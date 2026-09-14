@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Stage, Layer, Shape, Rect } from 'react-konva'
+import { Stage, Layer, Shape } from 'react-konva'
+import { Scene } from './Scene'
 import { useCanvasStore } from '../store/useCanvasStore'
 import {
   clampZoom, zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds,
@@ -215,11 +216,6 @@ export function Canvas2() {
     if (v) setView(v)
   }
 
-  /* A faint frame around everything in the store. Step-1 scaffolding: it gives
-     a sense of scale to pan and zoom against before step 2 draws the real
-     scene, and it is deleted the moment that lands. */
-  const extent = useMemo(() => worldBounds(objects), [objects])
-
   return (
     <div
       id="canvas2-container"
@@ -239,15 +235,15 @@ export function Canvas2() {
           onWheel={onWheel}
           onDblClick={onDblClick}
         >
+          {/* background — the grid alone; it never intercepts anything */}
           <Layer listening={false}>
             {showGrid && <Grid gridSize={gridSize} major={colors.major} minor={colors.minor} />}
-            {extent && (
-              <Rect
-                x={extent.x} y={extent.y} width={extent.width} height={extent.height}
-                stroke="#3E6B54" strokeWidth={1} dash={[6, 4]} opacity={0.5}
-                strokeScaleEnabled={false} listening={false}
-              />
-            )}
+          </Layer>
+          {/* objects — the real scene. listening stays off until step 3 gives
+              it selection; nothing can be clicked yet, so nothing should be
+              paying the cost of a hit graph. */}
+          <Layer listening={false}>
+            <Scene listening={false} />
           </Layer>
         </Stage>
       )}
