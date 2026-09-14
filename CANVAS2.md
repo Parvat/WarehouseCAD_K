@@ -52,10 +52,12 @@ down first this time.
    NOT mean the app loads — runtime `X is not defined` passes both (seen twice).
    Open the app; confirm zero red console errors.
 
-8. **ONE FILE, ONE JOB.** Keep the separation below. `Canvas2.jsx` is the
-   current exception — a blob doing input+drag+resize+Stage — and should be
-   split as it grows, mirroring the SVG split (CanvasArea / CanvasObjectCore /
-   CanvasOverlays).
+8. **ONE FILE, ONE JOB.** Keep the separation below. `Canvas2.jsx` was split
+   (mirroring the SVG's CanvasArea / CanvasOverlays split) into: `Canvas2.jsx`
+   (Stage/layer mounting + view), `useCanvasInteraction.js` (pan/marquee/drag/
+   selection input orchestration), and `Overlays.jsx` (selection outline +
+   marquee decoration). Keep splitting further as it grows — don't let any one
+   of the three regrow into a blob.
 
 ---
 
@@ -68,8 +70,10 @@ down first this time.
 | `selection.js` | Pure selection + drag geometry: nextSelection, marquee, movedIdsFor, objectCentre, isFloorPlan | no |
 | `Scene.jsx` | Composition — route each object to ONE painter, no double-draw | React |
 | `shapes.jsx` | The painters: RackShape / FloorPlanShape / ColumnGridShape / FallbackShape — how each draws + its hit area | React/Konva |
-| `Canvas2.jsx` | Orchestration: mount Stage, own pan/zoom (imperative), wire input/drag/resize/Transformer, portal in ⚠️ split as it grows | React/Konva |
-| `debugLog.js` / `DebugPanel.jsx` | TEMPORARY on-screen diagnostics — DELETE when the interaction bugs are closed | React |
+| `Canvas2.jsx` | Stage/layer mounting: container sizing, pan/zoom application (imperative) + store sync, composes Scene + Overlays into Layers | React/Konva |
+| `useCanvasInteraction.js` | Input/interaction orchestration: the one geometry pick (hitTest/hitTestBay) that drives both selection and drag-arming, pan, marquee, object drag, reparent-after-move | React (hook), no JSX |
+| `Overlays.jsx` | Decoration only, never listens: selection outline(s) + marquee rect | React/Konva |
+| `debugLog.js` / `DebugPanel.jsx` / `clickDiagnostics.js` | TEMPORARY on-screen diagnostics — DELETE when the interaction bugs are closed | React |
 
 Pure-logic files (`viewport`, `selection`) are the equivalent of SVG's
 `canvas.js` — they carry the maths so it can be unit-tested, and they must stay
@@ -165,5 +169,7 @@ shared truth for bounds / hit / resize — canvas2 uses them, never its own copy
 - Rendering (all types, full detail, smooth at Cord scale) — DONE.
 - Selection/drag — WORKS for most, but picking uses Konva's hit graph → some
   objects unhittable. **NEXT: switch picking to hitTest+objectContains (rule 4).**
-- Then: split `Canvas2.jsx` (rule 8); delete debug files (rule 7); then
-  Transformer polish → overlays → delete SVG (keep headless SVG export only).
+- `Canvas2.jsx` split (rule 8) — DONE: Canvas2.jsx / useCanvasInteraction.js /
+  Overlays.jsx.
+- Then: delete debug files (rule 7); then Transformer polish → overlays →
+  delete SVG (keep headless SVG export only).
