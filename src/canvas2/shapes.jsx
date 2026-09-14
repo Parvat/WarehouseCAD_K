@@ -36,8 +36,8 @@ const STRUCT_BLUE = '#3B6FB5'   // the building grid, and nothing else
 
 /** Centre-origin transform props, shared by every painter so rotation behaves
  *  identically no matter which one drew the object. */
-function spin(obj) {
-  const b = getObjectBounds(obj)
+function spin(obj, gridSize = 40) {
+  const b = outlineBounds(obj, gridSize) || getObjectBounds(obj)
   const cx = b.x + b.width / 2
   const cy = b.y + b.height / 2
   return { x: cx, y: cy, offsetX: cx, offsetY: cy, rotation: obj.rotation || 0 }
@@ -102,11 +102,45 @@ export function Ops({ ops, opacity = 1, listening = false }) {
   )
 }
 
+/** An invisible, screen-padded hit area over an object's bounds.
+ *
+ *  The draw-ops already produce real Konva nodes with real hit areas, so this
+ *  is not about being hittable at all — it is about being hittable COMFORTABLY.
+ *  A selective rack is 42in deep, which at the whole-building zoom is about ten
+ *  screen pixels: a target you have to aim at. This pads the body by a few
+ *  SCREEN px so the whole rack, plus a margin, is grabbable at any zoom.
+ *
+ *  It draws nothing — an empty sceneFunc — and exists only in the hit graph.
+ *  The pad is read from the live stage scale inside the hit pass, so it stays a
+ *  constant screen distance without threading zoom in as a prop. */
+function HitPad({ obj, gridSize, listening, pad = 4 }) {
+  if (!listening) return null
+  const b = outlineBounds(obj, gridSize)
+  if (!b) return null
+  return (
+    <Shape
+      listening
+      perfectDrawEnabled={false}
+      fill="#000"
+      sceneFunc={() => {}}
+      hitFunc={(ctx, shape) => {
+        const s = shape.getStage()?.scaleX() || 1
+        const m = pad / s
+        ctx.beginPath()
+        ctx.rect(b.x - m, b.y - m, b.width + m * 2, b.height + m * 2)
+        ctx.closePath()
+        ctx.fillStrokeShape(shape)
+      }}
+    />
+  )
+}
+
 /** A rack, from its draw-ops. */
-export function RackShape({ obj, ops, listening = false }) {
+export function RackShape({ obj, ops, gridSize, listening = false }) {
   return (
     <Group name={nodeName(obj.id)} listening={listening}
-      opacity={obj.opacity ?? 1} {...spin(obj)}>
+      opacity={obj.opacity ?? 1} {...spin(obj, gridSize)}>
+      <HitPad obj={obj} gridSize={gridSize} listening={listening} />
       <Ops ops={ops} listening={listening} />
     </Group>
   )
@@ -298,6 +332,56 @@ export function FallbackShape({ obj, listening = false }) {
   )
 }
 
+/** Bounds to outline — for EVERY selectable object, not just the ones
+ *  getObjectBounds happens to measure.
+ *
+ *  Three real gaps it has to cover, each found by selecting every type in turn:
+ *    • a column grid has no width/height at all; its extent is the columns,
+ *      which only expandColumnGrid knows;
+ *    • getObjectBounds reads rx/ry for a circle, so one created with a plain
+ *      r measures NaN;
+ *    • anything degenerate measures zero.
+ *
+ *  A selected object with no visible marker is worse than a slightly wrong
+ *  marker: you cannot tell whether the click registered. So the last resort is
+ *  a small square at the object's own position rather than nothing. */
+export function outlineBounds(obj, gridSize = 40) {
+  if (!obj) return null
+
+  if (obj.type === 'column_grid') {
+    const cols = expandColumnGrid(obj, gridSize)
+    if (cols.length) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const c of cols) {
+        if (c.x < minX) minX = c.x
+        if (c.y < minY) minY = c.y
+        if (c.x + c.w > maxX) maxX = c.x + c.w
+        if (c.y + c.h > maxY) maxY = c.y + c.h
+      }
+      return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+    }
+  }
+
+  if (obj.type === 'circle') {
+    const rx = Number.isFinite(obj.rx) ? obj.rx : obj.r
+    const ry = Number.isFinite(obj.ry) ? obj.ry : obj.r
+    if (Number.isFinite(rx) && Number.isFinite(ry) && Number.isFinite(obj.cx)) {
+      return { x: obj.cx - rx, y: obj.cy - ry, width: rx * 2, height: ry * 2 }
+    }
+  }
+
+  const b = getObjectBounds(obj)
+  if (b && Number.isFinite(b.x) && Number.isFinite(b.y) &&
+      b.width > 0 && b.height > 0) return b
+
+  /* Last resort: mark where it is, so selection is never invisible. */
+  const x = Number.isFinite(obj.x) ? obj.x : (Number.isFinite(obj.cx) ? obj.cx : obj.x1)
+  const y = Number.isFinite(obj.y) ? obj.y : (Number.isFinite(obj.cy) ? obj.cy : obj.y1)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  const m = gridSize / 2
+  return { x: x - m / 2, y: y - m / 2, width: m, height: m }
+}
+
 /* ── Selection outline ───────────────────────────────────────────────────────
    A minimal marker so selection is visible before the Transformer lands. Its
    node is named `sel:<id>` so a drag can offset it alongside the object it
@@ -310,9 +394,9 @@ export function FallbackShape({ obj, listening = false }) {
 
    Zero padding on purpose: at 7% a rack is ten pixels tall, and an inset or
    outset frame would read as a second object rather than as its outline. */
-export function SelectionOutline({ obj }) {
-  const b = getObjectBounds(obj)
-  if (!(b.width > 0) || !(b.height > 0)) return null
+export function SelectionOutline({ obj, gridSize = 40 }) {
+  const b = outlineBounds(obj, gridSize)
+  if (!b) return null
   return (
     <Group name={'sel:' + obj.id} listening={false} {...spin(obj)}>
       <Rect

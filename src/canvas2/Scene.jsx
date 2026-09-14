@@ -63,7 +63,7 @@ export function Scene({ listening = false }) {
       ))}
       {scene.rest.map(e => {
         if (e.kind === 'rack') {
-          return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} listening={listening} />
+          return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} gridSize={gridSize} listening={listening} />
         }
         if (e.kind === 'columns') {
           return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} />

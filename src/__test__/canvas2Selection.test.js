@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   GESTURE, gestureFor, nextSelection, normalizeRect, rectsOverlap,
-  objectsInMarquee, movedEnough, DRAG_THRESHOLD, movedIdsFor,
+  objectsInMarquee, movedEnough, DRAG_THRESHOLD, movedIdsFor, objectCentre,
 } from '../canvas2/selection'
 
 describe('canvas2 selection — what a press begins', () => {
@@ -170,5 +170,28 @@ describe('canvas2 selection — what a move actually shifts', () => {
   it('copes with nothing selected', () => {
     expect(movedIdsFor(objects, []).size).toBe(0)
     expect(movedIdsFor([], ['x']).size).toBe(1)
+  })
+})
+
+describe('canvas2 selection — object centre', () => {
+  it('uses the circle centre', () => {
+    expect(objectCentre({ cx: 10, cy: 20, r: 5 })).toEqual({ x: 10, y: 20 })
+  })
+
+  it('uses the midpoint of a line', () => {
+    expect(objectCentre({ x1: 0, y1: 0, x2: 100, y2: 50 })).toEqual({ x: 50, y: 25 })
+  })
+
+  it('uses the box centre for everything else', () => {
+    expect(objectCentre({ x: 10, y: 20, width: 100, height: 40 })).toEqual({ x: 60, y: 40 })
+  })
+
+  it('copes with a box that has no size', () => {
+    expect(objectCentre({ x: 7, y: 9 })).toEqual({ x: 7, y: 9 })
+  })
+
+  it('returns null for something with no position at all', () => {
+    expect(objectCentre({ type: 'odd' })).toBeNull()
+    expect(objectCentre(null)).toBeNull()
   })
 })

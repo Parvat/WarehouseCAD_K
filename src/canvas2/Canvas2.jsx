@@ -3,10 +3,10 @@ import { Stage, Layer, Shape, Rect } from 'react-konva'
 import { Scene } from './Scene'
 import { idFromNode, SelectionOutline } from './shapes'
 import { bayAtPoint } from '../render/rackOps'
-import { snapToGrid } from '../utils/canvas'
+import { snapToGrid, objectContains } from '../utils/canvas'
 import {
   GESTURE, gestureFor, nextSelection, normalizeRect, objectsInMarquee, movedEnough,
-  movedIdsFor,
+  movedIdsFor, objectCentre, isFloorPlan,
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
 import {
@@ -317,6 +317,7 @@ export function Canvas2() {
              moveObjects pushes history itself and cascades a floor plan to its
              children, which is why the preview moved that same cascade set. */
           useCanvasStore.getState().moveObjects(d.ids, d.delta.dx, d.delta.dy)
+          reparentMoved(d.ids)
         } else {
           stageRef.current?.batchDraw()
         }
@@ -386,6 +387,32 @@ export function Canvas2() {
     d.origin = grabbed && Number.isFinite(grabbed.x) ? { x: grabbed.x, y: grabbed.y } : null
     d.delta = null
     setCursor('grabbing')
+  }
+
+  /* Re-decide which building each moved object belongs to, from where it now
+   *  sits — exactly what CanvasArea does after its own moves.
+   *
+   *  Without this a rack dragged OUT of the building keeps claiming it as
+   *  parent, and the next building drag hauls it back along from outside: the
+   *  store cascades a floor-plan move to its parentId children and has no idea
+   *  the child has left. Parentage is a fact about position, so it has to be
+   *  recomputed when position changes.
+   *
+   *  attachToParent does not push history, so this stays ONE undo per drag. */
+  const reparentMoved = (ids) => {
+    const store = useCanvasStore.getState()
+    const all = store.objects          // post-move: immer has already applied it
+    for (const id of ids) {
+      const obj = all.find(o => o.id === id)
+      if (!obj || isFloorPlan(obj)) continue
+      const c = objectCentre(obj)
+      if (!c) continue
+      // last floor plan wins, matching the SVG's topmost-container rule
+      const fp = [...all].reverse().find(o => isFloorPlan(o) && objectContains(o, c.x, c.y))
+      if ((obj.parentId || undefined) !== (fp ? fp.id : undefined)) {
+        store.attachToParent(id, fp ? fp.id : undefined)
+      }
+    }
   }
 
   /* Selection, performed through the store's own actions. Reads only. */
@@ -458,7 +485,7 @@ export function Canvas2() {
           {/* overlay — the marquee, and later the handles. Never listens: it is
               decoration, and must not intercept a press meant for an object. */}
           <Layer listening={false}>
-            {selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} />)}
+            {selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} />)}
             {marquee && (
               <Rect
                 x={marquee.x} y={marquee.y} width={marquee.width} height={marquee.height}

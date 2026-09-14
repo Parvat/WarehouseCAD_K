@@ -141,3 +141,17 @@ export function movedIdsFor(objects = [], ids = []) {
   }
   return set
 }
+
+/** An object's centre, whatever geometry class it belongs to.
+ *  Used to decide which building an object sits in after a move. */
+export function objectCentre(obj) {
+  if (!obj) return null
+  if (Number.isFinite(obj.cx) && Number.isFinite(obj.cy)) return { x: obj.cx, y: obj.cy }
+  if (Number.isFinite(obj.x1)) return { x: (obj.x1 + obj.x2) / 2, y: (obj.y1 + obj.y2) / 2 }
+  if (Number.isFinite(obj.x)) {
+    return { x: obj.x + (obj.width || 0) / 2, y: obj.y + (obj.height || 0) / 2 }
+  }
+  return null
+}
+
+export const isFloorPlan = obj => !!obj && FP_TYPES.has(obj.type)
