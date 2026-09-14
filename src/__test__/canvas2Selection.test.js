@@ -1,31 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
-  GESTURE, gestureFor, nextSelection, normalizeRect, rectsOverlap,
+  nextSelection, normalizeRect, rectsOverlap,
   objectsInMarquee, movedEnough, DRAG_THRESHOLD, movedIdsFor, objectCentre,
 } from '../canvas2/selection'
-
-describe('canvas2 selection — what a press begins', () => {
-  it('pans on empty space and selects on an object', () => {
-    expect(gestureFor({ hitId: null })).toBe(GESTURE.PAN)
-    expect(gestureFor({ hitId: 'r1' })).toBe(GESTURE.SELECT)
-  })
-
-  it('marquees on shift over empty space, but ADDS on shift over an object', () => {
-    expect(gestureFor({ shiftKey: true, hitId: null })).toBe(GESTURE.MARQUEE)
-    expect(gestureFor({ shiftKey: true, hitId: 'r1' })).toBe(GESTURE.SELECT)
-  })
-
-  /* The escape hatches must never be ambiguous — they pan over anything. */
-  it('always pans on middle button or held space, object or not', () => {
-    expect(gestureFor({ button: 1, hitId: 'r1' })).toBe(GESTURE.PAN)
-    expect(gestureFor({ spaceDown: true, hitId: 'r1' })).toBe(GESTURE.PAN)
-    expect(gestureFor({ spaceDown: true, shiftKey: true, hitId: 'r1' })).toBe(GESTURE.PAN)
-  })
-
-  it('ignores buttons it does not own', () => {
-    expect(gestureFor({ button: 2, hitId: 'r1' })).toBeNull()
-  })
-})
 
 describe('canvas2 selection — what a press selects', () => {
   const groups = [{ id: 'g1', ids: ['a', 'b', 'c'] }]

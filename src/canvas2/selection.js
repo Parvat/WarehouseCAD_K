@@ -2,9 +2,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // What a press means, as pure functions.
 //
-// The canvas decides ownership of a gesture ONCE, on mousedown, from what is
-// under the pointer — and the rules for that decision live here rather than
-// tangled into an event handler, so they can be read and tested on their own.
+// Gesture OWNERSHIP (pan vs select vs marquee) is now decided by Konva itself —
+// each object node carries its own onMouseDown/draggable, and the Stage only
+// sees a press when Konva reports e.target === stage. What is left here is what
+// a press or a marquee SHOULD select, and the geometry a drag needs — logic
+// that has nothing to do with who owns the gesture.
 //
 // No React, no Konva, no store writes. Given a selection and a press, these say
 // what the next selection SHOULD be; the caller performs it through the store's
@@ -12,32 +14,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getObjectBounds } from '../utils/canvas'
-
-/** What a mousedown is for. Latched at press and held until release, so a drag
- *  that began on an object can never turn into a marquee halfway across the
- *  sheet, and a pan never becomes a selection because it crossed a rack. */
-export const GESTURE = {
-  PAN: 'pan',
-  SELECT: 'select',
-  MARQUEE: 'marquee',
-}
-
-/** Which gesture a press begins.
- *
- *  Order matters and is deliberate:
- *    • middle button or held space ALWAYS pans, over anything. These are the
- *      escape hatches that must never be ambiguous.
- *    • shift over empty space starts a marquee; shift over an object adds it to
- *      the selection instead, because that is the gesture people expect and a
- *      marquee starting on top of an object is almost always a mis-aim.
- *    • a press on an object selects it.
- *    • a press on empty space pans. */
-export function gestureFor({ button = 0, shiftKey = false, spaceDown = false, hitId = null }) {
-  if (button === 1 || spaceDown) return GESTURE.PAN
-  if (button !== 0) return null
-  if (shiftKey) return hitId ? GESTURE.SELECT : GESTURE.MARQUEE
-  return hitId ? GESTURE.SELECT : GESTURE.PAN
-}
 
 /** The selection a press on `id` should produce.
  *
