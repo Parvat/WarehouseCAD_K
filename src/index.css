@@ -1,0 +1,197 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; overflow: hidden; }
+
+:root {
+  --font-ui:      'Montserrat', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+  --font-display: 'Montserrat', sans-serif;
+}
+
+/* Font scale */
+[data-scale="sm"] { --fs-xs:9px;  --fs-sm:10px; --fs-md:11px; --fs-lg:13px; --fs-xl:15px; }
+[data-scale="md"] { --fs-xs:10px; --fs-sm:11px; --fs-md:13px; --fs-lg:15px; --fs-xl:17px; }
+[data-scale="lg"] { --fs-xs:12px; --fs-sm:13px; --fs-md:15px; --fs-lg:17px; --fs-xl:20px; }
+
+/* ── Obsidian (dark) ── */
+[data-theme="obsidian"] {
+  --bg:#0b0d11; --surface:#13151a; --surface2:#1a1d25; --surface3:#20242e;
+  --border:#252a36; --border2:#2e3444;
+  --accent:#f0b429; --accent-dim:rgba(240,180,41,0.13); --accent-dimmer:rgba(240,180,41,0.06);
+  --accent-bdr:rgba(240,180,41,0.30);
+  /* keeps Dark's existing tinted-active look */
+  --accent-solid:rgba(240,180,41,0.13); --accent-fg:#f0b429;
+  --blue:#4e9eff; --blue-dim:rgba(78,158,255,0.12);
+  --green:#34d399; --red:#f87171;
+  --green-dim:rgba(52,211,153,0.13); --green-bdr:rgba(52,211,153,0.35);
+  --red-dim:rgba(248,113,113,0.13);  --red-bdr:rgba(248,113,113,0.35);
+  --blue-bdr:rgba(78,158,255,0.32);
+  --purple:#a855f7; --purple-dim:rgba(168,85,247,0.13); --purple-bdr:rgba(168,85,247,0.32);
+  --text:#e2e5f0; --text2:#8892a4; --text3:#4e5668;
+  /* panel family aliases the theme surfaces — warm tint is studio-only */
+  --panel-bg:var(--surface); --panel-hover:var(--surface2); --panel-border:var(--border);
+  --panel-text2:var(--text2); --panel-text3:var(--text3); --panel-text4:var(--text3);
+  --panel-label:var(--text); --panel-muted:var(--text2); --panel-branch:var(--border);
+  --canvas-bg:#0b0d11;
+  --grid-major:rgba(37,42,54,0.75); --grid-minor:rgba(37,42,54,0.32);
+  --shadow:0 4px 24px rgba(0,0,0,0.5);
+  color:var(--text); background:var(--bg); font-family:var(--font-ui);
+}
+/* ── Studio (light) — clean white + near-black ── */
+[data-theme="studio"] {
+  --bg:#F7F8FA; --surface:#FFFFFF; --surface2:#F1F3F6; --surface3:#E8EBF1;
+  --border:#E6E9EF; --border2:#D5DAE3;
+  --accent:#0B101D; --accent-dim:#F1F3F6; --accent-dimmer:#F7F8FA;
+  --accent-bdr:rgba(11,16,29,0.18);
+  /* active/selected chrome: solid ink fill, white glyph */
+  --accent-solid:#0B101D; --accent-fg:#FFFFFF;
+  --blue:#0B101D; --blue-dim:#F1F3F6;
+  --green:#059669; --red:#dc2626;
+  --green-dim:rgba(5,150,105,0.12);  --green-bdr:rgba(5,150,105,0.32);
+  --red-dim:rgba(220,38,38,0.10);    --red-bdr:rgba(220,38,38,0.30);
+  --blue-bdr:rgba(11,16,29,0.18);
+  --purple:#8B5CF6; --purple-dim:rgba(139,92,246,0.12); --purple-bdr:rgba(139,92,246,0.30);
+  --text:#0B101D; --text2:#3A4152; --text3:#6B7280; --text4:#9AA1AE;
+  /* Left-panel surface family — slightly warmer than the app's cool greys, so
+     the library reads as its own plane against the canvas. Scoped to the panel;
+     obsidian/blueprint alias these back to their own surfaces below. */
+  --panel-bg:#FBFAF8; --panel-hover:#F1F0EB; --panel-border:#ECEAE5;
+  --panel-text2:#3A3833; --panel-text3:#6B675F; --panel-text4:#9A968C;
+  /* label ink runs warm to match the panel plane, rather than the cool --text */
+  --panel-label:#2A2823; --panel-muted:#57534B; --panel-branch:#E5E3DC;
+  --pin-accent:#378ADD; --pin-bg:#EAF1FE;
+  --tile-bg:#F4F4F2; --tile-hover:#ECECE9; --tool-muted:#8A8578;
+  --canvas-bg:#F7F8FA;
+  --grid-major:rgba(107,114,128,0.34); --grid-minor:rgba(107,114,128,0.14);
+  --shadow:0 4px 24px rgba(11,16,29,0.08);
+  color:var(--text); background:var(--bg); font-family:var(--font-ui);
+}
+/* ── Trace (pine on paper) — the Trace brand skin ── */
+[data-theme="trace"] {
+  --font-ui:'Plus Jakarta Sans', sans-serif;
+  --font-display:'Oswald', sans-serif;
+  --bg:#F2F1EC; --surface:#ECEAE1; --surface2:#E4E2D8; --surface3:#DAD8CD;
+  --border:#D6D4C9; --border2:#C9C7BB;
+  --accent:#14392B; --accent-dim:#E4E2D8; --accent-dimmer:#ECEAE1;
+  --accent-bdr:rgba(20,57,43,0.20);
+  --accent-solid:#14392B; --accent-fg:#F2F1EC;
+  --blue:#14392B; --blue-dim:#E4E2D8;
+  --green:#2F7A50; --red:#B4442E;
+  --green-dim:rgba(47,122,80,0.12);  --green-bdr:rgba(47,122,80,0.32);
+  --red-dim:rgba(180,68,46,0.10);    --red-bdr:rgba(180,68,46,0.30);
+  --blue-bdr:rgba(20,57,43,0.20);
+  --purple:#8B5CF6; --purple-dim:rgba(139,92,246,0.12); --purple-bdr:rgba(139,92,246,0.30);
+  --text:#161C18; --text2:#3F4A40; --text3:#6E7A6F; --text4:#96A093;
+  --panel-bg:#EFEDE6; --panel-hover:#E7E4DB; --panel-border:#DED9CE;
+  --panel-text2:#3F4A40; --panel-text3:#6E7A6F; --panel-text4:#96A093;
+  --panel-label:#1B2620; --panel-muted:#57534B; --panel-branch:#DED9CE;
+  --pin-accent:#14392B; --pin-bg:#E4EAE0;
+  --tile-bg:#E9E7DE; --tile-hover:#E1DFD4; --tool-muted:#7E8A7C;
+  --canvas-bg:#EDEBE4;
+  --grid-major:rgba(20,57,43,0.18); --grid-minor:rgba(20,57,43,0.08);
+  --shadow:0 4px 24px rgba(20,57,43,0.08);
+  color:var(--text); background:var(--bg); font-family:var(--font-ui);
+}
+/* ── Blueprint (engineering) ── */
+[data-theme="blueprint"] {
+  --bg:#081525; --surface:#0d1e3a; --surface2:#122448; --surface3:#182d58;
+  --border:#1c3668; --border2:#24437e;
+  --accent:#5bc8ff; --accent-dim:rgba(91,200,255,0.13); --accent-dimmer:rgba(91,200,255,0.05);
+  --accent-bdr:rgba(91,200,255,0.30);
+  /* keeps Blueprint's existing tinted-active look */
+  --accent-solid:rgba(91,200,255,0.13); --accent-fg:#5bc8ff;
+  --blue:#5bc8ff; --blue-dim:rgba(91,200,255,0.1);
+  --green:#4ade80; --red:#fb7185;
+  --green-dim:rgba(74,222,128,0.13); --green-bdr:rgba(74,222,128,0.35);
+  --red-dim:rgba(251,113,133,0.13);  --red-bdr:rgba(251,113,133,0.35);
+  --blue-bdr:rgba(91,200,255,0.32);
+  --purple:#a78bfa; --purple-dim:rgba(167,139,250,0.14); --purple-bdr:rgba(167,139,250,0.32);
+  --text:#cce5ff; --text2:#6b9fc4; --text3:#2e5c82;
+  /* panel family aliases the theme surfaces — warm tint is studio-only */
+  --panel-bg:var(--surface); --panel-hover:var(--surface2); --panel-border:var(--border);
+  --panel-text2:var(--text2); --panel-text3:var(--text3); --panel-text4:var(--text3);
+  --panel-label:var(--text); --panel-muted:var(--text2); --panel-branch:var(--border);
+  --canvas-bg:#070e1c;
+  --grid-major:rgba(28,54,104,0.95); --grid-minor:rgba(28,54,104,0.5);
+  --shadow:0 4px 24px rgba(0,0,0,0.6);
+  color:var(--text); background:var(--bg); font-family:var(--font-ui);
+}
+
+/* ── Focus & press states ──────────────────────────────────────────────────
+   Inputs across the app set inline `outline:none`, which removes the only
+   keyboard-navigation cue. Inline styles beat plain selectors, so the ring is
+   restored with !important. :focus-visible means mouse users never see it. */
+:focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px !important;
+  border-radius: 4px;
+}
+/* Inputs sit flush in their containers — keep the ring tight to avoid clipping */
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline-offset: 0 !important;
+}
+/* The inline canvas text editor is deliberately invisible — it sits directly
+   over the glyphs it edits, and a focus ring would draw a box around them.
+   The caret is the focus cue here, so the ring is not carrying any load. */
+[data-inline-text]:focus,
+[data-inline-text]:focus-visible {
+  outline: none !important;
+}
+/* Physical press feedback. Excludes :disabled so dead controls stay inert. */
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/* Canvas grid uses CSS vars */
+.canvas-grid {
+  background-image:
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width:4px; height:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border2,#2a2d36); border-radius:2px; }
+::-webkit-scrollbar-thumb:hover { background:var(--text3,#555a6a); }
+
+/* ── Global theme overrides — replaces Tailwind hardcoded colors ─────────── */
+/* These !important rules override hardcoded Tailwind classes for theme support */
+
+/* Backgrounds */
+.bg-\[\#16181d\], .bg-\[\#13151a\] { background: var(--surface) !important; }
+.bg-\[\#1d2028\], .bg-\[\#1a1d25\], .bg-\[\#1a1e2a\], .bg-\[\#1a1d26\] { background: var(--surface2) !important; }
+.bg-\[\#252830\], .bg-\[\#20242e\], .bg-\[\#12141a\] { background: var(--surface3) !important; }
+.bg-\[\#0e0f12\], .bg-\[\#0a0c10\], .bg-\[\#0e1420\] { background: var(--canvas-bg) !important; }
+
+/* Borders */
+.border-\[\#2a2d36\] { border-color: var(--border) !important; }
+.border-\[\#2e3444\] { border-color: var(--border2) !important; }
+.border-t.border-\[\#2a2d36\], .border-b.border-\[\#2a2d36\] { border-color: var(--border) !important; }
+
+/* Text */
+.text-\[\#e8eaf0\] { color: var(--text)  !important; }
+.text-\[\#8b90a0\] { color: var(--text2) !important; }
+.text-\[\#555a6a\] { color: var(--text3) !important; }
+
+/* Hover backgrounds */
+.hover\:bg-\[\#252830\]:hover, .hover\:bg-\[\#1d2028\]:hover, .hover\:bg-\[\#1a1e2a\]:hover { background: var(--surface3) !important; }
+.hover\:bg-\[\#252830\]:hover { background: var(--surface3) !important; }
+
+/* Sliders and range inputs */
+input[type=range] { accent-color: var(--accent); }
+
+/* Select dropdowns */
+select { background: var(--surface2) !important; color: var(--text) !important; border-color: var(--border) !important; }
+
+/* Toggle switch backgrounds */
+.bg-\[\#2a2d36\] { background: var(--border2) !important; }
+
+/* Hide fp dim labels when object not selected */
+.dim-labels-hidden { display: none; }
