@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Stage, Layer, Shape, Rect } from 'react-konva'
 import { Scene } from './Scene'
-import { idFromNode } from './shapes'
+import { idFromNode, SelectionOutline } from './shapes'
 import { bayAtPoint } from '../render/rackOps'
+import { snapToGrid } from '../utils/canvas'
 import {
   GESTURE, gestureFor, nextSelection, normalizeRect, objectsInMarquee, movedEnough,
+  movedIdsFor,
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
 import {
@@ -103,6 +105,13 @@ export function Canvas2() {
     panY: useCanvasStore.getState().panY,
   })
   const [cursor, setCursor] = useState('default')
+
+  /* What to outline. Selection is store state, so this re-renders when it
+     changes — but never during a drag, which moves the nodes directly. */
+  const selectedIds = useCanvasStore(s => s.selectedIds)
+  const selectedObjects = useMemo(
+    () => objects.filter(o => selectedIds.includes(o.id)),
+    [objects, selectedIds])
 
   const colors = useMemo(() => {
     try {
@@ -215,9 +224,15 @@ export function Canvas2() {
 
     if (g === GESTURE.SELECT) {
       applySelection(hitId, evt.shiftKey, screenToWorld(view.current, p))
-      /* Selection is the whole gesture for now — moving a selected object is
-         step 4. Latched anyway so a stray move cannot start a marquee. */
-      drag.current = { kind: GESTURE.SELECT }
+      /* A press SELECTS immediately and only becomes a move once the pointer
+         travels — so a click never nudges an object, and a drag never has to be
+         started twice. The promotion happens on the first qualifying move. */
+      drag.current = {
+        kind: GESTURE.SELECT,
+        hitId,
+        sx: evt.clientX, sy: evt.clientY,
+        moved: false,
+      }
       return
     }
 
@@ -248,6 +263,35 @@ export function Canvas2() {
         })
         return
       }
+      if (d.kind === GESTURE.SELECT) {
+        if (!movedEnough({ x: d.sx, y: d.sy }, { x: evt.clientX, y: evt.clientY })) return
+        beginMove(d)
+        if (d.kind !== 'move') return
+      }
+
+      if (d.kind === 'move') {
+        const st = useCanvasStore.getState()
+        let dx = (evt.clientX - d.sx) / view.current.zoom
+        let dy = (evt.clientY - d.sy) / view.current.zoom
+
+        if (st.snapToGrid && d.origin) {
+          /* Snap the resulting POSITION, not the delta — snapping the delta
+             would preserve whatever sub-grid offset the object started with.
+             Only the GRABBED object snaps; the rest of the selection moves by
+             that same delta, so the set keeps its internal spacing instead of
+             each piece collapsing onto its own nearest gridline. */
+          dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
+          dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
+        }
+        d.delta = { dx, dy }
+
+        /* Preview by offsetting the nodes themselves: no store write and no
+           React render per frame. */
+        for (const n of d.nodes) n.node.position({ x: n.rest.x + dx, y: n.rest.y + dy })
+        stageRef.current?.batchDraw()
+        return
+      }
+
       if (d.kind === GESTURE.MARQUEE) {
         if (!d.moved && !movedEnough({ x: d.sx, y: d.sy }, { x: evt.clientX, y: evt.clientY })) return
         d.moved = true
@@ -264,6 +308,22 @@ export function Canvas2() {
       const d = drag.current
       drag.current = null
       if (!d) return
+
+      if (d.kind === 'move') {
+        // hand every node back to where it actually rests
+        for (const n of d.nodes) n.node.position(n.rest)
+        if (d.delta && (d.delta.dx || d.delta.dy)) {
+          /* ONE call for the whole selection, so the drag is ONE history entry.
+             moveObjects pushes history itself and cascades a floor plan to its
+             children, which is why the preview moved that same cascade set. */
+          useCanvasStore.getState().moveObjects(d.ids, d.delta.dx, d.delta.dy)
+        } else {
+          stageRef.current?.batchDraw()
+        }
+        setCursor(spaceDown.current ? 'grab' : 'default')
+        return
+      }
+
       if (d.kind === GESTURE.MARQUEE) {
         if (d.moved && d.to) {
           const rect = normalizeRect(d.from, d.to)
@@ -285,6 +345,48 @@ export function Canvas2() {
       window.removeEventListener('mouseup', up)
     }
   }, [])
+
+  /* Turn a press into a move.
+   *
+   *  Resolved at promotion rather than at press, so it reflects the selection
+   *  AFTER the press settled it — pressing an unselected rack selects it and
+   *  then drags that, not whatever happened to be selected before.
+   *
+   *  The preview set is the cascade set: the selection plus the children of any
+   *  selected floor plan, because that is exactly what moveObjects will shift.
+   *  Previewing a different set is how a building ends up sliding out from
+   *  under its own racks. Each node's REST position is captured rather than
+   *  assumed to be (0,0): rack nodes sit at their own centre so rotation pivots
+   *  there, and snapping them back to the origin would fling them across the
+   *  sheet. */
+  const beginMove = (d) => {
+    const stage = stageRef.current
+    const st = useCanvasStore.getState()
+    if (!stage || !st.selectedIds.length) return
+
+    const ids = [...st.selectedIds]
+    const want = movedIdsFor(st.objects, ids)
+
+    /* One pass over the layers collecting both the object node and its
+       selection outline, so the outline travels with the thing it frames. */
+    const nodes = []
+    for (const layer of stage.getLayers()) {
+      for (const n of layer.getChildren()) {
+        const nm = n.name() || ''
+        const id = (nm.startsWith('obj:') || nm.startsWith('sel:')) ? nm.slice(4) : null
+        if (id && want.has(id)) nodes.push({ node: n, rest: n.position() })
+      }
+    }
+    if (!nodes.length) return
+
+    const grabbed = st.objects.find(o => o.id === (d.hitId || ids[0]))
+    d.kind = 'move'
+    d.ids = ids
+    d.nodes = nodes
+    d.origin = grabbed && Number.isFinite(grabbed.x) ? { x: grabbed.x, y: grabbed.y } : null
+    d.delta = null
+    setCursor('grabbing')
+  }
 
   /* Selection, performed through the store's own actions. Reads only. */
   const applySelection = (id, shiftKey, world) => {
@@ -356,6 +458,7 @@ export function Canvas2() {
           {/* overlay — the marquee, and later the handles. Never listens: it is
               decoration, and must not intercept a press meant for an object. */}
           <Layer listening={false}>
+            {selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} />)}
             {marquee && (
               <Rect
                 x={marquee.x} y={marquee.y} width={marquee.width} height={marquee.height}

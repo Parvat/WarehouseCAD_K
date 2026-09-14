@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   GESTURE, gestureFor, nextSelection, normalizeRect, rectsOverlap,
-  objectsInMarquee, movedEnough, DRAG_THRESHOLD,
+  objectsInMarquee, movedEnough, DRAG_THRESHOLD, movedIdsFor,
 } from '../canvas2/selection'
 
 describe('canvas2 selection — what a press begins', () => {
@@ -126,5 +126,49 @@ describe('canvas2 selection — drag threshold', () => {
     expect(movedEnough({ x: 0, y: 0 }, { x: 1, y: 1 })).toBe(false)
     expect(movedEnough({ x: 0, y: 0 }, { x: DRAG_THRESHOLD, y: 0 })).toBe(true)
     expect(movedEnough({ x: 0, y: 0 }, { x: 40, y: 30 })).toBe(true)
+  })
+})
+
+describe('canvas2 selection — what a move actually shifts', () => {
+  const objects = [
+    { id: 'fp', type: 'fp_rect', x: 0, y: 0, width: 900, height: 400 },
+    { id: 'r1', type: 'rack_row', parentId: 'fp' },
+    { id: 'r2', type: 'rack_row', parentId: 'fp' },
+    { id: 'loose', type: 'rack_row' },
+    { id: 'other', type: 'fp_rect' },
+    { id: 'kid', type: 'rack_row', parentId: 'other' },
+  ]
+
+  it('moving a plain object moves only it', () => {
+    expect([...movedIdsFor(objects, ['loose'])]).toEqual(['loose'])
+  })
+
+  /* The building carries its contents — the store cascades it, so the preview
+     has to agree or the drag lands somewhere other than where it looked. */
+  it('moving a floor plan carries its children', () => {
+    const s = movedIdsFor(objects, ['fp'])
+    expect(s.has('fp')).toBe(true)
+    expect(s.has('r1')).toBe(true)
+    expect(s.has('r2')).toBe(true)
+  })
+
+  it('carries only ITS children, not another building\u2019s', () => {
+    const s = movedIdsFor(objects, ['fp'])
+    expect(s.has('kid')).toBe(false)
+    expect(s.has('loose')).toBe(false)
+  })
+
+  it('a child selected on its own does not drag the parent', () => {
+    expect([...movedIdsFor(objects, ['r1'])]).toEqual(['r1'])
+  })
+
+  it('a multi-selection keeps every member', () => {
+    const s = movedIdsFor(objects, ['loose', 'r1'])
+    expect(s.size).toBe(2)
+  })
+
+  it('copes with nothing selected', () => {
+    expect(movedIdsFor(objects, []).size).toBe(0)
+    expect(movedIdsFor([], ['x']).size).toBe(1)
   })
 })

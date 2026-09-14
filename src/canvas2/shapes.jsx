@@ -154,6 +154,27 @@ export function FloorPlanShape({ obj, gridSize, listening = false }) {
         ref={attach}
         listening={listening}
         perfectDrawEnabled={false}
+        /* A sceneFunc that paints with raw canvas colours cannot be hit-tested:
+           Konva's hit canvas works by drawing each shape in a unique colour key
+           and reading the pixel back, and literal fills overwrite that. So the
+           hit area is stated separately.
+
+           It is the WALL BAND, not the footprint. Making the interior grabbable
+           would swallow every pan started inside the building — and on this
+           canvas an empty-space drag IS the pan. The band widens to ~24 screen
+           px because a real wall is often 3in, about one pixel at the zoom this
+           is used at, and nobody can hit one pixel. The stage scale is read
+           inside the hit pass, so no zoom has to be threaded in as a prop and
+           nothing re-renders when it changes. */
+        stroke={wall}
+        hitFunc={(ctx, shape) => {
+          const s = shape.getStage()?.scaleX() || 1
+          shape.strokeWidth(Math.max(wt, 24 / s))
+          ctx.beginPath()
+          verts.forEach((v, i) => (i ? ctx.lineTo(v.x, v.y) : ctx.moveTo(v.x, v.y)))
+          ctx.closePath()
+          ctx.strokeShape(shape)
+        }}
         sceneFunc={(ctx) => {
           const c = ctx._context
           const trace = (pts) => {
@@ -273,6 +294,33 @@ export function FallbackShape({ obj, listening = false }) {
           text={labelFor(obj.type)} fontSize={Math.min(11, b.height * 0.5)}
           fontFamily="sans-serif" fill={stroke} opacity={0.75} listening={false} />
       )}
+    </Group>
+  )
+}
+
+/* ── Selection outline ───────────────────────────────────────────────────────
+   A minimal marker so selection is visible before the Transformer lands. Its
+   node is named `sel:<id>` so a drag can offset it alongside the object it
+   frames — otherwise the outline would stay behind while the object moved.
+
+   strokeScaleEnabled={false} is what makes it visible at 7%: the stroke is a
+   SCREEN width, unaffected by the stage scale, so a 2px outline is 2px whether
+   the building fills the view or a single bay does. Dividing by zoom by hand
+   would do the same thing, less reliably, and would need the zoom threaded in.
+
+   Zero padding on purpose: at 7% a rack is ten pixels tall, and an inset or
+   outset frame would read as a second object rather than as its outline. */
+export function SelectionOutline({ obj }) {
+  const b = getObjectBounds(obj)
+  if (!(b.width > 0) || !(b.height > 0)) return null
+  return (
+    <Group name={'sel:' + obj.id} listening={false} {...spin(obj)}>
+      <Rect
+        x={b.x} y={b.y} width={b.width} height={b.height}
+        stroke="#4a9eff" strokeWidth={2}
+        strokeScaleEnabled={false} perfectDrawEnabled={false}
+        shadowForStrokeEnabled={false} listening={false}
+      />
     </Group>
   )
 }

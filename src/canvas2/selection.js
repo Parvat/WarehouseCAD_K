@@ -115,3 +115,29 @@ export const DRAG_THRESHOLD = 3
 export function movedEnough(a, b, threshold = DRAG_THRESHOLD) {
   return Math.hypot(b.x - a.x, b.y - a.y) >= threshold
 }
+
+/* Floor-plan types, for the cascade below. */
+const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
+
+/** Everything a move of `ids` will ACTUALLY shift.
+ *
+ *  The store cascades a floor-plan move to its parentId children, so dragging
+ *  the building carries its racks. The preview has to move the same set or the
+ *  drag lands somewhere other than where it looked — which is the bug that made
+ *  the building appear to slide out from under its own contents.
+ *
+ *  Mirrors the store's rule rather than reimplementing it: children of a moved
+ *  floor plan, and nothing else. */
+export function movedIdsFor(objects = [], ids = []) {
+  const set = new Set(ids)
+  const movedFps = new Set()
+  for (const o of objects) {
+    if (o && set.has(o.id) && FP_TYPES.has(o.type)) movedFps.add(o.id)
+  }
+  if (movedFps.size) {
+    for (const o of objects) {
+      if (o && o.parentId && movedFps.has(o.parentId)) set.add(o.id)
+    }
+  }
+  return set
+}
