@@ -372,6 +372,27 @@ export function Canvas2() {
      with the first — which is also why bay selection is reliable again: it
      is resolved from the exact same hitId, in the exact same handler, not
      racing a separate native drag-arm/click dispatch for the same node. */
+  /* Shared by beginDrag and the first real move below. Selecting an object
+     that wasn't already selected happens in the SAME mousedown as this call,
+     so React hasn't committed its new <SelectionOutline> yet — the sel: node
+     for a freshly-grabbed object simply doesn't exist in the Konva tree at
+     mousedown time. Collecting again once the drag actually starts (i.e. on
+     the first mousemove past the threshold, which always lands after React
+     has flushed) picks that node up instead of leaving it stranded at rest. */
+  const collectDragNodes = (stage, ids) => {
+    const st = useCanvasStore.getState()
+    const want = movedIdsFor(st.objects, ids)
+    const nodes = []
+    for (const layer of stage.getLayers()) {
+      for (const n of layer.getChildren()) {
+        const nm = n.name() || ''
+        const id = (nm.startsWith('obj:') || nm.startsWith('sel:')) ? nm.slice(4) : null
+        if (id && want.has(id)) nodes.push({ node: n, rest: n.position() })
+      }
+    }
+    return nodes
+  }
+
   const beginDrag = (hitId, world, evt) => {
     const stage = stageRef.current
     if (!stage) return
@@ -386,15 +407,7 @@ export function Canvas2() {
        REST position is captured rather than assumed to be (0,0): rack nodes
        sit at their own centre so rotation pivots there. */
     const ids = [...st.selectedIds]
-    const want = movedIdsFor(st.objects, ids)
-    const nodes = []
-    for (const layer of stage.getLayers()) {
-      for (const n of layer.getChildren()) {
-        const nm = n.name() || ''
-        const id = (nm.startsWith('obj:') || nm.startsWith('sel:')) ? nm.slice(4) : null
-        if (id && want.has(id)) nodes.push({ node: n, rest: n.position() })
-      }
-    }
+    const nodes = collectDragNodes(stage, ids)
     if (!nodes.length) return
 
     objDrag.current = {
@@ -624,6 +637,11 @@ export function Canvas2() {
         const box = stage.container().getBoundingClientRect()
         const world = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
         if (!d.moved && !movedEnough({ x: d.sx, y: d.sy }, { x: evt.clientX, y: evt.clientY })) return
+        if (!d.moved) {
+          // re-collect now that React has had a chance to mount a freshly-selected node's outline
+          const fresh = collectDragNodes(stage, d.ids)
+          if (fresh.length) d.nodes = fresh
+        }
         d.moved = true
 
         let dx = world.x - d.startWorld.x

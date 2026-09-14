@@ -3,6 +3,22 @@ import { Group, Rect, Path, Shape, Circle, Line, Text } from 'react-konva'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 
+/** Min/max extent of a vertex list, in the same absolute world coords the
+ *  verts are already drawn in. Shared by FloorPlanShape's own selfRect and
+ *  outlineBounds's floor-plan branch below, so a building's selection outline
+ *  cannot drift from what it actually draws. */
+function vertsBounds(verts) {
+  if (!verts || verts.length < 3) return null
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const v of verts) {
+    if (v.x < minX) minX = v.x
+    if (v.y < minY) minY = v.y
+    if (v.x > maxX) maxX = v.x
+    if (v.y > maxY) maxY = v.y
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+}
+
 /* ── STEP 2 · the painters ───────────────────────────────────────────────────
    Every object on the sheet is drawn by one of four painters. They read the
    store's objects and the frozen draw-op data and produce Konva nodes; they
@@ -212,17 +228,7 @@ export function FloorPlanShape({ obj, gridSize, listening = false, bind }) {
 
   /* Real outline bounds. Without this Konva reports a 1px self-rect for a
      sceneFunc shape and every measurement of the building collapses to a dot. */
-  const selfRect = useMemo(() => {
-    if (!verts || verts.length < 3) return null
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-    for (const v of verts) {
-      if (v.x < minX) minX = v.x
-      if (v.y < minY) minY = v.y
-      if (v.x > maxX) maxX = v.x
-      if (v.y > maxY) maxY = v.y
-    }
-    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
-  }, [verts])
+  const selfRect = useMemo(() => vertsBounds(verts), [verts])
 
   const attach = useCallback((node) => {
     if (node && selfRect) node.getSelfRect = () => selfRect
@@ -424,6 +430,15 @@ export function outlineBounds(obj, gridSize = 40) {
     if (Number.isFinite(rx) && Number.isFinite(ry) && Number.isFinite(obj.cx)) {
       return { x: obj.cx - rx, y: obj.cy - ry, width: rx * 2, height: ry * 2 }
     }
+  }
+
+  /* Floor plans draw from fpVerts directly, not from obj.x/y/width/height —
+     those stored fields can disagree with the actual polygon (they did: a
+     constant offset put the outline off the building's real drawn edges).
+     Measuring the same verts FloorPlanShape draws keeps the two in lockstep. */
+  if (obj.fpVerts) {
+    const vb = vertsBounds(obj.fpVerts)
+    if (vb) return vb
   }
 
   const b = getObjectBounds(obj)
