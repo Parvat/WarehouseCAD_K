@@ -7,7 +7,7 @@ import { Stage, Layer, Shape, Rect } from 'react-konva'
    rack into a move of that rack. */
 Konva.dragButtons = [0]
 import { Scene } from './Scene'
-import { idFromNode, SelectionOutline } from './shapes'
+import { idFromNode, nodeName, outlineBounds, hitPadMargins, SelectionOutline } from './shapes'
 import { bayAtPoint } from '../render/rackOps'
 import { snapToGrid, objectContains, getObjectBounds } from '../utils/canvas'
 import {
@@ -93,6 +93,75 @@ function Grid({ gridSize, major, minor }) {
       }}
     />
   )
+}
+
+/* ── TEMPORARY click-diagnostic geometry ─────────────────────────────────────
+   Pure functions, module-level: they take a stage/point and read the store
+   directly, so they need no component state and cannot go stale between
+   renders. Used only by the null-intersection branch of the click log below. */
+
+/** A LOCAL rect (world units, in the object's own pre-transform space) mapped
+ *  through the node's live absolute transform, corner by corner — correct
+ *  even when the object is rotated, unlike taking the rect's own x/y/w/h and
+ *  assuming axis alignment survives the transform. The result is in the same
+ *  screen-pixel space as the click point: getAbsoluteTransform() composes
+ *  every ancestor up to and including the Stage's own pan/zoom, so a local
+ *  point maps straight to container-relative pixels. */
+function screenBoundsOf(node, localRect) {
+  const t = node.getAbsoluteTransform()
+  const corners = [
+    { x: localRect.x, y: localRect.y },
+    { x: localRect.x + localRect.width, y: localRect.y },
+    { x: localRect.x, y: localRect.y + localRect.height },
+    { x: localRect.x + localRect.width, y: localRect.y + localRect.height },
+  ].map(p => t.point(p))
+  const xs = corners.map(p => p.x), ys = corners.map(p => p.y)
+  const minX = Math.min(...xs), maxX = Math.max(...xs)
+  const minY = Math.min(...ys), maxY = Math.max(...ys)
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+}
+
+const inRect = (p, r) => p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height
+
+/** Distance from a point to the NEAREST point on a rect's boundary or
+ *  interior — 0 when the point is already inside. */
+function distToRect(p, r) {
+  const cx = Math.max(r.x, Math.min(p.x, r.x + r.width))
+  const cy = Math.max(r.y, Math.min(p.y, r.y + r.height))
+  return Math.hypot(p.x - cx, p.y - cy)
+}
+
+/** For a null-intersection click: the nearest RACK object, with its drawn
+ *  bounds and its hit-rect bounds both already converted to the click's own
+ *  screen-pixel space, so the caller compares like with like instead of
+ *  inferring anything from world coordinates or distance alone.
+ *
+ *  Reuses hitPadMargins — the exact function HitPad's own hitFunc calls — so
+ *  this can never report a hit-rect that disagrees with what Konva actually
+ *  tested the click against. */
+function nearestRackScreenBounds(stage, screenPoint) {
+  const st = useCanvasStore.getState()
+  const gridSize = st.gridSize
+  const scale = stage.scaleX() || 1
+  let best = null
+
+  for (const o of st.objects) {
+    if (!/^rack/.test(o.type)) continue
+    const node = stage.findOne(n => n.name && n.name() === nodeName(o.id))
+    if (!node) continue
+    const b = outlineBounds(o, gridSize)
+    if (!b) continue
+
+    const drawnB = screenBoundsOf(node, b)
+    const dist = distToRect(screenPoint, drawnB)
+    if (best && dist >= best.dist) continue
+
+    const { mx, my } = hitPadMargins(b, scale)
+    const hitLocal = { x: b.x - mx, y: b.y - my, width: b.width + mx * 2, height: b.height + my * 2 }
+    const hitB = screenBoundsOf(node, hitLocal)
+    best = { obj: o, drawnB, hitB, dist }
+  }
+  return best
 }
 
 export function Canvas2() {
@@ -429,7 +498,7 @@ export function Canvas2() {
       setTimeout(() => {
         const st = useCanvasStore.getState()
         const obj = rec.objId ? st.objects.find(o => o.id === rec.objId) : null
-        dlog('click #' + rec.seq, [
+        const lines = [
           'pointer ' + Math.round(rec.point.x) + ',' + Math.round(rec.point.y) +
             '  button ' + rec.button,
           hit
@@ -442,7 +511,36 @@ export function Canvas2() {
           rec.fired.length
             ? 'handler fired: ' + rec.fired.join(', ')
             : 'handler fired: NONE  <-- nothing ran for this click',
-        ])
+        ]
+
+        /* getIntersection returned nothing — find the rack nearest the click
+           and put its DRAWN bounds and its HIT-rect bounds in the SAME screen
+           coordinates as the click point, so it is directly visible whether
+           the click landed inside either box rather than inferred from
+           distance alone. This is the only way to tell "genuinely empty
+           space" apart from "the hit rect does not cover what is drawn". */
+        if (!hit) {
+          const found = nearestRackScreenBounds(stage, rec.point)
+          if (found) {
+            const { obj: near, drawnB, hitB, dist } = found
+            const fmt = r => Math.round(r.x) + ',' + Math.round(r.y) + '  to  ' +
+              Math.round(r.x + r.width) + ',' + Math.round(r.y + r.height)
+            lines.push(
+              '',
+              'nearest rack: ' + near.type + '  ' + near.id.slice(0, 8) +
+                '  (' + Math.round(dist) + 'px away, screen coords)',
+              '  click point       ' + Math.round(rec.point.x) + ',' + Math.round(rec.point.y),
+              '  drawn bounds      ' + fmt(drawnB),
+              '  hit-rect bounds   ' + fmt(hitB),
+              '  inside drawn?  ' + inRect(rec.point, drawnB),
+              '  inside hit?    ' + inRect(rec.point, hitB),
+            )
+          } else {
+            lines.push('', 'nearest rack: none found (no rack objects in the scene)')
+          }
+        }
+
+        dlog('click #' + rec.seq, lines)
         if (clickTrace.current === rec) clickTrace.current = null
       }, 0)
     }

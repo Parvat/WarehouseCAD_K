@@ -148,14 +148,29 @@ export function Ops({ ops, opacity = 1, listening = false }) {
  *  close end to end, and when they do it reads as one continuous run anyway.
  *  Padding is kept minimal on the SHORT axis, where rows actually stack close
  *  together, so it can no longer bridge a realistic gap. */
-function HitPad({ obj, gridSize, listening, padLong = HIT_PAD_PX, padShort = HIT_PAD_SHORT_PX }) {
-  if (!listening) return null
-  const b = outlineBounds(obj, gridSize)
-  if (!b) return null
+/** The pad margins HitPad actually uses, in WORLD units, given the object's
+ *  own drawn bounds and the live stage scale.
+ *
+ *  Exported and called from BOTH the real hitFunc below and the click
+ *  diagnostics, so the two can never drift apart. A diagnostic that
+ *  re-derives this math independently is a diagnostic that can lie about
+ *  what Konva is actually testing against the moment either one changes. */
+export function hitPadMargins(b, scale, padLong = HIT_PAD_PX, padShort = HIT_PAD_SHORT_PX) {
+  const s = scale || 1
   /* "Long" and "short" are the object's own axes, not screen axes — a rack
      drawn taller than it is wide (unusual, but the fallback box case can be
      square or portrait) pads its actual short side regardless of orientation. */
   const wide = b.width >= b.height
+  return {
+    mx: (wide ? padLong : padShort) / s,
+    my: (wide ? padShort : padLong) / s,
+  }
+}
+
+function HitPad({ obj, gridSize, listening }) {
+  if (!listening) return null
+  const b = outlineBounds(obj, gridSize)
+  if (!b) return null
   return (
     <Shape
       listening
@@ -163,9 +178,7 @@ function HitPad({ obj, gridSize, listening, padLong = HIT_PAD_PX, padShort = HIT
       fill="#000"
       sceneFunc={() => {}}
       hitFunc={(ctx, shape) => {
-        const s = shape.getStage()?.scaleX() || 1
-        const mx = (wide ? padLong : padShort) / s
-        const my = (wide ? padShort : padLong) / s
+        const { mx, my } = hitPadMargins(b, shape.getStage()?.scaleX())
         ctx.beginPath()
         ctx.rect(b.x - mx, b.y - my, b.width + mx * 2, b.height + my * 2)
         ctx.closePath()
