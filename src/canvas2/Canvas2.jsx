@@ -8,7 +8,7 @@ import { Stage, Layer, Shape, Rect } from 'react-konva'
 Konva.dragButtons = [0]
 import { Scene } from './Scene'
 import { idFromNode, nodeName, outlineBounds, hitPadMargins, SelectionOutline } from './shapes'
-import { bayAtPoint } from '../render/rackOps'
+import { hitTest, hitTestBay } from './hitTest'
 import { snapToGrid, objectContains, getObjectBounds } from '../utils/canvas'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
@@ -139,6 +139,19 @@ function distToRect(p, r) {
  *  Reuses hitPadMargins — the exact function HitPad's own hitFunc calls — so
  *  this can never report a hit-rect that disagrees with what Konva actually
  *  tested the click against. */
+/* A screen rect wider or taller than this is not a rendering fact about any
+   real viewport — it is a symptom of corrupt object data (NaN propagating
+   through Math.min/max as -Infinity/Infinity, or a genuinely huge width/height
+   on the object itself) reaching the SAME transform math that everything else
+   here uses. Separate from the picking fix above: reported once, alongside
+   the raw fields, so it is diagnosable instead of just looking like wrong
+   arithmetic if it recurs. */
+const SANE_SCREEN_PX = 20000
+const isSaneRect = (r) => r &&
+  Number.isFinite(r.x) && Number.isFinite(r.y) &&
+  Number.isFinite(r.width) && Number.isFinite(r.height) &&
+  Math.abs(r.width) < SANE_SCREEN_PX && Math.abs(r.height) < SANE_SCREEN_PX
+
 function nearestRackScreenBounds(stage, screenPoint) {
   const st = useCanvasStore.getState()
   const gridSize = st.gridSize
@@ -153,6 +166,18 @@ function nearestRackScreenBounds(stage, screenPoint) {
     if (!b) continue
 
     const drawnB = screenBoundsOf(node, b)
+    if (!isSaneRect(drawnB)) {
+      /* TEMPORARY: report the corrupt instance directly rather than let its
+         wrong numbers silently win/lose the "nearest" comparison below. */
+      dlog('CORRUPT BOUNDS on ' + o.type + ' ' + o.id.slice(0, 8), [
+        'raw object: x=' + o.x + ' y=' + o.y + ' width=' + o.width + ' height=' + o.height +
+          ' rotation=' + o.rotation,
+        'local bounds (outlineBounds): ' + JSON.stringify(b),
+        'screen bounds computed:       ' + JSON.stringify(drawnB),
+      ])
+      continue
+    }
+
     const dist = distToRect(screenPoint, drawnB)
     if (best && dist >= best.dist) continue
 
@@ -307,11 +332,14 @@ export function Canvas2() {
   const [marquee, setMarquee] = useState(null)
 
   /* ── selection, from Konva's own hit ──────────────────────────────────── */
-  const selectFromEvent = (e, obj) => {
+  /* Selection AND bay pick, from a world point and a hit id already decided by
+     hitTest/hitTestBay — geometry, not Konva's scene graph. No Konva event is
+     needed here any more: hitId came from our own picking, so there is
+     nothing left to read off `e`. */
+  const selectFromHit = (hitId, shiftKey, world) => {
     const st = useCanvasStore.getState()
     const { ids, replaced } = nextSelection({
-      selectedIds: st.selectedIds, groups: st.groups, id: obj.id,
-      shiftKey: !!e.evt.shiftKey,
+      selectedIds: st.selectedIds, groups: st.groups, id: hitId, shiftKey,
     })
     if (replaced) {
       if (ids.length === 0) st.clearSelection()
@@ -319,18 +347,15 @@ export function Canvas2() {
       else { st.clearSelection(); st.selectMultiple(ids) }
     }
 
-    /* Bay pick, toggling like the SVG. The pointer comes straight off the
-       stage, so there is no coordinate maths of ours that can be wrong. */
-    const stage = stageRef.current
-    const p = stage && stage.getPointerPosition()
-    if (!p) return
-    const world = screenToWorld(view.current, p)
-    const live = useCanvasStore.getState().objects.find(o => o.id === obj.id)
+    /* Bay pick, toggling like the SVG — ported hitTestBay, not the render
+       layer's own bayAtPoint: it answers for the full RACK_BAY_TYPES set
+       (lanes and towers too, not just row/double-row) and un-rotates the
+       click first, so a turned rack still resolves the right bay. */
+    const live = st.objects.find(o => o.id === hitId)
     if (!live) return
-    const bay = bayAtPoint(live, world.x, st.gridSize)
+    const bay = hitTestBay(live, world.x, world.y, st.gridSize)
     if (bay != null) {
-      useCanvasStore.getState().updateObject(obj.id,
-        { activeBayIdx: live.activeBayIdx === bay ? null : bay })
+      st.updateObject(hitId, { activeBayIdx: live.activeBayIdx === bay ? null : bay })
     }
   }
 
@@ -550,46 +575,63 @@ export function Canvas2() {
   }, [])
 
   /* The props every object node gets. Konva owns the hit and the drag. */
+  /* draggable + the drag lifecycle only. SELECTION is not decided here at all
+     any more — no onMouseDown, no onTap, no e.cancelBubble. Konva's own hit
+     graph stays purely a rendering/dragging concern; what gets selected comes
+     entirely from onStageMouseDown's geometry-based hitTest below, which is
+     the whole point: a rack behaves identically whichever exact Rect/Path
+     happened to be topmost in Konva's OWN internal picking. Dragging itself
+     is untouched — Konva arms it internally off `draggable`, independent of
+     whatever event props a node does or doesn't carry. */
   const bind = useCallback((obj) => ({
     draggable: true,
-    onMouseDown: (e) => {
-      noteHandlerFired('obj:' + obj.type + ' ' + obj.id.slice(0, 8))
-      /* Middle button and held space pan over ANYTHING — they are the
-         unambiguous escape hatches. Let those bubble to the Stage untouched
-         instead of selecting what happens to be underneath. */
-      if (e.evt.button === 1 || spaceDown.current) return
-      e.cancelBubble = true
-      selectFromEvent(e, obj)
-    },
-    onTap: (e) => { e.cancelBubble = true; selectFromEvent(e, obj) },
     dragBoundFunc: dragBoundFor(obj),
     onDragStart: (e) => onObjDragStart(e, obj),
     onDragMove: onObjDragMove,
     onDragEnd: onObjDragEnd,
   }), [])
 
-  /* ── the Stage's own gestures ─────────────────────────────────────────── */
+  /* ── the Stage's own gestures — AND now the only place a press is decided ──
+     Every mousedown in the canvas reaches here (nothing upstream calls
+     cancelBubble any more), and what happens next is decided by our OWN
+     hitTest(world point), not by Konva's e.target/getIntersection. This is
+     the ported SVG picking: type-agnostic, and correct regardless of which
+     shape inside a rack's Group Konva's own hit graph happened to resolve to. */
   const onStageMouseDown = (e) => {
     const stage = stageRef.current
     if (!stage) return
     const evt = e.evt
     noteHandlerFired('stage (target=' + (e.target && e.target.getClassName ? e.target.getClassName() : '?') + ')')
-    /* Konva says so itself: the press landed on the Stage, i.e. empty space.
-       Anything on an object was already handled by that object's handler. */
-    const onEmpty = e.target === stage
-    const forcePan = evt.button === 1 || spaceDown.current
 
-    if (!onEmpty && !forcePan) return
+    /* Middle button and held space pan over ANYTHING — the unambiguous escape
+       hatches, checked before any hit test so they can never be shadowed by
+       whatever happens to be under the pointer. */
+    const forcePan = evt.button === 1 || spaceDown.current
     if (evt.button !== 0 && evt.button !== 1) return
 
-    if (onEmpty && evt.shiftKey && evt.button === 0 && !forcePan) {
-      const p = stage.getPointerPosition()
-      marqueeRef.current = {
-        from: screenToWorld(view.current, p),
-        sx: evt.clientX, sy: evt.clientY, moved: false,
+    const p = stage.getPointerPosition()
+    if (!p) return
+    const world = screenToWorld(view.current, p)
+
+    if (!forcePan) {
+      const st = useCanvasStore.getState()
+      const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+
+      if (hitId) {
+        if (evt.button === 0) selectFromHit(hitId, !!evt.shiftKey, world)
+        /* Selection only — a plain click never pans or marquees. If the
+           pointer later moves past the drag threshold, Konva's own draggable
+           machinery arms independently on whichever node it finds at THIS
+           same point, which agrees with hitId for any normal press. */
+        return
       }
-      return
+
+      if (evt.shiftKey) {
+        marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false }
+        return
+      }
     }
+
     pan.current = { sx: evt.clientX, sy: evt.clientY, panX: view.current.panX, panY: view.current.panY }
     setCursor('grabbing')
   }

@@ -27,11 +27,21 @@ export function DebugPanel() {
       display: 'flex', flexDirection: 'column',
       background: 'rgba(8,12,18,0.93)', color: '#dbe4f0',
       border: '1px solid #35507a', borderRadius: 6,
-      font: `11px/1.45 ${mono}`, pointerEvents: 'auto',
+      font: `11px/1.45 ${mono}`,
+      /* NONE on the whole panel: this box sits directly on top of the canvas,
+         and a diagnostic that itself steals the clicks it exists to diagnose
+         is worse than useless — confirmed live: a click on a rack whose screen
+         position fell under this panel never reached Konva at all
+         (document.elementFromPoint returned this panel's own census div, and
+         the Stage's own mousedown never fired), which looked exactly like a
+         "handler didn't fire" hit-graph bug but had nothing to do with one.
+         Only the header re-enables pointer events, for its buttons. */
+      pointerEvents: 'none',
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px',
         borderBottom: open ? '1px solid #24374f' : 'none', color: '#8fb6ef',
+        pointerEvents: 'auto',
       }}>
         <strong style={{ flex: 1 }}>canvas2 debug</strong>
         {open && <button onClick={copy} style={btn}>copy</button>}
