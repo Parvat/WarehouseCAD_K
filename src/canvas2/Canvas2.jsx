@@ -1,11 +1,17 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import Konva from 'konva'
 import { Stage, Layer, Shape, Rect } from 'react-konva'
+
+/* Only the LEFT button may drag an object. Konva allows the middle button by
+   default, which turned every middle-drag-to-pan that happened to start over a
+   rack into a move of that rack. */
+Konva.dragButtons = [0]
 import { Scene } from './Scene'
 import { idFromNode, SelectionOutline } from './shapes'
 import { bayAtPoint } from '../render/rackOps'
-import { snapToGrid, objectContains } from '../utils/canvas'
+import { snapToGrid, objectContains, getObjectBounds } from '../utils/canvas'
 import {
-  GESTURE, gestureFor, nextSelection, normalizeRect, objectsInMarquee, movedEnough,
+  nextSelection, normalizeRect, objectsInMarquee, movedEnough,
   movedIdsFor, objectCentre, isFloorPlan,
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
@@ -205,308 +211,153 @@ export function Canvas2() {
     return () => clearTimeout(id)
   }, [objects, selectedIds, zoom])
 
-  /* ── Pointer input, Konva-native ──────────────────────────────────────────
-     Ownership is decided ONCE at mousedown by selection.gestureFor, from what
-     is under the pointer, and latched until release. That latch is the point:
-     a pan that began on empty space can cross a rack without becoming a
-     selection, and a press on an object can never turn into a marquee.
+  /* ── Input, by Konva's own model ─────────────────────────────────────────
+     Selection and dragging are NOT hand-rolled. Each object node carries
+     Konva's own onMouseDown and draggable, so KONVA decides what was hit —
+     from the hit canvas it already maintains — instead of us re-deriving it
+     from coordinates. The Stage handles only what belongs to the Stage: pan
+     when the press lands on the Stage itself (Konva reports e.target === stage
+     for empty space), marquee on shift, and wheel zoom.
 
-     Moves and the release are taken on WINDOW, not the Stage. A pan bound to
-     Stage events dies the moment the pointer leaves the canvas — over the right
-     panel, or past the window edge — leaving the view stuck mid-drag. Window
-     capture means the gesture ends where the mouse actually ends. */
+     This deletes a custom hit test, a manual walk up the parent chain, a
+     gesture latch, and window-level mousemove/mouseup for object drags. Konva
+     already does all of it, and does it from what is actually drawn rather
+     than from arithmetic that can disagree with the drawing. */
   const spaceDown = useRef(false)
   useEffect(() => {
-    const down = e => {
-      if (e.code !== 'Space') return
-      spaceDown.current = true
-      if (!drag.current) setCursor('grab')
-    }
-    const up = e => {
-      if (e.code !== 'Space') return
-      spaceDown.current = false
-      if (!drag.current) setCursor('default')
-    }
+    const down = e => { if (e.code === 'Space') { spaceDown.current = true; setCursor('grab') } }
+    const up   = e => { if (e.code === 'Space') { spaceDown.current = false; setCursor('default') } }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up) }
   }, [])
 
-  const drag = useRef(null)
-  const [marquee, setMarquee] = useState(null)   // world rect, while dragging one
+  const pan = useRef(null)
+  const objDrag = useRef(null)
+  const marqueeRef = useRef(null)
+  const [marquee, setMarquee] = useState(null)
 
-  /* The object under a screen point, or null. Walks up from whatever shape was
-     hit to the node that carries the id — a press can land on a rack's box, its
-     dividers path, or a column square. */
-  const hitIdAt = (stage, p) => {
-    let n = stage.getIntersection(p)
-    while (n && idFromNode(n) === null) n = n.getParent()
-    return n ? idFromNode(n) : null
-  }
-
-  const onMouseDown = (e) => {
-    const stage = stageRef.current
-    if (!stage) return
-    const evt = e.evt
-    const p = stage.getPointerPosition()
-    if (!p) return
-
-    const hitId = hitIdAt(stage, p)
-    const g = gestureFor({
-      button: evt.button, shiftKey: evt.shiftKey,
-      spaceDown: spaceDown.current, hitId,
-    })
-    if (!g) return
-    evt.preventDefault()
-
-    if (debugOn()) {
-      const st0 = useCanvasStore.getState()
-      const ho = hitId ? st0.objects.find(o => o.id === hitId) : null
-      dlog('press → ' + g, [
-        hitId ? `hit ${ho ? ho.type : '?'}  ${hitId.slice(0, 6)}  parentId ${ho && ho.parentId ? ho.parentId.slice(0, 6) : 'none'}`
-              : 'hit nothing (empty space)',
-        `shift ${!!evt.shiftKey}   selected before ${st0.selectedIds.length}`,
-      ])
-    }
-
-    if (g === GESTURE.SELECT) {
-      applySelection(hitId, evt.shiftKey, screenToWorld(view.current, p))
-      /* A press SELECTS immediately and only becomes a move once the pointer
-         travels — so a click never nudges an object, and a drag never has to be
-         started twice. The promotion happens on the first qualifying move. */
-      drag.current = {
-        kind: GESTURE.SELECT,
-        hitId,
-        sx: evt.clientX, sy: evt.clientY,
-        moved: false,
-      }
-      return
-    }
-
-    if (g === GESTURE.MARQUEE) {
-      const w = screenToWorld(view.current, p)
-      drag.current = { kind: GESTURE.MARQUEE, from: w, sx: evt.clientX, sy: evt.clientY, moved: false }
-      return
-    }
-
-    drag.current = {
-      kind: GESTURE.PAN,
-      sx: evt.clientX, sy: evt.clientY,
-      panX: view.current.panX, panY: view.current.panY,
-    }
-    setCursor('grabbing')
-  }
-
-  /* Window-level move/up for the life of a gesture. */
-  useEffect(() => {
-    const move = (evt) => {
-      const d = drag.current
-      if (!d) return
-      if (d.kind === GESTURE.PAN) {
-        setView({
-          zoom: view.current.zoom,
-          panX: d.panX + (evt.clientX - d.sx),
-          panY: d.panY + (evt.clientY - d.sy),
-        })
-        return
-      }
-      if (d.kind === GESTURE.SELECT) {
-        if (!movedEnough({ x: d.sx, y: d.sy }, { x: evt.clientX, y: evt.clientY })) return
-        beginMove(d)
-        if (d.kind !== 'move') return
-      }
-
-      if (d.kind === 'move') {
-        const st = useCanvasStore.getState()
-        let dx = (evt.clientX - d.sx) / view.current.zoom
-        let dy = (evt.clientY - d.sy) / view.current.zoom
-
-        if (st.snapToGrid && d.origin) {
-          /* Snap the resulting POSITION, not the delta — snapping the delta
-             would preserve whatever sub-grid offset the object started with.
-             Only the GRABBED object snaps; the rest of the selection moves by
-             that same delta, so the set keeps its internal spacing instead of
-             each piece collapsing onto its own nearest gridline. */
-          dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
-          dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
-        }
-        d.delta = { dx, dy }
-
-        /* Preview by offsetting the nodes themselves: no store write and no
-           React render per frame. */
-        for (const n of d.nodes) n.node.position({ x: n.rest.x + dx, y: n.rest.y + dy })
-        stageRef.current?.batchDraw()
-        return
-      }
-
-      if (d.kind === GESTURE.MARQUEE) {
-        if (!d.moved && !movedEnough({ x: d.sx, y: d.sy }, { x: evt.clientX, y: evt.clientY })) return
-        d.moved = true
-        const stage = stageRef.current
-        if (!stage) return
-        const box = stage.container().getBoundingClientRect()
-        const to = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
-        d.to = to
-        setMarquee(normalizeRect(d.from, to))
-      }
-    }
-
-    const up = () => {
-      const d = drag.current
-      drag.current = null
-      if (!d) return
-
-      if (d.kind === 'move') {
-        // hand every node back to where it actually rests
-        for (const n of d.nodes) n.node.position(n.rest)
-
-        /* TEMPORARY: snapshot the cascade set BEFORE the commit. */
-        let snap = null
-        if (debugOn()) {
-          const st0 = useCanvasStore.getState()
-          const want = movedIdsFor(st0.objects, d.ids)
-          snap = [...want].map(id => {
-            const o = st0.objects.find(x => x.id === id)
-            return o ? { id, type: o.type, parentId: o.parentId || null,
-                         pos: Math.round(o.x) + ',' + Math.round(o.y) } : { id, type: '?' }
-          })
-        }
-
-        if (d.delta && (d.delta.dx || d.delta.dy)) {
-          /* ONE call for the whole selection, so the drag is ONE history entry.
-             moveObjects pushes history itself and cascades a floor plan to its
-             children, which is why the preview moved that same cascade set. */
-          useCanvasStore.getState().moveObjects(d.ids, d.delta.dx, d.delta.dy)
-          const changes = reparentMoved(d.ids)
-
-          if (debugOn() && snap) {
-            const st1 = useCanvasStore.getState()
-            const dragged = d.ids.map(i => {
-              const o = st1.objects.find(x => x.id === i)
-              return o ? o.type : '?' }).join(', ')
-            const lines = [
-              `dragged ${d.ids.length} object(s): ${dragged}`,
-              `delta ${Math.round(d.delta.dx)},${Math.round(d.delta.dy)}   cascade set ${snap.length} object(s)`,
-              `reparent ran: ${changes ? 'YES' : 'NO'}` +
-                (changes && changes.length ? `  (${changes.length} changed)` : '  (nothing changed)'),
-            ]
-            for (const b of snap) {
-              const o = st1.objects.find(x => x.id === b.id)
-              const nowParent = o && o.parentId ? o.parentId.slice(0, 6) : 'none'
-              const wasParent = b.parentId ? b.parentId.slice(0, 6) : 'none'
-              const nowPos = o ? Math.round(o.x) + ',' + Math.round(o.y) : '?'
-              const movedIt = nowPos !== b.pos
-              lines.push(
-                `  ${b.type.padEnd(18)} parent ${wasParent} → ${nowParent}` +
-                `   pos ${b.pos} → ${nowPos}${movedIt ? '  MOVED' : ''}`)
-            }
-            /* The question both bugs turn on: after this, what would a drag of
-               the building actually carry? */
-            const fp = st1.objects.find(o => isFloorPlan(o))
-            if (fp) {
-              const next = movedIdsFor(st1.objects, [fp.id])
-              const outside = [...next].filter(id => {
-                const o = st1.objects.find(x => x.id === id)
-                if (!o || isFloorPlan(o)) return false
-                const c = objectCentre(o)
-                return c && !objectContains(fp, c.x, c.y)
-              })
-              lines.push(`building would now carry ${next.size} object(s)` +
-                (outside.length ? `  — ${outside.length} of them OUTSIDE it (WOULD MOVE wrongly)` : '  (all inside, correct)'))
-            }
-            dlog('drag committed', lines)
-          }
-        } else {
-          stageRef.current?.batchDraw()
-        }
-        setCursor(spaceDown.current ? 'grab' : 'default')
-        return
-      }
-
-      if (d.kind === GESTURE.MARQUEE) {
-        if (d.moved && d.to) {
-          const rect = normalizeRect(d.from, d.to)
-          const st = useCanvasStore.getState()
-          const ids = objectsInMarquee(st.objects, rect)
-          /* Shift-marquee adds to what is already selected rather than
-             replacing it, so a selection can be built up in passes. */
-          if (ids.length) st.selectMultiple(ids)
-        }
-        setMarquee(null)
-      }
-      setCursor(spaceDown.current ? 'grab' : 'default')
-    }
-
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-    return () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-    }
-  }, [])
-
-  /* Turn a press into a move.
-   *
-   *  Resolved at promotion rather than at press, so it reflects the selection
-   *  AFTER the press settled it — pressing an unselected rack selects it and
-   *  then drags that, not whatever happened to be selected before.
-   *
-   *  The preview set is the cascade set: the selection plus the children of any
-   *  selected floor plan, because that is exactly what moveObjects will shift.
-   *  Previewing a different set is how a building ends up sliding out from
-   *  under its own racks. Each node's REST position is captured rather than
-   *  assumed to be (0,0): rack nodes sit at their own centre so rotation pivots
-   *  there, and snapping them back to the origin would fling them across the
-   *  sheet. */
-  const beginMove = (d) => {
-    const stage = stageRef.current
+  /* ── selection, from Konva's own hit ──────────────────────────────────── */
+  const selectFromEvent = (e, obj) => {
     const st = useCanvasStore.getState()
-    if (!stage || !st.selectedIds.length) return
+    const { ids, replaced } = nextSelection({
+      selectedIds: st.selectedIds, groups: st.groups, id: obj.id,
+      shiftKey: !!e.evt.shiftKey,
+    })
+    if (replaced) {
+      if (ids.length === 0) st.clearSelection()
+      else if (ids.length === 1) st.selectObject(ids[0], false)
+      else { st.clearSelection(); st.selectMultiple(ids) }
+    }
 
+    /* Bay pick, toggling like the SVG. The pointer comes straight off the
+       stage, so there is no coordinate maths of ours that can be wrong. */
+    const stage = stageRef.current
+    const p = stage && stage.getPointerPosition()
+    if (!p) return
+    const world = screenToWorld(view.current, p)
+    const live = useCanvasStore.getState().objects.find(o => o.id === obj.id)
+    if (!live) return
+    const bay = bayAtPoint(live, world.x, st.gridSize)
+    if (bay != null) {
+      useCanvasStore.getState().updateObject(obj.id,
+        { activeBayIdx: live.activeBayIdx === bay ? null : bay })
+    }
+  }
+
+  /* ── dragging, by Konva's draggable ───────────────────────────────────── */
+
+  /* Snap the OBJECT's own origin, not the node's centre: the node sits at the
+     object's centre so rotation pivots there, so snapping the node position
+     raw would land the object half a width off the line. */
+  const dragBoundFor = (obj) => (pos) => {
+    const st = useCanvasStore.getState()
+    if (!st.snapToGrid) return pos
+    const v = view.current
+    const b = getObjectBounds(obj)
+    const halfW = (b.width || 0) / 2, halfH = (b.height || 0) / 2
+    const originX = (pos.x - v.panX) / v.zoom - halfW
+    const originY = (pos.y - v.panY) / v.zoom - halfH
+    const sx = snapToGrid(originX, st.gridSize, st.snapUnit)
+    const sy = snapToGrid(originY, st.gridSize, st.snapUnit)
+    return { x: (sx + halfW) * v.zoom + v.panX, y: (sy + halfH) * v.zoom + v.panY }
+  }
+
+  const onObjDragStart = (e, obj) => {
+    /* Space means pan, so an object must not run away with the gesture just
+       because the press happened to land on it. */
+    if (spaceDown.current) { e.target.stopDrag(); return }
+    const stage = stageRef.current
+    const st0 = useCanvasStore.getState()
+    /* Dragging something unselected selects it first, so what moves is always
+       what is selected. */
+    if (!st0.selectedIds.includes(obj.id)) st0.selectObject(obj.id, false)
+
+    const st = useCanvasStore.getState()
     const ids = [...st.selectedIds]
     const want = movedIdsFor(st.objects, ids)
-
-    /* One pass over the layers collecting both the object node and its
-       selection outline, so the outline travels with the thing it frames. */
-    const nodes = []
-    for (const layer of stage.getLayers()) {
-      for (const n of layer.getChildren()) {
-        const nm = n.name() || ''
-        const id = (nm.startsWith('obj:') || nm.startsWith('sel:')) ? nm.slice(4) : null
-        if (id && want.has(id)) nodes.push({ node: n, rest: n.position() })
+    const node = e.target
+    const followers = []
+    if (stage) {
+      for (const layer of stage.getLayers()) {
+        for (const n of layer.getChildren()) {
+          const nm = n.name() || ''
+          const id = (nm.startsWith('obj:') || nm.startsWith('sel:')) ? nm.slice(4) : null
+          if (!id || n === node || !want.has(id)) continue
+          followers.push({ node: n, rest: n.position() })
+        }
       }
     }
-    if (!nodes.length) return
-
-    const grabbed = st.objects.find(o => o.id === (d.hitId || ids[0]))
-    d.kind = 'move'
-    d.ids = ids
-    d.nodes = nodes
-    d.origin = grabbed && Number.isFinite(grabbed.x) ? { x: grabbed.x, y: grabbed.y } : null
-    d.delta = null
+    objDrag.current = { ids, node, rest: node.position(), followers }
     setCursor('grabbing')
+  }
+
+  /* Konva moves the grabbed node; the rest of the selection — and a floor
+     plan's children — follow by the same delta. */
+  const onObjDragMove = () => {
+    const d = objDrag.current
+    if (!d) return
+    const dx = d.node.x() - d.rest.x
+    const dy = d.node.y() - d.rest.y
+    for (const f of d.followers) f.node.position({ x: f.rest.x + dx, y: f.rest.y + dy })
+  }
+
+  const onObjDragEnd = () => {
+    const d = objDrag.current
+    objDrag.current = null
+    setCursor(spaceDown.current ? 'grab' : 'default')
+    if (!d) return
+
+    /* Node coordinates live in the LAYER, which is unscaled — the Stage
+       carries the zoom. So this delta is already in world units; dividing by
+       zoom again inflated every drag by 1/zoom (a 90px drag at 10% became
+       8,862 world px instead of 900). */
+    const dx = d.node.x() - d.rest.x
+    const dy = d.node.y() - d.rest.y
+
+    /* Hand every node back; the store is the truth and React redraws from it. */
+    d.node.position(d.rest)
+    for (const f of d.followers) f.node.position(f.rest)
+
+    if (!dx && !dy) { stageRef.current?.batchDraw(); return }
+    useCanvasStore.getState().moveObjects(d.ids, dx, dy)
+    reparentMoved(d.ids)
   }
 
   /* Re-decide which building each moved object belongs to, from where it now
-   *  sits — exactly what CanvasArea does after its own moves.
-   *
-   *  Without this a rack dragged OUT of the building keeps claiming it as
-   *  parent, and the next building drag hauls it back along from outside: the
-   *  store cascades a floor-plan move to its parentId children and has no idea
-   *  the child has left. Parentage is a fact about position, so it has to be
-   *  recomputed when position changes.
-   *
-   *  attachToParent does not push history, so this stays ONE undo per drag. */
+     sits — the same rule CanvasArea applies after its own moves. Without it a
+     rack dragged OUT keeps claiming the building as parent and the next
+     building drag hauls it back. attachToParent does not push history, so this
+     stays ONE undo per drag. */
   const reparentMoved = (ids) => {
     const store = useCanvasStore.getState()
-    const all = store.objects          // post-move: immer has already applied it
+    const all = store.objects          // post-move: immer applied it already
     const changed = []
     for (const id of ids) {
       const obj = all.find(o => o.id === id)
       if (!obj || isFloorPlan(obj)) continue
       const c = objectCentre(obj)
       if (!c) continue
-      // last floor plan wins, matching the SVG's topmost-container rule
       const fp = [...all].reverse().find(o => isFloorPlan(o) && objectContains(o, c.x, c.y))
       if ((obj.parentId || undefined) !== (fp ? fp.id : undefined)) {
         store.attachToParent(id, fp ? fp.id : undefined)
@@ -516,29 +367,92 @@ export function Canvas2() {
     return changed
   }
 
-  /* Selection, performed through the store's own actions. Reads only. */
-  const applySelection = (id, shiftKey, world) => {
-    const st = useCanvasStore.getState()
-    const { ids, replaced } = nextSelection({
-      selectedIds: st.selectedIds, groups: st.groups, id, shiftKey,
-    })
+  /* The props every object node gets. Konva owns the hit and the drag. */
+  const bind = useCallback((obj) => ({
+    draggable: true,
+    onMouseDown: (e) => {
+      /* Middle button and held space pan over ANYTHING — they are the
+         unambiguous escape hatches. Let those bubble to the Stage untouched
+         instead of selecting what happens to be underneath. */
+      if (e.evt.button === 1 || spaceDown.current) return
+      e.cancelBubble = true
+      selectFromEvent(e, obj)
+    },
+    onTap: (e) => { e.cancelBubble = true; selectFromEvent(e, obj) },
+    dragBoundFunc: dragBoundFor(obj),
+    onDragStart: (e) => onObjDragStart(e, obj),
+    onDragMove: onObjDragMove,
+    onDragEnd: onObjDragEnd,
+  }), [])
 
-    if (replaced) {
-      if (ids.length === 0) st.clearSelection()
-      else if (ids.length === 1) st.selectObject(ids[0], false)
-      else { st.clearSelection(); st.selectMultiple(ids) }
-    }
+  /* ── the Stage's own gestures ─────────────────────────────────────────── */
+  const onStageMouseDown = (e) => {
+    const stage = stageRef.current
+    if (!stage) return
+    const evt = e.evt
+    /* Konva says so itself: the press landed on the Stage, i.e. empty space.
+       Anything on an object was already handled by that object's handler. */
+    const onEmpty = e.target === stage
+    const forcePan = evt.button === 1 || spaceDown.current
 
-    /* Bay pick, for the beam racks that have bays. Toggles like the SVG:
-       pressing the active bay clears it. updateObject, not commitObjectUpdate —
-       picking a bay is a selection and does not belong on the undo stack. */
-    const obj = st.objects.find(o => o.id === id)
-    if (!obj) return
-    const bay = bayAtPoint(obj, world.x, st.gridSize)
-    if (bay != null) {
-      st.updateObject(id, { activeBayIdx: obj.activeBayIdx === bay ? null : bay })
+    if (!onEmpty && !forcePan) return
+    if (evt.button !== 0 && evt.button !== 1) return
+
+    if (onEmpty && evt.shiftKey && evt.button === 0 && !forcePan) {
+      const p = stage.getPointerPosition()
+      marqueeRef.current = {
+        from: screenToWorld(view.current, p),
+        sx: evt.clientX, sy: evt.clientY, moved: false,
+      }
+      return
     }
+    pan.current = { sx: evt.clientX, sy: evt.clientY, panX: view.current.panX, panY: view.current.panY }
+    setCursor('grabbing')
   }
+
+  /* Pan and marquee still take their moves on WINDOW: a Stage-bound pan dies
+     the moment the pointer leaves the canvas. Object drags do not need this —
+     Konva already captures them. */
+  useEffect(() => {
+    const move = (evt) => {
+      if (pan.current) {
+        const d = pan.current
+        setView({
+          zoom: view.current.zoom,
+          panX: d.panX + (evt.clientX - d.sx),
+          panY: d.panY + (evt.clientY - d.sy),
+        })
+        return
+      }
+      const m = marqueeRef.current
+      if (!m) return
+      if (!m.moved && !movedEnough({ x: m.sx, y: m.sy }, { x: evt.clientX, y: evt.clientY })) return
+      m.moved = true
+      const stage = stageRef.current
+      if (!stage) return
+      const box = stage.container().getBoundingClientRect()
+      m.to = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+      setMarquee(normalizeRect(m.from, m.to))
+    }
+    const up = () => {
+      pan.current = null
+      const m = marqueeRef.current
+      marqueeRef.current = null
+      if (m && m.moved && m.to) {
+        const st = useCanvasStore.getState()
+        const ids = objectsInMarquee(st.objects, normalizeRect(m.from, m.to))
+        if (ids.length) st.selectMultiple(ids)
+      }
+      setMarquee(null)
+      setCursor(spaceDown.current ? 'grab' : 'default')
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    return () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+    }
+  }, [])
 
   const onWheel = (e) => {
     e.evt.preventDefault()
@@ -572,7 +486,7 @@ export function Canvas2() {
           /* Only the press starts here. Moves and the release are taken on
              window for the life of the gesture, so a drag survives the pointer
              leaving the canvas instead of dying at the edge. */
-          onMouseDown={onMouseDown}
+          onMouseDown={onStageMouseDown}
           onWheel={onWheel}
           onDblClick={onDblClick}
         >
@@ -582,7 +496,7 @@ export function Canvas2() {
           </Layer>
           {/* objects — the real scene, now hit-testable so it can be selected */}
           <Layer listening>
-            <Scene listening />
+            <Scene listening bind={bind} />
           </Layer>
           {/* overlay — the marquee, and later the handles. Never listens: it is
               decoration, and must not intercept a press meant for an object. */}

@@ -145,10 +145,10 @@ function HitPad({ obj, gridSize, listening, pad = HIT_PAD_PX }) {
 }
 
 /** A rack, from its draw-ops. */
-export function RackShape({ obj, ops, gridSize, listening = false }) {
+export function RackShape({ obj, ops, gridSize, listening = false, bind }) {
   return (
     <Group name={nodeName(obj.id)} listening={listening}
-      opacity={obj.opacity ?? 1} {...spin(obj, gridSize)}>
+      opacity={obj.opacity ?? 1} {...spin(obj, gridSize)} {...(bind ? bind(obj) : null)}>
       <HitPad obj={obj} gridSize={gridSize} listening={listening} />
       <Ops ops={ops} listening={listening} />
     </Group>
@@ -163,7 +163,7 @@ export function RackShape({ obj, ops, gridSize, listening = false }) {
  *  evenodd — so the wall measures exactly `wallThicknessFt` rather than a
  *  centred stroke straddling the boundary. insetPolygon is the shared helper
  *  the SVG uses, so the two cannot drift. */
-export function FloorPlanShape({ obj, gridSize, listening = false }) {
+export function FloorPlanShape({ obj, gridSize, listening = false, bind }) {
   const verts = obj.fpVerts
 
   /* Real outline bounds. Without this Konva reports a 1px self-rect for a
@@ -192,7 +192,8 @@ export function FloorPlanShape({ obj, gridSize, listening = false }) {
   const inner = insetPolygon(verts, wt)
 
   return (
-    <Group name={nodeName(obj.id)} listening={listening} opacity={obj.opacity ?? 1}>
+    <Group name={nodeName(obj.id)} listening={listening} opacity={obj.opacity ?? 1}
+      {...(bind ? bind(obj) : null)}>
       <Shape
         ref={attach}
         listening={listening}
@@ -243,7 +244,7 @@ export function FloorPlanShape({ obj, gridSize, listening = false }) {
  *  Drawn from the same expandColumnGrid the conflict check measures, so a red
  *  mark always lands on the column it refers to. All columns ride in ONE path:
  *  a 50ft grid over a 1,080ft building is hundreds of squares. */
-export function ColumnGridShape({ obj, gridSize, listening = false }) {
+export function ColumnGridShape({ obj, gridSize, listening = false, bind }) {
   const d = useMemo(() => {
     if (obj.showGrid === false) return null
     const cols = expandColumnGrid(obj, gridSize)
@@ -255,7 +256,8 @@ export function ColumnGridShape({ obj, gridSize, listening = false }) {
 
   if (!d) return null
   return (
-    <Group name={nodeName(obj.id)} listening={listening} opacity={obj.opacity ?? 1}>
+    <Group name={nodeName(obj.id)} listening={listening} opacity={obj.opacity ?? 1}
+      {...(bind ? bind(obj) : null)}>
       <Path data={d}
         fill={obj.fill || STRUCT_BLUE} stroke={obj.stroke || STRUCT_BLUE}
         strokeWidth={1} strokeScaleEnabled={false}
@@ -282,7 +284,7 @@ const labelFor = t => String(t || '')
  *
  *  A MIGRATION SURFACE, not a destination — each type given a real symbol drops
  *  out of here automatically, because Scene only routes what nothing claimed. */
-export function FallbackShape({ obj, listening = false }) {
+export function FallbackShape({ obj, listening = false, bind }) {
   const stroke = obj.stroke || '#6B7280'
   const fill = obj.noFill ? undefined : obj.fill
   const opacity = obj.opacity ?? 1
@@ -294,7 +296,7 @@ export function FallbackShape({ obj, listening = false }) {
 
   if (obj.type === 'text') {
     return (
-      <Group name={nodeName(obj.id)} listening={listening} opacity={opacity}>
+      <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...(bind ? bind(obj) : null)}>
         <Text x={obj.x} y={obj.y} text={obj.text || ''}
           fontSize={obj.fontSize || 14} fontFamily={obj.fontFamily || 'sans-serif'}
           fill={obj.fill || stroke} listening={listening} />
@@ -304,7 +306,7 @@ export function FallbackShape({ obj, listening = false }) {
 
   if (obj.type === 'freehand' && Array.isArray(obj.points)) {
     return (
-      <Group name={nodeName(obj.id)} listening={listening} opacity={opacity}>
+      <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...(bind ? bind(obj) : null)}>
         <Line points={obj.points.flatMap(p => [p.x, p.y])} {...common} />
       </Group>
     )
@@ -312,7 +314,7 @@ export function FallbackShape({ obj, listening = false }) {
 
   if (LINE_TYPES.has(obj.type) && Number.isFinite(obj.x1)) {
     return (
-      <Group name={nodeName(obj.id)} listening={listening} opacity={opacity}>
+      <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...(bind ? bind(obj) : null)}>
         <Line points={[obj.x1, obj.y1, obj.x2, obj.y2]} {...common} hitStrokeWidth={12} />
       </Group>
     )
@@ -320,7 +322,7 @@ export function FallbackShape({ obj, listening = false }) {
 
   if (obj.type === 'circle') {
     return (
-      <Group name={nodeName(obj.id)} listening={listening} opacity={opacity}>
+      <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...(bind ? bind(obj) : null)}>
         <Circle x={obj.cx} y={obj.cy} radius={obj.r || 10} fill={fill} {...common} />
       </Group>
     )
@@ -330,7 +332,8 @@ export function FallbackShape({ obj, listening = false }) {
   if (!(b.width > 0) || !(b.height > 0)) return null
 
   return (
-    <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...spin(obj)}>
+    <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...spin(obj)}
+      {...(bind ? bind(obj) : null)}>
       <Rect x={b.x} y={b.y} width={b.width} height={b.height} fill={fill} {...common} />
       {b.width > 24 && b.height > 12 && (
         <Text x={b.x} y={b.y + b.height / 2 - 5} width={b.width} align="center"

@@ -24,7 +24,7 @@ import { RackShape, FloorPlanShape, ColumnGridShape, FallbackShape } from './sha
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 
-export function Scene({ listening = false }) {
+export function Scene({ listening = false, bind }) {
   const objects = useCanvasStore(s => s.objects)
   const gridSize = useCanvasStore(s => s.gridSize)
   const visibleLayerIds = useCanvasStore(s => s.layers)
@@ -59,16 +59,16 @@ export function Scene({ listening = false }) {
   return (
     <>
       {scene.floors.map(o => (
-        <FloorPlanShape key={o.id} obj={o} gridSize={gridSize} listening={listening} />
+        <FloorPlanShape key={o.id} obj={o} gridSize={gridSize} listening={listening} bind={bind} />
       ))}
       {scene.rest.map(e => {
         if (e.kind === 'rack') {
-          return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} gridSize={gridSize} listening={listening} />
+          return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} gridSize={gridSize} listening={listening} bind={bind} />
         }
         if (e.kind === 'columns') {
-          return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} />
+          return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
         }
-        return <FallbackShape key={e.obj.id} obj={e.obj} listening={listening} />
+        return <FallbackShape key={e.obj.id} obj={e.obj} listening={listening} bind={bind} />
       })}
     </>
   )
