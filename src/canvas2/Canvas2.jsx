@@ -9,6 +9,8 @@ import {
   movedIdsFor, objectCentre, isFloorPlan,
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
+import { dlog, dcensus, debugOn } from './debugLog'
+import { DebugPanel } from './DebugPanel'
 import {
   clampZoom, zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds,
 } from './viewport'
@@ -168,6 +170,41 @@ export function Canvas2() {
 
   useEffect(() => { apply() }, [size.w, size.h])
 
+  /* TEMPORARY census: how many objects exist vs how many the hit graph can
+     actually find. A gap here is the selection bug made visible. */
+  useEffect(() => {
+    if (!debugOn()) return
+    const id = setTimeout(() => {
+      const stage = stageRef.current
+      if (!stage) return
+      const st = useCanvasStore.getState()
+      const named = new Set()
+      for (const layer of stage.getLayers())
+        for (const n of layer.getChildren()) {
+          const nm = n.name() || ''
+          if (nm.startsWith('obj:')) named.add(nm.slice(4))
+        }
+      const byType = {}
+      let hittable = 0
+      for (const o of st.objects) {
+        const drawn = named.has(o.id)
+        if (drawn) hittable++
+        byType[o.type] = byType[o.type] || { n: 0, drawn: 0 }
+        byType[o.type].n++
+        if (drawn) byType[o.type].drawn++
+      }
+      const parented = st.objects.filter(o => o.parentId).length
+      dcensus([
+        `objects ${st.objects.length}   drawn/hittable ${hittable}` +
+          (hittable === st.objects.length ? '   ok' : '   <-- MISMATCH'),
+        `zoom ${(st.zoom * 100).toFixed(1)}%   selected ${st.selectedIds.length}   with parentId ${parented}`,
+        ...Object.entries(byType).map(([t, v]) =>
+          `  ${t.padEnd(20)} ${v.drawn}/${v.n}` + (v.drawn === v.n ? '' : '  <-- NO')),
+      ])
+    }, 120)
+    return () => clearTimeout(id)
+  }, [objects, selectedIds, zoom])
+
   /* ── Pointer input, Konva-native ──────────────────────────────────────────
      Ownership is decided ONCE at mousedown by selection.gestureFor, from what
      is under the pointer, and latched until release. That latch is the point:
@@ -221,6 +258,16 @@ export function Canvas2() {
     })
     if (!g) return
     evt.preventDefault()
+
+    if (debugOn()) {
+      const st0 = useCanvasStore.getState()
+      const ho = hitId ? st0.objects.find(o => o.id === hitId) : null
+      dlog('press → ' + g, [
+        hitId ? `hit ${ho ? ho.type : '?'}  ${hitId.slice(0, 6)}  parentId ${ho && ho.parentId ? ho.parentId.slice(0, 6) : 'none'}`
+              : 'hit nothing (empty space)',
+        `shift ${!!evt.shiftKey}   selected before ${st0.selectedIds.length}`,
+      ])
+    }
 
     if (g === GESTURE.SELECT) {
       applySelection(hitId, evt.shiftKey, screenToWorld(view.current, p))
@@ -312,12 +359,63 @@ export function Canvas2() {
       if (d.kind === 'move') {
         // hand every node back to where it actually rests
         for (const n of d.nodes) n.node.position(n.rest)
+
+        /* TEMPORARY: snapshot the cascade set BEFORE the commit. */
+        let snap = null
+        if (debugOn()) {
+          const st0 = useCanvasStore.getState()
+          const want = movedIdsFor(st0.objects, d.ids)
+          snap = [...want].map(id => {
+            const o = st0.objects.find(x => x.id === id)
+            return o ? { id, type: o.type, parentId: o.parentId || null,
+                         pos: Math.round(o.x) + ',' + Math.round(o.y) } : { id, type: '?' }
+          })
+        }
+
         if (d.delta && (d.delta.dx || d.delta.dy)) {
           /* ONE call for the whole selection, so the drag is ONE history entry.
              moveObjects pushes history itself and cascades a floor plan to its
              children, which is why the preview moved that same cascade set. */
           useCanvasStore.getState().moveObjects(d.ids, d.delta.dx, d.delta.dy)
-          reparentMoved(d.ids)
+          const changes = reparentMoved(d.ids)
+
+          if (debugOn() && snap) {
+            const st1 = useCanvasStore.getState()
+            const dragged = d.ids.map(i => {
+              const o = st1.objects.find(x => x.id === i)
+              return o ? o.type : '?' }).join(', ')
+            const lines = [
+              `dragged ${d.ids.length} object(s): ${dragged}`,
+              `delta ${Math.round(d.delta.dx)},${Math.round(d.delta.dy)}   cascade set ${snap.length} object(s)`,
+              `reparent ran: ${changes ? 'YES' : 'NO'}` +
+                (changes && changes.length ? `  (${changes.length} changed)` : '  (nothing changed)'),
+            ]
+            for (const b of snap) {
+              const o = st1.objects.find(x => x.id === b.id)
+              const nowParent = o && o.parentId ? o.parentId.slice(0, 6) : 'none'
+              const wasParent = b.parentId ? b.parentId.slice(0, 6) : 'none'
+              const nowPos = o ? Math.round(o.x) + ',' + Math.round(o.y) : '?'
+              const movedIt = nowPos !== b.pos
+              lines.push(
+                `  ${b.type.padEnd(18)} parent ${wasParent} → ${nowParent}` +
+                `   pos ${b.pos} → ${nowPos}${movedIt ? '  MOVED' : ''}`)
+            }
+            /* The question both bugs turn on: after this, what would a drag of
+               the building actually carry? */
+            const fp = st1.objects.find(o => isFloorPlan(o))
+            if (fp) {
+              const next = movedIdsFor(st1.objects, [fp.id])
+              const outside = [...next].filter(id => {
+                const o = st1.objects.find(x => x.id === id)
+                if (!o || isFloorPlan(o)) return false
+                const c = objectCentre(o)
+                return c && !objectContains(fp, c.x, c.y)
+              })
+              lines.push(`building would now carry ${next.size} object(s)` +
+                (outside.length ? `  — ${outside.length} of them OUTSIDE it (WOULD MOVE wrongly)` : '  (all inside, correct)'))
+            }
+            dlog('drag committed', lines)
+          }
         } else {
           stageRef.current?.batchDraw()
         }
@@ -402,6 +500,7 @@ export function Canvas2() {
   const reparentMoved = (ids) => {
     const store = useCanvasStore.getState()
     const all = store.objects          // post-move: immer has already applied it
+    const changed = []
     for (const id of ids) {
       const obj = all.find(o => o.id === id)
       if (!obj || isFloorPlan(obj)) continue
@@ -411,8 +510,10 @@ export function Canvas2() {
       const fp = [...all].reverse().find(o => isFloorPlan(o) && objectContains(o, c.x, c.y))
       if ((obj.parentId || undefined) !== (fp ? fp.id : undefined)) {
         store.attachToParent(id, fp ? fp.id : undefined)
+        changed.push(id)
       }
     }
+    return changed
   }
 
   /* Selection, performed through the store's own actions. Reads only. */
@@ -462,6 +563,7 @@ export function Canvas2() {
       className="flex-1 relative overflow-hidden"
       style={{ background: colors.bg, cursor }}
     >
+      {debugOn() && <DebugPanel />}
       {size.w > 0 && size.h > 0 && (
         <Stage
           ref={stageRef}
