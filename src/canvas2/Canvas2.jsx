@@ -1,6 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Stage, Layer, Shape } from 'react-konva'
+import { Stage, Layer, Shape, Rect } from 'react-konva'
 import { Scene } from './Scene'
+import { idFromNode } from './shapes'
+import { bayAtPoint } from '../render/rackOps'
+import {
+  GESTURE, gestureFor, nextSelection, normalizeRect, objectsInMarquee, movedEnough,
+} from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
 import {
   clampZoom, zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds,
@@ -155,49 +160,154 @@ export function Canvas2() {
   useEffect(() => { apply() }, [size.w, size.h])
 
   /* ── Pointer input, Konva-native ──────────────────────────────────────────
-     Step 1 has nothing selectable, so any left-drag pans. Step 3 narrows this
-     to empty space when click-select and marquee arrive; middle-drag and
-     space-drag stay pan forever. */
+     Ownership is decided ONCE at mousedown by selection.gestureFor, from what
+     is under the pointer, and latched until release. That latch is the point:
+     a pan that began on empty space can cross a rack without becoming a
+     selection, and a press on an object can never turn into a marquee.
+
+     Moves and the release are taken on WINDOW, not the Stage. A pan bound to
+     Stage events dies the moment the pointer leaves the canvas — over the right
+     panel, or past the window edge — leaving the view stuck mid-drag. Window
+     capture means the gesture ends where the mouse actually ends. */
   const spaceDown = useRef(false)
   useEffect(() => {
-    const down = e => { if (e.code === 'Space') { spaceDown.current = true; setCursor('grab') } }
-    const up   = e => { if (e.code === 'Space') { spaceDown.current = false; setCursor('default') } }
+    const down = e => {
+      if (e.code !== 'Space') return
+      spaceDown.current = true
+      if (!drag.current) setCursor('grab')
+    }
+    const up = e => {
+      if (e.code !== 'Space') return
+      spaceDown.current = false
+      if (!drag.current) setCursor('default')
+    }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up) }
   }, [])
 
-  const pan = useRef(null)
+  const drag = useRef(null)
+  const [marquee, setMarquee] = useState(null)   // world rect, while dragging one
+
+  /* The object under a screen point, or null. Walks up from whatever shape was
+     hit to the node that carries the id — a press can land on a rack's box, its
+     dividers path, or a column square. */
+  const hitIdAt = (stage, p) => {
+    let n = stage.getIntersection(p)
+    while (n && idFromNode(n) === null) n = n.getParent()
+    return n ? idFromNode(n) : null
+  }
 
   const onMouseDown = (e) => {
-    const st = stageRef.current
-    if (!st) return
+    const stage = stageRef.current
+    if (!stage) return
     const evt = e.evt
-    const isPan = evt.button === 1 || evt.button === 0
-    if (!isPan) return
+    const p = stage.getPointerPosition()
+    if (!p) return
+
+    const hitId = hitIdAt(stage, p)
+    const g = gestureFor({
+      button: evt.button, shiftKey: evt.shiftKey,
+      spaceDown: spaceDown.current, hitId,
+    })
+    if (!g) return
     evt.preventDefault()
-    pan.current = {
+
+    if (g === GESTURE.SELECT) {
+      applySelection(hitId, evt.shiftKey, screenToWorld(view.current, p))
+      /* Selection is the whole gesture for now — moving a selected object is
+         step 4. Latched anyway so a stray move cannot start a marquee. */
+      drag.current = { kind: GESTURE.SELECT }
+      return
+    }
+
+    if (g === GESTURE.MARQUEE) {
+      const w = screenToWorld(view.current, p)
+      drag.current = { kind: GESTURE.MARQUEE, from: w, sx: evt.clientX, sy: evt.clientY, moved: false }
+      return
+    }
+
+    drag.current = {
+      kind: GESTURE.PAN,
       sx: evt.clientX, sy: evt.clientY,
       panX: view.current.panX, panY: view.current.panY,
     }
     setCursor('grabbing')
   }
 
-  const onMouseMove = (e) => {
-    const p = pan.current
-    if (!p) return
-    const evt = e.evt
-    setView({
-      zoom: view.current.zoom,
-      panX: p.panX + (evt.clientX - p.sx),
-      panY: p.panY + (evt.clientY - p.sy),
-    })
-  }
+  /* Window-level move/up for the life of a gesture. */
+  useEffect(() => {
+    const move = (evt) => {
+      const d = drag.current
+      if (!d) return
+      if (d.kind === GESTURE.PAN) {
+        setView({
+          zoom: view.current.zoom,
+          panX: d.panX + (evt.clientX - d.sx),
+          panY: d.panY + (evt.clientY - d.sy),
+        })
+        return
+      }
+      if (d.kind === GESTURE.MARQUEE) {
+        if (!d.moved && !movedEnough({ x: d.sx, y: d.sy }, { x: evt.clientX, y: evt.clientY })) return
+        d.moved = true
+        const stage = stageRef.current
+        if (!stage) return
+        const box = stage.container().getBoundingClientRect()
+        const to = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+        d.to = to
+        setMarquee(normalizeRect(d.from, to))
+      }
+    }
 
-  const endPan = () => {
-    if (!pan.current) return
-    pan.current = null
-    setCursor(spaceDown.current ? 'grab' : 'default')
+    const up = () => {
+      const d = drag.current
+      drag.current = null
+      if (!d) return
+      if (d.kind === GESTURE.MARQUEE) {
+        if (d.moved && d.to) {
+          const rect = normalizeRect(d.from, d.to)
+          const st = useCanvasStore.getState()
+          const ids = objectsInMarquee(st.objects, rect)
+          /* Shift-marquee adds to what is already selected rather than
+             replacing it, so a selection can be built up in passes. */
+          if (ids.length) st.selectMultiple(ids)
+        }
+        setMarquee(null)
+      }
+      setCursor(spaceDown.current ? 'grab' : 'default')
+    }
+
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    return () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+    }
+  }, [])
+
+  /* Selection, performed through the store's own actions. Reads only. */
+  const applySelection = (id, shiftKey, world) => {
+    const st = useCanvasStore.getState()
+    const { ids, replaced } = nextSelection({
+      selectedIds: st.selectedIds, groups: st.groups, id, shiftKey,
+    })
+
+    if (replaced) {
+      if (ids.length === 0) st.clearSelection()
+      else if (ids.length === 1) st.selectObject(ids[0], false)
+      else { st.clearSelection(); st.selectMultiple(ids) }
+    }
+
+    /* Bay pick, for the beam racks that have bays. Toggles like the SVG:
+       pressing the active bay clears it. updateObject, not commitObjectUpdate —
+       picking a bay is a selection and does not belong on the undo stack. */
+    const obj = st.objects.find(o => o.id === id)
+    if (!obj) return
+    const bay = bayAtPoint(obj, world.x, st.gridSize)
+    if (bay != null) {
+      st.updateObject(id, { activeBayIdx: obj.activeBayIdx === bay ? null : bay })
+    }
   }
 
   const onWheel = (e) => {
@@ -228,10 +338,10 @@ export function Canvas2() {
           ref={stageRef}
           width={size.w}
           height={size.h}
+          /* Only the press starts here. Moves and the release are taken on
+             window for the life of the gesture, so a drag survives the pointer
+             leaving the canvas instead of dying at the edge. */
           onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={endPan}
-          onMouseLeave={endPan}
           onWheel={onWheel}
           onDblClick={onDblClick}
         >
@@ -239,11 +349,20 @@ export function Canvas2() {
           <Layer listening={false}>
             {showGrid && <Grid gridSize={gridSize} major={colors.major} minor={colors.minor} />}
           </Layer>
-          {/* objects — the real scene. listening stays off until step 3 gives
-              it selection; nothing can be clicked yet, so nothing should be
-              paying the cost of a hit graph. */}
+          {/* objects — the real scene, now hit-testable so it can be selected */}
+          <Layer listening>
+            <Scene listening />
+          </Layer>
+          {/* overlay — the marquee, and later the handles. Never listens: it is
+              decoration, and must not intercept a press meant for an object. */}
           <Layer listening={false}>
-            <Scene listening={false} />
+            {marquee && (
+              <Rect
+                x={marquee.x} y={marquee.y} width={marquee.width} height={marquee.height}
+                fill="rgba(74,158,255,0.10)" stroke="#4a9eff" strokeWidth={1}
+                dash={[4, 3]} strokeScaleEnabled={false} listening={false}
+              />
+            )}
           </Layer>
         </Stage>
       )}
