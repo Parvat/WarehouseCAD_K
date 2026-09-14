@@ -7,6 +7,7 @@ import { useCanvasStore } from '../../store/useCanvasStore'
 import { UNITS } from '../../constants'
 import { RulesPanel } from '../Rules/RulesPanel'
 import { isKonvaEnabled, setKonvaEnabled, subscribeKonvaFlag } from '../Canvas/konvaFlag'
+import { isCanvas2Enabled, setCanvas2Enabled, subscribeCanvas2Flag } from '../../canvas2/flag'
 
 /* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
 const C = {
@@ -184,6 +185,7 @@ export function TopBar() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
   const konvaOn = useSyncExternalStore(subscribeKonvaFlag, isKonvaEnabled, () => false)
+  const canvas2On = useSyncExternalStore(subscribeCanvas2Flag, isCanvas2Enabled, () => false)
   const menuRef = useRef(null)
 
   useEffect(() => {
@@ -338,6 +340,12 @@ export function TopBar() {
               <MenuRow label="Konva canvas (beta)">
                 <Switch on={konvaOn} onClick={() => setKonvaEnabled(!konvaOn)}
                   label="Toggle Konva renderer" />
+              </MenuRow>
+              {/* The clean-start canvas. Unlike the row above, this one
+                  REPLACES the SVG canvas rather than mounting beside it. */}
+              <MenuRow label="New canvas (clean start)">
+                <Switch on={canvas2On} onClick={() => setCanvas2Enabled(!canvas2On)}
+                  label="Toggle new canvas" />
               </MenuRow>
             </MenuGroup>
 

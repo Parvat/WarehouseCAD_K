@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useSyncExternalStore } from 'react'
 import { TopBar }     from './components/Toolbar/TopBar'
 import { LeftPanel }  from './components/LeftPanel/index'
 import { CanvasArea } from './components/Canvas/CanvasArea'
@@ -9,6 +9,8 @@ import { FloatingToolbar } from './components/LeftPanel/FloatingToolbar'
 import { GeneratePanel } from './components/Generate/GeneratePanel'
 import { ColumnCheckOverlay } from './components/Canvas/ColumnCheckOverlay'
 import { KonvaStage } from './components/Canvas/KonvaStage'
+import { Canvas2 } from './canvas2/Canvas2'
+import { subscribeCanvas2Flag, isCanvas2Enabled } from './canvas2/flag'
 import { ColumnCheckProvider } from './generate/useColumnCheck'
 import { RulesProvider } from './rules/useRules'
 import { Login } from './shell/Login'
@@ -41,6 +43,8 @@ export default function App() {
   useKeyboardShortcuts()
   const { uiTheme, uiScale, restoreAutoSave, hasAutoSave, setUiTheme } = useCanvasStore()
   const [view, setView] = useState('login')
+  /* Which canvas is live. Exactly one is mounted at a time. */
+  const canvas2 = useSyncExternalStore(subscribeCanvas2Flag, isCanvas2Enabled, () => false)
 
   useEffect(() => {
     if (hasAutoSave()) restoreAutoSave()
@@ -69,14 +73,20 @@ export default function App() {
         <TopBar />
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <FloatingToolbar />
-          <CanvasArea />
+          {/* ONE canvas or the other, never both. The new Konva canvas owns its
+              own pointer events, so nothing here is layered over anything: when
+              it is live the SVG canvas and everything that portals into it are
+              simply not mounted. */}
+          {canvas2 ? <Canvas2 /> : <CanvasArea />}
           <RightPanel />
         </div>
         <GeneratePanel />
-        {/* Portals itself into #canvas-container — CanvasArea stays untouched. */}
-        <ColumnCheckOverlay />
-        {/* Konva renderer, behind a flag — portals into #canvas-container. */}
-        <KonvaStage />
+        {!canvas2 && <>
+          {/* Both portal into #canvas-container, which only the SVG canvas
+              provides — so they travel with it. */}
+          <ColumnCheckOverlay />
+          <KonvaStage />
+        </>}
       </ColumnCheckProvider>
       </RulesProvider>
       <button onClick={() => setView('hub')} title="Back to hub" style={{
