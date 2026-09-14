@@ -34,6 +34,15 @@ export const idFromNode = n => {
 
 const STRUCT_BLUE = '#3B6FB5'   // the building grid, and nothing else
 
+/* How far outside its own outline an object can still be grabbed, in SCREEN px.
+   Measured against the real problem: at the whole-building zoom a selective
+   rack is about 9px deep sitting in a 28px aisle, so it is a smaller target
+   than the gap around it and you miss more often than you hit. 8px roughly
+   doubles the target without closing the aisle — two neighbours pad 8px each
+   into 28px and still leave clear space to start a pan between them. Larger
+   would make the gap unpannable at low zoom; smaller leaves the rack fiddly. */
+const HIT_PAD_PX = 8
+
 /** Centre-origin transform props, shared by every painter so rotation behaves
  *  identically no matter which one drew the object. */
 function spin(obj, gridSize = 40) {
@@ -113,7 +122,7 @@ export function Ops({ ops, opacity = 1, listening = false }) {
  *  It draws nothing — an empty sceneFunc — and exists only in the hit graph.
  *  The pad is read from the live stage scale inside the hit pass, so it stays a
  *  constant screen distance without threading zoom in as a prop. */
-function HitPad({ obj, gridSize, listening, pad = 4 }) {
+function HitPad({ obj, gridSize, listening, pad = HIT_PAD_PX }) {
   if (!listening) return null
   const b = outlineBounds(obj, gridSize)
   if (!b) return null
