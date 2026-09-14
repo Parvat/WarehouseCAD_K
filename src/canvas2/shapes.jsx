@@ -42,6 +42,13 @@ const STRUCT_BLUE = '#3B6FB5'   // the building grid, and nothing else
    into 28px and still leave clear space to start a pan between them. Larger
    would make the gap unpannable at low zoom; smaller leaves the rack fiddly. */
 const HIT_PAD_PX = 8
+/* The short-axis pad. Small enough that it cannot bridge a realistic gap
+   between stacked rows (measured: failure starts under ~4 screen px total gap
+   with the old symmetric 8px pad; a 2px pad here needs a gap under ~4px on
+   its OWN to reach a neighbor's centre, which no real aisle or structural
+   clearance produces — while still rounding off the exact edge for a click a
+   pixel or two outside the rack's true footprint). */
+const HIT_PAD_SHORT_PX = 2
 
 /** Centre-origin transform props, shared by every painter so rotation behaves
  *  identically no matter which one drew the object. */
@@ -121,11 +128,34 @@ export function Ops({ ops, opacity = 1, listening = false }) {
  *
  *  It draws nothing — an empty sceneFunc — and exists only in the hit graph.
  *  The pad is read from the live stage scale inside the hit pass, so it stays a
- *  constant screen distance without threading zoom in as a prop. */
-function HitPad({ obj, gridSize, listening, pad = HIT_PAD_PX }) {
+ *  constant screen distance without threading zoom in as a prop.
+ *
+ *  The pad is NOT symmetric, and that asymmetry is load-bearing. A rack is
+ *  wide and short — at the whole-building zoom a rack_row is ~10 screen px
+ *  tall — so a uniform pad on all four sides reaches through a tight VERTICAL
+ *  gap between stacked rows far enough to cover a neighbor's own centre.
+ *  Konva resolves the overlap by z-order (topmost/last-drawn wins), so
+ *  whichever rack happens to be drawn later silently steals every click meant
+ *  for the row above or below it — reproduced at a 2 screen-px gap between
+ *  two racks, where the later one's pad ate the earlier one's centre and every
+ *  click on the "dead" rack actually selected its neighbor instead. This is
+ *  the real mechanism behind "specific racks are consistently unclickable,
+ *  neighbors are fine": it depends on how tightly THAT rack happens to be
+ *  stacked against its neighbors, which varies rack to rack.
+ *
+ *  Padding generously along the rack's own LENGTH (the horizontal axis, in
+ *  local — pre-rotation — coordinates) stays safe: two racks rarely sit that
+ *  close end to end, and when they do it reads as one continuous run anyway.
+ *  Padding is kept minimal on the SHORT axis, where rows actually stack close
+ *  together, so it can no longer bridge a realistic gap. */
+function HitPad({ obj, gridSize, listening, padLong = HIT_PAD_PX, padShort = HIT_PAD_SHORT_PX }) {
   if (!listening) return null
   const b = outlineBounds(obj, gridSize)
   if (!b) return null
+  /* "Long" and "short" are the object's own axes, not screen axes — a rack
+     drawn taller than it is wide (unusual, but the fallback box case can be
+     square or portrait) pads its actual short side regardless of orientation. */
+  const wide = b.width >= b.height
   return (
     <Shape
       listening
@@ -134,9 +164,10 @@ function HitPad({ obj, gridSize, listening, pad = HIT_PAD_PX }) {
       sceneFunc={() => {}}
       hitFunc={(ctx, shape) => {
         const s = shape.getStage()?.scaleX() || 1
-        const m = pad / s
+        const mx = (wide ? padLong : padShort) / s
+        const my = (wide ? padShort : padLong) / s
         ctx.beginPath()
-        ctx.rect(b.x - m, b.y - m, b.width + m * 2, b.height + m * 2)
+        ctx.rect(b.x - mx, b.y - my, b.width + mx * 2, b.height + my * 2)
         ctx.closePath()
         ctx.fillStrokeShape(shape)
       }}
