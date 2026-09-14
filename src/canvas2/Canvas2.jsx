@@ -367,10 +367,95 @@ export function Canvas2() {
     return changed
   }
 
+  /* ── TEMPORARY click diagnostics ──────────────────────────────────────────
+     What the report needs to distinguish: for a dead rack, does
+     getIntersection return nothing, return a DIFFERENT node (wrong target),
+     or return the right node while no handler ever runs?
+
+     A native, CAPTURE-phase listener on the container sees every mousedown
+     before Konva's own bubble-phase dispatch runs — so it can compute
+     getIntersection independently of whatever cancelBubble/early-returns
+     happen inside our own handlers, and its answer can never be skewed by
+     them. Each object's bind() and the Stage's own handler then stamp
+     "a handler fired here" onto the SAME record; a setTimeout(0) flushes it
+     to the panel once (macrotask) after that click's synchronous dispatch —
+     handlers, drag, everything — has finished, so one panel entry holds the
+     full story: pointer, what Konva's hit graph found, what object that
+     resolves to, and which handler (if any) actually ran. */
+  const clickTrace = useRef(null)
+  const clickSeq = useRef(0)
+
+  const noteHandlerFired = (label) => {
+    if (clickTrace.current) clickTrace.current.fired.push(label)
+  }
+
+  useEffect(() => {
+    if (!debugOn()) return
+    const container = document.getElementById('canvas2-container')
+    if (!container) return
+
+    /* Walks up from whatever shape was hit to the Group carrying the object
+       id — a click can land on a rack's box rect or its dividers path, which
+       carry no name of their own. */
+    const resolveObjId = (node) => {
+      let n = node
+      while (n) {
+        const id = idFromNode(n)
+        if (id !== null) return id
+        n = n.getParent && n.getParent()
+      }
+      return null
+    }
+
+    const onCaptureDown = (e) => {
+      const stage = stageRef.current
+      if (!stage) return
+      const box = container.getBoundingClientRect()
+      const point = { x: e.clientX - box.left, y: e.clientY - box.top }
+      const hit = stage.getIntersection(point)
+
+      const rec = {
+        seq: ++clickSeq.current,
+        point,
+        button: e.button,
+        hitClass: hit ? hit.getClassName() : null,
+        hitName: hit ? (hit.name() || '(unnamed)') : null,
+        hitListening: hit ? hit.isListening() : null,
+        objId: hit ? resolveObjId(hit) : null,
+        fired: [],
+      }
+      clickTrace.current = rec
+
+      setTimeout(() => {
+        const st = useCanvasStore.getState()
+        const obj = rec.objId ? st.objects.find(o => o.id === rec.objId) : null
+        dlog('click #' + rec.seq, [
+          'pointer ' + Math.round(rec.point.x) + ',' + Math.round(rec.point.y) +
+            '  button ' + rec.button,
+          hit
+            ? 'getIntersection -> ' + rec.hitClass + '  name=' + rec.hitName +
+              '  listening=' + rec.hitListening
+            : 'getIntersection -> null  (nothing hittable at this point)',
+          rec.objId
+            ? 'resolves to object: ' + (obj ? obj.type : '(id not in store)') + '  ' + rec.objId.slice(0, 8)
+            : 'resolves to object: none',
+          rec.fired.length
+            ? 'handler fired: ' + rec.fired.join(', ')
+            : 'handler fired: NONE  <-- nothing ran for this click',
+        ])
+        if (clickTrace.current === rec) clickTrace.current = null
+      }, 0)
+    }
+
+    container.addEventListener('mousedown', onCaptureDown, true)
+    return () => container.removeEventListener('mousedown', onCaptureDown, true)
+  }, [])
+
   /* The props every object node gets. Konva owns the hit and the drag. */
   const bind = useCallback((obj) => ({
     draggable: true,
     onMouseDown: (e) => {
+      noteHandlerFired('obj:' + obj.type + ' ' + obj.id.slice(0, 8))
       /* Middle button and held space pan over ANYTHING — they are the
          unambiguous escape hatches. Let those bubble to the Stage untouched
          instead of selecting what happens to be underneath. */
@@ -390,6 +475,7 @@ export function Canvas2() {
     const stage = stageRef.current
     if (!stage) return
     const evt = e.evt
+    noteHandlerFired('stage (target=' + (e.target && e.target.getClassName ? e.target.getClassName() : '?') + ')')
     /* Konva says so itself: the press landed on the Stage, i.e. empty space.
        Anything on an object was already handled by that object's handler. */
     const onEmpty = e.target === stage
