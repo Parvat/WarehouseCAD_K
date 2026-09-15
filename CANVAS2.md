@@ -230,6 +230,12 @@ shared truth for bounds / hit / resize — canvas2 uses them, never its own copy
   resize (bay/tower-quantized via `applyResize` where the type supports it),
   centre-pivot rotation, no bounce on a rotated resize, one undo per gesture,
   full undo revert.
+- Resize/rotate UI polish (BUG 10) — DONE: per-handle hover cursor
+  (`cursorForHandle`, ported from CanvasUI's `cursorMap`, via a new idle-only
+  `onStageMouseMove`), a rotate glyph on the rotate handle, and live handle
+  tracking during the drag itself (`syncHandleOverlayNode`, an imperative
+  twin of `ResizeHandlesOverlay`'s own render sharing its `computeHandleLayout`
+  — BUG 6's node-shortcut trick applied to the resize overlay).
 - Next: overlays polish (rule 6, e.g. suppressing the plain SelectionOutline
   for a rack the handles already frame); delete debug files (rule 7); delete
   SVG (keep headless SVG export only).

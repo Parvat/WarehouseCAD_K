@@ -1,7 +1,6 @@
-import { Group, Rect, Line, Circle } from 'react-konva'
-import { getObjectBounds, getHandlePositions } from '../utils/canvas'
+import { Group, Rect, Line, Circle, Text } from 'react-konva'
 import { spin } from './shapes'
-import { enabledHandlesFor, rotateEnabledFor, rotateHandlePos, handlePad } from './handleGeometry'
+import { computeHandleLayout } from './handleGeometry'
 
 /* ── Resize + rotate handles — pure paint, no Konva input of any kind ────────
    No onMouseDown, no draggable, no per-node listener: Konva is pure paint
@@ -29,25 +28,17 @@ import { enabledHandlesFor, rotateEnabledFor, rotateHandlePos, handlePad } from 
    divides by zoom for the exact same reason, and this is the same trick,
    not a different one). */
 export function ResizeHandlesOverlay({ obj, zoom, gridSize = 40 }) {
-  const enabled = enabledHandlesFor(obj.type)
-  const canRotate = rotateEnabledFor(obj.type)
+  const layout = computeHandleLayout(obj, zoom)
+  const { enabled, positions, hs, canRotate, rotateHandle } = layout
   if (!enabled.length && !canRotate) return null
 
-  const bounds = getObjectBounds(obj)
-  /* Same pad handleHitTest uses (handleGeometry.js) — see its own comment
-     for why this can't be getHandlePositions' unscaled default: the painted
-     square and the world-space hit box it must exactly match both need a
-     screen-constant pad, not a fixed few world units that vanish at 7%. */
-  const positions = getHandlePositions(bounds, handlePad(zoom))
-  const hs = 6 / zoom
-
   return (
-    <Group listening={false} {...spin(obj, gridSize)}>
+    <Group name={'handles:' + obj.id} listening={false} {...spin(obj, gridSize)}>
       {enabled.map(h => {
         const hp = positions[h]
         if (!hp) return null
         return (
-          <Rect key={h}
+          <Rect key={h} name={'handlebox:' + h}
             x={hp.x - hs} y={hp.y - hs} width={hs * 2} height={hs * 2}
             fill="#0e1420" stroke="#4a9eff" strokeWidth={1}
             strokeScaleEnabled={false} perfectDrawEnabled={false}
@@ -56,21 +47,58 @@ export function ResizeHandlesOverlay({ obj, zoom, gridSize = 40 }) {
         )
       })}
       {canRotate && (() => {
-        const { x: rx, y: ry } = rotateHandlePos(bounds, zoom)
-        const lineY = bounds.y - 6 / zoom
-        const r = 8 / zoom
+        const { rx, ry, lineY, r } = rotateHandle
         return (
           <>
-            <Line points={[rx, lineY, rx, ry + 7 / zoom]}
+            <Line name="handleline" points={[rx, lineY, rx, ry + 7 / zoom]}
               stroke="#f0b429" strokeWidth={1.5} opacity={0.8}
               strokeScaleEnabled={false} listening={false} />
-            <Circle x={rx} y={ry} radius={r}
+            <Circle name="handlecircle" x={rx} y={ry} radius={r}
               fill="#16181d" stroke="#f0b429" strokeWidth={1.8}
               strokeScaleEnabled={false} perfectDrawEnabled={false}
               shadowForStrokeEnabled={false} listening={false} />
+            {/* The glyph CanvasUI.jsx paints on its own rotate handle — same
+                character, same colour, sized the same screen-constant way as
+                everything else here. A width/height box the same size as the
+                circle plus Konva's own align/verticalAlign centres it
+                properly, rather than guessing an offset by eye. */}
+            <Text name="handleglyph" x={rx - r} y={ry - r} width={r * 2} height={r * 2}
+              text="↻" align="center" verticalAlign="middle"
+              fontSize={10 / zoom} fontFamily="sans-serif" fill="#f0b429"
+              listening={false} />
           </>
         )
       })()}
     </Group>
   )
+}
+
+/** The imperative twin of the render above — same computeHandleLayout, same
+ *  spin(), applied straight to an already-mounted Konva Group instead of
+ *  returned as JSX. Called from useCanvasInteraction's resize/rotate
+ *  mousemove (the same frame that writes the live preview to the store), so
+ *  the handles track the live gesture instead of waiting for React's own
+ *  re-render to reach this component — the resize/rotate counterpart to BUG
+ *  6's collectDragNodes trick for plain object drag's sel:/obj: nodes. Only
+ *  positions/points move: hs and r depend on zoom alone, which cannot change
+ *  mid-gesture, so widths/radii never need touching here. */
+export function syncHandleOverlayNode(group, obj, zoom, gridSize = 40) {
+  const t = spin(obj, gridSize)
+  group.position({ x: t.x, y: t.y })
+  group.offset({ x: t.offsetX, y: t.offsetY })
+  group.rotation(t.rotation)
+
+  const { positions, hs, rotateHandle } = computeHandleLayout(obj, zoom)
+  for (const child of group.getChildren()) {
+    const nm = child.name() || ''
+    if (nm.startsWith('handlebox:')) {
+      const hp = positions[nm.slice('handlebox:'.length)]
+      if (hp) child.position({ x: hp.x - hs, y: hp.y - hs })
+    } else if (rotateHandle) {
+      const { rx, ry, lineY, r } = rotateHandle
+      if (nm === 'handleline') child.points([rx, lineY, rx, ry + 7 / zoom])
+      else if (nm === 'handlecircle') child.position({ x: rx, y: ry })
+      else if (nm === 'handleglyph') child.position({ x: rx - r, y: ry - r })
+    }
+  }
 }

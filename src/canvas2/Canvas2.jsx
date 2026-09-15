@@ -204,7 +204,7 @@ export function Canvas2() {
 
   const [dblClickFitEnabled, toggleDblClickFit] = useDblClickFitSetting()
 
-  const { onStageMouseDown, onWheel, onDblClick, fitToContent, cursor, marquee } =
+  const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee } =
     useCanvasInteraction({ stageRef, view, setView, size, objects, noteHandlerFired, dblClickFitEnabled })
 
   return (
@@ -260,6 +260,8 @@ export function Canvas2() {
              window for the life of the gesture, so a drag survives the pointer
              leaving the canvas instead of dying at the edge. */
           onMouseDown={onStageMouseDown}
+          onMouseMove={onStageMouseMove}
+          onMouseLeave={onStageMouseLeave}
           onWheel={onWheel}
           onDblClick={onDblClick}
         >

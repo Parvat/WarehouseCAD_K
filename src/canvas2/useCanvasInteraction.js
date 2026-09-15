@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { hitTest, hitTestBay } from './hitTest'
-import { handleHitTest } from './handleGeometry'
+import { handleHitTest, cursorForHandle } from './handleGeometry'
+import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
 import { snapToGrid, objectContains, applyResize, getObjectBounds } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import {
@@ -191,6 +192,21 @@ export function useCanvasInteraction({
     resizeDrag.current = { objId: obj.id, handle, origObj: { ...obj }, startWorld: world }
   }
 
+  /* The handles overlay's own Group, by the same 'handles:'+id name
+     ResizeHandlesOverlay paints it with — the resize/rotate mousemove branch
+     below uses this to nudge it live (syncHandleOverlayNode), same idea as
+     collectDragNodes above but for a single, already-known node rather than
+     a whole drag set. */
+  const findHandlesGroup = (stage, objId) => {
+    const name = 'handles:' + objId
+    for (const layer of stage.getLayers()) {
+      for (const n of layer.getChildren()) {
+        if (n.name() === name) return n
+      }
+    }
+    return null
+  }
+
   /* Re-decide which building each moved object belongs to, from where it now
      sits — the same rule CanvasArea applies after its own moves. Without it a
      rack dragged OUT keeps claiming the building as parent and the next
@@ -289,6 +305,44 @@ export function useCanvasInteraction({
     setCursor('grabbing')
   }
 
+  /* Hover-only cursor feedback: which resize/rotate cursor to show BEFORE a
+     press, from the same handleHitTest/cursorForHandle pair the actual
+     press (onStageMouseDown) and paint (ResizeHandlesOverlay) already use —
+     so the cursor a handle shows and the handle a click lands on can never
+     disagree. Only runs while nothing else owns the cursor: any active
+     gesture (pan/drag/marquee/resize) keeps setting it from its own
+     mousemove/mouseup, and held space always means grab. */
+  const onStageMouseMove = () => {
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current) return
+    if (spaceDown.current) return
+    const stage = stageRef.current
+    if (!stage) return
+    const p = stage.getPointerPosition()
+    if (!p) return
+    const world = screenToWorld(view.current, p)
+    const st = useCanvasStore.getState()
+
+    let next = 'default'
+    if (st.selectedIds.length === 1) {
+      const selected = st.objects.find(o => o.id === st.selectedIds[0])
+      if (selected && PORTED_RACK_TYPES.has(selected.type)) {
+        const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
+        if (handle) next = cursorForHandle(handle, selected.rotation)
+      }
+    }
+    setCursor(next)
+  }
+
+  /* Without this, a resize-cursor set by a hover right at the canvas edge
+     sticks after the pointer leaves — onStageMouseMove never fires again to
+     clear it since the mouse is no longer over the Stage. Only relevant when
+     idle: an active gesture is already on window-level move/up and keeps
+     going (and setting its own cursor) even off-canvas. */
+  const onStageMouseLeave = () => {
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current) return
+    setCursor(spaceDown.current ? 'grab' : 'default')
+  }
+
   /* Pan, marquee AND object drag all take their moves on WINDOW: a
      Stage-bound gesture dies the moment the pointer leaves the canvas — over
      the right panel, or past the window edge — leaving it stuck mid-drag.
@@ -317,6 +371,14 @@ export function useCanvasInteraction({
           const snapDeg = evt.shiftKey ? 45 : 5
           const snapped = ((Math.round(angle / snapDeg) * snapDeg) % 360 + 360) % 360
           st.updateObject(objId, { rotation: snapped })
+
+          /* Same-frame handle tracking: don't wait for React to re-render
+             ResizeHandlesOverlay with the new rotation. */
+          const grp = findHandlesGroup(stage, objId)
+          if (grp) {
+            syncHandleOverlayNode(grp, { ...origObj, rotation: snapped }, view.current.zoom, st.gridSize)
+            stage.batchDraw()
+          }
           return
         }
 
@@ -384,6 +446,16 @@ export function useCanvasInteraction({
            which only a real re-render can redraw. mouseup below commits the
            ONE history entry for the whole gesture. */
         st.updateObject(objId, updates)
+
+        /* Same-frame handle tracking (see the rotate branch above): the
+           squares must move with the object THIS frame, not whenever React
+           gets around to re-rendering ResizeHandlesOverlay from the store
+           write just above. */
+        const grp = findHandlesGroup(stage, objId)
+        if (grp) {
+          syncHandleOverlayNode(grp, { ...origObj, ...updates }, view.current.zoom, st.gridSize)
+          stage.batchDraw()
+        }
         return
       }
 
@@ -628,5 +700,5 @@ export function useCanvasInteraction({
     return () => cancelAnimationFrame(raf)
   }, [size.w, size.h, objects])
 
-  return { onStageMouseDown, onWheel, onDblClick, fitToContent, cursor, marquee }
+  return { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee }
 }

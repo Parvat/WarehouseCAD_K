@@ -81,6 +81,43 @@ export function handlePad(zoom) {
   return 6 / zoom
 }
 
+/** CanvasUI.jsx's cursorMap, verbatim: each handle's resize cursor rotates
+ *  through the 8 compass directions in 45° steps as the object itself
+ *  rotates, so a handle that reads "stretch this edge" keeps pointing the
+ *  same way visually even once the object is turned. 'rotate' always shows
+ *  CanvasUI's own 'alias' cursor regardless of rotation. */
+const COMPASS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
+const HANDLE_DIR_INDEX = { tl: 7, tc: 0, tr: 1, ml: 6, mr: 2, bl: 5, bc: 4, br: 3 }
+
+export function cursorForHandle(handle, rotation) {
+  if (handle === 'rotate') return 'alias'
+  const base = HANDLE_DIR_INDEX[handle]
+  if (base === undefined) return 'default'
+  const steps = Math.round((rotation || 0) / 45) % 8
+  const i = (base + steps + 8) % 8
+  return COMPASS[i] + '-resize'
+}
+
+/** Every number ResizeHandlesOverlay needs to PAINT the handles, computed
+ *  once so the painter (a React render) and the imperative live-tracking
+ *  sync (useCanvasInteraction's resize/rotate mousemove — see BUG 6's
+ *  collectDragNodes for the same idea applied to plain object drag) can
+ *  never disagree on where a handle belongs mid-gesture, before React's
+ *  own re-render has caught up. */
+export function computeHandleLayout(obj, zoom) {
+  const bounds = getObjectBounds(obj)
+  const enabled = enabledHandlesFor(obj.type)
+  const canRotate = rotateEnabledFor(obj.type)
+  const positions = getHandlePositions(bounds, handlePad(zoom))
+  const hs = 6 / zoom
+  let rotateHandle = null
+  if (canRotate) {
+    const { x: rx, y: ry } = rotateHandlePos(bounds, zoom)
+    rotateHandle = { rx, ry, lineY: bounds.y - 6 / zoom, r: 8 / zoom }
+  }
+  return { bounds, enabled, positions, hs, canRotate, rotateHandle }
+}
+
 /** Which handle (a HANDLES entry, or 'rotate') a world point falls on, or
  *  null. Sizes match CanvasUI.jsx exactly: 6px half-size resize squares,
  *  8px-radius rotate circle, both screen-constant via /zoom — the same

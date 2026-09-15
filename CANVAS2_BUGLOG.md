@@ -397,6 +397,85 @@ gesture. And a feature's own NEW tests can pass cleanly while an EXISTING,
 unrelated regression check catches real damage — run the whole suite, not
 just the tests written for what changed.
 
+## BUG 10 — Resize/rotate handle polish: hover cursor, rotate glyph, live tracking
+
+Three cosmetic gaps in BUG 9's rebuild, reported after the functional rework
+was already verified: no cursor feedback on hovering a handle, the rotate
+handle was a plain dot with no glyph, and the handle squares appeared to lag
+behind the object during a fast real-mouse resize/rotate drag, snapping into
+place only after mouseup — same symptom class as BUG 6, but for the resize
+overlay instead of the selection outline.
+
+*Cursor:* `handleGeometry.js` gained `cursorForHandle(handle, rotation)`, a
+verbatim port of `CanvasUI.jsx`'s `cursorMap` closure (the same 45°-step
+compass remap, `'alias'` for the rotate handle). Wired through a NEW
+`onStageMouseMove` in `useCanvasInteraction.js` — the Stage had no
+mousemove handler at all before this, only `onMouseDown`/`onWheel`/
+`onDblClick`; moves during an actual gesture were window-level only. The new
+handler runs `handleHitTest` (the same call `onStageMouseDown` and
+`ResizeHandlesOverlay` already use) ONLY when idle — no pan/drag/marquee/
+resize ref set, space not held — so it can never fight a gesture's own
+cursor management. An `onStageMouseLeave` resets to default/grab, since
+without it a resize cursor set right at the canvas edge would stick after
+the pointer left the Stage (nothing left to fire and clear it).
+
+*Rotate glyph:* `ResizeHandlesOverlay.jsx` gained a Konva `Text` node
+(`text="↻"`) on top of the existing circle, sized the same screen-constant
+`r/zoom` way as everything else here. First attempt used `align`/
+`verticalAlign` with no explicit `width`/`height` — those Konva properties
+are no-ops without a sizing box, so the glyph rendered from its raw top-left
+anchor, off-centre. Fixed by giving `Text` an explicit `width={r*2}
+height={r*2}` box (same footprint as the circle) so Konva's own centering
+does the job instead of a guessed offset.
+
+*Live tracking, the real investigation:* measuring the handle overlay's own
+Konva-level position mid-drag (`stage.getLayers()[2]`'s Group, read via
+Playwright between `mousedown` and `mouseup`) showed it WAS already updating
+every frame, in step with the live-resizing object — not literally frozen.
+The reported "lag" is consistent with perceived latency from the deliberate
+choice in BUG 9 to preview resize via a full store write + React re-render
+every frame (needed because a resize can rewrite beams/lanes/towers, unlike
+plain object drag's Konva-node-only shortcut) — a few-millisecond render gap
+that a small, precise handle square makes far more visible than it is on the
+bulk rack body. Implemented the user's literal, and correct, fix regardless
+of root-cause precision: `ResizeHandlesOverlay.jsx` exports
+`syncHandleOverlayNode(group, obj, zoom, gridSize)`, an imperative twin of
+the component's own render — same `computeHandleLayout` (a new shared
+function factoring out the position/size math both the painter and this
+twin need, so they cannot drift), same `spin()` — applied directly to the
+already-mounted `'handles:'+id` Konva Group (found by name, alongside
+`collectDragNodes`'s existing `obj:`/`sel:` lookup) in the SAME resize/rotate
+mousemove branch that writes the store update, immediately followed by
+`stage.batchDraw()`. This is BUG 6's fix pattern again — bypass React's
+render latency for one specific visual by writing the Konva node directly —
+applied here as an ADDITION alongside the required store write, not a
+replacement for it (the store write still has to happen, for the real
+geometry to redraw correctly).
+
+**Verified, real mouse:** hovering all 8 resize handles plus the rotate
+handle shows the correct CSS cursor, including the 45°-step remap on a
+rotated rack (`mr` reads `e-resize` unrotated, `se-resize` at 45°); cursor
+resets to default off any handle and on leaving the canvas. The rotate glyph
+renders centred on the handle circle at multiple zoom levels (screenshot
+comparison). A resize handle's on-screen position was sampled at every
+mousemove step of a synthetic drag: it moves every step the object's own
+bay-quantization allows (never stuck at the pre-drag value), never
+regresses, and already matches its post-mouseup position on the same step
+that value is reached — proving the fix does not wait for release. The full
+existing regression suite (select/bay-select/drag/cascade/view-fit, and
+BUG 9's own 9-rack-type resize/rotate suite) stayed green, including the 3
+known cantilever tower-spacing test-drag-size artifacts already documented
+in BUG 9. Zero console errors on load.
+
+**Lesson:** before treating a user-reported "X lags" as a data race, measure
+the actual state at the layer the user is looking at — the Konva-level
+position here was already correct mid-drag, which would have been wasted
+motion to "fix" a second time. The right response to "the report and my
+measurement disagree" is to implement the requested fix anyway when it is
+technically sound and cheap (this one removes a render dependency from the
+critical path regardless of how much of the original symptom it explains),
+not to argue the report away.
+
 ---
 
 ## Known open (not selection/drag)
