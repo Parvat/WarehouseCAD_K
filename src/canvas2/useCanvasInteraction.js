@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { hitTest, hitTestBay } from './hitTest'
 import { snapToGrid, objectContains } from '../utils/canvas'
@@ -8,6 +8,7 @@ import {
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
+import { dlog, debugOn } from './debugLog'
 
 /* Only the LEFT button may drag an object. Konva allows the middle button by
    default, which turned every middle-drag-to-pan that happened to start over a
@@ -339,10 +340,19 @@ export function useCanvasInteraction({
      visible Fit button, double-click, and the auto-fit-on-load effect below,
      so all three ways of asking "show me everything" agree. Returns the view
      it applied (or null if there was nothing to fit yet), so a caller can
-     tell whether it actually happened. */
+     tell whether it actually happened.
+
+     Reads the store and the Stage's OWN current container size directly,
+     rather than trusting the `objects`/`size` closed over from this render:
+     a caller reached through a timer (the auto-fit debounce below) would
+     otherwise fit against whatever was current when that timer was
+     SCHEDULED, not when it actually FIRES — stale by exactly the length of
+     the delay. */
   const fitToContent = () => {
-    const gridSize = useCanvasStore.getState().gridSize
-    const v = fitView(worldBounds(objects, gridSize), size)
+    const st = useCanvasStore.getState()
+    const container = stageRef.current?.container()
+    const liveSize = container ? { w: container.clientWidth, h: container.clientHeight } : size
+    const v = fitView(worldBounds(st.objects, st.gridSize), liveSize)
     if (v) setView(v)
     return v
   }
@@ -377,30 +387,72 @@ export function useCanvasInteraction({
      single boolean, re-fits exactly when a NEW building shows up — generate,
      regenerate, or a hand-drawn floor plan — and leaves every ordinary edit
      (move, resize, add a rack by hand, toggle a bay) alone: none of those
-     place a new floor plan, so none of them fight the user's own pan/zoom. */
+     place a new floor plan, so none of them fight the user's own pan/zoom.
+
+     Confirmed root cause of a wrong fit sticking after a generate: traceGenerate's
+     own buildQueue places the floor plan, THEN does `await nextFrame()` BEFORE
+     adding a single rack (so the "Generating..." progress UI can paint at 0%) —
+     racks then arrive in their own batches, each separated by another
+     `await nextFrame()`. That yield is a GUARANTEED moment where React commits
+     a scene containing the floor plan ALONE. Firing the fit immediately (the
+     previous version of this effect, via useLayoutEffect with no wait) could
+     latch onto exactly that moment — fitting tightly to the empty building,
+     then never revisiting it as the real racks landed a frame later, since no
+     NEW floor-plan id appears once they do. That is what made the zoom
+     non-deterministic run to run: whichever frame this effect happened to
+     see first decided the fit, permanently, for the rest of the session.
+
+     Fixed by waiting for `objects.length` to stop changing for a couple of
+     animation frames before trusting it — re-checked on every rAF tick, and
+     restarted (via the effect's own cleanup) every time `objects` changes
+     again, so a still-arriving batch can never be mistaken for the final
+     scene. A plain reload (objects restored all at once, no batching) still
+     settles in ~2 frames — imperceptible, and the RIGHT scene every time. */
   const didAnyFit = useRef(false)
   const fittedFpIds = useRef(new Set())
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!(size.w > 0 && size.h > 0)) return
     const fpIds = objects.filter(isFloorPlan).map(o => o.id)
     const hasNewFp = fpIds.some(id => !fittedFpIds.current.has(id))
     if (didAnyFit.current && !hasNewFp) return
-    if (fitToContent()) {
-      didAnyFit.current = true
-      for (const id of fpIds) fittedFpIds.current.add(id)
-      return
+
+    let raf = 0
+    let lastCount = -1
+    let stableTicks = 0
+    const check = () => {
+      const n = useCanvasStore.getState().objects.length
+      if (n === lastCount) stableTicks++
+      else { stableTicks = 0; lastCount = n }
+      if (stableTicks < 2) { raf = requestAnimationFrame(check); return }
+
+      const liveFpIds = useCanvasStore.getState().objects.filter(isFloorPlan).map(o => o.id)
+      const v = fitToContent()
+      if (debugOn()) {
+        dlog('auto-fit', [
+          v ? `zoom ${(v.zoom * 100).toFixed(1)}%  pan ${Math.round(v.panX)},${Math.round(v.panY)}`
+            : 'nothing to fit yet (empty scene)',
+          `objects ${n}  floor plans ${liveFpIds.length}  container ${Math.round(size.w)}x${Math.round(size.h)}`,
+        ])
+      }
+      if (v) {
+        didAnyFit.current = true
+        for (const id of liveFpIds) fittedFpIds.current.add(id)
+        return
+      }
+      /* Nothing to fit to yet — a brand new, still-blank project. Leaving
+         the raw store default (zoom 1, tuned for the SVG canvas's close-up
+         drawing scale) shows barely ~35ft across on a warehouse-scale
+         sheet, which is "loaded zoomed in" before anything has even been
+         drawn. A sane starting scale, centred on the origin, gives room to
+         draw before there is any content to fit to — applied once; the
+         branch above takes over the moment a real floor plan exists. */
+      if (!didAnyFit.current) {
+        didAnyFit.current = true
+        setView({ zoom: EMPTY_CANVAS_ZOOM, panX: size.w / 2, panY: size.h / 2 })
+      }
     }
-    /* Nothing to fit to yet — a brand new, still-blank project. Leaving the
-       raw store default (zoom 1, tuned for the SVG canvas's close-up drawing
-       scale) shows barely ~35ft across on a warehouse-scale sheet, which is
-       "loaded zoomed in" before anything has even been drawn. A sane
-       starting scale, centred on the origin, gives room to draw before there
-       is any content to fit to — applied once; the branch above takes over
-       the moment a real floor plan exists. */
-    if (!didAnyFit.current) {
-      didAnyFit.current = true
-      setView({ zoom: EMPTY_CANVAS_ZOOM, panX: size.w / 2, panY: size.h / 2 })
-    }
+    raf = requestAnimationFrame(check)
+    return () => cancelAnimationFrame(raf)
   }, [size.w, size.h, objects])
 
   return { onStageMouseDown, onWheel, onDblClick, fitToContent, cursor, marquee }

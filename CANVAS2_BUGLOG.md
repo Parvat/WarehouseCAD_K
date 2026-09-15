@@ -246,6 +246,55 @@ gesture the way a mouse actually performs it, not a decomposed version of it.
   should have been caught by reusing outlineBounds's fix instead of writing
   worldBounds's column handling fresh. Added regression tests in
   `viewport.test.js`.
+
+  A THIRD round followed — the user reported the exact same symptom again
+  after both fixes above, from a project restored from local storage,
+  ">50% zoom", and pushed back specifically on the column_grid explanation.
+  Both earlier fixes were real and stayed fixed, but neither was the
+  mechanism this time — confirmed by scripting the user's exact modal field
+  values (240×120, double-deep, reach truck, aisle 10.5, speed bay 60,
+  column grid 50×54, dock doors 3) and getting a perfectly sane 10.5% both
+  times. The actual cause needed a screenshot plus direct instrumentation to
+  pin down (see the lesson at the end):
+
+  **Cause, confirmed:** `traceGenerate.js`'s `buildQueue` places the floor
+  plan (via `placeFpObject`, which sets its own zoom from the wrong
+  container as covered above), then `generateAndPlaceBatched` does
+  `await nextFrame()` BEFORE adding a single rack — so the "Generating..."
+  progress UI can paint at 0%. That yield is a GUARANTEED moment where React
+  commits a scene containing the floor plan ALONE, no racks yet. The
+  previous version of this effect fit immediately (via `useLayoutEffect`,
+  added to close a real flash-of-wrong-zoom window from `pushHistory`
+  autosaving `placeFpObject`'s bad value before this canvas could correct
+  it) — but "immediately" could mean "on that exact yield," fitting tightly
+  to the empty building and then never revisiting it once the real racks
+  landed a frame later, because no NEW floor-plan id ever appears once they
+  do. Confirmed non-deterministic by running the same generate 3 times in a
+  row and getting 23.4%, 29.3%, and 30.7% for the identical building —
+  proof the fit was racing the batch loop, not computing something
+  reproducibly wrong.
+
+  **Fix:** wait for `objects.length` to stop changing for two consecutive
+  animation frames before trusting it as "the scene," re-armed via the
+  effect's own cleanup every time `objects` changes again — so a
+  still-arriving batch can never be mistaken for the final one. A plain
+  reload (objects restored all at once, no batching) still settles in
+  ~2 frames, imperceptibly. `fitToContent` itself was also hardened to read
+  the store and the Stage's own current container size directly rather than
+  trust the `objects`/`size` closed over at the moment the effect was
+  scheduled. Verified: the same generate run 5 times in a row now lands on
+  29.3% every single time, both live and after a fresh reload.
+
+  **Lesson:** "fits once, then never wrong again" isn't provably true just
+  because the code runs before paint — a generator that intentionally
+  yields mid-placement (to paint a progress UI) can hand a one-shot fit an
+  INCOMPLETE scene, and the fit will never know it was incomplete. Don't
+  trust "did this succeed" as good enough for something that mutates in
+  batches; check "has this stopped changing." Also: reproducing a report
+  exactly (same field values, screenshot compared side by side) narrowed
+  this down far faster than continuing to reason about container sizes and
+  effect ordering in the abstract — get the exact repro before theorizing
+  further.
 - ~~(3) Replace double-click-to-fit with a visible "Fit" button.~~ DONE: a
   `Maximize`-icon button, bottom-right of the canvas2 container, calls the
   same `fitToContent` double-click already used — one function, three
