@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Stage, Layer, Shape } from 'react-konva'
+import { Maximize } from 'lucide-react'
 import { Scene } from './Scene'
 import { Overlays } from './Overlays'
 import { useCanvasStore } from '../store/useCanvasStore'
@@ -172,7 +173,7 @@ export function Canvas2() {
   useClickCensus({ stageRef, objects, selectedIds, zoom })
   const noteHandlerFired = useNativeClickTrace({ stageRef })
 
-  const { onStageMouseDown, onWheel, onDblClick, cursor, marquee } =
+  const { onStageMouseDown, onWheel, onDblClick, fitToContent, cursor, marquee } =
     useCanvasInteraction({ stageRef, view, setView, size, objects, noteHandlerFired })
 
   return (
@@ -183,6 +184,23 @@ export function Canvas2() {
       style={{ background: colors.bg, cursor }}
     >
       {debugOn() && <DebugPanel />}
+      {/* The primary fit-to-content control (double-click still works too,
+          but a button is discoverable — CANVAS2_BUGLOG's own open item asked
+          for this over relying on a hidden gesture). */}
+      <button
+        onClick={fitToContent}
+        title="Fit to content"
+        aria-label="Fit to content"
+        style={{
+          position: 'absolute', right: 12, bottom: 12, zIndex: 50,
+          width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'var(--surface, #fff)', color: 'var(--text2, #3A4152)',
+          border: '1px solid var(--border, #E6E9EF)', borderRadius: 8,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12)', cursor: 'pointer',
+        }}
+      >
+        <Maximize size={15} strokeWidth={1.6} absoluteStrokeWidth />
+      </button>
       {size.w > 0 && size.h > 0 && (
         <Stage
           ref={stageRef}

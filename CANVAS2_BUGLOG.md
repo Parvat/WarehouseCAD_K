@@ -183,9 +183,19 @@ gesture the way a mouse actually performs it, not a decomposed version of it.
   change — 307 tests green, real-mouse drag/selection/cascade re-verified at
   7% with identical results to before the split.
 - **Open:**
-  (1) bay-select only selects the whole row, not the bay — hitTestBay not wired to selection.\
-  (2) On refresh, view loads too zoomed-out — should auto-fit on load.
-  (3) Replace double-click-to-fit with a visible "Fit" button.
+  (1) bay-select only selects the whole row, not the bay — hitTestBay not wired to selection.
+- ~~(2) On refresh, view loads too zoomed-out — should auto-fit on load.~~ DONE:
+  `useCanvasInteraction`'s `fitToContent` now runs once, the first time the
+  container has a real size and there are objects to measure — replacing
+  whatever zoom/pan the autosave happened to persist. Verified: forced the
+  store to an extreme zoom/pan, triggered an autosave, reloaded the page —
+  the building was on screen at a sane size within one settle, with no
+  gesture needed.
+- ~~(3) Replace double-click-to-fit with a visible "Fit" button.~~ DONE: a
+  `Maximize`-icon button, bottom-right of the canvas2 container, calls the
+  same `fitToContent` double-click already used — one function, three
+  callers (load, button, double-click), so none of them can drift from what
+  "fit" means.
 
 ---
 

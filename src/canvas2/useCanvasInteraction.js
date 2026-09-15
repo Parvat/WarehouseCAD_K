@@ -324,12 +324,34 @@ export function useCanvasInteraction({ stageRef, view, setView, size, objects, n
     setView(zoomAtPoint(view.current, p, wheelFactor(e.evt.deltaY, e.evt.deltaMode)))
   }
 
-  /* Double-click fits the whole drawing — the whole-building view is where this
-     canvas has to be judged, so it should be one gesture away. */
-  const onDblClick = () => {
+  /* Fits the whole drawing into view — the whole-building view is where this
+     canvas has to be judged, so it should be one gesture away. Shared by the
+     visible Fit button, double-click, and the auto-fit-on-load effect below,
+     so all three ways of asking "show me everything" agree. Returns the view
+     it applied (or null if there was nothing to fit yet), so a caller can
+     tell whether it actually happened. */
+  const fitToContent = () => {
     const v = fitView(worldBounds(objects), size)
     if (v) setView(v)
+    return v
   }
 
-  return { onStageMouseDown, onWheel, onDblClick, cursor, marquee }
+  const onDblClick = () => { fitToContent() }
+
+  /* Auto-fit once, the first time the container has a real size and there is
+     something to measure. The view seeded into the ref (Canvas2.jsx, from
+     whatever zoom/pan the store's autosave restored) can be an arbitrary
+     leftover — including an extreme zoom-out from a past session — with
+     nothing to do with what is actually on the sheet now. Fitting once
+     replaces that leftover with the same "whole building" view Fit/
+     double-click produce, then gets out of the way: every later size/objects
+     change is the user's own pan/zoom business, not fought over. */
+  const didInitialFit = useRef(false)
+  useEffect(() => {
+    if (didInitialFit.current) return
+    if (!(size.w > 0 && size.h > 0)) return
+    if (fitToContent()) didInitialFit.current = true
+  }, [size.w, size.h, objects])
+
+  return { onStageMouseDown, onWheel, onDblClick, fitToContent, cursor, marquee }
 }
