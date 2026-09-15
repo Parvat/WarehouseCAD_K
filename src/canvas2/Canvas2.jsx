@@ -3,6 +3,7 @@ import { Stage, Layer, Shape } from 'react-konva'
 import { Maximize, ToggleLeft, ToggleRight } from 'lucide-react'
 import { Scene } from './Scene'
 import { Overlays } from './Overlays'
+import { ResizeTransformer } from './ResizeTransformer'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { debugOn } from './debugLog'
 import { DebugPanel } from './DebugPanel'
@@ -266,6 +267,13 @@ export function Canvas2() {
               decoration, and must not intercept a press meant for an object. */}
           <Layer listening={false}>
             <Overlays selectedObjects={selectedObjects} gridSize={gridSize} marquee={marquee} />
+          </Layer>
+          {/* resize/rotate — Konva's own Transformer, topmost so its handles
+              are never obscured. Listens for its own anchor presses only
+              (Konva cancels their bubble internally); everything else falls
+              through to onStageMouseDown/hitTest untouched. */}
+          <Layer listening>
+            <ResizeTransformer />
           </Layer>
         </Stage>
       )}

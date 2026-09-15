@@ -210,6 +210,25 @@ export function useCanvasInteraction({
   const onStageMouseDown = (e) => {
     const stage = stageRef.current
     if (!stage) return
+
+    /* Konva's Transformer (ResizeTransformer.jsx) sets e.cancelBubble = true
+       on its own anchor mousedown internally, but that only stops KONVA'S
+       OWN bubbling to ancestor Konva nodes — it does not stop the
+       underlying native browser event, and react-konva's <Stage
+       onMouseDown> still runs for it regardless. Confirmed the hard way: a
+       real drag on a resize anchor also armed our own object-drag through
+       this same handler, producing a SECOND, unwanted moveObjects commit
+       stacked on top of the Transformer's own correct resize (visible as
+       two history entries and a position that didn't match either gesture).
+       Recognizing the Transformer's own chrome here and returning
+       immediately is what makes this genuinely ONE input path: ours simply
+       defers the instant it sees the press already belongs to Konva's own
+       transform handles, rather than trusting cancelBubble to have done
+       that already. */
+    for (let n = e.target; n; n = n.getParent && n.getParent()) {
+      if (n.getClassName && n.getClassName() === 'Transformer') return
+    }
+
     const evt = e.evt
     noteHandlerFired?.('stage (target=' + (e.target && e.target.getClassName ? e.target.getClassName() : '?') + ')')
 

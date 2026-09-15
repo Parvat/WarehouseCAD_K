@@ -213,6 +213,106 @@ a missing wire.
 
 ---
 
+## BUG 8 — Building resize/rotate (step 5): two real bugs found building it, not fixed after the fact
+
+canvas2 had no Transformer at all before this — `ResizeTransformer.jsx` is new,
+not a repair. Logged here anyway because both bugs below are exactly the class
+CANVAS2.md rules 4 and 8's Handle-rules section now exist to prevent someone
+re-discovering the hard way.
+
+**Bug A — Konva's Transformer, given the real rack Group directly, resizes as
+almost-pure position with no scale.**
+
+*Symptom:* dragging `middle-right` outward on a `rack_row` moved the WHOLE
+rack sideways by roughly the full drag distance and left width/beams
+completely unchanged — visually indistinguishable from an accidental object
+drag, not a resize.
+
+*Chased:* first suspected a coordinate-space mixup in `onTransformEnd`
+(centre-vs-top-left math) and rewrote the x/y conversion twice with no
+change. Only reading the LIVE values back — `shadow.scaleX()` (1.0003, i.e.
+no meaningful scale) alongside `node.x()` moved by ~714 world units (the
+exact drag distance at that zoom) — showed the Transformer itself was
+computing almost no scale change, not that the conversion afterward was wrong.
+
+*Cause:* `RackShape`'s Group (shapes.jsx) is deliberately centre-origin —
+`spin()` sets `x = offsetX = cx, y = offsetY = cy` so ROTATION pivots at the
+object's centre while its Ops children still draw at plain absolute world
+coordinates (the two cancel to identity whenever rotation is 0, which is what
+makes the paint side work at all). Konva's Transformer does not expect a
+pre-baked offset on the node it manipulates — it assumes a standard,
+0,0-origin node when it inverts "here is the box you dragged this into" back
+into x/y/scale for that specific node shape, and gets it wrong for one with a
+non-zero offset already baked in.
+
+*Fix:* give the Transformer a plain, ordinary, invisible `Rect` PROXY — the
+object's own x/y/width/height/rotation, no offset — let Konva manipulate
+THAT, and read the result back off it instead of the real Group.
+`onTransformEnd` then never touches the real rack node at all until it calls
+`commitObjectUpdate`, which re-renders it normally from the store.
+
+**Bug B — after Bug A's fix, resize worked but ALSO silently doubled up with
+an ordinary object drag: two history entries, wrong final position.**
+
+*Symptom:* `onTransformEnd` now computed a correct patch (verified by direct
+read-back: right x, right bay-quantized width) — but the STORED object ended
+up somewhere else entirely, and one resize gesture pushed two undo entries.
+
+*Chased:* assumed a stray second call to `onTransformEnd` (added a call
+counter — it fired exactly once, with the correct patch) or a stale Transformer
+instance re-attaching mid-drag (ruled out — `objects` never changes during a
+transform, only on commit). The actual second write was found by logging
+every `moveObjects` call app-wide: one fired mid-gesture with a delta
+matching the drag distance almost exactly.
+
+*Cause:* Konva's Transformer sets `e.cancelBubble = true` on its own anchor
+mousedown internally (confirmed in Konva's source) — but that only stops
+KONVA'S OWN bubbling to ancestor Konva nodes. It does not call the native
+`Event.stopPropagation()`, so the underlying browser mousedown still reached
+react-konva's `<Stage onMouseDown>` — i.e. this canvas's own
+`onStageMouseDown` — which ran its normal `hitTest`, found the rack under the
+anchor, and armed an ordinary object-drag through the exact same window
+mousemove/mouseup path BUG 4/6 built. Two independent systems answered the
+same press: the Transformer resized correctly, and the ordinary drag path
+ALSO committed a `moveObjects` for the same mouse movement.
+
+*Fix:* `onStageMouseDown` now walks `e.target`'s ancestor chain for
+`getClassName() === 'Transformer'` and returns immediately if found — before
+any hitTest, pan, or marquee logic runs. This is CANVAS2.md rule 4's "one
+picker" made to hold under a case cancelBubble alone does not cover: our own
+handler now explicitly recognizes and defers to Konva's chrome, rather than
+trusting a property that only ever governed Konva's own internal tree.
+
+**Also corrected while building this:** `anchorSize` and friends do NOT need
+`/zoom` the way the SVG's own hand-drawn handles do — Konva's Transformer
+already renders its own UI at a constant screen size regardless of the
+Stage's ambient scale. Dividing by zoom (an assumption carried over from BUG
+1's diagnosis of the old, abandoned hybrid Transformer) produced anchors
+measuring roughly 140px on screen at 7% instead of the intended ~9px —
+caught by reading `anchor.getClientRect()` back off a live Stage before ever
+trusting a screenshot.
+
+**Verified, real mouse + direct store/Konva-node read-back, all 9
+`render/rackOps.js` rack types (`rack_row`, `rack_double_row`,
+`rack_drive_in`, `rack_drive_through`, `rack_pushback`, `rack_pallet_flow`,
+`rack_cantilever`, `rack_mezzanine`, `rack_shelving`):** selects, correct
+`enabledAnchors` per CANVAS2.md's Handle rules, resize grows/shrinks with the
+opposite edge pinned (bay-quantized via `resizeRackToWidth` for
+`rack_row`/`rack_double_row`, raw geometric width for the rest), rotate turns
+around centre, one undo per gesture either way, undo fully reverts. 309
+tests, build clean, drag/selection/bay-select/view-fit sweeps all still
+green.
+
+**Lesson:** don't trust a library's own documented event-cancellation
+semantics to mean what you'd guess across a boundary it wasn't designed to
+cross (Konva-internal cancelBubble vs. the native DOM event) — verify with a
+call counter, not an assumption. And a plausible one-line fix (the x/y
+conversion math) can be completely wrong about WHICH layer of the problem
+you're looking at; read the actual runtime values back before rewriting
+theory a second time.
+
+---
+
 ## Known open (not selection/drag)
 
 - **Corrupt rack bounds:** some racks report world bounds like −12549..688
