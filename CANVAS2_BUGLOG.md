@@ -191,11 +191,31 @@ gesture the way a mouse actually performs it, not a decomposed version of it.
   store to an extreme zoom/pan, triggered an autosave, reloaded the page —
   the building was on screen at a sane size within one settle, with no
   gesture needed.
+
+  First cut of this fix had its own bug, caught by the user from a screenshot
+  right after load: the view landed zoomed WAY IN on a sliver of the floor,
+  not zoomed out. Cause: `viewport.js`'s `worldBounds` was a dumb x/y/width/
+  height reader with no `column_grid` case — a column grid stores its extent
+  as `spacingX`/`spacingY`, not width/height, so the generic fallback
+  collapsed it to the single point (x,y). Since the column grid usually spans
+  the whole building and unions into the same bounds as everything else, that
+  single point could win the max/min and produce a tiny "content" rect,
+  zooming `fitView` WAY in. Fixed by giving `worldBounds` the same
+  `expandColumnGrid` special case `shapes.jsx`'s `outlineBounds` already
+  has for the identical reason — two functions computing "extent of a
+  column_grid" is exactly the kind of drift CANVAS2.md warns about, so this
+  should have been caught by reusing outlineBounds's fix instead of writing
+  worldBounds's column handling fresh. Added regression tests in
+  `viewport.test.js`.
 - ~~(3) Replace double-click-to-fit with a visible "Fit" button.~~ DONE: a
   `Maximize`-icon button, bottom-right of the canvas2 container, calls the
   same `fitToContent` double-click already used — one function, three
   callers (load, button, double-click), so none of them can drift from what
-  "fit" means.
+  "fit" means. Double-click itself is now gated behind a persisted, OFF-by-
+  default setting (a `ToggleLeft`/`ToggleRight` button next to Fit) — it's a
+  gesture also reached for while editing, and firing a big view jump by
+  accident there was disorienting. localStorage-backed, like the left panel's
+  own presentation prefs — never the canvas store.
 
 ---
 

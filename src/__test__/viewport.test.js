@@ -158,4 +158,24 @@ describe('canvas2 viewport — world bounds', () => {
     expect(worldBounds([])).toBeNull()
     expect(worldBounds([{ type: 'nonsense' }])).toBeNull()
   })
+
+  it('measures a column_grid by its expanded columns, not its own x/y point', () => {
+    // A column grid carries no width/height of its own — the generic x/y
+    // fallback would collapse it to a single point (x,y) and dominate a
+    // fit-to-content with almost nothing on screen (the exact bug this fixes).
+    const cg = { type: 'column_grid', x: 0, y: 0, spacingX: [50, 50], spacingY: [50], columnW: 4, columnH: 4 }
+    const b = worldBounds([cg], 40)
+    expect(b.x).toBe(0)
+    expect(b.y).toBe(0)
+    expect(b.width).toBe(100 + 4)   // two 50ft bays + the last column's own width
+    expect(b.height).toBe(50 + 4)
+  })
+
+  it('unions a column_grid with the rest of the scene', () => {
+    const cg = { type: 'column_grid', x: 0, y: 0, spacingX: [50], spacingY: [50], columnW: 4, columnH: 4 }
+    const rack = { x: 200, y: 200, width: 10, height: 10 }
+    const b = worldBounds([cg, rack], 40)
+    expect(b.width).toBeGreaterThan(200)
+    expect(b.height).toBeGreaterThan(200)
+  })
 })

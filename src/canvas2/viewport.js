@@ -15,6 +15,8 @@
 // zooming — can be tested directly instead of by eye.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { expandColumnGrid } from '../generate/columnCheck'
+
 /* Matches the store's own clamp, so the canvas can never drive the view
    somewhere the rest of the app will not follow. */
 export const ZOOM_MIN = 0.01
@@ -93,8 +95,15 @@ export function fitView(rect, size, margin = 0.06) {
 
 /** Axis-aligned world bounds of everything passed in, or null if there is
  *  nothing measurable. Reads the store's own shapes without interpreting them:
- *  a rect-ish object has x/y/width/height, a line has endpoints. */
-export function worldBounds(objects = []) {
+ *  a rect-ish object has x/y/width/height, a line has endpoints.
+ *
+ *  column_grid is a special case, checked FIRST: it carries no width/height of
+ *  its own (its extent is the columns, described by spacingX/spacingY) — the
+ *  generic x/y fallback below would collapse it to the single point (x,y),
+ *  and since a column grid usually spans the whole building, that single
+ *  point can dominate a fit-to-content and zoom in on almost nothing. Same
+ *  fix shapes.jsx's outlineBounds already applies for the same reason. */
+export function worldBounds(objects = [], gridSize = 40) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   const eat = (x, y) => {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return
@@ -105,6 +114,10 @@ export function worldBounds(objects = []) {
   }
   for (const o of objects) {
     if (!o) continue
+    if (o.type === 'column_grid') {
+      for (const c of expandColumnGrid(o, gridSize)) { eat(c.x, c.y); eat(c.x + c.w, c.y + c.h) }
+      continue
+    }
     if (Number.isFinite(o.x1)) { eat(o.x1, o.y1); eat(o.x2, o.y2); continue }
     if (Number.isFinite(o.cx)) { const r = o.r || 0; eat(o.cx - r, o.cy - r); eat(o.cx + r, o.cy + r); continue }
     if (Number.isFinite(o.x)) { eat(o.x, o.y); eat(o.x + (o.width || 0), o.y + (o.height || 0)) }

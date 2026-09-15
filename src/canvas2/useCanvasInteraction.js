@@ -26,7 +26,9 @@ Konva.dragButtons = [0]
    It is handed the live view (a ref, pushed to the Stage imperatively per
    CANVAS2.md rule 6) and a setter for it, and returns the handlers Canvas2.jsx
    wires onto the Stage plus the cursor/marquee state those gestures drive. */
-export function useCanvasInteraction({ stageRef, view, setView, size, objects, noteHandlerFired }) {
+export function useCanvasInteraction({
+  stageRef, view, setView, size, objects, noteHandlerFired, dblClickFitEnabled = false,
+}) {
   const [cursor, setCursor] = useState('default')
   const [marquee, setMarquee] = useState(null)
 
@@ -331,12 +333,18 @@ export function useCanvasInteraction({ stageRef, view, setView, size, objects, n
      it applied (or null if there was nothing to fit yet), so a caller can
      tell whether it actually happened. */
   const fitToContent = () => {
-    const v = fitView(worldBounds(objects), size)
+    const gridSize = useCanvasStore.getState().gridSize
+    const v = fitView(worldBounds(objects, gridSize), size)
     if (v) setView(v)
     return v
   }
 
-  const onDblClick = () => { fitToContent() }
+  /* Double-click is otherwise unclaimed on this canvas, but a big view jump
+     from a gesture people also reach for while editing (renaming, drilling
+     into a bay) is disorienting if it fires by accident — Canvas2.jsx now
+     owns a persisted opt-in for it, off by default; the Fit button is the
+     always-available control regardless of this setting. */
+  const onDblClick = () => { if (dblClickFitEnabled) fitToContent() }
 
   /* Auto-fit once, the first time the container has a real size and there is
      something to measure. The view seeded into the ref (Canvas2.jsx, from

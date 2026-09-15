@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Stage, Layer, Shape } from 'react-konva'
-import { Maximize } from 'lucide-react'
+import { Maximize, ToggleLeft, ToggleRight } from 'lucide-react'
 import { Scene } from './Scene'
 import { Overlays } from './Overlays'
 import { useCanvasStore } from '../store/useCanvasStore'
@@ -85,6 +85,26 @@ function Grid({ gridSize, major, minor }) {
       }}
     />
   )
+}
+
+/* Whether double-click also fits-to-content, defaulting OFF: double-click is
+   a gesture people reach for while editing (renaming, drilling into a bay),
+   and a big view jump firing by accident there is disorienting. The Fit
+   button (below) is always available regardless of this setting. Presentation
+   state, not canvas document state — localStorage, like the left panel's own
+   prefs, never the canvas store. */
+const DBLCLICK_FIT_KEY = 'trace.canvas2.dblClickFit'
+
+function useDblClickFitSetting() {
+  const [enabled, setEnabled] = useState(() => {
+    try { return localStorage.getItem(DBLCLICK_FIT_KEY) === '1' } catch { return false }
+  })
+  const toggle = () => setEnabled(prev => {
+    const next = !prev
+    try { localStorage.setItem(DBLCLICK_FIT_KEY, next ? '1' : '0') } catch { /* ignore */ }
+    return next
+  })
+  return [enabled, toggle]
 }
 
 export function Canvas2() {
@@ -173,8 +193,10 @@ export function Canvas2() {
   useClickCensus({ stageRef, objects, selectedIds, zoom })
   const noteHandlerFired = useNativeClickTrace({ stageRef })
 
+  const [dblClickFitEnabled, toggleDblClickFit] = useDblClickFitSetting()
+
   const { onStageMouseDown, onWheel, onDblClick, fitToContent, cursor, marquee } =
-    useCanvasInteraction({ stageRef, view, setView, size, objects, noteHandlerFired })
+    useCanvasInteraction({ stageRef, view, setView, size, objects, noteHandlerFired, dblClickFitEnabled })
 
   return (
     <div
@@ -184,23 +206,42 @@ export function Canvas2() {
       style={{ background: colors.bg, cursor }}
     >
       {debugOn() && <DebugPanel />}
-      {/* The primary fit-to-content control (double-click still works too,
-          but a button is discoverable — CANVAS2_BUGLOG's own open item asked
-          for this over relying on a hidden gesture). */}
-      <button
-        onClick={fitToContent}
-        title="Fit to content"
-        aria-label="Fit to content"
-        style={{
-          position: 'absolute', right: 12, bottom: 12, zIndex: 50,
-          width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'var(--surface, #fff)', color: 'var(--text2, #3A4152)',
-          border: '1px solid var(--border, #E6E9EF)', borderRadius: 8,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.12)', cursor: 'pointer',
-        }}
-      >
-        <Maximize size={15} strokeWidth={1.6} absoluteStrokeWidth />
-      </button>
+      {/* The primary fit-to-content control. Double-click can do the same
+          thing, but only when the setting to its right is turned on — off by
+          default, since double-click is also reached for while editing and a
+          big view jump firing by accident there is disorienting. */}
+      <div style={{ position: 'absolute', right: 12, bottom: 12, zIndex: 50, display: 'flex', gap: 6 }}>
+        <button
+          onClick={toggleDblClickFit}
+          title={(dblClickFitEnabled ? 'Disable' : 'Enable') + ' double-click to fit'}
+          aria-label={(dblClickFitEnabled ? 'Disable' : 'Enable') + ' double-click to fit'}
+          aria-pressed={dblClickFitEnabled}
+          style={{
+            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: dblClickFitEnabled ? 'var(--accent-solid, #0B101D)' : 'var(--surface, #fff)',
+            color: dblClickFitEnabled ? 'var(--accent-fg, #fff)' : 'var(--text2, #3A4152)',
+            border: '1px solid var(--border, #E6E9EF)', borderRadius: 8,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.12)', cursor: 'pointer',
+          }}
+        >
+          {dblClickFitEnabled
+            ? <ToggleRight size={16} strokeWidth={1.6} absoluteStrokeWidth />
+            : <ToggleLeft size={16} strokeWidth={1.6} absoluteStrokeWidth />}
+        </button>
+        <button
+          onClick={fitToContent}
+          title="Fit to content"
+          aria-label="Fit to content"
+          style={{
+            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'var(--surface, #fff)', color: 'var(--text2, #3A4152)',
+            border: '1px solid var(--border, #E6E9EF)', borderRadius: 8,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.12)', cursor: 'pointer',
+          }}
+        >
+          <Maximize size={15} strokeWidth={1.6} absoluteStrokeWidth />
+        </button>
+      </div>
       {size.w > 0 && size.h > 0 && (
         <Stage
           ref={stageRef}
