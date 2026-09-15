@@ -61,6 +61,8 @@ export function useCanvasInteraction({
      picking, so there is nothing left to read off `e`. */
   const selectFromHit = (hitId, shiftKey, world) => {
     const st = useCanvasStore.getState()
+    const prevSelectedIds = st.selectedIds
+
     const { ids, replaced } = nextSelection({
       selectedIds: st.selectedIds, groups: st.groups, id: hitId, shiftKey,
     })
@@ -70,15 +72,38 @@ export function useCanvasInteraction({
       else { st.clearSelection(); st.selectMultiple(ids) }
     }
 
-    /* Bay pick, toggling like the SVG — ported hitTestBay, not the render
-       layer's own bayAtPoint: it answers for the full RACK_BAY_TYPES set
-       (lanes and towers too, not just row/double-row) and un-rotates the
-       click first, so a turned rack still resolves the right bay. */
+    /* Clear a stale bay/tower pick on whatever was selected before, the same
+       moment CanvasArea does: switching to a DIFFERENT object (not extending
+       or re-clicking the current selection) leaves no reason for an old
+       rack's bay highlight to keep showing. */
+    if (!prevSelectedIds.includes(hitId)) {
+      for (const id of prevSelectedIds) {
+        const prev = st.objects.find(o => o.id === id)
+        if (!prev) continue
+        if (prev.activeBayIdx != null) st.updateObject(id, { activeBayIdx: null })
+        if (prev.activeTowerIdx != null) st.updateObject(id, { activeTowerIdx: null })
+      }
+    }
+
+    /* Bay/tower pick, toggling like the SVG — ported hitTestBay, not the
+       render layer's own bayAtPoint: it answers for the full RACK_BAY_TYPES
+       set (lanes and towers too, not just row/double-row) and un-rotates the
+       click first, so a turned rack still resolves the right bay. Cantilever
+       tracks its pick as activeTowerIdx, everything else as activeBayIdx —
+       matching CanvasArea's own split. A press that lands on the rack but
+       not on any bay (an upright/post) clears whichever field was active, so
+       clicking off a bay reliably falls back to a plain whole-rack selection
+       instead of leaving a stale highlight behind. */
     const live = st.objects.find(o => o.id === hitId)
     if (!live) return
+    const isCant = live.type === 'rack_cantilever'
+    const curIdx = isCant ? live.activeTowerIdx : live.activeBayIdx
     const bay = hitTestBay(live, world.x, world.y, st.gridSize)
     if (bay != null) {
-      st.updateObject(hitId, { activeBayIdx: live.activeBayIdx === bay ? null : bay })
+      const newIdx = curIdx === bay ? null : bay
+      st.updateObject(hitId, isCant ? { activeTowerIdx: newIdx } : { activeBayIdx: newIdx })
+    } else if (curIdx != null) {
+      st.updateObject(hitId, isCant ? { activeTowerIdx: null } : { activeBayIdx: null })
     }
   }
 

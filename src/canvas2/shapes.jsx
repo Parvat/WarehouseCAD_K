@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { Group, Rect, Path, Shape, Circle, Line, Text } from 'react-konva'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
+import { uprightXs, cantileverGeom } from '../render/rackOps'
 
 /** Min/max extent of a vertex list, in the same absolute world coords the
  *  verts are already drawn in. Shared by FloorPlanShape's own selfRect and
@@ -204,6 +205,62 @@ function HitPad({ obj, gridSize, listening }) {
   )
 }
 
+/** The active bay/tower's outline rect(s), in the same local world coords
+ *  Ops already draws in — the Group's own spin() transform rotates them
+ *  along with everything else, so this never re-derives rotation itself.
+ *
+ *  Geometry comes from rackOps.js's OWN uprightXs/cantileverGeom — the exact
+ *  functions rackRowOps/rackDoubleRowOps/rackCantileverOps use to draw the
+ *  bays/towers in the first place — rather than re-deriving bay positions a
+ *  second time. hitTestBay (canvas2/hitTest.js) is a THIRD place this same
+ *  geometry could drift from; it stays un-rotated-click-tested against the
+ *  object's raw x/y/width/height, which is exactly the local space these
+ *  rects are already in, so a hit and its highlight can never disagree.
+ *
+ *  Limited to the three types the SVG canvas itself visually highlights
+ *  (rack_row, rack_double_row, rack_cantilever) — hitTestBay answers for a
+ *  broader RACK_BAY_TYPES set (lanes too), but CanvasArea/ShapeGeometry only
+ *  ever paints a highlight for these three, so matching that is "mirror the
+ *  SVG" rather than inventing a new visual for types that have none there. */
+function activeBayRects(obj, gridSize) {
+  if (obj.type === 'rack_row' || obj.type === 'rack_double_row') {
+    const i = obj.activeBayIdx
+    if (i == null) return []
+    const { xs, upW, beams } = uprightXs(obj, gridSize)
+    if (i < 0 || i >= beams.length) return []
+    const bx = xs[i] + upW
+    const bw = (beams[i] / 12) * gridSize
+
+    if (obj.type === 'rack_row') {
+      return [{ x: bx, y: obj.y, width: bw, height: obj.height }]
+    }
+    // Double row: the SAME bay column on both bands, flue skipped between.
+    const flueH = ((obj.flueSpaceIn || 6) / 12) * gridSize
+    const rowH = Math.max(0, (obj.height - flueH) / 2)
+    if (rowH <= 0) return [{ x: bx, y: obj.y, width: bw, height: obj.height }]
+    return [
+      { x: bx, y: obj.y, width: bw, height: rowH },
+      { x: bx, y: obj.y + rowH + flueH, width: bw, height: rowH },
+    ]
+  }
+
+  if (obj.type === 'rack_cantilever') {
+    const i = obj.activeTowerIdx
+    if (i == null) return []
+    const { doubleSided, towers, armT, spineH, spineY, cxs } = cantileverGeom(obj, gridSize)
+    if (i < 0 || i >= cxs.length) return []
+    const armPx = ((towers[i] || 36) / 12) * gridSize
+    return [{
+      x: cxs[i] - armT / 2,
+      y: doubleSided ? spineY - armPx : spineY,
+      width: armT,
+      height: doubleSided ? armPx * 2 + spineH : armPx + spineH,
+    }]
+  }
+
+  return []
+}
+
 /** A rack, from its draw-ops. */
 export function RackShape({ obj, ops, gridSize, listening = false, bind }) {
   return (
@@ -211,6 +268,11 @@ export function RackShape({ obj, ops, gridSize, listening = false, bind }) {
       opacity={obj.opacity ?? 1} {...spin(obj, gridSize)} {...(bind ? bind(obj) : null)}>
       <HitPad obj={obj} gridSize={gridSize} listening={listening} />
       <Ops ops={ops} listening={listening} />
+      {activeBayRects(obj, gridSize).map((r, i) => (
+        <Rect key={i} {...r} stroke="#4a9eff" strokeWidth={2}
+          dash={[4, 3]} strokeScaleEnabled={false} perfectDrawEnabled={false}
+          shadowForStrokeEnabled={false} listening={false} />
+      ))}
     </Group>
   )
 }
