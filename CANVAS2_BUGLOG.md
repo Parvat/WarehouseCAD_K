@@ -168,6 +168,51 @@ gesture the way a mouse actually performs it, not a decomposed version of it.
 
 ---
 
+## BUG 7 — Bay click recorded correctly but invisible — read as "selects whole row"  (commit `aea742d`)
+
+**Symptom:** clicking a specific bay inside a rack looked exactly like
+clicking the rack itself — the whole-rack selection outline was the only
+thing that ever appeared, so bay-level picking read as not wired up at all.
+
+**Chased:** before touching any code, verified what the DATA actually did:
+clicked a bay by real mouse, read the object back from the store.
+`activeBayIdx` was set correctly, every time. So the pick itself — hitTest →
+`selectFromHit` → `hitTestBay` — was never the problem, despite looking
+exactly like "hitTestBay not wired to selection" from the screen alone.
+
+**Cause:** `render/rackOps.js`, the shared draw-op geometry canvas2 paints
+every rack from, has no notion of `activeBayIdx` at all. The SVG canvas
+draws its bay highlight inline in `ShapeGeometry.jsx`, entirely outside the
+shared ops — so canvas2 never inherited it. The pick was correct and
+completely invisible.
+
+**Fix:** added `activeBayRects` to `shapes.jsx` — a dashed highlight for
+`rack_row`, `rack_double_row` and `rack_cantilever` (the three types
+`ShapeGeometry.jsx` itself visually highlights; `RACK_BAY_TYPES` answers a
+pick for more types than that, but painting a highlight for ones the SVG
+canvas has none for isn't mirroring it). Built from `uprightXs`/
+`cantileverGeom` in `render/rackOps.js` — the SAME functions
+`rackRowOps`/`rackCantileverOps` already use to draw the bays/towers, so the
+highlight can never disagree with the drawing or with `hitTestBay`. Also
+closed two related gaps against `CanvasArea` found along the way: cantilever
+was always writing `activeBayIdx` instead of `activeTowerIdx`, and clicking
+the rack but missing every bay (an upright) left a stale highlight instead
+of clearing it.
+
+**Verified, real mouse + direct Konva-node read-back:** toggle on/off (click
+the same bay twice), switch bay, click an upright to clear it, double-row
+highlights both bands for the same bay column, cantilever sets
+`activeTowerIdx` with correct highlight geometry, shift-click a second rack
+clears the first one's bay (unconditional on shift, matching `CanvasArea`
+exactly). 309 tests, build clean, drag/selection sweep still 0/14 failures.
+
+**Lesson:** "the feature looks broken" and "the feature IS broken" are
+different claims — check the store before touching the picking code. The
+data path here was fine from the start; the bug was a missing renderer, not
+a missing wire.
+
+---
+
 ## Known open (not selection/drag)
 
 - **Corrupt rack bounds:** some racks report world bounds like −12549..688
@@ -183,37 +228,8 @@ gesture the way a mouse actually performs it, not a decomposed version of it.
   change — 307 tests green, real-mouse drag/selection/cascade re-verified at
   7% with identical results to before the split.
 - ~~(1) bay-select only selects the whole row, not the bay — hitTestBay not
-  wired to selection.~~ DONE, and it turned out to be two bugs, not one:
-  `selectFromHit` (`useCanvasInteraction.js`) already called `hitTestBay` and
-  toggled `activeBayIdx` correctly — a direct real-mouse test proved the DATA
-  was right (`activeBayIdx: 0` after clicking bay 1). The report was real
-  anyway because nothing painted it: `render/rackOps.js` (the shared draw-op
-  geometry canvas2 paints from) has no notion of `activeBayIdx` at all — the
-  SVG canvas draws its bay highlight itself, inline in `ShapeGeometry.jsx`,
-  entirely outside the shared ops. So the pick was correct and invisible,
-  reading exactly like "selects the whole row" since the only thing that
-  showed was the ordinary whole-rack selection outline. Fixed by adding
-  `activeBayRects` to `shapes.jsx`, rendering a dashed highlight for
-  `rack_row`/`rack_double_row`/`rack_cantilever` (the three types
-  `ShapeGeometry.jsx` itself visually highlights — `RACK_BAY_TYPES` answers a
-  pick for more types than that, but painting a highlight for ones the SVG
-  canvas never draws one for either isn't "mirroring SVG"), using
-  `uprightXs`/`cantileverGeom` from `render/rackOps.js` — the SAME functions
-  `rackRowOps`/`rackCantileverOps` already use to draw the bays/towers in the
-  first place, so the highlight can never disagree with the drawing or with
-  `hitTestBay`. Also mirrored two more `CanvasArea` behaviors that were
-  either missing or half-done: cantilever tracks `activeTowerIdx`, not
-  `activeBayIdx` (the old code always wrote `activeBayIdx`, even for a
-  cantilever); clicking the rack but not a bay (an upright) clears whichever
-  field was set, rather than leaving it stuck; and switching to a different
-  object clears bay/tower state on whatever was selected before, so a stale
-  highlight can't survive a selection change. Verified: bay toggle-on,
-  toggle-off (click twice), switch bay, click-off-bay clears it, double-row
-  highlights both bands for the same bay, cantilever sets `activeTowerIdx`
-  with correct geometry (confirmed by reading the actual Konva node back),
-  and shift-clicking a second rack clears the first one's bay exactly like
-  CanvasArea does (not gated by shift — matches the SVG's own unconditional
-  clear). 309 tests, build clean, drag/selection sweep still 0/14 failures.
+  wired to selection.~~ DONE — see BUG 7 above. (It turned out to already be
+  wired; nothing rendered it.)
 - ~~(2) On refresh, view loads too zoomed-out — should auto-fit on load.~~ DONE:
   `useCanvasInteraction`'s `fitToContent` now runs once, the first time the
   container has a real size and there are objects to measure — replacing
