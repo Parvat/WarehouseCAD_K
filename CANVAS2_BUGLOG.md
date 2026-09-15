@@ -192,6 +192,45 @@ gesture the way a mouse actually performs it, not a decomposed version of it.
   the building was on screen at a sane size within one settle, with no
   gesture needed.
 
+  Two more load-time zoom bugs turned up after this, both reported by the
+  user from real usage rather than caught by the verification above — the
+  scripted checks only ever reloaded a page that ALREADY had a building on
+  it, which is exactly the one case that was fine:
+
+  - **Zoomed in on a blank project.** A brand new project (nothing drawn or
+    generated yet) sat at the store's raw default, zoom 1 — barely ~35ft
+    across on a 40px/ft grid, i.e. "loaded zoomed in" before there was
+    anything to zoom in ON. `fitToContent` had nothing to fit (`worldBounds`
+    of an empty scene is `null`), so it correctly did nothing, but nothing
+    else supplied a sane alternative either. Fixed with `EMPTY_CANVAS_ZOOM`
+    (0.15), applied once, centred on the origin, only while there is truly
+    nothing yet to fit to.
+  - **A regenerate on an already-open project didn't re-fit.** The one-shot
+    latch fit correctly ONCE per canvas2 mount, then stopped looking —  but
+    the store's own `placeFpObject` (called by `generate`/`regenerate` —
+    frozen brain, CANVAS2.md rule 1, not ours to fix) computes ITS OWN
+    zoom/pan every time a floor plan is placed, from
+    `document.getElementById('canvas-container')` — the SVG canvas's id,
+    which does not exist under the flag, so it silently falls back to a
+    hardcoded 900×600 guess instead of canvas2's real container size. For a
+    small enough building that fallback produces a zoom well over 50%
+    (`900/(W*1.2)` — a 30×20ft building lands at 82%, matching what the
+    user saw), and the one-shot latch meant nothing corrected it after the
+    very first fit. Fixed by tracking which floor-plan IDS have already been
+    fit for, instead of a single boolean: `useCanvasInteraction` now re-fits
+    any time a NEW floor plan appears (first generate, a regenerate, or a
+    hand-drawn building), not just once — while leaving ordinary edits
+    (move, resize, add a rack by hand) alone, since none of those places a
+    new floor-plan id.
+
+  **Lesson:** the scripted verification for the FIRST version of this fix
+  only ever reloaded a page that already had a building on it — the one
+  case that was already correct. It never tried a genuinely blank project or
+  a second generate on top of an existing one, which is exactly where the
+  real bugs were. A regression suite for "does the view load sanely" has to
+  cover the lifecycle (blank → first content → regenerated content → reload
+  each stage), not just "reload once, with data already there."
+
   First cut of this fix had its own bug, caught by the user from a screenshot
   right after load: the view landed zoomed WAY IN on a sliver of the floor,
   not zoomed out. Cause: `viewport.js`'s `worldBounds` was a dumb x/y/width/

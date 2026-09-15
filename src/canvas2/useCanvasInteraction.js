@@ -14,6 +14,14 @@ import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from '.
    rack into a move of that rack. */
 Konva.dragButtons = [0]
 
+/* A blank project's starting zoom, once there is nothing yet to fit to. Not
+   the store's own raw default (zoom 1) — that is tuned for the SVG canvas's
+   close-up drawing scale and shows barely ~35ft across on this grid
+   (40px = 1ft). This is well short of the whole-building 7% dealers work at
+   (CANVAS2.md rule 7) on purpose: an empty sheet needs room to START drawing
+   in, not a view already zoomed for a building that does not exist yet. */
+const EMPTY_CANVAS_ZOOM = 0.15
+
 /* ── Input/interaction orchestration ─────────────────────────────────────────
    Everything that decides what a press/move/release DOES: pan, marquee,
    object drag, and the one geometry-based pick (hitTest) that drives both
@@ -346,19 +354,53 @@ export function useCanvasInteraction({
      always-available control regardless of this setting. */
   const onDblClick = () => { if (dblClickFitEnabled) fitToContent() }
 
-  /* Auto-fit once, the first time the container has a real size and there is
-     something to measure. The view seeded into the ref (Canvas2.jsx, from
-     whatever zoom/pan the store's autosave restored) can be an arbitrary
-     leftover — including an extreme zoom-out from a past session — with
-     nothing to do with what is actually on the sheet now. Fitting once
-     replaces that leftover with the same "whole building" view Fit/
-     double-click produce, then gets out of the way: every later size/objects
-     change is the user's own pan/zoom business, not fought over. */
-  const didInitialFit = useRef(false)
+  /* Auto-fit on load, AND every time a NEW floor plan is placed.
+
+     The view seeded into the ref (Canvas2.jsx, from whatever zoom/pan the
+     store's autosave restored) can be an arbitrary leftover — including an
+     extreme zoom-out from a past session — with nothing to do with what is
+     actually on the sheet now. Fitting once on load replaces that leftover
+     with the same "whole building" view Fit/double-click produce.
+
+     But it can't stop there: the store's OWN placeFpObject (called by
+     generate — CANVAS2.md rule 1, frozen brain, not ours to fix) sets its
+     own zoom/pan whenever a floor plan is placed, computed from
+     document.getElementById('canvas-container') — the SVG canvas's id. Under
+     the flag, that element does not exist, so it silently falls back to a
+     hardcoded 900x600 guess instead of this canvas's real size, and hands
+     back whatever zoom fits the building into THAT — wrong for canvas2's
+     actual container, and stale forever after a one-shot latch (a
+     regenerate on an already-open project re-triggers the same wrong
+     calculation, and nothing was left to correct it a second time).
+
+     Tracking which floor-plan ids have already been fit for, rather than a
+     single boolean, re-fits exactly when a NEW building shows up — generate,
+     regenerate, or a hand-drawn floor plan — and leaves every ordinary edit
+     (move, resize, add a rack by hand, toggle a bay) alone: none of those
+     place a new floor plan, so none of them fight the user's own pan/zoom. */
+  const didAnyFit = useRef(false)
+  const fittedFpIds = useRef(new Set())
   useEffect(() => {
-    if (didInitialFit.current) return
     if (!(size.w > 0 && size.h > 0)) return
-    if (fitToContent()) didInitialFit.current = true
+    const fpIds = objects.filter(isFloorPlan).map(o => o.id)
+    const hasNewFp = fpIds.some(id => !fittedFpIds.current.has(id))
+    if (didAnyFit.current && !hasNewFp) return
+    if (fitToContent()) {
+      didAnyFit.current = true
+      for (const id of fpIds) fittedFpIds.current.add(id)
+      return
+    }
+    /* Nothing to fit to yet — a brand new, still-blank project. Leaving the
+       raw store default (zoom 1, tuned for the SVG canvas's close-up drawing
+       scale) shows barely ~35ft across on a warehouse-scale sheet, which is
+       "loaded zoomed in" before anything has even been drawn. A sane
+       starting scale, centred on the origin, gives room to draw before there
+       is any content to fit to — applied once; the branch above takes over
+       the moment a real floor plan exists. */
+    if (!didAnyFit.current) {
+      didAnyFit.current = true
+      setView({ zoom: EMPTY_CANVAS_ZOOM, panX: size.w / 2, panY: size.h / 2 })
+    }
   }, [size.w, size.h, objects])
 
   return { onStageMouseDown, onWheel, onDblClick, fitToContent, cursor, marquee }
