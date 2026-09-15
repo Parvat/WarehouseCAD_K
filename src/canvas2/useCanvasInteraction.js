@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { hitTest, hitTestBay } from './hitTest'
-import { snapToGrid, objectContains } from '../utils/canvas'
+import { handleHitTest } from './handleGeometry'
+import { snapToGrid, objectContains, applyResize, getObjectBounds } from '../utils/canvas'
+import { PORTED_RACK_TYPES } from '../render/rackOps'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
   movedIdsFor, objectCentre, isFloorPlan,
@@ -9,6 +11,13 @@ import {
 import { useCanvasStore } from '../store/useCanvasStore'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
 import { dlog, debugOn } from './debugLog'
+
+/* Beam/lane racks whose applyResize branch handles its own snapping
+   internally (bay/tower/lane counts, not raw pixels) — ported verbatim from
+   CanvasArea.jsx's own SNAP_FREE set. Note the asymmetry is real, not an
+   oversight: rack_drive_in/through/pushback DO get grid-snapped dx/dy before
+   applyResize sees it, rack_pallet_flow does not. */
+const SNAP_FREE = new Set(['rack_row', 'rack_double_row', 'rack_pallet_flow', 'rack_cantilever'])
 
 /* Only the LEFT button may drag an object. Konva allows the middle button by
    default, which turned every middle-drag-to-pan that happened to start over a
@@ -53,6 +62,7 @@ export function useCanvasInteraction({
   const pan = useRef(null)
   const objDrag = useRef(null)
   const marqueeRef = useRef(null)
+  const resizeDrag = useRef(null)
 
   /* ── selection, from our own geometry pick ────────────────────────────── */
   /* Selection AND bay pick, from a world point and a hit id already decided by
@@ -168,6 +178,19 @@ export function useCanvasInteraction({
     }
   }
 
+  /* ── resize/rotate, from the SAME hitTest family as everything else ───────
+     handleHitTest (handleGeometry.js) is checked in onStageMouseDown BEFORE
+     the object hitTest — a handle sits on or near the selected rack's own
+     body, and must win over "re-select/drag this rack" the same way CanvasUI's
+     real DOM handles physically sit above the object and catch the click
+     first. Snapshotting origObj here (not reading it live during the drag)
+     is CanvasArea's own pattern: applyResize's math is delta-from-drag-START,
+     not delta-from-previous-frame, so the snapshot has to stay fixed for the
+     whole gesture. */
+  const beginHandleDrag = (obj, handle, world) => {
+    resizeDrag.current = { objId: obj.id, handle, origObj: { ...obj }, startWorld: world }
+  }
+
   /* Re-decide which building each moved object belongs to, from where it now
      sits — the same rule CanvasArea applies after its own moves. Without it a
      rack dragged OUT keeps claiming the building as parent and the next
@@ -211,24 +234,6 @@ export function useCanvasInteraction({
     const stage = stageRef.current
     if (!stage) return
 
-    /* Konva's Transformer (ResizeTransformer.jsx) sets e.cancelBubble = true
-       on its own anchor mousedown internally, but that only stops KONVA'S
-       OWN bubbling to ancestor Konva nodes — it does not stop the
-       underlying native browser event, and react-konva's <Stage
-       onMouseDown> still runs for it regardless. Confirmed the hard way: a
-       real drag on a resize anchor also armed our own object-drag through
-       this same handler, producing a SECOND, unwanted moveObjects commit
-       stacked on top of the Transformer's own correct resize (visible as
-       two history entries and a position that didn't match either gesture).
-       Recognizing the Transformer's own chrome here and returning
-       immediately is what makes this genuinely ONE input path: ours simply
-       defers the instant it sees the press already belongs to Konva's own
-       transform handles, rather than trusting cancelBubble to have done
-       that already. */
-    for (let n = e.target; n; n = n.getParent && n.getParent()) {
-      if (n.getClassName && n.getClassName() === 'Transformer') return
-    }
-
     const evt = e.evt
     noteHandlerFired?.('stage (target=' + (e.target && e.target.getClassName ? e.target.getClassName() : '?') + ')')
 
@@ -244,6 +249,24 @@ export function useCanvasInteraction({
 
     if (!forcePan) {
       const st = useCanvasStore.getState()
+
+      /* A resize/rotate handle, if the current single selection is a rack
+         type render/rackOps.js draws (matches ResizeHandlesOverlay's own
+         gate exactly, so a handle can never be painted somewhere this can't
+         find it). Checked BEFORE the object hitTest below: a handle sits on
+         or near the rack's own body, and must win the press the same way
+         CanvasUI's real DOM handles physically sit above the object. */
+      if (evt.button === 0 && st.selectedIds.length === 1) {
+        const selected = st.objects.find(o => o.id === st.selectedIds[0])
+        if (selected && PORTED_RACK_TYPES.has(selected.type)) {
+          const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
+          if (handle) {
+            beginHandleDrag(selected, handle, world)
+            return
+          }
+        }
+      }
+
       const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
 
       if (hitId) {
@@ -274,6 +297,96 @@ export function useCanvasInteraction({
      own drag capture is gone. */
   useEffect(() => {
     const move = (evt) => {
+      const rd = resizeDrag.current
+      if (rd) {
+        const stage = stageRef.current
+        if (!stage) return
+        const box = stage.container().getBoundingClientRect()
+        const pos = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+        const st = useCanvasStore.getState()
+        const { objId, handle, origObj, startWorld } = rd
+
+        if (handle === 'rotate') {
+          /* Same flow as CanvasArea.jsx: angle from the UNSNAPPED pointer
+             around the object's own (unrotated) bounds centre, 5deg steps
+             normally, 45deg holding shift. */
+          const b = getObjectBounds(origObj)
+          const rcx = b.x + b.width / 2
+          const rcy = b.y + b.height / 2
+          const angle = Math.atan2(pos.y - rcy, pos.x - rcx) * 180 / Math.PI + 90
+          const snapDeg = evt.shiftKey ? 45 : 5
+          const snapped = ((Math.round(angle / snapDeg) * snapDeg) % 360 + 360) % 360
+          st.updateObject(objId, { rotation: snapped })
+          return
+        }
+
+        /* Resize. sx/sy mirror CanvasArea's doSnap(pos) — the CURRENT point
+           snapped to the grid when snap is on — while startWorld stays the
+           RAW point captured at mousedown, exactly like CanvasArea's own
+           startX/startY. dx/dy is that mix, not two consistently-snapped
+           points; ported as-is rather than "cleaned up". */
+        const sx = st.snapToGrid ? snapToGrid(pos.x, st.gridSize, st.snapUnit) : pos.x
+        const sy = st.snapToGrid ? snapToGrid(pos.y, st.gridSize, st.snapUnit) : pos.y
+        let dx = sx - startWorld.x
+        let dy = sy - startWorld.y
+
+        /* Counter-rotate the drag delta into the object's own local space —
+           applyResize always operates unrotated. Only rect-shaped objects
+           (not lines/circles) need this; every rack type qualifies. */
+        const rot = origObj.rotation || 0
+        const isRect = 'x' in origObj && !('x1' in origObj) && origObj.type !== 'circle'
+        if (rot !== 0 && isRect) {
+          const rad = -rot * Math.PI / 180
+          const rdx = dx * Math.cos(rad) - dy * Math.sin(rad)
+          const rdy = dx * Math.sin(rad) + dy * Math.cos(rad)
+          dx = rdx; dy = rdy
+        }
+
+        const snapFn = SNAP_FREE.has(origObj.type)
+          ? (v => v)
+          : (v => (st.snapToGrid ? snapToGrid(v, st.gridSize, st.snapUnit) : v))
+        const updates = applyResize(origObj, handle, dx, dy, snapFn, !!evt.shiftKey)
+
+        /* Anchor-point correction for a rotated rect: growing/shrinking
+           shifts the rotation pivot (the object's own centre) unless the
+           handle OPPOSITE the one being dragged is kept fixed in WORLD
+           space. Ported verbatim from CanvasArea.jsx — this is what
+           prevents the resize "bounce" on a turned rack. Always reads
+           origObj.x/y for the OLD centre, never updates.x/y (which is
+           already the shifted position for a left-handle drag; using it
+           here would double-apply the shift). */
+        const newW = updates.width, newH = updates.height
+        if (rot !== 0 && isRect && newW !== undefined && newH !== undefined) {
+          const ow = origObj.width, oh = origObj.height
+          const ocx = origObj.x + ow / 2
+          const ocy = origObj.y + oh / 2
+
+          const ax = handle.includes('l') ? 1 : handle.includes('r') ? -1 : 0
+          const ay = handle.includes('t') ? 1 : handle.includes('b') ? -1 : 0
+
+          const frad = rot * Math.PI / 180
+          const cos = Math.cos(frad), sin = Math.sin(frad)
+          const alx = ax * ow / 2, aly = ay * oh / 2
+          const awx = ocx + alx * cos - aly * sin
+          const awy = ocy + alx * sin + aly * cos
+
+          const nalx = ax * newW / 2, naly = ay * newH / 2
+          const ncx = awx - (nalx * cos - naly * sin)
+          const ncy = awy - (nalx * sin + naly * cos)
+
+          updates.x = ncx - newW / 2
+          updates.y = ncy - newH / 2
+        }
+
+        /* Live preview, no history — mirrors CanvasArea exactly: a real
+           store write every frame (not a Konva-node shortcut the way plain
+           object drag uses) because a resize can rewrite beams/lanes/towers,
+           which only a real re-render can redraw. mouseup below commits the
+           ONE history entry for the whole gesture. */
+        st.updateObject(objId, updates)
+        return
+      }
+
       if (pan.current) {
         const d = pan.current
         setView({
@@ -332,6 +445,22 @@ export function useCanvasInteraction({
     }
     const up = () => {
       pan.current = null
+
+      const rd = resizeDrag.current
+      resizeDrag.current = null
+      if (rd) {
+        /* ONE history entry for the whole gesture — commitObjectUpdate pushes
+           history; updateObject (used for every frame of the live preview
+           above) does not. The object is already fully live-updated in the
+           store from the last mousemove, so this is CanvasArea's own
+           "commit with the object's own current state" no-op-Object.assign
+           pattern: its only real job is the single pushHistory call. */
+        const st = useCanvasStore.getState()
+        const obj = st.objects.find(o => o.id === rd.objId)
+        if (obj) st.commitObjectUpdate(rd.objId, obj)
+        setCursor(spaceDown.current ? 'grab' : 'default')
+        return
+      }
 
       const d = objDrag.current
       objDrag.current = null

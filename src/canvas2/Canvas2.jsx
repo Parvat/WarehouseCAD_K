@@ -3,7 +3,8 @@ import { Stage, Layer, Shape } from 'react-konva'
 import { Maximize, ToggleLeft, ToggleRight } from 'lucide-react'
 import { Scene } from './Scene'
 import { Overlays } from './Overlays'
-import { ResizeTransformer } from './ResizeTransformer'
+import { ResizeHandlesOverlay } from './ResizeHandlesOverlay'
+import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { debugOn } from './debugLog'
 import { DebugPanel } from './DebugPanel'
@@ -132,6 +133,13 @@ export function Canvas2() {
   const selectedObjects = useMemo(
     () => objects.filter(o => selectedIds.includes(o.id)),
     [objects, selectedIds])
+
+  /* Resize/rotate handles are a single-object control surface (matching the
+     SVG's own `!groupSelected` gate — a multi-selection keeps its plain
+     outline, no handles), and only for the rack types render/rackOps.js
+     actually draws (the same set RackShape paints from). */
+  const handleTarget = selectedObjects.length === 1 && PORTED_RACK_TYPES.has(selectedObjects[0].type)
+    ? selectedObjects[0] : null
 
   const colors = useMemo(() => {
     try {
@@ -263,17 +271,17 @@ export function Canvas2() {
           <Layer listening>
             <Scene listening />
           </Layer>
-          {/* overlay — the marquee, and later the handles. Never listens: it is
-              decoration, and must not intercept a press meant for an object. */}
+          {/* overlay — selection outline(s), marquee, resize/rotate handles.
+              Never listens: all of it is pure paint (CANVAS2.md rule 4) —
+              which handle a press hits is decided once, geometrically, in
+              onStageMouseDown (handleGeometry.js's handleHitTest), the SAME
+              path selection and object drag already use. Nothing here is a
+              second, independent input surface. */}
           <Layer listening={false}>
             <Overlays selectedObjects={selectedObjects} gridSize={gridSize} marquee={marquee} />
-          </Layer>
-          {/* resize/rotate — Konva's own Transformer, topmost so its handles
-              are never obscured. Listens for its own anchor presses only
-              (Konva cancels their bubble internally); everything else falls
-              through to onStageMouseDown/hitTest untouched. */}
-          <Layer listening>
-            <ResizeTransformer />
+            {handleTarget && (
+              <ResizeHandlesOverlay obj={handleTarget} zoom={zoom} gridSize={gridSize} />
+            )}
           </Layer>
         </Stage>
       )}

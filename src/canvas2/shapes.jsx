@@ -69,7 +69,7 @@ const HIT_PAD_SHORT_PX = 2
 
 /** Centre-origin transform props, shared by every painter so rotation behaves
  *  identically no matter which one drew the object. */
-function spin(obj, gridSize = 40) {
+export function spin(obj, gridSize = 40) {
   const b = outlineBounds(obj, gridSize) || getObjectBounds(obj)
   const cx = b.x + b.width / 2
   const cy = b.y + b.height / 2

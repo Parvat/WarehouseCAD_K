@@ -71,9 +71,10 @@ down first this time.
 | `Scene.jsx` | Composition — route each object to ONE painter, no double-draw | React |
 | `shapes.jsx` | The painters: RackShape / FloorPlanShape / ColumnGridShape / FallbackShape — how each draws + its hit area | React/Konva |
 | `Canvas2.jsx` | Stage/layer mounting: container sizing, pan/zoom application (imperative) + store sync, composes Scene + Overlays into Layers | React/Konva |
-| `useCanvasInteraction.js` | Input/interaction orchestration: the one geometry pick (hitTest/hitTestBay) that drives both selection and drag-arming, pan, marquee, object drag, reparent-after-move | React (hook), no JSX |
+| `useCanvasInteraction.js` | Input/interaction orchestration: the one geometry pick (hitTest/hitTestBay/handleHitTest) that drives selection, drag-arming, AND resize/rotate-arming, pan, marquee, reparent-after-move | React (hook), no JSX |
+| `handleGeometry.js` | Pure handle geometry, ported from CanvasUI.jsx: enabledHandlesFor/rotateEnabledFor (per-type suppression), handleHitTest (world point → handle name) | no |
 | `Overlays.jsx` | Decoration only, never listens: selection outline(s) + marquee rect | React/Konva |
-| `ResizeTransformer.jsx` | Resize + rotate: Konva's own Transformer, attached to a plain-geometry shadow proxy (not the real rack Group — see Handle rules below), type-aware enabled anchors, `resizeRackToWidth` for beam racks | React/Konva |
+| `ResizeHandlesOverlay.jsx` | Resize/rotate handles as PLAIN PAINTED shapes — no Konva input of any kind. Same handleGeometry.js functions decide what's drawn and what a click hits, so they can't disagree | React/Konva |
 | `debugLog.js` / `DebugPanel.jsx` / `clickDiagnostics.js` | TEMPORARY on-screen diagnostics — DELETE when the interaction bugs are closed | React |
 
 Pure-logic files (`viewport`, `selection`) are the equivalent of SVG's
@@ -106,51 +107,67 @@ battle-tested in the SVG engine; canvas2 must CALL them, not write its own copy
 | Object bounds (hit/snap truth) | `getObjectBounds(obj)` | utils/canvas.js |
 | What was clicked | `objectContains(obj,wx,wy,zoom)` + a ported `hitTest` loop | utils/canvas.js + CanvasArea.jsx |
 | Which bay was clicked | ported `hitTestBay(obj,wx,wy)` | CanvasArea.jsx |
-| Resize an object | `applyResize(obj,handle,dx,dy,snapFn,shiftKey)` | utils/canvas.js |
+| Resize an object (bays/towers not scale — quantization built in) | `applyResize(obj,handle,dx,dy,snapFn,shiftKey)` | utils/canvas.js |
+| Which handle was pressed | ported `handleHitTest` (`getHandlePositions`-based) | utils/canvas.js + CanvasUI.jsx |
+| Commit ONE undo for a resize/rotate gesture | `commitObjectUpdate(id, obj)` | store |
 | Move (+ fp→children cascade, one undo) | `moveObjects(ids,dx,dy)` | store |
 | Re-parent after a move | `attachToParent(id, parentId||undefined)` | store |
-| Bay resize → bays not scale | `resizeRackToWidth(obj,newW,gridSize)` | render/rackOps |
 | Snap | `snapToGrid`, warehouseSnap, geometricSnap | utils/ |
 | ft/in labels | `pxToFtIn(px,gridSize)` | utils/canvas.js |
 
-## Handle rules (Transformer must match SVG's CanvasUI)
+## Handle rules (ported from SVG's CanvasUI/CanvasArea — NOT Konva's Transformer)
 
-Implemented in `ResizeTransformer.jsx`.
+Resize/rotate went through two designs. The first used Konva's own
+`Transformer` widget, which works — right up until it collides with rule 4:
+its anchors are native Konva nodes with their OWN mousedown handlers, a
+second input surface `onStageMouseDown`'s single hitTest can't see or defer
+to reliably (Konva's `cancelBubble` on an anchor press does not stop the
+underlying native event from ALSO reaching `<Stage onMouseDown>` — confirmed
+the hard way: a resize drag also armed the ordinary object-drag path through
+that same handler, committing a second, unwanted `moveObjects`). Rebuilt to
+match rule 4 exactly instead: `ResizeHandlesOverlay.jsx` paints the handles
+as plain Konva shapes with **no event props of any kind** — the same "Konva
+is pure paint" rule every other object node already follows — and
+`handleGeometry.js`'s `handleHitTest` (called from `onStageMouseDown`, BEFORE
+the object hitTest) decides which one, if any, a press landed on. One input
+path, not two that happen not to collide today.
+
+Ported from `CanvasUI.jsx`'s `ResizeHandles`/`getHandlePositions`, not
+reinvented:
 
 - Beam racks (`rack_row`, `rack_double_row`, `rack_cantilever`) → **only ml/mr**
-  handles (width = bay count; other handles imply a stretch the object can't do).
-  Only `rack_row`/`rack_double_row` actually quantize through `resizeRackToWidth`
-  — there is no absolute-width tower-count helper for cantilever, so it takes
-  the raw geometric width from the gesture instead (a known, accepted gap, not
-  a bug: cantilever still resizes, just not tower-quantized).
+  handles (width/towers = bay/tower count; other handles imply a stretch the
+  object can't do). `applyResize` (utils/canvas.js) already contains its own
+  bay-count and tower-count quantization for these three types — no separate
+  `resizeRackToWidth` call needed the way the abandoned Transformer design did.
 - Lane racks (`rack_drive_in`/`through`/`pushback`/`pallet_flow`) → suppress `tc`.
-- `aisle` → no handles, no rotate (not yet wired — no aisle-type Transformer
-  attachment exists; this canvas2 pass covers rack types only).
-- Anchors/rotater are **plain screen px, undivided by zoom** — verified live at
-  7% by reading `anchor.getClientRect()` back off the Stage: Konva's own
-  Transformer already renders its chrome at a size independent of the ambient
-  Stage/Layer scale. This is the OPPOSITE of what the old hand-drawn SVG
-  handles need (screenPx / stage-scale) and of what BUG 1 in
-  CANVAS2_BUGLOG.md describes for the abandoned hybrid's Transformer — dividing
-  by zoom here double-compensates and produces handles roughly 1/zoom times
-  too large (confirmed: anchorSize divided by 0.07 measured ~140px on screen
-  instead of the intended ~9px).
-- The Transformer attaches to a plain-geometry SHADOW proxy object (a bare
-  Konva `Rect` with the object's own x/y/width/height/rotation, no offset),
-  not the real rack Group — `RackShape`'s centre-origin `spin()` offset
-  (shapes.jsx) confuses Konva's own inverse resize math if given that node
-  directly (verified: a middle-right drag read back as almost no scale change
-  and a position shift equal to the drag distance, instead of growing width
-  and shifting the centre by half that).
-- `onStageMouseDown` (useCanvasInteraction.js) explicitly recognizes and
-  defers to the Transformer's own nodes (walks `e.target`'s ancestors for
-  `getClassName() === 'Transformer'`). Konva's anchor `cancelBubble = true`
-  only stops Konva's OWN internal bubbling to ancestor Konva nodes — it does
-  NOT stop the underlying native browser event from also reaching
-  react-konva's `<Stage onMouseDown>` — confirmed the hard way: without this
-  guard, a resize drag also armed the ordinary object-drag path through the
-  very same handler, committing a second, unwanted `moveObjects` on top of
-  the Transformer's own correct resize.
+- `aisle` → no handles, no rotate (ported into `handleGeometry.js` for
+  fidelity; not reachable today since `ResizeHandlesOverlay` only attaches to
+  `PORTED_RACK_TYPES` — this canvas2 pass covers rack types only).
+- Handle squares/rotate circle are **screenPx / zoom** in world-space size AND
+  in `getHandlePositions`' own **pad** — both, matching each other. Using
+  `getHandlePositions`' unscaled default pad (6, a few world units) while
+  sizing the hit box `screenPx/zoom` (which is huge at 7% zoom) put the hit
+  box's INNER edge deep inside the rack's own body — confirmed: it silently
+  ate an upright click meant to clear an active bay. Padding by the SAME
+  `6/zoom` keeps the hit box's inner edge flush with the object's true edge
+  at every zoom, matching what "sits just outside the object" is supposed to
+  mean. (Stroke width still just needs Konva's own `strokeScaleEnabled`, like
+  `SelectionOutline` — that part isn't affected by any of this.)
+- Rotated-resize anchor correction (`useCanvasInteraction.js`'s window
+  mousemove) is ported VERBATIM from `CanvasArea.jsx` — the exact
+  counter-rotate-the-delta-into-local-space, then re-derive x/y from the
+  UNCHANGED `origObj` centre so the handle OPPOSITE the one being dragged
+  stays fixed in world space. This is what stops a rotated rack's resize from
+  "bouncing" (the pivot jumping) — verified directly: dragging `mr` on a
+  45°-rotated rack left the `ml` handle's world position unmoved to within
+  floating-point noise.
+- Live preview writes to the store every mousemove (`updateObject`, no
+  history) exactly like `CanvasArea.jsx` — NOT the Konva-node-position
+  shortcut plain object drag uses, because a resize can rewrite
+  beams/lanes/towers, which only a real re-render can redraw. `mouseup`
+  commits ONE history entry (`commitObjectUpdate`) for the whole gesture,
+  same one-undo pattern as everywhere else in this file.
 
 ## Lane-rack geometry (reference — lives in rackOps/shapes, don't re-derive)
 
@@ -204,17 +221,15 @@ shared truth for bounds / hit / resize — canvas2 uses them, never its own copy
 - View (auto-fit on load, Fit button, double-click opt-in) — DONE.
 - `Canvas2.jsx` split (rule 8) — DONE: Canvas2.jsx / useCanvasInteraction.js /
   Overlays.jsx.
-- Resize + rotate (step 5) — DONE: `ResizeTransformer.jsx`, Konva's own
-  Transformer, per-type handle rules (ml/mr-only beam racks, suppress-tc lane
-  racks). Attaches to a plain-geometry SHADOW proxy, not the real rack Group —
-  RackShape's centre-origin `spin()` offset confuses Konva's own resize math
-  if the Transformer is given that node directly (verified: it read as almost
-  no scale change and a position shift equal to the drag distance instead of
-  growing the width). `onStageMouseDown` explicitly recognizes and defers to
-  the Transformer's own chrome — Konva's anchor `cancelBubble` does not stop
-  the underlying native event from also reaching react-konva's `<Stage
-  onMouseDown>`, so without that check a resize doubled up with an unwanted
-  object-drag commit.
+- Resize + rotate (step 5) — DONE, rebuilt once: `handleGeometry.js` +
+  `ResizeHandlesOverlay.jsx`, ported straight from CanvasUI.jsx/CanvasArea.jsx
+  (handle positions, per-type suppression, applyResize, the rotated-resize
+  anchor correction) rather than Konva's Transformer — see Handle rules above
+  for why the Transformer version was replaced. Verified real-mouse for all 9
+  `render/rackOps.js` rack types: correct handle set per type, edge-pinned
+  resize (bay/tower-quantized via `applyResize` where the type supports it),
+  centre-pivot rotation, no bounce on a rotated resize, one undo per gesture,
+  full undo revert.
 - Next: overlays polish (rule 6, e.g. suppressing the plain SelectionOutline
-  for a rack the Transformer already frames); delete debug files (rule 7);
-  delete SVG (keep headless SVG export only).
+  for a rack the handles already frame); delete debug files (rule 7); delete
+  SVG (keep headless SVG export only).

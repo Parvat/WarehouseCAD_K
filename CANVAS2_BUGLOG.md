@@ -213,12 +213,25 @@ a missing wire.
 
 ---
 
-## BUG 8 — Building resize/rotate (step 5): two real bugs found building it, not fixed after the fact
+## BUG 8 — Building resize/rotate (step 5): two real bugs found building it, not fixed after the fact  *(superseded — see BUG 9)*
 
-canvas2 had no Transformer at all before this — `ResizeTransformer.jsx` is new,
-not a repair. Logged here anyway because both bugs below are exactly the class
-CANVAS2.md rules 4 and 8's Handle-rules section now exist to prevent someone
-re-discovering the hard way.
+**This whole design — Konva's own `Transformer` widget — was replaced after
+the fact.** It worked once both bugs below were fixed, but it violated rule 4
+on its own terms: the Transformer's anchors are a SECOND, independent Konva
+input surface (their own native mousedown handlers), which is precisely what
+rule 4 exists to rule out for object picking, and Bug B below is exactly that
+class of bug showing up in practice. Rebuilt to hand-painted handles + the
+same geometric hitTest everything else uses — see BUG 9. Left in place,
+unedited, because the ROOT CAUSES below (the centre-origin Group confusing
+Konva's own resize math, cancelBubble not covering the native event) are real
+findings about Konva itself, not about this specific design, and are exactly
+the kind of thing to check first if a future Konva-widget integration is ever
+attempted again here.
+
+canvas2 had no Transformer at all before this — `ResizeTransformer.jsx` was
+new, not a repair (and no longer exists — see BUG 9). Logged here anyway
+because both bugs below are exactly the class CANVAS2.md rule 4 exists to
+prevent someone re-discovering the hard way.
 
 **Bug A — Konva's Transformer, given the real rack Group directly, resizes as
 almost-pure position with no scale.**
@@ -310,6 +323,79 @@ call counter, not an assumption. And a plausible one-line fix (the x/y
 conversion math) can be completely wrong about WHICH layer of the problem
 you're looking at; read the actual runtime values back before rewriting
 theory a second time.
+
+---
+
+## BUG 9 — Resize/rotate rebuilt as ported geometry, not Konva's Transformer
+
+BUG 8's Transformer design worked, but it was a second Konva-native input
+surface living alongside the one geometric hitTest CANVAS2.md rule 4 says
+should decide everything — a real, if contained, violation, and Bug B in
+BUG 8 is what that violation looks like when it actually bites. Rebuilt from
+scratch: `ResizeTransformer.jsx` deleted; `handleGeometry.js` (pure geometry,
+ported from `CanvasUI.jsx`) + `ResizeHandlesOverlay.jsx` (plain painted
+Konva shapes, zero event props) take its place. `onStageMouseDown` now calls
+`handleHitTest` — the SAME function that decided what to paint — BEFORE the
+object hitTest, and arms a resize/rotate drag through the identical window
+mousemove/mouseup path object-drag already uses. One picker, provably, not
+two that happen not to collide.
+
+Ported verbatim rather than re-derived: `getHandlePositions`/`applyResize`/
+`HANDLES` (utils/canvas.js), the per-type handle suppression (`CanvasUI.jsx`),
+the rotated-resize anchor correction and the doSnap/SNAP_FREE asymmetry
+(`CanvasArea.jsx`). Confirmed directly: dragging `mr` on a 45°-rotated
+`rack_row` left the `ml` handle's world position unmoved to within
+floating-point noise — the anchor-correction math ported correctly.
+
+**One new bug found in the port, caught by re-running the EXISTING
+bay-select regression check (not a fresh one written for this feature) —
+exactly why that suite exists:**
+
+*Symptom:* at 7% (whole-building) zoom, clicking a beam rack's first upright
+— meant to clear its active bay, an already-shipped behavior — silently did
+nothing. `c2bayfull.mjs`'s existing "upright click clears bay" check, which
+had passed on every prior run, failed for the first time right after this
+rebuild landed.
+
+*Cause:* `getHandlePositions(bounds, pad)` was called with NO pad override
+(`getHandlePositions(bounds)`), taking its own default of a fixed 6 WORLD
+units — fine in the SVG, where a `<g transform="rotate(...)">` ancestor and
+the browser's own DOM stacking decide hit-testing, so an unscaled pad is
+just a small visual gap that shrinks with zoom like any other SVG length.
+canvas2 has no such free ride: `handleHitTest` compares WORLD-space
+distances directly, and its hit-box half-size (`hs = 6/zoom`) is
+screen-constant — at 7% zoom, `hs` is ~86 world units against a pad of a
+literal 6. The hit box's centre sat barely outside the rack's edge while its
+own half-size reached over 100 world px past that centre — INTO the rack's
+body, over the first upright, swallowing the bay-clear click.
+
+*Fix:* pad `getHandlePositions` by the SAME `6/zoom` as the hit box's own
+half-size (`handleGeometry.js`'s `handlePad`), in BOTH the hit-test and
+`ResizeHandlesOverlay`'s rendering (one function, called from both, so they
+cannot drift apart the way a second inline copy could). The hit box's inner
+edge now sits flush with the object's true edge at every zoom, never
+reaching inward.
+
+**Verified, real mouse, all 9 `render/rackOps.js` rack types:** selects,
+correct enabled-handle set per CANVAS2.md's Handle rules (checked by actually
+pressing all 8 positions and confirming which ones respond, not just reading
+a config value), edge-pinned resize with one undo and full revert
+(bay/tower-quantized via `applyResize` where the type supports it —
+cantilever's 48in tower spacing needs a proportionally bigger drag than a
+beam rack's bay spacing to register at all, which read as 3 false test
+failures until the probe drag was sized to match; confirmed correct in
+isolation with an appropriately-sized drag), centre-pivot rotation with one
+undo and full revert, no bounce on a rotated resize. The pre-existing
+select/bay-select/drag/cascade/view-fit regression suites all stayed green
+after the pad fix. Zero console errors on load.
+
+**Lesson:** rule 4 ("picking = geometry, not the renderer's hit graph") is
+not just about `stage.getIntersection` — ANY per-node Konva input, including
+a widget as well-behaved as `Transformer`, is a second picker by the same
+definition, and will eventually disagree with the first one under some
+gesture. And a feature's own NEW tests can pass cleanly while an EXISTING,
+unrelated regression check catches real damage — run the whole suite, not
+just the tests written for what changed.
 
 ---
 
