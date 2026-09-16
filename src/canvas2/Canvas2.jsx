@@ -197,7 +197,7 @@ export function Canvas2() {
 
   const [dblClickFitEnabled, toggleDblClickFit] = useDblClickFitSetting()
 
-  const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee } =
+  const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides } =
     useCanvasInteraction({ stageRef, view, setView, size, objects, dblClickFitEnabled })
 
   return (
@@ -273,7 +273,8 @@ export function Canvas2() {
               second, independent input surface. */}
           <Layer listening={false}>
             <Overlays selectedObjects={selectedObjects} gridSize={gridSize} marquee={marquee}
-              objects={objects} zoom={zoom} showAisles={showAisles} activeWall={activeWall} />
+              objects={objects} zoom={zoom} showAisles={showAisles} activeWall={activeWall}
+              smartGuides={smartGuides} />
             {handleTarget && (
               <ResizeHandlesOverlay obj={handleTarget} zoom={zoom} gridSize={gridSize} />
             )}
