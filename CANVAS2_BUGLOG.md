@@ -1427,6 +1427,111 @@ behaviour change from the SVG original, not a cleanup.
 
 ---
 
+## BUG 20 — Group rotate outline didn't track the rotating group, and its stroke width scaled with zoom
+
+Symptom:  Two bugs found by the user testing BUG 19's group rotate, both
+confirmed with a screenshot: (1) mid-gesture and after commit, the dashed
+purple group outline stayed at its ORIGINAL flat, unrotated position and
+size while the two selected racks visibly turned to a diagonal — box and
+racks completely disagreed about where the selection was. (2) the outline's
+stroke got visibly thicker zooming in, unlike every other piece of canvas2
+chrome (resize handles, single-object selection outline), which stay a
+constant screen-width regardless of zoom.
+
+Chased:   Neither was a regression in the rotation MATH itself — a
+console-level check confirmed both racks' `rotation`/`x`/`y` were exactly
+correct throughout (same values as BUG 19's own verification). Both bugs
+were entirely in `GroupRotateOverlay`/`computeGroupOutline`'s PAINT layer,
+not the interaction/store layer BUG 19 added.
+
+Cause (1) — stale outline: `computeGroupOutline` summed each member's RAW
+`getObjectBounds(obj)` — the object's own UNROTATED local rect — the same
+starting point `spin()` uses for a SINGLE object's chrome. But a single
+object's handles/selection outline then get physically turned by wrapping
+them in a Konva `Group` with `spin(obj)`'s rotation transform, matching the
+object's own rotated Group; `GroupRotateOverlay` never did that (deliberate
+at the time — see BUG 19's "No spin() here" note, which reasoned the box
+should stay a plain axis-aligned world rect, not realizing that reasoning
+only holds for an UNROTATED selection). Once a member actually had
+`rotation !== 0` (mid-drag or after a completed group rotate), its raw
+unrotated bounds no longer described where it was actually painted, and
+summing those stale rectangles produced a box that never moved with the
+rotation at all — this is the exact same "chrome computed from bounds that
+don't match live reality" root cause as BUGs 6/10/12 (CANVAS2_BUGLOG's own
+established recurring pattern), just in a FOURTH piece of chrome that
+hadn't existed yet when that pattern was first named.
+
+Cause (2) — stroke scaling with zoom: `GroupRotateOverlay`'s stroke widths
+and dash array were ported from CanvasUI.jsx's raw SVG numbers verbatim,
+INCLUDING their `/zoom` division — copied as a literal transcription without
+registering that the `/zoom` trick and Konva's `strokeScaleEnabled={false}`
+(already set on every one of these shapes) are two DIFFERENT, INCOMPATIBLE
+mechanisms for the same goal ("stroke stays a constant screen width").
+Raw SVG has no non-scaling-stroke primitive, so CanvasUI must manually
+divide by zoom to counteract its own coordinate system's zoom-scaling.
+Konva's `strokeScaleEnabled={false}` already does this automatically — it
+makes Konva treat the given `strokeWidth` number as the FINAL screen-pixel
+width regardless of the Stage's zoom scale. Feeding it an ALREADY-divided
+number (`5/zoom`) compounded the two: the stroke ended up sized
+`(constant) / zoom`, so it shrank at high zoom instead of staying put —
+and, empirically, LOOKED like it grew relative to the tiny (also
+correctly-scaled) rack geometry around it at low zoom, and vice versa —
+the actual bug the user's screenshot-free zoom-in check caught.
+
+Fix:      `src/canvas2/groupRotate.js` — new `rotatedCorners(bounds,
+rotation)` helper: the object's own 4 corners, rotated about ITS OWN centre
+by ITS OWN `obj.rotation` — literally the same transform `spin()` applies
+when painting the object. `computeGroupOutline` now folds every member's
+corners (not just its raw x/y/width/height) into the shared min/max, so the
+box always encloses what is actually on screen, live during the drag (every
+`updateObject` write each frame is a real store write, which re-renders
+`GroupRotateOverlay` with fresh live objects — no imperative Konva-node
+sync needed, same "real store write, dimension labels track for free"
+reasoning BUG 13's floor-plan wall drag already established) and after
+commit, for any 2+ selection regardless of how its members got their
+current rotation.
+
+`src/canvas2/GroupRotateOverlay.jsx` — stroke widths (`5`, `2.5`, `2`, `2`)
+and the dash array (`[8, 4]`) are now plain literals, matching
+`strokeScaleEnabled={false}`'s own convention (ResizeHandlesOverlay/
+SelectionOutline's — "a small literal strokeWidth for constant-screen-width
+lines"), not re-divided by zoom. `cornerRadius` (a genuine geometric SIZE,
+not a stroke property — Konva has no `strokeScaleEnabled` equivalent for
+it) correctly stays `N / zoom`.
+
+Verify:   Real mouse, via Playwright. Seeded and selected two `rack_row`
+objects as in BUG 19, then dragged the group handle through a slow 90°
+turn, screenshotting at ~45° and ~90° mid-gesture (not just before/after):
+at 45° the dashed box is visibly diagonal-encompassing, no longer axis-
+aligned to the ORIGINAL footprint, tightly wrapping the two turning racks
+at their CURRENT diagonal extent; at 90° it re-tightens to a narrow
+vertical box exactly matching the now-vertical racks. Confirmed the
+underlying rotation math is untouched (`rotation: 90`, `x/y` matching
+BUG 19's own hand-computed values) — this entry only touched paint.
+Zoomed the same committed selection from 1x to 3.5x and screenshotted:
+the dashed stroke reads the same thin screen-width at both zooms, no
+visible thickening. Zero console errors throughout. Build clean (1786
+modules), 309/309 tests pass (no existing test touches this paint-only
+path).
+
+Lesson:   The recurring "chrome computed from stale/wrong bounds" bug class
+(BUGs 6, 10, 12, and now this one) isn't finished being found just because
+the LAST piece of chrome that needed it got fixed — every NEW piece of
+selection/gesture chrome added after that fix has to independently earn
+the same "read the object's OWN current rotation/position, the way it's
+actually painted" discipline; a brand-new component (`GroupRotateOverlay`,
+which didn't exist when BUG 12 was written) can reintroduce the identical
+class of bug on day one if its bounds math quietly diverges from what
+`spin()` does for everything else. Separately: porting a raw-SVG numeric
+literal (`5/zoom`) verbatim is only correct when the TARGET renderer has no
+equivalent of its own — Konva's `strokeScaleEnabled` already solves the
+exact problem SVG's manual `/zoom` division solves, so applying both is
+double-compensation, not extra safety. "Port the numbers, not blindly the
+formula that produced them" — check what mechanism the destination already
+has before re-deriving one by hand.
+
+---
+
 ## Template for new entries
 
 ```
