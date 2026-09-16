@@ -4,6 +4,7 @@ import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
 import { handleHitTest, cursorForHandle } from './handleGeometry'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
 import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
+import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from './fpRotate'
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
@@ -72,6 +73,7 @@ export function useCanvasInteraction({
   const marqueeRef = useRef(null)
   const resizeDrag = useRef(null)
   const groupRotateDrag = useRef(null)
+  const fpRotateDrag = useRef(null)
 
   /* ── selection, from our own geometry pick ────────────────────────────── */
   /* Selection AND bay pick, from a world point and a hit id already decided by
@@ -239,6 +241,27 @@ export function useCanvasInteraction({
     }
   }
 
+  /* Floor-plan rotate handle mousedown. `pivot` is fixed for the whole
+     gesture — the building's own centre at drag-start (computeFpRotateHandle),
+     not recomputed from children each frame (fpRotate.js's own header
+     explains why). `childrenBase` snapshots every CURRENT child (by
+     parentId) so applyFpRotation always recomputes from the same fixed
+     start, the same anti-drift discipline group rotate's `base` uses. */
+  const beginFpRotateDrag = (fp) => {
+    const st = useCanvasStore.getState()
+    const h = computeFpRotateHandle(fp, st.gridSize, view.current.zoom)
+    if (!h) return
+    const children = st.objects.filter(o => o.parentId === fp.id)
+    fpRotateDrag.current = {
+      fpId: fp.id,
+      fpBase: { ...fp },
+      childrenBase: new Map(children.map(o => [o.id, { ...o }])),
+      pivot: h.pivot,
+      startAngle: undefined,
+      lastAngle: undefined,
+    }
+  }
+
   /* The handles overlay's own Group, by the same 'handles:'+id name
      ResizeHandlesOverlay paints it with — the resize/rotate mousemove branch
      below uses this to nudge it live (syncHandleOverlayNode), same idea as
@@ -326,6 +349,16 @@ export function useCanvasInteraction({
             beginHandleDrag(selected, handle, world)
             return
           }
+        } else if (selected && isFloorPlan(selected)) {
+          /* A floor plan's own rotate handle — same "handle sits above
+             the object, checked before the plain hitTest" priority. Not
+             the rack handleHitTest family: an fp resizes through its wall
+             drag (BUG 13), not the 8-square grid, so it only ever needs
+             this one circle. */
+          if (fpRotateHandleHitTest(selected, st.gridSize, view.current.zoom, world.x, world.y)) {
+            beginFpRotateDrag(selected)
+            return
+          }
         }
       } else if (evt.button === 0 && st.selectedIds.length >= 2) {
         /* Group rotate handle — checked before the plain object hitTest for
@@ -390,7 +423,7 @@ export function useCanvasInteraction({
      gesture (pan/drag/marquee/resize) keeps setting it from its own
      mousemove/mouseup, and held space always means grab. */
   const onStageMouseMove = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current) return
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current) return
     if (spaceDown.current) return
     const stage = stageRef.current
     if (!stage) return
@@ -405,6 +438,8 @@ export function useCanvasInteraction({
       if (selected && PORTED_RACK_TYPES.has(selected.type)) {
         const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
         if (handle) next = cursorForHandle(handle, selected.rotation)
+      } else if (selected && isFloorPlan(selected)) {
+        if (fpRotateHandleHitTest(selected, st.gridSize, view.current.zoom, world.x, world.y)) next = 'alias'
       }
     }
     if (next === 'default') {
@@ -437,7 +472,7 @@ export function useCanvasInteraction({
      idle: an active gesture is already on window-level move/up and keeps
      going (and setting its own cursor) even off-canvas. */
   const onStageMouseLeave = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current) return
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current) return
     setCursor(spaceDown.current ? 'grab' : 'default')
   }
 
@@ -635,6 +670,39 @@ export function useCanvasInteraction({
         return
       }
 
+      const fprd = fpRotateDrag.current
+      if (fprd) {
+        /* Same angle-from-pointer/5-45deg-snap/delta-from-first-angle flow
+           as group rotate, around the FIXED building-centre pivot captured
+           at drag-start (fpRotate.js's own header explains why it must
+           stay fixed rather than recomputed from live children). */
+        const stage = stageRef.current
+        if (!stage) return
+        const box = stage.container().getBoundingClientRect()
+        const pos = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+        const angle = Math.atan2(pos.y - fprd.pivot.y, pos.x - fprd.pivot.x) * 180 / Math.PI + 90
+        const snapDeg = evt.shiftKey ? 45 : 5
+        const snapped = Math.round(angle / snapDeg) * snapDeg
+        if (fprd.startAngle === undefined) { fprd.startAngle = snapped; fprd.lastAngle = snapped; return }
+        if (snapped !== fprd.lastAngle) {
+          const totalDelta = snapped - fprd.startAngle
+          const st = useCanvasStore.getState()
+          /* Real store write every frame for the fp AND every child —
+             BUG 13's own wall-drag pattern, not BUG 12's zero-store-write
+             node trick: reshaping fpVerts (and orbiting/spinning N racks)
+             is exactly the kind of change only a real re-render redraws,
+             which is also what keeps the rotate handle and selection
+             outline live-tracking for free (fpRotate.js/FpRotateHandleOverlay's
+             own comments). mouseup below commits ONE history entry for
+             fp+children together. */
+          const updates = applyFpRotation(fprd.fpBase, fprd.childrenBase, fprd.pivot, totalDelta)
+          for (const [id, u] of updates) st.updateObject(id, u)
+          stage.batchDraw()
+          fprd.lastAngle = snapped
+        }
+        return
+      }
+
       if (pan.current) {
         const d = pan.current
         setView({
@@ -754,6 +822,22 @@ export function useCanvasInteraction({
         const firstId = grd.ids[0]
         const obj = firstId && st.objects.find(o => o.id === firstId)
         if (obj) st.commitObjectUpdate(firstId, obj)
+        setCursor(spaceDown.current ? 'grab' : 'default')
+        return
+      }
+
+      const fprd = fpRotateDrag.current
+      fpRotateDrag.current = null
+      if (fprd) {
+        /* ONE history entry for the fp AND every child — same no-op-commit
+           pattern as group rotate above: the fp itself (and every child)
+           already has its live rotation written via updateObject each
+           mousemove frame, so committing just the fp (pushHistory snapshots
+           the WHOLE s.objects array, children included) is enough to make
+           the whole building's rotation one undo. */
+        const st = useCanvasStore.getState()
+        const obj = st.objects.find(o => o.id === fprd.fpId)
+        if (obj) st.commitObjectUpdate(fprd.fpId, obj)
         setCursor(spaceDown.current ? 'grab' : 'default')
         return
       }
