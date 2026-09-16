@@ -1229,6 +1229,97 @@ delete it — not just the six things you were told about.
 
 ---
 
+## BUG 18 — "Generated racks show no bay labels" — investigated, not a data bug: it's the auto-fit zoom
+
+**Symptom, as reported:** on a generated layout, clicking a rack shows no
+per-bay beam labels; a manually-drawn floor plan with racks placed from the
+left panel DOES show them; running Generate again then breaks labels even
+for the already-placed racks. Reported as a likely field-shape mismatch
+between generated and panel-placed rack objects (RackLabels/DimensionLabels
+reading something generated racks don't carry).
+
+**Chased, with a real comparison, not a guess:**
+1. Generated a layout, logged the full generated `rack_row` object, clicked
+   it (confirmed `selectedIds` resolved correctly), and found per-bay
+   labels genuinely absent at the post-generate view.
+2. Placed a `rack_row` from the left panel, logged its full object, and
+   diffed every field against the generated one. Real differences: `id`,
+   `label` text ("Rack Row" vs "Rack Row (multi-bay)"), `x`/`y`/`width`
+   (different bay counts, expected), `levels` (generated only),
+   `snapType`/`palletDeep` (panel only). Every field `RackLabels`
+   (`canvas2/DimensionLabels.jsx`) actually reads — `type`, `x`, `y`,
+   `width`, `height`, `beams`, `uprightWidth` — was present, correctly
+   typed, and equivalent in shape on both objects. None of the fields that
+   genuinely differ (`levels`, `snapType`, `palletDeep`, `label` text) are
+   read by the per-bay label code at all.
+3. Reproduced the exact reported sequence: placed a floor plan from the
+   panel, placed a rack from the panel inside it, selected it — labels
+   showed correctly (three `96"` tags, a total-length tag). Ran Generate
+   again on the same scene. Diffed the SAME rack object (by id) before vs.
+   after: the only field that changed was `activeBayIdx` (an artifact of my
+   own re-click landing on a different bay after the view moved) — `beams`,
+   `width`, `x`, `y` were byte-identical. The object was untouched.
+4. Selected that SAME unchanged object and screenshotted it: no per-bay
+   labels, at the zoom Generate's own auto-fit had just set
+   (`0.098` — fitting the whole generated warehouse into view). Zoomed
+   back in on it, same object, no data change: labels reappeared
+   immediately (`96"` visible again at zoom `1.2`).
+
+**Cause: none to fix — the label code is working as designed.**
+`RackLabels`' per-bay text has a minimum-screen-width gate
+(`beamPx > fs * 3.5 + pad * 2`, where `fs = 11/zoom`), ported verbatim from
+the SVG engine's own `RackLabels` — a real bay narrower than ~3.5 characters
+of text on screen skips its label rather than render illegible overlapping
+text. `zoom` is a single store-global value, not a per-object field, so
+this gate necessarily affects every currently-visible rack identically —
+old and new, generated and hand-placed. Generate's own auto-fit-to-content
+runs after placing the building and all its racks, and at typical generated
+warehouse sizes that lands the zoom far below the per-bay threshold — so a
+rack selected immediately after Generate predictably shows no per-bay
+labels, and running Generate AGAIN (auto-fitting to a now-larger scene, or
+just re-fitting) can zoom out past the threshold for racks that were
+visible fine a moment earlier, with no change to those racks' own data.
+"Panel-placed racks show labels" is explained the same way in reverse:
+placing an object from the library doesn't change the view at all, so it's
+almost always seen at whatever zoom the user was already editing at —
+typically well above the threshold.
+
+**Fix: none shipped.** Confirmed with the user before writing this entry:
+this is the same zoom-gated behaviour the SVG engine has always had, not a
+canvas2 regression or a data-shape gap between generate and the library.
+Changing it (e.g. giving Generate's auto-fit a zoom floor that keeps bay
+labels legible, or making the label gate ignore zoom for a selected rack)
+would be a deliberate UX decision about when a bay label should be allowed
+to render illegibly-small text, not a bug fix — logged here as a real,
+considered option for a future entry if the team decides the zoom-out-after-
+generate experience should behave differently, but not undertaken
+speculatively against a symptom whose actual cause turned out to be
+correct, intentional code.
+
+**Verify:** the four-step comparison above (generated object dump, panel
+object dump, field diff, before/after-Generate diff of the SAME object,
+zoom-back-in re-check) is itself the verification — no code changed, so
+the "log both full objects" comparison is the artifact this entry exists
+to preserve, not a before/after-a-fix pair. Zero console errors across
+every step. No commit beyond this log entry; 309 unit tests and the build
+are unaffected (no source changed).
+
+**Lesson:** a user's confident hypothesis about WHERE a bug lives ("some
+field is missing") is a lead to test, not a fact to build a fix on top of.
+The instruction to "compare field-by-field, log both full objects" was the
+right process regardless of whose hypothesis it confirmed — it happened to
+disprove this one instead, and the fastest way to find that out was running
+the actual comparison rather than reasoning about what COULD differ. A
+gate this deliberate (a literal screen-width readability threshold, ported
+on purpose from the SVG engine) is exactly the kind of thing that LOOKS
+like a missing-field bug from the "some racks show labels, some don't"
+symptom alone, and is expensive to mis-diagnose: "fixing" a field that
+isn't actually the cause would have shipped a no-op change while leaving
+the real (and arguably correct) zoom-dependent behaviour completely
+unexplained in the codebase.
+
+---
+
 ## Template for new entries
 
 ```
