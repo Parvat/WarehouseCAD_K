@@ -11,7 +11,6 @@ import {
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
-import { dlog, debugOn } from './debugLog'
 
 /* Beam/lane racks whose applyResize branch handles its own snapping
    internally (bay/tower/lane counts, not raw pixels) — ported verbatim from
@@ -51,7 +50,7 @@ const EMPTY_CANVAS_ZOOM = 0.15
    CANVAS2.md rule 6) and a setter for it, and returns the handlers Canvas2.jsx
    wires onto the Stage plus the cursor/marquee state those gestures drive. */
 export function useCanvasInteraction({
-  stageRef, view, setView, size, objects, noteHandlerFired, dblClickFitEnabled = false,
+  stageRef, view, setView, size, objects, dblClickFitEnabled = false,
 }) {
   const [cursor, setCursor] = useState('default')
   const [marquee, setMarquee] = useState(null)
@@ -277,7 +276,6 @@ export function useCanvasInteraction({
     if (!stage) return
 
     const evt = e.evt
-    noteHandlerFired?.('stage (target=' + (e.target && e.target.getClassName ? e.target.getClassName() : '?') + ')')
 
     /* Middle button and held space pan over ANYTHING — the unambiguous escape
        hatches, checked before any hit test so they can never be shadowed by
@@ -740,8 +738,9 @@ export function useCanvasInteraction({
      But it can't stop there: the store's OWN placeFpObject (called by
      generate — CANVAS2.md rule 1, frozen brain, not ours to fix) sets its
      own zoom/pan whenever a floor plan is placed, computed from
-     document.getElementById('canvas-container') — the SVG canvas's id. Under
-     the flag, that element does not exist, so it silently falls back to a
+     document.getElementById('canvas-container') — the OLD SVG engine's id,
+     retired along with the rest of it (CANVAS2_BUGLOG.md's final entry).
+     That element never exists now, so this always silently falls back to a
      hardcoded 900x600 guess instead of this canvas's real size, and hands
      back whatever zoom fits the building into THAT — wrong for canvas2's
      actual container, and stale forever after a one-shot latch (a
@@ -792,13 +791,6 @@ export function useCanvasInteraction({
 
       const liveFpIds = useCanvasStore.getState().objects.filter(isFloorPlan).map(o => o.id)
       const v = fitToContent()
-      if (debugOn()) {
-        dlog('auto-fit', [
-          v ? `zoom ${(v.zoom * 100).toFixed(1)}%  pan ${Math.round(v.panX)},${Math.round(v.panY)}`
-            : 'nothing to fit yet (empty scene)',
-          `objects ${n}  floor plans ${liveFpIds.length}  container ${Math.round(size.w)}x${Math.round(size.h)}`,
-        ])
-      }
       if (v) {
         didAnyFit.current = true
         for (const id of liveFpIds) fittedFpIds.current.add(id)

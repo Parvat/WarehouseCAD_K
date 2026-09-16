@@ -1,16 +1,12 @@
-import { useState, useEffect, useSyncExternalStore } from 'react'
+import { useState, useEffect } from 'react'
 import { TopBar }     from './components/Toolbar/TopBar'
 import { LeftPanel }  from './components/LeftPanel/index'
-import { CanvasArea } from './components/Canvas/CanvasArea'
 import { RightPanel } from './components/RightPanel/index'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useCanvasStore } from './store/useCanvasStore'
 import { FloatingToolbar } from './components/LeftPanel/FloatingToolbar'
 import { GeneratePanel } from './components/Generate/GeneratePanel'
-import { ColumnCheckOverlay } from './components/Canvas/ColumnCheckOverlay'
-import { KonvaStage } from './components/Canvas/KonvaStage'
 import { Canvas2 } from './canvas2/Canvas2'
-import { subscribeCanvas2Flag, isCanvas2Enabled } from './canvas2/flag'
 import { ColumnCheckProvider } from './generate/useColumnCheck'
 import { RulesProvider } from './rules/useRules'
 import { Login } from './shell/Login'
@@ -43,8 +39,6 @@ export default function App() {
   useKeyboardShortcuts()
   const { uiTheme, uiScale, restoreAutoSave, hasAutoSave, setUiTheme } = useCanvasStore()
   const [view, setView] = useState('login')
-  /* Which canvas is live. Exactly one is mounted at a time. */
-  const canvas2 = useSyncExternalStore(subscribeCanvas2Flag, isCanvas2Enabled, () => false)
 
   useEffect(() => {
     if (hasAutoSave()) restoreAutoSave()
@@ -66,27 +60,19 @@ export default function App() {
     >
       {/* The column check is a read-only lens over the canvas store, so the
           provider wraps the editor rather than living in it. The forklift
-          input (GeneratePanel), the red markings (ColumnCheckOverlay) and the
-          absorb/remove list (RightPanel) all read one derived result. */}
+          input (GeneratePanel) and the absorb/remove list (RightPanel) both
+          read one derived result. The on-canvas red conflict markings
+          (ColumnCheckOverlay) were an SVG-engine-only overlay, retired with
+          it — see CANVAS2_BUGLOG.md's final entry. */}
       <RulesProvider>
       <ColumnCheckProvider>
         <TopBar />
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <FloatingToolbar />
-          {/* ONE canvas or the other, never both. The new Konva canvas owns its
-              own pointer events, so nothing here is layered over anything: when
-              it is live the SVG canvas and everything that portals into it are
-              simply not mounted. */}
-          {canvas2 ? <Canvas2 /> : <CanvasArea />}
+          <Canvas2 />
           <RightPanel />
         </div>
         <GeneratePanel />
-        {!canvas2 && <>
-          {/* Both portal into #canvas-container, which only the SVG canvas
-              provides — so they travel with it. */}
-          <ColumnCheckOverlay />
-          <KonvaStage />
-        </>}
       </ColumnCheckProvider>
       </RulesProvider>
       <button onClick={() => setView('hub')} title="Back to hub" style={{

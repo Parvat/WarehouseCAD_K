@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
+import { useState, useRef, useEffect } from 'react'
 /* Grid3X3 / Ruler / Magnet left with the icon toggles they labelled — those
    three are switches in the settings menu now, named in words. */
 import { Scissors, Copy, Clipboard, Undo2, Redo2, ZoomIn, ZoomOut,
@@ -6,8 +6,6 @@ import { Scissors, Copy, Clipboard, Undo2, Redo2, ZoomIn, ZoomOut,
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { UNITS } from '../../constants'
 import { RulesPanel } from '../Rules/RulesPanel'
-import { isKonvaEnabled, setKonvaEnabled, subscribeKonvaFlag } from '../Canvas/konvaFlag'
-import { isCanvas2Enabled, setCanvas2Enabled, subscribeCanvas2Flag } from '../../canvas2/flag'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
 
 /* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
@@ -185,8 +183,6 @@ export function TopBar() {
   /* Menu open/closed is presentation state — component-local, never the store. */
   const [menuOpen, setMenuOpen] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
-  const konvaOn = useSyncExternalStore(subscribeKonvaFlag, isKonvaEnabled, () => false)
-  const canvas2On = useSyncExternalStore(subscribeCanvas2Flag, isCanvas2Enabled, () => false)
   const menuRef = useRef(null)
 
   useEffect(() => {
@@ -333,21 +329,6 @@ export function TopBar() {
                 onClick={() => { setRulesOpen(true); setMenuOpen(false) }}>
                 Rules profiles…
               </MenuItem>
-            </MenuGroup>
-
-            <MenuGroup label="Renderer">
-              {/* Migration flag: mounts the Konva Stage alongside the SVG
-                  canvas. Off is today's renderer, unchanged. */}
-              <MenuRow label="Konva canvas (beta)">
-                <Switch on={konvaOn} onClick={() => setKonvaEnabled(!konvaOn)}
-                  label="Toggle Konva renderer" />
-              </MenuRow>
-              {/* The clean-start canvas. Unlike the row above, this one
-                  REPLACES the SVG canvas rather than mounting beside it. */}
-              <MenuRow label="New canvas (clean start)">
-                <Switch on={canvas2On} onClick={() => setCanvas2Enabled(!canvas2On)}
-                  label="Toggle new canvas" />
-              </MenuRow>
             </MenuGroup>
 
             <MenuGroup label="Appearance">

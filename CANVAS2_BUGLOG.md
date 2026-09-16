@@ -1112,6 +1112,123 @@ context (`objects`, here) that function needs through to each call site."
 
 ---
 
+## BUG 17 — Final migration step: the SVG canvas retired, canvas2 is now the only renderer
+
+**Symptom:** not a bug — the last step. Every prior entry in this log
+(BUG 1 through BUG 16) existed to bring canvas2 to parity with the SVG
+engine it was built beside: resize/rotate, selection chrome, dimension
+labels, floor-plan wall resize, PDF export, object placement, aisles. Once
+BUG 16 closed, nothing on the audit list (the report that produced BUG 14/
+15/16) remained missing. This entry is the actual removal: the SVG
+renderer/input files retired, canvas2 made the sole, unconditional canvas.
+
+**Chased:** the real work here was scoping the move correctly, not fixing
+anything. Grepped every real `import ... from` (not comment mentions — an
+early pass over-matched dozens of canvas2 files that only mention
+`ShapeGeometry`/`CanvasOverlays`/etc. in "ported from" comments) to build
+the true dependency graph before moving a single file, so nothing still
+live got orphaned and nothing already-dead got missed. Three findings that
+weren't obvious from the task description alone:
+- `App.jsx`'s `{!canvas2 && <><ColumnCheckOverlay/><KonvaStage/></>}` gated
+  TWO unrelated things together: the column-check conflict-mark overlay
+  (SVG-only, already known-missing from canvas2 per an earlier audit entry)
+  AND a completely separate, already-ABANDONED early Konva migration
+  prototype (`KonvaStage.jsx` + its own dependency tree — `KonvaScene.jsx`,
+  `KonvaTransformer.jsx`, `KonvaOverlay.jsx`, `KonvaFallback.jsx`,
+  `useKonvaRackInteraction.js`, `konvaInputRouter.js`, its own separate
+  `konvaFlag.js`), superseded by BUG 9's ported-geometry rebuild (canvas2
+  itself) and never removed. It portals into `#canvas-container`, the SVG
+  engine's own element, so it could never have worked once that's gone
+  either way — moved out alongside the SVG files rather than left behind as
+  dead weight with nothing referencing it.
+- `TopBar.jsx` carried a UI toggle for that same abandoned prototype's flag
+  (`isKonvaEnabled`/`setKonvaEnabled`, a "Konva canvas (beta)" switch) right
+  next to canvas2's own mount-flag toggle, in one `MenuGroup label="Renderer"`
+  block — both toggles removed together, since a switch for a feature that
+  can no longer do anything is worse than no switch.
+- `utils/canvasContainer.js` (BUG 15's own fix) branched on
+  `isCanvas2Enabled()` to pick between two container ids — with only one
+  canvas left, that branch is dead weight; simplified to always resolve
+  `canvas2-container`, dropping its dependency on the now-deleted flag
+  module entirely.
+
+**Cause:** n/a — completion, not a defect.
+
+**Fix:**
+- Moved (git mv, history preserved) 19 files from `components/Canvas/` into
+  a new `src/_svg_reference/` — the six named in this step (`CanvasArea.jsx`,
+  `CanvasUI.jsx`, `ShapeGeometry.jsx`, `CanvasObjectCore.jsx`,
+  `CanvasObjects.jsx`, `CanvasOverlays.jsx`, `AnnotationObjects.jsx`) plus
+  their own SVG-only support (`Rulers.jsx`, `StatusBar.jsx`,
+  `ColumnCheckOverlay.jsx`, `exportMode.js`) and the abandoned Konva
+  prototype cluster described above. Left `components/Canvas/FloorPlan.jsx`
+  where it was — already unreferenced by anything before this change (a
+  pre-existing, unrelated orphan), out of this step's scope.
+- Deleted outright (not moved — nothing to preserve for reference):
+  `canvas2/flag.js` (the mount flag itself — "remove the flag branching"
+  means it has no reason to exist once nothing branches on it),
+  `canvas2/DebugPanel.jsx`, `canvas2/debugLog.js`, `canvas2/clickDiagnostics.js`
+  — all three marked "TEMPORARY... delete once the interaction bugs are
+  understood" in their own header comments, and every bug they existed to
+  make visible (BUG 1–7) has been closed for a long time.
+- `App.jsx`: `{canvas2 ? <Canvas2/> : <CanvasArea/>}` → unconditional
+  `<Canvas2/>`; the `{!canvas2 && ...}` block removed entirely along with
+  its now-orphaned imports.
+- `TopBar.jsx`: both renderer-toggle imports and the whole "Renderer" menu
+  group removed.
+- `canvas2/Canvas2.jsx` / `useCanvasInteraction.js`: the two debug-hook
+  calls, the `noteHandlerFired` threading, and the auto-fit `dlog` block
+  removed — exactly the "pull the two hook calls out of Canvas2.jsx and
+  this file can be deleted with nothing else to touch" instructions
+  `clickDiagnostics.js`'s own header already gave.
+
+**Verify:** real Chromium, scripted (Playwright), the plain root URL — no
+flag, no query param (the mechanism that would have read one no longer
+exists). Confirmed `#canvas2-container` exists and neither `#canvas-container`
+nor `#canvas-svg` do. Ran the full interaction matrix against this
+flag-less boot, all real mouse/keyboard events: click-select, shift
+multi-select, bay-select, Shift-held marquee select, single-object drag,
+floor-plan-cascade drag (a parented rack follows its building), bay-
+quantized rack resize, rack rotate, floor-plan wall resize, aisle
+create/select/delete (the real "+ Create Aisle Label" button, a real click
+on the gap, a real Delete keypress) — every one passed. Exported a PDF
+(floor plan + rack) from this same flag-less boot: a real popup with a real
+SVG containing `<path>`/`<rect>` elements, confirming the headless exporter
+(BUG 14) genuinely never depended on the SVG engine being mounted, as
+designed. Zero console errors across every script. Two script iterations
+briefly showed a marquee/drag "failure" that turned out to be test-script
+bugs (Shift not actually held during a marquee attempt — canvas2's own
+`onStageMouseDown` only arms a marquee when `evt.shiftKey` is true,
+otherwise an empty-space drag pans, by design), not application bugs —
+caught by isolating and re-running each gesture cleanly rather than trusting
+the first combined run. 309 unit tests pass; production build clean, and
+~142KB smaller (781KB vs 923KB) with the entire SVG engine and the
+abandoned Konva prototype excluded from the bundle — direct evidence
+nothing live still references them.
+
+**User-facing behaviour change, not a regression:** the column-check red
+conflict-mark overlay (`ColumnCheckOverlay.jsx`) has no canvas2 equivalent
+and is now permanently unreachable (previously reachable only when the SVG
+engine was the active renderer, which — until this step — a user could
+still choose). This was already a known, documented gap (an earlier audit
+entry, and `DimensionLabels.jsx`'s own header comment), not something newly
+broken here; it is simply no longer possible to work around by switching
+renderers, because there is only one renderer now. Porting it is real,
+scoped work for a future entry, not something to silently skip mentioning.
+
+**Lesson:** a "delete the old engine" step is a dependency-graph problem
+before it is a deletion problem. The task description named six files by
+memory; the actual live dependency graph (real `import` statements, not
+comment mentions) turned up thirteen more — an abandoned SECOND prototype
+sharing the same removal gate, a UI toggle for it nobody had connected to
+"the SVG engine" mentally, and a helper (this session's own BUG 15 fix)
+whose branching logic quietly assumed two renderers would always both
+exist. Grep for real imports, not names remembered from a task description,
+and check every consumer of anything you're about to delete before you
+delete it — not just the six things you were told about.
+
+---
+
 ## Template for new entries
 
 ```

@@ -6,9 +6,6 @@ import { Overlays } from './Overlays'
 import { ResizeHandlesOverlay } from './ResizeHandlesOverlay'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { debugOn } from './debugLog'
-import { DebugPanel } from './DebugPanel'
-import { useClickCensus, useNativeClickTrace } from './clickDiagnostics'
 import { useCanvasInteraction } from './useCanvasInteraction'
 import { clampZoom } from './viewport'
 
@@ -198,16 +195,10 @@ export function Canvas2() {
 
   useEffect(() => { apply() }, [size.w, size.h])
 
-  /* TEMPORARY diagnostics — see clickDiagnostics.js. noteHandlerFired is
-     threaded into the interaction hook so its stage handler can stamp itself
-     onto the same click record the capture-phase listener started. */
-  useClickCensus({ stageRef, objects, selectedIds, zoom })
-  const noteHandlerFired = useNativeClickTrace({ stageRef })
-
   const [dblClickFitEnabled, toggleDblClickFit] = useDblClickFitSetting()
 
   const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee } =
-    useCanvasInteraction({ stageRef, view, setView, size, objects, noteHandlerFired, dblClickFitEnabled })
+    useCanvasInteraction({ stageRef, view, setView, size, objects, dblClickFitEnabled })
 
   return (
     <div
@@ -216,7 +207,6 @@ export function Canvas2() {
       className="flex-1 relative overflow-hidden"
       style={{ background: colors.bg, cursor }}
     >
-      {debugOn() && <DebugPanel />}
       {/* The primary fit-to-content control. Double-click can do the same
           thing, but only when the setting to its right is turned on — off by
           default, since double-click is also reached for while editing and a

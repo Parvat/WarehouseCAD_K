@@ -482,11 +482,10 @@ export function AisleShape({ obj, objects, listening = false, bind }) {
     <Group name={nodeName(obj.id)} listening={listening} {...(bind ? bind(obj) : null)}>
       {/* Paints nothing (matches the SVG's own unselected "transparent" rect)
           but still registers a Konva hit region, the same sceneFunc-empty /
-          hitFunc-real split HitPad above uses — so the click-census
-          diagnostics (clickDiagnostics.js) see an aisle as hittable too,
-          consistent with every other selectable shape, even though the
-          selection DECISION itself comes from hitTest.js's own aisleRect
-          check, not from Konva's hit graph (CANVAS2.md rule 4). */}
+          hitFunc-real split HitPad above uses — consistent with every other
+          selectable shape here, even though the selection DECISION itself
+          comes from hitTest.js's own aisleRect check, not from Konva's hit
+          graph (CANVAS2.md rule 4). */}
       <Shape
         listening={listening}
         perfectDrawEnabled={false}
