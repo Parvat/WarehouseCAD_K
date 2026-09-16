@@ -1628,6 +1628,112 @@ doesn't.
 
 ---
 
+## BUG 22 — Smart-guide alignment snapping was missing from canvas2's object drag
+
+Symptom:  Dragging a rack near another object's edge or centre under
+canvas2 did nothing special — no snap, no alignment guide line — unlike
+the SVG engine, which magnet-snaps a dragged object's edges/centres to
+nearby objects (and floor-plan inner walls / column faces) and shows a
+dashed guide line while it does.
+
+Chased:   The task named `snapToDimPoint` as one of the three things to
+port, alongside `snapDelta`/`smartGuides`. Read closely, `snapToDimPoint`
+(CanvasArea.jsx ~216) is a DIFFERENT, unrelated feature — the DIMENSION
+TOOL's own endpoint snap, used only while DRAWING a new dimension line
+(its one call site inside the mousemove handler is in the `drag.type ===
+'draw'` branch for `ANNOT.DIMENSION`, never in the `'move'` branch that
+handles dragging an existing object). It shares an `onMouseMove`
+dependency array with the real move-drag code purely because both live in
+one giant callback, not because dragging an object calls it. The actual
+object-drag smart-guide feature — the one the task's own verify criteria
+describe ("drag a rack near another's edge → it snaps and a guide line
+shows") — is a SEPARATE, entirely inline block inside CanvasArea's
+`drag.type === 'move'` branch (~688-827), with its own THRESH/SNAP_DIST/
+WALL_THRESH/WALL_SNAP constants and its own guide-building logic. Ported
+that block; did not port `snapToDimPoint` (out of scope — a different
+tool, not touched here, logged so the naming mismatch in the task itself
+is on record rather than silently "fixed" by porting the wrong function).
+
+Also chased: how a guide-snap should interact with canvas2's own
+grid-snap-while-dragging (`st.snapToGrid`), which the SVG engine does not
+have at all for a move — CanvasArea's 'move' branch never calls `doSnap`.
+Rather than removing canvas2's already-existing (non-SVG) grid-snap
+behaviour, a guide snap now wins over it per-axis when one fires (matching
+CanvasArea's own snap being unconditional), with grid-snap remaining the
+fallback on an axis with nothing nearby to align to.
+
+Cause:    Not a bug — a genuine missing port, Step-5-scope work that
+BUG 12's floor-plan/rack drag port never covered because the SVG feature
+it corresponds to (an inline, un-named block deep in one mousemove
+handler) is easy to miss when porting file-by-file rather than
+gesture-by-gesture.
+
+Fix:      New `src/canvas2/smartGuides.js` — `computeSmartGuides(selectedIds,
+objects, gridSize, zoom, dx, dy)`, a pure function ported from CanvasArea's
+inline block: partitions objects into `others` (plain edge/centre
+snapping), `fpWalls` (floor-plan inner wall faces) and `colGrids` (column
+faces), computes the dragged selection's shifted bounds from the RAW
+pointer delta, checks every candidate pair against THRESH (6/zoom, for
+drawing a guide) and SNAP_DIST/WALL_SNAP (8/zoom and 32/zoom, tighter —
+for actually moving the object), and returns de-duplicated guide-line
+descriptors plus the best `snapDx`/`snapDy` per axis. No React/Konva/DOM,
+so the drag handler (decides what to move) and the painter (decides what
+to draw) share one computation (CANVAS2.md rule 4).
+
+`useCanvasInteraction.js`'s plain object-drag mousemove now calls this
+every frame with the raw delta, applies `snapDx`/`snapDy` over canvas2's
+existing grid-snap on whichever axis fires, and feeds the resulting
+`guides` array into a new `smartGuides` piece of React state (mouseup
+clears it) — the one deliberate exception to this drag's own "no store
+write, no React render per frame" rule (BUG 6/12's `collectDragNodes`
+trick still moves the dragged NODES imperatively with zero React
+involvement): a few guide-line overlay nodes are cheap to re-render every
+frame, the same way `marquee` state already updates live during a marquee
+drag, and it is the only way React ever sees the lines to paint them.
+Commit is unaffected — `d.delta` already carries whichever (grid- or
+guide-) adjusted dx/dy was computed, and mouseup's existing single
+`moveObjects(d.ids, d.delta.dx, d.delta.dy)` call was already the "one
+history entry for the whole gesture" commit.
+
+`Overlays.jsx` renders the `smartGuides` array as Konva `Line`s — CanvasArea's
+own colours (purple `#a78bfa` for wall/column snaps, green `#22c55e` for
+object-to-object) and dash pattern, but as plain literal stroke widths
+with `strokeScaleEnabled` rather than SVG's raw `/zoom` numbers (BUG 20's
+established lesson — Konva's own non-scaling-stroke mechanism, not a
+manual re-derivation of it).
+
+Verify:   Real mouse, via Playwright. Placed two racks 100 world units
+apart (A's right edge at x=200, B's left edge at x=300) and dragged A by a
+raw ~96-unit delta — short of exact alignment, but within SNAP_DIST(8).
+Mid-drag screenshot shows a green dashed vertical guide line at the
+snapped edge while A's own body is still visibly being dragged (store
+`objects` unchanged during the drag — confirms the plain-drag node-move
+optimization is untouched). Released: A landed at EXACTLY x=100 (right
+edge = 300, perfectly flush with B's left edge), not the approximate
+dragged position — confirms the snap, not just the guide, fired.
+`historyIndex` advanced by exactly one step for the whole gesture. Called
+`undo()` once: A reverted to its exact pre-drag `x=0`, `historyIndex` back
+to its pre-drag value. Zero console errors throughout. Build clean (1785
+modules), 309/309 tests pass (no existing test touches this path).
+
+Lesson:   A task's own naming of a source function can be wrong without
+the underlying request being wrong — `snapToDimPoint` and the real
+move-drag snap logic sit a few hundred lines apart in the same file,
+solve visually-similar problems (both are "snap this point to something
+nearby"), and share one `useCallback`'s dependency array, all of which
+make it easy to misattribute one for the other from a skim. Reading the
+actual call sites (which branch calls which function) before porting
+settled it in minutes and avoided porting a working feature (dimension
+tool endpoint snap) into the wrong place while leaving the actually-
+requested behaviour (object drag alignment) unbuilt. Also: not every gap
+found this late in the migration is a BUG in existing canvas2 code — some
+are still-missing ports of real SVG features that simply weren't part of
+whatever gesture-by-gesture pass already happened (this one, evidently,
+skipped one inline block CanvasArea's own file structure made easy to
+miss) — the log entry, and the fix, look the same either way.
+
+---
+
 ## Template for new entries
 
 ```

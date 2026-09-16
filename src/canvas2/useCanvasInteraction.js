@@ -6,6 +6,7 @@ import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
 import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
+import { computeSmartGuides } from './smartGuides'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
   movedIdsFor, objectCentre, isFloorPlan,
@@ -55,6 +56,7 @@ export function useCanvasInteraction({
 }) {
   const [cursor, setCursor] = useState('default')
   const [marquee, setMarquee] = useState(null)
+  const [smartGuides, setSmartGuides] = useState([])
 
   const spaceDown = useRef(false)
   useEffect(() => {
@@ -661,19 +663,43 @@ export function useCanvasInteraction({
         let dy = world.y - d.startWorld.y
 
         const st = useCanvasStore.getState()
-        if (st.snapToGrid) {
+
+        /* Smart guides — CanvasArea's own inline move-drag snap (NOT
+           snapToDimPoint, which is the separate dimension-TOOL endpoint
+           snap for drawing a new dimension line; this is the "drag an
+           existing object near another's edge/centre" feature, computed
+           from the RAW pointer delta exactly like CanvasArea does — the
+           SVG engine has no grid-snap on a move drag at all, only this.
+           A guide snap wins over canvas2's own (non-SVG) grid-snap-while-
+           dragging on whichever axis it fires, since it is the more
+           precise, deliberately-aimed adjustment; grid-snap is still the
+           fallback on an axis with no nearby guide, preserving that
+           already-existing canvas2 behaviour rather than replacing it. */
+        const { guides, snapDx, snapDy } = computeSmartGuides(
+          d.ids, st.objects, st.gridSize, view.current.zoom, dx, dy)
+
+        if (snapDx != null) dx = snapDx
+        else if (st.snapToGrid) {
           /* Snap the resulting POSITION, not the delta — snapping the delta
              would preserve whatever sub-grid offset the object started with.
              Only the GRABBED object snaps; the rest of the selection moves by
              that same delta, so the set keeps its internal spacing instead of
              each piece collapsing onto its own nearest gridline. */
           dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
+        }
+        if (snapDy != null) dy = snapDy
+        else if (st.snapToGrid) {
           dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
         }
         d.delta = { dx, dy }
+        setSmartGuides(guides)
 
         /* Preview by offsetting the nodes themselves: no store write and no
-           React render per frame. */
+           React render per frame — the guide LINES themselves are the one
+           exception (setSmartGuides above), the same lightweight per-frame
+           React state marquee already uses; it is a handful of overlay
+           nodes, not the object tree BUG 12's node-move trick exists to
+           keep off the hot path. */
         for (const n of d.nodes) n.node.position({ x: n.rest.x + dx, y: n.rest.y + dy })
         stage.batchDraw()
         return
@@ -747,6 +773,7 @@ export function useCanvasInteraction({
         } else {
           stageRef.current?.batchDraw()
         }
+        setSmartGuides([])
         setCursor(spaceDown.current ? 'grab' : 'default')
         return
       }
@@ -892,5 +919,5 @@ export function useCanvasInteraction({
     return () => cancelAnimationFrame(raf)
   }, [size.w, size.h, objects])
 
-  return { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee }
+  return { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides }
 }
