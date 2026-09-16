@@ -588,6 +588,27 @@ export function outlineBounds(obj, gridSize = 40, objects = []) {
    branch) — every other type ignores it, so callers that never select an
    aisle can omit it exactly as before. */
 export function SelectionOutline({ obj, gridSize = 40, objects = [] }) {
+  /* A floor plan traces its OWN fpVerts directly — always the true,
+     exact polygon, tight at any orientation — rather than an
+     outlineBounds Rect wrapped in spin(). A building's rotation is baked
+     straight into fpVerts (FloorPlanShape paints no separate rotation
+     transform at all — see fpRotate.js's own header), so a Rect+spin()
+     box here would be exactly BUG 20's mistake again: an axis-aligned
+     bounding box of already-rotated content, ballooning past 45° instead
+     of hugging the walls. Tracing fpVerts sidesteps the whole class of
+     bug — there is no bounding box to keep in sync, just the same points
+     FloorPlanShape itself draws from, this render and every one after. */
+  if (obj.fpVerts && obj.fpVerts.length >= 3) {
+    const pts = obj.fpVerts.flatMap(v => [v.x, v.y])
+    return (
+      <Line name={'sel:' + obj.id}
+        points={pts} closed
+        stroke="#4a9eff" strokeWidth={2}
+        strokeScaleEnabled={false} perfectDrawEnabled={false}
+        shadowForStrokeEnabled={false} listening={false}
+      />
+    )
+  }
   const b = outlineBounds(obj, gridSize, objects)
   if (!b) return null
   return (

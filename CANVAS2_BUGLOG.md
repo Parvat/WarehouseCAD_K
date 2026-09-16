@@ -1734,6 +1734,263 @@ miss) — the log entry, and the fix, look the same either way.
 
 ---
 
+## BUG 23 — Floor-plan rotation was missing entirely: a building is a container, and canvas2 had no rotate handle for one at all
+
+Symptom:  A floor plan under canvas2 had no rotate control whatsoever —
+`handleTarget`'s gate (the resize/rotate handle surface) only ever fired
+for `PORTED_RACK_TYPES`, so selecting a building alone showed no chrome
+beyond the plain selection outline. The SVG engine has `FpRotateHandle`
+(CanvasUI.jsx) for exactly this.
+
+Chased:   The task asked to port "how FpRotateHandle + the store rotate
+the fp and cascade to children — match the reference, don't reinvent."
+Read closely (every `parentId` reference in CanvasArea.jsx/
+CanvasObjectCore.jsx, and the generic `handle === 'rotate'` mousemove
+branch both FpRotateHandle and the rack rotate handle share), the SVG
+reference has NO cascade-to-children logic anywhere — the generic rotate
+branch writes exactly one object's `rotation` field
+(`useCanvasStore.getState().updateObject(objId, { rotation: snapped })`)
+and nothing else, regardless of whether that object is a rack or a
+building. This is a genuine, pre-existing gap in the SVG engine itself
+(confirmed, not assumed — the same kind of investigation BUG 22's
+`snapToDimPoint` mixup required), not a cascade this file failed to find.
+The task's own functional spec and verify criteria ("racks stay in their
+relative positions," "one undo reverts all") describe real, necessary
+behaviour regardless — built fresh, using the SAME rigid-rotation
+decomposition (orbit the shared pivot + spin each member in place)
+CANVAS2_BUGLOG's group-rotate entries (BUG 19-21) already established and
+proved correct for this exact shape of problem, just scoped to "this fp's
+current children by parentId" instead of "the current selection," and
+with the pivot pinned to the building's own centre rather than group
+rotate's shared-selection centroid.
+
+Also chased: whether the floor plan's own `rotation` field should be
+bumped by the delta, matching every OTHER rotatable object. It must NOT
+be — canvas2 draws a floor plan purely from `fpVerts` (`FloorPlanShape`
+applies no separate rotation transform at all, CANVAS2.md rule 4), so a
+building's turn has to be baked directly into fpVerts's own absolute
+coordinates, the same way a wall drag (BUG 13) reshapes fpVerts directly
+rather than writing a transform. Setting `rotation` ON TOP of that would
+double-rotate anything that reads it off an fp object —
+`SelectionOutline`'s `spin()`, which measures `outlineBounds` (already the
+rotated verts) and would rotate THAT again, turning the selection chrome
+away from the true building outline as the delta grows. Children ARE
+different: a rack's own paint path (`RackShape`) DOES read `obj.rotation`
+via `spin()`, so a child's rotation field has to be bumped by the same
+delta, or an axis-aligned rack orbiting a turned building would stay
+axis-aligned instead of turning with it — the orbit-alone-with-no-spin
+version was checked by hand against the verify criteria ("racks stay in
+their relative positions") and rejected: without the spin component a
+rack would end up in the right PLACE but the wrong ORIENTATION, still
+visibly wrong.
+
+Also chased, proactively (the task's own explicit "live bounds, not
+stale — same lesson as the group-rotate/chrome-offset bugs" instruction):
+whether the SelectionOutline gets this right for an ALREADY-rotated
+building. It did not, on the first pass that would have shipped — the
+existing fp branch of `outlineBounds`/`SelectionOutline` draws an
+axis-aligned `Rect` from the verts' own bounding box, exactly BUG 20's
+mistake (an AABB of rotated content, ballooning past 45° instead of
+hugging the walls) if a building actually turned. Fixed before it ever
+shipped by giving `SelectionOutline` a dedicated fpVerts branch: trace the
+polygon directly with a closed `Line`, no bounding box at all — always
+exact, at any angle, because there is no box to keep in sync, only the
+same points `FloorPlanShape` itself paints from.
+
+Cause:    Not a bug — a genuine missing port (no fp rotate handle existed
+at all) plus one real design decision that had to be made correctly up
+front (rotation baked into fpVerts, not a field) rather than copied
+blindly from how every OTHER object type already works.
+
+Fix:      New `src/canvas2/fpRotate.js` — `computeFpRotateHandle(fp,
+gridSize, zoom)` (FpRotateHandle's own 56/zoom stalk, 8/zoom hit circle —
+distinct numbers from the rack rotate handle's 70/zoom, a separate SVG
+component with its own constants; uses `outlineBounds`, the fpVerts-
+derived TRUE bounds, not `getObjectBounds`'s raw x/y/width/height fields
+the SVG source reads — BUG 13's own lesson, a handle anchored to a stale
+bbox is exactly the bug class this feature must avoid), 
+`fpRotateHandleHitTest`, and `applyFpRotation(fpBase, childrenBase, pivot,
+angleDeg)` — rotates the fp's OWN fpVerts directly (no `rotation` field
+write) and every child's centre around the SAME fixed pivot plus that
+child's own `rotation` field, mirroring `applyGroupRotation`'s per-type
+branches but keyed off a snapshot Map of "this fp's current children,"
+not the selection.
+
+New `src/canvas2/FpRotateHandleOverlay.jsx` — pure paint, `FpRotateHandle`'s
+geometry/colours ported, no `spin()` (the handle reads the LIVE, already-
+rotated `outlineBounds` every render — an ordinary React re-render is
+"live bounds, not stale" for free, since the drag writes a real store
+update every frame, BUG 13's own wall-drag pattern, not BUG 12's zero-
+store-write node trick).
+
+`src/canvas2/shapes.jsx`'s `SelectionOutline` gained the fpVerts-tracing
+branch described above (a closed `Line`, ahead of the existing `Rect`+
+`spin()` fallback used by every other type).
+
+`Canvas2.jsx` — a new `fpRotateTarget` (single-selection, `isFloorPlan`,
+parallel to but independent from `handleTarget`'s rack gate) mounts
+`FpRotateHandleOverlay`. `useCanvasInteraction.js` — a `fpRotateDrag` ref
+parallel to `groupRotateDrag`: `onStageMouseDown` checks the fp handle
+(inside the existing `selectedIds.length === 1` branch, alongside — not
+instead of — the rack handle check) before the plain hitTest, same
+"handle wins the press" priority as every other handle; window
+`mousemove` writes `applyFpRotation`'s updates for the fp and every child
+via `updateObject` each frame (real store writes, BUG 13's pattern);
+window `mouseup` commits ONE history entry via `commitObjectUpdate` on the
+fp alone (`pushHistory` snapshots the whole `s.objects` array, children
+included). Hover-cursor guards and the idle-hover 'alias' cursor extended
+to match.
+
+Verify:   Real mouse, via Playwright. Seeded an `fp_rect` (400×300) with
+two ASYMMETRICALLY-placed child racks (a 200×40 at (50,50) and a 100×40-ish
+at (250,200) — deliberately off-centre from the building's own centre
+(200,150), so "orbit + spin correctly" and "stay tight to the pivot" are
+actually being tested, not accidentally satisfied by symmetry). Dragged
+the fp's rotate handle through a slow ~90° turn:
+  - Screenshot at ~45°: the building is a tight diamond, BOTH racks
+    visibly turned to the same diagonal and sit in their correct relative
+    positions inside it, and the selection outline traces the diamond
+    exactly — not a loose axis-aligned box.
+  - At 90° committed: building is now 300×400 (correctly swapped), both
+    racks are vertical, selection outline is a tight rectangle matching
+    the new orientation.
+  - Numerically: fpVerts landed at EXACTLY the hand-computed rotated
+    corners ((350,-50),(350,350),(50,350),(50,-50) for a 90° turn around
+    pivot (200,150)); rack A landed at EXACTLY (230,30) rotation 90; rack
+    B at EXACTLY (80,230) rotation 90 — both matching independently
+    hand-derived expected values, not just "looked right."
+  - `fp.rotation` stayed `0` throughout (confirms the double-rotation
+    trap was avoided).
+  - `historyIndex` advanced by exactly ONE step for the whole gesture
+    (fp + both children). `undo()` once reverted the fp's fpVerts and
+    BOTH racks' x/y/rotation to their exact original values.
+  - Zero console errors throughout. Build clean (1789 modules), 309/309
+    tests pass (no existing test touches this path).
+
+Lesson:   A task's framing ("match the reference, don't reinvent") is
+sound advice for the parts that genuinely exist in the reference, but
+applying it uncritically to a part that DOESN'T (the children cascade)
+would have meant either fabricating a "port" of code that was never
+there, or worse, silently shipping single-object-only rotation while
+believing it matched a reference that never covered the container case.
+Verifying the reference's actual behaviour (not just its named functions)
+before building is the same discipline BUG 22 needed for `snapToDimPoint`,
+now needed twice in as many features — worth treating as a standing
+habit, not a one-off. Separately: "don't just copy how the last similar
+feature worked" is sometimes the correct call even when two features look
+architecturally identical (this one and group rotate share the exact same
+rigid-rotation math) — group rotate's members ALL get their `rotation`
+field bumped because they ALL paint through `spin()`; blindly extending
+that same rule to the fp itself would have been wrong, because the fp
+does NOT paint through `spin()` — it was necessary to check what the
+actual PAINTER does for a given object type before deciding whether
+`rotation` is safe to write, not assume architectural symmetry implies
+identical treatment. Also: this session's own established pattern
+(BUG 20/21 — a fresh piece of chrome can reintroduce the "stale/loose
+bounds" bug class on day one) is worth checking PROACTIVELY for every new
+chrome component, before it ships and gets its own bug number — done here
+for SelectionOutline's fp branch specifically because the task named that
+exact lesson explicitly, catching a real, would-have-shipped regression
+before any real user (or test) saw it.
+
+---
+
+## BUG 24 — Floor-plan rotate handle bounced/jittered instead of tracking smoothly
+
+Symptom:  During a floor-plan rotate (BUG 23), the rotate-handle pin
+visibly bounced — growing away from the building and retreating again as
+the drag progressed — instead of sweeping a clean, settled arc the way
+the single-object and group rotate handles already do.
+
+Chased:   Not a React-render-timing issue (the first hypothesis worth
+ruling out, given BUG 11's "same-frame handle tracking" precedent) — the
+fp rotate drag already writes a real store update every frame (BUG 13's
+pattern), and BUG 23's own verification already confirmed the underlying
+rotation data lands exactly on hand-computed values every frame, live.
+The actual cause was geometric, not timing: `computeFpRotateHandle`
+anchored the handle to `outlineBounds`' AABB of the LIVE (rotating)
+fpVerts — the exact same mistake BUG 20 already diagnosed and fixed for
+group rotate's outline, just reintroduced in a brand-new component that
+didn't exist yet when BUG 20/21 were written. An axis-aligned bounding
+box of a ROTATING rectangle isn't a rigid shape: its width/height (and
+therefore its top edge, which the handle was anchored 56px above) grow
+toward the shape's own diagonal as it turns past 0° and shrink back down
+approaching 90° — non-monotonic, which is exactly a "grows, doesn't
+settle" bounce, not smooth tracking.
+
+Group rotate solved this (BUG 21) by wrapping a tight LOCAL shape in ONE
+rigid Konva rotation transform (spin()'s own position+offset+rotate
+pattern). A floor plan has nothing to hand that transform to — its
+rotation is baked directly into fpVerts, not a field a Group could read
+(fpRotate.js's own header) — so the SAME fix couldn't be ported directly;
+a different rigid anchor was needed that works from vertex DATA alone,
+live during a drag or on an already-rotated, freshly-selected building
+alike (no separate "how far has this turned" value exists anywhere for
+an fp, unlike a rack's `rotation` field or a live drag's own `totalDelta`).
+
+Cause:    `computeFpRotateHandle`'s rx/ry, being derived from
+`outlineBounds` (an AABB recomputed fresh from the CURRENT verts every
+call), moved along a NON-rigid, non-monotonic path as the polygon
+rotated — verified numerically (see Verify): the AABB-anchored handle's
+distance from the building's own pivot ranged from 206 to ~306 and back
+to ~268 across a 100° sweep of a 400×300 rectangle, a ~100-world-unit
+radial bounce, while its ANGLE from the pivot stayed flat (a rectangle's
+AABB is always centred on the true centre by symmetry, which is why the
+bug reads as "bounces toward/away" rather than "swings side to side").
+
+Fix:      `computeFpRotateHandle` (`src/canvas2/fpRotate.js`) now anchors
+to `fpVerts[0]`/`fpVerts[1]` directly — the polygon's own first edge, the
+SAME edge every floor-plan shape's `initFpVerts` starts with (its top
+wall, for fp_rect/l/l_mirror/t/u/cross alike) — rather than a derived
+box. The handle sits a constant screen distance (56/zoom) OUTWARD along
+that edge's own normal (the edge direction rotated -90°, verified against
+initFpVerts's clockwise winding to point away from the interior), with
+the stalk's near-wall point similarly offset (6/zoom). Because `v0`/`v1`
+are two REAL points that `applyFpRotation` already rotates exactly every
+frame, their midpoint and the normal derived from their direction vector
+both rotate PERFECTLY rigidly around the pivot with no separate state to
+track — the same rigidity guarantee `spin()` gives a single object,
+built from vertex data instead of a transform. `FpRotateHandleOverlay.jsx`
+updated to draw the stalk between the new (no-longer-purely-vertical)
+near-wall and near-circle points, computed from the same outward normal.
+
+Verify:   Numerically, via Playwright: seeded the same 400×300 `fp_rect`
+BUG 23 used, dragged its rotate handle through a slow ~100° sweep in 20
+small steps (steps: 3 each, matching a real slow drag), and at each step
+computed the handle's distance from the building's own pivot (200,150)
+using BOTH the new (fpVerts-edge) formula AND the old (outlineBounds-AABB)
+formula it replaced, reading the SAME live, already-verified-correct
+fpVerts from the store at every sample. New formula: distance stayed
+EXACTLY 206 (variance: 0) across all 20 samples spanning the whole sweep
+— a perfect, unwavering arc. Old formula: distance ranged from 206 up to
+305.9 and back down to ~256-268 — a ~100-unit non-monotonic bounce,
+concretely reproducing the reported symptom and confirming the fix
+removes it entirely, not just reduces it. Zero console errors throughout.
+Build clean (1789 modules), 309/309 tests pass (no existing test touches
+this paint-only path; BUG 23's own rotation-math verification is
+untouched by this fix, which only changed WHERE the handle is drawn, not
+how the fp/children are rotated).
+
+Lesson:   A bug class documented once (BUG 20's "AABB of rotating content
+isn't rigid") doesn't stay fixed just because the ORIGINAL instance of it
+got fixed — every NEW piece of chrome for a rotatable object has to
+independently earn the same rigidity, and "I already fixed this exact
+class of bug for group rotate" is not the same claim as "I applied that
+fix here," which BUG 23's own shipped `computeFpRotateHandle` didn't
+(despite BUG 23's own bug-log entry explicitly citing BUG 20/21 by name
+as the lesson to apply to the SELECTION OUTLINE — the outline got the
+fix, the handle quietly didn't, in the same commit). Also: when the
+straightforward port of an established fix doesn't apply (group rotate's
+Konva-transform trick has no floor-plan equivalent, since there's no
+rotation field to hand it), the right move is to find a DIFFERENT rigid
+anchor suited to the data that actually exists (two real, already-
+correctly-rotating vertices) rather than settling for "at least it's
+live" (BUG 23's own `outlineBounds` version WAS live — freshly recomputed
+every render — and still wrong, because live and rigid are different
+properties and only rigid actually prevents a bounce).
+
+---
+
 ## Template for new entries
 
 ```

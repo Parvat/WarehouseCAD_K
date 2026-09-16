@@ -5,10 +5,12 @@ import { Scene } from './Scene'
 import { Overlays } from './Overlays'
 import { ResizeHandlesOverlay } from './ResizeHandlesOverlay'
 import { GroupRotateOverlay } from './GroupRotateOverlay'
+import { FpRotateHandleOverlay } from './FpRotateHandleOverlay'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useCanvasInteraction } from './useCanvasInteraction'
 import { clampZoom } from './viewport'
+import { isFloorPlan } from './selection'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
    A Konva Stage that owns its own pointer events. No router, no forwarding, no
@@ -142,6 +144,16 @@ export function Canvas2() {
      (GroupRotateOverlay below), ported from CanvasUI.jsx's GroupOutline —
      see groupRotate.js. */
   const handleTarget = selectedObjects.length === 1 && PORTED_RACK_TYPES.has(selectedObjects[0].type)
+    ? selectedObjects[0] : null
+
+  /* A floor plan gets its OWN, rotate-only handle (FpRotateHandle — no
+     8-square resize grid: an fp resizes through its wall-vertex drag,
+     BUG 13, not this). Single-object only, same as handleTarget above —
+     rotating a building as part of a multi-selection isn't this feature
+     (group rotate, BUG 19, already covers "2+ objects turn together";
+     this is specifically the container-rotation cascade to an fp's OWN
+     children by parentId). */
+  const fpRotateTarget = selectedObjects.length === 1 && isFloorPlan(selectedObjects[0])
     ? selectedObjects[0] : null
 
   const colors = useMemo(() => {
@@ -281,6 +293,9 @@ export function Canvas2() {
               smartGuides={smartGuides} />
             {handleTarget && (
               <ResizeHandlesOverlay obj={handleTarget} zoom={zoom} gridSize={gridSize} />
+            )}
+            {fpRotateTarget && (
+              <FpRotateHandleOverlay obj={fpRotateTarget} gridSize={gridSize} zoom={zoom} />
             )}
             {selectedObjects.length >= 2 && (
               <GroupRotateOverlay objects={selectedObjects} zoom={zoom} />
