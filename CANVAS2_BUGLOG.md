@@ -1895,6 +1895,102 @@ before any real user (or test) saw it.
 
 ---
 
+## BUG 24 — Floor-plan rotate handle bounced/jittered instead of tracking smoothly
+
+Symptom:  During a floor-plan rotate (BUG 23), the rotate-handle pin
+visibly bounced — growing away from the building and retreating again as
+the drag progressed — instead of sweeping a clean, settled arc the way
+the single-object and group rotate handles already do.
+
+Chased:   Not a React-render-timing issue (the first hypothesis worth
+ruling out, given BUG 11's "same-frame handle tracking" precedent) — the
+fp rotate drag already writes a real store update every frame (BUG 13's
+pattern), and BUG 23's own verification already confirmed the underlying
+rotation data lands exactly on hand-computed values every frame, live.
+The actual cause was geometric, not timing: `computeFpRotateHandle`
+anchored the handle to `outlineBounds`' AABB of the LIVE (rotating)
+fpVerts — the exact same mistake BUG 20 already diagnosed and fixed for
+group rotate's outline, just reintroduced in a brand-new component that
+didn't exist yet when BUG 20/21 were written. An axis-aligned bounding
+box of a ROTATING rectangle isn't a rigid shape: its width/height (and
+therefore its top edge, which the handle was anchored 56px above) grow
+toward the shape's own diagonal as it turns past 0° and shrink back down
+approaching 90° — non-monotonic, which is exactly a "grows, doesn't
+settle" bounce, not smooth tracking.
+
+Group rotate solved this (BUG 21) by wrapping a tight LOCAL shape in ONE
+rigid Konva rotation transform (spin()'s own position+offset+rotate
+pattern). A floor plan has nothing to hand that transform to — its
+rotation is baked directly into fpVerts, not a field a Group could read
+(fpRotate.js's own header) — so the SAME fix couldn't be ported directly;
+a different rigid anchor was needed that works from vertex DATA alone,
+live during a drag or on an already-rotated, freshly-selected building
+alike (no separate "how far has this turned" value exists anywhere for
+an fp, unlike a rack's `rotation` field or a live drag's own `totalDelta`).
+
+Cause:    `computeFpRotateHandle`'s rx/ry, being derived from
+`outlineBounds` (an AABB recomputed fresh from the CURRENT verts every
+call), moved along a NON-rigid, non-monotonic path as the polygon
+rotated — verified numerically (see Verify): the AABB-anchored handle's
+distance from the building's own pivot ranged from 206 to ~306 and back
+to ~268 across a 100° sweep of a 400×300 rectangle, a ~100-world-unit
+radial bounce, while its ANGLE from the pivot stayed flat (a rectangle's
+AABB is always centred on the true centre by symmetry, which is why the
+bug reads as "bounces toward/away" rather than "swings side to side").
+
+Fix:      `computeFpRotateHandle` (`src/canvas2/fpRotate.js`) now anchors
+to `fpVerts[0]`/`fpVerts[1]` directly — the polygon's own first edge, the
+SAME edge every floor-plan shape's `initFpVerts` starts with (its top
+wall, for fp_rect/l/l_mirror/t/u/cross alike) — rather than a derived
+box. The handle sits a constant screen distance (56/zoom) OUTWARD along
+that edge's own normal (the edge direction rotated -90°, verified against
+initFpVerts's clockwise winding to point away from the interior), with
+the stalk's near-wall point similarly offset (6/zoom). Because `v0`/`v1`
+are two REAL points that `applyFpRotation` already rotates exactly every
+frame, their midpoint and the normal derived from their direction vector
+both rotate PERFECTLY rigidly around the pivot with no separate state to
+track — the same rigidity guarantee `spin()` gives a single object,
+built from vertex data instead of a transform. `FpRotateHandleOverlay.jsx`
+updated to draw the stalk between the new (no-longer-purely-vertical)
+near-wall and near-circle points, computed from the same outward normal.
+
+Verify:   Numerically, via Playwright: seeded the same 400×300 `fp_rect`
+BUG 23 used, dragged its rotate handle through a slow ~100° sweep in 20
+small steps (steps: 3 each, matching a real slow drag), and at each step
+computed the handle's distance from the building's own pivot (200,150)
+using BOTH the new (fpVerts-edge) formula AND the old (outlineBounds-AABB)
+formula it replaced, reading the SAME live, already-verified-correct
+fpVerts from the store at every sample. New formula: distance stayed
+EXACTLY 206 (variance: 0) across all 20 samples spanning the whole sweep
+— a perfect, unwavering arc. Old formula: distance ranged from 206 up to
+305.9 and back down to ~256-268 — a ~100-unit non-monotonic bounce,
+concretely reproducing the reported symptom and confirming the fix
+removes it entirely, not just reduces it. Zero console errors throughout.
+Build clean (1789 modules), 309/309 tests pass (no existing test touches
+this paint-only path; BUG 23's own rotation-math verification is
+untouched by this fix, which only changed WHERE the handle is drawn, not
+how the fp/children are rotated).
+
+Lesson:   A bug class documented once (BUG 20's "AABB of rotating content
+isn't rigid") doesn't stay fixed just because the ORIGINAL instance of it
+got fixed — every NEW piece of chrome for a rotatable object has to
+independently earn the same rigidity, and "I already fixed this exact
+class of bug for group rotate" is not the same claim as "I applied that
+fix here," which BUG 23's own shipped `computeFpRotateHandle` didn't
+(despite BUG 23's own bug-log entry explicitly citing BUG 20/21 by name
+as the lesson to apply to the SELECTION OUTLINE — the outline got the
+fix, the handle quietly didn't, in the same commit). Also: when the
+straightforward port of an established fix doesn't apply (group rotate's
+Konva-transform trick has no floor-plan equivalent, since there's no
+rotation field to hand it), the right move is to find a DIFFERENT rigid
+anchor suited to the data that actually exists (two real, already-
+correctly-rotating vertices) rather than settling for "at least it's
+live" (BUG 23's own `outlineBounds` version WAS live — freshly recomputed
+every render — and still wrong, because live and rigid are different
+properties and only rigid actually prevents a bounce).
+
+---
+
 ## Template for new entries
 
 ```

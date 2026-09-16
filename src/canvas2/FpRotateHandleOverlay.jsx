@@ -11,6 +11,16 @@ import { computeFpRotateHandle } from './fpRotate'
    rotate drag writes a real store update every frame, exactly like BUG 13's
    wall drag, so this component simply re-renders from fresh data each
    frame with no imperative sync needed at all).
+
+   BUG 24: computeFpRotateHandle no longer anchors to an AABB (the earlier
+   version's own "live bounds, not stale" wasn't the whole story — an AABB
+   IS live, but it isn't RIGID, so the handle still visibly wobbled as the
+   building turned). It now anchors to the polygon's own first edge, with
+   an outward NORMAL direction rather than a fixed "straight up" — the
+   stalk's near-wall point (lx,ly) and near-circle point are no longer
+   both directly above rx,ry, so both ends are computed from the normal
+   explicitly instead of assuming a vertical line.
+
    No onMouseDown either: which press lands on the handle is decided once,
    geometrically, in useCanvasInteraction's onStageMouseDown via
    fpRotate.js's fpRotateHandleHitTest, the same function this uses to know
@@ -18,11 +28,11 @@ import { computeFpRotateHandle } from './fpRotate'
 export function FpRotateHandleOverlay({ obj, gridSize, zoom }) {
   const h = computeFpRotateHandle(obj, gridSize, zoom)
   if (!h) return null
-  const { rx, ry, ly, r } = h
+  const { rx, ry, lx, ly, nx, ny, r } = h
 
   return (
     <>
-      <Line points={[rx, ly, rx, ry + r]}
+      <Line points={[lx, ly, rx - nx * r, ry - ny * r]}
         stroke="#f0b429" strokeWidth={1.2} opacity={0.7}
         strokeScaleEnabled={false} listening={false} />
       <Circle x={rx} y={ry} radius={r}

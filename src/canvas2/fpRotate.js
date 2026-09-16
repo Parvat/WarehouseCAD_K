@@ -53,23 +53,56 @@ function rotPt(p, angleDeg, pivot) {
 }
 
 /** The floor plan's own rotate-handle geometry — FpRotateHandle ported
- *  (56/zoom stalk, 6/zoom line gap, 8/zoom hit circle). Uses outlineBounds
- *  (the fpVerts-derived TRUE bounds — BUG 13's own lesson: the stored raw
- *  x/y/width/height fields can disagree with the actual polygon), not
- *  getObjectBounds's raw fields the SVG source reads — a handle anchored
- *  to a stale bbox would be exactly the "chrome offset from the object"
- *  bug class this whole feature is required to avoid. `pivot` (the
- *  building's own centre) is exported alongside the paint geometry so the
- *  hit-test, the drag-start snapshot, and the painter can never disagree
- *  on where either the handle or the rotation pivot sit. */
+ *  (56/zoom stalk, 6/zoom line gap, 8/zoom hit circle).
+ *
+ *  BUG 24: the first version of this anchored rx/ry to outlineBounds — the
+ *  AABB of the LIVE fpVerts. That is exactly BUG 20's mistake transplanted
+ *  into a new component: an axis-aligned box of ROTATING content doesn't
+ *  turn as a rigid shape, it grows/shrinks/re-centres continuously as the
+ *  polygon spins, so a handle anchored to its top edge visibly wobbles
+ *  instead of sweeping a clean arc — the box's own centre and width both
+ *  move non-uniformly with the rotation angle. Group rotate solved the
+ *  same class of problem (BUG 21) by wrapping a TIGHT LOCAL shape in ONE
+ *  rigid Konva rotation transform; a floor plan has no such transform to
+ *  wrap in (fpRotate.js's own header — rotation is baked into fpVerts, not
+ *  a field), so there is nothing to hand a Group's `rotation` prop.
+ *
+ *  Fixed by anchoring to two REAL points instead of a derived box: fpVerts
+ *  index 0 and 1 — every floor-plan shape's own initFpVerts starts with
+ *  this exact edge (its top wall, before any rotation ever happened, for
+ *  fp_rect/l/l_mirror/t/u/cross alike), and it is already always fully
+ *  and exactly rotated along with the rest of the polygon, needing no
+ *  separate "how far has this turned" value at all — live mid-drag or on
+ *  an already-rotated, freshly-selected building alike. The handle sits a
+ *  constant screen distance OUTWARD along that edge's own normal, rather
+ *  than "above the AABB" — rigid by construction, the same guarantee
+ *  spin() gives a single object, just built from two vertices instead of
+ *  a transform. */
 export function computeFpRotateHandle(fp, gridSize, zoom) {
+  const verts = fp.fpVerts
+  if (!verts || verts.length < 2) return null
   const b = outlineBounds(fp, gridSize)
   if (!b) return null
-  const rx = b.x + b.width / 2
-  const ry = b.y - 56 / zoom
-  const ly = b.y - 6 / zoom
+  const pivot = { x: b.x + b.width / 2, y: b.y + b.height / 2 }
+
+  const v0 = verts[0], v1 = verts[1]
+  const mx = (v0.x + v1.x) / 2, my = (v0.y + v1.y) / 2
+  const ex = v1.x - v0.x, ey = v1.y - v0.y
+  const len = Math.hypot(ex, ey) || 1
+  /* Outward normal: the edge direction rotated -90° (screen-space) — for
+     initFpVerts's own clockwise winding this points away from the
+     interior on every shape (verified against fp_rect's unrotated case:
+     v0->v1 runs +X along the top wall, and (ey/len, -ex/len) comes out
+     (0,-1), i.e. up and away from the building — the same direction the
+     original AABB-top math put the handle in when nothing was rotated). */
+  const nx = ey / len, ny = -ex / len
+
+  const rx = mx + nx * 56 / zoom
+  const ry = my + ny * 56 / zoom
+  const lx = mx + nx * 6 / zoom
+  const ly = my + ny * 6 / zoom
   const r = 8 / zoom
-  return { rx, ry, ly, r, pivot: { x: b.x + b.width / 2, y: b.y + b.height / 2 } }
+  return { rx, ry, lx, ly, nx, ny, r, pivot }
 }
 
 /** Whether a world point falls on the fp rotate handle — same r hit
