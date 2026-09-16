@@ -18,10 +18,19 @@ import { computeGroupOutline } from './groupRotate'
    still needs the manual /zoom, since Konva has no strokeScaleEnabled
    equivalent for a Rect's own width/height/cornerRadius.
 
-   No spin() here: unlike a single object's handles, this box is a plain
-   axis-aligned world-space rect around the selection's combined bounds —
-   computeGroupOutline itself folds each member's own rotation into that
-   box (see groupRotate.js), rather than this component rotating a Group.
+   spin()-style transform (BUG 21): unlike BUG 20's first fix, this box is
+   NOT a plain axis-aligned world-space rect any more. computeGroupOutline
+   returns the box in its own LOCAL (pre-rotation) coordinates plus ONE
+   transform, {P, R} — the exact spin() pattern (position a Group at a
+   pivot, offset the SAME pivot, rotate around itself) generalised from
+   "one object's own bounds centre" to "the group's shared centroid P".
+   Position and offset are set to the SAME point (P) rather than to the
+   box's own separately-computed centre — see groupRotate.js's header for
+   why that specific choice is what makes the placement land exactly on
+   the live objects regardless of whatever pivot the actual rotate gesture
+   used internally. This is what keeps the box TIGHT (never an AABB that
+   grows as the group turns) and rigidly attached to the group's real
+   orientation, live during a drag and after commit.
    No onMouseDown either: which press lands on the handle is decided once,
    geometrically, in useCanvasInteraction's onStageMouseDown via
    groupRotate.js's groupRotateHandleHitTest, the same function this uses to
@@ -29,10 +38,11 @@ import { computeGroupOutline } from './groupRotate'
 export function GroupRotateOverlay({ objects, zoom }) {
   const g = computeGroupOutline(objects, zoom)
   if (!g) return null
-  const { minX, minY, maxX, maxY, pad, hx, hy, ly, r } = g
+  const { minX, minY, maxX, maxY, pad, hx, hy, ly, r, P, R } = g
 
   return (
-    <Group name="grouprotate" listening={false}>
+    <Group name="grouprotate" listening={false}
+      x={P.x} y={P.y} offsetX={P.x} offsetY={P.y} rotation={R}>
       <Rect
         x={minX - pad - 3 / zoom} y={minY - pad - 3 / zoom}
         width={maxX - minX + pad * 2 + 6 / zoom} height={maxY - minY + pad * 2 + 6 / zoom}

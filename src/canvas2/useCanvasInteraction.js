@@ -221,15 +221,16 @@ export function useCanvasInteraction({
 
   /* Group rotate handle mousedown — CanvasArea's onGroupRotateStart, ported.
      `base` snapshots every selected object at drag-start (basePositions'
-     canvas2 equivalent); `cx/cy` is the ANGLE pivot only (GroupOutline's own
-     bbox centre) — the POSITION pivot applyGroupRotation recomputes itself
-     from `base`, deliberately not the same value (see groupRotate.js). */
+     canvas2 equivalent); `cx/cy` is the ANGLE pivot only (computeGroupOutline's
+     own P, the selection's current centroid) — the POSITION pivot
+     applyGroupRotation recomputes itself from `base`, deliberately not the
+     same value (see groupRotate.js). */
   const beginGroupRotateDrag = (objs) => {
     const g = computeGroupOutline(objs, view.current.zoom)
     if (!g) return
     groupRotateDrag.current = {
       ids: objs.map(o => o.id),
-      cx: g.gcx, cy: g.gcy,
+      cx: g.P.x, cy: g.P.y,
       base: new Map(objs.map(o => [o.id, { ...o }])),
       startAngle: undefined,
       lastAngle: undefined,

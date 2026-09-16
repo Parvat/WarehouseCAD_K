@@ -9,85 +9,126 @@
 //
 // Two pivots, kept deliberately separate because that is what the SVG source
 // itself does:
-//   - the ANGLE pivot (gcx/gcy below) — the selection's bounding-box centre,
-//     used for both the visual handle position and the atan2() driving the
-//     drag.
+//   - the ANGLE pivot (P below) — used for both the visual handle position
+//     and the atan2() driving the drag.
 //   - the POSITION-ROTATION pivot recomputed inside applyGroupRotation, from
 //     each object's own raw x1/x/cx fields — exactly what rotateGroup (the
-//     store action) recomputes internally rather than accepting gcx/gcy.
+//     store action) recomputes internally rather than accepting P.
 // rotateGroup never receives GroupOutline's centre; applyGroupRotation
 // mirrors that structure rather than unifying the two pivots into one.
 //
-// ONE deliberate departure from a literal GroupOutline port: BUG 19's first
-// cut summed each member's RAW getObjectBounds (its own unrotated local
-// rect), which is what a spin()-wrapped Konva Group also starts from for a
-// SINGLE object — but a single object's Group then physically rotates via
-// spin(), while this box never did, so a member's own rotation (set by a
-// completed or in-progress group rotate) left the box motionless while the
-// racks visibly turned under it (BUG 20). getGroupCorners below rotates
-// each member's own 4 corners about its own centre by ITS OWN
-// obj.rotation — the same transform spin() applies to the object itself —
-// before folding them into the shared AABB, so the box always encloses
-// what is actually painted, live during the drag and after commit, for any
-// 2+ selection regardless of how it got its current rotation.
+// TWO departures from a literal GroupOutline port, both from bugs found
+// testing BUG 19's first cut:
+//
+// BUG 20 (first attempt, superseded): summing each member's RAW
+// getObjectBounds gave a box that never moved once a member actually had
+// rotation !== 0 — fixed by folding each member's OWN rotation into an
+// axis-aligned bounding box of their rotated corners. That tracked, but
+// grew/shrank as an AABB of rotated content always does, instead of
+// staying a tight, oriented box that turns WITH the group — unlike the
+// single-object SelectionOutline, which rotates a Konva Group (spin())
+// around the object's own UNROTATED bounds rather than recomputing an
+// AABB every frame.
+//
+// BUG 21 (this fix): match that approach. Every member of a completed or
+// in-progress group rotate shares the SAME rotation R (applyGroupRotation
+// adds the identical angleDeg to every member — see the store's own
+// rotateGroup, ported above), which means the WHOLE selection is a single
+// rigid body turning by R around ONE point — exactly what spin() does for
+// one object, just generalised to many. getGroupOutline below:
+//   1. finds P, the mean of every member's CURRENT bounds-centre (their
+//      true current position, already reflecting any live/committed
+//      rotation) — recomputed fresh on every call, not cached from
+//      drag-start, which is what keeps it exactly correct through a live
+//      drag without needing to know applyGroupRotation's own internal
+//      pivot (proven below, "why P works regardless of the true pivot").
+//   2. de-rotates each member's current centre by -R around P — this
+//      reconstructs the group's TRUE relative arrangement (each member's
+//      position relative to the others) exactly, for ANY choice of
+//      reference point, because rotating a rigid formation's relative
+//      vectors by R and then undoing that same R always cancels exactly;
+//      P only has to be used CONSISTENTLY for the de-rotation and the
+//      final placement, not equal any "true" pivot.
+//   3. folds those de-rotated (now axis-aligned again) member rects into
+//      one tight AABB — the box's own LOCAL, unrotated shape.
+//   4. hands that box to the caller alongside a SINGLE Konva transform,
+//      { x: P, y: P, offsetX: P, offsetY: P, rotation: R } — offset EQUAL
+//      to position, so the local content rotates in place around P with
+//      no net translation, the exact spin() pattern (position a Group at
+//      a pivot, rotate around itself) generalised from "one object's own
+//      bounds-centre" to "the group's shared centroid P".
+//
+// Why step 1's fresh P is safe even though applyGroupRotation's own
+// internal pivot C is generally a DIFFERENT point (a different formula,
+// over raw x1/x/cx corners rather than a mean of centres): for a member A,
+// worldPositionOfLocalPoint(lx,ly) = P + Rot(R)*((lx,ly) - P). Substituting
+// localCentreA = P + Rot(-R)*(currentCentreA - P) (step 2's own
+// definition) collapses to exactly currentCentreA for ANY P — the Rot(-R)
+// and Rot(R) cancel algebraically regardless of what point they're taken
+// around, as long as it's the SAME point both times. P need not match C;
+// it only has to be reused, which it always is within one computeGroupOutline
+// call.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getObjectBounds } from '../utils/canvas'
 
-/** obj's own 4 corners, rotated about ITS OWN centre by its own
- *  obj.rotation — the exact transform spin() applies when painting the
- *  object itself, so this always matches what is actually on screen. */
-function rotatedCorners(bounds, rotation) {
-  const cx = bounds.x + bounds.width / 2
-  const cy = bounds.y + bounds.height / 2
-  const corners = [
-    { x: bounds.x, y: bounds.y },
-    { x: bounds.x + bounds.width, y: bounds.y },
-    { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
-    { x: bounds.x, y: bounds.y + bounds.height },
-  ]
-  const rot = rotation || 0
-  if (!rot) return corners
-  const rad = (rot * Math.PI) / 180
+/** Rotate world point `p` by `angleDeg` about `pivot`. */
+function rotateAround(p, angleDeg, pivot) {
+  const rad = (angleDeg * Math.PI) / 180
   const cos = Math.cos(rad), sin = Math.sin(rad)
-  return corners.map(p => ({
-    x: cx + (p.x - cx) * cos - (p.y - cy) * sin,
-    y: cy + (p.x - cx) * sin + (p.y - cy) * cos,
-  }))
+  const dx = p.x - pivot.x, dy = p.y - pivot.y
+  return {
+    x: pivot.x + dx * cos - dy * sin,
+    y: pivot.y + dx * sin + dy * cos,
+  }
 }
 
-/** Visual outline + handle geometry, CanvasUI.jsx's GroupOutline ported
- *  (pad=10, stalk to -44/zoom, handle circle r=10/zoom), but folding in
- *  each member's own rotation (see the file header) so the box tracks the
- *  group live through a rotate instead of lagging at its pre-rotate
- *  footprint. Also the angle-drag pivot (gcx/gcy). */
+/** Visual outline + handle geometry: an ORIENTED box that rotates rigidly
+ *  with the group (see the file header for the derivation), tight around
+ *  the selection the same way a single object's SelectionOutline is —
+ *  never an axis-aligned box that grows/shrinks as the group turns.
+ *  Returns the box in its own LOCAL (pre-rotation) coordinates plus the
+ *  ONE transform ({P, R}) that places it — a caller draws minX/minY/
+ *  maxX/maxY/hx/hy/ly/r exactly as given, inside a Konva Group positioned
+ *  at P, offset at P, rotated by R (spin()'s own pattern, generalised). */
 export function computeGroupOutline(objs, zoom) {
   if (!objs || !objs.length) return null
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  objs.forEach(obj => {
+  const R = objs[0].rotation || 0
+
+  const centres = objs.map(obj => {
     const b = getObjectBounds(obj)
-    for (const c of rotatedCorners(b, obj.rotation)) {
-      minX = Math.min(minX, c.x); minY = Math.min(minY, c.y)
-      maxX = Math.max(maxX, c.x); maxY = Math.max(maxY, c.y)
-    }
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2, b }
   })
+  const P = {
+    x: centres.reduce((s, c) => s + c.x, 0) / centres.length,
+    y: centres.reduce((s, c) => s + c.y, 0) / centres.length,
+  }
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  centres.forEach(({ x, y, b }) => {
+    const lc = rotateAround({ x, y }, -R, P)
+    minX = Math.min(minX, lc.x - b.width / 2); minY = Math.min(minY, lc.y - b.height / 2)
+    maxX = Math.max(maxX, lc.x + b.width / 2); maxY = Math.max(maxY, lc.y + b.height / 2)
+  })
+
   const pad = 10
-  const gcx = (minX + maxX) / 2
-  const gcy = (minY + maxY) / 2
-  const hx = gcx
+  const hx = (minX + maxX) / 2
   const hy = minY - pad - 44 / zoom
   const ly = minY - pad - 8 / zoom
   const r = 10 / zoom
-  return { minX, minY, maxX, maxY, pad, gcx, gcy, hx, hy, ly, r }
+  return { minX, minY, maxX, maxY, pad, hx, hy, ly, r, P, R }
 }
 
 /** Whether a world point falls on the group rotate handle — CanvasUI.jsx's
  *  own hit circle radius, r*2.5 (bigger than the drawn circle, same as its
- *  invisible <circle> hit target). */
+ *  invisible <circle> hit target). The handle's LOCAL (hx,hy) has to be
+ *  carried through the SAME {P,R} transform the paint side uses, or a
+ *  click would miss wherever the rotated handle actually renders. */
 export function groupRotateHandleHitTest(objs, zoom, worldX, worldY) {
   const g = computeGroupOutline(objs, zoom)
   if (!g) return false
-  return Math.hypot(worldX - g.hx, worldY - g.hy) <= g.r * 2.5
+  const world = rotateAround({ x: g.hx, y: g.hy }, g.R, g.P)
+  return Math.hypot(worldX - world.x, worldY - world.y) <= g.r * 2.5
 }
 
 /** Per-object rotation updates for a whole group, ported verbatim from

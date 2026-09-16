@@ -1532,6 +1532,102 @@ has before re-deriving one by hand.
 
 ---
 
+## BUG 21 — Group rotate outline was an axis-aligned bounding box, not a tight box that rotates with the group
+
+Symptom:  Confirmed with a screenshot: BUG 20's fix made the dashed group
+outline track the rotating racks (it no longer stayed motionless), but it
+did so by staying AXIS-ALIGNED and GROWING to bound whatever the current
+rotated footprint was — an AABB of rotated content — instead of turning
+AS a rigid box with the group and staying snug around it. The single-object
+`SelectionOutline` already rotates a tight box that hugs the one selected
+object exactly; the group case looked visibly different (loose, expanding/
+contracting as the angle changed) from that established single-object
+behaviour.
+
+Chased:   The natural first instinct — "rotate the box by the delta the
+current gesture has applied so far" — doesn't generalise past the live
+drag: after a rotate is COMMITTED (or for a fresh render with no drag in
+progress at all, e.g. re-selecting the same two racks later), there is no
+"delta" left to read, only each member's own current `rotation` field. The
+box has to be reconstructed correctly from THAT alone, live or static,
+the same way `SelectionOutline` reconstructs a single object's box purely
+from its current `x/y/width/height/rotation` with no memory of how it got
+there.
+
+Cause:    `computeGroupOutline` (BUG 20's version) summed each member's own
+ROTATED corners into one shared axis-aligned min/max — mathematically
+correct as an enclosing box, but an AABB of a rotated rectangle is
+inherently larger than the rectangle itself (and grows/shrinks continuously
+as the angle changes), which is why it never looked "snug" the way a
+single object's outline does. `SelectionOutline` avoids this entirely: it
+draws the object's own UNROTATED bounds, then turns the whole Konva Group
+(`spin()`) around the object's own centre — geometry stays tight because
+it is never re-measured as an axis-aligned box in the first place, only
+rotated as a rigid shape.
+
+Fix:      `computeGroupOutline` (`src/canvas2/groupRotate.js`) now does the
+group equivalent of `spin()`, worked out algebraically before writing any
+code (see the file's own header comment for the full derivation): every
+member of a group rotate shares the exact same rotation `R`
+(`applyGroupRotation` adds the identical `angleDeg` to every member), which
+means the whole selection is one rigid body turning by `R` around one
+point — the same shape `spin()` handles for a single object, generalised
+to many.
+  1. `P` = the mean of every member's CURRENT bounds-centre — recomputed
+     fresh on every call from live positions (not cached from drag-start).
+  2. Each member's current centre is de-rotated by `-R` around `P`. Proven
+     (not assumed) that this reconstructs the group's TRUE relative
+     arrangement exactly for ANY reference point, because rotating a rigid
+     formation's relative vectors by `R` and undoing that same `R` always
+     cancels algebraically — `P` never has to equal whatever pivot the
+     actual rotate gesture used internally, it only has to be reused
+     consistently within one call.
+  3. Those de-rotated (now axis-aligned again) member rects fold into ONE
+     tight local AABB — the box's own unrotated shape, exactly like
+     `getObjectBounds` is for a single object.
+  4. The caller (`GroupRotateOverlay`) draws that local box inside a Konva
+     Group positioned at `P`, OFFSET AT THE SAME `P` (not the box's own
+     separately-computed centre — proven algebraically that using the SAME
+     point for both position and offset is what makes the placement land
+     exactly on the live objects), rotated by `R` — `spin()`'s own
+     position+offset+rotate pattern, generalised from "one object's own
+     bounds centre" to "the group's shared centroid P".
+
+Verify:   Real mouse, via Playwright, using an ASYMMETRIC pair (a 200x40
+and a 100x40 rack at different offsets — a symmetric pair can accidentally
+look right under either the old AABB approach or the new oriented one, so
+it doesn't distinguish them) selected and dragged through a slow ~75°
+rotation. Screenshots at ~45° and ~75° mid-gesture show the dashed box
+TILTED at the same angle as the racks, staying tight around their actual
+(different-sized, offset) footprint at every intermediate angle — not an
+axis-aligned box growing to contain them. Committed state matches the last
+mid-drag frame exactly. Both racks landed at the identical `rotation: 75`
+(self-consistent — confirms the underlying rotation math, untouched by this
+paint-only fix, still agrees). Zero console errors throughout. Build clean
+(1786 modules), 309/309 tests pass (no existing test touches this
+paint-only path).
+
+Lesson:   "Track the live bounds" (the fix for BUGs 6/10/12/20) and "rotate
+rigidly like a single object does" are two DIFFERENT bars, and clearing the
+first doesn't mean the second is met — BUG 20 genuinely fixed the outline's
+staleness, but the result (a correct, live-tracking AABB) was still visibly
+wrong relative to the established single-object convention, because an AABB
+of rotated content and a rotated rigid box are not the same shape. When a
+new piece of multi-object chrome needs to "match" how existing single-
+object chrome behaves, the right question isn't just "does it track the
+live object" but "does it use the SAME transform mechanism" — here, that
+meant literally reusing `spin()`'s position+offset+rotate pattern rather
+than inventing a parallel live-bounds-recompute approach that happened to
+also update every frame. Also: when a geometric fix depends on an identity
+("using P instead of C still works") that isn't immediately obvious, work
+it out algebraically with a concrete asymmetric numeric example BEFORE
+writing the code — the derivation here initially seemed to require knowing
+`applyGroupRotation`'s own internal pivot, and only checking the algebra by
+hand (twice, catching a real error in the first pass) showed that it
+doesn't.
+
+---
+
 ## Template for new entries
 
 ```
