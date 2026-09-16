@@ -4,6 +4,7 @@ import { Maximize, ToggleLeft, ToggleRight } from 'lucide-react'
 import { Scene } from './Scene'
 import { Overlays } from './Overlays'
 import { ResizeHandlesOverlay } from './ResizeHandlesOverlay'
+import { GroupRotateOverlay } from './GroupRotateOverlay'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useCanvasInteraction } from './useCanvasInteraction'
@@ -133,10 +134,13 @@ export function Canvas2() {
     () => objects.filter(o => selectedIds.includes(o.id)),
     [objects, selectedIds])
 
-  /* Resize/rotate handles are a single-object control surface (matching the
-     SVG's own `!groupSelected` gate — a multi-selection keeps its plain
-     outline, no handles), and only for the rack types render/rackOps.js
-     actually draws (the same set RackShape paints from). */
+  /* Resize handles (and the single-object rotate stalk) stay a single-object
+     control surface — resize is inherently per-object (bay counts, wall
+     verts), and only for the rack types render/rackOps.js actually draws
+     (the same set RackShape paints from). Rotate alone lifts the gate: 2+
+     selected objects get the group outline + rotate handle instead
+     (GroupRotateOverlay below), ported from CanvasUI.jsx's GroupOutline —
+     see groupRotate.js. */
   const handleTarget = selectedObjects.length === 1 && PORTED_RACK_TYPES.has(selectedObjects[0].type)
     ? selectedObjects[0] : null
 
@@ -197,7 +201,7 @@ export function Canvas2() {
 
   const [dblClickFitEnabled, toggleDblClickFit] = useDblClickFitSetting()
 
-  const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee } =
+  const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides } =
     useCanvasInteraction({ stageRef, view, setView, size, objects, dblClickFitEnabled })
 
   return (
@@ -273,9 +277,13 @@ export function Canvas2() {
               second, independent input surface. */}
           <Layer listening={false}>
             <Overlays selectedObjects={selectedObjects} gridSize={gridSize} marquee={marquee}
-              objects={objects} zoom={zoom} showAisles={showAisles} activeWall={activeWall} />
+              objects={objects} zoom={zoom} showAisles={showAisles} activeWall={activeWall}
+              smartGuides={smartGuides} />
             {handleTarget && (
               <ResizeHandlesOverlay obj={handleTarget} zoom={zoom} gridSize={gridSize} />
+            )}
+            {selectedObjects.length >= 2 && (
+              <GroupRotateOverlay objects={selectedObjects} zoom={zoom} />
             )}
           </Layer>
         </Stage>

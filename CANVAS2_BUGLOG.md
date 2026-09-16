@@ -1320,6 +1320,420 @@ unexplained in the codebase.
 
 ---
 
+## BUG 19 — Group rotate was never ported to canvas2: multi-selection had no rotate chrome at all
+
+Symptom:  Selecting 2+ objects under canvas2 showed only the plain per-object
+selection outlines — no bounding box, no rotate handle, no way to turn a
+multi-object selection as a unit. The SVG engine has always supported this
+(CanvasUI.jsx's `GroupOutline`, driven by `CanvasArea.jsx`'s
+`onGroupRotateStart`/`groupRotate` drag), but canvas2's resize/rotate input
+path hard-gated on `selectedIds.length === 1` everywhere, so a 2+ selection
+never got a rotate control at all.
+
+Chased:   The SVG engine's group rotate is keyed off *formal* `groups`
+(objects joined by Ctrl+G — `activeGroupIds`/`groupOutlines` in
+`CanvasObjectCore.jsx`, filtered from `useCanvasStore`'s persisted `groups`
+array), not off the ad-hoc selection. The task asked for the chrome and math
+to key off whatever is currently SELECTED (2+ objects, grouped or not) —
+a deliberate, narrower scope than a full group-management port, so this
+entry does not touch `groups`/`Group`/`Ungroup` at all, only rotate.
+
+Also chased: whether the store needed a new bulk-rotate action generalizing
+`rotateGroup(groupId, angleDeg, basePositions)` to accept a raw id list
+instead of a persisted `groupId` — `useCanvasStore.js` is protected
+(CLAUDE.md rule 2). Resolved without touching it: the exact same
+one-store-write-per-object-per-frame-via-`updateObject`-then-
+one-`commitObjectUpdate`-to-commit pattern the single-object resize/rotate
+gesture already uses (both exported, unprotected actions) gives "N live
+writes, ONE history push" for free — `commitObjectUpdate` on any single
+member pushes history over the store's *entire* `objects` array, which by
+that point already has every other member's rotation written by the
+preceding frame's `updateObject` calls.
+
+Cause:    canvas2 had no group-rotate code path at all — not a bug in
+existing code, a genuine missing port. `useCanvasInteraction.js`'s handle
+check only ever ran for `selectedIds.length === 1`
+(`PORTED_RACK_TYPES`-gated), and `Canvas2.jsx`'s `handleTarget` had the same
+single-object gate feeding `ResizeHandlesOverlay`. Nothing computed a group
+bounding box, hit-tested a group handle, or rotated more than one object at
+once.
+
+Fix:      New `src/canvas2/groupRotate.js` — pure geometry/math, no React/
+Konva/DOM, ported verbatim from two different SVG sources kept deliberately
+separate (matching what the SVG itself does, not "cleaned up" into one):
+  - `computeGroupOutline(objs, zoom)` — CanvasUI.jsx's `GroupOutline` bbox +
+    handle layout (pad=10, stalk to `-44/zoom`, handle circle `r=10/zoom`).
+    Its `gcx/gcy` (getObjectBounds-based bbox centre) is also the ANGLE
+    pivot for the drag.
+  - `groupRotateHandleHitTest(objs, zoom, wx, wy)` — the same `r*2.5` hit
+    circle CanvasUI's own invisible `<circle>` uses.
+  - `applyGroupRotation(base, angleDeg)` — `useCanvasStore`'s `rotateGroup`
+    reducer body ported verbatim (same `cx?? x1?? x` corner formula, same
+    `rotPt`, same per-type branches for circle/line/fpVerts/rect), just fed
+    a `Map` of a plain id list's snapshot instead of a persisted group's
+    `basePositions`. Recomputes its OWN pivot from `base` — intentionally
+    NOT the same value as `computeGroupOutline`'s `gcx/gcy`, because
+    `rotateGroup` never received `GroupOutline`'s centre either.
+
+New `src/canvas2/GroupRotateOverlay.jsx` — pure paint (no listeners, no
+`spin()`: this box is plain axis-aligned world space, not attached to any
+one object's rotation), same colours/dash/sizes as `GroupOutline`. Wired
+into `Canvas2.jsx` alongside `ResizeHandlesOverlay`, gated on
+`selectedObjects.length >= 2`.
+
+`useCanvasInteraction.js`: a `groupRotateDrag` ref parallel to
+`resizeDrag`. `onStageMouseDown` — when 2+ selected, hit-test the group
+handle *before* the plain object hitTest (same "handle wins the press"
+priority as the single-object case) and start the drag, snapshotting every
+selected object. Window `mousemove` — same angle-from-unsnapped-pointer,
+5°/45°(shift) snap-to-first-angle flow as the SVG's `groupRotate` branch,
+writing every member's rotation live via `updateObject` each frame (a real
+store write per frame, same "resize/rotate write every frame" pattern
+already used elsewhere, not the imperative-node-move drag trick — group
+rotate changes N objects' rotation/position, which only a real re-render
+redraws). Window `mouseup` — `commitObjectUpdate` on one member, for the
+single `pushHistory` call. Hover-cursor early-return guards
+(`onStageMouseMove`/`onStageMouseLeave`) extended to include
+`groupRotateDrag.current` alongside the existing gesture refs.
+
+Verify:   Real mouse, via a Playwright script driving actual mousedown/move/
+up on the live app (not a synthetic store call): seeded two `rack_row`
+objects via the store, selected both, screenshotted the resulting chrome —
+dashed purple bounding box around both racks with the stalk+handle centred
+above, matching `GroupOutline`'s look exactly. Dragged from the handle to a
+point 90° around the pivot: both racks' `rotation` became exactly `90` and
+their `x/y` landed at the hand-computed positions for a 90° turn about the
+shared bbox centre (150,70)/(50,70 → wait, (50,50) and (-50,50) — see the
+script's own worked arithmetic). `historyIndex` advanced by exactly ONE
+step across both objects changing. Called `undo()` once: BOTH racks
+reverted to their exact pre-rotate `x/y/rotation`, `historyIndex` back to
+its pre-drag value. Zero console errors throughout. Build clean (1786
+modules), 309/309 tests pass (no existing test touches this path, so no
+regressions from the new gate/branches).
+
+Lesson:   When a store action is scoped to a persisted concept (`groupId` +
+`s.groups`) but the task needs the same behaviour keyed off a DIFFERENT,
+lighter-weight concept (ad-hoc selection), the fix isn't always "generalize
+the protected action" — check whether the existing UNPROTECTED building
+blocks (`updateObject` for a no-history live write, `commitObjectUpdate`
+for a single history push over the WHOLE store) already compose into the
+same guarantee. They did here: N `updateObject` calls + 1
+`commitObjectUpdate` is exactly "N live writes, one undo," without touching
+`useCanvasStore.js` at all. Also: porting math from two DIFFERENT functions
+in the SVG source (`GroupOutline`'s visual centre vs. `rotateGroup`'s
+recomputed pivot) that happen to disagree with each other is still "don't
+reinvent" — unifying them into one pivot would be a real, if minor,
+behaviour change from the SVG original, not a cleanup.
+
+---
+
+## BUG 20 — Group rotate outline didn't track the rotating group, and its stroke width scaled with zoom
+
+Symptom:  Two bugs found by the user testing BUG 19's group rotate, both
+confirmed with a screenshot: (1) mid-gesture and after commit, the dashed
+purple group outline stayed at its ORIGINAL flat, unrotated position and
+size while the two selected racks visibly turned to a diagonal — box and
+racks completely disagreed about where the selection was. (2) the outline's
+stroke got visibly thicker zooming in, unlike every other piece of canvas2
+chrome (resize handles, single-object selection outline), which stay a
+constant screen-width regardless of zoom.
+
+Chased:   Neither was a regression in the rotation MATH itself — a
+console-level check confirmed both racks' `rotation`/`x`/`y` were exactly
+correct throughout (same values as BUG 19's own verification). Both bugs
+were entirely in `GroupRotateOverlay`/`computeGroupOutline`'s PAINT layer,
+not the interaction/store layer BUG 19 added.
+
+Cause (1) — stale outline: `computeGroupOutline` summed each member's RAW
+`getObjectBounds(obj)` — the object's own UNROTATED local rect — the same
+starting point `spin()` uses for a SINGLE object's chrome. But a single
+object's handles/selection outline then get physically turned by wrapping
+them in a Konva `Group` with `spin(obj)`'s rotation transform, matching the
+object's own rotated Group; `GroupRotateOverlay` never did that (deliberate
+at the time — see BUG 19's "No spin() here" note, which reasoned the box
+should stay a plain axis-aligned world rect, not realizing that reasoning
+only holds for an UNROTATED selection). Once a member actually had
+`rotation !== 0` (mid-drag or after a completed group rotate), its raw
+unrotated bounds no longer described where it was actually painted, and
+summing those stale rectangles produced a box that never moved with the
+rotation at all — this is the exact same "chrome computed from bounds that
+don't match live reality" root cause as BUGs 6/10/12 (CANVAS2_BUGLOG's own
+established recurring pattern), just in a FOURTH piece of chrome that
+hadn't existed yet when that pattern was first named.
+
+Cause (2) — stroke scaling with zoom: `GroupRotateOverlay`'s stroke widths
+and dash array were ported from CanvasUI.jsx's raw SVG numbers verbatim,
+INCLUDING their `/zoom` division — copied as a literal transcription without
+registering that the `/zoom` trick and Konva's `strokeScaleEnabled={false}`
+(already set on every one of these shapes) are two DIFFERENT, INCOMPATIBLE
+mechanisms for the same goal ("stroke stays a constant screen width").
+Raw SVG has no non-scaling-stroke primitive, so CanvasUI must manually
+divide by zoom to counteract its own coordinate system's zoom-scaling.
+Konva's `strokeScaleEnabled={false}` already does this automatically — it
+makes Konva treat the given `strokeWidth` number as the FINAL screen-pixel
+width regardless of the Stage's zoom scale. Feeding it an ALREADY-divided
+number (`5/zoom`) compounded the two: the stroke ended up sized
+`(constant) / zoom`, so it shrank at high zoom instead of staying put —
+and, empirically, LOOKED like it grew relative to the tiny (also
+correctly-scaled) rack geometry around it at low zoom, and vice versa —
+the actual bug the user's screenshot-free zoom-in check caught.
+
+Fix:      `src/canvas2/groupRotate.js` — new `rotatedCorners(bounds,
+rotation)` helper: the object's own 4 corners, rotated about ITS OWN centre
+by ITS OWN `obj.rotation` — literally the same transform `spin()` applies
+when painting the object. `computeGroupOutline` now folds every member's
+corners (not just its raw x/y/width/height) into the shared min/max, so the
+box always encloses what is actually on screen, live during the drag (every
+`updateObject` write each frame is a real store write, which re-renders
+`GroupRotateOverlay` with fresh live objects — no imperative Konva-node
+sync needed, same "real store write, dimension labels track for free"
+reasoning BUG 13's floor-plan wall drag already established) and after
+commit, for any 2+ selection regardless of how its members got their
+current rotation.
+
+`src/canvas2/GroupRotateOverlay.jsx` — stroke widths (`5`, `2.5`, `2`, `2`)
+and the dash array (`[8, 4]`) are now plain literals, matching
+`strokeScaleEnabled={false}`'s own convention (ResizeHandlesOverlay/
+SelectionOutline's — "a small literal strokeWidth for constant-screen-width
+lines"), not re-divided by zoom. `cornerRadius` (a genuine geometric SIZE,
+not a stroke property — Konva has no `strokeScaleEnabled` equivalent for
+it) correctly stays `N / zoom`.
+
+Verify:   Real mouse, via Playwright. Seeded and selected two `rack_row`
+objects as in BUG 19, then dragged the group handle through a slow 90°
+turn, screenshotting at ~45° and ~90° mid-gesture (not just before/after):
+at 45° the dashed box is visibly diagonal-encompassing, no longer axis-
+aligned to the ORIGINAL footprint, tightly wrapping the two turning racks
+at their CURRENT diagonal extent; at 90° it re-tightens to a narrow
+vertical box exactly matching the now-vertical racks. Confirmed the
+underlying rotation math is untouched (`rotation: 90`, `x/y` matching
+BUG 19's own hand-computed values) — this entry only touched paint.
+Zoomed the same committed selection from 1x to 3.5x and screenshotted:
+the dashed stroke reads the same thin screen-width at both zooms, no
+visible thickening. Zero console errors throughout. Build clean (1786
+modules), 309/309 tests pass (no existing test touches this paint-only
+path).
+
+Lesson:   The recurring "chrome computed from stale/wrong bounds" bug class
+(BUGs 6, 10, 12, and now this one) isn't finished being found just because
+the LAST piece of chrome that needed it got fixed — every NEW piece of
+selection/gesture chrome added after that fix has to independently earn
+the same "read the object's OWN current rotation/position, the way it's
+actually painted" discipline; a brand-new component (`GroupRotateOverlay`,
+which didn't exist when BUG 12 was written) can reintroduce the identical
+class of bug on day one if its bounds math quietly diverges from what
+`spin()` does for everything else. Separately: porting a raw-SVG numeric
+literal (`5/zoom`) verbatim is only correct when the TARGET renderer has no
+equivalent of its own — Konva's `strokeScaleEnabled` already solves the
+exact problem SVG's manual `/zoom` division solves, so applying both is
+double-compensation, not extra safety. "Port the numbers, not blindly the
+formula that produced them" — check what mechanism the destination already
+has before re-deriving one by hand.
+
+---
+
+## BUG 21 — Group rotate outline was an axis-aligned bounding box, not a tight box that rotates with the group
+
+Symptom:  Confirmed with a screenshot: BUG 20's fix made the dashed group
+outline track the rotating racks (it no longer stayed motionless), but it
+did so by staying AXIS-ALIGNED and GROWING to bound whatever the current
+rotated footprint was — an AABB of rotated content — instead of turning
+AS a rigid box with the group and staying snug around it. The single-object
+`SelectionOutline` already rotates a tight box that hugs the one selected
+object exactly; the group case looked visibly different (loose, expanding/
+contracting as the angle changed) from that established single-object
+behaviour.
+
+Chased:   The natural first instinct — "rotate the box by the delta the
+current gesture has applied so far" — doesn't generalise past the live
+drag: after a rotate is COMMITTED (or for a fresh render with no drag in
+progress at all, e.g. re-selecting the same two racks later), there is no
+"delta" left to read, only each member's own current `rotation` field. The
+box has to be reconstructed correctly from THAT alone, live or static,
+the same way `SelectionOutline` reconstructs a single object's box purely
+from its current `x/y/width/height/rotation` with no memory of how it got
+there.
+
+Cause:    `computeGroupOutline` (BUG 20's version) summed each member's own
+ROTATED corners into one shared axis-aligned min/max — mathematically
+correct as an enclosing box, but an AABB of a rotated rectangle is
+inherently larger than the rectangle itself (and grows/shrinks continuously
+as the angle changes), which is why it never looked "snug" the way a
+single object's outline does. `SelectionOutline` avoids this entirely: it
+draws the object's own UNROTATED bounds, then turns the whole Konva Group
+(`spin()`) around the object's own centre — geometry stays tight because
+it is never re-measured as an axis-aligned box in the first place, only
+rotated as a rigid shape.
+
+Fix:      `computeGroupOutline` (`src/canvas2/groupRotate.js`) now does the
+group equivalent of `spin()`, worked out algebraically before writing any
+code (see the file's own header comment for the full derivation): every
+member of a group rotate shares the exact same rotation `R`
+(`applyGroupRotation` adds the identical `angleDeg` to every member), which
+means the whole selection is one rigid body turning by `R` around one
+point — the same shape `spin()` handles for a single object, generalised
+to many.
+  1. `P` = the mean of every member's CURRENT bounds-centre — recomputed
+     fresh on every call from live positions (not cached from drag-start).
+  2. Each member's current centre is de-rotated by `-R` around `P`. Proven
+     (not assumed) that this reconstructs the group's TRUE relative
+     arrangement exactly for ANY reference point, because rotating a rigid
+     formation's relative vectors by `R` and undoing that same `R` always
+     cancels algebraically — `P` never has to equal whatever pivot the
+     actual rotate gesture used internally, it only has to be reused
+     consistently within one call.
+  3. Those de-rotated (now axis-aligned again) member rects fold into ONE
+     tight local AABB — the box's own unrotated shape, exactly like
+     `getObjectBounds` is for a single object.
+  4. The caller (`GroupRotateOverlay`) draws that local box inside a Konva
+     Group positioned at `P`, OFFSET AT THE SAME `P` (not the box's own
+     separately-computed centre — proven algebraically that using the SAME
+     point for both position and offset is what makes the placement land
+     exactly on the live objects), rotated by `R` — `spin()`'s own
+     position+offset+rotate pattern, generalised from "one object's own
+     bounds centre" to "the group's shared centroid P".
+
+Verify:   Real mouse, via Playwright, using an ASYMMETRIC pair (a 200x40
+and a 100x40 rack at different offsets — a symmetric pair can accidentally
+look right under either the old AABB approach or the new oriented one, so
+it doesn't distinguish them) selected and dragged through a slow ~75°
+rotation. Screenshots at ~45° and ~75° mid-gesture show the dashed box
+TILTED at the same angle as the racks, staying tight around their actual
+(different-sized, offset) footprint at every intermediate angle — not an
+axis-aligned box growing to contain them. Committed state matches the last
+mid-drag frame exactly. Both racks landed at the identical `rotation: 75`
+(self-consistent — confirms the underlying rotation math, untouched by this
+paint-only fix, still agrees). Zero console errors throughout. Build clean
+(1786 modules), 309/309 tests pass (no existing test touches this
+paint-only path).
+
+Lesson:   "Track the live bounds" (the fix for BUGs 6/10/12/20) and "rotate
+rigidly like a single object does" are two DIFFERENT bars, and clearing the
+first doesn't mean the second is met — BUG 20 genuinely fixed the outline's
+staleness, but the result (a correct, live-tracking AABB) was still visibly
+wrong relative to the established single-object convention, because an AABB
+of rotated content and a rotated rigid box are not the same shape. When a
+new piece of multi-object chrome needs to "match" how existing single-
+object chrome behaves, the right question isn't just "does it track the
+live object" but "does it use the SAME transform mechanism" — here, that
+meant literally reusing `spin()`'s position+offset+rotate pattern rather
+than inventing a parallel live-bounds-recompute approach that happened to
+also update every frame. Also: when a geometric fix depends on an identity
+("using P instead of C still works") that isn't immediately obvious, work
+it out algebraically with a concrete asymmetric numeric example BEFORE
+writing the code — the derivation here initially seemed to require knowing
+`applyGroupRotation`'s own internal pivot, and only checking the algebra by
+hand (twice, catching a real error in the first pass) showed that it
+doesn't.
+
+---
+
+## BUG 22 — Smart-guide alignment snapping was missing from canvas2's object drag
+
+Symptom:  Dragging a rack near another object's edge or centre under
+canvas2 did nothing special — no snap, no alignment guide line — unlike
+the SVG engine, which magnet-snaps a dragged object's edges/centres to
+nearby objects (and floor-plan inner walls / column faces) and shows a
+dashed guide line while it does.
+
+Chased:   The task named `snapToDimPoint` as one of the three things to
+port, alongside `snapDelta`/`smartGuides`. Read closely, `snapToDimPoint`
+(CanvasArea.jsx ~216) is a DIFFERENT, unrelated feature — the DIMENSION
+TOOL's own endpoint snap, used only while DRAWING a new dimension line
+(its one call site inside the mousemove handler is in the `drag.type ===
+'draw'` branch for `ANNOT.DIMENSION`, never in the `'move'` branch that
+handles dragging an existing object). It shares an `onMouseMove`
+dependency array with the real move-drag code purely because both live in
+one giant callback, not because dragging an object calls it. The actual
+object-drag smart-guide feature — the one the task's own verify criteria
+describe ("drag a rack near another's edge → it snaps and a guide line
+shows") — is a SEPARATE, entirely inline block inside CanvasArea's
+`drag.type === 'move'` branch (~688-827), with its own THRESH/SNAP_DIST/
+WALL_THRESH/WALL_SNAP constants and its own guide-building logic. Ported
+that block; did not port `snapToDimPoint` (out of scope — a different
+tool, not touched here, logged so the naming mismatch in the task itself
+is on record rather than silently "fixed" by porting the wrong function).
+
+Also chased: how a guide-snap should interact with canvas2's own
+grid-snap-while-dragging (`st.snapToGrid`), which the SVG engine does not
+have at all for a move — CanvasArea's 'move' branch never calls `doSnap`.
+Rather than removing canvas2's already-existing (non-SVG) grid-snap
+behaviour, a guide snap now wins over it per-axis when one fires (matching
+CanvasArea's own snap being unconditional), with grid-snap remaining the
+fallback on an axis with nothing nearby to align to.
+
+Cause:    Not a bug — a genuine missing port, Step-5-scope work that
+BUG 12's floor-plan/rack drag port never covered because the SVG feature
+it corresponds to (an inline, un-named block deep in one mousemove
+handler) is easy to miss when porting file-by-file rather than
+gesture-by-gesture.
+
+Fix:      New `src/canvas2/smartGuides.js` — `computeSmartGuides(selectedIds,
+objects, gridSize, zoom, dx, dy)`, a pure function ported from CanvasArea's
+inline block: partitions objects into `others` (plain edge/centre
+snapping), `fpWalls` (floor-plan inner wall faces) and `colGrids` (column
+faces), computes the dragged selection's shifted bounds from the RAW
+pointer delta, checks every candidate pair against THRESH (6/zoom, for
+drawing a guide) and SNAP_DIST/WALL_SNAP (8/zoom and 32/zoom, tighter —
+for actually moving the object), and returns de-duplicated guide-line
+descriptors plus the best `snapDx`/`snapDy` per axis. No React/Konva/DOM,
+so the drag handler (decides what to move) and the painter (decides what
+to draw) share one computation (CANVAS2.md rule 4).
+
+`useCanvasInteraction.js`'s plain object-drag mousemove now calls this
+every frame with the raw delta, applies `snapDx`/`snapDy` over canvas2's
+existing grid-snap on whichever axis fires, and feeds the resulting
+`guides` array into a new `smartGuides` piece of React state (mouseup
+clears it) — the one deliberate exception to this drag's own "no store
+write, no React render per frame" rule (BUG 6/12's `collectDragNodes`
+trick still moves the dragged NODES imperatively with zero React
+involvement): a few guide-line overlay nodes are cheap to re-render every
+frame, the same way `marquee` state already updates live during a marquee
+drag, and it is the only way React ever sees the lines to paint them.
+Commit is unaffected — `d.delta` already carries whichever (grid- or
+guide-) adjusted dx/dy was computed, and mouseup's existing single
+`moveObjects(d.ids, d.delta.dx, d.delta.dy)` call was already the "one
+history entry for the whole gesture" commit.
+
+`Overlays.jsx` renders the `smartGuides` array as Konva `Line`s — CanvasArea's
+own colours (purple `#a78bfa` for wall/column snaps, green `#22c55e` for
+object-to-object) and dash pattern, but as plain literal stroke widths
+with `strokeScaleEnabled` rather than SVG's raw `/zoom` numbers (BUG 20's
+established lesson — Konva's own non-scaling-stroke mechanism, not a
+manual re-derivation of it).
+
+Verify:   Real mouse, via Playwright. Placed two racks 100 world units
+apart (A's right edge at x=200, B's left edge at x=300) and dragged A by a
+raw ~96-unit delta — short of exact alignment, but within SNAP_DIST(8).
+Mid-drag screenshot shows a green dashed vertical guide line at the
+snapped edge while A's own body is still visibly being dragged (store
+`objects` unchanged during the drag — confirms the plain-drag node-move
+optimization is untouched). Released: A landed at EXACTLY x=100 (right
+edge = 300, perfectly flush with B's left edge), not the approximate
+dragged position — confirms the snap, not just the guide, fired.
+`historyIndex` advanced by exactly one step for the whole gesture. Called
+`undo()` once: A reverted to its exact pre-drag `x=0`, `historyIndex` back
+to its pre-drag value. Zero console errors throughout. Build clean (1785
+modules), 309/309 tests pass (no existing test touches this path).
+
+Lesson:   A task's own naming of a source function can be wrong without
+the underlying request being wrong — `snapToDimPoint` and the real
+move-drag snap logic sit a few hundred lines apart in the same file,
+solve visually-similar problems (both are "snap this point to something
+nearby"), and share one `useCallback`'s dependency array, all of which
+make it easy to misattribute one for the other from a skim. Reading the
+actual call sites (which branch calls which function) before porting
+settled it in minutes and avoided porting a working feature (dimension
+tool endpoint snap) into the wrong place while leaving the actually-
+requested behaviour (object drag alignment) unbuilt. Also: not every gap
+found this late in the migration is a BUG in existing canvas2 code — some
+are still-missing ports of real SVG features that simply weren't part of
+whatever gesture-by-gesture pass already happened (this one, evidently,
+skipped one inline block CanvasArea's own file structure made easy to
+miss) — the log entry, and the fix, look the same either way.
+
+---
+
 ## Template for new entries
 
 ```

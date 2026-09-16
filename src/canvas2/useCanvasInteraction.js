@@ -3,8 +3,10 @@ import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
 import { handleHitTest, cursorForHandle } from './handleGeometry'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
+import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
+import { computeSmartGuides } from './smartGuides'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
   movedIdsFor, objectCentre, isFloorPlan,
@@ -54,6 +56,7 @@ export function useCanvasInteraction({
 }) {
   const [cursor, setCursor] = useState('default')
   const [marquee, setMarquee] = useState(null)
+  const [smartGuides, setSmartGuides] = useState([])
 
   const spaceDown = useRef(false)
   useEffect(() => {
@@ -68,6 +71,7 @@ export function useCanvasInteraction({
   const objDrag = useRef(null)
   const marqueeRef = useRef(null)
   const resizeDrag = useRef(null)
+  const groupRotateDrag = useRef(null)
 
   /* ── selection, from our own geometry pick ────────────────────────────── */
   /* Selection AND bay pick, from a world point and a hit id already decided by
@@ -217,6 +221,24 @@ export function useCanvasInteraction({
     resizeDrag.current = { objId: obj.id, handle, origObj: { ...obj }, startWorld: world }
   }
 
+  /* Group rotate handle mousedown — CanvasArea's onGroupRotateStart, ported.
+     `base` snapshots every selected object at drag-start (basePositions'
+     canvas2 equivalent); `cx/cy` is the ANGLE pivot only (computeGroupOutline's
+     own P, the selection's current centroid) — the POSITION pivot
+     applyGroupRotation recomputes itself from `base`, deliberately not the
+     same value (see groupRotate.js). */
+  const beginGroupRotateDrag = (objs) => {
+    const g = computeGroupOutline(objs, view.current.zoom)
+    if (!g) return
+    groupRotateDrag.current = {
+      ids: objs.map(o => o.id),
+      cx: g.P.x, cy: g.P.y,
+      base: new Map(objs.map(o => [o.id, { ...o }])),
+      startAngle: undefined,
+      lastAngle: undefined,
+    }
+  }
+
   /* The handles overlay's own Group, by the same 'handles:'+id name
      ResizeHandlesOverlay paints it with — the resize/rotate mousemove branch
      below uses this to nudge it live (syncHandleOverlayNode), same idea as
@@ -305,6 +327,15 @@ export function useCanvasInteraction({
             return
           }
         }
+      } else if (evt.button === 0 && st.selectedIds.length >= 2) {
+        /* Group rotate handle — checked before the plain object hitTest for
+           the same reason the single-object handle check above is: the
+           handle sits above the selection's bounds and must win the press. */
+        const selectedObjs = st.selectedIds.map(id => st.objects.find(o => o.id === id)).filter(Boolean)
+        if (selectedObjs.length >= 2 && groupRotateHandleHitTest(selectedObjs, view.current.zoom, world.x, world.y)) {
+          beginGroupRotateDrag(selectedObjs)
+          return
+        }
       }
 
       const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
@@ -359,7 +390,7 @@ export function useCanvasInteraction({
      gesture (pan/drag/marquee/resize) keeps setting it from its own
      mousemove/mouseup, and held space always means grab. */
   const onStageMouseMove = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current) return
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current) return
     if (spaceDown.current) return
     const stage = stageRef.current
     if (!stage) return
@@ -406,7 +437,7 @@ export function useCanvasInteraction({
      idle: an active gesture is already on window-level move/up and keeps
      going (and setting its own cursor) even off-canvas. */
   const onStageMouseLeave = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current) return
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current) return
     setCursor(spaceDown.current ? 'grab' : 'default')
   }
 
@@ -571,6 +602,39 @@ export function useCanvasInteraction({
         return
       }
 
+      const grd = groupRotateDrag.current
+      if (grd) {
+        /* Same flow as CanvasArea.jsx's groupRotate branch: angle from the
+           UNSNAPPED pointer around the drag-start bbox centre, 5deg steps
+           normally, 45deg holding shift, delta measured from the FIRST
+           snapped angle (not the previous frame) so repeated small moves
+           can't accumulate rounding drift. */
+        const stage = stageRef.current
+        if (!stage) return
+        const box = stage.container().getBoundingClientRect()
+        const pos = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+        const angle = Math.atan2(pos.y - grd.cy, pos.x - grd.cx) * 180 / Math.PI + 90
+        const snapDeg = evt.shiftKey ? 45 : 5
+        const snapped = Math.round(angle / snapDeg) * snapDeg
+        if (grd.startAngle === undefined) { grd.startAngle = snapped; grd.lastAngle = snapped; return }
+        if (snapped !== grd.lastAngle) {
+          const totalDelta = snapped - grd.startAngle
+          const st = useCanvasStore.getState()
+          /* Live preview, no history — one real store write per member per
+             frame, same "resize/rotate write every frame" pattern as the
+             single-object branch above; mouseup below commits ONE history
+             entry for the whole group. */
+          const updates = applyGroupRotation(grd.base, totalDelta)
+          for (const id of grd.ids) {
+            const u = updates.get(id)
+            if (u) st.updateObject(id, u)
+          }
+          stage.batchDraw()
+          grd.lastAngle = snapped
+        }
+        return
+      }
+
       if (pan.current) {
         const d = pan.current
         setView({
@@ -599,19 +663,43 @@ export function useCanvasInteraction({
         let dy = world.y - d.startWorld.y
 
         const st = useCanvasStore.getState()
-        if (st.snapToGrid) {
+
+        /* Smart guides — CanvasArea's own inline move-drag snap (NOT
+           snapToDimPoint, which is the separate dimension-TOOL endpoint
+           snap for drawing a new dimension line; this is the "drag an
+           existing object near another's edge/centre" feature, computed
+           from the RAW pointer delta exactly like CanvasArea does — the
+           SVG engine has no grid-snap on a move drag at all, only this.
+           A guide snap wins over canvas2's own (non-SVG) grid-snap-while-
+           dragging on whichever axis it fires, since it is the more
+           precise, deliberately-aimed adjustment; grid-snap is still the
+           fallback on an axis with no nearby guide, preserving that
+           already-existing canvas2 behaviour rather than replacing it. */
+        const { guides, snapDx, snapDy } = computeSmartGuides(
+          d.ids, st.objects, st.gridSize, view.current.zoom, dx, dy)
+
+        if (snapDx != null) dx = snapDx
+        else if (st.snapToGrid) {
           /* Snap the resulting POSITION, not the delta — snapping the delta
              would preserve whatever sub-grid offset the object started with.
              Only the GRABBED object snaps; the rest of the selection moves by
              that same delta, so the set keeps its internal spacing instead of
              each piece collapsing onto its own nearest gridline. */
           dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
+        }
+        if (snapDy != null) dy = snapDy
+        else if (st.snapToGrid) {
           dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
         }
         d.delta = { dx, dy }
+        setSmartGuides(guides)
 
         /* Preview by offsetting the nodes themselves: no store write and no
-           React render per frame. */
+           React render per frame — the guide LINES themselves are the one
+           exception (setSmartGuides above), the same lightweight per-frame
+           React state marquee already uses; it is a handful of overlay
+           nodes, not the object tree BUG 12's node-move trick exists to
+           keep off the hot path. */
         for (const n of d.nodes) n.node.position({ x: n.rest.x + dx, y: n.rest.y + dy })
         stage.batchDraw()
         return
@@ -652,6 +740,24 @@ export function useCanvasInteraction({
         return
       }
 
+      const grd = groupRotateDrag.current
+      groupRotateDrag.current = null
+      if (grd) {
+        /* ONE history entry for the whole group — same no-op-commit pattern
+           as the single-object resize/rotate above: every member already
+           got its live rotation written via updateObject (no history) on
+           each mousemove frame, so committing just ONE of them (any one —
+           pushHistory snapshots the whole s.objects array, not just this
+           object) is enough to fire the single pushHistory call that makes
+           the whole group's rotation one undo. */
+        const st = useCanvasStore.getState()
+        const firstId = grd.ids[0]
+        const obj = firstId && st.objects.find(o => o.id === firstId)
+        if (obj) st.commitObjectUpdate(firstId, obj)
+        setCursor(spaceDown.current ? 'grab' : 'default')
+        return
+      }
+
       const d = objDrag.current
       objDrag.current = null
       if (d) {
@@ -667,6 +773,7 @@ export function useCanvasInteraction({
         } else {
           stageRef.current?.batchDraw()
         }
+        setSmartGuides([])
         setCursor(spaceDown.current ? 'grab' : 'default')
         return
       }
@@ -812,5 +919,5 @@ export function useCanvasInteraction({
     return () => cancelAnimationFrame(raf)
   }, [size.w, size.h, objects])
 
-  return { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee }
+  return { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides }
 }

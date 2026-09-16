@@ -1,4 +1,4 @@
-import { Rect } from 'react-konva'
+import { Rect, Line } from 'react-konva'
 import { SelectionOutline } from './shapes'
 import { RackLabels, FpDimLabels, AisleLabel, rackLabelsEligible } from './DimensionLabels'
 
@@ -17,7 +17,7 @@ const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_
    there is no second "what's selected" query to drift out of sync. Aisle
    labels are the one exception: always on (subject to `showAisles`),
    independent of selection, so they need the full `objects` list too. */
-export function Overlays({ selectedObjects, gridSize, marquee, objects = [], zoom = 1, showAisles = true, activeWall = null }) {
+export function Overlays({ selectedObjects, gridSize, marquee, objects = [], zoom = 1, showAisles = true, activeWall = null, smartGuides = [] }) {
   const aisles = showAisles ? objects.filter(o => o.type === 'aisle') : []
   return (
     <>
@@ -28,6 +28,22 @@ export function Overlays({ selectedObjects, gridSize, marquee, objects = [], zoo
         ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={zoom} gridSize={gridSize}
             activeWallIdx={activeWall && activeWall.objId === o.id ? activeWall.wallIdx : null} /> : null)}
       {aisles.map(a => <AisleLabel key={'ai:' + a.id} aisle={a} objects={objects} zoom={zoom} gridSize={gridSize} />)}
+      {/* Smart-guide alignment lines, live during a plain object drag —
+          CanvasArea's own colours (wall/column snaps purple, object-to-
+          object snaps green) and dash, ported. Stroke width is a plain
+          literal with strokeScaleEnabled, matching every other piece of
+          canvas2 chrome (BUG 20's lesson) rather than SVG's raw /zoom. */}
+      {smartGuides.map((g, i) => {
+        const color = g.isWall ? '#a78bfa' : '#22c55e'
+        const sw = g.isWall ? 1.5 : 1
+        const points = g.axis === 'x' ? [g.val, g.from, g.val, g.to] : [g.from, g.val, g.to, g.val]
+        return (
+          <Line key={i} points={points}
+            stroke={color} strokeWidth={sw} dash={[6, 3]} opacity={0.9}
+            strokeScaleEnabled={false} perfectDrawEnabled={false}
+            shadowForStrokeEnabled={false} listening={false} />
+        )
+      })}
       {marquee && (
         <Rect
           x={marquee.x} y={marquee.y} width={marquee.width} height={marquee.height}
