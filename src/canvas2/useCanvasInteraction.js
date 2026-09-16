@@ -3,6 +3,7 @@ import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
 import { handleHitTest, cursorForHandle } from './handleGeometry'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
+import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import {
@@ -68,6 +69,7 @@ export function useCanvasInteraction({
   const objDrag = useRef(null)
   const marqueeRef = useRef(null)
   const resizeDrag = useRef(null)
+  const groupRotateDrag = useRef(null)
 
   /* ── selection, from our own geometry pick ────────────────────────────── */
   /* Selection AND bay pick, from a world point and a hit id already decided by
@@ -217,6 +219,23 @@ export function useCanvasInteraction({
     resizeDrag.current = { objId: obj.id, handle, origObj: { ...obj }, startWorld: world }
   }
 
+  /* Group rotate handle mousedown — CanvasArea's onGroupRotateStart, ported.
+     `base` snapshots every selected object at drag-start (basePositions'
+     canvas2 equivalent); `cx/cy` is the ANGLE pivot only (GroupOutline's own
+     bbox centre) — the POSITION pivot applyGroupRotation recomputes itself
+     from `base`, deliberately not the same value (see groupRotate.js). */
+  const beginGroupRotateDrag = (objs) => {
+    const g = computeGroupOutline(objs, view.current.zoom)
+    if (!g) return
+    groupRotateDrag.current = {
+      ids: objs.map(o => o.id),
+      cx: g.gcx, cy: g.gcy,
+      base: new Map(objs.map(o => [o.id, { ...o }])),
+      startAngle: undefined,
+      lastAngle: undefined,
+    }
+  }
+
   /* The handles overlay's own Group, by the same 'handles:'+id name
      ResizeHandlesOverlay paints it with — the resize/rotate mousemove branch
      below uses this to nudge it live (syncHandleOverlayNode), same idea as
@@ -305,6 +324,15 @@ export function useCanvasInteraction({
             return
           }
         }
+      } else if (evt.button === 0 && st.selectedIds.length >= 2) {
+        /* Group rotate handle — checked before the plain object hitTest for
+           the same reason the single-object handle check above is: the
+           handle sits above the selection's bounds and must win the press. */
+        const selectedObjs = st.selectedIds.map(id => st.objects.find(o => o.id === id)).filter(Boolean)
+        if (selectedObjs.length >= 2 && groupRotateHandleHitTest(selectedObjs, view.current.zoom, world.x, world.y)) {
+          beginGroupRotateDrag(selectedObjs)
+          return
+        }
       }
 
       const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
@@ -359,7 +387,7 @@ export function useCanvasInteraction({
      gesture (pan/drag/marquee/resize) keeps setting it from its own
      mousemove/mouseup, and held space always means grab. */
   const onStageMouseMove = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current) return
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current) return
     if (spaceDown.current) return
     const stage = stageRef.current
     if (!stage) return
@@ -406,7 +434,7 @@ export function useCanvasInteraction({
      idle: an active gesture is already on window-level move/up and keeps
      going (and setting its own cursor) even off-canvas. */
   const onStageMouseLeave = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current) return
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current) return
     setCursor(spaceDown.current ? 'grab' : 'default')
   }
 
@@ -571,6 +599,39 @@ export function useCanvasInteraction({
         return
       }
 
+      const grd = groupRotateDrag.current
+      if (grd) {
+        /* Same flow as CanvasArea.jsx's groupRotate branch: angle from the
+           UNSNAPPED pointer around the drag-start bbox centre, 5deg steps
+           normally, 45deg holding shift, delta measured from the FIRST
+           snapped angle (not the previous frame) so repeated small moves
+           can't accumulate rounding drift. */
+        const stage = stageRef.current
+        if (!stage) return
+        const box = stage.container().getBoundingClientRect()
+        const pos = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+        const angle = Math.atan2(pos.y - grd.cy, pos.x - grd.cx) * 180 / Math.PI + 90
+        const snapDeg = evt.shiftKey ? 45 : 5
+        const snapped = Math.round(angle / snapDeg) * snapDeg
+        if (grd.startAngle === undefined) { grd.startAngle = snapped; grd.lastAngle = snapped; return }
+        if (snapped !== grd.lastAngle) {
+          const totalDelta = snapped - grd.startAngle
+          const st = useCanvasStore.getState()
+          /* Live preview, no history — one real store write per member per
+             frame, same "resize/rotate write every frame" pattern as the
+             single-object branch above; mouseup below commits ONE history
+             entry for the whole group. */
+          const updates = applyGroupRotation(grd.base, totalDelta)
+          for (const id of grd.ids) {
+            const u = updates.get(id)
+            if (u) st.updateObject(id, u)
+          }
+          stage.batchDraw()
+          grd.lastAngle = snapped
+        }
+        return
+      }
+
       if (pan.current) {
         const d = pan.current
         setView({
@@ -648,6 +709,24 @@ export function useCanvasInteraction({
            (rather than waiting for the next unrelated click) is the simpler
            equivalent for a mouse-only gesture. */
         if (typeof rd.handle === 'string' && rd.handle.startsWith('wall_')) st.setActiveWall(null)
+        setCursor(spaceDown.current ? 'grab' : 'default')
+        return
+      }
+
+      const grd = groupRotateDrag.current
+      groupRotateDrag.current = null
+      if (grd) {
+        /* ONE history entry for the whole group — same no-op-commit pattern
+           as the single-object resize/rotate above: every member already
+           got its live rotation written via updateObject (no history) on
+           each mousemove frame, so committing just ONE of them (any one —
+           pushHistory snapshots the whole s.objects array, not just this
+           object) is enough to fire the single pushHistory call that makes
+           the whole group's rotation one undo. */
+        const st = useCanvasStore.getState()
+        const firstId = grd.ids[0]
+        const obj = firstId && st.objects.find(o => o.id === firstId)
+        if (obj) st.commitObjectUpdate(firstId, obj)
         setCursor(spaceDown.current ? 'grab' : 'default')
         return
       }

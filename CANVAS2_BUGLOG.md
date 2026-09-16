@@ -1320,6 +1320,113 @@ unexplained in the codebase.
 
 ---
 
+## BUG 19 — Group rotate was never ported to canvas2: multi-selection had no rotate chrome at all
+
+Symptom:  Selecting 2+ objects under canvas2 showed only the plain per-object
+selection outlines — no bounding box, no rotate handle, no way to turn a
+multi-object selection as a unit. The SVG engine has always supported this
+(CanvasUI.jsx's `GroupOutline`, driven by `CanvasArea.jsx`'s
+`onGroupRotateStart`/`groupRotate` drag), but canvas2's resize/rotate input
+path hard-gated on `selectedIds.length === 1` everywhere, so a 2+ selection
+never got a rotate control at all.
+
+Chased:   The SVG engine's group rotate is keyed off *formal* `groups`
+(objects joined by Ctrl+G — `activeGroupIds`/`groupOutlines` in
+`CanvasObjectCore.jsx`, filtered from `useCanvasStore`'s persisted `groups`
+array), not off the ad-hoc selection. The task asked for the chrome and math
+to key off whatever is currently SELECTED (2+ objects, grouped or not) —
+a deliberate, narrower scope than a full group-management port, so this
+entry does not touch `groups`/`Group`/`Ungroup` at all, only rotate.
+
+Also chased: whether the store needed a new bulk-rotate action generalizing
+`rotateGroup(groupId, angleDeg, basePositions)` to accept a raw id list
+instead of a persisted `groupId` — `useCanvasStore.js` is protected
+(CLAUDE.md rule 2). Resolved without touching it: the exact same
+one-store-write-per-object-per-frame-via-`updateObject`-then-
+one-`commitObjectUpdate`-to-commit pattern the single-object resize/rotate
+gesture already uses (both exported, unprotected actions) gives "N live
+writes, ONE history push" for free — `commitObjectUpdate` on any single
+member pushes history over the store's *entire* `objects` array, which by
+that point already has every other member's rotation written by the
+preceding frame's `updateObject` calls.
+
+Cause:    canvas2 had no group-rotate code path at all — not a bug in
+existing code, a genuine missing port. `useCanvasInteraction.js`'s handle
+check only ever ran for `selectedIds.length === 1`
+(`PORTED_RACK_TYPES`-gated), and `Canvas2.jsx`'s `handleTarget` had the same
+single-object gate feeding `ResizeHandlesOverlay`. Nothing computed a group
+bounding box, hit-tested a group handle, or rotated more than one object at
+once.
+
+Fix:      New `src/canvas2/groupRotate.js` — pure geometry/math, no React/
+Konva/DOM, ported verbatim from two different SVG sources kept deliberately
+separate (matching what the SVG itself does, not "cleaned up" into one):
+  - `computeGroupOutline(objs, zoom)` — CanvasUI.jsx's `GroupOutline` bbox +
+    handle layout (pad=10, stalk to `-44/zoom`, handle circle `r=10/zoom`).
+    Its `gcx/gcy` (getObjectBounds-based bbox centre) is also the ANGLE
+    pivot for the drag.
+  - `groupRotateHandleHitTest(objs, zoom, wx, wy)` — the same `r*2.5` hit
+    circle CanvasUI's own invisible `<circle>` uses.
+  - `applyGroupRotation(base, angleDeg)` — `useCanvasStore`'s `rotateGroup`
+    reducer body ported verbatim (same `cx?? x1?? x` corner formula, same
+    `rotPt`, same per-type branches for circle/line/fpVerts/rect), just fed
+    a `Map` of a plain id list's snapshot instead of a persisted group's
+    `basePositions`. Recomputes its OWN pivot from `base` — intentionally
+    NOT the same value as `computeGroupOutline`'s `gcx/gcy`, because
+    `rotateGroup` never received `GroupOutline`'s centre either.
+
+New `src/canvas2/GroupRotateOverlay.jsx` — pure paint (no listeners, no
+`spin()`: this box is plain axis-aligned world space, not attached to any
+one object's rotation), same colours/dash/sizes as `GroupOutline`. Wired
+into `Canvas2.jsx` alongside `ResizeHandlesOverlay`, gated on
+`selectedObjects.length >= 2`.
+
+`useCanvasInteraction.js`: a `groupRotateDrag` ref parallel to
+`resizeDrag`. `onStageMouseDown` — when 2+ selected, hit-test the group
+handle *before* the plain object hitTest (same "handle wins the press"
+priority as the single-object case) and start the drag, snapshotting every
+selected object. Window `mousemove` — same angle-from-unsnapped-pointer,
+5°/45°(shift) snap-to-first-angle flow as the SVG's `groupRotate` branch,
+writing every member's rotation live via `updateObject` each frame (a real
+store write per frame, same "resize/rotate write every frame" pattern
+already used elsewhere, not the imperative-node-move drag trick — group
+rotate changes N objects' rotation/position, which only a real re-render
+redraws). Window `mouseup` — `commitObjectUpdate` on one member, for the
+single `pushHistory` call. Hover-cursor early-return guards
+(`onStageMouseMove`/`onStageMouseLeave`) extended to include
+`groupRotateDrag.current` alongside the existing gesture refs.
+
+Verify:   Real mouse, via a Playwright script driving actual mousedown/move/
+up on the live app (not a synthetic store call): seeded two `rack_row`
+objects via the store, selected both, screenshotted the resulting chrome —
+dashed purple bounding box around both racks with the stalk+handle centred
+above, matching `GroupOutline`'s look exactly. Dragged from the handle to a
+point 90° around the pivot: both racks' `rotation` became exactly `90` and
+their `x/y` landed at the hand-computed positions for a 90° turn about the
+shared bbox centre (150,70)/(50,70 → wait, (50,50) and (-50,50) — see the
+script's own worked arithmetic). `historyIndex` advanced by exactly ONE
+step across both objects changing. Called `undo()` once: BOTH racks
+reverted to their exact pre-rotate `x/y/rotation`, `historyIndex` back to
+its pre-drag value. Zero console errors throughout. Build clean (1786
+modules), 309/309 tests pass (no existing test touches this path, so no
+regressions from the new gate/branches).
+
+Lesson:   When a store action is scoped to a persisted concept (`groupId` +
+`s.groups`) but the task needs the same behaviour keyed off a DIFFERENT,
+lighter-weight concept (ad-hoc selection), the fix isn't always "generalize
+the protected action" — check whether the existing UNPROTECTED building
+blocks (`updateObject` for a no-history live write, `commitObjectUpdate`
+for a single history push over the WHOLE store) already compose into the
+same guarantee. They did here: N `updateObject` calls + 1
+`commitObjectUpdate` is exactly "N live writes, one undo," without touching
+`useCanvasStore.js` at all. Also: porting math from two DIFFERENT functions
+in the SVG source (`GroupOutline`'s visual centre vs. `rotateGroup`'s
+recomputed pivot) that happen to disagree with each other is still "don't
+reinvent" — unifying them into one pivot would be a real, if minor,
+behaviour change from the SVG original, not a cleanup.
+
+---
+
 ## Template for new entries
 
 ```
