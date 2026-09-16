@@ -3,6 +3,7 @@ import { useCanvasStore } from '../../store/useCanvasStore'
 import { WAREHOUSE_CATEGORIES } from '../../constants/warehouseObjects'
 import { SectionHeader } from '../shared/SectionHeader'
 import { objectContains } from '../../utils/canvas'
+import { getCanvasContainerSize } from '../../utils/canvasContainer'
 
 const FP_TYPES_SET = new Set(['fp_rect','fp_l','fp_t','fp_u','fp_cross','fp_l_mirror'])
 
@@ -304,9 +305,7 @@ export function WarehouseObjectPicker() {
   const [gridSetup, setGridSetup] = useState({ baysX: 5, baysY: 4 })
 
   const place = (item, variant) => {
-    const el = document.getElementById('canvas-container')
-    const cw = el ? el.clientWidth  : 900
-    const ch = el ? el.clientHeight : 600
+    const { w: cw, h: ch } = getCanvasContainerSize()
     const wx = (cw / 2 - panX) / zoom
     const wy = (ch / 2 - panY) / zoom
 

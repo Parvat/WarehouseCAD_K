@@ -1,14 +1,12 @@
 import { useState, useEffect } from 'react'
 import { TopBar }     from './components/Toolbar/TopBar'
 import { LeftPanel }  from './components/LeftPanel/index'
-import { CanvasArea } from './components/Canvas/CanvasArea'
 import { RightPanel } from './components/RightPanel/index'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useCanvasStore } from './store/useCanvasStore'
 import { FloatingToolbar } from './components/LeftPanel/FloatingToolbar'
 import { GeneratePanel } from './components/Generate/GeneratePanel'
-import { ColumnCheckOverlay } from './components/Canvas/ColumnCheckOverlay'
-import { KonvaStage } from './components/Canvas/KonvaStage'
+import { Canvas2 } from './canvas2/Canvas2'
 import { ColumnCheckProvider } from './generate/useColumnCheck'
 import { RulesProvider } from './rules/useRules'
 import { Login } from './shell/Login'
@@ -62,21 +60,19 @@ export default function App() {
     >
       {/* The column check is a read-only lens over the canvas store, so the
           provider wraps the editor rather than living in it. The forklift
-          input (GeneratePanel), the red markings (ColumnCheckOverlay) and the
-          absorb/remove list (RightPanel) all read one derived result. */}
+          input (GeneratePanel) and the absorb/remove list (RightPanel) both
+          read one derived result. The on-canvas red conflict markings
+          (ColumnCheckOverlay) were an SVG-engine-only overlay, retired with
+          it — see CANVAS2_BUGLOG.md's final entry. */}
       <RulesProvider>
       <ColumnCheckProvider>
         <TopBar />
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <FloatingToolbar />
-          <CanvasArea />
+          <Canvas2 />
           <RightPanel />
         </div>
         <GeneratePanel />
-        {/* Portals itself into #canvas-container — CanvasArea stays untouched. */}
-        <ColumnCheckOverlay />
-        {/* Konva renderer, behind a flag — portals into #canvas-container. */}
-        <KonvaStage />
       </ColumnCheckProvider>
       </RulesProvider>
       <button onClick={() => setView('hub')} title="Back to hub" style={{

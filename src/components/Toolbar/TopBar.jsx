@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
+import { useState, useRef, useEffect } from 'react'
 /* Grid3X3 / Ruler / Magnet left with the icon toggles they labelled — those
    three are switches in the settings menu now, named in words. */
 import { Scissors, Copy, Clipboard, Undo2, Redo2, ZoomIn, ZoomOut,
@@ -6,7 +6,7 @@ import { Scissors, Copy, Clipboard, Undo2, Redo2, ZoomIn, ZoomOut,
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { UNITS } from '../../constants'
 import { RulesPanel } from '../Rules/RulesPanel'
-import { isKonvaEnabled, setKonvaEnabled, subscribeKonvaFlag } from '../Canvas/konvaFlag'
+import { getCanvasContainerSize } from '../../utils/canvasContainer'
 
 /* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
 const C = {
@@ -160,9 +160,9 @@ function Switch({ on, onClick, label }) {
 
 function doZoom(factor) {
   const s = useCanvasStore.getState()
-  const el = document.getElementById('canvas-container')
-  const cx = el ? el.clientWidth  / 2 : 600
-  const cy = el ? el.clientHeight / 2 : 400
+  const { w, h } = getCanvasContainerSize({ w: 1200, h: 800 })
+  const cx = w / 2
+  const cy = h / 2
   const nz = Math.max(0.01, Math.min(20, s.zoom * factor))
   s.setViewport(nz, cx - (cx - s.panX) * (nz / s.zoom), cy - (cy - s.panY) * (nz / s.zoom))
 }
@@ -183,7 +183,6 @@ export function TopBar() {
   /* Menu open/closed is presentation state — component-local, never the store. */
   const [menuOpen, setMenuOpen] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
-  const konvaOn = useSyncExternalStore(subscribeKonvaFlag, isKonvaEnabled, () => false)
   const menuRef = useRef(null)
 
   useEffect(() => {
@@ -330,15 +329,6 @@ export function TopBar() {
                 onClick={() => { setRulesOpen(true); setMenuOpen(false) }}>
                 Rules profiles…
               </MenuItem>
-            </MenuGroup>
-
-            <MenuGroup label="Renderer">
-              {/* Migration flag: mounts the Konva Stage alongside the SVG
-                  canvas. Off is today's renderer, unchanged. */}
-              <MenuRow label="Konva canvas (beta)">
-                <Switch on={konvaOn} onClick={() => setKonvaEnabled(!konvaOn)}
-                  label="Toggle Konva renderer" />
-              </MenuRow>
             </MenuGroup>
 
             <MenuGroup label="Appearance">
