@@ -953,6 +953,76 @@ axis happens to be reached for first.
 
 ---
 
+## BUG 15 — New objects placed off-centre under canvas2: four call sites all read the SVG engine's container id
+
+**Symptom:** picking an item from the left panel (or clicking the top-bar
+zoom buttons) computed "centre of the current viewport" from
+`document.getElementById('canvas-container')` — the id `CanvasArea.jsx`
+gives its own container, which does not exist while canvas2 is the active
+renderer. All four call sites (`FloatingToolbar.jsx`'s `placeObject`,
+`TopBar.jsx`'s `doZoom`, `ObjectLibrary.jsx`, `WarehouseObjectPicker.jsx`)
+fell back to a hardcoded guessed size (900×600, or 1200×800 for the zoom
+buttons) instead of canvas2's real container, so a newly placed rack — or
+the zoom buttons' own anchor point — landed wherever that guess happened to
+put it, not the panel's actual current centre. Flagged by the parity audit
+that led to BUG 14; this is the other gap it found.
+
+**Chased:** nothing — this one was a clean, mechanical repeat of the exact
+pattern BUG 14 diagnosed (an id only the SVG engine's container ever has),
+just at four more call sites instead of one.
+
+**Cause:** every one of the four hardcoded `'canvas-container'` — canvas2
+mounts its Stage into a DIFFERENT id, `canvas2-container`
+(`src/canvas2/Canvas2.jsx`), and nothing told these four call sites which
+one is actually live.
+
+**Fix:** one new module, `src/utils/canvasContainer.js` —
+`getCanvasContainerEl()` reads `canvas2/flag.js`'s own `isCanvas2Enabled()`
+and returns whichever container id is actually mounted;
+`getCanvasContainerSize(fallback)` measures it (`clientWidth`/`clientHeight`)
+with the SAME `{900,600}`-shaped fallback every call site already had for
+"no container yet" (a real case on first paint), so the only thing that
+changed at each site is WHICH element gets measured, never what happens
+when measuring fails. All four call sites now import this instead of their
+own `document.getElementById('canvas-container')` literal — one place
+decides "which canvas is live," not four copies of the same guess.
+
+**Verify:** real Chromium, scripted (Playwright), canvas2 active. Set a
+deliberately off-default zoom (0.37) and pan `(213, 407)` first — a wrong
+hardcoded-viewport fallback would then place objects measurably away from
+the real centre, not coincidentally close to it. Expanded the left panel
+(narrowing the real canvas area, exactly the scenario that makes a
+hardcoded-size guess wrong) and placed four different rack types (Selective,
+Rack Row, Double Row, Cantilever) from the library: every one landed with
+**zero** offset from the true viewport centre, independently computed from
+the container's real `clientWidth`/`clientHeight` and the store's live
+zoom/pan. Confirmed the top-bar zoom-in button too: the world point sitting
+under the container's real centre is identical before and after a zoom-in
+click (anchors to the real centre, not a guessed one). Zero console errors.
+309 unit tests pass; build clean.
+
+**Not touched:** `useCanvasStore.js`'s own `placeFpObject` has the identical
+bug (same hardcoded id, same 900×600 fallback) but lives in a protected file
+(CLAUDE.md rule 2, and `canvas2/useCanvasInteraction.js` already documents
+it as "CANVAS2.md rule 1, frozen brain, not ours to fix") — canvas2 already
+works around it with its own re-fit-on-new-floor-plan effect rather than
+editing the store action directly, and this change doesn't disturb that.
+`ObjectLibrary.jsx`/`WarehouseObjectPicker.jsx` are fixed for consistency
+but are currently unreachable through the live app either way —
+`LeftPanel/index.jsx`, the only thing that renders them, is itself not
+mounted by `App.jsx` (`FloatingToolbar.jsx` is the real left panel); their
+fix could not be verified through today's UI for that reason, only read for
+correctness against the same pattern the other two call sites were proven
+against.
+
+**Lesson:** same lesson as BUG 14, at smaller scale — a DOM id owned by one
+specific renderer is a landmine for anything that has to work under either
+one. One shared "which canvas is actually live" lookup, used everywhere
+that needs the real container, means the next call site added only has to
+call it, not rediscover which id is safe to hardcode.
+
+---
+
 ## Template for new entries
 
 ```

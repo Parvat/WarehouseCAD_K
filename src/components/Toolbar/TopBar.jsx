@@ -8,6 +8,7 @@ import { UNITS } from '../../constants'
 import { RulesPanel } from '../Rules/RulesPanel'
 import { isKonvaEnabled, setKonvaEnabled, subscribeKonvaFlag } from '../Canvas/konvaFlag'
 import { isCanvas2Enabled, setCanvas2Enabled, subscribeCanvas2Flag } from '../../canvas2/flag'
+import { getCanvasContainerSize } from '../../utils/canvasContainer'
 
 /* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
 const C = {
@@ -161,9 +162,9 @@ function Switch({ on, onClick, label }) {
 
 function doZoom(factor) {
   const s = useCanvasStore.getState()
-  const el = document.getElementById('canvas-container')
-  const cx = el ? el.clientWidth  / 2 : 600
-  const cy = el ? el.clientHeight / 2 : 400
+  const { w, h } = getCanvasContainerSize({ w: 1200, h: 800 })
+  const cx = w / 2
+  const cy = h / 2
   const nz = Math.max(0.01, Math.min(20, s.zoom * factor))
   s.setViewport(nz, cx - (cx - s.panX) * (nz / s.zoom), cy - (cy - s.panY) * (nz / s.zoom))
 }

@@ -33,6 +33,7 @@ import { TOOLS } from '../../constants'
 import { ANNOT } from './AnnotationPanel'
 import { WAREHOUSE_CATEGORIES } from '../../constants/warehouseObjects'
 import { objectContains } from '../../utils/canvas'
+import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { PALETTE_COLORS } from '../../constants'
 import { PEN_TYPES, PEN_ORDER, clampPenWidth, penDefaultWidth, loadPenPrefs, savePenPrefs } from '../../utils/freehand'
 
@@ -864,9 +865,7 @@ export function FloatingToolbar() {
   const placeObject = useCallback((catItem) => {
     const item    = catItem
     const variant = item.variants?.[0] || { w:item.w||10, h:item.h||10 }
-    const el = document.getElementById('canvas-container')
-    const cw = el ? el.clientWidth  : 900
-    const ch = el ? el.clientHeight : 600
+    const { w: cw, h: ch } = getCanvasContainerSize()
     const wx = (cw/2 - panX) / zoom
     const wy = (ch/2 - panY) / zoom
     const uprightInches = variant.uprightWidth ?? item.meta?.uprightWidth ?? 3
