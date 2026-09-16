@@ -618,6 +618,231 @@ not to argue the report away.
 
 ---
 
+## BUG 11 — Resize handles/rotate stalk stuck at the pre-drag bounds on a bay-count change
+
+**Symptom:** resizing a beam rack (`rack_row`/`rack_double_row`) by dragging
+`ml`/`mr` so the bay count changes mid-gesture left the resize handles and
+the rotate stalk painted at the ORIGINAL (pre-drag) bounds instead of the
+rack's current ones — the handle ends up inside the rack body after a
+shrink, or floating well outside it after a growth, and the rotate glyph
+lands off-centre. Persisted after mouseup, not just mid-drag.
+
+**Chased:** the store write (`st.updateObject`) and the bay math
+(`applyResize`, `utils/canvas.js`) looked right in isolation — the
+committed `beams`/`width` matched the pointer position exactly whenever
+checked in the store directly. The mismatch only showed up comparing the
+STORE's object against what `syncHandleOverlayNode` (BUG 10's live-tracking
+twin) actually painted.
+
+**Cause, confirmed:** `applyResize`'s beam branches return `{}` (no-op)
+whenever the current drag delta rounds to the SAME bay count already
+committed — correct while a drag is monotonically approaching the next
+threshold, since the store hasn't diverged from `origObj` yet at that
+point. But the resize mousemove handler synced the handle overlay from
+`{ ...origObj, ...updates }`, not from the store. On a direction reversal
+mid-gesture (grow past a threshold, then ease back towards it — routine
+hand tremor on a real drag, not just a deliberate back-and-forth). The
+store had already committed the grown bay count and never reverts (nothing
+ever writes it back down while `add` reads as 0), but the handle sync's
+`updates` is `{}` again in that dead zone, merging onto `origObj` — the
+PRE-DRAG bounds — while the rack itself keeps rendering the last real
+commit. Two different sources of truth for the same drag. Reproduced with
+a scripted pointer drag plus pixel-sampling the actual painted handle
+squares against the store's live object: confirmed a rack stuck at 4 bays
+with `mr` painted at the 3-bay position, off by exactly one bay-width, both
+mid-drag and after `mouseup`.
+
+**Fix:** `useCanvasInteraction.js`'s resize mousemove branch re-reads the
+object from `useCanvasStore.getState()` right after `updateObject` and
+syncs the handle overlay from THAT, not from `{ ...origObj, ...updates }`.
+Since `updateObject` is a synchronous `Object.assign` onto the store's own
+object, the re-read is always exactly what the next real render will show —
+whether this frame's `updates` was a full bay-count patch or `{}`, the
+handles can never disagree with the rack body again. `mouseup`'s commit
+path already read the live object this same way (`st.objects.find(...)`
+before `commitObjectUpdate`), so only the mid-drag sync needed the change.
+Left `applyResize`'s own `{}` behavior untouched — it lives in the
+protected `utils/canvas.js` and CLAUDE.md's rule 4 requires reporting a
+protected-file change and waiting for approval rather than editing it
+silently; the dead-zone `{}` is arguably a separate, deeper bug in that
+file (the object never actually reverts to a smaller bay count on its
+own), but fixing the handle desync so it always matches whatever the store
+actually holds does not require touching it.
+
+**Lesson:** `{ ...origObj, ...partialUpdate }` is only correct when
+`partialUpdate` is guaranteed non-empty on every call. A bay-quantized
+resize's `updates` is deliberately `{}` between thresholds — re-reading the
+live object beats trying to enumerate every case where the patch could be
+empty. Same family as BUG 6/BUG 10: two paint paths for the same value
+(store-driven React render vs. an imperative same-frame sync) must derive
+from the identical source, or one of them WILL be caught reading a stale
+one eventually.
+
+---
+
+## BUG 12 — Dimension labels (and resize handles, and rotate) frozen at the pre-drag bounds during a plain drag — the recurring chrome-offset bug, fixed at the root
+
+**Symptom:** selecting a rack and dragging it across the sheet left its
+dimension labels, resize handles and rotate stalk sitting at the ORIGINAL
+position while the rack body itself moved live under the pointer — a rack
+dropped bottom-right could show its labels/handles/rotate stuck up-left,
+exactly where the drag started. Corrected itself the instant the mouse was
+released. This is the third time this exact class of bug has appeared:
+BUG 6 (selection outline), BUG 10 (resize handles, but only fixed for the
+resize/rotate gesture, not a plain drag), and now dimension labels — a new
+piece of chrome, same bug.
+
+**Chased:** nothing — this one was reproduced directly rather than argued
+from the code, because "it self-corrects on release" made it easy to
+dismiss as already-fixed. A scripted pointer drag with a mid-gesture
+screenshot showed the rack body and its selection outline moving live
+(BUG 6's fix, still working) while the resize handles, rotate stalk and the
+new `RackLabels`/`FpDimLabels` groups stayed exactly where the drag began,
+confirming the freeze was real and not just a screenshot-timing artifact.
+
+**Cause, confirmed:** a plain object drag moves Konva nodes directly
+instead of writing the store every frame (BUG 6, for performance — a
+resize DOES write the store every frame, which is why labels on a
+*resizing* rack were always correct). `useCanvasInteraction.js`'s
+`collectDragNodes` is what decides which nodes get moved that way, and it
+only ever matched two literal name prefixes, `'obj:'` and `'sel:'`
+(`nm.startsWith('obj:') || nm.startsWith('sel:')` with a hardcoded
+`.slice(4)`) — the object body and its selection outline. Resize handles
+live in a `'handles:'+id` group; BUG 10 gave that group its own SEPARATE
+imperative sync (`syncHandleOverlayNode`), but only inside the resize/
+rotate mousemove branch — a plain drag never calls it, so `'handles:'`
+was never in `collectDragNodes`'s set either. `RackLabels`/`FpDimLabels`
+(`'racklabels:'+id`, `'fpdim:'+id`) are newer still and were never added
+anywhere. Three chrome types, three different (or missing) live-tracking
+paths, one shared root cause: nothing collects "every Konva node that
+represents this object" in one place.
+
+**Fix:** two changes, matching what was asked for — consolidate to one
+shared bounds source, not another one-off patch:
+- `DimensionLabels.jsx`'s `RackLabels` now computes its bounds via
+  `getObjectBounds(obj)` — the exact function `handleGeometry.js`'s
+  `computeHandleLayout` already calls for the resize handles and rotate
+  stalk — instead of reading `obj.x/y/width/height` itself. For a plain
+  rect rack the two were numerically identical (which is why this was
+  never visibly wrong at rest), but it was a second copy of "how do you
+  read this object's bounds" that could silently diverge the moment either
+  one changed.
+- `collectDragNodes` now matches a list of known chrome prefixes
+  (`'obj:'`, `'sel:'`, `'handles:'`, `'racklabels:'`, `'fpdim:'`) found by
+  the node name's own `:` rather than a hardcoded `slice(4)` that only
+  worked because `'obj:'` and `'sel:'` happen to both be 4 characters —
+  `'handles:'` and `'fpdim:'` are not. Every chrome group matching an id in
+  the current drag set now moves by the same live delta as the object body,
+  through the SAME loop that already moved `obj:`/`sel:` — no new
+  per-frame code path, just a wider name list feeding the existing one.
+
+**Verify:** select a rack anywhere on the sheet and drag it — labels,
+resize handles and the rotate stalk move WITH the rack for the whole
+gesture, not just after release. Confirmed with a scripted drag plus a
+mid-gesture screenshot (previously showed the frozen chrome; now shows it
+attached throughout) and again after mouseup. 309 unit tests still pass —
+this is Konva-node wiring, nothing the unit suite exercises directly.
+
+**Lesson:** this bug class keeps recurring because each fix (BUG 6, BUG 10)
+solved it for exactly the chrome type in front of the reporter, not for
+"chrome in general." A `handleHitTest`/`computeHandleLayout`-style single
+function stops the DATA from disagreeing across chrome types; a single
+`collectDragNodes` name list stops the LIVE-TRACKING WIRING from disagreeing
+across them too — and a new chrome type only needs adding to that one list,
+not its own bespoke sync path, or this becomes BUG 13.
+
+---
+
+## BUG 13 — Floor-plan resize was missing from canvas2 entirely — ported from the SVG engine
+
+**Symptom:** not a regression — a straight-up gap. Step 5 of canvas2's build
+(BUG 8/9/10) ported resize and rotate for RACKS. Floor plans got a Group,
+a fill/wall paint (`FloorPlanShape`) and a hit band for their own body drag,
+but nothing to reshape them: no handles, no wall drag, nothing. A floor plan
+placed in canvas2 could be moved and deleted, never resized — the SVG
+engine's whole floor-plan resize path had no canvas2 counterpart at all.
+
+**Chased:** briefly assumed this meant "port `ResizeHandles` for `isFp`, the
+same 8-box handle set racks get" — CanvasUI.jsx's own `ResizeHandles` says
+otherwise: `if (isFp) return null`, first line. Floor plans never got
+corner/edge boxes in the SVG engine either. What they actually get is
+`FpWallHitAreas` — a thin, always-live hit band running along each wall of
+the polygon — feeding a wall-drag handler in `CanvasArea.jsx`
+(`handle.startsWith('wall_')`) that calls a DIFFERENT function,
+`applyFpWallDrag`, not `applyResize`. Confirmed by grepping `applyResize`
+itself for any `fp_*` case: none exist. The two resize mechanisms
+(rack handles vs. FP walls) are genuinely different in the SVG engine, not
+one generalized case of the other — the unification is in the surrounding
+INPUT ARCHITECTURE (hitTest a handle → arm `resizeDrag` → window mousemove
+computes an update → mouseup commits one undo), not in the math.
+
+**Fix:** ported both real pieces, wired through canvas2's existing
+`resizeDrag` state machine (the same one racks use) rather than a second
+gesture system:
+- `hitTest.js` gained `fpWallHitTest(objects, layers, wx, wy, zoom,
+  gridSize)` — CanvasUI's own `getFpWallSegments` for the wall geometry, the
+  same `distToSegment` rack-picking already imports, the same ~24-screen-px
+  band `FpWallHitAreas` used. Checked over every floor plan regardless of
+  selection (CanvasUI's own behaviour: a wall is always live) — but only
+  AFTER the plain `hitTest()` pass finds nothing or finds the floor plan
+  itself, so a rack standing on top of a wall still wins the press, matching
+  CanvasUI's DOM stacking (a later-drawn rack element physically sits above
+  the wall band and gets the click first).
+- `useCanvasInteraction.js`'s resize mousemove gained a
+  `handle.startsWith('wall_')` branch calling `applyFpWallDrag(liveObj,
+  wallIdx, pos)` — ported verbatim, including the deliberate choice NOT to
+  grid-snap a wall drag (CanvasArea only ever magnet-snaps a wall to a
+  nearby non-FP object's edge; that magnet-snap itself was NOT ported —
+  logged below as a real gap, not silently dropped). A real store write
+  every frame, same as rack resize (BUG 9) and for the same reason: reshaping
+  `fpVerts` can change the whole polygon, and only a real re-render redraws
+  it. mouseup's existing `commitObjectUpdate(rd.objId, obj)` already reads
+  whatever object is live and pushes ONE history entry — needed no
+  wall-specific change at all to make a wall drag one undo.
+- The active wall highlights gold in `FpDimLabels` (`Bug 12`'s shared
+  bounds/labels file) via the store's existing `activeWall`, now actually
+  wired from `onStageMouseDown`/`onStageMouseMove` instead of always `null`.
+  No 8-box handles are rendered for floor plans, matching CanvasUI exactly —
+  `handleTarget` already excludes fp_* types (`PORTED_RACK_TYPES` never
+  included them), so this needed no change.
+
+**Verify:** real mouse, `fp_rect` resized from each of its 4 walls — every
+wall's own axis tracks the pointer, the opposite walls stay fixed, `width`/
+`height` update and the properties panel reflects it live mid-drag (a store
+write every frame, not just on release). `fp_l` reshaped correctly from
+both its outer arm wall and its inner elbow wall — each wall move only ever
+touched its own two shared vertices, everything else held. History length
+increased by exactly 1 per full drag gesture (mousedown→mouseup), confirmed
+by reading `store.history.length` before and after. Zero console errors
+throughout, scripted with Playwright driving real pointer events.
+
+**Not ported (logged, not silently dropped):**
+- Cross-object wall snapping — CanvasArea magnet-snaps a dragged wall to a
+  nearby non-FP object's edge within ~20 screen px. Real behaviour, real
+  code (`CanvasArea.jsx`'s wall-drag branch, ~15 lines), left out to keep
+  this port to the core reshape mechanism; a wall drag in canvas2 today is
+  purely continuous, no magnet.
+- `applyFpWallLength` / `WallInputOverlay` — the numeric "type an exact wall
+  length" side panel. A separate UI feature layered on top of the same
+  vertex math, not part of "resize through the mouse," out of scope for this
+  pass.
+- Floor-plan ROTATION (`FpRotateHandle`) — out of scope; this port is resize
+  only, and canvas2 floor plans render unrotated (`FloorPlanShape` draws
+  `fpVerts` directly, no `spin()` wrapper), so rotation was never wired in
+  either direction here.
+
+**Lesson:** "port X's resize" is not one mechanism per object type in this
+codebase — it's whichever of `applyResize` (rect/beam/lane racks) or
+`applyFpWallDrag` (any polygon-vertex shape) actually matches that object's
+geometry model, dispatched through ONE shared gesture state machine by the
+`handle` string alone. Assuming a single fp_rect box-resize special case
+existed because the pattern "handles → applyResize" had worked for every
+rack so far would have reinvented a mechanism SVG had already built
+correctly, and reinvented it worse (a bbox scale cannot reshape an L/T/U/
+cross's concave corners; only vertex-editing can).
+
+---
+
 ## Template for new entries
 
 ```

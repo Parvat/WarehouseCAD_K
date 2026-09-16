@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
-import { hitTest, hitTestBay } from './hitTest'
+import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
 import { handleHitTest, cursorForHandle } from './handleGeometry'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
-import { snapToGrid, objectContains, applyResize, getObjectBounds } from '../utils/canvas'
+import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
@@ -19,6 +19,11 @@ import { dlog, debugOn } from './debugLog'
    oversight: rack_drive_in/through/pushback DO get grid-snapped dx/dy before
    applyResize sees it, rack_pallet_flow does not. */
 const SNAP_FREE = new Set(['rack_row', 'rack_double_row', 'rack_pallet_flow', 'rack_cantilever'])
+
+/* Matches hitTest.js's own FP_SET — kept as a separate literal rather than
+   exported/imported because it is a two-line constant and importing it would
+   be the only reason to change hitTest.js's own export surface. */
+const FP_SET_INPUT = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 
 /* Only the LEFT button may drag an object. Konva allows the middle button by
    default, which turned every middle-drag-to-pan that happened to start over a
@@ -137,7 +142,24 @@ export function useCanvasInteraction({
      for a freshly-grabbed object simply doesn't exist in the Konva tree at
      mousedown time. Collecting again once the drag actually starts (i.e. on
      the first mousemove past the threshold, which always lands after React
-     has flushed) picks that node up instead of leaving it stranded at rest. */
+     has flushed) picks that node up instead of leaving it stranded at rest.
+
+     Every piece of selection chrome is collected here, not just the object
+     body and its outline — resize handles, the rotate stalk, and the rack/fp
+     dimension labels all live in their own named Konva groups
+     ('handles:'+id, 'racklabels:'+id, 'fpdim:'+id), and a plain drag moves
+     nodes directly (BUG 6: no per-frame store write, for performance) rather
+     than re-rendering React. Any chrome group left out of this list simply
+     never moves until mouseup's store commit repaints it — which is BUG 6
+     (selection outline) and BUG 10 (resize handles, fixed piecemeal for
+     resize/rotate only) and, before this fix, dimension labels too: a rack
+     dragged across the sheet left its labels, resize handles and rotate
+     stalk sitting at the pre-drag position while the rack itself moved live
+     under the pointer. One list, matched by prefix regardless of length (a
+     literal startsWith/slice(4) pair only worked by coincidence for 'obj:'
+     and 'sel:', both 4 characters) so a future chrome piece is added here
+     once, not rediscovered the same way three times. */
+  const CHROME_NODE_PREFIXES = ['obj:', 'sel:', 'handles:', 'racklabels:', 'fpdim:']
   const collectDragNodes = (stage, ids) => {
     const st = useCanvasStore.getState()
     const want = movedIdsFor(st.objects, ids)
@@ -145,8 +167,12 @@ export function useCanvasInteraction({
     for (const layer of stage.getLayers()) {
       for (const n of layer.getChildren()) {
         const nm = n.name() || ''
-        const id = (nm.startsWith('obj:') || nm.startsWith('sel:')) ? nm.slice(4) : null
-        if (id && want.has(id)) nodes.push({ node: n, rest: n.position() })
+        const colon = nm.indexOf(':')
+        if (colon === -1) continue
+        const prefix = nm.slice(0, colon + 1)
+        if (!CHROME_NODE_PREFIXES.includes(prefix)) continue
+        const id = nm.slice(colon + 1)
+        if (want.has(id)) nodes.push({ node: n, rest: n.position() })
       }
     }
     return nodes
@@ -284,6 +310,28 @@ export function useCanvasInteraction({
       }
 
       const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+      const hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
+
+      /* A floor plan's wall, checked whenever the plain hitTest above didn't
+         land on something standing IN FRONT of the building (a rack parked
+         on top of a wall must still win the press — matching CanvasUI, where
+         FpWallHitAreas sits inside the floor plan's own DOM group and a
+         later-drawn rack's real element is what actually receives the
+         click). A wall is live regardless of what's currently selected —
+         CanvasUI's own FpWallHitAreas renders for every floor plan
+         unconditionally, not just a selected one. */
+      if (evt.button === 0 && (!hitObj || FP_SET_INPUT.has(hitObj.type))) {
+        const wallHit = fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+        if (wallHit) {
+          const fpObj = st.objects.find(o => o.id === wallHit.objId)
+          if (fpObj) {
+            st.selectObject(wallHit.objId)
+            st.setActiveWall({ objId: wallHit.objId, wallIdx: wallHit.wallIdx })
+            beginHandleDrag(fpObj, 'wall_' + wallHit.wallIdx, world)
+            return
+          }
+        }
+      }
 
       if (hitId) {
         if (evt.button !== 0) return
@@ -328,6 +376,27 @@ export function useCanvasInteraction({
       if (selected && PORTED_RACK_TYPES.has(selected.type)) {
         const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
         if (handle) next = cursorForHandle(handle, selected.rotation)
+      }
+    }
+    if (next === 'default') {
+      const wallHit = fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+      if (wallHit) {
+        /* CanvasUI shows a plain 'move' cursor on an unselected building's
+           wall — the click still starts a wall drag regardless (matched in
+           onStageMouseDown), this only affects what hovering shows before
+           that first click. */
+        if (!(st.selectedIds.length === 1 && st.selectedIds[0] === wallHit.objId)) {
+          next = 'move'
+        } else {
+          const fpObj = st.objects.find(o => o.id === wallHit.objId)
+          const axis = fpObj ? getWallDragAxis(fpObj.type, wallHit.wallIdx) : null
+          if (axis === 'y') next = 'ns-resize'
+          else if (axis === 'x') next = 'ew-resize'
+          else {
+            const seg = fpObj ? getFpWallSegments(fpObj, st.gridSize)[wallHit.wallIdx] : null
+            next = seg && Math.abs(seg.b.x - seg.a.x) > Math.abs(seg.b.y - seg.a.y) ? 'ns-resize' : 'ew-resize'
+          }
+        }
       }
     }
     setCursor(next)
@@ -377,6 +446,36 @@ export function useCanvasInteraction({
           const grp = findHandlesGroup(stage, objId)
           if (grp) {
             syncHandleOverlayNode(grp, { ...origObj, rotation: snapped }, view.current.zoom, st.gridSize)
+            stage.batchDraw()
+          }
+          return
+        }
+
+        /* Floor-plan wall drag — ported from CanvasArea.jsx's own
+           handle.startsWith('wall_') branch, NOT reinvented: move the one
+           dragged wall's two shared vertices along the wall's own axis (H
+           wall moves in Y, V wall moves in X — applyFpWallDrag works this
+           out from the wall's own endpoints, same as CanvasUI). Deliberately
+           NOT grid-snapped — CanvasArea only ever magnet-snaps a wall to a
+           nearby non-FP object's edge, never to the grid; that magnet-snap
+           itself is not ported here (a real but separate refinement, logged
+           in CANVAS2_BUGLOG.md rather than silently dropped).
+
+           A real store write every frame, exactly like a rack resize (BUG 9)
+           and for the same reason: reshaping fpVerts can change the whole
+           polygon, which only a real re-render redraws — and it is why the
+           dimension labels and the building itself track this live for
+           free, without BUG 12's imperative node-move (that mechanism is
+           for gestures that DELIBERATELY skip the store write; this one
+           doesn't). mouseup's existing commitObjectUpdate(rd.objId, obj)
+           already reads the live object generically, so it needs no
+           wall-specific change to land this as one undo entry. */
+        if (typeof handle === 'string' && handle.startsWith('wall_')) {
+          const wallIdx = parseInt(handle.slice(5), 10)
+          const liveObj = st.objects.find(o => o.id === objId) || origObj
+          const updates = applyFpWallDrag(liveObj, wallIdx, pos)
+          if (Object.keys(updates).length > 0) {
+            st.updateObject(objId, updates)
             stage.batchDraw()
           }
           return
@@ -450,10 +549,25 @@ export function useCanvasInteraction({
         /* Same-frame handle tracking (see the rotate branch above): the
            squares must move with the object THIS frame, not whenever React
            gets around to re-rendering ResizeHandlesOverlay from the store
-           write just above. */
+           write just above.
+
+           Re-read the object from the store rather than merging
+           {...origObj, ...updates}: a bay-quantized applyResize step can
+           return {} (the drag hasn't crossed into the next/previous whole
+           bay yet), in which case updateObject's Object.assign is a no-op
+           and the store KEEPS whatever the last non-empty step committed —
+           not origObj. Merging onto origObj in that case paints the handles
+           (and the rotate stalk, which computeHandleLayout derives from the
+           same bounds) at the pre-drag size while the rack itself is still
+           showing the last committed bay count: exactly the "handles at the
+           OLD bounds" mismatch, worst on a direction reversal mid-gesture
+           (grow past a threshold, ease back — beams stay grown, handles
+           snap to the original bounds). Reading the live object keeps this
+           and the next frame's real re-render in permanent agreement. */
         const grp = findHandlesGroup(stage, objId)
         if (grp) {
-          syncHandleOverlayNode(grp, { ...origObj, ...updates }, view.current.zoom, st.gridSize)
+          const liveObj = useCanvasStore.getState().objects.find(o => o.id === objId) || { ...origObj, ...updates }
+          syncHandleOverlayNode(grp, liveObj, view.current.zoom, st.gridSize)
           stage.batchDraw()
         }
         return
@@ -530,6 +644,12 @@ export function useCanvasInteraction({
         const st = useCanvasStore.getState()
         const obj = st.objects.find(o => o.id === rd.objId)
         if (obj) st.commitObjectUpdate(rd.objId, obj)
+        /* Wall highlight is only for the duration of the drag that's ending —
+           CanvasUI clears activeWall on the next click anywhere; canvas2 has
+           no WallInputOverlay to keep it alive for, so clearing it here
+           (rather than waiting for the next unrelated click) is the simpler
+           equivalent for a mouse-only gesture. */
+        if (typeof rd.handle === 'string' && rd.handle.startsWith('wall_')) st.setActiveWall(null)
         setCursor(spaceDown.current ? 'grab' : 'default')
         return
       }

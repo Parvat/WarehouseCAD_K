@@ -118,6 +118,8 @@ export function Canvas2() {
   const objects  = useCanvasStore(s => s.objects)
   const showGrid = useCanvasStore(s => s.showGrid)
   const uiTheme  = useCanvasStore(s => s.uiTheme)
+  const showAisles = useCanvasStore(s => s.showAisles ?? true)
+  const activeWall = useCanvasStore(s => s.activeWall)
 
   /* The live view. Seeded from the store so toggling the canvas keeps your
      place, then owned here for the duration of a gesture. */
@@ -280,7 +282,8 @@ export function Canvas2() {
               path selection and object drag already use. Nothing here is a
               second, independent input surface. */}
           <Layer listening={false}>
-            <Overlays selectedObjects={selectedObjects} gridSize={gridSize} marquee={marquee} />
+            <Overlays selectedObjects={selectedObjects} gridSize={gridSize} marquee={marquee}
+              objects={objects} zoom={zoom} showAisles={showAisles} activeWall={activeWall} />
             {handleTarget && (
               <ResizeHandlesOverlay obj={handleTarget} zoom={zoom} gridSize={gridSize} />
             )}

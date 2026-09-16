@@ -15,7 +15,7 @@
 // same function runs identically in either canvas.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { objectContains } from '../utils/canvas'
+import { objectContains, getFpWallSegments, distToSegment } from '../utils/canvas'
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 const COL_GRID = new Set(['column_grid'])
@@ -94,6 +94,36 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
     if (objectContains(obj, wx, wy, zoom)) return obj.id
   }
 
+  return null
+}
+
+/** Which floor plan's wall a world point falls on, as { objId, wallIdx }, or
+ *  null — ported from CanvasUI.jsx's FpWallHitAreas hit band, NOT reinvented:
+ *  the same distance-to-segment test, the same ~24-screen-px band (a real
+ *  wall is a few inches thick, under a screen px at most zooms nobody could
+ *  reliably grab). getFpWallSegments does the actual vertex/segment math, the
+ *  same function the render (FpDimLabels) and the drag (applyFpWallDrag) both
+ *  already key off — one source for "where are this building's walls".
+ *
+ *  Checked over EVERY floor plan regardless of what's currently selected
+ *  (matching CanvasUI: a wall is always live, dragging it selects its
+ *  building), so the caller must resolve this before it resolves the plain
+ *  hitTest() pass — a rack standing on top of a wall must still win, which
+ *  the caller does by checking hitTest() first and only falling back to this
+ *  when that pass found nothing or found the floor plan itself. */
+export function fpWallHitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
+  const layerMap = new Map((layers || []).map(l => [l.id, l]))
+  const hitW = Math.max(18, 24 / zoom)
+  for (const obj of objects) {
+    if (!FP_SET.has(obj.type)) continue
+    if (!isLayerUsable(layerMap, obj)) continue
+    const walls = getFpWallSegments(obj, gridSize)
+    for (const seg of walls) {
+      if (distToSegment({ x: wx, y: wy }, seg.a, seg.b) < hitW) {
+        return { objId: obj.id, wallIdx: seg.index }
+      }
+    }
+  }
   return null
 }
 
