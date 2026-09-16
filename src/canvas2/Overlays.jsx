@@ -21,7 +21,7 @@ export function Overlays({ selectedObjects, gridSize, marquee, objects = [], zoo
   const aisles = showAisles ? objects.filter(o => o.type === 'aisle') : []
   return (
     <>
-      {selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} />)}
+      {selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} objects={objects} />)}
       {selectedObjects.map(o => rackLabelsEligible(o.type)
         ? <RackLabels key={'rl:' + o.id} obj={o} zoom={zoom} gridSize={gridSize} /> : null)}
       {selectedObjects.map(o => (FP_TYPES.has(o.type) && o.fpVerts)

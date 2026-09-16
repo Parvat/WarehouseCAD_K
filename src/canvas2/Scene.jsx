@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
-import { RackShape, FloorPlanShape, ColumnGridShape, FallbackShape } from './shapes'
+import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape } from './shapes'
 
 /* ── STEP 2 · the scene ──────────────────────────────────────────────────────
    Everything in the store, drawn. One painter per object, chosen once, and no
@@ -46,6 +46,7 @@ export function Scene({ listening = false, bind }) {
       if (!o || !isVisible(o)) continue
       if (FP_TYPES.has(o.type) && o.fpVerts) { floors.push(o); continue }
       if (o.type === 'column_grid') { rest.push({ kind: 'columns', obj: o }); continue }
+      if (o.type === 'aisle') { rest.push({ kind: 'aisle', obj: o }); continue }
       if (PORTED_RACK_TYPES.has(o.type)) {
         const ops = rackDrawOps(o, { gridSize })
         // a degenerate rack has no ops; fall through so it is still visible
@@ -67,6 +68,9 @@ export function Scene({ listening = false, bind }) {
         }
         if (e.kind === 'columns') {
           return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
+        }
+        if (e.kind === 'aisle') {
+          return <AisleShape key={e.obj.id} obj={e.obj} objects={objects} listening={listening} bind={bind} />
         }
         return <FallbackShape key={e.obj.id} obj={e.obj} listening={listening} bind={bind} />
       })}

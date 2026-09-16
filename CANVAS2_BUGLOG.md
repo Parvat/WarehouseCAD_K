@@ -1023,6 +1023,95 @@ call it, not rediscover which id is safe to hardcode.
 
 ---
 
+## BUG 16 — Aisle objects invisible and unselectable under canvas2 — no geometry of their own to draw or hit-test
+
+**Symptom:** an aisle (the gap-width label between two rack rows) could be
+created fine — `createAisle` is a pure store action, engine-agnostic — but
+under canvas2 it could never be selected or deleted through the canvas. It
+had a LABEL (`DimensionLabels.jsx`'s `AisleLabel`, ported earlier and
+already correct), but no clickable body: `Scene.jsx` routed `'aisle'` to
+`FallbackShape`, which measures `getObjectBounds(obj)` and bails
+(`if (!(b.width>0) || !(b.height>0)) return null`) — an aisle carries no
+x/y/width/height at all, so that's always a 0×0 box. Flagged by the parity
+audit (the entry that led to BUG 14/15); this is the last of that audit's
+findings.
+
+**Chased:** nothing new — the audit had already traced the exact cause
+(`FallbackShape`'s bounds guard, `objectContains`'s 0×0 fallback for a type
+it has no case for) and named the fix precisely: port `ShapeGeometry.jsx`'s
+`'aisle'` case, which computes a real rect on the fly from the two
+referenced rows rather than reading it off the object.
+
+**Cause:** an aisle's geometry is entirely DERIVED, not stored — the SVG
+engine copes because every renderer call recomputes it live from `row1Id`/
+`row2Id`; canvas2's generic per-object machinery (`FallbackShape`'s bounds
+check, `objectContains`'s type-blind bbox test) has no way to know a
+particular object type needs its bounds looked up in the two OTHER objects
+it references instead of read off itself.
+
+**Fix:** one shared function, `aisleRect(aisle, objects)` in
+`canvas2/hitTest.js` — the exact gap-rect math ported verbatim from
+`ShapeGeometry.jsx`'s `'aisle'` case (same axis-detection, same clip-to-
+overlap) — used by three places so they can never disagree about where an
+aisle physically is:
+- `hitTest()`'s main pass gets an explicit `'aisle'` branch (a point-in-rect
+  test against `aisleRect`, padded like the rest of that pass) instead of
+  falling through to `objectContains`, which has no case for it — the same
+  pattern `fpWallHitTest` already established for a different type
+  `objectContains` doesn't know either.
+- `AisleShape` (new, `canvas2/shapes.jsx`) paints the rect — fully
+  transparent always (SVG's own UNSELECTED look, `fill="transparent"`, is
+  visually identical to canvas2 drawing nothing at all, so there was nothing
+  to actually port there) via the same empty-`sceneFunc`/real-`hitFunc`
+  split `HitPad` already uses, so the aisle also registers with Konva's own
+  hit graph — not the path that decides selection (CANVAS2.md rule 4), but
+  the one the click-census diagnostics compare against, and it would have
+  reported a false mismatch otherwise.
+- `outlineBounds` (shapes.jsx) gained an `objects` parameter (default `[]`,
+  so every existing caller that never selects an aisle is unaffected) and
+  an `'aisle'` branch calling the same `aisleRect` — so the ALREADY-existing
+  `SelectionOutline` component draws a real highlight around a selected
+  aisle for free, through the same one selection-chrome path every other
+  object type already goes through (BUG 12's whole point), rather than
+  teaching the aisle its own bespoke selected-state paint the way the SVG's
+  single rect had to.
+- `Scene.jsx` routes `'aisle'` to `AisleShape` instead of `FallbackShape`.
+
+**Verify:** real Chromium, scripted (Playwright): built two `rack_row`
+objects with a real gap, then drove the ACTUAL UI a person would — clicked
+one row, shift-clicked the second (real mouse + real Shift key, not a
+store poke), clicked the real "+ Create Aisle Label" button in the
+properties panel. Clicked the resulting aisle's gap area: `selectedIds`
+became exactly `[thatAisleId]`, the right panel switched to its real AISLE
+properties view (Name/Traffic fields), and a blue dashed `SelectionOutline`
+appeared in the gap on screen. Pressed the real Delete key: object count
+dropped by one, the aisle was gone, both rows were untouched. The debug
+census confirms Konva's own hit graph agrees too (`resolves to object:
+aisle ...`). Zero console errors. 309 unit tests pass; build clean.
+
+**Not in scope (consistent with BUG 12's own noted limitation):** an
+aisle's rect is recomputed fresh every render, so it already tracks a
+row's move correctly once that move COMMITS to the store — but a PLAIN
+drag of one of its rows (which moves Konva nodes directly, no per-frame
+store write, see BUG 12) does not live-update the aisle's rect mid-gesture,
+because the aisle is keyed by its OWN id in `collectDragNodes`, not by
+either row's id it actually depends on. BUG 12 logged this exact gap for
+aisle labels already; it applies equally to the new AisleShape/
+SelectionOutline now and is left as the same documented follow-up, not
+re-solved here.
+
+**Lesson:** "does this object have geometry" is not one question in this
+codebase — some types store it, some derive it from themselves (a circle's
+rx/ry), and this type derives it from TWO OTHER OBJECTS ENTIRELY. Any
+generic per-object machinery (bounds, hit-test, selection outline) that
+assumes "read x/y/width/height off the object" as the universal case will
+silently blank out the derived ones — the fix is never "special-case the
+generic function," it's "give the derived type its own geometry function,
+call it from every place that needs geometry, and thread whatever extra
+context (`objects`, here) that function needs through to each call site."
+
+---
+
 ## Template for new entries
 
 ```

@@ -3,6 +3,7 @@ import { Group, Rect, Path, Shape, Circle, Line, Text } from 'react-konva'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { uprightXs, cantileverGeom } from '../render/rackOps'
+import { aisleRect } from './hitTest'
 
 /** Min/max extent of a vertex list, in the same absolute world coords the
  *  verts are already drawn in. Shared by FloorPlanShape's own selfRect and
@@ -456,6 +457,52 @@ export function FallbackShape({ obj, listening = false, bind }) {
   )
 }
 
+/* ── Aisle ────────────────────────────────────────────────────────────────── */
+
+/** An aisle — a placeable rack-row gap indicator, carrying NO x/y/width/height
+ *  of its own; its geometry is entirely derived, live, from the two rows it
+ *  references (row1Id/row2Id), via the shared aisleRect (hitTest.js — same
+ *  function the pick and DimensionLabels' AisleLabel both use).
+ *
+ *  Ported from ShapeGeometry.jsx's 'aisle' case, ONE difference on purpose:
+ *  the SVG bakes its own selected-state fill/stroke into this same rect
+ *  (`fill={selected?'#f0b42915':'transparent'}`), because that is the only
+ *  paint it has. canvas2 already has a dedicated selection layer
+ *  (Overlays.jsx's SelectionOutline/AisleLabel highlight) that every other
+ *  object type's selection state goes through — so this shape stays fully
+ *  transparent always, matching the SVG's own UNSELECTED look exactly (which
+ *  is `transparent` too), and lets Overlays own "selected" the same way it
+ *  already owns it for a rack or a floor plan, rather than teaching one more
+ *  shape to read selection state that the render/rackOps.js op list and
+ *  every other painter here deliberately don't. */
+export function AisleShape({ obj, objects, listening = false, bind }) {
+  const rect = aisleRect(obj, objects)
+  if (!rect) return null
+  return (
+    <Group name={nodeName(obj.id)} listening={listening} {...(bind ? bind(obj) : null)}>
+      {/* Paints nothing (matches the SVG's own unselected "transparent" rect)
+          but still registers a Konva hit region, the same sceneFunc-empty /
+          hitFunc-real split HitPad above uses — so the click-census
+          diagnostics (clickDiagnostics.js) see an aisle as hittable too,
+          consistent with every other selectable shape, even though the
+          selection DECISION itself comes from hitTest.js's own aisleRect
+          check, not from Konva's hit graph (CANVAS2.md rule 4). */}
+      <Shape
+        listening={listening}
+        perfectDrawEnabled={false}
+        fill="#000"
+        sceneFunc={() => {}}
+        hitFunc={(ctx, shape) => {
+          ctx.beginPath()
+          ctx.rect(rect.x, rect.y, rect.width, rect.height)
+          ctx.closePath()
+          ctx.fillStrokeShape(shape)
+        }}
+      />
+    </Group>
+  )
+}
+
 /** Bounds to outline — for EVERY selectable object, not just the ones
  *  getObjectBounds happens to measure.
  *
@@ -469,8 +516,18 @@ export function FallbackShape({ obj, listening = false, bind }) {
  *  A selected object with no visible marker is worse than a slightly wrong
  *  marker: you cannot tell whether the click registered. So the last resort is
  *  a small square at the object's own position rather than nothing. */
-export function outlineBounds(obj, gridSize = 40) {
+export function outlineBounds(obj, gridSize = 40, objects = []) {
   if (!obj) return null
+
+  /* An aisle has no x/y/width/height of its own — see AisleShape above — so
+     it needs `objects` (to look up its two rows) rather than anything
+     getObjectBounds could ever measure from the object alone. Every other
+     branch below never reaches this for an aisle (none of their type checks
+     match), so passing objects=[] (every OTHER caller's default) is a
+     harmless no-op for them, not a silent aisle bug. */
+  if (obj.type === 'aisle') {
+    return aisleRect(obj, objects)
+  }
 
   if (obj.type === 'column_grid') {
     const cols = expandColumnGrid(obj, gridSize)
@@ -526,9 +583,13 @@ export function outlineBounds(obj, gridSize = 40) {
    would do the same thing, less reliably, and would need the zoom threaded in.
 
    Zero padding on purpose: at 7% a rack is ten pixels tall, and an inset or
-   outset frame would read as a second object rather than as its outline. */
-export function SelectionOutline({ obj, gridSize = 40 }) {
-  const b = outlineBounds(obj, gridSize)
+   outset frame would read as a second object rather than as its outline.
+
+   `objects` is only ever read for an aisle (outlineBounds's own aisleRect
+   branch) — every other type ignores it, so callers that never select an
+   aisle can omit it exactly as before. */
+export function SelectionOutline({ obj, gridSize = 40, objects = [] }) {
+  const b = outlineBounds(obj, gridSize, objects)
   if (!b) return null
   return (
     <Group name={'sel:' + obj.id} listening={false} {...spin(obj)}>

@@ -40,6 +40,45 @@ const isLayerUsable = (layerMap, obj) => {
   return !!l && l.visible && !l.locked && !obj.locked
 }
 
+/** An aisle's own rect — the actual gap between its two referenced rows,
+ *  clipped to their overlapping span — ported verbatim from ShapeGeometry.jsx's
+ *  'aisle' case. An aisle object carries no x/y/width/height of its own; its
+ *  geometry is entirely derived, live, from `row1Id`/`row2Id` every time this
+ *  is called. Exported so canvas2's AisleShape (the paint) and this file's own
+ *  hitTest (the pick) can never disagree about where an aisle physically is —
+ *  the same reason DimensionLabels' AisleLabel and this shared the same math
+ *  before BUG 16, just not through one function. */
+export function aisleRect(aisle, objects) {
+  const row1 = objects.find(o => o.id === aisle.row1Id)
+  const row2 = objects.find(o => o.id === aisle.row2Id)
+  if (!row1 || !row2) return null
+  const b1 = { x: row1.x, y: row1.y, r: row1.x + row1.width, b: row1.y + row1.height }
+  const b2 = { x: row2.x, y: row2.y, r: row2.x + row2.width, b: row2.y + row2.height }
+
+  const yGap = Math.max(b2.x - b1.r, b1.x - b2.r)
+  const xGap = Math.max(b2.y - b1.b, b1.y - b2.b)
+  const isHoriz = xGap >= yGap
+
+  let ax, ay, aw, ah
+  if (isHoriz) {
+    const top = b1.b < b2.y ? b1 : b2
+    const bot = b1.b < b2.y ? b2 : b1
+    ax = Math.max(top.x, bot.x)
+    ay = top.b
+    aw = Math.min(top.r, bot.r) - ax
+    ah = bot.y - top.b
+  } else {
+    const lft = b1.r < b2.x ? b1 : b2
+    const rgt = b1.r < b2.x ? b2 : b1
+    ax = lft.r
+    ay = Math.max(lft.y, rgt.y)
+    aw = rgt.x - lft.r
+    ah = Math.min(lft.b, rgt.b) - ay
+  }
+  if (aw <= 0 || ah <= 0) return null
+  return { x: ax, y: ay, width: aw, height: ah }
+}
+
 /** The object under a world point, or null.
  *
  *  Three passes, priority order matching visual z-order — copied from
@@ -67,6 +106,21 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
   for (const obj of sorted) {
     if (!isLayerUsable(layerMap, obj)) continue
     if (COL_GRID.has(obj.type) || FP_SET.has(obj.type)) continue
+    /* An aisle carries no x/y/width/height of its own — objectContains
+       (utils/canvas.js, frozen brain) has no case for it and degenerates to
+       a 0×0 box at the origin, never hittable. Its real geometry is the gap
+       rect between its two referenced rows (aisleRect above), so it gets its
+       own point-in-rect test here instead of objectContains — the one place
+       this module already carries geometry objectContains doesn't know
+       (fpWallHitTest is the other). */
+    if (obj.type === 'aisle') {
+      const r = aisleRect(obj, objects)
+      if (r) {
+        const P = 4 / zoom
+        if (wx >= r.x - P && wx <= r.x + r.width + P && wy >= r.y - P && wy <= r.y + r.height + P) return obj.id
+      }
+      continue
+    }
     if (objectContains(obj, wx, wy, zoom)) return obj.id
   }
 
