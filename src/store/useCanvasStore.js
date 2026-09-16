@@ -714,8 +714,8 @@ export const useCanvasStore = create(
     },
 
     exportAsPDF: () => {
-      const { currentFilename } = useCanvasStore.getState()
-      exportToPDF(currentFilename)
+      const state = useCanvasStore.getState()
+      exportToPDF(state.currentFilename, state)
     },
 
     newScene: () => {

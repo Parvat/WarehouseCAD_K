@@ -843,6 +843,116 @@ cross's concave corners; only vertex-editing can).
 
 ---
 
+## BUG 14 — PDF export hard-depended on the SVG engine's live DOM — replaced with a headless exporter
+
+**Symptom:** the parity audit (see the entry above BUG 13, and the audit
+report that preceded it) found PDF export was the single most severe gap in
+canvas2: `exportToPDFNow` (`src/utils/saveLoad.js`) read
+`document.getElementById('canvas-svg')` and `#canvas-container` — elements
+only `CanvasArea.jsx` (the SVG engine) ever creates — cloned that live SVG
+DOM node, and opened it in a new window for the browser's Print/Save-as-PDF
+dialog. With canvas2 active neither element exists, so export silently
+alerted "Canvas not ready" and produced nothing. Deleting the SVG engine, the
+whole point of this audit, would have deleted PDF export outright.
+
+**Chased:** the task description asked to "reuse the old export's A1 sizing
+/ title block / scale-bar layout" — none of that existed in code to reuse.
+`exportToPDFNow` was a bare DOM-clone wrapped in a browser print dialog, no
+A1 page size, no title block, no scale bar, at the container's raw on-screen
+pixel dimensions. Grepped the repo for `svg2pdf`/`jsPDF`/A1-sizing and found
+nothing — no such library is installed, no such layout ever existed. Read
+this as directional intent (build a real one, professional-grade) rather
+than a literal reuse instruction, since there was nothing to literally
+reuse; the one thing genuinely worth keeping from the old path was its
+*delivery mechanism* — open a window, let the browser's own print pipeline
+turn an SVG into a PDF — which needed no rewrite, only a real, headless SVG
+to feed it instead of a cloned one.
+
+**Cause:** PDF export was never headless. It was built as "screenshot the
+canvas," not "render the document" — a viable approach right up until there
+might be no canvas mounted to screenshot.
+
+**Fix:** new module, `src/export/pdfExport.js`, draws the plan itself from
+`state.objects` — no DOM read of any kind:
+- Floor plans: `getFpVertices`/`insetPolygon` (the exact functions
+  canvas2's `FloorPlanShape` already draws with) build the wall-band path
+  directly as SVG, evenodd fill rule.
+- Column grids: `expandColumnGrid` (same function the column-conflict check
+  and canvas2's `ColumnGridShape` both use) → a `<rect>` per column.
+- Every `PORTED_RACK_TYPES` rack: `rackDrawOps` — the SAME renderer-neutral
+  op list canvas2's own `Scene.jsx` paints with Konva — converted to
+  `<rect>`/`<path>`/arrow markup instead. An export and canvas2's own
+  on-screen drawing can never draw a rack two different ways, because they
+  now draw it from the identical op list.
+- Sized in real mm: the SVG's `width`/`height` attributes are literal `841mm
+  594mm` (A1, landscape or portrait chosen from the content's own aspect
+  ratio), the `viewBox` is world px — the browser's own vector scaling does
+  the mm conversion, so nothing is rasterized at any zoom.
+- A1 title block (bottom-right: project/scale/date/sheet) and a graphical
+  scale bar (bottom-left), both drawn new — see Chased above for why there
+  was nothing old to port here.
+- `saveLoad.js`'s `exportToPDF` now takes the store snapshot as an explicit
+  argument (matching this file's own `serializeScene`/`deserializeScene`
+  convention) instead of reading a mounted canvas; `exportAsPDF` in the
+  store passes `useCanvasStore.getState()` through. No longer `async` —
+  there is no live re-render to wait a frame for.
+
+**A real bug found building it, not assumed away:** the first working
+version put the title block and scale bar text and geometry directly in
+WORLD units (e.g. `font-size="10"`) — correct-LOOKING code, silently wrong.
+World units are NOT screen pixels here: `gridSize` (40 units = 1ft) means a
+"10-unit" font against a 240ft-wide generated building is a quarter-inch of
+REAL-WORLD height, invisible once that whole building is scaled down to fit
+an 841mm sheet — rendered as a sub-pixel smear in an on-screen preview and
+would have printed the same way. Confirmed by rendering the actual export
+and reading the raw SVG numbers, not by inspecting the code for
+plausibility. Fixed by computing `u` — world units per **paper** mm, at the
+sheet's actual applied print scale (`Math.min(paperW/vb.width,
+paperH/vb.height)`, the same constraining-axis rule SVG's own
+`preserveAspectRatio="xMidYMid meet"` uses) — and sizing every piece of
+print furniture (text, strokes, the title block's own box) as a fixed
+physical mm target multiplied by `u`, so it comes out legible on paper
+regardless of whether the plan is 50ft or 2,000ft across. The plan's own
+geometry (racks, walls) needed no such treatment — it already draws through
+`rackDrawOps` at real world scale, which is exactly what "matches what's on
+screen" requires.
+
+**Verify:** real Chromium, scripted (Playwright): generated a layout (a
+floor plan + 12 racks + a column grid, canvas2 AND the SVG engine both
+active in separate runs), exported from each, and confirmed **byte-identical
+output from both** — proof the exporter is genuinely engine-independent.
+Read the raw SVG: real `<path>`/`<rect>`/`<text>` elements, zero `<image>`
+tags. Rendered the print page through Chromium's own print-to-PDF
+(`page.pdf()`) to produce an actual PDF file, then read it back — the PDF's
+extracted text layer contains the title block and scale bar labels
+verbatim ("TRACE", "PROJECT warehouse-layout", "SCALE 1 : 96", "SHEET A1",
+"0' 10' 20' 30' 40'"), confirming real vector text, not a rasterized
+screenshot. Visually: the building outline, column markers, and all 12
+racks (including double-row flue lines and bay dividers) render correctly
+positioned and legible; zoomed crops of the title block and scale bar show
+crisp text at 5x magnification. Zero console errors. 309 unit tests pass;
+build clean.
+
+**Not ported (deliberate scope boundary, matching the task's own "rackOps.js
+draw-ops plus floor-plan and column geometry" wording):** aisles,
+annotations (text/lines/arrows/freehand/dimension), rack dimension labels,
+and aisle-gap labels are NOT drawn in the export. A "Generate layout" run
+(the verify scenario) produces only a floor plan, a column grid, and racks,
+so this covers it; a hand-annotated sheet would currently export those
+racks/building/columns only. Flagging as a known, explicit gap rather than
+silently dropping it.
+
+**Lesson:** "headless" has to mean it all the way down — a renderer that
+reads the store directly still isn't headless if it re-derives some of its
+sizing from the CONTENT's own scale (world units) instead of the OUTPUT's
+fixed physical target (paper mm). The two coordinate systems in a print
+export — the plan's world space and the sheet's physical space — must be
+kept explicitly distinct, with ONE conversion factor computed once from
+however the sheet actually gets fit to the page, not assumed from whichever
+axis happens to be reached for first.
+
+---
+
 ## Template for new entries
 
 ```
