@@ -33,6 +33,17 @@ export function useKeyboardShortcuts() {
            picked bays. */
         if (activeBaySelection && activeBaySelection.length > 0) {
           s.deleteSelectedBays()
+          /* deleteSelectedBays only clears activeBaySelection, not
+             selectedIds — the rack rows a bay marquee added there (BUG
+             29) stay selected, which re-satisfies GroupRotateOverlay's
+             own selectedObjects.length >= 2 gate now that
+             activeBaySelection is empty again, bringing back the
+             group-rotate outline/handle around racks nothing asked to
+             rotate (BUG 31). Clearing the selection too leaves nothing
+             selected after a bay delete, matching MultiBayPanel's own
+             "Delete selected bays" button (RackRowPanelCore.jsx), which
+             does the same pairing. */
+          s.clearSelection()
           return
         }
         if (selectedIds.length === 1) {

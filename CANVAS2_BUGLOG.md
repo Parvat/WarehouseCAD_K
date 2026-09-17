@@ -2553,6 +2553,85 @@ everything downstream already composes correctly.
 
 ---
 
+## BUG 31 — BUG 30's fix was incomplete: group-rotate chrome reappeared right after a bay delete
+
+Symptom:  BUG 30 correctly suppressed the group-rotate outline/handle
+while a cross-row bay selection was active, and made Delete route to
+`deleteSelectedBays`. But immediately AFTER deleting the selected bays,
+the group outline + rotate handle reappeared around the (now bay-less)
+racks — the exact chrome BUG 30 had just hidden, back the moment the
+bays it was hiding disappeared.
+
+Chased:   `deleteSelectedBays` (the store action) only ever clears
+`activeBaySelection` — it does not touch `selectedIds`. The rack ROWS a
+bay marquee added to `selectedIds` (BUG 29, so the Properties panel shows
+them) stay selected after the delete. With `activeBaySelection` now
+empty, `GroupRotateOverlay`'s own gate (`selectedObjects.length >= 2 &&
+!(activeBaySelection.length > 0)`, BUG 30's own fix) is satisfied again
+— the SAME condition that made the chrome disappear during bay-select
+mode makes it reappear the instant that mode ends, because "bay-select
+mode ended" and "2+ objects are still selected" both became true at
+once. Also chased, and confirmed real but out of THIS fix's scope:
+`PropertiesPanel.jsx`'s own "multi-select" branch
+(`selected.length > 1`) returns its own generic "N objects selected /
+Delete all" UI BEFORE ever reaching the line that mounts `MultiBayPanel`
+(mounted only in the single-object branch further down) — meaning for
+any genuine CROSS-ROW bay marquee (which inherently leaves 2+ racks
+selected), the panel's own "Delete selected bays" button is currently
+unreachable in the UI at all, independent of this bug. Logged here for
+visibility rather than silently expanded into: the keyboard Delete path
+this fix verifies is unaffected by it and already satisfies the reported
+symptom and its own verify criteria in full.
+
+Cause:    `deleteSelectedBays` clears the bay selection but not the
+object selection it rode in on, so the post-delete state is
+indistinguishable from "2+ racks selected, nothing bay-specific active"
+— which is precisely the state GroupRotateOverlay's gate treats as "show
+the group chrome."
+
+Fix:      Both call sites of `deleteSelectedBays` now also clear the
+whole selection afterward, so nothing is left selected once the bays it
+referred to are gone:
+  - `src/hooks/useKeyboardShortcuts.js`'s Delete/Backspace handler calls
+    `s.clearSelection()` right after `s.deleteSelectedBays()`.
+  - `RackRowPanelCore.jsx`'s `MultiBayPanel` "Delete N bays" button now
+    calls a small wrapper, `deleteSelectedBaysAndClear` (`deleteSelectedBays();
+    clearSelection()`), instead of passing the raw store action straight
+    to `onClick` — so the panel and the keyboard can never disagree here
+    either, matching BUG 30's own "keyboard and panel do the same thing"
+    goal. `clearSelection` (an existing, already-exported store action)
+    is used from the CALL SITES rather than editing the protected
+    `deleteSelectedBays` action itself to add this — a plain function
+    composition, not a change to `useCanvasStore.js`.
+
+Verify:   Real mouse, via Playwright, with the same fp+two-rack-rows
+setup BUG 29/30 used. Bay-marqueed bays 0-1 across both rows, then
+pressed the Delete key: `selectedIds` ended up `[]` (empty — not the two
+rack ids), `activeBaySelection` `[]`, both racks' `beams` correctly
+dropped to `[96]`, ONE history entry for the whole gesture. Screenshot
+confirms the RightPanel reads "No object selected" and the canvas shows
+no selection outline, no group box, no rotate handle — nothing left
+selected at all, not merely the group chrome specifically suppressed.
+`undo()` once restored `[96,96,96]` to both rows exactly. Zero console
+errors throughout. Build clean (1789 modules), 309/309 tests pass (no
+existing test touches this exact path).
+
+Lesson:   A gate that reacts to "condition X is now false" (BUG 30's
+`!activeBaySelection.length`) can flip back to its OTHER state the
+instant something ELSE changes X's sibling state, even without that
+sibling ever being the thing the gate was written to watch —
+`GroupRotateOverlay`'s gate was never wrong about `activeBaySelection`,
+it was just never told that `selectedIds` staying populated after a bay
+delete would recreate the exact condition ("2+ objects selected, no
+active bay picking") it treats as "show group chrome." Whenever a fix
+clears one piece of a two-part state (here: bay selection, but not
+object selection) to make a gate read a certain way, check what happens
+to the OTHER piece once the action completes — it's easy to fix the
+piece a bug report names and leave the sibling in a state that quietly
+reopens the same gate a moment later.
+
+---
+
 ## Template for new entries
 
 ```
