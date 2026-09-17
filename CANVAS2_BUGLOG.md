@@ -2467,6 +2467,92 @@ instruction is specifically to port the math, not to redesign it.
 
 ---
 
+## BUG 30 — Bay-select mode showed group-rotate chrome, and Delete deleted whole rows instead of the selected bays
+
+Symptom:  Two related inconsistencies in cross-row bay selection (BUG 29),
+both about bay-select mode not being treated as its own distinct mode:
+  1. After a bay marquee across 2+ rows, the purple group-rotate outline
+     + rotate handle (GroupRotateOverlay, BUG 19) appeared around the
+     racks — chrome for "rotate this group as a unit," not for "these are
+     the bays you picked," which the amber bay highlights already show.
+  2. Pressing Delete with a cross-row bay selection active deleted the
+     WHOLE racks, while the multi-bay panel's own "Delete selected bays"
+     button (`deleteSelectedBays`) correctly deleted only the picked
+     bays — the keyboard and the panel disagreed about what the current
+     selection even meant.
+
+Chased:   Both root causes were narrow and independent, not one shared
+mistake:
+  - GroupRotateOverlay's own mount condition (`Canvas2.jsx`) is
+    `selectedObjects.length >= 2` — and BUG 29's own bay-marquee fix adds
+    every matched row to `selectedIds` (so the Properties/multi-bay panel
+    shows them), which satisfies this exact condition as an unavoidable
+    side effect of making the bulk panel work at all. The overlay was
+    never taught that `activeBaySelection` (a DIFFERENT store array) being
+    non-empty means the CURRENT intent is "pick bays," not "rotate this
+    selection as a group."
+  - `useKeyboardShortcuts.js`'s Delete handler only ever checked ONE
+    thing for a bay-aware delete: a SINGLE selected object's own
+    `activeBayIdx` field (the per-object single-bay-click pick, BUG 4's
+    original port) — it never looked at `activeBaySelection` (the
+    cross-row array BUG 29 introduced) at all, so with 2+ rows selected
+    via a bay marquee, `selectedIds.length === 1` was already false and
+    the handler fell straight through to whole-object `deleteSelected()`.
+
+Cause:    Two pieces of chrome/behaviour (GroupRotateOverlay's mount
+gate, the keyboard Delete handler) were written before `activeBaySelection`
+existed as a concept (both predate BUG 29) and neither was updated when
+it was introduced — a cross-row bay selection quietly satisfies both
+gates' EXISTING conditions (2+ objects selected; one object with no bay
+picked) well enough that nothing crashed or looked obviously broken,
+it just meant the wrong thing.
+
+Fix:      `Canvas2.jsx`: read `activeBaySelection` from the store, and
+gate `GroupRotateOverlay` on `selectedObjects.length >= 2 &&
+!(activeBaySelection && activeBaySelection.length > 0)` — bay-select mode
+suppresses the group chrome entirely, leaving only RackShape's own amber
+`multiBaySelectionRects` highlights and each rack's own plain blue
+selection outline. The single-object `ResizeHandlesOverlay`/
+`FpRotateHandleOverlay` gates are untouched — a bay marquee landing on
+just one row never reaches the `>= 2` gate regardless, so there is
+nothing there to suppress.
+
+`useKeyboardShortcuts.js`: the Delete/Backspace handler now checks
+`activeBaySelection.length > 0` FIRST, before the existing single-object
+`activeBayIdx` check, and calls `s.deleteSelectedBays()` — the exact same
+store action `MultiBayPanel`'s own "Delete selected bays" button calls
+(`src/components/RightPanel/panels/RackRowPanelCore.jsx`) — so the
+keyboard and the panel can never disagree about what Delete does while a
+bay selection is active.
+
+Verify:   Real mouse, via Playwright, with the same fp+two-rack-rows
+setup BUG 29 used. Bay-marqueed bays 0-1 across both rows: screenshot
+shows only the amber bay tints and each rack's own plain blue outline —
+no purple dashed box, no rotate handle, matching the earlier BUG 29
+screenshot's group-rotate chrome being visibly ABSENT this time.
+`selectedIds` still had both racks (2 objects, Properties panel correctly
+showed "2 objects selected"); `activeBaySelection` had the expected 4
+entries. Pressed the Delete key: both racks STILL EXISTED as objects
+(`objectCount` unchanged) with `beams` dropped to `[96]` (bay 2, the one
+outside the marquee) on both — not a whole-row delete — in exactly ONE
+history entry, `activeBaySelection` cleared afterward. `undo()` once
+restored `[96,96,96]` to both rows exactly. Zero console errors
+throughout. Build clean (1789 modules), 309/309 tests pass (no existing
+test touches either path).
+
+Lesson:   Introducing a new selection CONCEPT (`activeBaySelection`,
+BUG 29) doesn't automatically teach every EXISTING piece of code that
+reads a related but different signal (`selectedIds.length`, a single
+object's own `activeBayIdx`) about it — each one has to be checked and
+updated deliberately, because the new concept can satisfy an old gate's
+condition by coincidence (2+ selectedIds) without meaning what that gate
+assumed it meant. The place to look for this class of gap is: grep every
+existing consumer of the OLD signal a new feature's selection state
+overlaps with, not just build the new feature's own code path and assume
+everything downstream already composes correctly.
+
+---
+
 ## Template for new entries
 
 ```
