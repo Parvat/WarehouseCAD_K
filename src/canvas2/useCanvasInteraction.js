@@ -10,7 +10,7 @@ import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
-  movedIdsFor, objectCentre, isFloorPlan,
+  movedIdsFor, objectCentre, isFloorPlan, bayEntriesInMarquee,
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
@@ -866,8 +866,28 @@ export function useCanvasInteraction({
       marqueeRef.current = null
       if (m && m.moved && m.to) {
         const st = useCanvasStore.getState()
-        const ids = objectsInMarquee(st.objects, normalizeRect(m.from, m.to))
+        const rect = normalizeRect(m.from, m.to)
+        const ids = objectsInMarquee(st.objects, rect)
         if (ids.length) st.selectMultiple(ids)
+
+        /* Cross-row bay marquee — CanvasArea's own marquee-mouseup
+           bay-intersection, ported verbatim (selection.js's
+           bayEntriesInMarquee). Unconditional set-or-clear on every
+           "moved enough" marquee release, same as the reference: a fresh
+           marquee always redefines the bay selection, including an empty
+           one that finds nothing. */
+        const bayEntries = bayEntriesInMarquee(st.objects, rect, st.gridSize)
+        if (bayEntries.length > 0) {
+          st.setBaySelection(bayEntries)
+          // Rack rows with a bay entry need to be in selectedIds too, so
+          // the Properties/multi-bay panel shows them — CanvasArea's own
+          // "only add, never toggle off an already-selected row" guard.
+          const rackIds = [...new Set(bayEntries.map(e => e.objId))]
+          const nowSelected = useCanvasStore.getState().selectedIds
+          rackIds.forEach(id => { if (!nowSelected.includes(id)) st.selectObject(id, true) })
+        } else {
+          st.clearBaySelection()
+        }
       }
       setMarquee(null)
       setCursor(spaceDown.current ? 'grab' : 'default')

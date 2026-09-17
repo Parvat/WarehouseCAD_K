@@ -28,6 +28,7 @@ export function Scene({ listening = false, bind }) {
   const objects = useCanvasStore(s => s.objects)
   const gridSize = useCanvasStore(s => s.gridSize)
   const visibleLayerIds = useCanvasStore(s => s.layers)
+  const activeBaySelection = useCanvasStore(s => s.activeBaySelection)
 
   /* A hidden layer hides its objects. Same rule the SVG applies — a layer counts
      as visible only when `visible` is truthy — so the two canvases cannot
@@ -64,7 +65,8 @@ export function Scene({ listening = false, bind }) {
       ))}
       {scene.rest.map(e => {
         if (e.kind === 'rack') {
-          return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} gridSize={gridSize} listening={listening} bind={bind} />
+          return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} gridSize={gridSize} listening={listening} bind={bind}
+            activeBaySelection={activeBaySelection} />
         }
         if (e.kind === 'columns') {
           return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
