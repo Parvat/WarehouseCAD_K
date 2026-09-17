@@ -1991,6 +1991,119 @@ properties and only rigid actually prevents a bounce).
 
 ---
 
+## BUG 25 — Shift+drag starting inside a floor plan never started a marquee
+
+Symptom:  Shift+drag over empty canvas correctly started a marquee, but
+shift+drag starting INSIDE a floor plan's footprint did nothing visible —
+no marquee appeared, and the building itself did not move either (the
+press was silently swallowed).
+
+Chased:   `onStageMouseDown`'s shift-check (`if (evt.shiftKey) {
+marqueeRef.current = {...} }`) sat AFTER the plain object `hitTest()` and
+its own `if (hitId) { selectFromHit(...); beginDrag(...); return }`
+block — so any press that `hitTest()` resolved to an object never reached
+the shift-check at all, shift held or not. A floor plan's WHOLE
+bounding box answers `hitTest()`'s Pass 3 (`objectContains` against the
+full rect, not just the ~24-screen-px wall band `FloorPlanShape`'s own
+Konva hit area covers), so pressing anywhere inside a building's
+footprint — not just on a wall — resolves `hitId` to the floor plan,
+taking the object-body branch before shift was ever considered. A
+plain rack has the same issue in principle, but its footprint is usually
+small enough that a marquee is naturally started just outside it; a
+building fills most of the visible canvas, so the interior is exactly
+where a real shift-drag was most likely to begin.
+
+Also chased: what shift is supposed to override, precisely — not
+everything. The SVG engine's own resize/rotate handles AND its
+`FpWallHitAreas` (wall drag) are real DOM elements with their own
+`onMouseDown` that call `e.stopPropagation()` before the canvas's own
+handler (and its shift-check) ever runs — meaning a handle or a wall
+ALWAYS wins the press in the SVG engine, shift held or not, simply
+because the more specific listener claims the event first. Only a press
+that reaches the CANVAS's own `onMouseDown` (nothing more specific
+claimed it) ever consults shift. canvas2 funnels every press through one
+`onStageMouseDown`, so matching this precisely meant moving the
+shift-check to AFTER the handle checks and the wall-hit-test (both of
+which stay exactly where they were), and only BEFORE the plain object
+`hitTest()`/`if (hitId)` block — not moving it to the very top of the
+function, which would have made shift wrongly override handles and
+walls too.
+
+Also chased, before shipping: shift+CLICK (no real drag) on an object is
+an existing, working feature — `nextSelection`'s own shiftKey branch
+toggles the clicked object in/out of the selection, called today via
+`selectFromHit(hitId, !!evt.shiftKey, world)` inside the (now-bypassed
+for shift) `if (hitId)` block. Moving the shift-check up would have
+silently broken this: a shift+press that never turns into a real drag
+would arm a marquee candidate that finds nothing to select on release
+(`m.moved` never becomes true), doing nothing at all where today it
+toggles the object. The SVG engine avoids this collision structurally —
+each object's own `click` (not `mousedown`) DOM listener handles the
+toggle independently of whatever the canvas's own `mousedown` armed, so
+a mousedown that turns out not to be a drag can start a (harmlessly
+abandoned) selbox AND still have the object's own click fire the toggle,
+with no explicit code reconciling the two. canvas2 has no second listener
+to fall back on, so the equivalent had to be built explicitly.
+
+Cause:    Ordering — the shift-check ran after the exact branch it needed
+to run before, for the same reason as the handle/wall checks: the
+"what's specifically hit" tests (handles, walls, then plain object) don't
+already know shift means "always start a marquee, don't interact with the
+body," so nothing skipped straight to it.
+
+Fix:      `onStageMouseDown` (`useCanvasInteraction.js`): computed the
+plain `hitId`/`hitObj` and ran the wall-hit-test exactly as before (both
+keep their existing precedence over shift, matching the handles/walls
+being real, stopPropagation-ing DOM elements in the SVG engine). The
+shift-check now sits immediately after the wall-hit-test and before the
+`if (hitId) { selectFromHit; beginDrag }` block: if shift is held, arm
+`marqueeRef.current` unconditionally — including a `clickHitId: hitId`
+field, capturing what a plain click would have hit right now. Window
+`mouseup`'s marquee handling gained an `else if (m && !m.moved &&
+m.clickHitId)` branch: if the shift-drag never actually moved,
+`selectFromHit(m.clickHitId, true, m.from)` reproduces exactly what the
+bypassed `if (hitId)` branch used to do for a plain shift-click,
+deferred to mouseup so a genuine drag still wins the marquee
+interpretation.
+
+Verify:   Real mouse, via Playwright, three scenarios against one floor
+plan (with a rack parented inside it):
+  - Shift+drag starting in the building's empty interior (well clear of
+    the wall band and the rack), dragged across the rack: mid-drag
+    screenshot shows the dashed blue marquee rectangle rendering inside
+    the building. On release, `selectedIds` included the rack (plus the
+    floor plan itself, from `objectsInMarquee`'s own pre-existing,
+    separate — and out of this fix's scope — lack of a floor-plan
+    exclusion the SVG engine's marquee has); the building's `x` stayed
+    at its original value, confirming the press did NOT fall into
+    "select and move the building," which is what it did before this fix.
+  - A normal (no-shift) press-and-drag on the same building body (a
+    different empty interior spot): the floor plan was selected AND
+    moved by the drag delta, exactly as before this fix — unaffected.
+  - A shift+CLICK (mousedown+mouseup with no real movement) on the rack,
+    starting from an empty selection: the rack landed as the sole
+    selected id — confirming the existing shift-click-to-toggle behaviour
+    still works, no regression from moving the shift-check.
+  Zero console errors across all three. Build clean (1789 modules),
+  309/309 tests pass (no existing test touches this exact ordering).
+
+Lesson:   "Move a check earlier so it isn't shadowed" is easy to get
+half-right: moving it far enough to fix the reported case but not
+checking what ELSE used to run before it (here: the wall-hit-test, and
+critically, the do-nothing-if-hitId branch that also carried the
+existing shift-click-to-toggle behaviour) turns a targeted bug fix into
+two new regressions. The SVG reference's real DOM-event architecture
+(separate `mousedown`-stoppropagation for handles/walls, a separate
+`click` listener for toggle-on-release) doesn't translate as "shift
+always wins, full stop" into canvas2's one-function funnel — it
+translates as "shift wins over the plain object body specifically,
+handles and walls keep their own precedence, and the click-vs-drag
+distinction those separate DOM listeners gave for free has to be
+rebuilt explicitly with the SAME movedEnough gate every other gesture
+here already uses to tell a click from a drag."
+
+---
+
 ## Template for new entries
 
 ```

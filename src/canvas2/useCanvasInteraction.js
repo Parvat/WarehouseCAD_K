@@ -371,6 +371,34 @@ export function useCanvasInteraction({
         }
       }
 
+      /* Shift held → ALWAYS arm a marquee candidate, regardless of what's
+         under the cursor — CanvasArea's own rule ("works anywhere including
+         inside fp"), checked here (after the handle checks above, before
+         the plain object hitTest below) rather than after hitId is known.
+         A handle still wins first: in the SVG engine a handle is a real DOM
+         element with its own onMouseDown that stops propagation before the
+         canvas's own handler ever sees the shift key, so a handle's small
+         hit target always takes the press regardless of shift there too —
+         this is the geometry-based equivalent, not a departure from it.
+         What must NOT win over shift is the plain object body: a floor
+         plan's whole footprint answers hitTest's Pass 3 (objectContains on
+         its full bounding box, not just the wall band CanvasUI's own DOM
+         hit area covers), so a shift+drag starting inside a building used
+         to resolve to hitId and fall into "select it and start a move"
+         before shiftKey was ever checked — the fix is only moving WHERE
+         this check runs, not changing what it does.
+
+         A plain shift+CLICK (no real drag) on an object still has to
+         toggle it in/out of the selection — nextSelection's own shiftKey
+         branch, which used to run unconditionally here via selectFromHit
+         before this fix moved the check up. The SVG engine gets this for
+         free from a SEPARATE native `click` listener on each object's own
+         DOM element, decided independently of whatever its mousedown
+         armed; canvas2 funnels everything through this one mousedown, so
+         the equivalent is capturing what the click WOULD hit right now and
+         falling back to it at mouseup, ONLY if the gesture never actually
+         moved (movedEnough) — a real drag still means marquee, matching
+         the drag/click split every other gesture here already makes. */
       const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       const hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
 
@@ -381,7 +409,11 @@ export function useCanvasInteraction({
          later-drawn rack's real element is what actually receives the
          click). A wall is live regardless of what's currently selected —
          CanvasUI's own FpWallHitAreas renders for every floor plan
-         unconditionally, not just a selected one. */
+         unconditionally, not just a selected one. Checked BEFORE the shift
+         check below, same as the handle checks above: a wall, like a
+         handle, is a real DOM element with its own onMouseDown in the SVG
+         engine, so it wins the press whether or not shift is held there —
+         shift only ever forces a marquee over a plain object BODY. */
       if (evt.button === 0 && (!hitObj || FP_SET_INPUT.has(hitObj.type))) {
         const wallHit = fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
         if (wallHit) {
@@ -395,6 +427,31 @@ export function useCanvasInteraction({
         }
       }
 
+      /* Shift held → ALWAYS arm a marquee candidate over a plain object
+         BODY (a floor plan's interior included) — CanvasArea's own rule
+         ("works anywhere including inside fp"). Before this fix the plain
+         `if (hitId) {...}` block below ran first regardless of shift, so a
+         shift+drag starting on an object's body (most visibly a floor
+         plan, whose whole footprint answers hitTest's Pass 3) fell into
+         "select it and start a move" and no marquee ever appeared — the
+         fix is moving WHERE this check runs, not changing what it does.
+
+         A plain shift+CLICK (no real drag) still has to toggle the object
+         under the cursor in/out of the selection — nextSelection's own
+         shiftKey branch, which used to run unconditionally via
+         selectFromHit before this fix. The SVG engine gets that for free
+         from a SEPARATE native `click` listener on each object's own DOM
+         element, decided independently of whatever its mousedown armed;
+         canvas2 funnels everything through this one mousedown, so the
+         equivalent is capturing hitId now and falling back to it at
+         mouseup, ONLY if the gesture never actually moved (movedEnough) —
+         a real drag still means marquee, the same drag/click split every
+         other gesture here already makes. */
+      if (evt.shiftKey) {
+        marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false, clickHitId: hitId }
+        return
+      }
+
       if (hitId) {
         if (evt.button !== 0) return
         /* forcePan (space/middle) already sent us past this whole block, so
@@ -402,11 +459,6 @@ export function useCanvasInteraction({
            object always selects it and arms its drag. */
         selectFromHit(hitId, !!evt.shiftKey, world)
         beginDrag(hitId, world, evt)
-        return
-      }
-
-      if (evt.shiftKey) {
-        marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false }
         return
       }
     }
@@ -868,6 +920,13 @@ export function useCanvasInteraction({
         const st = useCanvasStore.getState()
         const ids = objectsInMarquee(st.objects, normalizeRect(m.from, m.to))
         if (ids.length) st.selectMultiple(ids)
+      } else if (m && !m.moved && m.clickHitId) {
+        /* The shift+drag never actually moved — a plain shift+click on an
+           object's body, which still has to toggle it (see the mousedown
+           comment above): the same selectFromHit a non-shift click already
+           calls, just deferred to here so a genuine drag still wins the
+           marquee interpretation instead. */
+        selectFromHit(m.clickHitId, true, m.from)
       }
       setMarquee(null)
       setCursor(spaceDown.current ? 'grab' : 'default')
