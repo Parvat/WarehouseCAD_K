@@ -2104,6 +2104,85 @@ here already uses to tell a click from a drag."
 
 ---
 
+## BUG 26 — BUG 25's marquee fix selected the floor plan along with the racks inside it
+
+Symptom:  After BUG 25's fix, a shift+drag inside a building correctly
+produced a marquee — but the marquee selected the FLOOR PLAN itself
+alongside whatever racks it covered, offering a "Group" action for what
+looked like an accidental rack+building selection. Shift+clicking a
+single rack sometimes ALSO selected the building.
+
+Chased:   BUG 25's own log entry already named this exact gap under
+"Also chased" and explicitly flagged it as pre-existing and out of that
+fix's scope: `objectsInMarquee` (selection.js) never excluded floor
+plans, unlike CanvasArea's own marquee-mouseup (`if (FP_SET.has(obj.type))
+return false`, checked before its own overlap test). A marquee that
+starts or is dragged over a building necessarily overlaps the building's
+own bounding box — which fills most of the visible canvas at any zoom a
+marquee is useful at — so it was ALWAYS going to be caught by
+`objectsInMarquee`'s plain overlap test alongside anything inside it.
+
+The "shift+click sometimes also selects the building" half of the report
+is the SAME bug wearing a different disguise, not a second cause: a
+"click" is never perfectly still — a few pixels of incidental movement
+during a real shift-click can cross `movedEnough`'s 3px threshold,
+turning what was meant as a click into a (tiny) "moved" marquee, which
+then runs through the exact same unfiltered `objectsInMarquee` and picks
+up the building the press started inside, on top of whatever rack the
+click landed on. Confirmed by reasoning through `hitTest`'s own pass
+order rather than guessing: a precise, zero-movement click on a rack was
+never actually at risk (Pass 1 checks racks before Pass 3 checks floor
+plans, so `hitTest` itself already resolves a direct rack click
+correctly) — only the accidental-micro-drag path shared the marquee's bug.
+
+Cause:    A single missing exclusion, `objectsInMarquee` never filtering
+out floor-plan types, surfacing through two different gesture shapes
+(a deliberate drag, and a click whose incidental jitter crossed the
+drag threshold) that both ultimately call the same function.
+
+Fix:      `objectsInMarquee` (`selection.js`) now excludes floor plans
+unconditionally — `if (isFloorPlan(o)) continue`, ported from
+CanvasArea's own marquee filter — rather than requiring the one current
+caller to remember to pass it as an opt-in `isVisible` predicate: the
+exclusion is a correctness rule for what a marquee even means over a
+building (its contents, never the shell), not a situational filter, so
+it belongs in the function itself.
+
+Verify:   Real mouse, via Playwright, three scenarios against the same
+floor-plan-with-a-parented-rack setup BUG 25 used:
+  - Shift+drag from the building's empty interior across the rack:
+    `selectedIds` contained ONLY the rack — `includesFp: false,
+    includesRack: true` — the building no longer rides along.
+  - Shift+click (no real drag) directly on the rack: `selectedIds`
+    contained only the rack, confirming the direct-click path (already
+    fine per the pass-order reasoning above) still works and the fix
+    didn't disturb it.
+  - A normal (no-shift) press+drag on the building's own body (unrelated
+    to this fix, re-verified so the exclusion didn't overreach): the
+    floor plan was still selected AND moved by the drag delta, exactly as
+    BUG 25 verified — `objectsInMarquee`'s exclusion only touches the
+    marquee-drag/shift-click paths, not a direct plain-click hit on the
+    building itself (which goes through `hitTest`'s own object-body
+    branch, untouched by this change).
+  Zero console errors across all three. Build clean (1789 modules),
+  309/309 tests pass (no existing test touches this exact path).
+
+Lesson:   Naming a known-but-out-of-scope gap explicitly in a bug-log
+entry (BUG 25's own "Also chased" section flagged this precisely) is
+worth doing even under time pressure to ship the actual fix — it turned
+this follow-up into a five-minute, already-diagnosed fix instead of a
+fresh investigation, and confirms the discipline of writing down "I saw
+this, it's real, it's just not what I was asked to fix right now" pays
+for itself the moment the deferred issue gets reported back. Also: two
+differently-described symptoms ("drag selects the building" and "click
+sometimes selects the building") are worth checking for a SHARED root
+cause before assuming two fixes are needed — tracing both through the
+same `hitTest`/`movedEnough`/`objectsInMarquee` call graph, rather than
+patching each report's literal wording separately, found the one place
+that actually needed to change.
+
+---
+
 ## Template for new entries
 
 ```

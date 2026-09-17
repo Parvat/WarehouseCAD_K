@@ -63,12 +63,23 @@ export function rectsOverlap(a, b) {
  *
  *  Touch, not containment: on a 1,080ft building a rack is longer than the
  *  screen at any readable zoom, so requiring full enclosure would make marquee
- *  selection useless exactly where it is needed most. */
+ *  selection useless exactly where it is needed most.
+ *
+ *  Floor plans are excluded unconditionally (BUG 26) — CanvasArea's own
+ *  marquee-mouseup does the same (`if (FP_SET.has(obj.type)) return false`
+ *  before its own overlap test): a marquee drawn over or starting inside a
+ *  building is reaching for its CONTENTS, not the building itself, which
+ *  fills most of the visible canvas at any zoom a marquee is useful at and
+ *  would otherwise always be caught by any rubber-band touching it. This is
+ *  baked into the function itself rather than left to callers to opt into
+ *  (an `isVisible` filter) — there is exactly one call site today and the
+ *  exclusion is a correctness rule, not a situational one. */
 export function objectsInMarquee(objects = [], rect, { isVisible } = {}) {
   if (!rect || !(rect.width > 0) || !(rect.height > 0)) return []
   const out = []
   for (const o of objects) {
     if (!o) continue
+    if (isFloorPlan(o)) continue
     if (isVisible && !isVisible(o)) continue
     const b = getObjectBounds(o)
     if (!b || !(b.width >= 0) || !(b.height >= 0)) continue
