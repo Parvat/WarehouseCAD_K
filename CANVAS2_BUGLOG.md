@@ -2183,6 +2183,89 @@ that actually needed to change.
 
 ---
 
+## BUG 27 — BUG 26's fix was incomplete: a floor plan selected BEFORE the marquee still survived it
+
+Symptom:  After BUG 26's fix (excluding floor plans from
+`objectsInMarquee`'s own catches), a shift-marquee could STILL leave the
+building selected alongside the racks it caught — screenshot showed the
+purple group-rotate outline (2+ objects) with the building included.
+
+Chased, per the user's own explicit instructions, empirically rather than
+by further guessing: reproduced with the debug store hook by
+deliberately selecting the floor plan FIRST (`selectObject(fpId, false)`
+— a realistic prior step, e.g. clicking the building to inspect it
+before shift-dragging to also grab some racks), THEN performing the
+identical shift-marquee BUG 26's own test used. Logged `selectedIds`
+before and after: `["<fpId>"]` before, `["<fpId>", "<rackId>"]` after —
+the floor plan was never in `objectsInMarquee`'s own returned list (BUG
+26 already guarantees that), yet it survived anyway, proving the leak
+was NOT in what the marquee catches but in what happens to whatever was
+ALREADY selected. Root cause: `selectMultiple` (the store action the
+marquee-mouseup calls) only ever ADDS — `s.selectedIds.push(id)` for ids
+not already present — it never removes anything, so a floor plan
+selected by any EARLIER, unrelated action was never going to be cleared
+by BUG 26's fix, however completely that fix excluded the floor plan
+from the NEW ids being added. BUG 26 made the marquee stop selecting the
+building; it didn't make the marquee stop TOLERATING one.
+
+Cause:    `selectMultiple`'s additive-only semantics, combined with BUG
+26's fix only ever touching the NEWLY computed marquee ids and never the
+selection state the gesture started with.
+
+Fix:      `useCanvasInteraction.js`'s marquee mouseup, in the
+`m.moved && m.to` branch: before adding the marquee's own catches,
+filter the CURRENT `selectedIds` to drop any floor-plan entries
+(`isFloorPlan`, already imported) and — only if that actually changed
+anything — replace the selection with `selectGroup(keep)` (a real
+replace, unlike `selectMultiple`'s add-only). `selectMultiple(ids)` for
+the marquee's own (already floor-plan-free, per BUG 26) catches still
+runs afterward exactly as before. The net effect: whatever was selected
+before the gesture, minus any floor plans, plus whatever the marquee's
+rectangle covers — the marquee redefines what its own rectangle means,
+it does not inherit a building selection from a moment before it began.
+
+Verify:   Real mouse, via Playwright, with the debug store hook printing
+`selectedIds` at each step exactly as asked:
+  - Reproduced the bug first (pre-fix code path confirmed via the
+    investigation script): floor plan selected, then shift-marqueed —
+    `selectedIds` ended up `[fpId, rackId]`, matching the reported
+    screenshot exactly.
+  - Same scenario against the fix: floor plan selected
+    (`selectedIds: [fpId]`), then the identical shift-marquee —
+    `selectedIds` ended up `[rackId]` only; `includesFp: false`.
+  - Cold-start shift-marquee (nothing selected beforehand, BUG 26's own
+    scenario): still only the rack — confirms the new `keep`-filter step
+    is a no-op when there was nothing to strip, not a behaviour change
+    for the already-working case.
+  - Shift+click a rack (no drag): still only the rack — the click-fallback
+    path (`m.clickHitId`) is untouched by this fix, confirming it wasn't
+    itself a second source of the leak.
+  - Normal (no-shift) drag on the building's own body: still selects AND
+    moves it, exactly as BUG 25 verified — this fix only touches the
+    `m.moved && m.to` marquee branch, nothing about a direct plain-click
+    hit on the building.
+  Zero console errors across all five. Build clean (1789 modules),
+  309/309 tests pass (no existing test touches this exact path).
+
+Lesson:   "The new thing this gesture selects doesn't include X" and "the
+gesture's final result never includes X" are different guarantees, and
+conflating them is exactly how BUG 26 shipped looking complete while
+leaving this gap: it correctly stopped `objectsInMarquee` from CATCHING
+a floor plan, which is necessary but not sufficient when the store
+action consuming that list (`selectMultiple`) is additive rather than
+authoritative. Whenever a fix's own verification only tests from a
+freshly-cleared selection (as BUG 26's did), it silently assumes nothing
+useful survives from before the gesture — worth checking explicitly,
+with a NON-empty starting selection, any time a store action is
+add-only rather than a full replace. Also: reproducing a report exactly
+as the user describes it (a debug hook printing the real store state
+before and after, on the SAME gesture sequence they experienced) turned
+"the fix didn't work, try again" into a five-line confirmed root cause
+before a single line of new code was written — worth doing before
+patching a symptom a second time, not just the first.
+
+---
+
 ## Template for new entries
 
 ```
