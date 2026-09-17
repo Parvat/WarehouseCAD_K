@@ -2632,6 +2632,101 @@ reopens the same gate a moment later.
 
 ---
 
+## BUG 32 — Bay deletion always shrank a rack from its stored x, sliding right-segment rows away from their wall
+
+Symptom:  Deleting bays from a rack row left the SURVIVING bays anchored
+to `obj.x` (the object's stored left edge) no matter which bays were
+actually removed. For a row whose wall sits on its LEFT (`obj.x` IS the
+wall-facing edge — the common case), this happened to look correct: the
+wall end never moved. For a row whose wall sits on its RIGHT — the SECOND
+half of a building split by a cross-aisle (`sizingLayout.js`'s own
+`rowSegments`, which places two independent rack objects, one starting
+right after the cross-aisle and running toward the far wall) — `obj.x`
+is the AISLE-facing edge, so keeping it fixed shrank the rack from the
+WALL end instead, visibly sliding the whole row toward the aisle with
+every delete. The correct bays were removed every time; only the
+rack's REPOSITIONING was wrong.
+
+Chased:   Confirmed there is no stored field anywhere (`generate/`,
+`render/rackOps.js`, the object shape itself) recording which geometric
+end of a rack is "the wall" — a right-segment row is not a mirrored or
+flagged variant of a left-segment one, it is a perfectly ordinary
+`rack_row` object that simply happens to sit further along the building,
+with the identical `beams`-indexed-left-to-right convention `uprightXs`
+already uses for every rack regardless of where it was placed. This
+means the fix cannot look up "which end is the wall" from any existing
+data; it has to infer the right invariant from the deletion itself. Also
+chased: `deleteSingleBay` (the earlier, single-bay-click version of this
+same action) has the IDENTICAL structural gap — it also always leaves
+`obj.x` untouched. Not named in the task, but fixed here anyway rather
+than left for a future report to rediscover the exact same bug in the
+older of the two nearly-identical actions (the BUG 28 lesson: extend a
+fix to a sibling with the same shape proactively).
+
+Cause:    Both `deleteSingleBay` and `deleteSelectedBays` only ever
+recompute `obj.width` from the surviving `beams` array; neither ever
+touches `obj.x`, so the surviving bays always compact toward whatever
+`obj.x` happens to be — correct only when `obj.x` happens to coincide
+with the end that should stay fixed, which is true for a left-segment
+row by coincidence of how it was placed, not by any rule the deletion
+code itself was applying.
+
+Fix:      Both actions (`useCanvasStore.js`) now decide which edge to
+hold fixed from the DELETION ITSELF, not from any assumption about which
+side is the wall: if the FIRST bay (index 0) was removed but the LAST
+bay was not, the far/last end was left untouched and should stay
+fixed — `obj.x` shifts by exactly the amount the rack shrank
+(`obj.x += oldWidth - newWidth`) so that edge (`obj.x + width`) lands at
+the SAME world position it was at before the delete. Every other case
+(the last bay removed, both ends removed, only an interior bay removed)
+keeps the existing behaviour (`obj.x` unchanged) — already correct when
+the deletion is at the far/last end, and the least-surprising default
+for the genuinely ambiguous cases (an interior-only deletion, or a
+delete spanning both ends at once) that "which end did the user NOT
+touch" cannot answer cleanly anyway. This generalises correctly to
+EITHER segment orientation without needing to know which one it is: a
+left-segment row's wall-adjacent bay is index 0 (deleting it moves x,
+which is geometrically correct — that wall-adjacent slot is now empty,
+so the edge SHOULD recede rather than leave a phantom gap against the
+wall); a right-segment row's wall-adjacent bay is the LAST index
+(deleting the near-aisle end, index 0, leaves the last index untouched
+and triggers the x-shift that keeps the actual wall edge fixed).
+
+Verify:   Numerically, via Playwright and the debug store hook — no
+screenshot needed, the fix is a pure geometry correction verifiable
+exactly. Two `rack_row` objects, 3 bays each (96in beams, 3in uprights,
+1000px total width): a "right-segment" row at `x=500` (wall edge =
+`x+width` = 1500) and a "left-segment" row at `x=0` (wall edge = `x` =
+0). Deleted the aisle-adjacent bay (index 0) from the right-segment row
+via `setBaySelection`+`deleteSelectedBays` (the same path a bay marquee
+and `MultiBayPanel`'s own button use): `x` moved from 500 to EXACTLY 830,
+width shrank to 670, and `x + width` landed at EXACTLY 1500 — the
+original wall edge, unmoved, to the pixel. Deleted the aisle-adjacent
+bay (index 2, the LAST index for this segment) from the left-segment
+row: `x` stayed at EXACTLY 0 — confirming BUG-report's own "left-segment
+still correct" requirement wasn't disturbed. Two separate `undo()` calls
+(one per delete, each its own history entry) restored both racks' exact
+original `x`, `width`, and `beams`. Zero console errors. Build clean
+(1789 modules), 309/309 tests pass (no existing test touches this exact
+math).
+
+Lesson:   A store action that "happens to look correct" for one common
+input shape (a rack whose wall sits on the same side its own coordinate
+origin does) can hide a genuine geometry bug for a long time if nothing
+ever exercises the mirrored shape — this bug predates canvas2 entirely
+(both `deleteSingleBay` and `deleteSelectedBays` are shared store code,
+so the SVG engine had the identical bug the whole time), and only
+surfaced now because BUG 29's cross-row bay marquee made bulk-deleting
+bays across differently-oriented rows an easy, obvious thing to try for
+the first time. When a fix needs "which end should stay fixed" and no
+field records that, look for whether the ANSWER can be derived from the
+operation's own inputs (here: which indices were actually removed)
+instead of trying to add or infer a new "which side is the wall" concept
+from geometry that would need consulting the containing floor plan and
+would be far more fragile.
+
+---
+
 ## Template for new entries
 
 ```
