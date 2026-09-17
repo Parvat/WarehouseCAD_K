@@ -49,8 +49,22 @@ function maxFitBays(obj, allObjects, gridSize, newBeamIn = 96) {
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
 export function MultiBayPanel() {
-  const { activeBaySelection, objects, deleteSelectedBays, changeSelectedBaysBeam, clearBaySelection, gridSize } = useCanvasStore()
+  const { activeBaySelection, objects, deleteSelectedBays, changeSelectedBaysBeam, clearBaySelection, clearSelection, gridSize } = useCanvasStore()
   if (!activeBaySelection || activeBaySelection.length === 0) return null
+
+  /* deleteSelectedBays (the store action) only ever clears
+     activeBaySelection, not selectedIds — the rack ROWS a bay marquee
+     added to selectedIds (so this panel and Properties would show them)
+     stay selected after their bays are gone. With activeBaySelection now
+     empty, canvas2's GroupRotateOverlay gate (selectedObjects.length >= 2
+     && no active bay selection) is satisfied again, so the group-rotate
+     outline/handle reappeared around racks nothing was actually asking to
+     rotate (BUG 31). clearSelection() afterward drops selectedIds too, so
+     a bay delete leaves nothing selected at all — matching "the bays are
+     gone, so is the selection that picked them," not "now select the
+     whole rows instead." Kept as a wrapper here rather than a change to
+     the protected deleteSelectedBays action itself. */
+  const deleteSelectedBaysAndClear = () => { deleteSelectedBays(); clearSelection() }
 
   const BEAM_OPTIONS = [72, 96, 120, 144]
   const fmtIn = (inches) => {
@@ -109,7 +123,7 @@ export function MultiBayPanel() {
       {/* Delete + Clear */}
       <div style={{ display: 'flex', gap: 4 }}>
         <button
-          onClick={deleteSelectedBays}
+          onClick={deleteSelectedBaysAndClear}
           style={{
             flex: 1, padding: '5px 0', borderRadius: 4, cursor: 'pointer',
             fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,

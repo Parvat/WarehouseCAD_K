@@ -63,12 +63,42 @@ export function rectsOverlap(a, b) {
  *
  *  Touch, not containment: on a 1,080ft building a rack is longer than the
  *  screen at any readable zoom, so requiring full enclosure would make marquee
- *  selection useless exactly where it is needed most. */
+ *  selection useless exactly where it is needed most.
+ *
+ *  Floor plans (BUG 26) and column grids (BUG 28) are both excluded
+ *  unconditionally. CanvasArea's own marquee-mouseup filter only excludes
+ *  `FP_SET` by name (`if (FP_SET.has(obj.type)) return false`) — it does
+ *  NOT name column_grid, so this is a deliberate improvement over a literal
+ *  port, not a port of an existing exclusion; the reasoning is identical
+ *  either way, and the user's own instruction was explicit about wanting
+ *  it regardless. A generated column grid carries real width/height
+ *  spanning the whole building (`sizingLayout.js`'s own column_grid object:
+ *  `width: nx*gridXFt*GS + colPx`, same idea as a floor plan) — a marquee
+ *  drawn over or starting inside a building is reaching for its CONTENTS
+ *  (racks), not the structural grid underneath them, which — like the
+ *  floor plan — fills most of the visible canvas and would otherwise
+ *  always be caught by any rubber-band touching it. This is baked into the
+ *  function itself rather than left to callers to opt into (an
+ *  `isVisible` filter) — there is exactly one call site today and the
+ *  exclusion is a correctness rule, not a situational one. */
+const NON_MARQUEEABLE = new Set(['column_grid'])
+
+/** Shared by objectsInMarquee (what a NEW marquee catches) and
+ *  useCanvasInteraction's own marquee mouseup (what survives from a
+ *  SELECTION the gesture started with, per BUG 27 — selectMultiple only
+ *  ever adds, so excluding these types from the catch alone isn't enough;
+ *  anything already selected before the drag began has to be stripped
+ *  too, or it "survives" a marquee that never itself selected it). One
+ *  predicate so the two can never drift on what "the marquee excludes"
+ *  actually means. */
+export const isMarqueeExcluded = obj => isFloorPlan(obj) || (!!obj && NON_MARQUEEABLE.has(obj.type))
+
 export function objectsInMarquee(objects = [], rect, { isVisible } = {}) {
   if (!rect || !(rect.width > 0) || !(rect.height > 0)) return []
   const out = []
   for (const o of objects) {
     if (!o) continue
+    if (isMarqueeExcluded(o)) continue
     if (isVisible && !isVisible(o)) continue
     const b = getObjectBounds(o)
     if (!b || !(b.width >= 0) || !(b.height >= 0)) continue
@@ -131,3 +161,46 @@ export function objectCentre(obj) {
 }
 
 export const isFloorPlan = obj => !!obj && FP_TYPES.has(obj.type)
+
+/* Rack types the SVG engine's own marquee-mouseup bay-intersection checks —
+   CanvasArea.jsx's own BAY_ROW_TYPES, verbatim. Note this is broader than
+   what actually ever produces an entry: only types that carry a `.beams`
+   array (rack_row, rack_double_row in practice) pass the `!obj.beams` guard
+   below — cantilever/pushback/pallet_flow/drive_through are listed here
+   too, matching the reference exactly, even though their own geometry
+   (towers/lanes, not a beam-width array) means this specific algorithm
+   never actually walks their bays. Ported as-is rather than narrowed: the
+   task is to port the intersection math, not to second-guess which of the
+   reference's own listed types can really reach it. */
+const BAY_ROW_TYPES = new Set([
+  'rack_row', 'rack_double_row', 'rack_cantilever',
+  'rack_pushback', 'rack_pallet_flow', 'rack_drive_through',
+])
+
+/** Cross-row bay marquee — CanvasArea.jsx's own marquee-mouseup
+ *  bay-intersection block, ported verbatim (same cursor walk: start at
+ *  `obj.x + upW`, one bay per `beams` entry, step past its own upright to
+ *  the next). Returns every {objId, bayIdx} whose bay column overlaps
+ *  `rect`, across every eligible row in `objects` — not just one rack, so
+ *  a single rubber-band drag can span multiple rows at once, which is the
+ *  whole point of this over the plain per-bay click (hitTestBay). */
+export function bayEntriesInMarquee(objects = [], rect, gridSize = 40) {
+  if (!rect || !(rect.width > 0) || !(rect.height > 0)) return []
+  const minX = rect.x, maxX = rect.x + rect.width
+  const minY = rect.y, maxY = rect.y + rect.height
+  const bayEntries = []
+  objects.forEach(obj => {
+    if (!obj || !BAY_ROW_TYPES.has(obj.type) || !obj.beams) return
+    const b = getObjectBounds(obj)
+    if (b.y > maxY || b.y + b.height < minY) return   // row not in Y range
+    const upW = ((obj.uprightWidth || 3) / 12) * gridSize
+    let cursor = obj.x + upW
+    obj.beams.forEach((beamIn, i) => {
+      const beamPx = (beamIn / 12) * gridSize
+      const bayX0 = cursor, bayX1 = cursor + beamPx
+      if (bayX0 < maxX && bayX1 > minX) bayEntries.push({ objId: obj.id, bayIdx: i })
+      cursor = bayX1 + upW
+    })
+  })
+  return bayEntries
+}

@@ -20,7 +20,32 @@ export function useKeyboardShortcuts() {
       if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
         e.preventDefault()
         const s = useCanvasStore.getState()
-        const { selectedIds, objects } = s
+        const { selectedIds, objects, activeBaySelection } = s
+        /* A cross-row bay marquee (activeBaySelection, canvas2's own
+           marquee-mouseup) takes priority over the single-object
+           activeBayIdx check below — the same action the multi-bay panel's
+           own "Delete selected bays" button calls (deleteSelectedBays),
+           so the keyboard and the panel can never disagree about what
+           Delete does while a bay selection is active. Previously this
+           block never looked at activeBaySelection at all, so Delete fell
+           through to deleteSelected() (whole-object) even with a bay
+           marquee active — deleting entire rows instead of just the
+           picked bays. */
+        if (activeBaySelection && activeBaySelection.length > 0) {
+          s.deleteSelectedBays()
+          /* deleteSelectedBays only clears activeBaySelection, not
+             selectedIds — the rack rows a bay marquee added there (BUG
+             29) stay selected, which re-satisfies GroupRotateOverlay's
+             own selectedObjects.length >= 2 gate now that
+             activeBaySelection is empty again, bringing back the
+             group-rotate outline/handle around racks nothing asked to
+             rotate (BUG 31). Clearing the selection too leaves nothing
+             selected after a bay delete, matching MultiBayPanel's own
+             "Delete selected bays" button (RackRowPanelCore.jsx), which
+             does the same pairing. */
+          s.clearSelection()
+          return
+        }
         if (selectedIds.length === 1) {
           const obj = objects.find(o => o.id === selectedIds[0])
           const BEAM_RACK = new Set(['rack_row','rack_double_row'])

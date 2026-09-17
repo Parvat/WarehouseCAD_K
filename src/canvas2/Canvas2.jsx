@@ -120,6 +120,7 @@ export function Canvas2() {
   const uiTheme  = useCanvasStore(s => s.uiTheme)
   const showAisles = useCanvasStore(s => s.showAisles ?? true)
   const activeWall = useCanvasStore(s => s.activeWall)
+  const activeBaySelection = useCanvasStore(s => s.activeBaySelection)
 
   /* The live view. Seeded from the store so toggling the canvas keeps your
      place, then owned here for the duration of a gesture. */
@@ -142,7 +143,19 @@ export function Canvas2() {
      (the same set RackShape paints from). Rotate alone lifts the gate: 2+
      selected objects get the group outline + rotate handle instead
      (GroupRotateOverlay below), ported from CanvasUI.jsx's GroupOutline —
-     see groupRotate.js. */
+     see groupRotate.js.
+
+     That group chrome is suppressed while a cross-row bay marquee is
+     active (`activeBaySelection` non-empty, BUG 30) — a bay marquee adds
+     every matched row to `selectedIds` too (so the Properties/multi-bay
+     panel shows them), which would otherwise ALSO satisfy this ">= 2"
+     gate and paint a purple group-rotate outline + handle around racks
+     the user is picking BAYS out of, not preparing to rotate as a unit.
+     Bay-select mode shows only the amber bay highlights (RackShape's own
+     multiBaySelectionRects); the single-object resize/rotate handle above
+     is untouched — a bay marquee landing on just one row still leaves
+     `selectedObjects.length === 1`, so it never reaches this gate at
+     all. */
   const handleTarget = selectedObjects.length === 1 && PORTED_RACK_TYPES.has(selectedObjects[0].type)
     ? selectedObjects[0] : null
 
@@ -297,7 +310,7 @@ export function Canvas2() {
             {fpRotateTarget && (
               <FpRotateHandleOverlay obj={fpRotateTarget} gridSize={gridSize} zoom={zoom} />
             )}
-            {selectedObjects.length >= 2 && (
+            {selectedObjects.length >= 2 && !(activeBaySelection && activeBaySelection.length > 0) && (
               <GroupRotateOverlay objects={selectedObjects} zoom={zoom} />
             )}
           </Layer>

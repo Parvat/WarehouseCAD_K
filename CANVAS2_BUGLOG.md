@@ -1991,6 +1991,742 @@ properties and only rigid actually prevents a bounce).
 
 ---
 
+## BUG 25 — Shift+drag starting inside a floor plan never started a marquee
+
+Symptom:  Shift+drag over empty canvas correctly started a marquee, but
+shift+drag starting INSIDE a floor plan's footprint did nothing visible —
+no marquee appeared, and the building itself did not move either (the
+press was silently swallowed).
+
+Chased:   `onStageMouseDown`'s shift-check (`if (evt.shiftKey) {
+marqueeRef.current = {...} }`) sat AFTER the plain object `hitTest()` and
+its own `if (hitId) { selectFromHit(...); beginDrag(...); return }`
+block — so any press that `hitTest()` resolved to an object never reached
+the shift-check at all, shift held or not. A floor plan's WHOLE
+bounding box answers `hitTest()`'s Pass 3 (`objectContains` against the
+full rect, not just the ~24-screen-px wall band `FloorPlanShape`'s own
+Konva hit area covers), so pressing anywhere inside a building's
+footprint — not just on a wall — resolves `hitId` to the floor plan,
+taking the object-body branch before shift was ever considered. A
+plain rack has the same issue in principle, but its footprint is usually
+small enough that a marquee is naturally started just outside it; a
+building fills most of the visible canvas, so the interior is exactly
+where a real shift-drag was most likely to begin.
+
+Also chased: what shift is supposed to override, precisely — not
+everything. The SVG engine's own resize/rotate handles AND its
+`FpWallHitAreas` (wall drag) are real DOM elements with their own
+`onMouseDown` that call `e.stopPropagation()` before the canvas's own
+handler (and its shift-check) ever runs — meaning a handle or a wall
+ALWAYS wins the press in the SVG engine, shift held or not, simply
+because the more specific listener claims the event first. Only a press
+that reaches the CANVAS's own `onMouseDown` (nothing more specific
+claimed it) ever consults shift. canvas2 funnels every press through one
+`onStageMouseDown`, so matching this precisely meant moving the
+shift-check to AFTER the handle checks and the wall-hit-test (both of
+which stay exactly where they were), and only BEFORE the plain object
+`hitTest()`/`if (hitId)` block — not moving it to the very top of the
+function, which would have made shift wrongly override handles and
+walls too.
+
+Also chased, before shipping: shift+CLICK (no real drag) on an object is
+an existing, working feature — `nextSelection`'s own shiftKey branch
+toggles the clicked object in/out of the selection, called today via
+`selectFromHit(hitId, !!evt.shiftKey, world)` inside the (now-bypassed
+for shift) `if (hitId)` block. Moving the shift-check up would have
+silently broken this: a shift+press that never turns into a real drag
+would arm a marquee candidate that finds nothing to select on release
+(`m.moved` never becomes true), doing nothing at all where today it
+toggles the object. The SVG engine avoids this collision structurally —
+each object's own `click` (not `mousedown`) DOM listener handles the
+toggle independently of whatever the canvas's own `mousedown` armed, so
+a mousedown that turns out not to be a drag can start a (harmlessly
+abandoned) selbox AND still have the object's own click fire the toggle,
+with no explicit code reconciling the two. canvas2 has no second listener
+to fall back on, so the equivalent had to be built explicitly.
+
+Cause:    Ordering — the shift-check ran after the exact branch it needed
+to run before, for the same reason as the handle/wall checks: the
+"what's specifically hit" tests (handles, walls, then plain object) don't
+already know shift means "always start a marquee, don't interact with the
+body," so nothing skipped straight to it.
+
+Fix:      `onStageMouseDown` (`useCanvasInteraction.js`): computed the
+plain `hitId`/`hitObj` and ran the wall-hit-test exactly as before (both
+keep their existing precedence over shift, matching the handles/walls
+being real, stopPropagation-ing DOM elements in the SVG engine). The
+shift-check now sits immediately after the wall-hit-test and before the
+`if (hitId) { selectFromHit; beginDrag }` block: if shift is held, arm
+`marqueeRef.current` unconditionally — including a `clickHitId: hitId`
+field, capturing what a plain click would have hit right now. Window
+`mouseup`'s marquee handling gained an `else if (m && !m.moved &&
+m.clickHitId)` branch: if the shift-drag never actually moved,
+`selectFromHit(m.clickHitId, true, m.from)` reproduces exactly what the
+bypassed `if (hitId)` branch used to do for a plain shift-click,
+deferred to mouseup so a genuine drag still wins the marquee
+interpretation.
+
+Verify:   Real mouse, via Playwright, three scenarios against one floor
+plan (with a rack parented inside it):
+  - Shift+drag starting in the building's empty interior (well clear of
+    the wall band and the rack), dragged across the rack: mid-drag
+    screenshot shows the dashed blue marquee rectangle rendering inside
+    the building. On release, `selectedIds` included the rack (plus the
+    floor plan itself, from `objectsInMarquee`'s own pre-existing,
+    separate — and out of this fix's scope — lack of a floor-plan
+    exclusion the SVG engine's marquee has); the building's `x` stayed
+    at its original value, confirming the press did NOT fall into
+    "select and move the building," which is what it did before this fix.
+  - A normal (no-shift) press-and-drag on the same building body (a
+    different empty interior spot): the floor plan was selected AND
+    moved by the drag delta, exactly as before this fix — unaffected.
+  - A shift+CLICK (mousedown+mouseup with no real movement) on the rack,
+    starting from an empty selection: the rack landed as the sole
+    selected id — confirming the existing shift-click-to-toggle behaviour
+    still works, no regression from moving the shift-check.
+  Zero console errors across all three. Build clean (1789 modules),
+  309/309 tests pass (no existing test touches this exact ordering).
+
+Lesson:   "Move a check earlier so it isn't shadowed" is easy to get
+half-right: moving it far enough to fix the reported case but not
+checking what ELSE used to run before it (here: the wall-hit-test, and
+critically, the do-nothing-if-hitId branch that also carried the
+existing shift-click-to-toggle behaviour) turns a targeted bug fix into
+two new regressions. The SVG reference's real DOM-event architecture
+(separate `mousedown`-stoppropagation for handles/walls, a separate
+`click` listener for toggle-on-release) doesn't translate as "shift
+always wins, full stop" into canvas2's one-function funnel — it
+translates as "shift wins over the plain object body specifically,
+handles and walls keep their own precedence, and the click-vs-drag
+distinction those separate DOM listeners gave for free has to be
+rebuilt explicitly with the SAME movedEnough gate every other gesture
+here already uses to tell a click from a drag."
+
+---
+
+## BUG 26 — BUG 25's marquee fix selected the floor plan along with the racks inside it
+
+Symptom:  After BUG 25's fix, a shift+drag inside a building correctly
+produced a marquee — but the marquee selected the FLOOR PLAN itself
+alongside whatever racks it covered, offering a "Group" action for what
+looked like an accidental rack+building selection. Shift+clicking a
+single rack sometimes ALSO selected the building.
+
+Chased:   BUG 25's own log entry already named this exact gap under
+"Also chased" and explicitly flagged it as pre-existing and out of that
+fix's scope: `objectsInMarquee` (selection.js) never excluded floor
+plans, unlike CanvasArea's own marquee-mouseup (`if (FP_SET.has(obj.type))
+return false`, checked before its own overlap test). A marquee that
+starts or is dragged over a building necessarily overlaps the building's
+own bounding box — which fills most of the visible canvas at any zoom a
+marquee is useful at — so it was ALWAYS going to be caught by
+`objectsInMarquee`'s plain overlap test alongside anything inside it.
+
+The "shift+click sometimes also selects the building" half of the report
+is the SAME bug wearing a different disguise, not a second cause: a
+"click" is never perfectly still — a few pixels of incidental movement
+during a real shift-click can cross `movedEnough`'s 3px threshold,
+turning what was meant as a click into a (tiny) "moved" marquee, which
+then runs through the exact same unfiltered `objectsInMarquee` and picks
+up the building the press started inside, on top of whatever rack the
+click landed on. Confirmed by reasoning through `hitTest`'s own pass
+order rather than guessing: a precise, zero-movement click on a rack was
+never actually at risk (Pass 1 checks racks before Pass 3 checks floor
+plans, so `hitTest` itself already resolves a direct rack click
+correctly) — only the accidental-micro-drag path shared the marquee's bug.
+
+Cause:    A single missing exclusion, `objectsInMarquee` never filtering
+out floor-plan types, surfacing through two different gesture shapes
+(a deliberate drag, and a click whose incidental jitter crossed the
+drag threshold) that both ultimately call the same function.
+
+Fix:      `objectsInMarquee` (`selection.js`) now excludes floor plans
+unconditionally — `if (isFloorPlan(o)) continue`, ported from
+CanvasArea's own marquee filter — rather than requiring the one current
+caller to remember to pass it as an opt-in `isVisible` predicate: the
+exclusion is a correctness rule for what a marquee even means over a
+building (its contents, never the shell), not a situational filter, so
+it belongs in the function itself.
+
+Verify:   Real mouse, via Playwright, three scenarios against the same
+floor-plan-with-a-parented-rack setup BUG 25 used:
+  - Shift+drag from the building's empty interior across the rack:
+    `selectedIds` contained ONLY the rack — `includesFp: false,
+    includesRack: true` — the building no longer rides along.
+  - Shift+click (no real drag) directly on the rack: `selectedIds`
+    contained only the rack, confirming the direct-click path (already
+    fine per the pass-order reasoning above) still works and the fix
+    didn't disturb it.
+  - A normal (no-shift) press+drag on the building's own body (unrelated
+    to this fix, re-verified so the exclusion didn't overreach): the
+    floor plan was still selected AND moved by the drag delta, exactly as
+    BUG 25 verified — `objectsInMarquee`'s exclusion only touches the
+    marquee-drag/shift-click paths, not a direct plain-click hit on the
+    building itself (which goes through `hitTest`'s own object-body
+    branch, untouched by this change).
+  Zero console errors across all three. Build clean (1789 modules),
+  309/309 tests pass (no existing test touches this exact path).
+
+Lesson:   Naming a known-but-out-of-scope gap explicitly in a bug-log
+entry (BUG 25's own "Also chased" section flagged this precisely) is
+worth doing even under time pressure to ship the actual fix — it turned
+this follow-up into a five-minute, already-diagnosed fix instead of a
+fresh investigation, and confirms the discipline of writing down "I saw
+this, it's real, it's just not what I was asked to fix right now" pays
+for itself the moment the deferred issue gets reported back. Also: two
+differently-described symptoms ("drag selects the building" and "click
+sometimes selects the building") are worth checking for a SHARED root
+cause before assuming two fixes are needed — tracing both through the
+same `hitTest`/`movedEnough`/`objectsInMarquee` call graph, rather than
+patching each report's literal wording separately, found the one place
+that actually needed to change.
+
+---
+
+## BUG 27 — BUG 26's fix was incomplete: a floor plan selected BEFORE the marquee still survived it
+
+Symptom:  After BUG 26's fix (excluding floor plans from
+`objectsInMarquee`'s own catches), a shift-marquee could STILL leave the
+building selected alongside the racks it caught — screenshot showed the
+purple group-rotate outline (2+ objects) with the building included.
+
+Chased, per the user's own explicit instructions, empirically rather than
+by further guessing: reproduced with the debug store hook by
+deliberately selecting the floor plan FIRST (`selectObject(fpId, false)`
+— a realistic prior step, e.g. clicking the building to inspect it
+before shift-dragging to also grab some racks), THEN performing the
+identical shift-marquee BUG 26's own test used. Logged `selectedIds`
+before and after: `["<fpId>"]` before, `["<fpId>", "<rackId>"]` after —
+the floor plan was never in `objectsInMarquee`'s own returned list (BUG
+26 already guarantees that), yet it survived anyway, proving the leak
+was NOT in what the marquee catches but in what happens to whatever was
+ALREADY selected. Root cause: `selectMultiple` (the store action the
+marquee-mouseup calls) only ever ADDS — `s.selectedIds.push(id)` for ids
+not already present — it never removes anything, so a floor plan
+selected by any EARLIER, unrelated action was never going to be cleared
+by BUG 26's fix, however completely that fix excluded the floor plan
+from the NEW ids being added. BUG 26 made the marquee stop selecting the
+building; it didn't make the marquee stop TOLERATING one.
+
+Cause:    `selectMultiple`'s additive-only semantics, combined with BUG
+26's fix only ever touching the NEWLY computed marquee ids and never the
+selection state the gesture started with.
+
+Fix:      `useCanvasInteraction.js`'s marquee mouseup, in the
+`m.moved && m.to` branch: before adding the marquee's own catches,
+filter the CURRENT `selectedIds` to drop any floor-plan entries
+(`isFloorPlan`, already imported) and — only if that actually changed
+anything — replace the selection with `selectGroup(keep)` (a real
+replace, unlike `selectMultiple`'s add-only). `selectMultiple(ids)` for
+the marquee's own (already floor-plan-free, per BUG 26) catches still
+runs afterward exactly as before. The net effect: whatever was selected
+before the gesture, minus any floor plans, plus whatever the marquee's
+rectangle covers — the marquee redefines what its own rectangle means,
+it does not inherit a building selection from a moment before it began.
+
+Verify:   Real mouse, via Playwright, with the debug store hook printing
+`selectedIds` at each step exactly as asked:
+  - Reproduced the bug first (pre-fix code path confirmed via the
+    investigation script): floor plan selected, then shift-marqueed —
+    `selectedIds` ended up `[fpId, rackId]`, matching the reported
+    screenshot exactly.
+  - Same scenario against the fix: floor plan selected
+    (`selectedIds: [fpId]`), then the identical shift-marquee —
+    `selectedIds` ended up `[rackId]` only; `includesFp: false`.
+  - Cold-start shift-marquee (nothing selected beforehand, BUG 26's own
+    scenario): still only the rack — confirms the new `keep`-filter step
+    is a no-op when there was nothing to strip, not a behaviour change
+    for the already-working case.
+  - Shift+click a rack (no drag): still only the rack — the click-fallback
+    path (`m.clickHitId`) is untouched by this fix, confirming it wasn't
+    itself a second source of the leak.
+  - Normal (no-shift) drag on the building's own body: still selects AND
+    moves it, exactly as BUG 25 verified — this fix only touches the
+    `m.moved && m.to` marquee branch, nothing about a direct plain-click
+    hit on the building.
+  Zero console errors across all five. Build clean (1789 modules),
+  309/309 tests pass (no existing test touches this exact path).
+
+Lesson:   "The new thing this gesture selects doesn't include X" and "the
+gesture's final result never includes X" are different guarantees, and
+conflating them is exactly how BUG 26 shipped looking complete while
+leaving this gap: it correctly stopped `objectsInMarquee` from CATCHING
+a floor plan, which is necessary but not sufficient when the store
+action consuming that list (`selectMultiple`) is additive rather than
+authoritative. Whenever a fix's own verification only tests from a
+freshly-cleared selection (as BUG 26's did), it silently assumes nothing
+useful survives from before the gesture — worth checking explicitly,
+with a NON-empty starting selection, any time a store action is
+add-only rather than a full replace. Also: reproducing a report exactly
+as the user describes it (a debug hook printing the real store state
+before and after, on the SAME gesture sequence they experienced) turned
+"the fix didn't work, try again" into a five-line confirmed root cause
+before a single line of new code was written — worth doing before
+patching a symptom a second time, not just the first.
+
+---
+
+## BUG 28 — Column grid intercepted rack marquee selection, same as the floor plan did
+
+Symptom:  Reported as two things together: "clicking a rack selects the
+column grid instead of the rack" and "marquee-selecting rows catches the
+column grid too." A generated (or hand-added) column grid spans the
+whole building, the same shape of problem BUG 25-27 already fixed for
+the floor plan.
+
+Chased:   Investigated both halves independently rather than assuming
+two fixes were needed, the same discipline BUG 27 used. `hitTest.js`'s
+main function (the geometry-based CLICK picker) turned out to be
+ALREADY correct — its own three-pass structure (Pass 1: every ordinary
+object including racks, explicitly skipping column_grid/floor plans;
+Pass 2: column_grid, but ONLY hit-testing actual column squares with
+their own small pad, never the whole bounding box; Pass 3: floor plans
+last) has been unchanged since the original geometry-picking port
+(`git log` shows the file untouched by this shape of change since
+`8717c60`). Verified empirically, not just by reading the code: seeded a
+rack DELIBERATELY straddling a column square (the worst-case overlap —
+the click point was inside BOTH the rack's body and the column square's
+own padded hit box) and clicked it — the rack won, every time, exactly
+as Pass 1 returning before Pass 2/3 ever run guarantees. A bare click on
+an actual column square (no rack there) still correctly selected the
+grid. Part (1) of the report was already fixed; no code changed for it.
+
+Part (2) was real: `objectsInMarquee` (selection.js) excluded floor
+plans (BUG 26) but never column_grid — and a REAL column_grid object (as
+`generate/sizingLayout.js` actually creates one) carries genuine
+`width`/`height` spanning the whole building
+(`width: nx*gridXFt*GS + colPx`), so it was always going to be caught by
+any marquee rubber-band touching it, exactly like the floor plan before
+BUG 26. (A first attempt at reproducing this used a column_grid object
+with no `width`/`height` set, which gave a false "already excluded"
+result — `getObjectBounds`'s generic fallback treats missing width/height
+as 0, so a degenerate object can never overlap anything; fixed the test
+setup to match `sizingLayout.js`'s real shape before trusting the result
+either way.) Also chased, proactively: BUG 27's own "a pre-existing
+selection survives an additive `selectMultiple`" fix only filtered
+`isFloorPlan` — a column grid selected before a marquee would have hit
+the identical survival bug BUG 27 already diagnosed and fixed for the
+building, just unfixed for the grid, so this entry closes that gap too
+rather than leaving a second, differently-shaped version of BUG 27 to be
+reported back later.
+
+Cause:    Two related but genuinely separate gaps in the same file, both
+missing a type this feature has to treat the same as a floor plan:
+`objectsInMarquee`'s own exclusion list, and the BUG 27 "keep" filter
+that strips a pre-existing exclude-worthy selection before a marquee
+adds its own catches.
+
+Fix:      `selection.js`: `objectsInMarquee` now excludes `column_grid`
+alongside floor plans. The two exclusions were unified into one exported
+predicate, `isMarqueeExcluded(obj)`, rather than duplicating the check —
+CanvasArea's own reference marquee filter only names `FP_SET`, not
+column_grid, so this is a deliberate improvement beyond a literal port
+(the user's own instruction was explicit about wanting it), not a port
+of an existing SVG exclusion; noted here rather than silently claimed as
+"matching the reference." `useCanvasInteraction.js`'s BUG 27 keep-filter
+now calls the SAME `isMarqueeExcluded` instead of `isFloorPlan` directly,
+so the "what does a marquee refuse to select, and what does it strip
+from a selection it inherits" question is answered in exactly one place
+— the two could not have drifted apart again the way BUG 26/27 already
+showed they could.
+
+Verify:   Real mouse, via Playwright, with a REALISTIC column_grid
+(matching `sizingLayout.js`'s own field shape: `width`/`height` spanning
+the building, `spacingX`/`spacingY`/`columnW`/`columnH`) and a rack
+deliberately straddling one of its column squares:
+  - Click on the rack, at a point also inside the column square's own
+    padded hit box: rack selected, grid not — confirms part (1) was
+    already correct.
+  - Click a bare column square: grid selected — confirms the fix didn't
+    overreach and disable direct column-grid selection entirely.
+  - Marquee across the rack (cold start, nothing selected before): only
+    the rack — grid and floor plan both excluded.
+  - Grid selected FIRST, then the identical marquee (the BUG-27-shaped
+    repro, now for the grid): grid correctly dropped, only the rack
+    remains — confirms the shared `isMarqueeExcluded` predicate closed
+    the same survival gap BUG 27 fixed for the floor plan.
+  Zero console errors across all four. Build clean (1789 modules),
+  309/309 tests pass (no existing test touches this exact path).
+
+Lesson:   A bug report that names two symptoms doesn't guarantee two
+root causes, but it also doesn't guarantee ONE — checking each half
+independently (here: one already fixed, one real) beats assuming either
+answer up front. Separately, the SAME class of gap (BUG 26's missing
+exclusion, BUG 27's missing pre-existing-selection strip) recurring for
+a SECOND type in the very next report is exactly why BUG 27's own lesson
+("whenever a store action is add-only rather than a full replace, check
+explicitly with a non-empty starting selection") is worth applying
+PROACTIVELY the next time a similar type needs the same treatment,
+rather than waiting for it to be reported again — done here by
+extending BUG 27's own fix to column_grid in the same commit as BUG 26's
+extension, instead of shipping only the newly-reported half and leaving
+the other gap for a BUG 29 to rediscover.
+
+---
+
+## BUG 29 — Cross-row bay marquee was missing from canvas2: a rubber-band drag only selected whole objects, never bays
+
+Symptom:  Dragging a marquee across the bays of one or more racks under
+canvas2 only ever selected the RACKS as whole objects — the SVG engine's
+cross-row bay marquee (drag a rubber-band across bay columns spanning
+multiple rows, delete/resize them all in bulk via the multi-bay panel)
+had no canvas2 equivalent at all. `activeBaySelection` (the store array
+the bulk panel reads) was only ever populated one bay at a time, via the
+existing single-bay click (`hitTestBay`, BUG 4's own port) — never by a
+marquee.
+
+Chased:   The store's own bay-multi-select actions (`setBaySelection`,
+`toggleBayInSelection`, `deleteSelectedBays`, `changeSelectedBaysBeam`,
+`clearBaySelection`) already existed, unused by canvas2 — this whole
+feature was a pure INPUT-side gap (nothing to compute which bays a
+rubber-band actually touches), not a missing store capability. Likewise
+the bulk-action UI itself (`MultiBayPanel`, `src/components/RightPanel/
+panels/RackRowPanelCore.jsx`) already reads `activeBaySelection` directly
+from the store and is mounted unconditionally in `PropertiesPanel.jsx` —
+canvas-engine-agnostic, needing no canvas2-specific changes at all. The
+entire port was: compute the bay entries, write them to the store the
+same way the SVG engine's marquee-mouseup does, and paint a highlight —
+everything downstream of `activeBaySelection` already worked.
+
+Also chased: the SVG reference's own `BAY_ROW_TYPES` set lists
+`rack_pushback`/`rack_pallet_flow`/`rack_drive_through`/`rack_cantilever`
+alongside `rack_row`/`rack_double_row`, but the intersection algorithm's
+own `!obj.beams` guard means only the two beam-array types can ever
+actually produce an entry in practice (pushback/pallet_flow/drive_through
+use lane geometry, cantilever uses towers — none carry a `.beams` array).
+Ported the type set verbatim rather than narrowing it to "just the two
+that work" — matching the reference exactly, dead branches included,
+rather than second-guessing which of its own listed types it meant.
+
+Cause:    Not a bug — a genuine missing port, the same "SVG feature deep
+inside one mousemove/mouseup handler, easy to miss porting file-by-file"
+shape as BUG 19 (group rotate) and BUG 22 (smart guides).
+
+Fix:      `selection.js` gained `bayEntriesInMarquee(objects, rect,
+gridSize)` — CanvasArea.jsx's own marquee-mouseup bay-intersection block
+(~953-968) ported verbatim: same `BAY_ROW_TYPES` set, same cursor walk
+(`obj.x + upW`, one bay per `beams` entry, step past its own upright each
+time), same per-bay X-overlap test against the marquee rect. Pure
+function, no React/Konva/store — the same "one computation, not two that
+could drift" discipline every other canvas2 geometry helper follows
+(CANVAS2.md rule 4).
+
+`useCanvasInteraction.js`'s marquee mouseup (already calling
+`objectsInMarquee` for whole-object selection) now also calls
+`bayEntriesInMarquee` on the same normalized rect, unconditionally
+set-or-clearing `activeBaySelection` on every "moved enough" marquee
+release — CanvasArea's own behaviour: a fresh marquee always redefines
+the bay selection, including an empty one that finds nothing. Rack rows
+with a bay entry are added to `selectedIds` too (guarded to only ADD, not
+toggle off an already-selected row — the reference's own guard), so the
+Properties panel shows them.
+
+`shapes.jsx`: the existing single-bay highlight geometry
+(`activeBayRects`, rack_row/rack_double_row/rack_cantilever) was factored
+into a shared `bayRectForIndex(obj, gridSize, i)` so the single-active
+(blue) and new cross-row-marquee (amber) highlights can never disagree
+about where a given bay actually is. New `multiBaySelectionRects(obj,
+gridSize, activeBaySelection)` maps the store's array to this object's
+own bay rects. `RackShape` paints them as CanvasUI's own two-part
+treatment — a semi-transparent amber tint UNDER a dashed amber outline —
+kept visually distinct from the single-active blue outline, matching
+ShapeGeometry.jsx's own colour split between the two selections rather
+than merging them into one visual. `Scene.jsx` reads `activeBaySelection`
+from the store and threads it to `RackShape`.
+
+Verify:   Real mouse, via Playwright. Two `rack_row` objects, 3 bays each
+(96in beams), 100 world units apart in Y — a CROSS-ROW case, not a
+single-rack one. Dragged a marquee (shift-held, starting from empty space
+above the first row) diagonally down across bays 0-1 of both rows (bay 2
+of each deliberately left outside the rubber-band). `activeBaySelection`
+landed with EXACTLY 4 entries — {row A, bay 0}, {row A, bay 1}, {row B,
+bay 0}, {row B, bay 1} — both racks correctly in `selectedIds`.
+Screenshot confirms the amber tint+outline highlight on the selected
+bays. Called `deleteSelectedBays()` (the same store action `MultiBayPanel`
+calls): both rows dropped to a single remaining bay (`beams: [96]`) each,
+in ONE history entry (`historyIndex` advanced by exactly 1 for both rows'
+worth of changes). `undo()` once restored `[96,96,96]` to BOTH rows
+exactly. Zero console errors throughout. Build clean (1789 modules),
+309/309 tests pass (no existing test touches this path).
+
+Lesson:   Not every "missing feature" needs new UI or new store surface —
+this one turned out to be a single input-side gap sitting between two
+things that already worked (the store's bay-selection actions, and the
+bulk-action panel that reads them), because nothing on the canvas2 side
+had ever been asked to compute WHICH bays a gesture touched across
+multiple rows at once. Before building new plumbing, checking what
+already reads/writes the target store field (here: grep for
+`activeBaySelection` across the WHOLE src tree, not just canvas2/) finds
+these cases fast and avoids duplicating a bulk-action UI that already
+exists and is already engine-agnostic. Also, once more: a reference's own
+type list can include entries its own algorithm structurally can't reach
+(BAY_ROW_TYPES' cantilever/pushback/pallet_flow/drive_through) — porting
+it verbatim rather than "cleaning it up" preserves that exact behaviour,
+including its dead branches, which is the correct call when the
+instruction is specifically to port the math, not to redesign it.
+
+---
+
+## BUG 30 — Bay-select mode showed group-rotate chrome, and Delete deleted whole rows instead of the selected bays
+
+Symptom:  Two related inconsistencies in cross-row bay selection (BUG 29),
+both about bay-select mode not being treated as its own distinct mode:
+  1. After a bay marquee across 2+ rows, the purple group-rotate outline
+     + rotate handle (GroupRotateOverlay, BUG 19) appeared around the
+     racks — chrome for "rotate this group as a unit," not for "these are
+     the bays you picked," which the amber bay highlights already show.
+  2. Pressing Delete with a cross-row bay selection active deleted the
+     WHOLE racks, while the multi-bay panel's own "Delete selected bays"
+     button (`deleteSelectedBays`) correctly deleted only the picked
+     bays — the keyboard and the panel disagreed about what the current
+     selection even meant.
+
+Chased:   Both root causes were narrow and independent, not one shared
+mistake:
+  - GroupRotateOverlay's own mount condition (`Canvas2.jsx`) is
+    `selectedObjects.length >= 2` — and BUG 29's own bay-marquee fix adds
+    every matched row to `selectedIds` (so the Properties/multi-bay panel
+    shows them), which satisfies this exact condition as an unavoidable
+    side effect of making the bulk panel work at all. The overlay was
+    never taught that `activeBaySelection` (a DIFFERENT store array) being
+    non-empty means the CURRENT intent is "pick bays," not "rotate this
+    selection as a group."
+  - `useKeyboardShortcuts.js`'s Delete handler only ever checked ONE
+    thing for a bay-aware delete: a SINGLE selected object's own
+    `activeBayIdx` field (the per-object single-bay-click pick, BUG 4's
+    original port) — it never looked at `activeBaySelection` (the
+    cross-row array BUG 29 introduced) at all, so with 2+ rows selected
+    via a bay marquee, `selectedIds.length === 1` was already false and
+    the handler fell straight through to whole-object `deleteSelected()`.
+
+Cause:    Two pieces of chrome/behaviour (GroupRotateOverlay's mount
+gate, the keyboard Delete handler) were written before `activeBaySelection`
+existed as a concept (both predate BUG 29) and neither was updated when
+it was introduced — a cross-row bay selection quietly satisfies both
+gates' EXISTING conditions (2+ objects selected; one object with no bay
+picked) well enough that nothing crashed or looked obviously broken,
+it just meant the wrong thing.
+
+Fix:      `Canvas2.jsx`: read `activeBaySelection` from the store, and
+gate `GroupRotateOverlay` on `selectedObjects.length >= 2 &&
+!(activeBaySelection && activeBaySelection.length > 0)` — bay-select mode
+suppresses the group chrome entirely, leaving only RackShape's own amber
+`multiBaySelectionRects` highlights and each rack's own plain blue
+selection outline. The single-object `ResizeHandlesOverlay`/
+`FpRotateHandleOverlay` gates are untouched — a bay marquee landing on
+just one row never reaches the `>= 2` gate regardless, so there is
+nothing there to suppress.
+
+`useKeyboardShortcuts.js`: the Delete/Backspace handler now checks
+`activeBaySelection.length > 0` FIRST, before the existing single-object
+`activeBayIdx` check, and calls `s.deleteSelectedBays()` — the exact same
+store action `MultiBayPanel`'s own "Delete selected bays" button calls
+(`src/components/RightPanel/panels/RackRowPanelCore.jsx`) — so the
+keyboard and the panel can never disagree about what Delete does while a
+bay selection is active.
+
+Verify:   Real mouse, via Playwright, with the same fp+two-rack-rows
+setup BUG 29 used. Bay-marqueed bays 0-1 across both rows: screenshot
+shows only the amber bay tints and each rack's own plain blue outline —
+no purple dashed box, no rotate handle, matching the earlier BUG 29
+screenshot's group-rotate chrome being visibly ABSENT this time.
+`selectedIds` still had both racks (2 objects, Properties panel correctly
+showed "2 objects selected"); `activeBaySelection` had the expected 4
+entries. Pressed the Delete key: both racks STILL EXISTED as objects
+(`objectCount` unchanged) with `beams` dropped to `[96]` (bay 2, the one
+outside the marquee) on both — not a whole-row delete — in exactly ONE
+history entry, `activeBaySelection` cleared afterward. `undo()` once
+restored `[96,96,96]` to both rows exactly. Zero console errors
+throughout. Build clean (1789 modules), 309/309 tests pass (no existing
+test touches either path).
+
+Lesson:   Introducing a new selection CONCEPT (`activeBaySelection`,
+BUG 29) doesn't automatically teach every EXISTING piece of code that
+reads a related but different signal (`selectedIds.length`, a single
+object's own `activeBayIdx`) about it — each one has to be checked and
+updated deliberately, because the new concept can satisfy an old gate's
+condition by coincidence (2+ selectedIds) without meaning what that gate
+assumed it meant. The place to look for this class of gap is: grep every
+existing consumer of the OLD signal a new feature's selection state
+overlaps with, not just build the new feature's own code path and assume
+everything downstream already composes correctly.
+
+---
+
+## BUG 31 — BUG 30's fix was incomplete: group-rotate chrome reappeared right after a bay delete
+
+Symptom:  BUG 30 correctly suppressed the group-rotate outline/handle
+while a cross-row bay selection was active, and made Delete route to
+`deleteSelectedBays`. But immediately AFTER deleting the selected bays,
+the group outline + rotate handle reappeared around the (now bay-less)
+racks — the exact chrome BUG 30 had just hidden, back the moment the
+bays it was hiding disappeared.
+
+Chased:   `deleteSelectedBays` (the store action) only ever clears
+`activeBaySelection` — it does not touch `selectedIds`. The rack ROWS a
+bay marquee added to `selectedIds` (BUG 29, so the Properties panel shows
+them) stay selected after the delete. With `activeBaySelection` now
+empty, `GroupRotateOverlay`'s own gate (`selectedObjects.length >= 2 &&
+!(activeBaySelection.length > 0)`, BUG 30's own fix) is satisfied again
+— the SAME condition that made the chrome disappear during bay-select
+mode makes it reappear the instant that mode ends, because "bay-select
+mode ended" and "2+ objects are still selected" both became true at
+once. Also chased, and confirmed real but out of THIS fix's scope:
+`PropertiesPanel.jsx`'s own "multi-select" branch
+(`selected.length > 1`) returns its own generic "N objects selected /
+Delete all" UI BEFORE ever reaching the line that mounts `MultiBayPanel`
+(mounted only in the single-object branch further down) — meaning for
+any genuine CROSS-ROW bay marquee (which inherently leaves 2+ racks
+selected), the panel's own "Delete selected bays" button is currently
+unreachable in the UI at all, independent of this bug. Logged here for
+visibility rather than silently expanded into: the keyboard Delete path
+this fix verifies is unaffected by it and already satisfies the reported
+symptom and its own verify criteria in full.
+
+Cause:    `deleteSelectedBays` clears the bay selection but not the
+object selection it rode in on, so the post-delete state is
+indistinguishable from "2+ racks selected, nothing bay-specific active"
+— which is precisely the state GroupRotateOverlay's gate treats as "show
+the group chrome."
+
+Fix:      Both call sites of `deleteSelectedBays` now also clear the
+whole selection afterward, so nothing is left selected once the bays it
+referred to are gone:
+  - `src/hooks/useKeyboardShortcuts.js`'s Delete/Backspace handler calls
+    `s.clearSelection()` right after `s.deleteSelectedBays()`.
+  - `RackRowPanelCore.jsx`'s `MultiBayPanel` "Delete N bays" button now
+    calls a small wrapper, `deleteSelectedBaysAndClear` (`deleteSelectedBays();
+    clearSelection()`), instead of passing the raw store action straight
+    to `onClick` — so the panel and the keyboard can never disagree here
+    either, matching BUG 30's own "keyboard and panel do the same thing"
+    goal. `clearSelection` (an existing, already-exported store action)
+    is used from the CALL SITES rather than editing the protected
+    `deleteSelectedBays` action itself to add this — a plain function
+    composition, not a change to `useCanvasStore.js`.
+
+Verify:   Real mouse, via Playwright, with the same fp+two-rack-rows
+setup BUG 29/30 used. Bay-marqueed bays 0-1 across both rows, then
+pressed the Delete key: `selectedIds` ended up `[]` (empty — not the two
+rack ids), `activeBaySelection` `[]`, both racks' `beams` correctly
+dropped to `[96]`, ONE history entry for the whole gesture. Screenshot
+confirms the RightPanel reads "No object selected" and the canvas shows
+no selection outline, no group box, no rotate handle — nothing left
+selected at all, not merely the group chrome specifically suppressed.
+`undo()` once restored `[96,96,96]` to both rows exactly. Zero console
+errors throughout. Build clean (1789 modules), 309/309 tests pass (no
+existing test touches this exact path).
+
+Lesson:   A gate that reacts to "condition X is now false" (BUG 30's
+`!activeBaySelection.length`) can flip back to its OTHER state the
+instant something ELSE changes X's sibling state, even without that
+sibling ever being the thing the gate was written to watch —
+`GroupRotateOverlay`'s gate was never wrong about `activeBaySelection`,
+it was just never told that `selectedIds` staying populated after a bay
+delete would recreate the exact condition ("2+ objects selected, no
+active bay picking") it treats as "show group chrome." Whenever a fix
+clears one piece of a two-part state (here: bay selection, but not
+object selection) to make a gate read a certain way, check what happens
+to the OTHER piece once the action completes — it's easy to fix the
+piece a bug report names and leave the sibling in a state that quietly
+reopens the same gate a moment later.
+
+---
+
+## BUG 32 — Bay deletion always shrank a rack from its stored x, sliding right-segment rows away from their wall
+
+Symptom:  Deleting bays from a rack row left the SURVIVING bays anchored
+to `obj.x` (the object's stored left edge) no matter which bays were
+actually removed. For a row whose wall sits on its LEFT (`obj.x` IS the
+wall-facing edge — the common case), this happened to look correct: the
+wall end never moved. For a row whose wall sits on its RIGHT — the SECOND
+half of a building split by a cross-aisle (`sizingLayout.js`'s own
+`rowSegments`, which places two independent rack objects, one starting
+right after the cross-aisle and running toward the far wall) — `obj.x`
+is the AISLE-facing edge, so keeping it fixed shrank the rack from the
+WALL end instead, visibly sliding the whole row toward the aisle with
+every delete. The correct bays were removed every time; only the
+rack's REPOSITIONING was wrong.
+
+Chased:   Confirmed there is no stored field anywhere (`generate/`,
+`render/rackOps.js`, the object shape itself) recording which geometric
+end of a rack is "the wall" — a right-segment row is not a mirrored or
+flagged variant of a left-segment one, it is a perfectly ordinary
+`rack_row` object that simply happens to sit further along the building,
+with the identical `beams`-indexed-left-to-right convention `uprightXs`
+already uses for every rack regardless of where it was placed. This
+means the fix cannot look up "which end is the wall" from any existing
+data; it has to infer the right invariant from the deletion itself. Also
+chased: `deleteSingleBay` (the earlier, single-bay-click version of this
+same action) has the IDENTICAL structural gap — it also always leaves
+`obj.x` untouched. Not named in the task, but fixed here anyway rather
+than left for a future report to rediscover the exact same bug in the
+older of the two nearly-identical actions (the BUG 28 lesson: extend a
+fix to a sibling with the same shape proactively).
+
+Cause:    Both `deleteSingleBay` and `deleteSelectedBays` only ever
+recompute `obj.width` from the surviving `beams` array; neither ever
+touches `obj.x`, so the surviving bays always compact toward whatever
+`obj.x` happens to be — correct only when `obj.x` happens to coincide
+with the end that should stay fixed, which is true for a left-segment
+row by coincidence of how it was placed, not by any rule the deletion
+code itself was applying.
+
+Fix:      Both actions (`useCanvasStore.js`) now decide which edge to
+hold fixed from the DELETION ITSELF, not from any assumption about which
+side is the wall: if the FIRST bay (index 0) was removed but the LAST
+bay was not, the far/last end was left untouched and should stay
+fixed — `obj.x` shifts by exactly the amount the rack shrank
+(`obj.x += oldWidth - newWidth`) so that edge (`obj.x + width`) lands at
+the SAME world position it was at before the delete. Every other case
+(the last bay removed, both ends removed, only an interior bay removed)
+keeps the existing behaviour (`obj.x` unchanged) — already correct when
+the deletion is at the far/last end, and the least-surprising default
+for the genuinely ambiguous cases (an interior-only deletion, or a
+delete spanning both ends at once) that "which end did the user NOT
+touch" cannot answer cleanly anyway. This generalises correctly to
+EITHER segment orientation without needing to know which one it is: a
+left-segment row's wall-adjacent bay is index 0 (deleting it moves x,
+which is geometrically correct — that wall-adjacent slot is now empty,
+so the edge SHOULD recede rather than leave a phantom gap against the
+wall); a right-segment row's wall-adjacent bay is the LAST index
+(deleting the near-aisle end, index 0, leaves the last index untouched
+and triggers the x-shift that keeps the actual wall edge fixed).
+
+Verify:   Numerically, via Playwright and the debug store hook — no
+screenshot needed, the fix is a pure geometry correction verifiable
+exactly. Two `rack_row` objects, 3 bays each (96in beams, 3in uprights,
+1000px total width): a "right-segment" row at `x=500` (wall edge =
+`x+width` = 1500) and a "left-segment" row at `x=0` (wall edge = `x` =
+0). Deleted the aisle-adjacent bay (index 0) from the right-segment row
+via `setBaySelection`+`deleteSelectedBays` (the same path a bay marquee
+and `MultiBayPanel`'s own button use): `x` moved from 500 to EXACTLY 830,
+width shrank to 670, and `x + width` landed at EXACTLY 1500 — the
+original wall edge, unmoved, to the pixel. Deleted the aisle-adjacent
+bay (index 2, the LAST index for this segment) from the left-segment
+row: `x` stayed at EXACTLY 0 — confirming BUG-report's own "left-segment
+still correct" requirement wasn't disturbed. Two separate `undo()` calls
+(one per delete, each its own history entry) restored both racks' exact
+original `x`, `width`, and `beams`. Zero console errors. Build clean
+(1789 modules), 309/309 tests pass (no existing test touches this exact
+math).
+
+Lesson:   A store action that "happens to look correct" for one common
+input shape (a rack whose wall sits on the same side its own coordinate
+origin does) can hide a genuine geometry bug for a long time if nothing
+ever exercises the mirrored shape — this bug predates canvas2 entirely
+(both `deleteSingleBay` and `deleteSelectedBays` are shared store code,
+so the SVG engine had the identical bug the whole time), and only
+surfaced now because BUG 29's cross-row bay marquee made bulk-deleting
+bays across differently-oriented rows an easy, obvious thing to try for
+the first time. When a fix needs "which end should stay fixed" and no
+field records that, look for whether the ANSWER can be derived from the
+operation's own inputs (here: which indices were actually removed)
+instead of trying to add or infer a new "which side is the wall" concept
+from geometry that would need consulting the containing floor plan and
+would be far more fragile.
+
+---
+
 ## Template for new entries
 
 ```

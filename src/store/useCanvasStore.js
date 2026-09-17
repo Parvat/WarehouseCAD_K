@@ -342,17 +342,40 @@ export const useCanvasStore = create(
       if (idx >= 0) s.activeBaySelection.splice(idx, 1)
       else s.activeBaySelection.push({ objId, bayIdx })
     }),
+    /* Bay deletion always shrinks obj.width from the surviving beams, but
+       obj.x (the local, unrotated LEFT edge everything else — uprightXs,
+       hitTestBay, RackShape's own draw-ops — measures bays from) only
+       describes "the wall end" for a row whose wall happens to sit on its
+       LEFT. A row placed on the far side of a cross-aisle (sizingLayout.js's
+       own second `rowSegments` half) has its wall on the RIGHT instead —
+       x sits at the aisle-facing edge — so leaving x untouched after a
+       delete shrinks the rack from the WALL end and slides it toward the
+       aisle, not the other way around (BUG 32). Both actions below decide
+       which edge to hold fixed from the deletion itself, not from any
+       stored "which side is the wall" field (there isn't one) — the end
+       the user did NOT delete from is the one that should stay put,
+       whichever geometric side that turns out to be. */
     deleteSingleBay: (objId, bayIdx) => set((s) => {
       const idx = s.objects.findIndex(o => o.id === objId)
       if (idx === -1) return
-      const beams = [...s.objects[idx].beams]
+      const obj = s.objects[idx]
+      const beams = [...obj.beams]
       if (beams.length <= 1) return
       const newBeams = beams.filter((_, i) => i !== bayIdx)
-      const upIn = s.objects[idx].uprightWidth || 3
+      const upIn = obj.uprightWidth || 3
       const totalIn = upIn * (newBeams.length + 1) + newBeams.reduce((a,b)=>a+b, 0)
-      s.objects[idx].beams = newBeams
-      s.objects[idx].width = (totalIn / 12) * 40
-      s.objects[idx].activeBayIdx = null
+      const newWidth = (totalIn / 12) * 40
+      /* Deleted the FIRST bay but not the last -> the last (far/right) end
+         was left alone, so hold IT fixed and let x absorb the shrink.
+         Deleted the last bay (or a middle one, or — impossible here since
+         there's only one bayIdx — both) -> x already stays put, matching
+         the existing, still-correct-for-that-case behaviour. */
+      if (bayIdx === 0 && bayIdx !== beams.length - 1) {
+        obj.x = obj.x + (obj.width - newWidth)
+      }
+      obj.beams = newBeams
+      obj.width = newWidth
+      obj.activeBayIdx = null
       pushHistory(s)
     }),
 
@@ -366,12 +389,27 @@ export const useCanvasStore = create(
       s.objects.forEach(obj => {
         if (!byObj[obj.id]) return
         const toRemove = new Set(byObj[obj.id])
-        const newBeams = obj.beams.filter((_, i) => !toRemove.has(i))
+        const oldBeams = obj.beams
+        const newBeams = oldBeams.filter((_, i) => !toRemove.has(i))
         if (newBeams.length === 0) return  // don't remove all bays
         const upIn = obj.uprightWidth || 3
         const totalIn = upIn * (newBeams.length + 1) + newBeams.reduce((s,b)=>s+b,0)
+        const newWidth = (totalIn / 12) * 40
+        /* Same anchor rule as deleteSingleBay, generalised to a whole set
+           of removed indices: the first bay was removed but the last one
+           was not -> the far/right end is untouched, hold IT fixed. Any
+           other case (last removed, both ends removed, only a middle bay
+           removed) falls back to the existing "x stays put" behaviour,
+           which is already correct when the deletion is at the right/last
+           end and is the least-surprising default for the genuinely
+           ambiguous cases. */
+        const deletedFirst = toRemove.has(0)
+        const deletedLast = toRemove.has(oldBeams.length - 1)
+        if (deletedFirst && !deletedLast) {
+          obj.x = obj.x + (obj.width - newWidth)
+        }
         obj.beams = newBeams
-        obj.width = (totalIn / 12) * 40
+        obj.width = newWidth
         obj.activeBayIdx = null
       })
       s.activeBaySelection = []
