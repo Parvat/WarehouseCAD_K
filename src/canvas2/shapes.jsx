@@ -206,9 +206,9 @@ function HitPad({ obj, gridSize, listening }) {
   )
 }
 
-/** The active bay/tower's outline rect(s), in the same local world coords
- *  Ops already draws in — the Group's own spin() transform rotates them
- *  along with everything else, so this never re-derives rotation itself.
+/** Rect(s) for ONE bay/tower index, in the same local world coords Ops
+ *  already draws in — the Group's own spin() transform rotates them along
+ *  with everything else, so this never re-derives rotation itself.
  *
  *  Geometry comes from rackOps.js's OWN uprightXs/cantileverGeom — the exact
  *  functions rackRowOps/rackDoubleRowOps/rackCantileverOps use to draw the
@@ -218,15 +218,13 @@ function HitPad({ obj, gridSize, listening }) {
  *  object's raw x/y/width/height, which is exactly the local space these
  *  rects are already in, so a hit and its highlight can never disagree.
  *
- *  Limited to the three types the SVG canvas itself visually highlights
- *  (rack_row, rack_double_row, rack_cantilever) — hitTestBay answers for a
- *  broader RACK_BAY_TYPES set (lanes too), but CanvasArea/ShapeGeometry only
- *  ever paints a highlight for these three, so matching that is "mirror the
- *  SVG" rather than inventing a new visual for types that have none there. */
-function activeBayRects(obj, gridSize) {
+ *  Shared by activeBayRects (the single blue "currently active" outline)
+ *  and multiBaySelectionRects (the amber cross-row marquee selection,
+ *  BUG 25) below, so a bay's highlight geometry is computed in exactly one
+ *  place regardless of which selection put it there. */
+function bayRectForIndex(obj, gridSize, i) {
+  if (i == null) return []
   if (obj.type === 'rack_row' || obj.type === 'rack_double_row') {
-    const i = obj.activeBayIdx
-    if (i == null) return []
     const { xs, upW, beams } = uprightXs(obj, gridSize)
     if (i < 0 || i >= beams.length) return []
     const bx = xs[i] + upW
@@ -246,8 +244,6 @@ function activeBayRects(obj, gridSize) {
   }
 
   if (obj.type === 'rack_cantilever') {
-    const i = obj.activeTowerIdx
-    if (i == null) return []
     const { doubleSided, towers, armT, spineH, spineY, cxs } = cantileverGeom(obj, gridSize)
     if (i < 0 || i >= cxs.length) return []
     const armPx = ((towers[i] || 36) / 12) * gridSize
@@ -262,8 +258,39 @@ function activeBayRects(obj, gridSize) {
   return []
 }
 
+/** The active bay/tower's outline rect(s) — obj.activeBayIdx/activeTowerIdx,
+ *  the single per-bay click pick (hitTestBay). Limited to the three types
+ *  the SVG canvas itself visually highlights (rack_row, rack_double_row,
+ *  rack_cantilever) — hitTestBay answers for a broader RACK_BAY_TYPES set
+ *  (lanes too), but CanvasArea/ShapeGeometry only ever paints a highlight
+ *  for these three, so matching that is "mirror the SVG" rather than
+ *  inventing a new visual for types that have none there. */
+function activeBayRects(obj, gridSize) {
+  const i = obj.type === 'rack_cantilever' ? obj.activeTowerIdx : obj.activeBayIdx
+  return bayRectForIndex(obj, gridSize, i)
+}
+
+/** Every bay/tower this object has entries for in the store's
+ *  activeBaySelection — the cross-row MARQUEE selection (BUG 29), not the
+ *  single per-bay click above. Same three types/geometry, kept as its own
+ *  function rather than folded into activeBayRects: CanvasUI paints this
+ *  amber and the single-active pick blue, two visually and semantically
+ *  distinct things (a marquee selection vs. "the one bay you clicked
+ *  into") that ShapeGeometry.jsx itself never merges into one code path
+ *  either. */
+function multiBaySelectionRects(obj, gridSize, activeBaySelection) {
+  if (!activeBaySelection || !activeBaySelection.length) return []
+  const out = []
+  activeBaySelection.forEach(e => {
+    if (e.objId !== obj.id) return
+    out.push(...bayRectForIndex(obj, gridSize, e.bayIdx))
+  })
+  return out
+}
+
 /** A rack, from its draw-ops. */
-export function RackShape({ obj, ops, gridSize, listening = false, bind }) {
+export function RackShape({ obj, ops, gridSize, listening = false, bind, activeBaySelection }) {
+  const msRects = multiBaySelectionRects(obj, gridSize, activeBaySelection)
   return (
     <Group name={nodeName(obj.id)} listening={listening}
       opacity={obj.opacity ?? 1} {...spin(obj, gridSize)} {...(bind ? bind(obj) : null)}>
@@ -272,6 +299,16 @@ export function RackShape({ obj, ops, gridSize, listening = false, bind }) {
       {activeBayRects(obj, gridSize).map((r, i) => (
         <Rect key={i} {...r} stroke="#4a9eff" strokeWidth={2}
           dash={[4, 3]} strokeScaleEnabled={false} perfectDrawEnabled={false}
+          shadowForStrokeEnabled={false} listening={false} />
+      ))}
+      {/* Cross-row marquee bay selection — amber tint + dashed outline,
+          CanvasUI.jsx's own two-part paint for isMultiSel (a filled tint
+          rect UNDER a stroked outline rect), kept visually distinct from
+          the blue single-active outline above. */}
+      {msRects.map((r, i) => <Rect key={'ms' + i} {...r} fill="rgba(240,180,41,0.27)" listening={false} />)}
+      {msRects.map((r, i) => (
+        <Rect key={'mso' + i} {...r} stroke="#f0b429" strokeWidth={2}
+          dash={[4, 2]} strokeScaleEnabled={false} perfectDrawEnabled={false}
           shadowForStrokeEnabled={false} listening={false} />
       ))}
     </Group>
