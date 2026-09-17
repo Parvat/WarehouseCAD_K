@@ -2266,6 +2266,104 @@ patching a symptom a second time, not just the first.
 
 ---
 
+## BUG 28 — Column grid intercepted rack marquee selection, same as the floor plan did
+
+Symptom:  Reported as two things together: "clicking a rack selects the
+column grid instead of the rack" and "marquee-selecting rows catches the
+column grid too." A generated (or hand-added) column grid spans the
+whole building, the same shape of problem BUG 25-27 already fixed for
+the floor plan.
+
+Chased:   Investigated both halves independently rather than assuming
+two fixes were needed, the same discipline BUG 27 used. `hitTest.js`'s
+main function (the geometry-based CLICK picker) turned out to be
+ALREADY correct — its own three-pass structure (Pass 1: every ordinary
+object including racks, explicitly skipping column_grid/floor plans;
+Pass 2: column_grid, but ONLY hit-testing actual column squares with
+their own small pad, never the whole bounding box; Pass 3: floor plans
+last) has been unchanged since the original geometry-picking port
+(`git log` shows the file untouched by this shape of change since
+`8717c60`). Verified empirically, not just by reading the code: seeded a
+rack DELIBERATELY straddling a column square (the worst-case overlap —
+the click point was inside BOTH the rack's body and the column square's
+own padded hit box) and clicked it — the rack won, every time, exactly
+as Pass 1 returning before Pass 2/3 ever run guarantees. A bare click on
+an actual column square (no rack there) still correctly selected the
+grid. Part (1) of the report was already fixed; no code changed for it.
+
+Part (2) was real: `objectsInMarquee` (selection.js) excluded floor
+plans (BUG 26) but never column_grid — and a REAL column_grid object (as
+`generate/sizingLayout.js` actually creates one) carries genuine
+`width`/`height` spanning the whole building
+(`width: nx*gridXFt*GS + colPx`), so it was always going to be caught by
+any marquee rubber-band touching it, exactly like the floor plan before
+BUG 26. (A first attempt at reproducing this used a column_grid object
+with no `width`/`height` set, which gave a false "already excluded"
+result — `getObjectBounds`'s generic fallback treats missing width/height
+as 0, so a degenerate object can never overlap anything; fixed the test
+setup to match `sizingLayout.js`'s real shape before trusting the result
+either way.) Also chased, proactively: BUG 27's own "a pre-existing
+selection survives an additive `selectMultiple`" fix only filtered
+`isFloorPlan` — a column grid selected before a marquee would have hit
+the identical survival bug BUG 27 already diagnosed and fixed for the
+building, just unfixed for the grid, so this entry closes that gap too
+rather than leaving a second, differently-shaped version of BUG 27 to be
+reported back later.
+
+Cause:    Two related but genuinely separate gaps in the same file, both
+missing a type this feature has to treat the same as a floor plan:
+`objectsInMarquee`'s own exclusion list, and the BUG 27 "keep" filter
+that strips a pre-existing exclude-worthy selection before a marquee
+adds its own catches.
+
+Fix:      `selection.js`: `objectsInMarquee` now excludes `column_grid`
+alongside floor plans. The two exclusions were unified into one exported
+predicate, `isMarqueeExcluded(obj)`, rather than duplicating the check —
+CanvasArea's own reference marquee filter only names `FP_SET`, not
+column_grid, so this is a deliberate improvement beyond a literal port
+(the user's own instruction was explicit about wanting it), not a port
+of an existing SVG exclusion; noted here rather than silently claimed as
+"matching the reference." `useCanvasInteraction.js`'s BUG 27 keep-filter
+now calls the SAME `isMarqueeExcluded` instead of `isFloorPlan` directly,
+so the "what does a marquee refuse to select, and what does it strip
+from a selection it inherits" question is answered in exactly one place
+— the two could not have drifted apart again the way BUG 26/27 already
+showed they could.
+
+Verify:   Real mouse, via Playwright, with a REALISTIC column_grid
+(matching `sizingLayout.js`'s own field shape: `width`/`height` spanning
+the building, `spacingX`/`spacingY`/`columnW`/`columnH`) and a rack
+deliberately straddling one of its column squares:
+  - Click on the rack, at a point also inside the column square's own
+    padded hit box: rack selected, grid not — confirms part (1) was
+    already correct.
+  - Click a bare column square: grid selected — confirms the fix didn't
+    overreach and disable direct column-grid selection entirely.
+  - Marquee across the rack (cold start, nothing selected before): only
+    the rack — grid and floor plan both excluded.
+  - Grid selected FIRST, then the identical marquee (the BUG-27-shaped
+    repro, now for the grid): grid correctly dropped, only the rack
+    remains — confirms the shared `isMarqueeExcluded` predicate closed
+    the same survival gap BUG 27 fixed for the floor plan.
+  Zero console errors across all four. Build clean (1789 modules),
+  309/309 tests pass (no existing test touches this exact path).
+
+Lesson:   A bug report that names two symptoms doesn't guarantee two
+root causes, but it also doesn't guarantee ONE — checking each half
+independently (here: one already fixed, one real) beats assuming either
+answer up front. Separately, the SAME class of gap (BUG 26's missing
+exclusion, BUG 27's missing pre-existing-selection strip) recurring for
+a SECOND type in the very next report is exactly why BUG 27's own lesson
+("whenever a store action is add-only rather than a full replace, check
+explicitly with a non-empty starting selection") is worth applying
+PROACTIVELY the next time a similar type needs the same treatment,
+rather than waiting for it to be reported again — done here by
+extending BUG 27's own fix to column_grid in the same commit as BUG 26's
+extension, instead of shipping only the newly-reported half and leaving
+the other gap for a BUG 29 to rediscover.
+
+---
+
 ## Template for new entries
 
 ```

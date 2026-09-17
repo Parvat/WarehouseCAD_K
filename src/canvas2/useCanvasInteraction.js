@@ -10,7 +10,7 @@ import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
-  movedIdsFor, objectCentre, isFloorPlan,
+  movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded,
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
@@ -919,22 +919,24 @@ export function useCanvasInteraction({
       if (m && m.moved && m.to) {
         const st = useCanvasStore.getState()
         const ids = objectsInMarquee(st.objects, normalizeRect(m.from, m.to))
-        /* Guarantee a shift-marquee NEVER leaves a floor plan selected —
-           NOT just that it never ADDS one (objectsInMarquee already
-           excludes floor plans from what it catches, BUG 26), but that one
-           selected by something EARLIER (a plain click on the building
-           before this drag ever started, entirely unrelated to this
-           gesture) doesn't survive it either. selectMultiple only ever
-           ADDS — st.selectedIds.push(id) for ids not already present — it
-           was never going to remove a pre-existing floor-plan entry no
-           matter what objectsInMarquee returned, which is exactly BUG 26's
-           fix looking complete in isolation while the actual symptom
-           (verified: pre-selecting the building, THEN marqueeing, left it
-           selected afterward) came from the selection this drag STARTED
-           with, not the one it computed. A marquee redefines what its own
-           rectangle covers; it should never inherit a building selection
-           from a moment before it existed. */
-        const keep = st.selectedIds.filter(id => !isFloorPlan(st.objects.find(o => o.id === id)))
+        /* Guarantee a shift-marquee NEVER leaves a floor plan or column
+           grid selected — NOT just that it never ADDS one (objectsInMarquee
+           already excludes both from what it catches, BUG 26/28), but that
+           one selected by something EARLIER (a plain click on the building
+           or grid before this drag ever started, entirely unrelated to
+           this gesture) doesn't survive it either. selectMultiple only
+           ever ADDS — st.selectedIds.push(id) for ids not already present
+           — it was never going to remove a pre-existing entry no matter
+           what objectsInMarquee returned, which is exactly BUG 26's fix
+           looking complete in isolation while the actual symptom (BUG 27:
+           pre-selecting the building, THEN marqueeing, left it selected
+           afterward) came from the selection this drag STARTED with, not
+           the one it computed. A marquee redefines what its own rectangle
+           covers; it should never inherit a building/grid selection from a
+           moment before it existed. isMarqueeExcluded is the SAME
+           predicate objectsInMarquee itself uses, so the two can never
+           disagree on what "the marquee excludes" means. */
+        const keep = st.selectedIds.filter(id => !isMarqueeExcluded(st.objects.find(o => o.id === id)))
         if (keep.length !== st.selectedIds.length) st.selectGroup(keep)
         if (ids.length) st.selectMultiple(ids)
       } else if (m && !m.moved && m.clickHitId) {
