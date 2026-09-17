@@ -2364,6 +2364,109 @@ the other gap for a BUG 29 to rediscover.
 
 ---
 
+## BUG 29 — Cross-row bay marquee was missing from canvas2: a rubber-band drag only selected whole objects, never bays
+
+Symptom:  Dragging a marquee across the bays of one or more racks under
+canvas2 only ever selected the RACKS as whole objects — the SVG engine's
+cross-row bay marquee (drag a rubber-band across bay columns spanning
+multiple rows, delete/resize them all in bulk via the multi-bay panel)
+had no canvas2 equivalent at all. `activeBaySelection` (the store array
+the bulk panel reads) was only ever populated one bay at a time, via the
+existing single-bay click (`hitTestBay`, BUG 4's own port) — never by a
+marquee.
+
+Chased:   The store's own bay-multi-select actions (`setBaySelection`,
+`toggleBayInSelection`, `deleteSelectedBays`, `changeSelectedBaysBeam`,
+`clearBaySelection`) already existed, unused by canvas2 — this whole
+feature was a pure INPUT-side gap (nothing to compute which bays a
+rubber-band actually touches), not a missing store capability. Likewise
+the bulk-action UI itself (`MultiBayPanel`, `src/components/RightPanel/
+panels/RackRowPanelCore.jsx`) already reads `activeBaySelection` directly
+from the store and is mounted unconditionally in `PropertiesPanel.jsx` —
+canvas-engine-agnostic, needing no canvas2-specific changes at all. The
+entire port was: compute the bay entries, write them to the store the
+same way the SVG engine's marquee-mouseup does, and paint a highlight —
+everything downstream of `activeBaySelection` already worked.
+
+Also chased: the SVG reference's own `BAY_ROW_TYPES` set lists
+`rack_pushback`/`rack_pallet_flow`/`rack_drive_through`/`rack_cantilever`
+alongside `rack_row`/`rack_double_row`, but the intersection algorithm's
+own `!obj.beams` guard means only the two beam-array types can ever
+actually produce an entry in practice (pushback/pallet_flow/drive_through
+use lane geometry, cantilever uses towers — none carry a `.beams` array).
+Ported the type set verbatim rather than narrowing it to "just the two
+that work" — matching the reference exactly, dead branches included,
+rather than second-guessing which of its own listed types it meant.
+
+Cause:    Not a bug — a genuine missing port, the same "SVG feature deep
+inside one mousemove/mouseup handler, easy to miss porting file-by-file"
+shape as BUG 19 (group rotate) and BUG 22 (smart guides).
+
+Fix:      `selection.js` gained `bayEntriesInMarquee(objects, rect,
+gridSize)` — CanvasArea.jsx's own marquee-mouseup bay-intersection block
+(~953-968) ported verbatim: same `BAY_ROW_TYPES` set, same cursor walk
+(`obj.x + upW`, one bay per `beams` entry, step past its own upright each
+time), same per-bay X-overlap test against the marquee rect. Pure
+function, no React/Konva/store — the same "one computation, not two that
+could drift" discipline every other canvas2 geometry helper follows
+(CANVAS2.md rule 4).
+
+`useCanvasInteraction.js`'s marquee mouseup (already calling
+`objectsInMarquee` for whole-object selection) now also calls
+`bayEntriesInMarquee` on the same normalized rect, unconditionally
+set-or-clearing `activeBaySelection` on every "moved enough" marquee
+release — CanvasArea's own behaviour: a fresh marquee always redefines
+the bay selection, including an empty one that finds nothing. Rack rows
+with a bay entry are added to `selectedIds` too (guarded to only ADD, not
+toggle off an already-selected row — the reference's own guard), so the
+Properties panel shows them.
+
+`shapes.jsx`: the existing single-bay highlight geometry
+(`activeBayRects`, rack_row/rack_double_row/rack_cantilever) was factored
+into a shared `bayRectForIndex(obj, gridSize, i)` so the single-active
+(blue) and new cross-row-marquee (amber) highlights can never disagree
+about where a given bay actually is. New `multiBaySelectionRects(obj,
+gridSize, activeBaySelection)` maps the store's array to this object's
+own bay rects. `RackShape` paints them as CanvasUI's own two-part
+treatment — a semi-transparent amber tint UNDER a dashed amber outline —
+kept visually distinct from the single-active blue outline, matching
+ShapeGeometry.jsx's own colour split between the two selections rather
+than merging them into one visual. `Scene.jsx` reads `activeBaySelection`
+from the store and threads it to `RackShape`.
+
+Verify:   Real mouse, via Playwright. Two `rack_row` objects, 3 bays each
+(96in beams), 100 world units apart in Y — a CROSS-ROW case, not a
+single-rack one. Dragged a marquee (shift-held, starting from empty space
+above the first row) diagonally down across bays 0-1 of both rows (bay 2
+of each deliberately left outside the rubber-band). `activeBaySelection`
+landed with EXACTLY 4 entries — {row A, bay 0}, {row A, bay 1}, {row B,
+bay 0}, {row B, bay 1} — both racks correctly in `selectedIds`.
+Screenshot confirms the amber tint+outline highlight on the selected
+bays. Called `deleteSelectedBays()` (the same store action `MultiBayPanel`
+calls): both rows dropped to a single remaining bay (`beams: [96]`) each,
+in ONE history entry (`historyIndex` advanced by exactly 1 for both rows'
+worth of changes). `undo()` once restored `[96,96,96]` to BOTH rows
+exactly. Zero console errors throughout. Build clean (1789 modules),
+309/309 tests pass (no existing test touches this path).
+
+Lesson:   Not every "missing feature" needs new UI or new store surface —
+this one turned out to be a single input-side gap sitting between two
+things that already worked (the store's bay-selection actions, and the
+bulk-action panel that reads them), because nothing on the canvas2 side
+had ever been asked to compute WHICH bays a gesture touched across
+multiple rows at once. Before building new plumbing, checking what
+already reads/writes the target store field (here: grep for
+`activeBaySelection` across the WHOLE src tree, not just canvas2/) finds
+these cases fast and avoids duplicating a bulk-action UI that already
+exists and is already engine-agnostic. Also, once more: a reference's own
+type list can include entries its own algorithm structurally can't reach
+(BAY_ROW_TYPES' cantilever/pushback/pallet_flow/drive_through) — porting
+it verbatim rather than "cleaning it up" preserves that exact behaviour,
+including its dead branches, which is the correct call when the
+instruction is specifically to port the math, not to redesign it.
+
+---
+
 ## Template for new entries
 
 ```

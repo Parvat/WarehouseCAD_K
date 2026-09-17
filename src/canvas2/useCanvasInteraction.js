@@ -10,7 +10,7 @@ import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
-  movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded,
+  movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee,
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
@@ -918,7 +918,8 @@ export function useCanvasInteraction({
       marqueeRef.current = null
       if (m && m.moved && m.to) {
         const st = useCanvasStore.getState()
-        const ids = objectsInMarquee(st.objects, normalizeRect(m.from, m.to))
+        const rect = normalizeRect(m.from, m.to)
+        const ids = objectsInMarquee(st.objects, rect)
         /* Guarantee a shift-marquee NEVER leaves a floor plan or column
            grid selected — NOT just that it never ADDS one (objectsInMarquee
            already excludes both from what it catches, BUG 26/28), but that
@@ -939,12 +940,39 @@ export function useCanvasInteraction({
         const keep = st.selectedIds.filter(id => !isMarqueeExcluded(st.objects.find(o => o.id === id)))
         if (keep.length !== st.selectedIds.length) st.selectGroup(keep)
         if (ids.length) st.selectMultiple(ids)
+
+        /* Cross-row bay marquee — CanvasArea's own marquee-mouseup
+           bay-intersection, ported verbatim (selection.js's
+           bayEntriesInMarquee), on the SAME rect the whole-object catch
+           above used. Unconditional set-or-clear on every "moved enough"
+           marquee release, same as the reference: a fresh marquee always
+           redefines the bay selection, including an empty one that finds
+           nothing — no BUG-27-style survival concern here, since
+           setBaySelection/clearBaySelection fully REPLACE
+           activeBaySelection rather than selectMultiple's additive
+           push. */
+        const bayEntries = bayEntriesInMarquee(st.objects, rect, st.gridSize)
+        if (bayEntries.length > 0) {
+          st.setBaySelection(bayEntries)
+          // Rack rows with a bay entry need to be in selectedIds too, so
+          // the Properties/multi-bay panel shows them — CanvasArea's own
+          // "only add, never toggle off an already-selected row" guard.
+          const rackIds = [...new Set(bayEntries.map(e => e.objId))]
+          const nowSelected = useCanvasStore.getState().selectedIds
+          rackIds.forEach(id => { if (!nowSelected.includes(id)) st.selectObject(id, true) })
+        } else {
+          st.clearBaySelection()
+        }
       } else if (m && !m.moved && m.clickHitId) {
         /* The shift+drag never actually moved — a plain shift+click on an
            object's body, which still has to toggle it (see the mousedown
            comment above): the same selectFromHit a non-shift click already
            calls, just deferred to here so a genuine drag still wins the
-           marquee interpretation instead. */
+           marquee interpretation instead. selectFromHit's own hitTestBay
+           call already handles a single-bay pick for a plain click; a
+           rubber-band-only concept like the cross-row bay marquee above
+           has no rect to test here, so it does not run for the click
+           fallback at all. */
         selectFromHit(m.clickHitId, true, m.from)
       }
       setMarquee(null)

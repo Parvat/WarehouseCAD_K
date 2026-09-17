@@ -161,3 +161,46 @@ export function objectCentre(obj) {
 }
 
 export const isFloorPlan = obj => !!obj && FP_TYPES.has(obj.type)
+
+/* Rack types the SVG engine's own marquee-mouseup bay-intersection checks —
+   CanvasArea.jsx's own BAY_ROW_TYPES, verbatim. Note this is broader than
+   what actually ever produces an entry: only types that carry a `.beams`
+   array (rack_row, rack_double_row in practice) pass the `!obj.beams` guard
+   below — cantilever/pushback/pallet_flow/drive_through are listed here
+   too, matching the reference exactly, even though their own geometry
+   (towers/lanes, not a beam-width array) means this specific algorithm
+   never actually walks their bays. Ported as-is rather than narrowed: the
+   task is to port the intersection math, not to second-guess which of the
+   reference's own listed types can really reach it. */
+const BAY_ROW_TYPES = new Set([
+  'rack_row', 'rack_double_row', 'rack_cantilever',
+  'rack_pushback', 'rack_pallet_flow', 'rack_drive_through',
+])
+
+/** Cross-row bay marquee — CanvasArea.jsx's own marquee-mouseup
+ *  bay-intersection block, ported verbatim (same cursor walk: start at
+ *  `obj.x + upW`, one bay per `beams` entry, step past its own upright to
+ *  the next). Returns every {objId, bayIdx} whose bay column overlaps
+ *  `rect`, across every eligible row in `objects` — not just one rack, so
+ *  a single rubber-band drag can span multiple rows at once, which is the
+ *  whole point of this over the plain per-bay click (hitTestBay). */
+export function bayEntriesInMarquee(objects = [], rect, gridSize = 40) {
+  if (!rect || !(rect.width > 0) || !(rect.height > 0)) return []
+  const minX = rect.x, maxX = rect.x + rect.width
+  const minY = rect.y, maxY = rect.y + rect.height
+  const bayEntries = []
+  objects.forEach(obj => {
+    if (!obj || !BAY_ROW_TYPES.has(obj.type) || !obj.beams) return
+    const b = getObjectBounds(obj)
+    if (b.y > maxY || b.y + b.height < minY) return   // row not in Y range
+    const upW = ((obj.uprightWidth || 3) / 12) * gridSize
+    let cursor = obj.x + upW
+    obj.beams.forEach((beamIn, i) => {
+      const beamPx = (beamIn / 12) * gridSize
+      const bayX0 = cursor, bayX1 = cursor + beamPx
+      if (bayX0 < maxX && bayX1 > minX) bayEntries.push({ objId: obj.id, bayIdx: i })
+      cursor = bayX1 + upW
+    })
+  })
+  return bayEntries
+}
