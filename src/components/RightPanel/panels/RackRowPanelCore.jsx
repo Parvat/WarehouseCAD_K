@@ -423,13 +423,17 @@ export function RackRowPanel({ obj }) {
         ))}
       </div>
 
-      {/* ── Pallet size ── */}
+      {/* ── Pallet size — GMA standard: the loading face (narrower, 40"
+          default) runs ACROSS the beam and is what sizes positions per bay;
+          depth (48" default) runs into the frame and overhangs it by
+          design (~3" each side on a 42" frame is standard, not undersized).
+          No facing/orientation choice — this is the one convention. ── */}
       {(() => {
-        const pw = obj.palletWIn || 48
-        const pd = obj.palletDIn || 40
+        const pw = obj.palletWIn || 40
+        const pd = obj.palletDIn || 48
         const PRESETS = [
-          { label: '48x40', w: 48, d: 40 },
           { label: '40x48', w: 40, d: 48 },
+          { label: '48x40', w: 48, d: 40 },
           { label: '47x32', w: 47, d: 32 },
         ]
         const isPreset = (w, d) => PRESETS.some(p => p.w === w && p.d === d)
@@ -458,14 +462,14 @@ export function RackRowPanel({ obj }) {
                 </button>
               ))}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>W</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} title="Face — the loading-face width that runs across the beam and sets positions per bay">
+              <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>Face</span>
               <input type="text" defaultValue={pw} key={`pw-${obj.id}`}
                 onFocus={e => e.target.select()}
                 onBlur={e => { const v=parseInt(e.target.value); if(v>0) commitObjectUpdate(obj.id,{palletWIn:v}); else e.target.value=pw }}
                 onKeyDown={e=>{ if(e.key==='Enter') e.target.blur() }}
                 style={inputStyle}/>
-              <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>D</span>
+              <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }} title="Depth — runs into the frame, overhangs by design, does not affect positions per bay">Depth</span>
               <input type="text" defaultValue={pd} key={`pd-${obj.id}`}
                 onFocus={e => e.target.select()}
                 onBlur={e => { const v=parseInt(e.target.value); if(v>0) commitObjectUpdate(obj.id,{palletDIn:v}); else e.target.value=pd }}
@@ -500,7 +504,7 @@ export function RackRowPanel({ obj }) {
 
       {/* ── Flue space (double row only) ── */}
       {obj.type === 'rack_double_row' && (() => {
-        const flue = obj.flueSpaceIn || 6
+        const flue = obj.flueSpaceIn || 9
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {label('Flue')}
@@ -513,7 +517,12 @@ export function RackRowPanel({ obj }) {
                   const rowH    = (obj.height - oldFlueH) / 2
                   const newFlueH = (f / 12) * gridSize
                   const newH    = rowH * 2 + newFlueH
-                  commitObjectUpdate(obj.id, { flueSpaceIn: f, height: newH })
+                  /* flueBaseIn alongside flueSpaceIn — a dealer picking a
+                     Flue value here is a deliberate, genuine choice, so it
+                     becomes the new base the live-auto-flue drag (see
+                     useCanvasInteraction.js's beginDrag) reverts to away
+                     from a column, not just this instant's rendered value. */
+                  commitObjectUpdate(obj.id, { flueSpaceIn: f, flueBaseIn: f, height: newH })
                 }}
                 style={{
                   padding: '3px 8px', borderRadius: 4, cursor: 'pointer',

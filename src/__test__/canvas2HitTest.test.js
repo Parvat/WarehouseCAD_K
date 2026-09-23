@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hitTest, hitTestBay } from '../canvas2/hitTest'
+import { hitTest, hitTestBay, aisleRect } from '../canvas2/hitTest'
 
 const GS = 40
 const LAYERS = [{ id: 'l1', visible: true, locked: false }]
@@ -52,6 +52,47 @@ describe('canvas2 hitTest — object picking, ported from the SVG', () => {
     const fp = { id: 'fp1', type: 'fp_rect', layerId: 'l1', x: 0, y: 0, width: 5000, height: 5000 }
     expect(hitTest([fp, row], LAYERS, 1500, 70, 1, GS)).toBe('r1')
     expect(hitTest([fp, row], LAYERS, 4500, 4500, 1, GS)).toBe('fp1')
+  })
+})
+
+/* BUG 49: aisleRect used to read row1/row2's raw x/y/width/height directly,
+   which is only the true world box at rotation 0/180. A vertical rack
+   (GENERATOR_SPEC_V10, rotation 90) still stores its PRE-rotation local box,
+   so the old math measured the wrong rectangle entirely — `aw<=0||ah<=0`
+   held against that wrong rectangle almost every time, aisleRect returned
+   null, and a vertical aisle could never be clicked, outlined or deleted.
+   Fixed via rackFootprint (the same fix BUG 45 already applied to
+   AisleLabel), reused here since AisleShape/outlineBounds/hitTest all key
+   off this one function. */
+describe('canvas2 hitTest — BUG 49: aisleRect is rotation-aware', () => {
+  // Two 90°-rotated racks (traceGenerate's stored pre-rotation box: beams
+  // along local X, depth along local Y) whose TRUE rotated footprints sit
+  // side by side with a real 100px gap between them.
+  const rotA = { id: 'ra', type: 'rack_row', layerId: 'l1', x: 0, y: 0, width: 200, height: 40, rotation: 90 }
+  const rotB = { id: 'rb', type: 'rack_row', layerId: 'l1', x: 140, y: 0, width: 200, height: 40, rotation: 90 }
+  const aisle = { id: 'ai1', type: 'aisle', layerId: 'l1', row1Id: 'ra', row2Id: 'rb', label: '' }
+
+  it('measures the true rotated gap, not a degenerate one from the raw pre-rotation boxes', () => {
+    const rect = aisleRect(aisle, [rotA, rotB])
+    expect(rect).not.toBeNull()
+    expect(rect).toEqual({ x: 120, y: -80, width: 100, height: 200 })
+  })
+
+  it('is null for an unrelated pair, same as before (no regression on the null path)', () => {
+    expect(aisleRect(aisle, [rotA])).toBeNull()
+  })
+
+  it('a click inside the true rotated gap resolves to the aisle, and can be deleted like any other object', () => {
+    expect(hitTest([rotA, rotB, aisle], LAYERS, 170, 20, 1, GS)).toBe('ai1')
+    // outside the gap (on rack A itself) must NOT resolve to the aisle
+    expect(hitTest([rotA, rotB, aisle], LAYERS, 100, 20, 1, GS)).not.toBe('ai1')
+  })
+
+  it('unrotated racks are unaffected — same rect as the raw-field math would have given', () => {
+    const a = { id: 'ra2', type: 'rack_row', layerId: 'l1', x: 0, y: 0, width: 200, height: 40 }
+    const b = { id: 'rb2', type: 'rack_row', layerId: 'l1', x: 0, y: 140, width: 200, height: 40 }
+    const ai = { id: 'ai2', type: 'aisle', layerId: 'l1', row1Id: 'ra2', row2Id: 'rb2', label: '' }
+    expect(aisleRect(ai, [a, b])).toEqual({ x: 0, y: 40, width: 200, height: 100 })
   })
 })
 

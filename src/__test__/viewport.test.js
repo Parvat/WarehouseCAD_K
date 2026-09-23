@@ -165,8 +165,12 @@ describe('canvas2 viewport — world bounds', () => {
     // fit-to-content with almost nothing on screen (the exact bug this fixes).
     const cg = { type: 'column_grid', x: 0, y: 0, spacingX: [50, 50], spacingY: [50], columnW: 4, columnH: 4 }
     const b = worldBounds([cg], 40)
-    expect(b.x).toBe(0)
-    expect(b.y).toBe(0)
+    // Grid lines are column centrelines (expandColumnGrid), so the first and
+    // last columns each spill half their own width/height past the grid's
+    // own x/y — the total span is unchanged, just centred on it instead of
+    // starting at it.
+    expect(b.x).toBe(-2)
+    expect(b.y).toBe(-2)
     expect(b.width).toBe(100 + 4)   // two 50ft bays + the last column's own width
     expect(b.height).toBe(50 + 4)
   })

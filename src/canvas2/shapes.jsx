@@ -3,6 +3,7 @@ import { Group, Rect, Path, Shape, Circle, Line, Text } from 'react-konva'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { uprightXs, cantileverGeom } from '../render/rackOps'
+import { PALLET_CLEARANCE_IN } from '../utils/capacity'
 import { aisleRect } from './hitTest'
 
 /** Min/max extent of a vertex list, in the same absolute world coords the
@@ -222,7 +223,7 @@ function HitPad({ obj, gridSize, listening }) {
  *  and multiBaySelectionRects (the amber cross-row marquee selection,
  *  BUG 25) below, so a bay's highlight geometry is computed in exactly one
  *  place regardless of which selection put it there. */
-function bayRectForIndex(obj, gridSize, i) {
+export function bayRectForIndex(obj, gridSize, i) {
   if (i == null) return []
   if (obj.type === 'rack_row' || obj.type === 'rack_double_row') {
     const { xs, upW, beams } = uprightXs(obj, gridSize)
@@ -234,7 +235,7 @@ function bayRectForIndex(obj, gridSize, i) {
       return [{ x: bx, y: obj.y, width: bw, height: obj.height }]
     }
     // Double row: the SAME bay column on both bands, flue skipped between.
-    const flueH = ((obj.flueSpaceIn || 6) / 12) * gridSize
+    const flueH = ((obj.flueSpaceIn || 9) / 12) * gridSize
     const rowH = Math.max(0, (obj.height - flueH) / 2)
     if (rowH <= 0) return [{ x: bx, y: obj.y, width: bw, height: obj.height }]
     return [
@@ -256,6 +257,45 @@ function bayRectForIndex(obj, gridSize, i) {
   }
 
   return []
+}
+
+/** ONE pallet position's own rect within a bay/face — a sub-rect of
+ *  `bayRectForIndex`'s own face rect, narrowed to that position's GMA-
+ *  standard slot (palletFaceIn + clearance, columnCheck.js's own
+ *  `blockedPositionIndices` counts the SAME slots by the SAME width) rather
+ *  than the whole bay. Used for a blocked-position mark — a column blocks
+ *  one pick SPOT, not the entire bay it happens to sit in. `faceIndex`
+ *  selects which of `bayRectForIndex`'s returned rects (0/1 for a double
+ *  row, always 0 for a single) to slice from. */
+export function positionRectForIndex(obj, gridSize, bayIndex, positionIndex, faceIndex = 0) {
+  const faceRect = bayRectForIndex(obj, gridSize, bayIndex)[faceIndex]
+  if (!faceRect) return null
+  const palletFaceIn = obj.palletWIn || 40
+  const slotPx = ((palletFaceIn + PALLET_CLEARANCE_IN) / 12) * gridSize
+  const startPx = faceRect.x + positionIndex * slotPx
+  const width = Math.max(0, Math.min(slotPx, faceRect.x + faceRect.width - startPx))
+  return { x: startPx, y: faceRect.y, width, height: faceRect.height }
+}
+
+/** BUG 66 — a small structural marker (a 12"-default column square, a
+ *  pallet-position X) is a fixed WORLD size, so at building-overview zoom
+ *  (a few percent, the auto-fit `placeFpObject` itself sets) it shrinks to
+ *  a handful of screen px — arithmetically correct, visually gone. The
+ *  established fix for "this needs to read at any zoom" is already all
+ *  over this file (ResizeHandlesOverlay's own `hs = 6/zoom`, ported
+ *  verbatim from CanvasUI): world-space size computed as `screenPx /
+ *  zoom`. This grows a rect to that floor — CENTRED on its own true
+ *  centre, never from a corner, so a marker that grows to stay visible
+ *  never drifts off the position it's actually marking. Below the
+ *  threshold it's a no-op: a marker already bigger than the floor draws
+ *  at its real size, exactly as before. */
+export function growToMinScreenSize(rect, zoom, minPx) {
+  const minSize = minPx / zoom
+  const width  = Math.max(rect.width, minSize)
+  const height = Math.max(rect.height, minSize)
+  const cx = rect.x + rect.width / 2
+  const cy = rect.y + rect.height / 2
+  return { x: cx - width / 2, y: cy - height / 2, width, height }
 }
 
 /** The active bay/tower's outline rect(s) — obj.activeBayIdx/activeTowerIdx,
@@ -389,20 +429,37 @@ export function FloorPlanShape({ obj, gridSize, listening = false, bind }) {
 
 /* ── Column grid ─────────────────────────────────────────────────────────── */
 
+/* BUG 66 — 6 screen-px floor, matching ResizeHandlesOverlay's own
+ * `hs = 6/zoom` handle half-size exactly (a 12px handle square) — the
+ * established "reads at any zoom" size in this codebase, not a new one
+ * invented for columns. */
+const MIN_COLUMN_MARKER_PX = 6
+
 /** The building's structural columns — the actual squares, not a box.
  *
  *  Drawn from the same expandColumnGrid the conflict check measures, so a red
  *  mark always lands on the column it refers to. All columns ride in ONE path:
- *  a 50ft grid over a 1,080ft building is hundreds of squares. */
-export function ColumnGridShape({ obj, gridSize, listening = false, bind }) {
+ *  a 50ft grid over a 1,080ft building is hundreds of squares.
+ *
+ *  BUG 66 — each square is grown to `growToMinScreenSize` before being
+ *  baked into the path, so a building-overview zoom (a few percent) still
+ *  shows every column as a visible dot instead of a few sub-pixel-ish
+ *  screen px lost under the wall line. Needs `zoom` threaded in from
+ *  Scene.jsx/Canvas2.jsx — this shape carries no zoom on its own
+ *  otherwise, unlike the screen-constant-stroke trick below it, which
+ *  needs no zoom input at all. */
+export function ColumnGridShape({ obj, gridSize, zoom = 1, listening = false, bind }) {
   const d = useMemo(() => {
     if (obj.showGrid === false) return null
     const cols = expandColumnGrid(obj, gridSize)
     if (!cols.length) return null
     let out = ''
-    for (const c of cols) out += `M${c.x} ${c.y}h${c.w}v${c.h}h${-c.w}Z`
+    for (const c of cols) {
+      const g = growToMinScreenSize({ x: c.x, y: c.y, width: c.w, height: c.h }, zoom, MIN_COLUMN_MARKER_PX)
+      out += `M${g.x} ${g.y}h${g.width}v${g.height}h${-g.width}Z`
+    }
     return out
-  }, [obj, gridSize])
+  }, [obj, gridSize, zoom])
 
   if (!d) return null
   return (

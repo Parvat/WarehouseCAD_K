@@ -1,16 +1,19 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Stage, Layer, Shape } from 'react-konva'
-import { Maximize, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Maximize, ToggleLeft, ToggleRight, Ruler } from 'lucide-react'
 import { Scene } from './Scene'
 import { Overlays } from './Overlays'
 import { ResizeHandlesOverlay } from './ResizeHandlesOverlay'
 import { GroupRotateOverlay } from './GroupRotateOverlay'
 import { FpRotateHandleOverlay } from './FpRotateHandleOverlay'
+import { Rulers } from './Rulers'
+import { MeasureOverlay } from './MeasureTool'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useCanvasInteraction } from './useCanvasInteraction'
-import { clampZoom } from './viewport'
+import { clampZoom, screenToWorld } from './viewport'
 import { isFloorPlan } from './selection'
+import { useColumnCheck } from '../generate/useColumnCheck'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
    A Konva Stage that owns its own pointer events. No router, no forwarding, no
@@ -117,10 +120,17 @@ export function Canvas2() {
   const gridSize = useCanvasStore(s => s.gridSize)
   const objects  = useCanvasStore(s => s.objects)
   const showGrid = useCanvasStore(s => s.showGrid)
+  const showRulers = useCanvasStore(s => s.showRulers)
   const uiTheme  = useCanvasStore(s => s.uiTheme)
   const showAisles = useCanvasStore(s => s.showAisles ?? true)
   const activeWall = useCanvasStore(s => s.activeWall)
   const activeBaySelection = useCanvasStore(s => s.activeBaySelection)
+
+  /* Column clearance labels and blocked-face marks (Overlays) read straight
+     off the same derived check the RightPanel's Column Check panel already
+     shows — one source of truth for "how much clearance does this column
+     have" and "which pick face is blocked," not a second geometry pass. */
+  const { result: columnCheckResult, columns: columnCheckColumns, showMarks: columnCheckShowMarks } = useColumnCheck()
 
   /* The live view. Seeded from the store so toggling the canvas keeps your
      place, then owned here for the duration of a gesture. */
@@ -229,18 +239,84 @@ export function Canvas2() {
   const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides } =
     useCanvasInteraction({ stageRef, view, setView, size, objects, dblClickFitEnabled })
 
+  /* ── Measure tool — a modal click-two-points-get-distance aid, entirely
+     local state (never written to the store — it's a ruler, not a document
+     object). While active it takes over the Stage's own mouse handlers
+     completely rather than threading a branch through useCanvasInteraction's
+     much larger select/drag/marquee/resize/rotate press logic — the same
+     "modal tool suspends the normal gesture set" trade-off Pan already makes
+     everywhere else in this app. Points are converted to WORLD coordinates
+     immediately, off `view.current` (the live ref, not the store's
+     rAF-synced copy) — the same source onStageMouseDown itself reads for
+     every other hit-test, so a measurement taken mid-gesture is never a
+     frame stale. */
+  const [measuring, setMeasuring] = useState(false)
+  const [measurePts, setMeasurePts] = useState([])
+  const [measureHover, setMeasureHover] = useState(null)
+
+  const toggleMeasuring = () => {
+    setMeasuring((on) => !on)
+    setMeasurePts([])
+    setMeasureHover(null)
+  }
+
+  useEffect(() => {
+    if (!measuring) return
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      if (measurePts.length || measureHover) { setMeasurePts([]); setMeasureHover(null) }
+      else setMeasuring(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [measuring, measurePts.length, measureHover])
+
+  const measureMouseDown = (e) => {
+    const p = e.target.getStage()?.getPointerPosition()
+    if (!p) return
+    const world = screenToWorld(view.current, p)
+    setMeasurePts((pts) => (pts.length >= 2 ? [world] : [...pts, world]))
+    setMeasureHover(null)
+  }
+  const measureMouseMove = (e) => {
+    if (measurePts.length !== 1) return
+    const p = e.target.getStage()?.getPointerPosition()
+    if (!p) return
+    setMeasureHover(screenToWorld(view.current, p))
+  }
+
+  const stageMouseDown = measuring ? measureMouseDown : onStageMouseDown
+  const stageMouseMove = measuring ? measureMouseMove : onStageMouseMove
+  const stageMouseLeave = measuring ? () => setMeasureHover(null) : onStageMouseLeave
+  const effectiveCursor = measuring ? 'crosshair' : cursor
+
   return (
     <div
       id="canvas2-container"
       ref={setHost}
       className="flex-1 relative overflow-hidden"
-      style={{ background: colors.bg, cursor }}
+      style={{ background: colors.bg, cursor: effectiveCursor }}
     >
       {/* The primary fit-to-content control. Double-click can do the same
           thing, but only when the setting to its right is turned on — off by
           default, since double-click is also reached for while editing and a
           big view jump firing by accident there is disorienting. */}
       <div style={{ position: 'absolute', right: 12, bottom: 12, zIndex: 50, display: 'flex', gap: 6 }}>
+        <button
+          onClick={toggleMeasuring}
+          title={measuring ? 'Exit measure tool (Esc)' : 'Measure — click two points for the distance between them'}
+          aria-label="Measure"
+          aria-pressed={measuring}
+          style={{
+            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: measuring ? 'var(--accent-solid, #0B101D)' : 'var(--surface, #fff)',
+            color: measuring ? 'var(--accent-fg, #fff)' : 'var(--text2, #3A4152)',
+            border: '1px solid var(--border, #E6E9EF)', borderRadius: 8,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.12)', cursor: 'pointer',
+          }}
+        >
+          <Ruler size={15} strokeWidth={1.6} absoluteStrokeWidth />
+        </button>
         <button
           onClick={toggleDblClickFit}
           title={(dblClickFitEnabled ? 'Disable' : 'Enable') + ' double-click to fit'}
@@ -279,10 +355,14 @@ export function Canvas2() {
           height={size.h}
           /* Only the press starts here. Moves and the release are taken on
              window for the life of the gesture, so a drag survives the pointer
-             leaving the canvas instead of dying at the edge. */
-          onMouseDown={onStageMouseDown}
-          onMouseMove={onStageMouseMove}
-          onMouseLeave={onStageMouseLeave}
+             leaving the canvas instead of dying at the edge. While the measure
+             tool is active these three are swapped for its own minimal
+             click/hover handlers instead (see stageMouseDown/Move/Leave
+             above) — a modal tool, same as every other single-purpose canvas
+             mode in this app. */
+          onMouseDown={stageMouseDown}
+          onMouseMove={stageMouseMove}
+          onMouseLeave={stageMouseLeave}
           onWheel={onWheel}
           onDblClick={onDblClick}
         >
@@ -303,7 +383,9 @@ export function Canvas2() {
           <Layer listening={false}>
             <Overlays selectedObjects={selectedObjects} gridSize={gridSize} marquee={marquee}
               objects={objects} zoom={zoom} showAisles={showAisles} activeWall={activeWall}
-              smartGuides={smartGuides} />
+              smartGuides={smartGuides} showMarks={columnCheckShowMarks}
+              aisleBlocks={columnCheckResult.aisleBlocks} columns={columnCheckColumns}
+              rackConflicts={columnCheckResult.rackConflicts} />
             {handleTarget && (
               <ResizeHandlesOverlay obj={handleTarget} zoom={zoom} gridSize={gridSize} />
             )}
@@ -313,9 +395,13 @@ export function Canvas2() {
             {selectedObjects.length >= 2 && !(activeBaySelection && activeBaySelection.length > 0) && (
               <GroupRotateOverlay objects={selectedObjects} zoom={zoom} />
             )}
+            {measuring && (
+              <MeasureOverlay points={measurePts} hover={measureHover} zoom={zoom} gridSize={gridSize} />
+            )}
           </Layer>
         </Stage>
       )}
+      {showRulers && <Rulers view={{ zoom, panX, panY }} gridSize={gridSize} size={size} />}
     </div>
   )
 }

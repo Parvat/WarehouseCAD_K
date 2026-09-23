@@ -377,7 +377,7 @@ export function WarehouseObjectPicker() {
       clearance: item.clearance,
       uprightWidth: uprightInches,
       // Bay system for rack types
-      ...(BAY_RACK_TYPES.has(item.type) ? { beams, activeBayIdx: null, palletWIn: 48, palletDIn: 40, palletDeep: variant.palletDeep ?? null } : {}),
+      ...(BAY_RACK_TYPES.has(item.type) ? { beams, activeBayIdx: null, palletWIn: 40, palletDIn: 48, palletDeep: variant.palletDeep ?? null } : {}),
       ...(['rack_drive_in','rack_drive_through','rack_pushback','rack_pallet_flow'].includes(item.type) ? {
         lanes:        variant.lanes        || 2,
         palletDeep:   variant.palletDeep   || (item.type === 'rack_pushback' ? 2 : 5),
@@ -435,7 +435,7 @@ export function WarehouseObjectPicker() {
           _overrideH: totalH,
         }
       })() : {}),
-      ...(item.type === 'rack_double_row' ? { flueSpaceIn: item.meta?.flueSpace || 6 } : {}),
+      ...(item.type === 'rack_double_row' ? { flueSpaceIn: item.meta?.flueSpace || 9 } : {}),
       layerId: activeLayerId,
       /* column_grid is parented like everything else — see FloatingToolbar. */
       ...(parentFp ? { parentId: parentFp.id } : {}),

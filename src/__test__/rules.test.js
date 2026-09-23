@@ -62,7 +62,7 @@ describe('rules — the cascade', () => {
     expect(r.mheDefault).toBe('reach')                 // from the profile
     expect(r.selective.frameWidthsIn).toEqual([3, 4])  // from the profile
     expect(r.selective.beamLengthsIn).toEqual([96, 144]) // inherited
-    expect(r.pallet).toEqual({ wIn: 48, dIn: 40 })       // inherited
+    expect(r.pallet).toEqual({ wIn: 40, dIn: 48 })       // inherited
   })
 
   it('layers a customer override on top — three lines, not a full copy', () => {
@@ -70,7 +70,7 @@ describe('rules — the cascade', () => {
     expect(r.building.columnGridFt).toEqual({ x: 50, y: 54 })
     expect(r.building.clearHeightFt).toBe(36)
     expect(r.mheDefault).toBe('reach')                   // still from dealer
-    expect(r.selective.flueIn).toBe(6)                   // still from default
+    expect(r.selective.flueIn).toBe(9)                   // still from default
     // the override really is tiny
     expect(Object.keys(config.customerOverrides['cord-global'].rules)).toEqual(['building'])
   })
@@ -97,7 +97,7 @@ describe('rules — the cascade', () => {
     }
     const r = resolveRules(orphan, 'loose')
     expect(r.pallet.wIn).toBe(42)              // its own change
-    expect(r.selective.flueIn).toBe(6)         // still inherits the base
+    expect(r.selective.flueIn).toBe(9)         // still inherits the base
   })
 
   it('survives a cycle instead of hanging', () => {
@@ -114,7 +114,7 @@ describe('rules — the cascade', () => {
   })
 
   it('falls back to the shipped default with no config at all', () => {
-    expect(resolveActive(null).selective.flueIn).toBe(6)
+    expect(resolveActive(null).selective.flueIn).toBe(9)
   })
 
   it('explains which layer a value came from', () => {

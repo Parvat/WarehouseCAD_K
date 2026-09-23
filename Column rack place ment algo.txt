@@ -1,0 +1,41 @@
+Step 1 After wall row , 
+
+step 2 check is there space available for aisle - keep track of how much feet covered - how much feet remaining check against the wall - 42" wall single row
+	- If  space >= forklift aisle then  yes 
+		- - check the space between last row placed and the column
+		- if the space is >= equal to movable space like > 8' but less than 12 then place forklift aisle and then move to step 3
+                - if  the space is <= to movable space like > 8 then put next aisle space will be 
+			( space between last row and column which is less than minimum moveable space ) + column length 1 ft + minimum movable space require to move forklift in that aisle i.e 8' and move to step 3
+	- If No  - 
+		checkifwallistoHit
+		{
+			check how much space is remaining how much feet covered- how much feet remaining ,minus 42" wall single row
+		 -> if removing the previous back to back rows  and replacing single row make aisle or if there is single row and remove that make space>= forklift aisle 
+			Yes then replace it   	
+			No remove back to back rows and will enough space till wall side single row
+
+		}
+ exit no more steps
+
+		 
+step 3  check is there space available for racks 
+	so we need two back to back rows plus aisle i.e 42"+9"+42" i.e 7.75' space check if space is remaining to hit the wall is more
+	Yes 
+		check  (how far is next column ) if we place two back to back rows plus aisle i.e 42"+9"+42" i.e 7.75' feet space available, keep track of how much feet covered - how much feet remaining 
+ 		if back to back row is overlapping column
+		- Yes
+		 then 1. does customer allows this 
+			if Yes then just drop is over column like and move to step 2  
+			if NO then 
+			1.Check if moving flue in between back to back rows standard aisle space is left 
+				if yes move them in between
+				if not move them up let the aisle width increase and move to step 2
+		-No Put the rack and move to step 2 
+	No check if we can replace it single row , yes put single row and move to step 2
+			 
+Step4 repeat from step 3 until it reaches wall
+																													
+checkifwallistoHit
+
+{
+}

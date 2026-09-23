@@ -34,6 +34,7 @@ export function RulesProvider({ children }) {
         aisleFt: m.aisleFt,
         minAisleFt: m.minAisleFt,
         retrievalFt: m.retrievalFt,
+        travelFt: m.travelFt,
       }
     }
     return out

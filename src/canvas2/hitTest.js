@@ -16,6 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { objectContains, getFpWallSegments, distToSegment } from '../utils/canvas'
+import { rackFootprint } from '../generate/columnCheck'
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 const COL_GRID = new Set(['column_grid'])
@@ -47,13 +48,29 @@ const isLayerUsable = (layerMap, obj) => {
  *  is called. Exported so canvas2's AisleShape (the paint) and this file's own
  *  hitTest (the pick) can never disagree about where an aisle physically is —
  *  the same reason DimensionLabels' AisleLabel and this shared the same math
- *  before BUG 16, just not through one function. */
+ *  before BUG 16, just not through one function.
+ *
+ *  `rackFootprint` (BUG 49), not raw x/y/width/height — a row rotated 90°
+ *  (GENERATOR_SPEC_V10's vertical orientation) still stores the PRE-rotation
+ *  local box (traceGenerate never changes how one is built, only how it's
+ *  placed/spun), so measuring the gap between two rows from their raw fields
+ *  is only correct at rotation 0/180; at 90/270 it measures the wrong
+ *  rectangle entirely — which is exactly why a vertical aisle couldn't be
+ *  clicked or deleted before this fix: `aw <= 0 || ah <= 0` below almost
+ *  always held against the WRONG rectangle, so this returned null and
+ *  `hitTest`'s 'aisle' case never matched. `outlineBounds` and `AisleShape`
+ *  (shapes.jsx) both call this same function, so the fix reaches the
+ *  selection outline and the Konva hit region too, not just the pick — the
+ *  same single-source-of-truth reasoning BUG 45 already applied to
+ *  AisleLabel. Harmless no-op for an unrotated rack (rot=0 returns the same
+ *  box). */
 export function aisleRect(aisle, objects) {
   const row1 = objects.find(o => o.id === aisle.row1Id)
   const row2 = objects.find(o => o.id === aisle.row2Id)
   if (!row1 || !row2) return null
-  const b1 = { x: row1.x, y: row1.y, r: row1.x + row1.width, b: row1.y + row1.height }
-  const b2 = { x: row2.x, y: row2.y, r: row2.x + row2.width, b: row2.y + row2.height }
+  const f1 = rackFootprint(row1), f2 = rackFootprint(row2)
+  const b1 = { x: f1.x, y: f1.y, r: f1.x + f1.w, b: f1.y + f1.h }
+  const b2 = { x: f2.x, y: f2.y, r: f2.x + f2.w, b: f2.y + f2.h }
 
   const yGap = Math.max(b2.x - b1.r, b1.x - b2.r)
   const xGap = Math.max(b2.y - b1.b, b1.y - b2.b)

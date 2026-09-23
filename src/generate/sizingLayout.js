@@ -4,13 +4,17 @@
 // than the uniform block the Phase-1 stub produced:
 //
 //   ┌──────────────────────────────────────────────┐
-//   │ ░ │  ────────────  │  ────────────           │  single row, on the wall
-//   │ ░ │                                          │  12.5' aisle
-//   │ ░ │  ════════════  │  ════════════           │  double row, 6" flue
-//   │ ░ │       ▲        ▲        ▲                │
-//   │ ░ │   staging   cross-aisle                  │
-//   │ ░ │  ────────────  │  ────────────           │  single row, on the wall
+//   │  ────────────  │  ────────────                │  single row, on the wall
+//   │                 ▲                              │  12.5' aisle
+//   │  ════════════  │  ════════════                │  double row, 9" flue
+//   │             cross-aisle                        │
+//   │  ────────────  │  ────────────                │  single row, on the wall
 //   └──────────────────────────────────────────────┘
+//
+// Racking fills the FULL building rectangle on the run axis (minus a small
+// wall clearance each end) — no baked-in staging/dock carve-out. That zone
+// is coming back later as a separate, draggable object; generation doesn't
+// reserve space for it for now (see generateFixtures below).
 //
 // Pure geometry: feet in, placements out. No React, no store — the same
 // contract stubGenerateLayout has, so it drops straight into
@@ -20,7 +24,7 @@
 import { DEFAULT_RULES } from '../rules/defaults'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
-const FLUE_IN = 6    // back-to-back flue gap for double rows
+const FLUE_IN = 9    // back-to-back flue gap for double rows
 const UP_IN   = 3    // upright width
 
 /* A naive fill on a 1,000ft building can ask for tens of thousands of bay
@@ -37,70 +41,486 @@ export function baysInRun(runFt, beamIn = 96, upIn = UP_IN) {
   return Math.max(0, Math.floor((runIn - upIn) / (beamIn + upIn)))
 }
 
-/** Row bands down the building's depth (Y).
- *  Single rows sit hard against the top and bottom walls — a double row on a
- *  wall would bury its back face — and the requested rack type fills between.
+/* A column's own physical footprint, half-height in feet — colSizeIn=12in
+ * default (columnCheck.js's expandColumnGrid), centred on its grid line. */
+const COL_HALF_FT  = 0.5
+const COL_WIDTH_FT = 2 * COL_HALF_FT
+
+/** Row bands down the building's depth (Y) — PP's own hand-placement
+ *  algorithm (GENERATOR_SPEC_V10.md), not a re-derivation. A single forward
+ *  walk from the near wall to the far wall that ALTERNATES placing an
+ *  AISLE (Step 2) and a PAIR/single (Step 3), each one absorbing whatever
+ *  column lands where it goes:
+ *    - a column where the AISLE goes → absorbed into the aisle (widens it).
+ *    - a column where the PAIR goes → seated in the flue if it fits (free,
+ *      always attempted first), otherwise absorbed into the rack itself as
+ *      a bay-column (−1/level, row kept, pick positions lost there). No
+ *      customer toggle, no row-dropping — BUG 60 removed the old
+ *      allowColumnInRack preference: the generator places columns where
+ *      they naturally land and the dealer adjusts by moving rows on the
+ *      canvas afterward if they want something different.
+ *  Wall rows single (42in reference depth); interior back-to-back pairs.
+ *  `travelFt` is the truck's drive-only (not pick) minimum — a
+ *  per-forklift placeholder (~8ft) until real numbers land; only used when
+ *  Step 2 has to absorb a too-close column into the aisle itself.
+ *
+ *  `colSizeIn` (BUG 55) is the SAME column footprint `columnGridObject`
+ *  draws (brief.colSizeIn, default 12") — threaded through here (not just
+ *  hardcoded to the module's own COL_HALF_FT/COL_WIDTH_FT, which stayed
+ *  12"-shaped) so a pair's flue-widening math sizes itself to the REAL
+ *  column, not an assumed one.
+ *
+ *  `wallClearFt` (BUG 64) — the gap between the near/far walls and where
+ *  the wall rows actually start, the SAME number `rowSegments`' own
+ *  `endClearFt` already applies to the run axis (one "wall clearance"
+ *  input, both axes — see `sizingSheetLayout`'s own wiring). Defaults to
+ *  0 so a direct caller that predates this (a test, say) keeps the old
+ *  flush-to-the-wall behaviour unless it opts in.
  */
-export function rowBands(widthFt, { rackType, depthIn, aisleFt, flueIn = FLUE_IN }) {
+export function rowBands(widthFt, {
+  rackType, depthIn, aisleFt, flueIn = FLUE_IN, gridYFt,
+  travelFt = 8, gridOffsetFt = 0, colSizeIn = 12, wallClearFt = 0,
+}) {
   const singleFt = depthIn / 12
-  const midFt    = rackType === 'rack_double_row' ? (2 * depthIn + flueIn) / 12 : singleFt
+  const pairFt   = (2 * depthIn + flueIn) / 12
+  const midFt    = rackType === 'rack_double_row' ? pairFt : singleFt
+  const flueFt   = flueIn / 12
   const bands    = []
+  if (widthFt < singleFt + 2 * wallClearFt) return bands
 
-  if (widthFt < singleFt) return bands
-  bands.push({ type: 'rack_row', yFt: 0, depthFt: singleFt })
+  /* `wallClearFt` (default 0 — an explicit opt-in, not a silent behaviour
+   * change for any existing direct caller that doesn't pass it) offsets
+   * BOTH the near and far wall rows off their own wall line by the same
+   * gap `rowSegments`' own `endClearFt` already gives the run axis — one
+   * "wall clearance" number, both axes. */
+  const bottomY = widthFt - singleFt - wallClearFt
+  const hasGrid = gridYFt > 0
+  const colHalfFt  = colSizeIn / 24   // half the REAL column width, not the 12"-assumed module constant
+  const colWidthFt = 2 * colHalfFt
 
-  const bottomY = widthFt - singleFt
-  let y = singleFt + aisleFt
-  while (y + midFt + aisleFt <= bottomY && bands.length < MAX_ROWS - 1) {
-    bands.push({ type: rackType, yFt: y, depthFt: midFt })
-    y += midFt + aisleFt
+  /* BUG 59 — the flue width a pair actually needs to physically hold a
+   * column standing in it: exactly the column's own real width, no added
+   * clearance (that's the dealer's choice, via the flue-spacing property,
+   * not baked into the generator) — floored at the standard flue (a pair
+   * with no column in its flue keeps the standard flue — never widens for
+   * nothing). A 12" column seated in the flue makes the flue exactly 12",
+   * a flush fit, not 16.8" (BUG 55's old +4.8" clearance, removed). */
+  const flueInForColumn = () => Math.max(flueIn, colSizeIn)
+
+  /* BUG 56 — best-achievable flue-seat for a column at `colY`, given the
+   * pair can't start any earlier than `minStart` (the aisle just placed —
+   * never shrunk to chase a column) or any later than the far wall allows.
+   * The naive version of this (BUG 55's own "any strategy" fallback)
+   * widened the flue in place without ever moving `start`, so a column
+   * whose ideal centred position fell BEFORE `minStart` ended up with the
+   * flue widened the wrong way — half the column still inside the rack
+   * face it was supposed to be seated clear of. This clamps `start` to
+   * the closest reachable point to that ideal, then — critically —
+   * VERIFIES the column's full footprint actually lands inside the
+   * resulting flue before accepting it. A column is either FULLY seated
+   * or not seated at all; there is no partial-credit "closer than before"
+   * result, because a column straddling a rack edge is worse than one
+   * plainly absorbed into the rack body (the existing, accepted,
+   * pick-position-costing bay-column path) — that one at least doesn't
+   * pretend to be collision-free. Returns null when even the closest
+   * reachable flue can't fully contain the column, so the caller falls
+   * through to that existing path instead. */
+  const seatColumnInFlue = (colY, minStart) => {
+    const neededFlueIn = flueInForColumn()
+    const neededFlueFt = neededFlueIn / 12
+    const neededMidFt  = (2 * depthIn + neededFlueIn) / 12
+    const maxStart = bottomY - neededMidFt
+    if (maxStart < minStart) return null   // doesn't even fit standing alone
+    const idealStart = colY - singleFt - neededFlueFt / 2
+    const start   = Math.min(maxStart, Math.max(minStart, idealStart))
+    const flueLo  = start + singleFt, flueHi = flueLo + neededFlueFt
+    const colLo   = colY - colHalfFt, colHi  = colY + colHalfFt
+    if (colLo < flueLo - 1e-9 || colHi > flueHi + 1e-9) return null   // still doesn't fully contain it
+    return { start, flueIn: neededFlueIn, midFt: neededMidFt }
   }
-  /* The closing single row only earns its place if a full aisle still
-     separates it from whatever came before. */
-  if (bottomY >= y) bands.push({ type: 'rack_row', yFt: bottomY, depthFt: singleFt })
+
+  /* BUG 57 — the invariant is EITHER fully flue-seated OR fully inside one
+   * rack face, never straddling the line between them. When even the
+   * closest-reachable flue can't fully contain a column (`seatColumnInFlue`
+   * returns null), the pair used to just sit at its plain/standard
+   * position anyway, leaving that column exactly on the face/flue boundary
+   * — 6" in the rack, 6" in the flue, an uncosted straddle nothing else
+   * downstream understood. This shifts the (still-standard-flue) pair so
+   * the SAME column lands fully inside one
+   * face instead — a clean bay-column, checkColumns' own existing
+   * absorb-into-the-rack-body cost, just guaranteed collision-free rather
+   * than half-committed. Tries both faces, each clamped to the closest
+   * reachable centred position exactly like seatColumnInFlue, and prefers
+   * whichever needs the smaller shift off `minStart` — least disruptive.
+   * A face only needs `colWidthFt` of clearance (vs a flue's own width
+   * plus clearance on both sides), so whenever flue-seating was merely
+   * boundary-constrained rather than impossible outright, one of the two
+   * faces almost always has room; if truly neither does, this returns
+   * null and the column is left exactly where BUG 55/56 already put it —
+   * a straddle in that residual case is a genuine "nowhere left to put
+   * it" rather than an oversight. */
+  const seatColumnInFace = (colY, minStart) => {
+    const maxStart = bottomY - midFt
+    if (maxStart < minStart) return null
+    const tryFace = (faceOffset) => {
+      const idealStart = colY - faceOffset - singleFt / 2
+      const start = Math.min(maxStart, Math.max(minStart, idealStart))
+      const faceLo = start + faceOffset, faceHi = faceLo + singleFt
+      const colLo = colY - colHalfFt, colHi = colY + colHalfFt
+      if (colLo < faceLo - 1e-9 || colHi > faceHi + 1e-9) return null
+      return { start, shift: Math.abs(start - minStart) }
+    }
+    const candidates = [tryFace(0), tryFace(singleFt + flueFt)].filter(Boolean)
+    if (!candidates.length) return null
+    candidates.sort((a, b) => a.shift - b.shift)
+    return { start: candidates[0].start }
+  }
+
+  /* STEP 1 — the near-wall single row. Locked (position-wise, not column-
+   * aware — the far-wall pinch-loop below is the one place a wall row can
+   * still move), offset off the wall by wallClearFt. */
+  bands.push({ type: 'rack_row', yFt: wallClearFt, depthFt: singleFt })
+  let lastEnd = wallClearFt + singleFt
+
+  /* Column lines sit at gridOffsetFt + k*gridYFt (k=0,1,2,...) — flush from
+   * the building's own origin when gridOffsetFt is 0 (columnCheck.js's
+   * expandColumnGrid Y convention, the default this always used before
+   * GENERATOR_SPEC_V10's vertical orientation existed), or at the REAL
+   * centred offset columnGridObject computes for its X axis, when this
+   * walk is being driven by gridXFt instead. Getting this wrong doesn't
+   * fail loudly — it just has the walk correctly avoid columns that don't
+   * exist at the positions it thinks they're at, while the REAL columns
+   * (drawn elsewhere on the true convention) sit unavoided. */
+  const nextColumnNearEdge = (fromY) => {
+    if (!hasGrid) return Infinity
+    const k = Math.ceil((fromY + colHalfFt - gridOffsetFt) / gridYFt)
+    return gridOffsetFt + k * gridYFt - colHalfFt
+  }
+  /* Column lines whose own footprint overlaps [y0, y1). */
+  const columnsOverlapping = (y0, y1) => {
+    if (!hasGrid) return []
+    const kLo = Math.ceil((y0 - colHalfFt - gridOffsetFt) / gridYFt)
+    const kHi = Math.floor((y1 + colHalfFt - gridOffsetFt) / gridYFt)
+    const out = []
+    for (let k = kLo; k <= kHi; k++) {
+      const cy = gridOffsetFt + k * gridYFt
+      if (cy < 0) continue
+      if (cy + colHalfFt > y0 && cy - colHalfFt < y1) out.push(cy)
+    }
+    return out
+  }
+
+  for (let guard = 0; guard < MAX_ROWS * 3 && bands.length < MAX_ROWS; guard++) {
+    /* STEP 2 — place an aisle, if there's room for one before the far wall. */
+    if (bottomY - lastEnd < aisleFt) break   // NO branch: wall-hit, fall through to cleanup below
+
+    const preAisleEnd = lastEnd
+    const gapToNextColumn = nextColumnNearEdge(lastEnd) - lastEnd
+    /* BUG 52 — gate on travelFt (the drive-through minimum), not aisleFt
+       (the full pick width). A column that lands INSIDE a normal aisleFt
+       aisle is not automatically a problem: as long as the near-side gap
+       is already >= travelFt, a truck can drive past it fine — that's
+       exactly BUG 39's "level 2, one-side pick" case, already accessible
+       by default, not something the WALK needs to react to. Widening here
+       for every gap under aisleFt (the old gate) meant almost any column
+       merely inside the aisle — not actually too close — got the full
+       absorb treatment, which is what caused every aisle to blow out to
+       ~17.5ft in lockstep with the column grid (the "resonance" traced
+       before this fix). Only a gap that's ALSO under travelFt is a truck
+       that can't get through at all — THAT'S when the aisle has to widen,
+       so the far side of the column still gets a full travelFt clear.
+
+       This is already SUFFICIENT on its own for the interior walk (BUG 53
+       looked hard for a case where it wasn't and didn't find one): the
+       widen branch below always places `afterAisle` exactly `travelFt`
+       past the column's far edge, by construction — so checkColumns' own
+       accessibility read (`max(nearClear, farClear) >= travelFt` → level
+       2, "one-side pick," not blocked) can never come back level 1 from
+       THIS step. A row-drop/shift intervention here (an earlier version
+       of this fix had one) was solving a problem that didn't exist and
+       cost real capacity doing it — confirmed by testing 240x120/25x30/
+       reach horizontal, where it dropped a row despite checkColumns
+       already reporting zero blocked aisles for that exact geometry. */
+    const aisleWidth = (!hasGrid || gapToNextColumn >= travelFt)
+      ? aisleFt
+      : Math.max(aisleFt, gapToNextColumn + colWidthFt + travelFt)
+    const afterAisle = preAisleEnd + aisleWidth
+
+    /* STEP 3 — place a pair (or a single, if a pair no longer fits). */
+    if (afterAisle + midFt <= bottomY) {
+      let start = afterAisle
+      let pairFlueIn = flueIn   // BUG 55 — this pair's own flue; may widen below
+      let pairMidFt  = midFt
+      let seated = false
+      const overlap = rackType === 'rack_double_row' ? columnsOverlapping(start, start + midFt) : []
+      if (overlap.length) {
+        /* BUG 60 — always try seating the column in the flue instead of
+           eating a pick slot, no customer toggle gating it — only if the
+           pair doesn't have to start earlier than the aisle just placed to
+           do it (never shrink the aisle to chase a column) and still
+           leaves room to close. BUG 56 —
+           `seatColumnInFlue` clamps to the CLOSEST reachable centring the
+           aisle boundary allows and only accepts it if the column's full
+           footprint actually lands inside the resulting flue; if even
+           that clamped position can't fully contain it, this is null and
+           the column falls through to the existing bay-column path below
+           — never a flue "widened" around a column still half in a face. */
+        const fit = seatColumnInFlue(overlap[0], afterAisle)
+        if (fit) { start = fit.start; pairFlueIn = fit.flueIn; pairMidFt = fit.midFt; seated = true }
+      }
+      /* BUG 55/56 — even when the attempt above declined (its column
+         couldn't be fully seated, or `overlap[0]` wasn't the column that
+         actually touches the flue), a DIFFERENT column can still coincide
+         with this pair's CURRENT (still-standard, un-slid) flue purely by
+         chance. Retried here against the SAME aisle boundary, with the
+         SAME all-or-nothing rule — a partial overlap never ships from this
+         path either. Only checked when nothing was already seated, both
+         because a seated column has nothing left to fix and to avoid
+         re-deriving a position `seatColumnInFlue` already committed to. */
+      if (!seated) {
+        const flueLo = start + depthIn / 12, flueHi = flueLo + pairFlueIn / 12
+        const flueColumn = columnsOverlapping(flueLo, flueHi)[0]
+        if (flueColumn != null) {
+          const fit = seatColumnInFlue(flueColumn, afterAisle)
+          if (fit) {
+            start = fit.start; pairFlueIn = fit.flueIn; pairMidFt = fit.midFt
+          } else {
+            /* BUG 57 — this column touches the flue zone but can't be
+               fully seated in it at any reachable position; shift the
+               pair so it lands fully inside one face instead, rather
+               than leaving it straddling the boundary. */
+            const faceFit = seatColumnInFace(flueColumn, afterAisle)
+            if (faceFit) start = faceFit.start
+          }
+        }
+      }
+      lastEnd = start + pairMidFt
+      bands.push({ type: rackType, yFt: start, depthFt: pairMidFt, flueIn: pairFlueIn })
+    } else if (afterAisle + singleFt <= bottomY) {
+      lastEnd = afterAisle
+      bands.push({ type: 'rack_row', yFt: afterAisle, depthFt: singleFt })
+    } else {
+      lastEnd = preAisleEnd   // nothing placed this round — undo the aisle-only advance
+      break
+    }
+  }
+
+  /* Wall-hit cleanup (STEP 2's NO branch): if a back-to-back pair is the
+     last thing placed, try swapping it for a single row first — it may
+     free enough depth on its own; only if that still isn't enough do we
+     start removing rows outright, until the far wall's own aisle fits. */
+  let remaining = bottomY - lastEnd
+  if (bands.length > 1 && remaining < aisleFt) {
+    const last = bands[bands.length - 1]
+    if (last.type === 'rack_double_row') {
+      /* BUG 55 — this pair's OWN depthFt, not the shared `midFt`: a pair
+         that widened its flue to seat a column is deeper than standard,
+         so converting it back to a single frees MORE than `midFt -
+         singleFt` would assume. */
+      const freed = last.depthFt - singleFt
+      if (remaining + freed >= aisleFt) {
+        last.type = 'rack_row'
+        last.depthFt = singleFt
+        lastEnd = last.yFt + singleFt
+        remaining = bottomY - lastEnd
+      }
+    }
+    while (remaining < aisleFt && bands.length > 1) {
+      bands.pop()
+      const prev = bands[bands.length - 1]
+      lastEnd = prev.yFt + prev.depthFt
+      remaining = bottomY - lastEnd
+    }
+  }
+
+  /* BUG 53 — the cleanup above only ever checks for enough SPACE before
+     the far wall (`remaining >= aisleFt`); it never checked whether a
+     column sits INSIDE that final gap close enough that neither side of
+     it reaches travelFt. That, not the interior walk (which BUG 52's own
+     widen formula already keeps clear — see STEP 2's own comment), is
+     where BUG 52's reported "6.8ft clear" blocked aisles actually lived:
+     confirmed by testing 240x120/25x30/reach vertical directly — all 3
+     blocked aisles sat between the LAST interior row and the far wall's
+     own mirror row, both single rows, exactly this transition. Applied
+     here instead of the interior walk since the far wall's own position
+     (`bottomY`, STEP 1's mirror, "always") is fixed — only the row on
+     the near side of this gap can move.
+
+     BUG 60 — always shift the pinching row forward to absorb the column
+     (the row is kept, pick positions are lost there) rather than dropping
+     it; there is no customer preference to gate a drop on any more, and a
+     shift never blocks the aisle the way the drop's old "just remove it
+     and re-check space" branch occasionally still could downstream. */
+  for (let guard2 = 0; guard2 < MAX_ROWS && hasGrid && bands.length > 1; guard2++) {
+    const pinchingCol = columnsOverlapping(lastEnd, bottomY).find(colY => {
+      const nearClear = (colY - colHalfFt) - lastEnd
+      const farClear  = bottomY - (colY + colHalfFt)
+      return Math.max(nearClear, farClear) < travelFt
+    })
+    if (pinchingCol == null) break
+
+    const prev = bands[bands.length - 1]
+    const newFarEdge = pinchingCol + colHalfFt
+    prev.yFt += newFarEdge - (prev.yFt + prev.depthFt)
+    lastEnd = prev.yFt + prev.depthFt
+
+    /* A shift here can just as easily break the SPACE guarantee the
+       cleanup above already established — re-apply it. */
+    remaining = bottomY - lastEnd
+    if (bands.length > 1 && remaining < aisleFt) {
+      const last = bands[bands.length - 1]
+      if (last.type === 'rack_double_row') {
+        const freed = last.depthFt - singleFt   // BUG 55 — this pair's own depth, see above
+        if (remaining + freed >= aisleFt) {
+          last.type = 'rack_row'
+          last.depthFt = singleFt
+          lastEnd = last.yFt + singleFt
+          remaining = bottomY - lastEnd
+        }
+      }
+      while (remaining < aisleFt && bands.length > 1) {
+        bands.pop()
+        const prev = bands[bands.length - 1]
+        lastEnd = prev.yFt + prev.depthFt
+        remaining = bottomY - lastEnd
+      }
+    }
+  }
+
+  /* STEP 1's mirror — the far-wall single row, always. */
+  bands.push({ type: 'rack_row', yFt: bottomY, depthFt: singleFt })
   return bands
 }
 
-/** Rack runs across the building's length (X): the staging strip is skipped
- *  entirely and one cross-aisle splits what remains into two segments. */
-export function rowSegments(lengthFt, { speedBayFt, crossAisleFt, endClearFt, beamIn, upIn = UP_IN }) {
-  const x0     = speedBayFt
+/** Every column line along the run axis, in run-axis feet — the SAME
+ *  offX/offY convention `columnGridObject` draws from, fed the run axis's
+ *  own grid pitch/offset instead of hardcoding X or Y (BUG 54). */
+function runColumnLinesFt(runGridFt, runGridOffsetFt, lengthFt) {
+  if (!(runGridFt > 0)) return []
+  const n = Math.max(1, Math.floor(lengthFt / runGridFt))
+  return Array.from({ length: n }, (_, i) => runGridOffsetFt + i * runGridFt)
+}
+
+function intervalHitsColumn(startFt, endFt, colLinesFt) {
+  return colLinesFt.some(cx => cx + COL_HALF_FT > startFt && cx - COL_HALF_FT < endFt)
+}
+
+/** Rack runs across the building's length (X): the FULL run axis is used
+ *  (minus a small wall clearance each end — `endClearFt`, a real physical
+ *  standoff, not the staging carve-out this used to also subtract) and one
+ *  cross-aisle splits what remains into two segments.
+ *
+ *  No staging/dock carve-out here — BUG 44 removed it. It was a single
+ *  fixed-size deduction (`speedBayFt`) applied to whichever axis happened to
+ *  be the "run" axis; fine for horizontal (run = the 240ft length, staging
+ *  was a minority of it) but for vertical the run axis is the WIDTH, often
+ *  much shorter, so the same fixed deduction ate a much bigger fraction of
+ *  it — that's what crammed vertical's racking into a thin middle band. The
+ *  staging/dock zone is coming back as a separate draggable object later;
+ *  generation doesn't reserve space for it until then.
+ *
+ *  BUG 54 — three fixes at once, all falling out of one fact: `runLenFt(n) =
+ *  (upIn*(n+1) + n*beamIn)/12` is AFFINE in bay count `n`, not linear
+ *  through the origin — each segment carries its OWN pair of end uprights,
+ *  so splitting a run of `total` bays into two independent segments always
+ *  costs exactly one upright's width MORE than a single undivided run of
+ *  the same `total` would: `runLenFt(n1) + runLenFt(n2) = runLenFt(n1+n2) +
+ *  upIn/12` for any `n1 + n2 = total` (verified live — an earlier version
+ *  of this fix assumed true linearity and understated that extra upright,
+ *  which could silently starve the built aisle below the requested
+ *  `crossAisleFt`). What IS true, and still does all the work below: that
+ *  extra `upIn/12` depends only on `n1 + n2`, never on the split itself, so
+ *  the two segments' COMBINED length is still split-invariant — it just
+ *  isn't `runLenFt(total)` bare, it's `runLenFt(total) + upIn/12`. That
+ *  means:
+ *   1. Both segments can be WALL-FLUSH — segment 1 starts at x0, segment 2
+ *      ENDS at x1 — with the one remaining unknown (the cross-aisle's own
+ *      width, `usable - runLenFt(total) - upIn/12`) collecting whatever
+ *      integer-bay rounding slack is left over, instead of a gap silently
+ *      opening up between the last rack and the far wall.
+ *   2. Because the split doesn't change that combined length, it can be
+ *      chosen for free (zero capacity cost) purely to steer the
+ *      cross-aisle's POSITION away from a column — PP's method: hand a bay
+ *      from one section to the other "against the wall" and the
+ *      cross-aisle boundary just slides over, still filling both walls.
+ *   3. `crossAisleFt` is now the caller's per-forklift figure (BUG 54 wired
+ *      it from `rules.mhe[...].crossAisleFt` in sizingSheetLayout below),
+ *      used as the FLOOR the aisle must clear — reserved UP FRONT (the
+ *      extra upright deducted before bays are even counted, not after), so
+ *      the actual built width can end up larger (never smaller). */
+export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn = UP_IN, runGridFt = 0, runGridOffsetFt = 0 }) {
+  const x0     = endClearFt
   const x1     = lengthFt - endClearFt
   const usable = x1 - x0
   if (usable <= 0) return { segments: [], bays: 0, crossAisle: null }
 
-  const halfFt = (usable - crossAisleFt) / 2
+  const runLenFt = (n) => (upIn * (n + 1) + n * beamIn) / 12
+  const extraUprightFt = upIn / 12   // the second segment's own extra end-upright
+
+  const capacityFt = usable - crossAisleFt - extraUprightFt
+  const total = capacityFt >= beamIn / 12
+    ? Math.min(MAX_BAYS_SEG * 2, baysInRun(capacityFt, beamIn, upIn))
+    : 0
+
   /* Too narrow to be worth splitting — one run beats two stubs. */
-  if (halfFt < beamIn / 12) {
+  if (total < 2) {
     const bays = Math.min(MAX_BAYS_SEG, baysInRun(usable, beamIn, upIn))
-    return { segments: bays > 0 ? [x0] : [], bays, crossAisle: null }
+    return bays > 0
+      ? { segments: [{ xFt: x0, bays }], bays, crossAisle: null }
+      : { segments: [], bays: 0, crossAisle: null }
   }
 
-  const bays = Math.min(MAX_BAYS_SEG, baysInRun(halfFt, beamIn, upIn))
-  if (bays <= 0) return { segments: [], bays: 0, crossAisle: null }
+  const aisleWidthFt = usable - runLenFt(total) - extraUprightFt
+  const colLinesFt   = runColumnLinesFt(runGridFt, runGridOffsetFt, lengthFt)
+  const minN1 = Math.max(1, total - MAX_BAYS_SEG)
+  const maxN1 = Math.min(total - 1, MAX_BAYS_SEG)
+  const balancedN1 = Math.min(maxN1, Math.max(minN1, Math.round(total / 2)))
+
+  let n1 = null
+  for (let d = 0; d <= total && n1 == null; d++) {
+    const candidates = d === 0 ? [balancedN1] : [balancedN1 - d, balancedN1 + d]
+    for (const cand of candidates) {
+      if (cand < minN1 || cand > maxN1) continue
+      const aisleStartFt = x0 + runLenFt(cand)
+      if (!intervalHitsColumn(aisleStartFt, aisleStartFt + aisleWidthFt, colLinesFt)) { n1 = cand; break }
+    }
+  }
+  if (n1 == null) n1 = balancedN1
+
+  const n2 = total - n1
+  const seg1LenFt = runLenFt(n1)
+  const seg2LenFt = runLenFt(n2)
+
   return {
-    segments:   [x0, x0 + halfFt + crossAisleFt],
-    bays,
-    crossAisle: { xFt: x0 + halfFt, widthFt: crossAisleFt },
+    segments: [
+      { xFt: x0, bays: n1 },
+      { xFt: x1 - seg2LenFt, bays: n2 },
+    ],
+    bays: total,
+    crossAisle: { xFt: x0 + seg1LenFt, widthFt: aisleWidthFt },
   }
 }
 
 /** Frame/beam/flue/depth the layout is built from, resolved from the rules
  *  profile with the brief able to override any of them.
  *
- *  Which frame depth? The shallowest one that actually holds the pallet —
- *  picking the first in the list would spec a 36" frame under a 40" pallet,
- *  and picking the deepest would throw away floor space on every row. */
+ *  Frame depth is chosen independently of the pallet's own depth — a pallet
+ *  is EXPECTED to overhang a selective frame by design (a 48" pallet on a
+ *  42" frame, ~3" overhang each side, is the industry-standard stance, not
+ *  a fit problem the frame needs to grow to avoid), so this no longer
+ *  searches for "the shallowest frame that's still >= the pallet." It
+ *  defaults to the standard 42" selective frame depth whenever the rules
+ *  table offers one. */
 export function layoutSpec(brief = {}, rules = DEFAULT_RULES) {
   const sel     = rules.selective || {}
   const pallet  = rules.pallet || {}
   const beams   = sel.beamLengthsIn?.length ? sel.beamLengthsIn : [96]
   const depths  = sel.frameDepthsIn?.length ? sel.frameDepthsIn : [42]
   const frames  = sel.frameWidthsIn?.length ? sel.frameWidthsIn : [3]
-  const palletW = pallet.wIn ?? 48
-  const palletD = pallet.dIn ?? 40
+  const palletW = pallet.wIn ?? 40
+  const palletD = pallet.dIn ?? 48
 
-  const fitDepth = [...depths].sort((a, b) => a - b).find(d => d >= palletD) ?? depths[0]
+  const fitDepth = depths.includes(42) ? 42 : depths[0]
 
   return {
     beamIn:     brief.beamIn     ?? beams[0],
@@ -109,14 +529,102 @@ export function layoutSpec(brief = {}, rules = DEFAULT_RULES) {
     flueIn:     brief.flueIn     ?? sel.flueIn ?? FLUE_IN,
     palletWIn:  brief.palletWIn  ?? palletW,
     palletDIn:  brief.palletDIn  ?? palletD,
-    /* Wall clearance is authored in inches on the rules table; the layout
-       works in feet. */
-    endClearFt: brief.endClearFt ?? ((sel.wallClearanceIn ?? 36) / 12),
+    /* Wall clearance is authored in inches — the Generate panel's own
+       "WALL CLEARANCE (IN)" field (brief.wallClearanceIn) wins over the
+       dealer's rules-table default (sel.wallClearanceIn), which wins over
+       a raw feet override (brief.endClearFt, kept for any direct caller
+       that predates the panel field) — the layout itself works in feet. */
+    endClearFt: brief.endClearFt ?? ((brief.wallClearanceIn ?? sel.wallClearanceIn ?? 36) / 12),
+  }
+}
+
+/** BUG 46 — the ONLY orientation-aware code in the whole generator. Every
+ *  actual placement DECISION (tight-pack an aisle, absorb a column into the
+ *  aisle or the rack, apply travelFt, three-level accessibility) lives in
+ *  `rowBands`/`rowSegments`/`checkColumns` — none of them know or care which
+ *  physical axis they're running along, they just walk a 1D extent against a
+ *  1D grid pitch. Vertical was never a second implementation of that walk;
+ *  it was always the SAME `rowBands`/`rowSegments` call, fed a different
+ *  extent/pitch (BUG 41). What used to live inline in `sizingSheetLayout` as
+ *  a scattered `stackFt`/`runFt` setup plus an `if (vertical) {…} else {…}`
+ *  branch in the placement loop is pulled out here as ONE small, named,
+ *  independently-testable seam — not because the walk itself was ever
+ *  duplicated (it wasn't), but because that seam is exactly where BUG 44
+ *  (rowSegments given the wrong axis's carve-out) and BUG 45
+ *  (aisleObjectsForRacks/AisleLabel reading raw pre-rotation geometry as if
+ *  it were the world box) both actually lived — not in the walk, in how its
+ *  OUTPUT gets mapped onto world coordinates for each axis. Collapsing that
+ *  mapping into one function with one shared call site removes the only
+ *  remaining place a future orientation-shaped bug could hide.
+ *
+ *  `stackFt`/`stackGridFt`: the axis rows are LOCKED ACROSS (bands) and the
+ *  column pitch driving that walk. `runFt`/`runGridFt`: the axis a run's
+ *  own LENGTH lies along (rowSegments' job — fill the full run axis, split
+ *  around one cross-aisle) and the column pitch running ALONG it (BUG 54 —
+ *  rowSegments needs this now too, to steer the cross-aisle clear of a
+ *  column, the same way rowBands already steers bands clear of one).
+ *  `stackGridOffsetFt`/`runGridOffsetFt`: WHERE those column lines actually
+ *  sit along each axis — columnGridObject centres X (offX = leftover/2)
+ *  but walks Y flush from the origin (an earlier fix so rowBands' own
+ *  flush convention would agree with it) — a FIXED building-level
+ *  convention, not an orientation-dependent one, so the same
+ *  `centeredOffset(lengthFt, gridXFt)` formula applies to X regardless of
+ *  whether X is currently playing the stacking role (vertical) or the
+ *  running role (horizontal), and flush (0) applies to Y in either role.
+ *
+ *  `place(band, runPos, runLenFt)` is the per-placement coordinate map: for
+ *  horizontal, band.yFt/runPos ARE the stored xFt/yFt directly (angle 0, no
+ *  transform needed). For vertical, the stored object is still built
+ *  exactly like a horizontal one (beams along its own local X, depth along
+ *  its own local Y — traceGenerate.js never changes that), then spun 90° in
+ *  place around its own centre (shapes.jsx's spin() — every canvas2 object
+ *  rotates that way). So placing it correctly means computing where that
+ *  CENTRE needs to land — band.yFt (a position along the building's LENGTH)
+ *  plus half the depth is the true centre X; the run position (along the
+ *  building's WIDTH) plus half the run's own length is the true centre Y —
+ *  then backing out the PRE-rotation x/y from that centre, since
+ *  traceGenerate still treats xFt/yFt as the unrotated box's top-left. */
+export function axisFrame(orientation, { lengthFt, widthFt, gridXFt, gridYFt, columnsAlongWall = true }) {
+  const vertical = orientation === 'vertical'
+  const stackFt = vertical ? lengthFt : widthFt
+  const runFt    = vertical ? widthFt  : lengthFt
+  const stackGridFt = vertical ? gridXFt : gridYFt
+  const runGridFt    = vertical ? gridYFt : gridXFt
+  const centeredOffset = (totalFt, gridFt) => gridFt > 0
+    ? (totalFt - Math.max(1, Math.floor(totalFt / gridFt)) * gridFt) / 2
+    : 0
+  /* `gridYFt`'s own axis is always the one columnGridObject draws flush at
+   * the wall (offY=0 in the Yes case) — see that function's own header
+   * comment. "Columns along wall" = No shifts THAT axis's offset one full
+   * pitch off the wall, wherever it ends up feeding into the walk (the
+   * stack axis for horizontal, the run axis for vertical — see the block
+   * comment above this function). */
+  const wallOffsetFt = columnsAlongWall ? 0 : gridYFt
+  const stackGridOffsetFt = vertical ? centeredOffset(lengthFt, gridXFt) : wallOffsetFt
+  const runGridOffsetFt   = vertical ? wallOffsetFt : centeredOffset(lengthFt, gridXFt)
+  return {
+    vertical, stackFt, runFt, stackGridFt, stackGridOffsetFt, runGridFt, runGridOffsetFt,
+    place(band, runPos, runLenFt) {
+      if (!vertical) return { xFt: runPos, yFt: band.yFt, angle: 0 }
+      const centreXFt = band.yFt + band.depthFt / 2
+      const centreYFt = runPos + runLenFt / 2
+      return { xFt: centreXFt - runLenFt / 2, yFt: centreYFt - band.depthFt / 2, angle: 90 }
+    },
   }
 }
 
 /** The generator. Same shape/return as stubGenerateLayout, plus the resolved
- *  rules profile — change the profile and the whole layout re-drives. */
+ *  rules profile — change the profile and the whole layout re-drives.
+ *
+ *  `orientation: 'vertical'` runs the SAME walk (rowBands/rowSegments,
+ *  unchanged — see `axisFrame` above) along the OTHER pair of axes: rows
+ *  stack across the building's LENGTH instead of its WIDTH, driven by the X
+ *  column pitch (gridXFt) instead of Y (gridYFt), with wall singles on the
+ *  length-walls; the perpendicular runs move to the WIDTH axis. This is not
+ *  a visual rotation of the horizontal result — it is the same walk, re-run
+ *  with the stacking and running axes swapped, so a column that would only
+ *  have mattered to the Y pitch now gets tested against the X pitch
+ *  instead, and vice versa. Default is horizontal ('horizontal' or unset). */
 export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
   const spec = layoutSpec(brief, rules)
   const {
@@ -124,22 +632,75 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
     rackType     = 'rack_double_row',
     levels       = 4,
     aisleFt      = rules.mhe?.[brief.mhe || rules.mheDefault || 'reach']?.aisleFt ?? 12.5,
-    speedBayFt   = 60,
-    crossAisleFt = aisleFt,
+    /* Capped at aisleFt, not looked up independently from the forklift
+       profile — a truck can never need MORE room to drive through than it
+       needs to work in (BUG 40), and that invariant has to hold for a
+       MANUALLY typed aisle too, not just the forklift's own default. The
+       Generate panel's "AISLE (ft)" field is a genuinely free input (it
+       predates travelFt entirely and never sends one) — if a dealer types
+       an aisle narrower than the selected truck's own profile travelFt,
+       using the profile's travelFt as-is would silently claim the truck
+       needs more clearance to drive than the aisle it's now told to work
+       in actually has. Reduces to exactly the old value whenever aisleFt
+       IS the profile's own (the normal, non-overridden case), since a
+       shipped profile's travelFt is already <= its own aisleFt by
+       construction (columnCheck.js's travelFtFor). */
+    travelFt     = Math.min(rules.mhe?.[brief.mhe || rules.mheDefault || 'reach']?.travelFt ?? 8, aisleFt),
+    /* Per-forklift (BUG 54) — reach/VNA need less room to drive straight
+       through than counterbalance needs to turn, so this is its own
+       rules.mhe[...] figure, not aisleFt reused. */
+    crossAisleFt = rules.mhe?.[brief.mhe || rules.mheDefault || 'reach']?.crossAisleFt ?? aisleFt,
+    /* The SAME column footprint columnGridObject draws (BUG 55) — rowBands
+       needs the real width, not an assumed 12", to size a flue that
+       actually holds the column standing in it. */
+    colSizeIn    = 12,
+    gridYFt, gridXFt,
+    orientation  = 'horizontal',
+    /* "Columns along wall" (BUG 69 redesign) — Yes (default, matches every
+       caller that predates this toggle) keeps the grid flush at the wall;
+       No insets it one full pitch so no column sits on the wall line. See
+       axisFrame's own comment for how this threads into the walk. */
+    columnsAlongWall = true,
   } = brief
   const { beamIn, depthIn, upIn, flueIn, palletWIn, endClearFt } = spec
 
-  const bands = rowBands(widthFt, { rackType, depthIn, aisleFt, flueIn })
-  const { segments, bays } = rowSegments(lengthFt, { speedBayFt, crossAisleFt, endClearFt, beamIn, upIn })
+  const frame = axisFrame(orientation, { lengthFt, widthFt, gridXFt, gridYFt, columnsAlongWall })
+
+  const bands = rowBands(frame.stackFt, { rackType, depthIn, aisleFt, flueIn, gridYFt: frame.stackGridFt, travelFt, gridOffsetFt: frame.stackGridOffsetFt, colSizeIn, wallClearFt: endClearFt })
+  const { segments, bays } = rowSegments(frame.runFt, {
+    crossAisleFt, endClearFt, beamIn, upIn,
+    runGridFt: frame.runGridFt, runGridOffsetFt: frame.runGridOffsetFt,
+  })
   if (!bands.length || !segments.length || bays <= 0) return []
 
   const placements = []
   for (const band of bands) {
-    for (const xFt of segments) {
+    for (const seg of segments) {
+      /* A run's own length in feet — the SAME totalIn/12 formula
+         traceGenerate's beamRackObject will independently compute as its
+         (pre-rotation) width, needed here only for `frame.place` to locate
+         a vertical rack by its CENTRE. Per-segment (BUG 54) — the two
+         segments can now carry different bay counts. */
+      const segRunLenFt = (upIn * (seg.bays + 1) + seg.bays * beamIn) / 12
       placements.push({
-        type: band.type, xFt, yFt: band.yFt,
-        bays, beamIn, depthIn, levels, palletWIn,
-        palletDIn: spec.palletDIn, uprightWidthIn: upIn, angle: 0,
+        type: band.type,
+        ...frame.place(band, seg.xFt, segRunLenFt),
+        // BUG 55 — this band's OWN flue (widened if it seats a column),
+        // not the flat `flueIn` every placement used to share. flueBaseIn
+        // (canvas2's live-flue drag feature — see useCanvasInteraction.js's
+        // beginDrag) is the UN-widened spec default this band started
+        // from, always, even when flueIn above got widened for a seated
+        // column — the same distinction RackRowPanelCore's manual Flue
+        // control and a live drag's own commit already keep: flueIn/
+        // flueSpaceIn is "whatever's currently rendered," flueBaseIn is
+        // "what a drag away from every column should shrink back to."
+        // Leaving this unset here (as every placement did before) meant a
+        // generated rack's genuine base was never recorded at all, so
+        // beginDrag's own flueBaseIn-first read fell through to flueIn —
+        // for a rack the generator had already widened around a seated
+        // column, that IS the widened value, so it could never shrink.
+        bays: seg.bays, beamIn, depthIn, flueIn: band.flueIn ?? flueIn, flueBaseIn: flueIn, levels, palletWIn,
+        palletDIn: spec.palletDIn, uprightWidthIn: upIn,
       })
     }
   }
@@ -153,20 +714,46 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
 
 const STRUCT = '#6366f1'
 
-/** Structural column grid, centred in the building on the requested spacing. */
+/** Structural column grid on the requested spacing — X centred in the
+ *  building, Y either flush from the building's own origin or inset one
+ *  full pitch, depending on `columnsAlongWall`.
+ *
+ *  The two axes deliberately use different conventions. X has no rack logic
+ *  keyed off it (racks only care about clearing the staging strip and the
+ *  cross-aisle), so centring it keeps columns off the end walls with no
+ *  downstream effect. Y is exactly what rowBands's column-driven interior
+ *  placement (COLUMN_GENERATOR_SPEC_V5.md Part 1) walks its pairs against —
+ *  gridOffsetFt + k*gridYFt — so it MUST use the same convention this
+ *  fixture draws from, or a row's flue and this fixture's drawn column
+ *  disagree about where line k actually is, and columns land in aisles
+ *  instead of flues. axisFrame is where that agreement is kept (BUG 69).
+ *
+ *  BUG 64 originally modelled "no columns on the wall" as a SEPARATE
+ *  `wallColumnGridObjects` mechanism layered on top of this always-flush
+ *  grid — wrong, because this grid's own Y=0 line already sits ON the wall
+ *  regardless of that toggle, so "No" never actually removed the column the
+ *  customer was looking at. BUG 69 replaces that with the correct model:
+ *  `columnsAlongWall` directly controls THIS grid's own origin. Yes (the
+ *  default, so any caller that predates the toggle keeps the old behaviour)
+ *  keeps Y flush at 0 — a line on the wall. No shifts Y by one full
+ *  `gridYFt` pitch and drops the line that inset leaves outside the
+ *  building, so the first line sits one pitch in and none is ever ON the
+ *  wall. */
 export function columnGridObject(brief, ox, oy) {
-  const { lengthFt, widthFt, gridXFt = 50, gridYFt = 54, colSizeIn = 12 } = brief
+  const { lengthFt, widthFt, gridXFt = 50, gridYFt = 54, colSizeIn = 12, columnsAlongWall = true } = brief
   if (!(gridXFt > 0) || !(gridYFt > 0)) return null
 
   const nx = Math.max(1, Math.floor(lengthFt / gridXFt))
-  const ny = Math.max(1, Math.floor(widthFt  / gridYFt))
+  const nyFlush = Math.max(1, Math.floor(widthFt / gridYFt))
+  // Inset drops the wall-line itself, leaving one fewer line across the
+  // same span (see the header comment above).
+  const ny = columnsAlongWall ? nyFlush : Math.max(0, nyFlush - 1)
   const colPx = (colSizeIn / 12) * GS
 
   const spacingX = Array.from({ length: nx }, () => gridXFt * GS)
   const spacingY = Array.from({ length: ny }, () => gridYFt * GS)
-  /* Centre the grid so columns are not buried in the walls. */
   const offX = (lengthFt - nx * gridXFt) / 2 * GS
-  const offY = (widthFt  - ny * gridYFt) / 2 * GS
+  const offY = (columnsAlongWall ? 0 : gridYFt) * GS
 
   return {
     type: 'column_grid', label: 'Column Grid',
@@ -244,12 +831,16 @@ export function stagingObjects(brief, ox, oy) {
   ]
 }
 
-/** Every non-rack object the brief implies, in placement order. */
+/** Every non-rack object the brief implies, in placement order.
+ *
+ *  `stagingObjects`/`dockDoorObjects` are deliberately NOT emitted here
+ *  (BUG 44) — racking now fills the full building, so the dashed staging
+ *  boundary and dock doors they'd draw at the old `speedBayFt` carve-out
+ *  would sit on top of/inside placed racks instead of marking a real
+ *  reserved zone. Both functions are kept, still exported and still their
+ *  own tests' subject, for the draggable dock/staging zone that replaces
+ *  this later — they're just not wired into generation until then. */
 export function generateFixtures(brief, ox, oy) {
   const grid = columnGridObject(brief, ox, oy)
-  return [
-    ...stagingObjects(brief, ox, oy),
-    ...dockDoorObjects(brief, ox, oy),
-    ...(grid ? [grid] : []),
-  ]
+  return grid ? [grid] : []
 }

@@ -162,60 +162,63 @@ describe('rackOps — dispatch and level of detail', () => {
 
 /* Double row: two bands of `depth`, a real flue between them,
    total height = 2 x depth + flue. */
-const depthIn = 42, flueIn = 6
+const depthIn = 42, flueIn = 9
 const dbl = {
   ...rack, type: 'rack_double_row',
   height: ((2 * depthIn + flueIn) / 12) * GS,
 }
 
+/* BUG 59 — the flue gap carries NO visual marker at all: the two row rects
+ * are drawn with the real gap between them and nothing drawn on top of it,
+ * no line and no fill. This is a deliberate divergence from the SVG
+ * reference (which draws a thin centred hairline, BUG 58's own port) — the
+ * bare gap, at its own real width, is what reads as a flue now. */
 describe('rackOps — rack_double_row draw-ops', () => {
-  const ops   = rackDoubleRowOps(dbl, GS)
-  const bands = ops.filter(o => o.op === 'rect' && o.fill === RACK_PALETTE.fill)
-  const flue  = ops.find(o => o.op === 'rect' && o.fill === RACK_PALETTE.flue)
-  const path  = ops.find(o => o.op === 'path')
+  const ops       = rackDoubleRowOps(dbl, GS)
+  const bands     = ops.filter(o => o.op === 'rect' && o.fill === RACK_PALETTE.fill)
+  const dividers  = ops.find(o => o.op === 'path' && o.stroke === RACK_PALETTE.divider)
 
-  it('is two bands, one flue and ONE dividers path', () => {
+  it('is two bands and one dividers path — no flue marker of any kind', () => {
     expect(bands).toHaveLength(2)
-    expect(flue).toBeTruthy()
-    expect(ops.filter(o => o.op === 'path')).toHaveLength(1)
+    expect(dividers).toBeTruthy()
+    expect(ops).toHaveLength(3)
+    expect(ops.some(o => o.stroke === RACK_PALETTE.flue || o.fill === RACK_PALETTE.flue)).toBe(false)
   })
 
-  it('splits the height as depth + flue + depth, exactly filling the box', () => {
+  it('splits the height as depth + flue + depth, exactly filling the box — the gap itself stays UNMARKED', () => {
     const [top, bot] = bands
+    const flueHPx = (flueIn / 12) * GS
     expect(top.h).toBeCloseTo((depthIn / 12) * GS, 6)
     expect(top.h).toBeCloseTo(bot.h, 6)
-    expect(top.h + flue.h + bot.h).toBeCloseTo(dbl.height, 6)
+    expect(top.h + flueHPx + bot.h).toBeCloseTo(dbl.height, 6)
     expect(bot.y + bot.h).toBeCloseTo(dbl.y + dbl.height, 6)
-  })
-
-  it('sits the flue exactly between the bands, at its true dimension', () => {
-    const [top, bot] = bands
-    expect(flue.y).toBeCloseTo(top.y + top.h, 6)
-    expect(flue.y + flue.h).toBeCloseTo(bot.y, 6)
-    expect(flue.h).toBeCloseTo((flueIn / 12) * GS, 6)   // a 6" flue measures 6"
-  })
-
-  it('owns the orange — no other type uses it', () => {
-    expect(flue.fill).toBe(RACK_PALETTE.flue)
-    expect(rackRowOps(rack, GS).some(o => o.fill === RACK_PALETTE.flue)).toBe(false)
+    // the gap between the two bands is real (not a zero-height seam)
+    expect(bot.y - (top.y + top.h)).toBeCloseTo(flueHPx, 6)
   })
 
   it('draws dividers on BOTH bands from one path — 2 segments per boundary', () => {
-    expect((path.d.match(/M/g) || []).length).toBe((bays - 1) * 2)
+    expect((dividers.d.match(/M/g) || []).length).toBe((bays - 1) * 2)
   })
 
-  it('never runs a divider across the flue', () => {
-    const segs = [...path.d.matchAll(/M[\d.]+ ([\d.]+)L[\d.]+ ([\d.]+)/g)]
+  it('never runs a divider across the flue gap', () => {
+    const [top, bot] = bands
+    const gapLo = top.y + top.h, gapHi = bot.y
+    const segs = [...dividers.d.matchAll(/M[\d.]+ ([\d.]+)L[\d.]+ ([\d.]+)/g)]
     expect(segs.length).toBe((bays - 1) * 2)
     for (const [, a, b] of segs) {
-      const crosses = Number(a) < flue.y && Number(b) > flue.y + flue.h
+      const crosses = Number(a) < gapLo && Number(b) > gapHi
       expect(crosses).toBe(false)
     }
   })
 
-  it('honours a custom flue dimension', () => {
+  it('honours a custom flue dimension — the gap itself resizes, still with no marker', () => {
     const wide = rackDoubleRowOps({ ...dbl, flueSpaceIn: 12 }, GS)
-    expect(wide.find(o => o.fill === RACK_PALETTE.flue).h).toBeCloseTo(GS, 6)
+    const wideBands = wide.filter(o => o.op === 'rect' && o.fill === RACK_PALETTE.fill)
+    const [top, bot] = wideBands
+    const gapLo = top.y + top.h, gapHi = bot.y
+    expect(gapHi - gapLo).toBeCloseTo(GS, 6)   // a 12" flue measures 12" of real gap
+    expect(wide).toHaveLength(3)
+    expect(wide.some(o => o.stroke === RACK_PALETTE.flue || o.fill === RACK_PALETTE.flue)).toBe(false)
   })
 
   it('degrades to a plain box if the flue would swallow the rack', () => {
@@ -224,8 +227,8 @@ describe('rackOps — rack_double_row draw-ops', () => {
     expect(broken[0].op).toBe("rect")
   })
 
-  it('keeps both bands and the flue at any zoom — no lod collapse', () => {
-    expect(rackDrawOps(dbl, { gridSize: GS })).toHaveLength(4)
+  it('keeps both bands at any zoom — no lod collapse', () => {
+    expect(rackDrawOps(dbl, { gridSize: GS })).toHaveLength(3)
   })
 
   it('falls back to a bare box only for geometry it cannot subdivide', () => {
