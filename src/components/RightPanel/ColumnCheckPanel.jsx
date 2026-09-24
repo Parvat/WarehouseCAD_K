@@ -144,11 +144,11 @@ function ConflictCard({ conflict, index }) {
 export function ColumnCheckPanel() {
   const { result, mheKey, setMheKey, showMarks, setShowMarks, pickBothSides, setPickBothSides } = useColumnCheck()
   const { mheOptions } = useRules()
-  const { rackConflicts, aisleBlocks, summary } = result
+  const { rackConflicts, aisleBlocks, pickBlocks = [], summary } = result
   const blocked = (aisleBlocks || []).filter(a => a.blocked)
   const profileTravelFt = mheOptions[mheKey]?.travelFt ?? 8
 
-  const clean = !rackConflicts.length && !blocked.length
+  const clean = !rackConflicts.length && !blocked.length && !pickBlocks.length
 
   return (
     <SectionHeader title="Column Check" defaultOpen={true}>
@@ -190,6 +190,7 @@ export function ColumnCheckPanel() {
             <div style={{ ...S.mono9, color: 'var(--text3)' }}>
               {rackConflicts.length} column{rackConflicts.length === 1 ? '' : 's'} in racks
               {blocked.length > 0 && ` · ${blocked.length} aisle${blocked.length === 1 ? '' : 's'} blocked`}
+              {summary.positionsLostToPickZone > 0 && ` · −${summary.positionsLostToPickZone} blocked from the aisle`}
             </div>
 
             {blocked.map((a, i) => (

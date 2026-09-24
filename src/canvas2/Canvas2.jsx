@@ -385,7 +385,8 @@ export function Canvas2() {
               objects={objects} zoom={zoom} showAisles={showAisles} activeWall={activeWall}
               smartGuides={smartGuides} showMarks={columnCheckShowMarks}
               aisleBlocks={columnCheckResult.aisleBlocks} columns={columnCheckColumns}
-              rackConflicts={columnCheckResult.rackConflicts} />
+              rackConflicts={columnCheckResult.rackConflicts}
+              pickBlocks={columnCheckResult.pickBlocks} />
             {handleTarget && (
               <ResizeHandlesOverlay obj={handleTarget} zoom={zoom} gridSize={gridSize} />
             )}

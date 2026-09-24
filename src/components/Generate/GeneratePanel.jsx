@@ -273,17 +273,17 @@ export function GeneratePanel() {
             border: '1px solid var(--border)', borderRadius: 4,
           }}>
             <div style={{ fontSize: 18, fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--accent)' }}>
-              {result.total.toLocaleString()}
+              {result.total.toLocaleString()} <span style={{ fontSize: 11, color: 'var(--text3)' }}>·</span> {result.usable.toLocaleString()}
             </div>
             <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>
-              pallet positions · counted from placed racks
+              positions · usable after column losses
             </div>
             {result.horizontalTotal != null && (
               <div style={{
                 fontSize: 10, color: 'var(--text3)', marginTop: 6,
                 paddingTop: 6, borderTop: '1px solid var(--border)',
               }}>
-                Auto-picked <strong style={{ color: 'var(--text)', textTransform: 'capitalize' }}>{result.orientation}</strong> — {result.horizontalTotal.toLocaleString()} horizontal vs {result.verticalTotal.toLocaleString()} vertical
+                Auto-picked <strong style={{ color: 'var(--text)', textTransform: 'capitalize' }}>{result.orientation}</strong> — {result.horizontalUsable.toLocaleString()} usable horizontal vs {result.verticalUsable.toLocaleString()} vertical
               </div>
             )}
           </div>

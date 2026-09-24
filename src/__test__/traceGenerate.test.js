@@ -87,25 +87,21 @@ describe('traceGenerate — generated objects belong to the building', () => {
 })
 
 describe('traceGenerate — BUG 47: pickOrientation runs both and returns the denser one', () => {
-  it('240x120/25x30/reach: vertical wins (2,496 vs 2,376) — matches the live Generate panel numbers', () => {
+  it('240x120/25x30/reach: the reported winner has the larger USABLE total, and auto places exactly what the manual toggle for that orientation would', () => {
     const brief = {
       lengthFt: 240, widthFt: 120, rackType: 'rack_double_row',
       aisleFt: 10.5, gridXFt: 25, gridYFt: 30, dockDoors: 3, levels: 4, mhe: 'reach',
     }
     const pick = pickOrientation(brief, sizingSheetLayout, DEFAULT_RULES)
-    // BUG 59 — the default flue widened 6" -> 9", which costs horizontal
-    // depth (it stacks many more double-row pairs along the width than
-    // vertical does here) more than it costs vertical: horizontal's real
-    // capacity dropped 2,592 -> 2,376, while vertical's held at 2,496 (the
-    // extra 3"/pair doesn't cost it a row in this exact geometry) — so the
-    // orientation pick itself flips, vertical now denser than horizontal.
-    expect(pick.orientation).toBe('vertical')
-    expect(pick.horizontalTotal).toBe(2376)
-    expect(pick.verticalTotal).toBe(2496)
-    // The winning placements are vertical's own real output, not a
-    // re-derivation — auto mode must place exactly what the manual
-    // Vertical toggle would have.
-    expect(pick.placements).toEqual(sizingSheetLayout({ ...brief, orientation: 'vertical' }, DEFAULT_RULES))
+    // Exact totals are deliberately NOT pinned here: they have changed with
+    // every generator fix (flue, wall clearance, grid origin), and the
+    // confirmed reference totals live in TEST_PLAN.md §2, pending PP.
+    const winnerUsable = pick.orientation === 'vertical' ? pick.verticalUsable : pick.horizontalUsable
+    expect(winnerUsable).toBe(Math.max(pick.horizontalUsable, pick.verticalUsable))
+    // The winning placements are the orientation's own real output, not a
+    // re-derivation — auto mode must place exactly what the manual toggle
+    // would have.
+    expect(pick.placements).toEqual(sizingSheetLayout({ ...brief, orientation: pick.orientation }, DEFAULT_RULES))
   })
 
   it('picks whichever orientation scores more — proven with a fake generateLayout, independent of real geometry', () => {
@@ -178,17 +174,15 @@ describe('traceGenerate — BUG 45: aisleObjectsForRacks is rotation-aware', () 
   it('vertical: aisle count matches (bands-1) per run segment, not one bogus cross-aisle per band', () => {
     const racks = sizingSheetLayout({ ...spec, orientation: 'vertical' }, DEFAULT_RULES).map(placementToObject)
     const aisles = aisleObjectsForRacks(racks)
-    // 13 bands x 2 segments = 26 racks; 12 gaps/segment x 2 segments = 24
-    // aisles. (Band count: 11 pre-BUG-52 -> 14 once the walk stopped over-
-    // widening every aisle a column merely touched -> 13 once BUG 53 fixed
-    // the far-wall transition's own zero-column-awareness, which dropped
-    // one row to clear the aisles BUG 52 alone had left genuinely blocked.
-    // The pairing logic itself, this test's actual subject, is unchanged
-    // throughout — the pre-BUG-45 bug produced 11 aisles for a different
-    // reason: one per band, pairing each band's own two segment-halves
-    // instead of adjacent bands, not a band-count change at all.)
-    expect(racks.length).toBe(26)
-    expect(aisles.length).toBe(24)
+    // Every band is split into exactly 2 segments by the cross-aisle, so
+    // bands = racks / 2, and each segment has (bands - 1) gaps: aisles =
+    // 2 x (bands - 1). The pre-BUG-45 bug gave one aisle PER BAND instead
+    // (pairing a band's own two segment-halves across the cross-aisle).
+    // The band count itself is not pinned — it follows every generator fix.
+    expect(racks.length % 2).toBe(0)
+    const bands = racks.length / 2
+    expect(bands).toBeGreaterThan(2)
+    expect(aisles.length).toBe(2 * (bands - 1))
   })
 
   it('horizontal: unaffected by the fix (same tight-packed widths as before)', () => {

@@ -18,6 +18,29 @@
 
 import { expandColumnGrid } from '../generate/columnCheck'
 
+/** The drag-start base for a rack_double_row: `{ flueSpaceIn, height,
+ *  width, rotation }` with flueSpaceIn = the GENUINE base flue (flueBaseIn
+ *  first — never the live, possibly-widened flueSpaceIn when a base is
+ *  recorded) and height rebuilt from the fixed row depth plus that base,
+ *  since the stored height only pairs with the live flue. See
+ *  useCanvasInteraction.js's beginDrag for the two bugs this exists to
+ *  prevent. */
+export function resolveFlueBase(grabbed, gridSize) {
+  const liveFlueHPx = ((grabbed.flueSpaceIn || 9) / 12) * gridSize
+  const rowHPx = Math.max(0, (grabbed.height - liveFlueHPx) / 2)
+  const baseFlueIn = grabbed.flueBaseIn ?? grabbed.flueSpaceIn ?? 9
+  const baseHeight = rowHPx * 2 + (baseFlueIn / 12) * gridSize
+  return { flueSpaceIn: baseFlueIn, height: baseHeight, width: grabbed.width, rotation: grabbed.rotation || 0 }
+}
+
+/** Fields a finished live-flue drag commits on top of `liveObj` (the object
+ *  as the last drag frame left it): flueBaseIn locked to the drag's OWN
+ *  resolved base, never to liveObj.flueSpaceIn, which the drag may have
+ *  left widened. */
+export function flueCommitFields(liveObj, flueBase) {
+  return { ...liveObj, flueBaseIn: flueBase.flueSpaceIn }
+}
+
 /** `flueBase` — the object's geometry BEFORE this drag touched it:
  *  `{ flueSpaceIn, height, width, rotation }`. Re-grounding every call from
  *  this same frozen reference (rather than the object's own possibly

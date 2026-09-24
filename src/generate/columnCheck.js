@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { bayAtPoint, uprightXs } from '../render/rackOps'
-import { positionsPerBeam, blockedPositionIndices } from '../utils/capacity'
+import { positionsPerBeam, blockedPositionIndices, positionFootprintIn } from '../utils/capacity'
 
 const GS = 40 // px per foot (v16b convention)
 
@@ -109,15 +109,164 @@ export function expandColumnGrid(cg, gridSize = GS) {
   return cols
 }
 
+// ── Pick zones ───────────────────────────────────────────────────────────────
+/* A column standing in the AISLE can cost a pallet position even though it
+ * never touches the rack: the forklift needs a clear rectangle straight out
+ * from the pick face — as wide as that position's own footprint (the same
+ * `positionFootprintIn` slot capacity and the in-rack check use) and as deep
+ * as the truck's pick aisle (profile.aisleFt). Any overlap with a column
+ * means the position can't be picked from that side.
+ *
+ * Pick sides: a double row's face is picked only from its own outer side.
+ * A single row is picked from every side whose zone is genuinely open aisle
+ * — no other rack inside it and, when a floor plan is given, wholly inside
+ * the building (a single against a wall has one pick side). A position is
+ * lost only when EVERY pick side it has is blocked.
+ *
+ * Built in the rack's own LOCAL (pre-rotation) frame — beams along local X,
+ * depth along local Y, face 0 on the obj.y side — then carried to world by
+ * rotating about the rack's centre, the same in-place spin canvas2 draws
+ * with. Exact for any multiple of 90°; other angles are skipped rather than
+ * approximated, since a wrong red X is worse than none. */
+
+const PICK_TYPES = new Set(['rack_row', 'rack_double_row'])
+
+function localRectToWorld(obj, rect) {
+  const rot = (((obj.rotation || 0) % 360) + 360) % 360
+  if (rot === 0) return { ...rect }
+  const cx = obj.x + obj.width / 2, cy = obj.y + obj.height / 2
+  const t = rot * Math.PI / 180, c = Math.round(Math.cos(t)), s = Math.round(Math.sin(t))
+  const pts = [[rect.x, rect.y], [rect.x + rect.w, rect.y + rect.h]].map(([x, y]) => [
+    cx + (x - cx) * c - (y - cy) * s,
+    cy + (x - cx) * s + (y - cy) * c,
+  ])
+  const x0 = Math.min(pts[0][0], pts[1][0]), y0 = Math.min(pts[0][1], pts[1][1])
+  return { x: x0, y: y0, w: Math.abs(pts[1][0] - pts[0][0]), h: Math.abs(pts[1][1] - pts[0][1]) }
+}
+
+/** World rect of one position's pick zone. side: 'near' (local obj.y side,
+ *  face 0's) or 'far' (face 1's). null if the position doesn't exist. */
+export function pickZoneRect(obj, gridSize, bayIndex, positionIndex, side, aislePx) {
+  const { xs, upW, beams } = uprightXs(obj, gridSize)
+  if (!(bayIndex >= 0 && bayIndex < beams.length)) return null
+  const fp = positionFootprintIn(beams[bayIndex], obj.palletWIn || 40, positionIndex)
+  if (!fp) return null
+  const toPx = (inches) => (inches / 12) * gridSize
+  const x = xs[bayIndex] + upW + toPx(fp.startIn)
+  const w = toPx(fp.endIn - fp.startIn)
+  const local = side === 'near'
+    ? { x, y: obj.y - aislePx, w, h: aislePx }
+    : { x, y: obj.y + obj.height, w, h: aislePx }
+  return localRectToWorld(obj, local)
+}
+
+function pointInPolygon(px, py, verts) {
+  let inside = false
+  for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+    const a = verts[i], b = verts[j]
+    if ((a.y > py) !== (b.y > py) && px < (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x) inside = !inside
+  }
+  return inside
+}
+
+/* Does a wall segment pass through the rect's open interior? Liang–Barsky
+ * clip against the rect shrunk by a hair, so a wall lying exactly ON the
+ * zone's edge (a row set flush to it) doesn't count as crossing it. */
+function segmentCrossesRect(a, b, r) {
+  const e = 1e-6
+  const xmin = r.x + e, xmax = r.x + r.w - e, ymin = r.y + e, ymax = r.y + r.h - e
+  if (xmax <= xmin || ymax <= ymin) return false
+  const dx = b.x - a.x, dy = b.y - a.y
+  let t0 = 0, t1 = 1
+  for (const [p, q] of [[-dx, a.x - xmin], [dx, xmax - a.x], [-dy, a.y - ymin], [dy, ymax - a.y]]) {
+    if (p === 0) { if (q < 0) return false; continue }
+    const t = q / p
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t }
+    else { if (t < t0) return false; if (t < t1) t1 = t }
+  }
+  return t0 <= t1
+}
+
+function insideAnyFloor(rect, floors) {
+  const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2
+  return floors.some(verts => {
+    if (!verts || verts.length < 3) return false
+    if (!pointInPolygon(cx, cy, verts)) return false
+    for (let i = 0; i < verts.length; i++) {
+      if (segmentCrossesRect(verts[i], verts[(i + 1) % verts.length], rect)) return false
+    }
+    return true
+  })
+}
+
+/** Positions lost to aisle columns. `alreadyBlocked` is a Set of
+ *  `rackId:bay:face:pos` keys the in-rack check already charged — those are
+ *  never counted twice. `floors`: world-space polygons ([{x,y}, ...]) of the
+ *  building; empty means no walls are known. */
+export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, floors = [], alreadyBlocked = new Set() }) {
+  const aislePx = profile.aisleFt * gridSize
+  const out = []
+  if (!columns.length || !(aislePx > 0)) return out
+  const rackFeet = racks.map(r => ({ id: r.id, f: rackFootprint(r) }))
+
+  for (const r of racks) {
+    if (!PICK_TYPES.has(r.type)) continue
+    if (((r.rotation || 0) % 90) !== 0) continue
+    const isDouble = r.type === 'rack_double_row'
+    const levels = r.levels || 1
+    const { beams } = uprightXs(r, gridSize)
+    const palletWIn = r.palletWIn || 40
+
+    // is this zone an aisle a single can be picked from?
+    const isOpenAisle = (zone) =>
+      !rackFeet.some(o => o.id !== r.id && overlaps(zone, o.f)) &&
+      (!floors.length || insideAnyFloor(zone, floors))
+
+    beams.forEach((beamIn, bayIndex) => {
+      const n = positionsPerBeam(beamIn, palletWIn)
+      const faceSides = isDouble ? [[0, ['near']], [1, ['far']]] : [[0, ['near', 'far']]]
+      for (const [face, sides] of faceSides) {
+        const lost = []
+        const cols = new Set()
+        for (let p = 0; p < n; p++) {
+          if (alreadyBlocked.has(`${r.id}:${bayIndex}:${face}:${p}`)) continue
+          let pickSides = 0, blockedSides = 0
+          const hitting = []
+          for (const side of sides) {
+            const zone = pickZoneRect(r, gridSize, bayIndex, p, side, aislePx)
+            if (!zone) continue
+            if (!isDouble && !isOpenAisle(zone)) continue
+            pickSides++
+            const hits = columns.reduce((a, c, ci) => (overlaps(c, zone) ? [...a, ci] : a), [])
+            if (hits.length) { blockedSides++; hitting.push(...hits) }
+          }
+          if (pickSides > 0 && blockedSides === pickSides) {
+            lost.push(p)
+            hitting.forEach(ci => cols.add(ci))
+          }
+        }
+        if (lost.length) {
+          out.push({
+            rackId: r.id, bayIndex, faces: [face], positionIndices: lost,
+            columnIndices: [...cols], positionsLost: lost.length * levels, kind: 'pick-zone',
+          })
+        }
+      }
+    })
+  }
+  return out
+}
+
 // ── The check ────────────────────────────────────────────────────────────────
 // racks:   [{ id, x, y, width, height, type, beams, levels, palletWIn,
 //             depthIn, flueSpaceIn }]  (px, depthIn/flueSpaceIn in inches)
 // columns: [{ x, y, w, h }]  (px)  — use expandColumnGrid() to build these
 // profile: one of MHE_PROFILES
+// floors: world polygons ([{x,y},...]) of the building, for pick-zone walls.
 // pickBothSides: false (default) — a column with clear space on only ONE
 //   side is accessible (GENERATOR_SPEC_V10.md's 3-level rule below); true —
 //   the customer wants both faces pickable, so level 2 also gets flagged.
-export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, pickBothSides = false }) {
+export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, pickBothSides = false, floors = [] }) {
   /* Accessibility is 3 levels, not binary (GENERATOR_SPEC_V10.md, replacing
      the earlier "clear < minAisleFt = blocked" test — that flagged an 8ft-
      clear aisle on a reach truck (needs 10ft to PICK) as blocked, when the
@@ -277,6 +426,17 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
     }
   })
 
+  /* 1b) Column in a position's pick zone (see pickZoneBlocks). Positions the
+     in-rack pass above already charged are passed in so they count once. */
+  const alreadyBlocked = new Set()
+  for (const c of rackConflicts) {
+    if (c.bayIndex == null) continue
+    for (const f of c.faces || [0]) for (const p of c.positionIndices || []) alreadyBlocked.add(`${c.rackId}:${c.bayIndex}:${f}:${p}`)
+  }
+  const pickBlocks = pickZoneBlocks({ racks, columns, profile, gridSize, floors, alreadyBlocked })
+  const positionsLostToPickZone = pickBlocks.reduce((s, b) => s + b.positionsLost, 0)
+  positionsLostIfAbsorb += positionsLostToPickZone
+
   /* 2) Column in a travel aisle → blocked if the clear side is under the min.
      Aisles are gaps WITHIN one run of facing rows, measured along whichever
      axis those rows are actually STACKED on — Y for horizontal (rows run
@@ -342,6 +502,7 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
   return {
     rackConflicts,   // bay-columns only — accessible, kept, flagged red
     flueSeated,      // flue-columns — free, blue, not a conflict at all
+    pickBlocks,      // positions lost to a column in the aisle, every pick side blocked
     aisleBlocks,     // Step 3 territory, unchanged
     redMarks,
     summary: {
@@ -349,7 +510,8 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
       rackConflicts: rackConflicts.length,
       flueSeated: flueSeated.length,
       blockedAisles: aisleBlocks.filter(a => a.blocked).length,
-      positionsLostIfAbsorb,   // customer keeps the rack, loses these positions
+      positionsLostIfAbsorb,   // customer keeps the rack, loses these positions (in-rack + pick zone)
+      positionsLostToPickZone, // the pick-zone share of the above
       sectionsLostIfRemove,    // vs deleting whole bays — always worse
     },
   }

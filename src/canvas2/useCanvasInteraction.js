@@ -8,7 +8,7 @@ import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from '.
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
-import { computeLiveFlue } from './liveFlue'
+import { computeLiveFlue, resolveFlueBase, flueCommitFields } from './liveFlue'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
   movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee,
@@ -245,13 +245,7 @@ export function useCanvasInteraction({
        rebuilt from THAT depth plus the protected base flue, not read off
        the object directly at all. */
     const flueBase = (ids.length === 1 && grabbed.type === 'rack_double_row')
-      ? (() => {
-        const liveFlueHPx = ((grabbed.flueSpaceIn || 9) / 12) * st.gridSize
-        const rowHPx = Math.max(0, (grabbed.height - liveFlueHPx) / 2)
-        const baseFlueIn = grabbed.flueBaseIn ?? grabbed.flueSpaceIn ?? 9
-        const baseHeight = rowHPx * 2 + (baseFlueIn / 12) * st.gridSize
-        return { flueSpaceIn: baseFlueIn, height: baseHeight, width: grabbed.width, rotation: grabbed.rotation || 0 }
-      })()
+      ? resolveFlueBase(grabbed, st.gridSize)
       : null
 
     objDrag.current = {
@@ -1052,7 +1046,7 @@ export function useCanvasInteraction({
           if (d.moved) {
             const st = useCanvasStore.getState()
             const obj = st.objects.find(o => o.id === d.ids[0])
-            if (obj) st.commitObjectUpdate(d.ids[0], { ...obj, flueBaseIn: d.flueBase.flueSpaceIn })
+            if (obj) st.commitObjectUpdate(d.ids[0], flueCommitFields(obj, d.flueBase))
             reparentMoved(d.ids)
           }
           setSmartGuides([])

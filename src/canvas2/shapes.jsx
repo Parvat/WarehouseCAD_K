@@ -3,7 +3,7 @@ import { Group, Rect, Path, Shape, Circle, Line, Text } from 'react-konva'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { uprightXs, cantileverGeom } from '../render/rackOps'
-import { PALLET_CLEARANCE_IN } from '../utils/capacity'
+import { positionFootprintIn } from '../utils/capacity'
 import { aisleRect } from './hitTest'
 
 /** Min/max extent of a vertex list, in the same absolute world coords the
@@ -260,21 +260,22 @@ export function bayRectForIndex(obj, gridSize, i) {
 }
 
 /** ONE pallet position's own rect within a bay/face — a sub-rect of
- *  `bayRectForIndex`'s own face rect, narrowed to that position's GMA-
- *  standard slot (palletFaceIn + clearance, columnCheck.js's own
- *  `blockedPositionIndices` counts the SAME slots by the SAME width) rather
- *  than the whole bay. Used for a blocked-position mark — a column blocks
- *  one pick SPOT, not the entire bay it happens to sit in. `faceIndex`
- *  selects which of `bayRectForIndex`'s returned rects (0/1 for a double
- *  row, always 0 for a single) to slice from. */
+ *  `bayRectForIndex`'s own face rect, narrowed to that position's footprint
+ *  from utils/capacity.js's `positionFootprintIn` (the SAME footprint
+ *  columnCheck.js's `blockedPositionIndices` tests against) rather than the
+ *  whole bay. Used for a blocked-position mark — a column blocks one pick
+ *  SPOT, not the entire bay it happens to sit in. `faceIndex` selects which
+ *  of `bayRectForIndex`'s returned rects (0/1 for a double row, always 0
+ *  for a single) to slice from. */
 export function positionRectForIndex(obj, gridSize, bayIndex, positionIndex, faceIndex = 0) {
   const faceRect = bayRectForIndex(obj, gridSize, bayIndex)[faceIndex]
   if (!faceRect) return null
   const palletFaceIn = obj.palletWIn || 40
-  const slotPx = ((palletFaceIn + PALLET_CLEARANCE_IN) / 12) * gridSize
-  const startPx = faceRect.x + positionIndex * slotPx
-  const width = Math.max(0, Math.min(slotPx, faceRect.x + faceRect.width - startPx))
-  return { x: startPx, y: faceRect.y, width, height: faceRect.height }
+  const beamIn = (faceRect.width / gridSize) * 12
+  const fp = positionFootprintIn(beamIn, palletFaceIn, positionIndex)
+  if (!fp) return null
+  const toPx = (inches) => (inches / 12) * gridSize
+  return { x: faceRect.x + toPx(fp.startIn), y: faceRect.y, width: toPx(fp.endIn - fp.startIn), height: faceRect.height }
 }
 
 /** BUG 66 — a small structural marker (a 12"-default column square, a

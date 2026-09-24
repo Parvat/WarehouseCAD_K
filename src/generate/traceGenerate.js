@@ -12,16 +12,16 @@
 //
 // brief.orientation: 'horizontal' | 'vertical' picks one, unchanged since
 // GENERATOR_SPEC_V10. 'auto' (BUG 47) runs BOTH through pickOrientation and
-// places whichever scores more pallet capacity — the manual pick still
+// places whichever scores more USABLE pallet capacity — the manual pick still
 // costs exactly one generateLayout call either way.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { nanoid } from 'nanoid'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { getLayoutCapacity } from '../utils/capacity'
 import { sizingSheetLayout, generateFixtures } from './sizingLayout'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { rackFootprint, groupBySegment } from './columnCheck'
+import { usableCapacity, mheProfile } from './usableCapacity'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
 const FLUE_IN = 9    // back-to-back flue gap for double rows
@@ -165,7 +165,9 @@ export function aisleObjectsForRacks(racks) {
 }
 
 /** Auto orientation (BUG 47): runs `generateLayout` once per orientation,
- *  compares total pallet capacity, and returns whichever produced more —
+ *  compares USABLE pallet capacity (gross minus the positions the column
+ *  check says are lost — in a column or with every pick zone blocked), and
+ *  returns whichever produced more —
  *  ties keep horizontal, the long-standing default and the simpler layout
  *  when it's a toss-up. Pure: doesn't touch the store or place anything,
  *  so both candidate layouts can be scored without the loser ever being
@@ -173,33 +175,41 @@ export function aisleObjectsForRacks(racks) {
  *  palletWIn), not raw placements, so each candidate is run through
  *  `placementToObject` the same way `buildQueue` itself does before being
  *  scored — capacity is read back the SAME way the UI's own result number
- *  is, never a separate/parallel count. Both raw totals are returned
- *  alongside the winner so the caller can report the comparison, not just
- *  the pick. */
+ *  is, never a separate/parallel count. Each candidate is scored with its
+ *  own column grid and the building outline, exactly as Column Check will
+ *  see it once placed (building at the origin here; the check is
+ *  translation-invariant). Both gross and usable totals are returned so the
+ *  caller can report the comparison, not just the pick. */
 export function pickOrientation(brief, generateLayout, rules = DEFAULT_RULES) {
+  const profile = mheProfile(brief.mhe, rules)
+  const L = (brief.lengthFt || 0) * GS, W = (brief.widthFt || 0) * GS
+  const building = { type: 'fp_rect', fpVerts: [{ x: 0, y: 0 }, { x: L, y: 0 }, { x: L, y: W }, { x: 0, y: W }] }
   const runFor = (orientation) => {
-    const placements = generateLayout({ ...brief, orientation }, rules)
-    const total = getLayoutCapacity(placements.map(placementToObject), rules).total
-    return { orientation, placements, total }
+    const b = { ...brief, orientation }
+    const placements = generateLayout(b, rules)
+    const objects = [...placements.map(placementToObject), ...generateFixtures(b, 0, 0), building]
+    const { gross, usable } = usableCapacity(objects, { profile, gridSize: GS, rules })
+    return { orientation, placements, total: gross, usable }
   }
   const horizontal = runFor('horizontal')
   const vertical    = runFor('vertical')
-  const winner = vertical.total > horizontal.total ? vertical : horizontal
+  const winner = vertical.usable > horizontal.usable ? vertical : horizontal
   return {
-    orientation:     winner.orientation,
-    placements:      winner.placements,
-    horizontalTotal: horizontal.total,
-    verticalTotal:   vertical.total,
+    orientation:      winner.orientation,
+    placements:       winner.placements,
+    horizontalTotal:  horizontal.total,
+    verticalTotal:    vertical.total,
+    horizontalUsable: horizontal.usable,
+    verticalUsable:   vertical.usable,
   }
 }
 
 // ── Public entry the UI calls. Draws the building, fills it, returns capacity. ──
 export function generateAndPlace(brief, generateLayout = sizingSheetLayout, rules = DEFAULT_RULES) {
-  const { queue, orientation, horizontalTotal, verticalTotal } = buildQueue(brief, generateLayout, rules)
+  const { queue, ...picked } = buildQueue(brief, generateLayout, rules)
   const store = useCanvasStore.getState()
   queue.forEach(o => store.addObject(o))
-  const total = getLayoutCapacity(useCanvasStore.getState().objects, rules).total
-  return { total, orientation, horizontalTotal, verticalTotal }
+  return { ...placedCapacity(brief, rules), ...picked }
 }
 
 /* Draws the building, then returns every object to place inside it, already
@@ -253,9 +263,19 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
   return {
     queue,
     orientation:     auto ? pick.orientation : (brief.orientation ?? 'horizontal'),
-    horizontalTotal: pick?.horizontalTotal ?? null,
-    verticalTotal:   pick?.verticalTotal ?? null,
+    horizontalTotal:  pick?.horizontalTotal ?? null,
+    verticalTotal:    pick?.verticalTotal ?? null,
+    horizontalUsable: pick?.horizontalUsable ?? null,
+    verticalUsable:   pick?.verticalUsable ?? null,
   }
+}
+
+/* Gross and usable capacity of everything now on the canvas, read the same
+   way the headline and Column Check read it. */
+function placedCapacity(brief, rules) {
+  const { gross, usable } = usableCapacity(useCanvasStore.getState().objects,
+    { profile: mheProfile(brief.mhe, rules), gridSize: GS, rules })
+  return { total: gross, usable }
 }
 
 /* Adopt every generated object into the building it was drawn inside.
@@ -303,7 +323,7 @@ export async function generateAndPlaceBatched(
   brief,
   { generateLayout = sizingSheetLayout, batch = 10, onProgress, rules = DEFAULT_RULES } = {},
 ) {
-  const { queue, orientation, horizontalTotal, verticalTotal } = buildQueue(brief, generateLayout, rules)
+  const { queue, ...picked } = buildQueue(brief, generateLayout, rules)
   onProgress?.(0)
   await nextFrame()
 
@@ -315,8 +335,7 @@ export async function generateAndPlaceBatched(
   }
 
   onProgress?.(1)
-  const total = getLayoutCapacity(useCanvasStore.getState().objects, rules).total
-  return { total, orientation, horizontalTotal, verticalTotal }
+  return { ...placedCapacity(brief, rules), ...picked }
 }
 
 // ═══ PHASE-1 STUB ════════════════════════════════════════════════════════════

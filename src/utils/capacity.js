@@ -13,25 +13,40 @@ import { DEFAULT_RULES } from '../rules/defaults'
  * design (~3" each side on a 42" frame — not a fit problem, standard
  * practice). `palletWIn` on a rack object is always this loading-face width,
  * never the depth; there is no facing/orientation choice to make, this is
- * the one standard. 8" = 4"+4" clearance between adjacent pallets on the
- * same beam — the SAME number whether you're counting how many fit or
- * figuring out which one a column just blocked, so both live here. */
-export const PALLET_CLEARANCE_IN = 8
+ * the one standard.
+ *
+ * Spacing along the beam is the industry standard: 3" between a pallet and
+ * each upright, 4" between adjacent pallets, so N pallets fit when
+ *   N×face + (N−1)×4" + 2×3" ≤ beam.
+ * The SAME numbers drive counting, which position a column blocks, and the
+ * blocked-position mark, so all three live here. */
+export const UPRIGHT_CLEARANCE_IN = 3
+export const PALLET_GAP_IN = 4
 
-/** How many pallet positions fit across one beam, GMA-standard spacing. */
+/** How many pallet positions fit across one beam. */
 export function positionsPerBeam(beamIn, palletFaceIn) {
   if (!(beamIn > 0) || !(palletFaceIn > 0)) return 0
-  return Math.floor(beamIn / (palletFaceIn + PALLET_CLEARANCE_IN))
+  const n = Math.floor((beamIn - 2 * UPRIGHT_CLEARANCE_IN + PALLET_GAP_IN) / (palletFaceIn + PALLET_GAP_IN))
+  return Math.max(0, n)
 }
 
 /** Position `i`'s own [startIn, endIn) footprint along the beam — LOCAL to
- *  the beam's own start (0 = the near upright's far edge) — including its
- *  share of the clearance on both sides, so this is the SAME width the
- *  counting divisor above already uses; a renderer or an overlap test never
- *  has to re-derive a different number for "how wide is one position." */
-export function positionFootprintIn(palletFaceIn, i) {
-  const slotIn = palletFaceIn + PALLET_CLEARANCE_IN
-  return { startIn: i * slotIn, endIn: (i + 1) * slotIn }
+ *  the beam's own start (0 = the near upright's inside edge). Pallets sit
+ *  3" off the near upright, 4" apart; each position owns its pallet plus
+ *  half the 4" gap on each side, and the first and last extend to the
+ *  uprights (their full 3"). The footprints are contiguous from 0 to the
+ *  last pallet's 3" clearance; any slack past that belongs to no position.
+ *  Returns null for an index that doesn't fit. */
+export function positionFootprintIn(beamIn, palletFaceIn, i) {
+  const n = positionsPerBeam(beamIn, palletFaceIn)
+  if (!(i >= 0 && i < n)) return null
+  const halfGap = PALLET_GAP_IN / 2
+  const palletStart = UPRIGHT_CLEARANCE_IN + i * (palletFaceIn + PALLET_GAP_IN)
+  const palletEnd = palletStart + palletFaceIn
+  return {
+    startIn: i === 0 ? 0 : palletStart - halfGap,
+    endIn: i === n - 1 ? palletEnd + UPRIGHT_CLEARANCE_IN : palletEnd + halfGap,
+  }
 }
 
 /** Which position indices (0-based, within ONE beam) a [loIn, hiIn) footprint
@@ -39,13 +54,13 @@ export function positionFootprintIn(palletFaceIn, i) {
  *  intruder," the REAL slot(s) it overlaps, so a column that clips a slot's
  *  clearance margin without reaching its pallet counts (still ruins that
  *  slot), while one that sits entirely in the unusable slack past the last
- *  full position (a beam's length is rarely an exact multiple of the slot
- *  width) costs nothing — there was never a sellable position there. */
+ *  position's clearance costs nothing — there was never a sellable
+ *  position there. */
 export function blockedPositionIndices(beamIn, palletFaceIn, loIn, hiIn) {
   const n = positionsPerBeam(beamIn, palletFaceIn)
   const out = []
   for (let i = 0; i < n; i++) {
-    const { startIn, endIn } = positionFootprintIn(palletFaceIn, i)
+    const { startIn, endIn } = positionFootprintIn(beamIn, palletFaceIn, i)
     if (hiIn > startIn && loIn < endIn) out.push(i)
   }
   return out

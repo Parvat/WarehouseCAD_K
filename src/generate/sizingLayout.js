@@ -79,7 +79,7 @@ const COL_WIDTH_FT = 2 * COL_HALF_FT
  */
 export function rowBands(widthFt, {
   rackType, depthIn, aisleFt, flueIn = FLUE_IN, gridYFt,
-  travelFt = 8, gridOffsetFt = 0, colSizeIn = 12, wallClearFt = 0,
+  travelFt = 8, gridOffsetFt = 0, gridMaxFt = Infinity, colSizeIn = 12, wallClearFt = 0,
 }) {
   const singleFt = depthIn / 12
   const pairFt   = (2 * depthIn + flueIn) / 12
@@ -191,20 +191,27 @@ export function rowBands(widthFt, {
    * fail loudly — it just has the walk correctly avoid columns that don't
    * exist at the positions it thinks they're at, while the REAL columns
    * (drawn elsewhere on the true convention) sit unavoided. */
+  /* The line set is bounded on both ends, exactly like the drawn grid:
+   * gridOffsetFt is line #0 (k never goes negative — in "Columns along
+   * wall" = No mode that would invent a phantom column on the wall one
+   * pitch before line #0), and gridMaxFt is the last drawn line (No mode
+   * drops a line that would land on the far wall). */
   const nextColumnNearEdge = (fromY) => {
     if (!hasGrid) return Infinity
-    const k = Math.ceil((fromY + colHalfFt - gridOffsetFt) / gridYFt)
-    return gridOffsetFt + k * gridYFt - colHalfFt
+    const k = Math.max(0, Math.ceil((fromY + colHalfFt - gridOffsetFt) / gridYFt))
+    const cy = gridOffsetFt + k * gridYFt
+    if (cy > gridMaxFt + 1e-9) return Infinity
+    return cy - colHalfFt
   }
   /* Column lines whose own footprint overlaps [y0, y1). */
   const columnsOverlapping = (y0, y1) => {
     if (!hasGrid) return []
-    const kLo = Math.ceil((y0 - colHalfFt - gridOffsetFt) / gridYFt)
+    const kLo = Math.max(0, Math.ceil((y0 - colHalfFt - gridOffsetFt) / gridYFt))
     const kHi = Math.floor((y1 + colHalfFt - gridOffsetFt) / gridYFt)
     const out = []
     for (let k = kLo; k <= kHi; k++) {
       const cy = gridOffsetFt + k * gridYFt
-      if (cy < 0) continue
+      if (cy < 0 || cy > gridMaxFt + 1e-9) continue
       if (cy + colHalfFt > y0 && cy - colHalfFt < y1) out.push(cy)
     }
     return out
@@ -393,12 +400,15 @@ export function rowBands(widthFt, {
 }
 
 /** Every column line along the run axis, in run-axis feet — the SAME
- *  offX/offY convention `columnGridObject` draws from, fed the run axis's
- *  own grid pitch/offset instead of hardcoding X or Y (BUG 54). */
-function runColumnLinesFt(runGridFt, runGridOffsetFt, lengthFt) {
+ *  lines `columnGridObject` draws, fed the run axis's own pitch/offset
+ *  instead of hardcoding X or Y (BUG 54): line #0 at the offset, then every
+ *  pitch up to and including the last drawn line (`maxFt`, from axisFrame;
+ *  defaults to the run's own length for a direct caller). */
+function runColumnLinesFt(runGridFt, runGridOffsetFt, lengthFt, maxFt = lengthFt) {
   if (!(runGridFt > 0)) return []
-  const n = Math.max(1, Math.floor(lengthFt / runGridFt))
-  return Array.from({ length: n }, (_, i) => runGridOffsetFt + i * runGridFt)
+  const out = []
+  for (let v = runGridOffsetFt; v <= maxFt + 1e-9; v += runGridFt) out.push(v)
+  return out
 }
 
 function intervalHitsColumn(startFt, endFt, colLinesFt) {
@@ -448,7 +458,7 @@ function intervalHitsColumn(startFt, endFt, colLinesFt) {
  *      used as the FLOOR the aisle must clear — reserved UP FRONT (the
  *      extra upright deducted before bays are even counted, not after), so
  *      the actual built width can end up larger (never smaller). */
-export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn = UP_IN, runGridFt = 0, runGridOffsetFt = 0 }) {
+export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn = UP_IN, runGridFt = 0, runGridOffsetFt = 0, runGridMaxFt = lengthFt }) {
   const x0     = endClearFt
   const x1     = lengthFt - endClearFt
   const usable = x1 - x0
@@ -471,7 +481,7 @@ export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn =
   }
 
   const aisleWidthFt = usable - runLenFt(total) - extraUprightFt
-  const colLinesFt   = runColumnLinesFt(runGridFt, runGridOffsetFt, lengthFt)
+  const colLinesFt   = runColumnLinesFt(runGridFt, runGridOffsetFt, lengthFt, runGridMaxFt)
   const minN1 = Math.max(1, total - MAX_BAYS_SEG)
   const maxN1 = Math.min(total - 1, MAX_BAYS_SEG)
   const balancedN1 = Math.min(maxN1, Math.max(minN1, Math.round(total / 2)))
@@ -538,6 +548,25 @@ export function layoutSpec(brief = {}, rules = DEFAULT_RULES) {
   }
 }
 
+/** Column-line positions along ONE building axis, in feet from the
+ *  building's own origin — the single definition both the drawn grid
+ *  (columnGridObject) and the rack-avoidance walk (axisFrame -> rowBands /
+ *  rowSegments) read, so they cannot disagree about where any line is.
+ *  The same rule applies to both axes:
+ *    "Columns along wall" = Yes — line #0 on the near wall.
+ *    "Columns along wall" = No  — line #0 one full pitch in from the near
+ *      wall, and a line landing exactly on the far wall is dropped, so no
+ *      column sits on any wall. */
+export function axisGridLines(totalFt, pitchFt, columnsAlongWall) {
+  if (!(pitchFt > 0)) return []
+  const n = Math.max(1, Math.floor(totalFt / pitchFt))
+  const start = columnsAlongWall ? 0 : pitchFt
+  const count = columnsAlongWall ? n + 1 : n
+  const lines = Array.from({ length: count }, (_, i) => start + i * pitchFt)
+  if (!columnsAlongWall && lines.length && Math.abs(lines[lines.length - 1] - totalFt) < 1e-9) lines.pop()
+  return lines
+}
+
 /** BUG 46 — the ONLY orientation-aware code in the whole generator. Every
  *  actual placement DECISION (tight-pack an aisle, absorb a column into the
  *  aisle or the rack, apply travelFt, three-level accessibility) lives in
@@ -590,20 +619,23 @@ export function axisFrame(orientation, { lengthFt, widthFt, gridXFt, gridYFt, co
   const runFt    = vertical ? widthFt  : lengthFt
   const stackGridFt = vertical ? gridXFt : gridYFt
   const runGridFt    = vertical ? gridYFt : gridXFt
-  const centeredOffset = (totalFt, gridFt) => gridFt > 0
-    ? (totalFt - Math.max(1, Math.floor(totalFt / gridFt)) * gridFt) / 2
-    : 0
-  /* `gridYFt`'s own axis is always the one columnGridObject draws flush at
-   * the wall (offY=0 in the Yes case) — see that function's own header
-   * comment. "Columns along wall" = No shifts THAT axis's offset one full
-   * pitch off the wall, wherever it ends up feeding into the walk (the
-   * stack axis for horizontal, the run axis for vertical — see the block
-   * comment above this function). */
-  const wallOffsetFt = columnsAlongWall ? 0 : gridYFt
-  const stackGridOffsetFt = vertical ? centeredOffset(lengthFt, gridXFt) : wallOffsetFt
-  const runGridOffsetFt   = vertical ? wallOffsetFt : centeredOffset(lengthFt, gridXFt)
+  /* The avoidance walk reads the SAME line sets columnGridObject draws
+   * (axisGridLines), on both axes: flush to the walls ("Columns along
+   * wall" = Yes) or inset one pitch with no wall line (= No) — whichever
+   * physical axis ends up as this orientation's stack or run axis. First
+   * line is the walk's line #0 (…OffsetFt), last line bounds it (…MaxFt). */
+  const xLines = axisGridLines(lengthFt, gridXFt, columnsAlongWall)
+  const yLines = axisGridLines(widthFt, gridYFt, columnsAlongWall)
+  const stackLines = vertical ? xLines : yLines
+  const runLines   = vertical ? yLines : xLines
+  const first = (l) => (l.length ? l[0] : 0)
+  const last  = (l) => (l.length ? l[l.length - 1] : -Infinity)
+  const stackGridOffsetFt = first(stackLines), stackGridMaxFt = last(stackLines)
+  const runGridOffsetFt   = first(runLines),   runGridMaxFt   = last(runLines)
   return {
-    vertical, stackFt, runFt, stackGridFt, stackGridOffsetFt, runGridFt, runGridOffsetFt,
+    vertical, stackFt, runFt,
+    stackGridFt, stackGridOffsetFt, stackGridMaxFt,
+    runGridFt, runGridOffsetFt, runGridMaxFt,
     place(band, runPos, runLenFt) {
       if (!vertical) return { xFt: runPos, yFt: band.yFt, angle: 0 }
       const centreXFt = band.yFt + band.depthFt / 2
@@ -666,10 +698,10 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
 
   const frame = axisFrame(orientation, { lengthFt, widthFt, gridXFt, gridYFt, columnsAlongWall })
 
-  const bands = rowBands(frame.stackFt, { rackType, depthIn, aisleFt, flueIn, gridYFt: frame.stackGridFt, travelFt, gridOffsetFt: frame.stackGridOffsetFt, colSizeIn, wallClearFt: endClearFt })
+  const bands = rowBands(frame.stackFt, { rackType, depthIn, aisleFt, flueIn, gridYFt: frame.stackGridFt, travelFt, gridOffsetFt: frame.stackGridOffsetFt, gridMaxFt: frame.stackGridMaxFt, colSizeIn, wallClearFt: endClearFt })
   const { segments, bays } = rowSegments(frame.runFt, {
     crossAisleFt, endClearFt, beamIn, upIn,
-    runGridFt: frame.runGridFt, runGridOffsetFt: frame.runGridOffsetFt,
+    runGridFt: frame.runGridFt, runGridOffsetFt: frame.runGridOffsetFt, runGridMaxFt: frame.runGridMaxFt,
   })
   if (!bands.length || !segments.length || bays <= 0) return []
 
@@ -714,52 +746,43 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
 
 const STRUCT = '#6366f1'
 
-/** Structural column grid on the requested spacing — X centred in the
- *  building, Y either flush from the building's own origin or inset one
- *  full pitch, depending on `columnsAlongWall`.
+/** Structural column grid on the requested spacing. `columnsAlongWall`
+ *  sets the origin on BOTH axes: Yes (the default, so any caller that
+ *  predates the toggle keeps a wall-flush grid) starts the lines ON the
+ *  near walls; No starts them one full pitch in from each near wall
+ *  (gridXFt from left/right, gridYFt from top/bottom) and drops a line
+ *  that would land exactly on a far wall, so no column sits on any of the
+ *  four walls.
  *
- *  The two axes deliberately use different conventions. X has no rack logic
- *  keyed off it (racks only care about clearing the staging strip and the
- *  cross-aisle), so centring it keeps columns off the end walls with no
- *  downstream effect. Y is exactly what rowBands's column-driven interior
- *  placement (COLUMN_GENERATOR_SPEC_V5.md Part 1) walks its pairs against —
- *  gridOffsetFt + k*gridYFt — so it MUST use the same convention this
- *  fixture draws from, or a row's flue and this fixture's drawn column
- *  disagree about where line k actually is, and columns land in aisles
- *  instead of flues. axisFrame is where that agreement is kept (BUG 69).
+ *  The line positions come from axisGridLines — the same definition
+ *  axisFrame feeds the rack-avoidance walk (rowBands on the stack axis,
+ *  rowSegments on the run axis) — because a drawn column and the walk's
+ *  idea of that column disagreeing is silent: the walk steers clear of a
+ *  column that isn't there while the real one lands in an aisle or a face.
  *
- *  BUG 64 originally modelled "no columns on the wall" as a SEPARATE
- *  `wallColumnGridObjects` mechanism layered on top of this always-flush
- *  grid — wrong, because this grid's own Y=0 line already sits ON the wall
- *  regardless of that toggle, so "No" never actually removed the column the
- *  customer was looking at. BUG 69 replaces that with the correct model:
- *  `columnsAlongWall` directly controls THIS grid's own origin. Yes (the
- *  default, so any caller that predates the toggle keeps the old behaviour)
- *  keeps Y flush at 0 — a line on the wall. No shifts Y by one full
- *  `gridYFt` pitch and drops the line that inset leaves outside the
- *  building, so the first line sits one pitch in and none is ever ON the
- *  wall. */
+ *  History: BUG 64 modelled "no columns on the wall" as a separate
+ *  wall-grid object layered on an always-flush grid, which never removed
+ *  the grid's own wall line; BUG 69 moved the toggle onto this grid's
+ *  origin, but only for Y — X stayed centred (7.5' off the left wall on a
+ *  240'/25' grid) until both axes were put on the same rule. */
 export function columnGridObject(brief, ox, oy) {
   const { lengthFt, widthFt, gridXFt = 50, gridYFt = 54, colSizeIn = 12, columnsAlongWall = true } = brief
   if (!(gridXFt > 0) || !(gridYFt > 0)) return null
 
-  const nx = Math.max(1, Math.floor(lengthFt / gridXFt))
-  const nyFlush = Math.max(1, Math.floor(widthFt / gridYFt))
-  // Inset drops the wall-line itself, leaving one fewer line across the
-  // same span (see the header comment above).
-  const ny = columnsAlongWall ? nyFlush : Math.max(0, nyFlush - 1)
+  const xs = axisGridLines(lengthFt, gridXFt, columnsAlongWall)
+  const ys = axisGridLines(widthFt, gridYFt, columnsAlongWall)
+  // "No" on a building only one pitch across leaves no interior line at all.
+  if (!xs.length || !ys.length) return null
   const colPx = (colSizeIn / 12) * GS
 
-  const spacingX = Array.from({ length: nx }, () => gridXFt * GS)
-  const spacingY = Array.from({ length: ny }, () => gridYFt * GS)
-  const offX = (lengthFt - nx * gridXFt) / 2 * GS
-  const offY = (columnsAlongWall ? 0 : gridYFt) * GS
+  const spacingX = Array.from({ length: xs.length - 1 }, () => gridXFt * GS)
+  const spacingY = Array.from({ length: ys.length - 1 }, () => gridYFt * GS)
 
   return {
     type: 'column_grid', label: 'Column Grid',
-    x: ox + offX, y: oy + offY,
-    width:  nx * gridXFt * GS + colPx,
-    height: ny * gridYFt * GS + colPx,
+    x: ox + xs[0] * GS, y: oy + ys[0] * GS,
+    width:  spacingX.length * gridXFt * GS + colPx,
+    height: spacingY.length * gridYFt * GS + colPx,
     spacingX, spacingY,
     colSizeIn, columnW: colPx, columnH: colPx,
     showGrid: true, wallAttached: false,

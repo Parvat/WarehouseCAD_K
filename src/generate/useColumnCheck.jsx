@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, useState, useCallback } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { checkColumns, expandColumnGrid, MHE_PROFILES } from './columnCheck'
+import { checkColumns, MHE_PROFILES } from './columnCheck'
+import { layoutColumns, layoutFloors } from './usableCapacity'
 import { useRules } from '../rules/useRules'
 
 /* ── Column / forklift grid check — the app-side wiring ──────────────────────
@@ -21,11 +22,12 @@ import { useRules } from '../rules/useRules'
 const EMPTY_RESULT = {
   rackConflicts: [],
   flueSeated:    [],
+  pickBlocks:    [],
   aisleBlocks:   [],
   redMarks:      [],
   summary: {
     profile: '', rackConflicts: 0, flueSeated: 0, blockedAisles: 0,
-    positionsLostIfAbsorb: 0, sectionsLostIfRemove: 0,
+    positionsLostIfAbsorb: 0, positionsLostToPickZone: 0, sectionsLostIfRemove: 0,
   },
 }
 
@@ -71,17 +73,18 @@ export function ColumnCheckProvider({ children }) {
      inlined into `result`'s) so a renderer that needs a column's actual
      position — e.g. a clearance label at columns[aisleBlocks[i].columnIndex]
      — doesn't have to re-expand the grid itself. */
-  const columns = useMemo(() => (
-    objects
-      .filter(o => o.type === 'column_grid' && o.showGrid !== false)
-      .flatMap(g => expandColumnGrid(g, gridSize))
-  ), [objects, gridSize])
+  const columns = useMemo(() => layoutColumns(objects, gridSize), [objects, gridSize])
+
+  /* Building outlines for the pick-zone check: a single row against a wall
+     has no aisle on that side, so it has one pick side, not two. fpVerts are
+     absolute world points with any rotation already baked in. */
+  const floors = useMemo(() => layoutFloors(objects), [objects])
 
   const result = useMemo(() => {
     const racks = objects.filter(isRack)
     if (!racks.length || !columns.length) return EMPTY_RESULT
-    return checkColumns({ racks, columns, profile, gridSize, pickBothSides })
-  }, [objects, columns, gridSize, profile, pickBothSides])
+    return checkColumns({ racks, columns, profile, gridSize, pickBothSides, floors })
+  }, [objects, columns, gridSize, profile, pickBothSides, floors])
 
   /* Absorb is the default, so it is the absence of a decision, not a stored
      one — the customer keeps the rack and eats `positionsLost`. Only "remove
