@@ -77,31 +77,94 @@ export function computeSmartGuides(selectedIds, objects, gridSize, zoom, dx, dy)
       })
     })
 
-    // ── Snap to column faces (purple guides) ────────────────────────────
+    // ── Snap to columns — directional face pairs, PLUS centre-to-centre
+    // (purple guides) ─────────────────────────────────────────────────────
+    //
+    // "Edge clear of a column": the row's LEADING edge (the one facing the
+    // column, given which side the row is currently on) snaps to the ONE
+    // column face on that side — never the far face. Only two pairs per
+    // axis, not four: [row's right edge, column's LEFT face] and [row's
+    // left edge, column's RIGHT face]. The other two combinations a naive
+    // "check every edge against every face" would add (row's own left edge
+    // against the column's own left face, right against right) only ever
+    // match once the row already substantially OVERLAPS the column — not
+    // an approach from a direction, a row already past it — so leaving
+    // them out is what makes this "directional" at all, not an extra
+    // side-selection branch: for any row far wider than the gap between
+    // the two kept pairs' targets (the ordinary case), at most one of the
+    // two can be within WALL_THRESH at once, so the correct face is the
+    // only one that can ever fire.
+    //
+    // Centre-to-centre (`[sb.cx, cx]` / `[sb.cy, cy]`) is back, correctly
+    // this time — a genuinely different, legitimate placement from "edge
+    // clear of it": a row centred so the column runs through its own
+    // midline, the same alignment `[sb.cx, ob.cx]` already offers against
+    // any OTHER rack below. Dropping it entirely (an earlier version of
+    // this file did) silently broke that specific case: two facing rows
+    // straddling the same column line snap to EACH OTHER fine (their own
+    // centres coincide), but remove one and drag the other back to that
+    // exact spot with only the column left standing and nothing caught it
+    // — the column was never offering the one pairing that used to make
+    // that position reachable at all. It does not reintroduce the
+    // original centre-snap bug (BUG: "snaps to centre regardless of
+    // approach direction"): that bug was TWO things at once, both already
+    // fixed independently of this pairing existing — the centre value
+    // itself was wrong (`cx + colW/2`, actually a face position, not the
+    // column's true centre `cx`), and the old face pairs weren't
+    // directional yet, so a same-side edge/face match could coincide with
+    // the (mis-valued) "centre" match at the same approach position and
+    // either could win. With the face pairs now correctly directional and
+    // the centre value now the true `cx`/`cy`, the two only ever compete
+    // near the SAME drag position — which cannot happen: a row's own half-
+    // width is far bigger than WALL_THRESH for any real rack, so its edge
+    // reaches the column's face long before its centre gets anywhere near
+    // the column's centre. They fire at geometrically distinct points in
+    // an ordinary drag, not two answers to the same moment.
     colGrids.forEach(cg => {
       const spacingX = cg.spacingX || [cg.width || 40 * gridSize]
       const spacingY = cg.spacingY || [cg.height || 40 * gridSize]
       const colW = cg.columnW || (12 / 12) * gridSize
       const colH = cg.columnH || (12 / 12) * gridSize
+      /* colXs/colYs are GRID-LINE positions, not edges — expandColumnGrid
+       * (columnCheck.js), the same function ColumnGridShape actually
+       * renders from, centres each column's drawn square ON its line
+       * (`{x: cx - w/2, y: cy - h/2, w, h}`), it does not start the square
+       * AT the line. Faces below are computed the same way for exactly
+       * that reason: using `cx`/`cx + colW` here (an earlier version of
+       * this file did) put the "face" a full half-column-width away from
+       * where the square is actually drawn — on screen, a guide "snapped
+       * to a face" like that lands INSIDE the column instead of on its
+       * border, because it's aimed at a line offset from the real edge by
+       * exactly that half-width. */
       const colXs = [cg.x]; spacingX.forEach(s => colXs.push(colXs[colXs.length - 1] + s))
       const colYs = [cg.y]; spacingY.forEach(s => colYs.push(colYs[colYs.length - 1] + s))
-      const gridBottom = colYs[colYs.length - 1] + colH
-      const gridRight = colXs[colXs.length - 1] + colW
+      const gridTop = colYs[0] - colH / 2, gridBottom = colYs[colYs.length - 1] + colH / 2
+      const gridLeft = colXs[0] - colW / 2, gridRight = colXs[colXs.length - 1] + colW / 2
       colXs.forEach(cx => {
-        ;[[sb.x, cx], [sb.r, cx], [sb.x, cx + colW], [sb.r, cx + colW]].forEach(([ma, oa]) => {
+        const faceL = cx - colW / 2, faceR = cx + colW / 2
+        ;[
+          [sb.r, faceL],   // approaching from the left -> the column's LEFT face
+          [sb.x, faceR],   // approaching from the right -> the column's RIGHT face
+          [sb.cx, cx],     // row centred through the column's own centreline
+        ].forEach(([ma, oa]) => {
           const diff = ma - oa
           if (Math.abs(diff) < WALL_THRESH) {
             if (snapX === null || Math.abs(diff) < Math.abs(snapX.diff)) snapX = { diff, isWall: true }
-            guides.push({ axis: 'x', val: oa, from: cg.y - 20, to: gridBottom + 20, isWall: true })
+            guides.push({ axis: 'x', val: oa, from: gridTop - 20, to: gridBottom + 20, isWall: true })
           }
         })
       })
       colYs.forEach(cy => {
-        ;[[sb.y, cy], [sb.b, cy], [sb.y, cy + colH], [sb.b, cy + colH]].forEach(([ma, oa]) => {
+        const faceT = cy - colH / 2, faceB = cy + colH / 2
+        ;[
+          [sb.b, faceT],   // approaching from above -> the column's TOP face
+          [sb.y, faceB],   // approaching from below -> the column's BOTTOM face
+          [sb.cy, cy],     // row centred through the column's own centreline
+        ].forEach(([ma, oa]) => {
           const diff = ma - oa
           if (Math.abs(diff) < WALL_THRESH) {
             if (snapY === null || Math.abs(diff) < Math.abs(snapY.diff)) snapY = { diff, isWall: true }
-            guides.push({ axis: 'y', val: oa, from: cg.x - 20, to: gridRight + 20, isWall: true })
+            guides.push({ axis: 'y', val: oa, from: gridLeft - 20, to: gridRight + 20, isWall: true })
           }
         })
       })

@@ -902,7 +902,7 @@ export function FloatingToolbar() {
       strokeWidth:1.5, label:item.label, snapType:item.snapType,
       aisleMin:item.aisleMin||variant.aisleMin, clearance:item.clearance,
       uprightWidth:uprightInches,
-      ...(BAY_RACK_TYPES.has(item.type)?{beams,activeBayIdx:null,palletWIn:48,palletDIn:40,palletDeep:variant.palletDeep??null}:{}),
+      ...(BAY_RACK_TYPES.has(item.type)?{beams,activeBayIdx:null,palletWIn:40,palletDIn:48,palletDeep:variant.palletDeep??null}:{}),
       ...(['rack_drive_in','rack_drive_through','rack_pushback','rack_pallet_flow'].includes(item.type)?{
         lanes:variant.lanes||2, palletDeep:variant.palletDeep||(item.type==='rack_pushback'?2:5),
         palletWIn:item.meta?.palletWIn||40, palletDIn:item.meta?.palletDIn||48,
@@ -920,7 +920,7 @@ export function FloatingToolbar() {
         return{towers:Array(tCount).fill(armIn),doubleSided:dual,towerWidthIn:item.meta?.towerWidthIn||10,
           spineDepthIn:item.meta?.spineDepthIn||4,armThicknessIn:item.meta?.armThicknessIn||3,activeTowerIdx:null}
       })():{}),
-      ...(item.type==='rack_double_row'?{flueSpaceIn:item.meta?.flueSpace||6}:{}),
+      ...(item.type==='rack_double_row'?{flueSpaceIn:item.meta?.flueSpace||9}:{}),
       layerId:activeLayerId,
       /* column_grid is parented like everything else: the columns are the
          building's own structure, so they travel with it and go with it when

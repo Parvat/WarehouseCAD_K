@@ -8,6 +8,7 @@ import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from '.
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
+import { computeLiveFlue, resolveFlueBase, flueCommitFields } from './liveFlue'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
   movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee,
@@ -200,6 +201,53 @@ export function useCanvasInteraction({
     const nodes = collectDragNodes(stage, ids)
     if (!nodes.length) return
 
+    /* Live auto-flue — a single selected rack_double_row carries its own
+       BASE geometry (the flue/height it had before this drag touched it),
+       captured once here so every mousemove frame re-grounds from the SAME
+       reference instead of compounding whatever the last frame's widening
+       left behind. Only single-object drags of this one rack type qualify
+       — see the mousemove branch below for why (it switches this object,
+       and only this object, from the plain Konva-node-translation preview
+       every other drag uses to a real per-frame store write, the same
+       trade the resize handles already make for the same reason: a shape
+       change, not just a position change, needs a real re-render to draw).
+
+       Read from `flueBaseIn`, NOT `flueSpaceIn` — flueSpaceIn is the LIVE,
+       currently-rendered value, which this very feature freely rewrites
+       mid-drag; using it as "the base to revert to" was the bug where
+       releasing a drag while a column happened to be seated in the flue
+       (a perfectly normal way to end a drag) permanently adopted that
+       widened value as every FUTURE drag's own "base," since the next
+       drag's beginDrag would read the JUST-widened flueSpaceIn right back
+       out again — the flue could widen further from there but could never
+       again shrink below whatever it last committed at, however far from
+       any column it was dragged. flueBaseIn is a separate field this
+       feature only ever READS, never writes (see the mouseup commit
+       below and RackRowPanelCore.jsx's own manual Flue control, the only
+       two places that do write it) — falling back to flueSpaceIn only
+       for an object that predates this field entirely (nothing has ever
+       committed a flueBaseIn for it yet), in which case whatever it
+       currently has — the generator's own or a hand-placed default — IS
+       its genuine, not-yet-corrupted base.
+
+       `height` needs the SAME care, one level removed: it can't be read
+       straight off `grabbed.height` either, because that height is only
+       ever consistent with the object's CURRENT (possibly still widened)
+       flueSpaceIn, not with the protected flueBaseIn above — pairing a
+       widened height with the un-widened base flue would derive a row
+       depth (rowHPx) that's too DEEP by the very growth flueBaseIn is
+       supposed to undo, so "reverting" would compute a base height that's
+       still inflated even once flueSpaceIn itself correctly reads 9 again.
+       The row depth itself never actually changes, so it's what has to be
+       derived first, from the CURRENT (self-consistent by construction —
+       whatever the last live-flue write or the RightPanel put there
+       together) height/flueSpaceIn pair — and the genuine base height
+       rebuilt from THAT depth plus the protected base flue, not read off
+       the object directly at all. */
+    const flueBase = (ids.length === 1 && grabbed.type === 'rack_double_row')
+      ? resolveFlueBase(grabbed, st.gridSize)
+      : null
+
     objDrag.current = {
       ids, nodes,
       startWorld: world,
@@ -207,6 +255,7 @@ export function useCanvasInteraction({
       origin: { x: grabbed.x, y: grabbed.y },   // the grabbed object, which snap follows
       moved: false,
       delta: null,
+      flueBase,
     }
   }
 
@@ -784,6 +833,81 @@ export function useCanvasInteraction({
 
         const st = useCanvasStore.getState()
 
+        /* Live auto-flue (liveFlue.js) — a rack_double_row dragged over a
+           column widens its flue in real time to seat it and shrinks back
+           to its base the moment nothing is in the gap any more. This is
+           the one case in this whole drag where geometry (not just
+           position) changes mid-gesture, so — same trade-off the resize
+           handles above already make, for the same reason — it is a REAL
+           store write every frame instead of the Konva-node-translation
+           preview every other drag here uses: only a real re-render can
+           redraw the two row rects and the flue gap at their new depth,
+           and it is also what makes the RightPanel's column check/capacity
+           update live for free (its own useMemo already depends on
+           store.objects — see useColumnCheck.jsx). Scoped to exactly the
+           one object this drag actually grabbed (d.flueBase is null for
+           every other drag, including a rack_double_row that's part of a
+           multi-selection).
+
+           This branches off BEFORE the plain-drag smart-guide block below
+           (not after, the way an earlier version of this had it) — the
+           flue decision has to be made FIRST, from the RAW pre-snap
+           position, so the guide computation can be handed the object's
+           TRUE resulting footprint for this frame rather than its
+           pre-widened one. Feeding it the stale (base) footprint instead
+           was itself a bug: a column-face or rack-edge snap would target
+           where the object's edge sat BEFORE this frame's widening, a few
+           pixels off from where it visually actually is once the flue has
+           grown — "snapping is off/misaligned when the flue is expanded." */
+        if (d.flueBase) {
+          const fb = d.flueBase
+          const rawCenterX = d.origin.x + fb.width / 2 + dx
+          const rawCenterY = d.origin.y + fb.height / 2 + dy
+          const columnGrids = st.objects.filter(o => o.type === 'column_grid')
+          const liveFlue = computeLiveFlue(fb, rawCenterX, rawCenterY, columnGrids, st.gridSize)
+
+          /* Smart guides, computed against the object's TRUE current
+             footprint (this frame's liveFlue result), not its drag-start
+             one — same double-counting concern as the plain-drag path
+             below (computeSmartGuides adds dx/dy to whatever bounds it is
+             handed), so the substituted x/y is shifted by half of
+             whatever the flue has already grown BEFORE dx/dy get added
+             back on top by computeSmartGuides itself, so the two together
+             reconstruct liveFlue's own x/y exactly rather than double- or
+             under-counting the growth. */
+          const yShift = (fb.height - liveFlue.targetHeight) / 2
+          const guideObjects = st.objects.map(o => o.id === d.ids[0]
+            ? { ...o, x: d.origin.x, y: d.origin.y + yShift, height: liveFlue.targetHeight, flueSpaceIn: liveFlue.targetFlueIn }
+            : o)
+          const { guides, snapDx, snapDy } = computeSmartGuides(
+            d.ids, guideObjects, st.gridSize, view.current.zoom, dx, dy)
+
+          if (snapDx != null) dx = snapDx
+          else if (st.snapToGrid) dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
+          if (snapDy != null) dy = snapDy
+          else if (st.snapToGrid) dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
+          d.delta = { dx, dy }
+          setSmartGuides(guides)
+
+          /* Final position from the (possibly snap-nudged) dx/dy — height
+             and flueSpaceIn stay whatever the RAW-position pass above
+             decided. A snap nudge is at most a few px (WALL_THRESH/grid
+             increment), never enough to plausibly flip whether a column
+             is in the gap, so re-deriving the flue state from the
+             snapped position too would only risk the flue and the snap
+             fighting each other frame to frame for no real benefit. */
+          const centerX = d.origin.x + fb.width / 2 + dx
+          const centerY = d.origin.y + fb.height / 2 + dy
+          st.updateObject(d.ids[0], {
+            x: centerX - fb.width / 2,
+            y: centerY - liveFlue.targetHeight / 2,
+            height: liveFlue.targetHeight,
+            flueSpaceIn: liveFlue.targetFlueIn,
+          })
+          stage.batchDraw()
+          return
+        }
+
         /* Smart guides — CanvasArea's own inline move-drag snap (NOT
            snapToDimPoint, which is the separate dimension-TOOL endpoint
            snap for drawing a new dimension line; this is the "drag an
@@ -897,6 +1021,39 @@ export function useCanvasInteraction({
       const d = objDrag.current
       objDrag.current = null
       if (d) {
+        if (d.flueBase) {
+          /* The live-auto-flue path (mousemove above) already wrote the
+             object's final position AND shape to the store every frame —
+             there is no Konva-node "rest" to hand back (those nodes were
+             never touched; React has been redrawing this object from the
+             store directly) and no delta left to apply. Just the one
+             history entry for the whole gesture, the same no-op-merge
+             pattern resize/rotate use elsewhere in this file. A plain
+             click that never crossed the drag threshold never reached the
+             live-flue branch at all (same d.moved gate every other drag
+             here shares), so there is nothing to commit in that case.
+
+             flueBaseIn is written HERE, explicitly, alongside the no-op
+             merge — locking in d.flueBase's own resolved value (whatever
+             this drag actually read as ITS base, itself already
+             flueBaseIn-first per beginDrag above) as the object's
+             permanent base, REGARDLESS of what flueSpaceIn ends up
+             committed at (9, 12, whatever a column mid-drag last left it
+             at). That is what keeps a future drag's own beginDrag from
+             ever reading a widened flueSpaceIn back out as if it were the
+             genuine base — see beginDrag's own comment for the failure
+             this prevents. */
+          if (d.moved) {
+            const st = useCanvasStore.getState()
+            const obj = st.objects.find(o => o.id === d.ids[0])
+            if (obj) st.commitObjectUpdate(d.ids[0], flueCommitFields(obj, d.flueBase))
+            reparentMoved(d.ids)
+          }
+          setSmartGuides([])
+          setCursor(spaceDown.current ? 'grab' : 'default')
+          return
+        }
+
         // hand every node back to where it actually rests
         for (const n of d.nodes) n.node.position(n.rest)
         if (d.moved && d.delta && (d.delta.dx || d.delta.dy)) {

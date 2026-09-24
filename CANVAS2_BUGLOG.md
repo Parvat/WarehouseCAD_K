@@ -2725,6 +2725,3242 @@ instead of trying to add or infer a new "which side is the wall" concept
 from geometry that would need consulting the containing floor plan and
 would be far more fragile.
 
+## BUG 33 — checkColumns's travel-aisle detection never fired for any layout with a cross-aisle
+
+Symptom:  Asked to test a 240×120 building (20×25 column grid, double-deep,
+reach truck) for columns landing in a travel aisle, `checkColumns` reported
+`aisleBlocks: []` — zero columns tested, let alone flagged — even though a
+manual, independent geometry check found 9 columns sitting well inside a
+10.5ft aisle with only 6.5ft clear on either side (reach truck needs 10ft).
+The generator's own two-segment layout (every row split into a left and
+right run by the cross-aisle) made this a near-universal miss: any standard
+generate has the bug, not just this grid.
+
+Chased:   `checkColumns`'s aisle pass sorted ALL racks in the layout by `y`
+and paired each with the next entry in that sort, treating any pair whose
+X-ranges failed to overlap as "not really adjacent, skip." For a single-run
+layout (no cross-aisle) that is exactly right. It breaks the moment a
+building has two segments, because every row band contributes TWO rack
+objects at the identical `y` — one per segment. In a global Y-sort those two
+land next to each other (same y, so `gapH <= 0`, skipped), and the entry on
+either side of THAT pair belongs to the OTHER segment (zero X-overlap,
+skipped too). The one pairing that would have found a real aisle — the same
+segment's row at the NEXT band down — is never adjacent in the sort at all,
+because the other segment's row for THIS band sits between them. Confirmed
+by dumping the actual sort order for the 240×120/50×54 case: `[wall-L,
+wall-R, pair1-L, pair1-R, pair2-L, pair2-R, ...]` — every consecutive pair is
+either same-y or cross-segment, with no exceptions, for the whole list.
+
+Cause:    Pairing by "next in a Y-sort of every rack in the building" implicitly
+assumed one rack per row band. `rowSegments` (Step 1) has always produced two
+per band (a left run and a right run either side of the cross-aisle), so the
+assumption was wrong for every layout the generator actually produces, not an
+edge case.
+
+Fix:      `columnCheck.js` now groups racks into runs FIRST — `groupBySegment`,
+a small union-find over pairwise X-range overlap (not exact `x` equality, so a
+hand-resized bay that still overlaps its neighbours' span groups correctly,
+not just an untouched generated layout) — and only THEN sorts each run by `y`
+and looks for gaps between consecutive rows within that one run. A column is
+tested against an aisle only if it falls in a gap between two racks that
+actually face each other along the same run.
+
+Verify:   240×120/20×25/double-deep/reach, through the real `checkColumns`
+(not a workaround script): `aisleBlocks` now has 27 entries (columns actually
+tested against a real gap) with 9 `blocked: true` — 5 in the left segment
+(X=60,80,100,120,140), 4 in the right (X=160,180,200,220), all at the Y≈25
+aisle between the wall and the first interior pair, each with 6.5ft clear
+against the reach truck's 10ft minimum — exactly matching the independent
+manual check from the prior report. Sanity-checked the 240×120/50×54 case
+too: `aisleBlocks` now returns 4 tested entries (the trailing 23ft gap, which
+clears easily — 0 blocked) instead of the previous 0/0, and `flueSeated`/
+`rackConflicts` (BUG unrelated to this fix, already correct) are unchanged at
+4/4. Build clean (1789 modules), 309/309 tests pass — no shifting logic
+added, Step 3's actual move-and-search is still unbuilt.
+
+Lesson:   A "sort everything, pair consecutive entries" approach silently
+assumes there is exactly one of the thing being paired per position along the
+sorted axis. The generator has produced two racks per row band since Step 1
+existed (the cross-aisle split is not new), so this bug was latent from the
+moment column-aware placement started being asked about at all — it just
+never got exercised because nothing before this had actually tried to read
+`aisleBlocks` and compare it against an independent expectation. Group by the
+thing that actually defines adjacency (here: which run a rack belongs to)
+before sorting for adjacency within it, rather than sorting the whole
+collection and hoping X-overlap alone filters out the cases that don't belong
+together.
+
+## BUG 34 — Step 1's fixed-pitch row placement stranded columns in travel aisles by construction
+
+Symptom:  240×120 building, 20×25 column grid, double-deep racking, reach
+truck — 9 real columns landed in a travel aisle (the gap between the wall
+and the first interior pair), each with only 6.5ft clear against the reach
+truck's 10ft minimum. Not a rare edge case: Step 1's row placement never
+looked at the column grid at all when deciding where a row went, so any
+column grid whose lines didn't happen to coincide with the fixed tight
+pitch was guaranteed to leave some columns stranded exactly like this.
+
+Chased:   Step 1 (the "fix aisle logic" correction) deliberately made row
+spacing depend ONLY on the forklift's aisle input — the right call for
+getting the AISLE WIDTH correct, but it meant a row's Y position was fixed
+before anyone asked whether a column was about to land in the gap above or
+below it. Confirmed via BUG 33's corrected aisle-check that this wasn't a
+detection bug this time — the columns really were sitting in real travel
+aisles, correctly reported once BUG 33 fixed the detector.
+
+Cause:    Row placement and column-seating were two unrelated calculations
+that happened to share a building. Nothing in `rowBands` ever adjusted a
+row's position in response to where the real column grid put a column, so
+whether a column ended up seated, in a bay, or stuck in an aisle was pure
+coincidence of whether the column pitch happened to line up with the
+forklift-driven tight pitch.
+
+Fix:      `rowBands` (`sizingLayout.js`) replaces the fixed-pitch interior
+walk with a single FORWARD PASS (STEP_3B_SPEC.md) from the near wall to the
+far wall: place a row, lock it, and never revisit it. At each step, look at
+the nearest upcoming column line — if centring the next pair's flue on it
+still leaves at least the forklift's minimum aisle above the last locked
+row, place it there (a wider-than-minimum aisle is accepted; seating wins
+over squeezing rows tight). If seating would need less than the minimum, or
+the column is far enough away that reaching it would waste an entire extra
+row's worth of depth, place the pair tight at exactly the minimum instead —
+that column then becomes a bay-column (kept, flagged, -1/level) or gets
+re-evaluated against the NEXT locked row instead. Deterministic, single
+pass, no cascading or re-checking a locked row — termination is automatic
+since every step advances by at least pairDepth + minAisle. No branch-and-
+compare / max-positions search yet — that's later, once this simple pass is
+confirmed correct.
+
+Verify:   240×120/20×25/double-deep/reach, through the real generator and
+`checkColumns`: bands now at yFt = 0(wall), 21.25, 46.25, 71.25, 96.25,
+116.5(wall) — aisles 17.75/17.5/17.5/17.5/12.75, all comfortably ≥ 10.5.
+Column check: 36 flue-seated (was 0), 9 bay-conflicts (was 27), **0
+aisle-blocked (was 9)** — every column that was stranded in a travel aisle
+is now either seated or safely inside a bay. Row count dropped from 14 to
+12 (one fewer interior pair per segment) — the accepted trade of floor
+space for a fully accessible layout, per spec. Net capacity 1564 (was
+1888 post-BUG-33/pre-3b). Cross-checked two more cases: 240×120/50×54
+reproduces the same 14-row layout as before with pair 3 now seated exactly
+on its column line (was 0.25ft off) — nothing regressed, and one more
+column moved from "off by a hair" to "exactly seated." A 120ft-wide/25ft-
+pitch/42in-frame/12in-flue sanity check (the very first hand-worked PP
+example from the start of this whole effort) reproduces its known bands
+(17.5/17/17/17/12.5) exactly — confirming the forward-walk, built from the
+"correct" forklift-driven framework, still lands on PP's own original hand
+layout for the case it was designed against. Confirmed live in the running
+app: Column Check panel reads "If absorbed −36", "9 columns in racks",
+aisle labels read 17'9"/17'6"×3/12'9" — all matching. Build clean
+(1789 modules), 309/309 tests pass, zero console errors.
+
+Lesson:   Getting one dimension right in isolation (Step 1's forklift-
+correct aisle width) can still produce an unsafe layout if a SECOND input
+(the column grid) is never consulted when deciding position, not just
+validated after the fact. The fix here isn't "check harder" — it's letting
+the second input influence the decision AT THE POINT the first one is made,
+while keeping the first one's hard constraint (never below minAisle)
+non-negotiable. A deterministic forward walk that locks each decision and
+never revisits it is also worth noting as a pattern: it trades some
+optimality (this pass can and does leave rows on the table it might have
+fit with a smarter search) for a termination guarantee and zero risk of a
+cascading re-check ever needing to unwind a placement it already made.
+
+## BUG 35 — the density fix's "chase" threshold got MORE permissive as a truck's aisle got wider, breaking counterbalance
+
+Symptom:  The GENERATOR_SPEC_V7 density fix (pack tight, widen only to seat a
+column) worked for reach truck on 240×120/25×30 — 5 interior pairs, aisles
+mostly 10.5ft. The SAME building and grid with counterbalance instead of
+reach fell back to the sparse pattern the density fix was supposed to have
+already killed: 3 interior pairs, aisles ~22.5-22.75ft.
+
+Chased:   The row-placement pitch was already correctly per-truck —
+`aisleFt` is read from `MHE_PROFILES`/the rules `mhe` table and varies
+correctly (reach 10.5, VNA 6, counterbalance 12.5); nothing was hardcoded to
+reach. Traced the forward walk's own decision at each step for reach vs.
+counterbalance on the identical grid: the "is this column too far to chase"
+cutoff (`isFar = (seatStart - tightStart) >= aisleFt`) used the SAME
+variable, `aisleFt`, both to compute where a tight row would start
+(`tightStart = lastEnd + aisleFt`) and as the pass/fail bar for whether
+seating a column was "cheap enough." For counterbalance's larger aisleFt,
+`tightStart` sits further along toward the fixed column line, so the actual
+distance to seat (`seatStart - tightStart`) is SMALLER than reach's for the
+same line (10.25 vs 12.25 ft in the traced case) — while the bar it has to
+clear is simultaneously LARGER (12.5 vs 10.5). Both effects point the same
+direction, so a wider-aisle truck passes the "cheap enough to seat" test on
+every single opportunity, while a narrower one doesn't — the walk for
+counterbalance seated on every column it could reach, ballooning every
+aisle out toward the column pitch instead of ever placing a row tight.
+
+Cause:    One variable (`aisleFt`) was doing two jobs — the row pitch AND
+the willingness-to-widen cutoff — and those two roles interact in opposite
+directions as the truck's own aisle grows. This wasn't a hardcoded-to-reach
+bug (the value genuinely was per-truck already); it was the FORMULA's shape
+that broke, becoming more permissive exactly when it should have stayed
+just as strict.
+
+Fix:      Removed the opportunistic-seating step entirely, per explicit
+correction — the underlying premise (widen an aisle when it's "cheap" to
+seat a column) doesn't have a single per-truck-safe cutoff, and the real
+rule is simpler than that anyway: `rowBands` (`sizingLayout.js`) now always
+packs at a UNIFORM pitch = pairDepth + aisleFt, for every truck, with no
+column awareness in placement at all. A column ends up seated, in a bay, or
+in an aisle purely as a consequence of where the fixed row grid happens to
+land relative to the real column grid — deciding what to DO about that
+outcome (avoid it, accept it, shift for it) is now explicitly a strategy's
+job (S1/S2/S3, GENERATOR_SPEC_V7 Part B), not the row-spacing function's.
+`gridYFt` no longer has any effect on `rowBands` at all.
+
+Verify:   240×120/25×30, real generator + `checkColumns`, all three trucks:
+  - reach (10.5): every aisle 10.5 except the trailing 23.0, 5 interior
+    pairs, 14 rack rows.
+  - counterbalance (12.5): every aisle 12.5 except the trailing 13.0, 5
+    interior pairs, 14 rack rows. No 22ft blowout.
+  - VNA (6.0): every aisle 6.0 except the trailing 18.5, 7 interior pairs,
+    18 rack rows.
+No truck produces anything wider than its own standard aisle except the one
+unavoidable trailing remainder (always >= that aisle, never less — same
+invariant as every prior version). Confirmed live in the running app for
+counterbalance: aisle labels read 12'6"×5 and 13' (the trailing gap), Total
+Pallet Positions 1,920, zero console errors. Build clean (1789 modules),
+309/309 tests pass. The three previously-locked cases (20×25, 50×54, the
+original PP hand example) were re-verified as part of the density-fix work
+this replaces and are structurally covered by this same uniform formula —
+re-run to confirm.
+
+Lesson:   A single-pass heuristic that reuses one input value for two
+different roles (here: a pitch AND a threshold) needs to be checked across
+the full range that input can take, not just the one case (reach) it was
+built and verified against. "Per-truck" is not the same as "correct for
+every truck" — the value correctly varied per truck the whole time, and it
+still broke, because varying the RIGHT way for one truck can vary the WRONG
+way for another when it's driving two purposes that pull in opposite
+directions as it grows. When a fix's correctness depends on a specific
+numeric relationship between two quantities (here: cost of chasing vs. the
+bar for "cheap enough"), test it across the full range of BOTH before
+calling it fixed, not just the one combination in front of you.
+
+## BUG 36 — S1 built: shift rows to clear columns out of travel aisles, never touching aisle width
+
+Symptom:  BUG 35's uniform tight-pack fixed the aisle-WIDTH bug (every aisle
+now equals the truck's own standard, no more chasing/widening), but left a
+different, pre-existing problem exposed: on 240×120/25×30, tight-packed
+rows still let real columns land squarely inside a travel aisle — VNA (6ft
+aisle) and counterbalance (12.5ft aisle) each had a column with no
+passable side, genuinely blocking the truck. Reach (10.5ft) had the same
+defect, just not previously called out by name.
+
+Chased:   Tight-packing (BUG 35) never looked at the column grid at all —
+whether a column ended up in a flue, a bay, or an aisle was pure chance of
+where the fixed pitch happened to land relative to the fixed column grid.
+For gridYFt=30 specifically, the walk's own aisle windows (aisleFt wide,
+recurring every pairDepth+aisleFt) happened to catch a real column line on
+more than one pass for every truck tested, confirmed via the corrected
+BUG-33 segment-grouped aisle check (this part of the plumbing already
+worked; nothing needed fixing there).
+
+Cause:    No mechanism existed to react to a column landing in an aisle —
+placement and column position were two unrelated calculations sharing a
+building, same root cause named in BUG 34 but for a different consequence
+this time (an actually-blocked aisle, not just an unseated flue).
+
+Fix:      `rowBands` (`sizingLayout.js`) now does S1 (GENERATOR_SPEC_V8.md):
+tight-pack as before, but for each row, before locking it, check whether
+the travel aisle that would follow it (at its nominal tight position)
+contains a column. If so, extend THAT row later — never earlier, never
+touching aisle WIDTH — just far enough (centred, `columnY − pairDepth/2`,
+clamped to never start before the nominal tight position) that the column
+now falls under the row's own BODY instead of the aisle. This can only
+ever widen the aisle BEFORE the row it extends (a side effect of pushing
+that row later), never narrow any aisle below the truck's fixed width.
+Every row after cascades naturally from the extended row's actual end, so
+the fixed-width aisle holds for everything downstream — no separate
+"cascade" step was needed; a single forward pass that always measures from
+the ACTUAL (possibly-extended) previous end already propagates it. Flue
+alignment is never targeted (S1 doesn't care where in the body the column
+lands, only that it's not in the aisle — that's S3's job). If extending
+would leave no room to close with the far wall, the row is dropped instead
+(GENERATOR_SPEC_V8.md's explicit "access wins over a row").
+
+Verify:   240×120/25×30, real generator + the real (BUG-33-fixed)
+`checkColumns`, all three trucks — **zero aisle-blocked columns for every
+one**, down from the earlier confirmed blocked cases:
+  - VNA (6.0): 7 interior pairs kept (unchanged count) — two of eight
+    aisles widened to 12.25ft to clear a column, the rest still exactly
+    6.0ft. 18 rack rows, 28 bay-columns, capacity 2,560 raw / 2,336 net.
+  - Counterbalance (12.5) and reach (10.5): both dropped to 3 interior
+    pairs (from 5) — on THIS grid, every single tight aisle window along
+    the walk happened to catch a column, so each fix's own cascade pushed
+    the next row's window into catching the next column too, all the way
+    down. 10 rack rows each, aisles 22.5–22.75ft, capacity 1,280 raw /
+    1,224 net. This is a real, verified cost of the single deterministic
+    pass (no branch-and-compare, per spec) — not a bug in the fix, but
+    worth flagging plainly: on a grid this unfavorable, S1 gives up a lot
+    of density for full accessibility. S2 (a later build step) exists
+    specifically to relax this by tolerating a passable column-in-aisle
+    instead of always shifting.
+Confirmed live in the running app for VNA: aisle labels read 6'×6 and
+12'3"×2, Column Check panel shows "28 columns in racks" with no aisle-
+blocked entries at all, 2,560 total positions, zero console errors. Build
+clean (1789 modules), 309/309 tests pass — including the pre-existing
+default-brief test (gridYFt=54), which now also runs the shift check but
+produces no regression since a shift only ever widens a gap, never
+narrows it below the already-asserted minimum.
+
+Lesson:   A correct per-row fix ("extend this row to clear a column")
+composed with "cascade forward from the actual result" can still produce
+a much costlier overall layout than the same fix applied in isolation
+would suggest, because each local correction changes the phase of every
+subsequent row against a periodic grid it didn't originally collide with.
+This is inherent to a deterministic single pass with no lookahead across
+the WHOLE remaining walk, not a defect in any one step of it — verify the
+END-TO-END row count and capacity, not just "did this row's own check
+pass," before calling a per-row fix cheap.
+
+## BUG 37 — BUG 36's flush centred the column instead of touching its edge, over-shooting into the next column and cascading to every aisle
+
+Symptom:  BUG 36's S1 fix cleared every column out of every travel aisle
+(correct), but on 240×120/25×30 with reach or counterbalance, EVERY
+interior aisle came back at ~22–23ft — the exact uniform-blowout pattern
+BUG 35 had already fixed once. Confirmed by direct per-gap measurement:
+reach's four gaps were 22.75/22.5/22.5/22.75, not "10.5 mostly, wider only
+at a flush" as GENERATOR_SPEC_V8/V9 both require.
+
+Chased:   Verified this was NOT the aisle-WIDTH bug come back (BUG 35's own
+fix — packing at `pairDepth + aisleFt` — was untouched and still correct).
+It was the row-SHIFT amount. BUG 36 flushed a row by CENTRING the offending
+column in the row's body: `shifted = target - midFt/2`. Traced by hand and
+confirmed by execution: for reach on this grid, centring pushed row 1 from
+its tight position (14) to 26.25 — 12.25ft of movement to place a column
+that only needed 9ft of movement to be safely under the row at all. That
+extra 3.25ft of unnecessary reach is what carried row 2's own nominal
+aisle-after window forward into the NEXT column's (Y=60) territory, which
+otherwise would have missed it — and the same over-shoot repeated at row 2
+pushed row 3's window into column 90's territory too. Centring wasn't
+"safer," it was silently exporting each fix's blast radius onto the next
+column down the line.
+
+Cause:    The flush amount had no reason to be exactly `pairDepth/2` short
+of the column — that was an arbitrary choice (borrowed from the S3 "seat
+in the flue, centred" math from an earlier, superseded design) applied to
+a problem that only needs the column to land ANYWHERE under the row's
+body, not at its centre. Any extension larger than the minimum needed
+increases the odds of colliding with the next periodic column purely by
+accident, and on this specific grid it did so on every single row.
+
+Fix:      Changed the flush target in `rowBands` (`sizingLayout.js`) from
+centring the column in the row (`hit − midFt/2`) to touching the column's
+FAR edge exactly at the row's new end (`(hit + COL_HALF_FT) − midFt`) —
+the smallest possible extension that still fully contains the column
+under the row's body. No other logic changed: still a single forward
+pass, still "extend this row's own trailing aisle only when a column is
+actually found there," still drops a row rather than running out of
+building. The minimal push is what lets most downstream rows land at
+their plain minimum-aisle position (untouched, still exactly aisleFt)
+instead of inheriting an ever-growing search radius.
+
+Verify:   240×120/25×30, real generator + real `checkColumns`, all three
+trucks — zero aisle-blocked columns for every one (unchanged from BUG 36),
+but now with a genuine MIX of tight and flushed gaps, not a uniform
+blowout:
+  - Reach (10.5): bands at 23, 41, 59, 83 (4 interior pairs, down from
+    tight-pack's 5). Aisles: 19.5 / **10.5** / **10.5** / 16.5 / 26.0 —
+    two of four interior gaps are exactly the fixed width, untouched; only
+    the two rows that actually needed a flush (columns at Y=30 and Y=90)
+    show a wider leading aisle. 12 rack rows, 35 bay-columns, capacity
+    1,600 raw / 1,460 net.
+  - Counterbalance (12.5): bands at 23, 53, 83 (3 interior pairs). Aisles:
+    19.5 / 22.5 / 22.5 / 26.0 — every row needed its own flush on this
+    grid (12.5's own pitch phases against gridYFt=30 worse than reach's
+    does), so nothing stayed tight here; still a real, individually-
+    justified widening per row, not a blanket one. 10 rack rows, 35
+    bay-columns, capacity 1,280 raw / 1,140 net.
+  - VNA (6.0): bands at 9.5, 23, 36.5, 53, 66.5, 83, 96.5 (7 interior
+    pairs, unchanged count from BUG 36). Aisles: 6.0×5 mixed with 9.0×2
+    and a 12.5 closing gap — mostly tight, two small, targeted widenings.
+    18 rack rows, 35 bay-columns, capacity 2,560 raw / 2,420 net.
+Confirmed live in the app for reach: aisle labels read 19'6", 10'6"×2,
+16'6", 26' — the mixed pattern, not six identical ~22'9" labels. Column
+Check panel shows "35 columns in racks" with no aisle-blocked entries,
+1,600 total positions, zero console errors. Build clean (1789 modules),
+309/309 tests pass.
+
+Lesson:   When a fix has to push something just far enough to escape one
+constraint, "just far enough" is a hard requirement, not a style choice —
+any margin borrowed from a different, unrelated concern (here: the flue-
+centring convention from a different strategy, S3) can silently increase
+the fix's blast radius against a periodic pattern it was never checked
+against. The tell was in the output shape, not the pass/fail: BUG 36's
+own zero-aisle-blocked result LOOKED like success, and only measuring the
+actual per-gap widths (at the user's explicit insistence) surfaced that
+the "fix" had regressed the exact bug it was supposed to have already
+fixed one report earlier.
+
+## BUG 38 — V10's walk built as specified; the shared travelFt placeholder under-serves two of three trucks' own pick minimum
+
+Symptom:  Not a regression — a documented finding from building GENERATOR_
+SPEC_V10.md's placement walk (PP's own Step 1–4 tree) as written, replacing
+BUG 37's row-flush mechanism entirely. Verifying all three forklifts on
+240×120/25×30: VNA comes back with zero aisle-blocked columns, but reach
+and counterbalance both still show 14 blocked columns each, every one
+inside a Step-2 "column absorbed into the aisle" span.
+
+Chased:   Confirmed this is the literal Step 2 formula behaving exactly as
+specified, not an implementation slip. Step 2's own rule: when the next
+column is too close for a clean `aisleFt`-wide gap, the aisle absorbs it —
+width = (gap to the column) + (column's ~1ft) + `travelFt` (the truck's
+DRIVE-only minimum, not its PICK minimum `aisleFt`). Hand-traced and
+confirmed by execution for reach: the first absorbed aisle computes to
+gap(8) + 1 + travelFt(8) = 17ft — wide overall, but the column sits with
+exactly `travelFt` (8ft) clear on its BEST side, because that's precisely
+what the formula optimizes for. `checkColumns`'s existing accessibility
+test (BUG 33/37, unchanged and correct) checks the best-side clearance
+against the truck's PICK minimum (`minAisleFt`: reach 10.0, counterbalance
+12.0), not the lesser drive-only figure — so 8ft clear reads as blocked for
+both. VNA is the one truck where this doesn't bite: its own `travelFt`
+placeholder (8, shared across all three per the spec's explicit "use ~8 for
+now") happens to exceed VNA's actual pick minimum (5.5), so the same
+formula accidentally over-delivers for VNA and under-delivers for the
+other two.
+
+Cause:    Not a bug in this implementation — a direct, traceable
+consequence of GENERATOR_SPEC_V10.md's own placeholder policy: "Real
+travelFt / movableWindow numbers per forklift... TBD; placeholder ~8 for
+now." A single shared 8ft stand-in cannot simultaneously exceed reach's
+10.0ft and counterbalance's 12.0ft pick minimums while also being a
+meaningfully smaller "drive-only" figure — it's below both, so Step 2's
+absorb formula (built to use exactly `travelFt` clearance) structurally
+can't clear the accessibility bar for those two trucks until real,
+truck-specific `travelFt` values replace the shared placeholder.
+
+Fix:      Built exactly as specified — `rowBands` (`sizingLayout.js`) is a
+full rewrite: STEP 1 (wall row) → repeat STEP 2 (place an aisle, normal
+width or absorb the next column into it) → STEP 3 (place a pair, S1 tries
+sliding the flue onto an overlapping column first, else the pair just
+covers it as a bay-column; S2 drops the pair on it unconditionally) → until
+STEP 2's "no room" branch triggers wall-hit cleanup (swap the last pair for
+a single if that alone frees enough depth, else remove rows outright) and
+the walk closes with the far wall. Added `travelFt` (placeholder 8) to
+`rules/defaults.js`'s `mhe.*` entries and `columnCheck.js`'s
+`MHE_PROFILES`, and an `allowColumnInRack` toggle (default false = S1) to
+`sizingSheetLayout`/`rowBands`. The Step 2 absorb formula was implemented
+literally, per instruction ("build it as written, not a re-derivation") —
+the `Math.max(aisleFt, ...)` floor on the OVERALL aisle width is already in
+place (never narrower than the truck's own standard end-to-end), but that
+floor does not by itself guarantee the *column's* best-side clearance
+meets the pick minimum — that gap is `travelFt`'s job, and the placeholder
+value is what's currently insufficient for two of three trucks.
+
+Verify:   240×120/25×30, real generator + real `checkColumns`, all three
+trucks:
+  - VNA (6.0, travel 8): bands at 9.5, 26.25, 39.75, 56.25, 69.75, 86.25,
+    99.75 (7 interior pairs). Aisles: mostly 6.0, with four absorbs at
+    9.0–9.25. **Zero aisle-blocked columns.** 18 rack rows, 14 bay-columns,
+    21 flue-seated, capacity 2,560 raw / 2,504 net.
+  - Reach (10.5, travel 8): bands at 14, 38.5, 56.5, 74.5, 98.5 (5 interior
+    pairs). Aisles: 10.5 tight where no column forced an absorb, 17.0 and
+    16.5 where one did — a genuine mix, not a uniform blowout (the BUG 37
+    regression is confirmed gone). **14 aisle-blocked columns remain**,
+    every one inside an absorbed span, each reading exactly 8ft clear
+    against the 10ft the truck needs. 14 rack rows, 14 bay-columns, 7
+    flue-seated, capacity 1,920 raw / 1,864 net.
+  - Counterbalance (12.5, travel 8): bands at 16, 38.5, 58.5, 78.5 (4
+    interior pairs) plus a wall-hit swap (the row that would have been the
+    5th pair became a single instead — Step 2's cleanup branch firing for
+    real). Aisles: 12.5 tight, 15.0/14.5 where absorbed. **14 aisle-blocked
+    columns remain**, same 8ft-clear pattern. 14 rack rows, 21 bay-columns,
+    0 flue-seated, capacity 1,760 raw / 1,676 net.
+Confirmed live in the app for reach: aisle labels read 10'6" (tight), 17',
+16'6" — the mixed pattern. Column Check panel shows "14 columns in racks ·
+14 aisles blocked," each card reading "8ft clear of 17ft — Reach truck
+needs 10ft," matching the computed numbers exactly. Build clean (1789
+modules), 309/309 tests pass, zero console errors. Counterbalance's
+wall-hit swap (pair → single at the far end) was also exercised for real,
+not just theorized — confirms that branch of Step 2's NO path runs
+correctly.
+
+Lesson:   A spec that explicitly ships a shared placeholder for a
+per-entity constant ("~8 for now, logic independent of the exact value")
+is making a promise that only holds once real values arrive — building the
+logic correctly is not the same as the RESULT being correct for every
+input in the meantime. Reporting "implemented as specified, and here is
+exactly which trucks it doesn't yet clear and why" is the right outcome
+here, not silently declaring success on two-out-of-three, and not
+patching the formula to hide the gap the placeholder was always going to
+open up.
+
+## BUG 39 — BUG 38 wasn't a placement gap, it was checkColumns judging accessibility as binary instead of three levels
+
+Symptom:  BUG 38 reported reach and counterbalance both failing accessibility
+on 240×120/25×30 — 14 aisle-blocked columns each, every one reading exactly
+8ft clear against the truck's own pick minimum. Correction from
+GENERATOR_SPEC_V10 (1).md: that verdict was wrong. 8ft clear on a reach
+truck (needs 10ft to fully pick both sides) still means the truck can
+DRIVE the aisle and PICK from the face away from the column — accessible,
+just one-sided. Binary "clear < minAisleFt = blocked" was the bug, not the
+placement walk.
+
+Chased:   Confirmed BUG 38's placement numbers were never wrong — the same
+bands, same aisle widths, same 8ft-clear columns. What was wrong was the
+single threshold `checkColumns` judged them against (`profile.minAisleFt`,
+the PICK minimum), collapsing three physically distinct outcomes into one
+pass/fail: a column that can't even be driven past reads identically to
+one that only costs a single pick face. Those are not the same problem —
+one is a real accessibility failure, the other is a normal, accepted
+trade-off (GENERATOR_SPEC_V10's own priority: "each row accessible/
+pickable from at least one side beats picking both sides").
+
+Cause:    `checkColumns`'s aisle test only ever had one bar to clear.
+Nothing distinguished "can't drive through" from "can drive through, pick
+one side" from "fully clear" — collapsing a 3-outcome question into a
+2-outcome (blocked/not) one is what made a perfectly fine one-side-pick
+aisle print as "blocked."
+
+Fix:      `checkColumns` (`columnCheck.js`) now computes a `level` per
+aisle-column (1 = clear < `travelFt`, can't drive — the only real block;
+2 = `travelFt` <= clear < `aisleFt`, drivable + one-side pickable — accepted
+by default; 3 = clear >= `aisleFt`, fully clear) and only sets `blocked`
+true for level 1, or level 2 when the new `pickBothSides` param is on. Wired
+`pickBothSides` through as a real, user-facing toggle: new state in
+`useColumnCheck.jsx` (mirroring the existing `showMarks` pattern), a switch
+in `ColumnCheckPanel.jsx` ("Require pick from both sides"), and the
+"Aisle blocked" card text now branches on `level` (drive-through language
+for a real level-1 block, one-side-pick language when level 2 is flagged
+by the toggle). Also fixed a plumbing gap found while wiring this up:
+`useRules.jsx`'s `mheOptions` mapping dropped `travelFt` even though it
+was added to `DEFAULT_RULES.mhe.*` for BUG 38 — a dealer override of that
+field would have been silently discarded before reaching `checkColumns`,
+which was only working by coincidence (its own internal `?? 8` fallback
+happened to match). Added `travelFt` to that mapping too.
+
+Verify:   240×120/25×30, real generator + real `checkColumns`, all three
+trucks, `pickBothSides` OFF (default): **zero level-1 (truly blocked)
+aisles for every truck** — reach and counterbalance's 14 columns each are
+now correctly level 2 (one-side pick, 8ft clear, accessible), VNA has
+none at all. Turning `pickBothSides` ON reproduces BUG 38's old counts
+exactly (14 flagged for reach, 14 for counterbalance, 0 for VNA) —
+confirms the toggle's two states map onto the old and new behavior
+precisely, not a different calculation. Confirmed live in the app: with
+the toggle off, no "aisle blocked" cards render at all for reach; clicking
+"Require pick from both sides" via real mouse turns the switch on and the
+panel re-flags the same columns. Build clean (1789 modules), 309/309
+tests pass, zero console errors.
+
+Lesson:   A pure/binary check function can be "correct" in the sense of
+doing exactly the arithmetic it was told to, while still producing a
+wrong verdict, because the REAL-WORLD question it's answering had more
+than two outcomes. The fix here wasn't a math correction (the clearance
+numbers from BUG 38 were already right) — it was recognizing that
+"accessible" and "ideal" are different questions, and collapsing them
+into one boolean is where the wrongness actually lived. When a domain
+expert says a result "looks wrong," check whether the INPUT arithmetic is
+wrong before assuming that — sometimes the numbers are fine and the
+THRESHOLD being asked of them is what needs to change.
+
+## BUG 40 — travelFt locked to min(8, aisleFt): VNA no longer claims 8ft to drive an aisle it only has 6ft of
+
+Symptom:  Not a failure — locking down the last open placeholder from BUG
+38/39. `travelFt` (the truck's physical drive-through minimum) had been a
+flat 8ft for all three trucks since BUG 38, explicitly called out there as
+a stand-in "until PP supplies real numbers." That flat value was already
+physically wrong for VNA: an 8ft drive-through minimum on a truck whose own
+standard aisle is only 6ft would mean the truck needs MORE room to just
+drive through than it needs to actually work in — backwards.
+
+Chased:   Confirmed VNA's own aisle (6.0ft) already comfortably fit within
+the checkColumns/placement-walk logic at travelFt=8 without ever tripping
+the "clear < travelFt" true-block threshold on 240×120/25×30 (VNA had zero
+aisle-blocked entries under BUG 38/39 already) — so the flat 8ft never
+caused a wrong VERDICT on this grid. It was still the wrong NUMBER: a
+narrower grid or a tighter column combination could have let a column sit
+with, say, 7ft clear — genuinely fine for a 6ft-aisle truck (more than its
+own standard), but the flat placeholder would have called it "level 2, not
+full pick" using a floor (8) the truck doesn't actually need to drive
+through at all.
+
+Cause:    `travelFt: 8` was a single shared literal with no relationship
+to each truck's own `aisleFt`, per BUG 38's explicit placeholder note. A
+truck's physical drive-through minimum can never exceed what it needs to
+fully work the aisle — capping travelFt at aisleFt is a real physical
+constraint, not a tuning knob, and the flat placeholder didn't encode it.
+
+Fix:      `travelFt` is now computed as `min(8, aisleFt)` per truck, in
+both `rules/defaults.js` (`DEFAULT_RULES.mhe.*`, the dealer-overridable
+cascade) and `columnCheck.js` (`MHE_PROFILES`, the shipped fallback) — via
+a shared `travelFtFor(aisleFt)` helper in each file rather than hand-
+computed literals, so the two can never drift out of the min() relation if
+`aisleFt` is retuned later. Reach (10.5) and counterbalance (12.5) both
+keep the 8ft default since their own aisles are wider than 8ft; VNA (6.0)
+now gets `travelFt: 6`, capped at its own aisle.
+
+Verify:   240×120/25×30, real generator + real `checkColumns`, all three
+trucks, `pickBothSides` OFF: **zero true accessibility failures for every
+truck**, unchanged from BUG 39 — reach and counterbalance's absorbed
+aisles (17ft/16.5ft and 15ft/12.5ft respectively, 8ft clear each) still
+read as level 2 (one-side-pick, accessible) since their travelFt is still
+8. VNA's bands and aisle widths are byte-identical to before (9.5, 26.25,
+39.75, 56.25, 69.75, 86.25, 99.75; aisles 6.0×4 mixed with three ~9ft
+absorbs) — it never needed the changed value on this specific grid, but
+its profile now correctly reports `travelFt: 6`, confirmed live by reading
+both `DEFAULT_RULES.mhe.vna.travelFt` and `MHE_PROFILES.vna.travelFt`
+directly out of the running app (`{"reach":8,"vna":6,"counterbalance":8}`
+from both sources). Build clean (1789 modules), 309/309 tests pass, zero
+console errors.
+
+Lesson:   A placeholder that's explicitly flagged as provisional ("~8 for
+now") is still worth tightening as soon as a real physical constraint is
+known, even before the fully-real numbers arrive — "a truck can't need
+more room to drive than to work" was knowable immediately, without waiting
+on PP's exact per-truck figures, and computing it via `min()` instead of a
+literal means the relationship self-corrects if the underlying `aisleFt`
+values ever change, instead of silently going stale again.
+
+## BUG 41 — vertical orientation added: same S1/S2 walk, other axis, other column pitch — required rotation-aware checkColumns for the first time
+
+Symptom:  Not a bug fix — a new feature. The generator only ever ran rows
+horizontally (stacked across the WIDTH, driven by the Y column pitch).
+Added the ability to run rows VERTICALLY (stacked across the LENGTH,
+driven by the X column pitch) on demand, via `orientation: 'vertical'` on
+the brief — not picked automatically yet, just a correct result when asked
+for.
+
+Chased:   The SAME `rowBands`/`rowSegments` functions are already axis-
+agnostic (they just walk 0 to whatever length they're given), so swapping
+which physical dimension and which column pitch feeds each was the easy
+part. The hard part, discovered while making the result actually
+verifiable: a vertical rack's LENGTH has to run along world-Y — beams
+painted along an object's own local X (render/rackOps.js's uprightXs,
+hard-wired, not derived from width/height) mean the only correct way to
+get that is a real 90° rotation, not a width/height swap. And
+`checkColumns` had never once been asked to reason about a rotated rack —
+every overlap test used `r.x/r.y/r.width/r.height` raw, which for a
+90°-rotated rack is the PRE-rotation box, not where it actually sits. That
+would have made "columns handled, aisles accessible" a meaningless claim
+for anything vertical — the check would silently test the wrong rectangle.
+
+Cause:    Two separate gaps, both real:
+  1. Placing a vertical rack correctly requires computing its TRUE centre
+     (from the swapped-axis walk) and backing out the PRE-rotation x/y
+     canvas2's centre-pivot rotation (shapes.jsx's spin()) expects — not
+     something the existing xFt/yFt-as-top-left contract handled.
+  2. `checkColumns`'s geometry (rack overlap, flue/face split, segment
+     grouping, aisle-gap detection) was written assuming every rack is
+     unrotated — reasonable when nothing had ever produced a rotated one,
+     wrong the moment vertical orientation could.
+  A third, quieter gap: `rowBands`'s column-line convention (flush from the
+  origin) only ever matched `columnGridObject`'s Y axis (fixed for that
+  specifically, in an earlier entry) — its X axis is still centred. Vertical
+  walks X, so it would have been avoiding columns at positions nothing is
+  actually drawn at, unless it knew the real offset.
+
+Fix:      `sizingSheetLayout` (`sizingLayout.js`) takes `orientation:
+  'vertical'` and swaps which axis rowBands stacks across (length instead
+  of width, gridXFt instead of gridYFt) and which axis rowSegments' runs
+  lie along (width instead of length) — the walk itself, unchanged. Each
+  vertical placement's stored x/y is computed from its TRUE centre (band
+  position + half depth, run position + half the run's own length) minus
+  half the PRE-rotation width/height, with `angle: 90` — so canvas2's
+  existing centre-pivot rotation lands it at the right place, and
+  `beamRackObject` needed zero changes. Added `gridOffsetFt` to `rowBands`
+  so its column-line formula can match a CENTRED axis (X) as well as the
+  already-flush one (Y) — `sizingSheetLayout` computes the real offset the
+  same way `columnGridObject` does before handing it to a vertical walk;
+  horizontal still passes 0, byte-identical to before. `columnCheck.js`
+  gained a `rackFootprint(r)` helper (swap width/height around the centre
+  for a 90°/270° rack) and now runs it everywhere a rack's geometry is
+  read: rack-overlap testing, the flue-vs-face split (now measured along
+  whichever axis is the rack's TRUE depth — Y for horizontal, X for
+  vertical), run-grouping (X-overlap for horizontal runs, Y-overlap for
+  vertical ones), and aisle-gap detection (gaps measured along whichever
+  axis rows are actually stacked on).
+
+Verify:   240×120/25×30/reach, real generator, both orientations:
+  - Horizontal (baseline, unchanged): 14 racks, aisles 10.5×4 + 17.0 + 16.5
+    (2 absorbed), 0 aisle-blocked, capacity 1,920 raw / 1,864 net. Byte-
+    identical to the pre-this-change result — confirms zero regression.
+  - Vertical: 22 racks (4 wall singles, 18 interior pairs). Wall singles'
+    TRUE world footprint sits at x=0 and x=236.5 (=240−3.5) — exactly
+    against BOTH length-walls, not the width-walls. 0 bay-conflicts, 0
+    flue-seated, 10 aisle-tested, **0 truly blocked** — every tested aisle
+    reads one-side-pick (8–8.5ft clear) or better. Capacity 640 raw / 640
+    net (no bay-columns at all on this grid). Confirmed live: racks render
+    visibly vertical (tall, narrow, running top-to-bottom), Column Check
+    panel reads "No column interference," the clearance labels (from the
+    canvas label work) read correctly next to columns in the vertical
+    aisles too, zero console errors.
+  Build clean (1789 modules), 309/309 tests pass.
+
+  Worth reporting plainly, not a bug: vertical capacity (640) is far below
+  horizontal's (1,920) for this specific building. Traced it to speedBayFt
+  (60ft staging) now being subtracted from the WIDTH (120ft) instead of
+  the LENGTH (240ft) — the same fixed staging strip consumes HALF the
+  usable stacking axis for vertical on a building this elongated, versus
+  a quarter for horizontal. That's an honest, correct consequence of
+  re-running the identical walk on a much shorter axis, not a placement
+  defect — and it's exactly the kind of case a later two-orientation
+  compare (GENERATOR_SPEC_V7/V10's "compute all three, present counts")
+  is meant to catch and let the dealer see for themselves.
+
+  Known, explicitly out of scope for this pass: the staging boundary line/
+  label and dock-door fixtures (`generateFixtures`) are NOT orientation-
+  aware yet — they still draw against the length axis regardless of
+  `orientation`, so a vertical generate's visual staging marker doesn't
+  actually line up with where the rack-free strip really is (confirmed in
+  the screenshot: racks correctly leave the reserved width-strip empty,
+  but the dashed line + "STAGING" label are drawn in their old horizontal
+  position). This was scoped out deliberately — the ask was "make the walk
+  produce a correct vertical layout," not "rotate every fixture" — but it
+  needs its own pass before a vertical generate looks fully coherent.
+
+Lesson:   "Just swap which axis the walk uses" sounds like a parameter
+change until something ELSE in the pipeline turns out to have quietly
+assumed there was only ever one axis to worry about. The real scope of
+"add vertical orientation" was never the walk (rowBands/rowSegments were
+already axis-agnostic) — it was every OTHER piece of code that read a
+rack's geometry assuming it could never be rotated, because until this
+task nothing had ever given it a reason to be. Grep for every consumer of
+`r.x/r.y/r.width/r.height` before trusting a "just add an angle" plan.
+
+## BUG 42 — manual aisle input never set travelFt, so a dealer-typed aisle narrower than the truck's own profile could claim MORE drive room than it had
+
+Symptom:  Not a crash — a silent invariant break. The Generate panel's
+"AISLE (ft)" field is a genuinely free number input, editable independently
+of the FORKLIFT dropdown (`pickMhe` only resets it to the truck's default
+on a forklift CHANGE; the field stays hand-editable after that). Asked to
+verify: does typing a manual aisle also correctly drive `travelFt`, per
+BUG 40's `travelFt = min(8, aisleFt)` invariant, the same way the forklift
+profile does by construction?
+
+Chased:   Read `GeneratePanel.jsx`'s `run()` first, before touching any
+code, to see exactly what brief it sends. Confirmed `aisleFt` is always
+included (`Number(aisleFt) || 11`) but `travelFt` is never included at
+all — the panel predates `travelFt`'s existence (BUG 38/40 added it later,
+only inside `sizingSheetLayout`'s own default-resolution and
+`rules/defaults.js`'s profile objects, never touching this form).
+
+Cause:    `sizingSheetLayout`'s destructuring resolved `travelFt` from the
+forklift profile independently of whatever `aisleFt` the brief actually
+carried: `travelFt = rules.mhe?.[brief.mhe]?.travelFt ?? 8`. That's correct
+when `aisleFt` is left at the profile's own default (profile travelFt is
+always ≤ profile aisleFt by construction, BUG 40), but wrong the moment a
+dealer types a narrower aisle by hand — VNA selected (profile aisleFt=6,
+travelFt=6) with the AISLE field hand-typed down to 4ft still resolved
+`travelFt=6`, i.e. the truck was claimed to need MORE room to drive
+through (6ft) than the aisle it was being asked to work in actually had
+(4ft) — physically impossible, and exactly the invariant BUG 40 locked
+down for the profile-only path. Proved numerically first, before any fix,
+via a temp vitest test calling `sizingSheetLayout` with the exact brief
+shape `GeneratePanel.jsx` sends (`aisleFt: 4, mhe: 'vna'`, no `travelFt`
+key): confirmed `travelFt` resolved to `6 > aisleFt(4)`.
+
+Fix:      `travelFt`'s default now caps at whatever `aisleFt` the brief
+actually resolves to, not the profile's own aisleFt: `travelFt =
+Math.min(rules.mhe?.[...]?.travelFt ?? 8, aisleFt)` in
+`sizingSheetLayout` (`src/generate/sizingLayout.js`). Scoped to this one
+general resolution point rather than patching `GeneratePanel.jsx` to start
+sending a `travelFt` itself, so every caller that can independently
+override `aisleFt` gets the same guarantee, not just this one form.
+Reduces to the exact pre-fix value whenever `aisleFt` IS the profile's own
+default (the normal, non-overridden path), since a shipped profile's
+`travelFt` is already `≤` its own `aisleFt` by construction.
+
+Verify:   Three cases, real `sizingSheetLayout` call (temporary
+`globalThis.__lastResolved = { aisleFt, travelFt }` probe, removed after):
+(1) VNA + manual aisle 4ft (narrower than VNA's own 6ft) → `aisleFt=4,
+travelFt=4` (`min(6,4)`), was `6` before the fix. (2) reach truck, no
+override → `aisleFt=10.5, travelFt=8`, byte-identical to pre-fix
+(non-regression). (3) reach truck + manual aisle widened to 11ft (still
+`≥` its own travelFt=8) → `aisleFt=11, travelFt=8`, unaffected, confirming
+the cap only bites when the manual aisle goes narrower than the profile's
+travelFt, never when it's widened. Build clean, 309/309 tests pass. Live
+Playwright run against the dev server: selected VNA in the real dropdown,
+hand-typed `4` into the real AISLE field, clicked "Generate layout" —
+5,280 pallet positions produced, zero console errors, screenshot confirms
+clean render (racks, clearance labels, restyled aisle pills all correct).
+`ColumnCheckPanel` correctly reports "Aisle blocked · 4ft clear of 5.5ft —
+VNA / turret needs 6ft to drive through" for the resulting aisles — that
+check reads the truck's own fixed profile travelFt (6ft, from
+`columnCheck.js`'s `MHE_PROFILES`, a separate and correct concern: does a
+real VNA truck fit through THIS aisle), not the generator's walk-time cap,
+so a dealer who types an aisle narrower than their truck needs still sees
+an honest "blocked" report — this fix only stops the WALK from silently
+assuming more drive room than the chosen aisle provides, it doesn't (and
+shouldn't) suppress the real accessibility warning.
+
+Lesson:   A locked invariant (BUG 40's `travelFt ≤ aisleFt`) is only as
+solid as every PATH that can set `aisleFt`. It's easy to verify an
+invariant against the one caller you just built it for (the forklift
+profile) and miss that a much older, independently-editable input already
+existed and skips that caller entirely. Reproducing the exact brief shape
+the real UI sends — not a hand-simplified version — before writing the
+fix is what caught it; the panel's `run()` source was the ground truth.
+
+## BUG 43 — Generate panel exposed no way to pick vertical orientation; wired up a manual Horizontal/Vertical toggle
+
+Symptom:  Not a defect — a gap. BUG 41 built `sizingSheetLayout`'s
+`orientation: 'horizontal' | 'vertical'` param and proved it correct, but
+nothing in the UI could ever set it: `GeneratePanel.jsx`'s `run()` never
+included `orientation` in the brief it sends, so every generate was
+horizontal by construction regardless of what the building actually
+wanted. Requested explicitly as manual/testing-only — the automatic
+denser-orientation pick is later work, out of scope here.
+
+Chased:   Confirmed the wiring gap by reading `run()`'s brief object
+directly (same approach as BUG 42) rather than assuming the param was
+already threaded through: `orientation` was absent from the list of keys
+sent to `generateAndPlaceBatched`. Traced `generateAndPlaceBatched` →
+`buildQueue` → `generateLayout(brief, rules)` (= `sizingSheetLayout`) to
+confirm the brief is forwarded wholesale with no allowlist in between —
+so the only missing piece really was the panel adding the key, not
+anything downstream.
+
+Cause:    The orientation param was built and verified (BUG 41) but never
+surfaced as a control; a purely additive UI gap, not a regression.
+
+Fix:      Added `orientation` state to `GeneratePanel.jsx` (default
+`'horizontal'`, matching `sizingSheetLayout`'s own default so an
+unmodified panel behaves exactly as before), a two-button "ROW DIRECTION"
+toggle row (styled like the panel's other controls — `--accent` fill on
+the active choice, `--surface2`/`--border` on the inactive one, no new
+pattern introduced) placed between RACK TYPE and FORKLIFT since row
+direction is a structural choice like rack type, and included `orientation`
+in the brief `run()` sends. No changes to `sizingLayout.js`,
+`traceGenerate.js`, or any protected file — this is UI-only wiring onto an
+already-accepted param.
+
+Verify:   Build clean, 309/309 tests pass (no logic touched). Live
+Playwright run against the dev server, two fresh page loads (isolated so
+one generate's objects can't accumulate on top of the other and confuse
+the screenshot — confirmed generate is additive per click, a pre-existing,
+out-of-scope behavior, not something this change touches):
+(1) default Horizontal, "Generate layout" clicked with no toggle
+interaction → "Horizontal" chip shows the active/accent fill, rows render
+left-to-right stacked down the width, 1,920 pallet positions — byte-
+identical to the pre-toggle baseline, confirming the added state doesn't
+change default behavior. (2) "Vertical" clicked then "Generate layout" →
+"Vertical" chip becomes active/accent, "Horizontal" reverts to neutral,
+racks render tall/narrow stacked left-to-right down the length (top-to-
+bottom rows), 768 pallet positions, "No column interference" — the same
+shape of result BUG 41 already verified for vertical, now reachable from
+the real form instead of only a hand-built brief. Zero console errors in
+either run.
+
+Lesson:   A generator param being correct and covered by tests doesn't
+mean it's reachable — the same "read the real caller before trusting it's
+wired up" check from BUG 42 applies to feature gaps, not just invariant
+bugs. Verifying with two SEPARATE page loads (not two clicks on one page)
+mattered here specifically because Generate is additive per click; a
+single-page before/after screenshot would have shown both orientations'
+racks stacked on each other and made it hard to tell which chip produced
+which geometry.
+
+## BUG 44 — vertical crammed into a thin middle band: rowSegments applied the fixed staging deduction to whichever axis happened to be the "run" axis
+
+Symptom:  Vertical (now reachable end-to-end since BUG 43's toggle) didn't
+fill the building. Racking bunched into a narrow strip roughly in the
+middle of the WIDTH, with large empty bands on both sides — visible
+directly in BUG 43's own verification screenshot, though not flagged as a
+bug at the time.
+
+Chased:   Read `rowSegments` first, since BUG 41/43 had already proven the
+STACKING axis (bands, gridYFt/gridXFt pitch, wall singles) correct for
+both orientations — the bug had to be in the perpendicular RUN axis,
+`rowSegments`' own job. Found it immediately: `x0 = speedBayFt` (a flat
+60ft staging deduction) applied unconditionally to whatever `runFt` the
+caller passed in. `sizingSheetLayout` sets `runFt = vertical ? widthFt :
+lengthFt` — for horizontal, `runFt` is the 240ft length, so 60ft of
+staging is a minority of it (75% remains). For vertical, `runFt` becomes
+the 120ft WIDTH, and the exact same fixed 60ft deduction eats HALF of it
+before a single rack is placed — that 50%-gone extent is what rendered as
+a thin crammed band with huge empty margins either side.
+
+Cause:    `speedBayFt` was never meant to scale with which physical
+dimension it was being subtracted from — it's a flat dealer-set number
+representing a loading/staging zone, baked into `rowSegments`' extent math
+with no relationship to the axis's own size. Fine by coincidence when the
+run axis was always the (usually much longer) length; wrong the moment
+orientation made the run axis able to be the shorter width too.
+
+Fix:      Per this task's explicit direction, staging/dock is removed from
+generation's extent math entirely for now — racking fills the FULL run
+axis (minus a small real wall clearance, `endClearFt`, applied
+symmetrically on both ends instead of asymmetrically on one) regardless of
+orientation, rather than special-casing vertical to keep horizontal's old
+carve-out. `rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn,
+upIn })` no longer takes `speedBayFt` at all — `x0 = endClearFt` (was
+`speedBayFt`), `x1` unchanged (`lengthFt - endClearFt`). `generateFixtures`
+no longer emits `stagingObjects`/`dockDoorObjects` — drawing the old
+dashed staging boundary or dock doors at the removed carve-out position
+would sit on top of/inside the racks now placed there instead of marking
+anything real. Both functions are kept, still exported, still covered by
+their own direct unit tests — this only unwires them from generation,
+pending the draggable dock/staging zone that replaces this later
+(explicitly out of scope for this task). `sizingSheetLayout`'s now-unused
+local `speedBayFt` destructure was removed; the field still exists on a
+raw `brief` and the Generate panel's SPEED BAY input is untouched (UI
+change wasn't requested) — it's just inert as far as generation's extent
+math goes for now.
+
+Verify:   240×120/25×30/reach, real `rowBands`/`rowSegments`/
+`sizingSheetLayout`, both orientations, reported via a temp vitest test
+(removed after):
+- **Horizontal** — stack axis (width): 7 bands, full 0→120ft coverage
+  (wall single, 5 double rows, wall single). Run axis (length): segments
+  at [0.25, 125.25]ft, 13 bays/segment, coverage 0.25→232.75ft of 240ft
+  (96.9% — the remainder is whole-bay rounding + the 0.25ft wall
+  clearance each end, not a reintroduced carve-out). 14 placements, 2,496
+  pallet positions — measured live through the real Generate panel with
+  the grid fields hand-set to 25×30 (the app's own capacity count; the
+  temp vitest report's separately-printed "pallet capacity" numbers below
+  used a rough local approximation for quick reporting, not the app's real
+  `getLayoutCapacity`, so they don't match the live figures 1:1 — the live
+  browser numbers are the authoritative ones for this verification).
+- **Vertical** — stack axis (length): 11 bands, full 0→240ft coverage.
+  Run axis (width): segments at [0.25, 65.25]ft, 6 bays/segment, coverage
+  0.25→115.0ft of 120ft (95.6%). 22 placements, 1,920 pallet positions
+  live (240×120/25×30/reach). Zero true accessibility failures
+  (`aisleBlocks` level-1 count: 0) both orientations; column check summary
+  showed 0 rack conflicts for vertical on this grid (25×30 columns don't
+  intersect any vertical band at this pitch) vs 20 for horizontal on the
+  same grid — an honest consequence of where columns happen to fall
+  relative to each axis's own band positions, not a defect.
+  Live Playwright run against the dev server (real Generate panel, grid
+  fields hand-set to 25×30, Vertical toggle clicked): screenshot confirms
+  racks run edge-to-edge top-to-bottom with no empty band, no STAGING
+  label, no dock door markers; horizontal's own live screenshot on the
+  same grid confirms racks now run edge-to-edge left-to-right too (no
+  more empty strip on the left). Zero console errors either run. Build
+  clean, 312/312 tests pass (added permanent regression coverage in
+  `sizingLayout.test.js`: `rowSegments` starts at `endClearFt` not a
+  staging strip, vertical is no longer starved on a short run axis,
+  `generateFixtures` no longer bakes in staging/dock objects; updated the
+  three pre-existing tests that asserted the old staging-skip behaviour
+  as their expected/passing case).
+
+Lesson:   A per-axis deduction that's only ever been exercised on one
+axis can look completely correct for years and still be wrong the moment
+a second axis starts using the same code path — `rowSegments` was never
+vertical-aware or vertical-unaware, it simply never had a caller that
+could hand it the SHORT axis until orientation existed. The fix this task
+actually asked for wasn't "make the deduction axis-aware," it was "stop
+deducting it at all for now" — worth noticing that the correct scope was
+smaller and more durable than a fix that would have made vertical merely
+proportionally-less-wrong while leaving the arbitrary carve-out concept
+in place for a future maintainer to trip over again.
+
+## BUG 45 — vertical's LABELLED aisles read ~57ft: aisleObjectsForRacks paired rotated racks by raw stored x/y, which is only meaningful at rotation 0
+
+Symptom:  Reported after BUG 44 made vertical fill the whole building:
+the PLACEMENT was now correct, but the aisle-width labels between rows
+read ~57.5ft (~61.5ft at the wall rows) — nowhere near the 10.5ft reach
+aisle, and not even the column pitch despite looking like it at a glance.
+
+Chased:   First confirmed the STACKING axis walk (`rowBands`, BUG 41's own
+S1/S2 logic, driven by `gridXFt` for vertical) was NOT the culprit — re-ran
+it directly and got real tight-packed gaps (10.5, 12, 17.5×7, 20.5ft, all
+column-absorb-consistent), so the S1/S2 walk itself was never broken for
+vertical; BUG 41 had already gotten it right. That meant the bug had to be
+downstream, in how PLACED racks turn into the `aisle` objects that
+actually get labelled. Read `aisleObjectsForRacks` (traceGenerate.js) and
+found it groups racks by their raw stored `x`, sorts+pairs each group by
+raw stored `y` — correct ONLY when x is a run's own position and y is a
+row's own position, which is true for horizontal (unrotated) racks but
+not for vertical ones. Proved it numerically with a temp test that called
+the real `sizingSheetLayout` + `placementToObject` + `aisleObjectsForRacks`
+pipeline directly (not a hand-simplified version) on 240×120/25×30/reach:
+grouping-by-x put each vertical rack's own TWO run-segments (top half,
+bottom half of the SAME row, split by ONE cross-aisle) into the same
+group — since a 90°-rotated rack's stored `xFt` depends only on its BAND,
+identically for both of its segments — and paired THOSE as if they were
+adjacent rows. Their raw (pre-rotation) bounding boxes then measured a
+gap that isn't a real aisle at all — reproduced the exact ~57.5ft/~61.5ft
+numbers this way, confirming both the wrong pairing and a second, layered
+bug: `AisleLabel` (DimensionLabels.jsx) computes gaps from `row.x/y/width/
+height` directly, which for ANY 90°-rotated rack are still the PRE-
+rotation local box (traceGenerate never changes how one is built, only
+how it's placed/spun) — even a correctly-paired vertical pair would have
+measured the wrong rectangle, since width/height need swapping around
+the shared centre first at that rotation.
+
+Cause:    Two compounding bugs, both from treating a rack's raw stored
+geometry as if it were already its true world-space box, which only
+holds at rotation 0/180. Neither `aisleObjectsForRacks`' grouping key
+nor `AisleLabel`'s gap math had ever needed to know about rotation before
+BUG 41 gave vertical racks a reason to have one.
+
+Fix:      Both consumers now go through the SAME rotation-aware geometry
+BUG 41 already built and proved correct for column-checking rotated
+racks — `rackFootprint` (true world box, width/height swapped around the
+shared centre at 90°/270°) and `groupBySegment` (unions racks into real
+runs by TRUE cross-axis overlap, not raw-coordinate equality), both now
+exported from `columnCheck.js` rather than kept module-private.
+`aisleObjectsForRacks` rewritten to call `groupBySegment(beams)`, then
+sort+pair each group by whichever axis is the TRUE stacking axis for that
+group's rotation (`rackFootprint(...).x` if rotated, `.y` if not) —
+orientation-agnostic, no branch on `orientation` needed since it reads
+rotation straight off each rack. `AisleLabel` rewritten to build its `r1`/
+`r2` comparison rectangles from `rackFootprint(row1)`/`rackFootprint
+(row2)` instead of the rows' raw fields — a no-op at rotation 0 (footprint
+returns the same box), so every existing horizontal/unrotated aisle label
+in the app (generated OR hand-placed) is unaffected; only a 90°/270° rack
+now measures correctly. `aisleObjectsForRacks` also exported (was
+module-private) so it has its own direct test coverage instead of only
+being reachable through the full store-writing `generateAndPlace` path.
+
+Verify:   240×120/25×30/reach, both orientations, real
+`sizingSheetLayout`→`placementToObject`→`aisleObjectsForRacks` pipeline,
+widths computed with the same math `AisleLabel` now uses (temp vitest
+test, removed after):
+- **Vertical** — 22 racks (11 bands × 2 segments, unchanged from BUG 44),
+  **20** aisle objects (10 gaps/segment × 2 segments — the pre-fix bug
+  produced 11, one bogus cross-aisle-as-pick-aisle per band). Widths:
+  12.5ft (wall→first double), 17.5ft ×8 (interior, column-absorbed),
+  13.0ft (last double→wall) — repeated identically for both segments.
+  All within [aisleFt, 2×aisleFt], nowhere near the old ~57.5/61.5ft.
+- **Horizontal** — unchanged from before this fix: 14 racks, 12 aisle
+  objects, widths 10.5/17.0/10.5/10.5/16.5/10.5ft per segment — confirms
+  the rotation-aware rewrite is a true no-op for unrotated racks.
+- Live Playwright run against the dev server (real Generate panel, grid
+  hand-set to 25×30): vertical screenshot shows "12' 6"" and "17' 6""
+  aisle labels tight between adjacent rack columns, matching the computed
+  values exactly; horizontal screenshot unchanged from BUG 44's own
+  verification. Zero console errors either run. Build clean, 315/315
+  tests pass (added permanent regression coverage in
+  `traceGenerate.test.js`: vertical aisle widths stay under 3×aisleFt for
+  every generated aisle, vertical aisle count is exactly 20 not 11,
+  horizontal stays within the same bound as a no-op check).
+
+Lesson:   BUG 41 already solved "how do you read a rotated rack's TRUE
+geometry" for column-checking, and that exact same unsolved problem was
+quietly waiting in two OTHER consumers of rack geometry that happened to
+predate rotation ever existing. A rotation-aware primitive is only as
+useful as how many of its call sites actually get migrated to it —
+worth grep'ing for `.x` / `.y` / `.width` / `.height` reads on rack-typed
+objects elsewhere in the app before assuming BUG 41 was a complete fix
+rather than the first of several.
+
+## BUG 46 — refactor: collapsed sizingSheetLayout's last inline orientation branch into one named, tested seam (axisFrame)
+
+Symptom:  Not a functional defect — a maintenance-risk report, filed right
+after BUG 44/45 fixed the two actual vertical bugs. The concern: "vertical
+and horizontal behave as separate code paths, every fix has to be done
+twice." Asked to refactor so the S1/S2 walk is written once and runs on
+either axis by parameterizing it, so tight-pack/absorb/accessibility/
+travelFt apply to both automatically, and to CONFIRM the two orientations
+share one code path.
+
+Chased:   Audited the premise before changing anything, since BUG 44 and
+45 were both already fixed by this point and the premise needed to be
+checked against the CURRENT code, not the symptom that prompted them.
+Traced every orientation/rotation branch across `generate/`:
+`rowBands` and `rowSegments` (the actual S1/S2 walk — tight-pack, column-
+absorb, `travelFt`) take a plain 1D extent + grid pitch and have NEVER
+branched on orientation; `sizingSheetLayout` has always called them
+exactly once each, just with axis-swapped arguments (BUG 41). `checkColumns`
+(three-level accessibility) and its helpers branch only on a rack's own
+`rotation`, via `rackFootprint`/`groupBySegment` (BUG 41) — one shared
+function, not two. `aisleObjectsForRacks`/`AisleLabel` now do the same
+after BUG 45. So the walk itself was never duplicated — what BUG 44 and 45
+actually were was two SEPARATE shared functions (`rowSegments`,
+`aisleObjectsForRacks`) that had a latent bug only reachable once
+vertical existed to exercise them, not two parallel per-orientation
+implementations drifting apart. The one piece of code that WAS still
+orientation-branching was inline in `sizingSheetLayout` itself: the
+`stackFt`/`runFt`/`stackGridFt`/`stackGridOffsetFt` axis selection, plus
+an `if (!vertical) {…} else {…}` fork in the placement-construction loop
+that computed each rack's world `xFt`/`yFt`/`angle`. Not aisle logic — a
+pure coordinate transform — but exactly the KIND of seam BUG 44 and 45
+both lived in (mapping the walk's output onto world space per axis), so
+worth removing as a standing risk even though it had no active bug.
+
+Cause:    N/A — pre-emptive refactor, not a bug fix. The risk was
+architectural: a hand-written `if (vertical)` fork inline in a large
+function is an easy place for a THIRD axis-shaped bug to hide, compared
+to one small, named, independently-tested function.
+
+Fix:      Extracted `axisFrame(orientation, { lengthFt, widthFt, gridXFt,
+gridYFt })` in `sizingLayout.js` — returns `{ stackFt, runFt, stackGridFt,
+stackGridOffsetFt, place(band, runPos, runLenFt) }`. `place()` is horizontal's
+former passthrough (`{xFt: runPos, yFt: band.yFt, angle: 0}`) or vertical's
+former centre-based rotation math, now the ONLY place either branch
+exists. `sizingSheetLayout` now reads `const frame = axisFrame(orientation,
+{...})`, calls `rowBands(frame.stackFt, {...})` / `rowSegments(frame.runFt,
+{...})` exactly as before, and the placement loop is `placements.push({
+type: band.type, ...frame.place(band, runPos, runLenFt), bays, ... })` —
+no `if` left in `sizingSheetLayout` itself. Pure refactor: every argument
+`rowBands`/`rowSegments` receive is byte-identical to before, so this
+changes WHERE the axis decision is written, not what it computes.
+
+Verify:   Build clean, 318/318 tests pass — critically, EVERY existing
+BUG 44/45 regression test still passes unmodified, proving the refactor
+changed no observable output. Added direct `axisFrame` unit tests
+(horizontal: pure passthrough, angle 0; vertical: rotates around the true
+centre, grid offset matches `columnGridObject`'s own centring formula) plus
+a textual guard test (`sizingSheetLayout.toString()` contains no
+`orientation === 'vertical'` and does contain `axisFrame(` — fails loudly
+if a second orientation fork ever creeps back into the function). Live
+240×120/25×30/reach on both orientations, real Generate panel:
+- **Horizontal** — 14 racks, 12 aisles, widths 10.5/17.0/10.5/10.5/16.5/
+  10.5ft (×2 segments), 2,496 pallet positions, 0 true accessibility
+  failures — byte-identical to BUG 45's own numbers.
+- **Vertical** — 22 racks, 20 aisles, widths 12.5/17.5×8/13.0ft (×2
+  segments), 1,920 pallet positions, "No column interference" — byte-
+  identical to BUG 45's own numbers.
+Screenshots pixel-identical to BUG 45's verification screenshots for both
+orientations; zero console errors either run. Confirms the two
+orientations share one code path not by assertion but by construction —
+`axisFrame` is the only function in the module that reads `orientation`.
+
+Lesson:   Sometimes the right response to "these feel like two code
+paths" is to verify they're already one (they mostly were, here) rather
+than assume the report is describing the codebase as it currently
+stands — BUG 44 and 45 were fixed as two ordinary bugs in shared
+functions, not as "vertical's version of the logic," and conflating "a
+shared function had a latent bug" with "the logic is duplicated" would
+have led to a much bigger, unnecessary rewrite. The part of the report
+that WAS actionable — one remaining inline fork — was real and worth
+collapsing anyway, both to remove a standing risk and to make the
+"single path" property checkable by a test instead of only true by
+inspection.
+
+## BUG 47 — feature: automatic orientation pick (run both, place the denser one), manual toggle kept as an override
+
+Symptom:  Not a bug — a feature. Now that BUG 46 made orientation a single
+clean seam (`axisFrame`) and BUG 41/44/45 made both orientations
+correctly tight-packed and accessible, the manual Horizontal/Vertical
+toggle from BUG 43 could finally be automated: generate both, place
+whichever has more capacity, without a dealer needing to try both by
+hand and remember which was better.
+
+Chased:   N/A — additive feature on top of already-correct code, not a
+fix. The only design question was WHERE to run the comparison without
+placing (and then discarding) the loser's hundreds of objects in the
+store — `pickOrientation` needed to score both candidates from their raw
+`placements[]` (pure, pre-`addObject`) rather than by actually generating
+both into the canvas and measuring which one to keep.
+
+Fix:      `pickOrientation(brief, generateLayout, rules)` in
+`traceGenerate.js`: runs `generateLayout({...brief, orientation}, rules)`
+for `'horizontal'` and `'vertical'`, scores each via
+`getLayoutCapacity(placements.map(placementToObject), rules).total` — the
+SAME capacity function the UI's own result number always came from, not a
+separate count — and returns the orientation with more (ties keep
+horizontal). Pure: neither candidate touches the store, so scoring never
+draws the loser. `buildQueue` (the one function both `generateAndPlace`
+and `generateAndPlaceBatched` funnel through) now branches on
+`brief.orientation === 'auto'`: auto calls `pickOrientation` and places
+only the winner's placements; a manual `'horizontal'`/`'vertical'` still
+calls `generateLayout` exactly once, unchanged — the override costs no
+extra work and can't be second-guessed by the comparison. Both entry
+points now return `{ total, orientation, horizontalTotal, verticalTotal }`
+instead of a bare number (`horizontalTotal`/`verticalTotal` are `null` for
+a manual pick — the caller only ran one candidate, there's nothing to
+compare) — a return-shape change, but `generateAndPlaceBatched`'s only
+caller is `GeneratePanel.jsx`, updated in the same change; `generateAndPlace`
+has no callers in `src/` yet, so neither had anything to break.
+`GeneratePanel.jsx`: ROW DIRECTION is now a 3-way Auto/Horizontal/Vertical
+toggle, `orientation` state defaults to `'auto'`, and the result card
+shows the comparison line ("Auto-picked Horizontal — 2,496 horizontal vs
+1,920 vertical") whenever `horizontalTotal` is present, i.e. only in auto
+mode — a manual pick's result card is unchanged from before this feature.
+
+Verify:   240×120/25×30/reach, real Generate panel, Auto left at its
+default (no click needed — confirmed the toggle's own default state is
+Auto, highlighted, before touching anything): **Auto-picked Horizontal —
+2,496 horizontal vs 1,920 vertical**, and the canvas drew the horizontal
+layout (racks running left-to-right, tight aisles) — the reported winner
+is provably what got placed, not just a claimed number. Then explicitly
+overrode to Vertical on the same building/grid: produced 1,920 (vertical,
+confirmed by screenshot — tall racks, top-to-bottom rows), no comparison
+line (manual mode correctly has nothing to compare), proving the override
+still works and still costs exactly one generate. Zero console errors
+either run. Build clean, 322/322 tests pass — added `pickOrientation`
+coverage in `traceGenerate.test.js`: the real 240×120/25×30/reach case
+(byte-identical 2,496/1,920, and the winning `placements` array equals
+calling `sizingSheetLayout` directly with `orientation:'horizontal'` —
+auto places exactly what manual would have, not a re-derivation), a
+fake-`generateLayout` test proving the comparison/tie-break logic itself
+independent of real geometry, a tie test (equal totals keep horizontal),
+and a purity check (`pickOrientation` never touches the store).
+
+Lesson:   `getLayoutCapacity` already existed as the app's one source of
+truth for "how many pallet positions is this layout" (BUG-independent,
+predates this session) — reusing it to SCORE the auto comparison, rather
+than inventing a second capacity count just for the picker, means the
+number reported in "Auto-picked X — A vs B" can never drift from the
+number the result card shows after picking. Scoring from raw placements
+before they ever reach `addObject` is what kept this pure and cheap; the
+tempting alternative — generate both into the store, compare, delete the
+loser — would have worked but done real store/history-snapshot writes
+for a candidate that gets thrown away.
+
+## BUG 48 — column clearance label had no direction: added an arrow showing which side of the column the clear space is on
+
+Symptom:  The "8' clear" column label said HOW MUCH clearance a travel-
+aisle column had, but not WHICH SIDE — the pill was offset toward
+`clearSide`, but an offset alone reads as positioning noise, not a mark.
+
+Chased:   N/A — additive, not a fix. The only design decision was how
+long to draw the arrow: scaling it to the real `clearFt` distance (1ft to
+20+ft depending on the layout) would make the mark itself unreadable at
+one end of that range, so it's drawn at a small SCREEN-constant length
+instead — like every other size in `DimensionLabels.jsx` (fs/aw/sw/padX),
+matching AisleLabel's own convention of screen-constant marks.
+
+Fix:      `ColumnClearanceLabels` (DimensionLabels.jsx) now draws a
+stroked shaft + filled triangle from the column's own edge toward
+`clearSide`, using the exact same line+triangle mechanism `AisleLabel`
+already uses for its tick marks (`Line` + `Line closed fill`, apex at the
+target point) — single-headed rather than AisleLabel's double-headed span,
+since only one endpoint (the column) is real geometry here; the far end
+is a fixed 12px-screen mark, not a second known face. The label pill
+still sits past the arrow's tip, unchanged position. `gridSize` was the
+only prop this component needed for a clearFt→px scale that no longer
+exists, so it was dropped from the signature and its one call site
+(Overlays.jsx) — no other behaviour changed.
+
+Verify:   Live Playwright run against the dev server, vertical generate on
+240×120/25×30/reach, a 4x-device-scale cropped screenshot of a real
+rendered label: a short blue shaft + arrowhead points DOWN from the
+column's bottom edge to the "8' clear" pill, matching `clearSide='bot'`
+for that column (clear toward the row below it) — confirmed against the
+real `aisleBlocks` data the running app computed, not a mocked one. Build
+clean, 326/326 tests pass (no test coverage needed changing — this
+component had none before and the fix doesn't change `aisleBlocks`/
+`columns`, only how they're painted).
+
+Lesson:   A value with an implicit direction (an offset, a sign, a side)
+reads as intentional placement only if something ELSE marks the
+direction explicitly — the offset alone was already "correct" by BUG-38-
+era design, it just wasn't legible as a direction to someone who hadn't
+read the source.
+
+## BUG 49 — vertical aisles couldn't be selected or deleted: aisleRect measured the wrong rectangle for a rotated rack, same root cause as BUG 45
+
+Symptom:  In vertical orientation, clicking an aisle (the gap between two
+rack bands) never selected it, so Delete never worked — the one place
+BUG 45 hadn't reached yet.
+
+Chased:   Recognized the shape of the bug immediately from BUG 45:
+`hitTest.js`'s `aisleRect(aisle, objects)` reads `row1.x/y/width/height`
+directly as the aisle's two bounding rows, exactly the same raw-field
+read `AisleLabel` used before BUG 45 — and for a 90°-rotated vertical
+rack those fields are still the PRE-rotation local box, not the true
+world box. Traced the actual failure mode: with the wrong (unrotated)
+boxes, the `aw <= 0 || ah <= 0` guard at the end of `aisleRect` holds for
+almost every real vertical pair (confirmed by hand-deriving one concrete
+case and checking it against the fixed code in a temp test — see BUG 49's
+test in `canvas2HitTest.test.js`), so `aisleRect` returns `null`,
+`hitTest`'s `'aisle'` branch never matches, and the click falls through
+to whatever's underneath (or nothing) instead of selecting the aisle.
+
+Cause:    Same root cause as BUG 45, in a THIRD consumer that predates
+vertical orientation and had never been migrated to rotation-aware
+geometry: `aisleRect` is shared by `hitTest.js` (the pick), `AisleShape`
+(the Konva hit region/paint) and `outlineBounds` (the selection outline)
+per the file's own header comment ("can never disagree about where an
+aisle physically is") — but that comment only guaranteed the THREE
+consumers agreed with EACH OTHER, not that any of them were right for a
+rotated rack.
+
+Fix:      `aisleRect` now builds its two comparison boxes from
+`rackFootprint(row1)`/`rackFootprint(row2)` (`generate/columnCheck.js`,
+already exported for BUG 45) instead of the rows' raw fields — a no-op at
+rotation 0/180, so every existing horizontal aisle (generated or hand-
+placed) is unaffected. Because `AisleShape` and `outlineBounds` both call
+this same function, the fix reaches the Konva hit region and the
+selection outline too, not just the `hitTest` pick — one change, three
+consumers corrected together, matching the file's own stated design
+intent instead of only half-satisfying it.
+
+Verify:   Two layers, both real: (1) `canvas2HitTest.test.js` — a hand-
+derived rotated pair (two 90° racks whose true footprints sit 100px
+apart) where the OLD math would have measured a negative-height box and
+returned `null` (worked through by hand and confirmed against the fixed
+code), the NEW math returns the exact rect `{x:120,y:-80,width:100,
+height:200}`; a `hitTest` call at the centre of that rect resolves to the
+aisle's id, a click on the rack itself does not; an unrotated pair is
+provably unaffected (same rect the raw-field math would give). (2) Live
+Playwright run against the real dev server: generated vertical on
+240×120/25×30/reach, looked up a REAL generated aisle object, computed
+its rect via the actual running `aisleRect` (dynamic import from the dev
+server, not a re-implementation), clicked the real screen point the math
+produced — `selectedIds` included the aisle's id — pressed Delete —
+`objects.length` dropped by one and the aisle was gone. Zero console
+errors. Build clean, 326/326 tests pass.
+
+Lesson:   BUG 45's own lesson ("grep for other consumers before assuming
+a fix is complete") applied a second time to a THIRD consumer of the same
+raw-geometry pattern — `aisleRect` wasn't found by grepping in BUG 45
+because the search there was scoped to aisle LABELLING, not aisle
+PICKING; the two are different files serving different concerns that
+happen to share the exact same underlying geometry bug. A rotation-aware
+primitive earns its keep in proportion to how many places actually
+adopted it — worth periodically grepping for `\.x\b.*\.y\b.*\.width\b`-
+shaped reads on rack-typed objects across the WHOLE app, not just the
+file that prompted the last fix.
+
+## BUG 50 — BUG 48's clearance arrow still pointed the wrong way in vertical orientation: clearSide isn't an axis, it's "near/far along whichever axis the racks stack on"
+
+Symptom:  User reported BUG 48's arrow "still the same" in vertical
+orientation — screenshot showed "8.5' clear" labels with a tiny, barely-
+visible mark, nothing readable as a directional arrow, unlike the bold
+double-headed orange aisle-width arrows right next to it.
+
+Chased:   Two separate things were wrong, and the screenshot only
+directly evidenced the second:
+1. `ColumnClearanceLabels` treated `clearSide` as if it always meant "up"
+   (`top`) or "down" (`bot`) in world space. Re-read `columnCheck.js`'s
+   own computation (the block that sets `clearSide`, inside the aisle-gap
+   loop keyed on `stacked = rackFootprint(run[0]).rotated`): `clearSide`
+   is measured along whichever axis the racks are STACKED on — Y for
+   horizontal (unrotated) racks, but X for vertical (rotated) ones, since
+   vertical's own aisles run left/right between adjacent rack bars, not
+   up/down. BUG 48 never read `stacked`/rotation at all, so in vertical
+   orientation it was drawing a vertical arrow to describe a horizontal
+   relationship — pointing 90° off from the real direction.
+2. Independent of (1), BUG 48's arrow length (12/zoom) exceeded the
+   label's own offset (10/zoom), so the arrow's tip landed PAST the
+   label's centre — behind the opaque label pill, invisible regardless of
+   which axis it was drawn on. This alone would have made even a
+   correctly-oriented horizontal-case arrow hard to see; the two bugs
+   compounded into "no visible direction at all" for vertical, where both
+   were wrong simultaneously.
+
+Cause:    (1) is the same class of mistake BUG 45/49 already named twice
+— code written before vertical orientation existed, and never revisited
+to check whether an assumption ("this axis is always Y") still held once
+a second axis became real. (2) was a plain sizing mistake introduced
+while fixing (this session's own BUG 48), never caught because the
+verification screenshot at the time was zoomed too far out to notice a
+12px-vs-10px overlap.
+
+Fix:      `ColumnClearanceLabels` now resolves the real axis from the
+actual rack geometry instead of assuming one: looks up
+`objects.find(o => o.id === a.betweenRows[0])` (BUG 39's own
+`aisleBlocks` already names the two bounding racks) and reads
+`rackFootprint(row).rotated` — the same rotation-aware primitive BUG 41/
+45/49 all already share, so this needed no new geometry concept, just
+using the one that already existed. `horiz = rotated` picks the arrow's
+direction vector (`dx,dy`) and its perpendicular (`px,py` — where the
+arrowhead's two base corners spread), so one set of vector math now
+draws a correctly-oriented arrow on either axis instead of hardcoding Y.
+Sizing was reworked from scratch rather than patched: `shaftLen=20/zoom`,
+`aw=7/zoom` (up from 12/zoom and 5/zoom — a genuinely more visible mark,
+closer to what "like the aisle labels" asked for), and the label's
+position is now DERIVED from the arrow's own tip (`tipD + gap +
+labelH/2`, where `labelH` matches `LabelPill`'s real `fontSize*heightScale`
+formula) instead of an independently-guessed constant — so the two
+literally cannot overlap regardless of either one's size, by
+construction rather than by coincidentally-compatible numbers. `objects`
+threaded through as a new prop (`Overlays.jsx` already had it in scope
+for `AisleLabel`, so this was a one-line pass-through, not new plumbing).
+
+Verify:   Live Playwright run against the dev server, 240×120/25×30/reach,
+both orientations, 4x-device-scale cropped screenshots of real rendered
+labels (not mocked geometry):
+- **Vertical** (22/22 racks rotated) — arrow now runs HORIZONTAL, shaft +
+  triangular arrowhead clearly visible pointing from the column's right
+  edge to its "8' clear" label, no overlap.
+- **Horizontal** (0/14 racks rotated) — arrow runs VERTICAL, pointing up
+  from the column to its "8' clear" label — confirms the fix is a true
+  generalization, not a vertical-only special case; the horizontal
+  behaviour BUG 48 intended is preserved exactly, just via the same
+  code path instead of a hardcoded axis.
+Zero console errors either run. Build clean, 326/326 tests pass (no
+existing test covered this component's rendering before or after — the
+verification is the live-render screenshots, consistent with how BUG 48
+itself was verified).
+
+Lesson:   Reporting "still the same" after a fix is real signal, not just
+an annoyance — it meant the first fix's OWN verification (a zoomed-out
+screenshot that showed the label existed, without checking it against
+the real `clearSide` semantics or looking closely enough to catch the
+overlap) wasn't rigorous enough to have caught either bug. Re-deriving
+the axis from actual rack geometry rather than hardcoding one, and
+deriving the label's position from the arrow's own computed size rather
+than a second guessed constant, are both the same fix in spirit: stop
+encoding an assumption as a literal number, compute it from the thing
+that's actually true.
+
+## BUG 51 — BUG 50's arrow was geometrically correct and still invisible: 20px screen-constant read as a smudge, not a mark, at the zoom a dealer actually works at
+
+Symptom:  User reported "still cannot see the arrows" after BUG 50,
+screenshot showing "8.5' clear" labels with what reads as a meaningless
+tiny square, not a recognizable arrow — at a zoom level much like a
+dealer would actually work at (columns tall and thin, several visible
+across the building), not zoomed in tight on one label.
+
+Chased:   Did NOT assume BUG 50 regressed — verified the live math first,
+since the report could mean either "wrong direction again" or "right but
+invisible." Added a temporary trace (`window.__traceClearance`) logging
+every computed point, and separately three colour-coded fixed-size debug
+markers (green at the column centre, magenta at the arrow tip, cyan at
+the label) rendered directly in place of the real shapes. Both confirmed
+the geometry was exactly correct: green–magenta–cyan landed in the right
+relative order for both `clearSide` values, non-overlapping, correctly
+axis-selected — everything BUG 50 was supposed to fix, still holding. An
+early zoom=3 test that seemed to show nothing turned out to be a mis-
+targeted camera pan in the TEST SCRIPT (a fresh `checkColumns` recompute
+picking a different array-order match than the one actually on screen),
+not a rendering bug — caught by re-deriving the target from the SAME
+live column data the component itself uses and re-testing.
+
+Cause:    The arrow was drawn at a fixed 20px screen-constant length
+(`shaftLen`) with a 7px arrowhead (`aw`) — deliberately NOT scaled to the
+real clearance distance (BUG 48's own reasoning: clearFt ranges roughly
+1–20+ft, so scaling to it would make the mark unreadable at one end of
+that range). But 20px is also small enough that at any zoom where several
+columns and their labels are visible at once — i.e. the zoom a dealer
+actually reviews a layout at — it reads as an indistinct blob sitting
+next to the label, not as a shaft-plus-arrowhead shape. AisleLabel's own
+arrows don't have this problem because they DO scale, with the real
+aisle gap (often hundreds of screen px) — the two components' arrows
+were never actually comparable in scale, which is exactly what "like the
+aisle labels" was asking for and BUG 48/50 hadn't delivered.
+
+Fix:      Kept the screen-constant design (still the right call — no
+scaling to clearFt) but sized it up substantially: `shaftLen` 20→34px,
+`aw` 7→13px, `sw` 1.3→2.2px. No geometry/direction logic touched — BUG
+50's axis-resolution and non-overlap derivation are untouched, this is
+sizing only.
+
+Verify:   Live Playwright run against the dev server, 240×120/25×30/
+reach, vertical orientation, 4x-device-scale screenshots at the SAME
+zoom level the user's own screenshot used (multiple columns visible
+across the building): the arrow now reads as an unmistakable
+shaft-plus-triangle between column and label, for BOTH `clearSide`
+directions — confirmed at the wide/working zoom, not just a tight crop.
+Re-verified horizontal orientation at the same zoom: clear vertical
+arrows pointing up from column to label, equally legible, confirming the
+size bump didn't overshoot into looking oversized or cluttered next to
+the rack geometry. Zero console errors. Build clean, 326/326 tests pass
+(sizing-only change, no test assertions needed updating). All debug
+instrumentation (trace array, coloured markers) removed before finishing.
+
+Lesson:   "Correct but invisible" and "wrong" produce the identical user
+report ("I can't see it working") — the debug-marker technique (render
+the ACTUAL computed points in an unmissable fixed colour/size, right in
+place of the real shapes) settled which one this was in one screenshot,
+where reasoning about zoom/scale/pixel math alone had already gone in
+circles across several earlier attempts. Verifying at the zoom the user's
+own screenshot used, not a convenient close-up, is what caught that the
+first size (chosen and verified in a tight crop) didn't survive zooming
+back out to a working view.
+
+## BUG 52 — the resonance's real cause: the aisle-absorb gate compared against aisleFt (pick width) instead of travelFt (drive-through minimum), so it widened for columns that were never actually blocking anything
+
+Symptom:  The earlier "packing inconsistency" diagnostic (pre-BUG44)
+found that nearly every interior aisle in vertical orientation blew out
+to ~17.5ft in lockstep with the column grid, instead of staying tight to
+the 10.5ft reach aisle — that diagnostic reported WHAT the walk did but
+was explicitly asked not to fix it. This task supplied the actual fix,
+from PP's own hand method: the walk should only widen an aisle when a
+column is closer than the truck's drive-through minimum (travelFt, 8ft)
+— not merely because it's closer than the full pick width (aisleFt).
+
+Chased:   N/A — root cause was already fully traced in the earlier
+diagnostic (`rowBands`' STEP 2, the `gapToNextColumn` check before
+placing each aisle) and confirmed again here by hand-deriving that the
+walk's natural pitch (rack+aisle = 18ft) resonates with a 25ft column
+grid, and that the OLD gate — `gapToNextColumn >= aisleFt` — triggered a
+widen for ANY gap under 10.5ft, including gaps between 8 and 10.5ft that
+already had enough room for a truck to physically drive through (BUG 39's
+own "level 2, one-side pick" case, accessible by default). The walk was
+reacting to a case its own accessibility model already treats as fine.
+
+Cause:    `rowBands`' aisle-placement step gated the absorb formula on
+`gapToNextColumn >= aisleFt` instead of `>= travelFt`. Since
+`aisleFt(10.5) > travelFt(8)` for reach trucks, this meant the walk
+treated "not quite full pick width" as equivalent to "truck can't get
+through," widening every time — and because the widened aisle's own
+width plus a rack's depth happened to land in near-lockstep with the
+25ft column grid, that over-reaction repeated on almost every single
+interior gap instead of being a rare correction.
+
+Fix:      One-line gate change in `rowBands` (`sizingLayout.js`,
+STEP 2): `gapToNextColumn >= aisleFt ? aisleFt : Math.max(...)` →
+`gapToNextColumn >= travelFt ? aisleFt : Math.max(...)`. The widen
+formula itself (`Math.max(aisleFt, gapToNextColumn + COL_WIDTH_FT +
+travelFt)`) is untouched — still guarantees the far side of a genuinely-
+too-close column gets a full travelFt of drive room. Only the TRIGGER
+changed: a column with 8–10.5ft of near-side clearance now gets a plain
+aisleFt aisle (the column simply sits inside it, correctly reported as
+level 2/accessible by the existing 3-level system, not specially handled
+by the walk), and only a column with under 8ft near-side clearance still
+forces the aisle to widen.
+
+Verify:   240×120/25×30/reach, both orientations, real `rowBands`/
+`sizingSheetLayout`, before vs after:
+- **Horizontal** — bands unchanged at 7 (this grid's 30ft Y-pitch was
+  never as tightly resonant as vertical's 25ft X-pitch), but the two
+  gaps that used to over-widen to 16.5–17ft are now tight (10.5–11ft);
+  real pallet capacity unchanged at 2,496 (same band count, same
+  segments) — confirms the fix is a true no-op where no column was ever
+  genuinely too close.
+- **Vertical** — bands rose from **11 to 14** (3 more rows fit): gaps
+  now `[12.5, 10.5, 12.25, 10.5, 11.75, 10.5, 12.25, 10.5, 11.75, 10.5,
+  12.25, 10.5, 11.25]` — tight-packed 10.5–12.5ft throughout, no more
+  uniform 17.5ft resonance. Racks rose 22→28, aisle objects 20→26, and
+  real pallet capacity rose **1,920 → 2,400** (+25%). Auto-pick still
+  chooses horizontal (2,496 > 2,400) — closer than before, but still a
+  clear win, unchanged from BUG 47's own tie-break logic.
+- **Honest new finding, not a regression**: vertical now shows **3
+  genuinely blocked aisles** (6.8ft clear of the needed 8ft) that never
+  existed before — because the old gate's over-eager widening had been
+  accidentally papering over every near-miss with the full absorb
+  treatment. These are real: a column sitting exactly 6.8ft from the
+  previous rack's edge cannot be fixed by widening the aisle's far side
+  (the near side is already placed and can't move) — the existing BUG 39
+  accessibility system correctly surfaces this via the ColumnCheckPanel's
+  "Aisle blocked" cards with Absorb/Remove-section affordances, exactly
+  as designed, for the dealer to resolve. Confirmed live: the running app
+  reports "0 columns in racks · 3 aisles blocked" with the exact 6.8ft/
+  11.3ft numbers.
+Live Playwright screenshots on the real dev server confirm both
+orientations render correctly (tight aisle labels, visible clearance
+arrows, no visual artifacts), zero console errors. Build clean, 326/326
+tests pass — two pre-existing tests had hardcoded numbers from the old
+(buggy) output (`verticalTotal: 1920`, `racks.length: 22`,
+`aisles.length: 20`); updated to the new correct values (2400/28/26)
+with comments explaining why the numbers moved.
+
+Lesson:   The earlier diagnostic's "don't fix yet" scope was worth
+respecting literally — it meant this fix started from an already-
+complete, already-verified root-cause trace instead of re-discovering it
+under time pressure. A gate is only as correct as the THRESHOLD it
+compares against, not just its presence — the walk always HAD an
+accessibility-aware absorb formula (BUG 38-40), it was just comparing
+the wrong two numbers, treating "not full pick width" as "blocked" when
+the app's own 3-level model had already defined a real difference
+between those two thresholds.
+
+## BUG 53 — feature + fix: allowColumnInRack exposed in the UI, and the actually-blocked aisles resolved (they lived at the far-wall transition, not the interior walk BUG 52 already fixed)
+
+Symptom:  Two asks: (1) `allowColumnInRack` — whether a customer allows a
+column to sit inside a rack body (losing pick positions there) versus
+never allowing it (dropping the row instead) — was already a real
+parameter the generator read (`rowBands`/`sizingSheetLayout`, since
+GENERATOR_SPEC_V10), but `GeneratePanel.jsx` never sent it, so every
+generate ran the S1 (never-allow) default with no way to change it. (2)
+BUG 52 broke the resonance but left 3 aisles genuinely blocked (6.8ft
+clear of the needed 8ft) on 240×120/25×30/reach vertical — asked to
+resolve those, gated on the same preference: absorb the column into the
+row (kept) if allowed, or drop the row (gone) if not.
+
+Chased:   Part 2 took three real attempts before landing correctly, each
+one caught by testing rather than assumed correct:
+  1. First attempt added an interior STEP-2 pinch check (`gapToNextColumn
+     < travelFt` → shift or drop the row just placed) and looped back
+     into the ordinary aisle-placement code to continue. Testing found an
+     literal infinite non-terminating pattern for the DROP case:
+     resuming from the pre-drop position re-derives the byte-identical
+     row (the walk is a pure function of position), recreating the exact
+     same pinch forever until the loop's own guard counter silently gave
+     up, producing a ~195ft dead gap with zero rows in it.
+  2. Second attempt fixed the exact-recreation by skipping `lastEnd`
+     forward to the pinching column's own far edge before resuming. A
+     REAL instrumented trace (not hand-derived — hand-tracing this exact
+     scenario had already produced two wrong predictions) showed a
+     DIFFERENT infinite pattern: resetting to a column-derived position
+     is provably grid-locked (same residue mod gridYFt every time, since
+     gridOffsetFt and the column's own half-width are both constants),
+     so the very next normal-width aisle+row cycle lands at the identical
+     resonant phase relative to the NEXT column, forever — bandsLen
+     oscillating between two counts for 15+ cycles, net zero rows placed
+     across the whole remaining span.
+  3. Before attempting a third fix, tested whether the interior
+     intervention was even NECESSARY: temporarily disabled it and ran
+     real `checkColumns` on the resulting horizontal geometry — zero
+     blocked aisles, matching BUG 52's own original report exactly. Hand-
+     derivation then confirmed WHY: the interior widen formula
+     (`Math.max(aisleFt, gapToNextColumn + COL_WIDTH_FT + travelFt)`)
+     places `afterAisle` exactly `travelFt` past the column's far edge,
+     by construction, every time — and `checkColumns` scores accessibility
+     as `max(nearClear, farClear) >= travelFt`, not both sides — so an
+     interior pinch can never actually come back level-1 once BUG 52's
+     own widen formula has run. The 2nd/3rd attempts were fixing a
+     problem that didn't exist, at real capacity cost (confirmed: it
+     dropped a row in horizontal despite horizontal already reporting
+     zero blocked aisles). Traced the REAL 3 blocked aisles instead by
+     inspecting their actual geometry: both bounding rows had
+     height=3.5ft (single-row depth) and one sat exactly at `bottomY` —
+     the far-wall mirror row, placed unconditionally by STEP 1's own
+     "always" rule with ZERO column-awareness, the one transition the
+     interior walk's fix never touched.
+
+Cause:    (1) Pure UI gap — the parameter existed, nothing sent it. (2)
+The far-wall transition (`bands.push({ yFt: bottomY, ... })`, after the
+wall-hit space-only cleanup) never checked for a column inside the final
+gap; it only ever verified there was enough ROOM (`remaining >= aisleFt`),
+never whether a column sitting in that room left either side driveable.
+
+Fix:      (1) `GeneratePanel.jsx`: added `allowColumnInRack` state
+(default `false`, matching the walk's own S1 default so an untouched
+panel is unchanged) and a Yes/No toggle ("ALLOW COLUMNS INSIDE RACKS"),
+included in the brief `generateAndPlaceBatched` sends — no changes needed
+in the generator itself, it already read this field end-to-end. (2)
+Reverted the interior STEP-2 walk to pure BUG 52 behaviour (removed the
+unnecessary/broken pinch branch entirely — the widen formula was already
+correct there, restored with an explanatory comment recording why a
+row-level intervention isn't needed at that step). Added a NEW, separate
+column-aware loop after the existing wall-hit space cleanup, before the
+far-wall row gets pushed: finds any column inside `[lastEnd, bottomY)`
+where `max(nearClear, farClear) < travelFt` (the far wall's own edge is
+fixed, so only the near-side row can move) and resolves it the same way
+— `allowColumnInRack`: shift the last row forward so its far edge covers
+the column (kept, absorbed); otherwise: pop it (dropped, gap reopens) —
+then re-applies the original space-only cleanup (a shift/drop here can
+just as easily break the `remaining >= aisleFt` guarantee) before
+re-checking for further columns, looping until clear or down to the
+locked near-wall row.
+
+Verify:   240×120/25×30/reach vertical, real `rowBands`/`sizingSheetLayout`
++ real `checkColumns`, both `allowColumnInRack` settings:
+- **false (No)**: 13 bands (11→14 under BUG 52 alone, since BUG 52 never
+  fixed the actually-blocked ones →13 once the pinching row was dropped),
+  26 racks, `rackConflicts: 0` ("never put a column in a rack" — held),
+  `aisleBlocks` level-1 count: **0**. Min aisle width 10.5ft, one 25.25ft
+  gap where the dropped row used to be.
+- **true (Yes)**: 14 bands (row kept, not dropped), 28 racks,
+  `rackConflicts: 9` (columns genuinely landed in rack bodies — confirmed
+  live via the ColumnCheckPanel's own "9 columns in racks" + "Absorb −4"
+  cards), `aisleBlocks` level-1 count: **0**. Min aisle width still
+  10.5ft — no aisle anywhere below travelFt, either setting.
+- **Horizontal unaffected**: 14 racks, unchanged from BUG 52 (2,496
+  pallet capacity) — confirms the interior-walk revert cost nothing there,
+  since it never needed the extra intervention.
+- Auto-pick's own vertical total moved 2,400 → 2,304 (the No/default
+  case now correctly pays for zero-blocked-aisles instead of silently
+  shipping 3 that were never actually driveable) — horizontal still
+  wins either way.
+Live Playwright run against the real dev server confirms the toggle
+renders, reads correctly (rack counts match the unit-test numbers
+exactly: 26 vs 28), and the panel itself reports the expected state —
+"No column interference" for No, "9 columns in racks" with visible
+Absorb/Remove-section cards for Yes, no "Aisle blocked" warnings in
+either case. Zero console errors. Build clean, 330/330 tests pass
+(2 pre-existing hardcoded numbers updated to the new correct values with
+explanatory comments; 4 new tests lock in both toggle settings' rack
+counts, zero blocked aisles, zero-vs-nonzero rackConflicts, the
+travelFt floor across every generated aisle, and horizontal's
+unaffected capacity).
+
+Lesson:   Two lessons, both about not trusting a plausible-looking fix
+without executing it: (a) a "fix" that only ever gets verified by
+re-running the SAME deterministic function from a SLIGHTLY different
+starting point can recreate its own bug — real instrumentation, not
+hand-tracing, is what caught both failed attempts, and hand-tracing had
+already produced two confidently-wrong predictions before that. (b)
+Before extending a fix's scope, check whether the ORIGINAL fix already
+covers the case — BUG 52's widen formula was mathematically sufficient
+for the interior walk the whole time; the actual gap was a specific,
+narrow, previously-untouched transition (the far wall), and finding that
+took inspecting the REPORTED bug's own geometry directly rather than
+assuming "gapToNextColumn < travelFt" was the right signal just because
+it was the same threshold BUG 52 introduced.
+
+---
+
+## BUG 54 — cross-aisle left a wall gap, ignored columns, and reused aisleFt  (2026-09-22)
+
+Symptom:  Three independent problems in the ONE cross-aisle `rowSegments`
+splits a run into: (1) racks never reached the far wall — a symmetric
+floored half-split (`halfFt = (usable - crossAisleFt) / 2`, `bays =
+baysInRun(halfFt)`) left the same integer-bay rounding gap on BOTH the
+interior (before the cross-aisle) and the far end (before the wall), but
+only the far one is visible as "racks don't reach the wall." (2) The
+split position was chosen with zero column-awareness, so a column could
+land inside the cross-aisle itself — nothing ever checked. (3)
+`crossAisleFt` defaulted to `aisleFt` (the pick aisle between rack
+faces), not a per-forklift figure — reach/narrow-aisle trucks need far
+less room to just drive straight through (~8-10ft) than counterbalance
+needs to turn (~12-14ft), and a flat number either wasted floor space or
+was too narrow, depending which truck it happened to match.
+
+Chased:   First pass wired `crossAisleFt` per-forklift into
+`rules.mhe[...].crossAisleFt` and rewrote `rowSegments` around a
+"mathematical insight" that `runLenFt(n) = (upIn*(n+1) + n*beamIn)/12` is
+LINEAR in bay count `n`, so `runLenFt(n1) + runLenFt(n2)` depends only on
+`n1 + n2` — letting both segments sit wall-flush (fixing the wall gap)
+with the split chosen for free to dodge a column (PP's method: hand a
+bay from one section to the other "against the wall"). All 336 unit
+tests passed and the live Playwright run against the real dev server
+(both orientations, 240×120/25×30/reach) initially looked right too —
+until the verification script's OWN bug-hunt (recomputing the actual
+built gap between the two segments from their raw xFt/bays, independent
+of the code's self-reported `crossAisle.widthFt`) turned up a 0.25ft
+mismatch: `runLenFt(n1) + runLenFt(n2)` was actually 223.25ft for
+n1=10/n2=17, not the 223ft `runLenFt(27)` the "linearity" claim
+predicted. The insight was subtly wrong, not the implementation of it.
+
+Cause:    `runLenFt(n) = (upIn*(n+1) + n*beamIn)/12` is AFFINE, not
+linear through the origin — the `(n+1)` term means each segment carries
+its OWN pair of end uprights. Two independent segments totalling `n1+n2`
+bays need `(n1+1)+(n2+1) = n1+n2+2` uprights combined; one undivided run
+of the same `n1+n2` bays needs only `n1+n2+1`. Splitting always costs
+exactly one upright's width (`upIn/12` ft) MORE than the unsplit formula
+assumes, regardless of the split — a constant the first pass's capacity
+budget never reserved. Consequence: since `total` bays were chosen so
+`runLenFt(total) <= usable - crossAisleFt`, and the ACTUAL combined
+segment length is `runLenFt(total) + upIn/12`, the real gap could come
+out as low as `crossAisleFt - upIn/12 + slack` — i.e. up to a quarter
+foot UNDER the requested per-forklift floor whenever the integer-bay
+rounding slack was smaller than one upright's width. A real regression
+this fix would have introduced, caught only by an independent
+recomputation in the live verification, not by trusting the function's
+own self-reported number.
+
+Fix:      `src/generate/sizingLayout.js` — `rowSegments` now reserves
+the extra upright up front: `capacityFt = usable - crossAisleFt -
+upIn/12` (was `usable - crossAisleFt`), and the reported
+`aisleWidthFt = usable - runLenFt(total) - upIn/12` (was `usable -
+runLenFt(total)`) — both segments still wall-flush
+(`segments: [{xFt: x0, bays: n1}, {xFt: x1 - runLenFt(n2), bays: n2}]`),
+still free to split anywhere `n1+n2 = total` without cost, since the
+`upIn/12` constant depends only on the total, never the split — the
+column-avoidance search (`intervalHitsColumn` against real column lines
+computed via `axisFrame`'s new `runGridFt`/`runGridOffsetFt`, expanding
+outward bay-by-bay from the balanced split) needed no change once the
+budget was correct. `axisFrame` also gained `runGridFt`/`runGridOffsetFt`
+— the run axis's own column pitch/offset, X-centered/Y-flush exactly
+like `columnGridObject` draws, since `rowSegments` now needs to know the
+run axis's grid the same way `rowBands` already knows the stack axis's.
+`sizingSheetLayout` now defaults `crossAisleFt` from
+`rules.mhe[...].crossAisleFt ?? aisleFt` and consumes `rowSegments`'
+new per-segment `{xFt, bays}[]` shape (each segment computes its own
+`runLenFt` from its own bay count, not one shared value).
+`src/rules/defaults.js` — added `crossAisleFt: 9/8.5/13` to the
+reach/vna/counterbalance MHE profiles.
+
+Verify:   336/336 tests pass (34 in `sizingLayout.test.js`, including a
+new BUG 54 describe block: both orientations × reach/counterbalance,
+checking flush-to-both-walls, exactly one cross-aisle, built width >=
+the forklift's floor via real `columnGridObject`/`expandColumnGrid`
+geometry, and zero columns inside the aisle). Build clean. Live
+Playwright run against the real dev server, 240×120/25×30, forklift
+grid — all 4 combinations (horizontal/vertical × reach/counterbalance),
+16/16 checks green:
+- **Racks reach both walls**: span between first and last rack exactly
+  equals the usable run length (239.5ft horizontal, 119.5ft vertical) —
+  confirmed via each rack's ROTATION-AWARE bounding box (`rotation===90`
+  swaps stored width/height back around the object's true centre before
+  measuring), not raw pre-rotation x/y.
+- **Exactly one cross-aisle**: racks group into exactly 2 distinct
+  run-axis positions in every configuration.
+- **Width matches the forklift**: built gap >= 9ft (reach) / >= 13ft
+  (counterbalance) in every configuration — horizontal happened to land
+  the same 16.25ft built width for both (the 4ft difference between
+  9 and 13 is smaller than one bay's own pitch, so it didn't change the
+  bay count), vertical differed correctly (11.75ft reach vs 20ft
+  counterbalance).
+- **Zero columns in the cross-aisle**: checked with the exact overlap
+  formula the app itself uses (column half-width vs the real gap edges),
+  against real `column_grid` geometry read from the live store, in all 4
+  configurations.
+- Auto-pick totals moved again from BUG 53's own numbers — 2,496/2,304
+  (horizontal/vertical) → 2,592/2,496 — both risen for the same two
+  compounding reasons: reach's 9ft `crossAisleFt` is narrower than the
+  10.5ft `aisleFt` the cross-aisle used to borrow, and both segments now
+  reach their own wall instead of leaving a gap at the far one. Zero
+  console errors either orientation.
+
+Lesson:   A derived "mathematical insight" is a claim, not a fact, until
+it's checked against the actual formula it's about — `runLenFt` LOOKS
+linear at a glance (`a*n + b`, no obvious per-n coefficient on the
+constant), but the `(n+1)` inside it is exactly the kind of off-by-one
+that turns "linear" into "affine with a split-count-dependent constant."
+The bug survived a full green test suite AND an initially-green live
+Playwright run because the verification script's first version trusted
+the code's own self-reported `crossAisle.widthFt` instead of
+independently re-deriving the actual gap from the raw segment
+geometry — recomputing the same number two different ways (once from
+the formula being tested, once from its output) is what surfaced the
+0.25ft mismatch a same-formula check never could have. Recompute
+independently, don't just re-display.
+
+---
+
+## BUG 55 — flue sizing ignored the column standing in it  (2026-09-22)
+
+Symptom:  A back-to-back pair's flue is the physical gap between its two
+faces. `rowBands` used one fixed `flueIn` (the standard 6") for EVERY
+pair, including a pair whose flue was deliberately slid onto a column
+(S1's "seat it in the flue instead of eating a pick slot" move,
+established well before this bug). A real column is typically far wider
+than 6" — the default `colSizeIn` is 12" — so "seated in the flue" was
+never actually true: the rows would physically overlap the column. This
+was purely a generator-side gap; `checkColumns`' own flue-seated test
+(columnCheck.js) already only checks where a column's CENTRE lands, not
+whether its full footprint fits, so nothing downstream ever caught it.
+
+Chased:   None — the fix landed on the first design, but its numeric
+target needed pinning down. The user's own formula, `columnWidth +
+clearance (~4.8" per side, per rack-safety standard)`, read literally
+(4.8" added on EACH side) gives 12 + 2×4.8 = 21.6" for a 12" column —
+outside the user's own stated 16-17" verification band. Solving
+16 <= 12 + x <= 17 for the clearance term x gives x ∈ [4, 5], meaning
+the 4.8" figure is the TOTAL (both sides combined, ~2.4" each) — the
+literal "per side" in the sentence was describing the number's origin
+(a per-side rack-safety figure, doubled), not that 4.8" applies twice.
+12 + 4.8 = 16.8", inside the target band — confirmed against the user's
+own numbers before writing any code, not assumed.
+
+Cause:    `rowBands` computed one shared `midFt = (2*depthIn + flueIn)/12`
+for every `rack_double_row` band and stamped the same `flueIn` onto
+every placement in `sizingSheetLayout`'s output loop — there was no
+per-pair flue at all, so a pair could never be wider than standard
+regardless of what it was seating. `COL_HALF_FT`/`COL_WIDTH_FT` were
+also module-level constants hardcoded to a 12" column, decoupled from
+`brief.colSizeIn` (the same size `columnGridObject` actually draws) —
+harmless while every caller happened to use the 12" default, but wrong
+in principle for the flue formula, which explicitly needs the REAL
+column width.
+
+Fix:      `src/generate/sizingLayout.js` — `rowBands` gained a
+`colSizeIn = 12` parameter (threaded from `sizingSheetLayout`'s own
+`brief.colSizeIn`, the SAME value `columnGridObject` already reads, so
+the generator and the drawn column fixture always agree on column
+size). Its internal column-footprint math (`nextColumnNearEdge`,
+`columnsOverlapping`, the BUG 53 far-wall pinch check) now derives
+`colHalfFt`/`colWidthFt` from `colSizeIn` instead of the module's
+12"-assumed `COL_HALF_FT`/`COL_WIDTH_FT` (still used, unchanged, by
+`rowSegments` — a separate concern, untouched). A new
+`flueInForColumn()` returns `max(flueIn, colSizeIn +
+COLUMN_FLUE_CLEARANCE_IN)` (`COLUMN_FLUE_CLEARANCE_IN = 4.8`). STEP 3's
+double-row placement now computes a PER-PAIR `pairFlueIn`/`pairMidFt`
+instead of reusing the shared `midFt`:
+- S1's existing flue-slide (unchanged trigger — still only
+  `!allowColumnInRack`) now slides onto a flue sized to actually hold
+  the column (`flueStart` computed from the widened flue's own
+  half-width, so the column lands CENTRED in it, clearance on both
+  sides), not the standard one.
+- A NEW unconditional check ("applies in any strategy," per the ask) —
+  after `start` is set, if a column ends up inside THIS pair's flue
+  zone regardless of whether S1 deliberately put it there (S2 never
+  repositions a pair, so this only fires when a column coincidentally
+  lands in a pair's default position), the flue still widens to fit it.
+  A column landing in a FACE (not the flue) is untouched — that is the
+  accepted, existing "absorb as a bay-column" cost, not a flue-fit
+  question.
+- A pair with no column anywhere near its flue is completely untouched
+  — still the standard `flueIn`, never widens for nothing.
+Each band now carries its own `flueIn` (`bands.push({ ..., flueIn:
+pairFlueIn })`); `sizingSheetLayout`'s placement loop reads
+`band.flueIn ?? flueIn` per placement instead of stamping one shared
+value on every rack. The two wall-hit cleanup steps that used to
+compute `freed = midFt - singleFt` (converting a trailing pair back to
+a single) now use `last.depthFt - singleFt` — the pair's OWN depth,
+which can now be wider than the shared `midFt` if it absorbed a
+widened flue; using the stale shared value would have understated how
+much depth converting it back to a single actually frees.
+
+Verify:   341/341 tests pass (5 new in `sizingLayout.test.js`'s BUG 55
+block): S1's deliberate flue-slide widens to `12 + 4.8 = 16.8"` (inside
+16-17"), with the column's full footprint verified boundary-to-boundary
+against the flue's own [lo, hi) — not just its centre — confirming
+physical fit; a pair with no nearby column keeps the standard 6" flue;
+S2 (`allowColumnInRack=true`) still widens for a column that
+coincidentally lands in its flue, proving the fix is strategy-agnostic;
+S2 does NOT widen for a column in a face (regression guard against
+over-reaching into "absorb as bay-column" territory, which is a
+separate, unchanged decision); and a full-stack integration test
+(`sizingSheetLayout` → `placementToObject` → real `checkColumns`) where
+the RENDERED object's `flueSpaceIn`/`height` reflect the widened flue
+and `checkColumns` — reading that object completely independently —
+classifies the column as `flueSeated` (free) with zero `rackConflicts`
+for that pair. Build clean.
+
+Live Playwright run against the real dev server (40×50ft,
+gridXFt/gridYFt=20/20, reach truck, horizontal) confirms the SAME
+numbers end to end: the double-row pair renders at height 8.4ft
+(`(2×42+16.8)/12`), `flueSpaceIn=16.8`, and — independently recomputing
+the column's real-world footprint from `expandColumnGrid`'s own
+centreline convention (`cg.x`/`cg.y` ARE the first column's centre, not
+a bounding-box corner — caught a mistake in the verification script
+itself, which double-added a half-column offset on the first pass and
+wrongly reported a fit failure) — the column's [−5.50, −4.50]ft
+footprint sits entirely inside the pair's [−5.70, −4.30]ft flue, 0.2ft
+(2.4") clear on each side, exactly the designed clearance. Screenshot
+confirms visually: the flue renders visibly wider than the plain 6"
+flue on every other pair in the same layout, with the column's marker
+squares sitting right at its edges. Zero console errors. The two
+genuine `rackConflicts` in this layout both belong to the WALL single
+rows (no flue to seat a column in — unrelated, unaffected, expected).
+
+Lesson:   A "~X per side" figure in a spec sentence needs its target
+number checked against the OTHER number the same sentence gives before
+writing formula code — reading "4.8" per side" literally would have
+produced 21.6" against a stated 16-17" target, a contradiction that's
+easy to miss if the formula is coded first and the verification range
+is treated as a loose sanity check rather than the thing that pins the
+constant down. Second: when a per-item field (here, a pair's flue)
+that used to be shared/uniform across a collection becomes genuinely
+per-item, EVERY downstream read of the old shared variable needs an
+audit, not just the code path that motivated the change — the wall-hit
+cleanup's `freed = midFt - singleFt` was two screens away from STEP 3
+and easy to miss, but silently wrong (understating freed depth) the
+moment a widened pair became the one being converted back to a single.
+
+---
+
+## BUG 56 — flue-seating widened without recentring, leaving a column half in the rack  (2026-09-22)
+
+Symptom:  A column seated in a widened flue rendered as a small square
+sitting at the flue's edge rather than filling most of it — "floating,"
+not snug. Diagnosed first (report-only turn, no fix) against
+240×120/25×30/reach: horizontal's every widened pair had its column
+exactly at the flue's near edge, footprint `[89.5,90.5]` against a flue
+of `[90.0,91.4]` — 6 inches of the column still inside face 1, a real
+collision, not just cosmetic off-centring. Vertical's widened pairs, same
+building, were all perfectly centred (diff 0). Root cause traced to BUG
+55's own "applies in any strategy" fallback: it widened `pairFlueIn` in
+place without ever moving `start`, so whenever S1's own centring slide
+declined (because the ideal centred position needed to start earlier
+than the aisle allows), the fallback still widened the flue anyway —
+just in the wrong direction, growing `flueHi` outward from a `start`
+that was never repositioned to begin with.
+
+Chased:   None on the fix's shape — the design (clamp `start` to the
+closest reachable point to ideal, then verify actual containment before
+accepting) was right from the first pass. What needed chasing was two of
+the new tests: (1) BUG 55's own "S2 widens for a coincidental column"
+test (gridOffsetFt=19.2, depthIn=42/flueIn=6→16.8) turned out to encode
+the OLD bug as an expected result — once containment is actually
+verified, that exact scenario is the BUG 56 collision case itself, and
+correctly now returns "not seated." Replaced it with a from-scratch
+search confirming NO coincidental-S2 case is even mathematically
+possible at these specific numbers: the detection window (a column
+inside the narrow standard 6" flue) and the achievable full-containment
+window for a 16.8" flue never overlap when `neededFlueIn >= 2×flueIn` —
+proven algebraically (colY must be `< start+4.0` to be detected as
+"coincidentally in the standard flue" but `>= start+4.2` to be seatable
+without clamping past the aisle boundary; those never overlap regardless
+of `minStart`). Rebuilt the test with `flueIn: 10` (narrows the gap
+enough for a genuine ~1.6in window to exist) and searched for a real
+`gridOffsetFt` inside it rather than guessing one by hand. (2) The
+240×120/25×30 integration test asserted `widened.length > 0` for BOTH
+orientations — after the fix, horizontal legitimately produces ZERO
+widened pairs for this exact geometry (every one of them hits the
+"aisle makes full containment impossible" case), which is the fix
+working as intended, not a broken test; relaxed to expect zero for
+horizontal and nonzero for vertical specifically, with a combined
+"the invariant was actually exercised" assertion so the test can't pass
+vacuously.
+
+Cause:    `rowBands`'s STEP 3 (`src/generate/sizingLayout.js`) had two
+separate flue-widening attempts sharing no logic: S1's slide computed a
+correctly-centred `flueStart` but only applied it inside a hard
+`flueStart >= start` gate — reasonable on its own (never shrink the
+aisle), but when it failed, the SECOND ("any strategy") check ran
+against the untouched `start`/standard `pairFlueIn`, found the same
+column sitting in the narrow standard flue zone, and widened anyway —
+`flueLo` pinned wherever `start` already was, `flueHi` extended forward
+to cover the required width, with NOTHING checking whether the column's
+own (fixed) footprint actually landed inside that shifted window. A
+column near the AISLE-side edge of the standard flue zone — exactly
+where "the ideal centred slide needs to start earlier than the aisle
+allows" naturally puts it — is the worst case: its near edge sits before
+`flueLo`, genuinely overlapping face 1.
+
+Fix:      `src/generate/sizingLayout.js` — a new `seatColumnInFlue(colY,
+minStart)` helper replaces both ad hoc widening attempts. It computes
+the flue this column actually needs (`flueInForColumn()`, unchanged from
+BUG 55), the ideal centred `start` for it, then clamps that to
+`[minStart, bottomY - neededMidFt]` — the closest reachable point to
+ideal the aisle boundary and the far wall actually allow — and only
+THEN checks whether the column's real footprint (`colY ± colHalfFt`)
+lands fully inside the resulting flue band. Returns `null`, not a
+partial fit, when even the clamped position can't fully contain it.
+STEP 3 now calls this once for S1 (gated on `!allowColumnInRack`,
+unchanged trigger) and, only if that didn't seat something, once more
+for the "any strategy" fallback against whatever column (if any) sits in
+the pair's still-standard flue zone — same helper, same all-or-nothing
+rule, both paths. A column that can't be fully seated falls through
+untouched to the pair's plain, standard-flue placement — exactly the
+pre-existing, accepted "may land in a face, costs pick positions"
+bay-column path, never a widened-but-broken flue.
+
+Verify:   345/345 tests pass — `sizingLayout.test.js` gained a BUG 56
+block: (1) a clamped-but-fully-achievable case (ideal centring 0.1ft
+short of the aisle) seats with a small, minimal, verified-contained
+offset; (2) the genuine BUG 56 reproduction (ideal centring 0.5ft short)
+confirms the flue stays standard and does NOT widen — no half-seat; (3)
+a sweep across a full 30ft column pitch at 0.1ft resolution asserts that
+every widened pair, for every offset, either fully contains its column
+or doesn't widen — never a partial straddle; (4) the 240×120/25×30/reach
+benchmark, both orientations, with the invariant checked against real
+`sizingSheetLayout` → `placementToObject` → `rackFootprint` →
+`expandColumnGrid` geometry (not a hand re-derivation). Build clean.
+
+Live Playwright run against the real dev server, 240×120/25×30/reach,
+both orientations — independently recomputing column-centre-vs-flue-
+centre from the live store's own objects (not trusting any self-reported
+field): horizontal now reports **0 widened pairs** (was 2, both broken,
+pre-fix) — every column that used to produce a collision now correctly
+falls through to the standard flue/bay-column path, screenshot confirms
+a normal thin flue line, no orange band, "20 columns in racks" count
+unchanged (that's the wall-row conflicts, always unrelated to this
+fix). Vertical: 6 widened pairs, all `diffIn=0.00`, all
+`fullyContained=true` — completely unchanged from before this fix,
+confirming it didn't regress the case that already worked. Zero console
+errors either orientation. Total pallet capacity unchanged both
+orientations (2,592 / 2,496) — whether a flue widens or not never
+affects bay/pallet count, only clearance.
+
+Lesson:   "Applies in any strategy" (BUG 55's own framing) does not mean
+"widen unconditionally" — a physical constraint (does the column
+actually fit) has to be checked with the SAME rigor every time it's
+invoked, not just on the path that happened to be built first and
+tested hardest. The tell that this was under-verified: BUG 55's own test
+suite was green, and its live Playwright check only looked at whether
+`flueSpaceIn` and `checkColumns`' loose centre-tolerance classification
+looked right — never independently recomputed the column's own footprint
+against the flue's real boundaries. A field being the "correct number"
+(16.8") says nothing about whether it's positioned somewhere that number
+actually applies to. Second: once a fix makes a previously-accepted
+result properly conditional (here: only seat a column if it truly fits,
+which for this specific depthIn/flueIn ratio simply never triggers a
+whole class of column positions), the tests written for the PRE-fix
+behavior can look like regressions when they're actually the fix working
+— the fix here didn't break horizontal's widening, it revealed
+horizontal was never able to correctly widen for this building at all,
+and 0 is the right answer.
+
+---
+
+## BUG 57 — the standard-flue fallback left a column straddling the face/flue boundary  (2026-09-22)
+
+Symptom:  User re-measured a BUG 56 "no render bug" report against actual
+pixels and confirmed one of the two findings was real: horizontal
+(240×120/25×30/reach) drew a column sitting exactly ON the standard
+flue's line — 6" inside rack face 1, 6" inside the 6" standard flue.
+BUG 56 correctly refused to WIDEN the flue for this column (the aisle
+boundary made full containment impossible), but left the pair at its
+plain, un-slid position — where the SAME column, positioned near the
+face/flue transition, ended up straddling it. Confirmed with a pixel
+scanline of the real screenshot: two adjacent tinted runs (5.94" in the
+face, 5.97" in the flue) summing to 11.91" — one 12" column, split
+across the boundary.
+
+Chased:   The re-measurement itself took two wrong turns before landing
+on real numbers, both in the verification script, not the app — worth
+recording since they produced confidently-wrong readings at each step:
+(1) `stage.toCanvas()` (Konva's own compositing) gave inconsistent
+results between otherwise-identical runs — switched to decoding the
+actual saved screenshot PNG (`pngjs`) instead, which is what a user
+actually sees. (2) The pixel scanline was initially oriented ALONG the
+flue instead of ACROSS it (a `depthAxisIsY` sign flip), and the target
+column was picked at a building-edge grid line where dimension-arrow/
+wall-stroke chrome overlapped the scanline — both gave uniform, useless
+colour reads that looked like real data until checked against a second
+independent method (Konva's own `getClientRect`, then a hand-verified
+close-up screenshot) that disagreed with them.
+
+Cause:    STEP 3 of `rowBands` (`src/generate/sizingLayout.js`) had two
+outcomes when a column overlapped a pair: seat it in a (possibly
+widened) flue, or — when `seatColumnInFlue` returns null (BUG 56) —
+leave the pair exactly where it was and move on. That second path never
+asked whether the column, at that unmoved position, was actually fully
+inside a face. A column near the tiny 6" standard flue's own boundary
+routinely wasn't — the fallback that was supposed to mean "give up on
+the flue, accept it as an ordinary bay-column" silently produced a
+THIRD, un-handled outcome: neither flue-seated nor cleanly bayed.
+
+Fix:      `src/generate/sizingLayout.js` — a new `seatColumnInFace(colY,
+minStart)` helper, structurally the mirror of `seatColumnInFlue`: for
+each of the pair's two faces, compute the `start` that would CENTRE the
+column in that face, clamp it to `[minStart, bottomY - midFt]` (the
+same aisle/wall bounds every other seat-attempt respects, using the
+STANDARD, un-widened `midFt` since the flue isn't being touched here),
+and verify the column's full footprint actually lands inside that face
+before accepting it — same all-or-nothing rule as BUG 56, just applied
+to a face instead of a flue. Tries both faces and keeps whichever needs
+the smaller shift off `minStart`. Wired into STEP 3's existing
+"any-strategy" fallback: when `seatColumnInFlue` returns null for a
+column touching the flue zone, `seatColumnInFace` is tried before
+giving up — if it succeeds, `start` moves (still standard `flueIn`,
+never widened); if it also fails (documented as a residual, expected-
+to-be-rare case — a face only needs `colWidthFt` of clearance vs a
+flue's own width plus clearance both sides, so this almost always has
+more room than the flue attempt did), the column is left exactly where
+BUG 55/56 already put it.
+
+Verify:   346/346 tests pass. Two new tests directly reproduce BUG 57's
+own numbers: the exact `colY=19.2` collision case (BUG 56's own
+"impossible" reproduction) now shows the pair SHIFTED (yFt 15.5 → 17.45)
+so the column lands fully inside face 1, clear of the flue zone.
+A full-column-pitch sweep (`off` 0→30 by 0.1, matching BUG 56's own
+sweep test) asserts every column whose FULL footprint lies within a
+pair's own span (front face through back face — explicitly excluding
+columns that merely graze a pair's leading edge while mostly still
+sitting in the open aisle, a different, already-correct case owned by
+STEP 2's travelFt accessibility check, not this invariant) ends up
+fully in face 1, the flue, or face 2 — never straddling. That
+exclusion was itself found the hard way: the sweep's first two drafts
+both flagged aisle-grazing columns as failures, which they were never
+meant to satisfy — fixed by requiring the column's FULL footprint
+(not just its centre, which still let a still-half-in-the-aisle column
+through) to lie within the pair's total span before applying the
+invariant at all.
+
+For the real 240×120/25×30/reach benchmark, both orientations, every
+column overlapping a rack pair was classified (FACE1 / FLUE / FACE2 /
+STRADDLE) against real `sizingSheetLayout` → `placementToObject` →
+`rackFootprint` geometry:
+- **Horizontal**: 10/10 columns → `FACE1 (bay-column)`. **0 straddles**
+  (was 10/10 straddling before this fix — the exact case the user's
+  pixel measurement confirmed).
+- **Vertical**: 15/15 columns → `FLUE (free)`. **0 straddles** —
+  unchanged from BUG 56, confirming this fix didn't regress the
+  already-working case.
+
+Live Playwright run against the real dev server reproduces the
+identical classification (10/10 FACE1 horizontal, 15/15 FLUE vertical,
+0 straddles either orientation) reading straight from the live store's
+own objects. The RightPanel's own Column Check list now shows "Double
+Row · column N" entries for horizontal (columns genuinely absorbed into
+the double-row pairs) where it previously only had "Rack Row · column
+N" entries (the unrelated wall-row conflicts) — a real, visible
+behavioural change: those 10 columns moved from an undefined
+half-straddle into the pre-existing, correctly-counted bay-column cost.
+Zero console errors either orientation.
+
+Lesson:   "Give up and leave it as-is" is not a neutral fallback if the
+thing being given up on (flue-seating) was the ONLY placement decision
+being made — the code had exactly one repositioning tool and, when it
+declined to use it, implicitly assumed the UNCHANGED position was
+automatically fine. It wasn't; it just hadn't been checked. Whenever a
+"try X, else leave unchanged" pattern governs the only degree of
+freedom that affects an invariant, the "else" branch needs its own
+verification, not an assumption that not-X implies safe-by-default.
+Second, recorded again because it recurred within the same bug: a
+sweep test's own filter for "which cases does this invariant even apply
+to" is exactly the kind of thing that quietly narrows or widens scope
+without the test author noticing — the first two drafts of this test
+correctly found real code paths, then it took inspecting the ACTUAL
+failing geometry (not just seeing `expected true, got false`) to
+recognise they were flagging a different, already-correct mechanism
+rather than blindly loosening the assertion until it passed.
+
+---
+
+## BUG 58 — canvas2's flue rendered as a filled band; the SVG reference draws a thin centred line  (2026-09-22)
+
+Symptom:  Not a bug in the geometry — a rendering divergence between the
+two engines. canvas2's `rack_double_row` painted the flue gap as a
+solid-filled orange RECT spanning the gap's own real dimension
+(`flueSpaceIn`, 6" standard or up to 16.8" widened per BUG 55). The SVG
+reference (`ShapeGeometry.jsx`'s own `rack_double_row` case, the
+UI/visual source of truth for this symbol) never fills the gap at all —
+it draws the two row rects with the real gap left EMPTY (background
+shows through) and marks it with one thin, clamped-width LINE centred
+in the gap. A filled band reads as a third row rather than a gap; at
+high zoom (BUG 55/56/57's own verification screenshots) this is what
+made a correctly-sized, correctly-centred flue-seated column look like
+it was floating in an oversized bar, even though the underlying
+geometry (confirmed exhaustively across BUGs 55–57) was correct the
+whole time.
+
+Chased:   None on the geometry — this entry is purely about matching
+canvas2's DRAWING to the SVG reference's already-established one; BUGs
+55–57 had already independently, repeatedly verified (pixel-precise,
+multiple methods) that the flue's real width/position/centring were
+correct. The only open question was which mechanism to use for the
+line's clamp width, since the SVG reference's `flueW = max(dHair*1.4,
+min(flueH, dHair*4))` divides its hairline constant by the live `zoom`
+(`dHair = 1.2/zoom`) to stay screen-constant through SVG's own
+zoom-via-viewBox transform — but canvas2's `rackDrawOps` is explicitly
+a pure, zoom-agnostic function (Scene.jsx's own comment: "Rack ops are
+derived once per object and carry no zoom, so panning and zooming
+rebuild nothing here"), so there is no `zoom` value available to divide
+by at this layer. Resolved by recognising `RACK_LINE.hair` (canvas2's
+own existing hairline constant, `1.2`, numerically identical to the
+SVG's `dHair` at zoom=1) is used with Konva's `strokeScaleEnabled={false}`
+— the SAME "stays a constant number of screen pixels regardless of
+zoom" contract SVG's `/zoom` division achieves by a different
+mechanism — so no zoom input is needed here at all; the port is a
+direct value-for-value translation, not a re-derivation. Checked
+whether the `min(flueH, hair*4)` clamp bound would behave sensibly
+given `flueH` is a WORLD-px quantity being compared against a
+screen-px-constant one: for every realistic `flueSpaceIn` (>= 6"), `flueH`
+in world-px is always far larger than `hair*4` (4.8), so that branch of
+the clamp is a no-op in practice for real racks and only engages as a
+safety net for a degenerate near-zero flue — confirmed this matches the
+SVG reference's own steady-state behaviour (its clamp resolves to the
+same constant ~1.68–4.8 screen-px range for realistic flues too, just
+by the zoom-cancelling `/zoom` mechanism instead).
+
+Cause:    `rackDoubleRowOps` (`src/render/rackOps.js`) had a THIRD op in
+its return list beyond the two row rects: `{ op: 'rect', x, y: y+rowH,
+w, h: flueH, fill: RACK_PALETTE.flue }` — a filled rectangle sized to
+the flue's own real (possibly BUG-55-widened) dimension. Nothing else
+in the pipeline (bay highlights, dividers, hit-testing) assumed a
+filled flue rect existed, so removing it required no other changes.
+
+Fix:      `src/render/rackOps.js` — `rackDoubleRowOps` now emits the
+two row rects (unchanged) plus a single `path` op: a horizontal line
+from `(x, flueY)` to `(x+w, flueY)` where `flueY = y + rowH + flueH/2`
+(the exact centre of the real, unfilled gap — unchanged math from
+before, just no longer used to size a fill), `stroke:
+RACK_PALETTE.flue`, `strokeWidth: flueW` where `flueW = max(RACK_LINE.hair
+* 1.4, min(flueH, RACK_LINE.hair * 4))` — the same formula as the SVG
+reference, translated as described above. The gap itself is left with
+no fill — the two row rects' own edges bound it, and whatever sits
+behind (page background, or a column drawn on top by its own separate
+`column_grid` object, unaffected by this change) shows through.
+
+Verify:   347/347 tests pass. `src/__test__/rackOps.test.js`'s
+`rack_double_row draw-ops` block — the tests that directly encoded the
+OLD filled-rect contract (`ops.find(o => o.op === 'rect' && o.fill ===
+RACK_PALETTE.flue)`, checking `.h`/`.y` as rect fields) — updated to
+assert the NEW contract instead: the flue is a `path` with `stroke ===
+RACK_PALETTE.flue` (never a `fill`-bearing rect of that colour
+anywhere in the ops list), its line sits at the exact vertical centre
+of the real gap between the two row rects (derived independently from
+the bands' own `y`/`h`, not from a shared internal variable), its
+`strokeWidth` is bounded within `[hair*1.4, hair*4]` and never exceeds
+the real gap height, and — unchanged from before, still passing as-is
+— dividers still never cross the gap, bay count and op count stay
+correct, and the degenerate-flue fallback to a bare box is untouched.
+A new test drives a custom `flueSpaceIn: 12` and confirms the LINE
+re-centres on the new (bigger, still-unfilled) gap rather than
+checking a fill-rect height, since the line's own width is designed to
+stay clamped-thin regardless of how wide the real flue gets (matching
+the SVG reference's own behaviour, not a canvas2-specific choice).
+
+Live Playwright run against the real dev server, 240×120/25×30/reach:
+close-up (6× zoom) on a BUG-55-widened vertical pair shows a thin
+orange line running through the centre of a visibly OPEN (background-
+coloured) gap, with the flue-seated column's own square reading
+clearly against it — the "floating in a fat bar" look from the BUG
+55/56/57 screenshots is gone. Whole-building views at normal zoom for
+both orientations show clean thin lines at every double-row band
+(horizontal's 5 middle bands, vertical's every row) with no visual
+regression — dividers, bay highlights, dimension labels (which already
+independently compute `flueH`/`rowH` the same way, untouched by this
+change) all still line up correctly. Zero console errors either
+orientation.
+
+Lesson:   A geometry bug and a rendering-convention mismatch can
+produce the exact same visual symptom ("the column looks wrong
+relative to the flue"), and only PIXEL measurement against the correct
+reference tells them apart — BUGs 55–57's repeated, independent,
+pixel-precise verification that the WIDTH/POSITION/CENTRING numbers
+were all correct is what made it possible to recognise, once the user
+pointed at the SVG reference specifically, that the remaining gap was
+purely "canvas2 draws this differently from the app's own established
+visual language" rather than another round of geometry chasing. Second:
+porting a screen-constant clamp between two rendering engines needs
+the MECHANISM identified, not just the formula copied literally — SVG's
+`/zoom` and Konva's `strokeScaleEnabled={false}` are two different ways
+of saying "this stays N screen pixels wide," and mixing them (e.g.
+literally copying `dHair = 1.2/zoom` into a zoom-agnostic ops function)
+would have either required threading zoom through a layer explicitly
+designed not to carry it, or silently produced the wrong screen size at
+every zoom except 1.
+
+---
+
+## BUG 59 — the double-row flue carried a rendered line and a baked-in +4.8" clearance the dealer never asked for  (2026-09-23)
+
+Symptom:  Two separate product asks, not a bug in the geometry: (1) BUG
+58's ported hairline still reads as an unwanted visual marker in the
+flue gap — the request was to leave the gap completely bare, no line
+at all; (2) `flueInForColumn` (BUG 55) added a fixed +4.8" clearance
+on top of a seated column's own width, which nobody had asked for —
+the dealer's own flue-spacing property panel already exists for that
+choice, so the generator baking in a number of its own was wrong. The
+default (unwidened) flue was also bumped 6" → 9" as part of the same
+change.
+
+Chased:   Nothing — both changes were explicit, unambiguous product
+asks, not a diagnosis. The only real investigation was in verifying
+the KNOCK-ON effects: removing the +4.8" clearance means a widened
+flue is now sized to EXACTLY the seated column's own width
+(`max(flueIn, colSizeIn)`, no added margin), which collapses the
+"clamped-to-the-aisle-boundary but still fully contains the column"
+middle ground BUG 56 depended on — when `colSizeIn > flueIn`
+(widening actually happens), `neededFlueFt` and `colWidthFt` come out
+numerically EQUAL, so there is zero slack left to clamp into. Swept
+`gridOffsetFt` in 0.01ft steps around the exact boundary for this
+depthIn/aisleFt combo and confirmed live: seating flips from "seats,
+dead-centred" to "declines, falls through to BUG 57's face-seat
+fallback" at a single knife-edge point (19.5ft), with no intermediate
+clamped case surviving on either side — this is a real, correct
+consequence of removing the clearance, not a regression. The clamp
+mechanism itself isn't dead: it still fires normally whenever a column
+is genuinely SMALLER than the flue it lands in (verified with a 6"
+column against the 9" standard flue), since that case still has real
+slack. Also had to re-verify every test/fixture that hardcoded the OLD
+6" default or 16.8"/4.8" numbers — several unrelated tests
+(`pickOrientation`'s horizontal/vertical capacity totals, a "fills the
+middle" row-type assertion, a BUG 53 allowColumnInRack row-count
+assertion) broke purely because the wider 9" standard flue shifted how
+many rows/pairs fit in the SAME building, not because any decision
+logic changed; re-derived each with real code execution rather than
+adjusting numbers by guesswork.
+
+Cause:    `src/render/rackOps.js`'s `rackDoubleRowOps` emitted a third
+op beyond the two row rects — `{ op: 'path', ..., stroke:
+RACK_PALETTE.flue }`, BUG 58's ported hairline — with no way to
+suppress it. `src/generate/sizingLayout.js`'s `flueInForColumn()` was
+`Math.max(flueIn, colSizeIn + COLUMN_FLUE_CLEARANCE_IN)` with
+`COLUMN_FLUE_CLEARANCE_IN = 4.8`; `FLUE_IN` (the standard/unwidened
+default) was `6` in both `sizingLayout.js` and `traceGenerate.js`, and
+the same `6` fallback (`obj.flueSpaceIn || 6`) was duplicated across
+every consumer that reads a rack's own flue field when it's unset:
+`DimensionLabels.jsx` (×2), `shapes.jsx`'s bay-highlight positioning,
+`RackRowPanelCore.jsx`'s properties-panel default, the two
+library-placement paths (`WarehouseObjectPicker.jsx`,
+`FloatingToolbar.jsx`), `columnCheck.js`'s flue-vs-face classification,
+and `rules/defaults.js`'s `selective.flueIn`.
+
+Fix:      `rackDoubleRowOps` now returns only the two row rects plus
+dividers — no third op, no line, no fill; the gap is left completely
+bare, background showing through, at whatever its real `flueH` is.
+`flueInForColumn` is now `Math.max(flueIn, colSizeIn)` —
+`COLUMN_FLUE_CLEARANCE_IN` deleted entirely, its explanatory comment
+block removed. Every `6`-default site listed above changed to `9`
+(`FLUE_IN` in both generator files; the `|| 6` / `?? 6` fallbacks in
+`DimensionLabels.jsx`, `shapes.jsx`, `RackRowPanelCore.jsx`,
+`WarehouseObjectPicker.jsx`, `FloatingToolbar.jsx`, `columnCheck.js`;
+`rules/defaults.js`'s `selective.flueIn`). The flue-spacing properties
+panel (`RackRowPanelCore.jsx`, already existed pre-BUG-59) needed no
+new UI — its existing 6"/9"/12" preset buttons already cover the new
+9" default and the 12" column-fit value; only its own `|| 6` fallback
+needed the same `9` update. `DimensionLabels.jsx`'s flue-dimension TEXT
+PILL (a distinct, pre-existing feature — the numeric "9\" flue" label
+shown at high zoom, unrelated to BUG 58's removed hairline) was left
+alone; the request was specifically to remove the LINE, not the
+dimension-label system every other measurement on the drawing also
+uses.
+
+Verify:   345/345 tests pass, build clean. `rackOps.test.js`'s
+`rack_double_row draw-ops` block inverted from BUG 58's
+line-exists assertions to line-does-NOT-exist ones (no `path` or
+`rect` anywhere in the ops list carries `RACK_PALETTE.flue`, op count
+drops from 4 to 3). `sizingLayout.test.js`'s BUG 55/56/57 blocks
+rewritten with real numbers from live code execution: a 12" column
+seated in the flue now widens it to exactly 12" (not 16.8"); the
+zero-slack knife-edge (19.5ft boundary, described above) has its own
+dedicated test; a small-column (6") clamp-still-fits case preserves
+coverage of the clamp mechanism itself; the 240×120/25×30/reach
+both-orientation integration test now asserts the decision WALK is
+unchanged from the pre-BUG-59 known-good run — still 0 widened
+pairs/horizontal, still exactly 6 widened pairs/vertical, still 15
+flue-seated columns/vertical via `checkColumns` independently, zero
+rack conflicts on any widened pair, zero straddles — only the WIDTH
+each widened pair widens to changed (12" flush fit, not 16.8" with
+clearance). Live Playwright run against the real dev server,
+240×120/50×54/reach double-deep: generated 22 double-row objects with
+`flueSpaceIn` either `9` (standard) or `12` (widened to the 12"
+default column, confirmed via the store directly) — zero console
+errors. Zoomed 14 steps into a flue gap between two rack bands:
+screenshot shows a plain white gap with no line, no fill, nothing
+drawn in it at all. Selected a widened (12") and a standard (9")
+object in turn via the store and confirmed the properties panel's Flue
+row highlights the correct preset button (12" / 9" respectively) for
+each. Confirmed via the SAME live run that the placement algorithm
+still runs correctly end to end under the new threshold — no straddle,
+every aisle at or above the forklift minimum, both orientations.
+
+Lesson:   A generator constant that bakes in a safety margin (BUG 55's
++4.8") can be structurally invisible until the margin itself is
+removed — the OLD rule had enough slack that "ideal position
+unreachable, but a nearby clamped one still works" was common; the NEW
+rule (zero added clearance) makes that middle ground provably empty
+whenever widening actually occurs, because the flue width and the
+column width become the same number by construction. When a fix
+changes a SHARED default (6" → 9" flue) rather than just a formula,
+every fixture-hardcoded downstream number (row counts, orientation
+picks, capacity totals) that happened to depend on the OLD default is
+fair game to break — re-derive each one with real code execution
+against the new default rather than assuming the old numbers still
+apply with a small offset, since capacity math is rarely linear in the
+constant that changed.
+
+---
+
+## BUG 60 — allowColumnInRack never dropped an interior row; removed the toggle, added blocked-face X marks instead  (2026-09-23)
+
+Symptom:  With "Allow columns inside racks" set to **No**, the horizontal
+layout (240×120/25×30/reach) still placed 30 columns inside rack bodies
+(bay-columns) — contradicting the panel's own copy: "A too-close column
+drops that row instead — aisle opens up, no positions lost."
+
+Chased:   Confirmed `allowColumnInRack` reaches `rowBands` identically for
+both orientations (`axisFrame` only swaps which grid pitch feeds the
+depth axis) — not a wiring bug. Traced one conflict directly: a column at
+Y=60ft overlapping pair `[58.25, 66]`'s full span DID trigger S1's
+`seatColumnInFlue(60, afterAisle)`, which correctly declined (the column
+sits nowhere near that pair's flue at `[61.75, 62.5]`; no reachable slide
+could seat it there without shrinking the aisle). After declining, there
+was no further fallback for a column that's just sitting in the *middle*
+of a face — the pair was pushed at its default position and the column
+stayed exactly where it naturally landed. Confirmed the ONLY actual
+"drop the row" implementation anywhere in the file was the far-wall
+pinch-loop (BUG 53) — a narrow mechanism for a column threatening AISLE
+accessibility near the far wall, unrelated to a column sitting inside a
+face mid-building. Vertical's own existing test (`allowColumnInRack:
+false → rackConflicts: 0`) only ever passed because THAT geometry's
+specific pitch/offset numbers happened to put every interacting column
+within reach of a flue (`flueSeated: 15`) — it never actually exercised
+the "column stuck in a face" case the horizontal report was hitting. So
+the toggle's real, existing effect was never "drop the row" in general —
+only (1) whether S1's flue-slide optimisation is attempted at all, and
+(2) the far-wall pinch-loop's drop/absorb choice. The GeneratePanel's
+copy overpromised for the general interior case.
+
+Given that, the fix requested (and applied) was a simplification, not a
+wiring repair: remove the toggle and the branching entirely, always run
+the optimisation, always absorb rather than drop, and give the dealer a
+visual (an X on the blocked pick face) instead of a preference they'd
+have to guess the actual scope of.
+
+Cause:    No wiring defect — `sizingLayout.js`'s STEP 3 gated the S1
+flue-slide behind `!allowColumnInRack` (`if (overlap.length &&
+!allowColumnInRack)`), and the far-wall pinch-loop (BUG 53) branched
+between "shift to absorb" (`allowColumnInRack === true`) and "drop the
+row" (`false`) — but a column landing squarely inside a face, never
+touching a flue zone at all, was never covered by either branch; it was
+always silently accepted as a bay-column in every prior state of the
+code, `allowColumnInRack` value notwithstanding. Separately, canvas2 had
+no rendering at all for `checkColumns`' own `rackConflicts` — only
+`aisleBlocks` (via `ColumnClearanceLabels`) made it from
+`useColumnCheck`'s result into `Overlays`; the SVG reference's own
+`ColumnCheckOverlay.jsx` (a hatch-fill mark, not an X) was never ported
+to canvas2 at all, so a bay-column has been visually invisible on the
+canvas since canvas2 shipped.
+
+Fix:      **Toggle removed.** `src/components/Generate/GeneratePanel.jsx`
+— deleted the `allowColumnInRack` state, its UI block (the Yes/No
+buttons and the two-line explanation), and its key in the
+`generateAndPlaceBatched` payload. **Generator simplified.**
+`src/generate/sizingLayout.js` — `rowBands` no longer takes an
+`allowColumnInRack` parameter; STEP 3's flue-slide attempt
+(`seatColumnInFlue`) now always runs unconditionally (previously gated
+behind `!allowColumnInRack`) — a column near a flue is now MORE likely
+to seat for free than before, in every orientation, unconditionally. The
+far-wall pinch-loop (BUG 53) always takes the absorb/shift branch now —
+the drop (`bands.pop()`) branch is gone; a pinching column always shifts
+the last row forward to clear the aisle rather than being offered a
+choice. `sizingSheetLayout` no longer destructures or threads
+`allowColumnInRack` through to `rowBands`. **Blocked-face marking
+added.** New file `src/canvas2/BlockedFaceMarks.jsx` — canvas2's
+analogue of the SVG reference's `ColumnCheckOverlay.jsx` (rack-column
+kind only; aisle-blocked marks stay `ColumnClearanceLabels`' own
+arrow+label territory, unchanged), drawing a plain X (two diagonal
+`Line`s, `stroke: '#C0392B'`, the same conflict-red the SVG reference
+reserves for this) across each `rackConflicts[].overlap` box — the exact
+column∩rack-face intersection `checkColumns` already computes, the same
+box the old engine's hatch-fill mark used. Wired into
+`src/canvas2/Overlays.jsx` (new `rackConflicts` prop, gated on the
+existing `showMarks` toggle alongside `ColumnClearanceLabels`) and
+`src/canvas2/Canvas2.jsx` (passes `columnCheckResult.rackConflicts`
+through — the same derived `useColumnCheck` result `aisleBlocks` and
+`columns` already came from, no second geometry pass).
+
+Verify:   344/344 tests pass (one net fewer than before — BUG 53's old
+two-variant `allowColumnInRack: true/false` test collapsed into one
+unified test, since there's only one behaviour now), build clean.
+`sizingLayout.test.js`'s BUG 53 describe block rewritten: a single test
+now confirms 240×120/25×30/reach vertical keeps all 26 racks with ZERO
+blocked aisles AND zero rack conflicts (not because a row dropped —
+`flueSeated.length > 0` confirms the pinching column actually resolved
+via the now-unconditional flue-slide instead). Every stray
+`allowColumnInRack: true/false` prop left over in the BUG 55/56/57/59
+flue-sizing tests removed (silently ignored either way once the
+parameter is gone — confirmed harmless before removing them by running
+the full suite with only the production code changed: exactly one
+failure, the BUG 53 toggle-variant test, everything else already green).
+Live Playwright run against the real dev server, 240×120/25×30/reach:
+confirmed "ALLOW COLUMNS INSIDE RACKS" no longer appears anywhere in the
+Generate panel's text. Horizontal orientation + a matching column_grid
+object (the generator itself has never placed one — that's a separate,
+pre-existing structural object the dealer places; `columnGridObject` was
+added directly via the store for this check) — RightPanel's Column
+Check reported "38 columns in racks," "If absorbed −152 / If removed
+−304," confirming capacity still subtracts blocked positions exactly as
+before. Zoomed into one flagged rack: a clean red X renders precisely
+across the column∩rack-face overlap box, sitting under the column_grid's
+own marker square. Zero console errors throughout.
+
+Lesson:   A toggle whose UI copy makes a blanket promise ("drops that
+row instead") but whose implementation only ever covered one narrow
+sub-case (aisle-blocking pinches, not general face-embedded columns) is
+worse than no toggle at all — it tells the dealer a guarantee holds
+everywhere when it only ever held in the one scenario it was built for.
+When a customer preference turns out to only have ever done less than
+its own description claimed, the fix isn't necessarily to build out the
+missing cases (dropping an interior row over ONE bad bay position among
+dozens of good ones would cost real capacity for a marginal gain) — here
+it was cheaper and more honest to delete the preference entirely, always
+take the best-effort optimisation, and make the UNAVOIDABLE remainder
+visible instead of pretending a setting controls it.
+
+---
+
+## BUG 61 — BUG 60's blocked-face X drew over the COLUMN, not the pick face it blocks  (2026-09-23)
+
+Symptom:  The X marks BUG 60 added draw exactly over the column's own
+footprint (`rackConflicts[].overlap`, the column∩rack-face intersection —
+often just a sliver where a column clips a rack edge). The dealer needs
+to see which PICK POSITION on the rack is dead, not where the column
+physically is — those are two different rectangles, and only the second
+one is what actually needs marking.
+
+Chased:   The fix needs the rack's own bay geometry (the full beam-width
+× one-face-depth rectangle), not the column's. canvas2 already has this
+exact geometry in `shapes.jsx`'s `bayRectForIndex` (LOCAL, pre-rotation
+coordinates — the same function the bay-highlight overlays already use),
+but it only takes a bay INDEX, and `checkColumns` had never computed
+one. Getting from a WORLD-space conflict to a LOCAL bay index/face
+needed the rack's rotation accounted for, which — worked through by
+hand via the same corner-mapping `rackFootprint`'s own 90° case
+documents — turned out to split into two independent questions with two
+different answers: (1) the RUN axis (which bay, along the beams) maps
+from world to local with NO reversal under rotation — confirmed by
+mapping two known local corners through the rotation matrix and finding
+world-Y (for a rotated rack) tracks local-X directly, offset for offset;
+(2) the DEPTH axis (which face, front or back) DOES reverse under
+rotation — local face index 0 (the array's first/near-local entry) maps
+to the WORLD-FAR side once rotated, not the world-near side. Verified
+both conclusions two ways before trusting them: algebraically (plugging
+the derived transform back through corner coordinates) and empirically,
+by adding a real rotated rack + a real column to the live store, reading
+the ACTUAL rendered Konva `Group`'s transform attrs and its `Line`
+points back out via `stage.find`, and running those exact numbers
+through the SAME rotation formula by hand — the resulting world
+rectangle's X-range started exactly at the rack's near edge for a
+near-face conflict and ended exactly at its far edge for a far-face one,
+matching where the test column was actually placed in both cases.
+
+Cause:    `BlockedFaceMarks.jsx` (BUG 60) drew its X directly from
+`rackConflicts[].overlap` — the same box `redMarks`/the old SVG engine's
+hatch-fill mark use, which is deliberately sized to the COLUMN, not the
+bay. `checkColumns` had no bay-index or face concept at all; it only
+ever needed "how many faces does this cost" (`facesHit`, a count) for
+the capacity math, never "which specific bay/face rectangle."
+
+Fix:      `src/generate/columnCheck.js` — imports `bayAtPoint` from
+`render/rackOps.js` (both files were already standalone with no
+existing imports, so no circular-dependency risk). Right where a
+conflict is already being built, now also computes: `bayIndex` — the
+column's WORLD run-axis centre converted to the rack's LOCAL frame
+(`localRunX = r.x + (colRunPos - runStart)`, uniform for both 0° and
+90° racks, no separate branch) and fed to `bayAtPoint`; `faces` — an
+array of LOCAL face indices for `bayRectForIndex` to resolve, using the
+already-computed `isNearFace` (world-space "which side of the flue")
+flipped through `rb.rotated` for a double row (`[0]` for a single row;
+`[0,1]` for the legacy no-`depthIn` fallback, matching its existing
+conservative "any overlap costs every face" reading). Both fields are
+purely additive on the existing `rackConflicts` entries — `overlap`,
+`redMarks` and everything else untouched, so the old SVG engine's own
+`ColumnCheckOverlay.jsx` and any other consumer of the old shape are
+unaffected. `src/canvas2/shapes.jsx` — `bayRectForIndex` exported (was
+module-local). `src/canvas2/BlockedFaceMarks.jsx` rewritten: for each
+conflict, looks up the rack object by `rackId`, calls
+`bayRectForIndex(obj, gridSize, bayIndex)` for the LOCAL rect(s), and
+draws the X inside a `<Group {...spin(obj, gridSize)}>` — exactly the
+pattern `SelectionOutline`/every other per-object canvas2 overlay
+already uses for a rotated rack, so the X needs no rotation math of its
+own to get wrong a second time; Konva's own rotation on the Group places
+a LOCAL rectangle correctly regardless of orientation. `Overlays.jsx`
+passes `objects`/`gridSize` through to the new component alongside the
+existing `rackConflicts` prop.
+
+Verify:   344/344 tests pass, build clean. Two temp diagnostic tests
+(deleted after) constructed a known conflict for both an UNROTATED
+`rack_row` and a ROTATED `rack_double_row` (once for a column on the
+near face, once for the far face) and confirmed `bayIndex`/`faces` came
+back correct in all three cases — critically, the near/far cases came
+back with OPPOSITE local face indices (`[1]` near, `[0]` far) for the
+rotated rack, confirming the reversal is real and the code accounts for
+it (an unrotated rack showed no such reversal, as expected). Live
+Playwright run against the real dev server: added a rotated
+`rack_double_row` plus a column via the store directly (bypassing the
+Generate panel, for exact control over the conflict's position),
+screenshotted, then independently re-derived the drawn X's WORLD
+rectangle from the live Konva `Group`'s actual transform attributes
+(`x`/`y`/`offsetX`/`offsetY`/`rotation`) and its child `Line` points —
+the reconstructed world rectangle's near edge landed exactly on the
+rack's own world-near edge for the near-face test, and exactly on the
+world-far edge for the far-face test, both independent of and matching
+the hand-derived transform math above. A separate unrotated
+`rack_row` run showed the X spanning exactly one bay's beam width and
+the rack's full depth (a single row has one face, the whole thing) —
+matching `bayRectForIndex`'s own formula for that case, and visibly
+NOT the column's own ~1ft-square footprint. Zero console errors
+throughout.
+
+Lesson:   "Draw a mark at the conflict" has two different correct boxes
+depending on what the mark is FOR — the column's own footprint (what
+collided) and the bay's own footprint (what's now unusable) — and
+`checkColumns` only ever needed to compute the first one before this,
+because its job was capacity math (a count), not geometry a renderer
+could point at. When a NEW consumer needs a different rectangle for the
+same event, it's worth checking whether the existing pure function
+already has every INPUT needed to derive it exactly once, in one place,
+rather than having the renderer reverse-engineer it from what's already
+been reduced down to a count and a column-sized box.
+
+---
+
+## BUG 62 — pallet-position counting used the wrong dimension for the beam divisor, no clearance, and gated frame depth on it  (2026-09-23)
+
+Symptom:  Capacity and blocked-position math treated `palletWIn` (the
+field the whole codebase actually divides beam length by) as if it
+defaulted to the pallet's DEPTH (48") rather than its loading FACE
+(40") — backwards from the verified industry-standard selective-rack
+convention, where the face (narrower dimension) runs ACROSS the beam
+and is what determines positions per bay, while depth runs into the
+frame and is expected to overhang it (~3" each side on a 42" frame is
+standard, not a fit problem). The counting formula itself also had no
+clearance term — `Math.floor(beamIn / palletWIn)`, a bare divide — so
+there was no real model of the 4"+4" gap between adjacent pallets on
+the same beam, and `layoutSpec`'s frame-depth selection picked "the
+shallowest frame depth >= the pallet's depth," which — once corrected
+to the real 40/48 convention — would have started speccing a 48"
+selective frame under every default pallet instead of the standard 42"
+one, an even bigger behavioural error than the one being fixed.
+
+Chased:   The numeric coincidence that made this invisible: the OLD
+default (`palletWIn` = 48", no clearance) and the NEW correct formula
+(`palletFaceIn` = 40" + 8" clearance = 48) produce the IDENTICAL
+divisor for anyone using the shipped defaults — `floor(beam/48)` either
+way. Confirmed this holds for every beam length via direct computation
+before touching anything (96/48=2, 144/48=3, matching the brief's own
+worked examples exactly), which is why swapping the defaults and adding
+the clearance term changes NOTHING for existing generated layouts using
+default settings, only for a dealer who actually changes the pallet
+FACE width (previously that number was silently being used as a raw,
+clearance-free divisor no matter which field — W or D — a dealer typed
+it into). Also traced the frame-depth side effect specifically: with
+`palletD` corrected to 48 but `layoutSpec`'s old `find(d => d >= palletD)`
+search left untouched, the default frame depth would have jumped from
+42" to 48" (`frameDepthsIn: [36,42,48]`, shallowest >= 48 is 48) —
+confirmed this is real by computing `layoutSpec({}, DEFAULT_RULES)`
+before and after the pure default-swap in isolation, then fixed the
+selection logic itself (no longer palletD-gated) rather than trying to
+find a different default that happened to still land on 42.
+
+Cause:    `DEFAULT_RULES.pallet` (`rules/defaults.js`), `layoutSpec`
+(`sizingLayout.js`), `beamRackObject` (`traceGenerate.js`), the
+beam-rack drop-time defaults in `WarehouseObjectPicker.jsx`/
+`FloatingToolbar.jsx`, and `RackRowPanelCore.jsx`'s pallet-size panel
+all independently hardcoded `palletWIn: 48, palletDIn: 40` (backwards)
+— five separate sites, none of them wrong relative to EACH OTHER, all
+wrong relative to the real convention. `getRackCapacity` (`capacity.js`)
+and the rack-conflict cost estimate (`columnCheck.js`) each independently
+implemented `Math.floor(beam / palletWIn)` with no clearance term — a
+second duplication (on top of BUG 61's own note about the bay-vs-column
+box duplication) of the same missing model. `columnCheck.js`'s
+`positionsLost` was a coarse `Math.max(1, Math.ceil(col.w / palletWPx))`
+— the COLUMN's own width divided by a raw pallet width, not "which
+actual position slot(s), given real GMA spacing, does this column's
+real position touch" — so it could both under- and over-charge relative
+to the real slot boundaries, and always charged at least 1 even when a
+column sat entirely in the dead slack past the last real position.
+
+Fix:      **New shared formula**, `src/utils/capacity.js`:
+`PALLET_CLEARANCE_IN = 8`; `positionsPerBeam(beamIn, palletFaceIn) =
+Math.floor(beamIn / (palletFaceIn + 8))`; `positionFootprintIn` and
+`blockedPositionIndices` for the SAME slot geometry, precise enough for
+a renderer or a conflict cost to use directly rather than re-deriving a
+cruder estimate. `getRackCapacity`'s two beam-rack branches call
+`positionsPerBeam` instead of the old bare divide. **Defaults swapped**
+(40 face / 48 depth) at every site listed above: `rules/defaults.js`'s
+top-level `pallet`, `sizingLayout.js`'s `layoutSpec`, `traceGenerate.js`'s
+`beamRackObject` (+ the dead-but-tested `stubGenerateLayout` literal),
+`WarehouseObjectPicker.jsx`/`FloatingToolbar.jsx`'s beam-rack drop
+defaults, `RackRowPanelCore.jsx`'s panel (also relabelled "W"/"D" to
+"Face"/"Depth", reordered the preset buttons so `40x48` leads). Lane
+racks (`rack_drive_in`/`_through`/`_pushback`/`_pallet_flow`) already
+used `40/48` everywhere and are untouched — their capacity model
+(`lanes × palletDeep`) never divided by `palletWIn` in the first place.
+**Frame-depth selection decoupled from pallet depth**: `layoutSpec`'s
+`fitDepth` no longer searches for "the shallowest frame >= the pallet's
+own depth" (the premise a 48"-pallet-on-a-42"-frame overhang disproves)
+— it now just defaults to the standard 42" frame depth whenever the
+rules table offers one, independent of whatever `palletDIn` is.
+**Position-precise conflict cost**, `columnCheck.js`: replaced the
+ceil-estimate with `blockedPositionIndices` run against the column's
+real LOCAL run-axis footprint on its OWN bay's own beam (also fixed a
+latent bug in `sectionsLost`, which always read `beams[0]` regardless
+of which bay was actually hit — now uses `beams[bayIndex]`, the
+`bayIndex` BUG 61 already computes). Each conflict now also carries
+`positionIndices` — the exact blocked slot(s), not just which bay/face.
+**Blocked-position marks narrowed to match**: `shapes.jsx`'s new
+`positionRectForIndex` slices ONE slot's rect out of `bayRectForIndex`'s
+own face rect (same GMA slot width the counting formula uses);
+`BlockedFaceMarks.jsx` now draws one X per `(face, positionIndex)` pair
+instead of one X spanning the entire bay.
+
+Verify:   354/354 tests pass (10 new, `src/__test__/capacity.test.js`),
+build clean. New tests assert the brief's own worked examples exactly:
+`positionsPerBeam(96,40)===2`, `(144,40)===3`, and every named beam
+length (9'/10'=2, 12'=3, 13'/14'=3); a non-default 44" face genuinely
+changes the count (96"/44" = 1, not 2 — proving the clearance is real
+arithmetic, not a disguised fixed constant); `blockedPositionIndices`
+resolves a clean single-slot hit, a boundary straddle (both slots), an
+edge clip, and — the old code's forced-minimum-1 case — a footprint
+entirely in dead slack correctly costing zero; `layoutSpec({},
+DEFAULT_RULES)` asserts `palletWIn:40, palletDIn:48, depthIn:42` all at
+once, the exact regression the frame-depth side effect would have
+broken. `getRackCapacity`/`getLayoutCapacity` re-verified additive and
+self-consistent under the new formula. One pre-existing test
+(`rules.test.js`) had the old backwards `{wIn:48,dIn:40}` baked into an
+inheritance-cascade assertion — updated to the corrected values; every
+OTHER existing test (including `pickOrientation`'s exact `2376`/`2496`
+capacity totals) passed unchanged, confirming the shipped-default
+divisor really is numerically identical before and after. Live
+Playwright run against the real dev server: selected a 3-bay/96"-beam
+`rack_row` with no pallet fields set — RightPanel showed `Capacity: 12
+PAL` (`floor(96/48)=2` per bay × 3 bays × 2 levels), the `40x48` preset
+highlighted as active, `Face`/`Depth` labelled and reading `40`/`48`
+with no layout overflow. Placed a column centred exactly on position
+index 1 of bay 1 (a hand-computed slot boundary, not eyeballed) and
+read the ACTUAL rendered Konva `Line` points back out of the live
+stage: the drawn X's local rect was exactly `[1000,1160]×[300,440]` —
+160 world-px wide, which is exactly 48" at this grid scale, starting
+exactly at that bay's own beam-start-plus-one-slot-offset — matching
+the hand-computed slot boundary to the pixel, not just "close." A
+whole-building screenshot at 3x zoom shows the X spanning visibly less
+than half the bay's width (one slot out of two), with the column
+marker's own square sitting separately above it, untouched by the
+mark. Zero console errors throughout.
+
+Lesson:   Two defaults that are individually self-consistent (every
+site in the codebase agreed on `48 face / 40 depth`) can still both be
+wrong relative to an external, verifiable standard — internal
+consistency isn't the same evidence as correctness, and this one hid
+for as long as it did specifically because the WRONG default (48, no
+clearance) happened to numerically equal the RIGHT default run through
+the RIGHT formula (40+8) for every beam length actually in use. When
+fixing a value that several independent call sites all hardcode
+identically, checking that they at least AGREE with each other is not
+enough — the agreement is exactly what let a shared mistake go
+unnoticed. And a fix to one input (pallet depth) can silently break an
+unrelated OUTPUT three functions downstream (frame-depth selection)
+that happened to be reading the same field for a different reason —
+worth deriving the actual data-flow graph, not just grepping for the
+field name, before declaring a default-value fix "just a number
+change."
+
+---
+
+## BUG 64 — feature: Generate panel restructured into Building/Racking, wall clearance and perimeter wall columns added, rack type/speed bay/dock doors removed from it  (2026-09-23)
+
+Symptom:  Not a bug — a requested restructure. The Generate panel mixed
+building-shape inputs (length/width/column grid) with racking-choice
+inputs (rack type/forklift/aisle) with two fields that don't belong at
+generation time at all (speed bay, dock doors — both already excluded
+from `generateFixtures`, BUG 44, so they'd never draw anyway) in one
+flat list, with no wall-clearance concept and no way to say a building's
+exterior wall carries its own embedded columns.
+
+Chased:   `generateFixtures` already places a real `column_grid` object
+on every generate (confirmed by reading it directly — the interior grid
+has existed since before this session; an earlier turn's live check
+just hadn't verified its presence explicitly for the geometry it used).
+That meant "wall columns" didn't need new store-side machinery, only a
+second `column_grid`-shaped fixture and a brief flag — `checkColumns`
+already treats every `column_grid` object in the scene identically
+(BUG 60–62's whole bay/face/position pipeline), so a wall column costs
+a rack conflict exactly like an interior one with zero new avoidance
+code. Wall clearance was trickier: `rowSegments` already had an
+`endClearFt` concept for the RUN axis (`sel.wallClearanceIn`, 3"
+default) but `rowBands`'s DEPTH axis had never had one at all — STEP 1
+locked the near-wall row at `yFt: 0`, flush, unconditionally. Adding a
+`wallClearFt` param to `rowBands` and threading the SAME resolved value
+into both is what "one wall-clearance number, both axes" required.
+Changing the shipped default 3"->6" (matching the requested default)
+then rippled into every test that goes through `sizingSheetLayout`
+(not the ones calling `rowBands`/`rowSegments` directly, which default
+`wallClearFt=0` and were unaffected) — traced each failure individually
+rather than assuming they were all the same root cause: one was a test
+computing its OWN reference `bands` via a direct `rowBands` call that
+needed the same resolved clearance threaded in for an apples-to-apples
+comparison; one was a column landing exactly in a cross-aisle gap
+instead of a rack segment once the run-axis usable length shifted by
+the extra clearance (gridXFt swapped 20->15 to dodge the coincidence,
+re-verified live rather than picked by guesswork); one was the
+240×120/25×30/reach reference fixture's flue-seated total (still
+correctly non-zero, just 9 instead of 15 — the SAME 6 widened pairs,
+SAME zero-conflict invariant, confirmed via direct execution before
+touching the assertion).
+
+Cause:    N/A (feature work) — see Fix.
+
+Fix:      **Generator.** `src/generate/sizingLayout.js` — `rowBands`
+gained a `wallClearFt = 0` param (default preserves old flush-to-the-
+wall behaviour for any direct caller): the near-wall row now starts at
+`yFt: wallClearFt` instead of `0`, and `bottomY` (the far-wall row's own
+position) subtracts it too, symmetric on both walls. `sizingSheetLayout`
+passes `wallClearFt: endClearFt` into that call — the SAME resolved
+value `rowSegments` already gets. `layoutSpec`'s `endClearFt` resolution
+gained a `brief.wallClearanceIn` (inches) tier, ahead of the rules-table
+`sel.wallClearanceIn`: `DEFAULT_RULES.selective.wallClearanceIn` moved
+3->6. `layoutSpec`'s own frame-depth selection was already decoupled
+from pallet depth (BUG 62) so this default change had no knock-on
+effect there. New `wallColumnGridObjects(brief, ox, oy)` — returns `[]`
+unless `brief.columnsAlongWall`, else 4 `column_grid` objects (one per
+wall, `wallAttached: true`), each a single row/column at the interior
+grid's own `gridXFt`/`gridYFt` pitch and the SAME X-centred convention
+`columnGridObject` already uses (exploiting `expandColumnGrid`'s own
+N-entries-give-N+1-lines rule: an EMPTY `spacingX`/`spacingY` array
+yields exactly one line on that axis). Wired into `generateFixtures`
+alongside the existing interior grid — unconditional, always returns
+`[]` when the flag is off, so `generateFixtures` always includes the
+interior grid and only sometimes the four wall ones. **Panel.**
+`src/components/Generate/GeneratePanel.jsx` fully restructured: a
+`Section` component groups BUILDING (length/width, column grid, new
+WALL CLEARANCE (in) input defaulting to 6, new COLUMNS ALONG WALL
+Yes/No toggle, row direction) and RACKING (new pallet Face/Depth inputs
+defaulting to 40/48 — BUG 62's own GMA convention — forklift, aisle).
+`rackType` state deleted entirely; the payload always sends the
+module-level constant `RACK_TYPE = 'rack_double_row'` (rowBands' own
+STEP 1/STEP 3 shape — single rows at the walls, double-deep pairs
+interior — unchanged, just no longer a dealer choice in this panel).
+Speed bay and dock door state/inputs removed from the panel and the
+payload; `dockDoorObjects`/`stagingObjects` themselves are untouched,
+still exported, still not wired into `generateFixtures` (BUG 44) — this
+panel simply stops offering fields for functionality it was never
+actually connected to.
+
+Verify:   361/361 tests pass (7 new — wallClearFt symmetry and its
+opt-in default, `sizingSheetLayout`'s end-to-end `wallClearanceIn`
+threading against both a custom value and the shipped 6" default,
+`wallColumnGridObjects`'s off/on shape and on-the-wall-line geometry,
+`generateFixtures`'s 1-vs-5 grid count), build clean. Live Playwright
+run against the real dev server: panel text confirmed BUILDING/RACKING
+headers present, "RACK TYPE"/"SPEED BAY"/"DOCK DOORS" absent, "WALL
+CLEARANCE"/"COLUMNS ALONG WALL"/"PALLET SIZE" present — zero console
+errors. Generated a horizontal layout with defaults untouched and read
+the near-wall row's world Y back out of the live store against the
+floor plan's own origin: exactly 6" (not flush) — the panel's shipped
+default reaching the actual rendered geometry, not just the brief.
+Toggled COLUMNS ALONG WALL to Yes, generated again: exactly 5
+`column_grid` objects in the store (1 interior + 4 `wallAttached: true`
+wall grids, matching the four walls' own geometry printed and checked
+against the building's real dimensions), and a zoomed screenshot shows
+small purple column markers sitting directly on the wall line itself,
+not floating in the interior. Zero console errors throughout every run.
+
+Lesson:   A default-value change to a field several OTHER functions
+already read (`sel.wallClearanceIn`, previously only consumed by the
+run axis) doesn't stay contained to the one axis it was introduced
+for — anything reachable through the SAME rules-resolution path picks
+up the new value automatically, for better (that was the point here)
+and for worse (every test built on the old default's exact numbers is
+now fair game to re-verify, not just the ones that look related to
+"wall clearance" by name). Threading a new geometry input through an
+EXISTING resolution pipeline (`layoutSpec`'s `endClearFt`) rather than
+inventing a parallel one is what made both axes pick up the change
+uniformly with one line of wiring each — the alternative (a separate
+depth-axis clearance concept) would have been two configs to keep in
+sync instead of one.
+
+---
+
+## BUG 65 — Generate never cleared the previous layout: every click stacked a full duplicate building on top of the last one  (2026-09-23)
+
+Symptom:  Toggling "Columns along wall" and clicking Generate again
+appeared to do nothing. Root cause (found by a read-only investigation
+subagent, confirmed live): `buildQueue` (`traceGenerate.js`) calls
+`store.placeFpObject(...)` unconditionally on every Generate click, and
+`placeFpObject` only ever pushes a NEW `fp_rect` — nothing anywhere in
+`placeFpObject`/`addObject` removes what a PRIOR click placed. Since the
+floor plan's own world position is computed purely from
+`lengthFt`/`widthFt` (`Math.round(-W/2/GS)*GS`, `useCanvasStore.js`),
+an unchanged building size regenerates at the EXACT SAME coordinates
+every time — so the second click's building, racks, and interior
+column grid painted precisely on top of the first click's, pixel for
+pixel indistinguishable. The one thing that genuinely differed (the 4
+new wall-column grids) was real but separately too small to notice at
+overview zoom (BUG 66).
+
+Chased:   Confirmed live before touching anything: generate once (56
+objects, 1 floor plan, 28 racks, 1 column grid) → toggle → generate
+again (116 objects, 2 floor plans at IDENTICAL `(x,y)`, 56 racks, 6
+grids) — an exact duplicate stacked on the first, not a replacement.
+Ruled out z-order/layer/render-guard causes for the wall columns
+specifically (all confirmed working correctly by the same
+investigation) — this entry is about the duplication only.
+
+Cause:    No dedup/clear step anywhere between two `buildQueue` calls;
+`placeFpObject` and `addObject` are both pure "push a new object," by
+design (they're shared with hand-placing a floor plan/object from the
+library, where duplication-on-repeat is obviously not wanted either).
+
+Fix:      `src/store/useCanvasStore.js` — new `lastGeneratedFpId`
+state (`null` by default) plus `setLastGeneratedFpId(id)` and
+`clearGeneratedLayout()`, the latter removing that specific floor plan
+and every object whose `parentId` matches it (the same cascade
+`deleteSelected` already uses for a manually-deleted floor plan's
+children), then resetting `lastGeneratedFpId` to `null`. Deliberately
+NOT wired into `placeFpObject` itself — only `traceGenerate.js`'s
+`buildQueue` ever calls `setLastGeneratedFpId`, right after it
+identifies the building it just placed, so a hand-drawn floor plan
+(from `FloorPlanPicker`/`FloatingToolbar`/`FloorPlanPanel`, all of
+which also call `placeFpObject`) is never at risk of being silently
+deleted by a later Generate click. `buildQueue` calls
+`store.clearGeneratedLayout()` as its very first step, before placing
+anything new. A stale id (the tracked floor plan was hand-deleted
+since) is a harmless no-op — `clearGeneratedLayout` checks the objects
+actually still exist before touching `s.objects`.
+
+Verify:   367/367 tests pass, build clean. Live Playwright run:
+generate once (56 objects) → regenerate with unchanged inputs → still
+exactly 56 objects, 1 floor plan, 28 racks, 1 column grid — not 116/2/
+56/2. `lastGeneratedFpId` changed between the two generations (a real
+replacement, not a no-op). The panel's own capacity readout stayed a
+single consistent number instead of doubling. Zero console errors.
+
+Lesson:   "Regenerate" silently means "replace" to a user long before
+it's ever implemented that way in code — a generator that only ever
+knows how to ADD needs an explicit "remove what I added last time"
+step from day one, or the bug hides for exactly as long as nobody
+regenerates without changing the inputs (which is the single most
+common way to actually use a "Generate" button — try a toggle, see
+the result, try another).
+
+---
+
+## BUG 66 — small structural markers (columns, blocked-position X's) render at their true world size, so they vanish at whole-building overview zoom  (2026-09-23)
+
+Symptom:  Column markers and blocked-position X's are geometrically
+correct but imperceptible at the zoom `placeFpObject`'s own auto-fit
+sets for a whole building (roughly 5–10%, confirmed live: 0.0958 for a
+240ft building) — a 12"-default column square or a pallet-slot X is a
+fixed WORLD size, so it shrinks proportionally with everything else,
+down to a handful of screen px at overview zoom. Reported specifically
+via "toggling Columns along wall shows no visible change" (BUG 65's
+own duplication bug hid most of the symptom; the wall columns
+themselves were real, just too small to read once the duplication was
+fixed too).
+
+Chased:   Confirmed this is a rendering-scale problem, not a
+placement/z-order/layer bug — a read-only investigation had already
+ruled those out (no guard skips an empty `spacingX`/`spacingY`, no
+`wallAttached` check anywhere, wall grids paint last/on top). Found
+the actual established fix for exactly this ALREADY in the codebase:
+`ResizeHandlesOverlay`'s own `hs = 6/zoom` (`handleGeometry.js`) —
+"world-space width/height/radius computed as screenPx / zoom for
+constant-screen-SIZE shapes... CanvasUI divides by zoom for the exact
+same reason, and this is the same trick, not a different one." This
+is a port of that SAME established pattern to a different shape kind
+(a filled rect/square instead of a stroke), not a new technique.
+
+Cause:    `ColumnGridShape` (`shapes.jsx`) bakes `expandColumnGrid`'s
+raw world-px rects straight into one SVG-path string with no zoom
+input at all — the square's SIZE (not just its stroke) scales with
+the Layer's own zoom transform like any other shape. `BlockedFaceMarks`
+already received `zoom` (for its stroke width) but never applied it to
+the mark's own rect dimensions either.
+
+Fix:      New `growToMinScreenSize(rect, zoom, minPx)` in `shapes.jsx`
+— grows a rect's width/height to `minPx/zoom` world-size when it would
+otherwise render smaller than `minPx` screen px, CENTRED on the rect's
+own true centre (never from a corner, so a marker that grows to stay
+visible never drifts off the position it's actually marking); a
+no-op for anything already bigger than the floor. `MIN_COLUMN_MARKER_PX
+= 6` / `MIN_MARK_PX = 6`, matching `hs = 6/zoom` (a 12px handle square)
+exactly rather than inventing a new size. Applied in `ColumnGridShape`
+(needs `zoom` newly threaded in — `Scene.jsx` now reads
+`s.zoom` and passes it down; the `scene` routing memo itself stays
+zoom-agnostic exactly as its own comment already promised, only
+`ColumnGridShape`'s OWN internal memo now depends on zoom) and in
+`BlockedFaceMarks` (already had `zoom`, just wasn't using it for the
+rect).
+
+Verify:   367/367 tests pass (rendering isn't unit-tested in this
+suite — verified live), build clean. Live Playwright run at the real
+0.0958 overview zoom: independently recomputed a specific interior
+column's expected screen position from the live store's own `zoom`/
+`panX`/`panY`, decoded the actual screenshot PNG, and found
+struct-blue pixels exactly there (confirmed again for a wall column at
+its own independently-computed position); a tight pixel crop around
+the same spot shows a small but clearly legible square, not a
+sub-pixel smear. Toggling "Columns along wall" and regenerating (now
+that BUG 65 makes a regenerate a real replacement) shows new markers
+along all four walls that weren't there before — the "clear
+difference" the report asked to confirm. Zero console errors.
+
+Lesson:   A geometry-correctness fix and a legibility fix are
+different problems that can look identical from a bug report ("nothing
+changed") — BUG 65's duplication bug and this file's own scale problem
+were BOTH present and BOTH needed fixing before the toggle's effect
+became visible; fixing only one would have left the report open. When
+this codebase has already solved "stay visible at any zoom" once
+(resize handles), a new marker needing the same property should reuse
+the mechanism, not re-derive a screen-constant-size formula from
+scratch.
+
+---
+
+## BUG 67 — a pallet face too wide for a beam left the bay looking normal and holding nothing, with no mark at all  (2026-09-23)
+
+Symptom:  When `positionsPerBeam(beamIn, palletFaceIn) === 0` (a 90"
+face needs 90+8=98" of beam — wider than a 96" beam has), the bay
+already correctly contributed 0 to capacity (BUG 62's own formula) but
+had NO visual indicator of any kind — `render/rackOps.js`'s bay
+geometry never reads `palletWIn` at all, so an unusable bay draws
+identically to a normal one. `BlockedFaceMarks` (BUG 61/62) only draws
+when a COLUMN triggers a conflict; an oversized bay with zero columns
+anywhere near it — the exact case reported — produced no mark
+whatsoever, silently correct and silently invisible at the same time.
+
+Chased:   Confirmed via `checkColumns` directly (prior turn's
+investigation) that even WITH a column overlapping such a bay, the
+conflict entry came back `positionsLost: 0, positionIndices: []` — so
+`BlockedFaceMarks` had nothing to draw even in the column-present
+case. This confirmed the marking gap is structural (the bay's own
+geometry vs. the pallet face), not a per-column computation this
+session's existing `BlockedFaceMarks` could be extended to cover — it
+needed its own, column-independent pass over every rack's own bays.
+
+Cause:    No code anywhere checked "does this bay hold at least one
+position" independent of a column conflict — `positionsPerBeam`
+returning 0 was only ever consumed by the CAPACITY total (correctly)
+and by `blockedPositionIndices` (correctly returning nothing to mark,
+since there's no column involved in the general case).
+
+Fix:      `src/utils/capacity.js` — new `oversizedBayIndices(beams,
+palletFaceIn)`, a pure pass over a rack's own `beams` array flagging
+every index where `positionsPerBeam === 0` — independent of columns
+entirely, the SAME formula `getRackCapacity` already uses to (already
+correctly) contribute 0 for that bay. New
+`src/canvas2/OversizedBayMarks.jsx` — for every `rack_row`/
+`rack_double_row` object in the scene (not gated on any conflict
+list), flags its oversized bays and draws a full-bay X (BOTH faces of
+a double row — the two faces share the same beam and the same face
+width, so either both fit or neither does) via `bayRectForIndex`, the
+SAME whole-bay rect BUG 61 already established, not the narrower
+per-position rect BUG 62 introduced for a column-triggered mark — this
+mark means "the whole bay is unusable," not "this one slot is." Also
+applies BUG 66's `growToMinScreenSize` floor, for consistency at
+overview zoom. Wired into `Overlays.jsx` alongside `BlockedFaceMarks`,
+gated on the same `showMarks` toggle.
+
+Verify:   367/367 tests pass (6 new — the reported 90"/96" threshold
+exactly, confirming the REAL cutoff is 88" not a round "~90", mixed-
+beam racks flagging only the oversized bays, a fully-oversized rack
+flagging every bay, and the capacity total already correctly excluding
+those bays), build clean. Live Playwright run: placed a 3-bay,
+96"-beam `rack_row` at `palletWIn: 90` with NO columns anywhere near
+it — RightPanel showed "Capacity: 0 PAL, Ground level: 0 pal × 2
+levels" (already correct, BUG 62), and the canvas showed a clean X
+spanning the FULL width of every visible bay (confirmed via a zoomed
+screenshot — the X's diagonals run corner-to-corner of the whole bay
+rect, not a narrow slot within it). Zero console errors.
+
+Lesson:   "This already computes the right NUMBER" (capacity) and
+"this already draws the right MARK" (BlockedFaceMarks) are two
+separate claims, and BUG 62 only verified the first — the pure
+capacity math was correct from the start, but the only rendering path
+that existed was conflict-driven, so a geometrically-obvious problem
+(a pallet that physically can't fit) had no visual representation
+until a column happened to wander into the same bay. A capacity number
+alone doesn't tell a dealer WHERE the problem is or WHY — the mark is
+what turns "the total is lower than I expected" into "oh, THIS bay is
+too narrow for this pallet."
+
+---
+
+## BUG 68 — BUG 65's own fix didn't survive a page reload: the tracking field was ephemeral, the objects it tracked were not  (2026-09-23)
+
+Symptom:  "Columns along wall" added wall columns on Yes but did not
+remove them on No — toggle to No, regenerate, the wall columns from
+the earlier Yes generation were still there. Static reading of the
+BUG 65 code (`clearGeneratedLayout`, `wallColumnGridObjects`,
+`parentGenerated`) found nothing wrong — every piece looked correct in
+isolation, and a same-session live repro (generate Yes → toggle No →
+regenerate, no reload in between) genuinely could NOT reproduce it:
+wall columns went 0 → 4 → 0 exactly as designed, in one continuous
+browser session, twice, including a 3-step No→Yes→No sequence.
+
+Chased:   The gap between "looks correct" and "user's report is real"
+turned out to be exactly that gap — a scenario my own repros never
+exercised. `lastGeneratedFpId` (BUG 65's tracking field) was declared
+as ordinary Zustand state, sitting right next to `objects`/
+`selectedIds` — but `serializeScene` (`utils/saveLoad.js`) only ever
+serializes a fixed, explicit list of fields (`objects`, `groups`,
+`layers`, `activeLayerId`, `zoom`, `panX`, `panY`, `unit`, ...) and
+`lastGeneratedFpId` was never added to it. `App.jsx`'s own
+`useEffect(() => { if (hasAutoSave()) restoreAutoSave() }, [])` runs
+exactly once, on the App's own mount — i.e. on every full page
+load/reload. So a reload restores `s.objects` (every previously
+generated rack, grid, and wall column) from localStorage perfectly,
+while `lastGeneratedFpId` silently resets to its initial `null` —
+the ONE piece of state `clearGeneratedLayout` needed to find what to
+remove. The next Generate click's `clearGeneratedLayout()` then found
+`fpId === null`, no-opped immediately, and both symptoms fired at
+once: the wall columns from the stale layout survived (this report),
+and BUG 65's own duplication would have silently returned too (not
+independently reported, but the same missing link). Confirmed live,
+end to end: generate with Yes (4 wall grids, fp `generated: true`
+confirmed in the store) → `page.reload()` → log back in, reopen the
+project → objects AND the `generated: true` flag both came back intact
+via autosave (proving the flag itself round-trips fine once it lives
+on an object) → toggle No → regenerate → 0 wall grids, exactly one
+floor plan. Before the fix, the exact same sequence would have left
+the stale layout in place with a fresh one stacked on top of it,
+reproducing both this report and BUG 65's original symptom together.
+
+Cause:    State that MUST stay in sync with `s.objects` was tracked in
+a SEPARATE field with a different persistence lifetime than the
+objects it pointed at — `lastGeneratedFpId` was session-only,
+`s.objects` was durable (autosaved). Any event that reloads one
+without the other (a page refresh being the most ordinary one there
+is) desyncs them, and `clearGeneratedLayout`'s `if (!fpId) return`
+guard turned that desync into a silent, permanent no-op rather than a
+visible failure.
+
+Fix:      `src/store/useCanvasStore.js` — deleted `lastGeneratedFpId`/
+`setLastGeneratedFpId` entirely. New `markGenerated(fpId)` sets
+`generated: true` directly ON the floor-plan object in `s.objects` —
+not a separate field, just another property on an object that was
+always going to be serialized/restored as a whole. `clearGeneratedLayout`
+no longer reads a tracked id; it structurally finds `s.objects.filter(o
+=> o.type === 'fp_rect' && o.generated)` (plural and self-healing: an
+autosave written before this fix, or any other way more than one could
+exist, gets cleaned up on the very next Generate rather than needing a
+migration). `src/generate/traceGenerate.js`'s `buildQueue` calls
+`markGenerated(fp.id)` where it used to call `setLastGeneratedFpId`.
+`markGenerated` is still never called by `placeFpObject` itself, for
+the exact reason BUG 65 established: that action is shared with
+hand-placing a floor plan from the library, and flagging every
+hand-placed building would make Generate eligible to delete a
+customer's own drawing.
+
+Verify:   367/367 tests pass, build clean (no test changes needed —
+this bug lived entirely in cross-reload persistence, not in anything
+the existing unit suite exercises). Live Playwright run reproducing
+the EXACT real-world gap: generate with Columns Along Wall = Yes (4
+wall grids, `generated: true` confirmed on the floor plan) →
+`page.reload()` → sign in again → reopen the project → confirmed via
+the live store that both `s.objects` (5 column grids) AND the
+`generated: true` flag survived the reload identically → toggled to No
+→ regenerated → exactly 1 floor plan, 1 column grid (interior only), 0
+wall grids. Zero console errors throughout, including through the
+reload itself.
+
+Lesson:   When one piece of state exists ONLY to answer "which of
+these persisted objects did I put here," it has to live inside the
+same persistence boundary as the objects themselves, or a reload will
+silently split them apart — the tracked reference resets to its
+initial value while the objects it was meant to reference keep going.
+This is also why the bug survived a same-session repro: testing
+"toggle and regenerate" without ever closing/reloading the tab
+exercises the SAME in-memory session the whole time, which is exactly
+the one case where an ephemeral tracking field can't yet have gone
+stale. A repro that never once reproduces the SAME kind of gap a real
+user's tab lifetime naturally has (a session boundary, here) isn't a
+repro of the bug, only of a neighboring case that happens to share a
+description.
+
+---
+
+## BUG 69 — "Columns along wall" = No still left a column on the wall — the toggle was modelled wrong from the start  (2026-09-23)
+Symptom:  With the toggle set to No, on a fresh layout (hard refresh +
+cleared canvas + regenerate), a column line was still visible sitting
+exactly on the top wall.
+
+Chased:   BUG 68's own instrumentation ([WALLCOLS] logging + a
+`window.__debugWallColumns()` console helper, both added at the
+user's explicit request after live testing kept contradicting my own
+Playwright repros) traced this all the way down before any code
+changed. The user's own console output proved, in order: (1) the
+toggle's `false` value reaches `wallColumnGridObjects` correctly: (2)
+that function correctly returns `[]` when it does; (3) the generated
+queue has 0 wall-attached `column_grid` objects; (4)
+`clearGeneratedLayout` correctly finds 0 generated floor plans to
+clear on a fresh canvas (nothing to clear yet). Every hypothesis about
+the toggle's OWN wiring or its clearing path was proven wrong by the
+evidence — the mechanism BUG 64 built worked exactly as built.
+`window.__debugWallColumns()` then showed the real culprit: exactly
+ONE `column_grid` object existed in the whole store, `wallAttached:
+false` (the ordinary interior grid, not a wall grid), with `y` exactly
+equal to the floor plan's own `y` — the top wall line.
+
+Cause:    `columnGridObject` (the ordinary interior support grid,
+unrelated to the wall-columns feature) draws its Y axis flush from the
+building's own origin unconditionally — `offY = 0`, always, regardless
+of any toggle — because `rowBands`' own column-avoidance walk needs to
+agree with wherever this grid actually draws line k=0
+(COLUMN_GENERATOR_SPEC_V5.md's convention, predating BUG 64 entirely).
+BUG 64 modelled "no columns on the wall" as a SEPARATE mechanism
+(`wallColumnGridObjects`, four extra `column_grid` objects, one per
+wall) bolted on top of this always-flush grid, gated on the toggle.
+That mechanism worked exactly as built — but the interior grid's own
+Y=0 line was NEVER something it controlled, so turning it off changed
+nothing about the one column actually sitting on the wall. Right
+mechanism, wrong target.
+
+Fix:      Removed `wallColumnGridObjects` entirely — the whole
+separate-mechanism approach was wrong, not just its wiring. The
+toggle now controls the interior grid's own origin directly:
+`columnGridObject` (`src/generate/sizingLayout.js`) takes
+`columnsAlongWall` (default `true`, so any caller that predates the
+toggle keeps the old flush behaviour unless it opts out) — Yes keeps
+`offY = 0` (a line on the wall, the original behaviour); No sets
+`offY = gridYFt` (one full pitch in) and drops the line that inset
+would otherwise leave outside the building (`ny = nyFlush - 1`), so no
+line ever lands on the wall. `generateFixtures` now returns just this
+one grid, always — the four-wall-grids code path no longer exists.
+
+CRITICAL — the drawn grid is only half the fix. `rowBands`' own
+column-avoidance walk (`nextColumnNearEdge`/`columnsOverlapping`) has
+to agree with the SAME origin shift, or racks would dodge columns at
+the OLD (now-wrong) positions while the grid draws them at the NEW
+ones. `axisFrame` now takes `columnsAlongWall` too and computes a
+`wallOffsetFt` (`columnsAlongWall ? 0 : gridYFt`) that replaces the
+hardcoded `0` in whichever of `stackGridOffsetFt`/`runGridOffsetFt`
+was previously always flush. Which one that is flips with
+orientation — for horizontal, gridYFt is the STACK axis (feeds
+`rowBands` directly); for vertical, gridYFt is the RUN axis instead
+(feeds `rowSegments`' cross-aisle steering via `runGridOffsetFt`) —
+but it's always gridYFt's own axis either way, matching
+`columnGridObject`'s own fixed Y-flush/X-centred convention regardless
+of orientation. `sizingSheetLayout` threads `brief.columnsAlongWall`
+into `axisFrame` alongside the rest of the brief it already read.
+
+Verify:   `npx vitest run` — 370/370 passing, including a new "BUG 69"
+describe block in `sizingLayout.test.js` with two CRITICAL tests that
+assert `axisFrame`'s computed offset equals `columnGridObject`'s own
+drawn origin exactly, for both toggle states and both orientations
+(the sync this whole fix depends on), plus line-count/position tests
+for the inset itself and an end-to-end `checkColumns` comparison
+confirming No never introduces a NEW blocked aisle or rack conflict
+relative to Yes on the same geometry. `npm run build` clean. Live
+(Playwright, headless Chrome, real Login→Hub→Draw→Generate click
+path, `window.__cs` store dump before/after each toggle state): Yes
+produced a grid at `y = fp.y` exactly (flush, 3 lines); No produced a
+grid at `y = fp.y + 54ft` exactly — one full `gridYFt` pitch, 2 lines,
+one fewer than Yes — with exactly one `column_grid` object in the
+store in both cases (never four extra ones) and zero console errors.
+All BUG 64/68 debug logging (`[WALLCOLS]` console statements,
+`window.__debugWallColumns()`) removed once this landed — it was
+temporary investigation scaffolding, not permanent instrumentation.
+
+Lesson:   "The toggle's own mechanism works correctly" and "the
+toggle produces the right visual result" are different claims — BUG
+64's wiring was flawless and every log confirmed it, right up until
+the moment it became clear the wiring controlled a mechanism that was
+never the thing actually drawing the column the user could see. When
+a customer-reported symptom survives every trace of a feature's OWN
+code path, the next place to look is whatever ELSE draws in the same
+spot for reasons that predate the feature entirely — here, a grid
+convention two bug numbers older than the toggle that was supposed to
+control it. Also: the user's "stop verifying with your own scripts,
+add logging instead" instruction was the right call in hindsight — my
+own Playwright repros were internally consistent because they were
+all correctly proving the WIRING worked; no amount of re-running them
+would ever have surfaced that the wiring was solving the wrong
+problem, because the actual defect wasn't in anything my repro
+exercised. Direct evidence from the live app broke that blind spot;
+more self-testing of the same mechanism would not have.
+
 ---
 
 ## Template for new entries

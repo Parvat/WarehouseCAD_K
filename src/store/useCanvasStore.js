@@ -124,6 +124,51 @@ export const useCanvasStore = create(
     // ─── Objects ────────────────────────────────────────────────────────────
     objects:     [],
     selectedIds: [],
+
+    /* BUG 65/68 — which floor plan(s) a Generate click placed, so the NEXT
+     * click can remove that building + its own children before placing a
+     * new one, instead of stacking a duplicate on top at the same
+     * coordinates (buildQueue's fp origin is deterministic from
+     * lengthFt/widthFt alone, so an unchanged building size regenerates at
+     * the identical spot every time).
+     *
+     * BUG 68 — this was originally a separate, EPHEMERAL `lastGeneratedFpId`
+     * field, never included in `serializeScene`'s snapshot. That field
+     * survived exactly as long as the in-memory session did: any page
+     * reload (App.jsx's own `restoreAutoSave` runs once, on mount) restored
+     * `s.objects` — including a previous "Columns along wall: Yes"
+     * generation's wall columns — from localStorage just fine, while the
+     * separate tracking field silently reset to `null`. The NEXT
+     * `clearGeneratedLayout()` call then found nothing to clear and
+     * quietly no-opped, leaving the stale layout (wall columns included)
+     * in place forever. Marking the floor plan object ITSELF with
+     * `generated: true` fixes this by construction — it is just another
+     * field on an object already inside `s.objects`, so it round-trips
+     * through save/autosave/reload for free, with no separate persistence
+     * path to fall out of sync. `markGenerated` is NOT called by
+     * `placeFpObject` itself — that action is shared with hand-placing a
+     * floor plan from the library (FloorPlanPicker/FloatingToolbar/
+     * FloorPlanPanel), and flagging every hand-placed building would make
+     * Generate silently delete a customer's own drawing the next time they
+     * clicked it. Only traceGenerate.js's buildQueue ever calls
+     * markGenerated, right after it places ITS OWN fp. */
+    markGenerated: (fpId) => set((s) => {
+      const o = s.objects.find(x => x.id === fpId)
+      if (o) o.generated = true
+    }),
+    clearGeneratedLayout: () => set((s) => {
+      // Plural — self-healing against any autosave written before this fix
+      // (or a rare double-mark) that could otherwise carry more than one.
+      const fpIds = s.objects.filter(o => o.type === 'fp_rect' && o.generated).map(o => o.id)
+      if (!fpIds.length) return
+      const fpIdSet = new Set(fpIds)
+      const childIds = s.objects.filter(o => o.parentId && fpIdSet.has(o.parentId)).map(o => o.id)
+      const allIds = new Set([...fpIds, ...childIds])
+      s.objects     = s.objects.filter(o => !allIds.has(o.id))
+      s.selectedIds = s.selectedIds.filter(id => !allIds.has(id))
+      s.groups      = (s.groups || []).filter(g => g.ids.some(id => !allIds.has(id)))
+      pushHistory(s)
+    }),
     activeBaySelection: [],  // [{ objId, bayIdx }] — cross-row bay multi-select
     showAisles:   true,
     toggleAisles: () => set(s => { s.showAisles = !s.showAisles }),

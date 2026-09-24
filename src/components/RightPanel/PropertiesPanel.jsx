@@ -8,6 +8,8 @@ import {
 import { pxToFtIn } from '../../utils/canvas'
 import { RackRowPanel, MultiBayPanel, CantileverPanel, ColumnGridPanel, DriveInPanel, DriveThroughPanel, PushbackPanel } from '../RightPanel/Rackrowpanel'
 import { getLayoutCapacity } from '../../utils/capacity'
+import { useColumnCheck } from '../../generate/useColumnCheck'
+import { usableCapacity } from '../../generate/usableCapacity'
 import { PALETTE_COLORS } from '../../constants'
 
 /* The app's locked type system. Montserrat and JetBrains Mono are loaded by
@@ -79,6 +81,11 @@ const RACK_TYPE_META = {
 
 function CapacityHero({ objects }) {
   const layoutCap = getLayoutCapacity(objects)
+  /* Usable = gross minus what Column Check says is lost (in-rack columns and
+     blocked pick zones, each position once) — read off the SAME check result
+     the Column Check panel shows, so the two totals always agree. */
+  const { result } = useColumnCheck()
+  const { usable } = usableCapacity(objects, { check: result })
   if (layoutCap.total === 0) return null
 
   const entries = Object.entries(layoutCap.breakdown)
@@ -101,14 +108,25 @@ function CapacityHero({ objects }) {
           Total pallet positions
         </span>
 
-        <div style={{ display:'flex', alignItems:'baseline', gap:6 }}>
+        <div style={{ display:'flex', alignItems:'baseline', flexWrap:'wrap', columnGap:6, rowGap:4 }}>
           <span style={{
             fontSize:32, fontWeight:800, fontFamily:'var(--font-mono)',
             color:'var(--text)', letterSpacing:'-0.03em', lineHeight:1,
           }}>
             {layoutCap.total.toLocaleString()}
           </span>
-          <span style={{ fontSize:11, color:'var(--text3)', fontWeight:500 }}>PAL</span>
+          <span style={{ fontSize:11, color:'var(--text3)', fontWeight:500 }}>positions</span>
+          {/* "· M usable" wraps as one unit on a narrow panel, never split */}
+          <span style={{ display:'inline-flex', alignItems:'baseline', gap:5, whiteSpace:'nowrap' }}>
+            <span style={{ fontSize:11, color:'var(--text3)' }}>·</span>
+            <span data-testid="capacity-usable" style={{
+              fontSize:20, fontWeight:700, fontFamily:'var(--font-mono)',
+              color:'var(--text)', letterSpacing:'-0.02em', lineHeight:1,
+            }}>
+              {usable.toLocaleString()}
+            </span>
+            <span style={{ fontSize:11, color:'var(--text3)', fontWeight:500 }}>usable</span>
+          </span>
         </div>
 
         <div style={{

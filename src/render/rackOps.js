@@ -86,18 +86,18 @@ function dividerPath(interior, upW, bands) {
 }
 
 /** DOUBLE ROW (`rack_double_row`) — two bands back to back with the flue
- *  between them.
+ *  gap between them.
  *
- *  The flue is drawn as a world-space rect filling the real gap, not as a
- *  fixed-width line: it is a genuine 6" dimension, so at 1:1 it should measure
- *  6". It is the only place this orange appears in the whole symbol set, which
- *  is what separates a double row from two singles parked next to each other.
- */
+ *  BUG 59 — no marker in the flue gap at all: the two row rects are drawn
+ *  with the real `flueH` gap left empty (background shows through) and
+ *  nothing is drawn on top of it — no line, no fill. This deliberately
+ *  diverges from the SVG reference (which draws a thin centred hairline);
+ *  the gap itself, at its own real width, is what reads as a flue now. */
 export function rackDoubleRowOps(obj, gridSize) {
   const { xs, upW } = uprightXs(obj, gridSize)
   const { x, y, width: w, height: h } = obj
 
-  const flueH = ((obj.flueSpaceIn || 6) / 12) * gridSize
+  const flueH = ((obj.flueSpaceIn || 9) / 12) * gridSize
   /* Guard a flue taller than the object itself — a malformed rack should draw
      as one band rather than two inverted ones. */
   const rowH = Math.max(0, (h - flueH) / 2)
@@ -115,7 +115,6 @@ export function rackDoubleRowOps(obj, gridSize) {
   const ops = [
     band(topY),
     band(botY),
-    { op: 'rect', x, y: y + rowH, w, h: flueH, fill: RACK_PALETTE.flue },
   ]
 
   const dividers = dividerPath(xs.slice(1, -1), upW,

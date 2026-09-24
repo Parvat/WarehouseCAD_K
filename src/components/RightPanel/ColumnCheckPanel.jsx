@@ -142,12 +142,13 @@ function ConflictCard({ conflict, index }) {
 }
 
 export function ColumnCheckPanel() {
-  const { result, mheKey, setMheKey, showMarks, setShowMarks } = useColumnCheck()
+  const { result, mheKey, setMheKey, showMarks, setShowMarks, pickBothSides, setPickBothSides } = useColumnCheck()
   const { mheOptions } = useRules()
-  const { rackConflicts, aisleBlocks, summary } = result
+  const { rackConflicts, aisleBlocks, pickBlocks = [], summary } = result
   const blocked = (aisleBlocks || []).filter(a => a.blocked)
+  const profileTravelFt = mheOptions[mheKey]?.travelFt ?? 8
 
-  const clean = !rackConflicts.length && !blocked.length
+  const clean = !rackConflicts.length && !blocked.length && !pickBlocks.length
 
   return (
     <SectionHeader title="Column Check" defaultOpen={true}>
@@ -189,6 +190,7 @@ export function ColumnCheckPanel() {
             <div style={{ ...S.mono9, color: 'var(--text3)' }}>
               {rackConflicts.length} column{rackConflicts.length === 1 ? '' : 's'} in racks
               {blocked.length > 0 && ` · ${blocked.length} aisle${blocked.length === 1 ? '' : 's'} blocked`}
+              {summary.positionsLostToPickZone > 0 && ` · −${summary.positionsLostToPickZone} blocked from the aisle`}
             </div>
 
             {blocked.map((a, i) => (
@@ -197,8 +199,11 @@ export function ColumnCheckPanel() {
                 background: 'var(--red-dim)', border: '0.5px solid var(--red-bdr)',
                 ...S.mono9, color: 'var(--red)',
               }}>
-                Aisle blocked · {a.clearFt}ft clear of {a.aisleFt}ft
-                — {summary.profile} needs {mheOptions[mheKey]?.minAisleFt}ft
+                {a.level === 1
+                  ? <>Aisle blocked · {a.clearFt}ft clear of {a.aisleFt}ft
+                      — {summary.profile} needs {profileTravelFt}ft to drive through</>
+                  : <>One-side pick only · {a.clearFt}ft clear of {a.aisleFt}ft
+                      — {summary.profile} needs {mheOptions[mheKey]?.aisleFt}ft to pick both sides</>}
               </div>
             ))}
 
@@ -207,6 +212,29 @@ export function ColumnCheckPanel() {
             ))}
           </>
         )}
+
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 10, paddingTop: 10, borderTop: '0.5px solid var(--border)',
+        }}>
+          <span style={{ fontSize: 11, color: 'var(--text2)' }} title="A column with clear space on only one side is accessible by default (drivable + pickable from the far side). Turn this on to flag those too.">
+            Require pick from both sides
+          </span>
+          <button onClick={() => setPickBothSides(!pickBothSides)} role="switch" aria-checked={pickBothSides}
+            aria-label="Require pick from both sides"
+            style={{
+              position: 'relative', width: 34, height: 20, borderRadius: 999, border: 'none',
+              cursor: 'pointer', flexShrink: 0, padding: 0,
+              background: pickBothSides ? 'var(--accent-solid)' : 'var(--surface3)',
+              transition: 'background 0.16s',
+            }}>
+            <span style={{
+              position: 'absolute', top: 3, left: pickBothSides ? 17 : 3, width: 14, height: 14,
+              borderRadius: '50%', transition: 'left 0.16s',
+              background: pickBothSides ? 'var(--accent-fg)' : 'var(--text3)',
+            }} />
+          </button>
+        </div>
 
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',

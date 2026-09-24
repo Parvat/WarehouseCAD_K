@@ -29,6 +29,12 @@ export function Scene({ listening = false, bind }) {
   const gridSize = useCanvasStore(s => s.gridSize)
   const visibleLayerIds = useCanvasStore(s => s.layers)
   const activeBaySelection = useCanvasStore(s => s.activeBaySelection)
+  // BUG 66 — ColumnGridShape's own min-screen-size floor needs the live
+  // zoom; read here (not baked into the `scene` memo below, which stays
+  // zoom-agnostic exactly as its own comment says — only the column
+  // shape's INTERNAL memo depends on zoom, so panning/zooming still
+  // rebuilds nothing for racks).
+  const zoom = useCanvasStore(s => s.zoom)
 
   /* A hidden layer hides its objects. Same rule the SVG applies — a layer counts
      as visible only when `visible` is truthy — so the two canvases cannot
@@ -69,7 +75,7 @@ export function Scene({ listening = false, bind }) {
             activeBaySelection={activeBaySelection} />
         }
         if (e.kind === 'columns') {
-          return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
+          return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} zoom={zoom} listening={listening} bind={bind} />
         }
         if (e.kind === 'aisle') {
           return <AisleShape key={e.obj.id} obj={e.obj} objects={objects} listening={listening} bind={bind} />

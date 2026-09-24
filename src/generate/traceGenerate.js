@@ -9,15 +9,22 @@
 //
 // Phase 1: generateLayout = stubGenerateLayout (a sensible fill).
 // Phase 2: swap in the real rack-engine — placementToObject never changes.
+//
+// brief.orientation: 'horizontal' | 'vertical' picks one, unchanged since
+// GENERATOR_SPEC_V10. 'auto' (BUG 47) runs BOTH through pickOrientation and
+// places whichever scores more USABLE pallet capacity — the manual pick still
+// costs exactly one generateLayout call either way.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { nanoid } from 'nanoid'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { getLayoutCapacity } from '../utils/capacity'
 import { sizingSheetLayout, generateFixtures } from './sizingLayout'
 import { DEFAULT_RULES } from '../rules/defaults'
+import { rackFootprint, groupBySegment } from './columnCheck'
+import { usableCapacity, mheProfile } from './usableCapacity'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
-const FLUE_IN = 6    // back-to-back flue gap for double rows
+const FLUE_IN = 9    // back-to-back flue gap for double rows
 
 // Storage/racking identity colour (matches warehouseObjects category "storage")
 const RACK_COLOR = '#22c55e'
@@ -48,12 +55,13 @@ function beamRackObject(p) {
   const upIn    = p.uprightWidthIn ?? 3
   const beamIn  = p.beamIn  ?? 96
   const depthIn = p.depthIn ?? 42
+  const flueIn  = p.flueIn  ?? FLUE_IN
   const beams   = Array.from({ length: Math.max(1, p.bays | 0) }, () => beamIn)
 
   const totalIn  = upIn * (beams.length + 1) + beams.reduce((s, b) => s + b, 0)
   const width    = (totalIn / 12) * GS
   const isDouble = p.type === 'rack_double_row'
-  const heightIn = isDouble ? (2 * depthIn + FLUE_IN) : depthIn
+  const heightIn = isDouble ? (2 * depthIn + flueIn) : depthIn
 
   return {
     ...baseFields(p.type),
@@ -65,8 +73,25 @@ function beamRackObject(p) {
     beams,                          // bays live here — capacity.js reads this
     activeBayIdx: null,
     uprightWidth: upIn,
-    palletWIn:    p.palletWIn ?? 48,
-    palletDIn:    p.palletDIn ?? 40,
+    /* depthIn/flueSpaceIn: a double row's own front/flue/back split, in
+       inches, not re-derivable from height alone (2*depthIn+flueIn has two
+       unknowns). columnCheck.js needs this to tell a column seated in the
+       flue (free) apart from one landing in a pick face (costs a position) —
+       COLUMN_GENERATOR_SPEC_V6.md Step 2. */
+    depthIn,
+    flueSpaceIn:  isDouble ? flueIn : 0,
+    /* flueBaseIn — the UN-widened base flue this placement's own band
+       started from (sizingSheetLayout's own `flueIn`, passed through
+       separately from the possibly-column-widened `p.flueIn` above), so a
+       live drag (useCanvasInteraction.js's beginDrag, canvas2's live-flue
+       feature) knows what to shrink back to once no column is left in the
+       gap — falls back to the widened flueIn itself only for a caller
+       that predates this field entirely (a direct placementToObject call
+       with no flueBaseIn of its own), not for anything sizingSheetLayout
+       itself ever produces now. */
+    flueBaseIn:   isDouble ? (p.flueBaseIn ?? flueIn) : 0,
+    palletWIn:    p.palletWIn ?? 40,
+    palletDIn:    p.palletDIn ?? 48,
     levels:       p.levels ?? 1,
     rotation:     p.angle ?? 0,
   }
@@ -91,22 +116,124 @@ function laneRackObject(p) {
 }
 
 export function placementToObject(p) {
-  return BEAM_TYPES.has(p.type) ? beamRackObject(p) : laneRackObject(p)
+  const o = BEAM_TYPES.has(p.type) ? beamRackObject(p) : laneRackObject(p)
+  /* Pre-assigned, not left for addObject's own nanoid(): aisleObjectsForRacks
+     needs a real id to point row1Id/row2Id at BEFORE these racks are pushed
+     into the store (addObject respects an id that's already set). */
+  o.id = nanoid()
+  return o
+}
+
+/** One `aisle` object (the same type/shape RightPanel's own "measure aisle"
+ *  button creates via createAisle) per gap between two adjacent rows in the
+ *  same run — so a generated layout's aisle widths render with the SAME
+ *  live, geometry-derived label every hand-placed aisle already gets
+ *  (DimensionLabels.jsx's AisleLabel), instead of a second, separate
+ *  display path.
+ *
+ *  Rotation-aware (BUG 45) via the SAME `rackFootprint`/`groupBySegment`
+ *  columnCheck.js already built for BUG 41's vertical orientation — a
+ *  naive "group by raw stored x, sort+pair by raw stored y" (the pre-BUG-45
+ *  approach) is only correct for horizontal racks, where x IS a run's own
+ *  position and y IS a band's own position with no rotation involved. For a
+ *  90°-rotated vertical rack, stored x/y/width/height are still the
+ *  PRE-rotation local box (traceGenerate never changes how it builds one,
+ *  only how it's placed and spun) — raw x is actually per-BAND there, not
+ *  per-run, so grouping by it paired the two SEGMENT-halves of the SAME row
+ *  (a real but irrelevant cross-aisle gap, reported as if it were the
+ *  pick aisle) instead of adjacent bands, and even a correct pairing would
+ *  still have measured the wrong rectangle, since raw width/height ignore
+ *  the 90° swap. `rackFootprint` converts to the true rotated world box
+ *  first; `groupBySegment` finds real same-run neighbors by cross-axis
+ *  OVERLAP in that true box, which holds for either orientation without
+ *  needing to know which one produced these racks. */
+export function aisleObjectsForRacks(racks) {
+  const beams = racks.filter(r => BEAM_TYPES.has(r.type))
+  const aisles = []
+  for (const run of groupBySegment(beams)) {
+    if (run.length < 2) continue
+    const stacked = rackFootprint(run[0]).rotated   // true: bands run along X. false: along Y.
+    const sorted = [...run].sort((a, b) => {
+      const fa = rackFootprint(a), fb = rackFootprint(b)
+      return stacked ? fa.x - fb.x : fa.y - fb.y
+    })
+    for (let i = 0; i < sorted.length - 1; i++) {
+      aisles.push({ type: 'aisle', row1Id: sorted[i].id, row2Id: sorted[i + 1].id, label: '' })
+    }
+  }
+  return aisles
+}
+
+/** Auto orientation (BUG 47): runs `generateLayout` once per orientation,
+ *  compares USABLE pallet capacity (gross minus the positions the column
+ *  check says are lost — in a column or with every pick zone blocked), and
+ *  returns whichever produced more —
+ *  ties keep horizontal, the long-standing default and the simpler layout
+ *  when it's a toss-up. Pure: doesn't touch the store or place anything,
+ *  so both candidate layouts can be scored without the loser ever being
+ *  drawn. `getLayoutCapacity` needs real v16b objects (beams/levels/
+ *  palletWIn), not raw placements, so each candidate is run through
+ *  `placementToObject` the same way `buildQueue` itself does before being
+ *  scored — capacity is read back the SAME way the UI's own result number
+ *  is, never a separate/parallel count. Each candidate is scored with its
+ *  own column grid and the building outline, exactly as Column Check will
+ *  see it once placed (building at the origin here; the check is
+ *  translation-invariant). Both gross and usable totals are returned so the
+ *  caller can report the comparison, not just the pick. */
+export function pickOrientation(brief, generateLayout, rules = DEFAULT_RULES) {
+  const profile = mheProfile(brief.mhe, rules)
+  const L = (brief.lengthFt || 0) * GS, W = (brief.widthFt || 0) * GS
+  const building = { type: 'fp_rect', fpVerts: [{ x: 0, y: 0 }, { x: L, y: 0 }, { x: L, y: W }, { x: 0, y: W }] }
+  const runFor = (orientation) => {
+    const b = { ...brief, orientation }
+    const placements = generateLayout(b, rules)
+    const objects = [...placements.map(placementToObject), ...generateFixtures(b, 0, 0), building]
+    const { gross, usable } = usableCapacity(objects, { profile, gridSize: GS, rules })
+    return { orientation, placements, total: gross, usable }
+  }
+  const horizontal = runFor('horizontal')
+  const vertical    = runFor('vertical')
+  const winner = vertical.usable > horizontal.usable ? vertical : horizontal
+  return {
+    orientation:      winner.orientation,
+    placements:       winner.placements,
+    horizontalTotal:  horizontal.total,
+    verticalTotal:    vertical.total,
+    horizontalUsable: horizontal.usable,
+    verticalUsable:   vertical.usable,
+  }
 }
 
 // ── Public entry the UI calls. Draws the building, fills it, returns capacity. ──
 export function generateAndPlace(brief, generateLayout = sizingSheetLayout, rules = DEFAULT_RULES) {
-  const queue = buildQueue(brief, generateLayout, rules)
+  const { queue, ...picked } = buildQueue(brief, generateLayout, rules)
   const store = useCanvasStore.getState()
   queue.forEach(o => store.addObject(o))
-  return getLayoutCapacity(useCanvasStore.getState().objects, rules).total
+  return { ...placedCapacity(brief, rules), ...picked }
 }
 
 /* Draws the building, then returns every object to place inside it, already
    offset into the building's world position. Shared by the sync and batched
-   entries so the two can never drift apart. */
+   entries so the two can never drift apart.
+ *
+ *  `brief.orientation === 'auto'` routes through `pickOrientation` instead
+ *  of calling `generateLayout` directly — the manual Horizontal/Vertical
+ *  toggle still calls it exactly once, unchanged, so a manual pick costs
+ *  no extra work and can't be second-guessed by the auto comparison. Also
+ *  returns which orientation was actually used (echoed for a manual pick,
+ *  the winner for auto) and, in auto mode, both candidates' totals — the
+ *  UI needs these to report the comparison, not just place the winner. */
 function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
   const store = useCanvasStore.getState()
+
+  /* BUG 65 — remove whatever the LAST Generate click placed before placing
+     this one, so a second click replaces the layout instead of stacking an
+     exact duplicate on top of it (placeFpObject's own origin is
+     deterministic from lengthFt/widthFt alone — an unchanged building size
+     regenerates at the identical world position every time). Only ever
+     touches a building this SAME generator placed (tracked by id, set at
+     the end of this function) — a hand-drawn floor plan is never at risk. */
+  store.clearGeneratedLayout()
 
   // 1) Draw the building outline via the store's own floor-plan placer.
   //    It centres the box at world origin and fits the view.
@@ -117,15 +244,38 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
   const fp = after.objects.find(o => o.id === after.selectedIds[0])
   const ox = fp ? fp.x : 0
   const oy = fp ? fp.y : 0
+  if (fp) after.markGenerated(fp.id)
 
   // 3) Racks through the ONE factory, then the fixtures the brief implies.
-  const racks = generateLayout(brief, rules).map(p => {
+  const auto = brief.orientation === 'auto'
+  const pick = auto ? pickOrientation(brief, generateLayout, rules) : null
+  const rawPlacements = auto ? pick.placements : generateLayout(brief, rules)
+  const racks = rawPlacements.map(p => {
     const o = placementToObject(p)
     o.x += ox
     o.y += oy
     return o
   })
-  return parentGenerated([...racks, ...generateFixtures(brief, ox, oy)], fp?.id)
+  const queue = parentGenerated(
+    [...racks, ...aisleObjectsForRacks(racks), ...generateFixtures(brief, ox, oy)],
+    fp?.id,
+  )
+  return {
+    queue,
+    orientation:     auto ? pick.orientation : (brief.orientation ?? 'horizontal'),
+    horizontalTotal:  pick?.horizontalTotal ?? null,
+    verticalTotal:    pick?.verticalTotal ?? null,
+    horizontalUsable: pick?.horizontalUsable ?? null,
+    verticalUsable:   pick?.verticalUsable ?? null,
+  }
+}
+
+/* Gross and usable capacity of everything now on the canvas, read the same
+   way the headline and Column Check read it. */
+function placedCapacity(brief, rules) {
+  const { gross, usable } = usableCapacity(useCanvasStore.getState().objects,
+    { profile: mheProfile(brief.mhe, rules), gridSize: GS, rules })
+  return { total: gross, usable }
 }
 
 /* Adopt every generated object into the building it was drawn inside.
@@ -168,12 +318,12 @@ const nextFrame = () =>
    takes — the click just feels dead. Yielding to a frame between batches lets
    the spinner paint and keeps the window responsive while the layout fills in.
 
-   Returns the same derived capacity the sync entry does. */
+   Returns the same shape the sync entry does. */
 export async function generateAndPlaceBatched(
   brief,
   { generateLayout = sizingSheetLayout, batch = 10, onProgress, rules = DEFAULT_RULES } = {},
 ) {
-  const queue = buildQueue(brief, generateLayout, rules)
+  const { queue, ...picked } = buildQueue(brief, generateLayout, rules)
   onProgress?.(0)
   await nextFrame()
 
@@ -185,7 +335,7 @@ export async function generateAndPlaceBatched(
   }
 
   onProgress?.(1)
-  return getLayoutCapacity(useCanvasStore.getState().objects, rules).total
+  return { ...placedCapacity(brief, rules), ...picked }
 }
 
 // ═══ PHASE-1 STUB ════════════════════════════════════════════════════════════
@@ -214,7 +364,7 @@ export function stubGenerateLayout(brief) {
   for (let yFt = wallClearFt; yFt + rowDepthFt <= widthFt - wallClearFt; yFt += pitchFt) {
     placements.push({
       type: rackType, xFt: wallClearFt, yFt,
-      bays, beamIn, depthIn, levels, palletWIn: 48, angle: 0,
+      bays, beamIn, depthIn, levels, palletWIn: 40, angle: 0,
     })
   }
   return placements
