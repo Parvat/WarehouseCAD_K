@@ -48,6 +48,71 @@ the measuring tool:
 
 ---
 
+## 2b. Building variation matrix (REQUIRED — never test on one size only)
+
+A bug that only appears on large buildings (1080×410: racks stopped early, huge
+"leftover" aisle, empty middle) passed every test because all references were
+240×120. Every generator rule must be checked across this matrix.
+
+| ID | Building (L×W ft) | Grid (ft) | Forklift | Why it's here |
+|---|---|---|---|---|
+| M1 | 100×60 | 20×25 | Reach | very small |
+| M2 | 150×100 | 25×30 | Reach | small |
+| M3 | 240×120 | 25×30 | Reach | original reference |
+| M4 | 240×120 | 50×54 | Counterbalance | wide grid |
+| M5 | 300×300 | 30×30 | Reach | square building |
+| M6 | 300×200 | 40×40 | VNA | narrow aisles |
+| M7 | 400×250 | 25×30 | Counterbalance | medium |
+| M8 | 500×300 | 50×54 | Reach | medium, wide grid |
+| M9 | 600×400 | 40×40 | Reach | large |
+| M10 | 800×300 | 25×30 | VNA | long |
+| M11 | 1080×410 | 25×30 | Reach | the failing case |
+| M12 | 1080×410 | 50×54 | Counterbalance | large, wide grid |
+| M13 | 1200×600 | 50×50 | Reach | very large |
+| M14 | 1000×150 | 25×30 | Reach | long and narrow |
+| M15 | 150×1000 | 25×30 | Reach | narrow and deep (orientation flip) |
+| M16 | 175×95 | 22×27 | Reach | odd sizes, awkward grid |
+| M17 | 333×217 | 30×35 | Counterbalance | non-round everything |
+| M18 | 480×240 | 60×50 | VNA | grid larger than bays |
+| M19 | 720×360 | 36×42 | Reach | mid-large, odd grid |
+| M20 | 260×140 | 26×31 | Counterbalance | grid just off a common size |
+| M21 | 900×500 | 40×60 | VNA | large, uneven grid |
+| M22 | 125×125 | 25×25 | Reach | small square |
+| M23 | 1500×300 | 50×54 | Reach | extreme length |
+| M24 | 400×100 | 20×20 | Counterbalance | tight grid |
+
+Each case runs: **both orientations × Columns along wall Yes and No** (96 runs).
+
+### Rules checked on EVERY run (no hand-computed totals needed)
+1. **Fills the building:** racks reach within one row module of every wall along the
+   row-stacking axis, and within one bay + cross-aisle of each end along the run.
+2. **No oversized gap:** no aisle between interior rows exceeds the forklift aisle
+   unless a column forced a widen. The far-wall leftover gap must contain NO legal
+   position for another single row (checked against the aisle, straddle and travel
+   rules). Shortcut: if the gap is < 2 × aisle + single-row depth (24.5′ reach,
+   28.5′ counterbalance, 15.5′ VNA) this holds automatically; otherwise the test
+   scans the gap for a legal position. A wider gap is correct when a column in it
+   leaves no legal position (e.g. M4, M19 horizontal). Along the run,
+   the cross-aisle must be ≥ the forklift cross-aisle width and ≤ that width + one
+   bay; no other empty stretch longer than one bay.
+3. **Every aisle ≥ travelFt**; no column blocks a travel aisle (level 1).
+4. **No straddling columns:** every column is fully in a flue, face, or aisle.
+5. **Grid rule:** Yes → line on each near wall on both axes; No → first line one
+   pitch in on both axes, no column on any wall.
+6. **Capacity sanity:** usable ≤ gross; usable = gross − losses, no double counting;
+   gross > 0.
+7. **Auto-pick:** chosen orientation has usable ≥ the other (tie → horizontal).
+8. **No overlaps:** no two racks overlap; no rack outside the building.
+9. **Regenerate:** running twice gives identical output, one layout only.
+
+### Scale sanity (catches silent caps)
+- Packing density must not drop with size: for M2 → M9 → M13 (same truck family),
+  positions ratio ≥ 0.75 × area ratio (4× the area → at least 3× the positions).
+  (A looser "≥ area ratio / 2" check failed to catch the caps.)
+- Any hard cap on rows, bays, or segment length is a bug unless documented here.
+
+---
+
 ## 3. Areas and expected values
 
 ### A. Pallet position counting
@@ -108,7 +173,9 @@ beam; 3" clearance at each upright, 4" between pallets. N positions fit if
 - Rows pack at pitch = pairDepth + aisle; aisles equal the forklift width except
   where a column forced a widen, AND except the aisle before the far-wall row,
   which absorbs leftover space (whole rows can't fill any width exactly). That
-  aisle may be wider than the forklift aisle, never narrower.
+  aisle may be wider than the forklift aisle, never narrower, and must contain no
+  legal position for another single row (width < 2 × aisle + single-row depth
+  guarantees this; a column in the gap can also make it true).
 - Widen only when the gap to the next column is **less than travelFt**.
 - No aisle narrower than travelFt anywhere (no "blocked" level-1 aisle).
 - Level 2 (clear ≥ travelFt but < aisle) counts as accessible.
@@ -179,6 +246,7 @@ listed tests FAIL, then revert. Record the result.
 | J | Remove center snap | J: lone-column center snap | |
 | J | Drag writes flueSpaceIn into flueBaseIn | J: shrink back to 9" | |
 | K | Pick zone depth → 0 | K: aisle-column blocks position | |
+| 2b | Re-add the MAX_ROWS / MAX_BAYS caps | 2b: rule 2 on M10–M15, M21, M23; scale check M9→M13 (M9 alone is below the caps) | |
 
 **Any row where no test failed means those tests are not real. Fix before trusting.**
 

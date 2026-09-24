@@ -27,12 +27,15 @@ const GS      = 40   // px per foot — v16b convention (store.gridSize)
 const FLUE_IN = 9    // back-to-back flue gap for double rows
 const UP_IN   = 3    // upright width
 
-/* A naive fill on a 1,000ft building can ask for tens of thousands of bay
-   rects. These bound the shape count so the canvas stays interactive; the
-   cross-aisle also roughly halves bays-per-object, which is why it helps
-   rendering as well as truck movement. */
-const MAX_ROWS      = 40
-const MAX_BAYS_SEG  = 40
+/* No cap on rows, bays or segment length. There used to be two (40 rows,
+   40 bays per segment) to bound the shape count, but they were applied to
+   the GEOMETRY: a 1080x410 building stopped filling two-thirds of the way
+   along and dumped the rest into one 341' "last aisle" (vertical) or a 418'
+   "cross-aisle" (horizontal). Drawing cost is already bounded another way —
+   each segment is one object and its bays are one path (rackOps) — so the
+   layout always runs wall to wall. The only loop limit left is a guard
+   against an endless walk, sized from the building so it can never cut a
+   real layout short (TEST_PLAN.md §2b, scale sanity). */
 
 /** Bays that fit in a clear run, given the shared-upright layout
  *  `upright | beam | upright | beam | upright`. */
@@ -96,6 +99,10 @@ export function rowBands(widthFt, {
   const bottomY = widthFt - singleFt - wallClearFt
   const hasGrid = gridYFt > 0
   const colHalfFt  = colSizeIn / 24   // half the REAL column width, not the 12"-assumed module constant
+  /* Endless-walk guard, never a layout limit: every round that doesn't
+     break places a row at least `singleFt` deep, so no real walk takes
+     more rounds than the building has single-row depths. */
+  const walkGuard = Math.ceil(widthFt / singleFt) + 2
   const colWidthFt = 2 * colHalfFt
 
   /* BUG 59 — the flue width a pair actually needs to physically hold a
@@ -176,6 +183,40 @@ export function rowBands(widthFt, {
     return { start: candidates[0].start }
   }
 
+  /* No column may straddle a row's edge or an internal face/flue boundary
+   * (TEST_PLAN.md §3C, matrix rule 4). The seating steps above cover a column
+   * that lands in a flue or a face; this catches what they can't — above all
+   * a column whose far edge just clips a row's FRONT face (the column sits at
+   * the very end of the aisle). `cuts` are the row's internal boundaries,
+   * offsets from its start: [] for a single, [face, face + flue] for a pair.
+   * Returns a straddling column's centre, or null. */
+  const straddlingColumn = (start, depthFt, cuts) => columnsOverlapping(start, start + depthFt).find(colY => {
+    const lo = colY - colHalfFt, hi = colY + colHalfFt
+    return [0, ...cuts, depthFt].some(c => lo < start + c - 1e-9 && hi > start + c + 1e-9)
+  }) ?? null
+
+  /* Push a row FORWARD (never back — that would shrink the aisle before it)
+   * by the least amount that leaves every column it touches wholly inside
+   * one of its bands, or wholly behind it in the aisle. For a clipped front
+   * face that is "just past the column": start = the column's far edge, a
+   * column-forced aisle widen of under one column width. The face behind
+   * the column then reads as a pick-zone block, as intended. */
+  const settleRow = (start, depthFt, cuts) => {
+    const edges = [0, ...cuts, depthFt]
+    for (let k = 0; k < edges.length + 4; k++) {
+      const colY = straddlingColumn(start, depthFt, cuts)
+      if (colY == null) return start
+      const lo = colY - colHalfFt, hi = colY + colHalfFt
+      const options = [hi]   // column wholly in the aisle before the row
+      for (let b = 0; b < edges.length - 1; b++) {
+        const s = Math.max(start, hi - edges[b + 1])   // column's far edge at this band's end
+        if (s > start + 1e-9 && s <= lo - edges[b] + 1e-9) options.push(s)
+      }
+      start = Math.min(...options.filter(s => s > start + 1e-9))
+    }
+    return start
+  }
+
   /* STEP 1 — the near-wall single row. Locked (position-wise, not column-
    * aware — the far-wall pinch-loop below is the one place a wall row can
    * still move), offset off the wall by wallClearFt. */
@@ -217,7 +258,7 @@ export function rowBands(widthFt, {
     return out
   }
 
-  for (let guard = 0; guard < MAX_ROWS * 3 && bands.length < MAX_ROWS; guard++) {
+  for (let guard = 0; guard < walkGuard; guard++) {
     /* STEP 2 — place an aisle, if there's room for one before the far wall. */
     if (bottomY - lastEnd < aisleFt) break   // NO branch: wall-hit, fall through to cleanup below
 
@@ -301,15 +342,43 @@ export function rowBands(widthFt, {
           }
         }
       }
+      const pairCuts = rackType === 'rack_double_row' ? [singleFt, singleFt + pairFlueIn / 12] : []
+      start = settleRow(start, pairMidFt, pairCuts)
+      if (start + pairMidFt > bottomY + 1e-9) {   // pushed past the far wall's row: stop here
+        lastEnd = preAisleEnd
+        break
+      }
       lastEnd = start + pairMidFt
       bands.push({ type: rackType, yFt: start, depthFt: pairMidFt, flueIn: pairFlueIn })
-    } else if (afterAisle + singleFt <= bottomY) {
-      lastEnd = afterAisle
-      bands.push({ type: 'rack_row', yFt: afterAisle, depthFt: singleFt })
+    } else if (settleRow(afterAisle, singleFt, []) + singleFt <= bottomY) {
+      const start = settleRow(afterAisle, singleFt, [])
+      lastEnd = start + singleFt
+      bands.push({ type: 'rack_row', yFt: start, depthFt: singleFt })
     } else {
       lastEnd = preAisleEnd   // nothing placed this round — undo the aisle-only advance
       break
     }
+  }
+
+  /* After the far-wall cleanup pops a row, the gap it leaves can still hold
+   * a single row with a full aisle on each side (TEST_PLAN.md §2b rule 2:
+   * the last aisle must stay < 2 x aisle + single depth). Try one, under the
+   * same rules the walk uses: the travelFt widen gate before it, no
+   * straddled column, >= aisleFt left before the far-wall row, and no column
+   * pinching that last gap below travelFt on both sides. Returns whether one
+   * was placed. */
+  const tryFillSingle = () => {
+    const gap = nextColumnNearEdge(lastEnd) - lastEnd
+    const aisle = (!hasGrid || gap >= travelFt) ? aisleFt : Math.max(aisleFt, gap + colWidthFt + travelFt)
+    const start = settleRow(lastEnd + aisle, singleFt, [])
+    const end = start + singleFt
+    if (bottomY - end < aisleFt - 1e-9) return false
+    const pinched = columnsOverlapping(end, bottomY).some(colY =>
+      Math.max((colY - colHalfFt) - end, bottomY - (colY + colHalfFt)) < travelFt)
+    if (pinched) return false
+    bands.push({ type: 'rack_row', yFt: start, depthFt: singleFt })
+    lastEnd = end
+    return true
   }
 
   /* Wall-hit cleanup (STEP 2's NO branch): if a back-to-back pair is the
@@ -332,12 +401,15 @@ export function rowBands(widthFt, {
         remaining = bottomY - lastEnd
       }
     }
+    let popped = false
     while (remaining < aisleFt && bands.length > 1) {
       bands.pop()
+      popped = true
       const prev = bands[bands.length - 1]
       lastEnd = prev.yFt + prev.depthFt
       remaining = bottomY - lastEnd
     }
+    if (popped && tryFillSingle()) remaining = bottomY - lastEnd
   }
 
   /* BUG 53 — the cleanup above only ever checks for enough SPACE before
@@ -358,7 +430,7 @@ export function rowBands(widthFt, {
      it; there is no customer preference to gate a drop on any more, and a
      shift never blocks the aisle the way the drop's old "just remove it
      and re-check space" branch occasionally still could downstream. */
-  for (let guard2 = 0; guard2 < MAX_ROWS && hasGrid && bands.length > 1; guard2++) {
+  for (let guard2 = 0; guard2 < walkGuard && hasGrid && bands.length > 1; guard2++) {
     const pinchingCol = columnsOverlapping(lastEnd, bottomY).find(colY => {
       const nearClear = (colY - colHalfFt) - lastEnd
       const farClear  = bottomY - (colY + colHalfFt)
@@ -385,12 +457,16 @@ export function rowBands(widthFt, {
           remaining = bottomY - lastEnd
         }
       }
+      let popped = false
       while (remaining < aisleFt && bands.length > 1) {
         bands.pop()
+        popped = true
         const prev = bands[bands.length - 1]
         lastEnd = prev.yFt + prev.depthFt
         remaining = bottomY - lastEnd
       }
+      // the popped row's gap may still hold a single — see tryFillSingle
+      if (popped && tryFillSingle()) remaining = bottomY - lastEnd
     }
   }
 
@@ -469,12 +545,12 @@ export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn =
 
   const capacityFt = usable - crossAisleFt - extraUprightFt
   const total = capacityFt >= beamIn / 12
-    ? Math.min(MAX_BAYS_SEG * 2, baysInRun(capacityFt, beamIn, upIn))
+    ? baysInRun(capacityFt, beamIn, upIn)
     : 0
 
   /* Too narrow to be worth splitting — one run beats two stubs. */
   if (total < 2) {
-    const bays = Math.min(MAX_BAYS_SEG, baysInRun(usable, beamIn, upIn))
+    const bays = baysInRun(usable, beamIn, upIn)
     return bays > 0
       ? { segments: [{ xFt: x0, bays }], bays, crossAisle: null }
       : { segments: [], bays: 0, crossAisle: null }
@@ -482,8 +558,8 @@ export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn =
 
   const aisleWidthFt = usable - runLenFt(total) - extraUprightFt
   const colLinesFt   = runColumnLinesFt(runGridFt, runGridOffsetFt, lengthFt, runGridMaxFt)
-  const minN1 = Math.max(1, total - MAX_BAYS_SEG)
-  const maxN1 = Math.min(total - 1, MAX_BAYS_SEG)
+  const minN1 = 1
+  const maxN1 = total - 1
   const balancedN1 = Math.min(maxN1, Math.max(minN1, Math.round(total / 2)))
 
   let n1 = null

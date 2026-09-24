@@ -1,6 +1,6 @@
 # Canvas2 + Generator — Test Suite Record
 
-Implements `TEST_PLAN.md` (areas A–J), plus area K (pick zones, added 2026-09-24). This file records what each test covers,
+Implements `TEST_PLAN.md` (areas A–J), plus area K (pick zones) and the §2b building variation matrix (M1–M24). This file records what each test covers,
 the expected values it asserts, the break-it proof, and the final result.
 Bugs are logged in `CANVAS2_BUGLOG.md`; nothing here belongs there.
 
@@ -162,6 +162,54 @@ building outline, the same inputs Column Check sees once placed.
 
 ---
 
+### §2b — Building variation matrix · `M_matrix.test.js` (872 tests)
+24 buildings (M1–M24, TEST_PLAN.md §2b) × both orientations × both "Columns
+along wall" settings = 96 runs, each checked against all 9 rules (864 tests),
+plus 8 scale-sanity tests. Rules only; no totals are captured anywhere.
+
+| Rule | Asserts, per run |
+|---|---|
+| 1 fills | first/last row within one row module (pair + aisle) of each wall along the stack axis; every row within one bay + cross-aisle of each end along the run |
+| 2 no oversized gap | interior aisles = forklift aisle unless a column forced a widen (same detector as E-exact); **far-wall leftover gap holds no legal position for another single row** — under 2 × aisle + single depth (24.5 / 28.5 / 15.5′) it passes on width alone, above it an exhaustive scan runs (aisle ≥ forklift aisle both sides, no straddled column, every column leaving ≥ travelFt on one side; 0.01′ sweep plus every point where legality can change); per row, at most one stretch longer than a bay, and it is the cross-aisle, in [cross-aisle, cross-aisle + 8.25′]; wall-end gaps ≤ one bay |
+| 3 travel | every row-to-row gap ≥ travelFt; no level-1 column block |
+| 4 no straddle | every column touching a rack is wholly inside one face or flue band and inside the rack's run |
+| 5 grid | drawn lines = avoidance lines on X and Y; Yes → first line 0; No → first line one pitch in, none on either wall |
+| 6 capacity | gross > 0, usable ≤ gross, usable = gross − in-rack − pick-zone, no position in both lists or twice |
+| 7 auto-pick | winner's usable ≥ loser's; tie → horizontal |
+| 8 overlaps | no two racks overlap; every rack inside the building |
+| 9 regenerate | two `generateAndPlace` runs through the real store → one building, one grid, identical objects (ids normalised); the placed layout = the generator's output |
+| scale ×8 | M2 → M9 → M13 (reach), both orientations and toggles: positions ratio ≥ 0.75 × area ratio (density doesn't fall as the building grows; 4× area → ≥ 3× positions) |
+
+**Caps removed (the fix under test):** `MAX_ROWS = 40` and `MAX_BAYS_SEG = 40`
+are gone from `sizingLayout.js`. `rowBands` keeps an endless-walk guard
+sized from the building (`ceil(stackFt / singleFt) + 2` rounds, each placing
+at least a single row). `rowSegments` no longer limits bays or the split.
+
+**Two generator fixes** (after the matrix first ran, 26 failures):
+- **Rule 4 — no straddle.** `settleRow` (in `rowBands`): after the flue/face
+  seating steps, any column still crossing a row's edge or a face/flue
+  boundary pushes the row FORWARD by the least amount that leaves the column
+  wholly inside one band or wholly in the aisle before it. For a clipped
+  front face that is "just past the column" (start = column's far edge), a
+  column-forced widen of under one column width; the face behind it then
+  shows the expected pick-zone X. Applied to pairs and to singles. If the
+  push would run into the far-wall row, the walk stops there instead.
+- **Rule 2 — refill after a pop.** `tryFillSingle`: when the far-wall cleanup
+  pops a row (either cleanup pass), it tries a single in the freed gap under
+  the walk's own rules — travelFt widen gate, no straddle, ≥ aisle before the
+  far-wall row, and no column pinching that last gap below travelFt.
+
+**Matrix result: 872 / 872 pass.**
+
+Rule 2's far-wall check is worded as the scan itself (PP, 2026-09-24): "the
+far-wall leftover gap must contain no legal position for another single
+row", with the width bound kept as a fast pass. That settles M4 and M19
+horizontal (31′ and 27.5′ gaps): the scan finds no legal single in either —
+M4's column leaves 7.5′ to the far-wall row (< 8′ travel), M19's sits 7′ past
+the last pair — so the generator already fills them as well as the rules
+allow.
+
+
 ## 3. Plan-vs-code discrepancies found, and how each was resolved
 
 The first run gave 22 failures. All three causes were genuine differences
@@ -249,6 +297,13 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 
 | H | **Auto-pick compares gross again** (`vertical.total > horizontal.total`) | 3: `H-usable` hand-built (picks vertical), `H-usable` R3 wall=Yes, R3 wall=No (gross picks vertical, usable favours horizontal) | ✓ |
 
+| §2b | **Re-add the caps** (restore the committed `sizingLayout.js` with `MAX_ROWS`/`MAX_BAYS_SEG` = 40) | 34 newly failing: rule 2 on M10, M11, M12, M13, M14, M21, M23 (all four runs each) and M15 vertical ×2; scale sanity M9 → M13 ×4. **M9 does not fail** — at 600×400 neither cap binds (33 rows, 72 bays), so the plan's "M9–M13 must fail" expectation is off for M9; M14, M15 and M21 also fail. | ✓ |
+
+| §2b | **Remove the straddle push** (`settleRow` returns the row's start unchanged) | 18: rule 4 on M4 V, M7 H, M8 H, M12 V, M16 H, M17 V, M19 V, M23 H, M24 V (both wall settings each) — exactly the pre-fix set | ✓ |
+| §2b | **Remove the single refill** (`tryFillSingle` returns false) | 4: rule 2 on M2 H and M15 H (both wall settings) — exactly the pre-fix set that the refill resolves | ✓ |
+
+| §2b | **Scan rule: remove the single refill AND re-add the caps** (`tryFillSingle` returns false; `bands.length < 40`; bays capped at 80 / 40 per segment) | 40: rule 2 ×36 and scale M9 → M13 ×4. **The scan finds a legal single in 20 runs:** M2 H 30′ gap (legal at 76.5′), and the capped-row sides of M10 V, M11 V (341.5′ gap), M12 V, M13 V, M14 V, M15 H, M21 V, M23 V (761.5′). The other 16 rule-2 failures are the capped-bay sides failing the cross-aisle bound (e.g. M11 H 418.5′). | ✓ |
+
 **Round 1 (original code):**
 
 | Area | Break applied | Tests that failed | Reverted |
@@ -321,8 +376,14 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 232 tests, 232 passing** (after all breaks reverted).
-- **Whole project: 626 tests, 626 passing.**
+- **Plan suite: 1,104 tests, 1,104 passing** (after all breaks reverted).
+- **Whole project: 1,498 tests, 1,498 passing.**
+- **1080×410 vertical in the running app** (headless Chrome, software
+  rendering, same machine, old capped layout vs uncapped): 116 racks,
+  43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:
+  p95 13 ms, 0). Pan p95 40 ms, ~19% of frames > 33 ms (capped: p95 27 ms,
+  ~4%). Wheel zoom unchanged (p50 27 ms both). Generate 1.7–1.9 s (capped
+  1.1 s).
 - Production build clean.
 - Capacity totals R1–R5: **pending**, as TEST_PLAN.md §2 requires.
 - Still to do by PP: the manual measuring-tool checks in TEST_PLAN.md §5, and
