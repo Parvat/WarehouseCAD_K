@@ -27,6 +27,7 @@ export const RACK_PALETTE = {
   fill:      '#DCE8DC',
   border:    '#3E6B54',   // rack body outline — pine is reserved for the building wall
   divider:   '#9CBBAA',   // bay / lane boundaries
+  upright:   '#8FAE9C',   // upright frames, filled at real width — a shade under the divider so a 3" frame reads as steel, not a gap
   flue:      '#E0A63C',   // double row only
   roller:    '#C7A15A',   // pallet-flow roller track
   structure: '#2E4A3A',   // arrows, drive-in back wall
@@ -67,9 +68,36 @@ export function rackRowOps(obj, gridSize) {
     strokeWidth: RACK_LINE.edge,
   }]
 
-  const dividers = dividerPath(xs.slice(1, -1), upW, [{ y, h }])
-  if (dividers) ops.push(dividers)
+  const uprights = uprightsOp(xs, upW, [{ y, h }])
+  if (uprights) ops.push(uprights)
   return ops
+}
+
+/** Every upright frame of a beam rack, drawn to scale: a filled rect at the
+ *  frame's real width (`uprightWidth`, 3" default) across each band — one
+ *  op, one node, however many bays. `lefts` are the uprights' left edges
+ *  (uprightXs' `xs`: both end frames and every interior one). Never drawn
+ *  across a double row's flue: the two bands are separate frames.
+ *
+ *  The op stays zoom-free; the painter applies `minPx` (a SCREEN-px floor,
+ *  the old hairline width) through `uprightDrawRects`, so a 3" frame still
+ *  shows as a line at building-overview zoom instead of vanishing — the same
+ *  idea as the column markers' floor — and at working zoom is exactly 3". */
+function uprightsOp(lefts, upW, bands) {
+  if (!lefts.length || !bands.length) return null
+  const rects = []
+  for (const x of lefts) for (const b of bands) rects.push({ x, y: b.y, w: upW, h: b.h })
+  return { op: 'uprights', rects, fill: RACK_PALETTE.upright, minPx: RACK_LINE.hair }
+}
+
+/** The rects an `uprights` op actually paints at stage scale `scale`:
+ *  real width, or `minPx` screen px if that's wider, centred on the frame. */
+export function uprightDrawRects(op, scale = 1) {
+  const minW = op.minPx / (scale || 1)
+  return op.rects.map(r => {
+    const w = Math.max(r.w, minW)
+    return { x: r.x + r.w / 2 - w / 2, y: r.y, w, h: r.h }
+  })
 }
 
 /** Bay dividers for one or more horizontal bands, as a SINGLE path.
@@ -117,9 +145,8 @@ export function rackDoubleRowOps(obj, gridSize) {
     band(botY),
   ]
 
-  const dividers = dividerPath(xs.slice(1, -1), upW,
-    [{ y: topY, h: rowH }, { y: botY, h: rowH }])
-  if (dividers) ops.push(dividers)
+  const uprights = uprightsOp(xs, upW, [{ y: topY, h: rowH }, { y: botY, h: rowH }])
+  if (uprights) ops.push(uprights)
   return ops
 }
 

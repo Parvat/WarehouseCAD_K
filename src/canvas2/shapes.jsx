@@ -2,7 +2,8 @@ import { useCallback, useMemo } from 'react'
 import { Group, Rect, Path, Shape, Circle, Line, Text } from 'react-konva'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
-import { uprightXs, cantileverGeom } from '../render/rackOps'
+import { uprightXs, cantileverGeom, uprightDrawRects } from '../render/rackOps'
+import { rackBandsWorld, columnMarkerRect } from './columnMarker'
 import { positionFootprintIn } from '../utils/capacity'
 import { aisleRect } from './hitTest'
 
@@ -103,6 +104,21 @@ export function Ops({ ops, opacity = 1, listening = false }) {
               dash={o.dash} opacity={(o.opacity ?? 1) * opacity}
               strokeScaleEnabled={false} perfectDrawEnabled={false}
               shadowForStrokeEnabled={false} listening={listening} />
+          )
+        }
+        /* Upright frames at their real width, floored at `minPx` SCREEN px so
+           they never vanish at overview zoom — the floor needs the live stage
+           scale, which is only known here (same reason as the arrows below). */
+        if (o.op === 'uprights') {
+          return (
+            <Shape key={i} listening={false} perfectDrawEnabled={false}
+              opacity={(o.opacity ?? 1) * opacity}
+              sceneFunc={(ctx, shape) => {
+                const s = shape.getStage()?.scaleX() || 1
+                const c = ctx._context
+                c.fillStyle = o.fill
+                for (const r of uprightDrawRects(o, s)) c.fillRect(r.x, r.y, r.w, r.h)
+              }} />
           )
         }
         /* Travel arrows are a legend mark: ONE size on the whole sheet whatever
@@ -449,18 +465,22 @@ const MIN_COLUMN_MARKER_PX = 6
  *  Scene.jsx/Canvas2.jsx — this shape carries no zoom on its own
  *  otherwise, unlike the screen-constant-stroke trick below it, which
  *  needs no zoom input at all. */
-export function ColumnGridShape({ obj, gridSize, zoom = 1, listening = false, bind }) {
+export function ColumnGridShape({ obj, gridSize, zoom = 1, racks = [], listening = false, bind }) {
+  /* A grown marker stays inside the rack face its column sits in, growing
+     away from a double row's flue (columnMarker.js) — centred growth spilled
+     it across the gap and read as a column on the joint. */
+  const bands = useMemo(() => rackBandsWorld(racks, gridSize), [racks, gridSize])
   const d = useMemo(() => {
     if (obj.showGrid === false) return null
     const cols = expandColumnGrid(obj, gridSize)
     if (!cols.length) return null
     let out = ''
     for (const c of cols) {
-      const g = growToMinScreenSize({ x: c.x, y: c.y, width: c.w, height: c.h }, zoom, MIN_COLUMN_MARKER_PX)
+      const g = columnMarkerRect(c, bands, zoom, MIN_COLUMN_MARKER_PX)
       out += `M${g.x} ${g.y}h${g.width}v${g.height}h${-g.width}Z`
     }
     return out
-  }, [obj, gridSize, zoom])
+  }, [obj, gridSize, zoom, bands])
 
   if (!d) return null
   return (

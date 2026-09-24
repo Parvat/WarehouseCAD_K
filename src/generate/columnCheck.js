@@ -131,7 +131,7 @@ export function expandColumnGrid(cg, gridSize = GS) {
 
 const PICK_TYPES = new Set(['rack_row', 'rack_double_row'])
 
-function localRectToWorld(obj, rect) {
+export function localRectToWorld(obj, rect) {
   const rot = (((obj.rotation || 0) % 360) + 360) % 360
   if (rot === 0) return { ...rect }
   const cx = obj.x + obj.width / 2, cy = obj.y + obj.height / 2
@@ -255,6 +255,55 @@ export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILE
     })
   }
   return out
+}
+
+// ── Columns on upright frames ────────────────────────────────────────────────
+/* A column can't be installed through an upright frame, so any column whose
+ * footprint overlaps one is flagged — never moved; the dealer resolves it.
+ * Frames are the rack's own `uprightXs` (both ends and every interior one,
+ * `uprightWidth` wide), one per band: a double row has two frame lines, one
+ * per face, and none across the flue. Local frame -> world exactly as the
+ * pick zones do; racks at other than 0/90/180/270° are skipped. */
+
+/** Upright frames of one rack in its LOCAL frame: { upright, face, x, y, w, h }. */
+export function uprightFramesLocal(r, gridSize = GS) {
+  if (!PICK_TYPES.has(r.type)) return []
+  const { xs, upW } = uprightXs(r, gridSize)
+  let bands = [{ y: r.y, h: r.height }]
+  if (r.type === 'rack_double_row') {
+    const flueH = ((r.flueSpaceIn || 9) / 12) * gridSize
+    const rowH = Math.max(0, (r.height - flueH) / 2)
+    if (rowH > 0) bands = [{ y: r.y, h: rowH }, { y: r.y + rowH + flueH, h: rowH }]
+  }
+  const out = []
+  xs.forEach((x, upright) => bands.forEach((b, face) => out.push({ upright, face, x, y: b.y, w: upW, h: b.h })))
+  return out
+}
+
+/** Every column overlapping an upright frame, one entry per (rack, column,
+ *  upright): which faces it hits and the bay(s) that frame sits between. */
+export function columnsOnUprights({ racks = [], columns = [], gridSize = GS }) {
+  const hits = []
+  for (const r of racks) {
+    if (!PICK_TYPES.has(r.type) || ((r.rotation || 0) % 90) !== 0) continue
+    const nBays = uprightXs(r, gridSize).beams.length
+    const frames = uprightFramesLocal(r, gridSize).map(f => ({ ...f, world: localRectToWorld(r, f) }))
+    columns.forEach((col, columnIndex) => {
+      const byUpright = new Map()
+      for (const f of frames) {
+        if (!overlaps(col, f.world)) continue
+        if (!byUpright.has(f.upright)) byUpright.set(f.upright, [])
+        byUpright.get(f.upright).push(f.face)
+      }
+      for (const [upright, faces] of byUpright) {
+        hits.push({
+          rackId: r.id, columnIndex, upright, faces,
+          bays: [upright - 1, upright].filter(b => b >= 0 && b < nBays),
+        })
+      }
+    })
+  }
+  return hits
 }
 
 // ── The check ────────────────────────────────────────────────────────────────
@@ -434,6 +483,7 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
     for (const f of c.faces || [0]) for (const p of c.positionIndices || []) alreadyBlocked.add(`${c.rackId}:${c.bayIndex}:${f}:${p}`)
   }
   const pickBlocks = pickZoneBlocks({ racks, columns, profile, gridSize, floors, alreadyBlocked })
+  const uprightHits = columnsOnUprights({ racks, columns, gridSize })
   const positionsLostToPickZone = pickBlocks.reduce((s, b) => s + b.positionsLost, 0)
   positionsLostIfAbsorb += positionsLostToPickZone
 
@@ -503,6 +553,7 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
     rackConflicts,   // bay-columns only — accessible, kept, flagged red
     flueSeated,      // flue-columns — free, blue, not a conflict at all
     pickBlocks,      // positions lost to a column in the aisle, every pick side blocked
+    uprightHits,     // columns overlapping an upright frame — can't be installed; flagged, never moved
     aisleBlocks,     // Step 3 territory, unchanged
     redMarks,
     summary: {
@@ -512,6 +563,7 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
       blockedAisles: aisleBlocks.filter(a => a.blocked).length,
       positionsLostIfAbsorb,   // customer keeps the rack, loses these positions (in-rack + pick zone)
       positionsLostToPickZone, // the pick-zone share of the above
+      columnsOnUprights: new Set(uprightHits.map(h => h.columnIndex)).size,
       sectionsLostIfRemove,    // vs deleting whole bays — always worse
     },
   }

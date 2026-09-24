@@ -37,6 +37,7 @@ const MATRIX = {
   M22: [125, 125, 25, 25, 'reach'],
   M23: [1500, 300, 50, 54, 'reach'],
   M24: [400, 100, 20, 20, 'counterbalance'],
+  M25: [1080, 410, 50, 54, 'reach'],          // the column-on-the-joint report (a display effect; see CANVAS2_TESTS.md)
 }
 
 // TEST_PLAN.md §3E table (aisle / travel / cross-aisle), and rack geometry:

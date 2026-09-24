@@ -41,6 +41,15 @@ function bayIndexAt(rack, worldX, gridSize) {
   return beams.length - 1
 }
 
+/* Where the frame sits, in the panel's 1-based bay numbers: an interior
+   frame is shared by two bays, an end frame belongs to one. */
+function uprightBayText(h) {
+  const b = (h.bays || []).map(i => i + 1)
+  if (b.length === 2) return `between bays ${b[0]} and ${b[1]}`
+  if (b.length === 1) return h.upright === 0 ? `start of bay ${b[0]}` : `end of bay ${b[0]}`
+  return `frame ${h.upright + 1}`
+}
+
 function Stat({ label, value, tone }) {
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
@@ -144,11 +153,12 @@ function ConflictCard({ conflict, index }) {
 export function ColumnCheckPanel() {
   const { result, mheKey, setMheKey, showMarks, setShowMarks, pickBothSides, setPickBothSides } = useColumnCheck()
   const { mheOptions } = useRules()
-  const { rackConflicts, aisleBlocks, pickBlocks = [], summary } = result
+  const { rackConflicts, aisleBlocks, pickBlocks = [], uprightHits = [], summary } = result
+  const objects = useCanvasStore(s => s.objects)
   const blocked = (aisleBlocks || []).filter(a => a.blocked)
   const profileTravelFt = mheOptions[mheKey]?.travelFt ?? 8
 
-  const clean = !rackConflicts.length && !blocked.length && !pickBlocks.length
+  const clean = !rackConflicts.length && !blocked.length && !pickBlocks.length && !uprightHits.length
 
   return (
     <SectionHeader title="Column Check" defaultOpen={true}>
@@ -191,6 +201,7 @@ export function ColumnCheckPanel() {
               {rackConflicts.length} column{rackConflicts.length === 1 ? '' : 's'} in racks
               {blocked.length > 0 && ` · ${blocked.length} aisle${blocked.length === 1 ? '' : 's'} blocked`}
               {summary.positionsLostToPickZone > 0 && ` · −${summary.positionsLostToPickZone} blocked from the aisle`}
+              {summary.columnsOnUprights > 0 && ` · ${summary.columnsOnUprights} on upright frame${summary.columnsOnUprights === 1 ? '' : 's'}`}
             </div>
 
             {blocked.map((a, i) => (
@@ -204,6 +215,21 @@ export function ColumnCheckPanel() {
                       — {summary.profile} needs {profileTravelFt}ft to drive through</>
                   : <>One-side pick only · {a.clearFt}ft clear of {a.aisleFt}ft
                       — {summary.profile} needs {mheOptions[mheKey]?.aisleFt}ft to pick both sides</>}
+              </div>
+            ))}
+
+            {/* Can't be built: a column through an upright frame. Flagged only —
+                nothing here moves the rack; the dealer resolves it. */}
+            {uprightHits.map((h, i) => (
+              <div key={'up' + i} data-testid="column-on-upright" style={{
+                padding: '8px 10px', borderRadius: CARD_R,
+                background: 'rgba(230,126,34,0.10)', border: '0.5px solid #E67E22',
+                ...S.mono9, color: 'var(--text)',
+              }}>
+                <strong style={{ color: '#B85F12' }}>Column on upright frame</strong>
+                {' · '}{objects.find(o => o.id === h.rackId)?.label || 'Rack'}
+                {' · '}{uprightBayText(h)}
+                {' · column '}{h.columnIndex + 1}
               </div>
             ))}
 

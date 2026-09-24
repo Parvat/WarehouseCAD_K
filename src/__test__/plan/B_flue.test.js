@@ -55,7 +55,7 @@ describe('B — flue sizing', () => {
     for (const r of pairs) expect(r.flueBaseIn).toBe(9)
   })
 
-  it('B-line: no line is drawn in the flue gap — only the two row bands and their bay dividers', () => {
+  it('B-line: nothing is drawn in the flue gap — only the two row bands and their upright frames', () => {
     const obj = {
       type: 'rack_double_row', x: 0, y: 0, beams: [96, 96], uprightWidth: 3,
       width: ((3 * 3 + 96 * 2) / 12) * GS, height: ((42 * 2 + 9) / 12) * GS, flueSpaceIn: 9,
@@ -67,6 +67,9 @@ describe('B — flue sizing', () => {
       if (op.op === 'rect') {
         // every rect lies wholly outside the flue gap
         expect(op.y + op.h <= flueLo + EPS || op.y >= flueHi - EPS).toBe(true)
+      } else if (op.op === 'uprights') {
+        // every upright frame lies wholly outside the gap
+        for (const r of op.rects) expect(r.y + r.h <= flueLo + EPS || r.y >= flueHi - EPS).toBe(true)
       } else if (op.op === 'path') {
         // every segment's y range lies wholly outside the gap
         const ys = [...op.d.matchAll(/[ML]\s*[-\d.]+\s+([-\d.]+)/g)].map(m => +m[1])

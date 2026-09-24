@@ -20,7 +20,7 @@
 
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
-import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
+import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects } from '../render/rackOps'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 
@@ -129,6 +129,13 @@ function opToSVG(o) {
     return `<path d="${o.d}" fill="${o.fill || 'none'}" stroke="${o.stroke || 'none'}" ` +
       `stroke-width="${o.strokeWidth ?? 1}" ${o.dash ? `stroke-dasharray="${o.dash}"` : ''} ` +
       `opacity="${o.opacity ?? 1}"/>`
+  }
+  /* Uprights print at real width, floored at minPx WORLD units — a print
+     page has no live zoom, and that floor is what the old hairline printed at. */
+  if (o.op === 'uprights') {
+    return `<g fill="${o.fill}">` +
+      uprightDrawRects(o, 1).map(r => `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`).join('') +
+      `</g>`
   }
   if (o.op === 'arrows') {
     const { len, head, gap, color, strokeWidth, items } = o

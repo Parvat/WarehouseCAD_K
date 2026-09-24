@@ -162,9 +162,89 @@ building outline, the same inputs Column Check sees once placed.
 
 ---
 
-### §2b — Building variation matrix · `M_matrix.test.js` (872 tests)
-24 buildings (M1–M24, TEST_PLAN.md §2b) × both orientations × both "Columns
-along wall" settings = 96 runs, each checked against all 9 rules (864 tests),
+### L — Column on an upright frame · `L_uprightColumn.test.js` (7 tests)
+A column can't be installed through an upright frame. `columnsOnUprights`
+(`columnCheck.js`) flags every column whose footprint overlaps a frame and
+moves nothing; the dealer resolves it. Frames are `uprightXs` (both ends and
+every interior one, `uprightWidth` wide), one per band: a double row has a
+frame line per face and none across the flue. `checkColumns` returns
+`uprightHits` and `summary.columnsOnUprights`. On the canvas the frame gets
+an orange outline + light orange fill (`UprightConflictMarks`), distinct
+from the red pallet X. Column Check lists "Column on upright frame · <rack> ·
+between bays N and N+1 · column K".
+
+Hand geometry: two 96" bays on 3" uprights → frames at x 0–10, 330–340,
+660–670 px (GS 40); a 12" column is 40 px; 1" = 3.33 px.
+
+| Test | Asserts |
+|---|---|
+| `L-interior` | column x 320–360 over the frame at 330–340 → flagged: upright 1, bays [0, 1] |
+| `L-clear` | column 1" short of 330, and column 1" past 340 → not flagged |
+| `L-touch` | column 290–330, exactly touching → not flagged |
+| `L-end` | end frames: upright 0 → bay [0]; upright 2 → bay [1] |
+| `L-double` | back band only → face [1]; y 135–175 clips both bands → faces [0, 1]; a 12" column exactly filling a 12" flue → not flagged (no frame across the flue) |
+| `L-rotated` | 90° double row: frame 1 at world y 150–160, front band x 350–490 → flagged; mid-bay → not |
+| `L-check` | `checkColumns` reports it (`uprightHits`, count 1) and the rack object is unchanged |
+
+**Uprights drawn to scale** (`render/rackOps.js`). Upright frames were hairline
+bay dividers. They are now one `uprights` op per rack: a filled rect per
+frame per band at the real `uprightWidth`. The painter
+(`uprightDrawRects`, Konva and PDF) floors the drawn width at
+`RACK_LINE.hair` (1.2 px) screen, so at overview zoom a frame still reads as
+a line. Note: the SVG reference also drew these as hairlines, never filled
+rects, so there was nothing to port; this is new. Tests in `rackOps.test.js`
+("uprights drawn to scale"): drawn width = 10 world px (3") at scales 1, 4 and
+10; a 4" frame draws 13.33 px; at scale 0.05 the drawn width is 1.2 screen
+px, centred on the frame. The old divider-path tests were rewritten for the
+new op with the same intent (one node, inside the box, full height, never
+across the flue); B-line now checks the upright rects stay out of the flue.
+
+**Across the matrix** (M1–M25, 100 runs):
+36 runs have at least one column on an upright frame, **520 columns** in
+total. Each case below lists horizontal / vertical, and is the same for wall = Yes and No.
+
+| Case | H | V | Case | H | V |
+|---|---|---|---|---|---|
+| M2 150×100 | 5 | 0 | M14 1000×150 | 16 | 0 |
+| M3 240×120 | 4 | 0 | M15 150×1000 | 80 | 0 |
+| M6 300×200 VNA | 2 | 0 | M17 333×217 CB | 0 | 3 |
+| M7 400×250 CB | 10 | 3 | M18 480×240 VNA | 2 | 0 |
+| M8 500×300 | 16 | 0 | M19 720×360 | 0 | 12 |
+| M11 1080×410 | 48 | 0 | M21 900×500 VNA | 0 | 12 |
+| M12 1080×410 CB | 4 | 3 | M23 1500×300 | 16 | 0 |
+| M24 400×100 CB | 8 | 0 | M25 1080×410 50×54 reach | 16 | 0 |
+
+All other cases: 0.
+
+### Column markers stay in their face · `columnMarker.test.js` (6 tests)
+The "column on the joint" report (1080×410, 50×54, reach) was a drawing effect.
+No generated layout puts a column across both faces of a pair. At overview
+zoom a 12" column is enlarged to a 6 px marker, and it was grown around its
+centre, so a column flush against the flue spilled across the 9" gap.
+`canvas2/columnMarker.js` now keeps an enlarged marker inside the rack face
+(band) its column sits in. If the floor is deeper than the face, the marker
+is anchored at the flue edge and grows outward. `ColumnGridShape` receives
+the racks from `Scene`. Drawing only.
+
+Hand geometry: double row 340×310 px, front face y 0–140, flue 140–170,
+back face 170–310; 40 px column; 6 px floor = 60 world px at zoom 0.1, 300 at
+0.02.
+
+| Test | Asserts |
+|---|---|
+| front face, flush at the flue (y 100–140), zoom 0.1 | drawn y 80–140 (centred would be 90–150); x stays centred 40–100 |
+| back face, flush at the flue (y 170–210) | drawn y 170–230 |
+| floor deeper than the face (zoom 0.02) | front: y −160–140; back: y 170–470 (anchored at the flue edge) |
+| working zoom (1) | drawn = the column, y 100–140 |
+| open floor (y −200) | centred growth, y −210 to −150 |
+| rotated 90° (front face → world x 185–325, flue x 155–185) | column x 185–225 drawn 185–245 |
+
+### §2b — Building variation matrix · `M_matrix.test.js` (908 tests)
+**M25 = 1080×410, 50×54, reach** added permanently (the joint report's case):
+all 9 rules pass in all four runs (36 tests).
+
+25 buildings (M1–M25, TEST_PLAN.md §2b + M25) × both orientations × both "Columns
+along wall" settings = 100 runs, each checked against all 9 rules (900 tests),
 plus 8 scale-sanity tests. Rules only; no totals are captured anywhere.
 
 | Rule | Asserts, per run |
@@ -199,7 +279,7 @@ at least a single row). `rowSegments` no longer limits bays or the split.
   the walk's own rules — travelFt widen gate, no straddle, ≥ aisle before the
   far-wall row, and no column pinching that last gap below travelFt.
 
-**Matrix result: 872 / 872 pass.**
+**Matrix result: 908 / 908 pass** (872 for M1–M24, plus 36 for M25).
 
 Rule 2's far-wall check is worded as the scan itself (PP, 2026-09-24): "the
 far-wall leftover gap must contain no legal position for another single
@@ -304,6 +384,10 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 
 | §2b | **Scan rule: remove the single refill AND re-add the caps** (`tryFillSingle` returns false; `bands.length < 40`; bays capped at 80 / 40 per segment) | 40: rule 2 ×36 and scale M9 → M13 ×4. **The scan finds a legal single in 20 runs:** M2 H 30′ gap (legal at 76.5′), and the capped-row sides of M10 V, M11 V (341.5′ gap), M12 V, M13 V, M14 V, M15 H, M21 V, M23 V (761.5′). The other 16 rule-2 failures are the capped-bay sides failing the cross-aisle bound (e.g. M11 H 418.5′). | ✓ |
 
+| L | **Remove the detection** (`columnsOnUprights` returns []) | 5: `L-interior`, `L-end`, `L-double`, `L-rotated`, `L-check`. (`L-clear` / `L-touch` assert "not flagged" and can't fail this way.) | ✓ |
+
+| Marker | **Centred growth again** (`columnMarkerRect` returns the centred rect) | 4: front face, back face, deeper-than-face, rotated. (Working zoom and open floor can't fail this way.) | ✓ |
+
 **Round 1 (original code):**
 
 | Area | Break applied | Tests that failed | Reverted |
@@ -376,8 +460,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,104 tests, 1,104 passing** (after all breaks reverted).
-- **Whole project: 1,498 tests, 1,498 passing.**
+- **Plan suite: 1,147 tests, 1,147 passing** (after all breaks reverted).
+- **Whole project: 1,550 tests, 1,550 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

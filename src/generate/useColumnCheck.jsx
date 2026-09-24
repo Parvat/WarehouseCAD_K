@@ -23,11 +23,12 @@ const EMPTY_RESULT = {
   rackConflicts: [],
   flueSeated:    [],
   pickBlocks:    [],
+  uprightHits:   [],
   aisleBlocks:   [],
   redMarks:      [],
   summary: {
     profile: '', rackConflicts: 0, flueSeated: 0, blockedAisles: 0,
-    positionsLostIfAbsorb: 0, positionsLostToPickZone: 0, sectionsLostIfRemove: 0,
+    positionsLostIfAbsorb: 0, positionsLostToPickZone: 0, columnsOnUprights: 0, sectionsLostIfRemove: 0,
   },
 }
 

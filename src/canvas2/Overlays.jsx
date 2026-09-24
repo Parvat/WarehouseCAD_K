@@ -2,6 +2,7 @@ import { Rect, Line } from 'react-konva'
 import { SelectionOutline } from './shapes'
 import { RackLabels, FpDimLabels, AisleLabel, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
 import { BlockedFaceMarks } from './BlockedFaceMarks'
+import { UprightConflictMarks } from './UprightConflictMarks'
 import { OversizedBayMarks } from './OversizedBayMarks'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -21,7 +22,7 @@ const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_
    independent of selection, so they need the full `objects` list too. */
 export function Overlays({
   selectedObjects, gridSize, marquee, objects = [], zoom = 1, showAisles = true, activeWall = null, smartGuides = [],
-  showMarks = true, aisleBlocks = [], columns = [], rackConflicts = [], pickBlocks = [],
+  showMarks = true, aisleBlocks = [], columns = [], rackConflicts = [], pickBlocks = [], uprightHits = [],
 }) {
   const aisles = showAisles ? objects.filter(o => o.type === 'aisle') : []
   return (
@@ -35,6 +36,7 @@ export function Overlays({
       {aisles.map(a => <AisleLabel key={'ai:' + a.id} aisle={a} objects={objects} zoom={zoom} gridSize={gridSize} />)}
       {showMarks && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} zoom={zoom} />}
       {showMarks && <BlockedFaceMarks rackConflicts={pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts} objects={objects} gridSize={gridSize} zoom={zoom} />}
+      {showMarks && <UprightConflictMarks uprightHits={uprightHits} objects={objects} gridSize={gridSize} zoom={zoom} />}
       {showMarks && <OversizedBayMarks objects={objects} gridSize={gridSize} zoom={zoom} />}
       {/* Smart-guide alignment lines, live during a plain object drag —
           CanvasArea's own colours (wall/column snaps purple, object-to-

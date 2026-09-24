@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   rackDrawOps, rackRowOps, rackDoubleRowOps, rackBoxOps, uprightXs, bayAtPoint,
-  RACK_PALETTE, PORTED_RACK_TYPES,
+  RACK_PALETTE, RACK_LINE, PORTED_RACK_TYPES, uprightDrawRects,
 } from '../render/rackOps'
 
 const GS = 40
@@ -50,10 +50,10 @@ describe('rackOps — upright boundaries', () => {
 describe('rackOps — rack_row draw-ops', () => {
   const ops = rackRowOps(rack, GS)
 
-  it('is a box plus ONE dividers path, not a rect per bay', () => {
+  it('is a box plus ONE uprights op, not a node per bay', () => {
     expect(ops).toHaveLength(2)
     expect(ops[0].op).toBe('rect')
-    expect(ops[1].op).toBe('path')
+    expect(ops[1].op).toBe('uprights')
     expect(ops.filter(o => o.op === 'rect')).toHaveLength(1)
   })
 
@@ -62,44 +62,42 @@ describe('rackOps — rack_row draw-ops', () => {
     expect([x, y, w, h]).toEqual([rack.x, rack.y, rack.width, rack.height])
   })
 
-  it('emits one move/line pair per INTERIOR boundary — bays minus one', () => {
-    const moves = (ops[1].d.match(/M/g) || []).length
-    expect(moves).toBe(bays - 1)
+  it('draws every upright frame — both ends and each interior one: bays + 1', () => {
+    expect(ops[1].rects).toHaveLength(bays + 1)
   })
 
-  it('runs every divider the full height of the box', () => {
-    const pairs = ops[1].d.match(/M[\d.]+ ([\d.]+)L[\d.]+ ([\d.]+)/g) || []
-    expect(pairs.length).toBe(bays - 1)
-    for (const seg of pairs) {
-      const [, top, bottom] = seg.match(/M[\d.]+ ([\d.]+)L[\d.]+ ([\d.]+)/)
-      expect(Number(top)).toBeCloseTo(rack.y, 6)
-      expect(Number(bottom)).toBeCloseTo(rack.y + rack.height, 6)
+  it('runs every upright the full height of the box', () => {
+    for (const r of ops[1].rects) {
+      expect(r.y).toBeCloseTo(rack.y, 6)
+      expect(r.y + r.h).toBeCloseTo(rack.y + rack.height, 6)
     }
   })
 
-  it('keeps every divider strictly inside the box', () => {
-    const xsInPath = [...ops[1].d.matchAll(/M([\d.]+) /g)].map(m => Number(m[1]))
-    for (const dx of xsInPath) {
-      expect(dx).toBeGreaterThan(rack.x)
-      expect(dx).toBeLessThan(rack.x + rack.width)
+  it('keeps every upright inside the box, at the frame positions uprightXs gives', () => {
+    const { xs, upW } = uprightXs(rack, GS)
+    expect(ops[1].rects.map(r => r.x)).toEqual(xs)
+    for (const r of ops[1].rects) {
+      expect(r.w).toBeCloseTo(upW, 9)
+      expect(r.x).toBeGreaterThanOrEqual(rack.x - 1e-9)
+      expect(r.x + r.w).toBeLessThanOrEqual(rack.x + rack.width + 1e-9)
     }
   })
 
-  it('uses the locked palette — soft border, light dividers', () => {
+  it('uses the locked palette — soft border, filled uprights', () => {
     expect(ops[0].fill).toBe(RACK_PALETTE.fill)
     expect(ops[0].stroke).toBe(RACK_PALETTE.border)
-    expect(ops[1].stroke).toBe(RACK_PALETTE.divider)
+    expect(ops[1].fill).toBe(RACK_PALETTE.upright)
   })
 
-  it('carries stroke widths in SCREEN px, so they never scale with zoom', () => {
+  it('carries the box stroke and the upright floor in SCREEN px, so neither scales with zoom', () => {
     expect(ops[0].strokeWidth).toBeLessThanOrEqual(1.5)
-    expect(ops[1].strokeWidth).toBeLessThan(ops[0].strokeWidth)
+    expect(ops[1].minPx).toBe(RACK_LINE.hair)
   })
 
-  it('emits no dividers path for a single-bay rack', () => {
+  it('a single-bay rack still has its two end frames', () => {
     const one = rackRowOps({ ...rack, beams: [96] }, GS)
-    expect(one).toHaveLength(1)
-    expect(one[0].op).toBe('rect')
+    expect(one).toHaveLength(2)
+    expect(one[1].rects).toHaveLength(2)
   })
 })
 
@@ -107,7 +105,7 @@ describe('rackOps — dispatch and level of detail', () => {
   it('draws full detail regardless of zoom — no level-of-detail collapse', () => {
     const ops = rackDrawOps(rack, { gridSize: GS })
     expect(ops).toHaveLength(2)
-    expect(ops.some(o => o.op === 'path')).toBe(true)   // bay cells always present
+    expect(ops.some(o => o.op === 'uprights')).toBe(true)   // bay structure always present
   })
 
   it('ignores the removed lod flag, so it cannot creep back in via a caller', () => {
@@ -176,9 +174,9 @@ const dbl = {
 describe('rackOps — rack_double_row draw-ops', () => {
   const ops       = rackDoubleRowOps(dbl, GS)
   const bands     = ops.filter(o => o.op === 'rect' && o.fill === RACK_PALETTE.fill)
-  const dividers  = ops.find(o => o.op === 'path' && o.stroke === RACK_PALETTE.divider)
+  const dividers  = ops.find(o => o.op === 'uprights')
 
-  it('is two bands and one dividers path — no flue marker of any kind', () => {
+  it('is two bands and one uprights op — no flue marker of any kind', () => {
     expect(bands).toHaveLength(2)
     expect(dividers).toBeTruthy()
     expect(ops).toHaveLength(3)
@@ -196,18 +194,15 @@ describe('rackOps — rack_double_row draw-ops', () => {
     expect(bot.y - (top.y + top.h)).toBeCloseTo(flueHPx, 6)
   })
 
-  it('draws dividers on BOTH bands from one path — 2 segments per boundary', () => {
-    expect((dividers.d.match(/M/g) || []).length).toBe((bays - 1) * 2)
+  it('draws uprights on BOTH bands from one op — 2 frames per upright line', () => {
+    expect(dividers.rects).toHaveLength((bays + 1) * 2)
   })
 
-  it('never runs a divider across the flue gap', () => {
+  it('never runs an upright across the flue gap', () => {
     const [top, bot] = bands
     const gapLo = top.y + top.h, gapHi = bot.y
-    const segs = [...dividers.d.matchAll(/M[\d.]+ ([\d.]+)L[\d.]+ ([\d.]+)/g)]
-    expect(segs.length).toBe((bays - 1) * 2)
-    for (const [, a, b] of segs) {
-      const crosses = Number(a) < gapLo && Number(b) > gapHi
-      expect(crosses).toBe(false)
+    for (const r of dividers.rects) {
+      expect(r.y + r.h <= gapLo + 1e-9 || r.y >= gapHi - 1e-9).toBe(true)
     }
   })
 
@@ -234,6 +229,36 @@ describe('rackOps — rack_double_row draw-ops', () => {
   it('falls back to a bare box only for geometry it cannot subdivide', () => {
     const broken = rackDrawOps({ ...dbl, flueSpaceIn: 1000 }, { gridSize: GS })
     expect(broken).toEqual(rackBoxOps(dbl))
+  })
+})
+
+/* Uprights drawn to scale: a 3" frame is 3" wide at working zoom; only the
+ * screen-px floor (the old hairline width) applies when 3" would be thinner
+ * than that on screen. */
+describe('rackOps — uprights drawn to scale', () => {
+  const op = rackRowOps(rack, GS)[1]
+  const upPx = (upIn / 12) * GS   // 3" = 10 world px
+
+  it('at high zoom the drawn width is exactly uprightWidth (3" = 10 world px), on the frame', () => {
+    for (const scale of [1, 4, 10]) {
+      uprightDrawRects(op, scale).forEach((d, i) => {
+        expect(d.w).toBeCloseTo(upPx, 9)
+        expect(d.x).toBeCloseTo(op.rects[i].x, 9)
+      })
+    }
+  })
+
+  it('a 4" frame draws 4" wide (13.33 world px)', () => {
+    const four = rackRowOps({ ...rack, uprightWidth: 4, width: ((4 * (bays + 1) + beamIn * bays) / 12) * GS }, GS)[1]
+    for (const d of uprightDrawRects(four, 10)) expect(d.w).toBeCloseTo((4 / 12) * GS, 9)
+  })
+
+  it('at overview zoom it never drops below the 1.2 px screen floor, and stays centred on the frame', () => {
+    const scale = 0.05   // 10 world px would be 0.5 screen px
+    uprightDrawRects(op, scale).forEach((d, i) => {
+      expect(d.w * scale).toBeCloseTo(RACK_LINE.hair, 9)
+      expect(d.x + d.w / 2).toBeCloseTo(op.rects[i].x + upPx / 2, 9)
+    })
   })
 })
 
