@@ -12,7 +12,7 @@ import { computeSmartGuides } from './smartGuides'
 import { computeLiveFlue, resolveFlueBase, flueCommitFields } from './liveFlue'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
-  movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee,
+  movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee, inBayMode, toggleBaySelection, setStickyBayMode, isStickyBayMode,
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
@@ -83,6 +83,7 @@ export function useCanvasInteraction({
      4). No Konva event is needed here any more: hitId came from our own
      picking, so there is nothing left to read off `e`. */
   const selectFromHit = (hitId, shiftKey, world) => {
+    if (!shiftKey) setStickyBayMode(false)   // a plain click ends bay-by-bay editing
     const st = useCanvasStore.getState()
     const prevSelectedIds = st.selectedIds
 
@@ -1122,6 +1123,7 @@ export function useCanvasInteraction({
         const bayEntries = bayEntriesInMarquee(st.objects, rect, st.gridSize)
         if (bayEntries.length > 0) {
           st.setBaySelection(bayEntries)
+          setStickyBayMode(true)
           // Rack rows with a bay entry need to be in selectedIds too, so
           // the Properties/multi-bay panel shows them — CanvasArea's own
           // "only add, never toggle off an already-selected row" guard.
@@ -1130,6 +1132,7 @@ export function useCanvasInteraction({
           rackIds.forEach(id => { if (!nowSelected.includes(id)) st.selectObject(id, true) })
         } else {
           st.clearBaySelection()
+          setStickyBayMode(false)
         }
       } else if (m && !m.moved && m.clickHitId) {
         /* The shift+drag never actually moved — a plain shift+click on an
@@ -1141,7 +1144,21 @@ export function useCanvasInteraction({
            rubber-band-only concept like the cross-row bay marquee above
            has no rect to test here, so it does not run for the click
            fallback at all. */
-        selectFromHit(m.clickHitId, true, m.from)
+        /* In bay mode (a bay selection is active), Shift+click on a bay
+           toggles just that bay — see selection.js's toggleBaySelection. */
+        const st = useCanvasStore.getState()
+        const hit = st.objects.find(o => o.id === m.clickHitId)
+        const bay = hit && (hit.type === 'rack_row' || hit.type === 'rack_double_row')
+          ? hitTestBay(hit, m.from.x, m.from.y, st.gridSize) : null
+        if (bay != null && (inBayMode(st) || isStickyBayMode())) {
+          const next = toggleBaySelection(st, hit.id, bay)
+          for (const o of st.objects) if (o.activeBayIdx != null) st.updateObject(o.id, { activeBayIdx: null })
+          st.setBaySelection(next.entries)
+          st.selectGroup(next.selectedIds)
+          setStickyBayMode(true)
+        } else {
+          selectFromHit(m.clickHitId, true, m.from)
+        }
       }
       setMarquee(null)
       setCursor(spaceDown.current ? 'grab' : 'default')

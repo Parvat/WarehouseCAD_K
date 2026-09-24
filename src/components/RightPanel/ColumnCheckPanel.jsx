@@ -1,5 +1,4 @@
 import { useCanvasStore } from '../../store/useCanvasStore'
-import { withAnchoredPosition, bayDeleteAnchor } from '../../utils/bayAnchor'
 import { SectionHeader } from '../shared/SectionHeader'
 import { useColumnCheck, conflictKey } from '../../generate/useColumnCheck'
 import { useRules } from '../../rules/useRules'
@@ -66,7 +65,7 @@ function Stat({ label, value, tone }) {
 }
 
 function ConflictCard({ conflict, index }) {
-  const { objects, gridSize, commitObjectUpdate } = useCanvasStore()
+  const { objects, gridSize, deleteSingleBay } = useCanvasStore()
   const { resolutions, setResolution } = useColumnCheck()
 
   const key  = conflictKey(conflict)
@@ -80,20 +79,15 @@ function ConflictCard({ conflict, index }) {
     if (!rack) return
     const beams = rack.beams
     if (!Array.isArray(beams) || beams.length <= 1) return
-    const idx = bayIndexAt(rack, conflict.overlap.x, gridSize)
+    /* The column check's own bayIndex is rotation-aware; bayIndexAt reads
+       world x against the rack's unturned box, wrong for a vertical rack —
+       kept only as a fallback for a conflict without one. */
+    const idx = conflict.bayIndex ?? bayIndexAt(rack, conflict.overlap.x, gridSize)
     if (idx == null) return
-    const newBeams = beams.filter((_, i) => i !== idx)
-    const upIn     = rack.uprightWidth || 3
-    const totalIn  = upIn * (newBeams.length + 1) + newBeams.reduce((s, b) => s + b, 0)
-    /* Hold the untouched end where it's drawn — the bay-delete rule
-       (bayDeleteAnchor): removing the first bay holds the far end, anything
-       else the near end. It used to keep x regardless, so removing a
-       first-end section slid the rest of the rack along, even at 0°. */
-    commitObjectUpdate(rack.id, withAnchoredPosition(rack, {
-      beams: newBeams,
-      width: (totalIn / 12) * gridSize,
-      activeBayIdx: null,
-    }, { x: bayDeleteAnchor(beams.length, [idx]) }))
+    /* The same store action as the Delete key (deleteSingleBay): an end
+       section shortens the rack, a middle one splits it and leaves a gap —
+       every remaining bay stays where it was drawn. */
+    deleteSingleBay(rack.id, idx)
     setResolution(key, 'removed')
   }
 

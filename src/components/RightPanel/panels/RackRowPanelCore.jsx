@@ -1,5 +1,5 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
-import { withAnchoredPosition, bayDeleteAnchor } from '../../../utils/bayAnchor'
+import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getObjectBounds } from '../../../utils/canvas'
 import { getRackCapacity } from '../../../utils/capacity'
 
@@ -147,7 +147,7 @@ export function MultiBayPanel() {
 }
 
 export function RackRowPanel({ obj }) {
-  const { objects, updateObject, commitObjectUpdate, gridSize } = useCanvasStore()
+  const { objects, updateObject, commitObjectUpdate, deleteSingleBay, gridSize } = useCanvasStore()
 
   const beams   = obj.beams || [96]
   const upIn    = obj.uprightWidth || 3
@@ -193,13 +193,10 @@ export function RackRowPanel({ obj }) {
   const removeBay = () => {
     if (beams.length <= 1) return
     const idxToRemove = activeBay !== null ? activeBay : beams.length - 1
-    const newBeams = beams.filter((_, i) => i !== idxToRemove)
-    const newTotalIn = upIn * (newBeams.length + 1) + newBeams.reduce((s,b)=>s+b,0)
-    const newW = (newTotalIn / 12) * gridSize
-    /* Same end-holding rule as the Delete key and Column Check's "Remove
-       section" (bayDeleteAnchor): removing the first bay holds the far end,
-       so the rest of the rack doesn't slide along. */
-    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { beams: newBeams, width: newW, activeBayIdx: null }, { x: bayDeleteAnchor(beams.length, [idxToRemove]) }))
+    /* The same store action as the Delete key (deleteSingleBay): an end bay
+       shortens the rack with the other end held; a middle bay splits it,
+       leaving a gap, every remaining bay where it was drawn. */
+    deleteSingleBay(obj.id, idxToRemove)
   }
 
   const label = (s) => (

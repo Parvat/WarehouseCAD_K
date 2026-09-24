@@ -3,7 +3,8 @@ import { immer } from 'zustand/middleware/immer'
 import { nanoid } from 'nanoid'
 import { TOOLS, UNITS, DEFAULT_LAYERS } from '../constants'
 import { initFpVerts } from '../utils/canvas'
-import { anchoredShrink, bayDeleteAnchor } from '../utils/bayAnchor'
+import { anchoredShrink } from '../utils/bayAnchor'
+import { applyBayDeletes } from '../utils/baySplit'
 import { serializeScene, deserializeScene, downloadScene, pickFile, autoSave, autoLoad, hasAutoSave, clearAutoSave, exportToPDF } from '../utils/saveLoad'
 
 const MAX_HISTORY = 60
@@ -402,25 +403,10 @@ export const useCanvasStore = create(
        the user did NOT delete from is the one that should stay put,
        whichever geometric side that turns out to be. */
     deleteSingleBay: (objId, bayIdx) => set((s) => {
-      const idx = s.objects.findIndex(o => o.id === objId)
-      if (idx === -1) return
-      const obj = s.objects[idx]
-      const beams = [...obj.beams]
-      if (beams.length <= 1) return
-      const newBeams = beams.filter((_, i) => i !== bayIdx)
-      const upIn = obj.uprightWidth || 3
-      const totalIn = upIn * (newBeams.length + 1) + newBeams.reduce((a,b)=>a+b, 0)
-      const newWidth = (totalIn / 12) * 40
-      /* Deleted the FIRST bay but not the last -> the last (far/right) end
-         was left alone, so hold IT fixed and let x absorb the shrink.
-         Deleted the last bay (or a middle one, or — impossible here since
-         there's only one bayIdx — both) -> x already stays put, matching
-         the existing, still-correct-for-that-case behaviour. */
-      const pos = anchoredShrink(obj, newWidth, bayDeleteAnchor(beams.length, [bayIdx]))
-      obj.x = pos.x; obj.y = pos.y
-      obj.beams = newBeams
-      obj.width = newWidth
-      obj.activeBayIdx = null
+      const obj = s.objects.find(o => o.id === objId)
+      if (!obj || !Array.isArray(obj.beams) || obj.beams.length <= 1) return
+      // end bay: the rack shortens; middle bay: it splits, leaving a gap (utils/baySplit.js)
+      applyBayDeletes(s, { [objId]: [bayIdx] }, nanoid)
       pushHistory(s)
     }),
 
@@ -431,29 +417,8 @@ export const useCanvasStore = create(
         if (!byObj[objId]) byObj[objId] = []
         byObj[objId].push(bayIdx)
       })
-      s.objects.forEach(obj => {
-        if (!byObj[obj.id]) return
-        const toRemove = new Set(byObj[obj.id])
-        const oldBeams = obj.beams
-        const newBeams = oldBeams.filter((_, i) => !toRemove.has(i))
-        if (newBeams.length === 0) return  // don't remove all bays
-        const upIn = obj.uprightWidth || 3
-        const totalIn = upIn * (newBeams.length + 1) + newBeams.reduce((s,b)=>s+b,0)
-        const newWidth = (totalIn / 12) * 40
-        /* Same anchor rule as deleteSingleBay, generalised to a whole set
-           of removed indices: the first bay was removed but the last one
-           was not -> the far/right end is untouched, hold IT fixed. Any
-           other case (last removed, both ends removed, only a middle bay
-           removed) falls back to the existing "x stays put" behaviour,
-           which is already correct when the deletion is at the right/last
-           end and is the least-surprising default for the genuinely
-           ambiguous cases. */
-        const pos = anchoredShrink(obj, newWidth, bayDeleteAnchor(oldBeams.length, toRemove))
-        obj.x = pos.x; obj.y = pos.y
-        obj.beams = newBeams
-        obj.width = newWidth
-        obj.activeBayIdx = null
-      })
+      // end bays shorten a rack; middle bays split it, one piece per run of kept bays
+      applyBayDeletes(s, byObj, nanoid)
       s.activeBaySelection = []
       pushHistory(s)
     }),

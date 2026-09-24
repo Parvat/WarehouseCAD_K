@@ -216,6 +216,69 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
+### V — A middle bay delete leaves a gap; Shift+click toggles bays · `V_baySplit.test.js` (36 tests)
+**Split (store change approved by PP).** Deleting bays from the middle of a run
+leaves an empty gap with the uprights on both sides still standing, so the
+rack becomes separate pieces, one per run of kept bays (`utils/baySplit.js`).
+Each piece is its run's slice of the original's local box, drawn exactly
+where those bays were at any rotation. Gap = the deleted beam (320 px for
+96″). Adjacent deleted bays make one gap that includes the upright between
+them (96 + 3 + 96 = 195″ = 650 px), since that upright is left with no bay.
+End deletes don't split: the rack shortens, as before. Deleting both end bays
+now leaves the middle bays where they were; they used to shift.
+
+`deleteSingleBay` and `deleteSelectedBays` both call `applyBayDeletes` on their
+draft, so a delete is one history entry. Every delete path goes through them:
+the Delete key, a bay marquee plus Delete, the panel's "Delete selected
+bays", and now the rack panel's "− Bay" and Column Check "Remove section"
+(both call `deleteSingleBay`). Remove section now takes the column check's
+rotation-aware `bayIndex`; `bayIndexAt` on world x picked the wrong bay on a
+vertical rack.
+
+**What points at a rack:**
+- **id:** the first piece keeps it.
+- **parentId:** every piece copies it.
+- **groups:** every piece joins the original's groups.
+- **Aisles (row1Id/row2Id):** re-paired with every piece that still faces
+  across the aisle. The first pair keeps the aisle's id and label; the rest
+  are copies.
+
+**Shift+click toggles single bays** (`selection.js`: `inBayMode`,
+`toggleBaySelection`). In bay mode (a bay marquee selection, or a selected
+rack with one clicked bay), Shift+click on a selected bay removes it and on
+an unselected bay adds it, on top of a marquee and across racks. Racks follow
+their bays. Bay mode is sticky: a bay marquee or toggle turns it on; a plain
+click or a bay-less marquee turns it off. So toggling the last bay off and
+Shift+clicking it again adds it back. Outside bay mode, Shift+click still
+toggles whole objects.
+
+**Checked in the app, horizontal and vertical** (R1, a middle bay marquee-selected):
+- Shift+click turned the bay off and back on (highlights 2 → 0 → 2
+  horizontal; 4 → 2 → 4 vertical, two bays caught).
+- Delete split the rack into two pieces. The gap was one beam (37.5 px =
+  320 × scale) horizontally, and 96 + 3 + 96″ vertically where two adjacent
+  bays were caught. Both outer ends were at 0 px.
+- Aisles re-paired (12 → 14, 26 → 28). Undo restored the rack count.
+
+| Test | Asserts |
+|---|---|
+| `V-middle` ×4 (0/90/180/270°) | delete bay 2 → 2 racks, bays 0,1,3,4 exactly where they were, gap 320 px, both pieces keep parentId; one undo → the original rack |
+| `V-apart` ×4 | bays 1 and 3 → 3 racks, gaps [320, 320] |
+| `V-adjacent` ×4 | bays 1 and 2 → 2 racks, one gap of 650 px |
+| `V-key` ×4 | Delete key (`deleteSingleBay`) on a middle bay splits the same way; undo restores |
+| `V-ends` ×4 | first or last bay → still one rack, the others unmoved |
+| `V-aisles`, rotated | the aisle becomes two (original id/label on the first piece), both on the facing row; undo restores one aisle |
+| `V-groups` | both pieces are in the group |
+| `V-helper` ×2 | kept runs; `applyBayDeletes` on a plain state |
+| `V-toggle` ×4 per orientation | after a marquee (6 bays over two racks, picked with the rotation-aware `hitTestBay`), Shift+click turns a bay off and on; adds a bay of another rack; a rack whose last bay goes drops out; a clicked bay plus Shift+click selects both |
+| `V-toggle` ×2 | the last bay off then on again (sticky); no bay selection → whole-object toggle |
+| `V-wire` | the canvas Shift+click path toggles bays in bay mode, sticky until a plain click |
+
+Area T and U updates: middle deletes no longer close up, so T now expects
+every remaining bay at its drawn position across the pieces. U's Remove
+section and "− Bay" cases call `deleteSingleBay`; their wiring checks now
+assert that routing. The middle Remove section case moved to V.
+
 ### T — Deleting bays keeps the rack where it is drawn, any rotation · `T_bayDelete.test.js` (30 tests)
 A rotated rack is drawn spun about its stored box's centre, and deleting bays
 shrinks the stored width, which moves that centre. The store's anchor rule
@@ -667,6 +730,14 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | U | **"− Bay" without the bay-delete anchor** | 1: `U-wire` rack panel "− Bay" | ✓ |
 | U | **Helper ignores the anchor rule** (always holds the near end) | 5: `U-minus-bay` at 0°, 90°, 180°, 270°, plus Column Check remove section (first bay) at 0° | ✓ |
 
+| V | **No split** (all kept bays as one run: middle deletes close up) | 29: T middle and multi-row cases, V split and gap cases | ✓ |
+| V | **No aisle re-pairing** | 2: `V-aisles`, rotated | ✓ |
+| V | **Toggle only adds** | 4: `V-toggle` off/on and last-bay-drops, both orientations | ✓ |
+| V | **Shift+click wiring removed** | 1: `V-wire` | ✓ |
+| V | **Sticky bay mode removed** | 1: `V-wire` | ✓ |
+| V | **Remove section not routed through the split** | 1: `U-wire` Remove section | ✓ |
+| V | **"− Bay" not routed through the split** | 1: `U-wire` "− Bay" | ✓ |
+
 **Round 1 (original code):**
 
 | Area | Break applied | Tests that failed | Reverted |
@@ -739,8 +810,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,407 tests, 1,407 passing** (after all breaks reverted).
-- **Whole project: 1,810 tests, 1,810 passing.**
+- **Plan suite: 1,437 tests, 1,437 passing** (after all breaks reverted).
+- **Whole project: 1,840 tests, 1,840 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

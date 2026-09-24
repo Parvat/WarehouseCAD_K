@@ -224,3 +224,53 @@ export function bayEntriesInMarquee(objects = [], rect, gridSize = 40) {
   })
   return bayEntries
 }
+
+/* ── Shift+click on a bay: toggle it in the bay selection ────────────────────
+   A bay selection (a bay marquee's activeBaySelection, or a single clicked
+   bay's activeBayIdx) is edited one bay at a time: Shift+click a selected
+   bay removes it, Shift+click an unselected bay adds it — on top of a
+   marquee, and across racks. Outside that "bay mode" Shift+click still
+   toggles whole objects (nextSelection), so extending a plain object
+   multi-selection works exactly as before. */
+const BAY_PICK_TYPES = new Set(['rack_row', 'rack_double_row'])
+
+/** Is a bay selection active — marquee bays, or a selected rack's single
+ *  clicked bay? */
+export function inBayMode({ activeBaySelection = [], selectedIds = [], objects = [] }) {
+  if (activeBaySelection.length) return true
+  return objects.some(o => o && selectedIds.includes(o.id) && BAY_PICK_TYPES.has(o.type) && o.activeBayIdx != null)
+}
+
+/** The bay selection after Shift+clicking bay `bayIdx` of rack `objId`.
+ *  A single clicked bay (activeBayIdx) is folded in first, so Shift+clicking
+ *  a second bay gives both. Selected racks follow their bays: a rack with a
+ *  selected bay is selected, a rack whose last selected bay was toggled off
+ *  drops out; other selected objects are left alone. Returns
+ *  { entries, selectedIds }. */
+export function toggleBaySelection({ activeBaySelection = [], selectedIds = [], objects = [] }, objId, bayIdx) {
+  const entries = activeBaySelection.map(e => ({ ...e }))
+  if (!entries.length) {
+    for (const o of objects) {
+      if (o && selectedIds.includes(o.id) && BAY_PICK_TYPES.has(o.type) && o.activeBayIdx != null) {
+        entries.push({ objId: o.id, bayIdx: o.activeBayIdx })
+      }
+    }
+  }
+  const at = entries.findIndex(e => e.objId === objId && e.bayIdx === bayIdx)
+  if (at >= 0) entries.splice(at, 1)
+  else entries.push({ objId, bayIdx })
+  const withBays = new Set(entries.map(e => e.objId))
+  const isBayRack = (id) => BAY_PICK_TYPES.has(objects.find(o => o && o.id === id)?.type)
+  const ids = selectedIds.filter(id => !isBayRack(id) || withBays.has(id))
+  for (const id of withBays) if (!ids.includes(id)) ids.push(id)
+  return { entries, selectedIds: ids }
+}
+
+/* Bay mode is sticky across Shift+clicks: toggling the LAST selected bay off
+   empties activeBaySelection, and without this the next Shift+click would
+   fall back to a whole-object toggle instead of adding a bay back. Set by a
+   bay marquee or a bay toggle; cleared by a plain (non-Shift) click or a
+   marquee that catches no bays. Presentation state only — never the store. */
+let stickyBayMode = false
+export const setStickyBayMode = (on) => { stickyBayMode = !!on }
+export const isStickyBayMode = () => stickyBayMode

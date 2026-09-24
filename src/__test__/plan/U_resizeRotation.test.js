@@ -50,11 +50,11 @@ const ACTIONS = {
   'cantilever arm 36 -> 60"': { make: cantilever, run: panel(o => { const t = o.towers.map(() => 60); return { towers: t, height: cantH(t, true) } }) },
   'cantilever single-sided': { make: cantilever, run: panel(o => ({ doubleSided: false, height: cantH(o.towers, false) })) },
   'lane rack: 3 lanes, 6 deep (width and height)': { make: driveIn, run: panel(o => laneRecalc(o, 3, 6)) },
+  /* Column Check "Remove section" and the rack panel's "− Bay" call the
+     store's deleteSingleBay (area V). A first-bay remove shortens the rack;
+     a middle one splits it — that case is tested in V_baySplit. */
   'Column Check remove section (first bay)': {
-    make: rackRow, run: panel(o => { const b = o.beams.filter((_, i) => i !== 0); return { beams: b, width: beamW(b, 3), activeBayIdx: null } }, o => ({ x: bayDeleteAnchor(o.beams.length, [0]) })),
-  },
-  'Column Check remove section (middle bay)': {
-    make: rackRow, run: panel(o => { const b = o.beams.filter((_, i) => i !== 2); return { beams: b, width: beamW(b, 3), activeBayIdx: null } }, o => ({ x: bayDeleteAnchor(o.beams.length, [2]) })),
+    make: rackRow, run: (o) => store.getState().deleteSingleBay(o.id, 0),
   },
 }
 
@@ -109,10 +109,10 @@ describe('U — at 0° each edit keeps today\'s fixed point', () => {
   })
 })
 
-/* The rack panel's "− Bay" removes the selected bay (activeBayIdx) with the
- * payload below — the panel's own formula — anchored by the bay-delete rule.
- * With the FIRST bay selected the far end holds, so bays 1-4 keep their
- * drawn positions exactly, at every rotation. */
+/* The rack panel's "− Bay" removes the selected bay (activeBayIdx) through
+ * the store's deleteSingleBay, like the Delete key. With the FIRST bay
+ * selected the far end holds, so bays 1-4 keep their drawn positions
+ * exactly, at every rotation. */
 describe('U — rack panel "− Bay" with the first bay selected', () => {
   const bayWorld = (o, ids) => {
     const { xs, upW, beams } = uprightXs(o, GS)
@@ -123,9 +123,7 @@ describe('U — rack panel "− Bay" with the first bay selected', () => {
     it(`U-minus-bay ${rotation}°: bays 1-4 stay exactly where they are drawn; one undo restores`, () => {
       const o = { ...rackRow(rotation), activeBayIdx: 0 }
       store.setState({ objects: [JSON.parse(JSON.stringify(o))], activeBaySelection: [], history: [JSON.stringify({ objects: [o], groups: [] })], historyIndex: 0 })
-      const idxToRemove = o.activeBayIdx
-      const newBeams = o.beams.filter((_, i) => i !== idxToRemove)
-      store.getState().commitObjectUpdate(o.id, withAnchoredPosition(o, { beams: newBeams, width: beamW(newBeams, 3), activeBayIdx: null }, { x: bayDeleteAnchor(o.beams.length, [idxToRemove]) }))
+      store.getState().deleteSingleBay(o.id, o.activeBayIdx)
       const before = bayWorld(o, [0, 1, 2, 3, 4]), after = bayWorld(store.getState().objects[0], [1, 2, 3, 4])
       for (const [i, r] of after) expect(r).toEqual(before.get(i))
       store.getState().undo()
@@ -141,7 +139,6 @@ describe('U — every size-changing panel commit is anchored', () => {
     'src/components/RightPanel/panels/RackRowPanelCore.jsx',
     'src/components/RightPanel/panels/CantileverPanel.jsx',
     'src/components/RightPanel/panels/LaneRackPanels.jsx',
-    'src/components/RightPanel/ColumnCheckPanel.jsx',
   ]
   const calls = (src) => {
     const out = []
@@ -161,14 +158,18 @@ describe('U — every size-changing panel commit is anchored', () => {
       expect(sized.filter(c => !/withAnchoredPosition\(/.test(c))).toEqual([])
     })
   }
-  it('U-wire: the rack panel\'s "− Bay" holds the untouched end with the bay-delete rule', () => {
+  const bodyOf = (src, head, len) => src.slice(src.indexOf(head), src.indexOf(head) + len)
+  it('U-wire: the rack panel\'s "− Bay" deletes through the store\'s deleteSingleBay (end: shorten, middle: split)', () => {
     const src = readFileSync(new URL('../../../src/components/RightPanel/panels/RackRowPanelCore.jsx', import.meta.url), 'utf8')
-    const c = calls(src).find(x => /activeBayIdx: null/.test(x) && /beams: newBeams/.test(x))
-    expect(c).toMatch(/withAnchoredPosition\(obj, \{[\s\S]*\}, \{ x: bayDeleteAnchor\(beams\.length, \[idxToRemove\]\) \}\)/)
+    const body = bodyOf(src, 'const removeBay = () => {', 500)
+    expect(body).toMatch(/deleteSingleBay\(obj\.id, idxToRemove\)/)
+    expect(body).not.toMatch(/commitObjectUpdate\(/)
   })
-  it('U-wire: Column Check "Remove section" holds the untouched end with the bay-delete rule', () => {
+  it('U-wire: Column Check "Remove section" deletes through deleteSingleBay, using the rotation-aware bayIndex', () => {
     const src = readFileSync(new URL('../../../src/components/RightPanel/ColumnCheckPanel.jsx', import.meta.url), 'utf8')
-    const c = calls(src).find(x => /beams: newBeams/.test(x))
-    expect(c).toMatch(/withAnchoredPosition\(rack, \{[\s\S]*\}, \{ x: bayDeleteAnchor\(beams\.length, \[idx\]\) \}\)/)
+    const body = bodyOf(src, 'const removeSection = () => {', 900)
+    expect(body).toMatch(/const idx = conflict\.bayIndex \?\? bayIndexAt\(/)
+    expect(body).toMatch(/deleteSingleBay\(rack\.id, idx\)/)
+    expect(body).not.toMatch(/commitObjectUpdate\(/)
   })
 })

@@ -4,6 +4,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { uprightXs } from '../../render/rackOps'
 import { localRectToWorld } from '../../generate/columnCheck'
 import { anchoredShrink, bayDeleteAnchor } from '../../utils/bayAnchor'
+import { keptRuns } from '../../utils/baySplit'
 import { GS } from './fixtures'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
@@ -16,7 +17,6 @@ beforeAll(async () => { store = (await import('../../store/useCanvasStore')).use
 const BEAMS = [96, 96, 96, 96, 96]
 const rack = (id, rotation, cx = 2000, cy = 1500) =>
   ({ id, type: 'rack_row', x: cx - 830, y: cy - 70, width: 1660, height: 140, beams: [...BEAMS], uprightWidth: 3, rotation })
-const BAY_PX = 330
 
 /** World rect of each bay (by ORIGINAL index), as drawn. */
 function bayRects(obj, originalIndex) {
@@ -30,23 +30,25 @@ function load(objects) {
   store.setState({ objects: JSON.parse(JSON.stringify(objects)), activeBaySelection: [], selectedIds: [], history: [snap], historyIndex: 0 })
 }
 
-/* Expected world rect of a surviving bay: bays on the held end don't move;
- * bays beyond a gap close up toward the held end by the removed length,
- * along the rack's own run direction as drawn. */
+/* Expected world rect of a surviving bay: exactly where it was drawn.
+ * End deletes shorten the rack with the other end held; middle deletes
+ * (area V) now split it and leave a gap instead of closing up — so in
+ * every case no remaining bay moves. */
 function expectedAfter(obj, removed) {
-  const anchor = bayDeleteAnchor(BEAMS.length, removed)
-  const t = ((obj.rotation || 0) * Math.PI) / 180
   const before = new Map(bayRects(obj, BEAMS.map((_, i) => i)))
   const out = new Map()
-  for (let j = 0; j < BEAMS.length; j++) {
-    if (removed.has(j)) continue
-    // removed bays between this bay and the held end
-    const between = [...removed].filter(k => (anchor === 'start' ? k < j : k > j)).length
-    const d = between * BAY_PX * (anchor === 'start' ? -1 : 1)     // along local +x
-    const r = before.get(j)
-    out.set(j, round({ ...r, x: r.x + d * Math.cos(t), y: r.y + d * Math.sin(t) }))
-  }
+  for (let j = 0; j < BEAMS.length; j++) if (!removed.has(j)) out.set(j, round(before.get(j)))
   return out
+}
+
+/** The drawn rects of every bay the rack `id` left behind, by ORIGINAL
+ *  index: its pieces sit in the store in run order, the first keeping the
+ *  original id, the rest right after it. */
+function keptBayRects(objects, id, removed) {
+  const runs = keptRuns(BEAMS.length, removed)
+  const at = objects.findIndex(o => o.id === id)
+  const pieces = objects.slice(at, at + runs.length)
+  return new Map(pieces.flatMap((p, k) => bayRects(p, runs[k]).map(([i, rr]) => [i, round(rr)])))
 }
 
 const CASES = {
@@ -65,11 +67,7 @@ describe('T — deleting bays: remaining bays stay where they are drawn', () => 
         load([r])
         store.setState({ activeBaySelection: [...removed].map(bayIdx => ({ objId: 'r', bayIdx })) })
         store.getState().deleteSelectedBays()
-        const after = store.getState().objects[0]
-        const kept = BEAMS.map((_, i) => i).filter(i => !removed.has(i))
-        const got = new Map(bayRects(after, kept).map(([i, rr]) => [i, round(rr)]))
-        expect(got).toEqual(expectedAfter(r, removed))
-        // bays on the held end moved 0 px
+        expect(keptBayRects(store.getState().objects, 'r', removed)).toEqual(expectedAfter(r, removed))
         store.getState().undo()
         expect(store.getState().objects).toEqual([r])
       })
@@ -79,8 +77,7 @@ describe('T — deleting bays: remaining bays stay where they are drawn', () => 
       const r = rack('r', rotation)
       load([r])
       store.getState().deleteSingleBay('r', 0)
-      const got = new Map(bayRects(store.getState().objects[0], [1, 2, 3, 4]).map(([i, rr]) => [i, round(rr)]))
-      expect(got).toEqual(expectedAfter(r, new Set([0])))
+      expect(keptBayRects(store.getState().objects, 'r', new Set([0]))).toEqual(expectedAfter(r, new Set([0])))
       store.getState().undo()
       expect(store.getState().objects).toEqual([r])
     })
@@ -92,9 +89,7 @@ describe('T — deleting bays: remaining bays stay where they are drawn', () => 
       store.setState({ activeBaySelection: Object.entries(removed).flatMap(([objId, s]) => [...s].map(bayIdx => ({ objId, bayIdx }))) })
       store.getState().deleteSelectedBays()
       for (const r of rows) {
-        const after = store.getState().objects.find(o => o.id === r.id)
-        const kept = BEAMS.map((_, i) => i).filter(i => !removed[r.id].has(i))
-        expect(new Map(bayRects(after, kept).map(([i, rr]) => [i, round(rr)]))).toEqual(expectedAfter(r, removed[r.id]))
+        expect(keptBayRects(store.getState().objects, r.id, removed[r.id])).toEqual(expectedAfter(r, removed[r.id]))
       }
       store.getState().undo()
       expect(store.getState().objects).toEqual(rows)
