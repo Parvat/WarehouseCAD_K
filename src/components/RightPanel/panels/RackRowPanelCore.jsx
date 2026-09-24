@@ -1,4 +1,5 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
+import { withAnchoredPosition, bayDeleteAnchor } from '../../../utils/bayAnchor'
 import { getObjectBounds } from '../../../utils/canvas'
 import { getRackCapacity } from '../../../utils/capacity'
 
@@ -175,7 +176,7 @@ export function RackRowPanel({ obj }) {
     const newTotalIn = upIn * (newBeams.length + 1) + newBeams.reduce((s,b)=>s+b,0)
     if (clearIn != null && (newTotalIn / 12) * gridSize > (clearIn / 12) * gridSize) return
     const newW = (newTotalIn / 12) * gridSize
-    commitObjectUpdate(obj.id, { beams: newBeams, width: newW })
+    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { beams: newBeams, width: newW }))
   }
 
   // Change a bay's beam
@@ -185,7 +186,7 @@ export function RackRowPanel({ obj }) {
     const newTotalIn = upIn * (newBeams.length + 1) + newBeams.reduce((s,b)=>s+b,0)
     if (clearIn != null && newTotalIn > clearIn) return  // blocked
     const newW = (newTotalIn / 12) * gridSize
-    commitObjectUpdate(obj.id, { beams: newBeams, width: newW })
+    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { beams: newBeams, width: newW }))
   }
 
   // Remove active bay (or last bay if none selected)
@@ -195,7 +196,10 @@ export function RackRowPanel({ obj }) {
     const newBeams = beams.filter((_, i) => i !== idxToRemove)
     const newTotalIn = upIn * (newBeams.length + 1) + newBeams.reduce((s,b)=>s+b,0)
     const newW = (newTotalIn / 12) * gridSize
-    commitObjectUpdate(obj.id, { beams: newBeams, width: newW, activeBayIdx: null })
+    /* Same end-holding rule as the Delete key and Column Check's "Remove
+       section" (bayDeleteAnchor): removing the first bay holds the far end,
+       so the rest of the rack doesn't slide along. */
+    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { beams: newBeams, width: newW, activeBayIdx: null }, { x: bayDeleteAnchor(beams.length, [idxToRemove]) }))
   }
 
   const label = (s) => (
@@ -409,7 +413,7 @@ export function RackRowPanel({ obj }) {
             onClick={() => {
               const newTotalIn = u * (beams.length + 1) + beams.reduce((s,b)=>s+b,0)
               const newW = (newTotalIn / 12) * gridSize
-              commitObjectUpdate(obj.id, { uprightWidth: u, width: newW })
+              commitObjectUpdate(obj.id, withAnchoredPosition(obj, { uprightWidth: u, width: newW }))
             }}
             style={{
               padding: '3px 8px', borderRadius: 4, cursor: 'pointer',
@@ -522,7 +526,7 @@ export function RackRowPanel({ obj }) {
                      becomes the new base the live-auto-flue drag (see
                      useCanvasInteraction.js's beginDrag) reverts to away
                      from a column, not just this instant's rendered value. */
-                  commitObjectUpdate(obj.id, { flueSpaceIn: f, flueBaseIn: f, height: newH })
+                  commitObjectUpdate(obj.id, withAnchoredPosition(obj, { flueSpaceIn: f, flueBaseIn: f, height: newH }))
                 }}
                 style={{
                   padding: '3px 8px', borderRadius: 4, cursor: 'pointer',

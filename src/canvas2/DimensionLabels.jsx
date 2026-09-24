@@ -1,7 +1,13 @@
+import { useMemo } from 'react'
 import { Group, Rect, Line, Text } from 'react-konva'
 import { pxToFtIn, getFpWallSegments, getObjectBounds } from '../utils/canvas'
 import { spin } from './shapes'
-import { rackFootprint } from '../generate/columnCheck'
+import { aisleLabelLayout, AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX } from './hitTest'
+import { rackFootprint, aisleColumnBlocks } from '../generate/columnCheck'
+import { useColumnCheck, isRack } from '../generate/useColumnCheck'
+import { layoutColumns } from '../generate/usableCapacity'
+import { useDragPreview, previewObjects } from './dragPreview'
+import { clearanceMarks, aisleWarningRect, SHORT_COLOR } from './aisleMarks'
 
 /* ── Dimension labels — ported from the SVG engine, render-only ──────────────
    CanvasUI.jsx's RackLabels/FpSegmentDimLabels and CanvasOverlays.jsx's live
@@ -244,64 +250,18 @@ export function FpDimLabels({ obj, zoom, gridSize, activeWallIdx = null }) {
    frame the rack body already does (BUG 6 only special-cased the selection
    outline and resize handles, not every derived overlay). */
 export function AisleLabel({ aisle, objects, zoom, gridSize }) {
-  const row1 = objects.find(o => o.id === aisle.row1Id)
-  const row2 = objects.find(o => o.id === aisle.row2Id)
-  if (!row1 || !row2) return null
-
-  /* rackFootprint (BUG 45), not raw x/y/width/height — a rack rotated 90°
-     (GENERATOR_SPEC_V10's vertical orientation) still stores the PRE-
-     rotation local box, so measuring the gap between two rows with their
-     raw fields is only correct at rotation 0/180; at 90/270 it measures
-     the wrong rectangle entirely (width and height need swapping around
-     the shared centre first) and produces a nonsense width instead of the
-     true one. Harmless no-op for an unrotated rack (rot=0 returns the
-     same box). */
-  const f1 = rackFootprint(row1), f2 = rackFootprint(row2)
-  const r1 = { x: f1.x, y: f1.y, r: f1.x + f1.w, b: f1.y + f1.h }
-  const r2 = { x: f2.x, y: f2.y, r: f2.x + f2.w, b: f2.y + f2.h }
-
-  const yGap = Math.max(r2.x - r1.r, r1.x - r2.r)
-  const xGap = Math.max(r2.y - r1.b, r1.y - r2.b)
-  const isHoriz = xGap >= yGap
-
-  let aisleWidth, aisleStart, aisleEnd, topRow, bottomRow, leftRow, rightRow
-  if (isHoriz) {
-    topRow = r1.b < r2.y ? r1 : r2
-    bottomRow = r1.b < r2.y ? r2 : r1
-    aisleWidth = bottomRow.y - topRow.b
-    aisleStart = Math.max(topRow.x, bottomRow.x)
-    aisleEnd = Math.min(topRow.r, bottomRow.r)
-  } else {
-    leftRow = r1.r < r2.x ? r1 : r2
-    rightRow = r1.r < r2.x ? r2 : r1
-    aisleWidth = rightRow.x - leftRow.r
-    aisleStart = Math.max(leftRow.y, rightRow.y)
-    aisleEnd = Math.min(leftRow.b, rightRow.b)
-  }
-  if (aisleWidth <= 0 || aisleEnd <= aisleStart) return null
-  const aisleLen = aisleEnd - aisleStart
-
-  const widthTxt = pxToFtIn(aisleWidth, gridSize)
-  const userLabel = aisle.label ? `${aisle.label} · ` : ''
-  const fullTxt = `${userLabel}${widthTxt}`
-  /* Lighter/smaller/cleaner (was a solid near-black pill at 13px — heavy and
-     cluttered once a whole building's worth of rows are labelled at once).
-     A pale amber chip keeps the same colour family as the tick marks below
-     without the visual weight; fontSize stays screen-constant (/zoom) same
-     as before, just smaller, so it's still exactly as legible at any zoom,
-     just less loud. */
-  const fs = 10 / zoom
+  /* Geometry from aisleLabelLayout (hitTest.js) — the same stations the pick
+     tests against, so a label is exactly as clickable as it is visible.
+     rackFootprint-based (BUG 45) through aisleRect, so a 90°-rotated pair
+     measures its true gap. */
+  const L = aisleLabelLayout(aisle, objects, gridSize)
+  if (!L) return null
+  const { isHoriz, gapLo, gapHi, labelMid, positions, text: fullTxt } = L
+  const fs = AISLE_LABEL_FONT_PX / zoom
   const aw = 5 / zoom
   const sw = 1 / zoom
   const clr = '#f0b429'
   const bdr = '#f0b429'
-
-  let positions
-  if (aisleLen < 20 * gridSize) positions = [aisleStart + aisleLen * 0.5]
-  else if (aisleLen < 60 * gridSize) positions = [aisleStart + aisleLen * 0.25, aisleStart + aisleLen * 0.75]
-  else positions = [aisleStart + aisleLen * 0.15, aisleStart + aisleLen * 0.5, aisleStart + aisleLen * 0.85]
-
-  const labelMid = isHoriz ? topRow.b + aisleWidth / 2 : leftRow.r + aisleWidth / 2
 
   return (
     <Group name={'aisle:' + aisle.id} listening={false}>
@@ -309,29 +269,24 @@ export function AisleLabel({ aisle, objects, zoom, gridSize }) {
         const lx = isHoriz ? pos : labelMid
         const ly = isHoriz ? labelMid : pos
         const pad2 = 3 / zoom
+        const a1 = gapLo + pad2, a2 = gapHi - pad2
         return (
           <Group key={i} listening={false}>
-            {isHoriz ? (() => {
-              const y1 = topRow.b + pad2, y2 = bottomRow.y - pad2
-              return (
-                <>
-                  <Line points={[lx, y1, lx, y2]} stroke={clr} strokeWidth={sw} listening={false} />
-                  <Line closed fill={clr} listening={false} points={[lx, y1, lx - aw / 2, y1 + aw, lx + aw / 2, y1 + aw]} />
-                  <Line closed fill={clr} listening={false} points={[lx, y2, lx - aw / 2, y2 - aw, lx + aw / 2, y2 - aw]} />
-                </>
-              )
-            })() : (() => {
-              const x1 = leftRow.r + pad2, x2 = rightRow.x - pad2
-              return (
-                <>
-                  <Line points={[x1, ly, x2, ly]} stroke={clr} strokeWidth={sw} listening={false} />
-                  <Line closed fill={clr} listening={false} points={[x1, ly, x1 + aw, ly - aw / 2, x1 + aw, ly + aw / 2]} />
-                  <Line closed fill={clr} listening={false} points={[x2, ly, x2 - aw, ly - aw / 2, x2 - aw, ly + aw / 2]} />
-                </>
-              )
-            })()}
+            {isHoriz ? (
+              <>
+                <Line points={[lx, a1, lx, a2]} stroke={clr} strokeWidth={sw} listening={false} />
+                <Line closed fill={clr} listening={false} points={[lx, a1, lx - aw / 2, a1 + aw, lx + aw / 2, a1 + aw]} />
+                <Line closed fill={clr} listening={false} points={[lx, a2, lx - aw / 2, a2 - aw, lx + aw / 2, a2 - aw]} />
+              </>
+            ) : (
+              <>
+                <Line points={[a1, ly, a2, ly]} stroke={clr} strokeWidth={sw} listening={false} />
+                <Line closed fill={clr} listening={false} points={[a1, ly, a1 + aw, ly - aw / 2, a1 + aw, ly + aw / 2]} />
+                <Line closed fill={clr} listening={false} points={[a2, ly, a2 - aw, ly - aw / 2, a2 - aw, ly + aw / 2]} />
+              </>
+            )}
             <LabelPill cx={lx} cy={ly} text={fullTxt} fontSize={fs} zoom={zoom}
-              color="#92400e" bg="rgba(255,251,235,0.9)" padX={3.5 / zoom} heightScale={1.5} rx={2 / zoom}
+              color="#92400e" bg="rgba(255,251,235,0.9)" padX={AISLE_LABEL_PADX_PX / zoom} heightScale={1.5} rx={2 / zoom}
               stroke={bdr} strokeWidth={0.5 / zoom} opacity={0.95} />
           </Group>
         )
@@ -340,81 +295,76 @@ export function AisleLabel({ aisle, objects, zoom, gridSize }) {
   )
 }
 
-/* ── Column clearance labels — how far a column sitting in a travel aisle
-   is from the row it's clear toward. Reads columnCheck.js's own aisleBlocks
-   (clearFt/clearSide, already computed for the accessibility check, BUG 39's
-   3-level rule) rather than re-deriving the geometry: one source of truth
-   for "how much clearance does this column actually have." One label per
-   aisle-column, with a directional arrow (BUG 48/50) pointing from the
-   column toward whichever side clearSide names.
-   *
-   *  clearSide is NOT always "up/down" (BUG 50) — columnCheck.js measures
-   *  it along whichever axis the two bounding racks are STACKED on: for
-   *  unrotated (horizontal-orientation) racks that's Y, but for 90°-
-   *  rotated (vertical-orientation) racks the racks themselves stack along
-   *  X, so their shared travel aisle — and clearSide — runs LEFT/RIGHT, not
-   *  up/down. BUG 48 assumed Y unconditionally, which is why its arrow
-   *  pointed the wrong way (and, being sized to overlap the label, was
-   *  barely visible either way) the moment this ran in vertical
-   *  orientation. Resolved here from the REAL rack `aisleBlocks` already
-   *  names (`betweenRows[0]`) via the same `rackFootprint` BUG 45/49 use —
-   *  not assumed from the generator's own `orientation` flag, so a rack
-   *  rotated by hand still gets the right axis. */
-export function ColumnClearanceLabels({ aisleBlocks, columns, objects, zoom }) {
-  if (!aisleBlocks?.length || !columns?.length) return null
+/* ── Column clearance labels + red aisle warning ─────────────────────────────
+   For every column standing in a travel aisle: an arrow on EACH side, from
+   the column's edge to the rack face on that side, labelled with the clear
+   space. Built orientation-free in aisleMarks.js, so a vertical layout looks
+   exactly like a horizontal one turned 90° — same arrows, same pills (it was
+   a single fixed-length arrow toward the clearer side only).
+
+   When NEITHER side reaches the forklift's travelFt (`pinched`, the same
+   condition as accessibility level 1) the aisle stretch around the column is
+   shaded red and both labels turn red. Visual only: capacity and levels are
+   not touched. A generated layout never has one (E-no-block); it appears
+   when a dealer moves or places racks by hand.
+
+   Live while dragging: a plain drag doesn't write the store until mouseup,
+   so during one this re-runs just the cheap aisle part of the column check
+   (aisleColumnBlocks) on the previewed layout (dragPreview.js). Otherwise it
+   draws the full check's own aisleBlocks. */
+export function ColumnClearanceLabels({ aisleBlocks, columns, objects, zoom, gridSize = 40 }) {
+  const preview = useDragPreview()
+  const { profile, pickBothSides } = useColumnCheck()
+  const live = useMemo(() => {
+    if (!preview.ids) return null
+    const objs = previewObjects(objects || [], preview)
+    const cols = layoutColumns(objs, gridSize)
+    const racks = objs.filter(isRack)
+    return { cols, blocks: aisleColumnBlocks({ racks, columns: cols, profile, gridSize, pickBothSides }).aisleBlocks }
+  }, [preview, objects, gridSize, profile, pickBothSides])
+
+  const blocks = live ? live.blocks : aisleBlocks
+  const cols = live ? live.cols : columns
+  if (!blocks?.length || !cols?.length) return null
   const fs = 9 / zoom
-  const clr = '#0369a1'
-  /* BUG 51 — BUG 50's arrow was mathematically correct (verified: direction,
-     axis, and non-overlap with the label all held for both clearSide
-     values) but functionally invisible at any zoom a dealer actually
-     works at. A 20px screen-constant mark reads as a legible ARROW only
-     once you're zoomed in close enough that 20px is a large fraction of
-     what's on screen — at the working zoom AisleLabel's own arrows are
-     comfortably readable at (because THEY scale with the real aisle gap,
-     often hundreds of screen px), this one was a barely-there dot. Sized
-     up substantially — not to scale with clearFt (still can't, for the
-     same 1ft-to-20ft+ range reason BUG 48 already covered), just
-     BIG enough to unambiguously read as a shaft+arrowhead rather than a
-     smudge next to the label. */
-  const aw = 13 / zoom
-  const sw = 2.2 / zoom
-  const shaftLen = 34 / zoom
-  const gap = 3 / zoom
-  const labelH = fs * 1.4
+  const sw = 1.6 / zoom
 
   return (
     <Group name="column-clearance-labels" listening={false}>
-      {aisleBlocks.map((a, i) => {
-        const col = columns[a.columnIndex]
-        if (!col) return null
-        const cx = col.x + col.w / 2
-        const cy = col.y + col.h / 2
-
-        const row = objects?.find(o => o.id === a.betweenRows?.[0])
-        const horiz = row ? rackFootprint(row).rotated : false
-        const sign = a.clearSide === 'top' ? -1 : 1
-        const dx = horiz ? sign : 0, dy = horiz ? 0 : sign     // direction the arrow points
-        const px = horiz ? 0 : 1,    py = horiz ? 1 : 0        // its perpendicular (arrowhead spread)
-
-        const edgeD = (horiz ? col.w : col.h) / 2
-        const tipD  = edgeD + shaftLen
-        const baseD = tipD - aw
-        const at = (d) => ({ x: cx + dx * d, y: cy + dy * d })
-        const edgeP = at(edgeD), baseP = at(baseD), tipP = at(tipD)
-        const labelP = at(tipD + gap + labelH / 2)
-        const text = `${a.clearFt}' clear`
-
+      {blocks.map((a, i) => {
+        const col = cols[a.columnIndex]
+        if (!col || !a.axis) return null
+        const warn = aisleWarningRect(a, col)
         return (
-          <Group key={i} listening={false}>
-            <Line points={[edgeP.x, edgeP.y, baseP.x, baseP.y]} stroke={clr} strokeWidth={sw} listening={false} />
-            <Line closed fill={clr} listening={false} points={[
-              tipP.x, tipP.y,
-              baseP.x + px * aw / 2, baseP.y + py * aw / 2,
-              baseP.x - px * aw / 2, baseP.y - py * aw / 2,
-            ]} />
-            <LabelPill cx={labelP.x} cy={labelP.y} text={text} fontSize={fs} zoom={zoom}
-              color={clr} bg="rgba(224,242,254,0.92)" padX={3 / zoom} heightScale={1.4} rx={2 / zoom}
-              stroke="#7dd3fc" strokeWidth={0.5 / zoom} opacity={0.95} />
+          <Group key={i} name={'aisle-column:' + i} listening={false}>
+            {warn && (
+              <Rect name="aisle-warning" x={warn.x} y={warn.y} width={warn.w} height={warn.h}
+                fill="rgba(192,57,43,0.16)" stroke={SHORT_COLOR} strokeWidth={1.5 / zoom}
+                dash={[6 / zoom, 4 / zoom]} perfectDrawEnabled={false} listening={false} />
+            )}
+            {clearanceMarks(a, col, zoom, gridSize).map(m => {
+              /* A gap shorter on screen than its own label can't hold it:
+                 slide the pill off to the side of the arrow instead of over
+                 the column and rack (text is always horizontal, so the pill's
+                 extent along the arrow differs by orientation). */
+              const pillW = m.label.text.length * fs * 0.62 + (3 / zoom) * 2, pillH = fs * 1.4
+              const gapLen = Math.hypot(m.arrowhead[0].x - m.shaft[0].x, m.arrowhead[0].y - m.shaft[0].y)
+              const along = a.axis === 'y' ? pillH : pillW, across = a.axis === 'y' ? pillW : pillH
+              const off = gapLen < along + 4 / zoom ? across / 2 + 6 / zoom : 0
+              const lx = m.label.x + (a.axis === 'y' ? off : 0), ly = m.label.y - (a.axis === 'x' ? off : 0)
+              return (
+              <Group key={m.side} listening={false}>
+                <Line points={[m.shaft[0].x, m.shaft[0].y, m.shaft[1].x, m.shaft[1].y]}
+                  stroke={m.color} strokeWidth={sw} listening={false} />
+                <Line closed fill={m.color} listening={false}
+                  points={m.arrowhead.flatMap(q => [q.x, q.y])} />
+                <LabelPill cx={lx} cy={ly} text={m.label.text} fontSize={fs} zoom={zoom}
+                  color={m.color} bg={m.short ? 'rgba(254,226,226,0.95)' : 'rgba(224,242,254,0.92)'}
+                  padX={3 / zoom} heightScale={1.4} rx={2 / zoom}
+                  stroke={m.short ? SHORT_COLOR : '#7dd3fc'} strokeWidth={0.5 / zoom} opacity={0.95} />
+              </Group>
+              )
+            })}
           </Group>
         )
       })}

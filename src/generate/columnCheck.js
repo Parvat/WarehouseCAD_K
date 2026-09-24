@@ -306,6 +306,85 @@ export function columnsOnUprights({ racks = [], columns = [], gridSize = GS }) {
   return hits
 }
 
+/** Columns standing in a travel aisle — one entry per (aisle, column), with
+ *  the clear space on BOTH sides. Split out of checkColumns (which calls it)
+ *  so the canvas can re-run just this cheap part every frame of a drag,
+ *  without the pick-zone and in-rack work.
+ *
+ *  Aisles are gaps WITHIN one run of facing rows, measured along whichever
+ *  axis those rows are actually STACKED on — Y for horizontal (rows run
+ *  along X), X for vertical (GENERATOR_SPEC_V10; rows run along Y). Group
+ *  racks into runs FIRST (by shared cross-axis range), then look for
+ *  along-axis gaps inside each run on its own. Sorting every rack globally
+ *  by one fixed axis and pairing consecutive entries silently found nothing
+ *  the moment a building had a cross-aisle (BUG 33).
+ *
+ *  `pinched` — neither side reaches travelFt, so a forklift can't pass on
+ *  either side (the same condition as accessibility level 1). The drawing
+ *  shades that aisle red; levels and capacity are untouched. */
+export function aisleColumnBlocks({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, pickBothSides = false }) {
+  const travelPx = (profile.travelFt ?? 8) * gridSize
+  const aislePx  = profile.aisleFt * gridSize
+  const aisleBlocks = []
+  const redMarks = []
+  const segments = groupBySegment(racks)
+  for (const run of segments) {
+    if (!run.length) continue
+    const stacked = rackFootprint(run[0]).rotated   // true: stacked along X (vertical rows). false: along Y.
+    const feet = run.map(r => ({ r, f: rackFootprint(r) }))
+    feet.sort((a, b) => stacked ? a.f.x - b.f.x : a.f.y - b.f.y)
+
+    for (let i = 0; i < feet.length - 1; i++) {
+      const top = feet[i], bot = feet[i + 1]
+      const gapStart = stacked ? (top.f.x + top.f.w) : (top.f.y + top.f.h)
+      const gapLen   = stacked ? (bot.f.x - gapStart) : (bot.f.y - gapStart)
+      if (gapLen <= 0) continue
+      const crossStart = Math.max(stacked ? top.f.y : top.f.x, stacked ? bot.f.y : bot.f.x)
+      const crossEnd   = Math.min(
+        stacked ? top.f.y + top.f.h : top.f.x + top.f.w,
+        stacked ? bot.f.y + bot.f.h : bot.f.x + bot.f.w,
+      )
+      if (crossEnd <= crossStart) continue
+
+      const aisleBox = stacked
+        ? { x: gapStart, y: crossStart, w: gapLen, h: crossEnd - crossStart }
+        : { x: crossStart, y: gapStart, w: crossEnd - crossStart, h: gapLen }
+      columns.forEach((col, ci) => {
+        if (!overlaps(col, aisleBox)) return
+        // Widest clear pass on either side of the column within the aisle,
+        // measured along the same axis the aisle's own gap runs.
+        const colNear = stacked ? col.x : col.y
+        const colFar  = stacked ? (col.x + col.w) : (col.y + col.h)
+        const nearClear = colNear - gapStart
+        const farClear  = (gapStart + gapLen) - colFar
+        const clearPx   = Math.max(nearClear, farClear)
+        const clearSide = nearClear >= farClear ? 'top' : 'bot'   // which row the column is clear TOWARD
+        const level    = clearPx < travelPx ? 1 : (clearPx < aislePx ? 2 : 3)
+        const blocked  = level === 1 || (level === 2 && pickBothSides)
+        aisleBlocks.push({
+          betweenRows: [top.r.id, bot.r.id], columnIndex: ci,
+          aisleFt: +(gapLen / gridSize).toFixed(1),
+          clearFt: +(clearPx / gridSize).toFixed(1),
+          clearSide, level, blocked,
+          /* Both sides, for the drawing: the clear space from the column to
+             the rack on each side (near = the `top` row's side), the axis
+             the aisle's gap runs along, and the aisle box itself (px). */
+          nearClearFt: +(nearClear / gridSize).toFixed(1),
+          farClearFt: +(farClear / gridSize).toFixed(1),
+          nearShort: nearClear < travelPx, farShort: farClear < travelPx,
+          pinched: clearPx < travelPx,
+          axis: stacked ? 'x' : 'y',
+          gapStart, gapEnd: gapStart + gapLen, crossStart, crossEnd,
+        })
+        if (blocked) redMarks.push(stacked
+          ? { x: gapStart, y: col.y, w: gapLen, h: col.h, kind: 'aisle-blocked' }
+          : { x: col.x, y: gapStart, w: col.w, h: gapLen, kind: 'aisle-blocked' })
+      })
+    }
+  }
+  return { aisleBlocks, redMarks }
+}
+
 // ── The check ────────────────────────────────────────────────────────────────
 // racks:   [{ id, x, y, width, height, type, beams, levels, palletWIn,
 //             depthIn, flueSpaceIn }]  (px, depthIn/flueSpaceIn in inches)
@@ -328,8 +407,6 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
        3. FULL PICK  — clear >= aisleFt: ideal, both sides pickable.
      Only level 1 is ever a true block; level 2 is "flagged" (the field the
      UI/summary act on) only when pickBothSides is on. */
-  const travelPx = (profile.travelFt ?? 8) * gridSize
-  const aislePx  = profile.aisleFt * gridSize
   const rackConflicts = []
   const flueSeated = []
   const aisleBlocks = []
@@ -502,52 +579,9 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
      the same band (zero cross-axis overlap, skipped) or the next band's
      row from the other run (also zero overlap, skipped). aisleBlocks came
      back empty for every standard generate as a result (BUG 33). */
-  const segments = groupBySegment(racks)
-  for (const run of segments) {
-    if (!run.length) continue
-    const stacked = rackFootprint(run[0]).rotated   // true: stacked along X (vertical rows). false: along Y.
-    const feet = run.map(r => ({ r, f: rackFootprint(r) }))
-    feet.sort((a, b) => stacked ? a.f.x - b.f.x : a.f.y - b.f.y)
-
-    for (let i = 0; i < feet.length - 1; i++) {
-      const top = feet[i], bot = feet[i + 1]
-      const gapStart = stacked ? (top.f.x + top.f.w) : (top.f.y + top.f.h)
-      const gapLen   = stacked ? (bot.f.x - gapStart) : (bot.f.y - gapStart)
-      if (gapLen <= 0) continue
-      const crossStart = Math.max(stacked ? top.f.y : top.f.x, stacked ? bot.f.y : bot.f.x)
-      const crossEnd   = Math.min(
-        stacked ? top.f.y + top.f.h : top.f.x + top.f.w,
-        stacked ? bot.f.y + bot.f.h : bot.f.x + bot.f.w,
-      )
-      if (crossEnd <= crossStart) continue
-
-      const aisleBox = stacked
-        ? { x: gapStart, y: crossStart, w: gapLen, h: crossEnd - crossStart }
-        : { x: crossStart, y: gapStart, w: crossEnd - crossStart, h: gapLen }
-      columns.forEach((col, ci) => {
-        if (!overlaps(col, aisleBox)) return
-        // Widest clear pass on either side of the column within the aisle,
-        // measured along the same axis the aisle's own gap runs.
-        const colNear = stacked ? col.x : col.y
-        const colFar  = stacked ? (col.x + col.w) : (col.y + col.h)
-        const nearClear = colNear - gapStart
-        const farClear  = (gapStart + gapLen) - colFar
-        const clearPx   = Math.max(nearClear, farClear)
-        const clearSide = nearClear >= farClear ? 'top' : 'bot'   // which row the column is clear TOWARD
-        const level    = clearPx < travelPx ? 1 : (clearPx < aislePx ? 2 : 3)
-        const blocked  = level === 1 || (level === 2 && pickBothSides)
-        aisleBlocks.push({
-          betweenRows: [top.r.id, bot.r.id], columnIndex: ci,
-          aisleFt: +(gapLen / gridSize).toFixed(1),
-          clearFt: +(clearPx / gridSize).toFixed(1),
-          clearSide, level, blocked,
-        })
-        if (blocked) redMarks.push(stacked
-          ? { x: gapStart, y: col.y, w: gapLen, h: col.h, kind: 'aisle-blocked' }
-          : { x: col.x, y: gapStart, w: col.w, h: gapLen, kind: 'aisle-blocked' })
-      })
-    }
-  }
+  const aisle = aisleColumnBlocks({ racks, columns, profile, gridSize, pickBothSides })
+  aisleBlocks.push(...aisle.aisleBlocks)
+  redMarks.push(...aisle.redMarks)
 
   return {
     rackConflicts,   // bay-columns only — accessible, kept, flagged red

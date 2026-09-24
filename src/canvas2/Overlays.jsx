@@ -1,7 +1,9 @@
 import { Rect, Line } from 'react-konva'
 import { SelectionOutline } from './shapes'
 import { RackLabels, FpDimLabels, AisleLabel, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
+import { useMemo } from 'react'
 import { BlockedFaceMarks } from './BlockedFaceMarks'
+import { useDragPreview, previewObjects } from './dragPreview'
 import { UprightConflictMarks } from './UprightConflictMarks'
 import { OversizedBayMarks } from './OversizedBayMarks'
 
@@ -24,7 +26,19 @@ export function Overlays({
   selectedObjects, gridSize, marquee, objects = [], zoom = 1, showAisles = true, activeWall = null, smartGuides = [],
   showMarks = true, aisleBlocks = [], columns = [], rackConflicts = [], pickBlocks = [], uprightHits = [],
 }) {
-  const aisles = showAisles ? objects.filter(o => o.type === 'aisle') : []
+  /* Overlays DERIVED from object positions (aisle labels, the column-check
+     marks) are drawn from `pObjects`: the store's objects with the current
+     drag's offset applied (dragPreview.js). A plain drag moves Konva nodes and
+     writes the store only on mouseup, so without this they sat at the
+     pre-drag layout until the drop — ghosts during a floor-plan or multi-
+     select drag. Selection outlines and rack/fp dimension labels are NOT fed
+     pObjects: the drag already moves their nodes directly
+     (collectDragNodes), and offsetting them here too would move them twice.
+     The clearance labels apply the preview themselves (they re-run the aisle
+     check on the previewed layout). */
+  const preview = useDragPreview()
+  const pObjects = useMemo(() => previewObjects(objects, preview), [objects, preview])
+  const aisles = showAisles ? pObjects.filter(o => o.type === 'aisle') : []
   return (
     <>
       {selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} objects={objects} />)}
@@ -33,11 +47,11 @@ export function Overlays({
       {selectedObjects.map(o => (FP_TYPES.has(o.type) && o.fpVerts)
         ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={zoom} gridSize={gridSize}
             activeWallIdx={activeWall && activeWall.objId === o.id ? activeWall.wallIdx : null} /> : null)}
-      {aisles.map(a => <AisleLabel key={'ai:' + a.id} aisle={a} objects={objects} zoom={zoom} gridSize={gridSize} />)}
-      {showMarks && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} zoom={zoom} />}
-      {showMarks && <BlockedFaceMarks rackConflicts={pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts} objects={objects} gridSize={gridSize} zoom={zoom} />}
-      {showMarks && <UprightConflictMarks uprightHits={uprightHits} objects={objects} gridSize={gridSize} zoom={zoom} />}
-      {showMarks && <OversizedBayMarks objects={objects} gridSize={gridSize} zoom={zoom} />}
+      {aisles.map(a => <AisleLabel key={'ai:' + a.id} aisle={a} objects={pObjects} zoom={zoom} gridSize={gridSize} />)}
+      {showMarks && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} zoom={zoom} gridSize={gridSize} />}
+      {showMarks && <BlockedFaceMarks rackConflicts={pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts} objects={pObjects} gridSize={gridSize} zoom={zoom} />}
+      {showMarks && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} zoom={zoom} />}
+      {showMarks && <OversizedBayMarks objects={pObjects} gridSize={gridSize} zoom={zoom} />}
       {/* Smart-guide alignment lines, live during a plain object drag —
           CanvasArea's own colours (wall/column snaps purple, object-to-
           object snaps green) and dash, ported. Stroke width is a plain

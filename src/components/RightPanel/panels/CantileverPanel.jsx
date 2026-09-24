@@ -1,4 +1,5 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
+import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getObjectBounds } from '../../../utils/canvas'
 
 // ── Cantilever Properties Panel ───────────────────────────────────────────────
@@ -31,26 +32,26 @@ export function CantileverPanel({ obj }) {
   const addTower = () => {
     const newTowers = [...towers, towers[towers.length - 1] || 36]
     const newW = ((newTowers.length - 1) * TSPACE_IN / 12) * gridSize
-    commitObjectUpdate(obj.id, { towers: newTowers, width: newW })
+    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { towers: newTowers, width: newW }))
   }
 
   const removeTower = () => {
     if (towers.length <= 2) return
     const newTowers = towers.slice(0, -1)
     const newW = ((newTowers.length - 1) * TSPACE_IN / 12) * gridSize
-    commitObjectUpdate(obj.id, { towers: newTowers, width: newW, activeTowerIdx: null })
+    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { towers: newTowers, width: newW, activeTowerIdx: null }))
   }
 
   const changeTowerArm = (tIdx, newArmIn) => {
     // All arms must be the same length -- fill entire array
     const newTowers = Array(towers.length).fill(newArmIn)
     const newH = calcH(newTowers, doubleSided)
-    commitObjectUpdate(obj.id, { towers: newTowers, height: newH })
+    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { towers: newTowers, height: newH }))
   }
 
   const toggleSide = (val) => {
     const newH = calcH(towers, val)
-    commitObjectUpdate(obj.id, { doubleSided: val, height: newH })
+    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { doubleSided: val, height: newH }))
   }
 
   const label = (s) => (

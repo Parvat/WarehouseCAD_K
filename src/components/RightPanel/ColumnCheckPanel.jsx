@@ -1,4 +1,5 @@
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { withAnchoredPosition, bayDeleteAnchor } from '../../utils/bayAnchor'
 import { SectionHeader } from '../shared/SectionHeader'
 import { useColumnCheck, conflictKey } from '../../generate/useColumnCheck'
 import { useRules } from '../../rules/useRules'
@@ -84,11 +85,15 @@ function ConflictCard({ conflict, index }) {
     const newBeams = beams.filter((_, i) => i !== idx)
     const upIn     = rack.uprightWidth || 3
     const totalIn  = upIn * (newBeams.length + 1) + newBeams.reduce((s, b) => s + b, 0)
-    commitObjectUpdate(rack.id, {
+    /* Hold the untouched end where it's drawn — the bay-delete rule
+       (bayDeleteAnchor): removing the first bay holds the far end, anything
+       else the near end. It used to keep x regardless, so removing a
+       first-end section slid the rest of the rack along, even at 0°. */
+    commitObjectUpdate(rack.id, withAnchoredPosition(rack, {
       beams: newBeams,
       width: (totalIn / 12) * gridSize,
       activeBayIdx: null,
-    })
+    }, { x: bayDeleteAnchor(beams.length, [idx]) }))
     setResolution(key, 'removed')
   }
 

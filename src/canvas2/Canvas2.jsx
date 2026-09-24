@@ -395,7 +395,7 @@ export function Canvas2() {
               <FpRotateHandleOverlay obj={fpRotateTarget} gridSize={gridSize} zoom={zoom} />
             )}
             {selectedObjects.length >= 2 && !(activeBaySelection && activeBaySelection.length > 0) && (
-              <GroupRotateOverlay objects={selectedObjects} zoom={zoom} />
+              <GroupRotateOverlay objects={selectedObjects} zoom={zoom} allObjects={objects} />
             )}
             {measuring && (
               <MeasureOverlay points={measurePts} hover={measureHover} zoom={zoom} gridSize={gridSize} />

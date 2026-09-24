@@ -20,6 +20,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getObjectBounds } from '../utils/canvas'
+import { worldBoundsOf } from './hitTest'
+import { movedIdsFor } from './selection'
 
 const FP_SET_SNAP = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 const COL_GRID_SET = new Set(['column_grid'])
@@ -38,12 +40,22 @@ export function computeSmartGuides(selectedIds, objects, gridSize, zoom, dx, dy)
   const WALL_SNAP    = 32 / zoom
 
   const selObjs  = objects.filter(o => selectedIds.includes(o.id))
-  const others   = objects.filter(o => !selectedIds.includes(o.id) && !FP_SET_SNAP.has(o.type) && !COL_GRID_SET.has(o.type))
-  const fpWalls  = objects.filter(o => !selectedIds.includes(o.id) && FP_SET_SNAP.has(o.type))
-  const colGrids = objects.filter(o => !selectedIds.includes(o.id) && COL_GRID_SET.has(o.type))
+  /* Only objects that are NOT moving may be snap targets. The drag moves
+     more than the selection: a floor plan carries its children (racks,
+     aisles, its column grid — movedIdsFor, the same set the drag itself
+     moves). Those children still sit at their pre-drag positions in
+     `objects`, so as targets they made a dragged building snap to ghosts
+     of its own contents. */
+  const moving   = movedIdsFor(objects, selectedIds)
+  const others   = objects.filter(o => !moving.has(o.id) && !FP_SET_SNAP.has(o.type) && !COL_GRID_SET.has(o.type))
+  const fpWalls  = objects.filter(o => !moving.has(o.id) && FP_SET_SNAP.has(o.type))
+  const colGrids = objects.filter(o => !moving.has(o.id) && COL_GRID_SET.has(o.type))
 
-  const selBounds = selObjs.map(o => {
-    const b = getObjectBounds(o)
+  /* worldBoundsOf, not the stored box: a 90° (vertical-layout) rack is
+     stored wide but drawn tall, so its stored box put its snap edges and
+     centre lines where the rack isn't. Both the dragged object and every
+     target are measured as drawn. */
+  const selBounds = selObjs.map(o => worldBoundsOf(o, objects)).filter(Boolean).map(b => {
     return {
       x: b.x + dx, y: b.y + dy, r: b.x + b.width + dx, b: b.y + b.height + dy,
       cx: b.x + b.width / 2 + dx, cy: b.y + b.height / 2 + dy,
@@ -172,7 +184,8 @@ export function computeSmartGuides(selectedIds, objects, gridSize, zoom, dx, dy)
 
     // ── Snap to other objects' edges/centres (green guides) ─────────────
     others.forEach(o => {
-      const b = getObjectBounds(o)
+      const b = worldBoundsOf(o, objects)   // as drawn (rotation-aware); an aisle is its gap, never a phantom snap at the origin
+      if (!b) return
       const ob = { x: b.x, y: b.y, r: b.x + b.width, b: b.y + b.height, cx: b.x + b.width / 2, cy: b.y + b.height / 2 }
 
       const xPairs = [

@@ -70,7 +70,7 @@
 // call.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getObjectBounds } from '../utils/canvas'
+import { boundsOf } from './hitTest'
 
 /** Rotate world point `p` by `angleDeg` about `pivot`. */
 function rotateAround(p, angleDeg, pivot) {
@@ -91,14 +91,19 @@ function rotateAround(p, angleDeg, pivot) {
  *  ONE transform ({P, R}) that places it — a caller draws minX/minY/
  *  maxX/maxY/hx/hy/ly/r exactly as given, inside a Konva Group positioned
  *  at P, offset at P, rotated by R (spin()'s own pattern, generalised). */
-export function computeGroupOutline(objs, zoom) {
+export function computeGroupOutline(objs, zoom, allObjects = objs) {
   if (!objs || !objs.length) return null
   const R = objs[0].rotation || 0
 
+  /* boundsOf, not getObjectBounds: an aisle has no box of its own and used
+     to count as a zero box at the world origin, stretching the outline to
+     the building's centre. `allObjects` lets an aisle find its two rows;
+     one that can't is left out of the outline rather than put at (0, 0). */
   const centres = objs.map(obj => {
-    const b = getObjectBounds(obj)
-    return { x: b.x + b.width / 2, y: b.y + b.height / 2, b }
-  })
+    const b = boundsOf(obj, allObjects)
+    return b ? { x: b.x + b.width / 2, y: b.y + b.height / 2, b } : null
+  }).filter(Boolean)
+  if (!centres.length) return null
   const P = {
     x: centres.reduce((s, c) => s + c.x, 0) / centres.length,
     y: centres.reduce((s, c) => s + c.y, 0) / centres.length,
@@ -124,8 +129,8 @@ export function computeGroupOutline(objs, zoom) {
  *  invisible <circle> hit target). The handle's LOCAL (hx,hy) has to be
  *  carried through the SAME {P,R} transform the paint side uses, or a
  *  click would miss wherever the rotated handle actually renders. */
-export function groupRotateHandleHitTest(objs, zoom, worldX, worldY) {
-  const g = computeGroupOutline(objs, zoom)
+export function groupRotateHandleHitTest(objs, zoom, worldX, worldY, allObjects = objs) {
+  const g = computeGroupOutline(objs, zoom, allObjects)
   if (!g) return false
   const world = rotateAround({ x: g.hx, y: g.hy }, g.R, g.P)
   return Math.hypot(worldX - world.x, worldY - world.y) <= g.r * 2.5

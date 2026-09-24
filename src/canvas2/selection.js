@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getObjectBounds } from '../utils/canvas'
+import { worldBoundsOf } from './hitTest'
 
 /** The selection a press on `id` should produce.
  *
@@ -81,7 +82,12 @@ export function rectsOverlap(a, b) {
  *  function itself rather than left to callers to opt into (an
  *  `isVisible` filter) — there is exactly one call site today and the
  *  exclusion is a correctness rule, not a situational one. */
-const NON_MARQUEEABLE = new Set(['column_grid'])
+/* Aisles too: an aisle has nothing visible of its own except its labels
+   (and is picked by those alone — hitTest's aisleLabelHit), so a marquee
+   dragged across rows used to catch every aisle whose invisible gap it
+   crossed, mixing aisles into what should be a rack selection. A marquee
+   selects the racks and bays it visibly touches. */
+const NON_MARQUEEABLE = new Set(['column_grid', 'aisle'])
 
 /** Shared by objectsInMarquee (what a NEW marquee catches) and
  *  useCanvasInteraction's own marquee mouseup (what survives from a
@@ -100,7 +106,7 @@ export function objectsInMarquee(objects = [], rect, { isVisible } = {}) {
     if (!o) continue
     if (isMarqueeExcluded(o)) continue
     if (isVisible && !isVisible(o)) continue
-    const b = getObjectBounds(o)
+    const b = worldBoundsOf(o, objects)   // rotation-aware: a 90° rack is tested as drawn, not by its stored box
     if (!b || !(b.width >= 0) || !(b.height >= 0)) continue
     /* A zero-thickness object — a horizontal line — would never overlap on that
        axis. Give it a hair of width so it can still be caught. */
@@ -186,12 +192,26 @@ const BAY_ROW_TYPES = new Set([
  *  whole point of this over the plain per-bay click (hitTestBay). */
 export function bayEntriesInMarquee(objects = [], rect, gridSize = 40) {
   if (!rect || !(rect.width > 0) || !(rect.height > 0)) return []
-  const minX = rect.x, maxX = rect.x + rect.width
-  const minY = rect.y, maxY = rect.y + rect.height
   const bayEntries = []
   objects.forEach(obj => {
     if (!obj || !BAY_ROW_TYPES.has(obj.type) || !obj.beams) return
     const b = getObjectBounds(obj)
+    /* Bays run along the rack's own LOCAL x. For a turned rack (a vertical
+       layout's 90° rows) carry the marquee into that local frame first —
+       rotate its corners back about the rack's centre, the same pivot
+       spin() draws with — then run the walk below unchanged. At 0° this is
+       the identity, so horizontal layouts behave exactly as before. */
+    const rot = ((((obj.rotation || 0) % 360) + 360) % 360)
+    let minX = rect.x, maxX = rect.x + rect.width
+    let minY = rect.y, maxY = rect.y + rect.height
+    if (rot) {
+      const cx = b.x + b.width / 2, cy = b.y + b.height / 2
+      const t = -rot * Math.PI / 180, c = Math.cos(t), s = Math.sin(t)
+      const pts = [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]]
+        .map(([x, y]) => [cx + (x - cx) * c - (y - cy) * s, cy + (x - cx) * s + (y - cy) * c])
+      minX = Math.min(...pts.map(p => p[0])); maxX = Math.max(...pts.map(p => p[0]))
+      minY = Math.min(...pts.map(p => p[1])); maxY = Math.max(...pts.map(p => p[1]))
+    }
     if (b.y > maxY || b.y + b.height < minY) return   // row not in Y range
     const upW = ((obj.uprightWidth || 3) / 12) * gridSize
     let cursor = obj.x + upW

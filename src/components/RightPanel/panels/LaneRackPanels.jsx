@@ -1,4 +1,5 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
+import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getObjectBounds } from '../../../utils/canvas'
 import { getRackCapacity } from '../../../utils/capacity'
 
@@ -19,11 +20,11 @@ export function DriveInPanel({ obj }) {
     const laneWPx = ledgePx*2 + clearPx*2 + palletWPx  // must match render formula
     const newW = (newLanes+1)*upPx + newLanes*laneWPx
     const newH = newDeep * (newPalletDIn/12)*gridSize
-    commitObjectUpdate(obj.id, {
+    commitObjectUpdate(obj.id, withAnchoredPosition(obj, {
       lanes: newLanes, palletDeep: newDeep,
       palletWIn: newPalletWIn, palletDIn: newPalletDIn,
       uprightWidth: newUpIn, width: newW, height: newH,
-    })
+    }))
   }
 
   const btnStyle = (active) => ({
@@ -116,7 +117,7 @@ export function DriveThroughPanel({ obj }) {
     const laneWPx = ledgePx*2 + clearPx*2 + palletWPx
     const newW = (newLanes+1)*upPx + newLanes*laneWPx
     const newH = newDeep * (newPDIn/12)*gridSize
-    commitObjectUpdate(obj.id, { lanes: newLanes, palletDeep: newDeep, palletWIn: newPWIn, palletDIn: newPDIn, uprightWidth: newUpIn, width: newW, height: newH })
+    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { lanes: newLanes, palletDeep: newDeep, palletWIn: newPWIn, palletDIn: newPDIn, uprightWidth: newUpIn, width: newW, height: newH }))
   }
 
   const btnStyle = (active) => ({ padding:'3px 8px', borderRadius:4, cursor:'pointer', fontSize:9, fontFamily:'var(--font-mono)', background: active? 'var(--accent-solid)':'var(--surface3)', border:`1px solid ${active?'var(--accent)':'var(--border)'}`, color: active?'var(--accent-fg)':'var(--text2)' })
@@ -170,7 +171,7 @@ export function PushbackPanel({ obj }) {
     const laneWPx = ledgePx*2 + clearPx*2 + palletWPx
     const newW = (newLanes+1)*upPx + newLanes*laneWPx
     const newH = newDeep * (newPDIn/12)*gridSize
-    commitObjectUpdate(obj.id, { lanes: newLanes, palletDeep: newDeep, palletWIn: newPWIn, palletDIn: newPDIn, uprightWidth: newUpIn, width: newW, height: newH })
+    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { lanes: newLanes, palletDeep: newDeep, palletWIn: newPWIn, palletDIn: newPDIn, uprightWidth: newUpIn, width: newW, height: newH }))
   }
 
   const btnStyle = (active) => ({ padding:'3px 8px', borderRadius:4, cursor:'pointer', fontSize:9, fontFamily:'var(--font-mono)', background: active? 'var(--accent-solid)':'var(--surface3)', border:`1px solid ${active?'var(--accent)':'var(--border)'}`, color: active?'var(--accent-fg)':'var(--text2)' })

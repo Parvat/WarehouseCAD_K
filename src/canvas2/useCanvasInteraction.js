@@ -1,3 +1,4 @@
+import { setDragPreview, clearDragPreview } from './dragPreview'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
@@ -165,7 +166,7 @@ export function useCanvasInteraction({
      literal startsWith/slice(4) pair only worked by coincidence for 'obj:'
      and 'sel:', both 4 characters) so a future chrome piece is added here
      once, not rediscovered the same way three times. */
-  const CHROME_NODE_PREFIXES = ['obj:', 'sel:', 'handles:', 'racklabels:', 'fpdim:']
+  const CHROME_NODE_PREFIXES = ['obj:', 'sel:', 'handles:', 'racklabels:', 'fpdim:', 'fprotate:']
   const collectDragNodes = (stage, ids) => {
     const st = useCanvasStore.getState()
     const want = movedIdsFor(st.objects, ids)
@@ -173,6 +174,10 @@ export function useCanvasInteraction({
     for (const layer of stage.getLayers()) {
       for (const n of layer.getChildren()) {
         const nm = n.name() || ''
+        /* The multi-selection's group outline + rotate handle belongs to the
+           selection as a whole, not to one id: it moves whenever the drag
+           moves a selection of two or more (which is the only time it's drawn). */
+        if (nm === 'grouprotate') { if (ids.length >= 2) nodes.push({ node: n, rest: n.position() }); continue }
         const colon = nm.indexOf(':')
         if (colon === -1) continue
         const prefix = nm.slice(0, colon + 1)
@@ -256,6 +261,9 @@ export function useCanvasInteraction({
       moved: false,
       delta: null,
       flueBase,
+      /* Everything this drag moves (selection + floor-plan children), for the
+         overlays' live preview — see dragPreview.js. */
+      movedIds: movedIdsFor(st.objects, ids),
     }
   }
 
@@ -279,7 +287,7 @@ export function useCanvasInteraction({
      applyGroupRotation recomputes itself from `base`, deliberately not the
      same value (see groupRotate.js). */
   const beginGroupRotateDrag = (objs) => {
-    const g = computeGroupOutline(objs, view.current.zoom)
+    const g = computeGroupOutline(objs, view.current.zoom, useCanvasStore.getState().objects)
     if (!g) return
     groupRotateDrag.current = {
       ids: objs.map(o => o.id),
@@ -414,7 +422,7 @@ export function useCanvasInteraction({
            the same reason the single-object handle check above is: the
            handle sits above the selection's bounds and must win the press. */
         const selectedObjs = st.selectedIds.map(id => st.objects.find(o => o.id === id)).filter(Boolean)
-        if (selectedObjs.length >= 2 && groupRotateHandleHitTest(selectedObjs, view.current.zoom, world.x, world.y)) {
+        if (selectedObjs.length >= 2 && groupRotateHandleHitTest(selectedObjs, view.current.zoom, world.x, world.y, st.objects)) {
           beginGroupRotateDrag(selectedObjs)
           return
         }
@@ -945,6 +953,8 @@ export function useCanvasInteraction({
            nodes, not the object tree BUG 12's node-move trick exists to
            keep off the hot path. */
         for (const n of d.nodes) n.node.position({ x: n.rest.x + dx, y: n.rest.y + dy })
+        // aisle warnings and clearance labels follow the drag live
+        setDragPreview(d.movedIds, dx, dy)
         stage.batchDraw()
         return
       }
@@ -1020,6 +1030,7 @@ export function useCanvasInteraction({
 
       const d = objDrag.current
       objDrag.current = null
+      clearDragPreview()
       if (d) {
         if (d.flueBase) {
           /* The live-auto-flue path (mousemove above) already wrote the

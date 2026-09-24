@@ -216,6 +216,256 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
+### T — Deleting bays keeps the rack where it is drawn, any rotation · `T_bayDelete.test.js` (30 tests)
+A rotated rack is drawn spun about its stored box's centre, and deleting bays
+shrinks the stored width, which moves that centre. The store's anchor rule
+only adjusted `x` (right at 0°), so at 90° deleting the last bay moved every
+remaining bay (−165, +165) px. **Store change, approved by PP:**
+`deleteSingleBay` and `deleteSelectedBays` now set `x` and `y` from
+`anchoredShrink(obj, newWidth, bayDeleteAnchor(...))` (`utils/bayAnchor.js`).
+Same end-holding rule as before (first bay deleted but not the last → hold the
+far end; otherwise the near end), now held in WORLD space via the SVG engine's
+rotated-anchor correction (new centre = old centre + R(±Δw/2, 0)). At 0° it
+reproduces the old result exactly.
+
+These two actions are every bay-delete path: the Delete key with one bay
+(`deleteSingleBay`), a bay marquee plus Delete, and the panel's "Delete
+selected bays" (`deleteSelectedBays`), including selections across rows.
+
+Checked in the app, horizontal and vertical: delete the first bay → the near
+end moved in by exactly one bay (38.7 / 30.7 screen px), the far end and both
+sides 0; delete the last bay → the far end moved in, the near end 0; one Ctrl+Z
+restored the rack exactly.
+
+| Test | Asserts (a 5-bay rack at 0°, 90°, 180° and 270°) |
+|---|---|
+| `T-multi` ×5 per rotation | delete first, first two, middle, last, last two: every remaining bay's drawn rect = expected (held-end bays 0 px; bays past a gap close up by exactly 330 px per removed bay along the rack's own run); one undo restores the original object |
+| `T-single` per rotation | Delete key on the first bay: same, via `deleteSingleBay` |
+| `T-rows` per rotation | one bay selection across three rows (start of one, end of another, middle of a third): every row right; one undo restores all three |
+| `T-helper` ×2 | at 0° `anchoredShrink` is exactly the old rule; which end is held |
+
+The same bug class elsewhere was fixed in area U.
+
+### U — Every rack resize gives the 0° result rotated · `U_resizeRotation.test.js` (75 tests)
+**Rule (PP):** at any rotation, the result is exactly the 0° result rotated.
+Whichever point stays fixed at 0° today stays fixed on screen. One shared
+helper, `anchoredResize(obj, { width, height }, { x, y })` (`utils/bayAnchor.js`),
+holds a chosen end of each local axis where it is drawn. `anchoredShrink` (bay
+deletes) is it on x only; `withAnchoredPosition(obj, updates, anchor)` adds the
+resulting x/y to a commit payload.
+- **Store, approved:** `changeSelectedBaysBeam` now sets x/y from
+  `anchoredShrink(obj, newWidth, 'start')`. The position update only; the
+  import was already there from area T.
+- **Components:** `RackRowPanelCore` (add, change and remove bay; upright width;
+  flue), `CantileverPanel` (add and remove tower; arm length; single/double
+  sided), `LaneRackPanels` (all three recalcs: drive-in, drive-through,
+  pushback/pallet-flow). Every commit that changes width or height now goes
+  through `withAnchoredPosition` (near/top corner held, as at 0° today).
+- **Column Check "Remove section":** `withAnchoredPosition(rack, …, { x:
+  bayDeleteAnchor(beams.length, [idx]) })`. This also fixes the 0° bug:
+  removing the first-end section used to keep x, sliding the rest of the rack.
+
+Checked in the app, horizontal and vertical:
+- Panel "− Bay": only the far end moved in (38.7 / 30.8 px).
+- Flue 9 → 12″: the front side held and the back grew (bottom at 0°; at 90° the
+  front is on the right, and the left grew).
+- One Ctrl+Z restored each exactly.
+
+| Test | Asserts |
+|---|---|
+| `U` ×52 (13 actions × 0/90/180/270°) | the drawn box after the action = the 0° result rotated about the rack's centre; one undo restores the original. Actions: store changeSelectedBaysBeam; panel add bay, change bay, remove bay, upright 3→4″, flue 9→12″; cantilever add tower, remove tower, arm 36→60″, single-sided; lane rack 3 lanes × 6 deep; Column Check remove section (first bay, middle bay) |
+| `U-0°` ×13 | at 0° each keeps today's fixed point (x, y unchanged), except Remove section of the first bay, whose bays 1–4 now stay put (no slide) |
+| `U-minus-bay` ×4 (0/90/180/270°) | the rack panel's "− Bay" with the first bay selected now uses the bay-delete rule (PP): bays 1–4 keep their exact drawn positions; one undo restores. In the app, horizontal and vertical: only the near end moved in by one bay (38.7 / 30.8 px); undo restored it |
+| `U-wire` ×6 | in all four panel files, every commit that sets width/height goes through `withAnchoredPosition`; Column Check passes the bay-delete anchor |
+
+### S — Smart guides snap to racks as drawn, both orientations · `S_snapOrientation.test.js` (61 tests)
+`computeSmartGuides` measured the dragged object and every target with its
+stored, pre-rotation box. A 90° (vertical-layout) rack is stored wide but
+drawn tall, so its snap edges and centre lines were in the wrong places. Both
+sides now use `worldBoundsOf`. The moved-set exclusion from area P
+(`movedIdsFor`) is unchanged, and is now tested in both orientations. Checked
+in the app, horizontal and vertical:
+- nudging a rack along its run showed 6 object guides, every one exactly on a
+  drawn rack edge or centre (0 px off);
+- dragging the building showed 0 guides.
+
+| Test | Asserts |
+|---|---|
+| `S-hand` ×3 | A (0–670 × 0–140) dragged 995 px snaps its left edge to B's x 1000; the 90° twin dragged 995 px down snaps to y 1000 with the mirrored guides; centre-to-centre mirrors too |
+| `S-matrix` ×50 (M1–M25 × both orientations) | in each layout a rack dragged 8 ways (±3, 5/5, −6/4, 150 on each axis): the mirrored twin dragged the mirrored way gives the mirrored snap deltas and the same guides with axes swapped; at least one drag snaps |
+| `S-fp` ×2 per orientation | a building dragged 5 px never snaps to its own rack 3 px inside the wall; it still snaps to a rack outside (−2) |
+| `S-multi` ×2 per orientation | a two-rack drag never snaps to its members; it still snaps to a rack left behind (300) |
+
+### R — Marquee is the same in both orientations · `R_marquee.test.js` (52 tests)
+**Diagnosis** (R1 horizontal and its exact vertical twin, i.e. every rack mirrored
+across x = y; the same marquee, mirrored):
+
+| Marquee | Horizontal selected | Vertical twin selected (before) |
+|---|---|---|
+| inside one rack, over bays 0–1 | r1, bays r1#0 r1#1 | nothing |
+| across three rows | r1, r3, aisles a6, a7; 4 bays | aisles a6, a7 only; 0 bays |
+| inside an aisle gap | aisle a6 | aisle a6 |
+
+Three causes:
+- **Unrotated rack boxes.** `objectsInMarquee` tested each rack's stored,
+  pre-rotation box. A 90° rack is stored wide but drawn tall, so a vertical
+  rack was caught only when its unturned box happened to overlap the marquee.
+- **Unrotated bays.** `bayEntriesInMarquee` walked bays along world x, so it
+  found no vertical bays. The group outline is hidden whenever bays are
+  selected, so it appeared or vanished depending on those chance hits: the
+  "sometimes a group, sometimes not".
+- **Aisles caught.** Every marquee crossing rows caught the aisles' invisible
+  gaps.
+
+**Fix.**
+- `worldBoundsOf` (`hitTest.js`) gives the object's box turned with it (`boundsOf`
+  stays unrotated, because the group outline needs the object's own frame).
+  `objectsInMarquee` uses it.
+- `bayEntriesInMarquee` carries the marquee into each rack's local frame (rotated
+  back about its centre) before walking its bays.
+- Aisles are no longer marquee-selectable (they're picked by their labels,
+  area Q). `O-marquee` was updated to match.
+
+After the fix, both columns of the table above are identical. Checked in the
+app: three identical Shift-marquees on a vertical layout each selected the
+same 2 racks and 16 bay highlights, and no aisles.
+
+| Test | Asserts |
+|---|---|
+| `R-matrix` ×50 (M1–M25 × both orientations) | per layout: a marquee inside one rack selects exactly that rack (2 per layout); one spanning rows i..i+2 of a run selects exactly those 3; each also selects bays; the mirrored twin selects the same racks and bays |
+| `R-hand` | a 4-bay rack, marquee over local x 400–900 → bays 1 and 2, same on its 90° twin; the twin's old unturned box area selects nothing |
+| `R-aisle` | a marquee inside an aisle gap selects nothing; one spanning both rows selects the two rows only |
+
+### Q — Aisle picked by its labels only · `Q_aislePick.test.js` (6 tests)
+PP's screenshot showed the real complaint: the selection box was right, but
+the aisle's CLICK target was its whole gap, so a press on empty aisle floor
+selected the aisle and the building behind it could hardly be grabbed. Now
+`hitTest` picks an aisle only through `aisleLabelHit` (`hitTest.js`): a label
+pill, or within 5 screen px of its dimension arrow. Empty aisle floor falls
+through to the building, so a press there drags the layout. `aisleLabelLayout`
+is the one source for where the labels sit; `AisleLabel` draws from it, so
+what you can click is exactly what you see. (A marquee still catches an
+aisle by its gap.) Checked on the fresh server:
+- a click on empty aisle floor selected the building (FP RECT);
+- a click on the pill selected the aisle;
+- a drag started on aisle floor moved the whole layout by (60, 40) px.
+
+| Test | Asserts |
+|---|---|
+| `Q-layout` | rows A y 200–340 / B y 760–900 → one station at x 435, pill at y 550, gap 340–760, text 10′ 6″ |
+| `Q-floor` | four points of empty aisle floor → the building |
+| `Q-label` | the pill → the aisle |
+| `Q-arrow` | 2 px off the arrow → the aisle; 11 px off → the building |
+| `Q-racks` | the rows still pick as racks |
+| `Q-rotated` | the same turned 90°: pill and arrow → aisle, floor → building |
+
+### P — A drag never snaps to what moves with it · `P_dragSnap.test.js` (6 tests)
+Snap targets excluded only the selected ids, so a dragged floor plan snapped
+to its own children (racks, aisles, column grid), which still sit at their
+pre-drag positions in the store. `computeSmartGuides` now excludes the whole
+moved set (`movedIdsFor`: the floor plan plus its children; every member of a
+multi-selection). Rotate icons: the floor plan's rotate handle had no named
+node and the multi-selection's group outline wasn't in the drag's moved
+nodes, so both ghosted behind a drag. They're now `fprotate:<id>` (added to
+`CHROME_NODE_PREFIXES`) and `grouprotate` (moved when two or more are
+dragged). Checked on the fresh server: 0 snap guides across a 24-frame
+building drag; the rotate icon moved (96, 72) px with the racks.
+
+| Test | Asserts |
+|---|---|
+| `P-fp` | building dragged 5 px, its own rack's old edge 2 px away → no snap, no guide |
+| `P-fp` (control) | a rack outside the building still snaps (snapDx −2) |
+| `P-multi` | a two-rack selection dragged 297 px, 3 px from a member's old edge → no snap |
+| `P-multi` (control) | a rack left behind still snaps (snapDx 300) |
+| `P-wire` ×2 | the fp rotate handle is a `fprotate:` node the drag moves; `grouprotate` moves with a 2+ selection |
+
+### O — Aisle selection bounds + overlays follow a drag · `O_selectionDrag.test.js` (23 tests)
+**Aisle bounds.** An aisle has no box of its own; `getObjectBounds` (protected
+`utils/canvas.js`, not touched) returns {0, 0, 0, 0} for it, the world origin,
+which is the middle of a generated building. A single aisle's outline and hit
+area were already right (`aisleRect`), but three canvas2 paths still read
+the zero box:
+- the multi-selection outline (`computeGroupOutline`) stretched out to the building's centre;
+- every marquee across the centre caught every aisle;
+- every aisle offered a smart-guide snap at x = 0 / y = 0.
+
+New `boundsOf(obj, objects)` (`hitTest.js`): aisle → its gap (or null when its
+rows are missing, so it's skipped), every other type → `getObjectBounds`.
+Used by `computeGroupOutline` (now given all objects), `objectsInMarquee`
+and `computeSmartGuides`. Checked in the app: rack + shift-clicked aisle →
+the group outline spans the rack and aisle only (bottom at the aisle's
+edge), where it used to reach the building's centre.
+
+**Overlays follow a drag.** A plain drag moves Konva nodes and writes the store
+only on mouseup, so overlays derived from object positions sat at the
+pre-drag layout until the drop: aisle labels, in-rack and pick-zone X marks,
+orange upright marks, oversized-bay marks. `Overlays` now draws those from
+`pObjects = previewObjects(objects, preview)`, the drag offset published by
+`dragPreview.js` (floor-plan drags include every child via
+`movedIdsFor`). The clearance labels already re-run the aisle check on the
+previewed layout. Column markers and selection outlines ride the drag
+directly (their `obj:`/`sel:` nodes move), so they are not also offset.
+Checked in the app, building dragged by (80, 53) screen px: rack, aisle
+label, clearance label, in-rack X, upright mark and column grid all moved by
+exactly that mid-drag (before the fix, the aisle label, X and upright mark
+moved 0 until the drop). A two-rack shift-select drag moved that rack's X
+mark and the aisle label with it.
+
+| Test | Asserts |
+|---|---|
+| `O-bounds` ×2 | aisle between A (y 2000–2140) and B (y 2560–2700) = x 1000–1670, y 2140–2560; rotated: x 1140–1560, y 2000–2670 |
+| `O-group` | outline of [A, aisle] = x 1000–1670, y 2000–2560 (never to the origin) |
+| `O-marquee` | marquee around (0, 0) catches nothing; one inside the aisle catches it |
+| `O-guides` | no smart guide at x = 0 / y = 0 from an aisle |
+| `O-fp-set`, `O-fp` guard | a floor-plan drag moves every child; the fixture (R1 H, wall = Yes, building at (4000, 3000)) has aisles, aisle columns, in-rack X, pick-zone X and upright hits |
+| `O-fp` ×6 | mid-drag (dx 120, dy −80) the aisle label, clearance label, in-rack X, pick-zone X, upright mark and column marker geometry = original + (dx, dy) |
+| `O-multi` ×3 | two rows of one aisle dragged: that aisle's label and those rows' marks move by the offset; another rack's X and the column markers stay put |
+| `O-wire` ×7 | `pObjects` = previewObjects(objects, preview); AisleLabel, BlockedFaceMarks, UprightConflictMarks, OversizedBayMarks are drawn from it; the clearance labels preview their own layout; column markers' `obj:` node is in the drag's moved set and the drag publishes its offset |
+
+### N — Red aisle warning + two-sided clearance labels · `N_aisleWarning.test.js` (7 tests)
+**Rule (PP, 2026-09-24):** an aisle is shaded red when a column stands in it
+and **neither** side reaches the forklift's travelFt (= min(8′, aisle)): a
+forklift can't pass on either side. That is the same condition as
+accessibility level 1, and the generator never produces it (E-no-block). The
+first proposal, "either side short", would have flagged 6,328 of 6,354
+generated aisle columns (99.6%, 88 of 100 matrix runs): the generator
+deliberately leaves the far side at exactly travelFt and the near side
+shorter. Visual only; capacity and levels are unchanged.
+
+**Code.** `aisleColumnBlocks` (`columnCheck.js`) is the aisle part of
+`checkColumns`, split out and extended: each block carries `nearClearFt`,
+`farClearFt`, `nearShort`/`farShort`, `pinched`, its gap axis and the aisle box.
+`canvas2/aisleMarks.js` builds the marks in an orientation-free (gap, run)
+frame: one arrow per side, from the column edge to the rack face, with the
+arrowhead on the rack and the label on the shaft, plus the red shade (the
+whole gap, along the run the column ± half the gap). `ColumnClearanceLabels`
+draws them. **Live while dragging:** a plain drag writes the store only on
+mouseup, so the drag now publishes its offset (`canvas2/dragPreview.js`). The
+overlay re-runs just `aisleColumnBlocks` on the previewed layout each frame,
+not the full ~28 ms check.
+
+Hand geometry: rows A y 0–140 and B y 820–960 (17′ aisle), column x 300–340,
+y 440–480 → near 7.5′, far 8.5′ (reach, travel 8′).
+
+| Test | Asserts |
+|---|---|
+| `N-one-side-ok` | 7.5′ / 8.5′ → not pinched, no shade |
+| `N-both-ok` | 8′ / 8′ (exactly travelFt) → no shade |
+| `N-drag` | preview B up 1′ → 7.5′ / 7.5′, pinched; shade {x 0, y 140, w 660, h 640}; both labels red "7.5′ — under travel"; preview back → clear |
+| `N-placed` | B placed at 780 (no drag) → red immediately |
+| `N-both-sides` | two labels, "7.5′ clear" and "8.5′ clear"; arrows from (320, 440) to A's face (320, 140) and from (320, 480) to B's face (320, 820) |
+| `N-same-style` | the same layout turned 90° gives exactly the horizontal marks with x↔y; every mark is an arrow (`style: 'arrow'`, no dash, 3-point head) |
+| `N-same-style` (shade) | vertical shade = the horizontal rect, rotated: {x 140, y 0, w 640, h 660} |
+
+**In the running app:**
+- 240×120, 25×30, wall = No: horizontal shows 18 aisle columns with 36
+  labels, vertical 21 with 39 (a column touching a rack has nothing on that
+  side). No red in either.
+- Dragging a double row 1.5′ toward its aisle turned 4 aisles red mid-drag.
+  Dragging it back cleared them, and the drop at the start position left
+  none.
+- A label on a gap too short for its pill slides beside the arrow.
+
 ### Column markers stay in their face · `columnMarker.test.js` (6 tests)
 The "column on the joint" report (1080×410, 50×54, reach) was a drawing effect.
 No generated layout puts a column across both faces of a pair. At overview
@@ -388,6 +638,35 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 
 | Marker | **Centred growth again** (`columnMarkerRect` returns the centred rect) | 4: front face, back face, deeper-than-face, rotated. (Working zoom and open floor can't fail this way.) | ✓ |
 
+| N | **No red shade** (`aisleWarningRect` always null) | 3: `N-drag`, `N-placed`, vertical shade | ✓ |
+| N | **Preview ignores the drag** (`previewObjects` returns the store layout) | 2: `N-drag`, vertical shade | ✓ |
+| N | **Label one side only** | 2: `N-both-sides`, `N-drag` | ✓ |
+| N | **Vertical drawn dashed** (`style: 'dashed'` for the x axis) | 1: `N-same-style` | ✓ |
+
+| O | **Aisle bounds via getObjectBounds** (`boundsOf` skips the aisle branch) | 5: `O-bounds` ×2, `O-group`, `O-marquee`, `O-guides` | ✓ |
+| O | **Upright marks off the preview** (`objects` instead of `pObjects`) | 1: `O-wire` UprightConflictMarks | ✓ |
+| O | **Aisle labels off the preview** | 1: `O-wire` AisleLabel | ✓ |
+| O | **Preview ignores the drag** (`previewObjects` returns the store layout) | 8: `O-fp` ×6, `O-multi` aisle label and marks | ✓ |
+
+| Q | **Whole-gap aisle pick** (rect test instead of `aisleLabelHit`) | 3: `Q-floor`, `Q-arrow` (the 11 px case), `Q-rotated` | ✓ |
+| P | **Children back as snap targets** (`moving = new Set(selectedIds)`) | 1: `P-fp` | ✓ |
+| P | **Whole moved set back as targets** (`moving = new Set()`) | 2: `P-fp`, `P-multi` | ✓ |
+
+| R | **Unrotated bounds** (`objectsInMarquee` back to `getObjectBounds`) | 49 of 52: every matrix layout with vertical racks, directly or via its twin | ✓ |
+| R | **Bays ignore rotation** (no local-frame transform) | 50 of 52 | ✓ |
+
+| S | **Unrotated bounds** (smart guides back to `boundsOf`) | 53 of 61: `S-hand` vertical and centre, every `S-matrix` layout except one (27 vertical, 25 horizontal: each compares against its vertical twin) | ✓ |
+| S | **Children back as targets** (`moving = new Set(selectedIds)`) | 2: `S-fp` horizontal and vertical | ✓ |
+| S | **Whole moved set back as targets** (`moving = new Set()`) | 4: `S-fp` and `S-multi`, both orientations | ✓ |
+
+| T | **Rotation ignored in the anchor** (`anchoredShrink` with t = 0) | 21 of 30: every 90°, 180° and 270° case (7 each); all 0° cases still pass | ✓ |
+
+| U | **Helper ignores rotation** (`anchoredResize` with t = 0) | 60 of 99 across T and U: every 90°, 180° and 270° test (21 bay-delete + 39 resize); all 0° tests still pass | ✓ |
+| U | **Cantilever add tower not anchored** | 1: `U-wire` CantileverPanel | ✓ |
+| U | **Remove section without the bay-delete anchor** | 1: `U-wire` Column Check anchor | ✓ |
+| U | **"− Bay" without the bay-delete anchor** | 1: `U-wire` rack panel "− Bay" | ✓ |
+| U | **Helper ignores the anchor rule** (always holds the near end) | 5: `U-minus-bay` at 0°, 90°, 180°, 270°, plus Column Check remove section (first bay) at 0° | ✓ |
+
 **Round 1 (original code):**
 
 | Area | Break applied | Tests that failed | Reverted |
@@ -460,8 +739,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,147 tests, 1,147 passing** (after all breaks reverted).
-- **Whole project: 1,550 tests, 1,550 passing.**
+- **Plan suite: 1,407 tests, 1,407 passing** (after all breaks reverted).
+- **Whole project: 1,810 tests, 1,810 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

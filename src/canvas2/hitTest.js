@@ -15,7 +15,7 @@
 // same function runs identically in either canvas.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { objectContains, getFpWallSegments, distToSegment } from '../utils/canvas'
+import { objectContains, getFpWallSegments, distToSegment, getObjectBounds, pxToFtIn } from '../utils/canvas'
 import { rackFootprint } from '../generate/columnCheck'
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
@@ -64,7 +64,53 @@ const isLayerUsable = (layerMap, obj) => {
  *  same single-source-of-truth reasoning BUG 45 already applied to
  *  AisleLabel. Harmless no-op for an unrotated rack (rot=0 returns the same
  *  box). */
+/** An object's world bounds for selection chrome — marquee, group outline,
+ *  smart guides. An aisle has no box of its own, so utils/canvas.js's
+ *  getObjectBounds falls through to {x 0, y 0, w 0, h 0} for it: the world
+ *  origin, which is the MIDDLE of a generated building. Every group outline
+ *  holding an aisle stretched to that point, every marquee across the
+ *  building's centre caught every aisle, and every aisle offered a smart-
+ *  guide snap at x = 0 / y = 0. Here an aisle measures as its own gap
+ *  (aisleRect) — null if its rows can't be found, so callers skip it —
+ *  and every other type is getObjectBounds unchanged. */
+export function boundsOf(obj, objects = []) {
+  if (!obj) return null
+  if (obj.type === 'aisle') {
+    const r = aisleRect(obj, objects)
+    return r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null
+  }
+  return getObjectBounds(obj)
+}
+
+/** An object's box in WORLD space, rotation included — what a marquee
+ *  must test against. canvas2 spins every object about its own centre
+ *  (shapes.jsx's spin()), but its stored x/y/width/height are the
+ *  pre-rotation box: a 90° (vertical-layout) rack stores a wide box while
+ *  it is drawn tall. Testing a marquee against the stored box made vertical
+ *  racks get caught only when their unturned box happened to overlap —
+ *  the "sometimes a group, sometimes not" marquee. Here the box is turned
+ *  with the object (its axis-aligned bounds; exact for 0/90/180/270°). An
+ *  aisle is its gap. Unlike boundsOf, which the group outline needs in the
+ *  object's own unrotated frame. */
+export function worldBoundsOf(obj, objects = []) {
+  const b = boundsOf(obj, objects)
+  if (!b || obj.type === 'aisle') return b
+  const rot = ((((obj.rotation || 0) % 360) + 360) % 360)
+  if (!rot) return b
+  const cx = b.x + b.width / 2, cy = b.y + b.height / 2
+  const t = rot * Math.PI / 180, c = Math.abs(Math.cos(t)), s = Math.abs(Math.sin(t))
+  const w = b.width * c + b.height * s, h = b.width * s + b.height * c
+  return { x: cx - w / 2, y: cy - h / 2, width: w, height: h }
+}
+
 export function aisleRect(aisle, objects) {
+  const g = aisleGeom(aisle, objects)
+  return g ? g.rect : null
+}
+
+/* aisleRect plus which way the aisle runs: `isHoriz` = the two rows are
+   stacked along Y (rows run along X), so the gap is measured along Y. */
+function aisleGeom(aisle, objects) {
   const row1 = objects.find(o => o.id === aisle.row1Id)
   const row2 = objects.find(o => o.id === aisle.row2Id)
   if (!row1 || !row2) return null
@@ -93,7 +139,50 @@ export function aisleRect(aisle, objects) {
     ah = Math.min(lft.b, rgt.b) - ay
   }
   if (aw <= 0 || ah <= 0) return null
-  return { x: ax, y: ay, width: aw, height: ah }
+  return { rect: { x: ax, y: ay, width: aw, height: ah }, isHoriz }
+}
+
+/** Where an aisle's dimension labels sit — one to three stations along the
+ *  aisle, each an arrow across the gap with a pill at its middle. Shared by
+ *  the drawing (DimensionLabels.jsx's AisleLabel) and the pick below, so
+ *  what you can click is exactly what you can see. World px. */
+export function aisleLabelLayout(aisle, objects, gridSize = 40) {
+  const g = aisleGeom(aisle, objects)
+  if (!g) return null
+  const { rect: r, isHoriz } = g
+  const gapLo = isHoriz ? r.y : r.x, gapHi = isHoriz ? r.y + r.height : r.x + r.width
+  const runLo = isHoriz ? r.x : r.y, runLen = isHoriz ? r.width : r.height
+  const positions = runLen < 20 * gridSize ? [runLo + runLen * 0.5]
+    : runLen < 60 * gridSize ? [runLo + runLen * 0.25, runLo + runLen * 0.75]
+    : [runLo + runLen * 0.15, runLo + runLen * 0.5, runLo + runLen * 0.85]
+  const userLabel = aisle.label ? `${aisle.label} · ` : ''
+  return {
+    isHoriz, gapLo, gapHi, labelMid: (gapLo + gapHi) / 2, positions,
+    text: `${userLabel}${pxToFtIn(gapHi - gapLo, gridSize)}`,
+  }
+}
+
+/* Screen-constant label metrics — the same numbers AisleLabel draws with. */
+export const AISLE_LABEL_FONT_PX = 10
+export const AISLE_LABEL_PADX_PX = 3.5
+
+/** Is a world point on one of the aisle's labels — a pill, or the arrow
+ *  across the gap it sits on (±5 screen px)? The ONLY way to pick an aisle:
+ *  its empty floor belongs to the building, so a press there grabs and
+ *  drags the layout instead of selecting the aisle. */
+export function aisleLabelHit(aisle, objects, wx, wy, zoom = 1, gridSize = 40) {
+  const L = aisleLabelLayout(aisle, objects, gridSize)
+  if (!L) return false
+  const fs = AISLE_LABEL_FONT_PX / zoom
+  const w = L.text.length * fs * 0.62 + (AISLE_LABEL_PADX_PX / zoom) * 2
+  const h = fs * 1.5
+  const tol = 3 / zoom, lineTol = 5 / zoom
+  // (along the run, across the gap) for the point
+  const run = L.isHoriz ? wx : wy, gap = L.isHoriz ? wy : wx
+  const pillRun = L.isHoriz ? w : h, pillGap = L.isHoriz ? h : w   // text is always horizontal
+  return L.positions.some(pos =>
+    (Math.abs(run - pos) <= pillRun / 2 + tol && Math.abs(gap - L.labelMid) <= pillGap / 2 + tol) ||
+    (Math.abs(run - pos) <= lineTol && gap >= L.gapLo - tol && gap <= L.gapHi + tol))
 }
 
 /** The object under a world point, or null.
@@ -131,11 +220,10 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
        this module already carries geometry objectContains doesn't know
        (fpWallHitTest is the other). */
     if (obj.type === 'aisle') {
-      const r = aisleRect(obj, objects)
-      if (r) {
-        const P = 4 / zoom
-        if (wx >= r.x - P && wx <= r.x + r.width + P && wy >= r.y - P && wy <= r.y + r.height + P) return obj.id
-      }
+      /* Only its labels pick an aisle. The whole gap used to: a press on
+         empty aisle floor selected the aisle, so the building behind it
+         could hardly be grabbed to move the layout. */
+      if (aisleLabelHit(obj, objects, wx, wy, zoom, gridSize)) return obj.id
       continue
     }
     if (objectContains(obj, wx, wy, zoom)) return obj.id

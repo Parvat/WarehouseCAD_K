@@ -3,6 +3,7 @@ import { immer } from 'zustand/middleware/immer'
 import { nanoid } from 'nanoid'
 import { TOOLS, UNITS, DEFAULT_LAYERS } from '../constants'
 import { initFpVerts } from '../utils/canvas'
+import { anchoredShrink, bayDeleteAnchor } from '../utils/bayAnchor'
 import { serializeScene, deserializeScene, downloadScene, pickFile, autoSave, autoLoad, hasAutoSave, clearAutoSave, exportToPDF } from '../utils/saveLoad'
 
 const MAX_HISTORY = 60
@@ -415,9 +416,8 @@ export const useCanvasStore = create(
          Deleted the last bay (or a middle one, or — impossible here since
          there's only one bayIdx — both) -> x already stays put, matching
          the existing, still-correct-for-that-case behaviour. */
-      if (bayIdx === 0 && bayIdx !== beams.length - 1) {
-        obj.x = obj.x + (obj.width - newWidth)
-      }
+      const pos = anchoredShrink(obj, newWidth, bayDeleteAnchor(beams.length, [bayIdx]))
+      obj.x = pos.x; obj.y = pos.y
       obj.beams = newBeams
       obj.width = newWidth
       obj.activeBayIdx = null
@@ -448,11 +448,8 @@ export const useCanvasStore = create(
            which is already correct when the deletion is at the right/last
            end and is the least-surprising default for the genuinely
            ambiguous cases. */
-        const deletedFirst = toRemove.has(0)
-        const deletedLast = toRemove.has(oldBeams.length - 1)
-        if (deletedFirst && !deletedLast) {
-          obj.x = obj.x + (obj.width - newWidth)
-        }
+        const pos = anchoredShrink(obj, newWidth, bayDeleteAnchor(oldBeams.length, toRemove))
+        obj.x = pos.x; obj.y = pos.y
         obj.beams = newBeams
         obj.width = newWidth
         obj.activeBayIdx = null
@@ -472,6 +469,8 @@ export const useCanvasStore = create(
         byObj[obj.id].forEach(bayIdx => { newBeams[bayIdx] = beamIn })
         const upIn = obj.uprightWidth || 3
         const totalIn = upIn * (newBeams.length + 1) + newBeams.reduce((s,b)=>s+b,0)
+        const pos = anchoredShrink(obj, (totalIn / 12) * 40, 'start')
+        obj.x = pos.x; obj.y = pos.y
         obj.beams = newBeams
         obj.width = (totalIn / 12) * 40
       })

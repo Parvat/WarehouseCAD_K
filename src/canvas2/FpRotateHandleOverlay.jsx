@@ -1,4 +1,4 @@
-import { Line, Circle, Text } from 'react-konva'
+import { Group, Line, Circle, Text } from 'react-konva'
 import { computeFpRotateHandle } from './fpRotate'
 
 /* ── Floor-plan rotate handle — pure paint, no Konva input ───────────────────
@@ -30,8 +30,11 @@ export function FpRotateHandleOverlay({ obj, gridSize, zoom }) {
   if (!h) return null
   const { rx, ry, lx, ly, nx, ny, r } = h
 
+  /* Named 'fprotate:<id>' so a drag of this building moves the handle with
+     it (useCanvasInteraction's collectDragNodes). As a bare fragment it had
+     no node to move and sat behind as a ghost until the drop. */
   return (
-    <>
+    <Group name={'fprotate:' + obj.id} listening={false}>
       <Line points={[lx, ly, rx - nx * r, ry - ny * r]}
         stroke="#f0b429" strokeWidth={1.2} opacity={0.7}
         strokeScaleEnabled={false} listening={false} />
@@ -43,6 +46,6 @@ export function FpRotateHandleOverlay({ obj, gridSize, zoom }) {
         text="↻" align="center" verticalAlign="middle"
         fontSize={10 / zoom} fontFamily="sans-serif" fill="#f0b429"
         listening={false} />
-    </>
+    </Group>
   )
 }

@@ -61,3 +61,33 @@ export function rackBands(r) {
 }
 
 export const EPS = 1e-6
+
+// TEST_PLAN.md §2b table.
+export const MATRIX = {
+  M1:  [100, 60, 20, 25, 'reach'],
+  M2:  [150, 100, 25, 30, 'reach'],
+  M3:  [240, 120, 25, 30, 'reach'],
+  M4:  [240, 120, 50, 54, 'counterbalance'],
+  M5:  [300, 300, 30, 30, 'reach'],
+  M6:  [300, 200, 40, 40, 'vna'],
+  M7:  [400, 250, 25, 30, 'counterbalance'],
+  M8:  [500, 300, 50, 54, 'reach'],
+  M9:  [600, 400, 40, 40, 'reach'],
+  M10: [800, 300, 25, 30, 'vna'],
+  M11: [1080, 410, 25, 30, 'reach'],
+  M12: [1080, 410, 50, 54, 'counterbalance'],
+  M13: [1200, 600, 50, 50, 'reach'],
+  M14: [1000, 150, 25, 30, 'reach'],
+  M15: [150, 1000, 25, 30, 'reach'],
+  M16: [175, 95, 22, 27, 'reach'],
+  M17: [333, 217, 30, 35, 'counterbalance'],
+  M18: [480, 240, 60, 50, 'vna'],
+  M19: [720, 360, 36, 42, 'reach'],
+  M20: [260, 140, 26, 31, 'counterbalance'],
+  M21: [900, 500, 40, 60, 'vna'],
+  M22: [125, 125, 25, 25, 'reach'],
+  M23: [1500, 300, 50, 54, 'reach'],
+  M24: [400, 100, 20, 20, 'counterbalance'],
+  M25: [1080, 410, 50, 54, 'reach'],          // the column-on-the-joint report (a display effect; see CANVAS2_TESTS.md)
+}
+
