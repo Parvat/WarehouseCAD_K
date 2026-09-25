@@ -434,10 +434,11 @@ export const useCanvasStore = create(
         byObj[obj.id].forEach(bayIdx => { newBeams[bayIdx] = beamIn })
         const upIn = obj.uprightWidth || 3
         const totalIn = upIn * (newBeams.length + 1) + newBeams.reduce((s,b)=>s+b,0)
-        const pos = anchoredShrink(obj, (totalIn / 12) * 40, 'start')
+        const newW = (totalIn / 12) * (s.gridSize || 40)
+        const pos = anchoredShrink(obj, newW, 'start')
         obj.x = pos.x; obj.y = pos.y
         obj.beams = newBeams
-        obj.width = (totalIn / 12) * 40
+        obj.width = newW
       })
       pushHistory(s)
     }),

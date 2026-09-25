@@ -1,10 +1,11 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
+import { useState } from 'react'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
-import { getObjectBounds } from '../../../utils/canvas'
-import { getRackCapacity } from '../../../utils/capacity'
-
-// Standard beam lengths in inches
-const BEAM_OPTIONS = [72, 96, 120, 144]
+import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
+import {
+  BEAM_PRESETS_IN, parseBeamIn, wallClearAlong, planBayBeamChange,
+  changeIssues, rackIssues, issuesText,
+} from '../../../utils/bayBeam'
 
 // ── Compute rack geometry from beams array ────────────────────────────────────
 export function rackTotalInches(obj) {
@@ -25,16 +26,106 @@ export function rackTotalPx(obj, gridSize = 40) {
   return (totalIn / 12) * gridSize
 }
 
-// ── Get inner clear width of parent FP along the rack axis ────────────────────
+// ── Inner clear of the parent FP along the rack's OWN length, any rotation ────
 function getWallClear(obj, allObjects, gridSize) {
-  if (!obj.parentId) return null
-  const fp = allObjects.find(o => o.id === obj.parentId)
-  if (!fp) return null
-  const wt = fp.wallThicknessFt ? fp.wallThicknessFt * gridSize : 10
-  const b  = getObjectBounds(fp)
-  // Inner clear = bbox width - 2xwt (for horizontal rack along X axis)
-  const clearPx = b.width - 2 * wt
-  return { clearPx, clearIn: (clearPx / gridSize) * 12, fp, wt }
+  return wallClearAlong(obj, allObjects, gridSize)
+}
+
+export const fmtFtIn = (inches) => {
+  const ft  = Math.floor(Math.abs(inches) / 12)
+  const inc = Math.round((Math.abs(inches) % 12) * 10) / 10
+  if (inc === 12) return `${ft + 1}'`
+  if (ft === 0) return `${inc}"`
+  return inc === 0 ? `${ft}'` : `${ft}' ${inc}"`
+}
+
+/* Beam presets 4'–16' plus a custom value (inches, 9', 8' 6"). `warnFor(b)`
+   returns the red warning that pick would cause, or null: shown on the
+   button and its tooltip, never blocking. `current` highlights the preset
+   in use. */
+export function BeamPicker({ onPick, current = null, warnFor = () => null, prefix = '', label = 'beam' }) {
+  const [text, setText] = useState('')
+  const [bad, setBad] = useState(false)
+  const apply = () => {
+    const v = parseBeamIn(text)
+    if (v == null) { setBad(text.trim() !== ''); return }
+    setBad(false); setText(''); onPick(v)
+  }
+  const typed = parseBeamIn(text)
+  const customWarn = typed == null ? null : warnFor(typed)
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(34px, 1fr))', gap: 3 }}>
+        {BEAM_PRESETS_IN.map(b => {
+          const warn = warnFor(b)
+          const isCurrent = current === b
+          return (
+            <button key={b} onClick={() => onPick(b)}
+              aria-label={`${prefix}${b / 12}' ${label}`}
+              title={`${prefix}${b}" (${b / 12}')${warn ? ' — ' + warn : ''}`}
+              style={{
+                padding: '4px 0', borderRadius: 4, cursor: 'pointer',
+                fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: isCurrent ? 700 : 500,
+                background: isCurrent ? 'var(--accent-solid)' : 'var(--surface3)',
+                border: `1px solid ${warn ? 'var(--red)' : isCurrent ? 'var(--accent)' : 'var(--border)'}`,
+                color: isCurrent ? 'var(--accent-fg)' : warn ? 'var(--red)' : 'var(--text)',
+              }}>
+              {prefix}{b / 12}'
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
+        <input type="text" value={text} placeholder={`custom ${label} (in or ft)`}
+          aria-label={`Custom ${label} length`}
+          onChange={e => { setText(e.target.value); setBad(false) }}
+          onKeyDown={e => { if (e.key === 'Enter') apply() }}
+          style={{ flex: 1, minWidth: 0, padding: '3px 6px', borderRadius: 4, fontSize: 10,
+            fontFamily: 'var(--font-mono)', background: 'var(--surface3)',
+            border: `1px solid ${bad || customWarn ? 'var(--red)' : 'var(--border)'}`,
+            color: 'var(--text)', outline: 'none' }}/>
+        <button onClick={apply} aria-label={`Apply custom ${label}`}
+          style={{ padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 9,
+            fontFamily: 'var(--font-mono)', background: 'var(--surface3)',
+            border: '1px solid var(--border)', color: 'var(--text)' }}>
+          {prefix || 'Set'}
+        </button>
+      </div>
+      {bad && <div style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--red)', marginTop: 2 }}>12" to 360", e.g. 102, 8'6", 9'</div>}
+      {customWarn && <div style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--red)', marginTop: 2 }}>{customWarn}</div>}
+    </div>
+  )
+}
+
+/* The commits behind the rack panel's "+ bay" and "Change beam": beams and
+   width from the new beams, START end held where it is drawn (bays before
+   the changed one stay put, later ones slide), any rotation. Never blocked:
+   a rack that would pass the wall or overlap another only gets a warning. */
+export function addBayUpdate(obj, beamIn, gridSize = 40) {
+  const newBeams = [...(obj.beams || [96]), beamIn]
+  const newTotalIn = (obj.uprightWidth || 3) * (newBeams.length + 1) + newBeams.reduce((s, b) => s + b, 0)
+  const newW = (newTotalIn / 12) * gridSize
+  return withAnchoredPosition(obj, { beams: newBeams, width: newW })
+}
+export function changeBayUpdate(obj, bayIdx, newBeamIn, gridSize = 40) {
+  const newBeams = [...(obj.beams || [96])]
+  newBeams[bayIdx] = newBeamIn
+  const newTotalIn = (obj.uprightWidth || 3) * (newBeams.length + 1) + newBeams.reduce((s, b) => s + b, 0)
+  const newW = (newTotalIn / 12) * gridSize
+  return withAnchoredPosition(obj, { beams: newBeams, width: newW })
+}
+
+/* Red warning: a rack overlaps another or passes the wall. Never blocks. */
+export function RackWarning({ text }) {
+  if (!text) return null
+  return (
+    <div role="alert" style={{
+      padding: '5px 8px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 9,
+      background: 'var(--red-dim)', border: '1px solid var(--red)', color: 'var(--red)', fontWeight: 600,
+    }}>
+      ! {text}
+    </div>
+  )
 }
 
 // ── Max additional bays that fit ──────────────────────────────────────────────
@@ -67,12 +158,10 @@ export function MultiBayPanel() {
      the protected deleteSelectedBays action itself. */
   const deleteSelectedBaysAndClear = () => { deleteSelectedBays(); clearSelection() }
 
-  const BEAM_OPTIONS = [72, 96, 120, 144]
-  const fmtIn = (inches) => {
-    const ft = Math.floor(Math.abs(inches) / 12)
-    const inc = Math.round(Math.abs(inches) % 12)
-    return inc === 0 ? `${ft}'` : `${ft}' ${inc}"`
-  }
+  const fmtIn = fmtFtIn
+  const warnFor = (b) => issuesText([...changeIssues(objects, planBayBeamChange(objects, activeBaySelection, b, gridSize), gridSize).byId.values()], fmtIn)
+  const racksNow = [...new Set(activeBaySelection.map(e => e.objId))].map(id => objects.find(o => o.id === id)).filter(Boolean)
+  const nowWarn = issuesText(racksNow.map(o => rackIssues(o, objects, gridSize)), fmtIn)
 
   // Summarise selected bays
   const rowCount = new Set(activeBaySelection.map(e => e.objId)).size
@@ -104,22 +193,9 @@ export function MultiBayPanel() {
         <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
           Change all to
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {BEAM_OPTIONS.map(b => (
-            <button key={b}
-              onClick={() => changeSelectedBaysBeam(b)}
-              style={{
-                flex: 1, padding: '5px 0', borderRadius: 4, cursor: 'pointer',
-                fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
-                background: allSame && beamSizes[0] === b ? 'var(--accent-bdr)' : 'var(--surface3)',
-                border: `1px solid ${allSame && beamSizes[0] === b ? 'var(--accent)' : 'var(--border)'}`,
-                color: allSame && beamSizes[0] === b ? 'var(--accent)' : 'var(--text)',
-              }}>
-              {b}"
-            </button>
-          ))}
-        </div>
+        <BeamPicker current={allSame ? beamSizes[0] : null} warnFor={warnFor} onPick={b => changeSelectedBaysBeam(b)} />
       </div>
+      <RackWarning text={nowWarn} />
 
       {/* Delete + Clear */}
       <div style={{ display: 'flex', gap: 4 }}>
@@ -159,35 +235,24 @@ export function RackRowPanel({ obj }) {
 
   const clear   = getWallClear(obj, objects, gridSize)
   const clearIn = clear?.clearIn ?? null
-  const remainIn = clearIn != null ? clearIn - totalIn : null
+  // room from the rack's far end (where it grows) to the wall ahead, along its own length
+  const remainIn = clear ? Math.round(clear.aheadIn * 100) / 100 : null
   const overBy   = remainIn != null && remainIn < 0 ? Math.abs(remainIn) : 0
 
-  // Format inches
-  const fmtIn = (inches) => {
-    const ft  = Math.floor(Math.abs(inches) / 12)
-    const inc = Math.round(Math.abs(inches) % 12)
-    if (inc === 12) return `${ft+1}'`
-    return inc === 0 ? `${ft}'` : `${ft}' ${inc}"`
-  }
+  const fmtIn = fmtFtIn
 
-  // Add a bay
-  const addBay = (beamIn = 96) => {
-    const newBeams = [...beams, beamIn]
-    const newTotalIn = upIn * (newBeams.length + 1) + newBeams.reduce((s,b)=>s+b,0)
-    if (clearIn != null && (newTotalIn / 12) * gridSize > (clearIn / 12) * gridSize) return
-    const newW = (newTotalIn / 12) * gridSize
-    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { beams: newBeams, width: newW }))
-  }
+  /* Red warnings, never a block: what a pick would cause, and the rack as
+     it stands now (overlaps another rack / passes the wall). */
+  const warnAdd = (b) => issuesText([...changeIssues(objects, new Map([[obj.id, addBayUpdate(obj, b, gridSize)]]), gridSize).byId.values()], fmtIn)
+  const warnChange = (b) => activeBay === null ? null
+    : issuesText([...changeIssues(objects, new Map([[obj.id, changeBayUpdate(obj, activeBay, b, gridSize)]]), gridSize).byId.values()], fmtIn)
+  const nowWarn = issuesText([rackIssues(obj, objects, gridSize)], fmtIn)
 
-  // Change a bay's beam
-  const changeBay = (bayIdx, newBeamIn) => {
-    const newBeams = [...beams]
-    newBeams[bayIdx] = newBeamIn
-    const newTotalIn = upIn * (newBeams.length + 1) + newBeams.reduce((s,b)=>s+b,0)
-    if (clearIn != null && newTotalIn > clearIn) return  // blocked
-    const newW = (newTotalIn / 12) * gridSize
-    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { beams: newBeams, width: newW }))
-  }
+  // Add a bay at the far end; the existing bays stay where they are drawn
+  const addBay = (beamIn = 96) => commitObjectUpdate(obj.id, addBayUpdate(obj, beamIn, gridSize))
+
+  // Change a bay's beam: bays before it stay put, later ones slide (start end held)
+  const changeBay = (bayIdx, newBeamIn) => commitObjectUpdate(obj.id, changeBayUpdate(obj, bayIdx, newBeamIn, gridSize))
 
   // Remove active bay (or last bay if none selected)
   const removeBay = () => {
@@ -276,6 +341,8 @@ export function RackRowPanel({ obj }) {
         )}
       </div>
 
+      <RackWarning text={nowWarn} />
+
       {/* ── Bay list ── */}
       <div>
         <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -306,6 +373,16 @@ export function RackRowPanel({ obj }) {
                 <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: isActive ? 'var(--accent-fg)' : 'var(--text3)' }}>
                   {beamIn}"
                 </span>
+                {(() => {
+                  const pal = positionsPerBeam(beamIn, obj.palletWIn || 40)
+                  return (
+                    <span title={pal ? `${pal} pallet${pal > 1 ? 's' : ''} per level per face` : 'Beam too short for one pallet'}
+                      style={{ fontSize: 9, fontFamily: 'var(--font-mono)', minWidth: 34, textAlign: 'right',
+                        color: pal ? (isActive ? 'var(--accent-fg)' : 'var(--text2)') : 'var(--red)', fontWeight: pal ? 400 : 700 }}>
+                      {pal ? `${pal} pal` : '0 ✕'}
+                    </span>
+                  )
+                })()}
               </div>
             )
           })}
@@ -321,77 +398,21 @@ export function RackRowPanel({ obj }) {
           <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--accent)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Bay {activeBay + 1} -- Change beam
           </div>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {BEAM_OPTIONS.map(b => {
-              // Check if this beam fits
-              const testBeams = [...beams]
-              testBeams[activeBay] = b
-              const testTotal = upIn * (testBeams.length + 1) + testBeams.reduce((s,x)=>s+x,0)
-              const fits = clearIn == null || testTotal <= clearIn
-              const isCurrent = beams[activeBay] === b
-
-              return (
-                <button key={b}
-                  onClick={() => fits && changeBay(activeBay, b)}
-                  style={{
-                    padding: '4px 8px', borderRadius: 4, cursor: fits ? 'pointer' : 'not-allowed',
-                    fontSize: 9, fontFamily: 'var(--font-mono)',
-                    background: isCurrent ? 'var(--accent)' : fits ? 'var(--surface3)' : 'transparent',
-                    border: `1px solid ${isCurrent ? 'var(--accent)' : fits ? 'var(--border)' : 'var(--red-bdr)'}`,
-                    color: isCurrent ? '#000' : fits ? 'var(--text)' : 'var(--red-bdr)',
-                    fontWeight: isCurrent ? 700 : 400,
-                  }}>
-                  {b}"
-                  {!fits && <span style={{ marginLeft: 2 }}>x</span>}
-                </button>
-              )
-            })}
-          </div>
-          {/* Show what each option would do */}
-          {BEAM_OPTIONS.map(b => {
-            const testBeams = [...beams]
-            testBeams[activeBay] = b
-            const testTotal = upIn * (testBeams.length + 1) + testBeams.reduce((s,x)=>s+x,0)
-            const delta = testTotal - totalIn
-            if (delta === 0) return null
-            const fits = clearIn == null || testTotal <= clearIn
-            return (
-              <div key={b} style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: fits ? 'var(--text3)' : 'var(--red)', marginTop: 2 }}>
-                {b}": {delta > 0 ? '+' : ''}{fmtIn(delta)} {fits ? (clearIn != null ? `-> ${fmtIn(clearIn - testTotal)} remaining` : '') : '-> exceeds wall'}
-              </div>
-            )
-          })}
+          <BeamPicker current={beams[activeBay]} warnFor={warnChange} onPick={b => changeBay(activeBay, b)} />
         </div>
       )}
 
       {/* ── Add / Remove bay ── */}
-      <div style={{ display: 'flex', gap: 4 }}>
-        {BEAM_OPTIONS.map(b => {
-          const testBeams = [...beams, b]
-          const testTotal = upIn * (testBeams.length + 1) + testBeams.reduce((s,x)=>s+x,0)
-          const fits = clearIn == null || testTotal <= clearIn
-          return (
-            <button key={b}
-              onClick={() => addBay(b)}
-              disabled={!fits}
-              title={fits ? `Add ${b}" bay` : `${b}" bay doesn't fit`}
-              style={{
-                flex: 1, padding: '5px 4px', borderRadius: 4,
-                fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
-                cursor: fits ? 'pointer' : 'not-allowed',
-                background: fits ? 'var(--green-dim)' : 'transparent',
-                border: `1px solid ${fits ? 'var(--green-bdr)' : 'var(--border)'}`,
-                color: fits ? 'var(--green)' : 'var(--text3)',
-              }}>
-              + {b}"
-            </button>
-          )
-        })}
+      <div>
+        <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          Add bay
+        </div>
+        <BeamPicker prefix="+" label="bay" warnFor={warnAdd} onPick={b => addBay(b)} />
         <button
           onClick={removeBay}
           disabled={beams.length <= 1}
           style={{
-            padding: '5px 8px', borderRadius: 4,
+            marginTop: 4, width: '100%', padding: '5px 8px', borderRadius: 4,
             fontSize: 9, fontFamily: 'var(--font-mono)',
             cursor: beams.length > 1 ? 'pointer' : 'not-allowed',
             background: 'transparent',

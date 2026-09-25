@@ -216,6 +216,64 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
+### X — Per-bay beam length · `X_bayBeam.test.js` (105 tests)
+**Beam presets 4′ to 16′** (48″–192″, 12″ steps) and a custom value (`102`,
+`9'`, `8' 6"`; 12″–360″). They're used for the rack panel's "Change beam"
+and "+ bay", and the multi-bay box's "Change all to". A change applies to one
+bay, or to every bay in a multi-bay selection across racks. It holds the
+rack's start end where it's drawn, so bays before the changed one stay put
+and later ones slide, at any rotation. Pallets per bay recompute; the bay
+list shows each bay's pallets, and "0 ✕" for a beam too short for one
+pallet (the canvas also shows the oversized-bay X). Each change is one undo.
+Shared logic is in `utils/bayBeam.js`.
+
+**Warnings, never blocks.** A pick that would make the rack overlap another
+rack, or pass the building's inner wall, gets a red outline and tooltip. The
+rack's current problem shows in a red box. The panel's old wall-fit blocking
+is removed.
+
+**Three bugs fixed on the way:**
+- **Wall clear** is measured along the rack's own length at any rotation. It
+  is the chord of the building's inner box through the rack's centre, so the
+  inner height is used at 90°/270°; before, it always used the width.
+- **"Remaining"** is now the room from the rack's far end, where it grows, to
+  the wall ahead. Before, it was the whole wall-to-wall clear minus the
+  rack's length.
+- **The multi-bay box** now also shows for bays across several racks (the
+  multi-select branch) and for bays on grouped racks (the group branch).
+- **`changeSelectedBaysBeam`** (store change approved by PP) sizes the rack
+  with the store's grid size instead of a hardcoded 40.
+
+Floor plans that aren't rectangles use their bounding box (approximate, agreed).
+
+| Test | Asserts (hand-derived) |
+|---|---|
+| `X-wall` ×8 (300×120 and 120×300, 0/90/180/270°) | wall clear 3588″ along 300′ or 1428″ along 120′; for a 14-bay rack (1389″) at the wall, remaining 39″ (3′ 3″) or 2199″; +4′ bay → "passes the wall by 1′" on the short run only; bay 0 to 11′ → nothing; to 12′ → "passes the wall by 9″"; the panel's Wall clear and Remaining cells match |
+| `X-remaining` ×4 | a centred 14-bay rack: 91′ 7.5″ (0/180°), 1′ 7.5″ (90/270°) |
+| `X-presets` | presets = 48…192 in 12″ steps |
+| `X-bay` ×64 (4 rotations × 13 presets + 3 custom) | bay 2 of 5 changes: bays 0–1 unmoved, 3–4 moved by exactly the change, pallets and capacity from the hand table; the panel path and the multi-bay path give identical racks; one undo each restores the rack |
+| `X-add` ×12 | +4′, +16′, +102″ at 4 rotations: the existing 5 bays unmoved; one undo |
+| `X-oversized` | custom 40″ → that bay flagged, 0 pallets, panel shows "0 ✕" |
+| `X-parse` | inches, feet, feet+inches; junk and out-of-range rejected |
+| `X-multi` ×4 | bays on two racks → the multi-select panel shows the box (13 presets + custom); 12′ on both, earlier bays fixed, later +48″; one undo restores both |
+| `X-group` ×4 | grouped racks: one bay or bays on both → the group panel shows the box; no bays → no box; the change applies, the group is kept, one undo |
+| `X-overlap` ×4 | end-to-end racks 12″ apart: +12″ touches (no warning), +24″ → "overlaps 1 rack" (panel and multi-bay previews); applied anyway; the red box shows it |
+| `X-grid` | gridSize 20 → a 546″ rack is 910 px (the store change) |
+| `X-wire` | "Change beam" and "+ bay" each commit once through `changeBayUpdate` / `addBayUpdate`, with no wall block; the multi-bay box calls `changeSelectedBaysBeam` |
+
+**Checked in the app, horizontal and vertical** (240×120, 25×30 grid):
+- Wall clear showed 239′ 6″ (horizontal) and 119′ 6″ (vertical).
+- 13 presets showed for "Change beam" and for "+ bay".
+- The 12′ preset left bays 1–2 unmoved and moved every later bay 160 px;
+  custom `8' 6"` gave 102″; two undos restored the rack.
+- 16′ on a rack's last bay, 3″ from the wall, showed "passes the wall by
+  7′ 9″" (93″ = 96 − 3) and was applied.
+- The multi-bay box across two racks and across two grouped racks (a real
+  Shift+drag marquee) showed "2 bays selected across 2 rows". Presets applied
+  to both racks with earlier bays fixed, the group was kept, and one undo
+  restored both.
+- No console errors.
+
 ### W — Multiple cross-aisles for long rack runs · `W_crossAisles.test.js` (12 tests)
 **Rule (PP).** `rowSegments` places the fewest cross-aisles that keep every
 continuous rack run within `maxRunFt` (default 150 ft, the Generate panel's
@@ -803,6 +861,17 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | U | **"− Bay" without the bay-delete anchor** | 1: `U-wire` rack panel "− Bay" | ✓ |
 | U | **Helper ignores the anchor rule** (always holds the near end) | 5: `U-minus-bay` at 0°, 90°, 180°, 270°, plus Column Check remove section (first bay) at 0° | ✓ |
 
+| X | **Wall clear along X only** (the old bug) | 9: X-wall 90/180/270° on both buildings, X-remaining 90/270° | ✓ |
+| X | **Remaining = clear − length** (the old rule) | 4: X-remaining at all rotations | ✓ |
+| X | **Multi-bay box only for a single object** | 4: X-multi | ✓ |
+| X | **No multi-bay box in the group panel** | 4: X-group | ✓ |
+| X | **Presets back to 72/96/120/144** | X-presets | ✓ |
+| X | **Change holds the far end** | 84: every X-bay except 96″, X-add, X-wall, X-overlap | ✓ |
+| X | **Overlap check off** | 4: X-overlap | ✓ |
+| X | **Wall warning off** | 4: X-wall on the short run | ✓ |
+| X | **Wall block restored** | X-wire | ✓ |
+| X | **"+ bay" commits without history** | X-wire | ✓ |
+| X | **Store grid size back to 40** | X-grid | ✓ |
 | W | **Force a single cross-aisle** (skip the maxRunFt count loop and the extra-aisle fallback) | 61: 8 in W (W-1080, W-1080@100, W-extra, W-gen ×5), the other 53 are matrix rule 2 on long runs (listed output was truncated; seen: M5, M7, M8, M9, M10, M11, M12, M13, M14, M15 v, M17, M18, M19, M21, M23, M24, M25, both orientations wherever the run is long) | ✓ |
 | W | **No extra cross-aisle when columns block** (fallback loop off) | 21: rule 2 (column in cross-aisle) on M5 h/v, M10 v, M11 h, M12 h, M13 h/v, M23 h, M25 h (both wall settings each); W-extra; W-gen max 100 h and v | ✓ |
 | V | **No split** (all kept bays as one run: middle deletes close up) | 29: T middle and multi-row cases, V split and gap cases | ✓ |
@@ -885,8 +954,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,449 tests, 1,449 passing** (after all breaks reverted).
-- **Whole project: 1,852 tests, 1,852 passing.**
+- **Plan suite: 1,554 tests, 1,554 passing** (after all breaks reverted).
+- **Whole project: 1,957 tests, 1,957 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

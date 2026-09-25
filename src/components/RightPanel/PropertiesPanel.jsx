@@ -280,6 +280,8 @@ export function PropertiesPanel() {
             <span style={{ color:'var(--purple)' }}>Group · {activeGroup.ids.length} objects</span>
           </div>
           <p style={{ opacity:0.6 }}>Use the Arrange panel to edit group properties, rotate, or remove members.</p>
+          {/* Bays picked on grouped racks get the same multi-bay box. */}
+          <div style={{ margin:'8px -8px 0' }}><MultiBayPanel /></div>
           <button onClick={deleteSelected} style={{
             marginTop:10, display:'flex', alignItems:'center', gap:5,
             background:'none', border:'none', cursor:'pointer',
@@ -301,6 +303,10 @@ export function PropertiesPanel() {
       <SectionHeader title={`Properties (${selected.length})`} defaultOpen={true}>
         <div style={{ padding:12 }}>
           <p style={{ ...S.mono10, color:'var(--text3)' }}>{selected.length} objects selected.</p>
+          {/* Bays picked across several racks (a bay marquee / Shift+click
+              puts every rack they belong to in selectedIds) — the same
+              multi-bay box a single rack shows. */}
+          <div style={{ margin:'8px -8px 0' }}><MultiBayPanel /></div>
           {twoRacks && (
             <button
               onClick={() => createAisle(selected[0].id, selected[1].id)}
