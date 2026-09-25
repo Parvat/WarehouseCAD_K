@@ -216,6 +216,64 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
+### Z — Sync all sections · `Z_syncSections.test.js` (13 tests)
+**"Sync all sections (N other sections)"** is a button in the rack panel,
+under "Sync section". It applies the selected row's section's **row
+positions** to every other section in the building (same run direction).
+Positions only: beams, width, depth, levels and rotation are untouched.
+
+**How rows are placed:**
+- Rows are matched by **nearest position across the aisles** (row centres),
+  one to one and nearest pairs first, only within **half an aisle** (half
+  the narrowest gap between neighbouring rows of the source section). So a
+  section missing a middle row keeps every other row with its true partner.
+  A row with no source row within half an aisle is left unchanged and
+  reported. A source row with no partner in a section is reported as a gap:
+  "no partner for section 3 row 4".
+- Each matched row gets the source row's near edge across the aisles.
+- Along the run, it gets the same offset from its own section's start edge
+  as the source row has from the source section's.
+- A section's start edge is the run start of its earliest row, taken before
+  the sync.
+- Sections are found by merging overlapping run intervals, the same groups
+  as `groupBySegment` but n log n, since the panel re-renders a lot.
+- Logic: `utils/syncSections.js`.
+
+**Warnings, never blocks.** Each moved row that overlaps another rack, reaches
+past its section's run envelope into a cross-aisle ("2′ into the
+cross-aisle"), or passes the inner wall is listed as "Section k row i".
+
+**One undo:** every row but the last is written without history and the last
+commits. No store change.
+
+| Test | Asserts (a 240′ run with max rack run 60′ → 4 sections of 7 rows; grid 25′ along the run × 40′ across; horizontal 240×120, vertical 120×240) |
+|---|---|
+| `Z-sync` ×2 (h, v) | section 1 row 2 moved 1′ across and row 3 moved 2′ along. After the sync, sections 2–4: row 2 is +40 px across, row 3 +80 px along, every other row where it was. Beams, width, height, levels and rotation are unchanged; section 1 is untouched. Row 3 is listed 24″ into the cross-aisle (sections 2–3) and past the wall by 80 px less the end gap (section 4). One undo restores everything. |
+| `Z-warn` ×2 | row 3 moved 10′ along → row 3 of sections 2–3 is 120″ into the cross-aisle with no overlap (the cross-aisle is 10.58′), and section 4's passes the wall; applied anyway; one undo |
+| `Z-overlap` ×2 | a lane rack in section 3's aisle 1′–2.5′ past row 2; section 1's row 2 moved 3′ across (still within half the narrowed aisle) → only section 3's row 2 is listed, overlapping it; applied anyway |
+| `Z-gap` ×2 | section 3's middle row (4 of 7) deleted; section 1: row 2 +1′ across, row 3 +2′ along, row 5 +1′ across → section 3's rows 1–3 and 5–7 get exactly their true partners' moves (by order, its row 5 would get nothing and row 6 would get +1′); gap reported as section 3 row 4; one undo |
+| `Z-far` ×2 | a section-2 row moved 60% of an aisle across → no source row within half an aisle: left exactly as it was, reported as unmatched, and its source row reported as a gap |
+| `Z-unmatched` ×2 | an extra row far across in section 3 → left exactly as it was and reported |
+| `Z-panel` | "Sync all sections (3 other sections)"; a single-section building → disabled |
+
+**Checked in the app, horizontal and vertical:**
+- Generated 240×120 (h) and 120×240 (v) with a 60′ max rack run: 4 sections
+  of 7 rows each.
+- In section 1, row 2 was moved 1′ across and row 3 moved 2′ along, then
+  "Sync all sections (3 other sections)" was pressed.
+- All 21 rows in sections 2–4 matched (row 2 +1′ across, row 3 +2′ along,
+  the others unchanged), beams and widths unchanged, section 1 untouched.
+- The panel showed "Moved 6 rows" and the warning "Section 2 row 3: 2′ into
+  the cross-aisle · Section 3 row 3: 2′ into the cross-aisle · Section 4
+  row 3: passes the wall by 1′ 9″". 1′ 9″ = 80 − 10 px end gap = 70 px.
+- One Ctrl+Z restored every object. No console errors.
+- **Nearest-position matching, re-checked in the app (h and v):** section 3's
+  middle row was deleted (row 4 of 7) and section 1 adjusted (row 2 +1′
+  across, row 3 +2′ along, row 5 +1′ across). After the sync, all 20
+  remaining rows in sections 2–4 had their true partner's position, and the
+  panel showed "Moved 9 rows · no partner for section 3 row 4". One undo
+  restored everything.
+
 ### Y — Sync section · `Y_syncSection.test.js` (7 tests)
 **"Sync section"** is a button in the rack panel labelled with the number of
 other rows it will change. Every other row in the selected row's section
@@ -902,6 +960,13 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | U | **"− Bay" without the bay-delete anchor** | 1: `U-wire` rack panel "− Bay" | ✓ |
 | U | **Helper ignores the anchor rule** (always holds the near end) | 5: `U-minus-bay` at 0°, 90°, 180°, 270°, plus Column Check remove section (first bay) at 0° | ✓ |
 
+| Z | **Sync only one other section** | 10: Z-sync, Z-warn, Z-overlap, Z-gap, Z-unmatched (both orientations) | ✓ |
+| Z | **Match rows by order again** | 4: Z-gap h/v, Z-far h/v | ✓ |
+| Z | **Run offset not from the section's own start** | 6: Z-sync, Z-warn, Z-overlap h/v | ✓ |
+| Z | **Position across the aisles not copied** | 4: Z-sync h/v, Z-overlap h/v | ✓ |
+| Z | **Every row its own undo step** | 4: Z-sync h/v, Z-warn h/v | ✓ |
+| Z | **Cross-aisle check off** | 4: Z-sync h/v, Z-warn h/v | ✓ |
+| Z | **Overlap / wall check off** | 6: Z-sync, Z-warn, Z-overlap h/v | ✓ |
 | Y | **Sync only the first row** | 4: Y-sync h/v, Y-direction ×2 | ✓ |
 | Y | **Start position not copied** | 4: Y-sync h/v, Y-direction ×2 | ✓ |
 | Y | **Beams copied in local order** (no reversal for reversed rows) | 2: Y-direction | ✓ |
@@ -1002,8 +1067,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,561 tests, 1,561 passing** (after all breaks reverted).
-- **Whole project: 1,964 tests, 1,964 passing.**
+- **Plan suite: 1,574 tests, 1,574 passing** (after all breaks reverted).
+- **Whole project: 1,977 tests, 1,977 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

@@ -1,6 +1,7 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useState } from 'react'
 import { sectionRows, planSectionSync, syncWarnings } from '../../../utils/syncSection'
+import { buildingSections, planSectionsSync, sectionsSyncWarnings } from '../../../utils/syncSections'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
 import {
@@ -287,6 +288,71 @@ function SyncSection({ obj }) {
   )
 }
 
+/* "Sync all sections": every other section takes this section's row
+   positions (across the aisles, and offset from the section's start along
+   the run), rows matched by nearest position across the aisles (within half an aisle). Beams untouched. All
+   rows but the last are written without history, the last commits: one
+   undo. Returns the warnings and the rows left alone (no partner). */
+export function applySectionsSync(getState, sourceId) {
+  const st = getState()
+  const plan = planSectionsSync(st.objects, sourceId)
+  const warnings = sectionsSyncWarnings(st.objects, plan, st.gridSize || 40)
+  const entries = [...plan.updates.entries()]
+  entries.forEach(([id, u], i) => {
+    if (i < entries.length - 1) getState().updateObject(id, u)
+    else getState().commitObjectUpdate(id, u)
+  })
+  return { moved: entries.length, sections: plan.sections.length, warnings, unmatched: plan.unmatched, gaps: plan.gaps }
+}
+
+function sectionsWarningText(warnings) {
+  if (!warnings.length) return null
+  return warnings.map(w => {
+    const why = []
+    if (w.overlaps.length) why.push(`overlaps ${w.overlaps.length} rack${w.overlaps.length > 1 ? 's' : ''}`)
+    if (w.crossAisleIn > 0) why.push(`${fmtFtIn(w.crossAisleIn)} into the cross-aisle`)
+    if (w.wallOutIn > 0) why.push(`passes the wall by ${fmtFtIn(w.wallOutIn)}`)
+    return `Section ${w.section} row ${w.row}: ${why.join(', ')}`
+  }).join(' · ')
+}
+
+function SyncAllSections({ obj }) {
+  const { objects } = useCanvasStore()
+  const [result, setResult] = useState(null)
+  const { sections } = buildingSections(objects, obj.id)
+  const others = sections.length - 1
+  const mine = result && result.id === obj.id ? result : null
+  const text = mine ? sectionsWarningText(mine.warnings) : null
+  return (
+    <div>
+      <button
+        onClick={() => { const r = applySectionsSync(useCanvasStore.getState, obj.id); setResult({ id: obj.id, ...r }) }}
+        disabled={others < 1}
+        aria-label="Sync all sections"
+        title={others < 1 ? 'No other sections'
+          : `Give the other ${others} section${others > 1 ? 's' : ''} this section's row positions (beams unchanged)`}
+        style={{
+          width: '100%', padding: '6px 8px', borderRadius: 4,
+          fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
+          cursor: others < 1 ? 'not-allowed' : 'pointer',
+          background: others < 1 ? 'transparent' : 'var(--surface3)',
+          border: '1px solid var(--border)',
+          color: others < 1 ? 'var(--text3)' : 'var(--text)',
+        }}>
+        Sync all sections{others >= 1 ? ` (${others} other section${others > 1 ? 's' : ''})` : ''}
+      </button>
+      {mine && (
+        <div style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 2 }}>
+          Moved {mine.moved} row{mine.moved === 1 ? '' : 's'}
+          {mine.unmatched.length ? ` · ${mine.unmatched.length} row${mine.unmatched.length > 1 ? 's' : ''} with no match left as is` : ''}
+          {mine.gaps.length ? ` · no partner for ${mine.gaps.map(g => `section ${g.section} row ${g.row}`).join(', ')}` : ''}
+        </div>
+      )}
+      {text && <div style={{ marginTop: 4 }}><RackWarning text={`Synced, check: ${text}`} /></div>}
+    </div>
+  )
+}
+
 export function RackRowPanel({ obj }) {
   const { objects, updateObject, commitObjectUpdate, deleteSingleBay, gridSize } = useCanvasStore()
 
@@ -409,6 +475,7 @@ export function RackRowPanel({ obj }) {
       <RackWarning text={nowWarn} />
 
       <SyncSection obj={obj} />
+      <SyncAllSections obj={obj} />
 
       {/* ── Bay list ── */}
       <div>
