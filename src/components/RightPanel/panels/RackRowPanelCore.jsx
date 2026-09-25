@@ -1,5 +1,6 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useState } from 'react'
+import { sectionRows, planSectionSync, syncWarnings } from '../../../utils/syncSection'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
 import {
@@ -222,6 +223,70 @@ export function MultiBayPanel() {
   )
 }
 
+/* "Sync section": every other row in `sourceId`'s section takes its bay
+   pattern and start position along the run (utils/syncSection.js). All rows
+   but the last are written without history, the last one commits, so the
+   one snapshot holds the whole sync: one undo. Returns the warnings (rows
+   that now overlap a rack, pass the wall, or crowd a cross-aisle). */
+export function applySectionSync(getState, sourceId) {
+  const st = getState()
+  const updates = planSectionSync(st.objects, sourceId, st.gridSize || 40)
+  const warnings = syncWarnings(st.objects, sourceId, updates, st.gridSize || 40)
+  const entries = [...updates.entries()]
+  entries.forEach(([id, u], i) => {
+    if (i < entries.length - 1) getState().updateObject(id, u)
+    else getState().commitObjectUpdate(id, u)
+  })
+  return { synced: entries.length, warnings }
+}
+
+function syncWarningText(warnings) {
+  if (!warnings.length) return null
+  return warnings.map(w => {
+    const why = []
+    if (w.overlaps.length) why.push(`overlaps ${w.overlaps.length} rack${w.overlaps.length > 1 ? 's' : ''}`)
+    if (w.wallOutIn > 0) why.push(`passes the wall by ${fmtFtIn(w.wallOutIn)}`)
+    if (w.crossAisleFt != null) why.push(`cross-aisle down to ${fmtFtIn(w.crossAisleFt * 12)}`)
+    return `Row ${w.row}: ${why.join(', ')}`
+  }).join(' · ')
+}
+
+/* The "Sync section" control: the button, how many rows it touches, and the
+   warnings from the last sync of this rack (never blocking). */
+function SyncSection({ obj }) {
+  const { objects } = useCanvasStore()
+  const [result, setResult] = useState(null)
+  const rows = sectionRows(objects, obj.id)
+  const others = rows.length - 1
+  const text = result && result.id === obj.id ? syncWarningText(result.warnings) : null
+  return (
+    <div>
+      <button
+        onClick={() => { const r = applySectionSync(useCanvasStore.getState, obj.id); setResult({ id: obj.id, ...r }) }}
+        disabled={others < 1}
+        aria-label="Sync section"
+        title={others < 1 ? 'No other rows in this section'
+          : `Copy this row's bay pattern and start position to the other ${others} row${others > 1 ? 's' : ''} between the same cross-aisles`}
+        style={{
+          width: '100%', padding: '6px 8px', borderRadius: 4,
+          fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
+          cursor: others < 1 ? 'not-allowed' : 'pointer',
+          background: others < 1 ? 'transparent' : 'var(--surface3)',
+          border: '1px solid var(--border)',
+          color: others < 1 ? 'var(--text3)' : 'var(--text)',
+        }}>
+        Sync section{others >= 1 ? ` (${others} other row${others > 1 ? 's' : ''})` : ''}
+      </button>
+      {result && result.id === obj.id && !text && (
+        <div style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 2 }}>
+          Synced {result.synced} row{result.synced === 1 ? '' : 's'}
+        </div>
+      )}
+      {text && <div style={{ marginTop: 4 }}><RackWarning text={`Synced, check: ${text}`} /></div>}
+    </div>
+  )
+}
+
 export function RackRowPanel({ obj }) {
   const { objects, updateObject, commitObjectUpdate, deleteSingleBay, gridSize } = useCanvasStore()
 
@@ -342,6 +407,8 @@ export function RackRowPanel({ obj }) {
       </div>
 
       <RackWarning text={nowWarn} />
+
+      <SyncSection obj={obj} />
 
       {/* ── Bay list ── */}
       <div>

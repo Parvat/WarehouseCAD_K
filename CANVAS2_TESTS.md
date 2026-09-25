@@ -216,6 +216,47 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
+### Y — Sync section · `Y_syncSection.test.js` (7 tests)
+**"Sync section"** is a button in the rack panel labelled with the number of
+other rows it will change. Every other row in the selected row's section
+copies its **bay pattern** (beam lengths in order along the run) and its
+**start position along the run**, so every upright lines up across the
+aisles. It also copies the upright width, since uprights can't line up
+without it. Position across the aisles, depth, levels, rotation and type
+stay as they are. A double row takes the pattern for the whole rack.
+
+A **section** is the single and double beam rows in the same building, with
+the same run direction, whose run overlaps the selected row's: the rows
+between the same two cross-aisles, or a wall and a cross-aisle. A row drawn
+the other way round (180°/270°) gets the list reversed, so the pattern and
+uprights still match on the floor. Logic: `utils/syncSection.js`.
+
+**Warnings, never blocks.** After the sync the panel lists each row that now
+overlaps another rack, passes the inner wall, or sits closer to a rack across
+a cross-aisle than the selected row does ("Row 3: cross-aisle down to
+12′ 9″"). Rows are numbered in stack order within the section.
+
+**One undo:** every row but the last is written without history and the last
+commits, so the one snapshot holds the whole sync. No store change.
+
+| Test | Asserts |
+|---|---|
+| `Y-sync` ×2 (h, v) | a generated 240×120 layout. The selected row has 6′ and 10′ bays; other rows in its section are shifted 2′, cut 2 bays short, or re-beamed. After the sync every row in the section has the selected row's beams, run start and upright positions. Position across the aisles, height, levels and rotation are kept; the other section and the building are unchanged; one undo restores all. |
+| `Y-warn` ×2 (h, v) | a lane rack in the stretch a short row regains → that row "overlaps obs". A neighbour across the cross-aisle moved 3′ closer → that row's cross-aisle = generated gap − 3′. A selected row given an extra 16′ bay at the far wall → every other row listed as past the wall by 195″ − its end gap. Rows are still synced; one undo. |
+| `Y-direction` ×2 (0°/180°, 90°/270°) | a row drawn the other way round gets [144, 120, 96, 72] for [72, 96, 120, 144]; uprights aligned; one undo |
+| `Y-panel` | "Sync section (N other rows)"; a row alone in its section gets a disabled button |
+
+**Checked in the app, horizontal and vertical** (240×120):
+- The rows were disturbed by hand edits first. After "Sync section (6 other
+  rows)" horizontal and "(13 other rows)" vertical, all 7 / 14 rows matched
+  the selected row's beams, start and uprights.
+- Position across the aisles and levels were kept; the other sections were
+  byte-identical; one Ctrl+Z restored every row.
+- With a neighbouring rack moved 3′ into the cross-aisle, the panel showed
+  "Row 1: cross-aisle down to 12′ 9″" (h) and "8′ 3″" (v), matching the
+  generated gap − 3′.
+- No console errors.
+
 ### X — Per-bay beam length · `X_bayBeam.test.js` (105 tests)
 **Beam presets 4′ to 16′** (48″–192″, 12″ steps) and a custom value (`102`,
 `9'`, `8' 6"`; 12″–360″). They're used for the rack panel's "Change beam"
@@ -861,6 +902,13 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | U | **"− Bay" without the bay-delete anchor** | 1: `U-wire` rack panel "− Bay" | ✓ |
 | U | **Helper ignores the anchor rule** (always holds the near end) | 5: `U-minus-bay` at 0°, 90°, 180°, 270°, plus Column Check remove section (first bay) at 0° | ✓ |
 
+| Y | **Sync only the first row** | 4: Y-sync h/v, Y-direction ×2 | ✓ |
+| Y | **Start position not copied** | 4: Y-sync h/v, Y-direction ×2 | ✓ |
+| Y | **Beams copied in local order** (no reversal for reversed rows) | 2: Y-direction | ✓ |
+| Y | **Every row its own undo step** | 6: Y-sync, Y-warn, Y-direction (both orientations) | ✓ |
+| Y | **Cross-aisle check off** | 2: Y-warn h/v | ✓ |
+| Y | **Overlap / wall check off** | 2: Y-warn h/v | ✓ |
+| Y | **Section = every row** (other sections synced too) | 5: Y-sync h/v, Y-warn h/v, Y-panel | ✓ |
 | X | **Wall clear along X only** (the old bug) | 9: X-wall 90/180/270° on both buildings, X-remaining 90/270° | ✓ |
 | X | **Remaining = clear − length** (the old rule) | 4: X-remaining at all rotations | ✓ |
 | X | **Multi-bay box only for a single object** | 4: X-multi | ✓ |
@@ -954,8 +1002,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,554 tests, 1,554 passing** (after all breaks reverted).
-- **Whole project: 1,957 tests, 1,957 passing.**
+- **Plan suite: 1,561 tests, 1,561 passing** (after all breaks reverted).
+- **Whole project: 1,964 tests, 1,964 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:
