@@ -216,6 +216,79 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
+### W — Multiple cross-aisles for long rack runs · `W_crossAisles.test.js` (12 tests)
+**Rule (PP).** `rowSegments` places the fewest cross-aisles that keep every
+continuous rack run within `maxRunFt` (default 150 ft, the Generate panel's
+new "Max rack run (ft)" field). Bays are spread evenly in whole bays. Every
+cross-aisle has the same width: at least the forklift's cross-aisle width,
+at most that plus one bay. They line up straight across every row, and racks
+still reach both end walls. Short runs keep their one cross-aisle.
+
+The maximum bays per section is `floor((12·maxRun − 3) / 99)`: 18 at 150 ft
+(148.75 ft) and 12 at 100 ft (99.25 ft).
+
+**Columns.** A dynamic program chooses all section sizes together. The
+cross-aisles slide the fewest whole bays needed to clear every column line,
+and no section goes over the maximum. Placing one boundary at a time could
+box a later boundary in (that caused rule 4 straddles on M11-h and M25-h in
+the first attempt).
+
+**If no split at the fewest count is column-clear, one more cross-aisle is
+added** (up to 3 more). This happens because the 150 ft cap can leave only
+positions that cross a column. Example: 300 ft with a 30 ft grid. 18 | 17 or
+17 | 18 both cross the column at 150, and 16 | 19 would be over 150 ft. The
+layout becomes 11 | 11 | 11, with 2 cross-aisles and 33 bays per row instead
+of 35. If nothing clears, the fewest count stays with the split that hits
+the fewest columns.
+
+**The example in the request vs the rule:** for a 1,080 ft run, the rule
+gives **6 cross-aisles / 7 sections** (18,17,18,18,18,17,18 bays, longest
+148.75 ft). The example in the request said 7 cross-aisles / 8 sections of
+about 135 ft. The code follows the rule.
+
+| Test | Asserts (hand-derived: reach 9 ft, 96″ on 3″, 0.5 ft end clearance) |
+|---|---|
+| `W-240` | 240 ft → 1 cross-aisle, 14 | 13, 15.75 ft wide, at 116.25 |
+| `W-1080` | 1,080 ft → 6 cross-aisles, 18,17,18,18,18,17,18, each 54.25/6 = 9.042 ft, first rack at 0.5, last ends at 1079.5 |
+| `W-1080@100` | max 100 ft → 9 cross-aisles, 10 × 12 bays, each 86.5/9 = 9.611 ft |
+| `W-slide` | 240 ft, 25 ft grid → 13 | 14, aisle at 108 (the even spot crosses 125) |
+| `W-extra` | 300 ft, 30 ft grid → 2 cross-aisles, 11 | 11 | 11 at 91.5 and 195.5, 13 ft wide; 1 with no columns |
+| `W-small` | 60, 120, 150, 240 ft → exactly 1 |
+| `W-gen` ×6 (h and v) | through `sizingSheetLayout`, 1080×120 (v: 120×1080), 60 ft grid: default and 150 → 6, 100 → 10 (the forced 10 × 12 split puts aisle 2 at 208.86..218.47 over the column at 210, so one more is added); identical cross-aisles in every row; every section ≤ max; both walls reached |
+
+**Matrix rule 2** now checks every section ≤ 150 ft, every cross-aisle in
+[cross-aisle, cross-aisle + 8.25 ft], no column footprint in any
+cross-aisle, and the same cross-aisles in every row.
+
+**Before → after** (master 1e25d2c → this change). "Longest" is the longest
+single rack. The two "Columns along wall" settings gave identical numbers.
+
+| Case | Orient | Cross-aisles | Longest ft | Gross | Usable |
+|---|---|---|---|---|---|
+| M11 1080×410 | h | 1 → 7 | 536.5 → 140.5 | 41,280 → 39,040 | 37,680 → 35,060 |
+| M11 1080×410 | v | 1 → 2 | 206.5 → 140.5 | 43,776 → 42,864 | 40,356 → 39,444 |
+| M13 1200×600 | h | 1 → 8 | 602.5 → 132.25 | 73,728 → 69,632 | 72,128 → 67,904 |
+| M13 1200×600 | v | 1 → 4 | 305.5 → 115.75 | 72,704 → 69,632 | 71,296 → 67,968 |
+| M14 1000×150 | h | 1 → 6 | 503.5 → 140.5 | 13,328 → 12,768 | 12,312 → 11,744 |
+| M14 1000×150 | v | 1 → 1 | 66.25 (unchanged) | 13,568 | 12,528 |
+| M23 1500×300 | h | 1 → 10 | 751 → 132.25 | 46,080 → 43,520 | 45,352 → 42,856 |
+| M23 1500×300 | v | 1 → 1 | 148.75 (unchanged) | 44,800 | 43,680 |
+
+Auto-pick flips to **vertical** on M13 (67,968 vs 67,904) and M23 (43,680 vs
+42,856); both were horizontal before. M11 and M14 stay vertical.
+
+**Checked in the app, horizontal and vertical** (1080×410, 25×30 grid):
+- Max rack run defaults to 150.
+- Horizontal: 7 cross-aisles, vertical: 2, the same in every row. Longest
+  section 140.5 ft. Headline 39,040 · 35,060 (h) and 42,864 · 39,444 (v),
+  the same as the unit numbers.
+- Every aisle pairs rows in the same section (160 = 8 × 20 h, 171 = 3 × 57
+  v). Every aisle has its 3 clearance labels, all inside its own section.
+- Regenerate replaces the layout (the same count of racks, aisles and one
+  grid).
+- Max 100 gives 10 (h) and 3 (v), longest 91 and 99.25 ft.
+- Auto picked vertical (2 cross-aisles). No page errors.
+
 ### V — A middle bay delete leaves a gap; Shift+click toggles bays · `V_baySplit.test.js` (36 tests)
 **Split (store change approved by PP).** Deleting bays from the middle of a run
 leaves an empty gap with the uprights on both sides still standing, so the
@@ -563,7 +636,7 @@ plus 8 scale-sanity tests. Rules only; no totals are captured anywhere.
 | Rule | Asserts, per run |
 |---|---|
 | 1 fills | first/last row within one row module (pair + aisle) of each wall along the stack axis; every row within one bay + cross-aisle of each end along the run |
-| 2 no oversized gap | interior aisles = forklift aisle unless a column forced a widen (same detector as E-exact); **far-wall leftover gap holds no legal position for another single row** — under 2 × aisle + single depth (24.5 / 28.5 / 15.5′) it passes on width alone, above it an exhaustive scan runs (aisle ≥ forklift aisle both sides, no straddled column, every column leaving ≥ travelFt on one side; 0.01′ sweep plus every point where legality can change); per row, at most one stretch longer than a bay, and it is the cross-aisle, in [cross-aisle, cross-aisle + 8.25′]; wall-end gaps ≤ one bay |
+| 2 no oversized gap | interior aisles = forklift aisle unless a column forced a widen (same detector as E-exact); **far-wall leftover gap holds no legal position for another single row** — under 2 × aisle + single depth (24.5 / 28.5 / 15.5′) it passes on width alone, above it an exhaustive scan runs (aisle ≥ forklift aisle both sides, no straddled column, every column leaving ≥ travelFt on one side; 0.01′ sweep plus every point where legality can change); per row, every stretch longer than a bay is a cross-aisle in [cross-aisle, cross-aisle + 8.25′] with no column footprint inside it; every section ≤ 150′ (max rack run); the same cross-aisles in every row (aligned); wall-end gaps ≤ one bay |
 | 3 travel | every row-to-row gap ≥ travelFt; no level-1 column block |
 | 4 no straddle | every column touching a rack is wholly inside one face or flue band and inside the rack's run |
 | 5 grid | drawn lines = avoidance lines on X and Y; Yes → first line 0; No → first line one pitch in, none on either wall |
@@ -730,6 +803,8 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | U | **"− Bay" without the bay-delete anchor** | 1: `U-wire` rack panel "− Bay" | ✓ |
 | U | **Helper ignores the anchor rule** (always holds the near end) | 5: `U-minus-bay` at 0°, 90°, 180°, 270°, plus Column Check remove section (first bay) at 0° | ✓ |
 
+| W | **Force a single cross-aisle** (skip the maxRunFt count loop and the extra-aisle fallback) | 61: 8 in W (W-1080, W-1080@100, W-extra, W-gen ×5), the other 53 are matrix rule 2 on long runs (listed output was truncated; seen: M5, M7, M8, M9, M10, M11, M12, M13, M14, M15 v, M17, M18, M19, M21, M23, M24, M25, both orientations wherever the run is long) | ✓ |
+| W | **No extra cross-aisle when columns block** (fallback loop off) | 21: rule 2 (column in cross-aisle) on M5 h/v, M10 v, M11 h, M12 h, M13 h/v, M23 h, M25 h (both wall settings each); W-extra; W-gen max 100 h and v | ✓ |
 | V | **No split** (all kept bays as one run: middle deletes close up) | 29: T middle and multi-row cases, V split and gap cases | ✓ |
 | V | **No aisle re-pairing** | 2: `V-aisles`, rotated | ✓ |
 | V | **Toggle only adds** | 4: `V-toggle` off/on and last-bay-drops, both orientations | ✓ |
@@ -810,8 +885,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,437 tests, 1,437 passing** (after all breaks reverted).
-- **Whole project: 1,840 tests, 1,840 passing.**
+- **Plan suite: 1,449 tests, 1,449 passing** (after all breaks reverted).
+- **Whole project: 1,852 tests, 1,852 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

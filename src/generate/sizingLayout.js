@@ -534,57 +534,111 @@ function intervalHitsColumn(startFt, endFt, colLinesFt) {
  *      used as the FLOOR the aisle must clear — reserved UP FRONT (the
  *      extra upright deducted before bays are even counted, not after), so
  *      the actual built width can end up larger (never smaller). */
-export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn = UP_IN, runGridFt = 0, runGridOffsetFt = 0, runGridMaxFt = lengthFt }) {
+export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn = UP_IN, runGridFt = 0, runGridOffsetFt = 0, runGridMaxFt = lengthFt, maxRunFt = Infinity }) {
   const x0     = endClearFt
   const x1     = lengthFt - endClearFt
   const usable = x1 - x0
-  if (usable <= 0) return { segments: [], bays: 0, crossAisle: null }
+  if (usable <= 0) return { segments: [], bays: 0, crossAisle: null, crossAisles: [] }
 
   const runLenFt = (n) => (upIn * (n + 1) + n * beamIn) / 12
-  const extraUprightFt = upIn / 12   // the second segment's own extra end-upright
+  const extraUprightFt = upIn / 12   // each extra section's own extra end-upright
 
-  const capacityFt = usable - crossAisleFt - extraUprightFt
-  const total = capacityFt >= beamIn / 12
-    ? baysInRun(capacityFt, beamIn, upIn)
-    : 0
+  const maxBays = Number.isFinite(maxRunFt) ? Math.max(1, Math.floor((maxRunFt * 12 - upIn) / (beamIn + upIn))) : Infinity
+  const colLinesFt = runColumnLinesFt(runGridFt, runGridOffsetFt, lengthFt, runGridMaxFt)
+
+  /* Bays that fit when the run is cut into S sections: S - 1 cross-aisles,
+     each at least crossAisleFt, and S - 1 extra end-uprights. */
+  const baysFor = (S) => {
+    const capacityFt = usable - (S - 1) * (crossAisleFt + extraUprightFt)
+    return capacityFt >= beamIn / 12 ? baysInRun(capacityFt, beamIn, upIn) : 0
+  }
+
+  /* Where the cross-aisles go for S sections: choose all the section sizes
+     together (a small dynamic program over "cross-aisle k ends after P
+     bays"), so that no cross-aisle strip touches a column line, every
+     section stays within 1..maxBays, and the boundaries slide as little as
+     possible from an even split — the fewest whole bays moved in total.
+     Deciding one boundary at a time could box a later one in (a column
+     forced an early slide, and the remaining sections then had no room to
+     dodge the next column without going over maxBays). Every cross-aisle is
+     the same width: the leftover after the bays and the extra uprights,
+     shared equally — at least crossAisleFt, at most crossAisleFt + one bay
+     pitch / (S - 1). The combined length of the sections doesn't depend on
+     how the bays are split, so steering the split costs no capacity. */
+  const plan = (S, total) => {
+    const aisleWidthFt = (usable - runLenFt(total) - (S - 1) * extraUprightFt) / (S - 1)
+    const aisleStart = (k, P) => x0 + (upIn * (P + k + 1) + P * beamIn) / 12 + k * aisleWidthFt
+    const ideal = (k) => Math.round((total * (k + 1)) / S)
+    let prev = new Map([[0, { hits: 0, slide: 0, path: [] }]])
+    const better = (a, b) => !b || a.hits < b.hits || (a.hits === b.hits && a.slide < b.slide)
+    for (let k = 0; k < S - 1; k++) {
+      const next = new Map()
+      for (const [P0, st] of prev) {
+        for (let n = 1; n <= Math.min(maxBays, total); n++) {
+          const P = P0 + n
+          const rest = total - P, secsLeft = S - k - 1
+          if (rest < secsLeft || rest > secsLeft * maxBays) continue
+          const a0 = aisleStart(k, P)
+          const cand = {
+            hits:  st.hits + (intervalHitsColumn(a0, a0 + aisleWidthFt, colLinesFt) ? 1 : 0),
+            slide: st.slide + Math.abs(P - ideal(k)),
+            path:  [...st.path, n],
+          }
+          if (better(cand, next.get(P))) next.set(P, cand)
+        }
+      }
+      prev = next
+    }
+    let best = null
+    for (const [P, st] of prev) {
+      const last = total - P
+      if (last < 1 || last > maxBays) continue
+      const cand = { ...st, path: [...st.path, last] }
+      if (better(cand, best)) best = cand
+    }
+    const counts = best ? best.path : Array.from({ length: S }, (_, k) => ideal(k) - (k ? ideal(k - 1) : 0))
+    return { S, total, aisleWidthFt, counts, hits: best ? best.hits : Infinity }
+  }
+
+  /* Multiple cross-aisles (PP): the FEWEST so that no continuous rack run
+     is longer than maxRunFt, bays spread as evenly as whole bays allow.
+     Small runs keep the single cross-aisle they always had (S >= 2). */
+  let S = 2, total = baysFor(2)
+  while (total >= S && Math.ceil(total / S) > maxBays) total = baysFor(++S)
 
   /* Too narrow to be worth splitting — one run beats two stubs. */
-  if (total < 2) {
+  if (total < S || total < 2) {
     const bays = baysInRun(usable, beamIn, upIn)
     return bays > 0
-      ? { segments: [{ xFt: x0, bays }], bays, crossAisle: null }
-      : { segments: [], bays: 0, crossAisle: null }
+      ? { segments: [{ xFt: x0, bays }], bays, crossAisle: null, crossAisles: [] }
+      : { segments: [], bays: 0, crossAisle: null, crossAisles: [] }
   }
 
-  const aisleWidthFt = usable - runLenFt(total) - extraUprightFt
-  const colLinesFt   = runColumnLinesFt(runGridFt, runGridOffsetFt, lengthFt, runGridMaxFt)
-  const minN1 = 1
-  const maxN1 = total - 1
-  const balancedN1 = Math.min(maxN1, Math.max(minN1, Math.round(total / 2)))
-
-  let n1 = null
-  for (let d = 0; d <= total && n1 == null; d++) {
-    const candidates = d === 0 ? [balancedN1] : [balancedN1 - d, balancedN1 + d]
-    for (const cand of candidates) {
-      if (cand < minN1 || cand > maxN1) continue
-      const aisleStartFt = x0 + runLenFt(cand)
-      if (!intervalHitsColumn(aisleStartFt, aisleStartFt + aisleWidthFt, colLinesFt)) { n1 = cand; break }
-    }
+  /* Columns: slide the cross-aisles the minimum to clear every column. If
+     no split at this count clears them all — the maxRunFt cap can leave a
+     cross-aisle only positions that straddle a column line — add one more
+     cross-aisle and try again (a few at most). If none clears, keep the
+     fewest cross-aisles and the split hitting the fewest columns, as the
+     single cross-aisle always kept its even spot with no clear position. */
+  let chosen = plan(S, total)
+  for (let extra = 1; chosen.hits > 0 && extra <= 3; extra++) {
+    const S2 = S + extra, t2 = baysFor(S2)
+    if (t2 < S2) break
+    const alt = plan(S2, t2)
+    if (alt.hits === 0) { chosen = alt; break }
   }
-  if (n1 == null) n1 = balancedN1
+  const { counts, aisleWidthFt } = chosen
 
-  const n2 = total - n1
-  const seg1LenFt = runLenFt(n1)
-  const seg2LenFt = runLenFt(n2)
+  const segments = []
+  const crossAisles = []
+  let x = x0
+  counts.forEach((n, k) => {
+    segments.push({ xFt: x, bays: n })
+    x += runLenFt(n)
+    if (k < counts.length - 1) { crossAisles.push({ xFt: x, widthFt: aisleWidthFt }); x += aisleWidthFt }
+  })
 
-  return {
-    segments: [
-      { xFt: x0, bays: n1 },
-      { xFt: x1 - seg2LenFt, bays: n2 },
-    ],
-    bays: total,
-    crossAisle: { xFt: x0 + seg1LenFt, widthFt: aisleWidthFt },
-  }
+  return { segments, bays: total, crossAisle: crossAisles[0] || null, crossAisles }
 }
 
 /** Frame/beam/flue/depth the layout is built from, resolved from the rules
@@ -769,6 +823,10 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
        No insets it one full pitch so no column sits on the wall line. See
        axisFrame's own comment for how this threads into the walk. */
     columnsAlongWall = true,
+    /* Longest continuous rack run before a cross-aisle (PP) — the Generate
+       panel's "Max rack run (ft)". Long runs get as many evenly spaced
+       cross-aisles as it takes to keep every section this short or shorter. */
+    maxRunFt = 150,
   } = brief
   const { beamIn, depthIn, upIn, flueIn, palletWIn, endClearFt } = spec
 
@@ -778,6 +836,7 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
   const { segments, bays } = rowSegments(frame.runFt, {
     crossAisleFt, endClearFt, beamIn, upIn,
     runGridFt: frame.runGridFt, runGridOffsetFt: frame.runGridOffsetFt, runGridMaxFt: frame.runGridMaxFt,
+    maxRunFt,
   })
   if (!bands.length || !segments.length || bays <= 0) return []
 

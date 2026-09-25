@@ -71,6 +71,9 @@ export function GeneratePanel() {
   // number, both axes). Default matches DEFAULT_RULES.selective's own
   // shipped default, so an untouched panel matches an untouched rules table.
   const [wallClearanceIn, setWallClear] = useState(6)
+  /* Longest continuous rack run before a cross-aisle — long runs get as many
+     evenly spaced cross-aisles as it takes to stay this short. */
+  const [maxRunFt, setMaxRun] = useState(150)
   // Whether the interior column grid's own origin sits flush on the wall
   // (Yes, a line on it) or inset one full pitch off it (No, none on it) —
   // see sizingLayout.js's columnGridObject/axisFrame (BUG 69).
@@ -104,6 +107,7 @@ export function GeneratePanel() {
         gridXFt:          Number(gridXFt)           || 0,
         gridYFt:          Number(gridYFt)           || 0,
         wallClearanceIn:  Number(wallClearanceIn)   || 0,
+        maxRunFt:         Number(maxRunFt)          || 150,
         columnsAlongWall,
         palletWIn:        Number(palletWIn)         || 40,
         palletDIn:        Number(palletDIn)         || 48,
@@ -179,6 +183,10 @@ export function GeneratePanel() {
 
           <Field label="WALL CLEARANCE (in)">
             <input style={inputSt} type="number" min="0" value={wallClearanceIn} onChange={e => setWallClear(e.target.value)} />
+          </Field>
+          <Field label="MAX RACK RUN (ft)">
+            <input style={inputSt} type="number" min="20" value={maxRunFt} onChange={e => setMaxRun(e.target.value)}
+              aria-label="Max rack run (ft)" title="Longest continuous rack run before a cross-aisle" />
           </Field>
 
           <div>

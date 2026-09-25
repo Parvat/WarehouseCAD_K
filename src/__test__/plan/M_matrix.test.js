@@ -22,6 +22,7 @@ const TRUCK = {
 const SINGLE_FT = 42 / 12                 // 3.5
 const PAIR_FT = (42 + 9 + 42) / 12        // 7.75
 const BAY_FT = (96 + 3) / 12              // 8.25, one bay pitch along the run
+const MAX_RUN_FT = 150                     // Generate panel default "Max rack run (ft)"
 
 const briefOf = (id, orientation, columnsAlongWall) => {
   const [lengthFt, widthFt, gridXFt, gridYFt, mhe] = MATRIX[id]
@@ -153,7 +154,7 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
         }
       })
 
-      it(`2 no oversized gap: interior aisles = ${t.aisleFt}' unless column-forced; far-wall gap holds no legal single (< ${2 * t.aisleFt + SINGLE_FT}' passes unscanned); cross-aisle in [${t.crossAisleFt}, ${t.crossAisleFt + BAY_FT}]'; no other run gap > one bay`, () => {
+      it(`2 no oversized gap: interior aisles = ${t.aisleFt}' unless column-forced; far-wall gap holds no legal single (< ${2 * t.aisleFt + SINGLE_FT}' passes unscanned); every section <= ${MAX_RUN_FT}'; each cross-aisle in [${t.crossAisleFt}, ${t.crossAisleFt + BAY_FT}]', column-free, aligned across rows; no other run gap > one bay`, () => {
         const { racks, columns } = get()
         const bad = []
         for (const run of groupBySegment(racks)) {
@@ -183,14 +184,30 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
             if (!forced) bad.push({ aisleFromFt: from, widthFt: gap })
           }
         }
+        /* Cross-aisles (multiple, PP): every section <= maxRunFt; every
+         * cross-aisle in [crossAisleFt, crossAisleFt + one bay]; no column
+         * footprint inside any cross-aisle; the same cross-aisles in every
+         * row (aligned straight across). */
+        const f0 = racks.length ? rackFootprint(racks[0]) : null
+        const colRuns = f0 ? columns.map(c => { const r = runOf({ ...c, rotated: f0.rotated }); return [r.lo / GS, r.hi / GS] }) : []
+        let refCross = null
         for (const b of bandsOf(racks)) {
           const gaps = [b.segs[0][0], ...b.segs.slice(1).map((s, i) => s[0] - b.segs[i][1]), runFt - b.segs[b.segs.length - 1][1]]
-          const interior = gaps.slice(1, -1)
-          const cross = interior.filter(g => g > BAY_FT + 1e-6)
-          if (cross.length > 1) bad.push({ band: b.lo, extraLongStretches: cross })
-          for (const g of cross) {
+          for (const s of b.segs) if (s[1] - s[0] > MAX_RUN_FT + 1e-6) bad.push({ band: b.lo, sectionFt: s[1] - s[0] })
+          const cross = []
+          b.segs.slice(1).forEach((s, i) => {
+            const lo = b.segs[i][1], hi = s[0]
+            if (hi - lo > BAY_FT + 1e-6) cross.push([lo, hi])
+          })
+          for (const [lo, hi] of cross) {
+            const g = hi - lo
             if (g < t.crossAisleFt - 1e-6 || g > t.crossAisleFt + BAY_FT + 1e-6) bad.push({ band: b.lo, crossAisleFt: g })
+            const col = colRuns.find(([clo, chi]) => chi > lo + 1e-9 && clo < hi - 1e-9)
+            if (col) bad.push({ band: b.lo, crossAisle: [lo, hi], columnAt: col })
           }
+          const key = cross.map(([lo, hi]) => `${lo.toFixed(4)}-${hi.toFixed(4)}`).join(',')
+          if (refCross == null) refCross = key
+          else if (key !== refCross) bad.push({ band: b.lo, crossAislesNotAligned: key, firstRow: refCross })
           for (const g of [gaps[0], gaps[gaps.length - 1]]) if (g > BAY_FT + 1e-6) bad.push({ band: b.lo, endGapFt: g })
         }
         expect(bad, JSON.stringify(bad)).toEqual([])
