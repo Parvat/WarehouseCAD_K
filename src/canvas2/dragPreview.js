@@ -8,7 +8,13 @@ import { create } from 'zustand'
    offset and the set of object ids it moves (the selection plus any floor
    plan's children), so an overlay can derive a previewed layout per frame.
    Presentation state only: never the canvas store, never history. */
-export const useDragPreview = create(() => ({ ids: null, dx: 0, dy: 0 }))
+export const useDragPreview = create(() => ({ ids: null, dx: 0, dy: 0, dragging: false }))
+
+/* A gesture that moves or reshapes objects is under way (a plain drag, a
+   live-flue drag, a resize, a rotate, a wall drag). The column check holds
+   its last full result while this is on and re-runs only its cheap aisle
+   part per frame; the full check runs once, on the drop. */
+export const setDragging = (on) => { if (useDragPreview.getState().dragging !== on) useDragPreview.setState({ dragging: on }) }
 
 export const setDragPreview = (ids, dx, dy) => useDragPreview.setState({ ids, dx, dy })
 export const clearDragPreview = () => {

@@ -1,3 +1,6 @@
+// FROZEN REFERENCE: src/generate/columnCheck.js as it was before the performance work.
+// PF_perf.test.js checks the optimised check returns deep-equal results to this one.
+// Never edit it.
 // columnCheck.js
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure column-grid + forklift interference logic. No React, no store, no
@@ -9,8 +12,8 @@
 // brief); this module is what they call.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { bayAtPoint, uprightXs } from '../render/rackOps'
-import { positionsPerBeam, blockedPositionIndices, positionFootprintIn } from '../utils/capacity'
+import { bayAtPoint, uprightXs } from '../../../render/rackOps'
+import { positionsPerBeam, blockedPositionIndices, positionFootprintIn } from '../../../utils/capacity'
 
 const GS = 40 // px per foot (v16b convention)
 
@@ -35,23 +38,6 @@ export const MHE_PROFILES = {
 
 const overlaps = (a, b) =>
   a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
-
-/* Speed, not behaviour: the checks below test many small rects (pick zones,
-   upright frames) against every column. Anything that overlaps one of those
-   rects also overlaps their bounding box, so pre-filtering the columns to the
-   box — keeping their original order and indices — gives exactly the same
-   hits in the same order, at a fraction of the work. */
-const boxOf = (rects) => {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-  for (const q of rects) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + q.w); y1 = Math.max(y1, q.y + q.h) }
-  return x0 === Infinity ? null : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
-}
-/** [[column, index], ...] for the columns touching the box, in index order. */
-const columnsNear = (columns, box) => {
-  const out = []
-  if (box) columns.forEach((c, ci) => { if (overlaps(c, box)) out.push([c, ci]) })
-  return out
-}
 
 /* A rack's TRUE world footprint. canvas2 rotates every object IN PLACE
  * around its own centre (shapes.jsx's spin()) — a rack's stored x/y/width/
@@ -234,19 +220,9 @@ export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILE
     const { beams } = uprightXs(r, gridSize)
     const palletWIn = r.palletWIn || 40
 
-    // every zone this rack has, to narrow the columns and racks to test against
-    const zones = []
-    beams.forEach((beamIn, bayIndex) => {
-      const n = positionsPerBeam(beamIn, palletWIn)
-      for (let p = 0; p < n; p++) for (const side of ['near', 'far']) { const z = pickZoneRect(r, gridSize, bayIndex, p, side, aislePx); if (z) zones.push(z) }
-    })
-    const near = boxOf(zones)
-    const nearCols = columnsNear(columns, near)
-    const nearFeet = near ? rackFeet.filter(o => overlaps(near, o.f)) : []
-
     // is this zone an aisle a single can be picked from?
     const isOpenAisle = (zone) =>
-      !nearFeet.some(o => o.id !== r.id && overlaps(zone, o.f)) &&
+      !rackFeet.some(o => o.id !== r.id && overlaps(zone, o.f)) &&
       (!floors.length || insideAnyFloor(zone, floors))
 
     beams.forEach((beamIn, bayIndex) => {
@@ -264,7 +240,7 @@ export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILE
             if (!zone) continue
             if (!isDouble && !isOpenAisle(zone)) continue
             pickSides++
-            const hits = nearCols.filter(([c]) => overlaps(c, zone)).map(([, ci]) => ci)
+            const hits = columns.reduce((a, c, ci) => (overlaps(c, zone) ? [...a, ci] : a), [])
             if (hits.length) { blockedSides++; hitting.push(...hits) }
           }
           if (pickSides > 0 && blockedSides === pickSides) {
@@ -315,7 +291,7 @@ export function columnsOnUprights({ racks = [], columns = [], gridSize = GS }) {
     if (!PICK_TYPES.has(r.type) || ((r.rotation || 0) % 90) !== 0) continue
     const nBays = uprightXs(r, gridSize).beams.length
     const frames = uprightFramesLocal(r, gridSize).map(f => ({ ...f, world: localRectToWorld(r, f) }))
-    for (const [col, columnIndex] of columnsNear(columns, boxOf(frames.map(f => f.world)))) {
+    columns.forEach((col, columnIndex) => {
       const byUpright = new Map()
       for (const f of frames) {
         if (!overlaps(col, f.world)) continue
@@ -328,7 +304,7 @@ export function columnsOnUprights({ racks = [], columns = [], gridSize = GS }) {
           bays: [upright - 1, upright].filter(b => b >= 0 && b < nBays),
         })
       }
-    }
+    })
   }
   return hits
 }
@@ -451,10 +427,9 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
      footprint clears the flue's edges). A centre inside the flue band seats
      it there for free; a centre inside a face means the column is genuinely
      in that pick face, not just brushing it. */
-  const feet = racks.map(rackFootprint)
   columns.forEach((col, ci) => {
-    for (let k = 0; k < racks.length; k++) {
-      const r = racks[k], rb = feet[k]
+    for (const r of racks) {
+      const rb = rackFootprint(r)
       if (!overlaps(col, rb)) continue
 
       const beams     = r.beams || [96]

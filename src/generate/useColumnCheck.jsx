@@ -1,8 +1,9 @@
-import { createContext, useContext, useMemo, useState, useCallback } from 'react'
+import { createContext, useContext, useMemo, useState, useCallback, useRef } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { checkColumns, MHE_PROFILES } from './columnCheck'
+import { checkColumns, aisleColumnBlocks, MHE_PROFILES } from './columnCheck'
 import { layoutColumns, layoutFloors } from './usableCapacity'
 import { useRules } from '../rules/useRules'
+import { useDragPreview } from '../canvas2/dragPreview'
 
 /* ── Column / forklift grid check — the app-side wiring ──────────────────────
    columnCheck.js is the pure brain; this is the only place that calls it.
@@ -42,6 +43,32 @@ export const isRack = o => typeof o?.type === 'string' && o.type.startsWith('rac
    stick while the user drags racks around. */
 export const conflictKey = c => `${c.rackId}:${c.columnIndex}`
 
+/* ── Only re-check when the geometry changed ─────────────────────────────────
+   Any change to the store's objects makes a new `objects` array — a bay
+   highlight, the building's row baseline, a label. The check reads none of
+   that, so its three inputs (racks, columns, floors) keep their previous
+   array while their content is the same, and the check reruns only when one
+   of them really changed. A rack's key is everything on it except the fields
+   below, which are selection / bookkeeping, not geometry; it is cached per
+   object, so an edit re-keys only the racks it touched. */
+const NOT_GEOMETRY = new Set(['activeBayIdx', 'activeTowerIdx', 'rowIndex', 'genSection', 'genRunFt', 'genCrossFt', 'pieceOf'])
+const keyOf = new WeakMap()
+export const rackGeometryKey = (r) => {
+  let k = keyOf.get(r)
+  if (k === undefined) { k = JSON.stringify(r, (key, v) => (NOT_GEOMETRY.has(key) ? undefined : v)); keyOf.set(r, k) }
+  return k
+}
+export const sameRacks = (a, b) => a.length === b.length && a.every((r, i) => r === b[i] || rackGeometryKey(r) === rackGeometryKey(b[i]))
+export const sameRects = (a, b) => a.length === b.length && a.every((q, i) => q === b[i] || (q.x === b[i].x && q.y === b[i].y && q.w === b[i].w && q.h === b[i].h))
+export const sameFloors = (a, b) => a.length === b.length && a.every((f, i) => f === b[i] || JSON.stringify(f) === JSON.stringify(b[i]))
+
+/** `next`, or the previous value when it is `same` as it. */
+function useSame(next, same) {
+  const ref = useRef(next)
+  if (ref.current !== next && !same(ref.current, next)) ref.current = next
+  return ref.current
+}
+
 const Ctx = createContext(null)
 
 export function ColumnCheckProvider({ children }) {
@@ -74,18 +101,36 @@ export function ColumnCheckProvider({ children }) {
      inlined into `result`'s) so a renderer that needs a column's actual
      position — e.g. a clearance label at columns[aisleBlocks[i].columnIndex]
      — doesn't have to re-expand the grid itself. */
-  const columns = useMemo(() => layoutColumns(objects, gridSize), [objects, gridSize])
+  const columns = useSame(useMemo(() => layoutColumns(objects, gridSize), [objects, gridSize]), sameRects)
 
   /* Building outlines for the pick-zone check: a single row against a wall
      has no aisle on that side, so it has one pick side, not two. fpVerts are
      absolute world points with any rotation already baked in. */
-  const floors = useMemo(() => layoutFloors(objects), [objects])
+  const floors = useSame(useMemo(() => layoutFloors(objects), [objects]), sameFloors)
+  const racks = useSame(useMemo(() => objects.filter(isRack), [objects]), sameRacks)
 
+  /* During a drag (dragPreview's `dragging`: a plain or live-flue drag, a
+     resize, a rotate) the full check is held at its last result and only its
+     cheap aisle part reruns, on the layout as it stands this frame — the
+     clearance labels stay live, the in-rack / pick-zone / upright work waits
+     for the drop, where it runs once. The last full result is kept with its
+     inputs, so a drop that changed nothing doesn't run it again. */
+  const dragging = useDragPreview(s => s.dragging)
+  const last = useRef(null)
   const result = useMemo(() => {
-    const racks = objects.filter(isRack)
-    if (!racks.length || !columns.length) return EMPTY_RESULT
-    return checkColumns({ racks, columns, profile, gridSize, pickBothSides, floors })
-  }, [objects, columns, gridSize, profile, pickBothSides, floors])
+    const inputs = { racks, columns, profile, gridSize, pickBothSides, floors }
+    const l = last.current
+    const same = l && Object.keys(inputs).every(k => l.inputs[k] === inputs[k])
+    if (dragging) {
+      const held = l ? l.result : EMPTY_RESULT
+      if (same || !racks.length || !columns.length) return held
+      return { ...held, aisleBlocks: aisleColumnBlocks({ racks, columns, profile, gridSize, pickBothSides }).aisleBlocks }
+    }
+    if (same) return l.result
+    const full = (!racks.length || !columns.length) ? EMPTY_RESULT : checkColumns(inputs)
+    last.current = { inputs, result: full }
+    return full
+  }, [dragging, racks, columns, gridSize, profile, pickBothSides, floors])
 
   /* Absorb is the default, so it is the absence of a decision, not a stored
      one — the customer keeps the rack and eats `positionsLost`. Only "remove

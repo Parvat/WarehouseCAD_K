@@ -1,4 +1,4 @@
-import { setDragPreview, clearDragPreview } from './dragPreview'
+import { setDragPreview, clearDragPreview, setDragging } from './dragPreview'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
@@ -596,6 +596,7 @@ export function useCanvasInteraction({
     const move = (evt) => {
       const rd = resizeDrag.current
       if (rd) {
+        setDragging(true)
         const stage = stageRef.current
         if (!stage) return
         const box = stage.container().getBoundingClientRect()
@@ -749,6 +750,7 @@ export function useCanvasInteraction({
 
       const grd = groupRotateDrag.current
       if (grd) {
+        setDragging(true)
         /* Same flow as CanvasArea.jsx's groupRotate branch: angle from the
            UNSNAPPED pointer around the drag-start bbox centre, 5deg steps
            normally, 45deg holding shift, delta measured from the FIRST
@@ -782,6 +784,7 @@ export function useCanvasInteraction({
 
       const fprd = fpRotateDrag.current
       if (fprd) {
+        setDragging(true)
         /* Same angle-from-pointer/5-45deg-snap/delta-from-first-angle flow
            as group rotate, around the FIXED building-centre pivot captured
            at drag-start (fpRotate.js's own header explains why it must
@@ -836,6 +839,7 @@ export function useCanvasInteraction({
           if (fresh.length) d.nodes = fresh
         }
         d.moved = true
+        setDragging(true)
 
         let dx = world.x - d.startWorld.x
         let dy = world.y - d.startWorld.y
@@ -970,7 +974,7 @@ export function useCanvasInteraction({
       m.to = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
       setMarquee(normalizeRect(m.from, m.to))
     }
-    const up = () => {
+    const upGesture = () => {
       pan.current = null
 
       const rd = resizeDrag.current
@@ -1163,6 +1167,8 @@ export function useCanvasInteraction({
       setMarquee(null)
       setCursor(spaceDown.current ? 'grab' : 'default')
     }
+    // the drop: whatever the gesture committed, the full column check runs once now
+    const up = () => { try { upGesture() } finally { setDragging(false) } }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
     return () => {
