@@ -1,4 +1,6 @@
+import { memo, useMemo } from 'react'
 import { Group, Rect } from 'react-konva'
+import { firstById } from './BlockedFaceMarks'
 import { uprightFramesLocal } from '../generate/columnCheck'
 import { growToMinScreenSize, spin } from './shapes'
 
@@ -18,28 +20,33 @@ import { growToMinScreenSize, spin } from './shapes'
 const ORANGE = '#E67E22'
 const MIN_MARK_PX = 6
 
+/* One memoised item per mark, fed only its own rack (looked up once through
+   an id map, not a search per mark): a drag, a selection change or an edit
+   redraws only the marks on racks that actually changed. */
 export function UprightConflictMarks({ uprightHits = [], objects = [], gridSize = 40, zoom = 1 }) {
+  const byId = useMemo(() => firstById(objects), [objects])
   if (!uprightHits.length) return null
-  const sw = 2 / zoom
   return (
     <>
-      {uprightHits.map((h, i) => {
-        const obj = objects.find(o => o.id === h.rackId)
-        if (!obj) return null
-        const frames = uprightFramesLocal(obj, gridSize).filter(f => f.upright === h.upright && h.faces.includes(f.face))
-        return (
-          <Group key={i} name={'upright-conflict:' + h.rackId + ':' + h.upright} listening={false} {...spin(obj, gridSize)}>
-            {frames.map(f => {
-              const r = growToMinScreenSize({ x: f.x, y: f.y, width: f.w, height: f.h }, zoom, MIN_MARK_PX)
-              return (
-                <Rect key={f.face} x={r.x} y={r.y} width={r.width} height={r.height}
-                  fill="rgba(230,126,34,0.25)" stroke={ORANGE} strokeWidth={sw}
-                  perfectDrawEnabled={false} shadowForStrokeEnabled={false} listening={false} />
-              )
-            })}
-          </Group>
-        )
-      })}
+      {uprightHits.map((h, i) => <UprightItem key={i} h={h} obj={byId.get(h.rackId)} gridSize={gridSize} zoom={zoom} />)}
     </>
   )
 }
+
+const UprightItem = memo(function UprightItem({ h, obj, gridSize, zoom }) {
+  if (!obj) return null
+  const sw = 2 / zoom
+  const frames = uprightFramesLocal(obj, gridSize).filter(f => f.upright === h.upright && h.faces.includes(f.face))
+  return (
+    <Group name={'upright-conflict:' + h.rackId + ':' + h.upright} listening={false} {...spin(obj, gridSize)}>
+      {frames.map(f => {
+        const r = growToMinScreenSize({ x: f.x, y: f.y, width: f.w, height: f.h }, zoom, MIN_MARK_PX)
+        return (
+          <Rect key={f.face} x={r.x} y={r.y} width={r.width} height={r.height}
+            fill="rgba(230,126,34,0.25)" stroke={ORANGE} strokeWidth={sw}
+            perfectDrawEnabled={false} shadowForStrokeEnabled={false} listening={false} />
+        )
+      })}
+    </Group>
+  )
+})

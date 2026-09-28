@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, memo } from 'react'
 import { Group, Rect, Line, Text } from 'react-konva'
 import { pxToFtIn, getFpWallSegments, getObjectBounds } from '../utils/canvas'
 import { spin } from './shapes'
@@ -249,6 +249,13 @@ export function FpDimLabels({ obj, zoom, gridSize, activeWallIdx = null }) {
    rows' current store positions), so it lags a plain drag by the same one
    frame the rack body already does (BUG 6 only special-cased the selection
    outline and resize handles, not every derived overlay). */
+/* An aisle's label depends on the aisle and its two rows only, so it is a
+   memoised item fed exactly those: a drag redraws only the labels of aisles
+   beside a moved rack, a selection change redraws none. */
+export const AisleLabelItem = memo(function AisleLabelItem({ aisle, row1, row2, zoom, gridSize }) {
+  return <AisleLabel aisle={aisle} objects={[row1, row2].filter(Boolean)} zoom={zoom} gridSize={gridSize} />
+})
+
 export function AisleLabel({ aisle, objects, zoom, gridSize }) {
   /* Geometry from aisleLabelLayout (hitTest.js) — the same stations the pick
      tests against, so a label is exactly as clickable as it is visible.
@@ -295,6 +302,65 @@ export function AisleLabel({ aisle, objects, zoom, gridSize }) {
   )
 }
 
+/* One clearance label: redrawn only when its own block, column or the zoom
+   changed. The live check makes new block objects every frame, so they are
+   compared by content. */
+const sameContent = (x, y) => x === y || JSON.stringify(x) === JSON.stringify(y)
+
+/** Are the live blocks / columns exactly the held ones moved by (dx, dy)? */
+const nearly = (a, b) => Math.abs(a - b) < 1e-6
+function blocksMoveRigidly(blocks, cols, live, dx, dy) {
+  if (!blocks || !cols || blocks.length !== live.blocks.length || cols.length !== live.cols.length) return false
+  if (!cols.every((c, i) => { const q = live.cols[i]; return nearly(q.x, c.x + dx) && nearly(q.y, c.y + dy) && nearly(q.w, c.w) && nearly(q.h, c.h) })) return false
+  return blocks.every((a, i) => {
+    const b = live.blocks[i]
+    const keys = Object.keys(a)
+    if (keys.length !== Object.keys(b).length) return false
+    const gap = a.axis === 'x' ? dx : dy, cross = a.axis === 'x' ? dy : dx
+    return keys.every(k => (k === 'gapStart' || k === 'gapEnd') ? nearly(b[k], a[k] + gap)
+      : (k === 'crossStart' || k === 'crossEnd') ? nearly(b[k], a[k] + cross)
+      : JSON.stringify(a[k]) === JSON.stringify(b[k]))
+  })
+}
+const ClearanceItem = memo(function ClearanceItem({ a, i, col, zoom, gridSize }) {
+  const fs = 9 / zoom
+  const sw = 1.6 / zoom
+  if (!col || !a.axis) return null
+  const warn = aisleWarningRect(a, col)
+  return (
+    <Group name={'aisle-column:' + i} listening={false}>
+      {warn && (
+        <Rect name="aisle-warning" x={warn.x} y={warn.y} width={warn.w} height={warn.h}
+          fill="rgba(192,57,43,0.16)" stroke={SHORT_COLOR} strokeWidth={1.5 / zoom}
+          dash={[6 / zoom, 4 / zoom]} perfectDrawEnabled={false} listening={false} />
+      )}
+      {clearanceMarks(a, col, zoom, gridSize).map(m => {
+        /* A gap shorter on screen than its own label can't hold it:
+           slide the pill off to the side of the arrow instead of over
+           the column and rack (text is always horizontal, so the pill's
+           extent along the arrow differs by orientation). */
+        const pillW = m.label.text.length * fs * 0.62 + (3 / zoom) * 2, pillH = fs * 1.4
+        const gapLen = Math.hypot(m.arrowhead[0].x - m.shaft[0].x, m.arrowhead[0].y - m.shaft[0].y)
+        const along = a.axis === 'y' ? pillH : pillW, across = a.axis === 'y' ? pillW : pillH
+        const off = gapLen < along + 4 / zoom ? across / 2 + 6 / zoom : 0
+        const lx = m.label.x + (a.axis === 'y' ? off : 0), ly = m.label.y - (a.axis === 'x' ? off : 0)
+        return (
+        <Group key={m.side} listening={false}>
+          <Line points={[m.shaft[0].x, m.shaft[0].y, m.shaft[1].x, m.shaft[1].y]}
+            stroke={m.color} strokeWidth={sw} listening={false} />
+          <Line closed fill={m.color} listening={false}
+            points={m.arrowhead.flatMap(q => [q.x, q.y])} />
+          <LabelPill cx={lx} cy={ly} text={m.label.text} fontSize={fs} zoom={zoom}
+            color={m.color} bg={m.short ? 'rgba(254,226,226,0.95)' : 'rgba(224,242,254,0.92)'}
+            padX={3 / zoom} heightScale={1.4} rx={2 / zoom}
+            stroke={m.short ? SHORT_COLOR : '#7dd3fc'} strokeWidth={0.5 / zoom} opacity={0.95} />
+        </Group>
+        )
+      })}
+    </Group>
+  )
+}, (p, n) => p.i === n.i && p.zoom === n.zoom && p.gridSize === n.gridSize && sameContent(p.a, n.a) && sameContent(p.col, n.col))
+
 /* ── Column clearance labels + red aisle warning ─────────────────────────────
    For every column standing in a travel aisle: an arrow on EACH side, from
    the column's edge to the rack face on that side, labelled with the clear
@@ -312,8 +378,9 @@ export function AisleLabel({ aisle, objects, zoom, gridSize }) {
    so during one this re-runs just the cheap aisle part of the column check
    (aisleColumnBlocks) on the previewed layout (dragPreview.js). Otherwise it
    draws the full check's own aisleBlocks. */
-export function ColumnClearanceLabels({ aisleBlocks, columns, objects, zoom, gridSize = 40 }) {
-  const preview = useDragPreview()
+export function ColumnClearanceLabels({ aisleBlocks, columns, objects, zoom, gridSize = 40, rigidDrag = false }) {
+  const ids = useDragPreview(s => s.ids), dx = useDragPreview(s => s.dx), dy = useDragPreview(s => s.dy)
+  const preview = useMemo(() => ({ ids, dx, dy }), [ids, dx, dy])
   const { profile, pickBothSides } = useColumnCheck()
   const live = useMemo(() => {
     if (!preview.ids) return null
@@ -323,51 +390,19 @@ export function ColumnClearanceLabels({ aisleBlocks, columns, objects, zoom, gri
     return { cols, blocks: aisleColumnBlocks({ racks, columns: cols, profile, gridSize, pickBothSides }).aisleBlocks }
   }, [preview, objects, gridSize, profile, pickBothSides])
 
-  const blocks = live ? live.blocks : aisleBlocks
-  const cols = live ? live.cols : columns
+  /* rigidDrag: the drag moves everything these labels come from. When this
+     frame's live result is exactly the held one moved by the drag, the held
+     labels are drawn in a group offset by the drag — their props don't change,
+     so nothing re-renders. Otherwise (a float boundary can add or drop a
+     block) the live result is drawn, exactly as before. */
+  const moveHeld = rigidDrag && !!live && blocksMoveRigidly(aisleBlocks, columns, live, dx, dy)
+  const blocks = live && !moveHeld ? live.blocks : aisleBlocks
+  const cols = live && !moveHeld ? live.cols : columns
   if (!blocks?.length || !cols?.length) return null
-  const fs = 9 / zoom
-  const sw = 1.6 / zoom
 
   return (
-    <Group name="column-clearance-labels" listening={false}>
-      {blocks.map((a, i) => {
-        const col = cols[a.columnIndex]
-        if (!col || !a.axis) return null
-        const warn = aisleWarningRect(a, col)
-        return (
-          <Group key={i} name={'aisle-column:' + i} listening={false}>
-            {warn && (
-              <Rect name="aisle-warning" x={warn.x} y={warn.y} width={warn.w} height={warn.h}
-                fill="rgba(192,57,43,0.16)" stroke={SHORT_COLOR} strokeWidth={1.5 / zoom}
-                dash={[6 / zoom, 4 / zoom]} perfectDrawEnabled={false} listening={false} />
-            )}
-            {clearanceMarks(a, col, zoom, gridSize).map(m => {
-              /* A gap shorter on screen than its own label can't hold it:
-                 slide the pill off to the side of the arrow instead of over
-                 the column and rack (text is always horizontal, so the pill's
-                 extent along the arrow differs by orientation). */
-              const pillW = m.label.text.length * fs * 0.62 + (3 / zoom) * 2, pillH = fs * 1.4
-              const gapLen = Math.hypot(m.arrowhead[0].x - m.shaft[0].x, m.arrowhead[0].y - m.shaft[0].y)
-              const along = a.axis === 'y' ? pillH : pillW, across = a.axis === 'y' ? pillW : pillH
-              const off = gapLen < along + 4 / zoom ? across / 2 + 6 / zoom : 0
-              const lx = m.label.x + (a.axis === 'y' ? off : 0), ly = m.label.y - (a.axis === 'x' ? off : 0)
-              return (
-              <Group key={m.side} listening={false}>
-                <Line points={[m.shaft[0].x, m.shaft[0].y, m.shaft[1].x, m.shaft[1].y]}
-                  stroke={m.color} strokeWidth={sw} listening={false} />
-                <Line closed fill={m.color} listening={false}
-                  points={m.arrowhead.flatMap(q => [q.x, q.y])} />
-                <LabelPill cx={lx} cy={ly} text={m.label.text} fontSize={fs} zoom={zoom}
-                  color={m.color} bg={m.short ? 'rgba(254,226,226,0.95)' : 'rgba(224,242,254,0.92)'}
-                  padX={3 / zoom} heightScale={1.4} rx={2 / zoom}
-                  stroke={m.short ? SHORT_COLOR : '#7dd3fc'} strokeWidth={0.5 / zoom} opacity={0.95} />
-              </Group>
-              )
-            })}
-          </Group>
-        )
-      })}
+    <Group name="column-clearance-labels" listening={false} x={moveHeld ? dx : 0} y={moveHeld ? dy : 0}>
+      {blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={cols[a.columnIndex]} zoom={zoom} gridSize={gridSize} />)}
     </Group>
   )
 }

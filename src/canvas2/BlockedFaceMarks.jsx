@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import { Group, Line } from 'react-konva'
 import { positionRectForIndex, growToMinScreenSize, spin } from './shapes'
 
@@ -36,34 +37,45 @@ const RED = '#C0392B'
  * as a column marker. */
 const MIN_MARK_PX = 6
 
+/* One memoised item per mark, fed only its own rack (looked up once through
+   an id map, not a search per mark): a drag, a selection change or an edit
+   redraws only the marks on racks that actually changed. */
 export function BlockedFaceMarks({ rackConflicts = [], objects = [], gridSize = 40, zoom = 1 }) {
+  const byId = useMemo(() => firstById(objects), [objects])
   if (!rackConflicts.length) return null
-  const sw = 2 / zoom
-
   return (
     <>
-      {rackConflicts.map((c, i) => {
-        if (c.bayIndex == null) return null
-        const obj = objects.find(o => o.id === c.rackId)
-        if (!obj) return null
-        const faces = c.faces || [0]
-        const positions = c.positionIndices || []
-        return (
-          <Group key={i} name={'blocked-face:' + c.rackId + ':' + i} listening={false} {...spin(obj, gridSize)}>
-            {faces.flatMap(f => positions.map(p => {
-              const raw = positionRectForIndex(obj, gridSize, c.bayIndex, p, f)
-              if (!raw || !(raw.width > 0)) return null
-              const r = growToMinScreenSize(raw, zoom, MIN_MARK_PX)
-              return (
-                <Group key={f + ':' + p} listening={false}>
-                  <Line points={[r.x, r.y, r.x + r.width, r.y + r.height]} stroke={RED} strokeWidth={sw} listening={false} />
-                  <Line points={[r.x + r.width, r.y, r.x, r.y + r.height]} stroke={RED} strokeWidth={sw} listening={false} />
-                </Group>
-              )
-            }))}
-          </Group>
-        )
-      })}
+      {rackConflicts.map((c, i) => <BlockedFaceItem key={i} c={c} i={i} obj={byId.get(c.rackId)} gridSize={gridSize} zoom={zoom} />)}
     </>
   )
 }
+
+/** id -> object, the FIRST with that id (what objects.find returned). */
+export function firstById(objects) {
+  const m = new Map()
+  for (const o of objects) if (o && !m.has(o.id)) m.set(o.id, o)
+  return m
+}
+
+const BlockedFaceItem = memo(function BlockedFaceItem({ c, i, obj, gridSize, zoom }) {
+  if (c.bayIndex == null) return null
+  if (!obj) return null
+  const sw = 2 / zoom
+  const faces = c.faces || [0]
+  const positions = c.positionIndices || []
+  return (
+    <Group name={'blocked-face:' + c.rackId + ':' + i} listening={false} {...spin(obj, gridSize)}>
+      {faces.flatMap(f => positions.map(p => {
+        const raw = positionRectForIndex(obj, gridSize, c.bayIndex, p, f)
+        if (!raw || !(raw.width > 0)) return null
+        const r = growToMinScreenSize(raw, zoom, MIN_MARK_PX)
+        return (
+          <Group key={f + ':' + p} listening={false}>
+            <Line points={[r.x, r.y, r.x + r.width, r.y + r.height]} stroke={RED} strokeWidth={sw} listening={false} />
+            <Line points={[r.x + r.width, r.y, r.x, r.y + r.height]} stroke={RED} strokeWidth={sw} listening={false} />
+          </Group>
+        )
+      }))}
+    </Group>
+  )
+})

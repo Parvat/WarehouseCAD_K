@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Group, Line } from 'react-konva'
 import { bayRectForIndex, growToMinScreenSize, spin } from './shapes'
 import { oversizedBayIndices } from '../utils/capacity'
@@ -29,30 +30,33 @@ const BEAM_RACK_TYPES = new Set(['rack_row', 'rack_double_row'])
  * the same "never invisible at any zoom" floor everywhere else. */
 const MIN_MARK_PX = 6
 
+/* One memoised item per rack: only a rack that changed redraws its marks. */
 export function OversizedBayMarks({ objects = [], gridSize = 40, zoom = 1 }) {
   const racks = objects.filter(o => BEAM_RACK_TYPES.has(o.type) && Array.isArray(o.beams) && o.beams.length)
   if (!racks.length) return null
 
   return (
     <>
-      {racks.map(obj => {
-        const palletFaceIn = obj.palletWIn || 40
-        const bad = oversizedBayIndices(obj.beams, palletFaceIn)
-        if (!bad.length) return null
-        return (
-          <Group key={obj.id} name={'oversized-bay:' + obj.id} listening={false} {...spin(obj, gridSize)}>
-            {bad.flatMap(bayIndex => bayRectForIndex(obj, gridSize, bayIndex).map((raw, f) => {
-              const r = growToMinScreenSize(raw, zoom, MIN_MARK_PX)
-              return (
-                <Group key={bayIndex + ':' + f} listening={false}>
-                  <Line points={[r.x, r.y, r.x + r.width, r.y + r.height]} stroke={RED} strokeWidth={2 / zoom} listening={false} />
-                  <Line points={[r.x + r.width, r.y, r.x, r.y + r.height]} stroke={RED} strokeWidth={2 / zoom} listening={false} />
-                </Group>
-              )
-            }))}
-          </Group>
-        )
-      })}
+      {racks.map(obj => <OversizedItem key={obj.id} obj={obj} gridSize={gridSize} zoom={zoom} />)}
     </>
   )
 }
+
+const OversizedItem = memo(function OversizedItem({ obj, gridSize, zoom }) {
+  const palletFaceIn = obj.palletWIn || 40
+  const bad = oversizedBayIndices(obj.beams, palletFaceIn)
+  if (!bad.length) return null
+  return (
+    <Group name={'oversized-bay:' + obj.id} listening={false} {...spin(obj, gridSize)}>
+      {bad.flatMap(bayIndex => bayRectForIndex(obj, gridSize, bayIndex).map((raw, f) => {
+        const r = growToMinScreenSize(raw, zoom, MIN_MARK_PX)
+        return (
+          <Group key={bayIndex + ':' + f} listening={false}>
+            <Line points={[r.x, r.y, r.x + r.width, r.y + r.height]} stroke={RED} strokeWidth={2 / zoom} listening={false} />
+            <Line points={[r.x + r.width, r.y, r.x, r.y + r.height]} stroke={RED} strokeWidth={2 / zoom} listening={false} />
+          </Group>
+        )
+      }))}
+    </Group>
+  )
+})

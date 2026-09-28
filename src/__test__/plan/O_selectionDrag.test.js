@@ -193,11 +193,18 @@ describe('O — every derived overlay is drawn from the previewed objects', () =
   const scene = readFileSync(new URL('../../canvas2/useCanvasInteraction.js', import.meta.url), 'utf8')
   const fed = (comp) => new RegExp(`<${comp}\\b[^>]*\\bobjects=\\{pObjects\\}`).test(src)
 
-  it('O-wire: pObjects is the store objects with the live drag offset applied', () => {
-    expect(src).toMatch(/const preview = useDragPreview\(\)/)
-    expect(src).toMatch(/const pObjects = useMemo\(\(\) => previewObjects\(objects, preview\)/)
+  it('O-wire: pObjects is the store objects with the live drag offset applied — or, when the drag carries everything, the store objects inside a group offset by the drag', () => {
+    expect(src).toMatch(/const shifted = useMemo\(\(\) => previewObjects\(objects, \{ ids, dx, dy \}\)/)
+    expect(src).toMatch(/const pObjects = rigid \? objects : shifted/)
+    expect(src).toMatch(/const rigid = useMemo\(\(\) => !!ids && objects\.every\(o => !feedsOverlays\(o\) \|\| ids\.has\(o\.id\)\)/)
+    expect(src).toMatch(/<Group x=\{rigid \? dx : 0\} y=\{rigid \? dy : 0\}/)
   })
-  for (const comp of ['AisleLabel', 'BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) {
+  it('O-wire: AisleLabel is drawn from its two rows in the previewed objects — moved as a group only while every label is exactly the unshifted one moved', () => {
+    expect(src).toMatch(/<AisleLabelItem\b[^>]*row1=\{aisleById\.get\(a\.row1Id\)\} row2=\{aisleById\.get\(a\.row2Id\)\}/)
+    expect(src).toMatch(/const aisleSrc = aisleRigid \|\| !rigid \? pObjects : shifted/)
+    expect(src).toMatch(/<Group x=\{aisleRigid \? dx : 0\} y=\{aisleRigid \? dy : 0\}/)
+  })
+  for (const comp of ['BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) {
     it(`O-wire: ${comp} is drawn from pObjects`, () => expect(fed(comp)).toBe(true))
   }
   it('O-wire: the clearance labels re-run the aisle check on the previewed layout', () => {
