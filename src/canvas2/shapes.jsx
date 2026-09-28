@@ -4,6 +4,7 @@ import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { uprightXs, cantileverGeom, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
 import { columnGridOps } from '../render/columnDraw'
+import { isAxisAligned, deviceScale, minDevicePx, snapBorderRects, snapFillRect } from '../render/pixelSnap'
 import { labelScale } from '../render/labelSize'
 
 const DEFAULT_LZ = labelScale()
@@ -89,11 +90,51 @@ export function spin(obj, gridSize = 40) {
  *  Knows nothing about racks: add a type there and this paints it. */
 /* `lz`: the Label size scale (render/labelSize.js) — the travel arrows are
    drawing size and take it; nothing here reads the view zoom. */
+/* Rack lines — body outlines and upright frames — are drawn at their ACTUAL
+   size but never thinner than 1 screen px, every edge on a whole device
+   pixel (render/pixelSnap.js), so bay lines and outlines stay visible and
+   crisp at every zoom. Painted in device space from the canvas's own live
+   transform (pan, zoom, the rack's rotation, pixel ratio), so nothing here
+   reads the zoom and nothing re-renders on zoom. A rack turned off the 90°
+   grid cannot land on pixels: it is drawn in world space with the floor. */
+const pixelRatioOf = (ctx) => (ctx.canvas && ctx.canvas.getPixelRatio ? ctx.canvas.getPixelRatio() : 1)
+function paintSnapped(ctx, fill, snapped, fallback) {
+  const c = ctx._context, t = c.getTransform()
+  const m = { a: t.a, b: t.b, c: t.c, d: t.d, e: t.e, f: t.f }
+  const minPx = minDevicePx(pixelRatioOf(ctx))
+  c.fillStyle = fill
+  if (!isAxisAligned(m)) { fallback(c, minPx / deviceScale(m)); return }
+  c.setTransform(1, 0, 0, 1, 0, 0)
+  const rs = snapped(m, minPx)
+  for (let i = 0; i < rs.length; i++) c.fillRect(rs[i].x, rs[i].y, rs[i].w, rs[i].h)
+  c.setTransform(t)
+}
+
 export function Ops({ ops, opacity = 1, listening = false, lz = DEFAULT_LZ }) {
   if (!ops || !ops.length) return null
   return (
     <>
       {ops.map((o, i) => {
+        /* A rack body: the fill at its actual size, then the outline as
+           snapped device-pixel strips (actual width, 1 px floor). */
+        if (o.op === 'rect' && o.border) {
+          /* One node: the fill in world space, then the outline in device
+             space. The hit area is the plain rect (hitFunc), and the node
+             states its own bounds, as a sceneFunc Shape must. */
+          return (
+            <Shape key={i} name="rack-border" fill={o.fill} listening={listening} perfectDrawEnabled={false}
+              opacity={(o.opacity ?? 1) * opacity}
+              ref={(n) => { if (n) n.getSelfRect = () => ({ x: o.x, y: o.y, width: o.w, height: o.h }) }}
+              sceneFunc={(ctx) => {
+                const c = ctx._context
+                if (o.fill) { c.fillStyle = o.fill; c.fillRect(o.x, o.y, o.w, o.h) }
+                paintSnapped(ctx, o.stroke,
+                  (m, minPx) => snapBorderRects(m, o, o.strokeWidth, minPx),
+                  (c2, floor) => { c2.strokeStyle = o.stroke; c2.lineWidth = Math.max(o.strokeWidth, floor); c2.strokeRect(o.x, o.y, o.w, o.h) })
+              }}
+              hitFunc={(ctx, shape) => { ctx.beginPath(); ctx.rect(o.x, o.y, o.w, o.h); ctx.closePath(); ctx.fillShape(shape) }} />
+          )
+        }
         if (o.op === 'rect') {
           return (
             <Rect key={i} x={o.x} y={o.y} width={o.w} height={o.h}
@@ -112,16 +153,20 @@ export function Ops({ ops, opacity = 1, listening = false, lz = DEFAULT_LZ }) {
               shadowForStrokeEnabled={false} listening={listening} />
           )
         }
-        /* Upright frames at their REAL width at every zoom (uprightDrawRects). */
+        /* Upright frames at their REAL width (uprightDrawRects), 1 px floor,
+           snapped to whole pixels. */
         if (o.op === 'uprights') {
           return (
-            <Shape key={i} listening={false} perfectDrawEnabled={false}
+            <Shape key={i} name="rack-uprights" listening={false} perfectDrawEnabled={false}
               opacity={(o.opacity ?? 1) * opacity}
-              sceneFunc={(ctx) => {
-                const c = ctx._context
-                c.fillStyle = o.fill
-                for (const r of uprightDrawRects(o)) c.fillRect(r.x, r.y, r.w, r.h)
-              }} />
+              sceneFunc={(ctx) => paintSnapped(ctx, o.fill,
+                (m, minPx) => uprightDrawRects(o).map(r => snapFillRect(m, r, minPx)),
+                (c, floor) => {
+                  for (const r of uprightDrawRects(o)) {
+                    const w = Math.max(r.w, floor), h = Math.max(r.h, floor)
+                    c.fillRect(r.x + (r.w - w) / 2, r.y + (r.h - h) / 2, w, h)
+                  }
+                })} />
           )
         }
         /* Travel arrows are a legend mark: drawing size, by the Label size

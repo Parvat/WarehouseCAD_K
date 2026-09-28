@@ -489,6 +489,56 @@ selected):
 | Overlay nodes, whole-building view | 11,363 | 6,642 | 11,934 | 6,927 |
 | Overlay nodes, Column labels off | — | 3,933 | — | 3,534 |
 
+### PX — Rack lines: actual size, 1 px floor, whole pixels · `PX_rackLines.test.js` (11 tests)
+**What changed:**
+- **Rack outlines** are real lines of `RACK_BORDER_IN` = 0.45″, which is
+  1.5 world px at 40 px/ft. They are flagged `border: true` in
+  `rackOps`. The PDF has always printed them at this width, so the PDF is
+  unchanged.
+- **Outlines and upright frames** are drawn at their actual size, never
+  thinner than one CSS pixel. That is 1 device px at pixel ratio 1, and 2 at
+  ratio 1.5 or 2.
+- **Every edge is snapped** to a whole device pixel
+  (`render/pixelSnap.js`).
+- **Painting happens in device space**, from the canvas's live transform
+  inside the sceneFunc, so nothing reads the zoom.
+- **A rack off the 90° grid** can't land on pixels. It is drawn in world
+  space with the same floor instead.
+- **One node per rack body:** the fill (still actual size) and the snapped
+  outline are one Shape, with a plain-rect `hitFunc` and its own bounds.
+- **Unchanged:** lane dividers, rails and other hairlines stay
+  screen-constant. Columns are untouched.
+
+| Test (1080×410, every rack; ×2 h/v unless noted) | Asserts |
+|---|---|
+| `PX-layout` | horizontal racks sit at 0°, vertical at 90°; every rack has an outline at `rackBorderWidth` and one uprights op; every transform is axis-aligned |
+| `PX-in` | at 100 / 300 / 500 % and four fractional pans, each outline strip is `round(actual)` px (within ½ px). Each upright edge is its actual edge rounded (within ½ px), so its width is within 1 px |
+| `PX-out` | at 2 / 5 / 10 %, every outline strip is exactly 1 px, and every upright thinner than a pixel is exactly 1 px across (over 1,000 of them) |
+| `PX-whole` | at pixel ratios 1, 1.5 and 2, five zooms and four pans, every painted rect has integer coordinates and is at least the floor wide |
+| `PX-pdf` | the PDF prints every outline at stroke-width 1.5 (0.45″) |
+| `PX-wire` (once) | the canvas paints outlines and uprights through the snapper, with a floor from the pixel ratio; the body carries no stroke of its own; the column shape has no snapping |
+
+**Checked in the app, horizontal (0°) and vertical (90° racks):** the
+painted width was measured on the scene canvas, with a fractional pan.
+
+| Zoom | Outline, actual → drawn | Upright, actual → drawn |
+|---|---|---|
+| 5 % | 0.08 → **1** | 0.5 → **1** |
+| 20 % | 0.3 → **1** | 2 → 2 |
+| 100 % | 1.5 → 2 | 10 → 10 |
+| 300 % | 4.5 → 5 | 30 → 30 |
+
+- Both orientations give the same numbers.
+- At pixel ratio 2, the 5 % outline is 2 device px (one CSS px) and 100 % is
+  3.
+- With the floor removed, outlines at 5 % and 20 % disappear (0 px) in both
+  orientations.
+- Clicking a rack still selects it at 5 %, 30 % and 100 %.
+- No console errors.
+- **Scene-layer redraw** for the whole layout: about 14–15 ms, against
+  12–13 ms before (headless, software rendering). The extra time is
+  snapping about 20,000 uprights.
+
 ### FU — Follow-ups: real uprights, drawing-size arrows, Extra large, PDF label size, per-aisle size, column look · `FU_labelFollowUps.test.js` (12 tests)
 - **Upright frames** are drawn at their real `uprightWidth` at every zoom
   (`uprightDrawRects`); the minimum on-screen width is gone.
@@ -1614,6 +1664,10 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | FU | **Screen-constant column outline** | 1: FU-columns | ✓ |
 | FU | **Columns drawn under racks in the PDF** | 2: FU-columns-top h/v | ✓ |
 | FU | **Columns drawn under racks on the canvas** | 2: FU-columns-top h/v (and in the app: horizontal 12 of 24 columns hidden) | ✓ |
+| PX | **Remove the 1 px floor** | 4: PX-out h/v, PX-whole h/v (in the app: outlines at 5 % and 20 % become 0 px) | ✓ |
+| PX | **Floor 2 px** (thicker than 1) | 3: PX-out h/v, PX-whole | ✓ |
+| PX | **No snapping** (fractional edges) | 2: PX-whole h/v | ✓ |
+| PX | **Screen-constant outline again** | 4: PX-in h/v, PX-out h/v | ✓ |
 | LZ | **Labels sized by the view zoom again** | 2: LZ-zoom h/v | ✓ |
 | LZ | **X marks ignore Label size** (fixed stroke) | 2: LZ-all h/v | ✓ |
 | LZ | **Aisle labels a fixed size** | 6: LZ-feet, LZ-all, LZ-pdf (h/v) | ✓ |
@@ -1761,8 +1815,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,872 tests, 1,872 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,269 tests, 2,269 passing.**
+- **Plan suite: 1,883 tests, 1,883 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,280 tests, 2,280 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

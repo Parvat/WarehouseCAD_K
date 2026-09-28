@@ -16,8 +16,12 @@
 //   { op:'path', d, stroke?, strokeWidth?, fill? }        d = SVG path data
 //
 // `strokeWidth` is in SCREEN pixels and does not scale with zoom — Konva gets
-// strokeScaleEnabled={false}, SVG gets vector-effect="non-scaling-stroke". A
-// hairline divider has to stay a hairline at 400% or it becomes a slab.
+// strokeScaleEnabled={false}. A hairline divider has to stay a hairline at
+// 400% or it becomes a slab. EXCEPT a rack's body outline (`border: true`):
+// that is a real line of RACK_BORDER_IN, in WORLD units like the upright
+// frames, and the canvas draws both at their actual size with a 1-screen-px
+// floor, snapped to whole pixels (render/pixelSnap.js). The PDF prints the
+// same world width.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /* The locked rack symbology. Literal by design: CLAUDE.md keeps canvas object
@@ -35,6 +39,12 @@ export const RACK_PALETTE = {
 }
 
 export const RACK_LINE = { edge: 1.5, hair: 1.2, rail: 1 }   // screen px
+
+/** A rack body outline's actual width, inches: 0.45" = 1.5 world px at
+ *  40 px/ft, the width the PDF has always printed it at. */
+export const RACK_BORDER_IN = 0.45
+/** The outline's width in world px. */
+export const rackBorderWidth = (gridSize = 40) => (RACK_BORDER_IN / 12) * gridSize
 
 /** Upright boundary positions across a beam rack.
  *  Layout is `upright | beam | upright | beam | upright`, so there are
@@ -65,7 +75,7 @@ export function rackRowOps(obj, gridSize) {
     op: 'rect', x, y, w, h,
     fill: RACK_PALETTE.fill,
     stroke: RACK_PALETTE.border,
-    strokeWidth: RACK_LINE.edge,
+    strokeWidth: rackBorderWidth(gridSize), border: true,
   }]
 
   const uprights = uprightsOp(xs, upW, [{ y, h }])
@@ -88,7 +98,9 @@ function uprightsOp(lefts, upW, bands) {
   return { op: 'uprights', rects, fill: RACK_PALETTE.upright }
 }
 
-/** The rects an `uprights` op paints: each frame at its real width. */
+/** The rects an `uprights` op paints, in world px: each frame at its real
+ *  width. (The canvas then gives each a 1-screen-px floor and snaps it to
+ *  whole pixels — render/pixelSnap.js — which is a screen matter, not data.) */
 export function uprightDrawRects(op) {
   return op.rects.map(r => ({ x: r.x, y: r.y, w: r.w, h: r.h }))
 }
@@ -122,13 +134,13 @@ export function rackDoubleRowOps(obj, gridSize) {
   /* Guard a flue taller than the object itself — a malformed rack should draw
      as one band rather than two inverted ones. */
   const rowH = Math.max(0, (h - flueH) / 2)
-  if (rowH <= 0) return rackBoxOps(obj)
+  if (rowH <= 0) return rackBoxOps(obj, gridSize)
 
   const band = (by) => ({
     op: 'rect', x, y: by, w, h: rowH,
     fill: RACK_PALETTE.fill,
     stroke: RACK_PALETTE.border,
-    strokeWidth: RACK_LINE.edge,
+    strokeWidth: rackBorderWidth(gridSize), border: true,
   })
 
   const topY = y
@@ -150,12 +162,12 @@ export function rackDoubleRowOps(obj, gridSize) {
  *  level-of-detail collapse here: consolidating each rack to two nodes made
  *  full detail cheap enough to draw at every zoom, and dropping the threshold
  *  means these ops no longer depend on zoom at all. */
-export function rackBoxOps(obj) {
+export function rackBoxOps(obj, gridSize = 40) {
   return [{
     op: 'rect', x: obj.x, y: obj.y, w: obj.width, h: obj.height,
     fill: RACK_PALETTE.fill,
     stroke: RACK_PALETTE.border,
-    strokeWidth: RACK_LINE.edge,
+    strokeWidth: rackBorderWidth(gridSize), border: true,
   }]
 }
 
@@ -187,7 +199,7 @@ function laneChassisOps(obj, gridSize, { backWall = false } = {}) {
     op: 'rect', x, y, w, h,
     fill: RACK_PALETTE.fill,
     stroke: RACK_PALETTE.border,
-    strokeWidth: RACK_LINE.edge,
+    strokeWidth: rackBorderWidth(gridSize), border: true,
   }]
 
   const dividers = dividerPath(postXs.slice(1, -1), upW, [{ y, h }])
@@ -408,7 +420,7 @@ export function rackMezzanineOps(obj, gridSize) {
     op: 'rect', x, y, w, h,
     fill: RACK_PALETTE.fill,
     stroke: RACK_PALETTE.border,
-    strokeWidth: RACK_LINE.edge,
+    strokeWidth: rackBorderWidth(gridSize), border: true,
   }]
 
   const span = gridSize * 6
@@ -447,7 +459,7 @@ export function rackShelvingOps(obj, gridSize) {
     { op: 'rect', x, y, w, h,
       fill: RACK_PALETTE.fill,
       stroke: RACK_PALETTE.border,
-      strokeWidth: RACK_LINE.edge },
+      strokeWidth: rackBorderWidth(gridSize), border: true },
     // end frames — both uprights in one path
     { op: 'path', d: `M${x} ${y}L${x} ${y + h}M${x + w} ${y}L${x + w} ${y + h}`,
       stroke: RACK_PALETTE.border, strokeWidth: RACK_LINE.edge * 1.5 },

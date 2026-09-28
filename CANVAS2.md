@@ -66,10 +66,14 @@ down first this time.
    drawn from ops that the PDF export prints too. They scale with the racks;
    nothing re-renders on zoom. Only UI stays screen-constant (`N / zoom`):
    selection and resize handles, rotate grips, snap-guide thresholds, the
-   measure tool and rulers. Columns and upright frames are drawn at their
-   real size at every zoom (`render/columnDraw.js`, `uprightDrawRects`) —
-   no minimum on-screen size, no enlarged marker — and columns paint above
-   racks. Never size anything on the drawing by the view zoom.
+   measure tool and rulers. Columns and rack fill are drawn at their real
+   size at every zoom (`render/columnDraw.js`) — no minimum on-screen size,
+   no enlarged marker — and columns paint above racks. Rack LINES (body
+   outlines, 0.45″, and upright frames) are drawn at their actual size too,
+   but never thinner than 1 screen px and snapped to whole device pixels
+   (`render/pixelSnap.js`), from the canvas's live transform inside the
+   sceneFunc, so zooming still re-renders nothing. Never size anything on
+   the drawing by the view zoom.
 
 ---
 
