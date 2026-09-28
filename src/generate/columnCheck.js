@@ -220,35 +220,64 @@ function insideAnyFloor(rect, floors) {
  *  `rackId:bay:face:pos` keys the in-rack check already charged — those are
  *  never counted twice. `floors`: world-space polygons ([{x,y}, ...]) of the
  *  building; empty means no walls are known. */
+/* Per-rack results, reused across calls. A rack's pick zones are fixed by the
+   rack itself; whether one is blocked also depends on the racks near those
+   zones, on the rack's own in-rack blocked positions and on the columns,
+   floors, truck profile and grid. Each rack's answer is kept under a key made
+   of all of that (the rack's full content, not its identity — an object
+   changed in place is still re-checked), so after an edit only the touched
+   rack and its neighbours are worked out again. Columns / floors / profile /
+   grid are compared by identity and clear everything when they change. */
+let pickCache = null
+
 export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, floors = [], alreadyBlocked = new Set() }) {
   const aislePx = profile.aisleFt * gridSize
   const out = []
   if (!columns.length || !(aislePx > 0)) return out
+  if (!pickCache || pickCache.columns !== columns || pickCache.profile !== profile || pickCache.floors !== floors || pickCache.gridSize !== gridSize) {
+    pickCache = { columns, profile, floors, gridSize, zones: new Map(), blocks: new Map() }
+  }
   const rackFeet = racks.map(r => ({ id: r.id, f: rackFootprint(r) }))
+  const blockedBy = new Map()
+  for (const k of alreadyBlocked) { const id = k.slice(0, k.indexOf(':')); blockedBy.set(id, (blockedBy.get(id) || '') + k + ',') }
 
   for (const r of racks) {
     if (!PICK_TYPES.has(r.type)) continue
     if (((r.rotation || 0) % 90) !== 0) continue
     const isDouble = r.type === 'rack_double_row'
     const levels = r.levels || 1
-    const { beams } = uprightXs(r, gridSize)
-    const palletWIn = r.palletWIn || 40
+    const content = JSON.stringify(r)
 
-    // every zone this rack has, to narrow the columns and racks to test against
-    const zones = []
-    beams.forEach((beamIn, bayIndex) => {
-      const n = positionsPerBeam(beamIn, palletWIn)
-      for (let p = 0; p < n; p++) for (const side of ['near', 'far']) { const z = pickZoneRect(r, gridSize, bayIndex, p, side, aislePx); if (z) zones.push(z) }
-    })
-    const near = boxOf(zones)
-    const nearCols = columnsNear(columns, near)
+    // every zone this rack has (by bay, position and side), and their bounding box
+    let zi = pickCache.zones.get(r.id)
+    if (!zi || zi.content !== content) {
+      const { beams } = uprightXs(r, gridSize)
+      const palletWIn = r.palletWIn || 40
+      const at = new Map(), list = []
+      beams.forEach((beamIn, bayIndex) => {
+        const n = positionsPerBeam(beamIn, palletWIn)
+        for (let p = 0; p < n; p++) for (const side of ['near', 'far']) {
+          const z = pickZoneRect(r, gridSize, bayIndex, p, side, aislePx)
+          at.set(bayIndex + ':' + p + ':' + side, z)
+          if (z) list.push(z)
+        }
+      })
+      zi = { content, beams, palletWIn, at, near: boxOf(list) }
+      pickCache.zones.set(r.id, zi)
+    }
+    const { beams, palletWIn, at, near } = zi
     const nearFeet = near ? rackFeet.filter(o => overlaps(near, o.f)) : []
+    const key = content + '|' + nearFeet.map(o => o.id + ':' + o.f.x + ',' + o.f.y + ',' + o.f.w + ',' + o.f.h).join(';') + '|' + (String(r.id).includes(':') ? [...alreadyBlocked].filter(k => k.startsWith(r.id + ':')).join(',') : (blockedBy.get(r.id) || ''))
+    const hit = pickCache.blocks.get(r.id)
+    if (hit && hit.key === key) { out.push(...hit.blocks); continue }
 
+    const nearCols = columnsNear(columns, near)
     // is this zone an aisle a single can be picked from?
     const isOpenAisle = (zone) =>
       !nearFeet.some(o => o.id !== r.id && overlaps(zone, o.f)) &&
       (!floors.length || insideAnyFloor(zone, floors))
 
+    const start = out.length
     beams.forEach((beamIn, bayIndex) => {
       const n = positionsPerBeam(beamIn, palletWIn)
       const faceSides = isDouble ? [[0, ['near']], [1, ['far']]] : [[0, ['near', 'far']]]
@@ -260,7 +289,7 @@ export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILE
           let pickSides = 0, blockedSides = 0
           const hitting = []
           for (const side of sides) {
-            const zone = pickZoneRect(r, gridSize, bayIndex, p, side, aislePx)
+            const zone = at.get(bayIndex + ':' + p + ':' + side)
             if (!zone) continue
             if (!isDouble && !isOpenAisle(zone)) continue
             pickSides++
@@ -280,6 +309,7 @@ export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILE
         }
       }
     })
+    pickCache.blocks.set(r.id, { key, blocks: out.slice(start) })
   }
   return out
 }

@@ -66,6 +66,29 @@ describe('PF — the optimised column check equals the frozen reference', () => 
     }, 120000)
   }
 
+  /* The pick-zone results are cached per rack between calls (same columns /
+     floors / profile objects, as the app passes them). A sequence of edits —
+     racks replaced by moved copies, racks changed IN PLACE, racks removed and
+     added, levels, pick-both-sides toggled — must still equal the reference on
+     every call: a stale per-rack answer would show up here. */
+  for (const [id, orientation] of [['M11', 'horizontal'], ['M11', 'vertical'], ['M3', 'vertical']]) {
+    it(`PF-cache ${id} ${orientation}: 40 incremental edits with shared inputs, every call equals the reference`, () => {
+      const b = build(id, orientation, true)
+      const R = rng(4242 + id.length + orientation.length)
+      let racks = b.racks.map(r => ({ ...r }))
+      for (let step = 0; step < 40; step++) {
+        const k = Math.floor(R() * racks.length), q = R()
+        if (q < 0.3) racks = racks.map((r, i) => (i === k ? { ...r, x: r.x + (R() - 0.5) * 8 * GS, y: r.y + (R() - 0.5) * 8 * GS } : r))
+        else if (q < 0.5) { racks[k].x += (R() - 0.5) * 6 * GS; racks[k].levels = 1 + Math.floor(R() * 5) }           // mutated in place
+        else if (q < 0.6) racks = racks.filter((_, i) => i !== k)
+        else if (q < 0.7) racks = [...racks, { ...racks[k], id: 'n' + step, type: 'rack_row', height: racks[k].height / 2 - 4, y: racks[k].y + (R() - 0.5) * 16 * GS }]
+        else if (q < 0.8) racks = racks.map((r, i) => (i === k ? { ...r, rotation: ((r.rotation || 0) + 180) % 360 } : r))
+        const args = { racks, columns: b.columns, floors: b.floors, profile: b.profile, gridSize: GS, pickBothSides: step % 7 === 0 }
+        expect(checkColumns(args), `step ${step}`).toEqual(REF.checkColumns(args))
+      }
+    }, 120000)
+  }
+
   it('PF-aisle: the per-frame aisle check is untouched (same as the reference) on the edited layouts', () => {
     const b = build('M11', 'vertical', true)
     const racks = b.racks.map((r, i) => (i % 5 === 0 ? { ...r, x: r.x + 2 * GS, y: r.y + 3 * GS } : r))
