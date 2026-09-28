@@ -2,8 +2,11 @@ import { useCallback, useMemo, memo } from 'react'
 import { Group, Rect, Path, Shape, Circle, Line, Text } from 'react-konva'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
-import { uprightXs, cantileverGeom, uprightDrawRects } from '../render/rackOps'
-import { rackBandsWorld, columnMarkerRect } from './columnMarker'
+import { uprightXs, cantileverGeom, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
+import { columnGridOps } from '../render/columnDraw'
+import { labelScale } from '../render/labelSize'
+
+const DEFAULT_LZ = labelScale()
 import { bayRectForIndex, positionRectForIndex } from '../render/bayGeom'
 export { bayRectForIndex, positionRectForIndex }
 import { aisleRect } from './hitTest'
@@ -84,7 +87,9 @@ export function spin(obj, gridSize = 40) {
 
 /** Paints a renderer-neutral op list from render/rackOps.js.
  *  Knows nothing about racks: add a type there and this paints it. */
-export function Ops({ ops, opacity = 1, listening = false }) {
+/* `lz`: the Label size scale (render/labelSize.js) — the travel arrows are
+   drawing size and take it; nothing here reads the view zoom. */
+export function Ops({ ops, opacity = 1, listening = false, lz = DEFAULT_LZ }) {
   if (!ops || !ops.length) return null
   return (
     <>
@@ -107,42 +112,31 @@ export function Ops({ ops, opacity = 1, listening = false }) {
               shadowForStrokeEnabled={false} listening={listening} />
           )
         }
-        /* Upright frames at their real width, floored at `minPx` SCREEN px so
-           they never vanish at overview zoom — the floor needs the live stage
-           scale, which is only known here (same reason as the arrows below). */
+        /* Upright frames at their REAL width at every zoom (uprightDrawRects). */
         if (o.op === 'uprights') {
           return (
             <Shape key={i} listening={false} perfectDrawEnabled={false}
               opacity={(o.opacity ?? 1) * opacity}
-              sceneFunc={(ctx, shape) => {
-                const s = shape.getStage()?.scaleX() || 1
+              sceneFunc={(ctx) => {
                 const c = ctx._context
                 c.fillStyle = o.fill
-                for (const r of uprightDrawRects(o, s)) c.fillRect(r.x, r.y, r.w, r.h)
+                for (const r of uprightDrawRects(o)) c.fillRect(r.x, r.y, r.w, r.h)
               }} />
           )
         }
-        /* Travel arrows are a legend mark: ONE size on the whole sheet whatever
-           the rack's depth. The op carries screen measurements, divided here by
-           the live stage scale — the only place the zoom is known, which is what
-           lets the op list itself stay zoom-free and cacheable. */
+        /* Travel arrows are a legend mark: drawing size, by the Label size
+           scale (travelArrowGeom, the same geometry the PDF prints). */
         if (o.op === 'arrows') {
           return (
             <Shape key={i} listening={false} perfectDrawEnabled={false}
-              sceneFunc={(ctx, shape) => {
-                const s = shape.getStage()?.scaleX() || 1
-                const len = o.len / s, head = o.head / s, gap = o.gap / s
+              sceneFunc={(ctx) => {
+                const g = travelArrowGeom(o, lz)
                 const c = ctx._context
                 c.strokeStyle = o.color; c.fillStyle = o.color
-                c.lineWidth = o.strokeWidth / s
-                for (const it of o.items) {
-                  const tipY = it.side === 'below' ? it.edgeY + gap : it.edgeY - gap - len
-                  const baseY = tipY + head
-                  c.beginPath(); c.moveTo(it.cx, tipY + len); c.lineTo(it.cx, baseY); c.stroke()
-                  c.beginPath()
-                  c.moveTo(it.cx - head * 0.48, baseY)
-                  c.lineTo(it.cx, tipY)
-                  c.lineTo(it.cx + head * 0.48, baseY)
+                c.lineWidth = g.strokeWidth
+                for (const a of g.arrows) {
+                  c.beginPath(); c.moveTo(a.shaft[0], a.shaft[1]); c.lineTo(a.shaft[2], a.shaft[3]); c.stroke()
+                  c.beginPath(); c.moveTo(a.head[0], a.head[1]); c.lineTo(a.head[2], a.head[3]); c.lineTo(a.head[4], a.head[5])
                   c.closePath(); c.fill()
                 }
               }} />
@@ -225,27 +219,6 @@ function HitPad({ obj, gridSize, listening }) {
 }
 
 
-/** BUG 66 — a small structural marker (a 12"-default column square, a
- *  pallet-position X) is a fixed WORLD size, so at building-overview zoom
- *  (a few percent, the auto-fit `placeFpObject` itself sets) it shrinks to
- *  a handful of screen px — arithmetically correct, visually gone. The
- *  established fix for "this needs to read at any zoom" is already all
- *  over this file (ResizeHandlesOverlay's own `hs = 6/zoom`, ported
- *  verbatim from CanvasUI): world-space size computed as `screenPx /
- *  zoom`. This grows a rect to that floor — CENTRED on its own true
- *  centre, never from a corner, so a marker that grows to stay visible
- *  never drifts off the position it's actually marking. Below the
- *  threshold it's a no-op: a marker already bigger than the floor draws
- *  at its real size, exactly as before. */
-export function growToMinScreenSize(rect, zoom, minPx) {
-  const minSize = minPx / zoom
-  const width  = Math.max(rect.width, minSize)
-  const height = Math.max(rect.height, minSize)
-  const cx = rect.x + rect.width / 2
-  const cy = rect.y + rect.height / 2
-  return { x: cx - width / 2, y: cy - height / 2, width, height }
-}
-
 /** The active bay/tower's outline rect(s) — obj.activeBayIdx/activeTowerIdx,
  *  the single per-bay click pick (hitTestBay). Limited to the three types
  *  the SVG canvas itself visually highlights (rack_row, rack_double_row,
@@ -277,13 +250,13 @@ function multiBaySelectionRects(obj, gridSize, activeBaySelection) {
 }
 
 /** A rack, from its draw-ops. */
-function RackShapeView({ obj, ops, gridSize, listening = false, bind, activeBaySelection }) {
+function RackShapeView({ obj, ops, gridSize, listening = false, bind, activeBaySelection, lz = DEFAULT_LZ }) {
   const msRects = multiBaySelectionRects(obj, gridSize, activeBaySelection)
   return (
     <Group name={nodeName(obj.id)} listening={listening}
       opacity={obj.opacity ?? 1} {...spin(obj, gridSize)} {...(bind ? bind(obj) : null)}>
       <HitPad obj={obj} gridSize={gridSize} listening={listening} />
-      <Ops ops={ops} listening={listening} />
+      <Ops ops={ops} listening={listening} lz={lz} />
       {activeBayRects(obj, gridSize).map((r, i) => (
         <Rect key={i} {...r} stroke="#4a9eff" strokeWidth={2}
           dash={[4, 3]} strokeScaleEnabled={false} perfectDrawEnabled={false}
@@ -377,50 +350,26 @@ function FloorPlanShapeView({ obj, gridSize, listening = false, bind }) {
 
 /* ── Column grid ─────────────────────────────────────────────────────────── */
 
-/* BUG 66 — 6 screen-px floor, matching ResizeHandlesOverlay's own
- * `hs = 6/zoom` handle half-size exactly (a 12px handle square) — the
- * established "reads at any zoom" size in this codebase, not a new one
- * invented for columns. */
-const MIN_COLUMN_MARKER_PX = 6
 
-/** The building's structural columns — the actual squares, not a box.
+/** The building's structural columns — the actual squares, not a box, at
+ *  their REAL size at every zoom (render/columnDraw.js): no minimum on-screen
+ *  size, no enlarged marker. The SVG engine's look — a solid body at 0.85, the
+ *  I-beam web and flanges — with a thin outline in DRAWING units (it scales
+ *  with the zoom), inset so the drawn column is exactly the real column.
  *
  *  Drawn from the same expandColumnGrid the conflict check measures, so a red
  *  mark always lands on the column it refers to. All columns ride in ONE path:
- *  a 50ft grid over a 1,080ft building is hundreds of squares.
- *
- *  BUG 66 — each square is grown to `growToMinScreenSize` before being
- *  baked into the path, so a building-overview zoom (a few percent) still
- *  shows every column as a visible dot instead of a few sub-pixel-ish
- *  screen px lost under the wall line. Needs `zoom` threaded in from
- *  Scene.jsx/Canvas2.jsx — this shape carries no zoom on its own
- *  otherwise, unlike the screen-constant-stroke trick below it, which
- *  needs no zoom input at all. */
-function ColumnGridShapeView({ obj, gridSize, zoom = 1, racks = [], listening = false, bind }) {
-  /* A grown marker stays inside the rack face its column sits in, growing
-     away from a double row's flue (columnMarker.js) — centred growth spilled
-     it across the gap and read as a column on the joint. */
-  const bands = useMemo(() => rackBandsWorld(racks, gridSize), [racks, gridSize])
-  const d = useMemo(() => {
-    if (obj.showGrid === false) return null
-    const cols = expandColumnGrid(obj, gridSize)
-    if (!cols.length) return null
-    let out = ''
-    for (const c of cols) {
-      const g = columnMarkerRect(c, bands, zoom, MIN_COLUMN_MARKER_PX)
-      out += `M${g.x} ${g.y}h${g.width}v${g.height}h${-g.width}Z`
-    }
-    return out
-  }, [obj, gridSize, zoom, bands])
-
-  if (!d) return null
+ *  a 50ft grid over a 1,080ft building is hundreds of squares. */
+function ColumnGridShapeView({ obj, gridSize, listening = false, bind }) {
+  const g = useMemo(() => columnGridOps(obj, gridSize), [obj, gridSize])
+  if (!g) return null
   return (
     <Group name={nodeName(obj.id)} listening={listening} opacity={obj.opacity ?? 1}
       {...(bind ? bind(obj) : null)}>
-      <Path data={d}
-        fill={obj.fill || STRUCT_BLUE} stroke={obj.stroke || STRUCT_BLUE}
-        strokeWidth={1} strokeScaleEnabled={false}
-        perfectDrawEnabled={false} listening={listening} />
+      <Path name="column-body" data={g.body} fill={g.color} opacity={g.opacity.body} perfectDrawEnabled={false} listening={listening} />
+      <Path name="column-web" data={g.web} fill={g.color} opacity={g.opacity.web} perfectDrawEnabled={false} listening={false} />
+      <Path name="column-flanges" data={g.flanges} fill={g.color} opacity={g.opacity.flanges} perfectDrawEnabled={false} listening={false} />
+      <Path name="column-outline" data={g.outline} stroke={g.color} strokeWidth={g.outlineWidth} perfectDrawEnabled={false} listening={false} />
     </Group>
   )
 }

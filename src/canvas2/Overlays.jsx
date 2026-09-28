@@ -8,7 +8,7 @@ import { UprightConflictMarks } from './UprightConflictMarks'
 import { OversizedBayMarks } from './OversizedBayMarks'
 import { aisleLabelLayout } from './hitTest'
 import { useLabelPrefs } from './labelPrefs'
-import { labelScale } from '../render/labelSize'
+import { labelScale, aisleLabelScale } from '../render/labelSize'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const near = (a, b) => Math.abs(a - b) < 1e-6
@@ -94,7 +94,7 @@ function OverlaysView({
         ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={lz} gridSize={gridSize}
             activeWallIdx={activeWall && activeWall.objId === o.id ? activeWall.wallIdx : null} /> : null)}
       <Group x={aisleRigid ? dx : 0} y={aisleRigid ? dy : 0} listening={false}>
-      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={lz} gridSize={gridSize} />)}
+      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={aisleLabelScale(a, labelSize, gridSize)} gridSize={gridSize} />)}
       </Group>
       {/* one width label per cross-aisle; few, so drawn from the previewed layout every drag frame */}
       {showAisles && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} />}

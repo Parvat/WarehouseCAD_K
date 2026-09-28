@@ -79,25 +79,18 @@ export function rackRowOps(obj, gridSize) {
  *  (uprightXs' `xs`: both end frames and every interior one). Never drawn
  *  across a double row's flue: the two bands are separate frames.
  *
- *  The op stays zoom-free; the painter applies `minPx` (a SCREEN-px floor,
- *  the old hairline width) through `uprightDrawRects`, so a 3" frame still
- *  shows as a line at building-overview zoom instead of vanishing — the same
- *  idea as the column markers' floor — and at working zoom is exactly 3". */
+ *  Always the REAL width, at every zoom — no minimum on-screen width: a 3"
+ *  frame is 3" whether the view shows one bay or the whole building. */
 function uprightsOp(lefts, upW, bands) {
   if (!lefts.length || !bands.length) return null
   const rects = []
   for (const x of lefts) for (const b of bands) rects.push({ x, y: b.y, w: upW, h: b.h })
-  return { op: 'uprights', rects, fill: RACK_PALETTE.upright, minPx: RACK_LINE.hair }
+  return { op: 'uprights', rects, fill: RACK_PALETTE.upright }
 }
 
-/** The rects an `uprights` op actually paints at stage scale `scale`:
- *  real width, or `minPx` screen px if that's wider, centred on the frame. */
-export function uprightDrawRects(op, scale = 1) {
-  const minW = op.minPx / (scale || 1)
-  return op.rects.map(r => {
-    const w = Math.max(r.w, minW)
-    return { x: r.x + r.w / 2 - w / 2, y: r.y, w, h: r.h }
-  })
+/** The rects an `uprights` op paints: each frame at its real width. */
+export function uprightDrawRects(op) {
+  return op.rects.map(r => ({ x: r.x, y: r.y, w: r.w, h: r.h }))
 }
 
 /** Bay dividers for one or more horizontal bands, as a SINGLE path.
@@ -213,11 +206,27 @@ function laneChassisOps(obj, gridSize, { backWall = false } = {}) {
 }
 
 /* Travel arrows are a LEGEND mark, not a dimension: one size everywhere on the
-   sheet regardless of how deep the rack is. That makes them screen-sized, and
-   since rackDrawOps deliberately takes no zoom, the op carries the screen
-   measurements and the painter divides by the live stage scale. All of a
-   rack's arrows ride in ONE op, so a twelve-lane rack is one node. */
+   sheet regardless of how deep the rack is. They are DRAWING size, like the
+   labels (render/labelSize.js): the op carries the design measurements and
+   the painter sizes them by the Label size scale `lz` (travelArrowGeom), so
+   they scale with the racks when you zoom and with the Label size setting.
+   All of a rack's arrows ride in ONE op, so a twelve-lane rack is one node. */
 export const RACK_ARROW = { len: 13, head: 7, gap: 3, strokeWidth: 1.2 }
+
+/** An `arrows` op's geometry in world units for label scale `lz`: each
+ *  arrow's shaft (x1, y1, x2, y2) and head triangle, and the stroke width.
+ *  The canvas painter and the PDF export both draw from this. */
+export function travelArrowGeom(o, lz) {
+  const len = o.len / lz, head = o.head / lz, gap = o.gap / lz
+  return {
+    strokeWidth: o.strokeWidth / lz,
+    arrows: o.items.map(it => {
+      const tipY = it.side === 'below' ? it.edgeY + gap : it.edgeY - gap - len
+      const baseY = tipY + head
+      return { shaft: [it.cx, tipY + len, it.cx, baseY], head: [it.cx - head * 0.48, baseY, it.cx, tipY, it.cx + head * 0.48, baseY] }
+    }),
+  }
+}
 
 function arrowsOp(items) {
   if (!items.length) return null

@@ -23,9 +23,10 @@
 
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
-import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects } from '../render/rackOps'
+import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
 import { aisleLabelOps, clearanceOps, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
-import { labelScale } from '../render/labelSize'
+import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
+import { columnGridOps } from '../render/columnDraw'
 import { aisleLabelLayout } from '../canvas2/hitTest'
 import { crossAisleLabels } from '../canvas2/crossAisles'
 import { useLabelPrefs } from '../canvas2/labelPrefs'
@@ -111,26 +112,25 @@ function floorPlanSVG(obj, gridSize) {
     `</g>`
 }
 
-/* ── Column grid — the real column squares, ported from canvas2's
-   ColumnGridShape / expandColumnGrid, the same function the column-conflict
-   check measures against. */
+/* ── Column grid — the real column squares in the canvas's own look
+   (render/columnDraw.js: solid body, I-beam web and flanges, a thin outline
+   in drawing units), from the same expandColumnGrid the check measures. */
 function columnGridSVG(obj, gridSize) {
-  const cols = expandColumnGrid(obj, gridSize)
-  if (!cols.length) return ''
-  const color = obj.stroke || '#3B6FB5'
-  return `<g fill="none" stroke="${color}" stroke-width="1.5">` +
-    cols.map(c => `<rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}"/>`).join('') +
+  const g = columnGridOps(obj, gridSize)
+  if (!g) return ''
+  return `<g>` +
+    `<path d="${g.body}" fill="${g.color}" opacity="${g.opacity.body}"/>` +
+    `<path d="${g.web}" fill="${g.color}" opacity="${g.opacity.web}"/>` +
+    `<path d="${g.flanges}" fill="${g.color}" opacity="${g.opacity.flanges}"/>` +
+    `<path d="${g.outline}" fill="none" stroke="${g.color}" stroke-width="${g.outlineWidth}"/>` +
     `</g>`
 }
 
 /* ── One rackDrawOps op → an SVG element. Same op shapes canvas2's Ops
    component (shapes.jsx) paints with Konva — ported to markup instead of
-   canvas calls, not reinvented. Arrows drop the live /stage.scaleX() divide:
-   that only existed to keep a screen-constant size across live zoom, which
-   a static print page has no notion of — the op's own len/head/gap numbers
-   are used directly as world units, which is what they draw as at a normal
-   "fit the plan" viewing zoom anyway. */
-function opToSVG(o) {
+   canvas calls, not reinvented. `lz` is the sheet's label scale: the travel
+   arrows are drawing size, like the labels. */
+function opToSVG(o, lz) {
   if (o.op === 'rect') {
     return `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" ` +
       `fill="${o.fill || 'none'}" stroke="${o.stroke || 'none'}" stroke-width="${o.strokeWidth ?? 1}" ` +
@@ -141,22 +141,19 @@ function opToSVG(o) {
       `stroke-width="${o.strokeWidth ?? 1}" ${o.dash ? `stroke-dasharray="${o.dash}"` : ''} ` +
       `opacity="${o.opacity ?? 1}"/>`
   }
-  /* Uprights print at real width, floored at minPx WORLD units — a print
-     page has no live zoom, and that floor is what the old hairline printed at. */
+  /* Uprights at their real width, exactly as on screen. */
   if (o.op === 'uprights') {
     return `<g fill="${o.fill}">` +
-      uprightDrawRects(o, 1).map(r => `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`).join('') +
+      uprightDrawRects(o).map(r => `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`).join('') +
       `</g>`
   }
+  /* Travel arrows: drawing size at the sheet's label size (travelArrowGeom,
+     the same geometry the canvas draws). */
   if (o.op === 'arrows') {
-    const { len, head, gap, color, strokeWidth, items } = o
-    return `<g stroke="${color}" fill="${color}" stroke-width="${strokeWidth}">` +
-      items.map(it => {
-        const tipY = it.side === 'below' ? it.edgeY + gap : it.edgeY - gap - len
-        const baseY = tipY + head
-        return `<line x1="${it.cx}" y1="${tipY + len}" x2="${it.cx}" y2="${baseY}"/>` +
-          `<polygon points="${it.cx - head * 0.48},${baseY} ${it.cx},${tipY} ${it.cx + head * 0.48},${baseY}"/>`
-      }).join('') + `</g>`
+    const g = travelArrowGeom(o, lz)
+    return `<g stroke="${o.color}" fill="${o.color}" stroke-width="${g.strokeWidth}">` +
+      g.arrows.map(a => `<line x1="${a.shaft[0]}" y1="${a.shaft[1]}" x2="${a.shaft[2]}" y2="${a.shaft[3]}"/>` +
+        `<polygon points="${a.head[0]},${a.head[1]} ${a.head[2]},${a.head[3]} ${a.head[4]},${a.head[5]}"/>`).join('') + `</g>`
   }
   return ''
 }
@@ -179,13 +176,13 @@ export function labelOpToSVG(o) {
    marks, upright flags, oversized bays. `opts`: labelSize, showColumnLabels,
    showAisles, and the column check's profile / pickBothSides / showMarks. */
 export function labelsSVG(objects, gridSize, opts) {
-  const lz = labelScale(opts.labelSize, gridSize)
+  const lz = labelScale(opts.labelSize, gridSize)   // a Label size key or inches
   const ops = []
   if (opts.showAisles) {
     for (const a of objects) {
       if (a.type !== 'aisle') continue
       const L = aisleLabelLayout(a, objects, gridSize)
-      if (L) ops.push(...aisleLabelOps(L, lz))
+      if (L) ops.push(...aisleLabelOps(L, aisleLabelScale(a, opts.labelSize, gridSize)))
     }
     for (const L of crossAisleLabels(objects, gridSize)) ops.push(...aisleLabelOps(L, lz))
   }
@@ -210,13 +207,13 @@ export function labelsSVG(objects, gridSize, opts) {
    here as an SVG transform around the object's own centre, the same pivot
    canvas2/shapes.jsx's spin() uses, so a turned rack prints exactly as it
    sits on screen. */
-function rackSVG(obj, gridSize) {
+function rackSVG(obj, gridSize, lz) {
   const ops = rackDrawOps(obj, { gridSize })
   if (!ops) return ''
   const rot = obj.rotation || 0
   const cx = obj.x + obj.width / 2, cy = obj.y + obj.height / 2
   const transform = rot ? ` transform="rotate(${rot} ${cx} ${cy})"` : ''
-  return `<g${transform}>${ops.map(opToSVG).join('')}</g>`
+  return `<g${transform}>${ops.map(o => opToSVG(o, lz)).join('')}</g>`
 }
 
 /* ── Scale bar — the tick SPACING is drawn in the same world-unit coordinate
@@ -289,7 +286,7 @@ function titleBlockSVG(x, y, u, { title, scaleRatio, date }) {
    current settings (labelPrefs, the column check's published view). */
 export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled Layout', labels = {} } = {}) {
   const prefs = useLabelPrefs.getState(), view = getColumnCheckView()
-  const labelOpts = { labelSize: prefs.labelSize, showColumnLabels: prefs.showColumnLabels, showAisles: true, ...view, ...labels }
+  const labelOpts = { showColumnLabels: prefs.showColumnLabels, showAisles: true, ...view, ...labels }
   const layerMap = new Map((layers || []).map(l => [l.id, l]))
   const usable = (o) => isLayerUsable(layerMap, o)
 
@@ -317,11 +314,22 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
      correct only for a plan whose aspect ratio happened to be WIDER than A1's
      own 1.416:1 — anything taller made height the true constraint instead. */
   const mmPerUnitPaper = Math.min(paperW / vb.width, paperH / vb.height)
+  /* The PDF's label size: an explicit one (`labels.labelSize`, a Label size
+     key or inches), else the PDF Label size setting — 'auto' (default) sizes
+     the reference text so the SMALLEST printed label is at least 2.5 mm tall
+     on this sheet, 'screen' uses the drawing's Label size, or a size key. An
+     aisle's own label size still wins for that aisle. */
+  if (labelOpts.labelSize == null) {
+    const pdf = prefs.pdfLabelSize || 'auto'
+    labelOpts.labelSize = pdf === 'auto' ? autoPdfLabelInches(mmPerUnitPaper, gridSize) : pdf === 'screen' ? prefs.labelSize : pdf
+  }
+  const lz = labelScale(labelOpts.labelSize, gridSize)
   const u = 1 / mmPerUnitPaper // world units per PAPER mm — sizes the print furniture below
   const scaleRatio = Math.round(mmPerWorldPx(gridSize) / mmPerUnitPaper)
 
   // Draw order matches canvas2's Scene.jsx: floor plans first (the ground),
-  // then columns, then racks, then the object array's own order for the rest.
+  // then racks, then the columns on top (structure: a column inside a rack is
+  // the conflict the check reports, so no rack may hide it), then the labels.
   const floors = [], columns = [], racks = []
   for (const o of objects) {
     if (!o || !usable(o)) continue
@@ -340,8 +348,8 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   const body = [
     `<rect x="${vb.x}" y="${vb.y}" width="${vb.width}" height="${vb.height}" fill="#ffffff"/>`,
     ...floors.map(o => floorPlanSVG(o, gridSize)),
+    ...racks.map(o => rackSVG(o, gridSize, lz)),
     ...columns.map(o => columnGridSVG(o, gridSize)),
-    ...racks.map(o => rackSVG(o, gridSize)),
     labelsSVG(objects.filter(o => o && usable(o)), gridSize, labelOpts),
     scaleBarSVG(vb.x + 10 * u, titleY + titleH * 0.45, gridSize, u),
     titleBlockSVG(titleX, titleY, u, { title, scaleRatio, date }),

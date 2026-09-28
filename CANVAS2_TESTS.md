@@ -403,6 +403,31 @@ orientation, because this machine's speed drifts ±25 ms between runs.
 - **Single-row drop:** 40–53 ms in production. 11–16 ms of it is the
   protected store's `moveObjects` / history snapshot.
 
+### CR — Columns at their real size at every zoom · `CR_realColumns.test.js` (3 tests)
+Columns are drawn like any other object: each square is exactly the column
+(`render/columnDraw.js`, from the same `expandColumnGrid` the check
+measures) and scales with the zoom.
+- **Removed:** the 6-screen-px minimum (BUG 66), the enlarged marker kept
+  inside its rack face (`canvas2/columnMarker.js` and its test), the
+  `growToMinScreenSize` helper, and the 1 px screen-constant outline that
+  also inflated every column.
+- **Scene no longer reads the zoom at all.**
+- **Still screen-constant** (UI): selection handles, rotate grips, snap
+  guides, the measure tool, rulers.
+
+| Test (1080×410; ×2 h/v) | Asserts |
+|---|---|
+| `CR-path` | the drawn path is exactly the column check's rects, each 12″ × 12″; nothing grown; a hidden grid draws nothing |
+| `CR-wire` | the column shape takes no zoom and no strokeScaleEnabled (its outline is 1″ in drawing units, see FU); Scene reads no zoom; the enlarged-marker module is gone |
+
+**Checked in the app, horizontal and vertical:**
+- The drawn column shape's extent equals the grid's exact extent at zoom 3 %
+  and 20 %.
+- A 12″ column is 1.2 px on screen at 3 % and 8 px at 20 % (40 px/ft ×
+  zoom).
+- Resize handles stay 12 px at both zooms.
+- No console errors.
+
 ### LZ — Labels are drawing size (CAD text); Label size setting · `LZ_labelSize.test.js` (9 tests)
 Every label and mark on the drawing is a fixed size in feet and scales with
 the racks. Nothing is sized by the view zoom, so zooming re-renders none of
@@ -415,12 +440,13 @@ them. This replaces the earlier "hold labels while the wheel moves" idea.
   aisle-label pick area matches the drawn label.
 - **Screen size (UI, unchanged):** selection and resize handles, rotate
   grips, group-rotate chrome, snap-guide thresholds, the measure tool,
-  rulers, the column markers' minimum on-screen size, and the rack travel
-  arrows (a legend mark).
+  rulers. (The column markers' minimum on-screen size and the screen-size
+  travel arrows are gone: see CR and FU.)
 
 **How:**
 - **Label size** (`render/labelSize.js`): the View menu has Small / Medium /
-  Large = 12 / 24 / 36 in reference text, Medium by default. It is kept with
+  Large / Extra large = 12 / 24 / 36 / 48 in reference text, Medium by
+  default. It is kept with
   Column labels in `canvas2/labelPrefs.js` (localStorage, never the store).
 - **Label scale:** `labelScale(size, gridSize)` is used everywhere the old
   designs divided by the view zoom. Each design keeps its proportions:
@@ -441,7 +467,7 @@ them. This replaces the earlier "hold labels while the wheel moves" idea.
 | `LZ-all` | Small → Large scales every kind by 3× — aisle, cross-aisle, clearance + red shade, X marks, upright flags, oversized crosses (fonts, strokes, pills) — and width labels stay centred |
 | `LZ-zoom` | the overlays size everything from `labelScale`, never the view zoom: every label / mark component gets `lz`, the dimension labels get it as their zoom, and Canvas2 no longer passes the view zoom to Overlays |
 | `LZ-pdf` | the PDF has one label per aisle and per cross-aisle, at the Label size (2 ft Medium, 3 ft Large). Column labels off removes the blue "clear" labels and keeps every "under travel" label, red shade, X mark and upright flag |
-| `LZ-default` | Medium and Column labels on by default; an unknown size is ignored; the View menu has S / M / L |
+| `LZ-default` | Medium and Column labels on by default; an unknown size is ignored; the View menu has S / M / L (XL: `FU-sizes`) |
 
 **Checked in the app, horizontal and vertical** (1080×410, a rack
 selected):
@@ -462,6 +488,62 @@ selected):
 | Pan | 26.8 / 66.7 · 54/125 | 13.3 / 13.5 · 0/122 | 39.9 / 66.7 · 58/125 | 13.3 / 13.9 · 0/129 |
 | Overlay nodes, whole-building view | 11,363 | 6,642 | 11,934 | 6,927 |
 | Overlay nodes, Column labels off | — | 3,933 | — | 3,534 |
+
+### FU — Follow-ups: real uprights, drawing-size arrows, Extra large, PDF label size, per-aisle size, column look · `FU_labelFollowUps.test.js` (12 tests)
+- **Upright frames** are drawn at their real `uprightWidth` at every zoom
+  (`uprightDrawRects`); the minimum on-screen width is gone.
+- **Rack travel arrows** are drawing size, sized by Label size
+  (`travelArrowGeom(op, lz)`), on the canvas and in the PDF.
+- **Label size** adds Extra large (48 in text).
+- **PDF label size** (View menu) is a separate setting: Auto (default), Same
+  as screen, or a fixed size. Auto (`autoPdfLabelInches`) picks the
+  smallest size that prints every label at least 2.5 mm tall on the chosen
+  sheet.
+- **Per-aisle label size:** with one or more aisles selected, the right panel
+  shows Default / Small / Medium / Large / Extra large / custom (inches).
+  - The choice is stored as `labelSizeIn` on the aisle, which makes it
+    document data: saved with the layout, one undo step, and printed in the
+    PDF.
+  - Default removes the override.
+  - "Apply to all aisles" gives every aisle the selection's size.
+  - Cross-aisle labels follow the global size.
+- **Column look** is the SVG engine's: a solid body in the grid's strong
+  colour at 0.85, an I-beam web at 0.5, flanges at 0.9, and a 1″ outline in
+  drawing units, inset so the drawn column is exactly the real column.
+  Column grids now paint **above** racks, on the canvas and in the PDF. A
+  generated grid comes first in the array, so racks used to bury every
+  column inside a rack footprint.
+
+| Test (1080×410) | Asserts |
+|---|---|
+| `FU-upright` h/v | every upright's drawn width equals `uprightWidth` at zoom 0.02, 0.2, 1 and 5; the op carries no minimum |
+| `FU-aisle` h/v | Large on one aisle changes only its label (3 ft; the others stay 2 ft). Default restores it. Apply to all sets every aisle. It survives save/reload and appears in the PDF at the override size |
+| `FU-pdf-min` h/v | at Auto, every PDF label is ≥ 2.5 mm on the chosen sheet |
+| `FU-arrows` | the arrow stroke, length and head scale by exactly Small→Large (3×); the canvas and the PDF both pass `lz` |
+| `FU-sizes` | Extra large = 48 in; the View menu has S / M / L / XL and the PDF label size select; Auto is the default |
+| `FU-panel` | the per-aisle control is wired into the one-aisle and multi-select panels; Apply to all uses every aisle |
+| `FU-columns` | body opacity ≥ 0.8 in the strong colour; web and flanges present; the outline is 1″ in drawing units, inset, with no `strokeScaleEnabled`; the red conflict marks are still drawn above; the PDF prints the same look |
+| `FU-columns-top` h/v | the grid comes first in the array, yet the PDF draws every rack before the columns and the labels after them; Scene renders the column grids last |
+
+**Checked in the app, horizontal and vertical:**
+- **Columns at 20 %:** body opacity 0.85 in #6366f1; the outline is
+  0.0833 ft (1″) and scales with the zoom.
+- **Column pixels at 20 %:** all 24 on-screen columns show blue pixels in
+  both orientations.
+  - With the old order (columns under racks), horizontal drops to 12 of
+    24.
+  - Vertical is unaffected by the order, because its columns sit in aisles
+    and flues.
+- **Per-aisle size:**
+  - Large makes a0 3 ft and a1 2 ft. Default returns a0 to 2 ft.
+  - The panel shows "Mixed sizes".
+  - Extra large plus Apply to all puts every label at 4 ft (160 of 160
+    aisles horizontal, 171 of 171 vertical).
+  - Undo leaves a0 and a1 at 4 ft and returns the rest to 2 ft.
+- **PDF Auto:** the smallest label prints at 2.548 mm (769 labels
+  horizontal, 927 vertical).
+- **Travel arrows** grow from Medium to Extra large.
+- No console errors.
 
 ### LB — One label per aisle, cross-aisle labels, the Column labels switch · `LB_labels.test.js` (8 tests)
 - **One aisle label:** an aisle (one section's pair of facing rows) has ONE
@@ -1335,29 +1417,6 @@ y 440–480 → near 7.5′, far 8.5′ (reach, travel 8′).
   none.
 - A label on a gap too short for its pill slides beside the arrow.
 
-### Column markers stay in their face · `columnMarker.test.js` (6 tests)
-The "column on the joint" report (1080×410, 50×54, reach) was a drawing effect.
-No generated layout puts a column across both faces of a pair. At overview
-zoom a 12" column is enlarged to a 6 px marker, and it was grown around its
-centre, so a column flush against the flue spilled across the 9" gap.
-`canvas2/columnMarker.js` now keeps an enlarged marker inside the rack face
-(band) its column sits in. If the floor is deeper than the face, the marker
-is anchored at the flue edge and grows outward. `ColumnGridShape` receives
-the racks from `Scene`. Drawing only.
-
-Hand geometry: double row 340×310 px, front face y 0–140, flue 140–170,
-back face 170–310; 40 px column; 6 px floor = 60 world px at zoom 0.1, 300 at
-0.02.
-
-| Test | Asserts |
-|---|---|
-| front face, flush at the flue (y 100–140), zoom 0.1 | drawn y 80–140 (centred would be 90–150); x stays centred 40–100 |
-| back face, flush at the flue (y 170–210) | drawn y 170–230 |
-| floor deeper than the face (zoom 0.02) | front: y −160–140; back: y 170–470 (anchored at the flue edge) |
-| working zoom (1) | drawn = the column, y 100–140 |
-| open floor (y −200) | centred growth, y −210 to −150 |
-| rotated 90° (front face → world x 185–325, flue x 155–185) | column x 185–225 drawn 185–245 |
-
 ### §2b — Building variation matrix · `M_matrix.test.js` (908 tests)
 **M25 = 1080×410, 50×54, reach** added permanently (the joint report's case):
 all 9 rules pass in all four runs (36 tests).
@@ -1505,7 +1564,6 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 
 | L | **Remove the detection** (`columnsOnUprights` returns []) | 5: `L-interior`, `L-end`, `L-double`, `L-rotated`, `L-check`. (`L-clear` / `L-touch` assert "not flagged" and can't fail this way.) | ✓ |
 
-| Marker | **Centred growth again** (`columnMarkerRect` returns the centred rect) | 4: front face, back face, deeper-than-face, rotated. (Working zoom and open floor can't fail this way.) | ✓ |
 
 | N | **No red shade** (`aisleWarningRect` always null) | 3: `N-drag`, `N-placed`, vertical shade | ✓ |
 | N | **Preview ignores the drag** (`previewObjects` returns the store layout) | 2: `N-drag`, vertical shade | ✓ |
@@ -1542,6 +1600,20 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | RE | **Bay edits counted as moves** | 8: RE-split h/v, Z2-delete ×6 | ✓ |
 | RE | **The earlier of two clashing edits wins** | 2: RE-clash h/v | ✓ |
 | RE | **Pasted rows keep their stamps** | 1: RE-keeper | ✓ |
+| CR | **Columns enlarged** (grown in the path) | 2: CR-path h/v | ✓ |
+| CR | **Zoom passed back into the column shape** | 1: CR-wire | ✓ |
+| CR | **Screen-constant outline back** | 1: CR-wire | ✓ |
+| FU | **Upright minimum width back** | 2: FU-upright h/v | ✓ |
+| FU | **Arrows ignore `lz`** | 1: FU-arrows | ✓ |
+| FU | **PDF Auto targets 1.5 mm** | 2: FU-pdf-min h/v | ✓ |
+| FU | **Aisle override ignored** | 2: FU-aisle h/v | ✓ |
+| FU | **Default doesn't remove the override** | 2: FU-aisle h/v | ✓ |
+| FU | **Apply to all covers only the selection** | 3: FU-aisle h/v, FU-panel | ✓ |
+| FU | **Save drops `labelSizeIn`** | 2: FU-aisle h/v | ✓ |
+| FU | **Columns at 0.3 opacity** | 1: FU-columns | ✓ |
+| FU | **Screen-constant column outline** | 1: FU-columns | ✓ |
+| FU | **Columns drawn under racks in the PDF** | 2: FU-columns-top h/v | ✓ |
+| FU | **Columns drawn under racks on the canvas** | 2: FU-columns-top h/v (and in the app: horizontal 12 of 24 columns hidden) | ✓ |
 | LZ | **Labels sized by the view zoom again** | 2: LZ-zoom h/v | ✓ |
 | LZ | **X marks ignore Label size** (fixed stroke) | 2: LZ-all h/v | ✓ |
 | LZ | **Aisle labels a fixed size** | 6: LZ-feet, LZ-all, LZ-pdf (h/v) | ✓ |
@@ -1689,8 +1761,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,857 tests, 1,857 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,260 tests, 2,260 passing.**
+- **Plan suite: 1,872 tests, 1,872 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,269 tests, 2,269 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

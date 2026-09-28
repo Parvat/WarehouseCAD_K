@@ -89,9 +89,9 @@ describe('rackOps — rack_row draw-ops', () => {
     expect(ops[1].fill).toBe(RACK_PALETTE.upright)
   })
 
-  it('carries the box stroke and the upright floor in SCREEN px, so neither scales with zoom', () => {
+  it('carries the box stroke in SCREEN px; the uprights carry no screen floor (real width at every zoom)', () => {
     expect(ops[0].strokeWidth).toBeLessThanOrEqual(1.5)
-    expect(ops[1].minPx).toBe(RACK_LINE.hair)
+    expect(ops[1].minPx).toBeUndefined()
   })
 
   it('a single-bay rack still has its two end frames', () => {
@@ -239,8 +239,8 @@ describe('rackOps — uprights drawn to scale', () => {
   const op = rackRowOps(rack, GS)[1]
   const upPx = (upIn / 12) * GS   // 3" = 10 world px
 
-  it('at high zoom the drawn width is exactly uprightWidth (3" = 10 world px), on the frame', () => {
-    for (const scale of [1, 4, 10]) {
+  it('the drawn width is exactly uprightWidth (3" = 10 world px), on the frame, whatever the zoom', () => {
+    for (const scale of [0.02, 0.05, 1, 4, 10]) {
       uprightDrawRects(op, scale).forEach((d, i) => {
         expect(d.w).toBeCloseTo(upPx, 9)
         expect(d.x).toBeCloseTo(op.rects[i].x, 9)
@@ -253,11 +253,12 @@ describe('rackOps — uprights drawn to scale', () => {
     for (const d of uprightDrawRects(four, 10)) expect(d.w).toBeCloseTo((4 / 12) * GS, 9)
   })
 
-  it('at overview zoom it never drops below the 1.2 px screen floor, and stays centred on the frame', () => {
-    const scale = 0.05   // 10 world px would be 0.5 screen px
+  it('at overview zoom it is still exactly 3" (no minimum on-screen width): 0.5 screen px at 5 %', () => {
+    const scale = 0.05
     uprightDrawRects(op, scale).forEach((d, i) => {
-      expect(d.w * scale).toBeCloseTo(RACK_LINE.hair, 9)
-      expect(d.x + d.w / 2).toBeCloseTo(op.rects[i].x + upPx / 2, 9)
+      expect(d.w).toBeCloseTo(upPx, 9)
+      expect(d.w * scale).toBeCloseTo(0.5, 9)
+      expect(d.x).toBeCloseTo(op.rects[i].x, 9)
     })
   })
 })

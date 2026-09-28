@@ -90,7 +90,8 @@ describe.each(['horizontal', 'vertical'])('LZ — %s', (orientation) => {
     expect(ov).not.toMatch(/\bzoom=\{zoom\}|s => s\.zoom|zoom = 1,/)
     for (const comp of ['AisleLabelItem', 'CrossAisleLabels', 'ColumnClearanceLabels', 'BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) {
       const line = ov.split('\n').find(l => l.includes('<' + comp + ' '))
-      expect(line, comp).toMatch(/\blz=\{lz\}/)
+      // an aisle may carry its own size (labelSizeIn); otherwise the global one
+      expect(line, comp).toMatch(comp === 'AisleLabelItem' ? /\blz=\{aisleLabelScale\(a, labelSize, gridSize\)\}/ : /\blz=\{lz\}/)
     }
     // the selection-only dimension labels too
     expect(ov).toMatch(/<RackLabels [^>]*zoom=\{lz\}/)

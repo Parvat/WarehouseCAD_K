@@ -11,6 +11,7 @@ import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../../utils/pasteAt'
 import { useLabelPrefs } from '../../canvas2/labelPrefs'
+import { LABEL_SIZES, LABEL_SIZE_NAMES } from '../../render/labelSize'
 
 /* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
 const C = {
@@ -172,7 +173,7 @@ function doZoom(factor) {
 }
 
 export function TopBar() {
-  const { showColumnLabels, setShowColumnLabels, labelSize, setLabelSize } = useLabelPrefs()
+  const { showColumnLabels, setShowColumnLabels, labelSize, setLabelSize, pdfLabelSize, setPdfLabelSize } = useLabelPrefs()
   const {
     undo, redo, copySelected, paste, cutSelected,
     zoom, setViewport,
@@ -300,10 +301,18 @@ export function TopBar() {
               </MenuRow>
               <MenuRow label="Label size">
                 <SegGroup>
-                  {[['small','S'],['medium','M'],['large','L']].map(([val,lbl]) => (
-                    <Seg key={val} active={labelSize===val} onClick={() => setLabelSize(val)} title={{ small: 'Small — 12 in text', medium: 'Medium — 24 in text', large: 'Large — 36 in text' }[val]}>{lbl}</Seg>
+                  {[['small','S'],['medium','M'],['large','L'],['xlarge','XL']].map(([val,lbl]) => (
+                    <Seg key={val} active={labelSize===val} onClick={() => setLabelSize(val)} title={`${LABEL_SIZE_NAMES[val]} — ${LABEL_SIZES[val]} in text`}>{lbl}</Seg>
                   ))}
                 </SegGroup>
+              </MenuRow>
+              <MenuRow label="PDF label size">
+                <select value={pdfLabelSize} onChange={e => setPdfLabelSize(e.target.value)} aria-label="PDF label size"
+                  style={{ fontSize:11, fontFamily:'var(--font-mono)', background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', borderRadius:6, padding:'3px 4px' }}>
+                  <option value="auto">Auto (≥ 2.5 mm)</option>
+                  <option value="screen">Same as screen</option>
+                  {Object.keys(LABEL_SIZES).map(k => <option key={k} value={k}>{LABEL_SIZE_NAMES[k]} ({LABEL_SIZES[k]} in)</option>)}
+                </select>
               </MenuRow>
               <MenuRow label="Column labels">
                 <Switch on={showColumnLabels} onClick={() => setShowColumnLabels(!showColumnLabels)} label="Toggle column labels" />

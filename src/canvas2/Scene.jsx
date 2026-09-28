@@ -1,5 +1,7 @@
 import { useMemo, memo } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
+import { useLabelPrefs } from './labelPrefs'
+import { labelScale } from '../render/labelSize'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
 import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape } from './shapes'
 
@@ -20,7 +22,10 @@ import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape }
 
    Draw order is the store's own array order, so z-order matches what the rest
    of the app believes. The building is drawn first regardless, because it is
-   the ground everything else stands on. */
+   the ground everything else stands on, and the column grids LAST: a column is
+   structure, and one inside a rack's footprint is exactly the conflict the
+   column check reports — a rack painted over it would hide it. (Picking is
+   unaffected: hitTest tries racks before column squares either way.) */
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 
@@ -37,15 +42,13 @@ function opsFor(o, gridSize) {
 function SceneView({ listening = false, bind }) {
   const objects = useCanvasStore(s => s.objects)
   const gridSize = useCanvasStore(s => s.gridSize)
+  // the racks' travel arrows are drawing size, sized by the Label size (not the zoom)
+  const lz = labelScale(useLabelPrefs(s => s.labelSize), gridSize)
   const visibleLayerIds = useCanvasStore(s => s.layers)
   const activeBaySelection = useCanvasStore(s => s.activeBaySelection)
-  // BUG 66 — ColumnGridShape's own min-screen-size floor needs the live
-  // zoom; read here (not baked into the `scene` memo below, which stays
-  // zoom-agnostic exactly as its own comment says — only the column
-  // shape's INTERNAL memo depends on zoom, so panning/zooming still
-  // rebuilds nothing for racks).
-  const zoom = useCanvasStore(s => s.zoom)
-  const racks = useMemo(() => objects.filter(o => o && (o.type === 'rack_row' || o.type === 'rack_double_row')), [objects])
+  /* Nothing here reads the zoom: every object — columns included — is drawn
+     at its real size and the stage transform scales it, so zooming re-renders
+     none of the scene. */
 
   /* A hidden layer hides its objects. Same rule the SVG applies — a layer counts
      as visible only when `visible` is truthy — so the two canvases cannot
@@ -66,11 +69,11 @@ function SceneView({ listening = false, bind }) {
     return m
   }, [objects])
   const scene = useMemo(() => {
-    const floors = [], rest = []
+    const floors = [], rest = [], columns = []
     for (const o of objects) {
       if (!o || !isVisible(o)) continue
       if (FP_TYPES.has(o.type) && o.fpVerts) { floors.push(o); continue }
-      if (o.type === 'column_grid') { rest.push({ kind: 'columns', obj: o }); continue }
+      if (o.type === 'column_grid') { columns.push({ kind: 'columns', obj: o }); continue }
       if (o.type === 'aisle') { rest.push({ kind: 'aisle', obj: o }); continue }
       if (PORTED_RACK_TYPES.has(o.type)) {
         const ops = opsFor(o, gridSize)
@@ -79,7 +82,7 @@ function SceneView({ listening = false, bind }) {
       }
       rest.push({ kind: 'fallback', obj: o })
     }
-    return { floors, rest }
+    return { floors, rest: rest.concat(columns) }
   }, [objects, gridSize, visibleIds])
 
   return (
@@ -89,11 +92,11 @@ function SceneView({ listening = false, bind }) {
       ))}
       {scene.rest.map(e => {
         if (e.kind === 'rack') {
-          return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} gridSize={gridSize} listening={listening} bind={bind}
+          return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} gridSize={gridSize} lz={lz} listening={listening} bind={bind}
             activeBaySelection={activeBaySelection} />
         }
         if (e.kind === 'columns') {
-          return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} zoom={zoom} racks={racks} listening={listening} bind={bind} />
+          return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
         }
         if (e.kind === 'aisle') {
           return <AisleShape key={e.obj.id} obj={e.obj} row1={byId.get(e.obj.row1Id)} row2={byId.get(e.obj.row2Id)} listening={listening} bind={bind} />

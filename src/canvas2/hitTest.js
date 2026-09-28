@@ -17,7 +17,7 @@
 
 import { objectContains, getFpWallSegments, distToSegment, getObjectBounds, pxToFtIn } from '../utils/canvas'
 import { rackFootprint } from '../generate/columnCheck'
-import { labelScale } from '../render/labelSize'
+import { aisleLabelScale } from '../render/labelSize'
 import { useLabelPrefs } from './labelPrefs'
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
@@ -175,9 +175,10 @@ export const AISLE_LABEL_PADX_PX = 3.5
 export function aisleLabelHit(aisle, objects, wx, wy, zoom = 1, gridSize = 40) {
   const L = aisleLabelLayout(aisle, objects, gridSize)
   if (!L) return false
-  /* The pill is DRAWING size (the Label size setting, render/labelSize.js),
-     exactly as drawn; only the click tolerance is in screen px. */
-  const lz = labelScale(useLabelPrefs.getState().labelSize, gridSize)
+  /* The pill is DRAWING size (the aisle's own label size if it has one,
+     else the Label size setting — render/labelSize.js), exactly as drawn;
+     only the click tolerance is in screen px. */
+  const lz = aisleLabelScale(aisle, useLabelPrefs.getState().labelSize, gridSize)
   const fs = AISLE_LABEL_FONT_PX / lz
   const w = L.text.length * fs * 0.62 + (AISLE_LABEL_PADX_PX / lz) * 2
   const h = fs * 1.5

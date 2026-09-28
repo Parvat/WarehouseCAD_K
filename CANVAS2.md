@@ -61,12 +61,15 @@ down first this time.
 9. **LABELS ARE DRAWING SIZE, CHROME IS SCREEN SIZE.** Every label and mark on
    the drawing — aisle / cross-aisle widths, column clearances and red aisle
    warnings, rack / building dimensions, X marks, upright flags, oversized
-   bays — is a fixed size in feet (`render/labelSize.js`, the "Label size"
-   setting), drawn from `render/labelOps.js` ops that the PDF export prints
-   too. They scale with the racks; nothing re-renders on zoom. Only UI stays
-   screen-constant (`N / zoom`): selection and resize handles, rotate grips,
-   snap-guide thresholds, the measure tool, rulers, and the column markers'
-   minimum on-screen size. Never size a drawing label by the view zoom.
+   bays, rack travel arrows — is a fixed size in feet (`render/labelSize.js`,
+   the "Label size" setting; an aisle may carry its own `labelSizeIn`),
+   drawn from ops that the PDF export prints too. They scale with the racks;
+   nothing re-renders on zoom. Only UI stays screen-constant (`N / zoom`):
+   selection and resize handles, rotate grips, snap-guide thresholds, the
+   measure tool and rulers. Columns and upright frames are drawn at their
+   real size at every zoom (`render/columnDraw.js`, `uprightDrawRects`) —
+   no minimum on-screen size, no enlarged marker — and columns paint above
+   racks. Never size anything on the drawing by the view zoom.
 
 ---
 

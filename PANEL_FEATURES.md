@@ -8,6 +8,14 @@ keep, change or drop as you like.
 
 ## LEFT PANEL — things you place on the canvas
 
+### Text notes on the layout
+- Place free text anywhere to add info (notes for the customer, zone names, etc.).
+- Styling: font size, bold/italic, color, alignment, optional background box.
+- Same rules as labels: drawing size (scales with the layout, prints the same in the
+  PDF) and the same size presets (Small / Medium / Large / Extra large / custom).
+- First step when picked up: check the existing Text tool (drawing toolbar) and the
+  right panel's Text section, and build on them.
+
 ### Areas / zones
 - **Cross-aisle placer** — place a cross-aisle by hand (select tool, click or drag
   across rows). Racks under it are cut and re-flow around it. UI to decide.

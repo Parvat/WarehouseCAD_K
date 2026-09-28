@@ -7,7 +7,6 @@ import { objectsInMarquee, movedIdsFor } from '../../canvas2/selection'
 import { computeSmartGuides } from '../../canvas2/smartGuides'
 import { previewObjects } from '../../canvas2/dragPreview'
 import { clearanceMarks } from '../../canvas2/aisleMarks'
-import { rackBandsWorld, columnMarkerRect } from '../../canvas2/columnMarker'
 import {
   checkColumns, aisleColumnBlocks, uprightFramesLocal, localRectToWorld, MHE_PROFILES,
 } from '../../generate/columnCheck'
@@ -107,10 +106,10 @@ const G = {
     const f = uprightFramesLocal(r, GS).find(q => q.upright === h.upright && q.face === h.faces[0])
     return localRectToWorld(r, f)
   },
+  // a column is drawn at its real size (render/columnDraw.js): the column itself
   columnMarker: (objs) => {
     const c = layoutColumns(objs, GS)[5]
-    const g = columnMarkerRect(c, rackBandsWorld(objs.filter(isRack), GS), 0.1, 6)
-    return { x: g.x, y: g.y, w: g.width, h: g.height }
+    return { x: c.x, y: c.y, w: c.w, h: c.h }
   },
 }
 

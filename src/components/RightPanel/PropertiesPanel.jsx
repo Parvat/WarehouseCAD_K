@@ -7,6 +7,7 @@ import {
   Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight,
 } from 'lucide-react'
 import { pxToFtIn } from '../../utils/canvas'
+import { AisleLabelSize } from './panels/AisleLabelSize'
 import { RackRowPanel, MultiBayPanel, ApplyRowChanges, CantileverPanel, ColumnGridPanel, DriveInPanel, DriveThroughPanel, PushbackPanel } from '../RightPanel/Rackrowpanel'
 import { getLayoutCapacity } from '../../utils/capacity'
 import { useColumnCheck } from '../../generate/useColumnCheck'
@@ -238,6 +239,7 @@ function AislePanel({ obj }) {
             style={btnStyle(direction === val)}>{lbl}</button>
         ))}
       </div>
+      <AisleLabelSize ids={[obj.id]} />
     </div>
   )
 }
@@ -308,6 +310,10 @@ export function PropertiesPanel() {
               puts every rack they belong to in selectedIds) — the same
               multi-bay box a single rack shows. */}
           <div style={{ margin:'8px -8px 0' }}><MultiBayPanel /></div>
+          {/* aisles among the selection: their own label size */}
+          {selected.some(o => o.type === 'aisle') && (
+            <div style={{ marginTop:8 }}><AisleLabelSize ids={selected.filter(o => o.type === 'aisle').map(o => o.id)} /></div>
+          )}
           {twoRacks && (
             <button
               onClick={() => createAisle(selected[0].id, selected[1].id)}
