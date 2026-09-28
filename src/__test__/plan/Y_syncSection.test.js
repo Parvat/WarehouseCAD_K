@@ -1,4 +1,4 @@
-// Area Y — "Sync section": every other row between the same two cross-aisles
+// Area Y — "Match bays in this section" (was "Sync section"): every other row between the same two cross-aisles
 // copies the selected row's bay pattern (beam lengths, in order along the
 // run) and its start position along the run, so every upright lines up
 // across the aisles. Positions across the aisles and levels don't change.
@@ -78,7 +78,7 @@ function disturb(objects, secA, sourceId) {
   return objects.map(o => (d.has(o.id) ? { ...o, ...d.get(o.id) } : o))
 }
 
-describe('Y — Sync section', () => {
+describe('Y — Match bays in this section', () => {
   for (const orientation of ['horizontal', 'vertical']) {
     it(`Y-sync ${orientation}: every row in the section gets the source's beams and start, uprights aligned; across-aisle positions, levels kept; other section untouched; one undo`, () => {
       const base = generated(orientation)
@@ -182,7 +182,7 @@ describe('Y — Sync section', () => {
     })
   }
 
-  it('Y-panel: the rack panel shows "Sync section (N other rows)"; a row alone in its section gets a disabled button', async () => {
+  it('Y-panel: the rack panel shows "Match bays in this section (N other rows)"; a row alone in its section gets a disabled button', async () => {
     const { createElement } = await import('react')
     const { renderToStaticMarkup } = await import('react-dom/server')
     const base = generated('horizontal')
@@ -190,11 +190,11 @@ describe('Y — Sync section', () => {
     load(base)
     Object.assign(store.getInitialState(), store.getState())
     const html = renderToStaticMarkup(createElement(Panel.RackRowPanel, { obj: secA[0] }))
-    expect(html).toContain(`Sync section (${secA.length - 1} other rows)`)
+    expect(html).toContain(`Match bays in this section (${secA.length - 1} other rows)`)
     const lone = { id: 'lone', type: 'rack_row', x: 0, y: 0, width: 1000, height: 140, beams: [96, 96, 96], uprightWidth: 3 }
     load([lone])
     Object.assign(store.getInitialState(), store.getState())
     const html2 = renderToStaticMarkup(createElement(Panel.RackRowPanel, { obj: lone }))
-    expect(html2).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Sync section"|<button[^>]*aria-label="Sync section"[^>]*disabled=""/)
+    expect(html2).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Match bays in this section"|<button[^>]*aria-label="Match bays in this section"[^>]*disabled=""/)
   })
 })

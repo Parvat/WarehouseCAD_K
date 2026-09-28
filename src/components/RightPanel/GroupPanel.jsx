@@ -1,6 +1,8 @@
 import { Copy, Clipboard, Scissors, Layers, Ungroup, X } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { SectionHeader } from '../shared/SectionHeader'
+import { nanoid } from 'nanoid'
+import { pasteAt } from '../../utils/pasteAt'
 
 export function GroupPanel() {
   const {
@@ -51,7 +53,7 @@ export function GroupPanel() {
         {/* Copy / Paste / Cut */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
           <Btn icon={Copy}      label="Copy"  onClick={copySelected}  disabled={!hasSelection} />
-          <Btn icon={Clipboard} label="Paste" onClick={paste} />
+          <Btn icon={Clipboard} label="Paste" onClick={() => pasteAt(useCanvasStore, 'cursor', nanoid)} />
           {/* Cut is a clipboard move, not a destructive act — the red pulled the
               eye to the least important of the three sibling buttons. */}
           <Btn icon={Scissors}  label="Cut"   onClick={cutSelected}   disabled={!hasSelection} />

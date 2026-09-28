@@ -11,6 +11,22 @@ import { ColumnCheckProvider } from './generate/useColumnCheck'
 import { RulesProvider } from './rules/useRules'
 import { Login } from './shell/Login'
 import { Hub } from './shell/Hub'
+import { nanoid } from 'nanoid'
+import { installAisleKeeper } from './utils/aisleKeeper'
+import { installRowEditKeeper } from './utils/rowEditKeeper'
+import { trackCanvasPointer } from './utils/pasteAt'
+
+/* Aisle labels only ever pair two directly facing rows: re-pairs them after
+   deletes, pastes, undo/redo and every commit (utils/aisleKeeper.js). Once,
+   for the life of the app (and once per hot reload of this module). */
+const stopAisleKeeper = installAisleKeeper(useCanvasStore, nanoid)
+if (import.meta.hot) import.meta.hot.dispose(() => stopAisleKeeper())
+/* Row-edit baseline upkeep for 'Apply my changes to all sections' (utils/rowEditKeeper.js). */
+const stopRowEditKeeper = installRowEditKeeper(useCanvasStore)
+if (import.meta.hot) import.meta.hot.dispose(() => stopRowEditKeeper())
+/* Paste lands at the mouse cursor: remember where it last was over the canvas. */
+const stopPointer = trackCanvasPointer(window)
+if (import.meta.hot) import.meta.hot.dispose(() => stopPointer())
 
 // Simple placeholder for apps that don't exist yet (Inspect / Label).
 function Placeholder({ title, onBack }) {

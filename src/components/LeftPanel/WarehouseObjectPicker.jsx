@@ -4,6 +4,7 @@ import { WAREHOUSE_CATEGORIES } from '../../constants/warehouseObjects'
 import { SectionHeader } from '../shared/SectionHeader'
 import { objectContains } from '../../utils/canvas'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
+import { dropRotation } from '../../utils/rowEdits'
 
 const FP_TYPES_SET = new Set(['fp_rect','fp_l','fp_t','fp_u','fp_cross','fp_l_mirror'])
 
@@ -439,6 +440,8 @@ export function WarehouseObjectPicker() {
       layerId: activeLayerId,
       /* column_grid is parented like everything else — see FloatingToolbar. */
       ...(parentFp ? { parentId: parentFp.id } : {}),
+      /* a row dropped into a generated layout runs with its rows (utils/rowEdits.js) */
+      ...dropRotation(objects, parentFp, item.type),
     })
   }
 

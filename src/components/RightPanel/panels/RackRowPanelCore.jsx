@@ -1,7 +1,10 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useState } from 'react'
-import { sectionRows, planSectionSync, syncWarnings } from '../../../utils/syncSection'
-import { buildingSections, planSectionsSync, sectionsSyncWarnings } from '../../../utils/syncSections'
+import { sectionRows, planSectionSync, syncWarnings, splitRowIds } from '../../../utils/syncSection'
+import { rowLines } from '../../../utils/syncSections'
+import { planReplay, applyReplay, pendingEdits, describeEdits } from '../../../utils/rowEdits'
+import { nanoid } from 'nanoid'
+import { rebuildAisles } from '../../../utils/aisleRebuild'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
 import {
@@ -224,21 +227,22 @@ export function MultiBayPanel() {
   )
 }
 
-/* "Sync section": every other row in `sourceId`'s section takes its bay
-   pattern and start position along the run (utils/syncSection.js). All rows
-   but the last are written without history, the last one commits, so the
-   one snapshot holds the whole sync: one undo. Returns the warnings (rows
+/* "Match bays in this section": every other row in `sourceId`'s section takes its bay
+   pattern and start position along the run (utils/syncSection.js). The rows
+   (and re-paired aisles) are written without history and one commit then
+   snapshots them: one undo. Returns the warnings (rows
    that now overlap a rack, pass the wall, or crowd a cross-aisle). */
 export function applySectionSync(getState, sourceId) {
   const st = getState()
   const updates = planSectionSync(st.objects, sourceId, st.gridSize || 40)
   const warnings = syncWarnings(st.objects, sourceId, updates, st.gridSize || 40)
-  const entries = [...updates.entries()]
-  entries.forEach(([id, u], i) => {
-    if (i < entries.length - 1) getState().updateObject(id, u)
-    else getState().commitObjectUpdate(id, u)
-  })
-  return { synced: entries.length, warnings }
+  if (updates.size) {
+    // new lengths can change who faces whom: re-pair the aisles before the one commit
+    const moved = st.objects.map(o => (updates.has(o.id) ? { ...o, ...updates.get(o.id) } : o))
+    useCanvasStore.setState({ objects: rebuildAisles(moved, nanoid).objects })
+    getState().commitObjectUpdate(sourceId, {})
+  }
+  return { synced: updates.size, warnings, split: splitRowIds(st.objects, sourceId) }
 }
 
 function syncWarningText(warnings) {
@@ -252,22 +256,23 @@ function syncWarningText(warnings) {
   }).join(' · ')
 }
 
-/* The "Sync section" control: the button, how many rows it touches, and the
+const MATCH_BAYS_TIP = "Every other row in this section copies this row's beam lengths and start point, so uprights line up across the aisles."
+
+/* The "Match bays in this section" control (was "Sync section"): the button, how many rows it touches, and the
    warnings from the last sync of this rack (never blocking). */
 function SyncSection({ obj }) {
   const { objects } = useCanvasStore()
   const [result, setResult] = useState(null)
-  const rows = sectionRows(objects, obj.id)
-  const others = rows.length - 1
+  // rows = lines across the aisles: the pieces of a split row are one row
+  const others = rowLines(sectionRows(objects, obj.id)).length - 1
   const text = result && result.id === obj.id ? syncWarningText(result.warnings) : null
   return (
     <div>
       <button
         onClick={() => { const r = applySectionSync(useCanvasStore.getState, obj.id); setResult({ id: obj.id, ...r }) }}
         disabled={others < 1}
-        aria-label="Sync section"
-        title={others < 1 ? 'No other rows in this section'
-          : `Copy this row's bay pattern and start position to the other ${others} row${others > 1 ? 's' : ''} between the same cross-aisles`}
+        aria-label="Match bays in this section"
+        title={others < 1 ? 'No other rows in this section' : MATCH_BAYS_TIP}
         style={{
           width: '100%', padding: '6px 8px', borderRadius: 4,
           fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
@@ -276,11 +281,12 @@ function SyncSection({ obj }) {
           border: '1px solid var(--border)',
           color: others < 1 ? 'var(--text3)' : 'var(--text)',
         }}>
-        Sync section{others >= 1 ? ` (${others} other row${others > 1 ? 's' : ''})` : ''}
+        Match bays in this section{others >= 1 ? ` (${others} other row${others > 1 ? 's' : ''})` : ''}
       </button>
       {result && result.id === obj.id && !text && (
         <div style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 2 }}>
           Synced {result.synced} row{result.synced === 1 ? '' : 's'}
+          {result.split.length ? ` · ${result.split.length} piece${result.split.length > 1 ? 's' : ''} of split rows left as is` : ''}
         </div>
       )}
       {text && <div style={{ marginTop: 4 }}><RackWarning text={`Synced, check: ${text}`} /></div>}
@@ -288,68 +294,127 @@ function SyncSection({ obj }) {
   )
 }
 
-/* "Sync all sections": every other section takes this section's row
-   positions (across the aisles, and offset from the section's start along
-   the run), rows matched by nearest position across the aisles (within half an aisle). Beams untouched. All
-   rows but the last are written without history, the last commits: one
-   undo. Returns the warnings and the rows left alone (no partner). */
-export function applySectionsSync(getState, sourceId) {
+/* "Apply my changes to all sections": replays the ROW edits made since the
+   last sync (utils/rowEdits.js) — deleted, moved and added rows — in every
+   other section. Which row is selected doesn't matter; the building does.
+   The rows, re-paired aisles and the new baseline (which clears the list)
+   are written without history and ONE commit snapshots them: one undo
+   restores everything, pending list included. Returns the plan's reports. */
+export function applyRowEdits(getState, fpId) {
   const st = getState()
-  const plan = planSectionsSync(st.objects, sourceId)
-  const warnings = sectionsSyncWarnings(st.objects, plan, st.gridSize || 40)
-  const entries = [...plan.updates.entries()]
-  entries.forEach(([id, u], i) => {
-    if (i < entries.length - 1) getState().updateObject(id, u)
-    else getState().commitObjectUpdate(id, u)
+  const gridSize = st.gridSize || 40
+  const history = (st.history || []).slice(0, (st.historyIndex ?? -1) + 1)
+  const plan = planReplay(st.objects, fpId, gridSize, nanoid, history)
+  const report = {
+    applied: plan.applied.length, deleted: plan.deleted, moved: plan.moved, added: plan.added,
+    skipped: plan.skipped, held: plan.held, clashes: plan.clashes, missing: plan.missing,
+    trimmed: plan.trimmed, trimSkipped: plan.trimSkipped,
+  }
+  if (!plan.baseline) return report
+  const gone = plan.deletes
+  const replayed = applyReplay(st.objects, plan)
+    .map(o => (o.id === fpId ? { ...o, rowBaseline: plan.baseline } : o))
+    .filter(o => !(o.type === 'aisle' && (gone.has(o.row1Id) || gone.has(o.row2Id))))
+  const objects = rebuildAisles(replayed, nanoid).objects
+  const groups = (st.groups || []).map(g => ({ ...g, ids: g.ids.filter(id => !gone.has(id)) })).filter(g => g.ids.length >= 2)
+  useCanvasStore.setState({
+    objects, groups,
+    selectedIds: (st.selectedIds || []).filter(id => !gone.has(id)),
+    activeBaySelection: (st.activeBaySelection || []).filter(e => !gone.has(e.objId)),
   })
-  return { moved: entries.length, sections: plan.sections.length, warnings, unmatched: plan.unmatched, gaps: plan.gaps }
+  getState().commitObjectUpdate(fpId, {})
+  return report
 }
 
-function sectionsWarningText(warnings) {
-  if (!warnings.length) return null
-  return warnings.map(w => {
-    const why = []
-    if (w.overlaps.length) why.push(`overlaps ${w.overlaps.length} rack${w.overlaps.length > 1 ? 's' : ''}`)
-    if (w.crossAisleIn > 0) why.push(`${fmtFtIn(w.crossAisleIn)} into the cross-aisle`)
-    if (w.wallOutIn > 0) why.push(`passes the wall by ${fmtFtIn(w.wallOutIn)}`)
-    return `Section ${w.section} row ${w.row}: ${why.join(', ')}`
-  }).join(' · ')
+const perSection = (list, extra = () => '') => {
+  const by = new Map()
+  for (const h of list) { const e = by.get(h.section) || []; e.push(h); by.set(h.section, e) }
+  return [...by].map(([sec, l]) => `${l.length} row${l.length > 1 ? 's' : ''} in section ${sec}${extra(l)}`).join(', ')
 }
 
-function SyncAllSections({ obj }) {
+/* The button, in the rack panel (for the rack's building) and the building
+   panel. Shows how many edits are pending; its tooltip lists them. */
+export function ApplyRowChanges({ fpId }) {
   const { objects } = useCanvasStore()
   const [result, setResult] = useState(null)
-  const { sections } = buildingSections(objects, obj.id)
-  const others = sections.length - 1
-  const mine = result && result.id === obj.id ? result : null
-  const text = mine ? sectionsWarningText(mine.warnings) : null
+  const fp = fpId ? objects.find(o => o.id === fpId) : null
+  if (!fp || !fp.rowBaseline) return null
+  const edits = pendingEdits(objects, fp, useCanvasStore.getState().gridSize || 40)
+  const n = edits.length
+  const mine = result && result.fpId === fpId ? result : null
   return (
     <div>
       <button
-        onClick={() => { const r = applySectionsSync(useCanvasStore.getState, obj.id); setResult({ id: obj.id, ...r }) }}
-        disabled={others < 1}
-        aria-label="Sync all sections"
-        title={others < 1 ? 'No other sections'
-          : `Give the other ${others} section${others > 1 ? 's' : ''} this section's row positions (beams unchanged)`}
+        onClick={() => { const r = applyRowEdits(useCanvasStore.getState, fpId); setResult({ fpId, ...r }) }}
+        disabled={n < 1}
+        aria-label="Apply my changes to all sections"
+        title={n ? describeEdits(edits) : 'No row changes since the last sync'}
         style={{
           width: '100%', padding: '6px 8px', borderRadius: 4,
           fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
-          cursor: others < 1 ? 'not-allowed' : 'pointer',
-          background: others < 1 ? 'transparent' : 'var(--surface3)',
+          cursor: n < 1 ? 'not-allowed' : 'pointer',
+          background: n < 1 ? 'transparent' : 'var(--surface3)',
           border: '1px solid var(--border)',
-          color: others < 1 ? 'var(--text3)' : 'var(--text)',
+          color: n < 1 ? 'var(--text3)' : 'var(--text)',
         }}>
-        Sync all sections{others >= 1 ? ` (${others} other section${others > 1 ? 's' : ''})` : ''}
+        Apply my changes to all sections ({n} change{n === 1 ? '' : 's'})
       </button>
-      {mine && (
+      {n < 1 && !mine && (
         <div style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 2 }}>
-          Moved {mine.moved} row{mine.moved === 1 ? '' : 's'}
-          {mine.unmatched.length ? ` · ${mine.unmatched.length} row${mine.unmatched.length > 1 ? 's' : ''} with no match left as is` : ''}
-          {mine.gaps.length ? ` · no partner for ${mine.gaps.map(g => `section ${g.section} row ${g.row}`).join(', ')}` : ''}
+          No row changes since the last sync: delete, move or add rows in one section, then apply them to all.
         </div>
       )}
-      {text && <div style={{ marginTop: 4 }}><RackWarning text={`Synced, check: ${text}`} /></div>}
+      {mine && <ApplyReport report={mine} />}
     </div>
+  )
+}
+
+/** "16 × 8'" or "12 × 8' + 2 × 10'" — a bay pattern, beams in order of first use. */
+export const fmtBeams = (beams) => {
+  const n = new Map()
+  for (const b of beams) n.set(b, (n.get(b) || 0) + 1)
+  return [...n].map(([b, k]) => `${k} × ${fmtFtIn(b)}`).join(' + ')
+}
+/** One section's line: which bay pattern its copy of the new row used. */
+export const patternLine = (x, home) => {
+  const bays = `${x.bays} bay${x.bays === 1 ? '' : 's'} (${fmtBeams(x.beams)})`
+  if (x.section === home) return `Section ${x.section}: the new row, ${bays}`
+  if (x.from === 'source') return `Section ${x.section}: ${bays}, the new row's own length`
+  if (x.from === 'source-shortened') return `Section ${x.section}: ${bays}, the new row cut by ${x.dropped} bay${x.dropped === 1 ? '' : 's'} to fit`
+  return `Section ${x.section}: ${bays}, full length, bays from ${x.from}`
+}
+
+/* What Apply did, under the button. Every added-row copy that could not go in
+   is listed per section with its reason — a skip is never silent. */
+export function ApplyReport({ report: r }) {
+  return (
+    <>
+      <div style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 2 }}>
+        Applied {r.applied} change{r.applied === 1 ? '' : 's'}
+        {r.deleted.length ? ` · deleted ${r.deleted.length} row${r.deleted.length > 1 ? 's' : ''}` : ''}
+        {r.moved.length ? ` · moved ${r.moved.length} row${r.moved.length > 1 ? 's' : ''}` : ''}
+        {r.trimmed.length ? ` · trimmed ${r.trimmed.length} row end${r.trimmed.length > 1 ? 's' : ''} at cross-aisles` : ''}
+        {r.trimSkipped.length ? ` · not trimmed: ${r.trimSkipped.map(t => `section ${t.section} row ${t.rowIndex} (${t.reason})`).join(', ')}` : ''}
+        {r.added.length ? ` · added ${r.added.reduce((k, a) => k + a.sections.length, 0)} row copies` : ''}
+        {r.held.length ? ` · held at the wall: ${perSection(r.held, l => ` (up to ${fmtFtIn(Math.max(...l.map(h => h.shortIn)))} short)`)}` : ''}
+        {r.clashes.length ? ` · ${r.clashes.map(c => `row ${c.rowIndex} changed in sections ${c.sections.join(' and ')}: section ${c.winner}'s later ${c.kind} wins`).join('; ')}` : ''}
+        {r.missing.length ? ` · no row to move: ${r.missing.map(m => `section ${m.section} row ${m.rowIndex}`).join(', ')}` : ''}
+      </div>
+      {/* every added row's copy that couldn't go in, per section with the reason — never silent */}
+      {r.skipped.length > 0 && (
+        <div role="alert" aria-label="New rows not added" style={{ marginTop: 4, padding: '5px 8px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 9,
+          background: 'var(--red-dim)', border: '1px solid var(--red-bdr)', color: 'var(--red)', fontWeight: 600 }}>
+          {r.skipped.map((k, i) => <div key={i}>Section {k.section}: new row not added — {k.reason}</div>)}
+        </div>
+      )}
+      {/* which bays each section's new row got: the row next to it (a full-length
+          row), the new row's own length, or that length cut to fit */}
+      {r.added.some(a => (a.patterns || []).length) && (
+        <div aria-label="New row bay patterns" style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 2 }}>
+          {r.added.flatMap(a => (a.patterns || []).map((x, i) => <div key={a.rowIndex + '-' + i}>{patternLine(x, a.section)}</div>))}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -475,7 +540,7 @@ export function RackRowPanel({ obj }) {
       <RackWarning text={nowWarn} />
 
       <SyncSection obj={obj} />
-      <SyncAllSections obj={obj} />
+      <ApplyRowChanges fpId={obj.parentId} />
 
       {/* ── Bay list ── */}
       <div>

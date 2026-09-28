@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
+import { nanoid } from 'nanoid'
+import { pasteAt } from '../utils/pasteAt'
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -124,7 +126,8 @@ export function useKeyboardShortcuts() {
           break
         case 'v':
           e.preventDefault()
-          useCanvasStore.getState().paste()
+          // at the mouse cursor; Ctrl+Shift+V exactly in place (utils/pasteAt.js)
+          pasteAt(useCanvasStore, e.shiftKey ? 'inPlace' : 'cursor', nanoid)
           break
         case 'a':
           e.preventDefault()
@@ -132,9 +135,9 @@ export function useKeyboardShortcuts() {
           break
         case 'd': {
           e.preventDefault()
-          const store = useCanvasStore.getState()
-          store.copySelected()
-          store.paste()
+          // Duplicate: copy, then paste 20 px down-right; the copy is the selection (utils/pasteAt.js)
+          useCanvasStore.getState().copySelected()
+          pasteAt(useCanvasStore, 'nudge', nanoid)
           break
         }
         case 'g':

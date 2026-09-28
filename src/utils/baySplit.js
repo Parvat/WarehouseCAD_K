@@ -10,6 +10,7 @@
 
 import { uprightXs } from '../render/rackOps'
 import { rackFootprint } from '../generate/columnCheck'
+import { rebuildAisles } from './aisleRebuild'
 
 /** Runs of consecutive KEPT bay indices, e.g. 5 bays minus {2} -> [[0,1],[3,4]]. */
 export function keptRuns(bayCount, removed) {
@@ -50,6 +51,9 @@ export function splitRackForBayDelete(obj, removed, newId, gridSize = 40) {
     return {
       ...obj,
       id: k === 0 ? obj.id : newId(),
+      /* a new piece remembers the rack it came from, so "Apply my changes"
+         knows it is part of that row and not an added row (utils/rowEdits.js) */
+      ...(k === 0 ? {} : { pieceOf: obj.id }),
       beams: pieceBeams,
       width,
       x: clean(wx - width / 2),
@@ -123,5 +127,11 @@ export function applyBayDeletes(s, byObj, newId, gridSize = 40) {
     pairs.forEach(([r1, r2], k) => out.push(k === 0 ? Object.assign(o, { row1Id: r1, row2Id: r2 }) : { ...o, id: newId(), row1Id: r1, row2Id: r2 }))
   }
   s.objects.splice(0, s.objects.length, ...out)
+
+  /* Then every aisle pairs two directly facing rows (utils/aisleRebuild.js):
+     a pairing the split no longer supports goes, a new neighbour pair gets
+     an aisle. Same draft, so still one history entry. */
+  const rb = rebuildAisles(s.objects, newId)
+  if (rb.changed) s.objects.splice(0, s.objects.length, ...rb.objects)
   return pieces
 }

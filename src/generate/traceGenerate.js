@@ -22,6 +22,7 @@ import { sizingSheetLayout, generateFixtures } from './sizingLayout'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { rackFootprint, groupBySegment } from './columnCheck'
 import { usableCapacity, mheProfile } from './usableCapacity'
+import { makeBaseline } from '../utils/rowEdits'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
 const FLUE_IN = 9    // back-to-back flue gap for double rows
@@ -121,6 +122,21 @@ export function placementToObject(p) {
      needs a real id to point row1Id/row2Id at BEFORE these racks are pushed
      into the store (addObject respects an id that's already set). */
   o.id = nanoid()
+  /* Generator stamps (Sync all sections): which row across the aisles and
+     which section along the run this rack is, and where it was generated —
+     its drawn box's run start and near edge across the aisles, in feet from
+     the building's corner (placements are building-relative, so this holds
+     after buildQueue shifts x/y to the building and when the building is
+     dragged). A sync moves each row by how far its partner moved from ITS
+     generated spot. Pieces of a split rack copy every field, so they keep
+     their row. */
+  if (p.rowIndex != null) {
+    const f = rackFootprint(o)
+    o.rowIndex = p.rowIndex
+    o.genSection = p.genSection
+    o.genRunFt = (f.rotated ? f.y : f.x) / GS
+    o.genCrossFt = (f.rotated ? f.x : f.y) / GS
+  }
   return o
 }
 
@@ -260,6 +276,11 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
     [...racks, ...aisleObjectsForRacks(racks), ...generateFixtures(brief, ox, oy)],
     fp?.id,
   )
+  /* The row-edit baseline (utils/rowEdits.js): the rows as generated, on
+     the building, before any rack is added — so a batched placement never
+     shows up as pending "added rows". No history entry here; the racks'
+     own commits snapshot it. */
+  if (fp) after.updateObject(fp.id, { rowBaseline: makeBaseline([fp, ...queue], fp) })
   return {
     queue,
     orientation:     auto ? pick.orientation : (brief.orientation ?? 'horizontal'),

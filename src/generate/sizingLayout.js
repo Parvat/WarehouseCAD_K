@@ -841,8 +841,8 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
   if (!bands.length || !segments.length || bays <= 0) return []
 
   const placements = []
-  for (const band of bands) {
-    for (const seg of segments) {
+  bands.forEach((band, bandIdx) => {
+    segments.forEach((seg, segIdx) => {
       /* A run's own length in feet — the SAME totalIn/12 formula
          traceGenerate's beamRackObject will independently compute as its
          (pre-rotation) width, needed here only for `frame.place` to locate
@@ -868,9 +868,14 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
         // column, that IS the widened value, so it could never shrink.
         bays: seg.bays, beamIn, depthIn, flueIn: band.flueIn ?? flueIn, flueBaseIn: flueIn, levels, palletWIn,
         palletDIn: spec.palletDIn, uprightWidthIn: upIn,
+        /* Row / section stamps (Sync all sections): the same row number
+           for the same band in every section, counted across the aisles,
+           and the section number along the run. Saved with the rack and
+           kept by the pieces of a split rack. */
+        rowIndex: bandIdx + 1, genSection: segIdx + 1,
       })
-    }
-  }
+    })
+  })
   return placements
 }
 

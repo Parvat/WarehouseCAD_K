@@ -1,4 +1,4 @@
-// syncSection.js — "Sync section": every other row in the selected row's
+// syncSection.js — "Match bays in this section" (was "Sync section"): every other row in the selected row's
 // section copies its BAY PATTERN (beam lengths, in order along the run) and
 // its START POSITION along the run, so every upright lines up across the
 // aisles. Positions across the aisles, depth, levels and everything else
@@ -14,6 +14,7 @@
 
 import { rackFootprint } from '../generate/columnCheck'
 import { rackLengthIn, changeIssues } from './bayBeam'
+import { rowLines, buildingSections } from './syncSections'
 
 const BEAM_RACKS = new Set(['rack_row', 'rack_double_row'])
 const EPS = 1e-6
@@ -26,21 +27,34 @@ const crossOf = (f) => (f.rotated ? [f.x, f.x + f.w] : [f.y, f.y + f.h])
 
 /** The rows in `sourceId`'s section, the source included, in stack order. */
 export function sectionRows(objects, sourceId) {
-  const src = objects.find(o => o.id === sourceId)
-  if (!src || !BEAM_RACKS.has(src.type) || !Array.isArray(src.beams) || !rightAngle(src)) return []
-  const sf = rackFootprint(src), [a, b] = runOf(sf)
-  return objects
-    .filter(o => BEAM_RACKS.has(o.type) && Array.isArray(o.beams) && rightAngle(o) && (o.parentId || null) === (src.parentId || null))
-    .filter(o => { const f = rackFootprint(o); if (f.rotated !== sf.rotated) return false; const [c, d] = runOf(f); return c < b - EPS && d > a + EPS })
-    .sort((p, q) => crossOf(rackFootprint(p))[0] - crossOf(rackFootprint(q))[0])
+  /* The same sections as Sync all sections (buildingSections): racks
+     grouped by overlapping run, transitively, so the far piece of a split
+     row belongs to its section even when the selected rack is a short piece. */
+  const { sections, index } = buildingSections(objects, sourceId)
+  return index < 0 ? [] : sections[index].rows
 }
 
 /** The sync as Map(id -> { beams, uprightWidth, width, x, y }) for every
  *  other row in the section. Beams are copied in WORLD order along the run,
  *  so a row drawn the other way round (180° / 270°) gets them reversed and
  *  its uprights still land on the source's. */
+/** Racks the sync leaves alone: the pieces of a SPLIT row (a middle-bay
+ *  delete leaves two racks on one line across the aisles). Copying the full
+ *  pattern onto each piece would stack identical racks on top of each
+ *  other, so a split row keeps its pieces as they are and is reported. The
+ *  selected rack's own line counts too: its other pieces aren't touched. */
+export function splitRowIds(objects, sourceId) {
+  const out = []
+  for (const l of rowLines(sectionRows(objects, sourceId))) {
+    if (l.pieces.length < 2) continue
+    for (const r of l.pieces) if (r.id !== sourceId) out.push(r.id)
+  }
+  return out
+}
+
 export function planSectionSync(objects, sourceId, gridSize = 40) {
-  const rows = sectionRows(objects, sourceId)
+  const skip = new Set(splitRowIds(objects, sourceId))
+  const rows = sectionRows(objects, sourceId).filter(r => !skip.has(r.id))
   const src = rows.find(o => o.id === sourceId)
   const updates = new Map()
   if (!src) return updates

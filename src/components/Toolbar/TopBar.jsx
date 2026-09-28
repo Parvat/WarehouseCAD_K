@@ -7,6 +7,8 @@ import { useCanvasStore } from '../../store/useCanvasStore'
 import { UNITS } from '../../constants'
 import { RulesPanel } from '../Rules/RulesPanel'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
+import { nanoid } from 'nanoid'
+import { pasteAt } from '../../utils/pasteAt'
 
 /* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
 const C = {
@@ -282,7 +284,8 @@ export function TopBar() {
                   accent that pulled the eye to the quietest item in the menu. */}
               <MenuItem icon={Scissors}  onClick={() => { cutSelected();  setMenuOpen(false) }}>Cut</MenuItem>
               <MenuItem icon={Copy}      onClick={() => { copySelected(); setMenuOpen(false) }}>Copy</MenuItem>
-              <MenuItem icon={Clipboard} onClick={() => { paste();        setMenuOpen(false) }}>Paste</MenuItem>
+              <MenuItem icon={Clipboard} onClick={() => { pasteAt(useCanvasStore, 'cursor', nanoid); setMenuOpen(false) }} hint="Ctrl+V">Paste</MenuItem>
+              <MenuItem icon={Clipboard} onClick={() => { pasteAt(useCanvasStore, 'inPlace', nanoid); setMenuOpen(false) }} hint="Ctrl+Shift+V">Paste in place</MenuItem>
             </MenuGroup>
 
             <MenuGroup label="View">

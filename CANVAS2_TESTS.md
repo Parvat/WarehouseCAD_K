@@ -216,63 +216,445 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
-### Z — Sync all sections · `Z_syncSections.test.js` (13 tests)
-**"Sync all sections (N other sections)"** is a button in the rack panel,
-under "Sync section". It applies the selected row's section's **row
-positions** to every other section in the building (same run direction).
-Positions only: beams, width, depth, levels and rotation are untouched.
+### RE — Apply my changes to all sections · `RE_rowEdits.test.js` (22 tests)
+**The model (PP, agreed).** The button replays the ROW edits made since the
+last sync in every other section. It no longer makes the other sections match
+a selected source, so which row is selected doesn't matter; the building
+does. It replaces the source-matching "Copy row layout" / "Sync all sections"
+of areas Z and Z3, which are retired (their tests removed). "Recreate missing
+rows" is gone: a row deleted in one section only stays deleted unless that
+deletion is one of the pending edits.
 
-**How rows are placed:**
-- Rows are matched by **nearest position across the aisles** (row centres),
-  one to one and nearest pairs first, only within **half an aisle** (half
-  the narrowest gap between neighbouring rows of the source section). So a
-  section missing a middle row keeps every other row with its true partner.
-  A row with no source row within half an aisle is left unchanged and
-  reported. A source row with no partner in a section is reported as a gap:
-  "no partner for section 3 row 4".
-- Each matched row gets the source row's near edge across the aisles.
-- Along the run, it gets the same offset from its own section's start edge
-  as the source row has from the source section's.
-- A section's start edge is the run start of its earliest row, taken before
-  the sync.
-- Sections are found by merging overlapping run intervals, the same groups
-  as `groupBySegment` but n log n, since the panel re-renders a lot.
-- Logic: `utils/syncSections.js`.
+**Pending edits = the difference from a baseline.**
+- The protected store can't be hooked, so edits aren't logged action by action.
+  Pending edits are the difference between the rows now and the building's
+  `rowBaseline`: the rows right after the last sync, or as generated.
+- The baseline sits on the building (floor plan) object, in feet from its
+  corner:
+  - it is saved with the layout;
+  - it rides in every undo snapshot: undoing an edit takes it off the list,
+    and undoing a sync brings the list back;
+  - it is replaced in the sync's own commit, so the list clears.
+- The generator writes it before any rack is added, so a batched placement is
+  never "pending".
+- `rowEditKeeper` gives a building loaded without one (an older file) a
+  baseline from its rows as they are, and strips the stamps from a pasted
+  copy of a row so the copy counts as an added row. Split pieces and rows
+  coming back on undo/redo keep theirs.
 
-**Warnings, never blocks.** Each moved row that overlaps another rack, reaches
-past its section's run envelope into a cross-aisle ("2′ into the
-cross-aisle"), or passes the inner wall is listed as "Section k row i".
+**Row identity:** `genSection|rowIndex`. The pieces of a split row are one
+row. The edits:
+- **Delete:** a baseline row that's gone → deleted in every other section.
+- **Move:** the row's position changed, all pieces together → the same row
+  moves by the same amount in every other section, across the aisles and along
+  the run. A change of length is a bay edit and never a move along the run.
+  Held at the walls.
+- **Add:** a row not in the baseline (hand-placed or pasted) → a copy in every
+  other section at the same place relative to that section, with the same
+  beams, depth and levels, all sharing one new `rowIndex`. A copy that would
+  overlap a rack, pass the wall or reach into a cross-aisle is skipped and
+  reported.
+- **Bay changes** are not recorded ("Match bays in this section" does bays).
+- **Clashes:** the same row edited in several sections → the later edit (found
+  from the undo history) wins in every section, and the clash is reported.
+- **One undo** covers the whole replay. Aisle labels are re-paired in the same
+  commit (area AR).
 
-**One undo:** every row but the last is written without history and the last
-commits. No store change.
+**Button:** "Apply my changes to all sections (N changes)", in the rack panel
+(for the rack's building) and in the building panel. The tooltip lists the
+edits: "Delete row 5 · Move row 2 by 6' · Add 1 row". With none it is disabled,
+with the note "No row changes since the last sync…".
 
-| Test | Asserts (a 240′ run with max rack run 60′ → 4 sections of 7 rows; grid 25′ along the run × 40′ across; horizontal 240×120, vertical 120×240) |
+| Test (1080×410, 25×30, reach; 8 sections h, 3 v; each ×2) | Asserts |
 |---|---|
-| `Z-sync` ×2 (h, v) | section 1 row 2 moved 1′ across and row 3 moved 2′ along. After the sync, sections 2–4: row 2 is +40 px across, row 3 +80 px along, every other row where it was. Beams, width, height, levels and rotation are unchanged; section 1 is untouched. Row 3 is listed 24″ into the cross-aisle (sections 2–3) and past the wall by 80 px less the end gap (section 4). One undo restores everything. |
-| `Z-warn` ×2 | row 3 moved 10′ along → row 3 of sections 2–3 is 120″ into the cross-aisle with no overlap (the cross-aisle is 10.58′), and section 4's passes the wall; applied anyway; one undo |
-| `Z-overlap` ×2 | a lane rack in section 3's aisle 1′–2.5′ past row 2; section 1's row 2 moved 3′ across (still within half the narrowed aisle) → only section 3's row 2 is listed, overlapping it; applied anyway |
-| `Z-gap` ×2 | section 3's middle row (4 of 7) deleted; section 1: row 2 +1′ across, row 3 +2′ along, row 5 +1′ across → section 3's rows 1–3 and 5–7 get exactly their true partners' moves (by order, its row 5 would get nothing and row 6 would get +1′); gap reported as section 3 row 4; one undo |
-| `Z-far` ×2 | a section-2 row moved 60% of an aisle across → no source row within half an aisle: left exactly as it was, reported as unmatched, and its source row reported as a gap |
-| `Z-unmatched` ×2 | an extra row far across in section 3 → left exactly as it was and reported |
-| `Z-panel` | "Sync all sections (3 other sections)"; a single-section building → disabled |
+| `RE-delete` | a middle row deleted in the middle section, applied with another section's row selected → deleted in every section, never re-added (a second apply does nothing), list cleared; one undo brings the row and the list back |
+| `RE-multi` | rows 2, 6, 10 moved (1′ 6″ across, 1′ across, 2′ along) and row 14 deleted in section 2 → all 4 applied in every other section (the last section's along-move held at the wall) |
+| `RE-add` | a hand row in section 2's first aisle → a copy in every other section at the same place in each, same beams/levels/depth, one shared rowIndex; one undo removes all |
+| `RE-keep` | a row deleted only in section 3 before the last sync stays deleted there and isn't re-added; other sections keep theirs |
+| `RE-clash` | row 5 moved 1′ in section 1, then 2′ in section 2 → 2′ in every section, clash reported |
+| `RE-split` | split rows and an end-bay delete are not changes; a split row moved (both pieces) moves as one elsewhere, and split rows elsewhere move as one |
+| `RE-save` | the pending list survives serializeScene → deserializeScene |
+| `RE-undo` | undoing an edit takes it off the list; after a sync it's empty; undoing the sync brings it back |
+| `RE-buttons` | rack panel and building panel: label with count, tooltip listing the edits; disabled with the note when none |
+| `RE-merge` | a section moved 12′ along stays its own section (sections come from the stamps) |
+| `RE-stamps`, `RE-keeper` | stamps saved and kept by split pieces; a pasted copy loses its stamps; a building without a baseline gets one |
 
-**Checked in the app, horizontal and vertical:**
-- Generated 240×120 (h) and 120×240 (v) with a 60′ max rack run: 4 sections
-  of 7 rows each.
-- In section 1, row 2 was moved 1′ across and row 3 moved 2′ along, then
-  "Sync all sections (3 other sections)" was pressed.
-- All 21 rows in sections 2–4 matched (row 2 +1′ across, row 3 +2′ along,
-  the others unchanged), beams and widths unchanged, section 1 untouched.
-- The panel showed "Moved 6 rows" and the warning "Section 2 row 3: 2′ into
-  the cross-aisle · Section 3 row 3: 2′ into the cross-aisle · Section 4
-  row 3: passes the wall by 1′ 9″". 1′ 9″ = 80 − 10 px end gap = 70 px.
-- One Ctrl+Z restored every object. No console errors.
-- **Nearest-position matching, re-checked in the app (h and v):** section 3's
-  middle row was deleted (row 4 of 7) and section 1 adjusted (row 2 +1′
-  across, row 3 +2′ along, row 5 +1′ across). After the sync, all 20
-  remaining rows in sections 2–4 had their true partner's position, and the
-  panel showed "Moved 9 rows · no partner for section 3 row 4". One undo
-  restored everything.
+**Checked in the app, horizontal and vertical** (1080×410, 25×30, reach):
+- After generating: a baseline and 0 changes. The button reads "(0 changes)",
+  is disabled and shows the note.
+- A middle row of the middle section was deleted with the Delete key and rows
+  2, 6 and 10 of section 2 were moved. With a row of the LAST section selected:
+  "Apply my changes to all sections (4 changes)", tooltip "Move row 2 by 1′ 6″
+  · Move row 6 by 1′ · Move row 10 by 2′ · Delete row 11".
+- Applied, horizontal: row 11 gone from all 8 sections (167 → 160 racks);
+  rows 2, 6, 10 moved in all 7 other sections (21); section 8's row 10 held at
+  the wall. Vertical: 2 deleted, 6 moved.
+- The list cleared. The building panel showed the button. No aisle crossed a
+  row or dangled. Ctrl+Z brought back the list of 4. No console errors.
+
+### RL — A pasted row's copies are the right length for their own section · `RL_fullLength.test.js` (8 tests)
+**Bug:** a pasted full-length row was copied at its own bay count. Sections
+differ in length (horizontal 1080×410: 14 to 17 bays), so the copies in 2–3
+sections came out a bay or more shorter than the other rows there.
+
+**Rule and fix** (`utils/rowEdits.js`, planReplay's add):
+- **Full-length source** (one piece, at least as long as the nearest row in
+  its own section, within half a bay): each copy is full length for ITS
+  section. It takes the bays of the nearest one-piece row there (reversed if
+  that row faces the other way) and starts and ends where that row does. It
+  stays across where the new row is.
+- **Shorter source:** copied at its exact bays and length, at the same place
+  in the section. Its far-end bays are dropped only if it can't fit.
+- **Report:** every section gets a line under Apply saying which bay pattern
+  its copy used:
+  - "Section 1: 16 bays (16 × 8′), full length, bays from row 5"
+  - "Section 2: the new row, 14 bays (14 × 8′)"
+  - "Section 3: 6 bays (6 × 8′), the new row's own length"
+  - "…, the new row cut by 1 bay to fit"
+
+This replaces RS's shortening of a full-length row to fit a shorter section.
+
+| Test (1080×410; ×2 h/v) | Asserts |
+|---|---|
+| `RL-full` ×2 | a row of the shortest / the longest section, pasted in place and moved into the aisle. It is full length; every section gets a copy with no skips, in one undo step. Each copy has the same bays, start and end as the row next to it, and the bay counts differ between sections. Each section's pattern line names that row |
+| `RL-short` | the pasted row cut to 6 bays → every copy is exactly 6 bays at the same place in its section; lines say "the new row's own length" |
+| `RL-cut` | a row one bay short of the longest section's rows → copied at its length where it fits, cut at the far end in shorter sections; lines say "cut by N bays to fit" |
+
+Also changed:
+- **`RA-paste` / `RA-duplicate`:** these copy a full-length row, so they now
+  expect the neighbour's bays and ends, not the source's.
+- **`RS-10`:** the no-skip check is now geometric. A paste that reaches into
+  no other section skips nothing; one that pokes into a neighbour section
+  skips exactly that section, because the full-length copy there would start
+  on top of the new row.
+
+**Checked in the app, horizontal and vertical** (1080×410; a double row of
+the shortest section, Ctrl+C, Ctrl+Shift+V, moved into the aisle, Apply):
+
+| | Full-length paste | Paste cut to 6 bays |
+|---|---|---|
+| Horizontal (source section 2, 14 bays) | copies of 16/16/15/14/17/14/16 bays, each matching its section's row 5 end to end | every copy 6 bays |
+| Vertical | 16 and 17 bays, matching row 6 | every copy 6 bays |
+
+The panel listed every section's pattern. No skips, no console errors.
+
+### RS — The pasted copy is the selection; a pasted row reaches every section or is reported · `RS_pasteReport.test.js` (30 tests)
+**Bug 1 (the original still looked selected after a paste).** The store's
+selection was already the copy. But the original kept `activeBayIdx` from the
+bay click, and its dashed bay outline is drawn whether or not the rack is
+selected, so it looked selected. Ctrl+D copied that highlight onto the
+duplicate as well.
+
+**Fix** (`utils/pasteAt.js`):
+- Every paste clears the bay and tower highlights on all objects and selects
+  only the new objects.
+- Ctrl+D now goes through `pasteAt(…, 'nudge')` (copy, then paste 20 px
+  down-right), like Ctrl+V, Ctrl+Shift+V, the top bar and the Arrange Paste
+  button.
+
+**Bug 2 (a pasted row was sometimes missing from 1–2 sections).** Sections
+differ in length (horizontal 1080×410: 115′ 9″ to 140′ 6″). A row as long
+as its section could not fit a shorter one and was dropped with a vague
+reason; a paste off the section's extent had no home section.
+
+**Fix** (`utils/rowEdits.js`, planReplay's add):
+- **Home section:** a row off every section's extent belongs to the nearest
+  one.
+- **Shortening:** a full-length row (one piece, within one bay of its
+  section's length) loses far-end bays to fit a shorter section, and the
+  panel says so: "Section 4: new row shortened to 14 bays to fit".
+  *Superseded by RL:* a full-length row now takes the neighbour row's bays in
+  every section, and only a shorter row is cut to fit.
+- **Specific reasons:** a copy that still can't go in is skipped with
+  "overlaps row N by X", "overlaps the new row itself (it reaches into this
+  section from section M) by X", "would pass the wall by X" or "is X longer
+  than this section".
+- **No silent skips:** a final guard reports any section that was neither
+  placed nor skipped.
+- **Panel:** `ApplyReport` (under the Apply button) lists every skip on its
+  own red line, "Section 6: new row not added — overlaps row 4 by 1′ 2″".
+
+| Test (1080×410; ×2 h/v) | Asserts |
+|---|---|
+| `RS-select` ×3 | cursor / in place / nudge (Duplicate), with the original's bay highlighted: the selection is exactly the pasted rack; no object keeps a bay or tower highlight |
+| `RS-10` ×10 | a single row pasted into an aisle at 10 places (middle of section 1; middle of the shortest and of the longest section; near a section's start edge; near its far edge by the cross-aisle; last section; first aisle; last aisle; middle section; in the cross-aisle). Every other section is **exactly one of** placed or skipped. Every skip has a specific reason. A "new row itself" overlap is real (the pasted row does reach into that section). The 7 pastes fully inside a section skip nothing. After Apply, the number of copies = placed sections, placed + skipped = sections − 1, and the panel shows every skip line |
+| `RS-fit` | a full-length row in the longest section: placed in all sections, shortened in exactly the shorter ones, and each shortening shown in the panel |
+| `RS-wire` | Ctrl+V / Ctrl+Shift+V / Ctrl+D, the top bar and the Arrange Paste all call pasteAt |
+| `RS-panel` | each skipped section is its own "Section N: new row not added — reason" line in a role=alert box; shortenings are listed |
+
+**Repro, before and after** (a single row pasted at the 10 places; per
+section, placed or skipped with the reason):
+- **Before:** many sections were skipped with "longer than this section",
+  whenever the source section was longer than the target. Near-edge pastes
+  gave "would overlap a rack".
+- **After:** the only skips are the near-edge and cross-aisle pastes. There
+  the pasted row itself crosses into the neighbour section, and that section
+  is reported as "overlaps the new row itself … by 3′ 6″".
+- Both runs had no silent skips.
+
+**Checked in the app, horizontal and vertical** (1080×410; a row with a bay
+highlighted, Ctrl+C, mouse over an aisle, Ctrl+V):
+- Only the new row was selected, with no highlight left on the original.
+- A mid-section paste → Apply added 7/7 copies (h) and 2/2 (v), with no red
+  report.
+- A paste at 95 % (crossing the cross-aisle) → 6/7 and 1/2, and the panel
+  showed "Section 3: new row not added — overlaps the new row itself (it
+  reaches into this section from section 2) by 3′ 6″".
+- Ctrl+D then selected only the duplicate.
+- No console errors.
+
+### RP — Pasted / duplicated / dropped rows are added rows; paste at the cursor · `RP_pasteAdds.test.js` (13 tests)
+**Bug 1 (an added row treated as a move).** A copy of a row carries that row's
+`rowIndex`/section stamps. When rows had been moved to make space, the copy
+dropped into the gap sat closer to the row's baseline spot than the row
+itself, and "the rack nearest the baseline" picked the COPY as the row. The
+other sections' row then moved the wrong amount, the aisle beside it widened
+(the 28′ 6″), and no row was added.
+
+**Fix: an add is decided by rack id** (`utils/rowEdits.js`).
+- The baseline records the rack ids of every row (baseline v2).
+- A rack is part of an existing row only if its id is one the baseline
+  recorded for that row, or it is a split piece made from one: `baySplit` now
+  marks every new piece `pieceOf: <the rack it came from>`, and the piece must
+  sit on the same line and not on top of another rack of the row.
+- Any other rack is an ADDED row, whatever stamps it carries. Only baseline
+  racks can be moves. Once applied, the added row and its copies get their own
+  new `rowIndex`.
+- Paste and Ctrl+Shift+V strip the stamps and `pieceOf` from pasted racks; the
+  row-edit keeper strips them from duplicates.
+
+**Bug 2 (paste slid the object away).** The protected store's `paste()`
+nudges 20 px every time. `utils/pasteAt.js` builds the same copies (new ids,
+parent and group remapping):
+- **Ctrl+V and the top bar's Paste:** the clipboard's centre on the mouse
+  cursor (the last pointer position over the canvas, in world coordinates for
+  the current zoom and pan).
+- **Ctrl+Shift+V and "Paste in place":** exactly on the originals.
+
+Each paste is one history entry, and a pasted rack joins the building it lands
+in. Duplicate (Ctrl+D) keeps the store's nudge.
+
+**Matrix rule 9** (regenerate twice → identical): its id normalisation now
+reaches nested fields, because the building's baseline lists rack ids.
+
+| Test (1080×410; rows 3–10 of the shortest section moved 10′ across to open a gap; ×2 h/v) | Asserts |
+|---|---|
+| `RP-paste` | row 3 copied, Ctrl+V with the pointer in the gap (one undo step) → no stamps, counted as the one add next to the 8 moves; after Apply every section's rows 3–10 are exactly +10′, every other row unmoved, and each section has the new row (its own new rowIndex) in the gap |
+| `RP-duplicate` | Ctrl+D (the store's paste, the copy KEEPS row 3's stamps) dragged into the gap → still the add by id; row 3's move stays 10′; same result |
+| `RP-panel` | a left-panel row in the gap → same result |
+| `RP-cursor` | zoom 0.5, pan (120, 60): the pasted row's centre is exactly the pointer's world point; parented to the building |
+| `RP-inplace` | Ctrl+Shift+V lands exactly on the original; pending = one add; one undo removes it |
+| `RP-split` | a middle-bay split's new piece has `pieceOf` and is not an add |
+| `RP-wire` | Ctrl+V → `pasteAt(…, e.shiftKey ? 'inPlace' : 'cursor')`; the top bar has Paste and Paste in place |
+
+**Checked in the app, horizontal and vertical** (1080×410; rows 3–10 of the
+shortest section moved 10′; row 3 copied):
+- With the mouse over the gap, **Ctrl+V** put the row exactly at the cursor
+  (0 px off) with no stamps. The button counted 1 add and 8 moves. Apply added
+  the row in every section (7 / 2 copies) with no row moved wrongly.
+- **Ctrl+Shift+V** landed exactly on the original.
+- **Ctrl+D** plus a drag into the gap gave the same result.
+- No console errors.
+
+### RF — Final rules of "Apply my changes to all sections" · `RF_finalRules.test.js` (14 tests)
+| Change in one section | Copied? |
+|---|---|
+| delete a row / add a row (left panel, paste, duplicate) | yes, to every other section |
+| move a row | yes, but **only the movement made, on the axis that changed** |
+| delete the end bay next to a **cross-aisle** | yes, the same end of the same row, only in sections where that end also borders a cross-aisle (never a wall end) |
+| delete an end bay at a **wall** end | no, local |
+| delete a middle bay (a split) | no, local |
+| change a beam length | no, local ("Match bays in this section") |
+
+**The move bug.** The same row changed in two sections (along the run in the
+left section, up in the right one) went through the "later change wins" rule,
+which replaced the row's whole position. The left row lost its along-run move
+and went back to the wall.
+
+**Now moves combine per axis.** Along the run the latest along-move wins; across
+the aisles the latest across-move wins. Every section's row goes to its own
+baseline spot plus those deltas, and an axis nobody moved stays where it is.
+
+**Trims.** A row with fewer bays whose one end moved in (and the other didn't)
+has had end bays removed. The count is the distance that end moved, in bay
+pitches, so a middle-bay delete in the same row never adds to it.
+- Listed only when that end borders a cross-aisle in its own section.
+- Applied with the bay-split geometry (`splitRackForBayDelete`), holding the
+  other end, in every other section whose same end borders a cross-aisle,
+  unless it's already trimmed there.
+- The baseline now records each row's bay count.
+- Tooltip: "Remove 1 end bay at the far end of row 7".
+
+| Test (1080×410; ×2 h/v) | Asserts |
+|---|---|
+| `RF-axis-two` | left row 5 moved 3′ along + Apply, then right rows 4–6 moved 1′ up + Apply (one undo step) → the left row keeps its along-run position and only moves up; every section's row 5 unchanged along the run by the second apply |
+| `RF-axis-one` | the same two edits in one Apply (along first, up later) → every section's row 5 moved along AND up (the last section along only to its wall) |
+| `RF-add` | gap opened, a left-panel row dropped in it, row 9 deleted → one Apply (one undo step): row 9 gone everywhere, the new row in every section |
+| `RF-trim` | far-end bay of row 7 deleted in section 2 → pending "trim end 1"; after Apply every section except the last (wall) has one bay fewer with its start where it was; undo restores |
+| `RF-trim-start` | start-end bay → trimmed everywhere except the first section; far ends unchanged |
+| `RF-wall-trim` | an end bay deleted at a wall end → nothing pending |
+| `RF-middle` | a middle bay deleted and a beam length changed → nothing pending, Apply changes nothing |
+
+Area Z2 update: its chopped rows (a split and the front bay deleted next to
+section 2's start cross-aisle) now count as three 1-bay start trims (the split
+stays local). Its apply applies 4 changes: 3 trims and the move.
+
+**Checked in the app, horizontal and vertical** (1080×410):
+- Left row 5 moved 3′, "Apply my changes to all sections (1 change)" ("Move row
+  5 by 3′") clicked. Right rows 4–6 moved 1′ up, "(3 changes)" ("Move rows 4–6
+  by 1′") clicked. The left row kept its 3′ along and moved up 1′.
+- Row 7's far-end bay deleted in section 2 (Delete key), "(1 change)" ("Remove
+  1 end bay at the far end of row 7"). After Apply, every section except the
+  last lost that bay (horizontal 7 sections, e.g. 16→15; vertical 16→15,
+  14→13); the last stayed (16→16, 17→17).
+- A middle bay deleted → "(0 changes)", disabled.
+- Left-panel and paste adds re-checked: 7 / 2 copies. No console errors.
+
+### RA — Added rows are copied, however they were added · `RA_addPaths.test.js` (11 tests)
+**The bug:** rows moved to open a gap, a row added in it, Apply → the moves were
+copied but the new row wasn't added anywhere. Reproduced on 1080×410 with each
+add path:
+
+| Path | Horizontal | Vertical |
+|---|---|---|
+| Left-panel drop | counted, copied to all 7 | **not counted, nothing copied** |
+| Copy-paste / duplicate (Ctrl+D = copy + paste) | counted; copies of a full-length row **skipped** in the sections a bay shorter and whenever the paste's 20 px nudge pushed it past its section | counted, copied |
+
+**Causes:**
+1. **The left panel drops every rack at rotation 0.** In a vertical layout the
+   new row runs across the rows. The edit scan only looked at racks running
+   with the rows, so it wasn't counted and no copy was made. That is the
+   reported symptom: moves copied, the new row nowhere.
+2. **Copies of an added row were skipped whenever they stuck out of the
+   target section**, even by the paste's 20 px (6″) nudge. The skip was only
+   reported in the grey result line.
+
+**Fixes:**
+- **Turn dropped rows.** A row dropped from the left panel into a generated
+  layout is turned to run with its rows (`dropRotation`, used by FloatingToolbar
+  and WarehouseObjectPicker).
+- **Count a row placed the other way round.** It is still counted as an added
+  row, never silently ignored. The building's direction now comes from its
+  baseline or generated rows, not from whichever rack is first.
+- **Slide copies back in.** A copy that would stick out of its section slides
+  back inside if it's short enough. One longer than the section is skipped as
+  "longer than this section".
+- **Warn in red.** Skipped copies now show in a red warning box: "Added row not
+  copied to section 3 (…)".
+- **Group the tooltip.** The same change to many rows is said once: "Move rows
+  3–21 by 8′ · Delete rows 5, 9 · Add 1 row".
+
+| Test (1080×410, the shortest section's rows 3+ moved 8′ across to open a gap; ×2 h/v) | Asserts |
+|---|---|
+| `RA-panel` | the left panel's own drop payload in the gap → turned with the rows (90° vertical), counted (the button count includes it); Apply → one copy in every other section, at the same place across the aisles and the same offset from its section's start, same beams/size/rotation, overlapping nothing; list cleared |
+| `RA-across` | a row dropped the other way round → still counted as the one added row |
+| `RA-paste`, `RA-duplicate` | a row copy-pasted (and duplicated) and dragged into the gap → loses the source row's stamps, counted; Apply → a copy in every other section (within the 20 px paste nudge, slid back into its section) |
+| `RA-tooltip` | "Move rows 3–21 by 8′ · Delete rows 5, 9 · Move row 2 by 6′ · Add 1 row" |
+| `RA-wire` | both left-panel drop handlers spread `dropRotation(objects, parentFp, item.type)`; Ctrl+D is copy + paste |
+
+**Checked in the app, horizontal and vertical** (1080×410; the shortest
+section's rows 3+ moved 8′ across):
+- **Left panel:** the view was centred on the gap and the "Selective Rack" item
+  clicked. The row was placed inside the building, turned to 90° in vertical.
+  The button read "(20 changes)" (h) / "(57 changes)" (v), counting the add.
+  Apply made 7 / 2 copies, one per other section, and cleared the list.
+- **Paste:** Ctrl+C, Ctrl+V, then the row moved into the gap. The button counted
+  the add; Apply made 7 / 2 copies with no warning.
+- No console errors.
+
+### AR — Aisles pair only directly facing rows · `AR_aisleRebuild.test.js` (110 tests)
+**The bug.** An `aisle` is only a pair of rack ids. When a row is deleted, the
+aisles that pointed at it are left dangling and its neighbours get no aisle of
+their own. When a row comes back, nothing re-pairs, so a stale pairing can run
+straight through it (the 28′ 6″ label).
+
+**The fix** (`utils/aisleRebuild.js`). `rebuildAisles` re-derives the pairs.
+Rows are lines across the aisles (split pieces are one row), grouped by
+building, run direction and overlapping run, and neighbours are consecutive
+lines that share some of the run with a gap between them. Then:
+- an aisle whose pair is still neighbours is kept, with its id and label;
+- an aisle with a row between its rows, a duplicate, or one pointing at a
+  deleted rack is removed;
+- a neighbour pair without an aisle gets one.
+
+Only managed sections are touched: those with generated racks or existing
+aisles. A hand-drawn layout gets no new aisles, and lane-rack aisles are left
+alone.
+
+Where it runs:
+- **Sync buttons and bay splits:** before their commit, so their undo
+  snapshots are right.
+- **`aisleKeeper` (installed in App.jsx):** re-runs it whenever the racks or
+  aisles change or the history position moves (every commit, undo and redo),
+  without a history entry. This covers the protected store's delete, paste and
+  undo/redo.
+
+| Test | Asserts (both orientations) |
+|---|---|
+| `AR-delete` | delete a middle row → one aisle joins its neighbours; applied everywhere → same; undo twice → the row is back, the wide aisle gone, both of its aisles present |
+| `AR-handcopy` | row 4 deleted everywhere, a hand row in its place, applied → every copy has an aisle to each neighbour |
+| `AR-undo` | delete, apply, then undo/undo/redo/redo/undo → right at every step |
+| `AR-snapshot` | keeper off: the apply's own undo snapshot already has the right aisles |
+| `AR-split` | a middle-bay split and Match bays keep every aisle between facing rows |
+| `AR-matrix` ×100 | every matrix building, both orientations, both wall settings: the generator's aisles have no rack between their rows, every facing pair has one, and a rebuild changes nothing |
+
+Every test also checks that no aisle has a rack in its gap and that every
+facing pair has an aisle.
+
+### Z2 — Sync safety · `Z2_syncSafety.test.js` (12 tests)
+**What made rows disappear.**
+- Deleting "rows" by clicking a row and pressing Delete removes the clicked
+  bay; a middle bay splits the rack into two pieces. Pressing Delete on the
+  front piece then shortens it, so the row now starts one bay later.
+- Both syncs treated every piece as its own row. A section with 3 chopped
+  rows read as 10 rows instead of 7, so matching and row numbers went wrong.
+- Sync all sections then copied the chopped rows' later start onto
+  full-length rows in every other section. Those rows were pushed along the
+  run into the cross-aisle and the next section, and in the last section out
+  of the building. Reproduced with real clicks: after "Sync all sections"
+  from the chopped section, 3 of 31 racks were outside the building (6 with
+  more rows chopped), in both orientations.
+
+**The "Sync section" button looked missing:** the dev server was serving a
+stale `RackRowPanelCore.jsx` (its file watcher missed an edit; the served
+module had only one sync button while the file on disk renders both). After
+a clean restart both buttons render.
+
+**Fixes** (`utils/syncSections.js`, `utils/syncSection.js`):
+- **A row is a line across the aisles** (`rowLines`): the pieces of a split
+  row are one row. Sync all sections matches lines and moves every piece of
+  a line by the same shift, so the gap in a split row is kept.
+- **Never outside the building:** a Sync all sections shift that would take a
+  rack past the inner wall is cut at the wall. The row is reported as held
+  ("held at the wall: section 4 row 3 (8′ short)"). This replaces the old
+  "passes the wall" warning for Sync all sections.
+- **Sync section leaves split rows as they are** (`splitRowIds`), reported
+  as "N pieces of split rows left as is". Copying the full pattern onto each
+  piece would stack identical racks on top of each other.
+- **One section definition:** Sync section now uses the same sections as
+  Sync all sections (runs grouped transitively), so a split row's far piece
+  belongs to its section even when the selected rack is a short piece. Its
+  row count is in lines.
+
+| Test | Asserts |
+|---|---|
+| `Z2-buttons` ×2 (h, v) | a single row and a double row both render "Sync section" and "Sync all sections", and so does a chopped piece |
+| `Z2-delete` ×10 (h, v × Sync all from sections 2/1/3, Sync section from 2/1) | rows 1–3 of section 2 chopped (split at bay 3, then front bay deleted). After the sync the rack count is unchanged, every rack is inside the building's inner box, nothing is stacked on another rack, and split rows keep their gap (moved as one). Sync section from the chopped section leaves the 5 split pieces as they are. One undo restores. |
+
+Area Z updates: section 4's row 3 is now held at the wall (moved by the end
+gap only) instead of passing it; `Z-sync`, `Z-warn` and `Z-gap` assert the
+held report and the clamped position.
+
+**Checked in the app, horizontal and vertical** (fresh dev server):
+- Both buttons show.
+- Rows 1–3 of section 2 were chopped with real clicks and Delete (28 → 31
+  racks).
+- "Sync all sections" from that section: 31 racks before and after, all 31
+  inside the building and drawn. The panel said "Moved 9 rows · held at the
+  wall: section 4 rows 1–3 (8′ short)".
+- "Sync section": "Synced 4 rows · 5 pieces of split rows left as is",
+  31/31 inside.
+- No console errors.
 
 ### Y — Sync section · `Y_syncSection.test.js` (7 tests)
 **"Sync section"** is a button in the rack panel labelled with the number of
@@ -960,13 +1342,46 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | U | **"− Bay" without the bay-delete anchor** | 1: `U-wire` rack panel "− Bay" | ✓ |
 | U | **Helper ignores the anchor rule** (always holds the near end) | 5: `U-minus-bay` at 0°, 90°, 180°, 270°, plus Column Check remove section (first bay) at 0° | ✓ |
 
-| Z | **Sync only one other section** | 10: Z-sync, Z-warn, Z-overlap, Z-gap, Z-unmatched (both orientations) | ✓ |
-| Z | **Match rows by order again** | 4: Z-gap h/v, Z-far h/v | ✓ |
-| Z | **Run offset not from the section's own start** | 6: Z-sync, Z-warn, Z-overlap h/v | ✓ |
-| Z | **Position across the aisles not copied** | 4: Z-sync h/v, Z-overlap h/v | ✓ |
-| Z | **Every row its own undo step** | 4: Z-sync h/v, Z-warn h/v | ✓ |
-| Z | **Cross-aisle check off** | 4: Z-sync h/v, Z-warn h/v | ✓ |
-| Z | **Overlap / wall check off** | 6: Z-sync, Z-warn, Z-overlap h/v | ✓ |
+| RE | **Replay only the last edit** | 4: RE-multi h/v, RE-clash h/v | ✓ |
+| RE | **Restore source-snapshot matching** (sections re-made from the first section: missing rows re-added) | 10: RE-delete, RE-multi, RE-keep, AR-delete, AR-snapshot (h and v) | ✓ |
+| RE | **The sync doesn't reset the baseline** (list never clears) | 8: RE-delete, RE-multi, RE-add, RE-undo (h and v) | ✓ |
+| RE | **Bay edits counted as moves** | 8: RE-split h/v, Z2-delete ×6 | ✓ |
+| RE | **The earlier of two clashing edits wins** | 2: RE-clash h/v | ✓ |
+| RE | **Pasted rows keep their stamps** | 1: RE-keeper | ✓ |
+| RL | **Always copy the source length** (no neighbour pattern) | 8: RL-full h/v ×2 ("section 1: 14 bays, expected 16"), RS-fit h/v, RS-10 middle section h/v | ✓ |
+| RL | **Treat every row as full length** | 4: RL-short h/v, RL-cut h/v | ✓ |
+| RS | **Suppress the skip report** (drop `plan.skipped.push` and the no-silent-skip guard) | 6: RS-10 near edge / far edge (h/v) — sections neither placed nor reported | ✓ |
+| RS | **Suppress only the reason** (the guard's bare "not placed" remains) | 6: RS-10 near/far edge, cross-aisle — no specific reason | ✓ |
+| RS | **Keep the original's bay highlight on paste** | 6: RS-select cursor / inPlace / nudge (h/v) | ✓ |
+| RS | **No full-length shortening** | 12: RS-10 inside pastes + RS-fit (h/v) — "longer than this section" skips | ✓ |
+| RP | **Detect adds by rowIndex** (stamps decide which rack is the row) | 2: RP-duplicate h/v (the copy is taken for row 3) | ✓ |
+| RP | **…and paste keeps the stamps** | 6: RP-paste, RP-duplicate, RP-inplace (h and v) | ✓ |
+| RP | **Paste nudges 20 px instead of landing at the cursor** | 4: RP-paste h/v, RP-cursor h/v | ✓ |
+| RP | **Paste in place nudges 20 px** | 2: RP-inplace h/v | ✓ |
+| RP | **Split pieces not marked (pieceOf)** | 2: RP-split h/v | ✓ |
+| RF | **Copy whole position** (the latest move's full delta on both axes) | 2: RF-axis-one h/v | ✓ |
+| RF | **Copy whole position** (the source row's absolute place, like source matching) | 4: RF-axis-two h/v, RF-axis-one h/v | ✓ |
+| RF | **Skip adds** | 10: RA-panel/paste/duplicate, RE-add, RF-add (h and v) | ✓ |
+| RF | **Copy middle-bay deletes** (a split counted as a trim) | 4: RF-middle h/v, RE-split h/v | ✓ |
+| RF | **Copy trims to wall ends too** | 4: RF-trim h/v, RF-trim-start h/v | ✓ |
+| RF | **Skip cross-aisle trims** (the end-bay trim never copied) | 4: RF-trim h/v, RF-trim-start h/v | ✓ |
+| RA | **Left panel: dropped row not turned with the building** | 1: RA-panel vertical | ✓ |
+| RA | **Left panel: a row the other way round not counted** | 2: RA-across h/v | ✓ |
+| RA | **Both** (the reported bug: a vertical drop never counted) | 3: RA-panel v, RA-across h/v | ✓ |
+| RA | **Paste: the pasted row keeps its source row's stamps** | 4: RA-paste h/v, RA-duplicate h/v | ✓ |
+| RA | **Paste/duplicate: copies not slid back into their section** | 2: RA-paste h, RA-duplicate h | ✓ |
+| RA | **Duplicate: Ctrl+D only copies** | 1: RA-wire | ✓ |
+| AR | **Skip the rebuild** | 6: AR-recreate/handcopy/undo (h and v, before the replay redesign) | ✓ |
+| AR | **Keep aisles with a row between them** | 6 | ✓ |
+| AR | **Never add aisles for new neighbour pairs** | 6 | ✓ |
+| AR | **Keeper off** | 6 | ✓ |
+| AR | **The copy-rows sync without its own rebuild** | 2: AR-snapshot h/v | ✓ |
+| Z2 | **Split pieces counted as separate rows** | 2: Z2-delete h/v | ✓ |
+| Z2 | **No wall clamp** | 8: Z-sync, Z-warn, Z-gap, Z2-delete (h and v) | ✓ |
+| Z2 | **Sync section copies onto split pieces** | 2: Z2-delete h/v (stacked racks) | ✓ |
+| Z2 | **"Sync section" button not rendered** | 3: Y-panel, Z2-buttons h/v | ✓ |
+| Z2 | **"Sync all sections" button not rendered** | 3: Z-panel, Z2-buttons h/v | ✓ |
+| Z2 | **Section = rows overlapping the selected rack only** | 2: Z2-delete h/v | ✓ |
 | Y | **Sync only the first row** | 4: Y-sync h/v, Y-direction ×2 | ✓ |
 | Y | **Start position not copied** | 4: Y-sync h/v, Y-direction ×2 | ✓ |
 | Y | **Beams copied in local order** (no reversal for reversed rows) | 2: Y-direction | ✓ |
@@ -1067,8 +1482,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,574 tests, 1,574 passing** (after all breaks reverted).
-- **Whole project: 1,977 tests, 1,977 passing.**
+- **Plan suite: 1,780 tests, 1,780 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,183 tests, 2,183 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

@@ -123,8 +123,12 @@ beforeAll(async () => {
  * object's position in the list. */
 const normalize = (objects) => {
   const idx = new Map(objects.map((o, i) => [o.id, i]))
-  return objects.map(o => Object.fromEntries(Object.entries(o).map(([k, v]) =>
-    [k, typeof v === 'string' && idx.has(v) ? `#${idx.get(v)}` : v])))
+  // ids anywhere (the building's rowBaseline lists its rows' rack ids)
+  const norm = (v) => (typeof v === 'string' && idx.has(v) ? `#${idx.get(v)}`
+    : Array.isArray(v) ? v.map(norm)
+    : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, norm(x)]))
+    : v)
+  return objects.map(o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, norm(v)])))
 }
 
 const RUNS = Object.keys(MATRIX).flatMap(id =>
@@ -303,7 +307,7 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
         expect(normalize(twice)).toEqual(once)
         // and the placed layout is this run's own generator output
         expect(sizingSheetLayout(brief, DEFAULT_RULES)).toEqual(get().placements)
-      }, 30000)   // the real store snapshots history per object: ~300 objects x 2 runs on the largest cases
+      }, 60000)   // the real store snapshots history per object: ~300 objects x 2 runs on the largest cases (M13 ~25-31 s under load)
     })
   }
 })
