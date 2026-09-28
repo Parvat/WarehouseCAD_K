@@ -2,12 +2,14 @@ import { useMemo, memo } from 'react'
 import { Group, Rect, Line, Text } from 'react-konva'
 import { pxToFtIn, getFpWallSegments, getObjectBounds } from '../utils/canvas'
 import { spin } from './shapes'
-import { aisleLabelLayout, AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX } from './hitTest'
+import { aisleLabelLayout } from './hitTest'
 import { rackFootprint, aisleColumnBlocks } from '../generate/columnCheck'
 import { useColumnCheck, isRack } from '../generate/useColumnCheck'
 import { layoutColumns } from '../generate/usableCapacity'
 import { useDragPreview, previewObjects } from './dragPreview'
-import { clearanceMarks, aisleWarningRect, SHORT_COLOR } from './aisleMarks'
+import { LabelOps } from './LabelOps'
+import { aisleLabelOps, clearanceOps } from '../render/labelOps'
+import { crossAisleLabels } from './crossAisles'
 
 /* ── Dimension labels — ported from the SVG engine, render-only ──────────────
    CanvasUI.jsx's RackLabels/FpSegmentDimLabels and CanvasOverlays.jsx's live
@@ -252,55 +254,38 @@ export function FpDimLabels({ obj, zoom, gridSize, activeWallIdx = null }) {
 /* An aisle's label depends on the aisle and its two rows only, so it is a
    memoised item fed exactly those: a drag redraws only the labels of aisles
    beside a moved rack, a selection change redraws none. */
-export const AisleLabelItem = memo(function AisleLabelItem({ aisle, row1, row2, zoom, gridSize }) {
-  return <AisleLabel aisle={aisle} objects={[row1, row2].filter(Boolean)} zoom={zoom} gridSize={gridSize} />
+export const AisleLabelItem = memo(function AisleLabelItem({ aisle, row1, row2, lz, gridSize }) {
+  return <AisleLabel aisle={aisle} objects={[row1, row2].filter(Boolean)} lz={lz} gridSize={gridSize} />
 })
 
-export function AisleLabel({ aisle, objects, zoom, gridSize }) {
+/* Drawing size: `lz` is the Label size scale (render/labelSize.js), never
+   the view zoom — a label is a fixed size in feet, like CAD text. */
+export function AisleLabel({ aisle, objects, lz, gridSize }) {
   /* Geometry from aisleLabelLayout (hitTest.js) — the same stations the pick
      tests against, so a label is exactly as clickable as it is visible.
      rackFootprint-based (BUG 45) through aisleRect, so a 90°-rotated pair
      measures its true gap. */
   const L = aisleLabelLayout(aisle, objects, gridSize)
   if (!L) return null
-  const { isHoriz, gapLo, gapHi, labelMid, positions, text: fullTxt } = L
-  const fs = AISLE_LABEL_FONT_PX / zoom
-  const aw = 5 / zoom
-  const sw = 1 / zoom
-  const clr = '#f0b429'
-  const bdr = '#f0b429'
-
-  return (
-    <Group name={'aisle:' + aisle.id} listening={false}>
-      {positions.map((pos, i) => {
-        const lx = isHoriz ? pos : labelMid
-        const ly = isHoriz ? labelMid : pos
-        const pad2 = 3 / zoom
-        const a1 = gapLo + pad2, a2 = gapHi - pad2
-        return (
-          <Group key={i} listening={false}>
-            {isHoriz ? (
-              <>
-                <Line points={[lx, a1, lx, a2]} stroke={clr} strokeWidth={sw} listening={false} />
-                <Line closed fill={clr} listening={false} points={[lx, a1, lx - aw / 2, a1 + aw, lx + aw / 2, a1 + aw]} />
-                <Line closed fill={clr} listening={false} points={[lx, a2, lx - aw / 2, a2 - aw, lx + aw / 2, a2 - aw]} />
-              </>
-            ) : (
-              <>
-                <Line points={[a1, ly, a2, ly]} stroke={clr} strokeWidth={sw} listening={false} />
-                <Line closed fill={clr} listening={false} points={[a1, ly, a1 + aw, ly - aw / 2, a1 + aw, ly + aw / 2]} />
-                <Line closed fill={clr} listening={false} points={[a2, ly, a2 - aw, ly - aw / 2, a2 - aw, ly + aw / 2]} />
-              </>
-            )}
-            <LabelPill cx={lx} cy={ly} text={fullTxt} fontSize={fs} zoom={zoom}
-              color="#92400e" bg="rgba(255,251,235,0.9)" padX={AISLE_LABEL_PADX_PX / zoom} heightScale={1.5} rx={2 / zoom}
-              stroke={bdr} strokeWidth={0.5 / zoom} opacity={0.95} />
-          </Group>
-        )
-      })}
-    </Group>
-  )
+  return <AisleLabelView L={L} name={'aisle:' + aisle.id} lz={lz} />
 }
+
+/* A width label drawn from a layout ({ isHoriz, gapLo, gapHi, labelMid,
+   positions, text }): an arrow across the gap at each station with the width
+   in a pill. Aisle labels and cross-aisle labels both draw through this, so
+   they look the same. */
+export function AisleLabelView({ L, name, lz }) {
+  const ops = useMemo(() => aisleLabelOps(L, lz), [L, lz])
+  return <LabelOps ops={ops} name={name} />
+}
+
+/* One width label per cross-aisle (crossAisles.js), in the aisle-label style.
+   There are only a few, so they are simply derived from the (previewed)
+   objects they are given. */
+export const CrossAisleLabels = memo(function CrossAisleLabels({ objects, lz, gridSize = 40 }) {
+  const list = useMemo(() => crossAisleLabels(objects, gridSize), [objects, gridSize])
+  return <>{list.map(L => <AisleLabelView key={L.key} L={L} name={'cross-aisle:' + L.key} lz={lz} />)}</>
+})
 
 /* One clearance label: redrawn only when its own block, column or the zoom
    changed. The live check makes new block objects every frame, so they are
@@ -322,44 +307,10 @@ function blocksMoveRigidly(blocks, cols, live, dx, dy) {
       : JSON.stringify(a[k]) === JSON.stringify(b[k]))
   })
 }
-const ClearanceItem = memo(function ClearanceItem({ a, i, col, zoom, gridSize }) {
-  const fs = 9 / zoom
-  const sw = 1.6 / zoom
-  if (!col || !a.axis) return null
-  const warn = aisleWarningRect(a, col)
-  return (
-    <Group name={'aisle-column:' + i} listening={false}>
-      {warn && (
-        <Rect name="aisle-warning" x={warn.x} y={warn.y} width={warn.w} height={warn.h}
-          fill="rgba(192,57,43,0.16)" stroke={SHORT_COLOR} strokeWidth={1.5 / zoom}
-          dash={[6 / zoom, 4 / zoom]} perfectDrawEnabled={false} listening={false} />
-      )}
-      {clearanceMarks(a, col, zoom, gridSize).map(m => {
-        /* A gap shorter on screen than its own label can't hold it:
-           slide the pill off to the side of the arrow instead of over
-           the column and rack (text is always horizontal, so the pill's
-           extent along the arrow differs by orientation). */
-        const pillW = m.label.text.length * fs * 0.62 + (3 / zoom) * 2, pillH = fs * 1.4
-        const gapLen = Math.hypot(m.arrowhead[0].x - m.shaft[0].x, m.arrowhead[0].y - m.shaft[0].y)
-        const along = a.axis === 'y' ? pillH : pillW, across = a.axis === 'y' ? pillW : pillH
-        const off = gapLen < along + 4 / zoom ? across / 2 + 6 / zoom : 0
-        const lx = m.label.x + (a.axis === 'y' ? off : 0), ly = m.label.y - (a.axis === 'x' ? off : 0)
-        return (
-        <Group key={m.side} listening={false}>
-          <Line points={[m.shaft[0].x, m.shaft[0].y, m.shaft[1].x, m.shaft[1].y]}
-            stroke={m.color} strokeWidth={sw} listening={false} />
-          <Line closed fill={m.color} listening={false}
-            points={m.arrowhead.flatMap(q => [q.x, q.y])} />
-          <LabelPill cx={lx} cy={ly} text={m.label.text} fontSize={fs} zoom={zoom}
-            color={m.color} bg={m.short ? 'rgba(254,226,226,0.95)' : 'rgba(224,242,254,0.92)'}
-            padX={3 / zoom} heightScale={1.4} rx={2 / zoom}
-            stroke={m.short ? SHORT_COLOR : '#7dd3fc'} strokeWidth={0.5 / zoom} opacity={0.95} />
-        </Group>
-        )
-      })}
-    </Group>
-  )
-}, (p, n) => p.i === n.i && p.zoom === n.zoom && p.gridSize === n.gridSize && sameContent(p.a, n.a) && sameContent(p.col, n.col))
+const ClearanceItem = memo(function ClearanceItem({ a, i, col, lz, gridSize, showLabels = true }) {
+  const ops = useMemo(() => clearanceOps(a, col, lz, gridSize, showLabels), [a, col, lz, gridSize, showLabels])
+  return <LabelOps ops={ops} name={'aisle-column:' + i} />
+}, (p, n) => p.i === n.i && p.lz === n.lz && p.gridSize === n.gridSize && p.showLabels === n.showLabels && sameContent(p.a, n.a) && sameContent(p.col, n.col))
 
 /* ── Column clearance labels + red aisle warning ─────────────────────────────
    For every column standing in a travel aisle: an arrow on EACH side, from
@@ -378,7 +329,7 @@ const ClearanceItem = memo(function ClearanceItem({ a, i, col, zoom, gridSize })
    so during one this re-runs just the cheap aisle part of the column check
    (aisleColumnBlocks) on the previewed layout (dragPreview.js). Otherwise it
    draws the full check's own aisleBlocks. */
-export function ColumnClearanceLabels({ aisleBlocks, columns, objects, zoom, gridSize = 40, rigidDrag = false }) {
+export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridSize = 40, rigidDrag = false, showLabels = true }) {
   const ids = useDragPreview(s => s.ids), dx = useDragPreview(s => s.dx), dy = useDragPreview(s => s.dy)
   const preview = useMemo(() => ({ ids, dx, dy }), [ids, dx, dy])
   const { profile, pickBothSides } = useColumnCheck()
@@ -402,7 +353,7 @@ export function ColumnClearanceLabels({ aisleBlocks, columns, objects, zoom, gri
 
   return (
     <Group name="column-clearance-labels" listening={false} x={moveHeld ? dx : 0} y={moveHeld ? dy : 0}>
-      {blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={cols[a.columnIndex]} zoom={zoom} gridSize={gridSize} />)}
+      {blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} />)}
     </Group>
   )
 }

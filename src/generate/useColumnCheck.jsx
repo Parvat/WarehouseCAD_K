@@ -1,9 +1,10 @@
-import { createContext, useContext, useMemo, useState, useCallback, useRef } from 'react'
+import { createContext, useContext, useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { checkColumns, aisleColumnBlocks, MHE_PROFILES } from './columnCheck'
 import { layoutColumns, layoutFloors } from './usableCapacity'
 import { useRules } from '../rules/useRules'
 import { useDragPreview } from '../canvas2/dragPreview'
+import { setColumnCheckView } from './columnCheckView'
 
 /* ── Column / forklift grid check — the app-side wiring ──────────────────────
    columnCheck.js is the pure brain; this is the only place that calls it.
@@ -145,6 +146,9 @@ export function ColumnCheckProvider({ children }) {
     pickBothSides, setPickBothSides,
     resolutions, setResolution,
   }), [result, columns, profile, mheKey, showMarks, pickBothSides, resolutions, setResolution])
+
+  // the PDF export checks and marks the layout with these same settings
+  useEffect(() => { setColumnCheckView({ profile, pickBothSides, showMarks }) }, [profile, pickBothSides, showMarks])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

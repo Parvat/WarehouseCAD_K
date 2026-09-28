@@ -1,12 +1,14 @@
 import { Rect, Line, Group } from 'react-konva'
 import { SelectionOutline } from './shapes'
-import { RackLabels, FpDimLabels, AisleLabelItem, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
+import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
 import { useMemo, memo } from 'react'
 import { BlockedFaceMarks, firstById } from './BlockedFaceMarks'
 import { useDragPreview, previewObjects } from './dragPreview'
 import { UprightConflictMarks } from './UprightConflictMarks'
 import { OversizedBayMarks } from './OversizedBayMarks'
 import { aisleLabelLayout } from './hitTest'
+import { useLabelPrefs } from './labelPrefs'
+import { labelScale } from '../render/labelSize'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const near = (a, b) => Math.abs(a - b) < 1e-6
@@ -43,9 +45,14 @@ const feedsOverlays = (o) => o && ((typeof o.type === 'string' && o.type.startsW
    labels are the one exception: always on (subject to `showAisles`),
    independent of selection, so they need the full `objects` list too. */
 function OverlaysView({
-  selectedObjects, gridSize, marquee, objects = [], zoom = 1, showAisles = true, activeWall = null, smartGuides = [],
+  selectedObjects, gridSize, marquee, objects = [], showAisles = true, activeWall = null, smartGuides = [],
   showMarks = true, aisleBlocks = [], columns = [], rackConflicts = [], pickBlocks = [], uprightHits = [],
 }) {
+  /* Every label and mark here is DRAWING size (render/labelSize.js): sized by
+     the Label size setting, never by the view zoom, so zooming re-renders
+     none of it — the stage transform scales it with the racks. */
+  const labelSize = useLabelPrefs(s => s.labelSize), showColumnLabels = useLabelPrefs(s => s.showColumnLabels)
+  const lz = labelScale(labelSize, gridSize)
   /* Overlays DERIVED from object positions (aisle labels, the column-check
      marks) are drawn from `pObjects`: the store's objects with the current
      drag's offset applied (dragPreview.js). A plain drag moves Konva nodes and
@@ -82,18 +89,23 @@ function OverlaysView({
     <>
       {selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} objects={objects} />)}
       {selectedObjects.map(o => rackLabelsEligible(o.type)
-        ? <RackLabels key={'rl:' + o.id} obj={o} zoom={zoom} gridSize={gridSize} /> : null)}
+        ? <RackLabels key={'rl:' + o.id} obj={o} zoom={lz} gridSize={gridSize} /> : null)}
       {selectedObjects.map(o => (FP_TYPES.has(o.type) && o.fpVerts)
-        ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={zoom} gridSize={gridSize}
+        ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={lz} gridSize={gridSize}
             activeWallIdx={activeWall && activeWall.objId === o.id ? activeWall.wallIdx : null} /> : null)}
       <Group x={aisleRigid ? dx : 0} y={aisleRigid ? dy : 0} listening={false}>
-      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} zoom={zoom} gridSize={gridSize} />)}
+      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={lz} gridSize={gridSize} />)}
       </Group>
-      {showMarks && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} zoom={zoom} gridSize={gridSize} rigidDrag={rigid} />}
+      {/* one width label per cross-aisle; few, so drawn from the previewed layout every drag frame */}
+      {showAisles && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} />}
+      {/* "Column labels" off hides the clearance arrows and their distances; the
+          red "under travel" marks and aisle shading still show (and the X marks
+          and upright flags below are never affected) */}
+      {showMarks && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} rigidDrag={rigid} showLabels={showColumnLabels} />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
-      {showMarks && <BlockedFaceMarks rackConflicts={pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts} objects={pObjects} gridSize={gridSize} zoom={zoom} />}
-      {showMarks && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} zoom={zoom} />}
-      {showMarks && <OversizedBayMarks objects={pObjects} gridSize={gridSize} zoom={zoom} />}
+      {showMarks && <BlockedFaceMarks rackConflicts={pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts} objects={pObjects} gridSize={gridSize} lz={lz} />}
+      {showMarks && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}
+      {showMarks && <OversizedBayMarks objects={pObjects} gridSize={gridSize} lz={lz} />}
       </Group>
       {/* Smart-guide alignment lines, live during a plain object drag —
           CanvasArea's own colours (wall/column snaps purple, object-to-

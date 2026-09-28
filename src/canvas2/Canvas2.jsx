@@ -407,7 +407,7 @@ export function Canvas2() {
               second, independent input surface. */}
           <Layer listening={false}>
             <Overlays selectedObjects={selectedObjects} gridSize={gridSize} marquee={marquee}
-              objects={objects} zoom={zoom} showAisles={showAisles} activeWall={activeWall}
+              objects={objects} showAisles={showAisles} activeWall={activeWall}
               smartGuides={smartGuides} showMarks={columnCheckShowMarks}
               aisleBlocks={columnCheckResult.aisleBlocks} columns={columnCheckColumns}
               rackConflicts={columnCheckResult.rackConflicts}

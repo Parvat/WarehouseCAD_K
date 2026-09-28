@@ -17,6 +17,8 @@
 
 import { objectContains, getFpWallSegments, distToSegment, getObjectBounds, pxToFtIn } from '../utils/canvas'
 import { rackFootprint } from '../generate/columnCheck'
+import { labelScale } from '../render/labelSize'
+import { useLabelPrefs } from './labelPrefs'
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 const COL_GRID = new Set(['column_grid'])
@@ -142,19 +144,19 @@ function aisleGeom(aisle, objects) {
   return { rect: { x: ax, y: ay, width: aw, height: ah }, isHoriz }
 }
 
-/** Where an aisle's dimension labels sit — one to three stations along the
- *  aisle, each an arrow across the gap with a pill at its middle. Shared by
- *  the drawing (DimensionLabels.jsx's AisleLabel) and the pick below, so
- *  what you can click is exactly what you can see. World px. */
+/** Where an aisle's dimension label sits — ONE station, centred along the
+ *  aisle (an aisle is one section's pair of facing rows), an arrow across the
+ *  gap with a pill at its middle. It used to repeat at up to three stations on
+ *  long aisles; one is enough to read and a third of the nodes. Shared by the
+ *  drawing (DimensionLabels.jsx's AisleLabel) and the pick below, so what you
+ *  can click is exactly what you can see. World px. */
 export function aisleLabelLayout(aisle, objects, gridSize = 40) {
   const g = aisleGeom(aisle, objects)
   if (!g) return null
   const { rect: r, isHoriz } = g
   const gapLo = isHoriz ? r.y : r.x, gapHi = isHoriz ? r.y + r.height : r.x + r.width
   const runLo = isHoriz ? r.x : r.y, runLen = isHoriz ? r.width : r.height
-  const positions = runLen < 20 * gridSize ? [runLo + runLen * 0.5]
-    : runLen < 60 * gridSize ? [runLo + runLen * 0.25, runLo + runLen * 0.75]
-    : [runLo + runLen * 0.15, runLo + runLen * 0.5, runLo + runLen * 0.85]
+  const positions = [runLo + runLen * 0.5]
   const userLabel = aisle.label ? `${aisle.label} · ` : ''
   return {
     isHoriz, gapLo, gapHi, labelMid: (gapLo + gapHi) / 2, positions,
@@ -173,8 +175,11 @@ export const AISLE_LABEL_PADX_PX = 3.5
 export function aisleLabelHit(aisle, objects, wx, wy, zoom = 1, gridSize = 40) {
   const L = aisleLabelLayout(aisle, objects, gridSize)
   if (!L) return false
-  const fs = AISLE_LABEL_FONT_PX / zoom
-  const w = L.text.length * fs * 0.62 + (AISLE_LABEL_PADX_PX / zoom) * 2
+  /* The pill is DRAWING size (the Label size setting, render/labelSize.js),
+     exactly as drawn; only the click tolerance is in screen px. */
+  const lz = labelScale(useLabelPrefs.getState().labelSize, gridSize)
+  const fs = AISLE_LABEL_FONT_PX / lz
+  const w = L.text.length * fs * 0.62 + (AISLE_LABEL_PADX_PX / lz) * 2
   const h = fs * 1.5
   const tol = 3 / zoom, lineTol = 5 / zoom
   // (along the run, across the gap) for the point

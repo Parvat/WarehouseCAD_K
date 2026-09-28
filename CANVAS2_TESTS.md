@@ -292,6 +292,200 @@ with the note "No row changes since the last sync…".
 - The list cleared. The building panel showed the button. No aisle crossed a
   row or dangled. Ctrl+Z brought back the list of 4. No console errors.
 
+### PF — Lag fixes, measured before/after, behaviour unchanged · `PF_perf.test.js` (60 tests)
+Profiled on 1080×410 in both orientations. The lag was never the sync work;
+it came from three older causes, each fixed.
+
+**1. Column check** (`generate/columnCheck.js`, `generate/useColumnCheck.jsx`;
+committed as `681878a`, the pick-zone cache added after it).
+- **Faster check:** footprints are computed once per rack. Pick-zone and
+  upright tests use only the columns and racks near each rack, in the same
+  order, so the hits are the same.
+- **Per-rack cache:** pick-zone results are kept per rack, keyed on the
+  rack's full content, the racks near its zones, its own blocked positions,
+  and the columns, floors, profile and grid. An edit re-checks only the
+  touched rack and its neighbours.
+- **Speed:** 32 → 8 ms in Node before the per-rack cache; per drop in the
+  app, 19 → 7 ms.
+- **Geometry gate:** the provider reruns only on a geometry change. Racks,
+  columns and floors keep their identity while unchanged; bay highlight,
+  row stamps and selection don't count.
+- **Drag hold:** during any drag (plain, live flue, resize, rotate —
+  `dragPreview.dragging`) the full result is held and only the cheap aisle
+  check runs per frame. The full check runs once on the drop.
+
+**2. Pan / zoom / selection.**
+- **Narrow selectors:** every `useCanvasStore()` whole-store read outside
+  the protected folders became a narrow shallow selector (33 sites + TextPanel).
+- **View out of the canvas render:** Canvas2 no longer reads the pan;
+  `ViewAdopter` and `StoreRulers` do.
+- **Memoised canvas:** Scene, Overlays, the shapes, the handle overlays and
+  the grid are memoised.
+- **Per-rack draw ops:** rack draw ops are cached per rack object, so an edit
+  redraws only the rack it changed; aisle shapes get their two rows, not
+  `objects`.
+- **No hit canvas:** the scene layer no longer redraws Konva's hit canvas.
+  Picking is geometry (rule 4); nothing read it.
+- **Warning cache:** the beam-preset warnings are cached per objects array
+  (one check per preset per layout, not 28 per render).
+
+**3. Drag preview.**
+- **Per-item overlays:** X marks, upright marks, oversized-bay marks, aisle
+  labels and clearance labels are memoised items fed only their own rack /
+  rows / block. A drag, selection or edit redraws only what touches a
+  changed object.
+- **Rigid drags:** a drag that carries everything the overlays come from
+  (the building) draws them unshifted in a group offset by the drag.
+- **Exactness guard:** aisle and clearance labels ride the group only while
+  this frame's live result equals the held one moved by the drag, and
+  otherwise draw the live result as before. A float boundary can add a
+  block — seen in the vertical building drag.
+
+**Behaviour check** (`equiv.js`, scratchpad). A fixed script of real
+actions, run in both orientations: generate, drag a double row (live flue),
+drag a single row, drag the building (each with a mid-drag snapshot),
+pan + zoom, click-select, Levels + Enter, custom bay typing, move + Apply,
+building selected, undo.
+- **Recorded after each action:** every Konva shape (layer-space transform,
+  line points, drawing attrs), the page text and a canvas screenshot hash.
+- **Compared against:** the original code, served from a copy of the tree.
+- **Result, dev and production:** every static state is pixel-identical,
+  with the same text and marks.
+- **Mid-building-drag:** 13 (h) / 121 (v) pixels of 1.2 M differ by 1 level
+  of 255 (anti-aliasing from moving one group instead of every coordinate).
+- **Only attribute difference:** the building outline's hit-band width,
+  which only the (now skipped, unused) hit pass wrote.
+
+| Test | Asserts |
+|---|---|
+| `PF-matrix` ×50 | every matrix building, both orientations, both wall settings, both pick-both-sides: `checkColumns` deep-equals a frozen copy of the check before this work (`reference/columnCheck.v1.js`) |
+| `PF-edits` ×6 | 12 seeded random edit sets each: racks nudged over columns, turned 90/180, re-levelled, without depthIn, at 45°, single rows dropped in aisles, loose columns |
+| `PF-cache` ×3 | 40 incremental edits with the SAME columns / floors / profile objects (the cache engaged): moved copies, racks changed in place, removed, added, turned, pick-both-sides toggled — equal to the reference at every step |
+| `PF-aisle` | the per-frame aisle check equals the reference |
+| `O-wire` (updated) | the overlays follow the drag: previewed objects, or the store objects in a group offset by a drag that carries everything; aisle labels from their two previewed rows |
+
+**Timing** (`perf.js` + `ab.cjs`, scratchpad). Real input into the running
+app; the before and after servers are measured back to back per
+orientation, because this machine's speed drifts ±25 ms between runs.
+- **Production build.** Continuous actions: median / p95 ms per frame ·
+  frames over 50 ms. Single actions: the worst frame.
+
+| action | before H | after H | before V | after V |
+|---|---|---|---|---|
+| pan | 26.8 / 66.7 · 56/124 | 13.3 / 13.5 · 0/124 | 26.8 / 66.7 · 61/125 | 13.3 / 26.7 · 0/133 |
+| zoom | 13.4 / 80.1 · 30/153 | 13.4 / 66.7 · 24/151 | 13.4 / 80.1 · 30/152 | 13.4 / 66.8 · 30/148 |
+| drag single row | 13.4 / 26.8 · 1/316 | 13.3 / 13.5 · 1/188 (the drop, 53 ms) | 13.4 / 26.8 · 1/329 | 13.3 / 13.5 · 1/207 (the drop, 53 ms) |
+| drag double row | 13.3 / 80 · 19/330 | 13.3 / 26.7 · 0/198 | 13.4 / 80 · 39/326 | 13.3 / 26.6 · 0/211 |
+| drag building | 13.4 / 26.8 · 1/318 | 13.3 / 26.6 · 2/220 | 13.4 / 40 · 1/360 | 13.3 / 13.6 · 1/280 |
+| selection changes | 26.4 / 40.2 · 2/84 | 13.3 / 13.5 · 0/67 | 13.4 / 40.1 · 1/93 | 13.3 / 13.5 · 0/66 |
+| click-select | 52.8 | 13.4 | 53.4 | 13.4 |
+| Levels + Enter | 93.6 | 26.5 | 93.3 | 13.4 |
+| Apply | 93.4 | 40.1 | 80 | 26.9 |
+
+- **Dev server** (StrictMode renders twice), same format:
+
+| action | before H | after H | before V | after V |
+|---|---|---|---|---|
+| pan | 26.9 / 93.4 · 61/125 | 13.3 / 13.5 · 0/123 | 53.4 / 93.4 · 62/124 | 13.4 / 26.7 · 0/144 |
+| zoom | 13.4 / 120 · 30/156 | 13.4 / 80.1 · 30/151 | 13.4 / 106.8 · 30/157 | 13.4 / 93.3 · 30/149 |
+| drag single row | 13.4 / 40.1 · 2/330 | 13.3 / 13.5 · 1/192 | 13.4 / 53.3 · 22/325 | 13.3 / 13.5 · 1/207 |
+| drag double row | 13.4 / 133.6 · 20/328 | 13.4 / 40 · 2/202 | 13.4 / 133.5 · 52/334 | 13.3 / 26.7 · 0/239 |
+| drag building | 13.4 / 53.5 · 61/325 | 13.4 / 26.7 · 1/241 | 13.4 / 53.5 · 70/348 | 13.3 / 26.6 · 2/288 |
+| selection changes | 18.3 / 80 · 40/86 | 13.4 / 26.6 · 0/73 | 13.5 / 66.6 · 32/95 | 13.4 / 26.6 · 0/73 |
+| click-select | 106.7 | 26.7 | 93.5 | 26.6 |
+| Levels + Enter | 173.5 | 39.9 | 160.2 | 26.7 |
+| Apply | 173.4 | 53.1 | 146.6 | 26.7 |
+
+**Not met at this point:**
+- **Zoom:** still one slow frame per wheel step (p95 67–80 ms in
+  production), because every label was screen-constant (1/zoom). Fixed by
+  LZ below: labels are drawing size and nothing re-renders on zoom.
+- **Single-row drop:** 40–53 ms in production. 11–16 ms of it is the
+  protected store's `moveObjects` / history snapshot.
+
+### LZ — Labels are drawing size (CAD text); Label size setting · `LZ_labelSize.test.js` (9 tests)
+Every label and mark on the drawing is a fixed size in feet and scales with
+the racks. Nothing is sized by the view zoom, so zooming re-renders none of
+them. This replaces the earlier "hold labels while the wheel moves" idea.
+
+**What is drawing size, and what stays screen size:**
+- **Drawing size:** aisle and cross-aisle width labels, column clearance
+  arrows and labels, the red aisle shade, rack and building dimension
+  labels, X marks, orange upright flags, oversized-bay crosses. The
+  aisle-label pick area matches the drawn label.
+- **Screen size (UI, unchanged):** selection and resize handles, rotate
+  grips, group-rotate chrome, snap-guide thresholds, the measure tool,
+  rulers, the column markers' minimum on-screen size, and the rack travel
+  arrows (a legend mark).
+
+**How:**
+- **Label size** (`render/labelSize.js`): the View menu has Small / Medium /
+  Large = 12 / 24 / 36 in reference text, Medium by default. It is kept with
+  Column labels in `canvas2/labelPrefs.js` (localStorage, never the store).
+- **Label scale:** `labelScale(size, gridSize)` is used everywhere the old
+  designs divided by the view zoom. Each design keeps its proportions:
+  aisle text 1×, clearance 0.9×, dimensions 1.1×, X-mark stroke 0.2× the
+  reference height.
+- **One set of ops** (`render/labelOps.js`, renderer-neutral like
+  `rackDrawOps`) for every label and mark, in world units. The canvas paints
+  them (`canvas2/LabelOps.jsx`); the PDF writes the same ops as SVG
+  (`labelsSVG` in `export/pdfExport.js`), with the same Label size, Column
+  labels switch and column-check settings as the screen
+  (`generate/columnCheckView.js`).
+- **Mark geometry:** bay and pallet-position rects moved to
+  `render/bayGeom.js` (pure; `shapes.jsx` re-exports them).
+
+| Test (1080×410; ×2 h/v) | Asserts |
+|---|---|
+| `LZ-feet` | an aisle label's text is exactly 1 / 2 / 3 ft tall for Small / Medium / Large, and there is one label per aisle |
+| `LZ-all` | Small → Large scales every kind by 3× — aisle, cross-aisle, clearance + red shade, X marks, upright flags, oversized crosses (fonts, strokes, pills) — and width labels stay centred |
+| `LZ-zoom` | the overlays size everything from `labelScale`, never the view zoom: every label / mark component gets `lz`, the dimension labels get it as their zoom, and Canvas2 no longer passes the view zoom to Overlays |
+| `LZ-pdf` | the PDF has one label per aisle and per cross-aisle, at the Label size (2 ft Medium, 3 ft Large). Column labels off removes the blue "clear" labels and keeps every "under travel" label, red shade, X mark and upright flag |
+| `LZ-default` | Medium and Column labels on by default; an unknown size is ignored; the View menu has S / M / L |
+
+**Checked in the app, horizontal and vertical** (1080×410, a rack
+selected):
+- At zoom 0.03 and at 0.12, every label and mark has the same world size:
+  aisle and cross-aisle text 2 ft, clearance 1.8 ft, rack dimensions 2.2 ft,
+  X-mark and upright strokes 0.4 ft.
+- Label size → Large (the real View menu) made them 3, 2.7, 3.3 and 0.6 ft.
+- Resize handles stayed 12 screen px at both zooms.
+- The PDF's SVG carried 769 (h) / 927 (v) labels at the same 2 / 1.8 ft
+  sizes, and 602 / 754 of them are "clear" labels.
+- No console errors.
+
+**Production build, before → after:**
+
+| Measure | before H | after H | before V | after V |
+|---|---|---|---|---|
+| Zoom | 13.4 / 80.1 · 30/171 slow | 13.3 / 26.6 · 1/171 | 13.4 / 93.3 · 30/175 | 13.3 / 26.7 · 0/170 |
+| Pan | 26.8 / 66.7 · 54/125 | 13.3 / 13.5 · 0/122 | 39.9 / 66.7 · 58/125 | 13.3 / 13.9 · 0/129 |
+| Overlay nodes, whole-building view | 11,363 | 6,642 | 11,934 | 6,927 |
+| Overlay nodes, Column labels off | — | 3,933 | — | 3,534 |
+
+### LB — One label per aisle, cross-aisle labels, the Column labels switch · `LB_labels.test.js` (8 tests)
+- **One aisle label:** an aisle (one section's pair of facing rows) has ONE
+  width label, centred along it. It used to repeat at up to three stations
+  on long aisles. The pick area is the same single label.
+- **Cross-aisle labels** (`canvas2/crossAisles.js`): per building and row
+  orientation, the racks' run extents merge into sections, and each gap
+  between two sections gets one width label. Its width is the clear gap
+  between the facing racks, centred along the gap and across the racks, in
+  the aisle-label style. It follows a drag.
+- **Column labels** (View menu, on by default): off hides the clearance
+  arrows and their distances. It never hides the red "under travel" marks,
+  the red aisle shade, the X marks or the upright flags. The PDF follows it.
+
+| Test (1080×410; ×2 h/v) | Asserts |
+|---|---|
+| `LB-aisle` | every aisle has exactly one label, centred, including aisles ≥ 60 ft (which had three); every aisle is within one section and every section's aisles are labelled |
+| `LB-cross` | one label per cross-aisle (sections − 1). The width is the gap between the section envelopes (≥ the truck's 9 ft), centred along the gap and across both sections, with the right orientation |
+| `LB-cross-drag` | a rack moved 2 ft into a cross-aisle narrows that label by exactly 2 ft |
+| `LB-toggle` | switched off: plain clearances hidden; "under travel" marks kept, red, with their text; the red shade is independent of the switch; a mixed block keeps only its short side |
+| `LB-toggle-wire` | the View-menu switch, on by default (labelPrefs); only the clearance labels read it; X marks, upright flags and oversized marks never do; the shade is drawn whatever the switch says |
+
+### RL — A pasted row's copies are the right length
+
 ### RL — A pasted row's copies are the right length for their own section · `RL_fullLength.test.js` (8 tests)
 **Bug:** a pasted full-length row was copied at its own bay count. Sections
 differ in length (horizontal 1080×410: 14 to 17 bays), so the copies in 2–3
@@ -1348,6 +1542,19 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | RE | **Bay edits counted as moves** | 8: RE-split h/v, Z2-delete ×6 | ✓ |
 | RE | **The earlier of two clashing edits wins** | 2: RE-clash h/v | ✓ |
 | RE | **Pasted rows keep their stamps** | 1: RE-keeper | ✓ |
+| LZ | **Labels sized by the view zoom again** | 2: LZ-zoom h/v | ✓ |
+| LZ | **X marks ignore Label size** (fixed stroke) | 2: LZ-all h/v | ✓ |
+| LZ | **Aisle labels a fixed size** | 6: LZ-feet, LZ-all, LZ-pdf (h/v) | ✓ |
+| LZ | **PDF drops cross-aisle labels** | 2: LZ-pdf h/v | ✓ |
+| LZ | **PDF switch hides the red warnings too** | 2: LZ-pdf h/v | ✓ |
+| LZ | **PDF ignores Label size** | 2: LZ-pdf h/v | ✓ |
+| LB | **Three labels per long aisle** | 6: LB-aisle, LZ-feet, LZ-pdf (h/v) | ✓ |
+| LB | **Cross-aisle width between section centres** | 2: LB-cross h/v | ✓ |
+| LB | **Skip every other cross-aisle** | 2: LB-cross h/v | ✓ |
+| LB | **Switch hides the red "under travel" marks** | 3: LB-toggle, LZ-pdf h/v | ✓ |
+| LB | **Switch hides the X marks** | 1: LB-toggle-wire | ✓ |
+| PF | **Cache pick zones by rack id only** (ignore content / neighbours) | 3: PF-cache ×3 | ✓ |
+| PF | **Filter columns by the rack's footprint, not its pick zones** | 53: PF-matrix, PF-edits, PF-cache | ✓ |
 | RL | **Always copy the source length** (no neighbour pattern) | 8: RL-full h/v ×2 ("section 1: 14 bays, expected 16"), RS-fit h/v, RS-10 middle section h/v | ✓ |
 | RL | **Treat every row as full length** | 4: RL-short h/v, RL-cut h/v | ✓ |
 | RS | **Suppress the skip report** (drop `plan.skipped.push` and the no-silent-skip guard) | 6: RS-10 near edge / far edge (h/v) — sections neither placed nor reported | ✓ |
@@ -1482,8 +1689,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,780 tests, 1,780 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,183 tests, 2,183 passing.**
+- **Plan suite: 1,857 tests, 1,857 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,260 tests, 2,260 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

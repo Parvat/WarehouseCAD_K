@@ -11,16 +11,27 @@
 // coordinates, wrapped in an A1-sized print page — no dependency on which
 // canvas engine (or whether ANY canvas) is currently mounted.
 //
-// Scope: floor plans, column grids and every PORTED_RACK_TYPES rack — the
-// three things this was asked to cover ("render/rackOps.js draw-ops plus
-// floor-plan and column geometry"). Annotations, freehand strokes, text,
-// aisles, and interactive-only dimension labels are NOT drawn here; see the
-// bug journal entry for why that's a deliberate boundary, not an oversight.
+// Scope: floor plans, column grids, every PORTED_RACK_TYPES rack, and the
+// drawing's labels and marks — aisle and cross-aisle widths, column clearance
+// labels and red aisle warnings, X marks, upright flags, oversized bays —
+// from render/labelOps.js, the SAME ops the canvas paints, at the same Label
+// size (labels are drawing size, so a label is as big on paper, relative to
+// the racks, as on screen). Annotations, freehand strokes, free text and the
+// selection-only dimension labels are NOT drawn here; see the bug journal
+// entry for why that's a deliberate boundary, not an oversight.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects } from '../render/rackOps'
+import { aisleLabelOps, clearanceOps, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
+import { labelScale } from '../render/labelSize'
+import { aisleLabelLayout } from '../canvas2/hitTest'
+import { crossAisleLabels } from '../canvas2/crossAisles'
+import { useLabelPrefs } from '../canvas2/labelPrefs'
+import { getColumnCheckView } from '../generate/columnCheckView'
+import { checkColumns } from '../generate/columnCheck'
+import { layoutColumns, layoutFloors } from '../generate/usableCapacity'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 
@@ -150,6 +161,50 @@ function opToSVG(o) {
   return ''
 }
 
+/* ── One label op (render/labelOps.js) → an SVG element: the same ops the
+   canvas paints with Konva (canvas2/LabelOps.jsx), in world units. */
+const pts = (a) => { let out = ''; for (let i = 0; i < a.length; i += 2) out += (i ? ' ' : '') + a[i] + ',' + a[i + 1]; return out }
+const dashAttr = (d) => (d && d.length ? ` stroke-dasharray="${d.join(' ')}"` : '')
+export function labelOpToSVG(o) {
+  const op = ` opacity="${o.opacity ?? 1}"`
+  if (o.op === 'line') return `<polyline points="${pts(o.points)}" fill="none" stroke="${o.stroke}" stroke-width="${o.strokeWidth}"${dashAttr(o.dash)}${op}/>`
+  if (o.op === 'poly') return `<polygon points="${pts(o.points)}" fill="${o.fill || 'none'}" stroke="${o.stroke || 'none'}" stroke-width="${o.strokeWidth ?? 0}"${op}/>`
+  if (o.op === 'rect') return `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="${o.cornerRadius ?? 0}" fill="${o.fill || 'none'}" stroke="${o.stroke || 'none'}" stroke-width="${o.strokeWidth ?? 0}"${dashAttr(o.dash)}${op}/>`
+  if (o.op === 'text') return `<text x="${o.x + o.w / 2}" y="${o.y + o.h / 2}" font-size="${o.fontSize}" font-family="${o.fontFamily}" fill="${o.fill}" text-anchor="middle" dominant-baseline="central">${esc(o.text)}</text>`
+  return ''
+}
+
+/* ── The labels and marks layer, in the canvas's own order (Overlays.jsx):
+   aisle labels, cross-aisle labels, column clearances + red warnings, X
+   marks, upright flags, oversized bays. `opts`: labelSize, showColumnLabels,
+   showAisles, and the column check's profile / pickBothSides / showMarks. */
+export function labelsSVG(objects, gridSize, opts) {
+  const lz = labelScale(opts.labelSize, gridSize)
+  const ops = []
+  if (opts.showAisles) {
+    for (const a of objects) {
+      if (a.type !== 'aisle') continue
+      const L = aisleLabelLayout(a, objects, gridSize)
+      if (L) ops.push(...aisleLabelOps(L, lz))
+    }
+    for (const L of crossAisleLabels(objects, gridSize)) ops.push(...aisleLabelOps(L, lz))
+  }
+  if (opts.showMarks) {
+    const racks = objects.filter(o => typeof o.type === 'string' && o.type.startsWith('rack_'))
+    const columns = layoutColumns(objects, gridSize)
+    const byId = new Map()
+    for (const o of objects) if (!byId.has(o.id)) byId.set(o.id, o)
+    if (racks.length && columns.length) {
+      const res = checkColumns({ racks, columns, profile: opts.profile, gridSize, pickBothSides: opts.pickBothSides, floors: layoutFloors(objects) })
+      for (const b of res.aisleBlocks) ops.push(...clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels))
+      for (const c of [...res.rackConflicts, ...res.pickBlocks]) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
+      for (const h of res.uprightHits) ops.push(...uprightOps(h, byId.get(h.rackId), gridSize, lz))
+    }
+    for (const o of racks) if ((o.type === 'rack_row' || o.type === 'rack_double_row') && Array.isArray(o.beams) && o.beams.length) ops.push(...oversizedOps(o, gridSize, lz))
+  }
+  return `<g class="labels">${ops.map(labelOpToSVG).join('')}</g>`
+}
+
 /* ── One rack. rackDrawOps returns ops in the object's own unrotated local
    frame (same contract canvas2's RackShape relies on) — rotation is applied
    here as an SVG transform around the object's own centre, the same pivot
@@ -230,7 +285,11 @@ function titleBlockSVG(x, y, u, { title, scaleRatio, date }) {
  *  it to a true A1 sheet — no rasterization, no separate PDF library: the
  *  SVG's width/height are physical mm, its viewBox is world px, and the
  *  browser does the (exact, vector) conversion between the two. */
-export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled Layout' } = {}) {
+/* `labels`: overrides for the label layer; by default the canvas's own
+   current settings (labelPrefs, the column check's published view). */
+export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled Layout', labels = {} } = {}) {
+  const prefs = useLabelPrefs.getState(), view = getColumnCheckView()
+  const labelOpts = { labelSize: prefs.labelSize, showColumnLabels: prefs.showColumnLabels, showAisles: true, ...view, ...labels }
   const layerMap = new Map((layers || []).map(l => [l.id, l]))
   const usable = (o) => isLayerUsable(layerMap, o)
 
@@ -283,6 +342,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     ...floors.map(o => floorPlanSVG(o, gridSize)),
     ...columns.map(o => columnGridSVG(o, gridSize)),
     ...racks.map(o => rackSVG(o, gridSize)),
+    labelsSVG(objects.filter(o => o && usable(o)), gridSize, labelOpts),
     scaleBarSVG(vb.x + 10 * u, titleY + titleH * 0.45, gridSize, u),
     titleBlockSVG(titleX, titleY, u, { title, scaleRatio, date }),
     `<rect x="${vb.x + u}" y="${vb.y + u}" width="${vb.width - 2 * u}" height="${vb.height - 2 * u}" fill="none" stroke="#111" stroke-width="${0.4 * u}"/>`,
@@ -303,7 +363,7 @@ export function exportLayoutToPDF(filename, storeState) {
   const name = filename || 'warehouse-layout'
   const title = name.replace(/\.(wcad|pdf)$/i, '')
 
-  const { svg, paperW, paperH } = buildLayoutSVG(objects, layers, gridSize, { title })
+  const { svg, paperW, paperH } = buildLayoutSVG(objects, layers, gridSize, { title, labels: { showAisles: storeState.showAisles ?? true } })
 
   const html = `<!DOCTYPE html>
 <html>

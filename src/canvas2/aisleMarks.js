@@ -51,6 +51,15 @@ export function clearanceMarks(block, col, zoom = 1, gridSize = 40) {
   return out
 }
 
+/** The clearance marks actually drawn for a block: all of them, or — with
+ *  the "Column labels" view switch off — only the red "under travel" ones.
+ *  A warning always shows; the red aisle shade is drawn separately and is
+ *  never switched off here. */
+export function visibleClearanceMarks(block, col, zoom = 1, gridSize = 40, showLabels = true) {
+  const marks = clearanceMarks(block, col, zoom, gridSize)
+  return showLabels ? marks : marks.filter(m => m.short)
+}
+
 /** The red aisle-warning shade for a pinched aisle block, or null: across the
  *  whole aisle gap, and along the run the column's own extent plus half the
  *  gap on each side (so the shade reads as "this stretch"), clamped to where

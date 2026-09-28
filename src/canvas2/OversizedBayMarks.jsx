@@ -1,8 +1,8 @@
-import { memo } from 'react'
-import { Group, Line } from 'react-konva'
-import { bayRectForIndex, growToMinScreenSize, spin } from './shapes'
-import { oversizedBayIndices } from '../utils/capacity'
+import { memo, useMemo } from 'react'
+import { LabelOps } from './LabelOps'
+import { oversizedOps } from '../render/labelOps'
 
+const BEAM_RACK_TYPES = new Set(['rack_row', 'rack_double_row'])
 /* ── Oversized-bay marks — BUG 67 ─────────────────────────────────────────────
    Distinct from BlockedFaceMarks (a column blocking a real pick spot): this is
    a bay that holds ZERO pallet positions regardless of any column, because the
@@ -16,47 +16,28 @@ import { oversizedBayIndices } from '../utils/capacity'
    positionsPerBeam call) — this component only supplies the missing VISUAL:
    a bay that "looks fine but holds nothing" should never look fine.
 
-   Drawn inside a `spin(obj)` Group per rack, exactly like BlockedFaceMarks —
-   the rect is in the rack's own LOCAL (pre-rotation) coordinates, Konva's
-   rotation places it correctly with no manual rotation math here.
+   The geometry and drawing are render/labelOps.js (blockedFaceOps and
+   friends): the rects are built in the rack's own LOCAL (pre-rotation)
+   frame and turned about its centre (spin()'s pivot) into world ops, the
+   same ops the PDF export prints. Drawing size — a fixed size in feet from
+   the Label size setting, scaling with the racks when you zoom.
 
    A read-only layer, decoration only: listening={false} throughout. */
 
-const RED = '#C0392B'
-const BEAM_RACK_TYPES = new Set(['rack_row', 'rack_double_row'])
-
-/* Same 6 screen-px floor as ColumnGridShape/BlockedFaceMarks — a bay's own
- * rect is normally plenty big to read on its own, but stays consistent with
- * the same "never invisible at any zoom" floor everywhere else. */
-const MIN_MARK_PX = 6
-
 /* One memoised item per rack: only a rack that changed redraws its marks. */
-export function OversizedBayMarks({ objects = [], gridSize = 40, zoom = 1 }) {
+/* Drawing size: `lz` is the Label size scale (render/labelSize.js), not the
+   view zoom — the marks are a fixed size in feet and scale with the racks. */
+export function OversizedBayMarks({ objects = [], gridSize = 40, lz = 1 }) {
   const racks = objects.filter(o => BEAM_RACK_TYPES.has(o.type) && Array.isArray(o.beams) && o.beams.length)
   if (!racks.length) return null
-
   return (
     <>
-      {racks.map(obj => <OversizedItem key={obj.id} obj={obj} gridSize={gridSize} zoom={zoom} />)}
+      {racks.map(obj => <OversizedItem key={obj.id} obj={obj} gridSize={gridSize} lz={lz} />)}
     </>
   )
 }
 
-const OversizedItem = memo(function OversizedItem({ obj, gridSize, zoom }) {
-  const palletFaceIn = obj.palletWIn || 40
-  const bad = oversizedBayIndices(obj.beams, palletFaceIn)
-  if (!bad.length) return null
-  return (
-    <Group name={'oversized-bay:' + obj.id} listening={false} {...spin(obj, gridSize)}>
-      {bad.flatMap(bayIndex => bayRectForIndex(obj, gridSize, bayIndex).map((raw, f) => {
-        const r = growToMinScreenSize(raw, zoom, MIN_MARK_PX)
-        return (
-          <Group key={bayIndex + ':' + f} listening={false}>
-            <Line points={[r.x, r.y, r.x + r.width, r.y + r.height]} stroke={RED} strokeWidth={2 / zoom} listening={false} />
-            <Line points={[r.x + r.width, r.y, r.x, r.y + r.height]} stroke={RED} strokeWidth={2 / zoom} listening={false} />
-          </Group>
-        )
-      }))}
-    </Group>
-  )
+const OversizedItem = memo(function OversizedItem({ obj, gridSize, lz }) {
+  const ops = useMemo(() => oversizedOps(obj, gridSize, lz), [obj, gridSize, lz])
+  return <LabelOps ops={ops} name={'oversized-bay:' + obj.id} />
 })

@@ -10,6 +10,7 @@ import { RulesPanel } from '../Rules/RulesPanel'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../../utils/pasteAt'
+import { useLabelPrefs } from '../../canvas2/labelPrefs'
 
 /* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
 const C = {
@@ -171,6 +172,7 @@ function doZoom(factor) {
 }
 
 export function TopBar() {
+  const { showColumnLabels, setShowColumnLabels, labelSize, setLabelSize } = useLabelPrefs()
   const {
     undo, redo, copySelected, paste, cutSelected,
     zoom, setViewport,
@@ -295,6 +297,16 @@ export function TopBar() {
               </MenuRow>
               <MenuRow label="Rulers">
                 <Switch on={showRulers} onClick={toggleRulers} label="Toggle rulers" />
+              </MenuRow>
+              <MenuRow label="Label size">
+                <SegGroup>
+                  {[['small','S'],['medium','M'],['large','L']].map(([val,lbl]) => (
+                    <Seg key={val} active={labelSize===val} onClick={() => setLabelSize(val)} title={{ small: 'Small — 12 in text', medium: 'Medium — 24 in text', large: 'Large — 36 in text' }[val]}>{lbl}</Seg>
+                  ))}
+                </SegGroup>
+              </MenuRow>
+              <MenuRow label="Column labels">
+                <Switch on={showColumnLabels} onClick={() => setShowColumnLabels(!showColumnLabels)} label="Toggle column labels" />
               </MenuRow>
               <MenuRow label="Snap to grid">
                 <Switch on={snapToGrid} onClick={toggleSnap} label="Toggle snap" />
