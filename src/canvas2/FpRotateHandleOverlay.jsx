@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Group, Line, Circle, Text } from 'react-konva'
 import { computeFpRotateHandle } from './fpRotate'
 
@@ -25,7 +26,7 @@ import { computeFpRotateHandle } from './fpRotate'
    geometrically, in useCanvasInteraction's onStageMouseDown via
    fpRotate.js's fpRotateHandleHitTest, the same function this uses to know
    WHERE to draw it (CANVAS2.md rule 4). */
-export function FpRotateHandleOverlay({ obj, gridSize, zoom }) {
+function FpRotateHandleOverlayView({ obj, gridSize, zoom }) {
   const h = computeFpRotateHandle(obj, gridSize, zoom)
   if (!h) return null
   const { rx, ry, lx, ly, nx, ny, r } = h
@@ -49,3 +50,5 @@ export function FpRotateHandleOverlay({ obj, gridSize, zoom }) {
     </Group>
   )
 }
+
+export const FpRotateHandleOverlay = memo(FpRotateHandleOverlayView)

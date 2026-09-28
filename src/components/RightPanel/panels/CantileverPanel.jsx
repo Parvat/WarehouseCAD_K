@@ -1,4 +1,5 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getObjectBounds } from '../../../utils/canvas'
 
@@ -8,7 +9,7 @@ const TOWER_WIDTHS     = [8, 10]
 const TSPACE_IN        = 48
 
 export function CantileverPanel({ obj }) {
-  const { updateObject, commitObjectUpdate, gridSize } = useCanvasStore()
+  const { updateObject, commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize })))
 
   const towers      = obj.towers      || [36, 36, 36, 36, 36]
   const doubleSided = obj.doubleSided ?? true

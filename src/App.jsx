@@ -4,6 +4,7 @@ import { LeftPanel }  from './components/LeftPanel/index'
 import { RightPanel } from './components/RightPanel/index'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useCanvasStore } from './store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { FloatingToolbar } from './components/LeftPanel/FloatingToolbar'
 import { GeneratePanel } from './components/Generate/GeneratePanel'
 import { Canvas2 } from './canvas2/Canvas2'
@@ -53,7 +54,7 @@ function Placeholder({ title, onBack }) {
 
 export default function App() {
   useKeyboardShortcuts()
-  const { uiTheme, uiScale, restoreAutoSave, hasAutoSave, setUiTheme } = useCanvasStore()
+  const { uiTheme, uiScale, restoreAutoSave, hasAutoSave, setUiTheme } = useCanvasStore(useShallow(s => ({ uiTheme: s.uiTheme, uiScale: s.uiScale, restoreAutoSave: s.restoreAutoSave, hasAutoSave: s.hasAutoSave, setUiTheme: s.setUiTheme })))
   const [view, setView] = useState('login')
 
   useEffect(() => {

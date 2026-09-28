@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { SectionHeader } from '../shared/SectionHeader'
 
 export function CustomObjects() {
-  const { customObjects, saveAsCustomObject, deleteCustomObject, selectedIds } = useCanvasStore()
+  const { customObjects, saveAsCustomObject, deleteCustomObject, selectedIds } = useCanvasStore(useShallow(s => ({ customObjects: s.customObjects, saveAsCustomObject: s.saveAsCustomObject, deleteCustomObject: s.deleteCustomObject, selectedIds: s.selectedIds })))
   const [saving, setSaving] = useState(false)
   const [name, setName]     = useState('')
 

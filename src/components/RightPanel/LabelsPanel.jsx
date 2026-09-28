@@ -1,11 +1,12 @@
 import { Plus, Trash2, Tag } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { SectionHeader } from '../shared/SectionHeader'
 
 const COLORS = ['#4a9eff','#22c55e','#f0b429','#a855f7','#ef4444','#ec4899','#14b8a6']
 
 export function LabelsPanel() {
-  const { labels, addLabel, deleteLabel } = useCanvasStore()
+  const { labels, addLabel, deleteLabel } = useCanvasStore(useShallow(s => ({ labels: s.labels, addLabel: s.addLabel, deleteLabel: s.deleteLabel })))
 
   const handleAdd = () => {
     const text = window.prompt('Label text:')

@@ -1,7 +1,7 @@
 import { Rect, Line } from 'react-konva'
 import { SelectionOutline } from './shapes'
 import { RackLabels, FpDimLabels, AisleLabel, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
-import { useMemo } from 'react'
+import { useMemo, memo } from 'react'
 import { BlockedFaceMarks } from './BlockedFaceMarks'
 import { useDragPreview, previewObjects } from './dragPreview'
 import { UprightConflictMarks } from './UprightConflictMarks'
@@ -22,7 +22,7 @@ const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_
    there is no second "what's selected" query to drift out of sync. Aisle
    labels are the one exception: always on (subject to `showAisles`),
    independent of selection, so they need the full `objects` list too. */
-export function Overlays({
+function OverlaysView({
   selectedObjects, gridSize, marquee, objects = [], zoom = 1, showAisles = true, activeWall = null, smartGuides = [],
   showMarks = true, aisleBlocks = [], columns = [], rackConflicts = [], pickBlocks = [], uprightHits = [],
 }) {
@@ -78,3 +78,5 @@ export function Overlays({
     </>
   )
 }
+
+export const Overlays = memo(OverlaysView)

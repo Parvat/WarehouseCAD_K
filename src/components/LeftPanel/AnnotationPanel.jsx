@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { SectionHeader }  from '../shared/SectionHeader'
 import { Tooltip }        from '../shared/Tooltip'
 
@@ -55,7 +56,7 @@ const COLS = 3
 const DEFAULT_ROWS = 2
 
 export function AnnotationPanel() {
-  const { activeTool, setActiveTool } = useCanvasStore()
+  const { activeTool, setActiveTool } = useCanvasStore(useShallow(s => ({ activeTool: s.activeTool, setActiveTool: s.setActiveTool })))
   const [expanded, setExpanded] = useState(false)
   const visible = expanded ? TOOLS_LIST : TOOLS_LIST.slice(0, COLS * DEFAULT_ROWS)
   const hasMore = TOOLS_LIST.length > COLS * DEFAULT_ROWS

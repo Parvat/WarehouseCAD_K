@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { OBJECT_LIBRARY } from '../../constants'
 import { SectionHeader } from '../shared/SectionHeader'
 import { objectContains } from '../../utils/canvas'
@@ -8,7 +9,7 @@ import { getCanvasContainerSize } from '../../utils/canvasContainer'
 const FP_TYPES_SET = new Set(['fp_rect','fp_l','fp_t','fp_u','fp_cross','fp_l_mirror'])
 
 export function ObjectLibrary() {
-  const { addObject, activeLayerId, objects, zoom, panX, panY } = useCanvasStore()
+  const { addObject, activeLayerId, objects, zoom, panX, panY } = useCanvasStore(useShallow(s => ({ addObject: s.addObject, activeLayerId: s.activeLayerId, objects: s.objects, zoom: s.zoom, panX: s.panX, panY: s.panY })))
   const [search, setSearch] = useState('')
 
   const place = (item) => {

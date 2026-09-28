@@ -1,4 +1,5 @@
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { SectionHeader } from '../shared/SectionHeader'
 import { useColumnCheck, conflictKey } from '../../generate/useColumnCheck'
 import { useRules } from '../../rules/useRules'
@@ -65,7 +66,7 @@ function Stat({ label, value, tone }) {
 }
 
 function ConflictCard({ conflict, index }) {
-  const { objects, gridSize, deleteSingleBay } = useCanvasStore()
+  const { objects, gridSize, deleteSingleBay } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize, deleteSingleBay: s.deleteSingleBay })))
   const { resolutions, setResolution } = useColumnCheck()
 
   const key  = conflictKey(conflict)

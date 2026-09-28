@@ -1,4 +1,5 @@
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { FORKLIFTS } from '../../constants'
 import { SectionHeader } from '../shared/SectionHeader'
 import { cn } from '../../utils/cn'
@@ -24,7 +25,7 @@ function ForkliftIcon({ size = 'md' }) {
 }
 
 export function ForkliftPanel() {
-  const { activeForkliftId, setActiveForklift } = useCanvasStore()
+  const { activeForkliftId, setActiveForklift } = useCanvasStore(useShallow(s => ({ activeForkliftId: s.activeForkliftId, setActiveForklift: s.setActiveForklift })))
   const aisleWidthFt = 10 // In a real app: measured from canvas
 
   return (

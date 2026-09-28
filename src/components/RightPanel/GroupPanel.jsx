@@ -1,5 +1,6 @@
 import { Copy, Clipboard, Scissors, Layers, Ungroup, X } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { SectionHeader } from '../shared/SectionHeader'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../../utils/pasteAt'
@@ -9,7 +10,7 @@ export function GroupPanel() {
     selectedIds, groups, objects,
     groupSelected, ungroupSelected, removeFromGroup,
     copySelected, paste, cutSelected,
-  } = useCanvasStore()
+  } = useCanvasStore(useShallow(s => ({ selectedIds: s.selectedIds, groups: s.groups, objects: s.objects, groupSelected: s.groupSelected, ungroupSelected: s.ungroupSelected, removeFromGroup: s.removeFromGroup, copySelected: s.copySelected, paste: s.paste, cutSelected: s.cutSelected })))
 
   const hasSelection = selectedIds.length > 0
   const canGroup     = selectedIds.length >= 2

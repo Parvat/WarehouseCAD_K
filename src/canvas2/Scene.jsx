@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, memo } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
 import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape } from './shapes'
@@ -24,7 +24,17 @@ import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape }
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 
-export function Scene({ listening = false, bind }) {
+/* rackDrawOps is a pure function of the rack object and the grid size. */
+const opsCache = new WeakMap()
+function opsFor(o, gridSize) {
+  const hit = opsCache.get(o)
+  if (hit && hit.gridSize === gridSize) return hit.ops
+  const ops = rackDrawOps(o, { gridSize })
+  opsCache.set(o, { gridSize, ops })
+  return ops
+}
+
+function SceneView({ listening = false, bind }) {
   const objects = useCanvasStore(s => s.objects)
   const gridSize = useCanvasStore(s => s.gridSize)
   const visibleLayerIds = useCanvasStore(s => s.layers)
@@ -47,7 +57,14 @@ export function Scene({ listening = false, bind }) {
   const isVisible = (o) => visibleIds.size === 0 || !o.layerId || visibleIds.has(o.layerId)
 
   /* Rack ops are derived once per object and carry no zoom, so panning and
-     zooming rebuild nothing here. */
+     zooming rebuild nothing here. They are also kept per rack OBJECT: an edit
+     makes a new objects array but leaves every untouched rack the same object,
+     so it keeps the same ops and its (memoised) RackShape does not redraw. */
+  const byId = useMemo(() => {
+    const m = new Map()
+    for (const o of objects) if (o && !m.has(o.id)) m.set(o.id, o)
+    return m
+  }, [objects])
   const scene = useMemo(() => {
     const floors = [], rest = []
     for (const o of objects) {
@@ -56,7 +73,7 @@ export function Scene({ listening = false, bind }) {
       if (o.type === 'column_grid') { rest.push({ kind: 'columns', obj: o }); continue }
       if (o.type === 'aisle') { rest.push({ kind: 'aisle', obj: o }); continue }
       if (PORTED_RACK_TYPES.has(o.type)) {
-        const ops = rackDrawOps(o, { gridSize })
+        const ops = opsFor(o, gridSize)
         // a degenerate rack has no ops; fall through so it is still visible
         if (ops) { rest.push({ kind: 'rack', obj: o, ops }); continue }
       }
@@ -79,10 +96,12 @@ export function Scene({ listening = false, bind }) {
           return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} zoom={zoom} racks={racks} listening={listening} bind={bind} />
         }
         if (e.kind === 'aisle') {
-          return <AisleShape key={e.obj.id} obj={e.obj} objects={objects} listening={listening} bind={bind} />
+          return <AisleShape key={e.obj.id} obj={e.obj} row1={byId.get(e.obj.row1Id)} row2={byId.get(e.obj.row2Id)} listening={listening} bind={bind} />
         }
         return <FallbackShape key={e.obj.id} obj={e.obj} listening={listening} bind={bind} />
       })}
     </>
   )
 }
+
+export const Scene = memo(SceneView)

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, memo } from 'react'
 import { Stage, Layer, Shape } from 'react-konva'
 import { Maximize, ToggleLeft, ToggleRight, Ruler } from 'lucide-react'
 import { Scene } from './Scene'
@@ -57,7 +57,7 @@ function useContainerSize(el) {
 /** The grid, as ONE shape whose sceneFunc reads the live Stage transform.
  *  Built as a single node on purpose — a grid of React elements would be
  *  hundreds of nodes reconciled on every pan. */
-function Grid({ gridSize, major, minor }) {
+const Grid = memo(function Grid({ gridSize, major, minor }) {
   return (
     <Shape
       listening={false}
@@ -90,7 +90,7 @@ function Grid({ gridSize, major, minor }) {
       }}
     />
   )
-}
+})
 
 /* Whether double-click also fits-to-content, defaulting OFF: double-click is
    a gesture people reach for while editing (renaming, drilling into a bay),
@@ -110,6 +110,32 @@ function useDblClickFitSetting() {
     return next
   })
   return [enabled, toggle]
+}
+
+/* Adopt view changes made OUTSIDE the canvas — the zoom buttons, fit, a
+   freshly generated layout. Guarded against the values this canvas just
+   wrote, or the two would fight each other every frame. Its own component so
+   the per-frame pan writes re-render only this (and the rulers), never the
+   canvas tree. */
+function ViewAdopter({ view, apply }) {
+  const zoom = useCanvasStore(s => s.zoom)
+  const panX = useCanvasStore(s => s.panX)
+  const panY = useCanvasStore(s => s.panY)
+  useEffect(() => {
+    const v = view.current
+    if (zoom === v.zoom && panX === v.panX && panY === v.panY) return
+    view.current = { zoom: clampZoom(zoom), panX, panY }
+    apply()
+  }, [zoom, panX, panY])
+  return null
+}
+
+/* The rulers follow the pan, so they read it themselves. */
+function StoreRulers({ gridSize, size }) {
+  const zoom = useCanvasStore(s => s.zoom)
+  const panX = useCanvasStore(s => s.panX)
+  const panY = useCanvasStore(s => s.panY)
+  return <Rulers view={{ zoom, panX, panY }} gridSize={gridSize} size={size} />
 }
 
 export function Canvas2() {
@@ -222,15 +248,11 @@ export function Canvas2() {
   /* Adopt view changes made OUTSIDE the canvas — the zoom buttons, fit, a
      freshly generated layout. Guarded against the values this canvas just
      wrote, or the two would fight each other every frame. */
+  /* Zoom is read here because the overlays size their labels by it. The pan
+     is NOT: a pan writes panX/panY to the store every frame, and reading them
+     here re-rendered the whole canvas tree per frame. ViewAdopter and
+     StoreRulers (below) are the only readers. */
   const zoom = useCanvasStore(s => s.zoom)
-  const panX = useCanvasStore(s => s.panX)
-  const panY = useCanvasStore(s => s.panY)
-  useEffect(() => {
-    const v = view.current
-    if (zoom === v.zoom && panX === v.panX && panY === v.panY) return
-    view.current = { zoom: clampZoom(zoom), panX, panY }
-    apply()
-  }, [zoom, panX, panY])
 
   useEffect(() => { apply() }, [size.w, size.h])
 
@@ -370,8 +392,11 @@ export function Canvas2() {
           <Layer listening={false}>
             {showGrid && <Grid gridSize={gridSize} major={colors.major} minor={colors.minor} />}
           </Layer>
-          {/* objects — the real scene, now hit-testable so it can be selected */}
-          <Layer listening>
+          {/* objects — the real scene. Not listening: picking is geometry
+              (hitTest.js, CANVAS2.md rule 4), never Konva's hit graph, and a
+              listening layer redraws that unused hit canvas on every frame —
+              pan, zoom and drag included. */}
+          <Layer listening={false}>
             <Scene listening />
           </Layer>
           {/* overlay — selection outline(s), marquee, resize/rotate handles.
@@ -403,7 +428,8 @@ export function Canvas2() {
           </Layer>
         </Stage>
       )}
-      {showRulers && <Rulers view={{ zoom, panX, panY }} gridSize={gridSize} size={size} />}
+      <ViewAdopter view={view} apply={apply} />
+      {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>
   )
 }

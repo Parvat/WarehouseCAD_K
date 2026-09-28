@@ -1,11 +1,12 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getObjectBounds } from '../../../utils/canvas'
 import { getRackCapacity } from '../../../utils/capacity'
 
 // ── Drive-In Panel ───────────────────────────────────────────────────────────
 export function DriveInPanel({ obj }) {
-  const { commitObjectUpdate, gridSize } = useCanvasStore()
+  const { commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize })))
   const lanes      = obj.lanes      || 2
   const palletDeep = obj.palletDeep || 5
   const palletWIn  = obj.palletWIn  || 48
@@ -103,7 +104,7 @@ export function DriveInPanel({ obj }) {
 
 // ── Drive-Through Panel (reuses DriveInPanel logic, FIFO label) ─────────────
 export function DriveThroughPanel({ obj }) {
-  const { commitObjectUpdate, gridSize } = useCanvasStore()
+  const { commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize })))
   const lanes      = obj.lanes        || 2
   const palletDeep = obj.palletDeep   || 5
   const palletWIn  = obj.palletWIn    || 40
@@ -157,7 +158,7 @@ export function DriveThroughPanel({ obj }) {
 
 // ── Pushback Panel ────────────────────────────────────────────────────────────
 export function PushbackPanel({ obj }) {
-  const { commitObjectUpdate, gridSize } = useCanvasStore()
+  const { commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize })))
   const lanes      = obj.lanes        || 2
   const palletDeep = obj.palletDeep   || 2
   const palletWIn  = obj.palletWIn    || 40
@@ -213,7 +214,7 @@ export function PushbackPanel({ obj }) {
 
 // ── Pallet Flow Panel ────────────────────────────────────────────────────────
 export function PalletFlowPanel({ obj }) {
-  const { commitObjectUpdate } = useCanvasStore()
+  const { commitObjectUpdate } = useCanvasStore(useShallow(s => ({ commitObjectUpdate: s.commitObjectUpdate })))
   const palletDeep = obj.palletDeep || 2
   const palletDIn  = obj.palletDIn  || 48
 

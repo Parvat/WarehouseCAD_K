@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, memo } from 'react'
 import { Group, Rect, Path, Shape, Circle, Line, Text } from 'react-konva'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
@@ -346,7 +346,7 @@ function multiBaySelectionRects(obj, gridSize, activeBaySelection) {
 }
 
 /** A rack, from its draw-ops. */
-export function RackShape({ obj, ops, gridSize, listening = false, bind, activeBaySelection }) {
+function RackShapeView({ obj, ops, gridSize, listening = false, bind, activeBaySelection }) {
   const msRects = multiBaySelectionRects(obj, gridSize, activeBaySelection)
   return (
     <Group name={nodeName(obj.id)} listening={listening}
@@ -380,7 +380,7 @@ export function RackShape({ obj, ops, gridSize, listening = false, bind, activeB
  *  evenodd — so the wall measures exactly `wallThicknessFt` rather than a
  *  centred stroke straddling the boundary. insetPolygon is the shared helper
  *  the SVG uses, so the two cannot drift. */
-export function FloorPlanShape({ obj, gridSize, listening = false, bind }) {
+function FloorPlanShapeView({ obj, gridSize, listening = false, bind }) {
   const verts = obj.fpVerts
 
   /* Real outline bounds. Without this Konva reports a 1px self-rect for a
@@ -465,7 +465,7 @@ const MIN_COLUMN_MARKER_PX = 6
  *  Scene.jsx/Canvas2.jsx — this shape carries no zoom on its own
  *  otherwise, unlike the screen-constant-stroke trick below it, which
  *  needs no zoom input at all. */
-export function ColumnGridShape({ obj, gridSize, zoom = 1, racks = [], listening = false, bind }) {
+function ColumnGridShapeView({ obj, gridSize, zoom = 1, racks = [], listening = false, bind }) {
   /* A grown marker stays inside the rack face its column sits in, growing
      away from a double row's flue (columnMarker.js) — centred growth spilled
      it across the gap and read as a column on the joint. */
@@ -512,7 +512,7 @@ const labelFor = t => String(t || '')
  *
  *  A MIGRATION SURFACE, not a destination — each type given a real symbol drops
  *  out of here automatically, because Scene only routes what nothing claimed. */
-export function FallbackShape({ obj, listening = false, bind }) {
+function FallbackShapeView({ obj, listening = false, bind }) {
   const stroke = obj.stroke || '#6B7280'
   const fill = obj.noFill ? undefined : obj.fill
   const opacity = obj.opacity ?? 1
@@ -590,8 +590,10 @@ export function FallbackShape({ obj, listening = false, bind }) {
  *  already owns it for a rack or a floor plan, rather than teaching one more
  *  shape to read selection state that the render/rackOps.js op list and
  *  every other painter here deliberately don't. */
-export function AisleShape({ obj, objects, listening = false, bind }) {
-  const rect = aisleRect(obj, objects)
+function AisleShapeView({ obj, objects, row1, row2, listening = false, bind }) {
+  /* Fed its two rows (Scene) rather than the whole objects array, so an edit
+     elsewhere doesn't redraw it; aisleRect only ever looks those two up. */
+  const rect = aisleRect(obj, objects || [row1, row2].filter(Boolean))
   if (!rect) return null
   return (
     <Group name={nodeName(obj.id)} listening={listening} {...(bind ? bind(obj) : null)}>
@@ -737,3 +739,13 @@ export function SelectionOutline({ obj, gridSize = 40, objects = [] }) {
     </Group>
   )
 }
+
+export const RackShape = memo(RackShapeView)
+
+export const FloorPlanShape = memo(FloorPlanShapeView)
+
+export const ColumnGridShape = memo(ColumnGridShapeView)
+
+export const AisleShape = memo(AisleShapeView)
+
+export const FallbackShape = memo(FallbackShapeView)

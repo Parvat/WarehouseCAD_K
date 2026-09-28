@@ -1,4 +1,5 @@
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
 import { SectionHeader } from '../shared/SectionHeader'
 import { Tooltip } from '../shared/Tooltip'
@@ -32,7 +33,7 @@ const FP_TOOLS = [
 ]
 
 export function FloorPlanTools() {
-  const { activeTool, setActiveTool } = useCanvasStore()
+  const { activeTool, setActiveTool } = useCanvasStore(useShallow(s => ({ activeTool: s.activeTool, setActiveTool: s.setActiveTool })))
   return (
     <SectionHeader title="Floor Plan Rooms" defaultOpen={true}>
       <div className="px-2 pb-1">
@@ -69,7 +70,7 @@ export function FloorPlanTools() {
 }
 
 function WallThicknessControl() {
-  const { floorPlan, setFloorPlan, selectedIds, objects, updateObject, gridSize } = useCanvasStore()
+  const { floorPlan, setFloorPlan, selectedIds, objects, updateObject, gridSize } = useCanvasStore(useShallow(s => ({ floorPlan: s.floorPlan, setFloorPlan: s.setFloorPlan, selectedIds: s.selectedIds, objects: s.objects, updateObject: s.updateObject, gridSize: s.gridSize })))
   const thickness = floorPlan?.wallThicknessFt ?? 0.5
 
   const selFpObjs = objects.filter(o =>

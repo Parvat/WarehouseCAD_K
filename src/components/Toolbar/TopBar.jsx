@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Scissors, Copy, Clipboard, Undo2, Redo2, ZoomIn, ZoomOut,
          Save, FolderOpen, FilePlus, FileDown, MoreHorizontal, SlidersHorizontal } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { UNITS } from '../../constants'
 import { RulesPanel } from '../Rules/RulesPanel'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
@@ -180,7 +181,7 @@ export function TopBar() {
     uiScale, setUiScale,
     saveToFile, loadFromFile, newScene, exportAsPDF,
     currentFilename, hasUnsavedChanges,
-  } = useCanvasStore()
+  } = useCanvasStore(useShallow(s => ({ undo: s.undo, redo: s.redo, copySelected: s.copySelected, paste: s.paste, cutSelected: s.cutSelected, zoom: s.zoom, setViewport: s.setViewport, unit: s.unit, setUnit: s.setUnit, showGrid: s.showGrid, toggleGrid: s.toggleGrid, showRulers: s.showRulers, toggleRulers: s.toggleRulers, snapToGrid: s.snapToGrid, toggleSnap: s.toggleSnap, snapUnit: s.snapUnit, setSnapUnit: s.setSnapUnit, uiTheme: s.uiTheme, setUiTheme: s.setUiTheme, uiScale: s.uiScale, setUiScale: s.setUiScale, saveToFile: s.saveToFile, loadFromFile: s.loadFromFile, newScene: s.newScene, exportAsPDF: s.exportAsPDF, currentFilename: s.currentFilename, hasUnsavedChanges: s.hasUnsavedChanges })))
 
   /* Menu open/closed is presentation state — component-local, never the store. */
   const [menuOpen, setMenuOpen] = useState(false)

@@ -1,10 +1,11 @@
 import { Eye, EyeOff, Lock, Unlock, Trash2, Edit2, Plus, GripVertical } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { SectionHeader } from '../shared/SectionHeader'
 import { cn } from '../../utils/cn'
 
 export function LayerPanel() {
-  const { layers, activeLayerId, setActiveLayer, addLayer, updateLayer, deleteLayer } = useCanvasStore()
+  const { layers, activeLayerId, setActiveLayer, addLayer, updateLayer, deleteLayer } = useCanvasStore(useShallow(s => ({ layers: s.layers, activeLayerId: s.activeLayerId, setActiveLayer: s.setActiveLayer, addLayer: s.addLayer, updateLayer: s.updateLayer, deleteLayer: s.deleteLayer })))
 
   const rename = (layer) => {
     const n = window.prompt('Layer name:', layer.name)

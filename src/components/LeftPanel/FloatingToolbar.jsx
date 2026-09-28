@@ -29,6 +29,7 @@ import {
   ArrowUpDown, ArrowLeftRight,
 } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
 import { ANNOT } from './AnnotationPanel'
 import { WAREHOUSE_CATEGORIES } from '../../constants/warehouseObjects'
@@ -777,7 +778,7 @@ export function FloatingToolbar() {
     activeTool, setActiveTool,
     addObject, objects, zoom, panX, panY, activeLayerId, gridSize,
     placeFpObject, strokeColor, setStrokeColor, selectedIds, commitObjectUpdate,
-  } = useCanvasStore()
+  } = useCanvasStore(useShallow(s => ({ activeTool: s.activeTool, setActiveTool: s.setActiveTool, addObject: s.addObject, objects: s.objects, zoom: s.zoom, panX: s.panX, panY: s.panY, activeLayerId: s.activeLayerId, gridSize: s.gridSize, placeFpObject: s.placeFpObject, strokeColor: s.strokeColor, setStrokeColor: s.setStrokeColor, selectedIds: s.selectedIds, commitObjectUpdate: s.commitObjectUpdate })))
 
   /* Pen defaults are presentation state — localStorage, never the canvas
      store. CanvasArea reads the same key when it commits a stroke. */

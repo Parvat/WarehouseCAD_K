@@ -1,11 +1,12 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { getObjectBounds } from '../../../utils/canvas'
 
 // ── Column Grid Panel ─────────────────────────────────────────────────────────
 const COL_SIZES_IN = [12, 18, 24]
 
 export function ColumnGridPanel({ obj }) {
-  const { updateObject, commitObjectUpdate, gridSize } = useCanvasStore()
+  const { updateObject, commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize })))
 
   const spacingX    = obj.spacingX    || [40*gridSize]
   const spacingY    = obj.spacingY    || [40*gridSize]

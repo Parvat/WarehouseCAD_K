@@ -1,4 +1,5 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { useState } from 'react'
 import { sectionRows, planSectionSync, syncWarnings, splitRowIds } from '../../../utils/syncSection'
 import { rowLines } from '../../../utils/syncSections'
@@ -48,6 +49,19 @@ export const fmtFtIn = (inches) => {
    returns the red warning that pick would cause, or null: shown on the
    button and its tooltip, never blocking. `current` highlights the preset
    in use. */
+/* The beam presets' red warnings, remembered per layout. The picker asks for
+   every preset (and the custom value) on every render, and each answer is a
+   full overlap / wall check — but it can only change when the objects do,
+   and the store makes a new objects array on every object change, so the
+   array itself is the cache key. */
+const warnCache = new WeakMap()
+function cachedWarn(objects, key, compute) {
+  let m = warnCache.get(objects)
+  if (!m) { m = new Map(); warnCache.set(objects, m) }
+  if (!m.has(key)) m.set(key, compute())
+  return m.get(key)
+}
+
 export function BeamPicker({ onPick, current = null, warnFor = () => null, prefix = '', label = 'beam' }) {
   const [text, setText] = useState('')
   const [bad, setBad] = useState(false)
@@ -146,7 +160,7 @@ function maxFitBays(obj, allObjects, gridSize, newBeamIn = 96) {
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
 export function MultiBayPanel() {
-  const { activeBaySelection, objects, deleteSelectedBays, changeSelectedBaysBeam, clearBaySelection, clearSelection, gridSize } = useCanvasStore()
+  const { activeBaySelection, objects, deleteSelectedBays, changeSelectedBaysBeam, clearBaySelection, clearSelection, gridSize } = useCanvasStore(useShallow(s => ({ activeBaySelection: s.activeBaySelection, objects: s.objects, deleteSelectedBays: s.deleteSelectedBays, changeSelectedBaysBeam: s.changeSelectedBaysBeam, clearBaySelection: s.clearBaySelection, clearSelection: s.clearSelection, gridSize: s.gridSize })))
   if (!activeBaySelection || activeBaySelection.length === 0) return null
 
   /* deleteSelectedBays (the store action) only ever clears
@@ -164,7 +178,8 @@ export function MultiBayPanel() {
   const deleteSelectedBaysAndClear = () => { deleteSelectedBays(); clearSelection() }
 
   const fmtIn = fmtFtIn
-  const warnFor = (b) => issuesText([...changeIssues(objects, planBayBeamChange(objects, activeBaySelection, b, gridSize), gridSize).byId.values()], fmtIn)
+  const warnFor = (b) => cachedWarn(objects, `multi|${gridSize}|${JSON.stringify(activeBaySelection)}|${b}`,
+    () => issuesText([...changeIssues(objects, planBayBeamChange(objects, activeBaySelection, b, gridSize), gridSize).byId.values()], fmtIn))
   const racksNow = [...new Set(activeBaySelection.map(e => e.objId))].map(id => objects.find(o => o.id === id)).filter(Boolean)
   const nowWarn = issuesText(racksNow.map(o => rackIssues(o, objects, gridSize)), fmtIn)
 
@@ -261,7 +276,7 @@ const MATCH_BAYS_TIP = "Every other row in this section copies this row's beam l
 /* The "Match bays in this section" control (was "Sync section"): the button, how many rows it touches, and the
    warnings from the last sync of this rack (never blocking). */
 function SyncSection({ obj }) {
-  const { objects } = useCanvasStore()
+  const { objects } = useCanvasStore(useShallow(s => ({ objects: s.objects })))
   const [result, setResult] = useState(null)
   // rows = lines across the aisles: the pieces of a split row are one row
   const others = rowLines(sectionRows(objects, obj.id)).length - 1
@@ -335,7 +350,7 @@ const perSection = (list, extra = () => '') => {
 /* The button, in the rack panel (for the rack's building) and the building
    panel. Shows how many edits are pending; its tooltip lists them. */
 export function ApplyRowChanges({ fpId }) {
-  const { objects } = useCanvasStore()
+  const { objects } = useCanvasStore(useShallow(s => ({ objects: s.objects })))
   const [result, setResult] = useState(null)
   const fp = fpId ? objects.find(o => o.id === fpId) : null
   if (!fp || !fp.rowBaseline) return null
@@ -419,7 +434,7 @@ export function ApplyReport({ report: r }) {
 }
 
 export function RackRowPanel({ obj }) {
-  const { objects, updateObject, commitObjectUpdate, deleteSingleBay, gridSize } = useCanvasStore()
+  const { objects, updateObject, commitObjectUpdate, deleteSingleBay, gridSize } = useCanvasStore(useShallow(s => ({ objects: s.objects, updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, deleteSingleBay: s.deleteSingleBay, gridSize: s.gridSize })))
 
   const beams   = obj.beams || [96]
   const upIn    = obj.uprightWidth || 3
@@ -439,8 +454,10 @@ export function RackRowPanel({ obj }) {
 
   /* Red warnings, never a block: what a pick would cause, and the rack as
      it stands now (overlaps another rack / passes the wall). */
-  const warnAdd = (b) => issuesText([...changeIssues(objects, new Map([[obj.id, addBayUpdate(obj, b, gridSize)]]), gridSize).byId.values()], fmtIn)
-  const warnChange = (b) => activeBay === null ? null
+  const warnAdd = (b) => cachedWarn(objects, `add|${gridSize}|${obj.id}|${b}`,
+    () => issuesText([...changeIssues(objects, new Map([[obj.id, addBayUpdate(obj, b, gridSize)]]), gridSize).byId.values()], fmtIn))
+  const warnChange = (b) => activeBay === null ? null : cachedWarn(objects, `change|${gridSize}|${obj.id}|${activeBay}|${b}`, () => warnChangeNow(b))
+  const warnChangeNow = (b) => activeBay === null ? null
     : issuesText([...changeIssues(objects, new Map([[obj.id, changeBayUpdate(obj, activeBay, b, gridSize)]]), gridSize).byId.values()], fmtIn)
   const nowWarn = issuesText([rackIssues(obj, objects, gridSize)], fmtIn)
 

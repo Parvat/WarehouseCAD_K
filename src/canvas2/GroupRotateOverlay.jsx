@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Group, Rect, Line, Circle, Text } from 'react-konva'
 import { computeGroupOutline } from './groupRotate'
 
@@ -35,7 +36,7 @@ import { computeGroupOutline } from './groupRotate'
    geometrically, in useCanvasInteraction's onStageMouseDown via
    groupRotate.js's groupRotateHandleHitTest, the same function this uses to
    know WHERE to draw it (CANVAS2.md rule 4). */
-export function GroupRotateOverlay({ objects, zoom, allObjects = objects }) {
+function GroupRotateOverlayView({ objects, zoom, allObjects = objects }) {
   const g = computeGroupOutline(objects, zoom, allObjects)
   if (!g) return null
   const { minX, minY, maxX, maxY, pad, hx, hy, ly, r, P, R } = g
@@ -71,3 +72,5 @@ export function GroupRotateOverlay({ objects, zoom, allObjects = objects }) {
     </Group>
   )
 }
+
+export const GroupRotateOverlay = memo(GroupRotateOverlayView)

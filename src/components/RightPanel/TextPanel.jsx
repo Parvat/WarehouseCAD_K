@@ -9,7 +9,8 @@ import { cn } from '../../utils/cn'
 const FONTS = ['Montserrat', 'Inter', 'JetBrains Mono', 'monospace']
 
 export function TextPanel() {
-  const { textSettings: ts, setTextSetting } = useCanvasStore()
+  const ts = useCanvasStore(s => s.textSettings)
+  const setTextSetting = useCanvasStore(s => s.setTextSetting)
 
   const StyleBtn = ({ icon: Icon, field, title: t }) => (
     <button

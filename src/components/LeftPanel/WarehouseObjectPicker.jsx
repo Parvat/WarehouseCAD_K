@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { WAREHOUSE_CATEGORIES } from '../../constants/warehouseObjects'
 import { SectionHeader } from '../shared/SectionHeader'
 import { objectContains } from '../../utils/canvas'
@@ -300,7 +301,7 @@ function ObjectPreview({ type, color }) {
 
 // ── Main Picker ───────────────────────────────────────────────────────────────
 export function WarehouseObjectPicker() {
-  const { addObject, activeLayerId, objects, zoom, panX, panY } = useCanvasStore()
+  const { addObject, activeLayerId, objects, zoom, panX, panY } = useCanvasStore(useShallow(s => ({ addObject: s.addObject, activeLayerId: s.activeLayerId, objects: s.objects, zoom: s.zoom, panX: s.panX, panY: s.panY })))
   // Track selected variant per object id
   const [variantSel, setVariantSel] = useState({})
   const [gridSetup, setGridSetup] = useState({ baysX: 5, baysY: 4 })

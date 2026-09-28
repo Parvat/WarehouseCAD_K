@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Group, Rect, Line, Circle, Text } from 'react-konva'
 import { spin } from './shapes'
 import { computeHandleLayout } from './handleGeometry'
@@ -27,7 +28,7 @@ import { computeHandleLayout } from './handleGeometry'
    equivalent of strokeScaleEnabled for a Rect's own width/height — CanvasUI
    divides by zoom for the exact same reason, and this is the same trick,
    not a different one). */
-export function ResizeHandlesOverlay({ obj, zoom, gridSize = 40 }) {
+function ResizeHandlesOverlayView({ obj, zoom, gridSize = 40 }) {
   const layout = computeHandleLayout(obj, zoom)
   const { enabled, positions, hs, canRotate, rotateHandle } = layout
   if (!enabled.length && !canRotate) return null
@@ -102,3 +103,5 @@ export function syncHandleOverlayNode(group, obj, zoom, gridSize = 40) {
     }
   }
 }
+
+export const ResizeHandlesOverlay = memo(ResizeHandlesOverlayView)

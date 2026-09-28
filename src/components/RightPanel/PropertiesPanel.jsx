@@ -1,4 +1,5 @@
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { SectionHeader } from '../shared/SectionHeader'
 import { Disclosure } from '../shared/Disclosure'
 import {
@@ -197,7 +198,7 @@ function CapacityHero({ objects }) {
 /* ─── Aisle Panel ──────────────────────────────────────────────────────────── */
 
 function AislePanel({ obj }) {
-  const { commitObjectUpdate } = useCanvasStore()
+  const { commitObjectUpdate } = useCanvasStore(useShallow(s => ({ commitObjectUpdate: s.commitObjectUpdate })))
   const direction = obj.direction || 'both'
   const label     = obj.label || ''
 
@@ -249,7 +250,7 @@ function AislePanel({ obj }) {
 export function PropertiesPanel() {
   const { selectedIds, objects, groups, updateObject, commitObjectUpdate, deleteSelected, gridSize,
           bringForward, sendBackward, bringToFront, sendToBack, toggleLockSelected, createAisle,
-          showAisles, toggleAisles } = useCanvasStore()
+          showAisles, toggleAisles } = useCanvasStore(useShallow(s => ({ selectedIds: s.selectedIds, objects: s.objects, groups: s.groups, updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, deleteSelected: s.deleteSelected, gridSize: s.gridSize, bringForward: s.bringForward, sendBackward: s.sendBackward, bringToFront: s.bringToFront, sendToBack: s.sendToBack, toggleLockSelected: s.toggleLockSelected, createAisle: s.createAisle, showAisles: s.showAisles, toggleAisles: s.toggleAisles })))
   const selected = objects.filter(o => selectedIds.includes(o.id))
 
   /* ── Nothing selected → layout overview ──────────────────────────────────── */
@@ -766,7 +767,7 @@ export function PropertiesPanel() {
 /* ─── Layer Select ─────────────────────────────────────────────────────────── */
 
 function LayerSelect({ value, onChange }) {
-  const { layers } = useCanvasStore()
+  const { layers } = useCanvasStore(useShallow(s => ({ layers: s.layers })))
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
       style={{

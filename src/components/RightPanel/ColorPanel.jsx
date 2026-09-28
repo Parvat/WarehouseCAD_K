@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { PALETTE_COLORS } from '../../constants'
 import { SectionHeader } from '../shared/SectionHeader'
 import { cn } from '../../utils/cn'
@@ -12,7 +13,7 @@ export function ColorPanel() {
     setFillColor, setStrokeColor, setOpacity, setNoFill,
     applyFillToSelected, applyStrokeToSelected,
     selectedIds, objects,
-  } = useCanvasStore()
+  } = useCanvasStore(useShallow(s => ({ fillColor: s.fillColor, strokeColor: s.strokeColor, opacity: s.opacity, noFill: s.noFill, setFillColor: s.setFillColor, setStrokeColor: s.setStrokeColor, setOpacity: s.setOpacity, setNoFill: s.setNoFill, applyFillToSelected: s.applyFillToSelected, applyStrokeToSelected: s.applyStrokeToSelected, selectedIds: s.selectedIds, objects: s.objects })))
 
   const [active, setActive] = useState('fill')
   const color = active === 'fill' ? fillColor : strokeColor

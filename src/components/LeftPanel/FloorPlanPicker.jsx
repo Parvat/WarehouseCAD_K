@@ -1,4 +1,5 @@
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useShallow } from 'zustand/react/shallow'
 import { SectionHeader } from '../shared/SectionHeader'
 import { lShapePath, lMirrorPath, tShapePath, uShapePath, crossPath } from '../../utils/canvas'
 
@@ -27,7 +28,7 @@ const PLANS = [
 ]
 
 export function FloorPlanPicker() {
-  const { placeFpObject } = useCanvasStore()
+  const { placeFpObject } = useCanvasStore(useShallow(s => ({ placeFpObject: s.placeFpObject })))
   return (
     <SectionHeader title="Floor Plans" defaultOpen={true}>
       <div style={{ padding:'4px 8px 8px' }}>
@@ -59,7 +60,7 @@ export function FloorPlanPicker() {
 }
 
 function WallThicknessDefault() {
-  const { fpDefaults, setFpDefaults } = useCanvasStore()
+  const { fpDefaults, setFpDefaults } = useCanvasStore(useShallow(s => ({ fpDefaults: s.fpDefaults, setFpDefaults: s.setFpDefaults })))
   const thickness = fpDefaults?.wallThicknessFt ?? 0.5
   return (
     <div style={{ marginTop:10, paddingTop:8, borderTop:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:6 }}>
