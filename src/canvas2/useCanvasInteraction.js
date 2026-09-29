@@ -416,7 +416,7 @@ export function useCanvasInteraction({
       if (evt.button === 0 && st.selectedIds.length === 1) {
         const selected = st.objects.find(o => o.id === st.selectedIds[0])
         if (selected && PORTED_RACK_TYPES.has(selected.type)) {
-          const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
+          const handle = handleHitTest(selected, world.x, world.y, view.current.zoom, st.gridSize)
           if (handle) {
             beginHandleDrag(selected, handle, world)
             return
@@ -567,7 +567,7 @@ export function useCanvasInteraction({
     if (st.selectedIds.length === 1) {
       const selected = st.objects.find(o => o.id === st.selectedIds[0])
       if (selected && PORTED_RACK_TYPES.has(selected.type)) {
-        const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
+        const handle = handleHitTest(selected, world.x, world.y, view.current.zoom, st.gridSize)
         if (handle) next = cursorForHandle(handle, selected.rotation)
       } else if (selected && isFloorPlan(selected)) {
         if (fpRotateHandleHitTest(selected, st.gridSize, view.current.zoom, world.x, world.y)) next = 'alias'

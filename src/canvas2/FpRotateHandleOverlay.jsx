@@ -37,7 +37,7 @@ function FpRotateHandleOverlayView({ obj, gridSize, zoom }) {
      no node to move and sat behind as a ghost until the drop. */
   return (
     <Group name={'fprotate:' + obj.id} listening={false}>
-      <RotateGrip x={rx} y={ry} r={r} sx={lx} sy={ly} zoom={zoom} />
+      <RotateGrip x={rx} y={ry} r={r} sx={lx} sy={ly} />
     </Group>
   )
 }

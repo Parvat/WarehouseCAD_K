@@ -59,7 +59,7 @@ function GroupRotateOverlayView({ objects, zoom, allObjects = objects }) {
         cornerRadius={3 / zoom} strokeScaleEnabled={false} perfectDrawEnabled={false}
         shadowForStrokeEnabled={false} listening={false}
       />
-      <RotateGrip x={hx} y={hy} r={r} sx={hx} sy={ly} zoom={zoom} />
+      <RotateGrip x={hx} y={hy} r={r} sx={hx} sy={ly} />
     </Group>
   )
 }
