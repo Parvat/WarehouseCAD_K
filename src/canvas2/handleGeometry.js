@@ -18,25 +18,17 @@
 import { getObjectBounds, getHandlePositions, HANDLES } from '../utils/canvas'
 
 /* Handle sizes are FIXED on screen, the same at every zoom (divided by the
-   zoom for world units): they are chrome, not drawing. The click areas are
-   a little bigger than drawn. One set for every handle: the resize squares
-   and the rotate grip of a rack, a selection group and a building
+   zoom for world units): they are chrome, not drawing, and always shown.
+   Small — the handles must never outweigh what they select — with click
+   areas of at least 12 px. One set for every handle: the resize squares and
+   the rotate grip of a rack, a selection group and a building
    (handleSizes). */
-export const HANDLE_PX = 10          // a resize square's side, drawn
-export const GRIP_PX = 16            // the rotate grip's diameter, drawn
-export const GRIP_STEM_PX = 16       // the grip's stem
+export const HANDLE_PX = 6           // a resize square's side, drawn
+export const GRIP_PX = 10            // the rotate grip's diameter, drawn
+export const GRIP_STEM_PX = 12       // the grip's stem
 export const HANDLE_GAP_PX = 6       // from the object's edge to a square's centre (and the stem's foot)
-export const HANDLE_HIT_PX = 14      // a resize square's click area
-export const GRIP_HIT_PX = 18        // the grip's click area
-/* An object smaller than this on screen (its short side) shows no handles
-   and no rotate grip — only its selection outline. Handles only appear when
-   the object is clearly bigger than they are: at least 4x a square and 2.5x
-   the grip, so they never look as big as the rack they belong to. Zoom in
-   and they come back at full size. */
-export const HANDLES_MIN_OBJECT_PX = 40
-
-/** Is a box (world w × h) big enough on screen to carry handles? */
-export const bigEnoughForHandles = (w, h, zoom) => Math.min(w, h) * zoom >= HANDLES_MIN_OBJECT_PX
+export const HANDLE_HIT_PX = 12      // a resize square's click area
+export const GRIP_HIT_PX = 12        // the grip's click area
 export const HANDLE_FILL = '#ffffff'
 export const HANDLE_ACCENT = '#4a9eff'
 
@@ -139,10 +131,8 @@ export function cursorForHandle(handle, rotation) {
  *  own re-render has caught up. */
 export function computeHandleLayout(obj, zoom, gridSize = 40) {
   const bounds = getObjectBounds(obj)
-  // too small on screen: the outline alone, no handles (HANDLES_MIN_OBJECT_PX)
-  const big = bigEnoughForHandles(bounds.width, bounds.height, zoom)
-  const enabled = big ? enabledHandlesFor(obj.type) : []
-  const canRotate = big && rotateEnabledFor(obj.type)
+  const enabled = enabledHandlesFor(obj.type)
+  const canRotate = rotateEnabledFor(obj.type)
   const z = handleSizes(zoom, gridSize)
   const positions = getHandlePositions(bounds, z.pad)
   const hs = z.handle / 2
@@ -159,7 +149,6 @@ export function computeHandleLayout(obj, zoom, gridSize = 40) {
  *  on screen (handleSizes). */
 export function handleHitTest(obj, worldX, worldY, zoom, gridSize = 40) {
   const bounds = getObjectBounds(obj)
-  if (!bigEnoughForHandles(bounds.width, bounds.height, zoom)) return null     // no handles shown, none to hit
   const local = toLocal(bounds, obj.rotation, worldX, worldY)
   const z = handleSizes(zoom, gridSize)
   const hs = z.hitHalf

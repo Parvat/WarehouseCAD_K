@@ -216,28 +216,20 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
-### HF — Fixed-size handles; no red-warning flicker on a building drag · `HF_handlesFlicker.test.js` (13 tests)
-**Handles.** A fixed size on screen at every zoom (handleSizes in
-handleGeometry.js); they are chrome, not drawing:
-- **The sizes:** resize squares 10 px, white with a 1 px accent border; the
-  rotate grip a 16 px white disc on a 16 px stem.
-- **Click areas:** 14 px for a square, 18 px for the grip.
-- **Small objects get no handles.** An object whose short side is under
-  40 px on screen shows its selection outline only: no squares, no grip,
-  and nothing to hit.
-  - Handles show only when the object is at least 4× a square and 2.5× the
-    grip, so they never look as big as the rack.
-  - The first line, 12 px, still left the handles about as big as a
-    12–15 px rack.
-  - Zoom in and they come back at full size; a double row reaches 40 px at
-    about 13 %.
-  - A selection group and a building follow the same rule for their grip
-    (bigEnoughForHandles).
+### HF — Small fixed-size handles, always shown; no red-warning flicker on a building drag · `HF_handlesFlicker.test.js` (13 tests)
+**Handles.** The original design (7569d59), smaller: a fixed size on screen
+at every zoom (handleSizes in handleGeometry.js), always shown. They are
+chrome, not drawing:
+- **The sizes:** resize squares 6 px, white with a 1 px accent border; the
+  rotate grip a 10 px white disc on a 12 px stem.
+- **Click areas:** 12 px for a square and for the grip, bigger than drawn.
+- **Always shown:** no hiding rule and no drawing size. A rack only a few
+  pixels deep on screen still has its end squares and grip.
 - **One rule for everything:** a rack at any rotation, a selection group and
-  a building.
-- **History:** the drawing-size variants (pure 6″ / 10″, and with an
-  on-screen minimum and cap) were tried and reverted. This is the earlier
-  fixed size (8 px / 14 px), made bigger.
+  a building (all three grips drawn by the shared RotateGrip).
+- **History:** drawing size (pure 6″ / 10″, then with an on-screen minimum
+  and cap), a bigger fixed size (10 / 16 px) and a rule hiding handles on
+  objects under 40 px were tried and reverted.
 
 **Red "no clear aisle" warnings on a building drag.**
 - **The cause:** the clearance labels re-ran the aisle check on the previewed
@@ -253,23 +245,19 @@ handleGeometry.js); they are chrome, not drawing:
 
 | Test (1080×410; ×2 h/v) | Asserts |
 |---|---|
-| `HF-handles` | on racks turned 0°, 90°, 180° and 270°, at 2 %, 5 %, 20 %, 40 %, 100 %, 300 % and 800 %: squares 10 px, the grip 16 px on a 16 px stem, on screen |
-| `HF-hit` | at the same zooms and turns: a press ½ px inside the 14 px square click area hits and ½ px outside misses; the same for the grip's 18 px |
-| `HF-grips` | a selection group's grip is 16 px on a 16 px stem with an 18 px click area at every zoom; the building's grip takes the same sizes from handleSizes (read from fpRotate.js, which imports the Konva painters) |
-| `HF-hide` | the line is 40 px, and a square (10 px) is at most ¼ of it and the grip (16 px) at most 0.4. A rack at 0°, 90°, 180° and 270° just under 40 px on screen: no handles, no grip, nothing to hit where they would be. Just over: the two end handles and the grip, at full size, and hittable. A group's grip hides and shows at the same line; the building's grip is gated the same way (read from fpRotate.js) |
+| `HF-handles` | on racks turned 0°, 90°, 180° and 270°, at 1 %, 5 %, 20 %, 100 %, 300 % and 800 %: squares 6 px, the grip 10 px on a 12 px stem, on screen |
+| `HF-hit` | at the same zooms and turns: a press ½ px inside the grip's 12 px click area hits and ½ px outside misses; the same for a square's 12 px (from 5 % up — at 1 % the rack is 3 px and its end squares overlap) |
+| `HF-grips` | a selection group's grip is 10 px on a 12 px stem with a 12 px click area at every zoom; the building's grip takes the same sizes from handleSizes (read from fpRotate.js, which imports the Konva painters) |
+| `HF-always` | a rack only 3 px deep on screen, at 0°, 90°, 180° and 270°, still has its two end handles and the grip; a group at 0.05 % still has its grip; the hiding rule is gone from handleGeometry, groupRotate, GroupRotateOverlay and fpRotate, and the group overlay draws its grip unconditionally |
 | `HF-flicker` | a pinched layout (at least one red warning) and a building drag over 120 fractional frames: the held blocks are used, moved by the drag, and the set of red warnings is identical on every frame |
 | `HF-multi` | a selection holding every rack and the column grid: the same. A one-rack selection re-checks, and the red warnings of rows it doesn't move are identical on every frame |
 | `HF-wire` (once) | the painters draw the layout's sizes (white, 1 px accent) through one RotateGrip; the clearance group sits at the source's offset |
 
 **Checked in the app, horizontal and vertical:**
 - **Handles.** A rack, a two-rack group and the building selected in turn,
-  at 5 %, 40 % and 300 %: squares 10 px; rack, group and building grips
-  16 px; the stem 16 px.
-- **Small objects.** At 4.5 % (the rack 14 px deep on screen, the zoom of
-  the report where the handles looked bigger than the rack) a selected rack
-  showed its outline only, with 0 handles and no grip. At 20 % (64 px deep)
-  it had 2 end handles and the grip, small against the rack. The two-row
-  group and the building, both over 40 px on screen, kept their grips.
+  at 5 %, 20 %, 100 % and 300 %: squares 6 px; rack, group and building
+  grips 10 px; the stem 12 px. At 5 % the rack's handles show, small
+  against the rack.
 - **Building drag.** Several aisles pinched, then the building dragged from
   empty floor (found with the app's own hitTest). The red nodes stayed at
   270 (horizontal) and 216 (vertical) on all 40 frames, and after the drop.
@@ -1492,9 +1480,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | SC | **No question when switching sections** | 8: SC-question, SC-dont, SC-stop, SC-place (h/v) | ✓ |
 | SC | **Always copy waits** | 2: SC-always h/v | ✓ |
 | SC | **Match bays from the FIRST bay-changed row, not the last** | 2: SC-match h/v | ✓ |
-| HF | **Sizes follow the zoom** (not fixed on screen) | 4: HF-handles h/v, HF-grips h/v | ✓ |
-| HF | **Handles shown on objects of any size** | 2: HF-hide h/v | ✓ |
-| HF | **The line back at 12 px** | 2: HF-hide h/v | ✓ |
+| HF | **Sizes follow the zoom** (not fixed on screen) — against the 6 / 10 / 12 px handles | 4: HF-handles h/v, HF-grips h/v | ✓ |
 | HF | **A building drag re-checks the aisles every frame** | 4: HF-flicker, HF-multi (h/v) — also with the "not recomputed" checks removed, the red-set comparison alone fails in both orientations | ✓ |
 | AR | **Skip the rebuild** | 6: AR-recreate/handcopy/undo (h and v, before the replay redesign) | ✓ |
 | AR | **Keep aisles with a row between them** | 6 | ✓ |
