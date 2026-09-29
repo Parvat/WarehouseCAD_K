@@ -206,8 +206,11 @@ describe('O — every derived overlay is drawn from the previewed objects', () =
   for (const comp of ['BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) {
     it(`O-wire: ${comp} is drawn from pObjects`, () => expect(fed(comp)).toBe(true))
   }
-  it('O-wire: the clearance labels re-run the aisle check on the previewed layout', () => {
-    expect(dim).toMatch(/const objs = previewObjects\(objects \|\| \[\], preview\)/)
+  it('O-wire: the clearance labels re-run the aisle check on the previewed layout (unless the drag carries every rack and column: then the held result moves with it)', () => {
+    const cs = readFileSync(new URL('../../canvas2/clearanceSource.js', import.meta.url), 'utf8')
+    expect(cs).toMatch(/const objs = previewObjects\(objects \|\| \[\], preview\)/)
+    expect(cs).toMatch(/if \(dragCarriesCheck\(objects \|\| \[\], ids\)\) return \{ \.\.\.held, x: dx, y: dy \}/)
+    expect(dim).toMatch(/clearanceSource\(\{ aisleBlocks, columns, objects, preview: \{ ids, dx, dy \}/)
   })
   it('O-wire: column markers ride the drag directly (their obj: node is moved) and the drag publishes the preview', () => {
     expect(scene).toMatch(/CHROME_NODE_PREFIXES = \[[^\]]*'obj:'/)

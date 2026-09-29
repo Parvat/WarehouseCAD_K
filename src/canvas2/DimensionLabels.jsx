@@ -3,10 +3,10 @@ import { Group, Rect, Line, Text } from 'react-konva'
 import { pxToFtIn, getFpWallSegments, getObjectBounds } from '../utils/canvas'
 import { spin } from './shapes'
 import { aisleLabelLayout } from './hitTest'
-import { rackFootprint, aisleColumnBlocks } from '../generate/columnCheck'
-import { useColumnCheck, isRack } from '../generate/useColumnCheck'
-import { layoutColumns } from '../generate/usableCapacity'
-import { useDragPreview, previewObjects } from './dragPreview'
+import { rackFootprint } from '../generate/columnCheck'
+import { useColumnCheck } from '../generate/useColumnCheck'
+import { useDragPreview } from './dragPreview'
+import { clearanceSource } from './clearanceSource'
 import { LabelOps } from './LabelOps'
 import { aisleLabelOps, clearanceOps } from '../render/labelOps'
 import { crossAisleLabels } from './crossAisles'
@@ -292,21 +292,6 @@ export const CrossAisleLabels = memo(function CrossAisleLabels({ objects, lz, gr
    compared by content. */
 const sameContent = (x, y) => x === y || JSON.stringify(x) === JSON.stringify(y)
 
-/** Are the live blocks / columns exactly the held ones moved by (dx, dy)? */
-const nearly = (a, b) => Math.abs(a - b) < 1e-6
-function blocksMoveRigidly(blocks, cols, live, dx, dy) {
-  if (!blocks || !cols || blocks.length !== live.blocks.length || cols.length !== live.cols.length) return false
-  if (!cols.every((c, i) => { const q = live.cols[i]; return nearly(q.x, c.x + dx) && nearly(q.y, c.y + dy) && nearly(q.w, c.w) && nearly(q.h, c.h) })) return false
-  return blocks.every((a, i) => {
-    const b = live.blocks[i]
-    const keys = Object.keys(a)
-    if (keys.length !== Object.keys(b).length) return false
-    const gap = a.axis === 'x' ? dx : dy, cross = a.axis === 'x' ? dy : dx
-    return keys.every(k => (k === 'gapStart' || k === 'gapEnd') ? nearly(b[k], a[k] + gap)
-      : (k === 'crossStart' || k === 'crossEnd') ? nearly(b[k], a[k] + cross)
-      : JSON.stringify(a[k]) === JSON.stringify(b[k]))
-  })
-}
 const ClearanceItem = memo(function ClearanceItem({ a, i, col, lz, gridSize, showLabels = true }) {
   const ops = useMemo(() => clearanceOps(a, col, lz, gridSize, showLabels), [a, col, lz, gridSize, showLabels])
   return <LabelOps ops={ops} name={'aisle-column:' + i} />
@@ -325,35 +310,24 @@ const ClearanceItem = memo(function ClearanceItem({ a, i, col, lz, gridSize, sho
    not touched. A generated layout never has one (E-no-block); it appears
    when a dealer moves or places racks by hand.
 
-   Live while dragging: a plain drag doesn't write the store until mouseup,
-   so during one this re-runs just the cheap aisle part of the column check
-   (aisleColumnBlocks) on the previewed layout (dragPreview.js). Otherwise it
-   draws the full check's own aisleBlocks. */
-export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridSize = 40, rigidDrag = false, showLabels = true }) {
+   Live while dragging: a plain drag doesn't write the store until mouseup.
+   A drag that carries every rack and column (a building drag) moves the
+   held warnings with it, unchanged; any other drag re-runs just the cheap
+   aisle part of the column check on the previewed layout
+   (clearanceSource.js). Otherwise it draws the full check's own aisleBlocks. */
+export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridSize = 40, showLabels = true }) {
   const ids = useDragPreview(s => s.ids), dx = useDragPreview(s => s.dx), dy = useDragPreview(s => s.dy)
-  const preview = useMemo(() => ({ ids, dx, dy }), [ids, dx, dy])
   const { profile, pickBothSides } = useColumnCheck()
-  const live = useMemo(() => {
-    if (!preview.ids) return null
-    const objs = previewObjects(objects || [], preview)
-    const cols = layoutColumns(objs, gridSize)
-    const racks = objs.filter(isRack)
-    return { cols, blocks: aisleColumnBlocks({ racks, columns: cols, profile, gridSize, pickBothSides }).aisleBlocks }
-  }, [preview, objects, gridSize, profile, pickBothSides])
-
-  /* rigidDrag: the drag moves everything these labels come from. When this
-     frame's live result is exactly the held one moved by the drag, the held
-     labels are drawn in a group offset by the drag — their props don't change,
-     so nothing re-renders. Otherwise (a float boundary can add or drop a
-     block) the live result is drawn, exactly as before. */
-  const moveHeld = rigidDrag && !!live && blocksMoveRigidly(aisleBlocks, columns, live, dx, dy)
-  const blocks = live && !moveHeld ? live.blocks : aisleBlocks
-  const cols = live && !moveHeld ? live.cols : columns
-  if (!blocks?.length || !cols?.length) return null
+  /* clearanceSource.js: a drag carrying every rack and column (a building
+     drag) holds the last result and moves it — the warnings cannot change
+     mid-drag; any other drag re-runs the cheap aisle part on the preview */
+  const src = useMemo(() => clearanceSource({ aisleBlocks, columns, objects, preview: { ids, dx, dy }, gridSize, profile, pickBothSides }),
+    [aisleBlocks, columns, objects, ids, dx, dy, gridSize, profile, pickBothSides])
+  if (!src.blocks?.length || !src.cols?.length) return null
 
   return (
-    <Group name="column-clearance-labels" listening={false} x={moveHeld ? dx : 0} y={moveHeld ? dy : 0}>
-      {blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} />)}
+    <Group name="column-clearance-labels" listening={false} x={src.x} y={src.y}>
+      {src.blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={src.cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} />)}
     </Group>
   )
 }

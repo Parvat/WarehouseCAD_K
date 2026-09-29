@@ -1,7 +1,28 @@
 import { memo } from 'react'
 import { Group, Rect, Line, Circle, Text } from 'react-konva'
 import { spin } from './shapes'
-import { computeHandleLayout } from './handleGeometry'
+import { computeHandleLayout, HANDLE_FILL, HANDLE_ACCENT } from './handleGeometry'
+
+/** The rotate grip every selection shares (a rack, a group, a building): a
+ *  short 1 px stem from (sx, sy) to the grip, and a small white disc with a
+ *  1 px accent ring and a ↻ glyph, centred on (x, y) with radius r (world
+ *  units = screen px / zoom). Names let the live resize sync find its parts. */
+export function RotateGrip({ x, y, r, sx, sy, zoom }) {
+  return (
+    <>
+      <Line name="handleline" points={[sx, sy, x, y]} stroke={HANDLE_ACCENT} strokeWidth={1}
+        strokeScaleEnabled={false} listening={false} />
+      <Circle name="handlecircle" x={x} y={y} radius={r}
+        fill={HANDLE_FILL} stroke={HANDLE_ACCENT} strokeWidth={1}
+        strokeScaleEnabled={false} perfectDrawEnabled={false}
+        shadowForStrokeEnabled={false} listening={false} />
+      <Text name="handleglyph" x={x - r} y={y - r} width={r * 2} height={r * 2}
+        text="↻" align="center" verticalAlign="middle"
+        fontSize={10 / zoom} fontFamily="sans-serif" fill={HANDLE_ACCENT}
+        listening={false} />
+    </>
+  )
+}
 
 /* ── Resize + rotate handles — pure paint, no Konva input of any kind ────────
    No onMouseDown, no draggable, no per-node listener: Konva is pure paint
@@ -41,7 +62,7 @@ function ResizeHandlesOverlayView({ obj, zoom, gridSize = 40 }) {
         return (
           <Rect key={h} name={'handlebox:' + h}
             x={hp.x - hs} y={hp.y - hs} width={hs * 2} height={hs * 2}
-            fill="#0e1420" stroke="#4a9eff" strokeWidth={1}
+            fill={HANDLE_FILL} stroke={HANDLE_ACCENT} strokeWidth={1}
             strokeScaleEnabled={false} perfectDrawEnabled={false}
             shadowForStrokeEnabled={false} listening={false}
           />
@@ -49,26 +70,7 @@ function ResizeHandlesOverlayView({ obj, zoom, gridSize = 40 }) {
       })}
       {canRotate && (() => {
         const { rx, ry, lineY, r } = rotateHandle
-        return (
-          <>
-            <Line name="handleline" points={[rx, lineY, rx, ry + 7 / zoom]}
-              stroke="#f0b429" strokeWidth={1.5} opacity={0.8}
-              strokeScaleEnabled={false} listening={false} />
-            <Circle name="handlecircle" x={rx} y={ry} radius={r}
-              fill="#16181d" stroke="#f0b429" strokeWidth={1.8}
-              strokeScaleEnabled={false} perfectDrawEnabled={false}
-              shadowForStrokeEnabled={false} listening={false} />
-            {/* The glyph CanvasUI.jsx paints on its own rotate handle — same
-                character, same colour, sized the same screen-constant way as
-                everything else here. A width/height box the same size as the
-                circle plus Konva's own align/verticalAlign centres it
-                properly, rather than guessing an offset by eye. */}
-            <Text name="handleglyph" x={rx - r} y={ry - r} width={r * 2} height={r * 2}
-              text="↻" align="center" verticalAlign="middle"
-              fontSize={10 / zoom} fontFamily="sans-serif" fill="#f0b429"
-              listening={false} />
-          </>
-        )
+        return <RotateGrip x={rx} y={ry} r={r} sx={rx} sy={lineY} zoom={zoom} />
       })()}
     </Group>
   )
@@ -97,7 +99,7 @@ export function syncHandleOverlayNode(group, obj, zoom, gridSize = 40) {
       if (hp) child.position({ x: hp.x - hs, y: hp.y - hs })
     } else if (rotateHandle) {
       const { rx, ry, lineY, r } = rotateHandle
-      if (nm === 'handleline') child.points([rx, lineY, rx, ry + 7 / zoom])
+      if (nm === 'handleline') child.points([rx, lineY, rx, ry])
       else if (nm === 'handlecircle') child.position({ x: rx, y: ry })
       else if (nm === 'handleglyph') child.position({ x: rx - r, y: ry - r })
     }

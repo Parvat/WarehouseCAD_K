@@ -36,6 +36,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { outlineBounds } from './shapes'
+import { GRIP_PX, GRIP_HIT_PX, GRIP_STEM_PX } from './handleGeometry'
 
 /** Rotate world point `p` by `angleDeg` about `pivot`. Kept as its own
  *  small copy rather than imported from groupRotate.js's identical
@@ -97,12 +98,14 @@ export function computeFpRotateHandle(fp, gridSize, zoom) {
      original AABB-top math put the handle in when nothing was rotated). */
   const nx = ey / len, ny = -ex / len
 
-  const rx = mx + nx * 56 / zoom
-  const ry = my + ny * 56 / zoom
+  // the same small grip as a rack's (handleGeometry.js): a short stem out from the wall
+  const out = (6 + GRIP_STEM_PX + GRIP_PX / 2) / zoom
+  const rx = mx + nx * out
+  const ry = my + ny * out
   const lx = mx + nx * 6 / zoom
   const ly = my + ny * 6 / zoom
-  const r = 8 / zoom
-  return { rx, ry, lx, ly, nx, ny, r, pivot }
+  const r = GRIP_PX / 2 / zoom
+  return { rx, ry, lx, ly, nx, ny, r, hitR: GRIP_HIT_PX / 2 / zoom, pivot }
 }
 
 /** Whether a world point falls on the fp rotate handle — same r hit
@@ -112,7 +115,7 @@ export function computeFpRotateHandle(fp, gridSize, zoom) {
 export function fpRotateHandleHitTest(fp, gridSize, zoom, worldX, worldY) {
   const h = computeFpRotateHandle(fp, gridSize, zoom)
   if (!h) return false
-  return Math.hypot(worldX - h.rx, worldY - h.ry) <= h.r
+  return Math.hypot(worldX - h.rx, worldY - h.ry) <= h.hitR
 }
 
 /** Rotation updates for the floor plan AND every one of its current

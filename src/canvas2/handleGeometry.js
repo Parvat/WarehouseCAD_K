@@ -17,6 +17,18 @@
 
 import { getObjectBounds, getHandlePositions, HANDLES } from '../utils/canvas'
 
+/* Handle sizes, in SCREEN px at every zoom (divided by the zoom for world
+   units). Drawn small — the handles are chrome, not content — but hit in a
+   comfortable 14–16 px area. One set for every handle: the resize squares,
+   and the rotate grip of a rack, a selection group and a building. */
+export const HANDLE_PX = 8          // a resize square, drawn
+export const HANDLE_HIT_PX = 14     // a resize square, hit
+export const GRIP_PX = 14           // the rotate grip, drawn (diameter)
+export const GRIP_HIT_PX = 16       // the rotate grip, hit (diameter)
+export const GRIP_STEM_PX = 16      // the grip's stem, from the handle gap to the grip
+export const HANDLE_FILL = '#ffffff'
+export const HANDLE_ACCENT = '#4a9eff'
+
 /* CanvasUI.jsx's own per-type suppression, verbatim:
      - beam racks (bays/towers only stretch along their length) -> ml/mr only
      - lane racks (drive-in/through, pushback, pallet-flow) -> suppress tc
@@ -57,7 +69,7 @@ function toLocal(bounds, rotation, wx, wy) {
  *  `rx = bounds.x + bounds.width/2, ry = bounds.y - 70/zoom`. Exported so the
  *  painter and the hit-test can never disagree on where it sits. */
 export function rotateHandlePos(bounds, zoom) {
-  return { x: bounds.x + bounds.width / 2, y: bounds.y - 70 / zoom }
+  return { x: bounds.x + bounds.width / 2, y: bounds.y - (6 + GRIP_STEM_PX + GRIP_PX / 2) / zoom }
 }
 
 /** getHandlePositions' own pad, screen-constant like everything else here.
@@ -109,28 +121,27 @@ export function computeHandleLayout(obj, zoom) {
   const enabled = enabledHandlesFor(obj.type)
   const canRotate = rotateEnabledFor(obj.type)
   const positions = getHandlePositions(bounds, handlePad(zoom))
-  const hs = 6 / zoom
+  const hs = HANDLE_PX / 2 / zoom
   let rotateHandle = null
   if (canRotate) {
     const { x: rx, y: ry } = rotateHandlePos(bounds, zoom)
-    rotateHandle = { rx, ry, lineY: bounds.y - 6 / zoom, r: 8 / zoom }
+    rotateHandle = { rx, ry, lineY: bounds.y - 6 / zoom, r: GRIP_PX / 2 / zoom }
   }
   return { bounds, enabled, positions, hs, canRotate, rotateHandle }
 }
 
 /** Which handle (a HANDLES entry, or 'rotate') a world point falls on, or
- *  null. Sizes match CanvasUI.jsx exactly: 6px half-size resize squares,
- *  8px-radius rotate circle, both screen-constant via /zoom — the same
- *  reason CanvasUI divides by zoom for its own SVG geometry (a screen-space
- *  target size needs a WORLD size that shrinks as the view zooms in). */
+ *  null. The hit areas are bigger than the drawn handles (HANDLE_HIT_PX,
+ *  GRIP_HIT_PX), both screen-constant via /zoom (a screen-space target size
+ *  needs a WORLD size that shrinks as the view zooms in). */
 export function handleHitTest(obj, worldX, worldY, zoom) {
   const bounds = getObjectBounds(obj)
   const local = toLocal(bounds, obj.rotation, worldX, worldY)
-  const hs = 6 / zoom
+  const hs = HANDLE_HIT_PX / 2 / zoom
 
   if (rotateEnabledFor(obj.type)) {
     const { x: rx, y: ry } = rotateHandlePos(bounds, zoom)
-    const r = 8 / zoom
+    const r = GRIP_HIT_PX / 2 / zoom
     if (Math.hypot(local.x - rx, local.y - ry) <= r) return 'rotate'
   }
 

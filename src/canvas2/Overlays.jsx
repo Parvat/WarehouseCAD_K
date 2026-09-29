@@ -101,7 +101,7 @@ function OverlaysView({
       {/* "Column labels" off hides the clearance arrows and their distances; the
           red "under travel" marks and aisle shading still show (and the X marks
           and upright flags below are never affected) */}
-      {showMarks && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} rigidDrag={rigid} showLabels={showColumnLabels} />}
+      {showMarks && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} showLabels={showColumnLabels} />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
       {showMarks && <BlockedFaceMarks rackConflicts={pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {showMarks && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}

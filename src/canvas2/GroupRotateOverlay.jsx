@@ -1,5 +1,6 @@
 import { memo } from 'react'
-import { Group, Rect, Line, Circle, Text } from 'react-konva'
+import { RotateGrip } from './ResizeHandlesOverlay'
+import { Group, Rect } from 'react-konva'
 import { computeGroupOutline } from './groupRotate'
 
 /* ── Group rotate chrome — pure paint, no Konva input ────────────────────────
@@ -58,17 +59,7 @@ function GroupRotateOverlayView({ objects, zoom, allObjects = objects }) {
         cornerRadius={3 / zoom} strokeScaleEnabled={false} perfectDrawEnabled={false}
         shadowForStrokeEnabled={false} listening={false}
       />
-      <Line points={[hx, ly, hx, hy + r]}
-        stroke="#c084fc" strokeWidth={2}
-        strokeScaleEnabled={false} listening={false} />
-      <Circle x={hx} y={hy} radius={r}
-        fill="#1e1230" stroke="#c084fc" strokeWidth={2}
-        strokeScaleEnabled={false} perfectDrawEnabled={false}
-        shadowForStrokeEnabled={false} listening={false} />
-      <Text x={hx - r} y={hy - r} width={r * 2} height={r * 2}
-        text="↻" align="center" verticalAlign="middle"
-        fontSize={13 / zoom} fontFamily="sans-serif" fill="#c084fc" fontStyle="bold"
-        listening={false} />
+      <RotateGrip x={hx} y={hy} r={r} sx={hx} sy={ly} zoom={zoom} />
     </Group>
   )
 }

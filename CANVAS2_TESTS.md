@@ -216,6 +216,49 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
+### HF — Small, screen-constant handles; no red-warning flicker on a building drag · `HF_handlesFlicker.test.js` (11 tests)
+**Handles.**
+- **Sizes, in screen px at every zoom** (handleGeometry.js):
+  - resize squares 8 px, white with a 1 px accent (#4a9eff) border;
+  - the rotate grip a 14 px white disc with a 1 px accent ring and a ↻ glyph,
+    on a 16 px stem.
+- **Hit areas are larger than drawn:** 14 px for a square, 16 px for the grip.
+- **One grip for everything:** a rack at any rotation, a selection group and
+  a building all use the same RotateGrip.
+- **What it replaced:** 12 px dark squares, and a 16 px dark circle on a
+  70 px stem; the group grip had a 25 px hit radius.
+
+**Red "no clear aisle" warnings on a building drag.**
+- **The cause:** the clearance labels re-ran the aisle check on the previewed
+  layout every frame. On the shifted floats the set of red warnings changed
+  on 76 of 300 frames horizontally, and on 140 of 300 vertically (there,
+  frames grew red where the layout had none).
+- **The fix** (clearanceSource.js): a drag that carries every rack and every
+  column grid holds the check's last result and moves it with the drag, with
+  no recompute. That covers a building drag, or a selection holding every
+  rack and the grid.
+- **Any other drag** still re-checks, because it really changes what the
+  check sees. Rows the drag doesn't move keep their warnings on every frame.
+
+| Test (1080×410; ×2 h/v) | Asserts |
+|---|---|
+| `HF-handles` | at 5 %, 20 % and 100 %, on racks turned 0°, 90°, 180° and 270°: the square is 8 px, the grip 14 px, the stem 16 px |
+| `HF-hit` | at the same zooms and turns: a press ½ px inside the 14 px square box hits and ½ px outside misses; the same for the 16 px grip |
+| `HF-grips` | a selection group's grip: 14 px drawn, 16 px hit, 16 px stem; the building's grip uses the same sizes (read from fpRotate.js, which imports the Konva painters) |
+| `HF-flicker` | a pinched layout (at least one red warning) and a building drag over 120 fractional frames: the held blocks are used, moved by the drag, and the set of red warnings is identical on every frame |
+| `HF-multi` | a selection holding every rack and the column grid: the same. A one-rack selection re-checks, and the red warnings of rows it doesn't move are identical on every frame |
+| `HF-wire` (once) | the painters draw the layout's sizes (white, 1 px accent) through one RotateGrip; the clearance group sits at the source's offset |
+
+**Checked in the app, horizontal and vertical:**
+- **Handles.** A rack selected at 5 %, 20 % and 100 %: the squares measured
+  8 × 8 screen px (white, #4a9eff 1 px), the grip 14 px (white), the stem
+  16 px.
+- **Building drag.** Several aisles pinched, then the building dragged from
+  empty floor (found with the app's own hitTest). The red nodes stayed at
+  270 (horizontal) and 216 (vertical) on all 40 frames, and after the drop.
+- **One rack dragged** past its columns changed the count, as it should.
+- No console errors.
+
 ### SC — Copying across sections: a per-section pending set · `SC_sectionCopy.test.js` (33 tests)
 This replaces the per-change copy notes, the diagonal two-button note and
 manual mode, and their tests (CC). "Always copy" and "Match bays in this
@@ -1432,6 +1475,8 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | SC | **No question when switching sections** | 8: SC-question, SC-dont, SC-stop, SC-place (h/v) | ✓ |
 | SC | **Always copy waits** | 2: SC-always h/v | ✓ |
 | SC | **Match bays from the FIRST bay-changed row, not the last** | 2: SC-match h/v | ✓ |
+| HF | **Handles in world size (not divided by the zoom)** | 2: HF-handles h/v | ✓ |
+| HF | **A building drag re-checks the aisles every frame** | 4: HF-flicker, HF-multi (h/v) — also with the "not recomputed" checks removed, the red-set comparison alone fails in both orientations | ✓ |
 | AR | **Skip the rebuild** | 6: AR-recreate/handcopy/undo (h and v, before the replay redesign) | ✓ |
 | AR | **Keep aisles with a row between them** | 6 | ✓ |
 | AR | **Never add aisles for new neighbour pairs** | 6 | ✓ |
@@ -1543,8 +1588,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,819 tests, 1,819 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,216 tests, 2,216 passing.**
+- **Plan suite: 1,830 tests, 1,830 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,227 tests, 2,227 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

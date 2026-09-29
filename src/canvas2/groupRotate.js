@@ -71,6 +71,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { boundsOf } from './hitTest'
+import { GRIP_PX, GRIP_HIT_PX, GRIP_STEM_PX } from './handleGeometry'
 
 /** Rotate world point `p` by `angleDeg` about `pivot`. */
 function rotateAround(p, angleDeg, pivot) {
@@ -118,10 +119,11 @@ export function computeGroupOutline(objs, zoom, allObjects = objs) {
 
   const pad = 10
   const hx = (minX + maxX) / 2
-  const hy = minY - pad - 44 / zoom
-  const ly = minY - pad - 8 / zoom
-  const r = 10 / zoom
-  return { minX, minY, maxX, maxY, pad, hx, hy, ly, r, P, R }
+  // the same small grip as a rack's (handleGeometry.js): a short stem up from the outline
+  const hy = minY - pad - (GRIP_STEM_PX + GRIP_PX / 2) / zoom
+  const ly = minY - pad
+  const r = GRIP_PX / 2 / zoom
+  return { minX, minY, maxX, maxY, pad, hx, hy, ly, r, hitR: GRIP_HIT_PX / 2 / zoom, P, R }
 }
 
 /** Whether a world point falls on the group rotate handle — CanvasUI.jsx's
@@ -133,7 +135,7 @@ export function groupRotateHandleHitTest(objs, zoom, worldX, worldY, allObjects 
   const g = computeGroupOutline(objs, zoom, allObjects)
   if (!g) return false
   const world = rotateAround({ x: g.hx, y: g.hy }, g.R, g.P)
-  return Math.hypot(worldX - world.x, worldY - world.y) <= g.r * 2.5
+  return Math.hypot(worldX - world.x, worldY - world.y) <= g.hitR
 }
 
 /** Per-object rotation updates for a whole group, ported verbatim from
