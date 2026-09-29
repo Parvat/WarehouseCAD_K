@@ -24,6 +24,8 @@
 // left unused (the next action lands, or it is dismissed) means they no
 // longer do — and so does one action changing rows in several sections:
 // the building goes to manual mode, with a notice, and no copy notes appear
+// (any other change that can't be copied does the same — an upright width,
+// a turned row, a flue change, a mixed edit — its warning saying so)
 // until "Turn copying back on". Using one of a diagonal drag's two buttons
 // and leaving the other is not "unused". With Always copy on the sections
 // stay matched, so manual mode is never entered. The mode is `copyManual` on
@@ -68,6 +70,7 @@ export const useCopyPrompt = create((set) => ({
 }))
 
 export const MANUAL_NOTICE = 'Sections no longer match, so copying is turned off. Changes now apply only where you make them.'
+export const COPYING_OFF = 'Copying is now off: the sections no longer match.'
 export const BACK_ON_NOTICE = 'Copying is back on. The sections may already differ, so check each copy before you use it.'
 
 let watch = null   // { store, newId, lastObjects, lastHistory, lastIndex, busy, quiet, manual: Set(fpId) }
@@ -227,8 +230,12 @@ function settle(before) {
   }
   if (fpId && watch.manual.has(fpId)) { clear(); return }             // manual mode: no copy notes
   if (read.blocked) {
-    // a row change the note can't copy: said, never silent
-    useCopyPrompt.setState({ offer: { text: read.blocked, blocked: true }, report: null, hover: null })
+    /* a row change the note can't copy: said, never silent. It leaves the
+       sections different, so copying goes off (never with Always copy on) */
+    const ids = read.fpIds || (fpId ? [fpId] : [])
+    ids.forEach(enterManual)
+    const off = ids.length > 0 && ids.every(id => watch.manual.has(id))
+    useCopyPrompt.setState({ offer: { text: off ? `${read.blocked} ${COPYING_OFF}` : read.blocked, blocked: true }, report: null, hover: null })
     return
   }
   const text = describeChange(read.changes, gridSize)

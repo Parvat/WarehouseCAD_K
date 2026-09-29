@@ -21,7 +21,7 @@ import { buildingSections } from '../../utils/syncSections'
 import { rebuildAisles } from '../../utils/aisleRebuild'
 import { installAisleKeeper } from '../../utils/aisleKeeper'
 import { installRowEditKeeper } from '../../utils/rowEditKeeper'
-import { installCopyWatcher, useCopyPrompt, copyNow, flushCopyWatcher, buttonText, turnCopyingOn, MANUAL_NOTICE, BACK_ON_NOTICE } from '../../utils/copyPrompt'
+import { installCopyWatcher, useCopyPrompt, copyNow, flushCopyWatcher, buttonText, turnCopyingOn, MANUAL_NOTICE, BACK_ON_NOTICE, COPYING_OFF } from '../../utils/copyPrompt'
 import { serializeScene, deserializeScene } from '../../utils/saveLoad'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -145,7 +145,8 @@ describe.each(['horizontal', 'vertical'])('CC — %s', (orientation) => {
     // the flue alone, in place
     const s1 = strip(rowIn(S, K + 4)[0])
     await act(() => store.getState().commitObjectUpdate(s1.id, { y: s1.y - grow / 2, height: s1.height + grow, flueSpaceIn: 12 }))   // same centre
-    expect(offer()).toEqual({ text: "This change can't be copied: a flue or depth change.", blocked: true })
+    expect(offer()).toEqual({ text: `This change can't be copied: a flue or depth change. ${COPYING_OFF}`, blocked: true })
+    expect(useCopyPrompt.getState().manual).toBe(true)
   })
 
   it('CC-diagonal: a row dragged both across and along -> BOTH buttons, each copying only its own part; the other stays on offer after one is used; each copy is its own undo step', async () => {
@@ -196,15 +197,24 @@ describe.each(['horizontal', 'vertical'])('CC — %s', (orientation) => {
     expect(buttonText('Copy to all sections', 1)).toBe('Copy to all sections · 1 copy')
   })
 
-  it('CC-cant: other changes the note can\'t copy say why (upright width; a move and a bay change in one go); "Match bays" and moving the building say nothing', async () => {
+  it('CC-cant: a change the note can\'t copy (upright width) says why and that copying is now off: manual mode, the notice, no copy note on the next change. Also a move plus a bay change; "Match bays" and moving the building say nothing', async () => {
     load(base)
     const s0 = strip(src())
     await act(() => store.getState().commitObjectUpdate(s0.id, { uprightWidth: 4, width: s0.width + (s0.beams.length + 1) / 12 * GS }))
-    expect(offer()).toEqual({ text: "This change can't be copied: an upright width change.", blocked: true })
+    // it says why AND that copying is now off; manual mode is on, with the notice
+    expect(offer()).toEqual({ text: "This change can't be copied: an upright width change. Copying is now off: the sections no longer match.", blocked: true })
+    expect(useCopyPrompt.getState().manual).toBe(true)
+    expect(useCopyPrompt.getState().notice).toBe(MANUAL_NOTICE)
+    expect(get('fp').copyManual).toBe(true)
+    const r2 = rowIn(S, K + 2)[0]
+    await act(() => store.getState().commitObjectUpdate(r2.id, A.move(r2, 0, -GS / 2)))   // the next change: no copy note
+    expect(offer()).toBe(null)
+    turnCopyingOn()
     const s1 = strip(rowIn(S, K + 1)[0])
     await act(() => store.getState().commitObjectUpdate(s1.id, { ...Panel.addBayUpdate(s1, 96, GS), ...A.move(s1, 0, GS / 2) }))
     expect(offer().blocked).toBe(true)
-    expect(offer().text).toBe("This change can't be copied: it moves the row across the aisles and changes its bays in one go.")
+    expect(offer().text).toBe(`This change can't be copied: it moves the row across the aisles and changes its bays in one go. ${COPYING_OFF}`)
+    turnCopyingOn()
     await act(() => Panel.applySectionSync(store.getState, rowIn(S, K + 3)[0].id))
     expect(offer()).toBe(null)
     await act(() => store.getState().moveObjects(['fp'], 5 * GS, 5 * GS))

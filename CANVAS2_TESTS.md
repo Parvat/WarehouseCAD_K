@@ -263,6 +263,9 @@ bottom of the canvas then offers one copy, chosen by the kind of change:
     - A note is left unused: the next action lands, or the note is
       dismissed. The change stays local, and the sections no longer match.
     - One action changes rows in more than one section.
+    - Any other change that can't be copied: an upright width, a turned
+      row, a flue or depth change, a mixed edit, and so on. Its warning adds
+      "Copying is now off: the sections no longer match."
   - **What happens:** the building switches to manual mode and shows the
     notice "Sections no longer match, so copying is turned off. Changes now
     apply only where you make them." From then on, no copy notes appear.
@@ -273,7 +276,8 @@ bottom of the canvas then offers one copy, chosen by the kind of change:
   - **What doesn't count as unused:** using one of a diagonal drag's two
     buttons and leaving the other.
   - **Always copy:** with it on, the sections stay matched, so manual mode
-    is never entered. A multi-section move is then only a warning.
+    is never entered. A change that can't be copied is then only a warning.
+  - **Undo** never turns copying off.
   - **Storage:** the mode is `copyManual` on the building, so it is saved
     with the layout. The watcher keeps it through undo and redo; only
     "Turn copying back on" clears it.
@@ -311,10 +315,10 @@ bottom of the canvas then offers one copy, chosen by the kind of change:
 |---|---|
 | `CC-layout` | the orientation is right, and row 5 exists once in every section |
 | `CC-across` | move across → "Copy to all sections", count = sections − 1. Hovering gives one outline per copy and changes neither the layout nor the history. The copy moves row 5 in every other section by exactly 1′ across from its **own** place (a row already offset 6″ keeps its offset), with along untouched. The preview equals the result. First undo takes the copies, second the move |
-| `CC-flue` | a drag that also re-seats a double row's flue is copied as exactly the move; re-seating a flue in place gets the warning "a flue or depth change" |
+| `CC-flue` | a drag that also re-seats a double row's flue is copied as exactly the move; re-seating a flue in place gets the warning "a flue or depth change. Copying is now off …" and manual mode |
 | `CC-diagonal` | a drag of 2′ across and 3′ along gives both buttons. The across copy moves row 5 of every other section 2′ across and nothing along; the along button is still offered and moves the section's rows 3′ along and nothing across. Two undo steps, one per copy. Hovering the along button previews only that section's rows |
 | `CC-count` | the rendered note reads "Copy to all sections · 7 copies" (vertical 2) and "Copy to this section's rows · N copies"; one copy reads "1 copy" |
-| `CC-cant` | an upright width change and a move across plus a bay change say why they can't be copied; Match bays and moving the building give no note |
+| `CC-cant` | an upright width change: the warning "This change can't be copied: an upright width change. Copying is now off: the sections no longer match.", manual mode on with the notice, the building flagged, and no copy note on the next change. After turning copying back on, a move across plus a bay change gets the same treatment. Match bays and moving the building give no note |
 | `CC-along` | move along → "Copy to this section's rows". Every other row of the section moves by the delta from its own place (one already 1′ back stays 1′ back); other sections are untouched |
 | `CC-delete` | delete → "Copy to all sections"; the preview is all rows-to-go; row 5 is gone everywhere; undo brings them back, then the original |
 | `CC-add` | a paste into a gap follows the mouse (nothing is in the layout, no history), snaps to the forklift aisle and places on one undo step. "Copy to all sections" then puts a row in every section, each full length for its section and one forklift aisle from its neighbour |
@@ -375,6 +379,10 @@ driven by mouse and keyboard:**
   - Dismissing that note → manual again.
   - Rows 11 of sections 1 and 2, clicked with Shift and dragged together →
     manual mode with the notice.
+  - Row 5 selected, the panel's 4″ upright → the warning "This change can't
+    be copied: an upright width change. Copying is now off: the sections no
+    longer match.", the notice and the top-bar button. The next drag got no
+    copy note.
 - No console errors.
 
 ### PF — Lag fixes, measured before/after, behaviour unchanged · `PF_perf.test.js` (60 tests)
@@ -1503,6 +1511,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | CC | **One diagonal button used counts as unused** | 2: CC-manual-ways h/v | ✓ |
 | CC | **"Turn copying back on" does nothing** | 2: CC-manual-on h/v | ✓ |
 | CC | **Manual mode not read back on load** | 2: CC-manual-save h/v | ✓ |
+| CC | **A change that can't be copied leaves copying on** | 4: CC-cant h/v, CC-flue h/v | ✓ |
 | AR | **Skip the rebuild** | 6: AR-recreate/handcopy/undo (h and v, before the replay redesign) | ✓ |
 | AR | **Keep aisles with a row between them** | 6 | ✓ |
 | AR | **Never add aisles for new neighbour pairs** | 6 | ✓ |

@@ -134,8 +134,9 @@ export function readChange(before, after, gridSize = 40) {
   if (!removed.length && !changed.length && added.every(o => o.genSection != null && !o.pieceOf)) return null
   const fpIds = new Set(involved.map(o => o.parentId || null))
   if (fpIds.has(null)) return null                                    // rows outside any building: nothing to copy to
-  if (fpIds.size > 1) return blocked(`This change affects rows in ${fpIds.size} buildings, so it can't be copied. Make the change in one building, then copy it.`)
+  if (fpIds.size > 1) return { ...blocked(`This change affects rows in ${fpIds.size} buildings, so it can't be copied. Make the change in one building, then copy it.`), fpIds: [...fpIds] }
   const fpId = involved[0].parentId
+  const cant = (why) => ({ ...cantText(why), fpId })                 // it leaves the sections different: copying goes off here
   const fp = after.find(o => o.id === fpId), fpB = before.find(o => o.id === fpId)
   if (!fp || !fpB || !FP.has(fp.type)) return null                   // the building itself went (or came)
   // the building moved, turned or reshaped (its rows ride along), or cleared of its rows: not a row edit
@@ -233,7 +234,7 @@ export function readChange(before, after, gridSize = 40) {
 }
 const ok = (change) => ({ changes: [change] })
 const blocked = (text) => ({ blocked: text })
-const cant = (why) => blocked(`This change can't be copied: ${why}.`)
+const cantText = (why) => blocked(`This change can't be copied: ${why}.`)
 
 /* ── shared checks ────────────────────────────────────────────────────────── */
 
