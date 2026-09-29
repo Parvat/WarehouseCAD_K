@@ -53,7 +53,8 @@ export function actionLines(before, after, fpId, section, gridSize = 40) {
   const fp = after.find(o => o.id === fpId)
   if (!fp) return []
   const ch = pendingChanges(after, { ...fp, [PENDING]: P }, gridSize)
-  return ch ? [...ch.copy.map(c => ({ text: c.text, copies: true })), ...ch.stays.map(s => ({ text: s.text, copies: false }))] : []
+  // a bay change also notes its row (rowIndex, rack ids): the bar's "Match bays" takes the last one as its source
+  return ch ? [...ch.copy.map(c => ({ text: c.text, copies: true })), ...ch.stays.map(s => ({ text: s.text, copies: false, ...(s.bays ? { bays: true, rowIndex: s.rowIndex, ids: s.ids } : {}) }))] : []
 }
 
 /** The pending set of building `fp` now: { section, copy: [{ kind: 'move' |
@@ -113,7 +114,7 @@ export function pendingChanges(objects, fp, gridSize = 40) {
     if (!sameBays) {
       const shift = cs.length === bs.length && b.length === c.length && bs.every((x, i) => x[2] === cs[i][2]) ? cs[0][0] - bs[0][0] : null
       const along = shift != null && bs.every((x, i) => Math.abs(cs[i][0] - x[0] - shift) < EPS && Math.abs(cs[i][1] - x[1] - shift) < EPS)
-      stays.push({ rowIndex: b[0].rowIndex ?? null, text: along ? `${name(b)}: moved ${fmtLen(shift, gridSize)} along — stays in section ${P.section}` : `${name(b)}: bays changed — stays in section ${P.section}` })
+      stays.push({ rowIndex: b[0].rowIndex ?? null, text: along ? `${name(b)}: moved ${fmtLen(shift, gridSize)} along — stays in section ${P.section}` : `${name(b)}: bays changed — stays in section ${P.section}`, ...(along ? {} : { bays: true, ids: c.map(o => o.id) }) })
     } else if (b.length === c.length && !b.every(x => { const y = c.find(q => q.id === x.id); return y && sameShape(x, y) })) {
       stays.push({ rowIndex: b[0].rowIndex ?? null, text: `${name(b)}: changed (depth, flue or upright) — stays in section ${P.section}` })
     }

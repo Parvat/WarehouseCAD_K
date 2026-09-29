@@ -259,7 +259,7 @@ export function applySectionSync(getState, sourceId) {
   return { synced: updates.size, warnings, split: splitRowIds(st.objects, sourceId) }
 }
 
-function syncWarningText(warnings) {
+export function syncWarningText(warnings) {
   if (!warnings.length) return null
   return warnings.map(w => {
     const why = []

@@ -120,6 +120,29 @@ describe.each(['horizontal', 'vertical'])('SC — %s', (orientation) => {
     expect(bar()).toBe(null)
   })
 
+  it('SC-match: a bay change in section 3 puts "Match bays in section 3 (from row 5)" in the bar, from the row LAST changed; clicking gives every row of section 3 row 5\'s bays, as one undo step; no bay change, no button', async () => {
+    load(base)
+    await act(() => store.getState().commitObjectUpdate(row(K).id, A.move(row(K), 0, GS / 2)))      // a move across only
+    expect(bar().matchFrom).toBe(null)
+    expect(renderNote()).not.toContain('Match bays in section')
+    load(base)
+    await act(() => store.getState().commitObjectUpdate(row(K + 2).id, Panel.changeBayUpdate(row(K + 2), 1, 108, GS)))
+    await act(() => store.getState().commitObjectUpdate(row(K).id, Panel.changeBayUpdate(row(K), 2, 108, GS)))   // the last one changed
+    expect(bar().matchFrom).toEqual({ id: row(K).id, rowIndex: K })
+    expect(Note.matchText(bar())).toBe(`Match bays in section ${S} (from row ${K})`)
+    expect(renderNote()).toContain(`>Match bays in section ${S} (from row ${K})</button>`)
+    const beforeMatch = racksSig(objs()), h0 = hist()
+    const srcBeams = row(K).beams.join('/')
+    const r = Note.matchBays(bar()); await flushCopyWatcher()
+    expect(r.synced).toBeGreaterThan(5)
+    expect(hist()).toBe(h0 + 1)
+    const inS = objs().filter(o => BEAM.has(o.type) && o.genSection === S)
+    expect(inS.every(o => o.beams.join('/') === srcBeams)).toBe(true)                  // every row: row 5's bays
+    expect(useCopyPrompt.getState().report.text).toMatch(new RegExp(`^Matched bays in section ${S}: \\d+ rows`))
+    store.getState().undo(); await flushCopyWatcher()
+    expect(racksSig(objs())).toBe(beforeMatch)                                          // one undo restores
+  })
+
   it('SC-stays-mixed: bays and along-moves stay even when the same set has a move across: an end bay removed at a cross-aisle and a row moved along are NOT copied; the move across is', async () => {
     load(base)
     const was = new Map(objs().filter(o => BEAM.has(o.type)).map(o => [o.id, { run: A.run(o), cross: A.cross(o), bays: o.beams.length }]))

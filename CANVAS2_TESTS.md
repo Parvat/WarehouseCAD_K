@@ -216,7 +216,7 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
-### SC — Copying across sections: a per-section pending set · `SC_sectionCopy.test.js` (31 tests)
+### SC — Copying across sections: a per-section pending set · `SC_sectionCopy.test.js` (33 tests)
 This replaces the per-change copy notes, the diagonal two-button note and
 manual mode, and their tests (CC). "Always copy" and "Match bays in this
 section" stay.
@@ -246,6 +246,11 @@ section" stay.
   - deleted rows.
 
   The existing fit, skip and wall rules and the skip report apply.
+- **Match bays from the bar.** When the set includes a bay change, the bar
+  also offers "Match bays in section 3 (from row 5)". The source is the row
+  last given a bay change that still stands. It is the right panel's "Match
+  bays in this section" (applySectionSync): same rows, same warnings (shown
+  in the bar's report), one undo. The panel button stays.
 - **Never copied:** bay changes and moves along a row. For the copy, the
   section's rows are planned in their original shape, moved only by their
   delta across.
@@ -266,6 +271,7 @@ layout clears it.
 |---|---|
 | `SC-layout` | the orientation is right, and rows 5, 7 and 9 exist in every section |
 | `SC-stays` | a beam change and a move along the same row in section 3: no question and no lock; the bar reads "Section 3: 2 changes" with both lines "stays in section 3", the bar reading "Section 3: 2 changes (none will be copied)" and Copy disabled; copying changes nothing elsewhere |
+| `SC-match` | a move across alone: no Match bays button. Beam changes in row 7, then row 5, of section 3: the bar reads "Match bays in section 3 (from row 5)" (the last one). Clicking gives every row of section 3 row 5's bays in one history entry, with the report "Matched bays in section 3: N rows"; one undo restores |
 | `SC-stays-mixed` | an end bay removed at a cross-aisle, a row moved along and a row moved across, all in section 3: the bar reads "Section 3: 3 changes (1 will be copied)"; only the move across is copied; the other sections keep their bays and their along position |
 | `SC-question` | rows moved across (1′, −6″) and one deleted in section 3, then a drag started in section 5. The question "Copy your 3 changes from section 3 …" appears and nothing happens yet. Copy: every other section gets the same net deltas and loses row 9; section 3's own rows are untouched; the set clears; the drag may now go ahead and starts a set in section 5 |
 | `SC-dont` | the same, Don't copy: the other sections are unchanged, the set clears, and a change in section 5 starts its own set |
@@ -298,6 +304,14 @@ layout clears it.
   Don't copy cleared the set, and section 5's change stayed local.
 - **Always copy.** A drag across moved the row in all 8 (3) sections, with
   no bar.
+- **Match bays from the bar.** Row 5 of section 3 clicked, its bay 3 given a
+  9′ beam in the panel. The bar read "Section 3: 1 change (none will be
+  copied) · Copy to other sections · Match bays in section 3 (from row 5)".
+  - Clicking gave all 21 rows (vertical: 58) row 5's bays: "Matched bays in
+    section 3: 20 rows" (57).
+  - In vertical it added the panel's own warnings, "Row 1: passes the wall
+    by 9″" and so on: section 3 runs to the wall.
+  - One Ctrl+Z restored them.
 - **A live-flue drag.** Vertical, a row whose flue had widened around a
   column: a small drag re-seats it on the column. It doesn't move, only its
   flue changes, so nothing is copied. That is the existing drag behaviour.
@@ -1417,6 +1431,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | SC | **Bay change copied to other sections** (the old Apply way: the section's current bays planned, end-bay trims applied) | 2: SC-stays-mixed h/v | ✓ |
 | SC | **No question when switching sections** | 8: SC-question, SC-dont, SC-stop, SC-place (h/v) | ✓ |
 | SC | **Always copy waits** | 2: SC-always h/v | ✓ |
+| SC | **Match bays from the FIRST bay-changed row, not the last** | 2: SC-match h/v | ✓ |
 | AR | **Skip the rebuild** | 6: AR-recreate/handcopy/undo (h and v, before the replay redesign) | ✓ |
 | AR | **Keep aisles with a row between them** | 6 | ✓ |
 | AR | **Never add aisles for new neighbour pairs** | 6 | ✓ |
@@ -1528,8 +1543,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,817 tests, 1,817 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,214 tests, 2,214 passing.**
+- **Plan suite: 1,819 tests, 1,819 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,216 tests, 2,216 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

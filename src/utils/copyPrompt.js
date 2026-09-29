@@ -101,12 +101,24 @@ const withPending = (objects, fpId, P) => objects.map(o => {
   return rest
 })
 
+/** The bar's "Match bays" source: the row of the LAST bay change in the set
+ *  that still stands ({ id, rowIndex }), or null when the set has none. */
+export function matchSource(objects, log) {
+  for (let i = (log || []).length - 1; i >= 0; i--) {
+    const l = log[i]
+    if (!l.bays || !Array.isArray(l.ids)) continue
+    const rack = l.ids.map(id => objects.find(o => o.id === id)).find(Boolean)
+    if (rack) return { id: rack.id, rowIndex: l.rowIndex ?? rack.rowIndex ?? null }
+  }
+  return null
+}
+
 /** The bar, from the layout as it is now. */
 function refresh() {
   const objects = watch.store.getState().objects
   const p = allPending(objects, gs()).filter(q => q.log.length > 0)[0] || null
   useCopyPrompt.setState({
-    pending: p ? { fpId: p.fpId, section: p.section, count: p.log.length, copyCount: p.copy.length, lines: p.log.map(l => l.text) } : null,
+    pending: p ? { fpId: p.fpId, section: p.section, count: p.log.length, copyCount: p.copy.length, lines: p.log.map(l => l.text), matchFrom: matchSource(objects, p.log) } : null,
   })
 }
 

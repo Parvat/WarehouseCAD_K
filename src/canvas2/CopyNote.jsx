@@ -1,5 +1,7 @@
 import { usePlacement } from '../utils/placement'
 import { useCopyPrompt, copyPending, dontCopy, questionText } from '../utils/copyPrompt'
+import { useCanvasStore } from '../store/useCanvasStore'
+import { applySectionSync, syncWarningText } from '../components/RightPanel/panels/RackRowPanelCore'
 
 /* The bottom-of-canvas bar for copying row changes across sections
    (utils/copyPrompt.js): the pending set ("Section N: K changes · Copy to
@@ -42,6 +44,20 @@ function Lines({ skipped = [], warnings = [] }) {
       )}
     </>
   )
+}
+
+/** The bar's "Match bays in section 3 (from row 5)": the right panel's
+ *  "Match bays in this section" (applySectionSync — same rows, warnings and
+ *  single undo) from the row last given a bay change in the set. */
+export const matchText = (p) => `Match bays in section ${p.section} (from row ${p.matchFrom.rowIndex ?? '?'})`
+export function matchBays(p) {
+  if (!p || !p.matchFrom) return null
+  const r = applySectionSync(useCanvasStore.getState, p.matchFrom.id)
+  const text = syncWarningText(r.warnings)
+  useCopyPrompt.setState({ report: {
+    text: `Matched bays in section ${p.section}: ${r.synced} row${r.synced === 1 ? '' : 's'}${r.split.length ? `, ${r.split.length} piece${r.split.length > 1 ? 's' : ''} of split rows left as is` : ''}`,
+    skipped: [], warnings: text ? [`Synced, check: ${text}`] : [] } })
+  return r
 }
 
 /** "Section 3: 4 changes (2 will be copied)" — the pending set: every change,
@@ -89,6 +105,13 @@ function Body() {
             onClick={() => copyPending(pending.fpId)}>
             Copy to other sections
           </button>
+          {pending.matchFrom && (
+            <button style={btn2} aria-label={matchText(pending)}
+              title="Every other row in this section copies this row's beam lengths and start point, so uprights line up across the aisles."
+              onClick={() => matchBays(pending)}>
+              {matchText(pending)}
+            </button>
+          )}
         </div>
       </div>)
   }
