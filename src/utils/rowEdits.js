@@ -1,13 +1,11 @@
-// rowEdits.js — "Apply my changes to all sections": replay the ROW edits the
-// user made since the last sync in every other section.
+// rowEdits.js — the across-sections replay engine behind "Copy to all
+// sections" (utils/copyChange.js): the ROW edits between a BASELINE of the
+// rows and the rows now, replayed in every other section.
 //
-// Pending edits are not logged action by action (the store is protected):
-// they are the DIFFERENCE between the rows now and a BASELINE of the rows
-// as they were right after the last sync (or generation). The baseline lives
-// on the building (floor plan) object as `rowBaseline`, so it is saved with
-// the layout, rides in every undo snapshot (undoing an edit takes it off the
-// list; undoing a sync brings the list back) and is replaced in the sync's
-// own commit (the list clears).
+// The baseline is no longer kept on the building: copyChange builds one
+// from the layout just before a single action and hands it in as the
+// building's `rowBaseline` for that one plan, so the only edit seen is that
+// action's (a row moved across, deleted or added). Nothing piles up.
 //
 // A row = a line across the aisles in one section, identified by the
 // generator's stamps: `${genSection}|${rowIndex}` (split pieces share it).
@@ -157,7 +155,7 @@ export function rowRotationFor(objects, fpId) {
 /** Extra fields for a rack dropped from the left panel: a single or double
  *  row dropped into a building with generated rows is turned to run with
  *  them (a row dropped into a vertical layout is vertical), so it lines up
- *  with the rows around it and "Apply my changes" treats it as an added row. */
+ *  with the rows around it and "Copy to all sections" treats it as an added row. */
 export function dropRotation(objects, parentFp, type) {
   if (!parentFp || !BEAM.has(type)) return {}
   const rot = rowRotationFor(objects, parentFp.id)
@@ -244,43 +242,6 @@ const fmtFt = (ft) => {
   const f = Math.floor(inches / 12), i = inches % 12
   return f && i ? `${f}' ${i}"` : f ? `${f}'` : `${i}"`
 }
-/** Row numbers as ranges: [3,4,5,9] -> "rows 3–5, 9", [2] -> "row 2". */
-function rowsText(nums) {
-  const n = [...new Set(nums)].sort((x, y) => x - y), parts = []
-  for (let i = 0; i < n.length;) {
-    let j = i
-    while (j + 1 < n.length && n[j + 1] === n[j] + 1) j++
-    parts.push(j > i + 1 ? `${n[i]}–${n[j]}` : j === i + 1 ? `${n[i]}, ${n[j]}` : `${n[i]}`)
-    i = j + 1
-  }
-  return (n.length > 1 ? 'rows ' : 'row ') + parts.join(', ')
-}
-/** "Delete row 5 · Move row 2 by 6' · Add 1 row" — the same change to
- *  several rows is said once ("Move rows 3–21 by 8'"). */
-export function describeEdits(edits) {
-  const groups = new Map()
-  for (const e of edits) {
-    let what = null
-    if (e.kind === 'delete') what = 'Delete'
-    if (e.kind === 'trim') what = `Trim|${e.bays} end bay${e.bays > 1 ? 's' : ''} at the ${e.end === 'start' ? 'start' : 'far end'}`
-    if (e.kind === 'move') {
-      const a = Math.abs(e.dRunFt) > FT_EPS, c = Math.abs(e.dCrossFt) > FT_EPS
-      what = 'Move|' + (a && c ? `${fmtFt(e.dRunFt)} along, ${fmtFt(e.dCrossFt)} across` : fmtFt(a ? e.dRunFt : e.dCrossFt))
-    }
-    if (!what) continue
-    if (!groups.has(what)) groups.set(what, [])
-    groups.get(what).push(e.rowIndex)
-  }
-  const parts = [...groups].map(([what, rows]) => {
-    const [verb, by] = what.split('|')
-    const r = rowsText(rows)
-    return verb === 'Delete' ? `Delete ${r}` : verb === 'Trim' ? `Remove ${by} of ${r}` : `Move ${r} by ${by}`
-  })
-  const adds = edits.filter(e => e.kind === 'add').length
-  if (adds) parts.push(`Add ${adds} row${adds > 1 ? 's' : ''}`)
-  return parts.join(' · ')
-}
-
 /** When each row last changed: for rows edited in several sections, the
  *  undo history tells which edit came later. Returns Map(key -> history
  *  index of the snapshot where the row reached its current state). */

@@ -1,6 +1,6 @@
 // syncSections.js — rows and sections of a building, shared by "Match bays in
-// this section" (utils/syncSection.js), "Apply my changes to all sections"
-// (utils/rowEdits.js) and the aisle rebuild (utils/aisleRebuild.js).
+// this section" (utils/syncSection.js), "Copy this change"
+// (utils/copyChange.js, utils/rowEdits.js) and the aisle rebuild (utils/aisleRebuild.js).
 //
 // Sections = the beam-rack rows of one building with the same run direction:
 // generated racks by their stamped section (genSection), hand-placed racks by

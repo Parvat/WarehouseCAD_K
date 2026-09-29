@@ -15,6 +15,7 @@ import { Hub } from './shell/Hub'
 import { nanoid } from 'nanoid'
 import { installAisleKeeper } from './utils/aisleKeeper'
 import { installRowEditKeeper } from './utils/rowEditKeeper'
+import { installCopyWatcher } from './utils/copyPrompt'
 import { trackCanvasPointer } from './utils/pasteAt'
 
 /* Aisle labels only ever pair two directly facing rows: re-pairs them after
@@ -22,9 +23,12 @@ import { trackCanvasPointer } from './utils/pasteAt'
    for the life of the app (and once per hot reload of this module). */
 const stopAisleKeeper = installAisleKeeper(useCanvasStore, nanoid)
 if (import.meta.hot) import.meta.hot.dispose(() => stopAisleKeeper())
-/* Row-edit baseline upkeep for 'Apply my changes to all sections' (utils/rowEditKeeper.js). */
+/* A copied row loses the row it was copied from's stamps (utils/rowEditKeeper.js). */
 const stopRowEditKeeper = installRowEditKeeper(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopRowEditKeeper())
+/* "Copy this change": after each row / bay action, offer to copy it (utils/copyPrompt.js). */
+const stopCopyWatcher = installCopyWatcher(useCanvasStore, nanoid)
+if (import.meta.hot) import.meta.hot.dispose(() => stopCopyWatcher())
 /* Paste lands at the mouse cursor: remember where it last was over the canvas. */
 const stopPointer = trackCanvasPointer(window)
 if (import.meta.hot) import.meta.hot.dispose(() => stopPointer())

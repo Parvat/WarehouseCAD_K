@@ -11,6 +11,7 @@ import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../../utils/pasteAt'
 import { useLabelPrefs } from '../../canvas2/labelPrefs'
+import { useCopyPrompt } from '../../utils/copyPrompt'
 import { LABEL_SIZES, LABEL_SIZE_NAMES } from '../../render/labelSize'
 
 /* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
@@ -173,6 +174,8 @@ function doZoom(factor) {
 }
 
 export function TopBar() {
+  const alwaysCopy = useCopyPrompt(s => s.alwaysCopy)
+  const setAlwaysCopy = useCopyPrompt(s => s.setAlwaysCopy)
   const { showColumnLabels, setShowColumnLabels, labelSize, setLabelSize, pdfLabelSize, setPdfLabelSize } = useLabelPrefs()
   const {
     undo, redo, copySelected, paste, cutSelected,
@@ -240,6 +243,14 @@ export function TopBar() {
       </div>
 
       <div style={{ flex:1 }} />
+
+      {/* "Always copy": copy each row / bay change to its targets straight away
+          (utils/copyPrompt.js) instead of offering it in a note. Off by default. */}
+      <label title="Copy each row or bay change to all sections (or this section's rows) automatically, without asking"
+        style={{ display:'flex', alignItems:'center', gap:7, fontSize:12, color:C.subtle, cursor:'pointer', userSelect:'none' }}>
+        <Switch on={alwaysCopy} onClick={() => setAlwaysCopy(!alwaysCopy)} label="Always copy" />
+        Always copy
+      </label>
 
       {/* History stays in the bar: CLAUDE.md gives the top bar ownership of undo
           /redo, and the left panel's footer dropped its copies on that basis. */}

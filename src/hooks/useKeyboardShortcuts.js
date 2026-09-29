@@ -3,6 +3,7 @@ import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../utils/pasteAt'
+import { cancelPlacement } from '../utils/placement'
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -13,6 +14,8 @@ export function useKeyboardShortcuts() {
 
       // ── Escape — deselect, cancel draw ──────────────────────────────────
       if (e.key === 'Escape') {
+        // a row being placed (paste, duplicate, left panel): Esc cancels it, nothing else
+        if (cancelPlacement()) return
         useCanvasStore.getState().clearSelection()
         useCanvasStore.getState().setActiveWall(null)
         return

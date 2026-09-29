@@ -8,6 +8,8 @@ import { GroupRotateOverlay } from './GroupRotateOverlay'
 import { FpRotateHandleOverlay } from './FpRotateHandleOverlay'
 import { Rulers } from './Rulers'
 import { MeasureOverlay } from './MeasureTool'
+import { PlacementGhost, CopyPreview } from './CopyChange'
+import { CopyNote } from './CopyNote'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useCanvasInteraction } from './useCanvasInteraction'
@@ -425,10 +427,14 @@ export function Canvas2() {
             {measuring && (
               <MeasureOverlay points={measurePts} hover={measureHover} zoom={zoom} gridSize={gridSize} />
             )}
+            {/* "Copy this change": where the copies would land, and a row being placed */}
+            <CopyPreview />
+            <PlacementGhost gridSize={gridSize} />
           </Layer>
         </Stage>
       )}
       <ViewAdopter view={view} apply={apply} />
+      <CopyNote />
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>
   )

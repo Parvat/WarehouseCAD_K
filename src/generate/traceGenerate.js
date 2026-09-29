@@ -22,7 +22,6 @@ import { sizingSheetLayout, generateFixtures } from './sizingLayout'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { rackFootprint, groupBySegment } from './columnCheck'
 import { usableCapacity, mheProfile } from './usableCapacity'
-import { makeBaseline } from '../utils/rowEdits'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
 const FLUE_IN = 9    // back-to-back flue gap for double rows
@@ -276,11 +275,6 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
     [...racks, ...aisleObjectsForRacks(racks), ...generateFixtures(brief, ox, oy)],
     fp?.id,
   )
-  /* The row-edit baseline (utils/rowEdits.js): the rows as generated, on
-     the building, before any rack is added — so a batched placement never
-     shows up as pending "added rows". No history entry here; the racks'
-     own commits snapshot it. */
-  if (fp) after.updateObject(fp.id, { rowBaseline: makeBaseline([fp, ...queue], fp) })
   return {
     queue,
     orientation:     auto ? pick.orientation : (brief.orientation ?? 'horizontal'),

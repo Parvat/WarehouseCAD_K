@@ -3,8 +3,8 @@ import { useShallow } from 'zustand/react/shallow'
 import { useState } from 'react'
 import { sectionRows, planSectionSync, syncWarnings, splitRowIds } from '../../../utils/syncSection'
 import { rowLines } from '../../../utils/syncSections'
-import { planReplay, applyReplay, pendingEdits, describeEdits } from '../../../utils/rowEdits'
 import { nanoid } from 'nanoid'
+import { quietNextAction } from '../../../utils/copyPrompt'
 import { rebuildAisles } from '../../../utils/aisleRebuild'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
@@ -255,6 +255,7 @@ export function applySectionSync(getState, sourceId) {
     // new lengths can change who faces whom: re-pair the aisles before the one commit
     const moved = st.objects.map(o => (updates.has(o.id) ? { ...o, ...updates.get(o.id) } : o))
     useCanvasStore.setState({ objects: rebuildAisles(moved, nanoid).objects })
+    quietNextAction()        // a copy of its own: the "Copy this change" note says nothing about it
     getState().commitObjectUpdate(sourceId, {})
   }
   return { synced: updates.size, warnings, split: splitRowIds(st.objects, sourceId) }
@@ -306,130 +307,6 @@ function SyncSection({ obj }) {
       )}
       {text && <div style={{ marginTop: 4 }}><RackWarning text={`Synced, check: ${text}`} /></div>}
     </div>
-  )
-}
-
-/* "Apply my changes to all sections": replays the ROW edits made since the
-   last sync (utils/rowEdits.js) — deleted, moved and added rows — in every
-   other section. Which row is selected doesn't matter; the building does.
-   The rows, re-paired aisles and the new baseline (which clears the list)
-   are written without history and ONE commit snapshots them: one undo
-   restores everything, pending list included. Returns the plan's reports. */
-export function applyRowEdits(getState, fpId) {
-  const st = getState()
-  const gridSize = st.gridSize || 40
-  const history = (st.history || []).slice(0, (st.historyIndex ?? -1) + 1)
-  const plan = planReplay(st.objects, fpId, gridSize, nanoid, history)
-  const report = {
-    applied: plan.applied.length, deleted: plan.deleted, moved: plan.moved, added: plan.added,
-    skipped: plan.skipped, held: plan.held, clashes: plan.clashes, missing: plan.missing,
-    trimmed: plan.trimmed, trimSkipped: plan.trimSkipped,
-  }
-  if (!plan.baseline) return report
-  const gone = plan.deletes
-  const replayed = applyReplay(st.objects, plan)
-    .map(o => (o.id === fpId ? { ...o, rowBaseline: plan.baseline } : o))
-    .filter(o => !(o.type === 'aisle' && (gone.has(o.row1Id) || gone.has(o.row2Id))))
-  const objects = rebuildAisles(replayed, nanoid).objects
-  const groups = (st.groups || []).map(g => ({ ...g, ids: g.ids.filter(id => !gone.has(id)) })).filter(g => g.ids.length >= 2)
-  useCanvasStore.setState({
-    objects, groups,
-    selectedIds: (st.selectedIds || []).filter(id => !gone.has(id)),
-    activeBaySelection: (st.activeBaySelection || []).filter(e => !gone.has(e.objId)),
-  })
-  getState().commitObjectUpdate(fpId, {})
-  return report
-}
-
-const perSection = (list, extra = () => '') => {
-  const by = new Map()
-  for (const h of list) { const e = by.get(h.section) || []; e.push(h); by.set(h.section, e) }
-  return [...by].map(([sec, l]) => `${l.length} row${l.length > 1 ? 's' : ''} in section ${sec}${extra(l)}`).join(', ')
-}
-
-/* The button, in the rack panel (for the rack's building) and the building
-   panel. Shows how many edits are pending; its tooltip lists them. */
-export function ApplyRowChanges({ fpId }) {
-  const { objects } = useCanvasStore(useShallow(s => ({ objects: s.objects })))
-  const [result, setResult] = useState(null)
-  const fp = fpId ? objects.find(o => o.id === fpId) : null
-  if (!fp || !fp.rowBaseline) return null
-  const edits = pendingEdits(objects, fp, useCanvasStore.getState().gridSize || 40)
-  const n = edits.length
-  const mine = result && result.fpId === fpId ? result : null
-  return (
-    <div>
-      <button
-        onClick={() => { const r = applyRowEdits(useCanvasStore.getState, fpId); setResult({ fpId, ...r }) }}
-        disabled={n < 1}
-        aria-label="Apply my changes to all sections"
-        title={n ? describeEdits(edits) : 'No row changes since the last sync'}
-        style={{
-          width: '100%', padding: '6px 8px', borderRadius: 4,
-          fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
-          cursor: n < 1 ? 'not-allowed' : 'pointer',
-          background: n < 1 ? 'transparent' : 'var(--surface3)',
-          border: '1px solid var(--border)',
-          color: n < 1 ? 'var(--text3)' : 'var(--text)',
-        }}>
-        Apply my changes to all sections ({n} change{n === 1 ? '' : 's'})
-      </button>
-      {n < 1 && !mine && (
-        <div style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 2 }}>
-          No row changes since the last sync: delete, move or add rows in one section, then apply them to all.
-        </div>
-      )}
-      {mine && <ApplyReport report={mine} />}
-    </div>
-  )
-}
-
-/** "16 × 8'" or "12 × 8' + 2 × 10'" — a bay pattern, beams in order of first use. */
-export const fmtBeams = (beams) => {
-  const n = new Map()
-  for (const b of beams) n.set(b, (n.get(b) || 0) + 1)
-  return [...n].map(([b, k]) => `${k} × ${fmtFtIn(b)}`).join(' + ')
-}
-/** One section's line: which bay pattern its copy of the new row used. */
-export const patternLine = (x, home) => {
-  const bays = `${x.bays} bay${x.bays === 1 ? '' : 's'} (${fmtBeams(x.beams)})`
-  if (x.section === home) return `Section ${x.section}: the new row, ${bays}`
-  if (x.from === 'source') return `Section ${x.section}: ${bays}, the new row's own length`
-  if (x.from === 'source-shortened') return `Section ${x.section}: ${bays}, the new row cut by ${x.dropped} bay${x.dropped === 1 ? '' : 's'} to fit`
-  return `Section ${x.section}: ${bays}, full length, bays from ${x.from}`
-}
-
-/* What Apply did, under the button. Every added-row copy that could not go in
-   is listed per section with its reason — a skip is never silent. */
-export function ApplyReport({ report: r }) {
-  return (
-    <>
-      <div style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 2 }}>
-        Applied {r.applied} change{r.applied === 1 ? '' : 's'}
-        {r.deleted.length ? ` · deleted ${r.deleted.length} row${r.deleted.length > 1 ? 's' : ''}` : ''}
-        {r.moved.length ? ` · moved ${r.moved.length} row${r.moved.length > 1 ? 's' : ''}` : ''}
-        {r.trimmed.length ? ` · trimmed ${r.trimmed.length} row end${r.trimmed.length > 1 ? 's' : ''} at cross-aisles` : ''}
-        {r.trimSkipped.length ? ` · not trimmed: ${r.trimSkipped.map(t => `section ${t.section} row ${t.rowIndex} (${t.reason})`).join(', ')}` : ''}
-        {r.added.length ? ` · added ${r.added.reduce((k, a) => k + a.sections.length, 0)} row copies` : ''}
-        {r.held.length ? ` · held at the wall: ${perSection(r.held, l => ` (up to ${fmtFtIn(Math.max(...l.map(h => h.shortIn)))} short)`)}` : ''}
-        {r.clashes.length ? ` · ${r.clashes.map(c => `row ${c.rowIndex} changed in sections ${c.sections.join(' and ')}: section ${c.winner}'s later ${c.kind} wins`).join('; ')}` : ''}
-        {r.missing.length ? ` · no row to move: ${r.missing.map(m => `section ${m.section} row ${m.rowIndex}`).join(', ')}` : ''}
-      </div>
-      {/* every added row's copy that couldn't go in, per section with the reason — never silent */}
-      {r.skipped.length > 0 && (
-        <div role="alert" aria-label="New rows not added" style={{ marginTop: 4, padding: '5px 8px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 9,
-          background: 'var(--red-dim)', border: '1px solid var(--red-bdr)', color: 'var(--red)', fontWeight: 600 }}>
-          {r.skipped.map((k, i) => <div key={i}>Section {k.section}: new row not added — {k.reason}</div>)}
-        </div>
-      )}
-      {/* which bays each section's new row got: the row next to it (a full-length
-          row), the new row's own length, or that length cut to fit */}
-      {r.added.some(a => (a.patterns || []).length) && (
-        <div aria-label="New row bay patterns" style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 2 }}>
-          {r.added.flatMap(a => (a.patterns || []).map((x, i) => <div key={a.rowIndex + '-' + i}>{patternLine(x, a.section)}</div>))}
-        </div>
-      )}
-    </>
   )
 }
 
@@ -557,7 +434,6 @@ export function RackRowPanel({ obj }) {
       <RackWarning text={nowWarn} />
 
       <SyncSection obj={obj} />
-      <ApplyRowChanges fpId={obj.parentId} />
 
       {/* ── Bay list ── */}
       <div>

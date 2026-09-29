@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { pxToFtIn } from '../../utils/canvas'
 import { AisleLabelSize } from './panels/AisleLabelSize'
-import { RackRowPanel, MultiBayPanel, ApplyRowChanges, CantileverPanel, ColumnGridPanel, DriveInPanel, DriveThroughPanel, PushbackPanel } from '../RightPanel/Rackrowpanel'
+import { RackRowPanel, MultiBayPanel, CantileverPanel, ColumnGridPanel, DriveInPanel, DriveThroughPanel, PushbackPanel } from '../RightPanel/Rackrowpanel'
 import { getLayoutCapacity } from '../../utils/capacity'
 import { useColumnCheck } from '../../generate/useColumnCheck'
 import { usableCapacity } from '../../generate/usableCapacity'
@@ -436,7 +436,6 @@ export function PropertiesPanel() {
         {obj.type === 'aisle' && <AislePanel obj={obj} />}
 
         {/* ── Row edits: apply to every section of this building ─── */}
-        {obj.type?.startsWith('fp_') && <div style={{ padding: '8px 8px 0' }}><ApplyRowChanges fpId={obj.id} /></div>}
 
         {/* ── Floor Plan shapes ────────────────────────────────────── */}
         {obj.type?.startsWith('fp_') && (() => {

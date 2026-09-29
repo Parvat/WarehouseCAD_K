@@ -38,11 +38,14 @@ import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { PALETTE_COLORS } from '../../constants'
 import { PEN_TYPES, PEN_ORDER, clampPenWidth, penDefaultWidth, loadPenPrefs, savePenPrefs } from '../../utils/freehand'
 import { dropRotation } from '../../utils/rowEdits'
+import { startPlacement } from '../../utils/placement'
+import { nanoid } from 'nanoid'
 
 /* One glyph per preset — the text badges ate the popover's width. */
 const PEN_ICONS = { pencil: Pencil, marker: PenTool, highlighter: Highlighter, technical: Ruler }
 
 const FP_TYPES_SET = new Set(['fp_rect','fp_l','fp_t','fp_u','fp_cross','fp_l_mirror'])
+const ROW_TYPES = new Set(['rack_row','rack_double_row'])
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  PANEL PREFERENCES — local to this component, persisted in localStorage.    */
@@ -898,7 +901,12 @@ export function FloatingToolbar() {
     const parentFp = [...objects].reverse().find(o => FP_TYPES_SET.has(o.type) && objectContains(o, wx, wy))
     const x  = (item.type==='column_grid'&&parentFp) ? parentFp.x+(parentFp.wallThicknessFt||0.25)*GS : wx-w/2
     const y2 = (item.type==='column_grid'&&parentFp) ? parentFp.y+(parentFp.wallThicknessFt||0.25)*GS : wy-h/2
-    addObject({
+    /* a single or double row follows the mouse until a click places it
+       (utils/placement.js); everything else is dropped at the view centre */
+    const place = (fields) => (ROW_TYPES.has(item.type)
+      ? startPlacement(useCanvasStore, [{ id: nanoid(), layerId: activeLayerId, strokeWidth: 1.5, opacity: 1, rotation: 0, noFill: false, ...fields }], { at: { x: wx, y: wy } })
+      : addObject(fields))
+    place({
       type:item.type, x, y:y2, width:w, height:h,
       fill:(item.color||'#22c55e')+'22', stroke:item.color||'#22c55e',
       strokeWidth:1.5, label:item.label, snapType:item.snapType,

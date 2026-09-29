@@ -1,6 +1,6 @@
 // Area AR — aisle labels only pair two directly facing rows. After a row is
 // deleted and brought back (undo/redo, a hand-added row's copies), after
-// "Apply my changes to all sections", bay splits and "Match bays", no aisle
+// "Copy to all sections", bay splits and "Match bays", no aisle
 // may run through a rack, every aisle's two rows exist, and every pair of
 // facing rows has one.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -11,20 +11,23 @@ import { DEFAULT_RULES } from '../../rules/defaults'
 import { buildingSections } from '../../utils/syncSections'
 import { rebuildAisles, neighbourPairs } from '../../utils/aisleRebuild'
 import { installAisleKeeper } from '../../utils/aisleKeeper'
-import { makeBaseline } from '../../utils/rowEdits'
+import { installCopyWatcher, copyNow, flushCopyWatcher } from '../../utils/copyPrompt'
 import { aisleRect } from '../../canvas2/hitTest'
 import { GS, MATRIX } from './fixtures'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
-let store, Panel, stopKeeper
+let store, Panel, stopKeeper, stopCopy
 let seq = 0
 const newId = () => 'n' + (++seq)
 beforeAll(async () => {
   store = (await import('../../store/useCanvasStore')).useCanvasStore
   Panel = await import('../../components/RightPanel/panels/RackRowPanelCore.jsx')
   stopKeeper = installAisleKeeper(store, newId)
+  stopCopy = installCopyWatcher(store, newId)
 })
-afterAll(() => stopKeeper && stopKeeper())
+afterAll(() => { stopKeeper && stopKeeper(); stopCopy && stopCopy() })
+/** The note's "Copy to all sections", after the action that offered it. */
+const copyAll = async () => { await flushCopyWatcher(); const plan = copyNow(); await flushCopyWatcher(); return plan }
 
 const strip = (o) => JSON.parse(JSON.stringify(o))
 const BEAM = new Set(['rack_row', 'rack_double_row'])
@@ -37,7 +40,6 @@ function layout(orientation, L = 240, W = 120) {
   const racks = sizingSheetLayout(brief, DEFAULT_RULES).map((p, i) => ({ ...placementToObject(p), id: 'r' + i, parentId: 'fp' }))
   const aisles = aisleObjectsForRacks(racks).map((a, i) => ({ ...a, id: 'a' + i, parentId: 'fp' }))
   const fp = { id: 'fp', type: 'fp_rect', x: 0, y: 0, width: L * GS, height: W * GS, wallThicknessFt: 0.25 }
-  fp.rowBaseline = makeBaseline([fp, ...racks], fp)        // as the generator leaves it
   return [fp, ...racks, ...aisles]
 }
 function load(objects) {
@@ -83,7 +85,7 @@ const deleteRacks = (ids) => { const s = store.getState(); s.clearSelection(); s
 
 describe('AR — aisles pair only directly facing rows', () => {
   for (const orientation of ['horizontal', 'vertical']) {
-    it(`AR-delete ${orientation}: delete a middle row -> its neighbours get one aisle; apply to all sections -> the same everywhere; undo -> the row is back and no aisle crosses it, both its aisles exist`, () => {
+    it(`AR-delete ${orientation}: delete a middle row -> its neighbours get one aisle; copy to all sections -> the same everywhere; undo -> the row is back and no aisle crosses it, both its aisles exist`, async () => {
       const base = layout(orientation)
       expect(audit(base)).toEqual([])
       load(base)
@@ -92,7 +94,7 @@ describe('AR — aisles pair only directly facing rows', () => {
       expect(audit(objs())).toEqual([])
       expect(hasAisle(objs(), A.id, C.id)).toBe(true)          // the wide aisle, nothing between
       expect(missingPairs(objs())).toEqual([])
-      Panel.applyRowEdits(store.getState, 'fp')                  // row 4 goes from every section
+      await copyAll()                                            // row 4 goes from every section
       expect(objs().some(o => o.rowIndex === 4)).toBe(false)
       expect(audit(objs())).toEqual([])
       expect(missingPairs(objs())).toEqual([])
@@ -105,12 +107,12 @@ describe('AR — aisles pair only directly facing rows', () => {
       expect(missingPairs(objs())).toEqual([])
     })
 
-    it(`AR-handcopy ${orientation}: row 4 deleted everywhere, a hand row added in its place in section 1 and applied -> every copy has an aisle to each neighbour, none crosses a row`, () => {
+    it(`AR-handcopy ${orientation}: row 4 deleted everywhere, a hand row added in its place in section 1 and copied -> every copy has an aisle to each neighbour, none crosses a row`, async () => {
       const base = layout(orientation)
       load(base)
       const { B, sections } = trio(base, 0)
       deleteRacks([B.id])
-      Panel.applyRowEdits(store.getState, 'fp')                  // row 4 goes from every section
+      await copyAll()                                            // row 4 goes from every section
       expect(objs().filter(o => o.rowIndex === 4)).toEqual([])
       expect(audit(objs())).toEqual([])
       /* the same place, placed by hand (no stamps), as short as the shortest
@@ -124,20 +126,20 @@ describe('AR — aisles pair only directly facing rows', () => {
       const cx = rot ? crossMid : runMid, cy = rot ? runMid : crossMid
       store.getState().addObject({ ...hand, id: 'hand', beams, width, x: cx - width / 2, y: cy - B.height / 2 })
       expect(audit(objs())).toEqual([])
-      const res = Panel.applyRowEdits(store.getState, 'fp')
-      const copies = objs().filter(o => o.rowIndex === res.added[0].rowIndex)
+      const res = await copyAll()
+      const copies = objs().filter(o => o.rowIndex === res.adds[0].rowIndex)
       expect(copies.length).toBe(sections.length)
       for (const c of copies) expect(aislesOf(objs()).filter(a => a.row1Id === c.id || a.row2Id === c.id).length).toBe(2)
       expect(audit(objs())).toEqual([])
       expect(missingPairs(objs())).toEqual([])
     })
 
-    it(`AR-undo ${orientation}: delete, apply, undo, redo -> aisles right at every step`, () => {
+    it(`AR-undo ${orientation}: delete, copy, undo, redo -> aisles right at every step`, async () => {
       const base = layout(orientation)
       load(base)
       const { A, B, C } = trio(base, 1)
       deleteRacks([B.id])
-      Panel.applyRowEdits(store.getState, 'fp')
+      await copyAll()
       for (const step of ['undo', 'undo', 'redo', 'redo', 'undo']) {
         store.getState()[step]()
         expect(audit(objs())).toEqual([])
@@ -148,17 +150,17 @@ describe('AR — aisles pair only directly facing rows', () => {
       expect(hasAisle(objs(), A.id, C.id)).toBe(true)
     })
 
-    /* The apply's OWN commit is already right (not just fixed afterwards by
+    /* The copy's OWN commit is already right (not just fixed afterwards by
      * the keeper): with the keeper off, both the canvas and the undo
-     * snapshot the apply recorded have every aisle between facing rows. */
-    it(`AR-snapshot ${orientation}: with the keeper off, the apply's own undo snapshot already has the right aisles`, () => {
+     * snapshot the copy recorded have every aisle between facing rows. */
+    it(`AR-snapshot ${orientation}: with the keeper off, the copy's own undo snapshot already has the right aisles`, async () => {
       const base = layout(orientation)
       const { B } = trio(base, 1)
-      const deleted = rebuildAisles(base.filter(o => o.id !== B.id), newId).objects
       stopKeeper()
       try {
-        load(deleted)
-        Panel.applyRowEdits(store.getState, 'fp')
+        load(base)
+        deleteRacks([B.id])
+        await copyAll()
         expect(objs().some(o => o.rowIndex === 4)).toBe(false)
         expect(audit(objs())).toEqual([])
         expect(missingPairs(objs())).toEqual([])

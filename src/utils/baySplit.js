@@ -51,8 +51,8 @@ export function splitRackForBayDelete(obj, removed, newId, gridSize = 40) {
     return {
       ...obj,
       id: k === 0 ? obj.id : newId(),
-      /* a new piece remembers the rack it came from, so "Apply my changes"
-         knows it is part of that row and not an added row (utils/rowEdits.js) */
+      /* a new piece remembers the rack it came from, so it stays part of that
+         row and is never read as an added row (utils/copyChange.js) */
       ...(k === 0 ? {} : { pieceOf: obj.id }),
       beams: pieceBeams,
       width,

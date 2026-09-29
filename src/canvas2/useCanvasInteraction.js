@@ -10,6 +10,7 @@ import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBoun
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
 import { computeLiveFlue, resolveFlueBase, flueCommitFields } from './liveFlue'
+import { usePlacement, movePlacement, commitPlacement } from '../utils/placement'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
   movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee, inBayMode, toggleBaySelection, setStickyBayMode, isStickyBayMode,
@@ -390,6 +391,15 @@ export function useCanvasInteraction({
     if (!p) return
     const world = screenToWorld(view.current, p)
 
+    /* A row being added (paste, duplicate, the left panel) follows the mouse
+       until this click places it (utils/placement.js) — a blocked spot
+       (red outline) takes the click and does nothing. Pan still works. */
+    if (!forcePan && evt.button === 0 && usePlacement.getState().active) {
+      movePlacement(useCanvasStore, world, view.current.zoom)
+      commitPlacement(useCanvasStore)
+      return
+    }
+
     if (!forcePan) {
       const st = useCanvasStore.getState()
 
@@ -541,6 +551,13 @@ export function useCanvasInteraction({
     if (!p) return
     const world = screenToWorld(view.current, p)
     const st = useCanvasStore.getState()
+
+    // a row being placed follows the mouse
+    if (usePlacement.getState().active) {
+      movePlacement(useCanvasStore, world, view.current.zoom)
+      setCursor(usePlacement.getState().active?.blocked ? 'not-allowed' : 'copy')
+      return
+    }
 
     let next = 'default'
     if (st.selectedIds.length === 1) {

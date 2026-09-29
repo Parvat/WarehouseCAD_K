@@ -11,9 +11,17 @@
 //
 // A pasted rack is a NEW row: it loses the generator's row stamps
 // (rowIndex / genSection / genRunFt / genCrossFt) and any split-piece link
-// (pieceOf), so "Apply my changes to all sections" counts it as an added row
-// and never as a move of the row it was copied from. It is parented to the
-// building it lands in.
+// (pieceOf), so it is an added row ("Copy to all sections",
+// utils/copyPrompt.js) and never a move of the row it was copied from. It is
+// parented to the building it lands in.
+//
+// Pasting or duplicating ROWS (beam racks) does not drop them straight in:
+// they follow the mouse, faded, and snap until a click places them
+// (utils/placement.js) — Esc cancels. Paste in place still lands exactly
+// where the originals are.
+
+import { startPlacement } from './placement'
+import { isRow } from './copyChange'
 
 const STAMPS = ['rowIndex', 'genSection', 'genRunFt', 'genCrossFt', 'pieceOf']
 const FP = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
@@ -102,11 +110,18 @@ export function planPaste(state, mode, at, newId) {
   return { objects: [...others, ...pasted], groups: [...(state.groups || []), ...pastedGroups], selectedIds: pasted.map(o => o.id) }
 }
 
-/** Paste now: 'cursor', 'inPlace' or 'nudge'. One history entry. */
+/** Paste now: 'cursor', 'inPlace' or 'nudge'. One history entry — or, for
+ *  rows (not in place), a placement that follows the mouse until a click. */
 export function pasteAt(store, mode, newId) {
   const st = store.getState()
-  const r = planPaste(st, mode, mode === 'cursor' ? pointerWorld(st) : null, newId)
+  const at = pointerWorld(st)
+  const r = planPaste(st, mode, mode === 'cursor' ? at : null, newId)
   if (!r) return false
+  if (mode !== 'inPlace') {
+    const ids = new Set(r.selectedIds)
+    const items = r.objects.filter(o => ids.has(o.id))
+    if (items.some(isRow)) return startPlacement(store, items, { groups: r.groups.slice((st.groups || []).length), at })
+  }
   store.setState({ objects: r.objects, groups: r.groups, selectedIds: r.selectedIds, activeBaySelection: [] })
   store.getState().commitObjectUpdate(r.selectedIds[0], {})
   return true
