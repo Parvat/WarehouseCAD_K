@@ -2,7 +2,7 @@
 // at every zoom: 10 px white resize squares (1 px accent) and a 16 px rotate
 // grip on a 16 px stem, click areas 14 / 18 px; the same for a rack at any
 // rotation, a selection group and a building — and none at all on an object
-// under 12 px on screen (the outline alone). (2) The red "no clear
+// under 40 px on screen (the outline alone). (2) The red "no clear
 // aisle" warnings don't flicker while the whole building is dragged: a drag
 // that carries every rack and column holds the check's result and moves it.
 // 1080 x 410, 25 x 30, reach; horizontal and vertical.
@@ -61,9 +61,9 @@ describe.each(['horizontal', 'vertical'])('HF — %s', (orientation) => {
   const objs = layout(orientation)
   const rack = objs.find(o => o.type === 'rack_double_row')
 
-  it('HF-handles: a fixed size on screen at every zoom — 10 px squares and a 16 px grip on a 16 px stem, from 5 % to 800 % (while the rack is big enough on screen to carry them) — at 0°, 90°, 180° and 270°', () => {
+  it('HF-handles: a fixed size on screen at every zoom — 10 px squares and a 16 px grip on a 16 px stem, from 20 % to 800 % (while the rack is big enough on screen to carry them) — at 0°, 90°, 180° and 270°', () => {
     expect([HANDLE_PX, GRIP_PX, GRIP_STEM_PX, HANDLE_HIT_PX, GRIP_HIT_PX]).toEqual([10, 16, 16, 14, 18])
-    for (const rotation of [0, 90, 180, 270]) for (const z of [0.05, 0.2, 0.4, 1, 3, 8]) {
+    for (const rotation of [0, 90, 180, 270]) for (const z of [0.2, 0.4, 1, 3, 8]) {
       const L = computeHandleLayout({ ...rack, rotation }, z, GS)
       expect(r3(L.hs * 2 * z)).toBe(10)
       expect(r3(L.rotateHandle.r * 2 * z)).toBe(16)
@@ -72,7 +72,7 @@ describe.each(['horizontal', 'vertical'])('HF — %s', (orientation) => {
   })
 
   it('HF-hit: the click areas are 14 px (squares) and 18 px (grip) on screen, a little bigger than drawn, at every zoom and rotation', () => {
-    for (const rotation of [0, 90, 180, 270]) for (const z of [0.05, 0.2, 1, 3, 8]) {
+    for (const rotation of [0, 90, 180, 270]) for (const z of [0.2, 1, 3, 8]) {
       const o = { ...rack, rotation }
       const L = computeHandleLayout(o, z, GS), b = getObjectBounds(o)
       const cx = b.x + b.width / 2, cy = b.y + b.height / 2, t = (rotation * Math.PI) / 180
@@ -100,7 +100,11 @@ describe.each(['horizontal', 'vertical'])('HF — %s', (orientation) => {
     }
   })
 
-  it('HF-hide: an object under 12 px on screen (its short side) shows no handles and no grip, and none can be hit; zoomed in past that they are back at full size — racks at any turn, a selection group, a building', () => {
+  it('HF-hide: an object under 40 px on screen (its short side) shows no handles and no grip, and none can be hit; zoomed in past that they are back at full size — racks at any turn, a selection group, a building', () => {
+    expect(HANDLES_MIN_OBJECT_PX).toBe(40)
+    // whenever handles show, they are small against the object: a square at most 1/4 of it, the grip at most 0.4
+    expect(HANDLE_PX / HANDLES_MIN_OBJECT_PX).toBeLessThanOrEqual(0.25)
+    expect(GRIP_PX / HANDLES_MIN_OBJECT_PX).toBeLessThanOrEqual(0.4)
     const b0 = getObjectBounds(rack), short = Math.min(b0.width, b0.height)
     const zSmall = (HANDLES_MIN_OBJECT_PX - 1) / short, zBig = (HANDLES_MIN_OBJECT_PX + 1) / short
     for (const rotation of [0, 90, 180, 270]) {

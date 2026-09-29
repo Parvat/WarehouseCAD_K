@@ -29,10 +29,11 @@ export const HANDLE_GAP_PX = 6       // from the object's edge to a square's cen
 export const HANDLE_HIT_PX = 14      // a resize square's click area
 export const GRIP_HIT_PX = 18        // the grip's click area
 /* An object smaller than this on screen (its short side) shows no handles
-   and no rotate grip — only its selection outline. Zoomed out, fixed-size
-   handles would dwarf a 2 px rack and sit on its neighbours; zoom in and
-   they come back at full size. */
-export const HANDLES_MIN_OBJECT_PX = 12
+   and no rotate grip — only its selection outline. Handles only appear when
+   the object is clearly bigger than they are: at least 4x a square and 2.5x
+   the grip, so they never look as big as the rack they belong to. Zoom in
+   and they come back at full size. */
+export const HANDLES_MIN_OBJECT_PX = 40
 
 /** Is a box (world w × h) big enough on screen to carry handles? */
 export const bigEnoughForHandles = (w, h, zoom) => Math.min(w, h) * zoom >= HANDLES_MIN_OBJECT_PX
