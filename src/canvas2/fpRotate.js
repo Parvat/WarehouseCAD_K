@@ -36,7 +36,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { outlineBounds } from './shapes'
-import { handleSizes } from './handleGeometry'
+import { handleSizes, bigEnoughForHandles } from './handleGeometry'
 
 /** Rotate world point `p` by `angleDeg` about `pivot`. Kept as its own
  *  small copy rather than imported from groupRotate.js's identical
@@ -84,6 +84,7 @@ export function computeFpRotateHandle(fp, gridSize, zoom) {
   if (!verts || verts.length < 2) return null
   const b = outlineBounds(fp, gridSize)
   if (!b) return null
+  if (!bigEnoughForHandles(b.width, b.height, zoom)) return null           // too small on screen: no grip
   const pivot = { x: b.x + b.width / 2, y: b.y + b.height / 2 }
 
   const v0 = verts[0], v1 = verts[1]

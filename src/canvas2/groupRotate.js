@@ -71,7 +71,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { boundsOf } from './hitTest'
-import { handleSizes } from './handleGeometry'
+import { handleSizes, bigEnoughForHandles } from './handleGeometry'
 
 /** Rotate world point `p` by `angleDeg` about `pivot`. */
 function rotateAround(p, angleDeg, pivot) {
@@ -124,7 +124,9 @@ export function computeGroupOutline(objs, zoom, allObjects = objs, gridSize = 40
   const hy = minY - pad - z.stem - z.grip / 2
   const ly = minY - pad
   const r = z.grip / 2
-  return { minX, minY, maxX, maxY, pad, hx, hy, ly, r, hitR: z.hitR, P, R }
+  // the grip only when the group is big enough on screen (handleGeometry.js); the outline always
+  const showGrip = bigEnoughForHandles(maxX - minX, maxY - minY, zoom)
+  return { minX, minY, maxX, maxY, pad, hx, hy, ly, r, hitR: z.hitR, showGrip, P, R }
 }
 
 /** Whether a world point falls on the group rotate handle — CanvasUI.jsx's
@@ -134,7 +136,7 @@ export function computeGroupOutline(objs, zoom, allObjects = objs, gridSize = 40
  *  click would miss wherever the rotated handle actually renders. */
 export function groupRotateHandleHitTest(objs, zoom, worldX, worldY, allObjects = objs, gridSize = 40) {
   const g = computeGroupOutline(objs, zoom, allObjects, gridSize)
-  if (!g) return false
+  if (!g || !g.showGrip) return false
   const world = rotateAround({ x: g.hx, y: g.hy }, g.R, g.P)
   return Math.hypot(worldX - world.x, worldY - world.y) <= g.hitR
 }

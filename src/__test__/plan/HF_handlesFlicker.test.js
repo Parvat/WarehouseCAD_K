@@ -1,7 +1,8 @@
 // Area HF — (1) selection handles and rotate grips are a FIXED size on screen
 // at every zoom: 10 px white resize squares (1 px accent) and a 16 px rotate
 // grip on a 16 px stem, click areas 14 / 18 px; the same for a rack at any
-// rotation, a selection group and a building. (2) The red "no clear
+// rotation, a selection group and a building — and none at all on an object
+// under 12 px on screen (the outline alone). (2) The red "no clear
 // aisle" warnings don't flicker while the whole building is dragged: a drag
 // that carries every rack and column holds the check's result and moves it.
 // 1080 x 410, 25 x 30, reach; horizontal and vertical.
@@ -14,7 +15,7 @@ import { layoutColumns } from '../../generate/usableCapacity'
 import { DEFAULT_RULES } from '../../rules/defaults'
 import { rebuildAisles } from '../../utils/aisleRebuild'
 import { getObjectBounds } from '../../utils/canvas'
-import { computeHandleLayout, handleHitTest, HANDLE_PX, GRIP_PX, GRIP_STEM_PX, HANDLE_HIT_PX, GRIP_HIT_PX } from '../../canvas2/handleGeometry'
+import { computeHandleLayout, handleHitTest, HANDLE_PX, GRIP_PX, GRIP_STEM_PX, HANDLE_HIT_PX, GRIP_HIT_PX, HANDLES_MIN_OBJECT_PX } from '../../canvas2/handleGeometry'
 import { computeGroupOutline } from '../../canvas2/groupRotate'
 import { clearanceSource } from '../../canvas2/clearanceSource'
 import { aisleWarningRect } from '../../canvas2/aisleMarks'
@@ -60,9 +61,9 @@ describe.each(['horizontal', 'vertical'])('HF — %s', (orientation) => {
   const objs = layout(orientation)
   const rack = objs.find(o => o.type === 'rack_double_row')
 
-  it('HF-handles: a fixed size on screen at every zoom — 10 px squares and a 16 px grip on a 16 px stem, from 2 % to 800 % — at 0°, 90°, 180° and 270°', () => {
+  it('HF-handles: a fixed size on screen at every zoom — 10 px squares and a 16 px grip on a 16 px stem, from 5 % to 800 % (while the rack is big enough on screen to carry them) — at 0°, 90°, 180° and 270°', () => {
     expect([HANDLE_PX, GRIP_PX, GRIP_STEM_PX, HANDLE_HIT_PX, GRIP_HIT_PX]).toEqual([10, 16, 16, 14, 18])
-    for (const rotation of [0, 90, 180, 270]) for (const z of [0.02, 0.05, 0.2, 0.4, 1, 3, 8]) {
+    for (const rotation of [0, 90, 180, 270]) for (const z of [0.05, 0.2, 0.4, 1, 3, 8]) {
       const L = computeHandleLayout({ ...rack, rotation }, z, GS)
       expect(r3(L.hs * 2 * z)).toBe(10)
       expect(r3(L.rotateHandle.r * 2 * z)).toBe(16)
@@ -71,7 +72,7 @@ describe.each(['horizontal', 'vertical'])('HF — %s', (orientation) => {
   })
 
   it('HF-hit: the click areas are 14 px (squares) and 18 px (grip) on screen, a little bigger than drawn, at every zoom and rotation', () => {
-    for (const rotation of [0, 90, 180, 270]) for (const z of [0.02, 0.05, 0.2, 1, 3, 8]) {
+    for (const rotation of [0, 90, 180, 270]) for (const z of [0.05, 0.2, 1, 3, 8]) {
       const o = { ...rack, rotation }
       const L = computeHandleLayout(o, z, GS), b = getObjectBounds(o)
       const cx = b.x + b.width / 2, cy = b.y + b.height / 2, t = (rotation * Math.PI) / 180
@@ -93,10 +94,44 @@ describe.each(['horizontal', 'vertical'])('HF — %s', (orientation) => {
     expect(fpr).toMatch(/const r = z\.grip \/ 2/)
     expect(fpr).toMatch(/return Math\.hypot\(worldX - h\.rx, worldY - h\.ry\) <= h\.hitR/)
     const two = objs.filter(o => o.type === 'rack_double_row').slice(0, 2)
-    for (const z of [0.02, 0.05, 0.2, 1, 3, 8]) {
+    for (const z of [0.2, 1, 3, 8]) {
       const g = computeGroupOutline(two, z, two, GS)
       expect([r3(g.r * 2 * z), r3(g.hitR * 2 * z), r3((g.ly - (g.hy + g.r)) * z)]).toEqual([16, 18, 16])
     }
+  })
+
+  it('HF-hide: an object under 12 px on screen (its short side) shows no handles and no grip, and none can be hit; zoomed in past that they are back at full size — racks at any turn, a selection group, a building', () => {
+    const b0 = getObjectBounds(rack), short = Math.min(b0.width, b0.height)
+    const zSmall = (HANDLES_MIN_OBJECT_PX - 1) / short, zBig = (HANDLES_MIN_OBJECT_PX + 1) / short
+    for (const rotation of [0, 90, 180, 270]) {
+      const o = { ...rack, rotation }
+      const small = computeHandleLayout(o, zSmall, GS)
+      expect(small.enabled).toEqual([])
+      expect(small.canRotate).toBe(false)
+      expect(small.rotateHandle).toBe(null)
+      // where the handles would be: nothing to hit
+      const b = getObjectBounds(o), cx = b.x + b.width / 2, cy = b.y + b.height / 2, t = (rotation * Math.PI) / 180
+      const world = (p) => ({ x: cx + (p.x - cx) * Math.cos(t) - (p.y - cy) * Math.sin(t), y: cy + (p.x - cx) * Math.sin(t) + (p.y - cy) * Math.cos(t) })
+      const L = computeHandleLayout(o, zBig, GS)
+      for (const p of [L.positions.ml, L.positions.mr]) { const w = world(p); expect(handleHitTest(o, w.x, w.y, zSmall, GS)).toBe(null) }
+      const big = computeHandleLayout(o, zBig, GS)
+      expect(big.enabled).toEqual(['ml', 'mr'])
+      expect(big.canRotate).toBe(true)
+      expect(r3(big.hs * 2 * zBig)).toBe(10)                                       // full size
+      const w = world(big.positions.ml)
+      expect(handleHitTest(o, w.x, w.y, zBig, GS)).toBe('ml')
+    }
+    // a selection group: the outline stays, the grip goes
+    const two = objs.filter(o => o.type === 'rack_double_row').slice(0, 2)
+    const g1 = computeGroupOutline(two, 1, two, GS)
+    const gs = Math.min(g1.maxX - g1.minX, g1.maxY - g1.minY)
+    const gSmall = computeGroupOutline(two, (HANDLES_MIN_OBJECT_PX - 1) / gs, two, GS)
+    expect(gSmall.showGrip).toBe(false)
+    expect(computeGroupOutline(two, (HANDLES_MIN_OBJECT_PX + 1) / gs, two, GS).showGrip).toBe(true)
+    expect(readFileSync('src/canvas2/GroupRotateOverlay.jsx', 'utf8')).toMatch(/\{g\.showGrip && <RotateGrip /)
+    expect(readFileSync('src/canvas2/groupRotate.js', 'utf8')).toMatch(/if \(!g \|\| !g\.showGrip\) return false/)
+    // a building: no grip (fpRotate.js imports the Konva painters, so it is read here, not run)
+    expect(readFileSync('src/canvas2/fpRotate.js', 'utf8')).toMatch(/if \(!bigEnoughForHandles\(b\.width, b\.height, zoom\)\) return null/)
   })
 
   it('HF-flicker: dragging the whole building, the set of red warnings is identical on every frame (the held result moves with it)', () => {

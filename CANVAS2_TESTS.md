@@ -216,12 +216,20 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
-### HF — Fixed-size handles; no red-warning flicker on a building drag · `HF_handlesFlicker.test.js` (11 tests)
+### HF — Fixed-size handles; no red-warning flicker on a building drag · `HF_handlesFlicker.test.js` (13 tests)
 **Handles.** A fixed size on screen at every zoom (handleSizes in
 handleGeometry.js); they are chrome, not drawing:
 - **The sizes:** resize squares 10 px, white with a 1 px accent border; the
   rotate grip a 16 px white disc on a 16 px stem.
 - **Click areas:** 14 px for a square, 18 px for the grip.
+- **Small objects get no handles.** An object whose short side is under
+  12 px on screen shows its selection outline only: no squares, no grip,
+  and nothing to hit.
+  - Zoomed out, fixed-size handles dwarfed a 2–8 px rack and sat on its
+    neighbours.
+  - Zoom in and they come back at full size.
+  - A selection group and a building follow the same rule for their grip
+    (bigEnoughForHandles).
 - **One rule for everything:** a rack at any rotation, a selection group and
   a building.
 - **History:** the drawing-size variants (pure 6″ / 10″, and with an
@@ -245,6 +253,7 @@ handleGeometry.js); they are chrome, not drawing:
 | `HF-handles` | on racks turned 0°, 90°, 180° and 270°, at 2 %, 5 %, 20 %, 40 %, 100 %, 300 % and 800 %: squares 10 px, the grip 16 px on a 16 px stem, on screen |
 | `HF-hit` | at the same zooms and turns: a press ½ px inside the 14 px square click area hits and ½ px outside misses; the same for the grip's 18 px |
 | `HF-grips` | a selection group's grip is 16 px on a 16 px stem with an 18 px click area at every zoom; the building's grip takes the same sizes from handleSizes (read from fpRotate.js, which imports the Konva painters) |
+| `HF-hide` | a rack at 0°, 90°, 180° and 270° just under 12 px on screen: no handles, no grip, nothing to hit where they would be. Just over 12 px: the two end handles and the grip, at full size, and hittable. A group's grip hides and shows at the same line; the building's grip is gated the same way (read from fpRotate.js) |
 | `HF-flicker` | a pinched layout (at least one red warning) and a building drag over 120 fractional frames: the held blocks are used, moved by the drag, and the set of red warnings is identical on every frame |
 | `HF-multi` | a selection holding every rack and the column grid: the same. A one-rack selection re-checks, and the red warnings of rows it doesn't move are identical on every frame |
 | `HF-wire` (once) | the painters draw the layout's sizes (white, 1 px accent) through one RotateGrip; the clearance group sits at the source's offset |
@@ -253,6 +262,10 @@ handleGeometry.js); they are chrome, not drawing:
 - **Handles.** A rack, a two-rack group and the building selected in turn,
   at 5 %, 40 % and 300 %: squares 10 px; rack, group and building grips
   16 px; the stem 16 px.
+- **Small objects.** At the whole-building zoom (2.5 %, the rack 8 px deep
+  on screen) a selected rack showed its outline only, with 0 handles and no
+  grip. At 30 % it had 2 end handles and the grip. The two-row group and
+  the building, both over 12 px on screen, kept their grips.
 - **Building drag.** Several aisles pinched, then the building dragged from
   empty floor (found with the app's own hitTest). The red nodes stayed at
   270 (horizontal) and 216 (vertical) on all 40 frames, and after the drop.
@@ -1476,6 +1489,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | SC | **Always copy waits** | 2: SC-always h/v | ✓ |
 | SC | **Match bays from the FIRST bay-changed row, not the last** | 2: SC-match h/v | ✓ |
 | HF | **Sizes follow the zoom** (not fixed on screen) | 4: HF-handles h/v, HF-grips h/v | ✓ |
+| HF | **Handles shown on objects of any size** | 2: HF-hide h/v | ✓ |
 | HF | **A building drag re-checks the aisles every frame** | 4: HF-flicker, HF-multi (h/v) — also with the "not recomputed" checks removed, the red-set comparison alone fails in both orientations | ✓ |
 | AR | **Skip the rebuild** | 6: AR-recreate/handcopy/undo (h and v, before the replay redesign) | ✓ |
 | AR | **Keep aisles with a row between them** | 6 | ✓ |
@@ -1588,8 +1602,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,830 tests, 1,830 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,227 tests, 2,227 passing.**
+- **Plan suite: 1,832 tests, 1,832 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,229 tests, 2,229 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:
