@@ -1,43 +1,34 @@
-// copyPrompt.js — the "Copy this change" note and the "Always copy" switch
-// (utils/copyChange.js does the geometry).
+// copyPrompt.js — copying row changes across sections: the pending bar, the
+// question when the user moves on to another section, and "Always copy"
+// (utils/sectionCopy.js keeps the pending set, utils/copyChange.js copies).
 //
-// A watcher on the canvas store reads every action as it lands: a new
-// history entry is one action, and the layout before it and after it say
-// what it was. After a row / bay change it offers a copy in a note at the
-// bottom of the canvas — one button, or two for a row dragged both across
-// and along (each copies only its own part), each with its copy count:
-//   - clicking the button copies — as its OWN undo step (the first Ctrl+Z
-//     takes the copies away, the second the change);
-//   - ignoring it: the note goes at the next action (or undo / redo) and the
-//     change stays where it was made. Nothing piles up.
-// With "Always copy" on (a toolbar switch, off by default, remembered in
-// localStorage) the copy is made straight away, with no note, and folded
-// into the action's own history entry: one Ctrl+Z takes the change and its
-// copies together. A copy that could not go in is still reported, in a note
-// without a button.
+// Always copy OFF (the default):
+//   - the user makes any number of changes in ONE section; nothing is copied
+//     or locked meanwhile, and a bar at the bottom says "Section N: K changes
+//     · Copy to other sections" (its tooltip lists them). Clicking copies
+//     them — one undo step — and clears the set;
+//   - an edit started on a row in a DIFFERENT section while copyable changes
+//     are pending is stopped (drag start, Delete and placing are checked
+//     before they happen; anything else is taken back the moment it lands)
+//     and the user is asked "Copy your K changes from section N to the other
+//     sections?" [Copy] [Don't copy]. Either way the set clears, and edits in
+//     the new section start a new one;
+//   - one action that changes rows in more than one section is not copied:
+//     "This change affects rows in 2 sections, so it stays where you made it."
+// Always copy ON (a top-bar switch, remembered in localStorage): each move
+// across, add and delete is copied to every other section at once, folded
+// into the action's own history entry — one Ctrl+Z undoes both. No set, no
+// question.
+// Bay changes and moves along a row are never copied to other sections.
 //
-// A row / bay change that can't be copied (rows in several sections, an
-// upright width, a mixed edit, ...) is never silent: the note says so, and
-// why, with no button.
-//
-// MANUAL MODE. Copy notes are only offered while the sections match. A note
-// left unused (the next action lands, or it is dismissed) means they no
-// longer do — and so does one action changing rows in several sections:
-// the building goes to manual mode, with a notice, and no copy notes appear
-// (any other change that can't be copied does the same — an upright width,
-// a turned row, a flue change, a mixed edit — its warning saying so)
-// until "Turn copying back on". Using one of a diagonal drag's two buttons
-// and leaving the other is not "unused". With Always copy on the sections
-// stay matched, so manual mode is never entered. The mode is `copyManual` on
-// the building: saved with the layout; the watcher keeps it through undo /
-// redo (only "Turn copying back on" clears it).
-//
-// The watcher and the copy write without the protected store's own actions:
-// setState, plus commitObjectUpdate for the one history entry (or a
-// replacement of the last one, for Always copy).
+// A new history entry that follows the one seen before is an action; the
+// layout just before it and after it say what it touched. The watcher
+// writes with setState and the protected store's commitObjectUpdate (one
+// history entry), or folds a write into the current entry.
 
 import { create } from 'zustand'
-import { readChange, planCopy, applyPlan, describeChange, copyButtonLabel } from './copyChange'
+import { applyPlan, isRow } from './copyChange'
+import { PENDING, sectionOf, startPending, pendingChanges, planPending, allPending, actionLines } from './sectionCopy'
 import { rebuildAisles } from './aisleRebuild'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { autoSave, serializeScene } from './saveLoad'
@@ -45,161 +36,37 @@ import { autoSave, serializeScene } from './saveLoad'
 const LS_KEY = 'trace.copyChange.always'
 const readAlways = () => { try { return localStorage.getItem(LS_KEY) === '1' } catch { return false } }
 
-/** The note's state:
- *   `offer` = { text, before, parts: [{ change, plan, button, count,
- *     skipped, warnings }], notes, done } while a copy is on offer, or
- *     { text, blocked: true } for a change that can't be copied;
- *   `report` = what the last copy did (skips) when there is nothing to click;
- *   `hover` = which part's button is hovered (its copies are previewed on
- *     the canvas), or null. */
+/** The bar's state:
+ *   `pending`  = { fpId, section, count, copyCount, lines } (the set), or null;
+ *   `question` = { fpId, section, count } while the user is asked, or null;
+ *   `message`  = a one-line notice (rows in several sections), or null;
+ *   `report`   = what the last copy did (skips), or null;
+ *   `hover`    = the Copy button is hovered (the canvas previews the copies). */
 export const useCopyPrompt = create((set) => ({
-  offer: null,
+  pending: null,
+  question: null,
+  message: null,
   report: null,
-  hover: null,
+  hover: false,
   alwaysCopy: readAlways(),
-  setHover: (hover) => set({ hover: hover === true ? 0 : (hover === false || hover == null ? null : hover) }),
+  setHover: (hover) => set({ hover: !!hover }),
   setAlwaysCopy: (on) => {
     try { localStorage.setItem(LS_KEY, on ? '1' : '0') } catch { /* private window */ }
     set({ alwaysCopy: !!on })
   },
-  /** manual mode (for the layout's buildings), and the notice about it */
-  manual: false,
-  notice: null,
-  dismiss: () => { leaveOffer(); set({ offer: null, report: null, hover: null }) },
-  dismissNotice: () => set({ notice: null }),
+  dismissReport: () => set({ report: null, message: null }),
 }))
 
-export const MANUAL_NOTICE = 'Sections no longer match, so copying is turned off. Changes now apply only where you make them.'
-export const COPYING_OFF = 'Copying is now off: the sections no longer match.'
-export const BACK_ON_NOTICE = 'Copying is back on. The sections may already differ, so check each copy before you use it.'
+export const multiSectionText = (n) => `This change affects rows in ${n} sections, so it stays where you made it.`
+export const questionText = (q) => `Copy your ${q.count} change${q.count === 1 ? '' : 's'} from section ${q.section} to the other sections?`
 
-let watch = null   // { store, newId, lastObjects, lastHistory, lastIndex, busy, quiet, manual: Set(fpId) }
-
-const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
-
-/** Put the manual flags the watcher knows about onto the buildings (after a
- *  load it learns them from the buildings instead). No history entry; the
- *  layout's autosave picks it up. */
-function applyManualFlags() {
-  const st = watch.store.getState()
-  let changed = false
-  const objects = st.objects.map(o => {
-    if (!FP_TYPES.has(o.type)) return o
-    const want = watch.manual.has(o.id)
-    if (!!o.copyManual === want) return o
-    changed = true
-    if (want) return { ...o, copyManual: true }
-    const { copyManual, ...rest } = o
-    return rest
-  })
-  if (changed) {
-    watch.busy = true
-    try { watch.store.setState({ objects }) } finally { watch.busy = false }
-    try { autoSave(serializeScene(watch.store.getState())) } catch { /* storage full */ }
-  }
-  watch.lastObjects = watch.store.getState().objects
-  useCopyPrompt.setState({ manual: watch.manual.size > 0 })
-}
-const learnManualFlags = () => {
-  watch.manual = new Set(watch.store.getState().objects.filter(o => FP_TYPES.has(o.type) && o.copyManual).map(o => o.id))
-  useCopyPrompt.setState({ manual: watch.manual.size > 0 })
-}
-
-/** The building `fpId` goes to manual mode, with the notice. Never with
- *  Always copy on. */
-function enterManual(fpId) {
-  if (!watch || !fpId || useCopyPrompt.getState().alwaysCopy) return
-  const was = watch.manual.has(fpId)
-  watch.manual.add(fpId)
-  applyManualFlags()
-  if (!was) useCopyPrompt.setState({ notice: MANUAL_NOTICE })
-}
-
-/** A note on offer is being left (the next action, or dismissed): if none of
- *  its buttons was used, the sections no longer match. */
-function leaveOffer() {
-  if (!watch) return
-  const { offer } = useCopyPrompt.getState()
-  if (offer && offer.parts && !offer.used) enterManual(offer.fpId)
-}
-
-/** "Turn copying back on": notes again, with a warning that the sections
- *  may differ. */
-export function turnCopyingOn() {
-  if (!watch) return
-  watch.manual.clear()
-  applyManualFlags()
-  useCopyPrompt.setState({ notice: BACK_ON_NOTICE, offer: null, report: null, hover: null })
-}
-
-/** The next action is a copy of its own ("Match bays in this section"):
- *  read it, but say nothing about it. */
-export function quietNextAction() { if (watch) watch.quiet = true }
-
-/** The button's words: "Copy to all sections · 7 copies". */
-export const buttonText = (label, n) => `${label} · ${n} ${n === 1 ? 'copy' : 'copies'}`
+let watch = null   // { store, newId, lastObjects, lastHistory, lastIndex, busy, pending }
 
 const skipText = (plan) => [...plan.skipped, ...plan.held].map(s => `${cap(s.name)}: ${s.reason}`)
 const warnText = (plan) => plan.warnings.map(s => `${cap(s.name)}: ${s.reason}`)
 const cap = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t)
-
-/** Write a plan into the store: rows, re-paired aisles, one history entry
- *  (`merge`: folded into the last entry instead — Always copy). */
-function writePlan(store, plan, newId, merge) {
-  const st = store.getState()
-  const gone = plan.deletes
-  const objects = rebuildAisles(applyPlan(st.objects, plan), newId).objects
-  const groups = (st.groups || []).map(g => ({ ...g, ids: g.ids.filter(id => !gone.has(id)) })).filter(g => g.ids.length >= 2)
-  const sel = {
-    selectedIds: (st.selectedIds || []).filter(id => !gone.has(id)),
-    activeBaySelection: (st.activeBaySelection || []).filter(e => !gone.has(e.objId)),
-  }
-  if (merge && st.historyIndex >= 0) {
-    const history = st.history.slice(0, st.historyIndex + 1)
-    history[history.length - 1] = JSON.stringify({ objects, groups })
-    store.setState({ objects, groups, ...sel, history, historyIndex: history.length - 1 })
-    try { autoSave(serializeScene(store.getState())) } catch { /* storage full */ }
-  } else {
-    store.setState({ objects, groups, ...sel })
-    const anchor = objects.find(o => o.id === plan.change.fpId) || objects[0]
-    if (anchor) store.getState().commitObjectUpdate(anchor.id, {})
-  }
-}
-
-const planFor = (before, after, change, st) =>
-  planCopy(before, after, change, st.gridSize || 40, watch.newId, { profile: getColumnCheckView().profile })
-
-/** A note part for one change. */
-function partFor(before, after, change, st) {
-  const plan = planFor(before, after, change, st)
-  if (!plan || (!plan.copies.length && !plan.skipped.length && !plan.held.length)) return null
-  return { change, plan, button: copyButtonLabel(change), count: plan.copies.length, skipped: skipText(plan), warnings: warnText(plan) }
-}
-
-/** A note button: make that part's copies now, as their own undo step. The
- *  other part (a diagonal drag's) stays on offer. */
-export function copyNow(i = 0) {
-  if (!watch) return null
-  const { offer } = useCopyPrompt.getState()
-  if (!offer || !offer.parts || !offer.parts[i]) return null
-  const st = watch.store.getState()
-  const part = offer.parts[i]
-  // planned again against the layout as it is now (the other part may have been copied since)
-  const plan = planFor(offer.before, st.objects, part.change, st) || part.plan
-  watch.busy = true
-  try { writePlan(watch.store, plan, watch.newId, false) } finally { watch.busy = false }
-  sync()
-  const lines = skipText(plan)
-  const rest = offer.parts.filter((_, k) => k !== i)
-  const done = `Copied ${part.button.replace(/^Copy /, '')}: ${plan.copies.length} ${plan.copies.length === 1 ? 'copy' : 'copies'}`
-  if (rest.length) {
-    // one of a diagonal drag's two buttons used: leaving the other is not "unused"
-    useCopyPrompt.setState({ offer: { ...offer, parts: rest, used: true, done: [...(offer.done || []), done] }, hover: null })
-  } else {
-    useCopyPrompt.setState({ offer: null, hover: null, report: lines.length || plan.warnings.length ? { text: done, skipped: lines, warnings: warnText(plan) } : null })
-  }
-  return plan
-}
+const gs = () => watch.store.getState().gridSize || 40
+const profile = () => { try { return getColumnCheckView().profile } catch { return undefined } }
 
 function sync() {
   const st = watch.store.getState()
@@ -208,75 +75,224 @@ function sync() {
   watch.lastIndex = st.historyIndex
 }
 
-/** Read the action that just landed (the before layout -> now). */
+/** Write into the store folded into the current history entry (no new undo
+ *  step). */
+function writeInPlace(patch) {
+  const st = watch.store.getState()
+  const objects = patch.objects || st.objects, groups = patch.groups || st.groups || []
+  const full = { ...patch, objects, groups }
+  if (st.historyIndex >= 0) {
+    const history = st.history.slice(0, st.historyIndex + 1)
+    history[history.length - 1] = JSON.stringify({ objects, groups })
+    full.history = history
+    full.historyIndex = history.length - 1
+  }
+  watch.busy = true
+  try { watch.store.setState(full) } finally { watch.busy = false }
+  try { autoSave(serializeScene(watch.store.getState())) } catch { /* storage full */ }
+  sync()
+}
+
+/** The building's pending set replaced (null = cleared). */
+const withPending = (objects, fpId, P) => objects.map(o => {
+  if (o.id !== fpId) return o
+  if (P) return { ...o, [PENDING]: P }
+  const { [PENDING]: _gone, ...rest } = o
+  return rest
+})
+
+/** The bar, from the layout as it is now. */
+function refresh() {
+  const objects = watch.store.getState().objects
+  const p = allPending(objects, gs()).filter(q => q.log.length > 0)[0] || null
+  useCopyPrompt.setState({
+    pending: p ? { fpId: p.fpId, section: p.section, count: p.log.length, copyCount: p.copy.length, lines: p.log.map(l => l.text) } : null,
+  })
+}
+
+/** `objects` with a plan applied: rows, re-paired aisles; the groups and the
+ *  selection without deleted racks. */
+function applied(objects, plan) {
+  const st = watch.store.getState()
+  const gone = plan.deletes
+  return {
+    objects: rebuildAisles(applyPlan(objects, plan), watch.newId).objects,
+    groups: (st.groups || []).map(g => ({ ...g, ids: g.ids.filter(id => !gone.has(id)) })).filter(g => g.ids.length >= 2),
+    selectedIds: (st.selectedIds || []).filter(id => !gone.has(id)),
+    activeBaySelection: (st.activeBaySelection || []).filter(e => !gone.has(e.objId)),
+  }
+}
+
+const reportOf = (plan, lead) => {
+  const lines = skipText(plan), warns = warnText(plan)
+  return lines.length || warns.length ? { text: `${lead}: ${plan.copies.length} cop${plan.copies.length === 1 ? 'y' : 'ies'}`, skipped: lines, warnings: warns } : null
+}
+
+/** The copies the bar's button would make now, for the hover preview. */
+export function pendingPlan() {
+  if (!watch) return null
+  const p = useCopyPrompt.getState().pending
+  if (!p) return null
+  try { return planPending(watch.store.getState().objects, p.fpId, gs(), () => 'preview', undefined) } catch { return null }
+}
+
+/** "Copy to other sections" (the bar's button, or the question's Copy): the
+ *  pending set copied, as ONE undo step, and cleared. */
+export function copyPending(fpId) {
+  if (!watch) return null
+  const st = watch.store.getState()
+  const id = fpId || (useCopyPrompt.getState().question || {}).fpId || (useCopyPrompt.getState().pending || {}).fpId
+  if (!id) return null
+  const plan = planPending(st.objects, id, gs(), watch.newId, profile())
+  const next = plan ? applied(st.objects, plan) : { objects: st.objects }
+  next.objects = withPending(next.objects, id, null)
+  watch.busy = true
+  try {
+    watch.store.setState(next)
+    watch.store.getState().commitObjectUpdate(id, {})
+  } finally { watch.busy = false }
+  sync()
+  useCopyPrompt.setState({ question: null, hover: false, message: null, report: plan ? reportOf(plan, `Copied from section ${plan.section}`) : null })
+  refresh()
+  return plan
+}
+
+/** The question's "Don't copy": the changes stay in their section; the set
+ *  clears. */
+export function dontCopy() {
+  if (!watch) return
+  const q = useCopyPrompt.getState().question
+  const id = (q && q.fpId) || (useCopyPrompt.getState().pending || {}).fpId
+  if (id) writeInPlace({ objects: withPending(watch.store.getState().objects, id, null) })
+  useCopyPrompt.setState({ question: null, hover: false })
+  refresh()
+}
+
+/** Before an edit on `racks` (rack objects or ids): true if it may go
+ *  ahead; false — with the question asked — when copyable changes are
+ *  pending in another section of the same building. */
+export function guardEdit(racks) {
+  if (!watch || useCopyPrompt.getState().alwaysCopy) return true
+  const st = watch.store.getState()
+  for (const r of racks || []) {
+    const rack = typeof r === 'string' ? st.objects.find(o => o.id === r) : r
+    if (!rack || !isRow(rack) || !rack.parentId) continue
+    const fp = st.objects.find(o => o.id === rack.parentId)
+    const ch = fp ? pendingChanges(st.objects, fp, gs()) : null
+    if (!ch || !ch.copy.length) continue
+    const inStore = st.objects.some(o => o.id === rack.id)
+    const s = sectionOf(inStore ? st.objects : [...st.objects, rack], rack)
+    if (s != null && s !== ch.section) {
+      useCopyPrompt.setState({ question: { fpId: fp.id, section: ch.section, count: logCount(fp) } })
+      return false
+    }
+  }
+  return true
+}
+
+/** What one action touched: { fpId, sections, generated } for the rows of
+ *  one building it changed, or null (not a row, the building itself moved). */
+function touched(before, after) {
+  const B = new Map(before.filter(isRow).map(o => [o.id, o])), A = new Map(after.filter(isRow).map(o => [o.id, o]))
+  const sig = (o) => JSON.stringify([o.x, o.y, o.width, o.height, o.rotation || 0, o.beams, o.uprightWidth, o.flueSpaceIn])
+  const removed = [...B.values()].filter(o => !A.has(o.id))
+  const added = [...A.values()].filter(o => !B.has(o.id))
+  const changed = [...A.values()].filter(o => B.has(o.id) && sig(B.get(o.id)) !== sig(o))
+  if (!removed.length && !added.length && !changed.length) return null
+  const fps = new Set([...removed, ...added, ...changed].map(o => o.parentId).filter(Boolean))
+  if (fps.size !== 1) return null
+  const fpId = [...fps][0]
+  const fp = after.find(o => o.id === fpId), fpB = before.find(o => o.id === fpId)
+  if (!fp || !fpB) return null
+  const geo = (o) => JSON.stringify([o.x, o.y, o.width, o.height, o.rotation || 0, o.fpVerts || null])
+  if (geo(fp) !== geo(fpB)) return null                                    // the building moved: its rows ride along
+  const generated = (added.length && !changed.length && added.every(o => o.genSection != null && !o.pieceOf))
+    || (removed.length && !added.length && !after.some(o => isRow(o) && o.parentId === fpId))
+  const secs = new Set([...removed.map(o => sectionOf(before, o)), ...added.map(o => sectionOf(after, o)), ...changed.map(o => sectionOf(after, o))].filter(s => s != null))
+  return { fpId, sections: [...secs], generated: !!generated }
+}
+
+/** Take back the action that just landed (an edit in another section while
+ *  changes were pending) and ask. */
+function stopAndAsk(fpId, ch) {
+  const st = watch.store.getState()
+  if (st.historyIndex > 0) {
+    const snap = JSON.parse(st.history[st.historyIndex - 1])
+    watch.busy = true
+    try { watch.store.setState({ objects: snap.objects, groups: snap.groups || st.groups, history: st.history.slice(0, st.historyIndex), historyIndex: st.historyIndex - 1 }) } finally { watch.busy = false }
+    sync()
+  }
+  const fp = watch.store.getState().objects.find(o => o.id === fpId)
+  useCopyPrompt.setState({ question: { fpId, section: ch.section, count: logCount(fp) } })
+  refresh()
+}
+const logCount = (fp) => ((fp && fp[PENDING] && fp[PENDING].log) || []).length
+
+/** Read the action that just landed. */
 function settle(before) {
   watch.pending = false
   const st = watch.store.getState()
   const after = st.objects
-  const gridSize = st.gridSize || 40
-  const quiet = watch.quiet
-  watch.quiet = false
-  leaveOffer()                                                        // the note before this action, left unused?
-  let read = null
-  try { read = quiet ? null : readChange(before, after, gridSize) } catch { read = null }
+  const t = touched(before, after)
   sync()
-  const clear = () => useCopyPrompt.setState({ offer: null, report: null, hover: null })
-  if (!read) { clear(); return }
-  const fpId = read.fpId || (read.changes && read.changes[0] && read.changes[0].fpId)
-  if (read.sections > 1) {
-    // rows in several sections changed at once: they no longer match
-    enterManual(fpId)
-    if (watch.manual.has(fpId)) { clear(); return }
-  }
-  if (fpId && watch.manual.has(fpId)) { clear(); return }             // manual mode: no copy notes
-  if (read.blocked) {
-    /* a row change the note can't copy: said, never silent. It leaves the
-       sections different, so copying goes off (never with Always copy on) */
-    const ids = read.fpIds || (fpId ? [fpId] : [])
-    ids.forEach(enterManual)
-    const off = ids.length > 0 && ids.every(id => watch.manual.has(id))
-    useCopyPrompt.setState({ offer: { text: off ? `${read.blocked} ${COPYING_OFF}` : read.blocked, blocked: true }, report: null, hover: null })
+  if (!t) { refresh(); return }
+  const fp = after.find(o => o.id === t.fpId)
+  if (t.generated) {
+    // a (re)generated layout: nothing is pending any more
+    if (fp && fp[PENDING]) writeInPlace({ objects: withPending(after, t.fpId, null) })
+    useCopyPrompt.setState({ question: null, message: null, report: null })
+    refresh()
     return
   }
-  const text = describeChange(read.changes, gridSize)
-  if (useCopyPrompt.getState().alwaysCopy) {
-    const lines = [], warns = [], done = []
-    for (const change of read.changes) {
-      let plan = null
-      try { plan = planFor(before, watch.store.getState().objects, change, watch.store.getState()) } catch { plan = null }
-      if (!plan || (!plan.copies.length && !plan.skipped.length && !plan.held.length)) continue
-      watch.busy = true
-      try { writePlan(watch.store, plan, watch.newId, true) } finally { watch.busy = false }
-      sync()
-      lines.push(...skipText(plan)); warns.push(...warnText(plan))
-      done.push(`${copyButtonLabel(change).replace(/^Copy /, '')}: ${plan.copies.length} ${plan.copies.length === 1 ? 'copy' : 'copies'}`)
-    }
-    const notes = read.notes || []
-    useCopyPrompt.setState({ offer: null, hover: null, report: lines.length || warns.length || notes.length ? { text: `${text} — copied ${done.join(', ')}`, skipped: [...notes, ...lines], warnings: warns } : null })
+  const always = useCopyPrompt.getState().alwaysCopy
+  const ch = fp ? pendingChanges(after, fp, gs()) : null
+  // an edit in another section while copyable changes are pending: stop it, ask
+  if (!always && ch && ch.copy.length && t.sections.some(s => s !== ch.section)) { stopAndAsk(t.fpId, ch); return }
+  if (t.sections.length > 1) {
+    useCopyPrompt.setState({ message: multiSectionText(t.sections.length), report: null })
+    refresh()
     return
   }
-  let parts = []
-  try { parts = read.changes.map(ch => partFor(before, after, ch, st)).filter(Boolean) } catch { parts = [] }
-  if (!parts.length && !(read.notes || []).length) { clear(); return }
-  useCopyPrompt.setState({ offer: { text, before, fpId, parts, notes: read.notes || [], done: [], used: false }, report: null, hover: null })
+  const section = t.sections[0]
+  if (section == null) { refresh(); return }
+  if (always) {
+    // copied at once, folded into the action's own history entry
+    const objs = withPending(after, t.fpId, startPending(before, t.fpId, section))
+    const plan = planPending(objs, t.fpId, gs(), watch.newId, profile())
+    if (plan) {
+      const next = applied(objs, plan)
+      writeInPlace({ ...next, objects: withPending(next.objects, t.fpId, null) })
+      useCopyPrompt.setState({ report: reportOf(plan, `Copied from section ${section}`), message: null })
+    } else if (fp && fp[PENDING]) writeInPlace({ objects: withPending(after, t.fpId, null) })
+    refresh()
+    return
+  }
+  // this action's lines join the set here; a new set starts when there is none, it is empty, or it
+  // held only changes that stay in their own section (another section's)
+  const lines = actionLines(before, after, t.fpId, section, gs())
+  const cur = fp[PENDING]
+  const P = cur && ch && ch.section === section && (cur.log || []).length ? cur : startPending(before, t.fpId, section)
+  writeInPlace({ objects: withPending(after, t.fpId, { ...P, log: [...(P.log || []), ...lines] }) })
+  useCopyPrompt.setState({ message: null })
+  refresh()
 }
 
 /** Watch `store` for actions; returns the unsubscribe. */
 export function installCopyWatcher(store, newId) {
-  watch = { store, newId, lastObjects: null, lastHistory: null, lastIndex: -1, busy: false, pending: false, manual: new Set() }
+  watch = { store, newId, lastObjects: null, lastHistory: null, lastIndex: -1, busy: false, pending: false }
   sync()
-  learnManualFlags()
+  refresh()
   const unsub = store.subscribe((st) => {
     if (!watch || watch.busy) return
     if (st.history !== watch.lastHistory) {
-      /* a new history entry follows the one we last saw: an action. Anything
-         else (a load, a new project, a restored autosave) replaced the
-         history: start again from here. */
+      /* a new history entry that follows the one seen before: an action.
+         Anything else (a load, a new project, a restored autosave) replaced
+         the history: start again from here (a saved set comes back). */
       const prevTop = watch.lastHistory && watch.lastIndex >= 0 ? watch.lastHistory[watch.lastIndex] : undefined
       const action = st.historyIndex > 0 && prevTop !== undefined && st.history[st.historyIndex - 1] === prevTop
       watch.lastHistory = st.history
       watch.lastIndex = st.historyIndex
-      if (!action && !watch.pending) { sync(); learnManualFlags(); useCopyPrompt.setState({ offer: null, report: null, hover: null, notice: null }); return }
+      if (!action && !watch.pending) { sync(); useCopyPrompt.setState({ question: null, message: null, report: null }); refresh(); return }
       if (!watch.pending) {
         watch.pending = true
         const before = watch.lastObjects
@@ -286,11 +302,10 @@ export function installCopyWatcher(store, newId) {
       return
     }
     if (st.historyIndex !== watch.lastIndex) {
-      // undo / redo: the note is about a layout that is no longer there (the
-      // change is undone, so leaving it is not "unused"); manual mode stays
+      // undo / redo: the set is whatever the building carried at that step
       sync()
-      useCopyPrompt.setState({ offer: null, report: null, hover: null })
-      if (watch.manual.size) applyManualFlags()
+      useCopyPrompt.setState({ question: null, message: null })
+      refresh()
     }
   })
   return () => { unsub(); if (watch && watch.store === store) watch = null }

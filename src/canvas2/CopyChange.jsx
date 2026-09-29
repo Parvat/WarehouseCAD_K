@@ -4,15 +4,15 @@ import { rackFootprint } from '../generate/columnCheck'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
 import { RackShape } from './shapes'
 import { usePlacement } from '../utils/placement'
-import { useCopyPrompt } from '../utils/copyPrompt'
+import { useCopyPrompt, pendingPlan } from '../utils/copyPrompt'
 import { copyPreviewRects } from '../utils/copyChange'
 
 /* ── "Copy this change" on the canvas ─────────────────────────────────────────
    Three pieces, all pure paint or plain DOM (picking stays geometric):
      - PlacementGhost: a row being added follows the mouse, faded; its
        outline turns red where it cannot go (utils/placement.js);
-     - CopyPreview: while the note's button is hovered, faint outlines where
-       the copies would land (and the rows a delete would take);
+     - CopyPreview: while the bar's Copy button is hovered, faint outlines
+       where the copies would land (and the rows a delete would take);
      The note itself is DOM, in CopyNote.jsx. */
 
 const PREVIEW = '#2F7BD8'
@@ -40,12 +40,12 @@ export function PlacementGhost({ gridSize }) {
 }
 
 export function CopyPreview() {
-  const offer = useCopyPrompt(s => s.offer)
+  const pending = useCopyPrompt(s => s.pending)
   const hover = useCopyPrompt(s => s.hover)
   const objects = useCanvasStore(s => s.objects)
-  const part = offer && offer.parts && hover != null ? offer.parts[hover] : null
-  if (!part) return null
-  const out = copyPreviewRects(objects, part.plan).map(r => outline(r, r.gone ? BLOCKED : PREVIEW, (r.gone ? 'd' : 'c') + r.id, [6, 4], r.gone ? 'rgba(192,57,43,0.06)' : 'rgba(47,123,216,0.08)'))
+  const plan = pending && hover ? pendingPlan() : null
+  if (!plan) return null
+  const out = copyPreviewRects(objects, plan).map(r => outline(r, r.gone ? BLOCKED : PREVIEW, (r.gone ? 'd' : 'c') + r.id, [6, 4], r.gone ? 'rgba(192,57,43,0.06)' : 'rgba(47,123,216,0.08)'))
   return <Group listening={false}>{out}</Group>
 }
 

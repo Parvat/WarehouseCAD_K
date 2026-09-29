@@ -11,6 +11,7 @@ import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
 import { computeLiveFlue, resolveFlueBase, flueCommitFields } from './liveFlue'
 import { usePlacement, movePlacement, commitPlacement } from '../utils/placement'
+import { guardEdit } from '../utils/copyPrompt'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
   movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee, inBayMode, toggleBaySelection, setStickyBayMode, isStickyBayMode,
@@ -197,6 +198,9 @@ export function useCanvasInteraction({
     const st = useCanvasStore.getState()
     const grabbed = st.objects.find(o => o.id === hitId)
     if (!grabbed) return
+    /* a row in another section while changes are pending there: no drag —
+       the user is asked about copying them first (utils/copyPrompt.js) */
+    if (!guardEdit([...new Set([hitId, ...st.selectedIds])])) return
 
     /* The cascade set — the selection plus a floor plan's children — found
        AFTER selectFromHit has settled, so it reflects what actually got
@@ -396,7 +400,7 @@ export function useCanvasInteraction({
        (red outline) takes the click and does nothing. Pan still works. */
     if (!forcePan && evt.button === 0 && usePlacement.getState().active) {
       movePlacement(useCanvasStore, world, view.current.zoom)
-      commitPlacement(useCanvasStore)
+      commitPlacement(useCanvasStore, guardEdit)
       return
     }
 

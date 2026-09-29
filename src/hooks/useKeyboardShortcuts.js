@@ -4,6 +4,7 @@ import { TOOLS } from '../constants'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../utils/pasteAt'
 import { cancelPlacement } from '../utils/placement'
+import { guardEdit } from '../utils/copyPrompt'
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -26,6 +27,8 @@ export function useKeyboardShortcuts() {
         e.preventDefault()
         const s = useCanvasStore.getState()
         const { selectedIds, objects, activeBaySelection } = s
+        // rows in another section while changes are pending there: ask first (utils/copyPrompt.js)
+        if (!guardEdit([...selectedIds, ...(activeBaySelection || []).map(b => b.objId)])) return
         /* A cross-row bay marquee (activeBaySelection, canvas2's own
            marquee-mouseup) takes priority over the single-object
            activeBayIdx check below — the same action the multi-bay panel's

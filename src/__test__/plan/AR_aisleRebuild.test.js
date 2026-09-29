@@ -11,7 +11,7 @@ import { DEFAULT_RULES } from '../../rules/defaults'
 import { buildingSections } from '../../utils/syncSections'
 import { rebuildAisles, neighbourPairs } from '../../utils/aisleRebuild'
 import { installAisleKeeper } from '../../utils/aisleKeeper'
-import { installCopyWatcher, copyNow, flushCopyWatcher } from '../../utils/copyPrompt'
+import { installCopyWatcher, copyPending, flushCopyWatcher } from '../../utils/copyPrompt'
 import { aisleRect } from '../../canvas2/hitTest'
 import { GS, MATRIX } from './fixtures'
 
@@ -26,8 +26,8 @@ beforeAll(async () => {
   stopCopy = installCopyWatcher(store, newId)
 })
 afterAll(() => { stopKeeper && stopKeeper(); stopCopy && stopCopy() })
-/** The note's "Copy to all sections", after the action that offered it. */
-const copyAll = async () => { await flushCopyWatcher(); const plan = copyNow(); await flushCopyWatcher(); return plan }
+/** The bar's "Copy to other sections", after the action(s) in one section. */
+const copyAll = async () => { await flushCopyWatcher(); const plan = copyPending(); await flushCopyWatcher(); return plan }
 
 const strip = (o) => JSON.parse(JSON.stringify(o))
 const BEAM = new Set(['rack_row', 'rack_double_row'])

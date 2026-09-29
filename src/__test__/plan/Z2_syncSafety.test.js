@@ -13,7 +13,7 @@ import { placementToObject } from '../../generate/traceGenerate'
 import { rackFootprint } from '../../generate/columnCheck'
 import { DEFAULT_RULES } from '../../rules/defaults'
 import { buildingSections } from '../../utils/syncSections'
-import { installCopyWatcher, useCopyPrompt, copyNow, flushCopyWatcher, turnCopyingOn } from '../../utils/copyPrompt'
+import { installCopyWatcher, useCopyPrompt, copyPending, flushCopyWatcher } from '../../utils/copyPrompt'
 import { GS } from './fixtures'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
@@ -110,12 +110,11 @@ describe('Z2 — sync safety', () => {
         await chop(sections[1])
         const count0 = racksOf(objs()).length
         if (how === 'all') {
-          turnCopyingOn()                                    // the chop's notes were left unused: manual mode, turned back on
           const r5 = objs().find(o => o.id === sections[from].rows.find(r => r.rowIndex === 5).id)
           const rot = rackFootprint(r5).rotated
           store.getState().commitObjectUpdate(r5.id, { x: r5.x + (rot ? GS : 0), y: r5.y + (rot ? 0 : GS) })
           await flushCopyWatcher()
-          expect(useCopyPrompt.getState().offer.parts.map(p => p.button)).toEqual(['Copy to all sections'])
+          expect(useCopyPrompt.getState().pending.copyCount).toBe(1)                   // the move across; the chop's bay changes stay
         }
         const before = strip(objs())
         const count = racksOf(before).length
@@ -123,7 +122,7 @@ describe('Z2 — sync safety', () => {
         expect(count).toBe(racksOf(base).length + 3)          // each chopped row became two pieces
         expect(allInside(before)).toEqual([])
         const src = before.find(o => o.id === sections[from].rows[0].id)
-        const res = how === 'all' ? copyNow() : Panel.applySectionSync(store.getState, src.id)
+        const res = how === 'all' ? copyPending() : Panel.applySectionSync(store.getState, src.id)
         await flushCopyWatcher()
         const after = objs()
         expect(racksOf(after).length).toBe(count)

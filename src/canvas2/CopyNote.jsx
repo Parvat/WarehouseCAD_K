@@ -1,10 +1,11 @@
 import { usePlacement } from '../utils/placement'
-import { useCopyPrompt, copyNow, buttonText, turnCopyingOn, MANUAL_NOTICE } from '../utils/copyPrompt'
+import { useCopyPrompt, copyPending, dontCopy, questionText } from '../utils/copyPrompt'
 
-/* The "Copy this change" note at the bottom of the canvas (utils/copyPrompt.js):
-   a copy on offer (one button per part, each with its copy count), a change
-   that can't be copied (a warning, with why), what the last copy did, or a
-   row being placed. Plain DOM — no Konva — so it renders anywhere. */
+/* The bottom-of-canvas bar for copying row changes across sections
+   (utils/copyPrompt.js): the pending set ("Section N: K changes · Copy to
+   other sections", its tooltip listing them), the question asked when the
+   user moves on to another section, a one-line message, what the last copy
+   did, or a row being placed. Plain DOM — no Konva — so it renders anywhere. */
 
 const wrap = {
   position: 'absolute', left: '50%', bottom: 14, transform: 'translateX(-50%)', zIndex: 60,
@@ -22,7 +23,9 @@ const btn = {
   background: 'var(--accent-solid, #0B101D)', color: 'var(--accent-fg, #fff)', border: '1px solid var(--accent-solid, #0B101D)',
   whiteSpace: 'nowrap',
 }
+const btn2 = { ...btn, background: 'var(--surface, #fff)', color: 'var(--text, #0B101D)', border: '1px solid var(--border, #E6E9EF)' }
 const closeBtn = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3, #6B7280)', fontSize: 14, lineHeight: 1, padding: '0 2px' }
+const row = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }
 
 function Lines({ skipped = [], warnings = [] }) {
   return (
@@ -41,94 +44,67 @@ function Lines({ skipped = [], warnings = [] }) {
   )
 }
 
-/* Manual mode's notice ("copying is turned off", with the way back on), or
-   the warning once it is back on. */
-function Notice() {
-  const notice = useCopyPrompt(s => s.notice)
-  const manual = useCopyPrompt(s => s.manual)
-  const dismissNotice = useCopyPrompt(s => s.dismissNotice)
-  if (!notice) return null
-  const off = notice === MANUAL_NOTICE
-  return (
-    <div role="alert" aria-label={off ? 'Copying turned off' : 'Copying back on'} style={{ ...box, border: '1px solid var(--amber, #B87309)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ color: 'var(--amber, #B87309)', fontWeight: 600 }}>{notice}</span>
-        {off && manual && <button style={btn} aria-label="Turn copying back on" onClick={turnCopyingOn}>Turn copying back on</button>}
-        <button style={closeBtn} aria-label="Dismiss notice" onClick={dismissNotice}>×</button>
-      </div>
-    </div>
-  )
-}
+/** "Section 3: 4 changes (2 will be copied)" — the pending set: every change,
+ *  and how many of them go to the other sections. */
+export const barText = (p) => `Section ${p.section}: ${p.count} change${p.count === 1 ? '' : 's'} (${p.copyCount ? p.copyCount : 'none'} will be copied)`
 
-export function CopyNote() {
-  return (
-    <div style={wrap}>
-      <Notice />
-      <NoteBody />
-    </div>
-  )
-}
-
-function NoteBody() {
+function Body() {
   const placing = usePlacement(s => s.active)
-  const offer = useCopyPrompt(s => s.offer)
+  const pending = useCopyPrompt(s => s.pending)
+  const question = useCopyPrompt(s => s.question)
+  const message = useCopyPrompt(s => s.message)
   const report = useCopyPrompt(s => s.report)
   const setHover = useCopyPrompt(s => s.setHover)
-  const dismiss = useCopyPrompt(s => s.dismiss)
+  const dismissReport = useCopyPrompt(s => s.dismissReport)
+  const out = []
   if (placing) {
-    return (
-      <div role="status" aria-label="Placing row" style={box}>
+    out.push(
+      <div key="place" role="status" aria-label="Placing row" style={box}>
         <div>{placing.blocked
           ? <span style={{ color: 'var(--red, #C0392B)', fontWeight: 600 }}>Can't place here — {placing.blocked}</span>
           : <span>Click to place{placing.snapped?.cross || placing.snapped?.run ? <span style={{ color: 'var(--text3, #6B7280)' }}> · snapped to {[placing.snapped.cross, placing.snapped.run].filter(Boolean).join(', ')}</span> : null}</span>}
           <span style={{ color: 'var(--text3, #6B7280)' }}> · Esc to cancel</span></div>
         {!placing.blocked && <Lines warnings={placing.warnings} />}
-      </div>
-    )
+      </div>)
   }
-  if (offer && offer.blocked) {
-    // a row change the note can't copy: a warning, no buttons
-    return (
-      <div role="alert" aria-label="Can't copy this change" style={{ ...box, border: '1px solid var(--amber, #B87309)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ color: 'var(--amber, #B87309)', fontWeight: 600 }}>{offer.text}</span>
-          <button style={closeBtn} aria-label="Dismiss" onClick={dismiss}>×</button>
+  if (question) {
+    out.push(
+      <div key="q" role="alertdialog" aria-label="Copy your changes?" style={{ ...box, border: '1px solid var(--accent-solid, #0B101D)' }}>
+        <div style={row}>
+          <span style={{ fontWeight: 600 }}>{questionText(question)}</span>
+          <button style={btn} aria-label="Copy changes to other sections" onClick={() => copyPending(question.fpId)}>Copy</button>
+          <button style={btn2} aria-label="Don't copy" onClick={dontCopy}>Don't copy</button>
         </div>
-      </div>
-    )
-  }
-  if (offer) {
-    // one button per part: a diagonal drag offers its across part and its along part
-    return (
-      <div role="status" aria-label="Copy this change" style={box}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span>{offer.text}.</span>
-          {offer.parts.map((p, i) => p.count > 0 && (
-            <button key={p.button} style={btn} aria-label={buttonText(p.button, p.count)}
-              onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
-              onFocus={() => setHover(i)} onBlur={() => setHover(null)}
-              onClick={() => copyNow(i)}>
-              {buttonText(p.button, p.count)}
-            </button>
-          ))}
-          <button style={closeBtn} aria-label="Dismiss" title="Keep it here only" onClick={dismiss}>×</button>
+      </div>)
+  } else if (pending) {
+    const tip = pending.lines.join('\n')
+    out.push(
+      <div key="bar" role="status" aria-label="Pending changes" title={tip} style={box}>
+        <div style={row}>
+          <span title={tip}>{barText(pending)}</span>
+          <button style={pending.copyCount ? btn : { ...btn2, cursor: 'not-allowed', color: 'var(--text3, #6B7280)' }} aria-label="Copy to other sections"
+            disabled={!pending.copyCount} title={pending.copyCount ? tip : `${tip}\nNothing here is copied to other sections.`}
+            onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+            onFocus={() => setHover(true)} onBlur={() => setHover(false)}
+            onClick={() => copyPending(pending.fpId)}>
+            Copy to other sections
+          </button>
         </div>
-        {(offer.done || []).map((t, i) => <div key={'d' + i} style={line('var(--text3, #6B7280)')}>{t}</div>)}
-        {(offer.notes || []).map((t, i) => <div key={'n' + i} style={line('var(--amber, #B87309)')}>{t}</div>)}
-        <Lines skipped={offer.parts.flatMap(p => p.skipped)} warnings={offer.parts.flatMap(p => p.warnings)} />
-      </div>
-    )
+      </div>)
   }
-  if (report) {
-    return (
-      <div role="status" aria-label="Copy result" style={box}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span>{report.text}.</span>
-          <button style={closeBtn} aria-label="Dismiss" onClick={dismiss}>×</button>
+  if (message || report) {
+    out.push(
+      <div key="msg" role="status" aria-label="Copy result" style={box}>
+        <div style={row}>
+          <span>{message || `${report.text}.`}</span>
+          <button style={closeBtn} aria-label="Dismiss" onClick={dismissReport}>×</button>
         </div>
-        <Lines skipped={report.skipped} warnings={report.warnings} />
-      </div>
-    )
+        {report && <Lines skipped={report.skipped} warnings={report.warnings} />}
+      </div>)
   }
-  return null
+  return out.length ? out : null
+}
+
+export function CopyNote() {
+  return <div style={wrap}><Body /></div>
 }

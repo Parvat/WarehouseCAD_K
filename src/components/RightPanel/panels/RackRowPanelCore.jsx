@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { sectionRows, planSectionSync, syncWarnings, splitRowIds } from '../../../utils/syncSection'
 import { rowLines } from '../../../utils/syncSections'
 import { nanoid } from 'nanoid'
-import { quietNextAction } from '../../../utils/copyPrompt'
 import { rebuildAisles } from '../../../utils/aisleRebuild'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
@@ -255,7 +254,6 @@ export function applySectionSync(getState, sourceId) {
     // new lengths can change who faces whom: re-pair the aisles before the one commit
     const moved = st.objects.map(o => (updates.has(o.id) ? { ...o, ...updates.get(o.id) } : o))
     useCanvasStore.setState({ objects: rebuildAisles(moved, nanoid).objects })
-    quietNextAction()        // a copy of its own: the "Copy this change" note says nothing about it
     getState().commitObjectUpdate(sourceId, {})
   }
   return { synced: updates.size, warnings, split: splitRowIds(st.objects, sourceId) }

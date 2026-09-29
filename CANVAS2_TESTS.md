@@ -216,173 +216,91 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
-### CC — "Copy this change" (replaces "Apply my changes to all sections") · `CC_copyChange.test.js` (45 tests)
-The Apply button, its pending list and the baseline kept on the building
-are gone. So are its tests: RE, RF, RA, RP, RS and RL.
+### SC — Copying across sections: a per-section pending set · `SC_sectionCopy.test.js` (31 tests)
+This replaces the per-change copy notes, the diagonal two-button note and
+manual mode, and their tests (CC). "Always copy" and "Match bays in this
+section" stay.
 
-**Every row or bay action now stays where it was made.** A note at the
-bottom of the canvas then offers one copy, chosen by the kind of change:
+**With Always copy off (the default):**
+- **Collecting changes.** The user makes any number of changes in one
+  section; nothing is copied or locked meanwhile.
+- **The bar** at the bottom reads "Section N: K changes (M will be copied) ·
+  Copy to other sections"; with nothing to copy, "(none will be copied)". Its tooltip lists each change, one line per action:
+  - "Row 5: moved 1' across" and "Row 9: deleted" are copied;
+  - "Row 5: bays changed — stays in section 3" and "Row 5: moved 2' along —
+    stays in section 3" are not.
 
-| Change | Button | Copies to |
-|---|---|---|
-| row moved **across** the aisles | Copy to all sections | the same row (rowIndex) in every other section, by the **delta across** only |
-| row deleted | Copy to all sections | the same row in every other section |
-| row added (paste, duplicate, left panel) | Copy to all sections | a copy in every other section; full length for each section, a shorter row keeps its length |
-| row moved **along** its run | Copy to this section's rows | every other row of that section, by the **delta along** only |
-| row dragged **both** across and along (each part at least 1″) | both buttons | each copies only its own part; the other stays on offer after one is used, and each copy is its own undo step |
-| bays added, deleted (end or middle), beam length changed | Copy to this section's rows | every other row of that section, at the same spot |
+  Clicking copies the set at any time, as one undo step, and clears it.
+- **Moving on to another section.** Starting an edit on a row in a
+  different section, while copyable changes are pending, stops the edit and
+  asks "Copy your K changes from section N to the other sections?" [Copy]
+  [Don't copy]. Either way the set clears, and edits in the new section
+  start a new one.
+  - Drag start, Delete and placing a row are checked before they happen.
+  - Any other edit, such as a panel change, is taken back as soon as it
+    lands.
+  - A set that holds only changes that stay just gives way to the new one.
+- **What is copied** to the same row (rowIndex) in every other section:
+  - rows moved across the aisles, by the net delta per row;
+  - added rows, full length for each section;
+  - deleted rows.
 
-**How it works:**
-- **The watcher** (`utils/copyPrompt.js`) reads each action as it lands. An
-  action is a new history entry that follows the one seen before.
-- **Classifying and planning** (`utils/copyChange.js`): the layout just
-  before the action and just after it say what the action was.
-  - A drag whose only other change is a double row's live-flue depth is
-    still a move, measured at the rack's centre.
-  - Copies across sections use the old replay engine
-    (`utils/rowEdits.js`), with a baseline taken from the "before" layout
-    for that one plan. Rows added earlier and never copied count as rows
-    standing where they are.
-- **Nothing is logged and nothing piles up:**
-  - Every button shows its copy count: "Copy to all sections · 7 copies",
-    "1 copy".
-  - **A change it can't copy is never silent.** The note turns into a
-    warning with no buttons:
-    - rows in several sections: "This change affects rows in N sections, so
-      it can't be copied. Make the change in one section, then copy it.";
-    - anything else, with the reason: "This change can't be copied: …" (an
-      upright width change, a turned row, a flue or depth change, a mixed
-      edit such as a move across plus a bay change, bays added in the
-      middle, …).
-  - **Silent:** moving or turning the building, clearing its rows, a
-    generated layout, and "Match bays in this section" (a copy of its own).
-  - Undo and redo remove the note; the change is undone, so nothing is left
-    unmatched.
-- **Manual mode.** Copy notes are offered only while the sections match.
-  - **When it switches on:**
-    - A note is left unused: the next action lands, or the note is
-      dismissed. The change stays local, and the sections no longer match.
-    - One action changes rows in more than one section.
-    - Any other change that can't be copied: an upright width, a turned
-      row, a flue or depth change, a mixed edit, and so on. Its warning adds
-      "Copying is now off: the sections no longer match."
-  - **What happens:** the building switches to manual mode and shows the
-    notice "Sections no longer match, so copying is turned off. Changes now
-    apply only where you make them." From then on, no copy notes appear.
-  - **Turning it back on:** "Turn copying back on", in the notice and in the
-    top bar ("Copying off · Turn copying back on"), brings the notes back,
-    with the warning "Copying is back on. The sections may already differ,
-    so check each copy before you use it."
-  - **What doesn't count as unused:** using one of a diagonal drag's two
-    buttons and leaving the other.
-  - **Always copy:** with it on, the sections stay matched, so manual mode
-    is never entered. A change that can't be copied is then only a warning.
-  - **Undo** never turns copying off.
-  - **Storage:** the mode is `copyManual` on the building, so it is saved
-    with the layout. The watcher keeps it through undo and redo; only
-    "Turn copying back on" clears it.
-  - Hovering the button draws faint outlines where the copies would land;
-    rows a delete would take are outlined in red. Hovering changes nothing.
-- **Each copy is checked on its own:**
-  - **Hard:** overlaps a rack, outside the building, or in a cross-aisle.
-    That copy is skipped, and the note names the section and row and gives
-    the reason. A cross-aisle means one as the user's own change left it,
-    so copies can follow an edge the user moved.
-  - **Walls:** moves stop at the walls.
-  - **Soft:** an aisle narrower than the forklift aisle, or a column in the
-    row, is copied with a "Check" line. Only problems the copy itself
-    brings are listed.
-- **Undo:** clicking the note records the copy as its own undo step: the
-  first Ctrl+Z takes the copies away, the second the change.
-- **Always copy** (top bar switch, off by default, kept in localStorage):
-  - Copies straight away, with no note.
-  - The copies go into the action's own history entry, so one Ctrl+Z takes
-    the change and its copies together.
-  - Skipped copies are still reported.
-- **Adding rows** (`utils/placement.js`): paste, duplicate and the left
-  panel's single and double row follow the mouse, faded. Paste in place
-  still lands in place.
-  - **Snapping:** across, to an aisle equal to the forklift aisle, back to
-    back with a row, or to a column (in the flue or against a face); along,
-    to a row's start or end or a column face.
-  - **A hard problem** gives a red outline, the reason in the note, and a
-    click that does nothing.
-  - **Placing:** a click places the row as one undo step; Esc cancels.
-- **Kept:** rowIndex stamps, split pieces as one row, cross-aisle and wall
-  checks, the aisle-label rebuild, and "Match bays in this section".
+  The existing fit, skip and wall rules and the skip report apply.
+- **Never copied:** bay changes and moves along a row. For the copy, the
+  section's rows are planned in their original shape, moved only by their
+  delta across.
+- **Rows in several sections.** One action changing rows in more than one
+  section is not copied: "This change affects rows in 2 sections, so it
+  stays where you made it."
 
-| Test (1080×410; ×2 h/v) | Asserts |
+**With Always copy on:** each move across, add and delete is copied at once,
+folded into the action's own history entry, so one Ctrl+Z undoes both. There
+is no set and no question.
+
+**Storage.** The set is kept on the building (`copyPending`): a snapshot of
+the section's racks from just before its first change, and the log. It is
+saved with the layout, undo takes a change back out, and a regenerated
+layout clears it.
+
+| Test (1080×410, "section 3" and "section 5" — vertical has 3 sections, so section 1; ×2 h/v) | Asserts |
 |---|---|
-| `CC-layout` | the orientation is right, and row 5 exists once in every section |
-| `CC-across` | move across → "Copy to all sections", count = sections − 1. Hovering gives one outline per copy and changes neither the layout nor the history. The copy moves row 5 in every other section by exactly 1′ across from its **own** place (a row already offset 6″ keeps its offset), with along untouched. The preview equals the result. First undo takes the copies, second the move |
-| `CC-flue` | a drag that also re-seats a double row's flue is copied as exactly the move; re-seating a flue in place gets the warning "a flue or depth change. Copying is now off …" and manual mode |
-| `CC-diagonal` | a drag of 2′ across and 3′ along gives both buttons. The across copy moves row 5 of every other section 2′ across and nothing along; the along button is still offered and moves the section's rows 3′ along and nothing across. Two undo steps, one per copy. Hovering the along button previews only that section's rows |
-| `CC-count` | the rendered note reads "Copy to all sections · 7 copies" (vertical 2) and "Copy to this section's rows · N copies"; one copy reads "1 copy" |
-| `CC-cant` | an upright width change: the warning "This change can't be copied: an upright width change. Copying is now off: the sections no longer match.", manual mode on with the notice, the building flagged, and no copy note on the next change. After turning copying back on, a move across plus a bay change gets the same treatment. Match bays and moving the building give no note |
-| `CC-along` | move along → "Copy to this section's rows". Every other row of the section moves by the delta from its own place (one already 1′ back stays 1′ back); other sections are untouched |
-| `CC-delete` | delete → "Copy to all sections"; the preview is all rows-to-go; row 5 is gone everywhere; undo brings them back, then the original |
-| `CC-add` | a paste into a gap follows the mouse (nothing is in the layout, no history), snaps to the forklift aisle and places on one undo step. "Copy to all sections" then puts a row in every section, each full length for its section and one forklift aisle from its neighbour |
-| `CC-bays` ×4 | end bay deleted, middle bay deleted (the row splits at the same spot), bay added, beam length changed: every other row of the section changes at the same spot; racks in other sections are identical |
-| `CC-manual` | shorten a row ("- Bay" = deleteSingleBay), ignore the note, move another row up. Result: manual mode, the notice with "Turn copying back on", no copy note, every other rack unchanged, `copyManual` on the building. Later changes still get no note; undo twice keeps the mode |
-| `CC-manual-ways` | dismissing an unused note → manual. A change that is undone → not manual (the next change is offered). Using the across part of a diagonal drag and leaving the along part → not manual |
-| `CC-manual-multi` | rows 5 of sections 1 and 2 moved together → manual mode with the notice; no copy buttons; copyNow does nothing; no other rack moves |
-| `CC-manual-always` | with Always copy on: an ignored-style sequence and a multi-section move never enter manual mode (the multi-section move is a warning) |
-| `CC-manual-on` | "Turn copying back on" clears the mode and the building's flag and shows the warning; the next change gets its note again |
-| `CC-manual-save` | a layout saved in manual mode (serializeScene / deserializeScene) comes back in manual mode on load; another layout loads with copying on |
-| `CC-always` | Always copy: no note, copied, one history entry that holds the copies; one undo restores everything |
-| `CC-place` | the ghost follows the mouse exactly off the floor (blocked "outside the building"); on a row it is blocked "overlaps row N"; a blocked click does nothing; Esc cancels; duplicate places by mouse too; a short row in a cross-aisle is blocked |
-| `CC-skip` | a copy that would overlap is skipped, and the note says "Section 1, row 5: overlaps row 6 by 1'"; the others are copied; the report stays after the copy |
-| `CC-wire` (once) | the Apply button, list and baseline are gone from the panels, generator and keeper. The watcher, note, preview, ghost, click-to-place, Esc, left-panel placement and the switch (off by default) are wired |
+| `SC-layout` | the orientation is right, and rows 5, 7 and 9 exist in every section |
+| `SC-stays` | a beam change and a move along the same row in section 3: no question and no lock; the bar reads "Section 3: 2 changes" with both lines "stays in section 3", the bar reading "Section 3: 2 changes (none will be copied)" and Copy disabled; copying changes nothing elsewhere |
+| `SC-stays-mixed` | an end bay removed at a cross-aisle, a row moved along and a row moved across, all in section 3: the bar reads "Section 3: 3 changes (1 will be copied)"; only the move across is copied; the other sections keep their bays and their along position |
+| `SC-question` | rows moved across (1′, −6″) and one deleted in section 3, then a drag started in section 5. The question "Copy your 3 changes from section 3 …" appears and nothing happens yet. Copy: every other section gets the same net deltas and loses row 9; section 3's own rows are untouched; the set clears; the drag may now go ahead and starts a set in section 5 |
+| `SC-dont` | the same, Don't copy: the other sections are unchanged, the set clears, and a change in section 5 starts its own set |
+| `SC-stop` | a panel change in section 5, with nothing checked before it, is taken back (layout and history as before) and the question asked |
+| `SC-bar` | the bar's Copy is one undo step; undo brings the copies back out and the set back |
+| `SC-always` | Always copy: a move across and a delete are copied at once, one history entry each, and each undoes with its copies; a bay change stays; no set, no question |
+| `SC-undo` | three changes, then undo → 2 in the set, then undo twice → no set |
+| `SC-save` | a layout saved with a pending set comes back with it (serializeScene / deserializeScene), and Copy then works |
+| `SC-multi` | rows in two sections moved in one action: the message, no set, nothing copied |
+| `SC-regenerate` | a regenerated layout clears the set (and any old report) |
+| `SC-add` | a row pasted into a gap follows the mouse, snaps to the forklift aisle and places on one undo step. The set lists "A row added", and Copy puts it in every section, full length for each |
+| `SC-place` | paste and duplicate follow the mouse; blocked spots (outside, overlap, cross-aisle) take the click and do nothing; Esc cancels; placing a row in section 5 while section 3 has a copyable change asks first |
+| `SC-skip` | a copy that would overlap is skipped: "Section 1, row 5: overlaps row 6 by 1'"; the others are copied |
+| `SC-wire` (once) | the notes, two-button note and manual mode are gone. The bar, the question, the checks before a drag, Delete and placing, and the Always copy switch (off by default) are wired |
 
-**Checked in the app, horizontal (8 sections) and vertical (3 sections),
-driven by mouse and keyboard:**
-- **Across.** Dragged row 5 about 2′ across. The note said "Row 5 moved 2'
-  across the aisles · Copy to all sections (7)" (vertical: "(2)"). Hover gave
-  7 (2) outlines, with no history change. Clicking moved row 5 in every
-  section by the same 2′ (vertical 2.042′, the snapped drag), along
-  unchanged. Ctrl+Z took the copies away, a second Ctrl+Z the move.
-- **Along.** Drag along → "Copy to this section's rows (20)" (vertical 57).
-  The next drag replaced the note, and the ignored move stayed local. Undo
-  cleared the note.
-- **Bays.** Selected row 5, then the panel's "- Bay" → "1 bay removed from
-  row 5 · Copy to this section's rows (20)" (57). Hover gave 20 (57)
-  outlines. The copy took one bay off all 21 (58) rows; other sections were
-  identical.
-- **Paste.** Ctrl+C, Ctrl+V: the ghost followed the mouse. Over a row it
-  said "Can't place here — overlaps row 5 by 2' 10"", and a click placed
-  nothing. Esc cancelled.
-- **Add.** Row 5 was deleted everywhere (Delete + Copy to all sections).
-  The pasted neighbour over the gap said "Click to place · snapped to aisle,
-  row start". The click placed it, then "Row added · Copy to all sections
-  (7)" put it in all 8 sections (vertical 3).
-- **Always copy.** With the switch on, a drag gave no note and every section
-  moved. It was one history entry, and one Ctrl+Z restored all.
-- **Warnings.** In the vertical layout, moving row 5 across 2′ showed
-  "Check — aisle 8' 5" (the forklift needs 10' 6")" and "a column stands in
-  the row": the moved row left its columns' flue.
-- **Diagonal drag** of 2′ across and 3′ along (vertical: 2′ 11″ along):
-  - The note read "Row 5 moved 2' across the aisles and 3' along the row",
-    with "Copy to all sections · 7 copies" (vertical 2) and "Copy to this
-    section's rows · 20 copies" (57).
-  - Clicking the first moved 7 (2) racks. The note kept the second button
-    and added "Copied to all sections: 7 copies".
-  - The second then moved 20 (57).
-- **Manual mode, same in both orientations:**
-  - Row 5 selected, the panel's "- Bay" → "1 bay removed from row 5 · Copy to
-    this section's rows · 20 copies" (57). The note was ignored and row 7
-    dragged up.
-  - Result: the notice "Sections no longer match, …" with "Turn copying back
-    on", the top bar's "Copying off · Turn copying back on", no copy note,
-    and no other rack changed.
-  - The top-bar button showed "Copying is back on. The sections may already
-    differ, …", and the next drag got "Copy to all sections · 7 copies" (2).
-  - Dismissing that note → manual again.
-  - Rows 11 of sections 1 and 2, clicked with Shift and dragged together →
-    manual mode with the notice.
-  - Row 5 selected, the panel's 4″ upright → the warning "This change can't
-    be copied: an upright width change. Copying is now off: the sections no
-    longer match.", the notice and the top-bar button. The next drag got no
-    copy note.
+**Checked in the app, driven by mouse and keyboard in both orientations:**
+- **Bays and along moves (section 3).** A beam change (the panel) and a drag
+  along the same row: the bar listed "bays changed — stays in section 3" and
+  "moved 2' along — stays in section 3", with Copy disabled.
+- **Across and delete (section 3).** Rows 5 and 7 dragged across and row 9
+  deleted: "Section 3: … changes".
+- **The question.** A drag started on row 5 of section 5 (vertical: section
+  1) showed "Copy your N changes from section 3 to the other sections?"
+  [Copy] [Don't copy], and the row did not move.
+  - Copy moved rows 5 and 7 in every section by the dragged deltas: 2′ and
+    −2.13′ in all 8 sections (vertical 2.04′ and −0.96′ in all 3). Row 9
+    was gone everywhere.
+  - Dragging in section 5 then started "Section 5: 1 change".
+- **Don't copy.** A drag in section 3 while section 5 had a change asked;
+  Don't copy cleared the set, and section 5's change stayed local.
+- **Always copy.** A drag across moved the row in all 8 (3) sections, with
+  no bar.
+- **A live-flue drag.** Vertical, a row whose flue had widened around a
+  column: a small drag re-seats it on the column. It doesn't move, only its
+  flue changes, so nothing is copied. That is the existing drag behaviour.
 - No console errors.
 
 ### PF — Lag fixes, measured before/after, behaviour unchanged · `PF_perf.test.js` (60 tests)
@@ -1496,22 +1414,9 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LB | **Switch hides the X marks** | 1: LB-toggle-wire | ✓ |
 | PF | **Cache pick zones by rack id only** (ignore content / neighbours) | 3: PF-cache ×3 | ✓ |
 | PF | **Filter columns by the rack's footprint, not its pick zones** | 53: PF-matrix, PF-edits, PF-cache | ✓ |
-| CC | **Along-row move copied to other sections** | 2: CC-along h/v | ✓ |
-| CC | **Bay change copied to other sections** (the old Apply way: end-bay trims replayed in every section) | 8: CC-bays ×4 h/v | ✓ |
-| CC | **Across move not copied** | 8: CC-across, CC-ignore, CC-always, CC-skip (h/v) | ✓ |
-| CC | **Whole position copied instead of the delta** (across: the source row's place) | 3: CC-across h/v, CC-always | ✓ |
-| CC | **Whole position copied instead of the delta** (along: the source row's place) | 2: CC-along h/v | ✓ |
-| CC | **Note stays after the next action** | 2: CC-ignore h/v | ✓ |
-| CC | **Diagonal drag: one button** (dominant axis only) | 4: CC-diagonal h/v, CC-count h/v | ✓ |
-| CC | **No copy count on the buttons** | 2: CC-count h/v | ✓ |
-| CC | **Rows in two sections not caught** (copied as an across move) | 2: CC-mixed h/v (now CC-manual-multi) | ✓ |
-| CC | **An unused note leaves copying on** | 8: CC-manual, CC-manual-ways, CC-manual-on, CC-manual-save (h/v) | ✓ |
-| CC | **A multi-section move leaves copying on** | 2: CC-manual-multi h/v | ✓ |
-| CC | **Always copy enters manual mode** | 2: CC-manual-always h/v | ✓ |
-| CC | **One diagonal button used counts as unused** | 2: CC-manual-ways h/v | ✓ |
-| CC | **"Turn copying back on" does nothing** | 2: CC-manual-on h/v | ✓ |
-| CC | **Manual mode not read back on load** | 2: CC-manual-save h/v | ✓ |
-| CC | **A change that can't be copied leaves copying on** | 4: CC-cant h/v, CC-flue h/v | ✓ |
+| SC | **Bay change copied to other sections** (the old Apply way: the section's current bays planned, end-bay trims applied) | 2: SC-stays-mixed h/v | ✓ |
+| SC | **No question when switching sections** | 8: SC-question, SC-dont, SC-stop, SC-place (h/v) | ✓ |
+| SC | **Always copy waits** | 2: SC-always h/v | ✓ |
 | AR | **Skip the rebuild** | 6: AR-recreate/handcopy/undo (h and v, before the replay redesign) | ✓ |
 | AR | **Keep aisles with a row between them** | 6 | ✓ |
 | AR | **Never add aisles for new neighbour pairs** | 6 | ✓ |
@@ -1623,8 +1528,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,831 tests, 1,831 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,228 tests, 2,228 passing.**
+- **Plan suite: 1,817 tests, 1,817 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,214 tests, 2,214 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

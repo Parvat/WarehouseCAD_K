@@ -140,11 +140,13 @@ export function movePlacement(store, world, zoom = 1, profile) {
 
 /** Place where it is now: one history entry, the new objects selected.
  *  Does nothing (returns false) while blocked. */
-export function commitPlacement(store) {
+export function commitPlacement(store, guard = null) {
   const a = usePlacement.getState().active
   if (!a || a.blocked) return false
   const st = store.getState()
   const placed = placedItems(a.items, st.objects, a.dx, a.dy)
+  // a row placed in another section while changes are pending there: ask first
+  if (guard && !guard(placed)) return false
   // only the new objects look selected: no other rack keeps a clicked bay
   const others = st.objects.map(o => (o.activeBayIdx != null || o.activeTowerIdx != null ? { ...o, activeBayIdx: null, ...(o.activeTowerIdx != null ? { activeTowerIdx: null } : {}) } : o))
   usePlacement.setState({ active: null })
