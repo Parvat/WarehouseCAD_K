@@ -206,7 +206,7 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     m.L.setLayer(m.useCanvasStore, 'racking', { visible: false })
     expect(st().selectedIds).toEqual([])
     const ci = readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')
-    expect(ci).toMatch(/const ok = pickableIn\(st\.layers\)\n\s*if \(!ok\(grabbed\)\) return\n\s*const ids = st\.selectedIds\.filter/)
+    expect(ci).toMatch(/const ok = pickableIn\(st\.layers\)\r?\n\s*if \(!ok\(grabbed\)\) return\r?\n\s*const ids = st\.selectedIds\.filter/)   // \r?: a fresh checkout is CRLF
     expect(ci).toMatch(/objectsInMarquee\(st\.objects, rect, \{ isVisible: ok \}\)/)
     expect(ci).toMatch(/bayEntriesInMarquee\(st\.objects\.filter\(ok\), rect/)
     expect(ci.match(/computeSmartGuides\(\s*d\.ids, snapTargets\(/g)).toHaveLength(2)
