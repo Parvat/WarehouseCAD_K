@@ -18,6 +18,7 @@
 
 import { nanoid } from 'nanoid'
 import { useCanvasStore } from '../store/useCanvasStore'
+import { generatedLayers, layerForType } from '../utils/layers'
 import { sizingSheetLayout, generateFixtures } from './sizingLayout'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { rackFootprint, groupBySegment } from './columnCheck'
@@ -250,9 +251,18 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
      the end of this function) — a hand-drawn floor plan is never at risk. */
   store.clearGeneratedLayout()
 
+  /* Layers (utils/layers.js): the six standard layers, Building and Columns
+     locked, so a drag across the floor never grabs the building. Set before
+     anything is placed, so every history entry of this Generate carries them. */
+  useCanvasStore.setState({ layers: generatedLayers(useCanvasStore.getState().layers) })
+
   // 1) Draw the building outline via the store's own floor-plan placer.
-  //    It centres the box at world origin and fits the view.
+  //    It centres the box at world origin and fits the view. It lands on the
+  //    active layer, so that is the Building layer for this one call.
+  const prevActive = useCanvasStore.getState().activeLayerId
+  store.setActiveLayer('building')
   store.placeFpObject({ type: 'fp_rect', widthFt: brief.lengthFt, heightFt: brief.widthFt })
+  store.setActiveLayer(prevActive)
 
   // 2) The building we just placed is the selected object — read its origin.
   const after = useCanvasStore.getState()
@@ -271,10 +281,11 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
     o.y += oy
     return o
   })
+  // every generated object on its layer (utils/layers.js)
   const queue = parentGenerated(
     [...racks, ...aisleObjectsForRacks(racks), ...generateFixtures(brief, ox, oy)],
     fp?.id,
-  )
+  ).map(o => ({ ...o, layerId: layerForType(o.type) }))
   return {
     queue,
     orientation:     auto ? pick.orientation : (brief.orientation ?? 'horizontal'),

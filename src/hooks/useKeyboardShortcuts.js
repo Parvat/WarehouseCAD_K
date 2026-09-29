@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid'
 import { pasteAt } from '../utils/pasteAt'
 import { cancelPlacement } from '../utils/placement'
 import { guardEdit } from '../utils/copyPrompt'
+import { pickableIn } from '../utils/layers'
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -137,7 +138,13 @@ export function useKeyboardShortcuts() {
           break
         case 'a':
           e.preventDefault()
-          useCanvasStore.getState().selectAll()
+          {
+            // everything that can be picked: nothing on a hidden or locked layer
+            const st = useCanvasStore.getState(), ok = pickableIn(st.layers)
+            const ids = st.objects.filter(ok).map(o => o.id)
+            if (ids.length) st.selectGroup(ids)
+            else st.clearSelection()
+          }
           break
         case 'd': {
           e.preventDefault()

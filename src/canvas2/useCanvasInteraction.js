@@ -12,6 +12,7 @@ import { computeSmartGuides } from './smartGuides'
 import { computeLiveFlue, resolveFlueBase, flueCommitFields } from './liveFlue'
 import { usePlacement, movePlacement, commitPlacement } from '../utils/placement'
 import { guardEdit } from '../utils/copyPrompt'
+import { pickableIn, snapTargets } from '../utils/layers'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
   movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee, inBayMode, toggleBaySelection, setStickyBayMode, isStickyBayMode,
@@ -89,9 +90,13 @@ export function useCanvasInteraction({
     const st = useCanvasStore.getState()
     const prevSelectedIds = st.selectedIds
 
-    const { ids, replaced } = nextSelection({
+    const next = nextSelection({
       selectedIds: st.selectedIds, groups: st.groups, id: hitId, shiftKey,
     })
+    /* a group's members on a hidden or locked layer stay out (utils/layers.js) */
+    const okPick = pickableIn(st.layers)
+    const ids = next.ids.filter(id => { const o = st.objects.find(x => x.id === id); return o && okPick(o) })
+    const { replaced } = next
     if (replaced) {
       if (ids.length === 0) st.clearSelection()
       else if (ids.length === 1) st.selectObject(ids[0], false)
@@ -208,7 +213,11 @@ export function useCanvasInteraction({
        already-selected member keeps the whole multi-selection). Each node's
        REST position is captured rather than assumed to be (0,0): rack nodes
        sit at their own centre so rotation pivots there. */
-    const ids = [...st.selectedIds]
+    /* Nothing on a hidden or locked layer moves (utils/layers.js), even if it
+       was selected before its layer was locked. */
+    const ok = pickableIn(st.layers)
+    if (!ok(grabbed)) return
+    const ids = st.selectedIds.filter(id => { const o = st.objects.find(x => x.id === id); return o && ok(o) })
     const nodes = collectDragNodes(stage, ids)
     if (!nodes.length) return
 
@@ -914,7 +923,7 @@ export function useCanvasInteraction({
             ? { ...o, x: d.origin.x, y: d.origin.y + yShift, height: liveFlue.targetHeight, flueSpaceIn: liveFlue.targetFlueIn }
             : o)
           const { guides, snapDx, snapDy } = computeSmartGuides(
-            d.ids, guideObjects, st.gridSize, view.current.zoom, dx, dy)
+            d.ids, snapTargets(guideObjects, st.layers, d.movedIds), st.gridSize, view.current.zoom, dx, dy)
 
           if (snapDx != null) dx = snapDx
           else if (st.snapToGrid) dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
@@ -954,7 +963,7 @@ export function useCanvasInteraction({
            fallback on an axis with no nearby guide, preserving that
            already-existing canvas2 behaviour rather than replacing it. */
         const { guides, snapDx, snapDy } = computeSmartGuides(
-          d.ids, st.objects, st.gridSize, view.current.zoom, dx, dy)
+          d.ids, snapTargets(st.objects, st.layers, d.movedIds), st.gridSize, view.current.zoom, dx, dy)
 
         if (snapDx != null) dx = snapDx
         else if (st.snapToGrid) {
@@ -1113,7 +1122,9 @@ export function useCanvasInteraction({
       if (m && m.moved && m.to) {
         const st = useCanvasStore.getState()
         const rect = normalizeRect(m.from, m.to)
-        const ids = objectsInMarquee(st.objects, rect)
+        /* a hidden or locked layer is never caught (utils/layers.js) */
+        const ok = pickableIn(st.layers)
+        const ids = objectsInMarquee(st.objects, rect, { isVisible: ok })
         /* Guarantee a shift-marquee NEVER leaves a floor plan or column
            grid selected — NOT just that it never ADDS one (objectsInMarquee
            already excludes both from what it catches, BUG 26/28), but that
@@ -1145,7 +1156,7 @@ export function useCanvasInteraction({
            setBaySelection/clearBaySelection fully REPLACE
            activeBaySelection rather than selectMultiple's additive
            push. */
-        const bayEntries = bayEntriesInMarquee(st.objects, rect, st.gridSize)
+        const bayEntries = bayEntriesInMarquee(st.objects.filter(ok), rect, st.gridSize)
         if (bayEntries.length > 0) {
           st.setBaySelection(bayEntries)
           setStickyBayMode(true)

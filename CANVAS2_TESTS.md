@@ -216,6 +216,74 @@ total. Each case below lists horizontal / vertical, and is the same for wall = Y
 
 All other cases: 0.
 
+### LY — Layers: six standard layers, each with an eye and a padlock · `LY_layers.test.js` (18 tests)
+**The layers** (`utils/layers.js`, the one module every consumer asks):
+- **Building** (floor plan, walls, other structure), **Columns** (column
+  grid), **Racking** (every rack, plus the floor equipment placed among
+  them), **Aisles** (aisle objects, aisle and cross-aisle labels),
+  **Checks** (red X marks, red aisle warnings, orange upright flags, column
+  clearance arrows and labels) and **Notes** (text, dimensions, drawn shapes).
+- **Which layer:** an object's `layerId` if it names a layer in the list,
+  else the layer its type belongs on. Generate stamps every object; a
+  hand-placed object is stamped by type; a rebuilt aisle goes on Aisles (it
+  used to copy its rack's layer). Older layouts (layers 'racks',
+  'structural' …) load onto the six by type, with no migration.
+- **Hidden:** not drawn (Scene), not pickable, not a snap target, not in
+  the PDF.
+- **Locked:** drawn, printed and **still a snap target** — racks snap to a
+  locked building's walls and to locked columns. Not pickable, not
+  draggable, never caught by a marquee (objects or bays), left out of
+  Ctrl+A. Locking or hiding a layer drops its objects from the selection,
+  so nothing locked can be dragged.
+- **Generate** sets the six with **Building and Columns locked**, before the
+  first object lands. A press or drag on the building floor or wall then
+  picks nothing: the drag pans.
+- **Checks hidden:** only the drawing stops. The column check still runs, so
+  capacity and usable are unchanged. The View menu's "Column labels" switch
+  is gone — its arrows and distances are part of Checks.
+- **Saved** with the layout (`serializeScene` already carried `layers`); a
+  keeper (`installLayerKeeper`) keeps the list the six, carrying each eye
+  and padlock by id.
+- **Undo** (approved store change): every undo snapshot carries `layers`,
+  undo / redo restore them, and `updateLayer` is its own undo step (and so
+  autosaves). Generate's entries carry its locked Building and Columns. A
+  layer step changes no object and raises no copy bar.
+- **Panel:** six rows, eye + padlock each (`aria-pressed`, "Hide Racking
+  layer" / "Lock Racking layer"). No add, rename or delete: custom layers later.
+
+| Test (240×120 Generate; ×2 h/v) | Asserts |
+|---|---|
+| `LY-assign` | the list is the six in order; every object (with the app's aisle keeper running) is stamped with, and resolves to, its layer; all four layout layers used |
+| `LY-generate-locked` | Building and Columns locked and shown, the rest open. Floor points that pick the building when unlocked pick nothing; its wall is grabbed only unlocked; a column square only with Columns open |
+| `LY-locked` | Racking locked: the rack isn't picked or marqueed; it still prints (PDF identical). Building locked: a rack dragged 3 px from the wall gets the same wall guide as unlocked; hidden, none. Building and grid are snap targets. With Building hidden, a rack 3 px off a column face gets the column guide while Columns is locked, and none once Columns is hidden |
+| `LY-undo` | two layer steps undo and redo one at a time, objects untouched; the current undo entry carries the layers; undoing into Generate's entries keeps Building locked |
+| `LY-hidden` | each of Building, Columns, Racking, Aisles hidden in turn: its objects not shown, not pickable, and the PDF is exactly the PDF of the layout without them. Aisles hidden prints no aisle or cross-aisle labels. Scene draws through the same rule |
+| `LY-checks` | Checks hidden: the PDF equals the PDF with marks off (and differs from Checks shown); capacity unchanged; the check modules take no layer input; every mark on the canvas is behind `marksOn`, the aisle labels behind `aislesOn` |
+| `LY-select` | locking or hiding Racking drops a selected rack; the drag, marquee, bay marquee, both smart-guide calls and Ctrl+A take only pickable objects |
+| `LY-save` | eye / padlock state survives save and reload; an older file with the old layer list loads onto the six, every object on its layer |
+| `LY-hand` (once) | the type → layer table; the toolbar and object picker stamp by type, not the active layer |
+| `LY-panel` (once) | six rows, eye and padlock through `setLayer`, no add / rename / delete |
+
+**Checked in the app, horizontal and vertical** (1080×410, 25×30 grid):
+- Panel: Building and Columns locked after Generate. Every object on its
+  layer: fp → Building, 168–174 racks → Racking, 160 / 171 aisles → Aisles,
+  the grid → Columns.
+- A drag on the building floor: nothing selected, building unmoved, view
+  panned. A click on the wall: nothing. Unlock Building: the same floor
+  click selects it; lock again: deselected.
+- Lock Racking: the selected rack drops out; clicking, dragging and a
+  shift-marquee over it do nothing (36 / 69 caught once unlocked).
+- Hide Racking: scene nodes 1,151 → 327 (h), 1,213 → 349 (v); back on show.
+- Hide Checks: every red (#C0392B), orange (#E67E22) and blue clearance node
+  gone (overlay 5,269 → 835 h, 5,591 → 865 v); capacity 39,040 / 35,060 (h)
+  and 42,864 / 39,444 (v) before and after.
+- Undo: hide Notes, lock Aisles, then Ctrl+Z twice and Ctrl+Y twice step
+  through exactly those states, the panel following; no copy bar appears.
+- Snap: with Building locked, a rack dragged to 2 px off the left wall
+  shows the purple wall guide and lands flush on the wall's inner face
+  (10 px); with Building hidden, no guide.
+- The View menu has no "Column labels". No console errors.
+
 ### HF — Small fixed-size handles, always shown; no red-warning flicker on a building drag · `HF_handlesFlicker.test.js` (13 tests)
 **Handles.** The original design (7569d59), smaller: a fixed size on screen
 at every zoom (handleSizes in handleGeometry.js), always shown. They are
@@ -519,8 +587,8 @@ them. This replaces the earlier "hold labels while the wheel moves" idea.
 **How:**
 - **Label size** (`render/labelSize.js`): the View menu has Small / Medium /
   Large / Extra large = 12 / 24 / 36 / 48 in reference text, Medium by
-  default. It is kept with
-  Column labels in `canvas2/labelPrefs.js` (localStorage, never the store).
+  default. It is kept in `canvas2/labelPrefs.js` (localStorage, never the
+  store).
 - **Label scale:** `labelScale(size, gridSize)` is used everywhere the old
   designs divided by the view zoom. Each design keeps its proportions:
   aisle text 1×, clearance 0.9×, dimensions 1.1×, X-mark stroke 0.2× the
@@ -668,7 +736,7 @@ painted width was measured on the scene canvas, with a fractional pan.
 - **Travel arrows** grow from Medium to Extra large.
 - No console errors.
 
-### LB — One label per aisle, cross-aisle labels, the Column labels switch · `LB_labels.test.js` (8 tests)
+### LB — One label per aisle, cross-aisle labels, column labels (now the Checks layer) · `LB_labels.test.js` (8 tests)
 - **One aisle label:** an aisle (one section's pair of facing rows) has ONE
   width label, centred along it. It used to repeat at up to three stations
   on long aisles. The pick area is the same single label.
@@ -677,9 +745,10 @@ painted width was measured on the scene canvas, with a fractional pan.
   between two sections gets one width label. Its width is the clear gap
   between the facing racks, centred along the gap and across the racks, in
   the aisle-label style. It follows a drag.
-- **Column labels** (View menu, on by default): off hides the clearance
-  arrows and their distances. It never hides the red "under travel" marks,
-  the red aisle shade, the X marks or the upright flags. The PDF follows it.
+- **Column labels:** the View-menu switch is gone, folded into the Checks
+  layer (LY). The clearance arrows and distances draw exactly when the rest
+  of the Checks do. `clearanceOps` keeps its `showLabels` argument (LB-toggle
+  still covers what "off" hides); the canvas and the PDF always pass on.
 
 | Test (1080×410; ×2 h/v) | Asserts |
 |---|---|
@@ -687,7 +756,7 @@ painted width was measured on the scene canvas, with a fractional pan.
 | `LB-cross` | one label per cross-aisle (sections − 1). The width is the gap between the section envelopes (≥ the truck's 9 ft), centred along the gap and across both sections, with the right orientation |
 | `LB-cross-drag` | a rack moved 2 ft into a cross-aisle narrows that label by exactly 2 ft |
 | `LB-toggle` | switched off: plain clearances hidden; "under travel" marks kept, red, with their text; the red shade is independent of the switch; a mixed block keeps only its short side |
-| `LB-toggle-wire` | the View-menu switch, on by default (labelPrefs); only the clearance labels read it; X marks, upright flags and oversized marks never do; the shade is drawn whatever the switch says |
+| `LB-toggle-wire` | the switch is gone from the View menu and labelPrefs; the clearance labels, X marks, upright flags and oversized marks are all behind `marksOn` (the Checks layer); the shade is drawn whatever `showLabels` says |
 
 ### AR — Aisles pair only directly facing rows · `AR_aisleRebuild.test.js` (110 tests)
 **The bug.** An `aisle` is only a pair of rack ids. When a row is deleted, the
@@ -1480,6 +1549,17 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | SC | **No question when switching sections** | 8: SC-question, SC-dont, SC-stop, SC-place (h/v) | ✓ |
 | SC | **Always copy waits** | 2: SC-always h/v | ✓ |
 | SC | **Match bays from the FIRST bay-changed row, not the last** | 2: SC-match h/v | ✓ |
+| LY | **Generate does not stamp layerIds** | 2: LY-assign h/v | ✓ |
+| LY | **Rebuilt aisles copy their rack's layer** (the bug the app showed) | 4: LY-assign, LY-hidden (h/v) | ✓ |
+| LY | **Generate leaves Building and Columns unlocked** | 4: LY-generate-locked, LY-undo (h/v) | ✓ |
+| LY | **Locked layers still pickable** | 6: LY-generate-locked, LY-locked, LY-select (h/v) | ✓ |
+| LY | **Hidden layers still snap targets** | 2: LY-locked h/v | ✓ |
+| LY | **Locked layers not snap targets** (the rule before the change) | 2: LY-locked h/v | ✓ |
+| LY | **Undo does not restore layers** (store) | 2: LY-undo h/v | ✓ |
+| LY | **Hidden layers still drawn / printed** | 4: LY-locked, LY-hidden (h/v) | ✓ |
+| LY | **Checks hidden still prints marks** | 2: LY-checks h/v | ✓ |
+| LY | **Locking leaves the object selected** | 2: LY-select h/v | ✓ |
+| LY | **Layers not saved with the layout** | 2: LY-save h/v | ✓ |
 | HF | **Sizes follow the zoom** (not fixed on screen) — against the 6 / 10 / 12 px handles | 4: HF-handles h/v, HF-grips h/v | ✓ |
 | HF | **A building drag re-checks the aisles every frame** | 4: HF-flicker, HF-multi (h/v) — also with the "not recomputed" checks removed, the red-set comparison alone fails in both orientations | ✓ |
 | AR | **Skip the rebuild** | 6: AR-recreate/handcopy/undo (h and v, before the replay redesign) | ✓ |
@@ -1593,8 +1673,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,832 tests, 1,832 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,229 tests, 2,229 passing.**
+- **Plan suite: 1,850 tests, 1,850 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,247 tests, 2,247 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

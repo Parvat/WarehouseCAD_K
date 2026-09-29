@@ -23,6 +23,7 @@
 
 import { rackFootprint } from '../generate/columnCheck'
 import { rowLines } from './syncSections'
+import { layerForType } from './layers'   // a new aisle goes on the Aisles layer, not its rack's
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const EPS = 1e-6
@@ -112,7 +113,7 @@ export function rebuildAisles(objects, newId = () => Math.random().toString(36).
     const t = template.get(ra.parentId || '')
     const base = t
       ? (({ id, row1Id, row2Id, label, ...rest }) => rest)(t)
-      : { type: 'aisle', layerId: ra.layerId, parentId: ra.parentId, strokeWidth: 1.5, opacity: 1, rotation: 0, noFill: false }
+      : { type: 'aisle', layerId: layerForType('aisle'), parentId: ra.parentId, strokeWidth: 1.5, opacity: 1, rotation: 0, noFill: false }
     const aisle = { ...base, type: 'aisle', id: newId(), row1Id: a, row2Id: b, label: '' }
     if (!ra.parentId) delete aisle.parentId
     out.push(aisle)

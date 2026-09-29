@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { layerForType } from '../../utils/layers'
 import { useShallow } from 'zustand/react/shallow'
 import { WAREHOUSE_CATEGORIES } from '../../constants/warehouseObjects'
 import { SectionHeader } from '../shared/SectionHeader'
@@ -438,7 +439,7 @@ export function WarehouseObjectPicker() {
         }
       })() : {}),
       ...(item.type === 'rack_double_row' ? { flueSpaceIn: item.meta?.flueSpace || 9 } : {}),
-      layerId: activeLayerId,
+      layerId: layerForType(item.type),   // its layer by type (utils/layers.js)
       /* column_grid is parented like everything else — see FloatingToolbar. */
       ...(parentFp ? { parentId: parentFp.id } : {}),
       /* a row dropped into a generated layout runs with its rows (utils/rowEdits.js) */

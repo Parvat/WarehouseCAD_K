@@ -33,6 +33,7 @@ import { useLabelPrefs } from '../canvas2/labelPrefs'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { checkColumns } from '../generate/columnCheck'
 import { layoutColumns, layoutFloors } from '../generate/usableCapacity'
+import { isShown, layerShown } from '../utils/layers'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 
@@ -49,11 +50,9 @@ function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-const isLayerUsable = (layerMap, obj) => {
-  if (!obj.layerId) return true
-  const l = layerMap.get(obj.layerId)
-  return !l || (l.visible !== false && !l.locked)
-}
+/* On the sheet = on a shown layer (utils/layers.js). A LOCKED layer still
+   prints: locking only stops picking, the same as on the canvas. */
+const isLayerUsable = (layerMap, obj) => isShown(layerMap, obj)
 
 /* ── Bounds — only over what this exporter actually draws, so an unrendered
    annotation off in a corner can't blow out the sheet's scale. */
@@ -286,8 +285,11 @@ function titleBlockSVG(x, y, u, { title, scaleRatio, date }) {
    current settings (labelPrefs, the column check's published view). */
 export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled Layout', labels = {} } = {}) {
   const prefs = useLabelPrefs.getState(), view = getColumnCheckView()
-  const labelOpts = { showColumnLabels: prefs.showColumnLabels, showAisles: true, ...view, ...labels }
+  const labelOpts = { showColumnLabels: true, showAisles: true, ...view, ...labels }
   const layerMap = new Map((layers || []).map(l => [l.id, l]))
+  /* the Aisles layer carries the aisle labels, the Checks layer every mark */
+  labelOpts.showAisles = labelOpts.showAisles && layerShown(layerMap, 'aisles')
+  labelOpts.showMarks = labelOpts.showMarks !== false && layerShown(layerMap, 'checks')
   const usable = (o) => isLayerUsable(layerMap, o)
 
   const bounds = computeBounds(objects.filter(usable), gridSize) || { x: 0, y: 0, width: gridSize * 40, height: gridSize * 30 }
@@ -350,7 +352,9 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     ...floors.map(o => floorPlanSVG(o, gridSize)),
     ...racks.map(o => rackSVG(o, gridSize, lz)),
     ...columns.map(o => columnGridSVG(o, gridSize)),
-    labelsSVG(objects.filter(o => o && usable(o)), gridSize, labelOpts),
+    /* labels and marks are worked out from the whole layout, as on the canvas
+       (a hidden Columns layer still has columns); only their drawing is gated */
+    labelsSVG(objects.filter(Boolean), gridSize, labelOpts),
     scaleBarSVG(vb.x + 10 * u, titleY + titleH * 0.45, gridSize, u),
     titleBlockSVG(titleX, titleY, u, { title, scaleRatio, date }),
     `<rect x="${vb.x + u}" y="${vb.y + u}" width="${vb.width - 2 * u}" height="${vb.height - 2 * u}" fill="none" stroke="#111" stroke-width="${0.4 * u}"/>`,

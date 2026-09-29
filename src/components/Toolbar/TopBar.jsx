@@ -176,7 +176,7 @@ function doZoom(factor) {
 export function TopBar() {
   const alwaysCopy = useCopyPrompt(s => s.alwaysCopy)
   const setAlwaysCopy = useCopyPrompt(s => s.setAlwaysCopy)
-  const { showColumnLabels, setShowColumnLabels, labelSize, setLabelSize, pdfLabelSize, setPdfLabelSize } = useLabelPrefs()
+  const { labelSize, setLabelSize, pdfLabelSize, setPdfLabelSize } = useLabelPrefs()
   const {
     undo, redo, copySelected, paste, cutSelected,
     zoom, setViewport,
@@ -325,9 +325,6 @@ export function TopBar() {
                   <option value="screen">Same as screen</option>
                   {Object.keys(LABEL_SIZES).map(k => <option key={k} value={k}>{LABEL_SIZE_NAMES[k]} ({LABEL_SIZES[k]} in)</option>)}
                 </select>
-              </MenuRow>
-              <MenuRow label="Column labels">
-                <Switch on={showColumnLabels} onClick={() => setShowColumnLabels(!showColumnLabels)} label="Toggle column labels" />
               </MenuRow>
               <MenuRow label="Snap to grid">
                 <Switch on={snapToGrid} onClick={toggleSnap} label="Toggle snap" />

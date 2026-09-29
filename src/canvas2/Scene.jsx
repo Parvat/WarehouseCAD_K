@@ -1,5 +1,6 @@
 import { useMemo, memo } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
+import { shownIn } from '../utils/layers'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
@@ -44,20 +45,16 @@ function SceneView({ listening = false, bind }) {
   const gridSize = useCanvasStore(s => s.gridSize)
   // the racks' travel arrows are drawing size, sized by the Label size (not the zoom)
   const lz = labelScale(useLabelPrefs(s => s.labelSize), gridSize)
-  const visibleLayerIds = useCanvasStore(s => s.layers)
+  const layers = useCanvasStore(s => s.layers)
   const activeBaySelection = useCanvasStore(s => s.activeBaySelection)
   /* Nothing here reads the zoom: every object — columns included — is drawn
      at its real size and the stage transform scales it, so zooming re-renders
      none of the scene. */
 
-  /* A hidden layer hides its objects. Same rule the SVG applies — a layer counts
-     as visible only when `visible` is truthy — so the two canvases cannot
-     disagree about what is on the sheet. Guarded for the layerless case so an
-     object never vanishes just because the layer system is absent. */
-  const visibleIds = useMemo(
-    () => new Set((visibleLayerIds || []).filter(l => l && l.visible).map(l => l.id)),
-    [visibleLayerIds])
-  const isVisible = (o) => visibleIds.size === 0 || !o.layerId || visibleIds.has(o.layerId)
+  /* A hidden layer hides its objects (utils/layers.js — the same rule the PDF
+     and the picking use, so they cannot disagree about what is on the sheet).
+     A locked layer still draws. */
+  const isVisible = useMemo(() => shownIn(layers), [layers])
 
   /* Rack ops are derived once per object and carry no zoom, so panning and
      zooming rebuild nothing here. They are also kept per rack OBJECT: an edit
@@ -83,7 +80,7 @@ function SceneView({ listening = false, bind }) {
       rest.push({ kind: 'fallback', obj: o })
     }
     return { floors, rest: rest.concat(columns) }
-  }, [objects, gridSize, visibleIds])
+  }, [objects, gridSize, isVisible])
 
   return (
     <>

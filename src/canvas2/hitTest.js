@@ -19,6 +19,7 @@ import { objectContains, getFpWallSegments, distToSegment, getObjectBounds, pxTo
 import { rackFootprint } from '../generate/columnCheck'
 import { aisleLabelScale } from '../render/labelSize'
 import { useLabelPrefs } from './labelPrefs'
+import { isPickable } from '../utils/layers'
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 const COL_GRID = new Set(['column_grid'])
@@ -38,10 +39,9 @@ const RACK_BAY_TYPES = new Set([
   'rack_pushback', 'rack_pallet_flow', 'rack_drive_through',
 ])
 
-const isLayerUsable = (layerMap, obj) => {
-  const l = layerMap.get(obj.layerId)
-  return !!l && l.visible && !l.locked && !obj.locked
-}
+/* Hidden or locked layer, or the object itself locked: never picked
+   (utils/layers.js — the one rule marquee, Ctrl+A and drag also use). */
+const isLayerUsable = (layerMap, obj) => isPickable(layerMap, obj)
 
 /** An aisle's own rect — the actual gap between its two referenced rows,
  *  clipped to their overlapping span — ported verbatim from ShapeGeometry.jsx's

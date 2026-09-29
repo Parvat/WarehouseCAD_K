@@ -80,7 +80,7 @@ describe.each(['horizontal', 'vertical'])('LB — %s', (orientation) => {
   })
 })
 
-describe('LB — Column labels switch', () => {
+describe('LB — Column labels (now part of the Checks layer)', () => {
   // a column in an aisle: 10' gap, the column 1' wide at 4'..5' -> 4' and 5' clear
   const col = { x: 500, y: 4 * GS, w: GS, h: GS }
   const block = (pinched) => ({ axis: 'y', gapStart: 0, gapEnd: 10 * GS, crossStart: 0, crossEnd: 2000, nearClearFt: 4, farClearFt: 5,
@@ -99,18 +99,18 @@ describe('LB — Column labels switch', () => {
     expect(visibleClearanceMarks(mixed, col, 1, GS, false).map(m => m.side)).toEqual(['near'])
   })
 
-  it('LB-toggle-wire: the switch is in the View menu, on by default, feeds only the clearance labels; X marks and upright flags are never gated', () => {
+  it('LB-toggle-wire: the switch is folded into the Checks layer — gone from the View menu and the prefs; the clearance labels, X marks, upright flags and oversized bays all draw exactly when the Checks layer does (see LY)', () => {
     const top = readFileSync('src/components/Toolbar/TopBar.jsx', 'utf8')
-    expect(top).toMatch(/<MenuRow label="Column labels">\s*<Switch on=\{showColumnLabels\} onClick=\{\(\) => setShowColumnLabels\(!showColumnLabels\)\}/)
+    expect(top).not.toMatch(/Column labels|showColumnLabels/)
     const prefs = readFileSync('src/canvas2/labelPrefs.js', 'utf8')
-    expect(prefs).toMatch(/showColumnLabels: read\(KEY_COLUMN_LABELS\) !== '0'/)                  // on unless switched off
+    expect(prefs).not.toMatch(/showColumnLabels|KEY_COLUMN_LABELS/)
     const ov = readFileSync('src/canvas2/Overlays.jsx', 'utf8')
-    expect(ov).toMatch(/<ColumnClearanceLabels [^>]*showLabels=\{showColumnLabels\}/)
-    expect(ov).toMatch(/showColumnLabels = useLabelPrefs\(s => s\.showColumnLabels\)/)
+    expect(ov).toMatch(/\{marksOn && <ColumnClearanceLabels [^>]*showLabels \/>\}/)
+    expect(ov).not.toMatch(/showColumnLabels/)
     for (const comp of ['BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) {
       const line = ov.split('\n').find(l => l.includes('<' + comp + ' '))
       expect(line, comp).toBeTruthy()
-      expect(line).not.toMatch(/showColumnLabels|showLabels/)
+      expect(line).toMatch(/^\s*\{marksOn && </)
     }
     const ops = readFileSync('src/render/labelOps.js', 'utf8')
     expect(ops).toMatch(/for \(const m of visibleClearanceMarks\(block, col, lz, gridSize, showLabels\)\)/)

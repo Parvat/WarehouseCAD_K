@@ -10,7 +10,7 @@ import { serializeScene, deserializeScene, downloadScene, pickFile, autoSave, au
 const MAX_HISTORY = 60
 
 function pushHistory(s) {
-  const snap = JSON.stringify({ objects: s.objects, groups: s.groups || [] })
+  const snap = JSON.stringify({ objects: s.objects, groups: s.groups || [], layers: s.layers })
   s.history = [...s.history.slice(0, s.historyIndex+1), snap].slice(-MAX_HISTORY)
   s.historyIndex = s.history.length - 1
   // Auto-save full scene to localStorage on every undoable action
@@ -643,6 +643,7 @@ export const useCanvasStore = create(
         const snap = JSON.parse(s.history[s.historyIndex])
         s.objects = snap.objects ?? snap   // backward compat with old object-only snapshots
         s.groups  = snap.groups  ?? s.groups
+        if (snap.layers) s.layers = snap.layers
         s.selectedIds = []
       }
     }),
@@ -652,6 +653,7 @@ export const useCanvasStore = create(
         const snap = JSON.parse(s.history[s.historyIndex])
         s.objects = snap.objects ?? snap
         s.groups  = snap.groups  ?? s.groups
+        if (snap.layers) s.layers = snap.layers
         s.selectedIds = []
       }
     }),
@@ -664,7 +666,7 @@ export const useCanvasStore = create(
       const colors = ['#4a9eff','#22c55e','#f0b429','#a855f7','#ef4444','#ec4899']
       s.layers.push({ id: nanoid(), name: 'New Layer', color: colors[s.layers.length%colors.length], visible: true, locked: false })
     }),
-    updateLayer:  (id, u) => set((s) => { const l=s.layers.find(l=>l.id===id); if(l) Object.assign(l,u) }),
+    updateLayer:  (id, u) => set((s) => { const l=s.layers.find(l=>l.id===id); if(l) { Object.assign(l,u); pushHistory(s) } }),
     deleteLayer:  (id) => set((s) => {
       s.layers = s.layers.filter(l=>l.id!==id)
       if (s.activeLayerId===id && s.layers.length) s.activeLayerId = s.layers[0].id

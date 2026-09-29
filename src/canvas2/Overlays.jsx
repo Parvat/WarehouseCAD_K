@@ -8,6 +8,8 @@ import { UprightConflictMarks } from './UprightConflictMarks'
 import { OversizedBayMarks } from './OversizedBayMarks'
 import { aisleLabelLayout } from './hitTest'
 import { useLabelPrefs } from './labelPrefs'
+import { useCanvasStore } from '../store/useCanvasStore'
+import { layerShown } from '../utils/layers'
 import { labelScale, aisleLabelScale } from '../render/labelSize'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -51,7 +53,15 @@ function OverlaysView({
   /* Every label and mark here is DRAWING size (render/labelSize.js): sized by
      the Label size setting, never by the view zoom, so zooming re-renders
      none of it — the stage transform scales it with the racks. */
-  const labelSize = useLabelPrefs(s => s.labelSize), showColumnLabels = useLabelPrefs(s => s.showColumnLabels)
+  const labelSize = useLabelPrefs(s => s.labelSize)
+  /* Layers (utils/layers.js): the Aisles layer carries the aisle and
+     cross-aisle labels, the Checks layer every mark — X marks, red aisle
+     warnings, upright flags, column clearance arrows and labels. Hiding
+     Checks only stops the drawing: the check still runs, so capacity and
+     usable are unchanged. */
+  const layers = useCanvasStore(s => s.layers)
+  const aislesOn = showAisles && layerShown(layers, 'aisles')
+  const marksOn = showMarks && layerShown(layers, 'checks')
   const lz = labelScale(labelSize, gridSize)
   /* Overlays DERIVED from object positions (aisle labels, the column-check
      marks) are drawn from `pObjects`: the store's objects with the current
@@ -81,10 +91,10 @@ function OverlaysView({
      boundary, read differently: they ride the group only while every label
      is exactly the unshifted one moved by the drag, and otherwise are drawn
      from the shifted layout — exactly what was drawn before. */
-  const aisleRigid = useMemo(() => rigid && showAisles && aisleLabelsMoveRigidly(objects, shifted, dx, dy, gridSize), [rigid, showAisles, objects, shifted, dx, dy, gridSize])
+  const aisleRigid = useMemo(() => rigid && aislesOn && aisleLabelsMoveRigidly(objects, shifted, dx, dy, gridSize), [rigid, aislesOn, objects, shifted, dx, dy, gridSize])
   const aisleSrc = aisleRigid || !rigid ? pObjects : shifted
   const aisleById = aisleSrc === pObjects ? byId : firstById(aisleSrc)
-  const aisles = showAisles ? aisleSrc.filter(o => o.type === 'aisle') : []
+  const aisles = aislesOn ? aisleSrc.filter(o => o.type === 'aisle') : []
   return (
     <>
       {selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} objects={objects} />)}
@@ -97,15 +107,14 @@ function OverlaysView({
       {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={aisleLabelScale(a, labelSize, gridSize)} gridSize={gridSize} />)}
       </Group>
       {/* one width label per cross-aisle; few, so drawn from the previewed layout every drag frame */}
-      {showAisles && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} />}
-      {/* "Column labels" off hides the clearance arrows and their distances; the
-          red "under travel" marks and aisle shading still show (and the X marks
-          and upright flags below are never affected) */}
-      {showMarks && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} showLabels={showColumnLabels} />}
+      {aislesOn && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} />}
+      {/* the Checks layer: clearance arrows and distances, red "under travel"
+          marks and aisle shading, X marks, upright flags, oversized bays */}
+      {marksOn && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} showLabels />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
-      {showMarks && <BlockedFaceMarks rackConflicts={pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts} objects={pObjects} gridSize={gridSize} lz={lz} />}
-      {showMarks && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}
-      {showMarks && <OversizedBayMarks objects={pObjects} gridSize={gridSize} lz={lz} />}
+      {marksOn && <BlockedFaceMarks rackConflicts={pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts} objects={pObjects} gridSize={gridSize} lz={lz} />}
+      {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}
+      {marksOn && <OversizedBayMarks objects={pObjects} gridSize={gridSize} lz={lz} />}
       </Group>
       {/* Smart-guide alignment lines, live during a plain object drag —
           CanvasArea's own colours (wall/column snaps purple, object-to-

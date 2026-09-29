@@ -29,6 +29,7 @@ import {
   ArrowUpDown, ArrowLeftRight,
 } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { layerForType } from '../../utils/layers'
 import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
 import { ANNOT } from './AnnotationPanel'
@@ -904,7 +905,7 @@ export function FloatingToolbar() {
     /* a single or double row follows the mouse until a click places it
        (utils/placement.js); everything else is dropped at the view centre */
     const place = (fields) => (ROW_TYPES.has(item.type)
-      ? startPlacement(useCanvasStore, [{ id: nanoid(), layerId: activeLayerId, strokeWidth: 1.5, opacity: 1, rotation: 0, noFill: false, ...fields }], { at: { x: wx, y: wy } })
+      ? startPlacement(useCanvasStore, [{ id: nanoid(), layerId: layerForType(item.type), strokeWidth: 1.5, opacity: 1, rotation: 0, noFill: false, ...fields }], { at: { x: wx, y: wy } })
       : addObject(fields))
     place({
       type:item.type, x, y:y2, width:w, height:h,
@@ -931,7 +932,7 @@ export function FloatingToolbar() {
           spineDepthIn:item.meta?.spineDepthIn||4,armThicknessIn:item.meta?.armThicknessIn||3,activeTowerIdx:null}
       })():{}),
       ...(item.type==='rack_double_row'?{flueSpaceIn:item.meta?.flueSpace||9}:{}),
-      layerId:activeLayerId,
+      layerId:layerForType(item.type),   // its layer by type (utils/layers.js)
       /* column_grid is parented like everything else: the columns are the
          building's own structure, so they travel with it and go with it when
          it is deleted. CanvasArea re-parents a grid on its first move anyway,

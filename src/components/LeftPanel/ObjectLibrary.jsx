@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { layerForType } from '../../utils/layers'
 import { useShallow } from 'zustand/react/shallow'
 import { OBJECT_LIBRARY } from '../../constants'
 import { SectionHeader } from '../shared/SectionHeader'
@@ -31,7 +32,7 @@ export function ObjectLibrary() {
       fill:    item.color + '33',
       stroke:  item.color,
       label:   item.label,
-      layerId: activeLayerId,
+      layerId: layerForType('rect'),   // its layer by type (utils/layers.js)
       ...(parentFp ? { parentId: parentFp.id } : {}),
     })
   }
