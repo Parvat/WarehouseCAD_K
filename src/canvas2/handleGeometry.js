@@ -17,20 +17,15 @@
 
 import { getObjectBounds, getHandlePositions, HANDLES } from '../utils/canvas'
 
-/* Handle sizes are DRAWING size, like labels and columns: a resize square
-   is 6", the rotate grip 10" across on a 10" stem, so they scale with the
-   zoom — but they never draw smaller than a visible minimum (6 px square,
-   10 px grip) zoomed out, nor bigger than a maximum (12 px square, 18 px
-   grip) zoomed in. The click
-   area is the drawn size but never under 12 px on screen. One set for every
-   handle: the resize squares and the rotate grip of a rack, a selection
-   group and a building (handleSizes). */
+/* Handle sizes are DRAWING size at every zoom, like labels and columns: a
+   resize square is 6", the rotate grip 10" across on a 10" stem. They scale
+   with the zoom like the racks do — no on-screen minimum, no cap. Only the
+   invisible click area is kept at least 12 px on screen, so a handle can
+   still be grabbed zoomed out. One set for every handle: the resize squares
+   and the rotate grip of a rack, a selection group and a building
+   (handleSizes). */
 export const HANDLE_IN = 6           // a resize square's side, inches
 export const GRIP_IN = 10            // the rotate grip's diameter (and its stem), inches
-export const HANDLE_MIN_PX = 6       // a square never draws smaller than this on screen
-export const GRIP_MIN_PX = 10        // nor the grip
-export const HANDLE_MAX_PX = 12      // a square never draws bigger than this on screen
-export const GRIP_MAX_PX = 18        // nor the grip
 export const HIT_MIN_PX = 12         // a click area is never smaller than this on screen
 export const HANDLE_FILL = '#ffffff'
 export const HANDLE_ACCENT = '#4a9eff'
@@ -77,9 +72,8 @@ function toLocal(bounds, rotation, wx, wy) {
  *  `hitR` (the click areas). */
 export function handleSizes(zoom = 1, gridSize = 40) {
   const inch = gridSize / 12
-  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
-  const handle = clamp(HANDLE_IN * inch, HANDLE_MIN_PX / zoom, HANDLE_MAX_PX / zoom)
-  const grip = clamp(GRIP_IN * inch, GRIP_MIN_PX / zoom, GRIP_MAX_PX / zoom)
+  const handle = HANDLE_IN * inch
+  const grip = GRIP_IN * inch
   const floor = HIT_MIN_PX / zoom
   return { handle, grip, stem: grip, pad: handle * 0.75, hitHalf: Math.max(handle, floor) / 2, hitR: Math.max(grip, floor) / 2 }
 }

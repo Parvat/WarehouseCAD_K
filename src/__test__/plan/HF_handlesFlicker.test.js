@@ -1,6 +1,6 @@
 // Area HF — (1) selection handles and rotate grips are DRAWING size, like
-// labels and columns: 6" white resize squares (1 px accent) and a 10" rotate
-// grip on a 10" stem, kept between 6–12 px / 10–18 px on screen; the click area is
+// labels and columns, at every zoom: 6" white resize squares (1 px accent)
+// and a 10" rotate grip on a 10" stem; the click area is
 // never under 12 px; the same for a rack at any rotation, a selection group
 // and a building. (2) The red "no clear
 // aisle" warnings don't flicker while the whole building is dragged: a drag
@@ -15,7 +15,7 @@ import { layoutColumns } from '../../generate/usableCapacity'
 import { DEFAULT_RULES } from '../../rules/defaults'
 import { rebuildAisles } from '../../utils/aisleRebuild'
 import { getObjectBounds } from '../../utils/canvas'
-import { computeHandleLayout, handleHitTest, handleSizes, HANDLE_IN, GRIP_IN, HANDLE_MIN_PX, GRIP_MIN_PX, HANDLE_MAX_PX, GRIP_MAX_PX, HIT_MIN_PX } from '../../canvas2/handleGeometry'
+import { computeHandleLayout, handleHitTest, handleSizes, HANDLE_IN, GRIP_IN, HIT_MIN_PX } from '../../canvas2/handleGeometry'
 import { computeGroupOutline } from '../../canvas2/groupRotate'
 import { clearanceSource } from '../../canvas2/clearanceSource'
 import { aisleWarningRect } from '../../canvas2/aisleMarks'
@@ -61,32 +61,21 @@ describe.each(['horizontal', 'vertical'])('HF — %s', (orientation) => {
   const objs = layout(orientation)
   const rack = objs.find(o => o.type === 'rack_double_row')
 
-  it('HF-handles: drawing size — a 6" square and a 10" grip on a 10" stem, scaling with the zoom; never smaller than 6 px / 10 px zoomed out (still visible) nor bigger than 12 px / 18 px zoomed in — at 0°, 90°, 180° and 270°', () => {
-    expect([HANDLE_IN, GRIP_IN, HANDLE_MIN_PX, GRIP_MIN_PX, HANDLE_MAX_PX, GRIP_MAX_PX, HIT_MIN_PX]).toEqual([6, 10, 6, 10, 12, 18, 12])
+  it('HF-handles: pure drawing size at every zoom — a 6" square and a 10" grip on a 10" stem at 5 %, 40 % and 300 % (and 2 %, 20 %, 800 %), scaling with the zoom like the racks; no minimum, no cap — at 0°, 90°, 180° and 270°', () => {
+    expect([HANDLE_IN, GRIP_IN, HIT_MIN_PX]).toEqual([6, 10, 12])
     const inch = GS / 12, depth = Math.min(rack.width, rack.height)
-    for (const rotation of [0, 90, 180, 270]) {
-      for (const z of [0.4, 0.5]) {                                               // between the floor and the cap: drawing size
-        const L = computeHandleLayout({ ...rack, rotation }, z, GS)
-        expect(r3(L.hs * 2)).toBe(r3(6 * inch))                                  // 6" in drawing units
-        expect(L.hs * 2).toBeLessThan(depth)                                     // smaller than the rack's depth
-        expect(r3(L.rotateHandle.r * 2)).toBe(r3(10 * inch))                     // the grip 10"
-        expect(r3(L.rotateHandle.lineY - (L.rotateHandle.ry + L.rotateHandle.r))).toBe(r3(10 * inch))   // its 10" stem
-      }
-      for (const z of [0.02, 0.05, 0.2]) {                                        // zoomed out: the visible minimum
-        const L = computeHandleLayout({ ...rack, rotation }, z, GS)
-        expect(r3(L.hs * 2 * z)).toBe(6)
-        expect(r3(L.rotateHandle.r * 2 * z)).toBe(10)
-      }
-      for (const z of [1, 3, 8]) {                                                // zoomed in: the cap
-        const L = computeHandleLayout({ ...rack, rotation }, z, GS)
-        expect(r3(L.hs * 2 * z)).toBe(12)
-        expect(r3(L.rotateHandle.r * 2 * z)).toBe(18)
-      }
+    for (const rotation of [0, 90, 180, 270]) for (const z of [0.02, 0.05, 0.2, 0.4, 3, 8]) {
+      const L = computeHandleLayout({ ...rack, rotation }, z, GS)
+      expect(r3(L.hs * 2)).toBe(r3(6 * inch))                                      // 6" in drawing units
+      expect(r3(L.rotateHandle.r * 2)).toBe(r3(10 * inch))                         // the grip 10"
+      expect(r3(L.rotateHandle.lineY - (L.rotateHandle.ry + L.rotateHandle.r))).toBe(r3(10 * inch))   // its 10" stem
+      expect(L.hs * 2).toBeLessThan(depth)                                         // smaller than the rack's depth
+      expect(r3(L.hs * 2 * z)).toBe(r3(6 * inch * z))                              // on screen: exactly the zoom's share
     }
   })
 
   it('HF-hit: the click area is the drawn handle but never under 12 px on screen, at every zoom and rotation', () => {
-    for (const rotation of [0, 90, 180, 270]) for (const z of [0.02, 0.05, 0.2, 0.4, 1, 3]) {
+    for (const rotation of [0, 90, 180, 270]) for (const z of [0.02, 0.05, 0.2, 0.4, 1, 3, 8]) {
       const o = { ...rack, rotation }
       const L = computeHandleLayout(o, z, GS), b = getObjectBounds(o), S = handleSizes(z, GS)
       expect(S.hitHalf * 2 * z).toBeGreaterThanOrEqual(12 - 1e-9)
@@ -104,17 +93,17 @@ describe.each(['horizontal', 'vertical'])('HF — %s', (orientation) => {
     }
   })
 
-  it('HF-grips: a selection group\'s and a building\'s rotate grips follow the same rule (10", between 10 px and 18 px on screen, click area at least 12 px)', () => {
+  it('HF-grips: a selection group\'s and a building\'s rotate grips follow the same rule (10" at every zoom, click area at least 12 px)', () => {
     // the building's grip (fpRotate.js imports the Konva painters, so it is read here, not run)
     const fpr = readFileSync('src/canvas2/fpRotate.js', 'utf8')
     expect(fpr).toMatch(/const z = handleSizes\(zoom, gridSize\)/)
     expect(fpr).toMatch(/const r = z\.grip \/ 2/)
     expect(fpr).toMatch(/return Math\.hypot\(worldX - h\.rx, worldY - h\.ry\) <= h\.hitR/)
     const two = objs.filter(o => o.type === 'rack_double_row').slice(0, 2)
-    for (const z of [0.02, 0.05, 0.2, 0.4, 1, 3]) {
+    for (const z of [0.02, 0.05, 0.2, 0.4, 1, 3, 8]) {
       const g = computeGroupOutline(two, z, two, GS), S = handleSizes(z, GS)
       expect([r3(g.r), r3(g.hitR), r3(g.ly - (g.hy + g.r))]).toEqual([r3(S.grip / 2), r3(S.hitR), r3(S.stem)])
-      expect(r3(g.r * 2 * z)).toBe(r3(Math.min(Math.max((10 / 12) * GS * z, 10), 18)))
+      expect(r3(g.r * 2)).toBe(r3((10 / 12) * GS))                               // 10" in drawing units at every zoom
       expect(g.hitR * 2 * z).toBeGreaterThanOrEqual(12 - 1e-9)
     }
   })
