@@ -256,7 +256,7 @@ All other cases: 0.
 | `LY-assign` | the list is the six in order; every object (with the app's aisle keeper running) is stamped with, and resolves to, its layer; all four layout layers used |
 | `LY-generate-locked` | Building and Columns locked and shown, the rest open. Floor points that pick the building when unlocked pick nothing; its wall is grabbed only unlocked; a column square only with Columns open |
 | `LY-locked` | Racking locked: the rack isn't picked or marqueed; it still prints (PDF identical). Building locked: a rack dragged 3 px from the wall gets the same wall guide as unlocked; hidden, none. Building and grid are snap targets. With Building hidden, a rack 3 px off a column face gets the column guide while Columns is locked, and none once Columns is hidden |
-| `LY-undo` | two layer steps undo and redo one at a time, objects untouched; the current undo entry carries the layers; undoing into Generate's entries keeps Building locked |
+| `LY-undo` | two layer steps undo and redo one at a time, objects untouched; the current undo entry carries the layers; one more undo goes back before the Generate (no objects, Building unlocked) |
 | `LY-hidden` | each of Building, Columns, Racking, Aisles hidden in turn: its objects not shown, not pickable, and the PDF is exactly the PDF of the layout without them. Aisles hidden prints no aisle or cross-aisle labels. Scene draws through the same rule |
 | `LY-checks` | Checks hidden: the PDF equals the PDF with marks off (and differs from Checks shown); capacity unchanged; the check modules take no layer input; every mark on the canvas is behind `marksOn`, the aisle labels behind `aislesOn` |
 | `LY-select` | locking or hiding Racking drops a selected rack; the drag, marquee, bay marquee, both smart-guide calls and Ctrl+A take only pickable objects |
@@ -284,20 +284,49 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### HF — Small fixed-size handles, always shown; no red-warning flicker on a building drag · `HF_handlesFlicker.test.js` (13 tests)
-**Handles.** The original design (7569d59), smaller: a fixed size on screen
-at every zoom (handleSizes in handleGeometry.js), always shown. They are
-chrome, not drawing:
-- **The sizes:** resize squares 6 px, white with a 1 px accent border; the
-  rotate grip a 10 px white disc on a 12 px stem.
-- **Click areas:** 12 px for a square and for the grip, bigger than drawn.
-- **Always shown:** no hiding rule and no drawing size. A rack only a few
-  pixels deep on screen still has its end squares and grip.
+### GU — Generate is one undo step · `GU_generateUndo.test.js` (8 tests)
+- **Before:** the store records an entry per action, and Generate is
+  hundreds (clear the last layout, place the building, every rack and
+  aisle). Ctrl+Z walked back object by object and, past the 60-entry cap,
+  the layout from before Generate was gone.
+- **Now** (`traceGenerate.js`, no store change): around the whole Generate —
+  its layer setup and the aisle keeper's re-pairing included — the history
+  is taken as it stood, and at the end replaced by that history plus ONE
+  entry, the finished layout. The entry before it is the state Generate
+  started from, so one Ctrl+Z restores it exactly (objects, groups, layers)
+  and one Ctrl+Y redoes the Generate. Both entries: the sync one and the
+  batched one the panel runs. The same outside-the-store history write the
+  copy watcher uses.
+
+| Test (1080×410; ×2 h/v) | Asserts |
+|---|---|
+| `GU-undo` | after a hand-drawn row and a hidden layer: Generate adds exactly one entry; one undo restores objects, groups and layers exactly; one redo the Generate |
+| `GU-first` | on an empty canvas with no history: one undo empties it, one redo brings it back |
+| `GU-regenerate` | a second Generate (the other orientation, each far over 60 objects) — one undo restores the first layout exactly, one redo the second; two undos the empty canvas |
+| `GU-batched` | the batched entry is one step too |
+
+**Checked in the app, horizontal then vertical:** Generate on an empty
+canvas: history 0 → 2, Ctrl+Z → 0 objects, Ctrl+Y → 330. Then Vertical over
+it: 330 → 347 objects (history +1); Ctrl+Z → the 330-object horizontal
+layout, rows at 0°; Ctrl+Y → 347, rows at 90°. No console errors.
+
+### HF — Small fixed-size handles (7569d59's code); no red-warning flicker on a building drag · `HF_handlesFlicker.test.js` (11 tests)
+**Handles.** The handle and rotate-grip code is 7569d59's, restored file for
+file (handleGeometry, ResizeHandlesOverlay, GroupRotateOverlay, groupRotate,
+fpRotate, FpRotateHandleOverlay, and the two handleHitTest calls). Only the
+three drawn sizes changed:
+- **The sizes:** resize squares 6 px (was 8), white with a 1 px accent
+  border; the rotate grip a 10 px white disc (was 14) on a 12 px stem (was
+  16). A fixed size on screen at every zoom, always shown.
+- **Click areas:** 7569d59's, unchanged: 14 px for a square, 16 px for the grip.
 - **One rule for everything:** a rack at any rotation, a selection group and
   a building (all three grips drawn by the shared RotateGrip).
+- **No extra line:** a selected rack's length-dimension line (the line under
+  it, beside the length label) is gone — every rack type. The labels stay.
 - **History:** drawing size (pure 6″ / 10″, then with an on-screen minimum
-  and cap), a bigger fixed size (10 / 16 px) and a rule hiding handles on
-  objects under 40 px were tried and reverted.
+  and cap), a bigger fixed size (10 / 16 px), a rule hiding handles on
+  objects under 12 / 40 px and a handleSizes rewrite were all tried and
+  reverted to 7569d59.
 
 **Red "no clear aisle" warnings on a building drag.**
 - **The cause:** the clearance labels re-ran the aisle check on the previewed
@@ -313,19 +342,18 @@ chrome, not drawing:
 
 | Test (1080×410; ×2 h/v) | Asserts |
 |---|---|
-| `HF-handles` | on racks turned 0°, 90°, 180° and 270°, at 1 %, 5 %, 20 %, 100 %, 300 % and 800 %: squares 6 px, the grip 10 px on a 12 px stem, on screen |
-| `HF-hit` | at the same zooms and turns: a press ½ px inside the grip's 12 px click area hits and ½ px outside misses; the same for a square's 12 px (from 5 % up — at 1 % the rack is 3 px and its end squares overlap) |
-| `HF-grips` | a selection group's grip is 10 px on a 12 px stem with a 12 px click area at every zoom; the building's grip takes the same sizes from handleSizes (read from fpRotate.js, which imports the Konva painters) |
-| `HF-always` | a rack only 3 px deep on screen, at 0°, 90°, 180° and 270°, still has its two end handles and the grip; a group at 0.05 % still has its grip; the hiding rule is gone from handleGeometry, groupRotate, GroupRotateOverlay and fpRotate, and the group overlay draws its grip unconditionally |
+| `HF-handles` | on racks turned 0°, 90°, 180° and 270°, at 5 %, 20 % and 100 %: squares 6 px, the grip 10 px on a 12 px stem, on screen |
+| `HF-hit` | at the same zooms and turns: a press ½ px inside the 14 px square click area hits and ½ px outside misses; the same for the grip's 16 px |
+| `HF-grips` | a selection group's grip is 10 px on a 12 px stem with a 16 px click area at every zoom; the building's grip takes GRIP_PX / GRIP_HIT_PX (read from fpRotate.js, which imports the Konva painters) |
 | `HF-flicker` | a pinched layout (at least one red warning) and a building drag over 120 fractional frames: the held blocks are used, moved by the drag, and the set of red warnings is identical on every frame |
 | `HF-multi` | a selection holding every rack and the column grid: the same. A one-rack selection re-checks, and the red warnings of rows it doesn't move are identical on every frame |
-| `HF-wire` (once) | the painters draw the layout's sizes (white, 1 px accent) through one RotateGrip; the clearance group sits at the source's offset |
+| `HF-wire` (once) | the painters draw the layout's sizes (white, 1 px accent) through one RotateGrip; no dimension line under a selected rack (its length label stays); the clearance group sits at the source's offset |
 
 **Checked in the app, horizontal and vertical:**
-- **Handles.** A rack, a two-rack group and the building selected in turn,
-  at 5 %, 20 %, 100 % and 300 %: squares 6 px; rack, group and building
-  grips 10 px; the stem 12 px. At 5 % the rack's handles show, small
-  against the rack.
+- **Handles.** A selected rack at 5 %, 20 % and 100 %: 2 squares of 6 px,
+  the grip 10 px, the stem 12 px. With Checks and Aisles hidden the overlay
+  holds exactly: the blue outline, the rack's label pills, the two squares,
+  the stem, the grip and its glyph — no other line.
 - **Building drag.** Several aisles pinched, then the building dragged from
   empty floor (found with the app's own hitTest). The red nodes stayed at
   270 (horizontal) and 216 (vertical) on all 40 frames, and after the drop.
@@ -1560,7 +1588,8 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LY | **Checks hidden still prints marks** | 2: LY-checks h/v | ✓ |
 | LY | **Locking leaves the object selected** | 2: LY-select h/v | ✓ |
 | LY | **Layers not saved with the layout** | 2: LY-save h/v | ✓ |
-| HF | **Sizes follow the zoom** (not fixed on screen) — against the 6 / 10 / 12 px handles | 4: HF-handles h/v, HF-grips h/v | ✓ |
+| HF | **Handle sizes back to 8 / 14 / 16** (7569d59's own) | 2: HF-handles h/v | ✓ |
+| GU | **Generate not collapsed to one step** | 8: GU-undo, GU-first, GU-regenerate, GU-batched (h/v) | ✓ |
 | HF | **A building drag re-checks the aisles every frame** | 4: HF-flicker, HF-multi (h/v) — also with the "not recomputed" checks removed, the red-set comparison alone fails in both orientations | ✓ |
 | AR | **Skip the rebuild** | 6: AR-recreate/handcopy/undo (h and v, before the replay redesign) | ✓ |
 | AR | **Keep aisles with a row between them** | 6 | ✓ |
@@ -1673,8 +1702,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,850 tests, 1,850 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,247 tests, 2,247 passing.**
+- **Plan suite: 1,856 tests, 1,856 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,253 tests, 2,253 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

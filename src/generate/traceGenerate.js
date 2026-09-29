@@ -19,6 +19,7 @@
 import { nanoid } from 'nanoid'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { generatedLayers, layerForType } from '../utils/layers'
+import { autoSave, serializeScene } from '../utils/saveLoad'
 import { sizingSheetLayout, generateFixtures } from './sizingLayout'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { rackFootprint, groupBySegment } from './columnCheck'
@@ -220,11 +221,43 @@ export function pickOrientation(brief, generateLayout, rules = DEFAULT_RULES) {
   }
 }
 
+/* ── Generate is ONE undo step ─────────────────────────────────────────────────
+   The store records an entry per action — clearing the last layout, placing
+   the building, every one of the hundreds of objects — so Ctrl+Z walked back
+   object by object and, past the 60-entry cap, the layout from before
+   Generate was gone. Around the whole Generate (its layer setup and the aisle
+   keeper's re-pairing included) the history is taken as it stood, and at the
+   end replaced by that history plus ONE entry: the finished layout. The entry
+   before it is the state Generate started from (the store's snapshot shape:
+   objects, groups, layers), so one Ctrl+Z restores it exactly and one Ctrl+Y
+   redoes the Generate. The same outside-the-store history write the copy
+   watcher uses (utils/copyPrompt.js). */
+const snapOf = (s) => JSON.stringify({ objects: s.objects, groups: s.groups || [], layers: s.layers })
+const HISTORY_CAP = 60   // the store's MAX_HISTORY
+
+function beginOneStep() {
+  const s = useCanvasStore.getState()
+  const kept = s.history.slice(0, s.historyIndex + 1)
+  // the state Generate starts from, exactly as it is now
+  if (kept.length) kept[kept.length - 1] = snapOf(s)
+  else kept.push(snapOf(s))
+  return kept
+}
+
+function endOneStep(kept) {
+  const s = useCanvasStore.getState()
+  const history = [...kept, snapOf(s)].slice(-HISTORY_CAP)
+  useCanvasStore.setState({ history, historyIndex: history.length - 1 })
+  try { autoSave(serializeScene(useCanvasStore.getState())) } catch { /* storage full or absent */ }
+}
+
 // ── Public entry the UI calls. Draws the building, fills it, returns capacity. ──
 export function generateAndPlace(brief, generateLayout = sizingSheetLayout, rules = DEFAULT_RULES) {
+  const kept = beginOneStep()
   const { queue, ...picked } = buildQueue(brief, generateLayout, rules)
   const store = useCanvasStore.getState()
   queue.forEach(o => store.addObject(o))
+  endOneStep(kept)
   return { ...placedCapacity(brief, rules), ...picked }
 }
 
@@ -349,6 +382,7 @@ export async function generateAndPlaceBatched(
   brief,
   { generateLayout = sizingSheetLayout, batch = 10, onProgress, rules = DEFAULT_RULES } = {},
 ) {
+  const kept = beginOneStep()
   const { queue, ...picked } = buildQueue(brief, generateLayout, rules)
   onProgress?.(0)
   await nextFrame()
@@ -360,6 +394,7 @@ export async function generateAndPlaceBatched(
     await nextFrame()
   }
 
+  endOneStep(kept)
   onProgress?.(1)
   return { ...placedCapacity(brief, rules), ...picked }
 }

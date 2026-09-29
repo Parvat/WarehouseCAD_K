@@ -104,10 +104,6 @@ export function RackLabels({ obj, zoom, gridSize }) {
       cursor += beamPx + upW
     })
     const totY = by + bh + 14 / zoom
-    nodes.push(
-      <Line key="totline" points={[bx, by + bh + 4 / zoom, bx + bw, by + bh + 4 / zoom]}
-        stroke={clr} strokeWidth={0.5 / zoom} opacity={0.5} listening={false} />
-    )
     nodes.push(<LabelPill key="total" cx={bx + bw / 2} cy={totY} text={fmtIn(bw)} fontSize={fs} zoom={zoom} color={clr} />)
     nodes.push(<LabelPill key="depth" cx={bx + bw + 6 / zoom + (fmtIn(bh).length * fs * 0.62 + (4 / zoom) * 2) / 2} cy={by + bh / 2} text={fmtIn(bh)} fontSize={fs} zoom={zoom} color={clr} />)
   }
@@ -130,10 +126,6 @@ export function RackLabels({ obj, zoom, gridSize }) {
       cursor += beamPx + upW
     })
     const totY = by + bh + 14 / zoom
-    nodes.push(
-      <Line key="totline" points={[bx, by + bh + 4 / zoom, bx + bw, by + bh + 4 / zoom]}
-        stroke={clr} strokeWidth={0.5 / zoom} opacity={0.5} listening={false} />
-    )
     nodes.push(<LabelPill key="total" cx={bx + bw / 2} cy={totY} text={fmtIn(bw)} fontSize={fs} zoom={zoom} color={clr} />)
     const frontTxt = fmtIn(rowH), frontTw = frontTxt.length * fs * 0.62 + (4 / zoom) * 2
     nodes.push(<LabelPill key="front" cx={bx - 6 / zoom - frontTw / 2} cy={by + rowH / 2} text={frontTxt} fontSize={fs} zoom={zoom} color={clr} />)
@@ -157,10 +149,6 @@ export function RackLabels({ obj, zoom, gridSize }) {
       nodes.push(<LabelPill key="spacing" cx={bx + tSpPx / 2} cy={by - 14 / zoom} text={spTxt} fontSize={fs} zoom={zoom} color={clr} />)
     }
     const totY = by + bh + 14 / zoom
-    nodes.push(
-      <Line key="totline" points={[bx, by + bh + 4 / zoom, bx + bw, by + bh + 4 / zoom]}
-        stroke={clr} strokeWidth={0.5 / zoom} opacity={0.5} listening={false} />
-    )
     nodes.push(<LabelPill key="total" cx={bx + bw / 2} cy={totY} text={fmtIn(bw)} fontSize={fs} zoom={zoom} color={clr} />)
   }
 
@@ -175,10 +163,6 @@ export function RackLabels({ obj, zoom, gridSize }) {
     const derivedW = (lanes + 1) * upW + lanes * laneWPx
 
     const wY = by + bh + 14 / zoom
-    nodes.push(
-      <Line key="wline" points={[bx, by + bh + 4 / zoom, bx + derivedW, by + bh + 4 / zoom]}
-        stroke={clr} strokeWidth={0.5 / zoom} opacity={0.5} listening={false} />
-    )
     nodes.push(<LabelPill key="width" cx={bx + derivedW / 2} cy={wY} text={fmtIn(derivedW)} fontSize={fs} zoom={zoom} color={clr} />)
     const dTxt = fmtIn(bh), dTw = dTxt.length * fs * 0.62 + (4 / zoom) * 2
     nodes.push(<LabelPill key="depth" cx={bx + derivedW + 6 / zoom + dTw / 2} cy={by + bh / 2} text={dTxt} fontSize={fs} zoom={zoom} color={clr} />)

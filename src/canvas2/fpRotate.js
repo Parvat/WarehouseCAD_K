@@ -36,7 +36,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { outlineBounds } from './shapes'
-import { handleSizes } from './handleGeometry'
+import { GRIP_PX, GRIP_HIT_PX, GRIP_STEM_PX } from './handleGeometry'
 
 /** Rotate world point `p` by `angleDeg` about `pivot`. Kept as its own
  *  small copy rather than imported from groupRotate.js's identical
@@ -98,15 +98,14 @@ export function computeFpRotateHandle(fp, gridSize, zoom) {
      original AABB-top math put the handle in when nothing was rotated). */
   const nx = ey / len, ny = -ex / len
 
-  // the same grip as a rack's (handleGeometry.js): drawing size, capped on screen, a stem out from the wall
-  const z = handleSizes(zoom, gridSize)
-  const out = z.pad + z.stem + z.grip / 2
+  // the same small grip as a rack's (handleGeometry.js): a short stem out from the wall
+  const out = (6 + GRIP_STEM_PX + GRIP_PX / 2) / zoom
   const rx = mx + nx * out
   const ry = my + ny * out
-  const lx = mx + nx * z.pad
-  const ly = my + ny * z.pad
-  const r = z.grip / 2
-  return { rx, ry, lx, ly, nx, ny, r, hitR: z.hitR, pivot }
+  const lx = mx + nx * 6 / zoom
+  const ly = my + ny * 6 / zoom
+  const r = GRIP_PX / 2 / zoom
+  return { rx, ry, lx, ly, nx, ny, r, hitR: GRIP_HIT_PX / 2 / zoom, pivot }
 }
 
 /** Whether a world point falls on the fp rotate handle — same r hit

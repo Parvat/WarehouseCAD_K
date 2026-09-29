@@ -17,18 +17,15 @@
 
 import { getObjectBounds, getHandlePositions, HANDLES } from '../utils/canvas'
 
-/* Handle sizes are FIXED on screen, the same at every zoom (divided by the
-   zoom for world units): they are chrome, not drawing, and always shown.
-   Small — the handles must never outweigh what they select — with click
-   areas of at least 12 px. One set for every handle: the resize squares and
-   the rotate grip of a rack, a selection group and a building
-   (handleSizes). */
-export const HANDLE_PX = 6           // a resize square's side, drawn
-export const GRIP_PX = 10            // the rotate grip's diameter, drawn
-export const GRIP_STEM_PX = 12       // the grip's stem
-export const HANDLE_GAP_PX = 6       // from the object's edge to a square's centre (and the stem's foot)
-export const HANDLE_HIT_PX = 12      // a resize square's click area
-export const GRIP_HIT_PX = 12        // the grip's click area
+/* Handle sizes, in SCREEN px at every zoom (divided by the zoom for world
+   units). Drawn small — the handles are chrome, not content — but hit in a
+   comfortable 14–16 px area. One set for every handle: the resize squares,
+   and the rotate grip of a rack, a selection group and a building. */
+export const HANDLE_PX = 6          // a resize square, drawn
+export const HANDLE_HIT_PX = 14     // a resize square, hit
+export const GRIP_PX = 10           // the rotate grip, drawn (diameter)
+export const GRIP_HIT_PX = 16       // the rotate grip, hit (diameter)
+export const GRIP_STEM_PX = 12      // the grip's stem, from the handle gap to the grip
 export const HANDLE_FILL = '#ffffff'
 export const HANDLE_ACCENT = '#4a9eff'
 
@@ -68,21 +65,11 @@ function toLocal(bounds, rotation, wx, wy) {
   }
 }
 
-/** Every handle size in WORLD units for a zoom: `handle` (a square's side),
- *  `grip` (the rotate grip's diameter), `stem`, `pad` (the gap from the
- *  object's edge to a square's centre, and to the stem's foot), `hitHalf` /
- *  `hitR` (the click areas). */
-export function handleSizes(zoom = 1, gridSize = 40) {   // eslint-disable-line no-unused-vars
-  const px = (v) => v / zoom
-  return { handle: px(HANDLE_PX), grip: px(GRIP_PX), stem: px(GRIP_STEM_PX), pad: px(HANDLE_GAP_PX), hitHalf: px(HANDLE_HIT_PX) / 2, hitR: px(GRIP_HIT_PX) / 2 }
-}
-
-/** The rotate handle's LOCAL (pre-rotation) position: centred over the
- *  object, a stem above its top edge. Exported so the painter and the
- *  hit-test can never disagree on where it sits. */
-export function rotateHandlePos(bounds, zoom, gridSize = 40) {
-  const z = handleSizes(zoom, gridSize)
-  return { x: bounds.x + bounds.width / 2, y: bounds.y - (z.pad + z.stem + z.grip / 2) }
+/** The rotate handle's LOCAL (pre-rotation) position — CanvasUI.jsx's own
+ *  `rx = bounds.x + bounds.width/2, ry = bounds.y - 70/zoom`. Exported so the
+ *  painter and the hit-test can never disagree on where it sits. */
+export function rotateHandlePos(bounds, zoom) {
+  return { x: bounds.x + bounds.width / 2, y: bounds.y - (6 + GRIP_STEM_PX + GRIP_PX / 2) / zoom }
 }
 
 /** getHandlePositions' own pad, screen-constant like everything else here.
@@ -102,8 +89,8 @@ export function rotateHandlePos(bounds, zoom, gridSize = 40) {
  *  hit box's inner edge flush with the object's true edge at every zoom,
  *  matching what a real screen-space "handle sits just outside the object"
  *  is actually supposed to mean. */
-export function handlePad(zoom, gridSize = 40) {
-  return handleSizes(zoom, gridSize).pad
+export function handlePad(zoom) {
+  return 6 / zoom
 }
 
 /** CanvasUI.jsx's cursorMap, verbatim: each handle's resize cursor rotates
@@ -129,39 +116,38 @@ export function cursorForHandle(handle, rotation) {
  *  collectDragNodes for the same idea applied to plain object drag) can
  *  never disagree on where a handle belongs mid-gesture, before React's
  *  own re-render has caught up. */
-export function computeHandleLayout(obj, zoom, gridSize = 40) {
+export function computeHandleLayout(obj, zoom) {
   const bounds = getObjectBounds(obj)
   const enabled = enabledHandlesFor(obj.type)
   const canRotate = rotateEnabledFor(obj.type)
-  const z = handleSizes(zoom, gridSize)
-  const positions = getHandlePositions(bounds, z.pad)
-  const hs = z.handle / 2
+  const positions = getHandlePositions(bounds, handlePad(zoom))
+  const hs = HANDLE_PX / 2 / zoom
   let rotateHandle = null
   if (canRotate) {
-    const { x: rx, y: ry } = rotateHandlePos(bounds, zoom, gridSize)
-    rotateHandle = { rx, ry, lineY: bounds.y - z.pad, r: z.grip / 2 }
+    const { x: rx, y: ry } = rotateHandlePos(bounds, zoom)
+    rotateHandle = { rx, ry, lineY: bounds.y - 6 / zoom, r: GRIP_PX / 2 / zoom }
   }
   return { bounds, enabled, positions, hs, canRotate, rotateHandle }
 }
 
 /** Which handle (a HANDLES entry, or 'rotate') a world point falls on, or
- *  null. The click areas are the drawn handles, but never under HIT_MIN_PX
- *  on screen (handleSizes). */
-export function handleHitTest(obj, worldX, worldY, zoom, gridSize = 40) {
+ *  null. The hit areas are bigger than the drawn handles (HANDLE_HIT_PX,
+ *  GRIP_HIT_PX), both screen-constant via /zoom (a screen-space target size
+ *  needs a WORLD size that shrinks as the view zooms in). */
+export function handleHitTest(obj, worldX, worldY, zoom) {
   const bounds = getObjectBounds(obj)
   const local = toLocal(bounds, obj.rotation, worldX, worldY)
-  const z = handleSizes(zoom, gridSize)
-  const hs = z.hitHalf
+  const hs = HANDLE_HIT_PX / 2 / zoom
 
   if (rotateEnabledFor(obj.type)) {
-    const { x: rx, y: ry } = rotateHandlePos(bounds, zoom, gridSize)
-    const r = z.hitR
+    const { x: rx, y: ry } = rotateHandlePos(bounds, zoom)
+    const r = GRIP_HIT_PX / 2 / zoom
     if (Math.hypot(local.x - rx, local.y - ry) <= r) return 'rotate'
   }
 
   const enabled = enabledHandlesFor(obj.type)
   if (!enabled.length) return null
-  const positions = getHandlePositions(bounds, z.pad)
+  const positions = getHandlePositions(bounds, handlePad(zoom))
   for (const h of enabled) {
     const hp = positions[h]
     if (!hp) continue

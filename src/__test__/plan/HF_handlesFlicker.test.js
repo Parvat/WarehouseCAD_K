@@ -1,7 +1,8 @@
-// Area HF — (1) selection handles and rotate grips are a FIXED size on screen
-// at every zoom, always shown: 6 px white resize squares (1 px accent) and a
-// 10 px rotate grip on a 12 px stem, click areas 12 px; the same for a rack at
-// any rotation, a selection group and a building. (2) The red "no clear
+// Area HF — (1) selection handles and rotate grips are small and the same
+// size on screen at every zoom: 6 px white resize squares (1 px accent), a
+// 10 px rotate grip on a 12 px stem, hit areas 14–16 px (7569d59's design and
+// click areas, only the three drawn sizes smaller); the same for a rack
+// at any rotation, a selection group and a building. (2) The red "no clear
 // aisle" warnings don't flicker while the whole building is dragged: a drag
 // that carries every rack and column holds the check's result and moves it.
 // 1080 x 410, 25 x 30, reach; horizontal and vertical.
@@ -14,7 +15,7 @@ import { layoutColumns } from '../../generate/usableCapacity'
 import { DEFAULT_RULES } from '../../rules/defaults'
 import { rebuildAisles } from '../../utils/aisleRebuild'
 import { getObjectBounds } from '../../utils/canvas'
-import { computeHandleLayout, handleHitTest, HANDLE_PX, GRIP_PX, GRIP_STEM_PX, HANDLE_HIT_PX, GRIP_HIT_PX } from '../../canvas2/handleGeometry'
+import { computeHandleLayout, handleHitTest, HANDLE_PX, HANDLE_HIT_PX, GRIP_PX, GRIP_HIT_PX, GRIP_STEM_PX } from '../../canvas2/handleGeometry'
 import { computeGroupOutline } from '../../canvas2/groupRotate'
 import { clearanceSource } from '../../canvas2/clearanceSource'
 import { aisleWarningRect } from '../../canvas2/aisleMarks'
@@ -60,59 +61,43 @@ describe.each(['horizontal', 'vertical'])('HF — %s', (orientation) => {
   const objs = layout(orientation)
   const rack = objs.find(o => o.type === 'rack_double_row')
 
-  it('HF-handles: a fixed size on screen at every zoom — 6 px squares and a 10 px grip on a 12 px stem at 5 %, 20 % and 100 % (and 1 %, 300 %, 800 %) — at 0°, 90°, 180° and 270°', () => {
-    expect([HANDLE_PX, GRIP_PX, GRIP_STEM_PX, HANDLE_HIT_PX, GRIP_HIT_PX]).toEqual([6, 10, 12, 12, 12])
-    for (const rotation of [0, 90, 180, 270]) for (const z of [0.01, 0.05, 0.2, 1, 3, 8]) {
-      const L = computeHandleLayout({ ...rack, rotation }, z, GS)
-      expect(r3(L.hs * 2 * z)).toBe(6)
-      expect(r3(L.rotateHandle.r * 2 * z)).toBe(10)
-      expect(r3((L.rotateHandle.lineY - (L.rotateHandle.ry + L.rotateHandle.r)) * z)).toBe(12)
+  it('HF-handles: resize squares 6 px, rotate grip 10 px on a 12 px stem, the same on screen at 5 %, 20 % and 100 % — at 0°, 90°, 180° and 270°', () => {
+    expect([HANDLE_PX, GRIP_PX, GRIP_STEM_PX]).toEqual([6, 10, 12])
+    for (const rotation of [0, 90, 180, 270]) for (const z of ZOOMS) {
+      const L = computeHandleLayout({ ...rack, rotation }, z)
+      expect(r3(L.hs * 2 * z)).toBe(6)                                         // square side, screen px
+      expect(r3(L.rotateHandle.r * 2 * z)).toBe(10)                            // grip diameter
+      expect(r3((L.rotateHandle.lineY - (L.rotateHandle.ry + L.rotateHandle.r)) * z)).toBe(12)   // the stem
     }
   })
 
-  it('HF-hit: the click areas are 12 px on screen (bigger than the 6 px / 10 px drawn), at every zoom and rotation', () => {
-    for (const rotation of [0, 90, 180, 270]) for (const z of [0.01, 0.05, 0.2, 1, 3, 8]) {
+  it('HF-hit: the hit areas are 14 px (squares) and 16 px (grip), bigger than drawn, at every zoom and rotation', () => {
+    for (const rotation of [0, 90, 180, 270]) for (const z of ZOOMS) {
       const o = { ...rack, rotation }
-      const L = computeHandleLayout(o, z, GS), b = getObjectBounds(o)
+      const L = computeHandleLayout(o, z), b = getObjectBounds(o)
       const cx = b.x + b.width / 2, cy = b.y + b.height / 2, t = (rotation * Math.PI) / 180
       const world = (p) => ({ x: cx + (p.x - cx) * Math.cos(t) - (p.y - cy) * Math.sin(t), y: cy + (p.x - cx) * Math.sin(t) + (p.y - cy) * Math.cos(t) })
-      const at = (p, sx, sy) => { const w = world({ x: p.x + sx / z, y: p.y + sy / z }); return handleHitTest(o, w.x, w.y, z, GS) }
-      const g = { x: L.rotateHandle.rx, y: L.rotateHandle.ry }
-      expect(at(g, 6 - 0.5, 0)).toBe('rotate')
-      expect(at(g, 6 + 0.5, 0)).toBe(null)
-      if (z < 0.05) continue                                                     // a 3 px rack: its end squares sit inside each other's reach
+      const at = (p, sx, sy) => { const w = world({ x: p.x + sx / z, y: p.y + sy / z }); return handleHitTest(o, w.x, w.y, z) }
       const ml = L.positions.ml
-      expect(at(ml, 0, 6 - 0.5)).toBe('ml')
-      expect(at(ml, 0, 6 + 0.5)).toBe(null)
+      expect(at(ml, 0, HANDLE_HIT_PX / 2 - 0.5)).toBe('ml')                    // inside the 14 px box, outside the 6 px drawn one
+      expect(at(ml, 0, HANDLE_HIT_PX / 2 + 0.5)).toBe(null)
+      const g = { x: L.rotateHandle.rx, y: L.rotateHandle.ry }
+      expect(at(g, GRIP_HIT_PX / 2 - 0.5, 0)).toBe('rotate')
+      expect(at(g, GRIP_HIT_PX / 2 + 0.5, 0)).toBe(null)
     }
   })
 
-  it('HF-grips: a selection group\'s and a building\'s rotate grips are the same fixed size (10 px on a 12 px stem, 12 px click area) at every zoom', () => {
+  it('HF-grips: a selection group\'s and a building\'s rotate grips are the same size (10 px drawn on a 12 px stem, 16 px hit) at every zoom', () => {
     // the building's grip (fpRotate.js imports the Konva painters, so it is read here, not run)
     const fpr = readFileSync('src/canvas2/fpRotate.js', 'utf8')
-    expect(fpr).toMatch(/const z = handleSizes\(zoom, gridSize\)/)
-    expect(fpr).toMatch(/const r = z\.grip \/ 2/)
+    expect(fpr).toMatch(/const r = GRIP_PX \/ 2 \/ zoom/)
+    expect(fpr).toMatch(/hitR: GRIP_HIT_PX \/ 2 \/ zoom/)
     expect(fpr).toMatch(/return Math\.hypot\(worldX - h\.rx, worldY - h\.ry\) <= h\.hitR/)
     const two = objs.filter(o => o.type === 'rack_double_row').slice(0, 2)
-    for (const z of [0.01, 0.05, 0.2, 1, 3, 8]) {
-      const g = computeGroupOutline(two, z, two, GS)
-      expect([r3(g.r * 2 * z), r3(g.hitR * 2 * z), r3((g.ly - (g.hy + g.r)) * z)]).toEqual([10, 12, 12])
+    for (const z of ZOOMS) {
+      const g = computeGroupOutline(two, z)
+      expect([r3(g.r * 2 * z), r3(g.hitR * 2 * z), r3((g.ly - (g.hy + g.r)) * z)]).toEqual([10, 16, 12])
     }
-  })
-
-  it('HF-always: handles and grips are always shown — no hiding rule: a rack only 3 px deep on screen still has its end squares and grip, a group and a building their grips', () => {
-    const b0 = getObjectBounds(rack), z = 3 / Math.min(b0.width, b0.height)
-    for (const rotation of [0, 90, 180, 270]) {
-      const L = computeHandleLayout({ ...rack, rotation }, z, GS)
-      expect(L.enabled).toEqual(['ml', 'mr'])
-      expect(L.canRotate).toBe(true)
-      expect(L.rotateHandle).not.toBe(null)
-    }
-    const two = objs.filter(o => o.type === 'rack_double_row').slice(0, 2)
-    expect(computeGroupOutline(two, 0.0005, two, GS)).not.toBe(null)
-    const src = (f) => readFileSync(f, 'utf8')
-    for (const f of ['src/canvas2/handleGeometry.js', 'src/canvas2/groupRotate.js', 'src/canvas2/GroupRotateOverlay.jsx', 'src/canvas2/fpRotate.js']) expect(src(f)).not.toMatch(/bigEnoughForHandles|showGrip|HANDLES_MIN_OBJECT_PX/)
-    expect(src('src/canvas2/GroupRotateOverlay.jsx')).toMatch(/\n\s*<RotateGrip x=\{hx\} y=\{hy\} r=\{r\} sx=\{hx\} sy=\{ly\} \/>/)
   })
 
   it('HF-flicker: dragging the whole building, the set of red warnings is identical on every frame (the held result moves with it)', () => {
@@ -158,10 +143,14 @@ describe('HF — wiring', () => {
     const src = (f) => readFileSync(f, 'utf8')
     const rh = src('src/canvas2/ResizeHandlesOverlay.jsx')
     expect(rh).toMatch(/x=\{hp\.x - hs\} y=\{hp\.y - hs\} width=\{hs \* 2\} height=\{hs \* 2\}\s*\n\s*fill=\{HANDLE_FILL\} stroke=\{HANDLE_ACCENT\} strokeWidth=\{1\}/)
-    expect(rh).toMatch(/<RotateGrip x=\{rx\} y=\{ry\} r=\{r\} sx=\{rx\} sy=\{lineY\} \/>/)
+    expect(rh).toMatch(/<RotateGrip x=\{rx\} y=\{ry\} r=\{r\} sx=\{rx\} sy=\{lineY\} zoom=\{zoom\} \/>/)
     expect(src('src/canvas2/GroupRotateOverlay.jsx')).toMatch(/<RotateGrip x=\{hx\} y=\{hy\} r=\{r\}/)
     expect(src('src/canvas2/FpRotateHandleOverlay.jsx')).toMatch(/<RotateGrip x=\{rx\} y=\{ry\} r=\{r\}/)
     expect(src('src/canvas2/handleGeometry.js')).toMatch(/HANDLE_FILL = '#ffffff'/)
+    // a selected rack shows its outline, squares and grip — no dimension line under it (its labels stay)
+    const dl = src('src/canvas2/DimensionLabels.jsx')
+    expect(dl).not.toMatch(/key="(totline|wline)"/)
+    expect(dl).toMatch(/<LabelPill key="total"/)
     expect(src('src/canvas2/DimensionLabels.jsx')).toMatch(/<Group name="column-clearance-labels" listening=\{false\} x=\{src\.x\} y=\{src\.y\}>/)
   })
 })

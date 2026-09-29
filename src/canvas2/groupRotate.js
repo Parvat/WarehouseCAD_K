@@ -71,7 +71,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { boundsOf } from './hitTest'
-import { handleSizes } from './handleGeometry'
+import { GRIP_PX, GRIP_HIT_PX, GRIP_STEM_PX } from './handleGeometry'
 
 /** Rotate world point `p` by `angleDeg` about `pivot`. */
 function rotateAround(p, angleDeg, pivot) {
@@ -92,7 +92,7 @@ function rotateAround(p, angleDeg, pivot) {
  *  ONE transform ({P, R}) that places it — a caller draws minX/minY/
  *  maxX/maxY/hx/hy/ly/r exactly as given, inside a Konva Group positioned
  *  at P, offset at P, rotated by R (spin()'s own pattern, generalised). */
-export function computeGroupOutline(objs, zoom, allObjects = objs, gridSize = 40) {
+export function computeGroupOutline(objs, zoom, allObjects = objs) {
   if (!objs || !objs.length) return null
   const R = objs[0].rotation || 0
 
@@ -119,12 +119,11 @@ export function computeGroupOutline(objs, zoom, allObjects = objs, gridSize = 40
 
   const pad = 10
   const hx = (minX + maxX) / 2
-  // the same grip as a rack's (handleGeometry.js): drawing size, capped on screen
-  const z = handleSizes(zoom, gridSize)
-  const hy = minY - pad - z.stem - z.grip / 2
+  // the same small grip as a rack's (handleGeometry.js): a short stem up from the outline
+  const hy = minY - pad - (GRIP_STEM_PX + GRIP_PX / 2) / zoom
   const ly = minY - pad
-  const r = z.grip / 2
-  return { minX, minY, maxX, maxY, pad, hx, hy, ly, r, hitR: z.hitR, P, R }
+  const r = GRIP_PX / 2 / zoom
+  return { minX, minY, maxX, maxY, pad, hx, hy, ly, r, hitR: GRIP_HIT_PX / 2 / zoom, P, R }
 }
 
 /** Whether a world point falls on the group rotate handle — CanvasUI.jsx's
@@ -132,8 +131,8 @@ export function computeGroupOutline(objs, zoom, allObjects = objs, gridSize = 40
  *  invisible <circle> hit target). The handle's LOCAL (hx,hy) has to be
  *  carried through the SAME {P,R} transform the paint side uses, or a
  *  click would miss wherever the rotated handle actually renders. */
-export function groupRotateHandleHitTest(objs, zoom, worldX, worldY, allObjects = objs, gridSize = 40) {
-  const g = computeGroupOutline(objs, zoom, allObjects, gridSize)
+export function groupRotateHandleHitTest(objs, zoom, worldX, worldY, allObjects = objs) {
+  const g = computeGroupOutline(objs, zoom, allObjects)
   if (!g) return false
   const world = rotateAround({ x: g.hx, y: g.hy }, g.R, g.P)
   return Math.hypot(worldX - world.x, worldY - world.y) <= g.hitR

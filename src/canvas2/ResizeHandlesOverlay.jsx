@@ -4,10 +4,10 @@ import { spin } from './shapes'
 import { computeHandleLayout, HANDLE_FILL, HANDLE_ACCENT } from './handleGeometry'
 
 /** The rotate grip every selection shares (a rack, a group, a building): a
- *  1 px stem from (sx, sy) to the grip, and a white disc with a 1 px accent
- *  ring and a ↻ glyph, centred on (x, y) with radius r (world units —
- *  drawing size, handleSizes). Names let the live resize sync find its parts. */
-export function RotateGrip({ x, y, r, sx, sy }) {
+ *  short 1 px stem from (sx, sy) to the grip, and a small white disc with a
+ *  1 px accent ring and a ↻ glyph, centred on (x, y) with radius r (world
+ *  units = screen px / zoom). Names let the live resize sync find its parts. */
+export function RotateGrip({ x, y, r, sx, sy, zoom }) {
   return (
     <>
       <Line name="handleline" points={[sx, sy, x, y]} stroke={HANDLE_ACCENT} strokeWidth={1}
@@ -18,7 +18,7 @@ export function RotateGrip({ x, y, r, sx, sy }) {
         shadowForStrokeEnabled={false} listening={false} />
       <Text name="handleglyph" x={x - r} y={y - r} width={r * 2} height={r * 2}
         text="↻" align="center" verticalAlign="middle"
-        fontSize={r * 1.4} fontFamily="sans-serif" fill={HANDLE_ACCENT}
+        fontSize={10 / zoom} fontFamily="sans-serif" fill={HANDLE_ACCENT}
         listening={false} />
     </>
   )
@@ -50,7 +50,7 @@ export function RotateGrip({ x, y, r, sx, sy }) {
    divides by zoom for the exact same reason, and this is the same trick,
    not a different one). */
 function ResizeHandlesOverlayView({ obj, zoom, gridSize = 40 }) {
-  const layout = computeHandleLayout(obj, zoom, gridSize)
+  const layout = computeHandleLayout(obj, zoom)
   const { enabled, positions, hs, canRotate, rotateHandle } = layout
   if (!enabled.length && !canRotate) return null
 
@@ -70,7 +70,7 @@ function ResizeHandlesOverlayView({ obj, zoom, gridSize = 40 }) {
       })}
       {canRotate && (() => {
         const { rx, ry, lineY, r } = rotateHandle
-        return <RotateGrip x={rx} y={ry} r={r} sx={rx} sy={lineY} />
+        return <RotateGrip x={rx} y={ry} r={r} sx={rx} sy={lineY} zoom={zoom} />
       })()}
     </Group>
   )
@@ -91,7 +91,7 @@ export function syncHandleOverlayNode(group, obj, zoom, gridSize = 40) {
   group.offset({ x: t.offsetX, y: t.offsetY })
   group.rotation(t.rotation)
 
-  const { positions, hs, rotateHandle } = computeHandleLayout(obj, zoom, gridSize)
+  const { positions, hs, rotateHandle } = computeHandleLayout(obj, zoom)
   for (const child of group.getChildren()) {
     const nm = child.name() || ''
     if (nm.startsWith('handlebox:')) {

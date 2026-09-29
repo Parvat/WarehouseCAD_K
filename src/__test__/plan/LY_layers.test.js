@@ -123,7 +123,7 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect(colGuides(withLayer(noBuilding, 'columns', { visible: false }))).toEqual([])
   })
 
-  it('LY-undo: a layer change is one undo step — undo and redo restore the eye and padlock; each undo entry carries the layers, Generate\'s with Building locked', () => {
+  it('LY-undo: a layer change is one undo step — undo and redo restore the eye and padlock; each undo entry carries the layers; one more undo goes back before Generate', () => {
     const s = () => m.useCanvasStore.getState()
     const state = () => s().layers.map(l => [l.id, l.visible, l.locked].join(':')).join(' ')
     const gen = state()
@@ -139,10 +139,13 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect(s().objects).toEqual(objects)                              // a layer step changes no object
     s().redo(); expect(state()).toBe(hid)
     s().redo(); expect(state()).toBe(unlocked)
-    // every undo entry carries its layers (Generate's own entries: Building locked)
+    // every undo entry carries its layers
     expect(JSON.parse(s().history[s().historyIndex]).layers).toEqual(s().layers)
+    // Generate is one step (GU): one more Ctrl+Z goes back before it — no
+    // objects, Building no longer locked
     s().undo(); s().undo(); s().undo()
-    expect(s().layers.find(l => l.id === 'building').locked).toBe(true)
+    expect(s().objects).toEqual([])
+    expect(s().layers.find(l => l.id === 'building').locked).toBe(false)
   })
 
   it('LY-hidden: a hidden layer is not drawn, not pickable and not in the PDF — each layer in turn prints exactly as the layout without its objects', () => {
