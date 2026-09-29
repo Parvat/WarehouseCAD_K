@@ -21,7 +21,8 @@ import { buildingSections } from '../../utils/syncSections'
 import { rebuildAisles } from '../../utils/aisleRebuild'
 import { installAisleKeeper } from '../../utils/aisleKeeper'
 import { installRowEditKeeper } from '../../utils/rowEditKeeper'
-import { installCopyWatcher, useCopyPrompt, copyNow, flushCopyWatcher, buttonText } from '../../utils/copyPrompt'
+import { installCopyWatcher, useCopyPrompt, copyNow, flushCopyWatcher, buttonText, turnCopyingOn, MANUAL_NOTICE, BACK_ON_NOTICE } from '../../utils/copyPrompt'
+import { serializeScene, deserializeScene } from '../../utils/saveLoad'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { copyPreviewRects, bayRuns } from '../../utils/copyChange'
@@ -93,10 +94,9 @@ describe.each(['horizontal', 'vertical'])('CC — %s', (orientation) => {
   })
 
   it('CC-across: a row moved ACROSS -> "Copy to all sections"; hover previews without changing anything; the copy moves row 5 of every other section by the DELTA only (a row already offset keeps its offset); first undo takes the copies, second the move', async () => {
-    load(base)
-    // section 1's row 5 already sits 1' along and 6" across from the others (an earlier change, left local)
-    const off = rowIn(secKeys[0], K)[0]
-    await act(() => store.getState().commitObjectUpdate(off.id, A.move(off, GS, -GS / 2)))
+    // section 1's row 5 already sits 1' along and 6" across from the others (the layout came that way)
+    const off = base.find(o => o.genSection === secKeys[0] && o.rowIndex === K)
+    load(base.map(o => (o.id === off.id ? { ...o, ...A.move(o, GS, -GS / 2) } : o)))
     const was = new Map(objs().filter(o => BEAM.has(o.type)).map(o => [o.id, { run: A.run(o), cross: A.cross(o) }]))
     const h0 = hist()
     await act(() => store.getState().commitObjectUpdate(src().id, A.move(src(), 0, GS)))
@@ -196,19 +196,6 @@ describe.each(['horizontal', 'vertical'])('CC — %s', (orientation) => {
     expect(buttonText('Copy to all sections', 1)).toBe('Copy to all sections · 1 copy')
   })
 
-  it('CC-mixed: rows in two sections moved together -> a warning note, no copy buttons, nothing copied', async () => {
-    load(base)
-    const two = [rowIn(secKeys[0], K)[0].id, src().id]
-    const was = new Map(objs().filter(o => BEAM.has(o.type)).map(o => [o.id, A.cross(o)]))
-    await act(() => { store.setState({ selectedIds: two }); const d = A.move({ x: 0, y: 0 }, 0, GS); store.getState().moveObjects(two, d.x, d.y) })
-    expect(offer()).toEqual({ text: "This change affects rows in 2 sections, so it can't be copied. Make the change in one section, then copy it.", blocked: true })
-    const html = renderNote()
-    expect(html).toContain('aria-label="Can&#x27;t copy this change"')
-    expect(html).not.toMatch(/Copy to (all sections|this section)/)
-    expect(copyNow()).toBe(null)
-    for (const r of objs().filter(o => BEAM.has(o.type) && !two.includes(o.id))) expect(A.cross(r)).toEqual(was.get(r.id))
-  })
-
   it('CC-cant: other changes the note can\'t copy say why (upright width; a move and a bay change in one go); "Match bays" and moving the building say nothing', async () => {
     load(base)
     const s0 = strip(src())
@@ -225,9 +212,8 @@ describe.each(['horizontal', 'vertical'])('CC — %s', (orientation) => {
   })
 
   it('CC-along: a row moved ALONG -> "Copy to this section\'s rows"; every other row of that section moves by the delta (from its own place); other sections untouched', async () => {
-    load(base)
-    const other = rowIn(S, K + 1)[0]
-    await act(() => store.getState().commitObjectUpdate(other.id, A.move(other, -GS, 0)))   // already 1' back
+    const other = base.find(o => o.genSection === S && o.rowIndex === K + 1)
+    load(base.map(o => (o.id === other.id ? { ...o, ...A.move(o, -GS, 0) } : o)))            // already 1' back
     const was = new Map(objs().filter(o => BEAM.has(o.type)).map(o => [o.id, { run: A.run(o), cross: A.cross(o) }]))
     await act(() => store.getState().commitObjectUpdate(src().id, A.move(src(), 2 * GS, 0)))
     const o = offer()
@@ -342,24 +328,109 @@ describe.each(['horizontal', 'vertical'])('CC — %s', (orientation) => {
     expect(pieces[0].beams.filter(b => b === 108).length).toBe(bw.beams.filter(b => b === 108).length + 1)
   })
 
-  it('CC-ignore: ignoring the note leaves the change local; the note is gone after the next action (a row action gets its own note); nothing piles up', async () => {
+  it('CC-manual: shorten a row, ignore the note, move another row up -> manual mode: the notice, no copy note, nothing copied; the building carries the mode', async () => {
     load(base)
-    const was = new Map(objs().filter(o => BEAM.has(o.type)).map(o => [o.id, A.cross(o)]))
-    await act(() => store.getState().commitObjectUpdate(src().id, A.move(src(), 0, GS)))
-    expect(offer()).not.toBe(null)
-    await act(() => store.getState().commitObjectUpdate('fp', { label: 'Building A' }))    // the next action
+    const was = new Map(objs().filter(o => BEAM.has(o.type)).map(o => [o.id, strip(o)]))
+    const s0 = src()
+    await act(() => store.getState().deleteSingleBay(s0.id, s0.beams.length - 1))          // shorten a row
+    expect(offer().parts.map(p => p.button)).toEqual(["Copy to this section's rows"])
+    const r2 = rowIn(S, K + 2)[0]
+    await act(() => store.getState().commitObjectUpdate(r2.id, A.move(r2, 0, -GS)))          // ignored: move another row up
+    expect(useCopyPrompt.getState().manual).toBe(true)
+    expect(useCopyPrompt.getState().notice).toBe(MANUAL_NOTICE)
+    expect(MANUAL_NOTICE).toBe('Sections no longer match, so copying is turned off. Changes now apply only where you make them.')
     expect(offer()).toBe(null)
-    for (const s of secKeys.filter(k => k !== S)) expect(A.cross(rowIn(s, K)[0])).toEqual(was.get(rowIn(s, K)[0].id))
-    // a second row action offers only ITS change
+    expect(get('fp').copyManual).toBe(true)
+    const html = renderNote()
+    expect(html).toContain('aria-label="Turn copying back on"')
+    expect(html).not.toMatch(/Copy to (all sections|this section)/)
+    // nothing copied: every other rack is as it was
+    for (const r of objs().filter(o => BEAM.has(o.type) && o.id !== s0.id && o.id !== r2.id)) expect(strip(r)).toEqual(was.get(r.id))
+    // later changes: still no note; undo / redo keep the mode
+    const r3 = rowIn(S, K + 4)[0]
+    await act(() => store.getState().commitObjectUpdate(r3.id, A.move(r3, 0, GS / 2)))
+    expect(offer()).toBe(null)
+    store.getState().undo(); await flushCopyWatcher(); store.getState().undo(); await flushCopyWatcher()
+    expect(get('fp').copyManual).toBe(true)
+    expect(useCopyPrompt.getState().manual).toBe(true)
+  })
+
+  it('CC-manual-ways: dismissing an unused note -> manual mode; an undone change does not; using one of a diagonal drag\'s two buttons and leaving the other does not', async () => {
+    load(base)
+    await act(() => store.getState().commitObjectUpdate(src().id, A.move(src(), 0, GS)))
+    useCopyPrompt.getState().dismiss()
+    expect(useCopyPrompt.getState().manual).toBe(true)
+    load(base)
+    await act(() => store.getState().commitObjectUpdate(src().id, A.move(src(), 0, GS)))
+    store.getState().undo(); await flushCopyWatcher()                              // the change is gone: nothing left unmatched
     const r2 = rowIn(S, K + 2)[0]
     await act(() => store.getState().commitObjectUpdate(r2.id, A.move(r2, 0, -GS / 2)))
+    expect(useCopyPrompt.getState().manual).toBe(false)
+    expect(offer().parts.length).toBe(1)
+    load(base)
+    await act(() => store.getState().commitObjectUpdate(src().id, A.move(src(), 3 * GS, 2 * GS)))
+    copyNow(0); await flushCopyWatcher()                                           // the across part; the along part left
+    await act(() => store.getState().commitObjectUpdate(r2.id, A.move(r2, 0, -GS / 2)))
+    expect(useCopyPrompt.getState().manual).toBe(false)
     expect(offer().text).toBe(`Row ${K + 2} moved 6" across the aisles`)
-    copyNow(); await flushCopyWatcher()
-    for (const s of secKeys.filter(k => k !== S)) expect(A.cross(rowIn(s, K)[0])).toEqual(was.get(rowIn(s, K)[0].id))   // row 5 still local
-    // undo / redo clear the note too
-    await act(() => store.getState().commitObjectUpdate(src().id, A.move(src(), 0, -GS)))
-    expect(offer()).not.toBe(null)
-    store.getState().undo(); await flushCopyWatcher()
+  })
+
+  it('CC-manual-multi: rows in two sections moved together -> manual mode with the notice; no copy buttons; nothing copied', async () => {
+    load(base)
+    const two = [rowIn(secKeys[0], K)[0].id, src().id]
+    const was = new Map(objs().filter(o => BEAM.has(o.type)).map(o => [o.id, A.cross(o)]))
+    await act(() => { store.setState({ selectedIds: two }); const d = A.move({ x: 0, y: 0 }, 0, GS); store.getState().moveObjects(two, d.x, d.y) })
+    expect(useCopyPrompt.getState().manual).toBe(true)
+    expect(useCopyPrompt.getState().notice).toBe(MANUAL_NOTICE)
+    expect(offer()).toBe(null)
+    expect(renderNote()).not.toMatch(/Copy to (all sections|this section)/)
+    expect(copyNow()).toBe(null)
+    for (const r of objs().filter(o => BEAM.has(o.type) && !two.includes(o.id))) expect(A.cross(r)).toEqual(was.get(r.id))
+  })
+
+  it('CC-manual-always: with Always copy on, manual mode is never entered (the multi-section move is only a warning)', async () => {
+    load(base)
+    useCopyPrompt.getState().setAlwaysCopy(true)
+    await act(() => store.getState().commitObjectUpdate(src().id, A.move(src(), 0, GS)))
+    const r2 = rowIn(S, K + 2)[0]
+    await act(() => store.getState().commitObjectUpdate(r2.id, A.move(r2, 0, -GS / 2)))
+    const two = [rowIn(secKeys[0], K + 4)[0].id, rowIn(S, K + 4)[0].id]
+    await act(() => { const d = A.move({ x: 0, y: 0 }, 0, GS / 2); store.getState().moveObjects(two, d.x, d.y) })
+    expect(useCopyPrompt.getState().manual).toBe(false)
+    expect(get('fp').copyManual).toBeUndefined()
+    expect(offer()).toEqual({ text: "This change affects rows in 2 sections, so it can't be copied. Make the change in one section, then copy it.", blocked: true })
+    useCopyPrompt.getState().setAlwaysCopy(false)
+  })
+
+  it('CC-manual-on: "Turn copying back on" warns that sections may differ, and copy notes come back', async () => {
+    load(base)
+    await act(() => store.getState().commitObjectUpdate(src().id, A.move(src(), 0, GS)))
+    useCopyPrompt.getState().dismiss()
+    expect(useCopyPrompt.getState().manual).toBe(true)
+    turnCopyingOn()
+    expect(useCopyPrompt.getState().manual).toBe(false)
+    expect(get('fp').copyManual).toBeUndefined()
+    expect(useCopyPrompt.getState().notice).toBe(BACK_ON_NOTICE)
+    expect(BACK_ON_NOTICE).toMatch(/may already differ/)
+    const r2 = rowIn(S, K + 2)[0]
+    await act(() => store.getState().commitObjectUpdate(r2.id, A.move(r2, 0, -GS / 2)))
+    expect(offer().parts.map(p => p.button)).toEqual(['Copy to all sections'])
+  })
+
+  it('CC-manual-save: manual mode is saved with the layout and comes back on reload', async () => {
+    load(base)
+    await act(() => store.getState().commitObjectUpdate(src().id, A.move(src(), 0, GS)))
+    useCopyPrompt.getState().dismiss()
+    const file = serializeScene({ ...store.getState() })
+    load(base)                                                                     // another layout: copying on
+    expect(useCopyPrompt.getState().manual).toBe(false)
+    const loaded = {}
+    deserializeScene(file, loaded)
+    load(loaded.objects)                                                           // the saved one again
+    expect(get('fp').copyManual).toBe(true)
+    expect(useCopyPrompt.getState().manual).toBe(true)
+    const r2 = rowIn(S, K + 2)[0]
+    await act(() => store.getState().commitObjectUpdate(r2.id, A.move(r2, 0, -GS / 2)))
     expect(offer()).toBe(null)
   })
 
@@ -427,13 +498,12 @@ describe.each(['horizontal', 'vertical'])('CC — %s', (orientation) => {
   })
 
   it('CC-skip: a copy that cannot fit is skipped and the note says which section / row and why; the others are copied', async () => {
-    load(base)
     const s0 = secKeys[0]
-    const a = rowIn(s0, K)[0], b = rowIn(s0, K + 1)[0]
+    const a = base.find(o => o.genSection === s0 && o.rowIndex === K), b = base.find(o => o.genSection === s0 && o.rowIndex === K + 1)
     const sign = A.cross(b)[0] > A.cross(a)[0] ? 1 : -1
     const gap = sign > 0 ? A.cross(b)[0] - A.cross(a)[1] : A.cross(a)[0] - A.cross(b)[1]
-    // in section 1, row 6 has been moved to 2' from row 5
-    await act(() => store.getState().commitObjectUpdate(b.id, A.move(b, 0, -sign * (gap - 2 * GS))))
+    // in section 1, row 6 stands 2' from row 5 (the layout came that way)
+    load(base.map(o => (o.id === b.id ? { ...o, ...A.move(o, 0, -sign * (gap - 2 * GS)) } : o)))
     await act(() => store.getState().commitObjectUpdate(src().id, A.move(src(), 0, sign * 3 * GS)))
     const o = offer()
     expect(o.parts[0].skipped).toEqual([`Section ${s0}, row ${K}: overlaps row ${K + 1} by 1'`])

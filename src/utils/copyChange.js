@@ -149,7 +149,7 @@ export function readChange(before, after, gridSize = 40) {
     return index >= 0 ? (sections[index].key != null ? 'g' + sections[index].key : 'r' + index) : 'r?'
   }
   const secs = new Set([...removed.map(o => secOf(o, before)), ...added.map(o => secOf(o, after)), ...changed.map(o => secOf(o, after))])
-  if (secs.size > 1) return blocked(`This change affects rows in ${secs.size} sections, so it can't be copied. Make the change in one section, then copy it.`)
+  if (secs.size > 1) return { ...blocked(`This change affects rows in ${secs.size} sections, so it can't be copied. Make the change in one section, then copy it.`), fpId, sections: secs.size }
   if (changed.some(o => norm(o.rotation) !== norm(B.get(o.id).rotation))) return cant('a turned row')
   const rotated = rotatedOf(involved[0])
   const bRot = buildingRotated(before, fpId)

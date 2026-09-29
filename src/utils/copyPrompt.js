@@ -20,6 +20,16 @@
 // upright width, a mixed edit, ...) is never silent: the note says so, and
 // why, with no button.
 //
+// MANUAL MODE. Copy notes are only offered while the sections match. A note
+// left unused (the next action lands, or it is dismissed) means they no
+// longer do — and so does one action changing rows in several sections:
+// the building goes to manual mode, with a notice, and no copy notes appear
+// until "Turn copying back on". Using one of a diagonal drag's two buttons
+// and leaving the other is not "unused". With Always copy on the sections
+// stay matched, so manual mode is never entered. The mode is `copyManual` on
+// the building: saved with the layout; the watcher keeps it through undo /
+// redo (only "Turn copying back on" clears it).
+//
 // The watcher and the copy write without the protected store's own actions:
 // setState, plus commitObjectUpdate for the one history entry (or a
 // replacement of the last one, for Always copy).
@@ -50,10 +60,74 @@ export const useCopyPrompt = create((set) => ({
     try { localStorage.setItem(LS_KEY, on ? '1' : '0') } catch { /* private window */ }
     set({ alwaysCopy: !!on })
   },
-  dismiss: () => set({ offer: null, report: null, hover: null }),
+  /** manual mode (for the layout's buildings), and the notice about it */
+  manual: false,
+  notice: null,
+  dismiss: () => { leaveOffer(); set({ offer: null, report: null, hover: null }) },
+  dismissNotice: () => set({ notice: null }),
 }))
 
-let watch = null   // { store, newId, lastObjects, lastHistory, lastIndex, busy, quiet }
+export const MANUAL_NOTICE = 'Sections no longer match, so copying is turned off. Changes now apply only where you make them.'
+export const BACK_ON_NOTICE = 'Copying is back on. The sections may already differ, so check each copy before you use it.'
+
+let watch = null   // { store, newId, lastObjects, lastHistory, lastIndex, busy, quiet, manual: Set(fpId) }
+
+const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
+
+/** Put the manual flags the watcher knows about onto the buildings (after a
+ *  load it learns them from the buildings instead). No history entry; the
+ *  layout's autosave picks it up. */
+function applyManualFlags() {
+  const st = watch.store.getState()
+  let changed = false
+  const objects = st.objects.map(o => {
+    if (!FP_TYPES.has(o.type)) return o
+    const want = watch.manual.has(o.id)
+    if (!!o.copyManual === want) return o
+    changed = true
+    if (want) return { ...o, copyManual: true }
+    const { copyManual, ...rest } = o
+    return rest
+  })
+  if (changed) {
+    watch.busy = true
+    try { watch.store.setState({ objects }) } finally { watch.busy = false }
+    try { autoSave(serializeScene(watch.store.getState())) } catch { /* storage full */ }
+  }
+  watch.lastObjects = watch.store.getState().objects
+  useCopyPrompt.setState({ manual: watch.manual.size > 0 })
+}
+const learnManualFlags = () => {
+  watch.manual = new Set(watch.store.getState().objects.filter(o => FP_TYPES.has(o.type) && o.copyManual).map(o => o.id))
+  useCopyPrompt.setState({ manual: watch.manual.size > 0 })
+}
+
+/** The building `fpId` goes to manual mode, with the notice. Never with
+ *  Always copy on. */
+function enterManual(fpId) {
+  if (!watch || !fpId || useCopyPrompt.getState().alwaysCopy) return
+  const was = watch.manual.has(fpId)
+  watch.manual.add(fpId)
+  applyManualFlags()
+  if (!was) useCopyPrompt.setState({ notice: MANUAL_NOTICE })
+}
+
+/** A note on offer is being left (the next action, or dismissed): if none of
+ *  its buttons was used, the sections no longer match. */
+function leaveOffer() {
+  if (!watch) return
+  const { offer } = useCopyPrompt.getState()
+  if (offer && offer.parts && !offer.used) enterManual(offer.fpId)
+}
+
+/** "Turn copying back on": notes again, with a warning that the sections
+ *  may differ. */
+export function turnCopyingOn() {
+  if (!watch) return
+  watch.manual.clear()
+  applyManualFlags()
+  useCopyPrompt.setState({ notice: BACK_ON_NOTICE, offer: null, report: null, hover: null })
+}
 
 /** The next action is a copy of its own ("Match bays in this section"):
  *  read it, but say nothing about it. */
@@ -116,7 +190,8 @@ export function copyNow(i = 0) {
   const rest = offer.parts.filter((_, k) => k !== i)
   const done = `Copied ${part.button.replace(/^Copy /, '')}: ${plan.copies.length} ${plan.copies.length === 1 ? 'copy' : 'copies'}`
   if (rest.length) {
-    useCopyPrompt.setState({ offer: { ...offer, parts: rest, done: [...(offer.done || []), done] }, hover: null })
+    // one of a diagonal drag's two buttons used: leaving the other is not "unused"
+    useCopyPrompt.setState({ offer: { ...offer, parts: rest, used: true, done: [...(offer.done || []), done] }, hover: null })
   } else {
     useCopyPrompt.setState({ offer: null, hover: null, report: lines.length || plan.warnings.length ? { text: done, skipped: lines, warnings: warnText(plan) } : null })
   }
@@ -138,11 +213,19 @@ function settle(before) {
   const gridSize = st.gridSize || 40
   const quiet = watch.quiet
   watch.quiet = false
+  leaveOffer()                                                        // the note before this action, left unused?
   let read = null
   try { read = quiet ? null : readChange(before, after, gridSize) } catch { read = null }
   sync()
   const clear = () => useCopyPrompt.setState({ offer: null, report: null, hover: null })
   if (!read) { clear(); return }
+  const fpId = read.fpId || (read.changes && read.changes[0] && read.changes[0].fpId)
+  if (read.sections > 1) {
+    // rows in several sections changed at once: they no longer match
+    enterManual(fpId)
+    if (watch.manual.has(fpId)) { clear(); return }
+  }
+  if (fpId && watch.manual.has(fpId)) { clear(); return }             // manual mode: no copy notes
   if (read.blocked) {
     // a row change the note can't copy: said, never silent
     useCopyPrompt.setState({ offer: { text: read.blocked, blocked: true }, report: null, hover: null })
@@ -168,13 +251,14 @@ function settle(before) {
   let parts = []
   try { parts = read.changes.map(ch => partFor(before, after, ch, st)).filter(Boolean) } catch { parts = [] }
   if (!parts.length && !(read.notes || []).length) { clear(); return }
-  useCopyPrompt.setState({ offer: { text, before, parts, notes: read.notes || [], done: [] }, report: null, hover: null })
+  useCopyPrompt.setState({ offer: { text, before, fpId, parts, notes: read.notes || [], done: [], used: false }, report: null, hover: null })
 }
 
 /** Watch `store` for actions; returns the unsubscribe. */
 export function installCopyWatcher(store, newId) {
-  watch = { store, newId, lastObjects: null, lastHistory: null, lastIndex: -1, busy: false, pending: false }
+  watch = { store, newId, lastObjects: null, lastHistory: null, lastIndex: -1, busy: false, pending: false, manual: new Set() }
   sync()
+  learnManualFlags()
   const unsub = store.subscribe((st) => {
     if (!watch || watch.busy) return
     if (st.history !== watch.lastHistory) {
@@ -185,7 +269,7 @@ export function installCopyWatcher(store, newId) {
       const action = st.historyIndex > 0 && prevTop !== undefined && st.history[st.historyIndex - 1] === prevTop
       watch.lastHistory = st.history
       watch.lastIndex = st.historyIndex
-      if (!action && !watch.pending) { sync(); useCopyPrompt.setState({ offer: null, report: null, hover: null }); return }
+      if (!action && !watch.pending) { sync(); learnManualFlags(); useCopyPrompt.setState({ offer: null, report: null, hover: null, notice: null }); return }
       if (!watch.pending) {
         watch.pending = true
         const before = watch.lastObjects
@@ -195,9 +279,11 @@ export function installCopyWatcher(store, newId) {
       return
     }
     if (st.historyIndex !== watch.lastIndex) {
-      // undo / redo: the note is about a layout that is no longer there
+      // undo / redo: the note is about a layout that is no longer there (the
+      // change is undone, so leaving it is not "unused"); manual mode stays
       sync()
       useCopyPrompt.setState({ offer: null, report: null, hover: null })
+      if (watch.manual.size) applyManualFlags()
     }
   })
   return () => { unsub(); if (watch && watch.store === store) watch = null }

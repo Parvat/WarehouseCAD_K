@@ -1,14 +1,17 @@
 import { usePlacement } from '../utils/placement'
-import { useCopyPrompt, copyNow, buttonText } from '../utils/copyPrompt'
+import { useCopyPrompt, copyNow, buttonText, turnCopyingOn, MANUAL_NOTICE } from '../utils/copyPrompt'
 
 /* The "Copy this change" note at the bottom of the canvas (utils/copyPrompt.js):
    a copy on offer (one button per part, each with its copy count), a change
    that can't be copied (a warning, with why), what the last copy did, or a
    row being placed. Plain DOM — no Konva — so it renders anywhere. */
 
-const box = {
+const wrap = {
   position: 'absolute', left: '50%', bottom: 14, transform: 'translateX(-50%)', zIndex: 60,
-  maxWidth: 'min(640px, calc(100% - 32px))', padding: '8px 10px', borderRadius: 8,
+  width: 'max-content', maxWidth: 'min(640px, calc(100% - 32px))', display: 'flex', flexDirection: 'column', gap: 6,
+}
+const box = {
+  padding: '8px 10px', borderRadius: 8,
   background: 'var(--surface, #fff)', border: '1px solid var(--border, #E6E9EF)',
   boxShadow: '0 2px 10px rgba(0,0,0,0.14)', fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--text, #0B101D)',
   display: 'flex', flexDirection: 'column', gap: 4,
@@ -38,7 +41,35 @@ function Lines({ skipped = [], warnings = [] }) {
   )
 }
 
+/* Manual mode's notice ("copying is turned off", with the way back on), or
+   the warning once it is back on. */
+function Notice() {
+  const notice = useCopyPrompt(s => s.notice)
+  const manual = useCopyPrompt(s => s.manual)
+  const dismissNotice = useCopyPrompt(s => s.dismissNotice)
+  if (!notice) return null
+  const off = notice === MANUAL_NOTICE
+  return (
+    <div role="alert" aria-label={off ? 'Copying turned off' : 'Copying back on'} style={{ ...box, border: '1px solid var(--amber, #B87309)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ color: 'var(--amber, #B87309)', fontWeight: 600 }}>{notice}</span>
+        {off && manual && <button style={btn} aria-label="Turn copying back on" onClick={turnCopyingOn}>Turn copying back on</button>}
+        <button style={closeBtn} aria-label="Dismiss notice" onClick={dismissNotice}>×</button>
+      </div>
+    </div>
+  )
+}
+
 export function CopyNote() {
+  return (
+    <div style={wrap}>
+      <Notice />
+      <NoteBody />
+    </div>
+  )
+}
+
+function NoteBody() {
   const placing = usePlacement(s => s.active)
   const offer = useCopyPrompt(s => s.offer)
   const report = useCopyPrompt(s => s.report)

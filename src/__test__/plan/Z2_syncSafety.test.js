@@ -13,7 +13,7 @@ import { placementToObject } from '../../generate/traceGenerate'
 import { rackFootprint } from '../../generate/columnCheck'
 import { DEFAULT_RULES } from '../../rules/defaults'
 import { buildingSections } from '../../utils/syncSections'
-import { installCopyWatcher, useCopyPrompt, copyNow, flushCopyWatcher } from '../../utils/copyPrompt'
+import { installCopyWatcher, useCopyPrompt, copyNow, flushCopyWatcher, turnCopyingOn } from '../../utils/copyPrompt'
 import { GS } from './fixtures'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
@@ -110,6 +110,7 @@ describe('Z2 — sync safety', () => {
         await chop(sections[1])
         const count0 = racksOf(objs()).length
         if (how === 'all') {
+          turnCopyingOn()                                    // the chop's notes were left unused: manual mode, turned back on
           const r5 = objs().find(o => o.id === sections[from].rows.find(r => r.rowIndex === 5).id)
           const rot = rackFootprint(r5).rotated
           store.getState().commitObjectUpdate(r5.id, { x: r5.x + (rot ? GS : 0), y: r5.y + (rot ? 0 : GS) })

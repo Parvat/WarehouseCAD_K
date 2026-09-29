@@ -11,7 +11,7 @@ import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../../utils/pasteAt'
 import { useLabelPrefs } from '../../canvas2/labelPrefs'
-import { useCopyPrompt } from '../../utils/copyPrompt'
+import { useCopyPrompt, turnCopyingOn } from '../../utils/copyPrompt'
 import { LABEL_SIZES, LABEL_SIZE_NAMES } from '../../render/labelSize'
 
 /* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
@@ -175,6 +175,7 @@ function doZoom(factor) {
 
 export function TopBar() {
   const alwaysCopy = useCopyPrompt(s => s.alwaysCopy)
+  const copyManual = useCopyPrompt(s => s.manual)
   const setAlwaysCopy = useCopyPrompt(s => s.setAlwaysCopy)
   const { showColumnLabels, setShowColumnLabels, labelSize, setLabelSize, pdfLabelSize, setPdfLabelSize } = useLabelPrefs()
   const {
@@ -246,6 +247,15 @@ export function TopBar() {
 
       {/* "Always copy": copy each row / bay change to its targets straight away
           (utils/copyPrompt.js) instead of offering it in a note. Off by default. */}
+      {/* manual mode: copy notes are off until the user turns them back on */}
+      {copyManual && (
+        <button onClick={turnCopyingOn} aria-label="Turn copying back on"
+          title="Sections no longer match, so copying is turned off. Turn it back on (the sections may differ)."
+          style={{ height:28, padding:'0 10px', borderRadius:6, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:600,
+            background:'transparent', border:'1px solid var(--amber, #B87309)', color:'var(--amber, #B87309)', whiteSpace:'nowrap' }}>
+          Copying off · Turn copying back on
+        </button>
+      )}
       <label title="Copy each row or bay change to all sections (or this section's rows) automatically, without asking"
         style={{ display:'flex', alignItems:'center', gap:7, fontSize:12, color:C.subtle, cursor:'pointer', userSelect:'none' }}>
         <Switch on={alwaysCopy} onClick={() => setAlwaysCopy(!alwaysCopy)} label="Always copy" />
