@@ -63,11 +63,12 @@ describe('sizingLayout — rows down the depth', () => {
 
 describe('sizingLayout — segments across the length', () => {
   const endClearFt = 4
+  // 240' of run is longer than the 150' max run: split (a run within it stays one piece)
   const { segments, bays, crossAisle } = rowSegments(brief.lengthFt, {
-    ...brief, crossAisleFt: brief.aisleFt, endClearFt,
+    ...brief, crossAisleFt: brief.aisleFt, endClearFt, maxRunFt: 150,
   })
 
-  it('splits each row in two around one centre cross-aisle', () => {
+  it('splits a row longer than the max run in two around one centre cross-aisle', () => {
     expect(segments).toHaveLength(2)
     expect(crossAisle).not.toBeNull()
   })
@@ -355,11 +356,14 @@ describe('sizingLayout — BUG 54: cross-aisle reaches the far wall, clears ever
     gridXFt: 25, gridYFt: 30, levels: 4,
   }
   const endClearFt = (DEFAULT_RULES.selective.wallClearanceIn ?? 36) / 12
+  // a max run shorter than the run on each axis (240' horizontal, 120' vertical),
+  // so each run is split once: a run within the max run gets no cross-aisle
+  const maxRunFor = (orientation) => (orientation === 'vertical' ? 100 : 150)
 
   for (const orientation of ['horizontal', 'vertical']) {
     for (const mhe of ['reach', 'counterbalance']) {
       it(`${orientation}/${mhe}: fills to the far wall, cross-aisle clear of every column, width >= the forklift's crossAisleFt`, () => {
-        const brief = { ...base, orientation, mhe }
+        const brief = { ...base, orientation, mhe, maxRunFt: maxRunFor(orientation) }
         const placements = sizingSheetLayout(brief, DEFAULT_RULES)
         expect(placements.length).toBeGreaterThan(0)
         const racks = placements.map(placementToObject)
@@ -380,7 +384,7 @@ describe('sizingLayout — BUG 54: cross-aisle reaches the far wall, clears ever
         const frame = axisFrame(orientation, { lengthFt: base.lengthFt, widthFt: base.widthFt, gridXFt: base.gridXFt, gridYFt: base.gridYFt })
         const { segments, crossAisle } = rowSegments(runFt, {
           crossAisleFt, endClearFt, beamIn: 96, upIn: 3,
-          runGridFt: frame.runGridFt, runGridOffsetFt: frame.runGridOffsetFt,
+          runGridFt: frame.runGridFt, runGridOffsetFt: frame.runGridOffsetFt, maxRunFt: maxRunFor(orientation),
         })
         expect(segments).toHaveLength(2)
         expect(crossAisle).not.toBeNull()
@@ -406,7 +410,7 @@ describe('sizingLayout — BUG 54: cross-aisle reaches the far wall, clears ever
     for (const mhe of ['reach', 'counterbalance']) {
       const { crossAisle } = rowSegments(runFt, {
         crossAisleFt: DEFAULT_RULES.mhe[mhe].crossAisleFt, endClearFt, beamIn: 96, upIn: 3,
-        runGridFt: frame.runGridFt, runGridOffsetFt: frame.runGridOffsetFt,
+        runGridFt: frame.runGridFt, runGridOffsetFt: frame.runGridOffsetFt, maxRunFt: 150,
       })
       // built width can absorb integer-bay rounding slack, so it's a floor,
       // never a hardcoded exact match — the per-forklift figure is honoured

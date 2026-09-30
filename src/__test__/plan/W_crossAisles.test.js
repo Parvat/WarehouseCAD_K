@@ -112,8 +112,13 @@ describe('W — multiple cross-aisles', () => {
     expect(seg(300, { maxRunFt: 150 }).crossAisles).toHaveLength(1)
   })
 
-  it('W-small: short runs keep exactly one cross-aisle', () => {
-    for (const L of [60, 120, 150, 240]) expect(seg(L, { maxRunFt: 150 }).crossAisles).toHaveLength(1)
+  it('W-small: a run within the max run is one piece, no cross-aisle; just past it, exactly one', () => {
+    for (const L of [60, 72, 120, 150]) {
+      const r = seg(L, { maxRunFt: 150 })
+      expect(r.crossAisles).toHaveLength(0)
+      expect(r.segments).toHaveLength(1)
+    }
+    for (const L of [160, 240]) expect(seg(L, { maxRunFt: 150 }).crossAisles).toHaveLength(1)
   })
 
   for (const orientation of ['horizontal', 'vertical']) {

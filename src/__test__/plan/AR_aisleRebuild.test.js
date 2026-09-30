@@ -36,7 +36,8 @@ const pairKey = (a, b) => (a < b ? a + '|' + b : b + '|' + a)
 /** A generated layout exactly as buildQueue builds it: racks + the
  *  generator's aisles, all parented to the building. */
 function layout(orientation, L = 240, W = 120) {
-  const brief = { lengthFt: L, widthFt: W, gridXFt: 25, gridYFt: 30, mhe: 'reach', orientation, rackType: 'rack_double_row' }
+  // two sections in both orientations: the 120' vertical run is within the 150' default max run (one piece), so 100' here
+  const brief = { lengthFt: L, widthFt: W, gridXFt: 25, gridYFt: 30, mhe: 'reach', orientation, rackType: 'rack_double_row', ...(orientation === 'vertical' && W <= 150 ? { maxRunFt: 100 } : {}) }
   const racks = sizingSheetLayout(brief, DEFAULT_RULES).map((p, i) => ({ ...placementToObject(p), id: 'r' + i, parentId: 'fp' }))
   const aisles = aisleObjectsForRacks(racks).map((a, i) => ({ ...a, id: 'a' + i, parentId: 'fp' }))
   const fp = { id: 'fp', type: 'fp_rect', x: 0, y: 0, width: L * GS, height: W * GS, wallThicknessFt: 0.25 }

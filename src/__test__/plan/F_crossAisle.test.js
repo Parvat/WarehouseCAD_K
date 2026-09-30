@@ -30,7 +30,7 @@ describe('F — cross-aisle', () => {
    * 124 ft sits right in it, so the split must move. */
   it('F-column: no column is left inside the cross-aisle (lone column at 124\')', () => {
     const colFt = 124, half = 0.5
-    const res = rowSegments(240, { crossAisleFt: 9, endClearFt: 0.5, beamIn: 96, upIn: 3, runGridFt: 1000, runGridOffsetFt: colFt })
+    const res = rowSegments(240, { crossAisleFt: 9, endClearFt: 0.5, beamIn: 96, upIn: 3, runGridFt: 1000, runGridOffsetFt: colFt, maxRunFt: 150 })
     expect(res.crossAisle).toBeTruthy()
     const lo = res.crossAisle.xFt, hi = lo + res.crossAisle.widthFt
     const overlaps = colFt + half > lo && colFt - half < hi
@@ -39,11 +39,19 @@ describe('F — cross-aisle', () => {
   })
 
   for (const { label, brief } of ALL_CASES) {
-    it(`F-generated: ${label} — cross-aisle >= ${CROSS[brief.mhe]}' wide, column-free, racks reach both end walls`, () => {
+    it(`F-generated: ${label} — longer than the 150' max run: one cross-aisle >= ${CROSS[brief.mhe]}' wide, column-free; within it: one piece, no cross-aisle; racks reach both end walls`, () => {
       const { racks, columns } = generate(brief)
       const vertical = brief.orientation === 'vertical'
       const runFt = vertical ? brief.widthFt : brief.lengthFt
       for (const segs of bandsOf(racks)) {
+        if (runFt - 1 <= 150) {
+          // 120' of run (vertical): one piece from the near wall, ending within a bay of the far one
+          expect(segs).toHaveLength(1)
+          expect(segs[0][0]).toBeCloseTo(0.5, 6)
+          expect(runFt - 0.5 - segs[0][1]).toBeGreaterThanOrEqual(-1e-6)
+          expect(runFt - 0.5 - segs[0][1]).toBeLessThan(99 / 12)
+          continue
+        }
         expect(segs).toHaveLength(2)
         const [a, b] = segs
         // no gap at either end wall: 6" wall clearance, then racking

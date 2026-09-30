@@ -50,7 +50,8 @@ const get = (id) => objs().find(o => o.id === id)
 
 /** A generated 240 x 120 layout in a building, racks parented to it. */
 function generated(orientation) {
-  const brief = { lengthFt: 240, widthFt: 120, gridXFt: 25, gridYFt: 30, mhe: 'reach', orientation, rackType: 'rack_double_row' }
+  // two sections in both orientations: the 120' vertical run is within the 150' default max run (one piece), so 100' here
+  const brief = { lengthFt: 240, widthFt: 120, gridXFt: 25, gridYFt: 30, mhe: 'reach', orientation, rackType: 'rack_double_row', ...(orientation === 'vertical' ? { maxRunFt: 100 } : {}) }
   const racks = sizingSheetLayout(brief, DEFAULT_RULES).map((p, i) => ({ ...placementToObject(p), id: 'r' + i, parentId: 'fp' }))
   const fp = { id: 'fp', type: 'fp_rect', x: 0, y: 0, width: 240 * GS, height: 120 * GS, wallThicknessFt: 0.25 }
   return [fp, ...racks]

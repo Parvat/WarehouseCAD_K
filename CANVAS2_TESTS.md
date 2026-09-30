@@ -88,7 +88,7 @@ top/bottom), and no column on any of the four walls.
 | Test | Asserts |
 |---|---|
 | `F-column` | hand-derived lone column at 124', inside the centred split, is moved out of the cross-aisle; width ≥ 9' |
-| `F-generated` ×20 | each band has 2 segments; racks start 0.5' from one end wall and end 0.5' from the other; cross-aisle ≥ 9 / 13 / 8.5' per forklift; no column footprint inside it |
+| `F-generated` ×20 | a run past the 150' max run (240', horizontal): each band has 2 segments, racks start 0.5' from one end wall and end 0.5' from the other, cross-aisle ≥ 9 / 13 / 8.5' per forklift, no column footprint inside it; a run within it (120', vertical): one segment from 0.5' off the near wall, ending within a bay of the far one |
 
 ### G — Walls · `G_walls.test.js` (22 tests)
 | Test | Asserts |
@@ -343,9 +343,8 @@ All run horizontal and vertical.
 - **Found by FR-existing:** a run end was called open only when the existing
   rack sat at the side's midpoint. A rack beside part of the side got half a
   cross-aisle (4' 6"–5' 3"). Now any rack on the side makes it open.
-- As in Generate, every run of two or more bays gets at least one cross-aisle
-  (`rowSegments`: "small runs keep the single cross-aisle"). A T's 72' bar
-  therefore fills as two short runs.
+- Cross-aisles only when needed (area CX): a run within the max rack run is
+  one piece, so a T's 72' bar fills as one run.
 
 ### LC — Check layout · `LC_layoutCheck.test.js` (33 tests)
 A "Check layout" button in the top bar lists every problem in the right
@@ -1298,13 +1297,60 @@ Floor plans that aren't rectangles use their bounding box (approximate, agreed).
   restored both.
 - No console errors.
 
+### CX — Cross-aisles only when needed · `CX_crossAisleWhenNeeded.test.js` (16 tests)
+**Rule.** A rack run that fits within the max rack run (150 ft by default) in
+one piece stays one piece, with no cross-aisle. A longer run keeps the rule it
+had: the fewest cross-aisles so no section is longer than the max run (area W).
+The rule lives in `rowSegments`, so Generate and Fill racking both follow it.
+"Fits" counts whole bays: the run is one piece when its bays are at most
+`floor((12·maxRun − 3) / 99)` (18 at 150 ft).
+
+| Test | Asserts |
+|---|---|
+| `CX-72` | 72 ft: one segment from the 0.5 ft clearance, no cross-aisle, ending within a bay of the far wall |
+| `CX-limit` | 18 bays + clearances (the 150 ft limit): one piece; one bay longer: exactly one cross-aisle |
+| `CX-240` | 240 ft at 150 ft max: exactly one cross-aisle, both sections ≤ 150 ft |
+| `CX-1080` | 1,080 ft: 6 at 150 ft, 9 at 100 ft — the same as the pre-change `rowSegments` (run against it) |
+| `CX-generate` ×6 | Generate, 100 ft across, 30 × 30 grid: a 72 ft run → 1 piece per row; 240 ft → 2; 1,080 ft → 8 (6 by length, one forced by the columns, as before) |
+| `CX-fill-rect` ×2 | Fill racking 240 × 120: 2 pieces per row horizontal, 1 vertical |
+| `CX-fill-T` ×2 | Fill racking a T 360 × 240: vertical, the 72 ft bar's rows are one piece; horizontal, the 126 ft stem's rows are one piece |
+| `CX-fill-L` ×2 | Fill racking an L 300 × 200: horizontal, the 90 ft stem is one piece and the 210 ft bar is split in two; vertical, the 140 ft stem above the bar and the 60 ft bar are one piece each |
+
+All run horizontal and vertical.
+
+**Tests that assumed a short run always gets a cross-aisle, updated:**
+- **Given a max run shorter than their run**, so they still test how the split
+  is placed (flush to both walls, the aisle's width, dodging columns, pairing
+  aisles across it):
+  - `sizingLayout.test.js`: segments across the length, and BUG 54 (100 ft
+    vertical);
+  - `F-column`;
+  - `traceGenerate.test.js` BUG 45 vertical (100 ft).
+- **Given a 100 ft max run in vertical**, so they keep two sections to copy
+  between: AR (the 240 × 120 layout) and Y.
+- **Now state the new rule:** `F-generated` and `W-small`.
+- **Matrix rule 2:** measures an end gap past the 6" wall clearance. A
+  one-piece run's rounding slack now sits at the far wall (e.g. 0.5 + 8 ft),
+  not in a cross-aisle, and 8 ft still holds no 8.25 ft bay.
+
+**Checked in the app:**
+- Generate through the panel, 240 × 120 (30 × 30 grid): horizontal 7 rows of
+  2 pieces, vertical 13 rows of 1 piece; no Check layout errors.
+- Fill racking on a rectangle, an L and a T in both orientations: Check
+  layout 0 errors and 0 warnings on each; one undo empties each fill, redo
+  restores it; Esc places nothing.
+- The T's 72 ft bar fills as one run per row (vertical). The 168 ft stem
+  below it is still split: pieces at −43.5…31 ft and 45…119.5 ft.
+- No console errors.
+
 ### W — Multiple cross-aisles for long rack runs · `W_crossAisles.test.js` (12 tests)
 **Rule (PP).** `rowSegments` places the fewest cross-aisles that keep every
 continuous rack run within `maxRunFt` (default 150 ft, the Generate panel's
 new "Max rack run (ft)" field). Bays are spread evenly in whole bays. Every
 cross-aisle has the same width: at least the forklift's cross-aisle width,
 at most that plus one bay. They line up straight across every row, and racks
-still reach both end walls. Short runs keep their one cross-aisle.
+still reach both end walls. A run within `maxRunFt` is one piece with no
+cross-aisle (area CX; it used to keep one cross-aisle).
 
 The maximum bays per section is `floor((12·maxRun − 3) / 99)`: 18 at 150 ft
 (148.75 ft) and 12 at 100 ft (99.25 ft).
@@ -1335,7 +1381,7 @@ about 135 ft. The code follows the rule.
 | `W-1080@100` | max 100 ft → 9 cross-aisles, 10 × 12 bays, each 86.5/9 = 9.611 ft |
 | `W-slide` | 240 ft, 25 ft grid → 13 | 14, aisle at 108 (the even spot crosses 125) |
 | `W-extra` | 300 ft, 30 ft grid → 2 cross-aisles, 11 | 11 | 11 at 91.5 and 195.5, 13 ft wide; 1 with no columns |
-| `W-small` | 60, 120, 150, 240 ft → exactly 1 |
+| `W-small` | 60, 72, 120, 150 ft (max 150): one piece, no cross-aisle; 160, 240 ft: exactly 1 |
 | `W-gen` ×6 (h and v) | through `sizingSheetLayout`, 1080×120 (v: 120×1080), 60 ft grid: default and 150 → 6, 100 → 10 (the forced 10 × 12 split puts aisle 2 at 208.86..218.47 over the column at 210, so one more is added); identical cross-aisles in every row; every section ≤ max; both walls reached |
 
 **Matrix rule 2** now checks every section ≤ 150 ft, every cross-aisle in
@@ -1919,6 +1965,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | FR | **One history entry per rack** | FR-undo h/v | ✓ |
 | FR | **Esc does not drop the box** | FR-undo h/v | ✓ |
 | FR | **Aisles without ids** | 4: FR-generate h/v | ✓ |
+| CX | **Short runs get a cross-aisle again** (the old rule) | 9: CX-72, CX-limit, CX-generate 72' (h/v), CX-fill-rect v, CX-fill-T h/v, CX-fill-L h/v | ✓ |
 | LC | **An aisle too narrow to drive not an error** (aisleLevel) | 6: LC-aisle, LC-click, LC-recheck (h/v) | ✓ |
 | LC | **A can't-pick aisle filed under errors** | 2: LC-aisle h/v | ✓ |
 | LC | **Overlaps not reported** | 4: LC-overlap, LC-pdf (h/v) | ✓ |
@@ -2063,8 +2110,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,949 tests, 1,949 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,346 tests, 2,346 passing.**
+- **Plan suite: 1,965 tests, 1,965 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,362 tests, 2,362 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

@@ -22,6 +22,7 @@ const TRUCK = {
 const SINGLE_FT = 42 / 12                 // 3.5
 const PAIR_FT = (42 + 9 + 42) / 12        // 7.75
 const BAY_FT = (96 + 3) / 12              // 8.25, one bay pitch along the run
+const WALL_CLEAR_FT = 0.5                  // the 6" wall clearance at each run end
 const MAX_RUN_FT = 150                     // Generate panel default "Max rack run (ft)"
 
 const briefOf = (id, orientation, columnsAlongWall) => {
@@ -212,7 +213,9 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
           const key = cross.map(([lo, hi]) => `${lo.toFixed(4)}-${hi.toFixed(4)}`).join(',')
           if (refCross == null) refCross = key
           else if (key !== refCross) bad.push({ band: b.lo, crossAislesNotAligned: key, firstRow: refCross })
-          for (const g of [gaps[0], gaps[gaps.length - 1]]) if (g > BAY_FT + 1e-6) bad.push({ band: b.lo, endGapFt: g })
+          // past the wall clearance, an end holds less than one bay (a run within the max run is one
+          // piece, so its rounding slack sits at the far wall rather than in a cross-aisle)
+          for (const g of [gaps[0], gaps[gaps.length - 1]]) if (g - WALL_CLEAR_FT > BAY_FT + 1e-6) bad.push({ band: b.lo, endGapFt: g })
         }
         expect(bad, JSON.stringify(bad)).toEqual([])
       })

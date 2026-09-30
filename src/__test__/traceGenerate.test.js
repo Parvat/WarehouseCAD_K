@@ -172,7 +172,8 @@ describe('traceGenerate — BUG 45: aisleObjectsForRacks is rotation-aware', () 
   })
 
   it('vertical: aisle count matches (bands-1) per run segment, not one bogus cross-aisle per band', () => {
-    const racks = sizingSheetLayout({ ...spec, orientation: 'vertical' }, DEFAULT_RULES).map(placementToObject)
+    // a 100' max run: the 120' vertical run is split by one cross-aisle (within the max run it would be one piece)
+    const racks = sizingSheetLayout({ ...spec, orientation: 'vertical', maxRunFt: 100 }, DEFAULT_RULES).map(placementToObject)
     const aisles = aisleObjectsForRacks(racks)
     // Every band is split into exactly 2 segments by the cross-aisle, so
     // bands = racks / 2, and each segment has (bands - 1) gaps: aisles =

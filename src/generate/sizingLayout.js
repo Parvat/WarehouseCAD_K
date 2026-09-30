@@ -546,6 +546,16 @@ export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn =
   const maxBays = Number.isFinite(maxRunFt) ? Math.max(1, Math.floor((maxRunFt * 12 - upIn) / (beamIn + upIn))) : Infinity
   const colLinesFt = runColumnLinesFt(runGridFt, runGridOffsetFt, lengthFt, runGridMaxFt)
 
+  /* Cross-aisles only when needed: a run that fits within maxRunFt in one
+     piece stays one piece, with no cross-aisle (a 72' bar is one run). Only
+     a longer run is split, by the rule below. */
+  const oneRun = baysInRun(usable, beamIn, upIn)
+  if (oneRun <= maxBays) {
+    return oneRun > 0
+      ? { segments: [{ xFt: x0, bays: oneRun }], bays: oneRun, crossAisle: null, crossAisles: [] }
+      : { segments: [], bays: 0, crossAisle: null, crossAisles: [] }
+  }
+
   /* Bays that fit when the run is cut into S sections: S - 1 cross-aisles,
      each at least crossAisleFt, and S - 1 extra end-uprights. */
   const baysFor = (S) => {
@@ -601,8 +611,8 @@ export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn =
   }
 
   /* Multiple cross-aisles (PP): the FEWEST so that no continuous rack run
-     is longer than maxRunFt, bays spread as evenly as whole bays allow.
-     Small runs keep the single cross-aisle they always had (S >= 2). */
+     is longer than maxRunFt, bays spread as evenly as whole bays allow
+     (S >= 2: only runs longer than maxRunFt reach here). */
   let S = 2, total = baysFor(2)
   while (total >= S && Math.ceil(total / S) > maxBays) total = baysFor(++S)
 
