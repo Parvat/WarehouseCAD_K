@@ -389,12 +389,14 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
   It pulses briefly (three beats), then stays until the next click on the
   canvas or the next check. The user then clicks what they want to change;
   that click works as usual.
-- **Live re-check** (`installLiveRecheck`): while the list is open, every
-  committed change — a drop, a delete, a paste or placement, a panel edit,
-  undo / redo (anything that moves the history) — re-runs the check 300 ms
-  after the last one. Never during a drag: a live-flue drag writes history
-  every frame, so it waits and runs once the gesture ends. Fixed items go,
-  new ones appear, the count follows. The clicked item's highlight stays
+- **Live re-check — removal only** (`installLiveRecheck`,
+  `refreshLayoutCheck`): while the list is open, every committed change — a
+  drop, a delete, a paste or placement, a panel edit, undo / redo (anything
+  that moves the history) — re-checks the LISTED items 300 ms after the last
+  one and removes those that are fixed; an item still there takes its
+  current wording. It never adds: a new issue shows only when the user
+  presses Check layout. Never during a drag: a live-flue drag writes history
+  every frame, so it waits and runs once the gesture ends. The count follows. The clicked item's highlight stays
   unless its issue is fixed (matched by kind and objects). The button still
   re-checks by hand (and clears the highlight).
 - **One rule each, all reused:**
@@ -422,7 +424,7 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
 | `LC-angled` | a rack at +30°: a WARNING only once there are columns |
 | `LC-click` | nothing is selected (an earlier selection is cleared); the spot is on screen and fills the view; the highlight is the item's; the next click clears it and selects only the row it lands on (the canvas press clears it first); a re-check clears it too; the overlay is mounted and never listens |
 | `LC-highlight` | each issue highlights the problem at the right place: the aisle gap exactly, red, "7' · needs 8'"; the overlap area exactly; the unreachable rack's outline; the too-short bay 2 exactly, amber; the upright frame (an upright's width) containing the column, orange; blocked pallets: glowing red X marks, one pallet position each (never the bay), at exactly the X marks' centres |
-| `LC-live` | the list open: an unrelated change re-checks and keeps the highlight; the narrow aisle fixed by moving the row: gone, "· no issues", highlight cleared — no button pressed; a new overlap appears; mid-drag (dragging on) the result is untouched, after the drop re-checked; a closed list is not re-checked; 300 ms by default, installed in App |
+| `LC-live` | the list open: an unrelated change re-checks and keeps the highlight; the narrow aisle fixed by moving the row: gone, "· no issues", highlight cleared — no button pressed; a new overlap is NOT added ("· no issues" still) until Check layout is pressed; mid-drag (dragging on) the result is untouched, after the drop the fixed overlap is removed; a closed list is not re-checked; 300 ms by default, installed in App |
 | `LC-zoom` | at 15 % a column on an upright: 15 % kept, the issue exactly centred; at 5 %: 20 %, centred; at 10 %: kept; a narrow aisle a whole row long at 30 %: 30 % kept, centred; the 20 ft / 100 % rule is gone from the code |
 | `LC-xmarks` | generated 1080 × 410: a section's blocked-pallets item highlights exactly that section's X marks (same centres as blockedFaceOps draws, > 10 of them), each one position, never a bay; the painter draws a glowing X |
 | `LC-recheck` | "Check layout · 1 error"; fixed and pressed again: none (the stored result too), "· no issues" |
@@ -452,10 +454,11 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
     highlight was gone;
   - blocked pallets: as many glowing Xs as blocked positions, each 3.75 ft
     (one position), glow 14, two lines each;
-  - live (hand-drawn, a 7' aisle, the list open): dragging the row back
-    with the mouse removed the item — "· no issues", highlight gone, no
-    button; a drag held into the next row re-ran nothing for 0.9 s, the
-    drop listed the overlap ("· 1 error"); Ctrl+Z: "· no issues" again;
+  - live, removal only (hand-drawn, a 7' aisle, the list open): dragging
+    the row back with the mouse removed the item — "· no issues", highlight
+    gone, no button; a drag held into the next row re-ran nothing for 0.9 s;
+    after the drop NOTHING was added ("· no issues"); pressing Check layout
+    listed the overlap ("· 1 error"); Ctrl+Z removed it again;
   - zoom: a column on an upright clicked at 15 % stayed at 15 %, at 5 % went
     to 20 %; a narrow aisle at 25 % and a whole-row aisle (generated) at
     30 % kept their zoom — every one exactly centred (0 px off), highlighted,
@@ -1928,6 +1931,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LC | **Clicking an issue selects its racks again** | 2: LC-click h/v | ✓ |
 | LC | **No live re-check** (committed changes ignored) | 2: LC-live h/v | ✓ |
 | LC | **Live re-check runs mid-drag** | 2: LC-live h/v | ✓ |
+| LC | **The live re-check adds new items** | 2: LC-live h/v | ✓ |
 | LC | **Going to an issue changes the zoom** (always 20 %) | 2: LC-zoom h/v | ✓ |
 | LC | **Blocked pallets shade whole bays again** | 4: LC-highlight, LC-xmarks (h/v) | ✓ |
 | LC | **Re-check keeps the old result** | 2: LC-recheck h/v | ✓ |

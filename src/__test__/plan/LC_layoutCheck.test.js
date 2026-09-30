@@ -318,7 +318,7 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(readFileSync('src/utils/layoutCheck.js', 'utf8')).not.toMatch(/ISSUE_CONTEXT_FT|ISSUE_MAX_ZOOM|fitBox/)   // the 20 ft / 100 % rule is gone
   })
 
-  it('LC-live: with the list open, every committed change re-checks on its own (debounced) — a narrow aisle fixed disappears and a new overlap appears without pressing the button, the count follows; nothing re-runs mid-drag; the clicked item\'s highlight stays until its issue is fixed; a closed list isn\'t re-checked', async () => {
+  it('LC-live: with the list open, every committed change re-checks the LISTED items (debounced) and removes the fixed ones — a narrow aisle fixed disappears without pressing the button, the count follows; a new overlap is NOT added until Check layout is pressed; nothing re-runs mid-drag; the clicked item\'s highlight stays until its issue is fixed; a closed list isn\'t re-checked', async () => {
     const DP = await import('../../canvas2/dragPreview')
     const sleep = (ms) => new Promise(r => setTimeout(r, ms))
     const stop = m.LC.installLiveRecheck(m.useCanvasStore, { delay: 30 })
@@ -339,8 +339,11 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
       expect(lc().result.errors).toEqual([])
       expect(m.LC.checkLabel(lc().result)).toBe('Check layout · no issues')
       expect(lc().highlight).toBe(null)
-      // a new overlap: it appears
+      // a new overlap: NOT added by the live re-check — only when Check layout is pressed
       move(racks()[1], -(AISLE + GS)); await sleep(90)
+      expect(lc().result.errors).toEqual([])
+      expect(m.LC.checkLabel(lc().result)).toBe('Check layout · no issues')
+      m.LC.runLayoutCheck(m.useCanvasStore)
       expect(lc().result.errors.map(e => e.kind)).toContain('overlap')
       expect(m.LC.checkLabel(lc().result)).toMatch(/^Check layout · \d+ errors?$/)
       const during = lc().result
@@ -349,7 +352,7 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
       move(racks()[1], AISLE + GS); await sleep(90)
       expect(lc().result).toBe(during)
       DP.setDragging(false); await sleep(90)
-      expect(lc().result.errors).toEqual([])
+      expect(lc().result.errors).toEqual([])                                     // the fixed overlap removed after the drop
       // closed: no re-check
       lc().close()
       const closed = lc().result

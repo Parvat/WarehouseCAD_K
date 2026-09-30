@@ -266,20 +266,28 @@ export function goToIssue(store, item, size) {
  *  (an aisle that narrows further is still that aisle). */
 export const issueKey = (item) => item.kind + ':' + [...item.ids].sort().join(',')
 
-/** The LIVE re-check: a new result; the clicked item's highlight stays —
- *  unless its issue is gone. (The button's manual re-check clears it.) */
+/** The LIVE re-check is REMOVAL only: the items already listed are checked
+ *  again, and those that are fixed drop out (with their highlight). An item
+ *  still there takes its current wording and place. Nothing new is ever added
+ *  here — a new issue shows only when the user presses Check layout. */
 export function refreshLayoutCheck(store, opts = {}) {
   const st = store.getState()
-  const result = { ...checkLayout(st.objects, { ...viewOpts(), gridSize: st.gridSize || 40, ...opts }), at: Date.now() }
+  const prev = useLayoutCheck.getState().result
+  if (!prev) return null
+  const now = checkLayout(st.objects, { ...viewOpts(), gridSize: st.gridSize || 40, ...opts })
+  const still = new Map([...now.errors, ...now.warnings].map(i => [issueKey(i), i]))
+  const keep = (list) => list.filter(i => still.has(issueKey(i))).map(i => still.get(issueKey(i)))
+  const result = { errors: keep(prev.errors), warnings: keep(prev.warnings), at: Date.now() }
   let { highlight } = useLayoutCheck.getState()
-  if (highlight && highlight.key && ![...result.errors, ...result.warnings].some(i => issueKey(i) === highlight.key)) highlight = null
+  if (highlight && highlight.key && !still.has(highlight.key)) highlight = null
   useLayoutCheck.setState({ result, highlight })
   return result
 }
 
 /* While the list is open, every COMMITTED change — a drop, a delete, a paste
    or placement, a panel edit, undo / redo: anything that moves the history —
-   re-runs the check LIVE_RECHECK_MS after the last one. Never during a drag
+   re-checks the LISTED items LIVE_RECHECK_MS after the last one and removes
+   the fixed ones (refreshLayoutCheck: removal only, never adds). Never during a drag
    (a live-flue drag writes history every frame): it waits, and runs once the
    gesture ends. */
 export const LIVE_RECHECK_MS = 300
