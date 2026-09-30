@@ -87,7 +87,9 @@ export function rectsOverlap(a, b) {
    dragged across rows used to catch every aisle whose invisible gap it
    crossed, mixing aisles into what should be a rack selection. A marquee
    selects the racks and bays it visibly touches. */
-const NON_MARQUEEABLE = new Set(['column_grid', 'aisle'])
+/* A racking area too: it is the frame round its racks, and a marquee over them
+   selects the racks. It is picked by its outline (hitTest). */
+const NON_MARQUEEABLE = new Set(['column_grid', 'aisle', 'racking_area'])
 
 /** Shared by objectsInMarquee (what a NEW marquee catches) and
  *  useCanvasInteraction's own marquee mouseup (what survives from a

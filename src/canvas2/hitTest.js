@@ -225,6 +225,17 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
        own point-in-rect test here instead of objectContains — the one place
        this module already carries geometry objectContains doesn't know
        (fpWallHitTest is the other). */
+    /* A racking area is picked on its dashed outline only (within a few
+       screen pixels of it): its inside is the racks and aisles it placed,
+       and a press there must reach them, not the area behind them. */
+    if (obj.type === 'racking_area') {
+      const band = 6 / zoom
+      const x0 = obj.x, y0 = obj.y, x1 = obj.x + obj.width, y1 = obj.y + obj.height
+      const inOuter = wx >= x0 - band && wx <= x1 + band && wy >= y0 - band && wy <= y1 + band
+      const inInner = wx > x0 + band && wx < x1 - band && wy > y0 + band && wy < y1 - band
+      if (inOuter && !inInner) return obj.id
+      continue
+    }
     if (obj.type === 'aisle') {
       /* Only its labels pick an aisle. The whole gap used to: a press on
          empty aisle floor selected the aisle, so the building behind it

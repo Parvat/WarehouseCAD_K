@@ -284,6 +284,103 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
+### RA — Racking areas and zones · `RA_rackingAreas.test.js` (24 tests)
+Code: `generate/rackingArea.js` (pure) and `utils/rackingAreaTool.js` (store,
+question). UI: `canvas2/AreaPrompt.jsx` and
+`RightPanel/panels/RackingAreaPanel.jsx`.
+
+**Racking areas**
+- A Fill racking box becomes a persistent **racking area** (`racking_area`, on
+  the Racking layer). It holds:
+  - its box and its building;
+  - its settings (direction, beam, pallet, forklift, aisle, max run, levels);
+  - the corner the fill was anchored at;
+  - each rack it placed, with that rack's signature as placed.
+- Its racks carry `areaId`.
+- **Hand edits:** a rack changed since placed, a placed rack now gone, or a
+  rack added inside the area by hand.
+- **Drawing:** a dashed outline, 2' on and 1' off, in world units.
+- **Picking:** only within 6 screen px of the outline. A press inside reaches
+  the racks and aisles.
+- Never marqueed or dragged as a body.
+- Four edge handles. The right panel shows its settings.
+
+**Extend and shrink** (on release of an edge drag)
+- The area's racks are trimmed to the bays wholly inside the new box
+  (`splitRackForBayDelete`). A row cut across its depth goes.
+- Each newly covered part is filled with the area's settings, by every Fill
+  racking rule. The area's own racks are obstacles there, so they stay
+  exactly as they were.
+- The app's own trim is not a hand edit (the record follows it).
+
+**Settings change:** rebuilds the whole area. Racks as placed are replaced;
+hand-edited racks stay, and the fill goes round them.
+
+**Hand-edit warning:** "You've changed racks in this area. The new part will
+use the default settings; your changes stay as they are." [Continue]
+[Cancel]. It is asked before a resize or a rebuild of an area with hand edits.
+While it is asked, the area is back where it was.
+
+**Zones**
+- Office, Staging, Washroom and Custom area (`zone_*`) are on a new
+  **Zones** layer and placed from a new **Zones** section in the left panel
+  (after Safety).
+- Drawn as a tinted rectangle with the name. Eight handles, no rotation. The
+  right panel has the name.
+- Fill racking treats a zone as a hole whose edges are walls: nothing is
+  placed inside, and rows run flush on it.
+- A zone placed, moved or resized over racks, by any route, is caught by the
+  zone keeper. The action is taken back and a question asks; Continue puts it
+  back with the racks under it trimmed to their bays outside it.
+
+**Every one of these is one undo step.** Area and zone actions are not row
+edits: the copy watcher skips them (`copyPrompt.skipNextAction`), so nothing
+joins the copy-to-sections set.
+
+**Also changed**
+- Fill racking: a rack only **touching** the box (the old area's edge row)
+  marks the side it touches as rack, which keeps the aisle, and no longer
+  cuts the region into strips. Before, the strip beside the office stopped
+  5' 3" short of it, at the old row's end.
+- `aisleLevel` (the one aisle-width rule): a width equal to a limit to within
+  1e-6 px meets it. An aisle laid out at exactly 10' 6" from edges that are
+  not whole feet (a mouse drag) landed 1e-10 px short and was reported as
+  "10' 6", needs 10' 6" to pick".
+
+| Test | Asserts |
+|---|---|
+| `RA-create` | the fill makes an area on Racking, parented, with the box, the direction and every rack stamped and recorded; no edits; one undo removes the area and its racks |
+| `RA-extend` | 240 × 120, a 40 × 40 office top-right, the area all but the top 40'; the top edge dragged to the wall: the strip beside the office fills; no rack overlaps the office; the strip's racking ends exactly on the office's left edge (0"), and in vertical the row against it is single; the old racks are unchanged; no errors; one undo |
+| `RA-edits` | a rack moved by hand: the extend asks with the exact text; the area is back while asking; Cancel changes nothing (no history); Continue extends and the moved rack is unchanged; one undo |
+| `RA-shrink` ×2 | along the rows by 37' 5" (not whole bays): each crossing row is kept, fewer bays, ending within one bay (8' 3") of the new edge, beams still 96"; across the rows: crossing rows go; everything within the new box; no hand edits recorded; no errors; one undo |
+| `RA-rebuild` | beam → 108": every rack 108", the area remembers it, no errors, one undo; with a hand-moved rack: asked; Continue keeps it; the rest are 108"; no overlaps |
+| `RA-zone` | a staging zone added over racks: asked ("This staging covers N racks. …"), with the add taken back meanwhile (no history); Cancel leaves it unplaced; Continue places it, and no bay is left under it; one entry; no errors; one undo |
+| `RA-zone-move` | the office moved onto racks: asked; Continue trims them; moved onto clear floor: nothing asked |
+| `RA-mouse` | a box and an edge drag at mouse positions (top at 39.95', dragged 2.17' past the wall): Check layout finds nothing at all |
+| `RA-copy` | a shrink that trims rows puts nothing in the copy set and asks nothing |
+| `RA-shape` ×2 | an L (300 × 200) and a T (360 × 240) with a washroom: the area over the top part, extended to the whole building: every rack inside the walls' inner face, none in the washroom, > 8 racks, no errors |
+
+All run horizontal and vertical. LY-assign now expects seven standard layers
+(Zones added).
+
+**Checked in the app (both orientations), with the real mouse and panel:**
+- Zones section → Office, placed and moved top-right.
+- Fill racking all but the top 40' (15 / 14 racks).
+- The area selected by clicking its outline; the settings panel shows.
+- A rack dragged 3' by hand; the area's top edge dragged past the wall. The
+  question appeared; Continue: the strip beside the office filled (19 / 26
+  racks), none in the office, and the hand-moved rack unchanged. Ctrl+Z
+  restored the fill.
+- Beam 108 from the panel: rebuilt, all 108"; Ctrl+Z restored it.
+- Zones → Staging dropped over racks: "This staging covers 6 racks. …";
+  Continue trimmed them, none left under it; Ctrl+Z removed it.
+- After the float fix, Check layout reported no warnings on the untouched
+  layout. The only error was the aisle the hand drag itself narrowed.
+- No console errors.
+- The cross-aisle label overlay can label a small gap where an extension's
+  rows start at a different run position from the old ones. That is the
+  existing overlay describing the layout.
+
 ### FR — Fill racking · `FR_fillRacking.test.js` (40 tests)
 A tool in the drawing toolbar ("Fill racking", paint bucket). While it is on,
 an options bar shows the Racking settings it fills with: orientation H / V,
@@ -2001,6 +2098,17 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | FR | **Aisles without ids** | 4: FR-generate h/v | ✓ |
 | FR | **An aisle along an open box edge again** (the box is the racking area) | 6: FR-edge-stack ×2, FR-edge-run from the open edge (h/v) | ✓ |
 | FR | **Open-edge rows back-to-back again** (the rule before "edge rows always single") | 12: FR-edge-stack ×6 (h/v) | ✓ |
+| RA | **Zones not holes** (the fill runs into the office) | RA-extend and 8 more | ✓ |
+| RA | **An extend refills the whole box** (the old racks not kept) | RA-extend | ✓ |
+| RA | **No warning for hand edits** | RA-edits | ✓ |
+| RA | **A shrink drops a crossing row instead of trimming it to whole bays** | RA-shrink | ✓ |
+| RA | **A rebuild ignores the new settings** | RA-rebuild | ✓ |
+| RA | **A rebuild replaces hand-edited racks too** | RA-rebuild | ✓ |
+| RA | **A zone over racks not caught** | RA-zone | ✓ |
+| RA | **A resize is two undo steps** | RA-extend and 4 more | ✓ |
+| RA | **Area actions join the copy set** | RA-copy | ✓ |
+| RA | **No float tolerance in the aisle rule** | RA-mouse | ✓ |
+| RA | **The fill tool makes no area** | RA-create and 8 more | ✓ |
 | CX | **Short runs get a cross-aisle again** (the old rule) | 9: CX-72, CX-limit, CX-generate 72' (h/v), CX-fill-rect v, CX-fill-T h/v, CX-fill-L h/v | ✓ |
 | LC | **An aisle too narrow to drive not an error** (aisleLevel) | 6: LC-aisle, LC-click, LC-recheck (h/v) | ✓ |
 | LC | **A can't-pick aisle filed under errors** | 2: LC-aisle h/v | ✓ |
@@ -2146,8 +2254,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,979 tests, 1,979 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,376 tests, 2,376 passing.**
+- **Plan suite: 2,003 tests, 2,003 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,400 tests, 2,400 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

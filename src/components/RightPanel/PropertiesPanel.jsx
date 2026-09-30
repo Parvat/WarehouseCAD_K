@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { pxToFtIn } from '../../utils/canvas'
 import { AisleLabelSize } from './panels/AisleLabelSize'
+import { RackingAreaPanel, ZonePanel } from './panels/RackingAreaPanel'
 import { RackRowPanel, MultiBayPanel, CantileverPanel, ColumnGridPanel, DriveInPanel, DriveThroughPanel, PushbackPanel } from '../RightPanel/Rackrowpanel'
 import { getLayoutCapacity } from '../../utils/capacity'
 import { useColumnCheck } from '../../generate/useColumnCheck'
@@ -434,6 +435,10 @@ export function PropertiesPanel() {
 
         {/* ── Aisle panel ──────────────────────────────────────────── */}
         {obj.type === 'aisle' && <AislePanel obj={obj} />}
+
+        {/* ── Racking area and zones (generate/rackingArea.js) ─────── */}
+        {obj.type === 'racking_area' && <RackingAreaPanel obj={obj} />}
+        {typeof obj.type === 'string' && obj.type.startsWith('zone_') && <ZonePanel obj={obj} />}
 
         {/* ── Row edits: apply to every section of this building ─── */}
 

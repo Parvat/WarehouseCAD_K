@@ -1,10 +1,13 @@
 // fillTool.js — the "Fill racking" tool's state: the box being dragged, its
 // live plan (generate/fillRacking.js), the Racking settings it fills with,
-// and the one-undo-step commit. Presentation state, never the canvas store —
+// and the one-undo-step commit. The box becomes a racking area
+// (generate/rackingArea.js) that remembers its settings and racks. Presentation state, never the canvas store —
 // until the fill itself is committed.
 
 import { create } from 'zustand'
-import { planFill, DEFAULT_FILL_SETTINGS } from '../generate/fillRacking'
+import { DEFAULT_FILL_SETTINGS } from '../generate/fillRacking'
+import { planAreaCreate } from '../generate/rackingArea'
+import { nanoid } from 'nanoid'
 
 export const FILL_TOOL = 'fill_racking'
 
@@ -25,39 +28,42 @@ export const useRackingSettings = create((set, get) => ({
 }))
 export const rackingSettings = () => { const { setSetting, ...plain } = useRackingSettings.getState(); void setSetting; return plain }
 
-/** The box being dragged ({ from, to } world px) and its live plan. */
-export const useFillTool = create(() => ({ drag: null, plan: null }))
+/** The box being dragged ({ from, to } world px), its live plan, and the
+ *  racking area it would create (the plan's racks, stamped with its id). */
+export const useFillTool = create(() => ({ drag: null, plan: null, created: null }))
 
 export const boxOfDrag = (d) => d && ({ x: Math.min(d.from.x, d.to.x), y: Math.min(d.from.y, d.to.y), w: Math.abs(d.to.x - d.from.x), h: Math.abs(d.to.y - d.from.y) })
 
 /** The press: the box starts here. */
-export function startFill(world) { useFillTool.setState({ drag: { from: world, to: world }, plan: null }) }
+export function startFill(world) { useFillTool.setState({ drag: { from: world, to: world }, plan: null, created: null }) }
 
 /** The drag: the box grows; the plan (and its estimate) follows. */
 export function moveFill(world, objects, gridSize = 40) {
   const d = useFillTool.getState().drag
   if (!d) return null
   const drag = { ...d, to: world }
-  const plan = planFill(objects, boxOfDrag(drag), rackingSettings(), { gridSize, from: drag.from })
-  useFillTool.setState({ drag, plan })
+  const created = planAreaCreate(objects, boxOfDrag(drag), rackingSettings(), { gridSize, from: drag.from, newId: nanoid })
+  const plan = created ? created.plan : { racks: [], aisles: [], rows: 0, positions: 0, rects: [] }
+  useFillTool.setState({ drag, plan, created })
   return plan
 }
 
-/** The release: the planned racks and aisles go in as ONE undo step.
- *  Returns how many racks were placed. */
+/** The release: the racking area, its racks and aisles go in as ONE undo
+ *  step. Returns how many racks were placed. */
 export function commitFill(store) {
-  const { plan } = useFillTool.getState()
-  useFillTool.setState({ drag: null, plan: null })
-  if (!plan || !plan.racks.length) return 0
+  const { created } = useFillTool.getState()
+  useFillTool.setState({ drag: null, plan: null, created: null })
+  if (!created || !created.plan.racks.length) return 0
+  const { area, plan } = created
   const st = store.getState()
-  store.setState({ objects: [...st.objects, ...plan.racks, ...plan.aisles] })
-  store.getState().commitObjectUpdate(plan.racks[0].id, {})
+  store.setState({ objects: [...st.objects, area, ...plan.racks, ...plan.aisles] })
+  store.getState().commitObjectUpdate(area.id, {})
   return plan.racks.length
 }
 
 /** Esc: the box goes, nothing is placed. */
 export function cancelFill() {
   if (!useFillTool.getState().drag) return false
-  useFillTool.setState({ drag: null, plan: null })
+  useFillTool.setState({ drag: null, plan: null, created: null })
   return true
 }

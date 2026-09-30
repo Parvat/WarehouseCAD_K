@@ -284,7 +284,7 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
      the end of this function) — a hand-drawn floor plan is never at risk. */
   store.clearGeneratedLayout()
 
-  /* Layers (utils/layers.js): the six standard layers, Building and Columns
+  /* Layers (utils/layers.js): the standard layers, Building and Columns
      locked, so a drag across the floor never grabs the building. Set before
      anything is placed, so every history entry of this Generate carries them. */
   useCanvasStore.setState({ layers: generatedLayers(useCanvasStore.getState().layers) })

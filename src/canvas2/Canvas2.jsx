@@ -18,6 +18,8 @@ import { clampZoom, screenToWorld } from './viewport'
 import { isFloorPlan } from './selection'
 import { useColumnCheck } from '../generate/useColumnCheck'
 import { FillOverlay, FillOptionsBar } from './FillTool'
+import { AreaPrompt } from './AreaPrompt'
+import { hasResizeHandles } from './handleGeometry'
 import { FILL_TOOL, startFill, moveFill, commitFill } from '../utils/fillTool'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
@@ -197,7 +199,7 @@ export function Canvas2() {
      is untouched — a bay marquee landing on just one row still leaves
      `selectedObjects.length === 1`, so it never reaches this gate at
      all. */
-  const handleTarget = selectedObjects.length === 1 && PORTED_RACK_TYPES.has(selectedObjects[0].type)
+  const handleTarget = selectedObjects.length === 1 && hasResizeHandles(selectedObjects[0].type, PORTED_RACK_TYPES)
     ? selectedObjects[0] : null
 
   /* A floor plan gets its OWN, rotate-only handle (FpRotateHandle — no
@@ -462,6 +464,7 @@ export function Canvas2() {
       )}
       <ViewAdopter view={view} apply={apply} />
       <CopyNote />
+      <AreaPrompt />
       {filling && <FillOptionsBar />}
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>

@@ -45,9 +45,9 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     fp = st().objects.find(o => o.type === 'fp_rect')
   })
 
-  it('LY-assign: Generate puts every object on its layer — the building on Building, the column grid on Columns, racks on Racking, aisles on Aisles — stamped on the object itself; the list is the six standard layers', () => {
+  it('LY-assign: Generate puts every object on its layer — the building on Building, the column grid on Columns, racks on Racking, aisles on Aisles — stamped on the object itself; the list is the seven standard layers (Zones added with racking areas)', () => {
     const { layers, objects } = st()
-    expect(layers.map(l => l.id)).toEqual(['building', 'columns', 'racking', 'aisles', 'checks', 'notes'])
+    expect(layers.map(l => l.id)).toEqual(['building', 'columns', 'zones', 'racking', 'aisles', 'checks', 'notes'])
     const seen = new Set()
     for (const o of objects) {
       const want = LAYOUT_TYPES[o.type]

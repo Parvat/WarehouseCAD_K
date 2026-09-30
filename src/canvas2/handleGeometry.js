@@ -36,15 +36,26 @@ export const HANDLE_ACCENT = '#4a9eff'
 const ML_MR_ONLY = new Set(['rack_row', 'rack_double_row', 'rack_cantilever'])
 const SUPPRESS_TC = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pushback', 'rack_pallet_flow'])
 
+/* A racking area resizes by its four edges only (generate/rackingArea.js); a
+   zone is a plain rectangle — all eight. Neither rotates. */
+const EDGE_ONLY = new Set(['racking_area'])
+const isZoneType = (type) => typeof type === 'string' && type.startsWith('zone_')
+
+/** Does a single selection of this type get resize handles in canvas2? */
+export function hasResizeHandles(type, rackTypes) {
+  return (rackTypes && rackTypes.has(type)) || EDGE_ONLY.has(type) || isZoneType(type)
+}
+
 export function enabledHandlesFor(type) {
   if (type === 'aisle') return []
+  if (EDGE_ONLY.has(type)) return ['tc', 'bc', 'ml', 'mr']
   if (ML_MR_ONLY.has(type)) return ['ml', 'mr']
   if (SUPPRESS_TC.has(type)) return HANDLES.filter(h => h !== 'tc')
   return HANDLES.slice()
 }
 
 export function rotateEnabledFor(type) {
-  return type !== 'aisle'
+  return type !== 'aisle' && !EDGE_ONLY.has(type) && !isZoneType(type)
 }
 
 /** World point -> local (pre-rotation) point around the object's own bounds

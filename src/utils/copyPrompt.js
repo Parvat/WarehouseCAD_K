@@ -231,6 +231,11 @@ export function copyPending(fpId) {
  *  rebaseAfterMatch). */
 export function beginMatch() { if (watch) watch.matchNext = true }
 
+/** Mark the next action as the app's own, not a row edit — a racking area's
+ *  resize or rebuild, racks cleared from under a zone (utils/rackingAreaTool.js):
+ *  nothing joins the pending set and nothing is asked; the set stays as it was. */
+export function skipNextAction() { if (watch) watch.skipNext = true }
+
 /** After the question is answered: the edit that raised it is completed — a
  *  Delete or a placement run again, a panel change re-applied — or, for a
  *  drag, "Drag cancelled — drag again". A result shown by the answer (Copied
@@ -372,7 +377,9 @@ function settle(before) {
   watch.pending = false
   const st = watch.store.getState()
   const after = st.objects
-  const t = touched(before, after)
+  const skip = !!watch.skipNext
+  watch.skipNext = false
+  const t = skip ? null : touched(before, after)
   sync()
   // a result shown in the bar lasts until the next action; one held for THIS action shows now
   const carry = watch.nextReport || null
@@ -431,7 +438,7 @@ function settle(before) {
 
 /** Watch `store` for actions; returns the unsubscribe. */
 export function installCopyWatcher(store, newId) {
-  watch = { store, newId, lastObjects: null, lastHistory: null, lastIndex: -1, busy: false, pending: false, nextReport: null, matchNext: false, resume: null, resumeDrag: false }
+  watch = { store, newId, lastObjects: null, lastHistory: null, lastIndex: -1, busy: false, pending: false, nextReport: null, matchNext: false, skipNext: false, resume: null, resumeDrag: false }
   sync()
   refresh()
   const unsub = store.subscribe((st) => {

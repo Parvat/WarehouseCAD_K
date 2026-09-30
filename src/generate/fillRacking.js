@@ -17,7 +17,10 @@
 //   - a side on an EXISTING rack: a forklift aisle off it, so its pick face
 //     stays reachable (never overlapped, never moved);
 //   - where the region carries on into another of its rectangles (the elbow
-//     of an L), each side leaves half a cross-aisle.
+//     of an L), each side leaves half a cross-aisle;
+//   - a ZONE (office, staging, washroom, custom area — any `zone_*`) is a
+//     hole in the region whose edges are walls: nothing is placed inside it,
+//     and the rows run flush against it.
 // The walk starts at the box edge where the drag started (both axes), so the
 // racking is anchored there; the far edge gets its row flush too.
 //
@@ -39,6 +42,7 @@ import { nanoid } from 'nanoid'
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const EPS = 1e-6
 const isRack = (o) => typeof o?.type === 'string' && o.type.startsWith('rack_')
+export const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 
 /** The Racking settings a fill uses (the Generate panel's own, same defaults). */
 export const DEFAULT_FILL_SETTINGS = {
@@ -98,9 +102,9 @@ function walkGrid(lines, originFt, lengthFt, dir = 1) {
 }
 
 /** The region to fill, as rectangles in (run, stack) feet with each side's
- *  kind: 'wall' | 'open' (the box edge) | 'rack' (an existing rack) | 'join'
- *  (the region carries on into another rectangle). Horizontal: run = x,
- *  stack = y. */
+ *  kind: 'wall' (a wall, or a zone's edge) | 'open' (the box edge) | 'rack'
+ *  (an existing rack) | 'join' (the region carries on into another
+ *  rectangle). Horizontal: run = x, stack = y. */
 export function fillRects(objects, fp, boxPx, { orientation = 'horizontal', gridSize = 40 } = {}) {
   const vert = orientation === 'vertical'
   const ft = (v) => v / gridSize
@@ -111,6 +115,13 @@ export function fillRects(objects, fp, boxPx, { orientation = 'horizontal', grid
   // existing racks in the box or touching it, as (run, stack) rects
   const obstacles = objects.filter(isRack).map(o => {
     const f = rackFootprint(o), a = rs({ x: f.x, y: f.y }), c = rs({ x: f.x + f.w, y: f.y + f.h })
+    return { r0: Math.min(a.r, c.r), r1: Math.max(a.r, c.r), s0: Math.min(a.s, c.s), s1: Math.max(a.s, c.s) }
+  }).filter(o => o.r1 > box.r0 - EPS && o.r0 < box.r1 + EPS && o.s1 > box.s0 - EPS && o.s0 < box.s1 + EPS)
+  // the ones inside the box cut the region; the ones only touching it just mark the side they touch
+  const cutting = obstacles.filter(o => o.r1 > box.r0 + EPS && o.r0 < box.r1 - EPS && o.s1 > box.s0 + EPS && o.s0 < box.s1 - EPS)
+  // zones in the box or touching it: holes with wall edges
+  const zones = objects.filter(isZone).map(o => {
+    const a = rs({ x: o.x, y: o.y }), c = rs({ x: o.x + o.width, y: o.y + o.height })
     return { r0: Math.min(a.r, c.r), r1: Math.max(a.r, c.r), s0: Math.min(a.s, c.s), s1: Math.max(a.s, c.s) }
   }).filter(o => o.r1 > box.r0 - EPS && o.r0 < box.r1 + EPS && o.s1 > box.s0 - EPS && o.s0 < box.s1 + EPS)
 
@@ -127,7 +138,7 @@ export function fillRects(objects, fp, boxPx, { orientation = 'horizontal', grid
     for (let i = 0; i + 1 < out.length; i += 2) iv.push([out[i], out[i + 1]])
     return iv
   }
-  const cuts = [...new Set([box.r0, box.r1, ...poly.map(p => p.r), ...obstacles.flatMap(o => [o.r0, o.r1])]
+  const cuts = [...new Set([box.r0, box.r1, ...poly.map(p => p.r), ...cutting.flatMap(o => [o.r0, o.r1]), ...zones.flatMap(o => [o.r0, o.r1])]
     .filter(r => r >= box.r0 - EPS && r <= box.r1 + EPS).map(r => Math.round(r * 1e6) / 1e6))].sort((p, q) => p - q)
 
   // each strip's intervals, their ends' kinds
@@ -140,12 +151,21 @@ export function fillRects(objects, fp, boxPx, { orientation = 'horizontal', grid
       const lo = Math.max(a, box.s0), hi = Math.min(c, box.s1)
       return hi - lo > EPS ? { s0: lo, s1: hi, k0: lo > a + EPS ? 'open' : 'wall', k1: hi < c - EPS ? 'open' : 'wall' } : null
     }).filter(Boolean)
-    for (const o of obstacles) {
+    // a zone across the strip: a hole, its edges walls
+    for (const z of zones) {
+      if (!(z.r0 < rm && z.r1 > rm)) continue
+      ivs = ivs.flatMap(v => {
+        if (z.s1 <= v.s0 + EPS || z.s0 >= v.s1 - EPS) return [v]
+        const out = []
+        if (z.s0 > v.s0 + EPS) out.push({ s0: v.s0, s1: z.s0, k0: v.k0, k1: 'wall' })
+        if (z.s1 < v.s1 - EPS) out.push({ s0: z.s1, s1: v.s1, k0: 'wall', k1: v.k1 })
+        return out
+      })
+    }
+    for (const o of cutting) {
       if (!(o.r0 < rm && o.r1 > rm)) continue
       ivs = ivs.flatMap(v => {
-        if (o.s1 < v.s0 - EPS || o.s0 > v.s1 + EPS) return [v]
-        if (o.s1 <= v.s0 + EPS) return [{ ...v, k0: 'rack' }]            // touching its low side
-        if (o.s0 >= v.s1 - EPS) return [{ ...v, k1: 'rack' }]            // touching its high side
+        if (o.s1 <= v.s0 + EPS || o.s0 >= v.s1 - EPS) return [v]
         const out = []
         if (o.s0 > v.s0 + EPS) out.push({ s0: v.s0, s1: o.s0, k0: v.k0, k1: 'rack' })
         if (o.s1 < v.s1 - EPS) out.push({ s0: o.s1, s1: v.s1, k0: 'rack', k1: v.k1 })
@@ -165,12 +185,26 @@ export function fillRects(objects, fp, boxPx, { orientation = 'horizontal', grid
     }
     open = next
   }
-  // the run ends' kinds: a wall when the building stops there for the whole side; an existing
-  // rack on ANY part of the side; the box edge (open floor past it); else the region carries on
+  // a stack side with an existing rack on ANY part of it (touching or cut by it): an aisle off it
+  const rackAlong = (q, sv) => obstacles.some(o => o.r1 > q.r0 + EPS && o.r0 < q.r1 - EPS && o.s0 <= sv + EPS && o.s1 >= sv - EPS)
+  for (const q of rects) {
+    if (q.k0 === 'open' && rackAlong(q, q.s0)) q.k0 = 'rack'
+    if (q.k1 === 'open' && rackAlong(q, q.s1)) q.k1 = 'rack'
+  }
+  // the run ends' kinds: a wall when the building (or a zone) stops the floor there for the
+  // whole side; an existing rack on ANY part of the side; the box edge (open floor past it);
+  // else the region carries on
   const rackOnSide = (r, s0, s1) => obstacles.some(o => r > o.r0 - EPS && r < o.r1 + EPS && o.s1 > s0 + EPS && o.s0 < s1 - EPS)
+  const floorAt = (r, s0, s1) => {
+    let iv = crossings(r).map(([a, c]) => [Math.max(a, s0), Math.min(c, s1)]).filter(([a, c]) => c - a > EPS)
+    for (const z of zones) {
+      if (!(r > z.r0 - EPS && r < z.r1 + EPS)) continue
+      iv = iv.flatMap(([a, c]) => [[a, Math.min(c, z.s0)], [Math.max(a, z.s1), c]].filter(([p, q]) => q - p > EPS))
+    }
+    return iv
+  }
   const endKind = (r, s0, s1) => {
-    const iv = crossings(r).filter(([a, c]) => Math.min(c, s1) - Math.max(a, s0) > EPS)
-    if (!iv.length) return 'wall'
+    if (!floorAt(r, s0, s1).length) return 'wall'
     if (rackOnSide(r, s0, s1)) return 'rack'
     if (r < box.r0 - EPS || r > box.r1 + EPS) return 'open'
     return 'join'
@@ -185,8 +219,9 @@ export function fillRects(objects, fp, boxPx, { orientation = 'horizontal', grid
 /** Plan a fill of `boxPx` (world px) with `settings`: the new racks and
  *  aisles (world px, stamped, parented to the building), how many rows and
  *  pallet positions, and the rectangles it used. `from` (world px) is where
- *  the drag started: the walk is anchored at that corner's edges. */
-export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, newId = nanoid, from = null } = {}) {
+ *  the drag started: the walk is anchored at that corner's edges. `areaId`:
+ *  the racking area the racks belong to (stamped on each). */
+export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, newId = nanoid, from = null, areaId = null } = {}) {
   const set = { ...DEFAULT_FILL_SETTINGS, ...settings }
   const fp = buildingForBox(objects, boxPx)
   const empty = { fp: null, racks: [], aisles: [], rows: 0, positions: 0, rects: [] }
@@ -258,7 +293,7 @@ export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules =
     secBase += segments.length
   }
   // ids first: the aisles between the new rows refer to them
-  const racks = placements.map(p => ({ ...placementToObject(p), id: newId() }))
+  const racks = placements.map(p => ({ ...placementToObject(p), id: newId(), ...(areaId ? { areaId } : {}) }))
   // the aisles get ids here too: the fill goes into the store in one write, not through addObject
   const aisles = aisleObjectsForRacks(racks).map(o => ({ ...o, id: o.id || newId() }))
   const withParent = parentGenerated([...racks, ...aisles], fp.id).map(o => ({ ...o, layerId: layerForType(o.type) }))

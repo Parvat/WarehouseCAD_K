@@ -3,7 +3,7 @@ import { useCanvasStore } from '../../store/useCanvasStore'
 import { SectionHeader } from '../shared/SectionHeader'
 import { setLayer } from '../../utils/layers'
 
-/* The six standard layers (utils/layers.js), each with an eye and a padlock.
+/* The seven standard layers (utils/layers.js), each with an eye and a padlock.
    Hidden: not drawn, not pickable, not in the PDF. Locked: drawn and printed,
    but not pickable, draggable, snappable or marqueed. Custom layers later. */
 export function LayerPanel() {

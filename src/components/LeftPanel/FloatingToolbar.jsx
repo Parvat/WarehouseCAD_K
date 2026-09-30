@@ -27,7 +27,10 @@ import {
   Scan,
   /* toolbar chrome */
   ArrowUpDown, ArrowLeftRight,
+  /* zones */
+  LandPlot, Briefcase, PackageOpen, Bath, BoxSelect,
 } from 'lucide-react'
+import { ZONE_KINDS } from '../../generate/rackingArea'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { layerForType } from '../../utils/layers'
 import { levelsFor } from '../../utils/rackLevels'
@@ -149,6 +152,11 @@ const FOOTER_ITEMS = [
 
 /* keyed by item id where ids are unique, else by type */
 const ITEM_ICONS = {
+  /* zones */
+  zone_office:         Briefcase,
+  zone_staging:        PackageOpen,
+  zone_washroom:       Bath,
+  zone_custom:         BoxSelect,
   /* racking */
   rack_row:            Grid3x3,
   rack_row_multi:      Columns3,
@@ -208,6 +216,7 @@ const CATEGORY_ICONS = {
   utilities:  PlugZap,
   shapes:     Shapes,
   fp:         Frame,
+  zones:      LandPlot,
 }
 
 /* Single place that renders an item glyph, so size and stroke can never drift.
@@ -240,6 +249,12 @@ const BLOCK_ITEMS = [
 /*  FLOOR PLANS — its own top-level section. "Custom" drops a blank rectangle   */
 /*  which the wall-drag system then reshapes into any outline.                 */
 /* ═══════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  ZONES — office, staging, washroom, custom area (generate/rackingArea.js).  */
+/*  Plain rectangles on the Zones layer; no racking is placed inside one.      */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+const ZONE_ITEMS = ZONE_KINDS.map(z => ({ id: z.type, type: z.type, label: z.label, w: z.w, h: z.h, color: z.color }))
+
 const FP_ITEMS = [
   { id:'fp_rect',     label:'Rectangle', wFt:80,  hFt:60, type:'fp_rect'     },
   { id:'fp_l',        label:'L-Shape',   wFt:80,  hFt:60, type:'fp_l'        },
@@ -975,11 +990,11 @@ export function FloatingToolbar() {
      as "the header is the deepest thing in its group". */
   const CAT_COLOR = {
     storage:'#165c45', mhe:'#f59e0b', structural:'#6366f1', safety:'#ef4444',
-    utilities:'#3b82f6', shapes:'#8A8578', fp:'#8A8578',
+    utilities:'#3b82f6', shapes:'#8A8578', fp:'#8A8578', zones:'#7c3aed',
   }
   const CAT_HEADER = {
     storage:'#0E4433', mhe:'#B87309', structural:'#4547C4', safety:'#C42B2B',
-    utilities:'#4547C4', shapes:'#6B675F', fp:'#6B675F',
+    utilities:'#4547C4', shapes:'#6B675F', fp:'#6B675F', zones:'#5b21b6',
   }
   /* Sections own their items directly — no intermediate category row, so
      "Racking > Racking > items" collapses to "Racking > items". */
@@ -989,11 +1004,13 @@ export function FloatingToolbar() {
     { id:'ops',        label:'Ops',         icon:'mhe',        cats:['mhe','utilities'] },
     { id:'structural', label:'Structural',  icon:'structural', cats:['structural'] },
     { id:'safety',     label:'Safety',      icon:'safety',     cats:['safety'] },
+    { id:'zones',      label:'Zones',       icon:'zones',      cats:['zones'] },
     { id:'blocks',     label:'Blocks',      icon:'shapes',     cats:['shapes'] },
   ]
   const catItems = id =>
       id === 'shapes' ? BLOCK_ITEMS.map(o => ({ ...o, catId:'shapes' }))
     : id === 'fp'     ? FP_ITEMS.map(o => ({ ...o, catId:'fp' }))
+    : id === 'zones'  ? ZONE_ITEMS.map(o => ({ ...o, catId:'zones' }))
     : getCategoryItems(id).map(o => ({ ...o, catId:id }))
   const secItems = sec => sec.cats.flatMap(catItems)
   const colorOf  = item => CAT_COLOR[item.catId] || 'var(--panel-text2)'
@@ -1012,6 +1029,7 @@ export function FloatingToolbar() {
     ...allItems,
     ...BLOCK_ITEMS.map(o => ({ ...o, catId:'shapes' })),
     ...FP_ITEMS.map(o => ({ ...o, catId:'fp' })),
+    ...ZONE_ITEMS.map(o => ({ ...o, catId:'zones' })),
   ], [allItems])
   const results = useMemo(() => !q ? []
     : everyItem.filter(i => i.label.toLowerCase().includes(q)), [q, everyItem])

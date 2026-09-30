@@ -2,7 +2,8 @@ import { setDragPreview, clearDragPreview, setDragging } from './dragPreview'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
-import { handleHitTest, cursorForHandle } from './handleGeometry'
+import { handleHitTest, cursorForHandle, hasResizeHandles } from './handleGeometry'
+import { finishAreaResize } from '../utils/rackingAreaTool'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
 import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
 import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from './fpRotate'
@@ -433,7 +434,7 @@ export function useCanvasInteraction({
          CanvasUI's real DOM handles physically sit above the object. */
       if (evt.button === 0 && st.selectedIds.length === 1) {
         const selected = st.objects.find(o => o.id === st.selectedIds[0])
-        if (selected && PORTED_RACK_TYPES.has(selected.type)) {
+        if (selected && hasResizeHandles(selected.type, PORTED_RACK_TYPES)) {
           const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
           if (handle) {
             beginHandleDrag(selected, handle, world)
@@ -548,6 +549,9 @@ export function useCanvasInteraction({
            reaching here means neither is held — a plain left-press on an
            object always selects it and arms its drag. */
         selectFromHit(hitId, !!evt.shiftKey, world)
+        /* A racking area is selected, never dragged: it is resized by its
+           edges, and moving only its outline would leave its racks behind. */
+        if (hitObj && hitObj.type === 'racking_area') return
         beginDrag(hitId, world, evt)
         return
       }
@@ -584,7 +588,7 @@ export function useCanvasInteraction({
     let next = 'default'
     if (st.selectedIds.length === 1) {
       const selected = st.objects.find(o => o.id === st.selectedIds[0])
-      if (selected && PORTED_RACK_TYPES.has(selected.type)) {
+      if (selected && hasResizeHandles(selected.type, PORTED_RACK_TYPES)) {
         const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
         if (handle) next = cursorForHandle(handle, selected.rotation)
       } else if (selected && isFloorPlan(selected)) {
@@ -1025,7 +1029,13 @@ export function useCanvasInteraction({
            pattern: its only real job is the single pushHistory call. */
         const st = useCanvasStore.getState()
         const obj = st.objects.find(o => o.id === rd.objId)
-        if (obj) st.commitObjectUpdate(rd.objId, obj)
+        /* A racking area's edge: the resize is the area's own — trim / fill
+           its racks, one history entry, asked first if it has hand edits
+           (utils/rackingAreaTool.js). */
+        if (obj && obj.type === 'racking_area') {
+          const o = rd.origObj
+          finishAreaResize(useCanvasStore, rd.objId, { x: o.x, y: o.y, w: o.width, h: o.height }, { gridSize: st.gridSize })
+        } else if (obj) st.commitObjectUpdate(rd.objId, obj)
         /* Wall highlight is only for the duration of the drag that's ending —
            CanvasUI clears activeWall on the next click anywhere; canvas2 has
            no WallInputOverlay to keep it alive for, so clearing it here

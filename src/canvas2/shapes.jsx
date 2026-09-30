@@ -674,3 +674,37 @@ export const ColumnGridShape = memo(ColumnGridShapeView)
 export const AisleShape = memo(AisleShapeView)
 
 export const FallbackShape = memo(FallbackShapeView)
+
+/* ── Racking area and zones (generate/rackingArea.js) ───────────────────── */
+
+/** A racking area: its box as a dashed outline, nothing inside (the racks it
+ *  placed are drawn by their own painters). The dash is in world units — the
+ *  scene never re-renders for a zoom — 2' on, 1' off. */
+function RackingAreaShapeView({ obj, gridSize = 40, listening = false, bind }) {
+  if (!(obj.width > 0) || !(obj.height > 0)) return null
+  return (
+    <Group name={nodeName(obj.id)} listening={listening} {...(bind ? bind(obj) : null)}>
+      <Rect x={obj.x} y={obj.y} width={obj.width} height={obj.height} stroke="#2F7BD8" strokeWidth={1.5}
+        dash={[2 * gridSize, gridSize]} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={listening} />
+    </Group>
+  )
+}
+
+/** A zone: a tinted rectangle with its name in the middle, sized to the zone
+ *  (drawing-size text, like every other label on the plan). */
+function ZoneShapeView({ obj, gridSize = 40, listening = false, bind }) {
+  if (!(obj.width > 0) || !(obj.height > 0)) return null
+  const stroke = obj.stroke || '#64748b'
+  const fs = Math.max(gridSize, Math.min(4 * gridSize, Math.min(obj.width, obj.height) * 0.18))
+  return (
+    <Group name={nodeName(obj.id)} listening={listening} opacity={obj.opacity ?? 1} {...(bind ? bind(obj) : null)}>
+      <Rect x={obj.x} y={obj.y} width={obj.width} height={obj.height} fill={obj.fill || stroke + '22'} stroke={stroke}
+        strokeWidth={1.5} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={listening} />
+      <Text x={obj.x} y={obj.y + obj.height / 2 - fs / 2} width={obj.width} align="center" text={obj.label || 'Zone'}
+        fontSize={fs} fontStyle="600" fontFamily="Inter, sans-serif" fill={stroke} listening={false} />
+    </Group>
+  )
+}
+
+export const RackingAreaShape = memo(RackingAreaShapeView)
+export const ZoneShape = memo(ZoneShapeView)

@@ -29,11 +29,15 @@ const travelFtFor = (aisleFt) => Math.min(TRAVEL_FT_DEFAULT, aisleFt)
 /** THE aisle-width rule, for a clear width in px: 1 — under the truck's
  *  travel width, it can't drive through; 2 — it can drive, but it's under the
  *  forklift aisle, so it can't pick; 3 — fine. `slackPx` forgives a hair
- *  (rounding) on the pick test. The column check, the copy warnings and
- *  Check layout all ask this one function. */
+ *  (rounding) on the pick test. A width equal to a limit to within float
+ *  noise (FLOAT_PX, a hundred-millionth of an inch) meets it: an aisle laid
+ *  out at exactly 10' 6" from edges that are not whole feet can land 1e-10 px
+ *  short. The column check, the copy warnings and Check layout all ask this
+ *  one function. */
+const FLOAT_PX = 1e-6
 export function aisleLevel(clearPx, profile, gridSize = GS, slackPx = 0) {
-  if (clearPx < (profile.travelFt ?? TRAVEL_FT_DEFAULT) * gridSize) return 1
-  if (clearPx + slackPx < profile.aisleFt * gridSize) return 2
+  if (clearPx + FLOAT_PX < (profile.travelFt ?? TRAVEL_FT_DEFAULT) * gridSize) return 1
+  if (clearPx + slackPx + FLOAT_PX < profile.aisleFt * gridSize) return 2
   return 3
 }
 

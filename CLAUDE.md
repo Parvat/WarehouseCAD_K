@@ -104,8 +104,8 @@ line stays constant across sizes.
 tiles, so an object looks the same however you browse it:
 
 ```
-sub-item   racking #165c45 · ops #f59e0b · structural #6366f1 · safety #ef4444 · utilities #3b82f6
-section    racking #0E4433 · ops #B87309 · structural #4547C4 · safety #C42B2B · neutral #6B675F
+sub-item   racking #165c45 · ops #f59e0b · structural #6366f1 · safety #ef4444 · utilities #3b82f6 · zones #7c3aed
+section    racking #0E4433 · ops #B87309 · structural #4547C4 · safety #C42B2B · zones #5b21b6 · neutral #6B675F
 ```
 
 A **section header runs one shade deeper than its own children**, so the hierarchy reads as
@@ -133,7 +133,7 @@ rendered by `App.jsx`.) Docked in both states — the canvas starts at the panel
 | | |
 |---|---|
 | **Collapsed** | 50px icon rail — logo, pin, tools, search, then one bare icon per section. Clicking a section icon expands the panel and opens that section. |
-| **Expanded** | Drag-resizable 150–420px column, 240px on first run. Six sections (Floor Plans, Racking, Ops, Structural, Safety, Blocks) expand **inline**, accordion-style. |
+| **Expanded** | Drag-resizable 150–420px column, 240px on first run. Seven sections (Floor Plans, Racking, Ops, Structural, Safety, Zones, Blocks) expand **inline**, accordion-style. |
 
 **No flyouts.** That interaction is deleted — it put the primary browse action outside the panel
 and needed a second render path that drifted out of sync with the first. Exactly **two** things
@@ -183,7 +183,10 @@ shows items, route it through `ItemBody` rather than writing a third path.
   a 0.5px `--panel-border` rule. Undo/Redo used to live here and were removed — the top bar
   already owns history, and a third copy read as clutter. `FOOTER_H` must track the footer's real
   height or the last row hides underneath it.
-- Section order is **Floor Plans first**, then Racking, Ops, Structural, Safety, Blocks.
+- Section order is **Floor Plans first**, then Racking, Ops, Structural, Safety, Zones, Blocks.
+- **Zones** (Office, Staging, Washroom, Custom area) are a local list (`ZONE_KINDS` in
+  `generate/rackingArea.js`), not `constants/`. They sit on their own Zones layer, and no racking
+  is placed inside one; their edges count as walls.
 - Panel preferences — collapsed, **width**, view mode, pinned, usage, **toolbar open/orientation/
   position, tray position** — are presentation state: component state + `localStorage` under
   `trace.leftpanel.v1`, never the canvas store.

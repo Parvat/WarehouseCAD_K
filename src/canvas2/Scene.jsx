@@ -4,7 +4,7 @@ import { shownIn } from '../utils/layers'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
-import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape } from './shapes'
+import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape, RackingAreaShape, ZoneShape } from './shapes'
 
 /* ── STEP 2 · the scene ──────────────────────────────────────────────────────
    Everything in the store, drawn. One painter per object, chosen once, and no
@@ -72,6 +72,8 @@ function SceneView({ listening = false, bind }) {
       if (FP_TYPES.has(o.type) && o.fpVerts) { floors.push(o); continue }
       if (o.type === 'column_grid') { columns.push({ kind: 'columns', obj: o }); continue }
       if (o.type === 'aisle') { rest.push({ kind: 'aisle', obj: o }); continue }
+      if (o.type === 'racking_area') { rest.push({ kind: 'area', obj: o }); continue }
+      if (typeof o.type === 'string' && o.type.startsWith('zone_')) { rest.push({ kind: 'zone', obj: o }); continue }
       if (PORTED_RACK_TYPES.has(o.type)) {
         const ops = opsFor(o, gridSize)
         // a degenerate rack has no ops; fall through so it is still visible
@@ -98,6 +100,8 @@ function SceneView({ listening = false, bind }) {
         if (e.kind === 'aisle') {
           return <AisleShape key={e.obj.id} obj={e.obj} row1={byId.get(e.obj.row1Id)} row2={byId.get(e.obj.row2Id)} listening={listening} bind={bind} />
         }
+        if (e.kind === 'area') return <RackingAreaShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
+        if (e.kind === 'zone') return <ZoneShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
         return <FallbackShape key={e.obj.id} obj={e.obj} listening={listening} bind={bind} />
       })}
     </>
