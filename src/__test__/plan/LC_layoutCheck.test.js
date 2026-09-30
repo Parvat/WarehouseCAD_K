@@ -156,20 +156,92 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(w.text).toBe(`Double row 4: angled ${rot + 30}° — its column losses weren't checked`)
   })
 
-  it('LC-click: clicking an item selects its object(s) and zooms so the spot fills the view', () => {
+  it('LC-click: clicking an item selects NOTHING (a selection there is cleared), zooms so the spot fills the view and highlights the problem; the next click on the canvas or the next check clears it, and that click then selects only the row it lands on', () => {
     handDrawn()
-    const [a, b] = racks()
+    const [a, b, c] = racks()
     move(b, -(AISLE - 7 * GS))
+    s().selectGroup([c.id])
     const item = check().errors[0]
     const ids = m.LC.goToIssue(m.useCanvasStore, item, { w: 1200, h: 800 })
-    expect(ids.sort()).toEqual([a.id, b.id].sort())
-    expect([...s().selectedIds].sort()).toEqual([a.id, b.id].sort())
+    expect(ids.sort()).toEqual([a.id, b.id].sort())                            // involved, not selected
+    expect(s().selectedIds).toEqual([])
+    expect(m.LC.useLayoutCheck.getState().highlight).toMatchObject({ kind: 'aisle-drive', shapes: item.highlight })
+    // the next click: the highlight goes; the click selects the row it lands on, only that one
+    m.LC.clearIssueHighlight(); s().selectObject(a.id, false)
+    expect(m.LC.useLayoutCheck.getState().highlight).toBe(null)
+    expect(s().selectedIds).toEqual([a.id])
+    const ci = readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')
+    expect(ci).toMatch(/const onStageMouseDown = \(e\) => \{\s*\n\s*const stage = stageRef\.current\s*\n\s*if \(!stage\) return\s*\n\s*\/\/[^\n]*\n\s*clearIssueHighlight\(\)/)
+    // a re-check clears it too
+    m.LC.goToIssue(m.useCanvasStore, item, { w: 1200, h: 800 })
+    m.LC.runLayoutCheck(m.useCanvasStore)
+    expect(m.LC.useLayoutCheck.getState().highlight).toBe(null)
+    expect(readFileSync('src/canvas2/Canvas2.jsx', 'utf8')).toMatch(/<IssueHighlight \/>/)
+    expect(readFileSync('src/canvas2/IssueHighlight.jsx', 'utf8')).toMatch(/<Group ref=\{ref\} name="issue-highlight" listening=\{false\}>/)
     const { zoom, panX, panY } = s()
     const sx = item.box.x * zoom + panX, ex = (item.box.x + item.box.w) * zoom + panX
     const sy = item.box.y * zoom + panY, ey = (item.box.y + item.box.h) * zoom + panY
     expect(sx).toBeGreaterThanOrEqual(0); expect(ex).toBeLessThanOrEqual(1200)
     expect(sy).toBeGreaterThanOrEqual(0); expect(ey).toBeLessThanOrEqual(800)
     expect(Math.max(ex - sx, ey - sy)).toBeGreaterThanOrEqual(300)             // it fills a good part of the view
+  })
+
+  it('LC-highlight: each issue highlights the PROBLEM itself, at the right place — the aisle gap shaded red "7\' · needs 8\'"; the overlap area; the upright frame the column stands on (orange); an unreachable rack outlined red; a too-short bay and the bay that loses pallets shaded', () => {
+    handDrawn()
+    const [a, b, c, d] = racks()
+    const F = (o) => m.rackFootprint(s().objects.find(q => q.id === o.id))
+    const near = (p, q) => ['x', 'y', 'w', 'h'].every(k => Math.abs(p[k] - q[k]) < 1e-6)
+    const inside = (pt, r) => pt.x >= r.x - 1e-6 && pt.x <= r.x + r.w + 1e-6 && pt.y >= r.y - 1e-6 && pt.y <= r.y + r.h + 1e-6
+    const hlOf = (kind) => { const r = check(); return [...r.errors, ...r.warnings].find(i => i.kind === kind).highlight }
+    // narrow aisle: the gap between a and b, red, labelled
+    move(b, -(AISLE - 7 * GS))
+    let h = hlOf('aisle-drive')
+    const fa = F(a), fb = F(b)
+    const gap = rot ? { x: fa.x + fa.w, y: fa.y, w: fb.x - (fa.x + fa.w), h: fa.h } : { x: fa.x, y: fa.y + fa.h, w: fa.w, h: fb.y - (fa.y + fa.h) }
+    expect(h).toHaveLength(1)
+    expect(near(h[0], gap)).toBe(true)
+    expect(h[0]).toMatchObject({ color: m.LC.HL.red, mode: 'fill', label: "7' · needs 8'" })
+    move(racks()[1], AISLE - 7 * GS)
+    // overlap: exactly the shared area
+    move(racks()[1], -(AISLE + GS))
+    h = hlOf('overlap')
+    const f1 = F(a), f2 = F(racks()[1])
+    const x0 = Math.max(f1.x, f2.x), y0 = Math.max(f1.y, f2.y)
+    expect(near(h[0], { x: x0, y: y0, w: Math.min(f1.x + f1.w, f2.x + f2.w) - x0, h: Math.min(f1.y + f1.h, f2.y + f2.h) - y0 })).toBe(true)
+    expect(h[0]).toMatchObject({ color: m.LC.HL.red, mode: 'fill' })
+    move(racks()[1], AISLE + GS)
+    // unreachable: c back to back on both sides → its outline
+    move(racks()[1], -AISLE); move(racks()[2], -2 * AISLE)
+    h = hlOf('unreachable')
+    expect(near(h[0], F(racks()[1]))).toBe(true)
+    expect(h[0]).toMatchObject({ color: m.LC.HL.red, mode: 'outline' })
+    move(racks()[1], AISLE); move(racks()[2], 2 * AISLE)
+    // oversized: bay 2 of d
+    s().commitObjectUpdate(d.id, { beams: [96, 36, 96] })
+    h = hlOf('oversized')
+    const fd = F(d), up = (3 / 12) * GS, alongStart = rot ? fd.y : fd.x
+    const b2 = { start: alongStart + up + (96 / 12) * GS + up, len: (36 / 12) * GS }
+    expect(h).toHaveLength(1)
+    expect(near(h[0], rot ? { x: fd.x, y: b2.start, w: fd.w, h: b2.len } : { x: b2.start, y: fd.y, w: b2.len, h: fd.h })).toBe(true)
+    expect(h[0]).toMatchObject({ color: m.LC.HL.amber, mode: 'fill' })
+    // column on the first upright of a (face 0): that frame, orange, containing the column
+    const fa0 = F(a), aAlong = rot ? fa0.y : fa0.x, aAcross = rot ? fa0.x : fa0.y
+    const colAt = { along: aAlong + (1.5 / 12) * GS, across: aAcross + (21 / 12) * GS }
+    columnAt(colAt.along, colAt.across)
+    h = hlOf('upright')
+    const pt = rot ? { x: colAt.across, y: colAt.along } : { x: colAt.along, y: colAt.across }
+    expect(h.length).toBeGreaterThanOrEqual(1)
+    expect(h.every(q => q.color === m.LC.HL.orange && q.mode === 'fill')).toBe(true)
+    expect(h.some(q => inside(pt, q))).toBe(true)
+    expect(Math.min(...h.map(q => (rot ? q.h : q.w)))).toBeCloseTo(up, 6)       // an upright's width, not the rack
+    // a column mid-bay in b's face: the bay that loses pallets, shaded
+    const fbb = F(b), bAlong = rot ? fbb.y : fbb.x, bAcross = rot ? fbb.x : fbb.y
+    const mid = { along: bAlong + up + (48 / 12) * GS, across: bAcross + (21 / 12) * GS }
+    columnAt(mid.along, mid.across)
+    h = hlOf('columns-lost')
+    const mp = rot ? { x: mid.across, y: mid.along } : { x: mid.along, y: mid.across }
+    expect(h.some(q => inside(mp, q) && q.color === m.LC.HL.amber)).toBe(true)
+    void c
   })
 
   it('LC-recheck: fixing the problem and pressing again removes it; the button counts ("Check layout · 1 error" → "· no issues")', () => {

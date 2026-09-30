@@ -17,12 +17,18 @@
 // pick from, columns blocking pallets, a bay too short for a pallet, angled
 // racks whose column losses weren't checked.
 //
-// Each item: { severity, kind, text, ids (to select), box (world rect to zoom
-// to) }. The last result, the export question and "go to it" live in the
-// small store below.
+// Each item: { severity, kind, text, ids (the objects involved), box (world
+// rect to zoom to), highlight (the PROBLEM itself, drawn when the item is
+// clicked: [{ x, y, w, h, color, mode: 'fill' | 'outline', label? }]) }.
+// Clicking an item selects NOTHING: it zooms to the spot and highlights the
+// problem (canvas2/IssueHighlight.jsx) until the next click on the canvas or
+// the next check; the user then clicks what they want to change. The last
+// result, the highlight, the export question and "go to it" live in the small
+// store below.
 
 import { create } from 'zustand'
-import { rackFootprint, rowGaps, aisleLevel, rackReachable, MHE_PROFILES } from '../generate/columnCheck'
+import { rackFootprint, rowGaps, aisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld } from '../generate/columnCheck'
+import { uprightXs } from '../render/rackOps'
 import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate/usableCapacity'
 import { rackIssues } from './bayBeam'
 import { oversizedBayIndices } from './capacity'
@@ -55,6 +61,18 @@ function pairName(a, b, racks) {
   return `${lc(rackName(a, racks))} and ${lc(rackName(b, racks))}`
 }
 const boxOf = (f) => ({ x: f.x, y: f.y, w: f.w, h: f.h })
+
+/* the highlight colours: red = can't be built / reached, orange = a column on
+   an upright, amber = costs positions or needs a look */
+export const HL = { red: '#C0392B', orange: '#E67E22', amber: '#B87309' }
+const shade = (b, color, label) => ({ x: b.x, y: b.y, w: b.w, h: b.h, color, mode: 'fill', ...(label ? { label } : {}) })
+const outline = (b, color) => ({ x: b.x, y: b.y, w: b.w, h: b.h, color, mode: 'outline' })
+/** Bay `i` of a rack as a world rect (its whole depth, both faces). */
+const bayRect = (r, i, gridSize) => {
+  const { xs, upW } = uprightXs(r, gridSize)
+  if (!(i >= 0 && i < xs.length - 1)) return null
+  return localRectToWorld(r, { x: xs[i] + upW, y: r.y, w: xs[i + 1] - xs[i] - upW, h: r.height })
+}
 const union = (boxes) => {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
   for (const b of boxes) { x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h) }
@@ -78,7 +96,9 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
     const lvl = aisleLevel(g.gapLen, profile, gridSize)
     if (lvl === 3) continue
     const where = `Aisle between ${pairName(g.top, g.bot, racks)}`
-    const item = { kind: lvl === 1 ? 'aisle-drive' : 'aisle-pick', ids: [g.top.id, g.bot.id], box: g.box }
+    const need = lvl === 1 ? travelPx : aislePx
+    const item = { kind: lvl === 1 ? 'aisle-drive' : 'aisle-pick', ids: [g.top.id, g.bot.id], box: g.box,
+      highlight: [shade(g.box, lvl === 1 ? HL.red : HL.amber, `${len(g.gapLen)} · needs ${len(need)}`)] }
     if (lvl === 1) { pinchedPairs.add(g.top.id + '|' + g.bot.id); errors.push({ ...item, severity: 'error', text: `${where}: ${len(g.gapLen)}, needs ${len(travelPx)} to drive` }) }
     else warnings.push({ ...item, severity: 'warning', text: `${where}: ${len(g.gapLen)}, needs ${len(aislePx)} to pick` })
   }
@@ -94,21 +114,26 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       if (!t || !u || pinchedPairs.has(t.id + '|' + u.id)) continue
       pinchedPairs.add(t.id + '|' + u.id)
       const col = cols[b.columnIndex]
+      const band = col ? (b.axis === 'x' ? { x: b.gapStart, y: col.y, w: b.gapEnd - b.gapStart, h: col.h } : { x: col.x, y: b.gapStart, w: col.w, h: b.gapEnd - b.gapStart }) : null
       errors.push({ severity: 'error', kind: 'aisle-drive', ids: [t.id, u.id],
-        box: col ? union([col, b.axis === 'x' ? { x: b.gapStart, y: col.y, w: b.gapEnd - b.gapStart, h: col.h } : { x: col.x, y: b.gapStart, w: col.w, h: b.gapEnd - b.gapStart }]) : boxOf(foot.get(t.id)),
+        box: col ? union([col, band]) : boxOf(foot.get(t.id)),
+        highlight: band ? [shade(band, HL.red, `${len(b.clearFt * gridSize)} · needs ${len(travelPx)}`)] : [],
         text: `Aisle between ${pairName(t, u, racks)}: a column leaves ${len(b.clearFt * gridSize)}, needs ${len(travelPx)} to drive` })
     }
     // columns on upright frames: one item per rack
-    const onRack = new Map()
+    const onRack = new Map(), frames = new Map()
     for (const h of res.uprightHits) {
-      if (!onRack.has(h.rackId)) onRack.set(h.rackId, new Set())
+      if (!onRack.has(h.rackId)) { onRack.set(h.rackId, new Set()); frames.set(h.rackId, new Map()) }
       onRack.get(h.rackId).add(h.columnIndex)
+      const r = byId.get(h.rackId)
+      if (r) for (const f of uprightFramesLocal(r, gridSize)) if (f.upright === h.upright && h.faces.includes(f.face)) frames.get(h.rackId).set(f.upright + ':' + f.face, localRectToWorld(r, f))
     }
     for (const [id, set] of onRack) {
       const r = byId.get(id)
       if (!r) continue
       const n = set.size, boxes = [...set].map(ci => cols[ci]).filter(Boolean)
       errors.push({ severity: 'error', kind: 'upright', ids: [id], box: boxes.length ? union(boxes) : boxOf(foot.get(id)),
+        highlight: [...frames.get(id).values()].map(b => shade(b, HL.orange)),
         text: `${name(r)}: ${n === 1 ? 'a column stands' : `${n} columns stand`} on ${n === 1 ? 'an upright frame' : 'upright frames'}` })
     }
     // pallet positions lost to columns (in the rack and in its pick zones): one item per
@@ -118,14 +143,16 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       const r = byId.get(c.rackId)
       if (!r || !c.positionsLost) continue
       const key = r.genSection != null ? 's' + r.genSection : 'b' + (r.parentId || '')
-      if (!lostBy.has(key)) lostBy.set(key, { section: r.genSection, n: 0, ids: new Set() })
+      if (!lostBy.has(key)) lostBy.set(key, { section: r.genSection, n: 0, ids: new Set(), bays: new Map() })
       const g = lostBy.get(key)
       g.n += c.positionsLost; g.ids.add(r.id)
+      if (c.bayIndex != null && !g.bays.has(r.id + ':' + c.bayIndex)) { const b = bayRect(r, c.bayIndex, gridSize); if (b) g.bays.set(r.id + ':' + c.bayIndex, b) }
     }
     for (const g of lostBy.values()) {
       const ids = [...g.ids], rows = ids.length
       const where = g.section != null ? `Section ${sectionLabel(g.section)}` : rows === 1 ? name(byId.get(ids[0])) : 'Racks placed by hand'
       warnings.push({ severity: 'warning', kind: 'columns-lost', ids, box: union(ids.map(id => foot.get(id))), positions: g.n,
+        highlight: [...g.bays.values()].map(b => shade(b, HL.amber)),
         text: `${where}: columns block ${g.n} pallet position${g.n === 1 ? '' : 's'}${rows > 1 ? ` on ${rows} rows` : ''}` })
     }
   }
@@ -143,21 +170,23 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       pairs.add(k)
       const o = byId.get(oid), g = foot.get(oid)
       const by = Math.min(Math.min(f.x + f.w, g.x + g.w) - Math.max(f.x, g.x), Math.min(f.y + f.h, g.y + g.h) - Math.max(f.y, g.y))
-      errors.push({ severity: 'error', kind: 'overlap', ids: [r.id, oid], box: union([f, g]), text: `${name(r)} overlaps ${name(o).charAt(0).toLowerCase() + name(o).slice(1)} by ${len(by)}` })
+      const x0 = Math.max(f.x, g.x), y0 = Math.max(f.y, g.y), area = { x: x0, y: y0, w: Math.min(f.x + f.w, g.x + g.w) - x0, h: Math.min(f.y + f.h, g.y + g.h) - y0 }
+      errors.push({ severity: 'error', kind: 'overlap', ids: [r.id, oid], box: union([f, g]), highlight: [shade(area, HL.red)], text: `${name(r)} overlaps ${name(o).charAt(0).toLowerCase() + name(o).slice(1)} by ${len(by)}` })
     }
     const fp = r.parentId ? byId.get(r.parentId) : null
-    if (iss.wallOutIn > 0) errors.push({ severity: 'error', kind: 'outside', ids: [r.id], box: boxOf(f), text: `${name(r)}: past the wall by ${len((iss.wallOutIn / 12) * gridSize)}` })
-    else if (hasBuilding && !(fp && FP.has(fp.type))) errors.push({ severity: 'error', kind: 'outside', ids: [r.id], box: boxOf(f), text: `${name(r)}: outside the building` })
+    if (iss.wallOutIn > 0) errors.push({ severity: 'error', kind: 'outside', ids: [r.id], box: boxOf(f), highlight: [outline(f, HL.red)], text: `${name(r)}: past the wall by ${len((iss.wallOutIn / 12) * gridSize)}` })
+    else if (hasBuilding && !(fp && FP.has(fp.type))) errors.push({ severity: 'error', kind: 'outside', ids: [r.id], box: boxOf(f), highlight: [outline(f, HL.red)], text: `${name(r)}: outside the building` })
     if (!rackReachable(r, racks, { gridSize, floors, depthPx: travelPx })) {
-      errors.push({ severity: 'error', kind: 'unreachable', ids: [r.id], box: boxOf(f), text: `${name(r)}: no aisle on any pick side — nobody can reach it` })
+      errors.push({ severity: 'error', kind: 'unreachable', ids: [r.id], box: boxOf(f), highlight: [outline(f, HL.red)], text: `${name(r)}: no aisle on any pick side — nobody can reach it` })
     }
     if (Array.isArray(r.beams) && (r.type === 'rack_row' || r.type === 'rack_double_row')) {
       const bad = oversizedBayIndices(r.beams, r.palletWIn || 40)
       if (bad.length) warnings.push({ severity: 'warning', kind: 'oversized', ids: [r.id], box: boxOf(f),
+        highlight: bad.map(i => bayRect(r, i, gridSize)).filter(Boolean).map(b => shade(b, HL.amber)),
         text: `${name(r)}: bay${bad.length > 1 ? 's' : ''} ${bad.map(i => `${i + 1} (${r.beams[i]}")`).join(', ')} too short for a ${r.palletWIn || 40}" pallet — hold${bad.length > 1 ? '' : 's'} nothing` })
     }
     if (((r.rotation || 0) % 90) !== 0 && cols.length) {
-      warnings.push({ severity: 'warning', kind: 'angled', ids: [r.id], box: boxOf(f), text: `${name(r)}: angled ${Math.round(r.rotation)}° — its column losses weren't checked` })
+      warnings.push({ severity: 'warning', kind: 'angled', ids: [r.id], box: boxOf(f), highlight: [outline(f, HL.amber)], text: `${name(r)}: angled ${Math.round(r.rotation)}° — its column losses weren't checked` })
     }
   }
   const order = ['aisle-drive', 'overlap', 'outside', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'angled']
@@ -181,8 +210,14 @@ export const useLayoutCheck = create((set) => ({
   result: null,
   open: false,
   askExport: null,
+  highlight: null,     // { shapes, at } — the clicked item's problem, drawn on the canvas
   close: () => set({ open: false }),
 }))
+
+/** The highlight goes: the next click on the canvas, the next check. */
+export function clearIssueHighlight() {
+  if (useLayoutCheck.getState().highlight) useLayoutCheck.setState({ highlight: null })
+}
 
 /* the truck and "pick both sides" the Column Check panel is set to */
 const viewOpts = () => { try { const v = getColumnCheckView(); return { profile: v.profile || MHE_PROFILES.reach, pickBothSides: !!v.pickBothSides } } catch { return {} } }
@@ -191,7 +226,7 @@ const viewOpts = () => { try { const v = getColumnCheckView(); return { profile:
 export function runLayoutCheck(store, opts = {}) {
   const st = store.getState()
   const result = { ...checkLayout(st.objects, { ...viewOpts(), gridSize: st.gridSize || 40, ...opts }), at: Date.now() }
-  useLayoutCheck.setState({ result, open: true })
+  useLayoutCheck.setState({ result, open: true, highlight: null })
   return result
 }
 
@@ -203,13 +238,16 @@ export function fitBox(box, size, margin = 0.25) {
   return { zoom, panX: size.w / 2 - (box.x + w / 2) * zoom, panY: size.h / 2 - (box.y + h / 2) * zoom }
 }
 
-/** Clicking an item: select its object(s) and zoom to the spot. */
+/** Clicking an item: select NOTHING — zoom to the spot and highlight the
+ *  problem itself (pulsing briefly, then staying until the next click on the
+ *  canvas or the next check). The user then clicks what they want to change.
+ *  Returns the ids involved (for the caller's information only). */
 export function goToIssue(store, item, size) {
   const st = store.getState()
-  const ids = item.ids.filter(id => st.objects.some(o => o.id === id))
-  if (ids.length) st.selectGroup(ids)
+  if (st.selectedIds.length) st.clearSelection()
   if (size && item.box) { const v = fitBox(item.box, size); st.setViewport(v.zoom, v.panX, v.panY) }
-  return ids
+  useLayoutCheck.setState({ highlight: { shapes: item.highlight || [], at: Date.now(), kind: item.kind } })
+  return item.ids.filter(id => st.objects.some(o => o.id === id))
 }
 
 /** Export: with errors, ask first (never block); otherwise export. */

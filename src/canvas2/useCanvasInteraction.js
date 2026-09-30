@@ -13,6 +13,7 @@ import { computeLiveFlue, resolveFlueBase, flueCommitFields, flueDragCentre, flu
 import { usePlacement, movePlacement, commitPlacement } from '../utils/placement'
 import { guardEdit } from '../utils/copyPrompt'
 import { pickableIn, snapTargets } from '../utils/layers'
+import { clearIssueHighlight } from '../utils/layoutCheck'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
   movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee, inBayMode, toggleBaySelection, setStickyBayMode, isStickyBayMode,
@@ -397,6 +398,8 @@ export function useCanvasInteraction({
   const onStageMouseDown = (e) => {
     const stage = stageRef.current
     if (!stage) return
+    // a Check layout highlight lasts until the next click on the canvas; the click itself goes on as usual
+    clearIssueHighlight()
 
     const evt = e.evt
 

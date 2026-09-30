@@ -9,6 +9,7 @@ import { FpRotateHandleOverlay } from './FpRotateHandleOverlay'
 import { Rulers } from './Rulers'
 import { MeasureOverlay } from './MeasureTool'
 import { PlacementGhost, CopyPreview } from './CopyChange'
+import { IssueHighlight } from './IssueHighlight'
 import { CopyNote } from './CopyNote'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { useCanvasStore } from '../store/useCanvasStore'
@@ -429,6 +430,8 @@ export function Canvas2() {
             )}
             {/* "Copy this change": where the copies would land, and a row being placed */}
             <CopyPreview />
+            {/* Check layout: the clicked problem, until the next click (utils/layoutCheck.js) */}
+            <IssueHighlight />
             <PlacementGhost gridSize={gridSize} />
           </Layer>
         </Stage>
