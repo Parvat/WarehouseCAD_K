@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { layerForType } from '../../utils/layers'
+import { levelsFor } from '../../utils/rackLevels'
 import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
 import { ANNOT } from './AnnotationPanel'
@@ -932,6 +933,7 @@ export function FloatingToolbar() {
           spineDepthIn:item.meta?.spineDepthIn||4,armThicknessIn:item.meta?.armThicknessIn||3,activeTowerIdx:null}
       })():{}),
       ...(item.type==='rack_double_row'?{flueSpaceIn:item.meta?.flueSpace||9}:{}),
+      ...levelsFor(item.type),   // 4 levels, like a generated rack (utils/rackLevels.js)
       layerId:layerForType(item.type),   // its layer by type (utils/layers.js)
       /* column_grid is parented like everything else: the columns are the
          building's own structure, so they travel with it and go with it when

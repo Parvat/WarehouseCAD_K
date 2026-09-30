@@ -284,6 +284,31 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
+### RL — Every beam rack has levels: 4 unless set · `RL_rackLevels.test.js` (8 tests)
+- **The bug:** capacity (`utils/capacity.js`), the column check and the rack
+  panel read `levels || 1`. Generated racks carry 4; racks placed from the
+  left panel, and pasted / duplicated copies of them, carried none — so they
+  counted as ONE level in capacity, usable, Column Check and the headline.
+- **The fix** (`utils/rackLevels.js`): single and double rows placed from
+  the left panel (both placers) are stamped `levels: 4`, the same as a
+  generated rack. A keeper fills 4 on any row still missing a levels value —
+  a loaded older layout, an old autosave, any other path. A rack WITH a
+  levels value keeps it, so a paste or duplicate keeps its source's.
+
+| Test (×2 h/v) | Asserts |
+|---|---|
+| `RL-placed` | a generated rack a column costs positions is replaced by a hand-placed one of the same shape: levels 4; its capacity = ground positions × 4; gross rises by ground × 4 (× 1 at one level); its column losses are exactly 4× those at one level; the layout's gross is the generated one again. Both placers stamp `levelsFor` |
+| `RL-missing` | a row that arrives with no levels gets 4, a set value (2) stays; gross counts them so |
+| `RL-load` | an older file with a level-less hand rack loads with 4; generated racks' 4 and a set 3 stay |
+| `RL-paste` | Duplicate (nudge + placement) and paste in place keep the source's 6 and 4 |
+
+**Checked in the app, horizontal and vertical:** a generated double row
+deleted and a Double Row placed there from the Racking section: levels 4,
+"16 PAL (4 × 4L × 2 rows)", the rack panel "4 pal × 4 levels"; the live
+Column Check line rose by 16 gross and 16 usable (38,816 → 38,832 /
+34,860 → 34,876 h; 42,640 → 42,656 / 39,220 → 39,236 v). Three racks with
+levels stripped from the autosave reloaded with 4. No console errors.
+
 ### GU — Generate is one undo step · `GU_generateUndo.test.js` (8 tests)
 - **Before:** the store records an entry per action, and Generate is
   hundreds (clear the last layout, place the building, every rack and
@@ -1589,6 +1614,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LY | **Locking leaves the object selected** | 2: LY-select h/v | ✓ |
 | LY | **Layers not saved with the layout** | 2: LY-save h/v | ✓ |
 | HF | **Handle sizes back to 8 / 14 / 16** (7569d59's own) | 2: HF-handles h/v | ✓ |
+| RL | **Default levels back to 1** | 6: RL-placed, RL-missing, RL-load (h/v) | ✓ |
 | GU | **Generate not collapsed to one step** | 8: GU-undo, GU-first, GU-regenerate, GU-batched (h/v) | ✓ |
 | HF | **A building drag re-checks the aisles every frame** | 4: HF-flicker, HF-multi (h/v) — also with the "not recomputed" checks removed, the red-set comparison alone fails in both orientations | ✓ |
 | AR | **Skip the rebuild** | 6: AR-recreate/handcopy/undo (h and v, before the replay redesign) | ✓ |
@@ -1702,8 +1728,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,856 tests, 1,856 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,253 tests, 2,253 passing.**
+- **Plan suite: 1,864 tests, 1,864 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,261 tests, 2,261 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:
