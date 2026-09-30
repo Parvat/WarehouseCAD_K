@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useRackingSettings } from '../../utils/fillTool'
 import { Sparkles, X, Loader2 } from 'lucide-react'
 import { generateAndPlaceBatched } from '../../generate/traceGenerate'
 import { useRules } from '../../rules/useRules'
@@ -83,6 +84,17 @@ export function GeneratePanel() {
   const [palletWIn, setPalletW] = useState(40)
   const [palletDIn, setPalletD] = useState(48)
   const [result, setResult]   = useState(null)
+
+  /* The Racking settings are shared with the Fill racking tool (utils/fillTool.js):
+     a field changed here is what a fill uses next (opening the panel changes nothing). */
+  const syncedOnce = useRef(false)
+  useEffect(() => {
+    if (!syncedOnce.current) { syncedOnce.current = true; return }
+    const set = useRackingSettings.getState().setSetting
+    if (orientation !== 'auto') set('orientation', orientation)
+    set('mhe', mhe); set('aisleFt', Number(aisleFt) || 10.5); set('maxRunFt', Number(maxRunFt) || 150)
+    set('wallClearanceIn', Number(wallClearanceIn) || 0); set('palletWIn', Number(palletWIn) || 40); set('palletDIn', Number(palletDIn) || 48)
+  }, [orientation, mhe, aisleFt, maxRunFt, wallClearanceIn, palletWIn, palletDIn])
 
   /* Generating is a real wait on a big building — thousands of bay rects and a
      history snapshot per object. Without a flag the click just looks dead. */

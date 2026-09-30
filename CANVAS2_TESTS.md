@@ -284,6 +284,69 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
+### FR — Fill racking · `FR_fillRacking.test.js` (26 tests)
+A tool in the drawing toolbar ("Fill racking", paint bucket). While it is on,
+an options bar shows the Racking settings it fills with: orientation H / V,
+beam, pallet, forklift, aisle and max rack run. The Generate panel keeps these
+settings in step when one of its own fields changes. The user drags a box over
+part of a building, and on release it fills with racking by Generate's own walks
+(`rowBands` / `rowSegments`: tight forklift aisles, column seating, cross-aisles
+by max run, wall clearance) — `generate/fillRacking.js`, `utils/fillTool.js`,
+`canvas2/FillTool.jsx`.
+- The region is the box clipped to the building's **real outline** (L, T,
+  custom), cut into rectangles; each side is a **wall**, **open** (a box edge on
+  open floor, or an existing rack on any part of it) or a **join** (the region
+  carries on).
+- Walls get wall clearance and **single rows**, the inside corner of an L
+  included. An open side gets a **forklift aisle**, so two fills never meet
+  rack-to-rack. A join gets half a cross-aisle on each side.
+- **Existing racks are obstacles**: never moved, never overlapped, an aisle off.
+- New rows are stamped `rowIndex` / `genSection` after the building's own, so
+  copy-to-sections, Match bays and Check layout work on them. The copy watcher
+  sees a fill as a generated layout: nothing is pending.
+- While dragging: the box, the racks it would place (faint), and a label such as
+  "150' × 100' · ≈ 6 rows · 1,080 positions". Esc drops the box; a second Esc
+  leaves the tool. The fill is **one undo step**.
+
+| Test | Asserts |
+|---|---|
+| `FR-generate` (×2) | the whole of a rectangle, 240 × 120 (30 × 30 grid) and 1080 × 410 (25 × 30): exactly Generate's racks (position, size, rotation, beams, levels, rowIndex, genSection) and aisles; one rectangle; every object has its own id |
+| `FR-shape` (×2) | the whole of an L (300 × 200) and a T (360 × 240): more than one rectangle; no rack outside the outline (every corner inside, no outline vertex inside a rack); no overlaps; every rack whose long side is within 3' of a wall is a single row, and each inside wall the rows face has some; Check layout: nothing at all |
+| `FR-arms` | an L's two arms filled separately: single rows along the inside-corner wall, nothing outside, no overlaps, the second fill's stamps after the first's, no errors |
+| `FR-open` | half a rectangle: the racks stop at least an aisle (10' 6") short of the open box edge; the other half, filled next: at least an aisle off it too, and every rack of one fill at least an aisle from every rack of the other |
+| `FR-existing` | a double row in the middle and a single row across the rows: both exactly as they were after filling the whole building; no new rack overlaps them, each is at least an aisle off; no overlaps |
+| `FR-stamps` | 480' of run, 120' max run: every rack has integer rowIndex / genSection; nothing pending after the fill; 3+ sections, row 2 once in each; row 2 of section 2 moved 1' across, Copy: row 2 of every section moved 1' |
+| `FR-check` (×3) | Check layout: no errors on a fill of a rectangle, an L and a T |
+| `FR-undo` | Esc mid-drag (the plan had racks): nothing placed, no history; the fill adds exactly one history entry; one undo restores the objects exactly, one redo brings the fill back |
+| `FR-estimate` | the live plan while dragging has rows and positions, and the release places exactly its racks |
+
+All run horizontal and vertical.
+
+**Checked in the app, horizontal and vertical, on a rectangle (300 × 200), an L
+(300 × 200) and a T (360 × 240):**
+- The toolbar button turns the tool on, and the options bar shows.
+- Mid-drag the label reads e.g. "150' 2" × 100' · ≈ 6 rows · 1,080 positions",
+  with the faint racks under it.
+- Fills of the whole building: 22 / 28 / 46 racks horizontal, 34 / 46 / 56
+  vertical, rotation 0 / 90 respectively. Check layout: 0 errors, 0 warnings
+  on each.
+- One Ctrl+Z empties each fill; Ctrl+Y brings it back.
+- Esc mid-drag places nothing and the tool stays on; Esc again goes back to
+  Select and the options bar closes.
+- Screenshots: on the L, the rows along the inside-corner wall are single;
+  nothing is placed outside either shape.
+- No console errors (after the fix below).
+- **Found and fixed in the app:** the fill's aisles had no ids, because the fill
+  goes into the store in one write, not through `addObject`, and React warned
+  about duplicate keys. They now get ids in `planFill`, and FR-generate checks
+  every id.
+- **Found by FR-existing:** a run end was called open only when the existing
+  rack sat at the side's midpoint. A rack beside part of the side got half a
+  cross-aisle (4' 6"–5' 3"). Now any rack on the side makes it open.
+- As in Generate, every run of two or more bays gets at least one cross-aisle
+  (`rowSegments`: "small runs keep the single cross-aisle"). A T's 72' bar
+  therefore fills as two short runs.
+
 ### LC — Check layout · `LC_layoutCheck.test.js` (33 tests)
 A "Check layout" button in the top bar lists every problem in the right
 panel (`utils/layoutCheck.js`, `RightPanel/LayoutCheckPanel.jsx`). It only
@@ -1842,6 +1905,17 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LY | **Locking leaves the object selected** | 2: LY-select h/v | ✓ |
 | LY | **Layers not saved with the layout** | 2: LY-save h/v | ✓ |
 | HF | **Handle sizes back to 8 / 14 / 16** (7569d59's own) | 2: HF-handles h/v | ✓ |
+| FR | **The building's columns ignored** (not Generate's walk) | 2: FR-generate h/v | ✓ |
+| FR | **Clipped to the bounding box, not the outline** | FR-shape, FR-arms, FR-check, FR-generate (h/v) | ✓ |
+| FR | **Rows against a wall double** | FR-shape and 5 more (h/v) | ✓ |
+| FR | **No aisle along an open box edge** | FR-open, FR-existing (h/v) | ✓ |
+| FR | **Existing racks ignored** | FR-existing h/v | ✓ |
+| FR | **An existing rack counts only at the side's midpoint** | FR-existing h/v | ✓ |
+| FR | **No rowIndex / genSection stamps** | FR-stamps, FR-generate, FR-arms (h/v) | ✓ |
+| FR | **Aisles too tight** (Check layout) | FR-check and 4 more (h/v) | ✓ |
+| FR | **One history entry per rack** | FR-undo h/v | ✓ |
+| FR | **Esc does not drop the box** | FR-undo h/v | ✓ |
+| FR | **Aisles without ids** | 4: FR-generate h/v | ✓ |
 | LC | **An aisle too narrow to drive not an error** (aisleLevel) | 6: LC-aisle, LC-click, LC-recheck (h/v) | ✓ |
 | LC | **A can't-pick aisle filed under errors** | 2: LC-aisle h/v | ✓ |
 | LC | **Overlaps not reported** | 4: LC-overlap, LC-pdf (h/v) | ✓ |
@@ -1985,8 +2059,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,923 tests, 1,923 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,320 tests, 2,320 passing.**
+- **Plan suite: 1,949 tests, 1,949 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,346 tests, 2,346 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

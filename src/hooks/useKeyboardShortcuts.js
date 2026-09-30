@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid'
 import { pasteAt } from '../utils/pasteAt'
 import { cancelPlacement } from '../utils/placement'
 import { guardEdit, useCopyPrompt } from '../utils/copyPrompt'
+import { FILL_TOOL, cancelFill } from '../utils/fillTool'
 import { pickableIn } from '../utils/layers'
 
 export function useKeyboardShortcuts() {
@@ -17,6 +18,9 @@ export function useKeyboardShortcuts() {
       // ── Escape — deselect, cancel draw ──────────────────────────────────
       if (e.key === 'Escape') {
         useCopyPrompt.getState().dismissReport()   // a shown result (Copied…, Matched bays…) is over
+        // a fill box being dragged: Esc drops it, nothing placed; with none, Esc leaves the fill tool
+        if (cancelFill()) return
+        if (useCanvasStore.getState().activeTool === FILL_TOOL) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         // a row being placed (paste, duplicate, left panel): Esc cancels it, nothing else
         if (cancelPlacement()) return
         useCanvasStore.getState().clearSelection()

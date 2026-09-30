@@ -20,7 +20,7 @@ import {
   /* utilities */
   BatteryCharging, Fan, Droplets, Lightbulb, Armchair,
   /* draw tools + blocks */
-  MousePointer2, Hand, Minus, MoveRight, Spline, Ruler, Signature, Type,
+  MousePointer2, Hand, Minus, MoveRight, Spline, Ruler, Signature, Type, PaintBucket,
   Pencil, PenTool, Highlighter,
   RectangleHorizontal, Circle,
   /* floor plans — the L/T/U/cross outlines are drawn below, Lucide has none */
@@ -33,6 +33,7 @@ import { layerForType } from '../../utils/layers'
 import { levelsFor } from '../../utils/rackLevels'
 import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
+import { FILL_TOOL } from '../../utils/fillTool'
 import { ANNOT } from './AnnotationPanel'
 import { WAREHOUSE_CATEGORIES } from '../../constants/warehouseObjects'
 import { objectContains } from '../../utils/canvas'
@@ -386,6 +387,9 @@ const TOOLBAR_TOOLS = [
   { id:'dimension', tool:ANNOT.DIMENSION, label:'Dimension', Icon:Ruler         },
   { id:'freehand',  tool:TOOLS.FREEHAND,  label:'Freehand',  Icon:Signature     },
   { id:'text',      tool:TOOLS.TEXT,      label:'Text',      Icon:Type          },
+  null,
+  /* drag a box over part of the building: it fills with racking (utils/fillTool.js) */
+  { id:'fill',      tool:FILL_TOOL,       label:'Fill racking', Icon:PaintBucket },
 ]
 const BROKEN_HINT = ' — unavailable: CanvasObjectCore.jsx is missing its path-helper import'
 

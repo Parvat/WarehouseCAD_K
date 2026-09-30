@@ -17,6 +17,8 @@ import { useCanvasInteraction } from './useCanvasInteraction'
 import { clampZoom, screenToWorld } from './viewport'
 import { isFloorPlan } from './selection'
 import { useColumnCheck } from '../generate/useColumnCheck'
+import { FillOverlay, FillOptionsBar } from './FillTool'
+import { FILL_TOOL, startFill, moveFill, commitFill } from '../utils/fillTool'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
    A Konva Stage that owns its own pointer events. No router, no forwarding, no
@@ -310,10 +312,31 @@ export function Canvas2() {
     setMeasureHover(screenToWorld(view.current, p))
   }
 
-  const stageMouseDown = measuring ? measureMouseDown : onStageMouseDown
-  const stageMouseMove = measuring ? measureMouseMove : onStageMouseMove
-  const stageMouseLeave = measuring ? () => setMeasureHover(null) : onStageMouseLeave
-  const effectiveCursor = measuring ? 'crosshair' : cursor
+  /* "Fill racking" (utils/fillTool.js) — another modal tool: a press starts a
+     box, the drag grows it (the plan and its estimate follow), the release
+     fills it as one undo step. Moves and the release are taken on window, so
+     the box survives the pointer leaving the canvas. */
+  const activeTool = useCanvasStore(s => s.activeTool)
+  const filling = !measuring && activeTool === FILL_TOOL
+  const fillMouseDown = (e) => {
+    const stage = e.target.getStage()
+    const p = stage?.getPointerPosition()
+    if (!p || (e.evt && e.evt.button !== 0)) return
+    startFill(screenToWorld(view.current, p))
+    const rect = stage.container().getBoundingClientRect()
+    const move = (ev) => {
+      const st = useCanvasStore.getState()
+      moveFill(screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }), st.objects, st.gridSize)
+    }
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); commitFill(useCanvasStore) }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
+  const stageMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : onStageMouseDown
+  const stageMouseMove = measuring ? measureMouseMove : filling ? undefined : onStageMouseMove
+  const stageMouseLeave = measuring ? () => setMeasureHover(null) : filling ? undefined : onStageMouseLeave
+  const effectiveCursor = measuring || filling ? 'crosshair' : cursor
 
   return (
     <div
@@ -433,11 +456,13 @@ export function Canvas2() {
             {/* Check layout: the clicked problem, until the next click (utils/layoutCheck.js) */}
             <IssueHighlight />
             <PlacementGhost gridSize={gridSize} />
+            <FillOverlay />
           </Layer>
         </Stage>
       )}
       <ViewAdopter view={view} apply={apply} />
       <CopyNote />
+      {filling && <FillOptionsBar />}
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>
   )
