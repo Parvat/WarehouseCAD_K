@@ -235,33 +235,29 @@ export function runLayoutCheck(store, opts = {}) {
   return result
 }
 
-/* Going to an issue shows it WITH its surroundings: at least this much of the
-   drawing across (or the whole issue if it is bigger), and never closer
-   than 100 % — a column on an upright or a single bay otherwise filled the
-   screen and lost all context. */
-export const ISSUE_CONTEXT_FT = 20
-export const ISSUE_MAX_ZOOM = 1
+/* Going to an issue keeps the user's zoom and only PANS so the issue is in
+   the middle — the pulsing highlight does the pointing. Only when the view is
+   so far out (under ISSUE_MIN_ZOOM) that the issue can't be seen does it zoom
+   in, to ISSUE_ZOOM_IN and never further. */
+export const ISSUE_MIN_ZOOM = 0.1
+export const ISSUE_ZOOM_IN = 0.2
 
-/** The view that shows \`box\` (world px) in a canvas of \`size\`: the box
- *  grown to at least ISSUE_CONTEXT_FT across each way, centred, fitted
- *  with a margin, and no closer than ISSUE_MAX_ZOOM. */
-export function fitBox(box, size, { gridSize = 40, margin = 0.1 } = {}) {
-  const min = ISSUE_CONTEXT_FT * gridSize
-  const w = Math.max(box.w, min), h = Math.max(box.h, min)
+/** The view that centres \`box\` (world px) in a canvas of \`size\` at the
+ *  current \`zoom\` — or at ISSUE_ZOOM_IN when \`zoom\` is under ISSUE_MIN_ZOOM. */
+export function centreBox(box, size, zoom) {
+  const z = zoom < ISSUE_MIN_ZOOM ? ISSUE_ZOOM_IN : zoom
   const cx = box.x + box.w / 2, cy = box.y + box.h / 2
-  const pad = 1 - margin * 2
-  const zoom = Math.max(0.01, Math.min(ISSUE_MAX_ZOOM, (size.w * pad) / w, (size.h * pad) / h))
-  return { zoom, panX: size.w / 2 - cx * zoom, panY: size.h / 2 - cy * zoom }
+  return { zoom: z, panX: size.w / 2 - cx * z, panY: size.h / 2 - cy * z }
 }
 
-/** Clicking an item: select NOTHING — zoom to the spot and highlight the
+/** Clicking an item: select NOTHING — centre the spot (keeping the zoom) and highlight the
  *  problem itself (pulsing briefly, then staying until the next click on the
  *  canvas or the next check). The user then clicks what they want to change.
  *  Returns the ids involved (for the caller's information only). */
 export function goToIssue(store, item, size) {
   const st = store.getState()
   if (st.selectedIds.length) st.clearSelection()
-  if (size && item.box) { const v = fitBox(item.box, size, { gridSize: st.gridSize || 40 }); st.setViewport(v.zoom, v.panX, v.panY) }
+  if (size && item.box) { const v = centreBox(item.box, size, st.zoom); st.setViewport(v.zoom, v.panX, v.panY) }
   useLayoutCheck.setState({ highlight: { shapes: item.highlight || [], at: Date.now(), kind: item.kind, key: issueKey(item) } })
   return item.ids.filter(id => st.objects.some(o => o.id === id))
 }

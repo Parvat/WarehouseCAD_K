@@ -168,7 +168,7 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(w.text).toBe(`Double row 4: angled ${rot + 30}° — its column losses weren't checked`)
   })
 
-  it('LC-click: clicking an item selects NOTHING (a selection there is cleared), zooms so the spot fills the view and highlights the problem; the next click on the canvas or the next check clears it, and that click then selects only the row it lands on', () => {
+  it('LC-click: clicking an item selects NOTHING (a selection there is cleared), centres the spot and highlights the problem; the next click on the canvas or the next check clears it, and that click then selects only the row it lands on', () => {
     handDrawn()
     const [a, b, c] = racks()
     move(b, -(AISLE - 7 * GS))
@@ -190,12 +190,9 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(m.LC.useLayoutCheck.getState().highlight).toBe(null)
     expect(readFileSync('src/canvas2/Canvas2.jsx', 'utf8')).toMatch(/<IssueHighlight \/>/)
     expect(readFileSync('src/canvas2/IssueHighlight.jsx', 'utf8')).toMatch(/<Group ref=\{ref\} name="issue-highlight" listening=\{false\}>/)
-    const { zoom, panX, panY } = s()
-    const sx = item.box.x * zoom + panX, ex = (item.box.x + item.box.w) * zoom + panX
-    const sy = item.box.y * zoom + panY, ey = (item.box.y + item.box.h) * zoom + panY
-    expect(sx).toBeGreaterThanOrEqual(0); expect(ex).toBeLessThanOrEqual(1200)
-    expect(sy).toBeGreaterThanOrEqual(0); expect(ey).toBeLessThanOrEqual(800)
-    expect(Math.max(ex - sx, ey - sy)).toBeGreaterThanOrEqual(300)             // it fills a good part of the view
+    const { zoom, panX, panY } = s()                                            // the spot is centred
+    expect((item.box.x + item.box.w / 2) * zoom + panX).toBeCloseTo(600, 6)
+    expect((item.box.y + item.box.h / 2) * zoom + panY).toBeCloseTo(400, 6)
   })
 
   it('LC-highlight: each issue highlights the PROBLEM itself, at the right place — the aisle gap shaded red "7\' · needs 8\'"; the overlap area; the upright frame the column stands on (orange); an unreachable rack outlined red; a too-short bay and the bay that loses pallets shaded', () => {
@@ -285,21 +282,27 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(readFileSync('src/canvas2/IssueHighlight.jsx', 'utf8')).toMatch(/name="issue-hl:xmark"[\s\S]*shadowBlur=\{14\}[\s\S]*<Line points=\{\[0, 0, s\.w, s\.h\]\}/)
   })
 
-  it('LC-zoom: going to an issue shows it with its surroundings — a column on an upright: at least 20 ft across each way, zoom ≤ 100 %, the issue in view; a long narrow aisle (a whole row long) still fits entirely', async () => {
+  it('LC-zoom: going to an issue keeps the zoom and centres it — at 15 % a column on an upright stays at 15 %, centred; at 5 % (too far out to see) it zooms to 20 %, never more; a long aisle is centred without zooming in', async () => {
     const size = { w: 1200, h: 800 }
-    const inView = (b) => { const { zoom, panX, panY } = s(); return b.x * zoom + panX >= -1e-6 && (b.x + b.w) * zoom + panX <= size.w + 1e-6 && b.y * zoom + panY >= -1e-6 && (b.y + b.h) * zoom + panY <= size.h + 1e-6 }
+    const centred = (b) => { const { zoom, panX, panY } = s(); return Math.abs((b.x + b.w / 2) * zoom + panX - size.w / 2) < 1e-6 && Math.abs((b.y + b.h / 2) * zoom + panY - size.h / 2) < 1e-6 }
     handDrawn()
     const [a] = racks()
     const f = m.rackFootprint(a)
     columnAt((rot ? f.y : f.x) + (1.5 / 12) * GS, (rot ? f.x : f.y) + (21 / 12) * GS)
     const up = check().errors.find(e => e.kind === 'upright')
     expect(Math.max(up.box.w, up.box.h)).toBeLessThan(2 * GS)                  // a small issue: one column
+    s().setViewport(0.15, 17, -40)
     m.LC.goToIssue(m.useCanvasStore, up, size)
-    expect(s().zoom).toBeLessThanOrEqual(1)
-    expect(size.w / s().zoom).toBeGreaterThanOrEqual(20 * GS)                 // ≥ 20 ft across …
-    expect(size.h / s().zoom).toBeGreaterThanOrEqual(20 * GS)                 // … each way
-    expect(inView(up.box)).toBe(true)
-    // a long narrow aisle on a generated layout: the whole of it in view
+    expect(s().zoom).toBe(0.15)                                                 // kept
+    expect(centred(up.box)).toBe(true)
+    s().setViewport(0.05, 0, 0)
+    m.LC.goToIssue(m.useCanvasStore, up, size)
+    expect(s().zoom).toBe(0.2)                                                  // too far out: 20 %, not more
+    expect(centred(up.box)).toBe(true)
+    s().setViewport(0.1, 0, 0)
+    m.LC.goToIssue(m.useCanvasStore, up, size)
+    expect(s().zoom).toBe(0.1)                                                  // 10 % is enough to see: kept
+    // a long narrow aisle on a generated layout: centred, no zooming in
     m = await fresh()
     m.generateAndPlace({ lengthFt: 1080, widthFt: 410, gridXFt: 30, gridYFt: 30, mhe: 'reach', orientation, rackType: 'rack_double_row', dockDoors: 0 })
     const inS1 = racks().filter(o => o.genSection === 1), k = Math.min(...inS1.map(o => o.rowIndex))
@@ -308,9 +311,11 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     move(r5, (rot ? f6.x - (f5.x + f5.w) : f6.y - (f5.y + f5.h)) - 7 * GS)
     const aisle = check().errors.find(e => e.kind === 'aisle-drive' && e.ids.includes(r5.id))
     expect(Math.max(aisle.box.w, aisle.box.h)).toBeGreaterThan(size.w)          // longer than the screen at 100 %
+    s().setViewport(0.3, 0, 0)
     m.LC.goToIssue(m.useCanvasStore, aisle, size)
-    expect(inView(aisle.box)).toBe(true)
-    expect(s().zoom).toBeLessThan(1)
+    expect(s().zoom).toBe(0.3)                                                  // not zoomed in (or out) to fit
+    expect(centred(aisle.box)).toBe(true)
+    expect(readFileSync('src/utils/layoutCheck.js', 'utf8')).not.toMatch(/ISSUE_CONTEXT_FT|ISSUE_MAX_ZOOM|fitBox/)   // the 20 ft / 100 % rule is gone
   })
 
   it('LC-live: with the list open, every committed change re-checks on its own (debounced) — a narrow aisle fixed disappears and a new overlap appears without pressing the button, the count follows; nothing re-runs mid-drag; the clicked item\'s highlight stays until its issue is fixed; a closed list isn\'t re-checked', async () => {

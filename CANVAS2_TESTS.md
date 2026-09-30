@@ -306,10 +306,12 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
     are columns).
 - **Each item** says what and where ("Aisle between rows 4 and 5, section 3:
   7', needs 8' to drive"; "Double row 2: …" for a rack placed by hand).
-- **Clicking an item selects NOTHING** (a selection is cleared). It zooms
-  to the problem WITH its surroundings — at least 20 ft across each way
-  (or the whole issue if bigger), never closer than 100 % (`fitBox`:
-  `ISSUE_CONTEXT_FT`, `ISSUE_MAX_ZOOM`) — and highlights the problem itself
+- **Clicking an item selects NOTHING** (a selection is cleared). It keeps
+  the current zoom and only pans so the issue is centred; only below 10 %
+  (too far out to see it) does it zoom in, to 20 % and never more
+  (`centreBox`: `ISSUE_MIN_ZOOM`, `ISSUE_ZOOM_IN`). The pulsing highlight
+  does the pointing. (The earlier "20 ft around it, max 100 %" fit was still
+  too close, and is gone.) It highlights the problem itself
   (`canvas2/IssueHighlight.jsx`, from each item's `highlight` shapes):
   - a narrow aisle: the gap shaded red, labelled "7' · needs 8'";
   - an overlap: the overlapping area shaded red;
@@ -358,7 +360,7 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
 | `LC-click` | nothing is selected (an earlier selection is cleared); the spot is on screen and fills the view; the highlight is the item's; the next click clears it and selects only the row it lands on (the canvas press clears it first); a re-check clears it too; the overlay is mounted and never listens |
 | `LC-highlight` | each issue highlights the problem at the right place: the aisle gap exactly, red, "7' · needs 8'"; the overlap area exactly; the unreachable rack's outline; the too-short bay 2 exactly, amber; the upright frame (an upright's width) containing the column, orange; blocked pallets: glowing red X marks, one pallet position each (never the bay), at exactly the X marks' centres |
 | `LC-live` | the list open: an unrelated change re-checks and keeps the highlight; the narrow aisle fixed by moving the row: gone, "· no issues", highlight cleared — no button pressed; a new overlap appears; mid-drag (dragging on) the result is untouched, after the drop re-checked; a closed list is not re-checked; 300 ms by default, installed in App |
-| `LC-zoom` | a column on an upright (under 2 ft): zoom ≤ 100 %, at least 20 ft visible each way, the issue in view; a narrow aisle a whole row long (longer than the screen at 100 %) fits entirely |
+| `LC-zoom` | at 15 % a column on an upright: 15 % kept, the issue exactly centred; at 5 %: 20 %, centred; at 10 %: kept; a narrow aisle a whole row long at 30 %: 30 % kept, centred; the 20 ft / 100 % rule is gone from the code |
 | `LC-xmarks` | generated 1080 × 410: a section's blocked-pallets item highlights exactly that section's X marks (same centres as blockedFaceOps draws, > 10 of them), each one position, never a bay; the painter draws a glowing X |
 | `LC-recheck` | "Check layout · 1 error"; fixed and pressed again: none (the stored result too), "· no issues" |
 | `LC-pdf` | clean: exported at once; with errors: asked (N errors), not exported; Show issues opens the list; Export anyway exports |
@@ -391,9 +393,10 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
     with the mouse removed the item — "· no issues", highlight gone, no
     button; a drag held into the next row re-ran nothing for 0.9 s, the
     drop listed the overlap ("· 1 error"); Ctrl+Z: "· no issues" again;
-  - zoom: every issue at ≤ 100 % (0.94 at most) with at least 20 ft each
-    way in view (a 1 ft column on an upright: 34 × 25 ft); a 116 ft aisle
-    (vertical) whole in view at 16 %.
+  - zoom: a column on an upright clicked at 15 % stayed at 15 %, at 5 % went
+    to 20 %; a narrow aisle at 25 % and a whole-row aisle (generated) at
+    30 % kept their zoom — every one exactly centred (0 px off), highlighted,
+    nothing selected.
 - No console errors.
 
 ### EX — Fixes from the exploratory check of section copy · `EX_exploreFixes.test.js` (14 tests)
@@ -1851,7 +1854,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LC | **Clicking an issue selects its racks again** | 2: LC-click h/v | ✓ |
 | LC | **No live re-check** (committed changes ignored) | 2: LC-live h/v | ✓ |
 | LC | **Live re-check runs mid-drag** | 2: LC-live h/v | ✓ |
-| LC | **Zoom to the issue alone again** (no 20 ft, up to 400 %) | 2: LC-zoom h/v | ✓ |
+| LC | **Going to an issue changes the zoom** (always 20 %) | 2: LC-zoom h/v | ✓ |
 | LC | **Blocked pallets shade whole bays again** | 4: LC-highlight, LC-xmarks (h/v) | ✓ |
 | LC | **Re-check keeps the old result** | 2: LC-recheck h/v | ✓ |
 | LC | **Export does not ask when there are errors** | 2: LC-pdf h/v | ✓ |
