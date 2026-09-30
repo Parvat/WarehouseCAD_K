@@ -79,34 +79,24 @@ const COL_WIDTH_FT = 2 * COL_HALF_FT
  *  input, both axes — see `sizingSheetLayout`'s own wiring). Defaults to
  *  0 so a direct caller that predates this (a test, say) keeps the old
  *  flush-to-the-wall behaviour unless it opts in.
- *
- *  `nearType` / `farType` — the row at each end: a single ('rack_row', the
- *  default: a wall row, as Generate always places) or `rackType` (Fill
- *  racking's box edge on open floor, where the row is back-to-back).
  */
 export function rowBands(widthFt, {
   rackType, depthIn, aisleFt, flueIn = FLUE_IN, gridYFt,
   travelFt = 8, gridOffsetFt = 0, gridMaxFt = Infinity, colSizeIn = 12, wallClearFt = 0,
-  nearType = 'rack_row', farType = 'rack_row',
 }) {
   const singleFt = depthIn / 12
   const pairFt   = (2 * depthIn + flueIn) / 12
   const midFt    = rackType === 'rack_double_row' ? pairFt : singleFt
-  const endFt    = (type) => (type === 'rack_row' ? singleFt : midFt)
-  const endBand  = (type, yFt) => (type === 'rack_row' || rackType !== 'rack_double_row'
-    ? { type: 'rack_row', yFt, depthFt: singleFt }
-    : { type: rackType, yFt, depthFt: pairFt, flueIn })
-  const nearFt   = endFt(nearType), farFt = endFt(farType)
   const flueFt   = flueIn / 12
   const bands    = []
-  if (widthFt < nearFt + 2 * wallClearFt) return bands
+  if (widthFt < singleFt + 2 * wallClearFt) return bands
 
   /* `wallClearFt` (default 0 — an explicit opt-in, not a silent behaviour
    * change for any existing direct caller that doesn't pass it) offsets
    * BOTH the near and far wall rows off their own wall line by the same
    * gap `rowSegments`' own `endClearFt` already gives the run axis — one
    * "wall clearance" number, both axes. */
-  const bottomY = widthFt - farFt - wallClearFt
+  const bottomY = widthFt - singleFt - wallClearFt
   const hasGrid = gridYFt > 0
   const colHalfFt  = colSizeIn / 24   // half the REAL column width, not the 12"-assumed module constant
   /* Endless-walk guard, never a layout limit: every round that doesn't
@@ -230,8 +220,8 @@ export function rowBands(widthFt, {
   /* STEP 1 — the near-wall single row. Locked (position-wise, not column-
    * aware — the far-wall pinch-loop below is the one place a wall row can
    * still move), offset off the wall by wallClearFt. */
-  bands.push(endBand(nearType, wallClearFt))
-  let lastEnd = wallClearFt + nearFt
+  bands.push({ type: 'rack_row', yFt: wallClearFt, depthFt: singleFt })
+  let lastEnd = wallClearFt + singleFt
 
   /* Column lines sit at gridOffsetFt + k*gridYFt (k=0,1,2,...) — flush from
    * the building's own origin when gridOffsetFt is 0 (columnCheck.js's
@@ -480,8 +470,8 @@ export function rowBands(widthFt, {
     }
   }
 
-  /* STEP 1's mirror — the far-wall row (a single unless `farType` says), always. */
-  bands.push(endBand(farType, bottomY))
+  /* STEP 1's mirror — the far-wall single row, always. */
+  bands.push({ type: 'rack_row', yFt: bottomY, depthFt: singleFt })
   return bands
 }
 

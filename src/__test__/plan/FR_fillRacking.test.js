@@ -2,8 +2,8 @@
 // it fills with racking by Generate's own logic (generate/fillRacking.js,
 // utils/fillTool.js): rowBands / rowSegments, tight forklift aisles, columns,
 // cross-aisles by max run. The box IS the racking area: clipped to the walls'
-// inner face (L, T), the edge rows flush on the box edges — single against ANY
-// wall, back-to-back on open floor, no aisle added there; existing racks are
+// inner face (L, T), the edge rows flush on the box edges and ALWAYS single —
+// wall or open floor — the rows between back-to-back, no aisle added there; existing racks are
 // obstacles (an aisle off); rows stamped like Generate; one undo step.
 // Real store, the tool's own start / move / commit, the app's keepers
 // installed; both orientations; a rectangle, an L and a T.
@@ -155,6 +155,16 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
       .filter(([a, b]) => (vert ? a.x === b.x : a.y === b.y) && ![vert ? bb.x : bb.y, vert ? bb.x + bb.w : bb.y + bb.h].includes(vert ? a.x : a.y))
     expect(inner.length).toBeGreaterThan(0)
     for (const [, , i] of inner) expect(hits[i] || 0, `single rows along inside wall ${i}`).toBeGreaterThan(0)
+    // each rectangle of the region: its first and last rows are single, flush on its edges
+    for (const q of plan.rects) {
+      const mine = racks().map(r => ({ r, f: m.rackFootprint(r) })).map(({ r, f }) => ({ r, rs: (vert ? f.y + f.h / 2 : f.x + f.w / 2) / GS, s0: (vert ? f.x : f.y) / GS, s1: (vert ? f.x + f.w : f.y + f.h) / GS }))
+        .filter(o => o.rs > q.r0 && o.rs < q.r1 && o.s0 >= q.s0 - 1e-6 && o.s1 <= q.s1 + 1e-6)
+      if (!mine.length) continue
+      const lo = Math.min(...mine.map(o => o.s0)), hi = Math.max(...mine.map(o => o.s1))
+      expect(lo).toBeCloseTo(q.s0, 4)
+      expect(hi).toBeCloseTo(q.s1, 4)
+      for (const o of mine) if (Math.abs(o.s0 - lo) < 1e-6 || Math.abs(o.s1 - hi) < 1e-6) expect(o.r.type, 'an edge row').toBe('rack_row')
+    }
     expect(check()).toEqual({ errors: [], warnings: [] })
   })
 
@@ -180,8 +190,8 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
   /* The box is the racking area. A 300 × 200 rectangle; a box from the middle
    * of the building (open floor) past a wall (clipped to its inner face), in
    * both axes, dragged both ways. The row at each edge has its outer face
-   * EXACTLY on that edge: back-to-back on the open edge, single on the wall;
-   * no aisle on the open edge. Along the run, the racking starts exactly at
+   * EXACTLY on that edge and is a SINGLE row, open floor or wall; the rows
+   * between are back-to-back; no aisle on the open edge. Along the run, the racking starts exactly at
    * the edge the drag started from. "Exactly": within 0.001 px (under a
    * millionth of an inch — the region's cut positions are rounded to 1e-6 ft). */
   const edgeCase = () => {
@@ -195,25 +205,33 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
   /** Drag from `a` to `b` (world px) with the tool. */
   const dragFill = (a, b) => { m.FT.startFill(a); m.FT.moveFill(b, s().objects, GS); return m.FT.commitFill(m.useCanvasStore) }
 
-  it.each([['from the open edge', false], ['from the wall', true]])('FR-edge-stack: a box from mid-building past a wall, dragged %s — the open-edge row is back-to-back with its outer face exactly on the box edge (0"), the wall row is single and flush on the wall\'s inner face (0"); no aisle at the open edge', (_, fromWall) => {
+  /* The far edge three ways: past the wall (clipped to its inner face), exactly
+   * on the inner face, and 6" short of it (open floor next to the wall). */
+  const FAR = [['past the wall', 3 * GS], ['on the wall face', 0], ['6" off the wall', -GS / 2]]
+  it.each(FAR.flatMap(([far, off]) => [[far, 'from the open edge', off, false], [far, 'from the far edge', off, true]]))('FR-edge-stack: a box from mid-building to %s, dragged %s — the first and last rows are SINGLE with their outer faces exactly on the box edges (0"), every row between is back-to-back; no aisle at the open edge', (_far, _dir, off, fromFar) => {
     const { fp, inner } = edgeCase()
     // the open edge across the stack axis, a whole number of inches off the middle
     const mid = vert ? fp.x + Math.round(fp.width / 2 / GS * 12 + 7) / 12 * GS : fp.y + Math.round(fp.height / 2 / GS * 12 + 7) / 12 * GS
-    const past = vert ? fp.x + fp.width + 3 * GS : fp.y + fp.height + 3 * GS         // 3' past the far wall
+    const face = vert ? inner.x1 : inner.y1
+    const edge = face + off                                                            // where the box's far edge is
+    const farEdge = Math.min(edge, face)                                               // where the racking must end
     const runA = vert ? fp.y - 2 * GS : fp.x - 2 * GS, runB = vert ? fp.y + fp.height + 2 * GS : fp.x + fp.width + 2 * GS
     const pt = (st, rn) => (vert ? { x: st, y: rn } : { x: rn, y: st })
-    const n = fromWall ? dragFill(pt(past, runB), pt(mid, runA)) : dragFill(pt(mid, runA), pt(past, runB))
+    const n = fromFar ? dragFill(pt(edge, runB), pt(mid, runA)) : dragFill(pt(mid, runA), pt(edge, runB))
     expect(n).toBeGreaterThan(4)
     const f = racks().map(r => ({ r, f: m.rackFootprint(r) }))
     const minS = Math.min(...f.map(q => stackLo(q.f))), maxS = Math.max(...f.map(q => stackHi(q.f)))
-    expect(minS - mid).toBeCloseTo(0, 3)                                              // 0" at the open edge
-    expect(maxS - (vert ? inner.x1 : inner.y1)).toBeCloseTo(0, 3)                    // 0" at the wall's inner face
+    expect(minS - mid).toBeCloseTo(0, 3)                                               // 0" at the open edge
+    expect(maxS - farEdge).toBeCloseTo(0, 3)                                           // 0" at the far edge / wall face
+    let first = 0, last = 0, between = 0
     for (const q of f) {
-      if (Math.abs(stackLo(q.f) - mid) < 1e-6) expect(q.r.type).toBe('rack_double_row')
-      if (Math.abs(stackHi(q.f) - (vert ? inner.x1 : inner.y1)) < 1e-6) expect(q.r.type).toBe('rack_row')
+      if (Math.abs(stackLo(q.f) - mid) < 1e-3) { expect(q.r.type, 'first row').toBe('rack_row'); first++ }
+      else if (Math.abs(stackHi(q.f) - farEdge) < 1e-3) { expect(q.r.type, 'last row').toBe('rack_row'); last++ }
+      else { expect(q.r.type, 'a row between').toBe('rack_double_row'); between++ }
     }
+    expect(first).toBeGreaterThan(0); expect(last).toBeGreaterThan(0); expect(between).toBeGreaterThan(0)
     // nothing outside the box or the walls
-    for (const q of f) expect(stackLo(q.f)).toBeGreaterThanOrEqual(mid - 1e-6)
+    for (const q of f) { expect(stackLo(q.f)).toBeGreaterThanOrEqual(mid - 1e-3); expect(stackHi(q.f)).toBeLessThanOrEqual(farEdge + 1e-3) }
     expectInside()
     expect(check().errors).toEqual([])
   })

@@ -8,10 +8,12 @@
 // rectilinear shape), and existing racks are taken out of it. What is left is
 // cut into rectangles along the run axis (strips with the same stack extent
 // merged back together), and each rectangle is filled on its own:
-//   - a side on a WALL: the row is a single, flush on the wall's inner face —
-//     any wall, including the inside corner of an L;
-//   - a side on OPEN floor (the box edge): the row is back-to-back, its outer
-//     face exactly on the box edge — no aisle added;
+//   - a side on a WALL: the row is flush on the wall's inner face — any wall,
+//     including the inside corner of an L;
+//   - a side on OPEN floor (the box edge): the row's outer face is exactly on
+//     the box edge — no aisle added;
+//   - the first and last rows (at those two edges) are ALWAYS single rows, wall
+//     or open floor; the rows between are back-to-back (rowBands' own walk);
 //   - a side on an EXISTING rack: a forklift aisle off it, so its pick face
 //     stays reachable (never overlapped, never moved);
 //   - where the region carries on into another of its rectangles (the elbow
@@ -215,7 +217,6 @@ export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules =
 
   // what each side keeps clear: nothing at a wall or the box edge; an aisle off an existing rack; half a cross-aisle at a join
   const sideClear = (kind) => (kind === 'rack' ? aisleFt : kind === 'join' ? crossAisleFt / 2 : 0)
-  const endType = (kind) => (kind === 'wall' ? 'rack_row' : rackType)
   const singleFt = depthIn / 12
   const placements = []
   let rows = 0
@@ -225,7 +226,7 @@ export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules =
     const sNear = sideClear(kNear), sFar = sideClear(kFar)
     const W = q.s1 - q.s0 - sNear - sFar
     const sg = walkGrid(stackLines, flipS ? q.s1 - sNear : q.s0 + sNear, W, flipS ? -1 : 1)
-    let bands = rowBands(W, { rackType, depthIn, aisleFt, flueIn, gridYFt: sg.pitch, travelFt, gridOffsetFt: sg.offset, gridMaxFt: sg.max, colSizeIn, wallClearFt: 0, nearType: endType(kNear), farType: endType(kFar) })
+    let bands = rowBands(W, { rackType, depthIn, aisleFt, flueIn, gridYFt: sg.pitch, travelFt, gridOffsetFt: sg.offset, gridMaxFt: sg.max, colSizeIn, wallClearFt: 0 })
     // too narrow for both edge rows and an aisle: the start edge's row alone (a single, if a pair doesn't fit)
     if (bands.length === 2 && bands[1].yFt - (bands[0].yFt + bands[0].depthFt) < aisleFt - 1e-6) bands = [bands[0]]
     if (!bands.length && W >= singleFt - 1e-9) bands = [{ type: 'rack_row', yFt: 0, depthFt: singleFt }]

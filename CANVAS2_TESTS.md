@@ -284,7 +284,7 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### FR — Fill racking · `FR_fillRacking.test.js` (32 tests)
+### FR — Fill racking · `FR_fillRacking.test.js` (40 tests)
 A tool in the drawing toolbar ("Fill racking", paint bucket). While it is on,
 an options bar shows the Racking settings it fills with: orientation H / V,
 beam, pallet, forklift, aisle and max rack run. The Generate panel keeps these
@@ -298,10 +298,12 @@ by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
   into rectangles. Each side is a **wall**, **open** (the box edge), **rack**
   (an existing rack on any part of it, or touching it) or a **join** (the
   region carries on).
-- **Wall side:** the row is single and flush on the inner face (0"). There is
-  no wall-clearance inset, and this includes the inside corner of an L.
-- **Open side:** the row is back-to-back, with its outer face exactly on the
-  box edge (0"). No aisle is added.
+- **Wall side:** the row is flush on the inner face (0"). There is no
+  wall-clearance inset, and this includes the inside corner of an L.
+- **Open side:** the row's outer face is exactly on the box edge (0"). No
+  aisle is added.
+- **The first and last rows are always single**, whether their edge is a wall
+  or open floor. The rows between are back-to-back (`rowBands`' own walk).
 - **Join:** half a cross-aisle on each side.
 - The walk starts at the box edge **where the drag started**, in both axes,
   and the row at the far edge is flush too. Along the run, a one-piece run
@@ -312,8 +314,9 @@ by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
   is the one aisle a fill adds.
 - A box too narrow for both edge rows and an aisle gets the start edge's row
   alone (a single if a pair doesn't fit).
-- `rowBands` has optional `nearType` / `farType` for the end rows. They
-  default to single, so Generate is unchanged.
+- Generate is unchanged. `rowBands` is back to its pre-fill form; the
+  `nearType` / `farType` options that briefly made open-edge rows
+  back-to-back are gone.
 - New rows are stamped `rowIndex` / `genSection` after the building's own, so
   copy-to-sections, Match bays and Check layout work on them. The copy watcher
   sees a fill as a generated layout: nothing is pending.
@@ -326,7 +329,7 @@ by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
 | `FR-generate` (×2) | the whole of a rectangle, 240 × 120 and 1080 × 410: exactly Generate's walk over the same clear floor (the inner faces, no wall clearance) — racks (position, size, rotation, beams, rowIndex, genSection) and aisle count; the first and last rows and the run start flush on the inner faces; the wall rows single; every object has its own id |
 | `FR-shape` (×2) | the whole of an L (300 × 200) and a T (360 × 240): more than one rectangle; no rack outside the outline (every corner inside, no outline vertex inside a rack); no overlaps; every rack whose long side is within 3' of a wall is a single row, and each inside wall the rows face has some; Check layout: nothing at all |
 | `FR-arms` | an L's two arms filled separately: single rows along the inside-corner wall, nothing outside, no overlaps, the second fill's stamps after the first's, no errors |
-| `FR-edge-stack` (×2) | 300 × 200, a box from mid-building (open floor) past a wall, dragged from the open edge and from the wall: the open-edge row is back-to-back with its outer face exactly on the box edge (0", within 0.001 px), the wall row single and exactly on the inner face; nothing outside the box or the walls; no errors |
+| `FR-edge-stack` (×6) | 300 × 200, a box from mid-building (open floor) to a far edge past the wall, exactly on its inner face, or 6" short of it; each dragged from the open edge and from the far edge. The first and last rows are single, their outer faces exactly on the box edges (0", within 0.001 px; past the wall: the inner face); every row between is back-to-back; nothing outside the box or the walls; no errors |
 | `FR-edge-run` (×2) | the same along the run: dragged from the open edge the racking starts exactly on it; dragged from the wall, exactly on the inner face; nothing past either; no errors |
 | `FR-existing` | a double row in the middle and a single row across the rows: both exactly as they were after filling the whole building; no new rack overlaps them, each is at least an aisle off; no overlaps |
 | `FR-stamps` | 480' of run, 120' max run: every rack has integer rowIndex / genSection; nothing pending after the fill; 3+ sections, row 2 once in each; row 2 of section 2 moved 1' across, Copy: row 2 of every section moved 1' |
@@ -361,6 +364,16 @@ All run horizontal and vertical.
   - fills of a rectangle, an L and a T: clean, with undo, redo and Esc
     working;
   - no console errors.
+- **Edge rows always single (checked in the app, both orientations):**
+  - half-building boxes from open floor, with the far edge past the wall and
+    6" off it, each dragged both ways: first and last rows single, rows
+    between back-to-back;
+  - Check layout: 0 errors and 0 warnings;
+  - fills of a rectangle, an L and a T: clean, with undo, redo and Esc
+    working;
+  - no console errors.
+- FR-shape also checks every rectangle of an L or T fill: its first and last
+  rows are single and flush on its edges.
 - **Found by FR-existing:** a run end was called open only when the existing
   rack sat at the side's midpoint. A rack beside part of the side got half a
   cross-aisle (4' 6"–5' 3"). Now any rack on the side makes it open.
@@ -1987,6 +2000,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | FR | **Esc does not drop the box** | FR-undo h/v | ✓ |
 | FR | **Aisles without ids** | 4: FR-generate h/v | ✓ |
 | FR | **An aisle along an open box edge again** (the box is the racking area) | 6: FR-edge-stack ×2, FR-edge-run from the open edge (h/v) | ✓ |
+| FR | **Open-edge rows back-to-back again** (the rule before "edge rows always single") | 12: FR-edge-stack ×6 (h/v) | ✓ |
 | CX | **Short runs get a cross-aisle again** (the old rule) | 9: CX-72, CX-limit, CX-generate 72' (h/v), CX-fill-rect v, CX-fill-T h/v, CX-fill-L h/v | ✓ |
 | LC | **An aisle too narrow to drive not an error** (aisleLevel) | 6: LC-aisle, LC-click, LC-recheck (h/v) | ✓ |
 | LC | **A can't-pick aisle filed under errors** | 2: LC-aisle h/v | ✓ |
@@ -2132,8 +2146,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,971 tests, 1,971 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,368 tests, 2,368 passing.**
+- **Plan suite: 1,979 tests, 1,979 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,376 tests, 2,376 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:
