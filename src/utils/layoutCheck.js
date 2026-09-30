@@ -234,12 +234,23 @@ export function runLayoutCheck(store, opts = {}) {
   return result
 }
 
-/** The zoom that fits \`box\` (world px) in a canvas of \`size\`, with a margin. */
-export function fitBox(box, size, margin = 0.25) {
-  const w = Math.max(box.w, 1), h = Math.max(box.h, 1)
+/* Going to an issue shows it WITH its surroundings: at least this much of the
+   drawing across (or the whole issue if it is bigger), and never closer
+   than 100 % — a column on an upright or a single bay otherwise filled the
+   screen and lost all context. */
+export const ISSUE_CONTEXT_FT = 20
+export const ISSUE_MAX_ZOOM = 1
+
+/** The view that shows \`box\` (world px) in a canvas of \`size\`: the box
+ *  grown to at least ISSUE_CONTEXT_FT across each way, centred, fitted
+ *  with a margin, and no closer than ISSUE_MAX_ZOOM. */
+export function fitBox(box, size, { gridSize = 40, margin = 0.1 } = {}) {
+  const min = ISSUE_CONTEXT_FT * gridSize
+  const w = Math.max(box.w, min), h = Math.max(box.h, min)
+  const cx = box.x + box.w / 2, cy = box.y + box.h / 2
   const pad = 1 - margin * 2
-  const zoom = Math.max(0.01, Math.min(4, Math.min((size.w * pad) / w, (size.h * pad) / h)))
-  return { zoom, panX: size.w / 2 - (box.x + w / 2) * zoom, panY: size.h / 2 - (box.y + h / 2) * zoom }
+  const zoom = Math.max(0.01, Math.min(ISSUE_MAX_ZOOM, (size.w * pad) / w, (size.h * pad) / h))
+  return { zoom, panX: size.w / 2 - cx * zoom, panY: size.h / 2 - cy * zoom }
 }
 
 /** Clicking an item: select NOTHING — zoom to the spot and highlight the
@@ -249,7 +260,7 @@ export function fitBox(box, size, margin = 0.25) {
 export function goToIssue(store, item, size) {
   const st = store.getState()
   if (st.selectedIds.length) st.clearSelection()
-  if (size && item.box) { const v = fitBox(item.box, size); st.setViewport(v.zoom, v.panX, v.panY) }
+  if (size && item.box) { const v = fitBox(item.box, size, { gridSize: st.gridSize || 40 }); st.setViewport(v.zoom, v.panX, v.panY) }
   useLayoutCheck.setState({ highlight: { shapes: item.highlight || [], at: Date.now(), kind: item.kind } })
   return item.ids.filter(id => st.objects.some(o => o.id === id))
 }

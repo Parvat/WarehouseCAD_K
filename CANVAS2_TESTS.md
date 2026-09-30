@@ -284,7 +284,7 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### LC — Check layout · `LC_layoutCheck.test.js` (29 tests)
+### LC — Check layout · `LC_layoutCheck.test.js` (31 tests)
 A "Check layout" button in the top bar lists every problem in the right
 panel (`utils/layoutCheck.js`, `RightPanel/LayoutCheckPanel.jsx`). It only
 reports: nothing is blocked or moved. Pressing it again re-checks, and the
@@ -307,7 +307,9 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
 - **Each item** says what and where ("Aisle between rows 4 and 5, section 3:
   7', needs 8' to drive"; "Double row 2: …" for a rack placed by hand).
 - **Clicking an item selects NOTHING** (a selection is cleared). It zooms
-  so the spot fills the view and highlights the problem itself
+  to the problem WITH its surroundings — at least 20 ft across each way
+  (or the whole issue if bigger), never closer than 100 % (`fitBox`:
+  `ISSUE_CONTEXT_FT`, `ISSUE_MAX_ZOOM`) — and highlights the problem itself
   (`canvas2/IssueHighlight.jsx`, from each item's `highlight` shapes):
   - a narrow aisle: the gap shaded red, labelled "7' · needs 8'";
   - an overlap: the overlapping area shaded red;
@@ -347,6 +349,7 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
 | `LC-angled` | a rack at +30°: a WARNING only once there are columns |
 | `LC-click` | nothing is selected (an earlier selection is cleared); the spot is on screen and fills the view; the highlight is the item's; the next click clears it and selects only the row it lands on (the canvas press clears it first); a re-check clears it too; the overlay is mounted and never listens |
 | `LC-highlight` | each issue highlights the problem at the right place: the aisle gap exactly, red, "7' · needs 8'"; the overlap area exactly; the unreachable rack's outline; the too-short bay 2 exactly, amber; the upright frame (an upright's width) containing the column, orange; blocked pallets: glowing red X marks, one pallet position each (never the bay), at exactly the X marks' centres |
+| `LC-zoom` | a column on an upright (under 2 ft): zoom ≤ 100 %, at least 20 ft visible each way, the issue in view; a narrow aisle a whole row long (longer than the screen at 100 %) fits entirely |
 | `LC-xmarks` | generated 1080 × 410: a section's blocked-pallets item highlights exactly that section's X marks (same centres as blockedFaceOps draws, > 10 of them), each one position, never a bay; the painter draws a glowing X |
 | `LC-recheck` | "Check layout · 1 error"; fixed and pressed again: none (the stored result too), "· no issues" |
 | `LC-pdf` | clean: exported at once; with errors: asked (N errors), not exported; Show issues opens the list; Export anyway exports |
@@ -374,7 +377,10 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
   - clicking a row on the canvas afterwards selected only that row and the
     highlight was gone;
   - blocked pallets: as many glowing Xs as blocked positions, each 3.75 ft
-    (one position), glow 14, two lines each.
+    (one position), glow 14, two lines each;
+  - zoom: every issue at ≤ 100 % (0.94 at most) with at least 20 ft each
+    way in view (a 1 ft column on an upright: 34 × 25 ft); a 116 ft aisle
+    (vertical) whole in view at 16 %.
 - No console errors.
 
 ### EX — Fixes from the exploratory check of section copy · `EX_exploreFixes.test.js` (14 tests)
@@ -1830,6 +1836,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LC | **Oversized bay not reported** | 2: LC-oversized h/v | ✓ |
 | LC | **Angled rack not reported** | 2: LC-angled h/v | ✓ |
 | LC | **Clicking an issue selects its racks again** | 2: LC-click h/v | ✓ |
+| LC | **Zoom to the issue alone again** (no 20 ft, up to 400 %) | 2: LC-zoom h/v | ✓ |
 | LC | **Blocked pallets shade whole bays again** | 4: LC-highlight, LC-xmarks (h/v) | ✓ |
 | LC | **Re-check keeps the old result** | 2: LC-recheck h/v | ✓ |
 | LC | **Export does not ask when there are errors** | 2: LC-pdf h/v | ✓ |
@@ -1960,8 +1967,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,919 tests, 1,919 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,316 tests, 2,316 passing.**
+- **Plan suite: 1,921 tests, 1,921 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,318 tests, 2,318 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

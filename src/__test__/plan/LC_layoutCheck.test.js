@@ -285,6 +285,34 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(readFileSync('src/canvas2/IssueHighlight.jsx', 'utf8')).toMatch(/name="issue-hl:xmark"[\s\S]*shadowBlur=\{14\}[\s\S]*<Line points=\{\[0, 0, s\.w, s\.h\]\}/)
   })
 
+  it('LC-zoom: going to an issue shows it with its surroundings — a column on an upright: at least 20 ft across each way, zoom ≤ 100 %, the issue in view; a long narrow aisle (a whole row long) still fits entirely', async () => {
+    const size = { w: 1200, h: 800 }
+    const inView = (b) => { const { zoom, panX, panY } = s(); return b.x * zoom + panX >= -1e-6 && (b.x + b.w) * zoom + panX <= size.w + 1e-6 && b.y * zoom + panY >= -1e-6 && (b.y + b.h) * zoom + panY <= size.h + 1e-6 }
+    handDrawn()
+    const [a] = racks()
+    const f = m.rackFootprint(a)
+    columnAt((rot ? f.y : f.x) + (1.5 / 12) * GS, (rot ? f.x : f.y) + (21 / 12) * GS)
+    const up = check().errors.find(e => e.kind === 'upright')
+    expect(Math.max(up.box.w, up.box.h)).toBeLessThan(2 * GS)                  // a small issue: one column
+    m.LC.goToIssue(m.useCanvasStore, up, size)
+    expect(s().zoom).toBeLessThanOrEqual(1)
+    expect(size.w / s().zoom).toBeGreaterThanOrEqual(20 * GS)                 // ≥ 20 ft across …
+    expect(size.h / s().zoom).toBeGreaterThanOrEqual(20 * GS)                 // … each way
+    expect(inView(up.box)).toBe(true)
+    // a long narrow aisle on a generated layout: the whole of it in view
+    m = await fresh()
+    m.generateAndPlace({ lengthFt: 1080, widthFt: 410, gridXFt: 30, gridYFt: 30, mhe: 'reach', orientation, rackType: 'rack_double_row', dockDoors: 0 })
+    const inS1 = racks().filter(o => o.genSection === 1), k = Math.min(...inS1.map(o => o.rowIndex))
+    const r5 = inS1.find(o => o.rowIndex === k), r6 = inS1.find(o => o.rowIndex === k + 1)
+    const f5 = m.rackFootprint(r5), f6 = m.rackFootprint(r6)
+    move(r5, (rot ? f6.x - (f5.x + f5.w) : f6.y - (f5.y + f5.h)) - 7 * GS)
+    const aisle = check().errors.find(e => e.kind === 'aisle-drive' && e.ids.includes(r5.id))
+    expect(Math.max(aisle.box.w, aisle.box.h)).toBeGreaterThan(size.w)          // longer than the screen at 100 %
+    m.LC.goToIssue(m.useCanvasStore, aisle, size)
+    expect(inView(aisle.box)).toBe(true)
+    expect(s().zoom).toBeLessThan(1)
+  })
+
   it('LC-recheck: fixing the problem and pressing again removes it; the button counts ("Check layout · 1 error" → "· no issues")', () => {
     handDrawn()
     const [, b] = racks()
