@@ -284,7 +284,7 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### LC — Check layout · `LC_layoutCheck.test.js` (31 tests)
+### LC — Check layout · `LC_layoutCheck.test.js` (33 tests)
 A "Check layout" button in the top bar lists every problem in the right
 panel (`utils/layoutCheck.js`, `RightPanel/LayoutCheckPanel.jsx`). It only
 reports: nothing is blocked or moved. Pressing it again re-checks, and the
@@ -324,6 +324,14 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
   It pulses briefly (three beats), then stays until the next click on the
   canvas or the next check. The user then clicks what they want to change;
   that click works as usual.
+- **Live re-check** (`installLiveRecheck`): while the list is open, every
+  committed change — a drop, a delete, a paste or placement, a panel edit,
+  undo / redo (anything that moves the history) — re-runs the check 300 ms
+  after the last one. Never during a drag: a live-flue drag writes history
+  every frame, so it waits and runs once the gesture ends. Fixed items go,
+  new ones appear, the count follows. The clicked item's highlight stays
+  unless its issue is fixed (matched by kind and objects). The button still
+  re-checks by hand (and clears the highlight).
 - **One rule each, all reused:**
   - aisle widths: `aisleLevel` over `rowGaps` — the column check's
     column-in-aisle test and the copy warnings now ask the same function;
@@ -349,6 +357,7 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
 | `LC-angled` | a rack at +30°: a WARNING only once there are columns |
 | `LC-click` | nothing is selected (an earlier selection is cleared); the spot is on screen and fills the view; the highlight is the item's; the next click clears it and selects only the row it lands on (the canvas press clears it first); a re-check clears it too; the overlay is mounted and never listens |
 | `LC-highlight` | each issue highlights the problem at the right place: the aisle gap exactly, red, "7' · needs 8'"; the overlap area exactly; the unreachable rack's outline; the too-short bay 2 exactly, amber; the upright frame (an upright's width) containing the column, orange; blocked pallets: glowing red X marks, one pallet position each (never the bay), at exactly the X marks' centres |
+| `LC-live` | the list open: an unrelated change re-checks and keeps the highlight; the narrow aisle fixed by moving the row: gone, "· no issues", highlight cleared — no button pressed; a new overlap appears; mid-drag (dragging on) the result is untouched, after the drop re-checked; a closed list is not re-checked; 300 ms by default, installed in App |
 | `LC-zoom` | a column on an upright (under 2 ft): zoom ≤ 100 %, at least 20 ft visible each way, the issue in view; a narrow aisle a whole row long (longer than the screen at 100 %) fits entirely |
 | `LC-xmarks` | generated 1080 × 410: a section's blocked-pallets item highlights exactly that section's X marks (same centres as blockedFaceOps draws, > 10 of them), each one position, never a bay; the painter draws a glowing X |
 | `LC-recheck` | "Check layout · 1 error"; fixed and pressed again: none (the stored result too), "· no issues" |
@@ -378,6 +387,10 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
     highlight was gone;
   - blocked pallets: as many glowing Xs as blocked positions, each 3.75 ft
     (one position), glow 14, two lines each;
+  - live (hand-drawn, a 7' aisle, the list open): dragging the row back
+    with the mouse removed the item — "· no issues", highlight gone, no
+    button; a drag held into the next row re-ran nothing for 0.9 s, the
+    drop listed the overlap ("· 1 error"); Ctrl+Z: "· no issues" again;
   - zoom: every issue at ≤ 100 % (0.94 at most) with at least 20 ft each
     way in view (a 1 ft column on an upright: 34 × 25 ft); a 116 ft aisle
     (vertical) whole in view at 16 %.
@@ -1836,6 +1849,8 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LC | **Oversized bay not reported** | 2: LC-oversized h/v | ✓ |
 | LC | **Angled rack not reported** | 2: LC-angled h/v | ✓ |
 | LC | **Clicking an issue selects its racks again** | 2: LC-click h/v | ✓ |
+| LC | **No live re-check** (committed changes ignored) | 2: LC-live h/v | ✓ |
+| LC | **Live re-check runs mid-drag** | 2: LC-live h/v | ✓ |
 | LC | **Zoom to the issue alone again** (no 20 ft, up to 400 %) | 2: LC-zoom h/v | ✓ |
 | LC | **Blocked pallets shade whole bays again** | 4: LC-highlight, LC-xmarks (h/v) | ✓ |
 | LC | **Re-check keeps the old result** | 2: LC-recheck h/v | ✓ |
@@ -1967,8 +1982,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,921 tests, 1,921 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,318 tests, 2,318 passing.**
+- **Plan suite: 1,923 tests, 1,923 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,320 tests, 2,320 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

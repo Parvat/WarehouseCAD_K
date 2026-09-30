@@ -313,6 +313,49 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(s().zoom).toBeLessThan(1)
   })
 
+  it('LC-live: with the list open, every committed change re-checks on its own (debounced) — a narrow aisle fixed disappears and a new overlap appears without pressing the button, the count follows; nothing re-runs mid-drag; the clicked item\'s highlight stays until its issue is fixed; a closed list isn\'t re-checked', async () => {
+    const DP = await import('../../canvas2/dragPreview')
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+    const stop = m.LC.installLiveRecheck(m.useCanvasStore, { delay: 30 })
+    try {
+      handDrawn()
+      const [a, b, , d] = racks()
+      move(b, -(AISLE - 7 * GS))                                                   // a narrow aisle
+      m.LC.runLayoutCheck(m.useCanvasStore)                                        // the list is open
+      const lc = () => m.LC.useLayoutCheck.getState()
+      expect(m.LC.checkLabel(lc().result)).toBe('Check layout · 1 error')
+      m.LC.goToIssue(m.useCanvasStore, lc().result.errors[0], { w: 1200, h: 800 })
+      // an unrelated change: re-checked, the highlight stays (its issue is still there)
+      s().commitObjectUpdate(d.id, { beams: [96, 96, 108] }); await sleep(90)
+      expect(lc().result.errors.map(e => e.kind)).toEqual(['aisle-drive'])
+      expect(lc().highlight).not.toBe(null)
+      // fixed by moving the row back: gone, no button pressed; its highlight goes too
+      move(racks()[1], AISLE - 7 * GS); await sleep(90)
+      expect(lc().result.errors).toEqual([])
+      expect(m.LC.checkLabel(lc().result)).toBe('Check layout · no issues')
+      expect(lc().highlight).toBe(null)
+      // a new overlap: it appears
+      move(racks()[1], -(AISLE + GS)); await sleep(90)
+      expect(lc().result.errors.map(e => e.kind)).toContain('overlap')
+      expect(m.LC.checkLabel(lc().result)).toMatch(/^Check layout · \d+ errors?$/)
+      const during = lc().result
+      // mid-drag: history moves (a live-flue drag writes every frame), no re-check until the drop
+      DP.setDragging(true)
+      move(racks()[1], AISLE + GS); await sleep(90)
+      expect(lc().result).toBe(during)
+      DP.setDragging(false); await sleep(90)
+      expect(lc().result.errors).toEqual([])
+      // closed: no re-check
+      lc().close()
+      const closed = lc().result
+      move(racks()[1], -(AISLE + GS)); await sleep(90)
+      expect(lc().result).toBe(closed)
+      void a
+    } finally { stop() }
+    expect(m.LC.LIVE_RECHECK_MS).toBe(300)
+    expect(readFileSync('src/App.jsx', 'utf8')).toMatch(/installLiveRecheck\(useCanvasStore\)/)
+  })
+
   it('LC-recheck: fixing the problem and pressing again removes it; the button counts ("Check layout · 1 error" → "· no issues")', () => {
     handDrawn()
     const [, b] = racks()

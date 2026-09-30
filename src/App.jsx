@@ -19,6 +19,7 @@ import { installCopyWatcher } from './utils/copyPrompt'
 import { trackCanvasPointer } from './utils/pasteAt'
 import { installLayerKeeper } from './utils/layers'
 import { installLevelsKeeper } from './utils/rackLevels'
+import { installLiveRecheck } from './utils/layoutCheck'
 
 /* Aisle labels only ever pair two directly facing rows: re-pairs them after
    deletes, pastes, undo/redo and every commit (utils/aisleKeeper.js). Once,
@@ -37,6 +38,9 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopLayerKeeper())
 /* Every beam rack has levels — 4 unless set (utils/rackLevels.js). */
 const stopLevelsKeeper = installLevelsKeeper(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopLevelsKeeper())
+/* Check layout: while its list is open, re-checked after every committed change (utils/layoutCheck.js). */
+const stopLiveRecheck = installLiveRecheck(useCanvasStore)
+if (import.meta.hot) import.meta.hot.dispose(() => stopLiveRecheck())
 /* Paste lands at the mouse cursor: remember where it last was over the canvas. */
 const stopPointer = trackCanvasPointer(window)
 if (import.meta.hot) import.meta.hot.dispose(() => stopPointer())

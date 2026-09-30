@@ -36,6 +36,7 @@ import { oversizedBayIndices } from './capacity'
 import { fmtLen } from './copyChange'
 import { sectionLabel } from './sectionCopy'
 import { getColumnCheckView } from '../generate/columnCheckView'
+import { useDragPreview } from '../canvas2/dragPreview'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const TYPE_NAMES = {
@@ -261,8 +262,51 @@ export function goToIssue(store, item, size) {
   const st = store.getState()
   if (st.selectedIds.length) st.clearSelection()
   if (size && item.box) { const v = fitBox(item.box, size, { gridSize: st.gridSize || 40 }); st.setViewport(v.zoom, v.panX, v.panY) }
-  useLayoutCheck.setState({ highlight: { shapes: item.highlight || [], at: Date.now(), kind: item.kind } })
+  useLayoutCheck.setState({ highlight: { shapes: item.highlight || [], at: Date.now(), kind: item.kind, key: issueKey(item) } })
   return item.ids.filter(id => st.objects.some(o => o.id === id))
+}
+
+/** What makes an item the same issue across checks: its kind and objects
+ *  (an aisle that narrows further is still that aisle). */
+export const issueKey = (item) => item.kind + ':' + [...item.ids].sort().join(',')
+
+/** The LIVE re-check: a new result; the clicked item's highlight stays —
+ *  unless its issue is gone. (The button's manual re-check clears it.) */
+export function refreshLayoutCheck(store, opts = {}) {
+  const st = store.getState()
+  const result = { ...checkLayout(st.objects, { ...viewOpts(), gridSize: st.gridSize || 40, ...opts }), at: Date.now() }
+  let { highlight } = useLayoutCheck.getState()
+  if (highlight && highlight.key && ![...result.errors, ...result.warnings].some(i => issueKey(i) === highlight.key)) highlight = null
+  useLayoutCheck.setState({ result, highlight })
+  return result
+}
+
+/* While the list is open, every COMMITTED change — a drop, a delete, a paste
+   or placement, a panel edit, undo / redo: anything that moves the history —
+   re-runs the check LIVE_RECHECK_MS after the last one. Never during a drag
+   (a live-flue drag writes history every frame): it waits, and runs once the
+   gesture ends. */
+export const LIVE_RECHECK_MS = 300
+export function installLiveRecheck(store, { delay = LIVE_RECHECK_MS } = {}) {
+  let timer = null, dirty = false
+  let lastHistory = store.getState().history, lastIndex = store.getState().historyIndex
+  const run = () => {
+    timer = null
+    if (!dirty) return
+    const lc = useLayoutCheck.getState()
+    if (!lc.open || !lc.result) { dirty = false; return }
+    if (useDragPreview.getState().dragging) return            // after the drag (below)
+    dirty = false
+    refreshLayoutCheck(store)
+  }
+  const schedule = () => { dirty = true; clearTimeout(timer); timer = setTimeout(run, delay) }
+  const unStore = store.subscribe((st) => {
+    if (st.history === lastHistory && st.historyIndex === lastIndex) return
+    lastHistory = st.history; lastIndex = st.historyIndex
+    if (useLayoutCheck.getState().open) schedule()
+  })
+  const unDrag = useDragPreview.subscribe((d, prev) => { if (prev.dragging && !d.dragging && dirty) schedule() })
+  return () => { unStore(); unDrag(); clearTimeout(timer) }
 }
 
 /** Export: with errors, ask first (never block); otherwise export. */
