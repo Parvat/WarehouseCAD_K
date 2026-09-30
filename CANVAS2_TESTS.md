@@ -284,6 +284,72 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
+### LC — Check layout · `LC_layoutCheck.test.js` (25 tests)
+A "Check layout" button in the top bar lists every problem in the right
+panel (`utils/layoutCheck.js`, `RightPanel/LayoutCheckPanel.jsx`). It only
+reports: nothing is blocked or moved. Pressing it again re-checks, and the
+count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
+"· no issues").
+- **ERRORS** (can't be built or reached):
+  - an aisle too narrow to drive (under the travel width) — between rows, or
+    a column in it;
+  - racks overlapping each other;
+  - a rack past a wall, or outside the building;
+  - columns on an upright frame (one item per rack);
+  - a rack nobody can reach (no aisle on any pick side).
+- **WARNINGS** (cost positions, or need a look):
+  - an aisle a truck can drive but can't pick from;
+  - columns blocking pallets (one item per section, or per building for
+    racks placed by hand, with the positions lost);
+  - a bay too short for the pallet;
+  - angled racks whose column losses weren't checked (only where there
+    are columns).
+- **Each item** says what and where ("Aisle between rows 4 and 5, section 3:
+  7', needs 8' to drive"; "Double row 2: …" for a rack placed by hand).
+  Clicking it selects its object(s) and zooms so the spot fills the view.
+- **One rule each, all reused:**
+  - aisle widths: `aisleLevel` over `rowGaps` — the column check's
+    column-in-aisle test and the copy warnings now ask the same function;
+  - the Column Check (`runColumnCheck`) for upright hits, pinched aisles and
+    lost positions;
+  - `rackIssues` for overlap and walls;
+  - `rackReachable` — the pick-zone test, at the travel width;
+  - `oversizedBayIndices` for bays too short for the pallet.
+- **PDF export:** with errors it asks "N errors found. Export anyway?"
+  [Show issues] [Export anyway]. It never blocks, and without errors it
+  exports at once.
+
+| Test (×2 h/v; a hand-drawn 400 × 400 building with four double rows, and generated) | Asserts |
+|---|---|
+| `LC-clean` | a generated 240 × 120 (30 × 30 grid) and the hand-drawn building: no errors (hand-drawn: nothing at all) |
+| `LC-aisle` | 7' between two rows: ERROR "… 7', needs 8' to drive", both racks; 9': a WARNING "… needs 10' 6" to pick"; generated: "Aisle between rows k and k+1, section 1" |
+| `LC-overlap` | "Double row 1 overlaps double row 2 by 1'", both racks |
+| `LC-outside` | 9" past the wall: "past the wall by 9""; a rack with no building round it: "outside the building" |
+| `LC-upright` | a column on the first frame: "a column stands on an upright frame" |
+| `LC-unreachable` | a rack back to back with rows on both sides: ERROR on it alone; its neighbours stay reachable |
+| `LC-columns` | a column mid-bay in a face: a WARNING with the count of positions lost; no error |
+| `LC-oversized` | a 36" bay with a 40" pallet: "bay 2 (36") too short for a 40" pallet — holds nothing" |
+| `LC-angled` | a rack at +30°: a WARNING only once there are columns |
+| `LC-click` | the item selects both racks; the spot is on screen and fills the view |
+| `LC-recheck` | "Check layout · 1 error"; fixed and pressed again: none (the stored result too), "· no issues" |
+| `LC-pdf` | clean: exported at once; with errors: asked (N errors), not exported; Show issues opens the list; Export anyway exports |
+| `LC-reuse` (once) | the column check and the copy warnings ask `aisleLevel`; Check layout calls the existing checks and compares no width by hand; the button and panel are mounted |
+
+**Checked in the app, horizontal and vertical:**
+- **Generated 1080 × 410** (25 × 30 grid):
+  - horizontal: 12 errors (columns on upright frames, one per rack) and 8
+    warnings ("Section 1: columns block 356 pallet positions on 19 rows");
+  - an aisle narrowed to 7' is added as "Aisle between rows 5 and 6,
+    section 2: 7', needs 8' to drive"; clicking it selects the two rows and
+    zooms to them;
+  - Export asks "14 errors found. Export anyway?" (9 v); Show issues opens
+    the list; Export anyway opens the print window;
+  - moving the row back and pressing again removes the item.
+- **Hand-drawn:** "· no issues". An overlap of 1': "Double row 1 overlaps
+  double row 2 by 1'"; clicking selects both on screen; fixed: "· no
+  issues"; Export goes straight out.
+- No console errors.
+
 ### EX — Fixes from the exploratory check of section copy · `EX_exploreFixes.test.js` (14 tests)
 1. **Results clear on the next action** — undo, redo, a placement (paste,
    Ctrl+D), Esc (`dismissReport` in the watcher's undo / redo branch,
@@ -1727,6 +1793,18 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LY | **Locking leaves the object selected** | 2: LY-select h/v | ✓ |
 | LY | **Layers not saved with the layout** | 2: LY-save h/v | ✓ |
 | HF | **Handle sizes back to 8 / 14 / 16** (7569d59's own) | 2: HF-handles h/v | ✓ |
+| LC | **An aisle too narrow to drive not an error** (aisleLevel) | 6: LC-aisle, LC-click, LC-recheck (h/v) | ✓ |
+| LC | **A can't-pick aisle filed under errors** | 2: LC-aisle h/v | ✓ |
+| LC | **Overlaps not reported** | 4: LC-overlap, LC-pdf (h/v) | ✓ |
+| LC | **Past the wall not reported** | 2: LC-outside h/v | ✓ |
+| LC | **Column on an upright not reported** | 2: LC-upright h/v | ✓ |
+| LC | **Unreachable rack not reported** | 2: LC-unreachable h/v (and LC-reuse) | ✓ |
+| LC | **Columns blocking pallets not reported** | 2: LC-columns h/v | ✓ |
+| LC | **Oversized bay not reported** | 2: LC-oversized h/v | ✓ |
+| LC | **Angled rack not reported** | 2: LC-angled h/v | ✓ |
+| LC | **Click does not select** | 2: LC-click h/v | ✓ |
+| LC | **Re-check keeps the old result** | 2: LC-recheck h/v | ✓ |
+| LC | **Export does not ask when there are errors** | 2: LC-pdf h/v | ✓ |
 | EX | **Undo / redo leave the result up** | 2: EX-results h/v | ✓ |
 | EX | **Match bays treated as pending work again** | 4: EX-match, CF-match (h/v) | ✓ |
 | EX | **Live-flue drag centred on the base depth again** (the vertical creep) | 2: EX-flue h/v | ✓ |
@@ -1854,8 +1932,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,890 tests, 1,890 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,287 tests, 2,287 passing.**
+- **Plan suite: 1,915 tests, 1,915 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,312 tests, 2,312 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

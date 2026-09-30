@@ -12,7 +12,7 @@
 // Bay changes and moves ALONG a row are never copied to other sections.
 // Pure: no store, no React.
 
-import { rackFootprint, MHE_PROFILES } from '../generate/columnCheck'
+import { rackFootprint, MHE_PROFILES, aisleLevel } from '../generate/columnCheck'
 import { layoutColumns } from '../generate/usableCapacity'
 import { rackIssues } from './bayBeam'
 import { buildingSections } from './syncSections'
@@ -133,7 +133,8 @@ export function softProblems(rack, world, rotated, gridSize = 40, profile = MHE_
     if (d1 <= c0 + EPS) below = Math.min(below, c0 - d1)
     if (d0 >= c1 - EPS) above = Math.min(above, d0 - c1)
   }
-  const narrow = [below, above].filter(g => g > 2 * gridSize && g < need - gridSize / 24)
+  // the one aisle-width rule (columnCheck's aisleLevel), a hair forgiven for rounding
+  const narrow = [below, above].filter(g => g > 2 * gridSize && aisleLevel(g, profile, gridSize, gridSize / 24) < 3)
   if (narrow.length) out.push(`aisle ${fmtLen(Math.min(...narrow), gridSize)} (the forklift needs ${fmtLen(need, gridSize)})`)
   // a column inside the row itself (a double row's flue is where columns belong)
   const cols = columns || layoutColumns(world, gridSize)

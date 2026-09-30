@@ -5,6 +5,7 @@ import { ColorPanel }      from './ColorPanel'
 import { LabelsPanel }     from './LabelsPanel'
 import { GroupPanel }      from './GroupPanel'
 import { ColumnCheckPanel } from './ColumnCheckPanel'
+import { LayoutCheckPanel } from './LayoutCheckPanel'
 
 export function RightPanel() {
   return (
@@ -13,6 +14,7 @@ export function RightPanel() {
       background:'var(--surface)', borderLeft:'1px solid var(--border)',
       display:'flex', flexDirection:'column', overflowY:'auto',
     }}>
+      <LayoutCheckPanel />
       <PropertiesPanel />
       <ColumnCheckPanel />
       <GroupPanel />

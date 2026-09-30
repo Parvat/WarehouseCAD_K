@@ -26,6 +26,17 @@ const GS = 40 // px per foot (v16b convention)
 const TRAVEL_FT_DEFAULT = 8
 const travelFtFor = (aisleFt) => Math.min(TRAVEL_FT_DEFAULT, aisleFt)
 
+/** THE aisle-width rule, for a clear width in px: 1 — under the truck's
+ *  travel width, it can't drive through; 2 — it can drive, but it's under the
+ *  forklift aisle, so it can't pick; 3 — fine. `slackPx` forgives a hair
+ *  (rounding) on the pick test. The column check, the copy warnings and
+ *  Check layout all ask this one function. */
+export function aisleLevel(clearPx, profile, gridSize = GS, slackPx = 0) {
+  if (clearPx < (profile.travelFt ?? TRAVEL_FT_DEFAULT) * gridSize) return 1
+  if (clearPx + slackPx < profile.aisleFt * gridSize) return 2
+  return 3
+}
+
 // The selectable forklift input. Aisle widths are typical; tune per real MHE.
 export const MHE_PROFILES = {
   reach:          { key: 'reach',          label: 'Reach truck',   aisleFt: 10.5, minAisleFt: 10.0, retrievalFt: 6, travelFt: travelFtFor(10.5) },
@@ -230,6 +241,31 @@ function insideAnyFloor(rect, floors) {
    grid are compared by identity and clear everything when they change. */
 let pickCache = null
 
+/* Is a pick zone an aisle a truck can stand in: no other rack in it, and
+   inside the building (when its walls are known)? The pick-zone check and
+   Check layout's "nobody can reach it" both ask this. */
+function zoneIsOpen(zone, rackId, feet, floors) {
+  return !feet.some(o => o.id !== rackId && overlaps(zone, o.f)) && (!floors.length || insideAnyFloor(zone, floors))
+}
+
+/** Can a truck reach rack `r` at all: is the pick zone (`depthPx` deep —
+ *  the travel width) of ANY of its positions, on any pick side, an open
+ *  aisle? Racks at other than 0/90/180/270° aren't judged (true). */
+export function rackReachable(r, racks, { gridSize = GS, floors = [], depthPx } = {}) {
+  if (!PICK_TYPES.has(r.type) || ((r.rotation || 0) % 90) !== 0) return true
+  const feet = racks.map(o => ({ id: o.id, f: rackFootprint(o) }))
+  const { beams } = uprightXs(r, gridSize)
+  const palletWIn = r.palletWIn || 40
+  for (let bayIndex = 0; bayIndex < beams.length; bayIndex++) {
+    const n = positionsPerBeam(beams[bayIndex], palletWIn)
+    for (let p = 0; p < n; p++) for (const side of ['near', 'far']) {
+      const z = pickZoneRect(r, gridSize, bayIndex, p, side, depthPx)
+      if (z && zoneIsOpen(z, r.id, feet, floors)) return true
+    }
+  }
+  return false
+}
+
 export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, floors = [], alreadyBlocked = new Set() }) {
   const aislePx = profile.aisleFt * gridSize
   const out = []
@@ -273,9 +309,7 @@ export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILE
 
     const nearCols = columnsNear(columns, near)
     // is this zone an aisle a single can be picked from?
-    const isOpenAisle = (zone) =>
-      !nearFeet.some(o => o.id !== r.id && overlaps(zone, o.f)) &&
-      (!floors.length || insideAnyFloor(zone, floors))
+    const isOpenAisle = (zone) => zoneIsOpen(zone, r.id, nearFeet, floors)
 
     const start = out.length
     beams.forEach((beamIn, bayIndex) => {
@@ -379,18 +413,16 @@ export function columnsOnUprights({ racks = [], columns = [], gridSize = GS }) {
  *  `pinched` — neither side reaches travelFt, so a forklift can't pass on
  *  either side (the same condition as accessibility level 1). The drawing
  *  shades that aisle red; levels and capacity are untouched. */
-export function aisleColumnBlocks({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, pickBothSides = false }) {
-  const travelPx = (profile.travelFt ?? 8) * gridSize
-  const aislePx  = profile.aisleFt * gridSize
-  const aisleBlocks = []
-  const redMarks = []
-  const segments = groupBySegment(racks)
-  for (const run of segments) {
+/** The gaps between neighbouring rows of one run — the aisles, measured
+ *  along the axis the rows are stacked on: [{ top, bot (the racks), stacked,
+ *  gapStart, gapLen, crossStart, crossEnd, box }] (px). */
+export function rowGaps(racks) {
+  const out = []
+  for (const run of groupBySegment(racks)) {
     if (!run.length) continue
     const stacked = rackFootprint(run[0]).rotated   // true: stacked along X (vertical rows). false: along Y.
     const feet = run.map(r => ({ r, f: rackFootprint(r) }))
     feet.sort((a, b) => stacked ? a.f.x - b.f.x : a.f.y - b.f.y)
-
     for (let i = 0; i < feet.length - 1; i++) {
       const top = feet[i], bot = feet[i + 1]
       const gapStart = stacked ? (top.f.x + top.f.w) : (top.f.y + top.f.h)
@@ -402,10 +434,23 @@ export function aisleColumnBlocks({ racks = [], columns = [], profile = MHE_PROF
         stacked ? bot.f.y + bot.f.h : bot.f.x + bot.f.w,
       )
       if (crossEnd <= crossStart) continue
-
-      const aisleBox = stacked
+      const box = stacked
         ? { x: gapStart, y: crossStart, w: gapLen, h: crossEnd - crossStart }
         : { x: crossStart, y: gapStart, w: crossEnd - crossStart, h: gapLen }
+      out.push({ top: top.r, bot: bot.r, stacked, gapStart, gapLen, crossStart, crossEnd, box })
+    }
+  }
+  return out
+}
+
+export function aisleColumnBlocks({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, pickBothSides = false }) {
+  const travelPx = (profile.travelFt ?? 8) * gridSize
+  const aisleBlocks = []
+  const redMarks = []
+  for (const g of rowGaps(racks)) {
+    {
+      const top = { r: g.top }, bot = { r: g.bot }, stacked = g.stacked
+      const { gapStart, gapLen, crossStart, crossEnd } = g, aisleBox = g.box
       columns.forEach((col, ci) => {
         if (!overlaps(col, aisleBox)) return
         // Widest clear pass on either side of the column within the aisle,
@@ -416,7 +461,7 @@ export function aisleColumnBlocks({ racks = [], columns = [], profile = MHE_PROF
         const farClear  = (gapStart + gapLen) - colFar
         const clearPx   = Math.max(nearClear, farClear)
         const clearSide = nearClear >= farClear ? 'top' : 'bot'   // which row the column is clear TOWARD
-        const level    = clearPx < travelPx ? 1 : (clearPx < aislePx ? 2 : 3)
+        const level    = aisleLevel(clearPx, profile, gridSize)
         const blocked  = level === 1 || (level === 2 && pickBothSides)
         aisleBlocks.push({
           betweenRows: [top.r.id, bot.r.id], columnIndex: ci,

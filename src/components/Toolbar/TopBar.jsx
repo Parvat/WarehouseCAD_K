@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 /* Grid3X3 / Ruler / Magnet left with the icon toggles they labelled — those
    three are switches in the settings menu now, named in words. */
 import { Scissors, Copy, Clipboard, Undo2, Redo2, ZoomIn, ZoomOut,
-         Save, FolderOpen, FilePlus, FileDown, MoreHorizontal, SlidersHorizontal } from 'lucide-react'
+         Save, FolderOpen, FilePlus, FileDown, MoreHorizontal, SlidersHorizontal, ClipboardCheck } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { UNITS } from '../../constants'
@@ -11,6 +11,8 @@ import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../../utils/pasteAt'
 import { useLabelPrefs } from '../../canvas2/labelPrefs'
+import { useLayoutCheck, runLayoutCheck, checkLabel, exportWithCheck } from '../../utils/layoutCheck'
+import { ExportCheckDialog } from '../RightPanel/LayoutCheckPanel'
 import { useCopyPrompt } from '../../utils/copyPrompt'
 import { LABEL_SIZES, LABEL_SIZE_NAMES } from '../../render/labelSize'
 
@@ -173,6 +175,25 @@ function doZoom(factor) {
   s.setViewport(nz, cx - (cx - s.panX) * (nz / s.zoom), cy - (cy - s.panY) * (nz / s.zoom))
 }
 
+/* "Check layout · 3 errors": runs the check again every press. */
+function CheckLayoutButton() {
+  const result = useLayoutCheck(s => s.result)
+  const errors = result ? result.errors.length : 0
+  const label = checkLabel(result)
+  return (
+    <button type="button" aria-label={label} title="List every problem in the layout — nothing is changed"
+      onClick={() => runLayoutCheck(useCanvasStore)}
+      style={{
+        display:'flex', alignItems:'center', gap:7, height:34, padding:'0 12px', borderRadius:8, cursor:'pointer',
+        border:`1px solid ${C.border}`, background:C.bg, color: errors ? C.danger : C.text,
+        fontFamily:'inherit', fontSize:12.5, fontWeight:600, whiteSpace:'nowrap',
+      }}>
+      <ClipboardCheck size={14} strokeWidth={1.7} absoluteStrokeWidth/>
+      {label}
+    </button>
+  )
+}
+
 export function TopBar() {
   const alwaysCopy = useCopyPrompt(s => s.alwaysCopy)
   const setAlwaysCopy = useCopyPrompt(s => s.setAlwaysCopy)
@@ -260,8 +281,12 @@ export function TopBar() {
         <IBtn icon={Redo2} label="Redo" onClick={redo} title="Redo (Ctrl+Y)" />
       </div>
 
-      {/* Export — the one primary action */}
-      <button onClick={exportAsPDF} title="Export PDF"
+      {/* Check layout: every problem listed in the right panel (utils/layoutCheck.js); the count shows here */}
+      <CheckLayoutButton />
+
+      {/* Export — the one primary action; with errors in the layout it asks first, never blocks */}
+      <ExportCheckDialog onExport={exportAsPDF} />
+      <button onClick={() => exportWithCheck(useCanvasStore, exportAsPDF)} title="Export PDF"
         style={{
           display:'flex', alignItems:'center', gap:7,
           height:34, padding:'0 15px', borderRadius:8, border:'none', cursor:'pointer',
