@@ -263,6 +263,10 @@ export function addSoftWarnings(plan, after, rotated, gridSize = 40, profile = M
 /** Where the copies would land, for the hover preview: [{ x, y, w, h, gone }]
  *  in world px — each copied rack's footprint after the copy, or (gone) the
  *  footprint of a rack the copy would delete. Changes nothing. */
+/** The hover preview's React key for rect `i`: every added copy carries the
+ *  same placeholder id while previewing, so the position keeps them apart. */
+export const previewKey = (r, i) => (r.gone ? 'd' : 'c') + i + ':' + r.id
+
 export function copyPreviewRects(objects, plan) {
   if (!plan) return []
   const world = applyPlan(objects, plan)

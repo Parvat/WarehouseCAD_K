@@ -27,8 +27,15 @@ const rotatedOf = (o) => rackFootprint(o).rotated
 const runOf = (o, rot) => { const f = rackFootprint(o); return rot ? [f.y, f.y + f.h] : [f.x, f.x + f.w] }
 const crossOf = (o, rot) => { const f = rackFootprint(o); return rot ? [f.x, f.x + f.w] : [f.y, f.y + f.h] }
 const span = (list, fn, rot) => { let lo = Infinity, hi = -Infinity; for (const o of list) { const [a, b] = fn(o, rot); lo = Math.min(lo, a); hi = Math.max(hi, b) } return [lo, hi] }
-const GEO = { width: 0, height: 0, rotation: 0, uprightWidth: 3, flueSpaceIn: 9 }
-const sameShape = (a, b) => Object.keys(GEO).every(k => Math.abs((a[k] ?? GEO[k]) - (b[k] ?? GEO[k])) < EPS) && a.beams.length === b.beams.length && a.beams.every((v, i) => v === b.beams[i])
+const GEO = { width: 0, rotation: 0, uprightWidth: 3 }
+/* A double row's flue widens and narrows by itself as it passes a column
+   (live flue: flueSpaceIn and the depth follow, flueBaseIn stays). That is
+   not a change the user made, so the shape is compared at the BASE flue. */
+const baseFlue = (o) => o.flueBaseIn ?? o.flueSpaceIn ?? 9
+const baseDepth = (o, gridSize) => (o.height || 0) - ((o.flueSpaceIn ?? baseFlue(o)) - baseFlue(o)) * (gridSize / 12)
+const sameShape = (a, b, gridSize = 40) => Object.keys(GEO).every(k => Math.abs((a[k] ?? GEO[k]) - (b[k] ?? GEO[k])) < EPS)
+  && Math.abs(baseDepth(a, gridSize) - baseDepth(b, gridSize)) < EPS && Math.abs(baseFlue(a) - baseFlue(b)) < EPS
+  && a.beams.length === b.beams.length && a.beams.every((v, i) => v === b.beams[i])
 
 /** A section as the user reads it: "3" for generated section 3, and "1" —
  *  never "run 1" — for the first run of racks placed by hand. */
@@ -129,7 +136,7 @@ export function pendingChanges(objects, fp, gridSize = 40) {
       const shift = cs.length === bs.length && b.length === c.length && bs.every((x, i) => x[2] === cs[i][2]) ? cs[0][0] - bs[0][0] : null
       const along = shift != null && bs.every((x, i) => Math.abs(cs[i][0] - x[0] - shift) < EPS && Math.abs(cs[i][1] - x[1] - shift) < EPS)
       stays.push({ rowIndex: b[0].rowIndex ?? null, text: along ? `${name(b)}: moved ${fmtLen(shift, gridSize)} along — stays in section ${sectionLabel(P.section)}` : `${name(b)}: bays changed — stays in section ${sectionLabel(P.section)}`, ...(along ? {} : { bays: true, ids: c.map(o => o.id) }) })
-    } else if (b.length === c.length && !b.every(x => { const y = c.find(q => q.id === x.id); return y && sameShape(x, y) })) {
+    } else if (b.length === c.length && !b.every(x => { const y = c.find(q => q.id === x.id); return y && sameShape(x, y, gridSize) })) {
       stays.push({ rowIndex: b[0].rowIndex ?? null, text: `${name(b)}: changed (depth, flue or upright) — stays in section ${sectionLabel(P.section)}` })
     }
     rows.push({ key: k, base: b, cur: c, d: moved && numbered ? d : 0, numbered })
@@ -138,6 +145,30 @@ export function pendingChanges(objects, fp, gridSize = 40) {
   const count = copy.length + stays.length
   if (!count) return { section: P.section, copy, stays, count, rows, fresh }
   return { section: P.section, copy, stays, count, rows, fresh }
+}
+
+/** The pending set after "Match bays": the section's racks as matched —
+ *  their bays and their start along the run — but each where the set had it
+ *  ACROSS, with its own depth. So the bay changes (and moves along) Match bays
+ *  resolved stop counting, while a row moved across still counts, and its
+ *  copy still carries exactly the net delta across. */
+export function rebaseAfterMatch(P, objects, gridSize = 40) {   // eslint-disable-line no-unused-vars
+  const byId = new Map(objects.map(o => [o.id, o]))
+  const racks = P.racks.map(b => {
+    const c = byId.get(b.id)
+    if (!c || !Array.isArray(c.beams)) return b
+    const r = { ...JSON.parse(JSON.stringify(b)), beams: [...c.beams], width: c.width }
+    if (rotatedOf(b)) {
+      // along = y: the footprint's start along as matched; across = x: the base centre
+      const along0 = c.y + c.height / 2 - c.width / 2
+      r.y = along0 - b.height / 2 + c.width / 2
+      r.x = b.x + b.width / 2 - c.width / 2
+    } else {
+      r.x = c.x                                             // along = x, as matched; y (across) is the base's
+    }
+    return r
+  })
+  return { ...P, racks }
 }
 
 /** The copy of building `fpId`'s pending set to every other section: a

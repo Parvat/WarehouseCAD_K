@@ -1,5 +1,5 @@
 import { usePlacement } from '../utils/placement'
-import { useCopyPrompt, copyPending, dontCopy, questionText, matchReport, showAfterAction } from '../utils/copyPrompt'
+import { useCopyPrompt, copyPending, dontCopy, questionText, matchReport, showAfterAction, beginMatch } from '../utils/copyPrompt'
 import { sectionLabel } from '../utils/sectionCopy'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { applySectionSync, syncWarningText } from '../components/RightPanel/panels/RackRowPanelCore'
@@ -53,6 +53,7 @@ function Lines({ skipped = [], warnings = [] }) {
 export const matchText = (p) => `Match bays in section ${sectionLabel(p.section)} (from row ${p.matchFrom.rowIndex ?? '?'})`
 export function matchBays(p) {
   if (!p || !p.matchFrom) return null
+  beginMatch()   // a finished action: its rows don't join the set (utils/copyPrompt.js)
   const r = applySectionSync(useCanvasStore.getState, p.matchFrom.id)
   showAfterAction(matchReport(r, p.section, p.matchFrom.rowIndex, syncWarningText(r.warnings)))
   return r
@@ -96,13 +97,15 @@ function Body() {
       <div key="bar" role="status" aria-label="Pending changes" title={tip} style={box}>
         <div style={row}>
           <span title={tip}>{barText(pending)}</span>
-          <button style={pending.copyCount ? btn : { ...btn2, cursor: 'not-allowed', color: 'var(--text3, #6B7280)' }} aria-label="Copy to other sections"
-            disabled={!pending.copyCount} title={pending.copyCount ? tip : `${tip}\nNothing here is copied to other sections.`}
-            onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-            onFocus={() => setHover(true)} onBlur={() => setHover(false)}
-            onClick={() => copyPending(pending.fpId)}>
-            Copy to other sections
-          </button>
+          {/* only when copying would really do something; a bar with just a bay change offers Match bays */}
+          {pending.copyable && (
+            <button style={btn} aria-label="Copy to other sections" title={tip}
+              onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+              onFocus={() => setHover(true)} onBlur={() => setHover(false)}
+              onClick={() => copyPending(pending.fpId)}>
+              Copy to other sections
+            </button>
+          )}
           {pending.matchFrom && (
             <button style={btn2} aria-label={matchText(pending)}
               title="Every other row in this section copies this row's beam lengths and start point, so uprights line up across the aisles."

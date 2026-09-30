@@ -34,10 +34,14 @@ const COL_GRID_SET = new Set(['column_grid'])
  *  (guides can still be shown — CanvasArea's own THRESH for drawing a line
  *  is wider than SNAP_DIST/WALL_SNAP for actually moving the object). */
 export function computeSmartGuides(selectedIds, objects, gridSize, zoom, dx, dy) {
-  const THRESH      = 6  / zoom
-  const SNAP_DIST    = 8  / zoom
-  const WALL_THRESH  = 30 / zoom
-  const WALL_SNAP    = 32 / zoom
+  /* Every snap reaches the smaller of 12 px on screen or 1 ft of drawing:
+     the wall / column reach used to be 30 px — 5 ft at 15 % — so a drag
+     jumped feet at a time. A guide line shows no further out than it snaps. */
+  const R            = Math.min(12 / zoom, gridSize || 40)
+  const THRESH       = Math.min(6 / zoom, R)
+  const SNAP_DIST    = R
+  const WALL_THRESH  = R
+  const WALL_SNAP    = R
 
   const selObjs  = objects.filter(o => selectedIds.includes(o.id))
   /* Only objects that are NOT moving may be snap targets. The drag moves

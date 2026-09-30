@@ -5,7 +5,7 @@ import { sectionRows, planSectionSync, syncWarnings, splitRowIds } from '../../.
 import { rowLines } from '../../../utils/syncSections'
 import { nanoid } from 'nanoid'
 import { rebuildAisles } from '../../../utils/aisleRebuild'
-import { matchReport, showAfterAction } from '../../../utils/copyPrompt'
+import { matchReport, showAfterAction, beginMatch } from '../../../utils/copyPrompt'
 import { sectionOf } from '../../../utils/sectionCopy'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
@@ -250,8 +250,14 @@ export function MultiBayPanel() {
    that now overlap a rack, pass the wall, or crowd a cross-aisle). */
 export function applySectionSync(getState, sourceId) {
   const st = getState()
-  const updates = planSectionSync(st.objects, sourceId, st.gridSize || 40)
-  const warnings = syncWarnings(st.objects, sourceId, updates, st.gridSize || 40)
+  const planned = planSectionSync(st.objects, sourceId, st.gridSize || 40)
+  // only rows that really change: a row that already matches is not "matched"
+  const updates = new Map([...planned].filter(([id, u]) => {
+    const o = st.objects.find(q => q.id === id)
+    return o && Object.keys(u).some(k => JSON.stringify(o[k]) !== JSON.stringify(u[k]))
+  }))
+  // warnings over every row the match covers: one already matching can still be in the way
+  const warnings = syncWarnings(st.objects, sourceId, planned, st.gridSize || 40)
   if (updates.size) {
     // new lengths can change who faces whom: re-pair the aisles before the one commit
     const moved = st.objects.map(o => (updates.has(o.id) ? { ...o, ...updates.get(o.id) } : o))
@@ -277,6 +283,7 @@ export function syncWarningText(warnings) {
  *  rows in section 3 from row 5", any warnings — utils/copyPrompt.js). */
 export function runMatchBays(obj) {
   const st = useCanvasStore.getState(), section = sectionOf(st.objects, obj)
+  beginMatch()   // a finished action: its rows don't join the pending set
   const r = applySectionSync(useCanvasStore.getState, obj.id)
   showAfterAction(matchReport(r, section, obj.rowIndex, syncWarningText(r.warnings)))
   return r

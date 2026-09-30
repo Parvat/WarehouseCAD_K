@@ -23,6 +23,7 @@ import { rackFootprint, MHE_PROFILES } from '../generate/columnCheck'
 import { layoutColumns } from '../generate/usableCapacity'
 import { isRow, generatedCrossAisleGaps, hardProblem, softProblems } from './copyChange'
 import { sectionLabel } from './sectionCopy'
+import { useCopyPrompt } from './copyPrompt'
 import { getColumnCheckView } from '../generate/columnCheckView'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -82,7 +83,7 @@ export function snapPlacement(items, objects, world, gridSize = 40, zoom = 1, pr
     crossC.push({ at: (e0 + e1) / 2 - cLen / 2, why: 'column' }, { at: e1, why: 'column' }, { at: e0 - cLen, why: 'column' })
     runC.push({ at: q1, why: 'column' }, { at: q0 - rLen, why: 'column' })
   }
-  const snapR = SNAP_PX / (zoom || 1)
+  const snapR = Math.min(SNAP_PX / (zoom || 1), gridSize)   // 12 px on screen, never more than 1 ft
   const pick = (cands, raw) => cands.map(q => ({ ...q, dist: Math.abs(q.at - raw) })).filter(q => q.dist <= snapR).sort((a, b) => a.dist - b.dist)[0] || null
   const pr = pick(runC, r0 + dRun), pc = pick(crossC, c0 + dCross)
   const nRun = pr ? pr.at - r0 : dRun, nCross = pc ? pc.at - c0 : dCross
@@ -126,6 +127,7 @@ export function checkPlacement(placed, objects, gridSize = 40, profile = MHE_PRO
 /** Start placing `items` (new objects, fresh ids) at the world point `at`. */
 export function startPlacement(store, items, { groups = [], at = null } = {}) {
   if (!items || !items.length) return false
+  useCopyPrompt.getState().dismissReport()   // a shown result is over once the next thing starts
   const st = store.getState()
   const c = centreOf(items)
   const p = at || c
@@ -153,8 +155,8 @@ export function commitPlacement(store, guard = null) {
   if (!a || a.blocked) return false
   const st = store.getState()
   const placed = placedItems(a.items, st.objects, a.dx, a.dy)
-  // a row placed in another section while changes are pending there: ask first
-  if (guard && !guard(placed)) return false
+  // a row placed in another section while changes are pending there: ask first — then place it
+  if (guard && !guard(placed, { resume: () => commitPlacement(store, guard) })) return false
   // only the new objects look selected: no other rack keeps a clicked bay
   const others = st.objects.map(o => (o.activeBayIdx != null || o.activeTowerIdx != null ? { ...o, activeBayIdx: null, ...(o.activeTowerIdx != null ? { activeTowerIdx: null } : {}) } : o))
   usePlacement.setState({ active: null })
@@ -167,6 +169,7 @@ export function commitPlacement(store, guard = null) {
 export function cancelPlacement() {
   if (!usePlacement.getState().active) return false
   usePlacement.setState({ active: null })
+  useCopyPrompt.getState().dismissReport()
   return true
 }
 

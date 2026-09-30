@@ -25,6 +25,20 @@ import { expandColumnGrid } from '../generate/columnCheck'
  *  since the stored height only pairs with the live flue. See
  *  useCanvasInteraction.js's beginDrag for the two bugs this exists to
  *  prevent. */
+/** A live-flue drag's geometry: the rack's CENTRE follows the pointer
+ *  (origin + the rack's size at drag start + the delta), and the rack is
+ *  re-centred there at its new depth. `size` is the rack as it was when the
+ *  drag began — its possibly widened depth, not the base one: a centre from
+ *  the base depth sat (current − base) / 2 off, which moved a turned rack
+ *  along its run, and any rack across, the moment its flue changed back. */
+export function flueDragCentre(origin, size, dx, dy) {
+  return { x: origin.x + size.w / 2 + dx, y: origin.y + size.h / 2 + dy }
+}
+export function flueDragPlacement(origin, size, dx, dy, targetHeight) {
+  const c = flueDragCentre(origin, size, dx, dy)
+  return { x: c.x - size.w / 2, y: c.y - targetHeight / 2 }
+}
+
 export function resolveFlueBase(grabbed, gridSize) {
   const liveFlueHPx = ((grabbed.flueSpaceIn || 9) / 12) * gridSize
   const rowHPx = Math.max(0, (grabbed.height - liveFlueHPx) / 2)

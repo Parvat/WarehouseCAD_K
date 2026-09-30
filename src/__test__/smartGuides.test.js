@@ -88,8 +88,9 @@ describe('smartGuides — column snapping: directional faces, plus centre-to-cen
     const rack = { id: 'r1', type: 'rack_row', x: 700, y: 5000, width: 200, height: 80 }
     const objects = [colGrid, rack]
     const dxExact = FACE_NEAR - 200 - 700
-    const justInside = computeSmartGuides(['r1'], objects, GS, 1, dxExact - 25, 0)
-    const justOutside = computeSmartGuides(['r1'], objects, GS, 1, dxExact - 35, 0)
+    // the reach is the smaller of 12 px on screen and 1 ft: 12 px at 100 %
+    const justInside = computeSmartGuides(['r1'], objects, GS, 1, dxExact - 11, 0)
+    const justOutside = computeSmartGuides(['r1'], objects, GS, 1, dxExact - 13, 0)
     expect(justInside.snapDx).toBe(dxExact)
     expect(justOutside.snapDx).toBeNull()
     expect(justOutside.guides.some(g => g.axis === 'x')).toBe(false)

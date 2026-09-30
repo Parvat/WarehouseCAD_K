@@ -136,8 +136,9 @@ describe('Z2 — sync safety', () => {
         }
         if (how === 'all') expect(res.copies.length).toBe(sections.length - 1)   // row 5 in every other section, bays left alone
         if (how === 'section' && from === 1) expect(res.split.length).toBe(from === 1 ? 5 : 0)   // the other 2 chopped rows' 4 pieces + the source row's other piece
-        store.getState().undo()
-        expect(strip(objs())).toEqual(before)
+        // section 1 already matches its own row: Match bays changes nothing, so there is no undo step
+        if (how === 'section' && from === 0) { expect(res.synced).toBe(0); expect(strip(objs())).toEqual(before) }
+        else { store.getState().undo(); expect(strip(objs())).toEqual(before) }
       })
     }
   }

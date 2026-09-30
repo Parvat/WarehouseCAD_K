@@ -284,6 +284,70 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
+### EX — Fixes from the exploratory check of section copy · `EX_exploreFixes.test.js` (14 tests)
+1. **Results clear on the next action** — undo, redo, a placement (paste,
+   Ctrl+D), Esc (`dismissReport` in the watcher's undo / redo branch,
+   `startPlacement` / `cancelPlacement` and the Esc / Ctrl+D keys).
+2. **Match bays is a finished action.** Marked with `beginMatch()`; the
+   watcher then adds nothing to the pending set and rebases it
+   (`rebaseAfterMatch`): each row takes its matched bays and start along,
+   keeps its place across. So the bay changes it resolved stop counting, a
+   move across still counts (and copies its exact delta), and the bar's
+   Match source stays the row the user changed.
+3. **Vertical creep — the cause:** a live-flue drag (a double row whose flue
+   a column had widened, 12" instead of 9") worked out the rack's centre as
+   origin + BASE depth / 2, but the origin was the widened rack's. When the
+   flue went back to 9", the centre was off by (current − base) / 2 = 1.5"
+   — ALONG the run for a turned rack, across for an unturned one. The drag
+   now keeps the rack's size at drag start (`flueDragCentre` /
+   `flueDragPlacement` in liveFlue.js). An automatic flue change is no
+   longer a "change" (the shape is compared at the base flue). The copies
+   always took the source's net centre delta; the source's aisle face had
+   differed by half the flue change.
+4. **Preview keys** are unique (`previewKey`: position + id — every added
+   copy shares one placeholder id while previewing).
+5. **The question's edit is finished after the answer:** `guardEdit(racks,
+   { resume, drag })`. Delete re-runs itself, a placement commits, a panel
+   change (taken back when it landed) is re-applied field by field (so a
+   copy to the same rack survives); a drag shows "Drag cancelled — drag
+   again". A resume runs only for the question actually answered.
+6. **Snap reach** = min(12 px on screen, 1 ft) for every snap: smart guides
+   (rack, wall and column — the wall / column reach was 30 px, 5 ft at 15 %)
+   and placement.
+- **Minor:** "Copied N rows" after every copy; counts are NET (from the
+  difference, not per action); Match bays counts only rows that really
+  change (and writes no undo step when nothing does); the bar offers Match
+  bays whenever a bay change is pending, with no Copy button when nothing
+  would be copied. Also: the copy watcher's in-place history write now
+  keeps the layers the store's snapshots carry.
+
+| Test (1080×410; ×2 h/v; generated and manual) | Asserts |
+|---|---|
+| `EX-results` | "Copied 7 rows" (8 sections h); undo, redo, a Ctrl+D placement clear it; Esc and Ctrl+D wired to `dismissReport`; manual: a Match result clears on undo |
+| `EX-match` | a move across + a bay change: bar 2 changes, Match from row 5; after Match bays the log is unchanged, the bar is 1 change (the move), no Match button; Copy copies the move exactly; a second bay change is offered from ITS row |
+| `EX-flue` | a rack widened to a 12" flue dragged 48" across with its flue back to 9": its start along unchanged, centre exactly +48"; in the section one net change "moved 4' across"; every copy's centre exactly +48" |
+| `EX-preview` | with a delete and an added row pending, the preview's ids collide but `previewKey` never does; the painter uses it |
+| `EX-resume` | a placement in another section: asked, Copy, placed (and the "Copied" result outlives it); a panel bay change: taken back, asked, Don't copy, re-applied, a new set there; a Delete's resume runs once; a drag: "Drag cancelled — drag again"; a question cleared unanswered never runs later |
+| `EX-snap` | at 15 % / 50 % / 100 % a column face 0.8 × the reach away catches, 1.2 × doesn't (reach 1 ft, 24 px, 12 px); at 15 % a face 1.5 ft away no longer catches; placement never pulls a row more than 1 ft at 15 % |
+| `EX-minor` | the same row moved twice: 1 change, 1 line; the question says "1 change"; "Copied N rows"; manual: Match bays with one rack off → "Matched bays on 1 row in section 1"; a bay change alone: Match bays, no Copy button |
+
+**Re-run in the app (the exploratory sequences), horizontal and vertical, 30 steps each, no issue:**
+- Row 5 of section 3 dragged 4 ft across at 15 %, 50 %, 100 %: no along
+  creep (vertical: exactly 48"; horizontal 46.5" after snapping); every
+  copy's centre off the source's delta by 0; "Copied 7 rows" (2 v).
+- The result cleared on undo, redo, Esc and Ctrl+D (after Copy and after
+  panel Match bays).
+- A move across + a bay change → bar Match bays: "Section 3: 1 change",
+  no Match button, only section 3 changed.
+- Delete + paste, hover Copy: 14 (4 v) preview outlines for 14 (4) copies,
+  no console warning.
+- Delete in section 1 → question → Copy: copied AND row 8 deleted. A drag in
+  section 2 → Don't copy: "Drag cancelled — drag again", the row unmoved. A
+  panel bay change in section 2 → Don't copy: re-applied, "Section 2: 1
+  change … Match bays (from row 7)".
+- Manual: a rack off by 3 ft along, Match bays → "Matched bays on 1 row in
+  section 1"; undo clears it; a delete shows nothing. No console errors.
+
 ### CF — Section-copy fixes from manual use · `CF_copyFixes.test.js` (12 tests)
 1. **Bar and question only when a copy would do something.** The bar, its
    buttons and "Copy your changes?" appear only when the building has at
@@ -316,7 +380,7 @@ All other cases: 0.
 | `CF-select-all` | generated and manual, with a change pending: select all + Delete is not stopped, no question; everything goes; no bar after |
 | `CF-question` | "Copy your 2 changes from section 1 …" for a hand run; Copy (with and without a building) and Don't copy close a question with nothing to copy, without throwing; on a generated layout Copy copies (row moved in section T) and closes |
 | `CF-cross-aisle` | generated: a one-bay row in the cross-aisle between sections 1 and 2 — not blocked, `crossAisle`, the warning in the note, the orange outline; placed. Overlap and outside still block. Manual: the gap between runs gives no cross-aisle warning |
-| `CF-match` | generated: a bay change alone shows no bar; the panel's Match bays shows "Matched bays on N rows in section S from row K" after its action settles; the next action clears it; the panel button calls `runMatchBays`. Manual: "… in section 1" (no row number); a move spanning two runs gives no notice |
+| `CF-match` | generated: a bay change alone shows the bar with Match bays and no Copy button (EX); the panel's Match bays shows "Matched bays on N rows in section S from row K" after its action settles; the next action clears it; the panel button calls `runMatchBays`. Manual: "… in section 1" (no row number); a move spanning two runs gives no notice |
 
 **Checked in the app, horizontal and vertical:**
 - **Manual** (a hand-drawn 400 × 400 building, 8 rows in two runs): Ctrl+C /
@@ -488,8 +552,8 @@ layout clears it.
 | Test (1080×410, "section 3" and "section 5" — vertical has 3 sections, so section 1; ×2 h/v) | Asserts |
 |---|---|
 | `SC-layout` | the orientation is right, and rows 5, 7 and 9 exist in every section |
-| `SC-stays` | a beam change and a move along the same row in section 3: no question and no lock; nothing would be copied, so no bar and no button (CF rule 1); copying changes nothing elsewhere |
-| `SC-match` | a move across alone: no Match bays button. A beam change in row 7 alone: no bar. Then a move across (row 9) and a beam change in row 5: the bar reads "Match bays in section 3 (from row 5)" (the last one). Clicking gives every row of section 3 row 5's bays in one history entry, with the report "Matched bays on N rows in section 3 from row 5"; one undo restores |
+| `SC-stays` | a beam change and a move along the same row in section 3: no question and no lock; nothing would be copied, so no Copy button — the bar shows 1 net change and Match bays (EX); copying changes nothing elsewhere |
+| `SC-match` | a move across alone: no Match bays button. A beam change in row 7 alone: Match bays only, no Copy. Then a move across (row 9) and a beam change in row 5: the bar reads "Match bays in section 3 (from row 5)" (the last one). Clicking gives every row of section 3 row 5's bays in one history entry, with the report "Matched bays on N rows in section 3 from row 5"; one undo restores |
 | `SC-stays-mixed` | an end bay removed at a cross-aisle, a row moved along and a row moved across, all in section 3: the bar reads "Section 3: 3 changes (1 will be copied)"; only the move across is copied; the other sections keep their bays and their along position |
 | `SC-question` | rows moved across (1′, −6″) and one deleted in section 3, then a drag started in section 5. The question "Copy your 3 changes from section 3 …" appears and nothing happens yet. Copy: every other section gets the same net deltas and loses row 9; section 3's own rows are untouched; the set clears; the drag may now go ahead and starts a set in section 5 |
 | `SC-dont` | the same, Don't copy: the other sections are unchanged, the set clears, and a change in section 5 starts its own set |
@@ -1663,6 +1727,15 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LY | **Locking leaves the object selected** | 2: LY-select h/v | ✓ |
 | LY | **Layers not saved with the layout** | 2: LY-save h/v | ✓ |
 | HF | **Handle sizes back to 8 / 14 / 16** (7569d59's own) | 2: HF-handles h/v | ✓ |
+| EX | **Undo / redo leave the result up** | 2: EX-results h/v | ✓ |
+| EX | **Match bays treated as pending work again** | 4: EX-match, CF-match (h/v) | ✓ |
+| EX | **Live-flue drag centred on the base depth again** (the vertical creep) | 2: EX-flue h/v | ✓ |
+| EX | **Preview keyed by id only** | 2: EX-preview h/v | ✓ |
+| EX | **The question's edit not finished after the answer** | 2: EX-resume h/v | ✓ |
+| EX | **Snap reach back to 30 px, no 1 ft cap** | 2: EX-snap h/v | ✓ |
+| EX | **No confirmation without warnings** | 2: EX-results (h), EX-minor (v) | ✓ |
+| EX | **Counts per action again (not net)** | 6: EX-match, EX-minor, SC-stays (h/v) | ✓ |
+| EX | **Match bays counts rows that already matched** | 2: EX-minor h/v | ✓ |
 | CF | **Bar shown whether or not anything would be copied** | 8: CF-manual, CF-match, SC-stays, SC-match (h/v) | ✓ |
 | CF | **Select-all Delete asks again** (multi-section edits not skipped) | 2: CF-select-all h/v | ✓ |
 | CF | **A cross-aisle blocks placement again** | 4: CF-cross-aisle, SC-place (h/v) | ✓ |
@@ -1781,8 +1854,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,876 tests, 1,876 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,273 tests, 2,273 passing.**
+- **Plan suite: 1,890 tests, 1,890 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,287 tests, 2,287 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

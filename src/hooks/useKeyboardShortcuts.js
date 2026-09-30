@@ -4,7 +4,7 @@ import { TOOLS } from '../constants'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../utils/pasteAt'
 import { cancelPlacement } from '../utils/placement'
-import { guardEdit } from '../utils/copyPrompt'
+import { guardEdit, useCopyPrompt } from '../utils/copyPrompt'
 import { pickableIn } from '../utils/layers'
 
 export function useKeyboardShortcuts() {
@@ -16,6 +16,7 @@ export function useKeyboardShortcuts() {
 
       // ── Escape — deselect, cancel draw ──────────────────────────────────
       if (e.key === 'Escape') {
+        useCopyPrompt.getState().dismissReport()   // a shown result (Copied…, Matched bays…) is over
         // a row being placed (paste, duplicate, left panel): Esc cancels it, nothing else
         if (cancelPlacement()) return
         useCanvasStore.getState().clearSelection()
@@ -29,7 +30,8 @@ export function useKeyboardShortcuts() {
         const s = useCanvasStore.getState()
         const { selectedIds, objects, activeBaySelection } = s
         // rows in another section while changes are pending there: ask first (utils/copyPrompt.js)
-        if (!guardEdit([...selectedIds, ...(activeBaySelection || []).map(b => b.objId)])) return
+        // …and once answered, the Delete goes ahead
+        if (!guardEdit([...selectedIds, ...(activeBaySelection || []).map(b => b.objId)], { resume: () => handler({ key: e.key, preventDefault() {}, ctrlKey: false, metaKey: false }) })) return
         /* A cross-row bay marquee (activeBaySelection, canvas2's own
            marquee-mouseup) takes priority over the single-object
            activeBayIdx check below — the same action the multi-bay panel's
@@ -147,6 +149,7 @@ export function useKeyboardShortcuts() {
           }
           break
         case 'd': {
+          useCopyPrompt.getState().dismissReport()
           e.preventDefault()
           // Duplicate: copy, then paste 20 px down-right; the copy is the selection (utils/pasteAt.js)
           useCanvasStore.getState().copySelected()

@@ -225,7 +225,7 @@ describe.each(['horizontal', 'vertical'])('CF — %s', (orientation) => {
   it('CF-match: "Match bays in this section" from the right panel shows its result in the bar until the next action — "Matched bays on N rows in section S from row K"; on a manual layout "section 1"', async () => {
     load(gen)
     await act(() => store.getState().commitObjectUpdate(row(K).id, Panel.changeBayUpdate(row(K), 2, 108, GS)))
-    expect(bar()).toBe(null)                                                  // a bay change alone: nothing to copy
+    expect(bar()).toMatchObject({ copyable: false, matchFrom: { rowIndex: K } })   // a bay change alone: Match bays, no Copy
     const r = Panel.runMatchBays(row(K)); await flushCopyWatcher()
     expect(r.synced).toBeGreaterThan(3)
     expect(useCopyPrompt.getState().report.text).toBe(`Matched bays on ${r.synced} rows in section ${S} from row ${K}`)

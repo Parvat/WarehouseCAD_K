@@ -103,19 +103,20 @@ describe.each(['horizontal', 'vertical'])('SC — %s', (orientation) => {
     expect(rackFootprint(row(K)).rotated).toBe(rot)
   })
 
-  it('SC-stays: a beam change and a move ALONG of the same row in section 3 -> no lock, and since nothing would be copied, no bar and no button at all; copying sends nothing to the other sections', async () => {
+  it('SC-stays: a beam change and a move ALONG of the same row in section 3 -> no lock; nothing would be copied, so the bar has no Copy button — only Match bays (a bay change is pending); it counts the row once (net); copying sends nothing to the other sections', async () => {
     load(base)
     const was = racksSig(objs().filter(o => o.genSection !== S))
     await act(() => store.getState().commitObjectUpdate(row(K).id, Panel.changeBayUpdate(row(K), 2, 108, GS)))
     await act(() => store.getState().commitObjectUpdate(row(K).id, A.move(row(K), 2 * GS, 0)))
     expect(question()).toBe(null)
-    expect(bar()).toBe(null)                                                      // nothing would be copied: no bar
-    expect(renderNote()).not.toMatch(/Pending changes|Copy to other sections/)
+    expect(bar()).toMatchObject({ section: S, count: 1, copyCount: 0, copyable: false, matchFrom: { id: row(K).id, rowIndex: K } })
+    expect(bar().lines).toEqual([`Row ${K}: bays changed — stays in section ${S}`])   // one row, one net change
+    expect(renderNote()).toContain(`Match bays in section ${S} (from row ${K})`)
+    expect(renderNote()).not.toMatch(/Copy to other sections/)
     // no lock: another row of the same section can be edited straight away
     expect(guardEdit([row(K + 1).id])).toBe(true)
     copyPending(); await flushCopyWatcher()
     expect(racksSig(objs().filter(o => o.genSection !== S))).toBe(was)            // nothing copied
-    expect(bar()).toBe(null)
   })
 
   it('SC-match: with something to copy pending (a move across), a bay change in section 3 puts "Match bays in section 3 (from row 5)" in the bar, from the row LAST changed; clicking gives every row of section 3 row 5\'s bays, as one undo step; no bay change, no button', async () => {
@@ -125,7 +126,7 @@ describe.each(['horizontal', 'vertical'])('SC — %s', (orientation) => {
     expect(renderNote()).not.toContain('Match bays in section')
     load(base)
     await act(() => store.getState().commitObjectUpdate(row(K + 2).id, Panel.changeBayUpdate(row(K + 2), 1, 108, GS)))
-    expect(bar()).toBe(null)                                                      // bays alone: nothing to copy, no bar
+    expect(bar()).toMatchObject({ copyable: false, matchFrom: { rowIndex: K + 2 } })   // bays alone: only Match bays, no Copy
     await act(() => store.getState().commitObjectUpdate(row(K + 4).id, A.move(row(K + 4), 0, GS / 2)))   // something to copy
     await act(() => store.getState().commitObjectUpdate(row(K).id, Panel.changeBayUpdate(row(K), 2, 108, GS)))   // the last one changed
     expect(bar().matchFrom).toEqual({ id: row(K).id, rowIndex: K })
@@ -153,7 +154,7 @@ describe.each(['horizontal', 'vertical'])('SC — %s', (orientation) => {
     await act(() => store.getState().commitObjectUpdate(row(K + 2).id, A.move(row(K + 2), 0, GS)))       // across
     expect(bar()).toMatchObject({ section: S, count: 3, copyCount: 1 })
     expect(renderNote()).toContain(`Section ${S}: 3 changes (1 will be copied)`)
-    expect(bar().lines).toEqual([`Row ${K}: bays changed — stays in section ${S}`, `Row ${K + 1}: moved 2' along — stays in section ${S}`, `Row ${K + 2}: moved 1' across`])
+    expect(bar().lines).toEqual([`Row ${K + 2}: moved 1' across`, `Row ${K}: bays changed — stays in section ${S}`, `Row ${K + 1}: moved 2' along — stays in section ${S}`])
     copyPending(); await flushCopyWatcher()
     for (const s of others) {
       expect(row(K, s).beams.length).toBe(was.get(row(K, s).id).bays)              // no bay removed
@@ -406,7 +407,7 @@ describe('SC — wiring', () => {
     expect(src('src/App.jsx')).toMatch(/installCopyWatcher\(useCanvasStore, nanoid\)/)
     expect(src('src/components/Toolbar/TopBar.jsx')).toMatch(/<Switch on=\{alwaysCopy\} onClick=\{\(\) => setAlwaysCopy\(!alwaysCopy\)\} label="Always copy" \/>/)
     const inter = src('src/canvas2/useCanvasInteraction.js')
-    expect(inter).toMatch(/if \(!guardEdit\(\[\.\.\.new Set\(\[hitId, \.\.\.st\.selectedIds\]\)\]\)\) return/)
+    expect(inter).toMatch(/if \(!guardEdit\(\[\.\.\.new Set\(\[hitId, \.\.\.st\.selectedIds\]\)\], \{ drag: true \}\)\) return/)
     expect(inter).toMatch(/commitPlacement\(useCanvasStore, guardEdit\)/)
     expect(src('src/hooks/useKeyboardShortcuts.js')).toMatch(/if \(!guardEdit\(\[\.\.\.selectedIds/)
     expect(src('src/canvas2/Canvas2.jsx')).toMatch(/<CopyNote \/>/)

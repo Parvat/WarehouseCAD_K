@@ -5,7 +5,7 @@ import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
 import { RackShape } from './shapes'
 import { usePlacement } from '../utils/placement'
 import { useCopyPrompt, pendingPlan } from '../utils/copyPrompt'
-import { copyPreviewRects } from '../utils/copyChange'
+import { copyPreviewRects, previewKey } from '../utils/copyChange'
 
 /* ── "Copy this change" on the canvas ─────────────────────────────────────────
    Three pieces, all pure paint or plain DOM (picking stays geometric):
@@ -47,7 +47,8 @@ export function CopyPreview() {
   const objects = useCanvasStore(s => s.objects)
   const plan = pending && hover ? pendingPlan() : null
   if (!plan) return null
-  const out = copyPreviewRects(objects, plan).map(r => outline(r, r.gone ? BLOCKED : PREVIEW, (r.gone ? 'd' : 'c') + r.id, [6, 4], r.gone ? 'rgba(192,57,43,0.06)' : 'rgba(47,123,216,0.08)'))
+  // keyed by position too (previewKey): every added copy shares one placeholder id
+  const out = copyPreviewRects(objects, plan).map((r, i) => outline(r, r.gone ? BLOCKED : PREVIEW, previewKey(r, i), [6, 4], r.gone ? 'rgba(192,57,43,0.06)' : 'rgba(47,123,216,0.08)'))
   return <Group listening={false}>{out}</Group>
 }
 

@@ -9,7 +9,7 @@ import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from '.
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
-import { computeLiveFlue, resolveFlueBase, flueCommitFields } from './liveFlue'
+import { computeLiveFlue, resolveFlueBase, flueCommitFields, flueDragCentre, flueDragPlacement } from './liveFlue'
 import { usePlacement, movePlacement, commitPlacement } from '../utils/placement'
 import { guardEdit } from '../utils/copyPrompt'
 import { pickableIn, snapTargets } from '../utils/layers'
@@ -205,7 +205,7 @@ export function useCanvasInteraction({
     if (!grabbed) return
     /* a row in another section while changes are pending there: no drag —
        the user is asked about copying them first (utils/copyPrompt.js) */
-    if (!guardEdit([...new Set([hitId, ...st.selectedIds])])) return
+    if (!guardEdit([...new Set([hitId, ...st.selectedIds])], { drag: true })) return   // answered: "Drag cancelled — drag again"
 
     /* The cascade set — the selection plus a floor plan's children — found
        AFTER selectFromHit has settled, so it reflects what actually got
@@ -273,6 +273,12 @@ export function useCanvasInteraction({
       startWorld: world,
       sx: evt.clientX, sy: evt.clientY,   // SCREEN coords, for the drag threshold below
       origin: { x: grabbed.x, y: grabbed.y },   // the grabbed object, which snap follows
+      /* its size as it is NOW — a live-flue rack's current (possibly widened)
+         depth, not its base one: the centre is origin + size/2, and a centre
+         worked out from the base depth sat (current − base)/2 off, which
+         moved the rack ALONG its run (a turned rack) or across by that much
+         the moment its flue changed back */
+      size: { w: grabbed.width, h: grabbed.height },
       moved: false,
       delta: null,
       flueBase,
@@ -904,8 +910,7 @@ export function useCanvasInteraction({
            grown — "snapping is off/misaligned when the flue is expanded." */
         if (d.flueBase) {
           const fb = d.flueBase
-          const rawCenterX = d.origin.x + fb.width / 2 + dx
-          const rawCenterY = d.origin.y + fb.height / 2 + dy
+          const { x: rawCenterX, y: rawCenterY } = flueDragCentre(d.origin, d.size, dx, dy)
           const columnGrids = st.objects.filter(o => o.type === 'column_grid')
           const liveFlue = computeLiveFlue(fb, rawCenterX, rawCenterY, columnGrids, st.gridSize)
 
@@ -918,7 +923,7 @@ export function useCanvasInteraction({
              back on top by computeSmartGuides itself, so the two together
              reconstruct liveFlue's own x/y exactly rather than double- or
              under-counting the growth. */
-          const yShift = (fb.height - liveFlue.targetHeight) / 2
+          const yShift = (d.size.h - liveFlue.targetHeight) / 2
           const guideObjects = st.objects.map(o => o.id === d.ids[0]
             ? { ...o, x: d.origin.x, y: d.origin.y + yShift, height: liveFlue.targetHeight, flueSpaceIn: liveFlue.targetFlueIn }
             : o)
@@ -939,11 +944,10 @@ export function useCanvasInteraction({
              is in the gap, so re-deriving the flue state from the
              snapped position too would only risk the flue and the snap
              fighting each other frame to frame for no real benefit. */
-          const centerX = d.origin.x + fb.width / 2 + dx
-          const centerY = d.origin.y + fb.height / 2 + dy
+          const at = flueDragPlacement(d.origin, d.size, dx, dy, liveFlue.targetHeight)
           st.updateObject(d.ids[0], {
-            x: centerX - fb.width / 2,
-            y: centerY - liveFlue.targetHeight / 2,
+            x: at.x,
+            y: at.y,
             height: liveFlue.targetHeight,
             flueSpaceIn: liveFlue.targetFlueIn,
           })

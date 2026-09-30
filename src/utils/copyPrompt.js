@@ -28,7 +28,7 @@
 
 import { create } from 'zustand'
 import { applyPlan, isRow } from './copyChange'
-import { PENDING, sectionOf, startPending, pendingChanges, planPending, allPending, actionLines, sectionLabel, generatedSectionCount } from './sectionCopy'
+import { PENDING, sectionOf, startPending, pendingChanges, planPending, allPending, actionLines, sectionLabel, generatedSectionCount, rebaseAfterMatch } from './sectionCopy'
 import { rebuildAisles } from './aisleRebuild'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { autoSave, serializeScene } from './saveLoad'
@@ -95,7 +95,7 @@ function writeInPlace(patch) {
   const full = { ...patch, objects, groups }
   if (st.historyIndex >= 0) {
     const history = st.history.slice(0, st.historyIndex + 1)
-    history[history.length - 1] = JSON.stringify({ objects, groups })
+    history[history.length - 1] = JSON.stringify({ objects, groups, layers: st.layers })
     full.history = history
     full.historyIndex = history.length - 1
   }
@@ -114,12 +114,16 @@ const withPending = (objects, fpId, P) => objects.map(o => {
 })
 
 /** The bar's "Match bays" source: the row of the LAST bay change in the set
- *  that still stands ({ id, rowIndex }), or null when the set has none. */
-export function matchSource(objects, log) {
+ *  that is still a bay change now ({ id, rowIndex }), or null. `stays` is the
+ *  set's net changes that stay (pendingChanges): a row whose bays Match bays
+ *  has since resolved is no longer a source. Match bays never adds to the log,
+ *  so the source stays the row the user changed, not the last row matched. */
+export function matchSource(objects, log, stays = null) {
+  const open = stays ? new Set(stays.filter(s => s.bays).flatMap(s => s.ids || [])) : null
   for (let i = (log || []).length - 1; i >= 0; i--) {
     const l = log[i]
     if (!l.bays || !Array.isArray(l.ids)) continue
-    const rack = l.ids.map(id => objects.find(o => o.id === id)).find(Boolean)
+    const rack = l.ids.map(id => objects.find(o => o.id === id)).find(o => o && (!open || open.has(o.id)))
     if (rack) return { id: rack.id, rowIndex: l.rowIndex ?? rack.rowIndex ?? null }
   }
   return null
@@ -128,11 +132,21 @@ export function matchSource(objects, log) {
 /** The bar, from the layout as it is now. */
 function refresh() {
   const objects = watch.store.getState().objects
-  // the bar only when copying would really do something (copyablePlan)
-  const p = allPending(objects, gs()).filter(q => q.log.length > 0 && copyablePlan(objects, q.fpId, gs()))[0] || null
-  useCopyPrompt.setState({
-    pending: p ? { fpId: p.fpId, section: p.section, count: p.log.length, copyCount: p.copy.length, lines: p.log.map(l => l.text), matchFrom: matchSource(objects, p.log) } : null,
-  })
+  /* The bar when copying would really do something (copyablePlan), or a bay
+     change could be matched across the section (its Match bays button). The
+     counts are NET: what differs from the section as it was (the same row
+     moved twice is one change). */
+  let bar = null
+  for (const q of allPending(objects, gs())) {
+    if (!q.count) continue
+    const copyable = !!copyablePlan(objects, q.fpId, gs())
+    const matchFrom = matchSource(objects, q.log, q.stays)
+    if (!copyable && !matchFrom) continue
+    bar = { fpId: q.fpId, section: q.section, count: q.count, copyCount: copyable ? q.copy.length : 0, copyable,
+      lines: [...q.copy.map(c => c.text), ...q.stays.map(s => s.text)], matchFrom }
+    break
+  }
+  useCopyPrompt.setState({ pending: bar })
 }
 
 /** `objects` with a plan applied: rows, re-paired aisles; the groups and the
@@ -169,9 +183,11 @@ export function showAfterAction(report) {
   else useCopyPrompt.setState({ report, message: null })
 }
 
-const reportOf = (plan, lead) => {
-  const lines = skipText(plan), warns = warnText(plan)
-  return lines.length || warns.length ? { text: `${lead}: ${plan.copies.length} cop${plan.copies.length === 1 ? 'y' : 'ies'}`, skipped: lines, warnings: warns } : null
+/** What a copy did, for the bar: "Copied 7 rows" — always, so the button
+ *  visibly answers — with anything not copied and any warnings under it. */
+const reportOf = (plan) => {
+  const n = plan.copies.length
+  return { text: `Copied ${n} row${n === 1 ? '' : 's'}`, skipped: skipText(plan), warnings: warnText(plan) }
 }
 
 /** The copies the bar's button would make now, for the hover preview. */
@@ -186,10 +202,11 @@ export function pendingPlan() {
  *  pending set copied, as ONE undo step, and cleared. */
 export function copyPending(fpId) {
   if (!watch) return null
+  const asked = !!useCopyPrompt.getState().question
   const st = watch.store.getState()
   const id = fpId || (useCopyPrompt.getState().question || {}).fpId || (useCopyPrompt.getState().pending || {}).fpId
   // whatever happens below, the question closes: the button always does something
-  if (!id) { useCopyPrompt.setState({ question: null, hover: false }); refresh(); return null }
+  if (!id) { useCopyPrompt.setState({ question: null, hover: false }); refresh(); resumeAfterAnswer(asked); return null }
   const plan = copyablePlan(st.objects, id, gs(), watch.newId, profile())
   try {
     const next = plan ? applied(st.objects, plan) : { objects: st.objects }
@@ -201,30 +218,54 @@ export function copyPending(fpId) {
     } finally { watch.busy = false }
     sync()
   } finally {
-    useCopyPrompt.setState({ question: null, hover: false, message: null, report: plan ? reportOf(plan, `Copied from section ${sectionLabel(plan.section)}`) : null })
+    useCopyPrompt.setState({ question: null, hover: false, message: null, report: plan ? reportOf(plan) : null })
     refresh()
+    resumeAfterAnswer(asked)
   }
   return plan
+}
+
+/** Mark the next action as "Match bays" (the panel's or the bar's): a finished
+ *  action, not pending work — its matched rows are not added to the set, and
+ *  the bay changes it resolved stop counting (utils/sectionCopy.js
+ *  rebaseAfterMatch). */
+export function beginMatch() { if (watch) watch.matchNext = true }
+
+/** After the question is answered: the edit that raised it is completed — a
+ *  Delete or a placement run again, a panel change re-applied — or, for a
+ *  drag, "Drag cancelled — drag again". A result shown by the answer (Copied
+ *  7 rows) outlives that edit. */
+function resumeAfterAnswer(asked) {
+  if (!watch) return
+  const resume = watch.resume, drag = watch.resumeDrag
+  watch.resume = null; watch.resumeDrag = false
+  // only for the question just answered: the bar's own Copy finishes nothing
+  if (!asked) return
+  if (drag) { useCopyPrompt.setState({ message: 'Drag cancelled — drag again.' }); return }
+  if (!resume) return
+  const keep = useCopyPrompt.getState().report
+  try { resume() } finally { if (keep && watch.pending) watch.nextReport = keep }
 }
 
 /** The question's "Don't copy": the changes stay in their section; the set
  *  clears. */
 export function dontCopy() {
   if (!watch) return
-  const q = useCopyPrompt.getState().question
+  const q = useCopyPrompt.getState().question, asked = !!q
   const id = (q && q.fpId) || (useCopyPrompt.getState().pending || {}).fpId
   try {
     if (id) writeInPlace({ objects: withPending(watch.store.getState().objects, id, null) })
   } finally {
     useCopyPrompt.setState({ question: null, hover: false })
     refresh()
+    resumeAfterAnswer(asked)
   }
 }
 
 /** Before an edit on `racks` (rack objects or ids): true if it may go
  *  ahead; false — with the question asked — when copyable changes are
  *  pending in another section of the same building. */
-export function guardEdit(racks) {
+export function guardEdit(racks, { resume = null, drag = false } = {}) {
   if (!watch || useCopyPrompt.getState().alwaysCopy) return true
   const st = watch.store.getState()
   // the rows the edit touches, per building, with their sections
@@ -245,7 +286,10 @@ export function guardEdit(racks) {
     const ch = fp ? pendingChanges(st.objects, fp, gs()) : null
     if (!ch || [...secs][0] === ch.section) continue
     if (!copyablePlan(st.objects, fpId, gs())) continue
-    useCopyPrompt.setState({ question: { fpId, section: ch.section, count: logCount(fp) } })
+    // how to finish this edit once the question is answered (resumeAfterAnswer)
+    watch.resume = typeof resume === 'function' ? resume : null
+    watch.resumeDrag = !!drag
+    useCopyPrompt.setState({ question: { fpId, section: ch.section, count: netCount(st.objects, fp) } })
     return false
   }
   return true
@@ -275,19 +319,53 @@ function touched(before, after) {
 
 /** Take back the action that just landed (an edit in another section while
  *  changes were pending) and ask. */
-function stopAndAsk(fpId, ch) {
+function stopAndAsk(fpId, ch, before, after, wasMatch) {
   const st = watch.store.getState()
+  // the edit, to re-apply once the question is answered
+  const patch = rowPatch(before, after)
+  watch.resume = () => reapply(patch, wasMatch)
+  watch.resumeDrag = false
   if (st.historyIndex > 0) {
     const snap = JSON.parse(st.history[st.historyIndex - 1])
     watch.busy = true
     try { watch.store.setState({ objects: snap.objects, groups: snap.groups || st.groups, history: st.history.slice(0, st.historyIndex), historyIndex: st.historyIndex - 1 }) } finally { watch.busy = false }
     sync()
   }
-  const fp = watch.store.getState().objects.find(o => o.id === fpId)
-  useCopyPrompt.setState({ question: { fpId, section: ch.section, count: logCount(fp) } })
+  const now = watch.store.getState().objects, fp = now.find(o => o.id === fpId)
+  useCopyPrompt.setState({ question: { fpId, section: ch.section, count: netCount(now, fp) } })
   refresh()
 }
-const logCount = (fp) => ((fp && fp[PENDING] && fp[PENDING].log) || []).length
+/** The set's NET change count (the same row moved twice is one change). */
+const netCount = (objects, fp) => { const ch = fp ? pendingChanges(objects, fp, gs()) : null; return ch ? ch.count : 0 }
+
+/** What one action did to the rows: removed ids, added racks, and per changed
+ *  rack only the fields it changed — so re-applying it after a copy keeps
+ *  whatever the copy did to the same rack's other fields. */
+function rowPatch(before, after) {
+  const B = new Map(before.filter(isRow).map(o => [o.id, o])), A = new Map(after.filter(isRow).map(o => [o.id, o]))
+  const removed = [...B.keys()].filter(id => !A.has(id))
+  const added = [...A.values()].filter(o => !B.has(o.id))
+  const changed = []
+  for (const [id, a] of A) {
+    const b = B.get(id)
+    if (!b) continue
+    const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]))
+    if (keys.length) changed.push([id, Object.fromEntries(keys.map(k => [k, a[k]]))])
+  }
+  return { removed, added, changed }
+}
+
+/** Re-apply a taken-back edit as a new action (one history entry). */
+function reapply(patch, wasMatch) {
+  const st = watch.store.getState()
+  const gone = new Set(patch.removed), ch = new Map(patch.changed)
+  const objects = st.objects.filter(o => !gone.has(o.id)).map(o => (ch.has(o.id) ? { ...o, ...ch.get(o.id) } : o))
+    .concat(patch.added.filter(a => !st.objects.some(o => o.id === a.id)))
+  const anchor = patch.changed[0]?.[0] || patch.added[0]?.id || objects.find(o => o.type && o.type.startsWith('fp_'))?.id
+  if (wasMatch) watch.matchNext = true
+  watch.store.setState({ objects })
+  if (anchor) watch.store.getState().commitObjectUpdate(anchor, {})
+}
 
 /** Read the action that just landed. */
 function settle(before) {
@@ -302,6 +380,8 @@ function settle(before) {
   useCopyPrompt.setState({ report: carry, ...(carry ? { message: null } : {}) })
   if (!t) { refresh(); return }
   const fp = after.find(o => o.id === t.fpId)
+  const wasMatch = !!watch.matchNext
+  watch.matchNext = false
   if (t.generated) {
     // a (re)generated layout: nothing is pending any more
     if (fp && fp[PENDING]) writeInPlace({ objects: withPending(after, t.fpId, null) })
@@ -312,7 +392,13 @@ function settle(before) {
   const always = useCopyPrompt.getState().alwaysCopy
   const ch = fp ? pendingChanges(after, fp, gs()) : null
   // an edit in another section while copyable changes are pending: stop it, ask
-  if (!always && ch && t.sections.length === 1 && t.sections[0] !== ch.section && copyablePlan(after, t.fpId, gs())) { stopAndAsk(t.fpId, ch); return }
+  if (!always && ch && t.sections.length === 1 && t.sections[0] !== ch.section && copyablePlan(after, t.fpId, gs())) { stopAndAsk(t.fpId, ch, before, after, wasMatch); return }
+  // Match bays: a finished action — nothing joins the set; the bay changes it resolved stop counting
+  if (wasMatch) {
+    if (fp && fp[PENDING] && ch && ch.section === t.sections[0]) writeInPlace({ objects: withPending(after, t.fpId, rebaseAfterMatch(fp[PENDING], after, gs())) })
+    refresh()
+    return
+  }
   if (t.sections.length > 1) {
     // only where copying exists at all: a layout placed by hand gets no notice
     if (generatedSectionCount(after, t.fpId) >= 2) useCopyPrompt.setState({ message: multiSectionText(t.sections.length), report: carry })
@@ -328,7 +414,7 @@ function settle(before) {
     if (plan) {
       const next = applied(objs, plan)
       writeInPlace({ ...next, objects: withPending(next.objects, t.fpId, null) })
-      useCopyPrompt.setState({ report: reportOf(plan, `Copied from section ${sectionLabel(section)}`), message: null })
+      useCopyPrompt.setState({ report: reportOf(plan), message: null })
     } else if (fp && fp[PENDING]) writeInPlace({ objects: withPending(after, t.fpId, null) })
     refresh()
     return
@@ -345,7 +431,7 @@ function settle(before) {
 
 /** Watch `store` for actions; returns the unsubscribe. */
 export function installCopyWatcher(store, newId) {
-  watch = { store, newId, lastObjects: null, lastHistory: null, lastIndex: -1, busy: false, pending: false, nextReport: null }
+  watch = { store, newId, lastObjects: null, lastHistory: null, lastIndex: -1, busy: false, pending: false, nextReport: null, matchNext: false, resume: null, resumeDrag: false }
   sync()
   refresh()
   const unsub = store.subscribe((st) => {
@@ -368,9 +454,10 @@ export function installCopyWatcher(store, newId) {
       return
     }
     if (st.historyIndex !== watch.lastIndex) {
-      // undo / redo: the set is whatever the building carried at that step
+      // undo / redo: the set is whatever the building carried at that step; a shown result is over
       sync()
-      useCopyPrompt.setState({ question: null, message: null })
+      watch.resume = null; watch.resumeDrag = false
+      useCopyPrompt.setState({ question: null, message: null, report: null })
       refresh()
     }
   })
