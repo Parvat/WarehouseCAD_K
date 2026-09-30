@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react'
-import { Group, Rect, Text } from 'react-konva'
+import { Group, Rect, Text, Line } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useLayoutCheck } from '../utils/layoutCheck'
 
 /* Check layout's highlight: the PROBLEM of the clicked item (utils/
    layoutCheck.js) — an aisle gap shaded with "7' · needs 8'", an overlap
-   area, the upright frames a column stands on, the bays that lose pallets,
-   a rack's outline. It pulses for a moment, then stays until the next click
+   area, the upright frames a column stands on, a too-short bay, a rack's
+   outline — and, for blocked pallets, the X marks themselves: a glowing X on
+   exactly each blocked position. It pulses for a moment, then stays until the next click
    on the canvas or the next check. Pure paint: listening={false}, so the
    click that follows goes to whatever is under it. */
 
@@ -37,7 +38,15 @@ export function IssueHighlight() {
   const fs = 12 / zoom, pad = 4 / zoom
   return (
     <Group ref={ref} name="issue-highlight" listening={false}>
-      {hl.shapes.map((s, i) => (
+      {hl.shapes.filter(s => s.mode === 'xmark').map((s, i) => (
+        <Group key={'x' + i} name="issue-hl:xmark" x={s.x} y={s.y} listening={false}>
+          <Rect width={s.w} height={s.h} fill={s.color + '33'} stroke={s.color} strokeWidth={1.5} strokeScaleEnabled={false}
+            shadowColor={s.color} shadowBlur={14} shadowOpacity={0.9} listening={false} />
+          <Line points={[0, 0, s.w, s.h]} stroke={s.color} strokeWidth={3} strokeScaleEnabled={false} shadowColor={s.color} shadowBlur={10} listening={false} />
+          <Line points={[s.w, 0, 0, s.h]} stroke={s.color} strokeWidth={3} strokeScaleEnabled={false} shadowColor={s.color} shadowBlur={10} listening={false} />
+        </Group>
+      ))}
+      {hl.shapes.filter(s => s.mode !== 'xmark').map((s, i) => (
         <Rect key={'s' + i} name={'issue-hl:' + s.mode} x={s.x} y={s.y} width={s.w} height={s.h}
           fill={s.mode === 'fill' ? s.color + '4D' : undefined} stroke={s.color} strokeWidth={s.mode === 'outline' ? 3 : 1.5}
           dash={s.mode === 'outline' ? [8, 5] : undefined} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={false} />

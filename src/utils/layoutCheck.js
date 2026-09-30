@@ -29,6 +29,7 @@
 import { create } from 'zustand'
 import { rackFootprint, rowGaps, aisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld } from '../generate/columnCheck'
 import { uprightXs } from '../render/rackOps'
+import { blockedPositionRects } from '../render/labelOps'
 import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate/usableCapacity'
 import { rackIssues } from './bayBeam'
 import { oversizedBayIndices } from './capacity'
@@ -67,6 +68,8 @@ const boxOf = (f) => ({ x: f.x, y: f.y, w: f.w, h: f.h })
 export const HL = { red: '#C0392B', orange: '#E67E22', amber: '#B87309' }
 const shade = (b, color, label) => ({ x: b.x, y: b.y, w: b.w, h: b.h, color, mode: 'fill', ...(label ? { label } : {}) })
 const outline = (b, color) => ({ x: b.x, y: b.y, w: b.w, h: b.h, color, mode: 'outline' })
+/* a blocked pallet position: the X mark's own spot, drawn as a glowing X */
+const xmark = (b, color) => ({ x: b.x, y: b.y, w: b.w, h: b.h, color, mode: 'xmark' })
 /** Bay `i` of a rack as a world rect (its whole depth, both faces). */
 const bayRect = (r, i, gridSize) => {
   const { xs, upW } = uprightXs(r, gridSize)
@@ -143,16 +146,17 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       const r = byId.get(c.rackId)
       if (!r || !c.positionsLost) continue
       const key = r.genSection != null ? 's' + r.genSection : 'b' + (r.parentId || '')
-      if (!lostBy.has(key)) lostBy.set(key, { section: r.genSection, n: 0, ids: new Set(), bays: new Map() })
+      if (!lostBy.has(key)) lostBy.set(key, { section: r.genSection, n: 0, ids: new Set(), spots: [] })
       const g = lostBy.get(key)
       g.n += c.positionsLost; g.ids.add(r.id)
-      if (c.bayIndex != null && !g.bays.has(r.id + ':' + c.bayIndex)) { const b = bayRect(r, c.bayIndex, gridSize); if (b) g.bays.set(r.id + ':' + c.bayIndex, b) }
+      // exactly the positions the X marks are on (render/labelOps.js), not whole bays or rows
+      for (const q of blockedPositionRects(c, r, gridSize)) g.spots.push(localRectToWorld(r, { x: q.x, y: q.y, w: q.width, h: q.height }))
     }
     for (const g of lostBy.values()) {
       const ids = [...g.ids], rows = ids.length
       const where = g.section != null ? `Section ${sectionLabel(g.section)}` : rows === 1 ? name(byId.get(ids[0])) : 'Racks placed by hand'
       warnings.push({ severity: 'warning', kind: 'columns-lost', ids, box: union(ids.map(id => foot.get(id))), positions: g.n,
-        highlight: [...g.bays.values()].map(b => shade(b, HL.amber)),
+        highlight: g.spots.map(b => xmark(b, HL.red)),
         text: `${where}: columns block ${g.n} pallet position${g.n === 1 ? '' : 's'}${rows > 1 ? ` on ${rows} rows` : ''}` })
     }
   }

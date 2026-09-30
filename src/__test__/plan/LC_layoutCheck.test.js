@@ -16,12 +16,15 @@ async function fresh() {
   const LC = await import('../../utils/layoutCheck')
   const { generateAndPlace } = await import('../../generate/traceGenerate')
   const { rackFootprint, MHE_PROFILES } = await import('../../generate/columnCheck')
-  return { useCanvasStore, LC, generateAndPlace, rackFootprint, MHE_PROFILES }
+  const UC = await import('../../generate/usableCapacity'), LO = await import('../../render/labelOps')
+  return { useCanvasStore, LC, generateAndPlace, rackFootprint, MHE_PROFILES, UC, LO }
 }
 
 const W = ((3 * 4 + 3 * 96) / 12) * GS            // 3 × 96" bays, 3" uprights: 1000 px
 const H = ((42 * 2 + 9) / 12) * GS                // 42" deep faces + 9" flue: 310 px
 const AISLE = 11 * GS                              // over the reach truck's 10' 6"
+
+const key = (x, y) => Math.round(x * 1000) / 1000 + ',' + Math.round(y * 1000) / 1000
 
 describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
   const rot = orientation === 'vertical' ? 90 : 0
@@ -48,6 +51,15 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     s().addObject({ type: 'column_grid', x: cx, y: cy, spacingX: [100000], spacingY: [100000], columnW: GS, columnH: GS, colSizeIn: 12, parentId: fp.id })
   }
   beforeEach(async () => { m = await fresh(); s = () => m.useCanvasStore.getState() })
+  /** Centres of every X mark the canvas draws for the layout now. */
+  const xmarkCentres = () => {
+    const res = m.UC.runColumnCheck(s().objects, { gridSize: GS }), out = []
+    for (const c of res ? [...res.rackConflicts, ...res.pickBlocks] : []) {
+      const ops = m.LO.blockedFaceOps(c, s().objects.find(o => o.id === c.rackId), GS, 1)
+      for (let i = 0; i < ops.length; i += 2) { const p = ops[i].points; out.push(key((p[0] + p[2]) / 2, (p[1] + p[3]) / 2)) }
+    }
+    return out.sort()
+  }
 
   it('LC-clean: a clean generated layout (240 × 120, 30 × 30 grid) and the hand-drawn one have no errors', async () => {
     m.generateAndPlace({ lengthFt: 240, widthFt: 120, gridXFt: 30, gridYFt: 30, mhe: 'reach', orientation, rackType: 'rack_double_row', dockDoors: 0 })
@@ -234,14 +246,43 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(h.every(q => q.color === m.LC.HL.orange && q.mode === 'fill')).toBe(true)
     expect(h.some(q => inside(pt, q))).toBe(true)
     expect(Math.min(...h.map(q => (rot ? q.h : q.w)))).toBeCloseTo(up, 6)       // an upright's width, not the rack
-    // a column mid-bay in b's face: the bay that loses pallets, shaded
+    // a column mid-bay in b's face: exactly the blocked positions (the X marks' spots), not the bay
     const fbb = F(b), bAlong = rot ? fbb.y : fbb.x, bAcross = rot ? fbb.x : fbb.y
     const mid = { along: bAlong + up + (48 / 12) * GS, across: bAcross + (21 / 12) * GS }
     columnAt(mid.along, mid.across)
     h = hlOf('columns-lost')
     const mp = rot ? { x: mid.across, y: mid.along } : { x: mid.along, y: mid.across }
-    expect(h.some(q => inside(mp, q) && q.color === m.LC.HL.amber)).toBe(true)
+    expect(h.every(q => q.mode === 'xmark' && q.color === m.LC.HL.red)).toBe(true)
+    expect(h.some(q => inside(mp, q))).toBe(true)
+    const bayLen = (96 / 12) * GS, depth = (42 / 12) * GS
+    for (const q of h) expect(Math.max(q.w, q.h)).toBeLessThan(bayLen)                // one position, never the bay or the row
+    for (const q of h) expect(Math.min(q.w, q.h)).toBeLessThanOrEqual(depth + 1e-6)
+    expect(xmarkCentres()).toEqual(h.map(q => key(q.x + q.w / 2, q.y + q.h / 2)).sort())
     void c
+  })
+
+  it('LC-xmarks: on a generated layout, a section\'s "columns block pallets" highlight is exactly that section\'s X marks — one glowing X per blocked position, none over a whole bay or row', async () => {
+    m.generateAndPlace({ lengthFt: 1080, widthFt: 410, gridXFt: 25, gridYFt: 30, mhe: 'reach', orientation, rackType: 'rack_double_row', dockDoors: 0 })
+    const items = check().warnings.filter(w => w.kind === 'columns-lost')
+    expect(items.length).toBeGreaterThan(1)
+    const item = items[1]
+    const sec = s().objects.find(o => o.id === item.ids[0]).genSection
+    expect(item.text.startsWith(`Section ${sec}:`)).toBe(true)
+    // the X marks drawn for that section's racks (render/labelOps.js blockedFaceOps): their centres
+    const res = m.UC.runColumnCheck(s().objects, { gridSize: GS })
+    const inSec = new Set(s().objects.filter(o => o.genSection === sec).map(o => o.id))
+    const centres = []
+    for (const c of [...res.rackConflicts, ...res.pickBlocks]) {
+      if (!inSec.has(c.rackId)) continue
+      const ops = m.LO.blockedFaceOps(c, s().objects.find(o => o.id === c.rackId), GS, 1)
+      for (let i = 0; i < ops.length; i += 2) { const p = ops[i].points; centres.push(key((p[0] + p[2]) / 2, (p[1] + p[3]) / 2)) }
+    }
+    expect(centres.length).toBeGreaterThan(10)
+    expect(item.highlight.map(q => key(q.x + q.w / 2, q.y + q.h / 2)).sort()).toEqual(centres.sort())
+    const bayLen = (96 / 12) * GS
+    expect(item.highlight.every(q => q.mode === 'xmark' && Math.max(q.w, q.h) < bayLen)).toBe(true)
+    // the painter draws them as a glowing X
+    expect(readFileSync('src/canvas2/IssueHighlight.jsx', 'utf8')).toMatch(/name="issue-hl:xmark"[\s\S]*shadowBlur=\{14\}[\s\S]*<Line points=\{\[0, 0, s\.w, s\.h\]\}/)
   })
 
   it('LC-recheck: fixing the problem and pressing again removes it; the button counts ("Check layout · 1 error" → "· no issues")', () => {

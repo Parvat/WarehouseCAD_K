@@ -106,15 +106,23 @@ const crossOps = (r, T, color, sw) => [
   { op: 'line', points: [...T(r.x + r.width, r.y), ...T(r.x, r.y + r.height)], stroke: color, strokeWidth: sw },
 ]
 
-/** The red X on each pallet position a column blocks (in-rack or pick zone). */
-export function blockedFaceOps(c, obj, gridSize, lz) {
+/** The pallet positions a column blocks, in the rack's own (unrotated) frame
+ *  — one rect per position and face. The X marks below and Check layout's
+ *  highlight both come from this, so they always mark the same spots. */
+export function blockedPositionRects(c, obj, gridSize) {
   if (c.bayIndex == null || !obj) return []
-  const T = turner(obj), sw = 2 / lz, out = []
+  const out = []
   for (const f of c.faces || [0]) for (const p of c.positionIndices || []) {
     const raw = positionRectForIndex(obj, gridSize, c.bayIndex, p, f)
-    if (!raw || !(raw.width > 0)) continue
-    out.push(...crossOps(grow(raw, lz), T, RED, sw))
+    if (raw && raw.width > 0) out.push(raw)
   }
+  return out
+}
+
+/** The red X on each pallet position a column blocks (in-rack or pick zone). */
+export function blockedFaceOps(c, obj, gridSize, lz) {
+  const T = turner(obj), sw = 2 / lz, out = []
+  for (const raw of blockedPositionRects(c, obj, gridSize)) out.push(...crossOps(grow(raw, lz), T, RED, sw))
   return out
 }
 
