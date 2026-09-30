@@ -12,13 +12,17 @@
 //   - along: a row's start or end; against a column's face.
 // Where it would stand is checked as it moves:
 //   - hard (red outline, a click does nothing): overlapping a rack, outside
-//     the building, in a cross-aisle;
-//   - soft (placed, with a warning): a narrow aisle, a column in the row.
+//     the building;
+//   - soft (placed, with a warning): a narrow aisle, a column in the row, and
+//     in a cross-aisle (orange outline) — while planning, the dealer may not
+//     know yet where the cross-aisles go. Only cross-aisles between generated
+//     sections count: a layout placed by hand has none to warn about.
 
 import { create } from 'zustand'
 import { rackFootprint, MHE_PROFILES } from '../generate/columnCheck'
 import { layoutColumns } from '../generate/usableCapacity'
-import { isRow, crossAisleGaps, hardProblem, softProblems } from './copyChange'
+import { isRow, generatedCrossAisleGaps, hardProblem, softProblems } from './copyChange'
+import { sectionLabel } from './sectionCopy'
 import { getColumnCheckView } from '../generate/columnCheckView'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -99,20 +103,24 @@ export function placedItems(items, objects, dx, dy) {
   })
 }
 
-/** Where the placed rows would stand: { blocked (first hard problem, or
- *  null), warnings: [text] }. */
+/** Where the placed rows would stand: { blocked (first hard problem —
+ *  overlapping a rack, outside the building — or null), warnings: [text],
+ *  crossAisle (standing in a generated cross-aisle: a warning, not a block) }. */
 export function checkPlacement(placed, objects, gridSize = 40, profile = MHE_PROFILES.reach) {
   const world = [...objects, ...placed]
   const warnings = new Set()
-  let blocked = null
+  let blocked = null, crossAisle = false
   const cols = layoutColumns(objects, gridSize)
   for (const r of placed.filter(isRow)) {
     const rot = rackFootprint(r).rotated
-    const gaps = r.parentId ? crossAisleGaps(objects, r.parentId, rot) : []
-    blocked = blocked || hardProblem(r, world, gaps, rot, gridSize)
+    blocked = blocked || hardProblem(r, world, [], rot, gridSize)                 // no gaps: a cross-aisle never blocks
+    const f = rackFootprint(r), [r0, r1] = rot ? [f.y, f.y + f.h] : [f.x, f.x + f.w]
+    const gaps = r.parentId ? generatedCrossAisleGaps(objects, r.parentId, rot) : []
+    const g = gaps.find(q => Math.min(r1, q.hi) - Math.max(r0, q.lo) > 0.5)
+    if (g) { crossAisle = true; warnings.add(`In the cross-aisle between sections ${sectionLabel(g.between[0])} and ${sectionLabel(g.between[1])}`) }
     for (const t of softProblems(r, world, rot, gridSize, profile, cols)) warnings.add(t)
   }
-  return { blocked, warnings: [...warnings] }
+  return { blocked, warnings: [...warnings], crossAisle }
 }
 
 /** Start placing `items` (new objects, fresh ids) at the world point `at`. */
@@ -121,7 +129,7 @@ export function startPlacement(store, items, { groups = [], at = null } = {}) {
   const st = store.getState()
   const c = centreOf(items)
   const p = at || c
-  usePlacement.setState({ active: { items, groups, dx: p.x - c.x, dy: p.y - c.y, blocked: null, warnings: [], fpId: null, snapped: { run: null, cross: null } } })
+  usePlacement.setState({ active: { items, groups, dx: p.x - c.x, dy: p.y - c.y, blocked: null, warnings: [], crossAisle: false, fpId: null, snapped: { run: null, cross: null } } })
   movePlacement(store, p, st.zoom || 1)
   return true
 }
@@ -135,7 +143,7 @@ export function movePlacement(store, world, zoom = 1, profile) {
   const s = snapPlacement(a.items, st.objects, world, gridSize, zoom, prof)
   const placed = placedItems(a.items, st.objects, s.dx, s.dy)
   const chk = checkPlacement(placed, st.objects, gridSize, prof)
-  usePlacement.setState({ active: { ...a, dx: s.dx, dy: s.dy, snapped: s.snapped, fpId: s.fpId, blocked: chk.blocked, warnings: chk.warnings } })
+  usePlacement.setState({ active: { ...a, dx: s.dx, dy: s.dy, snapped: s.snapped, fpId: s.fpId, blocked: chk.blocked, warnings: chk.warnings, crossAisle: chk.crossAisle } })
 }
 
 /** Place where it is now: one history entry, the new objects selected.

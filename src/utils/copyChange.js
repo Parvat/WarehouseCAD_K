@@ -84,6 +84,20 @@ export function crossAisleGaps(objects, fpId, rotated) {
   return out
 }
 
+/** The cross-aisles between GENERATED sections only — a layout placed by
+ *  hand has none, so there is nothing to warn about there. */
+export function generatedCrossAisleGaps(objects, fpId, rotated) {
+  const ref = objects.find(o => isRow(o) && o.parentId === fpId && o.genSection != null && rotatedOf(o) === rotated)
+  if (!ref) return []
+  const sections = buildingSections(objects, ref.id).sections.filter(s => s.key != null)
+  const out = []
+  for (let i = 0; i + 1 < sections.length; i++) {
+    const a = sections[i], b = sections[i + 1]
+    if (b.start - a.end > EPS) out.push({ lo: a.end, hi: b.start, between: [a.key, b.key] })
+  }
+  return out
+}
+
 /** Hard problems for one rack where it would stand in `world`: a reason
  *  string, or null. */
 export function hardProblem(rack, world, gaps, rotated, gridSize = 40, fmtRow = rowName) {

@@ -5,6 +5,8 @@ import { sectionRows, planSectionSync, syncWarnings, splitRowIds } from '../../.
 import { rowLines } from '../../../utils/syncSections'
 import { nanoid } from 'nanoid'
 import { rebuildAisles } from '../../../utils/aisleRebuild'
+import { matchReport, showAfterAction } from '../../../utils/copyPrompt'
+import { sectionOf } from '../../../utils/sectionCopy'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
 import {
@@ -270,6 +272,16 @@ export function syncWarningText(warnings) {
   }).join(' · ')
 }
 
+/** The panel's "Match bays in this section" for `obj`: applySectionSync, and
+ *  its result in the bottom bar until the next action ("Matched bays on 6
+ *  rows in section 3 from row 5", any warnings — utils/copyPrompt.js). */
+export function runMatchBays(obj) {
+  const st = useCanvasStore.getState(), section = sectionOf(st.objects, obj)
+  const r = applySectionSync(useCanvasStore.getState, obj.id)
+  showAfterAction(matchReport(r, section, obj.rowIndex, syncWarningText(r.warnings)))
+  return r
+}
+
 const MATCH_BAYS_TIP = "Every other row in this section copies this row's beam lengths and start point, so uprights line up across the aisles."
 
 /* The "Match bays in this section" control (was "Sync section"): the button, how many rows it touches, and the
@@ -283,7 +295,7 @@ function SyncSection({ obj }) {
   return (
     <div>
       <button
-        onClick={() => { const r = applySectionSync(useCanvasStore.getState, obj.id); setResult({ id: obj.id, ...r }) }}
+        onClick={() => { const r = runMatchBays(obj); setResult({ id: obj.id, ...r }) }}
         disabled={others < 1}
         aria-label="Match bays in this section"
         title={others < 1 ? 'No other rows in this section' : MATCH_BAYS_TIP}

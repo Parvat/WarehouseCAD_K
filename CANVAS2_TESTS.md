@@ -284,6 +284,55 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
+### CF — Section-copy fixes from manual use · `CF_copyFixes.test.js` (12 tests)
+1. **Bar and question only when a copy would do something.** The bar, its
+   buttons and "Copy your changes?" appear only when the building has at
+   least 2 GENERATED sections and the copy plan copies (or deletes) at least
+   one row (`copyablePlan` in `utils/copyPrompt.js`, which never throws).
+   A layout placed by hand has no generated sections: placing, pasting and
+   deleting there show nothing. Before, the bar offered "Copy to other
+   sections" and the click did nothing: the plan threw (`planReplay`) on a
+   layout with no generated sections, so the question never closed either.
+2. **The question.** "section 1", never "section run 1" (`sectionLabel`, also
+   in the bar, reports and "stays in section" lines). Copy and Don't copy
+   always close it. An edit across several sections (select all + Delete) is
+   never asked about; the "affects rows in N sections" notice shows only
+   where copying exists (≥ 2 generated sections).
+3. **Cross-aisle = warning.** Paste / placement in a generated cross-aisle
+   is placed, with an orange outline and "In the cross-aisle between
+   sections A and B". Only overlapping a rack and outside the building still
+   block. Only cross-aisles between generated sections count
+   (`generatedCrossAisleGaps`): a manual layout has none to warn about.
+4. **Match bays → the bar.** From the right panel (`runMatchBays`) or the
+   bar, the result shows in the bar — "Matched bays on 6 rows in section 3
+   from row 5" (no "from row" for a row placed by hand), plus warnings —
+   until the next action (`showAfterAction`: held until its own action has
+   settled, cleared by the next).
+
+| Test (1080×410; ×2 h/v; generated and manual) | Asserts |
+|---|---|
+| `CF-manual` | manual layout (no generated sections, ≥ 2 runs): a row placed in the gap between runs, a pasted row, a move across and a delete — no bar, no question, nothing in the note; nothing copyable; an edit in another run is never stopped |
+| `CF-generated` | a move across shows the bar ("1 will be copied"); an edit in another section asks, worded "section 3"; Don't copy closes it |
+| `CF-select-all` | generated and manual, with a change pending: select all + Delete is not stopped, no question; everything goes; no bar after |
+| `CF-question` | "Copy your 2 changes from section 1 …" for a hand run; Copy (with and without a building) and Don't copy close a question with nothing to copy, without throwing; on a generated layout Copy copies (row moved in section T) and closes |
+| `CF-cross-aisle` | generated: a one-bay row in the cross-aisle between sections 1 and 2 — not blocked, `crossAisle`, the warning in the note, the orange outline; placed. Overlap and outside still block. Manual: the gap between runs gives no cross-aisle warning |
+| `CF-match` | generated: a bay change alone shows no bar; the panel's Match bays shows "Matched bays on N rows in section S from row K" after its action settles; the next action clears it; the panel button calls `runMatchBays`. Manual: "… in section 1" (no row number); a move spanning two runs gives no notice |
+
+**Checked in the app, horizontal and vertical:**
+- **Manual** (a hand-drawn 400 × 400 building, 8 rows in two runs): Ctrl+C /
+  Ctrl+V a row into the gap between runs, Delete, a Double Row from the left
+  panel into the gap (no orange), Match bays from the panel ("Matched bays on
+  3 rows in section 1" h, 2 v), Ctrl+A + Delete — never a bar, question or
+  notice.
+- **Generated:** a move across → the bar "Section 3: 1 change (1 will be
+  copied)". A one-bay row over the cross-aisle between sections 1 and 2:
+  orange outline, "Check — In the cross-aisle between sections 1 and 2";
+  the click asks "Copy your 1 change from section 3 …" (a change is pending
+  there); Don't copy closes it; the next click places the row. Match bays
+  from the panel: "Matched bays on 20 rows in section 2 from row 7" (57 v)
+  with its warnings; the next action clears it. Ctrl+A + Delete: no
+  question, every rack gone. No console errors.
+
 ### RL — Every beam rack has levels: 4 unless set · `RL_rackLevels.test.js` (8 tests)
 - **The bug:** capacity (`utils/capacity.js`), the column check and the rack
   panel read `levels || 1`. Generated racks carry 4; racks placed from the
@@ -439,8 +488,8 @@ layout clears it.
 | Test (1080×410, "section 3" and "section 5" — vertical has 3 sections, so section 1; ×2 h/v) | Asserts |
 |---|---|
 | `SC-layout` | the orientation is right, and rows 5, 7 and 9 exist in every section |
-| `SC-stays` | a beam change and a move along the same row in section 3: no question and no lock; the bar reads "Section 3: 2 changes" with both lines "stays in section 3", the bar reading "Section 3: 2 changes (none will be copied)" and Copy disabled; copying changes nothing elsewhere |
-| `SC-match` | a move across alone: no Match bays button. Beam changes in row 7, then row 5, of section 3: the bar reads "Match bays in section 3 (from row 5)" (the last one). Clicking gives every row of section 3 row 5's bays in one history entry, with the report "Matched bays in section 3: N rows"; one undo restores |
+| `SC-stays` | a beam change and a move along the same row in section 3: no question and no lock; nothing would be copied, so no bar and no button (CF rule 1); copying changes nothing elsewhere |
+| `SC-match` | a move across alone: no Match bays button. A beam change in row 7 alone: no bar. Then a move across (row 9) and a beam change in row 5: the bar reads "Match bays in section 3 (from row 5)" (the last one). Clicking gives every row of section 3 row 5's bays in one history entry, with the report "Matched bays on N rows in section 3 from row 5"; one undo restores |
 | `SC-stays-mixed` | an end bay removed at a cross-aisle, a row moved along and a row moved across, all in section 3: the bar reads "Section 3: 3 changes (1 will be copied)"; only the move across is copied; the other sections keep their bays and their along position |
 | `SC-question` | rows moved across (1′, −6″) and one deleted in section 3, then a drag started in section 5. The question "Copy your 3 changes from section 3 …" appears and nothing happens yet. Copy: every other section gets the same net deltas and loses row 9; section 3's own rows are untouched; the set clears; the drag may now go ahead and starts a set in section 5 |
 | `SC-dont` | the same, Don't copy: the other sections are unchanged, the set clears, and a change in section 5 starts its own set |
@@ -452,7 +501,7 @@ layout clears it.
 | `SC-multi` | rows in two sections moved in one action: the message, no set, nothing copied |
 | `SC-regenerate` | a regenerated layout clears the set (and any old report) |
 | `SC-add` | a row pasted into a gap follows the mouse, snaps to the forklift aisle and places on one undo step. The set lists "A row added", and Copy puts it in every section, full length for each |
-| `SC-place` | paste and duplicate follow the mouse; blocked spots (outside, overlap, cross-aisle) take the click and do nothing; Esc cancels; placing a row in section 5 while section 3 has a copyable change asks first |
+| `SC-place` | paste and duplicate follow the mouse; blocked spots (outside, overlap) take the click and do nothing; a cross-aisle warns and places (CF rule 3); Esc cancels; placing a row in section 5 while section 3 has a copyable change asks first |
 | `SC-skip` | a copy that would overlap is skipped: "Section 1, row 5: overlaps row 6 by 1'"; the others are copied |
 | `SC-wire` (once) | the notes, two-button note and manual mode are gone. The bar, the question, the checks before a drag, Delete and placing, and the Always copy switch (off by default) are wired |
 
@@ -1614,6 +1663,10 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LY | **Locking leaves the object selected** | 2: LY-select h/v | ✓ |
 | LY | **Layers not saved with the layout** | 2: LY-save h/v | ✓ |
 | HF | **Handle sizes back to 8 / 14 / 16** (7569d59's own) | 2: HF-handles h/v | ✓ |
+| CF | **Bar shown whether or not anything would be copied** | 8: CF-manual, CF-match, SC-stays, SC-match (h/v) | ✓ |
+| CF | **Select-all Delete asks again** (multi-section edits not skipped) | 2: CF-select-all h/v | ✓ |
+| CF | **A cross-aisle blocks placement again** | 4: CF-cross-aisle, SC-place (h/v) | ✓ |
+| CF | **Match bays result shown before its own action settles** (wiped at once) | 4: CF-match, SC-match (h/v) | ✓ |
 | RL | **Default levels back to 1** | 6: RL-placed, RL-missing, RL-load (h/v) | ✓ |
 | GU | **Generate not collapsed to one step** | 8: GU-undo, GU-first, GU-regenerate, GU-batched (h/v) | ✓ |
 | HF | **A building drag re-checks the aisles every frame** | 4: HF-flicker, HF-multi (h/v) — also with the "not recomputed" checks removed, the red-set comparison alone fails in both orientations | ✓ |
@@ -1728,8 +1781,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,864 tests, 1,864 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,261 tests, 2,261 passing.**
+- **Plan suite: 1,876 tests, 1,876 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,273 tests, 2,273 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:

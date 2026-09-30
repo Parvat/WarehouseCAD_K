@@ -28,7 +28,7 @@
 
 import { create } from 'zustand'
 import { applyPlan, isRow } from './copyChange'
-import { PENDING, sectionOf, startPending, pendingChanges, planPending, allPending, actionLines } from './sectionCopy'
+import { PENDING, sectionOf, startPending, pendingChanges, planPending, allPending, actionLines, sectionLabel, generatedSectionCount } from './sectionCopy'
 import { rebuildAisles } from './aisleRebuild'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { autoSave, serializeScene } from './saveLoad'
@@ -58,7 +58,19 @@ export const useCopyPrompt = create((set) => ({
 }))
 
 export const multiSectionText = (n) => `This change affects rows in ${n} sections, so it stays where you made it.`
-export const questionText = (q) => `Copy your ${q.count} change${q.count === 1 ? '' : 's'} from section ${q.section} to the other sections?`
+export const questionText = (q) => `Copy your ${q.count} change${q.count === 1 ? '' : 's'} from section ${sectionLabel(q.section)} to the other sections?`
+
+/** The copy of building `fpId`'s pending set, only when it would really do
+ *  something: the building has at least two generated sections AND the plan
+ *  copies (or deletes) at least one row. Otherwise null — and then no bar,
+ *  no buttons and no question (a layout placed by hand, everything deleted,
+ *  changes that stay in their section). Never throws. */
+export function copyablePlan(objects, fpId, gridSize = 40, newId = () => 'preview', prof) {
+  if (!fpId || generatedSectionCount(objects, fpId) < 2) return null
+  let plan = null
+  try { plan = planPending(objects, fpId, gridSize, newId, prof) } catch { return null }
+  return plan && plan.copies.length > 0 ? plan : null
+}
 
 let watch = null   // { store, newId, lastObjects, lastHistory, lastIndex, busy, pending }
 
@@ -116,7 +128,8 @@ export function matchSource(objects, log) {
 /** The bar, from the layout as it is now. */
 function refresh() {
   const objects = watch.store.getState().objects
-  const p = allPending(objects, gs()).filter(q => q.log.length > 0)[0] || null
+  // the bar only when copying would really do something (copyablePlan)
+  const p = allPending(objects, gs()).filter(q => q.log.length > 0 && copyablePlan(objects, q.fpId, gs()))[0] || null
   useCopyPrompt.setState({
     pending: p ? { fpId: p.fpId, section: p.section, count: p.log.length, copyCount: p.copy.length, lines: p.log.map(l => l.text), matchFrom: matchSource(objects, p.log) } : null,
   })
@@ -133,6 +146,27 @@ function applied(objects, plan) {
     selectedIds: (st.selectedIds || []).filter(id => !gone.has(id)),
     activeBaySelection: (st.activeBaySelection || []).filter(e => !gone.has(e.objId)),
   }
+}
+
+/** "Match bays in this section" (the right panel or the bar): its result for
+ *  the bar — "Matched bays on 6 rows in section 3 from row 5", any warnings
+ *  under it. `r` is applySectionSync's { synced, split }, `warn` its warnings
+ *  as one line (or null). */
+export function matchReport(r, section, rowIndex, warn) {
+  const split = r.split && r.split.length ? `, ${r.split.length} piece${r.split.length > 1 ? 's' : ''} of split rows left as is` : ''
+  return {
+    // a row placed by hand has no row number: no "from row"
+    text: `Matched bays on ${r.synced} row${r.synced === 1 ? '' : 's'} in section ${sectionLabel(section)}${rowIndex != null ? ` from row ${rowIndex}` : ''}${split}`,
+    skipped: [], warnings: warn ? [warn] : [],
+  }
+}
+
+/** Show `report` in the bar until the NEXT action. When the action that
+ *  produced it is still settling (the watcher reads it on a microtask), it is
+ *  shown once that action has settled — so it outlives its own action. */
+export function showAfterAction(report) {
+  if (watch && watch.pending) watch.nextReport = report
+  else useCopyPrompt.setState({ report, message: null })
 }
 
 const reportOf = (plan, lead) => {
@@ -154,18 +188,22 @@ export function copyPending(fpId) {
   if (!watch) return null
   const st = watch.store.getState()
   const id = fpId || (useCopyPrompt.getState().question || {}).fpId || (useCopyPrompt.getState().pending || {}).fpId
-  if (!id) return null
-  const plan = planPending(st.objects, id, gs(), watch.newId, profile())
-  const next = plan ? applied(st.objects, plan) : { objects: st.objects }
-  next.objects = withPending(next.objects, id, null)
-  watch.busy = true
+  // whatever happens below, the question closes: the button always does something
+  if (!id) { useCopyPrompt.setState({ question: null, hover: false }); refresh(); return null }
+  const plan = copyablePlan(st.objects, id, gs(), watch.newId, profile())
   try {
-    watch.store.setState(next)
-    watch.store.getState().commitObjectUpdate(id, {})
-  } finally { watch.busy = false }
-  sync()
-  useCopyPrompt.setState({ question: null, hover: false, message: null, report: plan ? reportOf(plan, `Copied from section ${plan.section}`) : null })
-  refresh()
+    const next = plan ? applied(st.objects, plan) : { objects: st.objects }
+    next.objects = withPending(next.objects, id, null)
+    watch.busy = true
+    try {
+      watch.store.setState(next)
+      watch.store.getState().commitObjectUpdate(id, {})
+    } finally { watch.busy = false }
+    sync()
+  } finally {
+    useCopyPrompt.setState({ question: null, hover: false, message: null, report: plan ? reportOf(plan, `Copied from section ${sectionLabel(plan.section)}`) : null })
+    refresh()
+  }
   return plan
 }
 
@@ -175,9 +213,12 @@ export function dontCopy() {
   if (!watch) return
   const q = useCopyPrompt.getState().question
   const id = (q && q.fpId) || (useCopyPrompt.getState().pending || {}).fpId
-  if (id) writeInPlace({ objects: withPending(watch.store.getState().objects, id, null) })
-  useCopyPrompt.setState({ question: null, hover: false })
-  refresh()
+  try {
+    if (id) writeInPlace({ objects: withPending(watch.store.getState().objects, id, null) })
+  } finally {
+    useCopyPrompt.setState({ question: null, hover: false })
+    refresh()
+  }
 }
 
 /** Before an edit on `racks` (rack objects or ids): true if it may go
@@ -186,18 +227,26 @@ export function dontCopy() {
 export function guardEdit(racks) {
   if (!watch || useCopyPrompt.getState().alwaysCopy) return true
   const st = watch.store.getState()
+  // the rows the edit touches, per building, with their sections
+  const byFp = new Map()
   for (const r of racks || []) {
     const rack = typeof r === 'string' ? st.objects.find(o => o.id === r) : r
     if (!rack || !isRow(rack) || !rack.parentId) continue
-    const fp = st.objects.find(o => o.id === rack.parentId)
-    const ch = fp ? pendingChanges(st.objects, fp, gs()) : null
-    if (!ch || !ch.copy.length) continue
     const inStore = st.objects.some(o => o.id === rack.id)
     const s = sectionOf(inStore ? st.objects : [...st.objects, rack], rack)
-    if (s != null && s !== ch.section) {
-      useCopyPrompt.setState({ question: { fpId: fp.id, section: ch.section, count: logCount(fp) } })
-      return false
-    }
+    if (s == null) continue
+    if (!byFp.has(rack.parentId)) byFp.set(rack.parentId, new Set())
+    byFp.get(rack.parentId).add(s)
+  }
+  for (const [fpId, secs] of byFp) {
+    // an edit across several sections (select all + Delete) is never copied, so nothing to ask
+    if (secs.size !== 1) continue
+    const fp = st.objects.find(o => o.id === fpId)
+    const ch = fp ? pendingChanges(st.objects, fp, gs()) : null
+    if (!ch || [...secs][0] === ch.section) continue
+    if (!copyablePlan(st.objects, fpId, gs())) continue
+    useCopyPrompt.setState({ question: { fpId, section: ch.section, count: logCount(fp) } })
+    return false
   }
   return true
 }
@@ -247,21 +296,26 @@ function settle(before) {
   const after = st.objects
   const t = touched(before, after)
   sync()
+  // a result shown in the bar lasts until the next action; one held for THIS action shows now
+  const carry = watch.nextReport || null
+  watch.nextReport = null
+  useCopyPrompt.setState({ report: carry, ...(carry ? { message: null } : {}) })
   if (!t) { refresh(); return }
   const fp = after.find(o => o.id === t.fpId)
   if (t.generated) {
     // a (re)generated layout: nothing is pending any more
     if (fp && fp[PENDING]) writeInPlace({ objects: withPending(after, t.fpId, null) })
-    useCopyPrompt.setState({ question: null, message: null, report: null })
+    useCopyPrompt.setState({ question: null, message: null, report: carry })
     refresh()
     return
   }
   const always = useCopyPrompt.getState().alwaysCopy
   const ch = fp ? pendingChanges(after, fp, gs()) : null
   // an edit in another section while copyable changes are pending: stop it, ask
-  if (!always && ch && ch.copy.length && t.sections.some(s => s !== ch.section)) { stopAndAsk(t.fpId, ch); return }
+  if (!always && ch && t.sections.length === 1 && t.sections[0] !== ch.section && copyablePlan(after, t.fpId, gs())) { stopAndAsk(t.fpId, ch); return }
   if (t.sections.length > 1) {
-    useCopyPrompt.setState({ message: multiSectionText(t.sections.length), report: null })
+    // only where copying exists at all: a layout placed by hand gets no notice
+    if (generatedSectionCount(after, t.fpId) >= 2) useCopyPrompt.setState({ message: multiSectionText(t.sections.length), report: carry })
     refresh()
     return
   }
@@ -270,11 +324,11 @@ function settle(before) {
   if (always) {
     // copied at once, folded into the action's own history entry
     const objs = withPending(after, t.fpId, startPending(before, t.fpId, section))
-    const plan = planPending(objs, t.fpId, gs(), watch.newId, profile())
+    const plan = copyablePlan(objs, t.fpId, gs(), watch.newId, profile())
     if (plan) {
       const next = applied(objs, plan)
       writeInPlace({ ...next, objects: withPending(next.objects, t.fpId, null) })
-      useCopyPrompt.setState({ report: reportOf(plan, `Copied from section ${section}`), message: null })
+      useCopyPrompt.setState({ report: reportOf(plan, `Copied from section ${sectionLabel(section)}`), message: null })
     } else if (fp && fp[PENDING]) writeInPlace({ objects: withPending(after, t.fpId, null) })
     refresh()
     return
@@ -291,7 +345,7 @@ function settle(before) {
 
 /** Watch `store` for actions; returns the unsubscribe. */
 export function installCopyWatcher(store, newId) {
-  watch = { store, newId, lastObjects: null, lastHistory: null, lastIndex: -1, busy: false, pending: false }
+  watch = { store, newId, lastObjects: null, lastHistory: null, lastIndex: -1, busy: false, pending: false, nextReport: null }
   sync()
   refresh()
   const unsub = store.subscribe((st) => {

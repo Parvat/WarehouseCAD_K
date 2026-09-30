@@ -10,13 +10,15 @@ import { copyPreviewRects } from '../utils/copyChange'
 /* ── "Copy this change" on the canvas ─────────────────────────────────────────
    Three pieces, all pure paint or plain DOM (picking stays geometric):
      - PlacementGhost: a row being added follows the mouse, faded; its
-       outline turns red where it cannot go (utils/placement.js);
+       outline turns red where it cannot go, orange in a cross-aisle (placed,
+       with a warning — utils/placement.js);
      - CopyPreview: while the bar's Copy button is hovered, faint outlines
        where the copies would land (and the rows a delete would take);
      The note itself is DOM, in CopyNote.jsx. */
 
 const PREVIEW = '#2F7BD8'
 const BLOCKED = '#C0392B'
+const WARNED = '#E67E22'
 
 const outline = (f, color, key, dash = [6, 4], fill = 'transparent') => (
   <Rect key={key} x={f.x} y={f.y} width={f.w} height={f.h} stroke={color} strokeWidth={1.5} dash={dash} fill={fill}
@@ -26,7 +28,7 @@ const outline = (f, color, key, dash = [6, 4], fill = 'transparent') => (
 export function PlacementGhost({ gridSize }) {
   const a = usePlacement(s => s.active)
   if (!a) return null
-  const color = a.blocked ? BLOCKED : PREVIEW
+  const color = a.blocked ? BLOCKED : a.crossAisle ? WARNED : PREVIEW
   return (
     <Group x={a.dx} y={a.dy} listening={false}>
       <Group opacity={0.45} listening={false}>

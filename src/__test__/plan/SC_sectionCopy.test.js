@@ -103,16 +103,14 @@ describe.each(['horizontal', 'vertical'])('SC — %s', (orientation) => {
     expect(rackFootprint(row(K)).rotated).toBe(rot)
   })
 
-  it('SC-stays: a beam change and a move ALONG of the same row in section 3 -> no lock, the bar lists both as staying in section 3, and copying sends nothing to the other sections', async () => {
+  it('SC-stays: a beam change and a move ALONG of the same row in section 3 -> no lock, and since nothing would be copied, no bar and no button at all; copying sends nothing to the other sections', async () => {
     load(base)
     const was = racksSig(objs().filter(o => o.genSection !== S))
     await act(() => store.getState().commitObjectUpdate(row(K).id, Panel.changeBayUpdate(row(K), 2, 108, GS)))
     await act(() => store.getState().commitObjectUpdate(row(K).id, A.move(row(K), 2 * GS, 0)))
     expect(question()).toBe(null)
-    expect(bar()).toMatchObject({ section: S, count: 2, copyCount: 0 })
-    expect(bar().lines).toEqual([`Row ${K}: bays changed — stays in section ${S}`, `Row ${K}: moved 2' along — stays in section ${S}`])
-    expect(renderNote()).toContain(`Section ${S}: 2 changes (none will be copied)`)
-    expect(renderNote()).toContain('disabled=""')                               // nothing here to copy
+    expect(bar()).toBe(null)                                                      // nothing would be copied: no bar
+    expect(renderNote()).not.toMatch(/Pending changes|Copy to other sections/)
     // no lock: another row of the same section can be edited straight away
     expect(guardEdit([row(K + 1).id])).toBe(true)
     copyPending(); await flushCopyWatcher()
@@ -120,13 +118,15 @@ describe.each(['horizontal', 'vertical'])('SC — %s', (orientation) => {
     expect(bar()).toBe(null)
   })
 
-  it('SC-match: a bay change in section 3 puts "Match bays in section 3 (from row 5)" in the bar, from the row LAST changed; clicking gives every row of section 3 row 5\'s bays, as one undo step; no bay change, no button', async () => {
+  it('SC-match: with something to copy pending (a move across), a bay change in section 3 puts "Match bays in section 3 (from row 5)" in the bar, from the row LAST changed; clicking gives every row of section 3 row 5\'s bays, as one undo step; no bay change, no button', async () => {
     load(base)
     await act(() => store.getState().commitObjectUpdate(row(K).id, A.move(row(K), 0, GS / 2)))      // a move across only
     expect(bar().matchFrom).toBe(null)
     expect(renderNote()).not.toContain('Match bays in section')
     load(base)
     await act(() => store.getState().commitObjectUpdate(row(K + 2).id, Panel.changeBayUpdate(row(K + 2), 1, 108, GS)))
+    expect(bar()).toBe(null)                                                      // bays alone: nothing to copy, no bar
+    await act(() => store.getState().commitObjectUpdate(row(K + 4).id, A.move(row(K + 4), 0, GS / 2)))   // something to copy
     await act(() => store.getState().commitObjectUpdate(row(K).id, Panel.changeBayUpdate(row(K), 2, 108, GS)))   // the last one changed
     expect(bar().matchFrom).toEqual({ id: row(K).id, rowIndex: K })
     expect(Note.matchText(bar())).toBe(`Match bays in section ${S} (from row ${K})`)
@@ -138,7 +138,7 @@ describe.each(['horizontal', 'vertical'])('SC — %s', (orientation) => {
     expect(hist()).toBe(h0 + 1)
     const inS = objs().filter(o => BEAM.has(o.type) && o.genSection === S)
     expect(inS.every(o => o.beams.join('/') === srcBeams)).toBe(true)                  // every row: row 5's bays
-    expect(useCopyPrompt.getState().report.text).toMatch(new RegExp(`^Matched bays in section ${S}: \\d+ rows`))
+    expect(useCopyPrompt.getState().report.text).toBe(`Matched bays on ${r.synced} rows in section ${S} from row ${K}`)
     store.getState().undo(); await flushCopyWatcher()
     expect(racksSig(objs())).toBe(beforeMatch)                                          // one undo restores
   })
@@ -358,9 +358,14 @@ describe.each(['horizontal', 'vertical'])('SC — %s', (orientation) => {
     startPlacement(store, [short])
     const midRun = (a0.end + a1.start) / 2, midCross = (A.cross(r0)[1] + A.cross(r1)[0]) / 2
     movePlacement(store, rot ? { x: midCross, y: midRun } : { x: midRun, y: midCross }, 1)
-    expect(usePlacement.getState().active.blocked).toMatch(/cross-aisle/)
-    expect(commitPlacement(store)).toBe(false)
-    cancelPlacement()
+    // a cross-aisle is a warning (orange outline), not a block: it is placed
+    expect(usePlacement.getState().active.blocked).toBe(null)
+    expect(usePlacement.getState().active.crossAisle).toBe(true)
+    expect(usePlacement.getState().active.warnings).toContain(`In the cross-aisle between sections ${a0.key} and ${a1.key}`)
+    const nPlace = objs().length
+    expect(commitPlacement(store)).toBe(true)
+    expect(objs().length).toBe(nPlace + 1)
+    await flushCopyWatcher()
     // pending in section 3; a row placed in section 5 asks first
     load(base.filter(o => !(BEAM.has(o.type) && o.rowIndex === K && o.genSection === T)))
     await act(() => store.getState().commitObjectUpdate(row(K + 2).id, A.move(row(K + 2), 0, GS / 2)))
