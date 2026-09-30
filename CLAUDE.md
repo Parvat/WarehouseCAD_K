@@ -175,7 +175,7 @@ shows items, route it through `ItemBody` rather than writing a third path.
   the tile *and* the label, or the track sizes to the longest word instead.
 - Pin affordance appears on **hover only** (`#B4B0A4` outline). Already-pinned items keep theirs
   visible — otherwise nothing signals what is pinned.
-- Drawing tools (Select, Pan, Line, Arrow, Arc, Dimension, Freehand, Text, and Fill racking — drag a box, it fills with racking) live in the **floating toolbar**, not
+- Drawing tools (Select, Pan, Line, Arrow, Arc, Dimension, Freehand, Text, and Fill racking — drag a box, it becomes the racking area) live in the **floating toolbar**, not
   in the panel — they are actions. Placeable shape *objects* stay in Blocks. The panel's top-row
   button toggles that toolbar; it is labelled "Drawing tools" with `aria-pressed`, because the
   toolbar's own close button already owns the name "Hide drawing tools".

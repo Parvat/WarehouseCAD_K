@@ -38,7 +38,7 @@ export function moveFill(world, objects, gridSize = 40) {
   const d = useFillTool.getState().drag
   if (!d) return null
   const drag = { ...d, to: world }
-  const plan = planFill(objects, boxOfDrag(drag), rackingSettings(), { gridSize })
+  const plan = planFill(objects, boxOfDrag(drag), rackingSettings(), { gridSize, from: drag.from })
   useFillTool.setState({ drag, plan })
   return plan
 }

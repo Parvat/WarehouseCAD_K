@@ -284,23 +284,36 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### FR — Fill racking · `FR_fillRacking.test.js` (26 tests)
+### FR — Fill racking · `FR_fillRacking.test.js` (32 tests)
 A tool in the drawing toolbar ("Fill racking", paint bucket). While it is on,
 an options bar shows the Racking settings it fills with: orientation H / V,
 beam, pallet, forklift, aisle and max rack run. The Generate panel keeps these
 settings in step when one of its own fields changes. The user drags a box over
 part of a building, and on release it fills with racking by Generate's own walks
 (`rowBands` / `rowSegments`: tight forklift aisles, column seating, cross-aisles
-by max run, wall clearance) — `generate/fillRacking.js`, `utils/fillTool.js`,
+by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
 `canvas2/FillTool.jsx`.
-- The region is the box clipped to the building's **real outline** (L, T,
-  custom), cut into rectangles; each side is a **wall**, **open** (a box edge on
-  open floor, or an existing rack on any part of it) or a **join** (the region
-  carries on).
-- Walls get wall clearance and **single rows**, the inside corner of an L
-  included. An open side gets a **forklift aisle**, so two fills never meet
-  rack-to-rack. A join gets half a cross-aisle on each side.
-- **Existing racks are obstacles**: never moved, never overlapped, an aisle off.
+- **The box is the racking area.** It is clipped to the walls' **inner face**
+  (the outline inset by the wall thickness, as drawn; L, T, custom) and cut
+  into rectangles. Each side is a **wall**, **open** (the box edge), **rack**
+  (an existing rack on any part of it, or touching it) or a **join** (the
+  region carries on).
+- **Wall side:** the row is single and flush on the inner face (0"). There is
+  no wall-clearance inset, and this includes the inside corner of an L.
+- **Open side:** the row is back-to-back, with its outer face exactly on the
+  box edge (0"). No aisle is added.
+- **Join:** half a cross-aisle on each side.
+- The walk starts at the box edge **where the drag started**, in both axes,
+  and the row at the far edge is flush too. Along the run, a one-piece run
+  ends within a bay of the far edge, since bays are whole; a split run ends
+  flush.
+- **Existing racks are obstacles**: never moved, never overlapped. The side
+  next to one gets a forklift aisle, so its pick face stays reachable; this
+  is the one aisle a fill adds.
+- A box too narrow for both edge rows and an aisle gets the start edge's row
+  alone (a single if a pair doesn't fit).
+- `rowBands` has optional `nearType` / `farType` for the end rows. They
+  default to single, so Generate is unchanged.
 - New rows are stamped `rowIndex` / `genSection` after the building's own, so
   copy-to-sections, Match bays and Check layout work on them. The copy watcher
   sees a fill as a generated layout: nothing is pending.
@@ -310,10 +323,11 @@ by max run, wall clearance) — `generate/fillRacking.js`, `utils/fillTool.js`,
 
 | Test | Asserts |
 |---|---|
-| `FR-generate` (×2) | the whole of a rectangle, 240 × 120 (30 × 30 grid) and 1080 × 410 (25 × 30): exactly Generate's racks (position, size, rotation, beams, levels, rowIndex, genSection) and aisles; one rectangle; every object has its own id |
+| `FR-generate` (×2) | the whole of a rectangle, 240 × 120 and 1080 × 410: exactly Generate's walk over the same clear floor (the inner faces, no wall clearance) — racks (position, size, rotation, beams, rowIndex, genSection) and aisle count; the first and last rows and the run start flush on the inner faces; the wall rows single; every object has its own id |
 | `FR-shape` (×2) | the whole of an L (300 × 200) and a T (360 × 240): more than one rectangle; no rack outside the outline (every corner inside, no outline vertex inside a rack); no overlaps; every rack whose long side is within 3' of a wall is a single row, and each inside wall the rows face has some; Check layout: nothing at all |
 | `FR-arms` | an L's two arms filled separately: single rows along the inside-corner wall, nothing outside, no overlaps, the second fill's stamps after the first's, no errors |
-| `FR-open` | half a rectangle: the racks stop at least an aisle (10' 6") short of the open box edge; the other half, filled next: at least an aisle off it too, and every rack of one fill at least an aisle from every rack of the other |
+| `FR-edge-stack` (×2) | 300 × 200, a box from mid-building (open floor) past a wall, dragged from the open edge and from the wall: the open-edge row is back-to-back with its outer face exactly on the box edge (0", within 0.001 px), the wall row single and exactly on the inner face; nothing outside the box or the walls; no errors |
+| `FR-edge-run` (×2) | the same along the run: dragged from the open edge the racking starts exactly on it; dragged from the wall, exactly on the inner face; nothing past either; no errors |
 | `FR-existing` | a double row in the middle and a single row across the rows: both exactly as they were after filling the whole building; no new rack overlaps them, each is at least an aisle off; no overlaps |
 | `FR-stamps` | 480' of run, 120' max run: every rack has integer rowIndex / genSection; nothing pending after the fill; 3+ sections, row 2 once in each; row 2 of section 2 moved 1' across, Copy: row 2 of every section moved 1' |
 | `FR-check` (×3) | Check layout: no errors on a fill of a rectangle, an L and a T |
@@ -340,6 +354,13 @@ All run horizontal and vertical.
   goes into the store in one write, not through `addObject`, and React warned
   about duplicate keys. They now get ids in `planFill`, and FR-generate checks
   every id.
+- **The box is the racking area (checked in the app, both orientations):**
+  - a half-building box dragged from open floor past a wall: the open-edge row
+    is back-to-back, the wall row single and 0" from the inner face;
+  - Check layout: 0 errors and 0 warnings;
+  - fills of a rectangle, an L and a T: clean, with undo, redo and Esc
+    working;
+  - no console errors.
 - **Found by FR-existing:** a run end was called open only when the existing
   rack sat at the side's midpoint. A rack beside part of the side got half a
   cross-aisle (4' 6"–5' 3"). Now any rack on the side makes it open.
@@ -1957,7 +1978,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | FR | **The building's columns ignored** (not Generate's walk) | 2: FR-generate h/v | ✓ |
 | FR | **Clipped to the bounding box, not the outline** | FR-shape, FR-arms, FR-check, FR-generate (h/v) | ✓ |
 | FR | **Rows against a wall double** | FR-shape and 5 more (h/v) | ✓ |
-| FR | **No aisle along an open box edge** | FR-open, FR-existing (h/v) | ✓ |
+| FR | **No aisle along an open box edge** (the rule before this one) | FR-open, FR-existing (h/v) | ✓ |
 | FR | **Existing racks ignored** | FR-existing h/v | ✓ |
 | FR | **An existing rack counts only at the side's midpoint** | FR-existing h/v | ✓ |
 | FR | **No rowIndex / genSection stamps** | FR-stamps, FR-generate, FR-arms (h/v) | ✓ |
@@ -1965,6 +1986,7 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | FR | **One history entry per rack** | FR-undo h/v | ✓ |
 | FR | **Esc does not drop the box** | FR-undo h/v | ✓ |
 | FR | **Aisles without ids** | 4: FR-generate h/v | ✓ |
+| FR | **An aisle along an open box edge again** (the box is the racking area) | 6: FR-edge-stack ×2, FR-edge-run from the open edge (h/v) | ✓ |
 | CX | **Short runs get a cross-aisle again** (the old rule) | 9: CX-72, CX-limit, CX-generate 72' (h/v), CX-fill-rect v, CX-fill-T h/v, CX-fill-L h/v | ✓ |
 | LC | **An aisle too narrow to drive not an error** (aisleLevel) | 6: LC-aisle, LC-click, LC-recheck (h/v) | ✓ |
 | LC | **A can't-pick aisle filed under errors** | 2: LC-aisle h/v | ✓ |
@@ -2110,8 +2132,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 1,965 tests, 1,965 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,362 tests, 2,362 passing.**
+- **Plan suite: 1,971 tests, 1,971 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,368 tests, 2,368 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:
