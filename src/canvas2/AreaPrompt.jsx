@@ -1,4 +1,4 @@
-import { useAreaPrompt, answerArea } from '../utils/rackingAreaTool'
+import { useAreaPrompt, answerArea, answerChoice } from '../utils/rackingAreaTool'
 
 /* The racking area / zone question (utils/rackingAreaTool.js): a racking area
    with hand edits about to be resized or rebuilt, or a zone about to go over
@@ -26,8 +26,12 @@ export function AreaPrompt() {
     <div style={wrap}>
       <div role="alertdialog" aria-label="Racking area question" style={box}>
         <span style={{ fontWeight: 600 }}>{q.text}</span>
-        <button type="button" style={btn} onClick={() => answerArea(true)}>Continue</button>
-        <button type="button" style={btn2} onClick={() => answerArea(false)}>Cancel</button>
+        {q.choices
+          ? q.choices.map((c, i) => <button key={c.label} type="button" style={i === q.choices.length - 1 ? btn : btn2} onClick={() => answerChoice(i)}>{c.label}</button>)
+          : <>
+              <button type="button" style={btn} onClick={() => answerArea(true)}>Continue</button>
+              <button type="button" style={btn2} onClick={() => answerArea(false)}>Cancel</button>
+            </>}
       </div>
     </div>
   )

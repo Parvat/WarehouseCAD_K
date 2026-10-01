@@ -33,8 +33,8 @@ async function fresh() {
   installAisleKeeper(useCanvasStore, nanoid)
   installRowEditKeeper(useCanvasStore)
   CP.installCopyWatcher(useCanvasStore, nanoid)
-  AT.installZoneKeeper(useCanvasStore)
-  return { useCanvasStore, FT, FR, RA, AT, LC, CP, rackFootprint }
+  AT.installAreaKeeper(useCanvasStore)
+  return { useCanvasStore, FT, FR, RA, AT, LC, CP, L, rackFootprint }
 }
 
 const RACK = new Set(['rack_row', 'rack_double_row'])
@@ -103,8 +103,11 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const strip = racks().filter(r => foot(r).y < fp.y + 40 * GS - EPS)
     expect(strip.length).toBeGreaterThan(1)
     for (const r of racks()) expect(overlap(foot(r), ob)).toBe(false)
-    // flush on the office: the strip's racking ends exactly on its left edge
-    expect(Math.max(...strip.map(r => foot(r).x + foot(r).w)) - office.x).toBeCloseTo(0, 3)
+    // up to the office: in vertical the rows run beside it and end flush on its edge; in horizontal the
+    // strip's rows line up with the row below (RA-align), cut to whole bays — within one bay of it, never past
+    const endGap = office.x - Math.max(...strip.map(r => foot(r).x + foot(r).w))
+    if (vert) expect(endGap).toBeCloseTo(0, 3)
+    else { expect(endGap).toBeGreaterThanOrEqual(-EPS); expect(endGap).toBeLessThan(99 / 12 * GS) }
     if (vert) for (const r of strip) if (Math.abs(foot(r).x + foot(r).w - office.x) < EPS) expect(r.type).toBe('rack_row')
     for (const r of strip) expect(r.areaId).toBe(areaNow().id)
     expect([areaNow().y, areaNow().height]).toEqual([fp.y, fp.height])
@@ -246,6 +249,118 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     expect(check()).toEqual({ errors: [], warnings: [] })
   })
 
+  /** Uprights (run positions, ft) of a rack, and its run start / end. */
+  const runOf = (r) => { const f = foot(r); return vert ? [f.y, f.y + f.h] : [f.x, f.x + f.w] }
+  const stackOf = (r) => { const f = foot(r); return vert ? f.x : f.y }
+  const uprights = (r) => { const [r0] = runOf(r), u = r.uprightWidth ?? 3, out = [r0 / GS]; let at = r0 / GS; for (const b of r.beams) { at += (u + b) / 12; out.push(at) } return out }
+  /** Extend the area across its rows (up for horizontal rows, left for vertical) to `edge`; returns
+   *  the template row (the area's row nearest that side, before) and the new racks. */
+  const extendAcross = (edge) => {
+    const a = areaNow(), before = new Set(racks().map(r => r.id))
+    const first = Math.min(...racks().map(stackOf))
+    const template = racks().filter(r => Math.abs(stackOf(r) - first) < 1e-6).map(r => JSON.parse(JSON.stringify(r)))
+    const box = vert ? { x: edge, y: a.y, w: a.x + a.width - edge, h: a.height } : { x: a.x, y: edge, w: a.width, h: a.y + a.height - edge }
+    if (!resizeArea(box)) answer(true)                                   // a hand edit in the area: asked first
+    return { template, added: racks().filter(r => !before.has(r.id)) }
+  }
+  /** Every new row lines up with the template where the template reaches: each piece there has the
+   *  template's uprights (same positions), and a piece the template had whole keeps its exact start,
+   *  end and bays. A piece where the template doesn't reach (filled fresh) lies wholly outside its
+   *  run range — no offset piece among the aligned ones. */
+  const expectAligned = (template, added) => {
+    const tUp = template.flatMap(uprights)
+    const h0 = Math.min(...template.map(t => runOf(t)[0])), h1 = Math.max(...template.map(t => runOf(t)[1]))
+    expect(added.length).toBeGreaterThan(1)
+    let whole = 0
+    for (const r of added) {
+      const [a0, a1] = runOf(r)
+      if (a1 <= h0 + EPS || a0 >= h1 - EPS) continue                   // fresh, beyond the template's reach
+      for (const u of uprights(r)) expect(tUp.some(t => Math.abs(t - u) < 1e-6), `upright at ${u.toFixed(3)}' lines up`).toBe(true)
+      const [r0, r1] = runOf(r)
+      const same = template.find(t => Math.abs(runOf(t)[0] - r0) < 1e-3 && Math.abs(runOf(t)[1] - r1) < 1e-3)
+      if (same) { expect(r.beams).toEqual(same.beams); whole++ }
+    }
+    expect(whole).toBeGreaterThan(0)
+  }
+
+  it('RA-align: extending the area across its rows (up / to the left, to the wall) gives new rows that line up with the row beside them — same starts, ends, uprights and bays (a Match-bays pattern included), no offset gaps; Check layout clean; one undo', () => {
+    s().placeFpObject({ type: 'fp_rect', widthFt: 240, heightFt: 120 })
+    const fp = s().objects.find(o => o.type === 'fp_rect')
+    // a washroom in the top-left corner, as placed from the left panel and dragged there
+    s().addObject({ type: 'zone_washroom', label: 'Washroom', x: fp.x + 10, y: fp.y + 10, width: 20 * GS, height: 15 * GS, parentId: fp.id, layerId: 'zones' })
+    // the area over the bottom (horizontal) / right (vertical) part — where a mouse puts it, not whole feet
+    if (vert) drag({ x: fp.x + fp.width + 61.3, y: fp.y + fp.height + 58.9 }, { x: fp.x + 100.37 * GS, y: fp.y - 59.6 })
+    else drag({ x: fp.x + 20.4, y: fp.y + fp.height + 61.7 }, { x: fp.x + fp.width + 58.3, y: fp.y + 50.37 * GS })
+    // give the nearest row a bay pattern of its own (120" then 72", the same length), as Match bays would leave it
+    const first = Math.min(...racks().map(stackOf))
+    const r = racks().find(o => Math.abs(stackOf(o) - first) < 1e-6)
+    s().commitObjectUpdate(r.id, { beams: r.beams.map((b, i) => (i === 1 ? 120 : i === 2 ? 72 : b)) })
+    const before = doc()
+    const { template, added } = extendAcross(vert ? fp.x - 81.7 : fp.y - 79.3)
+    if (question()) answer(true)
+    expectAligned(template, added)
+    expect(added.some(o => o.beams.includes(120))).toBe(true)
+    expect(check()).toEqual({ errors: [], warnings: [] })
+    s().undo()
+    expect(doc()).toEqual(before)
+  })
+
+  it.each([['fp_l', 300, 200], ['fp_t', 360, 240]])('RA-align-shape: on a %s, extending across the rows lines the new rows up with the row beside them, inside the walls', (type, w, h) => {
+    s().placeFpObject({ type, widthFt: w, heightFt: h })
+    const fp = s().objects.find(o => o.type === type)
+    const inner = m.FR.innerOutline(fp, GS)
+    // the area over the bottom (horizontal) / right (vertical) part, extended across the rows to the far wall
+    if (vert) drag({ x: fp.x + fp.width, y: fp.y + fp.height }, { x: fp.x + fp.width * 0.55, y: fp.y })
+    else drag({ x: fp.x, y: fp.y + fp.height }, { x: fp.x + fp.width, y: fp.y + fp.height * 0.55 })
+    expect(racks().length).toBeGreaterThan(2)
+    const { template, added } = extendAcross(vert ? fp.x : fp.y)
+    expectAligned(template, added)
+    const pointIn = (px, py) => { let c = false; for (let i = 0, j = inner.length - 1; i < inner.length; j = i++) { const a = inner[i], b = inner[j]; if ((a.y > py) !== (b.y > py) && px < (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x) c = !c } return c }
+    for (const o of racks()) { const f = foot(o); for (const [x, y] of [[f.x + 0.01, f.y + 0.01], [f.x + f.w - 0.01, f.y + f.h - 0.01]]) expect(pointIn(x, y)).toBe(true) }
+    expect(check().errors).toEqual([])
+  })
+
+  it('RA-pdf: zones are drawn in the PDF (a tinted rectangle with the name), and not when the Zones layer is hidden', async () => {
+    const { office } = officeLayout()
+    const { buildLayoutSVG } = await import('../../export/pdfExport')
+    const svgNow = () => buildLayoutSVG(s().objects, s().layers, GS).svg
+    let svg = svgNow()
+    expect(svg).toContain(`data-zone="${office.id}"`)
+    expect(svg).toMatch(new RegExp(`<rect x="${office.x}" y="${office.y}" width="${office.width}" height="${office.height}" fill="#[0-9a-fA-F]{6}" fill-opacity="0.13"`))
+    expect(svg).toMatch(/>Office<\/text>/)
+    m.L.setLayer(m.useCanvasStore, 'zones', { visible: false })
+    svg = svgNow()
+    expect(svg).not.toContain('data-zone=')
+    expect(svg).not.toMatch(/>Office<\/text>/)
+    expect(svg).toContain('<g')                                           // the racks still print
+  })
+
+  it.each([['Keep racks', 0], ['Delete racks', 1]])('RA-delete: deleting a racking area asks "Delete the racks in this area too?" (the delete taken back meanwhile); %s — one undo step, and undo brings the area back exactly', async (label, i) => {
+    officeLayout()
+    const a = areaNow(), mine = racks().map(r => r.id), n0 = s().history.length, before = doc()
+    s().selectObject(a.id); s().deleteSelected(); await tick()
+    expect(question().text).toBe('Delete the racks in this area too?')
+    expect(question().choices.map(c => c.label)).toEqual(['Keep racks', 'Delete racks'])
+    expect(doc()).toEqual(before)
+    expect(s().history.length).toBe(n0)
+    m.AT.answerChoice(i); await tick()
+    expect(question()).toBeNull()
+    expect(areaNow()).toBeUndefined()
+    expect(s().history.length).toBe(n0 + 1)
+    if (label === 'Keep racks') {
+      expect(racks().map(r => r.id).sort()).toEqual([...mine].sort())
+      for (const r of racks()) expect(r.areaId).toBeUndefined()
+      expect(check().errors).toEqual([])
+    } else {
+      expect(racks()).toHaveLength(0)
+      expect(s().objects.some(o => o.type === 'aisle')).toBe(false)
+      expect(s().objects.some(o => o.type === 'fp_rect')).toBe(true)
+      expect(s().objects.some(o => o.type === 'zone_office')).toBe(true)
+    }
+    s().undo()
+    expect(doc()).toEqual(before)
+  })
+
   it('RA-copy: an area\'s resize is not a row edit — a shrink that trims rows puts nothing in the copy-to-sections set', async () => {
     officeLayout()
     await m.CP.flushCopyWatcher()
@@ -274,5 +389,30 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     }
     expect(racks().length).toBeGreaterThan(8)
     expect(check().errors).toEqual([])
+  })
+})
+
+/* The case found in the app (horizontal, the mouse's own coordinates): a washroom top-left, the
+   area over the bottom part, its top edge dragged past the wall. The new rows' first aisle off the
+   old rows came out 9e-6 px under 10' 6" — fillRects rounded its cut positions to a millionth of a
+   foot, and lined up with the rows below, that cut is an aisle edge. Cuts are now merged without
+   moving them. */
+describe('RA — the app\'s own coordinates', () => {
+  it('RA-precision: extending across the rows at mouse coordinates leaves every aisle at its full width — Check layout finds nothing at all', async () => {
+    const m = await fresh(), s = () => m.useCanvasStore.getState()
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation: 'horizontal' })
+    s().placeFpObject({ type: 'fp_rect', widthFt: 240, heightFt: 120 })
+    const fp = s().objects.find(o => o.type === 'fp_rect')
+    expect([fp.x, fp.y]).toEqual([-4800, -2400])
+    s().addObject({ type: 'zone_washroom', label: 'Washroom', x: -4790, y: -2390, width: 800, height: 600, parentId: fp.id, layerId: 'zones' })
+    m.FT.startFill({ x: -4780.196329492104, y: -401.19504908237303 + 2859.581732821169 })
+    m.FT.moveFill({ x: -4780.196329492104 + 9637.217242851046, y: -401.19504908237303 }, s().objects, GS)
+    m.FT.commitFill(m.useCanvasStore)
+    const a = s().objects.find(o => o.type === 'racking_area')
+    expect([a.x, a.y, a.width, a.height]).toEqual([-4780.196329492104, -401.19504908237303, 9637.217242851046, 2859.581732821169])
+    s().updateObject(a.id, { y: -2483.3333333333335, height: 4941.72001707213 })
+    m.AT.finishAreaResize(m.useCanvasStore, a.id, { x: a.x, y: a.y, w: a.width, h: a.height })
+    expect(s().objects.filter(o => o.type === 'rack_double_row' || o.type === 'rack_row').length).toBeGreaterThan(12)
+    expect(m.LC.checkLayout(s().objects, { gridSize: GS })).toEqual({ errors: [], warnings: [] })
   })
 })

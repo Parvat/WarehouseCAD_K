@@ -12,17 +12,21 @@
 //     edge keeps its whole bays; a row wholly outside goes); the newly covered
 //     part is filled with the area's settings by every Fill racking rule
 //     (generate/fillRacking.js) — the area's own racks are obstacles there, so
-//     they stay exactly as they are.
+//     they stay exactly as they are. A part that extends the area ACROSS its
+//     rows lines its new rows up with the nearest existing row: the same
+//     pieces, starts, uprights and bays (like Match bays), cut to what fits;
+//     only what they can't reach is filled fresh.
 //   - Rebuild (a settings change): the area's racks as placed are removed and
 //     the whole box filled again with the new settings; hand-edited racks stay
 //     where they are (the fill goes round them).
 //
-// A ZONE (\`zone_*\`: office, staging, washroom, custom area) is a rectangle
+// A ZONE (`zone_*`: office, staging, washroom, custom area) is a rectangle
 // no racking may enter: Fill racking treats it as a hole with wall edges, and
 // racks under a zone that is placed, moved or resized over them are trimmed
 // to their bays outside it (clearZone).
 
 import { planFill, DEFAULT_FILL_SETTINGS, isZone } from './fillRacking'
+import { rackFootprint } from './columnCheck'
 import { splitRackForBayDelete } from '../utils/baySplit'
 import { rebuildAisles } from '../utils/aisleRebuild'
 import { uprightXs } from '../render/rackOps'
@@ -86,7 +90,7 @@ export function trimBays(objects, ids, bad, gridSize = 40, newId = nanoid) {
   return { objects: out, became }
 }
 
-/** Keep every area's \`placed\` record true after racks were trimmed by the app
+/** Keep every area's `placed` record true after racks were trimmed by the app
  *  (not by hand): a rack that matched its record keeps matching (its pieces
  *  are recorded as placed); a removed rack leaves the record. */
 function carryPlaced(before, after, became) {
@@ -106,7 +110,7 @@ function carryPlaced(before, after, became) {
   })
 }
 
-/** Hand edits in \`area\`: racks changed since placed, placed racks gone, and
+/** Hand edits in `area`: racks changed since placed, placed racks gone, and
  *  racks added inside the area by hand. */
 export function areaEdits(objects, area) {
   const placed = area?.placed || {}
@@ -119,13 +123,32 @@ export function areaEdits(objects, area) {
   return { count: changed.length + removed.length + added.length, changed: changed.map(o => o.id), removed, added: added.map(o => o.id) }
 }
 
-/** The racks and aisles of a fill of \`box\`, stamped with \`areaId\`. */
-function fillPart(objects, box, settings, { gridSize, newId, areaId, from }) {
+/** The racks and aisles of a fill of `box`, stamped with `areaId`. */
+function fillPart(objects, box, settings, { gridSize, newId, areaId, from, runTemplate = null }) {
   if (!(box.w > EPS) || !(box.h > EPS)) return null
-  const plan = planFill(objects, box, settings, { gridSize, newId, from, areaId })
+  const plan = planFill(objects, box, settings, { gridSize, newId, from, areaId, runTemplate })
   return plan.racks.length ? plan : null
 }
-/** The corner of \`box\` a fill anchored at \`anchor\` ({ x: 'l'|'r', y: 't'|'b' }) starts from. */
+
+/** The row of area `areaId` nearest `side` ('lo' | 'hi' across the rows), as a
+ *  run template for planFill: its pieces' run starts (ft), bays, uprights and
+ *  sections. Null when the area has no rows of its direction. */
+function nearestRowTemplate(objects, areaId, vert, side, gridSize) {
+  const rows = new Map()
+  for (const o of objects) {
+    if (!isRack(o) || o.areaId !== areaId || !Array.isArray(o.beams)) continue
+    const f = rackFootprint(o)
+    if (!!f.rotated !== vert) continue
+    const s0 = (vert ? f.x : f.y) / gridSize
+    const k = Math.round(s0 * 1000)
+    if (!rows.has(k)) rows.set(k, [])
+    rows.get(k).push({ r0: (vert ? f.y : f.x) / gridSize, beams: o.beams, upIn: o.uprightWidth ?? 3, genSection: o.genSection ?? null })
+  }
+  if (!rows.size) return null
+  const keys = [...rows.keys()].sort((a, b) => a - b)
+  return rows.get(side === 'lo' ? keys[0] : keys[keys.length - 1]).sort((a, b) => a.r0 - b.r0)
+}
+/** The corner of `box` a fill anchored at `anchor` ({ x: 'l'|'r', y: 't'|'b' }) starts from. */
 const cornerOf = (box, anchor = { x: 'l', y: 't' }) => ({ x: anchor.x === 'r' ? box.x + box.w : box.x, y: anchor.y === 'b' ? box.y + box.h : box.y })
 
 /** A new racking area from a Fill racking box: the area object and the fill.
@@ -143,21 +166,22 @@ export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = 
   return { area, plan, objects: [...objects, area, ...plan.racks, ...plan.aisles] }
 }
 
-/** The parts of \`nb\` not in \`ob\` (up to four rectangles). */
+/** The parts of `nb` not in `ob` (up to four rectangles), each with the side
+ *  of the old box it grows from. */
 function newlyCovered(nb, ob) {
   const x0 = Math.max(nb.x, ob.x), x1 = Math.min(nb.x + nb.w, ob.x + ob.w)
   const y0 = Math.max(nb.y, ob.y), y1 = Math.min(nb.y + nb.h, ob.y + ob.h)
-  if (x1 <= x0 + EPS || y1 <= y0 + EPS) return [nb]
+  if (x1 <= x0 + EPS || y1 <= y0 + EPS) return [{ ...nb, side: null }]
   const parts = [
-    { x: nb.x, y: nb.y, w: nb.w, h: y0 - nb.y },                              // above
-    { x: nb.x, y: y1, w: nb.w, h: nb.y + nb.h - y1 },                          // below
-    { x: nb.x, y: y0, w: x0 - nb.x, h: y1 - y0 },                              // left
-    { x: x1, y: y0, w: nb.x + nb.w - x1, h: y1 - y0 },                         // right
+    { x: nb.x, y: nb.y, w: nb.w, h: y0 - nb.y, side: 'above' },
+    { x: nb.x, y: y1, w: nb.w, h: nb.y + nb.h - y1, side: 'below' },
+    { x: nb.x, y: y0, w: x0 - nb.x, h: y1 - y0, side: 'left' },
+    { x: x1, y: y0, w: nb.x + nb.w - x1, h: y1 - y0, side: 'right' },
   ]
   return parts.filter(p => p.w > EPS && p.h > EPS)
 }
 
-/** Resize area \`areaId\` to \`box\`: trim its racks to the new box (whole bays),
+/** Resize area `areaId` to `box`: trim its racks to the new box (whole bays),
  *  fill what is newly covered. Returns the new objects. */
 export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = nanoid } = {}) {
   const area = objects.find(o => o.id === areaId)
@@ -171,9 +195,13 @@ export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = na
   // extend: each newly covered part filled on its own, anchored on the side it grows from
   const ocx = old.x + old.w / 2, ocy = old.y + old.h / 2
   const added = []
+  const vert = settings.orientation === 'vertical'
   for (const part of newlyCovered(box, old)) {
     const from = { x: Math.abs(part.x - ocx) <= Math.abs(part.x + part.w - ocx) ? part.x : part.x + part.w, y: Math.abs(part.y - ocy) <= Math.abs(part.y + part.h - ocy) ? part.y : part.y + part.h }
-    const plan = fillPart(next, part, settings, { gridSize, newId, areaId, from })
+    // across the rows (above/below a horizontal area, left/right of a vertical one): line up with the nearest row
+    const across = vert ? (part.side === 'left' || part.side === 'right') : (part.side === 'above' || part.side === 'below')
+    const runTemplate = across ? nearestRowTemplate(next, areaId, vert, part.side === 'above' || part.side === 'left' ? 'lo' : 'hi', gridSize) : null
+    const plan = fillPart(next, part, settings, { gridSize, newId, areaId, from, runTemplate })
     if (!plan) continue
     next = [...next, ...plan.racks, ...plan.aisles]
     added.push(...plan.racks)
@@ -185,7 +213,7 @@ export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = na
   return rebuildAisles(next, newId).objects
 }
 
-/** Rebuild area \`areaId\` with \`settings\`: its racks as placed go, the whole
+/** Rebuild area `areaId` with `settings`: its racks as placed go, the whole
  *  box is filled again; hand-edited racks stay (the fill goes round them). */
 export function planAreaRebuild(objects, areaId, settings, { gridSize = 40, newId = nanoid } = {}) {
   const area = objects.find(o => o.id === areaId)
@@ -204,13 +232,13 @@ export function planAreaRebuild(objects, areaId, settings, { gridSize = 40, newI
   return rebuildAisles(next, newId).objects
 }
 
-/** The racks with a bay under \`zone\`. */
+/** The racks with a bay under `zone`. */
 export function racksUnderZone(objects, zone, gridSize = 40) {
   const z = boxOf(zone)
   return objects.filter(o => isRack(o) && o.width > 0 && bayBoxes(o, gridSize).some(b => overlaps(b, z))).map(o => o.id)
 }
 
-/** Clear the racks under \`zone\`: each keeps only its bays outside it (a row
+/** Clear the racks under `zone`: each keeps only its bays outside it (a row
  *  crossing the zone becomes pieces either side; a rack wholly under it goes).
  *  Returns { objects, count } (count = racks touched). */
 export function clearZone(objects, zone, { gridSize = 40, newId = nanoid } = {}) {

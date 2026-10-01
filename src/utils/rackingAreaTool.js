@@ -10,9 +10,13 @@
 //     leaves everything as it was.
 //   - A zone placed, moved or resized over racks (any way at all — the left
 //     panel, a drag, a resize, a nudge, a paste) is caught after the fact by
-//     the zone keeper: the action is taken back and a question asks; Continue
+//     the area keeper: the action is taken back and a question asks; Continue
 //     puts it back with the racks under the zone removed or trimmed, as one
 //     history entry.
+//   - A racking area deleted (any way — Delete, the panel's bin, a cut) while
+//     its racks are still there: taken back the same way, and asked "Delete
+//     the racks in this area too?" [Keep racks] [Delete racks]; either answer
+//     puts the delete back as one history entry.
 // The copy watcher is told these are the app's own actions, not row edits
 // (copyPrompt.skipNextAction): nothing joins the copy-to-sections set.
 
@@ -24,7 +28,8 @@ import { rebuildAisles } from './aisleRebuild'
 
 export const EDIT_WARNING = "You've changed racks in this area. The new part will use the default settings; your changes stay as they are."
 
-/** The open question: { text, run } — run() is what Continue does. */
+/** The open question: { text, run } — run() is what Continue does — or
+ *  { text, choices: [{ label, run }] } for a question with its own answers. */
 export const useAreaPrompt = create(() => ({ question: null }))
 
 const sameBox = (a, b) => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6 && Math.abs(a.w - b.w) < 1e-6 && Math.abs(a.h - b.h) < 1e-6
@@ -48,8 +53,18 @@ function askOr(text, run) {
 export function answerArea(go) {
   const q = useAreaPrompt.getState().question
   useAreaPrompt.setState({ question: null })
-  if (go && q) q.run()
+  if (go && q && q.run) q.run()
 }
+
+/** One of the open question's own answers (`choices[i]`). */
+export function answerChoice(i) {
+  const q = useAreaPrompt.getState().question
+  useAreaPrompt.setState({ question: null })
+  const c = q && q.choices && q.choices[i]
+  if (c) c.run()
+}
+
+export const DELETE_AREA_TEXT = 'Delete the racks in this area too?'
 
 /** An area's edge was dragged to where it is now; `oldBox` is where it was.
  *  The area goes back to `oldBox` at once (the drag wrote no history), then
@@ -88,9 +103,10 @@ export function requestAreaRebuild(store, areaId, settings, { gridSize } = {}) {
 
 const zoneText = (zone, n) => `This ${(zone.label || 'zone').toLowerCase()} covers ${n} rack${n === 1 ? '' : 's'}. Racks under it will be removed or trimmed to the bays outside it.`
 
-/** Zones placed / moved / resized over racks: take the action back and ask
- *  (see the file comment). Returns the unsubscribe. */
-export function installZoneKeeper(store) {
+/** Zones placed / moved / resized over racks, and racking areas deleted with
+ *  their racks still there: take the action back and ask (see the file
+ *  comment). Returns the unsubscribe. */
+export function installAreaKeeper(store) {
   let lastHistory = store.getState().history, lastIndex = store.getState().historyIndex, lastObjects = store.getState().objects, busy = false
   const geo = (o) => (o ? [o.x, o.y, o.width, o.height].join(',') : '')
   const check = (st) => {
@@ -105,7 +121,11 @@ export function installZoneKeeper(store) {
     const gs = st.gridSize || 40
     const moved = st.objects.filter(o => isZone(o) && geo(o) !== geo(B.get(o.id)))
     const hits = moved.map(z => ({ z, n: racksUnderZone(st.objects, z, gs).length })).filter(h => h.n > 0)
-    if (!hits.length) return
+    // racking areas this action deleted whose racks are still there
+    const afterIds = new Set(st.objects.map(o => o.id))
+    const gone = before.filter(o => isArea(o) && !afterIds.has(o.id)).map(o => o.id)
+    const orphaned = new Set(gone.filter(id => st.objects.some(o => o.areaId === id)))
+    if (!hits.length && !orphaned.size) return
     // take the action back (its entry dropped), then ask
     const after = st.objects
     queueMicrotask(() => {
@@ -116,6 +136,20 @@ export function installZoneKeeper(store) {
       try { store.setState({ objects: snap.objects, groups: snap.groups || now.groups, history: now.history.slice(0, now.historyIndex), historyIndex: now.historyIndex - 1 }) } finally { busy = false }
       const cur = store.getState()
       lastHistory = cur.history; lastIndex = cur.historyIndex; lastObjects = cur.objects
+      if (orphaned.size) {
+        const anchor = (after.find(o => o.parentId && !o.areaId) || after.find(o => !o.areaId) || after[0] || {}).id
+        useAreaPrompt.setState({
+          question: {
+            text: DELETE_AREA_TEXT,
+            choices: [
+              // the racks stay, no longer part of an area
+              { label: 'Keep racks', run: () => commitAll(store, after.map(o => (o.areaId && orphaned.has(o.areaId) ? (({ areaId, ...rest }) => rest)(o) : o)), anchor) },
+              { label: 'Delete racks', run: () => commitAll(store, after.filter(o => !(o.areaId && orphaned.has(o.areaId))), anchor) },
+            ],
+          },
+        })
+        return
+      }
       const n = hits.reduce((t, h) => t + h.n, 0)
       useAreaPrompt.setState({
         question: {

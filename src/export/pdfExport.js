@@ -11,7 +11,9 @@
 // coordinates, wrapped in an A1-sized print page — no dependency on which
 // canvas engine (or whether ANY canvas) is currently mounted.
 //
-// Scope: floor plans, column grids, every PORTED_RACK_TYPES rack, and the
+// Scope: floor plans, zones (office, staging, washroom, custom area: a tinted
+// rectangle and its name, as canvas2 draws them), column grids, every
+// PORTED_RACK_TYPES rack, and the
 // drawing's labels and marks — aisle and cross-aisle widths, column clearance
 // labels and red aisle warnings, X marks, upright flags, oversized bays —
 // from render/labelOps.js, the SAME ops the canvas paints, at the same Label
@@ -36,6 +38,7 @@ import { layoutColumns, layoutFloors } from '../generate/usableCapacity'
 import { isShown, layerShown } from '../utils/layers'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
+const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 
 // One real-world millimetre per world px, at the app's fixed 40px = 1ft
 // convention (gridSize varies per-document, but the px-per-foot ratio is
@@ -72,6 +75,8 @@ function computeBounds(objects, gridSize) {
       for (const v of verts) eat(v.x, v.y)
     } else if (o.type === 'column_grid') {
       for (const c of expandColumnGrid(o, gridSize)) { eat(c.x, c.y); eat(c.x + c.w, c.y + c.h) }
+    } else if (isZone(o)) {
+      eat(o.x, o.y); eat(o.x + o.width, o.y + o.height)
     } else if (PORTED_RACK_TYPES.has(o.type)) {
       const cx = o.x + o.width / 2, cy = o.y + o.height / 2
       const rot = ((o.rotation || 0) * Math.PI) / 180
@@ -114,6 +119,18 @@ function floorPlanSVG(obj, gridSize) {
 /* ── Column grid — the real column squares in the canvas's own look
    (render/columnDraw.js: solid body, I-beam web and flanges, a thin outline
    in drawing units), from the same expandColumnGrid the check measures. */
+/* ── Zone — canvas2's ZoneShape (shapes.jsx): its colour as a light tint and
+   a 1.5-unit outline, its name centred, drawing-size text sized to the zone. */
+function zoneSVG(obj, gridSize) {
+  if (!(obj.width > 0) || !(obj.height > 0)) return ''
+  const stroke = /^#[0-9a-f]{6}$/i.test(obj.stroke || '') ? obj.stroke : '#64748b'
+  const fs = Math.max(gridSize, Math.min(4 * gridSize, Math.min(obj.width, obj.height) * 0.18))
+  const name = esc(obj.label || 'Zone')
+  return `<g data-zone="${esc(obj.id || '')}">` +
+    `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" fill="${stroke}" fill-opacity="0.13" stroke="${stroke}" stroke-width="${gridSize * 0.0375}"/>` +
+    `<text x="${obj.x + obj.width / 2}" y="${obj.y + obj.height / 2}" text-anchor="middle" dominant-baseline="central" font-family="Inter, sans-serif" font-weight="600" font-size="${fs}" fill="${stroke}">${name}</text></g>`
+}
+
 function columnGridSVG(obj, gridSize) {
   const g = columnGridOps(obj, gridSize)
   if (!g) return ''
@@ -332,10 +349,11 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   // Draw order matches canvas2's Scene.jsx: floor plans first (the ground),
   // then racks, then the columns on top (structure: a column inside a rack is
   // the conflict the check reports, so no rack may hide it), then the labels.
-  const floors = [], columns = [], racks = []
+  const floors = [], zones = [], columns = [], racks = []
   for (const o of objects) {
     if (!o || !usable(o)) continue
     if (FP_TYPES.has(o.type)) floors.push(o)
+    else if (isZone(o)) zones.push(o)
     else if (o.type === 'column_grid') columns.push(o)
     else if (PORTED_RACK_TYPES.has(o.type)) racks.push(o)
   }
@@ -350,6 +368,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   const body = [
     `<rect x="${vb.x}" y="${vb.y}" width="${vb.width}" height="${vb.height}" fill="#ffffff"/>`,
     ...floors.map(o => floorPlanSVG(o, gridSize)),
+    ...zones.map(o => zoneSVG(o, gridSize)),
     ...racks.map(o => rackSVG(o, gridSize, lz)),
     ...columns.map(o => columnGridSVG(o, gridSize)),
     /* labels and marks are worked out from the whole layout, as on the canvas

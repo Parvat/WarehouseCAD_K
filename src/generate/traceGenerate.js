@@ -58,7 +58,8 @@ function beamRackObject(p) {
   const beamIn  = p.beamIn  ?? 96
   const depthIn = p.depthIn ?? 42
   const flueIn  = p.flueIn  ?? FLUE_IN
-  const beams   = Array.from({ length: Math.max(1, p.bays | 0) }, () => beamIn)
+  // a placement may carry its own bay pattern (a fill lined up with existing rows: generate/fillRacking.js)
+  const beams   = Array.isArray(p.beams) && p.beams.length ? [...p.beams] : Array.from({ length: Math.max(1, p.bays | 0) }, () => beamIn)
 
   const totalIn  = upIn * (beams.length + 1) + beams.reduce((s, b) => s + b, 0)
   const width    = (totalIn / 12) * GS

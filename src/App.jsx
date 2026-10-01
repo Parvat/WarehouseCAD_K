@@ -20,7 +20,7 @@ import { trackCanvasPointer } from './utils/pasteAt'
 import { installLayerKeeper } from './utils/layers'
 import { installLevelsKeeper } from './utils/rackLevels'
 import { installLiveRecheck } from './utils/layoutCheck'
-import { installZoneKeeper } from './utils/rackingAreaTool'
+import { installAreaKeeper } from './utils/rackingAreaTool'
 
 /* Aisle labels only ever pair two directly facing rows: re-pairs them after
    deletes, pastes, undo/redo and every commit (utils/aisleKeeper.js). Once,
@@ -42,10 +42,11 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopLevelsKeeper())
 /* Check layout: while its list is open, re-checked after every committed change (utils/layoutCheck.js). */
 const stopLiveRecheck = installLiveRecheck(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopLiveRecheck())
-/* A zone placed, moved or resized over racks: taken back and asked about
-   (utils/rackingAreaTool.js). Installed after the copy watcher on purpose. */
-const stopZoneKeeper = installZoneKeeper(useCanvasStore)
-if (import.meta.hot) import.meta.hot.dispose(() => stopZoneKeeper())
+/* A zone placed, moved or resized over racks, a racking area deleted with its
+   racks: taken back and asked about (utils/rackingAreaTool.js). Installed
+   after the copy watcher on purpose. */
+const stopAreaKeeper = installAreaKeeper(useCanvasStore)
+if (import.meta.hot) import.meta.hot.dispose(() => stopAreaKeeper())
 /* Paste lands at the mouse cursor: remember where it last was over the canvas. */
 const stopPointer = trackCanvasPointer(window)
 if (import.meta.hot) import.meta.hot.dispose(() => stopPointer())

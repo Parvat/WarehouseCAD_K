@@ -284,7 +284,7 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### RA — Racking areas and zones · `RA_rackingAreas.test.js` (24 tests)
+### RA — Racking areas and zones · `RA_rackingAreas.test.js` (37 tests)
 Code: `generate/rackingArea.js` (pure) and `utils/rackingAreaTool.js` (store,
 question). UI: `canvas2/AreaPrompt.jsx` and
 `RightPanel/panels/RackingAreaPanel.jsx`.
@@ -313,6 +313,20 @@ question). UI: `canvas2/AreaPrompt.jsx` and
   exactly as they were.
 - The app's own trim is not a hand edit (the record follows it).
 
+**Extending across the rows lines up.** A part that extends the area across
+its rows (above or below a horizontal area, left or right of a vertical one)
+takes the area's nearest row as a template: its pieces' run starts, uprights,
+bays and sections.
+- Every new row gets the same pieces, cut to their whole bays where they don't
+  fit, so a Match-bays pattern carries over.
+- Only a stretch none of them reaches is filled fresh, a cross-aisle clear of
+  them.
+- For this fill the region is cut **across** the rows (fillRects with the
+  axes swapped), so each rectangle has one run interval and a zone off to one
+  side never shortens the rows beside it. A join there is half an aisle each
+  side.
+- Each new piece keeps the section of the template piece it lines up with.
+
 **Settings change:** rebuilds the whole area. Racks as placed are replaced;
 hand-edited racks stay, and the fill goes round them.
 
@@ -332,6 +346,14 @@ While it is asked, the area is back where it was.
 - A zone placed, moved or resized over racks, by any route, is caught by the
   zone keeper. The action is taken back and a question asks; Continue puts it
   back with the racks under it trimmed to their bays outside it.
+
+**Deleting an area** (Delete, the panel's bin, a cut) while its racks are
+still there is taken back and asked: "Delete the racks in this area too?"
+[Keep racks] [Delete racks]. Keep removes the area and leaves the racks, no
+longer stamped with it. Delete removes the area, its racks and their aisles.
+
+**PDF:** zones print as a tinted rectangle with the name, between the
+building and the racks. A hidden Zones layer leaves them off the sheet.
 
 **Every one of these is one undo step.** Area and zone actions are not row
 edits: the copy watcher skips them (`copyPrompt.skipNextAction`), so nothing
@@ -358,6 +380,11 @@ joins the copy-to-sections set.
 | `RA-zone-move` | the office moved onto racks: asked; Continue trims them; moved onto clear floor: nothing asked |
 | `RA-mouse` | a box and an edge drag at mouse positions (top at 39.95', dragged 2.17' past the wall): Check layout finds nothing at all |
 | `RA-copy` | a shrink that trims rows puts nothing in the copy set and asks nothing |
+| `RA-align` | a washroom top-left; the area at mouse coordinates over the bottom / right part; its nearest row given 120" + 72" bays (asked, as a hand edit); extended across the rows past the wall: every new piece within the template's reach has the template's uprights exactly, some are whole copies, the 120" bay carries over; Check layout finds nothing at all; one undo |
+| `RA-align-shape` ×2 | an L and a T: the area over the bottom / right part extended across the rows to the far wall: the same alignment, every rack inside the walls, no errors |
+| `RA-precision` (once) | the app's own coordinates (horizontal): the extension's first aisle off the old rows at full width — Check layout finds nothing at all (it was 9e-6 px short: fillRects rounded its cuts) |
+| `RA-pdf` | the PDF (buildLayoutSVG) has the zone (its group, the tinted rectangle at its box, its name); with the Zones layer hidden, neither, and the racks still print |
+| `RA-delete` ×2 | Delete with the area selected: asked, the delete taken back (no history); Keep racks: the area gone, every rack kept without its stamp, no errors; Delete racks: the area, its racks and aisles gone, the building and zone kept; one entry; undo restores exactly |
 | `RA-shape` ×2 | an L (300 × 200) and a T (360 × 240) with a washroom: the area over the top part, extended to the whole building: every rack inside the walls' inner face, none in the washroom, > 8 racks, no errors |
 
 All run horizontal and vertical. LY-assign now expects seven standard layers
@@ -380,6 +407,23 @@ All run horizontal and vertical. LY-assign now expects seven standard layers
 - The cross-aisle label overlay can label a small gap where an extension's
   rows start at a different run position from the old ones. That is the
   existing overlay describing the layout.
+
+- **The follow-ups, in the app (both orientations):**
+  - a washroom from the left panel; the area filled at mouse positions; its
+    edge dragged across the rows past the wall: 16 / 13 racks, every one
+    lined up, Check layout clean;
+  - the PDF has the washroom and loses it when the Zones layer's eye is
+    clicked;
+  - Delete with the area selected asks; Keep racks / Delete racks each do
+    what they say, and Ctrl+Z brings the area back;
+  - no console errors.
+- **Found in the app:** in vertical, the washroom's edges cut the extension
+  into a short and a long rectangle along the run. Rows far from it lost 2
+  bays and got 1-bay stubs, out of line. Fixed by the cut-across-the-rows
+  decomposition above.
+- **Found in the app:** the extension's first aisle was 9e-6 px under
+  10' 6", because fillRects rounded its cut positions to 1e-6 ft. Cuts are now
+  merged without being moved (RA-precision).
 
 ### FR — Fill racking · `FR_fillRacking.test.js` (40 tests)
 A tool in the drawing toolbar ("Fill racking", paint bucket). While it is on,
@@ -2109,6 +2153,13 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | RA | **Area actions join the copy set** | RA-copy | ✓ |
 | RA | **No float tolerance in the aisle rule** | RA-mouse | ✓ |
 | RA | **The fill tool makes no area** | RA-create and 8 more | ✓ |
+| RA | **Extend replaces the racks already there** (replaces "refills the whole box", which the touching-rack rule made a no-op) | RA-extend, RA-edits, RA-shrink, RA-align | ✓ |
+| RA | **PDF: zones not drawn** | RA-pdf | ✓ |
+| RA | **PDF: zones drawn on a hidden layer** | RA-pdf | ✓ |
+| RA | **Extending across the rows does not line up** (a fresh fill) | RA-align, RA-align-shape | ✓ |
+| RA | **Deleting an area is not asked** | RA-delete | ✓ |
+| RA | **Delete racks keeps them** | RA-delete | ✓ |
+| RA | **Cut positions rounded** (the old fillRects) | RA-precision (failed before the fix) | ✓ |
 | CX | **Short runs get a cross-aisle again** (the old rule) | 9: CX-72, CX-limit, CX-generate 72' (h/v), CX-fill-rect v, CX-fill-T h/v, CX-fill-L h/v | ✓ |
 | LC | **An aisle too narrow to drive not an error** (aisleLevel) | 6: LC-aisle, LC-click, LC-recheck (h/v) | ✓ |
 | LC | **A can't-pick aisle filed under errors** | 2: LC-aisle h/v | ✓ |
@@ -2254,8 +2305,8 @@ pending.
 
 ## 5. Final result
 
-- **Plan suite: 2,003 tests, 2,003 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
-- **Whole project: 2,400 tests, 2,400 passing.**
+- **Plan suite: 2,016 tests, 2,016 passing** (after all breaks reverted; M_matrix rule 9 limit raised to 60 s — M13 1200×600 runs 25–31 s under load).
+- **Whole project: 2,413 tests, 2,413 passing.**
 - **1080×410 vertical in the running app** (headless Chrome, software
   rendering, same machine, old capped layout vs uncapped): 116 racks,
   43,776 positions. Rack drag p50 13 ms, p95 27 ms, 1 frame > 33 ms (capped:
