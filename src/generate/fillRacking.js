@@ -18,7 +18,9 @@
 //     that half as a single row; no row is ever added at an edge. Walls and
 //     ZONES (office, staging, washroom, custom area — any `zone_*`) clip it the
 //     same way; existing racks are obstacles with a forklift aisle kept off
-//     them (never overlapped, never moved).
+//     them (never overlapped, never moved). Last, no pick face without an aisle:
+//     a pair with one face against a wall or a zone loses that face's bays
+//     along that stretch (single there, back-to-back elsewhere; faceReach.js).
 // So a box resized and resized back shows exactly the racks it had, and an
 // extended box carries the same rows on (generate/rackingArea.js).
 //
@@ -32,7 +34,8 @@ import { rowBands, rowSegments, layoutSpec } from './sizingLayout'
 import { placementToObject, aisleObjectsForRacks, parentGenerated } from './traceGenerate'
 import { rackFootprint, expandColumnGrid } from './columnCheck'
 import { layerForType } from '../utils/layers'
-import { insetPolygon } from '../utils/canvas'
+import { buildingOutline, innerOutline } from '../utils/floorGeom'
+import { dropUnreachableFaces } from './faceReach'
 import { getRackCapacity } from '../utils/capacity'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { nanoid } from 'nanoid'
@@ -40,18 +43,13 @@ import { nanoid } from 'nanoid'
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const EPS = 1e-6
 const isRack = (o) => typeof o?.type === 'string' && o.type.startsWith('rack_')
+export { buildingOutline, innerOutline }
 export const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 
 /** The Racking settings a fill uses (the Generate panel's own, same defaults). */
 export const DEFAULT_FILL_SETTINGS = {
   orientation: 'horizontal', beamIn: 96, palletWIn: 40, palletDIn: 48,
   mhe: 'reach', aisleFt: 10.5, maxRunFt: 150, wallClearanceIn: 6, levels: 4,
-}
-
-/** The building's outline as world px points (its drawn walls' outer line). */
-export function buildingOutline(fp) {
-  if (Array.isArray(fp.fpVerts) && fp.fpVerts.length >= 4) return fp.fpVerts.map(v => ({ x: v.x, y: v.y }))
-  return [{ x: fp.x, y: fp.y }, { x: fp.x + fp.width, y: fp.y }, { x: fp.x + fp.width, y: fp.y + fp.height }, { x: fp.x, y: fp.y + fp.height }]
 }
 
 /** The building a box belongs to: the one containing its centre, else the one it overlaps most. */
@@ -75,13 +73,6 @@ function pointInPolygon(px, py, pts) {
     if ((a.y > py) !== (b.y > py) && px < (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x) inside = !inside
   }
   return inside
-}
-
-/** The building's inner wall face as world px points: the outline inset by the
- *  wall thickness (the same inset the canvas draws the wall ring with). */
-export function innerOutline(fp, gridSize = 40) {
-  const wt = fp.wallThicknessFt ? fp.wallThicknessFt * gridSize : (fp.strokeWidth || 10)
-  return insetPolygon(buildingOutline(fp), wt)
 }
 
 /** The column lines along one axis (feet), from the building's column grids. */
@@ -363,7 +354,9 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
  *  edge. Clipped to the building's inner wall face and to zones the same way;
  *  every rack in `objects` is an obstacle with an aisle kept off it all round;
  *  `blocked` (world px rects) are kept clear with nothing added (racks removed
- *  from the area by hand). Returns { fp, racks, aisles, rows, positions }. */
+ *  from the area by hand). A face against a wall or zone (under an aisle of
+ *  clear floor in front of it) loses its bays there (faceReach.js). Returns
+ *  { fp, racks, aisles, rows, positions }. */
 export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = nanoid, areaId = null, fp = null, blocked = [] } = {}) {
   const empty = { fp: null, racks: [], aisles: [], rows: 0, positions: 0 }
   fp = fp || buildingForBox(objects, boxPx)
@@ -439,7 +432,11 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
     place(u, 'rack_row', u.s0 + u.d - singleFt, singleFt, hi)
   }
   // ids first: the aisles between the new rows refer to them
-  const racks = placements.map(p => ({ ...placementToObject(p), id: newId(), ...(areaId ? { areaId } : {}) }))
+  // and no pick face without an aisle: a face against a wall or a zone loses its bays there (faceReach.js)
+  const racks = dropUnreachableFaces(placements.map(p => ({ ...placementToObject(p), id: newId(), ...(areaId ? { areaId } : {}) })), {
+    poly: innerOutline(fp, gridSize), aislePx: aisleFt * gridSize, gridSize, newId,
+    zones: objects.filter(isZone).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height })),
+  })
   // the aisles get ids here too: the fill goes into the store in one write, not through addObject
   const aisles = aisleObjectsForRacks(racks).map(o => ({ ...o, id: o.id || newId() }))
   const withParent = parentGenerated([...racks, ...aisles], fp.id).map(o => ({ ...o, layerId: layerForType(o.type) }))

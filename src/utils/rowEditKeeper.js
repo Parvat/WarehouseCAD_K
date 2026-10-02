@@ -3,8 +3,9 @@
 // that did not go through utils/pasteAt.js) loses them, so it is an added
 // row ("Copy to all sections", utils/copyPrompt.js) instead of merging into
 // the row it was copied from. Kept: the pieces of a split row (they sit
-// inside the rack they came from) and a row coming back on undo/redo (no
-// other rack has its stamps).
+// inside the rack they came from), a row coming back on undo/redo (no
+// other rack has its stamps), and a racking area's own racks (recorded in its
+// `placed`: their stamps are the area's pattern rows and runs).
 // Written without a history entry, like the aisle keeper; the next commit
 // records it.
 
@@ -21,7 +22,9 @@ export function keepRowEdits(objects, prevObjects, gridSize = 40) {
   const edit = (i, patch) => { if (!out) out = [...objects]; out[i] = { ...out[i], ...patch } }
   if (prevObjects) {
     const prev = new Map(prevObjects.map(o => [o.id, o]))
-    const fresh = objects.map((o, i) => [o, i]).filter(([o]) => BEAM.has(o.type) && o.rowIndex != null && o.genSection != null && !prev.has(o.id))
+    // a racking area's own racks (it recorded them as placed): their stamps are its pattern's
+    const areaOwned = new Set(objects.filter(o => o.type === 'racking_area' && o.placed).flatMap(o => Object.keys(o.placed)))
+    const fresh = objects.map((o, i) => [o, i]).filter(([o]) => BEAM.has(o.type) && o.rowIndex != null && o.genSection != null && !prev.has(o.id) && !areaOwned.has(o.id))
     for (const [o, i] of fresh) {
       const k = key(o)
       const others = objects.filter(q => q !== o && q.parentId === o.parentId && BEAM.has(q.type) && q.rowIndex != null && key(q) === k)

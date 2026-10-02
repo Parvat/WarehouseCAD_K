@@ -1,6 +1,8 @@
 // rackingAreaTool.js — racking areas and zones in the running app: the one
 // place their store writes happen (the pure planning is generate/rackingArea.js).
 //
+//   - An area's box never goes past a wall: an edge dragged out stops at the
+//     wall's inner face (utils/floorClamp.js; the canvas clamps it live too).
 //   - An area's edge dragged (canvas2 calls finishAreaResize on release) and
 //     an area's settings changed (the right panel calls requestAreaRebuild)
 //     each land as ONE history entry: the area's new box or settings and the
@@ -25,6 +27,7 @@ import { nanoid } from 'nanoid'
 import { planAreaResize, planAreaRebuild, areaEdits, racksUnderZone, clearZone, isArea, isZone, boxOf } from '../generate/rackingArea'
 import { skipNextAction } from './copyPrompt'
 import { rebuildAisles } from './aisleRebuild'
+import { floorFor, clampGrowth } from './floorClamp'
 
 export const EDIT_WARNING = "You've changed racks in this area. The new part will use the default settings; your changes stay as they are."
 
@@ -73,12 +76,14 @@ export function finishAreaResize(store, areaId, oldBox, { gridSize } = {}) {
   const st = store.getState()
   const area = st.objects.find(o => o.id === areaId)
   if (!area) return false
-  const newBox = boxOf(area)
+  const gs = gridSize || st.gridSize || 40
+  // kept inside the building: an edge dragged past a wall stops at its inner face (utils/floorClamp.js)
+  const poly = floorFor(st.objects, area, gs)
+  const newBox = poly ? clampGrowth(poly, oldBox, boxOf(area)) : boxOf(area)
   // back to where it was, with no history: the resize itself is the one entry
   const before = st.objects.map(o => (o.id === areaId ? { ...o, x: oldBox.x, y: oldBox.y, width: oldBox.w, height: oldBox.h } : o))
   store.setState({ objects: before })
   if (sameBox(newBox, oldBox)) return false
-  const gs = gridSize || store.getState().gridSize || 40
   const run = () => {
     const now = store.getState().objects
     const next = planAreaResize(now, areaId, newBox, { gridSize: gs, newId: nanoid })

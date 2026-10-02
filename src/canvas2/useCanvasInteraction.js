@@ -4,6 +4,7 @@ import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
 import { handleHitTest, cursorForHandle, hasResizeHandles } from './handleGeometry'
 import { finishAreaResize } from '../utils/rackingAreaTool'
+import { clampResizeUpdates, clampDragDelta } from '../utils/floorClamp'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
 import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
 import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from './fpRotate'
@@ -762,6 +763,12 @@ export function useCanvasInteraction({
            object drag uses) because a resize can rewrite beams/lanes/towers,
            which only a real re-render can redraw. mouseup below commits the
            ONE history entry for the whole gesture. */
+        /* A racking area or zone stays inside its building: an edge dragged out stops at the
+           wall's inner face, and snaps onto it within 8 screen px (utils/floorClamp.js). */
+        if (origObj.type === 'racking_area' || (typeof origObj.type === 'string' && origObj.type.startsWith('zone_'))) {
+          Object.assign(updates, clampResizeUpdates(st.objects, origObj, updates, { gridSize: st.gridSize, snap: 8 / view.current.zoom }))
+        }
+
         st.updateObject(objId, updates)
 
         /* Same-frame handle tracking (see the rotate branch above): the
@@ -988,6 +995,12 @@ export function useCanvasInteraction({
         if (snapDy != null) dy = snapDy
         else if (st.snapToGrid) {
           dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
+        }
+        /* a racking area or zone dragged as a body stays inside its building: its leading
+           edges stop at (and snap onto) the wall's inner face (utils/floorClamp.js) */
+        if (d.ids.length === 1) {
+          const g = st.objects.find(o => o.id === d.ids[0])
+          if (g && (g.type === 'racking_area' || g.type.startsWith('zone_'))) ({ dx, dy } = clampDragDelta(st.objects, g, dx, dy, { gridSize: st.gridSize, snap: 8 / view.current.zoom }))
         }
         d.delta = { dx, dy }
         setSmartGuides(guides)

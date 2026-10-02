@@ -24,6 +24,8 @@ import { sizingSheetLayout, generateFixtures } from './sizingLayout'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { rackFootprint, groupBySegment } from './columnCheck'
 import { usableCapacity, mheProfile } from './usableCapacity'
+import { dropUnreachableFaces } from './faceReach'
+import { innerOutline } from '../utils/floorGeom'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
 const FLUE_IN = 9    // back-to-back flue gap for double rows
@@ -309,12 +311,17 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
   const auto = brief.orientation === 'auto'
   const pick = auto ? pickOrientation(brief, generateLayout, rules) : null
   const rawPlacements = auto ? pick.placements : generateLayout(brief, rules)
-  const racks = rawPlacements.map(p => {
+  const walked = rawPlacements.map(p => {
     const o = placementToObject(p)
     o.x += ox
     o.y += oy
     return o
   })
+  /* No pick face without an aisle (faceReach.js): a pair with one face against a wall or a zone
+     already on the floor loses that face's bays there — single beside it, back-to-back elsewhere. */
+  const aisleFt = brief.aisleFt ?? rules.mhe?.[brief.mhe || rules.mheDefault || 'reach']?.aisleFt ?? 12.5
+  const zones = useCanvasStore.getState().objects.filter(o => typeof o.type === 'string' && o.type.startsWith('zone_')).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height }))
+  const racks = fp ? dropUnreachableFaces(walked, { poly: innerOutline(fp, GS), zones, aislePx: aisleFt * GS, gridSize: GS, newId: nanoid }) : walked
   // every generated object on its layer (utils/layers.js)
   const queue = parentGenerated(
     [...racks, ...aisleObjectsForRacks(racks), ...generateFixtures(brief, ox, oy)],

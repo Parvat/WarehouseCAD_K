@@ -61,16 +61,24 @@ describe.each(['horizontal', 'vertical'])('CX — %s', (orientation) => {
     m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation })
   })
   const racks = () => s().objects.filter(o => RACK.has(o.type))
-  /** Pieces per row: racks grouped by their stack position, within `pred` (world px footprint). */
+  /** Pieces per row: the runs a row is cut into by cross-aisles, within `pred` (world px footprint).
+   *  A row is its row stamp (or its stack position); racks along it closer than a cross-aisle (a
+   *  double turning single beside a wall or zone loses one bay between them) are one run. */
   const piecesPerRow = (pred = () => true) => {
     const rows = new Map()
     for (const r of racks()) {
       const f = m.rackFootprint(r)
       if (!pred(f)) continue
-      const k = Math.round((vert ? f.x : f.y) * 100)
-      rows.set(k, (rows.get(k) || 0) + 1)
+      const k = r.rowIndex != null ? 'r' + r.rowIndex : Math.round((vert ? f.x : f.y) * 100)
+      if (!rows.has(k)) rows.set(k, [])
+      rows.get(k).push(vert ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
     }
-    return [...rows.values()]
+    return [...rows.values()].map(list => {
+      list.sort((p, q) => p[0] - q[0])
+      let runs = 1, end = list[0][1]
+      for (const [a, b] of list.slice(1)) { if (a - end >= 8.5 * GS) runs++; end = Math.max(end, b) }
+      return runs
+    })
   }
   const fillAll = () => {
     const fp = s().objects.find(o => o.type.startsWith('fp_')), pts = m.FR.buildingOutline(fp)

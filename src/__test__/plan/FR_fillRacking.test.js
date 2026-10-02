@@ -173,7 +173,7 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     const first = racks().filter(r => Math.abs(stackOf(m.rackFootprint(r))[0] - face) < 1e-3)
     expect(first.length).toBeGreaterThan(0)
     for (const r of first) expect(r.type).toBe('rack_row')
-    // a single row's other half, on its run, would cross a wall: its pair is cut
+    // a single row's other half, on its run, would cross a wall (its pair is cut) or has no aisle
     const depth = 42 / 12 * GS, pairD = (2 * 42 + 9) / 12 * GS
     for (const r of racks().filter(o => o.type === 'rack_row')) {
       const f = m.rackFootprint(r), [s0, s1] = stackOf(f), [r0, r1] = runOf(f)
@@ -182,9 +182,13 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
       if (lo == null) continue
       const o0 = Math.abs(s0 - lo) < 1e-3 ? lo + pairD - depth : lo
       const other = vert ? { x: o0, y: r0, w: depth, h: r1 - r0 } : { x: r0, y: o0, w: r1 - r0, h: depth }
-      const corners = [[other.x + EPS, other.y + EPS], [other.x + other.w - EPS, other.y + EPS], [other.x + EPS, other.y + other.h - EPS], [other.x + other.w - EPS, other.y + other.h - EPS]]
-      const fits = corners.every(([x, y]) => pointIn(x, y, inner)) && !inner.some(p => p.x > other.x + EPS && p.x < other.x + other.w - EPS && p.y > other.y + EPS && p.y < other.y + other.h - EPS)
-      expect(fits, `single row ${r.rowIndex}: its other half crosses a wall`).toBe(false)
+      const onFloor = (b) => [[b.x + EPS, b.y + EPS], [b.x + b.w - EPS, b.y + EPS], [b.x + EPS, b.y + b.h - EPS], [b.x + b.w - EPS, b.y + b.h - EPS]].every(([x, y]) => pointIn(x, y, inner))
+        && !inner.some(p => p.x > b.x + EPS && p.x < b.x + b.w - EPS && p.y > b.y + EPS && p.y < b.y + b.h - EPS)
+      // or the other half fits but its pick face (its outer side) has no aisle in front of it
+      const aisle = m.FR.DEFAULT_FILL_SETTINGS.aisleFt * GS
+      const f0 = Math.abs(o0 - lo) < 1e-3 ? lo - aisle : lo + pairD
+      const strip = vert ? { x: f0, y: r0, w: aisle, h: r1 - r0 } : { x: r0, y: f0, w: r1 - r0, h: aisle }
+      expect(onFloor(other) && onFloor(strip), `single row ${r.rowIndex}: its other half crosses a wall, or can't be picked`).toBe(false)
     }
     expect(check()).toEqual({ errors: [], warnings: [] })
   })

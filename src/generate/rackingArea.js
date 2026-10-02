@@ -28,7 +28,7 @@
 // racks under a zone that is placed, moved or resized over them are trimmed
 // to their bays outside it (clearZone).
 
-import { planFill, areaPattern, patternFill, DEFAULT_FILL_SETTINGS, isZone } from './fillRacking'
+import { planFill, areaPattern, patternFill, innerOutline, DEFAULT_FILL_SETTINGS, isZone } from './fillRacking'
 import { rackFootprint } from './columnCheck'
 import { splitRackForBayDelete } from '../utils/baySplit'
 import { rebuildAisles } from '../utils/aisleRebuild'
@@ -165,8 +165,11 @@ export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = 
   const plan = planFill(objects, box, settings, { gridSize, newId, from, areaId: id })
   if (!plan.racks.length) return null
   const anchor = from ? { x: from.x > box.x + box.w / 2 ? 'r' : 'l', y: from.y > box.y + box.h / 2 ? 'b' : 't' } : { x: 'l', y: 't' }
+  // the area's box stays inside the building: clipped to its inner walls' extent
+  const inner = innerOutline(plan.fp, gridSize), ix0 = Math.max(box.x, Math.min(...inner.map(p => p.x))), iy0 = Math.max(box.y, Math.min(...inner.map(p => p.y)))
+  const ix1 = Math.min(box.x + box.w, Math.max(...inner.map(p => p.x))), iy1 = Math.min(box.y + box.h, Math.max(...inner.map(p => p.y)))
   const area = {
-    id, type: AREA_TYPE, label: 'Racking area', x: box.x, y: box.y, width: box.w, height: box.h, rotation: 0,
+    id, type: AREA_TYPE, label: 'Racking area', x: ix0, y: iy0, width: ix1 - ix0, height: iy1 - iy0, rotation: 0,
     parentId: plan.fp.id, layerId: 'racking', settings: pickSettings(settings), anchor, pattern: plan.pattern,
     placed: Object.fromEntries(plan.racks.map(r => [r.id, rackSig(r)])),
   }

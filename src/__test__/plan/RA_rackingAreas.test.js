@@ -57,6 +57,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   const racks = () => s().objects.filter(o => RACK.has(o.type))
   const areaNow = () => s().objects.find(o => o.type === 'racking_area')
   const foot = (o) => m.rackFootprint(o)
+  /** The building's inner wall faces' bounding box (world px). */
+  const innerBox = (fp) => { const p = m.FR.innerOutline(fp, GS), xs = p.map(q => q.x), ys = p.map(q => q.y); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } }
   const doc = () => JSON.parse(JSON.stringify({ objects: s().objects }))
   const check = () => m.LC.checkLayout(s().objects, { gridSize: GS })
   const drag = (a, b) => { m.FT.startFill(a); m.FT.moveFill(b, s().objects, GS); return m.FT.commitFill(m.useCanvasStore) }
@@ -86,7 +88,9 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     expect(a).toBeTruthy()
     expect(a.layerId).toBe('racking')
     expect(a.parentId).toBe(fp.id)
-    expect([a.x, a.y, a.width, a.height]).toEqual([fp.x, fp.y + 40 * GS, fp.width, fp.height - 40 * GS])
+    // the box as dragged, clipped to the inner wall faces (it never goes past a wall)
+    const ib = innerBox(fp)
+    expect([a.x, a.y, a.width, a.height]).toEqual([ib.x, fp.y + 40 * GS, ib.w, ib.y + ib.h - (fp.y + 40 * GS)])
     expect(a.settings.orientation).toBe(orientation)
     expect(racks().length).toBeGreaterThan(4)
     for (const r of racks()) { expect(r.areaId).toBe(a.id); expect(a.placed[r.id]).toBe(m.RA.rackSig(r)) }
@@ -118,7 +122,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     expectOnPattern()
     expectAisles()
     for (const r of strip) expect(r.areaId).toBe(areaNow().id)
-    expect([areaNow().y, areaNow().height]).toEqual([fp.y, fp.height])
+    const ib = innerBox(fp)
+    expect([areaNow().y, areaNow().height]).toEqual([ib.y, ib.h])                // dragged past the wall: stopped at its inner face
     expect(check().errors).toEqual([])
     s().undo()
     expect(doc()).toEqual(before)
@@ -381,11 +386,15 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
       const [s0] = ftS(foot(r)), [r0, r1] = ftR(foot(r))
       const o0 = Math.abs(s0 - u.s0) < 1e-6 ? u.s0 + u.d - single : u.s0                 // the other half, across
       const other = vert ? { x: o0 * GS, y: r0 * GS, w: single * GS, h: (r1 - r0) * GS } : { x: r0 * GS, y: o0 * GS, w: (r1 - r0) * GS, h: single * GS }
-      const corners = [[other.x + 0.01, other.y + 0.01], [other.x + other.w - 0.01, other.y + 0.01], [other.x + 0.01, other.y + other.h - 0.01], [other.x + other.w - 0.01, other.y + other.h - 0.01]]
-      const fits = within(other, box) && corners.every(([x, y]) => pin(x, y))
-        && !inner.some(p => p.x > other.x + 0.01 && p.x < other.x + other.w - 0.01 && p.y > other.y + 0.01 && p.y < other.y + other.h - 0.01)
-        && !zones.some(z => overlap(z, other))
-      expect(fits, `single row ${r.rowIndex}: its other half doesn't fit`).toBe(false)
+      const onFloor = (b) => [[b.x + 0.01, b.y + 0.01], [b.x + b.w - 0.01, b.y + 0.01], [b.x + 0.01, b.y + b.h - 0.01], [b.x + b.w - 0.01, b.y + b.h - 0.01]].every(([x, y]) => pin(x, y))
+        && !inner.some(p => p.x > b.x + 0.01 && p.x < b.x + b.w - 0.01 && p.y > b.y + 0.01 && p.y < b.y + b.h - 0.01)
+      const fits = within(other, box) && onFloor(other) && !zones.some(z => overlap(z, other))
+      // or it fits, but its pick face (its outer side) has no aisle: a wall or a zone within an aisle of it
+      const aisle = a.pattern.aisleFt
+      const f0 = Math.abs(o0 - u.s0) < 1e-6 ? u.s0 - aisle : u.s0 + u.d
+      const strip = vert ? { x: f0 * GS, y: r0 * GS, w: aisle * GS, h: (r1 - r0) * GS } : { x: r0 * GS, y: f0 * GS, w: (r1 - r0) * GS, h: aisle * GS }
+      const faceOpen = onFloor(strip) && !zones.some(z => overlap(z, strip))
+      expect(fits && faceOpen, `single row ${r.rowIndex}: its other half doesn't fit, or can't be picked`).toBe(false)
     }
   }
   /** Every aisle is the forklift aisle: each rack's next rack across (overlapping it along) is
@@ -602,7 +611,8 @@ describe('RA — the app\'s own coordinates', () => {
     m.FT.moveFill({ x: -4780.196329492104 + 9637.217242851046, y: -401.19504908237303 }, s().objects, GS)
     m.FT.commitFill(m.useCanvasStore)
     const a = s().objects.find(o => o.type === 'racking_area')
-    expect([a.x, a.y, a.width, a.height]).toEqual([-4780.196329492104, -401.19504908237303, 9637.217242851046, 2859.581732821169])
+    // dragged past the walls: clipped to their inner faces (4790 right, 2390 bottom)
+    expect([a.x, a.y, a.width, a.height]).toEqual([-4780.196329492104, -401.19504908237303, 4790 + 4780.196329492104, 2390 + 401.19504908237303])
     s().updateObject(a.id, { y: -2483.3333333333335, height: 4941.72001707213 })
     m.AT.finishAreaResize(m.useCanvasStore, a.id, { x: a.x, y: a.y, w: a.width, h: a.height })
     expect(s().objects.filter(o => o.type === 'rack_double_row' || o.type === 'rack_row').length).toBeGreaterThan(12)

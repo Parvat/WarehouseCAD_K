@@ -334,6 +334,10 @@ round.
 
 **Extend and shrink** (on release of an edge drag): the box shows the
 pattern through its new edges.
+- The box never goes past a wall: a new area's box is clipped to the inner
+  walls' extent, and an edge dragged out stops at the first wall it meets from
+  inside (area WF). On an L or T an edge pulled back behind an inner wall
+  stops at that wall when pushed out again.
 - A shrink drops what is now outside. An extend carries the same rows, pairs
   and bays on: a double stays a double, the edge single becomes its pair where
   the pair now fits, and no extra row appears.
@@ -391,7 +395,7 @@ joins the copy-to-sections set.
 
 | Test | Asserts |
 |---|---|
-| `RA-create` | the fill makes an area on Racking, parented, with the box, the direction and every rack stamped and recorded; no edits; one undo removes the area and its racks |
+| `RA-create` | the fill makes an area on Racking, parented, with the box as dragged clipped to the inner wall faces, the direction and every rack stamped and recorded; no edits; one undo removes the area and its racks |
 | `RA-extend` | 240 × 120, a 40 × 40 office top-right, the area all but the top 40'; the top edge dragged to the wall: the strip beside the office fills; no rack overlaps the office; the strip ends up to the office, never past it (within the pattern's next bay / row); every rack more than a bay from the old edge is the very same object; on the pattern, aisles full; no errors; one undo |
 | `RA-edits` | a rack moved by hand: the extend asks with the exact text; the area is back while asking; Cancel changes nothing (no history); Continue extends and the moved rack is unchanged; one undo |
 | `RA-shrink` ×2 | along the rows by 37' 5" (not whole bays): each crossing row is kept from the same start on the same uprights, fewer bays, ending within one bay (8' 3") of the new edge, beams still 96"; across the rows: crossing racks go (a pair keeps a half that still fits, as a single); everything within the new box; on the pattern, aisles full; no hand edits recorded; no errors; one undo |
@@ -578,6 +582,74 @@ All run horizontal and vertical.
   cross-aisle (4' 6"–5' 3"). Now any rack on the side makes it open.
 - Cross-aisles only when needed (area CX): a run within the max rack run is
   one piece, so a T's 72' bar fills as one run.
+
+### WF — Walls and faces · `WF_wallsFaces.test.js` (32 tests)
+Code: `utils/floorGeom.js` (the floor: the building's inner wall face; segment and
+box tests), `utils/floorClamp.js` (the wall clamp), `generate/faceReach.js` (the
+face rule). Wired into `canvas2/useCanvasInteraction.js` (resize and body drag),
+`utils/rackingAreaTool.js` (`finishAreaResize`), `generate/rackingArea.js`
+(`planAreaCreate`), `generate/fillRacking.js` (`patternFill`) and
+`generate/traceGenerate.js` (`buildQueue`).
+
+**Racking areas and zones stay inside the building**
+- An edge dragged out stops at the first wall it meets **from inside**: the
+  wall's inner face, on any rectilinear building.
+- Within 8 screen px of that face it snaps onto it. Pulling an edge in is free.
+- "From inside" means where a part of the edge that is on the floor would leave
+  it. A part still over an L's notch (an area drawn across it) coming onto the
+  floor doesn't stop it.
+- Live on the canvas (the resize handles and a body drag of a zone or area), and
+  again in the area resize itself.
+- A new area's box is clipped to the inner walls' extent.
+- A zone is clamped once it is on the floor. One still outside the building, or
+  straddling a wall, moves freely.
+
+**No pick face without an aisle**
+- A back-to-back pair whose face runs against a wall or a zone (under a forklift
+  aisle of clear floor in front of it) loses that face's bays along that
+  stretch. It stays back-to-back where both faces have an aisle, and becomes a
+  single row (the reachable half) beside the wall or zone.
+- A bay neither face can reach goes. A single row keeps a bay while either side
+  has an aisle.
+- Where a double piece meets a single one they would share the upright frame,
+  so the single's bay there goes.
+- Racking areas apply it as the last step of the pattern clip, so a resize or
+  rebuild refits beside zones. Generate applies it to its layout, reading the
+  zones already on the floor. Placing a zone beside existing racks doesn't refit
+  them by itself; the area's next resize or rebuild does.
+- Capacity, X marks and Check layout follow from the racks.
+
+**Also changed**
+- `rowEditKeeper`: a racking area's own racks (in its `placed`) keep their
+  stamps. A resize's new single pieces beside a reused piece of the same row
+  were read as pasted copies and lost their row.
+
+| Test | Asserts |
+|---|---|
+| `WF-area-wall` ×3 | rectangle, L, T: an area's right edge dragged 50' past the building stops at the face it meets from inside (the T: the stem's right wall), live (`clampResizeUpdates`) and in the resize; 4 px short of the face snaps onto it; pulling in is free; the bottom edge past the bottom wall stops at its face; no errors |
+| `WF-zone-wall` ×3 | a zone on the floor resized past the right wall stops at its face; dragged 400' down, its bottom stops at the wall below (the T: the bar's bottom wall); a zone outside the building drags freely |
+| `WF-area-face` ×6 | rectangle, L, T, a zone mid-area and one at the edge of the area: a 5'-deep zone 1' off a pair's far face over its middle (4 bays or a third); after a rebuild that row is single (its near half) along the zone and back-to-back 2 bays beyond it; every pick face has an aisle (doubles both faces, singles one side); Check layout: no errors, no "nobody can reach"; shrink → extend back identical |
+| `WF-area-face-fill` ×3 | the zone placed first, the area deleted and filled again over the same box: the same |
+| `WF-generate-face` | Generate 240 × 120 with a zone in the aisle beside a pair (kept across a second Generate): single along the zone, back-to-back elsewhere; every face has an aisle; no errors |
+
+All run horizontal and vertical.
+
+**Break-its:** the clamp off (`stopEdge` returning the requested edge):
+WF-area-wall and WF-zone-wall fail (12). The face rule off: WF-area-face,
+WF-area-face-fill and WF-generate-face fail (20).
+
+**Checked in the app** (Playwright, real mouse; rectangle, L and T, horizontal and
+vertical):
+- The area's right handle dragged 50' past the building stopped exactly on the
+  face, mid-drag and on release (the T: the stem's right wall).
+- Two zones beside pairs (mid-area and at the edge of the area), the area
+  refitted by real handle drags: no face without an aisle, Check layout 0 / 0.
+- Shrink → back identical. A zone dragged 600 px down stopped with its bottom on
+  the wall face.
+- **Found in the app:** clicking an area's outline worked before only because a
+  box drawn past the wall had an edge outside the building. With the box clipped
+  inside, it is picked on its outline over open floor as before (the hit test
+  checks the outline before the building).
 
 ### LC — Check layout · `LC_layoutCheck.test.js` (33 tests)
 A "Check layout" button in the top bar lists every problem in the right
@@ -1548,6 +1620,10 @@ The rule lives in `rowSegments`, so Generate and Fill racking both follow it.
 | `CX-fill-rect` ×2 | Fill racking 240 × 120: 2 pieces per row horizontal, 1 vertical |
 | `CX-fill-T` ×2 | Fill racking a T 360 × 240: vertical, the 72 ft bar's rows are one piece; horizontal, the 126 ft stem's rows are one piece |
 | `CX-fill-L` ×2 | Fill racking an L 300 × 200: horizontal, the 90 ft stem is one piece, and the bar's rows, running the whole 300 ft through the elbow (one pattern), are split once; vertical, the stem above the bar and the 60 ft bar are one piece each |
+
+Pieces per row count the runs a row is cut into by cross-aisles (racks along a row
+closer than 8.5' are one run: a double turning single beside a wall or zone loses
+one bay between them, area WF).
 
 All run horizontal and vertical.
 
