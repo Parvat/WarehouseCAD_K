@@ -922,9 +922,9 @@ export function FloatingToolbar() {
     const parentFp = [...objects].reverse().find(o => FP_TYPES_SET.has(o.type) && objectContains(o, wx, wy))
     const x  = (item.type==='column_grid'&&parentFp) ? parentFp.x+(parentFp.wallThicknessFt||0.25)*GS : wx-w/2
     const y2 = (item.type==='column_grid'&&parentFp) ? parentFp.y+(parentFp.wallThicknessFt||0.25)*GS : wy-h/2
-    /* a single or double row follows the mouse until a click places it
+    /* a single or double row — and a zone — follows the mouse until a click places it
        (utils/placement.js); everything else is dropped at the view centre */
-    const place = (fields) => (ROW_TYPES.has(item.type)
+    const place = (fields) => (ROW_TYPES.has(item.type) || item.type.startsWith('zone_')
       ? startPlacement(useCanvasStore, [{ id: nanoid(), layerId: layerForType(item.type), strokeWidth: 1.5, opacity: 1, rotation: 0, noFill: false, ...fields }], { at: { x: wx, y: wy } })
       : addObject(fields))
     place({

@@ -29,6 +29,7 @@ async function fresh() {
   const FG = await import('../../utils/floorGeom')
   const { generateAndPlace } = await import('../../generate/traceGenerate')
   const { rackFootprint } = await import('../../generate/columnCheck')
+  const BB = await import('../../utils/bayBeam')
   const L = await import('../../utils/layers')
   const { installAisleKeeper } = await import('../../utils/aisleKeeper')
   const { installRowEditKeeper } = await import('../../utils/rowEditKeeper')
@@ -38,7 +39,7 @@ async function fresh() {
   installRowEditKeeper(useCanvasStore)
   CP.installCopyWatcher(useCanvasStore, nanoid)
   AT.installAreaKeeper(useCanvasStore)
-  return { useCanvasStore, FT, FR, RA, AT, LC, FC, FG, generateAndPlace, rackFootprint }
+  return { useCanvasStore, FT, FR, RA, AT, LC, FC, FG, BB, generateAndPlace, rackFootprint }
 }
 
 const RACK = new Set(['rack_row', 'rack_double_row'])
@@ -184,6 +185,29 @@ describe.each(['horizontal', 'vertical'])('WF — %s', (orientation) => {
     const away = row.filter(r => r.type === 'rack_double_row' && (() => { const [a, b] = ftR(foot(r)); return a < z0 - 2 * bay && a >= d0 - EPS || b > z1 + 2 * bay && b <= d1 + EPS })())
     expect(away.length, 'back-to-back away from the zone').toBeGreaterThan(0)
   }
+  /** Where a double turns single along a row, the single carries straight on from the double's last
+   *  upright frame: no gap, exactly one upright of overlap, and that is a shared frame (not an
+   *  overlap — Check layout stays clean). Returns how many such joins there are. */
+  const expectSharedFrames = () => {
+    const rows = new Map()
+    for (const r of racks()) { const k = r.rowIndex ?? Math.round(ftS(foot(r))[0]); if (!rows.has(k)) rows.set(k, []); rows.get(k).push(r) }
+    let n = 0
+    for (const list of rows.values()) {
+      list.sort((p, q) => ftR(foot(p))[0] - ftR(foot(q))[0])
+      for (let i = 0; i + 1 < list.length; i++) {
+        const a = list[i], b = list[i + 1]
+        if (a.type === b.type) continue
+        const gap = ftR(foot(b))[0] - ftR(foot(a))[1]
+        if (gap >= 8.5 * GS) continue                                                  // a cross-aisle between them
+        const up = (a.uprightWidth ?? 3) / 12 * GS
+        expect(gap / GS, `row ${a.rowIndex}: the single starts on the double's last frame (ft)`).toBeCloseTo(-up / GS, 6)
+        expect(m.BB.sharesFrame(a, b, GS)).toBe(true)
+        expect(m.BB.rackIssues(a, s().objects, GS).overlaps).not.toContain(b.id)
+        n++
+      }
+    }
+    return n
+  }
   const expectClean = () => {
     const c = check()
     expect(c.errors.filter(e => e.kind === 'unreachable')).toEqual([])
@@ -197,6 +221,8 @@ describe.each(['horizontal', 'vertical'])('WF — %s', (orientation) => {
     const z = zoneBeside(fp, which)
     m.AT.requestAreaRebuild(m.useCanvasStore, areaNow().id, {})               // the area refitted with the zone there
     expectSingleBeside(z)
+    expect(expectSharedFrames()).toBeGreaterThan(0)
+    expect(check().errors.filter(e => e.kind === 'overlap')).toEqual([])
     expectClean()
     const keys = rackKeys(), b0 = boxNow()
     // pulled in, the right edge staying on its side of every wall (pushed back through an inner wall it would stop there)
@@ -232,6 +258,7 @@ describe.each(['horizontal', 'vertical'])('WF — %s', (orientation) => {
     expect(s().objects.some(o => o.type === 'zone_staging')).toBe(true)
     const [ds0] = ftS(foot(z.D))
     expectSingleBeside(z, (r) => { const [a] = ftS(foot(r)); return Math.abs(a - ds0) < EPS })
+    expect(expectSharedFrames()).toBeGreaterThan(0)
     expectClean()
   })
 })

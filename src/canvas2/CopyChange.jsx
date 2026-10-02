@@ -2,14 +2,14 @@ import { Group, Rect } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { rackFootprint } from '../generate/columnCheck'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
-import { RackShape } from './shapes'
+import { RackShape, ZoneShape } from './shapes'
 import { usePlacement } from '../utils/placement'
 import { useCopyPrompt, pendingPlan } from '../utils/copyPrompt'
 import { copyPreviewRects, previewKey } from '../utils/copyChange'
 
 /* ── "Copy this change" on the canvas ─────────────────────────────────────────
    Three pieces, all pure paint or plain DOM (picking stays geometric):
-     - PlacementGhost: a row being added follows the mouse, faded; its
+     - PlacementGhost: a row (or a zone) being added follows the mouse, faded; its
        outline turns red where it cannot go, orange in a cross-aisle (placed,
        with a warning — utils/placement.js);
      - CopyPreview: while the bar's Copy button is hovered, faint outlines
@@ -34,7 +34,9 @@ export function PlacementGhost({ gridSize }) {
       <Group opacity={0.45} listening={false}>
         {a.items.map(o => (PORTED_RACK_TYPES.has(o.type)
           ? <RackShape key={o.id} obj={o} ops={rackDrawOps(o, { gridSize })} gridSize={gridSize} listening={false} activeBaySelection={null} />
-          : null))}
+          : typeof o.type === 'string' && o.type.startsWith('zone_')
+            ? <ZoneShape key={o.id} obj={o} gridSize={gridSize} listening={false} />
+            : null))}
       </Group>
       {a.items.filter(o => typeof o.type === 'string' && o.type.startsWith('rack_')).map(o => outline(rackFootprint(o), color, 'g' + o.id, a.blocked ? [] : [6, 4]))}
     </Group>

@@ -2,7 +2,10 @@
 // new row follows the mouse, faded, and snaps; a click places it, Esc
 // cancels. Nothing is in the layout until the click, so the click is ONE
 // action (one undo step) — after which "Copy to all sections" is offered
-// (utils/copyPrompt.js).
+// (utils/copyPrompt.js). A zone from the left panel is placed the same way:
+// it follows the mouse, stays within the walls and snaps onto a wall face;
+// on the click the area keeper refits any racking area it reaches
+// (utils/rackingAreaTool.js).
 //
 // Snapping, on each axis of the building's rows, to the nearest of (within
 // SNAP_PX on screen):
@@ -25,7 +28,10 @@ import { isRow, generatedCrossAisleGaps, hardProblem, softProblems } from './cop
 import { sectionLabel } from './sectionCopy'
 import { useCopyPrompt } from './copyPrompt'
 import { getColumnCheckView } from '../generate/columnCheckView'
+import { innerOutline } from './floorGeom'
+import { buildingForBox } from '../generate/fillRacking'
 
+const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 export const SNAP_PX = 12
 
@@ -58,6 +64,7 @@ const buildingAt = (objects, x, y) => [...objects].reverse().find(f => FP.has(f.
 /** The snapped move for `items` with their centre at the pointer `world`:
  *  { dx, dy, snapped: { run, cross } (what caught, or null), fpId }. */
 export function snapPlacement(items, objects, world, gridSize = 40, zoom = 1, profile = MHE_PROFILES.reach) {
+  if (items.length === 1 && isZone(items[0])) return snapZone(items[0], objects, world, gridSize, zoom)
   const c = centreOf(items)
   let dx = world.x - c.x, dy = world.y - c.y
   const ref = items.find(isRow)
@@ -90,13 +97,34 @@ export function snapPlacement(items, objects, world, gridSize = 40, zoom = 1, pr
   return { dx: rot ? nCross : nRun, dy: rot ? nRun : nCross, snapped: { run: pr ? pr.why : null, cross: pc ? pc.why : null }, fpId: fp.id }
 }
 
+/** A zone being placed, centred on the pointer: over (or hanging over) a building it stays within the walls' inner
+ *  faces, and an edge within 12 screen px of a wall face snaps onto it. */
+function snapZone(z, objects, world, gridSize, zoom) {
+  let x = world.x - z.width / 2, y = world.y - z.height / 2
+  // the building it is over: under its centre, else the one its box overlaps most (one hanging over a wall)
+  const fp = buildingAt(objects, world.x, world.y) || buildingForBox(objects, { x, y, w: z.width, h: z.height })
+  const snapped = { run: null, cross: null }
+  if (fp) {
+    const poly = innerOutline(fp, gridSize), xs = [...new Set(poly.map(p => p.x))], ys = [...new Set(poly.map(p => p.y))]
+    const lo = (v) => Math.min(...v), hi = (v) => Math.max(...v)
+    if (z.width <= hi(xs) - lo(xs)) x = Math.min(Math.max(x, lo(xs)), hi(xs) - z.width)
+    if (z.height <= hi(ys) - lo(ys)) y = Math.min(Math.max(y, lo(ys)), hi(ys) - z.height)
+    const snapR = SNAP_PX / (zoom || 1)                    // 12 px on screen, at any zoom: a wall is worth reaching for
+    const pick = (faces, a, len) => faces.flatMap(f => [f - a, f - (a + len)]).filter(d => Math.abs(d) <= snapR + 1e-9).sort((p, q) => Math.abs(p) - Math.abs(q))[0]
+    const sx = pick(xs, x, z.width), sy = pick(ys, y, z.height)
+    if (sx !== undefined) { x += sx; snapped.run = 'a wall' }
+    if (sy !== undefined) { y += sy; snapped.cross = 'a wall' }
+  }
+  return { dx: x - z.x, dy: y - z.y, snapped, fpId: fp ? fp.id : null }
+}
+
 /** The items placed at (dx, dy): racks parented to the building they land
  *  in (an item whose building comes with it keeps it). */
 export function placedItems(items, objects, dx, dy) {
   const ids = new Set(items.map(o => o.id))
   return items.map(o => {
     const c = shifted(o, dx, dy)
-    if (typeof c.type === 'string' && c.type.startsWith('rack_') && !(o.parentId && ids.has(o.parentId))) {
+    if (typeof c.type === 'string' && (c.type.startsWith('rack_') || isZone(c)) && !(o.parentId && ids.has(o.parentId))) {
       const b = boxOf(c), home = buildingAt(objects, (b.x + b.r) / 2, (b.y + b.b) / 2)
       if (home) c.parentId = home.id; else delete c.parentId
     }

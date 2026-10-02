@@ -30,6 +30,7 @@ async function fresh() {
   const { rackFootprint, MHE_PROFILES } = await import('../../generate/columnCheck')
   const { buildingSections } = await import('../../utils/syncSections')
   const CP = await import('../../utils/copyPrompt')
+  const BB = await import('../../utils/bayBeam')
   const L = await import('../../utils/layers')
   const { installAisleKeeper } = await import('../../utils/aisleKeeper')
   const { installRowEditKeeper } = await import('../../utils/rowEditKeeper')
@@ -38,7 +39,7 @@ async function fresh() {
   installAisleKeeper(useCanvasStore, nanoid)
   installRowEditKeeper(useCanvasStore)
   CP.installCopyWatcher(useCanvasStore, nanoid)
-  return { useCanvasStore, FT, FR, LC, generateAndPlace, rackFootprint, MHE_PROFILES, buildingSections, CP }
+  return { useCanvasStore, FT, FR, LC, generateAndPlace, rackFootprint, MHE_PROFILES, buildingSections, CP, BB }
 }
 
 const RACK = new Set(['rack_row', 'rack_double_row'])
@@ -105,8 +106,9 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     expect(n).toBeGreaterThan(0)
   }
   const noOverlaps = () => {
-    const f = racks().map(r => m.rackFootprint(r))
-    for (let i = 0; i < f.length; i++) for (let j = i + 1; j < f.length; j++) expect(overlapArea(f[i], f[j])).toBeLessThan(1)
+    // a single carrying on from a double's last upright frame shares it: not an overlap
+    const all = racks(), f = all.map(r => m.rackFootprint(r))
+    for (let i = 0; i < f.length; i++) for (let j = i + 1; j < f.length; j++) if (!m.BB.sharesFrame(all[i], all[j], GS)) expect(overlapArea(f[i], f[j])).toBeLessThan(1)
   }
 
   it.each([

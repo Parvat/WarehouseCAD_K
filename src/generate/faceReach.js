@@ -7,8 +7,9 @@
 // their aisle and becomes a single row (the half that can be reached) beside
 // the wall or zone. A bay neither face can reach goes. A single row keeps a
 // bay while either of its sides has an aisle. Where a double piece meets a
-// single one, the single's bay there goes too: the two would otherwise share
-// (overlap on) the upright frame between them.
+// single one, the single carries straight on from the double's last upright
+// frame: the two share that frame, as a real rack does (utils/bayBeam.js does
+// not count a shared end frame as an overlap).
 //
 // "Clear floor" is the building's floor (its inner wall face) with no zone on
 // it, an aisle deep, over the bay's whole length. Other racks are not read:
@@ -57,10 +58,6 @@ export function dropUnreachableFaces(racks, { poly, zones = [], aislePx, gridSiz
       return A && B ? 'D' : A ? 'A' : B ? 'B' : '-'
     })
     if (state.every(s => s === 'D')) { out.push(r); continue }
-    /* where a double piece meets a single one they would share the upright frame between them
-       (both racks own it): the single's bay there goes, so the two never overlap */
-    const shared = state.map((s, i) => ((s === 'A' || s === 'B') && (state[i - 1] === 'D' || state[i + 1] === 'D') ? '-' : s))
-    state.splice(0, state.length, ...shared)
     const upIn = r.uprightWidth || 3
     const depthPx = ((r.depthIn ?? 42) / 12) * gridSize
     let first = true

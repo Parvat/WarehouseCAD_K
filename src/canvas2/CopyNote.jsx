@@ -8,7 +8,8 @@ import { applySectionSync, syncWarningText } from '../components/RightPanel/pane
    (utils/copyPrompt.js): the pending set ("Section N: K changes · Copy to
    other sections", its tooltip listing them), the question asked when the
    user moves on to another section, a one-line message, what the last copy
-   did, or a row being placed. Plain DOM — no Konva — so it renders anywhere. */
+   did, or a row being placed. The pending set's ✕ (and Esc, when nothing else is
+   active) dismisses it, as "Don't copy". Plain DOM — no Konva — so it renders anywhere. */
 
 const wrap = {
   position: 'absolute', left: '50%', bottom: 14, transform: 'translateX(-50%)', zIndex: 60,
@@ -113,6 +114,9 @@ function Body() {
               {matchText(pending)}
             </button>
           )}
+          {/* Dismiss: the bar closes and the set clears, the changes staying where they were made (Don't copy) */}
+          <button style={closeBtn} aria-label="Dismiss pending changes" title="Dismiss — keep the changes where they were made; nothing is copied"
+            onClick={dontCopy}>✕</button>
         </div>
       </div>)
   }

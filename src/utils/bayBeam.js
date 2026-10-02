@@ -133,10 +133,31 @@ function boxesOverlap(a, b, eps = 0.01) {
   return true
 }
 
-/** What's wrong with a rack where it is: the racks it overlaps and how far
- *  (inches) its drawn box passes the building's inner wall (0 = inside). */
+const BEAM = new Set(['rack_row', 'rack_double_row'])
+/** Two beam racks in one line that share an upright frame: a single row carrying straight on from
+ *  a double row's last frame (beside a wall or zone, generate/faceReach.js), or two pieces of a row
+ *  butted frame to frame. Their boxes meet end to end, overlapping by no more than one upright
+ *  along the run, and across one lies within the other. Not an overlap: a real rack shares it. */
+export function sharesFrame(a, b, gridSize = 40) {
+  if (!BEAM.has(a.type) || !BEAM.has(b.type)) return false
+  const ra = (((a.rotation || 0) % 180) + 180) % 180, rb = (((b.rotation || 0) % 180) + 180) % 180
+  if (ra !== rb || ra % 90 !== 0) return false
+  const box = (o) => { const c = rackCorners(o), xs = c.map(p => p.x), ys = c.map(p => p.y); return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) } }
+  const A = box(a), B = box(b), vert = ra === 90
+  const [a0, a1, b0, b1] = vert ? [A.y0, A.y1, B.y0, B.y1] : [A.x0, A.x1, B.x0, B.x1]       // along the run
+  const [p0, p1, q0, q1] = vert ? [A.x0, A.x1, B.x0, B.x1] : [A.y0, A.y1, B.y0, B.y1]       // across
+  const along = Math.min(a1, b1) - Math.max(a0, b0), e = 0.01
+  const up = (Math.max(a.uprightWidth || 3, b.uprightWidth || 3) / 12) * gridSize
+  if (!(along > 0) || along > up + e) return false
+  if (!(Math.abs(a1 - b0 - along) < e || Math.abs(b1 - a0 - along) < e)) return false          // end to end
+  return (p0 >= q0 - e && p1 <= q1 + e) || (q0 >= p0 - e && q1 <= p1 + e)
+}
+
+/** What's wrong with a rack where it is: the racks it overlaps (a shared end frame is not an
+ *  overlap: sharesFrame) and how far (inches) its drawn box passes the building's inner wall
+ *  (0 = inside). */
 export function rackIssues(obj, objects, gridSize = 40) {
-  const overlaps = objects.filter(o => o.id !== obj.id && isRack(o) && o.width > 0 && o.height > 0 && boxesOverlap(obj, o)).map(o => o.id)
+  const overlaps = objects.filter(o => o.id !== obj.id && isRack(o) && o.width > 0 && o.height > 0 && boxesOverlap(obj, o) && !sharesFrame(obj, o, gridSize)).map(o => o.id)
   let wallOutIn = 0
   const fp = obj.parentId ? objects.find(o => o.id === obj.parentId) : null
   if (fp) {

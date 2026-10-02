@@ -284,7 +284,7 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### RA — Racking areas and zones · `RA_rackingAreas.test.js` (69 tests)
+### RA — Racking areas and zones · `RA_rackingAreas.test.js` (71 tests)
 Code: `generate/rackingArea.js` (pure) and `utils/rackingAreaTool.js` (store,
 question). UI: `canvas2/AreaPrompt.jsx` and
 `RightPanel/panels/RackingAreaPanel.jsx`.
@@ -359,6 +359,19 @@ use the default settings; your changes stay as they are." [Continue]
 [Cancel]. It is asked before a resize or a rebuild of an area with hand edits.
 While it is asked, the area is back where it was.
 
+**Zones refit areas.** A zone placed, moved, resized or deleted inside or
+beside a racking area (within an aisle of its box, where it is now or where it
+was) refits that area on release: the area shows its pattern through its box
+again with the zones as they are. Racks come back at their exact pattern places
+where a zone left, go where it now stands, and pairs beside it turn single.
+- It lands as ONE undo step with the zone change, and nothing is asked.
+- Racks under a zone that no area manages still ask first; Continue trims them
+  and refits the areas in the same step.
+- The keeper reads "before" from the last committed history entry, so an
+  action that writes its objects before its entry (a placement, a paste) is
+  seen.
+- `rowEditKeeper` leaves an area's own racks' stamps alone.
+
 **Zones**
 - Office, Staging, Washroom and Custom area (`zone_*`) are on a new
   **Zones** layer and placed from a new **Zones** section in the left panel
@@ -400,8 +413,9 @@ joins the copy-to-sections set.
 | `RA-edits` | a rack moved by hand: the extend asks with the exact text; the area is back while asking; Cancel changes nothing (no history); Continue extends and the moved rack is unchanged; one undo |
 | `RA-shrink` ×2 | along the rows by 37' 5" (not whole bays): each crossing row is kept from the same start on the same uprights, fewer bays, ending within one bay (8' 3") of the new edge, beams still 96"; across the rows: crossing racks go (a pair keeps a half that still fits, as a single); everything within the new box; on the pattern, aisles full; no hand edits recorded; no errors; one undo |
 | `RA-rebuild` | beam → 108": every rack 108", the area remembers it, no errors, one undo; with a hand-moved rack: asked; Continue keeps it; the rest are 108"; no overlaps |
-| `RA-zone` | a staging zone added over racks: asked ("This staging covers N racks. …"), with the add taken back meanwhile (no history); Cancel leaves it unplaced; Continue places it, and no bay is left under it; one entry; no errors; one undo |
-| `RA-zone-move` | the office moved onto racks: asked; Continue trims them; moved onto clear floor: nothing asked |
+| `RA-zone` | racks no area manages (the area deleted, Keep racks): a staging zone added over them asks ("This staging covers N racks. …"), with the add taken back meanwhile (no history); Cancel leaves it unplaced; Continue places it, and no bay is left under it; one entry; no errors; one undo |
+| `RA-zone-area` | a staging zone dropped over a racking area: nothing asked, the area refits at once — no bay under the zone, every rack on the pattern; ONE entry with the zone; no errors; one undo restores both exactly |
+| `RA-zone-move` | the office moved down onto the area's racks: refitted on release, nothing asked, no bay under it, one entry; moved back: every rack returns at its exact pattern place; grown 30' into the area: the racks under it go; shrunk back: they return; one undo takes back the shrink and its refit together |
 | `RA-mouse` | a box and an edge drag at mouse positions (top at 39.95', dragged 2.17' past the wall): Check layout finds nothing at all |
 | `RA-copy` | a shrink that trims rows puts nothing in the copy set and asks nothing |
 | `RA-align` | a washroom top-left; the area at mouse coordinates over the bottom / right part; its nearest row given 120" + 72" bays by hand; extended across the rows past the wall (asked, as a hand edit): every new rack within the placed row's reach has its uprights exactly, some are whole copies; the hand-edited row is unchanged and no new rack has a 120" bay (the pattern, not the hand edit); aisles full; Check layout finds nothing at all; one undo |
@@ -611,12 +625,15 @@ face rule). Wired into `canvas2/useCanvasInteraction.js` (resize and body drag),
   single row (the reachable half) beside the wall or zone.
 - A bay neither face can reach goes. A single row keeps a bay while either side
   has an aisle.
-- Where a double piece meets a single one they would share the upright frame,
-  so the single's bay there goes.
+- Where a double piece meets a single one, the single carries straight on from
+  the double's last upright frame: they share it, as a real rack does. No gap.
+  `utils/bayBeam.js` `sharesFrame` keeps that from counting as an overlap: two
+  beam racks in one line, end to end, overlapping by at most one upright, one
+  inside the other across. `rackIssues`, and so Check layout, skip it.
 - Racking areas apply it as the last step of the pattern clip, so a resize or
-  rebuild refits beside zones. Generate applies it to its layout, reading the
-  zones already on the floor. Placing a zone beside existing racks doesn't refit
-  them by itself; the area's next resize or rebuild does.
+  rebuild refits beside zones, and so does a zone placed, moved, resized or
+  deleted beside an area (area RA, RA-zone-area / RA-zone-move). Generate
+  applies it to its layout, reading the zones already on the floor.
 - Capacity, X marks and Check layout follow from the racks.
 
 **Also changed**
@@ -628,15 +645,16 @@ face rule). Wired into `canvas2/useCanvasInteraction.js` (resize and body drag),
 |---|---|
 | `WF-area-wall` ×3 | rectangle, L, T: an area's right edge dragged 50' past the building stops at the face it meets from inside (the T: the stem's right wall), live (`clampResizeUpdates`) and in the resize; 4 px short of the face snaps onto it; pulling in is free; the bottom edge past the bottom wall stops at its face; no errors |
 | `WF-zone-wall` ×3 | a zone on the floor resized past the right wall stops at its face; dragged 400' down, its bottom stops at the wall below (the T: the bar's bottom wall); a zone outside the building drags freely |
-| `WF-area-face` ×6 | rectangle, L, T, a zone mid-area and one at the edge of the area: a 5'-deep zone 1' off a pair's far face over its middle (4 bays or a third); after a rebuild that row is single (its near half) along the zone and back-to-back 2 bays beyond it; every pick face has an aisle (doubles both faces, singles one side); Check layout: no errors, no "nobody can reach"; shrink → extend back identical |
+| `WF-area-face` ×6 | rectangle, L, T, a zone mid-area and one at the edge of the area: a 5'-deep zone 1' off a pair's far face over its middle (4 bays or a third); after a rebuild that row is single (its near half) along the zone and back-to-back 2 bays beyond it; every double → single join along a row has no gap and exactly one upright of overlap, a shared frame (`sharesFrame`, not in `rackIssues`), and Check layout has no overlap; every pick face has an aisle (doubles both faces, singles one side); Check layout: no errors, no "nobody can reach"; shrink → extend back identical |
 | `WF-area-face-fill` ×3 | the zone placed first, the area deleted and filled again over the same box: the same |
-| `WF-generate-face` | Generate 240 × 120 with a zone in the aisle beside a pair (kept across a second Generate): single along the zone, back-to-back elsewhere; every face has an aisle; no errors |
+| `WF-generate-face` | Generate 240 × 120 with a zone in the aisle beside a pair (kept across a second Generate): single along the zone, back-to-back elsewhere; the joins share their frame; every face has an aisle; no errors |
 
 All run horizontal and vertical.
 
 **Break-its:** the clamp off (`stopEdge` returning the requested edge):
 WF-area-wall and WF-zone-wall fail (12). The face rule off: WF-area-face,
-WF-area-face-fill and WF-generate-face fail (20).
+WF-area-face-fill and WF-generate-face fail (20). The one-bay gap back (the
+single's bay at a join dropped): WF-area-face and WF-generate-face fail (14).
 
 **Checked in the app** (Playwright, real mouse; rectangle, L and T, horizontal and
 vertical):
@@ -650,6 +668,53 @@ vertical):
   box drawn past the wall had an edge outside the building. With the box clipped
   inside, it is picked on its outline over open floor as before (the hit test
   checks the outline before the building).
+
+### ZP — Placing a zone, dismissing the bar · `ZP_zonePlaceDismiss.test.js` (12 tests)
+Code: `utils/placement.js` (`snapZone`), `canvas2/CopyChange.jsx` (the ghost),
+`components/LeftPanel/FloatingToolbar.jsx` (zones placed like rows),
+`canvas2/CopyNote.jsx` (the ✕), `utils/copyPrompt.js` (`dismissOnEscape`),
+`hooks/useKeyboardShortcuts.js` (Esc).
+
+**Placing a zone from the left panel**
+- It follows the mouse, faded: the zone itself under a blue outline, as a row
+  being placed does.
+- Over a building (or hanging over one) it stays within the walls' inner faces.
+  An edge within 12 screen px of a wall face, at any zoom, snaps onto it.
+- A click drops it as one action; Esc cancels (nothing placed, no history).
+- On the drop the area keeper refits any racking area it reaches (area RA).
+
+**Dismissing the pending-changes bar**
+- The bar's ✕ ("Dismiss pending changes") closes it and clears the set: the
+  changes stay where they were made, nothing is copied. Same as "Don't copy".
+- Esc does the same when nothing else is active: nothing being placed or filled
+  and nothing selected. With a selection, Esc deselects first.
+
+| Test | Asserts |
+|---|---|
+| `ZP-dismiss` ×3 | Generate on a rectangle, Fill racking over a whole L / T, max run 120': a row moved across shows the bar with its ✕; Esc with a selection does nothing to it; with none it dismisses: the set and question clear, the ✕ is gone, the moved row stays moved, the row in the other sections is untouched; a second Esc does nothing |
+| `ZP-place` ×3 | rectangle, L, T with an area: a zone placed follows the pointer (centred on it); 8 px off the inner top-left corner it snaps onto both faces; pushed past the wall it stays inside; Esc: nothing placed, no history; a click over the area's racks drops it, parented, nothing asked, no bay under it, one entry, no errors; one undo restores both exactly |
+
+All run horizontal and vertical.
+
+**Break-its:** Esc's dismissal off: ZP-dismiss fails (6). The zone snap off: ZP-place
+fails (6). The zone refit off (`areasNear` finding no area): RA-zone-area,
+RA-zone-move and ZP-place fail (10).
+
+**Checked in the app** (Playwright, real mouse and keyboard; rectangle, L and T,
+horizontal and vertical; max run 60'):
+- A row dragged 2' across showed the bar. Its ✕ closed it with the move kept.
+  Again: Esc deselected, a second Esc closed it.
+- Staging from the left panel's Zones section followed the mouse, faded
+  ("Click to place · Esc to cancel"); Esc placed nothing and wrote no history.
+- Dropped 5 px off the inner top-left corner, it landed exactly on both wall
+  faces.
+- Dropped over the area: no rack under it, pairs beside it single, carrying on
+  from the double's frame. Check layout: no errors.
+- One Ctrl+Z took back the zone and the refit together.
+- The zone dragged away: every rack back at its pattern place, exactly.
+- **Found in the app:** the zone's wall snap was capped at 1 ft like a row's,
+  which is under a pixel when zoomed out to a whole building. Now 12 screen px
+  at any zoom.
 
 ### LC — Check layout · `LC_layoutCheck.test.js` (33 tests)
 A "Check layout" button in the top bar lists every problem in the right

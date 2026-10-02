@@ -28,6 +28,7 @@ async function fresh() {
   const LC = await import('../../utils/layoutCheck')
   const CP = await import('../../utils/copyPrompt')
   const { rackFootprint } = await import('../../generate/columnCheck')
+  const BB = await import('../../utils/bayBeam')
   const L = await import('../../utils/layers')
   const { installAisleKeeper } = await import('../../utils/aisleKeeper')
   const { installRowEditKeeper } = await import('../../utils/rowEditKeeper')
@@ -37,7 +38,7 @@ async function fresh() {
   installRowEditKeeper(useCanvasStore)
   CP.installCopyWatcher(useCanvasStore, nanoid)
   AT.installAreaKeeper(useCanvasStore)
-  return { useCanvasStore, FT, FR, RA, AT, LC, CP, L, rackFootprint }
+  return { useCanvasStore, FT, FR, RA, AT, LC, CP, L, BB, rackFootprint }
 }
 
 const RACK = new Set(['rack_row', 'rack_double_row'])
@@ -174,6 +175,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
       for (const c of crossing) {
         const fc = foot(c), across = alongX ? fc.y : fc.x, start = alongX ? fc.x : fc.y
         const kept = racks().filter(r => Math.abs((alongX ? foot(r).y : foot(r).x) - across) < EPS && Math.abs((alongX ? foot(r).x : foot(r).y) - start) < EPS)
+        // a piece with no whole bay left inside the new edge goes
+        if (edge - start < 99 / 12 * GS - EPS) { expect(kept).toHaveLength(0); continue }
         expect(kept).toHaveLength(1)
         expect(kept[0].type).toBe(c.type)
         const f = foot(kept[0]), end = alongX ? f.x + f.w : f.y + f.h
@@ -212,12 +215,16 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     answer(true)
     expect(s().objects.find(o => o.id === r.id)).toEqual(moved)
     for (const o of racks()) if (o.id !== r.id) expect(o.beams.every(b => b === 108)).toBe(true)
-    const f = racks().map(foot)
-    for (let i = 0; i < f.length; i++) for (let j = i + 1; j < f.length; j++) expect(overlap(f[i], f[j])).toBe(false)
+    const all = racks(), f = all.map(foot)
+    for (let i = 0; i < f.length; i++) for (let j = i + 1; j < f.length; j++) if (!m.BB.sharesFrame(all[i], all[j], GS)) expect(overlap(f[i], f[j])).toBe(false)
   })
 
-  it('RA-zone: a staging zone placed over racks asks first (the placing taken back meanwhile); Continue places it and removes / trims the racks under it — no bay left under it; Cancel leaves it unplaced; Check layout clean; one undo', async () => {
+  it('RA-zone: a staging zone placed over racks no area manages asks first (the placing taken back meanwhile); Continue places it and removes / trims the racks under it — no bay left under it; Cancel leaves it unplaced; Check layout clean; one undo', async () => {
     const { fp } = officeLayout()
+    // the area deleted, its racks kept: racks no area manages
+    s().selectObject(areaNow().id); s().deleteSelected(); await tick()
+    m.AT.answerChoice(0); await tick()
+    expect(areaNow()).toBeUndefined()
     const before = doc(), n0 = s().history.length
     const zone = { type: 'zone_staging', label: 'Staging', x: fp.x + 60 * GS, y: fp.y + 70 * GS, width: 40 * GS, height: 30 * GS, parentId: fp.id, layerId: 'zones' }
     const zb = { x: zone.x, y: zone.y, w: zone.width, h: zone.height }
@@ -240,19 +247,53 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     expect(doc()).toEqual(before)
   })
 
-  it('RA-zone-move: moving a zone onto racks asks too; Continue trims them; a zone moved onto clear floor asks nothing', async () => {
-    const { fp, office } = officeLayout()
-    const n0 = s().history.length
-    s().commitObjectUpdate(office.id, { y: office.y + 60 * GS }); await tick()
-    expect(question()).not.toBeNull()
-    answer(true); await tick()
-    const z = s().objects.find(o => o.id === office.id)
-    const zb = { x: z.x, y: z.y, w: z.width, h: z.height }
-    for (const r of racks()) expect(overlap(foot(r), zb)).toBe(false)
-    expect(s().history.length).toBe(n0 + 1)
-    // onto clear floor (outside the building): no question
-    s().commitObjectUpdate(office.id, { x: fp.x - 100 * GS }); await tick()
+  it('RA-zone-area: a staging zone dropped over a racking area refits it at once — nothing asked, no bay left under the zone, the area\'s racks still on its pattern; ONE undo step with the zone, and one undo restores both exactly', async () => {
+    const { fp } = officeLayout()
+    const before = doc(), n0 = s().history.length
+    const zone = { type: 'zone_staging', label: 'Staging', x: fp.x + 60 * GS, y: fp.y + 70 * GS, width: 40 * GS, height: 30 * GS, parentId: fp.id, layerId: 'zones' }
+    const zb = { x: zone.x, y: zone.y, w: zone.width, h: zone.height }
+    expect(racks().filter(r => overlap(foot(r), zb)).length).toBeGreaterThan(0)
+    s().addObject(zone); await tick()
     expect(question()).toBeNull()
+    expect(s().objects.some(o => o.type === 'zone_staging')).toBe(true)
+    for (const r of racks()) for (const b of m.RA.bayBoxes(r, GS)) expect(overlap(b, zb)).toBe(false)
+    expectOnPattern()
+    expect(s().history.length).toBe(n0 + 1)
+    expect(check().errors).toEqual([])
+    s().undo()
+    expect(doc()).toEqual(before)
+  })
+
+  it('RA-zone-move: a zone moved or resized inside an area refits it on release, one undo step each — moved onto the racks clears them; moved back, every rack returns at its exact pattern place; grown, the racks under it go; shrunk back, they return', async () => {
+    const { office } = officeLayout()
+    const original = rackKeys(), n0 = s().history.length
+    const zb = (z) => ({ x: z.x, y: z.y, w: z.width, h: z.height })
+    // moved down onto the racks
+    s().commitObjectUpdate(office.id, { y: office.y + 60 * GS }); await tick()
+    expect(question()).toBeNull()
+    let z = s().objects.find(o => o.id === office.id)
+    for (const r of racks()) for (const b of m.RA.bayBoxes(r, GS)) expect(overlap(b, zb(z))).toBe(false)
+    expect(s().history.length).toBe(n0 + 1)
+    expect(check().errors).toEqual([])
+    // moved back where it was: the racks return, exactly
+    s().commitObjectUpdate(office.id, { y: office.y }); await tick()
+    expect(rackKeys()).toEqual(original)
+    expect(s().history.length).toBe(n0 + 2)
+    // grown 30' down into the area: the racks under it go (and pairs beside it turn single)
+    s().commitObjectUpdate(office.id, { height: office.height + 30 * GS }); await tick()
+    z = s().objects.find(o => o.id === office.id)
+    expect(rackKeys()).not.toEqual(original)
+    for (const r of racks()) for (const b of m.RA.bayBoxes(r, GS)) expect(overlap(b, zb(z))).toBe(false)
+    expect(check().errors).toEqual([])
+    // shrunk back: they return at their pattern places
+    s().commitObjectUpdate(office.id, { height: office.height }); await tick()
+    expect(rackKeys()).toEqual(original)
+    expect(question()).toBeNull()
+    // one undo: the shrink and its refit together
+    s().undo()
+    z = s().objects.find(o => o.id === office.id)
+    expect(z.height).toBe(office.height + 30 * GS)
+    for (const r of racks()) for (const b of m.RA.bayBoxes(r, GS)) expect(overlap(b, zb(z))).toBe(false)
   })
 
   it('RA-mouse: with a box and an edge drag landing where a mouse puts them (not whole feet: the top at 39.95\', dragged to 2.17\' past the wall) Check layout finds nothing at all — no aisle a hair under the forklift\'s width', () => {
@@ -362,13 +403,15 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     }
   }
   /** Never an extra row: any two racks side by side across (overlapping along) are at least an aisle
-   *  apart — no single row back-to-back with another row. */
+   *  apart — no single row back-to-back with another row. A single carrying on from a double's last
+   *  upright frame (they share it) is one line, not two rows. */
   const expectAisles = () => {
     const aisleFt = m.FR.DEFAULT_FILL_SETTINGS.aisleFt
     const all = racks().map(r => ({ r, s: ftS(foot(r)), q: ftR(foot(r)) }))
     for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
       const a = all[i], b = all[j]
       if (Math.min(a.q[1], b.q[1]) - Math.max(a.q[0], b.q[0]) < 1e-3) continue
+      if (m.BB.sharesFrame(a.r, b.r, GS)) continue                      // a single carrying on from a double's last frame
       const gap = Math.max(b.s[0] - a.s[1], a.s[0] - b.s[1])
       expect(gap, `${a.r.type} row ${a.r.rowIndex} and ${b.r.type} row ${b.r.rowIndex}: an aisle between`).toBeGreaterThan(aisleFt - 1e-6)
     }

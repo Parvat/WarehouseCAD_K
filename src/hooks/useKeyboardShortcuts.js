@@ -4,7 +4,7 @@ import { TOOLS } from '../constants'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../utils/pasteAt'
 import { cancelPlacement } from '../utils/placement'
-import { guardEdit, useCopyPrompt } from '../utils/copyPrompt'
+import { guardEdit, useCopyPrompt, dismissOnEscape } from '../utils/copyPrompt'
 import { FILL_TOOL, cancelFill } from '../utils/fillTool'
 import { pickableIn } from '../utils/layers'
 
@@ -23,6 +23,8 @@ export function useKeyboardShortcuts() {
         if (useCanvasStore.getState().activeTool === FILL_TOOL) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         // a row being placed (paste, duplicate, left panel): Esc cancels it, nothing else
         if (cancelPlacement()) return
+        // nothing else active (nothing selected): Esc dismisses the pending-changes bar, as "Don't copy"
+        if (dismissOnEscape()) return
         useCanvasStore.getState().clearSelection()
         useCanvasStore.getState().setActiveWall(null)
         return

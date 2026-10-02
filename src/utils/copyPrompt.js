@@ -267,6 +267,17 @@ export function dontCopy() {
   }
 }
 
+/** Esc with nothing else active (nothing being placed or filled — the caller checks those — and
+ *  nothing selected): the pending-changes bar is dismissed, as its ✕ and "Don't copy" do — the
+ *  changes stay where they were made, nothing is copied. True when it was. */
+export function dismissOnEscape() {
+  if (!watch) return false
+  const st = watch.store.getState(), cp = useCopyPrompt.getState()
+  if ((st.selectedIds || []).length || (st.activeBaySelection || []).length || !cp.pending || cp.question) return false
+  dontCopy()
+  return true
+}
+
 /** Before an edit on `racks` (rack objects or ids): true if it may go
  *  ahead; false — with the question asked — when copyable changes are
  *  pending in another section of the same building. */
