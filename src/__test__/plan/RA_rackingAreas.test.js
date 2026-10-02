@@ -397,12 +397,53 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const faces = m.FR.innerOutline(fp, GS).map(p => (vert ? p.x : p.y) / GS), [s0, s1] = ftS(foot(r))     // feet, as ftS
     return faces.some(v => Math.abs(v - s1) < 1e-3 || Math.abs(v - s0) < 1e-3)
   }
+  const meetR = (x, y) => Math.min(x[1], y[1]) - Math.max(x[0], y[0]) > 1e-3
+  /** Area AA, the second-last row toward the wall: how far pattern row `row` may sit off its place,
+   *  toward the far wall — worked out here, independently of the fill, from the zones and the single
+   *  flush on the far wall. Only the last pair before that wall single; only for a zone on its start
+   *  side closer than an aisle (overlapping it along); Δ = the aisle less that clearance, and only
+   *  within the last aisle's slack. 0 when the row may not slide. */
+  const slideOf = (row) => {
+    const a = areaNow(), p = a?.pattern
+    if (!p) return 0
+    const dirS = p.dirS || 1, aisle = p.aisleFt, u = p.units.find(q => q.row === row)
+    if (!u || u.type !== 'rack_double_row') return 0
+    const own = racks().filter(o => o.areaId === a.id)
+    const mine = own.filter(o => o.rowIndex === row && !flushOnWall(o))
+    const mid = u.s0 + u.d / 2
+    const walls = own.filter(o => flushOnWall(o) && dirS * (ftS(foot(o))[0] - mid) > 0 && mine.some(q => meetR(ftR(foot(q)), ftR(foot(o)))))
+    if (!mine.length || !walls.length) return 0
+    const wallNear = dirS > 0 ? Math.min(...walls.map(o => ftS(foot(o))[0])) : Math.max(...walls.map(o => ftS(foot(o))[1]))
+    const lo = dirS > 0 ? u.s0 + u.d : wallNear, hi = dirS > 0 ? wallNear : u.s0
+    // the last row before the wall single: no other rack of the area between them
+    if (own.some(o => o.rowIndex !== row && !walls.includes(o) && ftS(foot(o))[1] > lo + 1e-6 && ftS(foot(o))[0] < hi - 1e-6 && mine.some(q => meetR(ftR(foot(q)), ftR(foot(o)))))) return 0
+    const slack = hi - lo - aisle, start = dirS > 0 ? u.s0 : u.s0 + u.d
+    let by = 0
+    for (const z of s().objects.filter(o => o.type.startsWith('zone_'))) {
+      const zb = { x: z.x, y: z.y, w: z.width, h: z.height }, [z0, z1] = ftS(zb)
+      if (!mine.some(q => meetR(ftR(foot(q)), ftR(zb)))) continue
+      const c = dirS > 0 ? start - z1 : z0 - start
+      if (c > -1e-6 && c < aisle - 1e-6) by = Math.max(by, aisle - c)
+    }
+    return by > 1e-6 && by <= slack + 1e-6 ? by : 0
+  }
+  /** The pattern unit as rack `r` sits: moved by exactly its Δ (slideOf) when it sits there, else at its
+   *  pattern place — so a row off its place by anything else still fails. */
+  const unitAt = (r) => {
+    const p = areaNow()?.pattern, u = p?.units.find(q => q.row === r.rowIndex)
+    if (!u || flushOnWall(r)) return u
+    const by = slideOf(r.rowIndex)
+    if (!by) return u
+    const v = { ...u, s0: u.s0 + (p.dirS || 1) * by }, single = p.depthIn / 12, [s0, s1] = ftS(foot(r))
+    const spots = r.type === 'rack_double_row' ? [[v.s0, v.s0 + v.d]] : [[v.s0, v.s0 + single], [v.s0 + v.d - single, v.s0 + v.d]]
+    return spots.some(([x, y]) => Math.abs(x - s0) < 1e-6 && Math.abs(y - s1) < 1e-6) ? v : u
+  }
   const expectOnPattern = () => {
     const a = areaNow(), p = a.pattern, single = p.depthIn / 12, pitch = (p.upIn + p.beamIn) / 12
     expect(p).toBeTruthy()
     for (const r of racks().filter(o => o.areaId === a.id && a.placed[o.id] === m.RA.rackSig(o))) {
       const f = foot(r), [s0, s1] = ftS(f), [r0] = ftR(f)
-      const u = p.units.find(q => q.row === r.rowIndex)
+      const u = unitAt(r)                                              // its pattern place, or slid by exactly its Δ
       expect(u, `row ${r.rowIndex} is a pattern row`).toBeTruthy()
       const spots = u.type !== 'rack_double_row' ? [[u.s0, u.s0 + u.d]]
         : r.type === 'rack_double_row' ? [[u.s0, u.s0 + u.d]] : [[u.s0, u.s0 + single], [u.s0 + u.d - single, u.s0 + u.d]]
@@ -437,7 +478,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const zones = s().objects.filter(o => o.type.startsWith('zone_')).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height }))
     for (const r of racks().filter(o => o.type === 'rack_row' && o.areaId === a.id)) {
       if (flushOnWall(r)) continue                                    // moved out onto the far wall (area AA), not a cut half
-      const u = a.pattern.units.find(q => q.row === r.rowIndex)
+      const u = unitAt(r)
       if (u.type !== 'rack_double_row') continue
       const [s0] = ftS(foot(r)), [r0, r1] = ftR(foot(r))
       const o0 = Math.abs(s0 - u.s0) < 1e-6 ? u.s0 + u.d - single : u.s0                 // the other half, across
@@ -462,12 +503,23 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const all = racks().map(r => ({ r, s: ftS(foot(r)), q: ftR(foot(r)) }))
     let n = 0
     for (const a of all) {
-      const next = all.filter(b => b !== a && b.s[0] >= a.s[1] - 1e-6 && Math.min(a.q[1], b.q[1]) - Math.max(a.q[0], b.q[0]) > 1e-3)
+      // (racks meeting along by no more than an upright — a corner at a shared frame — don't face each other)
+      const upFt = (areaNow()?.pattern.upIn ?? 3) / 12
+      const next = all.filter(b => b !== a && b.s[0] >= a.s[1] - 1e-6 && Math.min(a.q[1], b.q[1]) - Math.max(a.q[0], b.q[0]) > upFt + 1e-3)
       if (!next.length) continue
       const b = next.reduce((p, q) => (q.s[0] < p.s[0] ? q : p)), gap = b.s[0] - a.s[1]
+      // a gap with a zone in it is not an aisle (an office between two rows)
+      const g0 = Math.max(a.q[0], b.q[0]), g1 = Math.min(a.q[1], b.q[1])
+      const strip = vert ? { x: a.s[1] * GS, y: g0 * GS, w: gap * GS, h: (g1 - g0) * GS } : { x: g0 * GS, y: a.s[1] * GS, w: (g1 - g0) * GS, h: gap * GS }
+      if (gap > 1e-6 && s().objects.some(o => o.type.startsWith('zone_') && overlap({ x: o.x, y: o.y, w: o.width, h: o.height }, strip))) continue
       // the aisle before a single flush on the far wall may be wider: that single moved out onto the wall
       if (flushOnWall(b.r)) expect(gap, `the aisle after ${a.r.type} row ${a.r.rowIndex} (ft)`).toBeGreaterThanOrEqual(aisleFt - 1e-6)
-      else expect(gap, `the aisle after ${a.r.type} row ${a.r.rowIndex} (ft)`).toBeCloseTo(aisleFt, 6)
+      else {
+        // the aisle before the second-last row slid toward the wall (area AA) is wider by exactly its Δ
+        const pu = areaNow()?.pattern.units.find(q => q.row === b.r.rowIndex), bu = b.r.areaId ? unitAt(b.r) : pu
+        const wider = pu && bu && bu !== pu ? Math.abs(bu.s0 - pu.s0) : 0
+        expect(gap, `the aisle after ${a.r.type} row ${a.r.rowIndex} (ft)`).toBeCloseTo(aisleFt + wider, 6)
+      }
       n++
     }
     expect(n).toBeGreaterThan(0)
@@ -650,6 +702,153 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     }
     expect(racks().length).toBeGreaterThan(8)
     expect(check().errors).toEqual([])
+  })
+
+  /* ── Area AA: the second-last row slides toward the wall ── */
+  /** The whole building filled from its top-left corner (the far edge across the rows on the wall);
+   *  the last pair before the single flush on the far wall: its pattern unit, its longest double
+   *  beside a wall single, and the last aisle's slack there (ft). */
+  const fillWhole = (type, w, h) => {
+    s().placeFpObject({ type, widthFt: w, heightFt: h })
+    const fp = s().objects.find(o => o.type === type)
+    drag({ x: fp.x - 13.7, y: fp.y - 21.3 }, { x: fp.x + fp.width + 7.1, y: fp.y + fp.height + 3.3 })
+    return fp
+  }
+  const lastPair = () => {
+    const a = areaNow(), p = a.pattern
+    expect(p.dirS).toBe(1)
+    const own = racks().filter(o => o.areaId === a.id), far = Math.max(...own.map(o => ftS(foot(o))[1]))
+    const walls = own.filter(o => flushOnWall(o) && Math.abs(ftS(foot(o))[1] - far) < 1e-6)
+    const before = own.filter(o => !walls.includes(o) && walls.some(q => meetR(ftR(foot(o)), ftR(foot(q)))))
+    const top = Math.max(...before.map(o => ftS(foot(o))[1]))
+    const row = before.find(o => Math.abs(ftS(foot(o))[1] - top) < 1e-6).rowIndex
+    const u = p.units.find(q => q.row === row)
+    const len = (o) => ftR(foot(o))[1] - ftR(foot(o))[0]
+    const rk = before.filter(o => o.rowIndex === row && o.type === 'rack_double_row' && walls.some(q => meetR(ftR(foot(o)), ftR(foot(q))))).sort((x, y) => len(y) - len(x))[0]
+    if (!rk || u.type !== 'rack_double_row') return null
+    const wallNear = Math.min(...walls.filter(q => meetR(ftR(foot(rk)), ftR(foot(q)))).map(q => ftS(foot(q))[0]))
+    return { u, row, rk, slack: wallNear - (u.s0 + u.d) - p.aisleFt, aisle: p.aisleFt, pitch: (p.upIn + p.beamIn) / 12, upFt: p.upIn / 12, beamFt: p.beamIn / 12 }
+  }
+  /** An office on the row's start side whose edge comes `c` feet short of its start face, 6' deep
+   *  across, `along` feet along centred at `at` (ft, along the run). */
+  const officeOff = (fp, u, c, at, along) => {
+    const e = u.s0 - c
+    const b = vert ? { x: (e - 6) * GS, y: (at - along / 2) * GS, w: 6 * GS, h: along * GS } : { x: (at - along / 2) * GS, y: (e - 6) * GS, w: along * GS, h: 6 * GS }
+    s().addObject({ type: 'zone_office', label: 'Office', x: b.x, y: b.y, width: b.w, height: b.h, parentId: fp.id, layerId: 'zones' })
+    return b
+  }
+  const rowNow = (row) => racks().filter(o => o.areaId === areaNow().id && o.rowIndex === row && !flushOnWall(o))
+  const baysOf = (list) => list.reduce((t, o) => t + o.beams.length, 0)
+  const acrossAt = (list, s0, d) => list.every(r => { const [a0, a1] = ftS(foot(r)), single = areaNow().pattern.depthIn / 12
+    return r.type === 'rack_double_row' ? Math.abs(a0 - s0) < 1e-6 && Math.abs(a1 - (s0 + d)) < 1e-6 : [s0, s0 + d - single].some(x => Math.abs(a0 - x) < 1e-6) })
+  /** The building, cut across (½' at a time) until the whole fill's last row before the far-wall
+   *  single is a full pair with 2–9' of slack; with `slack`, cut further to leave exactly that. */
+  const fitBuilding = async (type, w, h, slack = null) => {
+    const build = async (k) => {
+      m = await fresh(); s = () => m.useCanvasStore.getState()
+      m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation })
+      m.AT.useAreaPrompt.setState({ question: null })
+      const fp = vert ? fillWhole(type, w - k, h) : fillWhole(type, w, h - k)
+      return { fp, L: lastPair() }
+    }
+    for (let k = 0; k <= 20; k += 0.5) {
+      const got = await build(k)
+      if (!got.L || got.L.slack < 2 || got.L.slack > 9) continue
+      if (slack == null) return got
+      const fit = await build(k + got.L.slack - slack)
+      expect(fit.L.slack).toBeCloseTo(slack, 6)
+      return fit
+    }
+    throw new Error('no size leaves a full last pair with slack')
+  }
+  const SLIDE = [['rectangle', 'fp_rect', 240, 120], ['L', 'fp_l', 300, 200], ['T', 'fp_t', 360, 240]]
+
+  it.each(SLIDE)('RA-slide (%s): an office on the start side of the last pair before the far-wall single, closer than an aisle — the WHOLE row slides toward the wall by exactly the aisle less that clearance: a full pair beside the office, its start face an aisle off its edge, nothing of its run lost, the aisle before it that much wider, every aisle ≥ the aisle; shrink → extend back identical; clean', async (_, type, w, h) => {
+    const { fp, L } = await fitBuilding(type, w, h)
+    clean()
+    const by = Math.min(1.5, L.slack), before = baysOf(rowNow(L.row))
+    const [r0, r1] = ftR(foot(L.rk))
+    const office = officeOff(fp, L.u, L.aisle - by, (r0 + r1) / 2, 20)
+    await tick()
+    // the strict helpers first: a row off its place by anything but its Δ fails here
+    clean()
+    expect(slideOf(L.row)).toBeCloseTo(by, 6)
+    // the whole row, along its full length: at the pattern place moved by exactly Δ
+    const row = rowNow(L.row)
+    expect(acrossAt(row, L.u.s0 + by, L.u.d), 'every rack of the row slid by Δ').toBe(true)
+    // beside the office: a full pair, its start face exactly an aisle off the office's edge
+    const beside = row.filter(r => meetR(ftR(foot(r)), ftR(office)))
+    expect(beside.length).toBeGreaterThan(0)
+    for (const r of beside) {
+      expect(r.type).toBe('rack_double_row')
+      expect(ftS(foot(r))[0] - ftS(office)[1]).toBeCloseTo(L.aisle, 6)
+    }
+    expect(baysOf(row), 'nothing of the row\'s run lost').toBe(before)
+    clean()
+    // shrink → extend back: identical — across (the far edge off the wall: no wall row, so no slide), and
+    // along. Shallow cuts: an edge dragged back across a T's inner corner stops at that wall (floorClamp)
+    const keys = rackKeys(), b0 = boxNow()
+    for (const cut of vert ? [{ w: b0.w - 15.3 * GS }, { h: b0.h - 20.3 * GS }] : [{ h: b0.h - 15.3 * GS }, { w: b0.w - 20.3 * GS }]) {
+      resizeArea({ ...b0, ...cut })
+      const cutRow = rowNow(L.row)
+      if (('w' in cut) === vert && cutRow.length) expect(acrossAt(cutRow, L.u.s0 + by, L.u.d), 'across: no wall row, so the row is not slid').toBe(false)
+      clean()
+      resizeArea(b0)
+      expect(boxNow()).toEqual(b0)
+      expect(rackKeys()).toEqual(keys)
+    }
+    clean()
+  })
+
+  it.each(SLIDE)('RA-slide-slack (%s, the building cut across to leave 2\' of slack): when the last aisle\'s slack is less than the slide the office needs, the row stays at its pattern place (the half facing the office loses its bays there, as before); clean', async (_, type, w, h) => {
+    const { fp, L } = await fitBuilding(type, w, h, 2)
+    clean()
+    const need = L.slack + 0.75
+    expect(need, 'a clearance to the office that the slack can\'t make up').toBeLessThan(L.aisle)
+    const [r0, r1] = ftR(foot(L.rk))
+    const office = officeOff(fp, L.u, L.aisle - need, (r0 + r1) / 2, 20)
+    await tick()
+    expect(slideOf(L.row)).toBe(0)
+    const row = rowNow(L.row)
+    expect(acrossAt(row, L.u.s0, L.u.d), 'the row at its pattern place').toBe(true)
+    // beside the office only the far half is left
+    const beside = row.filter(r => meetR(ftR(foot(r)), ftR(office)))
+    expect(beside.length).toBeGreaterThan(0)
+    for (const r of beside) expect(r.type).toBe('rack_row')
+    clean()
+  })
+
+  it('RA-slide-column (rectangle): building columns standing in the row\'s flue, where the slid row\'s face would land on them — the slide would lose usable positions (X marks), so the row stays where it is; the same office with no columns: the row slides', async () => {
+    const run = async (columns) => {
+      m = await fresh(); s = () => m.useCanvasStore.getState()
+      m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation })
+      m.AT.useAreaPrompt.setState({ question: null })
+      const fp = fillWhole('fp_rect', 240, 120)
+      const L = lastPair(), by = Math.min(1.5, L.slack), p = areaNow().pattern
+      const [r0, r1] = ftR(foot(L.rk))
+      // the columns: on the row's flue line, one in each of three bays along the rack (not under the office)
+      const flue = L.u.s0 + p.depthIn / 12 + p.flueIn / 24
+      const bayMid = (k) => r0 + L.upFt + L.beamFt / 2 + k * L.pitch
+      const along = [1, 3, 5].map(bayMid)
+      if (columns) for (const a of along) {
+        const c = vert ? { x: flue * GS, y: a * GS } : { x: a * GS, y: flue * GS }
+        s().addObject({ type: 'column_grid', x: c.x, y: c.y, spacingX: [], spacingY: [], columnW: GS, columnH: GS, colSizeIn: 12, parentId: fp.id })
+      }
+      await tick()
+      // the office faces one bay of the row, away from the columns
+      const n = Math.floor((r1 - r0) / L.pitch)
+      const office = officeOff(fp, L.u, L.aisle - by, bayMid(n - 2), 2)
+      await tick()
+      return { L, by, row: rowNow(L.row), office }
+    }
+    const bare = await run(false)
+    expect(acrossAt(bare.row, bare.L.u.s0 + bare.by, bare.L.u.d), 'no columns: the row slides').toBe(true)
+    const held = await run(true)
+    expect(acrossAt(held.row, held.L.u.s0, held.L.u.d), 'columns: the row stays at its pattern place').toBe(true)
+    // the reason: slid, it would lose usable positions to the columns; here none are lost in the row
+    const res = m.LC.checkLayout(s().objects, { gridSize: GS })
+    expect(res.errors).toEqual([])
+    clean()
   })
 })
 

@@ -38,6 +38,7 @@ import { buildingOutline, innerOutline } from '../utils/floorGeom'
 import { dropUnreachableFaces } from './faceReach'
 import { giveWayIn } from './aisleAccess'
 import { getRackCapacity } from '../utils/capacity'
+import { usableCapacity, mheProfile } from './usableCapacity'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { nanoid } from 'nanoid'
 
@@ -347,6 +348,8 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
     palletWIn: P.palletWIn, palletDIn: P.palletDIn, levels: set.levels,
     // the walks' directions from the start corner: across (stack) and along (run) — the far edges are the other way
     dirS, runDir: flipR ? -1 : 1,
+    // the truck: the usable-positions check (column X marks) a slid row must not lose against
+    mhe: set.mhe,
   }
   return { pattern, rects, fp }
 }
@@ -405,27 +408,6 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
     return ivs
   }
   const pitch = (upIn + beamIn) / 12, bayFt = (2 * upIn + beamIn) / 12
-  const placements = [], placedRS = []
-  const used = new Set()
-  /** Each pattern piece's whole bays inside the interval [a, c], placed across [sa, sa + depthFt]. */
-  const place = (unit, type, sa, depthFt, ivs) => {
-    for (const [a, c] of ivs) for (const pc of pattern.pieces) {
-      const kLo = Math.max(0, Math.ceil((a - pc.r0) / pitch - 1e-9)), kHi = Math.min(pc.n - 1, Math.floor((c - pc.r0 - bayFt) / pitch + 1e-9))
-      if (kHi < kLo) continue
-      const n = kHi - kLo + 1, r0 = pc.r0 + kLo * pitch, len = (upIn * (n + 1) + n * beamIn) / 12
-      const at = vert
-        ? { xFt: sa + depthFt / 2 - len / 2, yFt: r0 + len / 2 - depthFt / 2, angle: 90 }
-        : { xFt: r0, yFt: sa, angle: 0 }
-      const beams = Array(n).fill(beamIn)
-      placements.push({
-        type, ...at, bays: n, beams, beamIn, depthIn, flueIn: type === 'rack_double_row' ? unit.flueIn : flueIn, flueBaseIn: flueIn,
-        levels: pattern.levels, palletWIn: pattern.palletWIn, palletDIn: pattern.palletDIn, uprightWidthIn: upIn,
-        rowIndex: unit.row, genSection: pc.sec,
-      })
-      used.add(unit.row)
-      placedRS.push({ s0: sa, s1: sa + depthFt, r0, r1: r0 + len })
-    }
-  }
   const singleFt = depthIn / 12
   const dirS = pattern.dirS || 1, F = dirS > 0 ? box.s1 : box.s0
   /** The run intervals (within the box's run) where the floor holds all of [sa, sb] — no box edge, no blockers. */
@@ -456,41 +438,118 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
   const reserve = aisleFt + singleFt
   const tooClose = (s0, s1) => (dirS > 0 ? s1 > F - reserve + 1e-6 : s0 < F + reserve - 1e-6)
   const offWall = (ivs, s0, s1) => (wallIvs.length && tooClose(s0, s1) ? wallIvs.reduce((acc, [a, c]) => subtract(acc, a, c), ivs) : ivs)
-  for (const u of pattern.units) {
-    if (u.s0 + u.d < box.s0 - EPS || u.s0 > box.s1 + EPS) continue
-    if (u.type !== 'rack_double_row') { place(u, u.type, u.s0, u.d, offWall(freeRun(u.s0, u.s0 + u.d), u.s0, u.s0 + u.d)); continue }
-    // the pair where all of it fits; elsewhere either half that fits on its own, as a single row
-    const pair = offWall(freeRun(u.s0, u.s0 + u.d), u.s0, u.s0 + u.d)
-    place(u, 'rack_double_row', u.s0, u.d, pair)
-    let lo = freeRun(u.s0, u.s0 + singleFt), hi = freeRun(u.s0 + u.d - singleFt, u.s0 + u.d)
-    for (const [a, c] of pair) { lo = subtract(lo, a, c); hi = subtract(hi, a, c) }
-    place(u, 'rack_row', u.s0, singleFt, offWall(lo, u.s0, u.s0 + singleFt))
-    place(u, 'rack_row', u.s0 + u.d - singleFt, singleFt, offWall(hi, u.s0 + u.d - singleFt, u.s0 + u.d))
+  const fa = dirS > 0 ? F - singleFt : F                                 // the wall row's low face
+  /** One pass of the pattern over the box. `slide` ({ row, by }) moves that one pattern row `by` feet
+   *  toward the far wall, along its whole length. */
+  const lay = (slide = null) => {
+    const placements = [], placedRS = [], used = new Set()
+    /** Each pattern piece's whole bays inside the interval [a, c], placed across [sa, sa + depthFt]. */
+    const place = (unit, type, sa, depthFt, ivs) => {
+      for (const [a, c] of ivs) for (const pc of pattern.pieces) {
+        const kLo = Math.max(0, Math.ceil((a - pc.r0) / pitch - 1e-9)), kHi = Math.min(pc.n - 1, Math.floor((c - pc.r0 - bayFt) / pitch + 1e-9))
+        if (kHi < kLo) continue
+        const n = kHi - kLo + 1, r0 = pc.r0 + kLo * pitch, len = (upIn * (n + 1) + n * beamIn) / 12
+        const at = vert
+          ? { xFt: sa + depthFt / 2 - len / 2, yFt: r0 + len / 2 - depthFt / 2, angle: 90 }
+          : { xFt: r0, yFt: sa, angle: 0 }
+        const beams = Array(n).fill(beamIn)
+        placements.push({
+          type, ...at, bays: n, beams, beamIn, depthIn, flueIn: type === 'rack_double_row' ? unit.flueIn : flueIn, flueBaseIn: flueIn,
+          levels: pattern.levels, palletWIn: pattern.palletWIn, palletDIn: pattern.palletDIn, uprightWidthIn: upIn,
+          rowIndex: unit.row, genSection: pc.sec,
+        })
+        used.add(unit.row)
+        placedRS.push({ s0: sa, s1: sa + depthFt, r0, r1: r0 + len, row: unit.row, wall: !!unit.wall })
+      }
+    }
+    for (const pu of pattern.units) {
+      const u = slide && pu.row === slide.row ? { ...pu, s0: pu.s0 + dirS * slide.by } : pu
+      if (u.s0 + u.d < box.s0 - EPS || u.s0 > box.s1 + EPS) continue
+      if (u.type !== 'rack_double_row') { place(u, u.type, u.s0, u.d, offWall(freeRun(u.s0, u.s0 + u.d), u.s0, u.s0 + u.d)); continue }
+      // the pair where all of it fits; elsewhere either half that fits on its own, as a single row
+      const pair = offWall(freeRun(u.s0, u.s0 + u.d), u.s0, u.s0 + u.d)
+      place(u, 'rack_double_row', u.s0, u.d, pair)
+      let lo = freeRun(u.s0, u.s0 + singleFt), hi = freeRun(u.s0 + u.d - singleFt, u.s0 + u.d)
+      for (const [a, c] of pair) { lo = subtract(lo, a, c); hi = subtract(hi, a, c) }
+      place(u, 'rack_row', u.s0, singleFt, offWall(lo, u.s0, u.s0 + singleFt))
+      place(u, 'rack_row', u.s0 + u.d - singleFt, singleFt, offWall(hi, u.s0 + u.d - singleFt, u.s0 + u.d))
+    }
+    if (wallIvs.length) {
+      let flush = intersect(freeRun(fa, fa + singleFt), wallIvs)
+      for (const q of placedRS) if (q.s1 > fa - aisleFt + 1e-6 && q.s0 < fa + singleFt + aisleFt - 1e-6) flush = subtract(flush, q.r0, q.r1)
+      // its stamps: the pattern row whose place it takes (the unit across the wall band, else the nearest)
+      const mid = fa + singleFt / 2, home = pattern.units.reduce((b, q) => { const d = Math.max(0, q.s0 - mid, mid - (q.s0 + q.d)); return !b || d < b.d ? { q, d } : b }, null)
+      if (flush.length) place({ row: home.q.row, flueIn, wall: true }, 'rack_row', fa, singleFt, flush)
+    }
+    return { placements, placedRS, used }
   }
-  if (wallIvs.length) {
-    const fa = dirS > 0 ? F - singleFt : F
-    let flush = intersect(freeRun(fa, fa + singleFt), wallIvs)
-    for (const q of placedRS) if (q.s1 > fa - aisleFt + 1e-6 && q.s0 < fa + singleFt + aisleFt - 1e-6) flush = subtract(flush, q.r0, q.r1)
-    // its stamps: the pattern row whose place it takes (the unit across the wall band, else the nearest)
-    const mid = fa + singleFt / 2, home = pattern.units.reduce((b, q) => { const d = Math.max(0, q.s0 - mid, mid - (q.s0 + q.d)); return !b || d < b.d ? { q, d } : b }, null)
-    if (flush.length) place({ row: home.q.row, flueIn }, 'rack_row', fa, singleFt, flush)
+  const zonesRS = objects.filter(isZone).map(o => rsRect(vert, gridSize, { x: o.x, y: o.y, w: o.width, h: o.height }))
+  const runsMeet = (p, q) => Math.min(p.r1, q.r1) - Math.max(p.r0, q.r0) > EPS
+  /* The second-last row, toward the wall: when the last pair before the wall row has a zone on its
+     start side closer than an aisle (that half's face has no aisle and would lose its bays), and the
+     last aisle has the slack, the whole row slides toward the wall by just that much — its start face
+     then exactly an aisle off the zone. Only that row; never past the slack, so every aisle stays at
+     least the aisle. Returns { row, by } or null. */
+  const slideFor = ({ placedRS }) => {
+    const walls = placedRS.filter(q => q.wall), rest = placedRS.filter(q => !q.wall)
+    if (!walls.length || !rest.length) return null
+    const farFace = (q) => (dirS > 0 ? q.s1 : q.s0)
+    const row = rest.reduce((b, q) => (!b || dirS * (farFace(q) - farFace(b)) > EPS ? q : b), null).row
+    const u = pattern.units.find(q => q.row === row)
+    if (!u || u.type !== 'rack_double_row') return null
+    const mine = rest.filter(q => q.row === row)
+    if (!walls.some(w => mine.some(q => runsMeet(q, w)))) return null
+    const slack = (dirS > 0 ? fa - (u.s0 + u.d) : u.s0 - (fa + singleFt)) - aisleFt
+    const start = dirS > 0 ? u.s0 : u.s0 + u.d
+    let by = 0
+    for (const z of zonesRS) {
+      if (!mine.some(q => runsMeet(q, z))) continue
+      const c = dirS > 0 ? start - z.s1 : z.s0 - start
+      if (c > -EPS && c < aisleFt - EPS) by = Math.max(by, aisleFt - c)
+    }
+    return by > EPS && by <= slack + 1e-6 ? { row, by } : null
   }
-  // ids first: the aisles between the new rows refer to them
-  // and no pick face without an aisle: a face against a wall or a zone loses its bays there (faceReach.js)
-  const faced = dropUnreachableFaces(placements.map(p => ({ ...placementToObject(p), id: newId(), ...(areaId ? { areaId } : {}) })), {
-    poly: innerOutline(fp, gridSize), aislePx: aisleFt * gridSize, gridSize, newId,
-    zones: objects.filter(isZone).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height })),
-  })
-  // and every aisle with a way in: wall-to-wall rows leave a travel path; a pocket is opened by its cheapest strip (aisleAccess.js)
-  const mine = new Set(faced.map(r => r.id))
-  const racks = !wayIn ? faced : giveWayIn([...objects.filter(o => !mine.has(o.id)), ...faced], fp, [...mine], {
-    gridSize, aisleFt, travelFt: pattern.travelFt ?? Math.min(8, aisleFt), dir: pattern.runDir || 1, newId, report,
-  }).filter(o => mine.has(o.id) || (o.pieceOf && mine.has(o.pieceOf)))
+  /** Whether the slid pass keeps the row whole (all the run it had) and an aisle off every other rack. */
+  const slidOk = (A, B, row) => {
+    const runs = (P) => P.placedRS.filter(q => q.row === row && !q.wall)
+    let lost = runs(A).map(q => [q.r0, q.r1])
+    for (const q of runs(B)) lost = subtract(lost, q.r0, q.r1)
+    if (lost.some(([a, c]) => c - a > EPS)) return false
+    const others = B.placedRS.filter(q => q.row !== row || q.wall)
+    return runs(B).every(q => others.every(o => !runsMeet(q, o) || Math.max(o.s0 - q.s1, q.s0 - o.s1) >= aisleFt - 1e-6))
+  }
+  const zones = objects.filter(isZone).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height }))
+  /** A pass made into racks: ids, the face rule, a way in. */
+  const finish = (P, rep) => {
+    // ids first: the aisles between the new rows refer to them
+    // and no pick face without an aisle: a face against a wall or a zone loses its bays there (faceReach.js)
+    const faced = dropUnreachableFaces(P.placements.map(p => ({ ...placementToObject(p), id: newId(), ...(areaId ? { areaId } : {}) })), {
+      poly: innerOutline(fp, gridSize), aislePx: aisleFt * gridSize, gridSize, newId, zones,
+    })
+    // and every aisle with a way in: wall-to-wall rows leave a travel path; a pocket is opened by its cheapest strip (aisleAccess.js)
+    const mine = new Set(faced.map(r => r.id))
+    return !wayIn ? faced : giveWayIn([...objects.filter(o => !mine.has(o.id)), ...faced], fp, [...mine], {
+      gridSize, aisleFt, travelFt: pattern.travelFt ?? Math.min(8, aisleFt), dir: pattern.runDir || 1, newId, report: rep,
+    }).filter(o => mine.has(o.id) || (o.pieceOf && mine.has(o.pieceOf)))
+  }
+  let pass = lay(), rep = [], racks = finish(pass, rep)
+  const slide = slideFor(pass)
+  if (slide) {
+    const B = lay(slide)
+    if (slidOk(pass, B, slide.row)) {
+      // usable positions must not go down: the column check's X marks counted, against the row where it was
+      const repB = [], slid = finish(B, repB)
+      const others = objects.filter(o => !(areaId && o.areaId === areaId))
+      const usable = (list) => usableCapacity([...others, ...list], { profile: mheProfile(pattern.mhe || 'reach'), gridSize }).usable
+      if (usable(slid) >= usable(racks)) { pass = B; racks = slid; rep = repB }
+    }
+  }
+  if (report) report.push(...rep)
   // the aisles get ids here too: the fill goes into the store in one write, not through addObject
   const aisles = aisleObjectsForRacks(racks).map(o => ({ ...o, id: o.id || newId() }))
   const withParent = parentGenerated([...racks, ...aisles], fp.id).map(o => ({ ...o, layerId: layerForType(o.type) }))
   const positions = racks.reduce((t, o) => t + (getRackCapacity(o)?.total || 0), 0)
-  return { fp, racks: withParent.filter(isRack), aisles: withParent.filter(o => o.type === 'aisle'), rows: used.size, positions }
+  return { fp, racks: withParent.filter(isRack), aisles: withParent.filter(o => o.type === 'aisle'), rows: pass.used.size, positions }
 }
 
 /** Plan a fill of `boxPx` (world px) with `settings`: its pattern (areaPattern,

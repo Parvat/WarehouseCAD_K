@@ -284,7 +284,7 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### RA — Racking areas and zones · `RA_rackingAreas.test.js` (71 tests)
+### RA — Racking areas and zones · `RA_rackingAreas.test.js` (85 tests)
 Code: `generate/rackingArea.js` (pure) and `utils/rackingAreaTool.js` (store,
 question). UI: `canvas2/AreaPrompt.jsx` and
 `RightPanel/panels/RackingAreaPanel.jsx`.
@@ -430,6 +430,9 @@ joins the copy-to-sections set.
 | `RA-cut-pair` ×3 | the far edge across the rows moved through a pair shown whole, past its near half: that row is single rows at the near half's place only; nothing past the edge; clean |
 | `RA-regular-fill` | 240 × 120, the whole building: every aisle exactly the forklift aisle (each rack's next rack across, overlapping it along, 10' 6" off); what is left at the far wall is under a pair and an aisle; clean |
 | `RA-regular-extend` ×3 | a rectangle, an L and a T: the fill regular; extended past the far edge across the rows to the wall: still every aisle exactly the forklift aisle (no wide aisle where the first box ended); shrink back and extend again: identical; clean |
+| `RA-slide` ×3 | a rectangle, an L and a T, the whole building filled (cut across ½' at a time until the last row before the far-wall single is a full pair with 2–9' of slack); an office whose edge comes (aisle − Δ) short of that pair's start face, Δ = min(1.5', slack): the strict helpers pass; the whole row sits at its pattern place + Δ; beside the office a full pair, its start face exactly 10' 6" off the office; the row's bays unchanged; shrink across (the far edge off the wall: the row not slid) and along, extend back: the box back exactly and the racks identical; clean |
+| `RA-slide-slack` ×3 | the same, the building cut to leave exactly 2' of slack, the office needing 2' 9": the row stays at its pattern place, only its far half beside the office; clean |
+| `RA-slide-column` (rectangle) | the same office facing one bay of the row: with no columns the row slides; with three 12" building columns on the row's flue line (seated there, free), which the slid row's face would land on, the row stays at its pattern place (the slide would lose usable positions); Check layout clean |
 
 All run horizontal and vertical. LY-assign now expects seven standard layers
 (Zones added).
@@ -441,12 +444,30 @@ are at least an aisle apart, so no single sits back-to-back with another row. **
 each rack's next rack across is exactly one forklift aisle off (part of `clean`). **Singles only
 where cut**: a single's other half, on its run, is past the box, past a wall or on a zone.
 
+**The slid row, strictly** (`slideOf` / `unitAt`): a rack off its pattern place is accepted
+only as the second-last row slid toward the wall, and only at exactly its Δ, worked out in the
+test from the store (not the fill): the last pair before a single flush on the far wall,
+nothing between them; a zone on its start side, overlapping it along, closer than an aisle;
+Δ = the aisle less that clearance, within the last aisle's slack. Anything else off its
+place still fails "on its place across". Regular expects the aisle before it exactly
+aisle + Δ. Two readings added to Regular for these layouts: a gap with a zone in it
+is not an aisle (an office between two rows), and racks meeting along by no more than an
+upright (a corner at a shared frame) don't face each other. No existing test's expected values
+changed.
+
 **Break-its:** resize filling each newly covered part fresh (the old rule): RA-window,
 RA-extend-right, RA-extend-down (all shapes, both orientations), RA-extend, RA-align and
 RA-align-shape fail (23). A cut pair dropped instead of showing its near half: RA-cut-pair
 fails (6). The pattern before the regular walk (the first fill widening its last
 aisle to sit a single flush on the far edge): RA-regular-fill, RA-regular-extend,
 RA-window, RA-extend-right / -down, FR-generate and FR-edge-stack fail (42).
+The slide off: RA-slide and RA-slide-column fail (8). The slack limit off (the
+slack check, the spacing check and the usable guard — each alone is backed by the
+others): RA-slide-slack and RA-slide-column fail (8). The usable guard off:
+RA-slide-column fails (2). The fill sliding by Δ + 3": RA-slide fails inside the
+strict helper ("row N on its place across") and RA-slide-column fails (8). The
+fill sliding with no zone (1.5' whenever there is slack): 26 fail, existing
+RA-regular / RA-extend / RA-shrink among them, through the strict helper.
 
 **Checked in the app (both orientations), with the real mouse and panel:**
 - Zones section → Office, placed and moved top-right.
@@ -496,6 +517,23 @@ RA-window, RA-extend-right / -down, FR-generate and FR-edge-stack fail (42).
     aisle when extended. Now (the same six cases, the same drags) every aisle
     measures exactly 10' 6" after the fill, the shrink, the drag back and both
     extends, the leftover sits at the far wall, and Check layout is clean.
+
+- **The second-last row slide, in the app** (Playwright, a real Fill racking
+  drag over 240 × 120 with the screenshot layout's zones, max run 60'):
+  - the office's edge at 206' (9' short of the second-last row), vertical: the
+    row moves 215' → 216.5', a full pair along 0.3–58.3 and 70–119.8, 10' 6"
+    off the office, the last aisle 12'; 2,328 positions, all usable; no errors;
+  - the office's edge at 210.5' (needs 6', slack 3'): the row stays; a single
+    beside the office, as before; 2,296 positions;
+  - the screenshot layout as rebuilt (the office's edge at 220.5', across the
+    row's start face, not beside it): unchanged, 2,312 positions;
+  - horizontal, all three: unchanged (the office is 50' from the second-last
+    row), 2,088 positions; no errors.
+- **Found while testing:** on a T, an edge shrunk well into the bar and dragged
+  back stops at the inner corner's wall (`clampGrowth`, the walls clamp), so
+  the box does not come back and the racks differ. That is the clamp as built
+  (it happens on HEAD with no zone too); RA-slide uses shallow cuts and asserts
+  the box came back.
 
 ### FR — Fill racking · `FR_fillRacking.test.js` (40 tests)
 A tool in the drawing toolbar ("Fill racking", paint bucket). While it is on,
@@ -774,6 +812,24 @@ ends (a wall and an office, or two walls) is a dead-end pocket.
   past the far wall counts as on it.
 - The wall row is stamped with the pattern row whose place it takes.
 - Shrink → extend back is still identical.
+- **The second-last row slides toward the wall** (that row only):
+  - when the last pair before the wall row has a zone on its start side closer
+    than a forklift aisle (overlapping it along), that half's face has no aisle
+    and would lose its bays;
+  - if the last aisle's slack covers it, the WHOLE row moves toward the wall by
+    Δ = the aisle less that clearance, along its full length, so it stays one
+    straight line across the cross-aisle; the face is then exactly an aisle off
+    the zone, and the aisle on its start side is Δ wider;
+  - it never goes past the slack: every aisle stays at least the forklift
+    aisle; the slid row must keep all the run it had and stay an aisle off every
+    other rack;
+  - **usable positions must not go down**: the fill is made both ways and the
+    slide kept only if `usableCapacity` (the column check's X marks counted)
+    is at least the unslid result's — a building column the slid row would land
+    on keeps it where it was;
+  - otherwise the row stays at its pattern place (the result before).
+  - Still deterministic from the box, the pattern and the objects, so shrink →
+    extend back stays identical. Tests: RA-slide, RA-slide-slack, RA-slide-column.
 | Test | Asserts |
 |---|---|
 | `AA-pocket` ×3 | rectangle, L, T: an office 30' off the near wall; the racks only that pocket reaches with no way in are all kept (each row keeps bays); no row loses more than the strip (2 bays); the pocket strips cost fewer bays than dropping the cut-off rows; nothing cut off, Check layout clean; the cut rows put back at full length shut the path again: "No way in: aisle closed at both ends", the pocket shaded red |
