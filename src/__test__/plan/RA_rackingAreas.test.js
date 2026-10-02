@@ -110,7 +110,9 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     expect(s().history.length).toBe(n0 + 1)
     // a rack more than a bay from the old edge is untouched by the extend: the same object (a run that
     // stopped short of the edge, where its next whole bay did not fit, carries on past it)
-    const away = oldRacks.filter(r => foot(r).y > oldTop + 99 / 12 * GS)
+    // (not the rows under the office: they reach the floor by a travel path, area AA, and the extend changes that way in)
+    const underOffice = (r) => vert && foot(r).x + foot(r).w > office.x + EPS
+    const away = oldRacks.filter(r => foot(r).y > oldTop + 99 / 12 * GS && !underOffice(r))
     if (!vert) expect(away.length).toBeGreaterThan(4)
     for (const r of away) expect(s().objects.find(o => o.id === r.id)).toEqual(r)
     const strip = racks().filter(r => foot(r).y < fp.y + 40 * GS - EPS)
@@ -158,14 +160,15 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   })
 
   it.each([['along the rows', 'run'], ['across the rows', 'stack']])('RA-shrink: shrinking %s — racks crossing the new edge are trimmed to the whole bays inside it (a row cut across its depth goes — but a pair keeps a half that still fits, as a single row), nothing is left outside, bays keep their beams; one undo', (_, axis) => {
-    const { fp } = officeLayout()
+    const { fp, office } = officeLayout()
     const a = areaNow(), before = doc()
     // pull the far edge in by 37' 5" — not a whole number of bays
     const cut = (37 + 5 / 12) * GS
     const alongX = (axis === 'run') !== vert                             // horizontal rows run along x
     const box = alongX ? { x: a.x, y: a.y, w: a.width - cut, h: a.height } : { x: a.x, y: a.y, w: a.width, h: a.height - cut }
     const edge = alongX ? box.x + box.w : box.y + box.h
-    const crossing = racks().filter(r => { const f = foot(r); return alongX ? f.x < edge && f.x + f.w > edge : f.y < edge && f.y + f.h > edge })
+    // (not the rows under the office: they reach the floor by a travel path, area AA, which the shrink may move)
+    const crossing = racks().filter(r => { const f = foot(r); return (alongX ? f.x < edge && f.x + f.w > edge : f.y < edge && f.y + f.h > edge) && !(axis === 'run' && vert && f.x + f.w > office.x + EPS) })
     expect(crossing.length).toBeGreaterThan(0)
     expect(resizeArea(box)).toBe(true)
     for (const r of racks()) { expect(within(foot(r), box)).toBe(true); expect(r.beams.every(b => b === 96)).toBe(true) }
@@ -446,7 +449,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
       const aisle = a.pattern.aisleFt
       const f0 = Math.abs(o0 - u.s0) < 1e-6 ? u.s0 - aisle : u.s0 + u.d
       const strip = vert ? { x: f0 * GS, y: r0 * GS, w: aisle * GS, h: (r1 - r0) * GS } : { x: r0 * GS, y: f0 * GS, w: (r1 - r0) * GS, h: aisle * GS }
-      const faceOpen = onFloor(strip) && !zones.some(z => overlap(z, strip))
+      // (nor within an aisle of the single flush on the far wall, area AA: there the pair can't stay whole)
+      const faceOpen = onFloor(strip) && !zones.some(z => overlap(z, strip)) && !racks().some(q => q !== r && flushOnWall(q) && overlap(foot(q), strip))
       expect(fits && faceOpen, `single row ${r.rowIndex}: its other half doesn't fit, or can't be picked`).toBe(false)
     }
   }

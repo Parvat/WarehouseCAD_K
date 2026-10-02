@@ -716,7 +716,7 @@ horizontal and vertical; max run 60'):
   which is under a pixel when zoomed out to a whole building. Now 12 screen px
   at any zoom.
 
-### AA — A way in, and a far edge on a wall · `AA_aisleAccess.test.js` (32 tests)
+### AA — A way in, and a far edge on a wall · `AA_aisleAccess.test.js` (50 tests)
 Code: `generate/aisleAccess.js` (the analysis, `giveWayIn`), wired into
 `generate/fillRacking.js` (`patternFill`: Fill racking and racking areas),
 `generate/traceGenerate.js` (Generate) and `utils/layoutCheck.js`.
@@ -733,37 +733,54 @@ ends (a wall and an office, or two walls) is a dead-end pocket.
   when no pick face looks onto the main floor across an aisle's depth but one
   looks onto a pocket.
 - **Fill racking, racking areas and Generate** give the racks they place a way
-  in (`giveWayIn`). Where racks are cut off and no zone closes their rows, a
-  travel path the travel width wide is carved right across the floor along a
-  wall line. Candidate lines are each face of the building along the run, on its
-  floor side, tried from the far end in. The first that leaves nothing cut off is
-  taken, so it stays put as an area's box changes; failing that, the one keeping
-  the most bays reachable. The placed rows give up the bays it crosses.
-- Racks still cut off then go: a pocket a zone closes keeps no racks.
-- On a rectangle with no cross-aisle (rows wall to wall, e.g. a 120' run) the
-  path runs along the far wall. On an L whose bar block is closed off from the
-  open stem, it comes down at the stem's wall line.
+  in (`giveWayIn`).
+- **No main floor at all** (rows wall to wall with no cross-aisle): a travel
+  path the travel width wide is carved right across the floor along a wall
+  line. Candidate lines are each face of the building along the run, from the far
+  end in. The first that leaves nothing cut off is taken; failing that, the one
+  keeping the most bays. Unchanged from the first version.
+- **Each pocket left** is opened by its cheapest strip (`stripsFor`):
+  - a travel-wide strip standing against something fixed: either side of a
+    zone's edge or of a face of the building, across the run;
+  - it runs across the rows from the pocket toward the main floor, only as far
+    as the first cell of main floor;
+  - it can't cross a zone or a rack it may not cut, or leave the floor;
+  - its cost is the bays it cuts: the travel width, rounded up to whole bays.
+  The fewest bays wins. A tie goes to the strip against the zone edge, so the
+  racks stay against the building wall, then to the one nearer the far end.
+- Racks go only where no strip reaches the main floor. An office pocket is no
+  longer emptied: its rows are kept.
+- `giveWayIn` reports each pocket it opened (`{ racks, bays, kind, at,
+  tiedWith }`) when given a `report` array; `planFill` / `patternFill` pass one
+  through.
 - **Check layout:** "No way in: aisle closed at both ends", an error, one per
   pocket area (pockets sharing a rack merged), its racks listed, the pocket
   shaded red.
 
 **A far edge on a wall** (racking areas and Fill racking)
-- When the box's far edge, across the rows, lies on a wall's inner face, the
-  leftover takes a single row flush against the wall wherever it fits with at
-  least a forklift aisle before it.
-- With the regular pattern this means the far edge's cut half moves out onto the
-  wall. The pattern always leaves less than an aisle and a single after its last
-  whole pair: with room for both, that half is already there.
+- Where the floor stops right past the box's far edge, across the rows, the rows
+  end with a single row flush against the wall.
+- Before it go as many FULL pairs as fit, every aisle at least the forklift
+  aisle.
+- A pattern row whose far face would come within an aisle and a single of the
+  wall isn't placed there. A pair that can't stay whole keeps its near half when
+  that half still leaves the aisle.
+- The slack goes into the last aisle, before the wall row. The pairs keep their
+  pattern places, so the open edges extend the same rows, and the most full
+  pairs fit either way.
+- It works per stretch: on an L or T only where the far edge is a wall.
 - An open far edge keeps the regular leftover, cut half and all.
 - The box is read as far as the walls (`patternFill` clips it), so one dragged
   past the far wall counts as on it.
+- The wall row is stamped with the pattern row whose place it takes.
 - Shrink → extend back is still identical.
-
 | Test | Asserts |
 |---|---|
-| `AA-pocket` ×3 | rectangle, L, T: an office 30' off the near wall; the racks the pattern would put where only that pocket reaches (cut off in the unpassed fill, inside the pocket) are not placed, no rack is cut off, Check layout clean; one put back by hand: one "No way in: aisle closed at both ends" error listing it, its highlight red over the pocket |
+| `AA-pocket` ×3 | rectangle, L, T: an office 30' off the near wall; the racks only that pocket reaches with no way in are all kept (each row keeps bays); no row loses more than the strip (2 bays); the pocket strips cost fewer bays than dropping the cut-off rows; nothing cut off, Check layout clean; the cut rows put back at full length shut the path again: "No way in: aisle closed at both ends", the pocket shaded red |
+| `AA-tie` | rectangle: opening the office pocket costs the same against the office's edge as against the wall (`tiedWith: 'wall'`); the strip stands against the office (its band ends on the office's edge), and the pocket rows stay flush on the near wall |
 | `AA-travel` ×3 | a fill of the whole building: no rack cut off, Check layout clean |
 | `AA-width` | two rows, one aisle between them opening only onto a strip G deep before a zone: G = 8' reached by the reach truck (8'); G = 6' cuts off the row whose other face is on the wall, not for a VNA (6'); Check layout with the reach truck flags it, with the VNA not |
+| `AA-far-max` ×8 | rectangle, the far edge on the wall at 0–17.5' past the last whole pair (eight depths): read across the run, the last row a single flush on the wall; the number of full pairs = the most that fit, ⌊(L − 17.5) / 18.25⌋; every aisle ≥ 10' 6"; clean |
 | `AA-far-wall` ×3 | an area whose far edge is on the wall, 15' past its last whole pair: single rows flush on the wall, at least 10' 6" off the row before; clean; pulled off the wall the flush row goes; back: identical |
 | `AA-far-past` ×3 | the same box dragged 3' past the far wall: the single flush on the wall's inner face |
 | `AA-far-open` ×3 | the same box 2' short of the wall: nothing flush on the edge; the cut pair's near half 1' off it, as the pattern has it |
@@ -772,7 +789,21 @@ All run horizontal and vertical.
 
 **Break-its:** no rack ever cut off: AA-pocket and AA-width fail (8). The far
 wall not read as a wall: AA-far-wall fails (6). The box not clipped to the walls:
-AA-far-past fails (6).
+AA-far-past fails (6). Rows not held back from the far wall: AA-far-max (16),
+AA-far-wall, AA-far-past fail (29). No pocket strips: AA-pocket and others fail
+(34). The tie to the wall instead of the zone: AA-tie fails (2).
+
+**Existing tests changed with the strips and the far-wall rows** (listed before
+editing):
+- AA-pocket: rewritten. It asserted last round's "a pocket an office closes keeps
+  no racks"; the rows are now kept and shortened.
+- RA-extend and RA-shrink (vertical): the rows under the office, dropped before,
+  are kept now (124 bays against 108). An extend or shrink changes their way in,
+  so they are left out of the same-object / same-start checks. Bays after the
+  extend: 167 now, 156 before; after the shrink: 56 both.
+- RA's `expectSinglesCut`: a single whose other half would sit within an aisle of
+  the flush wall row is a legitimate single (fix 1).
+- No wall-to-wall layout changed.
 
 **Also changed:** the test runner's timeout is 20 s (`vite.config.js`). A few
 plan tests run Generate on a 1080 × 410 building, 2–4 s alone, the same before
@@ -787,6 +818,17 @@ and vertical):
   aisle closed at both ends"; clicking it shaded the pocket red.
 - An area dragged to past the far wall, 15' past its last whole pair, ended with
   single rows flush on the wall, 11.5'–11.75' off the row before. No errors.
+- **The far-wall rows and the pocket strips, in the app** (screenshot layouts
+  rebuilt: 240 × 120, office 52.5 × 36.5 top right, washroom 10 × 15.5, office
+  19.5 × 14.6 bottom left, custom area 14.5 × 5.2, max run 60'):
+  - vertical: the rightmost row flush on the right wall, a full pair before it,
+    13' 6" between them; no pocket;
+  - horizontal: the bottom row flush on the bottom wall; the 2 racks between the
+    office and the right wall kept, opened by one strip against the office's
+    edge, 2 bays lost (it tied with the wall);
+  - rectangle / L / T, both orientations, with an office 30' off the near wall:
+    nothing cut off, no errors, the pocket rows kept, flush wall singles on every
+    far wall.
 - **Found in the app:** a box dragged past the far wall wasn't read as on it.
   The fill was given the raw box; the area's own box was already clipped. Now
   `patternFill` clips it (AA-far-past).

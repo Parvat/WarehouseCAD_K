@@ -77,38 +77,80 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     return { W: 0, band }
   }
 
-  it.each(SHAPES)('AA-pocket (%s): an office 30\' off a wall closes the aisles between them — the fill places no rack only that pocket reaches, and Check layout is clean; a rack put back there by hand is flagged "No way in: aisle closed at both ends", the pocket highlighted', async (_, type, w, h) => {
+  /** The office 30' off the near wall, and what the pattern would place with no way in. */
+  const officePocket = async (type, w, h) => {
     s().placeFpObject({ type, widthFt: w, heightFt: h })
     const fp = fpNow(), { W, band } = runWall(type), wt = innerBox(fp).x - fp.x
     const office = rsBox(fp, W + 30, W + 60, band[0], band[1])
     s().addObject({ type: 'zone_office', label: 'Office', x: office.x, y: office.y, width: office.w, height: office.h, parentId: fp.id, layerId: 'zones' })
     await tick()
     const pocket = rsBox(fp, W + wt / GS, W + 30, band[0], band[1])
-    // what the pattern would place without a way in: racks in the pocket
     const ib = innerBox(fp)
     const made = m.FR.areaPattern(s().objects, ib, { orientation }, { gridSize: GS, from: { x: ib.x, y: ib.y } })
     const bare = m.FR.patternFill(s().objects, ib, made.pattern, { gridSize: GS, wayIn: false }).racks
     // the racks only the pocket reaches (between the office and the wall)
     const cut = new Set(m.AA.cutOffRacks([...s().objects, ...bare], fp, { gridSize: GS, travelFt: 8, aisleFt: 10.5, ids: bare.map(r => r.id) }).cutOff.map(c => c.id))
     const inPocket = bare.filter(r => cut.has(r.id) && within(foot(r), pocket))
+    return { fp, ib, office, pocket, inPocket, cutAll: bare.filter(r => cut.has(r.id)) }
+  }
+  const across = (r) => { const f = foot(r); return vert ? [f.x, f.x + f.w] : [f.y, f.y + f.h] }
+  const along = (r) => { const f = foot(r); return vert ? [f.y, f.y + f.h] : [f.x, f.x + f.w] }
+
+  it.each(SHAPES)('AA-pocket (%s): an office 30\' off the near wall closes the aisles between them — the fill keeps those rows: the fewest whole bays are cut (a strip the travel width, rounded up to whole bays) to open a travel path to the main floor; every rack reachable, Check layout clean; the cut row put back at full length shuts it again and is flagged "No way in: aisle closed at both ends", the pocket highlighted', async (_, type, w, h) => {
+    const { fp, ib, pocket, inPocket, cutAll } = await officePocket(type, w, h)
     expect(inPocket.length).toBeGreaterThan(0)
-    // the fill: none of them, and nothing in the pocket a forklift can't get to
+    const made = m.FR.areaPattern(s().objects, ib, { orientation }, { gridSize: GS, from: { x: ib.x, y: ib.y } })
+    const bare = m.FR.patternFill(s().objects, ib, made.pattern, { gridSize: GS, wayIn: false }).racks
+    const report = []
+    m.FR.planFill(s().objects, ib, { orientation }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
     drag({ x: ib.x, y: ib.y }, { x: ib.x + ib.w, y: ib.y + ib.h })
-    expect(racks().length).toBeGreaterThan(4)
-    const at = (r) => [r.type, Math.round(foot(r).x), Math.round(foot(r).y), Math.round(foot(r).w), Math.round(foot(r).h)].join()
-    const placedNow = new Set(racks().map(at))
-    for (const r of inPocket) expect(placedNow.has(at(r))).toBe(false)
+    const rowOf = (r, list) => list.filter(q => Math.abs(across(q)[0] - across(r)[0]) < EPS && Math.abs(across(q)[1] - across(r)[1]) < EPS && Math.min(along(q)[1], along(r)[1]) - Math.max(along(q)[0], along(r)[0]) > EPS)
+    const baysIn = (list) => list.reduce((t, q) => t + q.beams.length, 0)
+    // the pocket rows are kept
+    for (const r of inPocket) expect(baysIn(rowOf(r, racks())), 'the pocket row kept').toBeGreaterThan(0)
+    // no row loses more than the strip: the travel width rounded up to whole bays (2 bays of 8' 3")
+    for (const r of bare) {
+      const now = baysIn(rowOf(r, racks()))
+      if (now) expect(r.beams.length - now).toBeLessThanOrEqual(2)
+    }
+    // and opening the pockets costs fewer bays than dropping their rows would (the report: the pocket strips only)
+    expect(report.length).toBeGreaterThan(0)
+    expect(report.reduce((t, q) => t + q.bays, 0)).toBeLessThan(baysIn(cutAll))
     expect(m.AA.cutOffRacks(s().objects, fp, { gridSize: GS, travelFt: 8, aisleFt: 10.5 }).cutOff).toEqual([])
     expect(check().errors).toEqual([])
-    // one put back by hand: no way in
-    const r = inPocket[0], { areaId, ...hand } = r; void areaId
-    s().addObject({ ...hand, id: 'hand1' }); await tick()
+    // by hand: every row the strip cut put back at its full length — the travel path is shut again
+    const cutRows = bare.filter(r => baysIn(rowOf(r, racks())) < r.beams.length)
+    expect(cutRows.length).toBeGreaterThan(0)
+    let objs = s().objects
+    for (const r of cutRows) { const sameRow = rowOf(r, objs.filter(o => RACK.has(o.type))); objs = objs.filter(o => !sameRow.includes(o)) }
+    m.useCanvasStore.setState({ objects: objs })
+    cutRows.forEach((r, i) => { const { areaId, ...hand } = r; void areaId; s().addObject({ ...hand, id: 'hand' + i }) })
+    await tick()
     const err = check().errors.filter(e => e.kind === 'no-way-in')
-    expect(err).toHaveLength(1)
+    expect(err.length).toBeGreaterThan(0)
     expect(err[0].text).toBe('No way in: aisle closed at both ends')
-    expect(err[0].ids).toContain('hand1')
-    expect(overlap(err[0].highlight[0], pocket)).toBe(true)
+    expect(err.flatMap(e => e.highlight).some(b => overlap(b, pocket))).toBe(true)
     expect(err[0].highlight[0].color).toBe(m.LC.HL.red)
+  })
+
+  it('AA-tie (rectangle): opening the office pocket costs the same bays against the office\'s edge as against the wall — the strip is cut against the office, and the rows stay flush against the building wall', async () => {
+    const { ib, office, inPocket } = await officePocket('fp_rect', 240, 120)
+    const report = []
+    const plan = m.FR.planFill(s().objects, ib, { orientation }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
+    const tie = report.find(q => q.tiedWith)
+    expect(tie, 'a pocket whose strip against the office and strip against the wall cost the same').toBeTruthy()
+    expect(tie.kind).toBe('zone')
+    expect(tie.tiedWith).toBe('wall')
+    // the strip stands against the office's edge (on its wall side), not against the wall
+    const officeEdge = vert ? office.y : office.x
+    expect(tie.at[1]).toBeCloseTo(officeEdge, 3)
+    // the pocket rows: still flush on the near wall
+    const wallFace = vert ? ib.y : ib.x
+    for (const r of inPocket) {
+      const same = plan.racks.filter(q => Math.abs(across(q)[0] - across(r)[0]) < EPS && Math.min(along(q)[1], along(r)[1]) - Math.max(along(q)[0], along(r)[0]) > EPS)
+      expect(same.length).toBeGreaterThan(0)
+      expect(Math.min(...same.map(q => along(q)[0])) - wallFace).toBeCloseTo(0, 3)
+    }
   })
 
   it.each(SHAPES)('AA-travel (%s): a fill of the whole building leaves every aisle a way in — Check layout finds no aisle closed at both ends, and every rack a pick face onto the main floor', (_, type, w, h) => {
@@ -166,6 +208,30 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
   }
   const sOf = (r) => { const f = foot(r); return vert ? [f.x, f.x + f.w] : [f.y, f.y + f.h] }
   const rOf = (r) => { const f = foot(r); return vert ? [f.y, f.y + f.h] : [f.x, f.x + f.w] }
+
+  it.each([0, 2.5, 5, 7.5, 10, 12.5, 15, 17.5])('AA-far-max (rectangle, %s\' past the last whole pair): a racking area whose far edge is the wall ends with a single row flush on it and before it the most FULL pairs that fit — every aisle at least the forklift aisle; clean', (extra) => {
+    s().placeFpObject({ type: 'fp_rect', widthFt: 240, heightFt: 120 })
+    const fp = fpNow(), ib = innerBox(fp)
+    const F = vert ? ib.x + ib.w : ib.y + ib.h
+    const L = 3.5 + 10.5 + 7.75 + 18.25 * 3 + extra                     // the start single, aisles and pairs, then `extra`
+    const near = F - L * GS
+    if (vert) drag({ x: near, y: ib.y - 20 }, { x: F + 20, y: ib.y + ib.h + 20 })
+    else drag({ x: ib.x - 20, y: near }, { x: ib.x + ib.w + 20, y: F + 20 })
+    // read across a quarter of the way along the run (clear of the cross-aisle in the middle)
+    const mid = vert ? ib.y + ib.h / 4 : ib.x + ib.w / 4
+    const line = racks().filter(r => along(r)[0] < mid && along(r)[1] > mid).sort((p, q) => across(p)[0] - across(q)[0])
+    expect(line.length).toBeGreaterThan(1)
+    // a single flush on the wall
+    const last = line[line.length - 1]
+    expect(last.type).toBe('rack_row')
+    expect(across(last)[1]).toBeCloseTo(F, 3)
+    // the most full pairs: a start single, then n pairs, each an aisle off, and the wall single an aisle off
+    const most = Math.floor((L - 17.5) / 18.25)
+    expect(line.filter(r => r.type === 'rack_double_row').length).toBe(most)
+    // every aisle at least the forklift aisle
+    for (let i = 0; i + 1 < line.length; i++) expect((across(line[i + 1])[0] - across(line[i])[1]) / GS).toBeGreaterThanOrEqual(10.5 - 1e-6)
+    expect(check().errors).toEqual([])
+  })
 
   it.each(SHAPES)('AA-far-wall (%s): a racking area whose far edge lies on the wall\'s inner face ends with a single row flush against the wall — at least an aisle off the last row; shrink → extend back identical; clean', (_, type, w, h) => {
     const { F } = farArea(type, w, h, 0)

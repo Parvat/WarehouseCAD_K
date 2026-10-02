@@ -323,8 +323,8 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
   const aisleFt = brief.aisleFt ?? rules.mhe?.[brief.mhe || rules.mheDefault || 'reach']?.aisleFt ?? 12.5
   const zones = useCanvasStore.getState().objects.filter(o => typeof o.type === 'string' && o.type.startsWith('zone_')).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height }))
   const faced = fp ? dropUnreachableFaces(walked, { poly: innerOutline(fp, GS), zones, aislePx: aisleFt * GS, gridSize: GS, newId: nanoid }) : walked
-  /* Every aisle with a way in (aisleAccess.js): rows that run into the far wall with no cross-aisle
-     leave a travel path along it; racks only a pocket reaches go. */
+  /* Every aisle with a way in (aisleAccess.js): rows that run wall to wall with no cross-aisle leave
+     a travel path along a wall; a pocket is opened by its cheapest strip (fewest whole bays). */
   const travelFt = Math.min(brief.travelFt ?? rules.mhe?.[brief.mhe || rules.mheDefault || 'reach']?.travelFt ?? 8, aisleFt)
   const placedIds = new Set(faced.map(r => r.id))
   const racks = fp

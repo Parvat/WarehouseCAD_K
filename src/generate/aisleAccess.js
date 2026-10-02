@@ -20,6 +20,14 @@
 // single's either side) looks onto the main floor across an aisle's depth,
 // while one looks onto a pocket.
 //
+// Fill racking, racking areas and Generate give their racks a way in (giveWayIn):
+// with no main floor at all, a travel path right across the floor along a wall
+// line; then each pocket is opened by its cheapest strip — a travel-wide strip
+// against a zone's edge or a wall, across the rows from the pocket to the main
+// floor, the fewest whole bays cut (a tie cut against the zone edge, so the
+// racks stay against the building wall). Racks go only where no strip reaches
+// the main floor.
+//
 // Pure: objects in, analysis out. Shared by Check layout, Fill racking and
 // racking areas (fillRacking.js patternFill) and Generate (traceGenerate.js).
 
@@ -165,8 +173,9 @@ export function cutOffRacks(objects, fp, { gridSize = 40, travelFt = 8, aisleFt 
 }
 
 /** The bays of the racks `ids` (rows along `axis`) that a travel path across `band` ([lo, hi]
- *  along the run, right across the floor) crosses, removed. */
-function carve(objects, ids, axis, band, gridSize, newId) {
+ *  along the run) crosses, removed — right across the floor, or only for racks whose stack range
+ *  meets `across` ([lo, hi]) when given. */
+function carve(objects, ids, axis, band, gridSize, newId, across = null) {
   const want = new Set(ids)
   return objects.flatMap(o => {
     if (!want.has(o.id) || !BEAM.has(o.type)) return [o]
@@ -174,6 +183,7 @@ function carve(objects, ids, axis, band, gridSize, newId) {
     if (rot !== 0 && rot !== 90) return [o]                                     // fills and Generate turn rows 0° or 90°
     const f = rackFootprint(o), vert = !!f.rotated
     if ((vert ? 'y' : 'x') !== axis) return [o]
+    if (across) { const [s0, s1] = vert ? [f.x, f.x + f.w] : [f.y, f.y + f.h]; if (!(Math.min(s1, across[1]) - Math.max(s0, across[0]) > 1e-6)) return [o] }
     const { xs, upW } = uprightXs(o, gridSize)
     const toWorld = (lx) => (vert ? f.y + (lx - o.x) : f.x + (lx - o.x))
     const drop = new Set()
@@ -186,60 +196,145 @@ function carve(objects, ids, axis, band, gridSize, newId) {
     return splitRackForBayDelete(o, drop, newId, gridSize) || []
   })
 }
+/** The bays of the racks `ids` (and their pieces) in `objs`. */
+const baysOf = (objs, ids) => { const want = new Set(ids); return objs.filter(o => want.has(o.id) || (o.pieceOf && want.has(o.pieceOf))).reduce((t, o) => t + (o.beams?.length || 0), 0) }
 
-/** Fill racking / racking areas / Generate: the racks `ids` (just placed, in `objects`) given a way
- *  in. When some are cut off — and no zone closes their rows — a travel path the travel width wide
- *  is carved right across the floor along a wall line: tried at every face of the building along
- *  the run, on its floor side, from the far end (`dir`: +1 / -1 along the run) in; the first that
- *  leaves nothing cut off is taken (so it stays put as a racking area's box changes), else the one
- *  keeping the most bays reachable (and once more). The placed rows give up the bays it crosses.
- *  Racks still cut off after that go: a pocket a zone closes keeps no racks. Returns the objects,
- *  trimmed / removed. */
-export function giveWayIn(objects, fp, ids, { gridSize = 40, travelFt = 8, aisleFt = 10.5, dir = 1, newId } = {}) {
-  if (!fp || !ids.length) return objects
-  const opts = { gridSize, travelFt, aisleFt }
+/** No main floor at all — every aisle a pocket, as when rows run wall to wall with no cross-aisle:
+ *  a travel path the travel width wide is carved right across the floor along a wall line (each
+ *  face of the building along the run, on its floor side, tried from the far end in; the first that
+ *  leaves nothing cut off, else the one keeping the most bays reachable, and once more). */
+function pathAcross(objects, fp, ids, { gridSize, travelFt, aisleFt, dir, newId }) {
   const judge = (objs) => {
     const want = new Set(ids), alive = objs.filter(o => want.has(o.id) || (o.pieceOf && want.has(o.pieceOf)))
-    const cut = cutOffRacks(objs, fp, { ...opts, ids: alive.map(o => o.id) }).cutOff
+    const cut = cutOffRacks(objs, fp, { gridSize, travelFt, aisleFt, ids: alive.map(o => o.id) }).cutOff
     const gone = new Set(cut.map(c => c.id))
     return { cut, kept: alive.filter(o => !gone.has(o.id)).reduce((t, o) => t + (o.beams?.length || 0), 0) }
   }
   let best = { objs: objects, ...judge(objects) }
-  if (!best.cut.length) return objects
   const poly = innerOutline(fp, gridSize), T = travelFt * gridSize
-  const zones = objects.filter(isZone).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height }))
-  const meets = (p, q) => Math.min(p.x + p.w, q.x + q.w) - Math.max(p.x, q.x) > 1e-6 && Math.min(p.y + p.h, q.y + q.h) - Math.max(p.y, q.y) > 1e-6
-  /* A cut-off row a ZONE closes (within the travel width past either end) sits in a pocket the
-     office or staging makes: it gets no path, and goes. Any other cut-off row — closed by walls, or
-     in a block whose cross-aisles lead nowhere — may get a travel path. */
-  const byId = new Map(objects.map(o => [o.id, o]))
-  const pathable = (o) => {
-    const f = rackFootprint(o), vert = !!f.rotated
-    const [r0, r1] = vert ? [f.y, f.y + f.h] : [f.x, f.x + f.w], [s0, s1] = vert ? [f.x, f.x + f.w] : [f.y, f.y + f.h]
-    const zoneAt = (e, d) => zones.some(z => meets(z, vert ? { x: s0, y: Math.min(e, e + d * T), w: s1 - s0, h: T } : { x: Math.min(e, e + d * T), y: s0, w: T, h: s1 - s0 }))
-    return zoneAt(r1, 1) || zoneAt(r0, -1) ? null : (vert ? 'y' : 'x')
-  }
-  const axes = new Set(best.cut.map(c => byId.get(c.id)).filter(Boolean).map(pathable).filter(Boolean))
+  const axes = new Set(best.cut.map(c => objects.find(o => o.id === c.id)).filter(Boolean).map(o => (rackFootprint(o).rotated ? 'y' : 'x')))
   for (const axis of axes) {
-    // the candidate paths: along each face of the building across this run axis, on its floor side(s)
     const us = [...new Set(poly.map(p => (axis === 'x' ? p.x : p.y)))]
-    const bands = us.flatMap(u => [[u - T, u], [u, u + T]])
-      .sort((a, b) => dir * ((b[0] + b[1]) - (a[0] + a[1])))                      // the far end first: it wins a tie
-    /* the first path from the far end that leaves nothing cut off (so the path stays put as the box
-       changes); failing that, the one that keeps the most bays reachable — then once more */
+    const bands = us.flatMap(u => [[u - T, u], [u, u + T]]).sort((a, b) => dir * ((b[0] + b[1]) - (a[0] + a[1])))
     for (let round = 0; round < 2 && best.cut.length; round++) {
       let pick = null
       for (const band of bands) {
         const objs = carve(best.objs, [...ids, ...best.objs.filter(o => o.pieceOf && ids.includes(o.pieceOf)).map(o => o.id)], axis, band, gridSize, newId)
         const j = judge(objs)
-        if (!j.cut.filter(c => pathable(byId.get(c.id) || objs.find(o => o.id === c.id) || {})).length && j.kept > best.kept) { pick = { objs, ...j }; break }
+        if (!j.cut.length && j.kept > best.kept) { pick = { objs, ...j }; break }
         if (j.kept > (pick ? pick.kept : best.kept)) pick = { objs, ...j }
       }
       if (!pick) break
       best = pick
     }
   }
-  // still cut off: those racks go
-  if (best.cut.length) { const gone = new Set(best.cut.map(c => c.id)); return best.objs.filter(o => !gone.has(o.id)) }
   return best.objs
+}
+
+/** The ways one pocket could be opened: a travel-wide strip standing against something fixed —
+ *  either side of a zone's edge or of a face of the building, across the run — running ACROSS the
+ *  rows from the pocket toward the main floor, only as far as the first cell of main floor; each with
+ *  the bays it costs (whole bays: the strip is the travel width, rounded up to whole bays by the bays
+ *  it cuts). Cheapest first; a tie goes to the strip against a zone (so the racks stay against the
+ *  building wall), then to the one nearer the far end. */
+function stripsFor(objects, fp, res, pocketId, carvable, { gridSize, travelFt, dir }) {
+  const { grid: { x0, y0, nx, ny, res: cell }, label, main } = res.access
+  const T = travelFt * gridSize
+  const mine = res.cutOff.filter(c => c.pockets.includes(pocketId)).map(c => objects.find(o => o.id === c.id)).filter(Boolean)
+  if (!mine.length) return []
+  const vert = !!rackFootprint(mine[0]).rotated, axis = vert ? 'y' : 'x'
+  const poly = innerOutline(fp, gridSize)
+  const zones = objects.filter(isZone).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height }))
+  const meets = (p, q) => Math.min(p.x + p.w, q.x + q.w) - Math.max(p.x, q.x) > 1e-6 && Math.min(p.y + p.h, q.y + q.h) - Math.max(p.y, q.y) > 1e-6
+  const onFloor = (x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c } return c }
+  const others = objects.filter(o => isRack(o) && o.width > 0)
+  const canCut = new Set(carvable)
+  // the grid along this pocket's axes: u along the run, v across
+  const nu = vert ? ny : nx, nv = vert ? nx : ny, u0 = vert ? y0 : x0, v0 = vert ? x0 : y0
+  const at = (ui, vi) => label[(vert ? ui : vi) * nx + (vert ? vi : ui)]
+  /* where a strip can stand against something fixed: either side of a zone's edge across the run
+     (kind 'zone'), either side of a face of the building ('wall') */
+  const lines = []
+  for (const z of zones) for (const e of vert ? [z.y, z.y + z.h] : [z.x, z.x + z.w]) lines.push({ e, kind: 'zone' })
+  for (const q of poly) lines.push({ e: vert ? q.y : q.x, kind: 'wall' })
+  const seen = new Set(), out = []
+  for (const { e, kind } of lines) for (const side of [-1, 1]) {
+    const band = side < 0 ? [e - T, e] : [e, e + T]
+    const key = Math.round(band[0] * 100) + '|' + kind
+    if (seen.has(key)) continue
+    seen.add(key)
+    const ua = Math.max(0, Math.floor((band[0] - u0) / cell)), ub = Math.min(nu - 1, Math.ceil((band[1] - u0) / cell) - 1)
+    if (ub < ua) continue
+    // the pocket's cells under the strip, across
+    const vs = []
+    for (let vi = 0; vi < nv; vi++) for (let ui = ua; ui <= ub; ui++) if (at(ui, vi) === pocketId) { vs.push(vi); break }
+    if (!vs.length) continue
+    for (const dv of [-1, 1]) {
+      const start = dv > 0 ? Math.max(...vs) : Math.min(...vs)
+      let hit = null
+      for (let vi = start + dv; vi >= 0 && vi < nv && hit == null; vi += dv) for (let ui = ua; ui <= ub; ui++) if (at(ui, vi) === main) { hit = vi; break }
+      if (hit == null) continue
+      const va = Math.min(start, hit), vb = Math.max(start, hit)
+      const across = [v0 + va * cell, v0 + (vb + 1) * cell]
+      const R = vert ? { x: across[0], y: band[0], w: across[1] - across[0], h: T } : { x: band[0], y: across[0], w: T, h: across[1] - across[0] }
+      // it can only run where nothing fixed stands: no zone, no rack it may not cut, on the floor
+      if (zones.some(z => meets(z, R)) || others.some(q => !canCut.has(q.id) && meets(rackFootprint(q), R))) continue
+      if (![[R.x + 1, R.y + 1], [R.x + R.w - 1, R.y + 1], [R.x + 1, R.y + R.h - 1], [R.x + R.w - 1, R.y + R.h - 1]].every(([x, y]) => onFloor(x, y))) continue
+      let n = 0
+      const after = carve(objects, [...canCut], axis, band, gridSize, () => 'cost' + (++n), across)
+      const cost = baysOf(objects, [...canCut]) - after.filter(q => canCut.has(q.id) || String(q.id).startsWith('cost')).reduce((t, q) => t + (q.beams?.length || 0), 0)
+      out.push({ axis, band, across, cost, kind, mid: (band[0] + band[1]) / 2, pocket: pocketId, racks: mine.length })
+    }
+  }
+  // cheapest; a tie against a zone (the racks stay against the building wall); then nearer the far end
+  return out.sort((a, b) => a.cost - b.cost || (a.kind === 'zone' ? 0 : 1) - (b.kind === 'zone' ? 0 : 1) || dir * (b.mid - a.mid))
+}
+
+/** Fill racking / racking areas / Generate: the racks `ids` (just placed, in `objects`) given a way
+ *  in. With no main floor at all (rows wall to wall), a travel path runs right across the floor
+ *  along a wall line (pathAcross). Then each pocket left is opened by its cheapest strip (stripsFor):
+ *  the fewest bays; a tie cut against the zone edge, so the racks stay against the building wall. A
+ *  pocket no strip can open — nothing reaches the main floor from it — loses its racks. `report`
+ *  (an array) collects each pocket opened: { racks, bays, kind, at (the strip along the run),
+ *  tiedWith (the kind of an equal-cost strip it beat, or null) }. Returns the objects. */
+export function giveWayIn(objects, fp, ids, { gridSize = 40, travelFt = 8, aisleFt = 10.5, dir = 1, newId, report = null } = {}) {
+  if (!fp || !ids.length) return objects
+  const opts = { gridSize, travelFt, aisleFt }
+  const live = (objs) => { const want = new Set(ids); return objs.filter(o => want.has(o.id) || (o.pieceOf && want.has(o.pieceOf))).map(o => o.id) }
+  let objs = objects
+  let res = cutOffRacks(objs, fp, { ...opts, ids: live(objs) })
+  if (!res.cutOff.length) return objs
+  if (!res.access.main) {
+    objs = pathAcross(objs, fp, ids, { gridSize, travelFt, aisleFt, dir, newId })
+    res = cutOffRacks(objs, fp, { ...opts, ids: live(objs) })
+  }
+  for (let guard = 0; guard < 40 && res.cutOff.length && res.access.main; guard++) {
+    // the pocket with the most racks first
+    const count = new Map()
+    for (const c of res.cutOff) for (const p of c.pockets) count.set(p, (count.get(p) || 0) + 1)
+    const pocket = [...count].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0]
+    const mine = new Set(res.cutOff.filter(c => c.pockets.includes(pocket)).map(c => c.id))
+    let opened = false
+    const strips = stripsFor(objs, fp, res, pocket, live(objs), { gridSize, travelFt, dir })
+    for (const s of strips) {
+      const before = baysOf(objs, ids)
+      const next = carve(objs, live(objs), s.axis, s.band, gridSize, newId, s.across)
+      const r2 = cutOffRacks(next, fp, { ...opts, ids: live(next) })
+      const still = new Set(r2.cutOff.map(c => c.id))
+      // opened: none of the pocket's racks (or what is left of them) cut off any more
+      if (next.some(o => (mine.has(o.id) || (o.pieceOf && mine.has(o.pieceOf))) && still.has(o.id))) continue
+      // (and whether a strip of the other kind cost the same: the tie the zone edge wins)
+      const tie = strips.find(q => q !== s && q.kind !== s.kind && q.cost === s.cost)
+      if (report) report.push({ racks: mine.size, bays: before - baysOf(next, ids), kind: s.kind, at: s.band, tiedWith: tie ? tie.kind : null })
+      objs = next; res = r2; opened = true
+      break
+    }
+    if (!opened) {
+      // no strip reaches the main floor from it: its racks go
+      objs = objs.filter(o => !mine.has(o.id))
+      res = cutOffRacks(objs, fp, { ...opts, ids: live(objs) })
+    }
+  }
+  if (res.cutOff.length) { const gone = new Set(res.cutOff.map(c => c.id)); objs = objs.filter(o => !gone.has(o.id)) }
+  return objs
 }
