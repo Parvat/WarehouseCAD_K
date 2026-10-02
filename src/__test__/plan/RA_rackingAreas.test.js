@@ -219,7 +219,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     for (let i = 0; i < f.length; i++) for (let j = i + 1; j < f.length; j++) if (!m.BB.sharesFrame(all[i], all[j], GS)) expect(overlap(f[i], f[j])).toBe(false)
   })
 
-  it('RA-zone: a staging zone placed over racks no area manages asks first (the placing taken back meanwhile); Continue places it and removes / trims the racks under it — no bay left under it; Cancel leaves it unplaced; Check layout clean; one undo', async () => {
+  it('RA-zone: a staging zone placed over racks no area manages asks first (the placing taken back meanwhile); Continue places it and removes / trims the racks under it — no bay left under it; Cancel leaves it unplaced; Check layout clean but for the dead-end aisles the zone now closes (no area refits these racks); one undo', async () => {
     const { fp } = officeLayout()
     // the area deleted, its racks kept: racks no area manages
     s().selectObject(areaNow().id); s().deleteSelected(); await tick()
@@ -242,7 +242,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     for (const r of racks()) for (const b of m.RA.bayBoxes(r, GS)) expect(overlap(b, zb)).toBe(false)
     expect(s().history.length).toBe(n0 + 1)
     expect(question()).toBeNull()
-    expect(check().errors).toEqual([])
+    // the zone closes the aisles of the row pieces between it and the wall: Check layout says so (no area refits these racks)
+    expect(check().errors.filter(e => e.kind !== 'no-way-in')).toEqual([])
     s().undo()
     expect(doc()).toEqual(before)
   })
@@ -385,6 +386,14 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   const ftR = (f) => (vert ? [f.y, f.y + f.h] : [f.x, f.x + f.w]).map(v => v / GS)
   /** Every rack of the area sits on its pattern: across, a pair's place (a double) or one half of it
    *  (a single); along, whole bays of one of its runs; stamped with that row and run. */
+  /** A single row flush on a wall face across (area AA: a far edge on a wall ends with one, off the
+   *  regular pattern, the aisle before it wider). */
+  const flushOnWall = (r) => {
+    if (r.type !== 'rack_row') return false
+    const fp = s().objects.find(o => o.id === r.parentId) || s().objects.find(o => o.type.startsWith('fp_'))
+    const faces = m.FR.innerOutline(fp, GS).map(p => (vert ? p.x : p.y) / GS), [s0, s1] = ftS(foot(r))     // feet, as ftS
+    return faces.some(v => Math.abs(v - s1) < 1e-3 || Math.abs(v - s0) < 1e-3)
+  }
   const expectOnPattern = () => {
     const a = areaNow(), p = a.pattern, single = p.depthIn / 12, pitch = (p.upIn + p.beamIn) / 12
     expect(p).toBeTruthy()
@@ -394,7 +403,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
       expect(u, `row ${r.rowIndex} is a pattern row`).toBeTruthy()
       const spots = u.type !== 'rack_double_row' ? [[u.s0, u.s0 + u.d]]
         : r.type === 'rack_double_row' ? [[u.s0, u.s0 + u.d]] : [[u.s0, u.s0 + single], [u.s0 + u.d - single, u.s0 + u.d]]
-      expect(spots.some(([x, y]) => Math.abs(x - s0) < 1e-6 && Math.abs(y - s1) < 1e-6), `row ${r.rowIndex} on its place across`).toBe(true)
+      if (!flushOnWall(r)) expect(spots.some(([x, y]) => Math.abs(x - s0) < 1e-6 && Math.abs(y - s1) < 1e-6), `row ${r.rowIndex} on its place across`).toBe(true)
       const pc = p.pieces.find(q => q.sec === r.genSection)
       expect(pc, `section ${r.genSection} is a pattern run`).toBeTruthy()
       const k = (r0 - pc.r0) / pitch
@@ -424,6 +433,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const pin = (px, py) => { let c = false; for (let i = 0, j = inner.length - 1; i < inner.length; j = i++) { const p = inner[i], q = inner[j]; if ((p.y > py) !== (q.y > py) && px < (q.x - p.x) * (py - p.y) / (q.y - p.y) + p.x) c = !c } return c }
     const zones = s().objects.filter(o => o.type.startsWith('zone_')).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height }))
     for (const r of racks().filter(o => o.type === 'rack_row' && o.areaId === a.id)) {
+      if (flushOnWall(r)) continue                                    // moved out onto the far wall (area AA), not a cut half
       const u = a.pattern.units.find(q => q.row === r.rowIndex)
       if (u.type !== 'rack_double_row') continue
       const [s0] = ftS(foot(r)), [r0, r1] = ftR(foot(r))
@@ -441,8 +451,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     }
   }
   /** Every aisle is the forklift aisle: each rack's next rack across (overlapping it along) is
-   *  exactly one aisle off — none widened (no slack aisle anywhere), none narrowed. Cross-aisles
-   *  run along and aren't read. */
+   *  exactly one aisle off — none widened (no slack aisle anywhere), none narrowed — but for the aisle
+   *  before a single flush on the far wall (area AA), at least one. Cross-aisles run along and aren't read. */
   const expectRegular = () => {
     const aisleFt = m.FR.DEFAULT_FILL_SETTINGS.aisleFt
     const all = racks().map(r => ({ r, s: ftS(foot(r)), q: ftR(foot(r)) }))
@@ -450,8 +460,10 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     for (const a of all) {
       const next = all.filter(b => b !== a && b.s[0] >= a.s[1] - 1e-6 && Math.min(a.q[1], b.q[1]) - Math.max(a.q[0], b.q[0]) > 1e-3)
       if (!next.length) continue
-      const gap = Math.min(...next.map(b => b.s[0])) - a.s[1]
-      expect(gap, `the aisle after ${a.r.type} row ${a.r.rowIndex} (ft)`).toBeCloseTo(aisleFt, 6)
+      const b = next.reduce((p, q) => (q.s[0] < p.s[0] ? q : p)), gap = b.s[0] - a.s[1]
+      // the aisle before a single flush on the far wall may be wider: that single moved out onto the wall
+      if (flushOnWall(b.r)) expect(gap, `the aisle after ${a.r.type} row ${a.r.rowIndex} (ft)`).toBeGreaterThanOrEqual(aisleFt - 1e-6)
+      else expect(gap, `the aisle after ${a.r.type} row ${a.r.rowIndex} (ft)`).toBeCloseTo(aisleFt, 6)
       n++
     }
     expect(n).toBeGreaterThan(0)

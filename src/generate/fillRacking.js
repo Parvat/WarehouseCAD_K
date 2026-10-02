@@ -36,6 +36,7 @@ import { rackFootprint, expandColumnGrid } from './columnCheck'
 import { layerForType } from '../utils/layers'
 import { buildingOutline, innerOutline } from '../utils/floorGeom'
 import { dropUnreachableFaces } from './faceReach'
+import { giveWayIn } from './aisleAccess'
 import { getRackCapacity } from '../utils/capacity'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { nanoid } from 'nanoid'
@@ -342,8 +343,10 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
   const pieces = [...walkPieces, ...extra, ...back].map((p, i) => ({ r0: toR(p.a, p.n), n: p.n, sec: secBase + i + 1 }))
 
   const pattern = {
-    vert, units, pieces, beamIn, upIn, depthIn, flueIn, aisleFt,
+    vert, units, pieces, beamIn, upIn, depthIn, flueIn, aisleFt, travelFt,
     palletWIn: P.palletWIn, palletDIn: P.palletDIn, levels: set.levels,
+    // the walks' directions from the start corner: across (stack) and along (run) — the far edges are the other way
+    dirS, runDir: flipR ? -1 : 1,
   }
   return { pattern, rects, fp }
 }
@@ -357,13 +360,16 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
  *  from the area by hand). A face against a wall or zone (under an aisle of
  *  clear floor in front of it) loses its bays there (faceReach.js). Returns
  *  { fp, racks, aisles, rows, positions }. */
-export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = nanoid, areaId = null, fp = null, blocked = [] } = {}) {
+export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = nanoid, areaId = null, fp = null, blocked = [], wayIn = true } = {}) {
   const empty = { fp: null, racks: [], aisles: [], rows: 0, positions: 0 }
   fp = fp || buildingForBox(objects, boxPx)
   if (!fp || !pattern || !(boxPx.w > 0) || !(boxPx.h > 0)) return empty
   const { vert, beamIn, upIn, depthIn, flueIn, aisleFt } = pattern
-  const box = rsRect(vert, gridSize, boxPx)
   const poly = innerOutline(fp, gridSize).map(rsOf(vert, gridSize))
+  // the box as far as the walls: a box dragged past one ends on its inner face (as the area's box does)
+  const raw = rsRect(vert, gridSize, boxPx)
+  const box = { r0: Math.max(raw.r0, Math.min(...poly.map(q => q.r))), r1: Math.min(raw.r1, Math.max(...poly.map(q => q.r))),
+    s0: Math.max(raw.s0, Math.min(...poly.map(q => q.s))), s1: Math.min(raw.s1, Math.max(...poly.map(q => q.s))) }
   const grow = (q, by) => ({ r0: q.r0 - by, r1: q.r1 + by, s0: q.s0 - by, s1: q.s1 + by })
   const blockers = [
     ...objects.filter(o => isRack(o) && o.width > 0 && o.height > 0).map(o => { const f = rackFootprint(o); return grow(rsRect(vert, gridSize, { x: f.x, y: f.y, w: f.w, h: f.h }), aisleFt) }),
@@ -399,7 +405,7 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
     return ivs
   }
   const pitch = (upIn + beamIn) / 12, bayFt = (2 * upIn + beamIn) / 12
-  const placements = []
+  const placements = [], placedRS = []
   const used = new Set()
   /** Each pattern piece's whole bays inside the interval [a, c], placed across [sa, sa + depthFt]. */
   const place = (unit, type, sa, depthFt, ivs) => {
@@ -417,9 +423,14 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
         rowIndex: unit.row, genSection: pc.sec,
       })
       used.add(unit.row)
+      placedRS.push({ s0: sa, s1: sa + depthFt, r0, r1: r0 + len })
     }
   }
   const singleFt = depthIn / 12
+  const dirS = pattern.dirS || 1, F = dirS > 0 ? box.s1 : box.s0
+  // a pair the FAR edge cuts: the half that fits waits — on a wall it may move flush against it
+  const crossesFar = (u) => (dirS > 0 ? u.s0 + u.d > F + EPS && u.s0 < F - EPS : u.s0 < F - EPS && u.s0 + u.d > F + EPS)
+  const farHalves = []
   for (const u of pattern.units) {
     if (u.s0 + u.d < box.s0 - EPS || u.s0 > box.s1 + EPS) continue
     if (u.type !== 'rack_double_row') { place(u, u.type, u.s0, u.d, freeRun(u.s0, u.s0 + u.d)); continue }
@@ -428,15 +439,40 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
     place(u, 'rack_double_row', u.s0, u.d, pair)
     let lo = freeRun(u.s0, u.s0 + singleFt), hi = freeRun(u.s0 + u.d - singleFt, u.s0 + u.d)
     for (const [a, c] of pair) { lo = subtract(lo, a, c); hi = subtract(hi, a, c) }
-    place(u, 'rack_row', u.s0, singleFt, lo)
-    place(u, 'rack_row', u.s0 + u.d - singleFt, singleFt, hi)
+    const halves = [[u.s0, lo], [u.s0 + u.d - singleFt, hi]]
+    for (const [sa, ivs] of halves) {
+      if (crossesFar(u) && ivs.length) farHalves.push({ u, sa, ivs })
+      else place(u, 'rack_row', sa, singleFt, ivs)
+    }
   }
+  /* The far edge on a wall: the leftover there takes a single row flush against the wall, where it
+     fits with a forklift aisle (at least) between it and the last row — the far edge's cut half
+     moves out onto the wall (the regular pattern always leaves less than an aisle and a single after
+     its last whole pair: with room for both, that half is already there). An open far edge keeps the
+     regular pattern's leftover, cut half and all. */
+  let flush = []
+  const onWall = poly.some((a, i) => { const c = poly[(i + 1) % poly.length]; return Math.abs(a.s - c.s) < EPS && Math.abs(a.s - F) < 1e-6 })
+  if (onWall) {
+    const fa = dirS > 0 ? F - singleFt : F
+    flush = freeRun(fa, fa + singleFt)
+    for (const q of placedRS) if (q.s1 > fa - aisleFt + 1e-6 && q.s0 < fa + singleFt + aisleFt - 1e-6) flush = subtract(flush, q.r0, q.r1)
+    // the flush row's stamps: the cut pair's row where there is one, else a row past the pattern's
+    const row = farHalves.length ? farHalves[0].u.row : Math.max(...pattern.units.map(q => q.row)) + 1
+    if (flush.length) place({ row, flueIn }, 'rack_row', fa, singleFt, flush)
+  }
+  // the cut halves where the flush row isn't
+  for (const h of farHalves) { let ivs = h.ivs; for (const [a, c] of flush) ivs = subtract(ivs, a, c); place(h.u, 'rack_row', h.sa, singleFt, ivs) }
   // ids first: the aisles between the new rows refer to them
   // and no pick face without an aisle: a face against a wall or a zone loses its bays there (faceReach.js)
-  const racks = dropUnreachableFaces(placements.map(p => ({ ...placementToObject(p), id: newId(), ...(areaId ? { areaId } : {}) })), {
+  const faced = dropUnreachableFaces(placements.map(p => ({ ...placementToObject(p), id: newId(), ...(areaId ? { areaId } : {}) })), {
     poly: innerOutline(fp, gridSize), aislePx: aisleFt * gridSize, gridSize, newId,
     zones: objects.filter(isZone).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height })),
   })
+  // and every aisle with a way in: rows run into a wall at their far end leave a travel path there; racks only a pocket reaches go (aisleAccess.js)
+  const mine = new Set(faced.map(r => r.id))
+  const racks = !wayIn ? faced : giveWayIn([...objects.filter(o => !mine.has(o.id)), ...faced], fp, [...mine], {
+    gridSize, aisleFt, travelFt: pattern.travelFt ?? Math.min(8, aisleFt), dir: pattern.runDir || 1, newId,
+  }).filter(o => mine.has(o.id) || (o.pieceOf && mine.has(o.pieceOf)))
   // the aisles get ids here too: the fill goes into the store in one write, not through addObject
   const aisles = aisleObjectsForRacks(racks).map(o => ({ ...o, id: o.id || newId() }))
   const withParent = parentGenerated([...racks, ...aisles], fp.id).map(o => ({ ...o, layerId: layerForType(o.type) }))

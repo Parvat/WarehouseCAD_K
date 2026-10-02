@@ -413,7 +413,7 @@ joins the copy-to-sections set.
 | `RA-edits` | a rack moved by hand: the extend asks with the exact text; the area is back while asking; Cancel changes nothing (no history); Continue extends and the moved rack is unchanged; one undo |
 | `RA-shrink` ×2 | along the rows by 37' 5" (not whole bays): each crossing row is kept from the same start on the same uprights, fewer bays, ending within one bay (8' 3") of the new edge, beams still 96"; across the rows: crossing racks go (a pair keeps a half that still fits, as a single); everything within the new box; on the pattern, aisles full; no hand edits recorded; no errors; one undo |
 | `RA-rebuild` | beam → 108": every rack 108", the area remembers it, no errors, one undo; with a hand-moved rack: asked; Continue keeps it; the rest are 108"; no overlaps |
-| `RA-zone` | racks no area manages (the area deleted, Keep racks): a staging zone added over them asks ("This staging covers N racks. …"), with the add taken back meanwhile (no history); Cancel leaves it unplaced; Continue places it, and no bay is left under it; one entry; no errors; one undo |
+| `RA-zone` | racks no area manages (the area deleted, Keep racks): a staging zone added over them asks ("This staging covers N racks. …"), with the add taken back meanwhile (no history); Cancel leaves it unplaced; Continue places it, and no bay is left under it; one entry; no errors but the dead-end aisles the zone now closes ("No way in", area AA: no area refits these racks); one undo |
 | `RA-zone-area` | a staging zone dropped over a racking area: nothing asked, the area refits at once — no bay under the zone, every rack on the pattern; ONE entry with the zone; no errors; one undo restores both exactly |
 | `RA-zone-move` | the office moved down onto the area's racks: refitted on release, nothing asked, no bay under it, one entry; moved back: every rack returns at its exact pattern place; grown 30' into the area: the racks under it go; shrunk back: they return; one undo takes back the shrink and its refit together |
 | `RA-mouse` | a box and an edge drag at mouse positions (top at 39.95', dragged 2.17' past the wall): Check layout finds nothing at all |
@@ -542,7 +542,7 @@ by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
 
 | Test | Asserts |
 |---|---|
-| `FR-generate` (×2) | the whole of a rectangle, 240 × 120 and 1080 × 410: Generate's walk over the same clear floor (the inner faces, no wall clearance) — racks (position, size, rotation, beams, rowIndex, genSection) — for every rack ending before the last single + pair + aisle of the far wall, where Generate widens its last aisle and the fill doesn't; the first row (single) and the run start flush on the inner faces; what is left at the far wall under a pair and an aisle; every aisle the forklift aisle; every object has its own id |
+| `FR-generate` (×2) | the whole of a rectangle, 240 × 120 and 1080 × 410: Generate's walk over the same clear floor, given the same way in (area AA: a travel path where rows run wall to wall) (the inner faces, no wall clearance) — racks (position, size, rotation, beams, rowIndex, genSection) — for every rack ending before the last single + pair + aisle of the far wall, where Generate widens its last aisle and the fill doesn't; the first row (single) and the run start flush on the inner faces; what is left at the far wall under a pair and an aisle; every aisle the forklift aisle; every object has its own id |
 | `FR-shape` (×2) | the whole of an L (300 × 200) and a T (360 × 240): more than one rectangle in the region; no rack outside the outline (every corner inside, no outline vertex inside a rack); no overlaps; every row index has one place across (its doubles all at one stack position, its singles flush with one face of that pair); the start wall's row single and flush on it; every single's other half would cross a wall; Check layout: nothing at all |
 | `FR-arms` | an L's two arms filled separately: each fill's start wall gets single rows flush on it (in horizontal the bar's start is the inside-corner wall), nothing outside, no overlaps, the second fill's stamps after the first's, an aisle at least between the two fills wherever they face, no errors |
 | `FR-edge-stack` (×6) | 300 × 200, a box from mid-building (open floor) to a far edge past the wall, exactly on its inner face, or 6" short of it; each dragged from the open edge and from the far edge. The row at the start edge is single, its outer face exactly on it (0", within 0.001 px; past the wall: the inner face); what is left at the other edge is under a pair and an aisle; every row between is back-to-back; every aisle the forklift aisle; nothing outside the box or the walls; no errors |
@@ -715,6 +715,81 @@ horizontal and vertical; max run 60'):
 - **Found in the app:** the zone's wall snap was capped at 1 ft like a row's,
   which is under a pixel when zoomed out to a whole building. Now 12 screen px
   at any zoom.
+
+### AA — A way in, and a far edge on a wall · `AA_aisleAccess.test.js` (32 tests)
+Code: `generate/aisleAccess.js` (the analysis, `giveWayIn`), wired into
+`generate/fillRacking.js` (`patternFill`: Fill racking and racking areas),
+`generate/traceGenerate.js` (Generate) and `utils/layoutCheck.js`.
+
+**Every aisle needs a way in.** An aisle has to open, at one end or more, onto
+a cross-aisle or travel path at least the forklift's travel width (the reach
+truck's 8', the VNA's 6') that leads to the main floor. An aisle closed at both
+ends (a wall and an office, or two walls) is a dead-end pocket.
+- **The analysis.** A grid over the building's floor (the inner wall face):
+  walls, zones and racks are obstacles. The drivable floor is where a travel-wide
+  square fits (a chessboard distance transform over cell centres, half a cell of
+  slack). Its connected pieces: the main floor is the largest, unless that piece
+  is only a corridor (then there is none); the rest are pockets. A rack is cut off
+  when no pick face looks onto the main floor across an aisle's depth but one
+  looks onto a pocket.
+- **Fill racking, racking areas and Generate** give the racks they place a way
+  in (`giveWayIn`). Where racks are cut off and no zone closes their rows, a
+  travel path the travel width wide is carved right across the floor along a
+  wall line. Candidate lines are each face of the building along the run, on its
+  floor side, tried from the far end in. The first that leaves nothing cut off is
+  taken, so it stays put as an area's box changes; failing that, the one keeping
+  the most bays reachable. The placed rows give up the bays it crosses.
+- Racks still cut off then go: a pocket a zone closes keeps no racks.
+- On a rectangle with no cross-aisle (rows wall to wall, e.g. a 120' run) the
+  path runs along the far wall. On an L whose bar block is closed off from the
+  open stem, it comes down at the stem's wall line.
+- **Check layout:** "No way in: aisle closed at both ends", an error, one per
+  pocket area (pockets sharing a rack merged), its racks listed, the pocket
+  shaded red.
+
+**A far edge on a wall** (racking areas and Fill racking)
+- When the box's far edge, across the rows, lies on a wall's inner face, the
+  leftover takes a single row flush against the wall wherever it fits with at
+  least a forklift aisle before it.
+- With the regular pattern this means the far edge's cut half moves out onto the
+  wall. The pattern always leaves less than an aisle and a single after its last
+  whole pair: with room for both, that half is already there.
+- An open far edge keeps the regular leftover, cut half and all.
+- The box is read as far as the walls (`patternFill` clips it), so one dragged
+  past the far wall counts as on it.
+- Shrink → extend back is still identical.
+
+| Test | Asserts |
+|---|---|
+| `AA-pocket` ×3 | rectangle, L, T: an office 30' off the near wall; the racks the pattern would put where only that pocket reaches (cut off in the unpassed fill, inside the pocket) are not placed, no rack is cut off, Check layout clean; one put back by hand: one "No way in: aisle closed at both ends" error listing it, its highlight red over the pocket |
+| `AA-travel` ×3 | a fill of the whole building: no rack cut off, Check layout clean |
+| `AA-width` | two rows, one aisle between them opening only onto a strip G deep before a zone: G = 8' reached by the reach truck (8'); G = 6' cuts off the row whose other face is on the wall, not for a VNA (6'); Check layout with the reach truck flags it, with the VNA not |
+| `AA-far-wall` ×3 | an area whose far edge is on the wall, 15' past its last whole pair: single rows flush on the wall, at least 10' 6" off the row before; clean; pulled off the wall the flush row goes; back: identical |
+| `AA-far-past` ×3 | the same box dragged 3' past the far wall: the single flush on the wall's inner face |
+| `AA-far-open` ×3 | the same box 2' short of the wall: nothing flush on the edge; the cut pair's near half 1' off it, as the pattern has it |
+
+All run horizontal and vertical.
+
+**Break-its:** no rack ever cut off: AA-pocket and AA-width fail (8). The far
+wall not read as a wall: AA-far-wall fails (6). The box not clipped to the walls:
+AA-far-past fails (6).
+
+**Also changed:** the test runner's timeout is 20 s (`vite.config.js`). A few
+plan tests run Generate on a 1080 × 410 building, 2–4 s alone, the same before
+this change, and under the full suite's load they passed 5 s.
+
+**Checked in the app** (Playwright, real mouse; rectangle, L and T, horizontal
+and vertical):
+- With an office 30' off the near wall, a whole-building fill left the pocket
+  empty. No rack was cut off, and Check layout said no issues. Vertical rows
+  stopped short of the bottom wall: a travel path along it.
+- A rack put back in the pocket by hand: "Check layout · 1 error", "No way in:
+  aisle closed at both ends"; clicking it shaded the pocket red.
+- An area dragged to past the far wall, 15' past its last whole pair, ended with
+  single rows flush on the wall, 11.5'–11.75' off the row before. No errors.
+- **Found in the app:** a box dragged past the far wall wasn't read as on it.
+  The fill was given the raw box; the area's own box was already clipped. Now
+  `patternFill` clips it (AA-far-past).
 
 ### LC — Check layout · `LC_layoutCheck.test.js` (33 tests)
 A "Check layout" button in the top bar lists every problem in the right
@@ -1684,7 +1759,7 @@ The rule lives in `rowSegments`, so Generate and Fill racking both follow it.
 | `CX-generate` ×6 | Generate, 100 ft across, 30 × 30 grid: a 72 ft run → 1 piece per row; 240 ft → 2; 1,080 ft → 8 (6 by length, one forced by the columns, as before) |
 | `CX-fill-rect` ×2 | Fill racking 240 × 120: 2 pieces per row horizontal, 1 vertical |
 | `CX-fill-T` ×2 | Fill racking a T 360 × 240: vertical, the 72 ft bar's rows are one piece; horizontal, the 126 ft stem's rows are one piece |
-| `CX-fill-L` ×2 | Fill racking an L 300 × 200: horizontal, the 90 ft stem is one piece, and the bar's rows, running the whole 300 ft through the elbow (one pattern), are split once; vertical, the stem above the bar and the 60 ft bar are one piece each |
+| `CX-fill-L` ×2 | Fill racking an L 300 × 200: horizontal, the 90 ft stem is one piece, and the bar's rows, running the whole 300 ft through the elbow (one pattern), are split by the cross-aisle (≥ 2 runs: the stem's travel path, area AA, comes down through them too); vertical, the stem above the bar and the 60 ft bar are one piece each |
 
 Pieces per row count the runs a row is cut into by cross-aisles (racks along a row
 closer than 8.5' are one run: a double turning single beside a wall or zone loses

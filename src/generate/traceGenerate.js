@@ -25,6 +25,7 @@ import { DEFAULT_RULES } from '../rules/defaults'
 import { rackFootprint, groupBySegment } from './columnCheck'
 import { usableCapacity, mheProfile } from './usableCapacity'
 import { dropUnreachableFaces } from './faceReach'
+import { giveWayIn } from './aisleAccess'
 import { innerOutline } from '../utils/floorGeom'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
@@ -321,7 +322,15 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
      already on the floor loses that face's bays there — single beside it, back-to-back elsewhere. */
   const aisleFt = brief.aisleFt ?? rules.mhe?.[brief.mhe || rules.mheDefault || 'reach']?.aisleFt ?? 12.5
   const zones = useCanvasStore.getState().objects.filter(o => typeof o.type === 'string' && o.type.startsWith('zone_')).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height }))
-  const racks = fp ? dropUnreachableFaces(walked, { poly: innerOutline(fp, GS), zones, aislePx: aisleFt * GS, gridSize: GS, newId: nanoid }) : walked
+  const faced = fp ? dropUnreachableFaces(walked, { poly: innerOutline(fp, GS), zones, aislePx: aisleFt * GS, gridSize: GS, newId: nanoid }) : walked
+  /* Every aisle with a way in (aisleAccess.js): rows that run into the far wall with no cross-aisle
+     leave a travel path along it; racks only a pocket reaches go. */
+  const travelFt = Math.min(brief.travelFt ?? rules.mhe?.[brief.mhe || rules.mheDefault || 'reach']?.travelFt ?? 8, aisleFt)
+  const placedIds = new Set(faced.map(r => r.id))
+  const racks = fp
+    ? giveWayIn([...useCanvasStore.getState().objects, ...faced], fp, [...placedIds], { gridSize: GS, travelFt, aisleFt, dir: 1, newId: nanoid })
+      .filter(o => placedIds.has(o.id) || (o.pieceOf && placedIds.has(o.pieceOf)))
+    : faced
   // every generated object on its layer (utils/layers.js)
   const queue = parentGenerated(
     [...racks, ...aisleObjectsForRacks(racks), ...generateFixtures(brief, ox, oy)],

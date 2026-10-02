@@ -29,6 +29,7 @@ async function fresh() {
   const { generateAndPlace } = await import('../../generate/traceGenerate')
   const { rackFootprint, MHE_PROFILES } = await import('../../generate/columnCheck')
   const { buildingSections } = await import('../../utils/syncSections')
+  const AA = await import('../../generate/aisleAccess')
   const CP = await import('../../utils/copyPrompt')
   const BB = await import('../../utils/bayBeam')
   const L = await import('../../utils/layers')
@@ -39,7 +40,7 @@ async function fresh() {
   installAisleKeeper(useCanvasStore, nanoid)
   installRowEditKeeper(useCanvasStore)
   CP.installCopyWatcher(useCanvasStore, nanoid)
-  return { useCanvasStore, FT, FR, LC, generateAndPlace, rackFootprint, MHE_PROFILES, buildingSections, CP, BB }
+  return { useCanvasStore, FT, FR, LC, generateAndPlace, rackFootprint, MHE_PROFILES, buildingSections, CP, BB, AA }
 }
 
 const RACK = new Set(['rack_row', 'rack_double_row'])
@@ -94,13 +95,17 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
    *  exactly one aisle off — none widened, none narrowed. Cross-aisles run along and aren't read. */
   const expectRegular = () => {
     const aisle = m.FR.DEFAULT_FILL_SETTINGS.aisleFt * GS
-    const all = racks().map(r => m.rackFootprint(r)).map(f => (vert ? { s0: f.x, s1: f.x + f.w, r0: f.y, r1: f.y + f.h } : { s0: f.y, s1: f.y + f.h, r0: f.x, r1: f.x + f.w }))
+    const faces = m.FR.innerOutline(fpOf(), GS).map(p => (vert ? p.x : p.y))
+    const all = racks().map(r => ({ r, f: m.rackFootprint(r) })).map(({ r, f }) => (vert ? { r, s0: f.x, s1: f.x + f.w, r0: f.y, r1: f.y + f.h } : { r, s0: f.y, s1: f.y + f.h, r0: f.x, r1: f.x + f.w }))
+    // a single flush on a wall face (area AA: a far edge on a wall ends with one) may have a wider aisle before it
+    const flush = (b) => b.r.type === 'rack_row' && faces.some(v => Math.abs(v - b.s1) < 1e-3 || Math.abs(v - b.s0) < 1e-3)
     let n = 0
     for (const a of all) {
       const next = all.filter(b => b !== a && b.s0 >= a.s1 - 1e-6 && Math.min(a.r1, b.r1) - Math.max(a.r0, b.r0) > 1e-3)
       if (!next.length) continue
-      const gap = Math.min(...next.map(b => b.s0)) - a.s1
-      expect(gap / GS, 'an aisle (ft)').toBeCloseTo(aisle / GS, 6)
+      const b = next.reduce((p, q) => (q.s0 < p.s0 ? q : p)), gap = b.s0 - a.s1
+      if (flush(b)) expect(gap / GS, 'an aisle (ft)').toBeGreaterThanOrEqual(aisle / GS - 1e-6)
+      else expect(gap / GS, 'an aisle (ft)').toBeCloseTo(aisle / GS, 6)
       n++
     }
     expect(n).toBeGreaterThan(0)
@@ -119,7 +124,10 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     const wt = fp.wallThicknessFt * GS, ix = fp.x + wt, iy = fp.y + wt
     // Generate over the inner floor, no wall clearance (the fill's rule: the box is the racking area)
     const brief = { lengthFt: (fp.width - 2 * wt) / GS, widthFt: (fp.height - 2 * wt) / GS, gridXFt: 0, gridYFt: 0, mhe: 'reach', orientation, rackType: 'rack_double_row', endClearFt: 0, levels: 4 }
-    const want = sizingSheetLayout(brief, DEFAULT_RULES).map(p => placementToObject(p)).map(o => ({ ...o, x: o.x + ix, y: o.y + iy }))
+    const walk = sizingSheetLayout(brief, DEFAULT_RULES).map(p => placementToObject(p)).map(o => ({ ...o, x: o.x + ix, y: o.y + iy }))
+    // with the way in Generate and the fill both give it (area AA): a travel path where rows run wall to wall
+    let n = 0
+    const want = m.AA.giveWayIn([fp, ...walk], fp, walk.map(o => o.id), { gridSize: GS, travelFt: 8, aisleFt: 10.5, dir: 1, newId: () => 'w' + (++n) }).filter(o => RACK.has(o.type))
     expect(want.length).toBeGreaterThan(4)
     const { plan } = fill(bbox(outline()))
     expect(plan.rects).toHaveLength(1)

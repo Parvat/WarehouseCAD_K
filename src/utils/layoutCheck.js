@@ -8,11 +8,14 @@
 //                an aisle, positions lost in the rack and in pick zones
 //   overlap/wall rackIssues (utils/bayBeam.js)
 //   reach        rackReachable (the pick-zone test, at the travel width)
+//   way in       cutOffRacks (generate/aisleAccess.js): racks only a dead-end
+//                pocket reaches — an aisle closed at both ends
 //   bays         oversizedBayIndices (utils/capacity.js)
 //
 // ERRORS (can't be built or reached): an aisle a truck can't drive, racks
 // overlapping, a rack past a wall or outside the building, a column on an
-// upright frame, a rack nobody can reach.
+// upright frame, a rack nobody can reach, racks with no way in (the pocket
+// highlighted).
 // WARNINGS (cost positions, or need a look): an aisle it can drive but not
 // pick from, columns blocking pallets, a bay too short for a pallet, angled
 // racks whose column losses weren't checked.
@@ -32,6 +35,7 @@ import { uprightXs } from '../render/rackOps'
 import { blockedPositionRects } from '../render/labelOps'
 import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate/usableCapacity'
 import { rackIssues } from './bayBeam'
+import { cutOffRacks } from '../generate/aisleAccess'
 import { oversizedBayIndices } from './capacity'
 import { fmtLen } from './copyChange'
 import { sectionLabel } from './sectionCopy'
@@ -194,7 +198,24 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       warnings.push({ severity: 'warning', kind: 'angled', ids: [r.id], box: boxOf(f), highlight: [outline(f, HL.amber)], text: `${name(r)}: angled ${Math.round(r.rotation)}° — its column losses weren't checked` })
     }
   }
-  const order = ['aisle-drive', 'overlap', 'outside', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'angled']
+  // ── a way in: racks only a dead-end pocket reaches (an aisle closed at both ends) ──
+  for (const fp of objects.filter(o => FP.has(o.type))) {
+    if (!racks.some(r => r.parentId === fp.id)) continue
+    const { pockets } = cutOffRacks(objects, fp, { gridSize, travelFt: profile.travelFt ?? 8, aisleFt: profile.aisleFt })
+    // pockets that share a rack (one on each side of it) are one place: one item, every pocket lit
+    const groups = []
+    for (const [, pk] of pockets) {
+      const into = groups.filter(g => pk.ids.some(id => g.ids.has(id)))
+      const g = { ids: new Set(pk.ids), boxes: [pk.box] }
+      for (const o of into) { o.ids.forEach(id => g.ids.add(id)); g.boxes.push(...o.boxes); groups.splice(groups.indexOf(o), 1) }
+      groups.push(g)
+    }
+    for (const g of groups) {
+      errors.push({ severity: 'error', kind: 'no-way-in', ids: [...g.ids], box: union(g.boxes),
+        highlight: g.boxes.map(b => shade(b, HL.red, 'No way in')), text: 'No way in: aisle closed at both ends' })
+    }
+  }
+  const order = ['aisle-drive', 'no-way-in', 'overlap', 'outside', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'angled']
   const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind) }
 }
