@@ -3,26 +3,22 @@
 // rowSegments) — tight forklift aisles, columns seated in flues or faces
 // (never straddled), cross-aisles by the max rack run.
 //
-// The box IS the racking area. It is clipped to the building's REAL inner
-// wall face (the outline inset by the wall thickness; L, T, U, cross — any
-// rectilinear shape), and existing racks are taken out of it. What is left is
-// cut into rectangles along the run axis (strips with the same stack extent
-// merged back together), and each rectangle is filled on its own:
-//   - a side on a WALL: the row is flush on the wall's inner face — any wall,
-//     including the inside corner of an L;
-//   - a side on OPEN floor (the box edge): the row's outer face is exactly on
-//     the box edge — no aisle added;
-//   - the first and last rows (at those two edges) are ALWAYS single rows, wall
-//     or open floor; the rows between are back-to-back (rowBands' own walk);
-//   - a side on an EXISTING rack: a forklift aisle off it, so its pick face
-//     stays reachable (never overlapped, never moved);
-//   - where the region carries on into another of its rectangles (the elbow
-//     of an L), each side leaves half a cross-aisle;
-//   - a ZONE (office, staging, washroom, custom area — any `zone_*`) is a
-//     hole in the region whose edges are walls: nothing is placed inside it,
-//     and the rows run flush against it.
-// The walk starts at the box edge where the drag started (both axes), so the
-// racking is anchored there; the far edge gets its row flush too.
+// The box IS the racking area, and the area is a WINDOW on a fixed PATTERN:
+//   - areaPattern: computed once from the edges the drag started at — the row
+//     sequence across (the first row single, an aisle, back-to-back pairs,
+//     aisles …), the bay grid and cross-aisles along the rows. Generate's own
+//     walk over the first box (clipped to the building's REAL inner wall face —
+//     L, T, U, cross, any rectilinear shape — and kept an aisle off existing
+//     racks); its edge rows are single, each one half of a pair whose other
+//     half lies past the edge, and past the edges the walk carries on both ways.
+//   - patternFill: the racks the box shows — the pattern clipped to it (whole
+//     bays, rows wholly inside). A pair an edge cuts so only one half fits shows
+//     that half as a single row; no row is ever added at an edge. Walls and
+//     ZONES (office, staging, washroom, custom area — any `zone_*`) clip it the
+//     same way; existing racks are obstacles with a forklift aisle kept off
+//     them (never overlapped, never moved).
+// So a box resized and resized back shows exactly the racks it had, and an
+// extended box carries the same rows on (generate/rackingArea.js).
 //
 // Rows get section and row stamps like Generate (genSection, rowIndex), new
 // numbers after any already in the building, so "Copy to other sections",
@@ -219,137 +215,229 @@ export function fillRects(objects, fp, boxPx, { orientation = 'horizontal', grid
   return { rects, vert }
 }
 
-/** Plan a fill of `boxPx` (world px) with `settings`: the new racks and
- *  aisles (world px, stamped, parented to the building), how many rows and
- *  pallet positions, and the rectangles it used. `from` (world px) is where
- *  the drag started: the walk is anchored at that corner's edges. `areaId`:
- *  the racking area the racks belong to (stamped on each).
- *
- *  `runTemplate` — rows to line up with (a racking area extended across its
- *  aisles: generate/rackingArea.js): [{ r0, beams, upIn, genSection }], each
- *  piece's run start in feet along the run axis and its bay pattern. Every new
- *  row places the same pieces — same start, same uprights, same bays — cut to
- *  the whole bays that fit; only a stretch none of them reaches is walked
- *  fresh (rowSegments), a cross-aisle clear of them. */
-export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, newId = nanoid, from = null, areaId = null, runTemplate = null } = {}) {
+/** The racking parameters a fill uses, from its settings and the rules. */
+function fillParams(settings, rules) {
   const set = { ...DEFAULT_FILL_SETTINGS, ...settings }
-  const fp = buildingForBox(objects, boxPx)
-  const empty = { fp: null, racks: [], aisles: [], rows: 0, positions: 0, rects: [] }
-  if (!fp || !(boxPx.w > 0) || !(boxPx.h > 0)) return empty
   const mhe = rules.mhe?.[set.mhe] || {}
   const aisleFt = set.aisleFt ?? mhe.aisleFt ?? 10.5
-  const travelFt = Math.min(mhe.travelFt ?? 8, aisleFt)
-  const crossAisleFt = mhe.crossAisleFt ?? aisleFt
   const spec = layoutSpec({ beamIn: set.beamIn, palletWIn: set.palletWIn, palletDIn: set.palletDIn }, rules)
-  const { beamIn, depthIn, upIn, flueIn, palletWIn } = spec
-  const rackType = 'rack_double_row'
-  const colSizeIn = 12
+  return { set, aisleFt, travelFt: Math.min(mhe.travelFt ?? 8, aisleFt), crossAisleFt: mhe.crossAisleFt ?? aisleFt, ...spec }
+}
+/** World px ↔ (run, stack) feet. Horizontal: run = x, stack = y. */
+const rsOf = (vert, gridSize) => (p) => (vert ? { r: p.y / gridSize, s: p.x / gridSize } : { r: p.x / gridSize, s: p.y / gridSize })
+const rsRect = (vert, gridSize, b) => {
+  const rs = rsOf(vert, gridSize), a = rs({ x: b.x, y: b.y }), c = rs({ x: b.x + b.w, y: b.y + b.h })
+  return { r0: Math.min(a.r, c.r), r1: Math.max(a.r, c.r), s0: Math.min(a.s, c.s), s1: Math.max(a.s, c.s) }
+}
+/** Feet of floor kept past the building's extent either way, so a pattern still
+ *  covers the floor when its area is extended right up to the far wall. */
+const PATTERN_MARGIN_FT = 200
 
+/** A racking area's PATTERN: computed once, when the area is first filled (and
+ *  again when its settings change), from the edges the drag started at. It
+ *  reaches past the building both ways, and the area's box is a window on it
+ *  (patternFill): every fill, extend and shrink shows the same racks.
+ *
+ *  In feet along the area's (run, stack) axes, absolute:
+ *    - `units`: the rows across — { s0, d, type, flueIn, row }. The walk is
+ *      Generate's own (rowBands, columns included) over the area's first box:
+ *      the row at each edge is a single there, and in the pattern each is one
+ *      half of a back-to-back pair whose other half lies just past the edge;
+ *      past it the walk carries on — aisle, pair, aisle … — both ways.
+ *    - `pieces`: the runs along a row — { r0, n, sec } (n bays of beamIn on
+ *      upIn uprights), rowSegments' own walk over the first box with its
+ *      cross-aisles; past it the end runs carry on bay by bay up to the max
+ *      rack run, then a cross-aisle and whole max-length runs.
+ *  `row` / `sec` are the stamps (rowIndex / genSection) a rack there gets.
+ *
+ *  Returns { pattern, rects, fp }, or null when the box holds no row. */
+export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, from = null, areaId = null } = {}) {
+  const P = fillParams(settings, rules)
+  const { set, aisleFt, travelFt, crossAisleFt, beamIn, depthIn, upIn, flueIn } = P
+  const fp = buildingForBox(objects, boxPx)
+  if (!fp || !(boxPx.w > 0) || !(boxPx.h > 0)) return null
+  const rackType = 'rack_double_row', colSizeIn = 12
   const { rects, vert } = fillRects(objects, fp, boxPx, { orientation: set.orientation, gridSize })
+  if (!rects.length) return null
   const grids = objects.filter(o => o.type === 'column_grid' && (!o.parentId || o.parentId === fp.id))
   const runLines = columnLines(grids, vert ? 'y' : 'x', gridSize)
   const stackLines = columnLines(grids, vert ? 'x' : 'y', gridSize)
-  // the drag's start corner, in (run, stack) feet: the walk starts on its side of each axis
-  const start = from ? (vert ? { r: from.y / gridSize, s: from.x / gridSize } : { r: from.x / gridSize, s: from.y / gridSize }) : null
-  const b = vert ? { r0: boxPx.y, r1: boxPx.y + boxPx.h, s0: boxPx.x, s1: boxPx.x + boxPx.w } : { r0: boxPx.x, r1: boxPx.x + boxPx.w, s0: boxPx.y, s1: boxPx.y + boxPx.h }
-  const flipR = !!start && start.r * gridSize > (b.r0 + b.r1) / 2
-  const flipS = !!start && start.s * gridSize > (b.s0 + b.s1) / 2
+  const box = rsRect(vert, gridSize, boxPx)
+  const poly = innerOutline(fp, gridSize).map(rsOf(vert, gridSize))
+  const pr0 = Math.min(...poly.map(p => p.r)) - PATTERN_MARGIN_FT, pr1 = Math.max(...poly.map(p => p.r)) + PATTERN_MARGIN_FT
+  const ps0 = Math.min(...poly.map(p => p.s)) - PATTERN_MARGIN_FT, ps1 = Math.max(...poly.map(p => p.s)) + PATTERN_MARGIN_FT
+  // the drag's start corner: the walks start on its side of each axis
+  const start = from ? rsOf(vert, gridSize)(from) : null
+  const flipR = !!start && start.r > (box.r0 + box.r1) / 2
+  const flipS = !!start && start.s > (box.s0 + box.s1) / 2
+  // new stamps come after any the building already has (not this area's own)
+  const inBuilding = objects.filter(o => isRack(o) && o.parentId === fp.id && !(areaId && o.areaId === areaId))
+  const rowBase = Math.max(0, ...inBuilding.map(o => o.rowIndex || 0))
+  const secBase = Math.max(0, ...inBuilding.map(o => o.genSection || 0))
 
-  // new stamps come after any the building already has
-  const inBuilding = objects.filter(o => isRack(o) && o.parentId === fp.id)
-  let rowBase = Math.max(0, ...inBuilding.map(o => o.rowIndex || 0))
-  let secBase = Math.max(0, ...inBuilding.map(o => o.genSection || 0))
+  // ── across the rows ──
+  // the first box's extent: nothing kept clear at a wall or the box edge, an aisle off an existing rack
+  const clear = (kind) => (kind === 'rack' ? aisleFt : 0)
+  const sLo = Math.min(...rects.map(q => q.s0 + clear(q.k0))), sHi = Math.max(...rects.map(q => q.s1 - clear(q.k1)))
+  const dirS = flipS ? -1 : 1, anchorS = flipS ? sHi : sLo
+  const singleFt = depthIn / 12, flueFt = flueIn / 12, pairFt = (2 * depthIn + flueIn) / 12
+  const bandsOver = (originS, len, dir) => {
+    const sg = walkGrid(stackLines, originS, len, dir)
+    return rowBands(len, { rackType, depthIn, aisleFt, flueIn, gridYFt: sg.pitch, travelFt, gridOffsetFt: sg.offset, gridMaxFt: sg.max, colSizeIn, wallClearFt: 0 })
+  }
+  const W = sHi - sLo
+  let core = W > EPS ? bandsOver(anchorS, W, dirS) : []
+  // too narrow for both edge rows and an aisle: the start edge's row alone
+  if (core.length === 2 && core[1].yFt - (core[0].yFt + core[0].depthFt) < aisleFt - 1e-6) core = [core[0]]
+  if (!core.length && W >= singleFt - 1e-9) core = [{ type: 'rack_row', yFt: 0, depthFt: singleFt }]
+  if (!core.length) return null
+  // rows in walk coordinates (t: 0 at the start edge, growing into the area)
+  const walkRows = core.map(b => ({ t: b.yFt, d: b.depthFt, type: b.type, flueIn: b.flueIn ?? flueIn }))
+  // the start edge's single is half a pair: its other half lies behind the edge
+  const pairOf = (t) => ({ t, d: pairFt, type: rackType, flueIn })
+  walkRows[0] = pairOf(walkRows[0].t - flueFt - singleFt)
+  // the far edge's single likewise, its other half past the far edge
+  const lastSingle = core.length > 1 && core[core.length - 1].type === 'rack_row'
+  const lastEnd = core[core.length - 1].yFt + core[core.length - 1].depthFt
+  if (lastSingle) walkRows[walkRows.length - 1] = pairOf(walkRows[walkRows.length - 1].t)
+  const toS = (t, d) => (dirS > 0 ? anchorS + t : anchorS - t - d)
+  /* past the far edge: aisle, pair … — Generate's walk again from the inner face of the last
+     pair's far half (its first band is that half, already a row) */
+  const farOrigin = lastSingle ? lastEnd + flueFt : lastEnd - singleFt
+  const farLen = (dirS > 0 ? ps1 - toS(farOrigin, 0) : toS(farOrigin, 0) - ps0)
+  const beyond = farLen > singleFt ? bandsOver(toS(farOrigin, 0), farLen, dirS).slice(1).map(b => ({ t: farOrigin + b.yFt, d: b.depthFt, type: b.type, flueIn: b.flueIn ?? flueIn })) : []
+  // behind the start edge, the same walk the other way from the inner face of the first pair's hidden half
+  const backOrigin = -flueFt                                       // walk t of that face
+  const backLen = (dirS > 0 ? toS(backOrigin, 0) - ps0 : ps1 - toS(backOrigin, 0))
+  const behind = backLen > singleFt ? bandsOver(toS(backOrigin, 0), backLen, -dirS).slice(1).map(b => ({ t: backOrigin - b.yFt - b.depthFt, d: b.depthFt, type: b.type, flueIn: b.flueIn ?? flueIn })) : []
+  const units = [...walkRows, ...beyond, ...behind].map((u, i) => ({ s0: toS(u.t, u.d), d: u.d, type: u.type, flueIn: u.flueIn, row: rowBase + i + 1 }))
 
-  // what each side keeps clear: nothing at a wall or the box edge; an aisle off an existing rack; half a cross-aisle at a join
-  const sideClear = (kind) => (kind === 'rack' ? aisleFt : kind === 'join' ? crossAisleFt / 2 : 0)
-  const singleFt = depthIn / 12
-  const templ = Array.isArray(runTemplate) && runTemplate.length ? runTemplate : null
-  /* Lined up with existing rows, the region is cut ACROSS the rows instead (fillRects with the
-     axes swapped): every rectangle then has one run interval for all its rows, so a row is only
-     cut short where something is really in its way — a zone off to one side never shortens rows
-     beside it. A join between two such rectangles is half an aisle each side (rows face it). */
-  const work = templ
-    ? fillRects(objects, fp, boxPx, { orientation: vert ? 'horizontal' : 'vertical', gridSize }).rects
-      .map(q => ({ s0: q.r0, s1: q.r1, k0: q.e0, k1: q.e1, r0: q.s0, r1: q.s1, e0: q.k0, e1: q.k1 }))
-    : rects
-  const stackClear = (kind) => (templ && kind === 'join' ? aisleFt / 2 : sideClear(kind))
+  // ── along the rows ──
+  const rLo = Math.min(...rects.map(q => q.r0 + clear(q.e0))), rHi = Math.max(...rects.map(q => q.r1 - clear(q.e1)))
+  const len = rHi - rLo
+  if (!(len > EPS)) return null
+  const rg = walkGrid(runLines, flipR ? rHi : rLo, len, flipR ? -1 : 1)
+  const { segments } = rowSegments(len, { crossAisleFt, endClearFt: 0, beamIn, upIn, runGridFt: rg.pitch, runGridOffsetFt: rg.offset, runGridMaxFt: rg.max, maxRunFt: set.maxRunFt })
+  if (!segments.length) return null
+  const pitch = (upIn + beamIn) / 12
+  const runLen = (n) => (upIn * (n + 1) + n * beamIn) / 12
+  // walk order: from the start edge in. Each piece kept as { a (its start-edge end), n }, in walk distance
+  const walkPieces = segments.map(seg => ({ a: seg.xFt, n: seg.bays }))
+  const maxBays = Number.isFinite(set.maxRunFt) ? Math.max(1, Math.floor((set.maxRunFt * 12 - upIn) / (beamIn + upIn))) : Infinity
+  const toR = (a, n) => (flipR ? rHi - a - runLen(n) : rLo + a)          // a piece's low-end run position
+  const fwdLen = (flipR ? rHi - pr0 : pr1 - rLo), backRun = (flipR ? pr1 - rHi : rLo - pr0)
+  const extra = []
+  /* past the far end: the last run carries on bay by bay up to the max run, then a cross-aisle
+     and whole max-length runs */
+  {
+    const last = walkPieces[walkPieces.length - 1]
+    const room = Number.isFinite(maxBays) ? maxBays - last.n : Math.ceil((fwdLen - last.a - runLen(last.n)) / pitch)
+    if (room > 0) last.n += room
+    let at = last.a + runLen(last.n) + crossAisleFt
+    const n = Number.isFinite(maxBays) ? maxBays : Math.ceil(fwdLen / pitch)
+    while (at < fwdLen) { extra.push({ a: at, n }); at += runLen(n) + crossAisleFt }
+  }
+  /* behind the start edge, the same the other way: the first run grows back toward it (its own
+     uprights where they were) — a lone run already grew forward to the max — then a cross-aisle
+     and whole runs */
+  const back = []
+  {
+    const first = walkPieces[0]
+    const room = Number.isFinite(maxBays) ? maxBays - first.n : Math.ceil(backRun / pitch)
+    if (room > 0) { first.a -= room * pitch; first.n += room }
+    const n = Number.isFinite(maxBays) ? maxBays : Math.ceil(backRun / pitch)
+    let end = first.a - crossAisleFt
+    while (end > -backRun) { back.push({ a: end - runLen(n), n }); end -= runLen(n) + crossAisleFt }
+  }
+  const pieces = [...walkPieces, ...extra, ...back].map((p, i) => ({ r0: toR(p.a, p.n), n: p.n, sec: secBase + i + 1 }))
+
+  const pattern = {
+    vert, units, pieces, beamIn, upIn, depthIn, flueIn, aisleFt,
+    palletWIn: P.palletWIn, palletDIn: P.palletDIn, levels: set.levels,
+  }
+  return { pattern, rects, fp }
+}
+
+/** The racks a racking area's box shows: its pattern (areaPattern) clipped to
+ *  the box — whole bays, rows wholly inside. A pair the edge cuts so only one
+ *  half fits shows that half as a single row; nothing else is ever added at an
+ *  edge. Clipped to the building's inner wall face and to zones the same way;
+ *  every rack in `objects` is an obstacle with an aisle kept off it all round;
+ *  `blocked` (world px rects) are kept clear with nothing added (racks removed
+ *  from the area by hand). Returns { fp, racks, aisles, rows, positions }. */
+export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = nanoid, areaId = null, fp = null, blocked = [] } = {}) {
+  const empty = { fp: null, racks: [], aisles: [], rows: 0, positions: 0 }
+  fp = fp || buildingForBox(objects, boxPx)
+  if (!fp || !pattern || !(boxPx.w > 0) || !(boxPx.h > 0)) return empty
+  const { vert, beamIn, upIn, depthIn, flueIn, aisleFt } = pattern
+  const box = rsRect(vert, gridSize, boxPx)
+  const poly = innerOutline(fp, gridSize).map(rsOf(vert, gridSize))
+  const grow = (q, by) => ({ r0: q.r0 - by, r1: q.r1 + by, s0: q.s0 - by, s1: q.s1 + by })
+  const blockers = [
+    ...objects.filter(o => isRack(o) && o.width > 0 && o.height > 0).map(o => { const f = rackFootprint(o); return grow(rsRect(vert, gridSize, { x: f.x, y: f.y, w: f.w, h: f.h }), aisleFt) }),
+    ...objects.filter(isZone).map(o => rsRect(vert, gridSize, { x: o.x, y: o.y, w: o.width, h: o.height })),
+    ...blocked.map(b => rsRect(vert, gridSize, b)),
+  ].filter(q => q.r1 > box.r0 && q.r0 < box.r1 && q.s1 > box.s0 && q.s0 < box.s1)
+  const polyR = [...new Set(poly.map(p => p.r))].sort((a, b) => a - b)
+  /** Whether the inner outline holds all of [sa, sb] at run position r. */
+  const holds = (r, sa, sb) => {
+    const out = []
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], c = poly[(i + 1) % poly.length]
+      if (Math.abs(a.s - c.s) > EPS) continue
+      if (r > Math.min(a.r, c.r) + EPS && r < Math.max(a.r, c.r) - EPS) out.push(a.s)
+    }
+    out.sort((p, q) => p - q)
+    for (let i = 0; i + 1 < out.length; i += 2) if (out[i] <= sa + EPS && out[i + 1] >= sb - EPS) return true
+    return false
+  }
+  const subtract = (ivs, a, c) => ivs.flatMap(([x, y]) => (c <= x || a >= y ? [[x, y]] : [[x, Math.min(y, a)], [Math.max(x, c), y]].filter(([p, q]) => q - p > EPS)))
+  /** The run intervals where a row across [sa, sb] is wholly clear. */
+  const freeRun = (sa, sb) => {
+    if (sa < box.s0 - EPS || sb > box.s1 + EPS) return []
+    const cuts = [box.r0, ...polyR.filter(r => r > box.r0 && r < box.r1), box.r1]
+    let ivs = []
+    for (let i = 0; i + 1 < cuts.length; i++) {
+      const a = cuts[i], c = cuts[i + 1]
+      if (c - a < EPS || !holds((a + c) / 2, sa, sb)) continue
+      if (ivs.length && Math.abs(ivs[ivs.length - 1][1] - a) < EPS) ivs[ivs.length - 1][1] = c
+      else ivs.push([a, c])
+    }
+    for (const q of blockers) if (q.s1 > sa + EPS && q.s0 < sb - EPS) ivs = subtract(ivs, q.r0, q.r1)
+    return ivs
+  }
+  const pitch = (upIn + beamIn) / 12, bayFt = (2 * upIn + beamIn) / 12
   const placements = []
-  let rows = 0
-  for (const q of work) {
-    // stack: walked from the drag's side
-    const [kNear, kFar] = flipS ? [q.k1, q.k0] : [q.k0, q.k1]
-    const sNear = stackClear(kNear), sFar = stackClear(kFar)
-    const W = q.s1 - q.s0 - sNear - sFar
-    const sg = walkGrid(stackLines, flipS ? q.s1 - sNear : q.s0 + sNear, W, flipS ? -1 : 1)
-    let bands = rowBands(W, { rackType, depthIn, aisleFt, flueIn, gridYFt: sg.pitch, travelFt, gridOffsetFt: sg.offset, gridMaxFt: sg.max, colSizeIn, wallClearFt: 0 })
-    // too narrow for both edge rows and an aisle: the start edge's row alone (a single, if a pair doesn't fit)
-    if (bands.length === 2 && bands[1].yFt - (bands[0].yFt + bands[0].depthFt) < aisleFt - 1e-6) bands = [bands[0]]
-    if (!bands.length && W >= singleFt - 1e-9) bands = [{ type: 'rack_row', yFt: 0, depthFt: singleFt }]
-    // run: the pieces a row gets — { r0 (run start, ft), beams, upIn, genSection }
-    let fresh = 0
-    const freshSec = new Map()                                   // a fresh piece's section, the same in every row
-    /* a fresh run walk of [a, a + len] into `out` (anchored at `fromHi` ? its high end : its low end) */
-    const walk = (out, a, len, fromHi) => {
-      const rg = walkGrid(runLines, fromHi ? a + len : a, len, fromHi ? -1 : 1)
-      const { segments } = rowSegments(len, { crossAisleFt, endClearFt: 0, beamIn, upIn, runGridFt: rg.pitch, runGridOffsetFt: rg.offset, runGridMaxFt: rg.max, maxRunFt: set.maxRunFt })
-      for (const seg of segments) {
-        const runLen = (upIn * (seg.bays + 1) + seg.bays * beamIn) / 12
-        const r0 = fromHi ? a + len - seg.xFt - runLen : a + seg.xFt
-        const k = Math.round(r0 * 1000)
-        if (!freshSec.has(k)) freshSec.set(k, secBase + (++fresh))
-        out.push({ r0, beams: Array(seg.bays).fill(beamIn), upIn, genSection: freshSec.get(k) })
-      }
-    }
-    /* The pieces every row of this rectangle gets. Lined up with the template: its pieces cut to
-       their whole bays inside the run interval, a fresh walk only where none of them reaches;
-       without one: the rectangle's own run walk. */
-    const piecesFor = () => {
-      const pieces = []
-      const lo = q.r0 + sideClear(q.e0), hi = q.r1 - sideClear(q.e1)
-      if (!templ) { walk(pieces, lo, hi - lo, flipR); return pieces }
-      // line up with the template: each piece cut to its whole bays inside [lo, hi]
-      for (const t of templ) {
-        const u = t.upIn ?? upIn
-        let at = t.r0, best = null, cur = null
-        t.beams.forEach((bIn, i) => {
-          const s0 = at, s1 = at + (2 * u + bIn) / 12
-          at += (u + bIn) / 12
-          if (s0 >= lo - 1e-6 && s1 <= hi + 1e-6) { cur = cur ? { ...cur, to: i } : { from: i, to: i, r0: s0 }; if (!best || cur.to - cur.from > best.to - best.from) best = cur }
-          else cur = null
-        })
-        if (best) pieces.push({ r0: best.r0, beams: t.beams.slice(best.from, best.to + 1), upIn: u, genSection: t.genSection ?? null })
-      }
-      // a stretch none of them reaches (a cross-aisle clear of them): walked fresh
-      let free = [[lo, hi]]
-      for (const p of pieces) {
-        const p1 = p.r0 + (p.upIn * (p.beams.length + 1) + p.beams.reduce((x, y) => x + y, 0)) / 12
-        free = free.flatMap(([a, c]) => [[a, Math.min(c, p.r0 - crossAisleFt)], [Math.max(a, p1 + crossAisleFt), c]].filter(([x, y]) => y - x >= (2 * upIn + beamIn) / 12 - 1e-9))
-      }
-      for (const [a, c] of free) walk(pieces, a, c - a, false)
-      for (const p of pieces) if (p.genSection == null) { const k = 't' + Math.round(p.r0 * 1000); if (!freshSec.has(k)) freshSec.set(k, secBase + (++fresh)); p.genSection = freshSec.get(k) }
-      return pieces
-    }
-    const pieces = piecesFor()
-    if (!bands.length || !pieces.length) continue
-    bands.forEach((band, bi) => {
-      const sPos = flipS ? q.s1 - sNear - band.yFt - band.depthFt : q.s0 + sNear + band.yFt
-      pieces.forEach((pc) => {
-        const runLen = (pc.upIn * (pc.beams.length + 1) + pc.beams.reduce((x, y) => x + y, 0)) / 12
-        const rPos = pc.r0
-        const at = vert
-          ? { xFt: sPos + band.depthFt / 2 - runLen / 2, yFt: rPos + runLen / 2 - band.depthFt / 2, angle: 90 }
-          : { xFt: rPos, yFt: sPos, angle: 0 }
-        placements.push({
-          type: band.type, ...at,
-          bays: pc.beams.length, beams: pc.beams, beamIn: pc.beams[0], depthIn, flueIn: band.flueIn ?? flueIn, flueBaseIn: flueIn, levels: set.levels, palletWIn,
-          palletDIn: spec.palletDIn, uprightWidthIn: pc.upIn,
-          rowIndex: rowBase + bi + 1, genSection: pc.genSection,
-        })
+  const used = new Set()
+  /** Each pattern piece's whole bays inside the interval [a, c], placed across [sa, sa + depthFt]. */
+  const place = (unit, type, sa, depthFt, ivs) => {
+    for (const [a, c] of ivs) for (const pc of pattern.pieces) {
+      const kLo = Math.max(0, Math.ceil((a - pc.r0) / pitch - 1e-9)), kHi = Math.min(pc.n - 1, Math.floor((c - pc.r0 - bayFt) / pitch + 1e-9))
+      if (kHi < kLo) continue
+      const n = kHi - kLo + 1, r0 = pc.r0 + kLo * pitch, len = (upIn * (n + 1) + n * beamIn) / 12
+      const at = vert
+        ? { xFt: sa + depthFt / 2 - len / 2, yFt: r0 + len / 2 - depthFt / 2, angle: 90 }
+        : { xFt: r0, yFt: sa, angle: 0 }
+      const beams = Array(n).fill(beamIn)
+      placements.push({
+        type, ...at, bays: n, beams, beamIn, depthIn, flueIn: type === 'rack_double_row' ? unit.flueIn : flueIn, flueBaseIn: flueIn,
+        levels: pattern.levels, palletWIn: pattern.palletWIn, palletDIn: pattern.palletDIn, uprightWidthIn: upIn,
+        rowIndex: unit.row, genSection: pc.sec,
       })
-    })
-    rows += bands.length
-    rowBase += bands.length
-    secBase += fresh
+      used.add(unit.row)
+    }
+  }
+  const singleFt = depthIn / 12
+  for (const u of pattern.units) {
+    if (u.s0 + u.d < box.s0 - EPS || u.s0 > box.s1 + EPS) continue
+    if (u.type !== 'rack_double_row') { place(u, u.type, u.s0, u.d, freeRun(u.s0, u.s0 + u.d)); continue }
+    // the pair where all of it fits; elsewhere either half that fits on its own, as a single row
+    const pair = freeRun(u.s0, u.s0 + u.d)
+    place(u, 'rack_double_row', u.s0, u.d, pair)
+    let lo = freeRun(u.s0, u.s0 + singleFt), hi = freeRun(u.s0 + u.d - singleFt, u.s0 + u.d)
+    for (const [a, c] of pair) { lo = subtract(lo, a, c); hi = subtract(hi, a, c) }
+    place(u, 'rack_row', u.s0, singleFt, lo)
+    place(u, 'rack_row', u.s0 + u.d - singleFt, singleFt, hi)
   }
   // ids first: the aisles between the new rows refer to them
   const racks = placements.map(p => ({ ...placementToObject(p), id: newId(), ...(areaId ? { areaId } : {}) }))
@@ -357,5 +445,17 @@ export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules =
   const aisles = aisleObjectsForRacks(racks).map(o => ({ ...o, id: o.id || newId() }))
   const withParent = parentGenerated([...racks, ...aisles], fp.id).map(o => ({ ...o, layerId: layerForType(o.type) }))
   const positions = racks.reduce((t, o) => t + (getRackCapacity(o)?.total || 0), 0)
-  return { fp, racks: withParent.filter(isRack), aisles: withParent.filter(o => o.type === 'aisle'), rows, positions, rects }
+  return { fp, racks: withParent.filter(isRack), aisles: withParent.filter(o => o.type === 'aisle'), rows: used.size, positions }
+}
+
+/** Plan a fill of `boxPx` (world px) with `settings`: its pattern (areaPattern,
+ *  anchored at `from`, where the drag started) clipped to the box
+ *  (patternFill). The racks and aisles (world px, stamped, parented to the
+ *  building), how many rows and pallet positions, the rectangles of the
+ *  region, and the pattern. */
+export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, newId = nanoid, from = null, areaId = null } = {}) {
+  const made = areaPattern(objects, boxPx, settings, { gridSize, rules, from, areaId })
+  if (!made) return { fp: null, racks: [], aisles: [], rows: 0, positions: 0, rects: [], pattern: null }
+  const plan = patternFill(objects, boxPx, made.pattern, { gridSize, newId, areaId, fp: made.fp })
+  return { ...plan, rects: made.rects, pattern: made.pattern }
 }

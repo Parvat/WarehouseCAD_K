@@ -1,10 +1,12 @@
 // Area FR — "Fill racking": drag a box over part of a building, and on release
 // it fills with racking by Generate's own logic (generate/fillRacking.js,
 // utils/fillTool.js): rowBands / rowSegments, tight forklift aisles, columns,
-// cross-aisles by max run. The box IS the racking area: clipped to the walls'
-// inner face (L, T), the edge rows flush on the box edges and ALWAYS single —
-// wall or open floor — the rows between back-to-back, no aisle added there; existing racks are
-// obstacles (an aisle off); rows stamped like Generate; one undo step.
+// cross-aisles by max run. The box IS the racking area, a window on one
+// pattern walked from the drag's start edges: clipped to the walls' inner face;
+// on a rectangle the edge rows flush on the box edges and single — wall or open
+// floor — the rows between back-to-back, no aisle added there; on an L / T the
+// rows run straight through the elbow, a pair a wall cuts shown as its half;
+// existing racks are obstacles (an aisle off); rows stamped like Generate; one undo step.
 // Real store, the tool's own start / move / commit, the app's keepers
 // installed; both orientations; a rectangle, an L and a T.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -141,29 +143,44 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it.each([['fp_l', 300, 200], ['fp_t', 360, 240]])('FR-shape: filling the whole of a %s gives single rows along every wall the rows face (the inside-corner walls included), nothing outside the outline, no overlaps, and Check layout finds nothing', (type, w, h) => {
+  it.each([['fp_l', 300, 200], ['fp_t', 360, 240]])('FR-shape: filling the whole of a %s lays ONE pattern over it — every row runs straight through the elbow on its one place across, the start wall\'s row single and flush on it, a single elsewhere only where its pair is cut by a wall; nothing outside the outline, no overlaps, and Check layout finds nothing', (type, w, h) => {
     building(type, w, h)
     const { n, plan } = fill(bbox(outline()))
     expect(n).toBeGreaterThan(10)
     expect(plan.rects.length).toBeGreaterThan(1)
     expectInside()
     noOverlaps()
-    const hits = wallRows()
-    // the inside walls the rows face: parallel edges that are not on the bounding box
-    const pts = outline(), bb = bbox(pts)
-    const inner = pts.map((a, i) => [a, pts[(i + 1) % pts.length], i])
-      .filter(([a, b]) => (vert ? a.x === b.x : a.y === b.y) && ![vert ? bb.x : bb.y, vert ? bb.x + bb.w : bb.y + bb.h].includes(vert ? a.x : a.y))
-    expect(inner.length).toBeGreaterThan(0)
-    for (const [, , i] of inner) expect(hits[i] || 0, `single rows along inside wall ${i}`).toBeGreaterThan(0)
-    // each rectangle of the region: its first and last rows are single, flush on its edges
-    for (const q of plan.rects) {
-      const mine = racks().map(r => ({ r, f: m.rackFootprint(r) })).map(({ r, f }) => ({ r, rs: (vert ? f.y + f.h / 2 : f.x + f.w / 2) / GS, s0: (vert ? f.x : f.y) / GS, s1: (vert ? f.x + f.w : f.y + f.h) / GS }))
-        .filter(o => o.rs > q.r0 && o.rs < q.r1 && o.s0 >= q.s0 - 1e-6 && o.s1 <= q.s1 + 1e-6)
-      if (!mine.length) continue
-      const lo = Math.min(...mine.map(o => o.s0)), hi = Math.max(...mine.map(o => o.s1))
-      expect(lo).toBeCloseTo(q.s0, 4)
-      expect(hi).toBeCloseTo(q.s1, 4)
-      for (const o of mine) if (Math.abs(o.s0 - lo) < 1e-6 || Math.abs(o.s1 - hi) < 1e-6) expect(o.r.type, 'an edge row').toBe('rack_row')
+    const stackOf = (f) => (vert ? [f.x, f.x + f.w] : [f.y, f.y + f.h])
+    const runOf = (f) => (vert ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
+    // one row index, one place across: no row offset where the region turns a corner
+    const rows = new Map()
+    for (const r of racks()) {
+      const [s0, s1] = stackOf(m.rackFootprint(r)), at = rows.get(r.rowIndex) || []
+      at.push({ s0, s1, type: r.type }); rows.set(r.rowIndex, at)
+    }
+    for (const at of rows.values()) {
+      const pair = at.filter(q => q.type === 'rack_double_row')
+      for (const q of pair) { expect(q.s0).toBeCloseTo(pair[0].s0, 6); expect(q.s1).toBeCloseTo(pair[0].s1, 6) }
+      // a single is a half of that row's pair: flush with one of its faces
+      if (pair.length) for (const q of at.filter(x => x.type === 'rack_row')) expect(Math.abs(q.s0 - pair[0].s0) < 1e-6 || Math.abs(q.s1 - pair[0].s1) < 1e-6).toBe(true)
+    }
+    // the start wall (the drag began at the outline's top-left): its row single, flush on the inner face
+    const inner = m.FR.innerOutline(fpOf(), GS), face = Math.min(...inner.map(p => (vert ? p.x : p.y)))
+    const first = racks().filter(r => Math.abs(stackOf(m.rackFootprint(r))[0] - face) < 1e-3)
+    expect(first.length).toBeGreaterThan(0)
+    for (const r of first) expect(r.type).toBe('rack_row')
+    // a single row's other half, on its run, would cross a wall: its pair is cut
+    const depth = 42 / 12 * GS, pairD = (2 * 42 + 9) / 12 * GS
+    for (const r of racks().filter(o => o.type === 'rack_row')) {
+      const f = m.rackFootprint(r), [s0, s1] = stackOf(f), [r0, r1] = runOf(f)
+      const pair = (rows.get(r.rowIndex) || []).find(q => q.type === 'rack_double_row')
+      const lo = pair ? pair.s0 : (Math.abs(s0 - face) < 1e-3 ? s1 - pairD : null)
+      if (lo == null) continue
+      const o0 = Math.abs(s0 - lo) < 1e-3 ? lo + pairD - depth : lo
+      const other = vert ? { x: o0, y: r0, w: depth, h: r1 - r0 } : { x: r0, y: o0, w: r1 - r0, h: depth }
+      const corners = [[other.x + EPS, other.y + EPS], [other.x + other.w - EPS, other.y + EPS], [other.x + EPS, other.y + other.h - EPS], [other.x + other.w - EPS, other.y + other.h - EPS]]
+      const fits = corners.every(([x, y]) => pointIn(x, y, inner)) && !inner.some(p => p.x > other.x + EPS && p.x < other.x + other.w - EPS && p.y > other.y + EPS && p.y < other.y + other.h - EPS)
+      expect(fits, `single row ${r.rowIndex}: its other half crosses a wall`).toBe(false)
     }
     expect(check()).toEqual({ errors: [], warnings: [] })
   })

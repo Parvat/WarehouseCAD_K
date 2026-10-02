@@ -284,7 +284,7 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### RA — Racking areas and zones · `RA_rackingAreas.test.js` (37 tests)
+### RA — Racking areas and zones · `RA_rackingAreas.test.js` (61 tests)
 Code: `generate/rackingArea.js` (pure) and `utils/rackingAreaTool.js` (store,
 question). UI: `canvas2/AreaPrompt.jsx` and
 `RightPanel/panels/RackingAreaPanel.jsx`.
@@ -305,30 +305,44 @@ question). UI: `canvas2/AreaPrompt.jsx` and
 - Never marqueed or dragged as a body.
 - Four edge handles. The right panel shows its settings.
 
-**Extend and shrink** (on release of an edge drag)
-- The area's racks are trimmed to the bays wholly inside the new box
-  (`splitRackForBayDelete`). A row cut across its depth goes.
-- Each newly covered part is filled with the area's settings, by every Fill
-  racking rule. The area's own racks are obstacles there, so they stay
-  exactly as they were.
-- The app's own trim is not a hand edit (the record follows it).
+**The pattern: the box is a window on it.** When an area is first filled, its
+**pattern** is computed once (`fillRacking.js` `areaPattern`) and stored on the
+area (`area.pattern`, absolute feet along the area's run / stack axes):
+- **Across the rows (`units`):** Generate's own walk (`rowBands`, columns
+  included) over the first box from the drag-start edge. Its edge rows are
+  single there, and in the pattern each is one half of a back-to-back pair
+  whose other half lies just past the edge. Past both edges the walk carries
+  on (aisle, pair, aisle …), 200' beyond the building.
+- **Along the rows (`pieces`):** `rowSegments`' own walk over the first box,
+  cross-aisles included. Past it the end runs carry on bay by bay up to the
+  max rack run, then a cross-aisle and whole max-length runs. A lone run grows
+  forward, so past the start edge it gets a cross-aisle first.
+- Each unit carries its `rowIndex`, each piece its `genSection`.
 
-**Extending across the rows lines up.** A part that extends the area across
-its rows (above or below a horizontal area, left or right of a vertical one)
-takes the area's nearest row as a template: its pieces' run starts, uprights,
-bays and sections.
-- Every new row gets the same pieces, cut to their whole bays where they don't
-  fit, so a Match-bays pattern carries over.
-- Only a stretch none of them reaches is filled fresh, a cross-aisle clear of
-  them.
-- For this fill the region is cut **across** the rows (fillRects with the
-  axes swapped), so each rectangle has one run interval and a zone off to one
-  side never shortens the rows beside it. A join there is half an aisle each
-  side.
-- Each new piece keeps the section of the template piece it lines up with.
+The racks shown are the pattern clipped to the box (`patternFill`): whole
+bays, rows wholly inside. A pair the edge cuts, so only one half fits, shows
+that half as a single row; nothing else is ever added at an edge. Walls and
+zones clip it the same way (a pair an inside wall cuts shows its half). Every
+rack that isn't the area's own is an obstacle with an aisle kept off it all
+round.
 
-**Settings change:** rebuilds the whole area. Racks as placed are replaced;
-hand-edited racks stay, and the fill goes round them.
+**Extend and shrink** (on release of an edge drag): the box shows the
+pattern through its new edges.
+- A shrink drops what is now outside. An extend carries the same rows, pairs
+  and bays on: a double stays a double, the edge single becomes its pair where
+  the pair now fits, and no extra row appears.
+- Shrinking and extending back gives exactly the racks it had.
+- A rack the change doesn't touch (the same signature) stays the very same
+  object, id and all.
+- Hand-edited racks stay as they are (trimmed to their whole bays inside the
+  box) and the pattern goes round them. A rack removed by hand stays removed:
+  the pattern leaves its footprint empty.
+- An area saved before patterns gets one on its first resize, from its box
+  and anchor corner.
+
+**Settings change:** a new pattern from the new settings, anchored at the
+area's corner, shown through the box. Hand-edited racks stay, the pattern
+goes round them, and hand-removed racks stay removed.
 
 **Hand-edit warning:** "You've changed racks in this area. The new part will
 use the default settings; your changes stay as they are." [Continue]
@@ -372,23 +386,38 @@ joins the copy-to-sections set.
 | Test | Asserts |
 |---|---|
 | `RA-create` | the fill makes an area on Racking, parented, with the box, the direction and every rack stamped and recorded; no edits; one undo removes the area and its racks |
-| `RA-extend` | 240 × 120, a 40 × 40 office top-right, the area all but the top 40'; the top edge dragged to the wall: the strip beside the office fills; no rack overlaps the office; the strip's racking ends exactly on the office's left edge (0"), and in vertical the row against it is single; the old racks are unchanged; no errors; one undo |
+| `RA-extend` | 240 × 120, a 40 × 40 office top-right, the area all but the top 40'; the top edge dragged to the wall: the strip beside the office fills; no rack overlaps the office; the strip ends up to the office, never past it (within the pattern's next bay / row); every rack more than a bay from the old edge is the very same object; on the pattern, aisles full; no errors; one undo |
 | `RA-edits` | a rack moved by hand: the extend asks with the exact text; the area is back while asking; Cancel changes nothing (no history); Continue extends and the moved rack is unchanged; one undo |
-| `RA-shrink` ×2 | along the rows by 37' 5" (not whole bays): each crossing row is kept, fewer bays, ending within one bay (8' 3") of the new edge, beams still 96"; across the rows: crossing rows go; everything within the new box; no hand edits recorded; no errors; one undo |
+| `RA-shrink` ×2 | along the rows by 37' 5" (not whole bays): each crossing row is kept from the same start on the same uprights, fewer bays, ending within one bay (8' 3") of the new edge, beams still 96"; across the rows: crossing racks go (a pair keeps a half that still fits, as a single); everything within the new box; on the pattern, aisles full; no hand edits recorded; no errors; one undo |
 | `RA-rebuild` | beam → 108": every rack 108", the area remembers it, no errors, one undo; with a hand-moved rack: asked; Continue keeps it; the rest are 108"; no overlaps |
 | `RA-zone` | a staging zone added over racks: asked ("This staging covers N racks. …"), with the add taken back meanwhile (no history); Cancel leaves it unplaced; Continue places it, and no bay is left under it; one entry; no errors; one undo |
 | `RA-zone-move` | the office moved onto racks: asked; Continue trims them; moved onto clear floor: nothing asked |
 | `RA-mouse` | a box and an edge drag at mouse positions (top at 39.95', dragged 2.17' past the wall): Check layout finds nothing at all |
 | `RA-copy` | a shrink that trims rows puts nothing in the copy set and asks nothing |
-| `RA-align` | a washroom top-left; the area at mouse coordinates over the bottom / right part; its nearest row given 120" + 72" bays (asked, as a hand edit); extended across the rows past the wall: every new piece within the template's reach has the template's uprights exactly, some are whole copies, the 120" bay carries over; Check layout finds nothing at all; one undo |
-| `RA-align-shape` ×2 | an L and a T: the area over the bottom / right part extended across the rows to the far wall: the same alignment, every rack inside the walls, no errors |
+| `RA-align` | a washroom top-left; the area at mouse coordinates over the bottom / right part; its nearest row given 120" + 72" bays by hand; extended across the rows past the wall (asked, as a hand edit): every new rack within the placed row's reach has its uprights exactly, some are whole copies; the hand-edited row is unchanged and no new rack has a 120" bay (the pattern, not the hand edit); aisles full; Check layout finds nothing at all; one undo |
+| `RA-align-shape` ×2 | an L and a T: the area over the bottom / right part extended across the rows to the far wall: every new rack's uprights within the old row's reach are its uprights, some whole copies; every rack inside the walls, no errors |
 | `RA-precision` (once) | the app's own coordinates (horizontal): the extension's first aisle off the old rows at full width — Check layout finds nothing at all (it was 9e-6 px short: fillRects rounded its cuts) |
 | `RA-pdf` | the PDF (buildLayoutSVG) has the zone (its group, the tinted rectangle at its box, its name); with the Zones layer hidden, neither, and the racks still print |
 | `RA-delete` ×2 | Delete with the area selected: asked, the delete taken back (no history); Keep racks: the area gone, every rack kept without its stamp, no errors; Delete racks: the area, its racks and aisles gone, the building and zone kept; one entry; undo restores exactly |
 | `RA-shape` ×2 | an L (300 × 200) and a T (360 × 240) with a washroom: the area over the top part, extended to the whole building: every rack inside the walls' inner face, none in the washroom, > 8 racks, no errors |
+| `RA-window` ×3 | a rectangle, an L and a T (the area over the top-left, dragged from just past the corner at mouse coordinates): shrink the right edge, extend it back — the racks are exactly the fill's (type, position, size, bays, row, section; ids aside); the same for the bottom edge; every step on the pattern, aisles full, singles only where cut, Check layout finds nothing at all |
+| `RA-extend-right` ×3 | the right edge to past the wall: more bays; every rack there before is still covered by one across the same place (a double by a double); on the pattern; no single whose other half fits; Check layout finds nothing at all |
+| `RA-extend-down` ×3 | the bottom edge to past the wall: the same — no extra single rows, the old edge single becomes its pair where it fits |
+| `RA-cut-pair` ×3 | the far edge across the rows moved through a pair shown whole, past its near half: that row is single rows at the near half's place only; nothing past the edge; clean |
 
 All run horizontal and vertical. LY-assign now expects seven standard layers
 (Zones added).
+
+The pattern checks used throughout: **on the pattern**: every rack the area placed
+sits on a pattern row (its pair's place, or one half of it) and on whole bays of a pattern
+run, stamped with that row and run. **Aisles full**: any two racks side by side across
+are at least an aisle apart, so no single sits back-to-back with another row. **Singles only
+where cut**: a single's other half, on its run, is past the box, past a wall or on a zone.
+
+**Break-its:** resize filling each newly covered part fresh (the old rule): RA-window,
+RA-extend-right, RA-extend-down (all shapes, both orientations), RA-extend, RA-align and
+RA-align-shape fail (23). A cut pair dropped instead of showing its near half: RA-cut-pair
+fails (6).
 
 **Checked in the app (both orientations), with the real mouse and panel:**
 - Zones section → Office, placed and moved top-right.
@@ -424,6 +453,18 @@ All run horizontal and vertical. LY-assign now expects seven standard layers
 - **Found in the app:** the extension's first aisle was 9e-6 px under
   10' 6", because fillRects rounded its cut positions to 1e-6 ft. Cuts are now
   merged without being moved (RA-precision).
+- **The pattern model, in the app** (Playwright, real mouse: Fill racking drag,
+  the area picked on its outline, its edge handles dragged), on a rectangle
+  240 × 120, an L 300 × 200 and a T 360 × 240, horizontal and vertical:
+  - fill → shrink the right edge → drag it back: the racks are identical to the
+    fill on all six (the handle snaps the box back a few inches wider; the
+    racks are the same);
+  - extend right past the wall, then down past the wall: the pattern carries on,
+    the old edge single becomes a pair, no back-to-back singles;
+  - Check layout 0 errors / 0 warnings after every step on all six.
+  - A fill whose walk widened its last aisle to sit a single flush on the far
+    edge (a 14' 2" aisle on 240 × 120 horizontal) keeps that aisle when
+    extended: the pattern inside the first box is the first fill exactly.
 
 ### FR — Fill racking · `FR_fillRacking.test.js` (40 tests)
 A tool in the drawing toolbar ("Fill racking", paint bucket). While it is on,
@@ -434,22 +475,24 @@ part of a building, and on release it fills with racking by Generate's own walks
 (`rowBands` / `rowSegments`: tight forklift aisles, column seating, cross-aisles
 by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
 `canvas2/FillTool.jsx`.
-- **The box is the racking area.** It is clipped to the walls' **inner face**
-  (the outline inset by the wall thickness, as drawn; L, T, custom) and cut
-  into rectangles. Each side is a **wall**, **open** (the box edge), **rack**
-  (an existing rack on any part of it, or touching it) or a **join** (the
-  region carries on).
+- **The box is the racking area**, and a window on the area's **pattern** (area RA):
+  Generate's walk over the box from the edges **where the drag started**, in both axes,
+  clipped to the walls' **inner face** (the outline inset by the wall thickness, as
+  drawn; L, T, custom).
 - **Wall side:** the row is flush on the inner face (0"). There is no
-  wall-clearance inset, and this includes the inside corner of an L.
+  wall-clearance inset.
 - **Open side:** the row's outer face is exactly on the box edge (0"). No
   aisle is added.
-- **The first and last rows are always single**, whether their edge is a wall
-  or open floor. The rows between are back-to-back (`rowBands`' own walk).
-- **Join:** half a cross-aisle on each side.
-- The walk starts at the box edge **where the drag started**, in both axes,
-  and the row at the far edge is flush too. Along the run, a one-piece run
-  ends within a bay of the far edge, since bays are whole; a split run ends
-  flush.
+- **The first and last rows are single**, whether their edge is a wall
+  or open floor (the walk's own edge rows). The rows between are back-to-back
+  (`rowBands`' own walk).
+- **An L or a T:** one walk over the box's extent, so every row runs straight
+  through the elbow on one place across, and the run's bays and cross-aisles
+  are one grid too (no half cross-aisle at the elbow). An inside wall clips
+  the rows: a pair it cuts so only one half fits shows that half as a single;
+  a row there isn't otherwise moved to sit flush on it.
+- Along the run, a one-piece run ends within a bay of the far edge, since
+  bays are whole; a split run ends flush.
 - **Existing racks are obstacles**: never moved, never overlapped. The side
   next to one gets a forklift aisle, so its pick face stays reachable; this
   is the one aisle a fill adds.
@@ -468,7 +511,7 @@ by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
 | Test | Asserts |
 |---|---|
 | `FR-generate` (×2) | the whole of a rectangle, 240 × 120 and 1080 × 410: exactly Generate's walk over the same clear floor (the inner faces, no wall clearance) — racks (position, size, rotation, beams, rowIndex, genSection) and aisle count; the first and last rows and the run start flush on the inner faces; the wall rows single; every object has its own id |
-| `FR-shape` (×2) | the whole of an L (300 × 200) and a T (360 × 240): more than one rectangle; no rack outside the outline (every corner inside, no outline vertex inside a rack); no overlaps; every rack whose long side is within 3' of a wall is a single row, and each inside wall the rows face has some; Check layout: nothing at all |
+| `FR-shape` (×2) | the whole of an L (300 × 200) and a T (360 × 240): more than one rectangle in the region; no rack outside the outline (every corner inside, no outline vertex inside a rack); no overlaps; every row index has one place across (its doubles all at one stack position, its singles flush with one face of that pair); the start wall's row single and flush on it; every single's other half would cross a wall; Check layout: nothing at all |
 | `FR-arms` | an L's two arms filled separately: single rows along the inside-corner wall, nothing outside, no overlaps, the second fill's stamps after the first's, no errors |
 | `FR-edge-stack` (×6) | 300 × 200, a box from mid-building (open floor) to a far edge past the wall, exactly on its inner face, or 6" short of it; each dragged from the open edge and from the far edge. The first and last rows are single, their outer faces exactly on the box edges (0", within 0.001 px; past the wall: the inner face); every row between is back-to-back; nothing outside the box or the walls; no errors |
 | `FR-edge-run` (×2) | the same along the run: dragged from the open edge the racking starts exactly on it; dragged from the wall, exactly on the inner face; nothing past either; no errors |
@@ -513,8 +556,9 @@ All run horizontal and vertical.
   - fills of a rectangle, an L and a T: clean, with undo, redo and Esc
     working;
   - no console errors.
-- FR-shape also checks every rectangle of an L or T fill: its first and last
-  rows are single and flush on its edges.
+- FR-shape used to check every rectangle of an L or T fill (first and last
+  rows single and flush on its edges). Under the pattern model (area RA) it
+  checks one row grid through the elbow instead.
 - **Found by FR-existing:** a run end was called open only when the existing
   rack sat at the side's midpoint. A rack beside part of the side got half a
   cross-aisle (4' 6"–5' 3"). Now any rack on the side makes it open.
@@ -1489,7 +1533,7 @@ The rule lives in `rowSegments`, so Generate and Fill racking both follow it.
 | `CX-generate` ×6 | Generate, 100 ft across, 30 × 30 grid: a 72 ft run → 1 piece per row; 240 ft → 2; 1,080 ft → 8 (6 by length, one forced by the columns, as before) |
 | `CX-fill-rect` ×2 | Fill racking 240 × 120: 2 pieces per row horizontal, 1 vertical |
 | `CX-fill-T` ×2 | Fill racking a T 360 × 240: vertical, the 72 ft bar's rows are one piece; horizontal, the 126 ft stem's rows are one piece |
-| `CX-fill-L` ×2 | Fill racking an L 300 × 200: horizontal, the 90 ft stem is one piece and the 210 ft bar is split in two; vertical, the 140 ft stem above the bar and the 60 ft bar are one piece each |
+| `CX-fill-L` ×2 | Fill racking an L 300 × 200: horizontal, the 90 ft stem is one piece, and the bar's rows, running the whole 300 ft through the elbow (one pattern), are split once; vertical, the stem above the bar and the 60 ft bar are one piece each |
 
 All run horizontal and vertical.
 

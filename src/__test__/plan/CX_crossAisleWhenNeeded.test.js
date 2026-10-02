@@ -111,9 +111,9 @@ describe.each(['horizontal', 'vertical'])('CX — %s', (orientation) => {
     for (const k of rows) expect(k).toBe(1)
   })
 
-  it("CX-fill-L: Fill racking an L (300 × 200) — parts within 150' are one piece per row (horizontal: the 90' stem; vertical: the 140' stem above the bar and the 60' bar); a part past it is still split (horizontal: the 210' bar)", () => {
+  it("CX-fill-L: Fill racking an L (300 × 200) — parts within 150' are one piece per row (horizontal: the 90' stem; vertical: the 140' stem above the bar and the 60' bar); a part past it is still split (horizontal: the bar, its rows running the whole 300' through the elbow)", () => {
     const fp = (s().placeFpObject({ type: 'fp_l', widthFt: 300, heightFt: 200 }), fillAll())
-    const stemRight = fp.x + fp.width * 0.3, barTop = fp.y + fp.height * 0.7
+    const barTop = fp.y + fp.height * 0.7
     const above = (f) => f.y + f.h <= barTop + 1, inBar = (f) => f.y >= barTop - 1
     const one = vert ? [above, inBar] : [above]
     for (const part of one) {
@@ -122,7 +122,8 @@ describe.each(['horizontal', 'vertical'])('CX — %s', (orientation) => {
       for (const k of rows) expect(k).toBe(1)
     }
     if (!vert) {
-      const rows = piecesPerRow((f) => inBar(f) && f.x >= stemRight - 1)
+      // one area, one pattern: the bar's rows run on through the elbow, under the stem too — 300', split once
+      const rows = piecesPerRow(inBar)
       expect(rows.length).toBeGreaterThan(1)
       for (const k of rows) expect(k).toBe(2)
     }

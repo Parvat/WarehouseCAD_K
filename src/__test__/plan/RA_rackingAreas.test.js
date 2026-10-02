@@ -1,8 +1,11 @@
 // Area RA — racking areas and zones (generate/rackingArea.js,
 // utils/rackingAreaTool.js). A Fill racking box becomes a persistent racking
-// area; dragging its edge extends it (only the newly covered part is filled,
-// by every Fill racking rule) or shrinks it (racks trimmed to whole bays); a
-// settings change rebuilds it; hand edits are warned about first and survive.
+// area with a fixed PATTERN (its rows, pairs, bays and cross-aisles, computed
+// once from the drag-start edges); the box is a window on it. Dragging an edge
+// extends it (the same pattern carries on: doubles stay doubles, no extra edge
+// rows) or shrinks it (whole bays; a cut pair shows the half that fits), and
+// shrinking then extending back gives exactly the racks it had; a settings
+// change recomputes the pattern; hand edits are warned about first and survive.
 // Zones (office, staging, washroom, custom) are holes with wall edges for
 // every fill, and a zone placed over racks trims them after a question. Each
 // of these is one undo step. Real store with the app's keepers installed;
@@ -93,22 +96,27 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     expect(racks()).toHaveLength(0)
   })
 
-  it('RA-extend: dragging the top edge up to the wall fills the strip beside the office — up to the office and not into it (rows flush on it, the row against it single); the racks already there stay exactly as they were; Check layout clean; one undo', () => {
+  it('RA-extend: dragging the top edge up to the wall fills the strip beside the office — up to the office and not into it, the area\'s pattern carried on; every rack more than a bay from the old edge stays the very same object; Check layout clean; one undo', () => {
     const { fp, office, ob } = officeLayout()
     const before = doc(), oldRacks = JSON.parse(JSON.stringify(racks())), n0 = s().history.length
+    const oldTop = areaNow().y
     expect(resizeArea({ x: fp.x, y: fp.y, w: fp.width, h: fp.height })).toBe(true)
     expect(question()).toBeNull()
     expect(s().history.length).toBe(n0 + 1)
-    for (const r of oldRacks) expect(s().objects.find(o => o.id === r.id)).toEqual(r)
+    // a rack more than a bay from the old edge is untouched by the extend: the same object (a run that
+    // stopped short of the edge, where its next whole bay did not fit, carries on past it)
+    const away = oldRacks.filter(r => foot(r).y > oldTop + 99 / 12 * GS)
+    if (!vert) expect(away.length).toBeGreaterThan(4)
+    for (const r of away) expect(s().objects.find(o => o.id === r.id)).toEqual(r)
     const strip = racks().filter(r => foot(r).y < fp.y + 40 * GS - EPS)
     expect(strip.length).toBeGreaterThan(1)
     for (const r of racks()) expect(overlap(foot(r), ob)).toBe(false)
-    // up to the office: in vertical the rows run beside it and end flush on its edge; in horizontal the
-    // strip's rows line up with the row below (RA-align), cut to whole bays — within one bay of it, never past
+    // up to the office, never past it: the pattern's whole bays (horizontal) or rows (vertical) that fit
     const endGap = office.x - Math.max(...strip.map(r => foot(r).x + foot(r).w))
-    if (vert) expect(endGap).toBeCloseTo(0, 3)
-    else { expect(endGap).toBeGreaterThanOrEqual(-EPS); expect(endGap).toBeLessThan(99 / 12 * GS) }
-    if (vert) for (const r of strip) if (Math.abs(foot(r).x + foot(r).w - office.x) < EPS) expect(r.type).toBe('rack_row')
+    expect(endGap).toBeGreaterThanOrEqual(-EPS)
+    expect(endGap).toBeLessThan((vert ? (2 * 42 + 9) / 12 + 10.5 : 99 / 12) * GS)
+    expectOnPattern()
+    expectAisles()
     for (const r of strip) expect(r.areaId).toBe(areaNow().id)
     expect([areaNow().y, areaNow().height]).toEqual([fp.y, fp.height])
     expect(check().errors).toEqual([])
@@ -143,7 +151,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     expect(doc()).toEqual(before)
   })
 
-  it.each([['along the rows', 'run'], ['across the rows', 'stack']])('RA-shrink: shrinking %s — racks crossing the new edge are trimmed to the whole bays inside it (a row cut across its depth goes), nothing is left outside, bays keep their beams; one undo', (_, axis) => {
+  it.each([['along the rows', 'run'], ['across the rows', 'stack']])('RA-shrink: shrinking %s — racks crossing the new edge are trimmed to the whole bays inside it (a row cut across its depth goes — but a pair keeps a half that still fits, as a single row), nothing is left outside, bays keep their beams; one undo', (_, axis) => {
     const { fp } = officeLayout()
     const a = areaNow(), before = doc()
     // pull the far edge in by 37' 5" — not a whole number of bays
@@ -156,10 +164,13 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     expect(resizeArea(box)).toBe(true)
     for (const r of racks()) { expect(within(foot(r), box)).toBe(true); expect(r.beams.every(b => b === 96)).toBe(true) }
     if (axis === 'run') {
-      // trimmed to whole bays: each crossing row still reaches to within one bay (8' 3") of the new edge
+      // trimmed to whole bays: each crossing row still reaches to within one bay (8' 3") of the new edge,
+      // on the same uprights (the pattern's), from the same start
       for (const c of crossing) {
-        const kept = racks().filter(r => r.id === c.id)
+        const fc = foot(c), across = alongX ? fc.y : fc.x, start = alongX ? fc.x : fc.y
+        const kept = racks().filter(r => Math.abs((alongX ? foot(r).y : foot(r).x) - across) < EPS && Math.abs((alongX ? foot(r).x : foot(r).y) - start) < EPS)
         expect(kept).toHaveLength(1)
+        expect(kept[0].type).toBe(c.type)
         const f = foot(kept[0]), end = alongX ? f.x + f.w : f.y + f.h
         expect(edge - end).toBeGreaterThanOrEqual(-EPS)
         expect(edge - end).toBeLessThan(99 / 12 * GS)
@@ -168,6 +179,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     } else {
       for (const c of crossing) expect(racks().some(r => r.id === c.id)).toBe(false)
     }
+    expectOnPattern()
+    expectAisles()
     expect(m.RA.areaEdits(s().objects, areaNow()).count).toBe(0)       // the app's trim is not a hand edit
     expect(check().errors).toEqual([])
     s().undo()
@@ -263,19 +276,16 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     if (!resizeArea(box)) answer(true)                                   // a hand edit in the area: asked first
     return { template, added: racks().filter(r => !before.has(r.id)) }
   }
-  /** Every new row lines up with the template where the template reaches: each piece there has the
-   *  template's uprights (same positions), and a piece the template had whole keeps its exact start,
-   *  end and bays. A piece where the template doesn't reach (filled fresh) lies wholly outside its
-   *  run range — no offset piece among the aligned ones. */
+  /** Every new row lines up with the template where the template reaches: its uprights there are the
+   *  template's (same positions), and a piece the template had whole keeps its exact start, end and
+   *  bays. Past the template's reach a piece carries the pattern's own bays on. */
   const expectAligned = (template, added) => {
     const tUp = template.flatMap(uprights)
-    const h0 = Math.min(...template.map(t => runOf(t)[0])), h1 = Math.max(...template.map(t => runOf(t)[1]))
+    const h0 = Math.min(...template.map(t => runOf(t)[0])) / GS, h1 = Math.max(...template.map(t => runOf(t)[1])) / GS
     expect(added.length).toBeGreaterThan(1)
     let whole = 0
     for (const r of added) {
-      const [a0, a1] = runOf(r)
-      if (a1 <= h0 + EPS || a0 >= h1 - EPS) continue                   // fresh, beyond the template's reach
-      for (const u of uprights(r)) expect(tUp.some(t => Math.abs(t - u) < 1e-6), `upright at ${u.toFixed(3)}' lines up`).toBe(true)
+      for (const u of uprights(r)) if (u > h0 + 1e-6 && u < h1 - 1e-6) expect(tUp.some(t => Math.abs(t - u) < 1e-6), `upright at ${u.toFixed(3)}' lines up`).toBe(true)
       const [r0, r1] = runOf(r)
       const same = template.find(t => Math.abs(runOf(t)[0] - r0) < 1e-3 && Math.abs(runOf(t)[1] - r1) < 1e-3)
       if (same) { expect(r.beams).toEqual(same.beams); whole++ }
@@ -283,7 +293,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     expect(whole).toBeGreaterThan(0)
   }
 
-  it('RA-align: extending the area across its rows (up / to the left, to the wall) gives new rows that line up with the row beside them — same starts, ends, uprights and bays (a Match-bays pattern included), no offset gaps; Check layout clean; one undo', () => {
+  it('RA-align: extending the area across its rows (up / to the left, to the wall) gives new rows on the area\'s pattern — the same starts, ends, uprights and bays as the rows it placed; a row given its own bays by hand (Match bays) stays as it is and the pattern goes round it; Check layout clean; one undo', () => {
     s().placeFpObject({ type: 'fp_rect', widthFt: 240, heightFt: 120 })
     const fp = s().objects.find(o => o.type === 'fp_rect')
     // a washroom in the top-left corner, as placed from the left panel and dragged there
@@ -291,15 +301,19 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     // the area over the bottom (horizontal) / right (vertical) part — where a mouse puts it, not whole feet
     if (vert) drag({ x: fp.x + fp.width + 61.3, y: fp.y + fp.height + 58.9 }, { x: fp.x + 100.37 * GS, y: fp.y - 59.6 })
     else drag({ x: fp.x + 20.4, y: fp.y + fp.height + 61.7 }, { x: fp.x + fp.width + 58.3, y: fp.y + 50.37 * GS })
-    // give the nearest row a bay pattern of its own (120" then 72", the same length), as Match bays would leave it
+    // the row nearest the extension, as placed, then given a bay pattern of its own (120" then 72", the same length)
     const first = Math.min(...racks().map(stackOf))
-    const r = racks().find(o => Math.abs(stackOf(o) - first) < 1e-6)
+    const placedRow = racks().filter(o => Math.abs(stackOf(o) - first) < 1e-6).map(o => JSON.parse(JSON.stringify(o)))
+    const r = placedRow[0]
     s().commitObjectUpdate(r.id, { beams: r.beams.map((b, i) => (i === 1 ? 120 : i === 2 ? 72 : b)) })
+    const edited = JSON.parse(JSON.stringify(s().objects.find(o => o.id === r.id)))
     const before = doc()
-    const { template, added } = extendAcross(vert ? fp.x - 81.7 : fp.y - 79.3)
+    const { added } = extendAcross(vert ? fp.x - 81.7 : fp.y - 79.3)
     if (question()) answer(true)
-    expectAligned(template, added)
-    expect(added.some(o => o.beams.includes(120))).toBe(true)
+    expectAligned(placedRow, added)
+    expect(s().objects.find(o => o.id === r.id)).toEqual(edited)
+    expect(added.some(o => o.beams.includes(120))).toBe(false)
+    expectAisles()
     expect(check()).toEqual({ errors: [], warnings: [] })
     s().undo()
     expect(doc()).toEqual(before)
@@ -318,6 +332,141 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const pointIn = (px, py) => { let c = false; for (let i = 0, j = inner.length - 1; i < inner.length; j = i++) { const a = inner[i], b = inner[j]; if ((a.y > py) !== (b.y > py) && px < (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x) c = !c } return c }
     for (const o of racks()) { const f = foot(o); for (const [x, y] of [[f.x + 0.01, f.y + 0.01], [f.x + f.w - 0.01, f.y + f.h - 0.01]]) expect(pointIn(x, y)).toBe(true) }
     expect(check().errors).toEqual([])
+  })
+
+  /* ── The pattern: the area's box is a window on it ── */
+  const ftS = (f) => (vert ? [f.x, f.x + f.w] : [f.y, f.y + f.h]).map(v => v / GS)
+  const ftR = (f) => (vert ? [f.y, f.y + f.h] : [f.x, f.x + f.w]).map(v => v / GS)
+  /** Every rack of the area sits on its pattern: across, a pair's place (a double) or one half of it
+   *  (a single); along, whole bays of one of its runs; stamped with that row and run. */
+  const expectOnPattern = () => {
+    const a = areaNow(), p = a.pattern, single = p.depthIn / 12, pitch = (p.upIn + p.beamIn) / 12
+    expect(p).toBeTruthy()
+    for (const r of racks().filter(o => o.areaId === a.id && a.placed[o.id] === m.RA.rackSig(o))) {
+      const f = foot(r), [s0, s1] = ftS(f), [r0] = ftR(f)
+      const u = p.units.find(q => q.row === r.rowIndex)
+      expect(u, `row ${r.rowIndex} is a pattern row`).toBeTruthy()
+      const spots = u.type !== 'rack_double_row' ? [[u.s0, u.s0 + u.d]]
+        : r.type === 'rack_double_row' ? [[u.s0, u.s0 + u.d]] : [[u.s0, u.s0 + single], [u.s0 + u.d - single, u.s0 + u.d]]
+      expect(spots.some(([x, y]) => Math.abs(x - s0) < 1e-6 && Math.abs(y - s1) < 1e-6), `row ${r.rowIndex} on its place across`).toBe(true)
+      const pc = p.pieces.find(q => q.sec === r.genSection)
+      expect(pc, `section ${r.genSection} is a pattern run`).toBeTruthy()
+      const k = (r0 - pc.r0) / pitch
+      expect(Math.abs(k - Math.round(k)), `row ${r.rowIndex} on its run's uprights`).toBeLessThan(1e-6)
+      expect(Math.round(k) >= 0 && Math.round(k) + r.beams.length <= pc.n).toBe(true)
+    }
+  }
+  /** Never an extra row: any two racks side by side across (overlapping along) are at least an aisle
+   *  apart — no single row back-to-back with another row. */
+  const expectAisles = () => {
+    const aisleFt = m.FR.DEFAULT_FILL_SETTINGS.aisleFt
+    const all = racks().map(r => ({ r, s: ftS(foot(r)), q: ftR(foot(r)) }))
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+      const a = all[i], b = all[j]
+      if (Math.min(a.q[1], b.q[1]) - Math.max(a.q[0], b.q[0]) < 1e-3) continue
+      const gap = Math.max(b.s[0] - a.s[1], a.s[0] - b.s[1])
+      expect(gap, `${a.r.type} row ${a.r.rowIndex} and ${b.r.type} row ${b.r.rowIndex}: an aisle between`).toBeGreaterThan(aisleFt - 1e-6)
+    }
+  }
+  /** A single row only where its pair is cut: the other half, on the same run, does not fit — past the
+   *  box, past the walls, or on a zone. Doubles stay doubles. */
+  const expectSinglesCut = () => {
+    const a = areaNow(), box = { x: a.x, y: a.y, w: a.width, h: a.height }, single = a.pattern.depthIn / 12
+    const fp = s().objects.find(o => o.id === a.parentId), inner = m.FR.innerOutline(fp, GS)
+    const pin = (px, py) => { let c = false; for (let i = 0, j = inner.length - 1; i < inner.length; j = i++) { const p = inner[i], q = inner[j]; if ((p.y > py) !== (q.y > py) && px < (q.x - p.x) * (py - p.y) / (q.y - p.y) + p.x) c = !c } return c }
+    const zones = s().objects.filter(o => o.type.startsWith('zone_')).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height }))
+    for (const r of racks().filter(o => o.type === 'rack_row' && o.areaId === a.id)) {
+      const u = a.pattern.units.find(q => q.row === r.rowIndex)
+      if (u.type !== 'rack_double_row') continue
+      const [s0] = ftS(foot(r)), [r0, r1] = ftR(foot(r))
+      const o0 = Math.abs(s0 - u.s0) < 1e-6 ? u.s0 + u.d - single : u.s0                 // the other half, across
+      const other = vert ? { x: o0 * GS, y: r0 * GS, w: single * GS, h: (r1 - r0) * GS } : { x: r0 * GS, y: o0 * GS, w: (r1 - r0) * GS, h: single * GS }
+      const corners = [[other.x + 0.01, other.y + 0.01], [other.x + other.w - 0.01, other.y + 0.01], [other.x + 0.01, other.y + other.h - 0.01], [other.x + other.w - 0.01, other.y + other.h - 0.01]]
+      const fits = within(other, box) && corners.every(([x, y]) => pin(x, y))
+        && !inner.some(p => p.x > other.x + 0.01 && p.x < other.x + other.w - 0.01 && p.y > other.y + 0.01 && p.y < other.y + other.h - 0.01)
+        && !zones.some(z => overlap(z, other))
+      expect(fits, `single row ${r.rowIndex}: its other half doesn't fit`).toBe(false)
+    }
+  }
+  const rackKeys = () => racks().map(o => [o.type, Math.round(o.x * 1e4), Math.round(o.y * 1e4), Math.round(o.width * 1e4), Math.round(o.height * 1e4), o.rotation || 0, o.beams.join('/'), o.rowIndex, o.genSection, o.areaId].join(':')).sort()
+  const clean = () => { expect(check()).toEqual({ errors: [], warnings: [] }); expectOnPattern(); expectAisles(); expectSinglesCut() }
+  // [name, type, width, height, the area's share of each] — the area reaches into the L's bar and the T's stem
+  const SHAPES = [['rectangle', 'fp_rect', 240, 120, 0.55, 0.6], ['L', 'fp_l', 300, 200, 0.55, 0.8], ['T', 'fp_t', 360, 240, 0.55, 0.6]]
+  /** An area over the top-left of the building, dragged from its top-left corner (a little past the
+   *  walls, at mouse coordinates). */
+  const patternArea = (type, w, h, fw, fh) => {
+    s().placeFpObject({ type, widthFt: w, heightFt: h })
+    const fp = s().objects.find(o => o.type === type)
+    drag({ x: fp.x - 13.7, y: fp.y - 21.3 }, { x: fp.x + fp.width * fw + 7.1, y: fp.y + fp.height * fh + 3.3 })
+    expect(racks().length).toBeGreaterThan(4)
+    return fp
+  }
+  const boxNow = () => { const a = areaNow(); return { x: a.x, y: a.y, w: a.width, h: a.height } }
+  const bays = () => racks().reduce((t, r) => t + r.beams.length, 0)
+
+  it.each(SHAPES)('RA-window (%s): fill → shrink the right edge → extend it back gives exactly the racks it had (ids aside); the same for the bottom edge; every step on the pattern, clean', (_, type, w, h, fw, fh) => {
+    patternArea(type, w, h, fw, fh)
+    clean()
+    const original = rackKeys(), b0 = boxNow()
+    resizeArea({ ...b0, w: b0.w * 0.55 + 3.7 })
+    for (const r of racks()) expect(within(foot(r), boxNow())).toBe(true)
+    expect(racks().length).toBeGreaterThan(0)
+    clean()
+    resizeArea(b0)
+    expect(rackKeys()).toEqual(original)
+    clean()
+    resizeArea({ ...b0, h: b0.h * 0.5 + 5.3 })
+    for (const r of racks()) expect(within(foot(r), boxNow())).toBe(true)
+    clean()
+    resizeArea(b0)
+    expect(rackKeys()).toEqual(original)
+    clean()
+  })
+
+  /** Each rack of `before` is still there with every one of its bays: a rack across the same place
+   *  reaching over it along (an extend only adds) — a double stays a double; a single the extend gave
+   *  its other half to is now a double over it. */
+  const expectKept = (before) => {
+    for (const b of before) {
+      const fb = foot(b), [s0, s1] = ftS(fb), [r0, r1] = ftR(fb)
+      const over = racks().find(r => { const f = foot(r), [a0, a1] = ftS(f), [q0, q1] = ftR(f); return a0 <= s0 + 1e-6 && a1 >= s1 - 1e-6 && q0 <= r0 + 1e-6 && q1 >= r1 - 1e-6 })
+      expect(over, `${b.type} row ${b.rowIndex} kept`).toBeTruthy()
+      if (b.type === 'rack_double_row') expect(over.type, `double row ${b.rowIndex} stays a double`).toBe('rack_double_row')
+    }
+  }
+  it.each(SHAPES)('RA-extend-right (%s): extending the right edge to the wall carries the pattern on — every rack there stays (doubles stay doubles), the new part is the same rows and bays, no single where a pair fits; clean', (_, type, w, h, fw, fh) => {
+    const fp = patternArea(type, w, h, fw, fh)
+    const before = JSON.parse(JSON.stringify(racks())), n0 = bays()
+    const b0 = boxNow()
+    resizeArea({ ...b0, w: fp.x + fp.width + 17.9 - b0.x })
+    expect(bays()).toBeGreaterThan(n0)
+    expectKept(before)
+    clean()
+  })
+
+  it.each(SHAPES)('RA-extend-down (%s): extending the bottom edge to the wall carries the pattern on — no extra single rows, every rack there stays (the edge single becomes its pair where the pair now fits); clean', (_, type, w, h, fw, fh) => {
+    const fp = patternArea(type, w, h, fw, fh)
+    const before = JSON.parse(JSON.stringify(racks())), n0 = bays()
+    const b0 = boxNow()
+    resizeArea({ ...b0, h: fp.y + fp.height + 11.3 - b0.y })
+    expect(bays()).toBeGreaterThan(n0)
+    expectKept(before)
+    clean()
+  })
+
+  it.each(SHAPES)('RA-cut-pair (%s): an edge through a back-to-back pair, where only its near half fits, shows that half as a single row — nothing of the far half, nothing past the edge; clean', (_, type, w, h, fw, fh) => {
+    patternArea(type, w, h, fw, fh)
+    const a = areaNow(), p = a.pattern, single = p.depthIn / 12
+    // a pattern pair shown whole now, well inside: the far edge across the rows goes through its far half
+    const doubles = [...new Set(racks().filter(r => r.type === 'rack_double_row').map(r => r.rowIndex))]
+    const u = p.units.filter(q => doubles.includes(q.row)).sort((x, y) => x.s0 - y.s0)[Math.floor(doubles.length / 2)]
+    const edge = (u.s0 + single + 0.6) * GS                              // past the near half, into the flue / far half
+    resizeArea(vert ? { x: a.x, y: a.y, w: edge - a.x, h: a.height } : { x: a.x, y: a.y, w: a.width, h: edge - a.y })
+    const row = racks().filter(r => r.rowIndex === u.row)
+    expect(row.length).toBeGreaterThan(0)
+    for (const r of row) { expect(r.type).toBe('rack_row'); expect(ftS(foot(r))[0]).toBeCloseTo(u.s0, 6); expect(ftS(foot(r))[1]).toBeCloseTo(u.s0 + single, 6) }
+    for (const r of racks()) expect(ftS(foot(r))[1]).toBeLessThanOrEqual(edge / GS + 1e-6)
+    clean()
   })
 
   it('RA-pdf: zones are drawn in the PDF (a tinted rectangle with the name), and not when the Zones layer is hidden', async () => {

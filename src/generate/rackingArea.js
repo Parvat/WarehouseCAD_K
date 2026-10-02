@@ -2,30 +2,33 @@
 //
 // A RACKING AREA is what a Fill racking box becomes: a persistent object
 // (type 'racking_area') holding its box, its building (parentId), its Racking
-// settings, the corner the fill was anchored at, and — per rack it placed —
+// settings, the corner the fill was anchored at, its PATTERN (fillRacking.js
+// areaPattern: the rows across, the bays and cross-aisles along them, computed
+// once and reaching past the building both ways) and — per rack it placed —
 // that rack's signature as placed (`placed`). Racks it placed carry its id
 // (`areaId`). A rack whose signature no longer matches, one the area placed
 // that is gone, and a rack added inside the area by hand are HAND EDITS.
 //
-//   - Resize (an edge dragged): racks of the area that end up outside the new
-//     box are trimmed to the bays still wholly inside it (a row cut at the new
-//     edge keeps its whole bays; a row wholly outside goes); the newly covered
-//     part is filled with the area's settings by every Fill racking rule
-//     (generate/fillRacking.js) — the area's own racks are obstacles there, so
-//     they stay exactly as they are. A part that extends the area ACROSS its
-//     rows lines its new rows up with the nearest existing row: the same
-//     pieces, starts, uprights and bays (like Match bays), cut to what fits;
-//     only what they can't reach is filled fresh.
-//   - Rebuild (a settings change): the area's racks as placed are removed and
-//     the whole box filled again with the new settings; hand-edited racks stay
-//     where they are (the fill goes round them).
+// The box is a WINDOW on the pattern: the racks shown are the pattern clipped
+// to the box (whole bays, rows wholly inside; a pair the edge cuts to one half
+// shows that half as a single row; never an extra edge row), and to walls,
+// zones and racks that aren't the area's own.
+//   - Resize (an edge dragged): the box shows the pattern through its new
+//     edges — a shrink drops what is now outside, an extend carries the same
+//     rows, pairs and bays on, and shrinking then extending back gives exactly
+//     the racks it had. Racks the change doesn't touch stay the same objects.
+//   - Rebuild (a settings change): a new pattern from the new settings,
+//     anchored where the old one was, shown through the box.
+// Either way hand-edited racks stay as they are (a resize trims them to their
+// whole bays inside the box), the pattern goes round them, and a rack removed
+// by hand stays removed.
 //
 // A ZONE (`zone_*`: office, staging, washroom, custom area) is a rectangle
 // no racking may enter: Fill racking treats it as a hole with wall edges, and
 // racks under a zone that is placed, moved or resized over them are trimmed
 // to their bays outside it (clearZone).
 
-import { planFill, DEFAULT_FILL_SETTINGS, isZone } from './fillRacking'
+import { planFill, areaPattern, patternFill, DEFAULT_FILL_SETTINGS, isZone } from './fillRacking'
 import { rackFootprint } from './columnCheck'
 import { splitRackForBayDelete } from '../utils/baySplit'
 import { rebuildAisles } from '../utils/aisleRebuild'
@@ -45,7 +48,6 @@ export const ZONE_KINDS = [
   { type: 'zone_custom',   label: 'Custom area', w: 30, h: 30, color: '#64748b' },
 ]
 
-const EPS = 1e-6
 const r4 = (v) => Math.round(v * 1e4) / 1e4
 /** A rack as placed — what a hand edit changes. */
 export const rackSig = (o) => JSON.stringify([o.type, r4(o.x), r4(o.y), r4(o.width), r4(o.height), o.rotation || 0, o.beams || null, o.levels ?? null, o.uprightWidth ?? null, o.flueSpaceIn ?? null])
@@ -123,111 +125,96 @@ export function areaEdits(objects, area) {
   return { count: changed.length + removed.length + added.length, changed: changed.map(o => o.id), removed, added: added.map(o => o.id) }
 }
 
-/** The racks and aisles of a fill of `box`, stamped with `areaId`. */
-function fillPart(objects, box, settings, { gridSize, newId, areaId, from, runTemplate = null }) {
-  if (!(box.w > EPS) || !(box.h > EPS)) return null
-  const plan = planFill(objects, box, settings, { gridSize, newId, from, areaId, runTemplate })
-  return plan.racks.length ? plan : null
-}
-
-/** The row of area `areaId` nearest `side` ('lo' | 'hi' across the rows), as a
- *  run template for planFill: its pieces' run starts (ft), bays, uprights and
- *  sections. Null when the area has no rows of its direction. */
-function nearestRowTemplate(objects, areaId, vert, side, gridSize) {
-  const rows = new Map()
-  for (const o of objects) {
-    if (!isRack(o) || o.areaId !== areaId || !Array.isArray(o.beams)) continue
-    const f = rackFootprint(o)
-    if (!!f.rotated !== vert) continue
-    const s0 = (vert ? f.x : f.y) / gridSize
-    const k = Math.round(s0 * 1000)
-    if (!rows.has(k)) rows.set(k, [])
-    rows.get(k).push({ r0: (vert ? f.y : f.x) / gridSize, beams: o.beams, upIn: o.uprightWidth ?? 3, genSection: o.genSection ?? null })
-  }
-  if (!rows.size) return null
-  const keys = [...rows.keys()].sort((a, b) => a - b)
-  return rows.get(side === 'lo' ? keys[0] : keys[keys.length - 1]).sort((a, b) => a.r0 - b.r0)
-}
 /** The corner of `box` a fill anchored at `anchor` ({ x: 'l'|'r', y: 't'|'b' }) starts from. */
 const cornerOf = (box, anchor = { x: 'l', y: 't' }) => ({ x: anchor.x === 'r' ? box.x + box.w : box.x, y: anchor.y === 'b' ? box.y + box.h : box.y })
 
-/** A new racking area from a Fill racking box: the area object and the fill.
- *  Null when the box places nothing. */
+/** Where the racks removed from `area` by hand stood (world px boxes): the
+ *  pattern leaves them empty. */
+function removedBoxes(objects, area) {
+  const ids = new Set(objects.map(o => o.id))
+  return Object.entries(area.placed || {}).filter(([id]) => !ids.has(id)).map(([, sig]) => {
+    try {
+      const [type, x, y, width, height, rotation] = JSON.parse(sig)
+      const f = rackFootprint({ type, x, y, width, height, rotation })
+      return { x: f.x, y: f.y, w: f.w, h: f.h }
+    } catch { return null }
+  }).filter(Boolean)
+}
+
+/** The area's racks as placed (signature unchanged) — the ones its pattern owns. */
+const cleanRacks = (objects, area) => {
+  const placed = area.placed || {}
+  return objects.filter(o => isRack(o) && o.areaId === area.id && placed[o.id] === rackSig(o))
+}
+
+/** Show `area`'s pattern through `box` in `objects` (its clean racks already
+ *  taken out): the racks, reusing `clean` ones that come out exactly the same
+ *  (id and all), so a rack the change doesn't touch stays the very same rack.
+ *  `removed`: where racks removed by hand stood (left empty). */
+function showPattern(objects, box, pattern, area, clean, removed, { gridSize, newId }) {
+  const plan = patternFill(objects, box, pattern, { gridSize, newId, areaId: area.id, blocked: removed })
+  const bySig = new Map()
+  for (const r of clean) { const k = rackSig(r); if (!bySig.has(k)) bySig.set(k, []); bySig.get(k).push(r) }
+  return plan.racks.map(r => { const same = bySig.get(rackSig(r)); return same && same.length ? same.shift() : r })
+}
+
+/** A new racking area from a Fill racking box: the area object and the fill
+ *  (its pattern clipped to the box). Null when the box places nothing. */
 export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = nanoid, from = null } = {}) {
   const id = newId()
-  const plan = fillPart(objects, box, settings, { gridSize, newId, areaId: id, from })
-  if (!plan) return null
+  const plan = planFill(objects, box, settings, { gridSize, newId, from, areaId: id })
+  if (!plan.racks.length) return null
   const anchor = from ? { x: from.x > box.x + box.w / 2 ? 'r' : 'l', y: from.y > box.y + box.h / 2 ? 'b' : 't' } : { x: 'l', y: 't' }
   const area = {
     id, type: AREA_TYPE, label: 'Racking area', x: box.x, y: box.y, width: box.w, height: box.h, rotation: 0,
-    parentId: plan.fp.id, layerId: 'racking', settings: pickSettings(settings), anchor,
+    parentId: plan.fp.id, layerId: 'racking', settings: pickSettings(settings), anchor, pattern: plan.pattern,
     placed: Object.fromEntries(plan.racks.map(r => [r.id, rackSig(r)])),
   }
   return { area, plan, objects: [...objects, area, ...plan.racks, ...plan.aisles] }
 }
 
-/** The parts of `nb` not in `ob` (up to four rectangles), each with the side
- *  of the old box it grows from. */
-function newlyCovered(nb, ob) {
-  const x0 = Math.max(nb.x, ob.x), x1 = Math.min(nb.x + nb.w, ob.x + ob.w)
-  const y0 = Math.max(nb.y, ob.y), y1 = Math.min(nb.y + nb.h, ob.y + ob.h)
-  if (x1 <= x0 + EPS || y1 <= y0 + EPS) return [{ ...nb, side: null }]
-  const parts = [
-    { x: nb.x, y: nb.y, w: nb.w, h: y0 - nb.y, side: 'above' },
-    { x: nb.x, y: y1, w: nb.w, h: nb.y + nb.h - y1, side: 'below' },
-    { x: nb.x, y: y0, w: x0 - nb.x, h: y1 - y0, side: 'left' },
-    { x: x1, y: y0, w: nb.x + nb.w - x1, h: y1 - y0, side: 'right' },
-  ]
-  return parts.filter(p => p.w > EPS && p.h > EPS)
-}
-
-/** Resize area `areaId` to `box`: trim its racks to the new box (whole bays),
- *  fill what is newly covered. Returns the new objects. */
+/** Resize area `areaId` to `box`: the box is a window on the area's pattern,
+ *  so it shows exactly the pattern's racks inside it — a shrink drops what is
+ *  now outside, an extend carries the same rows, pairs and bays on, and
+ *  shrinking then extending back gives the racks it had. Hand-edited racks
+ *  stay as they are (trimmed to their whole bays inside the box); the pattern
+ *  goes round them, and leaves empty where a rack was removed by hand.
+ *  Returns the new objects. */
 export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = nanoid } = {}) {
   const area = objects.find(o => o.id === areaId)
   if (!area) return null
-  const old = boxOf(area)
-  const settings = areaSettings(area)
-  // shrink: the area's racks keep only the bays wholly inside the new box
-  const mine = objects.filter(o => isRack(o) && o.areaId === areaId).map(o => o.id)
-  const t = trimBays(objects, mine, (b) => !inside(b, box), gridSize, newId)
-  let next = carryPlaced(objects, t.objects, t.became)
-  // extend: each newly covered part filled on its own, anchored on the side it grows from
-  const ocx = old.x + old.w / 2, ocy = old.y + old.h / 2
-  const added = []
-  const vert = settings.orientation === 'vertical'
-  for (const part of newlyCovered(box, old)) {
-    const from = { x: Math.abs(part.x - ocx) <= Math.abs(part.x + part.w - ocx) ? part.x : part.x + part.w, y: Math.abs(part.y - ocy) <= Math.abs(part.y + part.h - ocy) ? part.y : part.y + part.h }
-    // across the rows (above/below a horizontal area, left/right of a vertical one): line up with the nearest row
-    const across = vert ? (part.side === 'left' || part.side === 'right') : (part.side === 'above' || part.side === 'below')
-    const runTemplate = across ? nearestRowTemplate(next, areaId, vert, part.side === 'above' || part.side === 'left' ? 'lo' : 'hi', gridSize) : null
-    const plan = fillPart(next, part, settings, { gridSize, newId, areaId, from, runTemplate })
-    if (!plan) continue
-    next = [...next, ...plan.racks, ...plan.aisles]
-    added.push(...plan.racks)
-  }
-  next = next.map(o => (o.id !== areaId ? o : {
-    ...o, x: box.x, y: box.y, width: box.w, height: box.h,
-    placed: { ...(o.placed || {}), ...Object.fromEntries(added.map(r => [r.id, rackSig(r)])) },
+  const clean = cleanRacks(objects, area), cleanIds = new Set(clean.map(o => o.id))
+  // hand-edited racks keep only their bays wholly inside the new box
+  const dirty = objects.filter(o => isRack(o) && o.areaId === areaId && !cleanIds.has(o.id)).map(o => o.id)
+  const t = trimBays(objects, dirty, (b) => !inside(b, box), gridSize, newId)
+  const kept = carryPlaced(objects, t.objects, t.became).filter(o => !cleanIds.has(o.id))
+  const now = kept.find(o => o.id === areaId)
+  // an area from before patterns: its pattern from the box it had, as it was anchored
+  const pattern = now.pattern || areaPattern(kept, boxOf(now), areaSettings(now), { gridSize, from: cornerOf(boxOf(now), now.anchor), areaId })?.pattern
+  const racks = pattern ? showPattern(kept, box, pattern, now, clean, removedBoxes(objects, area), { gridSize, newId }) : []
+  const keepPlaced = Object.fromEntries(Object.entries(now.placed || {}).filter(([id]) => !cleanIds.has(id)))
+  const next = [...kept, ...racks].map(o => (o.id !== areaId ? o : {
+    ...o, x: box.x, y: box.y, width: box.w, height: box.h, ...(pattern ? { pattern } : {}),
+    placed: { ...keepPlaced, ...Object.fromEntries(racks.map(r => [r.id, rackSig(r)])) },
   }))
   return rebuildAisles(next, newId).objects
 }
 
-/** Rebuild area `areaId` with `settings`: its racks as placed go, the whole
- *  box is filled again; hand-edited racks stay (the fill goes round them). */
+/** Rebuild area `areaId` with `settings`: a new pattern from them (anchored
+ *  where the area's was), shown through the box; hand-edited racks stay
+ *  where they are (the pattern goes round them). */
 export function planAreaRebuild(objects, areaId, settings, { gridSize = 40, newId = nanoid } = {}) {
   const area = objects.find(o => o.id === areaId)
   if (!area) return null
-  const placed = area.placed || {}
-  const clean = new Set(objects.filter(o => isRack(o) && o.areaId === areaId && placed[o.id] === rackSig(o)).map(o => o.id))
-  const kept = objects.filter(o => !clean.has(o.id))
+  const clean = cleanRacks(objects, area), cleanIds = new Set(clean.map(o => o.id))
+  const kept = objects.filter(o => !cleanIds.has(o.id))
   const set = { ...areaSettings(area), ...pickSettings(settings) }
   const box = boxOf(area)
-  const plan = fillPart(kept, box, set, { gridSize, newId, areaId, from: cornerOf(box, area.anchor) })
-  const newRacks = plan ? plan.racks : []
-  const keepPlaced = Object.fromEntries(Object.entries(placed).filter(([id]) => !clean.has(id)))
-  const next = [...kept, ...(plan ? [...plan.racks, ...plan.aisles] : [])].map(o => (o.id !== areaId ? o : {
-    ...o, settings: pickSettings(set), placed: { ...keepPlaced, ...Object.fromEntries(newRacks.map(r => [r.id, rackSig(r)])) },
+  const pattern = areaPattern(kept, box, set, { gridSize, from: cornerOf(box, area.anchor), areaId })?.pattern || null
+  const racks = pattern ? showPattern(kept, box, pattern, area, clean, removedBoxes(objects, area), { gridSize, newId }) : []
+  const keepPlaced = Object.fromEntries(Object.entries(area.placed || {}).filter(([id]) => !cleanIds.has(id)))
+  const next = [...kept, ...racks].map(o => (o.id !== areaId ? o : {
+    ...o, settings: pickSettings(set), pattern, placed: { ...keepPlaced, ...Object.fromEntries(racks.map(r => [r.id, rackSig(r)])) },
   }))
   return rebuildAisles(next, newId).objects
 }
