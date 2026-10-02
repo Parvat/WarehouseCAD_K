@@ -3,8 +3,9 @@
 // utils/fillTool.js): rowBands / rowSegments, tight forklift aisles, columns,
 // cross-aisles by max run. The box IS the racking area, a window on one
 // pattern walked from the drag's start edges: clipped to the walls' inner face;
-// on a rectangle the edge rows flush on the box edges and single — wall or open
-// floor — the rows between back-to-back, no aisle added there; on an L / T the
+// the start edge's row single and flush on it — wall or open floor, no aisle
+// added — the rows after it back-to-back, every aisle the forklift aisle, what
+// is left at the far edge (under a pair and an aisle) left empty; on an L / T the
 // rows run straight through the elbow, a pair a wall cuts shown as its half;
 // existing racks are obstacles (an aisle off); rows stamped like Generate; one undo step.
 // Real store, the tool's own start / move / commit, the app's keepers
@@ -88,26 +89,20 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
       for (const p of pts) expect(p.x > f.x + EPS && p.x < f.x + f.w - EPS && p.y > f.y + EPS && p.y < f.y + f.h - EPS).toBe(false)
     }
   }
-  /** Every rack whose long side faces a wall within 3 ft is a SINGLE row. Returns
-   *  how many wall-facing rows each wall edge got (by edge index). */
-  const wallRows = () => {
-    const pts = outline(), hits = {}
-    pts.forEach((a, i) => {
-      const b = pts[(i + 1) % pts.length]
-      const parallel = vert ? a.x === b.x : a.y === b.y            // the rows run along x (horizontal) or y (vertical)
-      if (!parallel) return
-      const c = vert ? a.x : a.y, lo = Math.min(vert ? a.y : a.x, vert ? b.y : b.x), hi = Math.max(vert ? a.y : a.x, vert ? b.y : b.x)
-      for (const r of racks()) {
-        const f = m.rackFootprint(r)
-        const [r0, r1] = vert ? [f.y, f.y + f.h] : [f.x, f.x + f.w]
-        const [s0, s1] = vert ? [f.x, f.x + f.w] : [f.y, f.y + f.h]
-        if (Math.min(r1, hi) - Math.max(r0, lo) < GS) continue
-        if (Math.min(Math.abs(s0 - c), Math.abs(s1 - c)) > 3 * GS) continue
-        expect(r.type, `row against wall edge ${i}`).toBe('rack_row')
-        hits[i] = (hits[i] || 0) + 1
-      }
-    })
-    return hits
+  /** Every aisle is the forklift aisle: each rack's next rack across (overlapping it along) is
+   *  exactly one aisle off — none widened, none narrowed. Cross-aisles run along and aren't read. */
+  const expectRegular = () => {
+    const aisle = m.FR.DEFAULT_FILL_SETTINGS.aisleFt * GS
+    const all = racks().map(r => m.rackFootprint(r)).map(f => (vert ? { s0: f.x, s1: f.x + f.w, r0: f.y, r1: f.y + f.h } : { s0: f.y, s1: f.y + f.h, r0: f.x, r1: f.x + f.w }))
+    let n = 0
+    for (const a of all) {
+      const next = all.filter(b => b !== a && b.s0 >= a.s1 - 1e-6 && Math.min(a.r1, b.r1) - Math.max(a.r0, b.r0) > 1e-3)
+      if (!next.length) continue
+      const gap = Math.min(...next.map(b => b.s0)) - a.s1
+      expect(gap / GS, 'an aisle (ft)').toBeCloseTo(aisle / GS, 6)
+      n++
+    }
+    expect(n).toBeGreaterThan(0)
   }
   const noOverlaps = () => {
     const f = racks().map(r => m.rackFootprint(r))
@@ -117,7 +112,7 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
   it.each([
     ['240 × 120', 240, 120],
     ['1080 × 410', 1080, 410],
-  ])('FR-generate: filling the whole of a rectangle (%s) gives exactly Generate\'s walk over the same clear floor — its rows, aisles, cross-aisles and stamps — with the racking flush on the inner wall faces', (_, L, W) => {
+  ])('FR-generate: filling the whole of a rectangle (%s) gives Generate\'s walk over the same clear floor — its rows, cross-aisles and stamps — everywhere but the far edge, flush on the start walls; at the far edge the aisles stay regular and what is left (under a pair and an aisle) stays empty', (_, L, W) => {
     const fp = building('fp_rect', L, W)
     const wt = fp.wallThicknessFt * GS, ix = fp.x + wt, iy = fp.y + wt
     // Generate over the inner floor, no wall clearance (the fill's rule: the box is the racking area)
@@ -126,18 +121,27 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     expect(want.length).toBeGreaterThan(4)
     const { plan } = fill(bbox(outline()))
     expect(plan.rects).toHaveLength(1)
-    const key = (o) => [o.type, r3(o.x), r3(o.y), r3(o.width), r3(o.height), o.rotation || 0, (o.beams || []).join('/'), o.rowIndex, o.genSection].join(':')
-    expect(racks().map(key).sort()).toEqual(want.map(key).sort())
-    // flush on the inner faces: the first and last rows, and the run's start
-    const f = racks().map(r => m.rackFootprint(r))
     const lo = (q) => (vert ? q.x : q.y), hi = (q) => (vert ? q.x + q.w : q.y + q.h)
+    const far = vert ? fp.x + fp.width - wt : fp.y + fp.height - wt
+    // Generate widens its last aisle to sit a single flush on the far wall; the fill doesn't. They
+    // differ only within a single + a pair + an aisle of the far wall — everything before it is the same
+    const pairFt = (2 * 42 + 9) / 12, aisleFt = m.FR.DEFAULT_FILL_SETTINGS.aisleFt
+    const edge = far - (42 / 12 + pairFt + aisleFt) * GS
+    const key = (o) => [o.type, r3(o.x), r3(o.y), r3(o.width), r3(o.height), o.rotation || 0, (o.beams || []).join('/'), o.rowIndex, o.genSection].join(':')
+    const before = (list) => list.filter(o => hi(m.rackFootprint(o)) <= edge + EPS).map(key).sort()
+    expect(before(want).length).toBeGreaterThan(2)
+    expect(before(racks())).toEqual(before(want))
+    // flush on the start walls: the first row (single) and the run's start
+    const f = racks().map(r => m.rackFootprint(r))
     expect(Math.min(...f.map(lo))).toBeCloseTo(vert ? ix : iy, 6)
-    expect(Math.max(...f.map(hi))).toBeCloseTo(vert ? fp.x + fp.width - wt : fp.y + fp.height - wt, 6)
     expect(Math.min(...f.map(q => (vert ? q.y : q.x)))).toBeCloseTo(vert ? iy : ix, 6)
-    // the wall rows are singles
     for (const q of racks()) { const g = m.rackFootprint(q); if (Math.abs(lo(g) - (vert ? ix : iy)) < 1e-6) expect(q.type).toBe('rack_row') }
-    // aisles: one per pair of facing rows, each with its own id (the canvas keys its shapes by id)
-    expect(s().objects.filter(o => o.type === 'aisle').length).toBe(aisleObjectsForRacks(want).length)
+    // the far edge: what is left is under a pair and an aisle, and every aisle is the forklift aisle
+    const left = far - Math.max(...f.map(hi))
+    expect(left).toBeGreaterThanOrEqual(-EPS)
+    expect(left).toBeLessThan((pairFt + aisleFt) * GS)
+    expectRegular()
+    // every object has its own id (the canvas keys its shapes by id)
     const ids = s().objects.map(o => o.id)
     expect(ids.every(Boolean)).toBe(true)
     expect(new Set(ids).size).toBe(ids.length)
@@ -185,30 +189,46 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     expect(check()).toEqual({ errors: [], warnings: [] })
   })
 
-  it('FR-arms: filling each arm of an L on its own (two drags) — single rows along the inside-corner walls, nothing outside, the two fills never meet rack-to-rack, Check layout clean', () => {
+  it('FR-arms: filling each arm of an L on its own (two drags) — each fill\'s start wall gets single rows flush on it (in horizontal the bar\'s is the inside-corner wall), nothing outside, the two fills never meet rack-to-rack (an aisle at least between them), Check layout clean', () => {
     const fp = building('fp_l', 300, 200)
     const bb = bbox(outline()), sw = fp.width * 0.3, sh = fp.height * 0.3
     fill({ x: bb.x, y: bb.y, w: sw, h: bb.h - sh })                       // the stem, down to the bar
     const first = racks(), maxRow = Math.max(...first.map(o => o.rowIndex)), maxSec = Math.max(...first.map(o => o.genSection))
     fill({ x: bb.x, y: bb.y + bb.h - sh, w: bb.w, h: sh })                // the bar
+    const second = racks().filter(r => !first.some(f => f.id === r.id))
     // the second fill's stamps come after the first's
-    for (const o of racks().filter(r => !first.some(f => f.id === r.id))) { expect(o.rowIndex).toBeGreaterThan(maxRow); expect(o.genSection).toBeGreaterThan(maxSec) }
+    for (const o of second) { expect(o.rowIndex).toBeGreaterThan(maxRow); expect(o.genSection).toBeGreaterThan(maxSec) }
     expect(racks().length).toBeGreaterThan(8)
     expectInside()
     noOverlaps()
-    const hits = wallRows()
-    const pts = outline()
-    const innerIdx = pts.findIndex((a, i) => { const b = pts[(i + 1) % pts.length]; return vert ? (a.x === b.x && a.x === bb.x + sw) : (a.y === b.y && a.y === bb.y + bb.h - sh) })
-    expect(innerIdx).toBeGreaterThanOrEqual(0)
-    expect(hits[innerIdx] || 0).toBeGreaterThan(0)
+    // each fill's start wall: single rows, 0" from the inner face
+    const inner = m.FR.innerOutline(fpOf(), GS)
+    const lo = (r) => { const f = m.rackFootprint(r); return vert ? f.x : f.y }
+    const startOf = (list, s0) => list.filter(r => Math.abs(lo(r) - s0) < 1e-3)
+    const s1 = Math.min(...inner.map(p => (vert ? p.x : p.y)))
+    const s2 = vert ? s1 : [...new Set(inner.map(p => p.y))].sort((p, q) => p - q)[1]   // horizontal: the bar's top, the inside-corner wall
+    for (const [list, s0] of [[first, s1], [second, s2]]) {
+      const rows = startOf(list, s0)
+      expect(rows.length).toBeGreaterThan(0)
+      for (const r of rows) expect(r.type).toBe('rack_row')
+    }
+    // never rack-to-rack: side by side across, an aisle at least between the two fills
+    const aisle = m.FR.DEFAULT_FILL_SETTINGS.aisleFt * GS
+    const span = (r) => { const f = m.rackFootprint(r); return vert ? { s0: f.x, s1: f.x + f.w, r0: f.y, r1: f.y + f.h } : { s0: f.y, s1: f.y + f.h, r0: f.x, r1: f.x + f.w } }
+    for (const a of first.map(span)) for (const b of second.map(span)) {
+      if (Math.min(a.r1, b.r1) - Math.max(a.r0, b.r0) < 1e-3) continue
+      expect(Math.max(b.s0 - a.s1, a.s0 - b.s1)).toBeGreaterThan(aisle - 1e-3)
+    }
     expect(check().errors).toEqual([])
   })
 
   /* The box is the racking area. A 300 × 200 rectangle; a box from the middle
    * of the building (open floor) past a wall (clipped to its inner face), in
-   * both axes, dragged both ways. The row at each edge has its outer face
+   * both axes, dragged both ways. The row at the start edge has its outer face
    * EXACTLY on that edge and is a SINGLE row, open floor or wall; the rows
-   * between are back-to-back; no aisle on the open edge. Along the run, the racking starts exactly at
+   * between are back-to-back, every aisle the forklift aisle; at the other edge
+   * what is left (under a pair and an aisle) stays empty; no aisle on the open
+   * edge. Along the run, the racking starts exactly at
    * the edge the drag started from. "Exactly": within 0.001 px (under a
    * millionth of an inch — the region's cut positions are rounded to 1e-6 ft). */
   const edgeCase = () => {
@@ -225,28 +245,35 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
   /* The far edge three ways: past the wall (clipped to its inner face), exactly
    * on the inner face, and 6" short of it (open floor next to the wall). */
   const FAR = [['past the wall', 3 * GS], ['on the wall face', 0], ['6" off the wall', -GS / 2]]
-  it.each(FAR.flatMap(([far, off]) => [[far, 'from the open edge', off, false], [far, 'from the far edge', off, true]]))('FR-edge-stack: a box from mid-building to %s, dragged %s — the first and last rows are SINGLE with their outer faces exactly on the box edges (0"), every row between is back-to-back; no aisle at the open edge', (_far, _dir, off, fromFar) => {
+  it.each(FAR.flatMap(([far, off]) => [[far, 'from the open edge', off, false], [far, 'from the far edge', off, true]]))('FR-edge-stack: a box from mid-building to %s, dragged %s — the row at the start edge is SINGLE with its outer face exactly on it (0"); every aisle is the forklift aisle; what is left at the other edge (under a pair and an aisle) stays empty, the row there a pair or the half of one that fits; no aisle at the open edge', (_far, _dir, off, fromFar) => {
     const { fp, inner } = edgeCase()
     // the open edge across the stack axis, a whole number of inches off the middle
     const mid = vert ? fp.x + Math.round(fp.width / 2 / GS * 12 + 7) / 12 * GS : fp.y + Math.round(fp.height / 2 / GS * 12 + 7) / 12 * GS
     const face = vert ? inner.x1 : inner.y1
     const edge = face + off                                                            // where the box's far edge is
-    const farEdge = Math.min(edge, face)                                               // where the racking must end
+    const farEdge = Math.min(edge, face)                                               // where the racking may reach
     const runA = vert ? fp.y - 2 * GS : fp.x - 2 * GS, runB = vert ? fp.y + fp.height + 2 * GS : fp.x + fp.width + 2 * GS
     const pt = (st, rn) => (vert ? { x: st, y: rn } : { x: rn, y: st })
     const n = fromFar ? dragFill(pt(edge, runB), pt(mid, runA)) : dragFill(pt(mid, runA), pt(edge, runB))
     expect(n).toBeGreaterThan(4)
     const f = racks().map(r => ({ r, f: m.rackFootprint(r) }))
     const minS = Math.min(...f.map(q => stackLo(q.f))), maxS = Math.max(...f.map(q => stackHi(q.f)))
-    expect(minS - mid).toBeCloseTo(0, 3)                                               // 0" at the open edge
-    expect(maxS - farEdge).toBeCloseTo(0, 3)                                           // 0" at the far edge / wall face
-    let first = 0, last = 0, between = 0
+    const pairPx = (2 * 42 + 9) / 12 * GS, aislePx = m.FR.DEFAULT_FILL_SETTINGS.aisleFt * GS
+    // the start edge: its row single, 0" from it
+    const atStart = (q) => (fromFar ? Math.abs(stackHi(q.f) - farEdge) < 1e-3 : Math.abs(stackLo(q.f) - mid) < 1e-3)
+    if (fromFar) expect(maxS - farEdge).toBeCloseTo(0, 3); else expect(minS - mid).toBeCloseTo(0, 3)
+    // the other edge: what is left is under a pair and an aisle
+    const left = fromFar ? minS - mid : farEdge - maxS
+    expect(left).toBeGreaterThanOrEqual(-1e-3)
+    expect(left).toBeLessThan(pairPx + aislePx)
+    let first = 0, between = 0
     for (const q of f) {
-      if (Math.abs(stackLo(q.f) - mid) < 1e-3) { expect(q.r.type, 'first row').toBe('rack_row'); first++ }
-      else if (Math.abs(stackHi(q.f) - farEdge) < 1e-3) { expect(q.r.type, 'last row').toBe('rack_row'); last++ }
-      else { expect(q.r.type, 'a row between').toBe('rack_double_row'); between++ }
+      const atOther = fromFar ? Math.abs(stackLo(q.f) - minS) < 1e-3 : Math.abs(stackHi(q.f) - maxS) < 1e-3
+      if (atStart(q)) { expect(q.r.type, 'the start edge row').toBe('rack_row'); first++ }
+      else if (!atOther) { expect(q.r.type, 'a row between').toBe('rack_double_row'); between++ }
     }
-    expect(first).toBeGreaterThan(0); expect(last).toBeGreaterThan(0); expect(between).toBeGreaterThan(0)
+    expect(first).toBeGreaterThan(0); expect(between).toBeGreaterThan(0)
+    expectRegular()
     // nothing outside the box or the walls
     for (const q of f) { expect(stackLo(q.f)).toBeGreaterThanOrEqual(mid - 1e-3); expect(stackHi(q.f)).toBeLessThanOrEqual(farEdge + 1e-3) }
     expectInside()

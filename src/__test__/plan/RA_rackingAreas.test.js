@@ -388,8 +388,24 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
       expect(fits, `single row ${r.rowIndex}: its other half doesn't fit`).toBe(false)
     }
   }
+  /** Every aisle is the forklift aisle: each rack's next rack across (overlapping it along) is
+   *  exactly one aisle off — none widened (no slack aisle anywhere), none narrowed. Cross-aisles
+   *  run along and aren't read. */
+  const expectRegular = () => {
+    const aisleFt = m.FR.DEFAULT_FILL_SETTINGS.aisleFt
+    const all = racks().map(r => ({ r, s: ftS(foot(r)), q: ftR(foot(r)) }))
+    let n = 0
+    for (const a of all) {
+      const next = all.filter(b => b !== a && b.s[0] >= a.s[1] - 1e-6 && Math.min(a.q[1], b.q[1]) - Math.max(a.q[0], b.q[0]) > 1e-3)
+      if (!next.length) continue
+      const gap = Math.min(...next.map(b => b.s[0])) - a.s[1]
+      expect(gap, `the aisle after ${a.r.type} row ${a.r.rowIndex} (ft)`).toBeCloseTo(aisleFt, 6)
+      n++
+    }
+    expect(n).toBeGreaterThan(0)
+  }
   const rackKeys = () => racks().map(o => [o.type, Math.round(o.x * 1e4), Math.round(o.y * 1e4), Math.round(o.width * 1e4), Math.round(o.height * 1e4), o.rotation || 0, o.beams.join('/'), o.rowIndex, o.genSection, o.areaId].join(':')).sort()
-  const clean = () => { expect(check()).toEqual({ errors: [], warnings: [] }); expectOnPattern(); expectAisles(); expectSinglesCut() }
+  const clean = () => { expect(check()).toEqual({ errors: [], warnings: [] }); expectOnPattern(); expectAisles(); expectSinglesCut(); expectRegular() }
   // [name, type, width, height, the area's share of each] — the area reaches into the L's bar and the T's stem
   const SHAPES = [['rectangle', 'fp_rect', 240, 120, 0.55, 0.6], ['L', 'fp_l', 300, 200, 0.55, 0.8], ['T', 'fp_t', 360, 240, 0.55, 0.6]]
   /** An area over the top-left of the building, dragged from its top-left corner (a little past the
@@ -398,7 +414,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     s().placeFpObject({ type, widthFt: w, heightFt: h })
     const fp = s().objects.find(o => o.type === type)
     drag({ x: fp.x - 13.7, y: fp.y - 21.3 }, { x: fp.x + fp.width * fw + 7.1, y: fp.y + fp.height * fh + 3.3 })
-    expect(racks().length).toBeGreaterThan(4)
+    expect(racks().length).toBeGreaterThan(3)
     return fp
   }
   const boxNow = () => { const a = areaNow(); return { x: a.x, y: a.y, w: a.width, h: a.height } }
@@ -467,6 +483,34 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     for (const r of row) { expect(r.type).toBe('rack_row'); expect(ftS(foot(r))[0]).toBeCloseTo(u.s0, 6); expect(ftS(foot(r))[1]).toBeCloseTo(u.s0 + single, 6) }
     for (const r of racks()) expect(ftS(foot(r))[1]).toBeLessThanOrEqual(edge / GS + 1e-6)
     clean()
+  })
+
+  it('RA-regular-fill: on 240 × 120 a fill of the whole building has every aisle exactly the forklift aisle — the last one not widened to sit a row flush on the far wall; what is left there is under a pair and an aisle; clean', () => {
+    s().placeFpObject({ type: 'fp_rect', widthFt: 240, heightFt: 120 })
+    const fp = s().objects.find(o => o.type === 'fp_rect')
+    drag({ x: fp.x - 13.7, y: fp.y - 21.3 }, { x: fp.x + fp.width + 7.1, y: fp.y + fp.height + 3.3 })
+    expect(racks().length).toBeGreaterThan(4)
+    expectRegular()
+    const inner = m.FR.innerOutline(fp, GS), far = Math.max(...inner.map(p => (vert ? p.x : p.y))) / GS
+    const left = far - Math.max(...racks().map(r => ftS(foot(r))[1]))
+    expect(left).toBeGreaterThanOrEqual(-1e-6)
+    expect(left).toBeLessThan((2 * 42 + 9) / 12 + m.FR.DEFAULT_FILL_SETTINGS.aisleFt)
+    clean()
+  })
+
+  it.each(SHAPES)('RA-regular-extend (%s): fill, then extend past the far edge across the rows to the wall — no aisle anywhere wider (or narrower) than the forklift aisle, no wide aisle where the first box ended; shrink back and extend again: identical; clean', (_, type, w, h, fw, fh) => {
+    const fp = patternArea(type, w, h, fw, fh)
+    expectRegular()
+    const b0 = boxNow()
+    const past = vert ? { ...b0, w: fp.x + fp.width + 17.9 - b0.x } : { ...b0, h: fp.y + fp.height + 11.3 - b0.y }
+    resizeArea(past)
+    expectRegular()
+    clean()
+    const extended = rackKeys()
+    resizeArea(b0)
+    clean()
+    resizeArea(past)
+    expect(rackKeys()).toEqual(extended)
   })
 
   it('RA-pdf: zones are drawn in the PDF (a tinted rectangle with the name), and not when the Zones layer is hidden', async () => {

@@ -6,11 +6,13 @@
 // The box IS the racking area, and the area is a WINDOW on a fixed PATTERN:
 //   - areaPattern: computed once from the edges the drag started at — the row
 //     sequence across (the first row single, an aisle, back-to-back pairs,
-//     aisles …), the bay grid and cross-aisles along the rows. Generate's own
-//     walk over the first box (clipped to the building's REAL inner wall face —
-//     L, T, U, cross, any rectilinear shape — and kept an aisle off existing
-//     racks); its edge rows are single, each one half of a pair whose other
-//     half lies past the edge, and past the edges the walk carries on both ways.
+//     aisles …), the bay grid and cross-aisles along the rows. The rows are ONE
+//     regular walk (rowBands) from the start edge of the first box (clipped to
+//     the building's REAL inner wall face — L, T, U, cross, any rectilinear
+//     shape — and kept an aisle off existing racks) on past the building: every
+//     aisle the forklift aisle, none widened to sit a row flush on the far edge
+//     (what is left there stays empty). The start edge's single is half of a
+//     pair whose other half lies behind it, and the walk carries on that way too.
 //   - patternFill: the racks the box shows — the pattern clipped to it (whole
 //     bays, rows wholly inside). A pair an edge cuts so only one half fits shows
 //     that half as a single row; no row is ever added at an edge. Walls and
@@ -240,10 +242,12 @@ const PATTERN_MARGIN_FT = 200
  *
  *  In feet along the area's (run, stack) axes, absolute:
  *    - `units`: the rows across — { s0, d, type, flueIn, row }. The walk is
- *      Generate's own (rowBands, columns included) over the area's first box:
- *      the row at each edge is a single there, and in the pattern each is one
- *      half of a back-to-back pair whose other half lies just past the edge;
- *      past it the walk carries on — aisle, pair, aisle … — both ways.
+ *      Generate's own (rowBands, columns included), one regular walk from the
+ *      first box's start edge on past the building — aisle, pair, aisle …,
+ *      every aisle the forklift aisle; the first box's far edge is not special.
+ *      The start edge's row is a single there, in the pattern one half of a
+ *      back-to-back pair whose other half lies behind the edge, and the walk
+ *      carries on that way too.
  *    - `pieces`: the runs along a row — { r0, n, sec } (n bays of beamIn on
  *      upIn uprights), rowSegments' own walk over the first box with its
  *      cross-aisles; past it the end runs carry on bay by bay up to the max
@@ -278,39 +282,34 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
   // ── across the rows ──
   // the first box's extent: nothing kept clear at a wall or the box edge, an aisle off an existing rack
   const clear = (kind) => (kind === 'rack' ? aisleFt : 0)
-  const sLo = Math.min(...rects.map(q => q.s0 + clear(q.k0))), sHi = Math.max(...rects.map(q => q.s1 - clear(q.k1)))
+  /* and an aisle off any existing rack facing a side across its run, touching it or not (a rack
+     an earlier fill left short of the edge still needs its aisle): where a row can really start */
+  const facing = objects.filter(o => isRack(o) && o.width > 0 && o.height > 0).map(o => { const f = rackFootprint(o); return rsRect(vert, gridSize, { x: f.x, y: f.y, w: f.w, h: f.h }) })
+  const along = (q, o) => o.r1 > q.r0 + EPS && o.r0 < q.r1 - EPS
+  const sideLo = (q) => Math.max(q.s0 + clear(q.k0), ...facing.filter(o => along(q, o) && o.s1 <= q.s0 + EPS && o.s1 + aisleFt > q.s0).map(o => o.s1 + aisleFt))
+  const sideHi = (q) => Math.min(q.s1 - clear(q.k1), ...facing.filter(o => along(q, o) && o.s0 >= q.s1 - EPS && o.s0 - aisleFt < q.s1).map(o => o.s0 - aisleFt))
+  const sLo = Math.min(...rects.map(sideLo)), sHi = Math.max(...rects.map(sideHi))
   const dirS = flipS ? -1 : 1, anchorS = flipS ? sHi : sLo
   const singleFt = depthIn / 12, flueFt = flueIn / 12, pairFt = (2 * depthIn + flueIn) / 12
   const bandsOver = (originS, len, dir) => {
     const sg = walkGrid(stackLines, originS, len, dir)
     return rowBands(len, { rackType, depthIn, aisleFt, flueIn, gridYFt: sg.pitch, travelFt, gridOffsetFt: sg.offset, gridMaxFt: sg.max, colSizeIn, wallClearFt: 0 })
   }
-  const W = sHi - sLo
-  let core = W > EPS ? bandsOver(anchorS, W, dirS) : []
-  // too narrow for both edge rows and an aisle: the start edge's row alone
-  if (core.length === 2 && core[1].yFt - (core[0].yFt + core[0].depthFt) < aisleFt - 1e-6) core = [core[0]]
-  if (!core.length && W >= singleFt - 1e-9) core = [{ type: 'rack_row', yFt: 0, depthFt: singleFt }]
-  if (!core.length) return null
-  // rows in walk coordinates (t: 0 at the start edge, growing into the area)
-  const walkRows = core.map(b => ({ t: b.yFt, d: b.depthFt, type: b.type, flueIn: b.flueIn ?? flueIn }))
-  // the start edge's single is half a pair: its other half lies behind the edge
-  const pairOf = (t) => ({ t, d: pairFt, type: rackType, flueIn })
-  walkRows[0] = pairOf(walkRows[0].t - flueFt - singleFt)
-  // the far edge's single likewise, its other half past the far edge
-  const lastSingle = core.length > 1 && core[core.length - 1].type === 'rack_row'
-  const lastEnd = core[core.length - 1].yFt + core[core.length - 1].depthFt
-  if (lastSingle) walkRows[walkRows.length - 1] = pairOf(walkRows[walkRows.length - 1].t)
+  if (!(sHi - sLo >= singleFt - 1e-9)) return null
+  /* One walk from the start edge on past the building: a single there, then aisle, pair, aisle …
+     every aisle the forklift aisle (wider only where a column forces it). The first box's far edge
+     is not special: what is left there (less than a row and an aisle) stays empty, so extending
+     past it carries the same regular rows on. */
   const toS = (t, d) => (dirS > 0 ? anchorS + t : anchorS - t - d)
-  /* past the far edge: aisle, pair … — Generate's walk again from the inner face of the last
-     pair's far half (its first band is that half, already a row) */
-  const farOrigin = lastSingle ? lastEnd + flueFt : lastEnd - singleFt
-  const farLen = (dirS > 0 ? ps1 - toS(farOrigin, 0) : toS(farOrigin, 0) - ps0)
-  const beyond = farLen > singleFt ? bandsOver(toS(farOrigin, 0), farLen, dirS).slice(1).map(b => ({ t: farOrigin + b.yFt, d: b.depthFt, type: b.type, flueIn: b.flueIn ?? flueIn })) : []
+  const stackLen = dirS > 0 ? ps1 - anchorS : anchorS - ps0
+  const walkRows = bandsOver(anchorS, stackLen, dirS).map(b => ({ t: b.yFt, d: b.depthFt, type: b.type, flueIn: b.flueIn ?? flueIn }))
+  // the start edge's single is half a pair: its other half lies behind the edge
+  walkRows[0] = { t: walkRows[0].t - flueFt - singleFt, d: pairFt, type: rackType, flueIn }
   // behind the start edge, the same walk the other way from the inner face of the first pair's hidden half
   const backOrigin = -flueFt                                       // walk t of that face
   const backLen = (dirS > 0 ? toS(backOrigin, 0) - ps0 : ps1 - toS(backOrigin, 0))
   const behind = backLen > singleFt ? bandsOver(toS(backOrigin, 0), backLen, -dirS).slice(1).map(b => ({ t: backOrigin - b.yFt - b.depthFt, d: b.depthFt, type: b.type, flueIn: b.flueIn ?? flueIn })) : []
-  const units = [...walkRows, ...beyond, ...behind].map((u, i) => ({ s0: toS(u.t, u.d), d: u.d, type: u.type, flueIn: u.flueIn, row: rowBase + i + 1 }))
+  const units = [...walkRows, ...behind].map((u, i) => ({ s0: toS(u.t, u.d), d: u.d, type: u.type, flueIn: u.flueIn, row: rowBase + i + 1 }))
 
   // ── along the rows ──
   const rLo = Math.min(...rects.map(q => q.r0 + clear(q.e0))), rHi = Math.max(...rects.map(q => q.r1 - clear(q.e1)))

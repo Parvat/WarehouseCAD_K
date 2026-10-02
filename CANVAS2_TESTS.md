@@ -284,7 +284,7 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### RA — Racking areas and zones · `RA_rackingAreas.test.js` (61 tests)
+### RA — Racking areas and zones · `RA_rackingAreas.test.js` (69 tests)
 Code: `generate/rackingArea.js` (pure) and `utils/rackingAreaTool.js` (store,
 question). UI: `canvas2/AreaPrompt.jsx` and
 `RightPanel/panels/RackingAreaPanel.jsx`.
@@ -308,11 +308,17 @@ question). UI: `canvas2/AreaPrompt.jsx` and
 **The pattern: the box is a window on it.** When an area is first filled, its
 **pattern** is computed once (`fillRacking.js` `areaPattern`) and stored on the
 area (`area.pattern`, absolute feet along the area's run / stack axes):
-- **Across the rows (`units`):** Generate's own walk (`rowBands`, columns
-  included) over the first box from the drag-start edge. Its edge rows are
-  single there, and in the pattern each is one half of a back-to-back pair
-  whose other half lies just past the edge. Past both edges the walk carries
-  on (aisle, pair, aisle …), 200' beyond the building.
+- **Across the rows (`units`):** one strictly regular walk (`rowBands`, columns
+  included) from the first box's start edge on past the building: a single at
+  the edge, then aisle, pair, aisle … Every aisle is the forklift aisle (wider
+  only where a column forces it); the last one is never widened to sit a row
+  flush on the far edge. What is left at the far edge (under a pair and an
+  aisle) stays empty, so extending past it carries the same rows on with no
+  wide aisle in the middle. The start edge's single is one half of a pair whose
+  other half lies behind the edge, and the walk carries on that way too.
+- The start edge is where a row can really sit: a wall's inner face, the box
+  edge, or an aisle off any existing rack facing that side (touching it or
+  not), the nearest such edge of the region's rectangles.
 - **Along the rows (`pieces`):** `rowSegments`' own walk over the first box,
   cross-aisles included. Past it the end runs carry on bay by bay up to the
   max rack run, then a cross-aisle and whole max-length runs. A lone run grows
@@ -404,6 +410,8 @@ joins the copy-to-sections set.
 | `RA-extend-right` ×3 | the right edge to past the wall: more bays; every rack there before is still covered by one across the same place (a double by a double); on the pattern; no single whose other half fits; Check layout finds nothing at all |
 | `RA-extend-down` ×3 | the bottom edge to past the wall: the same — no extra single rows, the old edge single becomes its pair where it fits |
 | `RA-cut-pair` ×3 | the far edge across the rows moved through a pair shown whole, past its near half: that row is single rows at the near half's place only; nothing past the edge; clean |
+| `RA-regular-fill` | 240 × 120, the whole building: every aisle exactly the forklift aisle (each rack's next rack across, overlapping it along, 10' 6" off); what is left at the far wall is under a pair and an aisle; clean |
+| `RA-regular-extend` ×3 | a rectangle, an L and a T: the fill regular; extended past the far edge across the rows to the wall: still every aisle exactly the forklift aisle (no wide aisle where the first box ended); shrink back and extend again: identical; clean |
 
 All run horizontal and vertical. LY-assign now expects seven standard layers
 (Zones added).
@@ -411,13 +419,16 @@ All run horizontal and vertical. LY-assign now expects seven standard layers
 The pattern checks used throughout: **on the pattern**: every rack the area placed
 sits on a pattern row (its pair's place, or one half of it) and on whole bays of a pattern
 run, stamped with that row and run. **Aisles full**: any two racks side by side across
-are at least an aisle apart, so no single sits back-to-back with another row. **Singles only
+are at least an aisle apart, so no single sits back-to-back with another row. **Regular**:
+each rack's next rack across is exactly one forklift aisle off (part of `clean`). **Singles only
 where cut**: a single's other half, on its run, is past the box, past a wall or on a zone.
 
 **Break-its:** resize filling each newly covered part fresh (the old rule): RA-window,
 RA-extend-right, RA-extend-down (all shapes, both orientations), RA-extend, RA-align and
 RA-align-shape fail (23). A cut pair dropped instead of showing its near half: RA-cut-pair
-fails (6).
+fails (6). The pattern before the regular walk (the first fill widening its last
+aisle to sit a single flush on the far edge): RA-regular-fill, RA-regular-extend,
+RA-window, RA-extend-right / -down, FR-generate and FR-edge-stack fail (42).
 
 **Checked in the app (both orientations), with the real mouse and panel:**
 - Zones section → Office, placed and moved top-right.
@@ -462,9 +473,11 @@ fails (6).
   - extend right past the wall, then down past the wall: the pattern carries on,
     the old edge single becomes a pair, no back-to-back singles;
   - Check layout 0 errors / 0 warnings after every step on all six.
-  - A fill whose walk widened its last aisle to sit a single flush on the far
-    edge (a 14' 2" aisle on 240 × 120 horizontal) keeps that aisle when
-    extended: the pattern inside the first box is the first fill exactly.
+  - Before the regular walk, a fill whose walk widened its last aisle to sit a
+    single flush on the far edge (14' 2" on 240 × 120 horizontal) kept that
+    aisle when extended. Now (the same six cases, the same drags) every aisle
+    measures exactly 10' 6" after the fill, the shrink, the drag back and both
+    extends, the leftover sits at the far wall, and Check layout is clean.
 
 ### FR — Fill racking · `FR_fillRacking.test.js` (40 tests)
 A tool in the drawing toolbar ("Fill racking", paint bucket). While it is on,
@@ -483,9 +496,10 @@ by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
   wall-clearance inset.
 - **Open side:** the row's outer face is exactly on the box edge (0"). No
   aisle is added.
-- **The first and last rows are single**, whether their edge is a wall
-  or open floor (the walk's own edge rows). The rows between are back-to-back
-  (`rowBands`' own walk).
+- **The row at the start edge is single**, flush on it, wall or open floor; the
+  rows after it are back-to-back, every aisle the forklift aisle. The far edge
+  is not special: what is left there (under a pair and an aisle) stays empty,
+  and the row there is a pair or the half of one that fits.
 - **An L or a T:** one walk over the box's extent, so every row runs straight
   through the elbow on one place across, and the run's bays and cross-aisles
   are one grid too (no half cross-aisle at the elbow). An inside wall clips
@@ -510,10 +524,10 @@ by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
 
 | Test | Asserts |
 |---|---|
-| `FR-generate` (×2) | the whole of a rectangle, 240 × 120 and 1080 × 410: exactly Generate's walk over the same clear floor (the inner faces, no wall clearance) — racks (position, size, rotation, beams, rowIndex, genSection) and aisle count; the first and last rows and the run start flush on the inner faces; the wall rows single; every object has its own id |
+| `FR-generate` (×2) | the whole of a rectangle, 240 × 120 and 1080 × 410: Generate's walk over the same clear floor (the inner faces, no wall clearance) — racks (position, size, rotation, beams, rowIndex, genSection) — for every rack ending before the last single + pair + aisle of the far wall, where Generate widens its last aisle and the fill doesn't; the first row (single) and the run start flush on the inner faces; what is left at the far wall under a pair and an aisle; every aisle the forklift aisle; every object has its own id |
 | `FR-shape` (×2) | the whole of an L (300 × 200) and a T (360 × 240): more than one rectangle in the region; no rack outside the outline (every corner inside, no outline vertex inside a rack); no overlaps; every row index has one place across (its doubles all at one stack position, its singles flush with one face of that pair); the start wall's row single and flush on it; every single's other half would cross a wall; Check layout: nothing at all |
-| `FR-arms` | an L's two arms filled separately: single rows along the inside-corner wall, nothing outside, no overlaps, the second fill's stamps after the first's, no errors |
-| `FR-edge-stack` (×6) | 300 × 200, a box from mid-building (open floor) to a far edge past the wall, exactly on its inner face, or 6" short of it; each dragged from the open edge and from the far edge. The first and last rows are single, their outer faces exactly on the box edges (0", within 0.001 px; past the wall: the inner face); every row between is back-to-back; nothing outside the box or the walls; no errors |
+| `FR-arms` | an L's two arms filled separately: each fill's start wall gets single rows flush on it (in horizontal the bar's start is the inside-corner wall), nothing outside, no overlaps, the second fill's stamps after the first's, an aisle at least between the two fills wherever they face, no errors |
+| `FR-edge-stack` (×6) | 300 × 200, a box from mid-building (open floor) to a far edge past the wall, exactly on its inner face, or 6" short of it; each dragged from the open edge and from the far edge. The row at the start edge is single, its outer face exactly on it (0", within 0.001 px; past the wall: the inner face); what is left at the other edge is under a pair and an aisle; every row between is back-to-back; every aisle the forklift aisle; nothing outside the box or the walls; no errors |
 | `FR-edge-run` (×2) | the same along the run: dragged from the open edge the racking starts exactly on it; dragged from the wall, exactly on the inner face; nothing past either; no errors |
 | `FR-existing` | a double row in the middle and a single row across the rows: both exactly as they were after filling the whole building; no new rack overlaps them, each is at least an aisle off; no overlaps |
 | `FR-stamps` | 480' of run, 120' max run: every rack has integer rowIndex / genSection; nothing pending after the fill; 3+ sections, row 2 once in each; row 2 of section 2 moved 1' across, Copy: row 2 of every section moved 1' |
