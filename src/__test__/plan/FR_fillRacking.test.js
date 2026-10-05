@@ -138,9 +138,22 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     const pairFt = (2 * 42 + 9) / 12, aisleFt = m.FR.DEFAULT_FILL_SETTINGS.aisleFt
     const edge = far - (42 / 12 + pairFt + aisleFt) * GS
     const key = (o) => [o.type, r3(o.x), r3(o.y), r3(o.width), r3(o.height), o.rotation || 0, (o.beams || []).join('/'), o.rowIndex, o.genSection].join(':')
-    const before = (list) => list.filter(o => hi(m.rackFootprint(o)) <= edge + EPS).map(key).sort()
+    // the start wall's single runs unbroken in the fill (area AA) — Generate still splits it at the
+    // cross-aisles (CANVAS2_BUGLOG), so it's left out here and asserted on its own below
+    const startWall = (o) => o.type === 'rack_row' && Math.abs(lo(m.rackFootprint(o)) - (vert ? ix : iy)) < 1e-6
+    const before = (list) => list.filter(o => !startWall(o) && hi(m.rackFootprint(o)) <= edge + EPS).map(key).sort()
     expect(before(want).length).toBeGreaterThan(2)
     expect(before(racks())).toEqual(before(want))
+    // the fill's start-wall single: one rack along the whole wall, its bays on the pattern's grid (Generate's first run, carried on)
+    const sw = racks().filter(startWall)
+    expect(sw).toHaveLength(1)
+    const run = (o) => { const g = m.rackFootprint(o); return vert ? [g.y, g.y + g.h] : [g.x, g.x + g.w] }
+    const gw = want.filter(startWall).sort((p, q) => run(p)[0] - run(q)[0])
+    expect(gw.length).toBeGreaterThan(0)
+    expect(run(sw[0])[0]).toBeCloseTo(run(gw[0])[0], 6)
+    const pitchPx = (96 + 3) / 12 * GS, nb = sw[0].beams.length
+    expect(run(sw[0])[1] - run(sw[0])[0]).toBeCloseTo(nb * pitchPx + 3 / 12 * GS, 6)
+    expect(run(sw[0])[1]).toBeGreaterThan(run(gw[gw.length - 1])[1] - pitchPx - EPS)
     // flush on the start walls: the first row (single) and the run's start
     const f = racks().map(r => m.rackFootprint(r))
     expect(Math.min(...f.map(lo))).toBeCloseTo(vert ? ix : iy, 6)

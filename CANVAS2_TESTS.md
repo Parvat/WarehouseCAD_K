@@ -284,7 +284,7 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### RA — Racking areas and zones · `RA_rackingAreas.test.js` (85 tests)
+### RA — Racking areas and zones · `RA_rackingAreas.test.js` (93 tests)
 Code: `generate/rackingArea.js` (pure) and `utils/rackingAreaTool.js` (store,
 question). UI: `canvas2/AreaPrompt.jsx` and
 `RightPanel/panels/RackingAreaPanel.jsx`.
@@ -410,7 +410,7 @@ joins the copy-to-sections set.
 |---|---|
 | `RA-create` | the fill makes an area on Racking, parented, with the box as dragged clipped to the inner wall faces, the direction and every rack stamped and recorded; no edits; one undo removes the area and its racks |
 | `RA-extend` | 240 × 120, a 40 × 40 office top-right, the area all but the top 40'; the top edge dragged to the wall: the strip beside the office fills; no rack overlaps the office; the strip ends up to the office, never past it (within the pattern's next bay / row); every rack more than a bay from the old edge is the very same object; on the pattern, aisles full; no errors; one undo |
-| `RA-edits` | a rack moved by hand: the extend asks with the exact text; the area is back while asking; Cancel changes nothing (no history); Continue extends and the moved rack is unchanged; one undo |
+| `RA-edits` | a rack moved by hand (the nearest that isn't a wall row): the extend asks with the exact text; the area is back while asking; Cancel changes nothing (no history); Continue extends and the moved rack is unchanged; one undo |
 | `RA-shrink` ×2 | along the rows by 37' 5" (not whole bays): each crossing row is kept from the same start on the same uprights, fewer bays, ending within one bay (8' 3") of the new edge, beams still 96"; across the rows: crossing racks go (a pair keeps a half that still fits, as a single); everything within the new box; on the pattern, aisles full; no hand edits recorded; no errors; one undo |
 | `RA-rebuild` | beam → 108": every rack 108", the area remembers it, no errors, one undo; with a hand-moved rack: asked; Continue keeps it; the rest are 108"; no overlaps |
 | `RA-zone` | racks no area manages (the area deleted, Keep racks): a staging zone added over them asks ("This staging covers N racks. …"), with the add taken back meanwhile (no history); Cancel leaves it unplaced; Continue places it, and no bay is left under it; one entry; no errors but the dead-end aisles the zone now closes ("No way in", area AA: no area refits these racks); one undo |
@@ -432,6 +432,8 @@ joins the copy-to-sections set.
 | `RA-regular-extend` ×3 | a rectangle, an L and a T: the fill regular; extended past the far edge across the rows to the wall: still every aisle exactly the forklift aisle (no wide aisle where the first box ended); shrink back and extend again: identical; clean |
 | `RA-slide` ×3 | a rectangle, an L and a T, the whole building filled (cut across ½' at a time until the last row before the far-wall single is a full pair with 2–9' of slack); an office whose edge comes (aisle − Δ) short of that pair's start face, Δ = min(1.5', slack): the strict helpers pass; the whole row sits at its pattern place + Δ; beside the office a full pair, its start face exactly 10' 6" off the office; the row's bays unchanged; shrink across (the far edge off the wall: the row not slid) and along, extend back: the box back exactly and the racks identical; clean |
 | `RA-slide-slack` ×3 | the same, the building cut to leave exactly 2' of slack, the office needing 2' 9": the row stays at its pattern place, only its far half beside the office; clean |
+| `RA-wall-row` ×3 | a rectangle, an L and a T, the whole building, max run 60': every single flush on a wall runs as far as whole bays of the pattern's grid fit (one more at either end would leave the box or floor, or land on a zone, another rack or a travel path from the way-in report); the rows have cross-aisles and a wall row runs on through them, longer than 60'; shrink along and across, extend back: the box back and the racks identical; clean |
+| `RA-wall-zone` (rectangle) | the same, an office 20' × 12' against the far wall mid-run: the far wall row is two racks, one either side, each up to the office by whole bays; nothing under it; clean |
 | `RA-slide-column` (rectangle) | the same office facing one bay of the row: with no columns the row slides; with three 12" building columns on the row's flue line (seated there, free), which the slid row's face would land on, the row stays at its pattern place (the slide would lose usable positions); Check layout clean |
 
 All run horizontal and vertical. LY-assign now expects seven standard layers
@@ -449,7 +451,8 @@ only as the second-last row slid toward the wall, and only at exactly its Δ, wo
 test from the store (not the fill): the last pair before a single flush on the far wall,
 nothing between them; a zone on its start side, overlapping it along, closer than an aisle;
 Δ = the aisle less that clearance, within the last aisle's slack. Anything else off its
-place still fails "on its place across". Regular expects the aisle before it exactly
+place still fails "on its place across". A wall row passes along only with its bays on the
+pattern's grid ("on the pattern's grid"), not a run's. Regular expects the aisle before it exactly
 aisle + Δ. Two readings added to Regular for these layouts: a gap with a zone in it
 is not an aisle (an office between two rows), and racks meeting along by no more than an
 upright (a corner at a shared frame) don't face each other. No existing test's expected values
@@ -468,6 +471,20 @@ RA-slide-column fails (2). The fill sliding by Δ + 3": RA-slide fails inside th
 strict helper ("row N on its place across") and RA-slide-column fails (8). The
 fill sliding with no zone (1.5' whenever there is slack): 26 fail, existing
 RA-regular / RA-extend / RA-shrink among them, through the strict helper.
+Wall rows placed per run again (split at the cross-aisles): RA-wall-row and
+RA-wall-zone fail (8, at "on the pattern's grid"), with CX-fill-rect, FR-generate,
+RA-align and others (34 in RA, CX, FR). The far wall row ignoring zones: RA-wall-zone
+fails vertical; horizontal the face rule drops the bays under the office anyway.
+
+**Existing tests changed with the unbroken wall rows** (listed before editing,
+approved): CX-fill-rect and CX-fill-L count wall rows separately (1 piece; the
+L's bar wall row ≤ 2, cut only by its travel path); FR-generate leaves the start
+wall's single out of the comparison with Generate and asserts it on its own (one
+rack, from Generate's first run start, on the grid, reaching within a bay of
+Generate's last piece); RA-edits picks the nearest rack that isn't a wall row (the
+merged wall row's centre was nearest, and moved 6" into the wall it is trimmed on
+the extend, as it should be); RA-align / RA-align-shape check a wall row's uprights
+against the pattern's grid.
 
 **Checked in the app (both orientations), with the real mouse and panel:**
 - Zones section → Office, placed and moved top-right.
@@ -580,7 +597,7 @@ by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
 
 | Test | Asserts |
 |---|---|
-| `FR-generate` (×2) | the whole of a rectangle, 240 × 120 and 1080 × 410: Generate's walk over the same clear floor, given the same way in (area AA: a travel path where rows run wall to wall) (the inner faces, no wall clearance) — racks (position, size, rotation, beams, rowIndex, genSection) — for every rack ending before the last single + pair + aisle of the far wall, where Generate widens its last aisle and the fill doesn't; the first row (single) and the run start flush on the inner faces; what is left at the far wall under a pair and an aisle; every aisle the forklift aisle; every object has its own id |
+| `FR-generate` (×2) | the whole of a rectangle, 240 × 120 and 1080 × 410: Generate's walk over the same clear floor, given the same way in (area AA: a travel path where rows run wall to wall) (the inner faces, no wall clearance) — racks (position, size, rotation, beams, rowIndex, genSection) — for every rack ending before the last single + pair + aisle of the far wall, where Generate widens its last aisle and the fill doesn't, but the start wall's single (unbroken in the fill, split in Generate: BUG 70) — that one asserted on its own: one rack from Generate's first run start, on the grid, reaching within a bay of Generate's last piece; the first row (single) and the run start flush on the inner faces; what is left at the far wall under a pair and an aisle; every aisle the forklift aisle; every object has its own id |
 | `FR-shape` (×2) | the whole of an L (300 × 200) and a T (360 × 240): more than one rectangle in the region; no rack outside the outline (every corner inside, no outline vertex inside a rack); no overlaps; every row index has one place across (its doubles all at one stack position, its singles flush with one face of that pair); the start wall's row single and flush on it; every single's other half would cross a wall; Check layout: nothing at all |
 | `FR-arms` | an L's two arms filled separately: each fill's start wall gets single rows flush on it (in horizontal the bar's start is the inside-corner wall), nothing outside, no overlaps, the second fill's stamps after the first's, an aisle at least between the two fills wherever they face, no errors |
 | `FR-edge-stack` (×6) | 300 × 200, a box from mid-building (open floor) to a far edge past the wall, exactly on its inner face, or 6" short of it; each dragged from the open edge and from the far edge. The row at the start edge is single, its outer face exactly on it (0", within 0.001 px; past the wall: the inner face); what is left at the other edge is under a pair and an aisle; every row between is back-to-back; every aisle the forklift aisle; nothing outside the box or the walls; no errors |
@@ -828,6 +845,14 @@ ends (a wall and an office, or two walls) is a dead-end pocket.
     is at least the unslid result's — a building column the slid row would land
     on keeps it where it was;
   - otherwise the row stays at its pattern place (the result before).
+- **A wall row runs unbroken.** A single row flush on a wall face (the far
+  edge's, and the start edge's when the box starts on a wall) is one rack per
+  stretch of wall: not broken where a cross-aisle meets it, exempt from the max
+  run. A zone, the box's end, the floor's end or a travel path the way in cuts
+  still ends it. Its bays sit on one grid the pattern fixes (its first run's
+  uprights, carried on), so an edge moved only adds or drops bays at the ends
+  and shrink → extend back stays identical. Generate still splits them
+  (CANVAS2_BUGLOG BUG 70). Tests: RA-wall-row, RA-wall-zone.
   - Still deterministic from the box, the pattern and the objects, so shrink →
     extend back stays identical. Tests: RA-slide, RA-slide-slack, RA-slide-column.
 | Test | Asserts |
@@ -1855,9 +1880,9 @@ The rule lives in `rowSegments`, so Generate and Fill racking both follow it.
 | `CX-240` | 240 ft at 150 ft max: exactly one cross-aisle, both sections ≤ 150 ft |
 | `CX-1080` | 1,080 ft: 6 at 150 ft, 9 at 100 ft — the same as the pre-change `rowSegments` (run against it) |
 | `CX-generate` ×6 | Generate, 100 ft across, 30 × 30 grid: a 72 ft run → 1 piece per row; 240 ft → 2; 1,080 ft → 8 (6 by length, one forced by the columns, as before) |
-| `CX-fill-rect` ×2 | Fill racking 240 × 120: 2 pieces per row horizontal, 1 vertical |
+| `CX-fill-rect` ×2 | Fill racking 240 × 120: 2 pieces per row horizontal, 1 vertical; the wall rows 1 piece (area AA: unbroken) |
 | `CX-fill-T` ×2 | Fill racking a T 360 × 240: vertical, the 72 ft bar's rows are one piece; horizontal, the 126 ft stem's rows are one piece |
-| `CX-fill-L` ×2 | Fill racking an L 300 × 200: horizontal, the 90 ft stem is one piece, and the bar's rows, running the whole 300 ft through the elbow (one pattern), are split by the cross-aisle (≥ 2 runs: the stem's travel path, area AA, comes down through them too); vertical, the stem above the bar and the 60 ft bar are one piece each |
+| `CX-fill-L` ×2 | Fill racking an L 300 × 200: horizontal, the 90 ft stem is one piece, and the bar's rows, running the whole 300 ft through the elbow (one pattern), are split by the cross-aisle (≥ 2 runs: the stem's travel path, area AA, comes down through them too); vertical, the stem above the bar and the 60 ft bar are one piece each; horizontal, the bar's wall row runs through the cross-aisle (≤ 2 pieces: only the travel path cuts it) |
 
 Pieces per row count the runs a row is cut into by cross-aisles (racks along a row
 closer than 8.5' are one run: a double turning single beside a wall or zone loses

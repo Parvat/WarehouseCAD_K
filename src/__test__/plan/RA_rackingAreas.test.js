@@ -137,7 +137,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     // the rack nearest the area's centre (an interior row: moving it keeps it inside)
     const a0 = areaNow(), cx = a0.x + a0.width / 2, cy = a0.y + a0.height / 2
     const dist = (o) => { const f = foot(o); return Math.hypot(f.x + f.w / 2 - cx, f.y + f.h / 2 - cy) }
-    const r = [...racks()].sort((p, q) => dist(p) - dist(q))[0]
+    // (not a wall row: one runs the area's whole length, so its centre is often the nearest)
+    const r = [...racks()].filter(o => !flushOnWall(o)).sort((p, q) => dist(p) - dist(q))[0]
     s().commitObjectUpdate(r.id, vert ? { x: r.x + GS / 2 } : { y: r.y + GS / 2 })
     const moved = JSON.parse(JSON.stringify(s().objects.find(o => o.id === r.id)))
     expect(m.RA.areaEdits(s().objects, areaNow()).count).toBe(1)
@@ -334,7 +335,13 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const h0 = Math.min(...template.map(t => runOf(t)[0])) / GS, h1 = Math.max(...template.map(t => runOf(t)[1])) / GS
     expect(added.length).toBeGreaterThan(1)
     let whole = 0
+    const p = areaNow().pattern, pitch = (p.upIn + p.beamIn) / 12, g0 = p.pieces[0].r0
     for (const r of added) {
+      // a wall row runs unbroken on the one grid the pattern fixes (area AA): its uprights on that grid
+      if (flushOnWall(r)) {
+        for (const u of uprights(r)) { const g = (u - g0) / pitch; expect(Math.abs(g - Math.round(g)), `wall row upright at ${u.toFixed(3)}' on the pattern's grid`).toBeLessThan(1e-6) }
+        continue
+      }
       for (const u of uprights(r)) if (u > h0 + 1e-6 && u < h1 - 1e-6) expect(tUp.some(t => Math.abs(t - u) < 1e-6), `upright at ${u.toFixed(3)}' lines up`).toBe(true)
       const [r0, r1] = runOf(r)
       const same = template.find(t => Math.abs(runOf(t)[0] - r0) < 1e-3 && Math.abs(runOf(t)[1] - r1) < 1e-3)
@@ -450,6 +457,12 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
       if (!flushOnWall(r)) expect(spots.some(([x, y]) => Math.abs(x - s0) < 1e-6 && Math.abs(y - s1) < 1e-6), `row ${r.rowIndex} on its place across`).toBe(true)
       const pc = p.pieces.find(q => q.sec === r.genSection)
       expect(pc, `section ${r.genSection} is a pattern run`).toBeTruthy()
+      if (flushOnWall(r)) {
+        // a wall row runs unbroken (area AA): its bays on the one grid the pattern fixes — its first run's uprights carried on
+        const g = (r0 - p.pieces[0].r0) / pitch
+        expect(Math.abs(g - Math.round(g)), `wall row ${r.rowIndex} on the pattern's grid`).toBeLessThan(1e-6)
+        continue
+      }
       const k = (r0 - pc.r0) / pitch
       expect(Math.abs(k - Math.round(k)), `row ${r.rowIndex} on its run's uprights`).toBeLessThan(1e-6)
       expect(Math.round(k) >= 0 && Math.round(k) + r.beams.length <= pc.n).toBe(true)
@@ -849,6 +862,81 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const res = m.LC.checkLayout(s().objects, { gridSize: GS })
     expect(res.errors).toEqual([])
     clean()
+  })
+
+  /* ── Area AA: a wall row runs unbroken ── */
+  /** Every single flush on a wall runs as far as it can: one more bay of the pattern's grid at either end
+   *  would leave the box or the floor, or land on a zone or a travel path the way in cut (its report). */
+  const expectWallRowsWhole = () => {
+    const a = areaNow(), p = a.pattern, pitch = (p.upIn + p.beamIn) / 12
+    const fp = s().objects.find(o => o.id === a.parentId), inner = m.FR.innerOutline(fp, GS)
+    const pin = (px, py) => { let c = false; for (let i = 0, j = inner.length - 1; i < inner.length; j = i++) { const P = inner[i], Q = inner[j]; if ((P.y > py) !== (Q.y > py) && px < (Q.x - P.x) * (py - P.y) / (Q.y - P.y) + P.x) c = !c } return c }
+    const onFloor = (b) => [[b.x + 0.01, b.y + 0.01], [b.x + b.w - 0.01, b.y + 0.01], [b.x + 0.01, b.y + b.h - 0.01], [b.x + b.w - 0.01, b.y + b.h - 0.01]].every(([x, y]) => pin(x, y))
+      && !inner.some(q => q.x > b.x + 0.01 && q.x < b.x + b.w - 0.01 && q.y > b.y + 0.01 && q.y < b.y + b.h - 0.01)
+    const zones = s().objects.filter(o => o.type.startsWith('zone_')).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height }))
+    const report = []
+    m.FR.patternFill(s().objects.filter(o => !(RACK.has(o.type) && o.areaId === a.id)), boxNow(), p, { gridSize: GS, report })
+    const lanes = report.map(q => q.at).filter(Boolean)
+    const box = boxNow()
+    const walls = racks().filter(o => o.areaId === a.id && flushOnWall(o))
+    expect(walls.length).toBeGreaterThan(0)
+    for (const r of walls) {
+      const [s0, s1] = ftS(foot(r)), [r0, r1] = ftR(foot(r))
+      for (const [q0, q1] of [[r0 - pitch, r0], [r1, r1 + pitch]]) {
+        const b = vert ? { x: s0 * GS, y: q0 * GS, w: (s1 - s0) * GS, h: (q1 - q0) * GS } : { x: q0 * GS, y: s0 * GS, w: (q1 - q0) * GS, h: (s1 - s0) * GS }
+        const lane = lanes.some(([l0, l1]) => Math.min(l1, q1 * GS) - Math.max(l0, q0 * GS) > EPS)
+        const fits = within(b, box) && onFloor(b) && !zones.some(z => overlap(z, b)) && !racks().some(o => o !== r && overlap(foot(o), b)) && !lane
+        expect(fits, `wall row ${r.rowIndex} stops where one more bay fits (${q0.toFixed(2)}–${q1.toFixed(2)}')`).toBe(false)
+      }
+    }
+    return walls
+  }
+  /** Where the pattern's rows (not the wall rows) break along the run: their cross-aisles (ft). */
+  const crossAisles = () => {
+    const a = areaNow(), rows = new Map()
+    for (const o of racks().filter(o => o.areaId === a.id && !flushOnWall(o))) { if (!rows.has(o.rowIndex)) rows.set(o.rowIndex, []); rows.get(o.rowIndex).push(ftR(foot(o))) }
+    const out = []
+    for (const list of rows.values()) { list.sort((x, y) => x[0] - y[0]); for (let i = 1; i < list.length; i++) if (list[i][0] - list[i - 1][1] >= a.pattern.aisleFt - 1e-6) out.push([list[i - 1][1], list[i][0]]) }
+    return out
+  }
+
+  it.each(SLIDE)('RA-wall-row (%s, max run 60\'): a single flush on a wall — the start wall\'s and the far wall\'s — is one rack per stretch of wall: not broken where a cross-aisle meets it (it runs on through, longer than the max run), its bays on the pattern\'s grid, as far as whole bays fit; shrink → extend back identical; clean', async (_, type, w, h) => {
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation, maxRunFt: 60 })
+    fillWhole(type, w, h)
+    clean()
+    const walls = expectWallRowsWhole()
+    const ca = crossAisles()
+    expect(ca.length, 'the rows have cross-aisles').toBeGreaterThan(0)
+    // a wall row runs on through every cross-aisle beside it, longer than the max run
+    const through = walls.filter(r => { const [r0, r1] = ftR(foot(r)); return ca.some(([c0, c1]) => r0 < c0 - 1e-6 && r1 > c1 + 1e-6) })
+    expect(through.length, 'a wall row runs through a cross-aisle').toBeGreaterThan(0)
+    for (const r of through) expect(ftR(foot(r))[1] - ftR(foot(r))[0]).toBeGreaterThan(60)
+    // shrink → extend back: identical (along, across)
+    const keys = rackKeys(), b0 = boxNow()
+    for (const cut of vert ? [{ h: b0.h - 20.3 * GS }, { w: b0.w - 15.3 * GS }] : [{ w: b0.w - 20.3 * GS }, { h: b0.h - 15.3 * GS }]) {
+      resizeArea({ ...b0, ...cut })
+      clean()
+      expectWallRowsWhole()
+      resizeArea(b0)
+      expect(boxNow()).toEqual(b0)
+      expect(rackKeys()).toEqual(keys)
+    }
+  })
+
+  it('RA-wall-zone (rectangle, max run 60\'): a zone against the far wall still interrupts its wall row — two racks, one either side of it, each running up to it by whole bays; none under it; clean', async () => {
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation, maxRunFt: 60 })
+    const fp = fillWhole('fp_rect', 240, 120)
+    const ib = innerBox(fp)
+    // an office 20' along × 12' across, against the far wall, in the middle along the run
+    const z = vert ? { x: ib.x + ib.w - 12 * GS, y: ib.y + ib.h / 2 - 10 * GS, w: 12 * GS, h: 20 * GS } : { x: ib.x + ib.w / 2 - 10 * GS, y: ib.y + ib.h - 12 * GS, w: 20 * GS, h: 12 * GS }
+    s().addObject({ type: 'zone_office', label: 'Office', x: z.x, y: z.y, width: z.w, height: z.h, parentId: fp.id, layerId: 'zones' })
+    await tick()
+    clean()
+    const far = vert ? ib.x + ib.w : ib.y + ib.h
+    const farWall = racks().filter(o => flushOnWall(o) && Math.abs((vert ? foot(o).x + foot(o).w : foot(o).y + foot(o).h) - far) < 1e-3)
+    expect(farWall).toHaveLength(2)
+    for (const o of racks()) expect(overlap(foot(o), z), 'nothing under the office').toBe(false)
+    expectWallRowsWhole()
   })
 })
 

@@ -64,11 +64,19 @@ describe.each(['horizontal', 'vertical'])('CX — %s', (orientation) => {
   /** Pieces per row: the runs a row is cut into by cross-aisles, within `pred` (world px footprint).
    *  A row is its row stamp (or its stack position); racks along it closer than a cross-aisle (a
    *  double turning single beside a wall or zone loses one bay between them) are one run. */
-  const piecesPerRow = (pred = () => true) => {
+  /** A single row flush on a wall face across (area AA: it runs unbroken, exempt from the max run). */
+  const onWall = (r) => {
+    if (r.type !== 'rack_row') return false
+    const fp = s().objects.find(o => o.type.startsWith('fp_')), f = m.rackFootprint(r)
+    const faces = m.FR.innerOutline(fp, GS).map(p => (vert ? p.x : p.y)), a = vert ? f.x : f.y, b = vert ? f.x + f.w : f.y + f.h
+    return faces.some(v => Math.abs(v - a) < 1e-3 || Math.abs(v - b) < 1e-3)
+  }
+  /** Pieces per row: `walls` false counts the rows but wall rows, true counts the wall rows only. */
+  const piecesPerRow = (pred = () => true, walls = false) => {
     const rows = new Map()
     for (const r of racks()) {
       const f = m.rackFootprint(r)
-      if (!pred(f)) continue
+      if (!pred(f) || onWall(r) !== walls) continue
       const k = r.rowIndex != null ? 'r' + r.rowIndex : Math.round((vert ? f.x : f.y) * 100)
       if (!rows.has(k)) rows.set(k, [])
       rows.get(k).push(vert ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
@@ -107,6 +115,10 @@ describe.each(['horizontal', 'vertical'])('CX — %s', (orientation) => {
     const rows = piecesPerRow()
     expect(rows.length).toBeGreaterThan(3)
     for (const k of rows) expect(k).toBe(vert ? 1 : 2)
+    // the wall rows (the start wall's single, the far wall's): one piece, through the cross-aisle
+    const walls = piecesPerRow(undefined, true)
+    expect(walls.length).toBeGreaterThan(0)
+    for (const k of walls) expect(k).toBe(1)
   })
 
   it('CX-fill-T: Fill racking a T (360 × 240) — every part whose run is within 150\' is one piece: the 72\' bar (vertical), the 126\' stem (horizontal)', () => {
@@ -135,6 +147,10 @@ describe.each(['horizontal', 'vertical'])('CX — %s', (orientation) => {
       const rows = piecesPerRow(inBar)
       expect(rows.length).toBeGreaterThan(1)
       for (const k of rows) expect(k).toBeGreaterThanOrEqual(2)
+      // its wall row on the bar's far wall: one piece through the cross-aisle, cut only where the travel path comes down
+      const walls = piecesPerRow(inBar, true)
+      expect(walls.length).toBeGreaterThan(0)
+      for (const k of walls) expect(k).toBeLessThanOrEqual(2)
     }
   })
 })

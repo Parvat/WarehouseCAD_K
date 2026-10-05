@@ -5961,6 +5961,24 @@ problem, because the actual defect wasn't in anything my repro
 exercised. Direct evidence from the live app broke that blind spot;
 more self-testing of the same mechanism would not have.
 
+## BUG 70 — Generate still splits wall rows at cross-aisles  (2026-10-05, open)
+Symptom:  In a layout from Generate, the single row flush on a wall (the
+start wall's, the far wall's) is broken where a cross-aisle meets it,
+like every other row. Racking areas and Fill racking no longer do this
+(area AA, branch canvas2-wall-pockets): there a wall row is one rack per
+stretch of wall, exempt from the max run, its bays on the grid the
+pattern fixes.
+
+Cause:    Generate (`traceGenerate.js` → `sizingSheetLayout`) places
+every row, the wall singles included, piece by piece along the run, and
+the pieces are what the cross-aisles split. Only `patternFill` (racking
+areas, Fill racking) merges wall rows.
+
+Fix:      Open — the next item. Left alone in that round on purpose.
+FR-generate (Fill = Generate's walk) leaves the start wall's single out
+of its comparison and asserts the fill's on its own until Generate
+does the same.
+
 ---
 
 ## Template for new entries

@@ -439,28 +439,59 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
   const tooClose = (s0, s1) => (dirS > 0 ? s1 > F - reserve + 1e-6 : s0 < F + reserve - 1e-6)
   const offWall = (ivs, s0, s1) => (wallIvs.length && tooClose(s0, s1) ? wallIvs.reduce((acc, [a, c]) => subtract(acc, a, c), ivs) : ivs)
   const fa = dirS > 0 ? F - singleFt : F                                 // the wall row's low face
+  /** The run intervals where face `sv` lies on a wall: on a wall line, the floor stopping right past
+   *  it (below it when `below`, else above). */
+  const wallAt = (sv, below) => {
+    if (!poly.some((a, i) => { const c = poly[(i + 1) % poly.length]; return Math.abs(a.s - c.s) < EPS && Math.abs(a.s - sv) < 1e-6 })) return []
+    const past = below ? floorRun(sv - 0.02, sv - 0.01) : floorRun(sv + 0.01, sv + 0.02)
+    return past.reduce((acc, [a, c]) => subtract(acc, a, c), [[box.r0, box.r1]])
+  }
   /** One pass of the pattern over the box. `slide` ({ row, by }) moves that one pattern row `by` feet
    *  toward the far wall, along its whole length. */
   const lay = (slide = null) => {
     const placements = [], placedRS = [], used = new Set()
+    /** One rack: `n` bays from run position `r0`, across [sa, sa + depthFt]. */
+    const put = (unit, type, sa, depthFt, r0, n, sec) => {
+      const len = (upIn * (n + 1) + n * beamIn) / 12
+      const at = vert
+        ? { xFt: sa + depthFt / 2 - len / 2, yFt: r0 + len / 2 - depthFt / 2, angle: 90 }
+        : { xFt: r0, yFt: sa, angle: 0 }
+      placements.push({
+        type, ...at, bays: n, beams: Array(n).fill(beamIn), beamIn, depthIn, flueIn: type === 'rack_double_row' ? unit.flueIn : flueIn, flueBaseIn: flueIn,
+        levels: pattern.levels, palletWIn: pattern.palletWIn, palletDIn: pattern.palletDIn, uprightWidthIn: upIn,
+        rowIndex: unit.row, genSection: sec,
+      })
+      used.add(unit.row)
+      placedRS.push({ s0: sa, s1: sa + depthFt, r0, r1: r0 + len, row: unit.row, wall: !!unit.wall })
+    }
     /** Each pattern piece's whole bays inside the interval [a, c], placed across [sa, sa + depthFt]. */
     const place = (unit, type, sa, depthFt, ivs) => {
       for (const [a, c] of ivs) for (const pc of pattern.pieces) {
         const kLo = Math.max(0, Math.ceil((a - pc.r0) / pitch - 1e-9)), kHi = Math.min(pc.n - 1, Math.floor((c - pc.r0 - bayFt) / pitch + 1e-9))
-        if (kHi < kLo) continue
-        const n = kHi - kLo + 1, r0 = pc.r0 + kLo * pitch, len = (upIn * (n + 1) + n * beamIn) / 12
-        const at = vert
-          ? { xFt: sa + depthFt / 2 - len / 2, yFt: r0 + len / 2 - depthFt / 2, angle: 90 }
-          : { xFt: r0, yFt: sa, angle: 0 }
-        const beams = Array(n).fill(beamIn)
-        placements.push({
-          type, ...at, bays: n, beams, beamIn, depthIn, flueIn: type === 'rack_double_row' ? unit.flueIn : flueIn, flueBaseIn: flueIn,
-          levels: pattern.levels, palletWIn: pattern.palletWIn, palletDIn: pattern.palletDIn, uprightWidthIn: upIn,
-          rowIndex: unit.row, genSection: pc.sec,
-        })
-        used.add(unit.row)
-        placedRS.push({ s0: sa, s1: sa + depthFt, r0, r1: r0 + len, row: unit.row, wall: !!unit.wall })
+        if (kHi >= kLo) put(unit, type, sa, depthFt, pc.r0 + kLo * pitch, kHi - kLo + 1, pc.sec)
       }
+    }
+    /* A single row flush on a wall (the far edge's, the start edge's): one rack per stretch of wall,
+       not broken where a cross-aisle meets it, and exempt from the max run — a zone, the box's end or
+       the floor's still end it. Its bays sit on one grid the pattern fixes (its first run's uprights,
+       carried on), so moving an edge only adds or drops bays at the ends. Stamped with the run it
+       starts in (else the nearest). */
+    const g0 = pattern.pieces[0].r0
+    const placeWall = (unit, sa, ivs) => {
+      for (const [a, c] of ivs) {
+        const kLo = Math.ceil((a - g0) / pitch - 1e-9), kHi = Math.floor((c - g0 - bayFt) / pitch + 1e-9)
+        if (kHi < kLo) continue
+        const r0 = g0 + kLo * pitch
+        const pc = pattern.pieces.reduce((b, q) => { const d = Math.max(0, q.r0 - r0, r0 - (q.r0 + q.n * pitch)); return !b || d < b.d ? { q, d } : b }, null).q
+        put(unit, 'rack_row', sa, singleFt, r0, kHi - kLo + 1, pc.sec)
+      }
+    }
+    /** A single row's intervals: flush on a wall there, one rack per stretch; elsewhere the pattern's runs. */
+    const placeSingle = (unit, sa, ivs) => {
+      const W = [...wallAt(sa, true), ...wallAt(sa + singleFt, false)]
+      const onWall = intersect(ivs, W)
+      place(unit, 'rack_row', sa, singleFt, onWall.reduce((acc, [a, c]) => subtract(acc, a, c), ivs))
+      placeWall(unit, sa, onWall)
     }
     for (const pu of pattern.units) {
       const u = slide && pu.row === slide.row ? { ...pu, s0: pu.s0 + dirS * slide.by } : pu
@@ -471,15 +502,15 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
       place(u, 'rack_double_row', u.s0, u.d, pair)
       let lo = freeRun(u.s0, u.s0 + singleFt), hi = freeRun(u.s0 + u.d - singleFt, u.s0 + u.d)
       for (const [a, c] of pair) { lo = subtract(lo, a, c); hi = subtract(hi, a, c) }
-      place(u, 'rack_row', u.s0, singleFt, offWall(lo, u.s0, u.s0 + singleFt))
-      place(u, 'rack_row', u.s0 + u.d - singleFt, singleFt, offWall(hi, u.s0 + u.d - singleFt, u.s0 + u.d))
+      placeSingle(u, u.s0, offWall(lo, u.s0, u.s0 + singleFt))
+      placeSingle(u, u.s0 + u.d - singleFt, offWall(hi, u.s0 + u.d - singleFt, u.s0 + u.d))
     }
     if (wallIvs.length) {
       let flush = intersect(freeRun(fa, fa + singleFt), wallIvs)
       for (const q of placedRS) if (q.s1 > fa - aisleFt + 1e-6 && q.s0 < fa + singleFt + aisleFt - 1e-6) flush = subtract(flush, q.r0, q.r1)
       // its stamps: the pattern row whose place it takes (the unit across the wall band, else the nearest)
       const mid = fa + singleFt / 2, home = pattern.units.reduce((b, q) => { const d = Math.max(0, q.s0 - mid, mid - (q.s0 + q.d)); return !b || d < b.d ? { q, d } : b }, null)
-      if (flush.length) place({ row: home.q.row, flueIn, wall: true }, 'rack_row', fa, singleFt, flush)
+      if (flush.length) placeWall({ row: home.q.row, flueIn, wall: true }, fa, flush)
     }
     return { placements, placedRS, used }
   }
