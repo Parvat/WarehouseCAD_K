@@ -13,7 +13,10 @@ import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
 import { computeLiveFlue, resolveFlueBase, flueCommitFields, flueDragCentre, flueDragPlacement } from './liveFlue'
 import { usePlacement, movePlacement, commitPlacement } from '../utils/placement'
-import { guardEdit } from '../utils/copyPrompt'
+import { guardEdit, skipNextAction } from '../utils/copyPrompt'
+import { rebuildAisles } from '../utils/aisleRebuild'
+import { nanoid } from 'nanoid'
+import { inlineSnap, planInlineDrop, applyJoin } from './inlineSnap'
 import { pickableIn, snapTargets } from '../utils/layers'
 import { clearIssueHighlight } from '../utils/layoutCheck'
 import {
@@ -276,6 +279,10 @@ export function useCanvasInteraction({
       startWorld: world,
       sx: evt.clientX, sy: evt.clientY,   // SCREEN coords, for the drag threshold below
       origin: { x: grabbed.x, y: grabbed.y },   // the grabbed object, which snap follows
+      grabbedId: hitId,
+      /* the grabbed object as it was: a live-flue drag writes it to the store every frame, so a drop
+         that can't stay (in-line, no free end) puts this back */
+      startObj: { ...grabbed },
       /* its size as it is NOW — a live-flue rack's current (possibly widened)
          depth, not its base one: the centre is origin + size/2, and a centre
          worked out from the base depth sat (current − base)/2 off, which
@@ -948,6 +955,14 @@ export function useCanvasInteraction({
           else if (st.snapToGrid) dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
           if (snapDy != null) dy = snapDy
           else if (st.snapToGrid) dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
+          /* in-line snap (canvas2/inlineSnap.js): an end near another rack's end in its line goes onto
+             that rack's end upright, shared — it wins over the guides and the grid on both axes */
+          {
+            const pre = flueDragPlacement(d.origin, d.size, dx, dy, liveFlue.targetHeight)
+            const here = { ...st.objects.find(o => o.id === d.ids[0]), x: pre.x, y: pre.y, height: liveFlue.targetHeight, flueSpaceIn: liveFlue.targetFlueIn }
+            const inl = inlineSnap(here, snapTargets(st.objects, st.layers, d.movedIds), st.gridSize, Math.min(12 / view.current.zoom, st.gridSize))
+            if (inl) { dx += inl.ddx; dy += inl.ddy; guides.push(inl.guide) }
+          }
           d.delta = { dx, dy }
           setSmartGuides(guides)
 
@@ -1001,6 +1016,15 @@ export function useCanvasInteraction({
         if (d.ids.length === 1) {
           const g = st.objects.find(o => o.id === d.ids[0])
           if (g && (g.type === 'racking_area' || g.type.startsWith('zone_'))) ({ dx, dy } = clampDragDelta(st.objects, g, dx, dy, { gridSize: st.gridSize, snap: 8 / view.current.zoom }))
+        }
+        /* in-line snap (canvas2/inlineSnap.js): the grabbed rack's end near another rack's end in its
+           line goes onto that rack's end upright, shared — it wins over the guides and the grid */
+        {
+          const g = st.objects.find(o => o.id === d.grabbedId)
+          if (g && PORTED_RACK_TYPES.has(g.type)) {
+            const inl = inlineSnap({ ...g, x: d.origin.x + dx, y: d.origin.y + dy }, snapTargets(st.objects, st.layers, d.movedIds), st.gridSize, Math.min(12 / view.current.zoom, st.gridSize))
+            if (inl) { dx += inl.ddx; dy += inl.ddy; guides.push(inl.guide) }
+          }
         }
         d.delta = { dx, dy }
         setSmartGuides(guides)
@@ -1122,8 +1146,24 @@ export function useCanvasInteraction({
           if (d.moved) {
             const st = useCanvasStore.getState()
             const obj = st.objects.find(o => o.id === d.ids[0])
-            if (obj) st.commitObjectUpdate(d.ids[0], flueCommitFields(obj, d.flueBase))
-            reparentMoved(d.ids)
+            /* in a line (canvas2/inlineSnap.js): off any rack it overlaps there, joined to one it now
+               shares an end upright with — or, with no free end, back where it was (it was written to
+               the store every frame, with no history, so putting it back leaves nothing to undo) */
+            const plan = obj && planInlineDrop(st.objects, d.ids, d.ids[0], 0, 0, st.gridSize)
+            if (obj && !plan) {
+              const o0 = d.startObj
+              st.updateObject(d.ids[0], { x: o0.x, y: o0.y, width: o0.width, height: o0.height, flueSpaceIn: o0.flueSpaceIn })
+            } else if (obj) {
+              if (plan.dx || plan.dy) st.updateObject(d.ids[0], { x: obj.x + plan.dx, y: obj.y + plan.dy })
+              const now = useCanvasStore.getState().objects.find(o => o.id === d.ids[0])
+              if (plan.join) {
+                applyJoin(useCanvasStore, plan.join, { rebuildAisles, skipNextAction, newId: nanoid })
+                reparentMoved([plan.join.keep])
+              } else {
+                st.commitObjectUpdate(d.ids[0], flueCommitFields(now, d.flueBase))
+                reparentMoved(d.ids)
+              }
+            }
           }
           setSmartGuides([])
           setCursor(spaceDown.current ? 'grab' : 'default')
@@ -1133,12 +1173,21 @@ export function useCanvasInteraction({
         // hand every node back to where it actually rests
         for (const n of d.nodes) n.node.position(n.rest)
         if (d.moved && d.delta && (d.delta.dx || d.delta.dy)) {
-          /* ONE call for the whole selection, so the drag is ONE history
-             entry. moveObjects pushes history itself and cascades a floor
-             plan to its children, which is why the preview moved that same
-             cascade set. */
-          useCanvasStore.getState().moveObjects(d.ids, d.delta.dx, d.delta.dy)
-          reparentMoved(d.ids)
+          /* In a line (canvas2/inlineSnap.js): the grabbed rack settles off any rack it overlaps in its
+             line (the whole selection by the same shift), or with no free end the drag goes back; a
+             single rack sharing an end upright with one it matches is joined into it. Still ONE history
+             entry either way: moveObjects pushes history itself (and cascades a floor plan to its
+             children, which is why the preview moved that same cascade set); a join is one write. */
+          const st = useCanvasStore.getState()
+          const plan = planInlineDrop(st.objects, d.ids, d.grabbedId, d.delta.dx, d.delta.dy, st.gridSize)
+          if (!plan) stageRef.current?.batchDraw()
+          else if (plan.join) {
+            applyJoin(useCanvasStore, plan.join, { rebuildAisles, skipNextAction, newId: nanoid })
+            reparentMoved([plan.join.keep])
+          } else {
+            st.moveObjects(d.ids, plan.dx, plan.dy)
+            reparentMoved(d.ids)
+          }
         } else {
           stageRef.current?.batchDraw()
         }

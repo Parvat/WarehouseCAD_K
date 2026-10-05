@@ -1985,6 +1985,76 @@ Floor plans that aren't rectangles use their bounding box (approximate, agreed).
   restored both.
 - No console errors.
 
+### IS — Racks in one line: in-line snap, no overlap, join on drop · `IS_inlineSnap.test.js` (32 tests)
+Code: `canvas2/inlineSnap.js` (pure, plus one store write), wired in
+`canvas2/useCanvasInteraction.js` (both drag paths: plain and live flue).
+
+- **The old engine:** `utils/warehouseSnap.js` `findEndSnap` snapped ends, but
+  is not wired into canvas2, reads the unturned box on a fixed x axis (a vertical
+  rack snapped on the wrong axis), meets edge to edge (two uprights) and has no
+  overlap rule or join. Not ported; written fresh on `sharesFrame` (ends
+  overlapping by exactly one upright). Protected files untouched; no change to
+  `useCanvasStore.js`.
+- **In-line snap:** while dragging, when the grabbed rack's end comes within the
+  snap reach (12 px on screen, at most 1 ft — the smart guides' reach) of an end
+  of a rack in its line (both with bays, turned the same way, 0° or 90°, lined up
+  across within the reach), it goes onto that rack's end upright, shared, and
+  lined up across; a guide line shows on that upright. It wins over the guides
+  and the grid. Measured end to end.
+- **No overlap in a line:** on the drop, a rack overlapping a rack in its line
+  (across at all, along by more than the shared upright) settles at the nearest
+  free end of a rack there — ending on its first upright or starting on its last.
+  A single rack always has a free end somewhere; a multi-selection settles by one
+  shift, and if another of its racks would still land on a rack in its line, the
+  drag goes back.
+- **Join on drop (option A):** a single dragged rack that ends up sharing an end
+  upright with a rack that matches it — type, depth (and flue), levels, upright,
+  pallet, rotation (the same end first), building, layer, racking area, row and
+  section stamps — is joined into it: one rack with the stationary rack's id, its
+  bays in order (per-bay lengths kept), starting where the first starts; a
+  `genRunFt` stamp follows the start. Anything else only snaps: two racks.
+  Never with more than one rack moving.
+- **One undo step:** the drag preview writes nothing (plain path), so the drop is
+  one write — `moveObjects` for a move or settle, `applyJoin` (set the objects,
+  then one `commitObjectUpdate`) for a join. The live-flue path writes the rack
+  each frame without history and commits once; with no free end it puts the rack
+  back as it was.
+- **Column check:** the joined rack is a new object with new geometry, so the
+  per-rack geometry cache re-keys it and the check runs again; a column under the
+  part that was the dragged rack is a conflict on the joined rack.
+- **Section copy:** a join is not a bay edit — `applyJoin` calls
+  `skipNextAction`, so it puts nothing in the copy-to-sections set; racks with
+  different row or section stamps only snap.
+- **Racking areas:** racks of different areas only snap; joining two racks of one
+  area changes its racks, which the area reads as a hand edit (as any move does).
+
+| Test | Asserts |
+|---|---|
+| `IS-snap` ×2 | a rack's start 0.25' past another's end and 0.2' off across: snapped onto it — its first upright is the other's last, lined up across; the guide on that upright; its far end onto another's start the same way |
+| `IS-snap-reach` ×2 | no snap with the end 0.5' off, lined up 0.5' off across, or the other rack turned the other way |
+| `IS-settle` ×2 | dropped overlapping: nearer the other's far end it settles there, nearer its start there; dropped clear it stays where dropped |
+| `IS-settle-none` ×2 | a multi-selection whose other rack would land on a rack in its line (the grabbed one clear): back (null); alone, that rack settles at the nearest free end |
+| `IS-join` ×2 | a matching rack snapped on: one rack, the stationary id, bays 96/96/72 + 96/120 in order, both lengths less the shared upright, lined up; dragged in front: its bays first, ending where the stationary one ends |
+| `IS-snap-only` ×14 | levels, depth, racking area, row stamp, section stamp, turned the other way round, or a pair against a single: snapped on one upright, two racks |
+| `IS-undo` ×2 | a settle and a join are each one history entry; one undo restores exactly the state before the drag; after a join only the stationary id remains and is selected |
+| `IS-multi` ×2 | two selected racks, the grabbed one dropped overlapping: both move by the same settle shift; no join |
+| `IS-column` ×2 | a column in the dragged rack's first bay: before the join a conflict on it, after on the joined rack, the same positions lost; the geometry key differs and `sameRacks` reads the racks as changed |
+| `IS-copy` | a generated layout: a middle bay deleted fills the copy set (a bay edit); after Don't copy, the two pieces dragged back together and joined: nothing in the set, no question; the joined rack one bay short of the original |
+| `IS-wire` | the wiring: `inlineSnap` on both drag paths, `planInlineDrop` and `applyJoin` on both drops, a settle through `moveObjects`, the grabbed id kept |
+
+**Break-its:** the snap off: IS-snap, IS-join, IS-snap-only, IS-undo, IS-column,
+IS-copy fail (23). Settling off: IS-settle, IS-settle-none, IS-multi fail (6). The
+join conditions ignored (only the shared upright): IS-snap-only fails (14). The join
+written as two undo steps: IS-undo fails (2). The joined rack written over the
+stationary one in place (its cached geometry would stand): IS-column and others
+fail (11).
+
+**Checked in the app** (Playwright, the real mouse; 160 × 120, both orientations):
+a rack dragged to 0.2' past another's end joined into it (bays 96/96/72/96/120, the
+stationary id, one history step; one undo gives both back); dropped overlapping, it
+settled onto the end and joined; with different levels it snapped onto the shared
+upright, lined up across from 0.2' off, and stayed two racks.
+
 ### CX — Cross-aisles only when needed · `CX_crossAisleWhenNeeded.test.js` (16 tests)
 **Rule.** A rack run that fits within the max rack run (150 ft by default) in
 one piece stays one piece, with no cross-aisle. A longer run keeps the rule it
