@@ -263,14 +263,17 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     expect(check().errors).toEqual([])
   })
 
-  it.each(SHAPES)('AA-far-open (%s): the same area with its far edge 2\x27 short of the wall (open floor) keeps the regular pattern\x27s leftover — the cut pair\x27s near half where the pattern has it (1\x27 off the edge), nothing flush on the edge', (_, type, w, h) => {
+  it.each(SHAPES)('AA-far-open (%s): the same area with its far edge 2\x27 short of the wall — within a rack\x27s depth (3\x27 6"), so it counts as on the wall: the single flush against the wall\x27s inner face, nothing ending at the edge itself; clean', (_, type, w, h) => {
     const { F } = farArea(type, w, h, 2)
+    const face = F + 2 * GS                                               // the wall's inner face, 2' past the edge
     expect(racks().length).toBeGreaterThan(2)
     expect(racks().filter(r => Math.abs(sOf(r)[1] - F) < EPS)).toHaveLength(0)
-    const last = racks().filter(r => Math.abs(sOf(r)[1] - (F - GS)) < EPS)
-    expect(last.length).toBeGreaterThan(0)
-    for (const r of last) expect(r.type).toBe('rack_row')
+    const flush = racks().filter(r => Math.abs(sOf(r)[1] - face) < EPS)
+    expect(flush.length).toBeGreaterThan(0)
+    for (const r of flush) expect(r.type).toBe('rack_row')
     expect(check().errors).toEqual([])
   })
+
+
 
 })

@@ -5979,6 +5979,24 @@ FR-generate (Fill = Generate's walk) leaves the start wall's single out
 of its comparison and asserts the fill's on its own until Generate
 does the same.
 
+## BUG 71 — Fill racking puts an upright on a column of the grid  (2026-10-05, open)
+Symptom:  On the hand-check layout (RL tests, realLayout.fixture.js: 500 ×
+250, columns every 50' × 54'), a new area filled horizontal (and the turned
+layout filled vertical) gets "Row 7, section 4: a column stands on an
+upright frame" from Check layout. Already there before area AA's
+corrections (at a1b9f96).
+
+Chased:   Found while making a box edge within a rack's depth of a wall
+count as on it. Moving the run's start onto the wall made it worse (7
+upright errors), so only the edges across the rows snap; the run's ends
+stay as drawn.
+
+Cause:    Not traced yet. The run's walk (`areaPattern` → `walkGrid` /
+`rowSegments` over the column lines) doesn't keep every upright off the
+column lines; where it lands depends on where the run starts.
+
+Fix:      Open. RL-clean allows exactly this one error until it is fixed.
+
 ---
 
 ## Template for new entries

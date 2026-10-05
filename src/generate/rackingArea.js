@@ -28,7 +28,7 @@
 // racks under a zone that is placed, moved or resized over them are trimmed
 // to their bays outside it (clearZone).
 
-import { planFill, areaPattern, patternFill, innerOutline, DEFAULT_FILL_SETTINGS, isZone } from './fillRacking'
+import { planFill, areaPattern, patternFill, innerOutline, snapToWalls, DEFAULT_FILL_SETTINGS, isZone } from './fillRacking'
 import { rackFootprint } from './columnCheck'
 import { splitRackForBayDelete } from '../utils/baySplit'
 import { rebuildAisles } from '../utils/aisleRebuild'
@@ -165,7 +165,9 @@ export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = 
   const plan = planFill(objects, box, settings, { gridSize, newId, from, areaId: id })
   if (!plan.racks.length) return null
   const anchor = from ? { x: from.x > box.x + box.w / 2 ? 'r' : 'l', y: from.y > box.y + box.h / 2 ? 'b' : 't' } : { x: 'l', y: 't' }
-  // the area's box stays inside the building: clipped to its inner walls' extent
+  // the area's box stays inside the building: clipped to its inner walls' extent, and an edge across
+  // the rows within a rack's depth of a wall put on it (it counts as on the wall)
+  box = snapToWalls(box, plan.fp, gridSize, plan.pattern.depthIn / 12, plan.pattern.vert)
   const inner = innerOutline(plan.fp, gridSize), ix0 = Math.max(box.x, Math.min(...inner.map(p => p.x))), iy0 = Math.max(box.y, Math.min(...inner.map(p => p.y)))
   const ix1 = Math.min(box.x + box.w, Math.max(...inner.map(p => p.x))), iy1 = Math.min(box.y + box.h, Math.max(...inner.map(p => p.y)))
   const area = {

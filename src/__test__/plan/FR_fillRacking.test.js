@@ -270,15 +270,16 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
   const dragFill = (a, b) => { m.FT.startFill(a); m.FT.moveFill(b, s().objects, GS); return m.FT.commitFill(m.useCanvasStore) }
 
   /* The far edge three ways: past the wall (clipped to its inner face), exactly
-   * on the inner face, and 6" short of it (open floor next to the wall). */
-  const FAR = [['past the wall', 3 * GS], ['on the wall face', 0], ['6" off the wall', -GS / 2]]
+   * on the inner face, and 6" short of it — within a rack's depth (3' 6"), so it counts as on the wall (area AA). */
+  const FAR = [['past the wall', 3 * GS], ['on the wall face', 0], ['6" off the wall: counts as on it', -GS / 2]]
   it.each(FAR.flatMap(([far, off]) => [[far, 'from the open edge', off, false], [far, 'from the far edge', off, true]]))('FR-edge-stack: a box from mid-building to %s, dragged %s — the row at the start edge is SINGLE with its outer face exactly on it (0"); every aisle is the forklift aisle; what is left at the other edge (under a pair and an aisle) stays empty, the row there a pair or the half of one that fits; no aisle at the open edge', (_far, _dir, off, fromFar) => {
     const { fp, inner } = edgeCase()
     // the open edge across the stack axis, a whole number of inches off the middle
     const mid = vert ? fp.x + Math.round(fp.width / 2 / GS * 12 + 7) / 12 * GS : fp.y + Math.round(fp.height / 2 / GS * 12 + 7) / 12 * GS
     const face = vert ? inner.x1 : inner.y1
     const edge = face + off                                                            // where the box's far edge is
-    const farEdge = Math.min(edge, face)                                               // where the racking may reach
+    // where the racking may reach: the wall's inner face when the edge is past it or within a rack's depth of it
+    const farEdge = edge >= face - 3.5 * GS - 1e-6 ? face : edge
     const runA = vert ? fp.y - 2 * GS : fp.x - 2 * GS, runB = vert ? fp.y + fp.height + 2 * GS : fp.x + fp.width + 2 * GS
     const pt = (st, rn) => (vert ? { x: st, y: rn } : { x: rn, y: st })
     const n = fromFar ? dragFill(pt(edge, runB), pt(mid, runA)) : dragFill(pt(mid, runA), pt(edge, runB))

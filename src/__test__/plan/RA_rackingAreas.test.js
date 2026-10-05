@@ -445,6 +445,43 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const spots = r.type === 'rack_double_row' ? [[v.s0, v.s0 + v.d]] : [[v.s0, v.s0 + single], [v.s0 + v.d - single, v.s0 + v.d]]
     return spots.some(([x, y]) => Math.abs(x - s0) < 1e-6 && Math.abs(y - s1) < 1e-6) ? v : u
   }
+  /** Area AA, along the run: the floor at run position `at` (ft) beside rack `r` (mid-depth), and the
+   *  zones and other racks across from it. */
+  const alongCtx = (r) => {
+    const fp = s().objects.find(o => o.id === r.parentId) || s().objects.find(o => o.type.startsWith('fp_')), inner = m.FR.innerOutline(fp, GS)
+    const [s0, s1] = ftS(foot(r)), mid = (s0 + s1) / 2
+    const pin = (at) => { const px = (vert ? mid : at) * GS, py = (vert ? at : mid) * GS; let c = false; for (let i = 0, j = inner.length - 1; i < inner.length; j = i++) { const P = inner[i], Q = inner[j]; if ((P.y > py) !== (Q.y > py) && px < (Q.x - P.x) * (py - P.y) / (Q.y - P.y) + P.x) c = !c } return c }
+    const across = (b) => Math.min(ftS(b)[1], s1) - Math.max(ftS(b)[0], s0) > 1e-3
+    const zones = s().objects.filter(o => o.type.startsWith('zone_')).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height })).filter(across)
+    const others = racks().filter(o => o !== r).map(foot).filter(across)
+    return { pin, zones, others }
+  }
+  /** Area AA, item 2, strictly: a pocket row pushed tight against the building wall — one end exactly on
+   *  the wall, the other facing a zone or a lane at least the travel width (8'), nothing between. */
+  const tightOnWall = (r) => {
+    const [r0, r1] = ftR(foot(r)), { pin, zones, others } = alongCtx(r), T = 8, up = 3 / 12
+    for (const high of [true, false]) {
+      const wallEnd = high ? !pin(r1 + 0.05) && pin(r1 - 0.05) : !pin(r0 - 0.05) && pin(r0 + 0.05)
+      if (!wallEnd) continue
+      // the near end: the nearest zone or rack the other way
+      const near = [...zones.map(b => ({ b, zone: true })), ...others.map(b => ({ b, zone: false }))]
+        .map(({ b, zone }) => ({ at: high ? ftR(b)[1] : ftR(b)[0], zone })).filter(q => (high ? q.at <= r0 + up + 1e-6 : q.at >= r1 - up - 1e-6))
+        .sort((a, b) => (high ? b.at - a.at : a.at - b.at))[0]
+      if (!near) return true
+      const gap = high ? r0 - near.at : near.at - r1
+      return near.zone || gap >= T - 1e-6
+    }
+    return false
+  }
+  /** Area AA, item 3, strictly: a row run on past its run's end toward a zone or a wall stops within a bay
+   *  of it — one more bay would land on the zone or leave the floor — with no rack in that space. */
+  const runOnToFixed = (r, high) => {
+    const p = areaNow().pattern, pitch = (p.upIn + p.beamIn) / 12
+    const [r0, r1] = ftR(foot(r)), { pin, zones, others } = alongCtx(r)
+    const q0 = high ? r1 : r0 - pitch, q1 = high ? r1 + pitch : r0
+    if (others.some(b => Math.min(ftR(b)[1], q1) - Math.max(ftR(b)[0], q0) > 1e-3)) return false
+    return zones.some(b => Math.min(ftR(b)[1], q1) - Math.max(ftR(b)[0], q0) > 1e-3) || !pin(high ? q1 - 0.05 : q0 + 0.05)
+  }
   const expectOnPattern = () => {
     const a = areaNow(), p = a.pattern, single = p.depthIn / 12, pitch = (p.upIn + p.beamIn) / 12
     expect(p).toBeTruthy()
@@ -464,8 +501,15 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
         continue
       }
       const k = (r0 - pc.r0) / pitch
-      expect(Math.abs(k - Math.round(k)), `row ${r.rowIndex} on its run's uprights`).toBeLessThan(1e-6)
-      expect(Math.round(k) >= 0 && Math.round(k) + r.beams.length <= pc.n).toBe(true)
+      if (Math.abs(k - Math.round(k)) > 1e-6) {
+        // off its run's uprights only as a pocket row pushed tight against the wall (area AA), no more bays than its run
+        expect(tightOnWall(r) && r.beams.length <= pc.n, `row ${r.rowIndex} on its run's uprights`).toBe(true)
+        continue
+      }
+      const kk = Math.round(k)
+      // past its run's end only where it runs on to a zone or a wall (area AA), within a bay of it
+      if (kk < 0) expect(runOnToFixed(r, false), `row ${r.rowIndex} within its run (start)`).toBe(true)
+      if (kk + r.beams.length > pc.n) expect(runOnToFixed(r, true), `row ${r.rowIndex} within its run (end)`).toBe(true)
     }
   }
   /** Never an extra row: any two racks side by side across (overlapping along) are at least an aisle

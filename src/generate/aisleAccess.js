@@ -34,7 +34,7 @@
 import { rackFootprint } from './columnCheck'
 import { uprightXs } from '../render/rackOps'
 import { splitRackForBayDelete } from '../utils/baySplit'
-import { innerOutline } from '../utils/floorGeom'
+import { innerOutline, floorSection } from '../utils/floorGeom'
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
@@ -196,6 +196,52 @@ function carve(objects, ids, axis, band, gridSize, newId, across = null) {
     return splitRackForBayDelete(o, drop, newId, gridSize) || []
   })
 }
+/** A pocket's shortened racks pushed tight against the building wall: each rack `carved` changed whose
+ *  far end along the run (`axis`) faces the wall across clear floor, and whose other end faces a zone
+ *  or the lane, slides along until it ends on the wall's inner face — the same bays, all the leftover
+ *  going to the lane on the other side. Returns the objects, and how many racks moved. */
+function tighten(objects, before, fp, axis, gridSize, travelFt) {
+  const was = new Set(before)
+  const moved = objects.filter(o => isRack(o) && o.width > 0 && !was.has(o))
+  if (!moved.length) return { objects, n: 0 }
+  const poly = innerOutline(fp, gridSize), cross = axis === 'x' ? 'y' : 'x'
+  const blocks = [...objects.filter(o => isRack(o) && o.width > 0).map(o => ({ o, f: rackFootprint(o) })),
+    ...objects.filter(isZone).map(o => ({ o, f: { x: o.x, y: o.y, w: o.width, h: o.height } }))]
+  const run = (f) => (axis === 'x' ? [f.x, f.x + f.w] : [f.y, f.y + f.h]), acr = (f) => (axis === 'x' ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
+  const shift = new Map()
+  for (const o of moved) {
+    const f = rackFootprint(o), [r0, r1] = run(f), [c0, c1] = acr(f)
+    // the floor along the rack's row: the stretch holding it, at three points across its depth
+    const lo = Math.min(...poly.map(q => q[axis])) - 1, hi = Math.max(...poly.map(q => q[axis])) + 1
+    let e0 = -Infinity, e1 = Infinity
+    for (const v of [c0 + 0.5, (c0 + c1) / 2, c1 - 0.5]) {
+      const iv = floorSection(poly, cross, v, lo, hi).find(([a, b]) => a <= r0 + 1e-6 && b >= r1 - 1e-6)
+      if (!iv) { e0 = e1 = NaN; break }
+      e0 = Math.max(e0, iv[0]); e1 = Math.min(e1, iv[1])
+    }
+    if (!Number.isFinite(e0) || !Number.isFinite(e1)) continue
+    // the nearest rack or zone either way along it
+    let n0 = -Infinity, n1 = Infinity, z0 = false, z1 = false
+    for (const b of blocks) {
+      if (b.o === o) continue
+      const [a0, a1] = acr(b.f), [q0, q1] = run(b.f)
+      if (!(Math.min(a1, c1) - Math.max(a0, c0) > 1e-6)) continue
+      // (a neighbour sharing its end frame overlaps it by an upright: still the next thing along)
+      const up = (o.uprightWidth ?? 3) / 12 * gridSize + 1e-6
+      if (q0 >= r1 - up && Math.max(q0, r1) < n1) { n1 = Math.max(q0, r1); z1 = isZone(b.o) }
+      if (q1 <= r0 + up && Math.min(q1, r0) > n0) { n0 = Math.min(q1, r0); z0 = isZone(b.o) }
+    }
+    const wallHi = e1 <= n1 + 1e-6, wallLo = e0 >= n0 - 1e-6
+    // the near end: a zone, or the lane (clear floor at least the travel width) — never a rack it carries on from
+    const T = travelFt * gridSize - 1e-6
+    const openLo = !wallLo && (z0 || r0 - n0 >= T), openHi = !wallHi && (z1 || n1 - r1 >= T)
+    if (wallHi && openLo && e1 - r1 > 1e-6) shift.set(o, e1 - r1)
+    else if (wallLo && openHi && r0 - e0 > 1e-6) shift.set(o, e0 - r0)
+  }
+  if (!shift.size) return { objects, n: 0 }
+  return { objects: objects.map(o => (shift.has(o) ? { ...o, [axis]: o[axis] + shift.get(o) } : o)), n: shift.size }
+}
+
 /** The bays of the racks `ids` (and their pieces) in `objs`. */
 const baysOf = (objs, ids) => { const want = new Set(ids); return objs.filter(o => want.has(o.id) || (o.pieceOf && want.has(o.pieceOf))).reduce((t, o) => t + (o.beams?.length || 0), 0) }
 
@@ -325,8 +371,13 @@ export function giveWayIn(objects, fp, ids, { gridSize = 40, travelFt = 8, aisle
       if (next.some(o => (mine.has(o.id) || (o.pieceOf && mine.has(o.pieceOf))) && still.has(o.id))) continue
       // (and whether a strip of the other kind cost the same: the tie the zone edge wins)
       const tie = strips.find(q => q !== s && q.kind !== s.kind && q.cost === s.cost)
-      if (report) report.push({ racks: mine.size, bays: before - baysOf(next, ids), kind: s.kind, at: s.band, tiedWith: tie ? tie.kind : null })
-      objs = next; res = r2; opened = true
+      // the racks it shortened, tight against the building wall: the leftover goes to the lane (kept only if nothing is cut off)
+      const t = tighten(next, objs, fp, s.axis, gridSize, travelFt)
+      let tight = 0
+      if (t.n) { const r3 = cutOffRacks(t.objects, fp, { ...opts, ids: live(t.objects) }); if (r3.cutOff.length <= r2.cutOff.length) { objs = t.objects; res = r3; tight = t.n } }
+      if (!tight) { objs = next; res = r2 }
+      if (report) report.push({ racks: mine.size, bays: before - baysOf(next, ids), kind: s.kind, at: s.band, tiedWith: tie ? tie.kind : null, tight })
+      opened = true
       break
     }
     if (!opened) {
