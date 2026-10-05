@@ -1,7 +1,7 @@
 // rowEditKeeper.js — keeps the generator's row stamps meaning one row:
 // a NEW rack carrying another row's stamps (a copy-paste of a generated row
 // that did not go through utils/pasteAt.js) loses them, so it is an added
-// row ("Copy to all sections", utils/copyPrompt.js) instead of merging into
+// row (utils/rowGroup.js) instead of merging into
 // the row it was copied from. Kept: the pieces of a split row (they sit
 // inside the rack they came from), a row coming back on undo/redo (no
 // other rack has its stamps), and a racking area's own racks (recorded in its

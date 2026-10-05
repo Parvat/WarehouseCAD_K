@@ -43,7 +43,7 @@ import { objectContains } from '../../utils/canvas'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { PALETTE_COLORS } from '../../constants'
 import { PEN_TYPES, PEN_ORDER, clampPenWidth, penDefaultWidth, loadPenPrefs, savePenPrefs } from '../../utils/freehand'
-import { dropRotation } from '../../utils/rowEdits'
+import { dropRotation } from '../../utils/rowRotation'
 import { startPlacement } from '../../utils/placement'
 import { nanoid } from 'nanoid'
 
@@ -959,7 +959,7 @@ export function FloatingToolbar() {
          it is deleted. CanvasArea re-parents a grid on its first move anyway,
          so excluding it here only made parentage depend on being dragged. */
       ...(parentFp?{parentId:parentFp.id}:{}),
-      /* a row dropped into a generated layout runs with its rows (utils/rowEdits.js) */
+      /* a row dropped into a generated layout runs with its rows (utils/rowRotation.js) */
       ...dropRotation(objects, parentFp, item.type),
     })
   }, [addObject, objects, zoom, panX, panY, activeLayerId, gridSize])

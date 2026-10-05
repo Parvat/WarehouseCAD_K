@@ -1,6 +1,6 @@
 // Area AR — aisle labels only pair two directly facing rows. After a row is
-// deleted and brought back (undo/redo, a hand-added row's copies), after
-// "Copy to all sections", bay splits and "Match bays", no aisle
+// deleted and brought back (undo/redo, a hand-added row's replays), after
+// a Row group apply to every section, bay splits and their replay, no aisle
 // may run through a rack, every aisle's two rows exist, and every pair of
 // facing rows has one.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -11,23 +11,24 @@ import { DEFAULT_RULES } from '../../rules/defaults'
 import { buildingSections } from '../../utils/syncSections'
 import { rebuildAisles, neighbourPairs } from '../../utils/aisleRebuild'
 import { installAisleKeeper } from '../../utils/aisleKeeper'
-import { installCopyWatcher, copyPending, flushCopyWatcher } from '../../utils/copyPrompt'
+import { installRowGroupWatcher, useRowGroup, addRowOf, applyPending, clearGroup, flushRowGroupWatcher } from '../../utils/rowGroupTool'
 import { aisleRect } from '../../canvas2/hitTest'
 import { GS, MATRIX } from './fixtures'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
-let store, Panel, stopKeeper, stopCopy
+let store, stopKeeper, stopGroup
 let seq = 0
 const newId = () => 'n' + (++seq)
 beforeAll(async () => {
   store = (await import('../../store/useCanvasStore')).useCanvasStore
-  Panel = await import('../../components/RightPanel/panels/RackRowPanelCore.jsx')
   stopKeeper = installAisleKeeper(store, newId)
-  stopCopy = installCopyWatcher(store, newId)
+  stopGroup = installRowGroupWatcher(store, newId)
 })
-afterAll(() => { stopKeeper && stopKeeper(); stopCopy && stopCopy() })
-/** The bar's "Copy to other sections", after the action(s) in one section. */
-const copyAll = async () => { await flushCopyWatcher(); const plan = copyPending(); await flushCopyWatcher(); return plan }
+afterAll(() => { stopKeeper && stopKeeper(); stopGroup && stopGroup() })
+/** A Row group of `rack`'s row and the same row in every other section. */
+const groupAcross = (rack) => { clearGroup(); return addRowOf(rack.id, { otherSections: true }) }
+/** The Row group bar's Apply, after the edit to one group row. */
+const applyAll = async () => { await flushRowGroupWatcher(); const p = useRowGroup.getState().pending; expect(p).toBeTruthy(); expect(applyPending()).toBe(true); await flushRowGroupWatcher(); return p.plan }
 
 const strip = (o) => JSON.parse(JSON.stringify(o))
 const BEAM = new Set(['rack_row', 'rack_double_row'])
@@ -91,11 +92,12 @@ describe('AR — aisles pair only directly facing rows', () => {
       expect(audit(base)).toEqual([])
       load(base)
       const { A, B, C } = trio(base, 1)
+      expect(groupAcross(B)).toBe(2)
       deleteRacks([B.id])
       expect(audit(objs())).toEqual([])
       expect(hasAisle(objs(), A.id, C.id)).toBe(true)          // the wide aisle, nothing between
       expect(missingPairs(objs())).toEqual([])
-      await copyAll()                                            // row 4 goes from every section
+      await applyAll()                                           // row 4 goes from every section
       expect(objs().some(o => o.rowIndex === 4)).toBe(false)
       expect(audit(objs())).toEqual([])
       expect(missingPairs(objs())).toEqual([])
@@ -108,12 +110,13 @@ describe('AR — aisles pair only directly facing rows', () => {
       expect(missingPairs(objs())).toEqual([])
     })
 
-    it(`AR-handcopy ${orientation}: row 4 deleted everywhere, a hand row added in its place in section 1 and copied -> every copy has an aisle to each neighbour, none crosses a row`, async () => {
+    it(`AR-handcopy ${orientation}: row 4 deleted everywhere, a hand row added in its place in section 1 and replayed (row 3 in the group) -> every copy has an aisle to each neighbour, none crosses a row`, async () => {
       const base = layout(orientation)
       load(base)
-      const { B, sections } = trio(base, 0)
+      const { A, B, sections } = trio(base, 0)
+      groupAcross(B)
       deleteRacks([B.id])
-      await copyAll()                                            // row 4 goes from every section
+      await applyAll()                                           // row 4 goes from every section
       expect(objs().filter(o => o.rowIndex === 4)).toEqual([])
       expect(audit(objs())).toEqual([])
       /* the same place, placed by hand (no stamps), as short as the shortest
@@ -125,10 +128,12 @@ describe('AR — aisles pair only directly facing rows', () => {
       const f = rackFootprint(B), rot = f.rotated
       const runMid = (rot ? f.y : f.x) + width / 2, crossMid = rot ? f.x + f.w / 2 : f.y + f.h / 2
       const cx = rot ? crossMid : runMid, cy = rot ? runMid : crossMid
+      groupAcross(A)                                             // row 3 everywhere: a row added beside it is replayed
       store.getState().addObject({ ...hand, id: 'hand', beams, width, x: cx - width / 2, y: cy - B.height / 2 })
       expect(audit(objs())).toEqual([])
-      const res = await copyAll()
-      const copies = objs().filter(o => o.rowIndex === res.adds[0].rowIndex)
+      const before = new Set(objs().map(o => o.id))
+      await applyAll()
+      const copies = objs().filter(o => BEAM.has(o.type) && (o.id === 'hand' || !before.has(o.id)))
       expect(copies.length).toBe(sections.length)
       for (const c of copies) expect(aislesOf(objs()).filter(a => a.row1Id === c.id || a.row2Id === c.id).length).toBe(2)
       expect(audit(objs())).toEqual([])
@@ -139,8 +144,9 @@ describe('AR — aisles pair only directly facing rows', () => {
       const base = layout(orientation)
       load(base)
       const { A, B, C } = trio(base, 1)
+      groupAcross(B)
       deleteRacks([B.id])
-      await copyAll()
+      await applyAll()
       for (const step of ['undo', 'undo', 'redo', 'redo', 'undo']) {
         store.getState()[step]()
         expect(audit(objs())).toEqual([])
@@ -151,17 +157,18 @@ describe('AR — aisles pair only directly facing rows', () => {
       expect(hasAisle(objs(), A.id, C.id)).toBe(true)
     })
 
-    /* The copy's OWN commit is already right (not just fixed afterwards by
+    /* The apply's OWN commit is already right (not just fixed afterwards by
      * the keeper): with the keeper off, both the canvas and the undo
-     * snapshot the copy recorded have every aisle between facing rows. */
-    it(`AR-snapshot ${orientation}: with the keeper off, the copy's own undo snapshot already has the right aisles`, async () => {
+     * snapshot the apply recorded have every aisle between facing rows. */
+    it(`AR-snapshot ${orientation}: with the keeper off, the Row group apply's own undo snapshot already has the right aisles`, async () => {
       const base = layout(orientation)
       const { B } = trio(base, 1)
       stopKeeper()
       try {
         load(base)
+        groupAcross(B)
         deleteRacks([B.id])
-        await copyAll()
+        await applyAll()
         expect(objs().some(o => o.rowIndex === 4)).toBe(false)
         expect(audit(objs())).toEqual([])
         expect(missingPairs(objs())).toEqual([])
@@ -173,14 +180,16 @@ describe('AR — aisles pair only directly facing rows', () => {
       }
     })
 
-    it(`AR-split ${orientation}: a middle-bay delete and "Match bays in this section" keep every aisle between facing rows`, () => {
+    it(`AR-split ${orientation}: a middle-bay delete and its Row group replay on the rows either side (rows 3, 4, 5 of the section) keep every aisle between facing rows`, async () => {
       const base = layout(orientation)
       load(base)
-      const { B, sections } = trio(base, 0)
+      const { A, B, C } = trio(base, 0)
+      clearGroup(); for (const r of [A, B, C]) addRowOf(r.id)
       store.getState().deleteSingleBay(B.id, 2)
       expect(audit(objs())).toEqual([])
       expect(missingPairs(objs())).toEqual([])
-      Panel.applySectionSync(store.getState, sections[0].rows[0].id)
+      await applyAll()
+      for (const r of [A, C]) expect(objs().filter(o => o.id === r.id || o.pieceOf === r.id).length).toBe(2)   // rows 3 and 5 split at the same bay
       expect(audit(objs())).toEqual([])
       expect(missingPairs(objs())).toEqual([])
     })

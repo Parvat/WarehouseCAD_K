@@ -1,20 +1,13 @@
 import { Group, Rect } from 'react-konva'
-import { useCanvasStore } from '../store/useCanvasStore'
 import { rackFootprint } from '../generate/columnCheck'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
 import { RackShape, ZoneShape } from './shapes'
 import { usePlacement } from '../utils/placement'
-import { useCopyPrompt, pendingPlan } from '../utils/copyPrompt'
-import { copyPreviewRects, previewKey } from '../utils/copyChange'
 
-/* ── "Copy this change" on the canvas ─────────────────────────────────────────
-   Three pieces, all pure paint or plain DOM (picking stays geometric):
-     - PlacementGhost: a row (or a zone) being added follows the mouse, faded; its
-       outline turns red where it cannot go, orange in a cross-aisle (placed,
-       with a warning — utils/placement.js);
-     - CopyPreview: while the bar's Copy button is hovered, faint outlines
-       where the copies would land (and the rows a delete would take);
-     The note itself is DOM, in CopyNote.jsx. */
+/* ── A row (or a zone) being placed, on the canvas ─────────────────────────────
+   PlacementGhost: it follows the mouse, faded; its outline turns red where it cannot go, orange in a
+   cross-aisle (placed, with a warning — utils/placement.js). Pure paint; the bar is DOM
+   (RowGroupBar.jsx). The Row group's own preview is RowGroupPreview.jsx. */
 
 const PREVIEW = '#2F7BD8'
 const BLOCKED = '#C0392B'
@@ -42,15 +35,3 @@ export function PlacementGhost({ gridSize }) {
     </Group>
   )
 }
-
-export function CopyPreview() {
-  const pending = useCopyPrompt(s => s.pending)
-  const hover = useCopyPrompt(s => s.hover)
-  const objects = useCanvasStore(s => s.objects)
-  const plan = pending && hover ? pendingPlan() : null
-  if (!plan) return null
-  // keyed by position too (previewKey): every added copy shares one placeholder id
-  const out = copyPreviewRects(objects, plan).map((r, i) => outline(r, r.gone ? BLOCKED : PREVIEW, previewKey(r, i), [6, 4], r.gone ? 'rgba(192,57,43,0.06)' : 'rgba(47,123,216,0.08)'))
-  return <Group listening={false}>{out}</Group>
-}
-

@@ -37,8 +37,7 @@ import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate
 import { rackIssues } from './bayBeam'
 import { cutOffRacks } from '../generate/aisleAccess'
 import { oversizedBayIndices } from './capacity'
-import { fmtLen } from './copyChange'
-import { sectionLabel } from './sectionCopy'
+import { fmtLen, sectionLabel } from './copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { useDragPreview } from '../canvas2/dragPreview'
 

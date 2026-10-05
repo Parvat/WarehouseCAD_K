@@ -26,7 +26,7 @@ async function fresh() {
   const AT = await import('../../utils/rackingAreaTool')
   const LC = await import('../../utils/layoutCheck')
   const AA = await import('../../generate/aisleAccess')
-  const CP = await import('../../utils/copyPrompt')
+  const RG = await import('../../utils/rowGroupTool')
   const { rackFootprint, MHE_PROFILES } = await import('../../generate/columnCheck')
   const L = await import('../../utils/layers')
   const { installAisleKeeper } = await import('../../utils/aisleKeeper')
@@ -35,7 +35,7 @@ async function fresh() {
   L.installLayerKeeper(useCanvasStore)
   installAisleKeeper(useCanvasStore, nanoid)
   installRowEditKeeper(useCanvasStore)
-  CP.installCopyWatcher(useCanvasStore, nanoid)
+  RG.installRowGroupWatcher(useCanvasStore, nanoid)
   AT.installAreaKeeper(useCanvasStore)
   return { useCanvasStore, FT, FR, AT, LC, AA, rackFootprint, MHE_PROFILES }
 }

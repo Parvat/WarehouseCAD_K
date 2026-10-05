@@ -24,7 +24,7 @@ async function fresh() {
   const RA = await import('../../generate/rackingArea')
   const AT = await import('../../utils/rackingAreaTool')
   const LC = await import('../../utils/layoutCheck')
-  const CP = await import('../../utils/copyPrompt')
+  const RG = await import('../../utils/rowGroupTool')
   const FC = await import('../../utils/floorClamp')
   const FG = await import('../../utils/floorGeom')
   const { generateAndPlace } = await import('../../generate/traceGenerate')
@@ -37,7 +37,7 @@ async function fresh() {
   L.installLayerKeeper(useCanvasStore)
   installAisleKeeper(useCanvasStore, nanoid)
   installRowEditKeeper(useCanvasStore)
-  CP.installCopyWatcher(useCanvasStore, nanoid)
+  RG.installRowGroupWatcher(useCanvasStore, nanoid)
   AT.installAreaKeeper(useCanvasStore)
   return { useCanvasStore, FT, FR, RA, AT, LC, FC, FG, BB, generateAndPlace, rackFootprint }
 }
