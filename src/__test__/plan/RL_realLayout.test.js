@@ -150,6 +150,20 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     }
   })
 
+  it(`RL-4: ${corrections23 ? 'the row under the washroom' : 'every row'} — where a pair stops but one half still has room (a zone over the other half only), that half carries on from the pair's last frame: no empty bay between them`, async () => {
+    const { m, out, fp } = await fill()
+    const v = view(m, fp), racks = out.filter(o => RACK.has(o.type)).map(v.rack), up = 3 / 12, pitch = 99 / 12
+    let found = 0
+    for (const q of racks.filter(x => x.o.type === 'rack_row')) {
+      // a pair of the same row whose across holds this single's, ending (or starting) within a bay of it
+      for (const p of racks.filter(x => x.o.type === 'rack_double_row' && x.o.rowIndex === q.o.rowIndex && x.s0 <= q.s0 + EPS && x.s1 >= q.s1 - EPS)) {
+        if (q.r0 > p.r1 - up - EPS && q.r0 < p.r1 + pitch) { found++; expect(q.r0, `the single at ${q.s0.toFixed(2)}' starts on the pair's last frame`).toBeCloseTo(p.r1 - up, 6) }
+        if (q.r1 < p.r0 + up + EPS && q.r1 > p.r0 - pitch) { found++; expect(q.r1, `the single at ${q.s0.toFixed(2)}' ends on the pair's first frame`).toBeCloseTo(p.r0 + up, 6) }
+      }
+    }
+    if (corrections23) expect(found, 'a half carrying on from its pair (under the washroom)').toBeGreaterThan(0)
+  })
+
   it('RL-clean: Check layout finds no error; nothing cut off; shrink across and along, then extend back — the same racks', async () => {
     const { m, out, fp, box, areaId } = await fill()
     // (but one error the fill already gave before area AA's corrections: the run's walk puts an upright on

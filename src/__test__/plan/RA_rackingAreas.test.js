@@ -560,9 +560,10 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const all = racks().map(r => ({ r, s: ftS(foot(r)), q: ftR(foot(r)) }))
     let n = 0
     for (const a of all) {
-      // (racks meeting along by no more than an upright — a corner at a shared frame — don't face each other)
-      const upFt = (areaNow()?.pattern.upIn ?? 3) / 12
-      const next = all.filter(b => b !== a && b.s[0] >= a.s[1] - 1e-6 && Math.min(a.q[1], b.q[1]) - Math.max(a.q[0], b.q[0]) > upFt + 1e-3)
+      // (racks meeting along by less than one bay don't face each other: a corner — a shared frame, or
+      // a bay carried on past a wall line where the rows across end short of it)
+      const pat = areaNow()?.pattern, bayFt = ((pat?.beamIn ?? 96) + 2 * (pat?.upIn ?? 3)) / 12
+      const next = all.filter(b => b !== a && b.s[0] >= a.s[1] - 1e-6 && Math.min(a.q[1], b.q[1]) - Math.max(a.q[0], b.q[0]) >= bayFt - 1e-3)
       if (!next.length) continue
       const b = next.reduce((p, q) => (q.s[0] < p.s[0] ? q : p)), gap = b.s[0] - a.s[1]
       // a gap with a zone in it is not an aisle (an office between two rows)
@@ -906,6 +907,42 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const res = m.LC.checkLayout(s().objects, { gridSize: GS })
     expect(res.errors).toEqual([])
     clean()
+  })
+
+  it('RA-regular-strict: the strict aisle check still catches a real over-wide aisle — one row of a regular fill moved 1\' 6" across by hand: the check fails', () => {
+    s().placeFpObject({ type: 'fp_rect', widthFt: 240, heightFt: 120 })
+    const fp = s().objects.find(o => o.type === 'fp_rect')
+    drag({ x: fp.x - 13.7, y: fp.y - 21.3 }, { x: fp.x + fp.width + 7.1, y: fp.y + fp.height + 3.3 })
+    expectRegular()
+    // an interior pair, full length along (it faces rows either side over many bays)
+    const pairs = racks().filter(o => o.type === 'rack_double_row').sort((p, q) => ftS(foot(p))[0] - ftS(foot(q))[0])
+    const r = pairs[Math.floor(pairs.length / 2)]
+    s().commitObjectUpdate(r.id, vert ? { x: r.x + 1.5 * GS } : { y: r.y + 1.5 * GS })
+    expect(() => expectRegular()).toThrow()
+  })
+
+  it.each(SLIDE)('RA-half-on (%s): a zone over one half of a pair only (3" into it, off the bay grid along) — the other half carries on from the pair\'s last frame, sharing that upright: no bay with an aisle in front left empty; clean', async (_, type, w, h) => {
+    const fp = fillWhole(type, w, h)
+    const p = areaNow().pattern, pitch = (p.upIn + p.beamIn) / 12, single = p.depthIn / 12, up = p.upIn / 12
+    // a long interior pair, away from the walls across
+    const s0s = racks().map(o => ftS(foot(o))[0]), lo = Math.min(...s0s), hi = Math.max(...s0s)
+    const pair = racks().filter(o => o.type === 'rack_double_row' && o.beams.length >= 8 && ftS(foot(o))[0] > lo + 30 && ftS(foot(o))[1] < hi - 30)
+      .sort((a, b) => b.beams.length - a.beams.length)[0]
+    expect(pair, 'a long interior pair').toBeTruthy()
+    const [p0, p1] = ftS(foot(pair)), [r0] = ftR(foot(pair)), row = pair.rowIndex
+    // the office: from 3 bays and 3' in along, 20' long; across, from 6' before the pair to 3" into it
+    const o0 = r0 + 3 * pitch + 3
+    const zb = vert ? { x: (p0 - 6) * GS, y: o0 * GS, w: 6.25 * GS, h: 20 * GS } : { x: o0 * GS, y: (p0 - 6) * GS, w: 20 * GS, h: 6.25 * GS }
+    s().addObject({ type: 'zone_office', label: 'Office', x: zb.x, y: zb.y, width: zb.w, height: zb.h, parentId: fp.id, layerId: 'zones' })
+    await tick()
+    clean()
+    const mine = racks().filter(o => o.rowIndex === row)
+    const before = mine.find(o => o.type === 'rack_double_row' && Math.abs(ftS(foot(o))[0] - p0) < 1e-6 && ftR(foot(o))[1] <= o0 + 1e-6 && ftR(foot(o))[1] > o0 - pitch)
+    const half = mine.find(o => o.type === 'rack_row' && Math.abs(ftS(foot(o))[0] - (p1 - single)) < 1e-6 && Math.abs(ftS(foot(o))[1] - p1) < 1e-6 && ftR(foot(o))[0] < o0 + 20)
+    expect(before, 'the pair stops at its last whole bay before the office').toBeTruthy()
+    expect(half, 'the free half beside the office').toBeTruthy()
+    expect(ftR(foot(half))[0], 'the half starts on the pair\'s last frame').toBeCloseTo(ftR(foot(before))[1] - up, 6)
+    expect(m.BB.sharesFrame(before, half, GS)).toBe(true)
   })
 
   /* ── Area AA: a wall row runs unbroken ── */

@@ -535,9 +535,14 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
       if (u.type !== 'rack_double_row') { place(u, u.type, u.s0, u.d, offWall(freeRun(u.s0, u.s0 + u.d), u.s0, u.s0 + u.d)); continue }
       // the pair where all of it fits; elsewhere either half that fits on its own, as a single row
       const pair = offWall(freeRun(u.s0, u.s0 + u.d), u.s0, u.s0 + u.d)
+      const placedFrom = placedRS.length
       place(u, 'rack_double_row', u.s0, u.d, pair)
+      // each half takes what the pair's placed bays leave — not what its clear run leaves: where the pair
+      // fits but no whole pair bay does (a zone over one half only), the other half carries on from the
+      // pair's last frame (it shares that upright), so no bay with an aisle in front stays empty
       let lo = freeRun(u.s0, u.s0 + singleFt), hi = freeRun(u.s0 + u.d - singleFt, u.s0 + u.d)
-      for (const [a, c] of pair) { lo = subtract(lo, a, c); hi = subtract(hi, a, c) }
+      const up = upIn / 12
+      for (const q of placedRS.slice(placedFrom)) { lo = subtract(lo, q.r0 + up, q.r1 - up); hi = subtract(hi, q.r0 + up, q.r1 - up) }
       placeSingle(u, u.s0, offWall(lo, u.s0, u.s0 + singleFt))
       placeSingle(u, u.s0 + u.d - singleFt, offWall(hi, u.s0 + u.d - singleFt, u.s0 + u.d))
     }

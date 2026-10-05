@@ -284,7 +284,7 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### RA — Racking areas and zones · `RA_rackingAreas.test.js` (93 tests)
+### RA — Racking areas and zones · `RA_rackingAreas.test.js` (101 tests)
 Code: `generate/rackingArea.js` (pure) and `utils/rackingAreaTool.js` (store,
 question). UI: `canvas2/AreaPrompt.jsx` and
 `RightPanel/panels/RackingAreaPanel.jsx`.
@@ -871,6 +871,12 @@ ends (a wall and an office, or two walls) is a dead-end pocket.
   face (`tighten`, aisleAccess.js): the same bays, all the leftover in the lane on
   the zone's side. Kept only if nothing is cut off. The report gives `tight`,
   how many racks moved.
+- **A half carries on from its pair.** Each half of a pair takes the run the
+  pair's PLACED bays leave (less their end uprights), not what the pair's clear
+  run leaves: where the pair fits but no whole pair bay does — a zone over one
+  half only — the other half carries on from the pair's last frame, sharing that
+  upright. (Found on the hand check: a bay under the washroom with an aisle in
+  front stood empty.) Tests: RA-half-on, RL-4.
 - **No cross-aisle gap that leads nowhere.** Where a rack's end along faces a
   zone's edge or a wall — not the box's end, not another rack or its aisle — across
   a gap that holds whole bays (a cross-aisle with nothing past it), the rack runs
@@ -884,7 +890,7 @@ ends (a wall and an office, or two walls) is a dead-end pocket.
 | Test | Asserts |
 |---|---|
 | `AA-pocket` ×3 | rectangle, L, T: an office 30' off the near wall; the racks only that pocket reaches with no way in are all kept (each row keeps bays); no row loses more than the strip (2 bays); the pocket strips cost fewer bays than dropping the cut-off rows; nothing cut off, Check layout clean; the cut rows put back at full length shut the path again: "No way in: aisle closed at both ends", the pocket shaded red |
-| `AA-tie` | rectangle: opening the office pocket costs the same against the office's edge as against the wall (`tiedWith: 'wall'`); the strip stands against the office (its band ends on the office's edge), and the pocket rows stay flush on the near wall |
+| `AA-tie` | rectangle. Vertical, an office 48–85' across: opening its pocket costs the same against the office's edge as against the wall (`tiedWith: 'wall'`); the strip stands against the office, and the pocket rows stay flush on the near wall. Horizontal, the office 40–70' across overlaps a pair's half by 3": that half carries on from the pair's last frame, so a strip against the office would cut it — the wall's strip (1 bay) is taken, no tie (changed, approved: the half's filled bays made the office strip dearer; at 40–70' no tie is left, so vertical moved to 48–85') |
 | `AA-travel` ×3 | a fill of the whole building: no rack cut off, Check layout clean |
 | `AA-width` | two rows, one aisle between them opening only onto a strip G deep before a zone: G = 8' reached by the reach truck (8'); G = 6' cuts off the row whose other face is on the wall, not for a VNA (6'); Check layout with the reach truck flags it, with the VNA not |
 | `AA-far-max` ×8 | rectangle, the far edge on the wall at 0–17.5' past the last whole pair (eight depths): read across the run, the last row a single flush on the wall; the number of full pairs = the most that fit, ⌊(L − 17.5) / 18.25⌋; every aisle ≥ 10' 6"; clean |
@@ -912,7 +918,7 @@ editing):
   the flush wall row is a legitimate single (fix 1).
 - No wall-to-wall layout changed.
 
-**The hand-check layout** · `RL_realLayout.test.js` (48 tests), fixture
+**The hand-check layout** · `RL_realLayout.test.js` (60 tests), fixture
 `realLayout.fixture.js` (the saved `warehouse-2026-10-05.wcad`: 500 × 250, a
 column grid, office and washroom on the top wall, a custom area on the bottom
 wall, the area's box 2.89' short of the left wall and 1.37' short of the top,
@@ -929,6 +935,7 @@ the office's corner unchanged.
 | `RL-1` ×12 | a single flush on the start wall and on the far wall although the box stops short; every wall row breaks only for a zone on that wall or the floor's end (a cut corner); the rows themselves have cross-aisles |
 | `RL-2` ×12 | where the pocket is: ≥ 3 shortened rows beside the office end exactly on the building wall, the lane on the office side ≥ 8' and under one more bay past it (16.2' on the file); elsewhere nothing past the wall |
 | `RL-3` ×12 | every rack beside the office that ends short of it runs on to within a bay of it (or a zone or rack stands between); where the cross-aisle is: ≥ 2 ran on across it, and below the office the same cross-aisle stays between racks |
+| `RL-4` ×12 | where a pair stops but one half still has room, that half starts (or ends) on the pair's frame — no empty bay between; on the layouts with the washroom row, at least one such half |
 | `RL-clean` ×12 | Check layout: no error but the one already there (BUG 71: "Row 7, section 4: a column stands on an upright frame"); nothing cut off; shrink across and along and extend back: the same racks |
 
 **Reproduced on the file before the fix** (both orientations; fill as saved
@@ -948,6 +955,18 @@ carrying on from a pair's frame was pushed off it). No row run on: RL-3 fails (6
 Run on even where it shuts a way in: ~40 fail (AA, RA, WF, RL). Run on through
 what the fill keeps clear: FR-arms fails (a row ran to 8.75' of the other area's
 racks) with RL.
+
+| `RA-half-on` ×3 | (in RA) rectangle, L, T: an office over one half of a long interior pair only (3" in across, 3 bays and 3' in along, off the bay grid): the pair stops at its last whole bay before it and the free half starts on that pair's last frame (`sharesFrame`); clean |
+| `RA-regular-strict` | (in RA) one row of a regular fill moved 1' 6" across by hand: the strict aisle check fails (a real over-wide aisle between facing rows is still caught) |
+
+**Break-its (the half carries on):** halves cut against the pair's clear run again:
+RA-half-on (6), RL-4 (11) and AA-tie's horizontal case fail. The strict aisle check
+skipping every pair: RA-regular-strict and the RA-regular tests fail (10).
+
+**Helper:** RA's `expectRegular` now reads racks meeting along by less than one bay as
+not facing (it was: no more than an upright) — a bay carried on past a wall line, where
+the rows across end short of it, faces open floor, not an aisle. RA-regular-strict
+shows a real over-wide aisle still fails.
 
 **Strict helpers:** RA's `expectOnPattern` passes a rack off its run's uprights only
 as a pocket row tight on the wall (one end exactly on the wall, the other facing a
