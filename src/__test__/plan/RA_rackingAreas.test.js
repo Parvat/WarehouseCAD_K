@@ -555,21 +555,35 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   /** Every aisle is the forklift aisle: each rack's next rack across (overlapping it along) is
    *  exactly one aisle off — none widened (no slack aisle anywhere), none narrowed — but for the aisle
    *  before a single flush on the far wall (area AA), at least one. Cross-aisles run along and aren't read. */
+  /** The lanes the way-in step cut for the area as it stands in the store (its pattern refit from the
+   *  store's objects): each { r: [along], s: [across] } in feet, exactly the strip it carved. */
+  const wayInLanes = () => {
+    const a = areaNow()
+    if (!a?.pattern) return []
+    const report = []
+    m.FR.patternFill(s().objects.filter(o => !(RACK.has(o.type) && o.areaId === a.id)), boxNow(), a.pattern, { gridSize: GS, report })
+    return report.map(q => ({ r: q.at.map(v => v / GS), s: q.across.map(v => v / GS) }))
+  }
   const expectRegular = () => {
     const aisleFt = m.FR.DEFAULT_FILL_SETTINGS.aisleFt
+    const lanes = wayInLanes()
     const all = racks().map(r => ({ r, s: ftS(foot(r)), q: ftR(foot(r)) }))
     let n = 0
     for (const a of all) {
-      // (racks meeting along by less than one bay don't face each other: a corner — a shared frame, or
-      // a bay carried on past a wall line where the rows across end short of it)
-      const pat = areaNow()?.pattern, bayFt = ((pat?.beamIn ?? 96) + 2 * (pat?.upIn ?? 3)) / 12
-      const next = all.filter(b => b !== a && b.s[0] >= a.s[1] - 1e-6 && Math.min(a.q[1], b.q[1]) - Math.max(a.q[0], b.q[0]) >= bayFt - 1e-3)
+      // (the nearest rack across, overlapping along by more than an upright; one meeting it along by less
+      // than one bay is only a corner — a bay carried on past a wall line, the rows across ending short of
+      // it — when the floor between is wider than the aisle: no aisle to measure, see below)
+      const pat = areaNow()?.pattern, bayFt = ((pat?.beamIn ?? 96) + 2 * (pat?.upIn ?? 3)) / 12, upFt = (pat?.upIn ?? 3) / 12
+      const next = all.filter(b => b !== a && b.s[0] >= a.s[1] - 1e-6 && Math.min(a.q[1], b.q[1]) - Math.max(a.q[0], b.q[0]) > upFt + 1e-3)
       if (!next.length) continue
       const b = next.reduce((p, q) => (q.s[0] < p.s[0] ? q : p)), gap = b.s[0] - a.s[1]
+      if (Math.min(a.q[1], b.q[1]) - Math.max(a.q[0], b.q[0]) < bayFt - 1e-3 && gap > aisleFt + 1e-6 && !flushOnWall(b.r)) continue
       // a gap with a zone in it is not an aisle (an office between two rows)
       const g0 = Math.max(a.q[0], b.q[0]), g1 = Math.min(a.q[1], b.q[1])
       const strip = vert ? { x: a.s[1] * GS, y: g0 * GS, w: gap * GS, h: (g1 - g0) * GS } : { x: g0 * GS, y: a.s[1] * GS, w: (g1 - g0) * GS, h: gap * GS }
       if (gap > 1e-6 && s().objects.some(o => o.type.startsWith('zone_') && overlap({ x: o.x, y: o.y, w: o.width, h: o.height }, strip))) continue
+      // nor a gap a way-in lane runs through: exactly its span — the two racks meet along only within the lane, which crosses the whole gap
+      if (gap > 1e-6 && lanes.some(l => l.r[0] <= g0 + 1e-6 && l.r[1] >= g1 - 1e-6 && l.s[0] <= a.s[1] + 1e-6 && l.s[1] >= b.s[0] - 1e-6)) continue
       // the aisle before a single flush on the far wall may be wider: that single moved out onto the wall
       if (flushOnWall(b.r)) expect(gap, `the aisle after ${a.r.type} row ${a.r.rowIndex} (ft)`).toBeGreaterThanOrEqual(aisleFt - 1e-6)
       else {
@@ -917,6 +931,28 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     // an interior pair, full length along (it faces rows either side over many bays)
     const pairs = racks().filter(o => o.type === 'rack_double_row').sort((p, q) => ftS(foot(p))[0] - ftS(foot(q))[0])
     const r = pairs[Math.floor(pairs.length / 2)]
+    s().commitObjectUpdate(r.id, vert ? { x: r.x + 1.5 * GS } : { y: r.y + 1.5 * GS })
+    expect(() => expectRegular()).toThrow()
+  })
+
+  it('RA-regular-strict-lanes: with way-in lanes cut (an office pocket), the strict aisle check still catches a real over-wide aisle away from them — one row moved 1\' 6" across: the check fails', async () => {
+    s().placeFpObject({ type: 'fp_rect', widthFt: 240, heightFt: 120 })
+    const fp = s().objects.find(o => o.type === 'fp_rect')
+    // an office 30' off the near wall: its pocket is opened by a lane
+    const ob = vert ? { x: fp.x + 40 * GS, y: fp.y + 30 * GS, w: 30 * GS, h: 30 * GS } : { x: fp.x + 30 * GS, y: fp.y + 40 * GS, w: 30 * GS, h: 30 * GS }
+    s().addObject({ type: 'zone_office', label: 'Office', x: ob.x, y: ob.y, width: ob.w, height: ob.h, parentId: fp.id, layerId: 'zones' })
+    await tick()
+    drag({ x: fp.x - 13.7, y: fp.y - 21.3 }, { x: fp.x + fp.width + 7.1, y: fp.y + fp.height + 3.3 })
+    expect(wayInLanes().length, 'a lane cut').toBeGreaterThan(0)
+    expectRegular()
+    // an interior pair at least 20' from every lane (across or along) and from the office, moved by hand
+    const lanes = wayInLanes(), s0s = racks().map(o => ftS(foot(o))[0]), lo = Math.min(...s0s), hi = Math.max(...s0s)
+    const far = (q0, q1, a0, a1) => q1 < a0 - 20 || q0 > a1 + 20
+    const pairs = racks().filter(o => { if (o.type !== 'rack_double_row') return false; const [s0, s1] = ftS(foot(o)), [r0, r1] = ftR(foot(o))
+      return s0 > lo + 20 && s1 < hi - 20 && [...lanes, { s: ftS(ob), r: ftR(ob) }].every(l => far(s0, s1, l.s[0], l.s[1]) || far(r0, r1, l.r[0], l.r[1])) })
+      .sort((p, q) => ftS(foot(p))[0] - ftS(foot(q))[0])
+    const r = pairs[0]
+    expect(r).toBeTruthy()
     s().commitObjectUpdate(r.id, vert ? { x: r.x + 1.5 * GS } : { y: r.y + 1.5 * GS })
     expect(() => expectRegular()).toThrow()
   })

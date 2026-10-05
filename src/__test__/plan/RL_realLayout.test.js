@@ -150,18 +150,90 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     }
   })
 
-  it(`RL-4: ${corrections23 ? 'the row under the washroom' : 'every row'} — where a pair stops but one half still has room (a zone over the other half only), that half carries on from the pair's last frame: no empty bay between them`, async () => {
-    const { m, out, fp } = await fill()
-    const v = view(m, fp), racks = out.filter(o => RACK.has(o.type)).map(v.rack), up = 3 / 12, pitch = 99 / 12
+  /** The lanes the way-in step cut for the area in `out` (its pattern refit from those objects): each
+   *  { r: [along], s: [across] } in feet off the building's corner — exactly the strip it carved. */
+  const wayInLanes = (m, out, fp) => {
+    const a = out.find(o => o.type === 'racking_area'), report = []
+    m.FR.patternFill(out.filter(o => !(RACK.has(o.type) && o.areaId === a.id)), { x: a.x, y: a.y, w: a.width, h: a.height }, a.pattern, { gridSize: GS, report })
+    const offR = vert ? fp.y : fp.x, offS = vert ? fp.x : fp.y
+    return report.map(q => ({ r: q.at.map(v => (v - offR) / GS), s: q.across.map(v => (v - offS) / GS) }))
+  }
+  /** Where a pair stops and a half of it carries on: every half within a bay of its pair that does NOT
+   *  start (or end) on the pair's frame — an empty bay between them — unless that gap is exactly a
+   *  way-in lane the fill cut. */
+  const holesBesidePairs = (racks, lanes) => {
+    const up = 3 / 12, pitch = 99 / 12, out = []
+    const inLane = (g0, g1, q) => lanes.some(l => l.r[0] <= g0 + EPS && l.r[1] >= g1 - EPS && l.s[0] <= q.s0 + EPS && l.s[1] >= q.s1 - EPS)
     let found = 0
     for (const q of racks.filter(x => x.o.type === 'rack_row')) {
-      // a pair of the same row whose across holds this single's, ending (or starting) within a bay of it
       for (const p of racks.filter(x => x.o.type === 'rack_double_row' && x.o.rowIndex === q.o.rowIndex && x.s0 <= q.s0 + EPS && x.s1 >= q.s1 - EPS)) {
-        if (q.r0 > p.r1 - up - EPS && q.r0 < p.r1 + pitch) { found++; expect(q.r0, `the single at ${q.s0.toFixed(2)}' starts on the pair's last frame`).toBeCloseTo(p.r1 - up, 6) }
-        if (q.r1 < p.r0 + up + EPS && q.r1 > p.r0 - pitch) { found++; expect(q.r1, `the single at ${q.s0.toFixed(2)}' ends on the pair's first frame`).toBeCloseTo(p.r0 + up, 6) }
+        if (q.r0 > p.r1 - up - EPS && q.r0 < p.r1 + pitch) { found++; if (Math.abs(q.r0 - (p.r1 - up)) > 1e-6 && !inLane(p.r1, q.r0, q)) out.push(`single at ${q.s0.toFixed(2)}' starts ${q.r0.toFixed(2)}', the pair ends ${p.r1.toFixed(2)}'`) }
+        if (q.r1 < p.r0 + up + EPS && q.r1 > p.r0 - pitch) { found++; if (Math.abs(q.r1 - (p.r0 + up)) > 1e-6 && !inLane(q.r1, p.r0, q)) out.push(`single at ${q.s0.toFixed(2)}' ends ${q.r1.toFixed(2)}', the pair starts ${p.r0.toFixed(2)}'`) }
       }
     }
+    return { holes: out, found }
+  }
+
+  it(`RL-4: ${corrections23 ? 'the row under the washroom' : 'every row'} — where a pair stops but one half still has room (a zone over the other half only), that half carries on from the pair's last frame: no empty bay between them`, async () => {
+    const { m, out, fp } = await fill()
+    const v = view(m, fp), racks = out.filter(o => RACK.has(o.type)).map(v.rack)
+    const { holes, found } = holesBesidePairs(racks, wayInLanes(m, out, fp))
+    expect(holes).toEqual([])
     if (corrections23) expect(found, 'a half carrying on from its pair (under the washroom)').toBeGreaterThan(0)
+  })
+
+  if (corrections23) it('RL-4-hole: an empty bay beside a pair that is NOT a lane still fails — the half carrying on from the pair under the washroom shortened by its first bay by hand: a hole is reported', async () => {
+    const { m, out, fp } = await fill()
+    const v = view(m, fp), racks = out.filter(o => RACK.has(o.type)).map(v.rack), pitchPx = 99 / 12 * GS
+    const lanes = wayInLanes(m, out, fp)
+    expect(holesBesidePairs(racks, lanes).holes).toEqual([])
+    // the single that starts on a pair's last frame: drop its first bay (it now starts a bay later)
+    const pairEnds = racks.filter(x => x.o.type === 'rack_double_row')
+    const q = racks.find(x => x.o.type === 'rack_row' && x.o.beams.length > 1 && pairEnds.some(p => p.o.rowIndex === x.o.rowIndex && Math.abs(x.r0 - (p.r1 - 0.25)) < 1e-6))
+    expect(q, 'a half carrying on from its pair').toBeTruthy()
+    const o = q.o, shorter = vert ? { ...o, y: o.y + pitchPx / 2, x: o.x + pitchPx / 2, width: o.width - pitchPx, beams: o.beams.slice(1) } : { ...o, x: o.x + pitchPx, width: o.width - pitchPx, beams: o.beams.slice(1) }
+    const edited = out.map(x => (x === o ? shorter : x)).filter(x => RACK.has(x.type)).map(v.rack)
+    expect(holesBesidePairs(edited, lanes).holes.length).toBeGreaterThan(0)
+  })
+
+  /** The pocket's way in below the office, at the far run wall (the hand check's row 6): the pair just
+   *  below the office's corner there, the single that row has nearer the office, and the lane cut. */
+  const belowOffice = (m, racks, out, fp, lanes) => {
+    const v = view(m, fp), office = v.zone(out.find(o => o.type === 'zone_office'))
+    const rMax = (vert ? fp.height : fp.width) / GS - 0.25
+    const row = racks.filter(q => q.s0 >= office.s1 - EPS && q.s0 < office.s1 + 6 && q.r1 > office.r1 - 10)
+    const pair = row.find(q => q.o.type === 'rack_double_row')
+    const single = pair && racks.filter(q => q.o.type === 'rack_row' && q.o.rowIndex === pair.o.rowIndex && q.s0 >= pair.s0 - EPS && q.s1 <= pair.s1 + EPS && q.r1 <= pair.r0 + EPS).sort((x, y) => y.r1 - x.r1)[0]
+    const lane = lanes.find(l => pair && l.s[0] <= pair.s0 + EPS && l.s[1] >= pair.s1 - EPS && l.r[1] >= office.r1 - 1 && l.r[0] <= rMax)
+    return { office, rMax, pair, single, lane }
+  }
+
+  if (corrections23) it('RL-5: the pocket\'s way in, below the office — the lane one bay in from the office\'s edge on the bay grid (a tie with the wall\'s lane, taken on the office\'s side): the pair below the office ends on the building wall; the single beside it is whole, its end exactly the travel width (8\') from the pair', async () => {
+    const { m, out, fp } = await fill()
+    const v = view(m, fp), racks = out.filter(o => RACK.has(o.type)).map(v.rack)
+    const { office, rMax, pair, single, lane } = belowOffice(m, racks, out, fp, wayInLanes(m, out, fp))
+    expect(pair && single && lane, 'the pair, the single and the lane below the office').toBeTruthy()
+    expect(pair.r1, 'the pair on the building wall').toBeCloseTo(rMax, 6)
+    expect(pair.r0 - single.r1, 'exactly the travel width between them').toBeCloseTo(8, 6)
+    expect(lane.r[0]).toBeCloseTo(single.r1, 6)
+    expect(lane.r[1]).toBeCloseTo(pair.r0, 6)
+    expect(lane.r[0] - office.r1, 'one bay in from the office\'s edge, not hard against it').toBeGreaterThan(1)
+  })
+
+  if (corrections23) it('RL-5-boundary: the travel width read to a thousandth of a foot — at 8\' the lane one bay in (exactly 8\' wide) opens the pocket and is taken; at 8.01\' it is 0.01\' short, so the wall\'s lane is taken and the pair below the office stops a bay short of the wall', async () => {
+    const { m, out, fp } = await fill()
+    const a = out.find(o => o.type === 'racking_area'), base = out.filter(o => !(RACK.has(o.type) && o.areaId === a.id))
+    const box = { x: a.x, y: a.y, w: a.width, h: a.height }, v = view(m, fp)
+    const run = (travelFt) => {
+      const report = [], racks = m.FR.patternFill(base, box, { ...a.pattern, travelFt }, { gridSize: GS, report }).racks.map(v.rack)
+      const offR = vert ? fp.y : fp.x, offS = vert ? fp.x : fp.y
+      return belowOffice(m, racks, out, fp, report.map(q => ({ r: q.at.map(x => (x - offR) / GS), s: q.across.map(x => (x - offS) / GS), kind: q.kind })))
+    }
+    const at8 = run(8), at801 = run(8.01)
+    expect(at8.pair.r1).toBeCloseTo(at8.rMax, 6)
+    expect(at8.lane.kind).toBe('zone')
+    expect(at801.lane.kind).toBe('wall')
+    expect(at801.pair.r1, 'a bay short of the wall').toBeLessThan(at801.rMax - 8)
   })
 
   it('RL-clean: Check layout finds no error; nothing cut off; shrink across and along, then extend back — the same racks', async () => {

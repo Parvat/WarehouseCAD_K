@@ -5997,6 +5997,23 @@ column lines; where it lands depends on where the run starts.
 
 Fix:      Open. RL-clean allows exactly this one error until it is fixed.
 
+## BUG 72 — the access check passes paths narrower than the travel width (down to about 7 ft)  (2026-10-05, open)
+Symptom:  On the hand-check layout (500 × 250), a lane cut 7.0 ft wide —
+a whole foot under the reach truck's 8 ft travel width — still counted as
+a way in: nothing cut off. Check layout's "No way in: aisle closed at both
+ends" can therefore pass a pocket whose only path is under width.
+
+Cause:    `floorAccess` (aisleAccess.js) works on a grid of cells — cell
+size max(gridSize / 2, √(area / MAX_CELLS)), about 0.8 ft on that building —
+marks a cell free by its centre, and calls a cell drivable when a
+(2m − 1)-cell square fits around it. Rounding at both sides of a gap lets
+it through at roughly a cell (or more) under the travel width.
+
+Fix:      Open — not this round. The lanes the fill cuts are now held to
+the exact travel width (a strip must be clear to 0.001 ft: `stripsFor`),
+but gaps the layout leaves on its own, and Check layout, still go by the
+grid.
+
 ---
 
 ## Template for new entries

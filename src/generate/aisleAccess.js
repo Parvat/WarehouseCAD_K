@@ -175,7 +175,7 @@ export function cutOffRacks(objects, fp, { gridSize = 40, travelFt = 8, aisleFt 
 /** The bays of the racks `ids` (rows along `axis`) that a travel path across `band` ([lo, hi]
  *  along the run) crosses, removed — right across the floor, or only for racks whose stack range
  *  meets `across` ([lo, hi]) when given. */
-function carve(objects, ids, axis, band, gridSize, newId, across = null) {
+function carve(objects, ids, axis, band, gridSize, newId, across = null, tol = 1e-6) {
   const want = new Set(ids)
   return objects.flatMap(o => {
     if (!want.has(o.id) || !BEAM.has(o.type)) return [o]
@@ -189,7 +189,7 @@ function carve(objects, ids, axis, band, gridSize, newId, across = null) {
     const drop = new Set()
     for (let i = 0; i + 1 < xs.length; i++) {
       const b0 = toWorld(xs[i]), b1 = toWorld(xs[i + 1] + upW)
-      if (Math.min(b1, band[1]) - Math.max(b0, band[0]) > 1e-6) drop.add(i)
+      if (Math.min(b1, band[1]) - Math.max(b0, band[0]) > tol) drop.add(i)
     }
     if (!drop.size) return [o]
     if (drop.size === xs.length - 1) return []
@@ -303,9 +303,30 @@ function stripsFor(objects, fp, res, pocketId, carvable, { gridSize, travelFt, d
   const lines = []
   for (const z of zones) for (const e of vert ? [z.y, z.y + z.h] : [z.x, z.x + z.w]) lines.push({ e, kind: 'zone' })
   for (const q of poly) lines.push({ e: vert ? q.y : q.x, kind: 'wall' })
-  const seen = new Set(), out = []
+  /* and, beside a zone's edge, on the bay grid of the racks the strip would cut: starting at the far
+     face of an upright that the strip hard against the edge would nick, inside the open lane — so a
+     rack it only nicks keeps that bay and the strip takes the next one (kind 'zone': it stands in the
+     zone's lane) */
+  const tol = 1e-3 * gridSize                                            // the travel width, to a thousandth of a foot
+  const uprights = []
+  for (const o of others) {
+    if (!canCut.has(o.id) || !Array.isArray(o.beams)) continue
+    const f = rackFootprint(o)
+    if ((f.rotated ? 'y' : 'x') !== axis) continue
+    const { xs, upW } = uprightXs(o, gridSize)
+    for (const lx of xs) { const a = (f.rotated ? f.y : f.x) + (lx - o.x); uprights.push([a, a + upW]) }
+  }
+  const bands = []
   for (const { e, kind } of lines) for (const side of [-1, 1]) {
-    const band = side < 0 ? [e - T, e] : [e, e + T]
+    bands.push({ band: side < 0 ? [e - T, e] : [e, e + T], kind })
+    if (kind !== 'zone') continue
+    for (const [a, b] of uprights) {
+      if (side > 0 && b > e + tol && a < e + T - tol) bands.push({ band: [b, b + T], kind })
+      if (side < 0 && a < e - tol && b > e - T + tol) bands.push({ band: [a - T, a], kind })
+    }
+  }
+  const seen = new Set(), out = []
+  for (const { band, kind } of bands) {
     const key = Math.round(band[0] * 100) + '|' + kind
     if (seen.has(key)) continue
     seen.add(key)
@@ -327,7 +348,10 @@ function stripsFor(objects, fp, res, pocketId, carvable, { gridSize, travelFt, d
       if (zones.some(z => meets(z, R)) || others.some(q => !canCut.has(q.id) && meets(rackFootprint(q), R))) continue
       if (![[R.x + 1, R.y + 1], [R.x + R.w - 1, R.y + 1], [R.x + 1, R.y + R.h - 1], [R.x + R.w - 1, R.y + R.h - 1]].every(([x, y]) => onFloor(x, y))) continue
       let n = 0
-      const after = carve(objects, [...canCut], axis, band, gridSize, () => 'cost' + (++n), across)
+      const after = carve(objects, [...canCut], axis, band, gridSize, () => 'cost' + (++n), across, tol)
+      // its exact width: nothing left in the strip (past the tolerance) — the full travel width, all the way across
+      const inner = vert ? { x: R.x, y: R.y + tol, w: R.w, h: R.h - 2 * tol } : { x: R.x + tol, y: R.y, w: R.w - 2 * tol, h: R.h }
+      if (after.some(q => isRack(q) && q.width > 0 && meets(rackFootprint(q), inner))) continue
       const cost = baysOf(objects, [...canCut]) - after.filter(q => canCut.has(q.id) || String(q.id).startsWith('cost')).reduce((t, q) => t + (q.beams?.length || 0), 0)
       out.push({ axis, band, across, cost, kind, mid: (band[0] + band[1]) / 2, pocket: pocketId, racks: mine.length })
     }
@@ -364,7 +388,7 @@ export function giveWayIn(objects, fp, ids, { gridSize = 40, travelFt = 8, aisle
     const strips = stripsFor(objs, fp, res, pocket, live(objs), { gridSize, travelFt, dir })
     for (const s of strips) {
       const before = baysOf(objs, ids)
-      const next = carve(objs, live(objs), s.axis, s.band, gridSize, newId, s.across)
+      const next = carve(objs, live(objs), s.axis, s.band, gridSize, newId, s.across, 1e-3 * gridSize)
       const r2 = cutOffRacks(next, fp, { ...opts, ids: live(next) })
       const still = new Set(r2.cutOff.map(c => c.id))
       // opened: none of the pocket's racks (or what is left of them) cut off any more
@@ -376,7 +400,7 @@ export function giveWayIn(objects, fp, ids, { gridSize = 40, travelFt = 8, aisle
       let tight = 0
       if (t.n) { const r3 = cutOffRacks(t.objects, fp, { ...opts, ids: live(t.objects) }); if (r3.cutOff.length <= r2.cutOff.length) { objs = t.objects; res = r3; tight = t.n } }
       if (!tight) { objs = next; res = r2 }
-      if (report) report.push({ racks: mine.size, bays: before - baysOf(next, ids), kind: s.kind, at: s.band, tiedWith: tie ? tie.kind : null, tight })
+      if (report) report.push({ racks: mine.size, bays: before - baysOf(next, ids), kind: s.kind, at: s.band, across: s.across, tiedWith: tie ? tie.kind : null, tight })
       opened = true
       break
     }

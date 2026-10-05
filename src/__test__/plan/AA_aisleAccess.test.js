@@ -155,16 +155,21 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     const { fp, ib } = await officePocket('fp_rect', 240, 120)
     const report = []
     const plan = m.FR.planFill(s().objects, ib, { orientation }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
+    // the strip on the bay grid inside the office's lane (17'–25': the half's first frame and the bay before it)
+    // ties with the wall's (1 bay each) and takes it: the pair stays on the near wall
     expect(report).toHaveLength(1)
-    expect(report[0].kind).toBe('wall')
-    expect(report[0].tiedWith).toBeNull()
+    expect(report[0].kind).toBe('zone')
+    expect(report[0].tiedWith).toBe('wall')
     expect(report[0].bays).toBe(1)
+    expect((report[0].at[0] - fp.x) / GS).toBeCloseTo(17, 6)
+    expect((report[0].at[1] - fp.x) / GS).toBeCloseTo(25, 6)
     // the pair the office overlaps by 3" (32.5–40.25' across): its free half carries on from its last frame
     const sOff = (q) => across(q).map(v => (v - fp.y) / GS)
     const pair = plan.racks.find(q => q.type === 'rack_double_row' && Math.abs(sOff(q)[0] - 32.5) < EPS && along(q)[1] < fp.x + 30 * GS)
     const half = plan.racks.find(q => q.type === 'rack_row' && Math.abs(sOff(q)[0] - 32.5) < EPS && Math.abs(sOff(q)[1] - 36) < EPS)
     expect(pair && half, 'the pair and its free half').toBeTruthy()
-    expect(along(half)[0]).toBeCloseTo(along(pair)[1] - 3 / 12 * GS, 3)
+    expect(along(half)[0]).toBeCloseTo(along(pair)[1] + 8 * GS, 3)                                // the lane between them, exactly 8 ft
+    expect(along(pair)[0] - ib.x).toBeCloseTo(0, 3)                                          // the pair on the near wall
   })
 
   it.each(SHAPES)('AA-travel (%s): a fill of the whole building leaves every aisle a way in — Check layout finds no aisle closed at both ends, and every rack a pick face onto the main floor', (_, type, w, h) => {

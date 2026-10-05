@@ -284,7 +284,7 @@ All other cases: 0.
   (10 px); with Building hidden, no guide.
 - The View menu has no "Column labels". No console errors.
 
-### RA — Racking areas and zones · `RA_rackingAreas.test.js` (101 tests)
+### RA — Racking areas and zones · `RA_rackingAreas.test.js` (103 tests)
 Code: `generate/rackingArea.js` (pure) and `utils/rackingAreaTool.js` (store,
 question). UI: `canvas2/AreaPrompt.jsx` and
 `RightPanel/panels/RackingAreaPanel.jsx`.
@@ -871,6 +871,17 @@ ends (a wall and an office, or two walls) is a dead-end pocket.
   face (`tighten`, aisleAccess.js): the same bays, all the leftover in the lane on
   the zone's side. Kept only if nothing is cut off. The report gives `tight`,
   how many racks moved.
+- **A lane can start on the bay grid, inside the zone's lane.** Besides a strip
+  hard against a zone's edge (or a wall face), the way-in search tries strips that
+  start at the far face of each upright the edge strip would nick — so a rack the
+  edge strip only grazes keeps that bay and the strip takes the next one. They are
+  zone-side strips: in a tie with the wall's they win (the racks stay on the
+  building wall). A bay only touching a strip (to 0.001 ft) is not cut, and a strip
+  is taken only clear to its full travel width, measured exactly — 8.00' passes,
+  7.99' does not (the grid check of BUG 72 is not what decides it). Cost is still
+  whole bays. On the hand-check layout: the lane below the office runs 466.75'–
+  474.75', one bay in from the office's edge; row 6's pair ends on the wall and
+  its single is whole (RL-5).
 - **A half carries on from its pair.** Each half of a pair takes the run the
   pair's PLACED bays leave (less their end uprights), not what the pair's clear
   run leaves: where the pair fits but no whole pair bay does — a zone over one
@@ -918,7 +929,7 @@ editing):
   the flush wall row is a legitimate single (fix 1).
 - No wall-to-wall layout changed.
 
-**The hand-check layout** · `RL_realLayout.test.js` (60 tests), fixture
+**The hand-check layout** · `RL_realLayout.test.js` (78 tests), fixture
 `realLayout.fixture.js` (the saved `warehouse-2026-10-05.wcad`: 500 × 250, a
 column grid, office and washroom on the top wall, a custom area on the bottom
 wall, the area's box 2.89' short of the left wall and 1.37' short of the top,
@@ -936,6 +947,9 @@ the office's corner unchanged.
 | `RL-2` ×12 | where the pocket is: ≥ 3 shortened rows beside the office end exactly on the building wall, the lane on the office side ≥ 8' and under one more bay past it (16.2' on the file); elsewhere nothing past the wall |
 | `RL-3` ×12 | every rack beside the office that ends short of it runs on to within a bay of it (or a zone or rack stands between); where the cross-aisle is: ≥ 2 ran on across it, and below the office the same cross-aisle stays between racks |
 | `RL-4` ×12 | where a pair stops but one half still has room, that half starts (or ends) on the pair's frame — no empty bay between; on the layouts with the washroom row, at least one such half |
+| `RL-4-hole` ×6 | where the washroom row is: the half carrying on from its pair shortened by its first bay by hand — the hole is reported (an empty bay that is not a lane still fails) |
+| `RL-5` ×6 | where the pocket is: the lane below the office on the bay grid one bay in from the office's edge; the pair below the office ends on the building wall; the single beside it whole, exactly 8' from the pair; the lane spans exactly that gap |
+| `RL-5-boundary` ×6 | the same with the travel width 8.00' (the zone-side lane, the pair on the wall) and 8.01' (the wall's lane; the pair a bay short of the wall) |
 | `RL-clean` ×12 | Check layout: no error but the one already there (BUG 71: "Row 7, section 4: a column stands on an upright frame"); nothing cut off; shrink across and along and extend back: the same racks |
 
 **Reproduced on the file before the fix** (both orientations; fill as saved
@@ -958,15 +972,34 @@ racks) with RL.
 
 | `RA-half-on` ×3 | (in RA) rectangle, L, T: an office over one half of a long interior pair only (3" in across, 3 bays and 3' in along, off the bay grid): the pair stops at its last whole bay before it and the free half starts on that pair's last frame (`sharesFrame`); clean |
 | `RA-regular-strict` | (in RA) one row of a regular fill moved 1' 6" across by hand: the strict aisle check fails (a real over-wide aisle between facing rows is still caught) |
+| `RA-regular-strict-lanes` | (in RA) with way-in lanes cut (an office pocket): an interior pair 20' from every lane and the office moved 1' 6": the strict aisle check still fails |
 
 **Break-its (the half carries on):** halves cut against the pair's clear run again:
 RA-half-on (6), RL-4 (11) and AA-tie's horizontal case fail. The strict aisle check
 skipping every pair: RA-regular-strict and the RA-regular tests fail (10).
 
-**Helper:** RA's `expectRegular` now reads racks meeting along by less than one bay as
-not facing (it was: no more than an upright) — a bay carried on past a wall line, where
-the rows across end short of it, faces open floor, not an aisle. RA-regular-strict
-shows a real over-wide aisle still fails.
+**Helper:** RA's `expectRegular` measures to the nearest rack across that overlaps by more
+than an upright; it skips one that overlaps by less than a bay only when the floor between
+is wider than an aisle (a bay carried on past a wall line, the rows across ending short of
+it, faces open floor). It also skips a gap a way-in lane runs through — exactly the span of
+a lane the way-in step cut, read from the store (the area refit from the store's objects,
+its report): the two racks meet along only within the lane, and the lane crosses the whole
+gap. RL-4 skips a gap between a pair and its half only when it is exactly such a lane.
+RA-regular-strict, RA-regular-strict-lanes and RL-4-hole show what is not a lane still
+fails. The way-in report now gives each lane's span across too (`across`).
+
+**Lanes that moved with the bay-grid strips** (listed before editing, approved: option
+A). Over the plan tests, 59 tests' chosen lanes moved: 2 keep more bays (AA-pocket L
+horizontal +2, RA-half-on T vertical +1), 57 tie (the same bays; the zone-side strip
+now wins the tie), none keep fewer. The exact width check rejected no lane anywhere
+(lanes are cut exactly the travel width). Tests edited: RL-4 (skips a way-in lane's
+exact gap), AA-tie horizontal (the zone-side tie at 17'–25', the pair on the near wall),
+RA's strict aisle helper (above).
+
+**Break-its (the bay-grid lanes):** no bay-grid strips: RL-5, RL-5-boundary and
+AA-tie fail (13). The travel width not measured exactly (a bay overlapping a strip by
+up to 0.1' left standing): RL-5 and RL-5-boundary fail (12). A bay only touching a
+strip cut: RL-5, RL-5-boundary and AA-tie fail (13).
 
 **Strict helpers:** RA's `expectOnPattern` passes a rack off its run's uprights only
 as a pocket row tight on the wall (one end exactly on the wall, the other facing a
