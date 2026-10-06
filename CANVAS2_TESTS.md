@@ -1253,7 +1253,7 @@ three drawn sizes changed:
 - **One rack dragged** past its columns changed the count, as it should.
 - No console errors.
 
-### RG — The Row group · `RG_rowGroup.test.js` (67 tests)
+### RG — The Row group · `RG_rowGroup.test.js` (75 tests)
 Replaces Match bays in section, the section-copy bar and its Copy / Don't copy
 question (areas SC, CF, EX, Y, Z2 are removed — their still-valid checks are
 listed below). Code: `utils/rowGroup.js` (rows, what an edit was, the replay
@@ -1281,14 +1281,24 @@ that row:
 - **bays:** the source's uprights wherever both have racks, within ½"
   (`UP_TOL_FT`). A bay that would go through a wall or a zone is **dropped,
   never squeezed**. A row whose uprights don't line up is skipped (wall rows).
-- **move across:** the same delta, measured centre to centre (a live-flue drag
-  that narrows the rack moves it exactly the drag). Only the across part of a
-  drag is replayed — a snap's drift along stays on the source. **Part of a row
+- **a move, across or along:** the same delta on its dominant axis — across
+  measured centre to centre (a live-flue drag that narrows the rack moves it
+  exactly the drag). Along moves are replayed too (after the hand check on
+  3a652bc; they used to stay on their own row). **Dragging a group row is locked
+  to its dominant axis**, so a wobbly hand never drifts it on the other — that
+  drift, kept on the source when only the across part was replayed, is what put
+  rows 22-25 3" apart along and made every later bay edit "uprights don't line
+  up". While a group row is dragged, the other group rows and every rack lined
+  up with where it started are not snap targets (they could only pull it back
+  to where it was), so a move of an inch sticks and is offered; a drag that ends
+  where it started writes no history. **Part of a row
   dragged** (one rack of a two-rack row): each target's racks more than half
   inside the moved rack's stretch move; a target with a rack only partly inside
   it is skipped ("a rack only partly inside the stretch that moved") — a rack is
-  never split. A target the move would push through a wall or into a zone is
-  skipped with that reason.
+  never split. A target the move — across or along — would push through a wall
+  or into a zone is skipped with that reason.
+- A skipped "uprights don't line up" says by how much: "uprights don't line up
+  (3" off)" — the nearest a target upright comes to a source one.
 - **delete:** the others deleted. **A row added next to a group row:** one beside
   each other group row, the same offset across, at that row's own length.
 - **levels:** the others get the same levels. Depth, kind and other edits are
@@ -1326,11 +1336,16 @@ and ✕.
   below ("Warning — Section 2, row 12: an overlap"), then the skipped rows with
   their reason. The preview is on the canvas: targets dashed blue, targets with
   warnings orange with long dashes, dropped bays red filled with a solid edge,
-  skipped rows amber dashed. **Apply is one undo step.** One grey line shows the
-  last result ("Applied to 48 rows · 1 with warnings — see Check layout · 3
-  skipped").
+  skipped rows amber dashed. **Apply is one undo step.** The result stays on the
+  bar ("Applied to 48 rows · 1 with warnings — see Check layout · 3 skipped"),
+  with the rows it warned about or skipped listed under it.
 - **Auto apply:** applied at once, folded into the edit's own history entry (one
-  Ctrl+Z undoes both).
+  Ctrl+Z undoes both) — never a question, never Skip.
+- **Nothing to apply** — Ask or Auto, no question: "Nothing applied. 3 skipped"
+  with each row and its reason; an edit no other group row has racks for says
+  "Nothing applied: no other group row has racks there." A move along shows the
+  bar like any other edit (it used to show only a faint grey "a move along the
+  row isn't replayed").
 
 Undo / redo end a pending apply. A racking area's refit is passed over
 (`skipNextAction`), and Generate clears the group.
@@ -1347,10 +1362,10 @@ vertical rows on the layout turned 90° (the same rows mirrored).
 | `RG-add-delete-bay` | an end bay deleted → each target loses the bay at that upright; a bay added back → each gets it back; a middle bay deleted → "Apply to the other 7 rows? 2 skipped.", every target with that bay has a gap there; no new overlap; every rack inside the walls |
 | `RG-across` | row 7 in every section; section 4's moved 1' across → "Apply to the other 3 rows?" → all moved 1'; one entry; undo restores |
 | `RG-together` | every row grouped, one dragged 3.875' → "Apply to the other 49 rows? 2 skipped." (the two wall rows, through the wall), no warnings; after Apply the spacing between rows is unchanged |
-| `RG-drift` | 1' across + 0.9' drift along → only the across part replayed: targets 1' across, 0 along; the source keeps its drift |
+| `RG-drift` | a move made other than by a drag (no axis lock), 1' across + 0.9' along → only its dominant part is replayed: targets 1' across, 0 along; the source keeps its own |
 | `RG-part` | only the pair of the half row 4/6 dragged 1' → "Apply to the other 5 rows? 8 skipped." — rows 2-5 and row 1's wall rack (more than half inside the stretch) move; rows 7-13 and 3/14 skipped, "a rack only partly inside the stretch that moved"; no rack split; the rest of the source row untouched |
 | `RG-warn-bays` | section 2's row 7 given two bays toward section 3: no bay dropped, "Apply to the other 11 rows? 11 will have warnings. 2 skipped." (an overlap); every row has both bays; Check layout reports each overlap; the result line points to Check layout |
-| `RG-along` | a move along the row: nothing pending, "a move along the row isn't replayed" |
+| `RG-along` | row 7 in every section moved 1' along → "Apply to the other 3 rows?" (kind along) → every row 7 1' along; section 1's moved 3' toward section 2: section 4's (at the end wall) skipped "a wall", section 3's applied with "a column on an upright" |
 | `RG-delete` | row 7 deleted in section 4 → "Apply to the other 3 rows?" → every row 7 gone, the group empty; undo → back but the source; undo → all back |
 | `RG-add-row` | row 8 deleted everywhere; a hand row where section 4's was, beside row 7 → three added, each beside its section's row 7 at the same offset across and that row's own length |
 | `RG-multi` | two group rows moved the same 3" across → "Apply to the other 11 rows? 1 skipped." (section 3's row 14 against the wall; row 7 keeps the column already on its upright) → the others moved 3"; select-all + Delete deletes every row, nothing left to offer |
@@ -1360,8 +1375,12 @@ vertical rows on the layout turned 90° (the same rows mirrored).
 | `RG-save` | the file has no group keys, no `rowGroup` / `alwaysApply`; the canvas store has no group; a reload carries none |
 | `RG-shape` ×6 | rectangle, L, T × both: a bay change on a middle row of each section, replayed on its section: no new overlap, every replayed rack inside the walls, every upright on the source's where the source has racks, each target's bay count down by exactly its dropped count |
 | `RG-warn-aisle` | by hand: B ends 8.0' from the rack across → applied, no warning (that aisle was already under the pick width); 7.99' → applied, "an aisle under the travel width", "1 will have warnings", listed on the bar |
-| `RG-warn-and-skip` | by hand: B moved onto C → applied with "an overlap", its racks marked `warned` in the preview, Check layout reports the overlap after; a column on B's upright → applied with "a column on an upright", Check layout reports it; a wall and a zone → still skipped with the reason ("Apply to the other 1 row? 1 skipped."); the preview's WARNED style |
-| `RG-skip-lineup` | by hand: a row 4' off the source's uprights → "uprights don't line up", untouched; the one that lines up takes it |
+| `RG-warn-and-skip` | by hand: B moved onto C → applied with "an overlap", its racks marked `warned` in the preview, Check layout reports the overlap after; a column on B's upright → applied with "a column on an upright", Check layout reports it; a wall → nothing applied, "Nothing applied. 1 skipped" with "a wall", no question; a zone → skipped beside a row that applies ("Apply to the other 1 row? 1 skipped."); the preview's WARNED style |
+| `RG-along-warn` | by hand: B moved 13' along onto C (its own row, 11' beyond) → applied with "an overlap" (found by B's racks, though B and C then chain into one row); one along through the end wall → "Nothing applied. 1 skipped", "a wall" |
+| `RG-rows22` | the layout as saved, rows 22-25 of section 1 under the office, Auto apply: identical uprights as loaded; a 1.5' move with a 3" drift along → only across replayed, row 22 3" off; a bay deleted → no question, "Nothing applied. 3 skipped", each "uprights don't line up (3" off)", no Apply / Skip on the bar; the same move through the axis lock → no drift, the delete applies to all three (every row split at the same bay) |
+| `RG-nothing` | Ask: every target skipped → no question, "Nothing applied. 3 skipped"; a bay edit on a group row no other group row reaches → "Nothing applied: no other group row has racks there." |
+| `RG-snap` | section 2 rows 10-16 grouped: a 2" drag of row 13 with every rack a snap target snaps back to 0; with the group rows and the racks lined up with its start left out (section 1's row 13 among them) it keeps its 2"; a rack outside the group drags as before; `lockToAxis` keeps nothing on the minor axis; the drag wiring (lock before and after snapping, both paths; a live-flue drag back to its start writes no history) |
+| `RG-skip-lineup` | by hand: a row 4' off the source's uprights → "uprights don't line up (48" off)", untouched; the one that lines up takes it |
 | `RG-reversed` | a target drawn at 180° / 270°: the edit lands at the same bay along the run; its stored bays reversed; its start and end where the source's are |
 | `RG-hand` | hand racks in one line are one row (`h|A1,A2`); a bay edit replays on the other hand row; a middle bay delete splits both rows and the pieces stay in the group; an edit on a piece replays on the other piece |
 | `RG-two-rows` | by hand: the same bay change on two group rows at once → the third gets it ("Apply to the other 1 row?"); different changes on the two → not replayed, "These 2 rows were changed in different ways…" |
@@ -2618,6 +2637,16 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | RG | **A rack partly inside the dragged stretch not skipped** | 2: RG-part | ✓ |
 | RG | **Any overlap with the stretch moves a rack** (no half rule) | 2: RG-part | ✓ |
 | RG | **Bays dropped at a rack along again** | 10: RG-zone, RG-warn-bays, RG-shape | ✓ |
+| RG | **A dragged group row snaps to everything again** | 2: RG-snap | ✓ |
+| RG | **Racks lined up with the start still snap targets** | 2: RG-snap | ✓ |
+| RG | **No axis lock** | 4: RG-rows22, RG-snap | ✓ |
+| RG | **A live-flue drag back to its start commits** | 2: RG-snap | ✓ |
+| RG | **Along moves not replayed** | 6: RG-along, RG-nothing, RG-along-warn | ✓ |
+| RG | **An along move through a wall applied** | 4: RG-along, RG-along-warn | ✓ |
+| RG | **No offset on "uprights don't line up"** | 6: RG-bays, RG-rows22, RG-skip-lineup | ✓ |
+| RG | **Nothing applied still asks** | 8: RG-rows22, RG-nothing, RG-warn-and-skip, RG-along-warn | ✓ |
+| RG | **No word when no target has racks there** | 2: RG-nothing | ✓ |
+| RG | **Warnings found by the row key after the apply** | 2: RG-along-warn | ✓ |
 
 **Round 1 (original code):**
 

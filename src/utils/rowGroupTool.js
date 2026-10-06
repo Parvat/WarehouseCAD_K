@@ -15,7 +15,7 @@
 //     caller calls skipNextAction() (Generate: clearGroup()) first.
 
 import { create } from 'zustand'
-import { rowsOf, resolveKey, rowOfRack, rowsInBox, sameRowOtherSections, classifyEdit, planReplay, applyReplay, planSummary } from './rowGroup'
+import { rowsOf, resolveKey, rowOfRack, rowsInBox, sameRowOtherSections, classifyEdit, planReplay, applyReplay, planSummary, groupDragExclusions } from './rowGroup'
 import { layoutColumns } from '../generate/usableCapacity'
 import { innerOutline } from './floorGeom'
 import { rebuildAisles } from './aisleRebuild'
@@ -30,7 +30,8 @@ export const useRowGroup = create((set) => ({
   keys: [],              // the group's rows (utils/rowGroup.js keys)
   drag: null,            // the Row group tool's box being dragged: { from, to } (world)
   pending: null,         // { plan, summary, edit } — waiting for Apply
-  message: null,         // a line for the bar ("Applied to 11 rows", "touches 2 rows …")
+  message: null,         // a line for the bar ("Applied to 11 rows", "Nothing applied. 3 skipped", "… isn't replayed")
+  report: null,          // with the message: { warned, skipped } — the rows it names, listed under it
   hover: false,
   alwaysApply: readAlways(),
   setAlwaysApply: (on) => { try { localStorage.setItem(LS_KEY, on ? '1' : '0') } catch { /* private window */ } set({ alwaysApply: !!on }) },
@@ -71,6 +72,13 @@ export function addRowOf(rackId, { otherSections = false } = {}) {
   setKeys([...useRowGroup.getState().keys, ...add])
   return add.length
 }
+/** For the drag (canvas2/useCanvasInteraction.js): the racks a dragged group row must not snap to, or null
+ *  when the drag holds no group row. */
+export function groupDragFor(objects, ids) {
+  const keys = useRowGroup.getState().keys
+  return keys.length ? groupDragExclusions(objects, ids, keys, gs()) : null
+}
+
 /* ── the tool: one box or one click, then back to Select ── */
 /** Press: the box starts here; `hitRackId` is the rack under the press, if any (a click toggles its row). */
 export function startGroupBox(world, hitRackId = null) { useRowGroup.setState({ drag: { from: world, to: world, hit: hitRackId } }) }
@@ -116,6 +124,8 @@ const written = (objects, plan) => rebuildAisles(applyReplay(objects, plan), wat
 /** The bar's grey line after an apply: "Applied to 11 rows · 3 lost a bay · 2 with warnings · 1 skipped". */
 const resultLine = (s) => `Applied to ${s.apply} row${s.apply === 1 ? '' : 's'}${s.lose ? ` · ${s.lose} lost ${s.bays === s.lose ? 'a bay' : 'bays'}` : ''}${s.warned.length ? ` · ${s.warned.length} with warnings — see Check layout` : ''}${s.skipped.length ? ` · ${s.skipped.length} skipped` : ''}`
 
+const reportOf = (s) => ({ warned: s.warned, skipped: s.skipped })
+
 /** The bar's Apply: the pending plan written as ONE history entry. */
 export function applyPending() {
   const p = useRowGroup.getState().pending
@@ -126,7 +136,7 @@ export function applyPending() {
   watch.skipNext = true
   watch.store.setState({ objects })
   if (anchor) watch.store.getState().commitObjectUpdate(anchor, {})
-  useRowGroup.setState({ pending: null, hover: false, message: resultLine(p.summary) })
+  useRowGroup.setState({ pending: null, hover: false, message: resultLine(p.summary), report: reportOf(p.summary) })
   return true
 }
 /** The bar's Skip on a pending apply: nothing is applied, the edit stays on its own row. */
@@ -154,10 +164,16 @@ function settle(before) {
   const plan = planReplay(after, edit, keys, contextFor(after, watch.newId))
   const summary = planSummary(plan)
   const groupKeys = edit.kind === 'delete' ? keep : keys
-  if (!summary.apply && !summary.skipped.length) { useRowGroup.setState({ keys: groupKeys, pending: null, message: null }); return }
-  if (st.alwaysApply && summary.apply) {
+  // nothing to apply — Ask or Auto, no question: say so, with the reasons
+  if (!summary.apply) {
+    const n = summary.skipped.length
+    const message = n ? `Nothing applied. ${n} skipped` : plan.targets.length ? 'Nothing applied: no other group row has racks there.' : null
+    useRowGroup.setState({ keys: groupKeys, pending: null, message, report: n ? reportOf(summary) : null })
+    return
+  }
+  if (st.alwaysApply) {
     writeInPlace(written(after, plan))
-    useRowGroup.setState({ keys: edit.kind === 'delete' ? groupRowsNow().map(r => r.key) : groupKeys, pending: null, message: resultLine(summary) })
+    useRowGroup.setState({ keys: edit.kind === 'delete' ? groupRowsNow().map(r => r.key) : groupKeys, pending: null, message: resultLine(summary), report: reportOf(summary) })
     return
   }
   useRowGroup.setState({ keys: groupKeys, pending: { plan, summary, edit }, message: null })

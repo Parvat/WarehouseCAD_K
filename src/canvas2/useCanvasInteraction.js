@@ -14,6 +14,8 @@ import { computeSmartGuides } from './smartGuides'
 import { computeLiveFlue, resolveFlueBase, flueCommitFields, flueDragCentre, flueDragPlacement } from './liveFlue'
 import { usePlacement, movePlacement, commitPlacement } from '../utils/placement'
 import { pickableIn, snapTargets } from '../utils/layers'
+import { groupDragFor } from '../utils/rowGroupTool'
+import { lockToAxis } from '../utils/rowGroup'
 import { clearIssueHighlight } from '../utils/layoutCheck'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
@@ -278,6 +280,13 @@ export function useCanvasInteraction({
          moved the rack ALONG its run (a turned rack) or across by that much
          the moment its flue changed back */
       size: { w: grabbed.width, h: grabbed.height },
+      /* the grabbed object as it was, so a live-flue drag that ends where it started is put back without a
+         history entry */
+      startObj: { ...grabbed },
+      /* a Row group row (utils/rowGroupTool.js): the drag is locked to its dominant axis, and the other
+         group rows and every rack lined up with where it started are not snap targets — they could only
+         pull it back to where it was. null for any other drag. */
+      groupNoSnap: groupDragFor(st.objects, ids),
       moved: false,
       delta: null,
       flueBase,
@@ -889,8 +898,13 @@ export function useCanvasInteraction({
 
         let dx = world.x - d.startWorld.x
         let dy = world.y - d.startWorld.y
+        // a Row group row moves on one axis only: no drift on the other, ever
+        const axisX = Math.abs(dx) >= Math.abs(dy)
+        if (d.groupNoSnap) ({ dx, dy } = lockToAxis(dx, dy))
+        const lock = () => { if (d.groupNoSnap) { if (axisX) dy = 0; else dx = 0 } }
 
         const st = useCanvasStore.getState()
+        const targetsFor = (objs) => { const t = snapTargets(objs, st.layers, d.movedIds); return d.groupNoSnap ? t.filter(o => !d.groupNoSnap.has(o.id)) : t }
 
         /* Live auto-flue (liveFlue.js) — a rack_double_row dragged over a
            column widens its flue in real time to seat it and shrinks back
@@ -938,12 +952,13 @@ export function useCanvasInteraction({
             ? { ...o, x: d.origin.x, y: d.origin.y + yShift, height: liveFlue.targetHeight, flueSpaceIn: liveFlue.targetFlueIn }
             : o)
           const { guides, snapDx, snapDy } = computeSmartGuides(
-            d.ids, snapTargets(guideObjects, st.layers, d.movedIds), st.gridSize, view.current.zoom, dx, dy)
+            d.ids, targetsFor(guideObjects), st.gridSize, view.current.zoom, dx, dy)
 
           if (snapDx != null) dx = snapDx
           else if (st.snapToGrid) dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
           if (snapDy != null) dy = snapDy
           else if (st.snapToGrid) dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
+          lock()
           d.delta = { dx, dy }
           setSmartGuides(guides)
 
@@ -977,7 +992,7 @@ export function useCanvasInteraction({
            fallback on an axis with no nearby guide, preserving that
            already-existing canvas2 behaviour rather than replacing it. */
         const { guides, snapDx, snapDy } = computeSmartGuides(
-          d.ids, snapTargets(st.objects, st.layers, d.movedIds), st.gridSize, view.current.zoom, dx, dy)
+          d.ids, targetsFor(st.objects), st.gridSize, view.current.zoom, dx, dy)
 
         if (snapDx != null) dx = snapDx
         else if (st.snapToGrid) {
@@ -998,6 +1013,7 @@ export function useCanvasInteraction({
           const g = st.objects.find(o => o.id === d.ids[0])
           if (g && (g.type === 'racking_area' || g.type.startsWith('zone_'))) ({ dx, dy } = clampDragDelta(st.objects, g, dx, dy, { gridSize: st.gridSize, snap: 8 / view.current.zoom }))
         }
+        lock()
         d.delta = { dx, dy }
         setSmartGuides(guides)
 
@@ -1118,8 +1134,12 @@ export function useCanvasInteraction({
           if (d.moved) {
             const st = useCanvasStore.getState()
             const obj = st.objects.find(o => o.id === d.ids[0])
-            if (obj) st.commitObjectUpdate(d.ids[0], flueCommitFields(obj, d.flueBase))
-            reparentMoved(d.ids)
+            const s0 = d.startObj
+            const back = obj && s0 && ['x', 'y', 'width', 'height', 'flueSpaceIn'].every(k => obj[k] === s0[k])
+            /* a drag that ends where it started (a snap put it back) is no change: put the object back as it
+               was, without a history entry */
+            if (back) st.updateObject(d.ids[0], { x: s0.x, y: s0.y, height: s0.height, flueSpaceIn: s0.flueSpaceIn })
+            else if (obj) { st.commitObjectUpdate(d.ids[0], flueCommitFields(obj, d.flueBase)); reparentMoved(d.ids) }
           }
           setSmartGuides([])
           setCursor(spaceDown.current ? 'grab' : 'default')

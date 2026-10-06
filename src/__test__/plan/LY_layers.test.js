@@ -212,7 +212,9 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect(ci).toMatch(/const ok = pickableIn\(st\.layers\)\r?\n\s*if \(!ok\(grabbed\)\) return\r?\n\s*const ids = st\.selectedIds\.filter/)   // \r?: a fresh checkout is CRLF
     expect(ci).toMatch(/objectsInMarquee\(st\.objects, rect, \{ isVisible: ok \}\)/)
     expect(ci).toMatch(/bayEntriesInMarquee\(st\.objects\.filter\(ok\), rect/)
-    expect(ci.match(/computeSmartGuides\(\s*d\.ids, snapTargets\(/g)).toHaveLength(2)
+    // both drag paths take their snap targets through targetsFor, which is snapTargets (layers) minus a dragged Row group row's no-snap racks
+    expect(ci.match(/computeSmartGuides\(\s*d\.ids, targetsFor\(/g)).toHaveLength(2)
+    expect(ci).toMatch(/const targetsFor = \(objs\) => \{ const t = snapTargets\(objs, st\.layers, d\.movedIds\);/)
     expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/const ids = st\.objects\.filter\(ok\)\.map\(o => o\.id\)/)
   })
 

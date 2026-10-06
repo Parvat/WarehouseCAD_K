@@ -25,7 +25,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { GS } from './fixtures'
 import { REAL_LAYOUT } from './realLayout.fixture'
-import { planAreaCreate } from '../../generate/rackingArea'
+import { planAreaCreate, planAreaResize } from '../../generate/rackingArea'
 import { rackFootprint } from '../../generate/columnCheck'
 import { rebuildAisles } from '../../utils/aisleRebuild'
 import { serializeScene, deserializeScene } from '../../utils/saveLoad'
@@ -79,6 +79,19 @@ function filled(vert, shape = 'rectangle') {
   const area = objs.find(o => o.type === 'racking_area')
   const box = { x: area.x, y: area.y, w: area.width, h: area.height }
   return planAreaCreate(objs.filter(o => o !== area), box, { ...area.settings, orientation: vert ? 'vertical' : 'horizontal' }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
+}
+/** The layout exactly as saved: vertical, its racking area refit with its stored pattern; for horizontal rows,
+ *  that result turned 90° (racks turned with it — a 90° rack becomes a 0° one, 270° → 180°). */
+function savedFill(vert) {
+  const objs = REAL_LAYOUT.map(o => ({ ...o }))
+  const area = objs.find(o => o.type === 'racking_area')
+  const out = planAreaResize(objs, area.id, { x: area.x, y: area.y, w: area.width, h: area.height }, { gridSize: GS })
+  if (vert) return out
+  return out.map(o => {
+    if (!BEAM.has(o.type)) return turn(o)
+    const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360
+    return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x }
+  })
 }
 function load(objects) {
   store.setState({ objects: strip(objects), groups: [], activeBaySelection: [], selectedIds: [], gridSize: GS, clipboard: [], zoom: 1, panX: 0, panY: 0,
@@ -153,7 +166,8 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(c2).toMatch(/const grouping = !measuring && activeTool === ROW_GROUP_TOOL/)
     expect(c2).toMatch(/commitGroupBox\(useCanvasStore, moved, TOOLS\.SELECT\)/)
     expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/activeTool === ROW_GROUP_TOOL\) \{ cancelGroupBox\(\); useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); return \}/)
-    expect(readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')).not.toMatch(/rowGroupTool|picking\)/)
+    // the select tool no longer picks rows (it only asks the Row group which racks a dragged group row skips)
+    expect(readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')).not.toMatch(/toggleRowOf|addRowsInBox|picking\)/)
   })
 
   /* ── 2. the bay replay — worked example a ── */
@@ -165,11 +179,12 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     const afterEdit = strip(objs())
     const p = st().pending
     expect(p.summary.text).toBe('Apply to the other 11 rows? 2 skipped.')
-    expect(p.summary.skipped).toEqual(expect.arrayContaining([{ key: key(4, 1), reason: 'uprights don\'t line up' }, { key: key(3, 14), reason: 'uprights don\'t line up' }]))
+    expect(p.summary.skipped.map(t => t.key).sort()).toEqual([key(4, 1), key(3, 14)].sort())
+    for (const t of p.summary.skipped) expect(t.reason).toMatch(/^uprights don't line up \(\d+(\.\d+)?" off\)$/)
     const html = render()
     expect(html).toContain('Apply to the other 11 rows? 2 skipped.')
-    expect(html).toContain('Skipped — Section 4, row 1: uprights don&#x27;t line up')
-    expect(html).toContain('Skipped — Section 3, row 14: uprights don&#x27;t line up')
+    expect(html).toMatch(/Skipped — Section 4, row 1: uprights don&#x27;t line up \(\d+(\.\d+)?&quot; off\)/)
+    expect(html).toMatch(/Skipped — Section 3, row 14: uprights don&#x27;t line up \(\d+(\.\d+)?&quot; off\)/)
     const srcUps = ups(get(src.id)), h = hist()
     expect(applyPending()).toBe(true)
     await settle()
@@ -349,12 +364,21 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(st().message).toBe('Applied to 11 rows · 11 with warnings — see Check layout · 2 skipped')
   })
 
-  it('RG-along: a move along the row is not replayed — the bar says so, nothing pending', async () => {
+  it('RG-along: a move along the row is replayed like one across — row 7 in every section moved 1\' along → every row 7 moves 1\' along; one into a wall is skipped with the reason', async () => {
     load(filled(vert))
     addRowOf(pairOf(key(4, 7)).id, { otherSections: true })
+    const r0 = new Map([1, 2, 3, 4].map(i => [i, RG.geom(pairOf(key(i, 7))).r0]))
     await moveRow(key(4, 7), 0, -GS, vert)
-    expect(st().pending).toBe(null)
-    expect(st().message).toBe('Not applied to the other rows: a move along the row isn\'t replayed.')
+    expect(st().pending.edit.kind).toBe('along')
+    expect(st().pending.summary.text).toBe('Apply to the other 3 rows?')
+    applyPending(); await settle()
+    for (const i of [1, 2, 3, 4]) expect(RG.geom(pairOf(key(i, 7))).r0 - r0.get(i)).toBeCloseTo(-GS, 6)
+    // section 4's row 7 runs to the end wall: 2' further toward it — skipped, "a wall"; the others take it
+    await moveRow(key(1, 7), 0, 3 * GS, vert)
+    const p = st().pending
+    expect(p.summary.skipped).toEqual([{ key: key(4, 7), reason: 'a wall' }])
+    expect(p.summary.text).toBe('Apply to the other 2 rows? 1 will have warnings. 1 skipped.')
+    expect(p.summary.warned).toEqual([{ key: key(3, 7), reasons: ['a column on an upright'] }])
   })
 
   it('RG-delete: row 7 of every section; section 4\'s deleted → "Apply to the other 3 rows?" → every row 7 gone; undo once → back but the source; twice → all back', async () => {
@@ -529,6 +553,96 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
   })
 })
 
+/* ── the hand check on 3a652bc, on the layout as saved: rows 22-25 of section 1 under the office ── */
+describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the layout as saved', (_, vert) => {
+  const four = () => [22, 23, 24, 25].map(i => key(1, i))
+  const r22 = () => pairOf(key(1, 22))
+  it('RG-rows22: rows 22-25 grouped, Auto apply — a move with an along drift (3") left on row 22 offsets its uprights 3" from the others; a bay deleted then applies to none: "Nothing applied. 3 skipped", each "uprights don\'t line up (3" off)", no question, no Skip; with the drag\'s axis lock there is no drift and the same delete applies to all three', async () => {
+    for (const locked of [false, true]) {
+      load(savedFill(vert))
+      useRowGroup.setState({ keys: four() })
+      useRowGroup.getState().setAlwaysApply(true)
+      const ups0 = four().map(k => ups(pairOf(k)))
+      expect(ups0.every(u => u.every((v, i) => Math.abs(v - ups0[0][i]) < 1e-6))).toBe(true)          // as loaded: all four identical
+      // a 1.5' move across with a 3" drift along — what a wobbly drag used to give; locked: what it gives now
+      let d = vert ? { dx: 1.5 * GS, dy: 0.25 * GS } : { dx: 0.25 * GS, dy: 1.5 * GS }
+      if (locked) d = RG.lockToAxis(d.dx, d.dy)
+      store.getState().moveObjects(rows().get(key(1, 22)).ids, d.dx, d.dy); await settle()
+      expect(st().message).toMatch(/^Applied to 3 rows/)
+      const off = (RG.geom(r22()).r0 - RG.geom(pairOf(key(1, 23))).r0) / GS * 12
+      expect(off).toBeCloseTo(locked ? 0 : 3, 6)
+      const h = hist()
+      store.getState().deleteSingleBay(r22().id, 1); await settle()
+      expect(st().pending).toBe(null)                                            // Auto apply never asks
+      if (!locked) {
+        expect(hist()).toBe(h + 1)
+        expect(st().message).toBe('Nothing applied. 3 skipped')
+        expect(st().report.skipped.map(t => t.reason)).toEqual(Array(3).fill('uprights don\'t line up (3" off)'))
+        const html = render()
+        expect(html).toContain('Nothing applied. 3 skipped')
+        expect(html).toContain('Skipped — Section 1, row 23: uprights don&#x27;t line up (3&quot; off)')
+        expect(html).not.toMatch(/aria-label="Skip"|Apply to the other/)
+      } else {
+        expect(st().message).toBe('Applied to 3 rows')
+        for (const k of four()) expect(racksOf(k)).toHaveLength(2)                 // every row split at the same bay
+      }
+      useRowGroup.getState().setAlwaysApply(false)
+    }
+  })
+
+  it('RG-nothing: Ask — every target skipped gives no question either: "Nothing applied. N skipped" with the reasons; an edit no other group row has racks for says "Nothing applied: no other group row has racks there."', async () => {
+    load(savedFill(vert))
+    useRowGroup.setState({ keys: four() })
+    const h0 = hist()
+    // a bay edit at the row's far end — rows 23-25 line up but a deleted end bay is one they all have: applied; so use the offset rows
+    store.getState().moveObjects(rows().get(key(1, 22)).ids, vert ? 0 : 0.25 * GS, vert ? 0.25 * GS : 0); await settle()   // 3" along, replayed
+    expect(st().pending.edit.kind).toBe('along')
+    dismissPending()                                                            // Skip: only row 22 moved
+    store.getState().deleteSingleBay(r22().id, 1); await settle()
+    expect(st().pending).toBe(null)
+    expect(st().message).toBe('Nothing applied. 3 skipped')
+    expect(render()).not.toMatch(/Apply to the other|aria-label="Skip"/)
+    expect(hist()).toBeGreaterThan(h0)
+    // a group of rows 22-25 and a row of another section nowhere near: a bay edit on that row touches none of them
+    load(savedFill(vert))
+    useRowGroup.setState({ keys: [...four(), key(2, 3)] })
+    await changeBeam(pairOf(key(2, 3)), 1, 84)
+    expect(st().pending).toBe(null)
+    expect(st().message).toBe('Nothing applied: no other group row has racks there.')
+  })
+
+  it('RG-snap: a dragged group row skips the other group rows and every rack lined up with where it started as snap targets — a 2" drag that used to snap back to 0 keeps its 2"; a rack outside the group is not affected; the drag is locked to its axis', async () => {
+    const { computeSmartGuides } = await import('../../canvas2/smartGuides')
+    const { snapTargets } = await import('../../utils/layers')
+    load(savedFill(vert))
+    const sec2 = [10, 11, 12, 13, 14, 15, 16].map(i => key(2, i))
+    useRowGroup.setState({ keys: sec2 })
+    const me = pairOf(key(2, 13)), zoom = 25 / GS, d = (2 / 12) * GS
+    const [dx, dy] = vert ? [d, 0] : [0, d]
+    const all = snapTargets(objs(), store.getState().layers, new Set([me.id]))
+    const snapped = computeSmartGuides([me.id], all, GS, zoom, dx, dy)
+    expect(vert ? snapped.snapDx : snapped.snapDy).toBeCloseTo(0, 6)              // every rack a target: pulled back to where it was
+    const skip = RG.groupDragExclusions(objs(), [me.id], sec2, GS)
+    for (const k of sec2) for (const id of rows().get(k).ids) if (id !== me.id) expect(skip.has(id)).toBe(true)
+    expect(skip.has(pairOf(key(1, 13)).id)).toBe(true)                          // the same row in section 1: lined up with it
+    const free = computeSmartGuides([me.id], all.filter(o => !skip.has(o.id)), GS, zoom, dx, dy)
+    const kept = (vert ? free.snapDx : free.snapDy) ?? d                       // no snap: the drag as it is
+    expect(kept).toBeCloseTo(d, 6)
+    expect(RG.groupDragExclusions(objs(), [pairOf(key(1, 5)).id], sec2, GS)).toBe(null)   // not a group row: an ordinary drag
+    // the axis lock: a wobbly drag keeps nothing on the other axis
+    expect(RG.lockToAxis(37, 4)).toEqual({ dx: 37, dy: 0 })
+    expect(RG.lockToAxis(-3, 29)).toEqual({ dx: 0, dy: 29 })
+    const ci = readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')
+    expect(ci).toMatch(/groupNoSnap: groupDragFor\(st\.objects, ids\)/)
+    expect(ci).toMatch(/if \(d\.groupNoSnap\) \(\{ dx, dy \} = lockToAxis\(dx, dy\)\)/)
+    expect((ci.match(/targetsFor\(/g) || []).length).toBe(2)                    // used by both drag paths
+    expect(ci).toMatch(/const targetsFor = \(objs\) => \{ const t = snapTargets\(objs, st\.layers, d\.movedIds\); return d\.groupNoSnap \? t\.filter\(o => !d\.groupNoSnap\.has\(o\.id\)\) : t \}/)
+    expect((ci.match(/\n\s+lock\(\)\r?\n/g) || []).length).toBe(2)                // locked again after snapping, both paths
+    // a live-flue drag that ends where it started writes no history
+    expect(ci).toMatch(/if \(back\) st\.updateObject\(d\.ids\[0\], \{ x: s0\.x, y: s0\.y, height: s0\.height, flueSpaceIn: s0\.flueSpaceIn \}\)/)
+  })
+})
+
 /* ── the shapes: the replay keeps the layout clean on the rectangle, the L and the T ── */
 describe.each([['rectangle'], ['L'], ['T']])('RG-shape — %s', (shape) => {
   it.each([['horizontal', false], ['vertical', true]])('RG-shape (%s): a bay change on a middle row of each section, replayed on its section → no new overlap, every rack inside the walls, every target upright on the source\'s, each target\'s lost bays = its dropped count', async (_, vert) => {
@@ -618,11 +732,13 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, plac
     expect(rects.filter(r => r.kind === 'warned').map(r => r.key)).toEqual([expect.stringMatching(/B$/)])
     applyPending(); await settle()
     expect(checkLayout(objs(), { gridSize: GS }).errors.some(e => e.kind === 'overlap' && e.ids.includes('B') && e.ids.includes('C'))).toBe(true)
-    // a wall: B would pass the building's wall — skipped
+    // a wall: B would pass the building's wall — skipped; nothing else to apply, so no question: the result
     setup(mk('A', 20, 10, B5), mk('B', 20, 100 - 0.25 - DEPTH - 1, B5))
     groupOf('A', 'B')
     await moveAcross('A', 2)
-    expect(reasonOf('B')).toMatchObject({ status: 'skip', reason: 'a wall' })
+    expect(st().pending).toBe(null)
+    expect(st().message).toBe('Nothing applied. 1 skipped')
+    expect(st().report.skipped).toEqual([{ key: 'h|B', reason: 'a wall' }])
     // a zone: B would land on an office — skipped; D (no zone) still takes it
     const z = at(20, 40 + DEPTH + 1)
     const zone = { id: 'z', type: 'zone_office', parentId: 'fp', x: z.x, y: z.y, width: vert ? 20 * GS : 60 * GS, height: vert ? 60 * GS : 20 * GS }
@@ -648,11 +764,30 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, plac
     expect(pv).toMatch(/p\.kind === 'warned' \? rect\(p\.f, p\.key, WARNED, \{ dash: \[10, 3\]/)
   })
 
-  it('RG-skip-lineup: a row whose uprights are off the source\'s (4\' along) takes no bay edit — "uprights don\'t line up"; a row beside it that lines up does', async () => {
+  it('RG-along-warn: an along move follows the same rules — B moved 13\' along onto C (in line, 11\' beyond it — its own row) is applied with "an overlap"; one through the end wall is skipped, "a wall"', async () => {
+    const len = (5 * 96 + 6 * 3) / 12
+    setup(mk('A', 20, 10, B5), mk('B', 20, 40, B5), mk('C', 20 + len + 11, 40, B5))
+    groupOf('A', 'B')
+    const moveAlong = async (id, dFt) => { store.getState().moveObjects(rows().get(RG.rowOfRack(rows(), id)).ids, vert ? 0 : dFt * GS, vert ? dFt * GS : 0); await settle() }
+    expect(RG.rowOfRack(rows(), 'C')).toBe('h|C')
+    await moveAlong('A', 13)
+    expect(st().pending.edit.kind).toBe('along')
+    expect(reasonOf('B').status).toBe('apply')
+    expect(reasonOf('B').warnings).toEqual(expect.arrayContaining(['an overlap']))
+    applyPending(); await settle()
+    expect(RG.geom(get('B')).r0 / GS).toBeCloseTo(33, 6)
+    setup(mk('A', 20, 10, B5), mk('B', 200 - 0.25 - len - 2, 40, B5))
+    groupOf('A', 'B')
+    await moveAlong('A', 4)
+    expect(st().message).toBe('Nothing applied. 1 skipped')
+    expect(st().report.skipped).toEqual([{ key: 'h|B', reason: 'a wall' }])
+  })
+
+  it('RG-skip-lineup: a row whose uprights are off the source\'s (4\' along) takes no bay edit — "uprights don\'t line up (48" off)"; a row beside it that lines up does', async () => {
     setup(mk('A', 20, 10, B5), mk('B', 24, 40, B5), mk('E', 20, 70, B5))
     groupOf('A', 'B', 'E')
     await changeBeam(get('A'), 1, 84)
-    expect(reasonOf('B')).toMatchObject({ status: 'skip', reason: 'uprights don\'t line up' })
+    expect(reasonOf('B')).toMatchObject({ status: 'skip', reason: 'uprights don\'t line up (48" off)' })
     expect(reasonOf('E').status).toBe('apply')
     applyPending(); await settle()
     expect(get('E').beams).toEqual([96, 84, 96, 96, 96])

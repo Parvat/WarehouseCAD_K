@@ -11,7 +11,8 @@ import { useCanvasStore } from '../store/useCanvasStore'
        lose how many bays, how many will have warnings and how many are skipped — Apply (primary) and Skip;
        the rows with warnings and the skipped rows listed with their reason; the live preview is on the
        canvas (RowGroupPreview.jsx);
-     - one grey line for the last result ("Applied to 11 rows", "… isn't replayed").
+     - the last result ("Applied to 11 rows", "Nothing applied. 3 skipped", "… isn't replayed"), with the rows
+       it warned about or skipped listed under it — in Auto apply too, which never asks.
    Plain DOM — no Konva — so it renders anywhere. */
 
 const wrap = {
@@ -68,6 +69,7 @@ function Body() {
   const keys = useRowGroup(s => s.keys)
   const pending = useRowGroup(s => s.pending)
   const message = useRowGroup(s => s.message)
+  const report = useRowGroup(s => s.report)
   const alwaysApply = useRowGroup(s => s.alwaysApply)
   const setAlwaysApply = useRowGroup(s => s.setAlwaysApply)
   const setHover = useRowGroup(s => s.setHover)
@@ -117,7 +119,13 @@ function Body() {
             {s.skipped.map((t, i) => <div key={i} style={line('var(--red, #C0392B)')}>Skipped — {rowLabel(t.key, objects, gridSize)}: {t.reason}</div>)}
           </div>
         )}
-        {message && !pending && <div aria-label="Row group result" style={line('var(--text3, #6B7280)')}>{message}</div>}
+        {message && !pending && <div aria-label="Row group result" style={{ fontSize: 12, color: 'var(--text, #0B101D)' }}>{message}</div>}
+        {message && !pending && report && (
+          <div aria-label="Row group result rows" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {report.warned.map((t, i) => <div key={'w' + i} style={line('var(--amber, #B87309)')}>Warning — {rowLabel(t.key, objects, gridSize)}: {t.reasons.join(', ')}</div>)}
+            {report.skipped.map((t, i) => <div key={'s' + i} style={line('var(--red, #C0392B)')}>Skipped — {rowLabel(t.key, objects, gridSize)}: {t.reason}</div>)}
+          </div>
+        )}
       </div>)
   }
   return out.length ? out : null

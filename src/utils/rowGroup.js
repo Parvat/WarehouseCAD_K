@@ -16,10 +16,10 @@
 //     uprights line up; a bay added at an end is added where the target ends at that same upright. A bay
 //     that would go through a wall or a zone is dropped, never squeezed. A target none of whose uprights
 //     line up is skipped;
-//   - move across: the same distance (only the across part of a drag — a snap's drift along is not
-//     replayed). Part of a row dragged: each target's racks more than half inside that stretch move; a
-//     rack only partly inside it skips that target (a rack is never split). A target the move would push
-//     through a wall or into a zone is skipped;
+//   - a move, across or along: the same distance on its dominant axis (a drag of a group row is locked to
+//     that axis, so there is nothing on the other). Part of a row dragged: each target's racks more than
+//     half inside that stretch move; a rack only partly inside it skips that target (a rack is never
+//     split). A target the move would push through a wall or into a zone is skipped;
 //   - delete row: the others deleted; levels: the same levels;
 //   - a row added next to a group row: one next to each other group row, at the same distance across,
 //     over that row's own racks (its own length, gaps and uprights).
@@ -61,6 +61,8 @@ export function withRun(o, r0, beamsRun, gridSize) {
 }
 /** The rack `o` moved `d` px across its run. */
 export const movedAcross = (o, d) => (rackFootprint(o).rotated ? { ...o, x: o.x + d } : { ...o, y: o.y + d })
+/** The rack `o` moved `d` px along its run. */
+export const movedAlong = (o, d) => (rackFootprint(o).rotated ? { ...o, y: o.y + d } : { ...o, x: o.x + d })
 
 /* ── rows ─────────────────────────────────────────────────────────────────── */
 
@@ -137,7 +139,7 @@ const onlyLevels = (a, b) => a.levels !== b.levels && without(a, [...UI_KEYS, 'l
 
 /** What one action did to the group. `groupKeys` are the group's row keys BEFORE the action.
  *  Returns { kind: 'none' } | { kind: 'multi', count } | { kind: 'other', why } |
- *  { kind: 'bays'|'across'|'delete'|'add'|'levels', source, ... } (source = the edited row's key before;
+ *  { kind: 'bays'|'across'|'along'|'delete'|'add'|'levels', source, ... } (source = the edited row's key before;
  *  `sources` = every edited row's key when one action changed several group rows the same way). */
 export function classifyEdit(before, after, groupKeys, gridSize = 40) {
   const rowsB = rowsOf(before, gridSize), rowsA = rowsOf(after, gridSize)
@@ -179,19 +181,20 @@ export function classifyEdit(before, after, groupKeys, gridSize = 40) {
     const L = pairs.find(p => onlyLevels(p.r, p.s[0])).s[0].levels
     if (pairs.every(p => p.s[0].levels === L)) return { kind: 'levels', source, levels: L }
   }
-  // move across: the racks that moved shifted the same across, nothing else changed. The delta across is
-  // centre to centre (a live-flue drag that narrows the rack, 12" → 9", moves it exactly the drag); a drift
-  // along (the drag's snap) is not part of it. Some racks of the row moved, the rest untouched: a move of
-  // the stretch along the run the moved racks covered.
+  // a move: the racks that moved shifted the same, nothing else changed — replayed on its DOMINANT axis,
+  // across or along (a drag of a group row is locked to it, so the other part is nothing; a move made some
+  // other way keeps only its larger part). Across is measured centre to centre (a live-flue drag that
+  // narrows the rack, 12" → 9", moves it exactly the drag). Some racks of the row moved, the rest
+  // untouched: a move of the stretch along the run the moved racks covered.
   if (one) {
     const ds = pairs.map(p => { const a = gB(p.r), b = gB(p.s[0]); return { r: p.r, dS: (b.s0 + b.s1 - a.s0 - a.s1) / 2, dR: b.r0 - a.r0, same: JSON.stringify(a.beams) === JSON.stringify(b.beams) && sameExceptGeom(p.r, p.s[0]) } })
-    const moved = ds.filter(d => Math.abs(d.dS) > EPS), still = ds.filter(d => Math.abs(d.dS) <= EPS && Math.abs(d.dR) < EPS && d.same)
-    if (moved.length && moved.every(d => d.same && Math.abs(d.dS - moved[0].dS) < EPS) && moved.length + still.length === ds.length) {
-      const e = { kind: 'across', source, delta: moved[0].dS }
+    const moved = ds.filter(d => Math.abs(d.dS) > EPS || Math.abs(d.dR) > EPS), still = ds.filter(d => !moved.includes(d) && d.same)
+    if (moved.length && moved.every(d => d.same && Math.abs(d.dS - moved[0].dS) < EPS && Math.abs(d.dR - moved[0].dR) < EPS) && moved.length + still.length === ds.length) {
+      const along = Math.abs(moved[0].dR) > Math.abs(moved[0].dS)
+      const e = { kind: along ? 'along' : 'across', source, delta: along ? moved[0].dR : moved[0].dS }
       if (still.length) e.span = [Math.min(...moved.map(d => gB(d.r).r0)), Math.max(...moved.map(d => gB(d.r).r1))]
       return e
     }
-    if (ds.every(d => d.same && Math.abs(d.dS) < EPS) && ds.some(d => Math.abs(d.dR) > EPS)) return { kind: 'other', source, why: 'a move along the row' }
   }
   // a bay edit: positions across unchanged, the uprights mapped
   const tol = UP_TOL_FT * gridSize
@@ -230,11 +233,11 @@ function sameEditOnAll(before, after, touched, gridSize) {
   const multi = { kind: 'multi', count: touched.length }
   const edits = touched.map(k => classifyEdit(before, after, [k], gridSize))
   const e0 = edits[0]
-  if (!['bays', 'across', 'delete', 'levels'].includes(e0.kind) || edits.some(e => e.kind !== e0.kind)) return multi
+  if (!['bays', 'across', 'along', 'delete', 'levels'].includes(e0.kind) || edits.some(e => e.kind !== e0.kind)) return multi
   const same = { ...e0, sources: touched }
   if (e0.kind === 'delete') return same
   if (e0.kind === 'levels') return edits.every(e => e.levels === e0.levels) ? same : multi
-  if (e0.kind === 'across') return edits.every(e => Math.abs(e.delta - e0.delta) < EPS && !e.span) && !e0.span ? same : multi
+  if (e0.kind === 'across' || e0.kind === 'along') return edits.every(e => Math.abs(e.delta - e0.delta) < EPS && !e.span) && !e0.span ? same : multi
   // bays: the first row's edit replayed on each other changed row as it was must give what the user made
   const rowsB = rowsOf(before, gridSize), rowsA = rowsOf(after, gridSize)
   const sig = (racks) => racks.map(o => { const g = geom(o); return Math.round(g.r0 * 100) + ':' + g.beams.join('/') }).sort().join('|')
@@ -271,6 +274,30 @@ function floorAlong(poly, vert, s0, s1, lo, hi) {
   return ivs
 }
 
+/** While a group row is dragged: the racks it must not snap to — the other group rows' racks, and every rack
+ *  lined up with where the dragged racks started (an edge on the same line, across or along): those could
+ *  only ever pull it back to where it was, so a move of a few inches never stuck. Returns a Set of ids, or
+ *  null when the drag holds no group row. */
+export function groupDragExclusions(objects, ids, groupKeys, gridSize = 40) {
+  const rows = rowsOf(objects, gridSize)
+  const keys = new Set(groupKeys.map(k => resolveKey(rows, k)).filter(Boolean))
+  const dragged = objects.filter(o => ids.includes(o.id) && isRowRack(o))
+  if (!dragged.some(o => { const k = rowOfRack(rows, o.id); return k && keys.has(k) })) return null
+  const out = new Set()
+  for (const k of keys) for (const id of rows.get(k).ids) if (!ids.includes(id)) out.add(id)
+  const lines = (f) => ({ xs: [f.x, f.x + f.w], ys: [f.y, f.y + f.h] })
+  const starts = dragged.map(o => lines(rackFootprint(o)))
+  const on = (a, b) => a.some(p => b.some(q => Math.abs(p - q) < 0.5))
+  for (const o of objects) {
+    if (!BEAM.has(o.type) || ids.includes(o.id)) continue
+    const l = lines(rackFootprint(o))
+    if (starts.some(st => on(st.xs, l.xs) || on(st.ys, l.ys))) out.add(o.id)
+  }
+  return out
+}
+/** The drag delta locked to its dominant axis (screen x or y — a row runs along one of them). */
+export const lockToAxis = (dx, dy) => (Math.abs(dx) >= Math.abs(dy) ? { dx, dy: 0 } : { dx: 0, dy })
+
 /** What Check layout flags that a target gets as a warning (its kind → the bar's words). */
 export const WARN_KINDS = {
   overlap: 'an overlap',
@@ -287,7 +314,7 @@ export const WARN_KINDS = {
  *  racks, removeIds, addRacks, droppedBays: [world rects], warnings: [words] }] }. */
 export function planReplay(after, edit, groupKeys, ctx) {
   const { gridSize = 40, newId = () => Math.random().toString(36).slice(2, 12) } = ctx
-  if (!edit || !['bays', 'across', 'delete', 'add', 'levels'].includes(edit.kind)) return { targets: [] }
+  if (!edit || !['bays', 'across', 'along', 'delete', 'add', 'levels'].includes(edit.kind)) return { targets: [] }
   const rows = rowsOf(after, gridSize)
   const byId = new Map(after.map(o => [o.id, o]))
   const tol = UP_TOL_FT * gridSize
@@ -308,7 +335,7 @@ export function planReplay(after, edit, groupKeys, ctx) {
       continue
     }
 
-    if (edit.kind === 'across') {
+    if (edit.kind === 'across' || edit.kind === 'along') {
       // part of a row dragged: the target's racks more than half inside that stretch move; one only partly
       // inside it would have to be split, so the target is skipped
       let movers = mine
@@ -318,7 +345,7 @@ export function planReplay(after, edit, groupKeys, ctx) {
         if (mine.some(o => !movers.includes(o) && inside(o) > EPS)) { targets.push({ key, status: 'skip', reason: 'a rack only partly inside the stretch that moved' }); continue }
         if (!movers.length) { targets.push({ key, status: 'none' }); continue }
       }
-      const moved = movers.map(o => movedAcross(o, edit.delta))
+      const moved = movers.map(o => (edit.kind === 'along' ? movedAlong : movedAcross)(o, edit.delta))
       const why = hardProblem(moved, zones, insideFloor)
       targets.push(why ? { key, status: 'skip', reason: why } : { key, status: 'apply', racks: moved, removeIds: [], addRacks: [], dropped: 0 })
       continue
@@ -345,7 +372,14 @@ export function planReplay(after, edit, groupKeys, ctx) {
     const lined = mine.some(o => { const g = geom(o); return uprightsOf(g.r0, g.beams, upPxOf(o, gridSize), gridSize).some(t => srcOld.some(u => Math.abs(u - t) <= tol)) })
     const srcLo = Math.min(...srcOld), srcHi = Math.max(...srcOld)
     const overlapsSource = mine.some(o => { const g = geom(o); return Math.min(g.r1, srcHi) - Math.max(g.r0, srcLo) > EPS })
-    if (!lined) { targets.push(overlapsSource ? { key, status: 'skip', reason: 'uprights don\'t line up' } : { key, status: 'none' }); continue }
+    if (!lined) {
+      if (!overlapsSource) { targets.push({ key, status: 'none' }); continue }
+      // by how much: the nearest a target upright comes to a source one, where both have racks
+      let off = Infinity
+      for (const o of mine) { const g = geom(o); for (const t of uprightsOf(g.r0, g.beams, upPxOf(o, gridSize), gridSize)) if (t >= srcLo - tol && t <= srcHi + tol) for (const u of srcOld) off = Math.min(off, Math.abs(u - t)) }
+      targets.push({ key, status: 'skip', reason: `uprights don't line up${Number.isFinite(off) ? ` (${fmtIn(off / gridSize * 12)} off)` : ''}` })
+      continue
+    }
     const plan = []
     let changed = false
     for (const o of mine) {
@@ -424,14 +458,19 @@ function markWarnings(after, targets, gridSize) {
   const was = new Set(issues(after).map(x => x.k))
   const fresh = issues(final).filter(x => !was.has(x.k))
   if (!fresh.length) return
-  const rowsF = rowsOf(final, gridSize)
+  // a target's racks by id, from the layout now — not by its row key after the apply: a hand row moved up to
+  // another can chain with it and change key
+  const rowsNow = rowsOf(after, gridSize)
   for (const t of applying) {
-    const ids = new Set(t.added ? t.addRacks.map(r => r.id) : [...((rowsF.get(t.key) || { ids: [] }).ids), ...t.addRacks.map(r => r.id)])
+    const was = ((rowsNow.get(t.key) || { ids: [] }).ids).filter(id => !t.removeIds.includes(id))
+    const ids = new Set(t.added ? t.addRacks.map(r => r.id) : [...was, ...t.racks.map(r => r.id), ...t.addRacks.map(r => r.id)])
     const words = [...new Set(fresh.filter(x => (x.i.ids || []).some(id => ids.has(id))).map(x => WARN_KINDS[x.i.kind]))]
     if (words.length) t.warnings = words
   }
 }
 
+/** Inches as the bar says them: whole or to the quarter, 3" / 2.5" / 0.25". */
+const fmtIn = (inches) => `${Math.round(inches * 4) / 4}"`
 const bayRect = (g, a, b) => (g.vert ? { x: g.s0, y: a, w: g.s1 - g.s0, h: b - a } : { x: a, y: g.s0, w: b - a, h: g.s1 - g.s0 })
 function pin(poly, x, y) { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c } return c }
 
