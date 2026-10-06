@@ -5,13 +5,18 @@
 // the row it was copied from. Kept: the pieces of a split row (they sit
 // inside the rack they came from), a row coming back on undo/redo (no
 // other rack has its stamps), and a racking area's own racks (recorded in its
-// `placed`: their stamps are the area's pattern rows and runs).
+// `placed`: their stamps are the area's pattern rows and runs), and the
+// piece the Split tool cut off, wherever it is placed (keepStampsOnce).
 // Written without a history entry, like the aisle keeper; the next commit
 // records it.
 
 import { rackFootprint } from '../generate/columnCheck'
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
+
+// racks whose stamps are kept the first time they appear (utils/splitTool.js: a cut-off piece is the same row)
+const keepOnce = new Set()
+export const keepStampsOnce = (id) => { keepOnce.add(id) }
 const key = (r) => r.genSection + '|' + r.rowIndex
 const inside = (a, b, eps = 0.5) => a.x >= b.x - eps && a.y >= b.y - eps && a.x + a.w <= b.x + b.w + eps && a.y + a.h <= b.y + b.h + eps
 
@@ -26,6 +31,7 @@ export function keepRowEdits(objects, prevObjects, gridSize = 40) {
     const areaOwned = new Set(objects.filter(o => o.type === 'racking_area' && o.placed).flatMap(o => Object.keys(o.placed)))
     const fresh = objects.map((o, i) => [o, i]).filter(([o]) => BEAM.has(o.type) && o.rowIndex != null && o.genSection != null && !prev.has(o.id) && !areaOwned.has(o.id))
     for (const [o, i] of fresh) {
+      if (keepOnce.delete(o.id)) continue                                    // a cut-off piece (the Split tool)
       const k = key(o)
       const others = objects.filter(q => q !== o && q.parentId === o.parentId && BEAM.has(q.type) && q.rowIndex != null && key(q) === k)
       if (!others.length) continue                                           // a row coming back (undo/redo, generation)

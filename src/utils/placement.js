@@ -5,7 +5,9 @@
 // (utils/rowGroupTool.js). A zone from the left panel is placed the same way:
 // it follows the mouse, stays within the walls and snaps onto a wall face;
 // on the click the area keeper refits any racking area it reaches
-// (utils/rackingAreaTool.js).
+// (utils/rackingAreaTool.js). The Split tool's cut-off piece is placed the
+// same way, held where it was grabbed (utils/splitTool.js: grab, finish,
+// onCancel, abandonIf).
 //
 // Snapping, on each axis of the building's rows, to the nearest of (within
 // SNAP_PX on screen):
@@ -151,14 +153,20 @@ export function checkPlacement(placed, objects, gridSize = 40, profile = MHE_PRO
   return { blocked, warnings: [...warnings], crossAisle }
 }
 
-/** Start placing `items` (new objects, fresh ids) at the world point `at`. */
-export function startPlacement(store, items, { groups = [], at = null } = {}) {
+/** Start placing `items` (new objects, fresh ids) at the world point `at`.
+ *  `grab`: they stay where they are and keep their offset from the pointer (otherwise they centre on it).
+ *  `finish(placed)` → the objects to place, just before the click's commit; `onCancel()` runs after Esc
+ *  (or another placement starting) clears it; `abandonIf(state)`: true ends it with nothing done (an undo
+ *  took away what it was placed against); `escHint`: what Esc does, for the hint. */
+export function startPlacement(store, items, { groups = [], at = null, grab = false, finish = null, onCancel = null, abandonIf = null, escHint = null } = {}) {
   if (!items || !items.length) return false
+  if (usePlacement.getState().active?.onCancel) cancelPlacement()   // never drop a placement that must be put back
   useRowGroup.setState({ message: null })   // a shown result is over once the next thing starts
   const st = store.getState()
   const c = centreOf(items)
   const p = at || c
-  usePlacement.setState({ active: { items, groups, dx: p.x - c.x, dy: p.y - c.y, blocked: null, warnings: [], crossAisle: false, fpId: null, snapped: { run: null, cross: null } } })
+  const offset = grab ? { x: c.x - p.x, y: c.y - p.y } : null
+  usePlacement.setState({ active: { items, groups, dx: grab ? 0 : p.x - c.x, dy: grab ? 0 : p.y - c.y, offset, finish, onCancel, abandonIf, escHint, blocked: null, warnings: [], crossAisle: false, fpId: null, snapped: { run: null, cross: null } } })
   movePlacement(store, p, st.zoom || 1)
   return true
 }
@@ -168,6 +176,8 @@ export function movePlacement(store, world, zoom = 1, profile) {
   const a = usePlacement.getState().active
   if (!a) return
   const st = store.getState(), gridSize = st.gridSize || 40
+  if (a.abandonIf && a.abandonIf(st)) { usePlacement.setState({ active: null }); return }
+  if (a.offset) world = { x: world.x + a.offset.x, y: world.y + a.offset.y }
   const prof = profile || safeProfile()
   const s = snapPlacement(a.items, st.objects, world, gridSize, zoom, prof)
   const placed = placedItems(a.items, st.objects, s.dx, s.dy)
@@ -181,7 +191,9 @@ export function commitPlacement(store) {
   const a = usePlacement.getState().active
   if (!a || a.blocked) return false
   const st = store.getState()
-  const placed = placedItems(a.items, st.objects, a.dx, a.dy)
+  if (a.abandonIf && a.abandonIf(st)) { usePlacement.setState({ active: null }); return false }
+  let placed = placedItems(a.items, st.objects, a.dx, a.dy)
+  if (a.finish) placed = a.finish(placed, a)
   // only the new objects look selected: no other rack keeps a clicked bay
   const others = st.objects.map(o => (o.activeBayIdx != null || o.activeTowerIdx != null ? { ...o, activeBayIdx: null, ...(o.activeTowerIdx != null ? { activeTowerIdx: null } : {}) } : o))
   usePlacement.setState({ active: null })
@@ -192,9 +204,11 @@ export function commitPlacement(store) {
 
 /** Esc: nothing is placed. */
 export function cancelPlacement() {
-  if (!usePlacement.getState().active) return false
+  const a = usePlacement.getState().active
+  if (!a) return false
   usePlacement.setState({ active: null })
   useRowGroup.setState({ message: null })
+  if (a.onCancel) a.onCancel()
   return true
 }
 

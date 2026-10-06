@@ -10,7 +10,13 @@
 //     a split row are one row), grouped by building, run direction and
 //     overlapping run (the rows between the same two cross-aisles);
 //   - neighbours = two consecutive lines, and the pieces of each that share
-//     some of the run with a gap between them across the aisles;
+//     some of the run with a gap between them across the aisles. Pieces of a
+//     line that are end to end (sharing an upright, touching — a cut, an
+//     in-line settle) are one STRETCH: two facing stretches get ONE aisle per
+//     width between them, between the two pieces that face each other the
+//     most at it, so a cut never adds labels to an aisle and no width loses its
+//     label. Pieces with a real gap between them (a
+//     deleted bay) are separate stretches, each with its own aisle;
 //   - an existing aisle whose pair is still neighbours is KEPT (id, label);
 //   - an aisle with a row between its two rows, a duplicate, or one pointing
 //     at a rack that no longer exists is REMOVED;
@@ -31,6 +37,20 @@ const rightAngle = (o) => ((((o.rotation || 0) % 90) + 90) % 90) === 0
 const runOf = (f) => (f.rotated ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
 const crossOf = (f) => (f.rotated ? [f.x, f.x + f.w] : [f.y, f.y + f.h])
 const pairKey = (a, b) => (a < b ? a + '|' + b : b + '|' + a)
+
+/** A line's pieces as stretches: end-to-end pieces (overlapping by a shared upright, or touching) together,
+ *  a real gap between pieces starting a new stretch. */
+function stretchesOf(pieces) {
+  const items = pieces.map(r => ({ r, run: runOf(rackFootprint(r)) })).sort((a, b) => a.run[0] - b.run[0])
+  const out = []
+  let end = -Infinity
+  for (const it of items) {
+    if (out.length && it.run[0] <= end + EPS) out[out.length - 1].push(it.r)
+    else out.push([it.r])
+    end = Math.max(end, it.run[1])
+  }
+  return out
+}
 
 /** Neighbour pairs among beam racks: Map(key -> [idA, idB]) and the section
  *  each rack belongs to: Map(id -> sectionKey). */
@@ -56,15 +76,22 @@ export function neighbourPairs(racks) {
       for (const r of s.racks) sectionOf.set(r.id, sk)
       const lines = rowLines(s.racks)
       for (let i = 0; i + 1 < lines.length; i++) {
-        for (const p of lines[i].pieces) {
-          for (const q of lines[i + 1].pieces) {
-            const fp = rackFootprint(p), fq = rackFootprint(q)
-            const [a0, a1] = runOf(fp), [b0, b1] = runOf(fq)
-            if (Math.min(a1, b1) - Math.max(a0, b0) <= EPS) continue           // don't share any of the run
-            if (crossOf(fq)[0] - crossOf(fp)[1] <= EPS) continue               // touching: no aisle
-            pairs.set(pairKey(p.id, q.id), [p.id, q.id])
-          }
-        }
+        // the best-facing pair of pieces for each pair of facing stretches, at each width between them
+        const best = new Map()
+        const sa = stretchesOf(lines[i].pieces), sb = stretchesOf(lines[i + 1].pieces)
+        sa.forEach((stA, ia) => stA.forEach(p => sb.forEach((stB, ib) => stB.forEach(q => {
+          const fp = rackFootprint(p), fq = rackFootprint(q)
+          const [a0, a1] = runOf(fp), [b0, b1] = runOf(fq)
+          const shared = Math.min(a1, b1) - Math.max(a0, b0)
+          if (shared <= EPS) return                                              // don't share any of the run
+          const gap = crossOf(fq)[0] - crossOf(fp)[1]
+          if (gap <= EPS) return                                                 // touching: no aisle
+          // one per pair of stretches AND width: a stretch facing at two widths (a single on the far half of a
+          // pair) keeps a label for each
+          const k = ia + ':' + ib + ':' + Math.round(gap * 100), b = best.get(k)
+          if (!b || shared > b.shared + EPS) best.set(k, { shared, p, q })
+        }))))
+        for (const { p, q } of best.values()) pairs.set(pairKey(p.id, q.id), [p.id, q.id])
       }
     })
   }

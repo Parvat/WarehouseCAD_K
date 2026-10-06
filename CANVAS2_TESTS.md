@@ -1539,54 +1539,84 @@ panel: BL-panel (2). Frames counted for any bay: BL-frames (2). The ledger
 worked out again on every call: BL-cache (1). The panels not held during a
 drag: BL-cache (1).
 
-### SB — Separate bays · `SB_separateBays.test.js` (13 tests)
-Code: `utils/separateBays.js` (`separationOf`, `separateBays`,
-`separateSelectedBays`), the button in both bay boxes of
-`RackRowPanelCore.jsx` (the multi-bay panel, and the rack panel's clicked bay).
+### SP — The Split tool · `SP_split.test.js` (18 tests)
+Code: `utils/splitTool.js` (`cutOf`, `cutRack`, `hoverSplit`, `splitAt`),
+`canvas2/SplitPreview.jsx`, the Split button (Scissors) after Row group in
+`FloatingToolbar.jsx`, the Split branch in `Canvas2.jsx`, Esc in
+`useKeyboardShortcuts.js`; placement's `grab` / `finish` / `onCancel` /
+`abandonIf` / `escHint` (`utils/placement.js`); `keepStampsOnce`
+(`utils/rowEditKeeper.js`); the aisle pairing by stretch (`utils/aisleRebuild.js`);
+the aisle keeper folding its fix into an action's entry (`utils/aisleKeeper.js`).
+Replaces "Separate bays" (the rack panel's buttons are gone).
 
-The reverse of the in-line snap's join: one bay (a click), or a run of
-adjacent bays of one rack (Shift+click), becomes its own rack in place; the
-rest stays one rack on each side — up to three racks. Nothing moves and no bay
-is lost: each cut upright is shared (one rack ends on it, the next starts on
-it — `sharesFrame`, the join's own rule), so the drawing, Check layout (a shared
-end frame is no overlap) and the bay ledger's counts are unchanged. One
-history entry (one store write and one commit, aisles re-paired in it); the
-separated rack is selected. Disabled, with the reason as the button's tooltip,
-for the whole rack, bays in more than one rack, or bays that aren't adjacent.
+Hovering a rack with the tool shows the cut line at its nearest INTERIOR
+upright (never an end one; a one-bay rack has none) and tints the piece on the
+cursor's side. A click cuts the rack in two there — all the bays on each side
+together — and the tool goes back to Select. The cut upright is shared
+(`sharesFrame`, the join's own rule), so nothing moves and Check layout and the
+bay ledger are unchanged. The piece on the cursor's side then follows the
+mouse, held where it was grabbed, through placement until a click places it;
+Esc leaves it where it was (the bar says "Esc leaves it where it was"). The
+cut and the placement are ONE history entry — nothing is committed until the
+click or Esc. An undo while it follows brings the rack back and ends the
+placement, nothing placed.
 
-Every piece keeps the original's fields and its row / section stamps (the same
-row, the same Row group row); all but the first along the run carry `pieceOf`
-(kept by the row-edit keeper: a stamped piece inside the rack it came from);
-`genRunFt` follows each piece's start, as the join does; the first along the
-run keeps the id. The Row group sees a separation as no change (every upright
-where it was) and offers nothing. A separated rack dragged straight back onto
-its shared upright joins again through the in-line snap.
+Both pieces keep the original's fields and row / section stamps — the moved
+one too, wherever it goes (`keepStampsOnce`: the row-edit keeper would
+otherwise strip a new stamped rack that isn't inside its old one, and it
+couldn't rejoin). The staying piece keeps the id, the other carries `pieceOf`;
+`genRunFt` follows each one's start (and the placed move). The Row group
+passes the action over (`skipNextAction`). A piece dragged straight back
+onto the shared upright joins again (in-line snap).
+
+The aisle fix: racks in one line end to end — a cut, or an in-line settle that
+didn't join — got one aisle each to the neighbouring line, so a label appeared
+for each piece. A line's pieces that touch or share an upright are now one
+STRETCH, and two facing stretches get one aisle per width between them. On
+the fixture this drops only duplicate labels: as saved, vertical 60 → 56
+pairs, each removed one with a kept pair of the same width between the same
+rows; turned 55 → 54, the same. No existing expected value changed.
+
+With a pair per width, a rack nudged off its line gets its own aisle — and the
+aisle keeper used to add it AFTER the action's history entry was written, so
+an undo back to that entry brought the aisle back under a new id (RA-edits
+caught it). The keeper now folds its fix into the action's entry, as the pair
+keeper does; undo and redo still correct without writing history.
 
 | Test | Asserts (the layout as saved, vertical and turned) |
 |---|---|
-| `SB-middle` | bay 6 of row 7's pair (section 2) clicked → 5 + 1 + 8, the same uprights and span, the cut frames shared, no overlap, the ledger's bays and positions unchanged; stamps on every piece, `pieceOf` on the new ones, the first keeps the id; the separated rack selected; one history entry; one undo restores the rack exactly |
-| `SB-run` | bays 1-3 Shift+clicked → 3 + 11; a single (wall row): its first two bays apart, the rest one rack — the same checks |
-| `SB-reversed` | the pair drawn reversed: stored bay 0 sits at the far end of the run — separated there (13 + 1), nothing moved |
-| `SB-disabled` | the whole rack / bays 2 and 4 / bays in two racks → not offered, with the reason; bays 5-7 → offered; the multi-bay panel's button disabled with "Can't separate: the bays aren't next to each other", enabled for adjacent bays; the rack panel's clicked bay has the button |
-| `SB-group` | row 7 in a Row group: a separation offers nothing, says nothing, the group unchanged |
-| `SB-rejoin` | the separated rack dragged 20' away and back: the in-line snap joins it again — one rack fewer, the same bays |
-| `SB-wire` | one button component in both bay boxes; one store write and one commit; aisles re-paired |
+| `SP-esc` | row 7's pair (14 bays) clicked just past upright 5: the tool back to Select, the 9-bay piece following (held, dx/dy 0, out of the layout, nothing committed); Esc → 5 + 9, same uprights and span, the cut frame shared, no overlap, the ledger's counts unchanged; stamps on both, the staying piece keeps the id, `pieceOf` on the other, which is selected; one history entry; one undo restores the rack |
+| `SP-place` | the wall single clicked just before upright 2 → the 2-bay piece follows; 8' across, click → placed there, one history entry, stamps and `pieceOf` kept, `genRunFt` moved with it; the rest in place; one undo restores the rack exactly |
+| `SP-nearest` | the first bay cuts at upright 1, the last at n-1; the side follows the pointer; the line across at the upright's centre; a one-bay rack has no cut; the hover set and cleared |
+| `SP-group` | rows 7 and the wall single's row in a Row group: a cut left in place and a cut placed away offer nothing, say nothing, the group unchanged |
+| `SP-rejoin` | a cut piece dragged 20' away and back: the in-line snap joins it again — one rack fewer, the same bays |
+| `SP-aisle` | after a cut, row 7's aisles to rows 6 and 8 as before — one each, the same widths; the same after the cut piece is made 1 level higher (can't join, settled end to end) |
+| `SP-keeper` | a cut piece nudged 6" across: its own aisle, in that action's history entry; another move and an undo restore every aisle exactly, ids and all |
+| `SP-undo` | Ctrl+Z while the piece follows: the next move ends the placement, a click places nothing, no duplicate |
+| `SP-aisle pairing` | synthetic: two racks end to end facing a long rack → one pair; a real gap → two; a single end to end at a second width → two |
+| `SP-wire` | the Split button after Row group; the canvas's Split branch (splitAt, hoverSplit, SplitPreview); Esc leaves the tool; the bar's Esc hint; no Separate left in the panel |
 
-**Break-its:** the cut uprights not shared (a gap): SB-middle, SB-run,
-SB-reversed, SB-group, SB-rejoin (10). The separated bays lost: SB-run (2).
-Two history entries: SB-middle (2). The new pieces losing their stamps:
-SB-middle, SB-run, SB-group, SB-rejoin (8). The whole rack offered: SB-disabled
-(2). Non-adjacent bays offered: SB-disabled (2). A reversed rack cut at the
-wrong end: SB-reversed (2). A piece with a field changed (it couldn't join
-back): SB-middle, SB-run, SB-reversed, SB-group (8).
+**Break-its:** the cut upright not shared: SP-esc, SP-place, SP-rejoin (6).
+The cut committed on its own: SP-esc, SP-place (4). The moved piece losing its
+stamps: SP-esc, SP-place, SP-rejoin, SP-aisle (8). The Row group not told to
+pass it over: SP-group (2). Esc dropping the piece: SP-esc, SP-rejoin,
+SP-aisle (6). The wrong piece following: SP-esc, SP-place (4). An end upright
+as the cut: SP-nearest (2). The piece jumping to centre on the pointer:
+SP-esc (2). The tool staying Split: SP-esc (2). An undo not ending the
+placement: SP-undo (2). The bar saying "Esc to cancel": SP-esc (2). Aisles one
+per piece again: SP-aisle, SP-aisle pairing (3). Aisles one per stretch
+whatever the width: SP-aisle pairing (1). No Split button: SP-wire (1). The
+aisle keeper not folding its fix into the action's entry: SP-keeper, RA-edits (3).
 
 **Checked in the app** (real mouse, the layout as saved, both orientations):
-row 7's 6th bay clicked (one click selects the rack and picks the bay) →
-"Separate bay" → 5 + 1 + 8 bays, cuts on shared uprights, 714 bays and 10,832
-positions as before, no overlap, one history step; Ctrl+Z restores the
-14-bay rack. Row 8's 6th bay clicked, the 7th Shift+clicked → "Separate 2
-bays" enabled; the 9th Shift+clicked too → disabled ("the bays aren't next to
-each other"); Shift+clicked off again → 5 + 2 + 7.
+Split button (pressed) → hover just past row 7's upright 5 shows the line at
+upright 5, the far side tinted → click: tool back to Select, the 9 bays
+following, nothing in history yet → Esc: 5 + 9 bays (9.00–50.50 + 50.25–124.75,
+the upright shared), 714 bays and 10,832 positions as before, no overlap, one
+history step, row 7's aisles 10.5' to row 6 and 10.5' to row 8 as before;
+Ctrl+Z restores the 14-bay rack. The 30-bay wall single cut just before
+upright 2 → 2 bays follow, moved 8' across, click → placed (row 1/1 stamps
+kept), 28 stay, one history step; Ctrl+Z restores the 30-bay rack.
 
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.

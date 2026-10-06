@@ -10,6 +10,7 @@ import { Rulers } from './Rulers'
 import { MeasureOverlay } from './MeasureTool'
 import { PlacementGhost } from './CopyChange'
 import { RowGroupPreview } from './RowGroupPreview'
+import { SplitPreview } from './SplitPreview'
 import { IssueHighlight } from './IssueHighlight'
 import { RowGroupBar } from './RowGroupBar'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
@@ -24,6 +25,9 @@ import { hasResizeHandles } from './handleGeometry'
 import { FILL_TOOL, startFill, moveFill, commitFill } from '../utils/fillTool'
 import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupBox } from '../utils/rowGroupTool'
 import { hitTest } from './hitTest'
+import { SPLIT_TOOL, useSplit, hoverSplit, splitAt } from '../utils/splitTool'
+import { rebuildAisles } from '../utils/aisleRebuild'
+import { nanoid } from 'nanoid'
 import { TOOLS } from '../constants'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
@@ -362,10 +366,27 @@ export function Canvas2() {
     window.addEventListener('mouseup', up)
   }
 
-  const stageMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : onStageMouseDown
-  const stageMouseMove = measuring ? measureMouseMove : filling || grouping ? undefined : onStageMouseMove
-  const stageMouseLeave = measuring ? () => setMeasureHover(null) : filling || grouping ? undefined : onStageMouseLeave
-  const effectiveCursor = measuring || filling || grouping ? 'crosshair' : cursor
+  /* "Split" (utils/splitTool.js): hovering a rack shows the cut at its nearest interior upright; a click cuts
+     it there and the piece on the cursor's side follows the mouse until a click places it (Esc: in place). */
+  const splitting = !measuring && activeTool === SPLIT_TOOL
+  useEffect(() => { if (!splitting) useSplit.setState({ hover: null }) }, [splitting])
+  const splitTarget = (e) => {
+    const p = e.target.getStage()?.getPointerPosition()
+    if (!p) return null
+    const st = useCanvasStore.getState(), world = screenToWorld(view.current, p)
+    return { st, world, hitId: hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize) }
+  }
+  const splitMouseMove = (e) => { const t = splitTarget(e); if (t) hoverSplit(t.st.objects, t.world, t.hitId, t.st.gridSize || 40) }
+  const splitMouseDown = (e) => {
+    if (e.evt && e.evt.button !== 0) return
+    const t = splitTarget(e)
+    if (t && t.hitId) splitAt(useCanvasStore, t.world, t.hitId, { newId: nanoid, rebuildAisles })
+  }
+
+  const stageMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : onStageMouseDown
+  const stageMouseMove = measuring ? measureMouseMove : splitting ? splitMouseMove : filling || grouping ? undefined : onStageMouseMove
+  const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : filling || grouping ? undefined : onStageMouseLeave
+  const effectiveCursor = measuring || filling || grouping || splitting ? 'crosshair' : cursor
 
   return (
     <div
@@ -482,6 +503,8 @@ export function Canvas2() {
             )}
             {/* the Row group: its rows outlined, a pending apply previewed (RowGroupPreview.jsx); a row being placed */}
             <RowGroupPreview />
+            {/* the Split tool's cut line (SplitPreview.jsx) */}
+            {splitting && <SplitPreview />}
             {/* Check layout: the clicked problem, until the next click (utils/layoutCheck.js) */}
             <IssueHighlight />
             <PlacementGhost gridSize={gridSize} />

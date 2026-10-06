@@ -6,6 +6,7 @@ import { pasteAt } from '../utils/pasteAt'
 import { cancelPlacement } from '../utils/placement'
 import { useRowGroup, clearGroup, cancelGroupBox, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
 import { FILL_TOOL, cancelFill } from '../utils/fillTool'
+import { SPLIT_TOOL, useSplit } from '../utils/splitTool'
 import { pickableIn } from '../utils/layers'
 
 export function useKeyboardShortcuts() {
@@ -25,6 +26,8 @@ export function useKeyboardShortcuts() {
         if (cancelPlacement()) return
         // the Row group (utils/rowGroupTool.js): Esc leaves the Row group tool, then clears the group (and a pending apply)
         if (useCanvasStore.getState().activeTool === ROW_GROUP_TOOL) { cancelGroupBox(); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
+        // the Split tool (utils/splitTool.js), before a cut: Esc leaves it (after a cut the piece is a placement, above)
+        if (useCanvasStore.getState().activeTool === SPLIT_TOOL) { useSplit.setState({ hover: null }); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         { const g = useRowGroup.getState()
           if (g.keys.length || g.pending) { clearGroup(); return } }
         useCanvasStore.getState().clearSelection()

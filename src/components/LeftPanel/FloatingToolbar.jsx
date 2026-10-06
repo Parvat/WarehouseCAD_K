@@ -20,7 +20,7 @@ import {
   /* utilities */
   BatteryCharging, Fan, Droplets, Lightbulb, Armchair,
   /* draw tools + blocks */
-  MousePointer2, Hand, Minus, MoveRight, Spline, Ruler, Signature, Type, PaintBucket, Rows3,
+  MousePointer2, Hand, Minus, MoveRight, Spline, Ruler, Signature, Type, PaintBucket, Rows3, Scissors,
   Pencil, PenTool, Highlighter,
   RectangleHorizontal, Circle,
   /* floor plans — the L/T/U/cross outlines are drawn below, Lucide has none */
@@ -38,6 +38,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
 import { FILL_TOOL } from '../../utils/fillTool'
 import { ROW_GROUP_TOOL } from '../../utils/rowGroupTool'
+import { SPLIT_TOOL } from '../../utils/splitTool'
 import { ANNOT } from './AnnotationPanel'
 import { WAREHOUSE_CATEGORIES } from '../../constants/warehouseObjects'
 import { objectContains } from '../../utils/canvas'
@@ -408,6 +409,8 @@ const TOOLBAR_TOOLS = [
   { id:'fill',      tool:FILL_TOOL,       label:'Fill racking', Icon:PaintBucket },
   /* drag a box over rows (or click one): they join the Row group; then back to Select (utils/rowGroupTool.js) */
   { id:'rowgroup',  tool:ROW_GROUP_TOOL,  label:'Row group', Icon:Rows3 },
+  /* click a rack at an upright: it is cut in two there, the cursor's piece follows the mouse (utils/splitTool.js) */
+  { id:'split',     tool:SPLIT_TOOL,      label:'Split',     Icon:Scissors },
 ]
 const BROKEN_HINT = ' — unavailable: CanvasObjectCore.jsx is missing its path-helper import'
 

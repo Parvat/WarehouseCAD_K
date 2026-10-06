@@ -82,7 +82,7 @@ function Body() {
         <div>{placing.blocked
           ? <span style={{ color: 'var(--red, #C0392B)', fontWeight: 600 }}>Can't place here — {placing.blocked}</span>
           : <span>Click to place{placing.snapped?.cross || placing.snapped?.run ? <span style={{ color: 'var(--text3, #6B7280)' }}> · snapped to {[placing.snapped.cross, placing.snapped.run].filter(Boolean).join(', ')}</span> : null}</span>}
-          <span style={{ color: 'var(--text3, #6B7280)' }}> · Esc to cancel</span></div>
+          <span style={{ color: 'var(--text3, #6B7280)' }}> · {placing.escHint || 'Esc to cancel'}</span></div>
         {!placing.blocked && placing.warnings?.length > 0 && placing.warnings.map((t, i) => <div key={i} style={line('var(--amber, #B87309)')}>Check — {t}</div>)}
       </div>)
   }
