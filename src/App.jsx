@@ -16,6 +16,7 @@ import { nanoid } from 'nanoid'
 import { installAisleKeeper } from './utils/aisleKeeper'
 import { installRowEditKeeper } from './utils/rowEditKeeper'
 import { installRowGroupWatcher } from './utils/rowGroupTool'
+import { installPairKeeper } from './utils/pairCarryOn'
 import { trackCanvasPointer } from './utils/pasteAt'
 import { installLayerKeeper } from './utils/layers'
 import { installLevelsKeeper } from './utils/rackLevels'
@@ -30,6 +31,11 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopAisleKeeper())
 /* A copied row loses the row it was copied from's stamps (utils/rowEditKeeper.js). */
 const stopRowEditKeeper = installRowEditKeeper(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopRowEditKeeper())
+/* A pair that grows a bay where its carried-on single stands takes that bay over from it — folded into the
+   edit's own history entry (utils/pairCarryOn.js). Before the Row group's watcher, which then reads the
+   edit with the takeover in it. */
+const stopPairKeeper = installPairKeeper(useCanvasStore)
+if (import.meta.hot) import.meta.hot.dispose(() => stopPairKeeper())
 /* The Row group: an edit to one row of the group is offered to the others (utils/rowGroupTool.js). */
 const stopRowGroupWatcher = installRowGroupWatcher(useCanvasStore, nanoid)
 if (import.meta.hot) import.meta.hot.dispose(() => stopRowGroupWatcher())

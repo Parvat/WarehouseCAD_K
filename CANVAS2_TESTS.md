@@ -1442,6 +1442,52 @@ along), `FR-stamps` (row 2 grouped in every section, moved across, applied),
 bar's Skip and Esc; the whole row is moved, every piece of it).
 `AA` and `WF` install the Row group watcher instead of the copy watcher.
 
+### PC — A pair takes over its carried-on single's bay · `PC_pairCarryOn.test.js` (16 tests)
+Code: `utils/pairCarryOn.js` (`takeOverCarriedBays`, `installPairKeeper`), wired in
+`App.jsx` (before the Row group's watcher) and `utils/rowGroupTool.js` (the
+apply writes it; the warnings are judged on it).
+
+A back-to-back pair whose half carries on as a single (section 2, rows 12
+and 14 of the hand-check layout as saved: the pair 9' → 108.25', its single
+from the pair's end upright to 124.75' on one half). "+ bay" on the pair used
+to grow both halves onto the single's first bay — "an overlap", and the bay
+counted twice. Now, for each bay the pair grows at that end, the single gives
+up its matching bay — the same uprights (within ½") and beam, and the single
+has the same levels and depth: pair +1 bay, single −1 bay from that end, a
+single left with none removed. It stops at the first bay that doesn't match;
+there the overlap and its warning stay. Hand edits: the keeper writes the
+takeover into the edit's own history entry (one undo step). Row group applies:
+written by the apply (Auto apply too, which the keeper doesn't see), and the
+bar's warnings are judged on it. Deleting the pair's end bay is not mirrored
+(both halves go, the gap is left).
+
+| Test | Asserts (vertical as saved, horizontal turned) |
+|---|---|
+| `PC-take` | "+ bay" on row 12's pair → pair 9' → 116.5' (13 bays), single 116.25' → 124.75' (1, same id); no overlap; 14 bays as before; pallet positions up by one single-sided bay (the far half), none twice; one history entry; one undo restores both exactly |
+| `PC-remove` | two bays added → both taken, the 2-bay single removed; one undo brings it back |
+| `PC-no-match` | the single's first bay 108", or 5 levels, or 48" depth → nothing taken; the overlap error stays |
+| `PC-reverse` | the pair's end bay deleted → pair 9' → 100' (11), the single unchanged — not mirrored |
+| `PC-group` | rows 12-14 grouped (13 a plain pair with the custom area beyond, 14's single on the other half), "+ bay" on row 12 → "Apply to the other 2 rows? 1 will have warnings." (row 13, "inside a zone"); row 14's pair takes over its single's bay; no overlaps; Ask = 2 entries, Auto apply = 1; undo restores |
+| `PC-group-target` | the source with no single (row 13): rows 12 and 14 take over from their singles as the apply writes — no "an overlap" on the bar, none after; in Ask and in Auto apply |
+| `PC-low` | by hand, a single carrying on before the pair's start: a bay added at the start is taken over the same way |
+| `PC-wire` | App installs the keeper before the Row group's watcher; the apply's `written` and the plan's `finalize` both run the takeover |
+
+**Break-its:** the keeper off: PC-take, PC-remove, PC-group, PC-group-target
+fail (8). The takeover its own undo step: PC-take, PC-group, PC-group-target
+(6). Taken whether or not it lines up (uprights and beam): PC-no-match (2). Other
+levels or depth taken from: PC-no-match (2+). A single with no bays left kept:
+PC-remove (2+). A pair grown at its start not taken over: PC-low (2+). A Row
+group apply not taken over: PC-group-target, PC-wire (4). The warnings judged
+without the takeover: PC-group-target, PC-wire (4). The beam match on its own
+can't fail a test: with the same upright width (also required), matching
+uprights already mean the same beam.
+
+**Checked in the app** (real mouse, the layout as saved, both orientations):
+row 12's pair clicked, the rack panel's "+8'" → pair 13 bays to 116.5', single
+1 bay from 116.25', one history step, no overlap; Ctrl+Z restores both. Rows
+12-14 grouped with the Row group tool, "+8'" on row 13, Apply → rows 12 and 14
+each pair 13 + single 1, no overlaps.
+
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.
 

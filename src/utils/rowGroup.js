@@ -293,8 +293,8 @@ export const WARN_KINDS = {
 }
 
 /** Plan the replay of `edit` on every group row but its source, in `after` (the layout with the edit).
- *  `ctx` = { gridSize, poly (inner outline world px, per building: fpId → points), newId, warnings (false:
- *  don't run Check layout) }. Returns { targets: [{ key, status: 'apply'|'skip'|'none', reason,
+ *  `ctx` = { gridSize, newId, warnings (false: don't run Check layout), finalize ((before, written) → objects:
+ *  what the writer does to the applied layout, applied before the warnings are judged) }. Returns { targets: [{ key, status: 'apply'|'skip'|'none', reason,
  *  racks, removeIds, addRacks, warnings: [words] }] }. */
 export function planReplay(after, edit, groupKeys, ctx) {
   const { gridSize = 40, newId = () => Math.random().toString(36).slice(2, 12) } = ctx
@@ -396,17 +396,20 @@ export function planReplay(after, edit, groupKeys, ctx) {
     }
     targets.push({ key, status: 'apply', racks: result.filter(r => byId.has(r.id)), addRacks: result.filter(r => !byId.has(r.id)), removeIds })
   }
-  if (ctx.warnings !== false) markWarnings(after, targets, gridSize)
+  if (ctx.warnings !== false) markWarnings(after, targets, gridSize, ctx.finalize)
   return { targets }
 }
 
 /** Warnings, the way a hand edit gets them: Check layout on the layout as it will be after the WHOLE apply
  *  (every target moved together), against the layout now; what is new and involves a target's racks is
  *  that target's warning. Issues are matched by kind and by the racks' roots (a split piece is its rack). */
-function markWarnings(after, targets, gridSize) {
+function markWarnings(after, targets, gridSize, finalize) {
   const applying = targets.filter(t => t.status === 'apply' && t.removeIds.length + t.racks.length + t.addRacks.length > 0)
   if (!applying.length) return
-  const final = applyReplay(after, { targets })
+  // the layout as the apply will write it — `finalize` is what the writer does after (a pair taking over its
+  // carried-on single's bay: utils/pairCarryOn.js), so a bay taken over is no overlap
+  let final = applyReplay(after, { targets })
+  if (finalize) final = finalize(after, final)
   const issues = (objects) => {
     const root = new Map(objects.map(o => [o.id, o.pieceOf || o.id]))
     const res = checkLayout(objects, { gridSize })
