@@ -1253,7 +1253,7 @@ three drawn sizes changed:
 - **One rack dragged** past its columns changed the count, as it should.
 - No console errors.
 
-### RG — The Row group · `RG_rowGroup.test.js` (48 tests)
+### RG — The Row group · `RG_rowGroup.test.js` (53 tests)
 Replaces Match bays in section, the section-copy bar and its Copy / Don't copy
 question (areas SC, CF, EX, Y, Z2 are removed — their still-valid checks are
 listed below). Code: `utils/rowGroup.js` (rows, what an edit was, the replay
@@ -1320,6 +1320,9 @@ vertical rows on the layout turned 90° (the same rows mirrored).
 | `RG-hand` | hand racks in one line are one row (`h|A1,A2`); a bay edit replays on the other hand row; a middle bay delete splits both rows and the pieces stay in the group; an edit on a piece replays on the other piece |
 | `RG-two-rows` | a bay change on two group rows at once is not replayed on the third |
 | `RG-panel` | a single and a double row's panel: "+ Row group", "+ Same row in other sections", no Match bays |
+| `RG-label` | a section reads "section 1", never "section run 1": `sectionLabel`; Check layout's row names and its overlap error on racks keyed "run 1"; placement's cross-aisle warning between runs keyed "run 1" / "run 2" reads "between sections 1 and 2" |
+| `RG-generate` | Generate through the batched entry the Generate panel calls, a group (row 3 in every section, plus a hand row on a hand-drawn building) with an apply pending → Generate again: no group, no apply, no message, the bar empty; the hand row itself untouched (Generate clears the group at the start of its one step) |
+| `RG-nogroup` | rows placed by hand, nothing grouped: a bay change, a move across and a delete offer nothing — no apply, no message, the other rows untouched |
 | `RG-wire` | App installs the watcher; Canvas2 renders the bar and the outlines; Esc ends picking, then clears the group; racking areas call the Row group's `skipNextAction`; the section-copy modules are gone; no Always copy in the top bar |
 
 **Carried over from the removed areas** (each check still valid, and where it
@@ -1334,12 +1337,13 @@ went):
 | SC-undo | undo takes a change back out | `RG-undo` |
 | SC-save | the pending set saved with the file | `RG-save` — reversed by the spec: the group is never saved |
 | SC-multi, CF-select-all | one action across several rows is not carried | `RG-multi`, `RG-two-rows` |
-| SC-regenerate | a new layout clears what was pending | `RG-undo` (a new layout ends a pending apply) |
+| SC-regenerate | a new layout clears what was pending | `RG-generate` (the real Generate), `RG-undo` (a layout loaded in place) |
 | SC-add, AR-handcopy | a row added is carried, full length for each | `RG-add-row`, `AR-handcopy` |
 | SC-place | paste / duplicate follow the mouse; Esc; blocked spots | `PD-place` |
 | SC-skip, Y-warn | a carry that can't fit is skipped with its reason | `RG-skip-*`, `RG-drop`, `RG-zone` |
 | SC-wire | the new pieces are wired, the old gone | `RG-wire` |
-| CF-manual | a manual layout works without generated sections | `RG-hand`, `RG-skip-*` (all by hand) |
+| CF-manual | a manual layout works without generated sections; with nothing to carry, nothing is offered | `RG-hand`, `RG-skip-*` (all by hand), `RG-nogroup` |
+| CF-question (its label half) | "section 1", never "section run 1" | `RG-label` |
 | CF-cross-aisle | a cross-aisle drop is a warning, not a block | `PD-cross-aisle` |
 | EX-results | a result clears on the next action | `RG-message` |
 | EX-flue | live-flue drag; exact net delta carried | `PD-flue` (the Row group replays the delta) |
@@ -1351,7 +1355,7 @@ went):
 | Z2-delete | after rows are chopped: inside, nothing stacked, split pieces right | `RG-add-delete-bay`, `RG-hand`, `AR-split` |
 
 Dropped as obsolete (the feature is gone): SC-match, SC-stays-mixed,
-SC-question, SC-dont, SC-stop, CF-generated, CF-question, CF-match, EX-match,
+SC-question, SC-dont, SC-stop, CF-generated, CF-question (its question half), CF-match, EX-match,
 EX-resume, EX-minor — Match bays, the pending set and the question no longer
 exist.
 
@@ -2547,6 +2551,9 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | RG | **A pair's free half counted as a new piece** (the fix reverted) | 4: ZP-dismiss, RG-hand | ✓ |
 | RG | **Across delta from the near face, not the centre** | 2: PD-flue | ✓ |
 | RG | **Deleted rows kept in the group after an apply** | 2: RG-delete | ✓ |
+| RG | **Section label shows the raw key** ("run 1") | 1: RG-label | ✓ |
+| RG | **Generate leaves the group** (no `clearGroup` at its start) | 2: RG-generate | ✓ |
+| RG | **An empty group means every row** | 6: RG-undo, RG-generate, RG-nogroup | ✓ |
 
 **Round 1 (original code):**
 

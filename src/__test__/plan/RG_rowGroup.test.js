@@ -603,3 +603,87 @@ describe('RG-wire', () => {
     expect(src('src/components/Toolbar/TopBar.jsx')).not.toMatch(/Always copy/)
   })
 })
+
+/* ── three more: the section label, Generate, a hand layout with no group ── */
+describe('RG-label', () => {
+  it('RG-label: a section reads "section 1", never "section run 1" — in Check layout (row names, overlaps) and in placement (the cross-aisle warning)', async () => {
+    const { sectionLabel } = await import('../../utils/copyChange')
+    const { checkLayout, rackName } = await import('../../utils/layoutCheck')
+    const { generatedCrossAisleGaps } = await import('../../utils/copyChange')
+    expect([sectionLabel('run 1'), sectionLabel('run 12'), sectionLabel(3)]).toEqual(['1', '12', '3'])
+    // two runs whose racks carry "run 1" / "run 2" section keys, and two overlapping racks in run 1
+    const tpl = filled(false).find(o => o.type === 'rack_double_row')
+    const fp = { id: 'fp', type: 'fp_rect', x: 0, y: 0, width: 300 * GS, height: 100 * GS, wallThicknessFt: 0.25, fpVerts: [{ x: 0, y: 0 }, { x: 300 * GS, y: 0 }, { x: 300 * GS, y: 100 * GS }, { x: 0, y: 100 * GS }] }
+    const beams = [96, 96, 96, 96, 96], width = ((3 * 6 + 480) / 12) * GS
+    const rack = (id, sec, row, runFt, acrossFt) => ({ ...tpl, id, parentId: 'fp', genSection: sec, rowIndex: row, beams, width, rotation: 0, x: runFt * GS, y: acrossFt * GS })
+    const objects = [fp, rack('a', 'run 1', 2, 10, 10), rack('b', 'run 1', 3, 10, 10 + DEPTH_FT(tpl) - 1), rack('c', 'run 2', 2, 120, 10)]
+    expect(rackName(objects[1], objects.filter(o => BEAM.has(o.type)))).toBe('Row 2, section 1')
+    const res = checkLayout(objects, { gridSize: GS })
+    const overlap = res.errors.find(e => e.kind === 'overlap')
+    expect(overlap.text).toMatch(/^Row \d, section 1 overlaps row \d, section 1 by /)
+    for (const item of [...res.errors, ...res.warnings]) expect(item.text).not.toMatch(/run \d/)
+    // placement: a rack dropped between the two runs is warned of the cross-aisle "between sections 1 and 2"
+    expect(generatedCrossAisleGaps(objects, 'fp', false).map(g => g.between)).toEqual([['run 1', 'run 2']])
+    load(objects)
+    const one = { ...tpl, id: 'one', parentId: 'fp', beams: [96], width: ((3 * 2 + 96) / 12) * GS, rotation: 0 }
+    startPlacement(store, [one])
+    const { movePlacement } = await import('../../utils/placement')
+    movePlacement(store, { x: 100 * GS, y: (40 + DEPTH_FT(tpl) / 2) * GS }, 1)
+    const w = usePlacement.getState().active.warnings
+    expect(w).toContain('In the cross-aisle between sections 1 and 2')
+    expect(w.join(' ')).not.toMatch(/run \d/)
+    cancelPlacement()
+  })
+})
+const DEPTH_FT = (o) => o.height / GS
+
+describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, Generate', (_, vert) => {
+  it('RG-generate: Generate (the batched entry the Generate panel calls) ends a pending apply and clears the group — a hand row on another building included', async () => {
+    const { generateAndPlaceBatched } = await import('../../generate/traceGenerate')
+    const brief = { ...(vert ? { lengthFt: 200, widthFt: 480 } : { lengthFt: 480, widthFt: 200 }), gridXFt: 0, gridYFt: 0, mhe: 'reach', orientation: vert ? 'vertical' : 'horizontal', rackType: 'rack_double_row', dockDoors: 0, maxRunFt: 120 }
+    store.setState({ objects: [], selectedIds: [], gridSize: GS, history: [JSON.stringify({ objects: [], groups: [] })], historyIndex: 0 })
+    await generateAndPlaceBatched(brief)
+    await settle()
+    // a hand-drawn building beside it with one hand row
+    const tpl = objs().find(o => o.type === 'rack_double_row')
+    const away = { id: 'fp2', type: 'fp_rect', x: 1e6, y: 1e6, width: 100 * GS, height: 100 * GS, wallThicknessFt: 0.25, fpVerts: [{ x: 1e6, y: 1e6 }, { x: 1e6 + 100 * GS, y: 1e6 }, { x: 1e6 + 100 * GS, y: 1e6 + 100 * GS }, { x: 1e6, y: 1e6 + 100 * GS }] }
+    const { id, rowIndex, genSection, genRunFt, genCrossFt, areaId, ...h } = tpl   // eslint-disable-line no-unused-vars
+    store.getState().addObject(away)
+    store.getState().addObject({ ...h, id: 'handrow', parentId: 'fp2', x: 1e6 + 10 * GS, y: 1e6 + 10 * GS, rotation: 0 })
+    await settle()
+    const k = objs().find(o => o.rowIndex === 3 && o.type === 'rack_double_row')
+    expect(addRowOf(k.id, { otherSections: true })).toBeGreaterThanOrEqual(2)
+    expect(addRowOf('handrow')).toBe(1)
+    await moveRow(RG.rowOfRack(rows(), k.id), GS, 0, vert)
+    expect(st().pending).toBeTruthy()
+    await generateAndPlaceBatched(brief)
+    await settle()
+    expect(st()).toMatchObject({ keys: [], pending: null, message: null })
+    expect(render()).not.toMatch(/Row group ·|Apply to the other/)
+    expect(objs().some(o => o.id === 'handrow')).toBe(true)                      // the hand row itself is untouched
+  })
+})
+
+describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, a hand layout with no group', (_, vert) => {
+  it('RG-nogroup: rows placed by hand, nothing grouped — a bay change, a move across and a delete offer nothing: no apply, no message', async () => {
+    const tpl = (() => { const p = filled(false).find(o => o.type === 'rack_double_row'); const { id, rowIndex, genSection, genRunFt, genCrossFt, areaId, parentId, pieceOf, ...t } = p; return t })()   // eslint-disable-line no-unused-vars
+    const L = 200 * GS, W = 100 * GS, [w, h] = vert ? [W, L] : [L, W]
+    const fp = { id: 'fp', type: 'fp_rect', x: 0, y: 0, width: w, height: h, wallThicknessFt: 0.25, fpVerts: [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }] }
+    const B5 = [96, 96, 96, 96, 96], width = ((3 * 6 + 480) / 12) * GS
+    const mk = (id, run, across) => {
+      if (!vert) return { ...tpl, id, parentId: 'fp', beams: B5, width, rotation: 0, x: run * GS, y: across * GS }
+      const fx = across * GS, fy = run * GS
+      return { ...tpl, id, parentId: 'fp', beams: B5, width, rotation: 90, x: fx - width / 2 + tpl.height / 2, y: fy - tpl.height / 2 + width / 2 }
+    }
+    load(rebuildAisles([fp, mk('A', 20, 10), mk('B', 20, 40), mk('E', 20, 70)], newId).objects)
+    clearGroup()
+    expect(st().keys).toEqual([])
+    const quiet = () => expect(st()).toMatchObject({ keys: [], pending: null, message: null })
+    await changeBeam(get('A'), 1, 84); quiet()
+    expect(get('B').beams).toEqual(B5)
+    store.getState().moveObjects(['A'], vert ? GS : 0, vert ? 0 : GS); await settle(); quiet()
+    store.setState({ selectedIds: ['B'] }); store.getState().deleteSelected(); await settle(); quiet()
+    expect(get('E').beams).toEqual(B5)
+    expect(render()).not.toMatch(/Apply to the other|Row group ·/)
+  })
+})
