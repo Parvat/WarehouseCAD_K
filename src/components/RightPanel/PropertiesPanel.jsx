@@ -13,6 +13,7 @@ import { RackRowPanel, MultiBayPanel, CantileverPanel, ColumnGridPanel, DriveInP
 import { getLayoutCapacity } from '../../utils/capacity'
 import { useColumnCheck } from '../../generate/useColumnCheck'
 import { usableCapacity } from '../../generate/usableCapacity'
+import { useBayLedger } from './useBayLedger'
 import { PALETTE_COLORS } from '../../constants'
 
 /* The app's locked type system. Montserrat and JetBrains Mono are loaded by
@@ -83,12 +84,15 @@ const RACK_TYPE_META = {
 }
 
 function CapacityHero({ objects }) {
-  const layoutCap = getLayoutCapacity(objects)
+  /* beam racks through the bay ledger (utils/bayLedger.js): an overlapped bay counted once */
+  const gridSize = useCanvasStore(s => s.gridSize) || 40
+  const ledger = useBayLedger(objects, gridSize)
+  const layoutCap = getLayoutCapacity(objects, undefined, ledger)
   /* Usable = gross minus what Column Check says is lost (in-rack columns and
      blocked pick zones, each position once) — read off the SAME check result
      the Column Check panel shows, so the two totals always agree. */
   const { result } = useColumnCheck()
-  const { usable } = usableCapacity(objects, { check: result })
+  const { usable } = usableCapacity(objects, { check: result, ledger, gridSize })
   if (layoutCap.total === 0) return null
 
   const entries = Object.entries(layoutCap.breakdown)
@@ -131,6 +135,12 @@ function CapacityHero({ objects }) {
             <span style={{ fontSize:11, color:'var(--text3)', fontWeight:500 }}>usable</span>
           </span>
         </div>
+        {layoutCap.uncountedBays > 0 && (
+          <div data-testid="capacity-overlap" title="A bay more than half covered by another rack's bay is counted once — Check layout lists the overlaps"
+            style={{ marginTop:6, fontSize:10, color:'var(--amber, #B87309)', fontFamily:'var(--font-mono)' }}>
+            {layoutCap.uncountedBays} overlapping bay{layoutCap.uncountedBays === 1 ? '' : 's'} not counted
+          </div>
+        )}
 
         <div style={{
           marginTop:10, display:'flex', gap:16,

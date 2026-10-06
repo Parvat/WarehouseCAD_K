@@ -1488,6 +1488,57 @@ row 12's pair clicked, the rack panel's "+8'" → pair 13 bays to 116.5', single
 12-14 grouped with the Row group tool, "+8'" on row 13, Apply → rows 12 and 14
 each pair 13 + single 1, no overlaps.
 
+### BL — An overlap never counts twice: the bay ledger · `BL_bayLedger.test.js` (17 tests)
+Code: `utils/bayLedger.js` (`bayLedger`, `bayRects`), read by `getLayoutCapacity`
+(`utils/capacity.js`), `usableCapacity` (`generate/usableCapacity.js`), the
+capacity headline (`PropertiesPanel.jsx`) and the rack panel
+(`RackRowPanelCore.jsx`), through `components/RightPanel/useBayLedger.js`.
+
+Before: every overlapped bay was counted twice — a copy of a 14-bay pair on
+top of it added 14 bays and 224 positions to the headline (usable too); a
+3-bay copy overlapping by one bay added 3 bays and 48 positions.
+
+The rule: a bay (between two of its rack's uprights, full depth) more than
+half covered by a bay of another rack is not counted; when two cover each
+other, the rack placed first keeps it. A single on one half of a pair's bay:
+the single's bay is fully covered (not counted), the pair's only half — counted
+once. Half a bay or less: both count. Check layout still reports the overlap.
+
+One ledger for every count: the headline and its breakdown, usable (a column's
+loss on a bay that isn't counted isn't taken off, so usable never exceeds the
+total), Generate's and the fill's totals (they go through `getLayoutCapacity`),
+the rack panel (its capacity as counted, and "N bays overlap another rack — not
+counted"). The headline shows "N overlapping bays not counted" when there are
+any. A future BOM reads `frames` per rack: a bay not counted has no beams; a
+frame counts when it bounds at least one counted bay of its rack. No PDF line
+(not now). Beam racks only — other rack types have no bays and count as before.
+
+Cost: the ledger caches on the racks' geometry — the same objects, or a change
+to anything that isn't a rack, return the cached ledger; and the panels hold
+their last ledger while a drag is in flight (a live-flue drag writes the rack
+every frame). Drawing and drag code untouched, so no perf tests.
+
+| Test | Asserts (the layout as saved, vertical and turned) |
+|---|---|
+| `BL-base` | no overlap: every bay counted, the same total as summing each rack |
+| `BL-copy` | a copy of row 7 (section 2) exactly on top → +0 bays, +0 positions, usable unchanged, racks unchanged; the original keeps its bays, the copy's 14 not counted; Check layout reports the overlap |
+| `BL-one-bay` | a 3-bay copy overlapping row 7 by one bay → +2 bays, +2 bays' positions; the shared bay counted once, on row 7 |
+| `BL-half-pair` | a single on one half of row 7's first bay → +0 bays, +0 positions (the single's bay not counted, the pair's counted) |
+| `BL-half-bay` | a 3-bay copy overlapping by exactly half a bay → both count (+3 bays); a little more than half → once (+2) |
+| `BL-usable` | usable ≤ total with and without overlaps; a copy on a rack that loses positions to columns leaves total and usable as before |
+| `BL-frames` | the 3-bay copy: its overlapped bay not counted, 3 of its 4 frames counted; a full copy: none |
+| `BL-panel` | the rack panel shows the counted capacity (32 PAL for the 3-bay copy) and "1 bay overlap another rack — not counted"; a rack with no overlap shows no note |
+| `BL-cache` | the same objects / a zone moved → the same ledger object; a rack moved → a new one; the panels hold it during a drag; the headline's "not counted" line |
+
+**Break-its:** the total ignoring the ledger: BL-copy, BL-one-bay,
+BL-half-pair, BL-usable (8). Two bays on top of each other both left out:
+BL-copy, BL-one-bay, BL-half-bay, BL-usable, BL-panel (10). Half a bay already
+counted once: BL-half-bay (2). Usable taking losses off uncounted bays:
+BL-usable (2). The rack panel's full figure: BL-panel (2). No note on the rack
+panel: BL-panel (2). Frames counted for any bay: BL-frames (2). The ledger
+worked out again on every call: BL-cache (1). The panels not held during a
+drag: BL-cache (1).
+
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.
 

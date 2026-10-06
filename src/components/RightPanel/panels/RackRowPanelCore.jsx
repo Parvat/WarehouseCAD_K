@@ -6,6 +6,7 @@ import { nanoid } from 'nanoid'
 import { rebuildAisles } from '../../../utils/aisleRebuild'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
+import { useBayLedger } from '../useBayLedger'
 import {
   BEAM_PRESETS_IN, parseBeamIn, wallClearAlong, planBayBeamChange,
   changeIssues, rackIssues, issuesText,
@@ -249,7 +250,13 @@ export function RackRowPanel({ obj }) {
   const levels  = obj.levels || 1
   const totalIn = upIn * (beams.length + 1) + beams.reduce((s, b) => s + b, 0)
   const totalFt = totalIn / 12
-  const capacity = getRackCapacity(obj)
+  /* as counted (utils/bayLedger.js): a bay more than half covered by another rack's bay isn't counted here */
+  const ledgerEntry = useBayLedger(objects, gridSize || 40).racks.get(obj.id)
+  const fullCapacity = getRackCapacity(obj)
+  const capacity = fullCapacity && ledgerEntry && ledgerEntry.uncounted
+    ? { ...fullCapacity, total: ledgerEntry.positions, groundTotal: ledgerEntry.positions / levels }
+    : fullCapacity
+  const overlapBays = ledgerEntry ? ledgerEntry.uncounted : 0
 
   const clear   = getWallClear(obj, objects, gridSize)
   const clearIn = clear?.clearIn ?? null
@@ -307,6 +314,11 @@ export function RackRowPanel({ obj }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
             <span style={{ color: 'var(--text3)' }}>Ground level</span>
             <span style={{ color: 'var(--text2)' }}>{capacity.groundTotal} pal × {levels} level{levels > 1 ? 's' : ''}</span>
+          </div>
+        )}
+        {overlapBays > 0 && (
+          <div data-testid="rack-overlap-bays" style={{ marginTop: 2, color: 'var(--amber, #B87309)' }}>
+            {overlapBays} bay{overlapBays === 1 ? '' : 's'} overlap another rack — not counted
           </div>
         )}
       </div>

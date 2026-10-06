@@ -5,6 +5,7 @@
 // that predates a field, or one drawn before a dealer set their standard, is
 // counted against that dealer's pallet and beam rather than a hardcoded 48/96.
 // Per-object values still win — they are what is actually drawn.
+import { bayLedger } from './bayLedger'
 import { DEFAULT_RULES } from '../rules/defaults'
 
 /* Industry-standard selective-rack convention (verified): a pallet's LOADING
@@ -155,20 +156,24 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES) {
 }
 
 /**
- * Calculate total pallet capacity for all racks in a layout.
+ * Calculate total pallet capacity for all racks in a layout. Beam racks (single and double rows) are
+ * counted through the bay ledger (utils/bayLedger.js): a bay more than half covered by another rack's bay
+ * is counted once, so an overlap never counts twice. `ledger` lets a caller pass one it already has.
+ * Returns { total, breakdown: { type → positions }, uncountedBays }.
  */
-export function getLayoutCapacity(objects, rules = DEFAULT_RULES) {
+export function getLayoutCapacity(objects, rules = DEFAULT_RULES, ledger = null) {
+  const L = ledger || bayLedger(objects)
   let total = 0
   const breakdown = {}
+  const add = (key, n) => { total += n; breakdown[key] = (breakdown[key] || 0) + n }
 
   objects.forEach(obj => {
+    const entry = L.racks.get(obj.id)
+    if (entry) { add(obj.type, entry.positions); return }
     const cap = getRackCapacity(obj, rules)
     if (!cap) return
-    total += cap.total
-    const key = obj.type
-    if (!breakdown[key]) breakdown[key] = 0
-    breakdown[key] += cap.total
+    add(obj.type, cap.total)
   })
 
-  return { total, breakdown }
+  return { total, breakdown, uncountedBays: L.uncountedBays }
 }

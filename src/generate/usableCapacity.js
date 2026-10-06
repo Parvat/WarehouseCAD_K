@@ -8,6 +8,7 @@
 // auto-pick all read these same helpers, so the three can't disagree.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { bayLedger } from '../utils/bayLedger'
 import { getLayoutCapacity } from '../utils/capacity'
 import { checkColumns, expandColumnGrid, MHE_PROFILES } from './columnCheck'
 import { DEFAULT_RULES } from '../rules/defaults'
@@ -48,11 +49,15 @@ export function runColumnCheck(objects, { profile = MHE_PROFILES.reach, gridSize
 }
 
 /** usable = gross − in-rack losses − pick-zone losses. `check` lets a caller
- *  that already ran the column check pass its result instead of rerunning it. */
-export function usableCapacity(objects, { profile, gridSize = GS, rules = DEFAULT_RULES, check } = {}) {
-  const gross = getLayoutCapacity(objects, rules).total
+ *  that already ran the column check pass its result instead of rerunning it; `ledger` likewise the bay
+ *  ledger. Gross counts an overlapped bay once (utils/bayLedger.js), so a loss on a bay the ledger leaves
+ *  out isn't taken off — the usable figure never goes below what is really there, nor above gross. */
+export function usableCapacity(objects, { profile, gridSize = GS, rules = DEFAULT_RULES, check, ledger } = {}) {
+  const L = ledger || bayLedger(objects, gridSize)
+  const gross = getLayoutCapacity(objects, rules, L).total
   const res = check !== undefined ? check : runColumnCheck(objects, { profile, gridSize })
-  const lost = res ? res.summary.positionsLostIfAbsorb : 0
-  const pickZoneLost = res ? res.summary.positionsLostToPickZone : 0
-  return { gross, usable: gross - lost, inRackLost: lost - pickZoneLost, pickZoneLost }
+  const counts = (c) => { const e = L.racks.get(c.rackId); return !e || c.bayIndex == null || e.counted[c.bayIndex] !== false }
+  const inRackLost = res ? (res.rackConflicts || []).filter(counts).reduce((t, c) => t + (c.positionsLost || 0), 0) : 0
+  const pickZoneLost = res ? (res.pickBlocks || []).filter(counts).reduce((t, c) => t + (c.positionsLost || 0), 0) : 0
+  return { gross, usable: gross - inRackLost - pickZoneLost, inRackLost, pickZoneLost }
 }
