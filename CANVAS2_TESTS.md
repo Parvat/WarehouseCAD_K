@@ -1539,6 +1539,55 @@ panel: BL-panel (2). Frames counted for any bay: BL-frames (2). The ledger
 worked out again on every call: BL-cache (1). The panels not held during a
 drag: BL-cache (1).
 
+### SB — Separate bays · `SB_separateBays.test.js` (13 tests)
+Code: `utils/separateBays.js` (`separationOf`, `separateBays`,
+`separateSelectedBays`), the button in both bay boxes of
+`RackRowPanelCore.jsx` (the multi-bay panel, and the rack panel's clicked bay).
+
+The reverse of the in-line snap's join: one bay (a click), or a run of
+adjacent bays of one rack (Shift+click), becomes its own rack in place; the
+rest stays one rack on each side — up to three racks. Nothing moves and no bay
+is lost: each cut upright is shared (one rack ends on it, the next starts on
+it — `sharesFrame`, the join's own rule), so the drawing, Check layout (a shared
+end frame is no overlap) and the bay ledger's counts are unchanged. One
+history entry (one store write and one commit, aisles re-paired in it); the
+separated rack is selected. Disabled, with the reason as the button's tooltip,
+for the whole rack, bays in more than one rack, or bays that aren't adjacent.
+
+Every piece keeps the original's fields and its row / section stamps (the same
+row, the same Row group row); all but the first along the run carry `pieceOf`
+(kept by the row-edit keeper: a stamped piece inside the rack it came from);
+`genRunFt` follows each piece's start, as the join does; the first along the
+run keeps the id. The Row group sees a separation as no change (every upright
+where it was) and offers nothing. A separated rack dragged straight back onto
+its shared upright joins again through the in-line snap.
+
+| Test | Asserts (the layout as saved, vertical and turned) |
+|---|---|
+| `SB-middle` | bay 6 of row 7's pair (section 2) clicked → 5 + 1 + 8, the same uprights and span, the cut frames shared, no overlap, the ledger's bays and positions unchanged; stamps on every piece, `pieceOf` on the new ones, the first keeps the id; the separated rack selected; one history entry; one undo restores the rack exactly |
+| `SB-run` | bays 1-3 Shift+clicked → 3 + 11; a single (wall row): its first two bays apart, the rest one rack — the same checks |
+| `SB-reversed` | the pair drawn reversed: stored bay 0 sits at the far end of the run — separated there (13 + 1), nothing moved |
+| `SB-disabled` | the whole rack / bays 2 and 4 / bays in two racks → not offered, with the reason; bays 5-7 → offered; the multi-bay panel's button disabled with "Can't separate: the bays aren't next to each other", enabled for adjacent bays; the rack panel's clicked bay has the button |
+| `SB-group` | row 7 in a Row group: a separation offers nothing, says nothing, the group unchanged |
+| `SB-rejoin` | the separated rack dragged 20' away and back: the in-line snap joins it again — one rack fewer, the same bays |
+| `SB-wire` | one button component in both bay boxes; one store write and one commit; aisles re-paired |
+
+**Break-its:** the cut uprights not shared (a gap): SB-middle, SB-run,
+SB-reversed, SB-group, SB-rejoin (10). The separated bays lost: SB-run (2).
+Two history entries: SB-middle (2). The new pieces losing their stamps:
+SB-middle, SB-run, SB-group, SB-rejoin (8). The whole rack offered: SB-disabled
+(2). Non-adjacent bays offered: SB-disabled (2). A reversed rack cut at the
+wrong end: SB-reversed (2). A piece with a field changed (it couldn't join
+back): SB-middle, SB-run, SB-reversed, SB-group (8).
+
+**Checked in the app** (real mouse, the layout as saved, both orientations):
+row 7's 6th bay clicked (one click selects the rack and picks the bay) →
+"Separate bay" → 5 + 1 + 8 bays, cuts on shared uprights, 714 bays and 10,832
+positions as before, no overlap, one history step; Ctrl+Z restores the
+14-bay rack. Row 8's 6th bay clicked, the 7th Shift+clicked → "Separate 2
+bays" enabled; the 9th Shift+clicked too → disabled ("the bays aren't next to
+each other"); Shift+clicked off again → 5 + 2 + 7.
+
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.
 

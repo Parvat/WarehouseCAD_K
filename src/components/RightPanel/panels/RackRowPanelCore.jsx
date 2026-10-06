@@ -7,6 +7,7 @@ import { rebuildAisles } from '../../../utils/aisleRebuild'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
 import { useBayLedger } from '../useBayLedger'
+import { separationOf, separateSelectedBays } from '../../../utils/separateBays'
 import {
   BEAM_PRESETS_IN, parseBeamIn, wallClearAlong, planBayBeamChange,
   changeIssues, rackIssues, issuesText,
@@ -157,6 +158,29 @@ function maxFitBays(obj, allObjects, gridSize, newBeamIn = 96) {
   return { remainIn, fits: remainIn >= newBeamIn + upIn, addIn: newBeamIn + upIn }
 }
 
+/* "Separate bays" (utils/separateBays.js): the selected bay(s) of one rack become their own rack, in place —
+   the reverse of the in-line snap's join. Disabled, with the reason as its tooltip, for the whole rack,
+   bays in more than one rack, or bays that aren't next to each other. */
+function SeparateBaysButton({ entries, objects }) {
+  const sep = separationOf(objects, entries)
+  const n = new Set(entries.map(e => e.bayIdx)).size
+  const label = `Separate ${n === 1 ? 'bay' : n + ' bays'}`
+  return (
+    <button
+      aria-label={label}
+      disabled={!sep.ok}
+      title={sep.ok ? 'Make the selected bays their own rack, in place — nothing moves, the cut uprights are shared' : `Can't separate: ${sep.reason}`}
+      onClick={() => separateSelectedBays(useCanvasStore, { newId: nanoid, rebuildAisles })}
+      style={{
+        flex: 1, padding: '5px 0', borderRadius: 4, cursor: sep.ok ? 'pointer' : 'not-allowed',
+        fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600, opacity: sep.ok ? 1 : 0.5,
+        background: 'var(--surface3)', border: '1px solid var(--border)', color: 'var(--text)',
+      }}>
+      {label}
+    </button>
+  )
+}
+
 // ── Main Panel ────────────────────────────────────────────────────────────────
 export function MultiBayPanel() {
   const { activeBaySelection, objects, deleteSelectedBays, changeSelectedBaysBeam, clearBaySelection, clearSelection, gridSize } = useCanvasStore(useShallow(s => ({ activeBaySelection: s.activeBaySelection, objects: s.objects, deleteSelectedBays: s.deleteSelectedBays, changeSelectedBaysBeam: s.changeSelectedBaysBeam, clearBaySelection: s.clearBaySelection, clearSelection: s.clearSelection, gridSize: s.gridSize })))
@@ -216,8 +240,9 @@ export function MultiBayPanel() {
       </div>
       <RackWarning text={nowWarn} />
 
-      {/* Delete + Clear */}
+      {/* Delete + Separate + Clear */}
       <div style={{ display: 'flex', gap: 4 }}>
+        <SeparateBaysButton entries={activeBaySelection} objects={objects} />
         <button
           onClick={deleteSelectedBaysAndClear}
           style={{
@@ -432,6 +457,9 @@ export function RackRowPanel({ obj }) {
             Bay {activeBay + 1} -- Change beam
           </div>
           <BeamPicker current={beams[activeBay]} warnFor={warnChange} onPick={b => changeBay(activeBay, b)} />
+          <div style={{ display: 'flex', marginTop: 6 }}>
+            <SeparateBaysButton entries={[{ objId: obj.id, bayIdx: activeBay }]} objects={objects} />
+          </div>
         </div>
       )}
 
