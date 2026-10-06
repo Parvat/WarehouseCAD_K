@@ -20,7 +20,7 @@ import {
   /* utilities */
   BatteryCharging, Fan, Droplets, Lightbulb, Armchair,
   /* draw tools + blocks */
-  MousePointer2, Hand, Minus, MoveRight, Spline, Ruler, Signature, Type, PaintBucket,
+  MousePointer2, Hand, Minus, MoveRight, Spline, Ruler, Signature, Type, PaintBucket, Rows3,
   Pencil, PenTool, Highlighter,
   RectangleHorizontal, Circle,
   /* floor plans — the L/T/U/cross outlines are drawn below, Lucide has none */
@@ -37,6 +37,7 @@ import { levelsFor } from '../../utils/rackLevels'
 import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
 import { FILL_TOOL } from '../../utils/fillTool'
+import { ROW_GROUP_TOOL } from '../../utils/rowGroupTool'
 import { ANNOT } from './AnnotationPanel'
 import { WAREHOUSE_CATEGORIES } from '../../constants/warehouseObjects'
 import { objectContains } from '../../utils/canvas'
@@ -405,6 +406,8 @@ const TOOLBAR_TOOLS = [
   null,
   /* drag a box over part of the building: it fills with racking (utils/fillTool.js) */
   { id:'fill',      tool:FILL_TOOL,       label:'Fill racking', Icon:PaintBucket },
+  /* drag a box over rows (or click one): they join the Row group; then back to Select (utils/rowGroupTool.js) */
+  { id:'rowgroup',  tool:ROW_GROUP_TOOL,  label:'Row group', Icon:Rows3 },
 ]
 const BROKEN_HINT = ' — unavailable: CanvasObjectCore.jsx is missing its path-helper import'
 

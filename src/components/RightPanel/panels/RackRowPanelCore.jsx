@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { rowLines } from '../../../utils/syncSections'
 import { nanoid } from 'nanoid'
 import { rebuildAisles } from '../../../utils/aisleRebuild'
-import { addRowOf, useRowGroup } from '../../../utils/rowGroupTool'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
 import {
@@ -241,26 +240,6 @@ export function MultiBayPanel() {
   )
 }
 
-/* The Row group (replaces "Match bays in this section"): this row into the group, or this row and the
-   rows with its row number in the other sections. Edits to one row of the group are then offered to the
-   others from the bar at the bottom (utils/rowGroupTool.js). */
-function RowGroupControl({ obj }) {
-  const keys = useRowGroup(s => s.keys)
-  const btnStyle = {
-    flex: 1, padding: '6px 8px', borderRadius: 4, fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
-    cursor: 'pointer', background: 'var(--surface3)', border: '1px solid var(--border)', color: 'var(--text)',
-  }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div style={{ display: 'flex', gap: 4 }}>
-        <button style={btnStyle} aria-label="Add this row to the row group" title="Add this row to the row group" onClick={() => addRowOf(obj.id)}>+ Row group</button>
-        <button style={btnStyle} aria-label="Same row in other sections" title="This row and the rows with its row number in the other sections" onClick={() => addRowOf(obj.id, { otherSections: true })}>+ Same row in other sections</button>
-      </div>
-      {keys.length > 0 && <div style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>Row group: {keys.length} row{keys.length === 1 ? '' : 's'} — an edit to one is offered to the others</div>}
-    </div>
-  )
-}
-
 export function RackRowPanel({ obj }) {
   const { objects, updateObject, commitObjectUpdate, deleteSingleBay, gridSize } = useCanvasStore(useShallow(s => ({ objects: s.objects, updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, deleteSingleBay: s.deleteSingleBay, gridSize: s.gridSize })))
 
@@ -384,7 +363,6 @@ export function RackRowPanel({ obj }) {
 
       <RackWarning text={nowWarn} />
 
-      <RowGroupControl obj={obj} />
 
       {/* ── Bay list ── */}
       <div>

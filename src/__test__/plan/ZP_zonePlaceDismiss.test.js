@@ -1,5 +1,5 @@
 // Area ZP — placing a zone, and dismissing the Row group's apply.
-//   1. The bar's ✕ ("Don't apply") leaves an edit on its own row, the group kept; Esc, once nothing
+//   1. The bar's Skip leaves an edit on its own row, the group kept; Esc, once nothing
 //      else is active, clears the pending apply and the group: the change stays where it was made,
 //      nothing is applied.
 //   2. A zone from the left panel follows the mouse (utils/placement.js),
@@ -65,8 +65,8 @@ describe.each(['horizontal', 'vertical'])('ZP — %s', (orientation) => {
   const innerBox = (fp) => { const p = m.FR.innerOutline(fp, GS), xs = p.map(q => q.x), ys = p.map(q => q.y); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } }
   // a static render reads each store's initial state: hand it the live one
   const note = () => { for (const st of [m.RG.useRowGroup, m.PL.usePlacement, m.useCanvasStore]) Object.assign(st.getInitialState(), st.getState()); return renderToStaticMarkup(createElement(m.Bar.RowGroupBar)) }
-  /** What Esc does once nothing is selected (hooks/useKeyboardShortcuts.js): end picking, else clear the group. */
-  const esc = () => { const g = m.RG.useRowGroup.getState(); if (g.picking) { g.setPicking(false); return true } if (g.keys.length || g.pending) { m.RG.clearGroup(); return true } return false }
+  /** What Esc does with the select tool and nothing selected (hooks/useKeyboardShortcuts.js): clear the group. */
+  const esc = () => { const g = m.RG.useRowGroup.getState(); if (g.keys.length || g.pending) { m.RG.clearGroup(); return true } return false }
 
   /* ── 1. Dismiss ── */
 
@@ -97,12 +97,12 @@ describe.each(['horizontal', 'vertical'])('ZP — %s', (orientation) => {
     await move()
     const moved = JSON.parse(JSON.stringify(s().objects.find(o => o.id === r.id)))
     expect(m.RG.useRowGroup.getState().pending).toBeTruthy()
-    expect(note()).toContain('aria-label="Don&#x27;t apply"')
+    expect(note()).toContain('aria-label="Skip"')
     // the bar's ✕: nothing applied, the group stays
     m.RG.dismissPending()
     expect(m.RG.useRowGroup.getState().pending).toBe(null)
     expect(m.RG.useRowGroup.getState().keys.length).toBeGreaterThanOrEqual(2)
-    expect(note()).not.toContain('Don&#x27;t apply')
+    expect(note()).not.toContain('aria-label="Skip"')
     // Esc with nothing selected: the pending apply and the group are cleared
     await move()
     expect(m.RG.useRowGroup.getState().pending).toBeTruthy()

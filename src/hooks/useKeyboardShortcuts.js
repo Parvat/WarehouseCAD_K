@@ -4,7 +4,7 @@ import { TOOLS } from '../constants'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../utils/pasteAt'
 import { cancelPlacement } from '../utils/placement'
-import { useRowGroup, clearGroup } from '../utils/rowGroupTool'
+import { useRowGroup, clearGroup, cancelGroupBox, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
 import { FILL_TOOL, cancelFill } from '../utils/fillTool'
 import { pickableIn } from '../utils/layers'
 
@@ -23,9 +23,9 @@ export function useKeyboardShortcuts() {
         if (useCanvasStore.getState().activeTool === FILL_TOOL) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         // a row being placed (paste, duplicate, left panel): Esc cancels it, nothing else
         if (cancelPlacement()) return
-        // the Row group (utils/rowGroupTool.js): Esc ends picking, then clears the group (and a pending apply)
+        // the Row group (utils/rowGroupTool.js): Esc leaves the Row group tool, then clears the group (and a pending apply)
+        if (useCanvasStore.getState().activeTool === ROW_GROUP_TOOL) { cancelGroupBox(); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         { const g = useRowGroup.getState()
-          if (g.picking) { g.setPicking(false); return }
           if (g.keys.length || g.pending) { clearGroup(); return } }
         useCanvasStore.getState().clearSelection()
         useCanvasStore.getState().setActiveWall(null)

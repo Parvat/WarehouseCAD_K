@@ -13,7 +13,6 @@ import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
 import { computeLiveFlue, resolveFlueBase, flueCommitFields, flueDragCentre, flueDragPlacement } from './liveFlue'
 import { usePlacement, movePlacement, commitPlacement } from '../utils/placement'
-import { useRowGroup, toggleRowOf, addRowsInBox } from '../utils/rowGroupTool'
 import { pickableIn, snapTargets } from '../utils/layers'
 import { clearIssueHighlight } from '../utils/layoutCheck'
 import {
@@ -423,17 +422,6 @@ export function useCanvasInteraction({
 
     if (!forcePan) {
       const st = useCanvasStore.getState()
-
-      /* Row group picking (utils/rowGroupTool.js): a click on a rack adds or removes its row, a box adds
-         every row it touches — nothing is selected, moved or resized while picking, so this takes the press
-         before the handles and the building's walls below (a box may well start on a wall). Pan still works. */
-      if (evt.button === 0 && useRowGroup.getState().picking) {
-        const pickId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
-        const pickObj = pickId ? st.objects.find(o => o.id === pickId) : null
-        if (pickObj && (pickObj.type === 'rack_row' || pickObj.type === 'rack_double_row')) { toggleRowOf(pickId); return }
-        marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false, clickHitId: null, rowGroup: true }
-        return
-      }
 
       /* A resize/rotate handle, if the current single selection is a rack
          type render/rackOps.js draws (matches ResizeHandlesOverlay's own
@@ -1157,10 +1145,7 @@ export function useCanvasInteraction({
 
       const m = marqueeRef.current
       marqueeRef.current = null
-      if (m && m.rowGroup) {
-        // a box while picking: the rows it touches join the Row group
-        if (m.moved && m.to) { const r = normalizeRect(m.from, m.to); addRowsInBox({ x: r.x, y: r.y, w: r.width, h: r.height }) }
-      } else if (m && m.moved && m.to) {
+      if (m && m.moved && m.to) {
         const st = useCanvasStore.getState()
         const rect = normalizeRect(m.from, m.to)
         /* a hidden or locked layer is never caught (utils/layers.js) */

@@ -739,14 +739,14 @@ Code: `utils/placement.js` (`snapZone`), `canvas2/CopyChange.jsx` (the ghost),
 - On the drop the area keeper refits any racking area it reaches (area RA).
 
 **Dismissing the Row group's apply**
-- The bar's ✕ ("Don't apply") closes the apply: the edit stays on its own row,
+- The bar's Skip closes the apply: the edit stays on its own row,
   nothing is applied, the group is kept.
 - Esc, when nothing else is active (nothing being placed or filled, nothing
   selected), ends picking, then clears the group and any pending apply.
 
 | Test | Asserts |
 |---|---|
-| `ZP-dismiss` ×3 | Generate on a rectangle, Fill racking over a whole L / T, max run 120': row K grouped in every section, the whole row (every piece) moved across → the apply bar; its ✕ ("Don't apply"): nothing applied, the group kept; moved again, Esc with nothing selected: the apply and the group clear; the moved row stays moved, the other sections' rows untouched; a second Esc does nothing |
+| `ZP-dismiss` ×3 | Generate on a rectangle, Fill racking over a whole L / T, max run 120': row K grouped in every section, the whole row (every piece) moved across → the apply bar; its Skip: nothing applied, the group kept; moved again, Esc with nothing selected: the apply and the group clear; the moved row stays moved, the other sections' rows untouched; a second Esc does nothing |
 | `ZP-place` ×3 | rectangle, L, T with an area: a zone placed follows the pointer (centred on it); 8 px off the inner top-left corner it snaps onto both faces; pushed past the wall it stays inside; Esc: nothing placed, no history; a click over the area's racks drops it, parented, nothing asked, no bay under it, one entry, no errors; one undo restores both exactly |
 
 All run horizontal and vertical.
@@ -1253,19 +1253,23 @@ three drawn sizes changed:
 - **One rack dragged** past its columns changed the count, as it should.
 - No console errors.
 
-### RG — The Row group · `RG_rowGroup.test.js` (53 tests)
+### RG — The Row group · `RG_rowGroup.test.js` (59 tests)
 Replaces Match bays in section, the section-copy bar and its Copy / Don't copy
 question (areas SC, CF, EX, Y, Z2 are removed — their still-valid checks are
 listed below). Code: `utils/rowGroup.js` (rows, what an edit was, the replay
 plan, the bar's words, the preview's rects), `utils/rowGroupTool.js` (the group,
-picking, the watcher, Apply), `canvas2/RowGroupBar.jsx`,
-`canvas2/RowGroupPreview.jsx`, the panel's `RowGroupControl`.
+its tool, the watcher, Apply), `canvas2/RowGroupBar.jsx`,
+`canvas2/RowGroupPreview.jsx`, the Row group tool in `canvas2/Canvas2.jsx` and
+the left panel's drawing toolbar.
 
-**Picking.** Pick rows on the bar: a click on a rack adds or removes its row, a
-box adds every row it touches. "+ This row" and "+ Same row in other sections"
-on the bar (and the rack panel) with a row selected. The group is outlined until
-Esc or ✕ and lives only in presentation state — never the canvas store, never
-the file.
+**Picking: the Row group tool**, next to Fill racking and used the same way.
+Drag a box over rows: they join the group. A click on a row toggles it. Either
+is one action, after which the tool goes back to Select. Using the tool again
+adds to the group. The tool takes the press before anything else, so a box may
+start on a wall or a rack. The group is outlined until Esc or ✕ and lives only
+in presentation state — never the canvas store, never the file. (Simplified
+after the hand check on 7b4b747: the "+ This row", "+ Same row in other
+sections" and "Pick rows" buttons are gone, from the bar and the rack panel.)
 
 **Rows.** A generated row is its stamp (`s|building|section|row`); a row placed
 by hand is its racks chained in one line (gap under 10.5'), keyed by their root
@@ -1282,23 +1286,44 @@ that row:
   that narrows the rack moves it exactly the drag).
 - **delete:** the others deleted. **A row added next to a group row:** one beside
   each other group row, the same offset across, at that row's own length.
+- **levels:** the others get the same levels. Depth, kind and other edits are
+  not replayed.
+- **several group rows changed by one action:** if each was changed the same
+  way, the edit is applied to the rest and every edited row is a source. "The
+  same way" means the same delta across, the same levels, all deleted, or bays
+  that replaying the first row's edit on the others reproduces exactly. Edits
+  that differ are not replayed ("These N rows were changed in different
+  ways…").
+- A clicked bay's highlight (`activeBayIdx` / `activeTowerIdx`) is selection
+  state written on the rack without a history entry; it is never an edit. (It
+  was: clicking a bay in a second row cleared the first row's, so every bay edit
+  after the first read "touches 2 rows" — the message from the hand check.)
+- A move across is skipped for a column only when the move puts a **new**
+  column on an upright (one already standing there, BUG 71, is not new) — the
+  same rule as the bay replay.
 
-**The bar:** "Apply to the other N rows?" and, when bays would drop, "K rows
-lose a bay (B bays)." — before Apply. Hovering Apply shows the preview: targets
-dashed blue, dropped bays red filled with a solid edge, skipped rows amber
-dashed. Skipped rows are listed with the reason: a column on an upright, an
-overlap, a wall, a zone, an aisle under the travel width, uprights don't line
-up. **Apply is one undo step**; **Always apply** folds the edit and its apply
-into the edit's own history entry (one Ctrl+Z undoes both). An action touching
-two group rows is not replayed (the bar says so); undo / redo end a pending
-apply; a racking area's refit is passed over (`skipNextAction`).
+**The bar** (one bar while a group exists): "Row group · N rows", one
+**Ask / Auto apply** switch (remembered per browser, `trace.rowGroup.always`)
+and ✕.
+- **Ask:** after an edit the same bar shows "Apply to the other N rows?" — with
+  "K rows lose a bay (B bays)." and "S skipped." in that line — **Apply**
+  (primary) and **Skip**. The skipped rows are listed below with their reason:
+  a column on an upright, an overlap, a wall, a zone, an aisle under the travel
+  width, uprights don't line up. The preview is on the canvas: targets dashed
+  blue, dropped bays red filled with a solid edge, skipped rows amber dashed.
+  **Apply is one undo step.** One grey line shows the last result.
+- **Auto apply:** applied at once, folded into the edit's own history entry (one
+  Ctrl+Z undoes both).
+
+Undo / redo end a pending apply. A racking area's refit is passed over
+(`skipNextAction`), and Generate clears the group.
 
 On the hand-check layout (`realLayout.fixture.js`): horizontal rows as saved,
 vertical rows on the layout turned 90° (the same rows mirrored).
 
 | Test | Asserts (horizontal and vertical) |
 |---|---|
-| `RG-pick` | a box over section 4's run adds 14 rows (section 4's 13 and section 3's row 14, which runs into it); a click adds row 7 of section 2, a second takes it out; the bar shows "Row group · 14 rows", Pick rows pressed, ✕; ✕ clears; one rack selected: "+ This row", "+ Same row in other sections" → row 7 of sections 1-4; the canvas wiring for click and box, and picking takes the press before a selected rack's handles and the building's walls (found in the app: a box started on a wall resized the building) |
+| `RG-pick` | the tool: a box over section 4's run adds 14 rows (section 4's 13 and section 3's row 14, which runs into it), then Select is back; the tool again, a click adds row 7 of section 2 (Select back), again takes it out; a second box adds more; the bar: "Row group · N rows", the Ask / Auto apply switch (off), ✕ — and with a rack selected no "+ This row", "+ Same row in other sections", "Pick rows" or "Always apply"; the toolbar button after Fill racking; the canvas routing; Esc leaves the tool; the select tool no longer picks |
 | `RG-bays` | worked example a — section 4 row 7, bay 5 96" → 84": "Apply to the other 11 rows? 2 skipped.", rows 4/1 and 3/14 "uprights don't line up" listed on the bar; Apply: one history entry, "Applied to 11 rows · 2 skipped"; every target upright on one of the source's; the half row (single + pair) and the short rows (3 bays from 224.75' → 223.75'); the skipped wall row untouched; undo once → the edit only, twice → as before |
 | `RG-drop` | b2 — bay 5 96" → 108": "Apply to the other 11 rows? 11 rows lose a bay (11 bays). 2 skipped." on the bar before Apply; `previewRects`: 11 `dropped` (each the bay past the wall at 249.75'), the skipped rows' racks `skipped`, no dropped bay over a skipped row, every key unique; each target's reason "a wall"; the preview's colours and styles (red filled solid vs amber dashed); after Apply each target has one bay fewer, none past the wall, beams only 96/108 (never squeezed) |
 | `RG-zone` | b′ — section 3 row 7, bay 11 96" → 132": "Apply to the other 11 rows? 3 rows lose a bay (3 bays). 2 skipped."; the three that run to the office (rows 3, 4, 5) lose a bay to "a zone" |
@@ -1307,8 +1332,8 @@ vertical rows on the layout turned 90° (the same rows mirrored).
 | `RG-along` | a move along the row: nothing pending, "a move along the row isn't replayed" |
 | `RG-delete` | row 7 deleted in section 4 → "Apply to the other 3 rows?" → every row 7 gone, the group empty; undo → back but the source; undo → all back |
 | `RG-add-row` | row 8 deleted everywhere; a hand row where section 4's was, beside row 7 → three added, each beside its section's row 7 at the same offset across and that row's own length |
-| `RG-multi` | a move of two group rows, and select-all + Delete: nothing pending, "This change touches N rows in the group…" |
-| `RG-always` | Always apply: no bar, applied at once, one history entry for edit + apply; one undo → as before the edit; redo → both back; the switch kept in `localStorage` |
+| `RG-multi` | two group rows moved the same 3" across → "Apply to the other 11 rows? 1 skipped." (section 3's row 14 against the wall; row 7 keeps the column already on its upright) → the others moved 3"; select-all + Delete deletes every row, nothing left to offer |
+| `RG-always` | Auto apply: the switch shows on, no apply bar, applied at once, one history entry for edit + apply; one undo → as before the edit; redo → both back; the switch kept in `localStorage` |
 | `RG-undo` | undo, redo and a new layout end a pending apply; ✕ leaves the edit on its own row; no group → nothing offered |
 | `RG-message` | "Applied to 11 rows · 2 skipped" on the bar until a placement starts |
 | `RG-save` | the file has no group keys, no `rowGroup` / `alwaysApply`; the canvas store has no group; a reload carries none |
@@ -1318,25 +1343,28 @@ vertical rows on the layout turned 90° (the same rows mirrored).
 | `RG-skip-lineup` | by hand: a row 4' off the source's uprights → "uprights don't line up", untouched; the one that lines up takes it |
 | `RG-reversed` | a target drawn at 180° / 270°: the edit lands at the same bay along the run; its stored bays reversed; its start and end where the source's are |
 | `RG-hand` | hand racks in one line are one row (`h|A1,A2`); a bay edit replays on the other hand row; a middle bay delete splits both rows and the pieces stay in the group; an edit on a piece replays on the other piece |
-| `RG-two-rows` | a bay change on two group rows at once is not replayed on the third |
-| `RG-panel` | a single and a double row's panel: "+ Row group", "+ Same row in other sections", no Match bays |
+| `RG-two-rows` | by hand: the same bay change on two group rows at once → the third gets it ("Apply to the other 1 row?"); different changes on the two → not replayed, "These 2 rows were changed in different ways…" |
+| `RG-panel` | a single and a double row's panel: no Row group buttons (the tool picks rows), no Match bays |
 | `RG-label` | a section reads "section 1", never "section run 1": `sectionLabel`; Check layout's row names and its overlap error on racks keyed "run 1"; placement's cross-aisle warning between runs keyed "run 1" / "run 2" reads "between sections 1 and 2" |
 | `RG-generate` | Generate through the batched entry the Generate panel calls, a group (row 3 in every section, plus a hand row on a hand-drawn building) with an apply pending → Generate again: no group, no apply, no message, the bar empty; the hand row itself untouched (Generate clears the group at the start of its one step) |
 | `RG-nogroup` | rows placed by hand, nothing grouped: a bay change, a move across and a delete offer nothing — no apply, no message, the other rows untouched |
-| `RG-wire` | App installs the watcher; Canvas2 renders the bar and the outlines; Esc ends picking, then clears the group; racking areas call the Row group's `skipNextAction`; the section-copy modules are gone; no Always copy in the top bar |
+| `RG-bayclick` | a bay clicked in row 7 and changed; then a bay clicked in row 8 (row 7's highlight cleared, no history) and changed → offered, source row 8, no "touches 2 rows" |
+| `RG-same-edit` | the same bay changed on rows 7 and 8 at once (multi-bay selection) → "Apply to the other 10 rows? 2 skipped.", both rows the sources; Apply gives rows 6 and 9-13 that bay |
+| `RG-levels` | levels 4 → 5 on row 7 → "Apply to the other 13 rows?" → every group row at 5, rows outside the group untouched, one undo step; a depth change → not replayed, "a change of depth or kind isn't replayed" |
+| `RG-wire` | App installs the watcher; Canvas2 renders the bar and the outlines; Esc leaves the Row group tool, then clears the group; racking areas call the Row group's `skipNextAction`; the section-copy modules are gone; no Always copy in the top bar |
 
 **Carried over from the removed areas** (each check still valid, and where it
 went):
 
 | Was | Check | Now |
 |---|---|---|
-| SC-layout | row K exists once in every section | `RG-pick` ("+ Same row in other sections" → 4 rows) |
+| SC-layout | row K exists once in every section | `RG-generate`, AR / FR / ZP / PD groups (`addRowOf(…, { otherSections })` — no button now, kept for building a group directly) |
 | SC-stays | a move along a row is not carried | `RG-along` |
 | SC-bar | the bar's text and buttons | `RG-pick`, `RG-bays`, `RG-drop` (rendered bar) |
 | SC-always | Always: applied at once, one Ctrl+Z each | `RG-always` (now one entry for edit + apply) |
 | SC-undo | undo takes a change back out | `RG-undo` |
 | SC-save | the pending set saved with the file | `RG-save` — reversed by the spec: the group is never saved |
-| SC-multi, CF-select-all | one action across several rows is not carried | `RG-multi`, `RG-two-rows` |
+| SC-multi, CF-select-all | one action across several rows: carried only when every row was changed the same way (changed after the hand check on 7b4b747) | `RG-multi`, `RG-two-rows`, `RG-same-edit` |
 | SC-regenerate | a new layout clears what was pending | `RG-generate` (the real Generate), `RG-undo` (a layout loaded in place) |
 | SC-add, AR-handcopy | a row added is carried, full length for each | `RG-add-row`, `AR-handcopy` |
 | SC-place | paste / duplicate follow the mouse; Esc; blocked spots | `PD-place` |
@@ -1365,7 +1393,7 @@ bar's Apply), `AR-split` (rows 3-5 of the section grouped: a bay replay maps by
 position along the run, so the rows either side, not the section further
 along), `FR-stamps` (row 2 grouped in every section, moved across, applied),
 `RA-copy` (every row grouped, an area shrink offers nothing), `ZP-dismiss` (the
-bar's ✕ "Don't apply" and Esc; the whole row is moved, every piece of it).
+bar's Skip and Esc; the whole row is moved, every piece of it).
 `AA` and `WF` install the Row group watcher instead of the copy watcher.
 
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
@@ -2541,12 +2569,10 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | RG | **Limits along off** (bays squeezed past a wall or zone) | 8: RG-drop, RG-zone, RG-shape | ✓ |
 | RG | **Wall rows applied** (no line-up check) | 14: RG-bays, -drop, -zone, -add-delete-bay, -always, -message, -skip-lineup | ✓ |
 | RG | **Apply written as two steps** | 8: AR-delete, RG-bays, RG-across, RG-delete | ✓ |
-| RG | **Always apply as its own undo step** (not folded) | 2: RG-always | ✓ |
+| RG | **Auto apply as its own undo step** (not folded) | 2: RG-always | ✓ |
 | RG | **Group saved into the file** | 2: RG-save | ✓ |
-| RG | **Two-row edit replayed anyway** | 4: RG-multi, RG-two-rows | ✓ |
 | RG | **Dropped-bays summary off** | 4: RG-drop, RG-zone | ✓ |
 | RG | **Dropped bays drawn as skipped rows** | 2: RG-drop | ✓ |
-| RG | **Picking off** (a click adds nothing) | 14: RG-pick, -skip-*, -reversed, -hand, -two-rows | ✓ |
 | RG | **Esc does not clear the group** | 7: ZP-dismiss, RG-wire | ✓ |
 | RG | **A pair's free half counted as a new piece** (the fix reverted) | 4: ZP-dismiss, RG-hand | ✓ |
 | RG | **Across delta from the near face, not the centre** | 2: PD-flue | ✓ |
@@ -2554,6 +2580,17 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | RG | **Section label shows the raw key** ("run 1") | 1: RG-label | ✓ |
 | RG | **Generate leaves the group** (no `clearGroup` at its start) | 2: RG-generate | ✓ |
 | RG | **An empty group means every row** | 6: RG-undo, RG-generate, RG-nogroup | ✓ |
+| RG | **A bay click counted as an edit** | 2: RG-bayclick | ✓ |
+| RG | **Several rows changed the same way refused** | 6: RG-multi, RG-same-edit, RG-two-rows | ✓ |
+| RG | **Rows changed in different ways accepted** | 2: RG-two-rows | ✓ |
+| RG | **Levels not replayed** | 2: RG-levels | ✓ |
+| RG | **Depth treated like levels** | 4: RG-levels, RG-hand | ✓ |
+| RG | **The tool stays on after a box** | 2: RG-pick | ✓ |
+| RG | **A click with the tool toggles nothing** | 2: RG-pick | ✓ |
+| RG | **Skip applies anyway** | 10: ZP-dismiss, RG-bayclick, RG-undo | ✓ |
+| RG | **Ask / Auto apply not remembered** | 2: RG-always | ✓ |
+| RG | **A column already on an upright counted as new** (move across) | 2: RG-multi | ✓ |
+| RG | **"Pick rows" button back on the bar** | 2: RG-pick | ✓ |
 
 **Round 1 (original code):**
 

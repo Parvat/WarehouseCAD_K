@@ -1,18 +1,20 @@
 // Area RG — the Row group (utils/rowGroup.js plans, utils/rowGroupTool.js runs it on the store,
 // canvas2/RowGroupBar.jsx + RowGroupPreview.jsx show it). Replaces Match bays in section, the
 // section-copy bar and its Copy / Don't copy question.
-//   1. Picking: a box over rows, a click on a row to add / remove it, "+ Same row in other sections".
-//      The group stays until Esc or ✕ and is never saved in the file.
+//   1. Picking: the Row group tool (next to Fill racking) — a box adds the rows it touches, a click toggles
+//      one row; one action, then back to Select. The group stays until Esc or ✕; never saved in the file.
 //   2. An edit to one group row is replayed on the others, relative to each:
 //        - bays: the source's uprights wherever both have racks (within ½"); a bay that would cross the
 //          target's limit (wall, zone, an aisle under the 8' travel width) is DROPPED, never squeezed;
 //        - a move across: the same delta;  - a delete: the others deleted;
 //        - a row added next to a group row: one beside each other group row, same offset, its own length.
-//   3. The bar: "Apply to the other N rows?" — "K rows lose a bay (B bays)." when bays would drop —
-//      with a live preview (dropped bays red, skipped rows amber) and an "Always apply" switch.
+//   3. The bar: "Row group · N rows", an "Ask / Auto apply" switch, ✕. Ask: "Apply to the other N rows?" —
+//      "K rows lose a bay (B bays)." when bays would drop — Apply and Skip, with a live preview (dropped
+//      bays red, skipped rows amber). Auto apply: at once. Several rows edited the same way are applied
+//      to the rest; a levels change is replayed too.
 //   4. Skipped rows name their reason: a column on an upright, an overlap, a wall, a zone, an aisle
 //      under the travel width, uprights don't line up (wall rows).
-//   5. One undo step per apply; Always apply folds the edit and its apply into one step.
+//   5. One undo step per apply; Auto apply folds the edit and its apply into one step.
 // On the hand-check layout (realLayout.fixture.js): horizontal rows as saved, vertical rows on the
 // layout turned 90° (x and y swapped — the same rows mirrored); rectangle, L and T.
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
@@ -26,8 +28,9 @@ import { rackFootprint } from '../../generate/columnCheck'
 import { rebuildAisles } from '../../utils/aisleRebuild'
 import { serializeScene, deserializeScene } from '../../utils/saveLoad'
 import * as RG from '../../utils/rowGroup'
-import { useRowGroup, installRowGroupWatcher, flushRowGroupWatcher, clearGroup, toggleRowOf, addRowsInBox, addRowOf, applyPending, dismissPending, groupRowsNow } from '../../utils/rowGroupTool'
+import { useRowGroup, installRowGroupWatcher, flushRowGroupWatcher, clearGroup, toggleRowOf, addRowsInBox, addRowOf, applyPending, dismissPending, groupRowsNow, ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupBox } from '../../utils/rowGroupTool'
 import { usePlacement, startPlacement, cancelPlacement } from '../../utils/placement'
+import { TOOLS } from '../../constants'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
 const mem = new Map()
@@ -112,42 +115,43 @@ const bayCount = (k) => racksOf(k).reduce((t, o) => t + o.beams.length, 0)
 
 describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the hand-check layout', (_, vert) => {
   /* ── 1. picking ── */
-  it('RG-pick: a box adds every row it touches; a click adds a row, a second click takes it out; "+ Same row in other sections" adds the row in every section; the group stays until ✕', async () => {
+  it('RG-pick: the Row group tool — a box adds every row it touches and the tool goes back to Select; with the tool again a click toggles one row and Select is back; the bar shows "Row group · N rows", Ask / Auto apply and ✕ — and none of the old buttons', async () => {
     load(filled(vert))
-    useRowGroup.getState().setPicking(true)
-    expect(addRowsInBox(runBox(vert, ...SEC4))).toBe(14)
+    const tool = () => store.getState().activeTool
+    const box = (b) => { store.getState().setActiveTool(ROW_GROUP_TOOL); startGroupBox({ x: b.x, y: b.y }); moveGroupBox({ x: b.x + b.w, y: b.y + b.h }); return commitGroupBox(store, true, TOOLS.SELECT) }
+    const click = (id) => { store.getState().setActiveTool(ROW_GROUP_TOOL); const f = rackFootprint(get(id)); startGroupBox({ x: f.x + f.w / 2, y: f.y + f.h / 2 }, id); return commitGroupBox(store, false, TOOLS.SELECT) }
+    expect(box(runBox(vert, ...SEC4))).toBe(14)
+    expect(tool()).toBe(TOOLS.SELECT)
     expect(st().keys).toEqual(expect.arrayContaining([...sectionKeys(4), key(3, 14)]))
     expect(st().keys).toHaveLength(14)
     const r = pairOf(key(2, 7))
-    expect(toggleRowOf(r.id)).toBe(true)
+    expect(click(r.id)).toBe(1)
+    expect(tool()).toBe(TOOLS.SELECT)
     expect(st().keys).toContain(key(2, 7))
-    expect(toggleRowOf(r.id)).toBe(true)
+    expect(click(r.id)).toBe(1)
     expect(st().keys).not.toContain(key(2, 7))
-    // the bar while grouped: the count, Pick rows (pressed while picking), ✕
-    let html = render()
-    expect(html).toContain('Row group · 14 rows')
-    expect(html).toContain('aria-pressed="true"')
-    expect(html).toContain('aria-label="Clear the row group"')
-    clearGroup()
-    expect(st()).toMatchObject({ keys: [], picking: false, pending: null })
-    // with one rack selected: + This row / + Same row in other sections
+    // a second box adds to the group
+    expect(box(runBox(vert, -120, -15))).toBeGreaterThan(5)
+    expect(st().keys.length).toBeGreaterThan(14)
+    // the bar: the count, one switch, ✕ — no + This row / + Same row in other sections / Pick rows, even with a rack selected
     store.setState({ selectedIds: [r.id] })
-    html = render()
-    expect(html).toContain('aria-label="Add this row to the group"')
-    expect(html).toContain('aria-label="Same row in other sections"')
-    expect(addRowOf(r.id, { otherSections: true })).toBe(4)
-    expect([...st().keys].sort()).toEqual([key(1, 7), key(2, 7), key(3, 7), key(4, 7)].sort())
+    const html = render()
+    expect(html).toMatch(/Row group · \d+ rows/)
+    expect(html).toContain('role="switch" aria-checked="false" aria-label="Auto apply"')
+    expect(html).toMatch(/>Ask<\/span><span[^>]*>Auto apply</)
+    expect(html).toContain('aria-label="Clear the row group"')
+    expect(html).not.toMatch(/This row|Same row in other sections|Pick rows|Always apply/)
     store.setState({ selectedIds: [] })
-    // the canvas: a click toggles while picking, a box adds rows
-    const ci = readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')
-    expect(ci).toMatch(/if \(evt\.button === 0 && useRowGroup\.getState\(\)\.picking\) \{/)
-    expect(ci).toMatch(/toggleRowOf\(pickId\)/)
-    // picking takes the press before a selected rack's handles and the building's walls (a box may start on a wall)
-    const down = ci.slice(ci.indexOf('const onStageMouseDown'))
-    expect(down.indexOf('useRowGroup.getState().picking')).toBeGreaterThan(0)
-    expect(down.indexOf('useRowGroup.getState().picking')).toBeLessThan(down.indexOf('handleHitTest(selected'))
-    expect(down.indexOf('useRowGroup.getState().picking')).toBeLessThan(down.indexOf('fpWallHitTest('))
-    expect(ci).toMatch(/addRowsInBox\(\{ x: r\.x, y: r\.y, w: r\.width, h: r\.height \}\)/)
+    clearGroup()
+    expect(st()).toMatchObject({ keys: [], pending: null, drag: null })
+    // the wiring: the toolbar button beside Fill racking, the canvas routing, Esc leaving the tool
+    const tb = readFileSync('src/components/LeftPanel/FloatingToolbar.jsx', 'utf8')
+    expect(tb.indexOf("label:'Row group'")).toBeGreaterThan(tb.indexOf("label:'Fill racking'"))
+    const c2 = readFileSync('src/canvas2/Canvas2.jsx', 'utf8')
+    expect(c2).toMatch(/const grouping = !measuring && activeTool === ROW_GROUP_TOOL/)
+    expect(c2).toMatch(/commitGroupBox\(useCanvasStore, moved, TOOLS\.SELECT\)/)
+    expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/activeTool === ROW_GROUP_TOOL\) \{ cancelGroupBox\(\); useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); return \}/)
+    expect(readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')).not.toMatch(/rowGroupTool|picking\)/)
   })
 
   /* ── 2. the bay replay — worked example a ── */
@@ -330,22 +334,71 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
   })
 
   /* ── the rules around an action ── */
-  it('RG-multi: one action touching two group rows (a two-row move, a select-all delete) is not replayed — the bar says why; nothing pending', async () => {
+  it('RG-multi: one action changing several group rows the same way is applied to the rest — two rows moved the same 3" across → "Apply to the other 11 rows? 1 skipped." (the wall row against the wall); select-all + Delete deletes every row, so nothing is left to offer', async () => {
     load(filled(vert))
     addRowsInBox(runBox(vert, ...SEC4))
+    const s0 = RG.geom(pairOf(key(4, 11))).s0
     store.getState().moveObjects([...rows().get(key(4, 8)).ids, ...rows().get(key(4, 9)).ids], vert ? GS / 4 : 0, vert ? 0 : GS / 4); await settle()
-    expect(st().pending).toBe(null)
-    expect(st().message).toBe('This change touches 2 rows in the group, so it isn\'t applied to the others.')
+    // row 7 keeps the column already on its upright (the move adds none); section 3's row 14 would pass the wall
+    expect(st().pending.summary.text).toBe('Apply to the other 11 rows? 1 skipped.')
+    expect(st().pending.summary.skipped).toEqual([{ key: key(3, 14), reason: 'a wall' }])
+    applyPending(); await settle()
+    expect(RG.geom(pairOf(key(4, 11))).s0 - s0).toBeCloseTo(GS / 4, 6)
     store.getState().selectAll(); store.getState().deleteSelected(); await settle()
-    expect(st().pending).toBe(null)
-    expect(st().message).toMatch(/^This change touches \d+ rows in the group/)
+    expect(st()).toMatchObject({ pending: null, message: null })
   })
 
-  it('RG-always: Always apply applies at once, folded into the edit\'s own history entry — one Ctrl+Z undoes the edit and its apply together; the switch is remembered', async () => {
+  it('RG-bayclick: a bay clicked in one row, changed; then a bay clicked in another row, changed — the second edit is offered too (a bay click is selection, not an edit)', async () => {
+    load(filled(vert))
+    addRowsInBox(runBox(vert, ...SEC4))
+    const r7 = pairOf(key(4, 7)).id, r8 = pairOf(key(4, 8)).id
+    store.getState().selectObject(r7); store.getState().updateObject(r7, { activeBayIdx: 4 })
+    store.getState().commitObjectUpdate(r7, Panel.changeBayUpdate(get(r7), 4, 84, GS)); await settle()
+    expect(st().pending.summary.text).toBe('Apply to the other 11 rows? 2 skipped.')
+    dismissPending()
+    store.getState().selectObject(r8); store.getState().updateObject(r8, { activeBayIdx: 2 })
+    expect(get(r7).activeBayIdx).toBe(null)                                     // the first row's click cleared, with no history entry
+    store.getState().commitObjectUpdate(r8, Panel.changeBayUpdate(get(r8), 2, 84, GS)); await settle()
+    expect(st().message).toBe(null)
+    expect(st().pending.summary.text).toMatch(/^Apply to the other \d+ rows\?/)
+    expect(st().pending.edit.source).toBe(key(4, 8))
+  })
+
+  it('RG-same-edit: the same bay changed on rows 7 and 8 at once (a multi-bay selection) → "Apply to the other 10 rows? 2 skipped."; Apply gives every other row that bay', async () => {
+    load(filled(vert))
+    addRowsInBox(runBox(vert, ...SEC4))
+    store.setState({ activeBaySelection: [{ objId: pairOf(key(4, 7)).id, bayIdx: 4 }, { objId: pairOf(key(4, 8)).id, bayIdx: 4 }] }); store.getState().changeSelectedBaysBeam(84); await settle()
+    expect(st().pending.summary.text).toBe('Apply to the other 10 rows? 2 skipped.')
+    expect([...st().pending.edit.sources].sort()).toEqual([key(4, 7), key(4, 8)].sort())
+    applyPending(); await settle()
+    for (const i of [9, 10, 11, 12, 13]) expect(pairOf(key(4, i)).beams[4]).toBe(84)
+    expect(racksOf(key(4, 6)).find(o => o.type === 'rack_row').beams[4]).toBe(84)
+  })
+
+  it('RG-levels: levels 4 → 5 on row 7 → "Apply to the other 13 rows?" → every group row at 5 levels, one undo step; a depth change is still not replayed', async () => {
+    load(filled(vert))
+    addRowsInBox(runBox(vert, ...SEC4))
+    const before = strip(objs())
+    store.getState().commitObjectUpdate(pairOf(key(4, 7)).id, { levels: 5 }); await settle()
+    expect(st().pending.summary.text).toBe('Apply to the other 13 rows?')
+    const h = hist()
+    applyPending(); await settle()
+    expect(hist()).toBe(h + 1)
+    for (const k of st().keys) for (const o of racksOf(k)) expect(o.levels).toBe(5)
+    expect(beamRacks(objs()).filter(o => !st().keys.some(k => rows().get(k).ids.includes(o.id))).every(o => o.levels === before.find(b => b.id === o.id).levels)).toBe(true)
+    store.getState().undo()
+    expect(racksOf(key(4, 9)).every(o => o.levels === before.find(b => b.id === o.id).levels)).toBe(true)
+    store.getState().commitObjectUpdate(pairOf(key(4, 9)).id, { depthIn: 48 }); await settle()
+    expect(st().pending).toBe(null)
+    expect(st().message).toBe('Not applied to the other rows: a change of depth or kind isn\'t replayed.')
+  })
+
+  it('RG-always: Auto apply applies at once, folded into the edit\'s own history entry — one Ctrl+Z undoes the edit and its apply together; the switch is remembered', async () => {
     load(filled(vert))
     addRowsInBox(runBox(vert, ...SEC4))
     useRowGroup.getState().setAlwaysApply(true)
     expect(localStorage.getItem('trace.rowGroup.always')).toBe('1')
+    expect(render()).toContain('role="switch" aria-checked="true" aria-label="Auto apply"')
     const before = strip(objs()), h = hist()
     await changeBeam(pairOf(key(4, 7)), 4, 84)
     expect(st().pending).toBe(null)
@@ -467,7 +520,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, plac
   }
   const B5 = [96, 96, 96, 96, 96]
   const setup = (...extra) => { load(rebuildAisles([fpObj(), ...extra], newId).objects); clearGroup() }
-  const groupOf = (...ids) => { useRowGroup.getState().setPicking(true); for (const id of ids) toggleRowOf(id); useRowGroup.getState().setPicking(false) }
+  const groupOf = (...ids) => { for (const id of ids) toggleRowOf(id) }
   const moveAcross = async (id, dFt) => { store.getState().moveObjects(rows().get(RG.rowOfRack(rows(), id)).ids, vert ? dFt * GS : 0, vert ? 0 : dFt * GS); await settle() }
   const reasonOf = (id) => st().pending.plan.targets.find(t => t.key === RG.rowOfRack(rows(), id))
   const across0 = (id) => RG.geom(get(id)).s0 / GS
@@ -567,36 +620,41 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, plac
     expect(objs().find(o => o.pieceOf === 'B2').beams).toEqual([84, 96])
   })
 
-  it('RG-two-rows: an edit to two group rows at once is not replayed on the third', async () => {
+  it('RG-two-rows: two group rows given the same bay change at once → the third gets it; given different changes → not replayed, the bar says so', async () => {
     setup(mk('A', 20, 10, B5), mk('B', 20, 40, B5), mk('E', 20, 70, B5))
     groupOf('A', 'B', 'E')
     store.setState({ activeBaySelection: [{ objId: 'A', bayIdx: 1 }, { objId: 'B', bayIdx: 1 }] }); store.getState().changeSelectedBaysBeam(84); await settle()
+    expect(st().pending.summary.text).toBe('Apply to the other 1 row?')
+    applyPending(); await settle()
+    expect(get('E').beams).toEqual([96, 84, 96, 96, 96])
+    setup(mk('A', 20, 10, B5), mk('B', 20, 40, B5), mk('E', 20, 70, B5))
+    groupOf('A', 'B', 'E')
+    store.setState({ activeBaySelection: [{ objId: 'A', bayIdx: 1 }, { objId: 'B', bayIdx: 2 }] }); store.getState().changeSelectedBaysBeam(84); await settle()
     expect(st().pending).toBe(null)
-    expect(st().message).toBe('This change touches 2 rows in the group, so it isn\'t applied to the others.')
+    expect(st().message).toBe('These 2 rows were changed in different ways, so the change isn\'t applied to the others.')
     expect(get('E').beams).toEqual(B5)
   })
 })
 
 /* ── the wiring ── */
 describe('RG-wire', () => {
-  it('RG-panel: a single and a double row\'s panel offer "+ Row group" and "+ Same row in other sections" — and no Match bays', () => {
+  it('RG-panel: a single and a double row\'s panel have no Row group buttons (the tool picks rows) and no Match bays', () => {
     load(filled(false))
     const html = (o) => { Object.assign(store.getInitialState(), store.getState()); return renderToStaticMarkup(createElement(Panel.RackRowPanel, { obj: o })) }
     for (const o of [objs().find(r => r.type === 'rack_row'), objs().find(r => r.type === 'rack_double_row')]) {
       const h = html(o)
-      expect(h).toContain('aria-label="Add this row to the row group"')
-      expect(h).toContain('aria-label="Same row in other sections"')
-      expect(h).not.toMatch(/Match bays|Apply my changes/)
+      expect(h).toContain('Total length')
+      expect(h).not.toMatch(/Row group|Same row in other sections|Match bays|Apply my changes/)
     }
   })
 
-  it('RG-wire: the app installs the Row group watcher; the canvas shows its bar and outlines; Esc ends picking, then clears the group; the section-copy modules are gone', () => {
+  it('RG-wire: the app installs the Row group watcher; the canvas shows its bar and outlines; Esc leaves the tool, then clears the group; the section-copy modules are gone', () => {
     const src = (p) => readFileSync(p, 'utf8')
     expect(src('src/App.jsx')).toMatch(/installRowGroupWatcher\(/)
     expect(src('src/canvas2/Canvas2.jsx')).toMatch(/<RowGroupPreview/)
     expect(src('src/canvas2/Canvas2.jsx')).toMatch(/<RowGroupBar/)
     const kb = src('src/hooks/useKeyboardShortcuts.js')
-    expect(kb).toMatch(/if \(g\.picking\) \{ g\.setPicking\(false\); return \}/)
+    expect(kb).toMatch(/activeTool === ROW_GROUP_TOOL\)/)
     expect(kb).toMatch(/if \(g\.keys\.length \|\| g\.pending\) \{ clearGroup\(\); return \}/)
     expect(src('src/utils/rackingAreaTool.js')).toMatch(/import \{ skipNextAction \} from '\.\/rowGroupTool'/)
     for (const f of ['src/utils/copyPrompt.js', 'src/utils/sectionCopy.js', 'src/utils/rowEdits.js', 'src/utils/syncSection.js', 'src/canvas2/CopyNote.jsx']) expect(existsSync(f)).toBe(false)

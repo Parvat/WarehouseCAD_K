@@ -120,12 +120,19 @@ export function sameRowOtherSections(objects, key, gridSize = 40) {
 /* ── what the edit was ────────────────────────────────────────────────────── */
 
 const GEOM_KEYS = ['x', 'y', 'width', 'height', 'rotation', 'beams']
-const sameRack = (a, b) => JSON.stringify(a) === JSON.stringify(b)
-const sameExceptGeom = (a, b) => { const strip = (o) => { const c = { ...o }; for (const k of [...GEOM_KEYS, 'activeBayIdx', 'pieceOf', 'genRunFt', 'genCrossFt', 'id', 'flueSpaceIn']) delete c[k]; return JSON.stringify(c) }; return strip(a) === strip(b) }
+/* a clicked bay's highlight (activeBayIdx / activeTowerIdx) is selection state kept on the rack and written
+   without a history entry — clicking a bay in another row clears it on this one — so it is never an edit */
+const UI_KEYS = ['activeBayIdx', 'activeTowerIdx']
+const without = (o, keys) => { const c = { ...o }; for (const k of keys) delete c[k]; return JSON.stringify(c) }
+const sameRack = (a, b) => without(a, UI_KEYS) === without(b, UI_KEYS)
+const sameExceptGeom = (a, b) => without(a, [...GEOM_KEYS, ...UI_KEYS, 'pieceOf', 'genRunFt', 'genCrossFt', 'id', 'flueSpaceIn']) === without(b, [...GEOM_KEYS, ...UI_KEYS, 'pieceOf', 'genRunFt', 'genCrossFt', 'id', 'flueSpaceIn'])
+/** Only the levels differ (geometry, bays, depth, kind the same). */
+const onlyLevels = (a, b) => a.levels !== b.levels && without(a, [...UI_KEYS, 'levels']) === without(b, [...UI_KEYS, 'levels'])
 
 /** What one action did to the group. `groupKeys` are the group's row keys BEFORE the action.
  *  Returns { kind: 'none' } | { kind: 'multi', count } | { kind: 'other', why } |
- *  { kind: 'bays'|'across'|'delete'|'add', source, ... } (source = the edited row's key before). */
+ *  { kind: 'bays'|'across'|'delete'|'add'|'levels', source, ... } (source = the edited row's key before;
+ *  `sources` = every edited row's key when one action changed several group rows the same way). */
 export function classifyEdit(before, after, groupKeys, gridSize = 40) {
   const rowsB = rowsOf(before, gridSize), rowsA = rowsOf(after, gridSize)
   const B = new Map(before.filter(isRowRack).map(o => [o.id, o])), A = new Map(after.filter(isRowRack).map(o => [o.id, o]))
@@ -135,7 +142,7 @@ export function classifyEdit(before, after, groupKeys, gridSize = 40) {
   // racks of group rows the action touched (a split piece belongs to the row of the rack it came from)
   const keys = groupKeys.map(k => resolveKey(rowsB, k)).filter(Boolean)
   const touched = keys.filter(k => rowsB.get(k).ids.some(id => changed.has(id)) || added.some(o => o.pieceOf && rowsB.get(k).ids.includes(o.pieceOf)))
-  if (touched.length > 1) return { kind: 'multi', count: touched.length }
+  if (touched.length > 1) return sameEditOnAll(before, after, touched, gridSize)
   if (!touched.length) {
     // a new row next to a group row
     const fresh = added.filter(o => !o.pieceOf)
@@ -160,8 +167,13 @@ export function classifyEdit(before, after, groupKeys, gridSize = 40) {
   const pairs = srcB.map(r => ({ r, s: succ(r) }))
   if (pairs.some(p => !p.s.length) || added.some(o => !o.pieceOf && !srcB.some(r => r.id === o.pieceOf))) return { kind: 'other', source, why: 'that kind of change' }
   const gB = (o) => geom(o)
-  // move across: every rack shifted the same across, nothing else changed
   const one = pairs.every(p => p.s.length === 1)
+  // levels: only the levels changed, every rack of the row to the same number
+  if (one && pairs.some(p => onlyLevels(p.r, p.s[0])) && pairs.every(p => p.r.levels === p.s[0].levels || onlyLevels(p.r, p.s[0]))) {
+    const L = pairs.find(p => onlyLevels(p.r, p.s[0])).s[0].levels
+    if (pairs.every(p => p.s[0].levels === L)) return { kind: 'levels', source, levels: L }
+  }
+  // move across: every rack shifted the same across, nothing else changed
   // the delta across is centre to centre: a live-flue drag that narrows the rack (12" → 9") moves it exactly the drag
   if (one) {
     const ds = pairs.map(p => { const a = gB(p.r), b = gB(p.s[0]); return { dS: (b.s0 + b.s1 - a.s0 - a.s1) / 2, dR: b.r0 - a.r0, same: JSON.stringify(a.beams) === JSON.stringify(b.beams) && sameExceptGeom(p.r, p.s[0]) } })
@@ -174,7 +186,7 @@ export function classifyEdit(before, after, groupKeys, gridSize = 40) {
   for (const { r, s } of pairs) {
     const a = gB(r), up = upPxOf(r, gridSize), U = uprightsOf(a.r0, a.beams, up, gridSize)
     if (s.some(o => Math.abs(gB(o).s0 - a.s0) > EPS || Math.abs(gB(o).s1 - a.s1) > EPS)) return { kind: 'other', source, why: 'a change across with its bays' }
-    if (s.some(o => !sameExceptGeom(r, o))) return { kind: 'other', source, why: 'a change of levels, depth or kind' }
+    if (s.some(o => !sameExceptGeom(r, o))) return { kind: 'other', source, why: 'a change of depth or kind' }
     if (s.length === 1) {
       const b = gB(s[0]), V = uprightsOf(b.r0, b.beams, up, gridSize), n = a.beams.length, m = b.beams.length
       if (m === n && Math.abs(V[0] - U[0]) < tol) { U.forEach((u, i) => map.push([u, V[i]])); continue }
@@ -196,6 +208,33 @@ export function classifyEdit(before, after, groupKeys, gridSize = 40) {
   }
   if (!deleted.length && !appended.length && map.every(([u, v]) => Math.abs(u - v) < EPS)) return { kind: 'none' }
   return { kind: 'bays', source, map, deleted, appended }
+}
+
+/** One action changed several group rows: if each was changed the same way — the same delta across, the
+ *  same levels, all deleted, or bays that replaying the first row's edit on it reproduces exactly — it is
+ *  that one edit with every changed row a source; otherwise { kind: 'multi' } (not replayed). */
+function sameEditOnAll(before, after, touched, gridSize) {
+  const multi = { kind: 'multi', count: touched.length }
+  const edits = touched.map(k => classifyEdit(before, after, [k], gridSize))
+  const e0 = edits[0]
+  if (!['bays', 'across', 'delete', 'levels'].includes(e0.kind) || edits.some(e => e.kind !== e0.kind)) return multi
+  const same = { ...e0, sources: touched }
+  if (e0.kind === 'delete') return same
+  if (e0.kind === 'levels') return edits.every(e => e.levels === e0.levels) ? same : multi
+  if (e0.kind === 'across') return edits.every(e => Math.abs(e.delta - e0.delta) < EPS) ? same : multi
+  // bays: the first row's edit replayed on each other changed row as it was must give what the user made
+  const rowsB = rowsOf(before, gridSize), rowsA = rowsOf(after, gridSize)
+  const sig = (racks) => racks.map(o => { const g = geom(o); return Math.round(g.r0 * 100) + ':' + g.beams.join('/') }).sort().join('|')
+  for (const k of touched.slice(1)) {
+    const was = new Set(rowsB.get(k).ids)
+    const nowIds = new Set((rowsA.get(resolveKey(rowsA, k)) || { ids: [] }).ids)
+    const mixed = [...after.filter(o => !nowIds.has(o.id)), ...before.filter(o => was.has(o.id))]
+    const t = planReplay(mixed, e0, [touched[0], k], { gridSize, newId: () => 'chk' + Math.random() }).targets.find(x => x.key === resolveKey(rowsOf(mixed, gridSize), k))
+    if (!t || t.status !== 'apply' || t.dropped) return multi
+    const out = applyReplay(mixed, { targets: [t] }).filter(o => isRowRack(o) && (was.has(o.id) || (o.pieceOf && was.has(o.pieceOf))))
+    if (sig(out) !== sig([...nowIds].map(id => after.find(o => o.id === id)))) return multi
+  }
+  return same
 }
 
 /* ── the replay on one target row ─────────────────────────────────────────── */
@@ -225,14 +264,15 @@ function floorAlong(poly, vert, s0, s1, lo, hi) {
  *  removeIds, addRacks, droppedBays: [world rects] }] }. */
 export function planReplay(after, edit, groupKeys, ctx) {
   const { gridSize = 40, travelFt = 8, newId = () => Math.random().toString(36).slice(2, 12) } = ctx
-  if (!edit || !['bays', 'across', 'delete', 'add'].includes(edit.kind)) return { targets: [] }
+  if (!edit || !['bays', 'across', 'delete', 'add', 'levels'].includes(edit.kind)) return { targets: [] }
   const rows = rowsOf(after, gridSize)
   const byId = new Map(after.map(o => [o.id, o]))
   const T = travelFt * gridSize - 1e-3 * gridSize
   const tol = UP_TOL_FT * gridSize
   const srcKeyNow = edit.kind === 'delete' ? null : resolveKey(rows, edit.source)
   const targets = []
-  const keysNow = groupKeys.map(k => resolveKey(rows, k)).filter(Boolean).filter(k => k !== srcKeyNow && !(edit.kind === 'delete' && sameRowKey(edit.source, rows.get(k))))
+  const sourcesNow = new Set((edit.sources || []).map(k => resolveKey(rows, k)).filter(Boolean))
+  const keysNow = groupKeys.map(k => resolveKey(rows, k)).filter(Boolean).filter(k => k !== srcKeyNow && !sourcesNow.has(k) && !(edit.kind === 'delete' && sameRowKey(edit.source, rows.get(k))))
   const zones = after.filter(o => typeof o.type === 'string' && o.type.startsWith('zone_')).map(z => ({ x: z.x, y: z.y, w: z.width, h: z.height }))
   const columns = ctx.columns || []
   const polyOf = (o) => (ctx.poly && ctx.poly[o.parentId]) || null
@@ -247,17 +287,32 @@ export function planReplay(after, edit, groupKeys, ctx) {
     }
     return null
   }
+  /** The columns standing on any upright frame of rack `o` (indexes into `columns`). */
+  const columnsOnUprights = (o) => {
+    const g = geom(o), up = upPxOf(o, gridSize), out = new Set()
+    for (const u of uprightsOf(g.r0, g.beams, up, gridSize)) {
+      const box = g.vert ? { x: g.s0, y: u, w: g.s1 - g.s0, h: up } : { x: u, y: g.s0, w: up, h: g.s1 - g.s0 }
+      columns.forEach((c, i) => { if (meets(c, box)) out.add(i) })
+    }
+    return out
+  }
   const others = (excludeIds) => after.filter(o => isRowRack(o) && !excludeIds.has(o.id))
 
   for (const key of keysNow) {
     const row = rows.get(key), mine = row.ids.map(id => byId.get(id))
     const mineIds = new Set(row.ids)
     if (edit.kind === 'delete') { targets.push({ key, status: 'apply', removeIds: [...mineIds], racks: [], addRacks: [], dropped: 0 }); continue }
+    if (edit.kind === 'levels') {
+      const racks = mine.filter(o => o.levels !== edit.levels).map(o => ({ ...o, levels: edit.levels }))
+      targets.push(racks.length ? { key, status: 'apply', racks, removeIds: [], addRacks: [], dropped: 0 } : { key, status: 'none' })
+      continue
+    }
 
     if (edit.kind === 'across') {
       const moved = mine.map(o => movedAcross(o, edit.delta))
       const why = acrossProblem(moved, others(mineIds), zones, insideFloor, gridSize, T)
-        || (moved.map(o => columnOnNewUpright(o, null)).find(u => u != null) != null ? 'a column on an upright' : null)
+        // a column the move puts on an upright — one already standing on it before the move is not new
+        || (moved.some((o, i) => { const was = columnsOnUprights(mine[i]); return [...columnsOnUprights(o)].some(c => !was.has(c)) }) ? 'a column on an upright' : null)
       targets.push(why ? { key, status: 'skip', reason: why } : { key, status: 'apply', racks: moved, removeIds: [], addRacks: [], dropped: 0 })
       continue
     }

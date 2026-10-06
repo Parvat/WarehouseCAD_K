@@ -1,18 +1,18 @@
-// rowGroupTool.js — the Row group on the store: the group, the picking, the watcher that reads each action,
+// rowGroupTool.js — the Row group on the store: the group, its tool, the watcher that reads each action,
 // and the bar's Apply (utils/rowGroup.js plans; canvas2/RowGroupBar.jsx and RowGroupPreview.jsx show it).
 //
 //   - The group is presentation state: it lives here, never in the canvas store, never in a saved file.
 //     It stays outlined until Esc or ✕. A row deleted outside the group drops out of it.
-//   - Picking: while `picking`, a click on a rack adds or removes its row and a box adds every row it
-//     touches (useCanvasInteraction.js). "+ Same row in other sections" adds a selected row and its
-//     namesakes.
-//   - An action (a new history entry following the one seen before) that edits exactly one group row is
-//     planned on the others: the bar asks "Apply to the other N rows?" with a live preview; Apply writes
-//     it as ONE history entry. With "Always apply" it is applied at once, folded into the action's own
+//   - The Row group tool (ROW_GROUP_TOOL, next to Fill racking): a box adds every row it touches, a click
+//     on a row adds or removes it — one action, then the tool goes back to Select (canvas2/Canvas2.jsx).
+//   - An action (a new history entry following the one seen before) that edits a group row is planned on
+//     the others. "Ask": the bar asks "Apply to the other N rows?" with a live preview; Apply writes it as
+//     ONE history entry, Skip leaves it. "Auto apply": applied at once, folded into the action's own
 //     history entry — one Ctrl+Z undoes the edit and its apply together.
-//   - An action editing two or more group rows is not replayed (the bar says so); undo / redo clear a
-//     pending apply. A change that isn't the user's edit (a racking area's refit, a join) is passed over:
-//     the caller calls skipNextAction() first.
+//   - An action editing several group rows the same way is applied to the rest (every edited row is a
+//     source); edits that differ are not replayed (the bar says so). Undo / redo end a pending apply. A
+//     change that isn't the user's edit (a racking area's refit, a join, Generate) is passed over: the
+//     caller calls skipNextAction() (Generate: clearGroup()) first.
 
 import { create } from 'zustand'
 import { rowsOf, resolveKey, rowOfRack, rowsInBox, sameRowOtherSections, classifyEdit, planReplay, applyReplay, planSummary } from './rowGroup'
@@ -21,18 +21,19 @@ import { innerOutline } from './floorGeom'
 import { rebuildAisles } from './aisleRebuild'
 import { autoSave, serializeScene } from './saveLoad'
 
-const LS_KEY = 'trace.rowGroup.always'
+/** The Row group tool's id (the store's activeTool), beside Fill racking's. */
+export const ROW_GROUP_TOOL = 'row_group'
+const LS_KEY = 'trace.rowGroup.always'   // "Auto apply" (on) or "Ask" (off), per browser
 const readAlways = () => { try { return localStorage.getItem(LS_KEY) === '1' } catch { return false } }
 
 export const useRowGroup = create((set) => ({
   keys: [],              // the group's rows (utils/rowGroup.js keys)
-  picking: false,
+  drag: null,            // the Row group tool's box being dragged: { from, to } (world)
   pending: null,         // { plan, summary, edit } — waiting for Apply
   message: null,         // a line for the bar ("Applied to 11 rows", "touches 2 rows …")
   hover: false,
   alwaysApply: readAlways(),
   setAlwaysApply: (on) => { try { localStorage.setItem(LS_KEY, on ? '1' : '0') } catch { /* private window */ } set({ alwaysApply: !!on }) },
-  setPicking: (on) => set({ picking: !!on }),
   setHover: (h) => set({ hover: !!h }),
 }))
 
@@ -48,10 +49,10 @@ function contextFor(objects, newId) {
 }
 
 /* ── the group ── */
-export function clearGroup() { useRowGroup.setState({ keys: [], picking: false, pending: null, message: null, hover: false }) }
+export function clearGroup() { useRowGroup.setState({ keys: [], drag: null, pending: null, message: null, hover: false }) }
 const objectsNow = () => (watch ? watch.store.getState().objects : [])
 function setKeys(keys) { useRowGroup.setState({ keys: [...new Set(keys)], pending: null }) }
-/** A click while picking: the rack's row in or out of the group. */
+/** A click with the tool: the rack's row in or out of the group. */
 export function toggleRowOf(rackId) {
   const objects = objectsNow(), rows = rowsOf(objects, gs()), key = rowOfRack(rows, rackId)
   if (!key) return false
@@ -59,9 +60,10 @@ export function toggleRowOf(rackId) {
   setKeys(i >= 0 ? keys.filter((_, j) => j !== i) : [...keys, key])
   return true
 }
-/** A box while picking: every row it touches joins the group. */
+/** A box with the tool: every row it touches joins the group. */
 export function addRowsInBox(box) { const add = rowsInBox(objectsNow(), box, gs()); if (add.length) setKeys([...useRowGroup.getState().keys, ...add]); return add.length }
-/** "+ This row" / "+ Same row in other sections" for a selected rack. */
+/** A rack's row (and, with otherSections, the rows with its row number in the building's other sections)
+ *  into the group — no button any more; for scripts and tests that build a group directly. */
 export function addRowOf(rackId, { otherSections = false } = {}) {
   const objects = objectsNow(), rows = rowsOf(objects, gs()), key = rowOfRack(rows, rackId)
   if (!key) return 0
@@ -69,6 +71,25 @@ export function addRowOf(rackId, { otherSections = false } = {}) {
   setKeys([...useRowGroup.getState().keys, ...add])
   return add.length
 }
+/* ── the tool: one box or one click, then back to Select ── */
+/** Press: the box starts here; `hitRackId` is the rack under the press, if any (a click toggles its row). */
+export function startGroupBox(world, hitRackId = null) { useRowGroup.setState({ drag: { from: world, to: world, hit: hitRackId } }) }
+export function moveGroupBox(world) { const d = useRowGroup.getState().drag; if (d) useRowGroup.setState({ drag: { ...d, to: world } }) }
+/** Release: a box (`moved`) adds the rows it touches; a click toggles the row under it. Either way the tool is
+ *  done and Select is back. Returns the rows added (box) or whether a row was toggled (click). */
+export function commitGroupBox(store, moved, selectTool) {
+  const d = useRowGroup.getState().drag
+  useRowGroup.setState({ drag: null })
+  let out = 0
+  if (d && moved) {
+    const box = { x: Math.min(d.from.x, d.to.x), y: Math.min(d.from.y, d.to.y), w: Math.abs(d.to.x - d.from.x), h: Math.abs(d.to.y - d.from.y) }
+    out = addRowsInBox(box)
+  } else if (d && d.hit) out = toggleRowOf(d.hit) ? 1 : 0
+  if (selectTool) store.getState().setActiveTool(selectTool)
+  return out
+}
+export function cancelGroupBox() { useRowGroup.setState({ drag: null }) }
+
 /** The group's rows as they are now (gone ones left out). */
 export function groupRowsNow(objects = objectsNow()) {
   const rows = rowsOf(objects, gs())
@@ -105,7 +126,7 @@ export function applyPending() {
   useRowGroup.setState({ pending: null, hover: false, message: `Applied to ${p.summary.apply} row${p.summary.apply === 1 ? '' : 's'}${p.summary.skipped.length ? ` · ${p.summary.skipped.length} skipped` : ''}` })
   return true
 }
-/** The bar's ✕ on a pending apply: nothing is applied. */
+/** The bar's Skip on a pending apply: nothing is applied, the edit stays on its own row. */
 export function dismissPending() { useRowGroup.setState({ pending: null, hover: false }) }
 /** The next history entry is not a user's edit (a racking area's refit, a join): pass it over. */
 export function skipNextAction() { if (watch) watch.skipNext = true }
@@ -125,7 +146,7 @@ function settle(before) {
   const edit = classifyEdit(before, after, keys, gs())
   const keep = keys.filter(k => resolveKey(rowsAfter, k))
   if (edit.kind === 'none') { useRowGroup.setState({ keys: keep, pending: null, message: null }); return }
-  if (edit.kind === 'multi') { useRowGroup.setState({ keys: keep, pending: null, message: `This change touches ${edit.count} rows in the group, so it isn't applied to the others.` }); return }
+  if (edit.kind === 'multi') { useRowGroup.setState({ keys: keep, pending: null, message: `These ${edit.count} rows were changed in different ways, so the change isn't applied to the others.` }); return }
   if (edit.kind === 'other') { useRowGroup.setState({ keys: keep, pending: null, message: `Not applied to the other rows: ${edit.why} isn't replayed.` }); return }
   const plan = planReplay(after, edit, keys, contextFor(after, watch.newId))
   const summary = planSummary(plan)
