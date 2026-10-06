@@ -12,8 +12,10 @@
 //      "K rows lose a bay (B bays)." when bays would drop — Apply and Skip, with a live preview (dropped
 //      bays red, skipped rows amber). Auto apply: at once. Several rows edited the same way are applied
 //      to the rest; a levels change is replayed too.
-//   4. Skipped rows name their reason: a column on an upright, an overlap, a wall, a zone, an aisle
-//      under the travel width, uprights don't line up (wall rows).
+//   4. A target gets the same treatment as a hand edit of the source: what Check layout flags after the
+//      apply and didn't before (an overlap, a narrow aisle, no way in, a column on an upright) is a
+//      WARNING — applied, counted on the bar, marked in the preview. Skipped only: uprights that don't
+//      line up, a move through a wall or into a zone, a rack only partly inside a dragged stretch.
 //   5. One undo step per apply; Auto apply folds the edit and its apply into one step.
 // On the hand-check layout (realLayout.fixture.js): horizontal rows as saved, vertical rows on the
 // layout turned 90° (x and y swapped — the same rows mirrored); rectangle, L and T.
@@ -284,6 +286,69 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     for (const i of [1, 2, 3]) expect(RG.geom(pairOf(key(i, 7))).s0).toBeCloseTo(s0.get(i), 6)
   })
 
+  it('RG-together: every row in the group, one moved 3.875\' across → the others move with it: no aisle warnings (rows moving together are judged where they end up), only the two wall rows skipped (they would go through the wall)', async () => {
+    load(filled(vert))
+    addRowsInBox({ x: -1e6, y: -1e6, w: 2e6, h: 2e6 })
+    const n = st().keys.length
+    await moveRow(key(4, 7), 3.875 * GS, 0, vert)
+    const p = st().pending
+    expect(p.summary.text).toBe(`Apply to the other ${n - 3} rows? 2 skipped.`)
+    expect(p.summary.skipped.map(t => t.reason)).toEqual(['a wall', 'a wall'])
+    expect(p.summary.warned).toEqual([])
+    applyPending(); await settle()
+    expect(RG.geom(pairOf(key(1, 7))).s0 - RG.geom(pairOf(key(1, 8))).s0).toBeCloseTo(RG.geom(filled(vert).find(o => o.genSection === 1 && o.rowIndex === 7 && o.type === 'rack_double_row')).s0 - RG.geom(filled(vert).find(o => o.genSection === 1 && o.rowIndex === 8 && o.type === 'rack_double_row')).s0, 6)
+  })
+
+  it('RG-drift: a drag with a snap\'s drift along (1\' across, 0.9\' along) → only the across part is replayed: the others move 1\' across and not at all along', async () => {
+    load(filled(vert))
+    addRowsInBox(runBox(vert, ...SEC4))
+    const g0 = RG.geom(pairOf(key(4, 9)))
+    await moveRow(key(4, 7), GS, 0.9 * GS, vert)
+    expect(st().pending.summary.text).toBe('Apply to the other 12 rows? 1 skipped.')
+    applyPending(); await settle()
+    const g1 = RG.geom(pairOf(key(4, 9)))
+    expect(g1.s0 - g0.s0).toBeCloseTo(GS, 6)
+    expect(g1.r0).toBeCloseTo(g0.r0, 9)
+    expect(RG.geom(pairOf(key(4, 7))).r0 - g0.r0).toBeCloseTo(0.9 * GS, 6)   // the source keeps its own drift
+  })
+
+  it('RG-part: only the pair of the half row 4/6 dragged 1\' across → the racks more than half inside its stretch move (rows 2-5, and row 1\'s wall rack); a row whose rack is only partly inside is skipped with the reason — no rack is split', async () => {
+    load(filled(vert))
+    addRowsInBox(runBox(vert, ...SEC4))
+    const n0 = beamRacks(objs()).length
+    const before = new Map(beamRacks(objs()).map(o => [o.id, RG.geom(o)]))
+    const pr = racksOf(key(4, 6)).find(o => o.type === 'rack_double_row')
+    store.getState().moveObjects([pr.id], vert ? GS : 0, vert ? 0 : GS); await settle()
+    const p = st().pending
+    expect(p.summary.text).toBe('Apply to the other 5 rows? 8 skipped.')
+    expect(new Set(p.summary.skipped.map(t => t.reason))).toEqual(new Set(['a rack only partly inside the stretch that moved']))
+    expect(p.summary.skipped.map(t => t.key).sort()).toEqual([...[7, 8, 9, 10, 11, 12, 13].map(i => key(4, i)), key(3, 14)].sort())
+    applyPending(); await settle()
+    expect(beamRacks(objs()).length).toBe(n0)                                   // nothing split
+    for (const i of [2, 3, 4, 5]) expect(RG.geom(pairOf(key(4, i))).s0 - before.get(pairOf(key(4, i)).id).s0).toBeCloseTo(GS, 6)
+    for (const i of [7, 8, 13]) expect(RG.geom(pairOf(key(4, i))).s0).toBeCloseTo(before.get(pairOf(key(4, i)).id).s0, 9)
+    const single = racksOf(key(4, 6)).find(o => o.type === 'rack_row')
+    expect(RG.geom(single).s0).toBeCloseTo(before.get(single.id).s0, 9)       // the rest of the source row untouched
+  })
+
+  it('RG-warn-bays: bays are no longer dropped at a cross-aisle or a rack along — section 2\'s row 7 given two bays toward section 3: every row takes both, "11 will have warnings" (an overlap), and Check layout reports the overlaps after', async () => {
+    const { checkLayout } = await import('../../utils/layoutCheck')
+    load(filled(vert))
+    addRowsInBox(runBox(vert, -120, -15))
+    const n0 = new Map(sectionKeys(2).map(k => [k, bayCount(k)]))
+    const src = pairOf(key(2, 7))
+    store.getState().commitObjectUpdate(src.id, Panel.addBayUpdate({ ...src, ...Panel.addBayUpdate(src, 96, GS) }, 96, GS)); await settle()
+    const p = st().pending
+    expect(p.summary.text).toBe('Apply to the other 11 rows? 11 will have warnings. 2 skipped.')
+    expect(p.summary.lose).toBe(0)
+    for (const w of p.summary.warned) expect(w.reasons).toEqual(['an overlap'])
+    applyPending(); await settle()
+    for (const k of sectionKeys(2)) expect(bayCount(k)).toBe(n0.get(k) + 2)
+    const overlaps = checkLayout(objs(), { gridSize: GS }).errors.filter(e => e.kind === 'overlap')
+    for (const w of p.summary.warned) expect(overlaps.some(e => e.ids.some(id => rows().get(w.key).ids.includes(id)))).toBe(true)
+    expect(st().message).toBe('Applied to 11 rows · 11 with warnings — see Check layout · 2 skipped')
+  })
+
   it('RG-along: a move along the row is not replayed — the bar says so, nothing pending', async () => {
     load(filled(vert))
     addRowOf(pairOf(key(4, 7)).id, { otherSections: true })
@@ -526,32 +591,39 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, plac
   const across0 = (id) => RG.geom(get(id)).s0 / GS
 
   /* the travel width, exactly: an aisle of 8.0' takes the move, 7.99' does not */
-  it('RG-skip-aisle: B would end 8.0\' from the rack across → applied; 7.99\' → skipped, "an aisle under the travel width"', async () => {
-    const C0 = 40 + DEPTH + 10                                                  // a 10' aisle beyond B
-    for (const [d, status] of [[2, 'apply'], [2.01, 'skip']]) {
+  it('RG-warn-aisle: the travel width is a warning, not a skip — B ends 8.0\' from the rack across → applied, no warning; 7.99\' → applied, "an aisle under the travel width"', async () => {
+    const C0 = 40 + DEPTH + 10                                                  // a 10' aisle beyond B (already under the pick width)
+    for (const [d, warn] of [[2, null], [2.01, 'an aisle under the travel width']]) {
       setup(mk('A', 20, 10, B5), mk('B', 20, 40, B5), mk('C', 20, C0, B5))
       groupOf('A', 'B')
       await moveAcross('A', d)
       const t = reasonOf('B')
-      expect(t.status).toBe(status)
-      if (status === 'skip') expect(t.reason).toBe('an aisle under the travel width')
-      else { applyPending(); await settle(); expect(C0 - (across0('B') + DEPTH)).toBeCloseTo(8, 9) }
+      expect(t.status).toBe('apply')
+      expect(t.warnings || null).toEqual(warn && [warn])
+      expect(st().pending.summary.text).toBe(warn ? 'Apply to the other 1 row? 1 will have warnings.' : 'Apply to the other 1 row?')
+      if (warn) expect(render()).toContain('Warning — Row at')
+      applyPending(); await settle()
+      expect(C0 - (across0('B') + DEPTH)).toBeCloseTo(10 - d, 9)
     }
-    expect(render()).toContain('Skipped — Row at')
   })
 
-  it('RG-skip-overlap / wall / zone / column: each skipped row names its reason; the others still apply', async () => {
-    // overlap: B would land on C
+  it('RG-warn-and-skip: an overlap and a column on an upright are warnings (applied, marked in the preview, reported by Check layout after); a wall and a zone still skip, with the reason', async () => {
+    const { checkLayout } = await import('../../utils/layoutCheck')
+    // overlap: B lands on C — applied, with the warning
     setup(mk('A', 20, 10, B5), mk('B', 20, 40, B5), mk('C', 20, 40 + DEPTH + 10, B5))
     groupOf('A', 'B')
     await moveAcross('A', 11)
-    expect(reasonOf('B')).toMatchObject({ status: 'skip', reason: 'an overlap' })
-    // a wall: B would pass the building's wall
+    expect(reasonOf('B')).toMatchObject({ status: 'apply', warnings: ['an overlap'] })
+    const rects = RG.previewRects(objs(), st().pending.plan, GS)
+    expect(rects.filter(r => r.kind === 'warned').map(r => r.key)).toEqual([expect.stringMatching(/B$/)])
+    applyPending(); await settle()
+    expect(checkLayout(objs(), { gridSize: GS }).errors.some(e => e.kind === 'overlap' && e.ids.includes('B') && e.ids.includes('C'))).toBe(true)
+    // a wall: B would pass the building's wall — skipped
     setup(mk('A', 20, 10, B5), mk('B', 20, 100 - 0.25 - DEPTH - 1, B5))
     groupOf('A', 'B')
     await moveAcross('A', 2)
     expect(reasonOf('B')).toMatchObject({ status: 'skip', reason: 'a wall' })
-    // a zone: B would land on an office; D (no zone) still takes it
+    // a zone: B would land on an office — skipped; D (no zone) still takes it
     const z = at(20, 40 + DEPTH + 1)
     const zone = { id: 'z', type: 'zone_office', parentId: 'fp', x: z.x, y: z.y, width: vert ? 20 * GS : 60 * GS, height: vert ? 60 * GS : 20 * GS }
     setup(mk('A', 20, 10, B5), mk('B', 20, 40, B5), mk('D', 120, 40, B5), zone)
@@ -560,14 +632,20 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, plac
     expect(reasonOf('B')).toMatchObject({ status: 'skip', reason: 'a zone' })
     expect(reasonOf('D').status).toBe('apply')
     expect(st().pending.summary.text).toBe('Apply to the other 1 row? 1 skipped.')
-    // a column: B's first upright would stand on one
+    // a column: B's first upright would stand on one — applied, with the warning
     const c = at(20 + 1.5 / 12, 40 + DEPTH + 1)
     const cg = { id: 'cg', type: 'column_grid', parentId: 'fp', x: c.x, y: c.y, spacingX: [1e6], spacingY: [1e6], columnW: GS, columnH: GS }
     setup(mk('A', 20, 10, B5), mk('B', 20, 40, B5), cg)
     groupOf('A', 'B')
     await moveAcross('A', 2)
-    expect(reasonOf('B')).toMatchObject({ status: 'skip', reason: 'a column on an upright' })
+    expect(reasonOf('B')).toMatchObject({ status: 'apply', warnings: ['a column on an upright'] })
+    expect(render()).toContain('Warning — Row at')
     expect(render()).toContain(': a column on an upright')
+    applyPending(); await settle()
+    expect(checkLayout(objs(), { gridSize: GS }).errors.some(e => e.kind === 'upright' && e.ids.includes('B'))).toBe(true)
+    const pv = readFileSync('src/canvas2/RowGroupPreview.jsx', 'utf8')
+    expect(pv).toMatch(/export const WARNED = '#D35400'/)
+    expect(pv).toMatch(/p\.kind === 'warned' \? rect\(p\.f, p\.key, WARNED, \{ dash: \[10, 3\]/)
   })
 
   it('RG-skip-lineup: a row whose uprights are off the source\'s (4\' along) takes no bay edit — "uprights don\'t line up"; a row beside it that lines up does', async () => {

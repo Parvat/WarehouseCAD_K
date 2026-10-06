@@ -113,6 +113,9 @@ function writeInPlace(objects) {
 }
 const written = (objects, plan) => rebuildAisles(applyReplay(objects, plan), watch.newId).objects
 
+/** The bar's grey line after an apply: "Applied to 11 rows · 3 lost a bay · 2 with warnings · 1 skipped". */
+const resultLine = (s) => `Applied to ${s.apply} row${s.apply === 1 ? '' : 's'}${s.lose ? ` · ${s.lose} lost ${s.bays === s.lose ? 'a bay' : 'bays'}` : ''}${s.warned.length ? ` · ${s.warned.length} with warnings — see Check layout` : ''}${s.skipped.length ? ` · ${s.skipped.length} skipped` : ''}`
+
 /** The bar's Apply: the pending plan written as ONE history entry. */
 export function applyPending() {
   const p = useRowGroup.getState().pending
@@ -123,7 +126,7 @@ export function applyPending() {
   watch.skipNext = true
   watch.store.setState({ objects })
   if (anchor) watch.store.getState().commitObjectUpdate(anchor, {})
-  useRowGroup.setState({ pending: null, hover: false, message: `Applied to ${p.summary.apply} row${p.summary.apply === 1 ? '' : 's'}${p.summary.skipped.length ? ` · ${p.summary.skipped.length} skipped` : ''}` })
+  useRowGroup.setState({ pending: null, hover: false, message: resultLine(p.summary) })
   return true
 }
 /** The bar's Skip on a pending apply: nothing is applied, the edit stays on its own row. */
@@ -154,7 +157,7 @@ function settle(before) {
   if (!summary.apply && !summary.skipped.length) { useRowGroup.setState({ keys: groupKeys, pending: null, message: null }); return }
   if (st.alwaysApply && summary.apply) {
     writeInPlace(written(after, plan))
-    useRowGroup.setState({ keys: edit.kind === 'delete' ? groupRowsNow().map(r => r.key) : groupKeys, pending: null, message: `Applied to ${summary.apply} row${summary.apply === 1 ? '' : 's'}${summary.lose ? ` · ${summary.lose} lost ${summary.bays === summary.lose ? 'a bay' : 'bays'}` : ''}${summary.skipped.length ? ` · ${summary.skipped.length} skipped` : ''}` })
+    useRowGroup.setState({ keys: edit.kind === 'delete' ? groupRowsNow().map(r => r.key) : groupKeys, pending: null, message: resultLine(summary) })
     return
   }
   useRowGroup.setState({ keys: groupKeys, pending: { plan, summary, edit }, message: null })
