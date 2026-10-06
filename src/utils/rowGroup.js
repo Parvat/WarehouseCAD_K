@@ -13,20 +13,21 @@
 //   - bay edit (a beam length, a bay added or deleted): every target upright within ½" of a source
 //     upright goes where that source upright went; uprights past the last such one move with it (their
 //     own bays kept), uprights before the first stay. A bay the source deleted goes where both its
-//     uprights line up; a bay added at an end is added where the target ends at that same upright. A bay
-//     that would go through a wall or a zone is dropped, never squeezed. A target none of whose uprights
-//     line up is skipped;
+//     uprights line up; a bay added at an end is added where the target ends at that same upright. A
+//     target none of whose uprights line up is skipped;
 //   - a move, across or along: the same distance on its dominant axis (a drag of a group row is locked to
 //     that axis, so there is nothing on the other). Part of a row dragged: each target's racks more than
 //     half inside that stretch move; a rack only partly inside it skips that target (a rack is never
-//     split). A target the move would push through a wall or into a zone is skipped;
+//     split);
 //   - delete row: the others deleted; levels: the same levels;
 //   - a row added next to a group row: one next to each other group row, at the same distance across,
 //     over that row's own racks (its own length, gaps and uprights).
-// A target gets the same treatment as a hand edit of the source: what Check layout would flag after the
-// apply and didn't before — an overlap, an aisle under the travel (or pick) width, a cross-aisle that
-// leaves no way in, a column on an upright, a rack nobody can reach — is a WARNING on that target, not a
-// skip. Skipped: uprights that don't line up; a move into a wall or a zone; a rack only partly moved.
+// A target gets exactly what the source got — a bay through a wall or a zone, a move into one, included.
+// What Check layout would flag after the apply and didn't before — through a wall, inside a zone, an
+// overlap, an aisle under the travel (or pick) width, a cross-aisle that leaves no way in, a column on an
+// upright, a rack nobody can reach — is a WARNING on that target, never a skip and never a dropped bay.
+// Skipped only: uprights that don't line up (and a rack only partly inside a dragged stretch, which would
+// have to be split).
 
 import { rackFootprint } from '../generate/columnCheck'
 import { checkLayout } from './layoutCheck'
@@ -246,7 +247,7 @@ function sameEditOnAll(before, after, touched, gridSize) {
     const nowIds = new Set((rowsA.get(resolveKey(rowsA, k)) || { ids: [] }).ids)
     const mixed = [...after.filter(o => !nowIds.has(o.id)), ...before.filter(o => was.has(o.id))]
     const t = planReplay(mixed, e0, [touched[0], k], { gridSize, newId: () => 'chk' + Math.random(), warnings: false }).targets.find(x => x.key === resolveKey(rowsOf(mixed, gridSize), k))
-    if (!t || t.status !== 'apply' || t.dropped) return multi
+    if (!t || t.status !== 'apply') return multi
     const out = applyReplay(mixed, { targets: [t] }).filter(o => isRowRack(o) && (was.has(o.id) || (o.pieceOf && was.has(o.pieceOf))))
     if (sig(out) !== sig([...nowIds].map(id => after.find(o => o.id === id)))) return multi
   }
@@ -254,25 +255,6 @@ function sameEditOnAll(before, after, touched, gridSize) {
 }
 
 /* ── the replay on one target row ─────────────────────────────────────────── */
-
-/** The floor along the run at a band across, as world-px intervals (inner outline, even-odd). */
-function floorAlong(poly, vert, s0, s1, lo, hi) {
-  const ivs = []
-  for (const sv of [s0 + 0.5, (s0 + s1) / 2, s1 - 0.5]) {
-    const cuts = []
-    for (let i = 0; i < poly.length; i++) {
-      const a = poly[i], c = poly[(i + 1) % poly.length]
-      const [as, cs, ar, cr] = vert ? [a.x, c.x, a.y, c.y] : [a.y, c.y, a.x, c.x]
-      if (Math.abs(ar - cr) > EPS) continue                                // an edge across the run
-      if (sv > Math.min(as, cs) + EPS && sv < Math.max(as, cs) - EPS) cuts.push(ar)
-    }
-    cuts.sort((p, q) => p - q)
-    const here = []
-    for (let i = 0; i + 1 < cuts.length; i += 2) here.push([Math.max(lo, cuts[i]), Math.min(hi, cuts[i + 1])])
-    ivs.push(here)
-  }
-  return ivs
-}
 
 /** While a group row is dragged: the racks it must not snap to — the other group rows' racks, and every rack
  *  lined up with where the dragged racks started (an edge on the same line, across or along): those could
@@ -300,6 +282,8 @@ export const lockToAxis = (dx, dy) => (Math.abs(dx) >= Math.abs(dy) ? { dx, dy: 
 
 /** What Check layout flags that a target gets as a warning (its kind → the bar's words). */
 export const WARN_KINDS = {
+  outside: 'through a wall',
+  zone: 'inside a zone',
   overlap: 'an overlap',
   'aisle-drive': 'an aisle under the travel width',
   'aisle-pick': 'an aisle under the pick width',
@@ -310,8 +294,8 @@ export const WARN_KINDS = {
 
 /** Plan the replay of `edit` on every group row but its source, in `after` (the layout with the edit).
  *  `ctx` = { gridSize, poly (inner outline world px, per building: fpId → points), newId, warnings (false:
- *  don't run Check layout) }. Returns { targets: [{ key, status: 'apply'|'skip'|'none', reason, dropped,
- *  racks, removeIds, addRacks, droppedBays: [world rects], warnings: [words] }] }. */
+ *  don't run Check layout) }. Returns { targets: [{ key, status: 'apply'|'skip'|'none', reason,
+ *  racks, removeIds, addRacks, warnings: [words] }] }. */
 export function planReplay(after, edit, groupKeys, ctx) {
   const { gridSize = 40, newId = () => Math.random().toString(36).slice(2, 12) } = ctx
   if (!edit || !['bays', 'across', 'along', 'delete', 'add', 'levels'].includes(edit.kind)) return { targets: [] }
@@ -322,16 +306,13 @@ export function planReplay(after, edit, groupKeys, ctx) {
   const targets = []
   const sourcesNow = new Set((edit.sources || []).map(k => resolveKey(rows, k)).filter(Boolean))
   const keysNow = groupKeys.map(k => resolveKey(rows, k)).filter(Boolean).filter(k => k !== srcKeyNow && !sourcesNow.has(k) && !(edit.kind === 'delete' && sameRowKey(edit.source, rows.get(k))))
-  const zones = after.filter(o => typeof o.type === 'string' && o.type.startsWith('zone_')).map(z => ({ x: z.x, y: z.y, w: z.width, h: z.height }))
-  const polyOf = (o) => (ctx.poly && ctx.poly[o.parentId]) || null
-  const insideFloor = (o) => { const poly = polyOf(o); if (!poly) return true; const f = rackFootprint(o); return [[f.x + 0.5, f.y + 0.5], [f.x + f.w - 0.5, f.y + 0.5], [f.x + 0.5, f.y + f.h - 0.5], [f.x + f.w - 0.5, f.y + f.h - 0.5]].every(([x, y]) => pin(poly, x, y)) }
   for (const key of keysNow) {
     const row = rows.get(key), mine = row.ids.map(id => byId.get(id))
     const mineIds = new Set(row.ids)
-    if (edit.kind === 'delete') { targets.push({ key, status: 'apply', removeIds: [...mineIds], racks: [], addRacks: [], dropped: 0 }); continue }
+    if (edit.kind === 'delete') { targets.push({ key, status: 'apply', removeIds: [...mineIds], racks: [], addRacks: [] }); continue }
     if (edit.kind === 'levels') {
       const racks = mine.filter(o => o.levels !== edit.levels).map(o => ({ ...o, levels: edit.levels }))
-      targets.push(racks.length ? { key, status: 'apply', racks, removeIds: [], addRacks: [], dropped: 0 } : { key, status: 'none' })
+      targets.push(racks.length ? { key, status: 'apply', racks, removeIds: [], addRacks: [] } : { key, status: 'none' })
       continue
     }
 
@@ -346,8 +327,7 @@ export function planReplay(after, edit, groupKeys, ctx) {
         if (!movers.length) { targets.push({ key, status: 'none' }); continue }
       }
       const moved = movers.map(o => (edit.kind === 'along' ? movedAlong : movedAcross)(o, edit.delta))
-      const why = hardProblem(moved, zones, insideFloor)
-      targets.push(why ? { key, status: 'skip', reason: why } : { key, status: 'apply', racks: moved, removeIds: [], addRacks: [], dropped: 0 })
+      targets.push({ key, status: 'apply', racks: moved, removeIds: [], addRacks: [] })
       continue
     }
 
@@ -362,8 +342,7 @@ export function planReplay(after, edit, groupKeys, ctx) {
         const now = geom(atRun)
         return movedAcross(atRun, s0 - now.s0)
       })
-      const why = hardProblem(adds, zones, insideFloor)
-      targets.push(why ? { key, status: 'skip', reason: why } : { key, status: 'apply', racks: [], removeIds: [], addRacks: adds, dropped: 0, added: true })
+      targets.push({ key, status: 'apply', racks: [], removeIds: [], addRacks: adds, added: true })
       continue
     }
 
@@ -408,36 +387,14 @@ export function planReplay(after, edit, groupKeys, ctx) {
       plan.push({ o, g, up, oldUps: t, pieces })
     }
     if (!changed) { targets.push({ key, status: 'none' }); continue }
-    // limits along: the floor and zones (bays through them are dropped); a narrow cross-aisle or an overlap
-    // along is a warning, found after (below)
-    const result = [], removeIds = [], dropped = [], notes = new Set()
-    let droppedN = 0
+    // written as replayed: a bay through a wall or a zone is applied like any other — Check layout's warning
+    // says so (markWarnings), the same as for a hand edit of the source
+    const result = [], removeIds = []
     for (const p of plan) {
-      const poly = polyOf(p.o)
-      p.pieces.forEach((pc, pi) => {
-        let { r0, beams } = pc
-        const endOf = () => uprightsOf(r0, beams, p.up, gridSize)[beams.length] + p.up
-        const was = { r0: p.g.r0, r1: p.g.r1 }
-        let lo = -Infinity, hi = Infinity, whyLo = null, whyHi = null
-        if (poly) for (const iv of floorAlong(poly, p.g.vert, p.g.s0, p.g.s1, -1e9, 1e9)) {
-          const f = iv.find(([a, b]) => a <= was.r0 + 0.5 && b >= was.r1 - 0.5) || iv.find(([a, b]) => Math.min(b, was.r1) - Math.max(a, was.r0) > 0)
-          if (f) { if (f[0] > lo) { lo = f[0]; whyLo = 'a wall' } if (f[1] < hi) { hi = f[1]; whyHi = 'a wall' } }
-        }
-        for (const z of zones) {
-          const zs = p.g.vert ? [z.x, z.x + z.w] : [z.y, z.y + z.h], zr = p.g.vert ? [z.y, z.y + z.h] : [z.x, z.x + z.w]
-          if (!(Math.min(zs[1], p.g.s1) - Math.max(zs[0], p.g.s0) > EPS)) continue
-          if (zr[0] >= was.r1 - EPS && zr[0] < hi) { hi = zr[0]; whyHi = 'a zone' }
-          if (zr[1] <= was.r0 + EPS && zr[1] > lo) { lo = zr[1]; whyLo = 'a zone' }
-        }
-        while (beams.length && endOf() > hi + 1e-3 * gridSize) { const ups = uprightsOf(r0, beams, p.up, gridSize); dropped.push(bayRect(p.g, ups[beams.length - 1], ups[beams.length] + p.up)); beams = beams.slice(0, -1); droppedN++; notes.add(whyHi) }
-        while (beams.length && r0 < lo - 1e-3 * gridSize) { const ups = uprightsOf(r0, beams, p.up, gridSize); dropped.push(bayRect(p.g, ups[0], ups[1] + p.up)); r0 = ups[1]; beams = beams.slice(1); droppedN++; notes.add(whyLo) }
-        if (!beams.length) return
-        const rack = withRun(pi === 0 ? p.o : { ...p.o, id: newId(), pieceOf: p.o.pieceOf || p.o.id }, r0, beams, gridSize)
-        result.push(rack)
-      })
+      p.pieces.forEach((pc, pi) => result.push(withRun(pi === 0 ? p.o : { ...p.o, id: newId(), pieceOf: p.o.pieceOf || p.o.id }, pc.r0, pc.beams, gridSize)))
       if (!p.pieces.length || !result.some(r => r.id === p.o.id)) removeIds.push(p.o.id)
     }
-    targets.push({ key, status: 'apply', racks: result.filter(r => byId.has(r.id)), addRacks: result.filter(r => !byId.has(r.id)), removeIds, dropped: droppedN, droppedBays: dropped, dropWhy: [...notes] })
+    targets.push({ key, status: 'apply', racks: result.filter(r => byId.has(r.id)), addRacks: result.filter(r => !byId.has(r.id)), removeIds })
   }
   if (ctx.warnings !== false) markWarnings(after, targets, gridSize)
   return { targets }
@@ -471,19 +428,6 @@ function markWarnings(after, targets, gridSize) {
 
 /** Inches as the bar says them: whole or to the quarter, 3" / 2.5" / 0.25". */
 const fmtIn = (inches) => `${Math.round(inches * 4) / 4}"`
-const bayRect = (g, a, b) => (g.vert ? { x: g.s0, y: a, w: g.s1 - g.s0, h: b - a } : { x: a, y: g.s0, w: b - a, h: g.s1 - g.s0 })
-function pin(poly, x, y) { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c } return c }
-
-/** Why racks placed across (a move across, an added row) can't go at all: through a wall or into a zone —
- *  or null. Everything else a hand edit could cause is a warning (markWarnings). */
-function hardProblem(racks, zones, insideFloor) {
-  for (const r of racks) {
-    if (!insideFloor(r)) return 'a wall'
-    const f = rackFootprint(r)
-    if (zones.some(z => Math.min(z.x + z.w, f.x + f.w) - Math.max(z.x, f.x) > EPS && Math.min(z.y + z.h, f.y + f.h) - Math.max(z.y, f.y) > EPS)) return 'a zone'
-  }
-  return null
-}
 
 /** The layout with the plan's applicable targets written: racks replaced, removed, added. */
 export function applyReplay(objects, plan) {
@@ -497,29 +441,25 @@ export function applyReplay(objects, plan) {
   return [...objects.filter(o => !remove.has(o.id) || replace.has(o.id)).map(o => replace.get(o.id) || o), ...add]
 }
 
-/** The bar's words for a plan: "Apply to the other N rows?" and, when an apply would drop bays, "K rows lose
- *  a bay (B bays)." */
+/** The bar's words for a plan: "Apply to the other N rows?", "W will have warnings.", "S skipped." */
 export function planSummary(plan) {
   const apply = plan.targets.filter(t => t.status === 'apply'), skip = plan.targets.filter(t => t.status === 'skip')
-  const lose = apply.filter(t => t.dropped > 0), bays = lose.reduce((s, t) => s + t.dropped, 0)
   const warned = apply.filter(t => t.warnings && t.warnings.length)
   const n = apply.length
   let text = `Apply to the other ${n} row${n === 1 ? '' : 's'}?`
-  if (lose.length) text += ` ${lose.length} row${lose.length === 1 ? ' loses' : 's lose'} ${bays === lose.length ? 'a bay' : 'bays'} (${bays} bay${bays === 1 ? '' : 's'}).`
   if (warned.length) text += ` ${warned.length} will have warnings.`
   if (skip.length) text += ` ${skip.length} skipped.`
-  return { text, apply: n, lose: lose.length, bays, warned: warned.map(t => ({ key: t.key, reasons: t.warnings })), skipped: skip.map(t => ({ key: t.key, reason: t.reason })) }
+  return { text, apply: n, warned: warned.map(t => ({ key: t.key, reasons: t.warnings })), skipped: skip.map(t => ({ key: t.key, reason: t.reason })) }
 }
 
-/** The rects the preview paints for a pending plan: { kind: 'target'|'warned'|'dropped'|'skipped', f, key } —
- *  a target that will have warnings paints its racks 'warned'. */
+/** The rects the preview paints for a pending plan: { kind: 'target'|'warned'|'skipped', f, key } — a target
+ *  that will have warnings paints its racks 'warned'. */
 export function previewRects(objects, plan, gridSize = 40) {
   const out = [], rows = rowsOf(objects, gridSize), byId = new Map(objects.map(o => [o.id, o]))
   for (const t of plan.targets) {
     if (t.status === 'apply') {
       const kind = t.warnings && t.warnings.length ? 'warned' : 'target'
       for (const r of [...(t.racks || []), ...(t.addRacks || [])]) out.push({ kind, f: rackFootprint(r), key: 't' + t.key + r.id })
-      for (const [i, b] of (t.droppedBays || []).entries()) out.push({ kind: 'dropped', f: b, key: 'd' + t.key + i })
     } else if (t.status === 'skip') {
       const row = rows.get(t.key)
       for (const id of row ? row.ids : []) if (byId.has(id)) out.push({ kind: 'skipped', f: rackFootprint(byId.get(id)), key: 's' + t.key + id })

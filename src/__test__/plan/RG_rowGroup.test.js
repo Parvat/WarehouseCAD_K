@@ -4,18 +4,18 @@
 //   1. Picking: the Row group tool (next to Fill racking) — a box adds the rows it touches, a click toggles
 //      one row; one action, then back to Select. The group stays until Esc or ✕; never saved in the file.
 //   2. An edit to one group row is replayed on the others, relative to each:
-//        - bays: the source's uprights wherever both have racks (within ½"); a bay that would cross the
-//          target's limit (wall, zone, an aisle under the 8' travel width) is DROPPED, never squeezed;
+//        - bays: the source's uprights wherever both have racks (within ½"); a target gets exactly what the
+//          source got — a bay through a wall or a zone included (a warning, never dropped);
 //        - a move across: the same delta;  - a delete: the others deleted;
 //        - a row added next to a group row: one beside each other group row, same offset, its own length.
-//   3. The bar: "Row group · N rows", an "Ask / Auto apply" switch, ✕. Ask: "Apply to the other N rows?" —
-//      "K rows lose a bay (B bays)." when bays would drop — Apply and Skip, with a live preview (dropped
-//      bays red, skipped rows amber). Auto apply: at once. Several rows edited the same way are applied
+//   3. The bar: "Row group · N rows", an "Ask / Auto apply" switch, ✕. Ask: "Apply to the other N rows?
+//      W will have warnings. S skipped." — Apply and Skip, with a live preview (warned rows orange, skipped
+//      rows amber). Auto apply: at once. Several rows edited the same way are applied
 //      to the rest; a levels change is replayed too.
-//   4. A target gets the same treatment as a hand edit of the source: what Check layout flags after the
-//      apply and didn't before (an overlap, a narrow aisle, no way in, a column on an upright) is a
-//      WARNING — applied, counted on the bar, marked in the preview. Skipped only: uprights that don't
-//      line up, a move through a wall or into a zone, a rack only partly inside a dragged stretch.
+//   4. A target gets exactly what the source got: what Check layout flags after the apply and didn't
+//      before (through a wall, inside a zone, an overlap, a narrow aisle, no way in, a column on an
+//      upright) is a WARNING — applied, counted on the bar, marked in the preview. Skipped only: uprights
+//      that don't line up (and a rack only partly inside a dragged stretch, which would need splitting).
 //   5. One undo step per apply; Auto apply folds the edit and its apply into one step.
 // On the hand-check layout (realLayout.fixture.js): horizontal rows as saved, vertical rows on the
 // layout turned 90° (x and y swapped — the same rows mirrored); rectangle, L and T.
@@ -208,52 +208,53 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
   })
 
   /* ── 3. dropped bays: the bar says so before Apply; the preview marks them apart from skipped rows ── */
-  it('RG-drop: bay 5 96" → 108" (b2): "Apply to the other 11 rows? 11 rows lose a bay (11 bays). 2 skipped." — the preview marks 11 dropped bays (red, solid) apart from the 2 skipped rows (amber, dashed); after Apply no target passes the wall and no bay is squeezed', async () => {
+  /* ── 3. a bay through the wall: applied, a warning (it used to be dropped) ── */
+  it('RG-drop: bay 5 96" → 108" (b2) — the targets end 1\' past the wall: "Apply to the other 11 rows? 11 will have warnings. 2 skipped." — each "through a wall", their racks marked warned in the preview; Apply gives every target the same bays as the source (nothing dropped), and Check layout reports each one past the wall', async () => {
+    const { checkLayout } = await import('../../utils/layoutCheck')
     load(filled(vert))
     addRowsInBox(runBox(vert, ...SEC4))
     const src = pairOf(key(4, 7)), wall = 249.75
     const bays0 = new Map(sectionKeys(4).map(k => [k, bayCount(k)]))
     await changeBeam(src, 4, 108)
     const p = st().pending
-    expect(p.summary.text).toBe('Apply to the other 11 rows? 11 rows lose a bay (11 bays). 2 skipped.')
-    expect(p.summary).toMatchObject({ apply: 11, lose: 11, bays: 11 })
-    expect(render()).toContain('Apply to the other 11 rows? 11 rows lose a bay (11 bays). 2 skipped.')
+    expect(p.summary.text).toBe('Apply to the other 11 rows? 11 will have warnings. 2 skipped.')
+    expect(p.summary.text).not.toMatch(/lose/)
+    expect(p.summary.warned).toHaveLength(11)
+    for (const w of p.summary.warned) expect(w.reasons).toEqual(expect.arrayContaining(['through a wall']))
+    expect(render()).toContain('Apply to the other 11 rows? 11 will have warnings. 2 skipped.')
     const rects = RG.previewRects(objs(), p.plan, GS)
     const kinds = (k) => rects.filter(r => r.kind === k)
-    expect(kinds('dropped')).toHaveLength(11)
+    expect(kinds('dropped')).toEqual([])
+    for (const w of p.summary.warned) for (const r of p.plan.targets.find(t => t.key === w.key).racks) expect(kinds('warned').some(q => q.key.endsWith(r.id))).toBe(true)
     const skippedIds = [...rows().get(key(4, 1)).ids, ...rows().get(key(3, 14)).ids]
     expect(kinds('skipped')).toHaveLength(skippedIds.length)
-    for (const id of skippedIds) expect(kinds('skipped').some(r => r.key.endsWith(id))).toBe(true)
     expect(new Set(rects.map(r => r.key)).size).toBe(rects.length)              // every outline keyed uniquely
-    for (const d of kinds('dropped')) {
-      expect(kinds('skipped').some(s => meets(s.f, d.f))).toBe(false)           // a dropped bay is never drawn as a skipped row
-      expect(ft(vert ? d.f.y + d.f.h : d.f.x + d.f.w)).toBeGreaterThan(wall)    // the bay that would pass the wall
-    }
-    for (const t of p.plan.targets.filter(t => t.status === 'apply')) expect(t.dropWhy).toEqual(['a wall'])
     const pv = readFileSync('src/canvas2/RowGroupPreview.jsx', 'utf8')
-    expect(pv).toMatch(/export const DROPPED = '#C0392B'/)
+    expect(pv).not.toMatch(/DROPPED/)
     expect(pv).toMatch(/export const SKIPPED = '#E67E22'/)
-    expect(pv).toMatch(/p\.kind === 'dropped' \? rect\(p\.f, p\.key, DROPPED, \{ fill: 'rgba\(192,57,43,0\.28\)', width: 1\.5 \}\)/)
     expect(pv).toMatch(/rect\(p\.f, p\.key, SKIPPED, \{ dash: \[3, 3\]/)
     applyPending(); await settle()
-    for (const k of sectionKeys(4).filter(k => k !== key(4, 7) && k !== key(4, 1))) {
-      expect(bayCount(k)).toBe(bays0.get(k) - 1)
-      for (const o of racksOf(k)) {
-        expect(RG.geom(o).r1).toBeLessThanOrEqual(wall * GS + 1e-6)
-        for (const b of o.beams) expect([96, 108]).toContain(b)                 // dropped, never squeezed
-      }
+    const outside = checkLayout(objs(), { gridSize: GS }).errors.filter(e => e.kind === 'outside')
+    for (const w of p.summary.warned) {
+      expect(bayCount(w.key)).toBe(bays0.get(w.key))                           // nothing dropped
+      expect(Math.max(...racksOf(w.key).map(o => RG.geom(o).r1))).toBeGreaterThan(wall * GS)
+      expect(outside.some(e => e.ids.some(id => rows().get(w.key).ids.includes(id)))).toBe(true)
     }
+    expect(st().message).toBe('Applied to 11 rows · 11 with warnings — see Check layout · 2 skipped')
   })
 
-  it('RG-zone: section 3 row 7, bay 11 96" → 132" (b′): "Apply to the other 11 rows? 3 rows lose a bay (3 bays). 2 skipped." — the rows that run to the office lose their last bay to the zone', async () => {
+  it('RG-zone: section 3 row 7, bay 11 96" → 132" (b′) — the rows that run to the office get the bay into it: "Apply to the other 11 rows? 3 will have warnings. 2 skipped.", each "inside a zone"; Check layout reports them after', async () => {
+    const { checkLayout } = await import('../../utils/layoutCheck')
     load(filled(vert))
     addRowsInBox(runBox(vert, ...SEC3))
     await changeBeam(pairOf(key(3, 7)), 10, 132)
     const p = st().pending
-    expect(p.summary.text).toBe('Apply to the other 11 rows? 3 rows lose a bay (3 bays). 2 skipped.')
-    const lost = p.plan.targets.filter(t => t.dropped)
-    expect(lost.map(t => t.key).sort()).toEqual([key(3, 3), key(3, 4), key(3, 5)].sort())
-    for (const t of lost) expect(t.dropWhy).toEqual(['a zone'])
+    expect(p.summary.text).toBe('Apply to the other 11 rows? 3 will have warnings. 2 skipped.')
+    expect(p.summary.warned.map(w => w.key).sort()).toEqual([key(3, 3), key(3, 4), key(3, 5)].sort())
+    for (const w of p.summary.warned) expect(w.reasons).toEqual(expect.arrayContaining(['inside a zone']))
+    applyPending(); await settle()
+    const inZone = checkLayout(objs(), { gridSize: GS }).errors.filter(e => e.kind === 'zone')
+    for (const w of p.summary.warned) expect(inZone.some(e => e.ids.some(id => rows().get(w.key).ids.includes(id)) && /inside the Office by/.test(e.text))).toBe(true)
   })
 
   /* ── a bay deleted at the end, added back; a middle bay deleted (the rows split) ── */
@@ -301,15 +302,16 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     for (const i of [1, 2, 3]) expect(RG.geom(pairOf(key(i, 7))).s0).toBeCloseTo(s0.get(i), 6)
   })
 
-  it('RG-together: every row in the group, one moved 3.875\' across → the others move with it: no aisle warnings (rows moving together are judged where they end up), only the two wall rows skipped (they would go through the wall)', async () => {
+  it('RG-together: every row in the group, one moved 3.875\' across → the others move with it: no aisle warnings (rows moving together are judged where they end up); the two wall rows go through the wall — applied, with that warning', async () => {
     load(filled(vert))
     addRowsInBox({ x: -1e6, y: -1e6, w: 2e6, h: 2e6 })
     const n = st().keys.length
     await moveRow(key(4, 7), 3.875 * GS, 0, vert)
     const p = st().pending
-    expect(p.summary.text).toBe(`Apply to the other ${n - 3} rows? 2 skipped.`)
-    expect(p.summary.skipped.map(t => t.reason)).toEqual(['a wall', 'a wall'])
-    expect(p.summary.warned).toEqual([])
+    expect(p.summary.text).toBe(`Apply to the other ${n - 1} rows? 2 will have warnings.`)
+    expect(p.summary.skipped).toEqual([])
+    expect(p.summary.warned).toHaveLength(2)
+    for (const w of p.summary.warned) { expect(w.reasons).toEqual(expect.arrayContaining(['through a wall'])); expect(w.reasons.some(r => /aisle/.test(r))).toBe(false) }
     applyPending(); await settle()
     expect(RG.geom(pairOf(key(1, 7))).s0 - RG.geom(pairOf(key(1, 8))).s0).toBeCloseTo(RG.geom(filled(vert).find(o => o.genSection === 1 && o.rowIndex === 7 && o.type === 'rack_double_row')).s0 - RG.geom(filled(vert).find(o => o.genSection === 1 && o.rowIndex === 8 && o.type === 'rack_double_row')).s0, 6)
   })
@@ -319,7 +321,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     addRowsInBox(runBox(vert, ...SEC4))
     const g0 = RG.geom(pairOf(key(4, 9)))
     await moveRow(key(4, 7), GS, 0.9 * GS, vert)
-    expect(st().pending.summary.text).toBe('Apply to the other 12 rows? 1 skipped.')
+    expect(st().pending.summary.text).toBe('Apply to the other 13 rows? 1 will have warnings.')
     applyPending(); await settle()
     const g1 = RG.geom(pairOf(key(4, 9)))
     expect(g1.s0 - g0.s0).toBeCloseTo(GS, 6)
@@ -355,7 +357,6 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     store.getState().commitObjectUpdate(src.id, Panel.addBayUpdate({ ...src, ...Panel.addBayUpdate(src, 96, GS) }, 96, GS)); await settle()
     const p = st().pending
     expect(p.summary.text).toBe('Apply to the other 11 rows? 11 will have warnings. 2 skipped.')
-    expect(p.summary.lose).toBe(0)
     for (const w of p.summary.warned) expect(w.reasons).toEqual(['an overlap'])
     applyPending(); await settle()
     for (const k of sectionKeys(2)) expect(bayCount(k)).toBe(n0.get(k) + 2)
@@ -364,7 +365,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(st().message).toBe('Applied to 11 rows · 11 with warnings — see Check layout · 2 skipped')
   })
 
-  it('RG-along: a move along the row is replayed like one across — row 7 in every section moved 1\' along → every row 7 moves 1\' along; one into a wall is skipped with the reason', async () => {
+  it('RG-along: a move along the row is replayed like one across — row 7 in every section moved 1\' along → every row 7 moves 1\' along; one pushed through the end wall is applied with "through a wall"', async () => {
     load(filled(vert))
     addRowOf(pairOf(key(4, 7)).id, { otherSections: true })
     const r0 = new Map([1, 2, 3, 4].map(i => [i, RG.geom(pairOf(key(i, 7))).r0]))
@@ -373,12 +374,12 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(st().pending.summary.text).toBe('Apply to the other 3 rows?')
     applyPending(); await settle()
     for (const i of [1, 2, 3, 4]) expect(RG.geom(pairOf(key(i, 7))).r0 - r0.get(i)).toBeCloseTo(-GS, 6)
-    // section 4's row 7 runs to the end wall: 2' further toward it — skipped, "a wall"; the others take it
+    // section 4's row 7 runs to the end wall: 2' further toward it — applied, "through a wall"
     await moveRow(key(1, 7), 0, 3 * GS, vert)
     const p = st().pending
-    expect(p.summary.skipped).toEqual([{ key: key(4, 7), reason: 'a wall' }])
-    expect(p.summary.text).toBe('Apply to the other 2 rows? 1 will have warnings. 1 skipped.')
-    expect(p.summary.warned).toEqual([{ key: key(3, 7), reasons: ['a column on an upright'] }])
+    expect(p.summary.skipped).toEqual([])
+    expect(p.summary.text).toBe('Apply to the other 3 rows? 2 will have warnings.')
+    expect(p.summary.warned).toEqual(expect.arrayContaining([{ key: key(3, 7), reasons: ['a column on an upright'] }, { key: key(4, 7), reasons: expect.arrayContaining(['through a wall']) }]))
   })
 
   it('RG-delete: row 7 of every section; section 4\'s deleted → "Apply to the other 3 rows?" → every row 7 gone; undo once → back but the source; twice → all back', async () => {
@@ -423,14 +424,14 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
   })
 
   /* ── the rules around an action ── */
-  it('RG-multi: one action changing several group rows the same way is applied to the rest — two rows moved the same 3" across → "Apply to the other 11 rows? 1 skipped." (the wall row against the wall); select-all + Delete deletes every row, so nothing is left to offer', async () => {
+  it('RG-multi: one action changing several group rows the same way is applied to the rest — two rows moved the same 3" across → "Apply to the other 12 rows? 1 will have warnings." (the wall row through the wall); select-all + Delete deletes every row, so nothing is left to offer', async () => {
     load(filled(vert))
     addRowsInBox(runBox(vert, ...SEC4))
     const s0 = RG.geom(pairOf(key(4, 11))).s0
     store.getState().moveObjects([...rows().get(key(4, 8)).ids, ...rows().get(key(4, 9)).ids], vert ? GS / 4 : 0, vert ? 0 : GS / 4); await settle()
-    // row 7 keeps the column already on its upright (the move adds none); section 3's row 14 would pass the wall
-    expect(st().pending.summary.text).toBe('Apply to the other 11 rows? 1 skipped.')
-    expect(st().pending.summary.skipped).toEqual([{ key: key(3, 14), reason: 'a wall' }])
+    // row 7 keeps the column already on its upright (the move adds none); section 3's row 14 goes through the wall
+    expect(st().pending.summary.text).toBe('Apply to the other 12 rows? 1 will have warnings.')
+    expect(st().pending.summary.warned).toEqual([{ key: key(3, 14), reasons: ['through a wall'] }])
     applyPending(); await settle()
     expect(RG.geom(pairOf(key(4, 11))).s0 - s0).toBeCloseTo(GS / 4, 6)
     store.getState().selectAll(); store.getState().deleteSelected(); await settle()
@@ -590,6 +591,26 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     }
   })
 
+  it('RG-office-bay: rows 22-25, a bay added at the office end of row 22 — every target gets that bay too, into the office: "Apply to the other 3 rows? 3 will have warnings.", each "inside a zone"; Apply changes all three (it used to drop the bay again and change nothing while saying "3 rows lose a bay"); Check layout reports them', async () => {
+    const { checkLayout } = await import('../../utils/layoutCheck')
+    load(savedFill(vert))
+    useRowGroup.setState({ keys: four() })
+    const before = new Map(four().map(k => [k, JSON.stringify(racksOf(k).map(o => [o.x, o.y, o.width, o.beams]))]))
+    const src = r22(), g = RG.geom(src)
+    const w = RG.withRun(src, g.r0 - (99 / 12) * GS, [96, ...g.beams], GS)
+    store.getState().commitObjectUpdate(src.id, { x: w.x, y: w.y, width: w.width, beams: w.beams }); await settle()
+    const p = st().pending
+    expect(p.summary.text).toBe('Apply to the other 3 rows? 3 will have warnings.')
+    for (const t of p.summary.warned) expect(t.reasons).toEqual(expect.arrayContaining(['inside a zone']))
+    applyPending(); await settle()
+    for (const k of four().slice(1)) {
+      expect(JSON.stringify(racksOf(k).map(o => [o.x, o.y, o.width, o.beams]))).not.toBe(before.get(k))
+      expect(bayCount(k)).toBe(5)
+    }
+    const inZone = checkLayout(objs(), { gridSize: GS }).errors.filter(e => e.kind === 'zone')
+    for (const k of four()) expect(inZone.some(e => e.ids.includes(pairOf(k).id))).toBe(true)
+  })
+
   it('RG-nothing: Ask — every target skipped gives no question either: "Nothing applied. N skipped" with the reasons; an edit no other group row has racks for says "Nothing applied: no other group row has racks there."', async () => {
     load(savedFill(vert))
     useRowGroup.setState({ keys: four() })
@@ -645,7 +666,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
 
 /* ── the shapes: the replay keeps the layout clean on the rectangle, the L and the T ── */
 describe.each([['rectangle'], ['L'], ['T']])('RG-shape — %s', (shape) => {
-  it.each([['horizontal', false], ['vertical', true]])('RG-shape (%s): a bay change on a middle row of each section, replayed on its section → no new overlap, every rack inside the walls, every target upright on the source\'s, each target\'s lost bays = its dropped count', async (_, vert) => {
+  it.each([['horizontal', false], ['vertical', true]])('RG-shape (%s): a bay change on a middle row of each section, replayed on its section → no new overlap, every target rack inside the walls unless it carries "through a wall", every target upright on the source\'s, no bay dropped', async (_, vert) => {
     load(filled(vert, shape))
     const fp = objs().find(o => o.type.startsWith('fp_'))
     const secs = [...new Set([...rows().keys()].map(k => k.split('|')[2]))]
@@ -665,8 +686,8 @@ describe.each([['rectangle'], ['L'], ['T']])('RG-shape — %s', (shape) => {
       applied += p.summary.apply
       expect(overlaps(objs()).filter(x => !x.split('|').includes(src.id))).toEqual(ov0)   // the source is the user's own edit
       for (const t of p.plan.targets.filter(t => t.status === 'apply')) {
-        for (const o of racksOf(t.key)) expect(inside(o, fp)).toBe(true)
-        expect(bayCount(t.key)).toBe(bays0.get(t.key) - t.dropped)
+        if (!(t.warnings || []).includes('through a wall')) for (const o of racksOf(t.key)) expect(inside(o, fp)).toBe(true)
+        expect(bayCount(t.key)).toBe(bays0.get(t.key))                          // a beam change: the same bays, none dropped
         for (const o of racksOf(t.key)) for (const u of ups(o)) if (u >= g.r0 - TOL && u <= g.r1) expect(Math.min(...srcUps.map(v => Math.abs(v - u)))).toBeLessThanOrEqual(TOL)
       }
     }
@@ -721,7 +742,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, plac
     }
   })
 
-  it('RG-warn-and-skip: an overlap and a column on an upright are warnings (applied, marked in the preview, reported by Check layout after); a wall and a zone still skip, with the reason', async () => {
+  it('RG-warn-and-skip: an overlap, a column on an upright, a wall and a zone are all warnings — applied, marked in the preview, reported by Check layout after', async () => {
     const { checkLayout } = await import('../../utils/layoutCheck')
     // overlap: B lands on C — applied, with the warning
     setup(mk('A', 20, 10, B5), mk('B', 20, 40, B5), mk('C', 20, 40 + DEPTH + 10, B5))
@@ -732,22 +753,26 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, plac
     expect(rects.filter(r => r.kind === 'warned').map(r => r.key)).toEqual([expect.stringMatching(/B$/)])
     applyPending(); await settle()
     expect(checkLayout(objs(), { gridSize: GS }).errors.some(e => e.kind === 'overlap' && e.ids.includes('B') && e.ids.includes('C'))).toBe(true)
-    // a wall: B would pass the building's wall — skipped; nothing else to apply, so no question: the result
+    // a wall: B goes 1' through the building's wall — applied, "through a wall"; Check layout says so after
     setup(mk('A', 20, 10, B5), mk('B', 20, 100 - 0.25 - DEPTH - 1, B5))
     groupOf('A', 'B')
     await moveAcross('A', 2)
-    expect(st().pending).toBe(null)
-    expect(st().message).toBe('Nothing applied. 1 skipped')
-    expect(st().report.skipped).toEqual([{ key: 'h|B', reason: 'a wall' }])
-    // a zone: B would land on an office — skipped; D (no zone) still takes it
+    expect(reasonOf('B')).toMatchObject({ status: 'apply', warnings: ['through a wall'] })
+    expect(st().pending.summary.text).toBe('Apply to the other 1 row? 1 will have warnings.')
+    applyPending(); await settle()
+    expect(checkLayout(objs(), { gridSize: GS }).errors.some(e => e.kind === 'outside' && e.ids.includes('B'))).toBe(true)
+    // a zone: B lands on an office — applied, "inside a zone"; D (no zone) takes it with no warning
     const z = at(20, 40 + DEPTH + 1)
     const zone = { id: 'z', type: 'zone_office', parentId: 'fp', x: z.x, y: z.y, width: vert ? 20 * GS : 60 * GS, height: vert ? 60 * GS : 20 * GS }
     setup(mk('A', 20, 10, B5), mk('B', 20, 40, B5), mk('D', 120, 40, B5), zone)
     groupOf('A', 'B', 'D')
     await moveAcross('A', 2)
-    expect(reasonOf('B')).toMatchObject({ status: 'skip', reason: 'a zone' })
-    expect(reasonOf('D').status).toBe('apply')
-    expect(st().pending.summary.text).toBe('Apply to the other 1 row? 1 skipped.')
+    expect(reasonOf('B')).toMatchObject({ status: 'apply', warnings: ['inside a zone'] })
+    expect(reasonOf('D')).toMatchObject({ status: 'apply' })
+    expect(reasonOf('D').warnings).toBe(undefined)
+    expect(st().pending.summary.text).toBe('Apply to the other 2 rows? 1 will have warnings.')
+    applyPending(); await settle()
+    expect(checkLayout(objs(), { gridSize: GS }).errors.some(e => e.kind === 'zone' && e.ids.includes('B') && e.ids.includes('z'))).toBe(true)
     // a column: B's first upright would stand on one — applied, with the warning
     const c = at(20 + 1.5 / 12, 40 + DEPTH + 1)
     const cg = { id: 'cg', type: 'column_grid', parentId: 'fp', x: c.x, y: c.y, spacingX: [1e6], spacingY: [1e6], columnW: GS, columnH: GS }
@@ -764,7 +789,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, plac
     expect(pv).toMatch(/p\.kind === 'warned' \? rect\(p\.f, p\.key, WARNED, \{ dash: \[10, 3\]/)
   })
 
-  it('RG-along-warn: an along move follows the same rules — B moved 13\' along onto C (in line, 11\' beyond it — its own row) is applied with "an overlap"; one through the end wall is skipped, "a wall"', async () => {
+  it('RG-along-warn: an along move follows the same rules — B moved 13\' along onto C (in line, 11\' beyond it — its own row) is applied with "an overlap"; one through the end wall is applied with "through a wall"', async () => {
     const len = (5 * 96 + 6 * 3) / 12
     setup(mk('A', 20, 10, B5), mk('B', 20, 40, B5), mk('C', 20 + len + 11, 40, B5))
     groupOf('A', 'B')
@@ -779,8 +804,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, plac
     setup(mk('A', 20, 10, B5), mk('B', 200 - 0.25 - len - 2, 40, B5))
     groupOf('A', 'B')
     await moveAlong('A', 4)
-    expect(st().message).toBe('Nothing applied. 1 skipped')
-    expect(st().report.skipped).toEqual([{ key: 'h|B', reason: 'a wall' }])
+    expect(reasonOf('B')).toMatchObject({ status: 'apply', warnings: ['through a wall'] })
   })
 
   it('RG-skip-lineup: a row whose uprights are off the source\'s (4\' along) takes no bay edit — "uprights don\'t line up (48" off)"; a row beside it that lines up does', async () => {
@@ -846,6 +870,24 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, plac
     expect(st().pending).toBe(null)
     expect(st().message).toBe('These 2 rows were changed in different ways, so the change isn\'t applied to the others.')
     expect(get('E').beams).toEqual(B5)
+  })
+})
+
+/* ── the column in an aisle: the travel width met to within 0.001 ft, the same tolerance as the lane check ── */
+describe.each([['horizontal', false], ['vertical', true]])('RG-travel — %s', (_, vert) => {
+  it('RG-travel: a 13\'3" aisle with a 1\' column 4.25\' from one row: the far side 8.000\' (or 7.9996\', built from edges that aren\'t whole feet) passes — not "under travel", not pinched, level 2; 7.99\' is under travel on both sides', async () => {
+    const { aisleColumnBlocks, MHE_PROFILES, aisleLevel, TRAVEL_TOL_FT } = await import('../../generate/columnCheck')
+    expect(TRAVEL_TOL_FT).toBe(0.001)
+    const dep = 7.75, mk = (id, s) => vert
+      ? { id, type: 'rack_double_row', x: s * GS - (40 * GS - dep * GS) / 2, y: 20 * GS - (dep * GS - 40 * GS) / 2, width: 40 * GS, height: dep * GS, rotation: 90, beams: [96, 96, 96, 96], uprightWidth: 3 }
+      : { id, type: 'rack_double_row', x: 20 * GS, y: s * GS, width: 40 * GS, height: dep * GS, rotation: 0, beams: [96, 96, 96, 96], uprightWidth: 3 }
+    for (const [far, pinched] of [[8, false], [8 - 0.0004, false], [7.99, true]]) {
+      const a = mk('a', 10), aEnd = 10 + dep, gap = 4.25 + 1 + far, b = mk('b', aEnd + gap)
+      const colAt = aEnd + 4.25, col = vert ? { x: colAt * GS, y: 30 * GS, w: GS, h: GS } : { x: 30 * GS, y: colAt * GS, w: GS, h: GS }
+      const [blk] = aisleColumnBlocks({ racks: [a, b], columns: [col], profile: MHE_PROFILES.reach, gridSize: GS }).aisleBlocks
+      expect(blk).toMatchObject({ pinched, nearShort: true, farShort: pinched, level: pinched ? 1 : 2 })
+      expect(aisleLevel(far * GS, MHE_PROFILES.reach, GS)).toBe(pinched ? 1 : 2)
+    }
   })
 })
 
