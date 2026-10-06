@@ -7,8 +7,9 @@
 //      depth and flue, levels, upright, pallet, rotation, building, layer, racking area, row and section
 //      stamps) is joined into it; otherwise it only snaps, two racks.
 //   4. One undo step restores the state before the drag.
-// Plus: the joined rack's column check is worked out again (it is cached per rack); a join puts nothing
-// in the copy-to-sections set; a multi-selection settles by one shift; per-bay beam lengths join in order.
+// Plus: the joined rack's column check is worked out again (it is cached per rack); a join offers nothing
+// to the Row group (it is passed over, like a racking area's refit); a multi-selection settles by one
+// shift; per-bay beam lengths join in order.
 // The drag wiring (useCanvasInteraction.js) is read, as O-wire / P-wire do (Konva can't load under node);
 // the calls it makes are the ones these tests make. Both orientations.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -24,11 +25,12 @@ async function fresh() {
   const { useCanvasStore } = await import('../../store/useCanvasStore')
   const IS = await import('../../canvas2/inlineSnap')
   const { rebuildAisles } = await import('../../utils/aisleRebuild')
-  const CP = await import('../../utils/copyPrompt')
+  const RGT = await import('../../utils/rowGroupTool')
+  const RG = await import('../../utils/rowGroup')
   const UC = await import('../../generate/usableCapacity')
   const CC = await import('../../generate/useColumnCheck.jsx')
   const { rackFootprint } = await import('../../generate/columnCheck')
-  return { useCanvasStore, IS, rebuildAisles, CP, UC, CC, rackFootprint }
+  return { useCanvasStore, IS, rebuildAisles, RGT, RG, UC, CC, rackFootprint }
 }
 
 const UP = 3, BEAM = 96
@@ -162,7 +164,7 @@ describe.each(['horizontal', 'vertical'])('IS — %s', (orientation) => {
     // a join
     before = doc(); h0 = s().historyIndex
     plan = dragDrop(s().objects, ['B'], 'B', d(run(A)[1] + 0.2 * GS - run(B)[0]))
-    m.IS.applyJoin(m.useCanvasStore, plan.join, { rebuildAisles: m.rebuildAisles, skipNextAction: m.CP.skipNextAction, newId: () => 'n' + Math.random() })
+    m.IS.applyJoin(m.useCanvasStore, plan.join, { rebuildAisles: m.rebuildAisles, skipNextAction: m.RGT.skipNextAction, newId: () => 'n' + Math.random() })
     expect(s().historyIndex).toBe(h0 + 1)
     expect(s().objects.filter(o => o.type === 'rack_row').map(o => o.id)).toEqual(['A'])
     expect(s().selectedIds).toEqual(['A'])
@@ -199,9 +201,9 @@ describe.each(['horizontal', 'vertical'])('IS — %s', (orientation) => {
   })
 })
 
-/* ── section copy: a join is not a bay edit ── */
-describe('IS — section copy', () => {
-  it('IS-copy: re-joining a generated rack split by a middle-bay delete puts nothing in the copy-to-sections set (a bay edit does)', async () => {
+/* ── the Row group: a join is not a bay edit ── */
+describe('IS — the Row group', () => {
+  it('IS-copy: re-joining a generated rack split by a middle-bay delete offers nothing to its Row group (a bay edit does)', async () => {
     const m = await fresh(), s = () => m.useCanvasStore.getState()
     const { sizingSheetLayout } = await import('../../generate/sizingLayout')
     const { placementToObject } = await import('../../generate/traceGenerate')
@@ -209,7 +211,7 @@ describe('IS — section copy', () => {
     const { installAisleKeeper } = await import('../../utils/aisleKeeper')
     const { installRowEditKeeper } = await import('../../utils/rowEditKeeper')
     let seq = 0; const newId = () => 'q' + (++seq)
-    const stops = [installAisleKeeper(m.useCanvasStore, newId), installRowEditKeeper(m.useCanvasStore), m.CP.installCopyWatcher(m.useCanvasStore, newId)]
+    const stops = [installAisleKeeper(m.useCanvasStore, newId), installRowEditKeeper(m.useCanvasStore), m.RGT.installRowGroupWatcher(m.useCanvasStore, newId)]
     try {
       const brief = { lengthFt: 1080, widthFt: 410, gridXFt: 0, gridYFt: 0, mhe: 'reach', orientation: 'horizontal', rackType: 'rack_double_row' }
       const racks = sizingSheetLayout(brief, DEFAULT_RULES).map((p, i) => ({ ...placementToObject(p), id: 'r' + i, parentId: 'fp' }))
@@ -217,15 +219,16 @@ describe('IS — section copy', () => {
       const fp = { id: 'fp', type: 'fp_rect', x: 0, y: 0, width: L, height: W, wallThicknessFt: 0.25, fpVerts: [{ x: 0, y: 0 }, { x: L, y: 0 }, { x: L, y: W }, { x: 0, y: W }] }
       const objects = m.rebuildAisles([fp, ...racks], newId).objects
       m.useCanvasStore.setState({ objects, groups: [], activeBaySelection: [], selectedIds: [], gridSize: GS, history: [JSON.stringify({ objects, groups: [] })], historyIndex: 0 })
-      // a long rack in a section with others: its 3rd bay deleted (a bay edit) — the set fills
+      // a long rack in a section, its section's rows in a Row group: its 3rd bay deleted (a bay edit) — offered; Skip
       const r = s().objects.find(o => o.type === 'rack_double_row' && o.beams.length >= 8 && o.genSection === 2)
+      m.RGT.useRowGroup.setState({ keys: [...m.RG.rowsOf(s().objects, GS).keys()].filter(k => k.split('|')[2] === String(r.genSection)) })
       m.useCanvasStore.setState({ activeBaySelection: [{ objId: r.id, bayIdx: 2 }] })
       s().deleteSelectedBays()
-      await m.CP.flushCopyWatcher()
-      expect(m.CP.useCopyPrompt.getState().pending, 'a bay edit fills the set').toBeTruthy()
-      m.CP.dontCopy()
-      await m.CP.flushCopyWatcher()
-      expect(m.CP.useCopyPrompt.getState().pending ?? null).toBeFalsy()
+      await m.RGT.flushRowGroupWatcher()
+      expect(m.RGT.useRowGroup.getState().pending, 'a bay edit is offered to the group').toBeTruthy()
+      m.RGT.dismissPending()
+      await m.RGT.flushRowGroupWatcher()
+      expect(m.RGT.useRowGroup.getState().pending).toBe(null)
       // the two pieces (same row, same section): the far one dragged back onto the near one's end — joined
       const pieces = s().objects.filter(o => o.type === 'rack_double_row' && o.rowIndex === r.rowIndex && o.genSection === r.genSection).sort((a, b) => a.x - b.x)
       expect(pieces.length).toBe(2)
@@ -234,10 +237,11 @@ describe('IS — section copy', () => {
       const inl = m.IS.inlineSnap({ ...p2, x: p2.x + dx }, s().objects.filter(o => o.id !== p2.id), GS, 12)
       const plan = m.IS.planInlineDrop(s().objects, [p2.id], p2.id, dx + inl.ddx, inl.ddy, GS)
       expect(plan.join, 'the pieces join').toBeTruthy()
-      m.IS.applyJoin(m.useCanvasStore, plan.join, { rebuildAisles: m.rebuildAisles, skipNextAction: m.CP.skipNextAction, newId })
-      await m.CP.flushCopyWatcher()
-      expect(m.CP.useCopyPrompt.getState().pending ?? null, 'a join puts nothing in the set').toBeFalsy()
-      expect(m.CP.useCopyPrompt.getState().question ?? null).toBeFalsy()
+      m.IS.applyJoin(m.useCanvasStore, plan.join, { rebuildAisles: m.rebuildAisles, skipNextAction: m.RGT.skipNextAction, newId })
+      await m.RGT.flushRowGroupWatcher()
+      // a join is passed over by the Row group (skipNextAction): nothing offered, nothing said
+      expect(m.RGT.useRowGroup.getState().pending, 'a join offers nothing to the group').toBe(null)
+      expect(m.RGT.useRowGroup.getState().message).toBe(null)
       const joined = s().objects.find(o => o.id === plan.join.keep)
       expect(joined.beams.length).toBe(r.beams.length - 1)
     } finally { stops.forEach(f => f()) }
@@ -253,5 +257,8 @@ describe('IS — wiring', () => {
     expect((inter.match(/applyJoin\(/g) || []).length).toBe(2)
     expect(inter).toMatch(/st\.moveObjects\(d\.ids, plan\.dx, plan\.dy\)/)
     expect(inter).toMatch(/grabbedId: hitId/)
+    // the join is passed over by the Row group: its skipNextAction, from utils/rowGroupTool.js
+    expect(inter).toMatch(/import \{ groupDragFor, skipNextAction \} from '\.\.\/utils\/rowGroupTool'/)
+    expect(inter).not.toMatch(/copyPrompt/)
   })
 })

@@ -15,7 +15,7 @@ import { Hub } from './shell/Hub'
 import { nanoid } from 'nanoid'
 import { installAisleKeeper } from './utils/aisleKeeper'
 import { installRowEditKeeper } from './utils/rowEditKeeper'
-import { installCopyWatcher } from './utils/copyPrompt'
+import { installRowGroupWatcher } from './utils/rowGroupTool'
 import { trackCanvasPointer } from './utils/pasteAt'
 import { installLayerKeeper } from './utils/layers'
 import { installLevelsKeeper } from './utils/rackLevels'
@@ -30,9 +30,9 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopAisleKeeper())
 /* A copied row loses the row it was copied from's stamps (utils/rowEditKeeper.js). */
 const stopRowEditKeeper = installRowEditKeeper(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopRowEditKeeper())
-/* "Copy this change": after each row / bay action, offer to copy it (utils/copyPrompt.js). */
-const stopCopyWatcher = installCopyWatcher(useCanvasStore, nanoid)
-if (import.meta.hot) import.meta.hot.dispose(() => stopCopyWatcher())
+/* The Row group: an edit to one row of the group is offered to the others (utils/rowGroupTool.js). */
+const stopRowGroupWatcher = installRowGroupWatcher(useCanvasStore, nanoid)
+if (import.meta.hot) import.meta.hot.dispose(() => stopRowGroupWatcher())
 /* The layer list is always the seven standard layers (utils/layers.js). */
 const stopLayerKeeper = installLayerKeeper(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopLayerKeeper())

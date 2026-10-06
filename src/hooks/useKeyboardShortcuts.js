@@ -4,7 +4,7 @@ import { TOOLS } from '../constants'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../utils/pasteAt'
 import { cancelPlacement } from '../utils/placement'
-import { guardEdit, useCopyPrompt, dismissOnEscape } from '../utils/copyPrompt'
+import { useRowGroup, clearGroup, cancelGroupBox, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
 import { FILL_TOOL, cancelFill } from '../utils/fillTool'
 import { pickableIn } from '../utils/layers'
 
@@ -17,14 +17,16 @@ export function useKeyboardShortcuts() {
 
       // ── Escape — deselect, cancel draw ──────────────────────────────────
       if (e.key === 'Escape') {
-        useCopyPrompt.getState().dismissReport()   // a shown result (Copied…, Matched bays…) is over
+        useRowGroup.setState({ message: null })   // a shown result ("Applied to 11 rows") is over
         // a fill box being dragged: Esc drops it, nothing placed; with none, Esc leaves the fill tool
         if (cancelFill()) return
         if (useCanvasStore.getState().activeTool === FILL_TOOL) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         // a row being placed (paste, duplicate, left panel): Esc cancels it, nothing else
         if (cancelPlacement()) return
-        // nothing else active (nothing selected): Esc dismisses the pending-changes bar, as "Don't copy"
-        if (dismissOnEscape()) return
+        // the Row group (utils/rowGroupTool.js): Esc leaves the Row group tool, then clears the group (and a pending apply)
+        if (useCanvasStore.getState().activeTool === ROW_GROUP_TOOL) { cancelGroupBox(); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
+        { const g = useRowGroup.getState()
+          if (g.keys.length || g.pending) { clearGroup(); return } }
         useCanvasStore.getState().clearSelection()
         useCanvasStore.getState().setActiveWall(null)
         return
@@ -35,9 +37,6 @@ export function useKeyboardShortcuts() {
         e.preventDefault()
         const s = useCanvasStore.getState()
         const { selectedIds, objects, activeBaySelection } = s
-        // rows in another section while changes are pending there: ask first (utils/copyPrompt.js)
-        // …and once answered, the Delete goes ahead
-        if (!guardEdit([...selectedIds, ...(activeBaySelection || []).map(b => b.objId)], { resume: () => handler({ key: e.key, preventDefault() {}, ctrlKey: false, metaKey: false }) })) return
         /* A cross-row bay marquee (activeBaySelection, canvas2's own
            marquee-mouseup) takes priority over the single-object
            activeBayIdx check below — the same action the multi-bay panel's
@@ -155,7 +154,7 @@ export function useKeyboardShortcuts() {
           }
           break
         case 'd': {
-          useCopyPrompt.getState().dismissReport()
+          useRowGroup.setState({ message: null })
           e.preventDefault()
           // Duplicate: copy, then paste 20 px down-right; the copy is the selection (utils/pasteAt.js)
           useCanvasStore.getState().copySelected()

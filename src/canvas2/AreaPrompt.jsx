@@ -3,7 +3,7 @@ import { useAreaPrompt, answerArea, answerChoice } from '../utils/rackingAreaToo
 /* The racking area / zone question (utils/rackingAreaTool.js): a racking area
    with hand edits about to be resized or rebuilt, or a zone about to go over
    racks. Continue does it (one undo step); Cancel leaves everything as it was.
-   Same bar as the copy question (CopyNote), just above it. */
+   Same bar as the Row group (RowGroupBar), just above it. */
 const wrap = {
   position: 'absolute', left: '50%', bottom: 64, transform: 'translateX(-50%)', zIndex: 61,
   width: 'max-content', maxWidth: 'min(640px, calc(100% - 32px))',

@@ -30,7 +30,7 @@ async function fresh() {
   const { rackFootprint, MHE_PROFILES } = await import('../../generate/columnCheck')
   const { buildingSections } = await import('../../utils/syncSections')
   const AA = await import('../../generate/aisleAccess')
-  const CP = await import('../../utils/copyPrompt')
+  const RG = await import('../../utils/rowGroupTool')
   const BB = await import('../../utils/bayBeam')
   const L = await import('../../utils/layers')
   const { installAisleKeeper } = await import('../../utils/aisleKeeper')
@@ -39,8 +39,8 @@ async function fresh() {
   L.installLayerKeeper(useCanvasStore)
   installAisleKeeper(useCanvasStore, nanoid)
   installRowEditKeeper(useCanvasStore)
-  CP.installCopyWatcher(useCanvasStore, nanoid)
-  return { useCanvasStore, FT, FR, LC, generateAndPlace, rackFootprint, MHE_PROFILES, buildingSections, CP, BB, AA }
+  RG.installRowGroupWatcher(useCanvasStore, nanoid)
+  return { useCanvasStore, FT, FR, LC, generateAndPlace, rackFootprint, MHE_PROFILES, buildingSections, RG, BB, AA }
 }
 
 const RACK = new Set(['rack_row', 'rack_double_row'])
@@ -342,13 +342,14 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     noOverlaps()
   })
 
-  it('FR-stamps: filled rows carry rowIndex and genSection (after the building\'s own), and Copy to other sections copies a row moved across the aisles to the same row in every other section', async () => {
+  it('FR-stamps: filled rows carry rowIndex and genSection (after the building\'s own), and a Row group of the same row in every section replays a row moved across the aisles on the others', async () => {
     m.FT.useRackingSettings.setState({ maxRunFt: 120 })
     if (vert) building('fp_rect', 200, 480); else building('fp_rect', 480, 200)
-    const { n } = fill(bbox(outline())); await m.CP.flushCopyWatcher()
+    m.RG.clearGroup()
+    const { n } = fill(bbox(outline())); await m.RG.flushRowGroupWatcher()
     expect(n).toBeGreaterThan(8)
     for (const r of racks()) { expect(Number.isInteger(r.rowIndex)).toBe(true); expect(Number.isInteger(r.genSection)).toBe(true) }
-    expect(m.CP.useCopyPrompt.getState().pending ?? null).toBeFalsy()      // a fill is a generated layout: nothing pending
+    expect(m.RG.useRowGroup.getState().pending).toBe(null)                 // a fill is a generated layout: nothing pending
     const secs = m.buildingSections(s().objects, racks()[0].id).sections.map(x => x.key)
     expect(secs.length).toBeGreaterThanOrEqual(3)
     const K = 2, S = secs[1]
@@ -357,10 +358,12 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     const was = Object.fromEntries(secs.map(k => [k, rowIn(k).map(acrossOf)]))
     for (const k of secs) expect(was[k]).toHaveLength(1)
     const r = rowIn(S)[0]
-    s().commitObjectUpdate(r.id, vert ? { x: r.x + GS } : { y: r.y + GS }); await m.CP.flushCopyWatcher()
-    expect(m.CP.copyablePlan(s().objects, fpOf().id, GS)).toBeTruthy()
-    m.CP.copyPending(); await m.CP.flushCopyWatcher()
+    expect(m.RG.addRowOf(r.id, { otherSections: true })).toBe(secs.length)
+    s().commitObjectUpdate(r.id, vert ? { x: r.x + GS } : { y: r.y + GS }); await m.RG.flushRowGroupWatcher()
+    expect(m.RG.useRowGroup.getState().pending.summary.apply).toBe(secs.length - 1)
+    expect(m.RG.applyPending()).toBe(true); await m.RG.flushRowGroupWatcher()
     for (const k of secs) expect(rowIn(k).map(acrossOf)).toEqual([was[k][0] + GS])
+    m.RG.clearGroup()
   })
 
   it.each([['fp_rect', 300, 200], ['fp_l', 300, 200], ['fp_t', 360, 240]])('FR-check: Check layout reports no errors on a clean fill of a %s', (type, w, h) => {

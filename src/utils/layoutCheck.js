@@ -37,8 +37,7 @@ import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate
 import { rackIssues } from './bayBeam'
 import { cutOffRacks } from '../generate/aisleAccess'
 import { oversizedBayIndices } from './capacity'
-import { fmtLen } from './copyChange'
-import { sectionLabel } from './sectionCopy'
+import { fmtLen, sectionLabel } from './copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { useDragPreview } from '../canvas2/dragPreview'
 
@@ -166,9 +165,10 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
     }
   }
 
-  // ── each rack: overlap, wall, reach, bays, angle ──
+  // ── each rack: overlap, inside a zone, wall, reach, bays, angle ──
   const floors = layoutFloors(objects)
   const hasBuilding = objects.some(o => FP.has(o.type))
+  const zones = objects.filter(o => typeof o.type === 'string' && o.type.startsWith('zone_') && o.width > 0 && o.height > 0)
   const pairs = new Set()
   for (const r of racks) {
     const f = foot.get(r.id)
@@ -181,6 +181,11 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       const by = Math.min(Math.min(f.x + f.w, g.x + g.w) - Math.max(f.x, g.x), Math.min(f.y + f.h, g.y + g.h) - Math.max(f.y, g.y))
       const x0 = Math.max(f.x, g.x), y0 = Math.max(f.y, g.y), area = { x: x0, y: y0, w: Math.min(f.x + f.w, g.x + g.w) - x0, h: Math.min(f.y + f.h, g.y + g.h) - y0 }
       errors.push({ severity: 'error', kind: 'overlap', ids: [r.id, oid], box: union([f, g]), highlight: [shade(area, HL.red)], text: `${name(r)} overlaps ${name(o).charAt(0).toLowerCase() + name(o).slice(1)} by ${len(by)}` })
+    }
+    // a rack inside a zone: nothing may stand in an office, a washroom, a staging area or a custom area
+    for (const z of zones) {
+      const ov = { x: Math.max(f.x, z.x), y: Math.max(f.y, z.y), w: Math.min(f.x + f.w, z.x + z.width) - Math.max(f.x, z.x), h: Math.min(f.y + f.h, z.y + z.height) - Math.max(f.y, z.y) }
+      if (ov.w > 0.01 && ov.h > 0.01) errors.push({ severity: 'error', kind: 'zone', ids: [r.id, z.id], box: union([f, { x: z.x, y: z.y, w: z.width, h: z.height }]), highlight: [shade(ov, HL.red)], text: `${name(r)}: inside the ${z.label || 'zone'} by ${len(Math.min(ov.w, ov.h))}` })
     }
     const fp = r.parentId ? byId.get(r.parentId) : null
     if (iss.wallOutIn > 0) errors.push({ severity: 'error', kind: 'outside', ids: [r.id], box: boxOf(f), highlight: [outline(f, HL.red)], text: `${name(r)}: past the wall by ${len((iss.wallOutIn / 12) * gridSize)}` })

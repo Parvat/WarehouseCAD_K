@@ -12,7 +12,7 @@
 // A pasted rack is a NEW row: it loses the generator's row stamps
 // (rowIndex / genSection / genRunFt / genCrossFt) and any split-piece link
 // (pieceOf), so it is an added row ("Copy to all sections",
-// utils/copyPrompt.js) and never a move of the row it was copied from. It is
+// utils/rowGroup.js) and never a move of the row it was copied from. It is
 // parented to the building it lands in.
 //
 // Pasting or duplicating ROWS (beam racks) does not drop them straight in:

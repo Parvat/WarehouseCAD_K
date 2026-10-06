@@ -22,13 +22,13 @@
 //     its racks are still there: taken back the same way, and asked "Delete
 //     the racks in this area too?" [Keep racks] [Delete racks]; either answer
 //     puts the delete back as one history entry.
-// The copy watcher is told these are the app's own actions, not row edits
-// (copyPrompt.skipNextAction): nothing joins the copy-to-sections set.
+// The Row group watcher is told these are the app's own actions, not row edits
+// (rowGroupTool.skipNextAction): the Row group passes it over.
 
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import { planAreaResize, planAreaRebuild, areaEdits, areaSettings, racksUnderZone, clearZone, isArea, isZone, boxOf } from '../generate/rackingArea'
-import { skipNextAction } from './copyPrompt'
+import { skipNextAction } from './rowGroupTool'
 import { rebuildAisles } from './aisleRebuild'
 import { floorFor, clampGrowth } from './floorClamp'
 

@@ -142,3 +142,5 @@ CURRENT FOUNDATION QUEUE (do these first — everything above builds on them)
 5. S3 (rack between every column) → then the 3-options killer feature.
 6. THEN Feature 1 (Layout Checker) — reuses the validators.
 7. LATER Feature 2 (Import plans) — file readers + assisted tagging.
+8. LATER — Run Check layout automatically on save. Show the errors and warnings,
+   the same way PDF export asks, but never block the save.

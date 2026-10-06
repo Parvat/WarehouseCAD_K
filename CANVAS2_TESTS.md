@@ -393,8 +393,8 @@ longer stamped with it. Delete removes the area, its racks and their aisles.
 building and the racks. A hidden Zones layer leaves them off the sheet.
 
 **Every one of these is one undo step.** Area and zone actions are not row
-edits: the copy watcher skips them (`copyPrompt.skipNextAction`), so nothing
-joins the copy-to-sections set.
+edits: the Row group's watcher passes them over (`rowGroupTool.skipNextAction`),
+so nothing is offered to the group.
 
 **Also changed**
 - Fill racking: a rack only **touching** the box (the old area's edge row)
@@ -417,7 +417,7 @@ joins the copy-to-sections set.
 | `RA-zone-area` | a staging zone dropped over a racking area: nothing asked, the area refits at once — no bay under the zone, every rack on the pattern; ONE entry with the zone; no errors; one undo restores both exactly |
 | `RA-zone-move` | the office moved down onto the area's racks: refitted on release, nothing asked, no bay under it, one entry; moved back: every rack returns at its exact pattern place; grown 30' into the area: the racks under it go; shrunk back: they return; one undo takes back the shrink and its refit together |
 | `RA-mouse` | a box and an edge drag at mouse positions (top at 39.95', dragged 2.17' past the wall): Check layout finds nothing at all |
-| `RA-copy` | a shrink that trims rows puts nothing in the copy set and asks nothing |
+| `RA-copy` | every row in the Row group, a shrink that trims rows: no apply offered, no message |
 | `RA-align` | a washroom top-left; the area at mouse coordinates over the bottom / right part; its nearest row given 120" + 72" bays by hand; extended across the rows past the wall (asked, as a hand edit): every new rack within the placed row's reach has its uprights exactly, some are whole copies; the hand-edited row is unchanged and no new rack has a 120" bay (the pattern, not the hand edit); aisles full; Check layout finds nothing at all; one undo |
 | `RA-align-shape` ×2 | an L and a T: the area over the bottom / right part extended across the rows to the far wall: every new rack's uprights within the old row's reach are its uprights, some whole copies; every rack inside the walls, no errors |
 | `RA-precision` (once) | the app's own coordinates (horizontal): the extension's first aisle off the old rows at full width — Check layout finds nothing at all (it was 9e-6 px short: fillRects rounded its cuts) |
@@ -589,8 +589,8 @@ by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
   `nearType` / `farType` options that briefly made open-edge rows
   back-to-back are gone.
 - New rows are stamped `rowIndex` / `genSection` after the building's own, so
-  copy-to-sections, Match bays and Check layout work on them. The copy watcher
-  sees a fill as a generated layout: nothing is pending.
+  the Row group ("+ Same row in other sections") and Check layout work on them.
+  A fill is a generated layout: nothing is offered.
 - While dragging: the box, the racks it would place (faint), and a label such as
   "150' × 100' · ≈ 6 rows · 1,080 positions". Esc drops the box; a second Esc
   leaves the tool. The fill is **one undo step**.
@@ -603,7 +603,7 @@ by max run) — `generate/fillRacking.js`, `utils/fillTool.js`,
 | `FR-edge-stack` (×6) | 300 × 200, a box from mid-building (open floor) to a far edge past the wall, exactly on its inner face, or 6" short of it (within a rack's depth, so on the wall: area AA — changed, approved, from "6" short: open floor"); each dragged from the open edge and from the far edge. The row at the start edge is single, its outer face exactly on it (0", within 0.001 px; past the wall or 6" short of it: the inner face); what is left at the other edge is under a pair and an aisle; every row between is back-to-back; every aisle the forklift aisle; nothing outside the box or the walls; no errors |
 | `FR-edge-run` (×2) | the same along the run: dragged from the open edge the racking starts exactly on it; dragged from the wall, exactly on the inner face; nothing past either; no errors |
 | `FR-existing` | a double row in the middle and a single row across the rows: both exactly as they were after filling the whole building; no new rack overlaps them, each is at least an aisle off; no overlaps |
-| `FR-stamps` | 480' of run, 120' max run: every rack has integer rowIndex / genSection; nothing pending after the fill; 3+ sections, row 2 once in each; row 2 of section 2 moved 1' across, Copy: row 2 of every section moved 1' |
+| `FR-stamps` | 480' of run, 120' max run: every rack has integer rowIndex / genSection; nothing offered after the fill; 3+ sections, row 2 once in each; row 2 grouped in every section, section 2's moved 1' across, Apply: row 2 of every section moved 1' |
 | `FR-check` (×3) | Check layout: no errors on a fill of a rectangle, an L and a T |
 | `FR-undo` | Esc mid-drag (the plan had racks): nothing placed, no history; the fill adds exactly one history entry; one undo restores the objects exactly, one redo brings the fill back |
 | `FR-estimate` | the live plan while dragging has rows and positions, and the release places exactly its racks |
@@ -724,11 +724,11 @@ vertical):
   inside, it is picked on its outline over open floor as before (the hit test
   checks the outline before the building).
 
-### ZP — Placing a zone, dismissing the bar · `ZP_zonePlaceDismiss.test.js` (12 tests)
+### ZP — Placing a zone, dismissing the Row group's apply · `ZP_zonePlaceDismiss.test.js` (12 tests)
 Code: `utils/placement.js` (`snapZone`), `canvas2/CopyChange.jsx` (the ghost),
 `components/LeftPanel/FloatingToolbar.jsx` (zones placed like rows),
-`canvas2/CopyNote.jsx` (the ✕), `utils/copyPrompt.js` (`dismissOnEscape`),
-`hooks/useKeyboardShortcuts.js` (Esc).
+`canvas2/RowGroupBar.jsx` (the ✕), `utils/rowGroupTool.js` (`dismissPending`,
+`clearGroup`), `hooks/useKeyboardShortcuts.js` (Esc).
 
 **Placing a zone from the left panel**
 - It follows the mouse, faded: the zone itself under a blue outline, as a row
@@ -738,20 +738,20 @@ Code: `utils/placement.js` (`snapZone`), `canvas2/CopyChange.jsx` (the ghost),
 - A click drops it as one action; Esc cancels (nothing placed, no history).
 - On the drop the area keeper refits any racking area it reaches (area RA).
 
-**Dismissing the pending-changes bar**
-- The bar's ✕ ("Dismiss pending changes") closes it and clears the set: the
-  changes stay where they were made, nothing is copied. Same as "Don't copy".
-- Esc does the same when nothing else is active: nothing being placed or filled
-  and nothing selected. With a selection, Esc deselects first.
+**Dismissing the Row group's apply**
+- The bar's Skip closes the apply: the edit stays on its own row,
+  nothing is applied, the group is kept.
+- Esc, when nothing else is active (nothing being placed or filled, nothing
+  selected), ends picking, then clears the group and any pending apply.
 
 | Test | Asserts |
 |---|---|
-| `ZP-dismiss` ×3 | Generate on a rectangle, Fill racking over a whole L / T, max run 120': a row moved across shows the bar with its ✕; Esc with a selection does nothing to it; with none it dismisses: the set and question clear, the ✕ is gone, the moved row stays moved, the row in the other sections is untouched; a second Esc does nothing |
+| `ZP-dismiss` ×3 | Generate on a rectangle, Fill racking over a whole L / T, max run 120': row K grouped in every section, the whole row (every piece) moved across → the apply bar; its Skip: nothing applied, the group kept; moved again, Esc with nothing selected: the apply and the group clear; the moved row stays moved, the other sections' rows untouched; a second Esc does nothing |
 | `ZP-place` ×3 | rectangle, L, T with an area: a zone placed follows the pointer (centred on it); 8 px off the inner top-left corner it snaps onto both faces; pushed past the wall it stays inside; Esc: nothing placed, no history; a click over the area's racks drops it, parented, nothing asked, no bay under it, one entry, no errors; one undo restores both exactly |
 
 All run horizontal and vertical.
 
-**Break-its:** Esc's dismissal off: ZP-dismiss fails (6). The zone snap off: ZP-place
+**Break-its:** Esc not clearing the group: ZP-dismiss fails (6). The zone snap off: ZP-place
 fails (6). The zone refit off (`areasNear` finding no area): RA-zone-area,
 RA-zone-move and ZP-place fail (10).
 
@@ -1152,119 +1152,6 @@ count shows on the button ("Check layout · 3 errors" / "· 2 warnings" /
     nothing selected.
 - No console errors.
 
-### EX — Fixes from the exploratory check of section copy · `EX_exploreFixes.test.js` (14 tests)
-1. **Results clear on the next action** — undo, redo, a placement (paste,
-   Ctrl+D), Esc (`dismissReport` in the watcher's undo / redo branch,
-   `startPlacement` / `cancelPlacement` and the Esc / Ctrl+D keys).
-2. **Match bays is a finished action.** Marked with `beginMatch()`; the
-   watcher then adds nothing to the pending set and rebases it
-   (`rebaseAfterMatch`): each row takes its matched bays and start along,
-   keeps its place across. So the bay changes it resolved stop counting, a
-   move across still counts (and copies its exact delta), and the bar's
-   Match source stays the row the user changed.
-3. **Vertical creep — the cause:** a live-flue drag (a double row whose flue
-   a column had widened, 12" instead of 9") worked out the rack's centre as
-   origin + BASE depth / 2, but the origin was the widened rack's. When the
-   flue went back to 9", the centre was off by (current − base) / 2 = 1.5"
-   — ALONG the run for a turned rack, across for an unturned one. The drag
-   now keeps the rack's size at drag start (`flueDragCentre` /
-   `flueDragPlacement` in liveFlue.js). An automatic flue change is no
-   longer a "change" (the shape is compared at the base flue). The copies
-   always took the source's net centre delta; the source's aisle face had
-   differed by half the flue change.
-4. **Preview keys** are unique (`previewKey`: position + id — every added
-   copy shares one placeholder id while previewing).
-5. **The question's edit is finished after the answer:** `guardEdit(racks,
-   { resume, drag })`. Delete re-runs itself, a placement commits, a panel
-   change (taken back when it landed) is re-applied field by field (so a
-   copy to the same rack survives); a drag shows "Drag cancelled — drag
-   again". A resume runs only for the question actually answered.
-6. **Snap reach** = min(12 px on screen, 1 ft) for every snap: smart guides
-   (rack, wall and column — the wall / column reach was 30 px, 5 ft at 15 %)
-   and placement.
-- **Minor:** "Copied N rows" after every copy; counts are NET (from the
-  difference, not per action); Match bays counts only rows that really
-  change (and writes no undo step when nothing does); the bar offers Match
-  bays whenever a bay change is pending, with no Copy button when nothing
-  would be copied. Also: the copy watcher's in-place history write now
-  keeps the layers the store's snapshots carry.
-
-| Test (1080×410; ×2 h/v; generated and manual) | Asserts |
-|---|---|
-| `EX-results` | "Copied 7 rows" (8 sections h); undo, redo, a Ctrl+D placement clear it; Esc and Ctrl+D wired to `dismissReport`; manual: a Match result clears on undo |
-| `EX-match` | a move across + a bay change: bar 2 changes, Match from row 5; after Match bays the log is unchanged, the bar is 1 change (the move), no Match button; Copy copies the move exactly; a second bay change is offered from ITS row |
-| `EX-flue` | a rack widened to a 12" flue dragged 48" across with its flue back to 9": its start along unchanged, centre exactly +48"; in the section one net change "moved 4' across"; every copy's centre exactly +48" |
-| `EX-preview` | with a delete and an added row pending, the preview's ids collide but `previewKey` never does; the painter uses it |
-| `EX-resume` | a placement in another section: asked, Copy, placed (and the "Copied" result outlives it); a panel bay change: taken back, asked, Don't copy, re-applied, a new set there; a Delete's resume runs once; a drag: "Drag cancelled — drag again"; a question cleared unanswered never runs later |
-| `EX-snap` | at 15 % / 50 % / 100 % a column face 0.8 × the reach away catches, 1.2 × doesn't (reach 1 ft, 24 px, 12 px); at 15 % a face 1.5 ft away no longer catches; placement never pulls a row more than 1 ft at 15 % |
-| `EX-minor` | the same row moved twice: 1 change, 1 line; the question says "1 change"; "Copied N rows"; manual: Match bays with one rack off → "Matched bays on 1 row in section 1"; a bay change alone: Match bays, no Copy button |
-
-**Re-run in the app (the exploratory sequences), horizontal and vertical, 30 steps each, no issue:**
-- Row 5 of section 3 dragged 4 ft across at 15 %, 50 %, 100 %: no along
-  creep (vertical: exactly 48"; horizontal 46.5" after snapping); every
-  copy's centre off the source's delta by 0; "Copied 7 rows" (2 v).
-- The result cleared on undo, redo, Esc and Ctrl+D (after Copy and after
-  panel Match bays).
-- A move across + a bay change → bar Match bays: "Section 3: 1 change",
-  no Match button, only section 3 changed.
-- Delete + paste, hover Copy: 14 (4 v) preview outlines for 14 (4) copies,
-  no console warning.
-- Delete in section 1 → question → Copy: copied AND row 8 deleted. A drag in
-  section 2 → Don't copy: "Drag cancelled — drag again", the row unmoved. A
-  panel bay change in section 2 → Don't copy: re-applied, "Section 2: 1
-  change … Match bays (from row 7)".
-- Manual: a rack off by 3 ft along, Match bays → "Matched bays on 1 row in
-  section 1"; undo clears it; a delete shows nothing. No console errors.
-
-### CF — Section-copy fixes from manual use · `CF_copyFixes.test.js` (12 tests)
-1. **Bar and question only when a copy would do something.** The bar, its
-   buttons and "Copy your changes?" appear only when the building has at
-   least 2 GENERATED sections and the copy plan copies (or deletes) at least
-   one row (`copyablePlan` in `utils/copyPrompt.js`, which never throws).
-   A layout placed by hand has no generated sections: placing, pasting and
-   deleting there show nothing. Before, the bar offered "Copy to other
-   sections" and the click did nothing: the plan threw (`planReplay`) on a
-   layout with no generated sections, so the question never closed either.
-2. **The question.** "section 1", never "section run 1" (`sectionLabel`, also
-   in the bar, reports and "stays in section" lines). Copy and Don't copy
-   always close it. An edit across several sections (select all + Delete) is
-   never asked about; the "affects rows in N sections" notice shows only
-   where copying exists (≥ 2 generated sections).
-3. **Cross-aisle = warning.** Paste / placement in a generated cross-aisle
-   is placed, with an orange outline and "In the cross-aisle between
-   sections A and B". Only overlapping a rack and outside the building still
-   block. Only cross-aisles between generated sections count
-   (`generatedCrossAisleGaps`): a manual layout has none to warn about.
-4. **Match bays → the bar.** From the right panel (`runMatchBays`) or the
-   bar, the result shows in the bar — "Matched bays on 6 rows in section 3
-   from row 5" (no "from row" for a row placed by hand), plus warnings —
-   until the next action (`showAfterAction`: held until its own action has
-   settled, cleared by the next).
-
-| Test (1080×410; ×2 h/v; generated and manual) | Asserts |
-|---|---|
-| `CF-manual` | manual layout (no generated sections, ≥ 2 runs): a row placed in the gap between runs, a pasted row, a move across and a delete — no bar, no question, nothing in the note; nothing copyable; an edit in another run is never stopped |
-| `CF-generated` | a move across shows the bar ("1 will be copied"); an edit in another section asks, worded "section 3"; Don't copy closes it |
-| `CF-select-all` | generated and manual, with a change pending: select all + Delete is not stopped, no question; everything goes; no bar after |
-| `CF-question` | "Copy your 2 changes from section 1 …" for a hand run; Copy (with and without a building) and Don't copy close a question with nothing to copy, without throwing; on a generated layout Copy copies (row moved in section T) and closes |
-| `CF-cross-aisle` | generated: a one-bay row in the cross-aisle between sections 1 and 2 — not blocked, `crossAisle`, the warning in the note, the orange outline; placed. Overlap and outside still block. Manual: the gap between runs gives no cross-aisle warning |
-| `CF-match` | generated: a bay change alone shows the bar with Match bays and no Copy button (EX); the panel's Match bays shows "Matched bays on N rows in section S from row K" after its action settles; the next action clears it; the panel button calls `runMatchBays`. Manual: "… in section 1" (no row number); a move spanning two runs gives no notice |
-
-**Checked in the app, horizontal and vertical:**
-- **Manual** (a hand-drawn 400 × 400 building, 8 rows in two runs): Ctrl+C /
-  Ctrl+V a row into the gap between runs, Delete, a Double Row from the left
-  panel into the gap (no orange), Match bays from the panel ("Matched bays on
-  3 rows in section 1" h, 2 v), Ctrl+A + Delete — never a bar, question or
-  notice.
-- **Generated:** a move across → the bar "Section 3: 1 change (1 will be
-  copied)". A one-bay row over the cross-aisle between sections 1 and 2:
-  orange outline, "Check — In the cross-aisle between sections 1 and 2";
-  the click asks "Copy your 1 change from section 3 …" (a change is pending
-  there); Don't copy closes it; the next click places the row. Match bays
-  from the panel: "Matched bays on 20 rows in section 2 from row 7" (57 v)
-  with its warnings; the next action clears it. Ctrl+A + Delete: no
-  question, every rack gone. No console errors.
-
 ### RL — Every beam rack has levels: 4 unless set · `RL_rackLevels.test.js` (8 tests)
 - **The bug:** capacity (`utils/capacity.js`), the column check and the rack
   panel read `levels || 1`. Generated racks carry 4; racks placed from the
@@ -1366,106 +1253,204 @@ three drawn sizes changed:
 - **One rack dragged** past its columns changed the count, as it should.
 - No console errors.
 
-### SC — Copying across sections: a per-section pending set · `SC_sectionCopy.test.js` (33 tests)
-This replaces the per-change copy notes, the diagonal two-button note and
-manual mode, and their tests (CC). "Always copy" and "Match bays in this
-section" stay.
+### RG — The Row group · `RG_rowGroup.test.js` (79 tests)
+Replaces Match bays in section, the section-copy bar and its Copy / Don't copy
+question (areas SC, CF, EX, Y, Z2 are removed — their still-valid checks are
+listed below). Code: `utils/rowGroup.js` (rows, what an edit was, the replay
+plan, the bar's words, the preview's rects), `utils/rowGroupTool.js` (the group,
+its tool, the watcher, Apply), `canvas2/RowGroupBar.jsx`,
+`canvas2/RowGroupPreview.jsx`, the Row group tool in `canvas2/Canvas2.jsx` and
+the left panel's drawing toolbar.
 
-**With Always copy off (the default):**
-- **Collecting changes.** The user makes any number of changes in one
-  section; nothing is copied or locked meanwhile.
-- **The bar** at the bottom reads "Section N: K changes (M will be copied) ·
-  Copy to other sections"; with nothing to copy, "(none will be copied)". Its tooltip lists each change, one line per action:
-  - "Row 5: moved 1' across" and "Row 9: deleted" are copied;
-  - "Row 5: bays changed — stays in section 3" and "Row 5: moved 2' along —
-    stays in section 3" are not.
+**Picking: the Row group tool**, next to Fill racking and used the same way.
+Drag a box over rows: they join the group. A click on a row toggles it. Either
+is one action, after which the tool goes back to Select. Using the tool again
+adds to the group. The tool takes the press before anything else, so a box may
+start on a wall or a rack. The group is outlined until Esc or ✕ and lives only
+in presentation state — never the canvas store, never the file. (Simplified
+after the hand check on 7b4b747: the "+ This row", "+ Same row in other
+sections" and "Pick rows" buttons are gone, from the bar and the rack panel.)
 
-  Clicking copies the set at any time, as one undo step, and clears it.
-- **Moving on to another section.** Starting an edit on a row in a
-  different section, while copyable changes are pending, stops the edit and
-  asks "Copy your K changes from section N to the other sections?" [Copy]
-  [Don't copy]. Either way the set clears, and edits in the new section
-  start a new one.
-  - Drag start, Delete and placing a row are checked before they happen.
-  - Any other edit, such as a panel change, is taken back as soon as it
-    lands.
-  - A set that holds only changes that stay just gives way to the new one.
-- **What is copied** to the same row (rowIndex) in every other section:
-  - rows moved across the aisles, by the net delta per row;
-  - added rows, full length for each section;
-  - deleted rows.
+**Rows.** A generated row is its stamp (`s|building|section|row`); a row placed
+by hand is its racks chained in one line (gap under 10.5'), keyed by their root
+ids (a split piece's root is the rack it came from), so a row keeps its key
+through splits.
 
-  The existing fit, skip and wall rules and the skip report apply.
-- **Match bays from the bar.** When the set includes a bay change, the bar
-  also offers "Match bays in section 3 (from row 5)". The source is the row
-  last given a bay change that still stands. It is the right panel's "Match
-  bays in this section" (applySectionSync): same rows, same warnings (shown
-  in the bar's report), one undo. The panel button stays.
-- **Never copied:** bay changes and moves along a row. For the copy, the
-  section's rows are planned in their original shape, moved only by their
-  delta across.
-- **Rows in several sections.** One action changing rows in more than one
-  section is not copied: "This change affects rows in 2 sections, so it
-  stays where you made it."
+**The replay** — an edit to one group row, on every other group row, relative to
+that row:
+- **bays:** the source's uprights wherever both have racks, within ½"
+  (`UP_TOL_FT`). A target gets exactly what the source got: a bay through a
+  wall or a zone is applied, with a warning — never dropped (after the hand check
+  on a111e8d; dropping it once made Apply do nothing while the bar said "3 rows
+  lose a bay": each target's new bay at the office end was dropped again). A row
+  whose uprights don't line up is skipped (wall rows).
+- **a move, across or along:** the same delta on its dominant axis — across
+  measured centre to centre (a live-flue drag that narrows the rack moves it
+  exactly the drag). Along moves are replayed too (after the hand check on
+  3a652bc; they used to stay on their own row). **Dragging a group row is locked
+  to its dominant axis**, so a wobbly hand never drifts it on the other — that
+  drift, kept on the source when only the across part was replayed, is what put
+  rows 22-25 3" apart along and made every later bay edit "uprights don't line
+  up". While a group row is dragged, the other group rows and every rack lined
+  up with where it started are not snap targets (they could only pull it back
+  to where it was), so a move of an inch sticks and is offered; a drag that ends
+  where it started writes no history. **Part of a row
+  dragged** (one rack of a two-rack row): each target's racks more than half
+  inside the moved rack's stretch move; a target with a rack only partly inside
+  it is skipped ("a rack only partly inside the stretch that moved") — a rack is
+  never split. A move — across or along — that pushes a target through a wall or
+  into a zone is applied, with that warning.
+- A skipped "uprights don't line up" says by how much: "uprights don't line up
+  (3" off)" — the nearest a target upright comes to a source one.
+- **delete:** the others deleted. **A row added next to a group row:** one beside
+  each other group row, the same offset across, at that row's own length.
+- **levels:** the others get the same levels. Depth, kind and other edits are
+  not replayed.
+- **several group rows changed by one action:** if each was changed the same
+  way, the edit is applied to the rest and every edited row is a source. "The
+  same way" means the same delta across, the same levels, all deleted, or bays
+  that replaying the first row's edit on the others reproduces exactly. Edits
+  that differ are not replayed ("These N rows were changed in different
+  ways…").
+- A clicked bay's highlight (`activeBayIdx` / `activeTowerIdx`) is selection
+  state written on the rack without a history entry; it is never an edit. (It
+  was: clicking a bay in a second row cleared the first row's, so every bay edit
+  after the first read "touches 2 rows" — the message from the hand check.)
+- **A target gets exactly what the source got** (after the hand checks on
+  26ec13e and a111e8d). What Check layout would flag after the apply and
+  didn't before — through a wall ("past the wall"), inside a zone (new: "inside
+  the Office by …"), an overlap, an aisle under the travel width or the pick width,
+  a cross-aisle that leaves no way in, a column on an upright, a rack nobody can
+  reach — is a **warning** on that target: it is applied, counted on the bar,
+  marked in the preview, and Check layout reports it after. It is judged on the
+  layout as it will be after the whole apply, every target moved together — so
+  rows moving together never warn about each other (they used to be skipped for
+  "an aisle under the travel width" against their neighbours' old positions:
+  40 of 51 rows on the fixture for a 3.875' drag). Skipped only: uprights that
+  don't line up (and a rack only partly inside a dragged stretch, which would
+  have to be split). A cross-aisle narrowed while a way in remains is
+  not flagged — Check layout doesn't flag it for a hand edit either.
 
-**With Always copy on:** each move across, add and delete is copied at once,
-folded into the action's own history entry, so one Ctrl+Z undoes both. There
-is no set and no question.
+**The bar** (one bar while a group exists): "Row group · N rows", one
+**Ask / Auto apply** switch (remembered per browser, `trace.rowGroup.always`)
+and ✕.
+- **Ask:** after an edit the same bar shows "Apply to the other N rows?" — with
+  "W will have warnings." and "S skipped." in
+  that line — **Apply** (primary) and **Skip**. The rows with warnings are listed
+  below ("Warning — Section 2, row 12: an overlap"), then the skipped rows with
+  their reason. The preview is on the canvas: targets dashed blue, targets with
+  warnings orange with long dashes, dropped bays red filled with a solid edge,
+  skipped rows amber dashed. **Apply is one undo step.** The result stays on the
+  bar ("Applied to 48 rows · 1 with warnings — see Check layout · 3 skipped"),
+  with the rows it warned about or skipped listed under it.
+- **Auto apply:** applied at once, folded into the edit's own history entry (one
+  Ctrl+Z undoes both) — never a question, never Skip.
+- **Nothing to apply** — Ask or Auto, no question: "Nothing applied. 3 skipped"
+  with each row and its reason; an edit no other group row has racks for says
+  "Nothing applied: no other group row has racks there." A move along shows the
+  bar like any other edit (it used to show only a faint grey "a move along the
+  row isn't replayed").
 
-**Storage.** The set is kept on the building (`copyPending`): a snapshot of
-the section's racks from just before its first change, and the log. It is
-saved with the layout, undo takes a change back out, and a regenerated
-layout clears it.
+Undo / redo end a pending apply. A racking area's refit is passed over
+(`skipNextAction`), and Generate clears the group.
 
-| Test (1080×410, "section 3" and "section 5" — vertical has 3 sections, so section 1; ×2 h/v) | Asserts |
+On the hand-check layout (`realLayout.fixture.js`): horizontal rows as saved,
+vertical rows on the layout turned 90° (the same rows mirrored).
+
+| Test | Asserts (horizontal and vertical) |
 |---|---|
-| `SC-layout` | the orientation is right, and rows 5, 7 and 9 exist in every section |
-| `SC-stays` | a beam change and a move along the same row in section 3: no question and no lock; nothing would be copied, so no Copy button — the bar shows 1 net change and Match bays (EX); copying changes nothing elsewhere |
-| `SC-match` | a move across alone: no Match bays button. A beam change in row 7 alone: Match bays only, no Copy. Then a move across (row 9) and a beam change in row 5: the bar reads "Match bays in section 3 (from row 5)" (the last one). Clicking gives every row of section 3 row 5's bays in one history entry, with the report "Matched bays on N rows in section 3 from row 5"; one undo restores |
-| `SC-stays-mixed` | an end bay removed at a cross-aisle, a row moved along and a row moved across, all in section 3: the bar reads "Section 3: 3 changes (1 will be copied)"; only the move across is copied; the other sections keep their bays and their along position |
-| `SC-question` | rows moved across (1′, −6″) and one deleted in section 3, then a drag started in section 5. The question "Copy your 3 changes from section 3 …" appears and nothing happens yet. Copy: every other section gets the same net deltas and loses row 9; section 3's own rows are untouched; the set clears; the drag may now go ahead and starts a set in section 5 |
-| `SC-dont` | the same, Don't copy: the other sections are unchanged, the set clears, and a change in section 5 starts its own set |
-| `SC-stop` | a panel change in section 5, with nothing checked before it, is taken back (layout and history as before) and the question asked |
-| `SC-bar` | the bar's Copy is one undo step; undo brings the copies back out and the set back |
-| `SC-always` | Always copy: a move across and a delete are copied at once, one history entry each, and each undoes with its copies; a bay change stays; no set, no question |
-| `SC-undo` | three changes, then undo → 2 in the set, then undo twice → no set |
-| `SC-save` | a layout saved with a pending set comes back with it (serializeScene / deserializeScene), and Copy then works |
-| `SC-multi` | rows in two sections moved in one action: the message, no set, nothing copied |
-| `SC-regenerate` | a regenerated layout clears the set (and any old report) |
-| `SC-add` | a row pasted into a gap follows the mouse, snaps to the forklift aisle and places on one undo step. The set lists "A row added", and Copy puts it in every section, full length for each |
-| `SC-place` | paste and duplicate follow the mouse; blocked spots (outside, overlap) take the click and do nothing; a cross-aisle warns and places (CF rule 3); Esc cancels; placing a row in section 5 while section 3 has a copyable change asks first |
-| `SC-skip` | a copy that would overlap is skipped: "Section 1, row 5: overlaps row 6 by 1'"; the others are copied |
-| `SC-wire` (once) | the notes, two-button note and manual mode are gone. The bar, the question, the checks before a drag, Delete and placing, and the Always copy switch (off by default) are wired |
+| `RG-pick` | the tool: a box over section 4's run adds 14 rows (section 4's 13 and section 3's row 14, which runs into it), then Select is back; the tool again, a click adds row 7 of section 2 (Select back), again takes it out; a second box adds more; the bar: "Row group · N rows", the Ask / Auto apply switch (off), ✕ — and with a rack selected no "+ This row", "+ Same row in other sections", "Pick rows" or "Always apply"; the toolbar button after Fill racking; the canvas routing; Esc leaves the tool; the select tool no longer picks |
+| `RG-bays` | worked example a — section 4 row 7, bay 5 96" → 84": "Apply to the other 11 rows? 2 skipped.", rows 4/1 and 3/14 "uprights don't line up" listed on the bar; Apply: one history entry, "Applied to 11 rows · 2 skipped"; every target upright on one of the source's; the half row (single + pair) and the short rows (3 bays from 224.75' → 223.75'); the skipped wall row untouched; undo once → the edit only, twice → as before |
+| `RG-drop` | b2 — bay 5 96" → 108", the targets end 1' past the wall: "Apply to the other 11 rows? 11 will have warnings. 2 skipped." (no "lose a bay"), each "through a wall"; their racks drawn warned in the preview, no dropped kind, every key unique; after Apply each has the source's bays (none dropped), ends past the wall, and Check layout reports it ("past the wall") |
+| `RG-zone` | b′ — section 3 row 7, bay 11 96" → 132": rows 3-5 get the bay into the office: "Apply to the other 11 rows? 3 will have warnings. 2 skipped.", each "inside a zone"; Check layout reports them ("inside the Office by …") |
+| `RG-add-delete-bay` | an end bay deleted → each target loses the bay at that upright; a bay added back → each gets it back; a middle bay deleted → "Apply to the other 7 rows? 2 skipped.", every target with that bay has a gap there; no new overlap; every rack inside the walls |
+| `RG-across` | row 7 in every section; section 4's moved 1' across → "Apply to the other 3 rows?" → all moved 1'; one entry; undo restores |
+| `RG-together` | every row grouped, one dragged 3.875' → "Apply to the other 51 rows? 2 will have warnings." — the two wall rows go through the wall (applied, "through a wall"), no aisle warnings anywhere; after Apply the spacing between rows is unchanged |
+| `RG-drift` | a move made other than by a drag (no axis lock), 1' across + 0.9' along → only its dominant part is replayed: targets 1' across, 0 along; the source keeps its own |
+| `RG-part` | only the pair of the half row 4/6 dragged 1' → "Apply to the other 5 rows? 8 skipped." — rows 2-5 and row 1's wall rack (more than half inside the stretch) move; rows 7-13 and 3/14 skipped, "a rack only partly inside the stretch that moved"; no rack split; the rest of the source row untouched |
+| `RG-warn-bays` | section 2's row 7 given two bays toward section 3: no bay dropped, "Apply to the other 11 rows? 11 will have warnings. 2 skipped." (an overlap); every row has both bays; Check layout reports each overlap; the result line points to Check layout |
+| `RG-along` | row 7 in every section moved 1' along → "Apply to the other 3 rows?" (kind along) → every row 7 1' along; section 1's moved 3' toward section 2: "Apply to the other 3 rows? 2 will have warnings." — section 4's through the end wall, section 3's a column on an upright |
+| `RG-delete` | row 7 deleted in section 4 → "Apply to the other 3 rows?" → every row 7 gone, the group empty; undo → back but the source; undo → all back |
+| `RG-add-row` | row 8 deleted everywhere; a hand row where section 4's was, beside row 7 → three added, each beside its section's row 7 at the same offset across and that row's own length |
+| `RG-multi` | two group rows moved the same 3" across → "Apply to the other 12 rows? 1 will have warnings." (section 3's row 14 through the wall; row 7 keeps the column already on its upright) → the others moved 3"; select-all + Delete deletes every row, nothing left to offer |
+| `RG-always` | Auto apply: the switch shows on, no apply bar, applied at once, one history entry for edit + apply; one undo → as before the edit; redo → both back; the switch kept in `localStorage` |
+| `RG-undo` | undo, redo and a new layout end a pending apply; ✕ leaves the edit on its own row; no group → nothing offered |
+| `RG-message` | "Applied to 11 rows · 2 skipped" on the bar until a placement starts |
+| `RG-save` | the file has no group keys, no `rowGroup` / `alwaysApply`; the canvas store has no group; a reload carries none |
+| `RG-shape` ×6 | rectangle, L, T × both: a bay change on a middle row of each section, replayed on its section: no new overlap, every replayed rack inside the walls unless it carries "through a wall", every upright on the source's where the source has racks, the same bay count (nothing dropped) |
+| `RG-warn-aisle` | by hand: B ends 8.0' from the rack across → applied, no warning (that aisle was already under the pick width); 7.99' → applied, "an aisle under the travel width", "1 will have warnings", listed on the bar |
+| `RG-warn-and-skip` | by hand, all warnings, none skipped: B moved onto C → "an overlap", its racks marked `warned`, Check layout reports the overlap; through the wall → "through a wall", Check layout "outside"; onto an office → "inside a zone" (D beside it applies with none), Check layout "zone"; a column on B's upright → "a column on an upright", Check layout reports it; the preview's WARNED style |
+| `RG-along-warn` | by hand: B moved 13' along onto C (its own row, 11' beyond) → applied with "an overlap" (found by B's racks, though B and C then chain into one row); one along through the end wall → applied with "through a wall" |
+| `RG-rows22` | the layout as saved, rows 22-25 of section 1 under the office, Auto apply: identical uprights as loaded; a 1.5' move with a 3" drift along → only across replayed, row 22 3" off; a bay deleted → no question, "Nothing applied. 3 skipped", each "uprights don't line up (3" off)", no Apply / Skip on the bar; the same move through the axis lock → no drift, the delete applies to all three (every row split at the same bay) |
+| `RG-nothing` | Ask: every target skipped → no question, "Nothing applied. 3 skipped"; a bay edit on a group row no other group row reaches → "Nothing applied: no other group row has racks there." |
+| `RG-office-bay` | the layout as saved, rows 22-25: a bay added at the office end of row 22 → "Apply to the other 3 rows? 3 will have warnings.", each "inside a zone"; Apply changes all three (5 bays each) — it used to say "3 rows lose a bay" and change nothing; Check layout reports all four inside the Office |
+| `RG-travel` | a 13'3" aisle with a 1' column 4.25' from one row: the far side at 8.000' and at 7.9996' (edges that aren't whole feet) is not under travel — not pinched, level 2; 7.99' is under travel on both sides (level 1); `TRAVEL_TOL_FT` = 0.001 |
+| `RG-snap` | section 2 rows 10-16 grouped: a 2" drag of row 13 with every rack a snap target snaps back to 0; with the group rows and the racks lined up with its start left out (section 1's row 13 among them) it keeps its 2"; a rack outside the group drags as before; `lockToAxis` keeps nothing on the minor axis; the drag wiring (lock before and after snapping, both paths; a live-flue drag back to its start writes no history) |
+| `RG-skip-lineup` | by hand: a row 4' off the source's uprights → "uprights don't line up (48" off)", untouched; the one that lines up takes it |
+| `RG-reversed` | a target drawn at 180° / 270°: the edit lands at the same bay along the run; its stored bays reversed; its start and end where the source's are |
+| `RG-hand` | hand racks in one line are one row (`h|A1,A2`); a bay edit replays on the other hand row; a middle bay delete splits both rows and the pieces stay in the group; an edit on a piece replays on the other piece |
+| `RG-two-rows` | by hand: the same bay change on two group rows at once → the third gets it ("Apply to the other 1 row?"); different changes on the two → not replayed, "These 2 rows were changed in different ways…" |
+| `RG-panel` | a single and a double row's panel: no Row group buttons (the tool picks rows), no Match bays |
+| `RG-label` | a section reads "section 1", never "section run 1": `sectionLabel`; Check layout's row names and its overlap error on racks keyed "run 1"; placement's cross-aisle warning between runs keyed "run 1" / "run 2" reads "between sections 1 and 2" |
+| `RG-generate` | Generate through the batched entry the Generate panel calls, a group (row 3 in every section, plus a hand row on a hand-drawn building) with an apply pending → Generate again: no group, no apply, no message, the bar empty; the hand row itself untouched (Generate clears the group at the start of its one step) |
+| `RG-nogroup` | rows placed by hand, nothing grouped: a bay change, a move across and a delete offer nothing — no apply, no message, the other rows untouched |
+| `RG-bayclick` | a bay clicked in row 7 and changed; then a bay clicked in row 8 (row 7's highlight cleared, no history) and changed → offered, source row 8, no "touches 2 rows" |
+| `RG-same-edit` | the same bay changed on rows 7 and 8 at once (multi-bay selection) → "Apply to the other 10 rows? 2 skipped.", both rows the sources; Apply gives rows 6 and 9-13 that bay |
+| `RG-levels` | levels 4 → 5 on row 7 → "Apply to the other 13 rows?" → every group row at 5, rows outside the group untouched, one undo step; a depth change → not replayed, "a change of depth or kind isn't replayed" |
+| `RG-wire` | App installs the watcher; Canvas2 renders the bar and the outlines; Esc leaves the Row group tool, then clears the group; racking areas call the Row group's `skipNextAction`; the section-copy modules are gone; no Always copy in the top bar |
 
-**Checked in the app, driven by mouse and keyboard in both orientations:**
-- **Bays and along moves (section 3).** A beam change (the panel) and a drag
-  along the same row: the bar listed "bays changed — stays in section 3" and
-  "moved 2' along — stays in section 3", with Copy disabled.
-- **Across and delete (section 3).** Rows 5 and 7 dragged across and row 9
-  deleted: "Section 3: … changes".
-- **The question.** A drag started on row 5 of section 5 (vertical: section
-  1) showed "Copy your N changes from section 3 to the other sections?"
-  [Copy] [Don't copy], and the row did not move.
-  - Copy moved rows 5 and 7 in every section by the dragged deltas: 2′ and
-    −2.13′ in all 8 sections (vertical 2.04′ and −0.96′ in all 3). Row 9
-    was gone everywhere.
-  - Dragging in section 5 then started "Section 5: 1 change".
-- **Don't copy.** A drag in section 3 while section 5 had a change asked;
-  Don't copy cleared the set, and section 5's change stayed local.
-- **Always copy.** A drag across moved the row in all 8 (3) sections, with
-  no bar.
-- **Match bays from the bar.** Row 5 of section 3 clicked, its bay 3 given a
-  9′ beam in the panel. The bar read "Section 3: 1 change (none will be
-  copied) · Copy to other sections · Match bays in section 3 (from row 5)".
-  - Clicking gave all 21 rows (vertical: 58) row 5's bays: "Matched bays in
-    section 3: 20 rows" (57).
-  - In vertical it added the panel's own warnings, "Row 1: passes the wall
-    by 9″" and so on: section 3 runs to the wall.
-  - One Ctrl+Z restored them.
-- **A live-flue drag.** Vertical, a row whose flue had widened around a
-  column: a small drag re-seats it on the column. It doesn't move, only its
-  flue changes, so nothing is copied. That is the existing drag behaviour.
-- No console errors.
+**Carried over from the removed areas** (each check still valid, and where it
+went):
+
+| Was | Check | Now |
+|---|---|---|
+| SC-layout | row K exists once in every section | `RG-generate`, AR / FR / ZP / PD groups (`addRowOf(…, { otherSections })` — no button now, kept for building a group directly) |
+| SC-stays | a move along a row is not carried | `RG-along` |
+| SC-bar | the bar's text and buttons | `RG-pick`, `RG-bays`, `RG-drop` (rendered bar) |
+| SC-always | Always: applied at once, one Ctrl+Z each | `RG-always` (now one entry for edit + apply) |
+| SC-undo | undo takes a change back out | `RG-undo` |
+| SC-save | the pending set saved with the file | `RG-save` — reversed by the spec: the group is never saved |
+| SC-multi, CF-select-all | one action across several rows: carried only when every row was changed the same way (changed after the hand check on 7b4b747) | `RG-multi`, `RG-two-rows`, `RG-same-edit` |
+| SC-regenerate | a new layout clears what was pending | `RG-generate` (the real Generate), `RG-undo` (a layout loaded in place) |
+| SC-add, AR-handcopy | a row added is carried, full length for each | `RG-add-row`, `AR-handcopy` |
+| SC-place | paste / duplicate follow the mouse; Esc; blocked spots | `PD-place` |
+| SC-skip, Y-warn | a carry that can't fit says why (now a warning, or a skip for uprights that don't line up) | `RG-skip-lineup`, `RG-warn-*`, `RG-drop`, `RG-zone` |
+| SC-wire | the new pieces are wired, the old gone | `RG-wire` |
+| CF-manual | a manual layout works without generated sections; with nothing to carry, nothing is offered | `RG-hand`, `RG-skip-*` (all by hand), `RG-nogroup` |
+| CF-question (its label half) | "section 1", never "section run 1" | `RG-label` |
+| CF-cross-aisle | a cross-aisle drop is a warning, not a block | `PD-cross-aisle` |
+| EX-results | a result clears on the next action | `RG-message` |
+| EX-flue | live-flue drag; exact net delta carried | `PD-flue` (the Row group replays the delta) |
+| EX-preview | every preview outline keyed uniquely | `RG-drop` |
+| EX-snap | snap reach ≤ 12 px or 1 ft | `PD-snap` |
+| Y-sync | the rows take the source's bays, uprights aligned, across kept, one undo | `RG-bays` |
+| Y-direction | reversed rows get the reversed list | `RG-reversed` |
+| Y-panel, Z2-buttons | the panel's buttons on single and double rows | `RG-panel` |
+| Z2-delete | after rows are chopped: inside, nothing stacked, split pieces right | `RG-add-delete-bay`, `RG-hand`, `AR-split` |
+
+Dropped as obsolete (the feature is gone): SC-match, SC-stays-mixed,
+SC-question, SC-dont, SC-stop, CF-generated, CF-question (its question half), CF-match, EX-match,
+EX-resume, EX-minor — Match bays, the pending set and the question no longer
+exist.
+
+**Converted** (their copy step is now a Row group apply): `AR-delete`,
+`AR-handcopy`, `AR-undo`, `AR-snapshot` (row 4 grouped in every section, the
+bar's Apply), `AR-split` (rows 3-5 of the section grouped: a bay replay maps by
+position along the run, so the rows either side, not the section further
+along), `FR-stamps` (row 2 grouped in every section, moved across, applied),
+`RA-copy` (every row grouped, an area shrink offers nothing), `ZP-dismiss` (the
+bar's Skip and Esc; the whole row is moved, every piece of it).
+`AA` and `WF` install the Row group watcher instead of the copy watcher.
+
+### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
+The placement and drag checks from SC, CF and EX that are not about copying.
+
+| Test | Asserts (horizontal and vertical) |
+|---|---|
+| `PD-place` | paste and duplicate follow the mouse; outside the building blocks; on a row blocks ("overlaps row N"); Esc: nothing placed, no history; a cross-aisle is a warning and places; placing asks nothing (`commitPlacement(store)`) |
+| `PD-cross-aisle` | a row in a generated cross-aisle: placed with the warning on the bar and the orange ghost; overlap and outside still block; a manual layout has no cross-aisle |
+| `PD-flue` | a live-flue drag (12" → 9") keeps its start along the run and moves its centre exactly 2'; with row K grouped in every section the bar offers it (vertical: "… will have warnings", the aisle under the 10' 6" pick width) and Apply moves the others exactly 2' |
+| `PD-snap` | snap reach is the smaller of 12 px or 1 ft, for drags and placement |
 
 ### PF — Lag fixes, measured before/after, behaviour unchanged · `PF_perf.test.js` (60 tests)
 Profiled on 1080×410 in both orientations. The lag was never the sync work;
@@ -1812,7 +1797,7 @@ aisles. A hand-drawn layout gets no new aisles, and lane-rack aisles are left
 alone.
 
 Where it runs:
-- **Sync buttons and bay splits:** before their commit, so their undo
+- **Row group applies and bay splits:** before their commit, so their undo
   snapshots are right.
 - **`aisleKeeper` (installed in App.jsx):** re-runs it whenever the racks or
   aisles change or the history position moves (every commit, undo and redo),
@@ -1821,111 +1806,15 @@ Where it runs:
 
 | Test | Asserts (both orientations) |
 |---|---|
-| `AR-delete` | delete a middle row → one aisle joins its neighbours; copied to all sections → same; undo twice → the row is back, the wide aisle gone, both of its aisles present |
-| `AR-handcopy` | row 4 deleted everywhere, a hand row in its place, copied to all sections → every copy has an aisle to each neighbour |
-| `AR-undo` | delete, copy, then undo/undo/redo/redo/undo → right at every step |
-| `AR-snapshot` | keeper off: the copy's own undo snapshot already has the right aisles |
-| `AR-split` | a middle-bay split and Match bays keep every aisle between facing rows |
+| `AR-delete` | delete a middle row → one aisle joins its neighbours; row 4 grouped in every section, applied → same; undo twice → the row is back, the wide aisle gone, both of its aisles present |
+| `AR-handcopy` | row 4 deleted everywhere (Row group apply), a hand row in its place beside row 3 (grouped in every section), applied → every copy has an aisle to each neighbour |
+| `AR-undo` | delete, apply, then undo/undo/redo/redo/undo → right at every step |
+| `AR-snapshot` | keeper off: the Row group apply's own undo snapshot already has the right aisles |
+| `AR-split` | a middle-bay split on row 4, replayed on rows 3 and 5 (the Row group), keeps every aisle between facing rows; rows 3 and 5 split at the same bay |
 | `AR-matrix` ×100 | every matrix building, both orientations, both wall settings: the generator's aisles have no rack between their rows, every facing pair has one, and a rebuild changes nothing |
 
 Every test also checks that no aisle has a rack in its gap and that every
 facing pair has an aisle.
-
-### Z2 — Sync safety · `Z2_syncSafety.test.js` (12 tests)
-**What made rows disappear.**
-- Deleting "rows" by clicking a row and pressing Delete removes the clicked
-  bay; a middle bay splits the rack into two pieces. Pressing Delete on the
-  front piece then shortens it, so the row now starts one bay later.
-- Both syncs treated every piece as its own row. A section with 3 chopped
-  rows read as 10 rows instead of 7, so matching and row numbers went wrong.
-- Sync all sections then copied the chopped rows' later start onto
-  full-length rows in every other section. Those rows were pushed along the
-  run into the cross-aisle and the next section, and in the last section out
-  of the building. Reproduced with real clicks: after "Sync all sections"
-  from the chopped section, 3 of 31 racks were outside the building (6 with
-  more rows chopped), in both orientations.
-
-**The "Sync section" button looked missing:** the dev server was serving a
-stale `RackRowPanelCore.jsx` (its file watcher missed an edit; the served
-module had only one sync button while the file on disk renders both). After
-a clean restart both buttons render.
-
-**Fixes** (`utils/syncSections.js`, `utils/syncSection.js`):
-- **A row is a line across the aisles** (`rowLines`): the pieces of a split
-  row are one row. Sync all sections matches lines and moves every piece of
-  a line by the same shift, so the gap in a split row is kept.
-- **Never outside the building:** a Sync all sections shift that would take a
-  rack past the inner wall is cut at the wall. The row is reported as held
-  ("held at the wall: section 4 row 3 (8′ short)"). This replaces the old
-  "passes the wall" warning for Sync all sections.
-- **Sync section leaves split rows as they are** (`splitRowIds`), reported
-  as "N pieces of split rows left as is". Copying the full pattern onto each
-  piece would stack identical racks on top of each other.
-- **One section definition:** Sync section now uses the same sections as
-  Sync all sections (runs grouped transitively), so a split row's far piece
-  belongs to its section even when the selected rack is a short piece. Its
-  row count is in lines.
-
-| Test | Asserts |
-|---|---|
-| `Z2-buttons` ×2 (h, v) | a single row and a double row both render "Match bays in this section" and no "Apply my changes", and so does a chopped piece |
-| `Z2-delete` ×10 (h, v × row 5 moved across in sections 2/1/3 then "Copy to all sections", Match bays from 2/1) | rows 1–3 of section 2 chopped (split at bay 3, then front bay deleted). After the sync the rack count is unchanged, every rack is inside the building's inner box, nothing is stacked on another rack, and split rows keep their gap (moved as one). Sync section from the chopped section leaves the 5 split pieces as they are. One undo restores. |
-
-Area Z updates: section 4's row 3 is now held at the wall (moved by the end
-gap only) instead of passing it; `Z-sync`, `Z-warn` and `Z-gap` assert the
-held report and the clamped position.
-
-**Checked in the app, horizontal and vertical** (fresh dev server):
-- Both buttons show.
-- Rows 1–3 of section 2 were chopped with real clicks and Delete (28 → 31
-  racks).
-- "Sync all sections" from that section: 31 racks before and after, all 31
-  inside the building and drawn. The panel said "Moved 9 rows · held at the
-  wall: section 4 rows 1–3 (8′ short)".
-- "Sync section": "Synced 4 rows · 5 pieces of split rows left as is",
-  31/31 inside.
-- No console errors.
-
-### Y — Sync section · `Y_syncSection.test.js` (7 tests)
-**"Sync section"** is a button in the rack panel labelled with the number of
-other rows it will change. Every other row in the selected row's section
-copies its **bay pattern** (beam lengths in order along the run) and its
-**start position along the run**, so every upright lines up across the
-aisles. It also copies the upright width, since uprights can't line up
-without it. Position across the aisles, depth, levels, rotation and type
-stay as they are. A double row takes the pattern for the whole rack.
-
-A **section** is the single and double beam rows in the same building, with
-the same run direction, whose run overlaps the selected row's: the rows
-between the same two cross-aisles, or a wall and a cross-aisle. A row drawn
-the other way round (180°/270°) gets the list reversed, so the pattern and
-uprights still match on the floor. Logic: `utils/syncSection.js`.
-
-**Warnings, never blocks.** After the sync the panel lists each row that now
-overlaps another rack, passes the inner wall, or sits closer to a rack across
-a cross-aisle than the selected row does ("Row 3: cross-aisle down to
-12′ 9″"). Rows are numbered in stack order within the section.
-
-**One undo:** every row but the last is written without history and the last
-commits, so the one snapshot holds the whole sync. No store change.
-
-| Test | Asserts |
-|---|---|
-| `Y-sync` ×2 (h, v) | a generated 240×120 layout. The selected row has 6′ and 10′ bays; other rows in its section are shifted 2′, cut 2 bays short, or re-beamed. After the sync every row in the section has the selected row's beams, run start and upright positions. Position across the aisles, height, levels and rotation are kept; the other section and the building are unchanged; one undo restores all. |
-| `Y-warn` ×2 (h, v) | a lane rack in the stretch a short row regains → that row "overlaps obs". A neighbour across the cross-aisle moved 3′ closer → that row's cross-aisle = generated gap − 3′. A selected row given an extra 16′ bay at the far wall → every other row listed as past the wall by 195″ − its end gap. Rows are still synced; one undo. |
-| `Y-direction` ×2 (0°/180°, 90°/270°) | a row drawn the other way round gets [144, 120, 96, 72] for [72, 96, 120, 144]; uprights aligned; one undo |
-| `Y-panel` | "Sync section (N other rows)"; a row alone in its section gets a disabled button |
-
-**Checked in the app, horizontal and vertical** (240×120):
-- The rows were disturbed by hand edits first. After "Sync section (6 other
-  rows)" horizontal and "(13 other rows)" vertical, all 7 / 14 rows matched
-  the selected row's beams, start and uprights.
-- Position across the aisles and levels were kept; the other sections were
-  byte-identical; one Ctrl+Z restored every row.
-- With a neighbouring rack moved 3′ into the cross-aisle, the panel showed
-  "Row 1: cross-aisle down to 12′ 9″" (h) and "8′ 3″" (v), matching the
-  generated gap − 3′.
-- No console errors.
 
 ### X — Per-bay beam length · `X_bayBeam.test.js` (105 tests)
 **Beam presets 4′ to 16′** (48″–192″, 12″ steps) and a custom value (`102`,
@@ -2700,10 +2589,6 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LB | **Switch hides the X marks** | 1: LB-toggle-wire | ✓ |
 | PF | **Cache pick zones by rack id only** (ignore content / neighbours) | 3: PF-cache ×3 | ✓ |
 | PF | **Filter columns by the rack's footprint, not its pick zones** | 53: PF-matrix, PF-edits, PF-cache | ✓ |
-| SC | **Bay change copied to other sections** (the old Apply way: the section's current bays planned, end-bay trims applied) | 2: SC-stays-mixed h/v | ✓ |
-| SC | **No question when switching sections** | 8: SC-question, SC-dont, SC-stop, SC-place (h/v) | ✓ |
-| SC | **Always copy waits** | 2: SC-always h/v | ✓ |
-| SC | **Match bays from the FIRST bay-changed row, not the last** | 2: SC-match h/v | ✓ |
 | LY | **Generate does not stamp layerIds** | 2: LY-assign h/v | ✓ |
 | LY | **Rebuilt aisles copy their rack's layer** (the bug the app showed) | 4: LY-assign, LY-hidden (h/v) | ✓ |
 | LY | **Generate leaves Building and Columns unlocked** | 4: LY-generate-locked, LY-undo (h/v) | ✓ |
@@ -2765,19 +2650,6 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | LC | **Blocked pallets shade whole bays again** | 4: LC-highlight, LC-xmarks (h/v) | ✓ |
 | LC | **Re-check keeps the old result** | 2: LC-recheck h/v | ✓ |
 | LC | **Export does not ask when there are errors** | 2: LC-pdf h/v | ✓ |
-| EX | **Undo / redo leave the result up** | 2: EX-results h/v | ✓ |
-| EX | **Match bays treated as pending work again** | 4: EX-match, CF-match (h/v) | ✓ |
-| EX | **Live-flue drag centred on the base depth again** (the vertical creep) | 2: EX-flue h/v | ✓ |
-| EX | **Preview keyed by id only** | 2: EX-preview h/v | ✓ |
-| EX | **The question's edit not finished after the answer** | 2: EX-resume h/v | ✓ |
-| EX | **Snap reach back to 30 px, no 1 ft cap** | 2: EX-snap h/v | ✓ |
-| EX | **No confirmation without warnings** | 2: EX-results (h), EX-minor (v) | ✓ |
-| EX | **Counts per action again (not net)** | 6: EX-match, EX-minor, SC-stays (h/v) | ✓ |
-| EX | **Match bays counts rows that already matched** | 2: EX-minor h/v | ✓ |
-| CF | **Bar shown whether or not anything would be copied** | 8: CF-manual, CF-match, SC-stays, SC-match (h/v) | ✓ |
-| CF | **Select-all Delete asks again** (multi-section edits not skipped) | 2: CF-select-all h/v | ✓ |
-| CF | **A cross-aisle blocks placement again** | 4: CF-cross-aisle, SC-place (h/v) | ✓ |
-| CF | **Match bays result shown before its own action settles** (wiped at once) | 4: CF-match, SC-match (h/v) | ✓ |
 | RL | **Default levels back to 1** | 6: RL-placed, RL-missing, RL-load (h/v) | ✓ |
 | GU | **Generate not collapsed to one step** | 8: GU-undo, GU-first, GU-regenerate, GU-batched (h/v) | ✓ |
 | HF | **A building drag re-checks the aisles every frame** | 4: HF-flicker, HF-multi (h/v) — also with the "not recomputed" checks removed, the red-set comparison alone fails in both orientations | ✓ |
@@ -2786,19 +2658,6 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | AR | **Never add aisles for new neighbour pairs** | 6 | ✓ |
 | AR | **Keeper off** | 6 | ✓ |
 | AR | **The copy-rows sync without its own rebuild** | 2: AR-snapshot h/v | ✓ |
-| Z2 | **Split pieces counted as separate rows** | 2: Z2-delete h/v | ✓ |
-| Z2 | **No wall clamp** | 8: Z-sync, Z-warn, Z-gap, Z2-delete (h and v) | ✓ |
-| Z2 | **Sync section copies onto split pieces** | 2: Z2-delete h/v (stacked racks) | ✓ |
-| Z2 | **"Sync section" button not rendered** | 3: Y-panel, Z2-buttons h/v | ✓ |
-| Z2 | **"Sync all sections" button not rendered** | 3: Z-panel, Z2-buttons h/v | ✓ |
-| Z2 | **Section = rows overlapping the selected rack only** | 2: Z2-delete h/v | ✓ |
-| Y | **Sync only the first row** | 4: Y-sync h/v, Y-direction ×2 | ✓ |
-| Y | **Start position not copied** | 4: Y-sync h/v, Y-direction ×2 | ✓ |
-| Y | **Beams copied in local order** (no reversal for reversed rows) | 2: Y-direction | ✓ |
-| Y | **Every row its own undo step** | 6: Y-sync, Y-warn, Y-direction (both orientations) | ✓ |
-| Y | **Cross-aisle check off** | 2: Y-warn h/v | ✓ |
-| Y | **Overlap / wall check off** | 2: Y-warn h/v | ✓ |
-| Y | **Section = every row** (other sections synced too) | 5: Y-sync h/v, Y-warn h/v, Y-panel | ✓ |
 | X | **Wall clear along X only** (the old bug) | 9: X-wall 90/180/270° on both buildings, X-remaining 90/270° | ✓ |
 | X | **Remaining = clear − length** (the old rule) | 4: X-remaining at all rotations | ✓ |
 | X | **Multi-bay box only for a single object** | 4: X-multi | ✓ |
@@ -2819,6 +2678,52 @@ With 0" at the uprights, three 40" faces still need 128", so the 108" and
 | V | **Sticky bay mode removed** | 1: `V-wire` | ✓ |
 | V | **Remove section not routed through the split** | 1: `U-wire` Remove section | ✓ |
 | V | **"− Bay" not routed through the split** | 1: `U-wire` "− Bay" | ✓ |
+
+| RG | **Replay off** (no targets) | 56: every apply — AR-delete/handcopy/undo/snapshot/split, PD-flue, ZP-dismiss, FR-stamps, RG-bays, -drop, -zone, -add-delete-bay, -across, -delete, -add-row, -always, -undo, -message, -shape, -skip-*, -reversed, -hand | ✓ |
+| RG | **Bay replay copies the source's start and end** (not its uprights relative to the target) | 20: AR-split, RG-bays, -drop, -zone, -add-delete-bay, -always, -shape, -hand | ✓ |
+| RG | **Wall rows applied** (no line-up check) | 14: RG-bays, -drop, -zone, -add-delete-bay, -always, -message, -skip-lineup | ✓ |
+| RG | **Apply written as two steps** | 8: AR-delete, RG-bays, RG-across, RG-delete | ✓ |
+| RG | **Auto apply as its own undo step** (not folded) | 2: RG-always | ✓ |
+| RG | **Group saved into the file** | 2: RG-save | ✓ |
+| RG | **Esc does not clear the group** | 7: ZP-dismiss, RG-wire | ✓ |
+| RG | **A pair's free half counted as a new piece** (the fix reverted) | 4: ZP-dismiss, RG-hand | ✓ |
+| RG | **Across delta from the near face, not the centre** | 2: PD-flue | ✓ |
+| RG | **Deleted rows kept in the group after an apply** | 2: RG-delete | ✓ |
+| RG | **Section label shows the raw key** ("run 1") | 1: RG-label | ✓ |
+| RG | **Generate leaves the group** (no `clearGroup` at its start) | 2: RG-generate | ✓ |
+| RG | **An empty group means every row** | 6: RG-undo, RG-generate, RG-nogroup | ✓ |
+| RG | **A bay click counted as an edit** | 2: RG-bayclick | ✓ |
+| RG | **Several rows changed the same way refused** | 6: RG-multi, RG-same-edit, RG-two-rows | ✓ |
+| RG | **Rows changed in different ways accepted** | 2: RG-two-rows | ✓ |
+| RG | **Levels not replayed** | 2: RG-levels | ✓ |
+| RG | **Depth treated like levels** | 4: RG-levels, RG-hand | ✓ |
+| RG | **The tool stays on after a box** | 2: RG-pick | ✓ |
+| RG | **A click with the tool toggles nothing** | 2: RG-pick | ✓ |
+| RG | **Skip applies anyway** | 10: ZP-dismiss, RG-bayclick, RG-undo | ✓ |
+| RG | **Ask / Auto apply not remembered** | 2: RG-always | ✓ |
+| RG | **"Pick rows" button back on the bar** | 2: RG-pick | ✓ |
+| RG | **Warnings off** | 7: PD-flue, RG-warn-bays, RG-warn-aisle, RG-warn-and-skip | ✓ |
+| RG | **Warnings judged with the other targets where they are now** | 5: PD-flue, RG-together, RG-warn-bays | ✓ |
+| RG | **An overlap skips again** | 4: RG-warn-bays, RG-warn-and-skip | ✓ |
+| RG | **A drift along refuses the move** | 2: RG-drift | ✓ |
+| RG | **A rack partly inside the dragged stretch not skipped** | 2: RG-part | ✓ |
+| RG | **Any overlap with the stretch moves a rack** (no half rule) | 2: RG-part | ✓ |
+| RG | **Bays dropped at a rack along again** | 10: RG-zone, RG-warn-bays, RG-shape | ✓ |
+| RG | **A dragged group row snaps to everything again** | 2: RG-snap | ✓ |
+| RG | **Racks lined up with the start still snap targets** | 2: RG-snap | ✓ |
+| RG | **No axis lock** | 4: RG-rows22, RG-snap | ✓ |
+| RG | **A live-flue drag back to its start commits** | 2: RG-snap | ✓ |
+| RG | **Along moves not replayed** | 6: RG-along, RG-nothing, RG-along-warn | ✓ |
+| RG | **No offset on "uprights don't line up"** | 6: RG-bays, RG-rows22, RG-skip-lineup | ✓ |
+| RG | **Nothing applied still asks** | 8: RG-rows22, RG-nothing, RG-warn-and-skip, RG-along-warn | ✓ |
+| RG | **No word when no target has racks there** | 2: RG-nothing | ✓ |
+| RG | **Warnings found by the row key after the apply** | 2: RG-along-warn | ✓ |
+| RG | **Bays added at an end dropped again** | 6: RG-add-delete-bay, RG-warn-bays, RG-office-bay | ✓ |
+| RG | **A wall or zone skips the target again** | 18: RG-drop, RG-zone, RG-together, RG-drift, RG-along, RG-multi, RG-office-bay, RG-warn-and-skip, RG-along-warn | ✓ |
+| RG | **No warning for a wall** | 18: RG-drop, RG-together, RG-drift, RG-along, RG-multi, RG-shape, RG-warn-and-skip, RG-along-warn | ✓ |
+| RG | **No warning for a zone** | 6: RG-zone, RG-office-bay, RG-warn-and-skip | ✓ |
+| RG | **Check layout ignores racks inside a zone** | 6: RG-zone, RG-office-bay, RG-warn-and-skip | ✓ |
+| RG | **No travel tolerance** (an 8.000' side under travel) | 2: RG-travel | ✓ |
 
 **Round 1 (original code):**
 

@@ -27,6 +27,7 @@ import { usableCapacity, mheProfile } from './usableCapacity'
 import { dropUnreachableFaces } from './faceReach'
 import { giveWayIn } from './aisleAccess'
 import { innerOutline } from '../utils/floorGeom'
+import { clearGroup } from '../utils/rowGroupTool'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
 const FLUE_IN = 9    // back-to-back flue gap for double rows
@@ -235,11 +236,13 @@ export function pickOrientation(brief, generateLayout, rules = DEFAULT_RULES) {
    before it is the state Generate started from (the store's snapshot shape:
    objects, groups, layers), so one Ctrl+Z restores it exactly and one Ctrl+Y
    redoes the Generate. The same outside-the-store history write the copy
-   watcher uses (utils/copyPrompt.js). */
+   watcher uses (utils/rowGroupTool.js). */
 const snapOf = (s) => JSON.stringify({ objects: s.objects, groups: s.groups || [], layers: s.layers })
 const HISTORY_CAP = 60   // the store's MAX_HISTORY
 
 function beginOneStep() {
+  // a new layout: the Row group (and any apply it was offering) is over — its rows are being replaced
+  clearGroup()
   const s = useCanvasStore.getState()
   const kept = s.history.slice(0, s.historyIndex + 1)
   // the state Generate starts from, exactly as it is now

@@ -20,7 +20,7 @@ import {
   /* utilities */
   BatteryCharging, Fan, Droplets, Lightbulb, Armchair,
   /* draw tools + blocks */
-  MousePointer2, Hand, Minus, MoveRight, Spline, Ruler, Signature, Type, PaintBucket,
+  MousePointer2, Hand, Minus, MoveRight, Spline, Ruler, Signature, Type, PaintBucket, Rows3,
   Pencil, PenTool, Highlighter,
   RectangleHorizontal, Circle,
   /* floor plans — the L/T/U/cross outlines are drawn below, Lucide has none */
@@ -37,13 +37,14 @@ import { levelsFor } from '../../utils/rackLevels'
 import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
 import { FILL_TOOL } from '../../utils/fillTool'
+import { ROW_GROUP_TOOL } from '../../utils/rowGroupTool'
 import { ANNOT } from './AnnotationPanel'
 import { WAREHOUSE_CATEGORIES } from '../../constants/warehouseObjects'
 import { objectContains } from '../../utils/canvas'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { PALETTE_COLORS } from '../../constants'
 import { PEN_TYPES, PEN_ORDER, clampPenWidth, penDefaultWidth, loadPenPrefs, savePenPrefs } from '../../utils/freehand'
-import { dropRotation } from '../../utils/rowEdits'
+import { dropRotation } from '../../utils/rowRotation'
 import { startPlacement } from '../../utils/placement'
 import { nanoid } from 'nanoid'
 
@@ -405,6 +406,8 @@ const TOOLBAR_TOOLS = [
   null,
   /* drag a box over part of the building: it fills with racking (utils/fillTool.js) */
   { id:'fill',      tool:FILL_TOOL,       label:'Fill racking', Icon:PaintBucket },
+  /* drag a box over rows (or click one): they join the Row group; then back to Select (utils/rowGroupTool.js) */
+  { id:'rowgroup',  tool:ROW_GROUP_TOOL,  label:'Row group', Icon:Rows3 },
 ]
 const BROKEN_HINT = ' — unavailable: CanvasObjectCore.jsx is missing its path-helper import'
 
@@ -959,7 +962,7 @@ export function FloatingToolbar() {
          it is deleted. CanvasArea re-parents a grid on its first move anyway,
          so excluding it here only made parentage depend on being dragged. */
       ...(parentFp?{parentId:parentFp.id}:{}),
-      /* a row dropped into a generated layout runs with its rows (utils/rowEdits.js) */
+      /* a row dropped into a generated layout runs with its rows (utils/rowRotation.js) */
       ...dropRotation(objects, parentFp, item.type),
     })
   }, [addObject, objects, zoom, panX, panY, activeLayerId, gridSize])

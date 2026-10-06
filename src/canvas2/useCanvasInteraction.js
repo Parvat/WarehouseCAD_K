@@ -13,11 +13,12 @@ import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
 import { computeLiveFlue, resolveFlueBase, flueCommitFields, flueDragCentre, flueDragPlacement } from './liveFlue'
 import { usePlacement, movePlacement, commitPlacement } from '../utils/placement'
-import { guardEdit, skipNextAction } from '../utils/copyPrompt'
 import { rebuildAisles } from '../utils/aisleRebuild'
 import { nanoid } from 'nanoid'
 import { inlineSnap, planInlineDrop, applyJoin } from './inlineSnap'
 import { pickableIn, snapTargets } from '../utils/layers'
+import { groupDragFor, skipNextAction } from '../utils/rowGroupTool'
+import { lockToAxis } from '../utils/rowGroup'
 import { clearIssueHighlight } from '../utils/layoutCheck'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
@@ -209,9 +210,6 @@ export function useCanvasInteraction({
     const st = useCanvasStore.getState()
     const grabbed = st.objects.find(o => o.id === hitId)
     if (!grabbed) return
-    /* a row in another section while changes are pending there: no drag —
-       the user is asked about copying them first (utils/copyPrompt.js) */
-    if (!guardEdit([...new Set([hitId, ...st.selectedIds])], { drag: true })) return   // answered: "Drag cancelled — drag again"
 
     /* The cascade set — the selection plus a floor plan's children — found
        AFTER selectFromHit has settled, so it reflects what actually got
@@ -281,7 +279,7 @@ export function useCanvasInteraction({
       origin: { x: grabbed.x, y: grabbed.y },   // the grabbed object, which snap follows
       grabbedId: hitId,
       /* the grabbed object as it was: a live-flue drag writes it to the store every frame, so a drop
-         that can't stay (in-line, no free end) puts this back */
+         that can't stay (in-line, no free end) or ends where it started puts this back, with no history */
       startObj: { ...grabbed },
       /* its size as it is NOW — a live-flue rack's current (possibly widened)
          depth, not its base one: the centre is origin + size/2, and a centre
@@ -289,6 +287,10 @@ export function useCanvasInteraction({
          moved the rack ALONG its run (a turned rack) or across by that much
          the moment its flue changed back */
       size: { w: grabbed.width, h: grabbed.height },
+      /* a Row group row (utils/rowGroupTool.js): the drag is locked to its dominant axis, and the other
+         group rows and every rack lined up with where it started are not snap targets — they could only
+         pull it back to where it was. null for any other drag. */
+      groupNoSnap: groupDragFor(st.objects, ids),
       moved: false,
       delta: null,
       flueBase,
@@ -427,7 +429,7 @@ export function useCanvasInteraction({
        (red outline) takes the click and does nothing. Pan still works. */
     if (!forcePan && evt.button === 0 && usePlacement.getState().active) {
       movePlacement(useCanvasStore, world, view.current.zoom)
-      commitPlacement(useCanvasStore, guardEdit)
+      commitPlacement(useCanvasStore)
       return
     }
 
@@ -900,8 +902,13 @@ export function useCanvasInteraction({
 
         let dx = world.x - d.startWorld.x
         let dy = world.y - d.startWorld.y
+        // a Row group row moves on one axis only: no drift on the other, ever
+        const axisX = Math.abs(dx) >= Math.abs(dy)
+        if (d.groupNoSnap) ({ dx, dy } = lockToAxis(dx, dy))
+        const lock = () => { if (d.groupNoSnap) { if (axisX) dy = 0; else dx = 0 } }
 
         const st = useCanvasStore.getState()
+        const targetsFor = (objs) => { const t = snapTargets(objs, st.layers, d.movedIds); return d.groupNoSnap ? t.filter(o => !d.groupNoSnap.has(o.id)) : t }
 
         /* Live auto-flue (liveFlue.js) — a rack_double_row dragged over a
            column widens its flue in real time to seat it and shrinks back
@@ -949,20 +956,22 @@ export function useCanvasInteraction({
             ? { ...o, x: d.origin.x, y: d.origin.y + yShift, height: liveFlue.targetHeight, flueSpaceIn: liveFlue.targetFlueIn }
             : o)
           const { guides, snapDx, snapDy } = computeSmartGuides(
-            d.ids, snapTargets(guideObjects, st.layers, d.movedIds), st.gridSize, view.current.zoom, dx, dy)
+            d.ids, targetsFor(guideObjects), st.gridSize, view.current.zoom, dx, dy)
 
           if (snapDx != null) dx = snapDx
           else if (st.snapToGrid) dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
           if (snapDy != null) dy = snapDy
           else if (st.snapToGrid) dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
           /* in-line snap (canvas2/inlineSnap.js): an end near another rack's end in its line goes onto
-             that rack's end upright, shared — it wins over the guides and the grid on both axes */
+             that rack's end upright, shared — it wins over the guides and the grid on both axes (a dragged
+             Row group row: its excluded racks aren't in-line targets either, and the axis lock still wins) */
           {
             const pre = flueDragPlacement(d.origin, d.size, dx, dy, liveFlue.targetHeight)
             const here = { ...st.objects.find(o => o.id === d.ids[0]), x: pre.x, y: pre.y, height: liveFlue.targetHeight, flueSpaceIn: liveFlue.targetFlueIn }
-            const inl = inlineSnap(here, snapTargets(st.objects, st.layers, d.movedIds), st.gridSize, Math.min(12 / view.current.zoom, st.gridSize))
+            const inl = inlineSnap(here, targetsFor(st.objects), st.gridSize, Math.min(12 / view.current.zoom, st.gridSize))
             if (inl) { dx += inl.ddx; dy += inl.ddy; guides.push(inl.guide) }
           }
+          lock()
           d.delta = { dx, dy }
           setSmartGuides(guides)
 
@@ -996,7 +1005,7 @@ export function useCanvasInteraction({
            fallback on an axis with no nearby guide, preserving that
            already-existing canvas2 behaviour rather than replacing it. */
         const { guides, snapDx, snapDy } = computeSmartGuides(
-          d.ids, snapTargets(st.objects, st.layers, d.movedIds), st.gridSize, view.current.zoom, dx, dy)
+          d.ids, targetsFor(st.objects), st.gridSize, view.current.zoom, dx, dy)
 
         if (snapDx != null) dx = snapDx
         else if (st.snapToGrid) {
@@ -1018,14 +1027,16 @@ export function useCanvasInteraction({
           if (g && (g.type === 'racking_area' || g.type.startsWith('zone_'))) ({ dx, dy } = clampDragDelta(st.objects, g, dx, dy, { gridSize: st.gridSize, snap: 8 / view.current.zoom }))
         }
         /* in-line snap (canvas2/inlineSnap.js): the grabbed rack's end near another rack's end in its
-           line goes onto that rack's end upright, shared — it wins over the guides and the grid */
+           line goes onto that rack's end upright, shared — it wins over the guides and the grid (a dragged
+           Row group row: its excluded racks aren't in-line targets either, and the axis lock still wins) */
         {
           const g = st.objects.find(o => o.id === d.grabbedId)
           if (g && PORTED_RACK_TYPES.has(g.type)) {
-            const inl = inlineSnap({ ...g, x: d.origin.x + dx, y: d.origin.y + dy }, snapTargets(st.objects, st.layers, d.movedIds), st.gridSize, Math.min(12 / view.current.zoom, st.gridSize))
+            const inl = inlineSnap({ ...g, x: d.origin.x + dx, y: d.origin.y + dy }, targetsFor(st.objects), st.gridSize, Math.min(12 / view.current.zoom, st.gridSize))
             if (inl) { dx += inl.ddx; dy += inl.ddy; guides.push(inl.guide) }
           }
         }
+        lock()
         d.delta = { dx, dy }
         setSmartGuides(guides)
 
@@ -1146,13 +1157,16 @@ export function useCanvasInteraction({
           if (d.moved) {
             const st = useCanvasStore.getState()
             const obj = st.objects.find(o => o.id === d.ids[0])
+            const s0 = d.startObj
+            const back = obj && s0 && ['x', 'y', 'width', 'height', 'flueSpaceIn'].every(k => obj[k] === s0[k])
             /* in a line (canvas2/inlineSnap.js): off any rack it overlaps there, joined to one it now
                shares an end upright with — or, with no free end, back where it was (it was written to
-               the store every frame, with no history, so putting it back leaves nothing to undo) */
-            const plan = obj && planInlineDrop(st.objects, d.ids, d.ids[0], 0, 0, st.gridSize)
-            if (obj && !plan) {
-              const o0 = d.startObj
-              st.updateObject(d.ids[0], { x: o0.x, y: o0.y, width: o0.width, height: o0.height, flueSpaceIn: o0.flueSpaceIn })
+               the store every frame, with no history, so putting it back leaves nothing to undo). A drag
+               that ends where it started (a snap put it back) is no change: put back, no history entry. */
+            const plan = obj && !back && planInlineDrop(st.objects, d.ids, d.ids[0], 0, 0, st.gridSize)
+            if (back) st.updateObject(d.ids[0], { x: s0.x, y: s0.y, height: s0.height, flueSpaceIn: s0.flueSpaceIn })
+            else if (obj && !plan) {
+              st.updateObject(d.ids[0], { x: s0.x, y: s0.y, width: s0.width, height: s0.height, flueSpaceIn: s0.flueSpaceIn })
             } else if (obj) {
               if (plan.dx || plan.dy) st.updateObject(d.ids[0], { x: obj.x + plan.dx, y: obj.y + plan.dy })
               const now = useCanvasStore.getState().objects.find(o => o.id === d.ids[0])

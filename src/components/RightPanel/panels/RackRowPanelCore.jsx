@@ -1,12 +1,9 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { useState } from 'react'
-import { sectionRows, planSectionSync, syncWarnings, splitRowIds } from '../../../utils/syncSection'
 import { rowLines } from '../../../utils/syncSections'
 import { nanoid } from 'nanoid'
 import { rebuildAisles } from '../../../utils/aisleRebuild'
-import { matchReport, showAfterAction, beginMatch } from '../../../utils/copyPrompt'
-import { sectionOf } from '../../../utils/sectionCopy'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
 import {
@@ -243,90 +240,6 @@ export function MultiBayPanel() {
   )
 }
 
-/* "Match bays in this section": every other row in `sourceId`'s section takes its bay
-   pattern and start position along the run (utils/syncSection.js). The rows
-   (and re-paired aisles) are written without history and one commit then
-   snapshots them: one undo. Returns the warnings (rows
-   that now overlap a rack, pass the wall, or crowd a cross-aisle). */
-export function applySectionSync(getState, sourceId) {
-  const st = getState()
-  const planned = planSectionSync(st.objects, sourceId, st.gridSize || 40)
-  // only rows that really change: a row that already matches is not "matched"
-  const updates = new Map([...planned].filter(([id, u]) => {
-    const o = st.objects.find(q => q.id === id)
-    return o && Object.keys(u).some(k => JSON.stringify(o[k]) !== JSON.stringify(u[k]))
-  }))
-  // warnings over every row the match covers: one already matching can still be in the way
-  const warnings = syncWarnings(st.objects, sourceId, planned, st.gridSize || 40)
-  if (updates.size) {
-    // new lengths can change who faces whom: re-pair the aisles before the one commit
-    const moved = st.objects.map(o => (updates.has(o.id) ? { ...o, ...updates.get(o.id) } : o))
-    useCanvasStore.setState({ objects: rebuildAisles(moved, nanoid).objects })
-    getState().commitObjectUpdate(sourceId, {})
-  }
-  return { synced: updates.size, warnings, split: splitRowIds(st.objects, sourceId) }
-}
-
-export function syncWarningText(warnings) {
-  if (!warnings.length) return null
-  return warnings.map(w => {
-    const why = []
-    if (w.overlaps.length) why.push(`overlaps ${w.overlaps.length} rack${w.overlaps.length > 1 ? 's' : ''}`)
-    if (w.wallOutIn > 0) why.push(`passes the wall by ${fmtFtIn(w.wallOutIn)}`)
-    if (w.crossAisleFt != null) why.push(`cross-aisle down to ${fmtFtIn(w.crossAisleFt * 12)}`)
-    return `Row ${w.row}: ${why.join(', ')}`
-  }).join(' · ')
-}
-
-/** The panel's "Match bays in this section" for `obj`: applySectionSync, and
- *  its result in the bottom bar until the next action ("Matched bays on 6
- *  rows in section 3 from row 5", any warnings — utils/copyPrompt.js). */
-export function runMatchBays(obj) {
-  const st = useCanvasStore.getState(), section = sectionOf(st.objects, obj)
-  beginMatch()   // a finished action: its rows don't join the pending set
-  const r = applySectionSync(useCanvasStore.getState, obj.id)
-  showAfterAction(matchReport(r, section, obj.rowIndex, syncWarningText(r.warnings)))
-  return r
-}
-
-const MATCH_BAYS_TIP = "Every other row in this section copies this row's beam lengths and start point, so uprights line up across the aisles."
-
-/* The "Match bays in this section" control (was "Sync section"): the button, how many rows it touches, and the
-   warnings from the last sync of this rack (never blocking). */
-function SyncSection({ obj }) {
-  const { objects } = useCanvasStore(useShallow(s => ({ objects: s.objects })))
-  const [result, setResult] = useState(null)
-  // rows = lines across the aisles: the pieces of a split row are one row
-  const others = rowLines(sectionRows(objects, obj.id)).length - 1
-  const text = result && result.id === obj.id ? syncWarningText(result.warnings) : null
-  return (
-    <div>
-      <button
-        onClick={() => { const r = runMatchBays(obj); setResult({ id: obj.id, ...r }) }}
-        disabled={others < 1}
-        aria-label="Match bays in this section"
-        title={others < 1 ? 'No other rows in this section' : MATCH_BAYS_TIP}
-        style={{
-          width: '100%', padding: '6px 8px', borderRadius: 4,
-          fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
-          cursor: others < 1 ? 'not-allowed' : 'pointer',
-          background: others < 1 ? 'transparent' : 'var(--surface3)',
-          border: '1px solid var(--border)',
-          color: others < 1 ? 'var(--text3)' : 'var(--text)',
-        }}>
-        Match bays in this section{others >= 1 ? ` (${others} other row${others > 1 ? 's' : ''})` : ''}
-      </button>
-      {result && result.id === obj.id && !text && (
-        <div style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 2 }}>
-          Synced {result.synced} row{result.synced === 1 ? '' : 's'}
-          {result.split.length ? ` · ${result.split.length} piece${result.split.length > 1 ? 's' : ''} of split rows left as is` : ''}
-        </div>
-      )}
-      {text && <div style={{ marginTop: 4 }}><RackWarning text={`Synced, check: ${text}`} /></div>}
-    </div>
-  )
-}
-
 export function RackRowPanel({ obj }) {
   const { objects, updateObject, commitObjectUpdate, deleteSingleBay, gridSize } = useCanvasStore(useShallow(s => ({ objects: s.objects, updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, deleteSingleBay: s.deleteSingleBay, gridSize: s.gridSize })))
 
@@ -450,7 +363,6 @@ export function RackRowPanel({ obj }) {
 
       <RackWarning text={nowWarn} />
 
-      <SyncSection obj={obj} />
 
       {/* ── Bay list ── */}
       <div>

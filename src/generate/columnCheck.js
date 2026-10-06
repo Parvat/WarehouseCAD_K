@@ -35,8 +35,13 @@ const travelFtFor = (aisleFt) => Math.min(TRAVEL_FT_DEFAULT, aisleFt)
  *  short. The column check, the copy warnings and Check layout all ask this
  *  one function. */
 const FLOAT_PX = 1e-6
+/** The travel width is met to within this (ft): the tolerance the way-in lane check uses (aisleAccess.js) —
+ *  a column 8.000' from a rack face, built from edges that aren't whole feet, can measure 7.9996'. */
+export const TRAVEL_TOL_FT = 0.001
+/** Under the travel width, to within TRAVEL_TOL_FT. */
+export const underTravel = (clearPx, travelPx, gridSize = GS) => clearPx + TRAVEL_TOL_FT * gridSize < travelPx
 export function aisleLevel(clearPx, profile, gridSize = GS, slackPx = 0) {
-  if (clearPx + FLOAT_PX < (profile.travelFt ?? TRAVEL_FT_DEFAULT) * gridSize) return 1
+  if (underTravel(clearPx, (profile.travelFt ?? TRAVEL_FT_DEFAULT) * gridSize, gridSize)) return 1
   if (clearPx + slackPx + FLOAT_PX < profile.aisleFt * gridSize) return 2
   return 3
 }
@@ -477,8 +482,8 @@ export function aisleColumnBlocks({ racks = [], columns = [], profile = MHE_PROF
              the aisle's gap runs along, and the aisle box itself (px). */
           nearClearFt: +(nearClear / gridSize).toFixed(1),
           farClearFt: +(farClear / gridSize).toFixed(1),
-          nearShort: nearClear < travelPx, farShort: farClear < travelPx,
-          pinched: clearPx < travelPx,
+          nearShort: underTravel(nearClear, travelPx, gridSize), farShort: underTravel(farClear, travelPx, gridSize),
+          pinched: underTravel(clearPx, travelPx, gridSize),
           axis: stacked ? 'x' : 'y',
           gapStart, gapEnd: gapStart + gapLen, crossStart, crossEnd,
         })

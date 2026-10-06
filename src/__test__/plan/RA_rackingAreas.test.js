@@ -26,7 +26,7 @@ async function fresh() {
   const RA = await import('../../generate/rackingArea')
   const AT = await import('../../utils/rackingAreaTool')
   const LC = await import('../../utils/layoutCheck')
-  const CP = await import('../../utils/copyPrompt')
+  const RG = await import('../../utils/rowGroupTool')
   const { rackFootprint } = await import('../../generate/columnCheck')
   const BB = await import('../../utils/bayBeam')
   const L = await import('../../utils/layers')
@@ -36,9 +36,9 @@ async function fresh() {
   L.installLayerKeeper(useCanvasStore)
   installAisleKeeper(useCanvasStore, nanoid)
   installRowEditKeeper(useCanvasStore)
-  CP.installCopyWatcher(useCanvasStore, nanoid)
+  RG.installRowGroupWatcher(useCanvasStore, nanoid)
   AT.installAreaKeeper(useCanvasStore)
-  return { useCanvasStore, FT, FR, RA, AT, LC, CP, L, BB, rackFootprint }
+  return { useCanvasStore, FT, FR, RA, AT, LC, RG, L, BB, rackFootprint }
 }
 
 const RACK = new Set(['rack_row', 'rack_double_row'])
@@ -746,14 +746,18 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     expect(doc()).toEqual(before)
   })
 
-  it('RA-copy: an area\'s resize is not a row edit — a shrink that trims rows puts nothing in the copy-to-sections set', async () => {
+  it('RA-copy: an area\'s resize is not a Row group edit — with every row in the group, a shrink that trims rows offers no apply and says nothing', async () => {
     officeLayout()
-    await m.CP.flushCopyWatcher()
+    await m.RG.flushRowGroupWatcher()
+    m.RG.clearGroup()
+    for (const r of racks()) m.RG.addRowOf(r.id)
+    expect(m.RG.useRowGroup.getState().keys.length).toBeGreaterThan(1)
     const a = areaNow(), cut = (37 + 5 / 12) * GS
     resizeArea(vert ? { x: a.x, y: a.y, w: a.width, h: a.height - cut } : { x: a.x, y: a.y, w: a.width - cut, h: a.height })
-    await m.CP.flushCopyWatcher()
-    expect(m.CP.useCopyPrompt.getState().pending ?? null).toBeFalsy()
-    expect(m.CP.useCopyPrompt.getState().question ?? null).toBeFalsy()
+    await m.RG.flushRowGroupWatcher()
+    expect(m.RG.useRowGroup.getState().pending).toBe(null)
+    expect(m.RG.useRowGroup.getState().message).toBe(null)
+    m.RG.clearGroup()
   })
 
   it.each([['fp_l', 300, 200], ['fp_t', 360, 240]])('RA-shape: on a %s, an area over one part extended across the rest fills only inside the walls, never into a zone placed there, and stays clean', (type, w, h) => {

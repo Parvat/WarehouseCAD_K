@@ -2,7 +2,7 @@
 // new row follows the mouse, faded, and snaps; a click places it, Esc
 // cancels. Nothing is in the layout until the click, so the click is ONE
 // action (one undo step) — after which "Copy to all sections" is offered
-// (utils/copyPrompt.js). A zone from the left panel is placed the same way:
+// (utils/rowGroupTool.js). A zone from the left panel is placed the same way:
 // it follows the mouse, stays within the walls and snaps onto a wall face;
 // on the click the area keeper refits any racking area it reaches
 // (utils/rackingAreaTool.js).
@@ -24,9 +24,8 @@
 import { create } from 'zustand'
 import { rackFootprint, MHE_PROFILES } from '../generate/columnCheck'
 import { layoutColumns } from '../generate/usableCapacity'
-import { isRow, generatedCrossAisleGaps, hardProblem, softProblems } from './copyChange'
-import { sectionLabel } from './sectionCopy'
-import { useCopyPrompt } from './copyPrompt'
+import { isRow, generatedCrossAisleGaps, hardProblem, softProblems, sectionLabel } from './copyChange'
+import { useRowGroup } from './rowGroupTool'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { innerOutline } from './floorGeom'
 import { buildingForBox } from '../generate/fillRacking'
@@ -155,7 +154,7 @@ export function checkPlacement(placed, objects, gridSize = 40, profile = MHE_PRO
 /** Start placing `items` (new objects, fresh ids) at the world point `at`. */
 export function startPlacement(store, items, { groups = [], at = null } = {}) {
   if (!items || !items.length) return false
-  useCopyPrompt.getState().dismissReport()   // a shown result is over once the next thing starts
+  useRowGroup.setState({ message: null })   // a shown result is over once the next thing starts
   const st = store.getState()
   const c = centreOf(items)
   const p = at || c
@@ -178,13 +177,11 @@ export function movePlacement(store, world, zoom = 1, profile) {
 
 /** Place where it is now: one history entry, the new objects selected.
  *  Does nothing (returns false) while blocked. */
-export function commitPlacement(store, guard = null) {
+export function commitPlacement(store) {
   const a = usePlacement.getState().active
   if (!a || a.blocked) return false
   const st = store.getState()
   const placed = placedItems(a.items, st.objects, a.dx, a.dy)
-  // a row placed in another section while changes are pending there: ask first — then place it
-  if (guard && !guard(placed, { resume: () => commitPlacement(store, guard) })) return false
   // only the new objects look selected: no other rack keeps a clicked bay
   const others = st.objects.map(o => (o.activeBayIdx != null || o.activeTowerIdx != null ? { ...o, activeBayIdx: null, ...(o.activeTowerIdx != null ? { activeTowerIdx: null } : {}) } : o))
   usePlacement.setState({ active: null })
@@ -197,7 +194,7 @@ export function commitPlacement(store, guard = null) {
 export function cancelPlacement() {
   if (!usePlacement.getState().active) return false
   usePlacement.setState({ active: null })
-  useCopyPrompt.getState().dismissReport()
+  useRowGroup.setState({ message: null })
   return true
 }
 

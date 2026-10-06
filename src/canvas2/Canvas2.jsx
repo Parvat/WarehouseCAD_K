@@ -8,9 +8,10 @@ import { GroupRotateOverlay } from './GroupRotateOverlay'
 import { FpRotateHandleOverlay } from './FpRotateHandleOverlay'
 import { Rulers } from './Rulers'
 import { MeasureOverlay } from './MeasureTool'
-import { PlacementGhost, CopyPreview } from './CopyChange'
+import { PlacementGhost } from './CopyChange'
+import { RowGroupPreview } from './RowGroupPreview'
 import { IssueHighlight } from './IssueHighlight'
-import { CopyNote } from './CopyNote'
+import { RowGroupBar } from './RowGroupBar'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useCanvasInteraction } from './useCanvasInteraction'
@@ -21,6 +22,9 @@ import { FillOverlay, FillOptionsBar } from './FillTool'
 import { AreaPrompt } from './AreaPrompt'
 import { hasResizeHandles } from './handleGeometry'
 import { FILL_TOOL, startFill, moveFill, commitFill } from '../utils/fillTool'
+import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupBox } from '../utils/rowGroupTool'
+import { hitTest } from './hitTest'
+import { TOOLS } from '../constants'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
    A Konva Stage that owns its own pointer events. No router, no forwarding, no
@@ -335,10 +339,33 @@ export function Canvas2() {
     window.addEventListener('mouseup', up)
   }
 
-  const stageMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : onStageMouseDown
-  const stageMouseMove = measuring ? measureMouseMove : filling ? undefined : onStageMouseMove
-  const stageMouseLeave = measuring ? () => setMeasureHover(null) : filling ? undefined : onStageMouseLeave
-  const effectiveCursor = measuring || filling ? 'crosshair' : cursor
+  /* "Row group" (utils/rowGroupTool.js) — the same way: a press starts a box, the release adds the rows it
+     touches; a press and release without a drag toggles the row under it. One action, then back to Select.
+     It takes the press before anything else, so a box may start on a wall or a rack. */
+  const grouping = !measuring && activeTool === ROW_GROUP_TOOL
+  const groupMouseDown = (e) => {
+    const stage = e.target.getStage()
+    const p = stage?.getPointerPosition()
+    if (!p || (e.evt && e.evt.button !== 0)) return
+    const st = useCanvasStore.getState(), world = screenToWorld(view.current, p)
+    const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+    const hit = hitId ? st.objects.find(o => o.id === hitId) : null
+    startGroupBox(world, hit && (hit.type === 'rack_row' || hit.type === 'rack_double_row') ? hitId : null)
+    const rect = stage.container().getBoundingClientRect(), sx = e.evt.clientX, sy = e.evt.clientY
+    let moved = false
+    const move = (ev) => {
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 4) moved = true
+      moveGroupBox(screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }))
+    }
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); commitGroupBox(useCanvasStore, moved, TOOLS.SELECT) }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
+  const stageMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : onStageMouseDown
+  const stageMouseMove = measuring ? measureMouseMove : filling || grouping ? undefined : onStageMouseMove
+  const stageMouseLeave = measuring ? () => setMeasureHover(null) : filling || grouping ? undefined : onStageMouseLeave
+  const effectiveCursor = measuring || filling || grouping ? 'crosshair' : cursor
 
   return (
     <div
@@ -453,8 +480,8 @@ export function Canvas2() {
             {measuring && (
               <MeasureOverlay points={measurePts} hover={measureHover} zoom={zoom} gridSize={gridSize} />
             )}
-            {/* "Copy this change": where the copies would land, and a row being placed */}
-            <CopyPreview />
+            {/* the Row group: its rows outlined, a pending apply previewed (RowGroupPreview.jsx); a row being placed */}
+            <RowGroupPreview />
             {/* Check layout: the clicked problem, until the next click (utils/layoutCheck.js) */}
             <IssueHighlight />
             <PlacementGhost gridSize={gridSize} />
@@ -463,7 +490,7 @@ export function Canvas2() {
         </Stage>
       )}
       <ViewAdopter view={view} apply={apply} />
-      <CopyNote />
+      <RowGroupBar />
       <AreaPrompt />
       {filling && <FillOptionsBar />}
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
