@@ -6016,6 +6016,28 @@ grid.
 
 ---
 
+## BUG 73 — Check layout doesn't warn when a cross-aisle is under the travel width but another way in exists  (2026-10-06 / 4fe2e9e, open)
+Symptom:  On the hand-check layout, with section 2's rows in a Row group, a
+bay added to section 2's row 7 toward section 3 shrank
+the cross-aisle between them from 11.2 ft to 2.95 ft — far under the reach
+truck's 8 ft travel width — and nothing was flagged: no Check layout item,
+so no Row group warning either (the Row group's warnings are Check layout's
+findings, and a hand edit of the source gets the same silence).
+
+Cause:    Check layout only looks at a cross-aisle through "No way in"
+(`cutOffRacks`): a pocket is an error only when its aisles are closed at both
+ends. A cross-aisle narrowed below the travel width while the aisles still
+open at their other end leaves a way in, so nothing reports it. There is no
+check of a cross-aisle's own width against `travelFt`.
+
+Fix:      Open — not this round. Wanted: a warning (or error) for a
+cross-aisle narrower than the travel width, measured with the same 0.001 ft
+tolerance as the lane check and the column-in-aisle check (TRAVEL_TOL_FT),
+whether or not another way in exists. The Row group then warns for it too,
+with no Row group change.
+
+---
+
 ## Template for new entries
 
 ```
