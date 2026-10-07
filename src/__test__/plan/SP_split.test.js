@@ -99,7 +99,7 @@ const unchanged = (before, after, t0) => {
 const wallSingle = () => objs().filter(o => o.type === 'rack_row' && o.genSection === 1).sort((a, b) => b.beams.length - a.beams.length)[0]
 
 describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert) => {
-  it('SP-esc: row 7\'s pair (14 bays) clicked just past upright 5 → cut there, the tool back to Select, the far piece (9 bays) follows the mouse and is out of the layout; Esc → it stays where it was: 5 + 9, the same uprights, the cut frame shared, no overlap, the counts unchanged; both stamped, the staying piece keeps the id, the other carries pieceOf; NOTHING selected (a selected rack draws its depth tag on the cut); one history entry, one undo restores the rack', async () => {
+  it('SP-esc: row 7\'s pair (14 bays) clicked just past upright 5 → cut there, the tool back to Select, the far piece (9 bays) follows the mouse and is out of the layout; Esc → it stays where it was: 5 + 9, the same uprights, the cut frame shared, no overlap, the counts unchanged; both stamped, the staying piece keeps the id, the other carries pieceOf and is selected; one history entry, one undo restores the rack', async () => {
     load(savedFill(vert))
     const r = rowRacks(2, 7)[0], before = rowRacks(2, 7).map(strip), t0 = totals(), h = hist()
     expect(r.beams.length).toBe(14)
@@ -119,7 +119,7 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     expect(after.every(o => o.rowIndex === 7 && o.genSection === 2 && o.parentId === r.parentId && o.type === r.type && o.levels === r.levels)).toBe(true)
     expect(after[0].id).toBe(r.id)
     expect(after[1].pieceOf).toBe(r.id)
-    expect(store.getState().selectedIds).toEqual([])
+    expect(store.getState().selectedIds).toEqual([after[1].id])
     expect(hist()).toBe(h + 1)
     store.getState().undo()
     expect(rowRacks(2, 7).map(strip)).toEqual(before)

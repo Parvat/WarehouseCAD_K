@@ -1556,11 +1556,9 @@ together — and the tool goes back to Select. The cut upright is shared
 (`sharesFrame`, the join's own rule), so nothing moves and Check layout and the
 bay ledger are unchanged. The piece on the cursor's side then follows the
 mouse, held where it was grabbed, through placement until a click places it;
-Esc leaves it where it was (the bar says "Esc leaves it where it was"), with
-nothing selected: a selected rack draws its depth tag just past its end, and
-after a cut that end is the cut — the "label at the cut" of the 5332e95 hand
-check. While the piece follows it is out of the layout, so no aisle is drawn
-for it; placed away along its own line, each piece gets its own aisle to the
+Esc leaves it where it was (the bar says "Esc leaves it where it was"),
+selected, showing its depth tag as any selected rack does. While the piece
+follows it is out of the layout, so no aisle is drawn for it; placed away along its own line, each piece gets its own aisle to the
 facing rows and none runs between the two. The
 cut and the placement are ONE history entry — nothing is committed until the
 click or Esc. An undo while it follows brings the rack back and ends the
@@ -1590,7 +1588,7 @@ keeper does; undo and redo still correct without writing history.
 
 | Test | Asserts (the layout as saved, vertical and turned) |
 |---|---|
-| `SP-esc` | row 7's pair (14 bays) clicked just past upright 5: the tool back to Select, the 9-bay piece following (held, dx/dy 0, out of the layout, nothing committed); Esc → 5 + 9, same uprights and span, the cut frame shared, no overlap, the ledger's counts unchanged; stamps on both, the staying piece keeps the id, `pieceOf` on the other; nothing selected; one history entry; one undo restores the rack |
+| `SP-esc` | row 7's pair (14 bays) clicked just past upright 5: the tool back to Select, the 9-bay piece following (held, dx/dy 0, out of the layout, nothing committed); Esc → 5 + 9, same uprights and span, the cut frame shared, no overlap, the ledger's counts unchanged; stamps on both, the staying piece keeps the id, `pieceOf` on the other, which is selected; one history entry; one undo restores the rack |
 | `SP-place` | the wall single clicked just before upright 2 → the 2-bay piece follows; 8' across, click → placed there, one history entry, stamps and `pieceOf` kept, `genRunFt` moved with it; the rest in place; one undo restores the rack exactly |
 | `SP-nearest` | the first bay cuts at upright 1, the last at n-1; the side follows the pointer; the line across at the upright's centre; a one-bay rack has no cut; the hover set and cleared |
 | `SP-group` | rows 7 and the wall single's row in a Row group: a cut left in place and a cut placed away offer nothing, say nothing, the group unchanged |
@@ -1614,7 +1612,7 @@ placement: SP-undo (2). The bar saying "Esc to cancel": SP-esc (2). Aisles one
 per piece again: SP-aisle, SP-aisle pairing (3). Aisles one per stretch
 whatever the width: SP-aisle pairing (1). No Split button: SP-wire (1). The
 aisle keeper not folding its fix into the action's entry: SP-keeper, RA-edits (3).
-Esc selecting the cut piece again: SP-esc (2). The piece left in the layout
+The piece left in the layout
 while it follows: SP-esc, SP-place, SP-group, SP-follow, SP-away (10). Same-line
 pieces with a gap paired as neighbours: SP-aisle, SP-keeper, SP-away, SP-aisle
 pairing (7).
@@ -1631,9 +1629,9 @@ kept), 28 stay, one history step; Ctrl+Z restores the 30-bay rack.
 
 The labels at the cut (real mouse, both orientations, row 7 cut at upright 5):
 while the piece follows, row 7's two aisle labels (to rows 6 and 8) sit on
-the staying piece and nothing is drawn at the cut; after Esc, nothing selected,
-the two labels on the 9-bay piece, nothing at the cut; the 5-bay piece placed
-3' back (6.00–47.50 + 50.25–124.75): four labels, one from each piece to rows
+the staying piece and nothing is drawn at the cut; after Esc, the two labels
+on the 9-bay piece, which is selected with its depth tag at its end; the
+5-bay piece placed 3' back (6.00–47.50 + 50.25–124.75): four labels, one from each piece to rows
 6 and 8, none between the pieces.
 
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
