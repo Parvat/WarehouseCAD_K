@@ -8,7 +8,8 @@
 //     back to Select.
 //   - The piece on the cursor's side of the line then follows the mouse, held where it was grabbed
 //     (utils/placement.js, as a paste does) until a click places it; Esc leaves it where it was, its own
-//     rack. Nothing is committed until then: the cut and the placement are ONE history entry.
+//     rack, with NOTHING selected — a selected rack draws its depth tag just past its end, which is the cut.
+//     Nothing is committed until then: the cut and the placement are ONE history entry.
 //   - Both pieces keep the original's fields and its row / section stamps (the same row, the same Row
 //     group row — the row-edit keeper is told to keep the moved piece's: keepStampsOnce); the piece that
 //     stays keeps the id, the other carries `pieceOf`; `genRunFt` follows each one's start. The Row group
@@ -99,7 +100,8 @@ export function splitAt(store, world, rackId, { newId, rebuildAisles } = {}) {
       let objects = [...s.objects.slice(0, j + 1), moving, ...s.objects.slice(j + 1)]
       if (rebuildAisles) objects = rebuildAisles(objects, newId).objects
       skipNextAction()
-      store.setState({ objects, selectedIds: [moving.id], activeBaySelection: [] })
+      // nothing selected: the piece's depth tag would sit right on the cut
+      store.setState({ objects, selectedIds: [], activeBaySelection: [] })
       store.getState().commitObjectUpdate(moving.id, {})
     },
   })

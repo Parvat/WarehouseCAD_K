@@ -1539,7 +1539,7 @@ panel: BL-panel (2). Frames counted for any bay: BL-frames (2). The ledger
 worked out again on every call: BL-cache (1). The panels not held during a
 drag: BL-cache (1).
 
-### SP — The Split tool · `SP_split.test.js` (18 tests)
+### SP — The Split tool · `SP_split.test.js` (22 tests)
 Code: `utils/splitTool.js` (`cutOf`, `cutRack`, `hoverSplit`, `splitAt`),
 `canvas2/SplitPreview.jsx`, the Split button (Scissors) after Row group in
 `FloatingToolbar.jsx`, the Split branch in `Canvas2.jsx`, Esc in
@@ -1556,7 +1556,12 @@ together — and the tool goes back to Select. The cut upright is shared
 (`sharesFrame`, the join's own rule), so nothing moves and Check layout and the
 bay ledger are unchanged. The piece on the cursor's side then follows the
 mouse, held where it was grabbed, through placement until a click places it;
-Esc leaves it where it was (the bar says "Esc leaves it where it was"). The
+Esc leaves it where it was (the bar says "Esc leaves it where it was"), with
+nothing selected: a selected rack draws its depth tag just past its end, and
+after a cut that end is the cut — the "label at the cut" of the 5332e95 hand
+check. While the piece follows it is out of the layout, so no aisle is drawn
+for it; placed away along its own line, each piece gets its own aisle to the
+facing rows and none runs between the two. The
 cut and the placement are ONE history entry — nothing is committed until the
 click or Esc. An undo while it follows brings the rack back and ends the
 placement, nothing placed.
@@ -1585,13 +1590,15 @@ keeper does; undo and redo still correct without writing history.
 
 | Test | Asserts (the layout as saved, vertical and turned) |
 |---|---|
-| `SP-esc` | row 7's pair (14 bays) clicked just past upright 5: the tool back to Select, the 9-bay piece following (held, dx/dy 0, out of the layout, nothing committed); Esc → 5 + 9, same uprights and span, the cut frame shared, no overlap, the ledger's counts unchanged; stamps on both, the staying piece keeps the id, `pieceOf` on the other, which is selected; one history entry; one undo restores the rack |
+| `SP-esc` | row 7's pair (14 bays) clicked just past upright 5: the tool back to Select, the 9-bay piece following (held, dx/dy 0, out of the layout, nothing committed); Esc → 5 + 9, same uprights and span, the cut frame shared, no overlap, the ledger's counts unchanged; stamps on both, the staying piece keeps the id, `pieceOf` on the other; nothing selected; one history entry; one undo restores the rack |
 | `SP-place` | the wall single clicked just before upright 2 → the 2-bay piece follows; 8' across, click → placed there, one history entry, stamps and `pieceOf` kept, `genRunFt` moved with it; the rest in place; one undo restores the rack exactly |
 | `SP-nearest` | the first bay cuts at upright 1, the last at n-1; the side follows the pointer; the line across at the upright's centre; a one-bay rack has no cut; the hover set and cleared |
 | `SP-group` | rows 7 and the wall single's row in a Row group: a cut left in place and a cut placed away offer nothing, say nothing, the group unchanged |
 | `SP-rejoin` | a cut piece dragged 20' away and back: the in-line snap joins it again — one rack fewer, the same bays |
 | `SP-aisle` | after a cut, row 7's aisles to rows 6 and 8 as before — one each, the same widths; the same after the cut piece is made 1 level higher (can't join, settled end to end) |
 | `SP-keeper` | a cut piece nudged 6" across: its own aisle, in that action's history entry; another move and an undo restore every aisle exactly, ids and all |
+| `SP-follow` | while the piece follows: no aisle names it; row 7 keeps one aisle to row 6 and one to row 8, both from the staying piece; none between two row-7 racks |
+| `SP-away` | the 5-bay piece placed 3' back along its line (2.75' gap): one 10.5' aisle from each piece to row 6 and to row 8, none between the two |
 | `SP-undo` | Ctrl+Z while the piece follows: the next move ends the placement, a click places nothing, no duplicate |
 | `SP-aisle pairing` | synthetic: two racks end to end facing a long rack → one pair; a real gap → two; a single end to end at a second width → two |
 | `SP-wire` | the Split button after Row group; the canvas's Split branch (splitAt, hoverSplit, SplitPreview); Esc leaves the tool; the bar's Esc hint; no Separate left in the panel |
@@ -1607,6 +1614,10 @@ placement: SP-undo (2). The bar saying "Esc to cancel": SP-esc (2). Aisles one
 per piece again: SP-aisle, SP-aisle pairing (3). Aisles one per stretch
 whatever the width: SP-aisle pairing (1). No Split button: SP-wire (1). The
 aisle keeper not folding its fix into the action's entry: SP-keeper, RA-edits (3).
+Esc selecting the cut piece again: SP-esc (2). The piece left in the layout
+while it follows: SP-esc, SP-place, SP-group, SP-follow, SP-away (10). Same-line
+pieces with a gap paired as neighbours: SP-aisle, SP-keeper, SP-away, SP-aisle
+pairing (7).
 
 **Checked in the app** (real mouse, the layout as saved, both orientations):
 Split button (pressed) → hover just past row 7's upright 5 shows the line at
@@ -1617,6 +1628,13 @@ history step, row 7's aisles 10.5' to row 6 and 10.5' to row 8 as before;
 Ctrl+Z restores the 14-bay rack. The 30-bay wall single cut just before
 upright 2 → 2 bays follow, moved 8' across, click → placed (row 1/1 stamps
 kept), 28 stay, one history step; Ctrl+Z restores the 30-bay rack.
+
+The labels at the cut (real mouse, both orientations, row 7 cut at upright 5):
+while the piece follows, row 7's two aisle labels (to rows 6 and 8) sit on
+the staying piece and nothing is drawn at the cut; after Esc, nothing selected,
+the two labels on the 9-bay piece, nothing at the cut; the 5-bay piece placed
+3' back (6.00–47.50 + 50.25–124.75): four labels, one from each piece to rows
+6 and 8, none between the pieces.
 
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.

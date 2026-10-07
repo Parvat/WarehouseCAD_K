@@ -99,7 +99,7 @@ const unchanged = (before, after, t0) => {
 const wallSingle = () => objs().filter(o => o.type === 'rack_row' && o.genSection === 1).sort((a, b) => b.beams.length - a.beams.length)[0]
 
 describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert) => {
-  it('SP-esc: row 7\'s pair (14 bays) clicked just past upright 5 → cut there, the tool back to Select, the far piece (9 bays) follows the mouse and is out of the layout; Esc → it stays where it was: 5 + 9, the same uprights, the cut frame shared, no overlap, the counts unchanged; both stamped, the staying piece keeps the id, the other carries pieceOf and is selected; one history entry, one undo restores the rack', async () => {
+  it('SP-esc: row 7\'s pair (14 bays) clicked just past upright 5 → cut there, the tool back to Select, the far piece (9 bays) follows the mouse and is out of the layout; Esc → it stays where it was: 5 + 9, the same uprights, the cut frame shared, no overlap, the counts unchanged; both stamped, the staying piece keeps the id, the other carries pieceOf; NOTHING selected (a selected rack draws its depth tag on the cut); one history entry, one undo restores the rack', async () => {
     load(savedFill(vert))
     const r = rowRacks(2, 7)[0], before = rowRacks(2, 7).map(strip), t0 = totals(), h = hist()
     expect(r.beams.length).toBe(14)
@@ -119,7 +119,7 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     expect(after.every(o => o.rowIndex === 7 && o.genSection === 2 && o.parentId === r.parentId && o.type === r.type && o.levels === r.levels)).toBe(true)
     expect(after[0].id).toBe(r.id)
     expect(after[1].pieceOf).toBe(r.id)
-    expect(store.getState().selectedIds).toEqual([after[1].id])
+    expect(store.getState().selectedIds).toEqual([])
     expect(hist()).toBe(h + 1)
     store.getState().undo()
     expect(rowRacks(2, 7).map(strip)).toEqual(before)
@@ -189,7 +189,7 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     load(savedFill(vert))
     const r = rowRacks(2, 7)[0]
     splitAt(store, near(r, 5, 0.5), r.id, { newId, rebuildAisles }); cancelPlacement(); await settle()
-    const sid = store.getState().selectedIds[0]
+    const sid = objs().find(x => x.pieceOf === r.id).id
     const n0 = rowRacks(2, 7).length, bays0 = rowRacks(2, 7).reduce((t, o) => t + o.beams.length, 0)
     const d = 20 * GS
     store.getState().moveObjects([sid], vert ? d : 0, vert ? 0 : d); await settle()
@@ -208,7 +208,7 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     splitAt(store, near(r, 5, 0.5), r.id, { newId, rebuildAisles }); cancelPlacement(); await settle()
     expect(rowRacks(2, 7).length).toBe(2)
     expect(aislesOf(2, 7)).toEqual(a0)
-    const sid = store.getState().selectedIds[0]
+    const sid = objs().find(x => x.pieceOf === r.id).id
     store.getState().updateObject(sid, { levels: (r.levels || 4) + 1 }); store.getState().commitObjectUpdate(sid, {}); await settle()
     expect(planInlineDrop(objs(), [sid], sid, 0, 0, GS)?.join || null).toBe(null)
     expect(aislesOf(2, 7)).toEqual(a0)
@@ -218,7 +218,7 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     load(savedFill(vert))
     const r = rowRacks(2, 7)[0]
     splitAt(store, near(r, 5, 0.5), r.id, { newId, rebuildAisles }); cancelPlacement(); await settle()
-    const sid = store.getState().selectedIds[0], o = objs().find(x => x.id === sid), d = GS / 2
+    const sid = objs().find(x => x.pieceOf === r.id).id, o = objs().find(x => x.id === sid), d = GS / 2
     const n0 = objs().filter(x => x.type === 'aisle').length
     store.getState().commitObjectUpdate(sid, vert ? { x: o.x + d } : { y: o.y + d }); await settle()
     const aisles = () => objs().filter(x => x.type === 'aisle').map(strip).sort((p, q) => (p.id < q.id ? -1 : 1))
@@ -228,6 +228,41 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     store.getState().commitObjectUpdate(sid, vert ? { x: o.x + 2 * d } : { y: o.y + 2 * d }); await settle()
     store.getState().undo(); await settle()
     expect(aisles()).toEqual(after)
+  })
+
+  it('SP-follow: while the cut piece follows the mouse no aisle is drawn for it — it is out of the layout, no aisle names it; row 7 keeps one aisle to row 6 and one to row 8, both from the piece that stays, the same widths; none between two racks of row 7', () => {
+    load(savedFill(vert))
+    const a0 = aislesOf(2, 7), r = rowRacks(2, 7)[0]
+    splitAt(store, near(r, 5, 0.5), r.id, { newId, rebuildAisles })
+    const moving = usePlacement.getState().active.items[0]
+    movePlacement(store, near(r, 5, 3), 1)
+    expect(objs().some(o => o.id === moving.id)).toBe(false)
+    expect(objs().filter(o => o.type === 'aisle' && (o.row1Id === moving.id || o.row2Id === moving.id))).toEqual([])
+    expect(aislesOf(2, 7)).toEqual(a0)
+    const row7 = new Set(rowRacks(2, 7).map(o => o.id))
+    expect(objs().filter(o => o.type === 'aisle' && row7.has(o.row1Id) && row7.has(o.row2Id))).toEqual([])
+    expect(objs().filter(o => o.type === 'aisle' && (row7.has(o.row1Id) || row7.has(o.row2Id))).every(o => o.row1Id === r.id || o.row2Id === r.id)).toBe(true)
+  })
+
+  it('SP-away: the cut piece placed 3 ft away along its own line (a gap of 2.75 ft between the two) — each piece gets its own normal aisle to row 6 and to row 8 (10.5 ft), and there is none between the piece and the rack it was cut from', async () => {
+    load(savedFill(vert))
+    const r = rowRacks(2, 7)[0], at = near(r, 5, -0.6)
+    splitAt(store, at, r.id, { newId, rebuildAisles })
+    const moving = usePlacement.getState().active.items[0]
+    expect(moving.beams.length).toBe(5)
+    movePlacement(store, vert ? { x: at.x, y: at.y - 3 * GS } : { x: at.x - 3 * GS, y: at.y }, 1)
+    expect(commitPlacement(store)).toBe(true); await settle()
+    const line = rowRacks(2, 7)
+    expect(line.map(o => o.beams.length)).toEqual([5, 9])
+    const gap = (RG.geom(line[1]).r0 - RG.geom(line[0]).r1) / GS
+    expect(gap).toBeCloseTo(2.75, 6)
+    const row7 = new Set(line.map(o => o.id))
+    expect(objs().filter(o => o.type === 'aisle' && row7.has(o.row1Id) && row7.has(o.row2Id))).toEqual([])
+    expect(aislesOf(2, 7)).toEqual({ '2/6': [10.5, 10.5], '2/8': [10.5, 10.5] })
+    for (const o of line) for (const other of [6, 8]) {
+      const n = objs().filter(a => a.type === 'aisle' && (a.row1Id === o.id || a.row2Id === o.id) && [a.row1Id, a.row2Id].some(id => { const q = objs().find(x => x.id === id); return q.genSection === 2 && q.rowIndex === other })).length
+      expect(n).toBe(1)
+    }
   })
 
   it('SP-undo: Ctrl+Z while the cut piece follows the mouse brings the rack back and ends the placement — the next move or click places nothing, no duplicate', () => {
