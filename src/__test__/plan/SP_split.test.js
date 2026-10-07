@@ -19,7 +19,9 @@ import { getLayoutCapacity } from '../../utils/capacity'
 import { rebuildAisles, neighbourPairs } from '../../utils/aisleRebuild'
 import * as RG from '../../utils/rowGroup'
 import { SPLIT_TOOL, useSplit, cutOf, hoverSplit, splitAt } from '../../utils/splitTool'
-import { usePlacement, movePlacement, commitPlacement, cancelPlacement, startPlacement, placementTags } from '../../utils/placement'
+import { usePlacement, movePlacement, commitPlacement, cancelPlacement, placementDistances } from '../../utils/placement'
+import { innerOutline } from '../../utils/floorGeom'
+import { crossAisleLabels } from '../../canvas2/crossAisles'
 import { installAisleKeeper } from '../../utils/aisleKeeper'
 import { installRowEditKeeper } from '../../utils/rowEditKeeper'
 import { installPairKeeper } from '../../utils/pairCarryOn'
@@ -84,17 +86,27 @@ function aislesOf(sec, ri) {
   return out
 }
 
-/** The live aisles a tagged placement draws, by the other row: { 'sec/row': [width ft, ...] }. */
-function ghostAisles() {
-  const out = {}
-  for (const { row1, row2 } of placementTags(usePlacement.getState().active, objs(), GS).aisles) {
-    const A = RG.geom(row1), B = RG.geom(row2), o = row1.id.startsWith('p') && !objs().some(x => x.id === row1.id) ? row2 : row1
-    const w = Math.round(((Math.max(A.s0, B.s0) - Math.min(A.s1, B.s1)) / GS) * 1000) / 1000;
-    (out[o.genSection + '/' + o.rowIndex] = out[o.genSection + '/' + o.rowIndex] || []).push(w)
+/** The live distances the following piece draws, by direction relative to its rack — along+ / along- (the
+ *  run), across+ / across- — and along0 / across0 for a 0 gap — as { kind, ft } (ft to 3 decimals). */
+function distances() {
+  const a = usePlacement.getState().active, out = {}
+  const runAxis = RG.geom(a.items[0]).vert ? 'y' : 'x'
+  for (const d of placementDistances(a, objs(), GS)) {
+    const k = (d.axis === runAxis ? 'along' : 'across') + (d.b > d.a + 1e-9 ? '+' : d.b < d.a - 1e-9 ? '-' : '0')
+    out[k] = { kind: d.kind, ft: Math.round(d.ft * 1000) / 1000 }
   }
-  for (const k in out) out[k].sort((a, b) => a - b)
   return out
 }
+/** The user's case: the building as saved, emptied, with ONE plain single of 6 bays (8') in the middle. */
+function oneRack(vert) {
+  const all = savedFill(vert), fp = all.find(o => typeof o.type === 'string' && o.type.startsWith('fp_'))
+  const src = all.filter(o => o.type === 'rack_row' && o.genSection === 1).sort((a, b) => b.beams.length - a.beams.length)[0]
+  const { rowIndex, genSection, genRunFt, genCrossFt, pieceOf, areaId, ...plain } = src
+  const rack = RG.movedAcross(RG.withRun({ ...plain, id: 'R6' }, RG.geom(src).r0 + 60 * GS, Array(6).fill(96), GS), 100 * GS)
+  return { objects: [fp, rack], fp, rack }
+}
+/** The building's inner faces: [lo, hi] on each world axis. */
+const innerBox = (fp) => { const q = innerOutline(fp, GS), xs = q.map(v => v.x), ys = q.map(v => v.y); return { x: [Math.min(...xs), Math.max(...xs)], y: [Math.min(...ys), Math.max(...ys)] } }
 
 /** A cut must leave every rack where it was: the same uprights and span, the cut frame shared, no overlap,
  *  no bay lost, the bay ledger's counts unchanged. */
@@ -243,7 +255,7 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     expect(aisles()).toEqual(after)
   })
 
-  it('SP-follow: while the cut piece follows the mouse its aisles are drawn live (to rows 6 and 8, 10.5 ft — placementTags) but never put in the layout: it is out of the layout, no aisle object names it; row 7 keeps one aisle to row 6 and one to row 8, both from the piece that stays, the same widths; none between two racks of row 7', () => {
+  it('SP-follow: while the cut piece follows the mouse it shows live distances — across, 10.5 ft to row 6 and to row 8 (the nearest racks) — and nothing goes in the layout: it is out of the layout, no aisle object names it; row 7 keeps one aisle to row 6 and one to row 8, both from the piece that stays, the same widths; none between two racks of row 7', () => {
     load(savedFill(vert))
     const a0 = aislesOf(2, 7), r = rowRacks(2, 7)[0]
     splitAt(store, near(r, 5, 0.5), r.id, { newId, rebuildAisles })
@@ -255,32 +267,58 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     const row7 = new Set(rowRacks(2, 7).map(o => o.id))
     expect(objs().filter(o => o.type === 'aisle' && row7.has(o.row1Id) && row7.has(o.row2Id))).toEqual([])
     expect(objs().filter(o => o.type === 'aisle' && (row7.has(o.row1Id) || row7.has(o.row2Id))).every(o => o.row1Id === r.id || o.row2Id === r.id)).toBe(true)
-    expect(ghostAisles()).toEqual({ '2/6': [10.5], '2/8': [10.5] })
+    const d = distances()
+    expect([d['across+'], d['across-']]).toEqual([{ kind: 'rack', ft: 10.5 }, { kind: 'rack', ft: 10.5 }])
   })
 
-  it('SP-tags: the following piece is drawn as a selected rack in a drag — placementTags gives it where it is now (its size / depth / beam tags) and its live aisles; the 2-bay piece of the wall single faces its row at the start (its own aisle, not lost to the rack it came from) and, moved 8 ft across, the same aisle re-measured 8 ft narrower; a paste-style placement (no tags) draws none', () => {
-    load(savedFill(vert))
-    const w = wallSingle(), at = near(w, 2, -0.5)
-    splitAt(store, at, w.id, { newId, rebuildAisles })
-    let a = usePlacement.getState().active, t = placementTags(a, objs(), GS)
-    expect(a.tags).toBe(true)
-    expect(t.racks.map(o => [o.id, o.beams.length])).toEqual([[a.items[0].id, 2]])
-    expect(RG.geom(t.racks[0]).r0).toBeCloseTo(RG.geom(a.items[0]).r0, 6)
-    const g0 = ghostAisles(), keys = Object.keys(g0)
-    expect(keys.length).toBe(1)
-    const w0 = g0[keys[0]][0]
-    movePlacement(store, vert ? { x: at.x + 8 * GS, y: at.y } : { x: at.x, y: at.y + 8 * GS }, 1)
-    a = usePlacement.getState().active; t = placementTags(a, objs(), GS)
-    const moved = (vert ? a.dx : a.dy) / GS
-    expect(moved).toBeCloseTo(8, 6)
-    expect(RG.geom(t.racks[0]).s0 - RG.geom(a.items[0]).s0).toBeCloseTo(8 * GS, 6)        // the tags ride with the piece
-    expect(ghostAisles()).toEqual({ [keys[0]]: [Math.round((w0 - 8) * 1000) / 1000] })
+  it('SP-dist: the user case — an empty building, one 6-bay single, cut before upright 2: the 2-bay piece follows with live distances, kept up as it moves — along, the gap to the rack it was cut from (0 at the cut, 3.75 ft after 4 ft away) and the wall the other way; across, the walls; moved 6 ft off the line, the gap to that rack is across (2.5 ft); moved diagonally, it is added on the axis that separates them', () => {
+    const { objects, fp, rack } = oneRack(vert)
+    load(objects)
+    const at = near(rack, 2, -0.6), runAxis = vert ? 'y' : 'x', crossAxis = vert ? 'x' : 'y', B = innerBox(fp)
+    splitAt(store, at, rack.id, { newId, rebuildAisles })
+    const move = (along, across) => movePlacement(store, vert ? { x: at.x + across * GS, y: at.y + along * GS } : { x: at.x + along * GS, y: at.y + across * GS }, 1)
+    const piece = () => { const a = usePlacement.getState().active; return RG.geom({ ...a.items[0], x: a.items[0].x + a.dx, y: a.items[0].y + a.dy }) }
+    const r3 = (v) => Math.round(v * 1000) / 1000
+    const walls = (g) => ({ along: r3((g.r0 - B[runAxis][0]) / GS), lo: r3((g.s0 - B[crossAxis][0]) / GS), hi: r3((B[crossAxis][1] - g.s1) / GS) })
+    // at the cut
+    const w = walls(piece())
+    const count = () => placementDistances(usePlacement.getState().active, objs(), GS).length
+    let d = distances()
+    expect(count()).toBe(4)                                                            // one line per direction, nothing twice
+    expect(d['along0']).toEqual({ kind: 'from', ft: 0 })
+    expect(d['along-']).toEqual({ kind: 'wall', ft: w.along })
+    expect(d['across-']).toEqual({ kind: 'wall', ft: w.lo })
+    expect(d['across+']).toEqual({ kind: 'wall', ft: w.hi })
+    // 4 ft along, away from the rest: live
+    move(-4, 0); d = distances()
+    expect(count()).toBe(4)
+    expect(d['along+']).toEqual({ kind: 'from', ft: 3.75 })
+    expect(d['along-']).toEqual({ kind: 'wall', ft: r3(w.along - 4) })
+    // 6 ft across, off the line: the gap to the rack it came from is across
+    move(0, 6); d = distances()
+    expect(count()).toBe(4)
+    expect(d['across-']).toEqual({ kind: 'from', ft: 2.5 })
+    expect(d['across+']).toEqual({ kind: 'wall', ft: r3(w.hi - 6) })
+    // diagonally (4 along, 6 across): no direction reaches it, so its gap is added along (3.75 > 2.5)
+    move(-4, 6)
+    const from = placementDistances(usePlacement.getState().active, objs(), GS).filter(x => x.kind === 'from')
+    expect(from.map(x => [x.axis, r3(x.ft)])).toEqual([[runAxis, 3.75]])
     cancelPlacement()
-    // a paste-style placement: no tags
-    const copy = { ...rowRacks(2, 7)[0], id: 'copy' }
-    startPlacement(store, [copy], { at: near(copy, 3, 0) })
-    expect(placementTags(usePlacement.getState().active, objs(), GS)).toEqual({ racks: [], aisles: [] })
-    usePlacement.setState({ active: null })
+  })
+
+  it('SP-ordinary: after the 2-bay piece is placed 4 ft along its line, the only label is the 3 ft 9 in cross-aisle label in the gap — exactly what two ordinary racks loaded in those spots draw; no aisle label, nothing selected', async () => {
+    const { objects, rack } = oneRack(vert)
+    load(objects)
+    const at = near(rack, 2, -0.6)
+    splitAt(store, at, rack.id, { newId, rebuildAisles })
+    movePlacement(store, vert ? { x: at.x, y: at.y - 4 * GS } : { x: at.x - 4 * GS, y: at.y }, 1)
+    expect(commitPlacement(store)).toBe(true); await settle()
+    const label = (os) => ({ cross: crossAisleLabels(os, GS).map(c => Math.round((c.gapHi - c.gapLo) / GS * 1000) / 1000), aisles: os.filter(o => o.type === 'aisle').length })
+    const now = label(objs())
+    expect(now).toEqual({ cross: [3.75], aisles: 0 })
+    expect(store.getState().selectedIds).toEqual([])
+    const ordinary = [objects[0], ...objs().filter(o => o.type === 'rack_row').map(({ pieceOf, ...o }) => ({ ...o, id: 'o' + o.id }))]
+    expect(label(ordinary)).toEqual(now)
   })
 
   it('SP-away: the cut piece placed 3 ft away along its own line (a gap of 2.75 ft between the two) — each piece gets its own normal aisle to row 6 and to row 8 (10.5 ft), and there is none between the piece and the rack it was cut from', async () => {
@@ -346,10 +384,13 @@ describe('SP-wire', () => {
     expect(kb).toMatch(/activeTool === SPLIT_TOOL\) \{ useSplit\.setState\(\{ hover: null \}\); useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); return \}/)
     expect(readFileSync('src/canvas2/RowGroupBar.jsx', 'utf8')).toContain("> · {placing.escHint || 'Esc to cancel'}</span>")
     const gh = readFileSync('src/canvas2/CopyChange.jsx', 'utf8')
-    expect(gh).toContain('const tags = placementTags(a, objects, gridSize)')
-    expect(gh).toContain('{aislesOn && tags.aisles.map(t => <AisleLabelItem ')
-    expect(gh).toContain("{tags.racks.map(o => <RackLabels key={'rl:' + o.id} obj={o} zoom={lz} gridSize={gridSize} />)}")
-    expect(readFileSync('src/utils/splitTool.js', 'utf8')).toContain("escHint: 'Esc leaves it where it was', tags: true, select: false,")
+    expect(gh).toContain('const distances = placementDistances(a, objects, gridSize)')
+    expect(gh).toContain('{distances.map((d, i) => <Distance key={d.axis + i} d={d} zoom={zoom} gridSize={gridSize} />)}')
+    expect(gh).toContain('const zoom = useCanvasStore(s => s.zoom) || 1')
+    expect(gh).toContain('fontSize={FONT_PX / zoom} zoom={zoom}')
+    expect(gh).toContain('Math.min(len / 2, NEAR_PX / zoom)')                               // a long one's pill stays near the piece
+    expect(gh).not.toMatch(/RackLabels|AisleLabelItem/)
+    expect(readFileSync('src/utils/splitTool.js', 'utf8')).toContain("escHint: 'Esc leaves it where it was', measure: { fromId: stay.id }, select: false,")
     expect(readFileSync('src/components/RightPanel/panels/RackRowPanelCore.jsx', 'utf8')).not.toMatch(/Separate/)
   })
 })

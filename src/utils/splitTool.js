@@ -8,10 +8,10 @@
 //     back to Select.
 //   - The piece on the cursor's side of the line then follows the mouse, held where it was grabbed
 //     (utils/placement.js, as a paste does) until a click places it; Esc leaves it where it was, its own
-//     rack. While it follows it is drawn as a selected rack is in a normal drag — its size / depth / beam
-//     tags and live aisle labels to the facing rows, no handles (placementTags). After the drop, either
-//     way, NOTHING is selected, so no tag is left on the piece or at the cut. Nothing is committed until
-//     then: the cut and the placement are ONE history entry.
+//     rack. While it follows, live distances show where it would land (placementDistances, drawn at
+//     screen size): the gap to the rack it was cut from, and to the nearest rack or wall in each
+//     direction. After the drop, either way, NOTHING is selected, so no tag is left on the piece or at the
+//     cut. Nothing is committed until then: the cut and the placement are ONE history entry.
 //   - Both pieces keep the original's fields and its row / section stamps (the same row, the same Row
 //     group row — the row-edit keeper is told to keep the moved piece's: keepStampsOnce); the piece that
 //     stays keeps the id, the other carries `pieceOf`; `genRunFt` follows each one's start. The Row group
@@ -88,7 +88,7 @@ export function splitAt(store, world, rackId, { newId, rebuildAisles } = {}) {
   // an undo while it follows the mouse brought the rack back: the placement is over, nothing to put back
   const gone = (s) => !s.objects.some(o => o.id === stay.id && o.width === stay.width && o.beams?.length === stay.beams.length) || s.objects.some(o => o.id === moving.id)
   startPlacement(store, [moving], {
-    at: world, grab: true, abandonIf: gone, escHint: 'Esc leaves it where it was', tags: true, select: false,
+    at: world, grab: true, abandonIf: gone, escHint: 'Esc leaves it where it was', measure: { fromId: stay.id }, select: false,
     finish: (placed) => {
       skipNextAction()
       if (moving.genRunFt == null) return placed

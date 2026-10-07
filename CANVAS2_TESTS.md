@@ -1539,7 +1539,7 @@ panel: BL-panel (2). Frames counted for any bay: BL-frames (2). The ledger
 worked out again on every call: BL-cache (1). The panels not held during a
 drag: BL-cache (1).
 
-### SP — The Split tool · `SP_split.test.js` (24 tests)
+### SP — The Split tool · `SP_split.test.js` (26 tests)
 Code: `utils/splitTool.js` (`cutOf`, `cutRack`, `hoverSplit`, `splitAt`),
 `canvas2/SplitPreview.jsx`, the Split button (Scissors) after Row group in
 `FloatingToolbar.jsx`, the Split branch in `Canvas2.jsx`, Esc in
@@ -1558,15 +1558,16 @@ bay ledger are unchanged. The piece on the cursor's side then follows the
 mouse, held where it was grabbed, through placement until a click places it;
 Esc leaves it where it was (the bar says "Esc leaves it where it was").
 
-While it follows, the piece is drawn as a selected rack is in a normal drag
-(`placementTags`, drawn by `PlacementGhost` with the components Overlays.jsx
-uses): its dark size / depth / beam tags (`RackLabels`) and live aisle labels
-to the facing rows (`AisleLabelItem`, hidden with the Aisles layer). As in a
-drag, the aisles are the ones it had where it started, re-measured as it moves
-— a drag never pairs a rack with a new one mid-move — and the rack it was cut
-from is left out, so the aisles are the piece's own. No handles: a click
-places it. They are drawn only, never in the layout. A paste keeps its plain
-ghost. After the drop, either way (click or Esc), NOTHING is selected, so no
+While it follows, live DISTANCES show where it would land (`placementDistances`,
+drawn by `PlacementGhost`): from each face of the piece to the nearest rack or
+wall straight ahead, and the gap to the rack it was cut from in amber — along
+the line, or across once the piece is off it; after a diagonal move, where no
+direction reaches that rack first, its gap is added on the axis that separates
+them. A dimension line with ticks and a dark pill, at SCREEN size (11 px, divided
+by the view zoom), the pill at the line's middle but never more than 70 screen
+px from the face so a long one stays in view. The size tags crowded the gap
+and the live aisle labels repeated the across distances, so neither is drawn.
+Drawn only, never in the layout. A paste keeps its plain ghost. After the drop, either way (click or Esc), NOTHING is selected, so no
 tag is left on the piece or at the cut. Placed away along its own line, each
 piece gets its own aisle to the facing rows and none runs between the two. The
 cut and the placement are ONE history entry — nothing is committed until the
@@ -1604,8 +1605,9 @@ keeper does; undo and redo still correct without writing history.
 | `SP-rejoin` | a cut piece dragged 20' away and back: the in-line snap joins it again — one rack fewer, the same bays |
 | `SP-aisle` | after a cut, row 7's aisles to rows 6 and 8 as before — one each, the same widths; the same after the cut piece is made 1 level higher (can't join, settled end to end) |
 | `SP-keeper` | a cut piece nudged 6" across: its own aisle, in that action's history entry; another move and an undo restore every aisle exactly, ids and all |
-| `SP-follow` | while the piece follows: its live aisles drawn (10.5' to rows 6 and 8), but no aisle object in the layout names it; row 7 keeps one aisle to row 6 and one to row 8, both from the staying piece; none between two row-7 racks |
-| `SP-tags` | the wall single's 2-bay piece while it follows: `placementTags` gives it where it is now (its tags) and its own aisle to row 1/2 at the start (not lost to the rack it came from); moved 8' across, the tags ride with it and the same aisle reads 8' narrower, no new pair; a paste-style placement draws no tags |
+| `SP-follow` | while the piece follows: across, 10.5' to row 6 and to row 8 (the nearest racks), but no aisle object in the layout names it; row 7 keeps one aisle to row 6 and one to row 8, both from the staying piece; none between two row-7 racks |
+| `SP-dist` | the user's case — an empty building, one 6-bay single, cut before upright 2: at the cut, 0 along to the rack it came from, the wall the other way and both walls across, one line per direction; 4' along, live: 3' 9" to that rack, the wall 4' nearer; 6' across, off the line: 2' 6" across to that rack; diagonally: that rack's gap added along (3' 9" > 2' 6") |
+| `SP-ordinary` | the 2-bay piece placed 4' along its line: the only label is the 3' 9" cross-aisle label in the gap, the same as two ordinary racks loaded in those spots draw; no aisle; nothing selected |
 | `SP-away` | the 5-bay piece placed 3' back along its line (2.75' gap): one 10.5' aisle from each piece to row 6 and to row 8, none between the two |
 | `SP-undo` | Ctrl+Z while the piece follows: the next move ends the placement, a click places nothing, no duplicate |
 | `SP-aisle pairing` | synthetic: two racks end to end facing a long rack → one pair; a real gap → two; a single end to end at a second width → two |
@@ -1625,11 +1627,13 @@ aisle keeper not folding its fix into the action's entry: SP-keeper, RA-edits (3
 The piece left in the layout
 while it follows: SP-esc, SP-place, SP-group, SP-follow, SP-away (10). Same-line
 pieces with a gap paired as neighbours: SP-aisle, SP-keeper, SP-away, SP-aisle
-pairing (7). The following piece with no tags: SP-follow, SP-tags, SP-wire (5).
-The placed piece left selected: SP-place, SP-wire (3). The piece left by Esc
-selected: SP-esc (2). The tags and aisles drawn where it started: SP-tags (2).
-Aisle pairs recomputed mid-move: SP-tags (2). The rack it was cut from not
-left out: SP-tags (2). The ghost not drawing the live aisle labels: SP-wire (1).
+pairing (7). The placed piece left selected: SP-place (2). The piece left by
+Esc selected: SP-esc (2). No distances while it follows: SP-follow, SP-dist,
+SP-wire (5). Distances measured where it started: SP-dist (2). Walls ignored:
+SP-dist (2). Other racks ignored: SP-follow (2). The gap to the rack it came
+from not told apart (drawn twice): SP-dist (2). No gap after a diagonal move:
+SP-dist (2). Drawn at drawing size: SP-wire (1). A long one's pill off screen:
+SP-wire (1). The size tags back: SP-wire (1).
 
 **Checked in the app** (real mouse, the layout as saved, both orientations):
 Split button (pressed) → hover just past row 7's upright 5 shows the line at
@@ -1641,17 +1645,16 @@ Ctrl+Z restores the 14-bay rack. The 30-bay wall single cut just before
 upright 2 → 2 bays follow, moved 8' across, click → placed (row 1/1 stamps
 kept), 28 stay, one history step; Ctrl+Z restores the 30-bay rack.
 
-The labels (real mouse, both orientations): row 7 cut at upright 5 — the
-9-bay piece follows with its 3' 6" depth and 74' 6" length tags and live
-10' 6" labels to rows 6 and 8; Esc → nothing selected, nothing at the cut,
-history +1. The wall single cut at upright 2 — the 2-bay piece follows with its
-3' 6" and 16' 9" tags and a live 13' 5" to row 1/2; moved 8' across, the same
-label reads 5' 5" (under the piece's own length tag, as a normal drag's label
-sits under its rack's); click → placed, nothing selected, history +1, and the
-layout's aisles are 5' 5" to row 1/2 and 4' 6" to the wall single it came from
-(no longer in the same line). The 5-bay piece placed 3' back along its line
-(6.00–47.50 + 50.25–124.75): four labels, one from each piece to rows 6 and 8,
-none between the pieces.
+The distances (real mouse, both orientations, the user's case: an empty
+building, one 6-bay single, the 2-bay piece cut off): at the cut, 0' to the
+rack it came from, 61' 4" along to the wall, 100' and 396' across to the walls;
+4' along, 3' 9" (amber) to that rack and 57' 4" to the wall; 6' across, off the
+line, 2' 6" across (amber) to that rack, 171' 5" and 61' 4" along to the walls,
+390' across. Placed 4' along: nothing selected, and the only label is the
+3' 9" cross-aisle label in the gap, the same label two ordinary racks there
+draw. The 5-bay piece of row 7 placed 3' back along its line (6.00–47.50 +
+50.25–124.75): four labels, one from each piece to rows 6 and 8, none between
+the pieces.
 
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.

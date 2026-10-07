@@ -7,8 +7,8 @@
 // on the click the area keeper refits any racking area it reaches
 // (utils/rackingAreaTool.js). The Split tool's cut-off piece is placed the
 // same way, held where it was grabbed (utils/splitTool.js: grab, finish,
-// onCancel, abandonIf), drawn as a selected rack is in a drag (tags:
-// placementTags) and left unselected when placed (select: false).
+// onCancel, abandonIf), with live distances to where it could go (measure:
+// placementDistances) and left unselected when placed (select: false).
 //
 // Snapping, on each axis of the building's rows, to the nearest of (within
 // SNAP_PX on screen):
@@ -32,7 +32,6 @@ import { useRowGroup } from './rowGroupTool'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { innerOutline } from './floorGeom'
 import { buildingForBox } from '../generate/fillRacking'
-import { neighbourPairs } from './aisleRebuild'
 
 const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -159,9 +158,9 @@ export function checkPlacement(placed, objects, gridSize = 40, profile = MHE_PRO
  *  `grab`: they stay where they are and keep their offset from the pointer (otherwise they centre on it).
  *  `finish(placed)` → the objects to place, just before the click's commit; `onCancel()` runs after Esc
  *  (or another placement starting) clears it; `abandonIf(state)`: true ends it with nothing done (an undo
- *  took away what it was placed against); `escHint`: what Esc does, for the hint; `tags`: drawn as a
- *  selected rack in a drag (placementTags); `select: false`: nothing selected once placed. */
-export function startPlacement(store, items, { groups = [], at = null, grab = false, finish = null, onCancel = null, abandonIf = null, escHint = null, tags = false, select = true } = {}) {
+ *  took away what it was placed against); `escHint`: what Esc does, for the hint; `measure: { fromId }`:
+ *  live distances drawn while it moves (placementDistances); `select: false`: nothing selected once placed. */
+export function startPlacement(store, items, { groups = [], at = null, grab = false, finish = null, onCancel = null, abandonIf = null, escHint = null, measure = null, select = true } = {}) {
   if (!items || !items.length) return false
   if (usePlacement.getState().active?.onCancel) cancelPlacement()   // never drop a placement that must be put back
   useRowGroup.setState({ message: null })   // a shown result is over once the next thing starts
@@ -169,7 +168,7 @@ export function startPlacement(store, items, { groups = [], at = null, grab = fa
   const c = centreOf(items)
   const p = at || c
   const offset = grab ? { x: c.x - p.x, y: c.y - p.y } : null
-  usePlacement.setState({ active: { items, groups, dx: grab ? 0 : p.x - c.x, dy: grab ? 0 : p.y - c.y, offset, finish, onCancel, abandonIf, escHint, tags, select, blocked: null, warnings: [], crossAisle: false, fpId: null, snapped: { run: null, cross: null } } })
+  usePlacement.setState({ active: { items, groups, dx: grab ? 0 : p.x - c.x, dy: grab ? 0 : p.y - c.y, offset, finish, onCancel, abandonIf, escHint, measure, select, blocked: null, warnings: [], crossAisle: false, fpId: null, snapped: { run: null, cross: null } } })
   movePlacement(store, p, st.zoom || 1)
   return true
 }
@@ -205,38 +204,60 @@ export function commitPlacement(store) {
   return true
 }
 
-/** What a tagged placement draws besides its ghost — what a selected rack shows in a normal drag (no
- *  handles: a click places it): `racks`, its racks where they are now (their size / depth / beam tags), and
- *  `aisles` ({ aisle, row1, row2 }; drawn only, never in the layout). As in a drag, the aisles are the
- *  ones each rack has where the placement STARTED, re-measured where it is now: a drag keeps a rack's
- *  aisle pairs and re-measures them; it never pairs it with a new rack mid-move. A rack's own line-mates
- *  (the rack it was cut from) are left out, so its aisles are its own. */
-export function placementTags(active, objects, gridSize = 40) {
-  if (!active || !active.tags) return { racks: [], aisles: [] }
-  const racks = placedItems(active.items, objects, active.dx, active.dy).filter(isRow)
-  const byId = new Map(objects.map(o => [o.id, o])), now = new Map(racks.map(g => [g.id, g]))
-  const aisles = []
-  for (const [k, [a, b]] of startPairs(active, objects)) {
-    const row1 = now.get(a) || byId.get(a), row2 = now.get(b) || byId.get(b)
-    if (row1 && row2) aisles.push({ aisle: { type: 'aisle', id: 'placing:' + k, row1Id: a, row2Id: b, label: '' }, row1, row2 })
+/** The live distances a measuring placement draws (the Split tool's piece), so you know where to drop it:
+ *  from each face of its rack to the nearest rack or wall straight ahead (±x, ±y), and the gap to the rack it
+ *  was cut from (`measure.fromId`) — along the line, or across once it is off it; when that rack is not the
+ *  nearest thing in any direction (a diagonal move) its gap is added on its own, on the axis that separates
+ *  them. [{ kind: 'from' | 'rack' | 'wall', axis: 'x' | 'y', a, b (world: the face and what it reaches),
+ *  at (the line's position on the other axis), ft }]. A rack overlapping or touching ahead reads 0. Drawn
+ *  only, never in the layout. */
+export function placementDistances(active, objects, gridSize = 40) {
+  if (!active || !active.measure) return []
+  const g = placedItems(active.items, objects, active.dx, active.dy).find(isRow)
+  if (!g) return []
+  const E = 1e-6, f = rackFootprint(g), F = { x0: f.x, x1: f.x + f.w, y0: f.y, y1: f.y + f.h }
+  const fromId = active.measure.fromId
+  const box = (o) => { const q = rackFootprint(o); return { id: o.id, x0: q.x, x1: q.x + q.w, y0: q.y, y1: q.y + q.h } }
+  const racks = objects.filter(o => typeof o.type === 'string' && o.type.startsWith('rack_') && o.id !== g.id && (!g.parentId || o.parentId === g.parentId)).map(box)
+  const fp = g.parentId ? objects.find(o => o.id === g.parentId && FP.has(o.type)) : null
+  const poly = fp ? innerOutline(fp, gridSize) : []
+  const walls = poly.map((p, i) => [p, poly[(i + 1) % poly.length]])
+  const overlaps = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0) > E
+  const out = []
+  for (const d of [
+    { axis: 'x', sign: 1, face: F.x1, band: [F.y0, F.y1], at: (F.y0 + F.y1) / 2 },
+    { axis: 'x', sign: -1, face: F.x0, band: [F.y0, F.y1], at: (F.y0 + F.y1) / 2 },
+    { axis: 'y', sign: 1, face: F.y1, band: [F.x0, F.x1], at: (F.x0 + F.x1) / 2 },
+    { axis: 'y', sign: -1, face: F.y0, band: [F.x0, F.x1], at: (F.x0 + F.x1) / 2 },
+  ]) {
+    let best = null
+    const take = (v, kind) => { if (!best || v < best.v - E || (Math.abs(v - best.v) <= E && kind === 'from')) best = { v, kind } }
+    for (const r of racks) {
+      const [b0, b1] = d.axis === 'x' ? [r.y0, r.y1] : [r.x0, r.x1]
+      if (!overlaps(b0, b1, d.band[0], d.band[1])) continue
+      const [n, far] = d.axis === 'x' ? (d.sign > 0 ? [r.x0, r.x1] : [r.x1, r.x0]) : (d.sign > 0 ? [r.y0, r.y1] : [r.y1, r.y0])
+      if ((far - d.face) * d.sign <= E) continue                                  // behind this face
+      take(Math.max(0, (n - d.face) * d.sign), r.id === fromId ? 'from' : 'rack')
+    }
+    for (const [p, q] of walls) {
+      const perpendicular = d.axis === 'x' ? Math.abs(p.x - q.x) <= E : Math.abs(p.y - q.y) <= E
+      if (!perpendicular) continue
+      const [e0, e1] = d.axis === 'x' ? [Math.min(p.y, q.y), Math.max(p.y, q.y)] : [Math.min(p.x, q.x), Math.max(p.x, q.x)]
+      if (!overlaps(e0, e1, d.band[0], d.band[1])) continue
+      const v = ((d.axis === 'x' ? p.x : p.y) - d.face) * d.sign
+      if (v >= -E) take(Math.max(0, v), 'wall')
+    }
+    if (best) out.push({ kind: best.kind, axis: d.axis, a: d.face, b: d.face + d.sign * best.v, at: d.at, ft: best.v / gridSize })
   }
-  return { racks, aisles }
-}
-/** The aisle pairs of a placement's racks where it started (no move), once per placement and layout. */
-let pairsMemo = { items: null, objects: null, pairs: [] }
-function startPairs(active, objects) {
-  if (pairsMemo.items === active.items && pairsMemo.objects === objects) return pairsMemo.pairs
-  const pairs = []
-  for (const g of placedItems(active.items, objects, 0, 0).filter(isRow)) {
-    const fg = rackFootprint(g), cg = fg.rotated ? [fg.x, fg.x + fg.w] : [fg.y, fg.y + fg.h]
-    const others = objects.filter(o => isRow(o) && o.parentId === g.parentId && rackFootprint(o).rotated === fg.rotated && (() => {
-      const f = rackFootprint(o), c = fg.rotated ? [f.x, f.x + f.w] : [f.y, f.y + f.h]
-      return Math.min(c[1], cg[1]) - Math.max(c[0], cg[0]) <= 1e-6            // not in g's line
-    })())
-    for (const [k, ab] of neighbourPairs([...others, g]).pairs) if (ab.includes(g.id)) pairs.push([k, ab])
+  // the rack it was cut from, when no direction reaches it first: its gap on the axis that separates them
+  const src = racks.find(r => r.id === fromId)
+  if (src && !out.some(o => o.kind === 'from')) {
+    const gx = Math.max(src.x0 - F.x1, F.x0 - src.x1), gy = Math.max(src.y0 - F.y1, F.y0 - src.y1)
+    const v = Math.max(0, Math.max(gx, gy))
+    if (gx >= gy) { const a = src.x0 >= F.x1 - E ? F.x1 : F.x0, sign = a === F.x1 ? 1 : -1; out.push({ kind: 'from', axis: 'x', a, b: a + sign * v, at: (F.y0 + F.y1) / 2, ft: v / gridSize }) }
+    else { const a = src.y0 >= F.y1 - E ? F.y1 : F.y0, sign = a === F.y1 ? 1 : -1; out.push({ kind: 'from', axis: 'y', a, b: a + sign * v, at: (F.x0 + F.x1) / 2, ft: v / gridSize }) }
   }
-  pairsMemo = { items: active.items, objects, pairs }
-  return pairs
+  return out
 }
 
 /** Esc: nothing is placed. */
