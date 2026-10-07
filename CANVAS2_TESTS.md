@@ -1737,6 +1737,36 @@ the cursor shows 2' 9" to its rack; click → each row 5 + 9 with a 2' 9" gap
 apply, no cross-aisle label; Ctrl+Z → three 14-bay rows. Cut again, Esc → each
 row 5 + 9 in place, 714 bays and 10,832 positions, no overlap, history +1.
 
+### LF — Frames in the bay ledger around a split · `LF_ledgerFrames.test.js` (8 tests)
+Code: `frames` / `frameCount` in `utils/bayLedger.js`.
+
+A frame is one upright line of one row: a single has one per upright position,
+a back-to-back pair two (its front and back rows). A frame two racks stand on
+together — end to end on a shared upright, after a split or an in-line settle —
+is ONE frame: the ledger's `frames` counts it once, for the rack earlier in the
+layout. Two frames are the same when they sit at the same position along the
+run (within ½") and overlap across by more than half the shallower one; racks
+that only touch (uprights 3" apart) keep a frame each. Per rack, `frameCount`
+gives what each upright position adds after that (0, 1, or 2 for a pair) — what a
+BOM will read. Only frames bounding a counted bay take part, as before.
+
+Before this, the ledger had per-rack frame flags only, and a split's shared
+upright was counted by both racks: on the fixture, row 7 went 15 → 16 upright
+positions on Split + Esc, the wall single 31 → 32.
+
+| Test | Asserts (the layout as saved, vertical and turned) |
+|---|---|
+| `LF-single` | the wall single, 31 frames: split + Esc 31; placed 8' across 32; rejoined 31 — the layout total the same way |
+| `LF-pair` | row 7's 14-bay pair, 30 frames (2 per position): split + Esc 30; placed 3' back 32 (one end of a pair = 2); rejoined 30 |
+| `LF-group` | rows 6, 7, 8 split through the Row group: + Esc unchanged; placed 3' back + 6; each rejoined, unchanged |
+| `LF-settle` | an in-line settle (the piece 1 level higher, can't join) on the shared upright: unchanged; moved one upright width apart (touching): + 2 |
+
+**Break-its:** a shared frame counted by each rack: LF-single, LF-pair,
+LF-group, LF-settle (8). Frames merged whatever they overlap across (a pair's two
+rows as one): LF-single, LF-pair, LF-settle (6). Touching racks merged (4"
+instead of ½"): LF-settle (2). A pair as one frame per position: LF-pair,
+LF-group, LF-settle (6).
+
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.
 
