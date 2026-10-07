@@ -19,7 +19,7 @@ import { getLayoutCapacity } from '../../utils/capacity'
 import { rebuildAisles, neighbourPairs } from '../../utils/aisleRebuild'
 import * as RG from '../../utils/rowGroup'
 import { SPLIT_TOOL, useSplit, cutOf, hoverSplit, splitAt } from '../../utils/splitTool'
-import { usePlacement, movePlacement, commitPlacement, cancelPlacement } from '../../utils/placement'
+import { usePlacement, movePlacement, commitPlacement, cancelPlacement, startPlacement, placementTags } from '../../utils/placement'
 import { installAisleKeeper } from '../../utils/aisleKeeper'
 import { installRowEditKeeper } from '../../utils/rowEditKeeper'
 import { installPairKeeper } from '../../utils/pairCarryOn'
@@ -84,6 +84,18 @@ function aislesOf(sec, ri) {
   return out
 }
 
+/** The live aisles a tagged placement draws, by the other row: { 'sec/row': [width ft, ...] }. */
+function ghostAisles() {
+  const out = {}
+  for (const { row1, row2 } of placementTags(usePlacement.getState().active, objs(), GS).aisles) {
+    const A = RG.geom(row1), B = RG.geom(row2), o = row1.id.startsWith('p') && !objs().some(x => x.id === row1.id) ? row2 : row1
+    const w = Math.round(((Math.max(A.s0, B.s0) - Math.min(A.s1, B.s1)) / GS) * 1000) / 1000;
+    (out[o.genSection + '/' + o.rowIndex] = out[o.genSection + '/' + o.rowIndex] || []).push(w)
+  }
+  for (const k in out) out[k].sort((a, b) => a - b)
+  return out
+}
+
 /** A cut must leave every rack where it was: the same uprights and span, the cut frame shared, no overlap,
  *  no bay lost, the bay ledger's counts unchanged. */
 const unchanged = (before, after, t0) => {
@@ -99,7 +111,7 @@ const unchanged = (before, after, t0) => {
 const wallSingle = () => objs().filter(o => o.type === 'rack_row' && o.genSection === 1).sort((a, b) => b.beams.length - a.beams.length)[0]
 
 describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert) => {
-  it('SP-esc: row 7\'s pair (14 bays) clicked just past upright 5 → cut there, the tool back to Select, the far piece (9 bays) follows the mouse and is out of the layout; Esc → it stays where it was: 5 + 9, the same uprights, the cut frame shared, no overlap, the counts unchanged; both stamped, the staying piece keeps the id, the other carries pieceOf and is selected; one history entry, one undo restores the rack', async () => {
+  it('SP-esc: row 7\'s pair (14 bays) clicked just past upright 5 → cut there, the tool back to Select, the far piece (9 bays) follows the mouse and is out of the layout; Esc → it stays where it was: 5 + 9, the same uprights, the cut frame shared, no overlap, the counts unchanged; both stamped, the staying piece keeps the id, the other carries pieceOf; NOTHING selected (no tag left on the piece or at the cut); one history entry, one undo restores the rack', async () => {
     load(savedFill(vert))
     const r = rowRacks(2, 7)[0], before = rowRacks(2, 7).map(strip), t0 = totals(), h = hist()
     expect(r.beams.length).toBe(14)
@@ -119,13 +131,13 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     expect(after.every(o => o.rowIndex === 7 && o.genSection === 2 && o.parentId === r.parentId && o.type === r.type && o.levels === r.levels)).toBe(true)
     expect(after[0].id).toBe(r.id)
     expect(after[1].pieceOf).toBe(r.id)
-    expect(store.getState().selectedIds).toEqual([after[1].id])
+    expect(store.getState().selectedIds).toEqual([])
     expect(hist()).toBe(h + 1)
     store.getState().undo()
     expect(rowRacks(2, 7).map(strip)).toEqual(before)
   })
 
-  it('SP-place: the wall single clicked just BEFORE upright 2 → the near piece (2 bays) is the one that follows; moved 8 ft across (into the aisle) and clicked → placed there, one history entry; its stamps kept (the same row), genRunFt follows its start; the rest stays in place; one undo restores the rack exactly', async () => {
+  it('SP-place: the wall single clicked just BEFORE upright 2 → the near piece (2 bays) is the one that follows; moved 8 ft across (into the aisle) and clicked → placed there, NOTHING selected, one history entry; its stamps kept (the same row), genRunFt follows its start; the rest stays in place; one undo restores the rack exactly', async () => {
     load(savedFill(vert))
     const w = wallSingle(), n = w.beams.length, before = strip(w), h = hist()
     const at = near(w, 2, -0.5)
@@ -140,6 +152,7 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     expect(p.blocked).toBe(null)
     expect(commitPlacement(store)).toBe(true)
     await settle()
+    expect(store.getState().selectedIds).toEqual([])
     expect(hist()).toBe(h + 1)
     const placed = objs().find(o => o.id === moving.id), stay = objs().find(o => o.id === w.id)
     expect(stay.beams.length).toBe(n - 2)
@@ -230,7 +243,7 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     expect(aisles()).toEqual(after)
   })
 
-  it('SP-follow: while the cut piece follows the mouse no aisle is drawn for it — it is out of the layout, no aisle names it; row 7 keeps one aisle to row 6 and one to row 8, both from the piece that stays, the same widths; none between two racks of row 7', () => {
+  it('SP-follow: while the cut piece follows the mouse its aisles are drawn live (to rows 6 and 8, 10.5 ft — placementTags) but never put in the layout: it is out of the layout, no aisle object names it; row 7 keeps one aisle to row 6 and one to row 8, both from the piece that stays, the same widths; none between two racks of row 7', () => {
     load(savedFill(vert))
     const a0 = aislesOf(2, 7), r = rowRacks(2, 7)[0]
     splitAt(store, near(r, 5, 0.5), r.id, { newId, rebuildAisles })
@@ -242,6 +255,32 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     const row7 = new Set(rowRacks(2, 7).map(o => o.id))
     expect(objs().filter(o => o.type === 'aisle' && row7.has(o.row1Id) && row7.has(o.row2Id))).toEqual([])
     expect(objs().filter(o => o.type === 'aisle' && (row7.has(o.row1Id) || row7.has(o.row2Id))).every(o => o.row1Id === r.id || o.row2Id === r.id)).toBe(true)
+    expect(ghostAisles()).toEqual({ '2/6': [10.5], '2/8': [10.5] })
+  })
+
+  it('SP-tags: the following piece is drawn as a selected rack in a drag — placementTags gives it where it is now (its size / depth / beam tags) and its live aisles; the 2-bay piece of the wall single faces its row at the start (its own aisle, not lost to the rack it came from) and, moved 8 ft across, the same aisle re-measured 8 ft narrower; a paste-style placement (no tags) draws none', () => {
+    load(savedFill(vert))
+    const w = wallSingle(), at = near(w, 2, -0.5)
+    splitAt(store, at, w.id, { newId, rebuildAisles })
+    let a = usePlacement.getState().active, t = placementTags(a, objs(), GS)
+    expect(a.tags).toBe(true)
+    expect(t.racks.map(o => [o.id, o.beams.length])).toEqual([[a.items[0].id, 2]])
+    expect(RG.geom(t.racks[0]).r0).toBeCloseTo(RG.geom(a.items[0]).r0, 6)
+    const g0 = ghostAisles(), keys = Object.keys(g0)
+    expect(keys.length).toBe(1)
+    const w0 = g0[keys[0]][0]
+    movePlacement(store, vert ? { x: at.x + 8 * GS, y: at.y } : { x: at.x, y: at.y + 8 * GS }, 1)
+    a = usePlacement.getState().active; t = placementTags(a, objs(), GS)
+    const moved = (vert ? a.dx : a.dy) / GS
+    expect(moved).toBeCloseTo(8, 6)
+    expect(RG.geom(t.racks[0]).s0 - RG.geom(a.items[0]).s0).toBeCloseTo(8 * GS, 6)        // the tags ride with the piece
+    expect(ghostAisles()).toEqual({ [keys[0]]: [Math.round((w0 - 8) * 1000) / 1000] })
+    cancelPlacement()
+    // a paste-style placement: no tags
+    const copy = { ...rowRacks(2, 7)[0], id: 'copy' }
+    startPlacement(store, [copy], { at: near(copy, 3, 0) })
+    expect(placementTags(usePlacement.getState().active, objs(), GS)).toEqual({ racks: [], aisles: [] })
+    usePlacement.setState({ active: null })
   })
 
   it('SP-away: the cut piece placed 3 ft away along its own line (a gap of 2.75 ft between the two) — each piece gets its own normal aisle to row 6 and to row 8 (10.5 ft), and there is none between the piece and the rack it was cut from', async () => {
@@ -306,6 +345,11 @@ describe('SP-wire', () => {
     const kb = readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')
     expect(kb).toMatch(/activeTool === SPLIT_TOOL\) \{ useSplit\.setState\(\{ hover: null \}\); useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); return \}/)
     expect(readFileSync('src/canvas2/RowGroupBar.jsx', 'utf8')).toContain("> · {placing.escHint || 'Esc to cancel'}</span>")
+    const gh = readFileSync('src/canvas2/CopyChange.jsx', 'utf8')
+    expect(gh).toContain('const tags = placementTags(a, objects, gridSize)')
+    expect(gh).toContain('{aislesOn && tags.aisles.map(t => <AisleLabelItem ')
+    expect(gh).toContain("{tags.racks.map(o => <RackLabels key={'rl:' + o.id} obj={o} zoom={lz} gridSize={gridSize} />)}")
+    expect(readFileSync('src/utils/splitTool.js', 'utf8')).toContain("escHint: 'Esc leaves it where it was', tags: true, select: false,")
     expect(readFileSync('src/components/RightPanel/panels/RackRowPanelCore.jsx', 'utf8')).not.toMatch(/Separate/)
   })
 })

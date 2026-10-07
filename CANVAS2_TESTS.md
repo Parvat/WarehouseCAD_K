@@ -1539,7 +1539,7 @@ panel: BL-panel (2). Frames counted for any bay: BL-frames (2). The ledger
 worked out again on every call: BL-cache (1). The panels not held during a
 drag: BL-cache (1).
 
-### SP — The Split tool · `SP_split.test.js` (22 tests)
+### SP — The Split tool · `SP_split.test.js` (24 tests)
 Code: `utils/splitTool.js` (`cutOf`, `cutRack`, `hoverSplit`, `splitAt`),
 `canvas2/SplitPreview.jsx`, the Split button (Scissors) after Row group in
 `FloatingToolbar.jsx`, the Split branch in `Canvas2.jsx`, Esc in
@@ -1556,10 +1556,19 @@ together — and the tool goes back to Select. The cut upright is shared
 (`sharesFrame`, the join's own rule), so nothing moves and Check layout and the
 bay ledger are unchanged. The piece on the cursor's side then follows the
 mouse, held where it was grabbed, through placement until a click places it;
-Esc leaves it where it was (the bar says "Esc leaves it where it was"),
-selected, showing its depth tag as any selected rack does. While the piece
-follows it is out of the layout, so no aisle is drawn for it; placed away along its own line, each piece gets its own aisle to the
-facing rows and none runs between the two. The
+Esc leaves it where it was (the bar says "Esc leaves it where it was").
+
+While it follows, the piece is drawn as a selected rack is in a normal drag
+(`placementTags`, drawn by `PlacementGhost` with the components Overlays.jsx
+uses): its dark size / depth / beam tags (`RackLabels`) and live aisle labels
+to the facing rows (`AisleLabelItem`, hidden with the Aisles layer). As in a
+drag, the aisles are the ones it had where it started, re-measured as it moves
+— a drag never pairs a rack with a new one mid-move — and the rack it was cut
+from is left out, so the aisles are the piece's own. No handles: a click
+places it. They are drawn only, never in the layout. A paste keeps its plain
+ghost. After the drop, either way (click or Esc), NOTHING is selected, so no
+tag is left on the piece or at the cut. Placed away along its own line, each
+piece gets its own aisle to the facing rows and none runs between the two. The
 cut and the placement are ONE history entry — nothing is committed until the
 click or Esc. An undo while it follows brings the rack back and ends the
 placement, nothing placed.
@@ -1588,14 +1597,15 @@ keeper does; undo and redo still correct without writing history.
 
 | Test | Asserts (the layout as saved, vertical and turned) |
 |---|---|
-| `SP-esc` | row 7's pair (14 bays) clicked just past upright 5: the tool back to Select, the 9-bay piece following (held, dx/dy 0, out of the layout, nothing committed); Esc → 5 + 9, same uprights and span, the cut frame shared, no overlap, the ledger's counts unchanged; stamps on both, the staying piece keeps the id, `pieceOf` on the other, which is selected; one history entry; one undo restores the rack |
-| `SP-place` | the wall single clicked just before upright 2 → the 2-bay piece follows; 8' across, click → placed there, one history entry, stamps and `pieceOf` kept, `genRunFt` moved with it; the rest in place; one undo restores the rack exactly |
+| `SP-esc` | row 7's pair (14 bays) clicked just past upright 5: the tool back to Select, the 9-bay piece following (held, dx/dy 0, out of the layout, nothing committed); Esc → 5 + 9, same uprights and span, the cut frame shared, no overlap, the ledger's counts unchanged; stamps on both, the staying piece keeps the id, `pieceOf` on the other; nothing selected; one history entry; one undo restores the rack |
+| `SP-place` | the wall single clicked just before upright 2 → the 2-bay piece follows; 8' across, click → placed there, nothing selected, one history entry, stamps and `pieceOf` kept, `genRunFt` moved with it; the rest in place; one undo restores the rack exactly |
 | `SP-nearest` | the first bay cuts at upright 1, the last at n-1; the side follows the pointer; the line across at the upright's centre; a one-bay rack has no cut; the hover set and cleared |
 | `SP-group` | rows 7 and the wall single's row in a Row group: a cut left in place and a cut placed away offer nothing, say nothing, the group unchanged |
 | `SP-rejoin` | a cut piece dragged 20' away and back: the in-line snap joins it again — one rack fewer, the same bays |
 | `SP-aisle` | after a cut, row 7's aisles to rows 6 and 8 as before — one each, the same widths; the same after the cut piece is made 1 level higher (can't join, settled end to end) |
 | `SP-keeper` | a cut piece nudged 6" across: its own aisle, in that action's history entry; another move and an undo restore every aisle exactly, ids and all |
-| `SP-follow` | while the piece follows: no aisle names it; row 7 keeps one aisle to row 6 and one to row 8, both from the staying piece; none between two row-7 racks |
+| `SP-follow` | while the piece follows: its live aisles drawn (10.5' to rows 6 and 8), but no aisle object in the layout names it; row 7 keeps one aisle to row 6 and one to row 8, both from the staying piece; none between two row-7 racks |
+| `SP-tags` | the wall single's 2-bay piece while it follows: `placementTags` gives it where it is now (its tags) and its own aisle to row 1/2 at the start (not lost to the rack it came from); moved 8' across, the tags ride with it and the same aisle reads 8' narrower, no new pair; a paste-style placement draws no tags |
 | `SP-away` | the 5-bay piece placed 3' back along its line (2.75' gap): one 10.5' aisle from each piece to row 6 and to row 8, none between the two |
 | `SP-undo` | Ctrl+Z while the piece follows: the next move ends the placement, a click places nothing, no duplicate |
 | `SP-aisle pairing` | synthetic: two racks end to end facing a long rack → one pair; a real gap → two; a single end to end at a second width → two |
@@ -1615,7 +1625,11 @@ aisle keeper not folding its fix into the action's entry: SP-keeper, RA-edits (3
 The piece left in the layout
 while it follows: SP-esc, SP-place, SP-group, SP-follow, SP-away (10). Same-line
 pieces with a gap paired as neighbours: SP-aisle, SP-keeper, SP-away, SP-aisle
-pairing (7).
+pairing (7). The following piece with no tags: SP-follow, SP-tags, SP-wire (5).
+The placed piece left selected: SP-place, SP-wire (3). The piece left by Esc
+selected: SP-esc (2). The tags and aisles drawn where it started: SP-tags (2).
+Aisle pairs recomputed mid-move: SP-tags (2). The rack it was cut from not
+left out: SP-tags (2). The ghost not drawing the live aisle labels: SP-wire (1).
 
 **Checked in the app** (real mouse, the layout as saved, both orientations):
 Split button (pressed) → hover just past row 7's upright 5 shows the line at
@@ -1627,12 +1641,17 @@ Ctrl+Z restores the 14-bay rack. The 30-bay wall single cut just before
 upright 2 → 2 bays follow, moved 8' across, click → placed (row 1/1 stamps
 kept), 28 stay, one history step; Ctrl+Z restores the 30-bay rack.
 
-The labels at the cut (real mouse, both orientations, row 7 cut at upright 5):
-while the piece follows, row 7's two aisle labels (to rows 6 and 8) sit on
-the staying piece and nothing is drawn at the cut; after Esc, the two labels
-on the 9-bay piece, which is selected with its depth tag at its end; the
-5-bay piece placed 3' back (6.00–47.50 + 50.25–124.75): four labels, one from each piece to rows
-6 and 8, none between the pieces.
+The labels (real mouse, both orientations): row 7 cut at upright 5 — the
+9-bay piece follows with its 3' 6" depth and 74' 6" length tags and live
+10' 6" labels to rows 6 and 8; Esc → nothing selected, nothing at the cut,
+history +1. The wall single cut at upright 2 — the 2-bay piece follows with its
+3' 6" and 16' 9" tags and a live 13' 5" to row 1/2; moved 8' across, the same
+label reads 5' 5" (under the piece's own length tag, as a normal drag's label
+sits under its rack's); click → placed, nothing selected, history +1, and the
+layout's aisles are 5' 5" to row 1/2 and 4' 6" to the wall single it came from
+(no longer in the same line). The 5-bay piece placed 3' back along its line
+(6.00–47.50 + 50.25–124.75): four labels, one from each piece to rows 6 and 8,
+none between the pieces.
 
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.

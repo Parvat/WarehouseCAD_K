@@ -7,7 +7,8 @@
 // on the click the area keeper refits any racking area it reaches
 // (utils/rackingAreaTool.js). The Split tool's cut-off piece is placed the
 // same way, held where it was grabbed (utils/splitTool.js: grab, finish,
-// onCancel, abandonIf).
+// onCancel, abandonIf), drawn as a selected rack is in a drag (tags:
+// placementTags) and left unselected when placed (select: false).
 //
 // Snapping, on each axis of the building's rows, to the nearest of (within
 // SNAP_PX on screen):
@@ -31,6 +32,7 @@ import { useRowGroup } from './rowGroupTool'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { innerOutline } from './floorGeom'
 import { buildingForBox } from '../generate/fillRacking'
+import { neighbourPairs } from './aisleRebuild'
 
 const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -157,8 +159,9 @@ export function checkPlacement(placed, objects, gridSize = 40, profile = MHE_PRO
  *  `grab`: they stay where they are and keep their offset from the pointer (otherwise they centre on it).
  *  `finish(placed)` → the objects to place, just before the click's commit; `onCancel()` runs after Esc
  *  (or another placement starting) clears it; `abandonIf(state)`: true ends it with nothing done (an undo
- *  took away what it was placed against); `escHint`: what Esc does, for the hint. */
-export function startPlacement(store, items, { groups = [], at = null, grab = false, finish = null, onCancel = null, abandonIf = null, escHint = null } = {}) {
+ *  took away what it was placed against); `escHint`: what Esc does, for the hint; `tags`: drawn as a
+ *  selected rack in a drag (placementTags); `select: false`: nothing selected once placed. */
+export function startPlacement(store, items, { groups = [], at = null, grab = false, finish = null, onCancel = null, abandonIf = null, escHint = null, tags = false, select = true } = {}) {
   if (!items || !items.length) return false
   if (usePlacement.getState().active?.onCancel) cancelPlacement()   // never drop a placement that must be put back
   useRowGroup.setState({ message: null })   // a shown result is over once the next thing starts
@@ -166,7 +169,7 @@ export function startPlacement(store, items, { groups = [], at = null, grab = fa
   const c = centreOf(items)
   const p = at || c
   const offset = grab ? { x: c.x - p.x, y: c.y - p.y } : null
-  usePlacement.setState({ active: { items, groups, dx: grab ? 0 : p.x - c.x, dy: grab ? 0 : p.y - c.y, offset, finish, onCancel, abandonIf, escHint, blocked: null, warnings: [], crossAisle: false, fpId: null, snapped: { run: null, cross: null } } })
+  usePlacement.setState({ active: { items, groups, dx: grab ? 0 : p.x - c.x, dy: grab ? 0 : p.y - c.y, offset, finish, onCancel, abandonIf, escHint, tags, select, blocked: null, warnings: [], crossAisle: false, fpId: null, snapped: { run: null, cross: null } } })
   movePlacement(store, p, st.zoom || 1)
   return true
 }
@@ -197,9 +200,43 @@ export function commitPlacement(store) {
   // only the new objects look selected: no other rack keeps a clicked bay
   const others = st.objects.map(o => (o.activeBayIdx != null || o.activeTowerIdx != null ? { ...o, activeBayIdx: null, ...(o.activeTowerIdx != null ? { activeTowerIdx: null } : {}) } : o))
   usePlacement.setState({ active: null })
-  store.setState({ objects: [...others, ...placed], groups: [...(st.groups || []), ...a.groups], selectedIds: placed.map(o => o.id), activeBaySelection: [] })
+  store.setState({ objects: [...others, ...placed], groups: [...(st.groups || []), ...a.groups], selectedIds: a.select === false ? [] : placed.map(o => o.id), activeBaySelection: [] })
   store.getState().commitObjectUpdate(placed[0].id, {})
   return true
+}
+
+/** What a tagged placement draws besides its ghost — what a selected rack shows in a normal drag (no
+ *  handles: a click places it): `racks`, its racks where they are now (their size / depth / beam tags), and
+ *  `aisles` ({ aisle, row1, row2 }; drawn only, never in the layout). As in a drag, the aisles are the
+ *  ones each rack has where the placement STARTED, re-measured where it is now: a drag keeps a rack's
+ *  aisle pairs and re-measures them; it never pairs it with a new rack mid-move. A rack's own line-mates
+ *  (the rack it was cut from) are left out, so its aisles are its own. */
+export function placementTags(active, objects, gridSize = 40) {
+  if (!active || !active.tags) return { racks: [], aisles: [] }
+  const racks = placedItems(active.items, objects, active.dx, active.dy).filter(isRow)
+  const byId = new Map(objects.map(o => [o.id, o])), now = new Map(racks.map(g => [g.id, g]))
+  const aisles = []
+  for (const [k, [a, b]] of startPairs(active, objects)) {
+    const row1 = now.get(a) || byId.get(a), row2 = now.get(b) || byId.get(b)
+    if (row1 && row2) aisles.push({ aisle: { type: 'aisle', id: 'placing:' + k, row1Id: a, row2Id: b, label: '' }, row1, row2 })
+  }
+  return { racks, aisles }
+}
+/** The aisle pairs of a placement's racks where it started (no move), once per placement and layout. */
+let pairsMemo = { items: null, objects: null, pairs: [] }
+function startPairs(active, objects) {
+  if (pairsMemo.items === active.items && pairsMemo.objects === objects) return pairsMemo.pairs
+  const pairs = []
+  for (const g of placedItems(active.items, objects, 0, 0).filter(isRow)) {
+    const fg = rackFootprint(g), cg = fg.rotated ? [fg.x, fg.x + fg.w] : [fg.y, fg.y + fg.h]
+    const others = objects.filter(o => isRow(o) && o.parentId === g.parentId && rackFootprint(o).rotated === fg.rotated && (() => {
+      const f = rackFootprint(o), c = fg.rotated ? [f.x, f.x + f.w] : [f.y, f.y + f.h]
+      return Math.min(c[1], cg[1]) - Math.max(c[0], cg[0]) <= 1e-6            // not in g's line
+    })())
+    for (const [k, ab] of neighbourPairs([...others, g]).pairs) if (ab.includes(g.id)) pairs.push([k, ab])
+  }
+  pairsMemo = { items: active.items, objects, pairs }
+  return pairs
 }
 
 /** Esc: nothing is placed. */
