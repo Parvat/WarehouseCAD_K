@@ -14,7 +14,9 @@
 //     cut. Nothing is committed until then: the cut and the placement are ONE history entry.
 //   - Both pieces keep the original's fields and its row / section stamps (the same row, the same Row
 //     group row — the row-edit keeper is told to keep the moved piece's: keepStampsOnce); the piece that
-//     stays keeps the id, the other carries `pieceOf`; `genRunFt` follows each one's start. The Row group
+//     stays keeps the id, the other carries `pieceOf` and `splitOf` (the original rack's id, kept through
+//     further splits: no label is drawn in the gap between a split family's racks — crossAisles.js);
+//     `genRunFt` follows each one's start. The Row group
 //     passes the action over (skipNextAction). A piece dragged straight back onto the shared upright joins
 //     again (the in-line snap).
 
@@ -46,13 +48,13 @@ export function cutOf(rack, world, gridSize = 40) {
 }
 
 /** `rack` cut at upright `k` (run order): [first, second] along the run, sharing that upright. The one
- *  named by `keep` keeps the id; the other gets a new id and `pieceOf`. */
+ *  named by `keep` keeps the id; the other gets a new id, `pieceOf` and `splitOf` (the original rack). */
 export function cutRack(rack, k, gridSize = 40, newId = () => Math.random().toString(36).slice(2, 12), keep = 'first') {
   const g = geom(rack), up = ((rack.uprightWidth || 3) / 12) * gridSize
   const ups = uprightsOf(g.r0, g.beams, up, gridSize)
   const root = rack.pieceOf || rack.id
   const piece = (s, e, own) => {
-    const out = withRun(own ? rack : { ...rack, id: newId(), pieceOf: root }, ups[s], g.beams.slice(s, e), gridSize)
+    const out = withRun(own ? rack : { ...rack, id: newId(), pieceOf: root, splitOf: rack.splitOf || rack.id }, ups[s], g.beams.slice(s, e), gridSize)
     if (rack.genRunFt != null) out.genRunFt = rack.genRunFt + (ups[s] - ups[0]) / gridSize
     return out
   }

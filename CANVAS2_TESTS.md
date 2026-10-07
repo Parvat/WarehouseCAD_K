@@ -1539,7 +1539,7 @@ panel: BL-panel (2). Frames counted for any bay: BL-frames (2). The ledger
 worked out again on every call: BL-cache (1). The panels not held during a
 drag: BL-cache (1).
 
-### SP — The Split tool · `SP_split.test.js` (26 tests)
+### SP — The Split tool · `SP_split.test.js` (34 tests)
 Code: `utils/splitTool.js` (`cutOf`, `cutRack`, `hoverSplit`, `splitAt`),
 `canvas2/SplitPreview.jsx`, the Split button (Scissors) after Row group in
 `FloatingToolbar.jsx`, the Split branch in `Canvas2.jsx`, Esc in
@@ -1569,7 +1569,19 @@ px from the face so a long one stays in view. The size tags crowded the gap
 and the live aisle labels repeated the across distances, so neither is drawn.
 Drawn only, never in the layout. A paste keeps its plain ghost. After the drop, either way (click or Esc), NOTHING is selected, so no
 tag is left on the piece or at the cut. Placed away along its own line, each
-piece gets its own aisle to the facing rows and none runs between the two. The
+piece gets its own aisle to the facing rows and none runs between the two.
+
+No label at all between a piece and the rack it was cut from, after the drop:
+the moved piece carries `splitOf` (the original rack's id, kept through
+further splits), and `crossAisleLabels` skips a gap when every rack on both
+sides of it is of one split family — so the "cross-aisle" label two racks in
+one line would get is not drawn for them, on the canvas or in the PDF. Any
+other rack in either stretch and the gap is labelled as ever. `splitOf` is a
+plain field on the rack, so the rule holds after save and reload, undo and
+redo; it ends when the piece rejoins, either rack is deleted, or an ordinary
+rack shares the stretch. Paste and duplicate drop it (a copy is ordinary).
+Bay-delete pieces carry only `pieceOf`, so the gap a deleted bay leaves keeps
+its label. The
 cut and the placement are ONE history entry — nothing is committed until the
 click or Esc. An undo while it follows brings the rack back and ends the
 placement, nothing placed.
@@ -1607,7 +1619,11 @@ keeper does; undo and redo still correct without writing history.
 | `SP-keeper` | a cut piece nudged 6" across: its own aisle, in that action's history entry; another move and an undo restore every aisle exactly, ids and all |
 | `SP-follow` | while the piece follows: across, 10.5' to row 6 and to row 8 (the nearest racks), but no aisle object in the layout names it; row 7 keeps one aisle to row 6 and one to row 8, both from the staying piece; none between two row-7 racks |
 | `SP-dist` | the user's case — an empty building, one 6-bay single, cut before upright 2: at the cut, 0 along to the rack it came from, the wall the other way and both walls across, one line per direction; 4' along, live: 3' 9" to that rack, the wall 4' nearer; 6' across, off the line: 2' 6" across to that rack; diagonally: that rack's gap added along (3' 9" > 2' 6") |
-| `SP-ordinary` | the 2-bay piece placed 4' along its line: the only label is the 3' 9" cross-aisle label in the gap, the same as two ordinary racks loaded in those spots draw; no aisle; nothing selected |
+| `SP-nolabel` | the user's case, the 2-bay piece placed 4' along and (again) 20' along: no label between it and the rack it came from either time (`splitOf` and `pieceOf` on it); two ordinary racks in those spots still get 3' 9" / 19' 9"; no aisle; nothing selected |
+| `SP-reload` | placed 4' apart, the scene saved and loaded: `splitOf` in the file, still no label |
+| `SP-family` | a plain rack beside the piece (20' across, the same run): the gap is labelled again (3' 9") |
+| `SP-baydelete` | a middle bay deleted from the 6-bay rack (the real action): pieces with `pieceOf`, no `splitOf`; the gap keeps its label |
+| `SP-paste` | a split piece copied and pasted: the copy has neither `splitOf` nor `pieceOf` |
 | `SP-away` | the 5-bay piece placed 3' back along its line (2.75' gap): one 10.5' aisle from each piece to row 6 and to row 8, none between the two |
 | `SP-undo` | Ctrl+Z while the piece follows: the next move ends the placement, a click places nothing, no duplicate |
 | `SP-aisle pairing` | synthetic: two racks end to end facing a long rack → one pair; a real gap → two; a single end to end at a second width → two |
@@ -1633,7 +1649,11 @@ SP-wire (5). Distances measured where it started: SP-dist (2). Walls ignored:
 SP-dist (2). Other racks ignored: SP-follow (2). The gap to the rack it came
 from not told apart (drawn twice): SP-dist (2). No gap after a diagonal move:
 SP-dist (2). Drawn at drawing size: SP-wire (1). A long one's pill off screen:
-SP-wire (1). The size tags back: SP-wire (1).
+SP-wire (1). The size tags back: SP-wire (1). The piece not marked (no
+splitOf): SP-nolabel, SP-reload, SP-family, SP-paste (8). The rule off (the gap
+still labelled): SP-nolabel, SP-reload (4). Bay-delete pieces counted as a family:
+SP-baydelete (2). Other racks in the stretch ignored: SP-family (2). A pasted
+copy keeping splitOf: SP-paste (2). splitOf lost on save: SP-reload (2).
 
 **Checked in the app** (real mouse, the layout as saved, both orientations):
 Split button (pressed) → hover just past row 7's upright 5 shows the line at
@@ -1650,9 +1670,9 @@ building, one 6-bay single, the 2-bay piece cut off): at the cut, 0' to the
 rack it came from, 61' 4" along to the wall, 100' and 396' across to the walls;
 4' along, 3' 9" (amber) to that rack and 57' 4" to the wall; 6' across, off the
 line, 2' 6" across (amber) to that rack, 171' 5" and 61' 4" along to the walls,
-390' across. Placed 4' along: nothing selected, and the only label is the
-3' 9" cross-aisle label in the gap, the same label two ordinary racks there
-draw. The 5-bay piece of row 7 placed 3' back along its line (6.00–47.50 +
+390' across. Placed 4' along, and again 20' along (19' 9" to that rack while
+it followed): nothing selected and NO label between the two — no cross-aisle
+label, no aisle label, no tag. The 5-bay piece of row 7 placed 3' back along its line (6.00–47.50 +
 50.25–124.75): four labels, one from each piece to rows 6 and 8, none between
 the pieces.
 

@@ -10,6 +10,11 @@ import { pxToFtIn } from '../utils/canvas'
    along the gap and across the racks on both sides of it — drawn exactly like
    an aisle label (DimensionLabels.jsx's AisleLabelView takes this layout).
 
+   No label between the racks of ONE split family (the Split tool: a rack and the pieces cut from it carry
+   `splitOf` = its id): a gap is skipped when every rack on both sides of it is of one family and one of
+   them is a cut piece. Any other rack in either section and the gap is labelled as ever. Bay-delete
+   pieces (`pieceOf` only) are not a family here: the gap a deleted bay leaves keeps its label.
+
    `isHoriz` follows aisleLabelLayout's meaning — true when the gap is
    measured along Y — so a horizontal layout (rows run along X, the
    cross-aisle gap is along X) gives isHoriz false. World px. Pure. */
@@ -22,7 +27,7 @@ export function crossAisleLabels(objects, gridSize = 40) {
     const f = rackFootprint(o)
     const k = (o.parentId ?? '') + '|' + (f.rotated ? 'v' : 'h')
     if (!groups.has(k)) groups.set(k, [])
-    groups.get(k).push(f)
+    groups.get(k).push({ ...f, family: o.splitOf || o.id, cut: !!o.splitOf })
   }
   const out = []
   for (const [k, feet] of groups) {
@@ -35,13 +40,15 @@ export function crossAisleLabels(objects, gridSize = 40) {
     for (const f of sorted) {
       const [r0, r1] = run(f), [c0, c1] = cross(f)
       const s = sections[sections.length - 1]
-      if (s && r0 < s.r1 - EPS) { s.r1 = Math.max(s.r1, r1); s.c0 = Math.min(s.c0, c0); s.c1 = Math.max(s.c1, c1) }
-      else sections.push({ r0, r1, c0, c1 })
+      if (s && r0 < s.r1 - EPS) { s.r1 = Math.max(s.r1, r1); s.c0 = Math.min(s.c0, c0); s.c1 = Math.max(s.c1, c1); s.families.add(f.family); s.cut = s.cut || f.cut }
+      else sections.push({ r0, r1, c0, c1, families: new Set([f.family]), cut: f.cut })
     }
     for (let i = 0; i + 1 < sections.length; i++) {
       const a = sections[i], b = sections[i + 1]
       const gapLo = a.r1, gapHi = b.r0
       if (gapHi - gapLo <= EPS) continue
+      // a split piece and the rack it was cut from, alone on both sides: no label
+      if ((a.cut || b.cut) && new Set([...a.families, ...b.families]).size === 1) continue
       const c0 = Math.min(a.c0, b.c0), c1 = Math.max(a.c1, b.c1)
       out.push({
         key: k + '|' + i,

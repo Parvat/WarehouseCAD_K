@@ -11,7 +11,7 @@
 //
 // A pasted rack is a NEW row: it loses the generator's row stamps
 // (rowIndex / genSection / genRunFt / genCrossFt) and any split-piece link
-// (pieceOf), so it is an added row ("Copy to all sections",
+// (pieceOf, splitOf), so it is an added row ("Copy to all sections",
 // utils/rowGroup.js) and never a move of the row it was copied from. It is
 // parented to the building it lands in.
 //
@@ -23,7 +23,7 @@
 import { startPlacement } from './placement'
 import { isRow } from './copyChange'
 
-const STAMPS = ['rowIndex', 'genSection', 'genRunFt', 'genCrossFt', 'pieceOf']
+const STAMPS = ['rowIndex', 'genSection', 'genRunFt', 'genCrossFt', 'pieceOf', 'splitOf']
 const FP = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 
 let lastPointer = null   // last pointer position over the canvas, px inside the canvas container

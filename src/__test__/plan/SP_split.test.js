@@ -22,6 +22,8 @@ import { SPLIT_TOOL, useSplit, cutOf, hoverSplit, splitAt } from '../../utils/sp
 import { usePlacement, movePlacement, commitPlacement, cancelPlacement, placementDistances } from '../../utils/placement'
 import { innerOutline } from '../../utils/floorGeom'
 import { crossAisleLabels } from '../../canvas2/crossAisles'
+import { serializeScene, deserializeScene } from '../../utils/saveLoad'
+import { pasteAt, setCanvasPointer } from '../../utils/pasteAt'
 import { installAisleKeeper } from '../../utils/aisleKeeper'
 import { installRowEditKeeper } from '../../utils/rowEditKeeper'
 import { installPairKeeper } from '../../utils/pairCarryOn'
@@ -105,6 +107,10 @@ function oneRack(vert) {
   const rack = RG.movedAcross(RG.withRun({ ...plain, id: 'R6' }, RG.geom(src).r0 + 60 * GS, Array(6).fill(96), GS), 100 * GS)
   return { objects: [fp, rack], fp, rack }
 }
+/** The cross-aisle labels drawn for `objects`: their widths in ft (3 decimals). */
+const crossLabels = (os) => crossAisleLabels(os, GS).map(c => Math.round((c.gapHi - c.gapLo) / GS * 1000) / 1000)
+/** The same racks as ordinary racks: no split link. */
+const ordinary = (os) => os.map(o => (o.type === 'rack_row' ? (({ splitOf, pieceOf, ...r }) => ({ ...r, id: 'o' + r.id }))(o) : o))
 /** The building's inner faces: [lo, hi] on each world axis. */
 const innerBox = (fp) => { const q = innerOutline(fp, GS), xs = q.map(v => v.x), ys = q.map(v => v.y); return { x: [Math.min(...xs), Math.max(...xs)], y: [Math.min(...ys), Math.max(...ys)] } }
 
@@ -306,19 +312,74 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     cancelPlacement()
   })
 
-  it('SP-ordinary: after the 2-bay piece is placed 4 ft along its line, the only label is the 3 ft 9 in cross-aisle label in the gap — exactly what two ordinary racks loaded in those spots draw; no aisle label, nothing selected', async () => {
+  it('SP-nolabel: the user case — the 2-bay piece placed 4 ft along its line, then (again) 20 ft along: NO label between the piece and the rack it was cut from either time (the piece carries splitOf); two ordinary racks loaded in those same spots still get the cross-aisle label (3 ft 9 in, 19 ft 9 in); no aisle label, nothing selected', async () => {
+    for (const [away, gap] of [[4, 3.75], [20, 19.75]]) {
+      const { objects, rack } = oneRack(vert)
+      load(objects)
+      const at = near(rack, 2, -0.6)
+      splitAt(store, at, rack.id, { newId, rebuildAisles })
+      movePlacement(store, vert ? { x: at.x, y: at.y - away * GS } : { x: at.x - away * GS, y: at.y }, 1)
+      expect(commitPlacement(store)).toBe(true); await settle()
+      const piece = objs().find(o => o.id !== rack.id && o.type === 'rack_row')
+      expect([piece.splitOf, piece.pieceOf]).toEqual([rack.id, rack.id])
+      expect(crossLabels(objs())).toEqual([])
+      expect(objs().filter(o => o.type === 'aisle')).toEqual([])
+      expect(store.getState().selectedIds).toEqual([])
+      expect(crossLabels(ordinary(objs()))).toEqual([gap])
+    }
+  })
+
+  it('SP-reload: the split pair placed 4 ft apart, the scene saved and loaded again: splitOf is in the file, and there is still no label between them', async () => {
     const { objects, rack } = oneRack(vert)
     load(objects)
     const at = near(rack, 2, -0.6)
     splitAt(store, at, rack.id, { newId, rebuildAisles })
     movePlacement(store, vert ? { x: at.x, y: at.y - 4 * GS } : { x: at.x - 4 * GS, y: at.y }, 1)
-    expect(commitPlacement(store)).toBe(true); await settle()
-    const label = (os) => ({ cross: crossAisleLabels(os, GS).map(c => Math.round((c.gapHi - c.gapLo) / GS * 1000) / 1000), aisles: os.filter(o => o.type === 'aisle').length })
-    const now = label(objs())
-    expect(now).toEqual({ cross: [3.75], aisles: 0 })
-    expect(store.getState().selectedIds).toEqual([])
-    const ordinary = [objects[0], ...objs().filter(o => o.type === 'rack_row').map(({ pieceOf, ...o }) => ({ ...o, id: 'o' + o.id }))]
-    expect(label(ordinary)).toEqual(now)
+    commitPlacement(store); await settle()
+    const json = serializeScene(store.getState())
+    const loaded = {}
+    deserializeScene(json, loaded)
+    expect(loaded.objects.filter(o => o.splitOf === rack.id).length).toBe(1)
+    expect(crossLabels(loaded.objects)).toEqual([])
+  })
+
+  it('SP-family: the rule ends when an ordinary rack shares the stretch — a plain rack beside the piece (20 ft across, the same run) and the gap is labelled again (3 ft 9 in)', async () => {
+    const { objects, rack } = oneRack(vert)
+    load(objects)
+    const at = near(rack, 2, -0.6)
+    splitAt(store, at, rack.id, { newId, rebuildAisles })
+    movePlacement(store, vert ? { x: at.x, y: at.y - 4 * GS } : { x: at.x - 4 * GS, y: at.y }, 1)
+    commitPlacement(store); await settle()
+    const piece = objs().find(o => o.splitOf === rack.id)
+    const { splitOf, pieceOf, ...plain } = piece
+    const other = RG.movedAcross({ ...plain, id: 'plain' }, 20 * GS)
+    expect(crossLabels([...objs(), other])).toEqual([3.75])
+  })
+
+  it('SP-baydelete: a bay deleted from the middle of the 6-bay rack (the real action) — its pieces carry pieceOf but not splitOf, and the gap it leaves keeps its cross-aisle label, as before', () => {
+    const { objects, rack } = oneRack(vert)
+    load(objects)
+    store.setState({ activeBaySelection: [{ objId: rack.id, bayIdx: 2 }] })
+    store.getState().deleteSelectedBays()
+    const pieces = objs().filter(o => o.type === 'rack_row')
+    expect(pieces.length).toBe(2)
+    expect(pieces.some(o => o.pieceOf) && pieces.every(o => !o.splitOf)).toBe(true)
+    expect(crossLabels(objs()).length).toBe(1)
+  })
+
+  it('SP-paste: a split piece copied and pasted is an ordinary rack — the copy carries neither splitOf nor pieceOf', async () => {
+    const { objects, rack } = oneRack(vert)
+    load(objects)
+    const at = near(rack, 2, -0.6)
+    splitAt(store, at, rack.id, { newId, rebuildAisles })
+    commitPlacement(store); await settle()
+    const piece = objs().find(o => o.splitOf === rack.id)
+    store.setState({ selectedIds: [piece.id] }); store.getState().copySelected()
+    setCanvasPointer({ x: -5000, y: -5000 })
+    pasteAt(store, 'cursor', newId)
+    const copy = usePlacement.getState().active.items[0]
+    expect([copy.splitOf, copy.pieceOf]).toEqual([undefined, undefined])
+    cancelPlacement()
   })
 
   it('SP-away: the cut piece placed 3 ft away along its own line (a gap of 2.75 ft between the two) — each piece gets its own normal aisle to row 6 and to row 8 (10.5 ft), and there is none between the piece and the rack it was cut from', async () => {
