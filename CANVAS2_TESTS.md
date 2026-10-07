@@ -1676,6 +1676,67 @@ label, no aisle label, no tag. The 5-bay piece of row 7 placed 3' back along its
 50.25–124.75): four labels, one from each piece to rows 6 and 8, none between
 the pieces.
 
+### SG — Split through the Row group · `SG_groupSplit.test.js` (18 tests)
+Code: `groupCuts` and `splitAt` in `utils/splitTool.js`, the group preview in
+`canvas2/SplitPreview.jsx`, the widened gap rule in `canvas2/crossAisles.js`.
+
+When the cut rack's row is in the Row group, the click cuts every other group
+row at the same position along the run: the rack spanning it, at an interior
+upright within ½" (`UP_TOL_FT`, the replay's own rule), its piece on the same
+side following with the others. A row whose racks already meet at that upright
+is not cut — its rack on that side moves with them ("moved without a cut"). A
+row with a rack there but no upright within ½" is skipped, with the offset; a
+row with no rack there is left alone. All of it at the first click, in Ask and
+Auto apply alike (the pieces must move together): one placement — the piece
+under the cursor first, leading the snap and the live distances, measured with
+the other moving pieces out of the way — one click places them all by the same
+move, Esc puts them all back, nothing selected, ONE history entry. Every piece
+keeps its row stamps, `pieceOf` and `splitOf` (its own rack); the Row group
+passes the action over. The bar: "Split 3 rows · 1 moved without a cut · 1
+skipped" (rows cut, the moved ones and the skipped ones counted apart), the
+skipped rows listed with their reasons. Hovering shows the cut on every row the
+click will cut and outlines the rows it will skip in amber. No gap label
+between any piece and its rack: a gap is skipped when every family on either
+side of it is a split family with racks on both sides — several rows cut
+together included.
+
+| Test | Asserts (the layout as saved, vertical and turned, unless noted) |
+|---|---|
+| `SG-cut` | rows 6, 7, 8 (section 2) and the wall single grouped, row 7 cut before upright 5: rows 6 and 8 cut at their upright 5, the wall single skipped (4.5" off), "Split 3 rows · 1 skipped", nothing committed; 3' back and a click: all placed by the same move (2' 9" gaps), one history entry, nothing selected, stamps / `pieceOf` / `splitOf` on each, `genRunFt` moved, no pending apply; one undo restores every row |
+| `SG-esc` | the same cut, Esc: every row 5 + 9 on a shared upright, no overlap, counts unchanged, one history entry, the bar still says it |
+| `SG-moved` | row 8 already separate at upright 5: its rack on that side moves uncut — "Split 1 row · 1 moved without a cut" — placed by the same move; Esc puts it back unchanged |
+| `SG-auto` | Ask and Auto apply the same: cut at the first click, nothing asked, the group kept |
+| `SG-alone` | the cut row not in the group: one piece, the bar silent, the group rows uncut |
+| `SG-preview` | the hover shows rows 6 and 8's cuts (upright 5, same side) and outlines the wall single |
+| `SG-dist` | the distances are the piece under the cursor's: 3' 9" to its own rack after 4' back |
+| `SG-reload` | saved and loaded: the pieces keep their row stamps, `pieceOf` and `splitOf` |
+| `SG-labels` | (synthetic) three plain racks grouped, all cut and placed 4' back: no label across the whole-stretch gap, ordinary racks there get 3' 9"; an ordinary rack added on one side brings it back |
+
+Changed expectations in SP: `SP-group` (the Row group still offers nothing,
+but the bar now says what was split — the Split tool applies the cut to the
+group itself), `SP-wire` (the placement line now names the first piece's rack).
+
+**Break-its:** the Row group ignored: SG-cut, SG-esc, SG-moved, SG-auto,
+SG-preview, SG-reload, SG-labels, SP-group (16). The ½" line-up ignored: SG-cut,
+SG-esc, SG-preview, SP-group (8). The other rows cut on the other side: SG-cut,
+SG-auto, SG-reload, SG-labels (8). The cut committed at the click: SG-cut,
+SG-esc, SG-moved, SP-esc, SP-place (10). Esc putting back only the clicked row:
+SG-esc (2). A row already meeting there not moving: SG-moved (2). The bar
+silent: SG-cut, SG-moved, SP-group (6). The Row group not told to pass it over:
+SP-group (2). The one-family gap rule back: SG-labels (2). No group preview:
+SG-preview (2). The other rows losing their stamps: SG-cut, SG-esc, SG-moved,
+SG-auto, SG-reload (10).
+
+**Checked in the app** (real mouse, the layout as saved, both orientations; the
+group rows 6, 7, 8 of section 2 and the wall single): hover before row 7's
+upright 5 → three cut lines, the wall single outlined; click → the three 5-bay
+pieces follow, the stays 9 bays each, "Split 3 rows · 1 skipped — Section 1,
+row 1: uprights don't line up (4.5" off)", history +0; 3' back, the piece under
+the cursor shows 2' 9" to its rack; click → each row 5 + 9 with a 2' 9" gap
+(row 7 6.00–47.50 + 50.25–124.75), history +1, nothing selected, no pending
+apply, no cross-aisle label; Ctrl+Z → three 14-bay rows. Cut again, Esc → each
+row 5 + 9 in place, 714 bays and 10,832 positions, no overlap, history +1.
+
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.
 

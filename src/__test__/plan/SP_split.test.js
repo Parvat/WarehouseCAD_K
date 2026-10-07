@@ -200,7 +200,7 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     expect(useSplit.getState().hover).toBe(null)
   })
 
-  it('SP-group: row 7 and the wall single row in a Row group — a cut left in place (Esc) and a cut placed away are both passed over: nothing offered, nothing said, the group unchanged', async () => {
+  it('SP-group: row 7 and the wall single row in a Row group — a cut left in place (Esc) and a cut placed away: the Row group watcher offers nothing (the cut is applied to the group by the Split tool itself — SG), the bar says what was split, the group unchanged', async () => {
     load(savedFill(vert))
     const w0 = wallSingle()
     const keys = [...RG.rowsOf(objs(), GS).keys()].filter(k => k.endsWith('|7') || k.endsWith('|' + w0.rowIndex))
@@ -208,12 +208,14 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     useRowGroup.setState({ keys })
     let r = rowRacks(2, 7)[0]
     splitAt(store, near(r, 5, 0.5), r.id, { newId, rebuildAisles }); cancelPlacement(); await settle()
-    expect(useRowGroup.getState()).toMatchObject({ pending: null, message: null, keys })
+    expect(useRowGroup.getState()).toMatchObject({ pending: null, keys })
+    expect(useRowGroup.getState().message).toMatch(/^Split /)
     const w = wallSingle(), at = near(w, 2, -0.5)
     splitAt(store, at, w.id, { newId, rebuildAisles })
     movePlacement(store, vert ? { x: at.x + 8 * GS, y: at.y } : { x: at.x, y: at.y + 8 * GS }, 1)
     expect(commitPlacement(store)).toBe(true); await settle()
-    expect(useRowGroup.getState()).toMatchObject({ pending: null, message: null, keys })
+    expect(useRowGroup.getState()).toMatchObject({ pending: null, keys })
+    expect(useRowGroup.getState().message).toMatch(/^Split /)
   })
 
   it('SP-rejoin: a cut piece (Esc: in place) dragged 20 ft away and straight back joins again through the in-line snap — one rack fewer, the same bays', async () => {
@@ -451,7 +453,7 @@ describe('SP-wire', () => {
     expect(gh).toContain('fontSize={FONT_PX / zoom} zoom={zoom}')
     expect(gh).toContain('Math.min(len / 2, NEAR_PX / zoom)')                               // a long one's pill stays near the piece
     expect(gh).not.toMatch(/RackLabels|AisleLabelItem/)
-    expect(readFileSync('src/utils/splitTool.js', 'utf8')).toContain("escHint: 'Esc leaves it where it was', measure: { fromId: stay.id }, select: false,")
+    expect(readFileSync('src/utils/splitTool.js', 'utf8')).toContain('measure: { fromId: pieces[0].stay.id }, select: false,')
     expect(readFileSync('src/components/RightPanel/panels/RackRowPanelCore.jsx', 'utf8')).not.toMatch(/Separate/)
   })
 })

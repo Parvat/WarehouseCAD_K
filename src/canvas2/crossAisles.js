@@ -10,9 +10,11 @@ import { pxToFtIn } from '../utils/canvas'
    along the gap and across the racks on both sides of it — drawn exactly like
    an aisle label (DimensionLabels.jsx's AisleLabelView takes this layout).
 
-   No label between the racks of ONE split family (the Split tool: a rack and the pieces cut from it carry
-   `splitOf` = its id): a gap is skipped when every rack on both sides of it is of one family and one of
-   them is a cut piece. Any other rack in either section and the gap is labelled as ever. Bay-delete
+   No label between split racks and the racks they were cut from (the Split tool: a cut piece carries
+   `splitOf` = the original rack's id; that rack and its pieces are one family): a gap is skipped when
+   every family on either side of it is a split family with racks on BOTH sides of the gap — one row cut,
+   or several rows cut together through the Row group. Any other rack in either section and the gap is
+   labelled as ever. Bay-delete
    pieces (`pieceOf` only) are not a family here: the gap a deleted bay leaves keeps its label.
 
    `isHoriz` follows aisleLabelLayout's meaning — true when the gap is
@@ -40,15 +42,15 @@ export function crossAisleLabels(objects, gridSize = 40) {
     for (const f of sorted) {
       const [r0, r1] = run(f), [c0, c1] = cross(f)
       const s = sections[sections.length - 1]
-      if (s && r0 < s.r1 - EPS) { s.r1 = Math.max(s.r1, r1); s.c0 = Math.min(s.c0, c0); s.c1 = Math.max(s.c1, c1); s.families.add(f.family); s.cut = s.cut || f.cut }
-      else sections.push({ r0, r1, c0, c1, families: new Set([f.family]), cut: f.cut })
+      if (s && r0 < s.r1 - EPS) { s.r1 = Math.max(s.r1, r1); s.c0 = Math.min(s.c0, c0); s.c1 = Math.max(s.c1, c1); s.families.add(f.family); if (f.cut) s.cutFamilies.add(f.family) }
+      else sections.push({ r0, r1, c0, c1, families: new Set([f.family]), cutFamilies: new Set(f.cut ? [f.family] : []) })
     }
     for (let i = 0; i + 1 < sections.length; i++) {
       const a = sections[i], b = sections[i + 1]
       const gapLo = a.r1, gapHi = b.r0
       if (gapHi - gapLo <= EPS) continue
-      // a split piece and the rack it was cut from, alone on both sides: no label
-      if ((a.cut || b.cut) && new Set([...a.families, ...b.families]).size === 1) continue
+      // split pieces and the racks they were cut from, alone on both sides: no label
+      if ([...a.families, ...b.families].every(fam => (a.cutFamilies.has(fam) || b.cutFamilies.has(fam)) && a.families.has(fam) && b.families.has(fam))) continue
       const c0 = Math.min(a.c0, b.c0), c1 = Math.max(a.c1, b.c1)
       out.push({
         key: k + '|' + i,

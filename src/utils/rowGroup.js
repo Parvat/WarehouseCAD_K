@@ -430,7 +430,7 @@ function markWarnings(after, targets, gridSize, finalize) {
 }
 
 /** Inches as the bar says them: whole or to the quarter, 3" / 2.5" / 0.25". */
-const fmtIn = (inches) => `${Math.round(inches * 4) / 4}"`
+export const fmtIn = (inches) => `${Math.round(inches * 4) / 4}"`
 
 /** The layout with the plan's applicable targets written: racks replaced, removed, added. */
 export function applyReplay(objects, plan) {
