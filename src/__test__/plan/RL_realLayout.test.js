@@ -220,20 +220,26 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     expect(lane.r[0] - office.r1, 'one bay in from the office\'s edge, not hard against it').toBeGreaterThan(1)
   })
 
-  if (corrections23) it('RL-5-boundary: the travel width read to a thousandth of a foot — at 8\' the lane one bay in (exactly 8\' wide) opens the pocket and is taken; at 8.01\' it is 0.01\' short, so the wall\'s lane is taken and the pair below the office stops a bay short of the wall', async () => {
+  if (corrections23) it('RL-5-boundary: the travel width read to a thousandth of a foot — at 8\' the lane one bay in (exactly 8\' wide) opens the pocket and is taken; at 8.01\' that gap is 0.01\' short and is no lane: the pocket is opened by a lane on the office\'s side one bay further in, 8.01\' wide (the exact access check — BUG 72 — finds the main floor it leads to), and nothing is cut off at 8.01\'', async () => {
     const { m, out, fp } = await fill()
     const a = out.find(o => o.type === 'racking_area'), base = out.filter(o => !(RACK.has(o.type) && o.areaId === a.id))
     const box = { x: a.x, y: a.y, w: a.width, h: a.height }, v = view(m, fp)
     const run = (travelFt) => {
-      const report = [], racks = m.FR.patternFill(base, box, { ...a.pattern, travelFt }, { gridSize: GS, report }).racks.map(v.rack)
+      const report = [], placed = m.FR.patternFill(base, box, { ...a.pattern, travelFt }, { gridSize: GS, report }).racks, racks = placed.map(v.rack)
       const offR = vert ? fp.y : fp.x, offS = vert ? fp.x : fp.y
-      return belowOffice(m, racks, out, fp, report.map(q => ({ r: q.at.map(x => (x - offR) / GS), s: q.across.map(x => (x - offS) / GS), kind: q.kind })))
+      const lanes = report.map(q => ({ r: q.at.map(x => (x - offR) / GS), s: q.across.map(x => (x - offS) / GS), kind: q.kind }))
+      return { ...belowOffice(m, racks, out, fp, lanes), lanes, cutOff: m.AA.cutOffRacks([...base, ...placed], fp, { gridSize: GS, travelFt, aisleFt: 10.5 }).cutOff }
     }
     const at8 = run(8), at801 = run(8.01)
     expect(at8.pair.r1).toBeCloseTo(at8.rMax, 6)
     expect(at8.lane.kind).toBe('zone')
-    expect(at801.lane.kind).toBe('wall')
-    expect(at801.pair.r1, 'a bay short of the wall').toBeLessThan(at801.rMax - 8)
+    expect(at8.lane.r[1] - at8.lane.r[0], 'exactly 8 ft').toBeCloseTo(8, 6)
+    // at 8.01': the 8' gap below the office is no lane; one lane, on the office's side, one bay further in, 8.01' wide
+    expect(at801.lane, 'no lane below the pair').toBeUndefined()
+    expect(at801.lanes.map(l => l.kind)).toEqual(['zone'])
+    expect(at801.lanes[0].r[1] - at801.lanes[0].r[0]).toBeCloseTo(8.01, 6)
+    expect(at801.lanes[0].r[1]).toBeLessThan(at8.lane.r[0])
+    expect(at801.cutOff, 'every rack has a way in at 8.01 ft').toEqual([])
   })
 
   it('RL-clean: Check layout finds no error; nothing cut off; shrink across and along, then extend back — the same racks', async () => {

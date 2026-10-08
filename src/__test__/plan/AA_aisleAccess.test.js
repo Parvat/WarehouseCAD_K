@@ -133,7 +133,7 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     expect(err[0].highlight[0].color).toBe(m.LC.HL.red)
   })
 
-  it('AA-tie (rectangle): vertical, an office 48–85\' across — opening its pocket costs the same bays against the office\'s edge as against the wall: the strip is cut against the office, and the rows stay flush against the building wall. Horizontal, the office 40–70\' across overlaps a pair\'s half by 3": that half runs on from the pair\'s last frame (no hole), so a strip against the office would cut it — the wall\'s strip is cheaper and is taken, no tie', async () => {
+  it('AA-tie (rectangle): vertical, an office 48–85\' across — opening its pocket costs the same bays (2) on the office\'s side as against the wall: the strip is cut on the office\'s side, in its lane on the bay grid, and the rows stay flush against the building wall. Horizontal, the office 40–70\' across overlaps a pair\'s half by 3": that half runs on from the pair\'s last frame (no hole), so a strip against the office would cut it — the wall\'s strip is cheaper and is taken, no tie', async () => {
     if (vert) {
       const { ib, office, inPocket } = await officePocket('fp_rect', 240, 120, [48, 85])
       const report = []
@@ -142,8 +142,12 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
       expect(tie, 'a pocket whose strip against the office and strip against the wall cost the same').toBeTruthy()
       expect(tie.kind).toBe('zone')
       expect(tie.tiedWith).toBe('wall')
-      // the strip stands against the office's edge (on its wall side), not against the wall
-      expect(tie.at[1]).toBeCloseTo(office.y, 3)
+      expect(tie.bays).toBe(2)                                                        // a real tie: the wall's strip costs 2 bays too
+      // the strip stands on the office's side — in the office's lane, on the bay grid: its far end at the upright
+      // 5' short of the office's edge (the strip right at the edge leads only onto floor under the travel width,
+      // so the exact access check — BUG 72 — runs it further and it costs more), not against the wall
+      expect((tie.at[1] - office.y) / GS).toBeCloseTo(-5, 3)
+      expect(tie.at[1] - tie.at[0]).toBeCloseTo(8 * GS, 3)
       // the pocket rows: still flush on the near wall
       for (const r of inPocket) {
         const same = plan.racks.filter(q => Math.abs(across(q)[0] - across(r)[0]) < EPS && Math.min(along(q)[1], along(r)[1]) - Math.max(along(q)[0], along(r)[0]) > EPS)

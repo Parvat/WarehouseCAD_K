@@ -287,6 +287,7 @@ export const WARN_KINDS = {
   overlap: 'an overlap',
   'aisle-drive': 'an aisle under the travel width',
   'aisle-pick': 'an aisle under the pick width',
+  'cross-aisle': 'a cross-aisle under the travel width',
   'no-way-in': 'a cross-aisle blocked — no way in',
   upright: 'a column on an upright',
   unreachable: 'a rack nobody can reach',

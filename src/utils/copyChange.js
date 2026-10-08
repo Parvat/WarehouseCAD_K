@@ -56,18 +56,49 @@ export function crossAisleGaps(objects, fpId, rotated) {
   return out
 }
 
-/** The cross-aisles between GENERATED sections only — a layout placed by
- *  hand has none, so there is nothing to warn about there. */
-export function generatedCrossAisleGaps(objects, fpId, rotated) {
-  const ref = objects.find(o => isRow(o) && o.parentId === fpId && o.genSection != null && rotatedOf(o) === rotated)
-  if (!ref) return []
-  const sections = buildingSections(objects, ref.id).sections.filter(s => s.key != null)
+/** The cross-aisles between a building's SECTIONS (rows carrying section stamps — Generate's, Fill racking's,
+ *  a racking area's), measured PER LINE: in each line of racks (lined up across), wherever the run passes
+ *  from one section's racks to another's, each gap between consecutive racks there is part of that
+ *  cross-aisle — a rack standing in it (stamped or not) splits it. Section envelopes would miss them: a wall
+ *  row runs the building's length, so its section's envelope swallows the others. Gaps inside a section (a
+ *  split, a deleted bay) are not cross-aisles; a layout placed by hand has no sections, so none.
+ *  [{ lo, hi, between: [section a, section b], a, b (the racks either side), cross: [lo, hi] }], world px;
+ *  a gap closed to nothing (racks touching) reads hi = lo; racks overlapping are not a gap. */
+export function sectionCrossAisles(objects, fpId, rotated) {
+  const racks = objects.filter(o => isRow(o) && o.parentId === fpId && rotatedOf(o) === rotated)
+  if (!racks.some(o => o.genSection != null)) return []
+  const items = racks.map(o => { const f = rackFootprint(o); return { o, run: runOf(f, rotated), cross: crossOf(f, rotated) } })
+  // lines: racks overlapping across, chained
+  const lines = []
+  for (const it of [...items].sort((p, q) => p.cross[0] - q.cross[0])) {
+    const l = lines[lines.length - 1]
+    if (l && it.cross[0] < l.hi - EPS) { l.items.push(it); l.hi = Math.max(l.hi, it.cross[1]) } else lines.push({ items: [it], hi: it.cross[1] })
+  }
   const out = []
-  for (let i = 0; i + 1 < sections.length; i++) {
-    const a = sections[i], b = sections[i + 1]
-    if (b.start - a.end > EPS) out.push({ lo: a.end, hi: b.start, between: [a.key, b.key] })
+  for (const l of lines) {
+    const its = l.items.sort((p, q) => p.run[0] - q.run[0])
+    let reach = null, lastSection = null
+    for (let i = 0; i < its.length; i++) {
+      const q = its[i]
+      if (reach && q.run[0] >= reach.run[1] - EPS) {
+        const next = its.slice(i).find(t => t.o.genSection != null)
+        if (lastSection != null && next && next.o.genSection !== lastSection) {
+          out.push({ lo: reach.run[1], hi: Math.max(reach.run[1], q.run[0]), between: [lastSection, next.o.genSection], a: reach.o, b: q.o,
+            cross: [Math.max(reach.cross[0], q.cross[0]), Math.min(reach.cross[1], q.cross[1])] })
+        }
+      }
+      if (q.o.genSection != null) lastSection = q.o.genSection
+      if (!reach || q.run[1] > reach.run[1]) reach = q
+    }
   }
   return out
+}
+
+/** The cross-aisles between sections, for placement's warning ("In the cross-aisle between sections 1 and
+ *  2"): the per-line gaps (sectionCrossAisles) — a layout placed by hand has none, so there is nothing to
+ *  warn about there. [{ lo, hi, between }] */
+export function generatedCrossAisleGaps(objects, fpId, rotated) {
+  return sectionCrossAisles(objects, fpId, rotated).filter(g => g.hi - g.lo > EPS).map(({ lo, hi, between }) => ({ lo, hi, between }))
 }
 
 /** Hard problems for one rack where it would stand in `world`: a reason

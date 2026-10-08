@@ -9,7 +9,9 @@
 //   overlap/wall rackIssues (utils/bayBeam.js)
 //   reach        rackReachable (the pick-zone test, at the travel width)
 //   way in       cutOffRacks (generate/aisleAccess.js): racks only a dead-end
-//                pocket reaches — an aisle closed at both ends
+//                pocket reaches — an aisle closed at both ends (exact width)
+//   cross-aisle  sectionCrossAisles (utils/copyChange.js): per line, between
+//                sections, under the travel width — underTravel (0.001 ft)
 //   bays         oversizedBayIndices (utils/capacity.js)
 //
 // ERRORS (can't be built or reached): an aisle a truck can't drive, racks
@@ -17,8 +19,9 @@
 // upright frame, a rack nobody can reach, racks with no way in (the pocket
 // highlighted).
 // WARNINGS (cost positions, or need a look): an aisle it can drive but not
-// pick from, columns blocking pallets, a bay too short for a pallet, angled
-// racks whose column losses weren't checked.
+// pick from, a cross-aisle between sections under the travel width (the
+// racks may still be reachable another way), columns blocking pallets, a bay
+// too short for a pallet, angled racks whose column losses weren't checked.
 //
 // Each item: { severity, kind, text, ids (the objects involved), box (world
 // rect to zoom to), highlight (the PROBLEM itself, drawn when the item is
@@ -30,14 +33,14 @@
 // store below.
 
 import { create } from 'zustand'
-import { rackFootprint, rowGaps, aisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld } from '../generate/columnCheck'
+import { rackFootprint, rowGaps, aisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld, underTravel } from '../generate/columnCheck'
 import { uprightXs } from '../render/rackOps'
 import { blockedPositionRects } from '../render/labelOps'
 import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate/usableCapacity'
 import { rackIssues } from './bayBeam'
 import { cutOffRacks } from '../generate/aisleAccess'
 import { oversizedBayIndices } from './capacity'
-import { fmtLen, sectionLabel } from './copyChange'
+import { fmtLen, sectionLabel, sectionCrossAisles } from './copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { useDragPreview } from '../canvas2/dragPreview'
 
@@ -108,6 +111,19 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       highlight: [shade(g.box, lvl === 1 ? HL.red : HL.amber, `${len(g.gapLen)} · needs ${len(need)}`)] }
     if (lvl === 1) { pinchedPairs.add(g.top.id + '|' + g.bot.id); errors.push({ ...item, severity: 'error', text: `${where}: ${len(g.gapLen)}, needs ${len(travelPx)} to drive` }) }
     else warnings.push({ ...item, severity: 'warning', text: `${where}: ${len(g.gapLen)}, needs ${len(aislePx)} to pick` })
+  }
+
+  // ── cross-aisles between sections, per line, under the travel width (to 0.001 ft) — a warning: the racks
+  //    may still be reachable another way (a pocket with none is "No way in", below) ──
+  for (const fp of objects.filter(o => FP.has(o.type))) for (const rot of [false, true]) {
+    for (const g of sectionCrossAisles(objects, fp.id, rot)) {
+      const w = g.hi - g.lo
+      if (!underTravel(w, travelPx, gridSize)) continue
+      const box = rot ? { x: g.cross[0], y: g.lo, w: g.cross[1] - g.cross[0], h: w } : { x: g.lo, y: g.cross[0], w, h: g.cross[1] - g.cross[0] }
+      warnings.push({ severity: 'warning', kind: 'cross-aisle', ids: [g.a.id, g.b.id], box,
+        highlight: [shade(box, HL.amber, `${len(w)} · needs ${len(travelPx)}`)],
+        text: `Cross-aisle between ${pairName(g.a, g.b, racks)}: ${len(w)}, needs ${len(travelPx)} to drive` })
+    }
   }
 
   // ── the column check ──
@@ -220,7 +236,7 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
         highlight: g.boxes.map(b => shade(b, HL.red, 'No way in')), text: 'No way in: aisle closed at both ends' })
     }
   }
-  const order = ['aisle-drive', 'no-way-in', 'overlap', 'outside', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'angled']
+  const order = ['aisle-drive', 'no-way-in', 'overlap', 'outside', 'upright', 'unreachable', 'aisle-pick', 'cross-aisle', 'columns-lost', 'oversized', 'angled']
   const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind) }
 }

@@ -5997,7 +5997,7 @@ column lines; where it lands depends on where the run starts.
 
 Fix:      Open. RL-clean allows exactly this one error until it is fixed.
 
-## BUG 72 — the access check passes paths narrower than the travel width (down to about 7 ft)  (2026-10-05, open)
+## BUG 72 — the access check passes paths narrower than the travel width (down to about 7 ft)  (2026-10-05, fixed 2026-10-08)
 Symptom:  On the hand-check layout (500 × 250), a lane cut 7.0 ft wide —
 a whole foot under the reach truck's 8 ft travel width — still counted as
 a way in: nothing cut off. Check layout's "No way in: aisle closed at both
@@ -6009,14 +6009,16 @@ marks a cell free by its centre, and calls a cell drivable when a
 (2m − 1)-cell square fits around it. Rounding at both sides of a gap lets
 it through at roughly a cell (or more) under the travel width.
 
-Fix:      Open — not this round. The lanes the fill cuts are now held to
-the exact travel width (a strip must be clear to 0.001 ft: `stripsFor`),
-but gaps the layout leaves on its own, and Check layout, still go by the
-grid.
+Fix:      `floorAccess` works the drivable floor exactly: the floor less
+every wall, zone and rack grown by half the travel width (less the 0.001 ft
+tolerance), on a grid cut at those edges — a gap opens exactly at the travel
+width (8.000 passes, 7.99 does not). "No way in" and the fill's lane search
+share it. The fixture's fills are unchanged rack for rack; AA-tie and
+RL-5-boundary now expect the lanes the exact check picks. Tests: area AX.
 
 ---
 
-## BUG 73 — Check layout doesn't warn when a cross-aisle is under the travel width but another way in exists  (2026-10-06 / 4fe2e9e, open)
+## BUG 73 — Check layout doesn't warn when a cross-aisle is under the travel width but another way in exists  (2026-10-06 / 4fe2e9e, fixed 2026-10-08)
 Symptom:  On the hand-check layout, with section 2's rows in a Row group, a
 bay added to section 2's row 7 toward section 3 shrank
 the cross-aisle between them from 11.2 ft to 2.95 ft — far under the reach
@@ -6030,11 +6032,13 @@ ends. A cross-aisle narrowed below the travel width while the aisles still
 open at their other end leaves a way in, so nothing reports it. There is no
 check of a cross-aisle's own width against `travelFt`.
 
-Fix:      Open — not this round. Wanted: a warning (or error) for a
-cross-aisle narrower than the travel width, measured with the same 0.001 ft
-tolerance as the lane check and the column-in-aisle check (TRAVEL_TOL_FT),
-whether or not another way in exists. The Row group then warns for it too,
-with no Row group change.
+Fix:      Check layout warns ("cross-aisle", amber) for a cross-aisle
+between sections under the travel width (`underTravel`, 0.001 ft), naming
+the two racks and the width. Cross-aisles are found per line
+(`sectionCrossAisles`): the old section-envelope rule found none on the
+layout as saved, its wall rows running the whole length. Placement's warning
+uses the same gaps. Gaps inside a section and hand-placed layouts stay
+silent. The Row group carries it. Tests: area AX.
 
 ---
 

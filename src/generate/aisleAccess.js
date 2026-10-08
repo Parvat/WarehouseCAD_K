@@ -6,11 +6,14 @@
 // wall at one end, an office at the other; or walls at both) is a dead-end
 // POCKET: nobody can drive into it.
 //
-// Worked on a grid over the building's floor (its inner wall face):
+// Worked EXACTLY on the building's floor (its inner wall face):
 //   - walls, zones and racks are obstacles;
-//   - the drivable floor is where a square the travel width wide fits (a
-//     chessboard distance transform over cell centres: a gap reads its width
-//     in cells, and half a cell of slack is allowed);
+//   - the drivable floor is where a square the travel width wide fits: the
+//     floor less every obstacle grown by half the travel width (the walls
+//     moved in by it) — less TRAVEL_TOL_FT, the lane check's 0.001 ft — on a
+//     grid cut exactly at those edges, so a gap is open exactly when it is at
+//     least the travel width: 8.000 ft passes, 7.999 ft does not (it used to
+//     be a ~0.8 ft grid that let gaps through at about 7.5 ft — BUG 72);
 //   - its connected pieces: the MAIN floor is the largest one, unless that one
 //     is itself just a corridor (thinner than the travel width once eroded —
 //     a single aisle closed at both ends, as every aisle is when rows run
@@ -31,7 +34,8 @@
 // Pure: objects in, analysis out. Shared by Check layout, Fill racking and
 // racking areas (fillRacking.js patternFill) and Generate (traceGenerate.js).
 
-import { rackFootprint } from './columnCheck'
+import { rackFootprint, TRAVEL_TOL_FT } from './columnCheck'
+import { insetPolygon } from '../utils/canvas'
 import { uprightXs } from '../render/rackOps'
 import { splitRackForBayDelete } from '../utils/baySplit'
 import { innerOutline, floorSection } from '../utils/floorGeom'
@@ -39,115 +43,79 @@ import { innerOutline, floorSection } from '../utils/floorGeom'
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 const isRack = (o) => typeof o?.type === 'string' && o.type.startsWith('rack_')
-const MAX_CELLS = 400000
-
-/** The floor grid of building `fp`: cells (resolution `res` px) marked free / blocked by walls,
- *  zones and the racks in `objects`. */
-function floorGrid(objects, fp, gridSize) {
-  const poly = innerOutline(fp, gridSize)
-  const xs = poly.map(p => p.x), ys = poly.map(p => p.y)
-  const x0 = Math.min(...xs), y0 = Math.min(...ys), W = Math.max(...xs) - x0, H = Math.max(...ys) - y0
-  const res = Math.max(gridSize / 2, Math.sqrt((W * H) / MAX_CELLS))
-  const nx = Math.max(1, Math.ceil(W / res)), ny = Math.max(1, Math.ceil(H / res))
-  const blocked = new Uint8Array(nx * ny).fill(1)
-  // the floor: scan each row of cell centres across the outline's vertical edges
-  for (let j = 0; j < ny; j++) {
-    const cy = y0 + (j + 0.5) * res, cuts = []
-    for (let i = 0; i < poly.length; i++) {
-      const a = poly[i], b = poly[(i + 1) % poly.length]
-      if ((a.y > cy) !== (b.y > cy)) cuts.push(a.x + (cy - a.y) * (b.x - a.x) / (b.y - a.y))
-    }
-    cuts.sort((p, q) => p - q)
-    for (let k = 0; k + 1 < cuts.length; k += 2) {
-      const i0 = Math.max(0, Math.ceil((cuts[k] - x0) / res - 0.5)), i1 = Math.min(nx - 1, Math.floor((cuts[k + 1] - x0) / res - 0.5))
-      for (let i = i0; i <= i1; i++) blocked[j * nx + i] = 0
-    }
-  }
-  // zones and racks: every cell whose centre they cover (as the floor is read), so a gap between
-  // two of them counts exactly its width in cells
-  const mark = (b) => {
-    const i0 = Math.max(0, Math.ceil((b.x - x0) / res - 0.5 - 1e-9)), i1 = Math.min(nx - 1, Math.floor((b.x + b.w - x0) / res - 0.5 + 1e-9))
-    const j0 = Math.max(0, Math.ceil((b.y - y0) / res - 0.5 - 1e-9)), j1 = Math.min(ny - 1, Math.floor((b.y + b.h - y0) / res - 0.5 + 1e-9))
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) blocked[j * nx + i] = 1
-  }
+/** The drivable floor of building `fp`, exactly: the floor less every wall, zone and rack grown by `grow`
+ *  px, on a grid whose lines are exactly those grown edges (and the moved-in walls). Each cell is wholly
+ *  free or wholly blocked. { xs, ys, nx, ny, free } — xs / ys the cell edges, world px. */
+function floorCells(objects, fp, grow, gridSize) {
+  const poly = insetPolygon(innerOutline(fp, gridSize), grow)
+  const boxes = []
   for (const o of objects) {
-    if (isZone(o)) mark({ x: o.x, y: o.y, w: o.width, h: o.height })
-    else if (isRack(o) && o.width > 0 && o.height > 0 && (!o.parentId || o.parentId === fp.id)) { const f = rackFootprint(o); mark({ x: f.x, y: f.y, w: f.w, h: f.h }) }
+    if (isZone(o)) boxes.push({ x0: o.x - grow, y0: o.y - grow, x1: o.x + o.width + grow, y1: o.y + o.height + grow })
+    else if (isRack(o) && o.width > 0 && o.height > 0 && (!o.parentId || o.parentId === fp.id)) { const f = rackFootprint(o); boxes.push({ x0: f.x - grow, y0: f.y - grow, x1: f.x + f.w + grow, y1: f.y + f.h + grow }) }
   }
-  return { x0, y0, nx, ny, res, blocked }
+  const px = poly.map(q => q.x), py = poly.map(q => q.y)
+  const X0 = Math.min(...px), X1 = Math.max(...px), Y0 = Math.min(...py), Y1 = Math.max(...py)
+  const within = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+  const xs = [...new Set([...px, ...boxes.flatMap(b => [within(b.x0, X0, X1), within(b.x1, X0, X1)])])].sort((a, b) => a - b)
+  const ys = [...new Set([...py, ...boxes.flatMap(b => [within(b.y0, Y0, Y1), within(b.y1, Y0, Y1)])])].sort((a, b) => a - b)
+  const nx = Math.max(0, xs.length - 1), ny = Math.max(0, ys.length - 1)
+  const inside = (x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c } return c }
+  const free = new Uint8Array(nx * ny)
+  for (let j = 0; j < ny; j++) {
+    const cy = (ys[j] + ys[j + 1]) / 2
+    for (let i = 0; i < nx; i++) {
+      const cx = (xs[i] + xs[i + 1]) / 2
+      if (inside(cx, cy) && !boxes.some(b => cx > b.x0 && cx < b.x1 && cy > b.y0 && cy < b.y1)) free[j * nx + i] = 1
+    }
+  }
+  return { xs, ys, nx, ny, free }
 }
 
-/** Chessboard distance from each cell to the nearest blocked one (the grid's edge counts). */
-function chessboard({ nx, ny, blocked }) {
-  const d = new Int32Array(nx * ny)
-  const BIG = nx + ny
-  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    const k = j * nx + i
-    if (blocked[k]) { d[k] = 0; continue }
-    let v = BIG
-    if (i === 0 || j === 0 || i === nx - 1 || j === ny - 1) v = 1
-    if (i > 0) v = Math.min(v, d[k - 1] + 1)
-    if (j > 0) { v = Math.min(v, d[k - nx] + 1); if (i > 0) v = Math.min(v, d[k - nx - 1] + 1); if (i < nx - 1) v = Math.min(v, d[k - nx + 1] + 1) }
-    d[k] = v
-  }
-  for (let j = ny - 1; j >= 0; j--) for (let i = nx - 1; i >= 0; i--) {
-    const k = j * nx + i
-    if (!d[k]) continue
-    let v = d[k]
-    if (i < nx - 1) v = Math.min(v, d[k + 1] + 1)
-    if (j < ny - 1) { v = Math.min(v, d[k + nx] + 1); if (i < nx - 1) v = Math.min(v, d[k + nx + 1] + 1); if (i > 0) v = Math.min(v, d[k + nx - 1] + 1) }
-    d[k] = v
-  }
-  return d
-}
-
-/** The drivable floor's pieces in building `fp`: { grid, label (Int32Array, 0 = not drivable),
- *  comps: [{ id, cells, box (world px) }], main (a component id, or 0: no main floor) }. */
+/** The drivable floor's pieces in building `fp`: { cells (floorCells), label (Int32Array per cell, 0 = not
+ *  drivable), comps: [{ id, area, thin, box (world px) }], main (a component id, or 0: no main floor),
+ *  labelsIn(box) → the component ids a world box touches }. */
 export function floorAccess(objects, fp, { gridSize = 40, travelFt = 8 } = {}) {
-  const grid = floorGrid(objects, fp, gridSize)
-  const { nx, ny, res, x0, y0 } = grid
-  const d = chessboard(grid)
-  // a travel-wide square fits: (2m - 1) cells ≥ the travel width less one cell
-  const m = Math.max(1, Math.ceil((travelFt * gridSize) / res / 2))
+  const grow = Math.max(0, ((travelFt - TRAVEL_TOL_FT) * gridSize) / 2)
+  const cells = floorCells(objects, fp, grow, gridSize)
+  const { xs, ys, nx, ny, free } = cells
   const label = new Int32Array(nx * ny)
   const comps = []
   const queue = new Int32Array(nx * ny)
   for (let s = 0; s < nx * ny; s++) {
-    if (label[s] || d[s] < m) continue
+    if (label[s] || !free[s]) continue
     const id = comps.length + 1
-    let head = 0, tail = 0, i0 = nx, i1 = -1, j0 = ny, j1 = -1
+    let head = 0, tail = 0, area = 0, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
     queue[tail++] = s; label[s] = id
     while (head < tail) {
       const k = queue[head++], i = k % nx, j = (k - i) / nx
-      if (i < i0) i0 = i; if (i > i1) i1 = i; if (j < j0) j0 = j; if (j > j1) j1 = j
-      for (const [ok, q] of [[i > 0, k - 1], [i < nx - 1, k + 1], [j > 0, k - nx], [j < ny - 1, k + nx]]) if (ok && !label[q] && d[q] >= m) { label[q] = id; queue[tail++] = q }
+      area += (xs[i + 1] - xs[i]) * (ys[j + 1] - ys[j])
+      x0 = Math.min(x0, xs[i]); y0 = Math.min(y0, ys[j]); x1 = Math.max(x1, xs[i + 1]); y1 = Math.max(y1, ys[j + 1])
+      for (const [ok, q] of [[i > 0, k - 1], [i < nx - 1, k + 1], [j > 0, k - nx], [j < ny - 1, k + nx]]) if (ok && free[q] && !label[q]) { label[q] = id; queue[tail++] = q }
     }
-    // the drivable cells' box, widened by the clearance back to the floor they stand for
-    const pad = (m - 0.5) * res
-    comps.push({ id, cells: tail, thin: Math.min(i1 - i0 + 1, j1 - j0 + 1) * res,
-      box: { x: x0 + i0 * res - pad, y: y0 + j0 * res - pad, w: (i1 - i0 + 1) * res + 2 * pad, h: (j1 - j0 + 1) * res + 2 * pad } })
+    // where a truck's centre can go, widened by the clearance back to the floor it stands for
+    comps.push({ id, area, thin: Math.min(x1 - x0, y1 - y0), box: { x: x0 - grow, y: y0 - grow, w: x1 - x0 + 2 * grow, h: y1 - y0 + 2 * grow } })
   }
-  const big = comps.reduce((a, c) => (!a || c.cells > a.cells ? c : a), null)
+  const big = comps.reduce((a, c) => (!a || c.area > a.area ? c : a), null)
   // the largest piece is the main floor — unless it is only a corridor itself (no way in anywhere)
   const main = big && big.thin >= travelFt * gridSize ? big.id : 0
-  return { grid, label, comps, main }
+  const span = (edges, lo, hi) => { const out = []; for (let i = 0; i + 1 < edges.length; i++) if (edges[i + 1] > lo && edges[i] < hi) out.push(i); return out }
+  const labelsIn = (b) => {
+    const seen = new Set()
+    const is = span(xs, b.x, b.x + b.w), js = span(ys, b.y, b.y + b.h)
+    for (const j of js) for (const i of is) { const l = label[j * nx + i]; if (l) seen.add(l) }
+    return seen
+  }
+  return { cells, label, comps, main, labelsIn }
 }
 
 /** The pieces of floor a rack's pick faces look onto, across `aisleFt` in front of them:
  *  [component ids per face] — a double row's two long sides, a single row's either side. */
 function facesOnto(access, r, aisleFt, gridSize) {
-  const { grid: { x0, y0, nx, ny, res }, label } = access
   const f = rackFootprint(r), vert = !!f.rotated, A = aisleFt * gridSize
   const strips = vert
     ? [{ x: f.x - A, y: f.y, w: A, h: f.h }, { x: f.x + f.w, y: f.y, w: A, h: f.h }]
     : [{ x: f.x, y: f.y - A, w: f.w, h: A }, { x: f.x, y: f.y + f.h, w: f.w, h: A }]
-  return strips.map(b => {
-    const seen = new Set()
-    const i0 = Math.max(0, Math.floor((b.x - x0) / res)), i1 = Math.min(nx - 1, Math.ceil((b.x + b.w - x0) / res) - 1)
-    const j0 = Math.max(0, Math.floor((b.y - y0) / res)), j1 = Math.min(ny - 1, Math.ceil((b.y + b.h - y0) / res) - 1)
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const l = label[j * nx + i]; if (l) seen.add(l) }
-    return seen
-  })
+  return strips.map(b => access.labelsIn(b))
 }
 
 /** Racks in building `fp` that only pockets reach: { cutOff: [{ id, pockets: [ids] }], pockets:
@@ -284,7 +252,7 @@ function pathAcross(objects, fp, ids, { gridSize, travelFt, aisleFt, dir, newId 
  *  it cuts). Cheapest first; a tie goes to the strip against a zone (so the racks stay against the
  *  building wall), then to the one nearer the far end. */
 function stripsFor(objects, fp, res, pocketId, carvable, { gridSize, travelFt, dir }) {
-  const { grid: { x0, y0, nx, ny, res: cell }, label, main } = res.access
+  const { cells: { xs, ys, nx }, label, main } = res.access
   const T = travelFt * gridSize
   const mine = res.cutOff.filter(c => c.pockets.includes(pocketId)).map(c => objects.find(o => o.id === c.id)).filter(Boolean)
   if (!mine.length) return []
@@ -295,8 +263,8 @@ function stripsFor(objects, fp, res, pocketId, carvable, { gridSize, travelFt, d
   const onFloor = (x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c } return c }
   const others = objects.filter(o => isRack(o) && o.width > 0)
   const canCut = new Set(carvable)
-  // the grid along this pocket's axes: u along the run, v across
-  const nu = vert ? ny : nx, nv = vert ? nx : ny, u0 = vert ? y0 : x0, v0 = vert ? x0 : y0
+  // the cells along this pocket's axes: u along the run, v across (their edges, world px)
+  const us = vert ? ys : xs, vsE = vert ? xs : ys, nv = vsE.length - 1
   const at = (ui, vi) => label[(vert ? ui : vi) * nx + (vert ? vi : ui)]
   /* where a strip can stand against something fixed: either side of a zone's edge across the run
      (kind 'zone'), either side of a face of the building ('wall') */
@@ -330,19 +298,21 @@ function stripsFor(objects, fp, res, pocketId, carvable, { gridSize, travelFt, d
     const key = Math.round(band[0] * 100) + '|' + kind
     if (seen.has(key)) continue
     seen.add(key)
-    const ua = Math.max(0, Math.floor((band[0] - u0) / cell)), ub = Math.min(nu - 1, Math.ceil((band[1] - u0) / cell) - 1)
-    if (ub < ua) continue
+    // the cells under the strip along the run
+    const uIn = []
+    for (let ui = 0; ui + 1 < us.length; ui++) if (us[ui + 1] > band[0] && us[ui] < band[1]) uIn.push(ui)
+    if (!uIn.length) continue
     // the pocket's cells under the strip, across
     const vs = []
-    for (let vi = 0; vi < nv; vi++) for (let ui = ua; ui <= ub; ui++) if (at(ui, vi) === pocketId) { vs.push(vi); break }
+    for (let vi = 0; vi < nv; vi++) if (uIn.some(ui => at(ui, vi) === pocketId)) vs.push(vi)
     if (!vs.length) continue
     for (const dv of [-1, 1]) {
       const start = dv > 0 ? Math.max(...vs) : Math.min(...vs)
       let hit = null
-      for (let vi = start + dv; vi >= 0 && vi < nv && hit == null; vi += dv) for (let ui = ua; ui <= ub; ui++) if (at(ui, vi) === main) { hit = vi; break }
+      for (let vi = start + dv; vi >= 0 && vi < nv && hit == null; vi += dv) if (uIn.some(ui => at(ui, vi) === main)) hit = vi
       if (hit == null) continue
       const va = Math.min(start, hit), vb = Math.max(start, hit)
-      const across = [v0 + va * cell, v0 + (vb + 1) * cell]
+      const across = [vsE[va], vsE[vb + 1]]
       const R = vert ? { x: across[0], y: band[0], w: across[1] - across[0], h: T } : { x: band[0], y: across[0], w: T, h: across[1] - across[0] }
       // it can only run where nothing fixed stands: no zone, no rack it may not cut, on the floor
       if (zones.some(z => meets(z, R)) || others.some(q => !canCut.has(q.id) && meets(rackFootprint(q), R))) continue
