@@ -276,10 +276,21 @@ export const CrossAisleLabels = memo(function CrossAisleLabels({ objects, lz, gr
    compared by content. */
 const sameContent = (x, y) => x === y || JSON.stringify(x) === JSON.stringify(y)
 
-const ClearanceItem = memo(function ClearanceItem({ a, i, col, lz, gridSize, showLabels = true }) {
-  const ops = useMemo(() => clearanceOps(a, col, lz, gridSize, showLabels), [a, col, lz, gridSize, showLabels])
+const ClearanceItem = memo(function ClearanceItem({ a, i, col, lz, gridSize, showLabels = true, avoid }) {
+  const ops = useMemo(() => clearanceOps(a, col, lz, gridSize, showLabels, avoid), [a, col, lz, gridSize, showLabels, avoid])
   return <LabelOps ops={ops} name={'aisle-column:' + i} />
-}, (p, n) => p.i === n.i && p.lz === n.lz && p.gridSize === n.gridSize && p.showLabels === n.showLabels && sameContent(p.a, n.a) && sameContent(p.col, n.col))
+}, (p, n) => p.i === n.i && p.lz === n.lz && p.gridSize === n.gridSize && p.showLabels === n.showLabels && sameContent(p.a, n.a) && sameContent(p.col, n.col) && sameContent(p.avoid, n.avoid))
+
+/* The aisle-label boxes near one column — all its clearance labels could reach (each arrow's length plus a
+   long pill) — so an item compares and redraws only for the labels around it. */
+function avoidNear(avoid, a, col, lz, gridSize) {
+  if (!avoid || !avoid.length || !col) return EMPTY
+  const R = (Math.max(a.nearClearFt || 0, a.farClearFt || 0) + 1) * gridSize + 80 / lz
+  const x0 = col.x - R, x1 = col.x + col.w + R, y0 = col.y - R, y1 = col.y + col.h + R
+  const near = avoid.filter(r => r.x < x1 && r.x + r.w > x0 && r.y < y1 && r.y + r.h > y0)
+  return near.length ? near : EMPTY
+}
+const EMPTY = []
 
 /* ── Column clearance labels + red aisle warning ─────────────────────────────
    For every column standing in a travel aisle: an arrow on EACH side, from
@@ -299,7 +310,7 @@ const ClearanceItem = memo(function ClearanceItem({ a, i, col, lz, gridSize, sho
    held warnings with it, unchanged; any other drag re-runs just the cheap
    aisle part of the column check on the previewed layout
    (clearanceSource.js). Otherwise it draws the full check's own aisleBlocks. */
-export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridSize = 40, showLabels = true }) {
+export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridSize = 40, showLabels = true, avoid = EMPTY }) {
   const ids = useDragPreview(s => s.ids), dx = useDragPreview(s => s.dx), dy = useDragPreview(s => s.dy)
   const { profile, pickBothSides } = useColumnCheck()
   /* clearanceSource.js: a drag carrying every rack and column (a building
@@ -307,11 +318,14 @@ export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridS
      mid-drag; any other drag re-runs the cheap aisle part on the preview */
   const src = useMemo(() => clearanceSource({ aisleBlocks, columns, objects, preview: { ids, dx, dy }, gridSize, profile, pickBothSides }),
     [aisleBlocks, columns, objects, ids, dx, dy, gridSize, profile, pickBothSides])
+  /* `avoid`: the aisle width labels' boxes as drawn (Overlays.jsx); this group sits at (src.x, src.y), so
+     they come into its frame */
+  const local = useMemo(() => (src.x || src.y) ? avoid.map(r => ({ ...r, x: r.x - (src.x || 0), y: r.y - (src.y || 0) })) : avoid, [avoid, src.x, src.y])
   if (!src.blocks?.length || !src.cols?.length) return null
 
   return (
     <Group name="column-clearance-labels" listening={false} x={src.x} y={src.y}>
-      {src.blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={src.cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} />)}
+      {src.blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={src.cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} avoid={avoidNear(local, a, src.cols[a.columnIndex], lz, gridSize)} />)}
     </Group>
   )
 }

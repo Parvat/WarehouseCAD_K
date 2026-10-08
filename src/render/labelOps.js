@@ -15,7 +15,9 @@
 //   { op: 'poly',  points, fill?, stroke?, strokeWidth? , opacity? }   (closed)
 //   { op: 'rect',  x, y, w, h, fill?, stroke?, strokeWidth?, dash?, cornerRadius?, opacity?, name? }
 //   { op: 'text',  x, y, w, h, text, fontSize, fill, fontFamily }      (centred in the box)
-import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX } from '../canvas2/hitTest'
+import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX, aisleLabelLayout } from '../canvas2/hitTest'
+import { crossAisleLabels } from '../canvas2/crossAisles'
+import { labelScale, aisleLabelScale } from './labelSize'
 import { visibleClearanceMarks, aisleWarningRect, SHORT_COLOR } from '../canvas2/aisleMarks'
 import { positionRectForIndex, bayRectForIndex } from './bayGeom'
 import { uprightFramesLocal } from '../generate/columnCheck'
@@ -61,10 +63,25 @@ export function aisleLabelOps(L, lz) {
   return out
 }
 
+/** The pill boxes of the aisle width labels (`aisles`: each aisle object's label, at its own Label size)
+ *  and the cross-aisle width labels (`cross`: the layout's cross-aisles), as `aisleLabelOps` draws them —
+ *  read off its own rect ops, so they are exactly what is on the drawing. A column clearance label keeps
+ *  clear of these (clearanceOps' `avoid`): the aisle width label has priority. */
+export function aisleLabelBoxes(objects, gridSize = 40, labelSize, { aisles = true, cross = true } = {}) {
+  const out = [], take = (ops) => { for (const o of ops) if (o.op === 'rect') out.push({ x: o.x, y: o.y, w: o.w, h: o.h }) }
+  if (aisles) for (const a of objects) {
+    if (!a || a.type !== 'aisle') continue
+    const L = aisleLabelLayout(a, objects, gridSize)
+    if (L) take(aisleLabelOps(L, aisleLabelScale(a, labelSize, gridSize)))
+  }
+  if (cross) { const lz = labelScale(labelSize, gridSize); for (const L of crossAisleLabels(objects, gridSize)) take(aisleLabelOps(L, lz)) }
+  return out
+}
+
 /** One column standing in an aisle: the red aisle shade when pinched (always),
  *  and the clearance arrows + distance pills (only the red "under travel"
  *  ones when the Column labels switch is off). */
-export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true) {
+export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, avoid = []) {
   if (!col || !block.axis) return []
   const fs = 9 / lz, sw = 1.6 / lz
   const out = []
@@ -82,16 +99,40 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true) {
     const lx = m.label.x + (block.axis === 'y' ? off : 0), ly = m.label.y - (block.axis === 'x' ? off : 0)
     return { m, lx, ly, pill: { x: lx - pillW / 2, y: ly - pillH / 2, w: pillW, h: pillH } }
   })
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+  /* The aisle width label has priority: a clearance label on one slides along its arrow (its centre kept
+     on the arrow, column edge to rack face) to the nearest place clear of every aisle label; with none, it
+     is hidden. The arrows always stay. */
+  const hidden = new Set()
+  if (avoid.length) {
+    const u = block.axis === 'y' ? 'y' : 'x', len = u === 'y' ? 'h' : 'w'
+    for (const k of marks) {
+      const clashes = (p) => avoid.some(r => hit(p, r))
+      if (!clashes(k.pill)) continue
+      const ends = [k.m.shaft[0][u], k.m.arrowhead[0][u]], lo = Math.min(...ends), hi = Math.max(...ends)
+      const half = k.pill[len] / 2, c0 = k.pill[u] + half, eps = 0.5 / lz
+      const at = (c) => ({ ...k.pill, [u]: c - half })
+      const cands = [lo, hi]
+      for (const r of avoid) cands.push(r[u] - half - eps, r[u] + r[len] + half + eps)
+      let best = null
+      for (const c of cands) {
+        if (c < lo - 1e-9 || c > hi + 1e-9 || clashes(at(c))) continue
+        if (best === null || Math.abs(c - c0) < Math.abs(best - c0)) best = c
+      }
+      if (best === null) { hidden.add(k); continue }
+      k.pill = at(best)
+      if (u === 'x') k.lx += best - c0; else k.ly += best - c0
+    }
+  }
   /* The column's two labels would overlap (a column at or near a rack face): only the wider side's label
      is drawn — both arrows stay. */
-  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-  let hidden = null
-  if (marks.length === 2 && hit(marks[0].pill, marks[1].pill)) hidden = (marks[0].m.ft ?? 0) >= (marks[1].m.ft ?? 0) ? marks[1] : marks[0]
+  const shown = marks.filter(k => !hidden.has(k))
+  if (shown.length === 2 && hit(shown[0].pill, shown[1].pill)) hidden.add((shown[0].m.ft ?? 0) >= (shown[1].m.ft ?? 0) ? shown[1] : shown[0])
   for (const k of marks) {
     const { m, lx, ly } = k
     out.push({ op: 'line', points: [m.shaft[0].x, m.shaft[0].y, m.shaft[1].x, m.shaft[1].y], stroke: m.color, strokeWidth: sw },
       { op: 'poly', points: m.arrowhead.flatMap(q => [q.x, q.y]), fill: m.color })
-    if (k === hidden) continue
+    if (hidden.has(k)) continue
     out.push(...pillOps(lx, ly, m.label.text, fs, lz, { color: m.color, bg: m.short ? 'rgba(254,226,226,0.95)' : 'rgba(224,242,254,0.92)', padX: 3 / lz, heightScale: 1.4, rx: 2 / lz, stroke: m.short ? SHORT_COLOR : '#7dd3fc', strokeWidth: 0.5 / lz, opacity: 0.95 }))
   }
   return out

@@ -26,7 +26,7 @@
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
-import { aisleLabelOps, clearanceOps, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
+import { aisleLabelOps, aisleLabelBoxes, clearanceOps, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
 import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
 import { columnGridOps } from '../render/columnDraw'
 import { aisleLabelLayout } from '../canvas2/hitTest'
@@ -209,7 +209,9 @@ export function labelsSVG(objects, gridSize, opts) {
     for (const o of objects) if (!byId.has(o.id)) byId.set(o.id, o)
     if (racks.length && columns.length) {
       const res = checkColumns({ racks, columns, profile: opts.profile, gridSize, pickBothSides: opts.pickBothSides, floors: layoutFloors(objects) })
-      for (const b of res.aisleBlocks) ops.push(...clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels))
+      // a clearance label keeps clear of the aisle width labels drawn above (they have priority)
+      const avoid = opts.showAisles ? aisleLabelBoxes(objects, gridSize, opts.labelSize) : []
+      for (const b of res.aisleBlocks) ops.push(...clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid))
       for (const c of [...res.rackConflicts, ...res.pickBlocks]) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
       for (const h of res.uprightHits) ops.push(...uprightOps(h, byId.get(h.rackId), gridSize, lz))
     }

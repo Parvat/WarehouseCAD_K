@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### CA — Columns in aisles and Generate's aisles on the labels' pairing (BUG 75) · `CA_columnAisles.test.js` (15 tests)
+### CA — Columns in aisles and Generate's aisles on the labels' pairing (BUG 75) · `CA_columnAisles.test.js` (19 tests)
 Code: `generate/rowAisles.js` (new: `neighbourPairs`, `rowAisleGaps`, `rowGaps`, `groupBySegment`),
 `generate/rackFootprint.js` (new); `aisleColumnBlocks` (columnCheck.js), `aisleObjectsForRacks`
 (traceGenerate.js); `reference/columnCheck.v1.js` (its pairing only).
@@ -1935,6 +1935,8 @@ frozen reference took the new pairing (approved).
 | `CA-generate` ×2 | Generate's aisle objects are the labels' pairs — on the layout as saved and on a Generate layout |
 | `CA-labels` ×2 | a column at a rack face (9' / 0.5') whose two clearance labels would overlap: only "9' clear" is drawn, both arrows stay — vertical at the default Label size, horizontal at a custom 60" (its labels stack along the arrow and don't meet before ~55") |
 | `CA-labels-all` ×2 | every column in an aisle at all four Label sizes and 60": two lines and two arrowheads each; drawn labels never overlap; a dropped label is always the narrower side; some dropped and some kept; horizontal at the default size keeps both on the face column |
+| `CA-labels-all (aisle labels)` ×2 | at all four preset Label sizes, with the aisle and cross-aisle width labels' pills (from `aisleLabelOps`): no clearance label overlaps one; two lines and two arrowheads each; a moved label's centre stays on its arrow; clashes / slid / hidden: vertical 2 / 0 / 2, horizontal 25 / 17 / 8; horizontal at the default size the face column's "9' clear" slides along its arrow |
+| `CA-labels-wire` | Overlays.jsx passes `avoid={avoid}` to ColumnClearanceLabels; the PDF passes its boxes to `clearanceOps` |
 | `CA-graph` | rowAisles.js imports only rackFootprint.js and syncSections.js; rackFootprint.js nothing; the four users import rowAisles.js; palletFit.js imports nothing, bayLedger.js imports it and not capacity.js |
 
 **Break-its:** the column check back on the old pairing: CA-fills, CA-block, CA-both, RG-together,
@@ -1942,7 +1944,14 @@ RG-drift, PF-edits, PF-cache (21). Usable reading the aisle blocks: CA-fills, CA
 the old pairing: CA-generate (2). The frozen reference left on the old pairing: PF-edits, PF-cache (9).
 rowAisles.js importing columnCheck back (a cycle): CA-graph (1). No overlap check on the clearance labels:
 CA-labels, CA-labels-all (4). The wider label dropped instead: the same (4). bayLedger.js importing
-capacity.js again (a cycle): CA-graph (1).
+capacity.js again (a cycle): CA-graph (1). The aisle labels' boxes ignored by `clearanceOps`: CA-labels-all
+(aisle labels) (2).
+
+**Aisle width labels have priority** (`aisleLabelBoxes` + `clearanceOps`' `avoid`): a clearance label on
+an aisle or cross-aisle width label slides along its arrow (its centre kept between the column edge and
+the rack face) to the nearest clear place, or is hidden when there is none; the arrows stay. Then the
+two-labels rule above. The canvas takes the boxes where the width labels are drawn (Overlays.jsx, drag
+preview included); the PDF takes them when it draws aisle labels.
 
 **Clearance labels** (`clearanceOps`, render/labelOps.js): when one column's two labels would overlap —
 their pill boxes, after a short gap's pill slides beside the arrow — only the wider side's label is

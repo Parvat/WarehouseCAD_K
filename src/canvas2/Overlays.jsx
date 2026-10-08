@@ -2,6 +2,7 @@ import { Rect, Line, Group } from 'react-konva'
 import { SelectionOutline } from './shapes'
 import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
 import { useMemo, memo } from 'react'
+import { aisleLabelBoxes } from '../render/labelOps'
 import { BlockedFaceMarks, firstById } from './BlockedFaceMarks'
 import { useDragPreview, previewObjects } from './dragPreview'
 import { UprightConflictMarks } from './UprightConflictMarks'
@@ -95,6 +96,16 @@ function OverlaysView({
   const aisleSrc = aisleRigid || !rigid ? pObjects : shifted
   const aisleById = aisleSrc === pObjects ? byId : firstById(aisleSrc)
   const aisles = aislesOn ? aisleSrc.filter(o => o.type === 'aisle') : []
+  /* The aisle width labels' boxes exactly where they are drawn (the aisle labels from aisleSrc, riding the
+     drag offset while rigid; the cross-aisle labels from the shifted layout): a column clearance label keeps
+     clear of them — the aisle width label has priority. */
+  const on = aislesOn && marksOn
+  const ownBoxes = useMemo(() => (on ? aisleLabelBoxes(aisleSrc, gridSize, labelSize, { cross: false }) : []), [on, aisleSrc, gridSize, labelSize])
+  const crossBoxes = useMemo(() => (on ? aisleLabelBoxes(shifted, gridSize, labelSize, { aisles: false }) : []), [on, shifted, gridSize, labelSize])
+  const avoid = useMemo(() => {
+    const ox = aisleRigid ? dx : 0, oy = aisleRigid ? dy : 0
+    return [...(ox || oy ? ownBoxes.map(r => ({ ...r, x: r.x + ox, y: r.y + oy })) : ownBoxes), ...crossBoxes]
+  }, [ownBoxes, crossBoxes, aisleRigid, dx, dy])
   return (
     <>
       {selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} objects={objects} />)}
@@ -110,7 +121,7 @@ function OverlaysView({
       {aislesOn && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} />}
       {/* the Checks layer: clearance arrows and distances, red "under travel"
           marks and aisle shading, X marks, upright flags, oversized bays */}
-      {marksOn && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} showLabels />}
+      {marksOn && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
       {marksOn && <BlockedFaceMarks rackConflicts={pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}
