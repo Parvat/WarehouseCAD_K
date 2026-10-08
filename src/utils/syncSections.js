@@ -10,7 +10,7 @@
 // across the aisles, the same in every section), genSection, and where it was
 // generated (genRunFt / genCrossFt, feet from the building's corner).
 
-import { rackFootprint } from '../generate/columnCheck'
+import { rackFootprint } from '../generate/rackFootprint'
 
 const BEAM_RACKS = new Set(['rack_row', 'rack_double_row'])
 const EPS = 1e-6

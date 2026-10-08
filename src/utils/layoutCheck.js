@@ -2,8 +2,8 @@
 //
 // It only REPORTS — nothing is blocked or moved. Every rule is an existing
 // one, asked here, never copied:
-//   aisles       rowAisleGaps: beam racks paired as the aisle labels pair them
-//                (neighbourPairs, utils/aisleRebuild.js — so a label and its
+//   aisles       rowAisleGaps (generate/rowAisles.js): beam racks paired as the
+//                aisle labels pair them (neighbourPairs — so a label and its
 //                check never disagree), other rack types by rowGaps; each gap
 //                graded by aisleLevel (generate/columnCheck.js)
 //   columns      runColumnCheck (the Column Check): upright hits, columns in
@@ -39,7 +39,8 @@ import { blockedPositionRects } from '../render/labelOps'
 import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate/usableCapacity'
 import { rackIssues } from './bayBeam'
 import { cutOffRacks } from '../generate/aisleAccess'
-import { neighbourPairs } from './aisleRebuild'
+import { rowAisleGaps } from '../generate/rowAisles'
+export { rowAisleGaps }
 import { oversizedBayIndices } from './capacity'
 import { fmtLen, fmtLenDown, sectionLabel, sectionCrossAisles } from './copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
@@ -90,28 +91,6 @@ const union = (boxes) => {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
-const BEAMS = new Set(['rack_row', 'rack_double_row'])
-/** The aisles between neighbouring rows, every one: [{ top, bot, gapLen, box }] (world px; top before bot
- *  across). Beam racks are paired exactly as the aisle labels pair them — facing stretches, per line
- *  (neighbourPairs) — whatever the sections or the wall rows; the old pairing (rowGaps over segments joined
- *  by any shared run) chained a layout's sections into one through its full-length wall rows and compared
- *  only neighbours in one list across, so it missed almost every aisle (BUG 74). A pair with any other rack
- *  type is found by rowGaps, as before. `racks`: right-angled racks. */
-export function rowAisleGaps(racks) {
-  const beams = racks.filter(r => BEAMS.has(r.type)), byId = new Map(beams.map(r => [r.id, r]))
-  const out = []
-  for (const [a, b] of neighbourPairs(beams).pairs.values()) {
-    const p = byId.get(a), q = byId.get(b)
-    const fp = rackFootprint(p), fq = rackFootprint(q), rot = fp.rotated
-    const across = (f) => (rot ? [f.x, f.x + f.w] : [f.y, f.y + f.h]), along = (f) => (rot ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
-    const [top, bot] = across(fp)[1] <= across(fq)[0] ? [p, q] : [q, p]
-    const ft = rackFootprint(top), fb = rackFootprint(bot)
-    const lo = across(ft)[1], hi = across(fb)[0], r0 = Math.max(along(ft)[0], along(fb)[0]), r1 = Math.min(along(ft)[1], along(fb)[1])
-    out.push({ top, bot, gapLen: hi - lo, box: rot ? { x: lo, y: r0, w: hi - lo, h: r1 - r0 } : { x: r0, y: lo, w: r1 - r0, h: hi - lo } })
-  }
-  for (const g of rowGaps(racks)) if (!BEAMS.has(g.top.type) || !BEAMS.has(g.bot.type)) out.push(g)
-  return out
-}
 
 /** Every problem in \`objects\`: { errors: [item], warnings: [item] }. */
 export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 40, pickBothSides = false } = {}) {

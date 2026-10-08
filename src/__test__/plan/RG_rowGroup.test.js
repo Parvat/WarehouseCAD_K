@@ -305,27 +305,41 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     for (const i of [1, 2, 3]) expect(RG.geom(pairOf(key(i, 7))).s0).toBeCloseTo(s0.get(i), 6)
   })
 
-  it('RG-together: every row in the group, one moved 3.875\' across → the others move with it: no aisle warnings (rows moving together are judged where they end up); the two wall rows go through the wall — applied, with that warning', async () => {
+  it('RG-together: every row in the group, one moved 3.875\' across → the others move with it: no aisle warning between rows (rows moving together are judged where they end up); the two wall rows go through the wall — applied, with that warning; 23 rows end up with a column in their aisle leaving under 8\' (the column-in-aisle check, BUG 75) — warned', async () => {
     load(filled(vert))
     addRowsInBox({ x: -1e6, y: -1e6, w: 2e6, h: 2e6 })
     const n = st().keys.length
     await moveRow(key(4, 7), 3.875 * GS, 0, vert)
     const p = st().pending
-    expect(p.summary.text).toBe(`Apply to the other ${n - 1} rows? 2 will have warnings.`)
+    expect(p.summary.text).toBe(`Apply to the other ${n - 1} rows? 25 will have warnings.`)
     expect(p.summary.skipped).toEqual([])
-    expect(p.summary.warned).toHaveLength(2)
-    for (const w of p.summary.warned) { expect(w.reasons).toEqual(expect.arrayContaining(['through a wall'])); expect(w.reasons.some(r => /aisle/.test(r))).toBe(false) }
+    expect(p.summary.warned).toHaveLength(25)
+    const wall = p.summary.warned.filter(w => w.reasons.includes('through a wall')), cols = p.summary.warned.filter(w => !w.reasons.includes('through a wall'))
+    expect(wall).toHaveLength(2)
+    for (const w of wall) expect(w.reasons.some(r => /aisle/.test(r))).toBe(false)
+    expect(cols).toHaveLength(23)
+    for (const w of cols) expect(w.reasons).toEqual(['an aisle under the travel width'])
     applyPending(); await settle()
+    // the reason is a column standing in the aisle, never the gap between the rows
+    const { checkLayout } = await import('../../utils/layoutCheck')
+    const drive = checkLayout(objs(), { gridSize: GS }).errors.filter(e => e.kind === 'aisle-drive')
+    expect(drive.length).toBeGreaterThan(0)
+    expect(drive.every(e => /a column leaves/.test(e.text))).toBe(true)
     expect(RG.geom(pairOf(key(1, 7))).s0 - RG.geom(pairOf(key(1, 8))).s0).toBeCloseTo(RG.geom(filled(vert).find(o => o.genSection === 1 && o.rowIndex === 7 && o.type === 'rack_double_row')).s0 - RG.geom(filled(vert).find(o => o.genSection === 1 && o.rowIndex === 8 && o.type === 'rack_double_row')).s0, 6)
   })
 
-  it('RG-drift: a drag with a snap\'s drift along (1\' across, 0.9\' along) → only the across part is replayed: the others move 1\' across and not at all along', async () => {
+  it('RG-drift: a drag with a snap\'s drift along (1\' across, 0.9\' along) → only the across part is replayed: the others move 1\' across and not at all along; 3 warned — 2 with a column in their aisle leaving under 8\' (the column-in-aisle check, BUG 75)', async () => {
     load(filled(vert))
     addRowsInBox(runBox(vert, ...SEC4))
     const g0 = RG.geom(pairOf(key(4, 9)))
     await moveRow(key(4, 7), GS, 0.9 * GS, vert)
-    expect(st().pending.summary.text).toBe('Apply to the other 13 rows? 1 will have warnings.')
+    expect(st().pending.summary.text).toBe('Apply to the other 13 rows? 3 will have warnings.')
+    expect(st().pending.summary.warned.filter(w => w.reasons.includes('an aisle under the travel width'))).toHaveLength(2)
     applyPending(); await settle()
+    const { checkLayout } = await import('../../utils/layoutCheck')
+    const drive = checkLayout(objs(), { gridSize: GS }).errors.filter(e => e.kind === 'aisle-drive')
+    expect(drive.length).toBeGreaterThan(0)
+    expect(drive.every(e => /a column leaves/.test(e.text))).toBe(true)
     const g1 = RG.geom(pairOf(key(4, 9)))
     expect(g1.s0 - g0.s0).toBeCloseTo(GS, 6)
     expect(g1.r0).toBeCloseTo(g0.r0, 9)

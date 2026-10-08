@@ -6069,7 +6069,7 @@ RW. The column check's same fault is BUG 75.
 
 ---
 
-## BUG 75 — the column-in-aisle check and Generate's aisles miss most aisles on a layout with sections  (2026-10-08, open)
+## BUG 75 — the column-in-aisle check and Generate's aisles miss most aisles on a layout with sections  (2026-10-08, fixed 2026-10-08)
 Symptom:  Found with BUG 74: the same pairing fault in two more places. The
 column check's "a column in an aisle" (`aisleColumnBlocks`, columnCheck.js —
 the clearance arrows, the red aisle marks, the positions a column in an aisle
@@ -6081,10 +6081,13 @@ so full-length wall rows chain all the sections into one segment, and
 `rowGaps` compares only neighbours in that segment's list across — on the
 hand-check layout almost no aisle is seen.
 
-Fix:      Open — next after BUG 74. Wanted: the same pairing as the aisle
-labels and Check layout's aisle check (`neighbourPairs`). It changes the
-column check's figures (positions lost in aisles, "if absorbed / removed"), so
-count them on the fixture before it lands.
+Fix:      One pairing module, `generate/rowAisles.js` (neighbourPairs,
+rowAisleGaps), used by the aisle labels, Check layout, `aisleColumnBlocks`
+and `aisleObjectsForRacks` — no two files import each other. The column check
+now sees every aisle: 23 / 18 / 18 / 23 columns in aisles on the fixture's
+fills, all passable on one side. Usable and the X marks are unchanged — they
+come from pick zones, which never paired rows (the "positions lost" feared
+above don't move). Generate's own layouts already paired right. Tests: area CA.
 
 ---
 

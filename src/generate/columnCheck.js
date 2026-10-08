@@ -11,6 +11,10 @@
 
 import { bayAtPoint, uprightXs } from '../render/rackOps'
 import { positionsPerBeam, blockedPositionIndices, positionFootprintIn } from '../utils/capacity'
+import { rackFootprint } from './rackFootprint'
+// the rows' pairing lives in rowAisles.js (one pairing for the aisle labels, Check layout, this check and Generate)
+import { groupBySegment, rowGaps, rowAisleGaps } from './rowAisles'
+export { rackFootprint, groupBySegment, rowGaps }
 
 const GS = 40 // px per foot (v16b convention)
 
@@ -73,59 +77,7 @@ const columnsNear = (columns, box) => {
   return out
 }
 
-/* A rack's TRUE world footprint. canvas2 rotates every object IN PLACE
- * around its own centre (shapes.jsx's spin()) — a rack's stored x/y/width/
- * height are always the PRE-rotation box (beams along local X, depth along
- * local Y, exactly as traceGenerate.js's beamRackObject builds it, angle or
- * not). For a 90°/270° rack (GENERATOR_SPEC_V10's vertical orientation —
- * the first thing that actually produces one), the real box is centred at
- * that same point with width and height swapped. Every reader of a rack's
- * geometry below needs THIS, not the stored fields raw, or a vertical
- * layout's columns/aisles get tested against the wrong rectangle entirely. */
-export function rackFootprint(r) {
-  const rot = ((r.rotation || 0) % 180 + 180) % 180
-  if (rot === 90) {
-    const cx = r.x + r.width / 2, cy = r.y + r.height / 2
-    return { x: cx - r.height / 2, y: cy - r.width / 2, w: r.height, h: r.width, rotated: true }
-  }
-  return { x: r.x, y: r.y, w: r.width, h: r.height, rotated: false }
-}
 
-/* Group racks into runs (segments) by shared-run overlap — a travel aisle
- * only exists BETWEEN two racks that actually face each other along the
- * same run; a rack in a different run (across a cross-aisle) shares no
- * aisle with it even if it happens to sit at the same Y. "Same run" means
- * sharing the cross-axis range: X-overlap for horizontal racks (stacked
- * down Y), Y-overlap for vertical ones (stacked across X, GENERATOR_SPEC_
- * V10's orientation) — mismatched orientation never shares a run. Union-
- * find over pairwise overlap rather than exact position equality, so a
- * hand-resized bay (still overlapping its neighbors' span) still groups
- * correctly, not just an untouched generated layout sharing one exact x. */
-export function groupBySegment(racks) {
-  const n = racks.length
-  const feet = racks.map(rackFootprint)
-  const parent = Array.from({ length: n }, (_, i) => i)
-  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] } return i }
-  const union = (i, j) => { const ri = find(i), rj = find(j); if (ri !== rj) parent[ri] = rj }
-  const sameRun = (a, b) => {
-    if (a.rotated !== b.rotated) return false
-    return a.rotated
-      ? a.y < b.y + b.h && a.y + a.h > b.y   // vertical: share the same Y range
-      : a.x < b.x + b.w && a.x + a.w > b.x   // horizontal: share the same X range
-  }
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      if (sameRun(feet[i], feet[j])) union(i, j)
-    }
-  }
-  const groups = new Map()
-  for (let i = 0; i < n; i++) {
-    const root = find(i)
-    if (!groups.has(root)) groups.set(root, [])
-    groups.get(root).push(racks[i])
-  }
-  return [...groups.values()]
-}
 
 /* Expand a v16b column_grid object into individual column footprints (px).
  * A grid LINE is a column's centreline, not a corner — standard structural
@@ -422,41 +374,13 @@ export function columnsOnUprights({ racks = [], columns = [], gridSize = GS }) {
  *  `pinched` — neither side reaches travelFt, so a forklift can't pass on
  *  either side (the same condition as accessibility level 1). The drawing
  *  shades that aisle red; levels and capacity are untouched. */
-/** The gaps between neighbouring rows of one run — the aisles, measured
- *  along the axis the rows are stacked on: [{ top, bot (the racks), stacked,
- *  gapStart, gapLen, crossStart, crossEnd, box }] (px). */
-export function rowGaps(racks) {
-  const out = []
-  for (const run of groupBySegment(racks)) {
-    if (!run.length) continue
-    const stacked = rackFootprint(run[0]).rotated   // true: stacked along X (vertical rows). false: along Y.
-    const feet = run.map(r => ({ r, f: rackFootprint(r) }))
-    feet.sort((a, b) => stacked ? a.f.x - b.f.x : a.f.y - b.f.y)
-    for (let i = 0; i < feet.length - 1; i++) {
-      const top = feet[i], bot = feet[i + 1]
-      const gapStart = stacked ? (top.f.x + top.f.w) : (top.f.y + top.f.h)
-      const gapLen   = stacked ? (bot.f.x - gapStart) : (bot.f.y - gapStart)
-      if (gapLen <= 0) continue
-      const crossStart = Math.max(stacked ? top.f.y : top.f.x, stacked ? bot.f.y : bot.f.x)
-      const crossEnd   = Math.min(
-        stacked ? top.f.y + top.f.h : top.f.x + top.f.w,
-        stacked ? bot.f.y + bot.f.h : bot.f.x + bot.f.w,
-      )
-      if (crossEnd <= crossStart) continue
-      const box = stacked
-        ? { x: gapStart, y: crossStart, w: gapLen, h: crossEnd - crossStart }
-        : { x: crossStart, y: gapStart, w: crossEnd - crossStart, h: gapLen }
-      out.push({ top: top.r, bot: bot.r, stacked, gapStart, gapLen, crossStart, crossEnd, box })
-    }
-  }
-  return out
-}
 
 export function aisleColumnBlocks({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, pickBothSides = false }) {
   const travelPx = (profile.travelFt ?? 8) * gridSize
   const aisleBlocks = []
   const redMarks = []
-  for (const g of rowGaps(racks)) {
+  // every aisle between facing rows, paired as the aisle labels pair them (rowAisleGaps — BUG 75)
+  for (const g of rowAisleGaps(racks)) {
     {
       const top = { r: g.top }, bot = { r: g.bot }, stacked = g.stacked
       const { gapStart, gapLen, crossStart, crossEnd } = g, aisleBox = g.box

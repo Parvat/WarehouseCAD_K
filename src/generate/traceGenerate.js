@@ -22,7 +22,8 @@ import { generatedLayers, layerForType } from '../utils/layers'
 import { autoSave, serializeScene } from '../utils/saveLoad'
 import { sizingSheetLayout, generateFixtures } from './sizingLayout'
 import { DEFAULT_RULES } from '../rules/defaults'
-import { rackFootprint, groupBySegment } from './columnCheck'
+import { rackFootprint } from './columnCheck'
+import { neighbourPairs } from './rowAisles'
 import { usableCapacity, mheProfile } from './usableCapacity'
 import { dropUnreachableFaces } from './faceReach'
 import { giveWayIn } from './aisleAccess'
@@ -170,20 +171,9 @@ export function placementToObject(p) {
  *  OVERLAP in that true box, which holds for either orientation without
  *  needing to know which one produced these racks. */
 export function aisleObjectsForRacks(racks) {
+  // the same pairing as the aisle labels, Check layout and the column check (rowAisles.js — BUG 75)
   const beams = racks.filter(r => BEAM_TYPES.has(r.type))
-  const aisles = []
-  for (const run of groupBySegment(beams)) {
-    if (run.length < 2) continue
-    const stacked = rackFootprint(run[0]).rotated   // true: bands run along X. false: along Y.
-    const sorted = [...run].sort((a, b) => {
-      const fa = rackFootprint(a), fb = rackFootprint(b)
-      return stacked ? fa.x - fb.x : fa.y - fb.y
-    })
-    for (let i = 0; i < sorted.length - 1; i++) {
-      aisles.push({ type: 'aisle', row1Id: sorted[i].id, row2Id: sorted[i + 1].id, label: '' })
-    }
-  }
-  return aisles
+  return [...neighbourPairs(beams).pairs.values()].map(([row1Id, row2Id]) => ({ type: 'aisle', row1Id, row2Id, label: '' }))
 }
 
 /** Auto orientation (BUG 47): runs `generateLayout` once per orientation,

@@ -1907,6 +1907,44 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### CA — Columns in aisles and Generate's aisles on the labels' pairing (BUG 75) · `CA_columnAisles.test.js` (11 tests)
+Code: `generate/rowAisles.js` (new: `neighbourPairs`, `rowAisleGaps`, `rowGaps`, `groupBySegment`),
+`generate/rackFootprint.js` (new); `aisleColumnBlocks` (columnCheck.js), `aisleObjectsForRacks`
+(traceGenerate.js); `reference/columnCheck.v1.js` (its pairing only).
+
+One pairing module: the aisle labels (aisleRebuild.js), Check layout, the column-in-aisle check and
+Generate's aisle objects all pair rows with `rowAisles.js`; it imports only `rackFootprint.js` and
+`syncSections.js`, and no two files import each other (`rackFootprint`, `rowGaps`, `groupBySegment`
+and `neighbourPairs` are re-exported where they used to live). The column check now looks at every aisle
+(56 / 54 / 54 / 55 on the four fills; 3 / 0 / 0 / 2 before) and finds 23 / 18 / 18 / 23 columns standing in
+them — every one passable on one side (8' or more), none blocked, so no new Check layout error; their
+clearance arrows now draw, and with "Require pick from both sides" they are flagged. Usable and the X
+marks don't change: they come from columns in a rack and in a position's pick zone (`pickZoneBlocks`),
+which never paired rows. Generate's own layouts already paired right (its wall rows split at
+cross-aisles): its aisles, orientation choice and counts don't change.
+
+Changed: `RG-together` (2 → 25 warned: 23 with a column in their aisle leaving under 8' once every row moves
+3.875' across) and `RG-drift` (1 → 3: 2 such) — the reason checked to be "a column leaves …"; the PF tests'
+frozen reference took the new pairing (approved).
+
+| Test | Asserts |
+|---|---|
+| `CA-fills` ×4 | the four fills: 23 / 18 / 18 / 23 columns in aisles, all one-side-only, none blocked, no red marks; usable 10,648 / 10,512 / 10,512 / 10,632 and pick-zone losses 184 / 176 / 176 / 184 as before; no "a column leaves" error |
+| `CA-block` ×2 | the layout as saved (both ways): a column 0.5' off a face, 9' on its other side; that row moved 1.5' toward it → 7.5' clear, blocked, a red mark; "a column leaves 7' 6", needs 8' to drive" |
+| `CA-both` ×2 | pick from both sides on: the 23 flagged, 23 red marks, 23 blocked aisles; usable unchanged |
+| `CA-generate` ×2 | Generate's aisle objects are the labels' pairs — on the layout as saved and on a Generate layout |
+| `CA-graph` | rowAisles.js imports only rackFootprint.js and syncSections.js; rackFootprint.js nothing; the four users import rowAisles.js |
+
+**Break-its:** the column check back on the old pairing: CA-fills, CA-block, CA-both, RG-together,
+RG-drift, PF-edits, PF-cache (21). Usable reading the aisle blocks: CA-fills, CA-both (6). Generate back on
+the old pairing: CA-generate (2). The frozen reference left on the old pairing: PF-edits, PF-cache (9).
+rowAisles.js importing columnCheck back (a cycle): CA-graph (1).
+
+**Checked in the app** (real mouse, the layout as saved, both orientations): the column between rows 1/8
+and 1/9 shows its clearance arrows (9' / 0.5'); the panel 10,832 positions, 10,648 usable; row 1/8 dragged
+1.5' toward it → "Aisle between rows 8 and 9, section 1: a column leaves 7' 6", needs 8' to drive", the
+red blocked mark, "2 aisles blocked" in the Column Check panel, usable still 10,648; Ctrl+Z → gone.
+
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.
 

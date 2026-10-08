@@ -14,6 +14,8 @@
 
 import { bayAtPoint, uprightXs } from '../../../render/rackOps'
 import { positionsPerBeam, blockedPositionIndices, positionFootprintIn } from '../../../utils/capacity'
+// the rows' pairing: the live one (BUG 75 changed it on purpose) — the only change to this frozen copy
+import { rowAisleGaps } from '../../../generate/rowAisles'
 
 const GS = 40 // px per foot (v16b convention)
 
@@ -330,28 +332,11 @@ export function aisleColumnBlocks({ racks = [], columns = [], profile = MHE_PROF
   const aislePx  = profile.aisleFt * gridSize
   const aisleBlocks = []
   const redMarks = []
-  const segments = groupBySegment(racks)
-  for (const run of segments) {
-    if (!run.length) continue
-    const stacked = rackFootprint(run[0]).rotated   // true: stacked along X (vertical rows). false: along Y.
-    const feet = run.map(r => ({ r, f: rackFootprint(r) }))
-    feet.sort((a, b) => stacked ? a.f.x - b.f.x : a.f.y - b.f.y)
-
-    for (let i = 0; i < feet.length - 1; i++) {
-      const top = feet[i], bot = feet[i + 1]
-      const gapStart = stacked ? (top.f.x + top.f.w) : (top.f.y + top.f.h)
-      const gapLen   = stacked ? (bot.f.x - gapStart) : (bot.f.y - gapStart)
-      if (gapLen <= 0) continue
-      const crossStart = Math.max(stacked ? top.f.y : top.f.x, stacked ? bot.f.y : bot.f.x)
-      const crossEnd   = Math.min(
-        stacked ? top.f.y + top.f.h : top.f.x + top.f.w,
-        stacked ? bot.f.y + bot.f.h : bot.f.x + bot.f.w,
-      )
-      if (crossEnd <= crossStart) continue
-
-      const aisleBox = stacked
-        ? { x: gapStart, y: crossStart, w: gapLen, h: crossEnd - crossStart }
-        : { x: crossStart, y: gapStart, w: crossEnd - crossStart, h: gapLen }
+  for (const g of rowAisleGaps(racks)) {
+    {
+      const top = { r: g.top }, bot = { r: g.bot }, stacked = g.stacked
+      const { gapStart, gapLen, crossStart, crossEnd } = g
+      const aisleBox = g.box
       columns.forEach((col, ci) => {
         if (!overlaps(col, aisleBox)) return
         // Widest clear pass on either side of the column within the aisle,

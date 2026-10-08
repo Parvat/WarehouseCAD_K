@@ -410,7 +410,7 @@ describe('LC — one rule each', () => {
     expect(cc).toMatch(/const level {4}= aisleLevel\(clearPx, profile, gridSize\)/)
     expect(src('src/utils/copyChange.js')).toMatch(/aisleLevel\(g, profile, gridSize, gridSize \/ 24\) < 3/)
     const lc = src('src/utils/layoutCheck.js')
-    for (const f of ['rowGaps', 'aisleLevel', 'rackReachable', 'runColumnCheck', 'rackIssues', 'oversizedBayIndices']) expect(lc).toMatch(new RegExp(f + '\\('))
+    for (const f of ['rowAisleGaps', 'aisleLevel', 'rackReachable', 'runColumnCheck', 'rackIssues', 'oversizedBayIndices']) expect(lc).toMatch(new RegExp(f + '\\('))
     expect(lc).not.toMatch(/aisleFt \* gridSize\) *[<>]|travelFt \?\? 8\) \* gridSize *[<>]/)   // no width compared by hand
     expect(src('src/components/RightPanel/index.jsx')).toMatch(/<LayoutCheckPanel \/>/)
     expect(src('src/components/Toolbar/TopBar.jsx')).toMatch(/<CheckLayoutButton \/>/)
