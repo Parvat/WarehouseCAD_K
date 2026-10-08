@@ -267,8 +267,9 @@ export function AisleLabelView({ L, name, lz }) {
 /* One width label per cross-aisle (crossAisles.js), in the aisle-label style.
    There are only a few, so they are simply derived from the (previewed)
    objects they are given. */
-export const CrossAisleLabels = memo(function CrossAisleLabels({ objects, lz, gridSize = 40 }) {
-  const list = useMemo(() => crossAisleLabels(objects, gridSize), [objects, gridSize])
+export const CrossAisleLabels = memo(function CrossAisleLabels({ objects, lz, gridSize = 40, profile = null }) {
+  // `profile`: grade them as Check layout does (red over a listed cross-aisle), null when the colours are off
+  const list = useMemo(() => crossAisleLabels(objects, gridSize, { profile }), [objects, gridSize, profile])
   return <>{list.map(L => <AisleLabelView key={L.key} L={L} name={'cross-aisle:' + L.key} lz={lz} />)}</>
 })
 

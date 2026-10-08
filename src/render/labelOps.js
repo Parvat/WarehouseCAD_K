@@ -43,7 +43,8 @@ export function pillOps(cx, cy, text, fontSize, lz, { color = '#4a9eff', bg = '#
  *  station, the width in a pill. */
 /** An aisle width label's look by its grade (L.level, rowAisleLevel): 3 — the usual amber-on-cream; 2 — under
  *  the pick width, a filled amber pill in Check layout's amber; 1 — under the drive width, a filled red pill
- *  in Check layout's red (the "under travel" clearance labels' style). Cross-aisle labels carry no level. */
+ *  in Check layout's red (the "under travel" clearance labels' style). A cross-aisle label is 1 or 3 only
+ *  (crossAisleLabels: red over a cross-aisle Check layout lists as an error). */
 export const AISLE_PICK_COLOR = '#B87309', AISLE_DRIVE_COLOR = '#C0392B'
 const AISLE_LOOK = {
   3: { clr: '#f0b429', text: '#92400e', bg: 'rgba(255,251,235,0.9)', stroke: '#f0b429', sw: 0.5 },
@@ -84,7 +85,7 @@ export function aisleLabelBoxes(objects, gridSize = 40, labelSize, { aisles = tr
     const L = aisleLabelLayout(a, objects, gridSize, { profile })
     if (L) take(aisleLabelOps(L, aisleLabelScale(a, labelSize, gridSize)))
   }
-  if (cross) { const lz = labelScale(labelSize, gridSize); for (const L of crossAisleLabels(objects, gridSize)) take(aisleLabelOps(L, lz)) }
+  if (cross) { const lz = labelScale(labelSize, gridSize); for (const L of crossAisleLabels(objects, gridSize, { profile })) take(aisleLabelOps(L, lz)) }
   return out
 }
 

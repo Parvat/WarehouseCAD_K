@@ -6,7 +6,7 @@
 // (Copying row changes across sections lived here too; the Row group replaced it — utils/rowGroup.js.)
 // Pure: no store, no React.
 
-import { rackFootprint, MHE_PROFILES, aisleLevel } from '../generate/columnCheck'
+import { rackFootprint, MHE_PROFILES, aisleLevel, underTravel } from '../generate/columnCheck'
 import { layoutColumns } from '../generate/usableCapacity'
 import { rackIssues } from './bayBeam'
 import { buildingSections } from './syncSections'
@@ -100,6 +100,14 @@ export function sectionCrossAisles(objects, fpId, rotated) {
     }
   }
   return out
+}
+
+/** THE cross-aisle failure: the per-line cross-aisles between sections (sectionCrossAisles) under the
+ *  forklift's travel width, to 0.001 ft (underTravel). Check layout lists each as an error, and the cross-aisle
+ *  width label is red over any of them — one rule, so the two can never disagree. */
+export function failingCrossAisles(objects, fpId, rotated, profile = MHE_PROFILES.reach, gridSize = 40) {
+  const travelPx = (profile.travelFt ?? 8) * gridSize
+  return sectionCrossAisles(objects, fpId, rotated).filter(g => underTravel(g.hi - g.lo, travelPx, gridSize))
 }
 
 /** The cross-aisles between sections, for placement's warning ("In the cross-aisle between sections 1 and

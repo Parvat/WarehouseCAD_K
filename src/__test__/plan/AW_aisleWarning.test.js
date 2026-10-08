@@ -17,8 +17,12 @@ import { aisleLabelOps, AISLE_PICK_COLOR, AISLE_DRIVE_COLOR } from '../../render
 import { labelScale } from '../../render/labelSize'
 import { setColumnCheckView } from '../../generate/columnCheckView'
 import * as RG from '../../utils/rowGroup'
+import { crossAisleLabels } from '../../canvas2/crossAisles'
+import { generateAndPlace } from '../../generate/traceGenerate'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
+const mem = new Map()
+globalThis.localStorage = globalThis.localStorage || { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)) }
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const turn = (o) => {
@@ -99,5 +103,59 @@ describe('AW — the switches and the PDF', () => {
     expect(svg(true)).toContain(RED_PILL)
     expect(svg(true)).toContain(`7' 11`)
     expect(svg(false)).not.toContain(RED_PILL)
+  })
+})
+
+// ── cross-aisles: red over a cross-aisle Check layout lists (failingCrossAisles), no amber level ──────────────
+/** A Generate layout (its wall rows split at the cross-aisles, so each has its label); one rack in a line
+ *  beside the section 2 / 3 cross-aisle moved along its run so that line's gap is `ft`. `sections`: false strips
+ *  the section stamps (a layout placed by hand: the error rule sees no cross-aisle). */
+async function crossNarrowed(vert, ft, { sections = true } = {}) {
+  const store = (await import('../../store/useCanvasStore')).useCanvasStore
+  store.setState({ objects: [], groups: [], history: [JSON.stringify({ objects: [], groups: [] })], historyIndex: 0 })
+  generateAndPlace({ lengthFt: vert ? 250 : 500, widthFt: vert ? 500 : 250, gridXFt: 30, gridYFt: 30, mhe: 'reach', orientation: vert ? 'vertical' : 'horizontal', rackType: 'rack_double_row', dockDoors: 0 })
+  let objs = store.getState().objects
+  const L0 = crossAisleLabels(objs, GS).sort((a, b) => a.gapLo - b.gapLo)[1]        // the 2 / 3 cross-aisle
+  const run = (o) => { const f = rackFootprint(o); return f.rotated ? [f.y, f.y + f.h] : [f.x, f.x + f.w] }
+  const mover = objs.find(o => BEAM.has(o.type) && Math.abs(run(o)[1] - L0.gapLo) < 1e-6)
+  const d = (L0.gapHi - L0.gapLo) - ft * GS
+  objs = objs.map(o => (o.id === mover.id ? RG.movedAlong(o, d) : o))
+  if (!sections) objs = objs.map(o => { const { genSection, ...rest } = o; return rest })
+  const label = crossAisleLabels(objs, GS, { profile: REACH }).find(l => Math.abs(l.gapLo - (L0.gapLo + d)) < 1e-6 && Math.abs(l.gapHi - L0.gapHi) < 1e-6)
+  return { objs, label, plain: crossAisleLabels(objs, GS).find(l => l.key === label?.key), mover }
+}
+const crossListed = (objs, id) => checkLayout(objs, { gridSize: GS, profile: REACH }).errors.filter(e => e.kind === 'cross-aisle' && e.ids.includes(id))
+
+describe.each([['vertical', true], ['horizontal', false]])('AW cross-aisles — %s', (_, vert) => {
+  it.each([
+    [8.0, 3, null, `8'`, '#f0b429'],
+    [7.99, 1, 'cross-aisle', `7' 11"`, AISLE_DRIVE_COLOR],
+  ])('AW-cross: a row grown into the cross-aisle, its line\'s gap %s ft — the label graded as Check layout lists that cross-aisle (level %s, %s), reads %s, in its colour; colours off: the usual label', async (ft, level, kind, text, stroke) => {
+    const { objs, label, plain, mover } = await crossNarrowed(vert, ft)
+    expect(label, 'the cross-aisle keeps its label').toBeTruthy()
+    expect(label.gapHi - label.gapLo).toBeCloseTo(ft * GS, 6)
+    const items = crossListed(objs, mover.id)
+    expect(items.map(e => e.kind)).toEqual(kind ? [kind] : [])
+    expect(label.level).toBe(level)
+    expect(label.text).toBe(text)
+    if (kind) expect(items[0].text).toContain(`: ${text}, needs 8' to drive`)
+    expect(pill(label).stroke).toBe(stroke)
+    expect([plain.level, plain.text, pill(plain).stroke]).toEqual([3, `8'`, '#f0b429'])
+  })
+  it('AW-cross-ignored: the same 7.99 ft gap on a layout with no sections (the error rule ignores it) — no cross-aisle listed, the label uncoloured', async () => {
+    const { objs, label, mover } = await crossNarrowed(vert, 7.99, { sections: false })
+    expect(crossListed(objs, mover.id)).toEqual([])
+    expect([label.level, label.text, pill(label).stroke]).toEqual([3, `8'`, '#f0b429'])
+  })
+})
+
+describe('AW cross-aisles — the PDF', () => {
+  it('AW-cross-pdf: the PDF grades cross-aisle labels under the same switches — red, "7\' 11", with markings on; not with them off', async () => {
+    const { labelsSVG } = await import('../../export/pdfExport')
+    const { objs } = await crossNarrowed(true, 7.99)
+    const svg = (showMarks) => labelsSVG(objs, GS, { labelSize: 'medium', showAisles: true, showMarks, showColumnLabels: true, profile: REACH, pickBothSides: false })
+    expect(svg(true)).toContain('rgba(254,226,226,0.95)')
+    expect(svg(true)).toContain(`7' 11`)
+    expect(svg(false)).not.toContain('rgba(254,226,226,0.95)')
   })
 })

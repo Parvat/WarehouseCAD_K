@@ -107,7 +107,7 @@ function OverlaysView({
      clear of them — the aisle width label has priority. */
   const on = aislesOn && marksOn
   const ownBoxes = useMemo(() => (on ? aisleLabelBoxes(aisleSrc, gridSize, labelSize, { cross: false, profile: warnProfile }) : []), [on, aisleSrc, gridSize, labelSize, warnProfile])
-  const crossBoxes = useMemo(() => (on ? aisleLabelBoxes(shifted, gridSize, labelSize, { aisles: false }) : []), [on, shifted, gridSize, labelSize])
+  const crossBoxes = useMemo(() => (on ? aisleLabelBoxes(shifted, gridSize, labelSize, { aisles: false, profile: warnProfile }) : []), [on, shifted, gridSize, labelSize, warnProfile])
   const avoid = useMemo(() => {
     const ox = aisleRigid ? dx : 0, oy = aisleRigid ? dy : 0
     return [...(ox || oy ? ownBoxes.map(r => ({ ...r, x: r.x + ox, y: r.y + oy })) : ownBoxes), ...crossBoxes]
@@ -124,7 +124,7 @@ function OverlaysView({
       {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={aisleLabelScale(a, labelSize, gridSize)} gridSize={gridSize} profile={warnProfile} />)}
       </Group>
       {/* one width label per cross-aisle; few, so drawn from the previewed layout every drag frame */}
-      {aislesOn && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} />}
+      {aislesOn && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} profile={warnProfile} />}
       {/* the Checks layer: clearance arrows and distances, red "under travel"
           marks and aisle shading, X marks, upright flags, oversized bays */}
       {marksOn && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels />}

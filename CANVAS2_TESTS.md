@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### AW — The aisle width label shows an aisle under the forklift widths · `AW_aisleWarning.test.js` (8 tests)
+### AW — The aisle width label shows an aisle under the forklift widths · `AW_aisleWarning.test.js` (15 tests)
 Code: `rowAisleLevel` + `AISLE_MIN_FT` (generate/columnCheck.js, new); `aisleLabelLayout` (`profile` → `level`,
 a failing width rounded down) and `aisleWarnProfile` (canvas2/hitTest.js); `aisleLabelOps` colours by level
 (`AISLE_PICK_COLOR` / `AISLE_DRIVE_COLOR`, render/labelOps.js); Overlays.jsx, DimensionLabels.jsx,
@@ -1928,10 +1928,27 @@ and it checks that `rowAisleLevel` is `aisleLevel` past the back-to-back cut.
 |---|---|
 | `AW-grade` ×6 | both orientations, a column-free 10' 6" aisle narrowed to 10.49 / 10.5 / 7.99 ft: label level 2 / 3 / 1 and Check layout's item for that pair `aisle-pick` / none / `aisle-drive`; the label reads 10' 5" / 10' 6" / 7' 11", the same width as the listed item; pill stroke amber / usual / red; with the colours off, the usual label (10' 6" / 10' 6" / 8') |
 | `AW-colours` | the label's amber and red are Check layout's `HL.amber` / `HL.red` |
+| `AW-cross` ×4 | a Generate layout, both orientations, a rack beside the section 2 / 3 cross-aisle moved so its line's gap is 8.00 / 7.99 ft: the label level 3 / 1 and Check layout's `cross-aisle` item none / listed; reads 8' / 7' 11" (the listed width); usual / red pill; colours off: the usual 8' |
+| `AW-cross-ignored` ×2 | the same 7.99 ft gap with the section stamps stripped (a hand-placed layout — the error rule sees no cross-aisle): nothing listed, the label uncoloured |
+| `AW-cross-pdf` | the PDF at 7.99 ft: the red pill and "7' 11" with markings on, not with them off |
 | `AW-layers` | graded only with the Checks layer shown and markings on (`aisleWarnProfile`); Overlays passes its profile only then; the PDF at 7.99 ft has the red pill and "7' 11" with markings on, not with them off |
 
 **Break-it:** the label graded on its displayed (rounded) width instead of the measured one: AW-grade at
-10.49 and 7.99 both ways, AW-layers (5).
+10.49 and 7.99 both ways, AW-layers (5). The cross-aisle label graded by its own envelope width instead of
+Check layout's per-line rule: AW-cross-ignored both ways (2).
+
+**Cross-aisles** (`failingCrossAisles`, utils/copyChange.js — Check layout's cross-aisle error loop asks it
+too): a cross-aisle label over a per-line cross-aisle under the travel width is red and reads that listed
+width (the narrowest under it) rounded down; no amber level. Gaps the error rule ignores — split pieces
+(no label anyway), a gap inside one section, a layout with no sections — stay uncoloured. Same layer and
+PDF rule as the row aisles. Which cross-aisle labels exist is unchanged: on the hand-check fixture
+(full-length wall rows merge every section into one envelope) there are none, so nothing shows there,
+though Check layout measures 25 per-line cross-aisles.
+
+**Checked in the app** (real mouse, a Generate layout, both orientations): the rack beside the section 2 / 3
+cross-aisle selected and grown by a bay ("+4'" in the panel) → the cross-aisle label red, "5'"; Check layout lists
+"Cross-aisle between row 7, section 2 and row 7, section 3: 5', needs 8' to drive"; Ctrl+Z → the usual 9' 3", nothing
+listed.
 
 **Checked in the app** (real mouse, both orientations): a column-free 10' 6" aisle — its row dragged 1 ft
 narrower → the label fills amber, reads 9' 6" (live during the drag, kept on drop), Check layout lists "9' 6",

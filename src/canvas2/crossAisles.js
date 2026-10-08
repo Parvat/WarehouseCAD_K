@@ -1,5 +1,6 @@
 import { rackFootprint } from '../generate/columnCheck'
 import { pxToFtIn } from '../utils/canvas'
+import { failingCrossAisles, fmtLenDown } from '../utils/copyChange'
 
 /* ── Cross-aisle width labels ─────────────────────────────────────────────────
    A cross-aisle is not an object: it is the gap between two sections along
@@ -19,21 +20,28 @@ import { pxToFtIn } from '../utils/canvas'
 
    `isHoriz` follows aisleLabelLayout's meaning — true when the gap is
    measured along Y — so a horizontal layout (rows run along X, the
-   cross-aisle gap is along X) gives isHoriz false. World px. Pure. */
+   cross-aisle gap is along X) gives isHoriz false. World px. Pure.
+
+   With a forklift `profile` (the warning colours on: Checks layer shown, markings on) a label over a
+   cross-aisle Check layout lists as an error — failingCrossAisles, the same per-line rule and comparator —
+   is red (level 1; there is no amber level for a cross-aisle) and reads that listed width, the narrowest
+   one under it, rounded down. A gap the error rule ignores (a split, a gap inside one section, a layout with
+   no sections) stays uncoloured. */
 const EPS = 1e-6
 
-export function crossAisleLabels(objects, gridSize = 40) {
-  const groups = new Map()
+export function crossAisleLabels(objects, gridSize = 40, { profile = null } = {}) {
+  const groups = new Map(), parents = new Map()
   for (const o of objects) {
     if (!o || typeof o.type !== 'string' || !o.type.startsWith('rack_')) continue
     const f = rackFootprint(o)
     const k = (o.parentId ?? '') + '|' + (f.rotated ? 'v' : 'h')
-    if (!groups.has(k)) groups.set(k, [])
+    if (!groups.has(k)) { groups.set(k, []); parents.set(k, o.parentId) }
     groups.get(k).push({ ...f, family: o.splitOf || o.id, cut: !!o.splitOf })
   }
   const out = []
   for (const [k, feet] of groups) {
     const rot = feet[0].rotated
+    const failing = profile ? failingCrossAisles(objects, parents.get(k), rot, profile, gridSize) : []
     const run = (f) => (rot ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
     const cross = (f) => (rot ? [f.x, f.x + f.w] : [f.y, f.y + f.h])
     // sections: racks merged along the run
@@ -52,12 +60,14 @@ export function crossAisleLabels(objects, gridSize = 40) {
       // split pieces and the racks they were cut from, alone on both sides: no label
       if ([...a.families, ...b.families].every(fam => (a.cutFamilies.has(fam) || b.cutFamilies.has(fam)) && a.families.has(fam) && b.families.has(fam))) continue
       const c0 = Math.min(a.c0, b.c0), c1 = Math.max(a.c1, b.c1)
+      const listed = failing.filter(g => Math.min(g.hi, gapHi) - Math.max(g.lo, gapLo) > EPS)
       out.push({
         key: k + '|' + i,
         isHoriz: rot,                       // vertical rows run along Y: the cross-aisle gap is along Y
         gapLo, gapHi, labelMid: (gapLo + gapHi) / 2,
         positions: [(c0 + c1) / 2],
-        text: pxToFtIn(gapHi - gapLo, gridSize),
+        level: listed.length ? 1 : 3,
+        text: listed.length ? fmtLenDown(Math.min(...listed.map(g => g.hi - g.lo)), gridSize) : pxToFtIn(gapHi - gapLo, gridSize),
       })
     }
   }

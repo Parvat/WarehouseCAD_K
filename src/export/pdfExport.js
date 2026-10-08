@@ -202,7 +202,7 @@ export function labelsSVG(objects, gridSize, opts) {
       const L = aisleLabelLayout(a, objects, gridSize, { profile: warnProfile })
       if (L) ops.push(...aisleLabelOps(L, aisleLabelScale(a, opts.labelSize, gridSize)))
     }
-    for (const L of crossAisleLabels(objects, gridSize)) ops.push(...aisleLabelOps(L, lz))
+    for (const L of crossAisleLabels(objects, gridSize, { profile: warnProfile })) ops.push(...aisleLabelOps(L, lz))
   }
   if (opts.showMarks) {
     const racks = objects.filter(o => typeof o.type === 'string' && o.type.startsWith('rack_'))

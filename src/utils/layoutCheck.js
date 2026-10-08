@@ -12,8 +12,8 @@
 //   reach        rackReachable (the pick-zone test, at the travel width)
 //   way in       cutOffRacks (generate/aisleAccess.js): racks only a dead-end
 //                pocket reaches — an aisle closed at both ends (exact width)
-//   cross-aisle  sectionCrossAisles (utils/copyChange.js): per line, between
-//                sections, under the travel width — underTravel (0.001 ft)
+//   cross-aisle  failingCrossAisles (utils/copyChange.js): sectionCrossAisles per line, between
+//                sections, under the travel width — underTravel (0.001 ft); the cross-aisle label's red too
 //   bays         oversizedBayIndices (utils/capacity.js)
 //
 // ERRORS (can't be built or reached): an aisle a truck can't drive, a
@@ -33,7 +33,7 @@
 // store below.
 
 import { create } from 'zustand'
-import { rackFootprint, rowGaps, rowAisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld, underTravel } from '../generate/columnCheck'
+import { rackFootprint, rowGaps, rowAisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld } from '../generate/columnCheck'
 import { uprightXs } from '../render/rackOps'
 import { blockedPositionRects } from '../render/labelOps'
 import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate/usableCapacity'
@@ -42,7 +42,7 @@ import { cutOffRacks } from '../generate/aisleAccess'
 import { rowAisleGaps } from '../generate/rowAisles'
 export { rowAisleGaps }
 import { oversizedBayIndices } from './capacity'
-import { fmtLen, fmtLenDown, sectionLabel, sectionCrossAisles } from './copyChange'
+import { fmtLen, fmtLenDown, sectionLabel, failingCrossAisles } from './copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { useDragPreview } from '../canvas2/dragPreview'
 
@@ -121,9 +121,8 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
   // ── cross-aisles between sections, per line, under the travel width (to 0.001 ft) — an ERROR: a truck
   //    can't drive it, even where the racks are reachable another way (a pocket with none is "No way in") ──
   for (const fp of objects.filter(o => FP.has(o.type))) for (const rot of [false, true]) {
-    for (const g of sectionCrossAisles(objects, fp.id, rot)) {
+    for (const g of failingCrossAisles(objects, fp.id, rot, profile, gridSize)) {
       const w = g.hi - g.lo
-      if (!underTravel(w, travelPx, gridSize)) continue
       const box = rot ? { x: g.cross[0], y: g.lo, w: g.cross[1] - g.cross[0], h: w } : { x: g.lo, y: g.cross[0], w, h: g.cross[1] - g.cross[0] }
       errors.push({ severity: 'error', kind: 'cross-aisle', ids: [g.a.id, g.b.id], box,
         highlight: [shade(box, HL.red, `${short(w)} · needs ${len(travelPx)}`)],
