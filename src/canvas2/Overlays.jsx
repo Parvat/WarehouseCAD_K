@@ -3,6 +3,7 @@ import { SelectionOutline } from './shapes'
 import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
 import { useMemo, memo } from 'react'
 import { aisleLabelBoxes } from '../render/labelOps'
+import { useColumnCheck } from '../generate/useColumnCheck'
 import { BlockedFaceMarks, firstById } from './BlockedFaceMarks'
 import { useDragPreview, previewObjects } from './dragPreview'
 import { UprightConflictMarks } from './UprightConflictMarks'
@@ -64,6 +65,11 @@ function OverlaysView({
   const aislesOn = showAisles && layerShown(layers, 'aisles')
   const marksOn = showMarks && layerShown(layers, 'checks')
   const lz = labelScale(labelSize, gridSize)
+  /* The aisle width labels are coloured by the aisle's grade (rowAisleLevel — the same function Check layout
+     lists it by) against the column check's forklift, while the Checks layer and the markings are on; with
+     them off the labels draw plain. Live: the labels already redraw from the drag preview. */
+  const { profile: mhe } = useColumnCheck()
+  const warnProfile = marksOn ? mhe : null
   /* Overlays DERIVED from object positions (aisle labels, the column-check
      marks) are drawn from `pObjects`: the store's objects with the current
      drag's offset applied (dragPreview.js). A plain drag moves Konva nodes and
@@ -100,7 +106,7 @@ function OverlaysView({
      drag offset while rigid; the cross-aisle labels from the shifted layout): a column clearance label keeps
      clear of them — the aisle width label has priority. */
   const on = aislesOn && marksOn
-  const ownBoxes = useMemo(() => (on ? aisleLabelBoxes(aisleSrc, gridSize, labelSize, { cross: false }) : []), [on, aisleSrc, gridSize, labelSize])
+  const ownBoxes = useMemo(() => (on ? aisleLabelBoxes(aisleSrc, gridSize, labelSize, { cross: false, profile: warnProfile }) : []), [on, aisleSrc, gridSize, labelSize, warnProfile])
   const crossBoxes = useMemo(() => (on ? aisleLabelBoxes(shifted, gridSize, labelSize, { aisles: false }) : []), [on, shifted, gridSize, labelSize])
   const avoid = useMemo(() => {
     const ox = aisleRigid ? dx : 0, oy = aisleRigid ? dy : 0
@@ -115,7 +121,7 @@ function OverlaysView({
         ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={lz} gridSize={gridSize}
             activeWallIdx={activeWall && activeWall.objId === o.id ? activeWall.wallIdx : null} /> : null)}
       <Group x={aisleRigid ? dx : 0} y={aisleRigid ? dy : 0} listening={false}>
-      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={aisleLabelScale(a, labelSize, gridSize)} gridSize={gridSize} />)}
+      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={aisleLabelScale(a, labelSize, gridSize)} gridSize={gridSize} profile={warnProfile} />)}
       </Group>
       {/* one width label per cross-aisle; few, so drawn from the previewed layout every drag frame */}
       {aislesOn && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} />}

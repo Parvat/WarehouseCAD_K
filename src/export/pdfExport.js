@@ -194,10 +194,12 @@ export function labelOpToSVG(o) {
 export function labelsSVG(objects, gridSize, opts) {
   const lz = labelScale(opts.labelSize, gridSize)   // a Label size key or inches
   const ops = []
+  // the aisle width labels graded as on screen: coloured while the Checks layer and the markings are on
+  const warnProfile = opts.showMarks ? (opts.profile || null) : null
   if (opts.showAisles) {
     for (const a of objects) {
       if (a.type !== 'aisle') continue
-      const L = aisleLabelLayout(a, objects, gridSize)
+      const L = aisleLabelLayout(a, objects, gridSize, { profile: warnProfile })
       if (L) ops.push(...aisleLabelOps(L, aisleLabelScale(a, opts.labelSize, gridSize)))
     }
     for (const L of crossAisleLabels(objects, gridSize)) ops.push(...aisleLabelOps(L, lz))
@@ -210,7 +212,7 @@ export function labelsSVG(objects, gridSize, opts) {
     if (racks.length && columns.length) {
       const res = checkColumns({ racks, columns, profile: opts.profile, gridSize, pickBothSides: opts.pickBothSides, floors: layoutFloors(objects) })
       // a clearance label keeps clear of the aisle width labels drawn above (they have priority)
-      const avoid = opts.showAisles ? aisleLabelBoxes(objects, gridSize, opts.labelSize) : []
+      const avoid = opts.showAisles ? aisleLabelBoxes(objects, gridSize, opts.labelSize, { profile: warnProfile }) : []
       for (const b of res.aisleBlocks) ops.push(...clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid))
       for (const c of [...res.rackConflicts, ...res.pickBlocks]) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
       for (const h of res.uprightHits) ops.push(...uprightOps(h, byId.get(h.rackId), gridSize, lz))

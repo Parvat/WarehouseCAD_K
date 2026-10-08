@@ -50,6 +50,16 @@ export function aisleLevel(clearPx, profile, gridSize = GS, slackPx = 0) {
   return 3
 }
 
+/** Narrower than this (ft) between facing rows is racks set back to back, not an aisle. */
+export const AISLE_MIN_FT = 2
+/** THE grade of the aisle between two facing rows, from its clear width in px: aisleLevel, except a gap of
+ *  AISLE_MIN_FT or less is racks set back to back — not an aisle, so 3. Check layout's aisle items and the
+ *  aisle width label's colour both ask this, so the label and the listed item can never disagree. */
+export function rowAisleLevel(gapPx, profile, gridSize = GS) {
+  if (gapPx <= AISLE_MIN_FT * gridSize) return 3
+  return aisleLevel(gapPx, profile, gridSize)
+}
+
 // The selectable forklift input. Aisle widths are typical; tune per real MHE.
 export const MHE_PROFILES = {
   reach:          { key: 'reach',          label: 'Reach truck',   aisleFt: 10.5, minAisleFt: 10.0, retrievalFt: 6, travelFt: travelFtFor(10.5) },

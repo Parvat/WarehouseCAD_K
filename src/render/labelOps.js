@@ -41,9 +41,19 @@ export function pillOps(cx, cy, text, fontSize, lz, { color = '#4a9eff', bg = '#
 /** An aisle / cross-aisle width label from its layout ({ isHoriz, gapLo,
  *  gapHi, labelMid, positions, text }): an arrow across the gap at each
  *  station, the width in a pill. */
+/** An aisle width label's look by its grade (L.level, rowAisleLevel): 3 — the usual amber-on-cream; 2 — under
+ *  the pick width, a filled amber pill in Check layout's amber; 1 — under the drive width, a filled red pill
+ *  in Check layout's red (the "under travel" clearance labels' style). Cross-aisle labels carry no level. */
+export const AISLE_PICK_COLOR = '#B87309', AISLE_DRIVE_COLOR = '#C0392B'
+const AISLE_LOOK = {
+  3: { clr: '#f0b429', text: '#92400e', bg: 'rgba(255,251,235,0.9)', stroke: '#f0b429', sw: 0.5 },
+  2: { clr: AISLE_PICK_COLOR, text: '#7a4a06', bg: 'rgba(253,230,138,0.95)', stroke: AISLE_PICK_COLOR, sw: 1 },
+  1: { clr: AISLE_DRIVE_COLOR, text: AISLE_DRIVE_COLOR, bg: 'rgba(254,226,226,0.95)', stroke: AISLE_DRIVE_COLOR, sw: 1 },
+}
 export function aisleLabelOps(L, lz) {
   const { isHoriz, gapLo, gapHi, labelMid, positions, text } = L
-  const fs = AISLE_LABEL_FONT_PX / lz, aw = 5 / lz, sw = 1 / lz, clr = '#f0b429'
+  const look = AISLE_LOOK[L.level] || AISLE_LOOK[3]
+  const fs = AISLE_LABEL_FONT_PX / lz, aw = 5 / lz, sw = 1 / lz, clr = look.clr
   const out = []
   for (const pos of positions) {
     const lx = isHoriz ? pos : labelMid, ly = isHoriz ? labelMid : pos
@@ -58,7 +68,7 @@ export function aisleLabelOps(L, lz) {
         { op: 'poly', points: [a1, ly, a1 + aw, ly - aw / 2, a1 + aw, ly + aw / 2], fill: clr },
         { op: 'poly', points: [a2, ly, a2 - aw, ly - aw / 2, a2 - aw, ly + aw / 2], fill: clr })
     }
-    out.push(...pillOps(lx, ly, text, fs, lz, { color: '#92400e', bg: 'rgba(255,251,235,0.9)', padX: AISLE_LABEL_PADX_PX / lz, heightScale: 1.5, rx: 2 / lz, stroke: clr, strokeWidth: 0.5 / lz, opacity: 0.95 }))
+    out.push(...pillOps(lx, ly, text, fs, lz, { color: look.text, bg: look.bg, padX: AISLE_LABEL_PADX_PX / lz, heightScale: 1.5, rx: 2 / lz, stroke: look.stroke, strokeWidth: look.sw / lz, opacity: 0.95 }))
   }
   return out
 }
@@ -67,11 +77,11 @@ export function aisleLabelOps(L, lz) {
  *  and the cross-aisle width labels (`cross`: the layout's cross-aisles), as `aisleLabelOps` draws them —
  *  read off its own rect ops, so they are exactly what is on the drawing. A column clearance label keeps
  *  clear of these (clearanceOps' `avoid`): the aisle width label has priority. */
-export function aisleLabelBoxes(objects, gridSize = 40, labelSize, { aisles = true, cross = true } = {}) {
+export function aisleLabelBoxes(objects, gridSize = 40, labelSize, { aisles = true, cross = true, profile = null } = {}) {
   const out = [], take = (ops) => { for (const o of ops) if (o.op === 'rect') out.push({ x: o.x, y: o.y, w: o.w, h: o.h }) }
   if (aisles) for (const a of objects) {
     if (!a || a.type !== 'aisle') continue
-    const L = aisleLabelLayout(a, objects, gridSize)
+    const L = aisleLabelLayout(a, objects, gridSize, { profile })
     if (L) take(aisleLabelOps(L, aisleLabelScale(a, labelSize, gridSize)))
   }
   if (cross) { const lz = labelScale(labelSize, gridSize); for (const L of crossAisleLabels(objects, gridSize)) take(aisleLabelOps(L, lz)) }

@@ -410,7 +410,9 @@ describe('LC — one rule each', () => {
     expect(cc).toMatch(/const level {4}= aisleLevel\(clearPx, profile, gridSize\)/)
     expect(src('src/utils/copyChange.js')).toMatch(/aisleLevel\(g, profile, gridSize, gridSize \/ 24\) < 3/)
     const lc = src('src/utils/layoutCheck.js')
-    for (const f of ['rowAisleGaps', 'aisleLevel', 'rackReachable', 'runColumnCheck', 'rackIssues', 'oversizedBayIndices']) expect(lc).toMatch(new RegExp(f + '\\('))
+    // Check layout's row aisles (and the aisle width label) ask rowAisleLevel: aisleLevel past the back-to-back cut
+    expect(cc).toMatch(/export function rowAisleLevel\([^)]*\) \{\s*if \(gapPx <= AISLE_MIN_FT \* gridSize\) return 3\s*return aisleLevel\(gapPx, profile, gridSize\)/)
+    for (const f of ['rowAisleGaps', 'rowAisleLevel', 'rackReachable', 'runColumnCheck', 'rackIssues', 'oversizedBayIndices']) expect(lc).toMatch(new RegExp(f + '\\('))
     expect(lc).not.toMatch(/aisleFt \* gridSize\) *[<>]|travelFt \?\? 8\) \* gridSize *[<>]/)   // no width compared by hand
     expect(src('src/components/RightPanel/index.jsx')).toMatch(/<LayoutCheckPanel \/>/)
     expect(src('src/components/Toolbar/TopBar.jsx')).toMatch(/<CheckLayoutButton \/>/)

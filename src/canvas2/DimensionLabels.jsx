@@ -238,18 +238,19 @@ export function FpDimLabels({ obj, zoom, gridSize, activeWallIdx = null }) {
 /* An aisle's label depends on the aisle and its two rows only, so it is a
    memoised item fed exactly those: a drag redraws only the labels of aisles
    beside a moved rack, a selection change redraws none. */
-export const AisleLabelItem = memo(function AisleLabelItem({ aisle, row1, row2, lz, gridSize }) {
-  return <AisleLabel aisle={aisle} objects={[row1, row2].filter(Boolean)} lz={lz} gridSize={gridSize} />
+export const AisleLabelItem = memo(function AisleLabelItem({ aisle, row1, row2, lz, gridSize, profile = null }) {
+  return <AisleLabel aisle={aisle} objects={[row1, row2].filter(Boolean)} lz={lz} gridSize={gridSize} profile={profile} />
 })
 
 /* Drawing size: `lz` is the Label size scale (render/labelSize.js), never
    the view zoom — a label is a fixed size in feet, like CAD text. */
-export function AisleLabel({ aisle, objects, lz, gridSize }) {
+export function AisleLabel({ aisle, objects, lz, gridSize, profile = null }) {
   /* Geometry from aisleLabelLayout (hitTest.js) — the same stations the pick
      tests against, so a label is exactly as clickable as it is visible.
      rackFootprint-based (BUG 45) through aisleRect, so a 90°-rotated pair
      measures its true gap. */
-  const L = aisleLabelLayout(aisle, objects, gridSize)
+  /* `profile`: the forklift to grade the aisle against (the warning colours), null when they are off */
+  const L = aisleLabelLayout(aisle, objects, gridSize, { profile })
   if (!L) return null
   return <AisleLabelView L={L} name={'aisle:' + aisle.id} lz={lz} />
 }

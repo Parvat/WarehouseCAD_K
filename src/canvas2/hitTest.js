@@ -16,10 +16,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { objectContains, getFpWallSegments, distToSegment, getObjectBounds, pxToFtIn } from '../utils/canvas'
-import { rackFootprint } from '../generate/columnCheck'
+import { rackFootprint, rowAisleLevel, MHE_PROFILES } from '../generate/columnCheck'
+import { fmtLenDown } from '../utils/copyChange'
+import { getColumnCheckView } from '../generate/columnCheckView'
 import { aisleLabelScale } from '../render/labelSize'
 import { useLabelPrefs } from './labelPrefs'
-import { isPickable } from '../utils/layers'
+import { isPickable, layerShown } from '../utils/layers'
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 const COL_GRID = new Set(['column_grid'])
@@ -150,7 +152,7 @@ function aisleGeom(aisle, objects) {
  *  long aisles; one is enough to read and a third of the nodes. Shared by the
  *  drawing (DimensionLabels.jsx's AisleLabel) and the pick below, so what you
  *  can click is exactly what you can see. World px. */
-export function aisleLabelLayout(aisle, objects, gridSize = 40) {
+export function aisleLabelLayout(aisle, objects, gridSize = 40, { profile = null } = {}) {
   const g = aisleGeom(aisle, objects)
   if (!g) return null
   const { rect: r, isHoriz } = g
@@ -158,10 +160,23 @@ export function aisleLabelLayout(aisle, objects, gridSize = 40) {
   const runLo = isHoriz ? r.x : r.y, runLen = isHoriz ? r.width : r.height
   const positions = [runLo + runLen * 0.5]
   const userLabel = aisle.label ? `${aisle.label} · ` : ''
+  /* With a forklift `profile` (the warning colours on: Checks layer shown, markings on) the label is graded
+     as Check layout grades the aisle — rowAisleLevel, the same function — and a failing width reads rounded
+     DOWN to the inch, as Check layout lists it (10.49 ft is 10' 5", never the 10' 6" it needs). */
+  const w = gapHi - gapLo
+  const level = profile ? rowAisleLevel(w, profile, gridSize) : 3
   return {
-    isHoriz, gapLo, gapHi, labelMid: (gapLo + gapHi) / 2, positions,
-    text: `${userLabel}${pxToFtIn(gapHi - gapLo, gridSize)}`,
+    isHoriz, gapLo, gapHi, labelMid: (gapLo + gapHi) / 2, positions, level,
+    text: `${userLabel}${level < 3 ? fmtLenDown(w, gridSize) : pxToFtIn(w, gridSize)}`,
   }
+}
+
+/** The forklift the aisle width labels are graded against, or null when their warning colours are off:
+ *  the Checks layer hidden or the column check's markings switched off — exactly when Overlays draws them
+ *  plain. `layers`: the store's layer list or a map of it. */
+export function aisleWarnProfile(layers) {
+  const v = getColumnCheckView() || {}
+  return v.showMarks !== false && layerShown(layers, 'checks') ? (v.profile || MHE_PROFILES.reach) : null
 }
 
 /* Screen-constant label metrics — the same numbers AisleLabel draws with. */
@@ -172,8 +187,8 @@ export const AISLE_LABEL_PADX_PX = 3.5
  *  across the gap it sits on (±5 screen px)? The ONLY way to pick an aisle:
  *  its empty floor belongs to the building, so a press there grabs and
  *  drags the layout instead of selecting the aisle. */
-export function aisleLabelHit(aisle, objects, wx, wy, zoom = 1, gridSize = 40) {
-  const L = aisleLabelLayout(aisle, objects, gridSize)
+export function aisleLabelHit(aisle, objects, wx, wy, zoom = 1, gridSize = 40, profile = null) {
+  const L = aisleLabelLayout(aisle, objects, gridSize, { profile })   // the text as drawn: its width is the pill's
   if (!L) return false
   /* The pill is DRAWING size (the aisle's own label size if it has one,
      else the Label size setting — render/labelSize.js), exactly as drawn;
@@ -240,7 +255,7 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
       /* Only its labels pick an aisle. The whole gap used to: a press on
          empty aisle floor selected the aisle, so the building behind it
          could hardly be grabbed to move the layout. */
-      if (aisleLabelHit(obj, objects, wx, wy, zoom, gridSize)) return obj.id
+      if (aisleLabelHit(obj, objects, wx, wy, zoom, gridSize, aisleWarnProfile(layerMap))) return obj.id
       continue
     }
     if (objectContains(obj, wx, wy, zoom)) return obj.id

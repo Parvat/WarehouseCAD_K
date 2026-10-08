@@ -5,7 +5,7 @@
 //   aisles       rowAisleGaps (generate/rowAisles.js): beam racks paired as the
 //                aisle labels pair them (neighbourPairs — so a label and its
 //                check never disagree), other rack types by rowGaps; each gap
-//                graded by aisleLevel (generate/columnCheck.js)
+//                graded by rowAisleLevel (generate/columnCheck.js; the aisle width label's colour too)
 //   columns      runColumnCheck (the Column Check): upright hits, columns in
 //                an aisle, positions lost in the rack and in pick zones
 //   overlap/wall rackIssues (utils/bayBeam.js)
@@ -33,7 +33,7 @@
 // store below.
 
 import { create } from 'zustand'
-import { rackFootprint, rowGaps, aisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld, underTravel } from '../generate/columnCheck'
+import { rackFootprint, rowGaps, rowAisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld, underTravel } from '../generate/columnCheck'
 import { uprightXs } from '../render/rackOps'
 import { blockedPositionRects } from '../render/labelOps'
 import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate/usableCapacity'
@@ -52,7 +52,6 @@ const TYPE_NAMES = {
   rack_drive_through: 'Drive-through rack', rack_pushback: 'Pushback rack', rack_pallet_flow: 'Pallet flow rack',
   rack_mezzanine: 'Mezzanine', rack_shelving: 'Shelving unit',
 }
-const AISLE_MIN_PX = (gridSize) => 2 * gridSize   // narrower than this is racks set back to back, not an aisle
 
 /** "Row 5, section 3" for a generated row; "Double row 4" (its place among
  *  the racks) for one placed by hand. */
@@ -108,8 +107,8 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
   // ── aisles between neighbouring rows ──
   const pinchedPairs = new Set()
   for (const g of rowAisleGaps(racks.filter(r => ((r.rotation || 0) % 90) === 0))) {
-    if (g.gapLen <= AISLE_MIN_PX(gridSize)) continue
-    const lvl = aisleLevel(g.gapLen, profile, gridSize)
+    // the one grade (rowAisleLevel): the aisle width label is coloured by it too
+    const lvl = rowAisleLevel(g.gapLen, profile, gridSize)
     if (lvl === 3) continue
     const where = `Aisle between ${pairName(g.top, g.bot, racks)}`
     const need = lvl === 1 ? travelPx : aislePx

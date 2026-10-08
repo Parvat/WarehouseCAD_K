@@ -1907,6 +1907,37 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### AW — The aisle width label shows an aisle under the forklift widths · `AW_aisleWarning.test.js` (8 tests)
+Code: `rowAisleLevel` + `AISLE_MIN_FT` (generate/columnCheck.js, new); `aisleLabelLayout` (`profile` → `level`,
+a failing width rounded down) and `aisleWarnProfile` (canvas2/hitTest.js); `aisleLabelOps` colours by level
+(`AISLE_PICK_COLOR` / `AISLE_DRIVE_COLOR`, render/labelOps.js); Overlays.jsx, DimensionLabels.jsx,
+pdfExport.js pass the profile; Check layout's row-aisle loop on `rowAisleLevel`.
+
+One grade: Check layout's aisle items and the aisle width label both ask `rowAisleLevel` (`aisleLevel`, with
+a gap of 2 ft or less being racks back to back, not an aisle — Check layout's old `AISLE_MIN_PX`). Under the
+pick width the pill fills amber (Check layout's amber), under the drive width red (its red, the "under
+travel" clearance style); a failing width reads rounded down, as Check layout lists it. Coloured only while
+the Checks layer is shown and the column check's markings are on; otherwise the usual label, to the nearest
+inch. Live while dragging (the labels redraw from the drag preview). The PDF grades under the same
+switches. The hit test reads the same text, so the pill is as clickable as it is drawn.
+
+Changed: `LC-reuse` — the functions Check layout must call list `rowAisleLevel` in place of `aisleLevel`,
+and it checks that `rowAisleLevel` is `aisleLevel` past the back-to-back cut.
+
+| Test | Asserts |
+|---|---|
+| `AW-grade` ×6 | both orientations, a column-free 10' 6" aisle narrowed to 10.49 / 10.5 / 7.99 ft: label level 2 / 3 / 1 and Check layout's item for that pair `aisle-pick` / none / `aisle-drive`; the label reads 10' 5" / 10' 6" / 7' 11", the same width as the listed item; pill stroke amber / usual / red; with the colours off, the usual label (10' 6" / 10' 6" / 8') |
+| `AW-colours` | the label's amber and red are Check layout's `HL.amber` / `HL.red` |
+| `AW-layers` | graded only with the Checks layer shown and markings on (`aisleWarnProfile`); Overlays passes its profile only then; the PDF at 7.99 ft has the red pill and "7' 11" with markings on, not with them off |
+
+**Break-it:** the label graded on its displayed (rounded) width instead of the measured one: AW-grade at
+10.49 and 7.99 both ways, AW-layers (5).
+
+**Checked in the app** (real mouse, both orientations): a column-free 10' 6" aisle — its row dragged 1 ft
+narrower → the label fills amber, reads 9' 6" (live during the drag, kept on drop), Check layout lists "9' 6",
+needs 10' 6" to pick"; 1.75 ft more → red, 7' 9", listed "7' 9", needs 8' to drive"; Ctrl+Z twice → the usual
+10' 6", nothing listed.
+
 ### CA — Columns in aisles and Generate's aisles on the labels' pairing (BUG 75) · `CA_columnAisles.test.js` (19 tests)
 Code: `generate/rowAisles.js` (new: `neighbourPairs`, `rowAisleGaps`, `rowGaps`, `groupBySegment`),
 `generate/rackFootprint.js` (new); `aisleColumnBlocks` (columnCheck.js), `aisleObjectsForRacks`
