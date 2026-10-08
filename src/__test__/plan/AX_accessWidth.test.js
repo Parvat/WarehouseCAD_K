@@ -10,7 +10,7 @@ import { REAL_LAYOUT } from './realLayout.fixture'
 import { planAreaResize, planAreaCreate } from '../../generate/rackingArea'
 import { rackFootprint } from '../../generate/columnCheck'
 import { sharesFrame } from '../../utils/bayBeam'
-import { checkLayout } from '../../utils/layoutCheck'
+import { checkLayout, HL } from '../../utils/layoutCheck'
 import { bayLedger } from '../../utils/bayLedger'
 import { getLayoutCapacity } from '../../utils/capacity'
 import { rebuildAisles, neighbourPairs } from '../../utils/aisleRebuild'
@@ -143,7 +143,8 @@ function fillOf(turned, orientation, stored) {
 /** The fill with the 11.2 ft cross-aisle between sections 2 and 3: horizontal rows, or the turned layout's vertical ones. */
 const crossFill = (vert) => (vert ? fillOf(true, 'vertical', false) : fillOf(false, 'horizontal', false))
 const fpOf = (objects) => objects.find(o => typeof o.type === 'string' && o.type.startsWith('fp_'))
-const crossWarnings = (objects) => checkLayout(objects, { gridSize: GS }).warnings.filter(w => w.kind === 'cross-aisle')
+/** Check layout's cross-aisle items — ERRORS (and never a warning of that kind alongside). */
+const crossWarnings = (objects) => { const c = checkLayout(objects, { gridSize: GS }); expect(c.warnings.filter(w => w.kind === 'cross-aisle')).toEqual([]); return c.errors.filter(e => e.kind === 'cross-aisle') }
 const rackOf = (objects, sec, ri) => objects.find(o => o.type === 'rack_double_row' && o.genSection === sec && o.rowIndex === ri)
 /** Row 7, section 2's pair grown by one 8' bay toward section 3 (the BUG 73 case). */
 function grown(objects) {
@@ -186,13 +187,14 @@ describe.each([['horizontal', false], ['vertical', true]])('AX — %s', (_, vert
     }
   })
 
-  it('AX-73: the BUG 73 case — row 7, section 2 grown by a bay toward section 3: the cross-aisle in that line is 2 ft 11 in — Check layout WARNS (not an error), naming both racks and the width; a way in still exists, so no "No way in"', () => {
+  it('AX-73: the BUG 73 case — row 7, section 2 grown by a bay toward section 3: the cross-aisle in that line is 2 ft 11 in — Check layout reports an ERROR (red, under Errors), naming both racks and the width; a way in still exists, so no "No way in"', () => {
     const out = grown(crossFill(vert))
     const a = rackOf(out, 2, 7), b = rackOf(out, 3, 7)
     expect(gapOf(out, a.id, b.id)).toBeCloseTo(2.952, 3)
     const ws = crossWarnings(out)
-    expect(ws.map(w => [w.severity, w.ids.slice().sort(), w.text])).toEqual([['warning', [a.id, b.id].sort(), `Cross-aisle between row 7, section 2 and row 7, section 3: 2' 11", needs 8' to drive`]])
-    expect(checkLayout(out, { gridSize: GS }).errors.filter(e => e.kind === 'cross-aisle' || e.kind === 'no-way-in')).toEqual([])
+    expect(ws.map(w => [w.severity, w.ids.slice().sort(), w.text])).toEqual([['error', [a.id, b.id].sort(), `Cross-aisle between row 7, section 2 and row 7, section 3: 2' 11", needs 8' to drive`]])
+    expect(ws[0].highlight[0].color).toBe(HL.red)
+    expect(checkLayout(out, { gridSize: GS }).errors.filter(e => e.kind === 'no-way-in')).toEqual([])
   })
 
   it('AX-73-boundary: the same line held at exactly 8.000 ft → no warning; at 7.99 ft → the warning', () => {
@@ -314,12 +316,12 @@ describe('AX-clean', () => {
 })
 
 describe('AX-fills', () => {
-  it.each(FILLS)('AX-fills (%s): the fixture — nothing cut off, no "No way in", no cross-aisle warning; the cross-aisle lines found per line (25 as saved vertical / turned horizontal, 38 the other two)', (_, turned, orientation, stored) => {
+  it.each(FILLS)('AX-fills (%s): the fixture — nothing cut off, no "No way in", no cross-aisle error; the cross-aisle lines found per line (25 as saved vertical / turned horizontal, 38 the other two)', (_, turned, orientation, stored) => {
     const out = fillOf(turned, orientation, stored), fp = fpOf(out)
     expect(cutOffRacks(out, fp, { gridSize: GS, travelFt: 8, aisleFt: 10.5 }).cutOff).toEqual([])
     const chk = checkLayout(out, { gridSize: GS })
     expect(chk.errors.filter(e => e.kind === 'no-way-in')).toEqual([])
-    expect(chk.warnings.filter(w => w.kind === 'cross-aisle')).toEqual([])
+    expect([...chk.errors, ...chk.warnings].filter(w => w.kind === 'cross-aisle')).toEqual([])
     const lines = [false, true].reduce((t, rot) => t + sectionCrossAisles(out, fp.id, rot).length, 0)
     expect(lines).toBe(turned === (orientation === 'horizontal') ? 25 : 38)
   })

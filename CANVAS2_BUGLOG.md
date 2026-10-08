@@ -6032,8 +6032,9 @@ ends. A cross-aisle narrowed below the travel width while the aisles still
 open at their other end leaves a way in, so nothing reports it. There is no
 check of a cross-aisle's own width against `travelFt`.
 
-Fix:      Check layout warns ("cross-aisle", amber) for a cross-aisle
-between sections under the travel width (`underTravel`, 0.001 ft), naming
+Fix:      Check layout reports an ERROR ("cross-aisle", red) for a cross-aisle
+between sections under the travel width — a truck can't drive it, even where
+the racks are reachable another way — (`underTravel`, 0.001 ft), naming
 the two racks and the width. Cross-aisles are found per line
 (`sectionCrossAisles`): the old section-envelope rule found none on the
 layout as saved, its wall rows running the whole length. Placement's warning

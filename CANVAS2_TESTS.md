@@ -1787,8 +1787,9 @@ width; `RL-5-boundary` — at 8.01' the 8' gap below the office is no lane, and
 the pocket is opened by a lane on the office's side one bay further in, 8.01'
 wide (it used to be the wall's lane, the grid having misread the main floor).
 
-BUG 73 — Check layout WARNS (not an error: the racks may still be reachable)
-for a cross-aisle between sections under the travel width, measured PER LINE:
+BUG 73 — Check layout reports an ERROR (red, under Errors — a truck can't drive
+it, even where the racks are reachable another way) for a cross-aisle between
+sections under the travel width, measured PER LINE:
 in each line of racks, where the run passes from one section's racks to
 another's, each gap between consecutive racks — a rack standing in it, stamped
 or not, splits it. Section envelopes missed them (a wall row runs the whole
@@ -1796,7 +1797,7 @@ length, so its section's envelope swallowed the others: none found as saved);
 placement's "In the cross-aisle between sections …" now uses the same per-line
 gaps. Gaps inside a section (a split, a deleted bay) and hand-placed layouts
 stay silent. "Cross-aisle between row 7, section 2 and row 7, section 3: 2'
-11", needs 8' to drive", amber on the gap. The Row group carries it ("a
+11", needs 8' to drive", red on the gap. The Row group carries it ("a
 cross-aisle under the travel width"). Cross-aisle lines on the fixture: 25 as
 saved vertical / turned horizontal, 38 the other two fills; none under 8'.
 
@@ -1804,33 +1805,34 @@ saved vertical / turned horizontal, 38 the other two fills; none under 8'.
 |---|---|
 | `AX-noway` | a pocket whose only way in is a gap in a barrier: 8.000' — nothing cut off, no "No way in"; 7.99' and 7.5' — the far rack cut off, "No way in" |
 | `AX-lane` | giving the racks a way in: at 8.000' the far rack stays; at 7.99' no lane can reach the main floor through the fixed barrier, it goes |
-| `AX-73` | the BUG 73 case (row 7, section 2 grown a bay toward section 3: 2.952'): one warning, both racks, "2' 11", needs 8' to drive"; no error, no "No way in" |
-| `AX-73-boundary` | that line held at exactly 8.000' → no warning; 7.99' → the warning |
-| `AX-73-quiet` | a split piece 2' 9" off its rack, a bay deleted from the middle, and the BUG 73 layout without stamps → no warning |
-| `AX-73-stand` | a plain rack standing in the cross-aisle: both gaps either side warn, each naming it |
+| `AX-73` | the BUG 73 case (row 7, section 2 grown a bay toward section 3: 2.952'): one ERROR (red; no cross-aisle warning), both racks, "2' 11", needs 8' to drive"; no "No way in" |
+| `AX-73-boundary` | that line held at exactly 8.000' → nothing; 7.99' → the error |
+| `AX-73-quiet` | a split piece 2' 9" off its rack, a bay deleted from the middle, and the BUG 73 layout without stamps → nothing |
+| `AX-73-stand` | a plain rack standing in the cross-aisle: both gaps either side are errors, each naming it |
 | `AX-73-group` | rows 6–8 of section 2 grouped, row 7 grown toward section 3: the apply offered to rows 6 and 8 carries "a cross-aisle under the travel width" |
 | `AX-place` | the layout as saved: a one-bay single placed in the 16.6' cross-aisle between sections 1 and 2 → "In the cross-aisle between sections 1 and 2" (the envelope rule found none) |
 | `AX-short` | a width that FAILS reads rounded down to the inch (`fmtLenDown`), never the same as the width it needs: a cross-aisle of 7.99' "7' 11", needs 8'"; an aisle between two rows (plain racks — the fixture's row aisles aren't checked, BUG 74) at 7.99' "7' 11", needs 8' to drive", at 10.49' "10' 5", needs 10' 6" to pick" (rounding said 10' 6"); the highlight labels the same; 10.5' passes, nothing shown |
 | `AX-short-format` | `fmtLenDown`: 7.99' → 7' 11", 10.49' → 10' 5", 8' (less float noise) → 8'; `fmtLen` (passing widths) unchanged; the column-in-aisle text and label use it too |
 | `AX-clean` | the access and check modules carry no `process.env` (it does not exist in the browser) and no `console.log` |
-| `AX-fills` ×4 | the fixture's four fills: nothing cut off, no "No way in", no cross-aisle warning; 25 / 38 cross-aisle lines |
+| `AX-fills` ×4 | the fixture's four fills: nothing cut off, no "No way in", no cross-aisle error; 25 / 38 cross-aisle lines |
 
 **Break-its:** the access check without the 0.001 ft tolerance (8.000' closes):
 AX-noway, AX-lane, AA-tie, AA-width (8). The old ~0.8 ft grid back: AX-noway,
 AX-lane (4). The warning loose by 0.02 ft (7.99' passes): AX-73-boundary (2). Any
 gap in a line counted (inside a section too): AX-73-quiet, AX-fills, AA-pocket
-(5). A rack standing in the gap ignored: AX-73-stand (2). Reported as an error:
-AX-73, AX-73-boundary, AX-73-stand (6). No Row group word: AX-73-group (2).
+(5). A rack standing in the gap ignored: AX-73-stand (2). Reported as a warning
+(not an error): AX-73, AX-73-boundary, AX-73-stand, AX-short (8). No Row group word: AX-73-group (2).
 Placement back on section envelopes: PD-cross-aisle, AX-place (4). A debugging
 line left in aisleAccess.js: AX-clean (1). Failing widths rounded to the nearest
 inch again: AX-short (2).
 
 **Checked in the app** (real mouse, the fixture filled with horizontal rows, and
 turned with vertical ones): row 7, section 2 clicked, "+8'" → 14 bays, the
-cross-aisle to row 7, section 3 from 11.202' to 2.952'; Check layout → "Warnings
-(5)" with "Cross-aisle between row 7, section 2 and row 7, section 3: 2' 11",
-needs 8' to drive"; clicked, the gap highlighted amber "2' 11" · needs 8'". (The
-one error is BUG 71's column on an upright, unchanged.)
+cross-aisle to row 7, section 3 from 11.202' to 2.952'; Check layout → listed
+"Cross-aisle between row 7, section 2 and row 7, section 3: 2' 11", needs 8' to
+drive"; clicked, the gap highlighted "2' 11" · needs 8'". (Checked as a warning;
+it is an error since — the same item, red, under Errors. The other error is BUG
+71's column on an upright, unchanged.)
 
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.
