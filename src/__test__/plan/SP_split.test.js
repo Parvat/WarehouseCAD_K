@@ -374,7 +374,7 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     load(objects)
     const at = near(rack, 2, -0.6)
     splitAt(store, at, rack.id, { newId, rebuildAisles })
-    commitPlacement(store); await settle()
+    cancelPlacement(); await settle()                     // Esc: the piece its own rack, in place
     const piece = objs().find(o => o.splitOf === rack.id)
     store.setState({ selectedIds: [piece.id] }); store.getState().copySelected()
     setCanvasPointer({ x: -5000, y: -5000 })

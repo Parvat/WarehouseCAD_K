@@ -275,6 +275,11 @@ export function groupDragExclusions(objects, ids, groupKeys, gridSize = 40) {
     const l = lines(rackFootprint(o))
     if (starts.some(st => on(st.xs, l.xs) || on(st.ys, l.ys))) out.add(o.id)
   }
+  // ...but never the rack a dragged split piece came from, nor its other pieces: brought back to their shared
+  // upright, they join again (the in-line snap needs them as targets)
+  const root = (o) => o.splitOf || o.id
+  const family = new Set(dragged.filter(o => o.splitOf || objects.some(q => q.splitOf === o.id)).map(root))
+  for (const o of objects) if (family.has(root(o))) out.delete(o.id)
   return out
 }
 /** The drag delta locked to its dominant axis (screen x or y — a row runs along one of them). */

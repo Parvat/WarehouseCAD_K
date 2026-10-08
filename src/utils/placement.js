@@ -159,8 +159,11 @@ export function checkPlacement(placed, objects, gridSize = 40, profile = MHE_PRO
  *  `finish(placed)` → the objects to place, just before the click's commit; `onCancel()` runs after Esc
  *  (or another placement starting) clears it; `abandonIf(state)`: true ends it with nothing done (an undo
  *  took away what it was placed against); `escHint`: what Esc does, for the hint; `measure: { fromId }`:
- *  live distances drawn while it moves (placementDistances); `select: false`: nothing selected once placed. */
-export function startPlacement(store, items, { groups = [], at = null, grab = false, finish = null, onCancel = null, abandonIf = null, escHint = null, measure = null, select = true } = {}) {
+ *  live distances drawn while it moves (placementDistances); `select: false`: nothing selected once placed;
+ *  `snapTo(items, objects, dx, dy, zoom, gridSize)` → an extra { ddx, ddy } nudge, or null (the Split tool:
+ *  onto its rack's shared upright); `settle(objects, placed)` → the layout the click commits (the Split tool:
+ *  a piece back on its rack's shared upright joins it). */
+export function startPlacement(store, items, { groups = [], at = null, grab = false, finish = null, onCancel = null, abandonIf = null, escHint = null, measure = null, select = true, snapTo = null, settle = null } = {}) {
   if (!items || !items.length) return false
   if (usePlacement.getState().active?.onCancel) cancelPlacement()   // never drop a placement that must be put back
   useRowGroup.setState({ message: null })   // a shown result is over once the next thing starts
@@ -168,7 +171,7 @@ export function startPlacement(store, items, { groups = [], at = null, grab = fa
   const c = centreOf(items)
   const p = at || c
   const offset = grab ? { x: c.x - p.x, y: c.y - p.y } : null
-  usePlacement.setState({ active: { items, groups, dx: grab ? 0 : p.x - c.x, dy: grab ? 0 : p.y - c.y, offset, finish, onCancel, abandonIf, escHint, measure, select, blocked: null, warnings: [], crossAisle: false, fpId: null, snapped: { run: null, cross: null } } })
+  usePlacement.setState({ active: { items, groups, dx: grab ? 0 : p.x - c.x, dy: grab ? 0 : p.y - c.y, offset, finish, onCancel, abandonIf, escHint, measure, select, snapTo, settle, blocked: null, warnings: [], crossAisle: false, fpId: null, snapped: { run: null, cross: null } } })
   movePlacement(store, p, st.zoom || 1)
   return true
 }
@@ -181,7 +184,9 @@ export function movePlacement(store, world, zoom = 1, profile) {
   if (a.abandonIf && a.abandonIf(st)) { usePlacement.setState({ active: null }); return }
   if (a.offset) world = { x: world.x + a.offset.x, y: world.y + a.offset.y }
   const prof = profile || safeProfile()
-  const s = snapPlacement(a.items, st.objects, world, gridSize, zoom, prof)
+  let s = snapPlacement(a.items, st.objects, world, gridSize, zoom, prof)
+  const nudge = a.snapTo ? a.snapTo(a.items, st.objects, s.dx, s.dy, zoom, gridSize) : null
+  if (nudge) s = { ...s, dx: s.dx + nudge.ddx, dy: s.dy + nudge.ddy, snapped: { ...s.snapped, run: 'its rack' } }
   const placed = placedItems(a.items, st.objects, s.dx, s.dy)
   const chk = checkPlacement(placed, st.objects, gridSize, prof)
   usePlacement.setState({ active: { ...a, dx: s.dx, dy: s.dy, snapped: s.snapped, fpId: s.fpId, blocked: chk.blocked, warnings: chk.warnings, crossAisle: chk.crossAisle } })
@@ -199,8 +204,12 @@ export function commitPlacement(store) {
   // only the new objects look selected: no other rack keeps a clicked bay
   const others = st.objects.map(o => (o.activeBayIdx != null || o.activeTowerIdx != null ? { ...o, activeBayIdx: null, ...(o.activeTowerIdx != null ? { activeTowerIdx: null } : {}) } : o))
   usePlacement.setState({ active: null })
-  store.setState({ objects: [...others, ...placed], groups: [...(st.groups || []), ...a.groups], selectedIds: a.select === false ? [] : placed.map(o => o.id), activeBaySelection: [] })
-  store.getState().commitObjectUpdate(placed[0].id, {})
+  let next = [...others, ...placed]
+  if (a.settle) next = a.settle(next, placed)
+  store.setState({ objects: next, groups: [...(st.groups || []), ...a.groups], selectedIds: a.select === false ? [] : placed.filter(o => next.includes(o)).map(o => o.id), activeBaySelection: [] })
+  // the history entry: on something this click wrote that is still there (a piece that joined its rack is gone)
+  const anchor = placed.find(o => next.includes(o)) || next.find(o => !st.objects.includes(o) && !others.includes(o)) || placed[0]
+  store.getState().commitObjectUpdate(anchor.id, {})
   return true
 }
 

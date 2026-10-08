@@ -17,8 +17,10 @@
 //     stays keeps the id, the other carries `pieceOf` and `splitOf` (the original rack's id, kept through
 //     further splits: no label is drawn in the gap between a split family's racks — crossAisles.js);
 //     `genRunFt` follows each one's start. The Row group
-//     passes the action over (skipNextAction). A piece dragged straight back onto the shared upright joins
-//     again (the in-line snap).
+//     passes the action over (skipNextAction). A piece brought back onto the shared upright of the rack it
+//     came from joins it again — dragged back (the in-line snap), or clicked back into place while it follows
+//     (it snaps onto that upright, and the click joins it: one undo step, the rack's id and fields, no
+//     splitOf); a group split's pieces alike. Esc still leaves it its own rack.
 //   - In a Row group (groupCuts): when the cut rack's row is in the group, every other group row is cut
 //     at the same position along the run — the rack spanning it, at an interior upright within ½" (the
 //     replay's own rule) — and its piece on the same side follows too. A row whose racks already meet at
@@ -34,6 +36,8 @@ import { geom, uprightsOf, withRun, isRowRack, rowsOf, rowOfRack, resolveKey, UP
 import { startPlacement } from './placement'
 import { skipNextAction, useRowGroup } from './rowGroupTool'
 import { keepStampsOnce } from './rowEditKeeper'
+import { inlineSnap, canJoin, joinRacks } from '../canvas2/inlineSnap'
+import { shifted } from './placement'
 import { TOOLS } from '../constants'
 
 export const SPLIT_TOOL = 'split'
@@ -175,6 +179,22 @@ export function splitAt(store, world, rackId, { newId, rebuildAisles } = {}) {
       skipNextAction()
       const was = new Map(items.map(o => [o.id, o]))
       return placed.map(p => { const m = was.get(p.id); return m && m.genRunFt != null ? { ...p, genRunFt: m.genRunFt + (geom(p).r0 - geom(m).r0) / gridSize } : p })
+    },
+    // the piece under the cursor snaps onto its rack's shared upright, as a drag's in-line snap does
+    snapTo: (its, objects, dx, dy, zoom, gs) => {
+      const stay = objects.find(o => o.id === pieces[0].stay.id)
+      return stay ? inlineSnap(shifted(its[0], dx, dy), [stay], gs, Math.min(12 / (zoom || 1), gs)) : null
+    },
+    // placed back on its rack's shared upright, a piece joins it again (one rack, its id and fields; no splitOf)
+    settle: (objects, placed) => {
+      let out = objects
+      for (const p of pieces) {
+        const piece = placed.find(o => o.id === p.moving.id), stay = out.find(o => o.id === p.stay.id)
+        if (!piece || !stay || !canJoin(piece, stay, gridSize)) continue
+        const merged = joinRacks(stay, piece, gridSize)
+        out = out.filter(o => o.id !== piece.id).map(o => (o.id === stay.id ? merged : o))
+      }
+      return out
     },
     onCancel: () => {
       const s = store.getState()

@@ -1834,6 +1834,46 @@ drive"; clicked, the gap highlighted "2' 11" · needs 8'". (Checked as a warning
 it is an error since — the same item, red, under Errors. The other error is BUG
 71's column on an upright, unchanged.)
 
+### RJ — A split piece back on its rack's upright rejoins · `RJ_splitRejoin.test.js` (20 tests)
+Code: the Split tool's placement (`snapTo`, `settle` in `utils/splitTool.js`, the hooks in
+`utils/placement.js`); `groupDragExclusions` in `utils/rowGroup.js`.
+
+Hand check: split then rejoin worked on hand-placed racks but not on Generate's or Fill racking's.
+Found with a real mouse (both orientations, hand-placed, Fill racking and Generate racks):
+- **Split, then a click back at the cut** never rejoined, on any kind of rack — the placement only
+  placed; joining was the drag's alone. Every field the join compares matched (only `genRunFt`,
+  `pieceOf`, `splitOf` differ, none compared).
+- **Placed away, then dragged back** rejoined — except a rack whose row is in a Row group, dragged
+  back a few pixels short: a group row's drag skips, as snap targets, every rack of the group's rows
+  and every rack lined up with where it started — the rack the piece came from among them — so it
+  never snapped onto the shared upright (a Fill or Generate row usually still caught a neighbour's
+  upright; a lone hand-placed rack did not).
+
+Now, while the piece follows the mouse it snaps onto its rack's shared upright (`inlineSnap`, the
+drag's own), and the click joins every piece that lands on its rack's shared upright (`canJoin`,
+`joinRacks`): one rack, its id and fields, no `splitOf`, ONE history entry — a group split's pieces
+alike. A Row group drag never skips the rack a split piece came from, nor its other pieces. Esc, or a
+click elsewhere, still leaves it its own rack.
+
+| Test | Asserts (vertical and horizontal; Fill racking's racks and Generate's) |
+|---|---|
+| `RJ-click` | Split, a click right back at the cut: one rack, the original exactly (id, bays, place), no splitOf, one history entry; undo back to the original |
+| `RJ-snap` | a click 0.2' short and 0.1' across: snapped onto the shared upright ("its rack"), joined |
+| `RJ-drag` | placed 4' away, its row in a Row group: the drag's skipped targets don't include its rack; dragged back, joined — one rack, no splitOf, one history entry |
+| `RJ-group` | three rows split through the Row group, clicked back at the cut: every piece joins its own rack, the rows as they were, one history entry |
+| `RJ-stay` | Split + Esc → its own rack on the shared upright; a click 4' away → split |
+
+`SP-paste` now leaves its piece with Esc (a click straight back at the cut would join it).
+
+**Break-its:** the click back at the cut not joining: RJ-click, RJ-snap, RJ-group (12). No snap onto
+the shared upright while it follows: RJ-snap (4). A Row group drag skipping the rack the piece came
+from: RJ-drag (4).
+
+**Checked in the app** (real mouse, both orientations; a hand-placed pair, the fixture's Fill racking
+row 7, a Generate row; the row in a Row group): Split, click back at the cut → one rack, as it was, no
+splitOf; Split, placed 4' away, dragged back 5 px short → one rack, history +1 (the hand-placed one used
+to stay split, 0.12' short).
+
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.
 
