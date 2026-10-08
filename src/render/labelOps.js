@@ -70,7 +70,7 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true) {
   const out = []
   const warn = aisleWarningRect(block, col)
   if (warn) out.push({ op: 'rect', name: 'aisle-warning', x: warn.x, y: warn.y, w: warn.w, h: warn.h, fill: 'rgba(192,57,43,0.16)', stroke: SHORT_COLOR, strokeWidth: 1.5 / lz, dash: [6 / lz, 4 / lz] })
-  for (const m of visibleClearanceMarks(block, col, lz, gridSize, showLabels)) {
+  const marks = visibleClearanceMarks(block, col, lz, gridSize, showLabels).map(m => {
     /* A gap shorter than its own label can't hold it: slide the pill off to
        the side of the arrow instead of over the column and rack (text is
        always horizontal, so the pill's extent along the arrow differs by
@@ -80,9 +80,19 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true) {
     const along = block.axis === 'y' ? pillH : pillW, across = block.axis === 'y' ? pillW : pillH
     const off = gapLen < along + 4 / lz ? across / 2 + 6 / lz : 0
     const lx = m.label.x + (block.axis === 'y' ? off : 0), ly = m.label.y - (block.axis === 'x' ? off : 0)
+    return { m, lx, ly, pill: { x: lx - pillW / 2, y: ly - pillH / 2, w: pillW, h: pillH } }
+  })
+  /* The column's two labels would overlap (a column at or near a rack face): only the wider side's label
+     is drawn — both arrows stay. */
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+  let hidden = null
+  if (marks.length === 2 && hit(marks[0].pill, marks[1].pill)) hidden = (marks[0].m.ft ?? 0) >= (marks[1].m.ft ?? 0) ? marks[1] : marks[0]
+  for (const k of marks) {
+    const { m, lx, ly } = k
     out.push({ op: 'line', points: [m.shaft[0].x, m.shaft[0].y, m.shaft[1].x, m.shaft[1].y], stroke: m.color, strokeWidth: sw },
-      { op: 'poly', points: m.arrowhead.flatMap(q => [q.x, q.y]), fill: m.color },
-      ...pillOps(lx, ly, m.label.text, fs, lz, { color: m.color, bg: m.short ? 'rgba(254,226,226,0.95)' : 'rgba(224,242,254,0.92)', padX: 3 / lz, heightScale: 1.4, rx: 2 / lz, stroke: m.short ? SHORT_COLOR : '#7dd3fc', strokeWidth: 0.5 / lz, opacity: 0.95 }))
+      { op: 'poly', points: m.arrowhead.flatMap(q => [q.x, q.y]), fill: m.color })
+    if (k === hidden) continue
+    out.push(...pillOps(lx, ly, m.label.text, fs, lz, { color: m.color, bg: m.short ? 'rgba(254,226,226,0.95)' : 'rgba(224,242,254,0.92)', padX: 3 / lz, heightScale: 1.4, rx: 2 / lz, stroke: m.short ? SHORT_COLOR : '#7dd3fc', strokeWidth: 0.5 / lz, opacity: 0.95 }))
   }
   return out
 }

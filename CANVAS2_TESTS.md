@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### CA — Columns in aisles and Generate's aisles on the labels' pairing (BUG 75) · `CA_columnAisles.test.js` (11 tests)
+### CA — Columns in aisles and Generate's aisles on the labels' pairing (BUG 75) · `CA_columnAisles.test.js` (15 tests)
 Code: `generate/rowAisles.js` (new: `neighbourPairs`, `rowAisleGaps`, `rowGaps`, `groupBySegment`),
 `generate/rackFootprint.js` (new); `aisleColumnBlocks` (columnCheck.js), `aisleObjectsForRacks`
 (traceGenerate.js); `reference/columnCheck.v1.js` (its pairing only).
@@ -1933,12 +1933,26 @@ frozen reference took the new pairing (approved).
 | `CA-block` ×2 | the layout as saved (both ways): a column 0.5' off a face, 9' on its other side; that row moved 1.5' toward it → 7.5' clear, blocked, a red mark; "a column leaves 7' 6", needs 8' to drive" |
 | `CA-both` ×2 | pick from both sides on: the 23 flagged, 23 red marks, 23 blocked aisles; usable unchanged |
 | `CA-generate` ×2 | Generate's aisle objects are the labels' pairs — on the layout as saved and on a Generate layout |
-| `CA-graph` | rowAisles.js imports only rackFootprint.js and syncSections.js; rackFootprint.js nothing; the four users import rowAisles.js |
+| `CA-labels` ×2 | a column at a rack face (9' / 0.5') whose two clearance labels would overlap: only "9' clear" is drawn, both arrows stay — vertical at the default Label size, horizontal at a custom 60" (its labels stack along the arrow and don't meet before ~55") |
+| `CA-labels-all` ×2 | every column in an aisle at all four Label sizes and 60": two lines and two arrowheads each; drawn labels never overlap; a dropped label is always the narrower side; some dropped and some kept; horizontal at the default size keeps both on the face column |
+| `CA-graph` | rowAisles.js imports only rackFootprint.js and syncSections.js; rackFootprint.js nothing; the four users import rowAisles.js; palletFit.js imports nothing, bayLedger.js imports it and not capacity.js |
 
 **Break-its:** the column check back on the old pairing: CA-fills, CA-block, CA-both, RG-together,
 RG-drift, PF-edits, PF-cache (21). Usable reading the aisle blocks: CA-fills, CA-both (6). Generate back on
 the old pairing: CA-generate (2). The frozen reference left on the old pairing: PF-edits, PF-cache (9).
-rowAisles.js importing columnCheck back (a cycle): CA-graph (1).
+rowAisles.js importing columnCheck back (a cycle): CA-graph (1). No overlap check on the clearance labels:
+CA-labels, CA-labels-all (4). The wider label dropped instead: the same (4). bayLedger.js importing
+capacity.js again (a cycle): CA-graph (1).
+
+**Clearance labels** (`clearanceOps`, render/labelOps.js): when one column's two labels would overlap —
+their pill boxes, after a short gap's pill slides beside the arrow — only the wider side's label is
+drawn (the marks carry `ft` for it); both arrows always draw. Vertical rows at the default Label size:
+the face columns (9' / 0.5') and the 4.2' / 4.3' / 6.4' against 8' columns keep only their 8' or 9'
+label. Horizontal rows keep both at every preset size.
+
+**palletFit.js** (new): `positionsPerBeam`, `UPRIGHT_CLEARANCE_IN`, `PALLET_GAP_IN` moved out of
+capacity.js (re-exported there), so bayLedger.js and capacity.js no longer import each other. No
+behaviour change.
 
 **Checked in the app** (real mouse, the layout as saved, both orientations): the column between rows 1/8
 and 1/9 shows its clearance arrows (9' / 0.5'); the panel 10,832 positions, 10,648 usable; row 1/8 dragged

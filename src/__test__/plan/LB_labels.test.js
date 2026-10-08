@@ -113,7 +113,7 @@ describe('LB — Column labels (now part of the Checks layer)', () => {
       expect(line).toMatch(/^\s*\{marksOn && </)
     }
     const ops = readFileSync('src/render/labelOps.js', 'utf8')
-    expect(ops).toMatch(/for \(const m of visibleClearanceMarks\(block, col, lz, gridSize, showLabels\)\)/)
+    expect(ops).toMatch(/visibleClearanceMarks\(block, col, lz, gridSize, showLabels\)/)
     expect(ops).toMatch(/if \(warn\) out\.push\(\{ op: 'rect', name: 'aisle-warning'/)             // the shade whatever the switch says
   })
 })

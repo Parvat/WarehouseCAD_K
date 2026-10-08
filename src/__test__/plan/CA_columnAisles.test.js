@@ -130,6 +130,9 @@ import { aisleColumnBlocks, MHE_PROFILES } from '../../generate/columnCheck'
 import { layoutColumns, usableCapacity, runColumnCheck } from '../../generate/usableCapacity'
 import { planAreaCreate } from '../../generate/rackingArea'
 import { aisleObjectsForRacks, generateAndPlace } from '../../generate/traceGenerate'
+import { clearanceOps } from '../../render/labelOps'
+import { clearanceMarks } from '../../canvas2/aisleMarks'
+import { labelScale, LABEL_SIZES } from '../../render/labelSize'
 
 const FILLS = [['as saved, vertical', false, 'vertical', true, { cols: 23, usable: 10648, pickLost: 184 }], ['as saved, horizontal', false, 'horizontal', false, { cols: 18, usable: 10512, pickLost: 176 }], ['turned, vertical', true, 'vertical', false, { cols: 18, usable: 10512, pickLost: 176 }], ['turned, horizontal', true, 'horizontal', false, { cols: 23, usable: 10632, pickLost: 184 }]]
 function fillOf(turned, orientation, stored) {
@@ -197,8 +200,41 @@ describe.each([['vertical', true], ['horizontal', false]])('CA — %s', (_, vert
   })
 })
 
+describe.each([['vertical', true, 'medium'], ['horizontal', false, 60]])('CA-labels — %s', (_, vert, faceSize) => {
+  const kinds = (ops) => ({ lines: ops.filter(o => o.op === 'line').length, polys: ops.filter(o => o.op === 'poly').length, texts: ops.filter(o => o.op === 'text').map(o => o.text) })
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+  it('CA-labels: a column at a rack face (9 ft / 0.5 ft) whose two clearance labels would overlap — only the wider side, "9\' clear", is labelled; both arrows stay', () => {
+    const base = savedFill(vert), cols = layoutColumns(base, GS), LZ = labelScale(faceSize, GS)
+    const face = blocksOf(base).aisleBlocks.find(x => Math.min(x.nearClearFt, x.farClearFt) <= 0.5 && Math.max(x.nearClearFt, x.farClearFt) >= 9)
+    expect(face, 'a column 0.5 ft off a face').toBeTruthy()
+    expect(kinds(clearanceOps(face, cols[face.columnIndex], LZ, GS, true))).toEqual({ lines: 2, polys: 2, texts: ["9' clear"] })
+  })
+  it('CA-labels-all: every column in an aisle, every Label size — its drawn labels never overlap, both arrows always draw, and a dropped label is always the narrower side; where they do not collide (horizontal at the default size, the face column included) both stay. Sizes: the four presets and a custom 60 in', () => {
+    const base = savedFill(vert), cols = layoutColumns(base, GS), blocks = blocksOf(base).aisleBlocks
+    let dropped = 0, kept = 0
+    for (const size of [...Object.keys(LABEL_SIZES), 60]) {
+      for (const b of blocks) {
+        const ops = clearanceOps(b, cols[b.columnIndex], labelScale(size, GS), GS, true), k = kinds(ops)
+        expect([k.lines, k.polys]).toEqual([2, 2])
+        const t = ops.filter(o => o.op === 'text')
+        if (t.length === 2) { expect(hit(t[0], t[1])).toBe(false); kept++ } else {
+          expect(t.length).toBe(1)
+          expect(t[0].text).toBe(`${Math.max(b.nearClearFt, b.farClearFt)}' clear`)
+          dropped++
+        }
+      }
+    }
+    expect(dropped).toBeGreaterThan(0)
+    expect(kept).toBeGreaterThan(0)
+    if (!vert) {
+      const face = blocks.find(x => Math.min(x.nearClearFt, x.farClearFt) <= 0.5)
+      expect(kinds(clearanceOps(face, cols[face.columnIndex], labelScale('medium', GS), GS, true)).texts).toEqual(["9' clear", "0.5' clear"])
+    }
+  })
+})
+
 describe('CA-graph', () => {
-  it('CA-graph: one pairing module, no two files importing each other — rowAisles.js imports only rackFootprint.js and syncSections.js; the aisle labels, Check layout, the column check and Generate import it; rackFootprint.js imports nothing', () => {
+  it('CA-graph: one pairing module, no two files importing each other — rowAisles.js imports only rackFootprint.js and syncSections.js; the aisle labels, Check layout, the column check and Generate import it; rackFootprint.js imports nothing; bayLedger.js and capacity.js share palletFit.js (which imports nothing) and bayLedger.js does not import capacity.js', () => {
     const imports = (f) => [...readFileSync(f, 'utf8').matchAll(/^\s*import\s[^'"]*from\s+['"]([^'"]+)['"]/gm)].map(m => m[1])
     expect(imports('src/generate/rowAisles.js').sort()).toEqual(['../utils/syncSections', './rackFootprint'])
     expect(imports('src/generate/rackFootprint.js')).toEqual([])
@@ -207,5 +243,11 @@ describe('CA-graph', () => {
     expect(imports('src/utils/aisleRebuild.js')).toContain('../generate/rowAisles')
     expect(imports('src/utils/layoutCheck.js')).toContain('../generate/rowAisles')
     expect(imports('src/generate/traceGenerate.js')).toContain('./rowAisles')
+    // positionsPerBeam and its spacing live in palletFit.js: bayLedger.js and capacity.js both use it and never import each other
+    expect(imports('src/utils/palletFit.js')).toEqual([])
+    expect(imports('src/utils/bayLedger.js')).toContain('./palletFit')
+    expect(imports('src/utils/bayLedger.js')).not.toContain('./capacity')
+    expect(imports('src/utils/capacity.js')).toContain('./palletFit')
+    expect(imports('src/utils/capacity.js')).toContain('./bayLedger')
   })
 })

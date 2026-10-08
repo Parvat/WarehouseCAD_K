@@ -25,7 +25,7 @@
 // Pure, and cached: computed again only when a rack changes (the racks' geometry key), never for a
 // change elsewhere — and the panels hold their last ledger while a drag is in flight.
 
-import { positionsPerBeam } from './capacity'
+import { positionsPerBeam } from './palletFit'
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const EPS = 1e-6

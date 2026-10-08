@@ -42,7 +42,7 @@ export function clearanceMarks(block, col, zoom = 1, gridSize = 40) {
     const color = s.short ? SHORT_COLOR : CLEAR_COLOR
     const base = s.to - dir * h
     out.push({
-      side: s.side, color, short: s.short, style: 'arrow', dash: null,
+      side: s.side, ft: s.ft, color, short: s.short, style: 'arrow', dash: null,
       shaft: [P(s.from, rMid), P(base, rMid)],
       arrowhead: [P(s.to, rMid), P(base, rMid - h / 2), P(base, rMid + h / 2)],
       label: { ...P((s.from + s.to) / 2, rMid), text: s.short ? `${s.ft}' — under travel` : `${s.ft}' clear` },
