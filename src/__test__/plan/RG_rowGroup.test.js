@@ -288,12 +288,15 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
   })
 
   /* ── a move across, a delete, a row added beside ── */
-  it('RG-across: row 7 of every section; section 4\'s row moved 1\' across → the others move the same 1\'; one undo step', async () => {
+  it('RG-across: row 7 of every section; section 4\'s row moved 1\' across → the others move the same 1\', each with a warning — the move leaves 9\' 6" on one side, under the pick width (an aisle Check layout sees since BUG 74); one undo step', async () => {
     load(filled(vert))
     addRowOf(pairOf(key(4, 7)).id, { otherSections: true })
     const s0 = new Map([1, 2, 3, 4].map(i => [i, RG.geom(pairOf(key(i, 7))).s0]))
     await moveRow(key(4, 7), GS, 0, vert)
-    expect(st().pending.summary.text).toBe('Apply to the other 3 rows?')
+    expect(st().pending.summary.text).toBe('Apply to the other 3 rows? 3 will have warnings.')
+    const warned = st().pending.plan.targets.filter(t => (t.warnings || []).length)
+    expect(warned.length).toBe(3)
+    for (const t of warned) expect(t.warnings).toEqual([RG.WARN_KINDS['aisle-pick']])
     const h = hist()
     applyPending(); await settle()
     expect(hist()).toBe(h + 1)

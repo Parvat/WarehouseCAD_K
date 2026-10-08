@@ -6043,7 +6043,7 @@ silent. The Row group carries it. Tests: area AX.
 
 ---
 
-## BUG 74 — Check layout's aisle check between rows looks at almost none of the aisles on a layout with sections  (2026-10-08, open)
+## BUG 74 — Check layout's aisle check between rows looks at almost none of the aisles on a layout with sections  (2026-10-08, fixed 2026-10-08)
 Symptom:  Found while testing the failing-width display (canvas2-access-width):
 on the hand-check layout, section 2's rows 7 and 8 moved to a 7.99 ft aisle —
 under the 8 ft travel width — gave no "Aisle between …" error. Counted on the
@@ -6059,11 +6059,32 @@ the list: the rows of different sections, at the same positions across,
 interleave, and a section's two neighbouring rows are almost never next to each
 other in it. The same root as BUG 73 (section envelopes swallowed by wall rows).
 
-Fix:      Open — not this round. Wanted: the aisle between each pair of racks
-facing each other across a clear gap (per line, as the aisle labels'
-`neighbourPairs` and `sectionCrossAisles` do), measured with `aisleLevel`.
-It will add errors and warnings wherever an aisle is already under width and
-went unseen — to be counted on the fixture before it lands.
+Fix:      `rowAisleGaps` (layoutCheck.js): beam racks are paired exactly as the
+aisle labels pair them (`neighbourPairs`), so a label and its check never
+disagree; pairs with another rack type stay on `rowGaps`. On the fixture's
+four fills it checks 56 / 54 / 54 / 55 aisles (2 / 0 / 0 / 2 before) and
+finds nothing (every aisle is 10' 6" or more). RG-across now warns ("3 will
+have warnings": its 1' move leaves 9' 6", under the pick width). Tests: area
+RW. The column check's same fault is BUG 75.
+
+---
+
+## BUG 75 — the column-in-aisle check and Generate's aisles miss most aisles on a layout with sections  (2026-10-08, open)
+Symptom:  Found with BUG 74: the same pairing fault in two more places. The
+column check's "a column in an aisle" (`aisleColumnBlocks`, columnCheck.js —
+the clearance arrows, the red aisle marks, the positions a column in an aisle
+costs) pairs rows through `rowGaps`; Generate's own aisle objects
+(`aisleObjectsForRacks`, traceGenerate.js) through `groupBySegment`.
+
+Cause:    As BUG 74: `groupBySegment` joins every rack sharing any of the run,
+so full-length wall rows chain all the sections into one segment, and
+`rowGaps` compares only neighbours in that segment's list across — on the
+hand-check layout almost no aisle is seen.
+
+Fix:      Open — next after BUG 74. Wanted: the same pairing as the aisle
+labels and Check layout's aisle check (`neighbourPairs`). It changes the
+column check's figures (positions lost in aisles, "if absorbed / removed"), so
+count them on the fixture before it lands.
 
 ---
 

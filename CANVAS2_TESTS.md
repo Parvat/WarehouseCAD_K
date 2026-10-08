@@ -1874,6 +1874,39 @@ row 7, a Generate row; the row in a Row group): Split, click back at the cut →
 splitOf; Split, placed 4' away, dragged back 5 px short → one rack, history +1 (the hand-placed one used
 to stay split, 0.12' short).
 
+### RW — Every aisle between facing rows is checked (BUG 74) · `RW_rowAisles.test.js` (12 tests)
+Code: `rowAisleGaps` in `utils/layoutCheck.js`.
+
+Check layout's aisle check used `rowGaps`, which works per segment of racks joined by any shared run —
+so a layout's full-length wall rows chained all its sections into one segment, and only neighbours in
+one list across were compared: on the fixture's four fills it checked 2 / 0 / 0 / 2 of 56 / 55 / 55 / 55
+aisles. Now beam racks are paired exactly as the aisle labels pair them (`neighbourPairs`: facing
+stretches, per line), so a label and its check never disagree, whatever the sections or the wall rows;
+a pair with another rack type stays on `rowGaps`. The grading is unchanged (`aisleLevel`: under the
+drive width an error, under the pick width a warning; a failing width rounded down). On the four fills
+it checks 56 / 54 / 54 / 55 aisles and finds nothing (the narrowest is 10' 6"). The column check's own
+pairing has the same fault — BUG 75, next.
+
+Changed: `RG-across` — its 1' move leaves 9' 6" on one side, under the pick width: "Apply to the other 3
+rows? 3 will have warnings.", each "an aisle under the pick width" (approved).
+
+| Test | Asserts (vertical and horizontal) |
+|---|---|
+| `RW-narrow` | the layout as saved, rows 7 and 8 of section 2 (the old pairing never saw them): 7.99' → error "Aisle between rows 7 and 8, section 2: 7' 11", needs 8' to drive"; 10.49' → warning "10' 5", needs 10' 6" to pick"; 10.5' → nothing |
+| `RW-wall` | a wall row and the row it faces, 7.99' → the error, both named |
+| `RW-sections` | two facing rows of different sections, 7.99' → the error |
+| `RW-other` | two facing cantilever racks, 7.99' → still checked |
+| `RW-labels` ×4 | the four fills: the aisles checked are exactly the aisles labelled (the same pairs of racks, as the aisle keeper keeps them), none under width |
+
+**Break-its:** the old `rowGaps` pairing back for beam racks: RW-sections, RG-across (4). The check
+pairing differently from the labels (one section only): RW-sections, RW-labels (6). Other rack types
+dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG-across, LC-aisle (8).
+
+**Checked in the app** (real mouse, the layout as saved, both orientations): rows 7 and 8 of section 2,
+10' 6" → nothing; row 8 dragged 1' closer → 9' 6", "Aisle between rows 7 and 8, section 2: 9' 6", needs
+10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
+Ctrl+Z → nothing.
+
 ### PD — Placing and dragging rows · `PD_placeDrag.test.js` (8 tests)
 The placement and drag checks from SC, CF and EX that are not about copying.
 
