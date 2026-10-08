@@ -40,7 +40,7 @@ import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate
 import { rackIssues } from './bayBeam'
 import { cutOffRacks } from '../generate/aisleAccess'
 import { oversizedBayIndices } from './capacity'
-import { fmtLen, sectionLabel, sectionCrossAisles } from './copyChange'
+import { fmtLen, fmtLenDown, sectionLabel, sectionCrossAisles } from './copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { useDragPreview } from '../canvas2/dragPreview'
 
@@ -97,6 +97,9 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
   const foot = new Map(racks.map(r => [r.id, rackFootprint(r)]))
   const name = (r) => rackName(r, racks)
   const len = (px) => fmtLen(px, gridSize)
+  // a width that FAILS reads rounded DOWN to the inch, so it never reads the same as the width it needs
+  // (7.99 ft is 7' 11", never 8')
+  const short = (px) => fmtLenDown(px, gridSize)
   const travelPx = (profile.travelFt ?? 8) * gridSize, aislePx = profile.aisleFt * gridSize
 
   // ── aisles between neighbouring rows ──
@@ -108,9 +111,9 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
     const where = `Aisle between ${pairName(g.top, g.bot, racks)}`
     const need = lvl === 1 ? travelPx : aislePx
     const item = { kind: lvl === 1 ? 'aisle-drive' : 'aisle-pick', ids: [g.top.id, g.bot.id], box: g.box,
-      highlight: [shade(g.box, lvl === 1 ? HL.red : HL.amber, `${len(g.gapLen)} · needs ${len(need)}`)] }
-    if (lvl === 1) { pinchedPairs.add(g.top.id + '|' + g.bot.id); errors.push({ ...item, severity: 'error', text: `${where}: ${len(g.gapLen)}, needs ${len(travelPx)} to drive` }) }
-    else warnings.push({ ...item, severity: 'warning', text: `${where}: ${len(g.gapLen)}, needs ${len(aislePx)} to pick` })
+      highlight: [shade(g.box, lvl === 1 ? HL.red : HL.amber, `${short(g.gapLen)} · needs ${len(need)}`)] }
+    if (lvl === 1) { pinchedPairs.add(g.top.id + '|' + g.bot.id); errors.push({ ...item, severity: 'error', text: `${where}: ${short(g.gapLen)}, needs ${len(travelPx)} to drive` }) }
+    else warnings.push({ ...item, severity: 'warning', text: `${where}: ${short(g.gapLen)}, needs ${len(aislePx)} to pick` })
   }
 
   // ── cross-aisles between sections, per line, under the travel width (to 0.001 ft) — a warning: the racks
@@ -121,8 +124,8 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       if (!underTravel(w, travelPx, gridSize)) continue
       const box = rot ? { x: g.cross[0], y: g.lo, w: g.cross[1] - g.cross[0], h: w } : { x: g.lo, y: g.cross[0], w, h: g.cross[1] - g.cross[0] }
       warnings.push({ severity: 'warning', kind: 'cross-aisle', ids: [g.a.id, g.b.id], box,
-        highlight: [shade(box, HL.amber, `${len(w)} · needs ${len(travelPx)}`)],
-        text: `Cross-aisle between ${pairName(g.a, g.b, racks)}: ${len(w)}, needs ${len(travelPx)} to drive` })
+        highlight: [shade(box, HL.amber, `${short(w)} · needs ${len(travelPx)}`)],
+        text: `Cross-aisle between ${pairName(g.a, g.b, racks)}: ${short(w)}, needs ${len(travelPx)} to drive` })
     }
   }
 
@@ -140,8 +143,8 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       const band = col ? (b.axis === 'x' ? { x: b.gapStart, y: col.y, w: b.gapEnd - b.gapStart, h: col.h } : { x: col.x, y: b.gapStart, w: col.w, h: b.gapEnd - b.gapStart }) : null
       errors.push({ severity: 'error', kind: 'aisle-drive', ids: [t.id, u.id],
         box: col ? union([col, band]) : boxOf(foot.get(t.id)),
-        highlight: band ? [shade(band, HL.red, `${len(b.clearFt * gridSize)} · needs ${len(travelPx)}`)] : [],
-        text: `Aisle between ${pairName(t, u, racks)}: a column leaves ${len(b.clearFt * gridSize)}, needs ${len(travelPx)} to drive` })
+        highlight: band ? [shade(band, HL.red, `${short(b.clearFt * gridSize)} · needs ${len(travelPx)}`)] : [],
+        text: `Aisle between ${pairName(t, u, racks)}: a column leaves ${short(b.clearFt * gridSize)}, needs ${len(travelPx)} to drive` })
     }
     // columns on upright frames: one item per rack
     const onRack = new Map(), frames = new Map()

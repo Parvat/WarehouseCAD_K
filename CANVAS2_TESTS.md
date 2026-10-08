@@ -1767,7 +1767,7 @@ rows as one): LF-single, LF-pair, LF-settle (6). Touching racks merged (4"
 instead of ½"): LF-settle (2). A pair as one frame per position: LF-pair,
 LF-group, LF-settle (6).
 
-### AX — The exact travel width (BUG 72, BUG 73) · `AX_accessWidth.test.js` (21 tests)
+### AX — The exact travel width (BUG 72, BUG 73) · `AX_accessWidth.test.js` (24 tests)
 Code: `floorAccess` / `floorCells` and `stripsFor` in `generate/aisleAccess.js`;
 `sectionCrossAisles` / `generatedCrossAisleGaps` in `utils/copyChange.js`; the
 `cross-aisle` warning in `utils/layoutCheck.js`; its word in `utils/rowGroup.js`.
@@ -1810,6 +1810,8 @@ saved vertical / turned horizontal, 38 the other two fills; none under 8'.
 | `AX-73-stand` | a plain rack standing in the cross-aisle: both gaps either side warn, each naming it |
 | `AX-73-group` | rows 6–8 of section 2 grouped, row 7 grown toward section 3: the apply offered to rows 6 and 8 carries "a cross-aisle under the travel width" |
 | `AX-place` | the layout as saved: a one-bay single placed in the 16.6' cross-aisle between sections 1 and 2 → "In the cross-aisle between sections 1 and 2" (the envelope rule found none) |
+| `AX-short` | a width that FAILS reads rounded down to the inch (`fmtLenDown`), never the same as the width it needs: a cross-aisle of 7.99' "7' 11", needs 8'"; an aisle between two rows (plain racks — the fixture's row aisles aren't checked, BUG 74) at 7.99' "7' 11", needs 8' to drive", at 10.49' "10' 5", needs 10' 6" to pick" (rounding said 10' 6"); the highlight labels the same; 10.5' passes, nothing shown |
+| `AX-short-format` | `fmtLenDown`: 7.99' → 7' 11", 10.49' → 10' 5", 8' (less float noise) → 8'; `fmtLen` (passing widths) unchanged; the column-in-aisle text and label use it too |
 | `AX-clean` | the access and check modules carry no `process.env` (it does not exist in the browser) and no `console.log` |
 | `AX-fills` ×4 | the fixture's four fills: nothing cut off, no "No way in", no cross-aisle warning; 25 / 38 cross-aisle lines |
 
@@ -1820,7 +1822,8 @@ gap in a line counted (inside a section too): AX-73-quiet, AX-fills, AA-pocket
 (5). A rack standing in the gap ignored: AX-73-stand (2). Reported as an error:
 AX-73, AX-73-boundary, AX-73-stand (6). No Row group word: AX-73-group (2).
 Placement back on section envelopes: PD-cross-aisle, AX-place (4). A debugging
-line left in aisleAccess.js: AX-clean (1).
+line left in aisleAccess.js: AX-clean (1). Failing widths rounded to the nearest
+inch again: AX-short (2).
 
 **Checked in the app** (real mouse, the fixture filled with horizontal rows, and
 turned with vertical ones): row 7, section 2 clicked, "+8'" → 14 bays, the

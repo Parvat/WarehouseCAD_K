@@ -6042,6 +6042,30 @@ silent. The Row group carries it. Tests: area AX.
 
 ---
 
+## BUG 74 — Check layout's aisle check between rows looks at almost none of the aisles on a layout with sections  (2026-10-08, open)
+Symptom:  Found while testing the failing-width display (canvas2-access-width):
+on the hand-check layout, section 2's rows 7 and 8 moved to a 7.99 ft aisle —
+under the 8 ft travel width — gave no "Aisle between …" error. Counted on the
+fixture's four fills (pairs of racks facing across an aisle, nothing between
+them): as saved vertical 56, checked 2; as saved horizontal 55, checked 0;
+turned vertical 55, checked 0; turned horizontal 55, checked 2.
+
+Cause:    `rowGaps` (columnCheck.js) works per segment from `groupBySegment`,
+which joins every rack sharing any of the run with another — so the wall rows,
+running the building's whole length, chain all the sections into one segment.
+`rowGaps` then sorts that whole segment across and compares only neighbours in
+the list: the rows of different sections, at the same positions across,
+interleave, and a section's two neighbouring rows are almost never next to each
+other in it. The same root as BUG 73 (section envelopes swallowed by wall rows).
+
+Fix:      Open — not this round. Wanted: the aisle between each pair of racks
+facing each other across a clear gap (per line, as the aisle labels'
+`neighbourPairs` and `sectionCrossAisles` do), measured with `aisleLevel`.
+It will add errors and warnings wherever an aisle is already under width and
+went unseen — to be counted on the fixture before it lands.
+
+---
+
 ## Template for new entries
 
 ```

@@ -30,6 +30,14 @@ export function fmtLen(px, gridSize = 40) {
   return f && i ? `${f}' ${i}"` : f ? `${f}'` : `${i}"`
 }
 
+/** As fmtLen, rounded DOWN to the inch: a width that fails a check, so it never reads the same as the width
+ *  it needs (7.99 ft is 7' 11", not 8'). A hair under the inch (float noise) still counts as the inch. */
+export function fmtLenDown(px, gridSize = 40) {
+  const inches = Math.floor((Math.abs(px) / gridSize) * 12 + 1e-6)
+  const f = Math.floor(inches / 12), i = inches % 12
+  return f && i ? `${f}' ${i}"` : f ? `${f}'` : `${i}"`
+}
+
 /** Every bay of a rack along the building's run, in world px:
  *  [{ i (local bay index), lo, hi, beam }] in world order. */
 export function bayRuns(o, gridSize = 40) {

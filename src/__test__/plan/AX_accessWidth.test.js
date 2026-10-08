@@ -128,7 +128,7 @@ const wallSingle = () => objs().filter(o => o.type === 'rack_row' && o.genSectio
 
 // ── AX: the exact travel width (BUG 72) and cross-aisles under it (BUG 73) ──────────────────────────────────
 import { cutOffRacks, giveWayIn } from '../../generate/aisleAccess'
-import { sectionCrossAisles } from '../../utils/copyChange'
+import { sectionCrossAisles, fmtLen, fmtLenDown } from '../../utils/copyChange'
 import { WARN_KINDS } from '../../utils/rowGroup'
 import { cutRack } from '../../utils/splitTool'
 import { checkPlacement } from '../../utils/placement'
@@ -259,6 +259,48 @@ describe.each([['vertical', true], ['horizontal', false]])('AX-place — %s', (_
     const chk = checkPlacement([one], out, GS)
     expect(chk.crossAisle).toBe(true)
     expect(chk.warnings).toContain('In the cross-aisle between sections 1 and 2')
+  })
+})
+
+describe.each([['horizontal', false], ['vertical', true]])('AX-short — %s', (_, vert) => {
+  it('AX-short: a width that FAILS reads rounded down to the inch, never the same as the width it needs — a cross-aisle of 7.99 ft reads 7\' 11", needs 8\'; an aisle between two rows at 7.99 ft reads 7\' 11", needs 8\' to drive; at 10.49 ft 10\' 5", needs 10\' 6" to pick (rounding said 10\' 6"); the label on the highlight the same', () => {
+    // the cross-aisle
+    let base = crossFill(vert), a = rackOf(base, 2, 7), b = rackOf(base, 3, 7)
+    const d = (RG.geom(a).r1 + 7.99 * GS) - RG.geom(b).r0
+    const cross = crossWarnings(base.map(o => (o.id === b.id ? RG.movedAlong(o, d) : o))).find(w => w.ids.includes(b.id))
+    expect(cross.text).toBe(`Cross-aisle between row 7, section 2 and row 7, section 3: 7' 11", needs 8' to drive`)
+    expect(cross.highlight[0].label).toBe(`7' 11" · needs 8'`)
+    // the aisle between two rows: two plain racks facing each other in the empty building (the fixture's own row
+    // aisles are not checked at all today — BUG 74 — so they can't show it)
+    const across = (ft) => {
+      const { objects, rack } = oneRack(vert), g = RG.geom(rack)
+      const other = { ...RG.movedAcross(rack, (g.s1 - g.s0) + ft * GS), id: 'facing' }
+      const chk = checkLayout([...objects, other], { gridSize: GS })
+      return [...chk.errors, ...chk.warnings].find(i => (i.kind === 'aisle-drive' || i.kind === 'aisle-pick') && i.ids.includes('facing'))
+    }
+    const drive = across(7.99)
+    expect(drive.kind).toBe('aisle-drive')
+    expect(drive.text).toMatch(/^Aisle between .+: 7' 11", needs 8' to drive$/)
+    expect(drive.highlight[0].label).toBe(`7' 11" · needs 8'`)
+    const pick = across(10.49)
+    expect(pick.kind).toBe('aisle-pick')
+    expect(pick.text).toMatch(/^Aisle between .+: 10' 5", needs 10' 6" to pick$/)
+    expect(across(10.5)).toBeUndefined()                                            // a passing width: nothing to show
+  })
+})
+
+describe('AX-short format', () => {
+  it('AX-short-format: fmtLenDown rounds down to the inch (7.99 ft → 7\' 11", 10.49 ft → 10\' 5"), a whole inch less float noise still reads the inch (8 ft → 8\'), and fmtLen — what passing widths show — is unchanged (7.99 ft → 8\')', () => {
+    expect(fmtLenDown(7.99 * GS, GS)).toBe(`7' 11"`)
+    expect(fmtLenDown(10.49 * GS, GS)).toBe(`10' 5"`)
+    expect(fmtLenDown(8 * GS, GS)).toBe(`8'`)
+    expect(fmtLenDown((8 - 1e-9) * GS, GS)).toBe(`8'`)
+    expect(fmtLen(7.99 * GS, GS)).toBe(`8'`)
+    expect(fmtLen(10.5 * GS, GS)).toBe(`10' 6"`)
+    // a column leaving a width: the same rounding down, in its text and label
+    const src = readFileSync('src/utils/layoutCheck.js', 'utf8')
+    expect(src).toContain('a column leaves ${short(b.clearFt * gridSize)}, needs')
+    expect(src).toContain('`${short(b.clearFt * gridSize)} · needs ${len(travelPx)}`')
   })
 })
 
