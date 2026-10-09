@@ -1907,6 +1907,39 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### CX — Cross-aisle labels from the per-line cross-aisles · `CX_crossAisleLines.test.js` (18 tests)
+Code: `crossAisleLabels` (canvas2/crossAisles.js): `lineLabels` (new) for a building whose rows carry section
+stamps, `envelopeLabels` (the old code, unchanged) for one with none.
+
+A sectioned building's cross-aisle labels come from the per-line cross-aisles Check layout measures
+(`sectionCrossAisles`); wall rows take no part (an unbroken wall row has no gap, so it adds no line — the merged
+envelopes let one swallow every section, and a Fill racking layout had no cross-aisle labels). The lines whose
+gaps overlap along the run, next to each other across with no rack standing across the gap between them, are
+one cross-aisle with ONE label (whatever sections either side). It reads the narrowest line's width, its arrow
+spans that line's gap, centred across the lines; red by `failingCrossAisles` (AW). A gap inside one section
+(a split, a deleted bay) is not a cross-aisle, so it has no label. Generate's layouts come out exactly as
+before; a building with no section stamps keeps the old labels. No existing test changed.
+
+| Test | Asserts |
+|---|---|
+| `CX-fills` ×4 | the fixture's four fills (0 labels before): as saved vertical 1 × 16' 8" (gap −7.631..9.000 ft, at −2.928 across); as saved horizontal and turned vertical 3 × 11' 2" (−131.106..−119.904 at −5.375, −12.404..−1.202 at 7.000, 122.798..134.000 at −12.375); turned horizontal 1 × 16' 8" (at −4.472); none red, nothing listed; no arrow or pill on a rack |
+| `CX-generate` ×4 | Generate 250×500 / 500×250: 3 × 9' 3" (−142..−132.75, −0.5..8.75, 124.5..133.75, at 0); 300×420 / 420×300: 2 × 11' 2" (−77.25..−66.125, 66.125..77.25, at 0) — as before |
+| `CX-one` ×6 | the layout as saved, both ways, one rack beside the cross-aisle moved so its line is 8.00 / 7.9995 / 7.99 ft: still one label, centred as before, reading that line — 8' / 8' / red 7' 11"; Check layout lists the cross-aisle only at 7.99 (7.9995 is within its 0.001 ft) |
+| `CX-split` ×2 | a rack standing across in a row aisle between two lines of the cross-aisle: two labels, one each side, both 16' 8" |
+| `CX-hand` ×2 | a Generate layout with its section stamps stripped: the old labels, the same three 9' 3" |
+
+**Break-its:** one label per line: CX-fills, CX-generate, CX-one, CX-split (16). The widest line read:
+CX-fills, CX-one (8). Merged envelopes for every building: CX-fills, CX-one, CX-split (12). Placed at one
+line's centre: CX-fills, CX-generate, CX-one (14). A rack between lines no longer splits: CX-split (2). No-
+sections buildings on the per-line labels (they lose them): CX-hand (2). Red by the label's own width (no
+0.001 ft): CX-one (2).
+
+**Checked in the app** (real mouse, the fixture as saved, both orientations): the cross-aisle label "16' 8"" appears;
+the rack beside it selected and grown by a bay ("+9'" in the panel) → the label red, "7' 4"", over the grown line's gap,
+and Check layout lists "Cross-aisle between row 14, section 1 and row 14, section 2: 7' 4", needs 8' to drive"; Ctrl+Z →
+"16' 8"" again, nothing listed. (Horizontal: the 7' 4" gap is narrower than the pill, which overlaps the rack ends a
+little — width labels do not slide aside.)
+
 ### AW — The aisle width label shows an aisle under the forklift widths · `AW_aisleWarning.test.js` (15 tests)
 Code: `rowAisleLevel` + `AISLE_MIN_FT` (generate/columnCheck.js, new); `aisleLabelLayout` (`profile` → `level`,
 a failing width rounded down) and `aisleWarnProfile` (canvas2/hitTest.js); `aisleLabelOps` colours by level
