@@ -6202,6 +6202,20 @@ flagged uprights on the horizontal-row fills 6 → 30 / 28, 4 → 26 (the run's 
 50' columns) — flagged, never moved; the fills' cross-aisles 11' 1" → 9' 3" (the reach truck's 9' or more).
 45 tests changed (listed in CANVAS2_TESTS.md, area WC). Tests: area WC.
 
+## BUG 80 — a zone dropped on racks jumps away and asks; resizing asks; a half-covered pair loses both halves  (2026-10-09, fixed 2026-10-09)
+Symptom:  Dropping an office on racks: the zone vanishes from the drop spot and "This office covers N racks…" asks
+before anything happens; a resize asks the same; a zone over one half of a back-to-back row removes both halves; a pair
+left with one face against the zone keeps that face; no exact size, no size shown while placing or resizing.
+
+Cause:    The area keeper (utils/rackingAreaTool.js) took every zone change back and asked when racks no area manages
+were under it; `clearZone` trimmed whole full-depth bays and never applied the face rule (faceReach.js ran only in
+Fill's pattern and in Generate).
+
+Fix:      One rule, `cutForZones` (rackingArea.js): the face rule extended to a half under a zone, run on every rack
+under or beside the zone; the keeper lands the change at once (`landZones`: the areas refitted, then the cut) with a
+note on the bar, one undo step; a red preview while an edge is dragged (`zonePreview` — the same landing); Width / Length
+in the zone panel, the wall-side edge kept (`zoneSized`); a size label while placing / resizing. Tests: area ZR.
+
 ## Template for new entries
 
 ```

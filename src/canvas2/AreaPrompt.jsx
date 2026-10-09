@@ -1,4 +1,4 @@
-import { useAreaPrompt, answerArea, answerChoice } from '../utils/rackingAreaTool'
+import { useAreaPrompt, answerArea, answerChoice, dismissAreaNote } from '../utils/rackingAreaTool'
 
 /* The racking area / zone question (utils/rackingAreaTool.js): a racking area
    with hand edits about to be resized or rebuilt, or a zone about to go over
@@ -20,7 +20,15 @@ const btn = {
 const btn2 = { ...btn, background: 'var(--surface, #fff)', color: 'var(--text, #0B101D)', border: '1px solid var(--border, #E6E9EF)' }
 
 export function AreaPrompt() {
-  const q = useAreaPrompt(s => s.question)
+  const q = useAreaPrompt(s => s.question), note = useAreaPrompt(s => s.note)
+  if (!q && note) return (
+    <div style={wrap}>
+      <div role="status" aria-label="Zone change" style={box}>
+        <span style={{ fontWeight: 600 }}>{note}</span>
+        <button type="button" aria-label="Dismiss" style={{ ...btn2, padding: '2px 8px' }} onClick={dismissAreaNote}>✕</button>
+      </div>
+    </div>
+  )
   if (!q) return null
   return (
     <div style={wrap}>

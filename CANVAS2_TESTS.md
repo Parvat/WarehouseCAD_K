@@ -1907,6 +1907,50 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### ZR — Zones placed on a layout after its racks · `ZR_zonesOverRacks.test.js` (36 tests)
+Code: `cutForZones`, `rowBayBoxes`, `removedRowBays`, `rowBays` (generate/rackingArea.js, new); `dropUnreachableFaces`
+(generate/faceReach.js — a pair's half under a zone goes, a single's bay under one goes); `landZones`, `zonePreview`,
+the keeper's zone path and the bar's note (utils/rackingAreaTool.js, canvas2/AreaPrompt.jsx); `ZoneEditPreview`,
+`ZoneSizeLabel`, `useZoneEdit` (canvas2/ZoneEdit.jsx, new; started / ended by the resize in useCanvasInteraction.js;
+the label on the placement ghost, CopyChange.jsx); `zoneSized` (utils/floorClamp.js) and the Width / Length fields
+(ZonePanel, RackingAreaPanel.jsx — `parseFeet`).
+
+One rule for every rack a zone reaches — Generate's, hand-placed, a Fill area's hand-edited ones (a Fill area's own
+racks refit round the zone, as before, and come back when it shrinks): a bay half the zone covers goes, the other half
+stays a single row on the same uprights; a pick face it leaves without an aisle goes (Fill racking's rule). Walls are
+not this rule's business. A zone dropped, moved or resized stays where it is put and cuts at once — no question, one
+undo step; the bar says "Office placed · 24 bays removed" (bays per row: a pair's bay is two). While an edge is dragged
+the bays the release removes show red — the keeper's own landing, so the same bays; nothing is removed until mouse-up.
+Racks it removed come back only by undo (a Fill area's by its refit). Typed width / length: the edge against a wall
+stays, the opposite edge moves; against walls on both sides or neither, the left / top edge stays; clamped to the walls.
+
+Changed (old → new): `RA-zone` ×2 — the zone over racks no area manages was taken back and asked ("This staging covers
+N racks…", Cancel left it unplaced) → placed at once where dropped, the racks cut, no question, the bar's note, one undo.
+
+| Test | Asserts |
+|---|---|
+| `ZR-drop` ×6 | Fill area, hand-placed, Generate; H and V: an office dropped on a pair stays at the drop, nothing asked, no bay half under it, one entry, "Office placed · N bays removed" with N the bays per row it took; one undo restores everything |
+| `ZR-face` ×6 | a zone 6' deep against one face of a pair: along it, the pair becomes the single on its far half |
+| `ZR-half` ×6 | a zone over exactly one half: that half goes along it, the other half stays a single |
+| `ZR-shrink` ×6 | shrunk after the drop: no question, one entry; a Fill area gets racks back, otherwise none come back; undo restores the drop |
+| `ZR-preview` ×6 | an edge dragged (live, no history): the preview's boxes are exactly the bays the release removes; the note counts them |
+| `ZR-size-wall` ×2 | against the right wall a typed width keeps the right edge; against the bottom a length keeps the bottom; against the top, the top |
+| `ZR-size-middle` ×2 | mid-floor, or walls both sides: left / top kept; clamped at the wall |
+| `ZR-size-panel` ×2 | "50' 6"" parsed; one undo step; the wall edge kept |
+
+**Break-its:** the take-back and question restored: RA-zone, -zone-area, -zone-move, -slide, -slide-slack, -slide-column,
+-half-on, -wall-zone, ZP-place, ZR-drop, -face, -half, -shrink, -preview (64). The preview counting whole bays under the
+zone, not the release: ZR-preview (6). Typed size always anchoring right / bottom: ZR-size-middle (2). Typed size ignoring
+the wall (always left / top): ZR-size-wall (2). The face rule skipped: ZR-face and 19 more (83). A half-cover removing the
+whole pair: ZR-half (4 — a Fill area's refit already kept the half).
+
+**Checked in the app** (real mouse; Generate 500 × 250 and the fixture's Fill area, H and V): an office picked from the
+Zones section and clicked on a pair lands exactly at the click, nothing asked, one undo step — "Office placed · 24 bays
+removed" (26 for Fill V); each edge dragged 8' out: the red count mid-drag equals the bays the release removes (4 / 4 / 16 /
+16, 4 / 4 / 8 / 8, 4 / 4 / 16 / 16, 6 / 6 / 9 / 8), no rack changes before release, the note "Office resized · N bays
+removed"; typed 50' 6" × 20' on an office against the right wall: the right edge stays (left 209.75' → 199.25'), the top
+stays; typed 25' × 45' mid-floor: the left and top edges stay.
+
 ### WC — One wall clearance, from the wall's inner face, for Generate and Fill racking (BUG 76, BUG 78, BUG 79) · `WC_wallClearance.test.js` (45 tests)
 Code: `wallClear.js` (generate, new: `WALL_CLEAR_IN` 3, `clearFromOutline`, `wallClearOf`); `layoutSpec`'s `sideClearFt`
 (sizingLayout.js — the wall thickness + the clearance; run ends keep `endClearFt`); `buildQueue` passes the floor plan's

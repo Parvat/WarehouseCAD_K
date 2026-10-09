@@ -11,6 +11,10 @@
 // frame: the two share that frame, as a real rack does (utils/bayBeam.js does
 // not count a shared end frame as an overlap).
 //
+// A half of a pair that a zone stands on is gone the same way (a zone dropped on racks, rackingArea.js
+// cutForZones): the other half stays as a single row while its own face has an aisle; a single row's bay
+// under a zone goes.
+//
 // "Clear floor" is the building's floor (its inner wall face) with no zone on
 // it, an aisle deep, over the bay's whole length. Other racks are not read:
 // the fill and Generate already keep their aisles off them. Pieces keep every
@@ -50,16 +54,19 @@ export function dropUnreachableFaces(racks, { poly, zones = [], aislePx, gridSiz
     const T = toWorld(r)
     const { xs, upW, beams } = uprightXs(r, gridSize)
     const top = r.y, bot = r.y + r.height
-    // per bay: which faces have their aisle — face A on the local top side, face B on the bottom
+    const depthPx = ((r.depthIn ?? 42) / 12) * gridSize
+    const under = (b) => zones.some(z => overlaps(z, b))
+    // per bay: which faces have their aisle — face A on the local top side, face B on the bottom — and which
+    // halves stand clear of every zone (a half under a zone is gone, whatever its face)
     const state = beams.map((_, i) => {
       const a = xs[i], b = xs[i + 1] + upW
       const A = clear(worldBox(T, a, top - aislePx, b, top)), B = clear(worldBox(T, a, bot, b, bot + aislePx))
-      if (r.type === 'rack_row') return A || B ? 'D' : '-'
-      return A && B ? 'D' : A ? 'A' : B ? 'B' : '-'
+      if (r.type === 'rack_row') return (A || B) && !under(worldBox(T, a, top, b, bot)) ? 'D' : '-'
+      const hA = A && !under(worldBox(T, a, top, b, top + depthPx)), hB = B && !under(worldBox(T, a, bot - depthPx, b, bot))
+      return hA && hB ? 'D' : hA ? 'A' : hB ? 'B' : '-'
     })
     if (state.every(s => s === 'D')) { out.push(r); continue }
     const upIn = r.uprightWidth || 3
-    const depthPx = ((r.depthIn ?? 42) / 12) * gridSize
     let first = true
     for (let i = 0; i < state.length;) {
       let j = i

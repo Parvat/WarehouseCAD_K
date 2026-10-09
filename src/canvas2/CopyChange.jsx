@@ -6,6 +6,7 @@ import { usePlacement, placementDistances } from '../utils/placement'
 import { LabelPill } from './DimensionLabels'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { pxToFtIn } from '../utils/canvas'
+import { ZoneSizeLabel } from './ZoneEdit'
 
 /* ── A row (or a zone) being placed, on the canvas ─────────────────────────────
    PlacementGhost: it follows the mouse, faded; its outline turns red where it cannot go, orange in a
@@ -61,6 +62,8 @@ export function PlacementGhost({ gridSize }) {
       </Group>
       {a.items.filter(o => typeof o.type === 'string' && o.type.startsWith('rack_')).map(o => outline(rackFootprint(o), color, 'g' + o.id, a.blocked ? [] : [6, 4]))}
     </Group>
+    {/* a zone being placed: its size on it (ZoneEdit.jsx) */}
+    {a.items.filter(o => typeof o.type === 'string' && o.type.startsWith('zone_')).map(o => <ZoneSizeLabel key={'zs' + o.id} box={{ x: o.x + a.dx, y: o.y + a.dy, w: o.width, h: o.height }} gridSize={gridSize} zoom={zoom} />)}
     {/* measured where the rack is now (placementDistances already moved it), so outside the moved group */}
     {distances.map((d, i) => <Distance key={d.axis + i} d={d} zoom={zoom} gridSize={gridSize} />)}
     </Group>

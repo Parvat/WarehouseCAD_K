@@ -21,6 +21,7 @@ import { isFloorPlan } from './selection'
 import { useColumnCheck } from '../generate/useColumnCheck'
 import { FillOverlay, FillOptionsBar } from './FillTool'
 import { AreaPrompt } from './AreaPrompt'
+import { ZoneEditPreview } from './ZoneEdit'
 import { hasResizeHandles } from './handleGeometry'
 import { FILL_TOOL, startFill, moveFill, commitFill } from '../utils/fillTool'
 import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupBox } from '../utils/rowGroupTool'
@@ -508,6 +509,8 @@ export function Canvas2() {
             {/* Check layout: the clicked problem, until the next click (utils/layoutCheck.js) */}
             <IssueHighlight />
             <PlacementGhost gridSize={gridSize} />
+            {/* a zone's edge dragged: the bays its release removes, red, and its size (ZoneEdit.jsx) */}
+            <ZoneEditPreview gridSize={gridSize} />
             <FillOverlay />
           </Layer>
         </Stage>

@@ -2,6 +2,8 @@ import { useCanvasStore } from '../../../store/useCanvasStore'
 import { requestAreaRebuild } from '../../../utils/rackingAreaTool'
 import { areaSettings, areaEdits } from '../../../generate/rackingArea'
 import { MHE_PROFILES } from '../../../generate/columnCheck'
+import { zoneSized } from '../../../utils/floorClamp'
+import { pxToFtIn } from '../../../utils/canvas'
 
 /* The right panel for a racking area (generate/rackingArea.js): its Racking
    settings. Changing one rebuilds the whole area with it — one undo step,
@@ -61,8 +63,27 @@ export function RackingAreaPanel({ obj }) {
   )
 }
 
+/** Feet from a typed length: "40", "40'", "40' 6\"", "40'6", "40.5". Null when it isn't one. */
+export function parseFeet(text) {
+  const t = String(text ?? '').trim()
+  const m = t.match(/^(\d+(?:\.\d+)?)\s*'?\s*(?:(\d+(?:\.\d+)?)\s*"?)?$/)
+  if (!m) return null
+  const v = Number(m[1]) + (m[2] ? Number(m[2]) / 12 : 0)
+  return Number.isFinite(v) && v > 0 ? v : null
+}
+
 export function ZonePanel({ obj }) {
   const commitObjectUpdate = useCanvasStore(s => s.commitObjectUpdate)
+  const gridSize = useCanvasStore(s => s.gridSize) || 40
+  /* an exact size, one undo step (the keeper cuts the racks with it): the edge against a wall stays put
+     (utils/floorClamp.js zoneSized), else the left / top edge; kept inside the building */
+  const size = (key) => (e) => {
+    const ft = parseFeet(e.target.value)
+    if (ft == null) { e.target.value = pxToFtIn(key === 'width' ? obj.width : obj.height, gridSize); return }
+    const st = useCanvasStore.getState(), cur = st.objects.find(o => o.id === obj.id)
+    if (!cur || Math.abs(ft * gridSize - cur[key]) < 1e-6) return
+    commitObjectUpdate(obj.id, zoneSized(st.objects, cur, { [key]: ft * gridSize }, { gridSize }))
+  }
   return (
     <div aria-label="Zone settings" style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={row}>
@@ -72,7 +93,15 @@ export function ZonePanel({ obj }) {
           onBlur={e => { if (e.target.value !== (obj.label || '')) commitObjectUpdate(obj.id, { label: e.target.value }) }}
           style={{ ...input, width: 'auto', flex: 1 }} />
       </div>
-      <div style={note}>No racking is placed inside a zone; its edges count as walls.</div>
+      <div style={row}>
+        <span style={lbl}>Width</span>
+        <input type="text" aria-label="Zone width" defaultValue={pxToFtIn(obj.width, gridSize)} key={'zw' + obj.id + obj.width}
+          onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} onBlur={size('width')} style={input} />
+        <span style={lbl}>Length</span>
+        <input type="text" aria-label="Zone length" defaultValue={pxToFtIn(obj.height, gridSize)} key={'zl' + obj.id + obj.height}
+          onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} onBlur={size('height')} style={input} />
+      </div>
+      <div style={note}>No racking is placed inside a zone; its edges count as walls. A typed size keeps the edge against a wall.</div>
     </div>
   )
 }

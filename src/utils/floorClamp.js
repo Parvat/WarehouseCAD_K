@@ -98,3 +98,25 @@ export function clampDragDelta(objects, orig, dx, dy, { gridSize = 40, snap = 0 
   const poly = floorFor(objects, orig, gridSize)
   return poly ? clampMove(poly, boxOf(orig), dx, dy, snap) : { dx, dy }
 }
+
+/** A zone given an exact width and / or length (world px): on each axis, an edge against a wall stays and the
+ *  opposite edge moves; against walls on both sides or neither, the left edge stays for the width and the top
+ *  edge for the length. Kept inside the building (clampGrowth). Returns { x, y, width, height }. */
+export function zoneSized(objects, zone, { width, height } = {}, { gridSize = 40 } = {}) {
+  const b = boxOf(zone), poly = floorFor(objects, zone, gridSize)
+  // an edge is against a wall when it cannot move out at all
+  const against = (axis, at, out, c0, c1) => !!poly && Math.abs(edgeReach(poly, axis, at, at + out, c0, c1) - at) < 1e-6
+  const next = { ...b }
+  if (Number.isFinite(width) && width > 0) {
+    const lo = against('x', b.x, -1, b.y, b.y + b.h), hi = against('x', b.x + b.w, 1, b.y, b.y + b.h)
+    next.x = hi && !lo ? b.x + b.w - width : b.x
+    next.w = width
+  }
+  if (Number.isFinite(height) && height > 0) {
+    const lo = against('y', b.y, -1, b.x, b.x + b.w), hi = against('y', b.y + b.h, 1, b.x, b.x + b.w)
+    next.y = hi && !lo ? b.y + b.h - height : b.y
+    next.h = height
+  }
+  const c = poly ? clampGrowth(poly, b, next) : next
+  return { x: c.x, y: c.y, width: c.w, height: c.h }
+}

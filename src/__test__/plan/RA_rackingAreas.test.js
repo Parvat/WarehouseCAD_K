@@ -223,7 +223,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     for (let i = 0; i < f.length; i++) for (let j = i + 1; j < f.length; j++) if (!m.BB.sharesFrame(all[i], all[j], GS)) expect(overlap(f[i], f[j])).toBe(false)
   })
 
-  it('RA-zone: a staging zone placed over racks no area manages asks first (the placing taken back meanwhile); Continue places it and removes / trims the racks under it — no bay left under it; Cancel leaves it unplaced; Check layout clean but for the dead-end aisles the zone now closes (no area refits these racks); one undo', async () => {
+  // (before the zones-over-racks change it asked first, the placing taken back meanwhile; Cancel left it unplaced)
+  it('RA-zone: a staging zone placed over racks no area manages stays where it is dropped and cuts them at once — nothing asked, no bay left under it, the bar says "Staging placed · N bays removed"; Check layout clean but for the dead-end aisles the zone now closes (no area refits these racks); one undo restores both', async () => {
     const { fp } = officeLayout()
     // the area deleted, its racks kept: racks no area manages
     s().selectObject(areaNow().id); s().deleteSelected(); await tick()
@@ -235,14 +236,10 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const under = racks().filter(r => overlap(foot(r), zb)).length
     expect(under).toBeGreaterThan(0)
     s().addObject(zone); await tick()
-    expect(question().text).toMatch(/^This staging covers \d+ racks?\. Racks under it will be removed or trimmed to the bays outside it\.$/)
-    expect(doc()).toEqual(before)
-    expect(s().history.length).toBe(n0)
-    answer(false)
-    expect(doc()).toEqual(before)
-    s().addObject(zone); await tick()
-    answer(true); await tick()
-    expect(s().objects.some(o => o.type === 'zone_staging')).toBe(true)
+    expect(question()).toBeNull()
+    const placed = s().objects.find(o => o.type === 'zone_staging')
+    expect([placed.x, placed.y, placed.width, placed.height]).toEqual([zone.x, zone.y, zone.width, zone.height])
+    expect(m.AT.useAreaPrompt.getState().note).toMatch(/^Staging placed · \d+ bays? removed$/)
     for (const r of racks()) for (const b of m.RA.bayBoxes(r, GS)) expect(overlap(b, zb)).toBe(false)
     expect(s().history.length).toBe(n0 + 1)
     expect(question()).toBeNull()

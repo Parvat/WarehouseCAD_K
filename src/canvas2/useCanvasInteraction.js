@@ -4,6 +4,7 @@ import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
 import { handleHitTest, cursorForHandle, hasResizeHandles } from './handleGeometry'
 import { finishAreaResize } from '../utils/rackingAreaTool'
+import { useZoneEdit } from './ZoneEdit'
 import { clampResizeUpdates, clampDragDelta } from '../utils/floorClamp'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
 import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
@@ -311,6 +312,8 @@ export function useCanvasInteraction({
      whole gesture. */
   const beginHandleDrag = (obj, handle, world) => {
     resizeDrag.current = { objId: obj.id, handle, origObj: { ...obj }, startWorld: world }
+    // a zone's edge: the bays the release will remove show red meanwhile (ZoneEdit.jsx)
+    if (typeof obj.type === 'string' && obj.type.startsWith('zone_')) useZoneEdit.setState({ zoneId: obj.id, was: { ...obj } })
   }
 
   /* Group rotate handle mousedown — CanvasArea's onGroupRotateStart, ported.
@@ -1068,6 +1071,7 @@ export function useCanvasInteraction({
 
       const rd = resizeDrag.current
       resizeDrag.current = null
+      if (useZoneEdit.getState().zoneId) useZoneEdit.setState({ zoneId: null, was: null })
       if (rd) {
         /* ONE history entry for the whole gesture — commitObjectUpdate pushes
            history; updateObject (used for every frame of the live preview
