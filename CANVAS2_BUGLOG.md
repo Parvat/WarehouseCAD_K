@@ -6099,6 +6099,24 @@ fills, all passable on one side. Usable and the X marks are unchanged — they
 come from pick zones, which never paired rows (the "positions lost" feared
 above don't move). Generate's own layouts already paired right. Tests: area CA.
 
+## BUG 76 — Fill racking and Generate keep different wall clearances: their wall rows sit 3" apart on the same building  (2026-10-09, open)
+Symptom:  Fill racking a building Generate made, with the racking area drawn
+where Generate's racks stop (6" inside the building's outline), gives the
+same wall rows along the run (same start, end, bay grid and count once BUG
+70 lands) but 3" apart across: Fill's single rows sit 3" nearer each wall
+than Generate's (250 × 500: Generate −124.5 / 121.0 ft, Fill −124.75 /
+121.25; 300 × 420: −149.5 / 146.0 against −149.75 / 146.25). On 250 × 500 the
+first double row moves 3" with it.
+
+Cause:    Not traced. Generate keeps a 6" clearance off the building's
+outline (`endClearFt`, `wallClearFt` in `rowBands`); Fill racking walks its
+rows with `wallClearFt: 0` and puts a wall row flush on the wall's inner
+face (snapping to it), so the two disagree by the wall's own thickness.
+
+Fix:      Open — logged while fixing BUG 70; left alone there on purpose.
+Decide which clearance is right (6" off the outline, flush on the inner
+face, or a rule setting), then make the two share it.
+
 ## BUG 77 — a row deleted in one section leaves its neighbours there without an aisle, where a wall row runs past the sections  (2026-10-09, fixed 2026-10-09)
 Symptom:  Delete the middle row of one section (row 4 of section 2) on a
 layout whose wall rows run unbroken past the sections — every Fill racking

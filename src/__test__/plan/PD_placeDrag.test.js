@@ -16,6 +16,7 @@ import { placementToObject } from '../../generate/traceGenerate'
 import { rackFootprint, MHE_PROFILES } from '../../generate/columnCheck'
 import { DEFAULT_RULES } from '../../rules/defaults'
 import { buildingSections } from '../../utils/syncSections'
+import { sectionCrossAisles } from '../../utils/copyChange'
 import { rebuildAisles } from '../../utils/aisleRebuild'
 import { installAisleKeeper } from '../../utils/aisleKeeper'
 import { installRowEditKeeper } from '../../utils/rowEditKeeper'
@@ -72,8 +73,12 @@ const sectionsNow = () => buildingSections(objs(), objs().find(o => BEAM.has(o.t
 const rowIn = (sec, k) => objs().filter(o => BEAM.has(o.type) && o.genSection === sec && o.rowIndex === k)
 const K = 5
 const oneBay = (r) => { const s = { ...strip(r), id: 'one' + (++seq), beams: [96], width: ((3 * 2 + 96) / 12) * GS }; for (const k of ['rowIndex', 'genSection', 'genRunFt', 'genCrossFt']) delete s[k]; return s }
-/** A point in the cross-aisle between runs a and b, across from rack r. */
-const inGap = (A, rot, a, b, r) => { const run = (a.end + b.start) / 2, c = A.cross(r), cross = (c[0] + c[1]) / 2; return rot ? { x: cross, y: run } : { x: run, y: cross } }
+/** The cross-aisle between sections a and b on rack r's line, as Check layout and the placement warning measure it
+ *  (sectionCrossAisles, per line) — not the sections' extents, which a wall row running past both would span. */
+const lineGap = (A, rot, a, b, r) => { const c = A.cross(r); return sectionCrossAisles(objs(), 'fp', rot).find(g => g.between[0] === a.key && g.between[1] === b.key && g.cross[0] < c[1] && g.cross[1] > c[0]) }
+/** A point in the cross-aisle between runs a and b, across from rack r (a layout placed by hand has no
+ *  cross-aisle: the middle of the gap between the two runs). */
+const inGap = (A, rot, a, b, r) => { const g = lineGap(A, rot, a, b, r), run = g ? (g.lo + g.hi) / 2 : (a.end + b.start) / 2, c = A.cross(r), cross = (c[0] + c[1]) / 2; return rot ? { x: cross, y: run } : { x: run, y: cross } }
 /** The bar as server-rendered HTML (the stores' live state as their initial one). */
 const renderBar = () => { for (const x of [useRowGroup, usePlacement, store]) Object.assign(x.getInitialState(), x.getState()); return renderToStaticMarkup(createElement(Bar.RowGroupBar)) }
 const centreAcross = (o, rot) => { const f = rackFootprint(o); return rot ? f.x + f.w / 2 : f.y + f.h / 2 }
@@ -120,7 +125,7 @@ describe.each(['horizontal', 'vertical'])('PD — %s', (orientation) => {
     const short = { ...strip(r0), id: 'short', beams: [96], width: ((3 * 2 + 96) / 12) * GS }
     delete short.rowIndex; delete short.genSection; delete short.genRunFt; delete short.genCrossFt
     startPlacement(store, [short])
-    const midRun = (a0.end + a1.start) / 2, midCross = (A.cross(r0)[1] + A.cross(r1)[0]) / 2
+    const g0 = lineGap(A, rot, a0, a1, r0), midRun = (g0.lo + g0.hi) / 2, midCross = (A.cross(r0)[1] + A.cross(r1)[0]) / 2
     movePlacement(store, rot ? { x: midCross, y: midRun } : { x: midRun, y: midCross }, 1)
     // a cross-aisle is a warning (orange outline), not a block: it is placed
     expect(usePlacement.getState().active.blocked).toBe(null)
