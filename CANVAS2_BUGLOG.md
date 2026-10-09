@@ -6099,7 +6099,7 @@ fills, all passable on one side. Usable and the X marks are unchanged — they
 come from pick zones, which never paired rows (the "positions lost" feared
 above don't move). Generate's own layouts already paired right. Tests: area CA.
 
-## BUG 77 — a row deleted in one section leaves its neighbours there without an aisle, where a wall row runs past the sections  (2026-10-09, open)
+## BUG 77 — a row deleted in one section leaves its neighbours there without an aisle, where a wall row runs past the sections  (2026-10-09, fixed 2026-10-09)
 Symptom:  Delete the middle row of one section (row 4 of section 2) on a
 layout whose wall rows run unbroken past the sections — every Fill racking
 layout today, and Generate's once BUG 70 lands: rows 3 and 5 of that
@@ -6114,7 +6114,18 @@ piece, so it stays "the next line" from line 3, and rows 3 and 5 of
 section 2 are never compared. (Generate's cross-aisles used to split its
 wall rows, keeping each section its own block.)
 
-Fix:      Open — planned before BUG 70's product commit.
+Fix:      `neighbourPairs` builds its sections from the double rows (a
+cross-aisle splits them; a wall row can't merge them), every rack joins
+each section it overlaps (a wall row is in every section's), and within a
+section each line pairs with the next across, as before (`pairingBlocks`,
+rowAisles.js). Untouched layouts pair exactly as before (the fixture's four
+fills, four Generate layouts: frozen copy, reference/neighbourPairs.v1.js);
+after a delete the wide aisle pairs (fill: 2/13 – 2/15 30', 2/7 – 2/9
+28' 9"). Tests: area PB.
+
+Lesson:   A grouping step that merges by "any overlap" lets one long piece
+chain everything it touches (BUG 74, 75, 77); seed groups from the pieces
+that really define them.
 
 ---
 

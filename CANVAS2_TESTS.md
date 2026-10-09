@@ -1907,6 +1907,34 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### PB — The shared pairing section by section (BUG 77) · `PB_pairingBlocks.test.js` (14 tests)
+Code: `neighbourPairs` / `pairingBlocks` (generate/rowAisles.js). Frozen copy of the pairing before:
+`reference/neighbourPairs.v1.js`.
+
+The pairing's sections come from the DOUBLE rows — a cross-aisle splits them, and a wall row running past
+several sections can't merge them into one; every rack then joins each section it overlaps along the run (a
+wall row is in every section's), and within a section each line pairs with the next across, as before. Racks
+overlapping no double-row section, and a building with no double rows, are merged by overlapping run as before.
+Feeds the aisle labels, Check layout, the column check and Generate's aisle objects alike. Untouched layouts pair
+exactly as before; a row deleted in one section leaves its neighbours there paired across the wide aisle (it
+didn't wherever a wall row ran past the sections: every Fill racking layout, and Generate's once BUG 70 lands).
+No existing test changed.
+
+| Test | Asserts |
+|---|---|
+| `PB-untouched` ×8 | the fixture's four fills (56 / 54 / 54 / 55 pairs) and Generate 250×500 / 500×250 / 300×420 / 420×300 (48 / 48 / 45 / 45): exactly the frozen copy's pairs |
+| `PB-delete` ×2 | fill as saved vertical, row 2/14 deleted: the one new pair 2/13 – 2/15, 30.000 ft; horizontal, row 2/8: 2/7 – 2/9, 28.750 ft — a width label each, no Check layout aisle item, nothing else changes |
+| `PB-wall` ×2 | AR's 240 × 120 layout with its wall singles made one rack along the run: each wall row pairs with the first row of both sections; row 2/4 deleted → 2/3 – 2/5 paired (30.25 / 29.75 ft), where the frozen copy left them unpaired; untouched, the frozen copy's pairs |
+| `PB-hand` ×2 | single rows only (no double rows): the frozen copy's pairs |
+
+**Break-its:** sections from all racks again: PB-delete, PB-wall (4). A wall row joining only its first section:
+PB-untouched, PB-delete, PB-wall, RW-sections (10). The no-double-rows fallback removed: PB-hand (2). (Clipping
+the shared run to the section, planned, changed nothing — pairs are keyed by the two racks — so it was left out.)
+
+**Checked in the app** (real mouse, the fixture as saved — vertical rows — and turned — horizontal rows): row 2/4
+(one rack) clicked and deleted → the wide aisle label "33' 7"" appears between rows 2/3 and 2/5 (none before); Ctrl+Z →
+the row back, that label gone.
+
 ### CX — Cross-aisle labels from the per-line cross-aisles, repeated along them · `CX_crossAisleLines.test.js` (23 tests)
 Code: `crossAisleLabels` (canvas2/crossAisles.js): `lineLabels` (new) for a building whose rows carry section
 stamps, `envelopeLabels` (the old code, unchanged) for one with none.

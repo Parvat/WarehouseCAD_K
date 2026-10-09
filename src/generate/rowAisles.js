@@ -3,7 +3,9 @@
 // (columnCheck.js) and Generate's aisle objects (traceGenerate.js), so none can disagree with another.
 //
 //   - neighbourPairs: beam racks, per line — facing stretches of consecutive lines across, one pair per
-//     pair of stretches and width (the aisle labels' rule; moved here from aisleRebuild.js).
+//     pair of stretches and width (the aisle labels' rule; moved here from aisleRebuild.js), section by
+//     section: the sections come from the double rows, so a wall row running past them can't merge them
+//     into one (BUG 77 — a row deleted in one section left its neighbours there unpaired).
 //   - rowAisleGaps: every aisle between neighbouring rows, as gaps — beam racks by neighbourPairs, any pair
 //     with another rack type by rowGaps.
 //   - rowGaps / groupBySegment: the old pairing (moved here from columnCheck.js), kept for the other rack
@@ -100,8 +102,36 @@ function stretchesOf(pieces) {
   return out
 }
 
+/** Blocks along the run (sections) for pairing: { start, end, racks }. Built from the DOUBLE rows — a
+ *  cross-aisle splits them, and a single row flush on a wall running past several sections can't merge
+ *  them into one (BUG 77) — then every rack joins each block it overlaps along the run (so a wall row is
+ *  in every section's block). Racks overlapping no such block, and every rack of a group with no double
+ *  rows, are merged by overlapping run among themselves, as before. */
+function pairingBlocks(items) {
+  const merge = (list) => {
+    const out = []
+    for (const q of [...list].sort((a, b) => a.run[0] - b.run[0])) {
+      const b = out[out.length - 1]
+      if (b && q.run[0] < b.end - EPS) b.end = Math.max(b.end, q.run[1])
+      else out.push({ start: q.run[0], end: q.run[1], racks: [] })
+    }
+    return out
+  }
+  const blocks = merge(items.filter(q => q.r.type === 'rack_double_row'))
+  const rest = []
+  for (const q of items) {
+    const hit = blocks.filter(b => q.run[0] < b.end - EPS && q.run[1] > b.start + EPS)
+    if (hit.length) for (const b of hit) b.racks.push(q.r)
+    else rest.push(q)
+  }
+  const extra = merge(rest)
+  for (const q of rest) extra.find(b => q.run[0] >= b.start - EPS && q.run[1] <= b.end + EPS).racks.push(q.r)
+  return [...blocks, ...extra].sort((a, b) => a.start - b.start)
+}
+
 /** Neighbour pairs among beam racks: Map(key -> [idA, idB]) and the section
- *  each rack belongs to: Map(id -> sectionKey). */
+ *  each rack belongs to: Map(id -> sectionKey) — a rack in several blocks (a wall row past several
+ *  sections) takes the first. Within a block, each line of racks pairs with the next line across. */
 export function neighbourPairs(racks) {
   const pairs = new Map(), sectionOf = new Map()
   const groups = new Map()
@@ -112,16 +142,9 @@ export function neighbourPairs(racks) {
     groups.get(k).push({ r, run: runOf(f) })
   }
   for (const [gk, items] of groups) {
-    items.sort((a, b) => a.run[0] - b.run[0])
-    const sections = []
-    for (const q of items) {
-      const s = sections[sections.length - 1]
-      if (s && q.run[0] < s.end - EPS) { s.racks.push(q.r); s.end = Math.max(s.end, q.run[1]) }
-      else sections.push({ racks: [q.r], end: q.run[1] })
-    }
-    sections.forEach((s, si) => {
+    pairingBlocks(items).forEach((s, si) => {
       const sk = gk + '|' + si
-      for (const r of s.racks) sectionOf.set(r.id, sk)
+      for (const r of s.racks) if (!sectionOf.has(r.id)) sectionOf.set(r.id, sk)
       const lines = rowLines(s.racks)
       for (let i = 0; i + 1 < lines.length; i++) {
         // the best-facing pair of pieces for each pair of facing stretches, at each width between them
