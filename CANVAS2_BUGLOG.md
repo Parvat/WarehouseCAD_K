@@ -6165,6 +6165,26 @@ that really define them.
 
 ---
 
+## BUG 78 — the wall clearance differs by side: 3" behind the wall rows, something else at the run ends  (2026-10-09, fixed 2026-10-09)
+Symptom:  Hand check on 8e67b6f (BUG 76): some sides show 3", some 9". Measured: behind the wall rows 3" both
+sides in both tools; at the run ends Generate starts 3" off the face and leaves the leftover at the far end, and
+Fill racking runs flush (0") to the end walls — a lane's tighten pushes pocket rows flush too.
+
+Cause:    Only the walls along the rows read the shared setting. Generate's run ends read the rules table's
+own "Wall clear" (`selective.wallClearanceIn`, from the outline: the shipped 6" is 3" off a 3" wall, 12" would
+be the 9"); Fill's floor (`clearOutline`) kept its run ends on the walls; `tighten` (aisleAccess.js) slid
+shortened racks onto the real inner face.
+
+Fix:      Anchor (centring costed and declined: it lost bays on M1 / M2 / M24 and usable on 250 × 500). The
+run ends take the one setting in both tools: rows start at it, the leftover goes to the far end, never less
+than it. Generate's `endClearFt` comes from the setting (`layoutSpec`); Fill's floor moves its run-end walls in
+too (`clearOutline(…, ends)`, a new pattern's `endsClear`); `tighten` stops at it (both `giveWayIn` callers);
+flush only at 0. The rules table's "Wall clear" is removed; a stored value converts once into the shared
+setting (old − 3" wall, as before). Wall rows stay on section 1's grid. Generate's default layouts unchanged
+(M1–M25, the four layouts: no change); the 12 fills keep every bay; flagged uprights on the horizontal-row
+fills 3 → 6 / 2 → 4 (the same rows, two columns each), a whole-building fill of the fixture (horizontal rows)
+23 → 30. Saved areas rebuild where they are. Tests: area WC.
+
 ## Template for new entries
 
 ```

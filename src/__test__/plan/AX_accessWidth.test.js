@@ -187,12 +187,12 @@ describe.each([['horizontal', false], ['vertical', true]])('AX — %s', (_, vert
     }
   })
 
-  it('AX-73: the BUG 73 case — row 7, section 2 grown by a bay toward section 3: the cross-aisle in that line is 2 ft 11 in — Check layout reports an ERROR (red, under Errors), naming both racks and the width; a way in still exists, so no "No way in"', () => {
+  it('AX-73: the BUG 73 case — row 7, section 2 grown by a bay toward section 3: the cross-aisle in that line is 2 ft 10 in (2 ft 11 in before the run ends kept the 3" wall clearance) — Check layout reports an ERROR (red, under Errors), naming both racks and the width; a way in still exists, so no "No way in"', () => {
     const out = grown(crossFill(vert))
     const a = rackOf(out, 2, 7), b = rackOf(out, 3, 7)
-    expect(gapOf(out, a.id, b.id)).toBeCloseTo(2.952, 3)
+    expect(gapOf(out, a.id, b.id)).toBeCloseTo(2.869, 3)   // 2.952 before the run ends kept the 3" clearance
     const ws = crossWarnings(out)
-    expect(ws.map(w => [w.severity, w.ids.slice().sort(), w.text])).toEqual([['error', [a.id, b.id].sort(), `Cross-aisle between row 7, section 2 and row 7, section 3: 2' 11", needs 8' to drive`]])
+    expect(ws.map(w => [w.severity, w.ids.slice().sort(), w.text])).toEqual([['error', [a.id, b.id].sort(), `Cross-aisle between row 7, section 2 and row 7, section 3: 2' 10", needs 8' to drive`]])
     expect(ws[0].highlight[0].color).toBe(HL.red)
     expect(checkLayout(out, { gridSize: GS }).errors.filter(e => e.kind === 'no-way-in')).toEqual([])
   })

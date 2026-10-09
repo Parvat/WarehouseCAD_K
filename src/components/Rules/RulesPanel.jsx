@@ -325,7 +325,6 @@ export function RulesPanel({ onClose }) {
             <Row label="Beam lengths"  origin={originFor('selective.beamLengthsIn')}>{list('selective.beamLengthsIn')}</Row>
             <Row label="Beam faces"    origin={originFor('selective.beamFaceHeightsIn')}>{list('selective.beamFaceHeightsIn')}</Row>
             <Row label="Flue"          origin={originFor('selective.flueIn')}>{field('selective.flueIn', { unit: 'in' })}</Row>
-            <Row label="Wall clear"    origin={originFor('selective.wallClearanceIn')}>{field('selective.wallClearanceIn', { unit: 'in' })}</Row>
           </Section>
 
           <Section title="Materials handling">

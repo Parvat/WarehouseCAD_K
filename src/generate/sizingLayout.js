@@ -681,21 +681,19 @@ export function layoutSpec(brief = {}, rules = DEFAULT_RULES) {
     flueIn:     brief.flueIn     ?? sel.flueIn ?? FLUE_IN,
     palletWIn:  brief.palletWIn  ?? palletW,
     palletDIn:  brief.palletDIn  ?? palletD,
-    /* Wall clearance is authored in inches — the Generate panel's own
-       "WALL CLEARANCE (IN)" field (brief.wallClearanceIn) wins over the
-       dealer's rules-table default (sel.wallClearanceIn), which wins over
-       a raw feet override (brief.endClearFt, kept for any direct caller
-       that predates the panel field) — the layout itself works in feet. */
-    endClearFt: brief.endClearFt ?? ((brief.wallClearanceIn ?? sel.wallClearanceIn ?? 36) / 12),
-    /* The walls ALONG the rows (BUG 76): the one wall clearance (wallClear.js — inches from the wall's
-       inner face, shared with Fill racking) plus the wall itself, measured from the building's outline
-       the layout works in. The run ends keep `endClearFt` above, as before. An old `wallClearanceIn`
-       (from the outline) is converted; a direct caller's raw `endClearFt` alone still sets the sides too. */
-    sideClearFt: (() => {
+    ...(() => {
+      /* The one wall clearance (BUG 76, wallClear.js — inches from the wall's inner face, shared with Fill
+         racking) plus the wall itself, measured from the building's outline the layout works in — on every
+         side: the walls ALONG the rows (`sideClearFt`) and the run ends (`endClearFt`). The rows start at
+         it; the leftover from whole bays goes to the far end, never less than it. An old `wallClearanceIn`
+         (from the outline) is converted; a direct caller's raw `endClearFt` (feet from the outline) still
+         sets the run ends, and the sides too when nothing else is given. */
       const wallThicknessIn = brief.wallThicknessIn ?? DEFAULT_WALL_THICKNESS_IN
-      if (!Number.isFinite(brief.wallClearIn) && !Number.isFinite(brief.wallClearanceIn) && Number.isFinite(brief.endClearFt)) return brief.endClearFt
-      const fallback = Number.isFinite(sel.wallClearIn) ? sel.wallClearIn : Number.isFinite(sel.wallClearanceIn) ? clearFromOutline(sel.wallClearanceIn) : WALL_CLEAR_IN
-      return (wallThicknessIn + wallClearOf(brief, { wallThicknessIn, fallback })) / 12
+      const fallback = Number.isFinite(sel.wallClearIn) ? sel.wallClearIn : Number.isFinite(sel.wallClearanceIn) ? clearFromOutline(sel.wallClearanceIn, wallThicknessIn) : WALL_CLEAR_IN
+      const fromSetting = (wallThicknessIn + wallClearOf(brief, { wallThicknessIn, fallback })) / 12
+      const raw = Number.isFinite(brief.endClearFt) ? brief.endClearFt : null
+      const given = Number.isFinite(brief.wallClearIn) || Number.isFinite(brief.wallClearanceIn)
+      return { endClearFt: raw ?? fromSetting, sideClearFt: raw != null && !given ? raw : fromSetting }
     })(),
   }
 }

@@ -65,7 +65,7 @@ describe('WC — the setting', () => {
 describe('WC — Generate', () => {
   const brief = (o) => ({ lengthFt: 250, widthFt: 500, gridXFt: 30, gridYFt: 30, mhe: 'reach', rackType: 'rack_double_row', ...o })
   const walls = (ps, vert) => ps.map(placementToObject).filter(o => o.type === 'rack_row').map(o => acrossOf(o, vert))
-  it.each([['vertical', true], ['horizontal', false]])('WC-generate (%s): the default 3" from the inner face of a 3" wall is exactly the old 6" from the outline — the same placements; 0" puts the wall rows flush on the face; a 6" wall moves them out with it', (orientation, vert) => {
+  it.each([['vertical', true], ['horizontal', false]])('WC-generate (%s): the default 3" from the inner face of a 3" wall is exactly the old 6" from the outline — the same placements; 0" puts the wall rows flush on the face; a 6" wall moves them out with it; the run ends take the same setting (rows start at it)', (orientation, vert) => {
     const now = sizingSheetLayout(brief({ orientation, wallClearIn: 3, wallThicknessIn: 3 }), DEFAULT_RULES)
     const old = sizingSheetLayout(brief({ orientation, wallClearanceIn: 6 }), DEFAULT_RULES)
     expect(JSON.stringify(now)).toBe(JSON.stringify(old))
@@ -76,22 +76,32 @@ describe('WC — Generate', () => {
       const ws = w(o), near = Math.min(...ws.map(a => a[0])), far = Math.max(...ws.map(a => a[1]))
       expect([near, stackFt - far]).toEqual([off, off])
     }
-    // the run ends stay as before: 6" from the outline whatever the clearance
+    // the run ends take the same setting (BUG 76 follow-up; before, 6" from the outline whatever the clearance):
+    // the rows start at the wall + the clearance, and the far end is never nearer than that
     const runs = (o) => sizingSheetLayout(brief({ orientation, ...o }), DEFAULT_RULES).map(placementToObject).map(r => runOf(r, vert))
-    expect(Math.min(...runs({ wallClearIn: 0 }).map(r => r[0]))).toBe(0.5)
-    expect(Math.min(...runs({ wallClearIn: 12 }).map(r => r[0]))).toBe(0.5)
+    const runFt = vert ? 500 : 250
+    for (const [o, off] of [[{ wallClearIn: 0 }, 0.25], [{ wallClearIn: 3 }, 0.5], [{ wallClearIn: 12 }, 1.25], [{ wallClearIn: 3, wallThicknessIn: 6 }, 0.75]]) {
+      const r = runs(o)
+      expect(Math.min(...r.map(q => q[0]))).toBeCloseTo(off, 6)
+      expect(runFt - Math.max(...r.map(q => q[1]))).toBeGreaterThanOrEqual(off - 1e-6)
+    }
   })
 })
 
 describe.each(ORIENT)('WC — Fill racking, %s', (_, turned, orientation) => {
-  it('WC-fill: the wall rows sit the clearance off the inner face — 3" by default, 0 flush as before — and nothing moves along the run (the run ends stay)', () => {
+  it('WC-fill: the wall rows sit the clearance off the inner face — 3" by default, 0 flush as before — and so does the run end on a wall (the box\'s open end stays where it is)', () => {
     const a = newFill({ turned, orientation }), z = newFill({ turned, orientation, settings: { wallClearIn: 0 } })
     const vert = a.vert, [lo, hi] = faces(a.fp, vert)
     const gap = (out) => { const s = out.filter(o => o.type === 'rack_row').map(o => acrossOf(o, vert)); return [Math.min(...s.map(q => q[0])) - lo, hi - Math.max(...s.map(q => q[1]))].map(v => Math.round(v * 1e6) / 1e6) }
     expect(gap(a.out)).toEqual([0.25, 0.25])
     expect(gap(z.out)).toEqual([0, 0])
     const ends = (out) => { const r = out.filter(o => RACK.has(o.type)).map(o => runOf(o, vert)); return [Math.min(...r.map(q => q[0])), Math.max(...r.map(q => q[1]))] }
-    expect(ends(a.out)).toEqual(ends(z.out))
+    // the box's start end is open floor (it stops short of the wall): the same; the far end is the wall: 3" off it
+    // at 3", on it at 0 (before the follow-up the run ends stayed on the walls at 3" too)
+    const runFace = (() => { const rv = innerOutline(a.fp, GS).map(p => (vert ? p.y : p.x) / GS); return Math.max(...rv) })()
+    expect(ends(a.out)[0]).toBeCloseTo(ends(z.out)[0], 6)
+    expect(runFace - ends(z.out)[1]).toBeCloseTo(0, 6)
+    expect(runFace - ends(a.out)[1]).toBeCloseTo(0.25, 6)
     expect(a.area.settings.wallClearIn).toBe(3)
   })
   it('WC-shrink: at the default 3", shrink across and along, then extend back — the same racks', () => {
@@ -190,13 +200,102 @@ describe('WC — saved layouts and the pair-half fix', () => {
     const again = planAreaResize(reopened, ra.id, { x: ra.x, y: ra.y, w: ra.width, h: ra.height }, { gridSize: GS })
     expect(keys(again)).toEqual(keys(filled))
   })
-  it.each(['L', 'T'])('WC-pair-half (%s, turned, horizontal rows): the half of row 2/9 beside the notch carries on from its pair\'s last frame at 42 ft — 10 bays, the shared upright kept — also at 3", where it lies on the wall', (shape) => {
-    for (const settings of [{ wallClearIn: 0 }, { wallClearIn: 3 }]) {
+  it.each(['L', 'T'])('WC-pair-half (%s, turned, horizontal rows): the half of row 2/9 beside the notch carries on from its pair\'s last frame at 42 ft (41.75 ft at 3": the rows start 3" off the run-end wall) — 10 bays, the shared upright kept — also at 3", where it lies on the wall', (shape) => {
+    for (const [settings, at] of [[{ wallClearIn: 0 }, 42], [{ wallClearIn: 3 }, 41.75]]) {
       const { out } = newFill({ shape, turned: true, orientation: 'horizontal', settings })
       const half = out.find(o => o.type === 'rack_row' && o.genSection === 2 && o.rowIndex === 9)
       const pair = out.find(o => o.type === 'rack_double_row' && o.genSection === 2 && o.rowIndex === 9)
-      expect([runOf(half, false)[0], half.beams.length]).toEqual([42, 10])
+      expect([runOf(half, false)[0], half.beams.length]).toEqual([at, 10])
       expect(runOf(half, false)[0]).toBeCloseTo(runOf(pair, false)[1] - 0.25, 6)
     }
+  })
+})
+
+// ── Every side (the follow-up): the run ends take the same one setting in both tools — the rows start at it, the
+// leftover from whole bays goes to the far end, never less than it; a lane's tighten stops at it too; the rules
+// table's "Wall clear" is gone (a stored value converts once); a saved area stays where it is.
+const FP0 = (() => { const { fpVerts, ...f } = REAL_LAYOUT.find(o => o.type.startsWith('fp_')); void fpVerts; return f })()
+const building = (L, W) => ({ ...FP0, id: 'fp', x: 0, y: 0, width: L * GS, height: W * GS })
+/** Inches from the inner face on all four sides: [behind near, behind far, run start, run end], over every rack. */
+const sides = (racks, face, vert) => {
+  const fs = racks.map(o => ({ s: acrossOf(o, vert), r: runOf(o, vert) }))
+  const i = (v) => Math.round(v * 12 * 1e4) / 1e4
+  return [i(Math.min(...fs.map(f => f.s[0])) - face.s0), i(face.s1 - Math.max(...fs.map(f => f.s[1]))), i(Math.min(...fs.map(f => f.r[0])) - face.r0), i(face.r1 - Math.max(...fs.map(f => f.r[1])))]
+}
+const SETTINGS = [0, 3, 6]
+
+describe.each([['horizontal', false], ['vertical', true]])('WC — every side, %s rows', (orientation, vert) => {
+  it.each(SETTINGS)('WC-sides-generate (%s"): 240 × 120 — behind the wall rows exactly the setting both sides; the rows start at it; the far end at least it', (clearIn) => {
+    const racks = sizingSheetLayout({ lengthFt: 240, widthFt: 120, gridXFt: 50, gridYFt: 54, mhe: 'reach', rackType: 'rack_double_row', orientation, wallClearIn: clearIn, wallThicknessIn: 3 }, DEFAULT_RULES).map(placementToObject)
+    const face = vert ? { s0: 0.25, s1: 239.75, r0: 0.25, r1: 119.75 } : { s0: 0.25, s1: 119.75, r0: 0.25, r1: 239.75 }
+    const [b0, b1, r0, r1] = sides(racks, face, vert)
+    expect([b0, b1, r0]).toEqual([clearIn, clearIn, clearIn])
+    expect(r1).toBeGreaterThanOrEqual(clearIn - 1e-6)
+  })
+  it.each(SETTINGS)('WC-sides-fill (%s"): a new area over the whole 240 × 120 building — behind the wall rows exactly the setting; the rows start at it (the drag corner); the far end at least it', (clearIn) => {
+    const fp = building(240, 120), poly = innerOutline(fp, GS), xs = poly.map(p => p.x), ys = poly.map(p => p.y)
+    const box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
+    const out = planAreaCreate([fp], box, { orientation, wallClearIn: clearIn }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)].map(v => v / GS)
+    const face = vert ? { s0: x0, s1: x1, r0: y0, r1: y1 } : { s0: y0, s1: y1, r0: x0, r1: x1 }
+    const [b0, b1, r0, r1] = sides(out.filter(o => RACK.has(o.type)), face, vert)
+    expect([b0, b1, r0]).toEqual([clearIn, clearIn, clearIn])
+    expect(r1).toBeGreaterThanOrEqual(clearIn - 1e-6)
+  })
+})
+
+describe.each(ORIENT)('WC — the lane tighten, %s', (_, turned, orientation) => {
+  it('WC-tighten: the pocket beside the office — the rows a lane shortens move up to the far run wall and stop at the setting: 3" off it at 3", 6" at 6", on it at 0', () => {
+    for (const clearIn of SETTINGS) {
+      const { out, fp, area, vert } = newFill({ turned, orientation, settings: { wallClearIn: clearIn } })
+      const office = out.find(o => o.type === 'zone_office')
+      const oR = (vert ? [office.y, office.y + office.height] : [office.x, office.x + office.width]).map(v => v / GS)
+      const oS = (vert ? [office.x, office.x + office.width] : [office.y, office.y + office.height]).map(v => v / GS)
+      const runFace = Math.max(...innerOutline(fp, GS).map(p => (vert ? p.y : p.x) / GS))
+      const [lo, hi] = faces(fp, vert), c = clearIn / 12
+      const pocket = out.filter(o => RACK.has(o.type) && o.areaId === area.id).filter(o => {
+        const s = acrossOf(o, vert), r = runOf(o, vert)
+        return Math.min(s[1], oS[1]) - Math.max(s[0], oS[0]) > E && r[0] >= oR[1] - E && Math.abs(s[0] - lo - c) > E && Math.abs(hi - c - s[1]) > E
+      })
+      expect(pocket.length).toBeGreaterThanOrEqual(3)
+      for (const o of pocket) expect(Math.round((runFace - runOf(o, vert)[1]) * 12 * 1e4) / 1e4).toBe(clearIn)
+    }
+  })
+})
+
+describe('WC — the rules table and saved areas', () => {
+  it('WC-rules: the rules table has no "Wall clear" — not in the shipped rules, not in the Rules panel, never read by Generate (a value left in a dealer rules object changes nothing)', () => {
+    expect(DEFAULT_RULES.selective.wallClearanceIn).toBeUndefined()
+    expect(readFileSync(new URL('../../components/Rules/RulesPanel.jsx', import.meta.url), 'utf8')).not.toContain('wallClearanceIn')
+    const brief = { lengthFt: 240, widthFt: 120, gridXFt: 50, gridYFt: 54, mhe: 'reach', rackType: 'rack_double_row', orientation: 'horizontal', wallClearIn: 3, wallThicknessIn: 3 }
+    const stale = { ...DEFAULT_RULES, selective: { ...DEFAULT_RULES.selective, wallClearanceIn: 24 } }
+    expect(JSON.stringify(sizingSheetLayout(brief, stale))).toBe(JSON.stringify(sizingSheetLayout(brief, DEFAULT_RULES)))
+  })
+  it('WC-rules-load: a dealer profile that stored "Wall clear" 12" (from the outline) — the Racking settings take it once as 9" (less the 3" wall), stored; the rules read back without it; a Racking setting already stored wins; the shipped 6" was 3", so a default layout does not move', async () => {
+    const profile = { id: 'p1', name: 'Dealer', rules: { selective: { wallClearanceIn: 12, flueIn: 9 } } }
+    localStorage.setItem('trace.rules.v1', JSON.stringify({ activeProfileId: 'p1', activeCustomerId: null, profiles: [profile], customerOverrides: {} }))
+    localStorage.removeItem('trace.racking.v1')
+    vi.resetModules()
+    const FT = await import('../../utils/fillTool')
+    expect(FT.useRackingSettings.getState().wallClearIn).toBe(9)
+    expect(JSON.parse(localStorage.getItem('trace.racking.v1')).wallClearIn).toBe(9)
+    const ST = await import('../../rules/storage')
+    expect(ST.loadConfig().profiles.find(p => p.id === 'p1').rules.selective).toEqual({ flueIn: 9 })
+    localStorage.setItem('trace.racking.v1', JSON.stringify({ wallClearIn: 4 }))
+    vi.resetModules()
+    expect((await import('../../utils/fillTool')).useRackingSettings.getState().wallClearIn).toBe(4)
+    expect(clearFromOutline(6)).toBe(WALL_CLEAR_IN)
+    localStorage.removeItem('trace.rules.v1'); localStorage.removeItem('trace.racking.v1')
+  })
+  it.each(ORIENT)('WC-saved-ends (%s): an area made at 3" before the run ends kept the clearance (its pattern has no endsClear) is rebuilt over the same box exactly where it was — its run end still on the wall', (_, turned, orientation) => {
+    const { out, area, box, fp } = newFill({ turned, orientation })
+    const old = { ...area.pattern }; delete old.endsClear
+    const base = out.filter(o => !(RACK.has(o.type) && o.areaId === area.id))
+    const ids = () => { let n = 0; return () => 'a' + (++n) }
+    const before = patternFill(base, box, old, { gridSize: GS, areaId: area.id, newId: ids() }).racks
+    const again = patternFill(base, box, old, { gridSize: GS, areaId: area.id, newId: ids() }).racks
+    expect(keys(again)).toEqual(keys(before))
+    const vert = orientation === 'vertical'
+    expect(Math.max(...before.map(o => runOf(o, vert)[1]))).toBeCloseTo(Math.max(...innerOutline(fp, GS).map(p => (vert ? p.y : p.x) / GS)), 6)
   })
 })

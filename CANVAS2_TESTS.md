@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### WC — One wall clearance, from the wall's inner face, for Generate and Fill racking (BUG 76) · `WC_wallClearance.test.js` (19 tests)
+### WC — One wall clearance, from the wall's inner face, for Generate and Fill racking (BUG 76, BUG 78) · `WC_wallClearance.test.js` (37 tests)
 Code: `wallClear.js` (generate, new: `WALL_CLEAR_IN` 3, `clearFromOutline`, `wallClearOf`); `layoutSpec`'s `sideClearFt`
 (sizingLayout.js — the wall thickness + the clearance; run ends keep `endClearFt`); `buildQueue` passes the floor plan's
 wall thickness (traceGenerate.js); `clearOutline` (fillRacking.js, new — the inner outline with the walls along the rows
@@ -1970,6 +1970,56 @@ thickness): 22 failed. The two fields on separate values: WC-shared (1). The pai
 wall face)"; a default Generate puts its wall rows 3.000" off the inner face (6.000" off the outline — as before); the
 Fill racking bar's "Wall clear" shows 3; set to 5 there → the Generate field shows 5; set to 3 in Generate → the bar shows
 3; a fill dragged over the whole building, H and V: wall rows 3.000" off the inner face on both sides.
+
+**Every side — the run ends too (BUG 78).** Code: `layoutSpec` (sizingLayout.js — `endClearFt` from the same
+setting as `sideClearFt`); `clearOutline(…, ends)` and the pattern's `endsClear` (fillRacking.js); `tighten` /
+`giveWayIn({ clearIn })` (aisleAccess.js, both callers); the rules table's "Wall clear" removed (`rules/defaults.js`,
+`RulesPanel.jsx`; `rules/storage.js` drops a stored value, `legacyWallClearanceIn` hands it to the Racking settings
+once — `utils/fillTool.js`). Rows start at the setting from a run-end wall; the leftover from whole bays goes to the
+far end, never less than the setting; a lane's tighten stops at it (flush only at 0). Wall rows stay on section 1's
+grid. Generate's default layouts don't move (the run ends were 6" from the outline = 3" + the 3" wall). A saved area
+(pattern without `endsClear`) rebuilds exactly where it was.
+
+Changed (old → new):
+- `sizingLayout` BUG 44 / BUG 54 ×5: the run-end clearance read from `DEFAULT_RULES.selective.wallClearanceIn` (6" → 0.5 ft)
+  → the default wall + setting, (3 + 3) / 12 = 0.5 ft. Same value.
+- `WC-generate` ×2: run ends 0.5 ft whatever the clearance → 0.25 / 0.5 / 1.25 / 0.75 ft at 0" / 3" / 12" / 3" on a 6" wall;
+  the far end at least that.
+- `WC-fill` ×2: run ends unchanged at 3" → the run end on a wall 0.25 ft off it at 3", on it at 0 (the open box end unchanged).
+- `WC-pair-half` ×2: the half's start 42 → 41.75 ft at 3" (42 at 0); 10 bays both.
+- `AX-73` ×2: the cross-aisle 2.952 → 2.869 ft, message "2' 11"" → "2' 10"".
+- `CX-fills` ×3: cross-aisle labels 11' 2" → 11' 1" (gaps −131.106..−119.904 → −119.987, −12.404..−1.202 → −12.487..−1.369,
+  122.798..134 → 122.631..133.75); turned horizontal 16' 8" → 16' 5" (−7.631..9 → 8.75). Positions across unchanged.
+- `CX-zone` ×2: the office stretch's gap 122.798 → 122.631.
+- `RL-2` / `RL-5` ×6 each: the pocket rows end on the far run wall → 3" off it (`rMax` less the clearance; the saved area 0).
+- `RL-5-boundary` ×6: the 8.01' lane runs to the wall's face: `at8.rMax` → `at8.rMax + clearFt`.
+- `RL-clean` ×6: the flagged uprights allowed, Rows 7, 10, 13 of section 4 with one column each → two each ("2 columns stand
+  on upright frames"): rectangle and L 3 → 6, T (Rows 7 and 10) 2 → 4. Flagged, never moved.
+
+| Test | Asserts |
+|---|---|
+| `WC-sides-generate` ×6 | 240 × 120, H and V, at 0" / 3" / 6": behind the wall rows exactly the setting both sides, the run start the setting, the far end at least it |
+| `WC-sides-fill` ×6 | a new area over the whole 240 × 120, H and V, at 0" / 3" / 6": the same four sides |
+| `WC-tighten` ×2 | the fixture's pocket beside the office: the rows a lane shortens end exactly 0" / 3" / 6" off the far run wall |
+| `WC-rules` | no `wallClearanceIn` in the shipped rules or the Rules panel; a rules object carrying one changes nothing Generate places |
+| `WC-rules-load` | a dealer profile's stored 12" becomes the shared 9" once (stored), the profile reads back without it; an already-stored setting wins |
+| `WC-saved-ends` ×2 | an area made at 3" before (no `endsClear`) rebuilds over its box exactly as before, its run end on the wall |
+
+**Break-its (ends):** Generate's run end fixed at 6" from the outline: WC-generate, WC-sides-generate (6). Fill's run ends
+on the walls: AX-73, CX-fills, CX-zone, RL-2, RL-5, RL-5-boundary, RL-clean, WC-fill, WC-pair-half, WC-sides-fill,
+WC-tighten (43). tighten flush on the wall: RL-2, RL-5, RL-5-boundary, WC-fill, WC-tighten (22). The rules field still read
+(a rules value wins): WC-rules (1).
+
+**Checked in the app (ends)** (real mouse; the value typed into the Fill bar's "Wall clear", the Generate field following;
+inches from the inner face — behind near / far, run start / end):
+
+| Setting | Generate 240 × 120 H / V | Generate 500 × 250 H / V | Fill 240 × 120 H / V | Fill fixture H / V |
+|---|---|---|---|---|
+| 3" | 3/3, 3/3 · 3/3, 3/141 | 3/3, 3/3 · 3/3, 3/3 | 3/3, 3/3 · 3/3, 3/42 | 3/3, 3/3 · 3/3, 3/3 |
+| 0" | 0/0, 0/0 · 0/0, 0/144 | 0/0, 0/0 · 0/0, 0/0 | 0/0, 0/0 · 0/0, 0/45 | 0/0, 0/0 · 0/0, 0/0 |
+| 6" | 6/6, 6/6 · 6/6, 6/138 | 6/6, 6/6 · 6/6, 6/6 | 6/6, 6/6 · 6/6, 6/39 | 6/6, 6/6 · 6/6, 6/6 |
+
+(The fill box dragged past the walls; a box stopping short of a run-end wall keeps its rows at the box edge, as before.)
 
 ### WR — Generate's wall rows follow Fill racking's rule (BUG 70) · `WR_wallRows.test.js` (25 tests)
 Code: `wallRun` (generate/wallRun.js, new — shared: Fill's `placeWall` calls it with the same arithmetic, Fill

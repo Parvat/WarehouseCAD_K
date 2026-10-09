@@ -110,11 +110,12 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     expect(new Set(pairs.map(q => q.r0.toFixed(2))).size).toBeGreaterThan(1)
   })
 
-  it(`RL-2: ${corrections23 ? 'the pocket beside the office' : 'no pocket here'} — its shortened rows end on the building wall, the leftover all in the lane on the office side (at least the travel width, under one more bay past it)`, async () => {
+  it(`RL-2: ${corrections23 ? 'the pocket beside the office' : 'no pocket here'} — its shortened rows end at the building wall (its clearance: 3" for a new area, on it for the saved one), the leftover all in the lane on the office side (at least the travel width, under one more bay past it)`, async () => {
     const { m, out, fp } = await fill()
     const v = view(m, fp), racks = out.filter(o => RACK.has(o.type)).map(v.rack)
     const office = v.zone(out.find(o => o.type === 'zone_office'))
-    const rMax = (vert ? fp.height : fp.width) / GS - 0.25
+    // where the rows stop at the far run wall: its inner face, less the wall clearance (BUG 76 follow-up: the run ends keep it too)
+    const rMax = (vert ? fp.height : fp.width) / GS - 0.25 - clearFt
     // (the wall row on the start wall is item 1's: one rack on the pattern's grid, not a shortened pocket row)
     const sMax = (vert ? fp.width : fp.height) / GS - 0.25
     const pocket = racks.filter(q => Math.min(q.s1, office.s1) - Math.max(q.s0, office.s0) > EPS && q.r0 >= office.r1 - EPS && Math.abs(q.s0 - 0.25 - clearFt) > EPS && Math.abs(q.s1 - sMax + clearFt) > EPS)
@@ -203,7 +204,8 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
    *  below the office's corner there, the single that row has nearer the office, and the lane cut. */
   const belowOffice = (m, racks, out, fp, lanes) => {
     const v = view(m, fp), office = v.zone(out.find(o => o.type === 'zone_office'))
-    const rMax = (vert ? fp.height : fp.width) / GS - 0.25
+    // where the rows stop at the far run wall: its inner face, less the wall clearance (BUG 76 follow-up: the run ends keep it too)
+    const rMax = (vert ? fp.height : fp.width) / GS - 0.25 - clearFt
     const row = racks.filter(q => q.s0 >= office.s1 - EPS && q.s0 < office.s1 + 6 && q.r1 > office.r1 - 10)
     const pair = row.find(q => q.o.type === 'rack_double_row')
     const single = pair && racks.filter(q => q.o.type === 'rack_row' && q.o.rowIndex === pair.o.rowIndex && q.s0 >= pair.s0 - EPS && q.s1 <= pair.s1 + EPS && q.r1 <= pair.r0 + EPS).sort((x, y) => y.r1 - x.r1)[0]
@@ -211,7 +213,7 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     return { office, rMax, pair, single, lane }
   }
 
-  if (corrections23) it('RL-5: the pocket\'s way in, below the office — the lane one bay in from the office\'s edge on the bay grid (a tie with the wall\'s lane, taken on the office\'s side): the pair below the office ends on the building wall; the single beside it is whole, its end exactly the travel width (8\') from the pair', async () => {
+  if (corrections23) it('RL-5: the pocket\'s way in, below the office — the lane one bay in from the office\'s edge on the bay grid (a tie with the wall\'s lane, taken on the office\'s side): the pair below the office ends at the building wall (its clearance); the single beside it is whole, its end exactly the travel width (8\') from the pair', async () => {
     const { m, out, fp } = await fill()
     const v = view(m, fp), racks = out.filter(o => RACK.has(o.type)).map(v.rack)
     const { office, rMax, pair, single, lane } = belowOffice(m, racks, out, fp, wayInLanes(m, out, fp))
@@ -241,7 +243,7 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     // (BUG 76: with the rows 3" off the wall the office-side lane one bay further in costs more bays)
     expect(at801.lanes.map(l => l.kind)).toEqual(['wall'])
     expect(at801.lanes[0].r[1] - at801.lanes[0].r[0]).toBeCloseTo(8.01, 6)
-    expect(at801.lanes[0].r[1]).toBeCloseTo(at8.rMax, 6)
+    expect(at801.lanes[0].r[1]).toBeCloseTo(at8.rMax + clearFt, 6)   // the lane runs on to the wall's face, past where the rows stop
     expect(at801.lanes[0].r[0]).toBeGreaterThan(at8.lane.r[1])
     expect(at801.cutOff, 'every rack has a way in at 8.01 ft').toEqual([])
   })
@@ -250,8 +252,9 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     const { m, out, fp, box, areaId } = await fill()
     // (but the uprights the run's walk puts on a column of this grid — flagged, never moved; the dealer resolves
     // them, CANVAS2_BUGLOG BUG 71: Row 7 of section 4 on the flush layout; at the 3" wall clearance Rows 7, 10 and
-    // 13 (BUG 76 — the rows sit 3" further in). Any other upright error still fails here)
-    const KNOWN = new Set(['Row 7, section 4', 'Row 10, section 4', 'Row 13, section 4'].map(r => r + ': a column stands on an upright frame'))
+    // 13 (BUG 76 — the rows sit 3" further in), one column each; with the run ends 3" in too, two columns each on
+    // those rows (rectangle, L: 3 → 6; T, Rows 7 and 10: 2 → 4). Any other upright error still fails here)
+    const KNOWN = new Set(['Row 7, section 4', 'Row 10, section 4', 'Row 13, section 4'].map(r => r + ': 2 columns stand on upright frames'))
     expect(m.LC.checkLayout(out, { gridSize: GS }).errors.filter(e => !(e.kind === 'upright' && KNOWN.has(e.text)))).toEqual([])
     expect(m.AA.cutOffRacks(out, fp, { gridSize: GS, travelFt: 8, aisleFt: 10.5 }).cutOff).toEqual([])
     const before = keys(out)

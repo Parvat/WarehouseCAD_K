@@ -33,7 +33,7 @@ export const DEFAULT_RULES = {
     beamLengthsIn:     [96, 144],
     beamFaceHeightsIn: [4, 5, 6],
     flueIn:            9,
-    wallClearanceIn:   6,
+    // (no wall clearance here: it is the one Racking setting, wallClearIn — generate/wallClear.js)
   },
 
   cantilever: {

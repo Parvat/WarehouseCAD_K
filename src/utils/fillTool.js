@@ -8,6 +8,7 @@ import { create } from 'zustand'
 import { DEFAULT_FILL_SETTINGS } from '../generate/fillRacking'
 import { planAreaCreate } from '../generate/rackingArea'
 import { clearFromOutline } from '../generate/wallClear'
+import { legacyWallClearanceIn } from '../rules/storage'
 import { nanoid } from 'nanoid'
 
 export const FILL_TOOL = 'fill_racking'
@@ -16,11 +17,19 @@ const LS_KEY = 'trace.racking.v1'
 const readSettings = () => {
   try {
     const v = JSON.parse(localStorage.getItem(LS_KEY) || 'null')
-    if (!v) return { ...DEFAULT_FILL_SETTINGS }
     /* the wall clearance before BUG 76 (`wallClearanceIn`, from the building's outline — the Generate field):
        read as inches from the wall's inner face, the old value less the default 3" wall, never below 0 */
-    const { wallClearanceIn, ...rest } = v
+    const { wallClearanceIn, ...rest } = v || {}
     if (!Number.isFinite(rest.wallClearIn) && Number.isFinite(wallClearanceIn)) rest.wallClearIn = clearFromOutline(wallClearanceIn)
+    /* none here: the rules table's old "Wall clear" (rules/storage.js), converted the same way, once —
+       stored at once, since the rules table drops it */
+    if (!Number.isFinite(rest.wallClearIn)) {
+      const legacy = legacyWallClearanceIn()
+      if (legacy != null) {
+        rest.wallClearIn = clearFromOutline(legacy)
+        try { localStorage.setItem(LS_KEY, JSON.stringify({ ...DEFAULT_FILL_SETTINGS, ...rest })) } catch { /* private window */ }
+      }
+    }
     return { ...DEFAULT_FILL_SETTINGS, ...rest }
   } catch { return { ...DEFAULT_FILL_SETTINGS } }
 }

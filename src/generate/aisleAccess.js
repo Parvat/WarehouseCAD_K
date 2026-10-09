@@ -168,11 +168,12 @@ function carve(objects, ids, axis, band, gridSize, newId, across = null, tol = 1
  *  far end along the run (`axis`) faces the wall across clear floor, and whose other end faces a zone
  *  or the lane, slides along until it ends on the wall's inner face — the same bays, all the leftover
  *  going to the lane on the other side. Returns the objects, and how many racks moved. */
-function tighten(objects, before, fp, axis, gridSize, travelFt) {
+function tighten(objects, before, fp, axis, gridSize, travelFt, clearIn = 0) {
   const was = new Set(before)
   const moved = objects.filter(o => isRack(o) && o.width > 0 && !was.has(o))
   if (!moved.length) return { objects, n: 0 }
-  const poly = innerOutline(fp, gridSize), cross = axis === 'x' ? 'y' : 'x'
+  // the floor the racks may reach: the inner face moved in by the wall clearance (BUG 76, wallClear.js); 0 flush
+  const poly = clearIn > 0 ? insetPolygon(innerOutline(fp, gridSize), clearIn / 12 * gridSize) : innerOutline(fp, gridSize), cross = axis === 'x' ? 'y' : 'x'
   const blocks = [...objects.filter(o => isRack(o) && o.width > 0).map(o => ({ o, f: rackFootprint(o) })),
     ...objects.filter(isZone).map(o => ({ o, f: { x: o.x, y: o.y, w: o.width, h: o.height } }))]
   const run = (f) => (axis === 'x' ? [f.x, f.x + f.w] : [f.y, f.y + f.h]), acr = (f) => (axis === 'x' ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
@@ -337,7 +338,7 @@ function stripsFor(objects, fp, res, pocketId, carvable, { gridSize, travelFt, d
  *  pocket no strip can open — nothing reaches the main floor from it — loses its racks. `report`
  *  (an array) collects each pocket opened: { racks, bays, kind, at (the strip along the run),
  *  tiedWith (the kind of an equal-cost strip it beat, or null) }. Returns the objects. */
-export function giveWayIn(objects, fp, ids, { gridSize = 40, travelFt = 8, aisleFt = 10.5, dir = 1, newId, report = null } = {}) {
+export function giveWayIn(objects, fp, ids, { gridSize = 40, travelFt = 8, aisleFt = 10.5, dir = 1, newId, report = null, clearIn = 0 } = {}) {
   if (!fp || !ids.length) return objects
   const opts = { gridSize, travelFt, aisleFt }
   const live = (objs) => { const want = new Set(ids); return objs.filter(o => want.has(o.id) || (o.pieceOf && want.has(o.pieceOf))).map(o => o.id) }
@@ -366,7 +367,7 @@ export function giveWayIn(objects, fp, ids, { gridSize = 40, travelFt = 8, aisle
       // (and whether a strip of the other kind cost the same: the tie the zone edge wins)
       const tie = strips.find(q => q !== s && q.kind !== s.kind && q.cost === s.cost)
       // the racks it shortened, tight against the building wall: the leftover goes to the lane (kept only if nothing is cut off)
-      const t = tighten(next, objs, fp, s.axis, gridSize, travelFt)
+      const t = tighten(next, objs, fp, s.axis, gridSize, travelFt, clearIn)
       let tight = 0
       if (t.n) { const r3 = cutOffRacks(t.objects, fp, { ...opts, ids: live(t.objects) }); if (r3.cutOff.length <= r2.cutOff.length) { objs = t.objects; res = r3; tight = t.n } }
       if (!tight) { objs = next; res = r2 }

@@ -26,6 +26,7 @@ import { rackFootprint } from './columnCheck'
 import { neighbourPairs } from './rowAisles'
 import { usableCapacity, mheProfile } from './usableCapacity'
 import { dropUnreachableFaces } from './faceReach'
+import { wallClearOf } from './wallClear'
 import { giveWayIn } from './aisleAccess'
 import { innerOutline } from '../utils/floorGeom'
 import { clearGroup } from '../utils/rowGroupTool'
@@ -324,7 +325,7 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
   const travelFt = Math.min(brief.travelFt ?? rules.mhe?.[brief.mhe || rules.mheDefault || 'reach']?.travelFt ?? 8, aisleFt)
   const placedIds = new Set(faced.map(r => r.id))
   const racks = fp
-    ? giveWayIn([...useCanvasStore.getState().objects, ...faced], fp, [...placedIds], { gridSize: GS, travelFt, aisleFt, dir: 1, newId: nanoid })
+    ? giveWayIn([...useCanvasStore.getState().objects, ...faced], fp, [...placedIds], { gridSize: GS, travelFt, aisleFt, dir: 1, newId: nanoid, clearIn: wallClearOf(brief) })
       .filter(o => placedIds.has(o.id) || (o.pieceOf && placedIds.has(o.pieceOf)))
     : faced
   // every generated object on its layer (utils/layers.js)

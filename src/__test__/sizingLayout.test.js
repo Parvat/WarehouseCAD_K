@@ -190,7 +190,7 @@ describe('sizingLayout — placements', () => {
   })
 
   it('fills the full building — racks start at the wall clearance, not a staging strip (BUG 44)', () => {
-    const endClearFt = (DEFAULT_RULES.selective.wallClearanceIn ?? 36) / 12
+    const endClearFt = (3 + 3) / 12   // the run ends: the default 3" wall + the 3" wall clearance (BUG 76 — the rules field is gone)
     for (const p of placements) expect(p.xFt).toBeGreaterThanOrEqual(endClearFt - 1e-6)
     expect(Math.min(...placements.map(p => p.xFt))).toBeLessThan(brief.speedBayFt)
   })
@@ -359,7 +359,7 @@ describe('sizingLayout — BUG 54: cross-aisle reaches the far wall, clears ever
     lengthFt: 240, widthFt: 120, rackType: 'rack_double_row',
     gridXFt: 25, gridYFt: 30, levels: 4,
   }
-  const endClearFt = (DEFAULT_RULES.selective.wallClearanceIn ?? 36) / 12
+  const endClearFt = (3 + 3) / 12   // the run ends: the default 3" wall + the 3" wall clearance (BUG 76 — the rules field is gone)
   // a max run shorter than the run on each axis (240' horizontal, 120' vertical),
   // so each run is split once: a run within the max run gets no cross-aisle
   const maxRunFor = (orientation) => (orientation === 'vertical' ? 100 : 150)

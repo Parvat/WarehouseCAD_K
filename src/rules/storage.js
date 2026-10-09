@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { emptyConfig, DEFAULT_PROFILE_ID, DEFAULT_RULES } from './defaults'
+import { resolveActive } from './resolve'
 
 const KEY = 'trace.rules.v1'
 
@@ -28,13 +29,39 @@ function withShippedDefault(config) {
   }
 }
 
+/* The rules table's "Wall clear" (selective.wallClearanceIn, inches from the building's outline) is gone:
+   the wall clearance is the one Racking setting now (utils/fillTool.js, generate/wallClear.js). A stored
+   value is dropped from every profile and customer override when read; legacyWallClearanceIn hands it to
+   the Racking settings once, converted as before. */
+const stripWallClear = (rules) => {
+  if (!rules?.selective || !('wallClearanceIn' in rules.selective)) return rules
+  const { wallClearanceIn, ...selective } = rules.selective
+  void wallClearanceIn
+  return { ...rules, selective }
+}
+function withoutWallClear(config) {
+  const overrides = Object.fromEntries(Object.entries(config.customerOverrides || {}).map(([id, c]) => [id, c && c.rules ? { ...c, rules: stripWallClear(c.rules) } : c]))
+  return { ...config, profiles: (config.profiles || []).map(p => (p && p.rules ? { ...p, rules: stripWallClear(p.rules) } : p)), customerOverrides: overrides }
+}
+
+/** The wall clearance the active profile (and customer) stored in the rules table before it moved to the
+ *  Racking settings — inches from the outline — or null. */
+export function legacyWallClearanceIn() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(KEY) || 'null')
+    if (!parsed || typeof parsed !== 'object') return null
+    const v = resolveActive(withShippedDefault({ ...emptyConfig(), ...parsed })).selective?.wallClearanceIn
+    return Number.isFinite(v) ? v : null
+  } catch { return null }
+}
+
 export function loadConfig() {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return emptyConfig()
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return emptyConfig()
-    return withShippedDefault({ ...emptyConfig(), ...parsed })
+    return withShippedDefault(withoutWallClear({ ...emptyConfig(), ...parsed }))
   } catch {
     /* Private mode, quota, or a half-written value from an older build —
        a broken profile must not take the editor down with it. */
