@@ -85,7 +85,7 @@ export function aisleLabelBoxes(objects, gridSize = 40, labelSize, { aisles = tr
     const L = aisleLabelLayout(a, objects, gridSize, { profile })
     if (L) take(aisleLabelOps(L, aisleLabelScale(a, labelSize, gridSize)))
   }
-  if (cross) { const lz = labelScale(labelSize, gridSize); for (const L of crossAisleLabels(objects, gridSize, { profile })) take(aisleLabelOps(L, lz)) }
+  if (cross) { const lz = labelScale(labelSize, gridSize); for (const L of crossAisleLabels(objects, gridSize, { profile, lz })) take(aisleLabelOps(L, lz)) }
   return out
 }
 

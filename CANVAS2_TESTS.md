@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### CX — Cross-aisle labels from the per-line cross-aisles · `CX_crossAisleLines.test.js` (18 tests)
+### CX — Cross-aisle labels from the per-line cross-aisles, repeated along them · `CX_crossAisleLines.test.js` (23 tests)
 Code: `crossAisleLabels` (canvas2/crossAisles.js): `lineLabels` (new) for a building whose rows carry section
 stamps, `envelopeLabels` (the old code, unchanged) for one with none.
 
@@ -1915,30 +1915,53 @@ A sectioned building's cross-aisle labels come from the per-line cross-aisles Ch
 (`sectionCrossAisles`); wall rows take no part (an unbroken wall row has no gap, so it adds no line — the merged
 envelopes let one swallow every section, and a Fill racking layout had no cross-aisle labels). The lines whose
 gaps overlap along the run, next to each other across with no rack standing across the gap between them, are
-one cross-aisle with ONE label (whatever sections either side). It reads the narrowest line's width, its arrow
-spans that line's gap, centred across the lines; red by `failingCrossAisles` (AW). A gap inside one section
-(a split, a deleted bay) is not a cross-aisle, so it has no label. Generate's layouts come out exactly as
-before; a building with no section stamps keeps the old labels. No existing test changed.
+one cross-aisle (whatever sections either side). A gap inside one section (a split, a deleted bay) is not a
+cross-aisle, so it has no label. A building with no section stamps keeps the old labels.
+
+**Repeated along the cross-aisle** (`LABEL_EVERY_FT` = 75): n = max(1, round(length across / 75 ft)) equal
+stretches, a label at each centre. Each line belongs to the stretch its centre falls in; a label reads the
+narrowest of its own lines (its arrow spans that line's gap) and goes red on its own lines alone
+(`failingCrossAisles`, AW), so a local squeeze shows on the nearest label only. Clear floor: the pill and arrow,
+at the Label size `lz` (the canvas, the clearance labels' boxes and the PDF pass theirs), touch no rack and no
+zone; a blocked centre slides to the nearest clear spot in its stretch, and a stretch with none gets no label —
+the fixture's horizontal fills' office stretch, whose lines' "gap" runs across the office.
+
+Changed (old → new, listed before editing): `CX-fills`, `CX-generate`, `CX-one`, `CX-split` as below;
+`LB-cross` one label per cross-aisle centred → one per stretch at its centre (horizontal 7 → 35, vertical
+2 → 28), gaps and readings unchanged; `CA-labels-all (aisle labels)` horizontal clashes / slid / hidden
+25 / 17 / 8 → 27 / 18 / 9.
 
 | Test | Asserts |
 |---|---|
-| `CX-fills` ×4 | the fixture's four fills (0 labels before): as saved vertical 1 × 16' 8" (gap −7.631..9.000 ft, at −2.928 across); as saved horizontal and turned vertical 3 × 11' 2" (−131.106..−119.904 at −5.375, −12.404..−1.202 at 7.000, 122.798..134.000 at −12.375); turned horizontal 1 × 16' 8" (at −4.472); none red, nothing listed; no arrow or pill on a rack |
-| `CX-generate` ×4 | Generate 250×500 / 500×250: 3 × 9' 3" (−142..−132.75, −0.5..8.75, 124.5..133.75, at 0); 300×420 / 420×300: 2 × 11' 2" (−77.25..−66.125, 66.125..77.25, at 0) — as before |
-| `CX-one` ×6 | the layout as saved, both ways, one rack beside the cross-aisle moved so its line is 8.00 / 7.9995 / 7.99 ft: still one label, centred as before, reading that line — 8' / 8' / red 7' 11"; Check layout lists the cross-aisle only at 7.99 (7.9995 is within its 0.001 ft) |
-| `CX-split` ×2 | a rack standing across in a row aisle between two lines of the cross-aisle: two labels, one each side, both 16' 8" |
+| `CX-fills` ×4 | the fixture's four fills (0 labels before the per-line labels): as saved vertical 6 × 16' 8" (gap −7.631..9.000 ft; at −194.534 / −117.892 / −41.249 / 35.393 / 112.036 / 188.679 across); as saved horizontal and turned vertical 8 × 11' 2" (−131.106..−119.904 at −75.625 / −5.375 / 64.875; −12.404..−1.202 at −71.5 / 7 / 85.5; 122.798..134.000 at −12.375 / 62.542 — no label on the office stretch); turned horizontal 6 × 16' 8" (at −197.204 / −120.111 / −43.018 / 34.075 / 111.168 / 188.26); none red, nothing listed; no arrow or pill on a rack or zone |
+| `CX-generate` ×4 | Generate 250×500 / 500×250: 9 × 9' 3" (the three gaps, each at −83 / 0 / 83); 300×420 / 420×300: 8 × 11' 2" (the two gaps, each at −112.125 / −37.375 / 37.375 / 112.125) |
+| `CX-clear` ×2 | Generate 250×500 / 500×250 at Extra large: 9 labels, none on a rack or zone; horizontal 6 slide (pill longer than the gap) and stay in their own 83 ft stretch, vertical none; at the default size none needs to |
+| `CX-one` ×6 | the layout as saved, both ways, one rack beside the cross-aisle moved so its line is 8.00 / 7.9995 / 7.99 ft: 6 labels, only the nearest reads that line — 8' / 8' / red 7' 11" (at 35.393 across; horizontal red 7' 11" slides to 31.15); the other five 16' 8"; Check layout lists the cross-aisle only at 7.99 |
+| `CX-split` ×2 | a rack standing across in a row aisle between two lines (at −219.9): 7 labels, 1 left of it, 6 right, all 16' 8" |
+| `CX-zone` ×2 | a zone on a label's spot: that label alone slides to clear floor in its stretch; the horizontal fill's third cross-aisle has 2 labels, both off the office |
 | `CX-hand` ×2 | a Generate layout with its section stamps stripped: the old labels, the same three 9' 3" |
+| `CX-wire` | the canvas, the clearance labels' boxes and the PDF pass their Label size |
 
-**Break-its:** one label per line: CX-fills, CX-generate, CX-one, CX-split (16). The widest line read:
-CX-fills, CX-one (8). Merged envelopes for every building: CX-fills, CX-one, CX-split (12). Placed at one
-line's centre: CX-fills, CX-generate, CX-one (14). A rack between lines no longer splits: CX-split (2). No-
-sections buildings on the per-line labels (they lose them): CX-hand (2). Red by the label's own width (no
-0.001 ft): CX-one (2).
+**Break-its:** one label per cross-aisle: CX-fills, CX-generate, CX-one, CX-split, CX-zone, LB-cross,
+CA-labels (23). Every label reads the cross-aisle's narrowest line: CX-one (6). Red if any line in the
+cross-aisle is listed: CX-one (2). No clear-floor check: CX-fills, CX-clear, CX-zone, CX-one (6). Zones not
+obstacles: CX-fills, CX-zone (4). A blocked label moving past its stretch: CX-fills (2). Stuck labels kept:
+CX-fills (2). No-section buildings on the per-line labels: CX-hand (2). The canvas dropping its Label size:
+CX-wire (1). (Before the repeat: one label per line 16, the widest line 8, merged envelopes 12, one line's
+centre 14, no split 2, no-section fallback 2, red by own width 2.)
 
 **Checked in the app** (real mouse, the fixture as saved, both orientations): the cross-aisle label "16' 8"" appears;
 the rack beside it selected and grown by a bay ("+9'" in the panel) → the label red, "7' 4"", over the grown line's gap,
 and Check layout lists "Cross-aisle between row 14, section 1 and row 14, section 2: 7' 4", needs 8' to drive"; Ctrl+Z →
 "16' 8"" again, nothing listed. (Horizontal: the 7' 4" gap is narrower than the pill, which overlaps the rack ends a
-little — width labels do not slide aside.)
+little — width labels did not slide aside then.)
+
+**Checked in the app, repeated labels** (real mouse, the fixture as saved, both orientations): the cross-aisle shows
+6 × "16' 8"" along it (at −194.5 / −117.9 / −41.2 / 35.4 / 112.0 / 188.7 ft across); the rack beside the middle one grown
+by a bay ("+9'") → only that label red, "7' 4"" (horizontal: it slides to 31.2 ft, into the nearest row aisle — its gap is
+shorter than the pill), Check layout lists "Cross-aisle between row 16, section 1 and row 16, section 2: 7' 4", needs 8'
+to drive"; Ctrl+Z → six "16' 8"" again, nothing listed; Label size Extra large → horizontal labels slide into row
+aisles (at −194.5 / −120.5 / −44.7 / 29.6 / 105.3 / 193.7), clear of the racks; vertical ones stay.
 
 ### AW — The aisle width label shows an aisle under the forklift widths · `AW_aisleWarning.test.js` (15 tests)
 Code: `rowAisleLevel` + `AISLE_MIN_FT` (generate/columnCheck.js, new); `aisleLabelLayout` (`profile` → `level`,
@@ -2016,7 +2039,7 @@ frozen reference took the new pairing (approved).
 | `CA-generate` ×2 | Generate's aisle objects are the labels' pairs — on the layout as saved and on a Generate layout |
 | `CA-labels` ×2 | a column at a rack face (9' / 0.5') whose two clearance labels would overlap: only "9' clear" is drawn, both arrows stay — vertical at the default Label size, horizontal at a custom 60" (its labels stack along the arrow and don't meet before ~55") |
 | `CA-labels-all` ×2 | every column in an aisle at all four Label sizes and 60": two lines and two arrowheads each; drawn labels never overlap; a dropped label is always the narrower side; some dropped and some kept; horizontal at the default size keeps both on the face column |
-| `CA-labels-all (aisle labels)` ×2 | at all four preset Label sizes, with the aisle and cross-aisle width labels' pills (from `aisleLabelOps`): no clearance label overlaps one; two lines and two arrowheads each; a moved label's centre stays on its arrow; clashes / slid / hidden: vertical 2 / 0 / 2, horizontal 25 / 17 / 8; horizontal at the default size the face column's "9' clear" slides along its arrow |
+| `CA-labels-all (aisle labels)` ×2 | at all four preset Label sizes, with the aisle and cross-aisle width labels' pills (from `aisleLabelOps`): no clearance label overlaps one; two lines and two arrowheads each; a moved label's centre stays on its arrow; clashes / slid / hidden: vertical 2 / 0 / 2, horizontal 27 / 18 / 9 (25 / 17 / 8 before the cross-aisle labels repeated); horizontal at the default size the face column's "9' clear" slides along its arrow |
 | `CA-labels-wire` | Overlays.jsx passes `avoid={avoid}` to ColumnClearanceLabels; the PDF passes its boxes to `clearanceOps` |
 | `CA-graph` | rowAisles.js imports only rackFootprint.js and syncSections.js; rackFootprint.js nothing; the four users import rowAisles.js; palletFit.js imports nothing, bayLedger.js imports it and not capacity.js |
 
@@ -2379,7 +2402,7 @@ painted width was measured on the scene canvas, with a fractional pan.
 | Test (1080×410; ×2 h/v) | Asserts |
 |---|---|
 | `LB-aisle` | every aisle has exactly one label, centred, including aisles ≥ 60 ft (which had three); every aisle is within one section and every section's aisles are labelled |
-| `LB-cross` | one label per cross-aisle (sections − 1). The width is the gap between the section envelopes (≥ the truck's 9 ft), centred along the gap and across both sections, with the right orientation |
+| `LB-cross` | each cross-aisle's label repeats about every 75 ft across the racks (a stretch each, at its centre; horizontal 7 × 5 = 35, vertical 2 × 14 = 28). The width is the gap between the sections (≥ the truck's 9 ft), centred along the gap, with the right orientation |
 | `LB-cross-drag` | a rack moved 2 ft into a cross-aisle narrows that label by exactly 2 ft |
 | `LB-toggle` | switched off: plain clearances hidden; "under travel" marks kept, red, with their text; the red shade is independent of the switch; a mixed block keeps only its short side |
 | `LB-toggle-wire` | the switch is gone from the View menu and labelPrefs; the clearance labels, X marks, upright flags and oversized marks are all behind `marksOn` (the Checks layer); the shade is drawn whatever `showLabels` says |

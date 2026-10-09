@@ -267,8 +267,8 @@ describe.each([['vertical', true, 'medium'], ['horizontal', false, 60]])('CA-lab
       }
     }
     // vertical: the face column 9 ft label meets one at Large and Extra large and has no room (2, hidden);
-    // horizontal: 25 meet one at Medium and up, 17 slide clear, 8 are hidden
-    expect([clashedBefore, moved, hiddenByAisle]).toEqual(vert ? [2, 0, 2] : [25, 17, 8])
+    // horizontal: 27 meet one at Medium and up, 18 slide clear, 9 are hidden (the cross-aisle label repeats along it)
+    expect([clashedBefore, moved, hiddenByAisle]).toEqual(vert ? [2, 0, 2] : [27, 18, 9])
     if (!vert) {
       const face = blocks.find(x => Math.min(x.nearClearFt, x.farClearFt) <= 0.5), lz = labelScale('medium', GS)
       const t = clearanceOps(face, cols[face.columnIndex], lz, GS, true, aisleBoxes('medium')).filter(o => o.op === 'text')

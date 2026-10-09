@@ -269,7 +269,8 @@ export function AisleLabelView({ L, name, lz }) {
    objects they are given. */
 export const CrossAisleLabels = memo(function CrossAisleLabels({ objects, lz, gridSize = 40, profile = null }) {
   // `profile`: grade them as Check layout does (red over a listed cross-aisle), null when the colours are off
-  const list = useMemo(() => crossAisleLabels(objects, gridSize, { profile }), [objects, gridSize, profile])
+  // `lz`: the Label size — a label must sit on clear floor at the size it is drawn
+  const list = useMemo(() => crossAisleLabels(objects, gridSize, { profile, lz }), [objects, gridSize, profile, lz])
   return <>{list.map(L => <AisleLabelView key={L.key} L={L} name={'cross-aisle:' + L.key} lz={lz} />)}</>
 })
 

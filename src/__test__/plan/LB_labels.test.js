@@ -56,19 +56,27 @@ describe.each(['horizontal', 'vertical'])('LB — %s', (orientation) => {
     expect([...perSection.keys()].sort((a, b) => a - b)).toEqual(sections.map(s => s.s))
   })
 
-  it('LB-cross: one label per cross-aisle — the clear width between the facing racks, centred along the gap and across the racks', () => {
+  it('LB-cross: each cross-aisle\'s label repeats about every 75 ft across the racks, evenly (a stretch each, at its centre) — every one the clear width between the facing racks, centred along the gap', () => {
     const labels = crossAisleLabels(objs, GS)
-    expect(labels).toHaveLength(sections.length - 1)
-    labels.forEach((L, i) => {
-      const a = sections[i], b = sections[i + 1]
-      expect(L.gapLo).toBeCloseTo(a.r1, 6)
-      expect(L.gapHi).toBeCloseTo(b.r0, 6)
-      expect(L.text).toBe(pxToFtIn(b.r0 - a.r1, GS))
-      expect((b.r0 - a.r1) / GS).toBeGreaterThanOrEqual(DEFAULT_RULES.mhe.reach.crossAisleFt - 1e-6)
-      expect(L.labelMid).toBeCloseTo((a.r1 + b.r0) / 2, 6)
-      expect(L.positions).toEqual([(Math.min(a.c0, b.c0) + Math.max(a.c1, b.c1)) / 2])
-      expect(L.isHoriz).toBe(rot)                         // the gap runs along the rows: X for horizontal rows, Y for vertical
+    const perGap = sections.slice(0, -1).map((a, i) => {
+      const b = sections[i + 1]
+      return { a, b, ls: labels.filter(L => Math.abs(L.gapLo - a.r1) < 1e-6).sort((p, q) => p.positions[0] - q.positions[0]) }
     })
+    expect(perGap.reduce((n, g) => n + g.ls.length, 0)).toBe(labels.length)
+    expect(labels.length).toBe(rot ? 28 : 35)                // 2 cross-aisles × 14 / 7 × 5
+    for (const { a, b, ls } of perGap) {
+      const c0 = Math.min(a.c0, b.c0), c1 = Math.max(a.c1, b.c1), n = Math.max(1, Math.round((c1 - c0) / (75 * GS)))
+      expect(ls).toHaveLength(n)
+      ls.forEach((L, j) => {
+        expect(L.gapLo).toBeCloseTo(a.r1, 6)
+        expect(L.gapHi).toBeCloseTo(b.r0, 6)
+        expect(L.text).toBe(pxToFtIn(b.r0 - a.r1, GS))
+        expect((b.r0 - a.r1) / GS).toBeGreaterThanOrEqual(DEFAULT_RULES.mhe.reach.crossAisleFt - 1e-6)
+        expect(L.labelMid).toBeCloseTo((a.r1 + b.r0) / 2, 6)
+        expect(L.positions[0]).toBeCloseTo(c0 + (j + 0.5) * (c1 - c0) / n, 6)
+        expect(L.isHoriz).toBe(rot)                       // the gap runs along the rows: X for horizontal rows, Y for vertical
+      })
+    }
   })
 
   it('LB-cross-drag: a rack moved into a cross-aisle narrows its label to the new clear width', () => {
