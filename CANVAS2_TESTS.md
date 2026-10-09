@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### WC — One wall clearance, from the wall's inner face, for Generate and Fill racking (BUG 76, BUG 78) · `WC_wallClearance.test.js` (37 tests)
+### WC — One wall clearance, from the wall's inner face, for Generate and Fill racking (BUG 76, BUG 78, BUG 79) · `WC_wallClearance.test.js` (45 tests)
 Code: `wallClear.js` (generate, new: `WALL_CLEAR_IN` 3, `clearFromOutline`, `wallClearOf`); `layoutSpec`'s `sideClearFt`
 (sizingLayout.js — the wall thickness + the clearance; run ends keep `endClearFt`); `buildQueue` passes the floor plan's
 wall thickness (traceGenerate.js); `clearOutline` (fillRacking.js, new — the inner outline with the walls along the rows
@@ -2020,6 +2020,58 @@ inches from the inner face — behind near / far, run start / end):
 | 6" | 6/6, 6/6 · 6/6, 6/138 | 6/6, 6/6 · 6/6, 6/6 | 6/6, 6/6 · 6/6, 6/39 | 6/6, 6/6 · 6/6, 6/6 |
 
 (The fill box dragged past the walls; a box stopping short of a run-end wall keeps its rows at the box edge, as before.)
+
+**Run-end snap (BUG 79).** Code: `snapToWalls(…, ends)` (fillRacking.js — the run ends by the same rule as the edges
+across the rows: within a rack's depth, 3' 6", of a wall counts as on it); a new pattern's `endsSnap`; `patternFill({
+snapEnds })`; `planAreaCreate` snaps the stored box; `planAreaResize` snaps an edited box (the same box again is no
+edit: a saved area refilled over its own box stays where it was). The rows then start at the wall clearance from that
+wall. Cost on the 12 fills: no bay or usable lost; bays 730 → 742, 712 → 733, 661 → 669, 632 → 653, 591 → 597,
+552 → 573; usable 10,608 → 10,848, 10,632 → 10,920, 9,524 → 9,704, 9,368 → 9,656, 8,432 → 8,572, 8,104 → 8,392;
+flagged uprights 6 → 30 (rectangle), 6 → 28 (L), 4 → 26 (T) on the horizontal-row fills; the saved areas unchanged.
+
+Changed (old → new, all 45, listed before editing):
+- `AX-73` ×2: the grown bay leaves 2.869 → 1.000 ft (the 9' 3" cross-aisle less the 8' 3" bay); message "2' 10"" → "1'".
+- `AX-73-quiet` ×2 (setup): the split piece moved 3' along also narrowed the cross-aisle to 6' 3" (a real error now the
+  cross-aisle is 9' 3"); the piece drops its last bay first, so only the 2' 9" gap inside the section is tested. Expected
+  unchanged (no warning).
+- `CA-fills` ×3: usable 10,608 → 10,848 (as saved H, turned V; pick-zone 0); turned H 10,632 / 184 → 10,920 / 224.
+- `CX-fills` ×3: labels 11' 1" → 9' 3"; stretches −131.106..−119.987 → −133.75..−124.5, −12.487..−1.369 → 7.75..17
+  (positions −71.333 / 7 / 85.333 → −75.75 / −6.25 / 63.25), 122.631..133.75 → 124.5..133.75; turned H 16' 5"
+  −7.631..8.75 → 9' 3" −0.5..8.75 (positions unchanged).
+- `CX-zone` ×2: the office stretch's gap 122.631 → 124.5.
+- `PB-untouched` ×2 (as saved H, turned V): pairs 54 → 55.
+- `RA-precision`: the area's left edge (0.245' inside the wall) −4780.196 → −4790, width 4790 + 4780.196 → 9580.
+- `RG-pick`, `RG-bays`, `RG-drop`, `RG-part`, `RG-multi` ×2 each: the far wall row's piece after the custom area starts in
+  section 2 now: key (3, 14) → (2, 14); RG-bays' bar "Section 3, row 14" → "Section 2, row 14".
+- `RG-zone` ×2: "3 will have warnings" → "10 will have warnings": rows 3/3–3/5 inside the Office as before, plus 3/6 and
+  3/8–3/13 "a cross-aisle under the travel width" (the bay made 3' longer closes the 9' 3" cross-aisle to 6' 3"); the
+  inside-a-zone checks over the first three.
+- `RG-warn-bays` ×2: the far wall row, now stamped section 2, is not in the group: the "+2 bays" check skips it (30 stays 30).
+- `RG-along` ×2: the first move "Apply to the other 3 rows?" → "… 1 will have warnings." (row 1/7 through the wall: the rows
+  start at the wall now); the second "2 will have warnings" (3/7 a column on an upright, 4/7 through a wall) → "1 will have
+  warnings" (4/7 through a wall).
+- `RL-3` ×6: the cross-aisle kept below the office "≥ 10.5 and < 12 ft" → "≥ 9 ft (the reach truck's cross-aisle) and
+  < 12" — it is 9' 3" now.
+- `RL-clean` ×6: the flagged uprights allowed (flagged, never moved) → rectangle: Rows 4, 7, 10, 13 of sections 1–3 and
+  Rows 7, 10, 13 of section 4, two columns each (30); L: the same rows less Row 13 of section 1, Rows 10 and 13 of section
+  2 with one column more (28); T: 26 — the exact Check layout lines per shape.
+- `WC-fill` ×2: the box's start end (2.89' short of the wall) snaps: run start −246.856 (the box edge) → −249.5 at 3",
+  −249.75 at 0.
+
+| Test | Asserts |
+|---|---|
+| `WC-snap-ends` ×6 | 240 × 120, H and V, at 0" / 3" / 6": a box drawn 1' and 3.4' short of every wall — all four sides read the setting, the area's box on the clearance lines; 3.6' short of the clearance line, the run ends stay at the box edge |
+| `WC-snap-resize` ×2 | a resized area's run end dragged to 2' short of the wall snaps (the racks as when filled to the wall); the same box again changes nothing |
+
+The reach counts from the clearance line, as it does for the edges across the rows (one rule for both).
+
+**Break-it (snap):** run ends never snap: AX-73, CA-fills, CX-fills, CX-zone, PB-untouched, RA-precision, RG-pick, -bays,
+-drop, -zone, -part, -along, -multi, RL-clean, WC-fill, WC-snap-ends, WC-snap-resize (43).
+
+**Checked in the app (snap)** (real mouse; the box drawn 4 px inside the walls — 0.98' on 240 × 120, 2.04' on the fixture;
+the value typed into the Fill bar): at 3" / 0" / 6", Fill 240 × 120 and the fixture, H and V — behind both sides, the
+run start and the run end all read the setting, but for 240 × 120 vertical's far-end leftover (42" / 45" / 39", at least
+the setting). Generate as before.
 
 ### WR — Generate's wall rows follow Fill racking's rule (BUG 70) · `WR_wallRows.test.js` (25 tests)
 Code: `wallRun` (generate/wallRun.js, new — shared: Fill's `placeWall` calls it with the same arithmetic, Fill

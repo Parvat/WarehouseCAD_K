@@ -187,12 +187,12 @@ describe.each([['horizontal', false], ['vertical', true]])('AX — %s', (_, vert
     }
   })
 
-  it('AX-73: the BUG 73 case — row 7, section 2 grown by a bay toward section 3: the cross-aisle in that line is 2 ft 10 in (2 ft 11 in before the run ends kept the 3" wall clearance) — Check layout reports an ERROR (red, under Errors), naming both racks and the width; a way in still exists, so no "No way in"', () => {
+  it('AX-73: the BUG 73 case — row 7, section 2 grown by a bay toward section 3: the cross-aisle in that line is 1 ft (2 ft 10 in before the run ends snapped to the wall, 2 ft 11 in before they kept the 3" clearance) — Check layout reports an ERROR (red, under Errors), naming both racks and the width; a way in still exists, so no "No way in"', () => {
     const out = grown(crossFill(vert))
     const a = rackOf(out, 2, 7), b = rackOf(out, 3, 7)
-    expect(gapOf(out, a.id, b.id)).toBeCloseTo(2.869, 3)   // 2.952 before the run ends kept the 3" clearance
+    expect(gapOf(out, a.id, b.id)).toBeCloseTo(1, 3)   // the 9' 3" cross-aisle less the bay (2.869 before the run-end snap, 2.952 before the clearance)
     const ws = crossWarnings(out)
-    expect(ws.map(w => [w.severity, w.ids.slice().sort(), w.text])).toEqual([['error', [a.id, b.id].sort(), `Cross-aisle between row 7, section 2 and row 7, section 3: 2' 10", needs 8' to drive`]])
+    expect(ws.map(w => [w.severity, w.ids.slice().sort(), w.text])).toEqual([['error', [a.id, b.id].sort(), `Cross-aisle between row 7, section 2 and row 7, section 3: 1', needs 8' to drive`]])
     expect(ws[0].highlight[0].color).toBe(HL.red)
     expect(checkLayout(out, { gridSize: GS }).errors.filter(e => e.kind === 'no-way-in')).toEqual([])
   })
@@ -210,7 +210,10 @@ describe.each([['horizontal', false], ['vertical', true]])('AX — %s', (_, vert
   it('AX-73-quiet: gaps inside a section never warn — a split piece moved 2 ft 9 in off its rack, a bay deleted from the middle of a row; nor a layout placed by hand (no section stamps) with the BUG 73 gap', () => {
     // a split inside section 2: 2' 9" between the pieces
     const base = crossFill(vert), r = rackOf(base, 2, 7)
-    const [p, q] = cutRack(r, 5, GS, () => 'piece', 'first')
+    const [p, q0] = cutRack(r, 5, GS, () => 'piece', 'first')
+    // (the piece first drops its last bay, so moving it does not also narrow the 9' 3" cross-aisle past it — that
+    // would be a real warning, not a gap inside the section)
+    const [q] = cutRack(q0, q0.beams.length - 1, GS, () => 'tail', 'first')
     const split = base.map(o => (o.id === r.id ? p : o)).concat([RG.movedAlong(q, 3 * GS)])
     expect(gapOf(split, p.id, 'piece')).toBeCloseTo(2.75, 6)
     expect(crossWarnings(split)).toEqual([])

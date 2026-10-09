@@ -47,8 +47,8 @@ const widthFt = (a, b) => (Math.max(across(a)[0], across(b)[0]) - Math.min(acros
 const pairOf = (a, b) => [a.id, b.id].sort().join('|')
 const FILLS = [
   ['as saved, vertical', false, 'vertical', true, 56],
-  ['as saved, horizontal', false, 'horizontal', false, 54],
-  ['turned, vertical', true, 'vertical', false, 54],
+  ['as saved, horizontal', false, 'horizontal', false, 55],   // 54 before the run's start end snapped to the wall (BUG 79)
+  ['turned, vertical', true, 'vertical', false, 55],
   ['turned, horizontal', true, 'horizontal', false, 55],
 ]
 

@@ -1078,8 +1078,9 @@ describe('RA — the app\'s own coordinates', () => {
     m.FT.moveFill({ x: -4780.196329492104 + 9637.217242851046, y: -401.19504908237303 }, s().objects, GS)
     m.FT.commitFill(m.useCanvasStore)
     const a = s().objects.find(o => o.type === 'racking_area')
-    // dragged past the walls: clipped to their inner faces (4790 right, 2390 bottom)
-    expect([a.x, a.y, a.width, a.height]).toEqual([-4780.196329492104, -401.19504908237303, 4790 + 4780.196329492104, 2390 + 401.19504908237303])
+    // dragged past the walls: clipped to their inner faces (4790 right, 2390 bottom); the left end, 0.245' short of
+    // the wall, snaps onto it (BUG 79 — before: x -4780.196, width 4790 + 4780.196)
+    expect([a.x, a.y, a.width, a.height]).toEqual([-4790, -401.19504908237303, 9580, 2390 + 401.19504908237303])
     s().updateObject(a.id, { y: -2483.3333333333335, height: 4941.72001707213 })
     m.AT.finishAreaResize(m.useCanvasStore, a.id, { x: a.x, y: a.y, w: a.width, h: a.height })
     expect(s().objects.filter(o => o.type === 'rack_double_row' || o.type === 'rack_row').length).toBeGreaterThan(12)

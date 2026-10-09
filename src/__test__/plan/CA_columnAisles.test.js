@@ -135,7 +135,8 @@ import { aisleLabelLayout } from '../../canvas2/hitTest'
 import { clearanceMarks } from '../../canvas2/aisleMarks'
 import { labelScale, aisleLabelScale, LABEL_SIZES } from '../../render/labelSize'
 
-const FILLS = [['as saved, vertical', false, 'vertical', true, { cols: 23, usable: 10648, pickLost: 184 }], ['as saved, horizontal', false, 'horizontal', false, { cols: 0, usable: 10608, pickLost: 0 }], ['turned, vertical', true, 'vertical', false, { cols: 0, usable: 10608, pickLost: 0 }], ['turned, horizontal', true, 'horizontal', false, { cols: 23, usable: 10632, pickLost: 184 }]]
+const FILLS = [['as saved, vertical', false, 'vertical', true, { cols: 23, usable: 10648, pickLost: 184 }], ['as saved, horizontal', false, 'horizontal', false, { cols: 0, usable: 10848, pickLost: 0 }], ['turned, vertical', true, 'vertical', false, { cols: 0, usable: 10848, pickLost: 0 }], ['turned, horizontal', true, 'horizontal', false, { cols: 23, usable: 10920, pickLost: 224 }]]
+// (the new fills' run ends snap to the wall — BUG 79: before, 10,608 / 0 and 10,632 / 184)
 function fillOf(turned, orientation, stored) {
   const objs = REAL_LAYOUT.map(o => ({ ...o })).map(o => (turned ? turn(o) : o))
   const area = objs.find(o => o.type === 'racking_area')

@@ -6185,6 +6185,23 @@ setting (old − 3" wall, as before). Wall rows stay on section 1's grid. Genera
 fills 3 → 6 / 2 → 4 (the same rows, two columns each), a whole-building fill of the fixture (horizontal rows)
 23 → 30. Saved areas rebuild where they are. Tests: area WC.
 
+## BUG 79 — a Fill box drawn a little short of a run-end wall keeps its rows at the box edge  (2026-10-09, fixed 2026-10-09)
+Symptom:  Found on the BUG 78 real-mouse check: a box drawn a few pixels inside the walls reads the wall
+clearance behind the wall rows (those edges snap) but 5.8"–15.4" at the run ends — the rows start at the box
+edge.
+
+Cause:    By design until now: `snapToWalls` moved only the edges across the rows onto a wall ("the run's ends
+stay as drawn: moving them moves the run's uprights").
+
+Fix:      The run ends snap by the same rule (an edge within a rack's depth, 3' 6", of a wall — counted from
+the clearance line, as across — counts as on it); the rows then start at the wall clearance from that wall.
+New boxes (`areaPattern`, `planAreaCreate`; a new pattern's `endsSnap`) and resized ones (`planAreaResize`
+passes `snapEnds` when the box changed); a saved area refilled over its own box stays where it was until
+edited. Approved as is: on the 12 fixture fills no bay or usable lost (bays +6 … +21, usable +140 … +288),
+flagged uprights on the horizontal-row fills 6 → 30 / 28, 4 → 26 (the run's grid moves 2' 7" against the
+50' columns) — flagged, never moved; the fills' cross-aisles 11' 1" → 9' 3" (the reach truck's 9' or more).
+45 tests changed (listed in CANVAS2_TESTS.md, area WC). Tests: area WC.
+
 ## Template for new entries
 
 ```

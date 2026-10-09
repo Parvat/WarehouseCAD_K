@@ -137,7 +137,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     const click = (id) => { store.getState().setActiveTool(ROW_GROUP_TOOL); const f = rackFootprint(get(id)); startGroupBox({ x: f.x + f.w / 2, y: f.y + f.h / 2 }, id); return commitGroupBox(store, false, TOOLS.SELECT) }
     expect(box(runBox(vert, ...SEC4))).toBe(14)
     expect(tool()).toBe(TOOLS.SELECT)
-    expect(st().keys).toEqual(expect.arrayContaining([...sectionKeys(4), key(3, 14)]))
+    expect(st().keys).toEqual(expect.arrayContaining([...sectionKeys(4), key(2, 14)]))
     expect(st().keys).toHaveLength(14)
     const r = pairOf(key(2, 7))
     expect(click(r.id)).toBe(1)
@@ -179,12 +179,12 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     const afterEdit = strip(objs())
     const p = st().pending
     expect(p.summary.text).toBe('Apply to the other 11 rows? 2 skipped.')
-    expect(p.summary.skipped.map(t => t.key).sort()).toEqual([key(4, 1), key(3, 14)].sort())
+    expect(p.summary.skipped.map(t => t.key).sort()).toEqual([key(4, 1), key(2, 14)].sort())
     for (const t of p.summary.skipped) expect(t.reason).toMatch(/^uprights don't line up \(\d+(\.\d+)?" off\)$/)
     const html = render()
     expect(html).toContain('Apply to the other 11 rows? 2 skipped.')
     expect(html).toMatch(/Skipped — Section 4, row 1: uprights don&#x27;t line up \(\d+(\.\d+)?&quot; off\)/)
-    expect(html).toMatch(/Skipped — Section 3, row 14: uprights don&#x27;t line up \(\d+(\.\d+)?&quot; off\)/)
+    expect(html).toMatch(/Skipped — Section 2, row 14: uprights don&#x27;t line up \(\d+(\.\d+)?&quot; off\)/)
     const srcUps = ups(get(src.id)), h = hist()
     expect(applyPending()).toBe(true)
     await settle()
@@ -226,7 +226,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     const kinds = (k) => rects.filter(r => r.kind === k)
     expect(kinds('dropped')).toEqual([])
     for (const w of p.summary.warned) for (const r of p.plan.targets.find(t => t.key === w.key).racks) expect(kinds('warned').some(q => q.key.endsWith(r.id))).toBe(true)
-    const skippedIds = [...rows().get(key(4, 1)).ids, ...rows().get(key(3, 14)).ids]
+    const skippedIds = [...rows().get(key(4, 1)).ids, ...rows().get(key(2, 14)).ids]
     expect(kinds('skipped')).toHaveLength(skippedIds.length)
     expect(new Set(rects.map(r => r.key)).size).toBe(rects.length)              // every outline keyed uniquely
     const pv = readFileSync('src/canvas2/RowGroupPreview.jsx', 'utf8')
@@ -249,12 +249,15 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     addRowsInBox(runBox(vert, ...SEC3))
     await changeBeam(pairOf(key(3, 7)), 10, 132)
     const p = st().pending
-    expect(p.summary.text).toBe('Apply to the other 11 rows? 3 will have warnings. 2 skipped.')
-    expect(p.summary.warned.map(w => w.key).sort()).toEqual([key(3, 3), key(3, 4), key(3, 5)].sort())
-    for (const w of p.summary.warned) expect(w.reasons).toEqual(expect.arrayContaining(['inside a zone']))
+    // (BUG 79: the run's start end snapped to the wall, the cross-aisles are 9' 3" — the bay 3' longer closes the one
+    // past it to 6' 3" in the other rows too: 3 → 10 warnings)
+    expect(p.summary.text).toBe('Apply to the other 11 rows? 10 will have warnings. 2 skipped.')
+    const zoned = [key(3, 3), key(3, 4), key(3, 5)], narrowed = [6, 8, 9, 10, 11, 12, 13].map(i => key(3, i))
+    expect(p.summary.warned.map(w => w.key).sort()).toEqual([...zoned, ...narrowed].sort())
+    for (const w of p.summary.warned) expect(w.reasons).toEqual(zoned.includes(w.key) ? expect.arrayContaining(['inside a zone']) : ['a cross-aisle under the travel width'])
     applyPending(); await settle()
     const inZone = checkLayout(objs(), { gridSize: GS }).errors.filter(e => e.kind === 'zone')
-    for (const w of p.summary.warned) expect(inZone.some(e => e.ids.some(id => rows().get(w.key).ids.includes(id)) && /inside the Office by/.test(e.text))).toBe(true)
+    for (const w of p.summary.warned.filter(w => zoned.includes(w.key))) expect(inZone.some(e => e.ids.some(id => rows().get(w.key).ids.includes(id)) && /inside the Office by/.test(e.text))).toBe(true)
   })
 
   /* ── a bay deleted at the end, added back; a middle bay deleted (the rows split) ── */
@@ -356,7 +359,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     const p = st().pending
     expect(p.summary.text).toBe('Apply to the other 5 rows? 8 skipped.')
     expect(new Set(p.summary.skipped.map(t => t.reason))).toEqual(new Set(['a rack only partly inside the stretch that moved']))
-    expect(p.summary.skipped.map(t => t.key).sort()).toEqual([...[7, 8, 9, 10, 11, 12, 13].map(i => key(4, i)), key(3, 14)].sort())
+    expect(p.summary.skipped.map(t => t.key).sort()).toEqual([...[7, 8, 9, 10, 11, 12, 13].map(i => key(4, i)), key(2, 14)].sort())
     applyPending(); await settle()
     expect(beamRacks(objs()).length).toBe(n0)                                   // nothing split
     for (const i of [2, 3, 4, 5]) expect(RG.geom(pairOf(key(4, i))).s0 - before.get(pairOf(key(4, i)).id).s0).toBeCloseTo(GS, 6)
@@ -376,7 +379,8 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(p.summary.text).toBe('Apply to the other 11 rows? 11 will have warnings. 2 skipped.')
     for (const w of p.summary.warned) expect(w.reasons).toEqual(['an overlap'])
     applyPending(); await settle()
-    for (const k of sectionKeys(2)) expect(bayCount(k)).toBe(n0.get(k) + 2)
+    // (the far wall row's piece, stamped section 2 since BUG 79, is not in the group: it keeps its bays)
+    for (const k of sectionKeys(2).filter(k => k !== key(2, 14))) expect(bayCount(k)).toBe(n0.get(k) + 2)
     const overlaps = checkLayout(objs(), { gridSize: GS }).errors.filter(e => e.kind === 'overlap')
     for (const w of p.summary.warned) expect(overlaps.some(e => e.ids.some(id => rows().get(w.key).ids.includes(id)))).toBe(true)
     expect(st().message).toBe('Applied to 11 rows · 11 with warnings — see Check layout · 2 skipped')
@@ -388,15 +392,18 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     const r0 = new Map([1, 2, 3, 4].map(i => [i, RG.geom(pairOf(key(i, 7))).r0]))
     await moveRow(key(4, 7), 0, -GS, vert)
     expect(st().pending.edit.kind).toBe('along')
-    expect(st().pending.summary.text).toBe('Apply to the other 3 rows?')
+    // (section 1's row 7 starts at the wall since BUG 79: moved 1' toward it, it goes through — before, no warning)
+    expect(st().pending.summary.text).toBe('Apply to the other 3 rows? 1 will have warnings.')
+    expect(st().pending.summary.warned).toEqual([{ key: key(1, 7), reasons: ['through a wall'] }])
     applyPending(); await settle()
     for (const i of [1, 2, 3, 4]) expect(RG.geom(pairOf(key(i, 7))).r0 - r0.get(i)).toBeCloseTo(-GS, 6)
     // section 4's row 7 runs to the end wall: 2' further toward it — applied, "through a wall"
     await moveRow(key(1, 7), 0, 3 * GS, vert)
     const p = st().pending
     expect(p.summary.skipped).toEqual([])
-    expect(p.summary.text).toBe('Apply to the other 3 rows? 2 will have warnings.')
-    expect(p.summary.warned).toEqual(expect.arrayContaining([{ key: key(3, 7), reasons: ['a column on an upright'] }, { key: key(4, 7), reasons: expect.arrayContaining(['through a wall']) }]))
+    // (BUG 79: section 3's row 7 no longer puts an upright on a column there — before, 2 warnings with it)
+    expect(p.summary.text).toBe('Apply to the other 3 rows? 1 will have warnings.')
+    expect(p.summary.warned).toEqual([{ key: key(4, 7), reasons: expect.arrayContaining(['through a wall']) }])
   })
 
   it('RG-delete: row 7 of every section; section 4\'s deleted → "Apply to the other 3 rows?" → every row 7 gone; undo once → back but the source; twice → all back', async () => {
@@ -448,7 +455,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     store.getState().moveObjects([...rows().get(key(4, 8)).ids, ...rows().get(key(4, 9)).ids], vert ? GS / 4 : 0, vert ? 0 : GS / 4); await settle()
     // row 7 keeps the column already on its upright (the move adds none); section 3's row 14 goes through the wall
     expect(st().pending.summary.text).toBe('Apply to the other 12 rows? 1 will have warnings.')
-    expect(st().pending.summary.warned).toEqual([{ key: key(3, 14), reasons: ['through a wall'] }])
+    expect(st().pending.summary.warned).toEqual([{ key: key(2, 14), reasons: ['through a wall'] }])
     applyPending(); await settle()
     expect(RG.geom(pairOf(key(4, 11))).s0 - s0).toBeCloseTo(GS / 4, 6)
     store.getState().selectAll(); store.getState().deleteSelected(); await settle()

@@ -251,17 +251,19 @@ const rsRect = (vert, gridSize, b) => {
 /** `boxPx` with each edge ACROSS the rows (`vert`: the left and right; else the top and bottom) that
  *  stops short of a wall — by no more than `reachFt` (a rack's depth: too thin a strip to hold any
  *  rack) — moved out onto that wall's inner face: such an edge counts as on the wall, so its wall row
- *  sits on the wall. The run's ends stay as drawn: moving them moves the run's uprights, which a column
- *  grid can land on. World px. */
-export function snapToWalls(boxPx, fp, gridSize = 40, reachFt = 3.5, vert = false, clearIn = 0) {
-  const poly = clearOutline(fp, gridSize, vert, clearIn), reach = reachFt * gridSize + 1e-6
+ *  sits on the wall. With `ends` (a box made or edited since, `pattern.endsSnap`) the run's ends too, by the
+ *  same rule: an end within `reachFt` of a wall counts as on it, and the rows start at the wall clearance from
+ *  that wall. Without it (a saved area not edited since) they stay as drawn. The lines are the clearance
+ *  floor's (clearOutline). World px. */
+export function snapToWalls(boxPx, fp, gridSize = 40, reachFt = 3.5, vert = false, clearIn = 0, ends = false) {
+  const poly = clearOutline(fp, gridSize, vert, clearIn, ends), reach = reachFt * gridSize + 1e-6
   const x0 = boxPx.x, y0 = boxPx.y, x1 = boxPx.x + boxPx.w, y1 = boxPx.y + boxPx.h
   const edges = poly.map((a, i) => [a, poly[(i + 1) % poly.length]])
   const xs = edges.filter(([a, c]) => Math.abs(a.x - c.x) < 1e-6 && Math.min(Math.max(a.y, c.y), y1) - Math.max(Math.min(a.y, c.y), y0) > 1e-6).map(([a]) => a.x)
   const ys = edges.filter(([a, c]) => Math.abs(a.y - c.y) < 1e-6 && Math.min(Math.max(a.x, c.x), x1) - Math.max(Math.min(a.x, c.x), x0) > 1e-6).map(([a]) => a.y)
   const lo = (v, lines) => { const c = lines.filter(l => l < v - 1e-6 && l >= v - reach); return c.length ? Math.max(...c) : v }
   const hi = (v, lines) => { const c = lines.filter(l => l > v + 1e-6 && l <= v + reach); return c.length ? Math.min(...c) : v }
-  const a = vert ? lo(x0, xs) : x0, b = vert ? y0 : lo(y0, ys), c = vert ? hi(x1, xs) : x1, d = vert ? y1 : hi(y1, ys)
+  const a = vert || ends ? lo(x0, xs) : x0, b = !vert || ends ? lo(y0, ys) : y0, c = vert || ends ? hi(x1, xs) : x1, d = !vert || ends ? hi(y1, ys) : y1
   return { x: a, y: b, w: c - a, h: d - b }
 }
 
@@ -297,7 +299,7 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
   // an edge across the rows within a rack's depth of a wall counts as on it: the pattern starts from the wall
   // the wall clearance (wallClear.js): the floor's walls along the rows moved in by it, the pattern holds it
   const clearIn = Number.isFinite(set.wallClearIn) ? Math.max(0, set.wallClearIn) : WALL_CLEAR_IN
-  boxPx = snapToWalls(boxPx, fp, gridSize, depthIn / 12, set.orientation === 'vertical', clearIn)
+  boxPx = snapToWalls(boxPx, fp, gridSize, depthIn / 12, set.orientation === 'vertical', clearIn, true)
   const rackType = 'rack_double_row', colSizeIn = 12
   const { rects, vert } = fillRects(objects, fp, boxPx, { orientation: set.orientation, gridSize, clearIn, ends: true })
   if (!rects.length) return null
@@ -392,6 +394,8 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
     vert, units, pieces, beamIn, upIn, depthIn, flueIn, aisleFt, travelFt, wallClearIn: clearIn,
     // the clearance holds at the run ends too (a pattern from before kept its run ends on the walls)
     endsClear: true,
+    // and a run end drawn within a rack's depth of a wall counts as on it, like the edges across the rows
+    endsSnap: true,
     palletWIn: P.palletWIn, palletDIn: P.palletDIn, levels: set.levels,
     // the walks' directions from the start corner: across (stack) and along (run) — the far edges are the other way
     dirS, runDir: flipR ? -1 : 1,
@@ -410,7 +414,7 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
  *  from the area by hand). A face against a wall or zone (under an aisle of
  *  clear floor in front of it) loses its bays there (faceReach.js). Returns
  *  { fp, racks, aisles, rows, positions }. */
-export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = nanoid, areaId = null, fp = null, blocked = [], wayIn = true, report = null } = {}) {
+export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = nanoid, areaId = null, fp = null, blocked = [], wayIn = true, report = null, snapEnds = false } = {}) {
   const empty = { fp: null, racks: [], aisles: [], rows: 0, positions: 0 }
   fp = fp || buildingForBox(objects, boxPx)
   if (!fp || !pattern || !(boxPx.w > 0) || !(boxPx.h > 0)) return empty
@@ -420,7 +424,7 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
   const poly = clearOutline(fp, gridSize, vert, clearIn, ends).map(rsOf(vert, gridSize))
   // the box as far as the walls: a box dragged past one ends on its inner face (as the area's box does),
   // and an edge within a rack's depth of a wall counts as on it
-  const raw = rsRect(vert, gridSize, snapToWalls(boxPx, fp, gridSize, depthIn / 12, vert, clearIn))
+  const raw = rsRect(vert, gridSize, snapToWalls(boxPx, fp, gridSize, depthIn / 12, vert, clearIn, snapEnds || !!pattern.endsSnap))
   const box = { r0: Math.max(raw.r0, Math.min(...poly.map(q => q.r))), r1: Math.min(raw.r1, Math.max(...poly.map(q => q.r))),
     s0: Math.max(raw.s0, Math.min(...poly.map(q => q.s))), s1: Math.min(raw.s1, Math.max(...poly.map(q => q.s))) }
   const grow = (q, by) => ({ r0: q.r0 - by, r1: q.r1 + by, s0: q.s0 - by, s1: q.s1 + by })

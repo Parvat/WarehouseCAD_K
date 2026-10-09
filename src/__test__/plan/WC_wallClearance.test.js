@@ -89,17 +89,18 @@ describe('WC — Generate', () => {
 })
 
 describe.each(ORIENT)('WC — Fill racking, %s', (_, turned, orientation) => {
-  it('WC-fill: the wall rows sit the clearance off the inner face — 3" by default, 0 flush as before — and so does the run end on a wall (the box\'s open end stays where it is)', () => {
+  it('WC-fill: the wall rows sit the clearance off the inner face — 3" by default, 0 flush as before — and so do the run ends: the far end on the wall, and the box\'s start end, 2.89\' short of the wall, snaps to it', () => {
     const a = newFill({ turned, orientation }), z = newFill({ turned, orientation, settings: { wallClearIn: 0 } })
     const vert = a.vert, [lo, hi] = faces(a.fp, vert)
     const gap = (out) => { const s = out.filter(o => o.type === 'rack_row').map(o => acrossOf(o, vert)); return [Math.min(...s.map(q => q[0])) - lo, hi - Math.max(...s.map(q => q[1]))].map(v => Math.round(v * 1e6) / 1e6) }
     expect(gap(a.out)).toEqual([0.25, 0.25])
     expect(gap(z.out)).toEqual([0, 0])
     const ends = (out) => { const r = out.filter(o => RACK.has(o.type)).map(o => runOf(o, vert)); return [Math.min(...r.map(q => q[0])), Math.max(...r.map(q => q[1]))] }
-    // the box's start end is open floor (it stops short of the wall): the same; the far end is the wall: 3" off it
-    // at 3", on it at 0 (before the follow-up the run ends stayed on the walls at 3" too)
-    const runFace = (() => { const rv = innerOutline(a.fp, GS).map(p => (vert ? p.y : p.x) / GS); return Math.max(...rv) })()
-    expect(ends(a.out)[0]).toBeCloseTo(ends(z.out)[0], 6)
+    // the far end is the wall: 3" off it at 3", on it at 0 (before BUG 78 the run ends stayed on the walls at 3" too);
+    // the box's start end, 2.89' short of the wall, snaps to it (BUG 79 — before, both at the box edge, -246.856)
+    const rv = innerOutline(a.fp, GS).map(p => (vert ? p.y : p.x) / GS), runFace = Math.max(...rv), runFace0 = Math.min(...rv)
+    expect(ends(a.out)[0] - runFace0).toBeCloseTo(0.25, 6)
+    expect(ends(z.out)[0] - runFace0).toBeCloseTo(0, 6)
     expect(runFace - ends(z.out)[1]).toBeCloseTo(0, 6)
     expect(runFace - ends(a.out)[1]).toBeCloseTo(0.25, 6)
     expect(a.area.settings.wallClearIn).toBe(3)
@@ -297,5 +298,43 @@ describe('WC — the rules table and saved areas', () => {
     expect(keys(again)).toEqual(keys(before))
     const vert = orientation === 'vertical'
     expect(Math.max(...before.map(o => runOf(o, vert)[1]))).toBeCloseTo(Math.max(...innerOutline(fp, GS).map(p => (vert ? p.y : p.x) / GS)), 6)
+  })
+})
+
+// ── The run ends snap too (BUG 79): a box edge at a run end within a rack's depth (3' 6") of a wall counts as on
+// it, like the edges across the rows — the rows then start at the wall clearance from it. New and resized boxes.
+describe.each([['horizontal', false], ['vertical', true]])('WC — the run ends snap, %s rows', (orientation, vert) => {
+  const fp = building(240, 120), poly = innerOutline(fp, GS), xs = poly.map(p => p.x), ys = poly.map(p => p.y)
+  const [X0, X1, Y0, Y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
+  const face = vert ? { s0: X0 / GS, s1: X1 / GS, r0: Y0 / GS, r1: Y1 / GS } : { s0: Y0 / GS, s1: Y1 / GS, r0: X0 / GS, r1: X1 / GS }
+  const inset = (ft) => ({ x: X0 + ft * GS, y: Y0 + ft * GS, w: X1 - X0 - 2 * ft * GS, h: Y1 - Y0 - 2 * ft * GS })
+  it.each(SETTINGS)('WC-snap-ends (%s"): a box drawn 1\' and 3.4\' short of every wall — all four sides read the setting; 3.6\' short of the clearance line (what the reach counts from, across the rows too), the run ends stay at the box edge', (clearIn) => {
+    for (const short of [1, 3.4]) {
+      const box = inset(short)
+      const out = planAreaCreate([fp], box, { orientation, wallClearIn: clearIn }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
+      const [b0, b1, r0, r1] = sides(out.filter(o => RACK.has(o.type)), face, vert)
+      expect([short, b0, b1, r0]).toEqual([short, clearIn, clearIn, clearIn])
+      expect(r1).toBeGreaterThanOrEqual(clearIn - 1e-6)
+      // the area's box is on the walls too — at the clearance line, as across the rows — at the run ends as across
+      const a = out.find(o => o.type === 'racking_area'), c = clearIn / 12 * GS
+      expect([a.x, a.y, a.x + a.width, a.y + a.height].map(v => Math.round(v * 1e6) / 1e6)).toEqual([X0 + c, Y0 + c, X1 - c, Y1 - c])
+    }
+    const box = inset(3.6 + clearIn / 12)
+    const out = planAreaCreate([fp], box, { orientation, wallClearIn: clearIn }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
+    const r0 = sides(out.filter(o => RACK.has(o.type)), face, vert)[2]
+    expect(r0).toBeCloseTo(3.6 * 12 + clearIn, 6)
+  })
+  it('WC-snap-resize: an area resized with its run end dragged to 2\' short of the wall — that end snaps (the rows reach the clearance); the same box again changes nothing', () => {
+    const box = inset(0)
+    const made = planAreaCreate([fp], box, { orientation, wallClearIn: 3 }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
+    const area = made.find(o => o.type === 'racking_area')
+    // shrink the far run end well in, then drag it back to 2' short of the wall
+    const shrunk = vert ? { ...box, h: box.h - 40 * GS } : { ...box, w: box.w - 40 * GS }
+    const back = vert ? { ...box, h: box.h - 2 * GS } : { ...box, w: box.w - 2 * GS }
+    const small = planAreaResize(made, area.id, shrunk, { gridSize: GS })
+    const again = planAreaResize(small, area.id, back, { gridSize: GS })
+    expect(keys(again)).toEqual(keys(made))
+    const same = planAreaResize(again, area.id, back, { gridSize: GS })
+    expect(keys(same)).toEqual(keys(again))
   })
 })

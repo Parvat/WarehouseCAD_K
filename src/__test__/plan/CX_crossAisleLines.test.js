@@ -61,18 +61,20 @@ describe('CX-fills', () => {
   // a label about every 75 ft along each cross-aisle; the office stretch (lines whose rows stop at the office) has none
   const ELEVEN = [
     // the new fills take the 3" wall clearance (BUG 76; flush before: -75.625 / -5.375 / 64.875, -71.5 / 7 / 85.5, -12.375 / 62.542),
-    // at the run ends too (each cross-aisle 1" narrower — before: 11' 2", -131.106..-119.904, -12.404..-1.202, 122.798..134)
-    ...STRETCH([`11' 1"`, -131.106, -119.987], [-75.75, -6.25, 63.25]),
-    ...STRETCH([`11' 1"`, -12.487, -1.369], [-71.333, 7.0, 85.333]),
-    ...STRETCH([`11' 1"`, 122.631, 133.75], [-13.25, 60.917]),
+    // at the run ends too (each cross-aisle 1" narrower — before: 11' 2", -131.106..-119.904, -12.404..-1.202, 122.798..134),
+    // and the run's start end snaps to the wall (BUG 79: a bay more per section, the cross-aisles 9' 3" — before 11' 1",
+    // -131.106..-119.987, -12.487..-1.369 at -71.333 / 7 / 85.333, 122.631..133.75)
+    ...STRETCH([`9' 3"`, -133.75, -124.5], [-75.75, -6.25, 63.25]),
+    ...STRETCH([`9' 3"`, 7.75, 17], [-75.75, -6.25, 63.25]),
+    ...STRETCH([`9' 3"`, 124.5, 133.75], [-13.25, 60.917]),
   ]
   it.each([
     ['as saved, vertical', false, 'vertical', true, STRETCH([`16' 8"`, -7.631, 9.0], [-194.534, -117.892, -41.249, 35.393, 112.036, 188.679])],
     ['as saved, horizontal', false, 'horizontal', false, ELEVEN],
     ['turned, vertical', true, 'vertical', false, ELEVEN],
     // (flush before: -197.204 / -120.111 / -43.018 / 34.075 / 111.168 / 188.26; the run end on the wall 3" in takes
-    // 3" off its one cross-aisle — before: 16' 8", -7.631..9)
-    ['turned, horizontal', true, 'horizontal', false, STRETCH([`16' 5"`, -7.631, 8.75], [-196.974, -119.923, -42.872, 34.179, 111.23, 188.281])],
+    // 3" off its one cross-aisle — before: 16' 8", -7.631..9; the start end snapped to the wall — before 16' 5", -7.631..8.75)
+    ['turned, horizontal', true, 'horizontal', false, STRETCH([`9' 3"`, -0.5, 8.75], [-196.974, -119.923, -42.872, 34.179, 111.23, 188.281])],
   ])('CX-fills (%s): a label about every 75 ft along each cross-aisle from the per-line gaps (it had none — its wall rows merged every section), each reading the narrowest of its lines; no arrow or pill on a rack or zone; no label on the office stretch', (_, turned, orientation, stored, want) => {
     const out = fillOf(turned, orientation, stored)
     const ls = crossAisleLabels(out, GS, { profile: REACH })
@@ -192,7 +194,7 @@ describe.each([['vertical', true], ['horizontal', false]])('CX — %s', (_, vert
     // the office stretch: the horizontal fill's third cross-aisle has 2 labels, not 3
     const fill = fillOf(false, 'horizontal', false)
     const office = fill.find(o => o.type === 'zone_office')
-    const third = crossAisleLabels(fill, GS).filter(l => Math.abs(l.gapLo / GS - 122.631) < 1e-3)   // 122.798 before the run ends kept the clearance
+    const third = crossAisleLabels(fill, GS).filter(l => Math.abs(l.gapLo / GS - 124.5) < 1e-3)   // 122.631 before the run-end snap, 122.798 before the clearance
     expect(third.length).toBe(2)
     const ox = [office.y, office.y + office.height]
     expect(third.every(l => l.positions[0] < ox[0] || l.positions[0] > ox[1])).toBe(true)

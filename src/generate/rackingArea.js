@@ -156,8 +156,8 @@ const cleanRacks = (objects, area) => {
  *  taken out): the racks, reusing `clean` ones that come out exactly the same
  *  (id and all), so a rack the change doesn't touch stays the very same rack.
  *  `removed`: where racks removed by hand stood (left empty). */
-function showPattern(objects, box, pattern, area, clean, removed, { gridSize, newId }) {
-  const plan = patternFill(objects, box, pattern, { gridSize, newId, areaId: area.id, blocked: removed })
+function showPattern(objects, box, pattern, area, clean, removed, { gridSize, newId, snapEnds = false }) {
+  const plan = patternFill(objects, box, pattern, { gridSize, newId, areaId: area.id, blocked: removed, snapEnds })
   const bySig = new Map()
   for (const r of clean) { const k = rackSig(r); if (!bySig.has(k)) bySig.set(k, []); bySig.get(k).push(r) }
   return plan.racks.map(r => { const same = bySig.get(rackSig(r)); return same && same.length ? same.shift() : r })
@@ -170,9 +170,9 @@ export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = 
   const plan = planFill(objects, box, settings, { gridSize, newId, from, areaId: id })
   if (!plan.racks.length) return null
   const anchor = from ? { x: from.x > box.x + box.w / 2 ? 'r' : 'l', y: from.y > box.y + box.h / 2 ? 'b' : 't' } : { x: 'l', y: 't' }
-  // the area's box stays inside the building: clipped to its inner walls' extent, and an edge across
-  // the rows within a rack's depth of a wall put on it (it counts as on the wall)
-  box = snapToWalls(box, plan.fp, gridSize, plan.pattern.depthIn / 12, plan.pattern.vert, plan.pattern.wallClearIn ?? 0)
+  // the area's box stays inside the building: clipped to its inner walls' extent, and an edge within a
+  // rack's depth of a wall put on it (it counts as on the wall) — across the rows and at the run ends
+  box = snapToWalls(box, plan.fp, gridSize, plan.pattern.depthIn / 12, plan.pattern.vert, plan.pattern.wallClearIn ?? 0, true)
   const inner = innerOutline(plan.fp, gridSize), ix0 = Math.max(box.x, Math.min(...inner.map(p => p.x))), iy0 = Math.max(box.y, Math.min(...inner.map(p => p.y)))
   const ix1 = Math.min(box.x + box.w, Math.max(...inner.map(p => p.x))), iy1 = Math.min(box.y + box.h, Math.max(...inner.map(p => p.y)))
   const area = {
@@ -202,7 +202,10 @@ export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = na
   const now = kept.find(o => o.id === areaId)
   // an area from before patterns: its pattern from the box it had, as it was anchored
   const pattern = now.pattern || areaPattern(kept, boxOf(now), areaSettings(now), { gridSize, from: cornerOf(boxOf(now), now.anchor), areaId })?.pattern
-  const racks = pattern ? showPattern(kept, box, pattern, now, clean, removedBoxes(objects, area), { gridSize, newId }) : []
+  /* a box resized (edited) snaps its run ends to a wall within a rack's depth, like a new one; the same box
+     again is no edit — a saved area refilled over its own box stays exactly where it was */
+  const E = 1e-6, edited = Math.abs(box.x - area.x) > E || Math.abs(box.y - area.y) > E || Math.abs(box.w - area.width) > E || Math.abs(box.h - area.height) > E
+  const racks = pattern ? showPattern(kept, box, pattern, now, clean, removedBoxes(objects, area), { gridSize, newId, snapEnds: edited }) : []
   const keepPlaced = Object.fromEntries(Object.entries(now.placed || {}).filter(([id]) => !cleanIds.has(id)))
   const next = [...kept, ...racks].map(o => (o.id !== areaId ? o : {
     ...o, x: box.x, y: box.y, width: box.w, height: box.h, ...(pattern ? { pattern } : {}),

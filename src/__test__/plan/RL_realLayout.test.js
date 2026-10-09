@@ -149,7 +149,8 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
       const below = racks.filter(q => q.s0 >= office.s1 - EPS)
       // (and that cross-aisle starts before where the rows beside the office now end: they ran on across it)
       const reach = Math.min(...beside.filter(q => office.r0 - q.r1 < pitch).map(q => q.r1))
-      const gapKept = below.some(a => below.some(b => Math.abs(a.s0 - b.s0) < EPS && b.r0 - a.r1 >= 10.5 - EPS && b.r0 - a.r1 < 12 && a.r1 < reach - EPS && b.r0 > office.r0 - 10))
+      // (at least the reach truck's 9' cross-aisle — 9' 3" since the run's start end snaps to the wall, BUG 79; 10.5 before)
+      const gapKept = below.some(a => below.some(b => Math.abs(a.s0 - b.s0) < EPS && b.r0 - a.r1 >= 9 - EPS && b.r0 - a.r1 < 12 && a.r1 < reach - EPS && b.r0 > office.r0 - 10))
       expect(gapKept, 'the cross-aisle kept between racks').toBe(true)
     }
   })
@@ -252,9 +253,19 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     const { m, out, fp, box, areaId } = await fill()
     // (but the uprights the run's walk puts on a column of this grid — flagged, never moved; the dealer resolves
     // them, CANVAS2_BUGLOG BUG 71: Row 7 of section 4 on the flush layout; at the 3" wall clearance Rows 7, 10 and
-    // 13 (BUG 76 — the rows sit 3" further in), one column each; with the run ends 3" in too, two columns each on
-    // those rows (rectangle, L: 3 → 6; T, Rows 7 and 10: 2 → 4). Any other upright error still fails here)
-    const KNOWN = new Set(['Row 7, section 4', 'Row 10, section 4', 'Row 13, section 4'].map(r => r + ': 2 columns stand on upright frames'))
+    // 13 (BUG 76), one column each; with the run ends 3" in too, two each (BUG 78: 3 → 6, T 2 → 4); with the start
+    // end snapped to the wall (BUG 79) the whole grid moves 2' 7": Rows 4, 7, 10 and 13 across the sections —
+    // rectangle 30, L 28, T 26, exactly these lines. Any other upright error still fails here)
+    const two = (r, s) => `Row ${r}, section ${s}: 2 columns stand on upright frames`, one = (r, s) => `Row ${r}, section ${s}: a column stands on an upright frame`
+    const RECT = [two(4, 1), two(4, 2), two(4, 3), two(7, 1), two(7, 2), two(7, 3), two(7, 4), two(10, 1), two(10, 2), two(10, 3), two(10, 4), two(13, 1), two(13, 2), two(13, 3), two(13, 4)]
+    const KNOWN = new Set({
+      rectangle: RECT,
+      L: [two(4, 1), two(4, 2), two(4, 3), two(7, 1), two(7, 2), two(7, 3), two(7, 4), two(10, 1), one(10, 2), two(10, 2), two(10, 3), two(10, 4), one(13, 2), two(13, 3), two(13, 4)],
+      T: [two(4, 1), two(4, 2), two(4, 3), two(7, 1), two(7, 2), two(7, 3), two(7, 4), two(10, 1), one(10, 2), two(10, 2), two(10, 3), one(10, 3), two(10, 4), one(13, 2), one(13, 3)],
+    }[shape])
+    // (exactly these on the horizontal-row fills; none on the others)
+    const rowsAcross = turned ? orientation === 'vertical' : orientation === 'horizontal'
+    expect(m.LC.checkLayout(out, { gridSize: GS }).errors.filter(e => e.kind === 'upright').map(e => e.text).sort()).toEqual(rowsAcross && !stored ? [...KNOWN].sort() : [])
     expect(m.LC.checkLayout(out, { gridSize: GS }).errors.filter(e => !(e.kind === 'upright' && KNOWN.has(e.text)))).toEqual([])
     expect(m.AA.cutOffRacks(out, fp, { gridSize: GS, travelFt: 8, aisleFt: 10.5 }).cutOff).toEqual([])
     const before = keys(out)
