@@ -4,10 +4,10 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { sizingSheetLayout, columnGridObject, axisFrame } from '../../generate/sizingLayout'
 import { placementToObject, pickOrientation } from '../../generate/traceGenerate'
-import { checkColumns, expandColumnGrid, groupBySegment, rackFootprint, MHE_PROFILES } from '../../generate/columnCheck'
+import { checkColumns, expandColumnGrid, rackFootprint, MHE_PROFILES } from '../../generate/columnCheck'
 import { usableCapacity, mheProfile } from '../../generate/usableCapacity'
 import { DEFAULT_RULES } from '../../rules/defaults'
-import { GS, rackBands, EPS, MATRIX } from './fixtures'
+import { GS, rackBands, EPS, MATRIX, stackPaths } from './fixtures'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
 
@@ -162,7 +162,8 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
       it(`2 no oversized gap: interior aisles = ${t.aisleFt}' unless column-forced; far-wall gap holds no legal single (< ${2 * t.aisleFt + SINGLE_FT}' passes unscanned); every section <= ${MAX_RUN_FT}'; each cross-aisle in [${t.crossAisleFt}, ${t.crossAisleFt + BAY_FT}]', column-free, aligned across rows; no other run gap > one bay`, () => {
         const { racks, columns } = get()
         const bad = []
-        for (const run of groupBySegment(racks)) {
+        // rows across by the shared pairing (stackPaths): one chain per stretch, wall to wall
+        for (const run of stackPaths(racks)) {
           const feet = run.map(rackFootprint).sort((a, b) => stackOf(a).lo - stackOf(b).lo)
           if (feet.length < 2) continue
           /* Far-wall leftover (TEST_PLAN.md §2b rule 2): the gap must hold no
@@ -170,8 +171,9 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
            * depth that's true by width alone; above it, scan. */
           const gapLo = stackOf(feet[feet.length - 2]).hi / GS, gapHi = stackOf(feet[feet.length - 1]).lo / GS
           if (!(gapHi - gapLo < 2 * t.aisleFt + SINGLE_FT)) {
-            const f0 = feet[0]
-            const runLo = runOf(f0).lo, runHi = runOf(f0).hi
+            // the stretch the far-wall gap spans: where its two rows overlap along the run
+            const f0 = feet[0], pa = feet[feet.length - 2], pb = feet[feet.length - 1]
+            const runLo = Math.max(runOf(pa).lo, runOf(pb).lo), runHi = Math.min(runOf(pa).hi, runOf(pb).hi)
             const colsHere = columns
               .filter(c => { const r = runOf({ ...c, rotated: f0.rotated }); return r.hi > runLo && r.lo < runHi })
               .map(c => { const s = stackOf({ ...c, rotated: f0.rotated }); return [s.lo / GS, s.hi / GS] })
@@ -223,7 +225,9 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
       it(`3 every aisle >= travel (${t.travelFt}'), no level-1 column block`, () => {
         const { racks, columns } = get()
         const narrow = []
-        for (const run of groupBySegment(racks)) {
+        // every rack is in a chain across (the shared pairing skipped none)
+        expect(new Set(stackPaths(racks).flat().map(r => r.id)).size).toBe(racks.length)
+        for (const run of stackPaths(racks)) {
           const feet = run.map(rackFootprint).sort((a, b) => stackOf(a).lo - stackOf(b).lo)
           for (let i = 0; i < feet.length - 1; i++) {
             const gap = (stackOf(feet[i + 1]).lo - stackOf(feet[i]).hi) / GS

@@ -9,11 +9,14 @@ const CROSS = { reach: 9, counterbalance: 13, vna: 8.5 }
 
 /** Group racks into bands (same stack-axis position) and return, per band,
  *  the run-axis extents of its segments in feet. */
-function bandsOf(racks) {
+function bandsOf(racks, stackFt = Infinity) {
   const byBand = new Map()
   for (const r of racks) {
     const f = rackFootprint(r)
     const stack = f.rotated ? f.x : f.y
+    // the interior rows only: a single row 6" off a wall is a wall row, read on its own rule
+    const s0 = stack / GS, s1 = (f.rotated ? f.x + f.w : f.y + f.h) / GS
+    if (r.type === 'rack_row' && (Math.abs(s0 - 0.5) < 1e-6 || Math.abs(s1 - (stackFt - 0.5)) < 1e-6)) continue
     const key = Math.round(stack * 1000)
     const run = f.rotated ? [f.y / GS, (f.y + f.h) / GS] : [f.x / GS, (f.x + f.w) / GS]
     if (!byBand.has(key)) byBand.set(key, [])
@@ -43,7 +46,8 @@ describe('F — cross-aisle', () => {
       const { racks, columns } = generate(brief)
       const vertical = brief.orientation === 'vertical'
       const runFt = vertical ? brief.widthFt : brief.lengthFt
-      for (const segs of bandsOf(racks)) {
+      const stackFt = vertical ? brief.lengthFt : brief.widthFt
+      for (const segs of bandsOf(racks, stackFt)) {
         if (runFt - 1 <= 150) {
           // 120' of run (vertical): one piece from the near wall, ending within a bay of the far one
           expect(segs).toHaveLength(1)

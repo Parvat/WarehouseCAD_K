@@ -1,9 +1,9 @@
 // TEST_PLAN.md §3E — aisles and accessibility.
 import { describe, it, expect } from 'vitest'
 import { rowBands } from '../../generate/sizingLayout'
-import { checkColumns, MHE_PROFILES, groupBySegment, rackFootprint } from '../../generate/columnCheck'
+import { checkColumns, MHE_PROFILES, rackFootprint } from '../../generate/columnCheck'
 import { DEFAULT_RULES } from '../../rules/defaults'
-import { ALL_CASES, generate, GS } from './fixtures'
+import { ALL_CASES, generate, GS, stackPaths } from './fixtures'
 
 // TEST_PLAN.md §3E table.
 const TABLE = {
@@ -85,7 +85,8 @@ describe('E — aisles and accessibility', () => {
     it(`E-exact: ${label} — every aisle but the last is the forklift width unless a column forced a widen`, () => {
       const { racks, columns } = generate(brief)
       const aisleFt = TABLE[brief.mhe].aisleFt
-      for (const run of groupBySegment(racks)) {
+      // rows across by the shared pairing (stackPaths): one chain per stretch, wall to wall
+      for (const run of stackPaths(racks)) {
         const stacked = rackFootprint(run[0]).rotated
         const feet = run.map(rackFootprint).sort((a, b) => stacked ? a.x - b.x : a.y - b.y)
         const lo = f => (stacked ? f.x : f.y) / GS, hi = f => (stacked ? f.x + f.w : f.y + f.h) / GS
@@ -116,8 +117,10 @@ describe('E — aisles and accessibility', () => {
     it(`E-no-block: ${label} — no aisle narrower than travelFt anywhere (no level-1 block)`, () => {
       const { racks, columns } = generate(brief)
       const travelFt = TABLE[brief.mhe].travelFt
-      // every row-to-row gap within a run, column or not
-      for (const run of groupBySegment(racks)) {
+      // every row-to-row gap within a run, column or not — and every rack is in a chain (none skipped)
+      expect(new Set(stackPaths(racks).flat().map(r => r.id)).size).toBe(racks.length)
+      // rows across by the shared pairing (stackPaths): one chain per stretch, wall to wall
+      for (const run of stackPaths(racks)) {
         const stacked = rackFootprint(run[0]).rotated
         const feet = run.map(rackFootprint).sort((a, b) => stacked ? a.x - b.x : a.y - b.y)
         for (let i = 0; i < feet.length - 1; i++) {

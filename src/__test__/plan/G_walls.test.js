@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { layoutSpec } from '../../generate/sizingLayout'
 import { rackFootprint } from '../../generate/columnCheck'
 import { DEFAULT_RULES } from '../../rules/defaults'
-import { ALL_CASES, generate, GS } from './fixtures'
+import { ALL_CASES, generate, GS, stackPaths } from './fixtures'
 
 describe('G — walls', () => {
   it('G-default: wall clearance defaults to 6"', () => {
@@ -22,15 +22,11 @@ describe('G — walls', () => {
       const { racks } = generate(brief)
       const vertical = brief.orientation === 'vertical'
       const stackFt = vertical ? brief.lengthFt : brief.widthFt
-      // one list of bands per run (segment), ordered across the stack axis
-      const runs = new Map()
-      for (const r of racks) {
-        const f = rackFootprint(r)
-        const runKey = Math.round((vertical ? f.y : f.x) * 1000)
-        if (!runs.has(runKey)) runs.set(runKey, [])
-        runs.get(runKey).push({ r, lo: (vertical ? f.x : f.y) / GS, hi: (vertical ? f.x + f.w : f.y + f.h) / GS })
-      }
-      for (const bands of runs.values()) {
+      // one list of bands per stretch, ordered across the stack axis — the rows across by the shared pairing
+      // (stackPaths), so a wall row running past several sections is in each one's list
+      const runs = stackPaths(racks).map(path => path.map(r => { const f = rackFootprint(r); return { r, lo: (vertical ? f.x : f.y) / GS, hi: (vertical ? f.x + f.w : f.y + f.h) / GS } }))
+      expect(runs.length).toBeGreaterThan(0)
+      for (const bands of runs) {
         bands.sort((a, b) => a.lo - b.lo)
         expect(bands.length).toBeGreaterThanOrEqual(2)
         const first = bands[0], last = bands[bands.length - 1]

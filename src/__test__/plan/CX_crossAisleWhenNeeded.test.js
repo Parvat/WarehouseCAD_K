@@ -69,7 +69,8 @@ describe.each(['horizontal', 'vertical'])('CX — %s', (orientation) => {
     if (r.type !== 'rack_row') return false
     const fp = s().objects.find(o => o.type.startsWith('fp_')), f = m.rackFootprint(r)
     const faces = m.FR.innerOutline(fp, GS).map(p => (vert ? p.x : p.y)), a = vert ? f.x : f.y, b = vert ? f.x + f.w : f.y + f.h
-    return faces.some(v => Math.abs(v - a) < 1e-3 || Math.abs(v - b) < 1e-3)
+    // flush (Fill), or Generate's own clearance off the wall: within 6" of its face
+    return faces.some(v => Math.abs(v - a) <= 0.5 * GS + 1e-3 || Math.abs(v - b) <= 0.5 * GS + 1e-3)
   }
   /** Pieces per row: `walls` false counts the rows but wall rows, true counts the wall rows only. */
   const piecesPerRow = (pred = () => true, walls = false) => {

@@ -3,6 +3,7 @@
 // TEST_PLAN.md (see CANVAS2_TESTS.md for the mapping).
 import { sizingSheetLayout, columnGridObject } from '../../generate/sizingLayout'
 import { placementToObject } from '../../generate/traceGenerate'
+import { rowAisleGaps } from '../../generate/rowAisles'
 import { expandColumnGrid, rackFootprint } from '../../generate/columnCheck'
 import { DEFAULT_RULES } from '../../rules/defaults'
 
@@ -61,6 +62,23 @@ export function rackBands(r) {
 }
 
 export const EPS = 1e-6
+
+/** The rows across the building, stretch by stretch, from the shared pairing (rowAisleGaps — the aisle
+ *  labels' and Check layout's): every chain of facing rows from one wall to the other, in order across.
+ *  A wall row that runs past several sections is in each section's chain (grouping racks by a shared
+ *  run instead chains every section into one through such a row). [[rack, ...]] */
+export function stackPaths(racks) {
+  const next = new Map(), hasIn = new Set()
+  for (const g of rowAisleGaps(racks)) {
+    if (!next.has(g.top.id)) next.set(g.top.id, [])
+    next.get(g.top.id).push(g.bot)
+    hasIn.add(g.bot.id)
+  }
+  const paths = []
+  const walk = (r, acc) => { const n = next.get(r.id); if (!n) { paths.push([...acc, r]); return } for (const b of n) walk(b, [...acc, r]) }
+  for (const r of racks) if (!hasIn.has(r.id) && next.has(r.id)) walk(r, [])
+  return paths
+}
 
 // TEST_PLAN.md §2b table.
 export const MATRIX = {

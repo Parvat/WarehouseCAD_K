@@ -25,11 +25,15 @@ const SPEC = { crossAisleFt: 9, endClearFt: 0.5, beamIn: 96, upIn: 3 }
 const seg = (lengthFt, extra = {}) => rowSegments(lengthFt, { ...SPEC, ...extra })
 
 /** Every placed rack, grouped by row (same stack position), with its run extent in ft. */
+/** The interior rows' run pieces (not the single rows 6" off a wall — the wall rows, on their own rule). */
 function rowsOf(brief) {
   const racks = sizingSheetLayout(brief, DEFAULT_RULES).map((p, i) => ({ ...placementToObject(p), id: 'r' + i }))
+  const stackFt = brief.orientation === 'vertical' ? brief.lengthFt : brief.widthFt
   const m = new Map()
   for (const r of racks) {
     const f = rackFootprint(r)
+    const s0 = (f.rotated ? f.x : f.y) / GS, s1 = (f.rotated ? f.x + f.w : f.y + f.h) / GS
+    if (r.type === 'rack_row' && (Math.abs(s0 - 0.5) < 1e-6 || Math.abs(s1 - (stackFt - 0.5)) < 1e-6)) continue
     const key = Math.round((f.rotated ? f.x : f.y) * 1000)
     const run = f.rotated ? [f.y / GS, (f.y + f.h) / GS] : [f.x / GS, (f.x + f.w) / GS]
     if (!m.has(key)) m.set(key, [])
