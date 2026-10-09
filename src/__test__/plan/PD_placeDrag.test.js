@@ -27,7 +27,7 @@ import { usePlacement, startPlacement, movePlacement, commitPlacement, cancelPla
 import { pasteAt, setCanvasPointer } from '../../utils/pasteAt'
 import { flueDragPlacement } from '../../canvas2/liveFlue'
 import { computeSmartGuides } from '../../canvas2/smartGuides'
-import { GS } from './fixtures'
+import { GS, splitWallRows } from './fixtures'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
 globalThis.localStorage = globalThis.localStorage || { getItem: () => null, setItem: () => {} }
@@ -52,7 +52,8 @@ function layout(orientation) {
   const fp = { id: 'fp', type: 'fp_rect', x: 0, y: 0, width: L, height: W, wallThicknessFt: 0.25, fpVerts: [{ x: 0, y: 0 }, { x: L, y: 0 }, { x: L, y: W }, { x: 0, y: W }] }
   return rebuildAisles([fp, { ...columnGridObject(brief, 0, 0), id: 'cg', parentId: 'fp' }, ...racks], newId).objects
 }
-const manual = (orientation) => layout(orientation).filter(o => o.type !== 'aisle')
+// placed by hand: no stamps, and the wall rows in pieces like the rows beside them
+const manual = (orientation) => splitWallRows(layout(orientation).filter(o => o.type !== 'aisle'))
   .map(o => { if (!BEAM.has(o.type)) return o; const { genSection, rowIndex, genRunFt, genCrossFt, ...r } = o; return r })   // eslint-disable-line no-unused-vars
 function load(objects) {
   store.setState({ objects: strip(objects), groups: [], activeBaySelection: [], selectedIds: [], gridSize: GS, clipboard: [], zoom: 1, panX: 0, panY: 0,
@@ -79,6 +80,9 @@ const lineGap = (A, rot, a, b, r) => { const c = A.cross(r); return sectionCross
 /** A point in the cross-aisle between runs a and b, across from rack r (a layout placed by hand has no
  *  cross-aisle: the middle of the gap between the two runs). */
 const inGap = (A, rot, a, b, r) => { const g = lineGap(A, rot, a, b, r), run = g ? (g.lo + g.hi) / 2 : (a.end + b.start) / 2, c = A.cross(r), cross = (c[0] + c[1]) / 2; return rot ? { x: cross, y: run } : { x: run, y: cross } }
+/** What a commit in a generated cross-aisle added (BUG 70: the wall row runs past the cross-aisle, so the placed rack
+ *  faces it — one aisle): the rack and that aisle. */
+const addedByCommit = (before) => { const had = new Set(before.map(o => o.id)), now = objs().filter(o => !had.has(o.id)), byId = new Map(objs().map(o => [o.id, o])); const aisle = now.find(o => o.type === 'aisle'), rack = now.find(o => o.type !== 'aisle'); return { n: now.length, aisleToWall: !!aisle && !!rack && [aisle.row1Id, aisle.row2Id].includes(rack.id) && [aisle.row1Id, aisle.row2Id].some(id => byId.get(id)?.type === 'rack_row') } }
 /** The bar as server-rendered HTML (the stores' live state as their initial one). */
 const renderBar = () => { for (const x of [useRowGroup, usePlacement, store]) Object.assign(x.getInitialState(), x.getState()); return renderToStaticMarkup(createElement(Bar.RowGroupBar)) }
 const centreAcross = (o, rot) => { const f = rackFootprint(o); return rot ? f.x + f.w / 2 : f.y + f.h / 2 }
@@ -131,9 +135,9 @@ describe.each(['horizontal', 'vertical'])('PD — %s', (orientation) => {
     expect(usePlacement.getState().active.blocked).toBe(null)
     expect(usePlacement.getState().active.crossAisle).toBe(true)
     expect(usePlacement.getState().active.warnings).toContain(`In the cross-aisle between sections ${a0.key} and ${a1.key}`)
-    const nPlace = objs().length
+    const placeBefore = objs()
     expect(commitPlacement(store)).toBe(true)
-    expect(objs().length).toBe(nPlace + 1)
+    expect(addedByCommit(placeBefore)).toEqual({ n: 2, aisleToWall: true })     // the rack and its aisle to the wall row (+1 before BUG 70)
     // placing never asks anything any more: no guard, no question
     expect(readFileSync('src/utils/placement.js', 'utf8')).toMatch(/export function commitPlacement\(store\) \{/)
   })
@@ -150,9 +154,9 @@ describe.each(['horizontal', 'vertical'])('PD — %s', (orientation) => {
     expect(a.warnings).toContain(`In the cross-aisle between sections ${a0.key} and ${a1.key}`)
     expect(renderBar()).toContain(`Check — In the cross-aisle between sections ${a0.key} and ${a1.key}`)
     expect(readFileSync('src/canvas2/CopyChange.jsx', 'utf8')).toMatch(/const color = a\.blocked \? BLOCKED : a\.crossAisle \? WARNED : PREVIEW/)
-    const n = objs().length
+    const crossBefore = objs()
     expect(commitPlacement(store)).toBe(true)
-    expect(objs().length).toBe(n + 1)
+    expect(addedByCommit(crossBefore)).toEqual({ n: 2, aisleToWall: true })     // the rack and its aisle to the wall row (+1 before BUG 70)
     await flushRowGroupWatcher()
     // still hard: overlapping a rack, outside the building
     startPlacement(store, [oneBay(r0)])

@@ -41,6 +41,7 @@ import { getRackCapacity } from '../utils/capacity'
 import { usableCapacity, mheProfile } from './usableCapacity'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { nanoid } from 'nanoid'
+import { wallRun } from './wallRun'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const EPS = 1e-6
@@ -515,11 +516,11 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
     const g0 = pattern.pieces[0].r0
     const placeWall = (unit, sa, ivs) => {
       for (const [a, c] of ivs) {
-        const kLo = Math.ceil((a - g0) / pitch - 1e-9), kHi = Math.floor((c - g0 - bayFt) / pitch + 1e-9)
-        if (kHi < kLo) continue
-        const r0 = g0 + kLo * pitch
+        const w = wallRun(a, c, g0, pitch, bayFt)               // shared with Generate (wallRun.js)
+        if (!w) continue
+        const { r0, n } = w
         const pc = pattern.pieces.reduce((b, q) => { const d = Math.max(0, q.r0 - r0, r0 - (q.r0 + q.n * pitch)); return !b || d < b.d ? { q, d } : b }, null).q
-        put(unit, 'rack_row', sa, singleFt, r0, kHi - kLo + 1, pc.sec)
+        put(unit, 'rack_row', sa, singleFt, r0, n, pc.sec)
       }
     }
     /** A single row's intervals: flush on a wall there, one rack per stretch; elsewhere the pattern's runs. */

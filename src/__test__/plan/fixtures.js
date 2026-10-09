@@ -63,6 +63,29 @@ export function rackBands(r) {
 
 export const EPS = 1e-6
 
+/** A layout's single rows that run past several pieces of the nearest double-row line across (a wall row
+ *  since BUG 70: one rack along the whole run) cut into pieces like that line's — the wall rows as Generate
+ *  laid them before, one per section. For tests that build a layout "placed by hand" from a generated one. */
+export function splitWallRows(objs) {
+  const runOf = (f) => (f.rotated ? [f.y, f.y + f.h] : [f.x, f.x + f.w]), crossOf = (f) => (f.rotated ? [f.x, f.x + f.w] : [f.y, f.y + f.h])
+  const doubles = objs.filter(o => o.type === 'rack_double_row').map(o => ({ o, f: rackFootprint(o) }))
+  if (!doubles.length) return objs
+  return objs.flatMap(o => {
+    if (o.type !== 'rack_row') return [o]
+    const f = rackFootprint(o), c = crossOf(f)[0], r = runOf(f)
+    const near = doubles.reduce((m, d) => (Math.abs(crossOf(d.f)[0] - c) < Math.abs(crossOf(m.f)[0] - c) ? d : m))
+    const line = doubles.filter(d => Math.abs(crossOf(d.f)[0] - crossOf(near.f)[0]) < 1e-6)
+      .filter(d => runOf(d.f)[0] < r[1] - 1e-6 && runOf(d.f)[1] > r[0] + 1e-6).sort((a, b) => runOf(a.f)[0] - runOf(b.f)[0])
+    if (line.length < 2) return [o]
+    return line.map((d, i) => {
+      const [a, b] = runOf(d.f), len = b - a
+      const piece = { ...o, id: o.id + ':' + i, beams: [...d.o.beams], width: len }
+      if (f.rotated) { piece.x = o.x + o.width / 2 - len / 2; piece.y = a + len / 2 - o.height / 2 } else piece.x = a
+      return piece
+    })
+  })
+}
+
 /** The rows across the building, stretch by stretch, from the shared pairing (rowAisleGaps — the aisle
  *  labels' and Check layout's): every chain of facing rows from one wall to the other, in order across.
  *  A wall row that runs past several sections is in each section's chain (grouping racks by a shared

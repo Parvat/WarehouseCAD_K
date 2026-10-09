@@ -5,7 +5,7 @@
 // The fixture's layout as saved, both orientations, a column-free 10' 6" aisle narrowed to 10.49 / 10.5 / 7.99 ft.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { GS } from './fixtures'
+import { GS, splitWallRows } from './fixtures'
 import { REAL_LAYOUT } from './realLayout.fixture'
 import { planAreaResize } from '../../generate/rackingArea'
 import { rackFootprint, aisleColumnBlocks, MHE_PROFILES } from '../../generate/columnCheck'
@@ -120,7 +120,8 @@ async function crossNarrowed(vert, ft, { sections = true } = {}) {
   const mover = objs.find(o => BEAM.has(o.type) && Math.abs(run(o)[1] - L0.gapLo) < 1e-6)
   const d = (L0.gapHi - L0.gapLo) - ft * GS
   objs = objs.map(o => (o.id === mover.id ? RG.movedAlong(o, d) : o))
-  if (!sections) objs = objs.map(o => { const { genSection, ...rest } = o; return rest })
+  // placed by hand: no section stamps, and the wall rows in pieces like the rows beside them
+  if (!sections) objs = splitWallRows(objs).map(o => { const { genSection, ...rest } = o; return rest })
   const label = crossAisleLabels(objs, GS, { profile: REACH }).find(l => Math.abs(l.gapLo - (L0.gapLo + d)) < 1e-6 && Math.abs(l.gapHi - L0.gapHi) < 1e-6)
   return { objs, label, plain: crossAisleLabels(objs, GS).find(l => l.key === label?.key), mover }
 }

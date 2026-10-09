@@ -90,33 +90,18 @@ describe('PB-delete', () => {
   })
 })
 
-/** AR's layout (240 × 120, two sections) with each wall single made one rack along the whole run, as BUG 70
- *  makes Generate's — the layout where a wall row runs past both sections. */
+/** AR's layout (240 × 120, two sections) as Generate lays it: each wall single one rack along the whole run
+ *  (BUG 70) — the layout where a wall row runs past both sections. */
 function arUnbroken(orientation) {
   const brief = { lengthFt: 240, widthFt: 120, gridXFt: 25, gridYFt: 30, mhe: 'reach', orientation, rackType: 'rack_double_row', ...(orientation === 'vertical' ? { maxRunFt: 100 } : {}) }
-  const racks = sizingSheetLayout(brief, DEFAULT_RULES).map((p, i) => ({ ...placementToObject(p), id: 'r' + i, parentId: 'fp' }))
-  const byStack = new Map(), stackFt = orientation === 'vertical' ? 240 : 120
-  // the single rows 6" off a wall (not an interior single by the far wall)
-  const onWall = (o) => Math.abs(across(o)[0] / GS - 0.5) < 1e-6 || Math.abs(across(o)[1] / GS - (stackFt - 0.5)) < 1e-6
-  for (const o of racks.filter(o => o.type === 'rack_row' && onWall(o))) { const k = Math.round(across(o)[0] * 100); if (!byStack.has(k)) byStack.set(k, []); byStack.get(k).push(o) }
-  const drop = new Set(), add = []
-  for (const list of byStack.values()) {
-    if (list.length < 2) continue
-    const run = (o) => { const f = rackFootprint(o); return f.rotated ? [f.y, f.y + f.h] : [f.x, f.x + f.w] }
-    const s = [...list].sort((a, b) => run(a)[0] - run(b)[0]), first = s[0], f0 = rackFootprint(first)
-    const lo = run(first)[0], hi = run(s[s.length - 1])[1]
-    const n = Math.floor(((hi - lo) / GS - 0.25) / 8.25), len = ((3 * (n + 1) + 96 * n) / 12) * GS
-    add.push(f0.rotated ? { ...first, id: first.id + 'w', beams: Array(n).fill(96), x: f0.x + f0.w / 2 - len / 2, y: lo + len / 2 - f0.w / 2, width: len, genSection: 1 }
-      : { ...first, id: first.id + 'w', beams: Array(n).fill(96), width: len, genSection: 1 })
-    for (const o of s) drop.add(o.id)
-  }
-  return [...racks.filter(o => !drop.has(o.id)), ...add]
+  return sizingSheetLayout(brief, DEFAULT_RULES).map((p, i) => ({ ...placementToObject(p), id: 'r' + i, parentId: 'fp' }))
 }
+const onWallAR = (o, orientation) => { const stackFt = orientation === 'vertical' ? 240 : 120; return o.type === 'rack_row' && (Math.abs(across(o)[0] / GS - 0.5) < 1e-6 || Math.abs(across(o)[1] / GS - (stackFt - 0.5)) < 1e-6) }
 
 describe.each([['horizontal', 30.25], ['vertical', 29.75]])('PB — %s', (orientation, w) => {
   it('PB-wall: a wall row running past both sections pairs with the first row of each section; with row 2/4 deleted, rows 2/3 and 2/5 pair across the wide aisle — where the old pairing, merging both sections through the wall row, left them unpaired', () => {
     const racks = arUnbroken(orientation)
-    const walls = racks.filter(o => o.type === 'rack_row' && o.id.endsWith('w'))
+    const walls = racks.filter(o => onWallAR(o, orientation))
     expect(walls.length).toBe(2)
     const now = neighbourPairs(racks)
     for (const sec of [1, 2]) {

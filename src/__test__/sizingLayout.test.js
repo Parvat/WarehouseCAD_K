@@ -182,7 +182,11 @@ describe('sizingLayout — placements', () => {
     // longer produces.
     const { endClearFt } = layoutSpec(brief, DEFAULT_RULES)
     const bands = rowBands(brief.widthFt, { ...brief, wallClearFt: endClearFt })
-    expect(placements).toHaveLength(bands.length * 2)
+    // a single row flush on a wall is ONE rack along the whole run (BUG 70); every other row, one per segment
+    const onWall = (b) => b.type === 'rack_row' && (Math.abs(b.yFt - endClearFt) < 1e-6 || Math.abs(b.yFt + b.depthFt - (brief.widthFt - endClearFt)) < 1e-6)
+    const walls = bands.filter(onWall).length
+    expect(walls).toBe(2)
+    expect(placements).toHaveLength((bands.length - walls) * 2 + walls)
   })
 
   it('fills the full building — racks start at the wall clearance, not a staging strip (BUG 44)', () => {
@@ -331,7 +335,7 @@ describe('sizingLayout — BUG 53/60: the far-wall transition is column-aware, a
     const columns = expandColumnGrid(columnGridObject(brief, 0, 0), GS)
     const res = checkColumns({ racks, columns, profile: MHE_PROFILES.reach, gridSize: GS })
     expect(res.aisleBlocks.filter(a => a.level === 1)).toHaveLength(0)
-    expect(racks.length).toBe(14)   // full capacity, unchanged from BUG 52
+    expect(racks.length).toBe(12)   // full capacity, unchanged from BUG 52 (the two wall rows one rack each since BUG 70: 14 racks before)
   })
 })
 

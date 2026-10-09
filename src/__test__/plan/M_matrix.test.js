@@ -200,7 +200,10 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
         let refCross = null
         for (const b of bandsOf(racks)) {
           const gaps = [b.segs[0][0], ...b.segs.slice(1).map((s, i) => s[0] - b.segs[i][1]), runFt - b.segs[b.segs.length - 1][1]]
-          for (const s of b.segs) if (s[1] - s[0] > MAX_RUN_FT + 1e-6) bad.push({ band: b.lo, sectionFt: s[1] - s[0] })
+          /* a single row 6" off a wall is one rack along the whole run, exempt from the max run and with no
+             cross-aisles of its own (BUG 70: Fill racking's rule) — only its ends are checked */
+          const wall = Math.abs(b.hi - b.lo - SINGLE_FT) < 1e-6 && (Math.abs(b.lo - WALL_CLEAR_FT) < 1e-6 || Math.abs(stackFt - WALL_CLEAR_FT - b.hi) < 1e-6)
+          if (!wall) for (const s of b.segs) if (s[1] - s[0] > MAX_RUN_FT + 1e-6) bad.push({ band: b.lo, sectionFt: s[1] - s[0] })
           const cross = []
           b.segs.slice(1).forEach((s, i) => {
             const lo = b.segs[i][1], hi = s[0]
@@ -213,7 +216,8 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
             if (col) bad.push({ band: b.lo, crossAisle: [lo, hi], columnAt: col })
           }
           const key = cross.map(([lo, hi]) => `${lo.toFixed(4)}-${hi.toFixed(4)}`).join(',')
-          if (refCross == null) refCross = key
+          if (wall) { if (cross.length) bad.push({ band: b.lo, wallRowBroken: key }) }
+          else if (refCross == null) refCross = key
           else if (key !== refCross) bad.push({ band: b.lo, crossAislesNotAligned: key, firstRow: refCross })
           // past the wall clearance, an end holds less than one bay (a run within the max run is one
           // piece, so its rounding slack sits at the far wall rather than in a cross-aisle)

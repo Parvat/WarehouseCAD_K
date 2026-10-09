@@ -5961,7 +5961,7 @@ problem, because the actual defect wasn't in anything my repro
 exercised. Direct evidence from the live app broke that blind spot;
 more self-testing of the same mechanism would not have.
 
-## BUG 70 — Generate still splits wall rows at cross-aisles  (2026-10-05, open)
+## BUG 70 — Generate still splits wall rows at cross-aisles  (2026-10-05, fixed 2026-10-09)
 Symptom:  In a layout from Generate, the single row flush on a wall (the
 start wall's, the far wall's) is broken where a cross-aisle meets it,
 like every other row. Racking areas and Fill racking no longer do this
@@ -5974,10 +5974,15 @@ every row, the wall singles included, piece by piece along the run, and
 the pieces are what the cross-aisles split. Only `patternFill` (racking
 areas, Fill racking) merges wall rows.
 
-Fix:      Open — the next item. Left alone in that round on purpose.
-FR-generate (Fill = Generate's walk) leaves the start wall's single out
-of its comparison and asserts the fill's on its own until Generate
-does the same.
+Fix:      Fill racking's rule, shared: `wallRun` (generate/wallRun.js) lays a
+single row flush on a wall as one rack per stretch of wall on the first
+section's bay grid, exempt from the max run; Fill's `placeWall` calls it
+(unchanged), and `sizingSheetLayout` uses it for Generate's wall bands,
+stamped section 1. More bays wherever there are cross-aisles (250 × 500:
+741 → 747, 300 × 420: 768 → 772; matrix +0 … +22); auto orientation flips
+on M13 and M25. Found on the way: BUG 76 (Fill and Generate 3" apart across)
+and BUG 77 (the shared pairing merged sections through the wall row; fixed
+first). Tests: area WR.
 
 ## BUG 71 — Fill racking puts an upright on a column of the grid  (2026-10-05, closed 2026-10-09: by design)
 Symptom:  On the hand-check layout (RL tests, realLayout.fixture.js: 500 ×

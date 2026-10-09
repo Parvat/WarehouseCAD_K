@@ -175,13 +175,13 @@ describe('traceGenerate — BUG 45: aisleObjectsForRacks is rotation-aware', () 
     // a 100' max run: the 120' vertical run is split by one cross-aisle (within the max run it would be one piece)
     const racks = sizingSheetLayout({ ...spec, orientation: 'vertical', maxRunFt: 100 }, DEFAULT_RULES).map(placementToObject)
     const aisles = aisleObjectsForRacks(racks)
-    // Every band is split into exactly 2 segments by the cross-aisle, so
-    // bands = racks / 2, and each segment has (bands - 1) gaps: aisles =
-    // 2 x (bands - 1). The pre-BUG-45 bug gave one aisle PER BAND instead
+    // Every interior band is split into 2 segments by the cross-aisle (a wall
+    // row runs past it, one rack — BUG 70), and each segment has (bands - 1)
+    // gaps: aisles = 2 x (bands - 1). The pre-BUG-45 bug gave one aisle PER BAND instead
     // (pairing a band's own two segment-halves across the cross-aisle).
     // The band count itself is not pinned — it follows every generator fix.
-    expect(racks.length % 2).toBe(0)
-    const bands = racks.length / 2
+    // bands: the rows across (a wall row is one rack along the whole run since BUG 70, so not racks / 2)
+    const bands = new Set(racks.map(r => { const f = rackFootprint(r); return Math.round((f.rotated ? f.x : f.y) * 1000) })).size
     expect(bands).toBeGreaterThan(2)
     expect(aisles.length).toBe(2 * (bands - 1))
   })

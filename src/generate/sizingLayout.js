@@ -22,6 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { DEFAULT_RULES } from '../rules/defaults'
+import { wallRun } from './wallRun'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
 const FLUE_IN = 9    // back-to-back flue gap for double rows
@@ -850,9 +851,16 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
   })
   if (!bands.length || !segments.length || bays <= 0) return []
 
+  /* A single row flush on a wall (BUG 70): Fill racking's rule (wallRun.js, shared) — ONE rack along the
+     whole stretch of wall, on the first section's bay grid, not broken where a cross-aisle meets it and
+     exempt from the max run. Stamped with the section it starts in (1), as Fill stamps it. The interior
+     rows keep their sections. */
+  const pitch = (upIn + beamIn) / 12, bayFt = (2 * upIn + beamIn) / 12
+  const onWall = (band) => band.type === 'rack_row' && (Math.abs(band.yFt - endClearFt) < 1e-6 || Math.abs(band.yFt + band.depthFt - (frame.stackFt - endClearFt)) < 1e-6)
+  const wallSegs = (() => { const w = wallRun(endClearFt, frame.runFt - endClearFt, segments[0].xFt, pitch, bayFt); return w ? [{ xFt: w.r0, bays: w.n }] : [] })()
   const placements = []
   bands.forEach((band, bandIdx) => {
-    segments.forEach((seg, segIdx) => {
+    (onWall(band) ? wallSegs : segments).forEach((seg, segIdx) => {
       /* A run's own length in feet — the SAME totalIn/12 formula
          traceGenerate's beamRackObject will independently compute as its
          (pre-rotation) width, needed here only for `frame.place` to locate

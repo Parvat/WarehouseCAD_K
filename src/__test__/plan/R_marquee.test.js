@@ -4,9 +4,9 @@ import { describe, it, expect } from 'vitest'
 import { objectsInMarquee, bayEntriesInMarquee } from '../../canvas2/selection'
 import { sizingSheetLayout } from '../../generate/sizingLayout'
 import { placementToObject, aisleObjectsForRacks } from '../../generate/traceGenerate'
-import { rackFootprint, groupBySegment } from '../../generate/columnCheck'
+import { rackFootprint } from '../../generate/columnCheck'
 import { DEFAULT_RULES } from '../../rules/defaults'
-import { GS, MATRIX } from './fixtures'
+import { GS, MATRIX, stackPaths } from './fixtures'
 
 /** The layout with every object mirrored across the x = y diagonal: each
  *  rack's world footprint (x, y, w, h) becomes (y, x, h, w). A horizontal
@@ -43,7 +43,9 @@ function layout(id, orientation) {
 function marquees(objs) {
   const out = []
   const racks = objs.filter(o => o.type !== 'aisle')
-  for (const run of groupBySegment(racks).slice(0, 2)) {
+  // the rows across, stretch by stretch, from the shared pairing (a wall row running past several sections
+  // would chain them all into one group by shared run)
+  for (const run of stackPaths(racks).slice(0, 2)) {
     const f = run.map(r => ({ r, f: rackFootprint(r) }))
     const stacked = f[0].f.rotated
     f.sort((a, b) => stacked ? a.f.x - b.f.x : a.f.y - b.f.y)

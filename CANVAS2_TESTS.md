@@ -1907,6 +1907,53 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### WR — Generate's wall rows follow Fill racking's rule (BUG 70) · `WR_wallRows.test.js` (25 tests)
+Code: `wallRun` (generate/wallRun.js, new — shared: Fill's `placeWall` calls it with the same arithmetic, Fill
+unchanged); `sizingSheetLayout` (generate/sizingLayout.js) lays a single row flush on a wall through it.
+
+A single row flush on a wall is ONE rack along the whole stretch of wall, on the first section's standard-bay
+grid, not broken where a cross-aisle meets it, exempt from the max run, stamped with the section it starts in
+(1) and its own row number. More bays on every layout with cross-aisles (the cross-aisles' ends along the
+walls filled); auto orientation flips on M13 and M25 (vertical → horizontal); Fill and Generate lay the same
+wall rows along the run (BUG 76: 3" apart across).
+
+Changed (old → new, listed before editing; 1–3 approved as behaviour changes):
+- `CX-generate` ×4 / `CX-clear` ×2 (1): label positions across — 250×500 / 500×250 −83 / 0 / 83 → −75.208 / −4.625 /
+  65.958; 300×420 / 420×300 −112.125 / −37.375 / 37.375 / 112.125 → −102.0625 / −35.1875 / 31.6875 / 98.5625 (the
+  cross-aisle spans the interior rows only); Extra large slides 6 → 3 (horizontal), 0 → 0 (vertical).
+- `LB-aisle` ×2 (2): an aisle touching a wall row (section 1) is exempt from the same-section check (14 / 4 such).
+- `PD-place` / `PD-cross-aisle` ×4 (3): a rack placed in a generated cross-aisle adds 2 objects, not 1 — the rack and
+  its aisle to the wall row it now faces.
+- sizingLayout "one placement per row per segment": 12 → 10; BUG 53/60 rack count 14 → 12 (a wall row is one rack).
+- M_matrix rule 2 ×74: a single row 6" off a wall is exempt from the 150 ft section limit and the same-cross-aisles
+  check, and must have no cross-aisle of its own.
+- `LB-cross` ×2: positions from the interior rows (h 41.4 / 123.2 / 205 / 286.8 / 368.6 → 51.475 / 125.425 / 199.375 /
+  273.325 / 347.275; counts 35 / 28 unchanged).
+- Harness / construction, no value change: traceGenerate BUG 45 (bands by position across, aisles 26), R-matrix ×37
+  (rows across from stackPaths), PB-wall ×2 (the generated layout as is), CX-hand ×2 / AW-cross-ignored ×2 / PD's
+  manual layout (`splitWallRows`: a hand layout's wall rows in pieces), LB-cross-drag ×2 (a double row pushed in).
+- Before the product change (prep commits, no product code): E-exact / E-no-block / M_matrix rules 2–3 / G-generated
+  on the shared row pairing (stackPaths), F-generated / W-gen from the interior rows, CX's wall-row test within 6",
+  PD on the per-line cross-aisles.
+
+| Test | Asserts |
+|---|---|
+| `WR-unbroken / WR-maxrun` ×4 | the four Generate layouts: 2 wall rows, each one rack from 6" off the wall to within a bay of the far end, longer than 150 ft (60 / 50 bays); the interior rows still in 4 / 3 sections of at most 150 ft |
+| `WR-grid` ×4 | every section-1 upright of an interior row is one of the wall row's |
+| `WR-section` ×4 | the wall rows stamped section 1, row numbers the first and last across |
+| `WR-bays` ×4 | 747 bays, 10,992 positions, 10,228 usable (250×500, 500×250); 772 / 11,168 / 10,388 (300×420, 420×300) — before 741 / 10,944 / 10,188 and 768 / 11,136 / 10,356 |
+| `WR-flip` ×5 | auto on M13 and M25 (both column settings) picks horizontal: H 68,048 / V 68,032 and H 42,064 / V 42,000 (vertical won before); controls: 250 × 500 stays horizontal (10,520 / 10,228), 300 × 420 vertical (10,036 / 10,388) |
+| `WR-fill` ×4 | Fill racking the same building (its area 6" inside the outline) lays the same wall rows along the run — start, end, bays |
+
+**Break-its:** wall rows split per section again: all WR (25). The wall row's grid 1 ft off section 1's:
+WR-unbroken, WR-grid, WR-fill (12). Wall rows capped at the max run: WR-unbroken, WR-bays, WR-flip, WR-fill (17).
+Wall rows stamped with the last section: WR-section (4). Unbroken wall rows for vertical rows only (the flip):
+WR-unbroken, WR-grid, WR-section, WR-bays, WR-flip, WR-fill (15).
+
+**Checked in the app** (real mouse; Generate 250 × 500 vertical and 500 × 250 horizontal): the near wall row clicked
+where the first cross-aisle meets it selects ONE rack row — 60 bays, 495' 3" long, −249.5 to 245.75 ft — running
+straight past the 9' 3" cross-aisle between the interior rows; 46 racks, 2 single rows.
+
 ### PB — The shared pairing section by section (BUG 77) · `PB_pairingBlocks.test.js` (14 tests)
 Code: `neighbourPairs` / `pairingBlocks` (generate/rowAisles.js). Frozen copy of the pairing before:
 `reference/neighbourPairs.v1.js`.

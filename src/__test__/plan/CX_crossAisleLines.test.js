@@ -4,7 +4,7 @@
 // zone; a stretch with none gets no label). A building with no section stamps keeps the old merged-envelope labels.
 // The fixture's four fills (none had a cross-aisle label before), four Generate layouts, both orientations.
 import { describe, it, expect } from 'vitest'
-import { GS } from './fixtures'
+import { GS, splitWallRows } from './fixtures'
 import { REAL_LAYOUT } from './realLayout.fixture'
 import { planAreaResize, planAreaCreate } from '../../generate/rackingArea'
 import { rackFootprint, MHE_PROFILES } from '../../generate/columnCheck'
@@ -93,14 +93,19 @@ function onObstacle(objs, ls, size) {
 }
 
 describe('CX-generate', () => {
-  const NINE = [...STRETCH([`9' 3"`, -142, -132.75], [-83, 0, 83]), ...STRETCH([`9' 3"`, -0.5, 8.75], [-83, 0, 83]), ...STRETCH([`9' 3"`, 124.5, 133.75], [-83, 0, 83])]
-  const ELEVEN = [...STRETCH([`11' 2"`, -77.25, -66.125], [-112.125, -37.375, 37.375, 112.125]), ...STRETCH([`11' 2"`, 66.125, 77.25], [-112.125, -37.375, 37.375, 112.125])]
+  // the wall rows run past the cross-aisles (BUG 70), so each cross-aisle spans the interior lines only: 3 stretches
+  // of 70.583 ft centred at -75.208 / -4.625 / 65.958 (before: -83 / 0 / 83, 83 ft)
+  const C9 = [-75.20833333333333, -4.625, 65.95833333333333]
+  const NINE = [...STRETCH([`9' 3"`, -142, -132.75], C9), ...STRETCH([`9' 3"`, -0.5, 8.75], C9), ...STRETCH([`9' 3"`, 124.5, 133.75], C9)]
+  // 4 stretches of 66.875 ft centred at -102.0625 / -35.1875 / 31.6875 / 98.5625 (before: -112.125 / -37.375 / 37.375 / 112.125)
+  const C11 = [-102.0625, -35.1875, 31.6875, 98.5625]
+  const ELEVEN = [...STRETCH([`11' 2"`, -77.25, -66.125], C11), ...STRETCH([`11' 2"`, 66.125, 77.25], C11)]
   it.each([
     ['250x500 vertical', { lengthFt: 250, widthFt: 500, orientation: 'vertical' }, NINE],
     ['500x250 horizontal', { lengthFt: 500, widthFt: 250, orientation: 'horizontal' }, NINE],
     ['300x420 vertical', { lengthFt: 300, widthFt: 420, orientation: 'vertical' }, ELEVEN],
     ['420x300 horizontal', { lengthFt: 420, widthFt: 300, orientation: 'horizontal' }, ELEVEN],
-  ])('CX-generate (%s): a Generate layout\'s cross-aisles each get a label about every 75 ft, evenly spaced (3 × 83 ft apart / 4 × 74.75 ft apart), the same gaps and readings as before', async (_, spec, want) => {
+  ])('CX-generate (%s): a Generate layout\'s cross-aisles each get a label about every 75 ft, evenly spaced across the interior rows (3 × 70.583 ft / 4 × 66.875 ft — the wall rows run past them), the same gaps and readings as before', async (_, spec, want) => {
     expectLabels(crossAisleLabels(await generated(spec), GS, { profile: REACH }), want, 6)
   })
   it.each([['vertical', true], ['horizontal', false]])('CX-clear (%s): at Extra large every label still sits on clear floor — a label longer than its gap slides along the cross-aisle into the nearest row aisle, within its own stretch; one that fits stays at its centre', async (_, vert) => {
@@ -109,10 +114,11 @@ describe('CX-generate', () => {
     const ls = sorted(crossAisleLabels(gen, GS, { profile: REACH, lz }))
     expect(ls.length).toBe(9)
     expect(onObstacle(gen, ls, 'xlarge')).toEqual([])
-    const moved = ls.filter(l => ![-83, 0, 83].some(c => Math.abs(l.positions[0] / GS - c) < 1e-6))
-    // the stretches are 83 ft wide; a slid label stays inside its own
-    for (const l of moved) expect(Math.min(...[-83, 0, 83].map(c => Math.abs(l.positions[0] / GS - c)))).toBeLessThanOrEqual(83 / 2 + 1e-6)
-    expect(moved.length).toBe(vert ? 0 : 6)
+    const C = [-75.20833333333333, -4.625, 65.95833333333333]
+    const moved = ls.filter(l => !C.some(c => Math.abs(l.positions[0] / GS - c) < 1e-6))
+    // the stretches are 70.583 ft wide; a slid label stays inside its own
+    for (const l of moved) expect(Math.min(...C.map(c => Math.abs(l.positions[0] / GS - c)))).toBeLessThanOrEqual(70.58333333333333 / 2 + 1e-6)
+    expect(moved.length).toBe(vert ? 0 : 3)                  // before BUG 70: 0 / 6
     // at the default size nothing needed to move
     expect(onObstacle(gen, crossAisleLabels(gen, GS, { profile: REACH }), 'medium')).toEqual([])
   })
@@ -189,7 +195,8 @@ describe.each([['vertical', true], ['horizontal', false]])('CX — %s', (_, vert
   })
   it('CX-hand: a building with no section stamps (racks placed by hand) keeps the old labels — a Generate layout with its stamps stripped still shows its three cross-aisles', async () => {
     const gen = await generated({ lengthFt: vert ? 250 : 500, widthFt: vert ? 500 : 250, orientation: vert ? 'vertical' : 'horizontal' })
-    const hand = gen.map(o => { const { genSection, ...rest } = o; return rest })
+    // placed by hand: no section stamps, and the wall rows in pieces like the rows beside them
+    const hand = splitWallRows(gen).map(o => { const { genSection, ...rest } = o; return rest })
     expect(hand.some(o => o.genSection != null)).toBe(false)
     expectLabels(crossAisleLabels(hand, GS, { profile: REACH }), [[`9' 3"`, -142, -132.75, 0], [`9' 3"`, -0.5, 8.75, 0], [`9' 3"`, 124.5, 133.75, 0]], 6)
   })

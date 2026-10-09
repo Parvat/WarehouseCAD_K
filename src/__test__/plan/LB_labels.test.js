@@ -32,9 +32,12 @@ describe.each(['horizontal', 'vertical'])('LB — %s', (orientation) => {
   const rot = rackFootprint(racks[0]).rotated
   const run = (f) => (rot ? [f.y, f.y + f.h] : [f.x, f.x + f.w]), cross = (f) => (rot ? [f.x, f.x + f.w] : [f.y, f.y + f.h])
   const byId = new Map(objs.map(o => [o.id, o]))
-  // the generator's sections: racks by genSection, with their run / cross extents
+  // a single row 6" off a wall: one rack along the whole run since BUG 70, stamped with section 1
+  const stackFt = rot ? 1080 : 410
+  const onWall = (r) => { const f = rackFootprint(r), c = cross(f); return r.type === 'rack_row' && (Math.abs(c[0] / GS - 0.5) < 1e-6 || Math.abs(c[1] / GS - (stackFt - 0.5)) < 1e-6) }
+  // the generator's sections: racks by genSection (the wall rows, running past them all, left out), with their run / cross extents
   const sections = [...new Set(racks.map(r => r.genSection))].sort((a, b) => a - b).map(s => {
-    const f = racks.filter(r => r.genSection === s).map(rackFootprint)
+    const f = racks.filter(r => r.genSection === s && !onWall(r)).map(rackFootprint)
     return { s, r0: Math.min(...f.map(q => run(q)[0])), r1: Math.max(...f.map(q => run(q)[1])), c0: Math.min(...f.map(q => cross(q)[0])), c1: Math.max(...f.map(q => cross(q)[1])) }
   })
 
@@ -47,6 +50,8 @@ describe.each(['horizontal', 'vertical'])('LB — %s', (orientation) => {
       const [lo, len] = L.isHoriz ? [r.x, r.width] : [r.y, r.height]
       expect(L.positions[0]).toBeCloseTo(lo + len / 2, 6)
       const s1 = byId.get(a.row1Id).genSection, s2 = byId.get(a.row2Id).genSection
+      // a wall row (section 1) runs past every section and faces each one's first / last row (BUG 70)
+      if (onWall(byId.get(a.row1Id)) || onWall(byId.get(a.row2Id))) continue
       expect(s1).toBe(s2)
       perSection.set(s1, (perSection.get(s1) || 0) + 1)
     }
@@ -81,7 +86,7 @@ describe.each(['horizontal', 'vertical'])('LB — %s', (orientation) => {
 
   it('LB-cross-drag: a rack moved into a cross-aisle narrows its label to the new clear width', () => {
     const labels = crossAisleLabels(objs, GS)
-    const a = sections[0], edge = racks.filter(r => r.genSection === a.s).sort((p, q) => run(rackFootprint(q))[1] - run(rackFootprint(p))[1])[0]
+    const a = sections[0], edge = racks.filter(r => r.genSection === a.s && r.type === 'rack_double_row').sort((p, q) => run(rackFootprint(q))[1] - run(rackFootprint(p))[1])[0]
     const moved = objs.map(o => (o.id === edge.id ? { ...o, x: o.x + (rot ? 0 : 2 * GS), y: o.y + (rot ? 2 * GS : 0) } : o))
     const after = crossAisleLabels(moved, GS)
     expect(after[0].gapHi - after[0].gapLo).toBeCloseTo((labels[0].gapHi - labels[0].gapLo) - 2 * GS, 6)
