@@ -78,7 +78,7 @@ function filled(vert, shape = 'rectangle') {
   const objs = REAL_LAYOUT.map(o => (o.type.startsWith('fp_') ? shaped(o, SHAPE_CUTS[shape]) : { ...o })).map(o => (vert ? turn(o) : o))
   const area = objs.find(o => o.type === 'racking_area')
   const box = { x: area.x, y: area.y, w: area.width, h: area.height }
-  return planAreaCreate(objs.filter(o => o !== area), box, { ...area.settings, orientation: vert ? 'vertical' : 'horizontal' }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
+  return planAreaCreate(objs.filter(o => o !== area), box, { ...area.settings, orientation: vert ? 'vertical' : 'horizontal', wallClearIn: 0 }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
 }
 /** The layout exactly as saved: vertical, its racking area refit with its stored pattern; for horizontal rows,
  *  that result turned 90° (racks turned with it — a 90° rack becomes a 0° one, 270° → 180°). */

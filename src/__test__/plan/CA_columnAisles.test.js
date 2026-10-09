@@ -135,7 +135,7 @@ import { aisleLabelLayout } from '../../canvas2/hitTest'
 import { clearanceMarks } from '../../canvas2/aisleMarks'
 import { labelScale, aisleLabelScale, LABEL_SIZES } from '../../render/labelSize'
 
-const FILLS = [['as saved, vertical', false, 'vertical', true, { cols: 23, usable: 10648, pickLost: 184 }], ['as saved, horizontal', false, 'horizontal', false, { cols: 18, usable: 10512, pickLost: 176 }], ['turned, vertical', true, 'vertical', false, { cols: 18, usable: 10512, pickLost: 176 }], ['turned, horizontal', true, 'horizontal', false, { cols: 23, usable: 10632, pickLost: 184 }]]
+const FILLS = [['as saved, vertical', false, 'vertical', true, { cols: 23, usable: 10648, pickLost: 184 }], ['as saved, horizontal', false, 'horizontal', false, { cols: 0, usable: 10608, pickLost: 0 }], ['turned, vertical', true, 'vertical', false, { cols: 0, usable: 10608, pickLost: 0 }], ['turned, horizontal', true, 'horizontal', false, { cols: 23, usable: 10632, pickLost: 184 }]]
 function fillOf(turned, orientation, stored) {
   const objs = REAL_LAYOUT.map(o => ({ ...o })).map(o => (turned ? turn(o) : o))
   const area = objs.find(o => o.type === 'racking_area')
@@ -147,7 +147,7 @@ const blocksOf = (objects, pickBothSides = false) => aisleColumnBlocks({ racks: 
 const pairKey = (a, b) => [a, b].sort().join('|')
 
 describe('CA-fills', () => {
-  it.each(FILLS)('CA-fills (%s): the column check looks at every aisle the labels show and finds the columns standing in them (23 / 18 / 18 / 23), every one passable on one side (none blocked); usable and the pick-zone losses — the X marks — are what they were', (_, turned, orientation, stored, want) => {
+  it.each(FILLS)('CA-fills (%s): the column check looks at every aisle the labels show and finds the columns standing in them (23 / 0 / 0 / 23 — the horizontal-row fills at the 3" wall clearance seat their columns in racks; 18 each when flush), every one passable on one side (none blocked); usable and the pick-zone losses — the X marks — are what they were', (_, turned, orientation, stored, want) => {
     const out = fillOf(turned, orientation, stored)
     const { aisleBlocks, redMarks } = blocksOf(out)
     expect(aisleBlocks.length).toBe(want.cols)

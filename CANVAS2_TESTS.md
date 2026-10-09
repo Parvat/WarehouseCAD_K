@@ -1907,6 +1907,70 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### WC — One wall clearance, from the wall's inner face, for Generate and Fill racking (BUG 76) · `WC_wallClearance.test.js` (19 tests)
+Code: `wallClear.js` (generate, new: `WALL_CLEAR_IN` 3, `clearFromOutline`, `wallClearOf`); `layoutSpec`'s `sideClearFt`
+(sizingLayout.js — the wall thickness + the clearance; run ends keep `endClearFt`); `buildQueue` passes the floor plan's
+wall thickness (traceGenerate.js); `clearOutline` (fillRacking.js, new — the inner outline with the walls along the rows
+moved in by the clearance) used by `snapToWalls`, `fillRects`, `areaPattern` and `patternFill`; the pattern stores its
+`wallClearIn`; `areaSettings` / `SETTING_KEYS` (rackingArea.js); `readSettings` (utils/fillTool.js); the Generate
+panel field and the Fill options bar's "Wall clear" field (one shared Racking setting, `wallClearIn`).
+
+The wall clearance is inches from the wall's INNER face to the back of a wall row — one setting, default 3", 0 allowed
+(flush), the same for Generate and Fill racking. Run ends unchanged in both. Generate's default layouts are identical
+(3" + the 3" wall = the old 6" from the outline). A new fill's wall rows move 3" in. Stored values: Generate's old
+`wallClearanceIn` reads as old − 3" (the wall), never below 0; a racking area saved before reloads at 0" (flush) and
+doesn't move; new areas store the setting they were made with. Also fixed: a pair half that carries on from its pair's
+last frame keeps the pair's bay grid even when it now lies on the wall (`placeSingle` — it lost a bay at 3": L / T
+turned, horizontal rows, row 2/9).
+
+Re-measured, the fixture's 12 fills at 3" against flush (no fill loses a bay; no aisle under 10.5 ft; cross-aisles
+unchanged; shrink → extend back identical; nothing cut off):
+
+| Fill | Bays | Positions | Usable | Flagged uprights |
+|---|---|---|---|---|
+| Rectangle, as saved V / turned H | 712 → 712 | 10,816 → 10,816 | 10,632 → 10,632 | 0 → 0 |
+| Rectangle, as saved H / turned V | 730 → 730 | 10,760 → 10,760 | 10,512 → 10,608 | 1 → 3 |
+| L, as saved V / turned H | 632 → 632 | 9,536 → 9,536 | 9,368 → 9,368 | 0 → 0 |
+| L, as saved H / turned V | 661 → 661 | 9,664 → 9,664 | 9,440 → 9,524 | 1 → 3 |
+| T, as saved V / turned H | 552 → 552 | 8,256 → 8,256 | 8,104 → 8,104 | 0 → 0 |
+| T, as saved H / turned V | 591 → 591 | 8,560 → 8,560 | 8,368 → 8,432 | 1 → 2 |
+
+Changed (old → new, listed before editing):
+- RA, AA, FR, RG: their fill settings take `wallClearIn: 0` (the flush behaviour they test); no value changed.
+- `RL-1`: the wall rows' faces 0.25 / sMax → 0.25 + 0.25 / sMax − 0.25 for a new area (the saved area stays flush).
+- `RL-2`: the pocket's rows told from the wall rows at the clearance (same offset).
+- `RL-5-boundary`: at 8.01' the lane is `['zone']`, on the office's side one bay further in → `['wall']`, at the far
+  run wall (8.01' wide, ending at rMax) — now the cheapest.
+- `RL-clean`: the flagged uprights allowed, Row 7 of section 4 → Rows 7, 10 and 13 of section 4 (flagged, never moved).
+- `CX-fills`: label positions along — as saved: −75.625 / −5.375 / 64.875 → −75.75 / −6.25 / 63.25; −71.5 / 7 / 85.5 →
+  −71.333 / 7 / 85.333; −12.375 / 62.542 → −13.25 / 60.917; turned, horizontal: −197.204 / −120.111 / −43.018 / 34.075 /
+  111.168 / 188.26 → −196.974 / −119.923 / −42.872 / 34.179 / 111.23 / 188.281.
+- `CA-fills` (the two horizontal-row fills): columns in aisles 18 → 0 (they seat in racks), usable 10,512 → 10,608, pick-zone
+  losses 176 → 0.
+
+| Test | Asserts |
+|---|---|
+| `WC-convert` | old 6" → 3", 12" → 9", 2" → 0 (never below 0), a 6" wall: 6" → 0; the default 3" |
+| `WC-shared` | the Generate field and the Fill bar's field edit the one setting; Generate sends it |
+| `WC-generate` ×2 | 3" from a 3" wall's face = the old 6" from the outline, same placements; 0" flush on the face; a 6" wall moves the rows out with it |
+| `WC-fill` ×2 | the wall rows 3" off the inner face (0 flush), nothing moves along the run |
+| `WC-shrink` ×2 | at 3", shrink across and along, extend back → the same racks |
+| `WC-far-wall` ×2 | at 3", the far edge on a wall ends with a single row at the clearance, full pairs before it, the last aisle ≥ the forklift aisle |
+| `WC-pocket` ×2 | at 3", the pocket beside the office opened by the cheapest lane (exactly the 8' travel width), nothing cut off |
+| `WC-wall-row` ×2 | at 3", a wall row one rack through the cross-aisles while the rows beside it are in sections |
+| `WC-row-group` ×2 | at 3", a row grouped across its sections and deleted in one: Apply deletes it in every section, one undo step |
+| `WC-load` | a layout saved with the old 6" reopens showing 3"; its area shows 0" and, refilled over the same box, no rack moves |
+| `WC-pair-half` ×2 | L, T turned, horizontal rows: row 2/9's half beside the notch carries on from its pair's frame at 42 ft — 10 bays — also at 3" |
+
+**Break-its:** Fill ignores the value (always flush): 27 failed. Generate measures from the outline (no wall
+thickness): 22 failed. The two fields on separate values: WC-shared (1). The pair-half fix reverted: RL-4, WC-pair-half
+(4).
+
+**Checked in the app** (real mouse, 240 × 120, 3" walls): the Generate field shows 3, labelled "WALL CLEARANCE (in from
+wall face)"; a default Generate puts its wall rows 3.000" off the inner face (6.000" off the outline — as before); the
+Fill racking bar's "Wall clear" shows 3; set to 5 there → the Generate field shows 5; set to 3 in Generate → the bar shows
+3; a fill dragged over the whole building, H and V: wall rows 3.000" off the inner face on both sides.
+
 ### WR — Generate's wall rows follow Fill racking's rule (BUG 70) · `WR_wallRows.test.js` (25 tests)
 Code: `wallRun` (generate/wallRun.js, new — shared: Fill's `placeWall` calls it with the same arithmetic, Fill
 unchanged); `sizingSheetLayout` (generate/sizingLayout.js) lays a single row flush on a wall through it.

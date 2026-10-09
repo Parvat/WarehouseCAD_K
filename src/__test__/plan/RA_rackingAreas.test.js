@@ -52,7 +52,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   let m, s
   beforeEach(async () => {
     m = await fresh(); s = () => m.useCanvasStore.getState()
-    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation })
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation })
     m.AT.useAreaPrompt.setState({ question: null })
   })
   const racks = () => s().objects.filter(o => RACK.has(o.type))
@@ -822,7 +822,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   const fitBuilding = async (type, w, h, slack = null) => {
     const build = async (k) => {
       m = await fresh(); s = () => m.useCanvasStore.getState()
-      m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation })
+      m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation })
       m.AT.useAreaPrompt.setState({ question: null })
       const fp = vert ? fillWhole(type, w - k, h) : fillWhole(type, w, h - k)
       return { fp, L: lastPair() }
@@ -897,7 +897,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   it('RA-slide-column (rectangle): building columns standing in the row\'s flue, where the slid row\'s face would land on them — the slide would lose usable positions (X marks), so the row stays where it is; the same office with no columns: the row slides', async () => {
     const run = async (columns) => {
       m = await fresh(); s = () => m.useCanvasStore.getState()
-      m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation })
+      m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation })
       m.AT.useAreaPrompt.setState({ question: null })
       const fp = fillWhole('fp_rect', 240, 120)
       const L = lastPair(), by = Math.min(1.5, L.slack), p = areaNow().pattern
@@ -1022,7 +1022,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   }
 
   it.each(SLIDE)('RA-wall-row (%s, max run 60\'): a single flush on a wall — the start wall\'s and the far wall\'s — is one rack per stretch of wall: not broken where a cross-aisle meets it (it runs on through, longer than the max run), its bays on the pattern\'s grid, as far as whole bays fit; shrink → extend back identical; clean', async (_, type, w, h) => {
-    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation, maxRunFt: 60 })
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation, maxRunFt: 60 })
     fillWhole(type, w, h)
     clean()
     const walls = expectWallRowsWhole()
@@ -1045,7 +1045,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   })
 
   it('RA-wall-zone (rectangle, max run 60\'): a zone against the far wall still interrupts its wall row — two racks, one either side of it, each running up to it by whole bays; none under it; clean', async () => {
-    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation, maxRunFt: 60 })
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation, maxRunFt: 60 })
     const fp = fillWhole('fp_rect', 240, 120)
     const ib = innerBox(fp)
     // an office 20' along × 12' across, against the far wall, in the middle along the run
@@ -1069,7 +1069,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
 describe('RA — the app\'s own coordinates', () => {
   it('RA-precision: extending across the rows at mouse coordinates leaves every aisle at its full width — Check layout finds nothing at all', async () => {
     const m = await fresh(), s = () => m.useCanvasStore.getState()
-    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation: 'horizontal' })
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation: 'horizontal' })
     s().placeFpObject({ type: 'fp_rect', widthFt: 240, heightFt: 120 })
     const fp = s().objects.find(o => o.type === 'fp_rect')
     expect([fp.x, fp.y]).toEqual([-4800, -2400])

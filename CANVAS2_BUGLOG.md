@@ -6104,7 +6104,7 @@ fills, all passable on one side. Usable and the X marks are unchanged — they
 come from pick zones, which never paired rows (the "positions lost" feared
 above don't move). Generate's own layouts already paired right. Tests: area CA.
 
-## BUG 76 — Fill racking and Generate keep different wall clearances: their wall rows sit 3" apart on the same building  (2026-10-09, open)
+## BUG 76 — Fill racking and Generate keep different wall clearances: their wall rows sit 3" apart on the same building  (2026-10-09, fixed 2026-10-09)
 Symptom:  Fill racking a building Generate made, with the racking area drawn
 where Generate's racks stop (6" inside the building's outline), gives the
 same wall rows along the run (same start, end, bay grid and count once BUG
@@ -6118,9 +6118,22 @@ outline (`endClearFt`, `wallClearFt` in `rowBands`); Fill racking walks its
 rows with `wallClearFt: 0` and puts a wall row flush on the wall's inner
 face (snapping to it), so the two disagree by the wall's own thickness.
 
-Fix:      Open — logged while fixing BUG 70; left alone there on purpose.
-Decide which clearance is right (6" off the outline, flush on the inner
-face, or a rule setting), then make the two share it.
+Fix:      One setting, `wallClearIn` (generate/wallClear.js): inches from
+the wall's INNER face to the back of a wall row, default 3", 0 allowed
+(flush). Generate adds the floor plan's wall thickness (`sideClearFt` in
+`layoutSpec`), so its default layouts are identical (3" + 3" wall = the old
+6"); Fill racking places on `clearOutline` — the inner outline with the
+walls along the rows moved in by it — so a new fill's wall rows move 3" in.
+Run ends unchanged in both. The Generate panel field and the Fill options
+bar's "Wall clear" field edit the one shared Racking setting. Stored values:
+Generate's old `wallClearanceIn` reads as old − 3" (never below 0); a racking
+area saved before loads at 0" and doesn't move; new areas store theirs.
+Found on the way and fixed: a pair half carrying on from its pair's last
+frame was re-gridded from the wall corner once it lay on the wall, losing a
+bay (L / T turned, horizontal rows, row 2/9) — `placeSingle` keeps the pair
+grid for it. The 12 fixture fills: no bay lost, usable up on the
+horizontal-row fills (10,512 → 10,608), flagged uprights 1 → 3 / 3 / 2
+there (BUG 71, flagged never moved). Tests: area WC.
 
 ## BUG 77 — a row deleted in one section leaves its neighbours there without an aisle, where a wall row runs past the sections  (2026-10-09, fixed 2026-10-09)
 Symptom:  Delete the middle row of one section (row 4 of section 2) on a

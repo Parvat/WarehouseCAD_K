@@ -79,6 +79,11 @@ export function FillOptionsBar() {
       <label style={field}>Max run
         <input aria-label="Max rack run (ft)" style={input} defaultValue={s.maxRunFt} key={'m' + s.maxRunFt} onBlur={e => num('maxRunFt', e.target.value)} />ft
       </label>
+      {/* the wall clearance (BUG 76): the same Racking setting as the Generate panel's field — inches from
+          the wall's inner face to the back of a wall row; 0 = flush */}
+      <label style={field} title="Inches from the wall's inner face to the back of a wall row — shared with Generate. 0 = flush.">Wall clear
+        <input aria-label="Wall clearance (in from the wall's inner face)" style={input} defaultValue={s.wallClearIn} key={'w' + s.wallClearIn} onBlur={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0) s.setSetting('wallClearIn', n) }} />in
+      </label>
     </div>
   )
 }

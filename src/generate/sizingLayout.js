@@ -23,6 +23,7 @@
 
 import { DEFAULT_RULES } from '../rules/defaults'
 import { wallRun } from './wallRun'
+import { wallClearOf, clearFromOutline, DEFAULT_WALL_THICKNESS_IN, WALL_CLEAR_IN } from './wallClear'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
 const FLUE_IN = 9    // back-to-back flue gap for double rows
@@ -686,6 +687,16 @@ export function layoutSpec(brief = {}, rules = DEFAULT_RULES) {
        a raw feet override (brief.endClearFt, kept for any direct caller
        that predates the panel field) — the layout itself works in feet. */
     endClearFt: brief.endClearFt ?? ((brief.wallClearanceIn ?? sel.wallClearanceIn ?? 36) / 12),
+    /* The walls ALONG the rows (BUG 76): the one wall clearance (wallClear.js — inches from the wall's
+       inner face, shared with Fill racking) plus the wall itself, measured from the building's outline
+       the layout works in. The run ends keep `endClearFt` above, as before. An old `wallClearanceIn`
+       (from the outline) is converted; a direct caller's raw `endClearFt` alone still sets the sides too. */
+    sideClearFt: (() => {
+      const wallThicknessIn = brief.wallThicknessIn ?? DEFAULT_WALL_THICKNESS_IN
+      if (!Number.isFinite(brief.wallClearIn) && !Number.isFinite(brief.wallClearanceIn) && Number.isFinite(brief.endClearFt)) return brief.endClearFt
+      const fallback = Number.isFinite(sel.wallClearIn) ? sel.wallClearIn : Number.isFinite(sel.wallClearanceIn) ? clearFromOutline(sel.wallClearanceIn) : WALL_CLEAR_IN
+      return (wallThicknessIn + wallClearOf(brief, { wallThicknessIn, fallback })) / 12
+    })(),
   }
 }
 
@@ -839,11 +850,11 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
        cross-aisles as it takes to keep every section this short or shorter. */
     maxRunFt = 150,
   } = brief
-  const { beamIn, depthIn, upIn, flueIn, palletWIn, endClearFt } = spec
+  const { beamIn, depthIn, upIn, flueIn, palletWIn, endClearFt, sideClearFt } = spec
 
   const frame = axisFrame(orientation, { lengthFt, widthFt, gridXFt, gridYFt, columnsAlongWall })
 
-  const bands = rowBands(frame.stackFt, { rackType, depthIn, aisleFt, flueIn, gridYFt: frame.stackGridFt, travelFt, gridOffsetFt: frame.stackGridOffsetFt, gridMaxFt: frame.stackGridMaxFt, colSizeIn, wallClearFt: endClearFt })
+  const bands = rowBands(frame.stackFt, { rackType, depthIn, aisleFt, flueIn, gridYFt: frame.stackGridFt, travelFt, gridOffsetFt: frame.stackGridOffsetFt, gridMaxFt: frame.stackGridMaxFt, colSizeIn, wallClearFt: sideClearFt })
   const { segments, bays } = rowSegments(frame.runFt, {
     crossAisleFt, endClearFt, beamIn, upIn,
     runGridFt: frame.runGridFt, runGridOffsetFt: frame.runGridOffsetFt, runGridMaxFt: frame.runGridMaxFt,
@@ -856,7 +867,7 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
      exempt from the max run. Stamped with the section it starts in (1), as Fill stamps it. The interior
      rows keep their sections. */
   const pitch = (upIn + beamIn) / 12, bayFt = (2 * upIn + beamIn) / 12
-  const onWall = (band) => band.type === 'rack_row' && (Math.abs(band.yFt - endClearFt) < 1e-6 || Math.abs(band.yFt + band.depthFt - (frame.stackFt - endClearFt)) < 1e-6)
+  const onWall = (band) => band.type === 'rack_row' && (Math.abs(band.yFt - sideClearFt) < 1e-6 || Math.abs(band.yFt + band.depthFt - (frame.stackFt - sideClearFt)) < 1e-6)
   const wallSegs = (() => { const w = wallRun(endClearFt, frame.runFt - endClearFt, segments[0].xFt, pitch, bayFt); return w ? [{ xFt: w.r0, bays: w.n }] : [] })()
   const placements = []
   bands.forEach((band, bandIdx) => {

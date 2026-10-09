@@ -79,16 +79,19 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
       : { s0: (f.y - fp.y) / GS, s1: (f.y + f.h - fp.y) / GS, r0: (f.x - fp.x) / GS, r1: (f.x + f.w - fp.x) / GS })
     return { rs, rack: (o) => ({ o, ...rs(m.rackFootprint(o)) }), zone: (o) => ({ o, ...rs({ x: o.x, y: o.y, w: o.width, h: o.height }) }) }
   }
+  // the wall clearance (BUG 76): a new area takes the default 3" off the wall's inner face; the saved area was made
+  // before it and stays flush
+  const clearFt = stored ? 0 : 3 / 12
   const keys = (list) => list.filter(o => RACK.has(o.type)).map(o => [o.type, Math.round(o.x * 1e3), Math.round(o.y * 1e3), Math.round(o.width * 1e3), o.rotation || 0, o.beams.join('/'), o.rowIndex, o.genSection].join(':')).sort()
 
-  it('RL-1: the start wall\'s single sits flush on the wall although the box stops short of it, and every wall row runs unbroken — a gap in one only where a zone stands on that wall', async () => {
+  it('RL-1: the start wall\'s single sits on the wall — at the wall clearance (3", flush for the saved area) — although the box stops short of it, and every wall row runs unbroken — a gap in one only where a zone stands on that wall', async () => {
     const { m, out, fp } = await fill()
     const v = view(m, fp), racks = out.filter(o => RACK.has(o.type)).map(v.rack)
     const zones = out.filter(o => o.type.startsWith('zone_')).map(v.zone)
     const sMax = (vert ? fp.width : fp.height) / GS - 0.25
     const inner = m.FR.innerOutline(fp, GS)
     const onFloor = (r, sv) => { const px = fp.x + (vert ? sv : r) * GS, py = fp.y + (vert ? r : sv) * GS; let c = false; for (let i = 0, j = inner.length - 1; i < inner.length; j = i++) { const P = inner[i], Q = inner[j]; if ((P.y > py) !== (Q.y > py) && px < (Q.x - P.x) * (py - P.y) / (Q.y - P.y) + P.x) c = !c } return c }
-    for (const face of [0.25, sMax]) {
+    for (const face of [0.25 + clearFt, sMax - clearFt]) {
       const wall = racks.filter(q => Math.abs(q.s0 - face) < EPS || Math.abs(q.s1 - face) < EPS).sort((a, b) => a.r0 - b.r0)
       expect(wall.length, `a wall row on the face at ${face}'`).toBeGreaterThan(0)
       for (const q of wall) expect(q.o.type).toBe('rack_row')
@@ -114,7 +117,7 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     const rMax = (vert ? fp.height : fp.width) / GS - 0.25
     // (the wall row on the start wall is item 1's: one rack on the pattern's grid, not a shortened pocket row)
     const sMax = (vert ? fp.width : fp.height) / GS - 0.25
-    const pocket = racks.filter(q => Math.min(q.s1, office.s1) - Math.max(q.s0, office.s0) > EPS && q.r0 >= office.r1 - EPS && Math.abs(q.s0 - 0.25) > EPS && Math.abs(q.s1 - sMax) > EPS)
+    const pocket = racks.filter(q => Math.min(q.s1, office.s1) - Math.max(q.s0, office.s0) > EPS && q.r0 >= office.r1 - EPS && Math.abs(q.s0 - 0.25 - clearFt) > EPS && Math.abs(q.s1 - sMax + clearFt) > EPS)
     if (!corrections23) { expect(pocket.every(q => q.r1 <= rMax + EPS)).toBe(true); return }
     expect(pocket.length).toBeGreaterThanOrEqual(3)
     for (const q of pocket) {
@@ -220,7 +223,7 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     expect(lane.r[0] - office.r1, 'one bay in from the office\'s edge, not hard against it').toBeGreaterThan(1)
   })
 
-  if (corrections23) it('RL-5-boundary: the travel width read to a thousandth of a foot — at 8\' the lane one bay in (exactly 8\' wide) opens the pocket and is taken; at 8.01\' that gap is 0.01\' short and is no lane: the pocket is opened by a lane on the office\'s side one bay further in, 8.01\' wide (the exact access check — BUG 72 — finds the main floor it leads to), and nothing is cut off at 8.01\'', async () => {
+  if (corrections23) it('RL-5-boundary: the travel width read to a thousandth of a foot — at 8\' the lane one bay in (exactly 8\' wide) opens the pocket and is taken; at 8.01\' that gap is 0.01\' short and is no lane: the pocket is opened by the cheapest lane that is — at the 3" wall clearance the one at the far run wall, 8.01\' wide (on the flush layout it was on the office\'s side, one bay further in) — and nothing is cut off at 8.01\'', async () => {
     const { m, out, fp } = await fill()
     const a = out.find(o => o.type === 'racking_area'), base = out.filter(o => !(RACK.has(o.type) && o.areaId === a.id))
     const box = { x: a.x, y: a.y, w: a.width, h: a.height }, v = view(m, fp)
@@ -234,20 +237,22 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     expect(at8.pair.r1).toBeCloseTo(at8.rMax, 6)
     expect(at8.lane.kind).toBe('zone')
     expect(at8.lane.r[1] - at8.lane.r[0], 'exactly 8 ft').toBeCloseTo(8, 6)
-    // at 8.01': the 8' gap below the office is no lane; one lane, on the office's side, one bay further in, 8.01' wide
-    expect(at801.lane, 'no lane below the pair').toBeUndefined()
-    expect(at801.lanes.map(l => l.kind)).toEqual(['zone'])
+    // at 8.01': the 8' gap below the office is no lane; one lane, the cheapest: at the far run wall, 8.01' wide
+    // (BUG 76: with the rows 3" off the wall the office-side lane one bay further in costs more bays)
+    expect(at801.lanes.map(l => l.kind)).toEqual(['wall'])
     expect(at801.lanes[0].r[1] - at801.lanes[0].r[0]).toBeCloseTo(8.01, 6)
-    expect(at801.lanes[0].r[1]).toBeLessThan(at8.lane.r[0])
+    expect(at801.lanes[0].r[1]).toBeCloseTo(at8.rMax, 6)
+    expect(at801.lanes[0].r[0]).toBeGreaterThan(at8.lane.r[1])
     expect(at801.cutOff, 'every rack has a way in at 8.01 ft').toEqual([])
   })
 
   it('RL-clean: Check layout finds no error; nothing cut off; shrink across and along, then extend back — the same racks', async () => {
     const { m, out, fp, box, areaId } = await fill()
-    // (but one error the fill already gave before area AA's corrections: the run's walk puts an upright on
-    // a column of this grid — CANVAS2_BUGLOG BUG 71, open; any other upright error still fails here)
-    const KNOWN = 'Row 7, section 4: a column stands on an upright frame'
-    expect(m.LC.checkLayout(out, { gridSize: GS }).errors.filter(e => !(e.kind === 'upright' && e.text === KNOWN))).toEqual([])
+    // (but the uprights the run's walk puts on a column of this grid — flagged, never moved; the dealer resolves
+    // them, CANVAS2_BUGLOG BUG 71: Row 7 of section 4 on the flush layout; at the 3" wall clearance Rows 7, 10 and
+    // 13 (BUG 76 — the rows sit 3" further in). Any other upright error still fails here)
+    const KNOWN = new Set(['Row 7, section 4', 'Row 10, section 4', 'Row 13, section 4'].map(r => r + ': a column stands on an upright frame'))
+    expect(m.LC.checkLayout(out, { gridSize: GS }).errors.filter(e => !(e.kind === 'upright' && KNOWN.has(e.text)))).toEqual([])
     expect(m.AA.cutOffRacks(out, fp, { gridSize: GS, travelFt: 8, aisleFt: 10.5 }).cutOff).toEqual([])
     const before = keys(out)
     for (const cut of [vert ? { w: box.w - 15.3 * GS } : { h: box.h - 15.3 * GS }, vert ? { h: box.h - 20.3 * GS } : { w: box.w - 20.3 * GS }]) {

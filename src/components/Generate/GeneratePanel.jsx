@@ -67,11 +67,11 @@ export function GeneratePanel() {
   const [aisleFt, setAisle]   = useState(() => mheOptions.reach?.aisleFt ?? 10.5)
   const [gridXFt, setGridX]   = useState(50)
   const [gridYFt, setGridY]   = useState(54)
-  // BUG 64 — the gap between every wall and where racking actually starts
-  // (rowBands' new wallClearFt, rowSegments' existing endClearFt — one
-  // number, both axes). Default matches DEFAULT_RULES.selective's own
-  // shipped default, so an untouched panel matches an untouched rules table.
-  const [wallClearanceIn, setWallClear] = useState(6)
+  /* The wall clearance (BUG 76, generate/wallClear.js): inches from the wall's INNER face to the back of a
+     wall row — the ONE Racking setting Fill racking uses too, so the field edits the shared value itself
+     (utils/fillTool.js) rather than a copy. The run ends keep their own clearance, as before. */
+  const wallClearIn = useRackingSettings(s => s.wallClearIn)
+  const setWallClear = (v) => { const n = Number(v); if (Number.isFinite(n) && n >= 0) useRackingSettings.getState().setSetting('wallClearIn', n) }
   /* Longest continuous rack run before a cross-aisle — long runs get as many
      evenly spaced cross-aisles as it takes to stay this short. */
   const [maxRunFt, setMaxRun] = useState(150)
@@ -93,8 +93,8 @@ export function GeneratePanel() {
     const set = useRackingSettings.getState().setSetting
     if (orientation !== 'auto') set('orientation', orientation)
     set('mhe', mhe); set('aisleFt', Number(aisleFt) || 10.5); set('maxRunFt', Number(maxRunFt) || 150)
-    set('wallClearanceIn', Number(wallClearanceIn) || 0); set('palletWIn', Number(palletWIn) || 40); set('palletDIn', Number(palletDIn) || 48)
-  }, [orientation, mhe, aisleFt, maxRunFt, wallClearanceIn, palletWIn, palletDIn])
+    set('palletWIn', Number(palletWIn) || 40); set('palletDIn', Number(palletDIn) || 48)
+  }, [orientation, mhe, aisleFt, maxRunFt, palletWIn, palletDIn])
 
   /* Generating is a real wait on a big building — thousands of bay rects and a
      history snapshot per object. Without a flag the click just looks dead. */
@@ -118,7 +118,7 @@ export function GeneratePanel() {
         aisleFt:          Number(aisleFt)           || 11,
         gridXFt:          Number(gridXFt)           || 0,
         gridYFt:          Number(gridYFt)           || 0,
-        wallClearanceIn:  Number(wallClearanceIn)   || 0,
+        wallClearIn:      Number(wallClearIn)       || 0,
         maxRunFt:         Number(maxRunFt)          || 150,
         columnsAlongWall,
         palletWIn:        Number(palletWIn)         || 40,
@@ -193,8 +193,8 @@ export function GeneratePanel() {
             </div>
           </div>
 
-          <Field label="WALL CLEARANCE (in)">
-            <input style={inputSt} type="number" min="0" value={wallClearanceIn} onChange={e => setWallClear(e.target.value)} />
+          <Field label="WALL CLEARANCE (in from wall face)">
+            <input aria-label="Wall clearance (in from the wall's inner face)" title="Inches from the wall's inner face to the back of a wall row — shared with Fill racking. 0 = flush." style={inputSt} type="number" min="0" value={wallClearIn} onChange={e => setWallClear(e.target.value)} />
           </Field>
           <Field label="MAX RACK RUN (ft)">
             <input style={inputSt} type="number" min="20" value={maxRunFt} onChange={e => setMaxRun(e.target.value)}

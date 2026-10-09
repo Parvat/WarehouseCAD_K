@@ -64,7 +64,7 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
   let m, s
   beforeEach(async () => {
     m = await fresh(); s = () => m.useCanvasStore.getState()
-    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation })
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation })
   })
   const racks = () => s().objects.filter(o => RACK.has(o.type))
   const fpOf = () => s().objects.find(o => o.type.startsWith('fp_'))

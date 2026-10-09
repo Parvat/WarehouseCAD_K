@@ -52,7 +52,7 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
   let m, s
   beforeEach(async () => {
     m = await fresh(); s = () => m.useCanvasStore.getState()
-    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, orientation })
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation })
     m.AT.useAreaPrompt.setState({ question: null })
   })
   const racks = () => s().objects.filter(o => RACK.has(o.type))
@@ -86,7 +86,7 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     await tick()
     const pocket = rsBox(fp, W + wt / GS, W + 30, band[0], band[1])
     const ib = innerBox(fp)
-    const made = m.FR.areaPattern(s().objects, ib, { orientation }, { gridSize: GS, from: { x: ib.x, y: ib.y } })
+    const made = m.FR.areaPattern(s().objects, ib, { orientation, wallClearIn: 0 }, { gridSize: GS, from: { x: ib.x, y: ib.y } })
     const bare = m.FR.patternFill(s().objects, ib, made.pattern, { gridSize: GS, wayIn: false }).racks
     // the racks only the pocket reaches (between the office and the wall)
     const cut = new Set(m.AA.cutOffRacks([...s().objects, ...bare], fp, { gridSize: GS, travelFt: 8, aisleFt: 10.5, ids: bare.map(r => r.id) }).cutOff.map(c => c.id))
@@ -99,10 +99,10 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
   it.each(SHAPES)('AA-pocket (%s): an office 30\' off the near wall closes the aisles between them — the fill keeps those rows: the fewest whole bays are cut (a strip the travel width, rounded up to whole bays) to open a travel path to the main floor; every rack reachable, Check layout clean; the cut row put back at full length shuts it again and is flagged "No way in: aisle closed at both ends", the pocket highlighted', async (_, type, w, h) => {
     const { fp, ib, pocket, inPocket, cutAll } = await officePocket(type, w, h)
     expect(inPocket.length).toBeGreaterThan(0)
-    const made = m.FR.areaPattern(s().objects, ib, { orientation }, { gridSize: GS, from: { x: ib.x, y: ib.y } })
+    const made = m.FR.areaPattern(s().objects, ib, { orientation, wallClearIn: 0 }, { gridSize: GS, from: { x: ib.x, y: ib.y } })
     const bare = m.FR.patternFill(s().objects, ib, made.pattern, { gridSize: GS, wayIn: false }).racks
     const report = []
-    m.FR.planFill(s().objects, ib, { orientation }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
+    m.FR.planFill(s().objects, ib, { orientation, wallClearIn: 0 }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
     drag({ x: ib.x, y: ib.y }, { x: ib.x + ib.w, y: ib.y + ib.h })
     const rowOf = (r, list) => list.filter(q => Math.abs(across(q)[0] - across(r)[0]) < EPS && Math.abs(across(q)[1] - across(r)[1]) < EPS && Math.min(along(q)[1], along(r)[1]) - Math.max(along(q)[0], along(r)[0]) > EPS)
     const baysIn = (list) => list.reduce((t, q) => t + q.beams.length, 0)
@@ -137,7 +137,7 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     if (vert) {
       const { ib, office, inPocket } = await officePocket('fp_rect', 240, 120, [48, 85])
       const report = []
-      const plan = m.FR.planFill(s().objects, ib, { orientation }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
+      const plan = m.FR.planFill(s().objects, ib, { orientation, wallClearIn: 0 }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
       const tie = report.find(q => q.tiedWith)
       expect(tie, 'a pocket whose strip against the office and strip against the wall cost the same').toBeTruthy()
       expect(tie.kind).toBe('zone')
@@ -158,7 +158,7 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     }
     const { fp, ib } = await officePocket('fp_rect', 240, 120)
     const report = []
-    const plan = m.FR.planFill(s().objects, ib, { orientation }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
+    const plan = m.FR.planFill(s().objects, ib, { orientation, wallClearIn: 0 }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
     // the strip on the bay grid inside the office's lane (17'–25': the half's first frame and the bay before it)
     // ties with the wall's (1 bay each) and takes it: the pair stays on the near wall
     expect(report).toHaveLength(1)

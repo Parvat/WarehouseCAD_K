@@ -271,6 +271,9 @@ export function generateAndPlace(brief, generateLayout = sizingSheetLayout, rule
  *  UI needs these to report the comparison, not just place the winner. */
 function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
   const store = useCanvasStore.getState()
+  /* the wall clearance is measured from the wall's inner face (BUG 76, wallClear.js): the layout needs the
+     wall the building is drawn with (the floor plan default) */
+  if (!Number.isFinite(brief.wallThicknessIn)) brief = { ...brief, wallThicknessIn: (store.fpDefaults?.wallThicknessFt ?? 0.25) * 12 }
 
   /* BUG 65 — remove whatever the LAST Generate click placed before placing
      this one, so a second click replaces the layout instead of stacking an

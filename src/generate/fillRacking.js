@@ -42,17 +42,38 @@ import { usableCapacity, mheProfile } from './usableCapacity'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { nanoid } from 'nanoid'
 import { wallRun } from './wallRun'
+import { WALL_CLEAR_IN } from './wallClear'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const EPS = 1e-6
 const isRack = (o) => typeof o?.type === 'string' && o.type.startsWith('rack_')
 export { buildingOutline, innerOutline }
+
+/** The floor a fill places on (BUG 76): the building's inner outline with each wall ALONG the rows (`vert`:
+ *  the vertical walls, else the horizontal ones) moved in by the wall clearance `clearIn` (inches from the
+ *  wall's inner face — wallClear.js). The run ends stay on the walls. A wall row placed flush on this floor
+ *  sits `clearIn` off the real wall; the pattern starts there too, so every aisle keeps its width.
+ *  Rectilinear floors (every floor plan type is). */
+export function clearOutline(fp, gridSize, vert, clearIn = 0) {
+  const poly = innerOutline(fp, gridSize), C = (clearIn / 12) * gridSize
+  if (!(C > 0)) return poly
+  const inside = (x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const P = poly[i], Q = poly[j]; if ((P.y > y) !== (Q.y > y) && x < (Q.x - P.x) * (y - P.y) / (Q.y - P.y) + P.x) c = !c } return c }
+  const out = poly.map(p => ({ ...p }))
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length]
+    if (!(vert ? Math.abs(a.x - b.x) < 1e-6 : Math.abs(a.y - b.y) < 1e-6)) continue      // a run end: stays
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
+    const dir = vert ? (inside(mx + 0.5, my) ? 1 : -1) : (inside(mx, my + 0.5) ? 1 : -1)  // toward the floor
+    for (const k of [i, (i + 1) % poly.length]) { if (vert) out[k].x = a.x + dir * C; else out[k].y = a.y + dir * C }
+  }
+  return out
+}
 export const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 
 /** The Racking settings a fill uses (the Generate panel's own, same defaults). */
 export const DEFAULT_FILL_SETTINGS = {
   orientation: 'horizontal', beamIn: 96, palletWIn: 40, palletDIn: 48,
-  mhe: 'reach', aisleFt: 10.5, maxRunFt: 150, wallClearanceIn: 6, levels: 4,
+  mhe: 'reach', aisleFt: 10.5, maxRunFt: 150, wallClearIn: WALL_CLEAR_IN, levels: 4,
 }
 
 /** The building a box belongs to: the one containing its centre, else the one it overlaps most. */
@@ -97,11 +118,11 @@ function walkGrid(lines, originFt, lengthFt, dir = 1) {
  *  kind: 'wall' (a wall, or a zone's edge) | 'open' (the box edge) | 'rack'
  *  (an existing rack) | 'join' (the region carries on into another
  *  rectangle). Horizontal: run = x, stack = y. */
-export function fillRects(objects, fp, boxPx, { orientation = 'horizontal', gridSize = 40 } = {}) {
+export function fillRects(objects, fp, boxPx, { orientation = 'horizontal', gridSize = 40, clearIn = 0 } = {}) {
   const vert = orientation === 'vertical'
   const ft = (v) => v / gridSize
   const rs = (p) => (vert ? { r: ft(p.y), s: ft(p.x) } : { r: ft(p.x), s: ft(p.y) })
-  const poly = innerOutline(fp, gridSize).map(rs)
+  const poly = clearOutline(fp, gridSize, vert, clearIn).map(rs)
   const b0 = rs({ x: boxPx.x, y: boxPx.y }), b1 = rs({ x: boxPx.x + boxPx.w, y: boxPx.y + boxPx.h })
   const box = { r0: Math.min(b0.r, b1.r), r1: Math.max(b0.r, b1.r), s0: Math.min(b0.s, b1.s), s1: Math.max(b0.s, b1.s) }
   // existing racks in the box or touching it, as (run, stack) rects
@@ -230,8 +251,8 @@ const rsRect = (vert, gridSize, b) => {
  *  rack) — moved out onto that wall's inner face: such an edge counts as on the wall, so its wall row
  *  sits on the wall. The run's ends stay as drawn: moving them moves the run's uprights, which a column
  *  grid can land on. World px. */
-export function snapToWalls(boxPx, fp, gridSize = 40, reachFt = 3.5, vert = false) {
-  const poly = innerOutline(fp, gridSize), reach = reachFt * gridSize + 1e-6
+export function snapToWalls(boxPx, fp, gridSize = 40, reachFt = 3.5, vert = false, clearIn = 0) {
+  const poly = clearOutline(fp, gridSize, vert, clearIn), reach = reachFt * gridSize + 1e-6
   const x0 = boxPx.x, y0 = boxPx.y, x1 = boxPx.x + boxPx.w, y1 = boxPx.y + boxPx.h
   const edges = poly.map((a, i) => [a, poly[(i + 1) % poly.length]])
   const xs = edges.filter(([a, c]) => Math.abs(a.x - c.x) < 1e-6 && Math.min(Math.max(a.y, c.y), y1) - Math.max(Math.min(a.y, c.y), y0) > 1e-6).map(([a]) => a.x)
@@ -272,15 +293,17 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
   const fp = buildingForBox(objects, boxPx)
   if (!fp || !(boxPx.w > 0) || !(boxPx.h > 0)) return null
   // an edge across the rows within a rack's depth of a wall counts as on it: the pattern starts from the wall
-  boxPx = snapToWalls(boxPx, fp, gridSize, depthIn / 12, set.orientation === 'vertical')
+  // the wall clearance (wallClear.js): the floor's walls along the rows moved in by it, the pattern holds it
+  const clearIn = Number.isFinite(set.wallClearIn) ? Math.max(0, set.wallClearIn) : WALL_CLEAR_IN
+  boxPx = snapToWalls(boxPx, fp, gridSize, depthIn / 12, set.orientation === 'vertical', clearIn)
   const rackType = 'rack_double_row', colSizeIn = 12
-  const { rects, vert } = fillRects(objects, fp, boxPx, { orientation: set.orientation, gridSize })
+  const { rects, vert } = fillRects(objects, fp, boxPx, { orientation: set.orientation, gridSize, clearIn })
   if (!rects.length) return null
   const grids = objects.filter(o => o.type === 'column_grid' && (!o.parentId || o.parentId === fp.id))
   const runLines = columnLines(grids, vert ? 'y' : 'x', gridSize)
   const stackLines = columnLines(grids, vert ? 'x' : 'y', gridSize)
   const box = rsRect(vert, gridSize, boxPx)
-  const poly = innerOutline(fp, gridSize).map(rsOf(vert, gridSize))
+  const poly = clearOutline(fp, gridSize, vert, clearIn).map(rsOf(vert, gridSize))
   const pr0 = Math.min(...poly.map(p => p.r)) - PATTERN_MARGIN_FT, pr1 = Math.max(...poly.map(p => p.r)) + PATTERN_MARGIN_FT
   const ps0 = Math.min(...poly.map(p => p.s)) - PATTERN_MARGIN_FT, ps1 = Math.max(...poly.map(p => p.s)) + PATTERN_MARGIN_FT
   // the drag's start corner: the walks start on its side of each axis
@@ -364,7 +387,7 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
   const pieces = [...walkPieces, ...extra, ...back].map((p, i) => ({ r0: toR(p.a, p.n), n: p.n, sec: secBase + i + 1 }))
 
   const pattern = {
-    vert, units, pieces, beamIn, upIn, depthIn, flueIn, aisleFt, travelFt,
+    vert, units, pieces, beamIn, upIn, depthIn, flueIn, aisleFt, travelFt, wallClearIn: clearIn,
     palletWIn: P.palletWIn, palletDIn: P.palletDIn, levels: set.levels,
     // the walks' directions from the start corner: across (stack) and along (run) — the far edges are the other way
     dirS, runDir: flipR ? -1 : 1,
@@ -388,10 +411,12 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
   fp = fp || buildingForBox(objects, boxPx)
   if (!fp || !pattern || !(boxPx.w > 0) || !(boxPx.h > 0)) return empty
   const { vert, beamIn, upIn, depthIn, flueIn, aisleFt } = pattern
-  const poly = innerOutline(fp, gridSize).map(rsOf(vert, gridSize))
+  // the clearance the pattern was made with (a pattern from before BUG 76 sat flush)
+  const clearIn = pattern.wallClearIn ?? 0
+  const poly = clearOutline(fp, gridSize, vert, clearIn).map(rsOf(vert, gridSize))
   // the box as far as the walls: a box dragged past one ends on its inner face (as the area's box does),
   // and an edge within a rack's depth of a wall counts as on it
-  const raw = rsRect(vert, gridSize, snapToWalls(boxPx, fp, gridSize, depthIn / 12, vert))
+  const raw = rsRect(vert, gridSize, snapToWalls(boxPx, fp, gridSize, depthIn / 12, vert, clearIn))
   const box = { r0: Math.max(raw.r0, Math.min(...poly.map(q => q.r))), r1: Math.min(raw.r1, Math.max(...poly.map(q => q.r))),
     s0: Math.max(raw.s0, Math.min(...poly.map(q => q.s))), s1: Math.min(raw.s1, Math.max(...poly.map(q => q.s))) }
   const grow = (q, by) => ({ r0: q.r0 - by, r1: q.r1 + by, s0: q.s0 - by, s1: q.s1 + by })
@@ -524,9 +549,13 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
       }
     }
     /** A single row's intervals: flush on a wall there, one rack per stretch; elsewhere the pattern's runs. */
-    const placeSingle = (unit, sa, ivs) => {
+    /* A pair's half that carries on from the pair's last frame (`frames`: the run positions of the frames
+       its placed bays end on) shares that upright and stays on the pair's grid even along a wall — the wall
+       row's own grid would drop the shared upright and start it at the wall's corner instead (a bay lost). */
+    const placeSingle = (unit, sa, ivs, frames = []) => {
       const W = [...wallAt(sa, true), ...wallAt(sa + singleFt, false)]
-      const onWall = intersect(ivs, W)
+      const carries = ([a, c]) => frames.some(f => Math.abs(a - f) < 1e-6 || Math.abs(c - f) < 1e-6)
+      const onWall = intersect(ivs, W).filter(iv => !ivs.some(jv => carries(jv) && jv[0] <= iv[0] + EPS && jv[1] >= iv[1] - EPS))
       place(unit, 'rack_row', sa, singleFt, onWall.reduce((acc, [a, c]) => subtract(acc, a, c), ivs))
       placeWall(unit, sa, onWall)
     }
@@ -544,8 +573,9 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
       let lo = freeRun(u.s0, u.s0 + singleFt), hi = freeRun(u.s0 + u.d - singleFt, u.s0 + u.d)
       const up = upIn / 12
       for (const q of placedRS.slice(placedFrom)) { lo = subtract(lo, q.r0 + up, q.r1 - up); hi = subtract(hi, q.r0 + up, q.r1 - up) }
-      placeSingle(u, u.s0, offWall(lo, u.s0, u.s0 + singleFt))
-      placeSingle(u, u.s0 + u.d - singleFt, offWall(hi, u.s0 + u.d - singleFt, u.s0 + u.d))
+      const frames = placedRS.slice(placedFrom).flatMap(q => [q.r0 + up, q.r1 - up])
+      placeSingle(u, u.s0, offWall(lo, u.s0, u.s0 + singleFt), frames)
+      placeSingle(u, u.s0 + u.d - singleFt, offWall(hi, u.s0 + u.d - singleFt, u.s0 + u.d), frames)
     }
     // the nearest pattern row to a band across: the stamps a wall row takes
     const homeRow = (sa) => { const mid = sa + singleFt / 2; return pattern.units.reduce((b, q) => { const d = Math.max(0, q.s0 - mid, mid - (q.s0 + q.d)); return !b || d < b.d ? { q, d } : b }, null).q.row }

@@ -53,8 +53,13 @@ const r4 = (v) => Math.round(v * 1e4) / 1e4
 export const rackSig = (o) => JSON.stringify([o.type, r4(o.x), r4(o.y), r4(o.width), r4(o.height), o.rotation || 0, o.beams || null, o.levels ?? null, o.uprightWidth ?? null, o.flueSpaceIn ?? null])
 export const boxOf = (o) => ({ x: o.x, y: o.y, w: o.width, h: o.height })
 /** The area's Racking settings (the Fill racking defaults under them). */
-export const areaSettings = (area) => ({ ...DEFAULT_FILL_SETTINGS, ...(area?.settings || {}) })
-const SETTING_KEYS = ['orientation', 'beamIn', 'palletWIn', 'palletDIn', 'mhe', 'aisleFt', 'maxRunFt', 'levels']
+export const areaSettings = (area) => {
+  const set = { ...DEFAULT_FILL_SETTINGS, ...(area?.settings || {}) }
+  // an area made before the wall clearance (BUG 76) sat flush on its walls: it stays there
+  if (area?.settings && !Number.isFinite(area.settings.wallClearIn)) set.wallClearIn = 0
+  return set
+}
+const SETTING_KEYS = ['orientation', 'beamIn', 'palletWIn', 'palletDIn', 'mhe', 'aisleFt', 'maxRunFt', 'levels', 'wallClearIn']
 const pickSettings = (s) => Object.fromEntries(SETTING_KEYS.filter(k => s[k] !== undefined).map(k => [k, s[k]]))
 
 /** Each bay's world box (axis-aligned bounds, any rotation). */
@@ -167,12 +172,13 @@ export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = 
   const anchor = from ? { x: from.x > box.x + box.w / 2 ? 'r' : 'l', y: from.y > box.y + box.h / 2 ? 'b' : 't' } : { x: 'l', y: 't' }
   // the area's box stays inside the building: clipped to its inner walls' extent, and an edge across
   // the rows within a rack's depth of a wall put on it (it counts as on the wall)
-  box = snapToWalls(box, plan.fp, gridSize, plan.pattern.depthIn / 12, plan.pattern.vert)
+  box = snapToWalls(box, plan.fp, gridSize, plan.pattern.depthIn / 12, plan.pattern.vert, plan.pattern.wallClearIn ?? 0)
   const inner = innerOutline(plan.fp, gridSize), ix0 = Math.max(box.x, Math.min(...inner.map(p => p.x))), iy0 = Math.max(box.y, Math.min(...inner.map(p => p.y)))
   const ix1 = Math.min(box.x + box.w, Math.max(...inner.map(p => p.x))), iy1 = Math.min(box.y + box.h, Math.max(...inner.map(p => p.y)))
   const area = {
     id, type: AREA_TYPE, label: 'Racking area', x: ix0, y: iy0, width: ix1 - ix0, height: iy1 - iy0, rotation: 0,
-    parentId: plan.fp.id, layerId: 'racking', settings: pickSettings(settings), anchor, pattern: plan.pattern,
+    parentId: plan.fp.id, layerId: 'racking', // the wall clearance it was filled with, always written: an area without one was made before it (flush)
+    settings: pickSettings({ ...settings, wallClearIn: plan.pattern.wallClearIn }), anchor, pattern: plan.pattern,
     placed: Object.fromEntries(plan.racks.map(r => [r.id, rackSig(r)])),
   }
   return { area, plan, objects: [...objects, area, ...plan.racks, ...plan.aisles] }
