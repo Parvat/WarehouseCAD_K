@@ -5979,7 +5979,7 @@ FR-generate (Fill = Generate's walk) leaves the start wall's single out
 of its comparison and asserts the fill's on its own until Generate
 does the same.
 
-## BUG 71 — Fill racking puts an upright on a column of the grid  (2026-10-05, open)
+## BUG 71 — Fill racking puts an upright on a column of the grid  (2026-10-05, closed 2026-10-09: by design)
 Symptom:  On the hand-check layout (RL tests, realLayout.fixture.js: 500 ×
 250, columns every 50' × 54'), a new area filled horizontal (and the turned
 layout filled vertical) gets "Row 7, section 4: a column stands on an
@@ -5991,11 +5991,21 @@ count as on it. Moving the run's start onto the wall made it worse (7
 upright errors), so only the edges across the rows snap; the run's ends
 stay as drawn.
 
-Cause:    Not traced yet. The run's walk (`areaPattern` → `walkGrid` /
-`rowSegments` over the column lines) doesn't keep every upright off the
-column lines; where it lands depends on where the run starts.
+Cause:    Traced 2026-10-09. Section 4's runs start at x 134.000 ft, so
+their uprights sit at 134 + k × 8.25 ft; upright 8 (bays 7 / 8) is at
+200.000–200.250 and column 33 (12", at 199.5–200.5) stands on it, in face 0
+of Row 7. `rowSegments` steers only the cross-aisles off column lines;
+moving bays between sections moves uprights by whole bays and never
+changes where they fall against the columns — only a section's start
+does. Generate is the same: it keeps no upright off a column either (its
+250 × 500 / 300 × 420 layouts carry 9 / 4 such uprights, all flagged).
 
-Fix:      Open. RL-clean allows exactly this one error until it is fixed.
+Fix:      None — by design: flagged, never moved; the dealer resolves it
+(by hand, and copies the fix to the other rows with the Row group).
+columnCheck.js states the same rule. A nudge of the section start along
+its cross-aisle's slack was planned (1.50 ft here, 3" clear, cross-aisle
+11' 2" → 9' 8", usable +16) and dropped. RL-clean keeps its one allowance
+for this error.
 
 ## BUG 72 — the access check passes paths narrower than the travel width (down to about 7 ft)  (2026-10-05, fixed 2026-10-08)
 Symptom:  On the hand-check layout (500 × 250), a lane cut 7.0 ft wide —
@@ -6088,6 +6098,23 @@ now sees every aisle: 23 / 18 / 18 / 23 columns in aisles on the fixture's
 fills, all passable on one side. Usable and the X marks are unchanged — they
 come from pick zones, which never paired rows (the "positions lost" feared
 above don't move). Generate's own layouts already paired right. Tests: area CA.
+
+## BUG 77 — a row deleted in one section leaves its neighbours there without an aisle, where a wall row runs past the sections  (2026-10-09, open)
+Symptom:  Delete the middle row of one section (row 4 of section 2) on a
+layout whose wall rows run unbroken past the sections — every Fill racking
+layout today, and Generate's once BUG 70 lands: rows 3 and 5 of that
+section get no aisle, so no width label, and Check layout doesn't grade
+the gap between them. Found by AR-delete / AR-undo while building BUG 70.
+
+Cause:    The shared pairing (`neighbourPairs`, generate/rowAisles.js)
+first merges racks into blocks by overlapping run, then pairs each line of
+racks only with the next line across. A wall row running past several
+sections merges them into one block; line 4 still has its section-1
+piece, so it stays "the next line" from line 3, and rows 3 and 5 of
+section 2 are never compared. (Generate's cross-aisles used to split its
+wall rows, keeping each section its own block.)
+
+Fix:      Open — planned before BUG 70's product commit.
 
 ---
 
