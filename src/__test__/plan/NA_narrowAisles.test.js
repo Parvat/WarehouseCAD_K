@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest'
 import { GS } from './fixtures'
 import { REAL_LAYOUT } from './realLayout.fixture'
 import { narrowAisleBlocks, blockedKeys } from '../../generate/narrowAisles'
+import { positionRunSpans } from '../../generate/faceAisles'
 import { usableCapacity, runColumnCheck } from '../../generate/usableCapacity'
 import { MHE_PROFILES, localRectToWorld, rackFootprint } from '../../generate/columnCheck'
 import { blockedPositionRects } from '../../render/labelOps'
@@ -80,6 +81,34 @@ describe.each([['horizontal rows', false], ['vertical rows', true]])('NA — %s'
       const u = usableCapacity(all, { profile: REACH, gridSize: GS })
       expect(u.inRackLost + u.pickZoneLost + u.narrowLost).toBeLessThanOrEqual(48 + u.inRackLost)
       expect(u.usable).toBe(u.gross - u.inRackLost - u.pickZoneLost - u.narrowLost)
+    })
+
+    // ── each position judged on its own slot (the capacity count's slots), not the whole bay ──
+    it(`NA-slot-zone${tag}: a washroom 9' in front of a pair, ending 1" into the second bay's first position — bay 1's positions and that one blocked, its second position (open floor in front) usable; ending 1" into the second position blocks it too`, () => {
+      const objs = two(9).filter(o => o.id !== 'b'), r = objs.find(o => o.id === 'a'), f = rackFootprint(r)
+      const slots = positionRunSpans(r, GS), run = (b) => (vert ? [b.y, b.y + b.h] : [b.x, b.x + b.w])
+      const [r0] = run(f), s0 = vert ? f.x : f.y
+      // the bays in run order: the second bay's slots, low end first
+      const second = [...slots.entries()].map(([bay, list]) => ({ bay, list: [...list].sort((p, q) => p.a - q.a) })).sort((p, q) => p.list[0].a - q.list[0].a)[1]
+      for (const [into, blocked] of [[second.list[0].a + GS / 12, [second.list[0].p]], [second.list[1].a + GS / 12, [second.list[0].p, second.list[1].p]]]) {
+        const zb = vert ? { x: s0 - 9 * GS - 4 * GS, y: r0, w: 4 * GS, h: into - r0 } : { x: r0, y: s0 - 9 * GS - 4 * GS, w: into - r0, h: 4 * GS }
+        const all = [...objs, { id: 'wz', type: 'zone_washroom', label: 'Washroom', x: zb.x, y: zb.y, width: zb.w, height: zb.h }]
+        const blocks = narrowAisleBlocks(all, { profile: REACH, gridSize: GS })
+        const inSecond = blocks.filter(b => b.bayIndex === second.bay).flatMap(b => b.positionIndices).sort()
+        expect([blocked.length, inSecond]).toEqual([blocked.length, [...blocked].sort()])
+        const total = blocks.reduce((t, b) => t + b.positionsLost, 0)
+        expect(usableCapacity(all, { profile: REACH, gridSize: GS }).narrowLost).toBe(total)
+        expect(total).toBe((2 + blocked.length) * 4)                                     // bay 1's two positions + those, 4 levels
+      }
+    })
+
+    it(`NA-slot-rack${tag}: two pairs 9' apart, the second shifted 1.5 bays along — only the positions facing the stretch they share are blocked: 3 on one face, 4 on the other (the stretch runs to the end of the first rack's last upright, 3.5\" into the next slot — any overlap blocks), not every bay`, () => {
+      const objs = two(9), pitch = (99 / 12) * GS, d = 1.5 * pitch
+      const shifted = objs.map(o => (o.id === 'b' ? (vert ? { ...o, y: o.y + d } : { ...o, x: o.x + d }) : o))
+      const blocks = narrowAisleBlocks(shifted, { profile: REACH, gridSize: GS })
+      const per = (id) => blocks.filter(b => b.rackId === id).reduce((t, b) => t + b.positionIndices.length, 0)
+      expect([per('a'), per('b')].sort()).toEqual([3, 4])
+      expect(usableCapacity(shifted, { profile: REACH, gridSize: GS }).narrowLost).toBe(7 * 4)
     })
   }
 

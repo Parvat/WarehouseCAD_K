@@ -6251,6 +6251,13 @@ pick width (a warning).
 Fix:      generate/narrowAisles.js: every bay of such a face gets the column pick-zone X mark and its positions come off
 usable; the label stays amber / red; Check layout keeps only the rack-to-rack drive-width error. Tests: area NA.
 
+## BUG 85 — narrow-aisle X marks judged per bay: a bay partly in front of a zone loses both positions  (2026-10-12, fixed 2026-10-12)
+Symptom:  Hand check on 1545e7f: the bottom row's third bay overlaps the washroom by its left end only, yet both its
+positions were X-marked; the right one has open floor in front.
+Cause:    narrowAisleBlocks took every position of a bay a narrow stretch touched.
+Fix:      each position judged on its own slot (capacity.js slots): a zone / the wall in front of that slot within the
+pick width, or the shared rack-to-rack stretch over it. Washroom case: −32 → −24 usable. Tests: NA-slot-zone, -rack.
+
 ## Template for new entries
 
 ```

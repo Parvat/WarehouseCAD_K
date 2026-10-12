@@ -20,6 +20,7 @@ import { rackFootprint, aisleLevel, rowAisleLevel, AISLE_MIN_FT, MHE_PROFILES } 
 import { uprightXs } from '../render/rackOps'
 import { innerOutline, floorSection } from '../utils/floorGeom'
 import { fmtLenDown } from '../utils/copyChange'
+import { positionFootprintIn, positionsPerBeam } from '../utils/capacity'
 
 const E = 1e-6
 const BEAM = new Set(['rack_row', 'rack_double_row'])
@@ -40,6 +41,29 @@ export function bayRunSpans(r, gridSize = 40) {
   return spans.sort((p, q) => p.a - q.a)
 }
 
+/** A right-angled rack's pallet positions as world run spans: Map(bay → [{ p, a, c }]) — each position's own slot (the
+ *  slots the capacity count uses, capacity.js positionFootprintIn), turned about the rack's centre as its bays are. */
+export function positionRunSpans(r, gridSize = 40) {
+  const f = rackFootprint(r), vert = !!f.rotated
+  const { xs, upW, beams } = uprightXs(r, gridSize)
+  const t = ((r.rotation || 0) * Math.PI) / 180, cos = Math.cos(t), sin = Math.sin(t)
+  const cx = r.x + r.width / 2, cy = r.y + r.height / 2
+  const runAt = (lx) => (vert ? cy + (lx - cx) * sin : cx + (lx - cx) * cos)
+  const px = (inches) => (inches / 12) * gridSize, palletWIn = r.palletWIn || 40
+  const out = new Map()
+  beams.forEach((beamIn, bay) => {
+    const list = []
+    for (let p = 0; p < positionsPerBeam(beamIn, palletWIn); p++) {
+      const fpIn = positionFootprintIn(beamIn, palletWIn, p)
+      if (!fpIn) continue
+      const u = runAt(xs[bay] + upW + px(fpIn.startIn)), v = runAt(xs[bay] + upW + px(fpIn.endIn))
+      list.push({ p, a: Math.min(u, v), c: Math.max(u, v) })
+    }
+    out.set(bay, list)
+  })
+  return out
+}
+
 /** The face index (capacity.js / the X marks: 0 the rack's local top side, 1 its bottom) of a pair's face on its
  *  world side `side` ('lo' | 'hi' across its rows); a single has one face, 0. */
 export function faceIndex(r, side) {
@@ -50,7 +74,7 @@ export function faceIndex(r, side) {
   return (side === 'lo') === topFacesLo ? 0 : 1
 }
 
-/** The failing aisles in front of faces with a zone or a wall across them: [{ rack, side ('lo' | 'hi' across), face (faceIndex), bays (its own bay indices),
+/** The failing aisles in front of faces with a zone or a wall across them: [{ rack, side ('lo' | 'hi' across), face (faceIndex), bays (its own bay indices), slots ({ bay: [positions with the obstacle in front of their own slot] }),
  *  obstacle ({ kind: 'zone', zone } | { kind: 'wall' }), width (px, the stretch's narrowest), level (1 | 2),
  *  vert (the rows run along y), box (world px: the strip from the face to the obstacle, the stretch long) }]. */
 export function faceObstacleGaps(objects, { gridSize = 40, profile = MHE_PROFILES.reach } = {}) {
@@ -74,6 +98,8 @@ export function faceObstacleGaps(objects, { gridSize = 40, profile = MHE_PROFILE
     const [s0, s1] = S(f), poly = polyOf(r)
     // the bays' run spans (world), in run order, with their own bay index
     const bays = bayRunSpans(r, gridSize), spans = bays.map(b => [b.a, b.c])
+    let slotCache = null
+    const slotsOf = () => slotCache || (slotCache = positionRunSpans(r, gridSize))
     /** What stands nearest in front of `face` (across) over the run span [a, c], `dir` +1 / −1: { d, kind, zone }. */
     const nearest = (face, dir, a, c) => {
       let best = { d: Infinity, kind: null, zone: null }
@@ -124,7 +150,14 @@ export function faceObstacleGaps(objects, { gridSize = 40, profile = MHE_PROFILE
         if (level < 3) {
           const a = spans[i][0], c = spans[j][1], face = side === 'lo' ? s0 : s1, o0 = side === 'lo' ? face - width : face
           const box = vert ? { x: o0, y: a, w: width, h: c - a } : { x: a, y: o0, w: c - a, h: width }
-          out.push({ rack: r, side, obstacle: n.kind === 'zone' ? { kind: 'zone', zone: n.zone } : { kind: 'wall' }, width, level, vert, box, bays: bays.slice(i, j + 1).map(b => b.i), face: faceIndex(r, side) })
+          // each position judged on its own slot: blocked only where a zone or the wall stands in front of THAT slot,
+          // within the pick width (a bay only partly in front of the zone keeps the positions with open floor)
+          const slotsAll = slotsOf(), dir = side === 'lo' ? -1 : 1, slots = {}
+          for (const b of bays.slice(i, j + 1)) {
+            const ps = (slotsAll.get(b.i) || []).filter(q => { const m = nearest(face, dir, q.a, q.c); return (m.kind === 'zone' || m.kind === 'wall') && m.d < aislePx - 1e-6 }).map(q => q.p)
+            if (ps.length) slots[b.i] = ps
+          }
+          out.push({ rack: r, side, obstacle: n.kind === 'zone' ? { kind: 'zone', zone: n.zone } : { kind: 'wall' }, width, level, vert, box, bays: bays.slice(i, j + 1).map(b => b.i), face: faceIndex(r, side), slots })
         }
         i = j + 1
       }

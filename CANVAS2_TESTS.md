@@ -1928,7 +1928,7 @@ to narrow aisles."; `PC-group` ×2 — "… 1 will have warnings." → "… 1 wi
 "Apply to the other 3 rows? 688 positions lost to narrow aisles.", the rows outlined orange; Auto apply: "Applied to 3 rows ·
 688 positions lost to narrow aisles".
 
-### NA — A face with less than the pick width in front of it loses its positions · `NA_narrowAisles.test.js` (20 tests)
+### NA — A face with less than the pick width in front of it loses its positions · `NA_narrowAisles.test.js` (28 tests)
 Code: `narrowAisleBlocks`, `blockedKeys` (generate/narrowAisles.js, new); `bayRunSpans`, `faceIndex` (generate/faceAisles.js);
 `usableCapacity` (generate/usableCapacity.js — `narrowLost`); the X marks on the canvas (Overlays.jsx) and in the PDF
 (export/pdfExport.js); Check layout's aisle items (utils/layoutCheck.js); the Generate panel's caption.
@@ -1969,8 +1969,19 @@ AX-short, LC-aisle, -click, -highlight, -zoom, -live, -recheck, NA-drive, RG-war
 (30). The loss not off usable: LC-aisle, NA-pick, NA-once, ZF-face-zone (12). A column's positions counted twice: NA-once
 (4). The X marks on the far face: NA-pick, NA-once (8).
 
+**Per position (follow-up, BUG 85).** Each pallet position is judged on its own slot (`positionRunSpans`, faceAisles.js —
+the slots the capacity count uses, capacity.js positionFootprintIn): blocked only if a zone or the wall stands in front of
+THAT slot within the pick width, or, rack-to-rack, if the slot overlaps the stretch the two rows share; any overlap blocks,
+none leaves it usable. A bay only partly in front of a zone keeps its open position. Column pick-zone marks unchanged.
+Changed: `PC-group` ×2 — "8 positions lost to narrow aisles" → "4" (row 14's new bay faces the custom area with one of its
+two positions; the narrow row's 8 → 4).
+| `NA-slot-zone` ×4 | a washroom ending 1" into the second bay's first position: bay 1 + that position blocked, the second usable; 1" into the second: both |
+| `NA-slot-rack` ×4 | the facing pair shifted 1.5 bays: 3 positions on one face, 4 on the other (the stretch runs to the first rack's end upright, 3.5" into the next slot), 28 off usable |
+**Break-it (per position):** judged per bay again: NA-slot-zone, NA-slot-rack, PC-group (10).
+
 **Checked in the app** (real mouse, the washroom case — a washroom 9' 9" in front of a pair, the fixture's racks by hand, H
-and V): usable 10,232 → 10,200 (H) and 10,648 → 10,616 (V), −32, the face's positions; X marks on the facing bays along the
+and V): per bay usable 10,232 → 10,200 (H) and 10,648 → 10,616 (V), −32; per position 10,232 → 10,208 and 10,648 → 10,624,
+−24 — the two end positions the washroom doesn't reach stay usable; X marks on the facing bays along the
 washroom (0 → 4 mark groups); the "9' 9"" label amber; Check layout lists nothing about that aisle.
 
 ### ZF — Zone follow-ups: size when selected, faces graded against zones and walls, takeover of split singles · `ZF_zoneFollowUps.test.js` (18 tests)
