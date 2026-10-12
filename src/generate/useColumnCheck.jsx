@@ -52,7 +52,7 @@ export const conflictKey = c => `${c.rackId}:${c.columnIndex}`
    of them really changed. A rack's key is everything on it except the fields
    below, which are selection / bookkeeping, not geometry; it is cached per
    object, so an edit re-keys only the racks it touched. */
-const NOT_GEOMETRY = new Set(['activeBayIdx', 'activeTowerIdx', 'rowIndex', 'genSection', 'genRunFt', 'genCrossFt', 'pieceOf'])
+const NOT_GEOMETRY = new Set(['activeBayIdx', 'activeBaySide', 'activeTowerIdx', 'rowIndex', 'genSection', 'genRunFt', 'genCrossFt', 'pieceOf'])
 const keyOf = new WeakMap()
 export const rackGeometryKey = (r) => {
   let k = keyOf.get(r)

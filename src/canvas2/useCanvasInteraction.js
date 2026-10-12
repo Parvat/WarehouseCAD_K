@@ -4,6 +4,7 @@ import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
 import { handleHitTest, cursorForHandle, hasResizeHandles } from './handleGeometry'
 import { finishAreaResize } from '../utils/rackingAreaTool'
+import { bayHalfAt } from '../utils/baySides'
 import { useZoneEdit } from './ZoneEdit'
 import { clampResizeUpdates, clampDragDelta } from '../utils/floorClamp'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
@@ -119,7 +120,7 @@ export function useCanvasInteraction({
       for (const id of prevSelectedIds) {
         const prev = st.objects.find(o => o.id === id)
         if (!prev) continue
-        if (prev.activeBayIdx != null) st.updateObject(id, { activeBayIdx: null })
+        if (prev.activeBayIdx != null) st.updateObject(id, { activeBayIdx: null, activeBaySide: null })
         if (prev.activeTowerIdx != null) st.updateObject(id, { activeTowerIdx: null })
       }
     }
@@ -139,10 +140,14 @@ export function useCanvasInteraction({
     const curIdx = isCant ? live.activeTowerIdx : live.activeBayIdx
     const bay = hitTestBay(live, world.x, world.y, st.gridSize)
     if (bay != null) {
-      const newIdx = curIdx === bay ? null : bay
-      st.updateObject(hitId, isCant ? { activeTowerIdx: newIdx } : { activeBayIdx: newIdx })
+      /* a pair's bay is picked on the half clicked (utils/baySides.js): the same bay on the same side again
+         unpicks it, the other side switches to it; the flue picks both */
+      const side = isCant ? null : bayHalfAt(live, world.x, world.y, st.gridSize)
+      const same = curIdx === bay && (isCant || (live.activeBaySide ?? null) === side)
+      const newIdx = same ? null : bay
+      st.updateObject(hitId, isCant ? { activeTowerIdx: newIdx } : { activeBayIdx: newIdx, activeBaySide: newIdx == null ? null : side })
     } else if (curIdx != null) {
-      st.updateObject(hitId, isCant ? { activeTowerIdx: null } : { activeBayIdx: null })
+      st.updateObject(hitId, isCant ? { activeTowerIdx: null } : { activeBayIdx: null, activeBaySide: null })
     }
   }
 
@@ -1284,8 +1289,8 @@ export function useCanvasInteraction({
         const bay = hit && (hit.type === 'rack_row' || hit.type === 'rack_double_row')
           ? hitTestBay(hit, m.from.x, m.from.y, st.gridSize) : null
         if (bay != null && (inBayMode(st) || isStickyBayMode())) {
-          const next = toggleBaySelection(st, hit.id, bay)
-          for (const o of st.objects) if (o.activeBayIdx != null) st.updateObject(o.id, { activeBayIdx: null })
+          const next = toggleBaySelection(st, hit.id, bay, bayHalfAt(hit, m.from.x, m.from.y, st.gridSize))
+          for (const o of st.objects) if (o.activeBayIdx != null) st.updateObject(o.id, { activeBayIdx: null, activeBaySide: null })
           st.setBaySelection(next.entries)
           st.selectGroup(next.selectedIds)
           setStickyBayMode(true)

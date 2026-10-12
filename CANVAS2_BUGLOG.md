@@ -6258,6 +6258,19 @@ Cause:    narrowAisleBlocks took every position of a bay a narrow stretch touche
 Fix:      each position judged on its own slot (capacity.js slots): a zone / the wall in front of that slot within the
 pick width, or the shared rack-to-rack stretch over it. Washroom case: −32 → −24 usable. Tests: NA-slot-zone, -rack.
 
+## BUG 86 — Row group: a pair grown over its whole carried-on single isn't replayed  (2026-10-12, fixed 2026-10-12)
+Symptom:  rows 12 and 14 grouped; "+ bay" twice on row 12's pair (its 2-bay single taken over whole) → "Not applied to
+the other rows: that kind of change isn't replayed."
+Cause:    the takeover removes the single in the same history entry; classifyEdit saw a rack with no successor.
+Fix:      a single inside the row's grown pair, gone in the action, counts as all its bays deleted next to the pair's
+appended bays; the target's own takeover follows. Test: BS-group.
+
+## BUG 87 — a rack drawn over a zone can't be clicked there: the zone takes the click  (2026-10-12, fixed 2026-10-12)
+Symptom:  row 12's pair grown into the custom area; a click on its bays over the zone selected the zone, so those bays
+could not be picked (found on the one-side delete mouse check).
+Cause:    hitTest's first pass takes objects in array order; the zone came before the rack though drawn under it.
+Fix:      zones ranked below other objects in that pass (Zones layer under Racking). Test: BS-zone-pick.
+
 ## Template for new entries
 
 ```

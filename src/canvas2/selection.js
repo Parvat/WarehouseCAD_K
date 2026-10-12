@@ -215,12 +215,21 @@ export function bayEntriesInMarquee(objects = [], rect, gridSize = 40) {
       minY = Math.min(...pts.map(p => p[1])); maxY = Math.max(...pts.map(p => p[1]))
     }
     if (b.y > maxY || b.y + b.height < minY) return   // row not in Y range
+    /* a pair: a marquee across only one half (its local top band — face 0 — or its bottom, face 1) picks the bays
+       on that side only (utils/baySides.js); across the flue, both */
+    let side = null
+    if (obj.type === 'rack_double_row') {
+      const flue = ((obj.flueSpaceIn ?? 9) / 12) * gridSize, rowH = (obj.height - flue) / 2
+      const top = minY < obj.y + rowH && maxY > obj.y, bottom = maxY > obj.y + obj.height - rowH && minY < obj.y + obj.height
+      if (top && !bottom) side = 0
+      else if (bottom && !top) side = 1
+    }
     const upW = ((obj.uprightWidth || 3) / 12) * gridSize
     let cursor = obj.x + upW
     obj.beams.forEach((beamIn, i) => {
       const beamPx = (beamIn / 12) * gridSize
       const bayX0 = cursor, bayX1 = cursor + beamPx
-      if (bayX0 < maxX && bayX1 > minX) bayEntries.push({ objId: obj.id, bayIdx: i })
+      if (bayX0 < maxX && bayX1 > minX) bayEntries.push({ objId: obj.id, bayIdx: i, ...(side != null ? { side } : {}) })
       cursor = bayX1 + upW
     })
   })
@@ -249,18 +258,20 @@ export function inBayMode({ activeBaySelection = [], selectedIds = [], objects =
  *  selected bay is selected, a rack whose last selected bay was toggled off
  *  drops out; other selected objects are left alone. Returns
  *  { entries, selectedIds }. */
-export function toggleBaySelection({ activeBaySelection = [], selectedIds = [], objects = [] }, objId, bayIdx) {
+export function toggleBaySelection({ activeBaySelection = [], selectedIds = [], objects = [] }, objId, bayIdx, side = null) {
   const entries = activeBaySelection.map(e => ({ ...e }))
   if (!entries.length) {
     for (const o of objects) {
       if (o && selectedIds.includes(o.id) && BAY_PICK_TYPES.has(o.type) && o.activeBayIdx != null) {
-        entries.push({ objId: o.id, bayIdx: o.activeBayIdx })
+        entries.push({ objId: o.id, bayIdx: o.activeBayIdx, ...(o.activeBaySide === 0 || o.activeBaySide === 1 ? { side: o.activeBaySide } : {}) })
       }
     }
   }
-  const at = entries.findIndex(e => e.objId === objId && e.bayIdx === bayIdx)
+  // a pair's bay is picked per side (utils/baySides.js): the same bay on the other side is another entry
+  const sd = side === 0 || side === 1 ? side : null
+  const at = entries.findIndex(e => e.objId === objId && e.bayIdx === bayIdx && (e.side ?? null) === sd)
   if (at >= 0) entries.splice(at, 1)
-  else entries.push({ objId, bayIdx })
+  else entries.push({ objId, bayIdx, ...(sd != null ? { side: sd } : {}) })
   const withBays = new Set(entries.map(e => e.objId))
   const isBayRack = (id) => BAY_PICK_TYPES.has(objects.find(o => o && o.id === id)?.type)
   const ids = selectedIds.filter(id => !isBayRack(id) || withBays.has(id))

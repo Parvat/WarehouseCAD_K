@@ -273,8 +273,10 @@ function HitPad({ obj, gridSize, listening }) {
  *  inventing a new visual for types that have none there. */
 function activeBayRects(obj, gridSize) {
   const i = obj.type === 'rack_cantilever' ? obj.activeTowerIdx : obj.activeBayIdx
-  return bayRectForIndex(obj, gridSize, i)
+  return sideOf(obj, bayRectForIndex(obj, gridSize, i), obj.activeBaySide)
 }
+/** A pair's bay picked on one side (utils/baySides.js): only that half's band (0 the local top, 1 the bottom). */
+const sideOf = (obj, rects, side) => (obj.type === 'rack_double_row' && (side === 0 || side === 1) && rects.length === 2 ? [rects[side]] : rects)
 
 /** Every bay/tower this object has entries for in the store's
  *  activeBaySelection — the cross-row MARQUEE selection (BUG 29), not the
@@ -289,7 +291,7 @@ function multiBaySelectionRects(obj, gridSize, activeBaySelection) {
   const out = []
   activeBaySelection.forEach(e => {
     if (e.objId !== obj.id) return
-    out.push(...bayRectForIndex(obj, gridSize, e.bayIdx))
+    out.push(...sideOf(obj, bayRectForIndex(obj, gridSize, e.bayIdx), e.side))
   })
   return out
 }

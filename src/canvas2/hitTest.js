@@ -226,6 +226,9 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
     (o.type?.startsWith('annot_') || o.type === 'text') ? 2
       : FP_SET.has(o.type) ? 0
       : COL_GRID.has(o.type) ? 0.5
+      /* a zone is drawn on the Zones layer, under the racks: a rack standing in one (a pair grown into it) is
+         picked where it is drawn over it, not the zone behind it (BUG 87) */
+      : (typeof o.type === 'string' && o.type.startsWith('zone_')) ? 0.75
       : 1
   const sorted = [...objects].sort((a, b) => priority(b) - priority(a))
 

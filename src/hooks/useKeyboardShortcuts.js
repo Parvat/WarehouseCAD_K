@@ -8,6 +8,7 @@ import { useRowGroup, clearGroup, cancelGroupBox, ROW_GROUP_TOOL } from '../util
 import { FILL_TOOL, cancelFill } from '../utils/fillTool'
 import { SPLIT_TOOL, useSplit } from '../utils/splitTool'
 import { pickableIn } from '../utils/layers'
+import { deleteBaySelection } from '../utils/baySides'
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -39,6 +40,8 @@ export function useKeyboardShortcuts() {
       if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
         e.preventDefault()
         const s = useCanvasStore.getState()
+        // a pair's bays picked on one side: removed from that side only (utils/baySides.js), one undo step
+        if (deleteBaySelection(useCanvasStore, nanoid)) return
         const { selectedIds, objects, activeBaySelection } = s
         /* A cross-row bay marquee (activeBaySelection, canvas2's own
            marquee-mouseup) takes priority over the single-object

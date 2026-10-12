@@ -1,3 +1,4 @@
+import { deleteBaySelection } from '../../../utils/baySides'
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { useState } from 'react'
@@ -174,7 +175,8 @@ export function MultiBayPanel() {
      gone, so is the selection that picked them," not "now select the
      whole rows instead." Kept as a wrapper here rather than a change to
      the protected deleteSelectedBays action itself. */
-  const deleteSelectedBaysAndClear = () => { deleteSelectedBays(); clearSelection() }
+  // a pair's bays picked on one side go from that side only (utils/baySides.js); otherwise the store's own delete
+  const deleteSelectedBaysAndClear = () => { if (deleteBaySelection(useCanvasStore, nanoid)) return; deleteSelectedBays(); clearSelection() }
 
   const fmtIn = fmtFtIn
   const warnFor = (b) => cachedWarn(objects, `multi|${gridSize}|${JSON.stringify(activeBaySelection)}|${b}`,
@@ -388,7 +390,7 @@ export function RackRowPanel({ obj }) {
               <div key={i}
                 onClick={() => {
                   const newBay = activeBay === i ? null : i
-                  updateObject(obj.id, { activeBayIdx: newBay })
+                  updateObject(obj.id, { activeBayIdx: newBay, activeBaySide: null })   // from the list: the whole bay, both sides
                 }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,

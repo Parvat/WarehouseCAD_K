@@ -229,7 +229,7 @@ describe('V — Shift+click toggles single bays in a bay selection', () => {
 
   it('V-wire: the canvas Shift+click path toggles a bay in bay mode, and bay mode is sticky until a plain click', () => {
     const src = readFileSync(new URL('../../canvas2/useCanvasInteraction.js', import.meta.url), 'utf8')
-    expect(src).toMatch(/if \(bay != null && \(inBayMode\(st\) \|\| isStickyBayMode\(\)\)\) \{\s*const next = toggleBaySelection\(st, hit\.id, bay\)/)
+    expect(src).toMatch(/if \(bay != null && \(inBayMode\(st\) \|\| isStickyBayMode\(\)\)\) \{\s*const next = toggleBaySelection\(st, hit\.id, bay[,)]/)
     expect(src).toMatch(/st\.setBaySelection\(next\.entries\)\s*st\.selectGroup\(next\.selectedIds\)\s*setStickyBayMode\(true\)/)
     expect(src).toMatch(/if \(!shiftKey\) setStickyBayMode\(false\)/)
   })

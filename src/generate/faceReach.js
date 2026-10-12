@@ -66,28 +66,43 @@ export function dropUnreachableFaces(racks, { poly, zones = [], aislePx, gridSiz
       return hA && hB ? 'D' : hA ? 'A' : hB ? 'B' : '-'
     })
     if (state.every(s => s === 'D')) { out.push(r); continue }
-    const upIn = r.uprightWidth || 3
-    let first = true
-    for (let i = 0; i < state.length;) {
-      let j = i
-      while (j + 1 < state.length && state[j + 1] === state[i]) j++
-      const st = state[i]
-      if (st !== '-') {
-        const pieceBeams = beams.slice(i, j + 1)
-        const width = ((upIn * (pieceBeams.length + 1) + pieceBeams.reduce((p, q) => p + q, 0)) / 12) * gridSize
-        const [ly0, ly1] = st === 'A' ? [top, top + depthPx] : st === 'B' ? [bot - depthPx, bot] : [top, bot]
-        const c = T(xs[i] + width / 2, (ly0 + ly1) / 2), h = ly1 - ly0
-        out.push({
-          ...r,
-          id: first ? r.id : newId(),
-          ...(first ? {} : { pieceOf: r.id }),
-          beams: pieceBeams, width, height: h, x: c.x - width / 2, y: c.y - h / 2, activeBayIdx: null,
-          ...(st === 'A' || st === 'B' ? { type: 'rack_row', label: 'Rack Row', flueSpaceIn: 0, flueBaseIn: 0 } : {}),
-        })
-        first = false
-      }
-      i = j + 1
+    out.push(...piecesFromStates(r, state, { gridSize, newId }))
+  }
+  return out
+}
+
+/** A beam rack rebuilt from a per-bay state (its own bay order): 'D' the bay kept whole, 'A' only its local top half
+ *  (face 0) kept, 'B' only its bottom half (face 1), '-' gone. Runs of one state become one piece: whole, or a single
+ *  row on that half — a single carrying on from a pair's last frame shares that frame, as a real rack does. The first
+ *  piece keeps the rack's id, the others get `newId()` and `pieceOf`. Shared by the face rule above and a one-side
+ *  bay delete (utils/baySides.js). */
+export function piecesFromStates(r, state, { gridSize = 40, newId }) {
+  const T = toWorld(r)
+  const { xs, beams } = uprightXs(r, gridSize)
+  const top = r.y, bot = r.y + r.height
+  const depthPx = ((r.depthIn ?? 42) / 12) * gridSize
+  const upIn = r.uprightWidth || 3
+  const out = []
+  let first = true
+  for (let i = 0; i < state.length;) {
+    let j = i
+    while (j + 1 < state.length && state[j + 1] === state[i]) j++
+    const st = state[i]
+    if (st !== '-') {
+      const pieceBeams = beams.slice(i, j + 1)
+      const width = ((upIn * (pieceBeams.length + 1) + pieceBeams.reduce((p, q) => p + q, 0)) / 12) * gridSize
+      const [ly0, ly1] = st === 'A' ? [top, top + depthPx] : st === 'B' ? [bot - depthPx, bot] : [top, bot]
+      const c = T(xs[i] + width / 2, (ly0 + ly1) / 2), h = ly1 - ly0
+      out.push({
+        ...r,
+        id: first ? r.id : newId(),
+        ...(first ? {} : { pieceOf: r.id }),
+        beams: pieceBeams, width, height: h, x: c.x - width / 2, y: c.y - h / 2, activeBayIdx: null, activeBaySide: null,
+        ...(st === 'A' || st === 'B' ? { type: 'rack_row', label: 'Rack Row', flueSpaceIn: 0, flueBaseIn: 0 } : {}),
+      })
+      first = false
     }
+    i = j + 1
   }
   return out
 }

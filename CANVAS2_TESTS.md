@@ -1907,6 +1907,46 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (21 tests)
+Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
+`piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click
+(canvas2/useCanvasInteraction.js), Shift+click and the bay marquee (canvas2/selection.js), the half-only highlight
+(canvas2/shapes.jsx), Delete (hooks/useKeyboardShortcuts.js) and the multi-bay panel's Delete; Row group kind
+`side-delete` (utils/rowGroup.js `sideDeleteOf` / `sideDeleteOn`).
+
+A click on a pair's bay picks it on the half clicked (`activeBaySide` 0 = local top band, 1 = bottom; the flue: both);
+Shift+click and a bay marquee inside one band carry the side (`{ objId, bayIdx, side }`). Delete takes those bays off
+that side only: the pair splits at that upright, the other half carries on as a single sharing it. The same bay on
+both sides, a pick with no side, the whole rack, a single row: the store's own delete, as before. One undo step.
+The Row group replays it on the same side across the floor (a pair's half facing that way; a single standing on that
+side of its row). Per-bay beam changes and the bay panel act on the whole bay — the pair has one beam list; a bay
+picked from the panel's list has no side (both).
+
+| Test | What |
+|---|---|
+| `BS-pick` ×2 | band 0, band 1, the flue (null); a single row has no side |
+| `BS-shift` ×2 | Shift+click entries keyed by side; a clicked bay folds in with its side; the flue: no side |
+| `BS-marquee` ×2 | a marquee inside one band: that side; across the flue: both |
+| `BS-delete` ×2 | the user's case: row 12's pair over its single (14 bays), the two far bays on the other side deleted → pair 9' → 108.25' (12) + single 108' → 124.75' (2) on its old side; bays, positions, ledger frames as before the takeover; no overlap; one entry, one undo |
+| `BS-click-delete` ×2 | one clicked bay on side 1 → that side only |
+| `BS-both` ×2 | both sides / no side → not one-sided, the store's delete takes them whole |
+| `BS-middle` ×2 | two middle bays on side 0 → pair + single + pair; same bay count, two half-bays of positions off |
+| `BS-beam` ×2 | a one-side pick's beam change changes the whole bay; picking a side is no history and no Row group edit |
+| `BS-group` ×2 | rows 12 and 14, Auto apply: row 14 loses the same bays on the same side across the floor; one entry (also BUG 86: the takeover-whole extension is replayed) |
+| `BS-group-ask` ×2 | Ask: "Apply to the other 1 row?"; uprights shifted 1' → skipped, "uprights don't line up" |
+| `BS-zone-pick` | BUG 87: a click on the pair where it stands in the custom area picks the pair; the zone's own floor, the zone |
+
+Changed: `V-wire` — the Shift+click source regex allows the side argument (`toggleBaySelection(st, hit.id, bay, …)`).
+
+**Break-its:** no band 0: BS-pick, BS-click-delete (4). One side deletes both: BS-delete, -click-delete, -middle,
+-group, -group-ask (10). Marquee without side: BS-marquee (2). Shift+click ignoring side: BS-shift (2). Row group on
+the other face: BS-group (2). BUG 86 fix off: BS-group (2). Zones ranked with racks in hitTest: BS-zone-pick (1).
+
+**Checked in the app** (real mouse, H and V): row 12's pair "+ bay" twice (takes over its single), click its bay 13
+on the half the single wasn't on → only that half highlighted; Shift+click bay 14 → "2 bays selected across 1 row";
+Delete → pair 9' → 108.25' (12 bays) + single 108' → 124.75' (2) on its old side, one history entry; Ctrl+Z → the
+14-bay pair. V usable 10,648, as the fixture.
+
 ### RN — The Row group says what an apply loses to narrow aisles · (in `RG_rowGroup`, `PD_placeDrag`, `PC_pairCarryOn`)
 Code: `markWarnings` / `planSummary` / `previewRects` (utils/rowGroup.js), `resultLine` (utils/rowGroupTool.js).
 
