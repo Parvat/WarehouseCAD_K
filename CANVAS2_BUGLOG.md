@@ -6244,6 +6244,13 @@ racks to the box — meant for a box made smaller, applied to an unchanged one.
 Fix:      only a changed box trims. (Also: the bar's zone note is cleared when a layout is opened or undone.)
 Tests: ZF-refit-keeps.
 
+## BUG 84 — an aisle under the pick width is a Check layout warning, but its positions still count as usable  (2026-10-12, fixed 2026-10-12)
+Symptom:  Hand check on 555ac09: a face with less than the pick width to a zone or wall listed as a Check layout item,
+while the positions on it — which no truck can pick — stayed in usable. The same for rack-to-rack aisles under the
+pick width (a warning).
+Fix:      generate/narrowAisles.js: every bay of such a face gets the column pick-zone X mark and its positions come off
+usable; the label stays amber / red; Check layout keeps only the rack-to-rack drive-width error. Tests: area NA.
+
 ## Template for new entries
 
 ```

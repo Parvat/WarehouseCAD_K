@@ -12,8 +12,8 @@
 //     run span (a zone covering part of the bay counts for it); runs of bays with the same obstacle form a
 //     stretch, read at its narrowest;
 //   - a face with a RACK nearest in front is the rack-to-rack aisle's business, not graded here.
-// Only failing stretches come back (level 1 / 2). Read by Check layout (its aisle items), the aisle width
-// labels on the canvas and in the PDF (faceAisleLabels), and through Check layout the Row group's warnings.
+// Only failing stretches come back (level 1 / 2). Read by the aisle width labels on the canvas and in the PDF
+// (faceAisleLabels) and by narrowAisles.js: every bay of such a face loses its positions (X marks, off usable).
 // Pure.
 
 import { rackFootprint, aisleLevel, rowAisleLevel, AISLE_MIN_FT, MHE_PROFILES } from './columnCheck'
@@ -28,7 +28,29 @@ const ZONE_NAME = { zone_office: 'Office', zone_staging: 'Staging', zone_washroo
 /** How a zone reads in a message: its own name, else its kind. */
 export const zoneName = (z) => (z.label && z.label.trim()) || ZONE_NAME[z.type] || 'Zone'
 
-/** The failing aisles in front of faces with a zone or a wall across them: [{ rack, side ('lo' | 'hi' across),
+/** A right-angled rack's bays as world run spans, in run order: [{ a, c, i }] — `i` the rack's own bay index. */
+export function bayRunSpans(r, gridSize = 40) {
+  const f = rackFootprint(r), vert = !!f.rotated
+  const { xs, upW } = uprightXs(r, gridSize)
+  const t = ((r.rotation || 0) * Math.PI) / 180, cos = Math.cos(t), sin = Math.sin(t)
+  const cx = r.x + r.width / 2, cy = r.y + r.height / 2
+  const runAt = (lx) => (vert ? cy + (lx - cx) * sin : cx + (lx - cx) * cos)
+  const spans = []
+  for (let i = 0; i + 1 < xs.length; i++) { const p = runAt(xs[i]), q = runAt(xs[i + 1] + upW); spans.push({ a: Math.min(p, q), c: Math.max(p, q), i }) }
+  return spans.sort((p, q) => p.a - q.a)
+}
+
+/** The face index (capacity.js / the X marks: 0 the rack's local top side, 1 its bottom) of a pair's face on its
+ *  world side `side` ('lo' | 'hi' across its rows); a single has one face, 0. */
+export function faceIndex(r, side) {
+  if (r.type !== 'rack_double_row') return 0
+  const t = ((r.rotation || 0) * Math.PI) / 180, vert = !!rackFootprint(r).rotated
+  // the local top side's outward normal, turned: (sin t, −cos t); 'lo' is −x (vertical rows) or −y
+  const topFacesLo = vert ? Math.sin(t) < 0 : Math.cos(t) > 0
+  return (side === 'lo') === topFacesLo ? 0 : 1
+}
+
+/** The failing aisles in front of faces with a zone or a wall across them: [{ rack, side ('lo' | 'hi' across), face (faceIndex), bays (its own bay indices),
  *  obstacle ({ kind: 'zone', zone } | { kind: 'wall' }), width (px, the stretch's narrowest), level (1 | 2),
  *  vert (the rows run along y), box (world px: the strip from the face to the obstacle, the stretch long) }]. */
 export function faceObstacleGaps(objects, { gridSize = 40, profile = MHE_PROFILES.reach } = {}) {
@@ -50,14 +72,8 @@ export function faceObstacleGaps(objects, { gridSize = 40, profile = MHE_PROFILE
     const f = foots.get(r.id), vert = !!f.rotated
     const R = (q) => (vert ? [q.y, q.y + q.h] : [q.x, q.x + q.w]), S = (q) => (vert ? [q.x, q.x + q.w] : [q.y, q.y + q.h])
     const [s0, s1] = S(f), poly = polyOf(r)
-    // the bays' run spans (world), in run order: each bay's local ends turned about the rack's centre
-    const { xs, upW } = uprightXs(r, gridSize)
-    const t = ((r.rotation || 0) * Math.PI) / 180, cos = Math.cos(t), sin = Math.sin(t)
-    const cx = r.x + r.width / 2, cy = r.y + r.height / 2
-    const runAt = (lx) => (vert ? cy + (lx - cx) * sin : cx + (lx - cx) * cos)
-    const spans = []
-    for (let i = 0; i + 1 < xs.length; i++) { const p = runAt(xs[i]), q = runAt(xs[i + 1] + upW); spans.push([Math.min(p, q), Math.max(p, q)]) }
-    spans.sort((p, q) => p[0] - q[0])
+    // the bays' run spans (world), in run order, with their own bay index
+    const bays = bayRunSpans(r, gridSize), spans = bays.map(b => [b.a, b.c])
     /** What stands nearest in front of `face` (across) over the run span [a, c], `dir` +1 / −1: { d, kind, zone }. */
     const nearest = (face, dir, a, c) => {
       let best = { d: Infinity, kind: null, zone: null }
@@ -108,7 +124,7 @@ export function faceObstacleGaps(objects, { gridSize = 40, profile = MHE_PROFILE
         if (level < 3) {
           const a = spans[i][0], c = spans[j][1], face = side === 'lo' ? s0 : s1, o0 = side === 'lo' ? face - width : face
           const box = vert ? { x: o0, y: a, w: width, h: c - a } : { x: a, y: o0, w: c - a, h: width }
-          out.push({ rack: r, side, obstacle: n.kind === 'zone' ? { kind: 'zone', zone: n.zone } : { kind: 'wall' }, width, level, vert, box })
+          out.push({ rack: r, side, obstacle: n.kind === 'zone' ? { kind: 'zone', zone: n.zone } : { kind: 'wall' }, width, level, vert, box, bays: bays.slice(i, j + 1).map(b => b.i), face: faceIndex(r, side) })
         }
         i = j + 1
       }

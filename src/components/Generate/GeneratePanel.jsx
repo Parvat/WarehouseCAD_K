@@ -296,7 +296,7 @@ export function GeneratePanel() {
               {result.total.toLocaleString()} <span style={{ fontSize: 11, color: 'var(--text3)' }}>·</span> {result.usable.toLocaleString()}
             </div>
             <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>
-              positions · usable after column losses
+              positions · usable after column and narrow-aisle losses
             </div>
             {result.horizontalTotal != null && (
               <div style={{

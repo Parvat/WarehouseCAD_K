@@ -15,6 +15,8 @@ import { GS } from './fixtures'
 import { REAL_LAYOUT } from './realLayout.fixture'
 import { planAreaCreate, planAreaResize } from '../../generate/rackingArea'
 import { faceObstacleGaps, faceAisleLabels } from '../../generate/faceAisles'
+import { narrowAisleBlocks } from '../../generate/narrowAisles'
+import { usableCapacity } from '../../generate/usableCapacity'
 import { rackFootprint, MHE_PROFILES } from '../../generate/columnCheck'
 import { checkLayout } from '../../utils/layoutCheck'
 import { takeOverCarriedBays } from '../../utils/pairCarryOn'
@@ -64,18 +66,25 @@ describe.each(ORIENT)('ZF — %s', (_, vert) => {
     expect(selectedZones(objs, [r.id])).toEqual([])
   })
 
-  it('ZF-face-zone: the user\'s case — a washroom 9\' 9" in front of a pair\'s face (its half put back by hand): amber, "Aisle between row … and the washroom: 9\' 9", needs 10\' 6" to pick", its label amber; 7\' → red, "needs 8\' to drive"; 11\' → nothing', () => {
-    for (const [ft, sev, lvl, text] of [[9.75, 'warning', 2, /and the washroom: 9' 9", needs 10' 6" to pick$/], [7, 'error', 1, /and the washroom: 7', needs 8' to drive$/], [11, null, 3, null]]) {
+  // (before the narrow-aisle change these were Check layout items: amber "… needs 10' 6" to pick", red "… needs 8' to drive")
+  it('ZF-face-zone: the user\'s case — a washroom 9\' 9" in front of a pair\'s face: not a Check layout item; every bay of that face along the washroom gets an X mark and its positions come off usable; the label amber; 7\' → the same, the label red; 11\' → nothing', () => {
+    for (const [ft, lvl] of [[9.75, 2], [7, 1], [11, 3]]) {
       const objs = fixture(vert, { hand: true }), { o, f } = midPair(objs), [r0, r1] = R(f, vert), [s0] = S(f, vert), rm = (r0 + r1) / 2
       const zb = boxRS(vert, rm - 12 * GS, rm + 12 * GS, s0 - ft * GS - 6 * GS, s0 - ft * GS)
       const all = [...objs, zone(zb)]
       const res = checkLayout(all, { gridSize: GS })
-      const items = [...res.errors, ...res.warnings].filter(e => e.ids.includes(o.id) && e.ids.includes('wz'))
+      expect([ft, [...res.errors, ...res.warnings].filter(e => e.ids.includes('wz') && /aisle/.test(e.kind))]).toEqual([ft, []])
       const labels = faceAisleLabels(all, GS).filter(L => L.rackId === o.id)
-      if (!sev) { expect([ft, items, labels]).toEqual([ft, [], []]); continue }
-      expect([ft, items.length, items[0].severity, items[0].kind]).toEqual([ft, 1, sev, lvl === 1 ? 'aisle-drive' : 'aisle-pick'])
-      expect(items[0].text).toMatch(text)
+      const marks = narrowAisleBlocks(all, { gridSize: GS }).filter(b => b.rackId === o.id)
+      const u = usableCapacity(all, { profile: MHE_PROFILES.reach, gridSize: GS }), u0 = usableCapacity(objs, { profile: MHE_PROFILES.reach, gridSize: GS })
+      if (lvl === 3) { expect([ft, labels, marks, u.usable]).toEqual([ft, [], [], u0.usable]); continue }
       expect(labels.map(L => [L.level, L.text])).toEqual([[lvl, lvl === 1 ? "7'" : `9' 9"`]])
+      // the bays along the washroom (24'), one face: every position on them, off usable
+      const bays = new Set(marks.map(b => b.bayIndex))
+      expect(marks.every(b => b.faces.length === 1 && b.faces[0] === marks[0].faces[0])).toBe(true)
+      expect(bays.size).toBeGreaterThanOrEqual(3)
+      expect(u0.usable - u.usable).toBe(marks.reduce((t, b) => t + b.positionsLost, 0))
+      expect(u.narrowLost).toBe(u0.usable - u.usable + u0.narrowLost)
     }
   })
 
@@ -91,7 +100,7 @@ describe.each(ORIENT)('ZF — %s', (_, vert) => {
     expect(R(gaps[0].box, vert).map(v => (v - r0) / GS)).toEqual([2 * 99 / 12, 3 * 99 / 12 + 0.25].map(v => expect.closeTo(v, 6)))
   })
 
-  it('ZF-face-wall: a pair whose face stands 5\' off the building\'s wall: red, "Aisle between … and the wall: 5\', needs 8\' to drive"; a single with its back to the wall is not graded', () => {
+  it('ZF-face-wall: a pair whose face stands 5\' off the building\'s wall: that face X-marked bay by bay, its positions off usable, the label red, no Check layout item (before: an error "… and the wall: 5\', needs 8\' to drive"); a single with its back to the wall is not graded', () => {
     const L = vert ? 60 : 100, W = vert ? 100 : 60
     const fp = { id: 'fp', type: 'fp_rect', x: 0, y: 0, width: L * GS, height: W * GS, wallThicknessFt: 0.25, fpVerts: [{ x: 0, y: 0 }, { x: L * GS, y: 0 }, { x: L * GS, y: W * GS }, { x: 0, y: W * GS }] }
     const ps = sizingSheetLayout({ lengthFt: L, widthFt: W, gridXFt: 0, gridYFt: 0, mhe: 'reach', rackType: 'rack_double_row', orientation: vert ? 'vertical' : 'horizontal', wallClearIn: 3, wallThicknessIn: 3 }, DEFAULT_RULES)
@@ -101,8 +110,11 @@ describe.each(ORIENT)('ZF — %s', (_, vert) => {
     const p = racks.find(r => r.type === 'rack_double_row'), g = rackFootprint(p), [ps0] = S(g, vert), d = (0.25 + 5) * GS - ps0
     const moved = racks.filter(r => r.type === 'rack_double_row' && r.id === p.id).map(r => (vert ? { ...r, x: r.x + d } : { ...r, y: r.y + d }))
     const res = checkLayout([fp, ...moved], { gridSize: GS })
-    const wall = res.errors.filter(e => e.kind === 'aisle-drive' && /and the wall: 5', needs 8' to drive$/.test(e.text))
-    expect(wall.length).toBe(1)
+    expect(res.errors.filter(e => /aisle/.test(e.kind))).toEqual([])
+    const marks = narrowAisleBlocks([fp, ...moved], { gridSize: GS })
+    expect(new Set(marks.map(b => b.bayIndex)).size).toBe(p.beams.length)                // every bay of that face
+    expect(faceAisleLabels([fp, ...moved], GS).map(L => [L.level, L.text])).toEqual([[1, "5'"]])
+    expect(usableCapacity([fp, ...moved], { profile: MHE_PROFILES.reach, gridSize: GS }).narrowLost).toBe(marks.reduce((t, b) => t + b.positionsLost, 0))
   })
 
   it('ZF-face-rack: a face with a rack nearest in front is the rack-to-rack aisle\'s, not graded here — a zone behind that rack changes nothing', () => {

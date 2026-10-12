@@ -1907,6 +1907,51 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### NA — A face with less than the pick width in front of it loses its positions · `NA_narrowAisles.test.js` (20 tests)
+Code: `narrowAisleBlocks`, `blockedKeys` (generate/narrowAisles.js, new); `bayRunSpans`, `faceIndex` (generate/faceAisles.js);
+`usableCapacity` (generate/usableCapacity.js — `narrowLost`); the X marks on the canvas (Overlays.jsx) and in the PDF
+(export/pdfExport.js); Check layout's aisle items (utils/layoutCheck.js); the Generate panel's caption.
+
+Under the forklift's pick width a face can't be picked from: every bay of it gets the X mark a column's pick-zone block
+gets, and its positions come off usable — a rack-to-rack aisle (both faces, over the run the rows share; 2' or less is
+racks set back to back, nothing lost) and a face with a zone or the wall nearest in front (area ZF). The width labels stay
+amber / red. Check layout: a rack-to-rack aisle under the drive width stays an ERROR (and its faces are X-marked too);
+under the pick width it is no longer listed; faces against a zone or a wall are never listed. Positions a column already
+blocks count once. Fixture: usable unchanged on the 12 fills and the four Generate layouts (no such faces).
+
+Changed (old → new):
+- `AW-grade` ×6: 10.49 ft — Check layout 'aisle-pick' → nothing listed, both facing racks X-marked (7.99 ft still 'aisle-drive').
+- `AX-short` ×2: the 10.49 ft rack-to-rack item ("10' 5", needs 10' 6" to pick") → none.
+- `LC-aisle` ×2: 9' — the warning "… 9', needs 10' 6" to pick" → no warning; usable loses 48 (both faces, 3 bays × 2 × 4).
+- `PD-flue` ×2: vertical — "N will have warnings" ('an aisle under the pick width') → "Apply to the other N rows?".
+- `RG-across` ×2: "3 will have warnings" (aisle-pick) → no warnings; every row 7 X-marked after the apply.
+- `RG-together` ×2: row 13's extra 'an aisle under the pick width' (from ZF) → gone; every row 'an aisle under the travel width'.
+- `RW-narrow` ×2: the 10.49 ft warning → nothing listed.
+- `PC-group` ×2: "2 will have warnings" (row 14's face against the custom area, ZF) → "1 will have warnings" (row 13, inside a
+  zone); "· 2 with warnings" → "· 1 with warnings".
+- `ZF-face-zone` ×2 / `ZF-face-wall` ×2: the Check layout items → none; the face's bays X-marked, their positions off usable,
+  the label amber / red.
+
+| Test | Asserts |
+|---|---|
+| `NA-pick` ×4 | two pairs 9' apart (also turned 180°): no item; both facing faces, every bay, X-marked on the aisle side; 48 off usable |
+| `NA-drive` ×4 | 7': the drive error stays; the faces X-marked |
+| `NA-wide` ×4 | 10' 6" and 2' (back to back): nothing |
+| `NA-once` ×4 | a column in the 9' aisle: the positions it blocks counted once |
+| `NA-fixture` ×2 | the fixture's fills and Generate's layouts: no narrow-aisle loss |
+| `NA-pdf` ×2 | the PDF draws the X marks with the marks on, none off |
+
+**Break-its:** faces against a zone / wall lose nothing: ZF-face-zone, -wall (4). Rack-to-rack under the pick width loses
+nothing: AW-grade, LC-aisle, NA-pick, -drive, -pdf, RG-across (18). Under the pick width still listed: AW-grade, AX-short,
+CA-block, LC-aisle, NA-pick, PD-flue, RG-across, RG-warn-aisle, RW-narrow (19). Under the drive width not listed: AW-grade,
+AX-short, LC-aisle, -click, -highlight, -zoom, -live, -recheck, NA-drive, RG-warn-aisle, RW-narrow, -wall, -sections, -other
+(30). The loss not off usable: LC-aisle, NA-pick, NA-once, ZF-face-zone (12). A column's positions counted twice: NA-once
+(4). The X marks on the far face: NA-pick, NA-once (8).
+
+**Checked in the app** (real mouse, the washroom case — a washroom 9' 9" in front of a pair, the fixture's racks by hand, H
+and V): usable 10,232 → 10,200 (H) and 10,648 → 10,616 (V), −32, the face's positions; X marks on the facing bays along the
+washroom (0 → 4 mark groups); the "9' 9"" label amber; Check layout lists nothing about that aisle.
+
 ### ZF — Zone follow-ups: size when selected, faces graded against zones and walls, takeover of split singles · `ZF_zoneFollowUps.test.js` (18 tests)
 Code: `selectedZones` (canvas2/zoneSelection.js, new) and `SelectedZoneSizes` (canvas2/ZoneEdit.jsx); `faceObstacleGaps`,
 `faceAisleLabels`, `zoneName` (generate/faceAisles.js, new) read by Check layout (utils/layoutCheck.js), the canvas labels

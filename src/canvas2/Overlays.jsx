@@ -5,6 +5,7 @@ import { useMemo, memo } from 'react'
 import { aisleLabelBoxes } from '../render/labelOps'
 import { useColumnCheck } from '../generate/useColumnCheck'
 import { BlockedFaceMarks, firstById } from './BlockedFaceMarks'
+import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
 import { useDragPreview, previewObjects } from './dragPreview'
 import { UprightConflictMarks } from './UprightConflictMarks'
 import { OversizedBayMarks } from './OversizedBayMarks'
@@ -92,6 +93,14 @@ function OverlaysView({
   const shifted = useMemo(() => previewObjects(objects, { ids, dx, dy }), [objects, ids, dx, dy])
   const pObjects = rigid ? objects : shifted
   const byId = useMemo(() => firstById(pObjects), [pObjects])
+  /* The X marks: a column's (in the rack, in a pick zone) and a face with less than the pick width in front of it
+     (narrowAisles.js — a rack-to-rack aisle, or a zone / the wall) — the same mark, the same loss off usable. */
+  const xMarks = useMemo(() => {
+    const cols = pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts
+    if (!marksOn) return cols
+    const narrow = narrowAisleBlocks(pObjects, { profile: mhe, gridSize, already: blockedKeys({ rackConflicts, pickBlocks }) })
+    return narrow.length ? [...cols, ...narrow] : cols
+  }, [rackConflicts, pickBlocks, pObjects, mhe, gridSize, marksOn])
   /* The marks sit on their rack (spin(obj)), so moving the rack and moving the
      group are the same drawing. Aisle labels round a measured gap to a label
      and pick label stations by length, so a shifted layout can, at a float
@@ -130,7 +139,7 @@ function OverlaysView({
           marks and aisle shading, X marks, upright flags, oversized bays */}
       {marksOn && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
-      {marksOn && <BlockedFaceMarks rackConflicts={pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts} objects={pObjects} gridSize={gridSize} lz={lz} />}
+      {marksOn && <BlockedFaceMarks rackConflicts={xMarks} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {marksOn && <OversizedBayMarks objects={pObjects} gridSize={gridSize} lz={lz} />}
       </Group>

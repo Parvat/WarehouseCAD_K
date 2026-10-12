@@ -8,6 +8,7 @@
 // auto-pick all read these same helpers, so the three can't disagree.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { narrowAisleBlocks, blockedKeys } from './narrowAisles'
 import { bayLedger } from '../utils/bayLedger'
 import { getLayoutCapacity } from '../utils/capacity'
 import { checkColumns, expandColumnGrid, MHE_PROFILES } from './columnCheck'
@@ -48,7 +49,8 @@ export function runColumnCheck(objects, { profile = MHE_PROFILES.reach, gridSize
   return checkColumns({ racks, columns, profile, gridSize, pickBothSides, floors: layoutFloors(objects) })
 }
 
-/** usable = gross − in-rack losses − pick-zone losses. `check` lets a caller
+/** usable = gross − in-rack losses − pick-zone losses − narrow-aisle losses (a face with less than the pick width
+ *  in front of it: narrowAisles.js — counted even with no columns at all). `check` lets a caller
  *  that already ran the column check pass its result instead of rerunning it; `ledger` likewise the bay
  *  ledger. Gross counts an overlapped bay once (utils/bayLedger.js), so a loss on a bay the ledger leaves
  *  out isn't taken off — the usable figure never goes below what is really there, nor above gross. */
@@ -59,5 +61,7 @@ export function usableCapacity(objects, { profile, gridSize = GS, rules = DEFAUL
   const counts = (c) => { const e = L.racks.get(c.rackId); return !e || c.bayIndex == null || e.counted[c.bayIndex] !== false }
   const inRackLost = res ? (res.rackConflicts || []).filter(counts).reduce((t, c) => t + (c.positionsLost || 0), 0) : 0
   const pickZoneLost = res ? (res.pickBlocks || []).filter(counts).reduce((t, c) => t + (c.positionsLost || 0), 0) : 0
-  return { gross, usable: gross - inRackLost - pickZoneLost, inRackLost, pickZoneLost }
+  const prof = profile || MHE_PROFILES.reach
+  const narrowLost = narrowAisleBlocks(objects, { profile: prof, gridSize, already: blockedKeys(res) }).filter(counts).reduce((t, c) => t + c.positionsLost, 0)
+  return { gross, usable: gross - inRackLost - pickZoneLost - narrowLost, inRackLost, pickZoneLost, narrowLost }
 }

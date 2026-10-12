@@ -3,6 +3,7 @@
 // the drive width, the usual label otherwise; a failing width reads rounded down, as Check layout lists it.
 // Coloured only while the Checks layer and the markings are on, on the canvas and in the PDF alike.
 // The fixture's layout as saved, both orientations, a column-free 10' 6" aisle narrowed to 10.49 / 10.5 / 7.99 ft.
+import { narrowAisleBlocks } from '../../generate/narrowAisles'
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { GS, splitWallRows } from './fixtures'
@@ -58,13 +59,14 @@ const pill = (L) => aisleLabelOps(L, labelScale('medium', GS)).find(o => o.op ==
 
 const CASES = [
   // ft, the label's level, Check layout's item for the pair, the label's text, its pill stroke
-  [10.49, 2, 'aisle-pick', `10' 5"`, AISLE_PICK_COLOR],
+  // (10.49 ft was a Check layout warning, 'aisle-pick'; under the pick width its faces now lose their positions instead)
+  [10.49, 2, null, `10' 5"`, AISLE_PICK_COLOR],
   [10.5, 3, null, `10' 6"`, '#f0b429'],
   [7.99, 1, 'aisle-drive', `7' 11"`, AISLE_DRIVE_COLOR],
 ]
 
 describe.each([['vertical', true], ['horizontal', false]])('AW — %s', (_, vert) => {
-  it.each(CASES)('AW-grade: the aisle at %s ft — the label is graded as Check layout lists that pair (level %s, %s), reads %s (a failing width rounded down, as listed) in its colour', (ft, level, kind, text, stroke) => {
+  it.each(CASES)('AW-grade: the aisle at %s ft — the label is graded (level %s; Check layout: %s — under the drive width an error, under the pick width not listed), reads %s (a failing width rounded down) in its colour; under the pick width both facing faces get X marks', (ft, level, kind, text, stroke) => {
     const { out, aisle, ids } = narrowed(vert, ft)
     expect(aisle, 'the pair has its aisle label').toBeTruthy()
     const L = aisleLabelLayout(aisle, out, GS, { profile: REACH })
@@ -74,6 +76,9 @@ describe.each([['vertical', true], ['horizontal', false]])('AW — %s', (_, vert
     expect(L.level).toBe(level)
     expect(L.text).toBe(text)
     if (kind) expect(items[0].text).toContain(`: ${text}, needs `)
+    // the two faces of the aisle: X marks under the pick width, none at it
+    const marked = new Set(narrowAisleBlocks(out, { profile: REACH, gridSize: GS }).map(b => b.rackId))
+    expect(ids.every(id => marked.has(id))).toBe(level < 3)
     expect(pill(L).stroke).toBe(stroke)
     // the warning colours off (Checks layer hidden / markings off): the usual label, the width to the nearest inch
     const plain = aisleLabelLayout(aisle, out, GS)

@@ -32,6 +32,7 @@ import { columnGridOps } from '../render/columnDraw'
 import { aisleLabelLayout } from '../canvas2/hitTest'
 import { crossAisleLabels } from '../canvas2/crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
+import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
 import { useLabelPrefs } from '../canvas2/labelPrefs'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { checkColumns } from '../generate/columnCheck'
@@ -212,14 +213,17 @@ export function labelsSVG(objects, gridSize, opts) {
     const columns = layoutColumns(objects, gridSize)
     const byId = new Map()
     for (const o of objects) if (!byId.has(o.id)) byId.set(o.id, o)
+    let res = null
     if (racks.length && columns.length) {
-      const res = checkColumns({ racks, columns, profile: opts.profile, gridSize, pickBothSides: opts.pickBothSides, floors: layoutFloors(objects) })
+      res = checkColumns({ racks, columns, profile: opts.profile, gridSize, pickBothSides: opts.pickBothSides, floors: layoutFloors(objects) })
       // a clearance label keeps clear of the aisle width labels drawn above (they have priority)
       const avoid = opts.showAisles ? aisleLabelBoxes(objects, gridSize, opts.labelSize, { profile: warnProfile }) : []
       for (const b of res.aisleBlocks) ops.push(...clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid))
       for (const c of [...res.rackConflicts, ...res.pickBlocks]) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
       for (const h of res.uprightHits) ops.push(...uprightOps(h, byId.get(h.rackId), gridSize, lz))
     }
+    // a face with less than the pick width in front of it (narrowAisles.js): the same X marks, as on screen
+    for (const c of narrowAisleBlocks(objects, { profile: opts.profile, gridSize, already: blockedKeys(res) })) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
     for (const o of racks) if ((o.type === 'rack_row' || o.type === 'rack_double_row') && Array.isArray(o.beams) && o.beams.length) ops.push(...oversizedOps(o, gridSize, lz))
   }
   return `<g class="labels">${ops.map(labelOpToSVG).join('')}</g>`

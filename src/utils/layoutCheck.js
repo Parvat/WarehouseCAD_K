@@ -3,8 +3,9 @@
 // It only REPORTS — nothing is blocked or moved. Every rule is an existing
 // one, asked here, never copied:
 //   aisles       rowAisleGaps (generate/rowAisles.js): beam racks paired as the
-//                aisle labels pair them; and a face with a zone or a wall in front of it
-//                (generate/faceAisles.js faceObstacleGaps), graded the same way —
+//                aisle labels pair them — under the drive width an ERROR; under the pick width
+//                not listed: its faces lose their positions (X marks, off usable —
+//                generate/narrowAisles.js), and so does a face with a zone or a wall in front
 //                aisle labels pair them (neighbourPairs — so a label and its
 //                check never disagree), other rack types by rowGaps; each gap
 //                graded by rowAisleLevel (generate/columnCheck.js; the aisle width label's colour too)
@@ -22,8 +23,9 @@
 // cross-aisle between sections under the travel width, racks overlapping, a rack past a wall or outside the building, a column on an
 // upright frame, a rack nobody can reach, racks with no way in (the pocket
 // highlighted).
-// WARNINGS (cost positions, or need a look): an aisle it can drive but not
-// pick from, columns blocking pallets, a bay too short for a pallet, angled racks whose column losses weren't checked.
+// WARNINGS (cost positions, or need a look):
+// columns blocking pallets, a bay too short for a pallet, angled racks whose column losses weren't checked. (An aisle a
+// truck can drive but not pick from is not listed: its faces lose their positions — narrowAisles.js.)
 //
 // Each item: { severity, kind, text, ids (the objects involved), box (world
 // rect to zoom to), highlight (the PROBLEM itself, drawn when the item is
@@ -34,7 +36,6 @@
 // result, the highlight, the export question and "go to it" live in the small
 // store below.
 
-import { faceObstacleGaps, zoneName } from '../generate/faceAisles'
 import { create } from 'zustand'
 import { rackFootprint, rowGaps, rowAisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld } from '../generate/columnCheck'
 import { uprightXs } from '../render/rackOps'
@@ -112,25 +113,12 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
   for (const g of rowAisleGaps(racks.filter(r => ((r.rotation || 0) % 90) === 0))) {
     // the one grade (rowAisleLevel): the aisle width label is coloured by it too
     const lvl = rowAisleLevel(g.gapLen, profile, gridSize)
-    if (lvl === 3) continue
-    const where = `Aisle between ${pairName(g.top, g.bot, racks)}`
-    const need = lvl === 1 ? travelPx : aislePx
-    const item = { kind: lvl === 1 ? 'aisle-drive' : 'aisle-pick', ids: [g.top.id, g.bot.id], box: g.box,
-      highlight: [shade(g.box, lvl === 1 ? HL.red : HL.amber, `${short(g.gapLen)} · needs ${len(need)}`)] }
-    if (lvl === 1) { pinchedPairs.add(g.top.id + '|' + g.bot.id); errors.push({ ...item, severity: 'error', text: `${where}: ${short(g.gapLen)}, needs ${len(travelPx)} to drive` }) }
-    else warnings.push({ ...item, severity: 'warning', text: `${where}: ${short(g.gapLen)}, needs ${len(aislePx)} to pick` })
-  }
-
-  // ── a face with a zone or a wall in front of it (faceAisles.js): the same grades, the same items ──
-  for (const g of faceObstacleGaps(objects, { gridSize, profile })) {
-    const r = g.rack, lc = (t) => t.charAt(0).toLowerCase() + t.slice(1)
-    const what = g.obstacle.kind === 'zone' ? `the ${lc(zoneName(g.obstacle.zone))}` : 'the wall'
-    const where = `Aisle between ${lc(name(r))} and ${what}`
-    const lvl = g.level, need = lvl === 1 ? travelPx : aislePx
-    const item = { kind: lvl === 1 ? 'aisle-drive' : 'aisle-pick', ids: [r.id, g.obstacle.kind === 'zone' ? g.obstacle.zone.id : r.parentId].filter(Boolean), box: g.box,
-      highlight: [shade(g.box, lvl === 1 ? HL.red : HL.amber, `${short(g.width)} · needs ${len(need)}`)] }
-    if (lvl === 1) errors.push({ ...item, severity: 'error', text: `${where}: ${short(g.width)}, needs ${len(travelPx)} to drive` })
-    else warnings.push({ ...item, severity: 'warning', text: `${where}: ${short(g.width)}, needs ${len(aislePx)} to pick` })
+    // under the pick width only: its faces' positions come off usable with X marks (narrowAisles.js), not listed here
+    if (lvl !== 1) continue
+    pinchedPairs.add(g.top.id + '|' + g.bot.id)
+    errors.push({ severity: 'error', kind: 'aisle-drive', ids: [g.top.id, g.bot.id], box: g.box,
+      highlight: [shade(g.box, HL.red, `${short(g.gapLen)} · needs ${len(travelPx)}`)],
+      text: `Aisle between ${pairName(g.top, g.bot, racks)}: ${short(g.gapLen)}, needs ${len(travelPx)} to drive` })
   }
 
   // ── cross-aisles between sections, per line, under the travel width (to 0.001 ft) — an ERROR: a truck

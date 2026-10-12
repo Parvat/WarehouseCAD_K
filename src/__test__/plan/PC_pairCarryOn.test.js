@@ -116,7 +116,7 @@ describe.each([['vertical', true], ['horizontal', false]])('PC — %s', (_, vert
     expect(singleOf(12)).toEqual(s0)
   })
 
-  it('PC-group: rows 12-14 in a Row group (row 13 a plain pair, the custom area beyond it; row 14\'s single on the other half) — "+ bay" on row 12 → "Apply to the other 2 rows? 2 will have warnings." — row 13 "inside a zone"; row 14 "an aisle under the travel width" (its new bay faces the custom area 3\' 1" away — a face with a zone in front, graded since faceAisles.js; before: no warning), its pair takes over its single\'s bay; no overlap anywhere; Auto apply: the edit, its takeover, the apply and row 14\'s takeover are one history entry', async () => {
+  it('PC-group: rows 12-14 in a Row group (row 13 a plain pair, the custom area beyond it; row 14\'s single on the other half) — "+ bay" on row 12 → "Apply to the other 2 rows? 1 will have warnings." — only row 13, "inside a zone" (row 14\'s new bay faces the custom area 3\' 1" away: its face gets X marks, not a warning); row 14\'s pair takes over its single\'s bay; no overlap anywhere; Auto apply: the edit, its takeover, the apply and row 14\'s takeover are one history entry', async () => {
     for (const auto of [false, true]) {
       load(savedFill(vert))
       useRowGroup.setState({ keys: [12, 13, 14].map(i => [...RG.rowsOf(objs(), GS).keys()].find(k => k.endsWith(`|2|${i}`))) })
@@ -124,14 +124,13 @@ describe.each([['vertical', true], ['horizontal', false]])('PC — %s', (_, vert
       const b14 = bays(14), s14 = strip(singleOf(14)), before = strip(objs()).filter(o => BEAM.has(o.type)), h = hist()
       addBay(pairOf(12)); await settle()
       if (!auto) {
-        expect(useRowGroup.getState().pending.summary.text).toBe('Apply to the other 2 rows? 2 will have warnings.')
-        const k = (i) => [...RG.rowsOf(objs(), GS).keys()].find(q => q.endsWith('|2|' + i))
-        expect(useRowGroup.getState().pending.summary.warned).toEqual([{ key: k(13), reasons: ['inside a zone'] }, { key: k(14), reasons: ['an aisle under the travel width'] }])
+        expect(useRowGroup.getState().pending.summary.text).toBe('Apply to the other 2 rows? 1 will have warnings.')
+        expect(useRowGroup.getState().pending.summary.warned).toEqual([{ key: [...RG.rowsOf(objs(), GS).keys()].find(k => k.endsWith('|2|13')), reasons: ['inside a zone'] }])
         applyPending(); await settle()
         expect(hist()).toBe(h + 2)
       } else {
         expect(useRowGroup.getState().pending).toBe(null)
-        expect(useRowGroup.getState().message).toBe('Applied to 2 rows · 2 with warnings — see Check layout')
+        expect(useRowGroup.getState().message).toBe('Applied to 2 rows · 1 with warnings — see Check layout')
         expect(hist()).toBe(h + 1)
       }
       expect([pairOf(14).beams.length, singleOf(14).beams.length, singleOf(14).id]).toEqual([13, 1, s14.id])

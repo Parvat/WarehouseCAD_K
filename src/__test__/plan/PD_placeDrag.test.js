@@ -196,10 +196,9 @@ describe.each(['horizontal', 'vertical'])('PD — %s', (orientation) => {
     load(gen.map(o => (o.id === r.id ? wide : o)))
     addRowOf(r.id, { otherSections: true })
     await act(() => { store.setState({ objects: objs().map(o => (o.id === r.id ? moved : o)) }); store.getState().commitObjectUpdate(r.id, {}) })
-    // vertical: the 2' narrows row K's aisle (10' 6") under the pick width — applied, with that warning, as Check layout would say of a hand move;
-    // horizontal: its aisles stay wide enough, no warning
-    expect(useRowGroup.getState().pending.summary.text).toBe(`Apply to the other ${others.length} rows?${rot ? ` ${others.length} will have warnings.` : ''}`)
-    for (const w of useRowGroup.getState().pending.summary.warned) expect(w.reasons).toEqual(['an aisle under the pick width'])
+    // vertical: the 2' narrows row K's aisle (10' 6") under the pick width — its faces lose their positions (X marks, off
+    // usable), not a warning any more (before: "N will have warnings", 'an aisle under the pick width'); horizontal: wide enough
+    expect(useRowGroup.getState().pending.summary.text).toBe(`Apply to the other ${others.length} rows?`)
     const before = new Map(others.map(s => [s, centreAcross(row(K, s), rot)]))
     applyPending(); await flushRowGroupWatcher()
     for (const s of others) expect(centreAcross(row(K, s), rot) - before.get(s)).toBeCloseTo(d, 6)
