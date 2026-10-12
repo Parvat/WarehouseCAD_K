@@ -1,20 +1,25 @@
 // pairCarryOn.js — a back-to-back pair whose half carries on as a single (the fill's "free half"): when the
-// pair grows a bay at that end, it takes that bay over from its single instead of standing on it.
+// pair grows bays over that half, it takes those bays over from its singles instead of standing on them.
 //
 //   Section 2, row 12 of the hand-check layout: the pair runs 9' → 108.25', its single carries on from the
 //   pair's end upright on one half, 108' → 124.75'. "+ bay" on the pair grew both halves to 116.5', so one
 //   half stood on the single's first bay — "an overlap", and the BOM counted that bay twice.
 //
-// The rule: for each bay the pair grew at that end, outward from its old end upright, the single gives up
-// its matching bay — the same uprights (within ½") and the same beam — so the pair +1 bay, the single −1
-// bay from that end; a single left with no bays is removed. It stops at the first bay that doesn't match,
-// and a single with other levels or depth gives up nothing: there the overlap (and its warning) stays.
-// Deleting the pair's end bay is not mirrored: both halves go, the gap is left.
+// The rule: for each bay the pair grew, EVERY single of its own row standing on that half gives up the bay it
+// has there — the same uprights (within ½") and the same beam — so the pair +1 bay, the single −1. Not only
+// the single that starts at the pair's end upright: a single split in two (a zone moved over it, a middle bay
+// deleted, the Split tool) gives up its bays piece by piece, and a piece the pair grows past a gap to reaches
+// it too. A piece left with no bays is removed; one losing bays in its middle is split there
+// (splitRackForBayDelete). A bay that doesn't line up, or a single with other levels or depth, gives up
+// nothing: there the overlap (and its warning) stays. Deleting the pair's end bay is not mirrored: both halves
+// go, the gap is left.
 //
 // Pure. Run on a hand edit by installPairKeeper (folded into that edit's own history entry: one undo step)
 // and on a Row group apply (utils/rowGroupTool.js), so both get the same result.
 
-import { geom, uprightsOf, withRun, isRowRack, UP_TOL_FT } from './rowGroup'
+import { nanoid } from 'nanoid'
+import { geom, uprightsOf, isRowRack, UP_TOL_FT } from './rowGroup'
+import { splitRackForBayDelete } from './baySplit'
 import { autoSave, serializeScene } from './saveLoad'
 
 const EPS = 1e-6
@@ -22,10 +27,10 @@ const upPx = (o, gridSize) => ((o.uprightWidth || 3) / 12) * gridSize
 const turn = (o) => ((((o.rotation || 0) % 360) + 360) % 360)
 const sameStamp = (a, b) => (a.rowIndex ?? null) === (b.rowIndex ?? null) && (a.genSection ?? null) === (b.genSection ?? null)
 
-/** The racks of `after` with each grown pair's bays taken over from its carried-on single, given `before`
- *  (the layout the edit started from). Returns { objects, taken: [{ pair, single, bays, removed }] } —
- *  `objects` is `after` itself when nothing was taken. */
-export function takeOverCarriedBays(before, after, gridSize = 40) {
+/** The racks of `after` with each grown pair's bays taken over from the singles of its row on the half it
+ *  grew over, given `before` (the layout the edit started from). Returns { objects, taken: [{ pair, single,
+ *  bays, removed }] } — `objects` is `after` itself when nothing was taken. */
+export function takeOverCarriedBays(before, after, gridSize = 40, newId = nanoid) {
   const tol = UP_TOL_FT * gridSize
   const B = new Map(before.filter(isRowRack).map(o => [o.id, o]))
   const replace = new Map(), remove = new Set(), taken = []
@@ -38,33 +43,32 @@ export function takeOverCarriedBays(before, after, gridSize = 40) {
     if (Math.abs(now.r0 - was.r0) < tol && was.beams.every((b, i) => b === now.beams[i])) hi = true
     else if (Math.abs(now.r1 - was.r1) < tol && was.beams.every((b, i) => b === now.beams[m - n + i])) hi = false
     else continue
-    const shared = hi ? was.r1 - up : was.r0                                   // the pair's old end upright (near face)
-    const grown = hi ? now.beams.slice(n) : now.beams.slice(0, m - n).reverse()  // outward from that upright
+    // the pair's new bays, as run intervals between its uprights' outer edges, with their beams
     const pUps = uprightsOf(now.r0, now.beams, up, gridSize)
-    const pOut = hi ? pUps.slice(n) : pUps.slice(0, m - n + 1).reverse()        // the pair's uprights outward from it
-    // its carried-on single: in line on one half, from that upright, in the same row, the same levels and depth
-    const single = after.find(o => {
-      if (o.type !== 'rack_row' || !isRowRack(o) || !B.has(o.id) || replace.has(o.id) || remove.has(o.id)) return false
-      if ((turn(o) % 180) !== (turn(p) % 180) || (o.parentId ?? null) !== (p.parentId ?? null) || !sameStamp(o, p)) return false
-      if (o.levels !== p.levels || o.depthIn !== p.depthIn || (o.uprightWidth || 3) !== (p.uprightWidth || 3)) return false
+    const fresh = (hi ? now.beams.map((b, i) => i).slice(n) : now.beams.map((b, i) => i).slice(0, m - n)).map(i => ({ a: pUps[i], c: pUps[i + 1] + up, beam: now.beams[i] }))
+    const lo = Math.min(...fresh.map(q => q.a)), hiR = Math.max(...fresh.map(q => q.c))
+    // every single of its row on one half that the new bays reach: the same row, levels and depth
+    for (const o of after) {
+      if (o.type !== 'rack_row' || !isRowRack(o) || !B.has(o.id) || replace.has(o.id) || remove.has(o.id)) continue
+      if ((turn(o) % 180) !== (turn(p) % 180) || (o.parentId ?? null) !== (p.parentId ?? null) || !sameStamp(o, p)) continue
+      if (o.levels !== p.levels || o.depthIn !== p.depthIn || (o.uprightWidth || 3) !== (p.uprightWidth || 3)) continue
       const g = geom(o)
       const onHalf = (Math.abs(g.s0 - now.s0) < 0.5 || Math.abs(g.s1 - now.s1) < 0.5) && g.s0 >= now.s0 - 0.5 && g.s1 <= now.s1 + 0.5 && g.s1 - g.s0 < now.s1 - now.s0 - 0.5
-      return onHalf && (hi ? Math.abs(g.r0 - shared) < tol : Math.abs(g.r1 - up - shared) < tol)
-    })
-    if (!single) continue
-    const g = geom(single), sUps = uprightsOf(g.r0, g.beams, up, gridSize)
-    const sBeams = hi ? g.beams : [...g.beams].reverse(), sOut = hi ? sUps : [...sUps].reverse()
-    // the single's bays outward from the shared upright, while they match the pair's new ones
-    let k = 0
-    while (k < grown.length && k < sBeams.length && grown[k] === sBeams[k] && Math.abs(pOut[k + 1] - sOut[k + 1]) <= tol) k++
-    if (!k) continue
-    const left = sBeams.slice(k)
-    if (!left.length) remove.add(single.id)
-    else replace.set(single.id, hi ? withRun(single, sUps[k], left, gridSize) : withRun(single, g.r0, [...left].reverse(), gridSize))
-    taken.push({ pair: p.id, single: single.id, bays: k, removed: !left.length })
+      if (!onHalf || g.r1 <= lo + tol || g.r0 >= hiR - tol) continue
+      // its bays (run order) that one of the pair's new bays covers exactly: the same uprights, the same beam
+      const sUps = uprightsOf(g.r0, g.beams, up, gridSize)
+      const give = g.beams.map((b, i) => i).filter(i => fresh.some(q => q.beam === g.beams[i] && Math.abs(q.a - sUps[i]) <= tol && Math.abs(q.c - (sUps[i + 1] + up)) <= tol))
+      if (!give.length) continue
+      // run order → the rack's own bay order (a reversed rack counts its bays from the other end)
+      const k = g.beams.length, flip = turn(o) === 180 || turn(o) === 270
+      const pieces = splitRackForBayDelete(o, new Set(give.map(i => (flip ? k - 1 - i : i))), newId, gridSize)
+      if (!pieces) remove.add(o.id)
+      else replace.set(o.id, pieces)
+      taken.push({ pair: p.id, single: o.id, bays: give.length, removed: !pieces })
+    }
   }
   if (!taken.length) return { objects: after, taken }
-  return { objects: after.filter(o => !remove.has(o.id)).map(o => replace.get(o.id) || o), taken }
+  return { objects: after.filter(o => !remove.has(o.id)).flatMap(o => replace.get(o.id) || [o]), taken }
 }
 
 /** For a store: after each action (a new history entry following the one seen), a pair that grew into its

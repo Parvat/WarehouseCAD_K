@@ -321,7 +321,8 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(wall).toHaveLength(2)
     for (const w of wall) expect(w.reasons.some(r => /aisle/.test(r))).toBe(false)
     expect(cols).toHaveLength(23)
-    for (const w of cols) expect(w.reasons).toEqual(['an aisle under the travel width'])
+    // (row 13's face also comes within the pick width of the zone in front of it — graded since faceAisles.js)
+    for (const w of cols) expect(w.reasons).toEqual(w.key === key(2, 13) ? ['an aisle under the travel width', 'an aisle under the pick width'] : ['an aisle under the travel width'])
     applyPending(); await settle()
     // the reason is a column standing in the aisle, never the gap between the rows
     const { checkLayout } = await import('../../utils/layoutCheck')

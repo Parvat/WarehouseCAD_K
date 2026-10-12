@@ -1,6 +1,6 @@
 import { Rect, Line, Group } from 'react-konva'
 import { SelectionOutline } from './shapes'
-import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
+import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, FaceAisleLabels, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
 import { useMemo, memo } from 'react'
 import { aisleLabelBoxes } from '../render/labelOps'
 import { useColumnCheck } from '../generate/useColumnCheck'
@@ -125,6 +125,7 @@ function OverlaysView({
       </Group>
       {/* one width label per cross-aisle; few, so drawn from the previewed layout every drag frame */}
       {aislesOn && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} profile={warnProfile} />}
+      {aislesOn && <FaceAisleLabels objects={shifted} lz={lz} gridSize={gridSize} profile={warnProfile} />}
       {/* the Checks layer: clearance arrows and distances, red "under travel"
           marks and aisle shading, X marks, upright flags, oversized bays */}
       {marksOn && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels />}

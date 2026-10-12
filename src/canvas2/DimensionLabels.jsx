@@ -10,6 +10,7 @@ import { clearanceSource } from './clearanceSource'
 import { LabelOps } from './LabelOps'
 import { aisleLabelOps, clearanceOps } from '../render/labelOps'
 import { crossAisleLabels } from './crossAisles'
+import { faceAisleLabels } from '../generate/faceAisles'
 
 /* ── Dimension labels — ported from the SVG engine, render-only ──────────────
    CanvasUI.jsx's RackLabels/FpSegmentDimLabels and CanvasOverlays.jsx's live
@@ -272,6 +273,14 @@ export const CrossAisleLabels = memo(function CrossAisleLabels({ objects, lz, gr
   // `lz`: the Label size — a label must sit on clear floor at the size it is drawn
   const list = useMemo(() => crossAisleLabels(objects, gridSize, { profile, lz }), [objects, gridSize, profile, lz])
   return <>{list.map(L => <AisleLabelView key={L.key} L={L} name={'cross-aisle:' + L.key} lz={lz} />)}</>
+})
+
+/* The width label of an aisle in front of a face with a zone or a wall across it (generate/faceAisles.js):
+   only the failing ones exist, so they draw only with the warning colours on (`profile`), amber / red as
+   Check layout lists them. */
+export const FaceAisleLabels = memo(function FaceAisleLabels({ objects, lz, gridSize = 40, profile = null }) {
+  const list = useMemo(() => (profile ? faceAisleLabels(objects, gridSize, { profile }) : []), [objects, gridSize, profile])
+  return <>{list.map((L, i) => <AisleLabelView key={L.rackId + ':' + i} L={L} name={'face-aisle:' + L.rackId + ':' + i} lz={lz} />)}</>
 })
 
 /* One clearance label: redrawn only when its own block, column or the zoom

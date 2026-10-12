@@ -1907,6 +1907,62 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### ZF — Zone follow-ups: size when selected, faces graded against zones and walls, takeover of split singles · `ZF_zoneFollowUps.test.js` (18 tests)
+Code: `selectedZones` (canvas2/zoneSelection.js, new) and `SelectedZoneSizes` (canvas2/ZoneEdit.jsx); `faceObstacleGaps`,
+`faceAisleLabels`, `zoneName` (generate/faceAisles.js, new) read by Check layout (utils/layoutCheck.js), the canvas labels
+(`FaceAisleLabels`, DimensionLabels.jsx / Overlays.jsx) and the PDF (export/pdfExport.js), and through Check layout the Row
+group's warnings; `takeOverCarriedBays` (utils/pairCarryOn.js, rewritten); `planAreaResize` (generate/rackingArea.js);
+the overlap item's text (layoutCheck.js); the bar's note cleared on a load / undo (rackingAreaTool.js).
+
+1. A selected zone shows its "W × L" label (not only while placed or resized).
+2. A pick face with a zone (office, washroom, staging, custom area) or the building's wall in front of it is graded like a
+   rack-to-rack aisle: amber under the pick width, red under the drive width, listed in Check layout ("Aisle between row
+   14, section 2 and the washroom: 9' 9", needs 10' 6" to pick"), its width label coloured (only failing ones are drawn,
+   with the warning colours on), the Row group's warnings following. A pair has a face on both sides and no back — graded
+   with aisleLevel (a pair 1' from a zone has no aisle); a single's face is the side that isn't its back (a wall, zone or
+   rack within 2'), graded with rowAisleLevel; open on both sides it isn't graded. Per bay the clear width is to the
+   nearest zone edge or wall face anywhere in front of that bay's run span (a zone over part of the bay counts for it);
+   stretches read at their narrowest. A rack nearest in front is the rack-to-rack aisle's, not graded again.
+3. A pair growing bays takes them from EVERY single of its row on that half whose bays its new ones cover exactly (uprights
+   within ½", same beam, same levels / depth / upright) — a single split in two included, a piece the pair reaches past a
+   gap included; a piece left with none is removed, one losing middle bays is split there. Before: only the single starting
+   at the pair's end upright, so a second piece stayed under the pair.
+Found on the way: a zone refit (the area refitted over its own box) trimmed a rack lengthened by hand past the box — now
+only a changed box trims; two racks of one row overlapping read "Row 12, section 2: the pair overlaps the single by …"
+(was "Row 12, section 2 overlaps row 12, section 2"); the bar's zone note no longer survives opening another layout.
+
+Fixture: no new Check layout item on the 12 fills or the four Generate layouts (face grading finds nothing there); no bay or
+usable position changes anywhere.
+
+Changed (old → new): `PC-group` ×2 — "Apply to the other 2 rows? 1 will have warnings." → "… 2 will have warnings.": row 14
+"an aisle under the travel width" too (its grown bay faces the custom area 3' 1" away); Auto apply "· 1 with warnings" → "· 2
+with warnings". `RG-together` ×2 — row 13's reasons ['an aisle under the travel width'] → [… , 'an aisle under the pick
+width'] (its face comes within the pick width of the zone in front). `PC-wire` ×2 — the source match takes the id maker
+(`takeOverCarriedBays(…, gridSize, newId)`, `gs(), watch.newId`).
+
+| Test | Asserts |
+|---|---|
+| `ZF-label` ×2 | every selected zone, not the one being resized, not a rack |
+| `ZF-face-zone` ×2 | a washroom 9' 9" in front of a pair: one amber item and label; 7': red, "needs 8' to drive"; 11': nothing |
+| `ZF-face-partial` ×2 | a 2' zone inside one bay's span: that bay, 9' |
+| `ZF-face-wall` ×2 | Generate's wall singles not graded (their backs); a pair 5' off the wall: red, "and the wall: 5'" |
+| `ZF-face-rack` ×2 | a rack nearest in front: not graded (a zone behind it changes nothing) |
+| `ZF-face-fixture` ×2 | 0 items on the fixture's fills (Fill area and hand-placed, rectangle / L / T) and Generate 250 × 500, 300 × 420 |
+| `ZF-take-split` ×2 | the user's case through the keepers: single +2 bays, a washroom over its 2nd bay and away (two pieces), the pair +4 in one action: one pair of 16 bays, no single, no overlap |
+| `ZF-take-rules` ×2 | both pieces give up their bays; a piece with a 108" bay keeps it, the overlap stays and reads "the pair overlaps the single" |
+| `ZF-refit-keeps` ×2 | a single lengthened past the area's box keeps its 4 bays when a staging zone is dropped in the area |
+
+**Break-its:** no size label for a selected zone: ZF-label (2). Faces with a zone / wall in front not graded: PC-group,
+RG-together, ZF-face-zone, -partial, -wall (10). Walls ignored: ZF-face-wall (2). A zone counted only over a whole bay:
+PC-group, ZF-face-partial (4). The old takeover (the end single only): ZF-take-split, -rules (4). The refit trimming to the
+box again: ZF-refit-keeps (2).
+
+**Checked in the app** (real mouse, the fixture's racks placed by hand, H and V): the office clicked → "83' 10" × 75' 4""
+(V "75' 4" × 83' 10"") on it, none before; a washroom 9' 9" in front of row 14's pair: the amber "9' 9"" label drawn, Check
+layout "Aisle between row 14, section 2 and the washroom: 9' 9", needs 10' 6" to pick", clicking it highlights the strip;
+row 12's single lengthened, cut in two by a washroom moved over and away (pieces 108–116.5', 124.5–141.25'), the pair's end
+handle dragged 4 bays: the pair 9–141.25', 16 bays, no piece left, no overlap.
+
 ### ZR — Zones placed on a layout after its racks · `ZR_zonesOverRacks.test.js` (36 tests)
 Code: `cutForZones`, `rowBayBoxes`, `removedRowBays`, `rowBays` (generate/rackingArea.js, new); `dropUnreachableFaces`
 (generate/faceReach.js — a pair's half under a zone goes, a single's bay under one goes); `landZones`, `zonePreview`,

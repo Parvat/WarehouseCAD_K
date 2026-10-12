@@ -31,6 +31,7 @@ import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/label
 import { columnGridOps } from '../render/columnDraw'
 import { aisleLabelLayout } from '../canvas2/hitTest'
 import { crossAisleLabels } from '../canvas2/crossAisles'
+import { faceAisleLabels } from '../generate/faceAisles'
 import { useLabelPrefs } from '../canvas2/labelPrefs'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { checkColumns } from '../generate/columnCheck'
@@ -203,6 +204,8 @@ export function labelsSVG(objects, gridSize, opts) {
       if (L) ops.push(...aisleLabelOps(L, aisleLabelScale(a, opts.labelSize, gridSize)))
     }
     for (const L of crossAisleLabels(objects, gridSize, { profile: warnProfile, lz })) ops.push(...aisleLabelOps(L, lz))
+    // a face with a zone or a wall in front of it, failing (generate/faceAisles.js): as on screen
+    if (warnProfile) for (const L of faceAisleLabels(objects, gridSize, { profile: warnProfile })) ops.push(...aisleLabelOps(L, lz))
   }
   if (opts.showMarks) {
     const racks = objects.filter(o => typeof o.type === 'string' && o.type.startsWith('rack_'))

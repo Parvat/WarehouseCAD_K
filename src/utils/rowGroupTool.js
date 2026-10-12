@@ -47,7 +47,7 @@ const gs = () => (watch && watch.store.getState().gridSize) || 40
 function contextFor(objects, newId) {
   const gridSize = gs(), poly = {}
   for (const fp of objects.filter(o => FP.has(o.type))) poly[fp.id] = innerOutline(fp, gridSize)
-  return { gridSize, poly, columns: layoutColumns(objects, gridSize), travelFt: 8, newId, finalize: (a, w) => takeOverCarriedBays(a, w, gridSize).objects }
+  return { gridSize, poly, columns: layoutColumns(objects, gridSize), travelFt: 8, newId, finalize: (a, w) => takeOverCarriedBays(a, w, gridSize, newId).objects }
 }
 
 /* ── the group ── */
@@ -122,7 +122,7 @@ function writeInPlace(objects) {
 }
 /** The layout an apply writes: the plan applied, each grown pair taking over its carried-on single's bay
  *  (utils/pairCarryOn.js — the same rule as for a hand edit), the aisles re-paired. */
-const written = (objects, plan) => rebuildAisles(takeOverCarriedBays(objects, applyReplay(objects, plan), gs()).objects, watch.newId).objects
+const written = (objects, plan) => rebuildAisles(takeOverCarriedBays(objects, applyReplay(objects, plan), gs(), watch.newId).objects, watch.newId).objects
 
 /** The bar's line after an apply: "Applied to 11 rows · 2 with warnings — see Check layout · 1 skipped". */
 const resultLine = (s) => `Applied to ${s.apply} row${s.apply === 1 ? '' : 's'}${s.warned.length ? ` · ${s.warned.length} with warnings — see Check layout` : ''}${s.skipped.length ? ` · ${s.skipped.length} skipped` : ''}`

@@ -3,6 +3,8 @@
 // It only REPORTS — nothing is blocked or moved. Every rule is an existing
 // one, asked here, never copied:
 //   aisles       rowAisleGaps (generate/rowAisles.js): beam racks paired as the
+//                aisle labels pair them; and a face with a zone or a wall in front of it
+//                (generate/faceAisles.js faceObstacleGaps), graded the same way —
 //                aisle labels pair them (neighbourPairs — so a label and its
 //                check never disagree), other rack types by rowGaps; each gap
 //                graded by rowAisleLevel (generate/columnCheck.js; the aisle width label's colour too)
@@ -32,6 +34,7 @@
 // result, the highlight, the export question and "go to it" live in the small
 // store below.
 
+import { faceObstacleGaps, zoneName } from '../generate/faceAisles'
 import { create } from 'zustand'
 import { rackFootprint, rowGaps, rowAisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld } from '../generate/columnCheck'
 import { uprightXs } from '../render/rackOps'
@@ -118,6 +121,18 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
     else warnings.push({ ...item, severity: 'warning', text: `${where}: ${short(g.gapLen)}, needs ${len(aislePx)} to pick` })
   }
 
+  // ── a face with a zone or a wall in front of it (faceAisles.js): the same grades, the same items ──
+  for (const g of faceObstacleGaps(objects, { gridSize, profile })) {
+    const r = g.rack, lc = (t) => t.charAt(0).toLowerCase() + t.slice(1)
+    const what = g.obstacle.kind === 'zone' ? `the ${lc(zoneName(g.obstacle.zone))}` : 'the wall'
+    const where = `Aisle between ${lc(name(r))} and ${what}`
+    const lvl = g.level, need = lvl === 1 ? travelPx : aislePx
+    const item = { kind: lvl === 1 ? 'aisle-drive' : 'aisle-pick', ids: [r.id, g.obstacle.kind === 'zone' ? g.obstacle.zone.id : r.parentId].filter(Boolean), box: g.box,
+      highlight: [shade(g.box, lvl === 1 ? HL.red : HL.amber, `${short(g.width)} · needs ${len(need)}`)] }
+    if (lvl === 1) errors.push({ ...item, severity: 'error', text: `${where}: ${short(g.width)}, needs ${len(travelPx)} to drive` })
+    else warnings.push({ ...item, severity: 'warning', text: `${where}: ${short(g.width)}, needs ${len(aislePx)} to pick` })
+  }
+
   // ── cross-aisles between sections, per line, under the travel width (to 0.001 ft) — an ERROR: a truck
   //    can't drive it, even where the racks are reachable another way (a pocket with none is "No way in") ──
   for (const fp of objects.filter(o => FP.has(o.type))) for (const rot of [false, true]) {
@@ -200,7 +215,12 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       const o = byId.get(oid), g = foot.get(oid)
       const by = Math.min(Math.min(f.x + f.w, g.x + g.w) - Math.max(f.x, g.x), Math.min(f.y + f.h, g.y + g.h) - Math.max(f.y, g.y))
       const x0 = Math.max(f.x, g.x), y0 = Math.max(f.y, g.y), area = { x: x0, y: y0, w: Math.min(f.x + f.w, g.x + g.w) - x0, h: Math.min(f.y + f.h, g.y + g.h) - y0 }
-      errors.push({ severity: 'error', kind: 'overlap', ids: [r.id, oid], box: union([f, g]), highlight: [shade(area, HL.red)], text: `${name(r)} overlaps ${name(o).charAt(0).toLowerCase() + name(o).slice(1)} by ${len(by)}` })
+      // two racks of the same row (a pair and its carried-on single, two pieces of one row) read apart by kind,
+      // never "row 12 overlaps row 12"
+      const kind = (q) => (q.type === 'rack_double_row' ? 'pair' : q.type === 'rack_row' ? 'single' : (TYPE_NAMES[q.type] || 'rack').toLowerCase())
+      const text = name(r) !== name(o) ? `${name(r)} overlaps ${name(o).charAt(0).toLowerCase() + name(o).slice(1)} by ${len(by)}`
+        : kind(r) === kind(o) ? `${name(r)}: two ${kind(r)}s overlap by ${len(by)}` : `${name(r)}: the ${kind(r)} overlaps the ${kind(o)} by ${len(by)}`
+      errors.push({ severity: 'error', kind: 'overlap', ids: [r.id, oid], box: union([f, g]), highlight: [shade(area, HL.red)], text })
     }
     // a rack inside a zone: nothing may stand in an office, a washroom, a staging area or a custom area
     for (const z of zones) {

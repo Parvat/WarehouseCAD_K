@@ -6216,6 +6216,34 @@ under or beside the zone; the keeper lands the change at once (`landZones`: the 
 note on the bar, one undo step; a red preview while an edge is dragged (`zonePreview` — the same landing); Width / Length
 in the zone panel, the wall-side edge kept (`zoneSized`); a size label while placing / resizing. Tests: area ZR.
 
+## BUG 81 — a pick face with a zone or a wall in front of it is never graded  (2026-10-12, fixed 2026-10-12)
+Symptom:  A washroom dropped below a back-to-back row, its facing half removed (right), the bays then put back by hand:
+a 9' 9" aisle to the washroom — no X, no label colour, nothing in Check layout.
+Cause:    Check layout and the aisle labels grade only aisles between paired racks (rowAisleGaps); a zone or a wall
+in front of a face was nobody's business.
+Fix:      generate/faceAisles.js — every face with a zone or a wall nearest in front, graded per bay with the same
+levels (a pair without the back-to-back exemption), listed in Check layout as aisle items, labelled amber / red on
+the canvas and in the PDF; the Row group's warnings follow. Tests: area ZF.
+
+## BUG 82 — a pair growing over a split single takes only the first piece; the second stays under it  (2026-10-12, fixed 2026-10-12)
+Symptom:  A pair carrying on as a single whose single was split in two; extending the pair took over the first piece
+and left the second under the pair, overlapping, unseen until the pair moved.
+Cause:    takeOverCarriedBays (utils/pairCarryOn.js) looked for ONE single — the one starting at the pair's old end
+upright — and walked its bays outward until they ran out; a second piece past them, or past a gap, was never looked
+at. Check layout did list the overlap — but as "Row 12, section 2 overlaps row 12, section 2" (both racks one row),
+and only once run (the live re-check refreshes only while the panel is open).
+Fix:      every single of the row on that half gives up the bays the pair's new ones cover exactly; pieces left
+empty go, ones losing middle bays split. The overlap item names the two apart ("the pair overlaps the single").
+Tests: area ZF.
+
+## BUG 83 — a zone placed near a Fill area trims racks lengthened by hand back to the area's box  (2026-10-12, fixed 2026-10-12)
+Symptom:  Found reproducing BUG 82: a single lengthened by hand past its area's box lost those bays when a washroom
+was dropped elsewhere in the area.
+Cause:    The zone keeper refits the area with planAreaResize over its own box, and planAreaResize trims hand-edited
+racks to the box — meant for a box made smaller, applied to an unchanged one.
+Fix:      only a changed box trims. (Also: the bar's zone note is cleared when a layout is opened or undone.)
+Tests: ZF-refit-keeps.
+
 ## Template for new entries
 
 ```

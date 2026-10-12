@@ -182,7 +182,8 @@ export function installAreaKeeper(store) {
     let before = lastObjects
     try { if (action) before = JSON.parse(prevTop).objects || lastObjects } catch { /* keep the last write */ }
     lastHistory = st.history; lastIndex = st.historyIndex; lastObjects = st.objects
-    if (!action || !before) return
+    // the layout replaced outright (a file opened, a fresh start) or undone: the bar's last note no longer applies
+    if (!action || !before) { if (useAreaPrompt.getState().note) useAreaPrompt.setState({ note: null }); return }
     const B = new Map(before.map(o => [o.id, o]))
     const gs = st.gridSize || 40
     const afterIds = new Set(st.objects.map(o => o.id))

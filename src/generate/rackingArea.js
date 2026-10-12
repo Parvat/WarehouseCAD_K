@@ -196,16 +196,17 @@ export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = na
   const area = objects.find(o => o.id === areaId)
   if (!area) return null
   const clean = cleanRacks(objects, area), cleanIds = new Set(clean.map(o => o.id))
-  // hand-edited racks keep only their bays wholly inside the new box
-  const dirty = objects.filter(o => isRack(o) && o.areaId === areaId && !cleanIds.has(o.id)).map(o => o.id)
+  /* a box resized (edited) snaps its run ends to a wall within a rack's depth, like a new one; the same box
+     again is no edit — a saved area refilled over its own box stays exactly where it was */
+  const E = 1e-6, edited = Math.abs(box.x - area.x) > E || Math.abs(box.y - area.y) > E || Math.abs(box.w - area.width) > E || Math.abs(box.h - area.height) > E
+  // hand-edited racks keep only their bays wholly inside the new box — when the box changed: a refit over the
+  // same box (a zone placed or moved nearby) leaves them as they are, a bay added past the box by hand included
+  const dirty = edited ? objects.filter(o => isRack(o) && o.areaId === areaId && !cleanIds.has(o.id)).map(o => o.id) : []
   const t = trimBays(objects, dirty, (b) => !inside(b, box), gridSize, newId)
   const kept = carryPlaced(objects, t.objects, t.became).filter(o => !cleanIds.has(o.id))
   const now = kept.find(o => o.id === areaId)
   // an area from before patterns: its pattern from the box it had, as it was anchored
   const pattern = now.pattern || areaPattern(kept, boxOf(now), areaSettings(now), { gridSize, from: cornerOf(boxOf(now), now.anchor), areaId })?.pattern
-  /* a box resized (edited) snaps its run ends to a wall within a rack's depth, like a new one; the same box
-     again is no edit — a saved area refilled over its own box stays exactly where it was */
-  const E = 1e-6, edited = Math.abs(box.x - area.x) > E || Math.abs(box.y - area.y) > E || Math.abs(box.w - area.width) > E || Math.abs(box.h - area.height) > E
   const racks = pattern ? showPattern(kept, box, pattern, now, clean, removedBoxes(objects, area), { gridSize, newId, snapEnds: edited }) : []
   const keepPlaced = Object.fromEntries(Object.entries(now.placed || {}).filter(([id]) => !cleanIds.has(id)))
   const next = [...kept, ...racks].map(o => (o.id !== areaId ? o : {

@@ -5,13 +5,14 @@ import { useCanvasStore } from '../store/useCanvasStore'
 import { zonePreview } from '../utils/rackingAreaTool'
 import { LabelPill } from './DimensionLabels'
 import { pxToFtIn } from '../utils/canvas'
+import { selectedZones } from './zoneSelection'
 
 /* A zone being resized or placed, on the canvas — pure paint, never listening:
      - while an edge is dragged, the bays (per row) the release will remove, in red: the keeper's own
        landing (utils/rackingAreaTool.js zonePreview → landZones), so the preview is exactly what mouse-up
        does. Nothing is removed until then. Recomputed a moment after the edge stops (a big layout's
        refit is not a per-frame job);
-     - its size, "40' × 30'", on the zone while it is resized or placed (ZoneSizeLabel). */
+     - its size, "40' × 30'", on the zone while it is selected, resized or placed (ZoneSizeLabel). */
 export const REMOVED = '#C0392B'
 const FONT_PX = 11
 
@@ -42,4 +43,16 @@ export function ZoneEditPreview({ gridSize }) {
       <ZoneSizeLabel box={{ x: zone.x, y: zone.y, w: zone.width, h: zone.height }} gridSize={gridSize} zoom={zoom} />
     </Group>
   )
+}
+
+/** The size label on every selected zone (one being resized draws its own, with the preview). */
+export function SelectedZoneSizes({ gridSize }) {
+  const selectedIds = useCanvasStore(s => s.selectedIds)
+  const objects = useCanvasStore(s => s.objects)
+  const zoom = useCanvasStore(s => s.zoom) || 1
+  const editing = useZoneEdit(s => s.zoneId)
+  if (!selectedIds || !selectedIds.length) return null
+  const zones = selectedZones(objects, selectedIds, editing)
+  if (!zones.length) return null
+  return <Group listening={false}>{zones.map(z => <ZoneSizeLabel key={z.id} box={{ x: z.x, y: z.y, w: z.width, h: z.height }} gridSize={gridSize} zoom={zoom} />)}</Group>
 }
