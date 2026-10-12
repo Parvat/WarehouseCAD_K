@@ -1,4 +1,4 @@
-import { deleteBaySelection } from '../../../utils/baySides'
+import { deleteBaySelection, oneSidePicked } from '../../../utils/baySides'
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { useState } from 'react'
@@ -159,6 +159,17 @@ function maxFitBays(obj, allObjects, gridSize, newBeamIn = 96) {
 }
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
+/** A pair's bay picked on one side only: how to pick both (utils/baySides.js). */
+function OneSideHint() {
+  const one = useCanvasStore(s => oneSidePicked(s))
+  if (!one) return null
+  return (
+    <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 4 }}>
+      One side selected · click between the sides to select both
+    </div>
+  )
+}
+
 export function MultiBayPanel() {
   const { activeBaySelection, objects, deleteSelectedBays, changeSelectedBaysBeam, clearBaySelection, clearSelection, gridSize } = useCanvasStore(useShallow(s => ({ activeBaySelection: s.activeBaySelection, objects: s.objects, deleteSelectedBays: s.deleteSelectedBays, changeSelectedBaysBeam: s.changeSelectedBaysBeam, clearBaySelection: s.clearBaySelection, clearSelection: s.clearSelection, gridSize: s.gridSize })))
   if (!activeBaySelection || activeBaySelection.length === 0) return null
@@ -207,6 +218,7 @@ export function MultiBayPanel() {
         <div style={{ color: 'var(--text3)' }}>
           {allSame ? `All ${fmtIn(beamSizes[0])} beams` : `Mixed: ${beamSizes.map(fmtIn).join(', ')}`}
         </div>
+        <OneSideHint />
       </div>
 
       {/* Change beam size */}
@@ -285,6 +297,8 @@ export function RackRowPanel({ obj }) {
 
   // Remove active bay (or last bay if none selected)
   const removeBay = () => {
+    // a pair's bay picked on one side: off that side only, as the Delete key (utils/baySides.js, BUG 88)
+    if (deleteBaySelection(useCanvasStore, nanoid)) return
     if (beams.length <= 1) return
     const idxToRemove = activeBay !== null ? activeBay : beams.length - 1
     /* The same store action as the Delete key (deleteSingleBay): an end bay
@@ -434,6 +448,7 @@ export function RackRowPanel({ obj }) {
             Bay {activeBay + 1} -- Change beam
           </div>
           <BeamPicker current={beams[activeBay]} warnFor={warnChange} onPick={b => changeBay(activeBay, b)} />
+          <OneSideHint />
         </div>
       )}
 

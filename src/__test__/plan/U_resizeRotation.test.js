@@ -161,7 +161,7 @@ describe('U — every size-changing panel commit is anchored', () => {
   const bodyOf = (src, head, len) => src.slice(src.indexOf(head), src.indexOf(head) + len)
   it('U-wire: the rack panel\'s "− Bay" deletes through the store\'s deleteSingleBay (end: shorten, middle: split)', () => {
     const src = readFileSync(new URL('../../../src/components/RightPanel/panels/RackRowPanelCore.jsx', import.meta.url), 'utf8')
-    const body = bodyOf(src, 'const removeBay = () => {', 500)
+    const body = bodyOf(src, 'const removeBay = () => {', 800)
     expect(body).toMatch(/deleteSingleBay\(obj\.id, idxToRemove\)/)
     expect(body).not.toMatch(/commitObjectUpdate\(/)
   })

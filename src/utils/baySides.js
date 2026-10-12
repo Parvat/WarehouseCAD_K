@@ -9,10 +9,25 @@
 // `activeBaySide` on the rack for a single click, `{ objId, bayIdx, side }` entries in activeBaySelection otherwise.
 // Per-bay beam changes and the bay panel act on the whole bay — both sides share the pair's one beam list.
 
+import { create } from 'zustand'
 import { piecesFromStates } from '../generate/faceReach'
 import { rebuildAisles } from './aisleRebuild'
 
 const isPair = (o) => o?.type === 'rack_double_row'
+
+/** The pair bay whose FLUE the pointer is over: { objId, bayIdx } or nulls — painted on both halves
+ *  (canvas2/shapes.jsx), so a click there reads as "both sides". Presentation state, never the canvas store. */
+export const useFlueHover = create(() => ({ objId: null, bayIdx: null }))
+export function setFlueHover(objId, bayIdx) {
+  const h = useFlueHover.getState()
+  if (h.objId !== objId || h.bayIdx !== bayIdx) useFlueHover.setState({ objId, bayIdx })
+}
+
+/** Is a pair's bay picked on one side only right now (the bay panel says how to pick both)? */
+export function oneSidePicked(state) {
+  const entries = selectedBays(state)
+  return entries.length > 0 && hasOneSide(state.objects || [], entries)
+}
 
 /** Which half of pair `obj` a world point is in: 0 (its local top band), 1 (bottom), or null (the flue, or not a pair). */
 export function bayHalfAt(obj, worldX, worldY, gridSize = 40) {

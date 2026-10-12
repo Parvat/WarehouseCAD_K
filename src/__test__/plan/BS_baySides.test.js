@@ -246,3 +246,45 @@ describe('BS — a rack drawn over a zone', () => {
     expect(hitTest(objs(), store.getState().layers, zone.x + zone.width / 2, zone.y + zone.height / 2, 1, GS)).toBe(zone.id)
   })
 })
+
+describe.each([['vertical', true], ['horizontal', false]])('BS — the flue made discoverable, %s', (_, vert) => {
+  it('BS-flue-hover: the pointer over a pair bay\'s flue is that bay on both halves (useFlueHover, set from the same pick as the click: bayHalfAt null); over a half, nothing; the canvas wires it on idle mouse moves and clears it on leave', async () => {
+    const { useFlueHover, setFlueHover } = await import('../../utils/baySides')
+    load(savedFill(vert))
+    const p = pairOf(12), q = pointIn(p, 3, null), h = pointIn(p, 3, 0)
+    expect([bayHalfAt(p, q.x, q.y, GS), bayHalfAt(p, h.x, h.y, GS)]).toEqual([null, 0])
+    setFlueHover(p.id, 3)
+    expect(useFlueHover.getState()).toEqual({ objId: p.id, bayIdx: 3 })
+    setFlueHover(null, null)
+    const src = (await import('node:fs')).readFileSync(new URL('../../canvas2/useCanvasInteraction.js', import.meta.url), 'utf8')
+    expect(src).toMatch(/bayHalfAt\(o, world\.x, world\.y, st\.gridSize\) == null \? hitTestBay\(o, world\.x, world\.y, st\.gridSize\) : null\s*setFlueHover\(/)
+    expect(src).toMatch(/onStageMouseLeave = \(\) => \{\s*setFlueHover\(null, null\)/)
+    const shapes = (await import('node:fs')).readFileSync(new URL('../../canvas2/shapes.jsx', import.meta.url), 'utf8')
+    expect(shapes).toMatch(/flueBay != null && obj\.type === 'rack_double_row' \? bayRectForIndex\(obj, gridSize, flueBay\) : \[\]/)
+  })
+
+  it('BS-hint: the bay panel\'s "One side selected · click between the sides to select both" shows for a bay picked on one side only (clicked or Shift+clicked), not for both sides, the flue, or a single row', async () => {
+    const { oneSidePicked } = await import('../../utils/baySides')
+    load(savedFill(vert))
+    const p = pairOf(12), s = singlesOf(12)[0]
+    const with1 = (patch, extra = {}) => ({ ...store.getState(), selectedIds: [p.id], activeBaySelection: [], ...extra, objects: objs().map(o => (o.id === p.id ? { ...o, ...patch } : o)) })
+    expect(oneSidePicked(with1({ activeBayIdx: 3, activeBaySide: 1 }))).toBe(true)
+    expect(oneSidePicked(with1({ activeBayIdx: 3, activeBaySide: null }))).toBe(false)
+    expect(oneSidePicked(with1({}, { activeBaySelection: [{ objId: p.id, bayIdx: 3, side: 0 }] }))).toBe(true)
+    expect(oneSidePicked(with1({}, { activeBaySelection: [{ objId: p.id, bayIdx: 3, side: 0 }, { objId: p.id, bayIdx: 3, side: 1 }] }))).toBe(false)
+    expect(oneSidePicked({ ...store.getState(), selectedIds: [s.id], activeBaySelection: [{ objId: s.id, bayIdx: 0 }] })).toBe(false)
+    const src = (await import('node:fs')).readFileSync(new URL('../../components/RightPanel/panels/RackRowPanelCore.jsx', import.meta.url), 'utf8')
+    expect(src).toContain('One side selected · click between the sides to select both')
+    expect((src.match(/<OneSideHint \/>/g) || []).length).toBe(2)          // the single-bay panel and the multi-bay panel
+  })
+
+  it('BS-remove (BUG 88): the bay panel\'s Remove bay with a bay picked on one side takes it off that side only, as the Delete key — no longer both', async () => {
+    await takenOver(vert)
+    const p = pairOf(12), last = baysIn(p, 116, 124.75)[0]
+    store.setState({ selectedIds: [p.id], activeBaySelection: [], objects: objs().map(o => (o.id === p.id ? { ...o, activeBayIdx: last, activeBaySide: 0 } : o)) })
+    const src = (await import('node:fs')).readFileSync(new URL('../../components/RightPanel/panels/RackRowPanelCore.jsx', import.meta.url), 'utf8')
+    expect(src).toMatch(/const removeBay = \(\) => \{[\s\S]{0,200}if \(deleteBaySelection\(useCanvasStore, nanoid\)\) return/)
+    expect(deleteBaySelection(store, newId)).toBe(true); await settle()
+    expect([pairOf(12).beams.length, singlesOf(12).length, singlesOf(12)[0].beams.length]).toEqual([13, 1, 1])
+  })
+})

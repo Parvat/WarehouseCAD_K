@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (21 tests)
+### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click
 (canvas2/useCanvasInteraction.js), Shift+click and the bay marquee (canvas2/selection.js), the half-only highlight
@@ -1937,6 +1937,29 @@ picked from the panel's list has no side (both).
 | `BS-zone-pick` | BUG 87: a click on the pair where it stands in the custom area picks the pair; the zone's own floor, the zone |
 
 Changed: `V-wire` — the Shift+click source regex allows the side argument (`toggleBaySelection(st, hit.id, bay, …)`).
+
+**The flue made discoverable (follow-up).** No new gesture — a double-click still takes the whole row. Hovering a pair
+bay's flue paints that bay on BOTH halves (light blue tint, `useFlueHover` in utils/baySides.js, set on idle mouse moves
+from the same pick as the click, cleared on leave or any drag), so a click there reads as "both sides". A bay picked
+on one side only: the bay panel (single-bay and multi-bay) says "One side selected · click between the sides to select
+both". BUG 88: the panel's "− Bay" with a one-side pick removed both sides; it goes through the one-side delete now,
+as the Delete key.
+
+| Test | What |
+|---|---|
+| `BS-flue-hover` ×2 | the flue is the bay on both halves, a half is nothing; wired on mouse move / leave; painted on both bands |
+| `BS-hint` ×2 | the hint for one side (clicked or Shift+clicked); not for both sides, the flue, a single row; in both panels |
+| `BS-remove` ×2 | BUG 88: "− Bay" with a one-side pick → that side only |
+
+Changed: `U-wire` ("− Bay" deletes through deleteSingleBay) — the source window 500 → 800 characters (the one-side
+line comes first; the deleteSingleBay path is unchanged).
+
+**Break-its (follow-up):** hover on a half instead of the flue: BS-flue-hover (2). Hint never shown: BS-hint (2).
+"− Bay" without the one-side path: BS-remove (2).
+
+**Checked in the app (follow-up)** (real mouse, H and V): row 12's pair, hover bay 5's flue → both halves tinted; over
+a half → nothing; click the flue → bay 5 picked on both sides, no hint; click its half → that half, the hint;
+"− Bay" → pair 4 + single 1 + pair 7, the row's own single 2 as before.
 
 **Break-its:** no band 0: BS-pick, BS-click-delete (4). One side deletes both: BS-delete, -click-delete, -middle,
 -group, -group-ask (10). Marquee without side: BS-marquee (2). Shift+click ignoring side: BS-shift (2). Row group on

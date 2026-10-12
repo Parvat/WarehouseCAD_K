@@ -4,7 +4,7 @@ import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
 import { handleHitTest, cursorForHandle, hasResizeHandles } from './handleGeometry'
 import { finishAreaResize } from '../utils/rackingAreaTool'
-import { bayHalfAt } from '../utils/baySides'
+import { bayHalfAt, setFlueHover } from '../utils/baySides'
 import { useZoneEdit } from './ZoneEdit'
 import { clampResizeUpdates, clampDragDelta } from '../utils/floorClamp'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
@@ -587,7 +587,7 @@ export function useCanvasInteraction({
      gesture (pan/drag/marquee/resize) keeps setting it from its own
      mousemove/mouseup, and held space always means grab. */
   const onStageMouseMove = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current) return
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current) { setFlueHover(null, null); return }
     if (spaceDown.current) return
     const stage = stageRef.current
     if (!stage) return
@@ -601,6 +601,15 @@ export function useCanvasInteraction({
       movePlacement(useCanvasStore, world, view.current.zoom)
       setCursor(usePlacement.getState().active?.blocked ? 'not-allowed' : 'copy')
       return
+    }
+
+    /* the flue of a pair's bay under the pointer: that bay painted on BOTH halves, so a click there reads as
+       picking both sides (utils/baySides.js) */
+    {
+      const id = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+      const o = id && st.objects.find(q => q.id === id)
+      const bay = o && o.type === 'rack_double_row' && bayHalfAt(o, world.x, world.y, st.gridSize) == null ? hitTestBay(o, world.x, world.y, st.gridSize) : null
+      setFlueHover(bay != null ? o.id : null, bay != null ? bay : null)
     }
 
     let next = 'default'
@@ -643,6 +652,7 @@ export function useCanvasInteraction({
      idle: an active gesture is already on window-level move/up and keeps
      going (and setting its own cursor) even off-canvas. */
   const onStageMouseLeave = () => {
+    setFlueHover(null, null)
     if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current) return
     setCursor(spaceDown.current ? 'grab' : 'default')
   }

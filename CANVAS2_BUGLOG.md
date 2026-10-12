@@ -6271,6 +6271,11 @@ could not be picked (found on the one-side delete mouse check).
 Cause:    hitTest's first pass takes objects in array order; the zone came before the rack though drawn under it.
 Fix:      zones ranked below other objects in that pass (Zones layer under Racking). Test: BS-zone-pick.
 
+## BUG 88 — the bay panel's "− Bay" removed both sides of a bay picked on one side  (2026-10-12, fixed 2026-10-12)
+Symptom:  a pair's bay clicked on one half; "− Bay" in the panel took it off both halves, while Delete took one side.
+Cause:    removeBay called the store's deleteSingleBay directly.
+Fix:      the one-side delete first (utils/baySides.js deleteBaySelection), as the Delete key. Test: BS-remove.
+
 ## Template for new entries
 
 ```
