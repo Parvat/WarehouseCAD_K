@@ -21,6 +21,7 @@ import { innerOutline } from './floorGeom'
 import { rebuildAisles } from './aisleRebuild'
 import { autoSave, serializeScene } from './saveLoad'
 import { takeOverCarriedBays } from './pairCarryOn'
+import { reconcileElevations } from './elevations'
 
 /** The Row group tool's id (the store's activeTool), beside Fill racking's. */
 export const ROW_GROUP_TOOL = 'row_group'
@@ -122,7 +123,7 @@ function writeInPlace(objects) {
 }
 /** The layout an apply writes: the plan applied, each grown pair taking over its carried-on single's bay
  *  (utils/pairCarryOn.js — the same rule as for a hand edit), the aisles re-paired. */
-const written = (objects, plan) => rebuildAisles(takeOverCarriedBays(objects, applyReplay(objects, plan), gs(), watch.newId).objects, watch.newId).objects
+const written = (objects, plan) => reconcileElevations(objects, rebuildAisles(takeOverCarriedBays(objects, applyReplay(objects, plan), gs(), watch.newId).objects, watch.newId).objects)   // a replayed levels edit gets its type too (utils/elevations.js)
 
 /** The bar's line after an apply: "Applied to 11 rows · 2 with warnings — see Check layout · 1 skipped". */
 const resultLine = (s) => `Applied to ${s.apply} row${s.apply === 1 ? '' : 's'}${s.warned.length ? ` · ${s.warned.length} with warnings — see Check layout` : ''}${s.narrowLost ? ` · ${s.narrowLost} position${s.narrowLost === 1 ? '' : 's'} lost to narrow aisles` : ''}${s.skipped.length ? ` · ${s.skipped.length} skipped` : ''}`

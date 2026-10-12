@@ -11,6 +11,7 @@
 import { uprightXs } from '../render/rackOps'
 import { rackFootprint } from '../generate/columnCheck'
 import { rebuildAisles } from './aisleRebuild'
+import { carryElev, withElev } from './elevations'
 
 /** Runs of consecutive KEPT bay indices, e.g. 5 bays minus {2} -> [[0,1],[3,4]]. */
 export function keptRuns(bayCount, removed) {
@@ -60,7 +61,7 @@ export function splitRackForBayDelete(obj, removed, newId, gridSize = 40) {
       y: clean(wy - obj.height / 2),
       activeBayIdx: null,
     }
-  })
+  }).map((p, k) => withElev(p, carryElev(obj, runs[k])))   // each piece keeps its bays' elevation types (utils/elevations.js)
 }
 
 /** Do two racks face each other across an aisle — a positive gap on one

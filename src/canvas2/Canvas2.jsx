@@ -13,6 +13,8 @@ import { RowGroupPreview } from './RowGroupPreview'
 import { SplitPreview } from './SplitPreview'
 import { IssueHighlight } from './IssueHighlight'
 import { RowGroupBar } from './RowGroupBar'
+import { ElevPaintPreview, ElevPaintBar, ElevLegend } from './ElevationsCanvas'
+import { PAINT_TOOL, usePaint, targetAt, strokeTargets, commitPaint } from '../utils/elevPaint'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useCanvasInteraction } from './useCanvasInteraction'
@@ -384,10 +386,51 @@ export function Canvas2() {
     if (t && t.hitId) splitAt(useCanvasStore, t.world, t.hitId, { newId: nanoid, rebuildAisles })
   }
 
-  const stageMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : onStageMouseDown
-  const stageMouseMove = measuring ? measureMouseMove : splitting ? splitMouseMove : filling || grouping ? undefined : onStageMouseMove
-  const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : filling || grouping ? undefined : onStageMouseLeave
-  const effectiveCursor = measuring || filling || grouping || splitting ? 'crosshair' : cursor
+  /* Paint an elevation type (utils/elevPaint.js): hovering shows what a click changes (Row / Side / Bay, the flue =
+     both sides); a press starts a stroke — Bay / Side follow the row and side it started on, Row adds every row the
+     drag crosses — and the release writes it as ONE history entry. */
+  const painting = !measuring && activeTool === PAINT_TOOL
+  useEffect(() => { if (!painting) usePaint.setState({ hover: null, stroke: null }) }, [painting])
+  const paintTarget = (p) => {
+    const st = useCanvasStore.getState(), world = screenToWorld(view.current, p)
+    const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+    return { st, world, t: targetAt(st.objects, hitId, world, st.gridSize || 40) }
+  }
+  const paintMouseMove = (e) => {
+    if (usePaint.getState().stroke) return
+    const p = e.target.getStage()?.getPointerPosition()
+    if (!p) return
+    const { st, t } = paintTarget(p)
+    usePaint.setState({ hover: t ? strokeTargets(st.objects, usePaint.getState().scope, t, t, st.gridSize || 40) : null })
+  }
+  const paintMouseDown = (e) => {
+    const stage = e.target.getStage()
+    const p = stage?.getPointerPosition()
+    if (!p || (e.evt && e.evt.button !== 0)) return
+    const { st, t } = paintTarget(p)
+    if (!t) return
+    const scope = usePaint.getState().scope, gs = st.gridSize || 40, rowKeys = new Set([t.rowKey])
+    usePaint.setState({ hover: null, stroke: { start: t, targets: strokeTargets(st.objects, scope, t, t, gs, [...rowKeys]) } })
+    const rect = stage.container().getBoundingClientRect()
+    const move = (ev) => {
+      const sp = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }, w = screenToWorld(view.current, sp), s2 = useCanvasStore.getState()
+      if (scope === 'row') { const tt = paintTarget(sp).t; if (tt) rowKeys.add(tt.rowKey) }
+      usePaint.setState({ stroke: { start: t, targets: strokeTargets(s2.objects, scope, t, { r: t.vert ? w.y : w.x }, gs, [...rowKeys]) } })
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+      const ps = usePaint.getState()
+      if (ps.stroke) commitPaint(useCanvasStore, ps.stroke.targets, { typeId: ps.typeId, reset: ps.reset })
+      usePaint.setState({ stroke: null })
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
+  const stageMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : painting ? paintMouseDown : onStageMouseDown
+  const stageMouseMove = measuring ? measureMouseMove : splitting ? splitMouseMove : painting ? paintMouseMove : filling || grouping ? undefined : onStageMouseMove
+  const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : painting ? () => usePaint.setState({ hover: null }) : filling || grouping ? undefined : onStageMouseLeave
+  const effectiveCursor = measuring || filling || grouping || splitting ? 'crosshair' : painting ? 'cell' : cursor
 
   return (
     <div
@@ -506,6 +549,8 @@ export function Canvas2() {
             <RowGroupPreview />
             {/* the Split tool's cut line (SplitPreview.jsx) */}
             {splitting && <SplitPreview />}
+            {/* paint an elevation type: what a click or the drag changes (ElevationsCanvas.jsx) */}
+            {painting && <ElevPaintPreview />}
             {/* Check layout: the clicked problem, until the next click (utils/layoutCheck.js) */}
             <IssueHighlight />
             <PlacementGhost gridSize={gridSize} />
@@ -520,6 +565,8 @@ export function Canvas2() {
       <ViewAdopter view={view} apply={apply} />
       <RowGroupBar />
       <AreaPrompt />
+      {painting && <ElevPaintBar />}
+      <ElevLegend />
       {filling && <FillOptionsBar />}
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>

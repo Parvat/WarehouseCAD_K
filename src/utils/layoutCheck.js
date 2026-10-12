@@ -48,6 +48,7 @@ export { rowAisleGaps }
 import { oversizedBayIndices } from './capacity'
 import { fmtLen, fmtLenDown, sectionLabel, failingCrossAisles } from './copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
+import { elevationIssues } from './elevations'
 import { useDragPreview } from '../canvas2/dragPreview'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -248,7 +249,14 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
         highlight: g.boxes.map(b => shade(b, HL.red, 'No way in')), text: 'No way in: aisle closed at both ends' })
     }
   }
-  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'angled']
+  /* elevation types (utils/elevations.js): the top of the upright above the building's clear height; a pallet and
+     its clearance that don't fit between two beams — one error per type, every rack carrying it lit */
+  for (const e of elevationIssues(objects)) {
+    const boxes = e.ids.map(id => foot.get(id)).filter(Boolean).map(boxOf)
+    if (!boxes.length) continue
+    errors.push({ severity: 'error', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => shade(b, HL.red)), text: e.text })
+  }
+  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'elev-height', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'angled']
   const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind) }
 }

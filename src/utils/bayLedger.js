@@ -26,6 +26,7 @@
 // change elsewhere — and the panels hold their last ledger while a drag is in flight.
 
 import { positionsPerBeam } from './palletFit'
+import { levelsResolver, tableOf } from './elevations'
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const EPS = 1e-6
@@ -72,11 +73,18 @@ function frameLines(r, gridSize) {
   return rev ? out.reverse() : out
 }
 
-/** Positions one bay holds: pallets on the beam × levels × faces (a pair has two). */
-const bayPositions = (r, b) => positionsPerBeam(b, r.palletWIn || 40) * (r.levels || 1) * (r.type === 'rack_double_row' ? 2 : 1)
+/** Positions one bay holds: pallets on the beam × levels, per face (a pair has two) — each face's levels from its
+ *  elevation type (utils/elevations.js), else the rack's own `levels`. */
+const bayPositions = (r, b, bi, lv) => {
+  const per = positionsPerBeam(b, r.palletWIn || 40)
+  if (!lv) return per * (r.levels || 1) * (r.type === 'rack_double_row' ? 2 : 1)
+  return per * (lv(r, bi, 0) + (r.type === 'rack_double_row' ? lv(r, bi, 1) : 0))
+}
 
 let cache = { objects: null, key: null, ledger: null }
-const keyOf = (racks) => racks.map(r => [r.id, r.type, r.x, r.y, r.width, r.height, r.rotation || 0, r.beams.join('/'), r.levels, r.palletWIn, r.uprightWidth].join(',')).join(';')
+const keyOf = (racks) => racks.map(r => [r.id, r.type, r.x, r.y, r.width, r.height, r.rotation || 0, r.beams.join('/'), r.levels, r.palletWIn, r.uprightWidth, JSON.stringify([r.elevType, r.elevSides, r.elevBays])].join(',')).join(';')
+/* the types' level counts (a type edited to more levels changes every bay that carries it) */
+const tableKey = (objects) => { const T = tableOf(objects); return T ? T.defaultId + ':' + T.types.map(t => t.id + '=' + t.levels.length).join(',') : '' }
 
 /** The layout's bay ledger: { racks: Map(id → { counted: [bool per bay], positions, bays, uncounted,
  *  frames: [bool per upright position, bays + 1: bounds a counted bay], frameCount: [frames each position
@@ -85,7 +93,8 @@ const keyOf = (racks) => racks.map(r => [r.id, r.type, r.x, r.y, r.width, r.heig
 export function bayLedger(objects, gridSize = 40) {
   if (cache.objects === objects && cache.ledger) return cache.ledger
   const racks = objects.filter(isBayRack)
-  const key = gridSize + '|' + keyOf(racks)
+  const key = gridSize + '|' + keyOf(racks) + '|' + tableKey(objects)
+  const lv = levelsResolver(objects)
   if (cache.key === key && cache.ledger) { cache.objects = objects; return cache.ledger }
   const rects = racks.map(r => bayRects(r, gridSize)), feet = racks.map(footprint)
   const counted = racks.map(r => r.beams.map(() => true))
@@ -122,7 +131,7 @@ export function bayLedger(objects, gridSize = 40) {
   }
   racks.forEach((r, i) => {
     const c = counted[i]
-    const positions = r.beams.reduce((t, b, bi) => t + (c[bi] ? bayPositions(r, b) : 0), 0)
+    const positions = r.beams.reduce((t, b, bi) => t + (c[bi] ? bayPositions(r, b, bi, lv) : 0), 0)
     const bays = c.filter(Boolean).length
     const frames = Array.from({ length: r.beams.length + 1 }, (_, k) => !!(c[k - 1] || c[k]))
     const lines = frameLines(r, gridSize)

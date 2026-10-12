@@ -6,6 +6,7 @@ import { LabelsPanel }     from './LabelsPanel'
 import { GroupPanel }      from './GroupPanel'
 import { ColumnCheckPanel } from './ColumnCheckPanel'
 import { LayoutCheckPanel } from './LayoutCheckPanel'
+import { ElevationsPanel } from './ElevationsPanel'
 
 export function RightPanel() {
   return (
@@ -17,6 +18,7 @@ export function RightPanel() {
       <LayoutCheckPanel />
       <PropertiesPanel />
       <ColumnCheckPanel />
+      <ElevationsPanel />
       <GroupPanel />
       <ColorPanel />
       <LayerPanel />

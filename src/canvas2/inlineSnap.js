@@ -20,6 +20,7 @@
 
 import { rackFootprint } from '../generate/columnCheck'
 import { sharesFrame, beamsUpdate } from '../utils/bayBeam'
+import { ELEV_FIELDS, effectiveRef, sidesOf } from '../utils/elevations'
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const EPS = 1e-6
@@ -120,6 +121,16 @@ export function joinRacks(stationary, moved, gridSize) {
   const second = first === moved ? stationary : moved
   const base = { ...stationary, x: first.x, y: first.y, width: first.width, height: first.height }
   const out = { ...base, ...beamsUpdate(base, [...first.beams, ...second.beams], gridSize), activeBayIdx: null }
+  /* the elevation types (utils/elevations.js): the joined rack keeps the stationary one's rack and side types; the
+     moved one's bays keep what they carried, as bay overrides ('*' = the default) */
+  if (ELEV_FIELDS.some(k => first[k] != null || second[k] != null)) {
+    for (const k of ELEV_FIELDS) delete out[k]
+    if (stationary.elevType != null) out.elevType = stationary.elevType
+    if (stationary.elevSides) out.elevSides = [...stationary.elevSides]
+    const S = sidesOf(out), mine = (r) => r === stationary
+    out.elevBays = Array.from({ length: S }, (_, s) => [...first.beams.map((_, b) => (mine(first) ? first.elevBays?.[s]?.[b] ?? null : effectiveRef(first, b, s))), ...second.beams.map((_, b) => (mine(second) ? second.elevBays?.[s]?.[b] ?? null : effectiveRef(second, b, s)))])
+    if (!out.elevBays.some(a => a.some(v => v != null))) delete out.elevBays
+  }
   // the stamp of where it was generated follows its start
   if (stationary.genRunFt != null) {
     const r = (o) => lineOf(o).r0

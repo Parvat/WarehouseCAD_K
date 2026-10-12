@@ -5,6 +5,7 @@ import { layoutColumns, layoutFloors } from './usableCapacity'
 import { useRules } from '../rules/useRules'
 import { useDragPreview } from '../canvas2/dragPreview'
 import { setColumnCheckView } from './columnCheckView'
+import { tableOf, levelsAt as elevLevelsAt } from '../utils/elevations'
 
 /* ── Column / forklift grid check — the app-side wiring ──────────────────────
    columnCheck.js is the pure brain; this is the only place that calls it.
@@ -109,6 +110,9 @@ export function ColumnCheckProvider({ children }) {
      absolute world points with any rotation already baked in. */
   const floors = useSame(useMemo(() => layoutFloors(objects), [objects]), sameFloors)
   const racks = useSame(useMemo(() => objects.filter(isRack), [objects]), sameRacks)
+  // each bay-side's levels from its elevation type (utils/elevations.js) — a new reader only when the types change
+  const elevTable = useMemo(() => tableOf(objects), [objects])
+  const levelsAt = useMemo(() => (elevTable ? (r, b, s) => elevLevelsAt(r, b, s, elevTable) : null), [elevTable])
 
   /* During a drag (dragPreview's `dragging`: a plain or live-flue drag, a
      resize, a rotate) the full check is held at its last result and only its
@@ -119,7 +123,7 @@ export function ColumnCheckProvider({ children }) {
   const dragging = useDragPreview(s => s.dragging)
   const last = useRef(null)
   const result = useMemo(() => {
-    const inputs = { racks, columns, profile, gridSize, pickBothSides, floors }
+    const inputs = { racks, columns, profile, gridSize, pickBothSides, floors, levelsAt }
     const l = last.current
     const same = l && Object.keys(inputs).every(k => l.inputs[k] === inputs[k])
     if (dragging) {
@@ -131,7 +135,7 @@ export function ColumnCheckProvider({ children }) {
     const full = (!racks.length || !columns.length) ? EMPTY_RESULT : checkColumns(inputs)
     last.current = { inputs, result: full }
     return full
-  }, [dragging, racks, columns, gridSize, profile, pickBothSides, floors])
+  }, [dragging, racks, columns, gridSize, profile, pickBothSides, floors, levelsAt])
 
   /* Absorb is the default, so it is the absence of a decision, not a stored
      one — the customer keeps the rack and eats `positionsLost`. Only "remove

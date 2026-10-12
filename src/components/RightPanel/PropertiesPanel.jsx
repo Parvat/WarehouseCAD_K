@@ -492,6 +492,17 @@ export function PropertiesPanel() {
                 </div>
               </div>
               <NumField label="Rot" value={obj.rotation||0} onChange={v => up('rotation',v)} onCommit={v => commit('rotation',v)} unit="°" />
+              {/* the clear height the elevation types are checked against (Check layout; utils/elevations.js) — none: not checked */}
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <span style={S.label}>Clear ht</span>
+                <input type="number" min={0} step={0.5} aria-label="Clear height"
+                  defaultValue={obj.clearHeightFt ?? ''} key={`ch-${obj.id}-${obj.clearHeightFt ?? ''}`} placeholder="not set"
+                  onBlur={e => { const v = parseFloat(e.target.value); const next = !isNaN(v) && v > 0 ? v : undefined; if (next !== obj.clearHeightFt) commit('clearHeightFt', next) }}
+                  onKeyDown={e => { if (e.key==='Enter') e.target.blur() }}
+                  style={S.input}
+                />
+                <span style={{...S.mono10, color:'var(--text3)'}}>ft</span>
+              </div>
 
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <span style={S.label}>Label</span>

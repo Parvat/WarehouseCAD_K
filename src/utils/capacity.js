@@ -69,7 +69,7 @@ export function oversizedBayIndices(beams, palletFaceIn) {
  * Calculate pallet capacity for a single rack object.
  * Returns null for non-rack objects.
  */
-export function getRackCapacity(obj, rules = DEFAULT_RULES) {
+export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
   if (!obj) return null
   const rPalletW = rules?.pallet?.wIn ?? 40
   const rBeam    = rules?.selective?.beamLengthsIn?.[0] ?? 96
@@ -81,7 +81,8 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES) {
     const levels     = obj.levels     || 1
     const palletsPerBay = beams.map(b => positionsPerBeam(b, palletWIn))
     const groundTotal   = palletsPerBay.reduce((s, p) => s + p, 0)
-    const total         = groundTotal * levels
+    // each bay's levels from its elevation type when `levelsAt` is given (utils/elevations.js)
+    const total         = levelsAt ? palletsPerBay.reduce((s, p, i) => s + p * levelsAt(obj, i, 0), 0) : groundTotal * levels
     return {
       type:    'beam',
       bays:    beams.length,
@@ -99,7 +100,7 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES) {
     const levels     = obj.levels     || 1
     const palletsPerBay = beams.map(b => positionsPerBeam(b, palletWIn))
     const groundTotal   = palletsPerBay.reduce((s, p) => s + p, 0) * 2  // × 2 rows
-    const total         = groundTotal * levels
+    const total         = levelsAt ? palletsPerBay.reduce((s, p, i) => s + p * (levelsAt(obj, i, 0) + levelsAt(obj, i, 1)), 0) : groundTotal * levels
     return {
       type:    'beam',
       bays:    beams.length,

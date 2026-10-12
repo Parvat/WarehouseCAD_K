@@ -17,6 +17,7 @@
 import { rackFootprint, rowAisleLevel, MHE_PROFILES } from './columnCheck'
 import { rowAisleGaps } from './rowAisles'
 import { faceObstacleGaps, positionRunSpans, faceIndex } from './faceAisles'
+import { levelsResolver } from '../utils/elevations'
 
 const E = 1e-6
 const BEAM = new Set(['rack_row', 'rack_double_row'])
@@ -45,11 +46,11 @@ export function narrowAisleBlocks(objects, { profile = MHE_PROFILES.reach, gridS
   }
   // faces with a zone or the wall nearest in front
   for (const g of faceObstacleGaps(objects, { gridSize, profile })) for (const bay of g.bays) add(g.rack, bay, g.face, g.level, (g.slots && g.slots[bay]) || [])
-  const out = []
+  const out = [], lv = levelsResolver(objects)
   for (const { r, bay, face, level, ps } of hit.values()) {
     const positionIndices = [...ps].sort((a, b) => a - b).filter(p => !already.has(r.id + ':' + bay + ':' + face + ':' + p))
     if (!positionIndices.length) continue
-    out.push({ rackId: r.id, bayIndex: bay, faces: [face], positionIndices, positionsLost: positionIndices.length * (r.levels || 1), level, kind: 'narrow-aisle' })
+    out.push({ rackId: r.id, bayIndex: bay, faces: [face], positionIndices, positionsLost: positionIndices.length * (lv ? lv(r, bay, face) : r.levels || 1), level, kind: 'narrow-aisle' })
   }
   return out
 }

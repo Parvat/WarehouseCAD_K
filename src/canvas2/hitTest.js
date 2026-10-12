@@ -236,6 +236,7 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
   for (const obj of sorted) {
     if (!isLayerUsable(layerMap, obj)) continue
     if (COL_GRID.has(obj.type) || FP_SET.has(obj.type)) continue
+    if (obj.type === 'elevation_types') continue   // data (utils/elevations.js), nothing to pick
     /* An aisle carries no x/y/width/height of its own — objectContains
        (utils/canvas.js, frozen brain) has no case for it and degenerates to
        a 0×0 box at the origin, never hittable. Its real geometry is the gap

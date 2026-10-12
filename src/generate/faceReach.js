@@ -25,6 +25,7 @@
 
 import { uprightXs } from '../render/rackOps'
 import { boxOnFloor } from '../utils/floorGeom'
+import { carryElev, withElev } from '../utils/elevations'
 
 const E = 1e-6
 const overlaps = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > E && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > E
@@ -93,13 +94,15 @@ export function piecesFromStates(r, state, { gridSize = 40, newId }) {
       const width = ((upIn * (pieceBeams.length + 1) + pieceBeams.reduce((p, q) => p + q, 0)) / 12) * gridSize
       const [ly0, ly1] = st === 'A' ? [top, top + depthPx] : st === 'B' ? [bot - depthPx, bot] : [top, bot]
       const c = T(xs[i] + width / 2, (ly0 + ly1) / 2), h = ly1 - ly0
-      out.push({
+      // the piece keeps its bays' elevation types; a half left as a single takes its side's (utils/elevations.js)
+      const elev = carryElev(r, Array.from({ length: j - i + 1 }, (_, k) => i + k), st === 'A' ? 0 : st === 'B' ? 1 : null)
+      out.push(withElev({
         ...r,
         id: first ? r.id : newId(),
         ...(first ? {} : { pieceOf: r.id }),
         beams: pieceBeams, width, height: h, x: c.x - width / 2, y: c.y - h / 2, activeBayIdx: null, activeBaySide: null,
         ...(st === 'A' || st === 'B' ? { type: 'rack_row', label: 'Rack Row', flueSpaceIn: 0, flueBaseIn: 0 } : {}),
-      })
+      }, elev))
       first = false
     }
     i = j + 1

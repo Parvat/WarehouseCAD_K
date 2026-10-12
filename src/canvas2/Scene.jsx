@@ -4,6 +4,8 @@ import { shownIn } from '../utils/layers'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
+import { tableOf } from '../utils/elevations'
+import { useElevView } from '../utils/elevationDraw'
 import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape, RackingAreaShape, ZoneShape } from './shapes'
 
 /* ── STEP 2 · the scene ──────────────────────────────────────────────────────
@@ -55,6 +57,10 @@ function SceneView({ listening = false, bind }) {
      and the picking use, so they cannot disagree about what is on the sheet).
      A locked layer still draws. */
   const isVisible = useMemo(() => shownIn(layers), [layers])
+  /* each bay filled with its elevation type's colour (utils/elevationDraw.js), unless the colours are hidden */
+  const showColors = useElevView(s => s.showColors)
+  const elevTable = useMemo(() => tableOf(objects), [objects])
+  const elev = showColors ? elevTable : null
 
   /* Rack ops are derived once per object and carry no zoom, so panning and
      zooming rebuild nothing here. They are also kept per rack OBJECT: an edit
@@ -69,6 +75,7 @@ function SceneView({ listening = false, bind }) {
     const floors = [], rest = [], columns = []
     for (const o of objects) {
       if (!o || !isVisible(o)) continue
+      if (o.type === 'elevation_types') continue   // the layout's elevation types (utils/elevations.js): data, never drawn
       if (FP_TYPES.has(o.type) && o.fpVerts) { floors.push(o); continue }
       if (o.type === 'column_grid') { columns.push({ kind: 'columns', obj: o }); continue }
       if (o.type === 'aisle') { rest.push({ kind: 'aisle', obj: o }); continue }
@@ -92,7 +99,7 @@ function SceneView({ listening = false, bind }) {
       {scene.rest.map(e => {
         if (e.kind === 'rack') {
           return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} gridSize={gridSize} lz={lz} listening={listening} bind={bind}
-            activeBaySelection={activeBaySelection} />
+            activeBaySelection={activeBaySelection} elev={elev} />
         }
         if (e.kind === 'columns') {
           return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />

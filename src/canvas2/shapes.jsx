@@ -10,6 +10,7 @@ import { labelScale } from '../render/labelSize'
 const DEFAULT_LZ = labelScale()
 import { bayRectForIndex, positionRectForIndex } from '../render/bayGeom'
 import { useFlueHover } from '../utils/baySides'
+import { bandRects } from '../utils/elevationDraw'
 export { bayRectForIndex, positionRectForIndex }
 import { aisleRect } from './hitTest'
 
@@ -298,7 +299,7 @@ function multiBaySelectionRects(obj, gridSize, activeBaySelection) {
 }
 
 /** A rack, from its draw-ops. */
-function RackShapeView({ obj, ops, gridSize, listening = false, bind, activeBaySelection, lz = DEFAULT_LZ }) {
+function RackShapeView({ obj, ops, gridSize, listening = false, bind, activeBaySelection, lz = DEFAULT_LZ, elev = null }) {
   const msRects = multiBaySelectionRects(obj, gridSize, activeBaySelection)
   // the pointer over this pair's flue: that bay on both halves (utils/baySides.js) — a click there picks both
   const flueBay = useFlueHover(h => (h.objId === obj.id ? h.bayIdx : null))
@@ -308,6 +309,11 @@ function RackShapeView({ obj, ops, gridSize, listening = false, bind, activeBayS
       opacity={obj.opacity ?? 1} {...spin(obj, gridSize)} {...(bind ? bind(obj) : null)}>
       <HitPad obj={obj} gridSize={gridSize} listening={listening} />
       <Ops ops={ops} listening={listening} lz={lz} />
+      {/* each bay band in its elevation type's colour, each side of a pair on its own (utils/elevationDraw.js) */}
+      {elev && bandRects(obj, elev, gridSize).map((r, i) => (
+        <Rect key={'ev' + i} x={r.x} y={r.y} width={r.width} height={r.height} fill={r.color} opacity={0.38}
+          perfectDrawEnabled={false} listening={false} />
+      ))}
       {flueRects.map((r, i) => (
         <Rect key={'fh' + i} {...r} fill="rgba(74,158,255,0.14)" stroke="#4a9eff" strokeWidth={1}
           dash={[2, 3]} strokeScaleEnabled={false} perfectDrawEnabled={false}

@@ -237,7 +237,7 @@ export function rackReachable(r, racks, { gridSize = GS, floors = [], depthPx } 
   return false
 }
 
-export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, floors = [], alreadyBlocked = new Set() }) {
+export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, floors = [], alreadyBlocked = new Set(), levelsAt = null }) {
   const aislePx = profile.aisleFt * gridSize
   const out = []
   if (!columns.length || !(aislePx > 0)) return out
@@ -274,7 +274,8 @@ export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILE
     }
     const { beams, palletWIn, at, near } = zi
     const nearFeet = near ? rackFeet.filter(o => overlaps(near, o.f)) : []
-    const key = content + '|' + nearFeet.map(o => o.id + ':' + o.f.x + ',' + o.f.y + ',' + o.f.w + ',' + o.f.h).join(';') + '|' + (String(r.id).includes(':') ? [...alreadyBlocked].filter(k => k.startsWith(r.id + ':')).join(',') : (blockedBy.get(r.id) || ''))
+    const lvKey = levelsAt ? '|' + zi.beams.map((_, b) => levelsAt(r, b, 0) + '/' + levelsAt(r, b, 1)).join(',') : ''
+    const key = content + lvKey + '|' + nearFeet.map(o => o.id + ':' + o.f.x + ',' + o.f.y + ',' + o.f.w + ',' + o.f.h).join(';') + '|' + (String(r.id).includes(':') ? [...alreadyBlocked].filter(k => k.startsWith(r.id + ':')).join(',') : (blockedBy.get(r.id) || ''))
     const hit = pickCache.blocks.get(r.id)
     if (hit && hit.key === key) { out.push(...hit.blocks); continue }
 
@@ -309,7 +310,7 @@ export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILE
         if (lost.length) {
           out.push({
             rackId: r.id, bayIndex, faces: [face], positionIndices: lost,
-            columnIndices: [...cols], positionsLost: lost.length * levels, kind: 'pick-zone',
+            columnIndices: [...cols], positionsLost: lost.length * (levelsAt ? levelsAt(r, bayIndex, face) : levels), kind: 'pick-zone',
           })
         }
       }
@@ -439,7 +440,7 @@ export function aisleColumnBlocks({ racks = [], columns = [], profile = MHE_PROF
 // pickBothSides: false (default) — a column with clear space on only ONE
 //   side is accessible (GENERATOR_SPEC_V10.md's 3-level rule below); true —
 //   the customer wants both faces pickable, so level 2 also gets flagged.
-export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, pickBothSides = false, floors = [] }) {
+export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.reach, gridSize = GS, pickBothSides = false, floors = [], levelsAt = null }) {
   /* Accessibility is 3 levels, not binary (GENERATOR_SPEC_V10.md, replacing
      the earlier "clear < minAisleFt = blocked" test — that flagged an 8ft-
      clear aisle on a reach truck (needs 10ft to PICK) as blocked, when the
@@ -587,8 +588,10 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
 
       // Absorb: only the pallet position(s) the column actually reaches, the
       // faces it hits, all levels. Remove: drop the whole bay it lands in.
-      const positionsLost = positionIndices.length * levels * facesHit
-      const sectionsLost  = positionsPerThisBay * levels * facesHit
+      // each face's levels from its elevation type (utils/elevations.js), else the rack's
+      const lvFaces = levelsAt && bayIndex != null ? faces.reduce((t, f) => t + levelsAt(r, bayIndex, f), 0) / faces.length : levels
+      const positionsLost = positionIndices.length * lvFaces * facesHit
+      const sectionsLost  = positionsPerThisBay * lvFaces * facesHit
 
       positionsLostIfAbsorb += positionsLost
       sectionsLostIfRemove  += sectionsLost
@@ -605,7 +608,7 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
     if (c.bayIndex == null) continue
     for (const f of c.faces || [0]) for (const p of c.positionIndices || []) alreadyBlocked.add(`${c.rackId}:${c.bayIndex}:${f}:${p}`)
   }
-  const pickBlocks = pickZoneBlocks({ racks, columns, profile, gridSize, floors, alreadyBlocked })
+  const pickBlocks = pickZoneBlocks({ racks, columns, profile, gridSize, floors, alreadyBlocked, levelsAt })
   const uprightHits = columnsOnUprights({ racks, columns, gridSize })
   const positionsLostToPickZone = pickBlocks.reduce((s, b) => s + b.positionsLost, 0)
   positionsLostIfAbsorb += positionsLostToPickZone

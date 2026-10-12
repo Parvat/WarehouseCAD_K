@@ -13,6 +13,7 @@ import { bayLedger } from '../utils/bayLedger'
 import { getLayoutCapacity } from '../utils/capacity'
 import { checkColumns, expandColumnGrid, MHE_PROFILES } from './columnCheck'
 import { DEFAULT_RULES } from '../rules/defaults'
+import { levelsResolver } from '../utils/elevations'
 
 const GS = 40
 
@@ -46,7 +47,7 @@ export function runColumnCheck(objects, { profile = MHE_PROFILES.reach, gridSize
   const racks = objects.filter(isRack)
   const columns = layoutColumns(objects, gridSize)
   if (!racks.length || !columns.length) return null
-  return checkColumns({ racks, columns, profile, gridSize, pickBothSides, floors: layoutFloors(objects) })
+  return checkColumns({ racks, columns, profile, gridSize, pickBothSides, floors: layoutFloors(objects), levelsAt: levelsResolver(objects) })
 }
 
 /** usable = gross − in-rack losses − pick-zone losses − narrow-aisle losses (a face with less than the pick width

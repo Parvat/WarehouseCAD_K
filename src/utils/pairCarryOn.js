@@ -20,6 +20,8 @@
 import { nanoid } from 'nanoid'
 import { geom, uprightsOf, isRowRack, UP_TOL_FT } from './rowGroup'
 import { splitRackForBayDelete } from './baySplit'
+import { faceIndex } from '../generate/faceAisles'
+import { effectiveRef } from './elevations'
 import { autoSave, serializeScene } from './saveLoad'
 
 const EPS = 1e-6
@@ -33,7 +35,7 @@ const sameStamp = (a, b) => (a.rowIndex ?? null) === (b.rowIndex ?? null) && (a.
 export function takeOverCarriedBays(before, after, gridSize = 40, newId = nanoid) {
   const tol = UP_TOL_FT * gridSize
   const B = new Map(before.filter(isRowRack).map(o => [o.id, o]))
-  const replace = new Map(), remove = new Set(), taken = []
+  const replace = new Map(), remove = new Set(), taken = [], pairBays = new Map()   // pairBays: the pair's taken bays' types
   for (const p of after) {
     if (p.type !== 'rack_double_row' || !isRowRack(p) || !B.has(p.id)) continue
     const was = geom(B.get(p.id)), now = geom(p), up = upPx(p, gridSize), n = was.beams.length, m = now.beams.length
@@ -61,6 +63,13 @@ export function takeOverCarriedBays(before, after, gridSize = 40, newId = nanoid
       if (!give.length) continue
       // run order → the rack's own bay order (a reversed rack counts its bays from the other end)
       const k = g.beams.length, flip = turn(o) === 180 || turn(o) === 270
+      /* the bays taken keep the single's elevation type, on the pair's side it stood on (utils/elevations.js) */
+      const side = faceIndex(p, Math.abs(g.s0 - now.s0) < 0.5 ? 'lo' : 'hi'), pFlip = turn(p) === 180 || turn(p) === 270
+      for (const i of give) {
+        const qi = fresh.findIndex(q => Math.abs(q.a - sUps[i]) <= tol), runIdx = (hi ? n : 0) + qi
+        const own = pFlip ? m - 1 - runIdx : runIdx, ref = effectiveRef(o, flip ? k - 1 - i : i, 0)
+        if (qi >= 0 && ref !== effectiveRef(p, own, side)) { if (!pairBays.has(p.id)) pairBays.set(p.id, []); pairBays.get(p.id).push([side, own, ref]) }
+      }
       const pieces = splitRackForBayDelete(o, new Set(give.map(i => (flip ? k - 1 - i : i))), newId, gridSize)
       if (!pieces) remove.add(o.id)
       else replace.set(o.id, pieces)
@@ -68,6 +77,11 @@ export function takeOverCarriedBays(before, after, gridSize = 40, newId = nanoid
     }
   }
   if (!taken.length) return { objects: after, taken }
+  for (const [id, list] of pairBays) {
+    const p = after.find(o => o.id === id), bays = [0, 1].map(s => p.beams.map((_, b) => p.elevBays?.[s]?.[b] ?? null))
+    for (const [s, b, ref] of list) bays[s][b] = ref
+    replace.set(id, [{ ...p, elevBays: bays }])
+  }
   return { objects: after.filter(o => !remove.has(o.id)).flatMap(o => replace.get(o.id) || [o]), taken }
 }
 

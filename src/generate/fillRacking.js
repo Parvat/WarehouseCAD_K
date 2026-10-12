@@ -43,6 +43,7 @@ import { DEFAULT_RULES } from '../rules/defaults'
 import { nanoid } from 'nanoid'
 import { wallRun } from './wallRun'
 import { WALL_CLEAR_IN } from './wallClear'
+import { tableOf, typeById } from '../utils/elevations'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const EPS = 1e-6
@@ -292,6 +293,9 @@ const PATTERN_MARGIN_FT = 200
  *
  *  Returns { pattern, rects, fp }, or null when the box holds no row. */
 export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, from = null, areaId = null } = {}) {
+  // a fill's racks carry the layout's default elevation type: its level count (utils/elevations.js)
+  const elevDefault = typeById(tableOf(objects), tableOf(objects)?.defaultId)
+  if (elevDefault) settings = { ...settings, levels: elevDefault.levels.length }
   const P = fillParams(settings, rules)
   const { set, aisleFt, travelFt, crossAisleFt, beamIn, depthIn, upIn, flueIn } = P
   const fp = buildingForBox(objects, boxPx)

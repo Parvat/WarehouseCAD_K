@@ -24,6 +24,8 @@
 //     on as a single): the same side, across the floor, of every target bay whose uprights line up, a pair's half
 //     going the same way; a target single standing on that side of its row loses that bay, one on the other side
 //     keeps it. A target with no bay lined up is skipped;
+//   - an elevation type painted (utils/elevations.js, utils/elevPaint.js): the same type on every target bay whose
+//     uprights line up, on the same side across the floor; a whole row painted one type: the target rows whole;
 //   - a row added next to a group row: one next to each other group row, at the same distance across,
 //     over that row's own racks (its own length, gaps and uprights).
 // A target gets exactly what the source got — a bay through a wall or a zone, a move into one, included.
@@ -40,6 +42,7 @@ import { narrowAisleBlocks } from '../generate/narrowAisles'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { piecesFromStates } from '../generate/faceReach'
 import { faceIndex } from '../generate/faceAisles'
+import { carryElev, withElev, ELEV_FIELDS, tableOf, typeIdAt, typeMap, compressElev, syncLevels, paintRack, sidesOf } from './elevations'
 
 export const BEAM = new Set(['rack_row', 'rack_double_row'])
 export const UP_TOL_FT = 0.5 / 12                          // uprights line up within ½"
@@ -143,13 +146,13 @@ const GEOM_KEYS = ['x', 'y', 'width', 'height', 'rotation', 'beams']
 const UI_KEYS = ['activeBayIdx', 'activeBaySide', 'activeTowerIdx']
 const without = (o, keys) => { const c = { ...o }; for (const k of keys) delete c[k]; return JSON.stringify(c) }
 const sameRack = (a, b) => without(a, UI_KEYS) === without(b, UI_KEYS)
-const sameExceptGeom = (a, b) => without(a, [...GEOM_KEYS, ...UI_KEYS, 'pieceOf', 'genRunFt', 'genCrossFt', 'id', 'flueSpaceIn']) === without(b, [...GEOM_KEYS, ...UI_KEYS, 'pieceOf', 'genRunFt', 'genCrossFt', 'id', 'flueSpaceIn'])
+const sameExceptGeom = (a, b) => without(a, [...GEOM_KEYS, ...UI_KEYS, ...ELEV_FIELDS, 'pieceOf', 'genRunFt', 'genCrossFt', 'id', 'flueSpaceIn']) === without(b, [...GEOM_KEYS, ...UI_KEYS, ...ELEV_FIELDS, 'pieceOf', 'genRunFt', 'genCrossFt', 'id', 'flueSpaceIn'])
 /** Only the levels differ (geometry, bays, depth, kind the same). */
-const onlyLevels = (a, b) => a.levels !== b.levels && without(a, [...UI_KEYS, 'levels']) === without(b, [...UI_KEYS, 'levels'])
+const onlyLevels = (a, b) => a.levels !== b.levels && without(a, [...UI_KEYS, 'levels']) === without(b, [...UI_KEYS, 'levels'])   /* elevation fields unchanged: a type painted is the elev kind */
 
 /** What one action did to the group. `groupKeys` are the group's row keys BEFORE the action.
  *  Returns { kind: 'none' } | { kind: 'multi', count } | { kind: 'other', why } |
- *  { kind: 'bays'|'side-delete'|'across'|'along'|'delete'|'add'|'levels', source, ... } (source = the edited row's key before;
+ *  { kind: 'bays'|'side-delete'|'across'|'along'|'delete'|'add'|'levels'|'elev', source, ... } (source = the edited row's key before;
  *  `sources` = every edited row's key when one action changed several group rows the same way). */
 export function classifyEdit(before, after, groupKeys, gridSize = 40) {
   const rowsB = rowsOf(before, gridSize), rowsA = rowsOf(after, gridSize)
@@ -194,6 +197,11 @@ export function classifyEdit(before, after, groupKeys, gridSize = 40) {
   if (one && pairs.some(p => onlyLevels(p.r, p.s[0])) && pairs.every(p => p.r.levels === p.s[0].levels || onlyLevels(p.r, p.s[0]))) {
     const L = pairs.find(p => onlyLevels(p.r, p.s[0])).s[0].levels
     if (pairs.every(p => p.s[0].levels === L)) return { kind: 'levels', source, levels: L }
+  }
+  // an elevation type painted: only the elevation fields (and the levels mirror) changed
+  if (one && pairs.some(p => ELEV_FIELDS.some(k => JSON.stringify(p.r[k] ?? null) !== JSON.stringify(p.s[0][k] ?? null))) && pairs.every(p => without(p.r, [...UI_KEYS, ...ELEV_FIELDS, 'levels']) === without(p.s[0], [...UI_KEYS, ...ELEV_FIELDS, 'levels']))) {
+    const e = elevEditOf(pairs, rowsB.get(source).ids.map(id => B.get(id)), tableOf(before), tableOf(after), gridSize)
+    if (e) return { kind: 'elev', source, ...e }
   }
   // bays of a pair deleted on one side
   const removed = sideDeleteOf(pairs, gridSize)
@@ -244,6 +252,33 @@ export function classifyEdit(before, after, groupKeys, gridSize = 40) {
   return { kind: 'bays', source, map, deleted, appended }
 }
 
+/** Which world side ('lo' | 'hi' across, or null: a single standing alone) local side `s` of rack `r` is on, in
+ *  its row `row` (its racks). */
+export function worldSideOf(r, s, row) {
+  if (r.type === 'rack_double_row') return faceIndex(r, 'lo') === s ? 'lo' : 'hi'
+  const gs = row.map(o => geom(o)), ext = [Math.min(...gs.map(g => g.s0)), Math.max(...gs.map(g => g.s1))], g = geom(r)
+  if (Math.abs(g.s0 - ext[0]) < 0.5 && g.s1 < ext[1] - 0.5) return 'lo'
+  if (Math.abs(g.s1 - ext[1]) < 0.5 && g.s0 > ext[0] + 0.5) return 'hi'
+  return null
+}
+/** An elevation paint in the source's racks: { changes: [{ a, b (the bay's uprights, run), ws, typeId }], whole }
+ *  — `whole`: every bay-side of the row now carries that one type (a Row paint). Null when nothing resolves
+ *  differently. */
+function elevEditOf(pairs, row, TB, TA, gridSize) {
+  if (!TA) return null
+  const changes = []
+  for (const { r, s } of pairs) {
+    const a = geom(r), up = upPxOf(r, gridSize), U = uprightsOf(a.r0, a.beams, up, gridSize), n = r.beams.length, rev = reversed(r)
+    for (let side = 0; side < sidesOf(r); side++) for (let i = 0; i < n; i++) {
+      const own = rev ? n - 1 - i : i, was = typeIdAt(r, own, side, TB || TA), now = typeIdAt(s[0], own, side, TA)
+      if (was !== now) changes.push({ a: U[i], b: U[i + 1], ws: worldSideOf(r, side, row), typeId: now })
+    }
+  }
+  if (!changes.length) return null
+  const all = pairs.flatMap(p => typeMap(p.s[0], TA).flat())
+  return { changes, whole: all.every(t => t === all[0]) ? all[0] : null }
+}
+
 /** A one-side bay delete (utils/baySides.js) in the source's racks before → after: every rack's successors stand on
  *  its own uprights with its own beams, each whole or one band of a pair (a single on that side), and at least one
  *  pair bay keeps one side only. Returns the bays gone as run intervals between upright near faces, [{ a, b, side:
@@ -282,10 +317,11 @@ function sameEditOnAll(before, after, touched, gridSize) {
   const multi = { kind: 'multi', count: touched.length }
   const edits = touched.map(k => classifyEdit(before, after, [k], gridSize))
   const e0 = edits[0]
-  if (!['bays', 'side-delete', 'across', 'along', 'delete', 'levels'].includes(e0.kind) || edits.some(e => e.kind !== e0.kind)) return multi
+  if (!['bays', 'side-delete', 'across', 'along', 'delete', 'levels', 'elev'].includes(e0.kind) || edits.some(e => e.kind !== e0.kind)) return multi
   const same = { ...e0, sources: touched }
   if (e0.kind === 'delete') return same
   if (e0.kind === 'levels') return edits.every(e => e.levels === e0.levels) ? same : multi
+  if (e0.kind === 'elev') return e0.whole != null && edits.every(e => e.whole === e0.whole) ? same : multi
   if (e0.kind === 'across' || e0.kind === 'along') return edits.every(e => Math.abs(e.delta - e0.delta) < EPS && !e.span) && !e0.span ? same : multi
   // bays: the first row's edit replayed on each other changed row as it was must give what the user made
   const rowsB = rowsOf(before, gridSize), rowsA = rowsOf(after, gridSize)
@@ -352,7 +388,7 @@ export const WARN_KINDS = {
  *  racks, removeIds, addRacks, warnings: [words] }] }. */
 export function planReplay(after, edit, groupKeys, ctx) {
   const { gridSize = 40, newId = () => Math.random().toString(36).slice(2, 12) } = ctx
-  if (!edit || !['bays', 'side-delete', 'across', 'along', 'delete', 'add', 'levels'].includes(edit.kind)) return { targets: [] }
+  if (!edit || !['bays', 'side-delete', 'across', 'along', 'delete', 'add', 'levels', 'elev'].includes(edit.kind)) return { targets: [] }
   const rows = rowsOf(after, gridSize)
   const byId = new Map(after.map(o => [o.id, o]))
   const tol = UP_TOL_FT * gridSize
@@ -386,6 +422,7 @@ export function planReplay(after, edit, groupKeys, ctx) {
     }
 
     if (edit.kind === 'side-delete') { targets.push(sideDeleteOn(key, mine, edit, { gridSize, newId, byId, tol })); continue }
+    if (edit.kind === 'elev') { targets.push(elevOn(key, mine, edit, { gridSize, tol, table: tableOf(after) })); continue }
 
     if (edit.kind === 'add') {
       const t = edit.template, adds = mine.map(o => {
@@ -438,7 +475,7 @@ export function planReplay(after, edit, groupKeys, ctx) {
       const pieces = []
       let cur = null
       const ups = uprightsOf(nt[0], beams, up, gridSize)
-      beams.forEach((b, i) => { if (delIdx.has(i)) { if (cur) { pieces.push(cur); cur = null } return } if (!cur) cur = { r0: ups[i], beams: [] }; cur.beams.push(b) })
+      beams.forEach((b, i) => { if (delIdx.has(i)) { if (cur) { pieces.push(cur); cur = null } return } if (!cur) cur = { r0: ups[i], beams: [], idx: [] }; cur.beams.push(b); cur.idx.push(i - pre) })
       if (cur) pieces.push(cur)
       plan.push({ o, g, up, oldUps: t, pieces })
     }
@@ -447,7 +484,10 @@ export function planReplay(after, edit, groupKeys, ctx) {
     // says so (markWarnings), the same as for a hand edit of the source
     const result = [], removeIds = []
     for (const p of plan) {
-      p.pieces.forEach((pc, pi) => result.push(withRun(pi === 0 ? p.o : { ...p.o, id: newId(), pieceOf: p.o.pieceOf || p.o.id }, pc.r0, pc.beams, gridSize)))
+      // each piece keeps its bays' elevation types (run order → the rack's own; a bay added at an end inherits)
+      const n0 = p.o.beams.length, rev = reversed(p.o)
+      const own = (pc) => { const l = pc.idx.map(i => (i < 0 || i >= n0 ? null : rev ? n0 - 1 - i : i)); return rev ? l.reverse() : l }
+      p.pieces.forEach((pc, pi) => result.push(withElev(withRun(pi === 0 ? p.o : { ...p.o, id: newId(), pieceOf: p.o.pieceOf || p.o.id }, pc.r0, pc.beams, gridSize), carryElev(p.o, own(pc)))))
       if (!p.pieces.length || !result.some(r => r.id === p.o.id)) removeIds.push(p.o.id)
     }
     targets.push({ key, status: 'apply', racks: result.filter(r => byId.has(r.id)), addRacks: result.filter(r => !byId.has(r.id)), removeIds })
@@ -488,6 +528,36 @@ function sideDeleteOn(key, mine, edit, { gridSize, newId, byId, tol }) {
   if (lined) return { key, status: 'none' }
   const lo = Math.min(...edit.removed.map(q => q.a)), hi = Math.max(...edit.removed.map(q => q.b))
   return gs.some(g => Math.min(g.r1, hi) - Math.max(g.r0, lo) > EPS) ? { key, status: 'skip', reason: "uprights don't line up" } : { key, status: 'none' }
+}
+
+/** An elevation paint replayed on one target row: a whole-row paint gives every rack of it that type; otherwise each
+ *  bay whose uprights line up with a painted one takes its type, on the same side across the floor (a pair's half
+ *  facing that way; a single standing on that side of its row, or alone). */
+function elevOn(key, mine, edit, { gridSize, tol, table }) {
+  if (!table) return { key, status: 'none' }
+  if (edit.whole != null) {
+    const racks = mine.map(o => paintRack(o, table, { typeId: edit.whole })).filter((o, i) => JSON.stringify(o) !== JSON.stringify(mine[i]))
+    return racks.length ? { key, status: 'apply', racks, addRacks: [], removeIds: [] } : { key, status: 'none' }
+  }
+  const racks = []
+  let lined = false
+  for (const o of mine) {
+    const g = geom(o), t = uprightsOf(g.r0, g.beams, upPxOf(o, gridSize), gridSize), n = g.beams.length, rev = reversed(o)
+    const map = typeMap(o, table)
+    let changed = false
+    for (let i = 0; i < n; i++) for (const c of edit.changes) {
+      if (Math.abs(t[i] - c.a) > tol || Math.abs(t[i + 1] - c.b) > tol) continue
+      lined = true
+      const own = rev ? n - 1 - i : i
+      const sides = o.type === 'rack_double_row' ? (c.ws ? [faceIndex(o, c.ws)] : [0, 1]) : (!c.ws || [c.ws, null].includes(worldSideOf(o, 0, mine)) ? [0] : [])
+      for (const s of sides) if (map[s][own] !== c.typeId) { map[s][own] = c.typeId; changed = true }
+    }
+    if (changed) racks.push(syncLevels(compressElev(o, map, table), table))
+  }
+  if (racks.length) return { key, status: 'apply', racks, addRacks: [], removeIds: [] }
+  if (lined) return { key, status: 'none' }
+  const lo = Math.min(...edit.changes.map(c => c.a)), hi = Math.max(...edit.changes.map(c => c.b))
+  return mine.some(o => { const g = geom(o); return Math.min(g.r1, hi) - Math.max(g.r0, lo) > EPS }) ? { key, status: 'skip', reason: "uprights don't line up" } : { key, status: 'none' }
 }
 
 /** Warnings, the way a hand edit gets them: Check layout on the layout as it will be after the WHOLE apply

@@ -1907,6 +1907,52 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### EV — Elevations v1 · `EV_elevations.test.js` (32 tests)
+Plan: ELEVATIONS_PLAN.md. Code: utils/elevations.js (types, layered assignment, compression, migration, the keeper,
+checks, legend, BOM data), utils/elevPaint.js (paint mode), utils/elevationDraw.js (colours toggle, bay fills, side
+view), canvas2/ElevationsCanvas.jsx (preview, bar, legend), components/RightPanel/ElevationsPanel.jsx; counts read the
+bay-side's type in bayLedger, getRackCapacity (optional reader), columnCheck (pick blocks, in-rack), narrowAisles,
+usableCapacity, useColumnCheck, the PDF; carried by splitRackForBayDelete, piecesFromStates, Row group bay replays,
+joinRacks, the takeover; Row group kind `elev`; Check layout `elev-fit` / `elev-height`; building clear height.
+
+| Test | What |
+|---|---|
+| `EV-migrate` ×2 | the 12 fills and the 4 Generate layouts: types from levels, the 4 the default, nothing moves, usable (every figure) unchanged |
+| `EV-mixed` ×2 | racks of 4 and 5 levels: two types, the 5s carry elevType, positions unchanged |
+| `EV-assign` ×2 | the six cases (all one type, half/half, singles, pairs, two sides different, bays in a side); overrides only where they differ |
+| `EV-positions` ×2 | 6 levels on one bay-side: ledger, rack capacity, usable gross, a narrow-aisle loss on that face |
+| `EV-paint-targets` ×2 | Row / Side / Bay targets, the flue = both sides, drags on the start row and side, Row across rows |
+| `EV-commit` ×2 | one history entry per click; reset Bay → side's type, Side → rack's, Row → none; one undo per step |
+| `EV-delete-type` ×2 | its bays fall back, no override left; the last type stays |
+| `EV-levels-edit` ×2 | a levels edit assigns the type with that many levels (made if needed); a new rack follows the default |
+| `EV-carry` ×2 | split, one-side delete (the half takes its side's type), join |
+| `EV-takeover` ×2 | "+ bay" over the carried-on single: the pair's taken bay keeps the single's type on that side |
+| `EV-group` ×2 | Row group Auto: a whole row → the other row whole; a bay on one side → the same uprights, same side across the floor |
+| `EV-check` ×2 | the fit and clear-height errors (text, racks); different types side by side: none |
+| `EV-legend-bom` ×2 | legend per side; BOM per bay per side; a shared upright the taller |
+| `EV-pdf` ×2 | fills + legend with colours on, none off; the elevations sheet |
+| `EV-keeper` ×2 | load migrates; an action's fix in the same entry; a table deleted with Select all comes back |
+| `EV-wire` | Canvas2 / Esc / Scene / hit test / App wiring |
+| `EV-scope` | entering paint mode starts on Row; switching type keeps the scope |
+
+Changed: `PC-wire` — the Row group writer's regex allows the elevation reconcile around it (the takeover and the
+aisle rebuild unchanged).
+
+**Break-its:** default the least common: EV-mixed (2). Bay override ignored: EV-assign, -carry, -commit, -group,
+-legend-bom, -positions, -takeover (14). Ledger ignoring types: EV-positions (2). Flue one side: EV-paint-targets (2).
+Side reset to the default instead of the rack's: EV-commit (2). Deleted type's overrides kept: EV-delete-type (2).
+Levels edit reverted: EV-keeper, -levels-edit (4). Split dropping types: EV-carry (2). Takeover dropping the type:
+EV-takeover (2). Row group on the other side: EV-group (2). Fit check off: EV-check (2). Legend one side:
+EV-legend-bom, -pdf (4). PDF without fills: EV-pdf (2). Table not restored: EV-keeper (2). Scope carried over:
+EV-scope (1).
+
+**Checked in the app** (real mouse, V, H, V): the fixture loads with one type "4 levels" (1,354 bays); New ×2; Paint
+Type 2, Row: row 12 (pair 12 + single 2 = 26 bays) — hover lit the whole row first; Paint Type 3, Side: one half of row
+14 (12) — hover lit that half only; Bay drag over bays 2–4 of row 7 on one side (3) — the preview followed the drag;
+Reset to default, Bay: bay 3 back; Esc → Select; Ctrl+Z → bay 3 Type 3 again; legend "4 levels 1313 · Type 2 26 ·
+Type 3 15", the same as the layout; Show colours off → plain racks, legend rows hidden; on → back. Side view drawn in
+the panel.
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click

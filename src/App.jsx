@@ -20,6 +20,7 @@ import { installPairKeeper } from './utils/pairCarryOn'
 import { trackCanvasPointer } from './utils/pasteAt'
 import { installLayerKeeper } from './utils/layers'
 import { installLevelsKeeper } from './utils/rackLevels'
+import { installElevationsKeeper } from './utils/elevations'
 import { installLiveRecheck } from './utils/layoutCheck'
 import { installAreaKeeper } from './utils/rackingAreaTool'
 
@@ -45,6 +46,10 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopLayerKeeper())
 /* Every beam rack has levels — 4 unless set (utils/rackLevels.js). */
 const stopLevelsKeeper = installLevelsKeeper(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopLevelsKeeper())
+/* Elevation types: made from the racks' levels on load, kept consistent after each action, folded into that
+   action's history entry (utils/elevations.js). */
+const stopElevationsKeeper = installElevationsKeeper(useCanvasStore)
+if (import.meta.hot) import.meta.hot.dispose(() => stopElevationsKeeper())
 /* Check layout: while its list is open, re-checked after every committed change (utils/layoutCheck.js). */
 const stopLiveRecheck = installLiveRecheck(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopLiveRecheck())
