@@ -125,7 +125,7 @@ function writeInPlace(objects) {
 const written = (objects, plan) => rebuildAisles(takeOverCarriedBays(objects, applyReplay(objects, plan), gs(), watch.newId).objects, watch.newId).objects
 
 /** The bar's line after an apply: "Applied to 11 rows · 2 with warnings — see Check layout · 1 skipped". */
-const resultLine = (s) => `Applied to ${s.apply} row${s.apply === 1 ? '' : 's'}${s.warned.length ? ` · ${s.warned.length} with warnings — see Check layout` : ''}${s.skipped.length ? ` · ${s.skipped.length} skipped` : ''}`
+const resultLine = (s) => `Applied to ${s.apply} row${s.apply === 1 ? '' : 's'}${s.warned.length ? ` · ${s.warned.length} with warnings — see Check layout` : ''}${s.narrowLost ? ` · ${s.narrowLost} position${s.narrowLost === 1 ? '' : 's'} lost to narrow aisles` : ''}${s.skipped.length ? ` · ${s.skipped.length} skipped` : ''}`
 
 const reportOf = (s) => ({ warned: s.warned, skipped: s.skipped })
 

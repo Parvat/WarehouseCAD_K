@@ -1907,6 +1907,27 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
+### RN — The Row group says what an apply loses to narrow aisles · (in `RG_rowGroup`, `PD_placeDrag`, `PC_pairCarryOn`)
+Code: `markWarnings` / `planSummary` / `previewRects` (utils/rowGroup.js), `resultLine` (utils/rowGroupTool.js).
+
+Narrow aisles are not Check layout items (area NA), so the Row group reads their cost from the usable figure itself:
+usableCapacity's `narrowLost` on the layout as the apply writes it, against now. The bar: "Apply to the other 3 rows? 688
+positions lost to narrow aisles."; the target rows whose own racks lose positions are outlined orange (warned) — without
+counting toward "W will have warnings"; Auto apply reports it after ("Applied to 3 rows · 688 positions lost to narrow
+aisles"). An apply that gives positions back (every row moved together) says nothing.
+
+Changed (old → new): `RG-across` ×2 — "Apply to the other 3 rows?" → "… 688 positions lost to narrow aisles." (rows 7 of
+sections 1–3: 112 / 128 / 104, outlined warned); `PD-flue` ×2 — vertical "Apply to the other N rows?" → "… 480 positions lost
+to narrow aisles."; `PC-group` ×2 — "… 1 will have warnings." → "… 1 will have warnings. 8 positions lost to narrow aisles."
+(row 14), the Auto apply message "· 8 positions lost to narrow aisles"; `RG-together` ×2 — asserts the apply loses none
+(224 → 40: the others following give back what the source's move took).
+
+**Break-it:** the Row group ignoring the narrow-aisle loss: PC-group, PD-flue, RG-across (5).
+
+**Checked in the app** (H and V, the fixture filled, row 7 of every section grouped, section 4's moved 1' across): the bar
+"Apply to the other 3 rows? 688 positions lost to narrow aisles.", the rows outlined orange; Auto apply: "Applied to 3 rows ·
+688 positions lost to narrow aisles".
+
 ### NA — A face with less than the pick width in front of it loses its positions · `NA_narrowAisles.test.js` (20 tests)
 Code: `narrowAisleBlocks`, `blockedKeys` (generate/narrowAisles.js, new); `bayRunSpans`, `faceIndex` (generate/faceAisles.js);
 `usableCapacity` (generate/usableCapacity.js — `narrowLost`); the X marks on the canvas (Overlays.jsx) and in the PDF

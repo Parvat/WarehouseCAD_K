@@ -29,8 +29,11 @@
 // Skipped only: uprights that don't line up (and a rack only partly inside a dragged stretch, which would
 // have to be split).
 
-import { rackFootprint } from '../generate/columnCheck'
+import { rackFootprint, MHE_PROFILES } from '../generate/columnCheck'
 import { checkLayout } from './layoutCheck'
+import { usableCapacity } from '../generate/usableCapacity'
+import { narrowAisleBlocks } from '../generate/narrowAisles'
+import { getColumnCheckView } from '../generate/columnCheckView'
 
 export const BEAM = new Set(['rack_row', 'rack_double_row'])
 export const UP_TOL_FT = 0.5 / 12                          // uprights line up within ½"
@@ -402,16 +405,16 @@ export function planReplay(after, edit, groupKeys, ctx) {
     }
     targets.push({ key, status: 'apply', racks: result.filter(r => byId.has(r.id)), addRacks: result.filter(r => !byId.has(r.id)), removeIds })
   }
-  if (ctx.warnings !== false) markWarnings(after, targets, gridSize, ctx.finalize)
-  return { targets }
+  const narrowLost = ctx.warnings !== false ? markWarnings(after, targets, gridSize, ctx.finalize, ctx.profile) : 0
+  return { targets, narrowLost }
 }
 
 /** Warnings, the way a hand edit gets them: Check layout on the layout as it will be after the WHOLE apply
  *  (every target moved together), against the layout now; what is new and involves a target's racks is
  *  that target's warning. Issues are matched by kind and by the racks' roots (a split piece is its rack). */
-function markWarnings(after, targets, gridSize, finalize) {
+function markWarnings(after, targets, gridSize, finalize, profile) {
   const applying = targets.filter(t => t.status === 'apply' && t.removeIds.length + t.racks.length + t.addRacks.length > 0)
-  if (!applying.length) return
+  if (!applying.length) return 0
   // the layout as the apply will write it — `finalize` is what the writer does after (a pair taking over its
   // carried-on single's bay: utils/pairCarryOn.js), so a bay taken over is no overlap
   let final = applyReplay(after, { targets })
@@ -423,7 +426,22 @@ function markWarnings(after, targets, gridSize, finalize) {
   }
   const was = new Set(issues(after).map(x => x.k))
   const fresh = issues(final).filter(x => !was.has(x.k))
-  if (!fresh.length) return
+  /* positions lost to narrow aisles (narrowAisles.js): not a Check layout item but a loss — read from the usable
+     figure itself (usableCapacity's narrowLost, the layout as the apply writes it against now), and the targets
+     whose own racks lose positions there are outlined as warned */
+  const prof = profile || getColumnCheckView()?.profile || MHE_PROFILES.reach
+  const narrowLost = Math.max(0, usableCapacity(final, { profile: prof, gridSize }).narrowLost - usableCapacity(after, { profile: prof, gridSize }).narrowLost)
+  if (narrowLost) {
+    const byRoot = (objects) => { const root = new Map(objects.map(o => [o.id, o.pieceOf || o.id])), m = new Map(); for (const b of narrowAisleBlocks(objects, { profile: prof, gridSize })) { const k = root.get(b.rackId) || b.rackId; m.set(k, (m.get(k) || 0) + b.positionsLost) } return m }
+    const lostNow = byRoot(after), lostThen = byRoot(final)
+    for (const t of applying) {
+      const ids = new Set([...t.racks.map(r => r.pieceOf || r.id), ...t.addRacks.map(r => r.id)])
+      let n = 0
+      for (const id of ids) n += Math.max(0, (lostThen.get(id) || 0) - (lostNow.get(id) || 0))
+      if (n) t.narrow = n
+    }
+  }
+  if (!fresh.length) return narrowLost
   // a target's racks by id, from the layout now — not by its row key after the apply: a hand row moved up to
   // another can chain with it and change key
   const rowsNow = rowsOf(after, gridSize)
@@ -433,6 +451,7 @@ function markWarnings(after, targets, gridSize, finalize) {
     const words = [...new Set(fresh.filter(x => (x.i.ids || []).some(id => ids.has(id))).map(x => WARN_KINDS[x.i.kind]))]
     if (words.length) t.warnings = words
   }
+  return narrowLost
 }
 
 /** Inches as the bar says them: whole or to the quarter, 3" / 2.5" / 0.25". */
@@ -457,8 +476,11 @@ export function planSummary(plan) {
   const n = apply.length
   let text = `Apply to the other ${n} row${n === 1 ? '' : 's'}?`
   if (warned.length) text += ` ${warned.length} will have warnings.`
+  // positions the apply loses to narrow aisles (the usable figure's own narrow-aisle loss)
+  const lost = plan.narrowLost || 0
+  if (lost) text += ` ${lost} position${lost === 1 ? '' : 's'} lost to narrow aisles.`
   if (skip.length) text += ` ${skip.length} skipped.`
-  return { text, apply: n, warned: warned.map(t => ({ key: t.key, reasons: t.warnings })), skipped: skip.map(t => ({ key: t.key, reason: t.reason })) }
+  return { text, apply: n, warned: warned.map(t => ({ key: t.key, reasons: t.warnings })), skipped: skip.map(t => ({ key: t.key, reason: t.reason })), narrowLost: lost, narrowRows: apply.filter(t => t.narrow).map(t => ({ key: t.key, positions: t.narrow })) }
 }
 
 /** The rects the preview paints for a pending plan: { kind: 'target'|'warned'|'skipped', f, key } — a target
@@ -467,7 +489,7 @@ export function previewRects(objects, plan, gridSize = 40) {
   const out = [], rows = rowsOf(objects, gridSize), byId = new Map(objects.map(o => [o.id, o]))
   for (const t of plan.targets) {
     if (t.status === 'apply') {
-      const kind = t.warnings && t.warnings.length ? 'warned' : 'target'
+      const kind = (t.warnings && t.warnings.length) || t.narrow ? 'warned' : 'target'      // (a row losing positions to a narrow aisle too)
       for (const r of [...(t.racks || []), ...(t.addRacks || [])]) out.push({ kind, f: rackFootprint(r), key: 't' + t.key + r.id })
     } else if (t.status === 'skip') {
       const row = rows.get(t.key)

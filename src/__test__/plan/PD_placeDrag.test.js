@@ -196,9 +196,10 @@ describe.each(['horizontal', 'vertical'])('PD — %s', (orientation) => {
     load(gen.map(o => (o.id === r.id ? wide : o)))
     addRowOf(r.id, { otherSections: true })
     await act(() => { store.setState({ objects: objs().map(o => (o.id === r.id ? moved : o)) }); store.getState().commitObjectUpdate(r.id, {}) })
-    // vertical: the 2' narrows row K's aisle (10' 6") under the pick width — its faces lose their positions (X marks, off
-    // usable), not a warning any more (before: "N will have warnings", 'an aisle under the pick width'); horizontal: wide enough
-    expect(useRowGroup.getState().pending.summary.text).toBe(`Apply to the other ${others.length} rows?`)
+    // vertical: the 2' narrows row K's aisle (10' 6") under the pick width — the bar says what that costs, from the usable
+    // figure itself: "480 positions lost to narrow aisles", those rows outlined orange; horizontal: wide enough, nothing
+    expect(useRowGroup.getState().pending.summary.text).toBe(`Apply to the other ${others.length} rows?${rot ? ' 480 positions lost to narrow aisles.' : ''}`)
+    expect(useRowGroup.getState().pending.summary.narrowRows.length).toBe(rot ? others.length : 0)
     const before = new Map(others.map(s => [s, centreAcross(row(K, s), rot)]))
     applyPending(); await flushRowGroupWatcher()
     for (const s of others) expect(centreAcross(row(K, s), rot) - before.get(s)).toBeCloseTo(d, 6)

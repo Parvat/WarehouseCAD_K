@@ -292,13 +292,18 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
   })
 
   /* ── a move across, a delete, a row added beside ── */
-  it('RG-across: row 7 of every section; section 4\'s row moved 1\' across → the others move the same 1\' — the move leaves 9\' 6" on one side, under the pick width: no warning (before: one each), the faces there get X marks and lose their positions; one undo step', async () => {
+  it('RG-across: row 7 of every section; section 4\'s row moved 1\' across → the others move the same 1\' — the move leaves 9\' 6" on one side, under the pick width: the bar says "688 positions lost to narrow aisles" (from the usable figure), the three rows outlined orange, the faces X-marked after; one undo step', async () => {
     load(filled(vert))
     addRowOf(pairOf(key(4, 7)).id, { otherSections: true })
     const s0 = new Map([1, 2, 3, 4].map(i => [i, RG.geom(pairOf(key(i, 7))).s0]))
     await moveRow(key(4, 7), GS, 0, vert)
-    expect(st().pending.summary.text).toBe('Apply to the other 3 rows?')
+    expect(st().pending.summary.text).toBe('Apply to the other 3 rows? 688 positions lost to narrow aisles.')
     expect(st().pending.plan.targets.filter(t => (t.warnings || []).length)).toEqual([])
+    expect(st().pending.summary.narrowRows.map(r => [r.key, r.positions])).toEqual([[key(1, 7), 112], [key(2, 7), 128], [key(3, 7), 104]])
+    // the preview: those rows warned (orange), from the same plan
+    const kinds = new Set(RG.previewRects(objs(), st().pending.plan, GS).map(p => p.kind))
+    expect(kinds.has('warned')).toBe(true)
+    expect(kinds.has('target')).toBe(false)
     const marked = () => new Set(narrowAisleBlocks(objs(), { gridSize: GS }).map(b => b.rackId))
     expect(marked().has(pairOf(key(4, 7)).id)).toBe(true)
     const h = hist()
@@ -324,6 +329,9 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     for (const w of wall) expect(w.reasons.some(r => /aisle/.test(r))).toBe(false)
     expect(cols).toHaveLength(23)
     for (const w of cols) expect(w.reasons).toEqual(['an aisle under the travel width'])
+    // narrow aisles: the source's move alone had pinched its neighbours (224 positions off usable); the others following it
+    // give most of that back (40 after) — the apply loses none, so the bar says nothing of it
+    expect(p.summary.narrowLost).toBe(0)
     applyPending(); await settle()
     // the reason is a column standing in the aisle, never the gap between the rows
     const { checkLayout } = await import('../../utils/layoutCheck')
