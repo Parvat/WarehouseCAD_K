@@ -13,7 +13,7 @@
 // at its own height (above the bottom chord, within the truss, as a rule). Side view beside it: the frame depth (two frames and
 // the flue for a back-to-back), the upright height, a simple diagonal bracing pattern. Weights stay off the drawing.
 
-import { beamFace } from './elevations'
+import { beamFace, topLoadIssue, SPRINKLER_CLEARANCE_IN } from './elevations'
 import { positionsPerBeam } from './palletFit'
 
 /** 6'-2" / 26' / 0" — feet and inches as on a rack drawing. */
@@ -63,11 +63,13 @@ export function misfitLevels(t) {
  *  left, chains (load + clearance, clear openings, beam face) smaller and lighter — and none overlaps a load, a beam or
  *  another label (declutter). */
 export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = {}) {
-  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null } = opts
+  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN } = opts
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
   const L = [...t.levels].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
   const top = L[L.length - 1]
   const misfit = misfitLevels(t)
+  // the top load against the building: above the clear height, or within the sprinkler clearance — the Check layout errors
+  const topIssue = topLoadIssue(t, building, sprinklerClearanceIn)
   const loadH = (lv, i) => { const ph = lv.palletHeightIn || 0, next = i + 1 < L.length ? L[i + 1].beamIn - face : Infinity; return Math.max(0, Math.min(ph, next - lv.beamIn - 0.5)) }
   const topLoad = top.beamIn + loadH(top, L.length - 1)
   const bClear = building?.clearHeightIn > 0 ? building.clearHeightIn : null
@@ -180,14 +182,14 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const per = Math.max(0, positionsPerBeam(bayIn, palletWIn))
   const gapIn = per ? (bayIn - per * palletWIn) / (per + 1) : 0
   L.forEach((lv, i) => {
-    const z = lv.beamIn, gone = removing === lv.k, bad = misfit.has(lv.k)
+    const isTop = i === L.length - 1, z = lv.beamIn, gone = removing === lv.k, bad = misfit.has(lv.k) || (isTop && !!topIssue)
     if (z > 0) rect(Xf(-1), Y(z), (frontW + 2) * s, Math.max(1.5, face * s), { fill: gone ? '#d0392b' : isActive({ kind: 'beam', k: lv.k }) ? BEAM_EDGE : BEAM, stroke: isActive({ kind: 'beam', k: lv.k }) ? '#7a3510' : undefined, sw: sw * 1.4, opacity: gone ? 0.5 : 1, role: { kind: 'beam', k: lv.k }, cursor: 'ns-resize', tag: 'beam' })
     const lh = loadH(lv, i)
     for (let p = 0; p < per; p++) {
       const x = upW + gapIn + p * (palletWIn + gapIn)
       rect(Xf(x), Y(z + lh), palletWIn * s, lh * s, { fill: bad ? MISFIT : LOAD, stroke: bad ? MISFIT_EDGE : LOAD_EDGE, sw: sw * (bad ? 1.2 : 0.8), opacity: gone ? 0.35 : 1, tag: 'load', level: lv.k })
     }
-    if (bad && per) text(Xf(frontW / 2), Y(z + lh / 2) + fC * 0.35, "doesn't fit", { size: fC, fill: MISFIT_EDGE, weight: 700, tag: 'misfit', pri: 1.5, level: lv.k })
+    if (bad && per) text(Xf(frontW / 2), Y(z + lh / 2) + fC * 0.35, misfit.has(lv.k) ? "doesn't fit" : topIssue === 'clear' ? 'above clear height' : `within ${sprinklerClearanceIn}" of sprinklers`, { size: fC, fill: MISFIT_EDGE, weight: 700, tag: 'misfit', pri: 1.5, level: lv.k })
   })
   if (!compact) {
     // the bay width across the top, over the top load

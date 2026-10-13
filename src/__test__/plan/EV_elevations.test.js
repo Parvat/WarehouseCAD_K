@@ -301,6 +301,7 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     const errs = checkLayout(o, { gridSize: GS, elevations: L.t }).errors.filter(e => /^elev/.test(e.kind))
     expect(errs.map(e => e.text)).toEqual([
       'Elevation B: top of upright 30\' is above the building\'s clear height 25\'',
+      'Elevation B: top of load 29\' is above the building\'s clear height 25\'',
       'Elevation B: level 1 pallet 48" + 6" clearance doesn\'t fit between the floor and the underside of the next at 46"',
     ])
     expect(errs[0].ids).toEqual(['p1'])
@@ -544,7 +545,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
   })
 
   it('EV-misfit: a level whose pallet + clearance doesn\'t fit under the next beam — its loads red, "doesn\'t fit", never over the beam above; the same levels as the Check layout error; the top level (no beam above) never', () => {
-    const t = { ...sampleT(), levels: [0, 74, 148, 222].map((z, k) => ({ beamIn: z, palletHeightIn: k === 1 ? 80 : k === 3 ? 60 : 60, loadLb: 2500 })) }
+    const t = { ...sampleT(), levels: [0, 74, 148, 222].map((z, k) => ({ beamIn: z, palletHeightIn: k === 1 ? 80 : k === 3 ? 36 : 60, loadLb: 2500 })) }
     expect([...misfitLevels(t).keys()]).toEqual([1])
     const d = elevationLayout(t, 96, { w: 1100, h: 420 }, sampleO)
     const bad = d.items.filter(i => i.tag === 'load' && i.level === 1)
@@ -620,5 +621,31 @@ describe('EV — the wiring', () => {
     startPainting(store, 'B')
     expect([usePaint.getState().typeId, usePaint.getState().scope]).toEqual(['B', 'side'])
     store.getState().setActiveTool('select')
+  })
+})
+
+describe('EV — the top load against the building', () => {
+  it('EV-topload: the top of the top load (the top beam + its pallet; the upright top with no load up there) must stay under the clear height, and at least the sprinkler clearance (a setting, 18") under the sprinkler heads — an error each in Check layout, the top loads red in the drawing', () => {
+    const t = { ...E.makeType({ id: 'A', levelsCount: 4 }), uprightHeightIn: 228, levels: [0, 74, 148, 222].map((z, k) => ({ beamIn: z, palletHeightIn: k === 3 ? 36 : 60, loadLb: 2500 })) }
+    expect(E.topOfLoad(t)).toBe(258)
+    expect(E.topOfLoad({ ...t, levels: t.levels.map((l, k) => (k === 3 ? { ...l, palletHeightIn: 0 } : l)) })).toBe(228)
+    expect([E.topLoadIssue(t, { clearHeightIn: 250 }), E.topLoadIssue(t, { clearHeightIn: 290, sprinklerIn: 270 }), E.topLoadIssue(t, { clearHeightIn: 290, sprinklerIn: 276 }), E.topLoadIssue(t, { sprinklerIn: 270 }, 12), E.topLoadIssue(t, null)]).toEqual(['clear', 'sprinkler', null, null, null])
+    // Check layout, on the hand layout: the default type at 4 levels (top load 180 + 48 = 228" = 19')
+    const L = hand(false), withFp = (patch) => L.o.map(x => (x.id === 'fp' ? { ...x, ...patch } : x))
+    const errs = (o, tb = L.t) => checkLayout(o, { gridSize: GS, elevations: tb }).errors.filter(e => e.kind === 'elev-load-clear' || e.kind === 'elev-sprinkler').map(e => e.text)
+    expect(errs(withFp({ clearHeightFt: 18 }))).toEqual(['Elevation 4 levels: top of load 19\' is above the building\'s clear height 18\''])
+    expect(errs(withFp({ clearHeightFt: 24, sprinklerFt: 20 }))).toEqual(['Top load within 18" of sprinklers — elevation 4 levels: top of load 19\', sprinkler heads at 20\''])
+    expect(errs(withFp({ clearHeightFt: 24, sprinklerFt: 21 }))).toEqual([])
+    // the setting: 6" → 20' sprinklers pass; it is the layout's own (saved with the types)
+    const six = edit(L, tb => ({ ...tb, sprinklerClearanceIn: 6 }))
+    expect([E.sprinklerClearance(six.t), E.sprinklerClearance(L.t), errs(withFp({ sprinklerFt: 20 }), six.t)]).toEqual([6, 18, []])
+    // the drawing: the top level's loads red with the reason, the others not
+    const d = elevationLayout(t, 96, { w: 1100, h: 420 }, { depthIn: 48, pair: true, flueIn: 12, building: { clearHeightIn: 290, sprinklerIn: 270 } })
+    expect(d.items.filter(i => i.tag === 'load' && i.level === 3).every(i => i.fill === '#f8d7d3')).toBe(true)
+    expect(d.items.filter(i => i.tag === 'load' && i.level !== 3).every(i => i.fill === '#f3e2c3')).toBe(true)
+    expect(d.items.filter(i => i.tag === 'misfit').map(i => i.s)).toEqual(['within 18" of sprinklers'])
+    const c = elevationLayout(t, 96, { w: 1100, h: 420 }, { depthIn: 48, building: { clearHeightIn: 250 } })
+    expect(c.items.filter(i => i.tag === 'misfit').map(i => i.s)).toEqual(['above clear height'])
+    expect(elevationLayout(t, 96, { w: 1100, h: 420 }, { building: { clearHeightIn: 290, sprinklerIn: 295 } }).items.some(i => i.tag === 'misfit')).toBe(false)
   })
 })

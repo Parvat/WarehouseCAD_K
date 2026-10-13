@@ -26,7 +26,7 @@
 import { levelsResolver, legendCounts } from '../utils/elevations'
 import { bandRects, useElevView } from '../utils/elevationDraw'
 import { elevationLayout, itemSVG, lengthsByType, buildingOf, ftInDash, archScale } from '../utils/elevationDrawing'
-import { typeIdAt } from '../utils/elevations'
+import { typeIdAt, sprinklerClearance } from '../utils/elevations'
 import { bayLedger } from '../utils/bayLedger'
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
@@ -447,7 +447,7 @@ export function buildElevationSheets(objects, { title = 'Untitled Layout', eleva
     const parts = cells.slice(p * per, (p + 1) * per).map(({ type, e }, i) => {
       const c = i % cols, r = Math.floor(i / cols), x = margin + c * cellW, y = margin + head + r * cellH
       const fs = Math.max(2.6, cellH / 48)   // text in proportion to the drawing, as on the sample
-      const box = { w: cellW - 8, h: cellH - fs * 7.5 }, opts = { palletWIn: e.palletWIn, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: buildingOf(objects, e.parentId), fontPx: fs }
+      const box = { w: cellW - 8, h: cellH - fs * 7.5 }, opts = { palletWIn: e.palletWIn, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: buildingOf(objects, e.parentId), fontPx: fs, sprinklerClearanceIn: sprinklerClearance(T) }
       const fit = elevationLayout(type, e.beamIn, box, opts), sc = archScale(fit.scale)
       const d = elevationLayout(type, e.beamIn, box, { ...opts, scale: sc.mmPerIn })
       const label = `${type.name} · ${ftInDash(e.beamIn)} bay`

@@ -256,7 +256,7 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
     if (!boxes.length) continue
     errors.push({ severity: 'error', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => shade(b, HL.red)), text: e.text })
   }
-  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'elev-height', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'angled']
+  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'angled']
   const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind) }
 }

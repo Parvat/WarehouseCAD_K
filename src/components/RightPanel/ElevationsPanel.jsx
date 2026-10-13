@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Paintbrush, Copy, Trash2, Plus, Star, PanelBottomOpen } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { SectionHeader } from '../shared/SectionHeader'
-import { addType, updateType, removeType, setDefault, legendCounts, typeById, typeIdAt } from '../../utils/elevations'
+import { addType, updateType, removeType, setDefault, legendCounts, typeById, typeIdAt, sprinklerClearance } from '../../utils/elevations'
 import { useElevView, setShowColors } from '../../utils/elevationDraw'
 import { elevationLayout, toSVG, lengthsByType } from '../../utils/elevationDrawing'
 import { startPainting, usePaint, PAINT_TOOL } from '../../utils/elevPaint'
@@ -29,6 +29,20 @@ function Name({ t }) {
   const done = () => { setEdit(false); if (text.trim() && text.trim() !== t.name) commitTable(store, tb => updateType(tb, t.id, { name: text.trim() })) }
   return <input autoFocus aria-label="Type name" value={text} onChange={e => setText(e.target.value)} onBlur={done} onKeyDown={e => { if (e.key === 'Enter') done(); if (e.key === 'Escape') { setText(t.name); setEdit(false) } }}
     style={{ flex: 1, minWidth: 0, fontSize: 11, padding: '1px 4px', border: '1px solid var(--border)', borderRadius: 2 }} />
+}
+
+function SprinklerClearance({ value }) {
+  const [text, setText] = useState(String(value))
+  useEffect(() => setText(String(value)), [value])
+  const done = () => { const v = Number(text); if (Number.isFinite(v) && v >= 0 && v !== value) commitTable(store, tb => ({ ...tb, sprinklerClearanceIn: v })); else setText(String(value)) }
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }} title="The top of the top load must stay at least this far under the building's sprinkler heads">
+      Sprinkler clearance
+      <input aria-label="Sprinkler clearance" type="number" min={0} value={text} onChange={e => setText(e.target.value)} onBlur={done} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+        style={{ width: 48, padding: '1px 4px', fontSize: 11, fontFamily: 'var(--font-mono)', border: '1px solid var(--border)', borderRadius: 2 }} />
+      <span style={{ ...S.mono9, color: 'var(--text3)' }}>in</span>
+    </label>
+  )
 }
 
 export function ElevationsPanel() {
@@ -92,6 +106,8 @@ export function ElevationsPanel() {
           <button type="button" aria-label="Set as default" disabled={selected.id === T.defaultId} style={{ ...S.btn, opacity: selected.id === T.defaultId ? 0.5 : 1 }} onClick={() => commitTable(store, tb => setDefault(tb, selected.id))}><Star size={12} /> Default</button>
           <button type="button" aria-label="Delete type" disabled={T.types.length <= 1} title="Delete — its bays go back to the default" style={{ ...S.btn, color: 'var(--red)', opacity: T.types.length <= 1 ? 0.5 : 1 }} onClick={() => { commitTable(store, tb => removeType(tb, selected.id)); setPane({ typeId: null }) }}><Trash2 size={12} /> Delete</button>
         </div>
+        {/* the clearance the top load keeps under the sprinkler heads (Check layout, the drawing) — the layout's setting */}
+        <SprinklerClearance value={sprinklerClearance(T)} />
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer' }}>
           <input type="checkbox" checked={showColors} onChange={e => setShowColors(e.target.checked)} aria-label="Show colours" /> Show colours on the plan and PDF
         </label>

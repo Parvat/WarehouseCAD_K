@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
-import { typeById, typeIdAt, beamFace, holePitch, isBeamRack } from '../../utils/elevations'
+import { typeById, typeIdAt, beamFace, holePitch, isBeamRack, sprinklerClearance } from '../../utils/elevations'
 import { elevationLayout, lengthsByType, buildingOf, ftInDash, parseFtIn } from '../../utils/elevationDrawing'
 import { useElevEditor, setPane, PANE_MIN, PANE_BAR, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, setField, commitType, paneFontPx } from '../../utils/elevEditor'
 import { rackDepthUpdate } from '../../utils/rackDepth'
@@ -122,13 +122,13 @@ export function ElevationPane() {
         </div>
         <button type="button" aria-label="Collapse elevation editor" onClick={() => setPane({ open: false })} style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><ChevronDown size={15} /></button>
       </div>
-      {t ? <Drawing t={t} entry={entry} building={building} sel={sel} stacked={layout === 'stacked'} /> : <div style={{ padding: 12, fontSize: 12, color: 'var(--text3)' }}>No elevation types yet.</div>}
+      {t ? <Drawing t={t} entry={entry} building={building} sel={sel} stacked={layout === 'stacked'} sprClr={sprinklerClearance(T)} /> : <div style={{ padding: 12, fontSize: 12, color: 'var(--text3)' }}>No elevation types yet.</div>}
     </div>
   )
 }
 
 /** The drawing, interactive. */
-function Drawing({ t, entry, building, sel, stacked }) {
+function Drawing({ t, entry, building, sel, stacked, sprClr }) {
   const host = useRef(null)
   const [box, setBox] = useState({ w: 600, h: 240 })
   useLayoutEffect(() => {
@@ -145,7 +145,7 @@ function Drawing({ t, entry, building, sel, stacked }) {
   const shown = draft ? draft.type : t
   // centred and fitted to the pane (elevationLayout centres it in the box), labels in proportion with a readable minimum
   const fontPx = paneFontPx(box)
-  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked])
+  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr])
 
   const at = (ev) => { const r = host.current.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
   const zAt = (p) => (d.floor - p.y) / d.scale

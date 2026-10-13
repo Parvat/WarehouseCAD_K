@@ -43,6 +43,25 @@ export const PALETTE = ['#7FA7D9', '#E8A33D', '#6DBE8C', '#C77DCB', '#E46F6F', '
 export const SPACING_IN = 60, PALLET_H_IN = 48, CLEARANCE_IN = 6, LOAD_LB = 2000, BEAM_FACE_IN = 4, HOLE_PITCH_IN = 2
 /** The beam face height (in) of type `t` — 4" for a type saved before it had one. */
 export const beamFace = (t) => (Number.isFinite(t?.beamFaceIn) ? t.beamFaceIn : BEAM_FACE_IN)
+/** The clearance (in) the top of the top load must keep under the sprinkler heads — the layout's setting (on its
+ *  types table, saved and undone with it), 18" when not set. */
+export const SPRINKLER_CLEARANCE_IN = 18
+export const sprinklerClearance = (table) => (Number.isFinite(table?.sprinklerClearanceIn) && table.sprinklerClearanceIn >= 0 ? table.sprinklerClearanceIn : SPRINKLER_CLEARANCE_IN)
+/** The top of type `t`'s top load (in): the top beam + its pallet; with no load on the top level, the top of the upright. */
+export function topOfLoad(t) {
+  const top = [...t.levels].sort((a, b) => a.beamIn - b.beamIn).pop()
+  return top && top.palletHeightIn > 0 ? top.beamIn + top.palletHeightIn : t.uprightHeightIn
+}
+/** What the top load breaks in building `b` ({ clearHeightIn, sprinklerIn }): 'clear' — above the clear height;
+ *  'sprinkler' — within `clearanceIn` of the sprinkler heads; null — neither (or no building heights). The clear height
+ *  wins when both. */
+export function topLoadIssue(t, b, clearanceIn = SPRINKLER_CLEARANCE_IN) {
+  if (!b) return null
+  const z = topOfLoad(t)
+  if (b.clearHeightIn > 0 && z > b.clearHeightIn + 1e-6) return 'clear'
+  if (b.sprinklerIn > 0 && z > b.sprinklerIn - clearanceIn + 1e-6) return 'sprinkler'
+  return null
+}
 /** The upright's hole pitch (in) — 2" when not set. */
 export const holePitch = (t) => (Number.isFinite(t?.holePitchIn) && t.holePitchIn > 0 ? t.holePitchIn : HOLE_PITCH_IN)
 
@@ -326,7 +345,8 @@ export function legendCounts(objects, T, counted = null) {
  *  the clearance must fit from the top of its beam (the floor) to the underside of the next beam — its top less the
  *  type's beam face height (the top level has no beam above it: a top load standing above the frame is normal); the top of the
  *  upright must be under the clear height of the building the type's racks stand in (`clearHeightFt` on the floor
- *  plan; none set: not checked). */
+ *  plan; none set: not checked); the top of the top load too ('elev-load-clear'), and at least the sprinkler clearance
+ *  (the table's setting, 18") under the building's sprinkler heads (`sprinklerFt`; 'elev-sprinkler'). */
 export function elevationIssues(objects, T) {
   if (!T) return []
   const used = new Map()
@@ -349,8 +369,15 @@ export function elevationIssues(objects, T) {
       }
     })
     const floors = new Map()
-    for (const id of ids) { const r = objects.find(o => o.id === id); const fp = r && objects.find(o => o.id === r.parentId && Number.isFinite(o.clearHeightFt) && o.clearHeightFt > 0); if (fp) { if (!floors.has(fp.id)) floors.set(fp.id, { fp, ids: [] }); floors.get(fp.id).ids.push(id) } }
-    for (const { fp, ids: inFp } of floors.values()) if (t.uprightHeightIn > fp.clearHeightFt * 12 + 1e-6)
+    for (const id of ids) { const r = objects.find(o => o.id === id); const fp = r && objects.find(o => o.id === r.parentId && ((Number.isFinite(o.clearHeightFt) && o.clearHeightFt > 0) || (Number.isFinite(o.sprinklerFt) && o.sprinklerFt > 0))); if (fp) { if (!floors.has(fp.id)) floors.set(fp.id, { fp, ids: [] }); floors.get(fp.id).ids.push(id) } }
+    const sprClr = sprinklerClearance(T), zLoad = topOfLoad(t)
+    for (const { fp, ids: inFp } of floors.values()) {
+      const b = { clearHeightIn: fp.clearHeightFt > 0 ? fp.clearHeightFt * 12 : null, sprinklerIn: fp.sprinklerFt > 0 ? fp.sprinklerFt * 12 : null }
+      const issue = topLoadIssue(t, b, sprClr)
+      if (issue === 'clear') out.push({ kind: 'elev-load-clear', typeId: t.id, ids: inFp, text: `Elevation ${t.name}: top of load ${ftIn(zLoad)} is above the building's clear height ${ftIn(b.clearHeightIn)}` })
+      if (issue === 'sprinkler') out.push({ kind: 'elev-sprinkler', typeId: t.id, ids: inFp, text: `Top load within ${sprClr}" of sprinklers — elevation ${t.name}: top of load ${ftIn(zLoad)}, sprinkler heads at ${ftIn(b.sprinklerIn)}` })
+    }
+    for (const { fp, ids: inFp } of floors.values()) if (fp.clearHeightFt > 0 && t.uprightHeightIn > fp.clearHeightFt * 12 + 1e-6)
       out.push({ kind: 'elev-height', typeId: t.id, ids: inFp, text: `Elevation ${t.name}: top of upright ${ftIn(t.uprightHeightIn)} is above the building's clear height ${ftIn(fp.clearHeightFt * 12)}` })
   }
   return out
