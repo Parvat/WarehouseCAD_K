@@ -456,8 +456,8 @@ export function buildElevationSheets(objects, { title = 'Untitled Layout', eleva
         `<text x="${fs * 1.5}" y="${fs}" font-size="${fs * 1.15}" font-weight="700" font-family="Arial, sans-serif" fill="#111">${esc(label)}</text>` +
         `<text x="${box.w}" y="${fs}" font-size="${fs * 0.9}" font-family="Arial, sans-serif" text-anchor="end" fill="#444">${e.bays} bay${e.bays === 1 ? '' : 's'}</text>` +
         `<g transform="translate(0 ${fs * 2})">${d.items.map(itemSVG).join('')}</g>` +
-        `<text x="${d.w / 2}" y="${d.h + fs * 3.4}" font-size="${fs * 1.7}" font-family="Arial, sans-serif" text-anchor="middle" letter-spacing="0.6" fill="#222">RACK ELEVATIONS</text>` +
-        `<text x="${d.w / 2}" y="${d.h + fs * 4.9}" font-size="${fs * 1.05}" font-family="Arial, sans-serif" text-anchor="middle" letter-spacing="0.3" fill="#222">SCALE: ${esc(sc.label)}</text></g>`
+        `<text x="${box.w / 2}" y="${d.bottom + fs * 3.4}" font-size="${fs * 1.7}" font-family="Arial, sans-serif" text-anchor="middle" letter-spacing="0.6" fill="#222">RACK ELEVATIONS</text>` +
+        `<text x="${box.w / 2}" y="${d.bottom + fs * 4.9}" font-size="${fs * 1.05}" font-family="Arial, sans-serif" text-anchor="middle" letter-spacing="0.3" fill="#222">SCALE: ${esc(sc.label)}</text></g>`
     })
     const header = `<text x="${paperW - margin}" y="${margin + 9}" font-size="4.5" font-family="Arial, sans-serif" text-anchor="end" fill="#444">${esc(title)} · sheet ${p + 2}</text>`
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${paperW}mm" height="${paperH}mm" viewBox="0 0 ${paperW} ${paperH}"><rect width="${paperW}" height="${paperH}" fill="#fff"/>${header}${parts.join('')}<rect x="2" y="2" width="${paperW - 4}" height="${paperH - 4}" fill="none" stroke="#111" stroke-width="0.4"/></svg>`

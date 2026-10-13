@@ -3,7 +3,8 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { typeById, typeIdAt, beamFace, holePitch, isBeamRack } from '../../utils/elevations'
 import { elevationLayout, lengthsByType, buildingOf, ftInDash, parseFtIn } from '../../utils/elevationDrawing'
-import { useElevEditor, setPane, PANE_MIN, PANE_BAR, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, setField, commitType } from '../../utils/elevEditor'
+import { useElevEditor, setPane, PANE_MIN, PANE_BAR, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, setField, commitType, paneFontPx } from '../../utils/elevEditor'
+import { rackDepthUpdate } from '../../utils/rackDepth'
 import { startPainting } from '../../utils/elevPaint'
 
 /* ── The elevation editor — docked under the canvas (Elevations v2 §B–E) ──────────────────────────────────────
@@ -36,7 +37,7 @@ function Field({ label, value, onCommit, aria }) {
 }
 
 export function ElevationPane() {
-  const { open, height, typeId, beamIn, sel } = useElevEditor()
+  const { open, height, typeId, beamIn, sel, layout } = useElevEditor()
   const objects = useCanvasStore(s => s.objects), T = useCanvasStore(s => s.elevations)
   const selectedIds = useCanvasStore(s => s.selectedIds)
   const t = T ? typeById(T, typeId) || typeById(T, T.defaultId) : null
@@ -44,6 +45,9 @@ export function ElevationPane() {
   const used = t ? lengths.get(t.id) || [] : []
   const entry = used.find(u => u.beamIn === beamIn) || used[0] || { beamIn: 96, depthIn: 42, pair: false, flueIn: 9, palletWIn: 40, parentId: null }
   const building = useMemo(() => buildingOf(objects, entry.parentId), [objects, entry.parentId])
+  /* Depth: the selected rack's own frame depth, editable (utils/rackDepth.js — one undo step, the aisles follow, the Row
+     group replays it); with no rack selected, read-only: the depth the drawing shows */
+  const selRack = selectedIds.length === 1 ? objects.find(o => o.id === selectedIds[0] && isBeamRack(o)) : null
 
   /* linked: the bay (or rack) selected on the canvas → its type and beam length */
   const selKey = useCanvasStore(s => { if (s.selectedIds.length !== 1) return ''; const o = s.objects.find(x => x.id === s.selectedIds[0]); return isBeamRack(o) ? `${o.id}|${o.activeBayIdx ?? ''}|${o.activeBaySide ?? ''}` : '' })
@@ -106,16 +110,25 @@ export function ElevationPane() {
           <Field label="Clear" aria="Clearance" value={t.clearanceIn ?? 6} onCommit={v => commitType(store, t.id, x => setField(x, 'clearanceIn', v))} />
           <Field label="Face" aria="Beam face height" value={beamFace(t)} onCommit={v => commitType(store, t.id, x => setField(x, 'beamFaceIn', v))} />
           <Field label="Pitch" aria="Hole pitch" value={holePitch(t)} onCommit={v => commitType(store, t.id, x => setField(x, 'holePitchIn', v))} />
+          {selRack
+            ? <Field label="Depth" aria="Rack depth" value={selRack.depthIn ?? 42} onCommit={v => { const u = rackDepthUpdate(selRack, v, store.getState().gridSize || 40); if (u) store.getState().commitObjectUpdate(selRack.id, u) }} />
+            : <span title="select a rack to change its depth" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={lab}>Depth</span><span aria-label="Rack depth (read-only)" style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text2)' }}>{entry.depthIn}"</span><span style={{ fontSize: 10, color: 'var(--text3)' }}>select a rack to change its depth</span></span>}
+          {sel != null && <button type="button" aria-label="Remove level" title="Remove the selected beam's level (Delete)" onClick={() => { commitType(store, t.id, x => removeLevel(x, sel)); setPane({ sel: null }) }}
+            style={{ padding: '2px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid var(--red-bdr, #e8b4ae)', background: 'var(--red-dim, #fdecea)', color: 'var(--red, #c0392b)' }}>Remove level</button>}
         </>}
-        <button type="button" aria-label="Collapse elevation editor" onClick={() => setPane({ open: false })} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><ChevronDown size={15} /></button>
+        {/* side by side, or stacked (front view on top, side view below) — remembered per browser */}
+        <div role="group" aria-label="Drawing layout" style={{ display: 'flex', gap: 2, padding: 2, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', marginLeft: 'auto' }}>
+          {[['side', 'Side by side'], ['stacked', 'Stacked']].map(([k, label]) => <button key={k} type="button" aria-pressed={layout === k} style={seg(layout === k)} onClick={() => setPane({ layout: k })}>{label}</button>)}
+        </div>
+        <button type="button" aria-label="Collapse elevation editor" onClick={() => setPane({ open: false })} style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><ChevronDown size={15} /></button>
       </div>
-      {t ? <Drawing t={t} entry={entry} building={building} sel={sel} /> : <div style={{ padding: 12, fontSize: 12, color: 'var(--text3)' }}>No elevation types yet.</div>}
+      {t ? <Drawing t={t} entry={entry} building={building} sel={sel} stacked={layout === 'stacked'} /> : <div style={{ padding: 12, fontSize: 12, color: 'var(--text3)' }}>No elevation types yet.</div>}
     </div>
   )
 }
 
 /** The drawing, interactive. */
-function Drawing({ t, entry, building, sel }) {
+function Drawing({ t, entry, building, sel, stacked }) {
   const host = useRef(null)
   const [box, setBox] = useState({ w: 600, h: 240 })
   useLayoutEffect(() => {
@@ -130,8 +143,9 @@ function Drawing({ t, entry, building, sel }) {
   const [draft, setDraft] = useState(null)          // { type, active, removing } while dragging
   const [editing, setEditing] = useState(null)      // a dimension being typed: { id, k, x, y, value }
   const shown = draft ? draft.type : t
-  const fontPx = Math.max(9, Math.min(12, box.h / 26))
-  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel])
+  // centred and fitted to the pane (elevationLayout centres it in the box), labels in proportion with a readable minimum
+  const fontPx = paneFontPx(box)
+  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked])
 
   const at = (ev) => { const r = host.current.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
   const zAt = (p) => (d.floor - p.y) / d.scale
@@ -147,7 +161,7 @@ function Drawing({ t, entry, building, sel }) {
       if (Math.hypot(p.x - p0.x, p.y - p0.y) > 3) moved = true
       if (!moved) return
       if (role.kind === 'beam') {
-        const off = p.x < d.Xf(0) - fontPx * 3 || p.x > d.Xf(d.frontW) + fontPx * 3
+        const off = p.x < d.Xf(0) - fontPx * 1.5 || p.x > d.Xf(d.frontW) + fontPx * 1.5      // dragged past the end of the bay
         last = off ? { type: t, active: null, removing: role.k } : { type: moveBeam(t, role.k, zAt(p)), active: 'dim:elev', removing: null, k: role.k }
         if (!off) last.active = 'beam:' + role.k
       } else last = { type: setUpright(t, zAt(p)), active: 'top:' }
@@ -168,6 +182,24 @@ function Drawing({ t, entry, building, sel }) {
     const next = addLevelAt(t, z)
     if (next) commitType(store, t.id, () => next)
   }
+  /* a picked beam: Delete / Backspace removes its level even when the focus has left the pane for the page itself
+     (taken before the canvas's own Delete, which would delete the selected racks) */
+  useEffect(() => {
+    if (sel == null) return
+    const onWin = (e) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      const a = document.activeElement
+      if (a && a !== document.body && !a.closest?.('[data-pane="open"]')) return
+      if (a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) return            // typing in a field
+      e.preventDefault(); e.stopImmediatePropagation()
+      commitType(store, t.id, x => removeLevel(x, sel)); setPane({ sel: null })
+    }
+    // a press anywhere outside the editor un-picks the beam, so a Delete meant for the canvas reaches it
+    const onDown = (e) => { if (!(e.target instanceof Element && e.target.closest('[data-pane="open"]'))) setPane({ sel: null }) }
+    window.addEventListener('keydown', onWin, true)
+    window.addEventListener('pointerdown', onDown, true)
+    return () => { window.removeEventListener('keydown', onWin, true); window.removeEventListener('pointerdown', onDown, true) }
+  }, [sel, t.id])
   const onKey = (e) => {
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel != null) { e.preventDefault(); e.stopPropagation(); commitType(store, t.id, x => removeLevel(x, sel)); setPane({ sel: null }) }
     if (e.key === 'Escape' && sel != null) { e.stopPropagation(); setPane({ sel: null }) }

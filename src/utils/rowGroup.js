@@ -19,7 +19,8 @@
 //     that axis, so there is nothing on the other). Part of a row dragged: each target's racks more than
 //     half inside that stretch move; a rack only partly inside it skips that target (a rack is never
 //     split);
-//   - delete row: the others deleted; levels: the same levels;
+//   - delete row: the others deleted; levels: the same levels; a frame depth changed (the elevation editor, utils/
+//     rackDepth.js): the same depth on the target's racks of that kind (a pair's on its pairs, a single's on its singles);
 //   - bays of a pair deleted on ONE side (utils/baySides.js — the pair splits there and its other half carries
 //     on as a single): the same side, across the floor, of every target bay whose uprights line up, a pair's half
 //     going the same way; a target single standing on that side of its row loses that bay, one on the other side
@@ -42,6 +43,7 @@ import { narrowAisleBlocks } from '../generate/narrowAisles'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { piecesFromStates } from '../generate/faceReach'
 import { faceIndex } from '../generate/faceAisles'
+import { rackDepthUpdate } from './rackDepth'
 import { carryElev, withElev, ELEV_FIELDS, typeIdAt, typeMap, compressElev, syncLevels, paintRack, sidesOf } from './elevations'
 
 export const BEAM = new Set(['rack_row', 'rack_double_row'])
@@ -152,7 +154,7 @@ const onlyLevels = (a, b) => a.levels !== b.levels && without(a, [...UI_KEYS, 'l
 
 /** What one action did to the group. `groupKeys` are the group's row keys BEFORE the action.
  *  Returns { kind: 'none' } | { kind: 'multi', count } | { kind: 'other', why } |
- *  { kind: 'bays'|'side-delete'|'across'|'along'|'delete'|'add'|'levels'|'elev', source, ... } (source = the edited row's key before;
+ *  { kind: 'bays'|'side-delete'|'across'|'along'|'delete'|'add'|'levels'|'elev'|'depth', source, ... } (source = the edited row's key before;
  *  `sources` = every edited row's key when one action changed several group rows the same way). */
 /* `elevations`: the layout's types (the store's) — what an elevation paint is judged by */
 export function classifyEdit(before, after, groupKeys, gridSize = 40, elevations = null) {
@@ -199,6 +201,13 @@ export function classifyEdit(before, after, groupKeys, gridSize = 40, elevations
     const L = pairs.find(p => onlyLevels(p.r, p.s[0])).s[0].levels
     if (pairs.every(p => p.s[0].levels === L)) return { kind: 'levels', source, levels: L }
   }
+  // a frame depth changed: racks of one kind took a new depth (re-sized about their centre), nothing else
+  if (one) {
+    const ch = pairs.filter(p => (p.r.depthIn ?? 42) !== (p.s[0].depthIn ?? 42))
+    const same = (p) => without(p.r, [...UI_KEYS, 'depthIn', 'height', 'y', 'x']) === without(p.s[0], [...UI_KEYS, 'depthIn', 'height', 'y', 'x'])
+    if (ch.length && pairs.every(p => same(p) && (ch.includes(p) || sameRack(p.r, p.s[0]))) && ch.every(p => p.s[0].depthIn === ch[0].s[0].depthIn && p.r.type === ch[0].r.type))
+      return { kind: 'depth', source, depthIn: ch[0].s[0].depthIn, rackType: ch[0].r.type }
+  }
   // an elevation type painted: only the elevation fields (and the levels mirror) changed
   if (one && pairs.some(p => ELEV_FIELDS.some(k => JSON.stringify(p.r[k] ?? null) !== JSON.stringify(p.s[0][k] ?? null))) && pairs.every(p => without(p.r, [...UI_KEYS, ...ELEV_FIELDS, 'levels']) === without(p.s[0], [...UI_KEYS, ...ELEV_FIELDS, 'levels']))) {
     const e = elevEditOf(pairs, rowsB.get(source).ids.map(id => B.get(id)), elevations, elevations, gridSize)
@@ -229,7 +238,7 @@ export function classifyEdit(before, after, groupKeys, gridSize = 40, elevations
     const a = gB(r), up = upPxOf(r, gridSize), U = uprightsOf(a.r0, a.beams, up, gridSize)
     if (takenWhole.has(r.id)) { U.forEach(u => map.push([u, u])); for (let i = 0; i + 1 < U.length; i++) deleted.push([U[i], U[i + 1]]); continue }
     if (s.some(o => Math.abs(gB(o).s0 - a.s0) > EPS || Math.abs(gB(o).s1 - a.s1) > EPS)) return { kind: 'other', source, why: 'a change across with its bays' }
-    if (s.some(o => !sameExceptGeom(r, o))) return { kind: 'other', source, why: 'a change of depth or kind' }
+    if (s.some(o => !sameExceptGeom(r, o))) return { kind: 'other', source, why: 'a change of kind' }   // (a depth change alone is the depth kind)
     if (s.length === 1) {
       const b = gB(s[0]), V = uprightsOf(b.r0, b.beams, up, gridSize), n = a.beams.length, m = b.beams.length
       if (m === n && Math.abs(V[0] - U[0]) < tol) { U.forEach((u, i) => map.push([u, V[i]])); continue }
@@ -318,7 +327,8 @@ function sameEditOnAll(before, after, touched, gridSize, elevations = null) {
   const multi = { kind: 'multi', count: touched.length }
   const edits = touched.map(k => classifyEdit(before, after, [k], gridSize, elevations))
   const e0 = edits[0]
-  if (!['bays', 'side-delete', 'across', 'along', 'delete', 'levels', 'elev'].includes(e0.kind) || edits.some(e => e.kind !== e0.kind)) return multi
+  if (!['bays', 'side-delete', 'across', 'along', 'delete', 'levels', 'elev', 'depth'].includes(e0.kind) || edits.some(e => e.kind !== e0.kind)) return multi
+  if (e0.kind === 'depth') return edits.every(e => e.depthIn === e0.depthIn && e.rackType === e0.rackType) ? { ...e0, sources: touched } : multi
   const same = { ...e0, sources: touched }
   if (e0.kind === 'delete') return same
   if (e0.kind === 'levels') return edits.every(e => e.levels === e0.levels) ? same : multi
@@ -389,7 +399,7 @@ export const WARN_KINDS = {
  *  racks, removeIds, addRacks, warnings: [words] }] }. */
 export function planReplay(after, edit, groupKeys, ctx) {
   const { gridSize = 40, newId = () => Math.random().toString(36).slice(2, 12) } = ctx
-  if (!edit || !['bays', 'side-delete', 'across', 'along', 'delete', 'add', 'levels', 'elev'].includes(edit.kind)) return { targets: [] }
+  if (!edit || !['bays', 'side-delete', 'across', 'along', 'delete', 'add', 'levels', 'elev', 'depth'].includes(edit.kind)) return { targets: [] }
   const rows = rowsOf(after, gridSize)
   const byId = new Map(after.map(o => [o.id, o]))
   const tol = UP_TOL_FT * gridSize
@@ -424,6 +434,11 @@ export function planReplay(after, edit, groupKeys, ctx) {
 
     if (edit.kind === 'side-delete') { targets.push(sideDeleteOn(key, mine, edit, { gridSize, newId, byId, tol })); continue }
     if (edit.kind === 'elev') { targets.push(elevOn(key, mine, edit, { gridSize, tol, table: ctx.elevations || null })); continue }
+    if (edit.kind === 'depth') {
+      const racks = mine.filter(o => o.type === edit.rackType).map(o => { const u = rackDepthUpdate(o, edit.depthIn, gridSize); return u ? { ...o, ...u } : null }).filter(Boolean)
+      targets.push(racks.length ? { key, status: 'apply', racks, removeIds: [], addRacks: [] } : { key, status: 'none' })
+      continue
+    }
 
     if (edit.kind === 'add') {
       const t = edit.template, adds = mine.map(o => {

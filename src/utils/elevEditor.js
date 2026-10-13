@@ -11,10 +11,11 @@ import { create } from 'zustand'
 import { beamFace, holePitch, editTable, updateType, typeById } from './elevations'
 
 const LS_KEY = 'trace.elevpane.v1'
-const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { open: !!v.open, height: Number.isFinite(v.height) ? v.height : 300 } } catch { return { open: false, height: 300 } } }
-const save = (s) => { try { localStorage.setItem(LS_KEY, JSON.stringify({ open: s.open, height: s.height })) } catch { /* private window */ } }
+const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { open: !!v.open, height: Number.isFinite(v.height) ? v.height : 300, layout: v.layout === 'stacked' ? 'stacked' : 'side' } } catch { return { open: false, height: 300, layout: 'side' } } }
+const save = (s) => { try { localStorage.setItem(LS_KEY, JSON.stringify({ open: s.open, height: s.height, layout: s.layout })) } catch { /* private window */ } }
 
-/** { typeId, beamIn, open, height, sel (a level index picked on the drawing) } */
+/** { typeId, beamIn, open, height, layout ('side' | 'stacked': the side view beside the front view, or under it), sel
+ *  (a level index picked on the drawing) } */
 export const useElevEditor = create(() => ({ typeId: null, beamIn: null, sel: null, ...read() }))
 export function setPane(patch) { useElevEditor.setState(patch); save(useElevEditor.getState()) }
 export const PANE_MIN = 140, PANE_BAR = 32
@@ -75,6 +76,9 @@ export function setField(t, field, v) {
   if (field === 'palletHeightIn') return { ...t, levels: t.levels.map(l => ({ ...l, palletHeightIn: v })) }
   return { ...t, [field]: v }
 }
+
+/** The base label size for a pane of `box` px: in proportion to it, never under a readable 9 px nor over 14. */
+export const paneFontPx = (box) => Math.max(9, Math.min(14, Math.min(box.w / 78, box.h / 26)))
 
 /** Write type `id` as `fn(type)` into the store: ONE undo step (the racks' levels mirror following). */
 export function commitType(store, id, fn) {

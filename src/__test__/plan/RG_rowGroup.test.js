@@ -499,7 +499,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(racksOf(key(4, 6)).find(o => o.type === 'rack_row').beams[4]).toBe(84)
   })
 
-  it('RG-levels: levels 4 → 5 on row 7 → "Apply to the other 13 rows?" → every group row at 5 levels, one undo step; a depth change is still not replayed', async () => {
+  it('RG-levels: levels 4 → 5 on row 7 → "Apply to the other 13 rows?" → every group row at 5 levels, one undo step; a depth change IS replayed now (the elevation editor\'s Depth: every group row\'s pairs at that depth); a change of kind still isn\'t', async () => {
     load(filled(vert))
     addRowsInBox(runBox(vert, ...SEC4))
     const before = strip(objs())
@@ -512,9 +512,17 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(beamRacks(objs()).filter(o => !st().keys.some(k => rows().get(k).ids.includes(o.id))).every(o => o.levels === before.find(b => b.id === o.id).levels)).toBe(true)
     store.getState().undo()
     expect(racksOf(key(4, 9)).every(o => o.levels === before.find(b => b.id === o.id).levels)).toBe(true)
-    store.getState().commitObjectUpdate(pairOf(key(4, 9)).id, { depthIn: 48 }); await settle()
+    const { rackDepthUpdate } = await import('../../utils/rackDepth')
+    const p9 = pairOf(key(4, 9))
+    store.getState().commitObjectUpdate(p9.id, rackDepthUpdate(p9, 48, GS)); await settle()
+    expect(st().pending.edit.kind).toBe('depth')
+    expect(st().pending.summary.text).toMatch(/^Apply to the other \d+ rows\?/)   // the group rows with pairs
+    applyPending(); await settle()
+    for (const k of st().keys) for (const o of racksOf(k).filter(r => r.type === 'rack_double_row')) expect(o.depthIn).toBe(48)
+    store.getState().undo()
+    store.getState().commitObjectUpdate(pairOf(key(4, 9)).id, { palletWIn: 48 }); await settle()
     expect(st().pending).toBe(null)
-    expect(st().message).toBe('Not applied to the other rows: a change of depth or kind isn\'t replayed.')
+    expect(st().message).toBe('Not applied to the other rows: a change of kind isn\'t replayed.')
   })
 
   it('RG-always: Auto apply applies at once, folded into the edit\'s own history entry — one Ctrl+Z undoes the edit and its apply together; the switch is remembered', async () => {

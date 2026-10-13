@@ -324,7 +324,7 @@ export function legendCounts(objects, T, counted = null) {
 
 /** What doesn't fit, per type in use: [{ kind: 'elev-fit' | 'elev-height', typeId, text, level? }]. A pallet plus
  *  the clearance must fit from the top of its beam (the floor) to the underside of the next beam — its top less the
- *  type's beam face height (the top level: to the top of the upright); the top of the
+ *  type's beam face height (the top level has no beam above it: a top load standing above the frame is normal); the top of the
  *  upright must be under the clear height of the building the type's racks stand in (`clearHeightFt` on the floor
  *  plan; none set: not checked). */
 export function elevationIssues(objects, T) {
@@ -339,11 +339,12 @@ export function elevationIssues(objects, T) {
     const L = [...t.levels].sort((a, b) => a.beamIn - b.beamIn)
     const face = beamFace(t)
     L.forEach((lv, k) => {
-      const next = k + 1 < L.length ? L[k + 1].beamIn - face : t.uprightHeightIn
+      if (k + 1 >= L.length) return
+      const next = L[k + 1].beamIn - face
       const need = (lv.palletHeightIn || 0) + (t.clearanceIn || 0)
       if (next - lv.beamIn < need - 1e-6) {
         const from = lv.beamIn ? `the top of the beam at ${lv.beamIn}"` : 'the floor'
-        const where = k + 1 < L.length ? `between ${from} and the underside of the next at ${next}"` : `between ${from} and the top of the upright at ${next}"`
+        const where = `between ${from} and the underside of the next at ${next}"`
         out.push({ kind: 'elev-fit', typeId: t.id, level: k + 1, ids, text: `Elevation ${t.name}: level ${k + 1} pallet ${lv.palletHeightIn}" + ${t.clearanceIn}" clearance doesn't fit ${where}` })
       }
     })

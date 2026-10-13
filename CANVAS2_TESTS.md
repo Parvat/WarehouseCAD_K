@@ -1943,6 +1943,30 @@ beam clicked + Delete → gone; a beam dragged off the end → gone; the upright
 level; Ctrl+Z → 48; divider 320 → 400 (stored), canvas 594; collapse → canvas 962; PDF elevation sheets: "4 levels ·
 8' bay", "Type 3 · 8' bay". The building's 26' clear height and 24'-7" sprinkler drawn with the roof truss.
 
+**Editor fixes (v2.1).** Trace's own colours again (blue frames, orange beams, beige loads), the sample's dimensioning and
+labelling kept. The drawing centred in the pane and fitted; a Side by side / Stacked switch (remembered). Label sizes: beam
+elevations largest and bold at the beam end, overall heights medium on the outer left, chains (load + clearance, clear
+openings, beam face) smaller and lighter; sizes follow the pane (9-14 px); no label on a load, a beam or another label
+(declutter: slide along the line, step out, a chain label gives way). Remove a level: drag the beam off the end of the bay
+(1.5 labels past the upright), or pick it and press Delete (also with the focus back on the page, never in a field), or
+Remove level; a press outside the editor un-picks. A level that doesn't fit: its loads red, "doesn't fit", never over the
+beam above — the Check layout rule, which no longer checks the top level (a top load above the frame is normal). Depth:
+the selected rack's own (utils/rackDepth.js, re-sized about its centre), one undo step, aisles follow, the Row group
+replays it (kind 'depth'); no rack selected: read-only, "select a rack to change its depth".
+
+New: EV-labels, EV-centre-stack, EV-misfit, EV-depth-edit, EV-remove-wire. Changed: EV-drawing (Trace colours), EV-pdf
+(dimension colour), EV-wire (layout stored), RG-levels (a depth change is replayed now; a change of kind still isn't,
+message "a change of kind").
+
+**Break-its (v2.1):** red outline uprights: EV-drawing. Not centred / no stacking: EV-centre-stack. Elevations not the
+largest: EV-labels. No declutter: EV-labels. Misfit loads over the beam / no misfit label: EV-misfit. Drag-off
+threshold: EV-remove-wire. Depth not about the centre: EV-depth-edit. Depth not replayed: EV-depth-edit, RG-levels.
+
+**Checked in the app (v2.1)** (real mouse, V and H): beam clicked → picked → Delete → its level gone (canvas selection
+untouched); a beam dragged off the end → gone; Ctrl+Z ×2 → back; Pallet 58" → three levels red "doesn't fit", the same
+three Check layout errors; Stacked → stored; the divider down to a 140 px pane, the drawing centred and readable; no rack →
+Depth read-only with its note; a pair picked → Depth 48 → 42" → 48", its box 310 → 350 px about its centre; Ctrl+Z → 42.
+
 ### EV-v1
 Plan: ELEVATIONS_PLAN.md. Code: utils/elevations.js (types, layered assignment, compression, migration, the keeper,
 checks, legend, BOM data), utils/elevPaint.js (paint mode), utils/elevationDraw.js (colours toggle, bay fills, side
