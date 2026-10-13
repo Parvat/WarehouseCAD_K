@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Paintbrush, Copy, Trash2, Plus, Star, Minus } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { SectionHeader } from '../shared/SectionHeader'
-import { tableOf, editTable, addType, updateType, removeType, setDefault, legendCounts, ELEV_ID } from '../../utils/elevations'
+import { tableOf, editTable, addType, updateType, removeType, setDefault, legendCounts, typeDepths, beamFace, ELEV_ID } from '../../utils/elevations'
 import { useElevView, setShowColors, sideViewSVG, ftIn } from '../../utils/elevationDraw'
 import { startPainting, usePaint, PAINT_TOOL } from '../../utils/elevPaint'
 import { bayLedger } from '../../utils/bayLedger'
@@ -55,7 +55,9 @@ export function ElevationsPanel() {
     return new Map(legendCounts(objects, (r) => L.racks.get(r.id)?.counted || null).map(x => [x.type.id, x.bays]))
   }, [objects, gridSize])
   const selected = T ? T.types.find(t => t.id === sel) || T.types.find(t => t.id === T.defaultId) || T.types[0] : null
-  const svg = useMemo(() => (selected ? sideViewSVG(selected, { width: 240 }) : ''), [selected])
+  // frame depth is the racks' own (read-only): the depths of the racks carrying this type
+  const depths = useMemo(() => (selected ? typeDepths(objects, selected.id) : []), [objects, selected])
+  const svg = useMemo(() => (selected ? sideViewSVG(selected, { width: 240, frameDepthIn: depths.length === 1 ? depths[0] : null }) : ''), [selected, depths])
 
   if (!T) {
     return (
@@ -117,9 +119,10 @@ export function ElevationsPanel() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
             <div><div style={S.label}>Upright in</div><Num label="Upright height" value={selected.uprightHeightIn} onCommit={v => commit(tb => updateType(tb, selected.id, { uprightHeightIn: v }))} /></div>
-            <div><div style={S.label}>Frame in</div><Num label="Frame depth" value={selected.frameDepthIn} onCommit={v => commit(tb => updateType(tb, selected.id, { frameDepthIn: v }))} /></div>
+            <div><div style={S.label}>Beam face in</div><Num label="Beam face height" value={beamFace(selected)} onCommit={v => commit(tb => updateType(tb, selected.id, { beamFaceIn: v }))} /></div>
             <div><div style={S.label}>Clear in</div><Num label="Clearance" value={selected.clearanceIn} onCommit={v => commit(tb => updateType(tb, selected.id, { clearanceIn: v }))} /></div>
           </div>
+          <div aria-label="Frame depth" style={{ ...S.mono9, color: 'var(--text3)' }}>Frame depth {depths.length ? depths.map(d => ftIn(d)).join(', ') : '—'} (the racks' own)</div>
           <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 1fr 1fr', gap: 4, alignItems: 'center' }}>
             <span style={S.label}>L</span><span style={S.label}>Beam in</span><span style={S.label}>Pallet in</span><span style={S.label}>Load lb</span>
             {selected.levels.map((l, k) => (

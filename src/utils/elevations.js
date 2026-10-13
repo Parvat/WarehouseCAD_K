@@ -1,7 +1,8 @@
 // elevations.js — Elevations v1: rack elevation TYPES and which bays carry them (ELEVATIONS_PLAN.md).
 //
-// A type: name, colour, upright height, frame depth, beam levels from the floor up (the first may be the floor:
-// beamIn 0), pallet height and load per level, clearance above the pallet. The layout's types live in ONE object in
+// A type: name, colour, upright height, beam levels from the floor up (each to the TOP of its beam; the first may be
+// the floor: beamIn 0), pallet height and load per level, clearance above the pallet, the beam's face height and the
+// upright's hole pitch. Frame depth is not the type's: it is the rack's own drawn depth (rack.depthIn). The layout's types live in ONE object in
 // `objects` — { type: 'elevation_types', version, defaultId, types } — so undo, save / load and the .trace format
 // carry them with the layout (the canvas store itself is protected). That object is never drawn, picked or copied.
 //
@@ -30,16 +31,20 @@ export const sidesOf = (r) => (r && r.type === 'rack_double_row' ? 2 : 1)
 /* ── types ───────────────────────────────────────────────────────────────── */
 
 export const PALETTE = ['#7FA7D9', '#E8A33D', '#6DBE8C', '#C77DCB', '#E46F6F', '#5BC0C8', '#B9A15A', '#8E8CE0']
-export const SPACING_IN = 60, PALLET_H_IN = 48, CLEARANCE_IN = 6, LOAD_LB = 2000
+export const SPACING_IN = 60, PALLET_H_IN = 48, CLEARANCE_IN = 6, LOAD_LB = 2000, BEAM_FACE_IN = 4, HOLE_PITCH_IN = 2
+/** The beam face height (in) of type `t` — 4" for a type saved before it had one. */
+export const beamFace = (t) => (Number.isFinite(t?.beamFaceIn) ? t.beamFaceIn : BEAM_FACE_IN)
+/** The upright's hole pitch (in) — 2" when not set. */
+export const holePitch = (t) => (Number.isFinite(t?.holePitchIn) && t.holePitchIn > 0 ? t.holePitchIn : HOLE_PITCH_IN)
 
 /** `n` levels from the floor up: the floor, then a beam every SPACING_IN. */
 export const levelsOf = (n, { spacingIn = SPACING_IN, palletHeightIn = PALLET_H_IN, loadLb = LOAD_LB } = {}) =>
   Array.from({ length: Math.max(1, n) }, (_, k) => ({ beamIn: k * spacingIn, palletHeightIn, loadLb }))
 
 /** A type with `n` levels (the migration's and "New type"'s shape). */
-export function makeType({ id, name, color = PALETTE[0], levelsCount = 4, frameDepthIn = 42, clearanceIn = CLEARANCE_IN } = {}) {
+export function makeType({ id, name, color = PALETTE[0], levelsCount = 4, clearanceIn = CLEARANCE_IN } = {}) {
   const levels = levelsOf(levelsCount)
-  return { id, name: name || `${levels.length} levels`, color, uprightHeightIn: levels[levels.length - 1].beamIn + SPACING_IN, frameDepthIn, clearanceIn, levels }
+  return { id, name: name || `${levels.length} levels`, color, uprightHeightIn: levels[levels.length - 1].beamIn + SPACING_IN, clearanceIn, beamFaceIn: BEAM_FACE_IN, holePitchIn: HOLE_PITCH_IN, levels }
 }
 
 /** `t` with `n` levels: levels removed from the top, or added above at its own top spacing. */
@@ -143,11 +148,10 @@ export function migrate(objects) {
   if (tableOf(objects)) return objects
   const racks = objects.filter(isBeamRack)
   if (!racks.length) return objects
-  const byLevels = new Map(), depths = new Map()
-  for (const r of racks) { const n = r.levels || 1; byLevels.set(n, (byLevels.get(n) || 0) + 1); const d = r.depthIn ?? 42; depths.set(d, (depths.get(d) || 0) + 1) }
+  const byLevels = new Map()
+  for (const r of racks) { const n = r.levels || 1; byLevels.set(n, (byLevels.get(n) || 0) + 1) }
   const counts = [...byLevels].sort((a, b) => b[1] - a[1] || a[0] - b[0])
-  const depth = [...depths].sort((a, b) => b[1] - a[1])[0][0]
-  const types = counts.map(([n], i) => makeType({ id: `elev-${n}`, levelsCount: n, color: PALETTE[i % PALETTE.length], frameDepthIn: depth }))
+  const types = counts.map(([n], i) => makeType({ id: `elev-${n}`, levelsCount: n, color: PALETTE[i % PALETTE.length] }))
   const table = { id: ELEV_ID, type: ELEV_TYPE, version: ELEV_VERSION, defaultId: types[0].id, types }
   const out = objects.map(o => (isBeamRack(o) && (o.levels || 1) !== counts[0][0] && o.elevType == null ? { ...o, elevType: `elev-${o.levels || 1}` } : o))
   return [...out, table]
@@ -312,7 +316,8 @@ export function legendCounts(objects, counted = null) {
 }
 
 /** What doesn't fit, per type in use: [{ kind: 'elev-fit' | 'elev-height', typeId, text, level? }]. A pallet plus
- *  the clearance must fit between its beam and the next (the top level: the top of the upright); the top of the
+ *  the clearance must fit from the top of its beam (the floor) to the underside of the next beam — its top less the
+ *  type's beam face height (the top level: to the top of the upright); the top of the
  *  upright must be under the clear height of the building the type's racks stand in (`clearHeightFt` on the floor
  *  plan; none set: not checked). */
 export function elevationIssues(objects) {
@@ -326,11 +331,13 @@ export function elevationIssues(objects) {
     if (!used.has(t.id)) continue
     const ids = [...used.get(t.id)]
     const L = [...t.levels].sort((a, b) => a.beamIn - b.beamIn)
+    const face = beamFace(t)
     L.forEach((lv, k) => {
-      const next = k + 1 < L.length ? L[k + 1].beamIn : t.uprightHeightIn
+      const next = k + 1 < L.length ? L[k + 1].beamIn - face : t.uprightHeightIn
       const need = (lv.palletHeightIn || 0) + (t.clearanceIn || 0)
       if (next - lv.beamIn < need - 1e-6) {
-        const where = k + 1 < L.length ? `between the beams at ${lv.beamIn}" and ${next}"` : `between the beam at ${lv.beamIn}" and the top of the upright at ${next}"`
+        const from = lv.beamIn ? `the top of the beam at ${lv.beamIn}"` : 'the floor'
+        const where = k + 1 < L.length ? `between ${from} and the underside of the next at ${next}"` : `between ${from} and the top of the upright at ${next}"`
         out.push({ kind: 'elev-fit', typeId: t.id, level: k + 1, ids, text: `Elevation ${t.name}: level ${k + 1} pallet ${lv.palletHeightIn}" + ${t.clearanceIn}" clearance doesn't fit ${where}` })
       }
     })
@@ -342,13 +349,20 @@ export function elevationIssues(objects) {
   return out
 }
 
+/** The frame depths (in, the racks' own) of the racks carrying type `id` somewhere, ascending. */
+export function typeDepths(objects, id) {
+  const T = tableOf(objects), out = new Set()
+  for (const r of objects.filter(isBeamRack)) for (let s = 0; s < sidesOf(r); s++) if (r.beams.some((_, b) => typeIdAt(r, b, s, T) === id)) out.add(r.depthIn ?? 42)
+  return [...out].sort((a, b) => a - b)
+}
+
 /** For the BOM: every bay of every beam rack, per side — { rackId, bay, side, typeId, levels (beam heights, in),
- *  uprightHeightIn, beamIn, frameDepthIn }. */
+ *  uprightHeightIn, beamIn, frameDepthIn (the rack's own depth) }. */
 export function elevationBays(objects) {
   const T = tableOf(objects), out = []
   for (const r of objects.filter(isBeamRack)) for (let s = 0; s < sidesOf(r); s++) r.beams.forEach((beamIn, bay) => {
     const t = typeAt(r, bay, s, T)
-    out.push({ rackId: r.id, bay, side: s, typeId: t ? t.id : null, levels: t ? t.levels.map(l => l.beamIn) : Array.from({ length: r.levels || 1 }, (_, k) => k * SPACING_IN), uprightHeightIn: t ? t.uprightHeightIn : null, beamIn, frameDepthIn: t ? t.frameDepthIn : r.depthIn ?? null })
+    out.push({ rackId: r.id, bay, side: s, typeId: t ? t.id : null, levels: t ? t.levels.map(l => l.beamIn) : Array.from({ length: r.levels || 1 }, (_, k) => k * SPACING_IN), uprightHeightIn: t ? t.uprightHeightIn : null, beamIn, frameDepthIn: r.depthIn ?? null })
   })
   return out
 }

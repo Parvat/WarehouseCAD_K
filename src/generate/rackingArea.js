@@ -51,6 +51,17 @@ export const ZONE_KINDS = [
 
 const r4 = (v) => Math.round(v * 1e4) / 1e4
 /** A rack as placed — what a hand edit changes. */
+/** Does `o` still match its placed record `stored` (rackSig)? Its levels aside: they come from its elevation type
+ *  (utils/elevations.js), and a type change — edited or assigned — is not a hand edit. Records saved before compare
+ *  the same way. */
+export function sigMatch(stored, o) {
+  if (stored == null || !o) return false
+  const now = rackSig(o)
+  if (stored === now) return true
+  try { const a = JSON.parse(stored); a[7] = o.levels ?? null; return JSON.stringify(a) === now } catch { return false }
+}
+/** rackSig without the levels: the key a refit reuses a clean rack by (it keeps its id and its elevation type). */
+const shapeKey = (o) => { const a = JSON.parse(rackSig(o)); a[7] = null; return JSON.stringify(a) }
 export const rackSig = (o) => JSON.stringify([o.type, r4(o.x), r4(o.y), r4(o.width), r4(o.height), o.rotation || 0, o.beams || null, o.levels ?? null, o.uprightWidth ?? null, o.flueSpaceIn ?? null])
 export const boxOf = (o) => ({ x: o.x, y: o.y, w: o.width, h: o.height })
 /** The area's Racking settings (the Fill racking defaults under them). */
@@ -110,7 +121,7 @@ function carryPlaced(before, after, became) {
     let touched = false
     for (const [id, ids] of became) {
       if (!(id in placed)) continue
-      const wasClean = placed[id] === rackSig(B.get(id))
+      const wasClean = sigMatch(placed[id], B.get(id))
       delete placed[id]; touched = true
       if (wasClean) for (const p of ids) if (A.has(p)) placed[p] = rackSig(A.get(p))
     }
@@ -123,7 +134,7 @@ function carryPlaced(before, after, became) {
 export function areaEdits(objects, area) {
   const placed = area?.placed || {}
   const mine = objects.filter(o => isRack(o) && o.areaId === area.id)
-  const changed = mine.filter(o => !(o.id in placed) || placed[o.id] !== rackSig(o))
+  const changed = mine.filter(o => !(o.id in placed) || !sigMatch(placed[o.id], o))
   const ids = new Set(objects.map(o => o.id))
   const removed = Object.keys(placed).filter(id => !ids.has(id))
   const b = boxOf(area)
@@ -150,7 +161,7 @@ function removedBoxes(objects, area) {
 /** The area's racks as placed (signature unchanged) — the ones its pattern owns. */
 const cleanRacks = (objects, area) => {
   const placed = area.placed || {}
-  return objects.filter(o => isRack(o) && o.areaId === area.id && placed[o.id] === rackSig(o))
+  return objects.filter(o => isRack(o) && o.areaId === area.id && sigMatch(placed[o.id], o))
 }
 
 /** Show `area`'s pattern through `box` in `objects` (its clean racks already
@@ -160,8 +171,8 @@ const cleanRacks = (objects, area) => {
 function showPattern(objects, box, pattern, area, clean, removed, { gridSize, newId, snapEnds = false }) {
   const plan = patternFill(objects, box, pattern, { gridSize, newId, areaId: area.id, blocked: removed, snapEnds })
   const bySig = new Map()
-  for (const r of clean) { const k = rackSig(r); if (!bySig.has(k)) bySig.set(k, []); bySig.get(k).push(r) }
-  return plan.racks.map(r => { const same = bySig.get(rackSig(r)); return same && same.length ? same.shift() : r })
+  for (const r of clean) { const k = shapeKey(r); if (!bySig.has(k)) bySig.set(k, []); bySig.get(k).push(r) }
+  return plan.racks.map(r => { const same = bySig.get(shapeKey(r)); return same && same.length ? same.shift() : r })
 }
 
 /** A new racking area from a Fill racking box: the area object and the fill

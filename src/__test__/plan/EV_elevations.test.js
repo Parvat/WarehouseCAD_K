@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { GS } from './fixtures'
 import { REAL_LAYOUT } from './realLayout.fixture'
-import { planAreaCreate, planAreaResize } from '../../generate/rackingArea'
+import { planAreaCreate, planAreaResize, areaEdits } from '../../generate/rackingArea'
 import { sizingSheetLayout } from '../../generate/sizingLayout'
 import { placementToObject } from '../../generate/traceGenerate'
 import { DEFAULT_RULES } from '../../rules/defaults'
@@ -308,9 +308,46 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     const errs = checkLayout(o, { gridSize: GS }).errors.filter(e => /^elev/.test(e.kind))
     expect(errs.map(e => e.text)).toEqual([
       'Elevation B: top of upright 30\' is above the building\'s clear height 25\'',
-      'Elevation B: level 1 pallet 48" + 6" clearance doesn\'t fit between the beams at 0" and 50"',
+      'Elevation B: level 1 pallet 48" + 6" clearance doesn\'t fit between the floor and the underside of the next at 46"',
     ])
     expect(errs[0].ids).toEqual(['p1'])
+  })
+
+  it(`EV-face: beam levels are to the TOP of the beam — a pallet + clearance must fit from the top of the lower beam to the UNDERSIDE of the next (its top less the type's beam face, 4" when not set): 58" between tops with a 4" face fits 48 + 6, a 5" face doesn't`, () => {
+    let o = withTypes(hand(vert))
+    o = o.map(x => (x.id === 'p1' ? E.paintRack(x, E.tableOf(o), { typeId: 'B' }) : x))
+    const lv = (gap) => [{ beamIn: 0, palletHeightIn: 48, loadLb: 2000 }, { beamIn: gap, palletHeightIn: 48, loadLb: 2000 }, { beamIn: gap * 2, palletHeightIn: 48, loadLb: 2000 }]
+    const fit = (patch) => E.elevationIssues(E.editTable(o, t => E.updateType(t, 'B', { uprightHeightIn: 300, ...patch }))).filter(e => e.kind === 'elev-fit').map(e => e.level)
+    expect(fit({ levels: lv(58) })).toEqual([])                                   // 58 - 4 = 54 = 48 + 6
+    expect(fit({ levels: lv(58), beamFaceIn: 5 })).toEqual([1, 2])
+    const old = E.editTable(o, t => ({ ...t, types: t.types.map(x => { const c = { ...x }; delete c.beamFaceIn; return c }) }))
+    expect(E.beamFace(E.typeById(E.tableOf(old), 'B'))).toBe(4)
+    expect(E.makeType({ id: 'x' }).beamFaceIn).toBe(4)
+  })
+
+  it(`EV-depth: frame depth is the rack's own — not a field of the type; the BOM and the panel read the racks' depths`, () => {
+    const o = withTypes(hand(vert)).map(x => (x.id === 's' ? { ...x, depthIn: 36 } : x)), tb = E.tableOf(o)
+    expect(tb.types.some(t => 'frameDepthIn' in t)).toBe(false)
+    expect(E.typeDepths(o, tb.defaultId)).toEqual([36, 42])
+    expect(E.elevationBays(o).find(b => b.rackId === 's').frameDepthIn).toBe(36)
+    expect(E.elevationBays(o).find(b => b.rackId === 'p1').frameDepthIn).toBe(42)
+  })
+
+  it(`EV-refit: a type change on a Fill area rack — even one that changes its levels — is no hand edit: the area counts no edits, and the next area resize still refits it (the rack kept, id and type with it)`, () => {
+    let o = E.migrate(savedFill(vert))
+    o = E.editTable(o, t => E.addType(t, { id: 'B', name: 'B' }))
+    o = E.editTable(o, t => E.updateType(t, 'B', { levels: E.levelsOf(6), uprightHeightIn: 360 }))
+    const area = o.find(x => x.type === 'racking_area'), r = o.find(x => E.isBeamRack(x) && x.areaId === area.id && x.type === 'rack_double_row')
+    const painted = o.map(x => (x.id === r.id ? E.paintRack(x, E.tableOf(o), { typeId: 'B' }) : x))
+    expect(painted.find(x => x.id === r.id).levels).toBe(6)
+    // (the horizontal copy is the saved layout turned: its area records never matched — compare before and after)
+    expect(areaEdits(painted, area).count).toBe(areaEdits(o, area).count)
+    if (vert) expect(areaEdits(painted, area).count).toBe(0)
+    const grow = vert ? { x: area.x, y: area.y, w: area.width, h: area.height + 40 } : { x: area.x, y: area.y, w: area.width + 40, h: area.height }
+    const after = planAreaResize(painted, area.id, grow, { gridSize: GS })
+    const kept = after.find(x => x.id === r.id)
+    expect([!!kept, kept && kept.elevType, kept && kept.levels]).toEqual([true, 'B', 6])
+    if (vert) expect(areaEdits(after, after.find(x => x.id === area.id)).count).toBe(0)
   })
 
   it('EV-legend-bom: the legend counts each side of a back-to-back as a bay; the BOM data gives every bay per side its type, levels and upright height, a shared upright the taller', () => {
