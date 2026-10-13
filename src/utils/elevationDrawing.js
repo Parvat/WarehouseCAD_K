@@ -36,8 +36,11 @@ export function parseFtIn(text) {
   return NaN
 }
 
-// Trace's own colours (the dimensioning and labelling follow the reference sheet; the look is Trace's)
-const INK = '#1d2433', DIM = '#2b3a55', DIM_LIGHT = '#6b7a90', UPRIGHT = '#2f5d8a', BEAM = '#e07a1f', BEAM_EDGE = '#b4561a', LOAD = '#f3e2c3', LOAD_EDGE = '#8a6a3a', BRACE = '#5b7da3', TRUSS = '#6b7280', MISFIT = '#f8d7d3', MISFIT_EDGE = '#c0392b', HEAD = '#c0392b'
+// the reference sheet's visual language: IBM Plex Mono, dark green frames and beams, kraft loads on a deck board, an
+// ink ground line with grey hatching, a dashed clear-height line over a yellow clearance band; dimensions blue,
+// clearances red, tags grey
+const FONT = "'IBM Plex Mono', 'JetBrains Mono', monospace"
+const INK = '#15181C', PINE = '#123A2E', LOAD = '#E8DCC2', LOAD_EDGE = '#B08F52', DECK = '#C9A870', BLUE = '#1B4FD8', RED = '#A8341C', GREY = '#7A828C', HATCH = '#B6BAB3', BAND = '#F2C230', MISFIT = '#F5E7E3', MISFIT_EDGE = '#A8341C'
 
 /** Which levels of `t` don't fit — a pallet plus the clearance taller than the top of its beam (the floor) to the
  *  underside of the next beam (the top level has none above it): the Check layout error's own rule
@@ -54,222 +57,217 @@ export function misfitLevels(t) {
 }
 
 /** The drawing of type `t` with `bayIn` beams, fitted into and centred in `box` ({ w, h } px): { w, h (the box), scale
- *  (px per inch), items, bottom (the drawing's lowest y) }. opts: palletWIn, depthIn (frame depth, the racks'), pair +
- *  flueIn (back-to-back side view), building ({ clearHeightIn, sprinklerIn } or null), fontPx (the base label size),
- *  compact (no dimensions: the panel's preview), stacked (the side view under the front view, not beside it), scale (a
- *  drawing scale asked for), draft overrides { active: role key, removing: level index }. Items: { t: 'rect'|'line'|
- *  'text'|'poly'|'polygon'|'circle', ..., role, tag } — role { kind: 'beam', k } | { kind: 'upright', x } |
- *  { kind: 'top' } | { kind: 'dim', id, k?, value } for the editor; tag names a part ('load', 'chord', 'head', 'misfit').
- *  Labels come in three sizes — beam elevations largest and bold at the beam end, overall heights medium on the outer
- *  left, chains (load + clearance, clear openings, beam face) smaller and lighter — and none overlaps a load, a beam or
- *  another label (declutter). */
+ *  (px per inch), items, bottom }. In the reference sheet's style. opts: palletWIn, depthIn (frame depth, the racks'),
+ *  pair + flueIn (back-to-back side view), building ({ clearHeightIn, sprinklerIn } or null), sprinklerClearanceIn,
+ *  fontPx (the base label size), detail ('simple': level tags, frame height, the beam with its pallets, the clear-height
+ *  line and clearance band, pitch and the pallets' side clearance; 'detailed': those plus each beam's elevation to its top
+ *  and per level the pallet height and the ACTUAL gap to the underside of the beam above, red under the clearance, and
+ *  that beam's face), compact (the panel's preview: no labels), stacked (the side view under the front view), scale, bg
+ *  (the colour behind the labels' halo: the panel's), draft overrides { active, removing }. Items: { t: 'rect'|'line'|
+ *  'text'|'poly'|'polygon'|'path', ..., role, tag } — role { kind: 'beam', k } | { kind: 'upright', x } | { kind: 'top' } |
+ *  { kind: 'dim', id, k?, value } for the editor. No label overlaps a load, a beam or another label (declutter). */
 export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = {}) {
-  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN } = opts
+  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff' } = opts
+  const detailed = detail === 'detailed'
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
   const L = [...t.levels].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
   const top = L[L.length - 1]
   const misfit = misfitLevels(t)
-  // the top load against the building: above the clear height, or within the sprinkler clearance — the Check layout errors
   const topIssue = topLoadIssue(t, building, sprinklerClearanceIn)
   const loadH = (lv, i) => { const ph = lv.palletHeightIn || 0, next = i + 1 < L.length ? L[i + 1].beamIn - face : Infinity; return Math.max(0, Math.min(ph, next - lv.beamIn - 0.5)) }
   const topLoad = top.beamIn + loadH(top, L.length - 1)
   const bClear = building?.clearHeightIn > 0 ? building.clearHeightIn : null
   const bSprink = building?.sprinklerIn > 0 ? building.sprinklerIn : null
-  /* the roof truss: its bottom chord at the clear height (the underside of the roof structure), its top chord above
-     both that and the sprinkler head */
-  const TRUSS_IN = 22
-  const trussTop = bClear ? Math.max(bClear + TRUSS_IN, (bSprink || 0) + 8) : null
-  const H = Math.max(t.uprightHeightIn, topLoad + clearance, trussTop ? trussTop + 2 : 0, bSprink ? bSprink + 8 : 0)
   const hTop = t.uprightHeightIn
+  const H = Math.max(hTop, topLoad + clearance, bClear || 0, bSprink || 0) + 6
   const frontW = bayIn + 2 * upW, sideW = pair ? 2 * depthIn + flueIn + 2 * upW : depthIn + upW
-  // the three label sizes: elevations, overall, chains
-  const fE = fontPx * 1.15, fO = fontPx, fC = Math.max(8, fontPx * 0.84)
-  const tw = (str, size) => String(str).length * size * 0.56
-  const longestElev = Math.max(0, ...L.filter(l => l.beamIn > 0).map(l => tw(ftInDash(l.beamIn), fE)))
-  const nOverall = 1 + (bClear ? 2 : 0)
-  // the columns, in px from the rack: left — chain, beam face, overall; right — clear openings, the leader, elevations, sprinkler
-  const cChain = fC * 1.5, cFace = cChain + fC * 0.7, cOver0 = cChain + fC * 4.2
-  const mL = compact ? 6 : cOver0 + nOverall * fO * 2.2 + fO * 0.8
-  const cOpen = fC * 1.4, cLead = cOpen + fC * 1.2, cElev = cLead + fE * 0.3
-  const cSpr = cElev + longestElev + fO * 1.6
-  const mR = compact ? 6 : (bSprink ? cSpr + fO * 1.4 : cElev + longestElev + fE * 0.6)
-  const mT = compact ? 6 : fO * (bClear ? 1.4 : 3.0), mB = compact ? 6 : fO * 1.4
-  const sideL = compact ? 6 : fO * 3.4, sideR = compact ? 6 : fO * 1.2, sideT = compact ? 6 : fO * (pair ? 4.2 : 2.6)
-  const gap = compact ? 14 : fO * 2
+  const fO = fontPx, fT = Math.max(8, fontPx * 0.85), fE = fontPx * 1.05
+  const tw = (str, size) => String(str).length * size * 0.6
+  // a uniform level spacing gives the pitch
+  const steps = L.slice(1).map((l, i) => l.beamIn - L[i].beamIn), pitch = steps.length && steps.every(x => Math.abs(x - steps[0]) < 1e-6) ? steps[0] : null
+  const longestElev = detailed ? Math.max(0, ...L.filter(l => l.beamIn > 0).map(l => tw(ftInDash(l.beamIn), fE))) : 0
+  // the columns, px from the frames
+  const cTag = fO * 0.8, cElev = cTag + fT * 2.4, cPitch = (detailed ? cElev + longestElev + fO * 0.8 : cTag + fT * 2.6) + fO * 0.6
+  const cChain = fO * 1.4, cFrame = detailed ? cChain + fO * 3.4 : fO * 1.8
+  const mL = compact ? 6 : cFrame + fO * 1.6, mR = compact ? 6 : Math.max(cPitch + fO * 1.6, tw('0.0" CLR', fT) + cTag + fO)
+  const mT = compact ? 6 : fO * (bClear || bSprink ? 2.0 : 1.2), mB = compact ? 6 : fO * 4.4
+  const sideL = compact ? 6 : fO * 3.2, sideR = compact ? 6 : fO * 1.2, sideT = compact ? 6 : fO * (pair ? 4.4 : 2.8)
+  const gap = compact ? 14 : fO * 2.4
   let fit
-  if (stacked) fit = Math.min((box.w - mL - mR) / frontW, (box.w - sideL - sideR) / sideW, (box.h - mT - mB - gap - sideT - mB) / (H + hTop))
-  else fit = Math.min((box.w - mL - mR - gap - sideL - sideR) / (frontW + sideW), (box.h - mT - mB) / H, (box.h - sideT - mB) / hTop)
+  if (stacked) fit = Math.min((box.w - mL - mR) / frontW, (box.w - sideL - sideR) / sideW, (box.h - mT - mB - gap - sideT - mB) / (H + H))
+  else fit = Math.min((box.w - mL - mR - gap - sideL - sideR) / (frontW + sideW), (box.h - mT - mB) / H, (box.h - sideT - mB) / H)
   fit = Math.max(0.05, fit)
-  const s = scale && scale <= fit ? scale : fit           // a drawing scale asked for (the PDF's standard one), if it fits
-  // the content's size, then centred in the box
+  const s = scale && scale <= fit ? scale : fit
   const frontBoxW = mL + frontW * s + mR, frontBoxH = mT + H * s + mB
-  const sideBoxW = sideL + sideW * s + sideR, sideBoxH = sideT + hTop * s + mB
+  const sideBoxW = sideL + sideW * s + sideR, sideBoxH = Math.max(sideT, mT) + H * s + mB
   const cw = stacked ? Math.max(frontBoxW, sideBoxW) : frontBoxW + gap + sideBoxW
   const ch = stacked ? frontBoxH + gap + sideBoxH : Math.max(frontBoxH, sideBoxH)
   const ox = Math.max(0, (box.w - cw) / 2), oy = Math.max(0, (box.h - ch) / 2)
   const X0 = ox + (stacked ? (cw - frontBoxW) / 2 : 0) + mL, floor = oy + mT + H * s
   const Y = (z) => floor - z * s, Xf = (x) => X0 + x * s
   const XS0 = stacked ? ox + (cw - sideBoxW) / 2 + sideL : X0 + frontW * s + mR + gap + sideL
-  const floorS = stacked ? floor + mB + gap + sideT + hTop * s : floor
+  const floorS = stacked ? floor + mB + gap + Math.max(sideT, mT) + H * s : floor
   const Ys = (z) => floorS - z * s, Xs = (x) => XS0 + x * s
-  const sw = Math.max(0.7, fontPx / 12)
+  const sw = Math.max(0.8, fontPx / 11)
+  const colPx = Math.max(3.5, upW * s), beamPx = Math.max(4, face * s), deckPx = Math.max(3, 4 * s)
   const items = []
   const rect = (x, y, w, h, o = {}) => items.push({ t: 'rect', x, y, w, h, ...o })
-  const line = (x1, y1, x2, y2, o = {}) => items.push({ t: 'line', x1, y1, x2, y2, stroke: o.stroke || DIM, sw: o.sw || sw, ...o })
-  const text = (x, y, str, o = {}) => items.push({ t: 'text', x, y, s: str, size: o.size || fO, fill: o.fill || DIM, anchor: o.anchor || 'middle', halo: Math.max(1, (o.size || fO) * 0.26), ...o })
+  const line = (x1, y1, x2, y2, o = {}) => items.push({ t: 'line', x1, y1, x2, y2, stroke: o.stroke || BLUE, sw: o.sw || sw, ...o })
+  const text = (x, y, str, o = {}) => items.push({ t: 'text', x, y, s: str, size: o.size || fO, fill: o.fill || BLUE, anchor: o.anchor || 'middle', font: FONT, halo: Math.max(1.5, (o.size || fO) * 0.45), haloColor: bg, ...o })
   const keyOf = (r) => (r ? r.kind + ':' + (r.k ?? r.id ?? '') : null)
   const isActive = (r) => active && keyOf(r) === active
-  const arrow = (x, y, dx, dy, c, size) => { const a = size * 0.5, b = size * 0.18; items.push({ t: 'polygon', points: [[x, y], [x - dx * a - dy * b, y - dy * a + dx * b], [x - dx * a + dy * b, y - dy * a - dx * b]], fill: c }) }
 
-  /* a vertical dimension at x from y0 (lower) to y1 (upper) in px: extension lines from `from`, arrowheads, the label
-     in a break of the line (beside it, arrows outside, when the span is too short); `pri`: the label's rank (1 the
-     elevations, 2 overall, 3 chains), `out`: which way it may move when crowded */
-  const dimV = (x, y0, y1, label, role, { from = null, size = fO, color = DIM, pri = 2, out = -1 } = {}) => {
+  /* a vertical dimension (the reference's: a thin line with short ticks at its ends, the label turned along it on its
+     outer side); too short for its label, the label sits beside it */
+  const dimV = (x, y0, y1, label, role, { from = null, color = BLUE, size = fO, pri = 2, out = -1 } = {}) => {
     if (compact) return
-    const hot = isActive(role), c = hot ? '#d0392b' : color, w = hot ? sw * 1.7 : sw
-    if (from != null) for (const y of [y0, y1]) line(from, y, x + (from < x ? size * 0.4 : -size * 0.4), y, { stroke: c, sw: sw * 0.6 })
-    const len = Math.abs(y0 - y1), need = tw(label, size) + size * 1.6
-    const meta = { pri, out, span: [Math.min(y0, y1), Math.max(y0, y1)], lineX: x }
-    if (len >= need) {
-      const mid = (y0 + y1) / 2, half = tw(label, size) / 2 + size * 0.35
-      line(x, y0, x, mid + half, { stroke: c, sw: w }); line(x, mid - half, x, y1, { stroke: c, sw: w })
-      arrow(x, y0, 0, 1, c, size); arrow(x, y1, 0, -1, c, size)
-      text(x + size * 0.35, mid, label, { rot: -90, size, fill: c, weight: hot ? 700 : undefined, role, ...meta })
-    } else {
-      line(x, y0, x, y1, { stroke: c, sw: w })
-      line(x, y0, x, y0 + size, { stroke: c, sw: w }); line(x, y1, x, y1 - size, { stroke: c, sw: w })
-      arrow(x, y0, 0, -1, c, size); arrow(x, y1, 0, 1, c, size)
-      text(x + out * size * 0.45, (y0 + y1) / 2 + size * 0.35, label, { anchor: out < 0 ? 'end' : 'start', size, fill: c, weight: hot ? 700 : undefined, role, ...meta })
+    const hot = isActive(role), c = hot ? '#d0392b' : color, w = hot ? sw * 1.6 : sw * 0.9
+    if (from != null) for (const y of [y0, y1]) line(from, y, x + (from < x ? size * 0.4 : -size * 0.4), y, { stroke: c, sw: sw * 0.5 })
+    line(x, y0, x, y1, { stroke: c, sw: w })
+    for (const y of [y0, y1]) line(x - size * 0.45, y, x + size * 0.45, y, { stroke: c, sw: w })
+    const len = Math.abs(y0 - y1), meta = { pri, out, span: [Math.min(y0, y1), Math.max(y0, y1)] }
+    if (len >= tw(label, size) + size) text(x + out * size * 0.55, (y0 + y1) / 2, label, { rot: -90, size, fill: c, weight: hot ? 700 : undefined, role, ...meta })
+    else text(x + out * size * 0.6, (y0 + y1) / 2 + size * 0.35, label, { anchor: out < 0 ? 'end' : 'start', size, fill: c, weight: hot ? 700 : undefined, role, ...meta })
+  }
+  // (`outboard` 'left' | 'right': a label wider than its span goes beyond that end, on the line's own row, as drafted)
+  const dimH = (y, x0, x1, label, { color = BLUE, size = fO, below = true, outboard = null } = {}) => {
+    if (compact) return
+    line(x0, y, x1, y, { stroke: color, sw: sw * 0.9 })
+    for (const x of [x0, x1]) line(x, y - size * 0.45, x, y + size * 0.45, { stroke: color, sw: sw * 0.9 })
+    if (outboard && tw(label, size) + size > x1 - x0) text(outboard === 'left' ? x0 - size * 0.6 : x1 + size * 0.6, y + size * 0.35, label, { anchor: outboard === 'left' ? 'end' : 'start', size, fill: color, pri: 2 })
+    else text((x0 + x1) / 2, below ? y + size * 1.45 : y - size * 0.55, label, { size, fill: color, pri: 2 })
+  }
+  /* the ground: an ink line, grey hatching below it */
+  const ground = (x0, x1, y) => {
+    line(x0, y, x1, y, { stroke: INK, sw: compact ? 2 : 3 })
+    if (!compact) for (let x = x0 + fO * 1.4; x < x1 - fO * 0.6; x += fO * 2.2) line(x, y, x - fO, y + fO, { stroke: HATCH, sw: 1 })
+  }
+  /* the building over a view: the clearance band under the sprinkler heads (yellow), the dashed clear-height (and
+     sprinkler) line, their labels — grey, the clearance red */
+  const shell = (Yv, x0, x1) => {
+    if (bSprink) {
+      rect(x0, Yv(bSprink), x1 - x0, sprinklerClearanceIn * s, { fill: BAND, opacity: 0.2, tag: 'band' })
+      line(x0, Yv(bSprink), x1, Yv(bSprink), { stroke: INK, sw: sw * 1.2, dash: `${fO * 0.7} ${fO * 0.4}` })
+      if (!compact) {
+        // (the sprinklers at the clear height itself: one line, labelled as the clear height, as on the reference)
+        if (!(bClear && Math.abs(bClear - bSprink) < 0.5)) text(x1 - 2, Yv(bSprink) - fT * 0.55, `SPRINKLERS ${ftInDash(bSprink)}`, { anchor: 'end', size: fT, fill: GREY, pri: 2, tag: 'shell' })
+        text(x0 + 2, Yv(bSprink) + Math.min(sprinklerClearanceIn * s, fT * 2) / 2 + fT * 0.35, `CLEARANCE ${ftInDash(sprinklerClearanceIn)}`, { anchor: 'start', size: fT, fill: RED, pri: 3, tag: 'shell' })   // (gives way in a narrow pane)
+      }
+    }
+    if (bClear) {
+      line(x0, Yv(bClear), x1, Yv(bClear), { stroke: INK, sw: sw * 1.5, dash: `${fO * 0.8} ${fO * 0.45}`, tag: 'clear' })
+      if (!compact) text(x1 - 2, Yv(bClear) + (bSprink && bSprink > bClear ? fT * 1.25 : -fT * 0.55), `CLEAR HEIGHT ${ftInDash(bClear)}`, { anchor: 'end', size: fT, fill: GREY, pri: 2, tag: 'shell' })
     }
   }
-  const dimH = (y, x0, x1, label, { size = fO, color = DIM } = {}) => {
-    if (compact) return
-    for (const x of [x0, x1]) line(x, y - size * 0.5, x, y + size * 0.5, { stroke: color, sw: sw * 0.6 })
-    const len = x1 - x0, need = tw(label, size) + size * 1.6
-    if (len >= need) {
-      const mid = (x0 + x1) / 2, half = tw(label, size) / 2 + size * 0.4
-      line(x0, y, mid - half, y, { stroke: color }); line(mid + half, y, x1, y, { stroke: color })
-      arrow(x0, y, -1, 0, color, size); arrow(x1, y, 1, 0, color, size)
-      text(mid, y + size * 0.35, label, { size, fill: color, pri: 2 })
-    } else {
-      line(x0 - size * 1.2, y, x1 + size * 1.2, y, { stroke: color })
-      arrow(x0, y, 1, 0, color, size); arrow(x1, y, -1, 0, color, size)
-      text((x0 + x1) / 2, y - size * 0.45, label, { size, fill: color, pri: 2 })
-    }
-  }
 
-  // ── the floor, under both views
-  const floorLine = (x0, x1, y) => line(x0, y, x1, y, { stroke: INK, sw: sw * 1.8 })
-  floorLine(X0 - (compact ? 0 : fO * 2), Xf(frontW) + (compact ? 0 : fO * 2), floor)
-  floorLine(Xs(0) - (compact ? 0 : fO * 1.5), Xs(sideW) + (compact ? 0 : fO * 1.5), floorS)
-
-  // ── the roof truss over the front view: double-line chords, Warren diagonals
-  const xSpr = Xf(frontW) + cSpr
-  if (bClear) {
-    const tx0 = X0 - (compact ? 0 : fO * 1.5), tx1 = compact ? Xf(frontW) + 6 : (bSprink ? xSpr : Xf(frontW)) + fO * 2
-    const c = Math.max(2, 3 * s), yb = Y(bClear), yt = Y(trussTop)
-    rect(tx0, yb - c, tx1 - tx0, c, { fill: '#fff', stroke: TRUSS, sw: sw * 0.9, tag: 'chord', chordAt: bClear })
-    rect(tx0, yt, tx1 - tx0, c, { fill: '#fff', stroke: TRUSS, sw: sw * 0.9, tag: 'chord', chordAt: trussTop })
-    const d = yb - c - (yt + c), n = Math.max(2, Math.round((tx1 - tx0) / Math.max(4, d * 1.15)))
-    const pts = []; for (let i = 0; i <= n; i++) pts.push([tx0 + (tx1 - tx0) * i / n, i % 2 ? yb - c : yt + c])
-    items.push({ t: 'poly', points: pts, stroke: TRUSS, sw: sw * 1.1 })
-  }
-
-  // ── front view: uprights (filled), beams, loads (beige; a level that doesn't fit red, never over the beam above)
-  for (const x of [0, frontW - upW]) {
-    rect(Xf(x), Y(hTop), Math.max(2, upW * s), hTop * s, { fill: UPRIGHT, role: { kind: 'upright', x }, tag: 'upright' })
-    if (!compact) rect(Xf(x) - 2, Y(hTop) - 3, Math.max(2, upW * s) + 4, 6, { fill: isActive({ kind: 'top' }) ? '#d0392b' : 'transparent', role: { kind: 'top' }, cursor: 'ns-resize' })
-  }
+  // ── front view
+  const fx0 = X0 - (compact ? 0 : fO * 1.4), fx1 = Xf(frontW) + (compact ? 0 : fO * 1.2)
+  shell(Y, fx0, fx1)
+  ground(fx0, fx1, floor)
   const per = Math.max(0, positionsPerBeam(bayIn, palletWIn))
   const gapIn = per ? (bayIn - per * palletWIn) / (per + 1) : 0
   L.forEach((lv, i) => {
     const isTop = i === L.length - 1, z = lv.beamIn, gone = removing === lv.k, bad = misfit.has(lv.k) || (isTop && !!topIssue)
-    if (z > 0) rect(Xf(-1), Y(z), (frontW + 2) * s, Math.max(1.5, face * s), { fill: gone ? '#d0392b' : isActive({ kind: 'beam', k: lv.k }) ? BEAM_EDGE : BEAM, stroke: isActive({ kind: 'beam', k: lv.k }) ? '#7a3510' : undefined, sw: sw * 1.4, opacity: gone ? 0.5 : 1, role: { kind: 'beam', k: lv.k }, cursor: 'ns-resize', tag: 'beam' })
+    if (z > 0) rect(Xf(upW), Y(z), bayIn * s, beamPx, { fill: gone ? '#d0392b' : isActive({ kind: 'beam', k: lv.k }) ? '#2a7a5f' : PINE, opacity: gone ? 0.5 : 1, role: { kind: 'beam', k: lv.k }, cursor: 'ns-resize', tag: 'beam' })
     const lh = loadH(lv, i)
     for (let p = 0; p < per; p++) {
       const x = upW + gapIn + p * (palletWIn + gapIn)
-      rect(Xf(x), Y(z + lh), palletWIn * s, lh * s, { fill: bad ? MISFIT : LOAD, stroke: bad ? MISFIT_EDGE : LOAD_EDGE, sw: sw * (bad ? 1.2 : 0.8), opacity: gone ? 0.35 : 1, tag: 'load', level: lv.k })
+      rect(Xf(x), Y(z + lh), palletWIn * s, Math.max(0, lh * s - deckPx), { fill: bad ? MISFIT : LOAD, stroke: bad ? MISFIT_EDGE : LOAD_EDGE, sw: bad ? sw * 1.2 : 1, opacity: gone ? 0.35 : 1, tag: 'load', level: lv.k })
+      rect(Xf(x), Y(z) - Math.min(deckPx, lh * s), palletWIn * s, Math.min(deckPx, lh * s), { fill: bad ? MISFIT_EDGE : DECK, stroke: bad ? MISFIT_EDGE : LOAD_EDGE, sw: 1, opacity: gone ? 0.35 : 1, tag: 'load', level: lv.k })
     }
-    if (bad && per) text(Xf(frontW / 2), Y(z + lh / 2) + fC * 0.35, misfit.has(lv.k) ? "doesn't fit" : topIssue === 'clear' ? 'above clear height' : `within ${sprinklerClearanceIn}" of sprinklers`, { size: fC, fill: MISFIT_EDGE, weight: 700, tag: 'misfit', pri: 1.5, level: lv.k })
+    if (bad && per && !compact) text(Xf(frontW / 2), Y(z + lh / 2) + fT * 0.35, misfit.has(lv.k) ? "DOESN'T FIT" : topIssue === 'clear' ? 'ABOVE CLEAR HEIGHT' : `WITHIN ${sprinklerClearanceIn}" OF SPRINKLERS`, { size: fT, fill: RED, weight: 600, tag: 'misfit', pri: 1.5, level: lv.k })
+    // the level tag, grey, beside the right frame
+    if (!compact && per) text(Xf(frontW) + cTag, Y(z + lh / 2) + fT * 0.35, `L${i + 1}`, { anchor: 'start', size: fT, fill: GREY, pri: 2, tag: 'tag' })
   })
-  if (!compact) {
-    // the bay width across the top, over the top load
-    dimH(Y(Math.max(topLoad, hTop)) - fO * 1.3, Xf(upW), Xf(upW + bayIn), ftInDash(bayIn), { size: fO })
-    // right: each beam's elevation to its top — largest and bold, on a leader off the beam's end
-    for (const lv of L) if (lv.beamIn > 0) {
-      const y = Y(lv.beamIn), role = { kind: 'dim', id: 'elev', k: lv.k, value: lv.beamIn }, hot = isActive(role) || isActive({ kind: 'beam', k: lv.k })
-      line(Xf(frontW + 1), y, Xf(frontW) + cLead, y, { stroke: hot ? '#d0392b' : DIM, sw: hot ? sw * 1.6 : sw })
-      text(Xf(frontW) + cElev, y + fE * 0.36, ftInDash(lv.beamIn), { anchor: 'start', size: fE, fill: hot ? '#d0392b' : INK, weight: 700, role, pri: 1 })
+  // the frames: dark green uprights with a zigzag of bracing, base plates
+  for (const x of [0, frontW - upW]) {
+    const fxp = Xf(x)
+    rect(fxp, Y(hTop), colPx, hTop * s, { fill: PINE, role: { kind: 'upright', x }, tag: 'upright' })
+    if (!compact) {
+      const cx = fxp + colPx / 2, step = Math.max(fO * 1.6, 26 * s * 0.5), zz = []
+      let d = true
+      for (let y = Y(hTop) + step * 0.5; y < floor - step * 0.4; y += step) { zz.push(d ? `M${cx - colPx * 0.4} ${y}L${cx + colPx * 0.4} ${Math.min(floor, y + step)}` : `M${cx + colPx * 0.4} ${y}L${cx - colPx * 0.4} ${Math.min(floor, y + step)}`); d = !d }
+      items.push({ t: 'path', d: zz.join(''), stroke: PINE, sw: 1.4, opacity: 0.65 })
+      rect(fxp - fO * 0.5, floor - fO * 0.45, colPx + fO, fO * 0.45, { fill: INK })
+      rect(fxp - 2, Y(hTop) - 3, colPx + 4, 6, { fill: isActive({ kind: 'top' }) ? '#d0392b' : 'transparent', role: { kind: 'top' }, cursor: 'ns-resize' })
     }
-    // just outside the right upright: the clear opening from the top of each beam (the floor) to the underside of the next — a chain, small and light
-    L.forEach((lv, i) => {
-      if (i + 1 >= L.length) return
-      const z0 = lv.beamIn, z1 = L[i + 1].beamIn - face
-      dimV(Xf(frontW) + cOpen, Y(z0), Y(z1), ftInDash(z1 - z0), { kind: 'dim', id: 'open', k: L[i + 1].k, value: z1 - z0 }, { size: fC, color: DIM_LIGHT, pri: 3, out: 1 })
-    })
-    /* left: what is really there, as one chain from the floor up, small and light — per level the pallet, the ACTUAL gap
-       from its top to the underside of the beam above (red under the clearance), that beam's face (its label beside the
-       chain): pallet + gap + face = the beam spacing; the top level its pallet, then the gaps up to the clear height and
-       the sprinkler heads when the building has them (red: above the clear height, or within the sprinkler clearance) */
-    const xc = X0 - cChain, ext = X0 - fC * 0.4, chain = { from: ext, size: fC, color: DIM_LIGHT, pri: 3, out: -1 }
-    const freeNote = (z, str, k) => text(xc - fC * 0.6, Y(z) + fC * 0.35, str, { anchor: 'end', size: fC, fill: MISFIT_EDGE, weight: 700, pri: 3, tag: 'gap', level: k })
-    L.forEach((lv, i) => {
-      const z0 = lv.beamIn, ph = lv.palletHeightIn || 0
-      if (i + 1 < L.length) {
-        const under = L[i + 1].beamIn - face, gap = under - (z0 + ph)
-        if (ph > 0) dimV(xc, Y(z0), Y(Math.min(z0 + ph, under)), ftInDash(ph), { kind: 'dim', id: 'pallet', k: lv.k, value: ph }, chain)
-        if (gap > 0) dimV(xc, Y(z0 + ph), Y(under), ftInDash(gap), { kind: 'dim', id: 'gap', k: lv.k, value: gap }, { ...chain, color: gap < clearance - 1e-6 ? MISFIT_EDGE : DIM_LIGHT })
-        else freeNote(under, 'gap ' + ftInDash(gap), lv.k)
-        // the beam above's face, on the chain; its label beside it
-        const y0 = Y(under), y1 = Y(L[i + 1].beamIn)
-        line(xc, y0, xc, y1, { stroke: DIM_LIGHT, sw }); line(ext, y1, xc - fC * 0.4, y1, { stroke: DIM_LIGHT, sw: sw * 0.6 })
-        text(X0 - cFace - fC * 1.05, (y0 + y1) / 2 + fC * 0.32, ftInDash(face), { anchor: 'end', size: fC, fill: DIM_LIGHT, pri: 3, role: { kind: 'dim', id: 'face', value: face }, tag: 'face' })
-      } else {
-        const zTop = topOfLoad(t)
-        if (ph > 0) dimV(xc, Y(z0), Y(zTop), ftInDash(ph), { kind: 'dim', id: 'pallet', k: lv.k, value: ph }, chain)
-        // up to the clear height and the sprinkler heads, in the order they come
-        const marks = [bClear ? [bClear, 'clear'] : null, bSprink ? [bSprink, 'sprinkler'] : null].filter(Boolean).sort((a, b) => a[0] - b[0])
-        let from = zTop
-        for (const [h, id] of marks) {
-          const red = id === 'clear' ? h < zTop - 1e-6 : h - zTop < sprinklerClearanceIn - 1e-6
-          if (h > from + 1e-6) { dimV(xc, Y(from), Y(h), ftInDash(h - from), { kind: 'info', id: 'gap-' + id }, { ...chain, color: red ? MISFIT_EDGE : DIM_LIGHT }); from = h }
-          else if (h < zTop) freeNote(h, (id === 'clear' ? 'clear ' : 'sprinkler ') + ftInDash(h - zTop), lv.k)
-        }
+  }
+  if (!compact) {
+    // the frame height, blue, on the left
+    dimV(X0 - cFrame, Y(0), Y(hTop), `FRAME ${ftInDash(hTop)}`, { kind: 'dim', id: 'upright', value: hTop }, { pri: 2, out: -1 })
+    // the pitch, blue, on the right (a uniform level spacing)
+    if (pitch && L.length > 1) dimV(Xf(frontW) + cPitch, Y(L[0].beamIn), Y(L[1].beamIn), `PITCH ${ftInDash(pitch)}`, { kind: 'info', id: 'pitch' }, { pri: 2, out: 1 })
+    // the pallets' side clearance to the frames, red, under the bay
+    if (per) {
+      const yc = floor + fO * 1.1, g = gapIn * s
+      line(Xf(upW), yc, Xf(upW) + g, yc, { stroke: RED, sw: sw * 0.9 }); line(Xf(upW + bayIn) - g, yc, Xf(upW + bayIn), yc, { stroke: RED, sw: sw * 0.9 })
+      text(Xf(frontW) + cTag, yc + fT * 0.35, `${(Math.round(gapIn * 10) / 10)}" CLR`, { anchor: 'start', size: fT, fill: RED, pri: 2, tag: 'clr' })
+    }
+    // the beam, with its pallets per level, blue, under the bay
+    dimH(floor + fO * 2.4, Xf(upW), Xf(upW + bayIn), `BEAM ${ftInDash(bayIn)} · ${per}P`)
+    if (detailed) {
+      // each beam's elevation to its top, blue, on a leader off the beam's end
+      for (const lv of L) if (lv.beamIn > 0) {
+        const y = Y(lv.beamIn), role = { kind: 'dim', id: 'elev', k: lv.k, value: lv.beamIn }, hot = isActive(role) || isActive({ kind: 'beam', k: lv.k })
+        line(Xf(frontW), y, Xf(frontW) + cElev - fE * 0.3, y, { stroke: hot ? '#d0392b' : BLUE, sw: hot ? sw * 1.6 : sw * 0.9 })
+        text(Xf(frontW) + cElev, y + fE * 0.36, ftInDash(lv.beamIn), { anchor: 'start', size: fE, fill: hot ? '#d0392b' : BLUE, weight: 600, role, pri: 1 })
       }
-    })
-    // the outer left, overall heights, medium: the top of the top load, the clear height (the truss's bottom chord), the top of the truss
-    const ov = [[topLoad, 'topload']]
-    if (bClear) ov.push([bClear, 'clear'], [trussTop, 'truss'])
-    ov.sort((a, b) => a[0] - b[0]).forEach(([z, id], i) => dimV(X0 - cOver0 - i * fO * 2.2, Y(0), Y(z), ftInDash(z), { kind: 'info', id }, { from: X0 - cOver0 + fO * 0.9, size: fO, pri: 2, out: -1 }))
-    // the sprinkler head: dimensioned from the floor (overall, medium), the head drawn, labelled with a leader
-    if (bSprink) {
-      dimV(xSpr, Y(0), Y(bSprink), ftInDash(bSprink), { kind: 'info', id: 'sprinkler' }, { size: fO, pri: 2, out: 1 })
-      items.push({ t: 'circle', cx: xSpr, cy: Y(bSprink) - fO * 0.35, r: fO * 0.32, fill: HEAD, stroke: '#922b21', sw: sw * 0.6, tag: 'head' })
-      const ly = (trussTop ? Y(trussTop) : Y(bSprink) - fO * 3) - fO * 0.6, lx = xSpr - fO * 5.5
-      text(lx, ly, 'Sprinkler head', { anchor: 'end', size: fC, fill: DIM_LIGHT, pri: 3 })
-      items.push({ t: 'poly', points: [[lx + fC * 0.2, ly - fC * 0.3], [xSpr - fO * 0.8, ly - fC * 0.3], [xSpr - fO * 0.1, Y(bSprink) - fO * 0.8]], stroke: DIM_LIGHT, sw: sw * 0.8 })
+      // per level: the pallet, the ACTUAL gap to the underside of the beam above (red under the clearance), that beam's face
+      const xc = X0 - cChain, ext = X0 - fO * 0.35, chainO = { from: ext, size: fT, pri: 3, out: -1 }
+      L.forEach((lv, i) => {
+        const z0 = lv.beamIn, ph = lv.palletHeightIn || 0
+        if (i + 1 < L.length) {
+          const under = L[i + 1].beamIn - face, g = under - (z0 + ph)
+          if (ph > 0) dimV(xc, Y(z0), Y(Math.min(z0 + ph, under)), ftInDash(ph), { kind: 'dim', id: 'pallet', k: lv.k, value: ph }, chainO)
+          if (g > 0) dimV(xc, Y(z0 + ph), Y(under), ftInDash(g), { kind: 'dim', id: 'gap', k: lv.k, value: g }, { ...chainO, color: g < clearance - 1e-6 ? RED : BLUE })
+          else text(xc - fT * 0.6, Y(under) + fT * 0.35, 'GAP ' + ftInDash(g), { anchor: 'end', size: fT, fill: RED, weight: 600, pri: 3, tag: 'gap', level: lv.k })
+          const y0 = Y(under), y1 = Y(L[i + 1].beamIn)
+          line(xc, y0, xc, y1, { stroke: BLUE, sw: sw * 0.9 })
+          text(xc - fT * 1.6, (y0 + y1) / 2 + fT * 0.32, ftInDash(face), { anchor: 'end', size: fT, fill: GREY, pri: 3, role: { kind: 'dim', id: 'face', value: face }, tag: 'face' })
+        } else {
+          // the top level: its pallet, then the gaps up to the clear height and the sprinkler heads (red: above the clear
+          // height, or within the sprinkler clearance)
+          const zTop = topOfLoad(t)
+          if (ph > 0) dimV(xc, Y(z0), Y(zTop), ftInDash(ph), { kind: 'dim', id: 'pallet', k: lv.k, value: ph }, chainO)
+          const marks = [bClear ? [bClear, 'clear'] : null, bSprink ? [bSprink, 'sprinkler'] : null].filter(Boolean).sort((a, b) => a[0] - b[0])
+          let from = zTop
+          for (const [h, id] of marks) {
+            const red = id === 'clear' ? h < zTop - 1e-6 : h - zTop < sprinklerClearanceIn - 1e-6
+            if (h > from + 1e-6) { dimV(xc, Y(from), Y(h), ftInDash(h - from), { kind: 'info', id: 'gap-' + id }, { ...chainO, color: red ? RED : BLUE }); from = h }
+            else if (h < zTop) text(xc - fT * 0.6, Y(h) + fT * 0.35, (id === 'clear' ? 'CLEAR ' : 'SPRINKLER ') + ftInDash(h - zTop), { anchor: 'end', size: fT, fill: RED, weight: 600, pri: 3, tag: 'gap', level: lv.k })
+          }
+        }
+      })
     }
   }
 
-  // ── side view: frames (filled uprights, two and the flue for a back-to-back), horizontals and alternating diagonals, flue spacers
+  // ── side view: dark green frames (two and the flue for a back-to-back), horizontals and diagonals, flue spacers
+  const sx0 = Xs(0) - (compact ? 0 : fO * 1.2), sx1 = Xs(sideW) + (compact ? 0 : fO * 1.0)
+  shell(Ys, sx0, sx1)
+  ground(sx0, sx1, floorS)
   const frames = pair ? [0, depthIn + flueIn + upW] : [0]
   for (const f0 of frames) {
-    for (const x of [f0, f0 + depthIn]) rect(Xs(x), Ys(hTop), Math.max(2, upW * s), hTop * s, { fill: UPRIGHT })
+    for (const x of [f0, f0 + depthIn]) rect(Xs(x), Ys(hTop), colPx, hTop * s, { fill: PINE, tag: 'frame' })
     const n = Math.max(3, Math.round((hTop - 6) / 28)), step = (hTop - 6) / n
-    for (let i = 0; i <= n; i++) line(Xs(f0 + upW), Ys(6 + i * step), Xs(f0 + depthIn), Ys(6 + i * step), { stroke: BRACE, sw: sw * 0.9 })
+    for (let i = 0; i <= n; i++) line(Xs(f0 + upW), Ys(6 + i * step), Xs(f0 + depthIn), Ys(6 + i * step), { stroke: PINE, sw: sw * 0.9, opacity: 0.65 })
     for (let i = 1; i < n; i += 2) {
       const a = Ys(6 + i * step), b = Ys(6 + (i + 1) * step), lr = ((i - 1) / 2) % 2 === 0
-      line(Xs(lr ? f0 + upW : f0 + depthIn), a, Xs(lr ? f0 + depthIn : f0 + upW), b, { stroke: BRACE, sw: sw * 0.9 })
+      line(Xs(lr ? f0 + upW : f0 + depthIn), a, Xs(lr ? f0 + depthIn : f0 + upW), b, { stroke: PINE, sw: sw * 0.9, opacity: 0.65 })
     }
+    if (!compact) for (const x of [f0, f0 + depthIn]) rect(Xs(x) - fO * 0.4, floorS - fO * 0.45, colPx + fO * 0.8, fO * 0.45, { fill: INK })
   }
-  if (pair) for (const z of [hTop / 3, (2 * hTop) / 3]) { const y = Ys(z); line(Xs(depthIn + upW), y - 1.5, Xs(depthIn + upW + flueIn), y - 1.5, { stroke: BRACE, sw: sw * 1.4 }); line(Xs(depthIn + upW), y + 1.5, Xs(depthIn + upW + flueIn), y + 1.5, { stroke: BRACE, sw: sw * 1.4 }) }
+  if (pair) for (const z of [hTop / 3, (2 * hTop) / 3]) rect(Xs(depthIn + upW), Ys(z) - 2, flueIn * s, 4, { fill: PINE, tag: 'spacer' })
   if (!compact) {
-    const yt = Ys(hTop) - fO * 1.3
-    dimH(yt, Xs(0), Xs(depthIn + upW), ftInDash(depthIn))
-    if (pair) { dimH(yt - fO * 1.7, Xs(depthIn + upW), Xs(depthIn + upW + flueIn), ftInDash(flueIn)); dimH(yt, Xs(depthIn + flueIn + upW), Xs(sideW), ftInDash(depthIn)) }
-    dimV(Xs(0) - fO * 1.6, Ys(0), Ys(hTop), ftInDash(hTop), { kind: 'dim', id: 'upright', value: hTop }, { from: Xs(0) - fO * 0.4, size: fO, pri: 2, out: -1 })
+    // under the ground, like the front view's beam: over the frames they would run into the building's labels
+    const yb = floorS + fO * 2.4
+    dimH(yb, Xs(0), Xs(depthIn + upW), ftInDash(depthIn), { outboard: pair ? 'left' : null })
+    if (pair) { dimH(yb, Xs(depthIn + upW), Xs(depthIn + upW + flueIn), ftInDash(flueIn), { below: false }); dimH(yb, Xs(depthIn + flueIn + upW), Xs(sideW), ftInDash(depthIn), { outboard: 'right' }) }
+    dimV(Xs(0) - fO * 1.8, Ys(0), Ys(hTop), `FRAME ${ftInDash(hTop)}`, { kind: 'dim', id: 'upright', value: hTop }, { pri: 2, out: -1 })
   }
   if (!compact) declutter(items)
+  // every label over the linework, so its halo clears the dashed building lines and the dimension lines beneath it
+  const drawn = [...items.filter(i => i.t !== 'text'), ...items.filter(i => i.t === 'text')]
+  items.length = 0; items.push(...drawn)
   return { w: box.w, h: box.h, scale: s, items, floor, Y, Xf, upW, frontW, bayIn, bottom: Math.max(floor, floorS) + mB }
 }
 
@@ -277,7 +275,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
 
 /** A label's box (px). */
 export function labelBox(i) {
-  const len = String(i.s).length * i.size * 0.56
+  const len = String(i.s).length * i.size * 0.6   // a monospace advance
   if (i.rot === -90) return { x0: i.x - i.size * 0.85, x1: i.x + i.size * 0.2, y0: i.y - len / 2, y1: i.y + len / 2 }
   const x0 = i.anchor === 'start' ? i.x : i.anchor === 'end' ? i.x - len : i.x - len / 2
   return { x0, x1: x0 + len, y0: i.y - i.size * 0.8, y1: i.y + i.size * 0.22 }
@@ -286,13 +284,14 @@ const hit = (a, b, pad = 0.5) => a.x0 < b.x1 - pad && b.x0 < a.x1 - pad && a.y0 
 const rectBox = (r) => ({ x0: r.x, x1: r.x + r.w, y0: r.y, y1: r.y + r.h })
 /** Move every label clear of the loads, the beams, the uprights and each other — in rank order (the elevations first);
  *  a dimension's label slides along its own line, then steps outward; a free label steps up or down; a chain label (or
- *  the sprinkler's note) that finds no room is dropped rather than drawn over something. In place. */
+ *  the sprinkler's note) that finds no room is dropped rather than drawn over something. Two labels keep half a character
+ *  apart side to side — closer, they read as one run. In place. */
 export function declutter(items) {
-  const solids = items.filter(i => i.t === 'rect' && (i.tag === 'load' || i.tag === 'beam' || i.tag === 'upright'))
+  const solids = items.filter(i => i.t === 'rect' && (i.tag === 'load' || i.tag === 'beam' || i.tag === 'upright' || i.tag === 'frame'))
   const labels = items.filter(i => i.t === 'text').sort((a, b) => (a.pri ?? 2) - (b.pri ?? 2))
   const placed = [], drop = new Set()
   for (const l of labels) {
-    const ok = () => { const b = labelBox(l); return !placed.some(p => hit(b, labelBox(p))) && !solids.some(r => !(l.tag === 'misfit' && r.level === l.level && r.tag === 'load') && hit(b, rectBox(r))) }
+    const ok = () => { const b = labelBox(l), g = l.size * 0.5, bg = { x0: b.x0 - g, x1: b.x1 + g, y0: b.y0, y1: b.y1 }; return !placed.some(p => hit(bg, labelBox(p))) && !solids.some(r => !(l.tag === 'misfit' && r.level === l.level && r.tag === 'load') && hit(b, rectBox(r))) }
     if (ok()) { placed.push(l); continue }
     const x0 = l.x, y0 = l.y, step = l.size * 0.6
     let found = false
@@ -316,12 +315,15 @@ export function declutter(items) {
 const esc = (v) => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 /** One primitive as SVG markup. */
 export function itemSVG(i) {
-  if (i.t === 'rect') return `<rect x="${i.x}" y="${i.y}" width="${Math.max(0, i.w)}" height="${Math.max(0, i.h)}" fill="${i.fill || 'none'}"${i.stroke ? ` stroke="${i.stroke}" stroke-width="${i.sw || 1}"` : ''}${i.opacity != null ? ` opacity="${i.opacity}"` : ''}/>`
-  if (i.t === 'line') return `<line x1="${i.x1}" y1="${i.y1}" x2="${i.x2}" y2="${i.y2}" stroke="${i.stroke}" stroke-width="${i.sw}"${i.dash ? ` stroke-dasharray="${i.dash}"` : ''}/>`
+  const op = i.opacity != null ? ` opacity="${i.opacity}"` : ''
+  if (i.t === 'rect') return `<rect x="${i.x}" y="${i.y}" width="${Math.max(0, i.w)}" height="${Math.max(0, i.h)}" fill="${i.fill || 'none'}"${i.stroke ? ` stroke="${i.stroke}" stroke-width="${i.sw || 1}"` : ''}${op}/>`
+  if (i.t === 'line') return `<line x1="${i.x1}" y1="${i.y1}" x2="${i.x2}" y2="${i.y2}" stroke="${i.stroke}" stroke-width="${i.sw}"${i.dash ? ` stroke-dasharray="${i.dash}"` : ''}${op}/>`
+  if (i.t === 'path') return `<path d="${i.d}" fill="none" stroke="${i.stroke}" stroke-width="${i.sw}"${op}/>`
   if (i.t === 'polygon') return `<polygon points="${i.points.map(p => p.join(',')).join(' ')}" fill="${i.fill}"/>`
   if (i.t === 'circle') return `<circle cx="${i.cx}" cy="${i.cy}" r="${i.r}" fill="${i.fill}"${i.stroke ? ` stroke="${i.stroke}" stroke-width="${i.sw || 1}"` : ''}/>`
   if (i.t === 'poly') return `<polyline points="${i.points.map(p => p.join(',')).join(' ')}" fill="none" stroke="${i.stroke}" stroke-width="${i.sw}"/>`
-  if (i.t === 'text') return `<text x="${i.x}" y="${i.y}" font-size="${i.size}" font-family="Arial, sans-serif" text-anchor="${i.anchor}" fill="${i.fill}"${i.halo ? ` stroke="#fff" stroke-width="${i.halo}" paint-order="stroke" stroke-linejoin="round"` : ''}${i.weight ? ` font-weight="${i.weight}"` : ''}${i.rot ? ` transform="rotate(${i.rot} ${i.x} ${i.y})"` : ''}>${esc(i.s)}</text>`
+  // the label's halo in the colour behind it (the panel's, or the paper's): a style, so a CSS variable works too
+  if (i.t === 'text') return `<text x="${i.x}" y="${i.y}" font-size="${i.size}" font-family="${esc(i.font || 'Arial, sans-serif')}" text-anchor="${i.anchor}" fill="${i.fill}"${i.halo ? ` style="stroke:${esc(i.haloColor || '#fff')};stroke-width:${i.halo}px;paint-order:stroke;stroke-linejoin:round"` : ''}${i.weight ? ` font-weight="${i.weight}"` : ''}${i.rot ? ` transform="rotate(${i.rot} ${i.x} ${i.y})"` : ''}>${esc(i.s)}</text>`
   return ''
 }
 /** The drawing as an SVG string, `w` × `h` px (or the units the caller wraps it in). */

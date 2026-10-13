@@ -61,7 +61,7 @@ export function ElevationsPanel() {
     if (!selected) return ''
     const used = lengthsByType(objects, T, typeIdAt).get(selected.id) || []
     const e = used.find(u => u.beamIn === beamIn) || used[0]
-    return toSVG(elevationLayout(selected, e ? e.beamIn : 96, { w: 240, h: 130 }, { compact: true, depthIn: e?.depthIn ?? 42, pair: !!e?.pair, flueIn: e?.flueIn ?? 9, palletWIn: e?.palletWIn ?? 40 }))
+    return toSVG(elevationLayout(selected, e ? e.beamIn : 96, { w: 240, h: 130 }, { compact: true, depthIn: e?.depthIn ?? 42, pair: !!e?.pair, flueIn: e?.flueIn ?? 9, palletWIn: e?.palletWIn ?? 40, bg: 'var(--surface)' }))
   }, [selected, objects, T, beamIn])
 
   if (!T) {
@@ -112,7 +112,7 @@ export function ElevationsPanel() {
           <input type="checkbox" checked={showColors} onChange={e => setShowColors(e.target.checked)} aria-label="Show colours" /> Show colours on the plan and PDF
         </label>
         <div aria-label="Elevation preview" title={`${selected.name} — edit in the elevation editor`} onClick={() => setPane({ open: true, typeId: selected.id })}
-          style={{ border: '0.5px solid var(--border)', borderRadius: 2, background: '#fff', lineHeight: 0, cursor: 'pointer' }} dangerouslySetInnerHTML={{ __html: preview }} />
+          style={{ border: '0.5px solid var(--border)', borderRadius: 2, background: 'var(--surface)', lineHeight: 0, cursor: 'pointer' }} dangerouslySetInnerHTML={{ __html: preview }} />
         <button type="button" style={{ ...S.btn, alignSelf: 'flex-start' }} aria-pressed={open} onClick={() => setPane({ open: !open, typeId: selected.id })}>
           <PanelBottomOpen size={12} /> {open ? 'Close editor' : 'Edit elevation'}
         </button>

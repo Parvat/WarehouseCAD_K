@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### EV — Elevations v1 + v2 · `EV_elevations.test.js` (46 tests)
+### EV — Elevations v1 + v2 · `EV_elevations.test.js` (57 tests)
 **v2** (ELEVATIONS_PLAN.md §v2). Beam face height per type (4"); levels to the top of the beam; the fit from the top of
 the lower beam to the underside of the next. Frame depth from the rack (read-only). A type change is no hand edit
 (rackingArea sigMatch / shapeKey). The types are the store's `elevations` (approved store diff: snapshot, undo / redo,
@@ -1966,6 +1966,34 @@ threshold: EV-remove-wire. Depth not about the centre: EV-depth-edit. Depth not 
 untouched); a beam dragged off the end → gone; Ctrl+Z ×2 → back; Pallet 58" → three levels red "doesn't fit", the same
 three Check layout errors; Stacked → stored; the divider down to a 140 px pane, the drawing centred and readable; no rack →
 Depth read-only with its note; a pair picked → Depth 48 → 42" → 48", its box 310 → 350 px about its centre; Ctrl+Z → 42.
+
+**Restyle (v2.2) — the drawing in the sizing sheet's visual language.** utils/elevationDrawing.js: IBM Plex Mono;
+dark green (#123A2E) beams, uprights and side frames with bracing and flue spacers; kraft loads on a deck board; an ink
+ground line with grey hatching; the dashed clear-height line over a yellow clearance band under the sprinklers; level
+tags L1–L4 grey; dimensions blue, clearances red, tags grey. The drawing sits on the panel's own background in the
+editor and the panel preview (labels haloed in `var(--surface)`); the PDF stays white. **Simple / Detailed**
+(utils/elevEditor.js `detail`, remembered in trace.elevpane.v1): Simple = level tags, frame height, pitch (uniform
+spacing only), beam length with pallets per level, side clearance, the clear line and band; Detailed adds beam
+elevations (top of beam) and per level the pallet height + actual gap (red under the clearance) and the beam face.
+The PDF prints whichever is selected. The side view's depth and flue dimensions sit under its ground (over the frames
+they ran into the building's labels); a label wider than its span goes outboard on the line's row. Labels paint after
+the linework and keep half a character apart side to side. The right panel is one panel with **Properties |
+Elevations** tabs (RightPanel/index.jsx, remembered in trace.rightpanel.v1). The truss and sprinkler head of v2.1 are
+gone — the reference draws the clear line and the band instead.
+
+New: EV-detailed, EV-background, EV-tabs. Changed: EV-drawing (reference colours and parts), EV-labels (both modes;
+side dimensions under the ground; labels over linework; the side gap), EV-centre-stack (frames; detail stored),
+EV-misfit, EV-topload, EV-chain (Detailed), EV-pdf (Simple has no beam elevations, Detailed does).
+
+**Break-its (v2.2):** white pane: EV-background. Blue frames / no hatching / no band / no flue spacers: EV-drawing.
+No level tags: EV-drawing, EV-detailed. Simple showing the detail: EV-drawing, EV-pdf. Gap never red: EV-chain,
+EV-detailed. PDF ignoring the switch: EV-pdf, EV-background. Tab not remembered: EV-tabs. Side dimensions back over
+the frames: EV-labels. No side gap between labels: EV-labels (2).
+
+**Checked in the app (v2.2)** (real mouse, both docks × both modes): beam 1 dragged up (→ 80 / 72); frame height typed
+22'-0" (Simple), beam 2 elevation typed 11'-0" (Detailed); click on the upright adds a level; Delete and drag-off each
+remove one; five undo steps per run; Simple/Detailed and the dock stored; Elevations tab lists the type, Properties tab
+shows the column check.
 
 ### EV-v1
 Plan: ELEVATIONS_PLAN.md. Code: utils/elevations.js (types, layered assignment, compression, migration, the keeper,

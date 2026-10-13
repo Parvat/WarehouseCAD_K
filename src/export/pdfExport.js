@@ -27,6 +27,7 @@ import { levelsResolver, legendCounts } from '../utils/elevations'
 import { bandRects, useElevView } from '../utils/elevationDraw'
 import { elevationLayout, itemSVG, lengthsByType, buildingOf, ftInDash, archScale } from '../utils/elevationDrawing'
 import { typeIdAt, sprinklerClearance } from '../utils/elevations'
+import { useElevEditor } from '../utils/elevEditor'
 import { bayLedger } from '../utils/bayLedger'
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
@@ -432,7 +433,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
  *  bay count, the front and the side view (utils/elevationDrawing.js, the editor's own drawing), drawn at an architectural
  *  scale — "RACK ELEVATIONS" and "SCALE: 1/4\"=1'" under each, as on the sample — several to an A1 landscape sheet
  *  where they fit. [] when no type is in use. */
-export function buildElevationSheets(objects, { title = 'Untitled Layout', elevations = null } = {}) {
+export function buildElevationSheets(objects, { title = 'Untitled Layout', elevations = null, detail = useElevEditor.getState().detail } = {}) {
   const T = elevations
   if (!T) return []
   const L = bayLedger(objects, 40, T)
@@ -447,7 +448,7 @@ export function buildElevationSheets(objects, { title = 'Untitled Layout', eleva
     const parts = cells.slice(p * per, (p + 1) * per).map(({ type, e }, i) => {
       const c = i % cols, r = Math.floor(i / cols), x = margin + c * cellW, y = margin + head + r * cellH
       const fs = Math.max(2.6, cellH / 48)   // text in proportion to the drawing, as on the sample
-      const box = { w: cellW - 8, h: cellH - fs * 7.5 }, opts = { palletWIn: e.palletWIn, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: buildingOf(objects, e.parentId), fontPx: fs, sprinklerClearanceIn: sprinklerClearance(T) }
+      const box = { w: cellW - 8, h: cellH - fs * 7.5 }, opts = { palletWIn: e.palletWIn, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: buildingOf(objects, e.parentId), fontPx: fs, sprinklerClearanceIn: sprinklerClearance(T), detail, bg: '#fff' }   // the editor's Simple / Detailed
       const fit = elevationLayout(type, e.beamIn, box, opts), sc = archScale(fit.scale)
       const d = elevationLayout(type, e.beamIn, box, { ...opts, scale: sc.mmPerIn })
       const label = `${type.name} · ${ftInDash(e.beamIn)} bay`
@@ -484,6 +485,7 @@ export function exportLayoutToPDF(filename, storeState) {
 <head>
 <meta charset="utf-8">
 <title>${esc(title)}</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; background: #888; }

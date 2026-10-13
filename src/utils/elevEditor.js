@@ -11,13 +11,14 @@ import { create } from 'zustand'
 import { beamFace, holePitch, editTable, updateType, typeById } from './elevations'
 
 const LS_KEY = 'trace.elevpane.v1'
-const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { open: !!v.open, height: Number.isFinite(v.height) ? v.height : 300, width: Number.isFinite(v.width) ? v.width : 420, layout: v.layout === 'side' ? 'side' : 'stacked' } } catch { return { open: false, height: 300, width: 420, layout: 'stacked' } } }
-const save = (s) => { try { localStorage.setItem(LS_KEY, JSON.stringify({ open: s.open, height: s.height, width: s.width, layout: s.layout })) } catch { /* private window */ } }
+const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { open: !!v.open, height: Number.isFinite(v.height) ? v.height : 300, width: Number.isFinite(v.width) ? v.width : 420, layout: v.layout === 'side' ? 'side' : 'stacked', detail: v.detail === 'detailed' ? 'detailed' : 'simple' } } catch { return { open: false, height: 300, width: 420, layout: 'stacked', detail: 'simple' } } }
+const save = (s) => { try { localStorage.setItem(LS_KEY, JSON.stringify({ open: s.open, height: s.height, width: s.width, layout: s.layout, detail: s.detail })) } catch { /* private window */ } }
 
 /** { typeId, beamIn, open, layout — where the editor docks, like a browser's developer tools: 'side' (Side by side)
  *  to the right of the canvas, a tall pane, the front view above the side view; 'stacked' (Stacked) at the bottom, a
  *  wide pane, the two views next to each other — height (the bottom dock's) and width (the right dock's), each
- *  remembered, sel (a level index picked on the drawing) } */
+ *  remembered, detail ('simple' | 'detailed': what the drawing — and the PDF — dimensions), sel (a level index picked on
+ *  the drawing) } */
 export const useElevEditor = create(() => ({ typeId: null, beamIn: null, sel: null, ...read() }))
 export function setPane(patch) { useElevEditor.setState(patch); save(useElevEditor.getState()) }
 export const PANE_MIN = 140, PANE_BAR = 32, PANE_MIN_W = 260

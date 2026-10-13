@@ -38,7 +38,7 @@ function Field({ label, value, onCommit, aria }) {
 
 /** `slot`: where App mounts it — 'bottom' (under the canvas) or 'right' (beside it); it shows in the slot its dock names. */
 export function ElevationPane({ slot = 'bottom' }) {
-  const { open, height, width, typeId, beamIn, sel, layout } = useElevEditor()
+  const { open, height, width, typeId, beamIn, sel, layout, detail } = useElevEditor()
   const dock = layout === 'side' ? 'right' : 'bottom'
   const objects = useCanvasStore(s => s.objects), T = useCanvasStore(s => s.elevations)
   const selectedIds = useCanvasStore(s => s.selectedIds)
@@ -136,19 +136,23 @@ export function ElevationPane({ slot = 'bottom' }) {
           {sel != null && <button type="button" aria-label="Remove level" title="Remove the selected beam's level (Delete)" onClick={() => { commitType(store, t.id, x => removeLevel(x, sel)); setPane({ sel: null }) }}
             style={{ padding: '2px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid var(--red-bdr, #e8b4ae)', background: 'var(--red-dim, #fdecea)', color: 'var(--red, #c0392b)' }}>Remove level</button>}
         </>}
+        {/* Simple (the reference sheet) or Detailed (with beam elevations and each level's pallet and gap) — the PDF prints it */}
+        <div role="group" aria-label="Drawing detail" style={{ display: 'flex', gap: 2, padding: 2, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)' }}>
+          {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={detail === k} style={seg(detail === k)} onClick={() => setPane({ detail: k })}>{label}</button>)}
+        </div>
         {/* where the editor docks, like a browser's developer tools: Side by side (right of the canvas) or Stacked (under it) */}
         <div role="group" aria-label="Dock" style={{ display: 'flex', gap: 2, padding: 2, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', marginLeft: 'auto' }}>
           {[['side', 'Side by side', 'Dock to the right of the canvas'], ['stacked', 'Stacked', 'Dock under the canvas']].map(([k, label, tip]) => <button key={k} type="button" title={tip} aria-pressed={layout === k} style={seg(layout === k)} onClick={() => setPane({ layout: k, sel: null })}>{label}</button>)}
         </div>
         <button type="button" aria-label="Collapse elevation editor" onClick={() => setPane({ open: false })} style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}>{dock === 'right' ? <ChevronRight size={15} /> : <ChevronDown size={15} />}</button>
       </div>
-      {t ? <Drawing t={t} entry={entry} building={building} sel={sel} stacked={dock === 'right'} sprClr={sprinklerClearance(T)} /> : <div style={{ padding: 12, fontSize: 12, color: 'var(--text3)' }}>No elevation types yet.</div>}
+      {t ? <Drawing t={t} entry={entry} building={building} sel={sel} stacked={dock === 'right'} sprClr={sprinklerClearance(T)} detail={detail} /> : <div style={{ padding: 12, fontSize: 12, color: 'var(--text3)' }}>No elevation types yet.</div>}
     </div>
   )
 }
 
 /** The drawing, interactive. */
-function Drawing({ t, entry, building, sel, stacked, sprClr }) {
+function Drawing({ t, entry, building, sel, stacked, sprClr, detail }) {
   const host = useRef(null)
   const [box, setBox] = useState({ w: 600, h: 240 })
   useLayoutEffect(() => {
@@ -165,7 +169,7 @@ function Drawing({ t, entry, building, sel, stacked, sprClr }) {
   const shown = draft ? draft.type : t
   // centred and fitted to the pane (elevationLayout centres it in the box), labels in proportion with a readable minimum
   const fontPx = paneFontPx(box)
-  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr])
+  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, bg: 'var(--surface)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail])
 
   const at = (ev) => { const r = host.current.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
   const zAt = (p) => (d.floor - p.y) / d.scale
@@ -244,15 +248,16 @@ function Drawing({ t, entry, building, sel, stacked, sprClr }) {
     if (r?.kind === 'dim') { handlers.onDoubleClick = (e) => startTyping(e, r); handlers.style = { cursor: 'text' } }
     const role = r ? (r.kind + ':' + (r.id ?? '') + ':' + (r.k ?? '')) : undefined
     if (i.t === 'rect') return <rect key={n} data-role={role} x={i.x} y={i.y} width={Math.max(0, i.w)} height={Math.max(0, i.h)} fill={i.fill || 'none'} stroke={i.stroke} strokeWidth={i.sw} opacity={i.opacity} style={{ cursor: i.cursor || (r?.kind === 'upright' ? 'copy' : undefined) }} {...handlers} />
-    if (i.t === 'line') return <line key={n} x1={i.x1} y1={i.y1} x2={i.x2} y2={i.y2} stroke={i.stroke} strokeWidth={i.sw} strokeDasharray={i.dash} pointerEvents="none" />
+    if (i.t === 'line') return <line key={n} x1={i.x1} y1={i.y1} x2={i.x2} y2={i.y2} stroke={i.stroke} strokeWidth={i.sw} strokeDasharray={i.dash} opacity={i.opacity} pointerEvents="none" />
+    if (i.t === 'path') return <path key={n} d={i.d} fill="none" stroke={i.stroke} strokeWidth={i.sw} opacity={i.opacity} pointerEvents="none" />
     if (i.t === 'polygon') return <polygon key={n} points={i.points.map(q => q.join(',')).join(' ')} fill={i.fill} pointerEvents="none" />
     if (i.t === 'circle') return <circle key={n} cx={i.cx} cy={i.cy} r={i.r} fill={i.fill} stroke={i.stroke} strokeWidth={i.sw} pointerEvents="none" />
     if (i.t === 'poly') return <polyline key={n} points={i.points.map(q => q.join(',')).join(' ')} fill="none" stroke={i.stroke} strokeWidth={i.sw} pointerEvents="none" />
-    if (i.t === 'text') return <text key={n} data-role={role} x={i.x} y={i.y} fontSize={i.size} fontFamily="Arial, sans-serif" textAnchor={i.anchor} fill={i.fill} stroke={i.halo ? '#fff' : undefined} strokeWidth={i.halo} paintOrder="stroke" strokeLinejoin="round" fontWeight={i.weight} transform={i.rot ? `rotate(${i.rot} ${i.x} ${i.y})` : undefined} style={{ userSelect: 'none', ...(handlers.style || {}) }} onDoubleClick={handlers.onDoubleClick}>{i.s}</text>
+    if (i.t === 'text') return <text key={n} data-role={role} x={i.x} y={i.y} fontSize={i.size} fontFamily={i.font || 'Arial, sans-serif'} textAnchor={i.anchor} fill={i.fill} fontWeight={i.weight} transform={i.rot ? `rotate(${i.rot} ${i.x} ${i.y})` : undefined} style={{ userSelect: 'none', ...(i.halo ? { stroke: i.haloColor || 'var(--surface)', strokeWidth: i.halo, paintOrder: 'stroke', strokeLinejoin: 'round' } : {}), ...(handlers.style || {}) }} onDoubleClick={handlers.onDoubleClick}>{i.s}</text>
     return null
   }
   return (
-    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" style={{ flex: 1, minHeight: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: '#fff' }}>
+    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" style={{ flex: 1, minHeight: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: 'var(--surface)' }}>
       <svg width={box.w} height={box.h} style={{ display: 'block' }} onPointerDown={() => host.current.focus()}>
         {d.items.map(render)}
         {/* the beams and the upright tops grabbed first: a transparent strip over each, drawn last, so a label lying on a

@@ -27,7 +27,8 @@ import { joinRacks } from '../../canvas2/inlineSnap'
 import * as RG from '../../utils/rowGroup'
 import * as E from '../../utils/elevations'
 import * as ED from '../../utils/elevEditor'
-import { elevationLayout, lengthsByType, ftInDash, parseFtIn, archScale, misfitLevels, labelBox } from '../../utils/elevationDrawing'
+import { elevationLayout, lengthsByType, ftInDash, parseFtIn, archScale, misfitLevels, labelBox, toSVG } from '../../utils/elevationDrawing'
+const itemSVGOf = (d) => toSVG(d)
 import { rackDepthUpdate } from '../../utils/rackDepth'
 import { serializeScene, deserializeScene } from '../../utils/saveLoad'
 import { targetAt, strokeTargets, commitPaint } from '../../utils/elevPaint'
@@ -360,9 +361,13 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     const pages = buildElevationSheets(o2, { title: 'T', elevations: tb })
     expect(pages.length).toBe(1)
     const svg = pages[0].svg
-    expect(['4 levels · 8\'-0" bay', '4 levels · 9\'-0" bay', 'B · 8\'-0" bay', 'RACK ELEVATIONS', 'SCALE: ', '=1\'', 'fill="#2b3a55"'].map(x => svg.includes(x))).toEqual([true, true, true, true, true, true, true])
+    expect(['4 levels · 8\'-0" bay', '4 levels · 9\'-0" bay', 'B · 8\'-0" bay', 'RACK ELEVATIONS', 'SCALE: ', '=1\'', 'fill="#1B4FD8"'].map(x => svg.includes(x))).toEqual([true, true, true, true, true, true, true])
     expect(svg.includes('C · ')).toBe(false)
-    expect(/\d lb|#/.test(svg.replace(/fill="#[0-9a-fA-F]+"|stroke="#[0-9a-fA-F]+"/g, ''))).toBe(false)   // no weights on the drawing
+    // it prints whichever of Simple / Detailed is selected
+    expect([svg.includes('PITCH'), /data-role|6'-0"<\/text>/.test(svg)]).toEqual([true, false])
+    const det = buildElevationSheets(o2, { title: 'T', elevations: tb, detail: 'detailed' })[0].svg
+    expect([det.includes(">5'-0&quot;<"), svg.includes(">5'-0&quot;<")]).toEqual([true, false])   // the beam at 5'-0" dimensioned only in Detailed
+    expect(/\d ?lb|\d#|MAX\./i.test(svg.replace(/#[0-9a-fA-F]{3,8}/g, ''))).toBe(false)   // no weights on the drawing
   })
 
   it('EV-keeper: a layout loaded is given its types in the store (not among its objects); an action\'s fix is folded into that action\'s entry; an old types object among the objects is moved to the store', async () => {
@@ -472,93 +477,129 @@ describe('EV — the editor (v2 §B–C, E)', () => {
   const sampleO = { depthIn: 48, pair: true, flueIn: 12, building: { clearHeightIn: 290, sprinklerIn: 295 } }
   /** Every pair of labels apart, and no label on a load, a beam or an upright (a misfit label may sit on its own loads). */
   const clean = (d) => {
-    const labs = d.items.filter(i => i.t === 'text'), solids = d.items.filter(i => i.t === 'rect' && ['load', 'beam', 'upright'].includes(i.tag))
+    const labs = d.items.filter(i => i.t === 'text'), solids = d.items.filter(i => i.t === 'rect' && ['load', 'beam', 'upright', 'frame'].includes(i.tag))
     const hit = (p, q) => p.x0 < q.x1 - 0.5 && q.x0 < p.x1 - 0.5 && p.y0 < q.y1 - 0.5 && q.y0 < p.y1 - 0.5
     const bad = []
     labs.forEach((l, i) => {
       const b = labelBox(l)
-      labs.slice(i + 1).forEach(m => { if (hit(b, labelBox(m))) bad.push(l.s + ' × ' + m.s) })
+      // (side to side, two labels keep a gap — closer, they read as one run)
+      const g = l.size * 0.45, bg = { ...b, x0: b.x0 - g, x1: b.x1 + g }
+      labs.slice(i + 1).forEach(m => { if (hit(bg, labelBox(m))) bad.push(l.s + ' × ' + m.s) })
       solids.forEach(r => { if (!(l.tag === 'misfit' && r.level === l.level) && hit(b, { x0: r.x, x1: r.x + r.w, y0: r.y, y1: r.y + r.h })) bad.push(l.s + ' on ' + r.tag) })
     })
     return bad
   }
 
-  it('EV-drawing: the sample\'s dimensioning — beams to the top at 6\'-2", 12\'-4", 18\'-6" (on leaders off the beam ends) with a 4" face, 5\'-10" clear openings, the 5\'-6" load + clearance chain and the 3\' top load, 21\'-6" top of load, the 24\'-2" clear height (the truss\'s bottom chord) and 26\' top of the truss, the sprinkler head at 24\'-7", the 8\' bay, 4\'/1\'/4\' frames and the 19\' upright — in Trace\'s colours (blue frames, orange beams, beige loads); no weights', () => {
-    const t = sampleT(), d = elevationLayout(t, 96, { w: 1100, h: 420 }, sampleO)
-    const texts = d.items.filter(i => i.t === 'text').map(i => i.s)
-    for (const want of ['8\'-0"', '6\'-2"', '12\'-4"', '18\'-6"', '5\'-10"', '5\'-0"', '10"', '3\'-0"', '4"', '21\'-6"', '24\'-2"', '26\'-0"', '24\'-7"', '19\'-0"', '4\'-0"', '1\'-0"', 'Sprinkler head']) expect([want, texts.includes(want)]).toEqual([want, true])
-    expect([texts.filter(x => x === '5\'-0"').length, texts.filter(x => x === '10"').length, texts.filter(x => x === '5\'-10"').length]).toEqual([3, 3, 3])
-    expect(texts.some(x => /^\d+'$/.test(x))).toBe(false)                                              // feet always with their inches
-    expect(d.items.filter(i => i.role?.kind === 'upright').every(i => i.fill === '#2f5d8a')).toBe(true)
-    expect(d.items.filter(i => i.role?.kind === 'beam').map(i => i.fill)).toEqual(['#e07a1f', '#e07a1f', '#e07a1f'])
-    expect(d.items.filter(i => i.tag === 'load').every(i => i.fill === '#f3e2c3')).toBe(true)
-    expect(d.items.filter(i => i.tag === 'load').length).toBe(8)
-    const chords = d.items.filter(i => i.tag === 'chord'), head = d.items.find(i => i.tag === 'head')
-    expect(chords.map(c => c.chordAt)).toEqual([290, 312])
-    expect([head.cy < d.Y(290), head.cy > d.Y(312)]).toEqual([true, true])
-    expect(texts.some(x => /lb|#/.test(x))).toBe(false)
-    expect(elevationLayout(t, 144, { w: 1100, h: 420 }).items.filter(i => i.tag === 'load').length).toBe(12)
+  const C = { ink: '#15181C', pine: '#123A2E', load: '#E8DCC2', loadEdge: '#B08F52', deck: '#C9A870', blue: '#1B4FD8', red: '#A8341C', grey: '#7A828C', hatch: '#B6BAB3', band: '#F2C230', misfit: '#F5E7E3' }
+
+  it('EV-drawing: Simple, in the reference sheet\'s visual language — IBM Plex Mono; dark green frames and beams; kraft loads on a deck board; the ink ground line with grey hatching; the dashed clear-height line over the yellow clearance band; level tags L1–L4 grey; the frame height, the pitch and the beam with its pallets per level blue; the pallets\' side clearance and the clearance band red; no beam elevations, no weights', () => {
+    const t = sampleT(), d = elevationLayout(t, 96, { w: 1100, h: 460 }, sampleO)
+    const texts = d.items.filter(i => i.t === 'text'), by = (str) => texts.find(i => i.s === str)
+    for (const want of ['L1', 'L2', 'L3', 'L4', 'FRAME 19\'-0"', 'PITCH 6\'-2"', 'BEAM 8\'-0" · 2P', 'CLEAR HEIGHT 24\'-2"', 'SPRINKLERS 24\'-7"', 'CLEARANCE 1\'-6"', '5.3" CLR', '4\'-0"', '1\'-0"']) expect([want, !!by(want)]).toEqual([want, true])
+    expect(['L1', 'L2', 'L3', 'L4'].map(x => by(x).fill)).toEqual([C.grey, C.grey, C.grey, C.grey])
+    expect([by('FRAME 19\'-0"').fill, by('PITCH 6\'-2"').fill, by('BEAM 8\'-0" · 2P').fill]).toEqual([C.blue, C.blue, C.blue])
+    expect([by('5.3" CLR').fill, by('CLEARANCE 1\'-6"').fill, by('CLEAR HEIGHT 24\'-2"').fill]).toEqual([C.red, C.red, C.grey])
+    expect(texts.every(i => /IBM Plex Mono/.test(i.font))).toBe(true)
+    expect(d.items.filter(i => i.role?.kind === 'upright').every(i => i.fill === C.pine)).toBe(true)
+    expect(d.items.filter(i => i.role?.kind === 'beam').map(i => i.fill)).toEqual([C.pine, C.pine, C.pine])
+    const loads = d.items.filter(i => i.tag === 'load')
+    expect([loads.filter(i => i.fill === C.load && i.stroke === C.loadEdge).length, loads.filter(i => i.fill === C.deck).length]).toEqual([8, 8])
+    expect(d.items.some(i => i.t === 'line' && i.stroke === C.ink && i.sw === 3)).toBe(true)                   // the ground line
+    expect(d.items.filter(i => i.t === 'line' && i.stroke === C.hatch).length).toBeGreaterThan(10)           // its hatching
+    expect(d.items.some(i => i.tag === 'band' && i.fill === C.band && i.opacity === 0.2)).toBe(true)
+    expect(d.items.find(i => i.tag === 'clear').dash).toBeTruthy()
+    expect(texts.some(i => i.role?.id === 'elev' || i.role?.id === 'pallet')).toBe(false)                    // Simple: none
+    expect(texts.some(i => /lb|LB|#/.test(i.s))).toBe(false)
+    // the side view: dark green frames, flue spacers, the depth and flue in blue, the frame height
+    expect(d.items.filter(i => i.tag === 'frame').every(i => i.fill === C.pine)).toBe(true)
+    expect(d.items.filter(i => i.tag === 'spacer').length).toBe(2)
+    expect(texts.filter(i => i.s === 'FRAME 19\'-0"').length).toBe(2)
+    expect(elevationLayout(t, 144, { w: 1100, h: 460 }).items.filter(i => i.tag === 'load' && i.fill === C.load).length).toBe(12)
     expect([archScale(0.53).label, archScale(1.06).label]).toEqual(['1/4"=1\'', '1/2"=1\''])
   })
 
-  it('EV-labels: the hierarchy — beam elevations largest and bold at the beam end; overall heights medium on the outer left; chains (load + clearance, clear openings, beam face) smaller and lighter; sizes follow the pane with a readable minimum; no label on a load, a beam or another label — side by side, stacked and in a small pane', () => {
+  it('EV-detailed: Detailed adds each beam\'s elevation to its top (blue, on a leader off the beam end) and per level the pallet height and the actual gap (red under the clearance) and the beam face — the chain adds up; the Simple drawing keeps none of them', () => {
+    const t = sampleT(), d = elevationLayout(t, 96, { w: 1100, h: 460 }, { ...sampleO, detail: 'detailed' })
+    const role = (id) => d.items.filter(i => i.t === 'text' && i.role?.id === id)
+    expect(role('elev').map(i => i.s)).toEqual(['6\'-2"', '12\'-4"', '18\'-6"'])
+    expect(role('elev').every(i => i.fill === C.blue && i.weight === 600)).toBe(true)
+    expect(role('pallet').map(i => i.s)).toEqual(['5\'-0"', '5\'-0"', '5\'-0"', '3\'-0"'])
+    expect(role('gap').map(i => [i.s, i.fill])).toEqual([['10"', C.blue], ['10"', C.blue], ['10"', C.blue]])
+    for (const k of [0, 1, 2]) expect(role('pallet').find(i => i.role.k === k).role.value + role('gap').find(i => i.role.k === k).role.value + role('face')[k].role.value).toBe(74)
+    // still the Simple drawing's own labels
+    expect(['L1', 'FRAME 19\'-0"', 'BEAM 8\'-0" · 2P', 'CLEAR HEIGHT 24\'-2"'].every(x => d.items.some(i => i.t === 'text' && i.s === x))).toBe(true)
+    const tight = { ...t, levels: t.levels.map((l, k) => (k === 1 ? { ...l, palletHeightIn: 66 } : l)) }
+    expect(elevationLayout(tight, 96, { w: 1100, h: 460 }, { depthIn: 48, detail: 'detailed' }).items.filter(i => i.t === 'text' && i.role?.id === 'gap').map(i => [i.s, i.fill])).toEqual([['10"', C.blue], ['4"', C.red], ['10"', C.blue]])
+  })
+
+  it('EV-labels: no label on a load, a beam, a frame or another label — Simple and Detailed, side by side and stacked, large and small panes, crowded levels; sizes follow the pane with a readable minimum', () => {
     const t = sampleT()
-    const d = elevationLayout(t, 96, { w: 1100, h: 420 }, { ...sampleO, fontPx: 12 })
-    const by = (id) => d.items.filter(i => i.t === 'text' && (i.role?.id === id))
-    const elev = by('elev'), overall = d.items.filter(i => i.t === 'text' && i.role?.kind === 'info' && !String(i.role.id).startsWith('gap-')), chain = [...by('pallet'), ...by('gap'), ...by('open'), ...by('face')]
-    expect(elev.every(i => i.weight === 700 && i.anchor === 'start' && !i.rot)).toBe(true)
-    expect(Math.min(...elev.map(i => i.size))).toBeGreaterThan(Math.max(...overall.map(i => i.size)))
-    expect(Math.min(...overall.map(i => i.size))).toBeGreaterThan(Math.max(...chain.map(i => i.size)))
-    expect(chain.every(i => i.fill === '#6b7a90')).toBe(true)
-    // the overall heights are the outermost on the left
-    expect(Math.max(...overall.filter(i => i.role.id !== 'sprinkler').map(i => i.x))).toBeLessThan(Math.min(...by('pallet').map(i => i.x)))
-    for (const [box, o] of [[{ w: 1100, h: 420 }, { fontPx: 12 }], [{ w: 360, h: 640 }, { fontPx: 10, stacked: true }], [{ w: 520, h: 200 }, { fontPx: 9 }], [{ w: 820, h: 300 }, { fontPx: 11 }]]) {
-      const x = elevationLayout(t, 96, box, { ...sampleO, ...o })
-      expect([JSON.stringify(box), clean(x)]).toEqual([JSON.stringify(box), []])
-      expect(Math.min(...x.items.filter(i => i.t === 'text').map(i => i.size))).toBeGreaterThanOrEqual(8)
-    }
-    // crowded: beams every 40" (30" loads), in a small pane — the labels make room or a chain label gives way
     const dense = { ...t, uprightHeightIn: 300, levels: [0, 40, 80, 120, 160, 200, 240].map(z => ({ beamIn: z, palletHeightIn: 30, loadLb: 1000 })) }
-    for (const [box, o] of [[{ w: 480, h: 190 }, { fontPx: 9 }], [{ w: 300, h: 520 }, { fontPx: 9, stacked: true }], [{ w: 700, h: 240 }, { fontPx: 10 }]]) {
-      const x = elevationLayout(dense, 96, box, { ...sampleO, ...o })
-      expect(['dense ' + JSON.stringify(box), clean(x)]).toEqual(['dense ' + JSON.stringify(box), []])
-      expect(x.items.filter(i => i.t === 'text' && i.role?.id === 'elev').length).toBe(6)      // every beam elevation kept
+    for (const detail of ['simple', 'detailed']) for (const [tt, box, o] of [[t, { w: 1100, h: 420 }, { fontPx: 12 }], [t, { w: 360, h: 640 }, { fontPx: 10, stacked: true }], [t, { w: 520, h: 200 }, { fontPx: 9 }], [t, { w: 820, h: 300 }, { fontPx: 11 }], [dense, { w: 480, h: 190 }, { fontPx: 9 }], [dense, { w: 700, h: 240 }, { fontPx: 10 }]]) {
+      const x = elevationLayout(tt, 96, box, { ...sampleO, ...o, detail })
+      expect([detail, JSON.stringify(box), clean(x)]).toEqual([detail, JSON.stringify(box), []])
+      expect(Math.min(...x.items.filter(i => i.t === 'text').map(i => i.size))).toBeGreaterThanOrEqual(8)
+      // the side view's depth and flue dimensions sit under its ground, clear of the building's labels over the frames
+      const fy1 = Math.max(...x.items.filter(i => i.tag === 'frame').map(i => i.y + i.h))
+      const depthLabels = x.items.filter(i => i.t === 'text' && !i.rot && i.fill === '#1B4FD8' && (i.s === ftInDash(48) || i.s === ftInDash(12)))
+      expect([detail, depthLabels.length, depthLabels.every(i => i.y > fy1)]).toEqual([detail, 3, true])
+      // labels paint over the linework (a dashed building line never strikes through one)
+      expect(x.items.findIndex(i => i.t === 'text')).toBeGreaterThan(x.items.map(i => i.t !== 'text').lastIndexOf(true))
     }
     const { paneFontPx } = ED
     expect([paneFontPx({ w: 300, h: 120 }), paneFontPx({ w: 2000, h: 900 }), paneFontPx({ w: 858, h: 286 })]).toEqual([9, 14, 11])
   })
 
-  it('EV-centre-stack: the drawing is centred in the pane and scaled to fit; stacked puts the side view under the front view, side by side beside it; the choice is remembered per browser', () => {
+  it('EV-centre-stack: the drawing is centred in the pane and scaled to fit; stacked (the right dock) puts the side view under the front view, side by side (the bottom dock) beside it; the Simple / Detailed choice is remembered per browser', () => {
     const t = sampleT(), box = { w: 1200, h: 420 }
     const ext = (d) => { const xs = [], ys = []; for (const i of d.items) { if (i.t === 'rect') { xs.push(i.x, i.x + i.w); ys.push(i.y, i.y + i.h) } if (i.t === 'line') { xs.push(i.x1, i.x2); ys.push(i.y1, i.y2) } } return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) } }
-    const side = elevationLayout(t, 96, box, sampleO), e = ext(side)
+    const e = ext(elevationLayout(t, 96, box, sampleO))
     expect(Math.abs((e.x0 + e.x1) / 2 - box.w / 2)).toBeLessThan(box.w * 0.08)
     expect([e.x0 >= 0, e.x1 <= box.w, e.y0 >= 0, e.y1 <= box.h]).toEqual([true, true, true, true])
-    const tall = { w: 420, h: 900 }, st = elevationLayout(t, 96, tall, { ...sampleO, stacked: true })
-    const frames = st.items.filter(i => i.t === 'rect' && i.fill === '#2f5d8a' && !i.role)        // the side view's frame uprights
-    const fronts = st.items.filter(i => i.role?.kind === 'upright')
-    expect(Math.min(...frames.map(i => i.y))).toBeGreaterThan(Math.max(...fronts.map(i => i.y + i.h)))
+    const st = elevationLayout(t, 96, { w: 420, h: 900 }, { ...sampleO, stacked: true }).items
+    expect(Math.min(...st.filter(i => i.tag === 'frame').map(i => i.y))).toBeGreaterThan(Math.max(...st.filter(i => i.role?.kind === 'upright').map(i => i.y + i.h)))
     const sb = elevationLayout(t, 96, box, sampleO).items
-    expect(Math.min(...sb.filter(i => i.t === 'rect' && i.fill === '#2f5d8a' && !i.role).map(i => i.x))).toBeGreaterThan(Math.max(...sb.filter(i => i.role?.kind === 'upright').map(i => i.x)))
-    ED.setPane({ layout: 'stacked' })
-    expect(JSON.parse(localStorage.getItem('trace.elevpane.v1')).layout).toBe('stacked')
-    ED.setPane({ layout: 'side' })
+    expect(Math.min(...sb.filter(i => i.tag === 'frame').map(i => i.x))).toBeGreaterThan(Math.max(...sb.filter(i => i.role?.kind === 'upright').map(i => i.x)))
+    ED.setPane({ detail: 'detailed' })
+    expect(JSON.parse(localStorage.getItem('trace.elevpane.v1')).detail).toBe('detailed')
+    ED.setPane({ detail: 'simple' })
   })
 
-  it('EV-misfit: a level whose pallet + clearance doesn\'t fit under the next beam — its loads red, "doesn\'t fit", never over the beam above; the same levels as the Check layout error; the top level (no beam above) never', () => {
+  it('EV-misfit: a level whose pallet + clearance doesn\'t fit under the next beam — its loads red, "DOESN\'T FIT", never over the beam above; the same levels as the Check layout error; the top level (no beam above) never', () => {
     const t = { ...sampleT(), levels: [0, 74, 148, 222].map((z, k) => ({ beamIn: z, palletHeightIn: k === 1 ? 80 : k === 3 ? 36 : 60, loadLb: 2500 })) }
     expect([...misfitLevels(t).keys()]).toEqual([1])
     const d = elevationLayout(t, 96, { w: 1100, h: 420 }, sampleO)
     const bad = d.items.filter(i => i.tag === 'load' && i.level === 1)
-    expect(bad.every(i => i.fill === '#f8d7d3' && i.stroke === '#c0392b')).toBe(true)
+    expect(bad.every(i => (i.fill === C.misfit || i.fill === C.red) && i.stroke === C.red)).toBe(true)
     const beamAbove = d.items.find(i => i.role?.kind === 'beam' && i.role.k === 2)
-    expect(bad.every(i => i.y >= beamAbove.y + beamAbove.h - 0.01)).toBe(true)                    // under the beam above
-    expect(d.items.filter(i => i.tag === 'misfit').map(i => i.s)).toEqual(['doesn\'t fit'])
-    expect(d.items.filter(i => i.tag === 'load' && i.level !== 1).every(i => i.fill === '#f3e2c3')).toBe(true)
-    // the Check layout error: the same level
+    expect(bad.every(i => i.y >= beamAbove.y + beamAbove.h - 0.01)).toBe(true)
+    expect(d.items.filter(i => i.tag === 'misfit').map(i => i.s)).toEqual(['DOESN\'T FIT'])
+    expect(d.items.filter(i => i.tag === 'load' && i.level !== 1).every(i => i.fill === C.load || i.fill === C.deck)).toBe(true)
     const L = paintIn(withTypes(hand(false)), 'p1', { typeId: 'B' }), x = edit(L, tb => E.updateType(tb, 'B', { ...t, id: 'B', name: 'B' }))
-    expect(E.elevationIssues(x.o, x.t).filter(e => e.kind === 'elev-fit').map(e => e.level)).toEqual([2])     // (1-based: the second level)
+    expect(E.elevationIssues(x.o, x.t).filter(e => e.kind === 'elev-fit').map(e => e.level)).toEqual([2])
     expect(clean(d)).toEqual([])
+  })
+
+  it('EV-background: the drawing sits on the panel\'s own background in the editor and the panel preview (labels haloed in it), on white paper in the PDF', () => {
+    const pane = readFileSync(new URL('../../components/Elevations/ElevationPane.jsx', import.meta.url), 'utf8')
+    expect(pane).toMatch(/aria-label="Elevation drawing" style=\{\{[^}]*background: 'var\(--surface\)' \}\}/)
+    expect(pane).toMatch(/bg: 'var\(--surface\)'/)
+    expect(pane.includes("background: '#fff'")).toBe(false)
+    const panel = readFileSync(new URL('../../components/RightPanel/ElevationsPanel.jsx', import.meta.url), 'utf8')
+    expect([panel.includes("bg: 'var(--surface)'"), panel.includes("background: '#fff'")]).toEqual([true, false])
+    const d = elevationLayout(sampleT(), 96, { w: 900, h: 400 }, { ...sampleO, bg: 'var(--surface)' })
+    expect(d.items.filter(i => i.t === 'text').every(i => i.haloColor === 'var(--surface)')).toBe(true)
+    expect(itemSVGOf(d).includes('stroke:var(--surface)')).toBe(true)
+    const pdf = readFileSync(new URL('../../export/pdfExport.js', import.meta.url), 'utf8')
+    expect(pdf).toMatch(/detail, bg: '#fff' \}/)
+  })
+
+  it('EV-tabs: one right panel with Properties | Elevations tabs, the tab remembered per browser', () => {
+    const rp = readFileSync(new URL('../../components/RightPanel/index.jsx', import.meta.url), 'utf8')
+    expect(rp).toMatch(/role="tablist" aria-label="Right panel"/)
+    expect(rp).toMatch(/>Properties<\/button>[\s\S]*>Elevations<\/button>/)
+    expect(rp).toMatch(/tab === 'properties' \? <>[\s\S]*<PropertiesPanel \/>[\s\S]*<\/> : <ElevationsPanel \/>/)
+    expect(rp).toMatch(/localStorage\.setItem\(TAB_KEY, t\)/)
   })
 
   it('EV-depth-edit: the selected rack\'s depth re-sizes it about its centre (a pair keeps its flue), one undo step; the aisles follow; the Row group replays it', async () => {
@@ -642,11 +683,11 @@ describe('EV — the top load against the building', () => {
     expect([E.sprinklerClearance(six.t), E.sprinklerClearance(L.t), errs(withFp({ sprinklerFt: 20 }), six.t)]).toEqual([6, 18, []])
     // the drawing: the top level's loads red with the reason, the others not
     const d = elevationLayout(t, 96, { w: 1100, h: 420 }, { depthIn: 48, pair: true, flueIn: 12, building: { clearHeightIn: 290, sprinklerIn: 270 } })
-    expect(d.items.filter(i => i.tag === 'load' && i.level === 3).every(i => i.fill === '#f8d7d3')).toBe(true)
-    expect(d.items.filter(i => i.tag === 'load' && i.level !== 3).every(i => i.fill === '#f3e2c3')).toBe(true)
-    expect(d.items.filter(i => i.tag === 'misfit').map(i => i.s)).toEqual(['within 18" of sprinklers'])
+    expect(d.items.filter(i => i.tag === 'load' && i.level === 3).every(i => i.fill === '#F5E7E3' || i.fill === '#A8341C')).toBe(true)
+    expect(d.items.filter(i => i.tag === 'load' && i.level !== 3).every(i => i.fill === '#E8DCC2' || i.fill === '#C9A870')).toBe(true)
+    expect(d.items.filter(i => i.tag === 'misfit').map(i => i.s)).toEqual(['WITHIN 18" OF SPRINKLERS'])
     const c = elevationLayout(t, 96, { w: 1100, h: 420 }, { depthIn: 48, building: { clearHeightIn: 250 } })
-    expect(c.items.filter(i => i.tag === 'misfit').map(i => i.s)).toEqual(['above clear height'])
+    expect(c.items.filter(i => i.tag === 'misfit').map(i => i.s)).toEqual(['ABOVE CLEAR HEIGHT'])
     expect(elevationLayout(t, 96, { w: 1100, h: 420 }, { building: { clearHeightIn: 290, sprinklerIn: 295 } }).items.some(i => i.tag === 'misfit')).toBe(false)
   })
 })
@@ -658,7 +699,7 @@ describe('EV — the chain, the dock', () => {
 
   it('EV-chain: per level what is really there — the pallet, the ACTUAL gap to the underside of the beam above, that beam\'s face — and it adds up: pallet + gap + face = the beam spacing; a gap under the clearance red; the top level its pallet then the gaps to the clear height and the sprinkler heads', () => {
     const t = t0(), b = { clearHeightIn: 290, sprinklerIn: 295 }
-    const d = elevationLayout(t, 96, { w: 1100, h: 460 }, { depthIn: 48, pair: true, flueIn: 12, building: b, fontPx: 12 })
+    const d = elevationLayout(t, 96, { w: 1100, h: 460 }, { depthIn: 48, pair: true, flueIn: 12, building: b, fontPx: 12, detail: 'detailed' })
     const pal = vals(d, 'pallet'), gap = vals(d, 'gap'), face = vals(d, 'face')
     expect(pal.map(x => x.s)).toEqual(['5\'-0"', '5\'-0"', '5\'-0"', '3\'-0"'])
     expect(gap.map(x => x.s)).toEqual(['10"', '10"', '10"'])
@@ -666,15 +707,15 @@ describe('EV — the chain, the dock', () => {
     // it adds up, level by level
     const L = [...t.levels].sort((a, b2) => a.beamIn - b2.beamIn)
     for (let i = 0; i + 1 < L.length; i++) expect(pal.find(x => x.k === i).v + gap.find(x => x.k === i).v + face[i].v).toBe(L[i + 1].beamIn - L[i].beamIn)
-    expect(gap.every(x => x.fill === '#6b7a90')).toBe(true)                       // 10" ≥ the 6" clearance
+    expect(gap.every(x => x.fill === '#1B4FD8')).toBe(true)                       // 10" ≥ the 6" clearance
     // the top level: its pallet, then up to the clear height (2'-8") and on to the sprinkler heads (5")
     const top = d.items.filter(i => i.t === 'text' && String(i.role?.id).startsWith('gap-')).map(i => [i.role.id, i.s])
     expect(top).toEqual([['gap-clear', '2\'-8"'], ['gap-sprinkler', '5"']])
     // a 66" pallet on level 2: a 4" gap, under the 6" clearance — red
     const t2 = { ...t, levels: t.levels.map((l, k) => (k === 1 ? { ...l, palletHeightIn: 66 } : l)) }
-    const d2 = elevationLayout(t2, 96, { w: 1100, h: 460 }, { depthIn: 48, fontPx: 12 })
+    const d2 = elevationLayout(t2, 96, { w: 1100, h: 460 }, { depthIn: 48, fontPx: 12, detail: 'detailed' })
     const g2 = vals(d2, 'gap')
-    expect(g2.map(x => [x.s, x.fill])).toEqual([['10"', '#6b7a90'], ['4"', '#c0392b'], ['10"', '#6b7a90']])
+    expect(g2.map(x => [x.s, x.fill])).toEqual([['10"', '#1B4FD8'], ['4"', '#A8341C'], ['10"', '#1B4FD8']])
     // a typed gap moves the beam above (pallet + gap + face); a typed pallet height sets that level's
     expect(ED.setDimension(t, 'gap', 1, 12).levels[2].beamIn).toBe(74 + 60 + 12 + 4)
     expect(ED.setDimension(t, 'pallet', 2, 50).levels[2].palletHeightIn).toBe(50)
