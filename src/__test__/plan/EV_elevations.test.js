@@ -466,14 +466,20 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(m.map(e => [e.beamIn, e.bays, e.pair])).toEqual([[96, 14, true], [108, 2, false]])
   })
 
-  it('EV-drawing: the sample — beams to the top at 6\'-2", 12\'-4", 18\'-6" with a 4" face, 60" pallets, 6" clearance, a 36" top load, an 8\' bay, a 19\' upright, back-to-back 4\' frames with a 1\' flue, a 26\' building with its sprinkler at 24\'-7": every dimension of the sample, 2 pallets a level, the roof truss and the sprinkler line; no weights', () => {
+  it('EV-drawing: the sample — beams to the top at 6\'-2", 12\'-4", 18\'-6" with a 4" face, 60" pallets, 6" clearance, a 36" top load, an 8\' bay, a 19\' upright, back-to-back 4\' frames with a 1\' flue, the building\'s clear height 24\'-2" to the underside of the roof structure (the truss\'s bottom chord drawn there) and its sprinkler head at 24\'-7" above it: every dimension of the sample, 2 pallets a level; no weights', () => {
     const t = { ...t0(), uprightHeightIn: 228, levels: [0, 74, 148, 222].map((z, k) => ({ beamIn: z, palletHeightIn: k === 3 ? 36 : 60, loadLb: 2500 })) }
-    const d = elevationLayout(t, 96, { w: 1100, h: 700 }, { depthIn: 48, pair: true, flueIn: 12, building: { clearHeightIn: 312, sprinklerIn: 295 } })
+    const d = elevationLayout(t, 96, { w: 1100, h: 700 }, { depthIn: 48, pair: true, flueIn: 12, building: { clearHeightIn: 290, sprinklerIn: 295 } })
     const texts = d.items.filter(i => i.t === 'text').map(i => i.s)
-    for (const want of ['8\'', '6\'-2"', '12\'-4"', '18\'-6"', '5\'-10"', '5\'-6"', '3\'', '21\'-6"', '19\'', '26\'', '24\'-7"', '4\'', '1\'', 'ROOF TRUSS', 'SPRINKLER HEAD', 'FRONT VIEW', 'SIDE VIEW — BACK TO BACK']) expect([want, texts.includes(want)]).toEqual([want, true])
+    for (const want of ['8\'', '6\'-2"', '12\'-4"', '18\'-6"', '5\'-10"', '5\'-6"', '3\'', '21\'-6"', '19\'', '24\'-2"', '24\'-7"', 'U/S OF BOTTOM CHORD', '4\'', '1\'', 'ROOF TRUSS', 'SPRINKLER HEAD', 'FRONT VIEW', 'SIDE VIEW — BACK TO BACK']) expect([want, texts.includes(want)]).toEqual([want, true])
     expect(texts.filter(s => s === '5\'-6"').length).toBe(3)
     expect(texts.filter(s => s === '5\'-10"').length).toBe(3)
     expect(d.items.filter(i => i.t === 'rect' && i.fill === '#f3e2c3').length).toBe(8)            // 2 pallets × 4 levels
+    // the bottom chord at the clear height, the sprinkler line above it, the top chord above both
+    const chord = d.items.filter(i => i.t === 'line' && i.stroke === '#6b7280').map(i => i.y1).sort((a, b) => a - b), sprink = d.items.find(i => i.t === 'line' && i.stroke === '#c0392b').y1
+    expect([Math.abs(chord[1] - d.Y(290)) < 0.01, chord[0] < sprink, sprink < chord[1]]).toEqual([true, true, true])
+    // their labels beyond the side view, none overlapping
+    const labs = d.items.filter(i => i.t === 'text' && ['ROOF TRUSS', 'U/S OF BOTTOM CHORD', 'SPRINKLER HEAD'].includes(i.s)).map(i => i.y).sort((a, b) => a - b)
+    expect([labs.length, labs.every((y, k) => !k || y - labs[k - 1] >= 11)]).toEqual([3, true])
     expect(d.items.filter(i => i.role?.kind === 'beam').length).toBe(3)
     expect(texts.some(s => /lb|#/.test(s))).toBe(false)
     expect(d.w).toBeLessThanOrEqual(1100 + 1)

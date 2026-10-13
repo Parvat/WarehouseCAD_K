@@ -7,7 +7,8 @@
 // many as the beam length holds), the bay width across the top. Dimensions in feet-inches: beam elevations to the top
 // of the beam on the right; the clear opening between beams inside the bay; the chain of load + clearance per level on
 // the left; overall on the far left: top of the top load, top of the upright, and — when the building has them — its
-// clear height (a roof truss drawn there) and the sprinkler line. Side view beside it: the frame depth (two frames and
+// clear height, to the underside of the roof structure (the truss's bottom chord, drawn there), and the sprinkler head
+// at its own height (above the bottom chord, within the truss, as a rule). Side view beside it: the frame depth (two frames and
 // the flue for a back-to-back), the upright height, a simple diagonal bracing pattern. Weights stay off the drawing.
 
 import { beamFace } from './elevations'
@@ -47,12 +48,16 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const topLoad = top.beamIn + (top.palletHeightIn || 0)
   const bClear = building?.clearHeightIn > 0 ? building.clearHeightIn : null
   const bSprink = building?.sprinklerIn > 0 ? building.sprinklerIn : null
-  const H = Math.max(t.uprightHeightIn, topLoad + clearance, bClear ? bClear + 18 : 0, bSprink || 0)
+  /* the roof truss: its bottom chord at the clear height (the underside of the roof structure), its top chord above
+     both that and the sprinkler head */
+  const TRUSS_IN = 22
+  const trussTop = bClear ? Math.max(bClear + TRUSS_IN, (bSprink || 0) + 8) : null
+  const H = Math.max(t.uprightHeightIn, topLoad + clearance, trussTop ? trussTop + 4 : 0, bSprink ? bSprink + 8 : 0)
   const frontW = bayIn + 2 * upW, sideW = pair ? 2 * depthIn + flueIn + 2 * upW : depthIn + upW
   // margins in px (dimensions need room; the preview needs none)
   const fp = fontPx
   const mL = compact ? 6 : fp * 13, mR = compact ? 6 : fp * (10 + Math.min(4, L.length) * 1.6), mT = compact ? 6 : fp * 4, mB = compact ? 6 : fp * 4.5, gap = compact ? 18 : fp * 9
-  const fit = Math.max(0.05, Math.min((box.w - mL - mR - gap - (compact ? 0 : fp * 7)) / (frontW + sideW), (box.h - mT - mB) / H))
+  const fit = Math.max(0.05, Math.min((box.w - mL - mR - gap - (compact ? 0 : fp * (bClear || bSprink ? 16 : 7))) / (frontW + sideW), (box.h - mT - mB) / H))
   const s = scale && scale <= fit ? scale : fit           // a drawing scale asked for (the PDF's standard one), if it fits
   const items = []
   const X0 = mL, floor = mT + H * s, Y = (z) => floor - z * s, Xf = (x) => X0 + x * s
@@ -83,21 +88,28 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     text((x0 + x1) / 2, y - fp * 0.45, label, { role })
   }
 
-  // ── the building: clear height (roof truss) and the sprinkler line, across both views
+  // ── the building: the roof truss (bottom chord at the clear height) and the sprinkler line, across both views
   const xEnd = compact ? Xs(sideW) : Xs(sideW) + fp * 2
   if (bClear) {
-    const y = Y(bClear), d = Math.min(18, (H - bClear) + 12) * s, x0 = X0 - (compact ? 0 : fp * 3)
+    const y = Y(bClear), d = (trussTop - bClear) * s, x0 = X0 - (compact ? 0 : fp * 3)
     line(x0, y, xEnd, y, { stroke: '#6b7280', sw: sw * 1.2 })
     line(x0, y - d, xEnd, y - d, { stroke: '#6b7280', sw: sw * 1.2 })
     const n = Math.max(2, Math.round((xEnd - x0) / (d * 1.6)))
     const pts = []; for (let i = 0; i <= n; i++) pts.push([x0 + (xEnd - x0) * i / n, i % 2 ? y - d : y])
     items.push({ t: 'poly', points: pts, stroke: '#6b7280', sw: sw * 0.9 })
-    if (!compact) text(xEnd - 2, y - d - fp * 0.4, 'ROOF TRUSS', { anchor: 'end', size: fp * 0.8, fill: '#6b7280' })
   }
   if (bSprink) {
     const y = Y(bSprink)
     line(X0 - (compact ? 0 : fp * 3), y, xEnd, y, { stroke: '#c0392b', sw: sw * 0.9, dash: `${fp * 0.6} ${fp * 0.4}` })
-    if (!compact) text(xEnd - 2, y + fp * 1.1, 'SPRINKLER HEAD', { anchor: 'end', size: fp * 0.8, fill: '#c0392b' })
+  }
+  /* the building's labels beyond the side view, each at its own height, nudged apart so none overlaps */
+  if (!compact && (bClear || bSprink)) {
+    const labels = []
+    if (bClear) { labels.push({ y: Y((bClear + trussTop) / 2), s: 'ROOF TRUSS', fill: '#6b7280' }); labels.push({ y: Y(bClear), s: 'U/S OF BOTTOM CHORD', fill: '#6b7280' }) }
+    if (bSprink) labels.push({ y: Y(bSprink), s: 'SPRINKLER HEAD', fill: '#c0392b' })
+    labels.sort((a, b) => a.y - b.y)
+    let last = -Infinity
+    for (const l of labels) { const y = Math.max(l.y, last + fp * 1.1); last = y; text(xEnd + fp * 0.6, y + fp * 0.3, l.s, { anchor: 'start', size: fp * 0.8, fill: l.fill }) }
   }
   // floor
   line(X0 - (compact ? 0 : fp * 3), floor, xEnd, floor, { stroke: INK, sw: sw * 1.6 })
@@ -137,7 +149,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     // far left: overall
     const ov = [[topLoad, 'topload', 'TOP OF LOAD'], [t.uprightHeightIn, 'upright', 'TOP OF UPRIGHT']]
     if (bSprink) ov.push([bSprink, 'sprinkler', 'SPRINKLER'])
-    if (bClear) ov.push([bClear, 'building', 'BUILDING'])
+    if (bClear) ov.push([bClear, 'clear', 'CLEAR HEIGHT'])
     ov.sort((a, b) => a[0] - b[0]).forEach(([z, id], i) => dimV(X0 - fp * (4.4 + i * 2.1), 0, z, ftInDash(z), id === 'upright' ? { kind: 'dim', id: 'upright', value: z } : { kind: 'info', id }, Xf(0), -1))
     text(Xf(frontW / 2), floor + fp * 1.6, 'FRONT VIEW', { size: fp * 0.85, fill: '#6b7280' })
   }
@@ -161,7 +173,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     dimV(Xs(sideW) + fp * 1.4, 0, t.uprightHeightIn, ftInDash(t.uprightHeightIn), { kind: 'dim', id: 'upright', value: t.uprightHeightIn }, Xs(sideW), +1)
     text(Xs(sideW / 2), floor + fp * 3.1, pair ? 'SIDE VIEW — BACK TO BACK' : 'SIDE VIEW', { size: fp * 0.85, fill: '#6b7280' })
   }
-  const w = compact ? Xs(sideW) + 6 : Xs(sideW) + fp * 4
+  const w = compact ? Xs(sideW) + 6 : Xs(sideW) + fp * (bClear || bSprink ? 14 : 4)
   return { w, h: floor + mB, scale: s, items, floor, Y, Xf, upW, frontW, bayIn }
 }
 
