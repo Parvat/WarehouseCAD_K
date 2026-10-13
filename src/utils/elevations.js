@@ -351,7 +351,8 @@ export function elevationIssues(objects, T) {
   if (!T) return []
   const used = new Map()
   for (const r of objects.filter(isBeamRack)) for (let s = 0; s < sidesOf(r); s++) r.beams.forEach((_, b) => { const id = typeIdAt(r, b, s, T); if (!used.has(id)) used.set(id, new Set()); used.get(id).add(r.id) })
-  const ftIn = (inches) => { const f = Math.floor(inches / 12), i = Math.round(inches - f * 12); return i ? `${f}' ${i}"` : `${f}'` }
+  // feet always with their inches, as on the drawing (utils/elevationDrawing.js ftInDash): 19'-0", 24'-7"
+  const ftIn = (inches) => { const v = Math.round(inches), f = Math.floor(v / 12), i = v - f * 12; return f ? `${f}'-${i}"` : `${i}"` }
   const out = []
   for (const t of T.types) {
     if (!used.has(t.id)) continue

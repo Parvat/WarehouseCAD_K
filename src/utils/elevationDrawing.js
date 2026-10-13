@@ -13,15 +13,16 @@
 // at its own height (above the bottom chord, within the truss, as a rule). Side view beside it: the frame depth (two frames and
 // the flue for a back-to-back), the upright height, a simple diagonal bracing pattern. Weights stay off the drawing.
 
-import { beamFace, topLoadIssue, SPRINKLER_CLEARANCE_IN } from './elevations'
+import { beamFace, topLoadIssue, topOfLoad, SPRINKLER_CLEARANCE_IN } from './elevations'
 import { positionsPerBeam } from './palletFit'
 
-/** 6'-2" / 26' / 0" — feet and inches as on a rack drawing. */
+/** 6'-2" / 26'-0" / 8" — feet and inches as on a rack drawing: a length of a foot or more always with its inches,
+ *  under a foot in inches. */
 export function ftInDash(inches) {
   const v = Math.round(inches)
   const f = Math.floor(Math.abs(v) / 12), i = Math.abs(v) - f * 12, sign = v < 0 ? '-' : ''
   if (!f) return `${sign}${i}"`
-  return i ? `${sign}${f}'-${i}"` : `${sign}${f}'`
+  return `${sign}${f}'-${i}"`
 }
 /** Parse 6'-2" / 6' 2" / 6.5' / 74 / 74" / 6-2 → inches (NaN when it isn't a length). */
 export function parseFtIn(text) {
@@ -87,7 +88,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const longestElev = Math.max(0, ...L.filter(l => l.beamIn > 0).map(l => tw(ftInDash(l.beamIn), fE)))
   const nOverall = 1 + (bClear ? 2 : 0)
   // the columns, in px from the rack: left — chain, beam face, overall; right — clear openings, the leader, elevations, sprinkler
-  const cChain = fC * 1.5, cFace = cChain + fC * 2.4, cOver0 = cFace + fC * 2.2
+  const cChain = fC * 1.5, cFace = cChain + fC * 0.7, cOver0 = cChain + fC * 4.2
   const mL = compact ? 6 : cOver0 + nOverall * fO * 2.2 + fO * 0.8
   const cOpen = fC * 1.4, cLead = cOpen + fC * 1.2, cElev = cLead + fE * 0.3
   const cSpr = cElev + longestElev + fO * 1.6
@@ -206,18 +207,40 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       const z0 = lv.beamIn, z1 = L[i + 1].beamIn - face
       dimV(Xf(frontW) + cOpen, Y(z0), Y(z1), ftInDash(z1 - z0), { kind: 'dim', id: 'open', k: L[i + 1].k, value: z1 - z0 }, { size: fC, color: DIM_LIGHT, pri: 3, out: 1 })
     })
-    // left: the chain of load + clearance per level (the top level: its load), small and light
+    /* left: what is really there, as one chain from the floor up, small and light — per level the pallet, the ACTUAL gap
+       from its top to the underside of the beam above (red under the clearance), that beam's face (its label beside the
+       chain): pallet + gap + face = the beam spacing; the top level its pallet, then the gaps up to the clear height and
+       the sprinkler heads when the building has them (red: above the clear height, or within the sprinkler clearance) */
+    const xc = X0 - cChain, ext = X0 - fC * 0.4, chain = { from: ext, size: fC, color: DIM_LIGHT, pri: 3, out: -1 }
+    const freeNote = (z, str, k) => text(xc - fC * 0.6, Y(z) + fC * 0.35, str, { anchor: 'end', size: fC, fill: MISFIT_EDGE, weight: 700, pri: 3, tag: 'gap', level: k })
     L.forEach((lv, i) => {
-      const h = (lv.palletHeightIn || 0) + (i + 1 < L.length ? clearance : 0)
-      dimV(X0 - cChain, Y(lv.beamIn), Y(lv.beamIn + h), ftInDash(h), { kind: 'dim', id: 'chain', k: lv.k, value: h }, { from: X0 - fC * 0.4, size: fC, color: DIM_LIGHT, pri: 3, out: -1 })
+      const z0 = lv.beamIn, ph = lv.palletHeightIn || 0
+      if (i + 1 < L.length) {
+        const under = L[i + 1].beamIn - face, gap = under - (z0 + ph)
+        if (ph > 0) dimV(xc, Y(z0), Y(Math.min(z0 + ph, under)), ftInDash(ph), { kind: 'dim', id: 'pallet', k: lv.k, value: ph }, chain)
+        if (gap > 0) dimV(xc, Y(z0 + ph), Y(under), ftInDash(gap), { kind: 'dim', id: 'gap', k: lv.k, value: gap }, { ...chain, color: gap < clearance - 1e-6 ? MISFIT_EDGE : DIM_LIGHT })
+        else freeNote(under, 'gap ' + ftInDash(gap), lv.k)
+        // the beam above's face, on the chain; its label beside it
+        const y0 = Y(under), y1 = Y(L[i + 1].beamIn)
+        line(xc, y0, xc, y1, { stroke: DIM_LIGHT, sw }); line(ext, y1, xc - fC * 0.4, y1, { stroke: DIM_LIGHT, sw: sw * 0.6 })
+        text(X0 - cFace - fC * 1.05, (y0 + y1) / 2 + fC * 0.32, ftInDash(face), { anchor: 'end', size: fC, fill: DIM_LIGHT, pri: 3, role: { kind: 'dim', id: 'face', value: face }, tag: 'face' })
+      } else {
+        const zTop = topOfLoad(t)
+        if (ph > 0) dimV(xc, Y(z0), Y(zTop), ftInDash(ph), { kind: 'dim', id: 'pallet', k: lv.k, value: ph }, chain)
+        // up to the clear height and the sprinkler heads, in the order they come
+        const marks = [bClear ? [bClear, 'clear'] : null, bSprink ? [bSprink, 'sprinkler'] : null].filter(Boolean).sort((a, b) => a[0] - b[0])
+        let from = zTop
+        for (const [h, id] of marks) {
+          const red = id === 'clear' ? h < zTop - 1e-6 : h - zTop < sprinklerClearanceIn - 1e-6
+          if (h > from + 1e-6) { dimV(xc, Y(from), Y(h), ftInDash(h - from), { kind: 'info', id: 'gap-' + id }, { ...chain, color: red ? MISFIT_EDGE : DIM_LIGHT }); from = h }
+          else if (h < zTop) freeNote(h, (id === 'clear' ? 'clear ' : 'sprinkler ') + ftInDash(h - zTop), lv.k)
+        }
+      }
     })
-    // the beam face, at the lowest beam, small and light
-    const low = L.find(l => l.beamIn > 0)
-    if (low) dimV(X0 - cFace, Y(low.beamIn - face), Y(low.beamIn), ftInDash(face), { kind: 'dim', id: 'face', value: face }, { from: X0 - fC * 0.4, size: fC, color: DIM_LIGHT, pri: 3, out: -1 })
     // the outer left, overall heights, medium: the top of the top load, the clear height (the truss's bottom chord), the top of the truss
     const ov = [[topLoad, 'topload']]
     if (bClear) ov.push([bClear, 'clear'], [trussTop, 'truss'])
-    ov.sort((a, b) => a[0] - b[0]).forEach(([z, id], i) => dimV(X0 - cOver0 - i * fO * 2.2, Y(0), Y(z), ftInDash(z), { kind: 'info', id }, { from: X0 - cFace + fC * 0.6, size: fO, pri: 2, out: -1 }))
+    ov.sort((a, b) => a[0] - b[0]).forEach(([z, id], i) => dimV(X0 - cOver0 - i * fO * 2.2, Y(0), Y(z), ftInDash(z), { kind: 'info', id }, { from: X0 - cOver0 + fO * 0.9, size: fO, pri: 2, out: -1 }))
     // the sprinkler head: dimensioned from the floor (overall, medium), the head drawn, labelled with a leader
     if (bSprink) {
       dimV(xSpr, Y(0), Y(bSprink), ftInDash(bSprink), { kind: 'info', id: 'sprinkler' }, { size: fO, pri: 2, out: 1 })

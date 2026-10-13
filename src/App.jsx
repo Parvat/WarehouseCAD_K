@@ -123,8 +123,10 @@ export default function App() {
           {/* the canvas and, docked under it, the elevation editor: the canvas shrinks for it, nothing is covered */}
           <div className="flex flex-col flex-1 min-w-0 min-h-0">
             <Canvas2 />
-            <ElevationPane />
+            <ElevationPane slot="bottom" />
           </div>
+          {/* docked to the right of the canvas instead (the editor's dock switch) */}
+          <ElevationPane slot="right" />
           <RightPanel />
         </div>
         <GeneratePanel />

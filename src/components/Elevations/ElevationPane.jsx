@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { typeById, typeIdAt, beamFace, holePitch, isBeamRack, sprinklerClearance } from '../../utils/elevations'
 import { elevationLayout, lengthsByType, buildingOf, ftInDash, parseFtIn } from '../../utils/elevationDrawing'
-import { useElevEditor, setPane, PANE_MIN, PANE_BAR, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, setField, commitType, paneFontPx } from '../../utils/elevEditor'
+import { useElevEditor, setPane, PANE_MIN, PANE_MIN_W, PANE_BAR, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, setField, commitType, paneFontPx } from '../../utils/elevEditor'
 import { rackDepthUpdate } from '../../utils/rackDepth'
 import { startPainting } from '../../utils/elevPaint'
 
@@ -36,8 +36,10 @@ function Field({ label, value, onCommit, aria }) {
   )
 }
 
-export function ElevationPane() {
-  const { open, height, typeId, beamIn, sel, layout } = useElevEditor()
+/** `slot`: where App mounts it — 'bottom' (under the canvas) or 'right' (beside it); it shows in the slot its dock names. */
+export function ElevationPane({ slot = 'bottom' }) {
+  const { open, height, width, typeId, beamIn, sel, layout } = useElevEditor()
+  const dock = layout === 'side' ? 'right' : 'bottom'
   const objects = useCanvasStore(s => s.objects), T = useCanvasStore(s => s.elevations)
   const selectedIds = useCanvasStore(s => s.selectedIds)
   const t = T ? typeById(T, typeId) || typeById(T, T.defaultId) : null
@@ -64,15 +66,26 @@ export function ElevationPane() {
   const [drag, setDrag] = useState(false)
   const startResize = (e) => {
     e.preventDefault()
-    const y0 = e.clientY, h0 = height, max = () => Math.max(PANE_MIN, window.innerHeight * 0.7)
-    let raf = 0, h = h0
+    const right = dock === 'right', p0 = right ? e.clientX : e.clientY, s0 = right ? width : height
+    const max = () => (right ? Math.max(PANE_MIN_W, window.innerWidth * 0.6) : Math.max(PANE_MIN, window.innerHeight * 0.7)), min = right ? PANE_MIN_W : PANE_MIN
+    let raf = 0, v = s0
     setDrag(true)
-    const move = (ev) => { h = Math.max(PANE_MIN, Math.min(max(), h0 - (ev.clientY - y0))); if (!raf) raf = requestAnimationFrame(() => { raf = 0; useElevEditor.setState({ height: h }) }) }
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (raf) cancelAnimationFrame(raf); setPane({ height: h }); setDrag(false) }
+    const move = (ev) => { v = Math.max(min, Math.min(max(), s0 - ((right ? ev.clientX : ev.clientY) - p0))); if (!raf) raf = requestAnimationFrame(() => { raf = 0; useElevEditor.setState(right ? { width: v } : { height: v }) }) }
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (raf) cancelAnimationFrame(raf); setPane(right ? { width: v } : { height: v }); setDrag(false) }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
   }
+  if (slot !== dock) return null
 
   const title = t ? `${t.name} · ${ftInDash(entry.beamIn)} bay` : 'No elevation types'
+  if (!open && dock === 'right') {
+    return (
+      <div aria-label="Elevation editor" data-pane="collapsed" onClick={() => setPane({ open: true })} title={`Elevation editor — ${title}`}
+        style={{ width: PANE_BAR, flexShrink: 0, borderLeft: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, paddingTop: 8 }}>
+        <button type="button" aria-label="Expand elevation editor" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><ChevronLeft size={15} /></button>
+        <span style={{ ...lab, writingMode: 'vertical-rl' }}>Elevation editor</span>
+      </div>
+    )
+  }
   if (!open) {
     return (
       <div aria-label="Elevation editor" data-pane="collapsed" style={{ ...bar, borderTop: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }} onClick={() => setPane({ open: true })}>
@@ -83,13 +96,20 @@ export function ElevationPane() {
     )
   }
   return (
-    <div aria-label="Elevation editor" data-pane="open" style={{ height, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderTop: '1px solid var(--border)', position: 'relative', minHeight: PANE_MIN }}>
-      {/* the divider: a thin line you can see inside a strip you can hit */}
-      <div role="separator" aria-orientation="horizontal" aria-label="Resize elevation editor" onPointerDown={startResize}
-        style={{ position: 'absolute', left: 0, right: 0, top: -6, height: 12, cursor: 'row-resize', zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ width: 40, height: 3, borderRadius: 2, background: drag ? 'var(--text2)' : 'var(--border)' }} />
-      </div>
-      <div style={bar}>
+    <div aria-label="Elevation editor" data-pane="open" data-dock={dock} style={dock === 'right'
+      ? { width, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderLeft: '1px solid var(--border)', position: 'relative', minWidth: PANE_MIN_W }
+      : { height, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderTop: '1px solid var(--border)', position: 'relative', minHeight: PANE_MIN }}>
+      {/* the divider on the edge facing the canvas: a thin line you can see inside a strip you can hit */}
+      {dock === 'right'
+        ? <div role="separator" aria-orientation="vertical" aria-label="Resize elevation editor" onPointerDown={startResize}
+            style={{ position: 'absolute', top: 0, bottom: 0, left: -6, width: 12, cursor: 'col-resize', zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 3, height: 40, borderRadius: 2, background: drag ? 'var(--text2)' : 'var(--border)' }} />
+          </div>
+        : <div role="separator" aria-orientation="horizontal" aria-label="Resize elevation editor" onPointerDown={startResize}
+            style={{ position: 'absolute', left: 0, right: 0, top: -6, height: 12, cursor: 'row-resize', zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 40, height: 3, borderRadius: 2, background: drag ? 'var(--text2)' : 'var(--border)' }} />
+          </div>}
+      <div style={dock === 'right' ? { ...bar, height: 'auto', minHeight: PANE_BAR, flexWrap: 'wrap', rowGap: 4, padding: '6px 10px', whiteSpace: 'normal' } : bar}>
         <span style={lab}>Elevation</span>
         {T && (
           <select aria-label="Elevation type" value={t ? t.id : ''} title="Choosing a type arms paint mode"
@@ -116,13 +136,13 @@ export function ElevationPane() {
           {sel != null && <button type="button" aria-label="Remove level" title="Remove the selected beam's level (Delete)" onClick={() => { commitType(store, t.id, x => removeLevel(x, sel)); setPane({ sel: null }) }}
             style={{ padding: '2px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid var(--red-bdr, #e8b4ae)', background: 'var(--red-dim, #fdecea)', color: 'var(--red, #c0392b)' }}>Remove level</button>}
         </>}
-        {/* side by side, or stacked (front view on top, side view below) — remembered per browser */}
-        <div role="group" aria-label="Drawing layout" style={{ display: 'flex', gap: 2, padding: 2, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', marginLeft: 'auto' }}>
-          {[['side', 'Side by side'], ['stacked', 'Stacked']].map(([k, label]) => <button key={k} type="button" aria-pressed={layout === k} style={seg(layout === k)} onClick={() => setPane({ layout: k })}>{label}</button>)}
+        {/* where the editor docks, like a browser's developer tools: Side by side (right of the canvas) or Stacked (under it) */}
+        <div role="group" aria-label="Dock" style={{ display: 'flex', gap: 2, padding: 2, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', marginLeft: 'auto' }}>
+          {[['side', 'Side by side', 'Dock to the right of the canvas'], ['stacked', 'Stacked', 'Dock under the canvas']].map(([k, label, tip]) => <button key={k} type="button" title={tip} aria-pressed={layout === k} style={seg(layout === k)} onClick={() => setPane({ layout: k, sel: null })}>{label}</button>)}
         </div>
-        <button type="button" aria-label="Collapse elevation editor" onClick={() => setPane({ open: false })} style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><ChevronDown size={15} /></button>
+        <button type="button" aria-label="Collapse elevation editor" onClick={() => setPane({ open: false })} style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}>{dock === 'right' ? <ChevronRight size={15} /> : <ChevronDown size={15} />}</button>
       </div>
-      {t ? <Drawing t={t} entry={entry} building={building} sel={sel} stacked={layout === 'stacked'} sprClr={sprinklerClearance(T)} /> : <div style={{ padding: 12, fontSize: 12, color: 'var(--text3)' }}>No elevation types yet.</div>}
+      {t ? <Drawing t={t} entry={entry} building={building} sel={sel} stacked={dock === 'right'} sprClr={sprinklerClearance(T)} /> : <div style={{ padding: 12, fontSize: 12, color: 'var(--text3)' }}>No elevation types yet.</div>}
     </div>
   )
 }

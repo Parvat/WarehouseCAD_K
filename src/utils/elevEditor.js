@@ -11,14 +11,16 @@ import { create } from 'zustand'
 import { beamFace, holePitch, editTable, updateType, typeById } from './elevations'
 
 const LS_KEY = 'trace.elevpane.v1'
-const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { open: !!v.open, height: Number.isFinite(v.height) ? v.height : 300, layout: v.layout === 'stacked' ? 'stacked' : 'side' } } catch { return { open: false, height: 300, layout: 'side' } } }
-const save = (s) => { try { localStorage.setItem(LS_KEY, JSON.stringify({ open: s.open, height: s.height, layout: s.layout })) } catch { /* private window */ } }
+const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { open: !!v.open, height: Number.isFinite(v.height) ? v.height : 300, width: Number.isFinite(v.width) ? v.width : 420, layout: v.layout === 'side' ? 'side' : 'stacked' } } catch { return { open: false, height: 300, width: 420, layout: 'stacked' } } }
+const save = (s) => { try { localStorage.setItem(LS_KEY, JSON.stringify({ open: s.open, height: s.height, width: s.width, layout: s.layout })) } catch { /* private window */ } }
 
-/** { typeId, beamIn, open, height, layout ('side' | 'stacked': the side view beside the front view, or under it), sel
- *  (a level index picked on the drawing) } */
+/** { typeId, beamIn, open, layout — where the editor docks, like a browser's developer tools: 'side' (Side by side)
+ *  to the right of the canvas, a tall pane, the front view above the side view; 'stacked' (Stacked) at the bottom, a
+ *  wide pane, the two views next to each other — height (the bottom dock's) and width (the right dock's), each
+ *  remembered, sel (a level index picked on the drawing) } */
 export const useElevEditor = create(() => ({ typeId: null, beamIn: null, sel: null, ...read() }))
 export function setPane(patch) { useElevEditor.setState(patch); save(useElevEditor.getState()) }
-export const PANE_MIN = 140, PANE_BAR = 32
+export const PANE_MIN = 140, PANE_BAR = 32, PANE_MIN_W = 260
 
 /* ── the edits: a type in, a type out (pure) ─────────────────────────────── */
 
@@ -56,12 +58,16 @@ export function setUpright(t, z, { exact = false } = {}) {
 }
 /** A typed dimension (the drawing's role ids) → the type: 'elev' level k's beam top; 'open' the clear opening under
  *  level k's beam (it moves to the lower beam's top + the opening + its face); 'chain' level k's load + clearance
- *  (its pallet height follows; the top level: its load); 'upright' the upright height; 'face' the beam face height. */
+ *  (its pallet height follows; the top level: its load); 'upright' the upright height; 'face' the beam face height;
+ *  'pallet' level k's pallet height; 'gap' the gap over level k's pallet (the beam above moves). */
 export function setDimension(t, id, k, inches) {
   if (!(inches >= 0)) return t
   if (id === 'elev') return moveBeam(t, k, inches, { exact: true })
   if (id === 'upright') return setUpright(t, inches, { exact: true })
   if (id === 'face') return inches > 0 ? { ...t, beamFaceIn: inches } : t
+  // the chain: a pallet height (that level's), a gap (moves the beam above: pallet + gap + face over this beam)
+  if (id === 'pallet') return inches > 0 ? { ...t, levels: t.levels.map((l, j) => (j === k ? { ...l, palletHeightIn: inches } : l)) } : t
+  if (id === 'gap') { const L2 = sorted(t), i2 = L2.findIndex(l => l.k === k); if (i2 < 0 || i2 + 1 >= L2.length) return t; return moveBeam(t, L2[i2 + 1].k, L2[i2].beamIn + (L2[i2].palletHeightIn || 0) + inches + beamFace(t), { exact: true }) }
   const L = sorted(t), i = L.findIndex(l => l.k === k)
   if (id === 'open' && i > 0) return moveBeam(t, k, L[i - 1].beamIn + inches + beamFace(t), { exact: true })
   if (id === 'chain' && i >= 0) {

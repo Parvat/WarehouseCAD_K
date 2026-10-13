@@ -4,6 +4,7 @@ import { Sparkles, X, Loader2 } from 'lucide-react'
 import { generateAndPlaceBatched } from '../../generate/traceGenerate'
 import { useRules } from '../../rules/useRules'
 import { useColumnCheck } from '../../generate/useColumnCheck'
+import { useElevEditor } from '../../utils/elevEditor'
 
 // Trace CAD — "Describe → Generate" Brief.
 // A self-contained floating card. It only CALLS the store (via generateAndPlace);
@@ -133,8 +134,11 @@ export function GeneratePanel() {
     }
   }
 
+  /* over the canvas's top right: past the right panel, and past the elevation editor when it docks on the right */
+  const elev = useElevEditor()
+  const right = 296 + (elev.layout === 'side' ? (elev.open ? elev.width : 32) : 0)
   const box = {
-    position: 'fixed', right: 296, top: 60, zIndex: 40, width: 236,
+    position: 'fixed', right, top: 60, zIndex: 40, width: 236,
     background: 'var(--surface)', border: '1px solid var(--border)',
     borderRadius: R, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
     fontFamily: 'var(--font-ui)', color: 'var(--text)',
@@ -149,7 +153,7 @@ export function GeneratePanel() {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} style={{
-        position: 'fixed', right: 296, top: 60, zIndex: 40,
+        position: 'fixed', right, top: 60, zIndex: 40,
         display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px',
         background: 'var(--accent)', color: '#fff', border: 'none',
         borderRadius: R, cursor: 'pointer', fontSize: 12, fontWeight: 600,
