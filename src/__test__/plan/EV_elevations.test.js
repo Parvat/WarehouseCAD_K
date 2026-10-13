@@ -27,7 +27,7 @@ import { joinRacks } from '../../canvas2/inlineSnap'
 import * as RG from '../../utils/rowGroup'
 import * as E from '../../utils/elevations'
 import * as ED from '../../utils/elevEditor'
-import { elevationLayout, lengthsByType, ftInDash, parseFtIn, standardScale } from '../../utils/elevationDrawing'
+import { elevationLayout, lengthsByType, ftInDash, parseFtIn, archScale } from '../../utils/elevationDrawing'
 import { serializeScene, deserializeScene } from '../../utils/saveLoad'
 import { targetAt, strokeTargets, commitPaint } from '../../utils/elevPaint'
 import { useRowGroup, installRowGroupWatcher, flushRowGroupWatcher, clearGroup, addRowOf } from '../../utils/rowGroupTool'
@@ -358,7 +358,7 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     const pages = buildElevationSheets(o2, { title: 'T', elevations: tb })
     expect(pages.length).toBe(1)
     const svg = pages[0].svg
-    expect(['4 levels · 8\' bay', '4 levels · 9\' bay', 'B · 8\' bay', 'RACK ELEVATIONS', 'SCALE 1:', 'FRONT VIEW', 'SIDE VIEW'].map(x => svg.includes(x))).toEqual([true, true, true, true, true, true, true])
+    expect(['4 levels · 8\' bay', '4 levels · 9\' bay', 'B · 8\' bay', 'RACK ELEVATIONS', 'SCALE: ', '=1\'', 'fill="#a3201b"'].map(x => svg.includes(x))).toEqual([true, true, true, true, true, true, true])
     expect(svg.includes('C · ')).toBe(false)
     expect(/\d lb|#/.test(svg.replace(/fill="#[0-9a-fA-F]+"|stroke="#[0-9a-fA-F]+"/g, ''))).toBe(false)   // no weights on the drawing
   })
@@ -466,26 +466,36 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(m.map(e => [e.beamIn, e.bays, e.pair])).toEqual([[96, 14, true], [108, 2, false]])
   })
 
-  it('EV-drawing: the sample — beams to the top at 6\'-2", 12\'-4", 18\'-6" with a 4" face, 60" pallets, 6" clearance, a 36" top load, an 8\' bay, a 19\' upright, back-to-back 4\' frames with a 1\' flue, the building\'s clear height 24\'-2" to the underside of the roof structure (the truss\'s bottom chord drawn there) and its sprinkler head at 24\'-7" above it: every dimension of the sample, 2 pallets a level; no weights', () => {
+  it('EV-drawing: the sample sheet — beams to the top at 6\'-2", 12\'-4", 18\'-6" (on leaders off the beam ends) with a 4" face, 5\'-10" clear openings, the 5\'-6" load + clearance chain and the 3\' top load, 21\'-6" top of load, the 24\'-2" clear height (the truss\'s bottom chord) and 26\' top of the truss, the sprinkler head at 24\'-7" on its own dimension, labelled; an 8\' bay; back-to-back 4\' frames with a 1\' flue and a 19\' upright; drawn in the sample\'s style; no weights', () => {
     const t = { ...t0(), uprightHeightIn: 228, levels: [0, 74, 148, 222].map((z, k) => ({ beamIn: z, palletHeightIn: k === 3 ? 36 : 60, loadLb: 2500 })) }
     const d = elevationLayout(t, 96, { w: 1100, h: 700 }, { depthIn: 48, pair: true, flueIn: 12, building: { clearHeightIn: 290, sprinklerIn: 295 } })
     const texts = d.items.filter(i => i.t === 'text').map(i => i.s)
-    for (const want of ['8\'', '6\'-2"', '12\'-4"', '18\'-6"', '5\'-10"', '5\'-6"', '3\'', '21\'-6"', '19\'', '24\'-2"', '24\'-7"', 'U/S OF BOTTOM CHORD', '4\'', '1\'', 'ROOF TRUSS', 'SPRINKLER HEAD', 'FRONT VIEW', 'SIDE VIEW — BACK TO BACK']) expect([want, texts.includes(want)]).toEqual([want, true])
-    expect(texts.filter(s => s === '5\'-6"').length).toBe(3)
-    expect(texts.filter(s => s === '5\'-10"').length).toBe(3)
-    expect(d.items.filter(i => i.t === 'rect' && i.fill === '#f3e2c3').length).toBe(8)            // 2 pallets × 4 levels
-    // the bottom chord at the clear height, the sprinkler line above it, the top chord above both
-    const chord = d.items.filter(i => i.t === 'line' && i.stroke === '#6b7280').map(i => i.y1).sort((a, b) => a - b), sprink = d.items.find(i => i.t === 'line' && i.stroke === '#c0392b').y1
-    expect([Math.abs(chord[1] - d.Y(290)) < 0.01, chord[0] < sprink, sprink < chord[1]]).toEqual([true, true, true])
-    // their labels beyond the side view, none overlapping
-    const labs = d.items.filter(i => i.t === 'text' && ['ROOF TRUSS', 'U/S OF BOTTOM CHORD', 'SPRINKLER HEAD'].includes(i.s)).map(i => i.y).sort((a, b) => a - b)
-    expect([labs.length, labs.every((y, k) => !k || y - labs[k - 1] >= 11)]).toEqual([3, true])
-    expect(d.items.filter(i => i.role?.kind === 'beam').length).toBe(3)
-    expect(texts.some(s => /lb|#/.test(s))).toBe(false)
+    for (const want of ['8\'', '6\'-2"', '12\'-4"', '18\'-6"', '5\'-10"', '5\'-6"', '3\'', '4"', '21\'-6"', '24\'-2"', '26\'', '24\'-7"', '19\'', '4\'', '1\'', 'Sprinkler head']) expect([want, texts.includes(want)]).toEqual([want, true])
+    expect([texts.filter(x => x === '5\'-6"').length, texts.filter(x => x === '5\'-10"').length, texts.filter(x => x === '4\'').length]).toEqual([3, 3, 2])
+    for (const gone of ['FRONT VIEW', 'ROOF TRUSS', 'U/S OF BOTTOM CHORD']) expect([gone, texts.some(x => x.startsWith(gone))]).toEqual([gone, false])
+    // the beam elevations read horizontally (on leaders), the vertical dimensions rotated
+    expect(d.items.filter(i => i.t === 'text' && i.role?.id === 'elev').every(i => !i.rot)).toBe(true)
+    expect(d.items.filter(i => i.t === 'text' && i.role?.id === 'open').every(i => i.rot === -90)).toBe(true)
+    // the style: filled arrowheads, dark-red dimensions, red upright outlines, orange beams, blue loads on a pallet base, a floor strip
+    expect(d.items.filter(i => i.t === 'polygon').length).toBeGreaterThan(30)
+    expect(d.items.filter(i => i.t === 'text' && i.role?.kind === 'dim').every(i => i.fill === '#a3201b' && i.halo > 0)).toBe(true)
+    expect(d.items.filter(i => i.role?.kind === 'upright').every(i => i.stroke === '#c8372d' && i.fill === '#fff')).toBe(true)
+    expect(d.items.filter(i => i.role?.kind === 'beam').map(i => i.fill)).toEqual(['#f39c12', '#f39c12', '#f39c12'])
+    expect(d.items.filter(i => i.tag === 'load').length).toBe(8)                                     // 2 pallets × 4 levels
+    expect(d.items.filter(i => i.tag === 'load').every(i => i.stroke === '#2e86de')).toBe(true)
+    expect(d.items.some(i => i.t === 'rect' && i.fill === '#e7dcc3')).toBe(true)
+    // the truss: the bottom chord at the clear height, the sprinkler head above it, under the top chord
+    const chords = d.items.filter(i => i.tag === 'chord'), head = d.items.find(i => i.tag === 'head')
+    expect(chords.map(c => c.chordAt)).toEqual([290, 312])
+    expect([head.cy < d.Y(290), head.cy > d.Y(312)]).toEqual([true, true])
+    expect(texts.some(x => /lb|#/.test(x))).toBe(false)
     expect(d.w).toBeLessThanOrEqual(1100 + 1)
-    // a 9' bay holds 2 pallets a level too; a 12' one 3
-    expect(elevationLayout(t, 144, { w: 1100, h: 700 }).items.filter(i => i.t === 'rect' && i.fill === '#f3e2c3').length).toBe(12)
-    expect(standardScale(25.4 / 37)).toBe(40)
+    // a 12' bay holds 3 pallets a level
+    expect(elevationLayout(t, 144, { w: 1100, h: 700 }).items.filter(i => i.tag === 'load').length).toBe(12)
+    // the scale, architectural as on the sample: the largest that fits
+    expect(archScale(0.53).label).toBe('1/4"=1\'')
+    expect(archScale(0.6).label).toBe('1/4"=1\'')
+    expect(archScale(1.06).label).toBe('1/2"=1\'')
   })
 })
 
@@ -501,6 +511,9 @@ describe('EV — the wiring', () => {
     expect(app).toMatch(/<div className="flex flex-col flex-1 min-w-0 min-h-0">\s*<Canvas2 \/>\s*<ElevationPane \/>\s*<\/div>/)
     const pane = readFileSync(new URL('../../components/Elevations/ElevationPane.jsx', import.meta.url), 'utf8')
     expect(/position: 'fixed'|createPortal/.test(pane)).toBe(false)
+    // the beams and the upright tops are grabbed through strips drawn last, so a label on a beam never takes its drag
+    expect(pane.includes("data-grab=")).toBe(true)
+    expect(pane.includes("onPointerDown={(e) => startDrag(e, i.role)}")).toBe(true)
     ED.setPane({ open: true, height: 333 })
     expect(JSON.parse(localStorage.getItem('trace.elevpane.v1'))).toEqual({ open: true, height: 333 })
     ED.setPane({ open: false })

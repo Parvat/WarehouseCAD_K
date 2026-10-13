@@ -25,7 +25,7 @@
 
 import { levelsResolver, legendCounts } from '../utils/elevations'
 import { bandRects, useElevView } from '../utils/elevationDraw'
-import { elevationLayout, itemSVG, lengthsByType, buildingOf, ftInDash, standardScale } from '../utils/elevationDrawing'
+import { elevationLayout, itemSVG, lengthsByType, buildingOf, ftInDash, archScale } from '../utils/elevationDrawing'
 import { typeIdAt } from '../utils/elevations'
 import { bayLedger } from '../utils/bayLedger'
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
@@ -429,9 +429,9 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
 }
 
 /** The elevation sheets: one elevation per type × beam length in use — "Type A · 8' bay", its colour swatch and
- *  bay count, the front and the side view (utils/elevationDrawing.js, the editor's own drawing), drawn at a standard
- *  scale printed under it — several to an A1 landscape sheet where they fit, "RACK ELEVATIONS" on each. [] when
- *  no type is in use. */
+ *  bay count, the front and the side view (utils/elevationDrawing.js, the editor's own drawing), drawn at an architectural
+ *  scale — "RACK ELEVATIONS" and "SCALE: 1/4\"=1'" under each, as on the sample — several to an A1 landscape sheet
+ *  where they fit. [] when no type is in use. */
 export function buildElevationSheets(objects, { title = 'Untitled Layout', elevations = null } = {}) {
   const T = elevations
   if (!T) return []
@@ -440,25 +440,26 @@ export function buildElevationSheets(objects, { title = 'Untitled Layout', eleva
   const lengths = lengthsByType(objects, T, typeIdAt)
   const cells = used.flatMap(({ type }) => (lengths.get(type.id) || []).map(e => ({ type, e })))
   if (!cells.length) return []
-  const paperW = A1.w, paperH = A1.h, margin = 16, head = 16, cols = Math.min(3, cells.length), rowsN = Math.min(2, Math.ceil(cells.length / cols))
+  const paperW = A1.w, paperH = A1.h, margin = 16, head = 16, cols = 3, rowsN = 2   // a fixed grid: each elevation the same size, however many there are
   const per = cols * rowsN, cellW = (paperW - 2 * margin) / cols, cellH = (paperH - 2 * margin - head) / rowsN
   const pages = []
   for (let p = 0; p * per < cells.length; p++) {
     const parts = cells.slice(p * per, (p + 1) * per).map(({ type, e }, i) => {
       const c = i % cols, r = Math.floor(i / cols), x = margin + c * cellW, y = margin + head + r * cellH
-      const box = { w: cellW - 8, h: cellH - 26 }, opts = { palletWIn: e.palletWIn, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: buildingOf(objects, e.parentId), fontPx: 2.6 }
-      const fit = elevationLayout(type, e.beamIn, box, opts), n = standardScale(fit.scale)
-      const d = elevationLayout(type, e.beamIn, box, { ...opts, scale: 25.4 / n })
+      const fs = Math.max(2.6, cellH / 48)   // text in proportion to the drawing, as on the sample
+      const box = { w: cellW - 8, h: cellH - fs * 7.5 }, opts = { palletWIn: e.palletWIn, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: buildingOf(objects, e.parentId), fontPx: fs }
+      const fit = elevationLayout(type, e.beamIn, box, opts), sc = archScale(fit.scale)
+      const d = elevationLayout(type, e.beamIn, box, { ...opts, scale: sc.mmPerIn })
       const label = `${type.name} · ${ftInDash(e.beamIn)} bay`
       return `<g transform="translate(${x + 4} ${y})">` +
-        `<rect x="0" y="0" width="4" height="4" fill="${esc(type.color)}" stroke="#333" stroke-width="0.2"/>` +
-        `<text x="6" y="3.6" font-size="4.2" font-weight="700" font-family="Arial, sans-serif" fill="#111">${esc(label)}</text>` +
-        `<text x="${box.w}" y="3.6" font-size="3.4" font-family="Arial, sans-serif" text-anchor="end" fill="#444">${e.bays} bay${e.bays === 1 ? '' : 's'}</text>` +
-        `<g transform="translate(0 8)">${d.items.map(itemSVG).join('')}</g>` +
-        `<text x="${box.w / 2}" y="${Math.min(cellH - 4, d.h + 13)}" font-size="3.4" font-family="Arial, sans-serif" text-anchor="middle" fill="#111">SCALE 1:${n}</text></g>`
+        `<rect x="0" y="0" width="${fs * 1.1}" height="${fs * 1.1}" fill="${esc(type.color)}" stroke="#333" stroke-width="0.2"/>` +
+        `<text x="${fs * 1.5}" y="${fs}" font-size="${fs * 1.15}" font-weight="700" font-family="Arial, sans-serif" fill="#111">${esc(label)}</text>` +
+        `<text x="${box.w}" y="${fs}" font-size="${fs * 0.9}" font-family="Arial, sans-serif" text-anchor="end" fill="#444">${e.bays} bay${e.bays === 1 ? '' : 's'}</text>` +
+        `<g transform="translate(0 ${fs * 2})">${d.items.map(itemSVG).join('')}</g>` +
+        `<text x="${d.w / 2}" y="${d.h + fs * 3.4}" font-size="${fs * 1.7}" font-family="Arial, sans-serif" text-anchor="middle" letter-spacing="0.6" fill="#222">RACK ELEVATIONS</text>` +
+        `<text x="${d.w / 2}" y="${d.h + fs * 4.9}" font-size="${fs * 1.05}" font-family="Arial, sans-serif" text-anchor="middle" letter-spacing="0.3" fill="#222">SCALE: ${esc(sc.label)}</text></g>`
     })
-    const header = `<text x="${margin}" y="${margin + 9}" font-size="8" font-weight="700" font-family="Arial, sans-serif" fill="#111">RACK ELEVATIONS</text>` +
-      `<text x="${paperW - margin}" y="${margin + 9}" font-size="4.5" font-family="Arial, sans-serif" text-anchor="end" fill="#444">${esc(title)} · sheet ${p + 2}</text>`
+    const header = `<text x="${paperW - margin}" y="${margin + 9}" font-size="4.5" font-family="Arial, sans-serif" text-anchor="end" fill="#444">${esc(title)} · sheet ${p + 2}</text>`
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${paperW}mm" height="${paperH}mm" viewBox="0 0 ${paperW} ${paperH}"><rect width="${paperW}" height="${paperH}" fill="#fff"/>${header}${parts.join('')}<rect x="2" y="2" width="${paperW - 4}" height="${paperH - 4}" fill="none" stroke="#111" stroke-width="0.4"/></svg>`
     pages.push({ svg, paperW, paperH })
   }

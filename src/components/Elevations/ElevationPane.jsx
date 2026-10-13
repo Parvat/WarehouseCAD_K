@@ -193,14 +193,22 @@ function Drawing({ t, entry, building, sel }) {
     const role = r ? (r.kind + ':' + (r.id ?? '') + ':' + (r.k ?? '')) : undefined
     if (i.t === 'rect') return <rect key={n} data-role={role} x={i.x} y={i.y} width={Math.max(0, i.w)} height={Math.max(0, i.h)} fill={i.fill || 'none'} stroke={i.stroke} strokeWidth={i.sw} opacity={i.opacity} style={{ cursor: i.cursor || (r?.kind === 'upright' ? 'copy' : undefined) }} {...handlers} />
     if (i.t === 'line') return <line key={n} x1={i.x1} y1={i.y1} x2={i.x2} y2={i.y2} stroke={i.stroke} strokeWidth={i.sw} strokeDasharray={i.dash} pointerEvents="none" />
+    if (i.t === 'polygon') return <polygon key={n} points={i.points.map(q => q.join(',')).join(' ')} fill={i.fill} pointerEvents="none" />
+    if (i.t === 'circle') return <circle key={n} cx={i.cx} cy={i.cy} r={i.r} fill={i.fill} stroke={i.stroke} strokeWidth={i.sw} pointerEvents="none" />
     if (i.t === 'poly') return <polyline key={n} points={i.points.map(q => q.join(',')).join(' ')} fill="none" stroke={i.stroke} strokeWidth={i.sw} pointerEvents="none" />
-    if (i.t === 'text') return <text key={n} data-role={role} x={i.x} y={i.y} fontSize={i.size} fontFamily="Arial, sans-serif" textAnchor={i.anchor} fill={i.fill} fontWeight={i.weight} transform={i.rot ? `rotate(${i.rot} ${i.x} ${i.y})` : undefined} style={{ userSelect: 'none', ...(handlers.style || {}) }} onDoubleClick={handlers.onDoubleClick}>{i.s}</text>
+    if (i.t === 'text') return <text key={n} data-role={role} x={i.x} y={i.y} fontSize={i.size} fontFamily="Arial, sans-serif" textAnchor={i.anchor} fill={i.fill} stroke={i.halo ? '#fff' : undefined} strokeWidth={i.halo} paintOrder="stroke" strokeLinejoin="round" fontWeight={i.weight} transform={i.rot ? `rotate(${i.rot} ${i.x} ${i.y})` : undefined} style={{ userSelect: 'none', ...(handlers.style || {}) }} onDoubleClick={handlers.onDoubleClick}>{i.s}</text>
     return null
   }
   return (
     <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" style={{ flex: 1, minHeight: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: '#fff' }}>
       <svg width={box.w} height={box.h} style={{ display: 'block' }} onPointerDown={() => host.current.focus()}>
         {d.items.map(render)}
+        {/* the beams and the upright tops grabbed first: a transparent strip over each, drawn last, so a label lying on a
+            beam at a small scale never takes its drag */}
+        {d.items.filter(i => i.t === 'rect' && (i.role?.kind === 'beam' || i.role?.kind === 'top')).map((i, n) => {
+          const h = Math.max(8, i.h), y = i.y + i.h / 2 - h / 2
+          return <rect key={'grab' + n} data-grab={i.role.kind + ':' + (i.role.k ?? '')} x={i.x} y={y} width={i.w} height={h} fill="transparent" style={{ cursor: 'ns-resize' }} onPointerDown={(e) => startDrag(e, i.role)} />
+        })}
       </svg>
       {editing && (
         <input autoFocus aria-label="Dimension" value={editing.text} onChange={e => setEditing({ ...editing, text: e.target.value })}

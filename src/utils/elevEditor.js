@@ -55,11 +55,12 @@ export function setUpright(t, z, { exact = false } = {}) {
 }
 /** A typed dimension (the drawing's role ids) → the type: 'elev' level k's beam top; 'open' the clear opening under
  *  level k's beam (it moves to the lower beam's top + the opening + its face); 'chain' level k's load + clearance
- *  (its pallet height follows; the top level: its load); 'upright' the upright height. */
+ *  (its pallet height follows; the top level: its load); 'upright' the upright height; 'face' the beam face height. */
 export function setDimension(t, id, k, inches) {
   if (!(inches >= 0)) return t
   if (id === 'elev') return moveBeam(t, k, inches, { exact: true })
   if (id === 'upright') return setUpright(t, inches, { exact: true })
+  if (id === 'face') return inches > 0 ? { ...t, beamFaceIn: inches } : t
   const L = sorted(t), i = L.findIndex(l => l.k === k)
   if (id === 'open' && i > 0) return moveBeam(t, k, L[i - 1].beamIn + inches + beamFace(t), { exact: true })
   if (id === 'chain' && i >= 0) {
