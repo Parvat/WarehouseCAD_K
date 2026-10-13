@@ -10,7 +10,7 @@ import { serializeScene, deserializeScene, downloadScene, pickFile, autoSave, au
 const MAX_HISTORY = 60
 
 function pushHistory(s) {
-  const snap = JSON.stringify({ objects: s.objects, groups: s.groups || [], layers: s.layers })
+  const snap = JSON.stringify({ objects: s.objects, groups: s.groups || [], layers: s.layers, elevations: s.elevations ?? null })
   s.history = [...s.history.slice(0, s.historyIndex+1), snap].slice(-MAX_HISTORY)
   s.historyIndex = s.history.length - 1
   // Auto-save full scene to localStorage on every undoable action
@@ -126,6 +126,16 @@ export const useCanvasStore = create(
     // ─── Objects ────────────────────────────────────────────────────────────
     objects:     [],
     selectedIds: [],
+
+    // ─── Elevation types (utils/elevations.js) ───
+    // { version, defaultId, types } | null — part of the layout: saved, undone and loaded with it
+    elevations:  null,
+    /** One undo step: the types replaced, and optionally the objects with them (racks' levels following). */
+    commitElevations: (elevations, objects) => set((s) => {
+      s.elevations = elevations
+      if (objects) s.objects = objects
+      pushHistory(s)
+    }),
 
     /* BUG 65/68 — which floor plan(s) a Generate click placed, so the NEXT
      * click can remove that building + its own children before placing a
@@ -644,6 +654,7 @@ export const useCanvasStore = create(
         s.objects = snap.objects ?? snap   // backward compat with old object-only snapshots
         s.groups  = snap.groups  ?? s.groups
         if (snap.layers) s.layers = snap.layers
+        if ('elevations' in snap) s.elevations = snap.elevations
         s.selectedIds = []
       }
     }),
@@ -654,6 +665,7 @@ export const useCanvasStore = create(
         s.objects = snap.objects ?? snap
         s.groups  = snap.groups  ?? s.groups
         if (snap.layers) s.layers = snap.layers
+        if ('elevations' in snap) s.elevations = snap.elevations
         s.selectedIds = []
       }
     }),
@@ -776,6 +788,7 @@ export const useCanvasStore = create(
       set((s) => {
         s.objects      = []
         s.groups       = []
+        s.elevations   = null
         s.selectedIds  = []
         s.history      = []
         s.historyIndex = -1

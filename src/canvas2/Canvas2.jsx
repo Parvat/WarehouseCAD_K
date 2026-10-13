@@ -339,7 +339,7 @@ export function Canvas2() {
     const rect = stage.container().getBoundingClientRect()
     const move = (ev) => {
       const st = useCanvasStore.getState()
-      moveFill(screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }), st.objects, st.gridSize)
+      moveFill(screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }), st.objects, st.gridSize, st.elevations)
     }
     const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); commitFill(useCanvasStore) }
     window.addEventListener('mousemove', move)
@@ -436,7 +436,7 @@ export function Canvas2() {
     <div
       id="canvas2-container"
       ref={setHost}
-      className="flex-1 relative overflow-hidden"
+      className="flex-1 relative overflow-hidden min-h-0"
       style={{ background: colors.bg, cursor: effectiveCursor }}
     >
       {/* The primary fit-to-content control. Double-click can do the same

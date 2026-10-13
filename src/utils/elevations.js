@@ -1,10 +1,12 @@
-// elevations.js — Elevations v1: rack elevation TYPES and which bays carry them (ELEVATIONS_PLAN.md).
+// elevations.js — rack elevation TYPES and which bays carry them (ELEVATIONS_PLAN.md).
 //
 // A type: name, colour, upright height, beam levels from the floor up (each to the TOP of its beam; the first may be
 // the floor: beamIn 0), pallet height and load per level, clearance above the pallet, the beam's face height and the
-// upright's hole pitch. Frame depth is not the type's: it is the rack's own drawn depth (rack.depthIn). The layout's types live in ONE object in
-// `objects` — { type: 'elevation_types', version, defaultId, types } — so undo, save / load and the .trace format
-// carry them with the layout (the canvas store itself is protected). That object is never drawn, picked or copied.
+// upright's hole pitch. Frame depth is not the type's: it is the rack's own drawn depth (rack.depthIn).
+//
+// The layout's types — { version, defaultId, types } — are part of the layout: the canvas store's `elevations`,
+// saved, undone and loaded with it (utils/saveLoad.js; a file from before, with the types as an 'elevation_types'
+// object among its objects, is moved there by extractLegacy). Every function here takes the table explicitly.
 //
 // Assignment is layered, overrides stored only where they differ, on each beam rack:
 //   layout default → rack `elevType` → side `elevSides[s]` → bay `elevBays[s][b]`.
@@ -14,7 +16,7 @@
 //
 // `rack.levels` mirrors the rack-level type's level count, so every reader of it keeps working; every count that
 // sees a single bay — the bay ledger, rack capacity, column pick blocks, narrow aisles — reads `levelsAt` instead,
-// the bay-side's own type. With no types table (a layout the keeper hasn't seen, the test fixtures) everything reads
+// the bay-side's own type. With no table (the generator's own layouts, the test fixtures) everything reads
 // `rack.levels`, exactly as before. Pure, except installElevationsKeeper.
 
 export const ELEV_TYPE = 'elevation_types'
@@ -25,7 +27,14 @@ export const ELEV_FIELDS = ['elevType', 'elevSides', 'elevBays']
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 export const isBeamRack = (o) => !!o && BEAM.has(o.type) && Array.isArray(o.beams)
 export const isElevTable = (o) => !!o && o.type === ELEV_TYPE
-export const tableOf = (objects) => (objects || []).find(isElevTable) || null
+/** A file or clipboard from before the types moved to the store: the 'elevation_types' object(s) taken out of
+ *  `objects` → { objects, table } (table null when there was none). */
+export function extractLegacy(objects) {
+  const list = objects || []
+  if (!list.some(isElevTable)) return { objects: list, table: null }
+  const o = list.find(isElevTable)
+  return { objects: list.filter(x => !isElevTable(x)), table: { version: ELEV_VERSION, defaultId: o.defaultId, types: o.types } }
+}
 export const sidesOf = (r) => (r && r.type === 'rack_double_row' ? 2 : 1)
 
 /* ── types ───────────────────────────────────────────────────────────────── */
@@ -74,10 +83,9 @@ export function levelsAt(rack, bay, side, table) {
   const t = table ? typeAt(rack, bay, side, table) : null
   return t ? t.levels.length : rack.levels || 1
 }
-/** `(rack, bay, side) → levels` for a layout, or null when it has no types table (read `rack.levels`). */
-export function levelsResolver(objects) {
-  const T = tableOf(objects)
-  return T ? (r, b, s) => levelsAt(r, b, s, T) : null
+/** `(rack, bay, side) → levels` for a types table, or null without one (read `rack.levels`). */
+export function levelsResolver(table) {
+  return table ? (r, b, s) => levelsAt(r, b, s, table) : null
 }
 /** Every bay-side's type id: [[side 0 per bay], [side 1 per bay]] (one array for a single row). */
 export const typeMap = (rack, table) => Array.from({ length: sidesOf(rack) }, (_, s) => rack.beams.map((_, b) => typeIdAt(rack, b, s, table)))
@@ -108,11 +116,10 @@ export function syncLevels(rack, table) {
   return t && rack.levels !== t.levels.length ? { ...rack, levels: t.levels.length } : rack
 }
 /** Every rack's `levels` mirror brought up to date (same array when nothing changes). */
-export function syncAllLevels(objects) {
-  const T = tableOf(objects)
-  if (!T) return objects
+export function syncAllLevels(objects, table) {
+  if (!table) return objects
   let changed = false
-  const out = objects.map(o => { if (!isBeamRack(o)) return o; const n = syncLevels(o, T); if (n !== o) changed = true; return n })
+  const out = objects.map(o => { if (!isBeamRack(o)) return o; const n = syncLevels(o, table); if (n !== o) changed = true; return n })
   return changed ? out : objects
 }
 
@@ -141,47 +148,42 @@ export const effectiveRef = (rack, b, s) => rack.elevBays?.[s]?.[b] ?? rack.elev
 
 /* ── migration and the keeper ────────────────────────────────────────────── */
 
-/** `objects` with a types table made from the racks' own levels (one type per distinct value, the most common the
- *  default; racks with another value get it as `elevType`). Nothing moves; every count is unchanged. Same array
- *  when there is a table already or no beam rack. */
+/** A types table made from the racks' own levels (one type per distinct value, the most common the default) and
+ *  `objects` with the racks of another value carrying theirs as `elevType` → { objects, table }. Nothing moves;
+ *  every count is unchanged. Null when there is no beam rack. */
 export function migrate(objects) {
-  if (tableOf(objects)) return objects
   const racks = objects.filter(isBeamRack)
-  if (!racks.length) return objects
+  if (!racks.length) return null
   const byLevels = new Map()
   for (const r of racks) { const n = r.levels || 1; byLevels.set(n, (byLevels.get(n) || 0) + 1) }
   const counts = [...byLevels].sort((a, b) => b[1] - a[1] || a[0] - b[0])
   const types = counts.map(([n], i) => makeType({ id: `elev-${n}`, levelsCount: n, color: PALETTE[i % PALETTE.length] }))
-  const table = { id: ELEV_ID, type: ELEV_TYPE, version: ELEV_VERSION, defaultId: types[0].id, types }
-  const out = objects.map(o => (isBeamRack(o) && (o.levels || 1) !== counts[0][0] && o.elevType == null ? { ...o, elevType: `elev-${o.levels || 1}` } : o))
-  return [...out, table]
+  const table = { version: ELEV_VERSION, defaultId: types[0].id, types }
+  return { table, objects: objects.map(o => (isBeamRack(o) && (o.levels || 1) !== counts[0][0] && o.elevType == null ? { ...o, elevType: `elev-${o.levels || 1}` } : o)) }
 }
 
 let seq = 0
 const freshId = (table, base) => { let id; do { id = `${base}-${(++seq).toString(36)}${Date.now().toString(36).slice(-3)}` } while (table.types.some(t => t.id === id)); return id }
 
-/** The layout after an action, made consistent (`prev` = the layout before it):
- *   - a table that went (deleted with Select all, cut) comes back from `prev` while racks remain;
+/** The layout after an action, made consistent → { objects, table } (the same two when nothing changes):
+ *   - an 'elevation_types' object among the objects (an old clipboard pasted) is taken out (adopted when there is
+ *     no table yet);
+ *   - no table while there are beam racks: one made from their levels (a load, the first racks placed) — unless
+ *     `migrate: false`;
  *   - overrides naming a type that no longer exists are dropped (those bays fall back);
- *   - a rack whose `levels` changed while its type didn't (a levels edit, the Row group's levels replay) gets the
- *     type with that many levels — an existing one, or a copy of its type with levels added / removed;
- *   - any other mismatch (a new rack, a piece, a type changed): `levels` follows the type.
- *  `migrate: true` (a load) builds a table when there is none. Same array when nothing changes. */
-export function reconcileElevations(prev, objects, { migrate: doMigrate = false } = {}) {
-  let out = objects
-  if (!tableOf(out)) {
-    const was = tableOf(prev || [])
-    if (was && out.some(isBeamRack)) out = [...out, was]
-    else if (doMigrate) out = migrate(out)
-  }
-  let T = tableOf(out)
-  if (!T) return objects
-  // one table only (a paste of a Select-all copy brings another)
-  if (out.filter(isElevTable).length > 1) { let first = true; out = out.filter(o => !isElevTable(o) || (first && !(first = false))) }
+ *   - a rack whose `levels` changed while its type didn't (`prevObjects`: the layout before — a levels edit, the
+ *     Row group's levels replay) gets the type with that many levels — an existing one, or a copy of its type;
+ *   - any other mismatch (a new rack, a piece, a type changed): `levels` follows the type. */
+export function reconcileElevations({ prevObjects = null, objects, table, migrate: doMigrate = true }) {
+  let out = objects, T = table
+  const legacy = extractLegacy(out)
+  if (legacy.objects !== out) { out = legacy.objects; if (!T) T = legacy.table }
+  if (!T && !doMigrate) return { objects: out, table: T }   // (the Row group's writer: a layout without types stays so)
+  if (!T) { const m = migrate(out); if (!m) return { objects: out, table: T }; out = m.objects; T = m.table }
   const ids = new Set(T.types.map(t => t.id))
   const known = (v) => v == null || v === DEFAULT_REF || ids.has(v)
-  const prevById = new Map((prev || []).filter(isBeamRack).map(o => [o.id, o]))
-  let table = T, changed = out !== objects
+  const prevById = new Map((prevObjects || []).filter(isBeamRack).map(o => [o.id, o]))
+  let tb = T, changed = out !== objects
   out = out.map(o => {
     if (!isBeamRack(o)) return o
     let r = o
@@ -191,40 +193,43 @@ export function reconcileElevations(prev, objects, { migrate: doMigrate = false 
       if (r.elevSides) r.elevSides = r.elevSides.map(v => (known(v) ? v : null))
       if (r.elevBays) r.elevBays = r.elevBays.map(a => a.map(v => (known(v) ? v : null)))
     }
-    const t = typeById(table, rackTypeId(r, table))
+    const t = typeById(tb, rackTypeId(r, tb))
     if (t && (r.levels || 1) !== t.levels.length) {
       const p = prevById.get(r.id)
       const levelsEdit = p && (p.levels || 1) !== (r.levels || 1) && (p.elevType ?? null) === (r.elevType ?? null) && p.type === r.type
       if (levelsEdit) {
         const n = r.levels || 1
-        let m = table.types.find(x => x.levels.length === n)
+        let m = tb.types.find(x => x.levels.length === n)
         if (!m) {
-          m = { ...withLevelCount(t, n), id: freshId(table, 'elev'), name: `${n} levels`, color: PALETTE[table.types.length % PALETTE.length] }
-          table = { ...table, types: [...table.types, m] }
+          m = { ...withLevelCount(t, n), id: freshId(tb, 'elev'), name: `${n} levels`, color: PALETTE[tb.types.length % PALETTE.length] }
+          tb = { ...tb, types: [...tb.types, m] }
           ids.add(m.id)
         }
         r = { ...r, elevType: m.id }
         delete r.elevSides; delete r.elevBays
-        if (m.id === table.defaultId) delete r.elevType
+        if (m.id === tb.defaultId) delete r.elevType
       } else r = { ...r, levels: t.levels.length }
     }
     if (r !== o) changed = true
     return r
   })
-  if (table !== T) out = out.map(o => (isElevTable(o) ? table : o))
-  return changed ? out : objects
+  return { objects: changed ? out : objects, table: tb }
 }
 
+/** The history snapshot the store writes (useCanvasStore pushHistory's shape) — for the writers outside the store
+ *  that fold a change into the current entry. */
+export const snapshotOf = (st, objects = st.objects, elevations = st.elevations) => JSON.stringify({ objects, groups: st.groups || [], layers: st.layers, elevations: elevations ?? null })
+
 /** For a store: after each action (a new history entry following the one seen) the layout is reconciled and the
- *  result written into that SAME entry (one undo step); a load (history reset) is migrated. Undo / redo are left
- *  alone — their snapshots are already consistent. Returns the unsubscribe. */
+ *  result written into that SAME entry (one undo step); a load (history reset) or a layout set without history is
+ *  given its types. Undo / redo are left alone — their snapshots are already consistent. Returns the unsubscribe. */
 export function installElevationsKeeper(store) {
   let lastHistory = store.getState().history, lastIndex = store.getState().historyIndex, busy = false
-  const write = (objects, st) => {
-    const full = { objects }
+  const write = (r, st) => {
+    const full = { objects: r.objects, elevations: r.table }
     if (st.historyIndex >= 0 && st.history.length) {
       const history = st.history.slice(0, st.historyIndex + 1)
-      history[history.length - 1] = JSON.stringify({ objects, groups: st.groups || [], layers: st.layers })
+      history[history.length - 1] = snapshotOf(st, r.objects, r.table)
       full.history = history
       full.historyIndex = history.length - 1
     }
@@ -232,13 +237,16 @@ export function installElevationsKeeper(store) {
     try { store.setState(full) } finally { busy = false }
     lastHistory = store.getState().history; lastIndex = store.getState().historyIndex
   }
-  const first = store.getState(), m = reconcileElevations(null, first.objects, { migrate: true })
-  if (m !== first.objects) write(m, first)
+  const run = (st, prevObjects) => {
+    const r = reconcileElevations({ prevObjects, objects: st.objects, table: st.elevations })
+    if (r.objects !== st.objects || r.table !== st.elevations) write(r, st)
+  }
+  run(store.getState(), null)
   return store.subscribe((st) => {
     if (busy) return
     if (st.history === lastHistory && st.historyIndex === lastIndex) {
-      // a layout loaded or set without history (a file, the fixture): migrate it
-      if (!tableOf(st.objects) && st.objects.some(isBeamRack) && st.historyIndex <= 0) { const n = reconcileElevations(null, st.objects, { migrate: true }); if (n !== st.objects) write(n, st) }
+      // a layout set without history (a load, the fixture): give it its types
+      if ((!st.elevations && st.objects.some(isBeamRack)) || st.objects.some(isElevTable)) run(st, null)
       return
     }
     const prevTop = lastIndex >= 0 && lastHistory ? lastHistory[lastIndex] : undefined
@@ -246,22 +254,22 @@ export function installElevationsKeeper(store) {
     lastHistory = st.history; lastIndex = st.historyIndex
     let prev = null
     if (action) { try { prev = JSON.parse(prevTop).objects } catch { prev = null } }
-    const n = reconcileElevations(prev, st.objects, { migrate: !action })
-    if (n !== st.objects) write(n, st)
+    if (action || !st.elevations || st.objects.some(isElevTable)) run(st, prev)
   })
 }
 
 /* ── the table's own edits (the Elevations panel) ────────────────────────── */
 
-/** `objects` with the table replaced by `fn(table)` (made first if there is none), every rack's levels mirror
- *  following and every override of a type that went dropped. */
-export function editTable(objects, fn) {
-  let objs = tableOf(objects) ? objects : migrate(objects)
-  if (!tableOf(objs)) objs = [...objs, { id: ELEV_ID, type: ELEV_TYPE, version: ELEV_VERSION, defaultId: 'elev-4', types: [makeType({ id: 'elev-4', levelsCount: 4 })] }]
-  const T = tableOf(objs), next = fn(T)
-  if (!next || next === T) return objects
-  const replaced = objs.map(o => (isElevTable(o) ? next : o))
-  return syncAllLevels(reconcileElevations(replaced, replaced))
+/** The table replaced by `fn(table)` (made from the racks' levels first, or a 4-level default, when there is
+ *  none) → { objects, table }: every rack's levels mirror following, every override of a type that went dropped.
+ *  The same two when `fn` changes nothing. */
+export function editTable(objects, table, fn) {
+  let objs = objects, T = table
+  if (!T) { const m = migrate(objects); if (m) { objs = m.objects; T = m.table } else T = { version: ELEV_VERSION, defaultId: 'elev-4', types: [makeType({ id: 'elev-4', levelsCount: 4 })] } }
+  const next = fn(T)
+  if (!next || (next === T && T === table)) return { objects, table }
+  const r = reconcileElevations({ prevObjects: objs, objects: objs, table: next })
+  return { objects: syncAllLevels(r.objects, r.table), table: r.table }
 }
 /** A new type (a copy of `fromId`, or the default) named `name`. */
 export function addType(table, { fromId = null, name = null, id } = {}) {
@@ -304,8 +312,7 @@ export function paintRack(rack, table, { sides = null, bays = null, typeId = nul
 
 /** Bays per type (each side of a back-to-back is one bay — the two sides can carry different types), counting only
  *  the bays `counted` says count (the bay ledger: an overlapped bay once): [{ type, bays }] in table order, used ones. */
-export function legendCounts(objects, counted = null) {
-  const T = tableOf(objects)
+export function legendCounts(objects, T, counted = null) {
   if (!T) return []
   const n = new Map()
   for (const r of objects.filter(isBeamRack)) {
@@ -320,8 +327,7 @@ export function legendCounts(objects, counted = null) {
  *  type's beam face height (the top level: to the top of the upright); the top of the
  *  upright must be under the clear height of the building the type's racks stand in (`clearHeightFt` on the floor
  *  plan; none set: not checked). */
-export function elevationIssues(objects) {
-  const T = tableOf(objects)
+export function elevationIssues(objects, T) {
   if (!T) return []
   const used = new Map()
   for (const r of objects.filter(isBeamRack)) for (let s = 0; s < sidesOf(r); s++) r.beams.forEach((_, b) => { const id = typeIdAt(r, b, s, T); if (!used.has(id)) used.set(id, new Set()); used.get(id).add(r.id) })
@@ -350,16 +356,16 @@ export function elevationIssues(objects) {
 }
 
 /** The frame depths (in, the racks' own) of the racks carrying type `id` somewhere, ascending. */
-export function typeDepths(objects, id) {
-  const T = tableOf(objects), out = new Set()
+export function typeDepths(objects, T, id) {
+  const out = new Set()
   for (const r of objects.filter(isBeamRack)) for (let s = 0; s < sidesOf(r); s++) if (r.beams.some((_, b) => typeIdAt(r, b, s, T) === id)) out.add(r.depthIn ?? 42)
   return [...out].sort((a, b) => a - b)
 }
 
 /** For the BOM: every bay of every beam rack, per side — { rackId, bay, side, typeId, levels (beam heights, in),
  *  uprightHeightIn, beamIn, frameDepthIn (the rack's own depth) }. */
-export function elevationBays(objects) {
-  const T = tableOf(objects), out = []
+export function elevationBays(objects, T) {
+  const out = []
   for (const r of objects.filter(isBeamRack)) for (let s = 0; s < sidesOf(r); s++) r.beams.forEach((beamIn, bay) => {
     const t = typeAt(r, bay, s, T)
     out.push({ rackId: r.id, bay, side: s, typeId: t ? t.id : null, levels: t ? t.levels.map(l => l.beamIn) : Array.from({ length: r.levels || 1 }, (_, k) => k * SPACING_IN), uprightHeightIn: t ? t.uprightHeightIn : null, beamIn, frameDepthIn: r.depthIn ?? null })
@@ -368,8 +374,8 @@ export function elevationBays(objects) {
 }
 /** For the BOM: each rack's upright frames per side — [{ rackId, side, heights: [per upright position] }]; a frame
  *  between two bays of different types takes the taller. */
-export function uprightHeights(objects) {
-  const T = tableOf(objects), out = []
+export function uprightHeights(objects, T) {
+  const out = []
   for (const r of objects.filter(isBeamRack)) for (let s = 0; s < sidesOf(r); s++) {
     const h = r.beams.map((_, b) => typeAt(r, b, s, T)?.uprightHeightIn ?? null)
     out.push({ rackId: r.id, side: s, heights: Array.from({ length: r.beams.length + 1 }, (_, k) => Math.max(h[k - 1] ?? -Infinity, h[k] ?? -Infinity)).map(v => (Number.isFinite(v) ? v : null)) })

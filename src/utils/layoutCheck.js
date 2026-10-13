@@ -97,7 +97,7 @@ const union = (boxes) => {
 
 
 /** Every problem in \`objects\`: { errors: [item], warnings: [item] }. */
-export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 40, pickBothSides = false } = {}) {
+export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 40, pickBothSides = false, elevations = null } = {}) {
   const errors = [], warnings = []
   const racks = objects.filter(isRack)
   const byId = new Map(objects.map(o => [o.id, o]))
@@ -136,7 +136,7 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
 
   // ── the column check ──
   const cols = layoutColumns(objects, gridSize)
-  const res = runColumnCheck(objects, { profile, gridSize, pickBothSides })
+  const res = runColumnCheck(objects, { profile, gridSize, pickBothSides, elevations })
   if (res) {
     // a column in an aisle leaving less than the travel width
     for (const b of res.aisleBlocks) {
@@ -251,7 +251,7 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
   }
   /* elevation types (utils/elevations.js): the top of the upright above the building's clear height; a pallet and
      its clearance that don't fit between two beams — one error per type, every rack carrying it lit */
-  for (const e of elevationIssues(objects)) {
+  for (const e of elevationIssues(objects, elevations)) {
     const boxes = e.ids.map(id => foot.get(id)).filter(Boolean).map(boxOf)
     if (!boxes.length) continue
     errors.push({ severity: 'error', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => shade(b, HL.red)), text: e.text })
@@ -292,7 +292,7 @@ const viewOpts = () => { try { const v = getColumnCheckView(); return { profile:
 /** Run the check on the store's layout now; the panel opens. */
 export function runLayoutCheck(store, opts = {}) {
   const st = store.getState()
-  const result = { ...checkLayout(st.objects, { ...viewOpts(), gridSize: st.gridSize || 40, ...opts }), at: Date.now() }
+  const result = { ...checkLayout(st.objects, { ...viewOpts(), gridSize: st.gridSize || 40, elevations: st.elevations, ...opts }), at: Date.now() }
   useLayoutCheck.setState({ result, open: true, highlight: null })
   return result
 }
@@ -336,7 +336,7 @@ export function refreshLayoutCheck(store, opts = {}) {
   const st = store.getState()
   const prev = useLayoutCheck.getState().result
   if (!prev) return null
-  const now = checkLayout(st.objects, { ...viewOpts(), gridSize: st.gridSize || 40, ...opts })
+  const now = checkLayout(st.objects, { ...viewOpts(), gridSize: st.gridSize || 40, elevations: st.elevations, ...opts })
   const still = new Map([...now.errors, ...now.warnings].map(i => [issueKey(i), i]))
   const keep = (list) => list.filter(i => still.has(issueKey(i))).map(i => still.get(issueKey(i)))
   const result = { errors: keep(prev.errors), warnings: keep(prev.warnings), at: Date.now() }
@@ -377,7 +377,7 @@ export function installLiveRecheck(store, { delay = LIVE_RECHECK_MS } = {}) {
 
 /** Export: with errors, ask first (never block); otherwise export. */
 export function exportWithCheck(store, exportFn, opts = {}) {
-  const result = checkLayout(store.getState().objects, { ...viewOpts(), gridSize: store.getState().gridSize || 40, ...opts })
+  const result = checkLayout(store.getState().objects, { ...viewOpts(), gridSize: store.getState().gridSize || 40, elevations: store.getState().elevations, ...opts })
   if (result.errors.length) {
     useLayoutCheck.setState({ result: { ...result, at: Date.now() }, askExport: { errors: result.errors.length } })
     return false

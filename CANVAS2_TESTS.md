@@ -1907,7 +1907,43 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### EV — Elevations v1 · `EV_elevations.test.js` (32 tests)
+### EV — Elevations v1 + v2 · `EV_elevations.test.js` (46 tests)
+**v2** (ELEVATIONS_PLAN.md §v2). Beam face height per type (4"); levels to the top of the beam; the fit from the top of
+the lower beam to the underside of the next. Frame depth from the rack (read-only). A type change is no hand edit
+(rackingArea sigMatch / shapeKey). The types are the store's `elevations` (approved store diff: snapshot, undo / redo,
+new scene, commitElevations); save / load format 2, an old file's 'elevation_types' object moved there
+(extractLegacy); the five history writers outside the store keep them (snapshotOf); every count takes them as input
+(bayLedger, usableCapacity, runColumnCheck, narrowAisleBlocks, checkLayout, the PDF, the Row group). Right panel: the
+list, colours, a small preview. The editor docked under the canvas (components/Elevations/ElevationPane.jsx): divider
+(height per browser), collapse, linked to the canvas selection, choosing a type arms paint mode; on the drawing
+(utils/elevationDrawing.js, utils/elevEditor.js): drag a beam (hole-pitch snap, live dimension), double-click a dimension
+to type it, click an empty upright to add a level, drag off / select + Delete to remove, drag the upright top; fields
+pallet, clearance, face, pitch; no weights. Beam length per bay: the picker lists the lengths the type's bays use. The
+drawing: front + side, the sample's dimensions (elevations to the top, clear openings, load + clearance chain, top of
+load, top of upright, building and sprinkler with the roof truss; frames, flue, bracing). PDF: sheet 1 the layout +
+legend, then one elevation per type × beam length, several to an A1 sheet, "RACK ELEVATIONS", a standard scale.
+
+New v2 tests: `EV-face` ×2, `EV-depth` ×2, `EV-refit` ×2, `EV-store`, `EV-saveload`, `EV-edit-beam`, `EV-edit-levels`,
+`EV-edit-dims`, `EV-edit-fields`, `EV-lengths`, `EV-drawing` (the sample's every dimension). Changed: every v1 test
+passes the types explicitly; `EV-pdf` checks the elevation sheets; `EV-keeper` checks the store, not an object;
+`EV-check` text (underside of the next beam); `PC-wire` regex (the reconcile wrapper's new call shape).
+
+**Break-its (v2):** snapshot without types: EV-store. Undo keeping the types: EV-store, EV-edit-fields. Old file not
+migrated: EV-saveload. Pair keeper dropping the types: EV-saveload, EV-takeover. Usable ignoring the types:
+EV-positions. No hole-pitch snap: EV-edit-beam. A level added on a beam: EV-edit-levels. Opening without the face:
+EV-edit-dims. Pallet field one level: EV-edit-fields. Length bay counts: EV-lengths. Chain without clearance:
+EV-drawing. One sheet per type: EV-pdf. The Row group writer making a table: RG-levels. Area records with levels:
+EV-refit. Fit without the face: EV-check, EV-face.
+
+**Checked in the app (v2)** (real mouse, V and H): New ×2; Edit elevation → the pane docked, the canvas 962 → 674 px
+(nothing covered); wheel zoom and a bay click still work on the canvas; the bay → the editor shows its type and 8'; a
+Type 3 bay → Type 3; Type 2 chosen in the editor → paint mode; beam dragged 60 → 88 (2" snap, its elevation red while
+dragging), one undo step; double-click its elevation, "12'-6"" → 150; a click on the empty upright → a level at 232; a
+beam clicked + Delete → gone; a beam dragged off the end → gone; the upright top dragged 240 → 274; Pallet 50 → every
+level; Ctrl+Z → 48; divider 320 → 400 (stored), canvas 594; collapse → canvas 962; PDF elevation sheets: "4 levels ·
+8' bay", "Type 3 · 8' bay". The building's 26' clear height and 24'-7" sprinkler drawn with the roof truss.
+
+### EV-v1
 Plan: ELEVATIONS_PLAN.md. Code: utils/elevations.js (types, layered assignment, compression, migration, the keeper,
 checks, legend, BOM data), utils/elevPaint.js (paint mode), utils/elevationDraw.js (colours toggle, bay fills, side
 view), canvas2/ElevationsCanvas.jsx (preview, bar, legend), components/RightPanel/ElevationsPanel.jsx; counts read the

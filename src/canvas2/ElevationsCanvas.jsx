@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Group, Rect } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { usePaint, SCOPES } from '../utils/elevPaint'
-import { tableOf, typeById, legendCounts, sidesOf } from '../utils/elevations'
+import { typeById, legendCounts, sidesOf } from '../utils/elevations'
 import { useElevView, setShowColors } from '../utils/elevationDraw'
 import { bayLedger } from '../utils/bayLedger'
 import { bayRectForIndex } from '../render/bayGeom'
@@ -39,7 +39,7 @@ export function ElevPaintPreview() {
   const objects = useCanvasStore(s => s.objects), gridSize = useCanvasStore(s => s.gridSize) || 40
   const { hover, stroke, typeId, reset } = usePaint()
   const targets = stroke ? stroke.targets : hover
-  const T = tableOf(objects), t = typeById(T, typeId)
+  const T = useCanvasStore(s => s.elevations), t = typeById(T, typeId)
   const bands = useMemo(() => targetBands(objects, targets, gridSize), [objects, targets, gridSize])
   if (!bands.length) return null
   const fill = reset ? 'rgba(255,255,255,0.55)' : t ? t.color : 'rgba(47,123,216,0.3)'
@@ -73,7 +73,7 @@ const swatch = (color) => ({ width: 12, height: 12, borderRadius: 3, background:
 export function ElevPaintBar() {
   const objects = useCanvasStore(s => s.objects)
   const { typeId, scope, reset } = usePaint()
-  const t = typeById(tableOf(objects), typeId)
+  const t = typeById(useCanvasStore(s => s.elevations), typeId)
   const label = { row: 'Row', side: 'Side', bay: 'Bay' }
   return (
     <div style={box} role="toolbar" aria-label="Paint elevation">
@@ -92,10 +92,11 @@ export function ElevPaintBar() {
 export function ElevLegend() {
   const objects = useCanvasStore(s => s.objects), gridSize = useCanvasStore(s => s.gridSize) || 40
   const showColors = useElevView(s => s.showColors)
+  const elevations = useCanvasStore(s => s.elevations)
   const rows = useMemo(() => {
-    const L = bayLedger(objects, gridSize)
-    return legendCounts(objects, (r) => L.racks.get(r.id)?.counted || null)
-  }, [objects, gridSize])
+    const L = bayLedger(objects, gridSize, elevations)
+    return legendCounts(objects, elevations, (r) => L.racks.get(r.id)?.counted || null)
+  }, [objects, gridSize, elevations])
   if (!rows.length) return null
   return (
     <div aria-label="Elevation legend" style={{

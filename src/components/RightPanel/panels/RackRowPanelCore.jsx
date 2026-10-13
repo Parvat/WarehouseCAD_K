@@ -1,3 +1,4 @@
+import { levelsResolver } from '../../../utils/elevations'
 import { deleteBaySelection, oneSidePicked } from '../../../utils/baySides'
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
@@ -266,7 +267,9 @@ export function RackRowPanel({ obj }) {
   const totalFt = totalIn / 12
   /* as counted (utils/bayLedger.js): a bay more than half covered by another rack's bay isn't counted here */
   const ledgerEntry = useBayLedger(objects, gridSize || 40).racks.get(obj.id)
-  const fullCapacity = getRackCapacity(obj)
+  // each bay-side's levels from its elevation type (utils/elevations.js)
+  const elevations = useCanvasStore(s => s.elevations)
+  const fullCapacity = getRackCapacity(obj, undefined, levelsResolver(elevations))
   const capacity = fullCapacity && ledgerEntry && ledgerEntry.uncounted
     ? { ...fullCapacity, total: ledgerEntry.positions, groundTotal: ledgerEntry.positions / levels }
     : fullCapacity

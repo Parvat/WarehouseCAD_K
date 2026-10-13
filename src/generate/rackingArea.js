@@ -177,9 +177,9 @@ function showPattern(objects, box, pattern, area, clean, removed, { gridSize, ne
 
 /** A new racking area from a Fill racking box: the area object and the fill
  *  (its pattern clipped to the box). Null when the box places nothing. */
-export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = nanoid, from = null } = {}) {
+export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = nanoid, from = null, elevations = null } = {}) {
   const id = newId()
-  const plan = planFill(objects, box, settings, { gridSize, newId, from, areaId: id })
+  const plan = planFill(objects, box, settings, { gridSize, newId, from, areaId: id, elevations })
   if (!plan.racks.length) return null
   const anchor = from ? { x: from.x > box.x + box.w / 2 ? 'r' : 'l', y: from.y > box.y + box.h / 2 ? 'b' : 't' } : { x: 'l', y: 't' }
   // the area's box stays inside the building: clipped to its inner walls' extent, and an edge within a
@@ -230,14 +230,14 @@ export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = na
 /** Rebuild area `areaId` with `settings`: a new pattern from them (anchored
  *  where the area's was), shown through the box; hand-edited racks stay
  *  where they are (the pattern goes round them). */
-export function planAreaRebuild(objects, areaId, settings, { gridSize = 40, newId = nanoid } = {}) {
+export function planAreaRebuild(objects, areaId, settings, { gridSize = 40, newId = nanoid, elevations = null } = {}) {
   const area = objects.find(o => o.id === areaId)
   if (!area) return null
   const clean = cleanRacks(objects, area), cleanIds = new Set(clean.map(o => o.id))
   const kept = objects.filter(o => !cleanIds.has(o.id))
   const set = { ...areaSettings(area), ...pickSettings(settings) }
   const box = boxOf(area)
-  const pattern = areaPattern(kept, box, set, { gridSize, from: cornerOf(box, area.anchor), areaId })?.pattern || null
+  const pattern = areaPattern(kept, box, set, { gridSize, from: cornerOf(box, area.anchor), areaId, elevations })?.pattern || null
   const racks = pattern ? showPattern(kept, box, pattern, area, clean, removedBoxes(objects, area), { gridSize, newId }) : []
   const keepPlaced = Object.fromEntries(Object.entries(area.placed || {}).filter(([id]) => !cleanIds.has(id)))
   const next = [...kept, ...racks].map(o => (o.id !== areaId ? o : {

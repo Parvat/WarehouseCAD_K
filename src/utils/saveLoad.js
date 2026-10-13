@@ -1,7 +1,8 @@
 import { exportLayoutToPDF } from '../export/pdfExport'
+import { extractLegacy } from './elevations'
 // ─── Scene serialization / deserialization ────────────────────────────────────
 // Format version — bump when breaking changes are made to the schema
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2      // 2: the elevation types as their own field (`elevations`)
 const LS_KEY = 'warehousecad_autosave'
 
 /** Collect all saveable state from the store snapshot */
@@ -12,6 +13,7 @@ export function serializeScene(s) {
     appName:      'WarehouseCAD',
     // Canvas content
     objects:      s.objects,
+    elevations:   s.elevations ?? null,   // the layout's elevation types (utils/elevations.js)
     groups:       s.groups || [],
     layers:       s.layers,
     activeLayerId: s.activeLayerId,
@@ -45,7 +47,10 @@ export function deserializeScene(json, s) {
   if (!Array.isArray(data.objects))    throw new Error('File missing objects array')
 
   // Canvas content
-  s.objects      = data.objects
+  // the elevation types: their own field; a file from before has them as an object among its objects — moved here
+  const legacy = extractLegacy(data.objects)
+  s.objects      = legacy.objects
+  s.elevations   = data.elevations ?? legacy.table ?? null
   s.groups       = data.groups || []
   s.layers       = data.layers || s.layers
   s.activeLayerId= data.activeLayerId || s.activeLayerId

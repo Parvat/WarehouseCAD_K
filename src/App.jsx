@@ -8,6 +8,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { FloatingToolbar } from './components/LeftPanel/FloatingToolbar'
 import { GeneratePanel } from './components/Generate/GeneratePanel'
 import { Canvas2 } from './canvas2/Canvas2'
+import { ElevationPane } from './components/Elevations/ElevationPane'
 import { ColumnCheckProvider } from './generate/useColumnCheck'
 import { RulesProvider } from './rules/useRules'
 import { Login } from './shell/Login'
@@ -119,7 +120,11 @@ export default function App() {
         <TopBar />
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <FloatingToolbar />
-          <Canvas2 />
+          {/* the canvas and, docked under it, the elevation editor: the canvas shrinks for it, nothing is covered */}
+          <div className="flex flex-col flex-1 min-w-0 min-h-0">
+            <Canvas2 />
+            <ElevationPane />
+          </div>
           <RightPanel />
         </div>
         <GeneratePanel />

@@ -125,3 +125,18 @@ neighbour's height.
 
 Real-mouse check: create two types, paint a row, one side, three bays by drag, reset, undo, toggle colours,
 legend counts.
+
+## v2 (built)
+
+- **A1** beam face height per type (4"); levels to the top of the beam; fit = top of the lower beam to the underside of
+  the next ≥ pallet + clearance. **A2** frame depth from the rack (read-only on the drawing; BOM reads rack depth).
+  **A3** a type change is no hand edit (area records compared without levels; refit reuses racks by shape).
+- **A4** the types are the store's `elevations` (approved diff); save / load format 2, old files migrated; the history
+  writers outside the store keep them; every count takes them as input.
+- **B** right panel: list, colours, preview. The editor docked under the canvas: divider (height per browser),
+  collapse; linked to the canvas selection; choosing a type arms paint mode.
+- **C** on the drawing: drag beams (hole pitch, 2"), double-click a dimension to type it, click an empty upright to add a
+  level, drag off / select + Delete to remove, drag the upright top; fields: pallet, clearance, face, pitch.
+- **D** the drawing: front + side, the sample's dimensions, building clear height + sprinkler with the roof truss.
+- **E** beam length per bay: the picker lists the lengths the type's bays use; level edits apply to the type.
+- **F** PDF: the layout + legend, then one elevation per type × beam length, several per A1 sheet.

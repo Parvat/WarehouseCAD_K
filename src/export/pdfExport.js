@@ -23,8 +23,10 @@
 // entry for why that's a deliberate boundary, not an oversight.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { levelsResolver, tableOf, legendCounts } from '../utils/elevations'
-import { bandRects, sideViewSVG, useElevView } from '../utils/elevationDraw'
+import { levelsResolver, legendCounts } from '../utils/elevations'
+import { bandRects, useElevView } from '../utils/elevationDraw'
+import { elevationLayout, itemSVG, lengthsByType, buildingOf, ftInDash, standardScale } from '../utils/elevationDrawing'
+import { typeIdAt } from '../utils/elevations'
 import { bayLedger } from '../utils/bayLedger'
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
@@ -218,7 +220,7 @@ export function labelsSVG(objects, gridSize, opts) {
     for (const o of objects) if (!byId.has(o.id)) byId.set(o.id, o)
     let res = null
     if (racks.length && columns.length) {
-      res = checkColumns({ racks, columns, profile: opts.profile, gridSize, pickBothSides: opts.pickBothSides, floors: layoutFloors(objects), levelsAt: levelsResolver(objects) })
+      res = checkColumns({ racks, columns, profile: opts.profile, gridSize, pickBothSides: opts.pickBothSides, floors: layoutFloors(objects), levelsAt: levelsResolver(opts.elevations) })
       // a clearance label keeps clear of the aisle width labels drawn above (they have priority)
       const avoid = opts.showAisles ? aisleLabelBoxes(objects, gridSize, opts.labelSize, { profile: warnProfile }) : []
       for (const b of res.aisleBlocks) ops.push(...clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid))
@@ -226,7 +228,7 @@ export function labelsSVG(objects, gridSize, opts) {
       for (const h of res.uprightHits) ops.push(...uprightOps(h, byId.get(h.rackId), gridSize, lz))
     }
     // a face with less than the pick width in front of it (narrowAisles.js): the same X marks, as on screen
-    for (const c of narrowAisleBlocks(objects, { profile: opts.profile, gridSize, already: blockedKeys(res) })) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
+    for (const c of narrowAisleBlocks(objects, { profile: opts.profile, gridSize, already: blockedKeys(res), elevations: opts.elevations })) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
     for (const o of racks) if ((o.type === 'rack_row' || o.type === 'rack_double_row') && Array.isArray(o.beams) && o.beams.length) ops.push(...oversizedOps(o, gridSize, lz))
   }
   return `<g class="labels">${ops.map(labelOpToSVG).join('')}</g>`
@@ -330,7 +332,7 @@ function titleBlockSVG(x, y, u, { title, scaleRatio, date }) {
  *  browser does the (exact, vector) conversion between the two. */
 /* `labels`: overrides for the label layer; by default the canvas's own
    current settings (labelPrefs, the column check's published view). */
-export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled Layout', labels = {}, elevColors = useElevView.getState().showColors } = {}) {
+export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled Layout', labels = {}, elevColors = useElevView.getState().showColors, elevations = null } = {}) {
   const prefs = useLabelPrefs.getState(), view = getColumnCheckView()
   const labelOpts = { showColumnLabels: true, showAisles: true, ...view, ...labels }
   const layerMap = new Map((layers || []).map(l => [l.id, l]))
@@ -396,11 +398,12 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   const date = new Date().toISOString().slice(0, 10)
 
   /* elevation types: bay fills and the legend follow the Show colours toggle */
-  const elevTable = elevColors ? tableOf(objects) : null
+  labelOpts.elevations = elevations
+  const elevTable = elevColors ? elevations : null
   let legend = ''
   if (elevTable) {
-    const L = bayLedger(objects, gridSize)
-    const rows = legendCounts(objects, (r) => L.racks.get(r.id)?.counted || null)
+    const L = bayLedger(objects, gridSize, elevations)
+    const rows = legendCounts(objects, elevations, (r) => L.racks.get(r.id)?.counted || null)
     if (rows.length) { const lg = elevLegendSVG(0, 0, u, rows); legend = `<g transform="translate(${titleX - lg.w - 4 * u} ${titleY + titleH - lg.h})">${lg.svg}</g>` }
   }
 
@@ -425,22 +428,41 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   return { svg, paperW, paperH }
 }
 
-/** The elevations sheet: the side view of every elevation type in use, in a grid on an A1 landscape sheet, with
- *  the project's title. Null when no type is in use. */
-export function buildElevationSheetSVG(objects, { title = 'Untitled Layout' } = {}) {
-  const T = tableOf(objects)
-  const used = T ? legendCounts(objects) : []
-  if (!used.length) return null
-  const paperW = A1.w, paperH = A1.h, margin = 20, cols = Math.min(4, used.length), rowsN = Math.ceil(used.length / cols)
-  const cellW = (paperW - 2 * margin) / cols, cellH = (paperH - 2 * margin - 18) / rowsN
-  const cells = used.map(({ type, bays }, i) => {
-    const c = i % cols, r = Math.floor(i / cols), x = margin + c * cellW, y = margin + 18 + r * cellH
-    const inner = sideViewSVG(type, { width: cellW - 10 }).replace(/^<svg [^>]*viewBox="([^"]+)"[^>]*>/, (m, vb) => `<svg x="${x + 5}" y="${y}" width="${cellW - 10}" height="${cellH - 12}" viewBox="${vb}" preserveAspectRatio="xMidYMin meet">`)
-    return inner + `<text x="${x + 5}" y="${y + cellH - 4}" font-size="4" font-family="Arial, sans-serif" fill="#444">${esc(type.name)} · ${type.levels.length} levels · ${bays} bay${bays === 1 ? '' : 's'}</text>`
-  })
-  const head = `<text x="${margin}" y="${margin + 8}" font-size="8" font-weight="700" font-family="Arial, sans-serif" fill="#111">${esc(title)} — elevations</text>`
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${paperW}mm" height="${paperH}mm" viewBox="0 0 ${paperW} ${paperH}"><rect width="${paperW}" height="${paperH}" fill="#fff"/>${head}${cells.join('')}<rect x="2" y="2" width="${paperW - 4}" height="${paperH - 4}" fill="none" stroke="#111" stroke-width="0.4"/></svg>`
-  return { svg, paperW, paperH }
+/** The elevation sheets: one elevation per type × beam length in use — "Type A · 8' bay", its colour swatch and
+ *  bay count, the front and the side view (utils/elevationDrawing.js, the editor's own drawing), drawn at a standard
+ *  scale printed under it — several to an A1 landscape sheet where they fit, "RACK ELEVATIONS" on each. [] when
+ *  no type is in use. */
+export function buildElevationSheets(objects, { title = 'Untitled Layout', elevations = null } = {}) {
+  const T = elevations
+  if (!T) return []
+  const L = bayLedger(objects, 40, T)
+  const used = legendCounts(objects, T, (r) => L.racks.get(r.id)?.counted || null)
+  const lengths = lengthsByType(objects, T, typeIdAt)
+  const cells = used.flatMap(({ type }) => (lengths.get(type.id) || []).map(e => ({ type, e })))
+  if (!cells.length) return []
+  const paperW = A1.w, paperH = A1.h, margin = 16, head = 16, cols = Math.min(3, cells.length), rowsN = Math.min(2, Math.ceil(cells.length / cols))
+  const per = cols * rowsN, cellW = (paperW - 2 * margin) / cols, cellH = (paperH - 2 * margin - head) / rowsN
+  const pages = []
+  for (let p = 0; p * per < cells.length; p++) {
+    const parts = cells.slice(p * per, (p + 1) * per).map(({ type, e }, i) => {
+      const c = i % cols, r = Math.floor(i / cols), x = margin + c * cellW, y = margin + head + r * cellH
+      const box = { w: cellW - 8, h: cellH - 26 }, opts = { palletWIn: e.palletWIn, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: buildingOf(objects, e.parentId), fontPx: 2.6 }
+      const fit = elevationLayout(type, e.beamIn, box, opts), n = standardScale(fit.scale)
+      const d = elevationLayout(type, e.beamIn, box, { ...opts, scale: 25.4 / n })
+      const label = `${type.name} · ${ftInDash(e.beamIn)} bay`
+      return `<g transform="translate(${x + 4} ${y})">` +
+        `<rect x="0" y="0" width="4" height="4" fill="${esc(type.color)}" stroke="#333" stroke-width="0.2"/>` +
+        `<text x="6" y="3.6" font-size="4.2" font-weight="700" font-family="Arial, sans-serif" fill="#111">${esc(label)}</text>` +
+        `<text x="${box.w}" y="3.6" font-size="3.4" font-family="Arial, sans-serif" text-anchor="end" fill="#444">${e.bays} bay${e.bays === 1 ? '' : 's'}</text>` +
+        `<g transform="translate(0 8)">${d.items.map(itemSVG).join('')}</g>` +
+        `<text x="${box.w / 2}" y="${Math.min(cellH - 4, d.h + 13)}" font-size="3.4" font-family="Arial, sans-serif" text-anchor="middle" fill="#111">SCALE 1:${n}</text></g>`
+    })
+    const header = `<text x="${margin}" y="${margin + 9}" font-size="8" font-weight="700" font-family="Arial, sans-serif" fill="#111">RACK ELEVATIONS</text>` +
+      `<text x="${paperW - margin}" y="${margin + 9}" font-size="4.5" font-family="Arial, sans-serif" text-anchor="end" fill="#444">${esc(title)} · sheet ${p + 2}</text>`
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${paperW}mm" height="${paperH}mm" viewBox="0 0 ${paperW} ${paperH}"><rect width="${paperW}" height="${paperH}" fill="#fff"/>${header}${parts.join('')}<rect x="2" y="2" width="${paperW - 4}" height="${paperH - 4}" fill="none" stroke="#111" stroke-width="0.4"/></svg>`
+    pages.push({ svg, paperW, paperH })
+  }
+  return pages
 }
 
 /** Top-level entry — reads the store itself (headless: no mounted-canvas
@@ -452,9 +474,9 @@ export function exportLayoutToPDF(filename, storeState) {
   const name = filename || 'warehouse-layout'
   const title = name.replace(/\.(wcad|pdf)$/i, '')
 
-  const { svg, paperW, paperH } = buildLayoutSVG(objects, layers, gridSize, { title, labels: { showAisles: storeState.showAisles ?? true } })
+  const { svg, paperW, paperH } = buildLayoutSVG(objects, layers, gridSize, { title, labels: { showAisles: storeState.showAisles ?? true }, elevations: storeState.elevations })
   // a second sheet: every elevation type in use, drawn (utils/elevationDraw.js)
-  const sheet = buildElevationSheetSVG(objects, { title })
+  const sheets = buildElevationSheets(objects, { title, elevations: storeState.elevations })
 
   const html = `<!DOCTYPE html>
 <html>
@@ -485,7 +507,7 @@ export function exportLayoutToPDF(filename, storeState) {
     <button class="btn btn-primary" onclick="window.print()">🖨 Print / Save as PDF</button>
   </div>
   <div class="page">${svg}</div>
-  ${sheet ? `<div class="page" style="page-break-before: always">${sheet.svg}</div>` : ''}
+  ${sheets.map(p => `<div class="page" style="page-break-before: always">${p.svg}</div>`).join('')}
   <script>window.focus()</script>
 </body>
 </html>`

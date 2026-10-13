@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react'
 import { useDragPreview } from '../../canvas2/dragPreview'
 import { bayLedger } from '../../utils/bayLedger'
+import { useCanvasStore } from '../../store/useCanvasStore'
 
 /** The layout's bay ledger (utils/bayLedger.js) for a panel: worked out again only when the racks change
  *  (the ledger caches on their geometry), and held at its last value while a drag is in flight — a live-flue
@@ -8,9 +9,10 @@ import { bayLedger } from '../../utils/bayLedger'
 export function useBayLedger(objects, gridSize = 40) {
   const dragging = useDragPreview(s => s.dragging)
   const held = useRef(null)
+  const elevations = useCanvasStore(s => s.elevations)   // each bay-side's levels from its elevation type
   return useMemo(() => {
     if (dragging && held.current) return held.current
-    held.current = bayLedger(objects, gridSize)
+    held.current = bayLedger(objects, gridSize, elevations)
     return held.current
-  }, [objects, gridSize, dragging])
+  }, [objects, gridSize, dragging, elevations])
 }

@@ -15,7 +15,7 @@ import { rowsOf, rowOfRack, geom, uprightsOf, worldSideOf } from './rowGroup'
 import { faceIndex } from '../generate/faceAisles'
 import { bayHalfAt } from './baySides'
 import { hitTestBay } from '../canvas2/hitTest'
-import { tableOf, paintRack, isBeamRack } from './elevations'
+import { paintRack, isBeamRack } from './elevations'
 
 export const PAINT_TOOL = 'elevation_paint'
 export const SCOPES = ['row', 'side', 'bay']
@@ -72,9 +72,8 @@ export function strokeTargets(objects, scope, start, cur = start, gridSize = 40,
   return out
 }
 
-/** `objects` with `targets` painted with `typeId` (or their overrides removed: `reset`). */
-export function applyPaint(objects, targets, { typeId, reset = false }) {
-  const T = tableOf(objects)
+/** `objects` with `targets` painted with `typeId` (or their overrides removed: `reset`), by the types `T`. */
+export function applyPaint(objects, T, targets, { typeId, reset = false }) {
   if (!T || !targets.size) return objects
   let changed = false
   const out = objects.map(o => {
@@ -89,7 +88,7 @@ export function applyPaint(objects, targets, { typeId, reset = false }) {
 
 /** Write a paint into `store` as ONE history entry. Returns whether anything changed. */
 export function commitPaint(store, targets, opts) {
-  const st = store.getState(), next = applyPaint(st.objects, targets, opts)
+  const st = store.getState(), next = applyPaint(st.objects, st.elevations, targets, opts)
   if (next === st.objects) return false
   const anchor = [...targets.keys()][0]
   store.setState({ objects: next })

@@ -16,6 +16,7 @@
 // costs exactly one generateLayout call either way.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { snapshotOf } from '../utils/elevations'
 import { nanoid } from 'nanoid'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { generatedLayers, layerForType } from '../utils/layers'
@@ -228,7 +229,7 @@ export function pickOrientation(brief, generateLayout, rules = DEFAULT_RULES) {
    objects, groups, layers), so one Ctrl+Z restores it exactly and one Ctrl+Y
    redoes the Generate. The same outside-the-store history write the copy
    watcher uses (utils/rowGroupTool.js). */
-const snapOf = (s) => JSON.stringify({ objects: s.objects, groups: s.groups || [], layers: s.layers })
+const snapOf = (s) => snapshotOf(s)   // the store's snapshot, the elevation types with it (utils/elevations.js)
 const HISTORY_CAP = 60   // the store's MAX_HISTORY
 
 function beginOneStep() {

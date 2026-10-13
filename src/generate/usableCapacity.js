@@ -43,11 +43,11 @@ export function mheProfile(key = 'reach', rules = DEFAULT_RULES) {
 
 /** The column check over a set of objects, or null when there is nothing
  *  to check (no racks or no columns). */
-export function runColumnCheck(objects, { profile = MHE_PROFILES.reach, gridSize = GS, pickBothSides = false } = {}) {
+export function runColumnCheck(objects, { profile = MHE_PROFILES.reach, gridSize = GS, pickBothSides = false, elevations = null } = {}) {
   const racks = objects.filter(isRack)
   const columns = layoutColumns(objects, gridSize)
   if (!racks.length || !columns.length) return null
-  return checkColumns({ racks, columns, profile, gridSize, pickBothSides, floors: layoutFloors(objects), levelsAt: levelsResolver(objects) })
+  return checkColumns({ racks, columns, profile, gridSize, pickBothSides, floors: layoutFloors(objects), levelsAt: levelsResolver(elevations) })
 }
 
 /** usable = gross − in-rack losses − pick-zone losses − narrow-aisle losses (a face with less than the pick width
@@ -55,14 +55,14 @@ export function runColumnCheck(objects, { profile = MHE_PROFILES.reach, gridSize
  *  that already ran the column check pass its result instead of rerunning it; `ledger` likewise the bay
  *  ledger. Gross counts an overlapped bay once (utils/bayLedger.js), so a loss on a bay the ledger leaves
  *  out isn't taken off — the usable figure never goes below what is really there, nor above gross. */
-export function usableCapacity(objects, { profile, gridSize = GS, rules = DEFAULT_RULES, check, ledger } = {}) {
-  const L = ledger || bayLedger(objects, gridSize)
+export function usableCapacity(objects, { profile, gridSize = GS, rules = DEFAULT_RULES, check, ledger, elevations = null } = {}) {
+  const L = ledger || bayLedger(objects, gridSize, elevations)
   const gross = getLayoutCapacity(objects, rules, L).total
-  const res = check !== undefined ? check : runColumnCheck(objects, { profile, gridSize })
+  const res = check !== undefined ? check : runColumnCheck(objects, { profile, gridSize, elevations })
   const counts = (c) => { const e = L.racks.get(c.rackId); return !e || c.bayIndex == null || e.counted[c.bayIndex] !== false }
   const inRackLost = res ? (res.rackConflicts || []).filter(counts).reduce((t, c) => t + (c.positionsLost || 0), 0) : 0
   const pickZoneLost = res ? (res.pickBlocks || []).filter(counts).reduce((t, c) => t + (c.positionsLost || 0), 0) : 0
   const prof = profile || MHE_PROFILES.reach
-  const narrowLost = narrowAisleBlocks(objects, { profile: prof, gridSize, already: blockedKeys(res) }).filter(counts).reduce((t, c) => t + c.positionsLost, 0)
+  const narrowLost = narrowAisleBlocks(objects, { profile: prof, gridSize, already: blockedKeys(res), elevations }).filter(counts).reduce((t, c) => t + c.positionsLost, 0)
   return { gross, usable: gross - inRackLost - pickZoneLost - narrowLost, inRackLost, pickZoneLost, narrowLost }
 }

@@ -43,7 +43,7 @@ import { DEFAULT_RULES } from '../rules/defaults'
 import { nanoid } from 'nanoid'
 import { wallRun } from './wallRun'
 import { WALL_CLEAR_IN } from './wallClear'
-import { tableOf, typeById } from '../utils/elevations'
+import { typeById } from '../utils/elevations'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const EPS = 1e-6
@@ -292,9 +292,9 @@ const PATTERN_MARGIN_FT = 200
  *  `row` / `sec` are the stamps (rowIndex / genSection) a rack there gets.
  *
  *  Returns { pattern, rects, fp }, or null when the box holds no row. */
-export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, from = null, areaId = null } = {}) {
+export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, from = null, areaId = null, elevations = null } = {}) {
   // a fill's racks carry the layout's default elevation type: its level count (utils/elevations.js)
-  const elevDefault = typeById(tableOf(objects), tableOf(objects)?.defaultId)
+  const elevDefault = typeById(elevations, elevations?.defaultId)
   if (elevDefault) settings = { ...settings, levels: elevDefault.levels.length }
   const P = fillParams(settings, rules)
   const { set, aisleFt, travelFt, crossAisleFt, beamIn, depthIn, upIn, flueIn } = P
@@ -732,8 +732,8 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
  *  (patternFill). The racks and aisles (world px, stamped, parented to the
  *  building), how many rows and pallet positions, the rectangles of the
  *  region, and the pattern. */
-export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, newId = nanoid, from = null, areaId = null, report = null } = {}) {
-  const made = areaPattern(objects, boxPx, settings, { gridSize, rules, from, areaId })
+export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, newId = nanoid, from = null, areaId = null, report = null, elevations = null } = {}) {
+  const made = areaPattern(objects, boxPx, settings, { gridSize, rules, from, areaId, elevations })
   if (!made) return { fp: null, racks: [], aisles: [], rows: 0, positions: 0, rects: [], pattern: null }
   const plan = patternFill(objects, boxPx, made.pattern, { gridSize, newId, areaId, fp: made.fp, report })
   return { ...plan, rects: made.rects, pattern: made.pattern }

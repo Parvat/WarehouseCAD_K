@@ -109,7 +109,7 @@ export function requestAreaRebuild(store, areaId, settings, { gridSize } = {}) {
   if (!area) return false
   const gs = gridSize || st.gridSize || 40
   const run = () => {
-    const next = planAreaRebuild(store.getState().objects, areaId, settings, { gridSize: gs, newId: nanoid })
+    const next = planAreaRebuild(store.getState().objects, areaId, settings, { gridSize: gs, newId: nanoid, elevations: store.getState().elevations })
     if (next) commitAll(store, next, areaId)
   }
   return askOr(areaEdits(st.objects, area).count ? EDIT_WARNING : null, run)

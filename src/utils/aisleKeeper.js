@@ -11,6 +11,7 @@
 // rebuild before they commit, so their own snapshots are already right.
 // Moving racks (a drag) doesn't trigger it until the move is committed.
 
+import { snapshotOf } from './elevations'
 import { rebuildAisles } from './aisleRebuild'
 import { autoSave, serializeScene } from './saveLoad'
 
@@ -43,7 +44,7 @@ export function installAisleKeeper(store, newId) {
     const patch = { objects: r.objects }
     if (action) {
       const history = st.history.slice(0, st.historyIndex + 1)
-      history[history.length - 1] = JSON.stringify({ objects: r.objects, groups: st.groups || [], layers: st.layers })
+      history[history.length - 1] = snapshotOf(st, r.objects)   // the elevation types kept (utils/elevations.js)
       patch.history = history
     }
     busy = true

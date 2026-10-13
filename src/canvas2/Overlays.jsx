@@ -93,14 +93,15 @@ function OverlaysView({
   const shifted = useMemo(() => previewObjects(objects, { ids, dx, dy }), [objects, ids, dx, dy])
   const pObjects = rigid ? objects : shifted
   const byId = useMemo(() => firstById(pObjects), [pObjects])
+  const elevations = useCanvasStore(s => s.elevations)
   /* The X marks: a column's (in the rack, in a pick zone) and a face with less than the pick width in front of it
      (narrowAisles.js — a rack-to-rack aisle, or a zone / the wall) — the same mark, the same loss off usable. */
   const xMarks = useMemo(() => {
     const cols = pickBlocks.length ? [...rackConflicts, ...pickBlocks] : rackConflicts
     if (!marksOn) return cols
-    const narrow = narrowAisleBlocks(pObjects, { profile: mhe, gridSize, already: blockedKeys({ rackConflicts, pickBlocks }) })
+    const narrow = narrowAisleBlocks(pObjects, { profile: mhe, gridSize, already: blockedKeys({ rackConflicts, pickBlocks }), elevations })
     return narrow.length ? [...cols, ...narrow] : cols
-  }, [rackConflicts, pickBlocks, pObjects, mhe, gridSize, marksOn])
+  }, [rackConflicts, pickBlocks, pObjects, mhe, gridSize, marksOn, elevations])
   /* The marks sit on their rack (spin(obj)), so moving the rack and moving the
      group are the same drawing. Aisle labels round a measured gap to a label
      and pick label stations by length, so a shifted layout can, at a float

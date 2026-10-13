@@ -5,7 +5,7 @@ import { layoutColumns, layoutFloors } from './usableCapacity'
 import { useRules } from '../rules/useRules'
 import { useDragPreview } from '../canvas2/dragPreview'
 import { setColumnCheckView } from './columnCheckView'
-import { tableOf, levelsAt as elevLevelsAt } from '../utils/elevations'
+import { levelsAt as elevLevelsAt } from '../utils/elevations'
 
 /* ── Column / forklift grid check — the app-side wiring ──────────────────────
    columnCheck.js is the pure brain; this is the only place that calls it.
@@ -111,7 +111,7 @@ export function ColumnCheckProvider({ children }) {
   const floors = useSame(useMemo(() => layoutFloors(objects), [objects]), sameFloors)
   const racks = useSame(useMemo(() => objects.filter(isRack), [objects]), sameRacks)
   // each bay-side's levels from its elevation type (utils/elevations.js) — a new reader only when the types change
-  const elevTable = useMemo(() => tableOf(objects), [objects])
+  const elevTable = useCanvasStore(s => s.elevations)
   const levelsAt = useMemo(() => (elevTable ? (r, b, s) => elevLevelsAt(r, b, s, elevTable) : null), [elevTable])
 
   /* During a drag (dragPreview's `dragging`: a plain or live-flue drag, a

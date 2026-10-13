@@ -92,7 +92,7 @@ function CapacityHero({ objects }) {
      blocked pick zones, each position once) — read off the SAME check result
      the Column Check panel shows, so the two totals always agree. */
   const { result } = useColumnCheck()
-  const { usable } = usableCapacity(objects, { check: result, ledger, gridSize })
+  const { usable } = usableCapacity(objects, { check: result, ledger, gridSize, elevations: useCanvasStore.getState().elevations })
   if (layoutCap.total === 0) return null
 
   const entries = Object.entries(layoutCap.breakdown)
@@ -492,6 +492,17 @@ export function PropertiesPanel() {
                 </div>
               </div>
               <NumField label="Rot" value={obj.rotation||0} onChange={v => up('rotation',v)} onCommit={v => commit('rotation',v)} unit="°" />
+              {/* the sprinkler head height, drawn on the elevations (utils/elevationDrawing.js) */}
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <span style={S.label}>Sprinkler</span>
+                <input type="number" min={0} step={0.5} aria-label="Sprinkler height"
+                  defaultValue={obj.sprinklerFt ?? ''} key={`sp-${obj.id}-${obj.sprinklerFt ?? ''}`} placeholder="not set"
+                  onBlur={e => { const v = parseFloat(e.target.value); const next = !isNaN(v) && v > 0 ? v : undefined; if (next !== obj.sprinklerFt) commit('sprinklerFt', next) }}
+                  onKeyDown={e => { if (e.key==='Enter') e.target.blur() }}
+                  style={S.input}
+                />
+                <span style={{...S.mono10, color:'var(--text3)'}}>ft</span>
+              </div>
               {/* the clear height the elevation types are checked against (Check layout; utils/elevations.js) — none: not checked */}
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <span style={S.label}>Clear ht</span>

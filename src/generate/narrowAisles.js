@@ -22,7 +22,7 @@ import { levelsResolver } from '../utils/elevations'
 const E = 1e-6
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 
-export function narrowAisleBlocks(objects, { profile = MHE_PROFILES.reach, gridSize = 40, already = new Set() } = {}) {
+export function narrowAisleBlocks(objects, { profile = MHE_PROFILES.reach, gridSize = 40, already = new Set(), elevations = null } = {}) {
   if (!profile) return []
   const racks = objects.filter(o => BEAM.has(o.type) && o.width > 0 && o.height > 0 && ((o.rotation || 0) % 90) === 0 && Array.isArray(o.beams))
   if (!racks.length) return []
@@ -46,7 +46,7 @@ export function narrowAisleBlocks(objects, { profile = MHE_PROFILES.reach, gridS
   }
   // faces with a zone or the wall nearest in front
   for (const g of faceObstacleGaps(objects, { gridSize, profile })) for (const bay of g.bays) add(g.rack, bay, g.face, g.level, (g.slots && g.slots[bay]) || [])
-  const out = [], lv = levelsResolver(objects)
+  const out = [], lv = levelsResolver(elevations)   // each face's levels from its elevation type
   for (const { r, bay, face, level, ps } of hit.values()) {
     const positionIndices = [...ps].sort((a, b) => a - b).filter(p => !already.has(r.id + ':' + bay + ':' + face + ':' + p))
     if (!positionIndices.length) continue

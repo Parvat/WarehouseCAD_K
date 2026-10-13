@@ -4,7 +4,6 @@ import { shownIn } from '../utils/layers'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
-import { tableOf } from '../utils/elevations'
 import { useElevView } from '../utils/elevationDraw'
 import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape, RackingAreaShape, ZoneShape } from './shapes'
 
@@ -59,7 +58,7 @@ function SceneView({ listening = false, bind }) {
   const isVisible = useMemo(() => shownIn(layers), [layers])
   /* each bay filled with its elevation type's colour (utils/elevationDraw.js), unless the colours are hidden */
   const showColors = useElevView(s => s.showColors)
-  const elevTable = useMemo(() => tableOf(objects), [objects])
+  const elevTable = useCanvasStore(s => s.elevations)
   const elev = showColors ? elevTable : null
 
   /* Rack ops are derived once per object and carry no zoom, so panning and

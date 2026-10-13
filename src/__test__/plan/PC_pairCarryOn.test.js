@@ -195,7 +195,7 @@ describe.each([['vertical', true], ['horizontal', false]])('PC — %s', (_, vert
     expect(app.indexOf('installPairKeeper(useCanvasStore)')).toBeLessThan(app.indexOf('installRowGroupWatcher(useCanvasStore'))
     const tool = readFileSync('src/utils/rowGroupTool.js', 'utf8')
     // (the id maker passed in: a piece can be cut in two by the takeover)
-    expect(tool).toMatch(/const written = \(objects, plan\) => (reconcileElevations\(objects, )?rebuildAisles\(takeOverCarriedBays\(objects, applyReplay\(objects, plan\), gs\(\), watch\.newId\)\.objects, watch\.newId\)\.objects/)
+    expect(tool).toMatch(/const written = \(objects, plan\) => (reconcileElevations\(\{ prevObjects: objects, objects: )?rebuildAisles\(takeOverCarriedBays\(objects, applyReplay\(objects, plan\), gs\(\), watch\.newId\)\.objects, watch\.newId\)\.objects/)
     expect(tool).toMatch(/finalize: \(a, w\) => takeOverCarriedBays\(a, w, gridSize, newId\)\.objects/)
     void rebuildAisles
   })

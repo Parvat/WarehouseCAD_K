@@ -21,7 +21,7 @@ import { innerOutline } from './floorGeom'
 import { rebuildAisles } from './aisleRebuild'
 import { autoSave, serializeScene } from './saveLoad'
 import { takeOverCarriedBays } from './pairCarryOn'
-import { reconcileElevations } from './elevations'
+import { reconcileElevations, snapshotOf } from './elevations'
 
 /** The Row group tool's id (the store's activeTool), beside Fill racking's. */
 export const ROW_GROUP_TOOL = 'row_group'
@@ -48,7 +48,7 @@ const gs = () => (watch && watch.store.getState().gridSize) || 40
 function contextFor(objects, newId) {
   const gridSize = gs(), poly = {}
   for (const fp of objects.filter(o => FP.has(o.type))) poly[fp.id] = innerOutline(fp, gridSize)
-  return { gridSize, poly, columns: layoutColumns(objects, gridSize), travelFt: 8, newId, finalize: (a, w) => takeOverCarriedBays(a, w, gridSize, newId).objects }
+  return { gridSize, poly, columns: layoutColumns(objects, gridSize), travelFt: 8, newId, elevations: watch ? watch.store.getState().elevations : null, finalize: (a, w) => takeOverCarriedBays(a, w, gridSize, newId).objects }
 }
 
 /* ── the group ── */
@@ -109,11 +109,11 @@ export function groupRowsNow(objects = objectsNow()) {
 /* ── writing ── */
 function sync() { const st = watch.store.getState(); watch.lastObjects = st.objects; watch.lastHistory = st.history; watch.lastIndex = st.historyIndex }
 /** Folded into the current history entry (no new undo step). */
-function writeInPlace(objects) {
-  const st = watch.store.getState(), full = { objects }
+function writeInPlace({ objects, table }) {
+  const st = watch.store.getState(), full = { objects, elevations: table }
   if (st.historyIndex >= 0) {
     const history = st.history.slice(0, st.historyIndex + 1)
-    history[history.length - 1] = JSON.stringify({ objects, groups: st.groups || [], layers: st.layers })
+    history[history.length - 1] = snapshotOf(st, objects, table)
     full.history = history; full.historyIndex = history.length - 1
   }
   watch.busy = true
@@ -123,7 +123,8 @@ function writeInPlace(objects) {
 }
 /** The layout an apply writes: the plan applied, each grown pair taking over its carried-on single's bay
  *  (utils/pairCarryOn.js — the same rule as for a hand edit), the aisles re-paired. */
-const written = (objects, plan) => reconcileElevations(objects, rebuildAisles(takeOverCarriedBays(objects, applyReplay(objects, plan), gs(), watch.newId).objects, watch.newId).objects)   // a replayed levels edit gets its type too (utils/elevations.js)
+/* → { objects, table }: a replayed levels edit gets its type too (utils/elevations.js) */
+const written = (objects, plan) => reconcileElevations({ prevObjects: objects, objects: rebuildAisles(takeOverCarriedBays(objects, applyReplay(objects, plan), gs(), watch.newId).objects, watch.newId).objects, table: watch.store.getState().elevations, migrate: false })
 
 /** The bar's line after an apply: "Applied to 11 rows · 2 with warnings — see Check layout · 1 skipped". */
 const resultLine = (s) => `Applied to ${s.apply} row${s.apply === 1 ? '' : 's'}${s.warned.length ? ` · ${s.warned.length} with warnings — see Check layout` : ''}${s.narrowLost ? ` · ${s.narrowLost} position${s.narrowLost === 1 ? '' : 's'} lost to narrow aisles` : ''}${s.skipped.length ? ` · ${s.skipped.length} skipped` : ''}`
@@ -135,10 +136,10 @@ export function applyPending() {
   const p = useRowGroup.getState().pending
   if (!watch || !p) return false
   const st = watch.store.getState()
-  const objects = written(st.objects, p.plan)
+  const { objects, table } = written(st.objects, p.plan)
   const anchor = p.plan.targets.flatMap(t => [...(t.racks || []), ...(t.addRacks || [])])[0]?.id || objects.find(o => FP.has(o.type))?.id
   watch.skipNext = true
-  watch.store.setState({ objects })
+  watch.store.setState({ objects, elevations: table })
   if (anchor) watch.store.getState().commitObjectUpdate(anchor, {})
   useRowGroup.setState({ pending: null, hover: false, message: resultLine(p.summary), report: reportOf(p.summary) })
   return true
@@ -160,7 +161,7 @@ function settle(before) {
   const keys = st.keys
   sync()
   if (skip || !keys.length || !before) { if (keys.length) useRowGroup.setState({ keys: keys.filter(k => resolveKey(rowsAfter, k)), pending: null }); return }
-  const edit = classifyEdit(before, after, keys, gs())
+  const edit = classifyEdit(before, after, keys, gs(), watch.store.getState().elevations)
   const keep = keys.filter(k => resolveKey(rowsAfter, k))
   if (edit.kind === 'none') { useRowGroup.setState({ keys: keep, pending: null, message: null }); return }
   if (edit.kind === 'multi') { useRowGroup.setState({ keys: keep, pending: null, message: `These ${edit.count} rows were changed in different ways, so the change isn't applied to the others.` }); return }

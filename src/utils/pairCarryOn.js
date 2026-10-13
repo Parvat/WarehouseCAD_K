@@ -21,7 +21,7 @@ import { nanoid } from 'nanoid'
 import { geom, uprightsOf, isRowRack, UP_TOL_FT } from './rowGroup'
 import { splitRackForBayDelete } from './baySplit'
 import { faceIndex } from '../generate/faceAisles'
-import { effectiveRef } from './elevations'
+import { effectiveRef, snapshotOf } from './elevations'
 import { autoSave, serializeScene } from './saveLoad'
 
 const EPS = 1e-6
@@ -103,7 +103,7 @@ export function installPairKeeper(store) {
     const { objects, taken } = takeOverCarriedBays(before, st.objects, st.gridSize || 40)
     if (!taken.length) return
     const history = st.history.slice(0, st.historyIndex + 1)
-    history[history.length - 1] = JSON.stringify({ objects, groups: st.groups || [], layers: st.layers })
+    history[history.length - 1] = snapshotOf(st, objects)
     busy = true
     try { store.setState({ objects, history, historyIndex: history.length - 1 }) } finally { busy = false }
     try { autoSave(serializeScene(store.getState())) } catch { /* storage full or absent */ }

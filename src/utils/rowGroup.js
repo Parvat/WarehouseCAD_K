@@ -42,7 +42,7 @@ import { narrowAisleBlocks } from '../generate/narrowAisles'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { piecesFromStates } from '../generate/faceReach'
 import { faceIndex } from '../generate/faceAisles'
-import { carryElev, withElev, ELEV_FIELDS, tableOf, typeIdAt, typeMap, compressElev, syncLevels, paintRack, sidesOf } from './elevations'
+import { carryElev, withElev, ELEV_FIELDS, typeIdAt, typeMap, compressElev, syncLevels, paintRack, sidesOf } from './elevations'
 
 export const BEAM = new Set(['rack_row', 'rack_double_row'])
 export const UP_TOL_FT = 0.5 / 12                          // uprights line up within ½"
@@ -154,7 +154,8 @@ const onlyLevels = (a, b) => a.levels !== b.levels && without(a, [...UI_KEYS, 'l
  *  Returns { kind: 'none' } | { kind: 'multi', count } | { kind: 'other', why } |
  *  { kind: 'bays'|'side-delete'|'across'|'along'|'delete'|'add'|'levels'|'elev', source, ... } (source = the edited row's key before;
  *  `sources` = every edited row's key when one action changed several group rows the same way). */
-export function classifyEdit(before, after, groupKeys, gridSize = 40) {
+/* `elevations`: the layout's types (the store's) — what an elevation paint is judged by */
+export function classifyEdit(before, after, groupKeys, gridSize = 40, elevations = null) {
   const rowsB = rowsOf(before, gridSize), rowsA = rowsOf(after, gridSize)
   const B = new Map(before.filter(isRowRack).map(o => [o.id, o])), A = new Map(after.filter(isRowRack).map(o => [o.id, o]))
   const changed = new Set()
@@ -163,7 +164,7 @@ export function classifyEdit(before, after, groupKeys, gridSize = 40) {
   // racks of group rows the action touched (a split piece belongs to the row of the rack it came from)
   const keys = groupKeys.map(k => resolveKey(rowsB, k)).filter(Boolean)
   const touched = keys.filter(k => rowsB.get(k).ids.some(id => changed.has(id)) || added.some(o => o.pieceOf && rowsB.get(k).ids.includes(o.pieceOf)))
-  if (touched.length > 1) return sameEditOnAll(before, after, touched, gridSize)
+  if (touched.length > 1) return sameEditOnAll(before, after, touched, gridSize, elevations)
   if (!touched.length) {
     // a new row next to a group row
     const fresh = added.filter(o => !o.pieceOf)
@@ -200,7 +201,7 @@ export function classifyEdit(before, after, groupKeys, gridSize = 40) {
   }
   // an elevation type painted: only the elevation fields (and the levels mirror) changed
   if (one && pairs.some(p => ELEV_FIELDS.some(k => JSON.stringify(p.r[k] ?? null) !== JSON.stringify(p.s[0][k] ?? null))) && pairs.every(p => without(p.r, [...UI_KEYS, ...ELEV_FIELDS, 'levels']) === without(p.s[0], [...UI_KEYS, ...ELEV_FIELDS, 'levels']))) {
-    const e = elevEditOf(pairs, rowsB.get(source).ids.map(id => B.get(id)), tableOf(before), tableOf(after), gridSize)
+    const e = elevEditOf(pairs, rowsB.get(source).ids.map(id => B.get(id)), elevations, elevations, gridSize)
     if (e) return { kind: 'elev', source, ...e }
   }
   // bays of a pair deleted on one side
@@ -313,9 +314,9 @@ function sideDeleteOf(pairs, gridSize) {
 /** One action changed several group rows: if each was changed the same way — the same delta across, the
  *  same levels, all deleted, or bays that replaying the first row's edit on it reproduces exactly — it is
  *  that one edit with every changed row a source; otherwise { kind: 'multi' } (not replayed). */
-function sameEditOnAll(before, after, touched, gridSize) {
+function sameEditOnAll(before, after, touched, gridSize, elevations = null) {
   const multi = { kind: 'multi', count: touched.length }
-  const edits = touched.map(k => classifyEdit(before, after, [k], gridSize))
+  const edits = touched.map(k => classifyEdit(before, after, [k], gridSize, elevations))
   const e0 = edits[0]
   if (!['bays', 'side-delete', 'across', 'along', 'delete', 'levels', 'elev'].includes(e0.kind) || edits.some(e => e.kind !== e0.kind)) return multi
   const same = { ...e0, sources: touched }
@@ -330,7 +331,7 @@ function sameEditOnAll(before, after, touched, gridSize) {
     const was = new Set(rowsB.get(k).ids)
     const nowIds = new Set((rowsA.get(resolveKey(rowsA, k)) || { ids: [] }).ids)
     const mixed = [...after.filter(o => !nowIds.has(o.id)), ...before.filter(o => was.has(o.id))]
-    const t = planReplay(mixed, e0, [touched[0], k], { gridSize, newId: () => 'chk' + Math.random(), warnings: false }).targets.find(x => x.key === resolveKey(rowsOf(mixed, gridSize), k))
+    const t = planReplay(mixed, e0, [touched[0], k], { gridSize, newId: () => 'chk' + Math.random(), warnings: false, elevations }).targets.find(x => x.key === resolveKey(rowsOf(mixed, gridSize), k))
     if (!t || t.status !== 'apply') return multi
     const out = applyReplay(mixed, { targets: [t] }).filter(o => isRowRack(o) && (was.has(o.id) || (o.pieceOf && was.has(o.pieceOf))))
     if (sig(out) !== sig([...nowIds].map(id => after.find(o => o.id === id)))) return multi
@@ -422,7 +423,7 @@ export function planReplay(after, edit, groupKeys, ctx) {
     }
 
     if (edit.kind === 'side-delete') { targets.push(sideDeleteOn(key, mine, edit, { gridSize, newId, byId, tol })); continue }
-    if (edit.kind === 'elev') { targets.push(elevOn(key, mine, edit, { gridSize, tol, table: tableOf(after) })); continue }
+    if (edit.kind === 'elev') { targets.push(elevOn(key, mine, edit, { gridSize, tol, table: ctx.elevations || null })); continue }
 
     if (edit.kind === 'add') {
       const t = edit.template, adds = mine.map(o => {
@@ -492,7 +493,7 @@ export function planReplay(after, edit, groupKeys, ctx) {
     }
     targets.push({ key, status: 'apply', racks: result.filter(r => byId.has(r.id)), addRacks: result.filter(r => !byId.has(r.id)), removeIds })
   }
-  const narrowLost = ctx.warnings !== false ? markWarnings(after, targets, gridSize, ctx.finalize, ctx.profile) : 0
+  const narrowLost = ctx.warnings !== false ? markWarnings(after, targets, gridSize, ctx.finalize, ctx.profile, ctx.elevations || null) : 0
   return { targets, narrowLost }
 }
 
@@ -563,7 +564,7 @@ function elevOn(key, mine, edit, { gridSize, tol, table }) {
 /** Warnings, the way a hand edit gets them: Check layout on the layout as it will be after the WHOLE apply
  *  (every target moved together), against the layout now; what is new and involves a target's racks is
  *  that target's warning. Issues are matched by kind and by the racks' roots (a split piece is its rack). */
-function markWarnings(after, targets, gridSize, finalize, profile) {
+function markWarnings(after, targets, gridSize, finalize, profile, elevations = null) {
   const applying = targets.filter(t => t.status === 'apply' && t.removeIds.length + t.racks.length + t.addRacks.length > 0)
   if (!applying.length) return 0
   // the layout as the apply will write it — `finalize` is what the writer does after (a pair taking over its
@@ -572,7 +573,7 @@ function markWarnings(after, targets, gridSize, finalize, profile) {
   if (finalize) final = finalize(after, final)
   const issues = (objects) => {
     const root = new Map(objects.map(o => [o.id, o.pieceOf || o.id]))
-    const res = checkLayout(objects, { gridSize })
+    const res = checkLayout(objects, { gridSize, elevations })
     return [...res.errors, ...res.warnings].filter(i => WARN_KINDS[i.kind]).map(i => ({ i, k: i.kind + '|' + (i.ids || []).map(id => root.get(id) || id).sort().join(',') }))
   }
   const was = new Set(issues(after).map(x => x.k))
@@ -581,9 +582,9 @@ function markWarnings(after, targets, gridSize, finalize, profile) {
      figure itself (usableCapacity's narrowLost, the layout as the apply writes it against now), and the targets
      whose own racks lose positions there are outlined as warned */
   const prof = profile || getColumnCheckView()?.profile || MHE_PROFILES.reach
-  const narrowLost = Math.max(0, usableCapacity(final, { profile: prof, gridSize }).narrowLost - usableCapacity(after, { profile: prof, gridSize }).narrowLost)
+  const narrowLost = Math.max(0, usableCapacity(final, { profile: prof, gridSize, elevations }).narrowLost - usableCapacity(after, { profile: prof, gridSize, elevations }).narrowLost)
   if (narrowLost) {
-    const byRoot = (objects) => { const root = new Map(objects.map(o => [o.id, o.pieceOf || o.id])), m = new Map(); for (const b of narrowAisleBlocks(objects, { profile: prof, gridSize })) { const k = root.get(b.rackId) || b.rackId; m.set(k, (m.get(k) || 0) + b.positionsLost) } return m }
+    const byRoot = (objects) => { const root = new Map(objects.map(o => [o.id, o.pieceOf || o.id])), m = new Map(); for (const b of narrowAisleBlocks(objects, { profile: prof, gridSize, elevations })) { const k = root.get(b.rackId) || b.rackId; m.set(k, (m.get(k) || 0) + b.positionsLost) } return m }
     const lostNow = byRoot(after), lostThen = byRoot(final)
     for (const t of applying) {
       const ids = new Set([...t.racks.map(r => r.pieceOf || r.id), ...t.addRacks.map(r => r.id)])

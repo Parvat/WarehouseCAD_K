@@ -56,11 +56,11 @@ export const boxOfDrag = (d) => d && ({ x: Math.min(d.from.x, d.to.x), y: Math.m
 export function startFill(world) { useFillTool.setState({ drag: { from: world, to: world }, plan: null, created: null }) }
 
 /** The drag: the box grows; the plan (and its estimate) follows. */
-export function moveFill(world, objects, gridSize = 40) {
+export function moveFill(world, objects, gridSize = 40, elevations = null) {
   const d = useFillTool.getState().drag
   if (!d) return null
   const drag = { ...d, to: world }
-  const created = planAreaCreate(objects, boxOfDrag(drag), rackingSettings(), { gridSize, from: drag.from, newId: nanoid })
+  const created = planAreaCreate(objects, boxOfDrag(drag), rackingSettings(), { gridSize, from: drag.from, newId: nanoid, elevations })
   const plan = created ? created.plan : { racks: [], aisles: [], rows: 0, positions: 0, rects: [] }
   useFillTool.setState({ drag, plan, created })
   return plan
