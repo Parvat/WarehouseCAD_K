@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### EV — Elevations v1 + v2 · `EV_elevations.test.js` (57 tests)
+### EV — Elevations v1 + v2 · `EV_elevations.test.js` (59 tests)
 **v2** (ELEVATIONS_PLAN.md §v2). Beam face height per type (4"); levels to the top of the beam; the fit from the top of
 the lower beam to the underside of the next. Frame depth from the rack (read-only). A type change is no hand edit
 (rackingArea sigMatch / shapeKey). The types are the store's `elevations` (approved store diff: snapshot, undo / redo,
@@ -1994,6 +1994,32 @@ the frames: EV-labels. No side gap between labels: EV-labels (2).
 22'-0" (Simple), beam 2 elevation typed 11'-0" (Detailed); click on the upright adds a level; Delete and drag-off each
 remove one; five undo steps per run; Simple/Detailed and the dock stored; Elevations tab lists the type, Properties tab
 shows the column check.
+
+**The Elevations tab holds everything (v2.3).** The editor left its dock: components/Elevations/ElevationPane.jsx →
+ElevationEditor.jsx, mounted in the tab under the types list (RightPanel/ElevationsPanel.jsx): the beam length and
+Simple / Detailed, the drawing (its gestures unchanged), then the settings in the Properties field style — pallet,
+clearance, beam face, pitch, depth (editable with a rack selected), sprinkler clearance. The small preview, the "Edit
+elevation" button and the Side by side / Stacked dock are gone (App.jsx mounts no pane). The drawing takes the panel's
+width — side by side from 400 px, stacked under that. The tab widens the panel (utils/rightPanel.js: 480 px at first,
+its left edge dragged 360–60% of the window, rAF-coalesced, remembered with the tab in trace.rightpanel.v1); Properties
+keeps 272. GeneratePanel offsets by `panelWidth`. Detailed draws the sprinkler line red, labelled with its height;
+Simple keeps the reference's dashed line. CLEARANCE sits inside the band under the clear-height line (declutter
+`keepIn`), none where there is no room. Frames, beams, uprights, bracing and spacers take `--elev-frame`, the ground and
+base plates `--elev-ink` (all four theme blocks; light greens and greys on obsidian / blueprint); the PDF keeps the
+reference's colours. Declutter keeps labels inside the drawing (a chain label with no room goes; a ranked one may pass
+the edge rather than sit on another label).
+
+New: EV-panel, EV-sprinkler-line, EV-clearance-label. Changed: EV-background (theme tokens), EV-tabs (the store),
+EV-labels (the tab size and the app's type; labels inside the box), EV-wire (no dock; detail stored), EV-remove-wire
+(the file); EV-dock retired.
+
+**Break-its (v2.3):** sprinkler line not red: EV-sprinkler-line. CLEARANCE back on the line: EV-clearance-label. Theme
+colours ignored: EV-background. Panel fixed at 272: EV-panel. Labels not kept in the box: EV-labels.
+
+**Checked in the app (v2.3)** (real mouse): Properties 272 px → Elevations 480; edge dragged → 560, stored; Properties
+272, Elevations 560 again; reload → the tab and its width back. In Simple and Detailed: beam dragged, frame height /
+beam elevation typed, a level added, Delete and drag-off, the pallet field typed — six undo steps each run; Detailed
+draws the red sprinkler line; obsidian draws the frames light green (rgb 93,187,147).
 
 ### EV-v1
 Plan: ELEVATIONS_PLAN.md. Code: utils/elevations.js (types, layered assignment, compression, migration, the keeper,

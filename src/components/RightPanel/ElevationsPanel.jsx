@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Paintbrush, Copy, Trash2, Plus, Star, PanelBottomOpen } from 'lucide-react'
+import { Paintbrush, Copy, Trash2, Plus, Star } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { SectionHeader } from '../shared/SectionHeader'
-import { addType, updateType, removeType, setDefault, legendCounts, typeById, typeIdAt, sprinklerClearance } from '../../utils/elevations'
+import { addType, updateType, removeType, setDefault, legendCounts, typeById } from '../../utils/elevations'
 import { useElevView, setShowColors } from '../../utils/elevationDraw'
-import { elevationLayout, toSVG, lengthsByType } from '../../utils/elevationDrawing'
 import { startPainting, usePaint, PAINT_TOOL } from '../../utils/elevPaint'
 import { useElevEditor, setPane, commitTable } from '../../utils/elevEditor'
 import { bayLedger } from '../../utils/bayLedger'
+import { ElevationEditor } from '../Elevations/ElevationEditor'
 
-/* ── Elevations — the layout's rack elevation types (ELEVATIONS_PLAN.md, v2 §B) ─────────────────────────────
-   The list only: each type's colour (click the swatch to change it), name (double-click to rename), bay count,
-   the default; New, Duplicate, Default, Delete (its bays fall back to the default); Paint arms paint mode; Show
-   colours; a small read-only preview of the selected type. Editing happens in the elevation editor docked under the
-   canvas (components/Elevations/ElevationPane.jsx) — Edit opens it. Every change is one undo step. */
+/* ── Elevations — the right panel's Elevations tab, all of it (ELEVATIONS_PLAN.md, v2 §B) ───────────────────────
+   The types list: each type's colour (click the swatch to change it), name (double-click to rename), bay count, the
+   default; New, Duplicate, Default, Delete (its bays fall back to the default); Paint arms paint mode; Show colours.
+   Then the picked type's drawing and its settings (components/Elevations/ElevationEditor.jsx). Every change is one
+   undo step. */
 
 const S = {
   mono9: { fontSize: 9, fontFamily: 'var(--font-mono)' },
@@ -31,39 +31,18 @@ function Name({ t }) {
     style={{ flex: 1, minWidth: 0, fontSize: 11, padding: '1px 4px', border: '1px solid var(--border)', borderRadius: 2 }} />
 }
 
-function SprinklerClearance({ value }) {
-  const [text, setText] = useState(String(value))
-  useEffect(() => setText(String(value)), [value])
-  const done = () => { const v = Number(text); if (Number.isFinite(v) && v >= 0 && v !== value) commitTable(store, tb => ({ ...tb, sprinklerClearanceIn: v })); else setText(String(value)) }
-  return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }} title="The top of the top load must stay at least this far under the building's sprinkler heads">
-      Sprinkler clearance
-      <input aria-label="Sprinkler clearance" type="number" min={0} value={text} onChange={e => setText(e.target.value)} onBlur={done} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
-        style={{ width: 48, padding: '1px 4px', fontSize: 11, fontFamily: 'var(--font-mono)', border: '1px solid var(--border)', borderRadius: 2 }} />
-      <span style={{ ...S.mono9, color: 'var(--text3)' }}>in</span>
-    </label>
-  )
-}
-
 export function ElevationsPanel() {
   const objects = useCanvasStore(s => s.objects), gridSize = useCanvasStore(s => s.gridSize) || 40
   const T = useCanvasStore(s => s.elevations)
   const activeTool = useCanvasStore(s => s.activeTool)
   const paintType = usePaint(s => s.typeId)
   const showColors = useElevView(s => s.showColors)
-  const { typeId, beamIn, open } = useElevEditor()
+  const { typeId } = useElevEditor()
   const counts = useMemo(() => {
     const L = bayLedger(objects, gridSize, T)
     return new Map(legendCounts(objects, T, (r) => L.racks.get(r.id)?.counted || null).map(x => [x.type.id, x.bays]))
   }, [objects, gridSize, T])
   const selected = T ? typeById(T, typeId) || typeById(T, T.defaultId) || T.types[0] : null
-  const preview = useMemo(() => {
-    if (!selected) return ''
-    const used = lengthsByType(objects, T, typeIdAt).get(selected.id) || []
-    const e = used.find(u => u.beamIn === beamIn) || used[0]
-    return toSVG(elevationLayout(selected, e ? e.beamIn : 96, { w: 240, h: 130 }, { compact: true, depthIn: e?.depthIn ?? 42, pair: !!e?.pair, flueIn: e?.flueIn ?? 9, palletWIn: e?.palletWIn ?? 40, bg: 'var(--surface)' }))
-  }, [selected, objects, T, beamIn])
-
   if (!T) {
     return (
       <SectionHeader title="Elevations" defaultOpen={true}>
@@ -106,16 +85,11 @@ export function ElevationsPanel() {
           <button type="button" aria-label="Set as default" disabled={selected.id === T.defaultId} style={{ ...S.btn, opacity: selected.id === T.defaultId ? 0.5 : 1 }} onClick={() => commitTable(store, tb => setDefault(tb, selected.id))}><Star size={12} /> Default</button>
           <button type="button" aria-label="Delete type" disabled={T.types.length <= 1} title="Delete — its bays go back to the default" style={{ ...S.btn, color: 'var(--red)', opacity: T.types.length <= 1 ? 0.5 : 1 }} onClick={() => { commitTable(store, tb => removeType(tb, selected.id)); setPane({ typeId: null }) }}><Trash2 size={12} /> Delete</button>
         </div>
-        {/* the clearance the top load keeps under the sprinkler heads (Check layout, the drawing) — the layout's setting */}
-        <SprinklerClearance value={sprinklerClearance(T)} />
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer' }}>
           <input type="checkbox" checked={showColors} onChange={e => setShowColors(e.target.checked)} aria-label="Show colours" /> Show colours on the plan and PDF
         </label>
-        <div aria-label="Elevation preview" title={`${selected.name} — edit in the elevation editor`} onClick={() => setPane({ open: true, typeId: selected.id })}
-          style={{ border: '0.5px solid var(--border)', borderRadius: 2, background: 'var(--surface)', lineHeight: 0, cursor: 'pointer' }} dangerouslySetInnerHTML={{ __html: preview }} />
-        <button type="button" style={{ ...S.btn, alignSelf: 'flex-start' }} aria-pressed={open} onClick={() => setPane({ open: !open, typeId: selected.id })}>
-          <PanelBottomOpen size={12} /> {open ? 'Close editor' : 'Edit elevation'}
-        </button>
+        {/* the picked type: its drawing, then its settings */}
+        <div style={{ borderTop: '0.5px solid var(--border)', margin: '4px -13px 0', padding: '10px 13px 0' }}><ElevationEditor /></div>
       </div>
     </SectionHeader>
   )

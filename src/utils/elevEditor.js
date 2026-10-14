@@ -1,27 +1,23 @@
 // elevEditor.js — the elevation editor's state and its edits (Elevations v2 §B–C, §E).
 //
-// The editor is the docked pane under the canvas (components/Elevations/ElevationPane.jsx); the right panel lists the
-// types. Both show the same type (`typeId`) at one beam length (`beamIn` — beam length is per bay, not per type: the
+// The editor is in the right panel's Elevations tab, under the types list (components/Elevations/ElevationEditor.jsx).
+// The list and the drawing show the same type (`typeId`) at one beam length (`beamIn` — beam length is per bay, not per type: the
 // picker lists the lengths that type's bays use; level edits apply to the type, so to every length at once).
 // Linked: a bay or rack selected on the canvas shows its type and beam length; choosing a type in the editor arms paint
 // mode (utils/elevPaint.js). Every drag or typed edit is ONE undo step (the store's commitElevations).
-// The pane's open state and height are presentation state, per browser (localStorage).
+// Simple / Detailed is presentation state, per browser (localStorage); the PDF prints the one chosen.
 
 import { create } from 'zustand'
 import { beamFace, holePitch, editTable, updateType, typeById } from './elevations'
 
 const LS_KEY = 'trace.elevpane.v1'
-const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { open: !!v.open, height: Number.isFinite(v.height) ? v.height : 300, width: Number.isFinite(v.width) ? v.width : 420, layout: v.layout === 'side' ? 'side' : 'stacked', detail: v.detail === 'detailed' ? 'detailed' : 'simple' } } catch { return { open: false, height: 300, width: 420, layout: 'stacked', detail: 'simple' } } }
-const save = (s) => { try { localStorage.setItem(LS_KEY, JSON.stringify({ open: s.open, height: s.height, width: s.width, layout: s.layout, detail: s.detail })) } catch { /* private window */ } }
+const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { detail: v.detail === 'detailed' ? 'detailed' : 'simple' } } catch { return { detail: 'simple' } } }
+const save = (s) => { try { localStorage.setItem(LS_KEY, JSON.stringify({ detail: s.detail })) } catch { /* private window */ } }
 
-/** { typeId, beamIn, open, layout — where the editor docks, like a browser's developer tools: 'side' (Side by side)
- *  to the right of the canvas, a tall pane, the front view above the side view; 'stacked' (Stacked) at the bottom, a
- *  wide pane, the two views next to each other — height (the bottom dock's) and width (the right dock's), each
- *  remembered, detail ('simple' | 'detailed': what the drawing — and the PDF — dimensions), sel (a level index picked on
+/** { typeId, beamIn, detail ('simple' | 'detailed': what the drawing — and the PDF — dimensions), sel (a level index picked on
  *  the drawing) } */
 export const useElevEditor = create(() => ({ typeId: null, beamIn: null, sel: null, ...read() }))
 export function setPane(patch) { useElevEditor.setState(patch); save(useElevEditor.getState()) }
-export const PANE_MIN = 140, PANE_BAR = 32, PANE_MIN_W = 260
 
 /* ── the edits: a type in, a type out (pure) ─────────────────────────────── */
 

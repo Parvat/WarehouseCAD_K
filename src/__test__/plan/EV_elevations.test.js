@@ -27,6 +27,7 @@ import { joinRacks } from '../../canvas2/inlineSnap'
 import * as RG from '../../utils/rowGroup'
 import * as E from '../../utils/elevations'
 import * as ED from '../../utils/elevEditor'
+import * as RP from '../../utils/rightPanel'
 import { elevationLayout, lengthsByType, ftInDash, parseFtIn, archScale, misfitLevels, labelBox, toSVG } from '../../utils/elevationDrawing'
 const itemSVGOf = (d) => toSVG(d)
 import { rackDepthUpdate } from '../../utils/rackDepth'
@@ -535,14 +536,18 @@ describe('EV — the editor (v2 §B–C, E)', () => {
   it('EV-labels: no label on a load, a beam, a frame or another label — Simple and Detailed, side by side and stacked, large and small panes, crowded levels; sizes follow the pane with a readable minimum', () => {
     const t = sampleT()
     const dense = { ...t, uprightHeightIn: 300, levels: [0, 40, 80, 120, 160, 200, 240].map(z => ({ beamIn: z, palletHeightIn: 30, loadLb: 1000 })) }
-    for (const detail of ['simple', 'detailed']) for (const [tt, box, o] of [[t, { w: 1100, h: 420 }, { fontPx: 12 }], [t, { w: 360, h: 640 }, { fontPx: 10, stacked: true }], [t, { w: 520, h: 200 }, { fontPx: 9 }], [t, { w: 820, h: 300 }, { fontPx: 11 }], [dense, { w: 480, h: 190 }, { fontPx: 9 }], [dense, { w: 700, h: 240 }, { fontPx: 10 }]]) {
+    const app = { ...t, uprightHeightIn: 240, levels: [0, 60, 120, 180].map(z => ({ beamIn: z, palletHeightIn: 48, loadLb: 2000 })) }   // the app's 4-level type, at the Elevations tab's size
+    for (const detail of ['simple', 'detailed']) for (const [tt, box, o] of [[t, { w: 1100, h: 420 }, { fontPx: 12 }], [t, { w: 360, h: 640 }, { fontPx: 10, stacked: true }], [t, { w: 520, h: 200 }, { fontPx: 9 }], [t, { w: 820, h: 300 }, { fontPx: 11 }], [dense, { w: 480, h: 190 }, { fontPx: 9 }], [dense, { w: 700, h: 240 }, { fontPx: 10 }], [t, { w: 454, h: 431 }, { fontPx: 9 }], [app, { w: 454, h: 431 }, { fontPx: 9, depthIn: 42, flueIn: 9, building: { clearHeightIn: 290, sprinklerIn: 295 } }]]) {
       const x = elevationLayout(tt, 96, box, { ...sampleO, ...o, detail })
       expect([detail, JSON.stringify(box), clean(x)]).toEqual([detail, JSON.stringify(box), []])
       expect(Math.min(...x.items.filter(i => i.t === 'text').map(i => i.size))).toBeGreaterThanOrEqual(8)
       // the side view's depth and flue dimensions sit under its ground, clear of the building's labels over the frames
       const fy1 = Math.max(...x.items.filter(i => i.tag === 'frame').map(i => i.y + i.h))
-      const depthLabels = x.items.filter(i => i.t === 'text' && !i.rot && i.fill === '#1B4FD8' && (i.s === ftInDash(48) || i.s === ftInDash(12)))
+      const depthLabels = x.items.filter(i => i.t === 'text' && !i.rot && i.fill === '#1B4FD8' && (i.s === ftInDash(o.depthIn ?? 48) || i.s === ftInDash(o.flueIn ?? 12)))
       expect([detail, depthLabels.length, depthLabels.every(i => i.y > fy1)]).toEqual([detail, 3, true])
+      // the chain's labels stay inside the drawing (dropped rather than clipped at its edge)
+      const out = x.items.filter(i => i.t === 'text' && (i.pri ?? 2) >= 3).filter(i => { const b = labelBox(i); return b.x0 < 0 || b.x1 > box.w || b.y0 < 0 || b.y1 > box.h }).map(i => i.s)
+      expect([detail, JSON.stringify(box), out]).toEqual([detail, JSON.stringify(box), []])
       // labels paint over the linework (a dashed building line never strikes through one)
       expect(x.items.findIndex(i => i.t === 'text')).toBeGreaterThan(x.items.map(i => i.t !== 'text').lastIndexOf(true))
     }
@@ -580,13 +585,24 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(clean(d)).toEqual([])
   })
 
-  it('EV-background: the drawing sits on the panel\'s own background in the editor and the panel preview (labels haloed in it), on white paper in the PDF', () => {
-    const pane = readFileSync(new URL('../../components/Elevations/ElevationPane.jsx', import.meta.url), 'utf8')
+  it('EV-background: the drawing sits on the panel\'s own background in the Elevations tab (labels haloed in it, frames and ground in the theme\'s colours), on white paper in the PDF in the reference\'s', () => {
+    const pane = readFileSync(new URL('../../components/Elevations/ElevationEditor.jsx', import.meta.url), 'utf8')
     expect(pane).toMatch(/aria-label="Elevation drawing" style=\{\{[^}]*background: 'var\(--surface\)' \}\}/)
-    expect(pane).toMatch(/bg: 'var\(--surface\)'/)
+    expect(pane).toMatch(/bg: 'var\(--surface\)', frame: 'var\(--elev-frame\)', ink: 'var\(--elev-ink\)'/)
     expect(pane.includes("background: '#fff'")).toBe(false)
     const panel = readFileSync(new URL('../../components/RightPanel/ElevationsPanel.jsx', import.meta.url), 'utf8')
-    expect([panel.includes("bg: 'var(--surface)'"), panel.includes("background: '#fff'")]).toEqual([true, false])
+    expect(panel.includes("background: '#fff'")).toBe(false)
+    // the theme tokens: in every theme block, light frames on the dark panels
+    const css = readFileSync(new URL('../../index.css', import.meta.url), 'utf8')
+    const tok = (th) => { const a = css.indexOf(`[data-theme="${th}"] {`), b = css.indexOf('\n}', a); const m = css.slice(a, b).match(/--elev-frame:(#[0-9A-Fa-f]{6}); --elev-ink:(#[0-9A-Fa-f]{6});/); return m ? [m[1], m[2]] : null }
+    const lum = (h) => { const n = parseInt(h.slice(1), 16); return 0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255) }
+    expect([tok('trace'), tok('studio')]).toEqual([['#123A2E', '#15181C'], ['#123A2E', '#15181C']])
+    for (const th of ['obsidian', 'blueprint']) expect([th, lum(tok(th)[0]) > 120, lum(tok(th)[1]) > 120]).toEqual([th, true, true])
+    // frame / ink: the frames, beams, uprights, bracing and spacers, the ground and base plates; the default the reference's
+    const th = elevationLayout(sampleT(), 96, { w: 900, h: 400 }, { ...sampleO, frame: 'var(--elev-frame)', ink: 'var(--elev-ink)' }).items
+    expect(th.filter(i => ['beam', 'upright', 'frame', 'spacer'].includes(i.tag)).every(i => i.fill === 'var(--elev-frame)')).toBe(true)
+    expect(th.some(i => i.t === 'line' && i.stroke === 'var(--elev-ink)')).toBe(true)
+    expect(JSON.stringify(th).includes('#123A2E') || JSON.stringify(th).includes('#15181C')).toBe(false)
     const d = elevationLayout(sampleT(), 96, { w: 900, h: 400 }, { ...sampleO, bg: 'var(--surface)' })
     expect(d.items.filter(i => i.t === 'text').every(i => i.haloColor === 'var(--surface)')).toBe(true)
     expect(itemSVGOf(d).includes('stroke:var(--surface)')).toBe(true)
@@ -599,7 +615,39 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(rp).toMatch(/role="tablist" aria-label="Right panel"/)
     expect(rp).toMatch(/>Properties<\/button>[\s\S]*>Elevations<\/button>/)
     expect(rp).toMatch(/tab === 'properties' \? <>[\s\S]*<PropertiesPanel \/>[\s\S]*<\/> : <ElevationsPanel \/>/)
-    expect(rp).toMatch(/localStorage\.setItem\(TAB_KEY, t\)/)
+    expect(rp).toMatch(/onClick=\{\(\) => setRightPanel\(\{ tab: 'elevations' \}\)\}/)
+    RP.setRightPanel({ tab: 'elevations' })
+    expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1')).tab).toBe('elevations')
+    RP.setRightPanel({ tab: 'properties' })
+  })
+
+  it('EV-panel: the Elevations tab holds everything — the types list, then the drawing, then its settings in the Properties field style; it widens the panel (480 px at first, its edge dragged, the width remembered), Properties keeps the normal width; the Generate button stays clear', () => {
+    const panel = readFileSync(new URL('../../components/RightPanel/ElevationsPanel.jsx', import.meta.url), 'utf8')
+    expect(panel).toMatch(/role="list" aria-label="Elevation types"[\s\S]*<ElevationEditor \/>/)
+    expect(/Elevation preview|toSVG|Edit elevation/.test(panel)).toBe(false)
+    const ed = readFileSync(new URL('../../components/Elevations/ElevationEditor.jsx', import.meta.url), 'utf8')
+    const order = ['<Drawing ', 'aria-label="Elevation settings"', 'label="Pallet"', 'label="Clearance"', 'label="Beam face"', 'label="Pitch"', 'label="Depth"', 'label="Sprinkler clr"'].map(k => ed.indexOf(k))
+    expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))).toBe(true)
+    // the Properties field look: its label and input styles
+    expect(ed).toMatch(/label: \{ fontSize: 10, fontFamily: 'var\(--font-mono\)', color: 'var\(--text3\)'/)
+    expect(ed).toMatch(/input: \{ flex: 1, minWidth: 0, borderRadius: 6, padding: '5px 8px', background: 'var\(--surface2\)', border: '1px solid var\(--border\)'/)
+    // no docked editor any more: one place for the drawing
+    const app = readFileSync(new URL('../../App.jsx', import.meta.url), 'utf8')
+    expect(app.includes('ElevationPane')).toBe(false)
+    // the width: the Elevations tab its own (480 at first), every other tab 272; remembered with the tab
+    expect([RP.panelWidth({ tab: 'elevations', elevW: 480 }), RP.panelWidth({ tab: 'properties', elevW: 640 }), RP.ELEV_W]).toEqual([480, 272, 480])
+    RP.setRightPanel({ tab: 'elevations', elevW: 555 })
+    expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1'))).toEqual({ tab: 'elevations', elevW: 555 })
+    RP.setRightPanel({ tab: 'properties', elevW: 480 })
+    const rp = readFileSync(new URL('../../components/RightPanel/index.jsx', import.meta.url), 'utf8')
+    expect(rp).toMatch(/width:panelWidth\(rp\)/)
+    expect(rp).toMatch(/\{tab === 'elevations' && \(\s*<div role="separator" aria-orientation="vertical" aria-label="Resize right panel" onPointerDown=\{startResize\}/)
+    expect(rp).toMatch(/requestAnimationFrame\(\(\) => \{ raf = 0; useRightPanel\.setState\(\{ elevW: v \}\) \}\)/)
+    expect(rp).toMatch(/transition: drag \? 'none' :/)
+    const gen = readFileSync(new URL('../../components/Generate/GeneratePanel.jsx', import.meta.url), 'utf8')
+    expect(gen.includes('const right = panelWidth(useRightPanel()) + 24')).toBe(true)
+    // the drawing sized from the panel's width: side by side when there is room, stacked when narrow
+    expect(ed).toMatch(/const stacked = box\.w < 400/)
   })
 
   it('EV-depth-edit: the selected rack\'s depth re-sizes it about its centre (a pair keeps its flue), one undo step; the aisles follow; the Row group replays it', async () => {
@@ -624,7 +672,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
   })
 
   it('EV-remove-wire: a beam\'s level is removed by dragging it off the end of the bay or by picking it and pressing Delete (also with the focus back on the page, never while typing in a field), or with the Remove level button; a press outside the editor un-picks it', () => {
-    const pane = readFileSync(new URL('../../components/Elevations/ElevationPane.jsx', import.meta.url), 'utf8')
+    const pane = readFileSync(new URL('../../components/Elevations/ElevationEditor.jsx', import.meta.url), 'utf8')
     expect(pane).toMatch(/p\.x < d\.Xf\(0\) - fontPx \* 1\.5 \|\| p\.x > d\.Xf\(d\.frontW\) \+ fontPx \* 1\.5/)
     expect(pane).toMatch(/window\.addEventListener\('keydown', onWin, true\)/)
     expect(pane).toMatch(/\/\^\(INPUT\|SELECT\|TEXTAREA\)\$\/\.test\(a\.tagName\)/)
@@ -634,7 +682,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
 })
 
 describe('EV — the wiring', () => {
-  it('EV-wire: Canvas2 routes the paint tool; Esc leaves paint mode; the keeper is installed; the editor is docked under the canvas in a column with it (never floating), its height and open state remembered per browser', async () => {
+  it('EV-wire: Canvas2 routes the paint tool; Esc leaves paint mode; the keeper is installed; the editor is in the Elevations tab (never floating); Simple / Detailed remembered per browser', async () => {
     const c2 = readFileSync(new URL('../../canvas2/Canvas2.jsx', import.meta.url), 'utf8')
     expect(c2).toMatch(/painting \? paintMouseDown : onStageMouseDown/)
     expect(c2).toMatch(/commitPaint\(useCanvasStore, ps\.stroke\.targets, \{ typeId: ps\.typeId, reset: ps\.reset \}\)/)
@@ -642,15 +690,15 @@ describe('EV — the wiring', () => {
     expect(kb).toMatch(/activeTool === PAINT_TOOL\) \{ useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); return \}/)
     const app = readFileSync(new URL('../../App.jsx', import.meta.url), 'utf8')
     expect(app).toMatch(/installElevationsKeeper\(useCanvasStore\)/)
-    expect(app).toMatch(/<div className="flex flex-col flex-1 min-w-0 min-h-0">\s*<Canvas2 \/>\s*<ElevationPane slot="bottom" \/>\s*<\/div>[\s\S]{0,120}<ElevationPane slot="right" \/>/)
-    const pane = readFileSync(new URL('../../components/Elevations/ElevationPane.jsx', import.meta.url), 'utf8')
+    expect(app).toMatch(/<div className="flex flex-col flex-1 min-w-0 min-h-0">\s*<Canvas2 \/>\s*<\/div>\s*<RightPanel \/>/)
+    const pane = readFileSync(new URL('../../components/Elevations/ElevationEditor.jsx', import.meta.url), 'utf8')
     expect(/position: 'fixed'|createPortal/.test(pane)).toBe(false)
     // the beams and the upright tops are grabbed through strips drawn last, so a label on a beam never takes its drag
     expect(pane.includes("data-grab=")).toBe(true)
     expect(pane.includes("onPointerDown={(e) => startDrag(e, i.role)}")).toBe(true)
-    ED.setPane({ open: true, height: 333 })
-    expect(JSON.parse(localStorage.getItem('trace.elevpane.v1'))).toMatchObject({ open: true, height: 333 })
-    ED.setPane({ open: false })
+    ED.setPane({ detail: 'detailed' })
+    expect(JSON.parse(localStorage.getItem('trace.elevpane.v1'))).toEqual({ detail: 'detailed' })
+    ED.setPane({ detail: 'simple' })
   })
 
   it('EV-scope: entering paint mode from Select starts on Row; switching type while painting keeps the scope chosen', async () => {
@@ -693,7 +741,7 @@ describe('EV — the top load against the building', () => {
 })
 
 
-describe('EV — the chain, the dock', () => {
+describe('EV — the chain, the building lines', () => {
   const t0 = () => ({ ...E.makeType({ id: 'A', levelsCount: 4 }), uprightHeightIn: 228, clearanceIn: 6, beamFaceIn: 4, levels: [0, 74, 148, 222].map((z, k) => ({ beamIn: z, palletHeightIn: k === 3 ? 36 : 60, loadLb: 2500 })) })
   const vals = (d, id) => d.items.filter(i => i.t === 'text' && i.role?.id === id).map(i => ({ k: i.role.k, v: i.role.value, s: i.s, fill: i.fill }))
 
@@ -721,20 +769,42 @@ describe('EV — the chain, the dock', () => {
     expect(ED.setDimension(t, 'pallet', 2, 50).levels[2].palletHeightIn).toBe(50)
   })
 
-  it('EV-dock: Side by side docks the editor to the right of the canvas (a tall pane: front view above side view), Stacked at the bottom (a wide pane: the two views next to each other); each dock remembers its own size; the canvas shrinks, nothing covered', () => {
-    const pane = readFileSync(new URL('../../components/Elevations/ElevationPane.jsx', import.meta.url), 'utf8')
-    expect(pane).toMatch(/const dock = layout === 'side' \? 'right' : 'bottom'/)
-    expect(pane).toMatch(/if \(slot !== dock\) return null/)
-    expect(pane).toMatch(/stacked=\{dock === 'right'\}/)
-    expect(pane).toMatch(/setPane\(right \? \{ width: v \} : \{ height: v \}\)/)
-    expect(/position: 'fixed'|createPortal/.test(pane)).toBe(false)
-    // the canvas's floating Generate button keeps clear of the right dock
-    const gen = readFileSync(new URL('../../components/Generate/GeneratePanel.jsx', import.meta.url), 'utf8')
-    expect(gen.includes("const right = 296 + (elev.layout === 'side' ? (elev.open ? elev.width : 32) : 0)")).toBe(true)
-    ED.setPane({ layout: 'side', width: 512 }); ED.setPane({ layout: 'stacked', height: 288 })
-    expect(JSON.parse(localStorage.getItem('trace.elevpane.v1'))).toMatchObject({ layout: 'stacked', width: 512, height: 288 })
-    ED.setPane({ layout: 'side' })
-    expect(ED.useElevEditor.getState()).toMatchObject({ width: 512, height: 288 })
-    ED.setPane({ layout: 'stacked' })
+  it('EV-sprinkler-line: Detailed draws the sprinkler line red, labelled with its height, and the clear-height line as before; Simple keeps the reference (the dashed line, a grey label, none when it is the clear height)', () => {
+    const t = t0(), b = { clearHeightIn: 290, sprinklerIn: 295 }, box = { w: 1100, h: 460 }, o = { depthIn: 48, pair: true, flueIn: 12, building: b, fontPx: 12 }
+    const det = elevationLayout(t, 96, box, { ...o, detail: 'detailed' }).items, sim = elevationLayout(t, 96, box, { ...o, detail: 'simple' }).items
+    const spr = (items) => items.filter(i => i.tag === 'sprinkler'), lab = (items) => items.find(i => i.t === 'text' && i.s === 'SPRINKLERS 24\'-7"')
+    expect(spr(det).length).toBe(2)                                                   // front and side
+    expect(spr(det).every(i => i.stroke === '#A8341C' && !i.dash)).toBe(true)
+    expect(lab(det).fill).toBe('#A8341C')
+    expect(det.filter(i => i.tag === 'clear').length).toBe(2)
+    expect([spr(sim).length, lab(sim).fill, sim.filter(i => i.tag === 'clear').length]).toEqual([0, '#7A828C', 2])
+    // the sprinklers at the clear height: Simple one line labelled as the clear height; Detailed still names them, red
+    const same = { ...o, building: { clearHeightIn: 290, sprinklerIn: 290 } }
+    expect(elevationLayout(t, 96, box, { ...same, detail: 'simple' }).items.some(i => i.t === 'text' && /^SPRINKLERS/.test(i.s))).toBe(false)
+    expect(elevationLayout(t, 96, box, { ...same, detail: 'detailed' }).items.filter(i => i.t === 'text' && /^SPRINKLERS/.test(i.s)).map(i => i.fill)).toEqual(['#A8341C', '#A8341C'])
+    // no sprinkler height: no line
+    expect(elevationLayout(t, 96, box, { ...o, building: { clearHeightIn: 290 }, detail: 'detailed' }).items.some(i => i.tag === 'sprinkler')).toBe(false)
+  })
+
+  it('EV-clearance-label: CLEARANCE sits inside the band, under the clear-height line where that line crosses it — never on the line, in either mode, at any size; no room there: none', () => {
+    const t = t0()
+    const cases = [[{ clearHeightIn: 290, sprinklerIn: 295 }], [{ clearHeightIn: 280, sprinklerIn: 310 }], [{ clearHeightIn: 250, sprinklerIn: 300 }], [{ clearHeightIn: 300, sprinklerIn: 300 }]]
+    const boxes = [[{ w: 1100, h: 460 }, 12, false], [{ w: 454, h: 431 }, 9, false], [{ w: 360, h: 640 }, 9, true], [{ w: 820, h: 300 }, 11, false]]
+    let seen = 0
+    for (const [b] of cases) for (const [box, fontPx, stacked] of boxes) for (const detail of ['simple', 'detailed']) {
+      const items = elevationLayout(t, 96, box, { depthIn: 48, pair: true, flueIn: 12, building: b, fontPx, stacked, detail }).items
+      const bands = items.filter(i => i.tag === 'band'), clears = items.filter(i => i.tag === 'clear')
+      for (const l of items.filter(i => i.t === 'text' && /^CLEARANCE/.test(i.s))) {
+        seen++
+        const bx = labelBox(l), band = bands.find(r => bx.x0 < r.x + r.w + l.size * 6 && bx.x1 > r.x - l.size * 6 && bx.y0 >= r.y - 0.5 && bx.y1 <= r.y + r.h + 0.5)
+        expect([JSON.stringify(b), detail, !!band]).toEqual([JSON.stringify(b), detail, true])
+        const line = clears.find(c => c.y1 > band.y && c.y1 < band.y + band.h)
+        if (line) expect([JSON.stringify(b), detail, bx.y0 > line.y1]).toEqual([JSON.stringify(b), detail, true])
+      }
+    }
+    expect(seen).toBeGreaterThan(20)
+    // a band with no room under the line (the clear height 2" over its bottom): no label
+    const tight = elevationLayout(t, 96, { w: 1100, h: 460 }, { depthIn: 48, building: { clearHeightIn: 279, sprinklerIn: 295 }, fontPx: 12 }).items
+    expect(tight.some(i => i.t === 'text' && /^CLEARANCE/.test(i.s))).toBe(false)
   })
 })

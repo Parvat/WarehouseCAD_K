@@ -4,7 +4,7 @@ import { Sparkles, X, Loader2 } from 'lucide-react'
 import { generateAndPlaceBatched } from '../../generate/traceGenerate'
 import { useRules } from '../../rules/useRules'
 import { useColumnCheck } from '../../generate/useColumnCheck'
-import { useElevEditor } from '../../utils/elevEditor'
+import { useRightPanel, panelWidth } from '../../utils/rightPanel'
 
 // Trace CAD — "Describe → Generate" Brief.
 // A self-contained floating card. It only CALLS the store (via generateAndPlace);
@@ -134,9 +134,8 @@ export function GeneratePanel() {
     }
   }
 
-  /* over the canvas's top right: past the right panel, and past the elevation editor when it docks on the right */
-  const elev = useElevEditor()
-  const right = 296 + (elev.layout === 'side' ? (elev.open ? elev.width : 32) : 0)
+  /* over the canvas's top right: past the right panel, as wide as its tab makes it (the Elevations tab widens it) */
+  const right = panelWidth(useRightPanel()) + 24
   const box = {
     position: 'fixed', right, top: 60, zIndex: 40, width: 236,
     background: 'var(--surface)', border: '1px solid var(--border)',

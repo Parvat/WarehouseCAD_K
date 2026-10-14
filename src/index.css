@@ -36,6 +36,8 @@ html, body, #root { height: 100%; overflow: hidden; }
   --panel-bg:var(--surface); --panel-hover:var(--surface2); --panel-border:var(--border);
   --panel-text2:var(--text2); --panel-text3:var(--text3); --panel-text4:var(--text3);
   --panel-label:var(--text); --panel-muted:var(--text2); --panel-branch:var(--border);
+  /* the elevation drawing's frames and beams, its ground and base plates (ElevationEditor.jsx) — readable on this panel */
+  --elev-frame:#5DBB93; --elev-ink:#C9CED8;
   --canvas-bg:#0b0d11;
   --grid-major:rgba(37,42,54,0.75); --grid-minor:rgba(37,42,54,0.32);
   --shadow:0 4px 24px rgba(0,0,0,0.5);
@@ -65,6 +67,8 @@ html, body, #root { height: 100%; overflow: hidden; }
   --panel-label:#2A2823; --panel-muted:#57534B; --panel-branch:#E5E3DC;
   --pin-accent:#378ADD; --pin-bg:#EAF1FE;
   --tile-bg:#F4F4F2; --tile-hover:#ECECE9; --tool-muted:#8A8578;
+  /* the elevation drawing's frames and beams, its ground and base plates (ElevationEditor.jsx) — readable on this panel */
+  --elev-frame:#123A2E; --elev-ink:#15181C;
   --canvas-bg:#F7F8FA;
   --grid-major:rgba(107,114,128,0.34); --grid-minor:rgba(107,114,128,0.14);
   --shadow:0 4px 24px rgba(11,16,29,0.08);
@@ -91,6 +95,8 @@ html, body, #root { height: 100%; overflow: hidden; }
   --panel-label:#1B2620; --panel-muted:#57534B; --panel-branch:#DED9CE;
   --pin-accent:#14392B; --pin-bg:#E4EAE0;
   --tile-bg:#E9E7DE; --tile-hover:#E1DFD4; --tool-muted:#7E8A7C;
+  /* the elevation drawing's frames and beams, its ground and base plates (ElevationEditor.jsx) — readable on this panel */
+  --elev-frame:#123A2E; --elev-ink:#15181C;
   --canvas-bg:#EDEBE4;
   --grid-major:rgba(20,57,43,0.18); --grid-minor:rgba(20,57,43,0.08);
   --shadow:0 4px 24px rgba(20,57,43,0.08);
@@ -115,6 +121,8 @@ html, body, #root { height: 100%; overflow: hidden; }
   --panel-bg:var(--surface); --panel-hover:var(--surface2); --panel-border:var(--border);
   --panel-text2:var(--text2); --panel-text3:var(--text3); --panel-text4:var(--text3);
   --panel-label:var(--text); --panel-muted:var(--text2); --panel-branch:var(--border);
+  /* the elevation drawing's frames and beams, its ground and base plates (ElevationEditor.jsx) — readable on this panel */
+  --elev-frame:#5CC9A0; --elev-ink:#CCE5FF;
   --canvas-bg:#070e1c;
   --grid-major:rgba(28,54,104,0.95); --grid-minor:rgba(28,54,104,0.5);
   --shadow:0 4px 24px rgba(0,0,0,0.6);

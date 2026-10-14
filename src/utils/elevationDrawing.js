@@ -1,7 +1,6 @@
 // elevationDrawing.js — the rack elevation drawing of one type at one beam length (Elevations v2 §D–F): ONE pure
-// layout of primitives in pixel space, drawn by the editor pane (components/Elevations/ElevationPane.jsx — the same
-// primitives made interactive by their `role`), the right panel's preview and the PDF (toSVG), so the three never
-// differ.
+// layout of primitives in pixel space, drawn by the editor (components/Elevations/ElevationEditor.jsx — the same
+// primitives made interactive by their `role`) and the PDF (toSVG), so the two never differ.
 //
 // Dimensioned and labelled as on the reference rack elevation (the sample sheet); drawn in Trace's own colours (blue
 // frames, orange beams, beige loads). Weights stay off.
@@ -63,11 +62,12 @@ export function misfitLevels(t) {
  *  line and clearance band, pitch and the pallets' side clearance; 'detailed': those plus each beam's elevation to its top
  *  and per level the pallet height and the ACTUAL gap to the underside of the beam above, red under the clearance, and
  *  that beam's face), compact (the panel's preview: no labels), stacked (the side view under the front view), scale, bg
- *  (the colour behind the labels' halo: the panel's), draft overrides { active, removing }. Items: { t: 'rect'|'line'|
+ *  (the colour behind the labels' halo: the panel's), frame / ink (the frames' and beams' colour, the ground's and base
+ *  plates' — the editor passes theme tokens so a dark panel keeps them readable; the PDF the defaults), draft overrides { active, removing }. Items: { t: 'rect'|'line'|
  *  'text'|'poly'|'polygon'|'path', ..., role, tag } — role { kind: 'beam', k } | { kind: 'upright', x } | { kind: 'top' } |
  *  { kind: 'dim', id, k?, value } for the editor. No label overlaps a load, a beam or another label (declutter). */
 export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = {}) {
-  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff' } = opts
+  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK } = opts
   const detailed = detail === 'detailed'
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
   const L = [...t.levels].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
@@ -139,23 +139,29 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   }
   /* the ground: an ink line, grey hatching below it */
   const ground = (x0, x1, y) => {
-    line(x0, y, x1, y, { stroke: INK, sw: compact ? 2 : 3 })
+    line(x0, y, x1, y, { stroke: ink, sw: compact ? 2 : 3 })
     if (!compact) for (let x = x0 + fO * 1.4; x < x1 - fO * 0.6; x += fO * 2.2) line(x, y, x - fO, y + fO, { stroke: HATCH, sw: 1 })
   }
-  /* the building over a view: the clearance band under the sprinkler heads (yellow), the dashed clear-height (and
-     sprinkler) line, their labels — grey, the clearance red */
+  /* the building over a view: the clearance band under the sprinkler heads (yellow), the dashed clear-height line, the
+     sprinkler line — Simple: dashed, as on the reference; Detailed: red, labelled with its height — their labels grey,
+     the clearance red */
   const shell = (Yv, x0, x1) => {
     if (bSprink) {
-      rect(x0, Yv(bSprink), x1 - x0, sprinklerClearanceIn * s, { fill: BAND, opacity: 0.2, tag: 'band' })
-      line(x0, Yv(bSprink), x1, Yv(bSprink), { stroke: INK, sw: sw * 1.2, dash: `${fO * 0.7} ${fO * 0.4}` })
+      const top = Yv(bSprink), bot = top + sprinklerClearanceIn * s
+      rect(x0, top, x1 - x0, bot - top, { fill: BAND, opacity: 0.2, tag: 'band' })
+      line(x0, top, x1, top, detailed ? { stroke: RED, sw: sw * 1.4, tag: 'sprinkler' } : { stroke: ink, sw: sw * 1.2, dash: `${fO * 0.7} ${fO * 0.4}` })
       if (!compact) {
-        // (the sprinklers at the clear height itself: one line, labelled as the clear height, as on the reference)
-        if (!(bClear && Math.abs(bClear - bSprink) < 0.5)) text(x1 - 2, Yv(bSprink) - fT * 0.55, `SPRINKLERS ${ftInDash(bSprink)}`, { anchor: 'end', size: fT, fill: GREY, pri: 2, tag: 'shell' })
-        text(x0 + 2, Yv(bSprink) + Math.min(sprinklerClearanceIn * s, fT * 2) / 2 + fT * 0.35, `CLEARANCE ${ftInDash(sprinklerClearanceIn)}`, { anchor: 'start', size: fT, fill: RED, pri: 3, tag: 'shell' })   // (gives way in a narrow pane)
+        // (Simple, the sprinklers at the clear height itself: one line, labelled as the clear height, as on the reference)
+        if (detailed || !(bClear && Math.abs(bClear - bSprink) < 0.5)) text(x1 - 2, top - fT * 0.55, `SPRINKLERS ${ftInDash(bSprink)}`, { anchor: 'end', size: fT, fill: detailed ? RED : GREY, pri: 2, tag: 'shell' })
+        // the band's label inside the band, under the clear-height line where that line crosses it — never on the line;
+        // no room there: none (it stays in that strip when it gives way, or goes)
+        const lineY = bClear ? Yv(bClear) : null
+        const y0 = lineY != null && lineY > top - 0.5 && lineY < bot ? lineY + sw * 2 : top + 1, y1 = bot - 1
+        if (y1 - y0 >= fT * 1.05) text(x0 + 2, (y0 + y1) / 2 + fT * 0.29, `CLEARANCE ${ftInDash(sprinklerClearanceIn)}`, { anchor: 'start', size: fT, fill: RED, pri: 3, tag: 'shell', keepIn: [y0, y1] })
       }
     }
     if (bClear) {
-      line(x0, Yv(bClear), x1, Yv(bClear), { stroke: INK, sw: sw * 1.5, dash: `${fO * 0.8} ${fO * 0.45}`, tag: 'clear' })
+      line(x0, Yv(bClear), x1, Yv(bClear), { stroke: ink, sw: sw * 1.5, dash: `${fO * 0.8} ${fO * 0.45}`, tag: 'clear' })
       if (!compact) text(x1 - 2, Yv(bClear) + (bSprink && bSprink > bClear ? fT * 1.25 : -fT * 0.55), `CLEAR HEIGHT ${ftInDash(bClear)}`, { anchor: 'end', size: fT, fill: GREY, pri: 2, tag: 'shell' })
     }
   }
@@ -168,7 +174,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const gapIn = per ? (bayIn - per * palletWIn) / (per + 1) : 0
   L.forEach((lv, i) => {
     const isTop = i === L.length - 1, z = lv.beamIn, gone = removing === lv.k, bad = misfit.has(lv.k) || (isTop && !!topIssue)
-    if (z > 0) rect(Xf(upW), Y(z), bayIn * s, beamPx, { fill: gone ? '#d0392b' : isActive({ kind: 'beam', k: lv.k }) ? '#2a7a5f' : PINE, opacity: gone ? 0.5 : 1, role: { kind: 'beam', k: lv.k }, cursor: 'ns-resize', tag: 'beam' })
+    if (z > 0) rect(Xf(upW), Y(z), bayIn * s, beamPx, { fill: gone ? '#d0392b' : isActive({ kind: 'beam', k: lv.k }) ? '#2a7a5f' : frame, opacity: gone ? 0.5 : 1, role: { kind: 'beam', k: lv.k }, cursor: 'ns-resize', tag: 'beam' })
     const lh = loadH(lv, i)
     for (let p = 0; p < per; p++) {
       const x = upW + gapIn + p * (palletWIn + gapIn)
@@ -182,13 +188,13 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   // the frames: dark green uprights with a zigzag of bracing, base plates
   for (const x of [0, frontW - upW]) {
     const fxp = Xf(x)
-    rect(fxp, Y(hTop), colPx, hTop * s, { fill: PINE, role: { kind: 'upright', x }, tag: 'upright' })
+    rect(fxp, Y(hTop), colPx, hTop * s, { fill: frame, role: { kind: 'upright', x }, tag: 'upright' })
     if (!compact) {
       const cx = fxp + colPx / 2, step = Math.max(fO * 1.6, 26 * s * 0.5), zz = []
       let d = true
       for (let y = Y(hTop) + step * 0.5; y < floor - step * 0.4; y += step) { zz.push(d ? `M${cx - colPx * 0.4} ${y}L${cx + colPx * 0.4} ${Math.min(floor, y + step)}` : `M${cx + colPx * 0.4} ${y}L${cx - colPx * 0.4} ${Math.min(floor, y + step)}`); d = !d }
-      items.push({ t: 'path', d: zz.join(''), stroke: PINE, sw: 1.4, opacity: 0.65 })
-      rect(fxp - fO * 0.5, floor - fO * 0.45, colPx + fO, fO * 0.45, { fill: INK })
+      items.push({ t: 'path', d: zz.join(''), stroke: frame, sw: 1.4, opacity: 0.65 })
+      rect(fxp - fO * 0.5, floor - fO * 0.45, colPx + fO, fO * 0.45, { fill: ink })
       rect(fxp - 2, Y(hTop) - 3, colPx + 4, 6, { fill: isActive({ kind: 'top' }) ? '#d0392b' : 'transparent', role: { kind: 'top' }, cursor: 'ns-resize' })
     }
   }
@@ -247,16 +253,16 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   ground(sx0, sx1, floorS)
   const frames = pair ? [0, depthIn + flueIn + upW] : [0]
   for (const f0 of frames) {
-    for (const x of [f0, f0 + depthIn]) rect(Xs(x), Ys(hTop), colPx, hTop * s, { fill: PINE, tag: 'frame' })
+    for (const x of [f0, f0 + depthIn]) rect(Xs(x), Ys(hTop), colPx, hTop * s, { fill: frame, tag: 'frame' })
     const n = Math.max(3, Math.round((hTop - 6) / 28)), step = (hTop - 6) / n
-    for (let i = 0; i <= n; i++) line(Xs(f0 + upW), Ys(6 + i * step), Xs(f0 + depthIn), Ys(6 + i * step), { stroke: PINE, sw: sw * 0.9, opacity: 0.65 })
+    for (let i = 0; i <= n; i++) line(Xs(f0 + upW), Ys(6 + i * step), Xs(f0 + depthIn), Ys(6 + i * step), { stroke: frame, sw: sw * 0.9, opacity: 0.65 })
     for (let i = 1; i < n; i += 2) {
       const a = Ys(6 + i * step), b = Ys(6 + (i + 1) * step), lr = ((i - 1) / 2) % 2 === 0
-      line(Xs(lr ? f0 + upW : f0 + depthIn), a, Xs(lr ? f0 + depthIn : f0 + upW), b, { stroke: PINE, sw: sw * 0.9, opacity: 0.65 })
+      line(Xs(lr ? f0 + upW : f0 + depthIn), a, Xs(lr ? f0 + depthIn : f0 + upW), b, { stroke: frame, sw: sw * 0.9, opacity: 0.65 })
     }
-    if (!compact) for (const x of [f0, f0 + depthIn]) rect(Xs(x) - fO * 0.4, floorS - fO * 0.45, colPx + fO * 0.8, fO * 0.45, { fill: INK })
+    if (!compact) for (const x of [f0, f0 + depthIn]) rect(Xs(x) - fO * 0.4, floorS - fO * 0.45, colPx + fO * 0.8, fO * 0.45, { fill: ink })
   }
-  if (pair) for (const z of [hTop / 3, (2 * hTop) / 3]) rect(Xs(depthIn + upW), Ys(z) - 2, flueIn * s, 4, { fill: PINE, tag: 'spacer' })
+  if (pair) for (const z of [hTop / 3, (2 * hTop) / 3]) rect(Xs(depthIn + upW), Ys(z) - 2, flueIn * s, 4, { fill: frame, tag: 'spacer' })
   if (!compact) {
     // under the ground, like the front view's beam: over the frames they would run into the building's labels
     const yb = floorS + fO * 2.4
@@ -264,7 +270,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     if (pair) { dimH(yb, Xs(depthIn + upW), Xs(depthIn + upW + flueIn), ftInDash(flueIn), { below: false }); dimH(yb, Xs(depthIn + flueIn + upW), Xs(sideW), ftInDash(depthIn), { outboard: 'right' }) }
     dimV(Xs(0) - fO * 1.8, Ys(0), Ys(hTop), `FRAME ${ftInDash(hTop)}`, { kind: 'dim', id: 'upright', value: hTop }, { pri: 2, out: -1 })
   }
-  if (!compact) declutter(items)
+  if (!compact) declutter(items, box)
   // every label over the linework, so its halo clears the dashed building lines and the dimension lines beneath it
   const drawn = [...items.filter(i => i.t !== 'text'), ...items.filter(i => i.t === 'text')]
   items.length = 0; items.push(...drawn)
@@ -285,29 +291,38 @@ const rectBox = (r) => ({ x0: r.x, x1: r.x + r.w, y0: r.y, y1: r.y + r.h })
 /** Move every label clear of the loads, the beams, the uprights and each other — in rank order (the elevations first);
  *  a dimension's label slides along its own line, then steps outward; a free label steps up or down; a chain label (or
  *  the sprinkler's note) that finds no room is dropped rather than drawn over something. Two labels keep half a character
- *  apart side to side — closer, they read as one run. In place. */
-export function declutter(items) {
+ *  apart side to side — closer, they read as one run. A label with keepIn [y0, y1] stays inside that strip; with the `box`, every label inside the drawing (one with no
+ *  room there is dropped, or left where it was if it ranks). In place. */
+export function declutter(items, box = null) {
   const solids = items.filter(i => i.t === 'rect' && (i.tag === 'load' || i.tag === 'beam' || i.tag === 'upright' || i.tag === 'frame'))
   const labels = items.filter(i => i.t === 'text').sort((a, b) => (a.pri ?? 2) - (b.pri ?? 2))
   const placed = [], drop = new Set()
   for (const l of labels) {
-    const ok = () => { const b = labelBox(l), g = l.size * 0.5, bg = { x0: b.x0 - g, x1: b.x1 + g, y0: b.y0, y1: b.y1 }; return !placed.some(p => hit(bg, labelBox(p))) && !solids.some(r => !(l.tag === 'misfit' && r.level === l.level && r.tag === 'load') && hit(b, rectBox(r))) }
+    let inBox = !!box
+    const ok = () => { const b = labelBox(l), g = l.size * 0.5, bg = { x0: b.x0 - g, x1: b.x1 + g, y0: b.y0, y1: b.y1 }; if (l.keepIn && (b.y0 < l.keepIn[0] - 0.5 || b.y1 > l.keepIn[1] + 0.5)) return false; if (inBox && (b.x0 < 0 || b.x1 > box.w || b.y0 < 0 || b.y1 > box.h)) return false; return !placed.some(p => hit(bg, labelBox(p))) && !solids.some(r => !(l.tag === 'misfit' && r.level === l.level && r.tag === 'load') && hit(b, rectBox(r))) }
     if (ok()) { placed.push(l); continue }
     const x0 = l.x, y0 = l.y, step = l.size * 0.6
-    let found = false
-    // along its line, within its span
-    if (l.span) for (let k = 1; k <= 12 && !found; k++) for (const d of [k, -k]) {
-      const y = y0 + d * step
-      if (l.rot === -90 ? (y - String(l.s).length * l.size * 0.28 < l.span[0] - l.size || y + String(l.s).length * l.size * 0.28 > l.span[1] + l.size) : (y < l.span[0] - l.size || y > l.span[1] + l.size)) continue
-      l.y = y
-      if (ok()) { found = true; break }
+    const search = () => {
+      // along its line, within its span
+      if (l.span) for (let k = 1; k <= 12; k++) for (const d of [k, -k]) {
+        const y = y0 + d * step
+        if (l.rot === -90 ? (y - String(l.s).length * l.size * 0.28 < l.span[0] - l.size || y + String(l.s).length * l.size * 0.28 > l.span[1] + l.size) : (y < l.span[0] - l.size || y > l.span[1] + l.size)) continue
+        l.x = x0; l.y = y
+        if (ok()) return true
+      }
+      // then outward
+      l.y = y0; for (let k = 1; k <= 4; k++) { l.x = x0 + (l.out || -1) * k * l.size * 1.1; if (ok()) return true }
+      // a free label (no line of its own): up or down
+      if (!l.span) { l.x = x0; for (let k = 1; k <= 4; k++) for (const d of [-k, k]) { l.y = y0 + d * l.size * 0.95; if (ok()) return true } }
+      l.x = x0; l.y = y0
+      return false
     }
-    // then outward
-    if (!found) { l.y = y0; for (let k = 1; k <= 4 && !found; k++) { l.x = x0 + (l.out || -1) * k * l.size * 1.1; if (ok()) found = true } }
-    // a free label (no line of its own): up or down
-    if (!found && !l.span) { l.x = x0; for (let k = 1; k <= 4 && !found; k++) for (const d of [-k, k]) { l.y = y0 + d * l.size * 0.95; if (ok()) { found = true; break } } }
+    // inside the drawing first; a label that ranks (it is drawn whatever) may then go past its edge rather than on another
+    let found = search()
+    if (!found && inBox && (l.pri ?? 2) < 3) { inBox = false; found = ok() || search() }
     if (found) placed.push(l)
-    else { l.x = x0; l.y = y0; if ((l.pri ?? 2) >= 3) drop.add(l); else placed.push(l) }
+    else if ((l.pri ?? 2) >= 3) drop.add(l)
+    else placed.push(l)
   }
   for (let n = items.length - 1; n >= 0; n--) if (drop.has(items[n])) items.splice(n, 1)
 }
