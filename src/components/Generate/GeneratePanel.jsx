@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRackingSettings } from '../../utils/fillTool'
 import { Sparkles, X, Loader2 } from 'lucide-react'
-import { generateAndPlaceBatched } from '../../generate/traceGenerate'
+import { generateAndPlaceBatched, regenerateRacking } from '../../generate/traceGenerate'
+import { regenBuilding, regenSummary } from '../../generate/regenerate'
+import { useCanvasStore } from '../../store/useCanvasStore'
 import { useRules } from '../../rules/useRules'
 import { useColumnCheck } from '../../generate/useColumnCheck'
 import { useRightPanelWidth } from '../../utils/rightPanel'
@@ -107,12 +109,13 @@ export function GeneratePanel() {
     setAisle(mheOptions[key].aisleFt)  // forklift choice drives the aisle → layout
   }
 
-  const run = async () => {
-    if (generating) return
-    setGenerating(true)
-    setProgress(0)
-    try {
-      const outcome = await generateAndPlaceBatched({
+  /* A layout already there: Generate asks — Regenerate racking (generate/regenerate.js: the building, zones,
+     hand-placed racks, text, dimensions, layers and elevation types kept; only the generated racks refilled, with
+     the rows and hand edits that loses counted) or Start over (a new building, as before). */
+  const [ask, setAsk] = useState(null)
+  const askRef = useRef(null)
+  useEffect(() => { if (ask) askRef.current?.scrollIntoView({ block: 'nearest' }) }, [ask])
+  const brief = () => ({
         lengthFt:         Number(lengthFt)         || 100,
         widthFt:          Number(widthFt)          || 60,
         rackType:         RACK_TYPE,
@@ -127,17 +130,37 @@ export function GeneratePanel() {
         levels:     4,
         mhe,
         orientation,
-      }, { onProgress: setProgress, rules })
+  })
+  const run = () => {
+    if (generating) return
+    const objects = useCanvasStore.getState().objects
+    const fp = regenBuilding(objects)
+    if (fp && objects.some(o => o.parentId === fp.id)) { setAsk(regenSummary(objects, fp)); return }
+    startOver()
+  }
+  const startOver = async () => {
+    setAsk(null)
+    setGenerating(true)
+    setProgress(0)
+    try {
+      const outcome = await generateAndPlaceBatched(brief(), { onProgress: setProgress, rules })
       setResult(outcome)
     } finally {
       setGenerating(false)
     }
+  }
+  const regenerate = () => {
+    setAsk(null)
+    const outcome = regenerateRacking(brief(), { rules, beamIn: useRackingSettings.getState().beamIn ?? 96 })
+    setResult(outcome ? { ...outcome, regenerated: true } : { failed: true })
   }
 
   /* over the canvas's top right: past the right panel, as wide as it is (a rack selected widens it) */
   const right = useRightPanelWidth().width + 24
   const box = {
     position: 'fixed', right, top: 60, zIndex: 40, width: 236,
+    // never past the window's bottom: the panel scrolls, so Generate and the Regenerate question stay reachable
+    maxHeight: 'calc(100vh - 76px)', overflowY: 'auto',
     background: 'var(--surface)', border: '1px solid var(--border)',
     borderRadius: R, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
     fontFamily: 'var(--font-ui)', color: 'var(--text)',
@@ -290,7 +313,31 @@ export function GeneratePanel() {
             : <><Sparkles size={14} /> Generate layout</>}
         </button>
 
-        {result != null && !generating && (
+        {ask && (
+          <div ref={askRef} role="dialog" aria-label="Regenerate or start over" style={{ padding: '9px 10px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 7, fontSize: 11, lineHeight: 1.45 }}>
+            <div style={{ fontWeight: 600, fontSize: 12 }}>This building already has a layout.</div>
+            <div>
+              <strong>Regenerate racking</strong> keeps the building, zones{ask.zones ? ` (${ask.zones})` : ''}, hand-placed racks{ask.handPlaced ? ` (${ask.handPlaced})` : ''}, text, dimensions, layers and elevation types,
+              and refills <strong>{ask.rows} row{ask.rows === 1 ? '' : 's'}</strong> ({ask.racks.length} rack{ask.racks.length === 1 ? '' : 's'}) with the settings above.
+            </div>
+            <div data-testid="regen-edits" style={{ color: ask.handEdits || !ask.editsKnown ? 'var(--red)' : 'var(--text3)' }}>
+              {!ask.editsKnown ? "Hand edits to these racks can't be detected — any will be lost."
+                : ask.handEdits ? `${ask.handEdits} hand edit${ask.handEdits === 1 ? '' : 's'} to generated racks will be lost.`
+                : 'No hand edits to generated racks.'}
+            </div>
+            <div style={{ color: 'var(--text3)' }}><strong>Start over</strong> draws a new building from the size above; everything in the old one goes.</div>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              <button type="button" onClick={regenerate} style={{ flex: 1, padding: '6px 8px', borderRadius: R, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#fff', fontSize: 11.5, fontWeight: 600 }}>Regenerate racking</button>
+              <button type="button" onClick={startOver} style={{ padding: '6px 8px', borderRadius: R, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--surface)', color: 'var(--text)', fontSize: 11.5 }}>Start over</button>
+              <button type="button" onClick={() => setAsk(null)} style={{ padding: '6px 8px', borderRadius: R, border: '1px solid var(--border)', cursor: 'pointer', background: 'transparent', color: 'var(--text3)', fontSize: 11.5 }}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {result?.failed && !generating && (
+          <div role="alert" style={{ fontSize: 11, color: 'var(--red)' }}>Nothing fits — the layout is unchanged.</div>
+        )}
+        {result != null && !result.failed && !generating && (
           <div style={{
             padding: '8px 10px', background: 'var(--surface2)',
             border: '1px solid var(--border)', borderRadius: 4,
@@ -301,6 +348,11 @@ export function GeneratePanel() {
             <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>
               positions · usable after column and narrow-aisle losses
             </div>
+            {result.regenerated && (
+              <div data-testid="regen-result" style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                Regenerated <strong style={{ color: 'var(--text)', textTransform: 'capitalize' }}>{result.orientation}</strong> — {result.rows} row{result.rows === 1 ? '' : 's'} replaced{result.handPlaced ? `, ${result.handPlaced} hand-placed kept` : ''}
+              </div>
+            )}
             {result.horizontalTotal != null && (
               <div style={{
                 fontSize: 10, color: 'var(--text3)', marginTop: 6,

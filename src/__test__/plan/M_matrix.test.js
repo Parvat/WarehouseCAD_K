@@ -127,7 +127,7 @@ const normalize = (objects) => {
   // ids anywhere (the building's rowBaseline lists its rows' rack ids)
   const norm = (v) => (typeof v === 'string' && idx.has(v) ? `#${idx.get(v)}`
     : Array.isArray(v) ? v.map(norm)
-    : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, norm(x)]))
+    : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [norm(k), norm(x)]))   // (keys too: the building's genPlaced is keyed by rack id)
     : v)
   return objects.map(o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, norm(v)])))
 }

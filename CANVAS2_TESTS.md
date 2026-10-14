@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### EV — Elevations v1 + v2 · `EV_elevations.test.js` (62 tests)
+### EV — Elevations v1 + v2 · `EV_elevations.test.js` (64 tests)
 **v2** (ELEVATIONS_PLAN.md §v2). Beam face height per type (4"); levels to the top of the beam; the fit from the top of
 the lower beam to the underside of the next. Frame depth from the rack (read-only). A type change is no hand edit
 (rackingArea sigMatch / shapeKey). The types are the store's `elevations` (approved store diff: snapshot, undo / redo,
@@ -2063,6 +2063,11 @@ frame height / beam elevation, a level added, Delete, drag-off — one step each
 bay 1 → 9' from the dropdown; + Bay; the edge 480 → 560 stored; the SVG on the device grid (within 0.02 device px);
 deselected → 272.
 
+**Unused custom types go (v3.1).** `reconcileElevations` removes a custom type ("N levels · custom", `isCustomName`)
+no bay carries any more (`unusedCustom`), in the same pass — so with the edit or type choice that emptied it, one undo
+step. Standard types, and a custom type made the default, stay until deleted. New: EV-custom-prune. Break-it: the
+removal off → EV-custom-prune (2). ELEVATIONS_PLAN.md rewritten to the selection model.
+
 ### EV-v1
 Plan: ELEVATIONS_PLAN.md. Code: utils/elevations.js (types, layered assignment, compression, migration, the keeper,
 checks, legend, BOM data), utils/elevPaint.js (paint mode), utils/elevationDraw.js (colours toggle, bay fills, side
@@ -2108,6 +2113,36 @@ Type 2, Row: row 12 (pair 12 + single 2 = 26 bays) — hover lit the whole row f
 Reset to default, Bay: bay 3 back; Esc → Select; Ctrl+Z → bay 3 Type 3 again; legend "4 levels 1313 · Type 2 26 ·
 Type 3 15", the same as the layout; Show colours off → plain racks, legend rows hidden; on → back. Side view drawn in
 the panel.
+
+### RGN — Regenerate racking · `RGN_regenerate.test.js` (5 tests)
+Code: generate/regenerate.js (`regenBuilding`, `regenSummary`, `planRegenerate`, `innerBox`, `isGeneratedRack`,
+`genPlacedOf`), traceGenerate.js (`stampGenPlaced` — Generate's record on its building; `regenerateRacking`, ONE undo
+step), GeneratePanel.jsx (the question). REGENERATE_PLAN.md, "Built" note at the top.
+
+When the building has a layout, Generate asks: **Regenerate racking** — keeps the building, zones, hand-placed racks,
+text, dimensions, layers and elevation types; replaces every generated rack (Generate's stamps or a racking area's)
+with one Fill racking over the building's inner box at Generate's settings ('auto' scores both orientations), the
+hand-placed racks and zones as obstacles, the new racks in one racking area; counts the rows (across the building) and
+the hand edits lost (each area's changed + removed; Generate's racks against `genPlaced`; "can't be detected" on a
+layout generated before the record) — or **Start over** (the old Generate) or Cancel. The panel scrolls within the
+window and brings the question into view.
+
+| Test | What |
+|---|---|
+| `RGN-record` | Generate's `genPlaced` (one per rack); the summary: racks, rows across sections, 1 hand edit (a bay added), 1 hand-placed, 1 zone; no record → edits unknown |
+| `RGN-keep` | 500' × 250', an office, a hand-placed rack and a text after generating: all kept byte for byte (column grid, layers, types too); every old generated rack replaced by the new area's; nothing on the office or the hand-placed rack; aisles only between racks that exist; one undo restores the layout exactly |
+| `RGN-again` | the second Regenerate counts the area's hand edits (a rack removed); 'auto' keeps the orientation with more racks |
+| `RGN-fixture` | the user's fixture filled, a hand-placed rack added, an area rack edited: office, washroom, custom zone and hand rack kept, racks clear of all; one area |
+| `RGN-wire` | the question, its counts and wording, the three buttons, the scrolling panel; both Generate entries stamp the record |
+
+**Break-its:** hand-placed racks treated as generated: RGN-record, -keep, -again, -fixture (4). Area edits not counted:
+RGN-again, -fixture (2).
+
+**Checked in the app** (real mouse): Generate 500' × 250' → 52 racks, `genPlaced` 52; an office (cut 3 racks), a
+hand-placed rack, a text, a bay added; Generate layout → "27 rows (53 racks) … 4 hand edits to generated racks will be
+lost"; Regenerate racking → office, hand rack, text kept, one racking area, none on the office or the hand rack,
+"Regenerated Vertical — 27 rows replaced, 1 hand-placed kept", one undo step (Ctrl+Z restores, record back); Start over →
+the old behaviour (a new building, the office, hand rack and text gone).
 
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);

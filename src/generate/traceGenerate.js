@@ -30,7 +30,8 @@ import { dropUnreachableFaces } from './faceReach'
 import { wallClearOf } from './wallClear'
 import { giveWayIn } from './aisleAccess'
 import { innerOutline } from '../utils/floorGeom'
-import { clearGroup } from '../utils/rowGroupTool'
+import { clearGroup, skipNextAction } from '../utils/rowGroupTool'
+import { regenBuilding, planRegenerate, genPlacedOf } from './regenerate'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
 const FLUE_IN = 9    // back-to-back flue gap for double rows
@@ -243,6 +244,16 @@ function beginOneStep() {
   return kept
 }
 
+/* What Generate placed, on its building (`genPlaced`: rack id → its signature as placed): a later Regenerate counts
+   the racks changed or removed since as hand edits (generate/regenerate.js). */
+function stampGenPlaced(queue) {
+  const fpId = queue.find(o => o.parentId)?.parentId
+  if (!fpId) return
+  const st = useCanvasStore.getState()
+  const rec = genPlacedOf(st.objects.filter(o => o.parentId === fpId))
+  useCanvasStore.setState({ objects: st.objects.map(o => (o.id === fpId ? { ...o, genPlaced: rec } : o)) })
+}
+
 function endOneStep(kept) {
   const s = useCanvasStore.getState()
   const history = [...kept, snapOf(s)].slice(-HISTORY_CAP)
@@ -256,6 +267,7 @@ export function generateAndPlace(brief, generateLayout = sizingSheetLayout, rule
   const { queue, ...picked } = buildQueue(brief, generateLayout, rules)
   const store = useCanvasStore.getState()
   queue.forEach(o => store.addObject(o))
+  stampGenPlaced(queue)
   endOneStep(kept)
   return { ...placedCapacity(brief, rules), ...picked }
 }
@@ -409,9 +421,30 @@ export async function generateAndPlaceBatched(
     await nextFrame()
   }
 
+  stampGenPlaced(queue)
   endOneStep(kept)
   onProgress?.(1)
   return { ...placedCapacity(brief, rules), ...picked }
+}
+
+/* Regenerate racking (generate/regenerate.js, REGENERATE_PLAN.md): the layout's building kept with its zones, text,
+   dimensions, layers, elevation types and hand-placed racks; only the generated racks refilled — one Fill racking over
+   the building with Generate's settings (`brief`: aisle, MHE, orientation — 'auto' scores both — run length, pallet,
+   wall clearance). ONE undo step. Returns { total, usable, orientation, rows, handEdits, editsKnown, … } or null when
+   there is no building or nothing fits. */
+export function regenerateRacking(brief, { rules = DEFAULT_RULES, beamIn = 96 } = {}) {
+  const st = useCanvasStore.getState(), fp = regenBuilding(st.objects)
+  const settings = {
+    orientation: brief.orientation || 'auto', beamIn, palletWIn: brief.palletWIn ?? 40, palletDIn: brief.palletDIn ?? 48,
+    mhe: brief.mhe || 'reach', aisleFt: brief.aisleFt ?? 10.5, maxRunFt: brief.maxRunFt ?? 150, wallClearIn: brief.wallClearIn ?? 0, levels: brief.levels ?? 4,
+  }
+  const r = planRegenerate(st.objects, fp, settings, { gridSize: GS, newId: nanoid, elevations: st.elevations })
+  if (!r) return null
+  const kept = beginOneStep()
+  skipNextAction()                                     // the Row group passes over it: its rows are being replaced
+  useCanvasStore.setState({ objects: r.objects, selectedIds: [], activeBaySelection: [] })
+  endOneStep(kept)
+  return { ...placedCapacity(brief, rules), ...r.summary, orientation: r.orientation, areaId: r.area.id }
 }
 
 // ═══ PHASE-1 STUB ════════════════════════════════════════════════════════════

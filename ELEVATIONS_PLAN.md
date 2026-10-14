@@ -1,142 +1,178 @@
-# Elevations v1 — plan
+# Elevations — plan and current model
 
-Branch `canvas2-elevations` off master (3f7c258). Working mode per CLAUDE.md / memory.
+Branch `canvas2-elevations`. Working mode per CLAUDE.md / memory. This file describes elevations **as they work now**
+(the selection model). The "History" section at the end records what changed and why.
+
+**Rule:** the elevation editor changes only the vertical design (levels, spacing, upright height, pallet, clearance,
+beam face, hole pitch). Nothing in it changes the floor plan. Frame depth, beam length, upright width, pallet size and
+flue are the rack's own; they are edited in the rack panel's Bays and Rack sections.
 
 ## Stop-condition check (done before building)
 
-- **Bays / usable on the fixture and the Generate layouts.** Existing racks' `levels` become types on load and every
-  count reads the bay's type levels, which equal the rack's old `levels` — so positions and usable are identical.
-  Verified by test on the 12 fills (H and V) and the 4 Generate layouts.
-- **Rules already set.** None changes. The Row group "levels" replay still works: a levels edit becomes a type
-  assignment with that many levels, and the replay gives the other rows the same. One-side delete, takeover, splits
+- **Bays and usable on the fixture and the Generate layouts.** On load, existing racks' `levels` become types, and every
+  count reads each bay's type levels. Those equal the rack's old `levels`, so positions and usable are identical.
+  Verified by test on the 12 fills (horizontal and vertical) and the 4 Generate layouts.
+- **Rules already set.** None changes. The Row group "levels" replay still works. One-side delete, takeover, splits
   and joins keep their behaviour and now also carry the type.
-- **Product forks decided here** (listed in the report):
-  - Bay counts in the legend count each side of a back-to-back as one bay, because the two sides can carry
-    different types.
-  - The building's **clear height** is a new field on the building (Properties). A building without one is not
-    checked.
-  - Frame depth is an attribute of the type (drawn, exposed to the BOM). It does not resize racks — "nothing moves".
+- **Product forks decided:**
+  - The legend counts each side of a back-to-back as one bay.
+  - A building without a clear height or sprinkler height isn't checked against it.
 
 ## 1. Data
 
-**Types table** — one object in the layout's `objects` (so undo, save/load and paste-exclusion come free; the canvas
-store is protected and has no other place):
+**The types table** is part of the layout: the canvas store's `elevations` (approved store diff, A4). It is saved
+(file format 2), undone and loaded with the layout. Older files with an `elevation_types` object among their objects
+are migrated on load.
 
 ```
-{ id: 'elevation-types', type: 'elevation_types', version: 1, defaultId,
-  types: [{ id, name, color, uprightHeightIn, frameDepthIn, clearanceIn,
-            levels: [{ beamIn, palletHeightIn, loadLb }] }] }   // levels from the floor up; beamIn 0 = on the floor
+elevations: { version: 1, defaultId, sprinklerClearanceIn?,
+  types: [{ id, name, color, uprightHeightIn, clearanceIn, beamFaceIn, holePitchIn,
+            levels: [{ beamIn, palletHeightIn, loadLb }] }] }   // beamIn to the TOP of the beam; 0 = on the floor
 ```
 
-`version` is the elevation schema version inside the `.trace`/`.wcad` file (bumped on breaking changes).
-The object is never drawn, picked, selected, deleted by Delete / Select all, copied or exported as geometry.
+**Names are always unique.** Duplicates (an old file) are renamed "name 2", "name 3" on load and after each action. A
+rename to a name already in use gets the next free suffix.
 
-**Assignment** — on each beam rack, overrides only where they differ:
+**Assignment.** Each beam rack stores overrides only where they differ:
 
-- `elevType` — the rack's type (absent = the layout default)
-- `elevSides: [t0, t1]` — per side of a back-to-back (side 0 = local top band, the same convention as
-  `activeBaySide` / `faceIndex`); null = the rack's
-- `elevBays: [[...side 0 per bay], [...side 1]]` — per bay on a side; null = the side's
+- `elevType`: the rack's type (absent = the layout default)
+- `elevSides: [t0, t1]`: one per side of a back-to-back (side 0 = the local top band, the same convention as
+  `activeBaySide`). Null = the rack's.
+- `elevBays: [[side 0 per bay], [side 1]]`: per bay on a side. Null = the side's.
 
-A bay-side's type = bay ?? side ?? rack ?? default. After every write the overrides are **compressed** (minimal
-storage, same resolution): the majority type of each side becomes the side type, the common side type the rack type,
-and the rack type is dropped when it is the default.
+A bay-side's type is bay ?? side ?? rack ?? default. After every write the overrides are **compressed** back to the
+minimum.
 
-`rack.levels` stays as a mirror of the rack-level type's level count, so every existing reader keeps working. Every
-count that can see a single bay (bay ledger, rack capacity, column pick blocks, narrow aisles, usable) reads the
-**bay-side's type** through `levelsAt(rack, bay, side)`.
+`rack.levels` mirrors the rack-level type's level count. Every count that can see a single bay (bay ledger, rack
+capacity, column pick blocks, narrow aisles, usable) reads the **bay-side's type** through `levelsAt`.
 
 ## 2. Load, keeper, existing tools
 
-- **Migration** (`reconcileElevations`, run by a keeper on load and after each action, folded into that action's
-  history entry like the pair keeper): with no table, one type per distinct `levels` value ("4 levels": floor + a
-  beam every 60", pallet 48", clearance 6", 2,000 lb, upright = top beam + 60", frame depth = the most common rack
-  depth). The most common becomes the default. Racks with other levels get `elevType`. Nothing moves.
-- **A levels edit** (rack panel, Row group levels replay, anything that sets `levels`): the rack gets the type with
-  that many levels (an existing one, or a copy of its type with levels added or removed at the same spacing).
-- **New racks** (placed, Generate, Fill): the layout default. Fill and racking areas plan with the default's level
-  count.
-- **Carry the type**: bay-delete splits (`splitRackForBayDelete`), one-side delete and the face rule
-  (`piecesFromStates`: a half that becomes a single takes its side's types), Row group bay replays (`withRun`, bays
-  prepended shift the indices), joins (`joinRacks`), takeover (the pair's taken bays get the single's type on that
-  side), paste (the fields copy with the rack).
-- **Type deleted**: every override naming it goes, so those bays fall back to the default (or their side's/rack's
-  type, which is what "reassigns to the default" means for a bay under an override).
+- **The keeper** (`reconcileElevations`) runs after each action and folds its fixes into that action's own history
+  entry:
+  - A layout with no table gets one type per distinct `levels` value ("4 levels": a beam every 60", pallet 48",
+    clearance 6", 2,000 lb, upright = top beam + 60"). The most common becomes the default.
+  - Overrides naming a type that no longer exists are dropped.
+  - Duplicate names are fixed.
+  - **A custom type no bay uses any more is removed**, in the same undo step as the edit that emptied it. A custom
+    type is one named "N levels · custom" or "custom N". Standard types, and a custom type that is the default, stay
+    until deleted.
+- **A levels edit** (the rack panel's Levels field, the Row group levels replay): the rack gets the type with that
+  many levels. An existing type is reused; otherwise a copy is made with levels added or removed at the same spacing,
+  under a unique name.
+- **New racks** (placed, Generate, Fill, Regenerate) get the layout default.
+- **The type is carried** through bay-delete splits, one-side deletes and the face rule, Row group bay replays,
+  joins, the takeover, and paste.
+- **A deleted type**: every override naming it goes, so those bays fall back.
 
-## 3. Paint mode
+## 3. Selection model (Properties)
 
-- **Elevations** panel (right panel): types with a colour swatch and a bay count; create, edit (name, colour,
-  upright height, frame depth, clearance, levels: beam height, pallet height, load; add or remove a level),
-  duplicate, delete, set as default; "Show colours" toggle; the side view.
-- **Paint** on a type: the paint tool (`elevation_paint`). A bar at the top of the canvas: type, **Row / Side / Bay**
-  (Row by default), **Reset to default**, Done.
-- **Hover** shows exactly what a click changes: Row = every rack of the row (`rowsOf`); Side = the half under the
-  cursor (`bayHalfAt`; the flue = both sides; a single = its one side); Bay = that bay on that half (flue = both
-  halves).
-- **Click** applies. **Drag**: Bay / Side stay on the row and the world side where the drag started (the run between
-  the first and the current bay); Row paints every row it crosses. One history entry per click or drag.
-- **Reset** removes the overrides on the target: Row → all of the rack's; Side → that side's and its bays'; Bay →
-  that bay's.
-- Esc, Done or the Select tool leave paint mode.
-- **Row group**: a type change is a new edit kind `elev`. It is replayed per bay-side at the same uprights (within ½")
-  and on the same world side, then compressed. A row with nothing lined up is skipped.
+There is no Elevations tab and no paint mode. The elevation lives in Properties and follows the selection.
+
+- **Selection → bay-sides** (`utils/elevSelection.js` `selectionCells`):
+  - a rack selected whole counts every bay on every side;
+  - a clicked bay counts that bay on the side clicked (both sides when picked between them);
+  - bays picked across racks (Shift+click, bay box) count theirs.
+- **The Elevation section** (`components/Elevations/ElevationSection.jsx`):
+  - a **type dropdown**: choosing a type sets it on every selected bay-side, one undo step;
+  - **tabs**, one per type with its bay count, when the selection carries several types;
+  - the **drawing** of the type shown, at the selected bay's beam length (else the most common in the selection);
+  - a read-only line: Beam · Depth · Pallet · Clearance;
+  - **Details** (collapsed): pallet height, clearance, beam face, hole pitch;
+  - Simple / Detailed, remembered per browser; the PDF prints whichever is chosen.
+- **Editing the drawing** (drag a beam, type a dimension, add or remove a level, drag the upright top) or a Details
+  field saves the new design **for the selected bay-sides only** (the current tab's), one undo step
+  (`findOrMakeType`):
+  - an existing type of that very design is reused;
+  - otherwise a new type named by level count: "N levels" when the spacing is standard (a beam every 60") and the
+    name is free, else "N levels · custom", then "custom 2"…;
+  - a hint line says which.
+- **Nothing selected**: the layout summary and the types list (rename, delete, set default, bay counts, colour,
+  Show colours).
+- **Sprinkler clearance** (18" by default) is the layout's setting. It sits in the building's properties next to the
+  sprinkler height and clear height.
+- **Row group**: a type change is the edit kind `elev`. It is replayed per bay-side at the same uprights and on the
+  same world side.
+- **Width**: the right panel widens while a rack (or bays of one) is selected (480 px to start; drag its edge, width
+  remembered). Otherwise it uses the normal width.
 
 ## 4. Plan view
 
-- Each bay band is filled with its type colour; each side of a pair is filled separately.
-- Legend at the canvas's bottom left: swatch, name, bay count, for the types in use.
-- "Show colours" toggle (panel and legend; presentation state, localStorage `trace.elev.v1`). The PDF follows it:
-  fills plus a legend block next to the title.
+- Each bay band is filled with its type's colour, each side of a pair separately.
+- The legend sits at the canvas's bottom left: swatch, name, bay count, for the types in use.
+- "Show colours" (types list and legend; per browser) controls both. The PDF follows it.
 
-## 5. Side view
+## 5. The drawing
 
-An SVG elevation per type: two uprights, the beams at their heights, pallets on each level, the clearance band,
-dimensions (each beam height, pallet height, upright height, frame depth). Drawn in the panel under the selected
-type and edited through its fields. The PDF gets a second sheet with every type in use.
+`utils/elevationDrawing.js` builds one pure layout. The editor, the PDF and the tests all read that same layout.
 
-## 6. Rules
+- **Front view:**
+  - the beams to the top of each beam, the loads, and level tags L1–Ln;
+  - the frame height, the pitch, and the beam with its pallets per level;
+  - the side clearance;
+  - the clear-height line and the clearance band under the sprinklers.
+- **Side view:** frames, bracing, flue spacers, depth and flue.
+- **Detailed** adds:
+  - beam elevations;
+  - per level, the pallet height and the actual gap (red under the clearance);
+  - the red sprinkler line with its height.
+- **Colours:** in the app they come from theme tokens (`--elev-frame`, `--elev-ink`, `--elev-dim`, `--elev-clr`). The
+  PDF prints the reference sheet's colours on white.
+- **On screen:** the drawing snaps to the device-pixel grid and draws crisp edges. Focusing it never scrolls the
+  panel.
 
-- Different types side by side, or on the two sides of a pair: no warning.
-- A shared upright takes the taller type's height (BOM data).
-- Check layout **errors**:
-  - "Elevation X: top of upright 22' is above the building's clear height 20'" (racks using X inside that building).
-  - "Elevation X: level 2 pallet 48" + 6" clearance doesn't fit between the beams at 60" and 100"" — for the top
-    level, measured against the top of the upright.
-- Pallet positions per bay = positions on the beam × the bay-side type's level count.
+## 6. Rules (Check layout errors)
+
+- A pallet plus its clearance must fit from the top of its beam (or the floor) to the underside of the next beam.
+  The top level has no beam above, so it isn't checked this way.
+- The top of the upright must be at or under the building's clear height.
+- The top of the top load must be at or under the clear height, and at least the sprinkler clearance under the
+  sprinkler heads.
+- Different types side by side, or on the two sides of a pair: no warning. A shared upright takes the taller type's
+  height (BOM data).
 
 ## 7. For the BOM (exposed, not built)
 
-`elevationBays(objects)` → per rack, per bay, per side: `{ rackId, bay, side, typeId, levels (beam heights),
-uprightHeightIn, beamIn }`. `uprightHeights(objects)` → per rack, per upright position, per side: the taller
-neighbour's height.
+- `elevationBays(objects, T)`: per rack, bay and side → type, levels, upright height, beam, frame depth.
+- `uprightHeights(objects, T)`: per upright position, the taller neighbour's height.
 
-## 8. Tests (`EV_elevations.test.js`), both orientations
+## 8. Tests (`EV_elevations.test.js`)
 
-- Migration: types from levels; usable unchanged on the fixture fills and the Generate layouts; nothing moves.
-- Resolution and the six assignment cases; compression; reset; type delete.
-- Positions per bay from the type's levels (ledger, usable, narrow aisles, column check).
-- Paint targets and strokes (Row / Side / Bay, flue, drag constraints); one history entry.
-- Carry through split, one-side delete, takeover, join, paste, Row group bays.
-- Row group `elev` replay on the same world side.
-- Check layout errors.
-- Legend counts; PDF fills / legend / side-view sheet.
-- BOM data.
-- One break-it per behaviour.
+Both orientations for the layout tests. Coverage:
 
-Real-mouse check: create two types, paint a row, one side, three bays by drag, reset, undo, toggle colours,
-legend counts.
+- migration;
+- resolution and the six assignment cases;
+- positions per bay;
+- the selection's bay-sides, choosing a type, saving a design for the selection;
+- naming, unique names, removing unused custom types;
+- carrying the type through edits, and the Row group;
+- Check layout;
+- legend, PDF and BOM;
+- the drawing in both modes;
+- the Properties wiring.
 
-## v2 (built)
+There is one break-it per behaviour.
 
-- **A1** beam face height per type (4"); levels to the top of the beam; fit = top of the lower beam to the underside of
-  the next ≥ pallet + clearance. **A2** frame depth from the rack (read-only on the drawing; BOM reads rack depth).
-  **A3** a type change is no hand edit (area records compared without levels; refit reuses racks by shape).
-- **A4** the types are the store's `elevations` (approved diff); save / load format 2, old files migrated; the history
-  writers outside the store keep them; every count takes them as input.
-- **B** right panel: list, colours, preview. The editor docked under the canvas: divider (height per browser),
-  collapse; linked to the canvas selection; choosing a type arms paint mode.
-- **C** on the drawing: drag beams (hole pitch, 2"), double-click a dimension to type it, click an empty upright to add a
-  level, drag off / select + Delete to remove, drag the upright top; fields: pallet, clearance, face, pitch.
-- **D** the drawing: front + side, the sample's dimensions, building clear height + sprinkler with the roof truss.
-- **E** beam length per bay: the picker lists the lengths the type's bays use; level edits apply to the type.
-- **F** PDF: the layout + legend, then one elevation per type × beam length, several per A1 sheet.
+## History
+
+- **v1:** types and layered assignment, migration, the keeper, paint mode (Row / Side / Bay), legend, side view,
+  checks, BOM data.
+- **v2:**
+  - beam face and levels to the top of the beam;
+  - frame depth from the rack;
+  - the types moved into the store (A4);
+  - the editor docked under (later beside) the canvas;
+  - drag, type and add/remove gestures;
+  - the reference-style drawing;
+  - beam length per bay;
+  - the PDF elevation sheets.
+- **v2.x:**
+  - sprinkler clearance and the top-load check;
+  - Simple / Detailed;
+  - theme tokens;
+  - the Properties | Elevations tabs, then the editor moved into the Elevations tab.
+- **v3 (current):**
+  - the elevation moved into Properties, driven by the selection; paint mode and the tab removed;
+  - an edit saves a design for the selection only, named by level count;
+  - unused custom types are removed automatically;
+  - the rack panel was reorganised into Summary, Bays, Elevation and Rack.

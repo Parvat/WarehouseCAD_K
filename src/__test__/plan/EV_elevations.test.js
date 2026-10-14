@@ -244,6 +244,32 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     expect(E.typeIdAt(rack(objs(), 'p2'), 2, 1, T())).toBe(def)
   })
 
+  it('EV-custom-prune: a custom type no bay uses any more is removed — in the same undo step as the edit (or the type choice) that emptied it; standard types stay until deleted; a custom default stays', async () => {
+    const L = hand(vert); load(L.o, L.t); await settle()
+    const def = T().defaultId, base = E.typeById(T(), def), one = new Map([['p1', [[0, 1]]]])
+    const r1 = SEL.commitDesign(store, one, ED.moveBeam(base, 1, 70)); await settle()
+    const h = hist()
+    expect(T().types.map(t => t.name)).toEqual(['4 levels', '4 levels · custom'])
+    // the bay edited back to the standard design: the custom type goes with that one edit
+    SEL.commitDesign(store, one, base); await settle()
+    expect([T().types.map(t => t.name), hist()]).toEqual([['4 levels'], h + 1])
+    expect(JSON.parse(store.getState().history[hist()]).elevations.types.length).toBe(1)        // folded into the entry
+    store.getState().undo()
+    expect([T().types.map(t => t.name), E.typeIdAt(rack(objs(), 'p1'), 1, 0, T())]).toEqual([['4 levels', '4 levels · custom'], r1.id])
+    // a type chosen over it: gone too
+    SEL.commitAssign(store, one, def); await settle()
+    expect(T().types.some(t => t.id === r1.id)).toBe(false)
+    // a standard type unused stays; a custom type made the default stays
+    const r5 = SEL.commitDesign(store, one, E.withLevelCount(base, 5)); await settle()
+    SEL.commitAssign(store, one, def); await settle()
+    expect(T().types.some(t => t.id === r5.id)).toBe(true)
+    const rc = SEL.commitDesign(store, one, ED.moveBeam(base, 1, 80)); await settle()
+    commitTable(t => E.setDefault(t, rc.id)); await settle()
+    SEL.commitAssign(store, one, def); await settle()
+    expect(T().types.some(t => t.id === rc.id)).toBe(true)
+    expect(E.isCustomName('4 levels · custom 3') && E.isCustomName('2 levels · custom') && !E.isCustomName('Mezzanine custom')).toBe(true)
+  })
+
   it('EV-names: names stay unique — a duplicate (an old file) renamed on load; a rename to a name in use gets "name 2"; the design key ignores the name, id and colour', () => {
     const { o, t } = hand(vert)
     const dup = { ...t, types: [...t.types, { ...t.types[0], id: 'x', color: '#000' }, { ...t.types[0], id: 'y' }] }

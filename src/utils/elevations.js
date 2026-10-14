@@ -192,7 +192,9 @@ const freshId = (table, base) => { let id; do { id = `${base}-${(++seq).toString
  *   - overrides naming a type that no longer exists are dropped (those bays fall back);
  *   - a rack whose `levels` changed while its type didn't (`prevObjects`: the layout before — a levels edit, the
  *     Row group's levels replay) gets the type with that many levels — an existing one, or a copy of its type;
- *   - any other mismatch (a new rack, a piece, a type changed): `levels` follows the type. */
+ *   - any other mismatch (a new rack, a piece, a type changed): `levels` follows the type;
+ *   - a custom type ("N levels · custom", findOrMakeType's) no bay carries any more is removed — in the same pass, so
+ *     the edit that emptied it and its removal are one undo step. Standard types stay until deleted. */
 export function reconcileElevations({ prevObjects = null, objects, table, migrate: doMigrate = true }) {
   let out = objects, T = table
   const legacy = extractLegacy(out)
@@ -233,7 +235,18 @@ export function reconcileElevations({ prevObjects = null, objects, table, migrat
     if (r !== o) changed = true
     return r
   })
+  const unused = unusedCustom(out, tb)
+  if (unused.length) tb = { ...tb, types: tb.types.filter(t => !unused.includes(t.id)) }
   return { objects: changed ? out : objects, table: tb }
+}
+/** A custom type's name — what findOrMakeType calls a design at a non-standard spacing. */
+export const isCustomName = (name) => / · custom( \d+)?$/.test(String(name || ''))
+/** The custom types of `table` no bay of `objects` carries (never the default) → their ids. */
+export function unusedCustom(objects, table) {
+  if (!table || !table.types.some(t => isCustomName(t.name))) return []
+  const used = new Set()
+  for (const r of objects) if (isBeamRack(r)) for (const side of typeMap(r, table)) for (const id of side) used.add(id)
+  return table.types.filter(t => isCustomName(t.name) && t.id !== table.defaultId && !used.has(t.id)).map(t => t.id)
 }
 
 /** The history snapshot the store writes (useCanvasStore pushHistory's shape) — for the writers outside the store
@@ -343,7 +356,7 @@ export const isStandardSpacing = (t) => [...t.levels].sort((a, b) => a.beamIn - 
 export function findOrMakeType(table, design) {
   const key = designKey(design)
   const same = table.types.find(t => designKey(t) === key)
-  if (same) return { table, id: same.id, name: same.name, created: false, custom: / · custom/.test(same.name) }
+  if (same) return { table, id: same.id, name: same.name, created: false, custom: isCustomName(same.name) }
   const base = `${design.levels.length} levels`
   let name = base
   if (!isStandardSpacing(design) || table.types.some(t => t.name === base)) {

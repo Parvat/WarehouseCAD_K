@@ -1,4 +1,15 @@
-# Regenerate — plan (no code yet)
+# Regenerate — plan
+
+> **Built.** Where the build differs from the plan below:
+>
+> - Generate records what it placed on its **building** (`genPlaced`: rack id → signature), instead of creating a
+>   racking area. The plan's step 1 would have added an object to every Generate layout and its tests.
+> - Regenerate (`generate/regenerate.js` `planRegenerate`, `traceGenerate.js` `regenerateRacking`) replaces **every**
+>   generated rack, the hand-edited ones included. Their edits are counted in the warning as lost, not kept.
+> - The new racks go into one racking area over the building, so the next Regenerate counts that area's hand edits.
+> - When the building already has a layout, Generate asks "Regenerate racking" (with counts) or "Start over" (the old
+>   Generate).
+> - Aisle labels and per-rack elevation assignments are not carried over: new racks take the default type.
 
 **Goal:** re-run racking on a finished layout and replace only the racks that Generate or Fill made. Everything else
 stays as the user left it:
