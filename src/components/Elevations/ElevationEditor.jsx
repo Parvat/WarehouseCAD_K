@@ -12,8 +12,8 @@ import { rackDepthUpdate } from '../../utils/rackDepth'
    On the drawing: drag a beam up or down (snapping to the type's hole pitch, its elevation live); drag it off the
    ends of the bay, or click it and press Delete, to remove its level; click an empty upright to add a level there;
    drag the top of the upright to change its height; double-click a dimension to type it exactly. Every drag or typed
-   edit is ONE undo step. Frames and beams take the theme's --elev-frame, the ground --elev-ink, so a dark panel keeps
-   them readable (the PDF prints the reference's own colours). */
+   edit is ONE undo step. Frames and beams take the theme's --elev-frame, the ground --elev-ink, the dimensions
+   --elev-dim, the clearances --elev-clr, so a dark panel keeps them readable (the PDF prints the reference's own colours). */
 
 const store = useCanvasStore
 const seg = (on) => ({ padding: '2px 8px', fontSize: 11, borderRadius: 4, border: 'none', cursor: 'pointer', background: on ? 'var(--accent-solid, #0B101D)' : 'transparent', color: on ? 'var(--accent-fg, #fff)' : 'var(--text2)' })
@@ -121,7 +121,7 @@ function Drawing({ t, entry, building, sel, sprClr, detail }) {
   const shown = draft ? draft.type : t
   // centred and fitted to the pane (elevationLayout centres it in the box), labels in proportion with a readable minimum
   const fontPx = paneFontPx(box)
-  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, bg: 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail])
+  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, bg: 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail])
 
   const at = (ev) => { const r = host.current.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
   const zAt = (p) => (d.floor - p.y) / d.scale

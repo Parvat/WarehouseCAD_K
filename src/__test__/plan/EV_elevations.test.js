@@ -603,6 +603,16 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(th.filter(i => ['beam', 'upright', 'frame', 'spacer'].includes(i.tag)).every(i => i.fill === 'var(--elev-frame)')).toBe(true)
     expect(th.some(i => i.t === 'line' && i.stroke === 'var(--elev-ink)')).toBe(true)
     expect(JSON.stringify(th).includes('#123A2E') || JSON.stringify(th).includes('#15181C')).toBe(false)
+    // blue / red: the dimensions and the clearances take the theme's too (dark themes: light enough to read); the PDF the reference's
+    const tk = elevationLayout(sampleT(), 96, { w: 1100, h: 460 }, { ...sampleO, detail: 'detailed', blue: 'var(--elev-dim)', red: 'var(--elev-clr)' }).items
+    const fills = tk.flatMap(i => [i.fill, i.stroke]).filter(Boolean)
+    expect([fills.includes('var(--elev-dim)'), fills.includes('var(--elev-clr)'), fills.includes('#1B4FD8'), fills.includes('#A8341C')]).toEqual([true, true, false, false])
+    expect(tk.find(i => i.t === 'text' && /^FRAME/.test(i.s)).fill).toBe('var(--elev-dim)')
+    expect(tk.find(i => i.t === 'text' && / CLR$/.test(i.s)).fill).toBe('var(--elev-clr)')
+    const tok2 = (th) => { const a = css.indexOf(`[data-theme="${th}"] {`), b = css.indexOf('\n}', a); const m = css.slice(a, b).match(/--elev-dim:(#[0-9A-Fa-f]{6}); --elev-clr:(#[0-9A-Fa-f]{6});/); return m ? [m[1], m[2]] : null }
+    expect([tok2('trace'), tok2('studio')]).toEqual([['#1B4FD8', '#A8341C'], ['#1B4FD8', '#A8341C']])
+    for (const th of ['obsidian', 'blueprint']) expect([th, lum(tok2(th)[0]) > 120, lum(tok2(th)[1]) > 120]).toEqual([th, true, true])
+    expect(readFileSync(new URL('../../components/Elevations/ElevationEditor.jsx', import.meta.url), 'utf8')).toMatch(/blue: 'var\(--elev-dim\)', red: 'var\(--elev-clr\)'/)
     const d = elevationLayout(sampleT(), 96, { w: 900, h: 400 }, { ...sampleO, bg: 'var(--surface)' })
     expect(d.items.filter(i => i.t === 'text').every(i => i.haloColor === 'var(--surface)')).toBe(true)
     expect(itemSVGOf(d).includes('stroke:var(--surface)')).toBe(true)

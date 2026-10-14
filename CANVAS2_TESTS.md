@@ -2021,6 +2021,12 @@ colours ignored: EV-background. Panel fixed at 272: EV-panel. Labels not kept in
 beam elevation typed, a level added, Delete and drag-off, the pallet field typed — six undo steps each run; Detailed
 draws the red sprinkler line; obsidian draws the frames light green (rgb 93,187,147).
 
+**Dimension and clearance colours per theme (v2.3.1).** `blue` / `red` options on elevationLayout; the editor passes
+`--elev-dim` / `--elev-clr` (all four theme blocks: the reference blue and red on trace / studio, light blue and coral on
+obsidian / blueprint); the PDF keeps the reference colours. Changed: EV-background. Break-it: the options ignored →
+EV-background. Checked in the app: FRAME / CLR / SPRINKLERS computed rgb(127,166,255) / rgb(255,140,117) on obsidian,
+rgb(142,197,255) / rgb(255,154,133) on blueprint, the reference colours on trace; a beam drag one undo step.
+
 ### EV-v1
 Plan: ELEVATIONS_PLAN.md. Code: utils/elevations.js (types, layered assignment, compression, migration, the keeper,
 checks, legend, BOM data), utils/elevPaint.js (paint mode), utils/elevationDraw.js (colours toggle, bay fills, side

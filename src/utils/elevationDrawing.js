@@ -63,11 +63,12 @@ export function misfitLevels(t) {
  *  and per level the pallet height and the ACTUAL gap to the underside of the beam above, red under the clearance, and
  *  that beam's face), compact (the panel's preview: no labels), stacked (the side view under the front view), scale, bg
  *  (the colour behind the labels' halo: the panel's), frame / ink (the frames' and beams' colour, the ground's and base
- *  plates' — the editor passes theme tokens so a dark panel keeps them readable; the PDF the defaults), draft overrides { active, removing }. Items: { t: 'rect'|'line'|
+ *  plates'), blue / red (the dimensions', the clearances') — the editor passes theme tokens so a dark panel keeps them
+ *  readable; the PDF the reference's own colours — draft overrides { active, removing }. Items: { t: 'rect'|'line'|
  *  'text'|'poly'|'polygon'|'path', ..., role, tag } — role { kind: 'beam', k } | { kind: 'upright', x } | { kind: 'top' } |
  *  { kind: 'dim', id, k?, value } for the editor. No label overlaps a load, a beam or another label (declutter). */
 export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = {}) {
-  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK } = opts
+  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED } = opts
   const detailed = detail === 'detailed'
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
   const L = [...t.levels].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
@@ -112,14 +113,14 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const colPx = Math.max(3.5, upW * s), beamPx = Math.max(4, face * s), deckPx = Math.max(3, 4 * s)
   const items = []
   const rect = (x, y, w, h, o = {}) => items.push({ t: 'rect', x, y, w, h, ...o })
-  const line = (x1, y1, x2, y2, o = {}) => items.push({ t: 'line', x1, y1, x2, y2, stroke: o.stroke || BLUE, sw: o.sw || sw, ...o })
-  const text = (x, y, str, o = {}) => items.push({ t: 'text', x, y, s: str, size: o.size || fO, fill: o.fill || BLUE, anchor: o.anchor || 'middle', font: FONT, halo: Math.max(1.5, (o.size || fO) * 0.45), haloColor: bg, ...o })
+  const line = (x1, y1, x2, y2, o = {}) => items.push({ t: 'line', x1, y1, x2, y2, stroke: o.stroke || blue, sw: o.sw || sw, ...o })
+  const text = (x, y, str, o = {}) => items.push({ t: 'text', x, y, s: str, size: o.size || fO, fill: o.fill || blue, anchor: o.anchor || 'middle', font: FONT, halo: Math.max(1.5, (o.size || fO) * 0.45), haloColor: bg, ...o })
   const keyOf = (r) => (r ? r.kind + ':' + (r.k ?? r.id ?? '') : null)
   const isActive = (r) => active && keyOf(r) === active
 
   /* a vertical dimension (the reference's: a thin line with short ticks at its ends, the label turned along it on its
      outer side); too short for its label, the label sits beside it */
-  const dimV = (x, y0, y1, label, role, { from = null, color = BLUE, size = fO, pri = 2, out = -1 } = {}) => {
+  const dimV = (x, y0, y1, label, role, { from = null, color = blue, size = fO, pri = 2, out = -1 } = {}) => {
     if (compact) return
     const hot = isActive(role), c = hot ? '#d0392b' : color, w = hot ? sw * 1.6 : sw * 0.9
     if (from != null) for (const y of [y0, y1]) line(from, y, x + (from < x ? size * 0.4 : -size * 0.4), y, { stroke: c, sw: sw * 0.5 })
@@ -130,7 +131,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     else text(x + out * size * 0.6, (y0 + y1) / 2 + size * 0.35, label, { anchor: out < 0 ? 'end' : 'start', size, fill: c, weight: hot ? 700 : undefined, role, ...meta })
   }
   // (`outboard` 'left' | 'right': a label wider than its span goes beyond that end, on the line's own row, as drafted)
-  const dimH = (y, x0, x1, label, { color = BLUE, size = fO, below = true, outboard = null } = {}) => {
+  const dimH = (y, x0, x1, label, { color = blue, size = fO, below = true, outboard = null } = {}) => {
     if (compact) return
     line(x0, y, x1, y, { stroke: color, sw: sw * 0.9 })
     for (const x of [x0, x1]) line(x, y - size * 0.45, x, y + size * 0.45, { stroke: color, sw: sw * 0.9 })
@@ -149,15 +150,15 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     if (bSprink) {
       const top = Yv(bSprink), bot = top + sprinklerClearanceIn * s
       rect(x0, top, x1 - x0, bot - top, { fill: BAND, opacity: 0.2, tag: 'band' })
-      line(x0, top, x1, top, detailed ? { stroke: RED, sw: sw * 1.4, tag: 'sprinkler' } : { stroke: ink, sw: sw * 1.2, dash: `${fO * 0.7} ${fO * 0.4}` })
+      line(x0, top, x1, top, detailed ? { stroke: red, sw: sw * 1.4, tag: 'sprinkler' } : { stroke: ink, sw: sw * 1.2, dash: `${fO * 0.7} ${fO * 0.4}` })
       if (!compact) {
         // (Simple, the sprinklers at the clear height itself: one line, labelled as the clear height, as on the reference)
-        if (detailed || !(bClear && Math.abs(bClear - bSprink) < 0.5)) text(x1 - 2, top - fT * 0.55, `SPRINKLERS ${ftInDash(bSprink)}`, { anchor: 'end', size: fT, fill: detailed ? RED : GREY, pri: 2, tag: 'shell' })
+        if (detailed || !(bClear && Math.abs(bClear - bSprink) < 0.5)) text(x1 - 2, top - fT * 0.55, `SPRINKLERS ${ftInDash(bSprink)}`, { anchor: 'end', size: fT, fill: detailed ? red : GREY, pri: 2, tag: 'shell' })
         // the band's label inside the band, under the clear-height line where that line crosses it — never on the line;
         // no room there: none (it stays in that strip when it gives way, or goes)
         const lineY = bClear ? Yv(bClear) : null
         const y0 = lineY != null && lineY > top - 0.5 && lineY < bot ? lineY + sw * 2 : top + 1, y1 = bot - 1
-        if (y1 - y0 >= fT * 1.05) text(x0 + 2, (y0 + y1) / 2 + fT * 0.29, `CLEARANCE ${ftInDash(sprinklerClearanceIn)}`, { anchor: 'start', size: fT, fill: RED, pri: 3, tag: 'shell', keepIn: [y0, y1] })
+        if (y1 - y0 >= fT * 1.05) text(x0 + 2, (y0 + y1) / 2 + fT * 0.29, `CLEARANCE ${ftInDash(sprinklerClearanceIn)}`, { anchor: 'start', size: fT, fill: red, pri: 3, tag: 'shell', keepIn: [y0, y1] })
       }
     }
     if (bClear) {
@@ -181,7 +182,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       rect(Xf(x), Y(z + lh), palletWIn * s, Math.max(0, lh * s - deckPx), { fill: bad ? MISFIT : LOAD, stroke: bad ? MISFIT_EDGE : LOAD_EDGE, sw: bad ? sw * 1.2 : 1, opacity: gone ? 0.35 : 1, tag: 'load', level: lv.k })
       rect(Xf(x), Y(z) - Math.min(deckPx, lh * s), palletWIn * s, Math.min(deckPx, lh * s), { fill: bad ? MISFIT_EDGE : DECK, stroke: bad ? MISFIT_EDGE : LOAD_EDGE, sw: 1, opacity: gone ? 0.35 : 1, tag: 'load', level: lv.k })
     }
-    if (bad && per && !compact) text(Xf(frontW / 2), Y(z + lh / 2) + fT * 0.35, misfit.has(lv.k) ? "DOESN'T FIT" : topIssue === 'clear' ? 'ABOVE CLEAR HEIGHT' : `WITHIN ${sprinklerClearanceIn}" OF SPRINKLERS`, { size: fT, fill: RED, weight: 600, tag: 'misfit', pri: 1.5, level: lv.k })
+    if (bad && per && !compact) text(Xf(frontW / 2), Y(z + lh / 2) + fT * 0.35, misfit.has(lv.k) ? "DOESN'T FIT" : topIssue === 'clear' ? 'ABOVE CLEAR HEIGHT' : `WITHIN ${sprinklerClearanceIn}" OF SPRINKLERS`, { size: fT, fill: red, weight: 600, tag: 'misfit', pri: 1.5, level: lv.k })
     // the level tag, grey, beside the right frame
     if (!compact && per) text(Xf(frontW) + cTag, Y(z + lh / 2) + fT * 0.35, `L${i + 1}`, { anchor: 'start', size: fT, fill: GREY, pri: 2, tag: 'tag' })
   })
@@ -206,8 +207,8 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     // the pallets' side clearance to the frames, red, under the bay
     if (per) {
       const yc = floor + fO * 1.1, g = gapIn * s
-      line(Xf(upW), yc, Xf(upW) + g, yc, { stroke: RED, sw: sw * 0.9 }); line(Xf(upW + bayIn) - g, yc, Xf(upW + bayIn), yc, { stroke: RED, sw: sw * 0.9 })
-      text(Xf(frontW) + cTag, yc + fT * 0.35, `${(Math.round(gapIn * 10) / 10)}" CLR`, { anchor: 'start', size: fT, fill: RED, pri: 2, tag: 'clr' })
+      line(Xf(upW), yc, Xf(upW) + g, yc, { stroke: red, sw: sw * 0.9 }); line(Xf(upW + bayIn) - g, yc, Xf(upW + bayIn), yc, { stroke: red, sw: sw * 0.9 })
+      text(Xf(frontW) + cTag, yc + fT * 0.35, `${(Math.round(gapIn * 10) / 10)}" CLR`, { anchor: 'start', size: fT, fill: red, pri: 2, tag: 'clr' })
     }
     // the beam, with its pallets per level, blue, under the bay
     dimH(floor + fO * 2.4, Xf(upW), Xf(upW + bayIn), `BEAM ${ftInDash(bayIn)} · ${per}P`)
@@ -215,8 +216,8 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       // each beam's elevation to its top, blue, on a leader off the beam's end
       for (const lv of L) if (lv.beamIn > 0) {
         const y = Y(lv.beamIn), role = { kind: 'dim', id: 'elev', k: lv.k, value: lv.beamIn }, hot = isActive(role) || isActive({ kind: 'beam', k: lv.k })
-        line(Xf(frontW), y, Xf(frontW) + cElev - fE * 0.3, y, { stroke: hot ? '#d0392b' : BLUE, sw: hot ? sw * 1.6 : sw * 0.9 })
-        text(Xf(frontW) + cElev, y + fE * 0.36, ftInDash(lv.beamIn), { anchor: 'start', size: fE, fill: hot ? '#d0392b' : BLUE, weight: 600, role, pri: 1 })
+        line(Xf(frontW), y, Xf(frontW) + cElev - fE * 0.3, y, { stroke: hot ? '#d0392b' : blue, sw: hot ? sw * 1.6 : sw * 0.9 })
+        text(Xf(frontW) + cElev, y + fE * 0.36, ftInDash(lv.beamIn), { anchor: 'start', size: fE, fill: hot ? '#d0392b' : blue, weight: 600, role, pri: 1 })
       }
       // per level: the pallet, the ACTUAL gap to the underside of the beam above (red under the clearance), that beam's face
       const xc = X0 - cChain, ext = X0 - fO * 0.35, chainO = { from: ext, size: fT, pri: 3, out: -1 }
@@ -225,10 +226,10 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
         if (i + 1 < L.length) {
           const under = L[i + 1].beamIn - face, g = under - (z0 + ph)
           if (ph > 0) dimV(xc, Y(z0), Y(Math.min(z0 + ph, under)), ftInDash(ph), { kind: 'dim', id: 'pallet', k: lv.k, value: ph }, chainO)
-          if (g > 0) dimV(xc, Y(z0 + ph), Y(under), ftInDash(g), { kind: 'dim', id: 'gap', k: lv.k, value: g }, { ...chainO, color: g < clearance - 1e-6 ? RED : BLUE })
-          else text(xc - fT * 0.6, Y(under) + fT * 0.35, 'GAP ' + ftInDash(g), { anchor: 'end', size: fT, fill: RED, weight: 600, pri: 3, tag: 'gap', level: lv.k })
+          if (g > 0) dimV(xc, Y(z0 + ph), Y(under), ftInDash(g), { kind: 'dim', id: 'gap', k: lv.k, value: g }, { ...chainO, color: g < clearance - 1e-6 ? red : blue })
+          else text(xc - fT * 0.6, Y(under) + fT * 0.35, 'GAP ' + ftInDash(g), { anchor: 'end', size: fT, fill: red, weight: 600, pri: 3, tag: 'gap', level: lv.k })
           const y0 = Y(under), y1 = Y(L[i + 1].beamIn)
-          line(xc, y0, xc, y1, { stroke: BLUE, sw: sw * 0.9 })
+          line(xc, y0, xc, y1, { stroke: blue, sw: sw * 0.9 })
           text(xc - fT * 1.6, (y0 + y1) / 2 + fT * 0.32, ftInDash(face), { anchor: 'end', size: fT, fill: GREY, pri: 3, role: { kind: 'dim', id: 'face', value: face }, tag: 'face' })
         } else {
           // the top level: its pallet, then the gaps up to the clear height and the sprinkler heads (red: above the clear
@@ -239,8 +240,8 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
           let from = zTop
           for (const [h, id] of marks) {
             const red = id === 'clear' ? h < zTop - 1e-6 : h - zTop < sprinklerClearanceIn - 1e-6
-            if (h > from + 1e-6) { dimV(xc, Y(from), Y(h), ftInDash(h - from), { kind: 'info', id: 'gap-' + id }, { ...chainO, color: red ? RED : BLUE }); from = h }
-            else if (h < zTop) text(xc - fT * 0.6, Y(h) + fT * 0.35, (id === 'clear' ? 'CLEAR ' : 'SPRINKLER ') + ftInDash(h - zTop), { anchor: 'end', size: fT, fill: RED, weight: 600, pri: 3, tag: 'gap', level: lv.k })
+            if (h > from + 1e-6) { dimV(xc, Y(from), Y(h), ftInDash(h - from), { kind: 'info', id: 'gap-' + id }, { ...chainO, color: red ? red : blue }); from = h }
+            else if (h < zTop) text(xc - fT * 0.6, Y(h) + fT * 0.35, (id === 'clear' ? 'CLEAR ' : 'SPRINKLER ') + ftInDash(h - zTop), { anchor: 'end', size: fT, fill: red, weight: 600, pri: 3, tag: 'gap', level: lv.k })
           }
         }
       })
