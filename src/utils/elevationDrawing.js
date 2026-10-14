@@ -1,5 +1,5 @@
 // elevationDrawing.js — the rack elevation drawing of one type at one beam length (Elevations v2 §D–F): ONE pure
-// layout of primitives in pixel space, drawn by the editor (components/Elevations/ElevationEditor.jsx — the same
+// layout of primitives in pixel space, drawn by the editor (components/Elevations/ElevationDrawing.jsx — the same
 // primitives made interactive by their `role`) and the PDF (toSVG), so the two never differ.
 //
 // Dimensioned and labelled as on the reference rack elevation (the sample sheet); drawn in Trace's own colours (blue
@@ -114,7 +114,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const items = []
   const rect = (x, y, w, h, o = {}) => items.push({ t: 'rect', x, y, w, h, ...o })
   const line = (x1, y1, x2, y2, o = {}) => items.push({ t: 'line', x1, y1, x2, y2, stroke: o.stroke || blue, sw: o.sw || sw, ...o })
-  const text = (x, y, str, o = {}) => items.push({ t: 'text', x, y, s: str, size: o.size || fO, fill: o.fill || blue, anchor: o.anchor || 'middle', font: FONT, halo: Math.max(1.5, (o.size || fO) * 0.45), haloColor: bg, ...o })
+  const text = (x, y, str, o = {}) => items.push({ t: 'text', x, y, s: str, size: o.size || fO, fill: o.fill || blue, anchor: o.anchor || 'middle', font: FONT, halo: Math.max(1.5, (o.size || fO) * 0.45), haloColor: bg, ...o, weight: o.weight ?? 500 })   // (500: a touch bolder than book, to read at small sizes)
   const keyOf = (r) => (r ? r.kind + ':' + (r.k ?? r.id ?? '') : null)
   const isActive = (r) => active && keyOf(r) === active
 

@@ -25,7 +25,7 @@
 //     on as a single): the same side, across the floor, of every target bay whose uprights line up, a pair's half
 //     going the same way; a target single standing on that side of its row loses that bay, one on the other side
 //     keeps it. A target with no bay lined up is skipped;
-//   - an elevation type painted (utils/elevations.js, utils/elevPaint.js): the same type on every target bay whose
+//   - an elevation type painted (utils/elevations.js; set from a selection, utils/elevSelection.js): the same type on every target bay whose
 //     uprights line up, on the same side across the floor; a whole row painted one type: the target rows whole;
 //   - a row added next to a group row: one next to each other group row, at the same distance across,
 //     over that row's own racks (its own length, gaps and uprights).

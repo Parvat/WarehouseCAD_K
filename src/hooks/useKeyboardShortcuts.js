@@ -9,7 +9,6 @@ import { FILL_TOOL, cancelFill } from '../utils/fillTool'
 import { SPLIT_TOOL, useSplit } from '../utils/splitTool'
 import { pickableIn } from '../utils/layers'
 import { deleteBaySelection } from '../utils/baySides'
-import { PAINT_TOOL } from '../utils/elevPaint'
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -24,8 +23,6 @@ export function useKeyboardShortcuts() {
         // a fill box being dragged: Esc drops it, nothing placed; with none, Esc leaves the fill tool
         if (cancelFill()) return
         if (useCanvasStore.getState().activeTool === FILL_TOOL) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
-        // paint mode (utils/elevPaint.js): Esc leaves it
-        if (useCanvasStore.getState().activeTool === PAINT_TOOL) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         // a row being placed (paste, duplicate, left panel): Esc cancels it, nothing else
         if (cancelPlacement()) return
         // the Row group (utils/rowGroupTool.js): Esc leaves the Row group tool, then clears the group (and a pending apply)

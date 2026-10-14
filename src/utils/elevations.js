@@ -199,6 +199,7 @@ export function reconcileElevations({ prevObjects = null, objects, table, migrat
   if (legacy.objects !== out) { out = legacy.objects; if (!T) T = legacy.table }
   if (!T && !doMigrate) return { objects: out, table: T }   // (the Row group's writer: a layout without types stays so)
   if (!T) { const m = migrate(out); if (!m) return { objects: out, table: T }; out = m.objects; T = m.table }
+  { const d = dedupeNames(T); if (d !== T) T = d }   // two types of one name (an old file): the later ones renamed
   const ids = new Set(T.types.map(t => t.id))
   const known = (v) => v == null || v === DEFAULT_REF || ids.has(v)
   const prevById = new Map((prevObjects || []).filter(isBeamRack).map(o => [o.id, o]))
@@ -220,7 +221,7 @@ export function reconcileElevations({ prevObjects = null, objects, table, migrat
         const n = r.levels || 1
         let m = tb.types.find(x => x.levels.length === n)
         if (!m) {
-          m = { ...withLevelCount(t, n), id: freshId(tb, 'elev'), name: `${n} levels`, color: PALETTE[tb.types.length % PALETTE.length] }
+          m = { ...withLevelCount(t, n), id: freshId(tb, 'elev'), name: uniqueTypeName(tb, `${n} levels`), color: PALETTE[tb.types.length % PALETTE.length] }
           tb = { ...tb, types: [...tb.types, m] }
           ids.add(m.id)
         }
@@ -305,6 +306,70 @@ export function removeType(table, id) {
   return { ...table, types, defaultId: table.defaultId === id ? types[0].id : table.defaultId }
 }
 export const setDefault = (table, id) => (table.types.some(t => t.id === id) ? { ...table, defaultId: id } : table)
+
+/* ── names, and a design saved as a type ─────────────────────────────────── */
+
+/** `name`, or "name 2", "name 3"… — the first no other type (but `exceptId`) is called. */
+export function uniqueTypeName(table, name, exceptId = null) {
+  const taken = new Set((table?.types || []).filter(t => t.id !== exceptId).map(t => t.name))
+  if (!taken.has(name)) return name
+  let k = 2
+  while (taken.has(`${name} ${k}`)) k++
+  return `${name} ${k}`
+}
+/** The table with every name unique: a later type with a name already used gets "name 2"… (same table when none). */
+export function dedupeNames(table) {
+  if (!table) return table
+  const seen = new Set()
+  let changed = false
+  const types = table.types.map(t => {
+    if (!seen.has(t.name)) { seen.add(t.name); return t }
+    let k = 2
+    while (seen.has(`${t.name} ${k}`) || table.types.some(x => x.name === `${t.name} ${k}`)) k++
+    const name = `${t.name} ${k}`
+    seen.add(name); changed = true
+    return { ...t, name }
+  })
+  return changed ? { ...table, types } : table
+}
+/** What a type IS, vertically — its levels (beam tops, pallets, loads), upright, clearance, beam face, hole pitch —
+ *  as a key: two types with the same key are the same design whatever they are called. */
+export const designKey = (t) => JSON.stringify({ L: [...t.levels].sort((a, b) => a.beamIn - b.beamIn).map(l => [l.beamIn, l.palletHeightIn ?? 0, l.loadLb ?? 0]), u: t.uprightHeightIn, c: t.clearanceIn ?? CLEARANCE_IN, f: beamFace(t), p: holePitch(t) })
+/** The levels at the standard spacing: the floor, then a beam every SPACING_IN. */
+export const isStandardSpacing = (t) => [...t.levels].sort((a, b) => a.beamIn - b.beamIn).every((l, k) => Math.abs(l.beamIn - k * SPACING_IN) < 1e-6)
+/** The type for `design` in `table` → { table, id, name, created, custom }: an existing type of that very design;
+ *  else a new one named by its level count — "4 levels" when the spacing is standard and the name is free, else
+ *  "4 levels · custom" (then "custom 2"…). */
+export function findOrMakeType(table, design) {
+  const key = designKey(design)
+  const same = table.types.find(t => designKey(t) === key)
+  if (same) return { table, id: same.id, name: same.name, created: false, custom: / · custom/.test(same.name) }
+  const base = `${design.levels.length} levels`
+  let name = base
+  if (!isStandardSpacing(design) || table.types.some(t => t.name === base)) {
+    name = `${base} · custom`
+    for (let k = 2; table.types.some(t => t.name === name); k++) name = `${base} · custom ${k}`
+  }
+  const t = { ...JSON.parse(JSON.stringify(design)), id: freshId(table, 'elev'), name, color: PALETTE[table.types.length % PALETTE.length] }
+  return { table: { ...table, types: [...table.types, t] }, id: t.id, name, created: true, custom: name !== base }
+}
+
+/** `objects` with type `typeId` on the bay-sides `cells` (Map rackId → [[side, bay]…]), each rack's overrides
+ *  written back minimally and its levels mirror following (same array when nothing changes). */
+export function assignCells(objects, table, cells, typeId) {
+  if (!table || !cells || !cells.size) return objects
+  let changed = false
+  const out = objects.map(o => {
+    const list = cells.get(o.id)
+    if (!list || !isBeamRack(o)) return o
+    const map = typeMap(o, table)
+    for (const [s, b] of list) if (map[s] && b >= 0 && b < o.beams.length) map[s][b] = typeId
+    const n = syncLevels(compressElev(o, map, table), table)
+    if (JSON.stringify(n) !== JSON.stringify(o)) changed = true
+    return n
+  })
+  return changed ? out : objects
+}
 
 /* ── painting ────────────────────────────────────────────────────────────── */
 

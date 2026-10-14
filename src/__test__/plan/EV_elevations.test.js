@@ -7,7 +7,7 @@
 // change no hand edit, the types in the store (undo, save / load, old files), the editor's edits, the drawing, the
 // PDF's elevation sheets. Both orientations.
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { GS } from './fixtures'
 import { REAL_LAYOUT } from './realLayout.fixture'
 import { planAreaCreate, planAreaResize, areaEdits } from '../../generate/rackingArea'
@@ -32,7 +32,7 @@ import { elevationLayout, lengthsByType, ftInDash, parseFtIn, archScale, misfitL
 const itemSVGOf = (d) => toSVG(d)
 import { rackDepthUpdate } from '../../utils/rackDepth'
 import { serializeScene, deserializeScene } from '../../utils/saveLoad'
-import { targetAt, strokeTargets, commitPaint } from '../../utils/elevPaint'
+import * as SEL from '../../utils/elevSelection'
 import { useRowGroup, installRowGroupWatcher, flushRowGroupWatcher, clearGroup, addRowOf } from '../../utils/rowGroupTool'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
@@ -175,49 +175,89 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     expect([b0.faces, b0.positionsLost]).toEqual([[1], b0.positionIndices.length * 6])
   })
 
-  it('EV-paint-targets: Row = every rack of the row; Side = the half under the cursor (the flue: both sides), a drag along the row takes that side of every rack it passes; Bay = that bay on that half, a drag the run of bays between, staying on the side it started', () => {
-    const { o } = hand(vert), p1 = rack(o, 'p1'), p2 = rack(o, 'p2')
-    const at = (r, i, side) => targetAt(o, r.id, pointIn(r, i, side), GS)
-    const show = (m) => [...m].map(([id, t]) => [id, t.sides, t.bays]).sort()
-    const t0 = at(p1, 1, 0), side0 = t0.ws
-    expect(show(strokeTargets(o, 'row', t0, t0, GS))).toEqual([['p1', null, null], ['p2', null, null]])
-    expect(show(strokeTargets(o, 'side', t0, t0, GS))).toEqual([['p1', [0], null]])
-    expect(show(strokeTargets(o, 'bay', t0, t0, GS))).toEqual([['p1', [0], [1]]])
-    const flue = at(p1, 1, null)
-    expect([flue.ws, show(strokeTargets(o, 'bay', flue, flue, GS))]).toEqual([null, [['p1', [0, 1], [1]]]])
-    const to = at(p2, 0, 0)
-    expect(to.ws).toBe(side0)
-    expect(show(strokeTargets(o, 'bay', t0, to, GS))).toEqual([['p1', [0], [1, 2]], ['p2', [0], [0]]])
-    expect(show(strokeTargets(o, 'side', t0, to, GS))).toEqual([['p1', [0], null], ['p2', [0], null]])
-    const ts = targetAt(o, 's', pointIn(rack(o, 's'), 0, null), GS)
-    expect(show(strokeTargets(o, 'row', t0, t0, GS, [t0.rowKey, ts.rowKey]))).toEqual([['p1', null, null], ['p2', null, null], ['s', null, null]])
+  it('EV-selection: the selection as bay-sides — a rack selected whole: every bay on every side; one clicked bay: that side (both when picked between them); bays picked across racks: theirs; a single row has side 0 only; the types among them with their bays; the drawing\'s beam the picked bay\'s', () => {
+    const { o, t } = hand(vert), at = (patch) => [...SEL.selectionCells({ objects: o, selectedIds: [], activeBaySelection: [], ...patch })].map(([id, c]) => [id, c.map(x => x.join('/')).sort()]).sort()
+    expect(at({ selectedIds: ['p1'] })).toEqual([['p1', ['0/0', '0/1', '0/2', '1/0', '1/1', '1/2']]])
+    const clicked = (side) => o.map(x => (x.id === 'p1' ? { ...x, activeBayIdx: 1, activeBaySide: side } : x))
+    expect([...SEL.selectionCells({ objects: clicked(1), selectedIds: ['p1'], activeBaySelection: [] })].map(([id, c]) => [id, c])).toEqual([['p1', [[1, 1]]]])
+    expect([...SEL.selectionCells({ objects: clicked(null), selectedIds: ['p1'], activeBaySelection: [] })].map(([id, c]) => [id, c])).toEqual([['p1', [[0, 1], [1, 1]]]])
+    expect(at({ selectedIds: ['p1', 'p2'], activeBaySelection: [{ objId: 'p1', bayIdx: 1, side: 0 }, { objId: 'p2', bayIdx: 0 }] })).toEqual([['p1', ['0/1']], ['p2', ['0/0', '1/0']]])
+    expect(at({ selectedIds: ['s'], activeBaySelection: [{ objId: 's', bayIdx: 2, side: 1 }] })).toEqual([['s', ['0/2']]])
+    expect(at({ selectedIds: ['fp'] })).toEqual([])
+    // the types among them, most bays first; the drawing at the picked bay's beam
+    const L = paintIn(withTypes({ o, t }), 'p1', { sides: [1], typeId: 'B' }), cells = SEL.selectionCells({ objects: L.o, selectedIds: ['p1', 's'], activeBaySelection: [] })
+    expect(SEL.cellTypes(L.o, L.t, cells)).toEqual([{ id: L.t.defaultId, bays: 7 }, { id: 'B', bays: 3 }])
+    expect([...SEL.cellsOfType(L.o, L.t, cells, 'B')]).toEqual([['p1', [[1, 0], [1, 1], [1, 2]]]])
+    const long = o.map(x => (x.id === 'p1' ? { ...x, beams: [96, 120, 96] } : x))
+    expect(SEL.drawEntry(long, new Map([['p1', [[0, 1]]]])).beamIn).toBe(120)
+    expect(SEL.drawEntry(long, new Map([['p1', [[0, 0], [0, 1], [0, 2]]]])).beamIn).toBe(96)
+    expect(SEL.drawEntry(o, new Map([['p1', [[0, 0]]]]))).toMatchObject({ depthIn: 42, pair: true, flueIn: 9, palletWIn: 40, parentId: 'fp' })
   })
 
-  it('EV-commit: a click or drag is ONE history entry; one undo takes it back; reset removes the overrides on what is clicked (Bay → the side\'s type, Side → the rack\'s, Row → all)', async () => {
+  it('EV-commit: choosing a type sets it on every selected bay-side — ONE history entry each; one undo takes it back; the default chosen takes the override off', async () => {
     const L = withTypes(hand(vert)); load(L.o, L.t); await settle()
-    const h = hist(), p1 = rack(objs(), 'p1')
-    const t0 = targetAt(objs(), 'p1', pointIn(p1, 0, 1), GS), def = T().defaultId
-    expect(commitPaint(store, strokeTargets(objs(), 'row', t0, t0, GS), { typeId: 'C' })).toBe(true); await settle()
-    expect(commitPaint(store, strokeTargets(objs(), 'side', t0, t0, GS), { typeId: 'B' })).toBe(true); await settle()
-    expect(commitPaint(store, strokeTargets(objs(), 'bay', t0, t0, GS), { typeId: def })).toBe(true); await settle()
+    const h = hist(), def = T().defaultId
+    const cells = (patch) => SEL.selectionCells({ objects: objs(), selectedIds: [], activeBaySelection: [], ...patch })
+    expect(SEL.commitAssign(store, cells({ selectedIds: ['p1'] }), 'C')).toBe(true); await settle()
+    expect(SEL.commitAssign(store, cells({ selectedIds: ['p1'], activeBaySelection: [0, 1, 2].map(b => ({ objId: 'p1', bayIdx: b, side: 1 })) }), 'B')).toBe(true); await settle()
+    expect(SEL.commitAssign(store, cells({ selectedIds: ['p1'], activeBaySelection: [{ objId: 'p1', bayIdx: 0, side: 1 }] }), def)).toBe(true); await settle()
     expect(hist()).toBe(h + 3)
-    const sideIdx = rack(objs(), 'p1').elevSides.findIndex(v => v === 'B')
-    expect([rack(objs(), 'p1').elevType, ids(rack(objs(), 'p1'), T())[sideIdx], ids(rack(objs(), 'p1'), T())[1 - sideIdx]]).toEqual(['C', [def, 'B', 'B'], ['C', 'C', 'C']])
-    commitPaint(store, strokeTargets(objs(), 'bay', t0, t0, GS), { reset: true }); await settle()
-    expect(ids(rack(objs(), 'p1'), T())[sideIdx]).toEqual(['B', 'B', 'B'])
-    commitPaint(store, strokeTargets(objs(), 'side', t0, t0, GS), { reset: true }); await settle()
-    expect([rack(objs(), 'p1').elevType, rack(objs(), 'p1').elevSides, ids(rack(objs(), 'p1'), T())[sideIdx]]).toEqual(['C', undefined, ['C', 'C', 'C']])
-    commitPaint(store, strokeTargets(objs(), 'row', t0, t0, GS), { reset: true }); await settle()
+    expect([rack(objs(), 'p1').elevType, ids(rack(objs(), 'p1'), T())]).toEqual(['C', [['C', 'C', 'C'], [def, 'B', 'B']]])
+    expect(SEL.commitAssign(store, cells({ selectedIds: ['p1'] }), 'C')).toBe(true); await settle()
+    expect(SEL.commitAssign(store, cells({ selectedIds: ['p1'] }), 'C')).toBe(false)                    // nothing to change: no entry
+    expect(SEL.commitAssign(store, cells({ selectedIds: ['p1'] }), 'nope')).toBe(false)
+    expect(SEL.commitAssign(store, cells({ selectedIds: ['p1'] }), def)).toBe(true); await settle()
     expect(['p1', 'p2'].map(id => E.ELEV_FIELDS.map(k => rack(objs(), id)[k]))).toEqual([[undefined, undefined, undefined], [undefined, undefined, undefined]])
-    expect(hist()).toBe(h + 6)
+    expect(hist()).toBe(h + 5)
     store.getState().undo()
     expect(rack(objs(), 'p1').elevType).toBe('C')
     store.getState().undo()
-    expect(ids(rack(objs(), 'p1'), T())[sideIdx]).toEqual(['B', 'B', 'B'])
-    store.getState().undo(); store.getState().undo(); store.getState().undo()
-    expect([rack(objs(), 'p1').elevType, rack(objs(), 'p1').elevSides]).toEqual(['C', undefined])
+    expect(ids(rack(objs(), 'p1'), T())[1]).toEqual([def, 'B', 'B'])
+  })
+
+  it('EV-design: editing the drawing saves the design for the selection only — an existing type of that design reused, else a new one named by its level count ("5 levels" at the standard spacing, "4 levels · custom", then "custom 2"); ONE history entry; other bays keep theirs', async () => {
+    const L = hand(vert); load(L.o, L.t); await settle()
+    const def = T().defaultId, base = E.typeById(T(), def), h = hist()
+    const one = new Map([['p1', [[0, 1]]]])
+    // a beam moved: non-standard spacing → "4 levels · custom", that bay-side only
+    const moved = ED.moveBeam(base, 1, 70)
+    const r1 = SEL.commitDesign(store, one, moved); await settle()
+    expect([r1.name, r1.created, r1.custom, hist()]).toEqual(['4 levels · custom', true, true, h + 1])
+    expect(ids(rack(objs(), 'p1'), T())).toEqual([[def, r1.id, def], [def, def, def]])
+    expect(rack(objs(), 'p2').elevType).toBe(undefined)
+    // the same design elsewhere: the same type, nothing new
+    const r2 = SEL.commitDesign(store, new Map([['s', [[0, 0]]]]), moved); await settle()
+    expect([r2.id, r2.created, T().types.length]).toEqual([r1.id, false, 2])
+    // another design: "custom 2"; back at the standard spacing: the "4 levels" type again
+    const r3 = SEL.commitDesign(store, new Map([['p2', [[0, 0]]]]), ED.moveBeam(base, 1, 80)); await settle()
+    expect(r3.name).toBe('4 levels · custom 2')
+    const r4 = SEL.commitDesign(store, one, base); await settle()
+    expect([r4.id, r4.created]).toEqual([def, false])
+    // a level added at the standard spacing: "5 levels"; again for another rack: reused
+    const five = E.withLevelCount(base, 5)
+    const r5 = SEL.commitDesign(store, new Map([['s', [[0, 3]]]]), five); await settle()
+    expect([r5.name, r5.custom, E.isStandardSpacing(five)]).toEqual(['5 levels', false, true])
+    expect(SEL.commitDesign(store, new Map([['p2', [[1, 2]]]]), five).id).toBe(r5.id); await settle()
+    // each one step
+    expect(hist()).toBe(h + 6)
     store.getState().undo()
-    expect(rack(objs(), 'p1').elevType).toBe(undefined)
+    expect(E.typeIdAt(rack(objs(), 'p2'), 2, 1, T())).toBe(def)
+  })
+
+  it('EV-names: names stay unique — a duplicate (an old file) renamed on load; a rename to a name in use gets "name 2"; the design key ignores the name, id and colour', () => {
+    const { o, t } = hand(vert)
+    const dup = { ...t, types: [...t.types, { ...t.types[0], id: 'x', color: '#000' }, { ...t.types[0], id: 'y' }] }
+    expect(E.dedupeNames(dup).types.map(x => x.name)).toEqual(['4 levels', '4 levels 2', '4 levels 3'])
+    expect(E.dedupeNames(t)).toBe(t)
+    const r = E.reconcileElevations({ objects: o, table: dup })
+    expect(r.table.types.map(x => x.name)).toEqual(['4 levels', '4 levels 2', '4 levels 3'])
+    expect(E.uniqueTypeName(dup, '4 levels', 'zzz')).toBe('4 levels 2')
+    expect(E.uniqueTypeName(t, '4 levels', t.types[0].id)).toBe('4 levels')
+    expect(E.designKey(dup.types[1])).toBe(E.designKey(dup.types[0]))
+    // the levels edit's new type has a free name too
+    const named = { ...t, types: [...t.types, { ...t.types[0], id: 'z', name: '6 levels' }] }
+    const ed6 = E.reconcileElevations({ prevObjects: o, objects: o.map(x => (x.id === 's' ? { ...x, levels: 6 } : x)), table: named })
+    expect(new Set(ed6.table.types.map(x => x.name)).size).toBe(ed6.table.types.length)
   })
 
   it('EV-delete-type: a type deleted — its bays go back to the default (no override left naming it); the default deleted → the next is the default; the last type can\'t be deleted', () => {
@@ -256,8 +296,8 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
   it('EV-takeover: a pair grown over its carried-on single takes the single\'s type on that side for the bays it takes ("+ bay" by hand, the pair keeper)', async () => {
     load(savedFill(vert)); await settle()
     commitTable(t => E.addType(t, { id: 'B', name: 'B' })); await settle()
-    const s0 = rowRacks(12, 'rack_row')[0], ts = targetAt(objs(), s0.id, pointIn(s0, 0, null), GS)
-    commitPaint(store, strokeTargets(objs(), 'side', ts, ts, GS), { typeId: 'B' }); await settle()
+    const s0 = rowRacks(12, 'rack_row')[0]
+    SEL.commitAssign(store, SEL.selectionCells({ objects: objs(), selectedIds: [s0.id], activeBaySelection: [] }), 'B'); await settle()
     expect(E.typeMap(rowRacks(12, 'rack_row')[0], T())).toEqual([['B', 'B']])
     const Panel = await import('../../components/RightPanel/panels/RackRowPanelCore.jsx')
     const p = pairOf(12)
@@ -271,20 +311,19 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     expect(JSON.parse(store.getState().history[hist()]).elevations).toEqual(T())
   })
 
-  it('EV-group: rows 12 and 14 in a Row group (Auto apply) — a whole row painted B → row 14 whole B; then one bay on one side painted C → row 14 the bay at the same uprights on the same side across the floor; one history entry each, the types in it', async () => {
+  it('EV-group: rows 12 and 14 in a Row group (Auto apply) — a whole row set to B → row 14 whole B; then one bay on one side set to C → row 14 the bay at the same uprights on the same side across the floor; one history entry each, the types in it', async () => {
     load(savedFill(vert)); await settle()
     commitTable(t => E.addType(E.addType(t, { id: 'B', name: 'B' }), { id: 'C', name: 'C' })); await settle()
     useRowGroup.getState().setAlwaysApply(true)
     addRowOf(pairOf(12).id); addRowOf(pairOf(14).id)
     const h = hist(), p12 = pairOf(12)
-    const t = targetAt(objs(), p12.id, pointIn(p12, 2, 0), GS)
-    commitPaint(store, strokeTargets(objs(), 'row', t, t, GS), { typeId: 'B' }); await settle()
+    SEL.commitAssign(store, SEL.selectionCells({ objects: objs(), selectedIds: rowRacks(12).map(r => r.id), activeBaySelection: [] }), 'B'); await settle()
     expect(hist()).toBe(h + 1)
     expect(useRowGroup.getState().message).toMatch(/^Applied to 1 row/)
     expect(rowRacks(14).every(r => E.typeMap(r, T()).flat().every(x => x === 'B'))).toBe(true)
     expect(JSON.parse(store.getState().history[hist()]).elevations).toEqual(T())
-    const t2 = targetAt(objs(), pairOf(12).id, pointIn(pairOf(12), 2, 0), GS)
-    commitPaint(store, strokeTargets(objs(), 'bay', t2, t2, GS), { typeId: 'C' }); await settle()
+    SEL.commitAssign(store, SEL.selectionCells({ objects: objs(), selectedIds: [pairOf(12).id], activeBaySelection: [{ objId: pairOf(12).id, bayIdx: 2, side: 0 }] }), 'C'); await settle()
+    const t2 = { ws: RG.worldSideOf(pairOf(12), 0, [pairOf(12)]) }
     expect(hist()).toBe(h + 2)
     const g12 = RG.geom(pairOf(12)), U12 = RG.uprightsOf(g12.r0, g12.beams, (3 / 12) * GS, GS)
     const run12 = [180, 270].includes(((pairOf(12).rotation || 0) % 360 + 360) % 360) ? g12.beams.length - 1 - 2 : 2
@@ -585,12 +624,12 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(clean(d)).toEqual([])
   })
 
-  it('EV-background: the drawing sits on the panel\'s own background in the Elevations tab (labels haloed in it, frames and ground in the theme\'s colours), on white paper in the PDF in the reference\'s', () => {
-    const pane = readFileSync(new URL('../../components/Elevations/ElevationEditor.jsx', import.meta.url), 'utf8')
+  it('EV-background: the drawing sits on the panel\'s own background in Properties (labels haloed in it, frames and ground in the theme\'s colours), on white paper in the PDF in the reference\'s', () => {
+    const pane = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
     expect(pane).toMatch(/aria-label="Elevation drawing" style=\{\{[^}]*background: 'var\(--surface\)' \}\}/)
     expect(pane).toMatch(/bg: 'var\(--surface\)', frame: 'var\(--elev-frame\)', ink: 'var\(--elev-ink\)'/)
     expect(pane.includes("background: '#fff'")).toBe(false)
-    const panel = readFileSync(new URL('../../components/RightPanel/ElevationsPanel.jsx', import.meta.url), 'utf8')
+    const panel = readFileSync(new URL('../../components/RightPanel/ElevationTypesList.jsx', import.meta.url), 'utf8')
     expect(panel.includes("background: '#fff'")).toBe(false)
     // the theme tokens: in every theme block, light frames on the dark panels
     const css = readFileSync(new URL('../../index.css', import.meta.url), 'utf8')
@@ -612,7 +651,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     const tok2 = (th) => { const a = css.indexOf(`[data-theme="${th}"] {`), b = css.indexOf('\n}', a); const m = css.slice(a, b).match(/--elev-dim:(#[0-9A-Fa-f]{6}); --elev-clr:(#[0-9A-Fa-f]{6});/); return m ? [m[1], m[2]] : null }
     expect([tok2('trace'), tok2('studio')]).toEqual([['#1B4FD8', '#A8341C'], ['#1B4FD8', '#A8341C']])
     for (const th of ['obsidian', 'blueprint']) expect([th, lum(tok2(th)[0]) > 120, lum(tok2(th)[1]) > 120]).toEqual([th, true, true])
-    expect(readFileSync(new URL('../../components/Elevations/ElevationEditor.jsx', import.meta.url), 'utf8')).toMatch(/blue: 'var\(--elev-dim\)', red: 'var\(--elev-clr\)'/)
+    expect(readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')).toMatch(/blue: 'var\(--elev-dim\)', red: 'var\(--elev-clr\)'/)
     const d = elevationLayout(sampleT(), 96, { w: 900, h: 400 }, { ...sampleO, bg: 'var(--surface)' })
     expect(d.items.filter(i => i.t === 'text').every(i => i.haloColor === 'var(--surface)')).toBe(true)
     expect(itemSVGOf(d).includes('stroke:var(--surface)')).toBe(true)
@@ -620,44 +659,58 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(pdf).toMatch(/detail, bg: '#fff' \}/)
   })
 
-  it('EV-tabs: one right panel with Properties | Elevations tabs, the tab remembered per browser', () => {
-    const rp = readFileSync(new URL('../../components/RightPanel/index.jsx', import.meta.url), 'utf8')
-    expect(rp).toMatch(/role="tablist" aria-label="Right panel"/)
-    expect(rp).toMatch(/>Properties<\/button>[\s\S]*>Elevations<\/button>/)
-    expect(rp).toMatch(/tab === 'properties' \? <>[\s\S]*<PropertiesPanel \/>[\s\S]*<\/> : <ElevationsPanel \/>/)
-    expect(rp).toMatch(/onClick=\{\(\) => setRightPanel\(\{ tab: 'elevations' \}\)\}/)
-    RP.setRightPanel({ tab: 'elevations' })
-    expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1')).tab).toBe('elevations')
-    RP.setRightPanel({ tab: 'properties' })
+  it('EV-properties: the elevation lives in Properties, driven by the selection — no Elevations tab, no paint mode; a rack\'s panel in collapsible sections (Summary, Bays, Elevation, Rack collapsed) with one beam-length dropdown and the Levels field under Elevation; several racks or a group: the Elevation section and their frame depth; nothing selected: the layout summary and the types list; the sprinkler clearance on the building', () => {
+    const src = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8')
+    const rp = src('components/RightPanel/index.jsx')
+    expect(/role="tablist"|ElevationsPanel|setRightPanel\(\{ tab/.test(rp)).toBe(false)
+    expect(rp).toMatch(/<LayoutCheckPanel \/>\s*<PropertiesPanel \/>/)
+    expect(existsSync(new URL('../../utils/elevPaint.js', import.meta.url))).toBe(false)
+    expect(/PAINT_TOOL|usePaint|ElevPaint/.test(src('canvas2/Canvas2.jsx') + src('canvas2/ElevationsCanvas.jsx') + src('hooks/useKeyboardShortcuts.js'))).toBe(false)
+    // the rack panel: four folds in order, Rack collapsed; the Elevation section with the Levels field; no button grids
+    const core = src('components/RightPanel/panels/RackRowPanelCore.jsx')
+    const at = ['<Fold title="Summary"', '<Fold title={`Bays (${beams.length})`}', '<Fold title="Elevation"', '<ElevationSection extra=', 'aria-label="Levels"', '<Fold title="Rack" defaultOpen={false}', 'label="Frame depth"', 'label(\'Upright\', 86)', 'label(\'Pallet\', 86)', 'label(\'Flue\', 86)'].map(k => core.indexOf(k))
+    expect(at.every((v, i) => v > 0 && (i === 0 || v > at[i - 1]))).toBe(true)
+    expect(/BeamPicker|Change beam|Add bay<|gridTemplateColumns/.test(core)).toBe(false)
+    expect(core.match(/<BeamSelect /g).length).toBe(2)                                   // the rack's bays, the multi-bay box
+    // several racks / a group: the Elevation section and the frame depth; nothing selected: summary + types list
+    const pp = src('components/RightPanel/PropertiesPanel.jsx')
+    expect(pp.match(/<SelectionRacks selected=\{selected\} \/>/g).length).toBe(2)
+    expect(pp).toMatch(/<CapacityHero objects=\{objects\} \/>\s*<\/SectionHeader>\s*<ElevationTypesList \/>/)
+    expect(pp).toMatch(/<SprinklerClearanceField \/>/)
+    // the section: a type dropdown, tabs for several types, the drawing, the read-only line, Details
+    const sec = src('components/Elevations/ElevationSection.jsx')
+    const order = ['aria-label="Elevation type"', 'aria-label="Types in the selection"', '<ElevationDrawing ', 'aria-label="Elevation inputs"', '{extra}', '<Fold title="Details" defaultOpen={false}'].map(k => sec.indexOf(k))
+    expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))).toBe(true)
+    expect(sec).toMatch(/Beam \{ftInDash\(entry\.beamIn\)\} · Depth \{ftInDash\(entry\.depthIn\)\} · Pallet \{ftInDash\(pallet\)\} · Clearance \{ftInDash\(t\.clearanceIn \?\? 6\)\}/)
+    expect(sec).toMatch(/commitAssign\(store, cells, e\.target\.value\)/)
+    expect(sec).toMatch(/commitDesign\(store, tabCells, next\)/)
+    expect(sec).toMatch(/set them in the building's properties|set \{!building \? 'them' : 'it'\} in the building's properties/)
+    // the types list: rename (unique), delete, default, counts — no paint, no new type
+    const list = src('components/RightPanel/ElevationTypesList.jsx')
+    expect(list).toMatch(/uniqueTypeName\(tb, v, t\.id\)/)
+    expect(/Paintbrush|startPainting|addType|ElevationEditor/.test(list)).toBe(false)
+    // the width: wide while a rack (or bays of one) is selected, 272 otherwise; the edge dragged, remembered
+    const o = [{ id: 'r', type: 'rack_row', beams: [96] }, { id: 'z', type: 'zone_custom' }]
+    expect([RP.rackSelected({ objects: o, selectedIds: ['r'] }), RP.rackSelected({ objects: o, selectedIds: ['z'] }), RP.rackSelected({ objects: o, selectedIds: [], activeBaySelection: [{ objId: 'r', bayIdx: 0 }] })]).toEqual([true, false, true])
+    expect([RP.panelWidth({ elevW: 480 }, true), RP.panelWidth({ elevW: 640 }, false), RP.ELEV_W]).toEqual([480, 272, 480])
+    RP.setRightPanel({ elevW: 555 })
+    expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1'))).toEqual({ elevW: 555 })
+    RP.setRightPanel({ elevW: 480 })
+    expect(rp).toMatch(/\{wide && \(\s*<div role="separator" aria-orientation="vertical" aria-label="Resize right panel" onPointerDown=\{startResize\}/)
+    expect(rp).toMatch(/requestAnimationFrame\(\(\) => \{ raf = 0; useRightPanel\.setState\(\{ elevW: v \}\) \}\)/)
+    expect(src('components/Generate/GeneratePanel.jsx').includes('const right = useRightPanelWidth().width + 24')).toBe(true)
   })
 
-  it('EV-panel: the Elevations tab holds everything — the types list, then the drawing, then its settings in the Properties field style; it widens the panel (480 px at first, its edge dragged, the width remembered), Properties keeps the normal width; the Generate button stays clear', () => {
-    const panel = readFileSync(new URL('../../components/RightPanel/ElevationsPanel.jsx', import.meta.url), 'utf8')
-    expect(panel).toMatch(/role="list" aria-label="Elevation types"[\s\S]*<ElevationEditor \/>/)
-    expect(/Elevation preview|toSVG|Edit elevation/.test(panel)).toBe(false)
-    const ed = readFileSync(new URL('../../components/Elevations/ElevationEditor.jsx', import.meta.url), 'utf8')
-    const order = ['<Drawing ', 'aria-label="Elevation settings"', 'label="Pallet"', 'label="Clearance"', 'label="Beam face"', 'label="Pitch"', 'label="Depth"', 'label="Sprinkler clr"'].map(k => ed.indexOf(k))
-    expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))).toBe(true)
-    // the Properties field look: its label and input styles
-    expect(ed).toMatch(/label: \{ fontSize: 10, fontFamily: 'var\(--font-mono\)', color: 'var\(--text3\)'/)
-    expect(ed).toMatch(/input: \{ flex: 1, minWidth: 0, borderRadius: 6, padding: '5px 8px', background: 'var\(--surface2\)', border: '1px solid var\(--border\)'/)
-    // no docked editor any more: one place for the drawing
-    const app = readFileSync(new URL('../../App.jsx', import.meta.url), 'utf8')
-    expect(app.includes('ElevationPane')).toBe(false)
-    // the width: the Elevations tab its own (480 at first), every other tab 272; remembered with the tab
-    expect([RP.panelWidth({ tab: 'elevations', elevW: 480 }), RP.panelWidth({ tab: 'properties', elevW: 640 }), RP.ELEV_W]).toEqual([480, 272, 480])
-    RP.setRightPanel({ tab: 'elevations', elevW: 555 })
-    expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1'))).toEqual({ tab: 'elevations', elevW: 555 })
-    RP.setRightPanel({ tab: 'properties', elevW: 480 })
-    const rp = readFileSync(new URL('../../components/RightPanel/index.jsx', import.meta.url), 'utf8')
-    expect(rp).toMatch(/width:panelWidth\(rp\)/)
-    expect(rp).toMatch(/\{tab === 'elevations' && \(\s*<div role="separator" aria-orientation="vertical" aria-label="Resize right panel" onPointerDown=\{startResize\}/)
-    expect(rp).toMatch(/requestAnimationFrame\(\(\) => \{ raf = 0; useRightPanel\.setState\(\{ elevW: v \}\) \}\)/)
-    expect(rp).toMatch(/transition: drag \? 'none' :/)
-    const gen = readFileSync(new URL('../../components/Generate/GeneratePanel.jsx', import.meta.url), 'utf8')
-    expect(gen.includes('const right = panelWidth(useRightPanel()) + 24')).toBe(true)
-    // the drawing sized from the panel's width: side by side when there is room, stacked when narrow
-    expect(ed).toMatch(/const stacked = box\.w < 400/)
+  it('EV-crisp: the drawing sits on the device-pixel grid (a fractional panel offset snapped out), straight lines and rects with crisp edges, labels with geometric precision and a touch bolder (500)', () => {
+    const dr = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
+    expect(dr).toMatch(/Math\.round\(r\.left \* dpr\) - r\.left \* dpr\) \/ dpr/)
+    expect(dr).toMatch(/style=\{\{ display: 'block', position: 'relative', left: snap\.x, top: snap\.y \}\}/)
+    expect(dr).toMatch(/<rect key=\{n\} data-role=\{role\} shapeRendering="crispEdges"/)
+    expect(dr).toMatch(/shapeRendering=\{i\.x1 === i\.x2 \|\| i\.y1 === i\.y2 \? 'crispEdges' : undefined\}/)
+    expect(dr).toMatch(/textRendering="geometricPrecision"/)
+    expect(/transform: `?scale|zoom:/.test(dr)).toBe(false)
+    const d = elevationLayout(sampleT(), 96, { w: 900, h: 400 }, { ...sampleO, detail: 'detailed' })
+    expect(d.items.filter(i => i.t === 'text').every(i => i.weight >= 500)).toBe(true)
   })
 
   it('EV-depth-edit: the selected rack\'s depth re-sizes it about its centre (a pair keeps its flue), one undo step; the aisles follow; the Row group replays it', async () => {
@@ -682,26 +735,26 @@ describe('EV — the editor (v2 §B–C, E)', () => {
   })
 
   it('EV-remove-wire: a beam\'s level is removed by dragging it off the end of the bay or by picking it and pressing Delete (also with the focus back on the page, never while typing in a field), or with the Remove level button; a press outside the editor un-picks it', () => {
-    const pane = readFileSync(new URL('../../components/Elevations/ElevationEditor.jsx', import.meta.url), 'utf8')
+    const pane = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
     expect(pane).toMatch(/p\.x < d\.Xf\(0\) - fontPx \* 1\.5 \|\| p\.x > d\.Xf\(d\.frontW\) \+ fontPx \* 1\.5/)
     expect(pane).toMatch(/window\.addEventListener\('keydown', onWin, true\)/)
+    // focusing the drawing never scrolls the panel: a beam grabbed low in a long panel stays under the pointer
+    expect([/\.focus\(\)/.test(pane), (pane.match(/focus\(\{ preventScroll: true \}\)/g) || []).length]).toEqual([false, 2])
     expect(pane).toMatch(/\/\^\(INPUT\|SELECT\|TEXTAREA\)\$\/\.test\(a\.tagName\)/)
-    expect(pane).toMatch(/aria-label="Remove level"/)
+    expect(readFileSync(new URL('../../components/Elevations/ElevationSection.jsx', import.meta.url), 'utf8')).toMatch(/aria-label="Remove level"[^\n]*onCommit\(removeLevel\(t, sel\)\)/)
     expect(pane).toMatch(/closest\('\[data-pane="open"\]'\)\)\) setPane\(\{ sel: null \}\)/)
   })
 })
 
 describe('EV — the wiring', () => {
-  it('EV-wire: Canvas2 routes the paint tool; Esc leaves paint mode; the keeper is installed; the editor is in the Elevations tab (never floating); Simple / Detailed remembered per browser', async () => {
+  it('EV-wire: no paint tool on the canvas (types are set from a selection); the legend stays; the keeper is installed; the editor is in Properties (never floating); Simple / Detailed remembered per browser', async () => {
     const c2 = readFileSync(new URL('../../canvas2/Canvas2.jsx', import.meta.url), 'utf8')
-    expect(c2).toMatch(/painting \? paintMouseDown : onStageMouseDown/)
-    expect(c2).toMatch(/commitPaint\(useCanvasStore, ps\.stroke\.targets, \{ typeId: ps\.typeId, reset: ps\.reset \}\)/)
-    const kb = readFileSync(new URL('../../hooks/useKeyboardShortcuts.js', import.meta.url), 'utf8')
-    expect(kb).toMatch(/activeTool === PAINT_TOOL\) \{ useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); return \}/)
+    expect(c2).toMatch(/splitting \? splitMouseDown : onStageMouseDown/)
+    expect(c2).toMatch(/<ElevLegend \/>/)
     const app = readFileSync(new URL('../../App.jsx', import.meta.url), 'utf8')
     expect(app).toMatch(/installElevationsKeeper\(useCanvasStore\)/)
     expect(app).toMatch(/<div className="flex flex-col flex-1 min-w-0 min-h-0">\s*<Canvas2 \/>\s*<\/div>\s*<RightPanel \/>/)
-    const pane = readFileSync(new URL('../../components/Elevations/ElevationEditor.jsx', import.meta.url), 'utf8')
+    const pane = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
     expect(/position: 'fixed'|createPortal/.test(pane)).toBe(false)
     // the beams and the upright tops are grabbed through strips drawn last, so a label on a beam never takes its drag
     expect(pane.includes("data-grab=")).toBe(true)
@@ -711,17 +764,6 @@ describe('EV — the wiring', () => {
     ED.setPane({ detail: 'simple' })
   })
 
-  it('EV-scope: entering paint mode from Select starts on Row; switching type while painting keeps the scope chosen', async () => {
-    const { usePaint, startPainting, PAINT_TOOL } = await import('../../utils/elevPaint')
-    store.getState().setActiveTool('select')
-    usePaint.setState({ scope: 'bay' })
-    startPainting(store, 'A')
-    expect([store.getState().activeTool, usePaint.getState().scope]).toEqual([PAINT_TOOL, 'row'])
-    usePaint.setState({ scope: 'side' })
-    startPainting(store, 'B')
-    expect([usePaint.getState().typeId, usePaint.getState().scope]).toEqual(['B', 'side'])
-    store.getState().setActiveTool('select')
-  })
 })
 
 describe('EV — the top load against the building', () => {

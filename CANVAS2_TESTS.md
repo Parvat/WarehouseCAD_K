@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### EV — Elevations v1 + v2 · `EV_elevations.test.js` (59 tests)
+### EV — Elevations v1 + v2 · `EV_elevations.test.js` (62 tests)
 **v2** (ELEVATIONS_PLAN.md §v2). Beam face height per type (4"); levels to the top of the beam; the fit from the top of
 the lower beam to the underside of the next. Frame depth from the rack (read-only). A type change is no hand edit
 (rackingArea sigMatch / shapeKey). The types are the store's `elevations` (approved store diff: snapshot, undo / redo,
@@ -2026,6 +2026,42 @@ draws the red sprinkler line; obsidian draws the frames light green (rgb 93,187,
 obsidian / blueprint); the PDF keeps the reference colours. Changed: EV-background. Break-it: the options ignored →
 EV-background. Checked in the app: FRAME / CLR / SPRINKLERS computed rgb(127,166,255) / rgb(255,140,117) on obsidian,
 rgb(142,197,255) / rgb(255,154,133) on blueprint, the reference colours on trace; a beam drag one undo step.
+
+**Elevation in Properties, driven by the selection (v3).** Rule: the elevation editor changes only the vertical design;
+nothing in it moves a rack. The Elevations tab and paint mode are gone (utils/elevPaint.js deleted; Canvas2, the canvas
+bar and Esc no longer know a paint tool; the legend stays). utils/elevSelection.js: the selection as bay-sides
+(`selectionCells` — a rack whole, a clicked bay on its side or both, bays picked across racks), the types among them
+(`cellTypes`), the drawing's beam (`drawEntry`: the picked bay's, else the most common), `commitAssign` (a type on
+every selected bay-side) and `commitDesign` (an edited design for those bay-sides only) — ONE undo step each.
+utils/elevations.js: `findOrMakeType` (an existing type of that very design — `designKey` — reused; else "N levels" at
+the standard spacing when free, else "N levels · custom", "custom 2"…), `assignCells`, `uniqueTypeName`,
+`dedupeNames` (duplicates renamed on load and after each action; the levels edit's new type named uniquely).
+components/Elevations/ElevationSection.jsx: type dropdown ("Mixed — set all to…" for several), one tab per type with its
+bays, the hint line ("Saved as …"), the building hint when clear height or sprinklers are missing, the drawing, the
+read-only line "Beam · Depth · Pallet · Clearance", Details (pallet height, clearance, beam face, hole pitch — the same
+save). ElevationDrawing.jsx: the interactive drawing with `onCommit`; crisp (snapped to the device-pixel grid,
+crispEdges, geometric text); focus never scrolls the panel (a plain focus() threw a grabbed beam to the floor when the
+drawing sat low in a long panel). Rack panel (RackRowPanelCore.jsx) in folds: Summary, Bays (compact list, + Bay / − Bay,
+one beam-length dropdown `BeamSelect` replacing both grids — also the multi-bay box's), Elevation (+ the Levels
+field), Rack collapsed (frame depth, upright, pallet size, flue). Several racks / a group: Elevation + frame depth for all
+(one step). Nothing selected: the layout summary + ElevationTypesList (rename unique, Default, Delete, bay counts, Show
+colours). Building properties: sprinkler clearance beside sprinkler / clear height. The panel is wide (480 px, edge
+dragged, remembered) while a rack or its bays are selected (utils/rightPanel.js `rackSelected`). Labels weight 500.
+
+New: EV-selection, EV-design, EV-names, EV-properties, EV-crisp. Rewritten: EV-commit (choosing a type), EV-takeover and
+EV-group (from a selection). Retired: EV-paint-targets, EV-scope, EV-tabs, EV-panel. Changed: EV-background, EV-wire,
+EV-remove-wire (no bare focus()). X_bayBeam X-multi / X-group: the presets are dropdown options now.
+
+**Break-its (v3):** an edit applied to every bay: EV-design. Custom naming off: EV-design. The clicked side ignored:
+EV-selection. Duplicate names kept: EV-names. Plain focus(): EV-remove-wire.
+
+**Checked in the app (v3)** (real mouse, 1.25 display scale): nothing selected 272 px, summary + types; a canvas click
+on a pair → bay 13 side 1, the panel 480 px, folds Summary / Bays / Elevation / Rack; one bay: beam dragged 60 → 74" →
+"4 levels · custom" on that bay-side only, the hint shown, one undo step; a row: "4 levels · custom" from the dropdown on
+every bay-side, one step; a mixed selection: tabs "4 levels 28 · 4 levels · custom 1"; whole rack, both modes: typed
+frame height / beam elevation, a level added, Delete, drag-off — one step each, named by level count; Details pallet 50;
+bay 1 → 9' from the dropdown; + Bay; the edge 480 → 560 stored; the SVG on the device grid (within 0.02 device px);
+deselected → 272.
 
 ### EV-v1
 Plan: ELEVATIONS_PLAN.md. Code: utils/elevations.js (types, layered assignment, compression, migration, the keeper,

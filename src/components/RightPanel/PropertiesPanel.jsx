@@ -15,6 +15,11 @@ import { useColumnCheck } from '../../generate/useColumnCheck'
 import { usableCapacity } from '../../generate/usableCapacity'
 import { useBayLedger } from './useBayLedger'
 import { PALETTE_COLORS } from '../../constants'
+import { ElevationTypesList } from './ElevationTypesList'
+import { ElevationSection, Field, Fold } from '../Elevations/ElevationSection'
+import { isBeamRack, sprinklerClearance } from '../../utils/elevations'
+import { commitTable } from '../../utils/elevEditor'
+import { rackDepthUpdate } from '../../utils/rackDepth'
 
 /* The app's locked type system. Montserrat and JetBrains Mono are loaded by
    index.html; Inter was added alongside them. `monospace` is the generic
@@ -256,6 +261,34 @@ function AislePanel({ obj }) {
 }
 
 
+/* The selected racks' elevation, and their frame depth together (each about its own centre, ONE undo step; overlaps
+   show as warnings; the Row group replays it). For a selection of several racks or bays, and a group. */
+function SelectionRacks({ selected }) {
+  const racks = selected.filter(isBeamRack)
+  const anyBays = useCanvasStore(s => (s.activeBaySelection || []).length > 0)
+  if (!racks.length && !anyBays) return null
+  const depths = [...new Set(racks.map(r => r.depthIn ?? 42))]
+  const setDepth = (v) => {
+    const st = useCanvasStore.getState(), gs = st.gridSize || 40, ids = new Set(racks.map(r => r.id))
+    let changed = false
+    const objects = st.objects.map(o => { if (!ids.has(o.id)) return o; const u = rackDepthUpdate(o, v, gs); if (!u) return o; changed = true; return { ...o, ...u } })
+    if (!changed) return
+    useCanvasStore.setState({ objects })
+    st.commitObjectUpdate(racks[0].id, {})
+  }
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:12, marginTop:10 }}>
+      <Fold title="Elevation" aria="Elevation"><ElevationSection /></Fold>
+      {racks.length > 0 && (
+        <Fold title="Rack" defaultOpen={false} aria="Rack">
+          <Field label="Frame depth" aria="Rack depth" value={depths.length === 1 ? depths[0] : ''} title={`The ${racks.length} selected rack${racks.length === 1 ? '' : 's'} — each resized about its centre`} onCommit={setDepth} />
+          {depths.length > 1 && <span style={{ ...S.mono9, color:'var(--text3)' }}>Mixed: {depths.map(d => d + '"').join(', ')}</span>}
+        </Fold>
+      )}
+    </div>
+  )
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  MAIN PANEL                                                                */
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -269,6 +302,7 @@ export function PropertiesPanel() {
   /* ── Nothing selected → layout overview ──────────────────────────────────── */
   if (!selected.length) {
     return (
+      <>
       <SectionHeader title="Properties" defaultOpen={true}>
         <div style={{
           padding:'14px 12px', ...S.mono10, color:'var(--text3)',
@@ -279,6 +313,8 @@ export function PropertiesPanel() {
         </div>
         <CapacityHero objects={objects} />
       </SectionHeader>
+      <ElevationTypesList />
+      </>
     )
   }
 
@@ -296,6 +332,7 @@ export function PropertiesPanel() {
           <p style={{ opacity:0.6 }}>Use the Arrange panel to edit group properties, rotate, or remove members.</p>
           {/* Bays picked on grouped racks get the same multi-bay box. */}
           <div style={{ margin:'8px -8px 0' }}><MultiBayPanel /></div>
+          <SelectionRacks selected={selected} />
           <button onClick={deleteSelected} style={{
             marginTop:10, display:'flex', alignItems:'center', gap:5,
             background:'none', border:'none', cursor:'pointer',
@@ -321,6 +358,7 @@ export function PropertiesPanel() {
               puts every rack they belong to in selectedIds) — the same
               multi-bay box a single rack shows. */}
           <div style={{ margin:'8px -8px 0' }}><MultiBayPanel /></div>
+          <SelectionRacks selected={selected} />
           {/* aisles among the selection: their own label size */}
           {selected.some(o => o.type === 'aisle') && (
             <div style={{ marginTop:8 }}><AisleLabelSize ids={selected.filter(o => o.type === 'aisle').map(o => o.id)} /></div>
@@ -503,6 +541,8 @@ export function PropertiesPanel() {
                 />
                 <span style={{...S.mono10, color:'var(--text3)'}}>ft</span>
               </div>
+              {/* the clearance the top load keeps under the sprinkler heads — the layout's setting (Check layout, the drawing) */}
+              <SprinklerClearanceField />
               {/* the clear height the elevation types are checked against (Check layout; utils/elevations.js) — none: not checked */}
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <span style={S.label}>Clear ht</span>
@@ -807,6 +847,24 @@ export function PropertiesPanel() {
 }
 
 /* ─── Layer Select ─────────────────────────────────────────────────────────── */
+
+/** The layout's sprinkler clearance (on its elevation types table, saved and undone with it), building style. */
+function SprinklerClearanceField() {
+  const T = useCanvasStore(s => s.elevations)
+  const v = sprinklerClearance(T)
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:6 }} title="The top of the top load must stay at least this far under the sprinkler heads">
+      <span style={S.label}>Spr. clr</span>
+      <input type="number" min={0} step={1} aria-label="Sprinkler clearance"
+        defaultValue={v} key={`spc-${v}`}
+        onBlur={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0 && n !== v) commitTable(useCanvasStore, tb => ({ ...tb, sprinklerClearanceIn: n })); else e.target.value = v }}
+        onKeyDown={e => { if (e.key==='Enter') e.target.blur() }}
+        style={S.input}
+      />
+      <span style={{...S.mono10, color:'var(--text3)'}}>in</span>
+    </div>
+  )
+}
 
 function LayerSelect({ value, onChange }) {
   const { layers } = useCanvasStore(useShallow(s => ({ layers: s.layers })))

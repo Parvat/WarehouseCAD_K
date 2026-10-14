@@ -1,10 +1,9 @@
 // elevEditor.js — the elevation editor's state and its edits (Elevations v2 §B–C, §E).
 //
-// The editor is in the right panel's Elevations tab, under the types list (components/Elevations/ElevationEditor.jsx).
-// The list and the drawing show the same type (`typeId`) at one beam length (`beamIn` — beam length is per bay, not per type: the
-// picker lists the lengths that type's bays use; level edits apply to the type, so to every length at once).
-// Linked: a bay or rack selected on the canvas shows its type and beam length; choosing a type in the editor arms paint
-// mode (utils/elevPaint.js). Every drag or typed edit is ONE undo step (the store's commitElevations).
+// The editor is the Properties panel's Elevation section, driven by the selection (components/Elevations/
+// ElevationSection.jsx, utils/elevSelection.js): the drawing shows the selection's type (`typeId`: the tab picked when
+// the selection carries several) at the selected bay's beam length. The edits below are pure — a type in, a type out;
+// the section saves the result for the selected bay-sides only (ONE undo step), never the floor plan.
 // Simple / Detailed is presentation state, per browser (localStorage); the PDF prints the one chosen.
 
 import { create } from 'zustand'
@@ -14,9 +13,9 @@ const LS_KEY = 'trace.elevpane.v1'
 const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { detail: v.detail === 'detailed' ? 'detailed' : 'simple' } } catch { return { detail: 'simple' } } }
 const save = (s) => { try { localStorage.setItem(LS_KEY, JSON.stringify({ detail: s.detail })) } catch { /* private window */ } }
 
-/** { typeId, beamIn, detail ('simple' | 'detailed': what the drawing — and the PDF — dimensions), sel (a level index picked on
- *  the drawing) } */
-export const useElevEditor = create(() => ({ typeId: null, beamIn: null, sel: null, ...read() }))
+/** { typeId (the tab shown), detail ('simple' | 'detailed': what the drawing — and the PDF — dimensions), sel (a level
+ *  index picked on the drawing), hint (what the last edit was saved as) } */
+export const useElevEditor = create(() => ({ typeId: null, sel: null, hint: null, ...read() }))
 export function setPane(patch) { useElevEditor.setState(patch); save(useElevEditor.getState()) }
 
 /* ── the edits: a type in, a type out (pure) ─────────────────────────────── */
