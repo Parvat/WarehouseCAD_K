@@ -12,9 +12,12 @@
 //     own record (rackingArea.js areaEdits: changed + removed) and, for Generate's racks, the record Generate writes
 //     on the building (`genPlaced`: rack id → its signature as placed). A layout generated before that record has no
 //     way to tell: `editsKnown` false.
+// Elevation choices are kept: each new rack side takes the elevation of the old generated bay-sides it overlaps most
+// (by area); with no overlap, the layout default (carryElevations).
 
 import { nanoid } from 'nanoid'
-import { planAreaCreate, areaEdits, rackSig, sigMatch, isArea } from './rackingArea'
+import { planAreaCreate, areaEdits, rackSig, sigMatch, isArea, rowBayBoxes } from './rackingArea'
+import { isBeamRack, sidesOf, typeIdAt, assignCells } from '../utils/elevations'
 import { innerOutline } from './fillRacking'
 import { rebuildAisles } from '../utils/aisleRebuild'
 
@@ -84,9 +87,41 @@ export function planRegenerate(objects, fp, settings, { gridSize = 40, newId = n
     if (made && (!best || made.plan.positions > best.made.plan.positions)) best = { made, orientation }
   }
   if (!best) return null
-  // the building's record of what Generate placed belongs to the racks just replaced
-  const next = best.made.objects.map(o => (o.id === fp.id && o.genPlaced ? (({ genPlaced, ...rest }) => rest)(o) : o))
+  // the elevation choices carried from the racks replaced; the building's record of what Generate placed goes with them
+  const carried = carryElevations(objects.filter(o => summary.racks.includes(o.id)), best.made.objects, best.made.area.id, elevations, gridSize)
+  const next = carried.map(o => (o.id === fp.id && o.genPlaced ? (({ genPlaced, ...rest }) => rest)(o) : o))
   return { objects: rebuildAisles(next, newId).objects, area: best.made.area, orientation: best.orientation, summary }
+}
+
+/** `objects` with each rack of area `areaId` taking, per side, the elevation of the `old` racks' bay-sides it overlaps
+ *  most (by area) — the layout default where it overlaps none, or where that is the default anyway. Same array when
+ *  there is no table or nothing to carry. */
+export function carryElevations(old, objects, areaId, table, gridSize = 40) {
+  if (!table || !old.length) return objects
+  const ov = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y))
+  const was = []
+  for (const o of old) {
+    if (!isBeamRack(o)) continue
+    const S = sidesOf(o), bx = rowBayBoxes(o, gridSize)
+    o.beams.forEach((_, b) => { for (let sd = 0; sd < S; sd++) { const box = bx[b * S + sd]; if (box) was.push({ box, t: typeIdAt(o, b, sd, table) }) } })
+  }
+  if (!was.some(w => w.t !== table.defaultId)) return objects
+  const byType = new Map()                                     // typeId → Map(rackId → [[side, bay]…])
+  for (const r of objects) {
+    if (!isBeamRack(r) || r.areaId !== areaId) continue
+    const S = sidesOf(r), bx = rowBayBoxes(r, gridSize)
+    for (let sd = 0; sd < S; sd++) {
+      const area = new Map()
+      r.beams.forEach((_, b) => { const box = bx[b * S + sd]; if (!box) return; for (const w of was) { const a = ov(box, w.box); if (a > 0) area.set(w.t, (area.get(w.t) || 0) + a) } })
+      const best = [...area].sort((x, y) => y[1] - x[1])[0]
+      if (!best || best[0] === table.defaultId) continue
+      if (!byType.has(best[0])) byType.set(best[0], new Map())
+      byType.get(best[0]).set(r.id, [...(byType.get(best[0]).get(r.id) || []), ...r.beams.map((_, b) => [sd, b])])
+    }
+  }
+  let out = objects
+  for (const [t, cells] of byType) out = assignCells(out, table, cells, t)
+  return out
 }
 
 /** The record Generate writes on its building: each rack it placed → its signature as placed. */

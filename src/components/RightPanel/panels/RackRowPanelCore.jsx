@@ -9,7 +9,8 @@ import { rebuildAisles } from '../../../utils/aisleRebuild'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
 import { useBayLedger } from '../useBayLedger'
-import { ElevationSection, Field, Fold } from '../../Elevations/ElevationSection'
+import { Field, Fold } from '../../shared/Fold'
+import { ElevationLine } from '../../Elevations/ElevationLine'
 import { rackDepthUpdate } from '../../../utils/rackDepth'
 import {
   BEAM_PRESETS_IN, parseBeamIn, wallClearAlong, planBayBeamChange,
@@ -233,9 +234,9 @@ export function BeamSelect({ value, onPick, warnFor = () => null, aria = 'Beam l
   )
 }
 
-/* The rack panel, in collapsible sections: Summary (pallets, length, bays), Bays (the list, + Bay / − Bay, one beam
-   length), Elevation (the selection's elevation — components/Elevations/ElevationSection.jsx — and the Levels field),
-   Rack, collapsed (frame depth, upright, pallet size, flue). Only Bays and Rack change the floor plan. */
+/* The rack panel, in collapsible sections: Summary (pallets, length, bays, and the elevation as one read-only line —
+   elevations are set in Elevation mode, components/Elevations/ElevationWorkspace.jsx), Bays (the list, + Bay / − Bay,
+   one beam length), Rack, collapsed (frame depth, upright, pallet size, flue). */
 export function RackRowPanel({ obj }) {
   const { objects, updateObject, commitObjectUpdate, deleteSingleBay, gridSize } = useCanvasStore(useShallow(s => ({ objects: s.objects, updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, deleteSingleBay: s.deleteSingleBay, gridSize: s.gridSize })))
 
@@ -329,6 +330,7 @@ export function RackRowPanel({ obj }) {
           )}
         </div>
         <RackWarning text={nowWarn} />
+        <ElevationLine />
       </Fold>
 
       {/* ── Bays: the list, + Bay / − Bay, one beam length ── */}
@@ -360,25 +362,6 @@ export function RackRowPanel({ obj }) {
           <button type="button" onClick={() => addBay(beamShown)} aria-label={`+ Bay ${fmtIn(beamShown)}`} title={warnAdd(beamShown) || `Add a ${fmtIn(beamShown)} bay at the far end`} style={btn(true, warnAdd(beamShown) ? 'var(--red)' : 'var(--text)')}>+ Bay</button>
           <button type="button" onClick={removeBay} disabled={beams.length <= 1} style={btn(beams.length > 1, 'var(--red)')}>− Bay</button>
         </div>
-      </Fold>
-
-      {/* ── Elevation: the selection's (vertical design only) and the Levels field ── */}
-      <Fold title="Elevation" aria="Elevation">
-        <ElevationSection extra={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {label('Levels', 86)}
-            <input type="text" aria-label="Levels" defaultValue={levels} key={`lvl-${obj.id}-${levels}`}
-              onFocus={e => e.target.select()}
-              onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-              onBlur={e => {
-                const v = parseInt(e.target.value)
-                if (v > 0) commitObjectUpdate(obj.id, { levels: v })
-                else e.target.value = levels
-              }}
-              style={{ flex: 1, minWidth: 0, padding: '5px 8px', borderRadius: 6, fontSize: 11, fontFamily: 'var(--font-mono)', background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', outline: 'none' }}/>
-            <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>whole rack</span>
-          </div>
-        } />
       </Fold>
 
       {/* ── Rack: frame depth, upright, pallet size, flue (collapsed) ── */}

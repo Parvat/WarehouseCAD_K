@@ -193,8 +193,8 @@ const freshId = (table, base) => { let id; do { id = `${base}-${(++seq).toString
  *   - a rack whose `levels` changed while its type didn't (`prevObjects`: the layout before — a levels edit, the
  *     Row group's levels replay) gets the type with that many levels — an existing one, or a copy of its type;
  *   - any other mismatch (a new rack, a piece, a type changed): `levels` follows the type;
- *   - a custom type ("N levels · custom", findOrMakeType's) no bay carries any more is removed — in the same pass, so
- *     the edit that emptied it and its removal are one undo step. Standard types stay until deleted. */
+ *   - a custom type ("N levels · custom", made automatically before Elevation mode) no bay carries any more is
+ *     removed — in the same pass, so the edit that emptied it and its removal are one undo step. Others stay. */
 export function reconcileElevations({ prevObjects = null, objects, table, migrate: doMigrate = true }) {
   let out = objects, T = table
   const legacy = extractLegacy(out)
@@ -239,7 +239,7 @@ export function reconcileElevations({ prevObjects = null, objects, table, migrat
   if (unused.length) tb = { ...tb, types: tb.types.filter(t => !unused.includes(t.id)) }
   return { objects: changed ? out : objects, table: tb }
 }
-/** A custom type's name — what findOrMakeType calls a design at a non-standard spacing. */
+/** A custom type's name — what an edit used to call a design at a non-standard spacing (before Elevation mode). */
 export const isCustomName = (name) => / · custom( \d+)?$/.test(String(name || ''))
 /** The custom types of `table` no bay of `objects` carries (never the default) → their ids. */
 export function unusedCustom(objects, table) {
@@ -320,7 +320,7 @@ export function removeType(table, id) {
 }
 export const setDefault = (table, id) => (table.types.some(t => t.id === id) ? { ...table, defaultId: id } : table)
 
-/* ── names, and a design saved as a type ─────────────────────────────────── */
+/* ── names, and assigning ─────────────────────────────────── */
 
 /** `name`, or "name 2", "name 3"… — the first no other type (but `exceptId`) is called. */
 export function uniqueTypeName(table, name, exceptId = null) {
@@ -345,28 +345,6 @@ export function dedupeNames(table) {
   })
   return changed ? { ...table, types } : table
 }
-/** What a type IS, vertically — its levels (beam tops, pallets, loads), upright, clearance, beam face, hole pitch —
- *  as a key: two types with the same key are the same design whatever they are called. */
-export const designKey = (t) => JSON.stringify({ L: [...t.levels].sort((a, b) => a.beamIn - b.beamIn).map(l => [l.beamIn, l.palletHeightIn ?? 0, l.loadLb ?? 0]), u: t.uprightHeightIn, c: t.clearanceIn ?? CLEARANCE_IN, f: beamFace(t), p: holePitch(t) })
-/** The levels at the standard spacing: the floor, then a beam every SPACING_IN. */
-export const isStandardSpacing = (t) => [...t.levels].sort((a, b) => a.beamIn - b.beamIn).every((l, k) => Math.abs(l.beamIn - k * SPACING_IN) < 1e-6)
-/** The type for `design` in `table` → { table, id, name, created, custom }: an existing type of that very design;
- *  else a new one named by its level count — "4 levels" when the spacing is standard and the name is free, else
- *  "4 levels · custom" (then "custom 2"…). */
-export function findOrMakeType(table, design) {
-  const key = designKey(design)
-  const same = table.types.find(t => designKey(t) === key)
-  if (same) return { table, id: same.id, name: same.name, created: false, custom: isCustomName(same.name) }
-  const base = `${design.levels.length} levels`
-  let name = base
-  if (!isStandardSpacing(design) || table.types.some(t => t.name === base)) {
-    name = `${base} · custom`
-    for (let k = 2; table.types.some(t => t.name === name); k++) name = `${base} · custom ${k}`
-  }
-  const t = { ...JSON.parse(JSON.stringify(design)), id: freshId(table, 'elev'), name, color: PALETTE[table.types.length % PALETTE.length] }
-  return { table: { ...table, types: [...table.types, t] }, id: t.id, name, created: true, custom: name !== base }
-}
-
 /** `objects` with type `typeId` on the bay-sides `cells` (Map rackId → [[side, bay]…]), each rack's overrides
  *  written back minimally and its levels mirror following (same array when nothing changes). */
 export function assignCells(objects, table, cells, typeId) {

@@ -1,3 +1,4 @@
+import { useElevMode } from '../utils/elevMode'
 import { useMemo, memo } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { shownIn } from '../utils/layers'
@@ -57,7 +58,9 @@ function SceneView({ listening = false, bind }) {
      A locked layer still draws. */
   const isVisible = useMemo(() => shownIn(layers), [layers])
   /* each bay filled with its elevation type's colour (utils/elevationDraw.js), unless the colours are hidden */
-  const showColors = useElevView(s => s.showColors)
+  // the colours on, or Elevation mode (rows coloured by elevation whatever the toggle)
+  const elevMode = useElevMode(s => s.on)
+  const showColors = useElevView(s => s.showColors) || elevMode
   const elevTable = useCanvasStore(s => s.elevations)
   const elev = showColors ? elevTable : null
 

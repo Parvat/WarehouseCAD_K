@@ -8,6 +8,8 @@ import { useShallow } from 'zustand/react/shallow'
 import { FloatingToolbar } from './components/LeftPanel/FloatingToolbar'
 import { GeneratePanel } from './components/Generate/GeneratePanel'
 import { Canvas2 } from './canvas2/Canvas2'
+import { ElevationWorkspace, ElevationDivider } from './components/Elevations/ElevationWorkspace'
+import { useElevMode } from './utils/elevMode'
 import { ColumnCheckProvider } from './generate/useColumnCheck'
 import { RulesProvider } from './rules/useRules'
 import { Login } from './shell/Login'
@@ -89,6 +91,7 @@ export default function App() {
   useKeyboardShortcuts()
   const { uiTheme, uiScale, restoreAutoSave, hasAutoSave, setUiTheme } = useCanvasStore(useShallow(s => ({ uiTheme: s.uiTheme, uiScale: s.uiScale, restoreAutoSave: s.restoreAutoSave, hasAutoSave: s.hasAutoSave, setUiTheme: s.setUiTheme })))
   const [view, setView] = useState('login')
+  const elevMode = useElevMode(s => s.on), elevSplit = useElevMode(s => s.split)
 
   useEffect(() => {
     if (hasAutoSave()) restoreAutoSave()
@@ -118,14 +121,18 @@ export default function App() {
       <ColumnCheckProvider>
         <TopBar />
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          <FloatingToolbar />
-          {/* the canvas; the elevation editor lives in the right panel's Elevations tab, which widens for it */}
+          {/* Layout mode: the tools, the plan, Properties. Elevation mode (ELEVATIONS_PLAN.md §3): the plan on the
+              left (select-only, rows coloured by elevation), the elevation workspace on the right, a divider between */}
+          {!elevMode && <FloatingToolbar />}
           <div className="flex flex-col flex-1 min-w-0 min-h-0">
             <Canvas2 />
           </div>
-          <RightPanel />
+          {elevMode ? <>
+            <ElevationDivider />
+            <div style={{ width: `${Math.round(elevSplit * 100)}%`, flexShrink: 0, minWidth: 0 }}><ElevationWorkspace /></div>
+          </> : <RightPanel />}
         </div>
-        <GeneratePanel />
+        {!elevMode && <GeneratePanel />}
       </ColumnCheckProvider>
       </RulesProvider>
       <button onClick={() => setView('hub')} title="Back to hub" style={{

@@ -63,12 +63,14 @@ export function misfitLevels(t) {
  *  and per level the pallet height and the ACTUAL gap to the underside of the beam above, red under the clearance, and
  *  that beam's face), compact (the panel's preview: no labels), stacked (the side view under the front view), scale, bg
  *  (the colour behind the labels' halo: the panel's), frame / ink (the frames' and beams' colour, the ground's and base
- *  plates'), blue / red (the dimensions', the clearances') — the editor passes theme tokens so a dark panel keeps them
+ *  plates'), view ('both' — the PDF's figure —, 'front' or 'side': one view, fitted alone; the Elevation workspace's
+ *  Front | Side switch), blue / red (the dimensions', the clearances') — the editor passes theme tokens so a dark panel keeps them
  *  readable; the PDF the reference's own colours — draft overrides { active, removing }. Items: { t: 'rect'|'line'|
  *  'text'|'poly'|'polygon'|'path', ..., role, tag } — role { kind: 'beam', k } | { kind: 'upright', x } | { kind: 'top' } |
  *  { kind: 'dim', id, k?, value } for the editor. No label overlaps a load, a beam or another label (declutter). */
 export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = {}) {
-  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED } = opts
+  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED, view = 'both' } = opts
+  const showFront = view !== 'side', showSide = view !== 'front'
   const detailed = detail === 'detailed'
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
   const L = [...t.levels].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
@@ -95,19 +97,21 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const sideL = compact ? 6 : fO * 3.2, sideR = compact ? 6 : fO * 1.2, sideT = compact ? 6 : fO * (pair ? 4.4 : 2.8)
   const gap = compact ? 14 : fO * 2.4
   let fit
-  if (stacked) fit = Math.min((box.w - mL - mR) / frontW, (box.w - sideL - sideR) / sideW, (box.h - mT - mB - gap - sideT - mB) / (H + H))
+  if (view === 'front') fit = Math.min((box.w - mL - mR) / frontW, (box.h - mT - mB) / H)
+  else if (view === 'side') fit = Math.min((box.w - sideL - sideR) / sideW, (box.h - Math.max(sideT, mT) - mB) / H)
+  else if (stacked) fit = Math.min((box.w - mL - mR) / frontW, (box.w - sideL - sideR) / sideW, (box.h - mT - mB - gap - sideT - mB) / (H + H))
   else fit = Math.min((box.w - mL - mR - gap - sideL - sideR) / (frontW + sideW), (box.h - mT - mB) / H, (box.h - sideT - mB) / H)
   fit = Math.max(0.05, fit)
   const s = scale && scale <= fit ? scale : fit
   const frontBoxW = mL + frontW * s + mR, frontBoxH = mT + H * s + mB
   const sideBoxW = sideL + sideW * s + sideR, sideBoxH = Math.max(sideT, mT) + H * s + mB
-  const cw = stacked ? Math.max(frontBoxW, sideBoxW) : frontBoxW + gap + sideBoxW
-  const ch = stacked ? frontBoxH + gap + sideBoxH : Math.max(frontBoxH, sideBoxH)
+  const cw = view === 'front' ? frontBoxW : view === 'side' ? sideBoxW : stacked ? Math.max(frontBoxW, sideBoxW) : frontBoxW + gap + sideBoxW
+  const ch = view === 'front' ? frontBoxH : view === 'side' ? sideBoxH : stacked ? frontBoxH + gap + sideBoxH : Math.max(frontBoxH, sideBoxH)
   const ox = Math.max(0, (box.w - cw) / 2), oy = Math.max(0, (box.h - ch) / 2)
   const X0 = ox + (stacked ? (cw - frontBoxW) / 2 : 0) + mL, floor = oy + mT + H * s
   const Y = (z) => floor - z * s, Xf = (x) => X0 + x * s
-  const XS0 = stacked ? ox + (cw - sideBoxW) / 2 + sideL : X0 + frontW * s + mR + gap + sideL
-  const floorS = stacked ? floor + mB + gap + Math.max(sideT, mT) + H * s : floor
+  const XS0 = view === 'side' ? ox + sideL : stacked ? ox + (cw - sideBoxW) / 2 + sideL : X0 + frontW * s + mR + gap + sideL
+  const floorS = view === 'side' ? oy + Math.max(sideT, mT) + H * s : stacked ? floor + mB + gap + Math.max(sideT, mT) + H * s : floor
   const Ys = (z) => floorS - z * s, Xs = (x) => XS0 + x * s
   const sw = Math.max(0.8, fontPx / 11)
   const colPx = Math.max(3.5, upW * s), beamPx = Math.max(4, face * s), deckPx = Math.max(3, 4 * s)
@@ -168,6 +172,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   }
 
   // ── front view
+  if (showFront) {
   const fx0 = X0 - (compact ? 0 : fO * 1.4), fx1 = Xf(frontW) + (compact ? 0 : fO * 1.2)
   shell(Y, fx0, fx1)
   ground(fx0, fx1, floor)
@@ -248,7 +253,10 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     }
   }
 
+  }
+
   // ── side view: dark green frames (two and the flue for a back-to-back), horizontals and diagonals, flue spacers
+  if (showSide) {
   const sx0 = Xs(0) - (compact ? 0 : fO * 1.2), sx1 = Xs(sideW) + (compact ? 0 : fO * 1.0)
   shell(Ys, sx0, sx1)
   ground(sx0, sx1, floorS)
@@ -270,6 +278,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     dimH(yb, Xs(0), Xs(depthIn + upW), ftInDash(depthIn), { outboard: pair ? 'left' : null })
     if (pair) { dimH(yb, Xs(depthIn + upW), Xs(depthIn + upW + flueIn), ftInDash(flueIn), { below: false }); dimH(yb, Xs(depthIn + flueIn + upW), Xs(sideW), ftInDash(depthIn), { outboard: 'right' }) }
     dimV(Xs(0) - fO * 1.8, Ys(0), Ys(hTop), `FRAME ${ftInDash(hTop)}`, { kind: 'dim', id: 'upright', value: hTop }, { pri: 2, out: -1 })
+  }
   }
   if (!compact) declutter(items, box)
   // every label over the linework, so its halo clears the dashed building lines and the dimension lines beneath it

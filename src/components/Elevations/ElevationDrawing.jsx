@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { elevationLayout, ftInDash, parseFtIn } from '../../utils/elevationDrawing'
 import { setPane, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, paneFontPx } from '../../utils/elevEditor'
 
-/* ── The elevation drawing, interactive — in the Properties panel's Elevation section (ElevationSection.jsx) ──────
+/* ── The elevation drawing, interactive — Elevation mode's workspace (ElevationWorkspace.jsx) ───────────────────────
    Drag a beam up or down (snapping to the type's hole pitch, its elevation live); drag it off the ends of the bay, or
    click it and press Delete, to remove its level; click an empty upright to add a level there; drag the top of the
    upright to change its height; double-click a dimension to type it exactly. Each gesture hands the edited type to
@@ -13,7 +13,8 @@ import { setPane, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, p
    every line on a scaled display), straight lines and rects draw with crisp edges, labels with geometric precision. */
 
 /** The drawing of type `t` at `entry` (beam length, depth, pair, flue, pallet width); `onCommit(nextType)` per gesture. */
-export function ElevationDrawing({ t, entry, building, sel, sprClr, detail, onCommit }) {
+/** `view`: 'both' | 'front' | 'side' (one view, fitted alone); `height`: a fixed height (px) — else it follows the width. */
+export function ElevationDrawing({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null }) {
   const commit = (fn) => { const next = fn(t); if (next && JSON.stringify(next) !== JSON.stringify(t)) onCommit(next) }
   const host = useRef(null)
   const [box, setBox] = useState({ w: 454, h: 431 })
@@ -25,7 +26,7 @@ export function ElevationDrawing({ t, entry, building, sel, sprClr, detail, onCo
     // the height follows the width: side by side when there is room, the side view under the front view when narrow
     const read = () => {
       const w = el.clientWidth
-      setBox(b => { const n = w < 400 ? { w, h: Math.round(Math.min(900, Math.max(480, w * 1.7))) } : { w, h: Math.round(Math.min(640, Math.max(340, w * 0.95))) }; return n.w === b.w && n.h === b.h ? b : n })
+      setBox(b => { const n = height ? { w, h: Math.round(height) } : w < 400 ? { w, h: Math.round(Math.min(900, Math.max(480, w * 1.7))) } : { w, h: Math.round(Math.min(640, Math.max(340, w * 0.95))) }; return n.w === b.w && n.h === b.h ? b : n })
       // onto the device-pixel grid: the host can sit at a fraction of a pixel (the panel's 0.5 px rules, a scaled display)
       const r = el.getBoundingClientRect(), dpr = window.devicePixelRatio || 1
       const fx = (Math.round(r.left * dpr) - r.left * dpr) / dpr, fy = (Math.round(r.top * dpr) - r.top * dpr) / dpr
@@ -36,13 +37,13 @@ export function ElevationDrawing({ t, entry, building, sel, sprClr, detail, onCo
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read)
     ro?.observe(el)
     return () => { ro?.disconnect(); window.removeEventListener('scroll', read, true); window.removeEventListener('resize', read) }
-  }, [])
+  }, [height])
   const [draft, setDraft] = useState(null)          // { type, active, removing } while dragging
   const [editing, setEditing] = useState(null)      // a dimension being typed: { id, k, x, y, value }
   const shown = draft ? draft.type : t
   // centred and fitted to the pane (elevationLayout centres it in the box), labels in proportion with a readable minimum
   const fontPx = paneFontPx(box)
-  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, bg: 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail])
+  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, view, bg: 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail, view])
 
   const at = (ev) => { const r = host.current.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
   const zAt = (p) => (d.floor - p.y) / d.scale

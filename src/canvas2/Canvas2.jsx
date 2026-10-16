@@ -14,6 +14,7 @@ import { SplitPreview } from './SplitPreview'
 import { IssueHighlight } from './IssueHighlight'
 import { RowGroupBar } from './RowGroupBar'
 import { ElevLegend } from './ElevationsCanvas'
+import { useElevMode } from '../utils/elevMode'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useCanvasInteraction } from './useCanvasInteraction'
@@ -385,6 +386,8 @@ export function Canvas2() {
     if (t && t.hitId) splitAt(useCanvasStore, t.world, t.hitId, { newId: nanoid, rebuildAisles })
   }
 
+  // Elevation mode (utils/elevMode.js): the plan is select-only — no resize, rotate or group handles
+  const elevMode = useElevMode(s => s.on)
   const stageMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : onStageMouseDown
   const stageMouseMove = measuring ? measureMouseMove : splitting ? splitMouseMove : filling || grouping ? undefined : onStageMouseMove
   const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : filling || grouping ? undefined : onStageMouseLeave
@@ -491,13 +494,13 @@ export function Canvas2() {
               rackConflicts={columnCheckResult.rackConflicts}
               pickBlocks={columnCheckResult.pickBlocks}
               uprightHits={columnCheckResult.uprightHits} />
-            {handleTarget && (
+            {handleTarget && !elevMode && (
               <ResizeHandlesOverlay obj={handleTarget} zoom={zoom} gridSize={gridSize} />
             )}
-            {fpRotateTarget && (
+            {fpRotateTarget && !elevMode && (
               <FpRotateHandleOverlay obj={fpRotateTarget} gridSize={gridSize} zoom={zoom} />
             )}
-            {selectedObjects.length >= 2 && !(activeBaySelection && activeBaySelection.length > 0) && (
+            {!elevMode && selectedObjects.length >= 2 && !(activeBaySelection && activeBaySelection.length > 0) && (
               <GroupRotateOverlay objects={selectedObjects} zoom={zoom} allObjects={objects} />
             )}
             {measuring && (

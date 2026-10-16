@@ -135,6 +135,26 @@ describe('RGN — Regenerate racking', () => {
     expect(r.objects.filter(o => o.type === 'racking_area').length).toBe(1)
   })
 
+  it('RGN-elevations: Regenerate keeps elevation choices — each new rack side takes the elevation of the old generated bay-sides it overlaps most; elsewhere the layout default', () => {
+    generatedThenEdited()
+    const E = { ...store.getState().elevations }
+    const B = { ...E.types[0], id: 'B', name: '6 levels · 30\'', levels: Array.from({ length: 6 }, (_, k) => ({ beamIn: k * 58, palletHeightIn: 48, loadLb: 2000 })), uprightHeightIn: 360 }
+    // the western third of the generated racks carries B
+    const fp = objs().find(o => o.type === 'fp_rect'), box = innerBox(fp, GS), west = box.x + box.w / 3
+    const isWest = (o) => { const f = foot(o); return f.x + f.w / 2 < west }
+    const T2 = { ...E, types: [...E.types, B] }
+    store.setState({ elevations: T2, objects: objs().map(o => (isGeneratedRack(o) && isWest(o) ? { ...o, elevType: 'B', levels: 6 } : o)) })
+    store.getState().commitObjectUpdate(fp.id, {})
+    regenerateRacking({ ...BRIEF, orientation: 'vertical' })
+    const now = objs().filter(o => isRack(o) && o.areaId)
+    const typed = (o) => { const tb = store.getState().elevations; const v = o.elevBays?.[0]?.[0] ?? o.elevSides?.[0] ?? o.elevType ?? tb.defaultId; return v === '*' ? tb.defaultId : v }
+    const westNew = now.filter(isWest), eastNew = now.filter(o => foot(o).x > west + 20 * GS)
+    expect([westNew.length > 3, eastNew.length > 3]).toEqual([true, true])
+    expect(westNew.filter(o => typed(o) === 'B').length / westNew.length).toBeGreaterThan(0.8)
+    expect(eastNew.every(o => typed(o) !== 'B')).toBe(true)
+    expect(store.getState().elevations.types.some(x => x.id === 'B')).toBe(true)
+  })
+
   it('RGN-wire: the Generate panel asks when the building has a layout — Regenerate racking (with the rows, racks, zones, hand-placed racks and the hand edits lost, or that they can\'t be detected) or Start over (the old Generate) or Cancel', () => {
     const src = readFileSync(new URL('../../components/Generate/GeneratePanel.jsx', import.meta.url), 'utf8')
     expect(src).toMatch(/if \(fp && objects\.some\(o => o\.parentId === fp\.id\)\) \{ setAsk\(regenSummary\(objects, fp\)\); return \}/)

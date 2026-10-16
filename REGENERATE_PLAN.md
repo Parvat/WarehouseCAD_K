@@ -9,7 +9,8 @@
 > - The new racks go into one racking area over the building, so the next Regenerate counts that area's hand edits.
 > - When the building already has a layout, Generate asks "Regenerate racking" (with counts) or "Start over" (the old
 >   Generate).
-> - Aisle labels and per-rack elevation assignments are not carried over: new racks take the default type.
+> - Elevation choices are carried: each new rack side takes the elevation of the old generated bay-sides it overlaps
+>   most, else the default (`carryElevations`). Aisle labels are not carried over.
 
 **Goal:** re-run racking on a finished layout and replace only the racks that Generate or Fill made. Everything else
 stays as the user left it:

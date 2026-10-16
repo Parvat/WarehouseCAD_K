@@ -15,8 +15,8 @@ import { useColumnCheck } from '../../generate/useColumnCheck'
 import { usableCapacity } from '../../generate/usableCapacity'
 import { useBayLedger } from './useBayLedger'
 import { PALETTE_COLORS } from '../../constants'
-import { ElevationTypesList } from './ElevationTypesList'
-import { ElevationSection, Field, Fold } from '../Elevations/ElevationSection'
+import { Field, Fold } from '../shared/Fold'
+import { ElevationLine } from '../Elevations/ElevationLine'
 import { isBeamRack, sprinklerClearance } from '../../utils/elevations'
 import { commitTable } from '../../utils/elevEditor'
 import { rackDepthUpdate } from '../../utils/rackDepth'
@@ -261,7 +261,7 @@ function AislePanel({ obj }) {
 }
 
 
-/* The selected racks' elevation, and their frame depth together (each about its own centre, ONE undo step; overlaps
+/* The selected racks' elevation (read-only: set in Elevation mode), and their frame depth together (each about its own centre, ONE undo step; overlaps
    show as warnings; the Row group replays it). For a selection of several racks or bays, and a group. */
 function SelectionRacks({ selected }) {
   const racks = selected.filter(isBeamRack)
@@ -278,7 +278,7 @@ function SelectionRacks({ selected }) {
   }
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:12, marginTop:10 }}>
-      <Fold title="Elevation" aria="Elevation"><ElevationSection /></Fold>
+      <ElevationLine />
       {racks.length > 0 && (
         <Fold title="Rack" defaultOpen={false} aria="Rack">
           <Field label="Frame depth" aria="Rack depth" value={depths.length === 1 ? depths[0] : ''} title={`The ${racks.length} selected rack${racks.length === 1 ? '' : 's'} — each resized about its centre`} onCommit={setDepth} />
@@ -313,7 +313,6 @@ export function PropertiesPanel() {
         </div>
         <CapacityHero objects={objects} />
       </SectionHeader>
-      <ElevationTypesList />
       </>
     )
   }

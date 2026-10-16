@@ -9,6 +9,7 @@ import { FILL_TOOL, cancelFill } from '../utils/fillTool'
 import { SPLIT_TOOL, useSplit } from '../utils/splitTool'
 import { pickableIn } from '../utils/layers'
 import { deleteBaySelection } from '../utils/baySides'
+import { useElevMode, undoOrDiscard } from '../utils/elevMode'
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -16,6 +17,18 @@ export function useKeyboardShortcuts() {
       const tag = document.activeElement?.tagName
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
       const ctrl = e.ctrlKey || e.metaKey
+
+      /* Elevation mode (utils/elevMode.js): the plan is select-only — Esc clears the selection, Ctrl+Z discards a
+         draft not applied (else undoes), Ctrl+Y / Ctrl+Shift+Z redo; no other key edits the layout */
+      if (useElevMode.getState().on) {
+        if (isInput) return
+        const k = (e.key || '').toLowerCase()
+        if (e.key === 'Escape') { const st = useCanvasStore.getState(); useCanvasStore.setState({ selectedIds: [], activeBaySelection: [], objects: st.objects.some(o => o.activeBayIdx != null) ? st.objects.map(o => (o.activeBayIdx != null ? { ...o, activeBayIdx: null, activeBaySide: null } : o)) : st.objects }); return }
+        if (ctrl && k === 'z' && !e.shiftKey) { e.preventDefault(); undoOrDiscard(useCanvasStore); return }
+        if (ctrl && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); if (!useElevMode.getState().pending) useCanvasStore.getState().redo(); return }
+        if (e.key === 'Delete' || e.key === 'Backspace' || ctrl || e.key.startsWith('Arrow')) e.preventDefault()
+        return
+      }
 
       // ── Escape — deselect, cancel draw ──────────────────────────────────
       if (e.key === 'Escape') {

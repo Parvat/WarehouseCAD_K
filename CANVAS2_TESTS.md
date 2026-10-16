@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### EV — Elevations v1 + v2 · `EV_elevations.test.js` (64 tests)
+### EV — Elevations v1 + v2 · `EV_elevations.test.js` (68 tests)
 **v2** (ELEVATIONS_PLAN.md §v2). Beam face height per type (4"); levels to the top of the beam; the fit from the top of
 the lower beam to the underside of the next. Frame depth from the rack (read-only). A type change is no hand edit
 (rackingArea sigMatch / shapeKey). The types are the store's `elevations` (approved store diff: snapshot, undo / redo,
@@ -2067,6 +2067,38 @@ deselected → 272.
 no bay carries any more (`unusedCustom`), in the same pass — so with the edit or type choice that emptied it, one undo
 step. Standard types, and a custom type made the default, stay until deleted. New: EV-custom-prune. Break-it: the
 removal off → EV-custom-prune (2). ELEVATIONS_PLAN.md rewritten to the selection model.
+
+**Elevation mode (v4).** Elevations are a separate step after the layout. The top bar's **Layout | Elevations**
+(components/Elevations/ModeSwitch.jsx); Elevation mode a split view — the plan left (select-only: only beam racks answer a
+press, a click selects that ROW SIDE, Shift+click adds or removes it, a Shift+drag boxes; no drag, no handles, no wall or
+zone caught, no editing keys; rows coloured), the workspace right (ElevationWorkspace.jsx, 40% at first, the divider's
+share remembered in trace.elevmode.v1). utils/elevMode.js: the draft (live edits, no history; Apply = ONE undo step;
+Discard = the history's top; leaving with a draft asks Apply / Discard / Stay; Ctrl+Z / Undo with a draft discards it),
+`useForLayout` (a proposal the only type, overrides cleared), `addElevation` (a proposal or a duplicate, made active),
+the assign watcher (each new selection → whole row sides, `rowSideCells`, once the gesture settles), change / rename /
+recolour / delete / default. utils/elevFit.js: pitch = pallet + clearance + face to the hole pitch; max levels by the
+lower of clear height and sprinklers − clearance; upright = top beam + 12" to the step, ≤ clear height; proposals (★ max,
+one fewer, the next up flagged with by how much); `layoutPositions`; names "5 levels · 21'" (`autoName`, follows the
+design unless renamed). elevationLayout `view` (front / side / both). Properties: one read-only line (ElevationLine.jsx);
+the Elevation section, the types list, the Levels field and the panel widening are gone (Field / Fold moved to
+components/shared/Fold.jsx); no automatic "custom" types (findOrMakeType / commitDesign removed; old "· custom" types still
+pruned when unused). Regenerate keeps elevation choices (regenerate.js `carryElevations`: each new rack side takes the
+elevation of the old generated bay-sides it overlaps most).
+
+New: EV-fit (the worked example: 5 levels, 4'-10" … 19'-4", 21', 6 flagged 2" over), EV-mode, EV-view, EV-mode-wiring,
+RGN-elevations. Rewritten: EV-custom-prune (an older layout's custom type). Retired: EV-design, EV-properties. Changed:
+EV-background, EV-names, EV-remove-wire, EV-wire.
+
+**Break-its (v4):** Regenerate without the carry: RGN-elevations. (The fit numbers, the draft and the assign rules are
+asserted value by value in EV-fit / EV-mode.)
+
+**Checked in the app (v4)** (real mouse, the fixture filled, clear 30', sprinklers 29'-6"): Elevations → the split at
+40%, no right panel / Generate; proposals "★ 5 levels · upright 21' · 13,540 positions · headroom 4'-8"", "4 levels ·
+16'", "6 levels · 2" over the sprinkler limit"; Use for layout → a draft (no history), Apply → one undo step; + Add
+elevation → the 4-level proposal → a click on a row → its 30 bays, Shift+click another row's side → 44, a Shift+drag box
+→ 7 racks' sides; Apply; a drag and Delete on the plan change nothing; Side shows the frames; a beam dragged on the drawing
+→ a draft; the divider 40% → 49% stored; Layout with a draft → asks → Apply; Properties "Elevation: mixed — 5 levels · 21'
+(14), 4 levels · 16' (14)", no drawing.
 
 ### EV-v1
 Plan: ELEVATIONS_PLAN.md. Code: utils/elevations.js (types, layered assignment, compression, migration, the keeper,

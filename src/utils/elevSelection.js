@@ -1,12 +1,11 @@
-// elevSelection.js — the elevation of what is selected (the Properties panel's Elevation section).
+// elevSelection.js — the elevation of what is selected.
 //
 // The selection — racks clicked, Shift+clicked or boxed, bays picked (one side of a pair, or both) — as bay-sides:
-// Map(rackId → [[side, bay]…]). Choosing a type sets it on every one of them; editing the drawing saves the new
-// vertical design for those bay-sides only, as an existing type of that design or a new one named by its level count
-// (utils/elevations.js findOrMakeType). Each is ONE undo step. Nothing here moves a rack: the floor plan is untouched.
+// Map(rackId → [[side, bay]…]): what Elevation mode assigns the active elevation to (utils/elevMode.js) and what
+// Properties' read-only elevation line reads. Nothing here moves a rack: the floor plan is untouched.
 // The Row group replays a type change to its other rows like any edit (utils/rowGroup.js, kind 'elev').
 
-import { isBeamRack, sidesOf, typeIdAt, typeById, assignCells, findOrMakeType, editTable, syncAllLevels, reconcileElevations } from './elevations'
+import { isBeamRack, sidesOf, typeIdAt, typeById, assignCells, editTable } from './elevations'
 
 const allSides = (r) => Array.from({ length: sidesOf(r) }, (_, s) => s)
 
@@ -66,17 +65,4 @@ export function commitAssign(store, cells, typeId) {
   if (next === st.objects && table === st.elevations) return false
   st.commitElevations(table, next)
   return true
-}
-
-/** The edited design `next` saved for the bay-sides `cells` — an existing type of that design, or a new one named by
- *  its level count ("N levels", "N levels · custom"…) — ONE undo step → { id, name, created, custom } or null. */
-export function commitDesign(store, cells, next) {
-  const st = store.getState(), base = ensureTable(st)
-  if (!cells.size) return null
-  const f = findOrMakeType(base.table, next)
-  const r = reconcileElevations({ prevObjects: base.objects, objects: assignCells(base.objects, f.table, cells, f.id), table: f.table })
-  const objects = syncAllLevels(r.objects, r.table)
-  if (objects === st.objects && r.table === st.elevations) return null
-  st.commitElevations(r.table, objects)
-  return { id: f.id, name: f.name, created: f.created, custom: f.custom }
 }

@@ -1,9 +1,8 @@
 // elevEditor.js — the elevation editor's state and its edits (Elevations v2 §B–C, §E).
 //
-// The editor is the Properties panel's Elevation section, driven by the selection (components/Elevations/
-// ElevationSection.jsx, utils/elevSelection.js): the drawing shows the selection's type (`typeId`: the tab picked when
-// the selection carries several) at the selected bay's beam length. The edits below are pure — a type in, a type out;
-// the section saves the result for the selected bay-sides only (ONE undo step), never the floor plan.
+// The editor is Elevation mode's workspace (components/Elevations/ElevationWorkspace.jsx, utils/elevMode.js): the
+// drawing shows the active elevation. The edits below are pure — a type in, a type out; the workspace writes the result
+// to that elevation everywhere it is used, as a draft (Apply: ONE undo step). Never the floor plan.
 // Simple / Detailed is presentation state, per browser (localStorage); the PDF prints the one chosen.
 
 import { create } from 'zustand'
