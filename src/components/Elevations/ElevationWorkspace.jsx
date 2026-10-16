@@ -10,6 +10,7 @@ import { useElevMode, setElevMode, applyDraft, discardDraft, useForLayout, addEl
 import { useElevEditor, setPane } from '../../utils/elevEditor'
 import { bayLedger } from '../../utils/bayLedger'
 import { regenBuilding } from '../../generate/regenerate'
+import { projectOf, defaultPallet, advancedOf, ceilingFor, openSetup } from '../../utils/project'
 import { ElevationDrawing } from './ElevationDrawing'
 
 /* ── The elevation workspace — the right side of Elevation mode (ELEVATIONS_PLAN.md §3) ────────────────────────────
@@ -59,18 +60,16 @@ export function ElevationWorkspace() {
   const { detail, sel } = useElevEditor()
   useEffect(() => installAssignWatcher(store), [])
   const fp = useMemo(() => regenBuilding(objects), [objects])
-  const building = useMemo(() => (fp ? buildingOf(objects, fp.id) : null), [objects, fp])
-  const [fitDraft, setFit] = useState(null)
-  const fit = fitInputs({ ...(T?.fit || {}), ...(fitDraft || {}), sprinklerClearanceIn: sprinklerClearance(T) })
+  // the ceiling, the pallet and the advanced settings: the project's (Project setup, utils/project.js)
+  const pr = projectOf(T), pal = defaultPallet(pr), adv = advancedOf(pr)
+  const building = useMemo(() => ceilingFor(T, null, objects, fp?.id), [T, objects, fp])
+  const fit = fitInputs({ palletHeightIn: pal?.heightIn, clearanceIn: adv.clearanceIn, beamFaceIn: pal?.beamFaceIn, holePitchIn: adv.holePitchIn, uprightStepIn: adv.uprightStepIn, sprinklerClearanceIn: sprinklerClearance(T) })
   const props = useMemo(() => proposals(building, fit, (d) => layoutPositions(objects, d, gridSize)), [building, JSON.stringify(fit), objects, gridSize])   // eslint-disable-line react-hooks/exhaustive-deps
   const counts = useMemo(() => { const L = bayLedger(objects, gridSize, T); return new Map(legendCounts(objects, T, (r) => L.racks.get(r.id)?.counted || null).map(x => [x.type.id, x.bays])) }, [objects, gridSize, T])
   const active = T ? typeById(T, activeId) || typeById(T, T.defaultId) : null
   const entry = useMemo(() => { const used = active ? lengthsByType(objects, T, typeIdAt).get(active.id) || [] : []; const r0 = objects.find(isBeamRack); return used[0] || { beamIn: 96, depthIn: r0?.depthIn ?? 42, pair: r0?.type === 'rack_double_row', flueIn: r0?.flueSpaceIn ?? 9, palletWIn: r0?.palletWIn ?? 40, parentId: fp?.id ?? null } }, [objects, T, active, fp])
-  const setFitKey = (k, v) => { setFit(f => ({ ...(f || {}), [k]: v })); if (T) draft(store, { elevations: { ...T, fit: { ...(T.fit || {}), ...(fitDraft || {}), [k]: v } } }) }
   const fitSaved = { palletHeightIn: fit.palletHeightIn, clearanceIn: fit.clearanceIn, beamFaceIn: fit.beamFaceIn, holePitchIn: fit.holePitchIn, uprightStepIn: fit.uprightStepIn }
   const several = (T?.types.length || 0) > 1
-  const [inputsOpen, setInputsOpen] = useState(() => !(fp?.clearHeightFt > 0))
-  useEffect(() => { if (fp && !(fp.clearHeightFt > 0)) setInputsOpen(true) }, [fp])
 
   return (
     <div aria-label="Elevation workspace" data-pane="open" style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', minWidth: 0 }}>
@@ -85,28 +84,12 @@ export function ElevationWorkspace() {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-        {/* the building and the pallet: what the proposals fit */}
+        {/* what the proposals fit: the project's ceiling, pallet and advanced settings — set in Project setup */}
         <div style={S.sec} role="group" aria-label="Fit inputs">
-          {/* open while the clear height is missing; otherwise one line, so the drawing comes up the page */}
-          <button type="button" aria-expanded={inputsOpen} onClick={() => setInputsOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: 0, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-            <ChevronRight size={11} style={{ color: 'var(--text3)', transform: inputsOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
-            <span style={S.h}>Building &amp; pallet</span>
-          </button>
-          {!fp && <div style={S.note}>No building on the plan.</div>}
-          {fp && !inputsOpen && <div aria-label="Fit summary" style={S.note}>Clear {feetLabel(fp.clearHeightFt * 12)} · sprinklers {fp.sprinklerFt > 0 ? feetLabel(fp.sprinklerFt * 12) : 'not set'} ({fit.sprinklerClearanceIn}") · pallet {fit.palletHeightIn}" · clearance {fit.clearanceIn}" · face {fit.beamFaceIn}" · pitch {fit.holePitchIn}" · step {feetLabel(fit.uprightStepIn)}</div>}
-          {fp && inputsOpen && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))', gap: 8 }}>
-              <Num label="Clear height" unit="ft" aria="Clear height" step={0.5} required={!(fp.clearHeightFt > 0)} value={fp.clearHeightFt > 0 ? fp.clearHeightFt : null} onCommit={v => setBuildingHeights(store, fp.id, { clearHeightFt: v > 0 ? v : undefined })} />
-              <Num label="Sprinklers" unit="ft" aria="Sprinkler height" step={0.5} value={fp.sprinklerFt > 0 ? fp.sprinklerFt : null} onCommit={v => setBuildingHeights(store, fp.id, { sprinklerFt: v > 0 ? v : undefined })} onClear={() => setBuildingHeights(store, fp.id, { sprinklerFt: undefined })} />
-              <Num label="Spr. clearance" unit="in" aria="Sprinkler clearance" value={fit.sprinklerClearanceIn} onCommit={v => T && draft(store, { elevations: { ...T, sprinklerClearanceIn: v } })} />
-              <Num label="Pallet" unit="in" aria="Pallet height" value={fit.palletHeightIn} onCommit={v => setFitKey('palletHeightIn', v)} />
-              <Num label="Clearance" unit="in" aria="Clearance" value={fit.clearanceIn} onCommit={v => setFitKey('clearanceIn', v)} />
-              <Num label="Beam face" unit="in" aria="Beam face" value={fit.beamFaceIn} onCommit={v => setFitKey('beamFaceIn', v)} />
-              <Num label="Hole pitch" unit="in" aria="Hole pitch" value={fit.holePitchIn} onCommit={v => setFitKey('holePitchIn', v)} />
-              <Num label="Upright step" unit="ft" aria="Upright step" step={0.5} value={fit.uprightStepIn / 12} onCommit={v => v > 0 && setFitKey('uprightStepIn', v * 12)} />
-            </div>
-          )}
-          {fp && !(fp.clearHeightFt > 0) && <div role="alert" style={{ ...S.note, color: 'var(--elev-clr, #A8341C)' }}>Enter the building's clear height to see elevation proposals.</div>}
+          <span style={S.h}>Building &amp; pallet</span>
+          {building?.clearHeightIn
+            ? <div aria-label="Fit summary" style={S.note}>Clear {feetLabel(building.clearHeightIn)} · sprinklers {building.sprinklerIn ? feetLabel(building.sprinklerIn) : 'not set'} ({fit.sprinklerClearanceIn}") · pallet {pal ? pal.name : '—'} {fit.palletHeightIn}" · clearance {fit.clearanceIn}" · face {fit.beamFaceIn}" · pitch {fit.holePitchIn}" — <button type="button" onClick={() => openSetup('settings')} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent)', fontSize: 10.5, textDecoration: 'underline' }}>Project setup</button></div>
+            : <div role="alert" style={{ ...S.note, color: 'var(--elev-clr, #A8341C)' }}>Add a ceiling height in <button type="button" onClick={() => openSetup('settings')} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent)', fontSize: 10.5, textDecoration: 'underline' }}>Project setup</button> to see elevation proposals.</div>}
           {props && <div style={S.note}>Level pitch {ftInDash(levelPitch(fit))} = pallet + clearance + beam face, to the hole pitch; first level on the floor.</div>}
         </div>
 

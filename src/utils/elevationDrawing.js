@@ -12,7 +12,7 @@
 // at its own height (above the bottom chord, within the truss, as a rule). Side view beside it: the frame depth (two frames and
 // the flue for a back-to-back), the upright height, a simple diagonal bracing pattern. Weights stay off the drawing.
 
-import { beamFace, topLoadIssue, topOfLoad, SPRINKLER_CLEARANCE_IN } from './elevations'
+import { beamFace, topLoadIssue, topOfLoad, SPRINKLER_CLEARANCE_IN, ceilingOf } from './elevations'
 import { positionsPerBeam } from './palletFit'
 
 /** 6'-2" / 26'-0" / 8" — feet and inches as on a rack drawing: a length of a foot or more always with its inches,
@@ -386,6 +386,9 @@ export function lengthsByType(objects, table, typeIdAt) {
   }
   return new Map([...out].map(([id, m]) => [id, [...m.values()].sort((a, b) => b.bays - a.bays || a.beamIn - b.beamIn)]))
 }
+/** The ceiling the drawing reads → { clearHeightIn, sprinklerIn } or null: type `type`'s from the project (`table`,
+ *  utils/project.js), else the building (floor plan) `parentId` names (else the layout's first). */
+export function ceilingForDrawing(objects, table, type, parentId) { return ceilingOf(table, type) || buildingOf(objects, parentId) }
 /** The building (floor plan) `parentId` names (else the layout's first), as the drawing reads it: { clearHeightIn, sprinklerIn } or null. */
 export function buildingOf(objects, parentId) {
   // the racks' building; a type no bay carries yet: the layout's (first) building

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { openSetup } from '../../utils/project'
 import { createPortal } from 'react-dom'
 import {
   /* chrome */
@@ -145,8 +146,7 @@ const InfoSquare = fpGlyph(
   'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z M12 16v-4 M12 8h.01',
   'InfoSquare')
 
-/* Footer — project-level entry points. No handlers yet: nothing in the store
-   opens these, and inventing one would be a logic change. */
+/* Footer — project-level entry points. Project Settings opens Project setup (utils/project.js). */
 const FOOTER_ITEMS = [
   { id:'settings',   label:'Project Settings',   Icon:Settings   },
   { id:'properties', label:'Project Properties', Icon:InfoSquare },
@@ -1269,6 +1269,7 @@ export function FloatingToolbar() {
                 ? { width:BTN, height:BTN, justifyContent:'center', padding:0 }
                 : { width:'100%', height:30, padding:'0 8px', textAlign:'left' }),
             }}
+            onClick={id === 'settings' ? () => openSetup('settings') : undefined}
             onMouseEnter={e => e.currentTarget.style.background='var(--panel-hover)'}
             onMouseLeave={e => e.currentTarget.style.background='transparent'}>
             <Icon size={17} strokeWidth={ICON_STROKE} absoluteStrokeWidth style={{ flexShrink:0 }}/>

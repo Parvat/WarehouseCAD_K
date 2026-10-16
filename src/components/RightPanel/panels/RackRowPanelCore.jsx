@@ -382,50 +382,8 @@ export function RackRowPanel({ obj }) {
               style={chip(upIn === u)}>{u}"</button>
           ))}
         </div>
-        {/* Pallet size — GMA standard: the loading face (narrower, 40" default) runs ACROSS the beam and is what sizes
-            positions per bay; depth (48" default) runs into the frame and overhangs it by design (~3" each side on a
-            42" frame is standard, not undersized). No facing/orientation choice — this is the one convention. */}
-        {(() => {
-          const pw = obj.palletWIn || 40
-          const pd = obj.palletDIn || 48
-          const PRESETS = [
-            { label: '40x48', w: 40, d: 48 },
-            { label: '48x40', w: 48, d: 40 },
-            { label: '47x32', w: 47, d: 32 },
-          ]
-          const isPreset = (w, d) => PRESETS.some(p => p.w === w && p.d === d)
-          const inputStyle = {
-            width: 42, padding: '2px 4px', borderRadius: 3, fontSize: 10,
-            fontFamily: 'var(--font-mono)', textAlign: 'right',
-            background: 'var(--surface3)', border: '1px solid var(--border)',
-            color: 'var(--text)', outline: 'none',
-          }
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                {label('Pallet', 86)}
-                {PRESETS.map(p => (
-                  <button key={p.label} type="button" onClick={() => commitObjectUpdate(obj.id, { palletWIn: p.w, palletDIn: p.d })} style={chip(pw === p.w && pd === p.d)}>{p.label}"</button>
-                ))}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 94 }} title="Face — the loading-face width that runs across the beam and sets positions per bay">
-                <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>Face</span>
-                <input type="text" defaultValue={pw} key={`pw-${obj.id}`}
-                  onFocus={e => e.target.select()}
-                  onBlur={e => { const v=parseInt(e.target.value); if(v>0) commitObjectUpdate(obj.id,{palletWIn:v}); else e.target.value=pw }}
-                  onKeyDown={e=>{ if(e.key==='Enter') e.target.blur() }}
-                  style={inputStyle}/>
-                <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }} title="Depth — runs into the frame, overhangs by design, does not affect positions per bay">Depth</span>
-                <input type="text" defaultValue={pd} key={`pd-${obj.id}`}
-                  onFocus={e => e.target.select()}
-                  onBlur={e => { const v=parseInt(e.target.value); if(v>0) commitObjectUpdate(obj.id,{palletDIn:v}); else e.target.value=pd }}
-                  onKeyDown={e=>{ if(e.key==='Enter') e.target.blur() }}
-                  style={inputStyle}/>
-                <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>{!isPreset(pw,pd) ? 'custom' : ''}</span>
-              </div>
-            </div>
-          )
-        })()}
+        {/* the pallet size: the project's default (Project setup) — Generate and Fill stamp it on the racks */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{label('Pallet', 86)}<span aria-label="Pallet size" style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text2)' }}>{obj.palletWIn || 40}" face × {obj.palletDIn || 48}"</span></div>
         {/* ── Flue space (double row only) ── */}
         {obj.type === 'rack_double_row' && (() => {
           const flue = obj.flueSpaceIn || 9

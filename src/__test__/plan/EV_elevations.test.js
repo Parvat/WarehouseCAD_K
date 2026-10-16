@@ -328,7 +328,7 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     expect(lg).toMatch(/background: color, opacity: ELEV_FILL_OPACITY/)
     // clear of the fixed "← Hub" button (left 12, about 90 px wide): the legend starts past it
     expect(lg).toMatch(/position: 'absolute', left: 104, bottom: 12/)
-    expect(src('App.jsx')).toMatch(/position: 'fixed', left: 12, bottom: 36/)
+    expect(src('App.jsx')).toMatch(/position: 'absolute', left: 12, bottom: 12, zIndex: 55/)
     expect(src('components/Elevations/ElevationWorkspace.jsx')).toMatch(/background: tint\(t\.color\), opacity: several \? ELEV_FILL_OPACITY : 0\.25/)
   })
 
@@ -800,7 +800,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))).toBe(true)
     expect(ws).toMatch(/\[\['front', 'Front'\], \['side', 'Side'\]\]/)
     expect(ws).toMatch(/view=\{view\}/)
-    expect(ws).toMatch(/Enter the building's clear height to see elevation proposals/)
+    expect(ws.includes(`Add a ceiling height in <button type="button" onClick={() => openSetup('settings')}`)).toBe(true)
     expect(ws).toMatch(/onCommit=\{\(next\) => changeElevation\(store, active\.id, next\)\}/)
     // the split's share remembered per browser
     MODE.setElevMode({ split: 0.5 })
@@ -859,7 +859,7 @@ describe('EV — the wiring', () => {
     expect(c2).toMatch(/<ElevLegend \/>/)
     const app = readFileSync(new URL('../../App.jsx', import.meta.url), 'utf8')
     expect(app).toMatch(/installElevationsKeeper\(useCanvasStore\)/)
-    expect(app).toMatch(/<div className="flex flex-col flex-1 min-w-0 min-h-0">\s*<Canvas2 \/>\s*<\/div>/)
+    expect(app).toMatch(/<div className="flex flex-col flex-1 min-w-0 min-h-0" style=\{\{ position: 'relative' \}\}>\s*<Canvas2 \/>/)
     const pane = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
     expect(/position: 'fixed'|createPortal/.test(pane)).toBe(false)
     // the beams and the upright tops are grabbed through strips drawn last, so a label on a beam never takes its drag

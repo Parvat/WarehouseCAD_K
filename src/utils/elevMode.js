@@ -84,7 +84,7 @@ const freshId = (table) => { let k = table ? table.types.length + 1 : 1, id; do 
 export function useForLayout(store, design, { fit = null, sprinklerClearanceIn = null } = {}) {
   const st = store.getState(), id = freshId(null)
   const t = { ...design, id, name: autoName(design), color: PALETTE[0] }
-  const table = { version: ELEV_VERSION, defaultId: id, types: [t], ...(fit ? { fit } : {}), ...(sprinklerClearanceIn != null ? { sprinklerClearanceIn } : st.elevations?.sprinklerClearanceIn != null ? { sprinklerClearanceIn: st.elevations.sprinklerClearanceIn } : {}) }
+  const table = { version: ELEV_VERSION, defaultId: id, types: [t], ...(st.elevations?.project ? { project: st.elevations.project } : {}), ...(fit ? { fit } : {}), ...(sprinklerClearanceIn != null ? { sprinklerClearanceIn } : st.elevations?.sprinklerClearanceIn != null ? { sprinklerClearanceIn: st.elevations.sprinklerClearanceIn } : {}) }
   const r = editTable(st.objects.map(o => { if (o.elevType == null && o.elevSides == null && o.elevBays == null) return o; const n = { ...o }; delete n.elevType; delete n.elevSides; delete n.elevBays; return n }), null, () => table)
   draft(store, { objects: r.objects, elevations: r.table })
   useElevMode.setState({ activeId: id, adding: false })

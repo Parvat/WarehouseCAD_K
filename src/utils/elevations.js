@@ -50,7 +50,21 @@ export const beamFace = (t) => (Number.isFinite(t?.beamFaceIn) ? t.beamFaceIn : 
 /** The clearance (in) the top of the top load must keep under the sprinkler heads — the layout's setting (on its
  *  types table, saved and undone with it), 18" when not set. */
 export const SPRINKLER_CLEARANCE_IN = 18
-export const sprinklerClearance = (table) => (Number.isFinite(table?.sprinklerClearanceIn) && table.sprinklerClearanceIn >= 0 ? table.sprinklerClearanceIn : SPRINKLER_CLEARANCE_IN)
+export const sprinklerClearance = (table) => {
+  // the project's advanced setting (utils/project.js); a table from before the project: its own; else 18"
+  const a = table?.project?.advanced?.sprinklerClearanceIn
+  if (Number.isFinite(a) && a >= 0) return a
+  return Number.isFinite(table?.sprinklerClearanceIn) && table.sprinklerClearanceIn >= 0 ? table.sprinklerClearanceIn : SPRINKLER_CLEARANCE_IN
+}
+/** The ceiling type `type` is checked and drawn against, from the project (utils/project.js) → { clearHeightIn,
+ *  sprinklerIn, id, name } or null: its own ceiling entry, else the project's default (no project ceiling: null —
+ *  the caller reads the building's old fields). */
+export function ceilingOf(table, type) {
+  const pr = table?.project
+  if (!pr || !pr.ceilings?.length) return null
+  const c = (type?.ceilingId && pr.ceilings.find(x => x.id === type.ceilingId)) || pr.ceilings.find(x => x.id === pr.defaultCeilingId) || pr.ceilings[0]
+  return c ? { clearHeightIn: c.clearHeightIn > 0 ? c.clearHeightIn : null, sprinklerIn: c.sprinklerIn > 0 ? c.sprinklerIn : null, id: c.id, name: c.name } : null
+}
 /** The top of type `t`'s top load (in): the top beam + its pallet; with no load on the top level, the top of the upright. */
 export function topOfLoad(t) {
   const top = [...t.levels].sort((a, b) => a.beamIn - b.beamIn).pop()
@@ -430,7 +444,9 @@ export function elevationIssues(objects, T) {
       }
     })
     const floors = new Map()
-    for (const id of ids) { const r = objects.find(o => o.id === id); const fp = r && objects.find(o => o.id === r.parentId && ((Number.isFinite(o.clearHeightFt) && o.clearHeightFt > 0) || (Number.isFinite(o.sprinklerFt) && o.sprinklerFt > 0))); if (fp) { if (!floors.has(fp.id)) floors.set(fp.id, { fp, ids: [] }); floors.get(fp.id).ids.push(id) } }
+    const ceil = ceilingOf(T, t)
+    if (ceil) floors.set('ceiling', { fp: { id: 'ceiling', clearHeightFt: ceil.clearHeightIn ? ceil.clearHeightIn / 12 : null, sprinklerFt: ceil.sprinklerIn ? ceil.sprinklerIn / 12 : null }, ids: [...ids] })
+    else for (const id of ids) { const r = objects.find(o => o.id === id); const fp = r && objects.find(o => o.id === r.parentId && ((Number.isFinite(o.clearHeightFt) && o.clearHeightFt > 0) || (Number.isFinite(o.sprinklerFt) && o.sprinklerFt > 0))); if (fp) { if (!floors.has(fp.id)) floors.set(fp.id, { fp, ids: [] }); floors.get(fp.id).ids.push(id) } }
     const sprClr = sprinklerClearance(T), zLoad = topOfLoad(t)
     for (const { fp, ids: inFp } of floors.values()) {
       const b = { clearHeightIn: fp.clearHeightFt > 0 ? fp.clearHeightFt * 12 : null, sprinklerIn: fp.sprinklerFt > 0 ? fp.sprinklerFt * 12 : null }

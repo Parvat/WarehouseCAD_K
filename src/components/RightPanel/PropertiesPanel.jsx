@@ -17,8 +17,7 @@ import { useBayLedger } from './useBayLedger'
 import { PALETTE_COLORS } from '../../constants'
 import { Field, Fold } from '../shared/Fold'
 import { ElevationLine } from '../Elevations/ElevationLine'
-import { isBeamRack, sprinklerClearance } from '../../utils/elevations'
-import { commitTable } from '../../utils/elevEditor'
+import { isBeamRack } from '../../utils/elevations'
 import { rackDepthUpdate } from '../../utils/rackDepth'
 
 /* The app's locked type system. Montserrat and JetBrains Mono are loaded by
@@ -529,31 +528,6 @@ export function PropertiesPanel() {
                 </div>
               </div>
               <NumField label="Rot" value={obj.rotation||0} onChange={v => up('rotation',v)} onCommit={v => commit('rotation',v)} unit="°" />
-              {/* the sprinkler head height, drawn on the elevations (utils/elevationDrawing.js) */}
-              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <span style={S.label}>Sprinkler</span>
-                <input type="number" min={0} step={0.5} aria-label="Sprinkler height"
-                  defaultValue={obj.sprinklerFt ?? ''} key={`sp-${obj.id}-${obj.sprinklerFt ?? ''}`} placeholder="not set"
-                  onBlur={e => { const v = parseFloat(e.target.value); const next = !isNaN(v) && v > 0 ? v : undefined; if (next !== obj.sprinklerFt) commit('sprinklerFt', next) }}
-                  onKeyDown={e => { if (e.key==='Enter') e.target.blur() }}
-                  style={S.input}
-                />
-                <span style={{...S.mono10, color:'var(--text3)'}}>ft</span>
-              </div>
-              {/* the clearance the top load keeps under the sprinkler heads — the layout's setting (Check layout, the drawing) */}
-              <SprinklerClearanceField />
-              {/* the clear height the elevation types are checked against (Check layout; utils/elevations.js) — none: not checked */}
-              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <span style={S.label}>Clear ht</span>
-                <input type="number" min={0} step={0.5} aria-label="Clear height"
-                  defaultValue={obj.clearHeightFt ?? ''} key={`ch-${obj.id}-${obj.clearHeightFt ?? ''}`} placeholder="not set"
-                  onBlur={e => { const v = parseFloat(e.target.value); const next = !isNaN(v) && v > 0 ? v : undefined; if (next !== obj.clearHeightFt) commit('clearHeightFt', next) }}
-                  onKeyDown={e => { if (e.key==='Enter') e.target.blur() }}
-                  style={S.input}
-                />
-                <span style={{...S.mono10, color:'var(--text3)'}}>ft</span>
-              </div>
-
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <span style={S.label}>Label</span>
                 <input type="text" defaultValue={obj.label||''} key={obj.id}
@@ -846,24 +820,6 @@ export function PropertiesPanel() {
 }
 
 /* ─── Layer Select ─────────────────────────────────────────────────────────── */
-
-/** The layout's sprinkler clearance (on its elevation types table, saved and undone with it), building style. */
-function SprinklerClearanceField() {
-  const T = useCanvasStore(s => s.elevations)
-  const v = sprinklerClearance(T)
-  return (
-    <div style={{ display:'flex', alignItems:'center', gap:6 }} title="The top of the top load must stay at least this far under the sprinkler heads">
-      <span style={S.label}>Spr. clr</span>
-      <input type="number" min={0} step={1} aria-label="Sprinkler clearance"
-        defaultValue={v} key={`spc-${v}`}
-        onBlur={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0 && n !== v) commitTable(useCanvasStore, tb => ({ ...tb, sprinklerClearanceIn: n })); else e.target.value = v }}
-        onKeyDown={e => { if (e.key==='Enter') e.target.blur() }}
-        style={S.input}
-      />
-      <span style={{...S.mono10, color:'var(--text3)'}}>in</span>
-    </div>
-  )
-}
 
 function LayerSelect({ value, onChange }) {
   const { layers } = useCanvasStore(useShallow(s => ({ layers: s.layers })))

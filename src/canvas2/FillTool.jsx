@@ -64,26 +64,11 @@ export function FillOptionsBar() {
           {[72, 84, 96, 108, 120, 144].map(v => <option key={v} value={v}>{v}"</option>)}
         </select>
       </label>
-      <label style={field}>Pallet
-        <input aria-label="Pallet face" style={{ ...input, width: 38 }} defaultValue={s.palletWIn} key={'pw' + s.palletWIn} onBlur={e => num('palletWIn', e.target.value)} />×
-        <input aria-label="Pallet depth" style={{ ...input, width: 38 }} defaultValue={s.palletDIn} key={'pd' + s.palletDIn} onBlur={e => num('palletDIn', e.target.value)} />
-      </label>
-      <label style={field}>Forklift
-        <select aria-label="Forklift" value={s.mhe} onChange={e => { s.setSetting('mhe', e.target.value); s.setSetting('aisleFt', MHE_PROFILES[e.target.value]?.aisleFt ?? s.aisleFt) }} style={{ ...input, width: 104 }}>
-          {Object.values(MHE_PROFILES).map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-        </select>
-      </label>
-      <label style={field}>Aisle
-        <input aria-label="Aisle (ft)" style={input} defaultValue={s.aisleFt} key={'a' + s.aisleFt} onBlur={e => num('aisleFt', e.target.value)} />ft
-      </label>
       <label style={field}>Max run
         <input aria-label="Max rack run (ft)" style={input} defaultValue={s.maxRunFt} key={'m' + s.maxRunFt} onBlur={e => num('maxRunFt', e.target.value)} />ft
       </label>
-      {/* the wall clearance (BUG 76): the same Racking setting as the Generate panel's field — inches from
-          the wall's inner face to the back of a wall row; 0 = flush */}
-      <label style={field} title="Inches from the wall's inner face to the back of a wall row — shared with Generate. 0 = flush.">Wall clear
-        <input aria-label="Wall clearance (in from the wall's inner face)" style={input} defaultValue={s.wallClearIn} key={'w' + s.wallClearIn} onBlur={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0) s.setSetting('wallClearIn', n) }} />in
-      </label>
+      {/* the pallet, the forklift (its aisle) and the wall clearance: Project setup (utils/project.js) */}
+      <span style={{ color: 'var(--text3, #6B7280)', fontSize: 11 }}>pallet, forklift, wall clearance: Project setup</span>
     </div>
   )
 }

@@ -25,6 +25,10 @@ import { installLevelsKeeper } from './utils/rackLevels'
 import { installElevationsKeeper } from './utils/elevations'
 import { installLiveRecheck } from './utils/layoutCheck'
 import { installAreaKeeper } from './utils/rackingAreaTool'
+import { installProjectKeeper, projectOf, openSetup } from './utils/project'
+import { useRackingSettings } from './utils/fillTool'
+import { ProjectSync } from './components/Project/ProjectSync'
+import { ProjectSetup } from './components/Project/ProjectSetup'
 
 /* Aisle labels only ever pair two directly facing rows: re-pairs them after
    deletes, pastes, undo/redo and every commit (utils/aisleKeeper.js). Once,
@@ -60,6 +64,11 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopLiveRecheck())
    after the copy watcher on purpose. */
 const stopAreaKeeper = installAreaKeeper(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopAreaKeeper())
+/* The project (utils/project.js): a layout without one is given one from what it uses — the forklift, wall clearance
+   and pallet in the Racking settings, the units — nothing moves; a new empty layout opens Project setup. After the
+   elevations keeper, which gives a layout its types first. */
+const stopProjectKeeper = installProjectKeeper(useCanvasStore, () => { const r = useRackingSettings.getState(); return { mhe: r.mhe, wallClearIn: r.wallClearIn, palletWIn: r.palletWIn, palletDIn: r.palletDIn, units: useCanvasStore.getState().unit } })
+if (import.meta.hot) import.meta.hot.dispose(() => stopProjectKeeper())
 /* Paste lands at the mouse cursor: remember where it last was over the canvas. */
 const stopPointer = trackCanvasPointer(window)
 if (import.meta.hot) import.meta.hot.dispose(() => stopPointer())
@@ -98,6 +107,13 @@ export default function App() {
     setUiTheme('trace')   // default the CAD to the Trace pine-on-paper skin
   }, []) // eslint-disable-line
 
+  // Draw opened on an empty layout with no project yet: a new project — Project setup first (Skip allowed)
+  useEffect(() => {
+    if (view !== 'cad') return
+    const st = useCanvasStore.getState()
+    if (!st.objects.length && !projectOf(st.elevations)) openSetup('new')
+  }, [view])
+
   if (view === 'login') return <Login onEnter={() => setView('hub')} />
   if (view === 'hub')   return <Hub onOpen={setView} />
   if (view === 'inspect' || view === 'label')
@@ -120,12 +136,23 @@ export default function App() {
       <RulesProvider>
       <ColumnCheckProvider>
         <TopBar />
+        <ProjectSync />
+        <ProjectSetup />
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* Layout mode: the tools, the plan, Properties. Elevation mode (ELEVATIONS_PLAN.md §3): the plan on the
               left (select-only, rows coloured by elevation), the elevation workspace on the right, a divider between */}
           {!elevMode && <FloatingToolbar />}
-          <div className="flex flex-col flex-1 min-w-0 min-h-0">
+          <div className="flex flex-col flex-1 min-w-0 min-h-0" style={{ position: 'relative' }}>
             <Canvas2 />
+            {/* back to the hub: in the plan's own bottom-left corner — never over the left panel's footer (Project
+                settings) — the elevation legend starts past it */}
+            <button onClick={() => setView('hub')} title="Back to hub" style={{
+              position: 'absolute', left: 12, bottom: 12, zIndex: 55,
+              display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
+              cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--text)',
+              fontFamily: 'var(--font-ui)', boxShadow: '0 2px 8px rgba(20,57,43,0.12)',
+            }}>← Hub</button>
           </div>
           {elevMode ? <>
             <ElevationDivider />
@@ -135,13 +162,6 @@ export default function App() {
         {!elevMode && <GeneratePanel />}
       </ColumnCheckProvider>
       </RulesProvider>
-      <button onClick={() => setView('hub')} title="Back to hub" style={{
-        position: 'fixed', left: 12, bottom: 36, zIndex: 50,
-        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
-        cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--text)',
-        fontFamily: 'var(--font-ui)', boxShadow: '0 2px 8px rgba(20,57,43,0.12)',
-      }}>← Hub</button>
     </div>
   )
 }

@@ -2183,6 +2183,41 @@ lost"; Regenerate racking → office, hand rack, text kept, one racking area, no
 "Regenerated Vertical — 27 rows replaced, 1 hand-placed kept", one undo step (Ctrl+Z restores, record back); Start over →
 the old behaviour (a new building, the office, hand rack and text gone).
 
+### PS — Project setup · `PS_project.test.js` (4 tests)
+Code: utils/project.js (the project on the layout's elevation table, `migrateProject`, `dropUnusedTypes`,
+`installProjectKeeper`, `layoutAffecting`, `syncTypesToPallets`, `ceilingFor`), utils/elevations.js (`ceilingOf`; the
+sprinkler clearance and Check layout's heights from the project), components/Project/ProjectSetup.jsx (the screen),
+ProjectSync.jsx (the column check's forklift, the Fill settings and the units follow the project). PROJECT_SETUP.md
+lists every reader, before and after.
+
+Ceiling heights and pallet sizes are lists, one of each default; the forklift (aisle widths follow it); wall clearance
+and units; Advanced (collapsed): load clearance, sprinkler clearance, hole pitch, upright step, flue. Shown for a new
+project, for the first racks with no ceiling (once, Skip allowed; Generate waits for it) and from Project settings.
+Generate keeps building size, column grid, row direction, max rack run; the Fill bar, a racking area, the column check,
+a building's and a rack's properties and the Elevation workspace show none of the project's inputs. A layout from
+before: the project made from what it uses, nothing moving, unused elevation types dropped once. Saving a change to the
+default pallet's face or depth, the forklift or the wall clearance on a layout with generated racks asks Regenerate
+racking / Keep layout; a pallet's height, weight or beam face updates the elevations carrying it. The "← Hub" button
+moved into the plan's bottom-left corner (it covered the left panel's Project settings).
+
+| Test | What |
+|---|---|
+| `PS-migrate` | the fixture filled: ceiling Main 30' / 29'-6", pallet 48×40 (40 × 48, 48" high, 4" face), forklift / wall / units / advanced carried; no heights → no ceiling; ceilingOf, sprinkler clearance from the project |
+| `PS-keeper` | a load: the project folded into that history entry, a junk type dropped, nothing moved; an empty new layout opens setup ('new'); the first racks with no ceiling open it once ('ceiling') and get types |
+| `PS-changes` | what asks (pallet face / depth, forklift, wall) and what doesn't (height, ceilings); a pallet's height / weight / beam face into the types; Check layout against the project's ceiling |
+| `PS-inputs` | the slim Generate panel, the Fill bar / area / column check / Properties without them, Project settings opens setup, the sync, the screen's sections and buttons |
+
+Changed: WC-shared (the wall clearance is the project's: no field in Generate or Fill), EV-mode-wiring (the workspace's
+link to Project setup), EV-tint and EV-wire (the Hub button's new place).
+
+**Break-its:** checks blind to the project's ceiling: PS-changes.
+
+**Checked in the app** (real mouse): Draw on an empty layout → Project setup; two ceilings (Main 30' / 29'-6",
+Mezzanine 20'), two pallets (48×40; 48×48, 60", 2,500 lb), Advanced open; Save. The Generate panel: length, width,
+column grid, max run, row direction, and "Pallet 48×40 (40" face) · Reach truck · aisle 10.5 ft · wall clearance 3" —
+Project setup"; Generate → racks at 40" face × 48". Project settings → face 42 → Save → "Regenerate racking / Keep
+layout" → Keep: racks unchanged, Fill's setting 42. Pallet height 54 → Save, no question, the elevation's pallet 54".
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click

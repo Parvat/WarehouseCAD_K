@@ -25,7 +25,7 @@
 
 import { levelsResolver, legendCounts } from '../utils/elevations'
 import { bandRects, useElevView, tint, tintOn, ELEV_FILL_OPACITY } from '../utils/elevationDraw'
-import { elevationLayout, itemSVG, lengthsByType, buildingOf, ftInDash, archScale } from '../utils/elevationDrawing'
+import { elevationLayout, itemSVG, lengthsByType, ceilingForDrawing, ftInDash, archScale } from '../utils/elevationDrawing'
 import { typeIdAt, sprinklerClearance } from '../utils/elevations'
 import { useElevEditor } from '../utils/elevEditor'
 import { bayLedger } from '../utils/bayLedger'
@@ -449,7 +449,7 @@ export function buildElevationSheets(objects, { title = 'Untitled Layout', eleva
     const parts = cells.slice(p * per, (p + 1) * per).map(({ type, e }, i) => {
       const c = i % cols, r = Math.floor(i / cols), x = margin + c * cellW, y = margin + head + r * cellH
       const fs = Math.max(2.6, cellH / 48)   // text in proportion to the drawing, as on the sample
-      const box = { w: cellW - 8, h: cellH - fs * 7.5 }, opts = { palletWIn: e.palletWIn, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: buildingOf(objects, e.parentId), fontPx: fs, sprinklerClearanceIn: sprinklerClearance(T), detail, bg: '#fff' }   // the editor's Simple / Detailed
+      const box = { w: cellW - 8, h: cellH - fs * 7.5 }, opts = { palletWIn: e.palletWIn, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: ceilingForDrawing(objects, T, type, e.parentId), fontPx: fs, sprinklerClearanceIn: sprinklerClearance(T), detail, bg: '#fff' }   // the editor's Simple / Detailed
       const fit = elevationLayout(type, e.beamIn, box, opts), sc = archScale(fit.scale)
       const d = elevationLayout(type, e.beamIn, box, { ...opts, scale: sc.mmPerIn })
       const label = `${type.name} · ${ftInDash(e.beamIn)} bay`

@@ -43,19 +43,6 @@ export function RackingAreaPanel({ obj }) {
           {[72, 84, 96, 108, 120, 144].map(v => <option key={v} value={v}>{v}"</option>)}
         </select>
       </label>
-      <div style={row}><span style={lbl}>Pallet</span>
-        <input aria-label="Area pallet face" key={'pw' + obj.id + set.palletWIn} defaultValue={set.palletWIn} onBlur={num('palletWIn')} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} style={{ ...input, width: 44 }} />
-        <span style={note}>×</span>
-        <input aria-label="Area pallet depth" key={'pd' + obj.id + set.palletDIn} defaultValue={set.palletDIn} onBlur={num('palletDIn')} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} style={{ ...input, width: 44 }} />
-      </div>
-      <label style={row}><span style={lbl}>Forklift</span>
-        <select aria-label="Area forklift" value={set.mhe} onChange={e => change({ mhe: e.target.value, aisleFt: MHE_PROFILES[e.target.value]?.aisleFt ?? set.aisleFt })} style={{ ...input, width: 130 }}>
-          {Object.values(MHE_PROFILES).map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-        </select>
-      </label>
-      <div style={row}><span style={lbl}>Aisle (ft)</span>
-        <input aria-label="Area aisle" key={'a' + obj.id + set.aisleFt} defaultValue={set.aisleFt} onBlur={num('aisleFt')} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} style={input} />
-      </div>
       <div style={row}><span style={lbl}>Max run (ft)</span>
         <input aria-label="Area max rack run" key={'m' + obj.id + set.maxRunFt} defaultValue={set.maxRunFt} onBlur={num('maxRunFt')} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} style={input} />
       </div>

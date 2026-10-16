@@ -4,8 +4,8 @@ import { Sparkles, X, Loader2 } from 'lucide-react'
 import { generateAndPlaceBatched, regenerateRacking } from '../../generate/traceGenerate'
 import { regenBuilding, regenSummary } from '../../generate/regenerate'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { openSetup, defaultPallet, projectOf } from '../../utils/project'
 import { useRules } from '../../rules/useRules'
-import { useColumnCheck } from '../../generate/useColumnCheck'
 import { useRightPanelWidth } from '../../utils/rightPanel'
 
 // Trace CAD — "Describe → Generate" Brief.
@@ -62,19 +62,16 @@ export function GeneratePanel() {
   // Horizontal/Vertical buttons are an explicit override, still exactly
   // the manual single-orientation path GeneratePanel has had since BUG 43.
   const [orientation, setOrientation] = useState('auto')
-  // The forklift choice is shared state: it sets the aisle the layout is built
-  // to AND the clearance the column check tests against, so the two can never
-  // disagree about which truck this warehouse is for.
-  const { mheKey: mhe, setMheKey } = useColumnCheck()
+  /* The forklift (its aisle), the default pallet and the wall clearance are the project's (Project setup,
+     utils/project.js) — read here, set there; the column check follows the same forklift (ProjectSync). */
   const { rules, mheOptions } = useRules()
-  const [aisleFt, setAisle]   = useState(() => mheOptions.reach?.aisleFt ?? 10.5)
+  const project = useCanvasStore(s => projectOf(s.elevations))
+  const mhe = project?.equipment?.mhe || useRackingSettings.getState().mhe || 'reach'
+  const aisleFt = mheOptions[mhe]?.aisleFt ?? 10.5
+  const pallet = defaultPallet(project)
+  const wallClearIn = project?.rules?.wallClearIn ?? useRackingSettings.getState().wallClearIn ?? 0
   const [gridXFt, setGridX]   = useState(50)
   const [gridYFt, setGridY]   = useState(54)
-  /* The wall clearance (BUG 76, generate/wallClear.js): inches from the wall's INNER face to the back of a
-     wall row — the ONE Racking setting Fill racking uses too, so the field edits the shared value itself
-     (utils/fillTool.js) rather than a copy. The run ends keep their own clearance, as before. */
-  const wallClearIn = useRackingSettings(s => s.wallClearIn)
-  const setWallClear = (v) => { const n = Number(v); if (Number.isFinite(n) && n >= 0) useRackingSettings.getState().setSetting('wallClearIn', n) }
   /* Longest continuous rack run before a cross-aisle — long runs get as many
      evenly spaced cross-aisles as it takes to stay this short. */
   const [maxRunFt, setMaxRun] = useState(150)
@@ -82,32 +79,25 @@ export function GeneratePanel() {
   // (Yes, a line on it) or inset one full pitch off it (No, none on it) —
   // see sizingLayout.js's columnGridObject/axisFrame (BUG 69).
   const [columnsAlongWall, setColumnsAlongWall] = useState(false)
-  // Pallet loading FACE (across the beam, sizes positions per bay) and
-  // DEPTH (into the frame, overhangs by design — BUG 62) — GMA default.
-  const [palletWIn, setPalletW] = useState(40)
-  const [palletDIn, setPalletD] = useState(48)
+  // the pallet: the project's default (face across the beam sizes positions per bay; depth into the frame)
+  const palletWIn = pallet?.faceIn ?? 40, palletDIn = pallet?.depthIn ?? 48
   const [result, setResult]   = useState(null)
 
-  /* The Racking settings are shared with the Fill racking tool (utils/fillTool.js):
-     a field changed here is what a fill uses next (opening the panel changes nothing). */
+  /* The row direction and max run are shared with the Fill racking tool (utils/fillTool.js): a field changed here
+     is what a fill uses next (opening the panel changes nothing). */
   const syncedOnce = useRef(false)
   useEffect(() => {
     if (!syncedOnce.current) { syncedOnce.current = true; return }
     const set = useRackingSettings.getState().setSetting
     if (orientation !== 'auto') set('orientation', orientation)
-    set('mhe', mhe); set('aisleFt', Number(aisleFt) || 10.5); set('maxRunFt', Number(maxRunFt) || 150)
-    set('palletWIn', Number(palletWIn) || 40); set('palletDIn', Number(palletDIn) || 48)
-  }, [orientation, mhe, aisleFt, maxRunFt, palletWIn, palletDIn])
+    set('maxRunFt', Number(maxRunFt) || 150)
+  }, [orientation, maxRunFt])
 
   /* Generating is a real wait on a big building — thousands of bay rects and a
      history snapshot per object. Without a flag the click just looks dead. */
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress]     = useState(0)
 
-  const pickMhe = (key) => {
-    setMheKey(key)
-    setAisle(mheOptions[key].aisleFt)  // forklift choice drives the aisle → layout
-  }
 
   /* A layout already there: Generate asks — Regenerate racking (generate/regenerate.js: the building, zones,
      hand-placed racks, text, dimensions, layers and elevation types kept; only the generated racks refilled, with
@@ -133,6 +123,12 @@ export function GeneratePanel() {
   })
   const run = () => {
     if (generating) return
+    // no ceiling height yet: Project setup first, once per project (Skip allowed) — then this Generate
+    if (project && !project.ceilings.length && !project.setupPrompted) {
+      useCanvasStore.getState().commitElevations({ ...useCanvasStore.getState().elevations, project: { ...project, setupPrompted: true } })
+      openSetup('ceiling', run)
+      return
+    }
     const objects = useCanvasStore.getState().objects
     const fp = regenBuilding(objects)
     if (fp && objects.some(o => o.parentId === fp.id)) { setAsk(regenSummary(objects, fp)); return }
@@ -219,9 +215,6 @@ export function GeneratePanel() {
             </div>
           </div>
 
-          <Field label="WALL CLEARANCE (in from wall face)">
-            <input aria-label="Wall clearance (in from the wall's inner face)" title="Inches from the wall's inner face to the back of a wall row — shared with Fill racking. 0 = flush." style={inputSt} type="number" min="0" value={wallClearIn} onChange={e => setWallClear(e.target.value)} />
-          </Field>
           <Field label="MAX RACK RUN (ft)">
             <input style={inputSt} type="number" min="20" value={maxRunFt} onChange={e => setMaxRun(e.target.value)}
               aria-label="Max rack run (ft)" title="Longest continuous rack run before a cross-aisle" />
@@ -272,32 +265,11 @@ export function GeneratePanel() {
           </div>
         </Section>
 
-        <Section title="RACKING">
-          <div>
-            <div style={labelSt}>PALLET SIZE (in)</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Field label="Face">
-                <input style={inputSt} type="number" value={palletWIn} onChange={e => setPalletW(e.target.value)} />
-              </Field>
-              <Field label="Depth">
-                <input style={inputSt} type="number" value={palletDIn} onChange={e => setPalletD(e.target.value)} />
-              </Field>
-            </div>
-          </div>
-
-          <div>
-            <div style={labelSt}>FORKLIFT</div>
-            <select style={inputSt} value={mhe} onChange={e => pickMhe(e.target.value)}>
-              {Object.values(mheOptions).map(p => (
-                <option key={p.key} value={p.key}>{p.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <Field label="AISLE (ft)">
-            <input style={inputSt} type="number" value={aisleFt} onChange={e => setAisle(e.target.value)} />
-          </Field>
-        </Section>
+        {/* the pallet, the forklift (its aisle) and the wall clearance come from Project setup */}
+        <div aria-label="From Project setup" style={{ fontSize: 10.5, color: 'var(--text3)', lineHeight: 1.45 }}>
+          Pallet {pallet ? `${pallet.name} (${pallet.faceIn}" face)` : '—'} · {mheOptions[mhe]?.label || mhe} · aisle {aisleFt} ft · wall clearance {wallClearIn}" —{' '}
+          <button type="button" onClick={() => openSetup('settings')} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent)', fontSize: 10.5, textDecoration: 'underline' }}>Project setup</button>
+        </div>
 
         <button onClick={run} disabled={generating} style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,

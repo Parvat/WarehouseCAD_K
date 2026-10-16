@@ -164,22 +164,13 @@ export function ColumnCheckPanel() {
     <SectionHeader title="Column Check" defaultOpen={true}>
       <div style={{ padding: '12px 13px 14px', display: 'flex', flexDirection: 'column', gap: 11 }}>
 
-        {/* Forklift — the same value that drives the generated aisle width */}
+        {/* Forklift — the project's (Project setup), the same value that drives the generated aisle width */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Forklift size={15} absoluteStrokeWidth
             style={{ color: 'var(--text3)', flexShrink: 0 }} aria-hidden="true" />
           <span style={{ ...S.mono10, color: 'var(--text3)', width: 28, flexShrink: 0 }}>MHE</span>
-          <select value={mheKey} onChange={e => setMheKey(e.target.value)}
-            style={{
-              flex: 1, minWidth: 0, borderRadius: R, padding: '5px 8px',
-              background: 'var(--surface2)', border: '1px solid var(--border)',
-              fontSize: 11, color: 'var(--text)', fontFamily: 'var(--font-mono)',
-              outline: 'none', cursor: 'pointer',
-            }}>
-            {Object.values(mheOptions).map(p => (
-              <option key={p.key} value={p.key}>{p.label}</option>
-            ))}
-          </select>
+          {/* the project's forklift (Project setup); the aisle widths follow it */}
+          <span aria-label="Forklift" title="Set in Project setup" style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{mheOptions[mheKey]?.label || mheKey}</span>
         </div>
 
         {clean ? (
