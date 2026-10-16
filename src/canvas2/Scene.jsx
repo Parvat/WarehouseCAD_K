@@ -5,7 +5,7 @@ import { shownIn } from '../utils/layers'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
-import { useElevView } from '../utils/elevationDraw'
+import { useElevView, tintOn } from '../utils/elevationDraw'
 import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape, RackingAreaShape, ZoneShape } from './shapes'
 
 /* ── STEP 2 · the scene ──────────────────────────────────────────────────────
@@ -62,7 +62,8 @@ function SceneView({ listening = false, bind }) {
   const elevMode = useElevMode(s => s.on)
   const showColors = useElevView(s => s.showColors) || elevMode
   const elevTable = useCanvasStore(s => s.elevations)
-  const elev = showColors ? elevTable : null
+  // tinted only with 2+ elevations: with one, every bay is the same (utils/elevationDraw.js tintOn)
+  const elev = showColors && tintOn(elevTable) ? elevTable : null
 
   /* Rack ops are derived once per object and carry no zoom, so panning and
      zooming rebuild nothing here. They are also kept per rack OBJECT: an edit

@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { typeById, typeIdAt, legendCounts, sprinklerClearance, isBeamRack } from '../../utils/elevations'
 import { lengthsByType, buildingOf, ftInDash } from '../../utils/elevationDrawing'
+import { tint, ELEV_FILL_OPACITY } from '../../utils/elevationDraw'
 import { proposals, fitInputs, layoutPositions, feetLabel, levelPitch } from '../../utils/elevFit'
 import { useElevMode, setElevMode, applyDraft, discardDraft, useForLayout, addElevation, changeElevation, renameElevation, recolorElevation, deleteElevation, defaultElevation, setBuildingHeights, draft, installAssignWatcher } from '../../utils/elevMode'
 import { useElevEditor, setPane } from '../../utils/elevEditor'
@@ -154,8 +155,8 @@ export function ElevationWorkspace() {
                 return (
                   <div key={t.id} role="listitem" data-type-id={t.id} aria-selected={on} onClick={() => setElevMode({ activeId: t.id })} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', background: on ? 'var(--surface2)' : 'transparent', border: `1px solid ${on ? 'var(--text2)' : 'transparent'}` }}>
                     <label onClick={e => e.stopPropagation()} title="Colour" style={{ position: 'relative', width: 14, height: 14, flexShrink: 0, cursor: 'pointer' }}>
-                      <span style={{ position: 'absolute', inset: 0, borderRadius: 3, background: t.color, border: '1px solid rgba(0,0,0,0.25)' }} />
-                      <input aria-label={`${t.name} colour`} type="color" value={t.color} onChange={e => recolorElevation(store, t.id, e.target.value)} style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
+                      <span style={{ position: 'absolute', inset: 0, borderRadius: 3, background: 'white', border: '1px solid rgba(0,0,0,0.25)' }}><span style={{ position: 'absolute', inset: 0, borderRadius: 2, background: tint(t.color), opacity: several ? ELEV_FILL_OPACITY : 0.25 }} /></span>
+                      <input aria-label={`${t.name} colour`} type="color" value={tint(t.color)} onChange={e => recolorElevation(store, t.id, e.target.value)} style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
                     </label>
                     <Name t={t} onRename={v => renameElevation(store, t.id, v)} />
                     {t.id === T.defaultId ? <span title="Layout default" style={S.label}>default</span>

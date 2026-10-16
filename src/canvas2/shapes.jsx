@@ -10,7 +10,7 @@ import { labelScale } from '../render/labelSize'
 const DEFAULT_LZ = labelScale()
 import { bayRectForIndex, positionRectForIndex } from '../render/bayGeom'
 import { useFlueHover } from '../utils/baySides'
-import { bandRects } from '../utils/elevationDraw'
+import { bandRects, ELEV_FILL_OPACITY } from '../utils/elevationDraw'
 export { bayRectForIndex, positionRectForIndex }
 import { aisleRect } from './hitTest'
 
@@ -311,7 +311,7 @@ function RackShapeView({ obj, ops, gridSize, listening = false, bind, activeBayS
       <Ops ops={ops} listening={listening} lz={lz} />
       {/* each bay band in its elevation type's colour, each side of a pair on its own (utils/elevationDraw.js) */}
       {elev && bandRects(obj, elev, gridSize).map((r, i) => (
-        <Rect key={'ev' + i} x={r.x} y={r.y} width={r.width} height={r.height} fill={r.color} opacity={0.38}
+        <Rect key={'ev' + i} x={r.x} y={r.y} width={r.width} height={r.height} fill={r.color} opacity={ELEV_FILL_OPACITY}
           perfectDrawEnabled={false} listening={false} />
       ))}
       {flueRects.map((r, i) => (

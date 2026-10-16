@@ -24,7 +24,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { levelsResolver, legendCounts } from '../utils/elevations'
-import { bandRects, useElevView } from '../utils/elevationDraw'
+import { bandRects, useElevView, tint, tintOn, ELEV_FILL_OPACITY } from '../utils/elevationDraw'
 import { elevationLayout, itemSVG, lengthsByType, buildingOf, ftInDash, archScale } from '../utils/elevationDrawing'
 import { typeIdAt, sprinklerClearance } from '../utils/elevations'
 import { useElevEditor } from '../utils/elevEditor'
@@ -247,7 +247,7 @@ function rackSVG(obj, gridSize, lz, elev = null) {
   const cx = obj.x + obj.width / 2, cy = obj.y + obj.height / 2
   const transform = rot ? ` transform="rotate(${rot} ${cx} ${cy})"` : ''
   // each bay band in its elevation type's colour, as on the canvas, when the colours are shown (utils/elevationDraw.js)
-  const fills = elev ? bandRects(obj, elev, gridSize).map(r => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="${esc(r.color)}" fill-opacity="0.38"/>`).join('') : ''
+  const fills = elev ? bandRects(obj, elev, gridSize).map(r => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="${esc(r.color)}" fill-opacity="${ELEV_FILL_OPACITY}"/>`).join('') : ''
   return `<g${transform}>${ops.map(o => opToSVG(o, lz)).join('')}${fills}</g>`
 }
 
@@ -298,7 +298,7 @@ function elevLegendSVG(x, y, u, rows) {
     `<text x="${x + 2 * u}" y="${y + rowH * 0.85}" font-size="${3 * u}" font-weight="700" font-family="Arial, sans-serif" fill="#111">ELEVATIONS</text>`
   rows.forEach(({ type, bays }, i) => {
     const ry = y + rowH * (i + 1.25)
-    inner += `<rect x="${x + 2 * u}" y="${ry + 0.6 * u}" width="${3 * u}" height="${3 * u}" fill="${esc(type.color)}" stroke="#333" stroke-width="${0.15 * u}"/>` +
+    inner += `<rect x="${x + 2 * u}" y="${ry + 0.6 * u}" width="${3 * u}" height="${3 * u}" fill="${esc(tint(type.color))}" fill-opacity="${ELEV_FILL_OPACITY}" stroke="#333" stroke-width="${0.15 * u}"/>` +
       `<text x="${x + 6.5 * u}" y="${ry + 3.1 * u}" font-size="${2.8 * u}" font-family="Arial, sans-serif" fill="#111">${esc(type.name)}</text>` +
       `<text x="${x + w - 2 * u}" y="${ry + 3.1 * u}" font-size="${2.8 * u}" font-family="Arial, sans-serif" text-anchor="end" fill="#111">${bays} bay${bays === 1 ? '' : 's'}</text>`
   })
@@ -400,7 +400,8 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
 
   /* elevation types: bay fills and the legend follow the Show colours toggle */
   labelOpts.elevations = elevations
-  const elevTable = elevColors ? elevations : null
+  // tinted (and a colour legend) only with 2+ elevations — as on the canvas
+  const elevTable = elevColors && tintOn(elevations) ? elevations : null
   let legend = ''
   if (elevTable) {
     const L = bayLedger(objects, gridSize, elevations)
@@ -453,7 +454,7 @@ export function buildElevationSheets(objects, { title = 'Untitled Layout', eleva
       const d = elevationLayout(type, e.beamIn, box, { ...opts, scale: sc.mmPerIn })
       const label = `${type.name} · ${ftInDash(e.beamIn)} bay`
       return `<g transform="translate(${x + 4} ${y})">` +
-        `<rect x="0" y="0" width="${fs * 1.1}" height="${fs * 1.1}" fill="${esc(type.color)}" stroke="#333" stroke-width="0.2"/>` +
+        `<rect x="0" y="0" width="${fs * 1.1}" height="${fs * 1.1}" fill="${esc(tint(type.color))}" fill-opacity="${ELEV_FILL_OPACITY}" stroke="#333" stroke-width="0.2"/>` +
         `<text x="${fs * 1.5}" y="${fs}" font-size="${fs * 1.15}" font-weight="700" font-family="Arial, sans-serif" fill="#111">${esc(label)}</text>` +
         `<text x="${box.w}" y="${fs}" font-size="${fs * 0.9}" font-family="Arial, sans-serif" text-anchor="end" fill="#444">${e.bays} bay${e.bays === 1 ? '' : 's'}</text>` +
         `<g transform="translate(0 ${fs * 2})">${d.items.map(itemSVG).join('')}</g>` +

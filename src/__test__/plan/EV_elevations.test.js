@@ -35,6 +35,7 @@ import { serializeScene, deserializeScene } from '../../utils/saveLoad'
 import * as SEL from '../../utils/elevSelection'
 import * as FIT from '../../utils/elevFit'
 import * as MODE from '../../utils/elevMode'
+import * as DRAW from '../../utils/elevationDraw'
 import { useRowGroup, installRowGroupWatcher, flushRowGroupWatcher, clearGroup, addRowOf } from '../../utils/rowGroupTool'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
@@ -308,6 +309,29 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     stop()
   })
 
+  it('EV-tint: with 2+ elevations every one (the default too) is tinted, clearly — saturated colours at 0.6, the old pale palette drawn as the new; with one, no tint; the plan, the legend, the PDF and the workspace list agree; the legend clear of "← Hub"', () => {
+    const { o, t } = hand(vert)
+    expect([DRAW.tintOn(t), DRAW.tintOn({ ...t, types: [...t.types, { ...t.types[0], id: 'x' }] }), DRAW.tintOn(null), DRAW.ELEV_FILL_OPACITY]).toEqual([false, true, false, 0.6])
+    // the old pale colours drawn as the new ones at the same place; any other colour as it is
+    expect([DRAW.tint('#7FA7D9'), DRAW.tint('#e8a33d'), DRAW.tint('#123456'), E.PALETTE[0]]).toEqual(['#E07B22', '#2F80ED', '#123456', '#E07B22'])
+    expect(DRAW.bandRects(rack(o, 'p1'), t, GS).every(r => r.color === DRAW.tint(t.types[0].color))).toBe(true)
+    // saturated: no palette colour is pale (the rack's own fill is)
+    const light = (h) => { const n = parseInt(h.slice(1), 16); return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) }
+    expect(E.PALETTE.every(c => light(c) < 170)).toBe(true)
+    const src = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8')
+    expect(src('canvas2/Scene.jsx')).toMatch(/const elev = showColors && tintOn\(elevTable\) \? elevTable : null/)
+    expect(src('canvas2/shapes.jsx')).toMatch(/fill=\{r\.color\} opacity=\{ELEV_FILL_OPACITY\}/)
+    expect(src('export/pdfExport.js')).toMatch(/const elevTable = elevColors && tintOn\(elevations\) \? elevations : null/)
+    const lg = src('canvas2/ElevationsCanvas.jsx')
+    expect(lg).toMatch(/const tinted = \(showColors \|\| elevMode\) && tintOn\(elevations\)/)
+    expect(lg).toMatch(/\{tinted \? <Swatch color=\{tint\(type\.color\)\} \/>/)
+    expect(lg).toMatch(/background: color, opacity: ELEV_FILL_OPACITY/)
+    // clear of the fixed "← Hub" button (left 12, about 90 px wide): the legend starts past it
+    expect(lg).toMatch(/position: 'absolute', left: 104, bottom: 12/)
+    expect(src('App.jsx')).toMatch(/position: 'fixed', left: 12, bottom: 36/)
+    expect(src('components/Elevations/ElevationWorkspace.jsx')).toMatch(/background: tint\(t\.color\), opacity: several \? ELEV_FILL_OPACITY : 0\.25/)
+  })
+
   it('EV-view: the drawing\'s Front | Side — one view fitted alone (front: beams and uprights, no frames; side: frames, no beams); both for the PDF', () => {
     const t = { ...E.makeType({ id: 'A', levelsCount: 4 }), uprightHeightIn: 228 }, box = { w: 520, h: 900 }, o = { depthIn: 48, pair: true, flueIn: 12, building: { clearHeightIn: 290, sprinklerIn: 295 } }
     const f = elevationLayout(t, 96, box, { ...o, view: 'front' }).items, s = elevationLayout(t, 96, box, { ...o, view: 'side' }).items, both = elevationLayout(t, 96, box, o).items
@@ -469,8 +493,11 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     const L = paintIn(withTypes(hand(vert)), 'p1', { sides: [1], typeId: 'B' }), tb = L.t
     const on = buildLayoutSVG(L.o, [], GS, { elevColors: true, elevations: tb }).svg, off = buildLayoutSVG(L.o, [], GS, { elevColors: false, elevations: tb }).svg
     const B = tb.types.find(t => t.id === 'B').color
-    expect([on.includes(`fill="${B}" fill-opacity="0.38"`), on.includes('ELEVATIONS')]).toEqual([true, true])
-    expect([off.includes('fill-opacity="0.38"'), off.includes('ELEVATIONS')]).toEqual([false, false])
+    expect([on.includes(`fill="${B}" fill-opacity="0.6"`), on.includes('ELEVATIONS')]).toEqual([true, true])
+    expect([off.includes('fill-opacity="0.6"'), off.includes('ELEVATIONS')]).toEqual([false, false])
+    // one elevation only: no tint, no colour legend (every bay the same)
+    const one = { ...tb, types: [tb.types.find(t => t.id === tb.defaultId)] }
+    expect(buildLayoutSVG(L.o, [], GS, { elevColors: true, elevations: one }).svg.includes('fill-opacity="0.6"')).toBe(false)
     // a 9' bay on the single too: three elevations — the default at 8' and 9', B at 8'
     const o2 = L.o.map(x => (x.id === 's' ? { ...x, beams: [96, 108, 96, 96] } : x))
     const pages = buildElevationSheets(o2, { title: 'T', elevations: tb })

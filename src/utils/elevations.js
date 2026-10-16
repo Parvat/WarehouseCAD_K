@@ -39,7 +39,11 @@ export const sidesOf = (r) => (r && r.type === 'rack_double_row' ? 2 : 1)
 
 /* ── types ───────────────────────────────────────────────────────────────── */
 
-export const PALETTE = ['#7FA7D9', '#E8A33D', '#6DBE8C', '#C77DCB', '#E46F6F', '#5BC0C8', '#B9A15A', '#8E8CE0']
+/** The elevation colours — saturated, so a bay's tint stands out from the rack's own pale fill (the first, the usual
+ *  default, included). OLD_PALETTE: the pale set types were given before; drawn as the new colour at the same place
+ *  (utils/elevationDraw.js tint). */
+export const PALETTE = ['#E07B22', '#2F80ED', '#27AE60', '#9B51E0', '#EB5757', '#00A3A3', '#C9A100', '#5E60CE']
+export const OLD_PALETTE = ['#7FA7D9', '#E8A33D', '#6DBE8C', '#C77DCB', '#E46F6F', '#5BC0C8', '#B9A15A', '#8E8CE0']
 export const SPACING_IN = 60, PALLET_H_IN = 48, CLEARANCE_IN = 6, LOAD_LB = 2000, BEAM_FACE_IN = 4, HOLE_PITCH_IN = 2
 /** The beam face height (in) of type `t` — 4" for a type saved before it had one. */
 export const beamFace = (t) => (Number.isFinite(t?.beamFaceIn) ? t.beamFaceIn : BEAM_FACE_IN)

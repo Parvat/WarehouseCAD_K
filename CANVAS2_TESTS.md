@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### EV — Elevations v1 + v2 · `EV_elevations.test.js` (68 tests)
+### EV — Elevations v1 + v2 · `EV_elevations.test.js` (70 tests)
 **v2** (ELEVATIONS_PLAN.md §v2). Beam face height per type (4"); levels to the top of the beam; the fit from the top of
 the lower beam to the underside of the next. Frame depth from the rack (read-only). A type change is no hand edit
 (rackingArea sigMatch / shapeKey). The types are the store's `elevations` (approved store diff: snapshot, undo / redo,
@@ -2099,6 +2099,13 @@ elevation → the 4-level proposal → a click on a row → its 30 bays, Shift+c
 → 7 racks' sides; Apply; a drag and Delete on the plan change nothing; Side shows the frames; a beam dragged on the drawing
 → a draft; the divider 40% → 49% stored; Layout with a draft → asks → Apply; Properties "Elevation: mixed — 5 levels · 21'
 (14), 4 levels · 16' (14)", no drawing.
+
+**Tint and legend (v4.1).** With 2+ elevations every one (the default too) is tinted — a saturated palette at 0.6
+(utils/elevationDraw.js `tintOn`, `tint`, `ELEV_FILL_OPACITY`; the old pale palette drawn as the new colour at the same
+place); with one, no tint and no colour legend. Canvas, legend swatches, the PDF fills and legend, and the workspace list
+use the same tint and opacity. The canvas legend starts at left 104, clear of the fixed "← Hub" button. New: EV-tint.
+Changed: EV-pdf (0.6; one elevation: no fills). Checked in the app: one elevation — no tint, no swatch; two — orange and
+blue bands, the legend matching; legend 104–257 px vs Hub 12–76 px, no overlap in either mode.
 
 ### EV-v1
 Plan: ELEVATIONS_PLAN.md. Code: utils/elevations.js (types, layered assignment, compression, migration, the keeper,
