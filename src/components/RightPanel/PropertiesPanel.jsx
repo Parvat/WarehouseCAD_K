@@ -260,7 +260,7 @@ function AislePanel({ obj }) {
 }
 
 
-/* The selected racks' elevation (read-only: set in Elevation mode), and their frame depth together (each about its own centre, ONE undo step; overlaps
+/* The selected racks' elevation (read-only: set in the Elevations tab), and their frame depth together (each about its own centre, ONE undo step; overlaps
    show as warnings; the Row group replays it). For a selection of several racks or bays, and a group. */
 function SelectionRacks({ selected }) {
   const racks = selected.filter(isBeamRack)

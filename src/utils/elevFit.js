@@ -81,3 +81,25 @@ export const feetLabel = (inches) => { const v = Math.round(inches), ft = Math.f
 export const autoName = (t) => `${t.levels.length} level${t.levels.length === 1 ? '' : 's'} · ${feetLabel(t.uprightHeightIn)}`
 /** A name autoName made (a unique suffix allowed) — it follows its elevation's changes; a renamed one keeps its own. */
 export const isAutoName = (name) => /^\d+ levels? · \d+'(-\d+")?( \d+)?$/.test(String(name || ''))
+
+/* ── an elevation for a ceiling + pallet pair (the Elevations tab, the project's first elevation) ───────────────── */
+
+/** The fit inputs for pallet `pallet` under project `project` (its advanced settings). */
+export const fitForPallet = (project, pallet) => fitInputs({ palletHeightIn: pallet?.heightIn, clearanceIn: project?.advanced?.clearanceIn, beamFaceIn: pallet?.beamFaceIn, holePitchIn: project?.advanced?.holePitchIn, uprightStepIn: project?.advanced?.uprightStepIn, sprinklerClearanceIn: project?.advanced?.sprinklerClearanceIn })
+/** The ceiling entry as a building ({ clearHeightIn, sprinklerIn }) for the fit. */
+export const ceilingBuilding = (c) => (c ? { clearHeightIn: c.clearHeightIn > 0 ? c.clearHeightIn : null, sprinklerIn: c.sprinklerIn > 0 ? c.sprinklerIn : null } : null)
+/** The best-fit elevation design for ceiling `ceiling` and pallet `pallet` — the most levels that fit, the pallet's
+ *  height, weight and beam face on every level — tagged with the pair (a type without id / name / colour); null with
+ *  no clear height or not even one level. */
+export function bestFitFor(project, ceiling, pallet) {
+  const b = ceilingBuilding(ceiling), f = fitForPallet(project, pallet), n = maxLevels(b, f)
+  if (!n) return null
+  const d = designFor(n, b, f)
+  return { ...d, levels: d.levels.map(l => ({ ...l, loadLb: pallet?.weightLb ?? l.loadLb })), ceilingId: ceiling.id, palletId: pallet?.id ?? null }
+}
+/** The name an elevation shows: its level count and its pairing — "5 levels · 48×40 · Main" (pallet, ceiling). */
+export function pairName(project, t) {
+  const p = project?.pallets?.find(x => x.id === t.palletId), c = project?.ceilings?.find(x => x.id === t.ceilingId)
+  const n = t.levels.length
+  return [`${n} level${n === 1 ? '' : 's'}`, p?.name, c?.name].filter(Boolean).join(' · ')
+}

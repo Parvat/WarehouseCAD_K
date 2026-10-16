@@ -8,8 +8,6 @@ import { useShallow } from 'zustand/react/shallow'
 import { FloatingToolbar } from './components/LeftPanel/FloatingToolbar'
 import { GeneratePanel } from './components/Generate/GeneratePanel'
 import { Canvas2 } from './canvas2/Canvas2'
-import { ElevationWorkspace, ElevationDivider } from './components/Elevations/ElevationWorkspace'
-import { useElevMode } from './utils/elevMode'
 import { ColumnCheckProvider } from './generate/useColumnCheck'
 import { RulesProvider } from './rules/useRules'
 import { Login } from './shell/Login'
@@ -100,7 +98,6 @@ export default function App() {
   useKeyboardShortcuts()
   const { uiTheme, uiScale, restoreAutoSave, hasAutoSave, setUiTheme } = useCanvasStore(useShallow(s => ({ uiTheme: s.uiTheme, uiScale: s.uiScale, restoreAutoSave: s.restoreAutoSave, hasAutoSave: s.hasAutoSave, setUiTheme: s.setUiTheme })))
   const [view, setView] = useState('login')
-  const elevMode = useElevMode(s => s.on), elevSplit = useElevMode(s => s.split)
 
   useEffect(() => {
     if (hasAutoSave()) restoreAutoSave()
@@ -139,9 +136,7 @@ export default function App() {
         <ProjectSync />
         <ProjectSetup />
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          {/* Layout mode: the tools, the plan, Properties. Elevation mode (ELEVATIONS_PLAN.md §3): the plan on the
-              left (select-only, rows coloured by elevation), the elevation workspace on the right, a divider between */}
-          {!elevMode && <FloatingToolbar />}
+                    <FloatingToolbar />
           <div className="flex flex-col flex-1 min-w-0 min-h-0" style={{ position: 'relative' }}>
             <Canvas2 />
             {/* back to the hub: in the plan's own bottom-left corner — never over the left panel's footer (Project
@@ -154,12 +149,9 @@ export default function App() {
               fontFamily: 'var(--font-ui)', boxShadow: '0 2px 8px rgba(20,57,43,0.12)',
             }}>← Hub</button>
           </div>
-          {elevMode ? <>
-            <ElevationDivider />
-            <div style={{ width: `${Math.round(elevSplit * 100)}%`, flexShrink: 0, minWidth: 0 }}><ElevationWorkspace /></div>
-          </> : <RightPanel />}
+          <RightPanel />
         </div>
-        {!elevMode && <GeneratePanel />}
+        <GeneratePanel />
       </ColumnCheckProvider>
       </RulesProvider>
     </div>

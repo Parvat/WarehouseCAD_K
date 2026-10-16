@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Maximize2, X } from 'lucide-react'
 import { elevationLayout, ftInDash, parseFtIn } from '../../utils/elevationDrawing'
 import { setPane, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, paneFontPx } from '../../utils/elevEditor'
 
-/* ── The elevation drawing, interactive — Elevation mode's workspace (ElevationWorkspace.jsx) ───────────────────────
+/* ── The elevation drawing, interactive — the Elevations tab (ElevationsTab.jsx) ─────────────────────────────────────
    Drag a beam up or down (snapping to the type's hole pitch, its elevation live); drag it off the ends of the bay, or
    click it and press Delete, to remove its level; click an empty upright to add a level there; drag the top of the
    upright to change its height; double-click a dimension to type it exactly. Each gesture hands the edited type to
@@ -12,9 +14,31 @@ import { setPane, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, p
    Crisp on screen: the SVG sits on the device-pixel grid (a half-pixel offset from the panel's 0.5 px rules blurred
    every line on a scaled display), straight lines and rects draw with crisp edges, labels with geometric precision. */
 
-/** The drawing of type `t` at `entry` (beam length, depth, pair, flue, pallet width); `onCommit(nextType)` per gesture. */
-/** `view`: 'both' | 'front' | 'side' (one view, fitted alone); `height`: a fixed height (px) — else it follows the width. */
-export function ElevationDrawing({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null }) {
+/** The drawing of type `t` at `entry` (beam length, depth, pair, flue, pallet width); `onCommit(nextType)` per gesture.
+ *  `view`: 'both' | 'front' | 'side' (one view, fitted alone); `height`: a fixed height (px) — else it follows the width;
+ *  `fill`: the height its container gives it. Zoom: the wheel or a pinch around the cursor, a drag on empty space pans
+ *  (a beam still drags), Fit or a double-click on empty space fits, labels keep their screen size; ⤢ opens it full
+ *  screen (Esc closes). */
+export function ElevationDrawing(props) {
+  const [full, setFull] = useState(false)
+  const [host, setHost] = useState(null)
+  useEffect(() => { setHost(document.querySelector('[data-theme]') || document.body) }, [])
+  useEffect(() => { if (!full) return; const k = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setFull(false) } }; window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true) }, [full])
+  return <>
+    <DrawingCore {...props} onFull={() => setFull(true)} />
+    {full && host && createPortal(
+      <div role="dialog" aria-label="Elevation full screen" style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{props.title || props.t?.name}</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Esc closes</span>
+          <button type="button" aria-label="Close full screen" onClick={() => setFull(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><X size={16} /></button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0 }}><DrawingCore {...props} fill height={null} /></div>
+      </div>, host)}
+  </>
+}
+
+function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null }) {
   const commit = (fn) => { const next = fn(t); if (next && JSON.stringify(next) !== JSON.stringify(t)) onCommit(next) }
   const host = useRef(null)
   const [box, setBox] = useState({ w: 454, h: 431 })
@@ -26,7 +50,7 @@ export function ElevationDrawing({ t, entry, building, sel, sprClr, detail, onCo
     // the height follows the width: side by side when there is room, the side view under the front view when narrow
     const read = () => {
       const w = el.clientWidth
-      setBox(b => { const n = height ? { w, h: Math.round(height) } : w < 400 ? { w, h: Math.round(Math.min(900, Math.max(480, w * 1.7))) } : { w, h: Math.round(Math.min(640, Math.max(340, w * 0.95))) }; return n.w === b.w && n.h === b.h ? b : n })
+      setBox(b => { const n = fill ? { w, h: Math.max(200, el.parentElement?.clientHeight || el.clientHeight || 400) } : height ? { w, h: Math.round(height) } : w < 400 ? { w, h: Math.round(Math.min(900, Math.max(480, w * 1.7))) } : { w, h: Math.round(Math.min(640, Math.max(340, w * 0.95))) }; return n.w === b.w && n.h === b.h ? b : n })
       // onto the device-pixel grid: the host can sit at a fraction of a pixel (the panel's 0.5 px rules, a scaled display)
       const r = el.getBoundingClientRect(), dpr = window.devicePixelRatio || 1
       const fx = (Math.round(r.left * dpr) - r.left * dpr) / dpr, fy = (Math.round(r.top * dpr) - r.top * dpr) / dpr
@@ -37,15 +61,43 @@ export function ElevationDrawing({ t, entry, building, sel, sprClr, detail, onCo
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read)
     ro?.observe(el)
     return () => { ro?.disconnect(); window.removeEventListener('scroll', read, true); window.removeEventListener('resize', read) }
-  }, [height])
+  }, [height, fill])
+  /* zoom about the cursor, pan by dragging empty space — the layout is redrawn at the zoomed scale, so the labels keep
+     their screen size and every gesture keeps working at any zoom */
+  const [zv, setZv] = useState({ zoom: 1, pan: { x: 0, y: 0 } })
+  useEffect(() => { setZv({ zoom: 1, pan: { x: 0, y: 0 } }) }, [t?.id, view, entry?.beamIn])
+  const zvRef = useRef(zv); zvRef.current = zv
+  const fit = () => setZv({ zoom: 1, pan: { x: 0, y: 0 } })
   const [draft, setDraft] = useState(null)          // { type, active, removing } while dragging
   const [editing, setEditing] = useState(null)      // a dimension being typed: { id, k, x, y, value }
   const shown = draft ? draft.type : t
   // centred and fitted to the pane (elevationLayout centres it in the box), labels in proportion with a readable minimum
   const fontPx = paneFontPx(box)
-  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, view, bg: 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail, view])
+  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, view, zoom: zv.zoom, pan: zv.pan, bg: 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail, view, zv])
 
   const at = (ev) => { const r = host.current.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
+  useEffect(() => {
+    const el = host.current
+    if (!el) return
+    const onWheel = (e) => {
+      e.preventDefault()
+      const r = el.getBoundingClientRect(), q = { x: e.clientX - r.left - r.width / 2, y: e.clientY - r.top - r.height / 2 }
+      const { zoom, pan } = zvRef.current, z2 = Math.min(16, Math.max(0.5, zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015))))
+      // the point under the cursor stays under it
+      setZv({ zoom: z2, pan: { x: q.x - (q.x - pan.x) * (z2 / zoom), y: q.y - (q.y - pan.y) * (z2 / zoom) } })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+  /* a press on empty space (not a beam, the upright top, an upright or a dimension) pans */
+  const empty = (e) => { const tg = e.target; return tg === e.currentTarget || (tg instanceof Element && !tg.getAttribute('data-role') && !tg.getAttribute('data-grab')) }
+  const startPan = (e) => {
+    if (e.button !== 0 || !empty(e)) return
+    const x0 = e.clientX, y0 = e.clientY, p0 = zvRef.current.pan
+    const move = (ev) => setZv(v => ({ ...v, pan: { x: p0.x + ev.clientX - x0, y: p0.y + ev.clientY - y0 } }))
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+  }
   const zAt = (p) => (d.floor - p.y) / d.scale
 
   /* a drag on a beam or on the top of the upright: the type follows live; the release writes it once */
@@ -131,8 +183,9 @@ export function ElevationDrawing({ t, entry, building, sel, sprClr, detail, onCo
     return null
   }
   return (
-    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" style={{ height: box.h, flexShrink: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: 'var(--surface)' }}>
-      <svg width={box.w} height={box.h} style={{ display: 'block', position: 'relative', left: snap.x, top: snap.y }} onPointerDown={() => host.current.focus({ preventScroll: true })}>
+    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" data-zoom={Math.round(zv.zoom * 100) / 100} style={{ height: box.h, flexShrink: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: 'var(--surface)', cursor: 'grab' }}>
+      <svg width={box.w} height={box.h} style={{ display: 'block', position: 'relative', left: snap.x, top: snap.y }}
+        onPointerDown={(e) => { host.current.focus({ preventScroll: true }); startPan(e) }} onDoubleClick={(e) => { if (empty(e)) fit() }}>
         {d.items.map(render)}
         {/* the beams and the upright tops grabbed first: a transparent strip over each, drawn last, so a label lying on a
             beam at a small scale never takes its drag */}
@@ -141,6 +194,11 @@ export function ElevationDrawing({ t, entry, building, sel, sprClr, detail, onCo
           return <rect key={'grab' + n} data-grab={i.role.kind + ':' + (i.role.k ?? '')} x={i.x} y={y} width={i.w} height={h} fill="transparent" style={{ cursor: 'ns-resize' }} onPointerDown={(e) => startDrag(e, i.role)} />
         })}
       </svg>
+      {/* Fit, and full screen */}
+      <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 2 }}>
+        <button type="button" onClick={fit} title="Fit (double-click empty space)" style={{ padding: '3px 9px', fontSize: 11, borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer' }}>Fit</button>
+        {onFull && <button type="button" aria-label="Full screen" onClick={onFull} title="Full screen (Esc closes)" style={{ padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', display: 'flex' }}><Maximize2 size={13} /></button>}
+      </div>
       {editing && (
         <input autoFocus aria-label="Dimension" value={editing.text} onChange={e => setEditing({ ...editing, text: e.target.value })}
           onBlur={commitTyping} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') commitTyping(); if (e.key === 'Escape') setEditing(null) }}

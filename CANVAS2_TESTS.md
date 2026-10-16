@@ -1907,7 +1907,7 @@ dropped: RW-other, LC-reuse (3). The pick level dropped: RW-narrow, AX-short, RG
 10' 6" to pick"; 2' more → 7' 6", "… 7' 6", needs 8' to drive"; Ctrl+Z → back to the pick warning;
 Ctrl+Z → nothing.
 
-### EV — Elevations v1 + v2 · `EV_elevations.test.js` (70 tests)
+### EV — Elevations v1 + v2 · `EV_elevations.test.js` (72 tests)
 **v2** (ELEVATIONS_PLAN.md §v2). Beam face height per type (4"); levels to the top of the beam; the fit from the top of
 the lower beam to the underside of the next. Frame depth from the rack (read-only). A type change is no hand edit
 (rackingArea sigMatch / shapeKey). The types are the store's `elevations` (approved store diff: snapshot, undo / redo,
@@ -2107,6 +2107,41 @@ use the same tint and opacity. The canvas legend starts at left 104, clear of th
 Changed: EV-pdf (0.6; one elevation: no fills). Checked in the app: one elevation — no tint, no swatch; two — orange and
 blue bands, the legend matching; legend 104–257 px vs Hub 12–76 px, no overlap in either mode.
 
+**The Elevations tab (v5).** Elevation mode is removed, along with utils/elevMode.js, ModeSwitch.jsx and
+ElevationWorkspace.jsx; the guards in TopBar, the shortcuts, the canvas interaction, Canvas2, Scene and
+ElevationsCanvas went with it.
+- Elevations are a tab next to Properties (utils/rightPanel.js: `tab`, `elevW` 480 to start, the edge drags, and
+  the width is remembered).
+- Each elevation pairs a ceiling and a pallet (`ceilingId`, `palletId`), and its name shows the pair
+  (elevFit.js `pairName`; renamed ones are `named`).
+- Positions per beam come from that pallet's face (elevations.js `faceResolver`, used in bayLedger and capacity).
+- Check layout uses its ceiling (`ceilingOf`).
+- utils/elevTab.js: `addBestFit`, `assignSelected` (whole row sides, one step), rename, recolour, duplicate,
+  delete, default, `setPairing` (refits), `removeUnused`, `refreshNames`.
+- With a ceiling and no elevation, the best fit is created silently (project.js `firstElevations`).
+- The drawing zooms and pans (elevationDrawing.js `zoom` / `pan`, labels keep their screen size), with Fit, a
+  double-click to fit, and ⤢ full screen (Esc closes).
+
+New: EV-tab, EV-zoom, EV-tab-wiring, PS-bestfit. Retired: EV-mode, EV-mode-wiring. Changed: EV-background, EV-crisp,
+EV-tint, EV-wire.
+
+**Break-its (v5):**
+- the pallet-face resolver off: EV-tab (a 48" face still drew and counted 2 per 8' beam);
+- checks blind to the project's ceiling: PS-changes.
+
+**Checked in the app (v5)** (real mouse, a new project with ceilings Main 30' / 29'-6" and Mezz 20', and pallets
+48×40 and 48×48 at 60"):
+- After Save, "5 levels · 48×40 · Main" was created silently. Generate → 325 bay-sides.
+- The Elevations tab opens at 480 px.
+- + Add with Mezz and 48×48 → "3 levels · 48×48 · Mezz", 1 pallet per 8' beam.
+- A row clicked on the canvas, then the Mezz chip → 13 bay-sides, one undo step.
+- Wheel zoom reached 1.8× and 4.5×. A drag from empty space panned with the levels unchanged; a drag on a beam moved
+  that beam; a double-click fitted back to 1×.
+- ⤢ opened full screen, and Esc closed it.
+- Renamed to "Mezzanine racks".
+- The edge dragged to 580 and was stored. Properties is back at 272, with "Elevation: Mezzanine racks".
+- The legend starts at 154 px, clear of Hub's right edge at 126 px.
+
 ### EV-v1
 Plan: ELEVATIONS_PLAN.md. Code: utils/elevations.js (types, layered assignment, compression, migration, the keeper,
 checks, legend, BOM data), utils/elevPaint.js (paint mode), utils/elevationDraw.js (colours toggle, bay fills, side
@@ -2183,7 +2218,7 @@ lost"; Regenerate racking → office, hand rack, text kept, one racking area, no
 "Regenerated Vertical — 27 rows replaced, 1 hand-placed kept", one undo step (Ctrl+Z restores, record back); Start over →
 the old behaviour (a new building, the office, hand rack and text gone).
 
-### PS — Project setup · `PS_project.test.js` (4 tests)
+### PS — Project setup · `PS_project.test.js` (5 tests)
 Code: utils/project.js (the project on the layout's elevation table, `migrateProject`, `dropUnusedTypes`,
 `installProjectKeeper`, `layoutAffecting`, `syncTypesToPallets`, `ceilingFor`), utils/elevations.js (`ceilingOf`; the
 sprinkler clearance and Check layout's heights from the project), components/Project/ProjectSetup.jsx (the screen),
@@ -2205,6 +2240,7 @@ moved into the plan's bottom-left corner (it covered the left panel's Project se
 | `PS-migrate` | the fixture filled: ceiling Main 30' / 29'-6", pallet 48×40 (40 × 48, 48" high, 4" face), forklift / wall / units / advanced carried; no heights → no ceiling; ceilingOf, sprinkler clearance from the project |
 | `PS-keeper` | a load: the project folded into that history entry, a junk type dropped, nothing moved; an empty new layout opens setup ('new'); the first racks with no ceiling open it once ('ceiling') and get types |
 | `PS-changes` | what asks (pallet face / depth, forklift, wall) and what doesn't (height, ceilings); a pallet's height / weight / beam face into the types; Check layout against the project's ceiling |
+| `PS-bestfit` | bestFitFor per ceiling + pallet (Main + 48×40 → 5 levels, upright 21'; Mezz + 48×48 60" → 3 levels), pairName, the silent first elevation |
 | `PS-inputs` | the slim Generate panel, the Fill bar / area / column check / Properties without them, Project settings opens setup, the sync, the screen's sections and buttons |
 
 Changed: WC-shared (the wall clearance is the project's: no field in Generate or Fill), EV-mode-wiring (the workspace's

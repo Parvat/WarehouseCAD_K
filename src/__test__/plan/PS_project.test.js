@@ -67,6 +67,25 @@ describe('PS — the project', () => {
     stop(); stop = null
   })
 
+  it('PS-bestfit: a project with a ceiling height and no elevation yet gets the best fit for the default ceiling and pallet, silently, in that same history entry — named by its pairing; without a ceiling, racks get types from their levels', () => {
+    stop = P.installProjectKeeper(store, () => ({}))
+    const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }], defaultCeilingId: 'c' }
+    const T0 = P.withProject(null, pr)
+    store.setState({ objects: [], elevations: null, history: [JSON.stringify({ objects: [], groups: [], elevations: null })], historyIndex: 0 })
+    P.useProjectSetup.setState({ open: false })
+    store.getState().commitElevations(T0)
+    const T = store.getState().elevations
+    expect([T.types.length, T.types[0].name, T.types[0].levels.length, T.types[0].uprightHeightIn, T.defaultId === T.types[0].id]).toEqual([1, '5 levels · 48×40 · Main', 5, 252, true])
+    expect(JSON.parse(store.getState().history[store.getState().historyIndex]).elevations.types.length).toBe(1)   // folded
+    // no ceiling: the racks placed take types from their own levels
+    store.setState({ objects: [], elevations: P.withProject(null, P.newProject()), history: ['{}'], historyIndex: 0 })
+    const o = filled(false)
+    store.setState({ objects: o, history: ['{}', '{}'], historyIndex: 1 })
+    expect(store.getState().elevations.types.map(t => t.levels.length)).toEqual([4])
+    P.useProjectSetup.setState({ open: false })
+    stop(); stop = null
+  })
+
   it('PS-changes: what moves racks (the default pallet\'s face or depth, the forklift, the wall clearance) asks Regenerate / Keep; a pallet\'s height, weight or beam face updates the elevations that carry it; ceilings drive the checks', () => {
     const pr = P.newProject(), pal = P.defaultPallet(pr)
     const with_ = (f) => { const n = JSON.parse(JSON.stringify(pr)); f(n); return n }

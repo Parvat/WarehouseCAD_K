@@ -14,7 +14,6 @@ import { useLabelPrefs } from '../../canvas2/labelPrefs'
 import { useLayoutCheck, runLayoutCheck, checkLabel, exportWithCheck } from '../../utils/layoutCheck'
 import { ExportCheckDialog } from '../RightPanel/LayoutCheckPanel'
 import { LABEL_SIZES, LABEL_SIZE_NAMES } from '../../render/labelSize'
-import { ModeSwitch, undoOrDiscard } from '../Elevations/ModeSwitch'
 
 /* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
 const C = {
@@ -261,15 +260,12 @@ export function TopBar() {
         )}
       </div>
 
-      {/* Layout | Elevations: elevations are a separate step after the layout (ELEVATIONS_PLAN.md §3) */}
-      <ModeSwitch />
-
       <div style={{ flex:1 }} />
 
       {/* History stays in the bar: CLAUDE.md gives the top bar ownership of undo
           /redo, and the left panel's footer dropped its copies on that basis. */}
       <div style={{ display:'flex', alignItems:'center', gap:2 }}>
-        <IBtn icon={Undo2} label="Undo" onClick={undoOrDiscard} title="Undo (Ctrl+Z)" />
+        <IBtn icon={Undo2} label="Undo" onClick={undo} title="Undo (Ctrl+Z)" />
         <IBtn icon={Redo2} label="Redo" onClick={redo} title="Redo (Ctrl+Y)" />
       </div>
 

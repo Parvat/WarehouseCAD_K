@@ -449,7 +449,7 @@ export function buildElevationSheets(objects, { title = 'Untitled Layout', eleva
     const parts = cells.slice(p * per, (p + 1) * per).map(({ type, e }, i) => {
       const c = i % cols, r = Math.floor(i / cols), x = margin + c * cellW, y = margin + head + r * cellH
       const fs = Math.max(2.6, cellH / 48)   // text in proportion to the drawing, as on the sample
-      const box = { w: cellW - 8, h: cellH - fs * 7.5 }, opts = { palletWIn: e.palletWIn, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: ceilingForDrawing(objects, T, type, e.parentId), fontPx: fs, sprinklerClearanceIn: sprinklerClearance(T), detail, bg: '#fff' }   // the editor's Simple / Detailed
+      const box = { w: cellW - 8, h: cellH - fs * 7.5 }, opts = { palletWIn: (type.palletId && T?.project?.pallets?.find(x => x.id === type.palletId)?.faceIn) || e.palletWIn, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: ceilingForDrawing(objects, T, type, e.parentId), fontPx: fs, sprinklerClearanceIn: sprinklerClearance(T), detail, bg: '#fff' }   // the editor's Simple / Detailed
       const fit = elevationLayout(type, e.beamIn, box, opts), sc = archScale(fit.scale)
       const d = elevationLayout(type, e.beamIn, box, { ...opts, scale: sc.mmPerIn })
       const label = `${type.name} · ${ftInDash(e.beamIn)} bay`

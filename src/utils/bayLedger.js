@@ -78,13 +78,15 @@ function frameLines(r, gridSize) {
 const bayPositions = (r, b, bi, lv) => {
   const per = positionsPerBeam(b, r.palletWIn || 40)
   if (!lv) return per * (r.levels || 1) * (r.type === 'rack_double_row' ? 2 : 1)
-  return per * (lv(r, bi, 0) + (r.type === 'rack_double_row' ? lv(r, bi, 1) : 0))
+  // each face's pallets on the beam from its elevation's pallet face (Project setup), its levels from its elevation
+  const f = lv.face, at = (s) => (f ? positionsPerBeam(b, f(r, bi, s)) : per) * lv(r, bi, s)
+  return at(0) + (r.type === 'rack_double_row' ? at(1) : 0)
 }
 
 let cache = { objects: null, key: null, ledger: null }
 const keyOf = (racks) => racks.map(r => [r.id, r.type, r.x, r.y, r.width, r.height, r.rotation || 0, r.beams.join('/'), r.levels, r.palletWIn, r.uprightWidth, JSON.stringify([r.elevType, r.elevSides, r.elevBays])].join(',')).join(';')
 /* the types' level counts (a type edited to more levels changes every bay that carries it) */
-const tableKey = (T) => { return T ? T.defaultId + ':' + T.types.map(t => t.id + '=' + t.levels.length).join(',') : '' }
+const tableKey = (T) => { return T ? T.defaultId + ':' + T.types.map(t => t.id + '=' + t.levels.length + '/' + (t.palletId || '')).join(',') + '|' + (T.project?.pallets || []).map(p => p.id + '=' + p.faceIn).join(',') : '' }
 
 /** The layout's bay ledger: { racks: Map(id → { counted: [bool per bay], positions, bays, uncounted,
  *  frames: [bool per upright position, bays + 1: bounds a counted bay], frameCount: [frames each position

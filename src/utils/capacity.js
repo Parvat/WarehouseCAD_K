@@ -82,7 +82,9 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
     const palletsPerBay = beams.map(b => positionsPerBeam(b, palletWIn))
     const groundTotal   = palletsPerBay.reduce((s, p) => s + p, 0)
     // each bay's levels from its elevation type when `levelsAt` is given (utils/elevations.js)
-    const total         = levelsAt ? palletsPerBay.reduce((s, p, i) => s + p * levelsAt(obj, i, 0), 0) : groundTotal * levels
+    // a bay's pallets on the beam from its elevation's pallet face when the levels resolver carries one (Project setup)
+    const per = (i, side) => (levelsAt?.face ? positionsPerBeam(beams[i], levelsAt.face(obj, i, side)) : palletsPerBay[i])
+    const total         = levelsAt ? beams.reduce((s, _, i) => s + per(i, 0) * levelsAt(obj, i, 0), 0) : groundTotal * levels
     return {
       type:    'beam',
       bays:    beams.length,
@@ -100,7 +102,8 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
     const levels     = obj.levels     || 1
     const palletsPerBay = beams.map(b => positionsPerBeam(b, palletWIn))
     const groundTotal   = palletsPerBay.reduce((s, p) => s + p, 0) * 2  // × 2 rows
-    const total         = levelsAt ? palletsPerBay.reduce((s, p, i) => s + p * (levelsAt(obj, i, 0) + levelsAt(obj, i, 1)), 0) : groundTotal * levels
+    const per = (i, side) => (levelsAt?.face ? positionsPerBeam(beams[i], levelsAt.face(obj, i, side)) : palletsPerBay[i])
+    const total         = levelsAt ? beams.reduce((s, _, i) => s + per(i, 0) * levelsAt(obj, i, 0) + per(i, 1) * levelsAt(obj, i, 1), 0) : groundTotal * levels
     return {
       type:    'beam',
       bays:    beams.length,

@@ -1,8 +1,8 @@
 // elevEditor.js — the elevation editor's state and its edits (Elevations v2 §B–C, §E).
 //
-// The editor is Elevation mode's workspace (components/Elevations/ElevationWorkspace.jsx, utils/elevMode.js): the
-// drawing shows the active elevation. The edits below are pure — a type in, a type out; the workspace writes the result
-// to that elevation everywhere it is used, as a draft (Apply: ONE undo step). Never the floor plan.
+// The editor is the Elevations tab (components/Elevations/ElevationsTab.jsx, utils/elevTab.js): the drawing shows the
+// active elevation. The edits below are pure — a type in, a type out; the tab writes the result to that elevation
+// everywhere it is used, ONE undo step. Never the floor plan.
 // Simple / Detailed is presentation state, per browser (localStorage); the PDF prints the one chosen.
 
 import { create } from 'zustand'

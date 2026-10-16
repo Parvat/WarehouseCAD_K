@@ -5,7 +5,8 @@ import { useCanvasStore } from '../../store/useCanvasStore'
 import { useRules } from '../../rules/useRules'
 import { useRackingSettings } from '../../utils/fillTool'
 import { UNITS } from '../../constants'
-import { useProjectSetup, closeSetup, projectOf, newProject, newId, palletName, commitProject, syncTypesToPallets, layoutAffecting, ADVANCED_DEFAULTS } from '../../utils/project'
+import { useProjectSetup, closeSetup, projectOf, newProject, newId, palletName, withProject, syncTypesToPallets, layoutAffecting, ADVANCED_DEFAULTS } from '../../utils/project'
+import { refreshNames } from '../../utils/elevTab'
 import { regenBuilding, regenSummary } from '../../generate/regenerate'
 import { regenerateRacking } from '../../generate/traceGenerate'
 
@@ -65,7 +66,8 @@ function SetupCard({ reason }) {
   const write = (project) => {
     const st = store.getState(), old = projectOf(st.elevations)
     const r = syncTypesToPallets(st.objects, st.elevations, old, project)
-    commitProject(store, project, r.objects, r.table)
+    // the elevations' names follow their pallet and ceiling (renamed ones keep theirs)
+    st.commitElevations(refreshNames(withProject(r.table, project)), r.objects)
   }
   const save = () => {
     const st = store.getState(), old = projectOf(st.elevations)

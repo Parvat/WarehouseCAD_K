@@ -122,7 +122,18 @@ export function levelsAt(rack, bay, side, table) {
 }
 /** `(rack, bay, side) → levels` for a types table, or null without one (read `rack.levels`). */
 export function levelsResolver(table) {
-  return table ? (r, b, s) => levelsAt(r, b, s, table) : null
+  if (!table) return null
+  const fn = (r, b, s) => levelsAt(r, b, s, table)
+  // the pallet face a bay-side holds (positions per beam): its elevation's pallet, when it names one (Project setup)
+  fn.face = faceResolver(table)
+  return fn
+}
+/** `(rack, bay, side) → pallet face (in)`: the bay-side's elevation's pallet (`type.palletId`, the project's pallet
+ *  sizes), else the rack's own `palletWIn` — null with no project pallets (read the rack's). */
+export function faceResolver(table) {
+  const pallets = table?.project?.pallets
+  if (!pallets?.length) return null
+  return (r, b, s) => { const t = typeAt(r, b, s, table); const p = t?.palletId && pallets.find(x => x.id === t.palletId); return p?.faceIn > 0 ? p.faceIn : (r.palletWIn || 40) }
 }
 /** Every bay-side's type id: [[side 0 per bay], [side 1 per bay]] (one array for a single row). */
 export const typeMap = (rack, table) => Array.from({ length: sidesOf(rack) }, (_, s) => rack.beams.map((_, b) => typeIdAt(rack, b, s, table)))

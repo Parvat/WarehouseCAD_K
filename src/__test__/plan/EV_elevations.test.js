@@ -34,7 +34,8 @@ import { rackDepthUpdate } from '../../utils/rackDepth'
 import { serializeScene, deserializeScene } from '../../utils/saveLoad'
 import * as SEL from '../../utils/elevSelection'
 import * as FIT from '../../utils/elevFit'
-import * as MODE from '../../utils/elevMode'
+import * as TAB from '../../utils/elevTab'
+import * as P from '../../utils/project'
 import * as DRAW from '../../utils/elevationDraw'
 import { useRowGroup, installRowGroupWatcher, flushRowGroupWatcher, clearGroup, addRowOf } from '../../utils/rowGroupTool'
 
@@ -256,57 +257,62 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     expect(FIT.layoutPositions(o, FIT.designFor(5, b, {}))).toBe(FIT.layoutPositions(o, FIT.designFor(4, b, {})) / 4 * 5)
   })
 
-  it('EV-mode: Elevation mode edits as a draft — a proposal used for the layout (the only type, every override gone), another added and assigned like a colour picker (a selection on the plan takes the active one; picking another never reassigns), Discard back to the last applied, Apply ONE undo step; names follow the design unless renamed; duplicate, delete; leaving with a draft asks; undo with a draft discards it', async () => {
-    const L = withTypes(hand(vert)); load(L.o, L.t); await settle()
-    const stop = MODE.installAssignWatcher(store)
-    MODE.enterElevations(store)
-    const h0 = hist(), b = { clearHeightIn: 360, sprinklerIn: 354 }
-    const id5 = MODE.useForLayout(store, FIT.designFor(5, b, {}))
-    expect([T().types.map(t => t.name), objs().filter(E.isBeamRack).every(r => E.ELEV_FIELDS.every(k => r[k] == null) && r.levels === 5), hist(), MODE.useElevMode.getState().pending]).toEqual([["5 levels · 21'"], true, h0, true])
-    MODE.discardDraft(store)
-    expect([T().types.length, rack(objs(), 'p1').levels, MODE.useElevMode.getState().pending]).toEqual([3, 4, false])
-    MODE.useForLayout(store, FIT.designFor(5, b, {}))
-    expect(MODE.applyDraft(store)).toBe(true); await settle()
-    expect([hist(), MODE.useElevMode.getState().pending]).toEqual([h0 + 1, false])
-    // another elevation, active; a selection on the plan takes it — one side of p1, then all of s
-    const id4 = MODE.addElevation(store, { design: FIT.designFor(4, b, {}) })
-    expect([MODE.useElevMode.getState().activeId, E.typeById(T(), id4).name]).toEqual([id4, "4 levels · 16'"])
-    store.setState({ selectedIds: ['p1'], activeBaySelection: [0, 1, 2].map(i => ({ objId: 'p1', bayIdx: i, side: 1 })) })
-    await Promise.resolve()                                                            // the assignment runs once the selection settles
-    expect(ids(rack(objs(), 'p1'), T())[1]).toEqual([id4, id4, id4])
+  it('EV-tab: each elevation names a ceiling and a pallet — + Add makes the best fit for the pair, named "5 levels · 48×40 · Main"; selected rows take a chip (whole row sides, ONE undo step); positions per beam from the pallet face; Check layout against its own ceiling; rename, back to the pairing, duplicate, change the pairing (refitted, assignments kept), delete, remove unused', async () => {
+    const L = hand(vert)
+    const pr = { ...P.newProject(), ceilings: [{ id: 'main', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }, { id: 'mez', name: 'Mezz', clearHeightIn: 240, sprinklerIn: null }], defaultCeilingId: 'main' }
+    pr.pallets = [{ ...pr.pallets[0], id: 'p40', name: '48×40' }, { id: 'p48', name: '48×48', faceIn: 48, depthIn: 48, heightIn: 60, weightLb: 2500, beamFaceIn: 4 }]; pr.defaultPalletId = 'p40'
+    load(L.o, P.withProject(L.t, pr)); await settle()
+    const h0 = hist()
+    const a = TAB.addBestFit(store, {})
+    const ta = E.typeById(T(), a)
+    expect([ta.name, ta.ceilingId, ta.palletId, ta.levels.map(l => l.beamIn), ta.uprightHeightIn, hist()]).toEqual(['5 levels · 48×40 · Main', 'main', 'p40', [0, 58, 116, 174, 232], 252, h0 + 1])
+    // the 48×48 pallet (60" high) under the Mezz ceiling (20'): fewer levels, its own name
+    const b = TAB.addBestFit(store, { ceilingId: 'mez', palletId: 'p48' })
+    const tb = E.typeById(T(), b)
+    expect([tb.name, tb.levels.length, tb.levels[0].palletHeightIn, tb.levels[0].loadLb]).toEqual(['3 levels · 48×48 · Mezz', 3, 60, 2500])
+    // selected rows take a chip: one side of p1 picked → that whole row side; one undo step
+    store.setState({ selectedIds: ['p1'], activeBaySelection: [{ objId: 'p1', bayIdx: 1, side: 0 }] })
+    const h1 = hist()
+    expect(TAB.assignSelected(store, b)).toBe(true); await settle()
+    expect([hist(), ids(rack(objs(), 'p1'), T())[0].every(x => x === b), ids(rack(objs(), 'p1'), T())[1].every(x => x === T().defaultId)]).toEqual([h1 + 1, true, true])
+    expect(TAB.assignSelected(store, b)).toBe(false)                                       // nothing to change
+    // positions per beam from the pallet face: a 96" beam holds 2 × 40" but 1 × 48"
+    const pos = (t) => bayLedger(objs(), GS, t).racks.get('p1').positions
+    const T48 = { ...T(), types: T().types.map(t => (t.id === b ? { ...t, palletId: 'p40' } : t)) }
+    expect(pos(T())).toBeLessThan(pos(T48))
+    // Check layout: each elevation against its own ceiling — B (the Mezz one) breaks 20' when its levels are too tall
+    TAB.changeElevation(store, b, { ...E.typeById(T(), b), uprightHeightIn: 260 }); await settle()
+    const errs = checkLayout(objs(), { gridSize: GS, elevations: T() }).errors.filter(e => /clear height/.test(e.text))
+    expect(errs.some(e => e.text.includes('3 levels · 48×48 · Mezz') && e.text.includes("20'-0\""))).toBe(true)
+    // rename; empty: back to the pairing; a level added: the pairing name follows
+    TAB.renameElevation(store, a, 'Main racks')
+    expect([E.typeById(T(), a).name, E.typeById(T(), a).named]).toEqual(['Main racks', true])
+    TAB.renameElevation(store, a, '')
+    expect(E.typeById(T(), a).name).toBe('5 levels · 48×40 · Main')
+    TAB.changeElevation(store, a, E.withLevelCount(E.typeById(T(), a), 4))
+    expect(E.typeById(T(), a).name).toBe('4 levels · 48×40 · Main')
+    // duplicate: a copy to adjust, unique name, active
+    const d = TAB.duplicateElevation(store, a)
+    expect([E.typeById(T(), d).name, TAB.useElevTab.getState().activeId]).toEqual(['4 levels · 48×40 · Main 2', d])
+    // change the pairing: refitted for the new pair, still on its rows
+    TAB.setPairing(store, b, { ceilingId: 'main' })
+    expect([E.typeById(T(), b).name, E.typeById(T(), b).levels.length, ids(rack(objs(), 'p1'), T())[0].every(x => x === b)]).toEqual(['4 levels · 48×48 · Main', 4, true])                // 60" pallets: pitch 70", (n−1)·70 + 60 ≤ 336
+    // remove unused: the duplicate goes (the default and B stay); delete B: its rows fall back
+    expect(TAB.removeUnused(store)).toBe(true)
+    expect(T().types.some(t => t.id === d)).toBe(false)
+    expect(TAB.deleteElevation(store, b)).toBe(true)
     expect(ids(rack(objs(), 'p1'), T())[0].every(x => x === T().defaultId)).toBe(true)
-    MODE.setElevMode({ activeId: T().defaultId })                                       // picking another: nothing reassigned
-    expect(ids(rack(objs(), 'p1'), T())[1]).toEqual([id4, id4, id4])
-    MODE.setElevMode({ activeId: id4 })
-    store.setState({ selectedIds: ['s'], activeBaySelection: [] })
-    await Promise.resolve()                                                            // the assignment runs once the selection settles
-    expect(E.typeMap(rack(objs(), 's'), T()).flat().every(x => x === id4)).toBe(true)
-    // the drawing's adjustment: that elevation everywhere, its auto name following; a renamed one keeps its name
-    MODE.changeElevation(store, id4, { ...E.typeById(T(), id4), uprightHeightIn: 216 })
-    expect([E.typeById(T(), id4).name, rack(objs(), 's').levels]).toEqual(["4 levels · 18'", 4])
-    MODE.renameElevation(store, id4, 'Mezz')
-    MODE.changeElevation(store, id4, { ...E.typeById(T(), id4), uprightHeightIn: 228 })
-    expect(E.typeById(T(), id4).name).toBe('Mezz')
-    MODE.renameElevation(store, id4, "5 levels · 21'")                                 // a name in use: made unique
-    expect(E.typeById(T(), id4).name).toBe("5 levels · 21' 2")
-    // duplicate: a variant to adjust, made active, unique name
-    const dup = MODE.addElevation(store, { fromId: T().defaultId })
-    expect([E.typeById(T(), dup).name, MODE.useElevMode.getState().activeId]).toEqual(["5 levels · 21' 3", dup])
-    // leaving with a draft asks; undo with a draft discards it (no step further back)
-    expect([MODE.leaveElevations(store), MODE.useElevMode.getState().leaving, MODE.useElevMode.getState().on]).toEqual([false, true, true])
-    MODE.undoOrDiscard(store)
-    expect([hist(), T().types.length, MODE.useElevMode.getState().pending]).toEqual([h0 + 1, 1, false])
-    // delete: its bays fall back to the default; the last can't go
-    const x = MODE.addElevation(store, { design: FIT.designFor(3, b, {}) })
-    store.setState({ selectedIds: ['p2'], activeBaySelection: [] })
-    await Promise.resolve()                                                            // the assignment runs once the selection settles
-    expect(MODE.deleteElevation(store, x)).toBe(true)
-    expect([E.typeMap(rack(objs(), 'p2'), T()).flat().every(t => t === T().defaultId), MODE.deleteElevation(store, T().defaultId)]).toEqual([true, false])
-    MODE.applyDraft(store); await settle()
-    expect(hist()).toBe(h0 + 2)
-    MODE.useElevMode.setState({ leaving: false })
-    expect(MODE.leaveElevations(store)).toBe(true)
-    stop()
+  })
+
+  it('EV-zoom: the drawing zoomed around a point and panned — the fitted scale times the zoom, the labels the same screen size, the content moved by the pan; Fit is zoom 1, no pan', () => {
+    const t = { ...E.makeType({ id: 'A', levelsCount: 4 }), uprightHeightIn: 228 }, box = { w: 500, h: 600 }, o = { depthIn: 48, view: 'front', building: { clearHeightIn: 290 } }
+    const one = elevationLayout(t, 96, box, o), two = elevationLayout(t, 96, box, { ...o, zoom: 2 }), moved = elevationLayout(t, 96, box, { ...o, zoom: 2, pan: { x: 40, y: -30 } })
+    expect(two.scale / one.scale).toBeCloseTo(2, 5)
+    const lab = (d) => d.items.find(i => i.t === 'text' && /^FRAME/.test(i.s))
+    expect(lab(two).size).toBe(lab(one).size)
+    const up = (d) => d.items.find(i => i.tag === 'upright')
+    expect([Math.round(up(moved).x - up(two).x), Math.round(up(moved).y - up(two).y)]).toEqual([40, -30])
+    expect(elevationLayout(t, 96, box, { ...o, zoom: 1, pan: { x: 0, y: 0 } }).scale).toBe(one.scale)
   })
 
   it('EV-tint: with 2+ elevations every one (the default too) is tinted, clearly — saturated colours at 0.6, the old pale palette drawn as the new; with one, no tint; the plan, the legend, the PDF and the workspace list agree; the legend clear of "← Hub"', () => {
@@ -323,13 +329,13 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     expect(src('canvas2/shapes.jsx')).toMatch(/fill=\{r\.color\} opacity=\{ELEV_FILL_OPACITY\}/)
     expect(src('export/pdfExport.js')).toMatch(/const elevTable = elevColors && tintOn\(elevations\) \? elevations : null/)
     const lg = src('canvas2/ElevationsCanvas.jsx')
-    expect(lg).toMatch(/const tinted = \(showColors \|\| elevMode\) && tintOn\(elevations\)/)
+    expect(lg).toMatch(/const tinted = showColors && tintOn\(elevations\)/)
     expect(lg).toMatch(/\{tinted \? <Swatch color=\{tint\(type\.color\)\} \/>/)
     expect(lg).toMatch(/background: color, opacity: ELEV_FILL_OPACITY/)
     // clear of the fixed "← Hub" button (left 12, about 90 px wide): the legend starts past it
     expect(lg).toMatch(/position: 'absolute', left: 104, bottom: 12/)
     expect(src('App.jsx')).toMatch(/position: 'absolute', left: 12, bottom: 12, zIndex: 55/)
-    expect(src('components/Elevations/ElevationWorkspace.jsx')).toMatch(/background: tint\(t\.color\), opacity: several \? ELEV_FILL_OPACITY : 0\.25/)
+    expect(src('components/Elevations/ElevationsTab.jsx')).toMatch(/background: tint\(t\.color\), opacity: tinted \? ELEV_FILL_OPACITY : 0\.25/)
   })
 
   it('EV-view: the drawing\'s Front | Side — one view fitted alone (front: beams and uprights, no frames; side: frames, no beams); both for the PDF', () => {
@@ -728,10 +734,10 @@ describe('EV — the editor (v2 §B–C, E)', () => {
 
   it('EV-background: the drawing sits on the panel\'s own background in Properties (labels haloed in it, frames and ground in the theme\'s colours), on white paper in the PDF in the reference\'s', () => {
     const pane = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
-    expect(pane).toMatch(/aria-label="Elevation drawing" style=\{\{[^}]*background: 'var\(--surface\)' \}\}/)
+    expect(pane).toMatch(/aria-label="Elevation drawing" data-zoom=\{[^}]*\} style=\{\{[^}]*background: 'var\(--surface\)', cursor: 'grab' \}\}/)
     expect(pane).toMatch(/bg: 'var\(--surface\)', frame: 'var\(--elev-frame\)', ink: 'var\(--elev-ink\)'/)
     expect(pane.includes("background: '#fff'")).toBe(false)
-    const panel = readFileSync(new URL('../../components/Elevations/ElevationWorkspace.jsx', import.meta.url), 'utf8')
+    const panel = readFileSync(new URL('../../components/Elevations/ElevationsTab.jsx', import.meta.url), 'utf8')
     expect(panel.includes("background: '#fff'")).toBe(false)
     // the theme tokens: in every theme block, light frames on the dark panels
     const css = readFileSync(new URL('../../index.css', import.meta.url), 'utf8')
@@ -761,51 +767,42 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(pdf).toMatch(/detail, bg: '#fff' \}/)
   })
 
-  it('EV-mode-wiring: Layout | Elevations in the top bar; Elevation mode a split view (the plan left, the workspace right, a divider, its share remembered; no tools, Generate or Properties); the plan select-only (no drag, no handles, no editing keys; Ctrl+Z discards a draft), rows coloured; Properties shows one read-only line; the workspace: Apply / Discard, fit inputs, proposals, the list, Front | Side', () => {
+  it('EV-tab-wiring: no Elevation mode — Elevations a tab next to Properties, the panel wider on it (edge dragged, remembered), the toolbar stays; the tab: Front | Side and Simple | Detailed, the drawing taking most of the space, the chips (menu, + Add, Apply to selected rows, Remove unused), the Project setup link; the drawing zooms, pans, fits, goes full screen', () => {
     const src = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8')
-    const app = src('App.jsx')
-    expect(app).toMatch(/\{!elevMode && <FloatingToolbar \/>\}/)
-    expect(app).toMatch(/\{elevMode \? <>\s*<ElevationDivider \/>\s*<div style=\{\{ width: `\$\{Math\.round\(elevSplit \* 100\)\}%`[^}]*\}\}><ElevationWorkspace \/><\/div>\s*<\/> : <RightPanel \/>\}/)
-    expect(app).toMatch(/\{!elevMode && <GeneratePanel \/>\}/)
-    const top = src('components/Toolbar/TopBar.jsx')
-    expect(top).toMatch(/<ModeSwitch \/>/)
-    expect(top).toMatch(/onClick=\{undoOrDiscard\}/)
-    const sw = src('components/Elevations/ModeSwitch.jsx')
-    expect(sw).toMatch(/>Layout<\/button>[\s\S]*>Elevations<\/button>/)
-    expect(sw).toMatch(/role="dialog" aria-label="Leave Elevation mode"[\s\S]*>Apply<\/button>[\s\S]*>Discard<\/button>[\s\S]*>Stay<\/button>/)
-    // the plan: select-only
-    expect(src('canvas2/useCanvasInteraction.js')).toMatch(/const beginDrag = \(hitId, world, evt\) => \{\s*\/\/[^\n]*\n\s*if \(useElevMode\.getState\(\)\.on\) return/)
-    // only beam racks answer a press (no wall, handle, zone or building is caught — a wall press would drag it)
-    // a click selects that row side (every bay on the half pressed), Shift+click adds or takes it out, in one write
-    expect(src('canvas2/useCanvasInteraction.js')).toMatch(/if \(useElevMode\.getState\(\)\.on && evt\.button === 0\) \{\s*const racks = st\.objects\.filter\(o => o\.type === 'rack_row' \|\| o\.type === 'rack_double_row'\)\s*const rackId = hitTest\(racks,[\s\S]{0,300}bayHalfAt\(r, world\.x, world\.y, st\.gridSize\)[\s\S]{0,200}const entries = r\.beams\.map\(\(_, b\) => \(\{ objId: r\.id, bayIdx: b, side \}\)\)[\s\S]{0,200}!evt\.shiftKey \? entries : cur\.some\(same\) \? cur\.filter\(c => !same\(c\)\) : \[\.\.\.cur, \.\.\.entries\]/)
-    // the assignment: whole row sides, once the gesture settles
-    const ex = (st) => [...MODE.rowSideCells(st)].map(([id, c]) => [id, c.length])
-    const o = [{ id: 'p', type: 'rack_double_row', beams: [96, 96, 96] }, { id: 's', type: 'rack_row', beams: [96, 96] }]
-    expect(ex({ objects: o, selectedIds: ['p', 's'], activeBaySelection: [{ objId: 'p', bayIdx: 1, side: 0 }, { objId: 's', bayIdx: 0, side: null }] })).toEqual([['p', 3], ['s', 2]])
-    expect(src('utils/elevMode.js')).toMatch(/store\.subscribe\(\(\) => \{ if \(!queued\) \{ queued = true; queueMicrotask\(run\) \} \}\)/)
-    const c2 = src('canvas2/Canvas2.jsx')
-    expect([c2.includes('{handleTarget && !elevMode && ('), c2.includes('{fpRotateTarget && !elevMode && ('), c2.includes('{!elevMode && selectedObjects.length >= 2')]).toEqual([true, true, true])
-    const kb = src('hooks/useKeyboardShortcuts.js')
-    expect(kb).toMatch(/if \(useElevMode\.getState\(\)\.on\) \{[\s\S]{0,900}undoOrDiscard\(useCanvasStore\)[\s\S]{0,400}return\s*\}/)
-    expect(src('canvas2/Scene.jsx')).toMatch(/const showColors = useElevView\(s => s\.showColors\) \|\| elevMode/)
-    // Properties: one read-only line, nothing to edit; the panel its normal width
-    expect([existsSync(new URL('../../components/Elevations/ElevationSection.jsx', import.meta.url)), existsSync(new URL('../../components/RightPanel/ElevationTypesList.jsx', import.meta.url))]).toEqual([false, false])
-    const core = src('components/RightPanel/panels/RackRowPanelCore.jsx'), pp = src('components/RightPanel/PropertiesPanel.jsx')
-    expect([core.includes('<ElevationLine />'), /aria-label="Levels"|<Fold title="Elevation"/.test(core), pp.includes('<ElevationLine />'), pp.includes('ElevationTypesList')]).toEqual([true, false, true, false])
-    expect(src('components/Elevations/ElevationLine.jsx')).toMatch(/Elevation:/)
-    expect(src('components/RightPanel/index.jsx')).toMatch(/width:RP_W/)
-    // the workspace
-    const ws = src('components/Elevations/ElevationWorkspace.jsx')
-    const order = ['> Discard</button>', '> Apply</button>', 'aria-label="Fit inputs"', 'aria-label="Proposals"', 'aria-label="Elevations"', 'aria-label="Elevation drawing view"'].map(k => ws.indexOf(k))
+    for (const f of ['utils/elevMode.js', 'components/Elevations/ModeSwitch.jsx', 'components/Elevations/ElevationWorkspace.jsx']) expect([f, existsSync(new URL('../../' + f, import.meta.url))]).toEqual([f, false])
+    const app = src('App.jsx'), top = src('components/Toolbar/TopBar.jsx')
+    expect([/elevMode|ElevationWorkspace/.test(app), app.includes('          <FloatingToolbar />'), app.includes('        <GeneratePanel />'), /ModeSwitch/.test(top)]).toEqual([false, true, true, false])
+    expect(/useElevMode/.test(src('canvas2/Canvas2.jsx') + src('canvas2/Scene.jsx') + src('canvas2/useCanvasInteraction.js') + src('hooks/useKeyboardShortcuts.js') + src('canvas2/ElevationsCanvas.jsx'))).toBe(false)
+    const rp = src('components/RightPanel/index.jsx')
+    expect(rp).toMatch(/>Properties<\/button>[\s\S]*>Elevations<\/button>/)
+    expect(rp).toMatch(/<ElevationsTab \/>/)
+    expect(rp).toMatch(/\{tab === 'elevations' && \(\s*<div role="separator" aria-orientation="vertical" aria-label="Resize right panel" onPointerDown=\{startResize\}/)
+    expect([RP.panelWidth({ tab: 'elevations', elevW: 520 }), RP.panelWidth({ tab: 'properties', elevW: 520 })]).toEqual([520, 272])
+    RP.setRightPanel({ tab: 'elevations', elevW: 555 })
+    expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1'))).toEqual({ tab: 'elevations', elevW: 555 })
+    RP.setRightPanel({ tab: 'properties', elevW: 480 })
+    const tab = src('components/Elevations/ElevationsTab.jsx')
+    const order = ['aria-label="View"', 'aria-label="Drawing detail"', '<ElevationDrawing ', 'aria-label="Elevation chips"', '> Add</button>', '>Apply to selected rows</button>', '>Remove unused</button>'].map(k => tab.indexOf(k))
     expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))).toBe(true)
-    expect(ws).toMatch(/\[\['front', 'Front'\], \['side', 'Side'\]\]/)
-    expect(ws).toMatch(/view=\{view\}/)
-    expect(ws.includes(`Add a ceiling height in <button type="button" onClick={() => openSetup('settings')}`)).toBe(true)
-    expect(ws).toMatch(/onCommit=\{\(next\) => changeElevation\(store, active\.id, next\)\}/)
-    // the split's share remembered per browser
-    MODE.setElevMode({ split: 0.5 })
-    expect(JSON.parse(localStorage.getItem('trace.elevmode.v1'))).toEqual({ split: 0.5 })
-    MODE.setElevMode({ split: 0.4 })
+    expect(tab).toMatch(/Add a ceiling height in <button type="button" style=\{S\.link\} onClick=\{\(\) => openSetup\('settings'\)\}>Project setup<\/button>/)
+    expect(tab).toMatch(/const clickChip = \(t\) => \{ useElevTab\.setState\(\{ activeId: t\.id \}\); if \(rowsSelected\) assignSelected\(store, t\.id\) \}/)
+    for (const k of ['aria-label="Elevation name"', 'aria-label="Elevation ceiling"', 'aria-label="Elevation pallet"', '>Duplicate</button>', 'Set default</button>', '>Delete</button>', '>Create best fit</button>']) expect([k, tab.includes(k)]).toEqual([k, true])
+    expect(/Proposals|Use for layout|> Apply</.test(tab)).toBe(false)                     // no proposals, no Apply / Discard
+    expect(tab).toMatch(/view=\{view\} fill onCommit=\{\(next\) => changeElevation\(store, active\.id, next\)\}/)
+    // the pallets drawn on a beam: the elevation's own pallet face — in the tab and on the PDF
+    expect(tab).toMatch(/const face = active\?\.palletId \? palletFor\(T, active\)\?\.faceIn : null/)
+    expect(tab).toMatch(/entry=\{shownEntry\}/)
+    expect(src('export/pdfExport.js')).toMatch(/palletWIn: \(type\.palletId && T\?\.project\?\.pallets\?\.find\(x => x\.id === type\.palletId\)\?\.faceIn\) \|\| e\.palletWIn/)
+    const dr = src('components/Elevations/ElevationDrawing.jsx')
+    expect(dr).toMatch(/el\.addEventListener\('wheel', onWheel, \{ passive: false \}\)/)
+    expect(dr).toMatch(/setZv\(\{ zoom: z2, pan: \{ x: q\.x - \(q\.x - pan\.x\) \* \(z2 \/ zoom\), y: q\.y - \(q\.y - pan\.y\) \* \(z2 \/ zoom\) \} \}\)/)
+    expect(dr).toMatch(/onDoubleClick=\{\(e\) => \{ if \(empty\(e\)\) fit\(\) \}\}/)
+    expect(dr).toMatch(/aria-label="Full screen"/)
+    expect(dr).toMatch(/role="dialog" aria-label="Elevation full screen"/)
+    expect(dr).toMatch(/if \(e\.key === 'Escape'\) \{ e\.stopPropagation\(\); setFull\(false\) \}/)
+    // the legend clear of "← Hub"; Properties keeps its one line
+    expect(src('canvas2/ElevationsCanvas.jsx')).toMatch(/position: 'absolute', left: 104, bottom: 12/)
+    expect(src('components/RightPanel/panels/RackRowPanelCore.jsx')).toMatch(/<ElevationLine \/>/)
   })
 
   it('EV-crisp: the drawing sits on the device-pixel grid (a fractional panel offset snapped out), straight lines and rects with crisp edges, labels with geometric precision and a touch bolder (500)', () => {
@@ -815,7 +812,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(dr).toMatch(/<rect key=\{n\} data-role=\{role\} shapeRendering="crispEdges"/)
     expect(dr).toMatch(/shapeRendering=\{i\.x1 === i\.x2 \|\| i\.y1 === i\.y2 \? 'crispEdges' : undefined\}/)
     expect(dr).toMatch(/textRendering="geometricPrecision"/)
-    expect(/transform: `?scale|zoom:/.test(dr)).toBe(false)
+    expect(/transform: `?scale|style=\{\{[^}]*\bzoom:/.test(dr)).toBe(false)                   // no CSS scaling (zoom redraws the layout)
     const d = elevationLayout(sampleT(), 96, { w: 900, h: 400 }, { ...sampleO, detail: 'detailed' })
     expect(d.items.filter(i => i.t === 'text').every(i => i.weight >= 500)).toBe(true)
   })
@@ -861,7 +858,8 @@ describe('EV — the wiring', () => {
     expect(app).toMatch(/installElevationsKeeper\(useCanvasStore\)/)
     expect(app).toMatch(/<div className="flex flex-col flex-1 min-w-0 min-h-0" style=\{\{ position: 'relative' \}\}>\s*<Canvas2 \/>/)
     const pane = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
-    expect(/position: 'fixed'|createPortal/.test(pane)).toBe(false)
+    // never floating — only its full-screen view, on purpose
+    expect([(pane.match(/position: 'fixed'/g) || []).length, /createPortal\(\s*<div role="dialog" aria-label="Elevation full screen" style=\{\{ position: 'fixed'/.test(pane)]).toEqual([1, true])
     // the beams and the upright tops are grabbed through strips drawn last, so a label on a beam never takes its drag
     expect(pane.includes("data-grab=")).toBe(true)
     expect(pane.includes("onPointerDown={(e) => startDrag(e, i.role)}")).toBe(true)

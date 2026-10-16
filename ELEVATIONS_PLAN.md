@@ -1,7 +1,7 @@
 # Elevations — plan and current model
 
 Branch `canvas2-elevations`. Working mode per CLAUDE.md / memory. This file describes elevations **as they work now**
-(Elevation mode, v4). The "History" section at the end records what changed and why.
+(the Elevations tab, v5). The "History" section at the end records what changed and why.
 
 **Rule:** the elevation editor changes only the vertical design (levels, spacing, upright height, pallet, clearance,
 beam face, hole pitch). Nothing in it changes the floor plan. Frame depth, beam length, upright width, pallet size and
@@ -65,87 +65,67 @@ capacity, column pick blocks, narrow aisles, usable) reads the **bay-side's type
   joins, the takeover, and paste.
 - **A deleted type**: every override naming it goes, so those bays fall back.
 
-## 3. Elevation mode (v4)
+## 3. The Elevations tab (v5)
 
-**Principle:** elevations are a separate step, done after the layout. The layout editor (Properties) shows no
-elevation drawing and allows no elevation editing. It keeps one read-only line, "Elevation: 5 levels · 21'" ("mixed"
-for a selection with several). The canvas legend stays.
+**Principle:** elevations come from the project (Project setup, `PROJECT_SETUP.md`). Each elevation references
+**one ceiling entry and one pallet size** (`ceilingId`, `palletId` on the type). Its levels, its positions per beam
+(from that pallet's face) and its checks use that pair. Check layout tests each elevation against its own ceiling
+(`elevations.js` `ceilingOf`). Properties keeps one read-only line ("Elevation: 5 levels · 48×40 · Main", or
+"mixed"). The canvas legend stays.
 
-**Stop-condition check for v4:**
-- **Bays and usable:** unchanged until an elevation is applied. Applying one changes the level counts, and so the
-  positions, on purpose.
-- **Rules reversed at your request:**
-  - "no automatic custom types": an edit no longer makes a "· custom" type;
-  - the elevation editor leaves Properties.
-- **Kept from before:** the keeper's removal of unused "· custom" types, so older layouts still tidy themselves.
-- None of this is a fork; built without waiting.
+**Stop-condition check for v5:**
+- **Bays and usable:** unchanged by the tab. An elevation's pallet face sets that side's positions per beam (a 48"
+  face on an 8' beam gives 1 per beam, a 40" face gives 2), exactly as the rack's own pallet did before.
+- **Rules reversed at your request:** Elevation mode (the Layout | Elevations switch, the split view, Apply / Discard
+  drafts, proposals) is removed.
+- Not a fork; built without waiting.
 
-**The mode switch:**
-- The top bar gets **Layout | Elevations**.
-- Elevation mode is a split view:
-  - the plan on the left, with rows coloured by elevation (colours forced on);
-  - the elevation workspace on the right, 40% to start, with a draggable divider whose width is remembered
-    (`trace.elevmode.v1`).
-- Hidden in Elevation mode: the left toolbar, Generate and the right panel.
-- **The plan is select-only:** click (side-aware), Shift+click and box selection work; nothing moves, resizes,
-  rotates or is deleted.
+**Where it lives:**
+- A tab next to Properties in the right panel (`utils/rightPanel.js` `tab`).
+- The panel widens on that tab: 480 px to start. Its edge drags, and the width is remembered (`elevW`,
+  `trace.rightpanel.v1`). Properties keeps its own width.
+- The left toolbar, Generate and the canvas all stay as they are. Rows are selected on the canvas as usual.
 
-**Drafts:**
-- Everything done in the workspace edits the layout live, so the plan recolours at once, but without a history
-  entry.
-- **Apply** saves it all as ONE undo step (`commitElevations`).
-- **Discard** goes back to the last applied state.
-- **Back to Layout** with unapplied changes asks: Apply / Discard / Stay. With none it simply leaves; everything
-  stays as applied.
-- An undo while changes are pending discards them.
+**The tab's content, top to bottom** (`components/Elevations/ElevationsTab.jsx`):
+1. **Front | Side** and **Simple | Detailed**.
+2. **The drawing**, taking most of the space (`fill`).
+3. **The elevation chips:**
+   - each chip shows its colour, name and bay count;
+   - names show the pairing, "5 levels · 48×40 · Main" (`elevFit.js` `pairName`), unless renamed;
+   - a menu offers rename (empty goes back to the pairing), ceiling, pallet (a change refits it to the best fit for
+     the new pair), colour, duplicate, set default and delete;
+   - **+ Add** asks for a ceiling and a pallet, then creates the best fit for that pair (`elevTab.js` `addBestFit`);
+   - **Apply to selected rows** and **Remove unused**.
+- **With no ceiling height:** "Add a ceiling height in Project setup", with a link that opens the setup screen.
 
-**Auto-fit proposals** (`utils/elevFit.js`):
-- **Inputs:**
-  - clear height (required; the building's. When missing, the workspace asks for it);
-  - sprinkler height (optional, the building's) and sprinkler clearance (18");
-  - pallet height (48"), clearance (6"), beam face (4"), hole pitch (2"), upright step (1').
-  - The fit inputs are saved on the types table (`fit`) on Apply.
-- **The first level is on the floor.** Level pitch = pallet + clearance + beam face, rounded up to the hole pitch.
-  Beam k (to the top of the beam) sits at k × pitch.
-- **A level fits** when its top load (beam + pallet) is at or under the clear height, and at or under the sprinkler
-  height less the sprinkler clearance.
-- **Upright** = the top beam + 12", rounded up to the next upright step, never above the clear height. It can be
-  edited.
-- **2–3 options:**
-  - **max levels (★ best)**;
-  - one fewer;
-  - the next one up, flagged with how much it fails by and against which limit.
-  - Each shows levels, upright, total pallet positions for the layout (as if every bay carried it), and the headroom
-    left.
-- **Worked example:** clear 30', sprinklers 29'-6", pallet 48":
-  - pitch 58";
-  - **best: 5 levels** (floor + 4'-10", 9'-8", 14'-6", 19'-4"), upright 21';
-  - 6 levels flagged 2" over the sprinkler limit (top load 28'-2" against 28'-0").
+**No proposals.** When the project has a ceiling height and no elevation yet, the keeper creates the best fit for
+the default ceiling and pallet silently (`project.js` `firstElevations` → `elevFit.js` `bestFitFor`).
 
-**Picking and assigning:**
-- **Choosing a proposal** makes it the elevation of the whole layout: it is the only type and every override is
-  cleared. Most jobs end here.
-- **+ Add elevation** adds another, either from a proposal or by duplicating the active one (to adjust it). The new
-  one becomes active. This is a deliberate variant: there are no automatic "custom" types.
-- **Assigning** works like a colour picker. Pick an elevation in the list, then select on the plan; each new
-  selection takes the active elevation (`elevSelection.js` `selectionCells` → `assignCells`). Picking another
-  elevation never reassigns what is already selected.
-- **The list:** colour, name, bay count; click to make it active; double-click to rename; delete (its bays fall back
-  to the default); set default.
-- **Names come from the level count and upright:** "5 levels · 21'". A name made this way follows its elevation when
-  the drawing changes it; a renamed one keeps its name. Names stay unique.
+**Best fit** (`bestFitFor(project, ceiling, pallet)`):
+- The first level is on the floor.
+- Pitch = pallet height + load clearance + beam face, rounded up to the hole pitch.
+- Levels are added while the top load is at or under min(clear height, sprinkler − sprinkler clearance).
+- Upright = the top beam + 12", rounded up to the upright step, never above the clear height.
+- Worked example (clear 30', sprinklers 29'-6", 48" pallet): pitch 58", 5 levels, upright 21'.
+
+**Assigning:** select rows on the canvas, then click an elevation chip or **Apply to selected rows**. Whole row
+sides take it (`rowSideCells`). Each assignment is one undo step. There is no Apply / Discard: every edit in the tab
+(assign, add, rename, recolour, pairing, a beam dragged) is one `commitElevations`.
 
 **The drawing:**
-- One large view, with **Front | Side** on top (`elevationLayout` `view: 'front' | 'side' | 'both'`), and Simple /
-  Detailed.
-- The ceiling (clear height) and sprinkler lines are drawn.
-- Small adjustments (drag a beam, type a value, the upright height) change **that elevation everywhere**, as a draft.
-- The PDF prints, per elevation and beam length in use, the front and side as separate figures, as before.
+- `elevationLayout` takes `view` (front / side / both) plus `zoom` and `pan`.
+- **Zoom:** the wheel or a pinch zooms around the cursor. Dragging empty space pans; dragging a beam or the upright
+  top still edits it. **Fit** or a double-click on empty space resets the view. Labels keep their screen size.
+- **⤢** opens it full screen (a portal to the themed root); Esc closes it.
+- Ceiling and sprinkler lines come from the elevation's ceiling (`ceilingForDrawing`), and pallets from its pallet's
+  face.
+- The PDF prints, per elevation and beam length in use, the front and side as separate figures, with the
+  elevation's own ceiling and pallet face.
 
-**BOM:** reads the applied table and assignments (`elevationBays`, `uprightHeights`), unchanged.
+**BOM:** reads the table and assignments (`elevationBays`, `uprightHeights`); unchanged.
 
 **Regenerate keeps elevation choices.** Each new rack side takes the elevation of the old generated bay-sides it
-overlaps most (by area). With no overlap, the layout default (`regenerate.js` `carryElevations`).
+overlaps most (by area). With no overlap it takes the layout default (`regenerate.js` `carryElevations`).
 
 ## 4. Plan view
 
@@ -199,7 +179,8 @@ Both orientations for the layout tests. Coverage:
 - carrying the type through edits, and the Row group;
 - Check layout;
 - legend, PDF and BOM;
-- the drawing in both modes;
+- the drawing in both modes, zoom and pan;
+- the Elevations tab (pairing, names, add, assign, remove unused) and its wiring;
 - the Properties wiring.
 
 There is one break-it per behaviour.
@@ -227,10 +208,18 @@ There is one break-it per behaviour.
   - an edit saves a design for the selection only, named by level count;
   - unused custom types are removed automatically;
   - the rack panel was reorganised into Summary, Bays, Elevation and Rack.
-- **v4 (current):**
+- **v4:**
   - Elevation mode: the Layout | Elevations switch, a split view, and drafts applied as one step;
   - auto-fit proposals;
   - assigning like a colour picker;
   - a Front | Side drawing;
   - Properties reduced to a read-only line;
   - Regenerate keeps elevation choices.
+- **v5 (current):**
+  - Project setup: ceiling heights and pallet sizes as lists, the forklift, rules and Advanced, all held on the
+    elevation table (`project`);
+  - Elevation mode removed, and elevations moved to a tab next to Properties that widens and remembers its width;
+  - each elevation pairs one ceiling with one pallet, names show the pairing, and checks run against that ceiling;
+  - proposals removed, and the best fit is created silently;
+  - chips with a menu, + Add (ceiling + pallet), Apply to selected rows and Remove unused;
+  - drawing zoom, pan, Fit and full screen.

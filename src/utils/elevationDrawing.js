@@ -69,7 +69,7 @@ export function misfitLevels(t) {
  *  'text'|'poly'|'polygon'|'path', ..., role, tag } — role { kind: 'beam', k } | { kind: 'upright', x } | { kind: 'top' } |
  *  { kind: 'dim', id, k?, value } for the editor. No label overlaps a load, a beam or another label (declutter). */
 export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = {}) {
-  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED, view = 'both' } = opts
+  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED, view = 'both', zoom = 1, pan = null } = opts
   const showFront = view !== 'side', showSide = view !== 'front'
   const detailed = detail === 'detailed'
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
@@ -102,12 +102,15 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   else if (stacked) fit = Math.min((box.w - mL - mR) / frontW, (box.w - sideL - sideR) / sideW, (box.h - mT - mB - gap - sideT - mB) / (H + H))
   else fit = Math.min((box.w - mL - mR - gap - sideL - sideR) / (frontW + sideW), (box.h - mT - mB) / H, (box.h - sideT - mB) / H)
   fit = Math.max(0.05, fit)
-  const s = scale && scale <= fit ? scale : fit
+  // zoom: the fitted scale times it (labels stay their screen size: they are laid out in screen px); pan: the
+  // content moved by it (px) — the Elevations tab's wheel / pinch and drag
+  const zoomed = zoom !== 1 || !!(pan && (pan.x || pan.y))
+  const s = scale && scale <= fit ? scale : fit * zoom
   const frontBoxW = mL + frontW * s + mR, frontBoxH = mT + H * s + mB
   const sideBoxW = sideL + sideW * s + sideR, sideBoxH = Math.max(sideT, mT) + H * s + mB
   const cw = view === 'front' ? frontBoxW : view === 'side' ? sideBoxW : stacked ? Math.max(frontBoxW, sideBoxW) : frontBoxW + gap + sideBoxW
   const ch = view === 'front' ? frontBoxH : view === 'side' ? sideBoxH : stacked ? frontBoxH + gap + sideBoxH : Math.max(frontBoxH, sideBoxH)
-  const ox = Math.max(0, (box.w - cw) / 2), oy = Math.max(0, (box.h - ch) / 2)
+  const ox = zoomed ? (box.w - cw) / 2 + (pan?.x || 0) : Math.max(0, (box.w - cw) / 2), oy = zoomed ? (box.h - ch) / 2 + (pan?.y || 0) : Math.max(0, (box.h - ch) / 2)
   const X0 = ox + (stacked ? (cw - frontBoxW) / 2 : 0) + mL, floor = oy + mT + H * s
   const Y = (z) => floor - z * s, Xf = (x) => X0 + x * s
   const XS0 = view === 'side' ? ox + sideL : stacked ? ox + (cw - sideBoxW) / 2 + sideL : X0 + frontW * s + mR + gap + sideL

@@ -14,7 +14,8 @@
 //   }
 
 import { create } from 'zustand'
-import { ELEV_VERSION, isBeamRack, typeById, typeIdAt, sidesOf, snapshotOf, SPRINKLER_CLEARANCE_IN, migrate, syncAllLevels } from './elevations'
+import { ELEV_VERSION, isBeamRack, typeById, typeIdAt, sidesOf, snapshotOf, SPRINKLER_CLEARANCE_IN, migrate, syncAllLevels, PALETTE, editTable } from './elevations'
+import { bestFitFor, pairName } from './elevFit'
 
 export const ADVANCED_DEFAULTS = { clearanceIn: 6, sprinklerClearanceIn: 18, holePitchIn: 2, uprightStepIn: 12, flueIn: 6 }
 export const PALLET_DEFAULT = { name: '48×40', faceIn: 40, depthIn: 48, heightIn: 48, weightLb: 2000, beamFaceIn: 4 }
@@ -137,6 +138,15 @@ export const closeSetup = () => { const t = useProjectSetup.getState().then; use
 /** The first elevations of a project whose racks have none yet → { table, objects } or null: one type per distinct
  *  level count (migrate's), the most common the default — the project kept. */
 export let firstElevations = (objects, table) => {
+  // a ceiling height: the best fit for the default ceiling and pallet, silently; none: one type per level count
+  const pr = projectOf(table), c = defaultCeiling(pr)
+  const d = c && bestFitFor(pr, c, defaultPallet(pr))
+  if (d) {
+    const id = newId('elev'), t = { ...d, id, name: pairName(pr, d), color: PALETTE[0] }
+    const r = editTable(objects, { ...table, defaultId: id, types: [t] }, tb => tb)
+    return { table: r.table, objects: r.objects }
+  }
+  if (!objects.some(isBeamRack)) return null
   const m = migrate(objects)
   if (!m) return null
   const t = { ...table, defaultId: m.table.defaultId, types: m.table.types }
@@ -176,8 +186,8 @@ export function installProjectKeeper(store, current = () => ({})) {
     }
     const pr = projectOf(T)
     let table = T, objects = st.objects, ask = false
-    // racks on a project with no elevation yet: their first elevations (`firstElevations`)
-    if (racks && !T.types?.length) { const made = firstElevations(st.objects, T); if (made) { table = made.table; objects = made.objects } }
+    // no elevation yet: the best fit once there is a ceiling height (silently), or racks' own levels (`firstElevations`)
+    if (!T.types?.length && (racks || defaultCeiling(pr))) { const made = firstElevations(st.objects, T); if (made) { table = made.table; objects = made.objects } }
     // the first racks with no ceiling height: the setup screen, once per project
     if (racks && !lastRacks && !pr.ceilings.length && !pr.setupPrompted && !useProjectSetup.getState().open) { table = withProject(table, { ...pr, setupPrompted: true }); ask = true }
     if (table !== T || objects !== st.objects) fold(st, table, objects)

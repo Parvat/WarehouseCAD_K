@@ -235,7 +235,7 @@ export function BeamSelect({ value, onPick, warnFor = () => null, aria = 'Beam l
 }
 
 /* The rack panel, in collapsible sections: Summary (pallets, length, bays, and the elevation as one read-only line —
-   elevations are set in Elevation mode, components/Elevations/ElevationWorkspace.jsx), Bays (the list, + Bay / − Bay,
+   elevations are set in the Elevations tab, components/Elevations/ElevationsTab.jsx), Bays (the list, + Bay / − Bay,
    one beam length), Rack, collapsed (frame depth, upright, pallet size, flue). */
 export function RackRowPanel({ obj }) {
   const { objects, updateObject, commitObjectUpdate, deleteSingleBay, gridSize } = useCanvasStore(useShallow(s => ({ objects: s.objects, updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, deleteSingleBay: s.deleteSingleBay, gridSize: s.gridSize })))

@@ -1,4 +1,3 @@
-import { useElevMode } from '../utils/elevMode'
 import { setDragPreview, clearDragPreview, setDragging } from './dragPreview'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
@@ -212,8 +211,6 @@ export function useCanvasInteraction({
   }
 
   const beginDrag = (hitId, world, evt) => {
-    // Elevation mode: the plan is select-only — a press selects, nothing moves (utils/elevMode.js)
-    if (useElevMode.getState().on) return
     const stage = stageRef.current
     if (!stage) return
     const st = useCanvasStore.getState()
@@ -446,30 +443,6 @@ export function useCanvasInteraction({
 
     if (!forcePan) {
       const st = useCanvasStore.getState()
-
-      /* Elevation mode (utils/elevMode.js): the plan is select-only and only beam racks answer — no handle, wall,
-         zone, racking area or building is caught (a press near a wall would otherwise drag it). A press on a rack
-         selects that ROW SIDE — every bay of it on the half pressed (the flue or a single row: the whole rack), one
-         selection written at once; Shift+click adds it (or takes it out again); a Shift+drag on the floor boxes;
-         elsewhere the press pans. Nothing is dragged. */
-      if (useElevMode.getState().on && evt.button === 0) {
-        const racks = st.objects.filter(o => o.type === 'rack_row' || o.type === 'rack_double_row')
-        const rackId = hitTest(racks, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
-        if (rackId) {
-          const r = racks.find(o => o.id === rackId)
-          const side = r.type === 'rack_double_row' ? bayHalfAt(r, world.x, world.y, st.gridSize) : null
-          const same = (c) => c.objId === r.id && (c.side ?? null) === (side ?? null)
-          const entries = r.beams.map((_, b) => ({ objId: r.id, bayIdx: b, side }))
-          const cur = st.activeBaySelection || []
-          const next = !evt.shiftKey ? entries : cur.some(same) ? cur.filter(c => !same(c)) : [...cur, ...entries]
-          useCanvasStore.setState({ selectedIds: [...new Set(next.map(e => e.objId))], activeBaySelection: next, objects: st.objects.some(o => o.activeBayIdx != null) ? st.objects.map(o => (o.activeBayIdx != null ? { ...o, activeBayIdx: null, activeBaySide: null } : o)) : st.objects })
-          return
-        }
-        if (evt.shiftKey) { marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false, clickHitId: null }; return }
-        pan.current = { sx: evt.clientX, sy: evt.clientY, panX: view.current.panX, panY: view.current.panY }
-        setCursor('grabbing')
-        return
-      }
 
       /* A resize/rotate handle, if the current single selection is a rack
          type render/rackOps.js draws (matches ResizeHandlesOverlay's own

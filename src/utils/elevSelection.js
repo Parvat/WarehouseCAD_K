@@ -1,7 +1,7 @@
 // elevSelection.js — the elevation of what is selected.
 //
 // The selection — racks clicked, Shift+clicked or boxed, bays picked (one side of a pair, or both) — as bay-sides:
-// Map(rackId → [[side, bay]…]): what Elevation mode assigns the active elevation to (utils/elevMode.js) and what
+// Map(rackId → [[side, bay]…]): what the Elevations tab assigns an elevation to (utils/elevTab.js) and what
 // Properties' read-only elevation line reads. Nothing here moves a rack: the floor plan is untouched.
 // The Row group replays a type change to its other rows like any edit (utils/rowGroup.js, kind 'elev').
 

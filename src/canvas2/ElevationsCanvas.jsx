@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { legendCounts } from '../utils/elevations'
 import { useElevView, setShowColors, tint, tintOn, ELEV_FILL_OPACITY } from '../utils/elevationDraw'
-import { useElevMode } from '../utils/elevMode'
 import { bayLedger } from '../utils/bayLedger'
 
 /* Elevations on the canvas (ELEVATIONS_PLAN.md §4) — ElevLegend: bottom left, the types in use with their colour and
@@ -16,9 +15,8 @@ export function ElevLegend() {
   const objects = useCanvasStore(s => s.objects), gridSize = useCanvasStore(s => s.gridSize) || 40
   const showColors = useElevView(s => s.showColors)
   const elevations = useCanvasStore(s => s.elevations)
-  const elevMode = useElevMode(s => s.on)
-  // the colours shown (the toggle, or Elevation mode) — and only with 2+ elevations, as the plan's fill
-  const tinted = (showColors || elevMode) && tintOn(elevations)
+  // the colours shown (the toggle) — and only with 2+ elevations, as the plan's fill
+  const tinted = showColors && tintOn(elevations)
   const rows = useMemo(() => {
     const L = bayLedger(objects, gridSize, elevations)
     return legendCounts(objects, elevations, (r) => L.racks.get(r.id)?.counted || null)
@@ -35,7 +33,7 @@ export function ElevLegend() {
         <input type="checkbox" checked={showColors} onChange={e => setShowColors(e.target.checked)} aria-label="Show elevation colours" />
         Elevations
       </label>
-      {(showColors || elevMode) && rows.map(({ type, bays }) => (
+      {showColors && rows.map(({ type, bays }) => (
         <div key={type.id} data-legend-type={type.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {tinted ? <Swatch color={tint(type.color)} /> : <span style={{ width: 12, flexShrink: 0 }} />}
           <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{type.name}</span>
