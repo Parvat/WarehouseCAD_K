@@ -8,6 +8,39 @@ store needs no change.
 
 Module: `src/utils/project.js`. Screen: `components/Project/ProjectSetup.jsx`.
 
+## The screen (v2: one start screen)
+
+**A new project** opens one start screen. It replaces both the separate setup popup and the Generate panel's first
+step. It opens only for a new, empty layout: Draw on an empty layout with no project, or a fresh empty layout
+(File → New). Nothing opens it once a layout exists, and there is no "set it up first" trigger on Generate, Fill or
+placing racks.
+
+- **Building:** length, width, clear height, sprinkler height. The clear height may stay empty (see below).
+- **Pallet:** face, depth, height, weight, beam face. Pre-filled 48×40×48", 2,500 lb, beam face 4".
+- **Forklift** (reach truck) and **wall clearance** (3").
+- **Advanced** (folded): load clearance 6", sprinkler clearance 18", hole pitch 2", upright step 1', flue 6",
+  units.
+- **[Generate layout]** continues on the same screen with the column grid, row direction, columns along the wall and
+  max run, then generates (`generateBrief`, the brief the Generate panel also uses). **[Draw it myself]** keeps the
+  project and closes. Esc or ✕ do the same as Draw it myself, so a project always exists afterwards.
+- The building values are kept on the project (`project.building`), and the Generate panel starts from them when
+  opened later. That panel now starts closed: it is for regenerating, or starting over at another size.
+
+**Project settings** reopens the same screen for an existing project. Ceiling heights and pallet sizes are lists,
+each with + Add, edit, set default, and delete. Delete is disabled for an entry an elevation uses (`ceilingInUse` /
+`palletInUse`: its own, or the saved default for an elevation without one), and for the last pallet. A change that
+moves racks asks Regenerate racking / Keep layout, as before.
+
+**From the Elevations tab:** the + Add elevation form's Ceiling ▾ and Pallet ▾ each end with "+ New ceiling height…" /
+"+ New pallet size…". These open a small inline form that saves to the project (`addCeiling` / `addPallet`, one undo
+step each) and selects the new entry.
+
+**Anything not set** is assumed and reminded. A clear height not set (or no ceiling entry at all) is **24'**
+(`ASSUMED_CLEAR_IN`) for the best fit, the drawing ("CLEAR HEIGHT 24'-0" (ASSUMED)") and the checks. Check layout
+lists "Clear height not set — elevations assume 24'" and "Sprinkler height not set — sprinkler clearance not checked"
+under **Reminders** (`projectReminders`), per ceiling in use. Reminders are never counted as issues, and clicking one
+opens Project settings.
+
 ## Where each input is read: before → after
 
 ### Pallet size (face × depth; height, weight, beam face)
@@ -46,7 +79,8 @@ Module: `src/utils/project.js`. Screen: `components/Project/ProjectSetup.jsx`.
 | Check layout (`elevations.js elevationIssues`) | the building's `clearHeightFt` / `sprinklerFt` | the project's **ceiling entries**: A the default ceiling; B each elevation's own ceiling. A building's old fields are read only when the project has none |
 | The drawing and PDF (`elevationDrawing.js buildingOf`) | the building's fields | the elevation's ceiling (`project.js ceilingFor`) |
 | Properties, building (Sprinkler, Clear ht, Spr. clr fields) | edit the building | **removed** (Project setup) |
-| Elevation workspace (A) / tab (B) (Clear height, Sprinklers inputs) | edit the building | **removed**; a link to Project setup when there is no ceiling |
+| Elevation workspace (A) / tab (B) (Clear height, Sprinklers inputs) | edit the building | **removed**; with no clear height set, a note that 24' is assumed, with a link to Project settings |
+| A clear height not set | no checks, no fit | **24' assumed** (fit, drawing, checks); Check layout reminds |
 
 ### Elevation inputs (load clearance, sprinkler clearance, hole pitch, upright step, flue)
 

@@ -2218,7 +2218,7 @@ lost"; Regenerate racking → office, hand rack, text kept, one racking area, no
 "Regenerated Vertical — 27 rows replaced, 1 hand-placed kept", one undo step (Ctrl+Z restores, record back); Start over →
 the old behaviour (a new building, the office, hand rack and text gone).
 
-### PS — Project setup · `PS_project.test.js` (5 tests)
+### PS — Project setup · `PS_project.test.js` (7 tests)
 Code: utils/project.js (the project on the layout's elevation table, `migrateProject`, `dropUnusedTypes`,
 `installProjectKeeper`, `layoutAffecting`, `syncTypesToPallets`, `ceilingFor`), utils/elevations.js (`ceilingOf`; the
 sprinkler clearance and Check layout's heights from the project), components/Project/ProjectSetup.jsx (the screen),
@@ -2254,7 +2254,47 @@ column grid, max run, row direction, and "Pallet 48×40 (40" face) · Reach truc
 Project setup"; Generate → racks at 40" face × 48". Project settings → face 42 → Save → "Regenerate racking / Keep
 layout" → Keep: racks unchanged, Fill's setting 42. Pallet height 54 → Save, no question, the elevation's pallet 54".
 
-### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
+
+**Project start + setup flow (v2).**
+- A new project opens ONE start screen (components/Project/ProjectSetup.jsx `StartCard`): building, pallet,
+  forklift, wall clearance, Advanced folded; [Generate layout] → column grid, row direction, max run → generates
+  (project.js `generateBrief`, shared with the Generate panel, which now starts closed); [Draw it myself].
+- No "set it up first" trigger anywhere (the keeper's 'ceiling' prompt, Generate's `openSetup('ceiling', run)` and
+  `setupPrompted` are gone).
+- Project settings (`SettingsCard`): ceiling and pallet lists with + Add, delete disabled when in use
+  (`ceilingInUse` / `palletInUse`), set default.
+- The Elevations tab: + Add elevation, whose Ceiling / Pallet lists end with "+ New …" (`addCeiling` / `addPallet`);
+  Create says "Created" or "Already exists" (`sameBestFit`), with the chip highlighted and the hint.
+- A clear height not set is 24' (`ASSUMED_CLEAR_IN`: elevations.js `ceilingOf`, project.js `ceilingFor`, elevFit.js
+  `ceilingBuilding`, the drawing's "(ASSUMED)").
+- Check layout's `reminders` (project.js `projectReminders`): present only when something is unset; the panel lists
+  them apart, and clicking one opens Project settings.
+- The default pallet weight is 2,500 lb.
+- The drawing re-measures its container when filling (ElevationDrawing.jsx), so the + Add form no longer draws over
+  it.
+
+New: PS-assumed, PS-entries. Rewritten: PS-keeper (nothing opens once a layout exists), PS-inputs (the start screen and
+Project settings, the slim Generate panel starting closed). Changed: EV-tab-wiring (+ Add elevation, Create, "+ New …",
+the 24' note), WC-shared (`generateBrief`).
+
+**Break-its (v2):**
+- the 24' assumption off in the fit: PS-assumed;
+- "Already exists" never found: PS-entries.
+
+**Checked in the app (v2)** (real mouse, a new job from an empty localStorage):
+- Draw → the start screen, pre-filled 240 × 120, 40 × 48 × 48", 2,500 lb, beam 4", reach truck, 3"; clear 30',
+  sprinklers 29'-6". The Generate panel is closed.
+- Generate layout → the layout step (grid 50 × 54, Vertical, max run 150) → Generate → 14 racks, 325 bay-sides on
+  "5 levels · 48×40 · Main".
+- Elevations → + Add elevation: Pallet ▾ = "48×40, + New pallet size…" → 48 face, 60" high → Save (one undo step,
+  picked 48×48) → Create → "Created: 4 levels · 48×48 · Main", the new chip selected. Create again → "Already exists:
+  4 levels · 48×48 · Main", that chip highlighted, still 2 elevations.
+- A row clicked on the plan, then the new chip → 13 bay-sides, one undo step.
+- Project settings: 1 ceiling and 2 pallets, both pallets' delete disabled (in use). + Add → Mezz 20' → Save.
+- Export → the sheets window, 2 pages; the elevation sheet shows 5 levels 2P and 4 levels 1P.
+- A second job, clear height left empty → Draw it myself → Check layout: "No issues found", with Reminders (2):
+  "Clear height not set — elevations assume 24'" and "Sprinkler height not set — sprinkler clearance not checked".
+ picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click
 (canvas2/useCanvasInteraction.js), Shift+click and the bay marquee (canvas2/selection.js), the half-only highlight

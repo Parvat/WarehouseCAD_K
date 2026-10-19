@@ -782,11 +782,11 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1'))).toEqual({ tab: 'elevations', elevW: 555 })
     RP.setRightPanel({ tab: 'properties', elevW: 480 })
     const tab = src('components/Elevations/ElevationsTab.jsx')
-    const order = ['aria-label="View"', 'aria-label="Drawing detail"', '<ElevationDrawing ', 'aria-label="Elevation chips"', '> Add</button>', '>Apply to selected rows</button>', '>Remove unused</button>'].map(k => tab.indexOf(k))
+    const order = ['aria-label="View"', 'aria-label="Drawing detail"', '<ElevationDrawing ', 'aria-label="Elevation chips"', '> Add elevation</button>', '>Apply to selected rows</button>', '>Remove unused</button>'].map(k => tab.indexOf(k))
     expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))).toBe(true)
-    expect(tab).toMatch(/Add a ceiling height in <button type="button" style=\{S\.link\} onClick=\{\(\) => openSetup\('settings'\)\}>Project setup<\/button>/)
-    expect(tab).toMatch(/const clickChip = \(t\) => \{ useElevTab\.setState\(\{ activeId: t\.id \}\); if \(rowsSelected\) assignSelected\(store, t\.id\) \}/)
-    for (const k of ['aria-label="Elevation name"', 'aria-label="Elevation ceiling"', 'aria-label="Elevation pallet"', '>Duplicate</button>', 'Set default</button>', '>Delete</button>', '>Create best fit</button>']) expect([k, tab.includes(k)]).toEqual([k, true])
+    expect(tab).toMatch(/Clear height not set — elevations assume \{ASSUMED_FT\}'\. Set it in <button type="button" style=\{S\.link\} onClick=\{\(\) => openSetup\('settings'\)\}>Project settings<\/button>/)
+    expect(tab).toMatch(/const clickChip = \(t\) => \{ useElevTab\.setState\(\{ activeId: t\.id \}\); if \(rowsSelected && assignSelected\(store, t\.id\)\) useElevTab\.setState\(\{ made: null \}\) \}/)
+    for (const k of ['aria-label="Elevation name"', 'aria-label="Elevation ceiling"', 'aria-label="Elevation pallet"', '>Duplicate</button>', 'Set default</button>', '>Delete</button>', '>Create</button>', '>+ New ceiling height…</option>', '>+ New pallet size…</option>']) expect([k, tab.includes(k)]).toEqual([k, true])
     expect(/Proposals|Use for layout|> Apply</.test(tab)).toBe(false)                     // no proposals, no Apply / Discard
     expect(tab).toMatch(/view=\{view\} fill onCommit=\{\(next\) => changeElevation\(store, active\.id, next\)\}/)
     // the pallets drawn on a beam: the elevation's own pallet face — in the tab and on the PDF

@@ -5,7 +5,7 @@
 // and at or under the sprinkler height less the sprinkler clearance. The upright = the top beam + 12", rounded up to
 // the upright step, never above the clear height. Pure.
 
-import { ELEV_FIELDS, isBeamRack, LOAD_LB } from './elevations'
+import { ELEV_FIELDS, isBeamRack, LOAD_LB, ASSUMED_CLEAR_IN } from './elevations'
 import { bayLedger } from './bayLedger'
 
 export const FIT_DEFAULTS = { palletHeightIn: 48, clearanceIn: 6, beamFaceIn: 4, holePitchIn: 2, uprightStepIn: 12, sprinklerClearanceIn: 18 }
@@ -86,16 +86,17 @@ export const isAutoName = (name) => /^\d+ levels? · \d+'(-\d+")?( \d+)?$/.test(
 
 /** The fit inputs for pallet `pallet` under project `project` (its advanced settings). */
 export const fitForPallet = (project, pallet) => fitInputs({ palletHeightIn: pallet?.heightIn, clearanceIn: project?.advanced?.clearanceIn, beamFaceIn: pallet?.beamFaceIn, holePitchIn: project?.advanced?.holePitchIn, uprightStepIn: project?.advanced?.uprightStepIn, sprinklerClearanceIn: project?.advanced?.sprinklerClearanceIn })
-/** The ceiling entry as a building ({ clearHeightIn, sprinklerIn }) for the fit. */
-export const ceilingBuilding = (c) => (c ? { clearHeightIn: c.clearHeightIn > 0 ? c.clearHeightIn : null, sprinklerIn: c.sprinklerIn > 0 ? c.sprinklerIn : null } : null)
+/** The ceiling entry as a building ({ clearHeightIn, sprinklerIn }) for the fit — a clear height not set (or no
+ *  ceiling at all) assumed ASSUMED_CLEAR_IN (24'). */
+export const ceilingBuilding = (c) => ({ clearHeightIn: c?.clearHeightIn > 0 ? c.clearHeightIn : ASSUMED_CLEAR_IN, sprinklerIn: c?.sprinklerIn > 0 ? c.sprinklerIn : null })
 /** The best-fit elevation design for ceiling `ceiling` and pallet `pallet` — the most levels that fit, the pallet's
- *  height, weight and beam face on every level — tagged with the pair (a type without id / name / colour); null with
- *  no clear height or not even one level. */
+ *  height, weight and beam face on every level — tagged with the pair (a type without id / name / colour); null when
+ *  not even one level fits. No ceiling (or none set): 24' assumed. */
 export function bestFitFor(project, ceiling, pallet) {
   const b = ceilingBuilding(ceiling), f = fitForPallet(project, pallet), n = maxLevels(b, f)
   if (!n) return null
   const d = designFor(n, b, f)
-  return { ...d, levels: d.levels.map(l => ({ ...l, loadLb: pallet?.weightLb ?? l.loadLb })), ceilingId: ceiling.id, palletId: pallet?.id ?? null }
+  return { ...d, levels: d.levels.map(l => ({ ...l, loadLb: pallet?.weightLb ?? l.loadLb })), ceilingId: ceiling?.id ?? null, palletId: pallet?.id ?? null }
 }
 /** The name an elevation shows: its level count and its pairing — "5 levels · 48×40 · Main" (pallet, ceiling). */
 export function pairName(project, t) {

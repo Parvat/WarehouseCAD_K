@@ -60,6 +60,9 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
     window.addEventListener('scroll', read, true); window.addEventListener('resize', read)
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read)
     ro?.observe(el)
+    // filling: the container's height is the one that changes (the chips' + Add form opening below it) — the host's own
+    // size is fixed by the last read, so it alone never notices
+    if (fill && el.parentElement) ro?.observe(el.parentElement)
     return () => { ro?.disconnect(); window.removeEventListener('scroll', read, true); window.removeEventListener('resize', read) }
   }, [height, fill])
   /* zoom about the cursor, pan by dragging empty space — the layout is redrawn at the zoomed scale, so the labels keep

@@ -5,21 +5,27 @@
 // untouched). A layout from before is given one on load from what it already uses (`migrateProject`): nothing moves.
 //
 //   project = {
-//     ceilings: [{ id, name, clearHeightIn, sprinklerIn | null }], defaultCeilingId,
+//     ceilings: [{ id, name, clearHeightIn | null, sprinklerIn | null }], defaultCeilingId,
 //     pallets:  [{ id, name, faceIn, depthIn, heightIn, weightLb, beamFaceIn }], defaultPalletId,
 //     equipment: { mhe },                       // the forklift; aisle widths follow it (the rules)
 //     rules: { wallClearIn, units },
 //     advanced: { clearanceIn, sprinklerClearanceIn, holePitchIn, uprightStepIn, flueIn },
-//     setupPrompted,                            // the setup screen was shown for a missing ceiling (once)
-//   }
+//     building: { lengthFt, widthFt, gridXFt, gridYFt, columnsAlongWall, orientation, maxRunFt },  // the start screen's
+//   }                                                                                               // brief (Generate's)
+//
+// A clear height not set is assumed 24' (ASSUMED_CLEAR_IN) by the fit, the drawing and the checks; Check layout lists
+// it as a reminder (`projectReminders`).
 
 import { create } from 'zustand'
-import { ELEV_VERSION, isBeamRack, typeById, typeIdAt, sidesOf, snapshotOf, SPRINKLER_CLEARANCE_IN, migrate, syncAllLevels, PALETTE, editTable } from './elevations'
+import { ELEV_VERSION, isBeamRack, typeById, typeIdAt, sidesOf, snapshotOf, SPRINKLER_CLEARANCE_IN, ASSUMED_CLEAR_IN, migrate, syncAllLevels, PALETTE, editTable } from './elevations'
 import { bestFitFor, pairName } from './elevFit'
+export { ASSUMED_CLEAR_IN }
 
 export const ADVANCED_DEFAULTS = { clearanceIn: 6, sprinklerClearanceIn: 18, holePitchIn: 2, uprightStepIn: 12, flueIn: 6 }
-export const PALLET_DEFAULT = { name: '48×40', faceIn: 40, depthIn: 48, heightIn: 48, weightLb: 2000, beamFaceIn: 4 }
+export const PALLET_DEFAULT = { name: '48×40', faceIn: 40, depthIn: 48, heightIn: 48, weightLb: 2500, beamFaceIn: 4 }
 export const RULES_DEFAULTS = { wallClearIn: 3, units: 'ft · in' }
+/** The start screen's building and Generate's brief, before anyone changes them. */
+export const BUILDING_DEFAULTS = { lengthFt: 240, widthFt: 120, gridXFt: 50, gridYFt: 54, columnsAlongWall: false, orientation: 'auto', maxRunFt: 150 }
 
 let seq = 0
 export const newId = (p) => `${p}-${Date.now().toString(36)}${(++seq).toString(36)}`
@@ -27,11 +33,11 @@ export const newId = (p) => `${p}-${Date.now().toString(36)}${(++seq).toString(3
 /** A pallet's name from its size, face × depth the other way round as dealers say it ("48×40": depth × face). */
 export const palletName = (p) => `${p.depthIn}×${p.faceIn}`
 
-/** A fresh project — no ceiling yet (the setup screen asks), one pallet, the given forklift / rules. */
+/** A fresh project — no ceiling yet, one pallet, the given forklift / rules. */
 export function newProject({ mhe = 'reach', wallClearIn = RULES_DEFAULTS.wallClearIn, units = RULES_DEFAULTS.units, pallet = null } = {}) {
   const p = { id: newId('pal'), ...PALLET_DEFAULT, ...(pallet || {}) }
   if (!pallet?.name) p.name = palletName(p)
-  return { ceilings: [], defaultCeilingId: null, pallets: [p], defaultPalletId: p.id, equipment: { mhe }, rules: { wallClearIn, units }, advanced: { ...ADVANCED_DEFAULTS }, setupPrompted: false }
+  return { ceilings: [], defaultCeilingId: null, pallets: [p], defaultPalletId: p.id, equipment: { mhe }, rules: { wallClearIn, units }, advanced: { ...ADVANCED_DEFAULTS } }
 }
 
 /** The project of table `table` (null without one). */
@@ -42,12 +48,14 @@ export const advancedOf = (pr) => ({ ...ADVANCED_DEFAULTS, ...(pr?.advanced || {
 export const ceilingById = (pr, id) => (pr && id ? pr.ceilings.find(c => c.id === id) || null : null)
 export const palletById = (pr, id) => (pr && id ? pr.pallets.find(c => c.id === id) || null : null)
 
-/** The ceiling an elevation is checked and drawn against → { clearHeightIn, sprinklerIn } or null: its own ceiling
- *  entry, else the project's default, else (a layout without project ceilings) the building's old fields. */
+/** The ceiling an elevation is checked and drawn against → { clearHeightIn, sprinklerIn, id, name, assumed } or null:
+ *  its own ceiling entry, else the project's default; a clear height not set (or no entry at all) assumed 24'. A table
+ *  without a project: the building's old fields. */
 export function ceilingFor(table, type, objects = null, parentId = null) {
   const pr = projectOf(table)
   const c = (type && ceilingById(pr, type.ceilingId)) || defaultCeiling(pr)
-  if (c) return { clearHeightIn: c.clearHeightIn > 0 ? c.clearHeightIn : null, sprinklerIn: c.sprinklerIn > 0 ? c.sprinklerIn : null, id: c.id, name: c.name }
+  if (c) { const set = c.clearHeightIn > 0; return { clearHeightIn: set ? c.clearHeightIn : ASSUMED_CLEAR_IN, sprinklerIn: c.sprinklerIn > 0 ? c.sprinklerIn : null, id: c.id, name: c.name, assumed: !set } }
+  if (pr) return { clearHeightIn: ASSUMED_CLEAR_IN, sprinklerIn: null, id: null, name: null, assumed: true }
   if (!objects) return null
   const isFp = (o) => typeof o.type === 'string' && o.type.startsWith('fp_')
   const fp = objects.find(o => o.id === parentId && isFp(o)) || objects.find(isFp)
@@ -122,23 +130,82 @@ export function syncTypesToPallets(objects, table, prev, next) {
 /** The table with `project` (a layout without a table: one holding only the project — no types yet). */
 export const withProject = (table, project) => (table ? { ...table, project } : { version: ELEV_VERSION, defaultId: null, types: [], project })
 
+/** Is ceiling `id` used by an elevation of `table` (its own, or the saved default for one without)? */
+export function ceilingInUse(table, id) {
+  const pr = projectOf(table), def = defaultCeiling(pr)?.id
+  return !!table?.types?.some(t => (ceilingById(pr, t.ceilingId) ? t.ceilingId : def) === id)
+}
+/** Is pallet `id` used by an elevation of `table` (its own, or the saved default for one without)? */
+export function palletInUse(table, id) {
+  const pr = projectOf(table), def = defaultPallet(pr)?.id
+  return !!table?.types?.some(t => (palletById(pr, t.palletId) ? t.palletId : def) === id)
+}
+
+/** What the project leaves unset, for Check layout's reminders → [{ severity: 'reminder', kind, ceilingId, text }]:
+ *  per ceiling in use (the default when no elevation yet), a clear height not set (24' assumed) and a sprinkler
+ *  height not set. */
+export function projectReminders(table) {
+  const pr = projectOf(table)
+  if (!pr) return []
+  const resolve = (t) => (ceilingById(pr, t?.ceilingId) || defaultCeiling(pr))?.id ?? null
+  const ids = new Set(table?.types?.length ? table.types.map(resolve) : [resolve(null)])
+  const many = pr.ceilings.length > 1, ft = Math.round(ASSUMED_CLEAR_IN / 12), out = []
+  for (const id of ids) {
+    const c = ceilingById(pr, id), of = many && c ? ' for ' + c.name : ''
+    if (!(c?.clearHeightIn > 0)) out.push({ severity: 'reminder', kind: 'unset-clear', ceilingId: id, text: `Clear height not set${of} — elevations assume ${ft}'` })
+    if (!(c?.sprinklerIn > 0)) out.push({ severity: 'reminder', kind: 'unset-sprinkler', ceilingId: id, text: `Sprinkler height not set${of} — sprinkler clearance not checked` })
+  }
+  return out
+}
+
+/** Generate's brief from the project (the default pallet, the forklift's aisle, the wall clearance) and the building
+ *  values `b` ({ lengthFt, widthFt, gridXFt, gridYFt, maxRunFt, columnsAlongWall, orientation }). The one rack type
+ *  Generate produces: double rows (single along the walls). */
+export function generateBrief(project, mheOptions, b) {
+  const pal = defaultPallet(project), mhe = project?.equipment?.mhe || 'reach'
+  return {
+    lengthFt: Number(b.lengthFt) || 100, widthFt: Number(b.widthFt) || 60, rackType: 'rack_double_row',
+    aisleFt: Number(mheOptions?.[mhe]?.aisleFt) || 11, gridXFt: Number(b.gridXFt) || 0, gridYFt: Number(b.gridYFt) || 0,
+    wallClearIn: Number(project?.rules?.wallClearIn) || 0, maxRunFt: Number(b.maxRunFt) || 150, columnsAlongWall: !!b.columnsAlongWall,
+    palletWIn: Number(pal?.faceIn) || 40, palletDIn: Number(pal?.depthIn) || 48, levels: 4, mhe, orientation: b.orientation || 'auto',
+  }
+}
+
 /** Write `project` into the layout — ONE undo step (the table's own commit). `objects`: replaced too (elevations
  *  following a pallet change). */
 export function commitProject(store, project, objects = null, table = undefined) {
   const st = store.getState()
   st.commitElevations(withProject(table === undefined ? st.elevations : table, project), objects)
 }
+/** A ceiling (`{ name, clearHeightIn, sprinklerIn }`) added to the layout's project — one undo step → its id. */
+export function addCeiling(store, c) {
+  const pr = projectOf(store.getState().elevations)
+  if (!pr) return null
+  const e = { id: newId('ceil'), name: String(c.name || '').trim() || `Ceiling ${pr.ceilings.length + 1}`, clearHeightIn: c.clearHeightIn > 0 ? c.clearHeightIn : null, sprinklerIn: c.sprinklerIn > 0 ? c.sprinklerIn : null }
+  commitProject(store, { ...pr, ceilings: [...pr.ceilings, e], defaultCeilingId: pr.defaultCeilingId || e.id })
+  return e.id
+}
+/** A pallet size (`{ name?, faceIn, depthIn, heightIn, weightLb, beamFaceIn }`) added to the layout's project — one
+ *  undo step → its id. Named from its size when no name is given. */
+export function addPallet(store, p) {
+  const pr = projectOf(store.getState().elevations)
+  if (!pr) return null
+  const e = { ...PALLET_DEFAULT, ...Object.fromEntries(Object.entries(p).filter(([, v]) => v != null && v !== '')), id: newId('pal') }
+  e.name = String(p.name || '').trim() || palletName(e)
+  commitProject(store, { ...pr, pallets: [...pr.pallets, e] })
+  return e.id
+}
 
-/** The setup screen: open, why (first run of a project, a missing ceiling, or from Project settings), and what to run
- *  when it closes (Generate waits for it). Presentation state. */
-export const useProjectSetup = create(() => ({ open: false, reason: null, then: null }))
-export const openSetup = (reason = 'settings', then = null) => useProjectSetup.setState({ open: true, reason, then })
-export const closeSetup = () => { const t = useProjectSetup.getState().then; useProjectSetup.setState({ open: false, reason: null, then: null }); if (t) t() }
+/** The setup screen: open, and why — 'new' (the start screen of a new project) or 'settings' (Project settings).
+ *  Presentation state. */
+export const useProjectSetup = create(() => ({ open: false, reason: null }))
+export const openSetup = (reason = 'settings') => useProjectSetup.setState({ open: true, reason })
+export const closeSetup = () => useProjectSetup.setState({ open: false, reason: null })
 
-/** The first elevations of a project whose racks have none yet → { table, objects } or null: one type per distinct
- *  level count (migrate's), the most common the default — the project kept. */
+/** The first elevations of a project whose racks have none yet → { table, objects } or null: the best fit for the
+ *  default ceiling (24' assumed when not set) and pallet; a project with no ceiling entry (a layout from before): one
+ *  type per distinct level count (migrate's), the most common the default — the project kept. */
 export let firstElevations = (objects, table) => {
-  // a ceiling height: the best fit for the default ceiling and pallet, silently; none: one type per level count
   const pr = projectOf(table), c = defaultCeiling(pr)
   const d = c && bestFitFor(pr, c, defaultPallet(pr))
   if (d) {
@@ -157,10 +224,9 @@ export const setFirstElevations = (fn) => { firstElevations = fn }
 
 /** For a store: a layout without a project is given one — a load or an action folds it into that same history entry
  *  (one undo step), migrated from what the layout uses (`current()`), unused elevation types dropped once; a new,
- *  empty layout opens the setup screen; the first racks placed with no ceiling open it once (Skip allowed).
- *  Returns the unsubscribe. */
+ *  empty layout opens the start screen. Nothing opens it once a layout exists. Returns the unsubscribe. */
 export function installProjectKeeper(store, current = () => ({})) {
-  let busy = false, lastRacks = store.getState().objects.some(isBeamRack), lastHist = store.getState().history
+  let busy = false, lastHist = store.getState().history
   const fold = (st, table, objects = st.objects) => {
     const full = { elevations: table, ...(objects !== st.objects ? { objects } : {}) }
     if (st.historyIndex >= 0 && st.history.length) {
@@ -177,22 +243,16 @@ export function installProjectKeeper(store, current = () => ({})) {
     const fresh = st.history !== lastHist && st.historyIndex === 0
     lastHist = st.history
     if (!projectOf(T)) {
-      if (!st.objects.length) {                                  // a new, empty layout: set the project up first
+      if (!st.objects.length) {                                  // a new, empty layout: the start screen
         if (fresh && !useProjectSetup.getState().open) openSetup('new')
-        lastRacks = racks; return
+        return
       }
       fold(st, withProject(dropUnusedTypes(st.objects, T), migrateProject(st.objects, T, current())))
-      lastRacks = racks; return
+      return
     }
     const pr = projectOf(T)
-    let table = T, objects = st.objects, ask = false
-    // no elevation yet: the best fit once there is a ceiling height (silently), or racks' own levels (`firstElevations`)
-    if (!T.types?.length && (racks || defaultCeiling(pr))) { const made = firstElevations(st.objects, T); if (made) { table = made.table; objects = made.objects } }
-    // the first racks with no ceiling height: the setup screen, once per project
-    if (racks && !lastRacks && !pr.ceilings.length && !pr.setupPrompted && !useProjectSetup.getState().open) { table = withProject(table, { ...pr, setupPrompted: true }); ask = true }
-    if (table !== T || objects !== st.objects) fold(st, table, objects)
-    if (ask) openSetup('ceiling')
-    lastRacks = racks
+    // no elevation yet: the best fit for the default ceiling and pallet, silently (`firstElevations`)
+    if (!T.types?.length && (racks || defaultCeiling(pr))) { const made = firstElevations(st.objects, T); if (made) fold(st, made.table, made.objects) }
   }
   run(store.getState())
   return store.subscribe(run)

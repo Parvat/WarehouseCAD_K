@@ -6,8 +6,8 @@ import { typeById, typeIdAt, legendCounts, sprinklerClearance, isBeamRack } from
 import { lengthsByType, ftInDash } from '../../utils/elevationDrawing'
 import { tint, tintOn, ELEV_FILL_OPACITY } from '../../utils/elevationDraw'
 import { useElevEditor, setPane } from '../../utils/elevEditor'
-import { useElevTab, nameOf, addBestFit, assignSelected, changeElevation, renameElevation, recolorElevation, duplicateElevation, deleteElevation, defaultElevation, setPairing, removeUnused, rowSideCells } from '../../utils/elevTab'
-import { projectOf, defaultCeiling, defaultPallet, ceilingFor, palletFor, openSetup } from '../../utils/project'
+import { useElevTab, nameOf, addBestFit, sameBestFit, assignSelected, changeElevation, renameElevation, recolorElevation, duplicateElevation, deleteElevation, defaultElevation, setPairing, removeUnused, rowSideCells } from '../../utils/elevTab'
+import { projectOf, defaultCeiling, defaultPallet, ceilingFor, palletFor, openSetup, addCeiling, addPallet, palletName, PALLET_DEFAULT, ASSUMED_CLEAR_IN } from '../../utils/project'
 import { bayLedger } from '../../utils/bayLedger'
 import { ElevationDrawing } from './ElevationDrawing'
 
@@ -62,9 +62,46 @@ function ChipMenu({ t, T, onClose }) {
   )
 }
 
+const NEW = '__new'
+const ASSUMED_FT = Math.round(ASSUMED_CLEAR_IN / 12)
+const solid = { background: 'var(--accent-solid, #0B101D)', color: 'var(--accent-fg, #fff)', border: '1px solid transparent' }
+const num = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null }
+
+/** "+ New ceiling height…": name, clear height, sprinkler height → saved to the project (one undo step), then picked. */
+function NewCeiling({ onDone }) {
+  const [v, setV] = useState({ name: '', clearFt: '', sprFt: '' })
+  const save = () => { const id = addCeiling(store, { name: v.name, clearHeightIn: num(v.clearFt) && Math.round(num(v.clearFt) * 12), sprinklerIn: num(v.sprFt) && Math.round(num(v.sprFt) * 12) }); onDone(id) }
+  return (
+    <div role="group" aria-label="New ceiling height" style={{ display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap', padding: 8, borderRadius: 7, background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 90px' }}><span style={S.note}>Name</span><input aria-label="New ceiling name" autoFocus value={v.name} placeholder="Mezzanine" style={S.sel} onChange={e => setV(x => ({ ...x, name: e.target.value }))} /></label>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 70px' }}><span style={S.note}>Clear (ft)</span><input aria-label="New ceiling clear height (ft)" type="number" min={0} step={0.5} value={v.clearFt} placeholder={`${ASSUMED_FT}`} style={S.sel} onChange={e => setV(x => ({ ...x, clearFt: e.target.value }))} /></label>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 70px' }}><span style={S.note}>Sprinkler (ft)</span><input aria-label="New ceiling sprinkler height (ft)" type="number" min={0} step={0.5} value={v.sprFt} placeholder="optional" style={S.sel} onChange={e => setV(x => ({ ...x, sprFt: e.target.value }))} /></label>
+      <button type="button" style={{ ...S.btn, ...solid }} onClick={save}>Save</button>
+      <button type="button" style={S.btn} onClick={() => onDone(null)}>Cancel</button>
+    </div>
+  )
+}
+/** "+ New pallet size…": face, depth, height, weight, beam face (named from its size) → saved to the project, picked. */
+function NewPallet({ onDone }) {
+  const [v, setV] = useState({ faceIn: PALLET_DEFAULT.faceIn, depthIn: PALLET_DEFAULT.depthIn, heightIn: PALLET_DEFAULT.heightIn, weightLb: PALLET_DEFAULT.weightLb, beamFaceIn: PALLET_DEFAULT.beamFaceIn })
+  const fields = [['faceIn', 'Face (in)'], ['depthIn', 'Depth (in)'], ['heightIn', 'Height (in)'], ['weightLb', 'Weight (lb)'], ['beamFaceIn', 'Beam face (in)']]
+  const save = () => { const id = addPallet(store, Object.fromEntries(fields.map(([k]) => [k, num(v[k])]))); onDone(id) }
+  return (
+    <div role="group" aria-label="New pallet size" style={{ display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap', padding: 8, borderRadius: 7, background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+      {fields.map(([k, label], i) => (
+        <label key={k} style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 58px' }}><span style={S.note}>{label}</span><input aria-label={`New pallet ${label.toLowerCase()}`} autoFocus={i === 0} type="number" min={0} value={v[k]} style={S.sel} onChange={e => setV(x => ({ ...x, [k]: e.target.value }))} /></label>
+      ))}
+      <span style={{ ...S.note, alignSelf: 'center' }}>{num(v.depthIn) && num(v.faceIn) ? palletName({ depthIn: num(v.depthIn), faceIn: num(v.faceIn) }) : ''}</span>
+      <button type="button" style={{ ...S.btn, ...solid }} onClick={save}>Save</button>
+      <button type="button" style={S.btn} onClick={() => onDone(null)}>Cancel</button>
+    </div>
+  )
+}
+
 export function ElevationsTab() {
   const { objects, T, gridSize, selectedIds, activeBaySelection } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, gridSize: s.gridSize || 40, selectedIds: s.selectedIds, activeBaySelection: s.activeBaySelection })))
-  const { activeId, view, adding } = useElevTab()
+  const { activeId, view, adding, made } = useElevTab()
+  const [newForm, setNewForm] = useState(null)        // 'ceiling' | 'pallet': the inline "+ New …" form open
   const { detail, sel } = useElevEditor()
   const [menu, setMenu] = useState(null)
   const pr = projectOf(T)
@@ -78,8 +115,22 @@ export function ElevationsTab() {
   const shownEntry = useMemo(() => (face ? { ...entry, palletWIn: face } : entry), [entry, face])
   const rowsSelected = useMemo(() => rowSideCells({ objects, selectedIds, activeBaySelection }).size, [objects, selectedIds, activeBaySelection])
   const tinted = tintOn(T)
-  const hasCeiling = !!defaultCeiling(pr)
-  const clickChip = (t) => { useElevTab.setState({ activeId: t.id }); if (rowsSelected) assignSelected(store, t.id) }
+  const clickChip = (t) => { useElevTab.setState({ activeId: t.id }); if (rowsSelected && assignSelected(store, t.id)) useElevTab.setState({ made: null }) }
+  // the + Add elevation form: a ceiling (none set: 24' assumed) and a pallet, each list ending with "+ New …"
+  const pickCeil = pick.ceilingId ?? defaultCeiling(pr)?.id ?? '', pickPal = pick.palletId ?? defaultPallet(pr)?.id ?? ''
+  const choose = (key, v) => { if (v === NEW) { setNewForm(key === 'ceilingId' ? 'ceiling' : 'pallet'); return } setNewForm(null); setPick(p => ({ ...p, [key]: v || null })) }
+  const madeNew = (key) => (id) => { setNewForm(null); if (id) setPick(p => ({ ...p, [key]: id })) }
+  // Create: always visible — the new chip selected, or "Already exists" with that chip highlighted
+  const create = () => {
+    const pair = { ceilingId: pickCeil || null, palletId: pickPal || null }
+    const same = sameBestFit(store.getState().elevations, pair)
+    if (same) { useElevTab.setState({ activeId: same.id, adding: false, made: { id: same.id, kind: 'exists', at: Date.now() } }); return }
+    const id = addBestFit(store, pair)
+    useElevTab.setState(id ? { made: { id, kind: 'new', at: Date.now() } } : { made: { id: null, kind: 'none', at: Date.now() } })
+  }
+  const madeType = made?.id ? typeById(T, made.id) : null
+  const [flash, setFlash] = useState(false)
+  useEffect(() => { if (made?.kind !== 'exists') return; setFlash(true); const k = setTimeout(() => setFlash(false), 1600); return () => clearTimeout(k) }, [made])
 
   return (
     <div aria-label="Elevations" data-pane="open" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -93,26 +144,26 @@ export function ElevationsTab() {
         </div>
         {active && <span style={{ ...S.note, marginLeft: 'auto' }}>beam {ftInDash(entry.beamIn)}</span>}
       </div>
-      {!hasCeiling && (
-        <div role="alert" style={{ ...S.note, padding: '0 12px 8px', color: 'var(--elev-clr, #A8341C)' }}>
-          Add a ceiling height in <button type="button" style={S.link} onClick={() => openSetup('settings')}>Project setup</button>.
+      {active && building?.assumed && (
+        <div role="note" style={{ ...S.note, padding: '0 12px 8px', color: 'var(--elev-clr, #A8341C)' }}>
+          Clear height not set — elevations assume {ASSUMED_FT}'. Set it in <button type="button" style={S.link} onClick={() => openSetup('settings')}>Project settings</button>.
         </div>
       )}
 
       {/* the drawing: most of the space */}
-      <div style={{ flex: 1, minHeight: 220, padding: '0 8px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minHeight: 220, padding: '0 8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {active
-          ? <div style={{ flex: 1, minHeight: 0 }}><ElevationDrawing t={active} title={nameOf(T, active)} entry={shownEntry} building={building} sel={sel} sprClr={sprinklerClearance(T)} detail={detail} view={view} fill onCommit={(next) => changeElevation(store, active.id, next)} /></div>
-          : <div style={{ ...S.note, padding: 12 }}>{hasCeiling ? 'No elevation yet — + Add one below.' : 'No elevation yet.'}</div>}
+          ? <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}><ElevationDrawing t={active} title={nameOf(T, active)} entry={shownEntry} building={building} sel={sel} sprClr={sprinklerClearance(T)} detail={detail} view={view} fill onCommit={(next) => changeElevation(store, active.id, next)} /></div>
+          : <div style={{ ...S.note, padding: 12 }}>No elevation yet — + Add elevation below.</div>}
       </div>
 
       {/* the elevations */}
       <div role="group" aria-label="Elevation chips" style={{ flexShrink: 0, maxHeight: '38%', overflowY: 'auto', padding: '10px 12px 12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div role="list" aria-label="Elevation list" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {(T?.types || []).map(t => {
-            const on = active && t.id === active.id
+            const on = active && t.id === active.id, lit = made?.id === t.id
             return (
-              <div key={t.id} role="listitem" data-type-id={t.id} aria-selected={on} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 4px 4px 8px', borderRadius: 7, cursor: 'pointer', background: on ? 'var(--surface2)' : 'var(--surface)', border: `1px solid ${on ? 'var(--text2)' : 'var(--border)'}` }}>
+              <div key={t.id} role="listitem" data-type-id={t.id} aria-selected={on} data-highlight={lit && flash ? 'flash' : lit ? 'made' : undefined} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 4px 4px 8px', borderRadius: 7, cursor: 'pointer', background: on ? 'var(--surface2)' : 'var(--surface)', border: `1px solid ${on ? 'var(--text2)' : 'var(--border)'}`, boxShadow: lit ? `0 0 0 ${flash ? 3 : 2}px var(--pin-accent, #378ADD)` : 'none', transition: 'box-shadow .25s ease' }}>
                 <button type="button" aria-label={`${nameOf(T, t)}${rowsSelected ? ' — apply to the selected rows' : ''}`} title={rowsSelected ? 'Apply to the selected rows' : 'Show this elevation'} onClick={() => clickChip(t)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--text)', fontSize: 12 }}>
                   <span style={{ position: 'relative', width: 12, height: 12, borderRadius: 3, background: 'white', border: '1px solid rgba(0,0,0,0.25)', flexShrink: 0 }}><span style={{ position: 'absolute', inset: 0, borderRadius: 2, background: tint(t.color), opacity: tinted ? ELEV_FILL_OPACITY : 0.25 }} /></span>
                   <span>{nameOf(T, t)}</span>
@@ -126,18 +177,40 @@ export function ElevationsTab() {
           })}
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button type="button" aria-pressed={adding} disabled={!hasCeiling} onClick={() => useElevTab.setState({ adding: !adding })} style={{ ...S.btn, opacity: hasCeiling ? 1 : 0.45 }}><Plus size={12} /> Add</button>
+          <button type="button" aria-pressed={adding} disabled={!pr} onClick={() => { setNewForm(null); useElevTab.setState({ adding: !adding }) }} style={{ ...S.btn, opacity: pr ? 1 : 0.45 }}><Plus size={12} /> Add elevation</button>
           <button type="button" disabled={!rowsSelected || !active} onClick={() => active && assignSelected(store, active.id)} style={{ ...S.btn, opacity: rowsSelected && active ? 1 : 0.45 }}>Apply to selected rows</button>
           <button type="button" onClick={() => removeUnused(store)} style={S.btn} title="Remove the elevations no bay uses">Remove unused</button>
         </div>
-        {adding && hasCeiling && (
-          <div role="group" aria-label="Add elevation" style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <select aria-label="New elevation ceiling" value={pick.ceilingId || defaultCeiling(pr)?.id} style={S.sel} onChange={e => setPick(p => ({ ...p, ceilingId: e.target.value }))}>{pr.ceilings.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-            <select aria-label="New elevation pallet" value={pick.palletId || defaultPallet(pr)?.id} style={S.sel} onChange={e => setPick(p => ({ ...p, palletId: e.target.value }))}>{pr.pallets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-            <button type="button" style={{ ...S.btn, background: 'var(--accent-solid, #0B101D)', color: 'var(--accent-fg, #fff)', border: '1px solid transparent' }} onClick={() => addBestFit(store, { ceilingId: pick.ceilingId || defaultCeiling(pr)?.id, palletId: pick.palletId || defaultPallet(pr)?.id })}>Create best fit</button>
+        {adding && pr && (
+          <div role="group" aria-label="Add elevation" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={S.note}>Ceiling</span>
+                <select aria-label="New elevation ceiling" value={newForm === 'ceiling' ? NEW : pickCeil} style={S.sel} onChange={e => choose('ceilingId', e.target.value)}>
+                  {!pr.ceilings.length && <option value="">Not set ({ASSUMED_FT}')</option>}
+                  {pr.ceilings.map(c => <option key={c.id} value={c.id}>{c.name}{c.clearHeightIn > 0 ? '' : ` (${ASSUMED_FT}' assumed)`}</option>)}
+                  <option value={NEW}>+ New ceiling height…</option>
+                </select>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={S.note}>Pallet</span>
+                <select aria-label="New elevation pallet" value={newForm === 'pallet' ? NEW : pickPal} style={S.sel} onChange={e => choose('palletId', e.target.value)}>
+                  {pr.pallets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  <option value={NEW}>+ New pallet size…</option>
+                </select>
+              </label>
+              <button type="button" disabled={!!newForm} style={{ ...S.btn, ...solid, opacity: newForm ? 0.45 : 1 }} onClick={create}>Create</button>
+              <button type="button" style={S.btn} onClick={() => { setNewForm(null); useElevTab.setState({ adding: false }) }}>Cancel</button>
+            </div>
+            {newForm === 'ceiling' && <NewCeiling onDone={madeNew('ceilingId')} />}
+            {newForm === 'pallet' && <NewPallet onDone={madeNew('palletId')} />}
           </div>
         )}
-        <div style={S.note}>{rowsSelected ? `${rowsSelected} row${rowsSelected === 1 ? '' : 's'} selected — click an elevation to apply it.` : 'Select rows on the plan, then click an elevation to apply it.'}</div>
+        {made && (
+          <div role="status" aria-label="Elevation feedback" style={{ ...S.note, color: 'var(--text)' }}>
+            {made.kind === 'none' ? 'Nothing fits that ceiling with that pallet.'
+              : <><strong>{made.kind === 'exists' ? 'Already exists' : 'Created'}: {madeType ? nameOf(T, madeType) : ''}</strong>. Select rows on the plan, then click this elevation.</>}
+          </div>
+        )}
+        {(rowsSelected || !made || made.kind === 'none') && <div style={S.note}>{rowsSelected ? `${rowsSelected} row${rowsSelected === 1 ? '' : 's'} selected — click an elevation to apply it.` : 'Select rows on the plan, then click an elevation to apply it.'}</div>}
       </div>
     </div>
   )

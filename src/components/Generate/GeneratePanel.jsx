@@ -4,7 +4,7 @@ import { Sparkles, X, Loader2 } from 'lucide-react'
 import { generateAndPlaceBatched, regenerateRacking } from '../../generate/traceGenerate'
 import { regenBuilding, regenSummary } from '../../generate/regenerate'
 import { useCanvasStore } from '../../store/useCanvasStore'
-import { openSetup, defaultPallet, projectOf } from '../../utils/project'
+import { openSetup, defaultPallet, projectOf, generateBrief, BUILDING_DEFAULTS } from '../../utils/project'
 import { useRules } from '../../rules/useRules'
 import { useRightPanelWidth } from '../../utils/rightPanel'
 
@@ -51,12 +51,14 @@ function Section({ title, children }) {
 // warehouses actually run for max space, not a dealer choice to expose
 // here; a customer who genuinely wants single rows throughout still
 // builds that from the object library or edits a placed row by hand.
-const RACK_TYPE = 'rack_double_row'
+// (utils/project.js generateBrief: rackType 'rack_double_row')
 
 export function GeneratePanel() {
-  const [open, setOpen]     = useState(true)
-  const [lengthFt, setL]    = useState(240)
-  const [widthFt, setW]     = useState(120)
+  /* closed to start: a new project's first step is the start screen (components/Project/ProjectSetup.jsx), which
+     generates itself; this panel is for later — regenerate, or start over with another size */
+  const [open, setOpen]     = useState(false)
+  const [lengthFt, setL]    = useState(BUILDING_DEFAULTS.lengthFt)
+  const [widthFt, setW]     = useState(BUILDING_DEFAULTS.widthFt)
   // Auto (BUG 47) is the default — generateAndPlaceBatched runs both
   // orientations and places whichever scores more pallet capacity. The
   // Horizontal/Vertical buttons are an explicit override, still exactly
@@ -70,17 +72,15 @@ export function GeneratePanel() {
   const aisleFt = mheOptions[mhe]?.aisleFt ?? 10.5
   const pallet = defaultPallet(project)
   const wallClearIn = project?.rules?.wallClearIn ?? useRackingSettings.getState().wallClearIn ?? 0
-  const [gridXFt, setGridX]   = useState(50)
-  const [gridYFt, setGridY]   = useState(54)
+  const [gridXFt, setGridX]   = useState(BUILDING_DEFAULTS.gridXFt)
+  const [gridYFt, setGridY]   = useState(BUILDING_DEFAULTS.gridYFt)
   /* Longest continuous rack run before a cross-aisle — long runs get as many
      evenly spaced cross-aisles as it takes to stay this short. */
-  const [maxRunFt, setMaxRun] = useState(150)
+  const [maxRunFt, setMaxRun] = useState(BUILDING_DEFAULTS.maxRunFt)
   // Whether the interior column grid's own origin sits flush on the wall
   // (Yes, a line on it) or inset one full pitch off it (No, none on it) —
   // see sizingLayout.js's columnGridObject/axisFrame (BUG 69).
   const [columnsAlongWall, setColumnsAlongWall] = useState(false)
-  // the pallet: the project's default (face across the beam sizes positions per bay; depth into the frame)
-  const palletWIn = pallet?.faceIn ?? 40, palletDIn = pallet?.depthIn ?? 48
   const [result, setResult]   = useState(null)
 
   /* The row direction and max run are shared with the Fill racking tool (utils/fillTool.js): a field changed here
@@ -105,30 +105,9 @@ export function GeneratePanel() {
   const [ask, setAsk] = useState(null)
   const askRef = useRef(null)
   useEffect(() => { if (ask) askRef.current?.scrollIntoView({ block: 'nearest' }) }, [ask])
-  const brief = () => ({
-        lengthFt:         Number(lengthFt)         || 100,
-        widthFt:          Number(widthFt)          || 60,
-        rackType:         RACK_TYPE,
-        aisleFt:          Number(aisleFt)           || 11,
-        gridXFt:          Number(gridXFt)           || 0,
-        gridYFt:          Number(gridYFt)           || 0,
-        wallClearIn:      Number(wallClearIn)       || 0,
-        maxRunFt:         Number(maxRunFt)          || 150,
-        columnsAlongWall,
-        palletWIn:        Number(palletWIn)         || 40,
-        palletDIn:        Number(palletDIn)         || 48,
-        levels:     4,
-        mhe,
-        orientation,
-  })
+  const brief = () => generateBrief(project, mheOptions, { lengthFt, widthFt, gridXFt, gridYFt, maxRunFt, columnsAlongWall, orientation })
   const run = () => {
     if (generating) return
-    // no ceiling height yet: Project setup first, once per project (Skip allowed) — then this Generate
-    if (project && !project.ceilings.length && !project.setupPrompted) {
-      useCanvasStore.getState().commitElevations({ ...useCanvasStore.getState().elevations, project: { ...project, setupPrompted: true } })
-      openSetup('ceiling', run)
-      return
-    }
     const objects = useCanvasStore.getState().objects
     const fp = regenBuilding(objects)
     if (fp && objects.some(o => o.parentId === fp.id)) { setAsk(regenSummary(objects, fp)); return }
@@ -151,6 +130,18 @@ export function GeneratePanel() {
     setResult(outcome ? { ...outcome, regenerated: true } : { failed: true })
   }
 
+  /* opened: the start screen's building and layout choices (project.building) are where it starts */
+  const openPanel = () => {
+    const g = project?.building
+    if (g) {
+      if (g.lengthFt) setL(g.lengthFt); if (g.widthFt) setW(g.widthFt)
+      if (g.gridXFt != null) setGridX(g.gridXFt); if (g.gridYFt != null) setGridY(g.gridYFt)
+      if (g.maxRunFt) setMaxRun(g.maxRunFt); if (g.orientation) setOrientation(g.orientation)
+      if (g.columnsAlongWall != null) setColumnsAlongWall(!!g.columnsAlongWall)
+    }
+    setOpen(true)
+  }
+
   /* over the canvas's top right: past the right panel, as wide as it is (a rack selected widens it) */
   const right = useRightPanelWidth().width + 24
   const box = {
@@ -170,7 +161,7 @@ export function GeneratePanel() {
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} style={{
+      <button onClick={openPanel} style={{
         position: 'fixed', right, top: 60, zIndex: 40,
         display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px',
         background: 'var(--accent)', color: '#fff', border: 'none',

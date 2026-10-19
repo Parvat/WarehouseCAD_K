@@ -11,9 +11,10 @@ import { selectionCells } from './elevSelection'
 import { bestFitFor, pairName } from './elevFit'
 import { projectOf, defaultCeiling, defaultPallet, ceilingById, palletById, dropUnusedTypes } from './project'
 
-/** { activeId (the elevation the drawing shows), view ('front' | 'side'), adding (the + Add form open) } —
- *  presentation state. */
-export const useElevTab = create(() => ({ activeId: null, view: 'front', adding: false }))
+/** { activeId (the elevation the drawing shows), view ('front' | 'side'), adding (the + Add elevation form open),
+ *  made (the last Create's outcome: { id, kind: 'new' | 'exists' | 'none', at } — its chip highlighted, the hint
+ *  shown, until the next Create or an assignment) } — presentation state. */
+export const useElevTab = create(() => ({ activeId: null, view: 'front', adding: false, made: null }))
 
 /** The selection as whole ROW SIDES — "select rows": each picked bay brings every bay of its rack on that side. */
 export function rowSideCells(st) {
@@ -43,12 +44,23 @@ export function refreshNames(table) {
 const commit = (store, table, objects = null) => store.getState().commitElevations(table, objects)
 const freshId = (table) => { let k = (table?.types?.length || 0) + 1, id; do { id = `elev-${Date.now().toString(36)}-${k++}` } while (table?.types?.some(t => t.id === id)); return id }
 
-/** The best-fit elevation for ceiling `ceilingId` and pallet `palletId` added (the project's defaults when not given),
- *  made active → its id, or null (no ceiling height, or nothing fits). The first one becomes the default. */
+/** The elevation already giving the best fit for that ceiling and pallet (same pair, same beams and upright) → it, or
+ *  null. */
+export function sameBestFit(table, { ceilingId = null, palletId = null } = {}) {
+  const pr = projectOf(table)
+  const c = ceilingById(pr, ceilingId) || defaultCeiling(pr), p = palletById(pr, palletId) || defaultPallet(pr)
+  const d = bestFitFor(pr, c, p)
+  if (!d) return null
+  const beams = (t) => t.levels.map(l => l.beamIn).join(',')
+  return (table?.types || []).find(t => (t.ceilingId ?? null) === d.ceilingId && (t.palletId ?? null) === d.palletId && t.uprightHeightIn === d.uprightHeightIn && beams(t) === beams(d)) || null
+}
+
+/** The best-fit elevation for ceiling `ceilingId` and pallet `palletId` added (the project's defaults when not given;
+ *  no ceiling: 24' assumed), made active → its id, or null (nothing fits). The first one becomes the default. */
 export function addBestFit(store, { ceilingId = null, palletId = null } = {}) {
   const st = store.getState(), T = st.elevations, pr = projectOf(T)
   const c = ceilingById(pr, ceilingId) || defaultCeiling(pr), p = palletById(pr, palletId) || defaultPallet(pr)
-  const d = c && bestFitFor(pr, c, p)
+  const d = bestFitFor(pr, c, p)
   if (!d) return null
   const id = freshId(T)
   const base = T || { version: ELEV_VERSION, defaultId: null, types: [] }
@@ -112,7 +124,7 @@ export function setPairing(store, id, { ceilingId, palletId }) {
   const st = store.getState(), T = st.elevations, pr = projectOf(T), cur = typeById(T, id)
   if (!cur) return false
   const c = ceilingById(pr, ceilingId ?? cur.ceilingId) || defaultCeiling(pr), p = palletById(pr, palletId ?? cur.palletId) || defaultPallet(pr)
-  const d = c && bestFitFor(pr, c, p)
+  const d = bestFitFor(pr, c, p)
   if (!d) return false
   return changeElevation(store, id, { ...cur, ...d })
 }

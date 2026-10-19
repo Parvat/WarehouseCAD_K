@@ -1,10 +1,12 @@
-import { X, OctagonAlert, TriangleAlert } from 'lucide-react'
+import { X, OctagonAlert, TriangleAlert, Info } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { useLayoutCheck, goToIssue, exportAnyway, showIssues } from '../../utils/layoutCheck'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
+import { openSetup } from '../../utils/project'
 
 /* "Check layout" (utils/layoutCheck.js): the last check's problems, grouped
-   ERRORS / WARNINGS. Clicking one selects its object(s) and zooms to the spot.
+   ERRORS / WARNINGS. Clicking one selects its object(s) and zooms to the spot. REMINDERS (something the project
+   leaves unset — a clear height, a sprinkler height) open Project settings.
    It only reports; the top bar's button runs it again. */
 
 const head = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 13px 6px' }
@@ -50,6 +52,19 @@ export function LayoutCheckPanel() {
       {none && <div style={{ padding: '4px 13px 6px', fontSize: 12, color: 'var(--text2)' }}>No issues found.</div>}
       <Group label="Errors" items={result.errors} color="var(--red, #C0392B)" Icon={OctagonAlert} />
       <Group label="Warnings" items={result.warnings} color="var(--amber, #B87309)" Icon={TriangleAlert} />
+      {!!result.reminders?.length && (
+        <div role="group" aria-label="Reminders">
+          <div style={group('var(--text3)')}><Info size={13} strokeWidth={1.5} absoluteStrokeWidth />Reminders ({result.reminders.length})</div>
+          {result.reminders.map((it, i) => (
+            <button key={it.kind + i} type="button" style={{ ...itemBtn, color: 'var(--text2)' }} aria-label={it.text} title="Open Project settings"
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              onClick={() => openSetup('settings')}>
+              {it.text}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -14,6 +14,8 @@ import { planAreaResize } from '../../generate/rackingArea'
 import * as E from '../../utils/elevations'
 import * as P from '../../utils/project'
 import { checkLayout } from '../../utils/layoutCheck'
+import { bestFitFor } from '../../utils/elevFit'
+import * as T_ from '../../utils/elevTab'
 
 let store, stop
 beforeAll(async () => { store = (await import('../../store/useCanvasStore')).useCanvasStore })
@@ -40,7 +42,7 @@ describe('PS — the project', () => {
     expect([E.ceilingOf(T2, null).clearHeightIn, E.sprinklerClearance(T2), E.sprinklerClearance({ sprinklerClearanceIn: 12 })]).toEqual([360, 24, 12])
   })
 
-  it('PS-keeper: on load a layout without a project is given one in that same history entry (one undo step), unused elevation types dropped once; a new empty layout opens Project setup; the first racks with no ceiling open it once', async () => {
+  it('PS-keeper: on load a layout without a project is given one in that same history entry (one undo step), unused elevation types dropped once; a new empty layout opens the start screen; nothing opens it once a layout exists', async () => {
     stop = P.installProjectKeeper(store, () => ({ mhe: 'reach', wallClearIn: 3, units: 'ft · in' }))
     const o = filled(), m = E.migrate(o)
     const T = { ...m.table, types: [...m.table.types, { ...m.table.types[0], id: 'junk', name: "4 levels · 16' 2" }] }
@@ -54,16 +56,15 @@ describe('PS — the project', () => {
     store.setState({ objects: [], elevations: null, history: [JSON.stringify({ objects: [], groups: [], elevations: null })], historyIndex: 0 })
     expect([P.useProjectSetup.getState().open, P.useProjectSetup.getState().reason]).toEqual([true, 'new'])
     P.useProjectSetup.setState({ open: false, reason: null })
-    // a project with no ceiling; the first racks go down: Project setup once (prompted), types made for them
+    // a project with no ceiling; the first racks go down: nothing opens (never once a layout exists), types made for them
     const pr = P.newProject()
     store.setState({ elevations: P.withProject(null, pr) })
     store.setState({ objects: o, history: [...store.getState().history, JSON.stringify({ objects: o, groups: [] })], historyIndex: store.getState().history.length })
     const s2 = store.getState()
-    expect([P.useProjectSetup.getState().open, P.useProjectSetup.getState().reason, s2.elevations.project.setupPrompted, s2.elevations.types.length > 0]).toEqual([true, 'ceiling', true, true])
-    P.useProjectSetup.setState({ open: false, reason: null })
+    expect([P.useProjectSetup.getState().open, s2.elevations.types.length > 0]).toEqual([false, true])
     store.setState({ objects: [], history: [...s2.history, '{}'], historyIndex: s2.history.length })
     store.setState({ objects: o, history: [...store.getState().history, '{}'], historyIndex: store.getState().history.length })
-    expect(P.useProjectSetup.getState().open).toBe(false)                              // once per project
+    expect(P.useProjectSetup.getState().open).toBe(false)
     stop(); stop = null
   })
 
@@ -108,9 +109,10 @@ describe('PS — the project', () => {
     const gen = src('components/Generate/GeneratePanel.jsx')
     expect(/PALLET SIZE|>FORKLIFT<|AISLE \(ft\)|WALL CLEARANCE/.test(gen)).toBe(false)
     for (const k of ['LENGTH (ft)', 'WIDTH (ft)', 'COLUMN GRID (ft)', 'ROW DIRECTION', 'MAX RACK RUN (ft)']) expect([k, gen.includes(k)]).toEqual([k, true])
-    expect(gen).toMatch(/const palletWIn = pallet\?\.faceIn \?\? 40, palletDIn = pallet\?\.depthIn \?\? 48/)
+    expect(gen).toMatch(/const brief = \(\) => generateBrief\(project, mheOptions, \{ lengthFt, widthFt, gridXFt, gridYFt, maxRunFt, columnsAlongWall, orientation \}\)/)
     expect(gen).toMatch(/const aisleFt = mheOptions\[mhe\]\?\.aisleFt \?\? 10\.5/)
-    expect(gen).toMatch(/openSetup\('ceiling', run\)/)
+    expect(gen).toMatch(/const \[open, setOpen\]     = useState\(false\)/)            // the start screen is a new project's first step
+    expect(/openSetup\('ceiling'|setupPrompted/.test(gen + src('utils/project.js'))).toBe(false)   // no "set up first" trigger
     expect(/aria-label="Pallet face"|aria-label="Forklift"|aria-label="Aisle \(ft\)"|aria-label="Wall clearance/.test(src('canvas2/FillTool.jsx'))).toBe(false)
     expect(/Area pallet|Area forklift|Area aisle/.test(src('components/RightPanel/panels/RackingAreaPanel.jsx'))).toBe(false)
     expect(src('components/RightPanel/ColumnCheckPanel.jsx')).not.toMatch(/<select value=\{mheKey\}/)
@@ -124,11 +126,77 @@ describe('PS — the project', () => {
     expect(sync).toMatch(/palletWIn: pal\.faceIn, palletDIn: pal\.depthIn/)
     // the screen
     const ui = src('components/Project/ProjectSetup.jsx')
-    const order = ['aria-label="Ceiling heights"', 'aria-label="Pallet sizes"', 'aria-label="Equipment"', 'aria-label="Rules"', 'aria-label="Advanced"'].map(k => ui.indexOf(k))
-    expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))).toBe(true)
-    for (const k of ['name="defaultCeiling"', 'name="defaultPallet"', 'aria="Pallet weight (lb)"', 'aria="Beam face (in)"', "['clearanceIn', 'Load clearance (in)']", "['sprinklerClearanceIn', 'Sprinkler clearance (in)']", "['holePitchIn', 'Hole pitch (in)']", "['flueIn', 'Flue (in)']", 'Upright step (ft)', '>Regenerate racking</button>', '>Keep layout</button>', '>Skip</button>']) expect([k, ui.includes(k)]).toEqual([k, true])
-    expect(ui).toMatch(/const \[adv, setAdv\] = useState\(false\)/)                    // Advanced collapsed
-    expect(ui).toMatch(/if \(old && gen && layoutAffecting\(old, pr\)\) \{ setAsk/)
+    const startUi = ui.slice(ui.indexOf('function StartCard'), ui.indexOf('function SettingsCard')), setUi = ui.slice(ui.indexOf('function SettingsCard'))
+    const inOrder = (txt, keys) => { const o = keys.map(k => txt.indexOf(k)); return o.every((v, i) => v > 0 && (i === 0 || v > o[i - 1])) }
+    // the start screen: building, pallet, forklift + walls, Advanced; then the layout step; Generate layout / Draw it myself
+    expect(inOrder(startUi, ['aria-label="New project"', 'aria-label="Building"', 'label="Clear height (ft)"', 'label="Sprinkler height (ft)"', 'aria-label="Pallet"', 'label="Beam face (in)"', 'aria-label="Equipment and rules"', 'label="Wall clearance (in)"', '<Advanced ', 'label="Column grid X (ft)"', 'label="Max rack run (ft)"', 'aria="Row direction"', ' Draw it myself</button>', ' Generate layout</button>'])).toBe(true)
+    // Project settings: the same sections, lists with + Add, delete not when in use, set default
+    expect(inOrder(setUi, ['aria-label="Project setup"', 'aria-label="Ceiling heights"', 'aria-label="Pallet sizes"', 'aria-label="Equipment and rules"', '<Advanced '])).toBe(true)
+    for (const k of ['name="defaultCeiling"', 'name="defaultPallet"', 'aria="Pallet weight (lb)"', 'aria="Beam face (in)"', 'aria-label="Add ceiling height"', 'aria-label="Add pallet size"', 'disabled={used}', 'disabled={blocked}', '>Regenerate racking</button>', '>Keep layout</button>']) expect([k, setUi.includes(k)]).toEqual([k, true])
+    for (const k of ["['clearanceIn', 'Load clearance (in)']", "['sprinklerClearanceIn', 'Sprinkler clearance (in)']", "['holePitchIn', 'Hole pitch (in)']", "['flueIn', 'Flue (in)']", 'Upright step (ft)']) expect([k, ui.includes(k)]).toEqual([k, true])
+    expect(/>Skip<\/button>/.test(ui)).toBe(false)
+    expect(ui).toMatch(/const \[open, setOpen\] = useState\(false\)/)                  // Advanced folded
+    expect(setUi).toMatch(/if \(old && gen && layoutAffecting\(old, pr\)\) \{ setAsk/)
     expect(src('App.jsx')).toMatch(/installProjectKeeper\(useCanvasStore,/)
+  })
+
+  it('PS-assumed: a clear height not set is 24\' for the fit, the drawing and the checks; Check layout lists what is unset as reminders (per ceiling in use), never as issues', () => {
+    const p60 = { id: 'p60', name: '48×48', faceIn: 48, depthIn: 48, heightIn: 60, weightLb: 2500, beamFaceIn: 4 }
+    const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: null, sprinklerIn: null }], defaultCeilingId: 'c' }
+    // the fit: pitch 60 + 6 + 4 = 70; top load (n − 1) × 70 + 60 ≤ 288 → 4 levels; upright 210 + 12 → 228 (19')
+    const d = (c) => { const x = bestFitFor(pr, c, p60); return [x.levels.length, x.uprightHeightIn, x.ceilingId] }
+    expect([d(pr.ceilings[0]), d(null)]).toEqual([[4, 228, 'c'], [4, 228, null]])
+    expect(d({ id: 'c30', clearHeightIn: 360 })).toEqual([5, 300, 'c30'])                 // a real 30' fits one more
+    // the checks and the drawing read 24', assumed
+    const T = P.withProject({ version: E.ELEV_VERSION, defaultId: null, types: [] }, pr)
+    expect([E.ceilingOf(T, null), P.ceilingFor(T, null)].map(c => [c.clearHeightIn, c.sprinklerIn, c.assumed])).toEqual([[288, null, true], [288, null, true]])
+    expect(E.ceilingOf(P.withProject(null, { ...pr, ceilings: [], defaultCeilingId: null }), null).clearHeightIn).toBe(288)
+    expect(E.ceilingOf(P.withProject(null, { ...pr, ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360 }] }), null).assumed).toBe(false)
+    // reminders: clear and sprinkler not set
+    expect(P.projectReminders(T).map(r => r.text)).toEqual(["Clear height not set — elevations assume 24'", 'Sprinkler height not set — sprinkler clearance not checked'])
+    expect(P.projectReminders(P.withProject(null, { ...pr, ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }] }))).toEqual([])
+    expect(P.projectReminders(null)).toEqual([])
+    // two ceilings: per ceiling an elevation uses, by name
+    const two = { ...pr, ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }, { id: 'm', name: 'Mezz', clearHeightIn: null, sprinklerIn: 230 }] }
+    const T2 = P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...bestFitFor(two, two.ceilings[0], p60), id: 'a', name: 'a' }, { ...bestFitFor(two, two.ceilings[1], p60), id: 'b', name: 'b' }] }, two)
+    expect(P.projectReminders(T2).map(r => r.text)).toEqual(["Clear height not set for Mezz — elevations assume 24'"])
+    // Check layout: reminders apart from the issues; an upright above the assumed 24' is an error against it
+    const o = filled(false), m = E.migrate(o)
+    const tall = P.withProject({ ...m.table, types: m.table.types.map(t => ({ ...t, uprightHeightIn: 300 })) }, pr)
+    const res = checkLayout(m.objects, { gridSize: GS, elevations: tall })
+    expect(res.reminders.map(r => r.kind)).toEqual(['unset-clear', 'unset-sprinkler'])
+    expect(res.errors.some(e => e.kind === 'elev-height' && /clear height 24'-0"/.test(e.text))).toBe(true)
+    expect('reminders' in checkLayout(m.objects, { gridSize: GS, elevations: P.withProject(m.table, { ...pr, ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }] }) })).toBe(false)
+    // the panel lists them and opens Project settings; the drawing says "assumed"
+    expect(src('components/RightPanel/LayoutCheckPanel.jsx')).toMatch(/aria-label="Reminders"[\s\S]*onClick=\{\(\) => openSetup\('settings'\)\}/)
+    expect(src('utils/elevationDrawing.js')).toMatch(/\$\{building\?\.assumed \? ' \(ASSUMED\)' : ''\}/)
+  })
+
+  it('PS-entries: Project settings deletes no ceiling or pallet an elevation uses; the Elevations tab adds a ceiling or pallet to the project (one undo step) and Create says when that elevation already exists', () => {
+    const p60 = { id: 'p60', name: '48×48', faceIn: 48, depthIn: 48, heightIn: 60, weightLb: 2500, beamFaceIn: 4 }
+    const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }, { id: 'm', name: 'Mezz', clearHeightIn: 240, sprinklerIn: null }], defaultCeilingId: 'c' }
+    pr.pallets = [...pr.pallets, p60]
+    const t = { ...bestFitFor(pr, pr.ceilings[0], null), id: 'a', name: 'a', ceilingId: null, palletId: 'p60' }
+    const T = P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [t] }, pr)
+    // in use: the saved default for an elevation without its own; its own pallet
+    expect([P.ceilingInUse(T, 'c'), P.ceilingInUse(T, 'm'), P.palletInUse(T, 'p60'), P.palletInUse(T, pr.pallets[0].id)]).toEqual([true, false, true, false])
+    // the tab: + New ceiling height / pallet size → into the project, one undo step each
+    store.setState({ objects: [], elevations: P.withProject(null, { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }], defaultCeilingId: 'c' }), history: [JSON.stringify({ objects: [], groups: [], elevations: null })], historyIndex: 0 })
+    const h0 = store.getState().historyIndex
+    const cid = P.addCeiling(store, { name: 'Mezz', clearHeightIn: 240 }), pid = P.addPallet(store, { faceIn: 48, depthIn: 48, heightIn: 60, weightLb: 2500, beamFaceIn: 4 })
+    const pr2 = P.projectOf(store.getState().elevations)
+    expect([P.ceilingById(pr2, cid).name, P.ceilingById(pr2, cid).clearHeightIn, P.palletById(pr2, pid).name, store.getState().historyIndex - h0]).toEqual(['Mezz', 240, '48×48', 2])
+    // Create: a new chip; the same again: already exists (that one), nothing added
+    const pair = { ceilingId: cid, palletId: pid }
+    expect(T_.sameBestFit(store.getState().elevations, pair)).toBe(null)
+    const id = T_.addBestFit(store, pair)
+    expect([T_.sameBestFit(store.getState().elevations, pair)?.id, store.getState().elevations.types.length]).toEqual([id, 1])
+    expect(T_.nameOf(store.getState().elevations, T_.sameBestFit(store.getState().elevations, pair))).toBe('3 levels · 48×48 · Mezz')
+    expect(T_.sameBestFit(store.getState().elevations, { ceilingId: 'c', palletId: pid })).toBe(null)   // another pair
+    const tab = src('components/Elevations/ElevationsTab.jsx')
+    expect(tab).toMatch(/if \(same\) \{ useElevTab\.setState\(\{ activeId: same\.id, adding: false, made: \{ id: same\.id, kind: 'exists'/)
+    expect(tab).toMatch(/\{made\.kind === 'exists' \? 'Already exists' : 'Created'\}: \{madeType \? nameOf\(T, madeType\) : ''\}<\/strong>\. Select rows on the plan, then click this elevation\./)
+    expect(tab).toMatch(/if \(v === NEW\) \{ setNewForm\(key === 'ceilingId' \? 'ceiling' : 'pallet'\); return \}/)
+    expect(tab).toMatch(/const madeNew = \(key\) => \(id\) => \{ setNewForm\(null\); if \(id\) setPick\(p => \(\{ \.\.\.p, \[key\]: id \}\)\) \}/)
   })
 })

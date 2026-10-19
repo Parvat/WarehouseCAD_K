@@ -27,6 +27,9 @@
 // columns blocking pallets, a bay too short for a pallet, angled racks whose column losses weren't checked. (An aisle a
 // truck can drive but not pick from is not listed: its faces lose their positions — narrowAisles.js.)
 //
+// REMINDERS (nothing wrong, something not set): the project's clear height or sprinkler height not set (utils/project.js
+// projectReminders — elevations assume 24'); listed apart, never counted as issues.
+//
 // Each item: { severity, kind, text, ids (the objects involved), box (world
 // rect to zoom to), highlight (the PROBLEM itself, drawn when the item is
 // clicked: [{ x, y, w, h, color, mode: 'fill' | 'outline', label? }]) }.
@@ -49,6 +52,7 @@ import { oversizedBayIndices } from './capacity'
 import { fmtLen, fmtLenDown, sectionLabel, failingCrossAisles } from './copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { elevationIssues } from './elevations'
+import { projectReminders } from './project'
 import { useDragPreview } from '../canvas2/dragPreview'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -258,7 +262,8 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
   }
   const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'angled']
   const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
-  return { errors: errors.sort(byKind), warnings: warnings.sort(byKind) }
+  const reminders = projectReminders(elevations)
+  return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }
 }
 
 /** "Check layout · 3 errors" / "· 2 warnings" / "· no issues". */

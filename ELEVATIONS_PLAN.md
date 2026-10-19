@@ -94,12 +94,17 @@ capacity, column pick blocks, narrow aisles, usable) reads the **bay-side's type
    - names show the pairing, "5 levels · 48×40 · Main" (`elevFit.js` `pairName`), unless renamed;
    - a menu offers rename (empty goes back to the pairing), ceiling, pallet (a change refits it to the best fit for
      the new pair), colour, duplicate, set default and delete;
-   - **+ Add** asks for a ceiling and a pallet, then creates the best fit for that pair (`elevTab.js` `addBestFit`);
+   - **+ Add elevation** opens an inline form with Ceiling ▾ and Pallet ▾. Each list ends with "+ New ceiling
+     height…" / "+ New pallet size…", which opens a small form that saves to the project and selects the new entry.
+     **Create** always gives visible feedback: either a new chip, selected, or "Already exists: <name>" with that
+     chip highlighted (`sameBestFit`: same pair, same beams and upright). Then the hint "Select rows on the plan,
+     then click this elevation" (`elevTab.js` `addBestFit`, `useElevTab.made`);
    - **Apply to selected rows** and **Remove unused**.
-- **With no ceiling height:** "Add a ceiling height in Project setup", with a link that opens the setup screen.
+- **With no clear height set:** 24' is assumed (fit, drawing, checks). The tab notes it, with a link to Project
+  settings, and Check layout lists it as a reminder.
 
-**No proposals.** When the project has a ceiling height and no elevation yet, the keeper creates the best fit for
-the default ceiling and pallet silently (`project.js` `firstElevations` → `elevFit.js` `bestFitFor`).
+**No proposals.** When the project has a ceiling entry (its clear height set, or 24' assumed) and no elevation yet, the
+keeper creates the best fit for the default ceiling and pallet silently (`project.js` `firstElevations` → `elevFit.js` `bestFitFor`).
 
 **Best fit** (`bestFitFor(project, ceiling, pallet)`):
 - The first level is on the floor.

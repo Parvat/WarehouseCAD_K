@@ -50,6 +50,9 @@ export const beamFace = (t) => (Number.isFinite(t?.beamFaceIn) ? t.beamFaceIn : 
 /** The clearance (in) the top of the top load must keep under the sprinkler heads — the layout's setting (on its
  *  types table, saved and undone with it), 18" when not set. */
 export const SPRINKLER_CLEARANCE_IN = 18
+/** The clear height (in) elevations assume while the project has none set — Check layout reminds (utils/project.js
+ *  `projectReminders`). */
+export const ASSUMED_CLEAR_IN = 288
 export const sprinklerClearance = (table) => {
   // the project's advanced setting (utils/project.js); a table from before the project: its own; else 18"
   const a = table?.project?.advanced?.sprinklerClearanceIn
@@ -57,13 +60,16 @@ export const sprinklerClearance = (table) => {
   return Number.isFinite(table?.sprinklerClearanceIn) && table.sprinklerClearanceIn >= 0 ? table.sprinklerClearanceIn : SPRINKLER_CLEARANCE_IN
 }
 /** The ceiling type `type` is checked and drawn against, from the project (utils/project.js) → { clearHeightIn,
- *  sprinklerIn, id, name } or null: its own ceiling entry, else the project's default (no project ceiling: null —
- *  the caller reads the building's old fields). */
+ *  sprinklerIn, id, name, assumed } or null: its own ceiling entry, else the project's default. A clear height not set
+ *  (or no ceiling entry at all) is ASSUMED_CLEAR_IN, `assumed` true. No project: null — the caller reads the
+ *  building's old fields. */
 export function ceilingOf(table, type) {
   const pr = table?.project
-  if (!pr || !pr.ceilings?.length) return null
-  const c = (type?.ceilingId && pr.ceilings.find(x => x.id === type.ceilingId)) || pr.ceilings.find(x => x.id === pr.defaultCeilingId) || pr.ceilings[0]
-  return c ? { clearHeightIn: c.clearHeightIn > 0 ? c.clearHeightIn : null, sprinklerIn: c.sprinklerIn > 0 ? c.sprinklerIn : null, id: c.id, name: c.name } : null
+  if (!pr) return null
+  const c = (type?.ceilingId && pr.ceilings?.find(x => x.id === type.ceilingId)) || pr.ceilings?.find(x => x.id === pr.defaultCeilingId) || pr.ceilings?.[0]
+  if (!c) return { clearHeightIn: ASSUMED_CLEAR_IN, sprinklerIn: null, id: null, name: null, assumed: true }
+  const set = c.clearHeightIn > 0
+  return { clearHeightIn: set ? c.clearHeightIn : ASSUMED_CLEAR_IN, sprinklerIn: c.sprinklerIn > 0 ? c.sprinklerIn : null, id: c.id, name: c.name, assumed: !set }
 }
 /** The top of type `t`'s top load (in): the top beam + its pallet; with no load on the top level, the top of the upright. */
 export function topOfLoad(t) {

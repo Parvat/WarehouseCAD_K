@@ -170,7 +170,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     }
     if (bClear) {
       line(x0, Yv(bClear), x1, Yv(bClear), { stroke: ink, sw: sw * 1.5, dash: `${fO * 0.8} ${fO * 0.45}`, tag: 'clear' })
-      if (!compact) text(x1 - 2, Yv(bClear) + (bSprink && bSprink > bClear ? fT * 1.25 : -fT * 0.55), `CLEAR HEIGHT ${ftInDash(bClear)}`, { anchor: 'end', size: fT, fill: GREY, pri: 2, tag: 'shell' })
+      if (!compact) text(x1 - 2, Yv(bClear) + (bSprink && bSprink > bClear ? fT * 1.25 : -fT * 0.55), `CLEAR HEIGHT ${ftInDash(bClear)}${building?.assumed ? ' (ASSUMED)' : ''}`, { anchor: 'end', size: fT, fill: GREY, pri: 2, tag: 'shell' })
     }
   }
 
