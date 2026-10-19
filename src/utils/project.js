@@ -201,14 +201,22 @@ export function addPallet(store, p) {
 export const useProjectSetup = create(() => ({ open: false, reason: null }))
 export const openSetup = (reason = 'settings') => useProjectSetup.setState({ open: true, reason })
 export const closeSetup = () => useProjectSetup.setState({ open: false, reason: null })
-/** Does the layout need the start screen: nothing in it and no project yet (a new project, however it began — Draw
- *  from the Hub, File → New, a refresh on an empty one)? */
-export const needsStart = (st) => !st.objects.length && !projectOf(st.elevations)
-/** While the CAD is on screen: the start screen opens the moment the layout needs it — on entering, and on every later
- *  change (a new scene clears the layout while the CAD is already open) — never once a layout exists. Returns the
- *  unsubscribe (components/Project/ProjectSetup.jsx runs it for as long as it is mounted). */
+/** Is the layout a NEW project — a pristine scene (no history at all: the app's first state, or File → New), nothing in
+ *  it and no project? Undo never gets back here (it stops at the first entry, and the project is written into it), nor
+ *  does deleting everything (the history and the project stay). */
+export const needsStart = (st) => !st.history?.length && st.historyIndex === -1 && !st.objects.length && !projectOf(st.elevations)
+/** The scene the start screen was last shown for — its history array, a new one per scene (File → New, a reload) and
+ *  kept by every unrelated change — so it opens ONCE per new project. */
+let shownFor = null
+/** While the CAD is on screen: the start screen opens the moment a new project needs it — on entering, and on a later
+ *  File → New while the CAD is already open — once per new project, never again because of undo or deleting
+ *  everything. Returns the unsubscribe (components/Project/ProjectSetup.jsx runs it for as long as it is mounted). */
 export function installStartScreen(store) {
-  const check = (st) => { if (needsStart(st) && !useProjectSetup.getState().open) openSetup('new') }
+  const check = (st) => {
+    if (!needsStart(st) || st.history === shownFor || useProjectSetup.getState().open) return
+    shownFor = st.history
+    openSetup('new')
+  }
   check(store.getState())
   return store.subscribe(check)
 }

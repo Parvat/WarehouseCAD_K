@@ -44,35 +44,49 @@ describe('PS — the project', () => {
     expect([E.ceilingOf(T2, null).clearHeightIn, E.sprinklerClearance(T2), E.sprinklerClearance({ sprinklerClearanceIn: 12 })]).toEqual([360, 24, 12])
   })
 
-  it('PS-start-screen: Hub → New project (Draw on an empty layout) opens the start screen at once; File → New with the CAD already open opens it at once; a refresh on an empty new project too; an existing project never; nothing while the CAD is off screen', () => {
+  it('PS-start-screen: the start screen opens once per new project — Hub → Draw on a pristine layout, File → New with the CAD already open, a refresh — and never again because of undo or deleting everything; an existing project never; nothing while the CAD is off screen', () => {
     const was = globalThis.confirm; globalThis.confirm = () => true
     const open = () => P.useProjectSetup.getState().open && P.useProjectSetup.getState().reason === 'new'
     const shut = () => P.useProjectSetup.setState({ open: false, reason: null })
+    const s = () => store.getState()
     const existing = { objects: [{ id: 'r', type: 'rect', x: 0, y: 0, width: 10, height: 10 }], elevations: P.withProject(null, P.newProject()), history: ['{}'], historyIndex: 0 }
     // an existing project: entering the CAD (ProjectSetup mounted) opens nothing
     shut(); store.setState(existing)
     let leave = P.installStartScreen(store)
     expect(open()).toBe(false)
-    // File → New while the CAD is open: the scene resets (history [] / -1) — the start screen opens at once, not on the
-    // next visit
-    store.getState().newScene()
-    expect([store.getState().historyIndex, open()]).toEqual([-1, true])
-    leave()
-    // Hub → New project: the CAD entered on an empty layout with no project — at once, on mount
-    shut()
-    leave = P.installStartScreen(store)
-    expect(open()).toBe(true)
-    // Draw it myself (a project written): it stays shut afterwards; Undo back to nothing: a new project again
-    shut(); store.setState({ elevations: P.withProject(null, P.newProject()) })
+    // File → New while the CAD is open: a pristine scene (history [] / -1) — the start screen at once
+    s().newScene()
+    expect([s().history.length, s().historyIndex, open()]).toEqual([0, -1, true])
+    // Draw it myself: the project written (one history entry) — shut, and it stays shut
+    shut(); s().commitElevations(P.withProject(null, P.newProject()))
+    expect([s().historyIndex, open()]).toEqual([0, false])
+    // undo: it stops at that first entry — the project stays, nothing opens
+    s().undo(); s().undo()
+    expect([s().historyIndex, !!P.projectOf(s().elevations), open()]).toEqual([0, true, false])
+    // deleting everything: something drawn, then all of it deleted — empty again, still no start screen
+    s().addObject({ id: 'a', type: 'rect', x: 0, y: 0, width: 10, height: 10 }); s().addObject({ id: 'b', type: 'rect', x: 40, y: 0, width: 10, height: 10 })
+    s().selectAll(); s().deleteSelected()
+    expect([s().objects.length, open()]).toEqual([0, false])
+    // even an empty layout with no project, but past its first step (a history), is not a new project
+    store.setState({ objects: [], elevations: null })
     expect(open()).toBe(false)
-    store.setState({ elevations: null })
+    s().undo(); s().undo(); s().undo()
+    expect(open()).toBe(false)
+    // once per new project: shown for this scene and closed without a project (no commit) — later changes don't reopen it
+    s().newScene()
     expect(open()).toBe(true)
+    shut(); store.setState({ zoom: 2 }); store.setState({ panX: 10 })
+    expect(open()).toBe(false)
     leave()
-    // off screen (the Hub): a reset opens nothing; a refresh (a fresh store state, empty, then the CAD entered) opens it
+    // Hub → Draw on a pristine scene: at once, on mount (a fresh scene — File → New made off screen opens nothing there)
     shut(); store.setState(existing)
-    store.getState().newScene()
-    expect(open()).toBe(false)
-    store.setState({ objects: [], elevations: null, history: [], historyIndex: -1 })
+    s().newScene()
+    expect(open()).toBe(false)                                                       // off screen: nothing
+    leave = P.installStartScreen(store)
+    expect(open()).toBe(true)                                                        // entering: at once
+    leave()
+    // a refresh on an empty new project (a fresh pristine state, then the CAD entered): at once
+    shut(); store.setState({ objects: [], elevations: null, history: [], historyIndex: -1 })
     leave = P.installStartScreen(store)
     expect(open()).toBe(true)
     leave(); shut()

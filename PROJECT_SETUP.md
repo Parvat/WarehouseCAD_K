@@ -11,9 +11,13 @@ Module: `src/utils/project.js`. Screen: `components/Project/ProjectSetup.jsx`.
 ## The screen (v2: one start screen)
 
 **A new project** opens one start screen. It replaces both the separate setup popup and the Generate panel's first
-step. It opens whenever the layout is empty with no project while the CAD is on screen (`installStartScreen`, run by
-`ProjectSetup` for as long as it is mounted): Draw from the Hub on an empty layout, File → New while already in the CAD
-(at once, not on the next visit), a refresh on an empty new project. (It used to be checked only on entering the CAD
+step. It opens **once per new project**, while the CAD is on screen (`installStartScreen`, run by `ProjectSetup` for as
+long as it is mounted). A new project is a pristine scene: no history at all (the app's first state, or File → New),
+nothing in it, and no project (`needsStart`). It opens on Draw from the Hub on such a layout, on File → New while
+already in the CAD (at once, not on the next visit), and on a refresh of an empty new project. It never reopens
+because of undo, which stops at the first entry where the project was written, or because of deleting everything,
+which keeps the history and the project. A latch on the scene's history array (`shownFor`) also stops it reopening
+in a scene it was already shown for. (It used to be checked only on entering the CAD
 and on a history reset to index 0, which File → New, at −1, never matched.) Nothing opens it once a layout exists, and there is no "set it up first" trigger on Generate, Fill or
 placing racks.
 

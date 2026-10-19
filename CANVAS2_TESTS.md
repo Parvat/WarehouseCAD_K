@@ -2333,6 +2333,23 @@ refresh on an empty one opens it; the wiring). Changed: PS-keeper (the keeper op
 - refresh on the new empty project → Draw: start screen;
 - refresh on an existing project → Draw: none; ← Hub → Draw: none.
 
+**Once per new project (PS v2.3).** `needsStart` asks for a pristine scene: history [] at −1, no objects, no project.
+Undo stops at the first entry, which holds the project, and deleting everything keeps the history, so neither is a
+new project. `installStartScreen` also latches on the scene's history array (`shownFor`), so a scene shows it once.
+
+Rewritten: PS-start-screen (an existing project: none; File → New: at once; Draw it myself: shut; undo ×2: stays at
+entry 0, project kept, shut; drawn + select all + delete: shut; empty with no project but a history: shut; undo ×3:
+shut; a new scene shown and closed with no commit, then other changes: shut; File → New off screen: none, entering:
+at once; a refresh: at once).
+
+**Break-its:**
+- the pristine condition dropped → PS-start-screen fails (the start screen on an emptied layout with a history);
+- the latch dropped → PS-start-screen fails (it reopens after being closed with no commit).
+
+**Checked in the app** (real mouse and keys): new project → start screen → Generate (29 objects); Ctrl+A, Delete: none;
+Ctrl+Z ×12, back to an empty entry 0: none; File → New: the start screen once; Draw it myself; a rect, Ctrl+A,
+Delete (0 objects): none; Ctrl+Z ×8: none.
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click
