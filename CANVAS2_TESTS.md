@@ -2314,6 +2314,25 @@ the header labels).
   column warning, plus the 2 reminders.
 - Draw it myself → Check layout: header "Check layout · No errors · 2 reminders", and the same line in the panel.
 
+**The start screen opens at once on a new project (PS v2.2).** Before, File → New with the CAD open left an empty canvas
+with no start screen, and it appeared only after ← Hub → Draw. There were two checks: App ran one on entering the CAD
+view only, and the keeper waited for a history reset to index 0, while newScene resets to −1. Both are replaced by
+utils/project.js `installStartScreen` (`needsStart`: no objects, no project). ProjectSetup runs it from mount to
+unmount, so it checks on entering and on every later store change.
+
+New: PS-start-screen (an existing project opens nothing; File → New with the CAD open opens it at once; Hub → Draw on
+an empty layout opens it at once; written project → shut, undone → open again; off screen a reset opens nothing; a
+refresh on an empty one opens it; the wiring). Changed: PS-keeper (the keeper opens nothing).
+
+**Break-it:** `installStartScreen` checking on mount only → PS-start-screen fails at File → New ([-1, false]).
+
+**Checked in the app** (real mouse; the bug reproduced first, then fixed):
+- fresh storage → Hub → Draw: start screen;
+- an existing project → ← Hub → Draw: none;
+- File → New: before the fix none, and only ← Hub → Draw showed it; after the fix, the start screen at once;
+- refresh on the new empty project → Draw: start screen;
+- refresh on an existing project → Draw: none; ← Hub → Draw: none.
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click

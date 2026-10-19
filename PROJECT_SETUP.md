@@ -11,8 +11,10 @@ Module: `src/utils/project.js`. Screen: `components/Project/ProjectSetup.jsx`.
 ## The screen (v2: one start screen)
 
 **A new project** opens one start screen. It replaces both the separate setup popup and the Generate panel's first
-step. It opens only for a new, empty layout: Draw on an empty layout with no project, or a fresh empty layout
-(File → New). Nothing opens it once a layout exists, and there is no "set it up first" trigger on Generate, Fill or
+step. It opens whenever the layout is empty with no project while the CAD is on screen (`installStartScreen`, run by
+`ProjectSetup` for as long as it is mounted): Draw from the Hub on an empty layout, File → New while already in the CAD
+(at once, not on the next visit), a refresh on an empty new project. (It used to be checked only on entering the CAD
+and on a history reset to index 0, which File → New, at −1, never matched.) Nothing opens it once a layout exists, and there is no "set it up first" trigger on Generate, Fill or
 placing racks.
 
 - **Building:** length, width, clear height, sprinkler height. The clear height may stay empty (see below).

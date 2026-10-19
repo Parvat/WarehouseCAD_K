@@ -23,7 +23,7 @@ import { installLevelsKeeper } from './utils/rackLevels'
 import { installElevationsKeeper } from './utils/elevations'
 import { installLiveRecheck } from './utils/layoutCheck'
 import { installAreaKeeper } from './utils/rackingAreaTool'
-import { installProjectKeeper, projectOf, openSetup } from './utils/project'
+import { installProjectKeeper } from './utils/project'
 import { useRackingSettings } from './utils/fillTool'
 import { ProjectSync } from './components/Project/ProjectSync'
 import { ProjectSetup } from './components/Project/ProjectSetup'
@@ -104,12 +104,8 @@ export default function App() {
     setUiTheme('trace')   // default the CAD to the Trace pine-on-paper skin
   }, []) // eslint-disable-line
 
-  // Draw opened on an empty layout with no project yet: a new project — Project setup first (Skip allowed)
-  useEffect(() => {
-    if (view !== 'cad') return
-    const st = useCanvasStore.getState()
-    if (!st.objects.length && !projectOf(st.elevations)) openSetup('new')
-  }, [view])
+  // a new project's start screen: <ProjectSetup /> opens it while the CAD is on screen (utils/project.js
+  // installStartScreen) — entering on an empty layout, File → New while already in, a refresh
 
   if (view === 'login') return <Login onEnter={() => setView('hub')} />
   if (view === 'hub')   return <Hub onOpen={setView} />

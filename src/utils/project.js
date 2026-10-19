@@ -201,6 +201,17 @@ export function addPallet(store, p) {
 export const useProjectSetup = create(() => ({ open: false, reason: null }))
 export const openSetup = (reason = 'settings') => useProjectSetup.setState({ open: true, reason })
 export const closeSetup = () => useProjectSetup.setState({ open: false, reason: null })
+/** Does the layout need the start screen: nothing in it and no project yet (a new project, however it began — Draw
+ *  from the Hub, File → New, a refresh on an empty one)? */
+export const needsStart = (st) => !st.objects.length && !projectOf(st.elevations)
+/** While the CAD is on screen: the start screen opens the moment the layout needs it — on entering, and on every later
+ *  change (a new scene clears the layout while the CAD is already open) — never once a layout exists. Returns the
+ *  unsubscribe (components/Project/ProjectSetup.jsx runs it for as long as it is mounted). */
+export function installStartScreen(store) {
+  const check = (st) => { if (needsStart(st) && !useProjectSetup.getState().open) openSetup('new') }
+  check(store.getState())
+  return store.subscribe(check)
+}
 
 /** The first elevations of a project whose racks have none yet → { table, objects } or null: the best fit for the
  *  default ceiling (24' assumed when not set) and pallet; a project with no ceiling entry (a layout from before): one
@@ -223,10 +234,10 @@ export let firstElevations = (objects, table) => {
 export const setFirstElevations = (fn) => { firstElevations = fn }
 
 /** For a store: a layout without a project is given one — a load or an action folds it into that same history entry
- *  (one undo step), migrated from what the layout uses (`current()`), unused elevation types dropped once; a new,
- *  empty layout opens the start screen. Nothing opens it once a layout exists. Returns the unsubscribe. */
+ *  (one undo step), migrated from what the layout uses (`current()`), unused elevation types dropped once. (A new,
+ *  empty layout is left to the start screen: `installStartScreen`.) Returns the unsubscribe. */
 export function installProjectKeeper(store, current = () => ({})) {
-  let busy = false, lastHist = store.getState().history
+  let busy = false
   const fold = (st, table, objects = st.objects) => {
     const full = { elevations: table, ...(objects !== st.objects ? { objects } : {}) }
     if (st.historyIndex >= 0 && st.history.length) {
@@ -240,13 +251,8 @@ export function installProjectKeeper(store, current = () => ({})) {
   const run = (st) => {
     if (busy) return
     const T = st.elevations, racks = st.objects.some(isBeamRack)
-    const fresh = st.history !== lastHist && st.historyIndex === 0
-    lastHist = st.history
     if (!projectOf(T)) {
-      if (!st.objects.length) {                                  // a new, empty layout: the start screen
-        if (fresh && !useProjectSetup.getState().open) openSetup('new')
-        return
-      }
+      if (!st.objects.length) return                             // a new, empty layout: the start screen's (installStartScreen)
       fold(st, withProject(dropUnusedTypes(st.objects, T), migrateProject(st.objects, T, current())))
       return
     }

@@ -5,14 +5,14 @@ import { useCanvasStore } from '../../store/useCanvasStore'
 import { useRules } from '../../rules/useRules'
 import { useRackingSettings } from '../../utils/fillTool'
 import { UNITS } from '../../constants'
-import { useProjectSetup, closeSetup, projectOf, newProject, newId, palletName, withProject, syncTypesToPallets, layoutAffecting, ceilingInUse, palletInUse, generateBrief, ADVANCED_DEFAULTS, PALLET_DEFAULT, RULES_DEFAULTS, BUILDING_DEFAULTS, ASSUMED_CLEAR_IN } from '../../utils/project'
+import { useProjectSetup, closeSetup, installStartScreen, projectOf, newProject, newId, palletName, withProject, syncTypesToPallets, layoutAffecting, ceilingInUse, palletInUse, generateBrief, ADVANCED_DEFAULTS, PALLET_DEFAULT, RULES_DEFAULTS, BUILDING_DEFAULTS, ASSUMED_CLEAR_IN } from '../../utils/project'
 import { refreshNames } from '../../utils/elevTab'
 import { regenBuilding, regenSummary } from '../../generate/regenerate'
 import { regenerateRacking, generateAndPlaceBatched } from '../../generate/traceGenerate'
 
 /* ── The project screen (PROJECT_SETUP.md) ──────────────────────────────────────────────────────────────────────────
    ONE screen, two states:
-   - a NEW project (the start screen): the building (length, width, clear height, sprinkler height), the pallet (face,
+   - a NEW project (the start screen, opened by installStartScreen whenever the layout is empty with no project): the building (length, width, clear height, sprinkler height), the pallet (face,
      depth, height, weight, beam face), the forklift and the wall clearance, pre-filled with common values; Advanced
      (folded) for the fixed defaults. [Generate layout] continues with the column grid, row direction and max run,
      then generates; [Draw it myself] keeps the project and closes. It opens only for a new, empty layout — never once
@@ -89,6 +89,9 @@ function Advanced({ value, onChange, units, onUnits }) {
 
 export function ProjectSetup() {
   const { open, reason } = useProjectSetup()
+  // for as long as the CAD is on screen: an empty layout with no project opens the start screen, at once — on entering
+  // (Hub → Draw) and on any later reset (File → New), not only on mount
+  useEffect(() => installStartScreen(store), [])
   const [host, setHost] = useState(null)
   useEffect(() => { setHost(document.querySelector('[data-theme]')) }, [open])
   if (!open || !host) return null

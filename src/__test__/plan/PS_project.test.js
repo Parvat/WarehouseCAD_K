@@ -44,7 +44,45 @@ describe('PS — the project', () => {
     expect([E.ceilingOf(T2, null).clearHeightIn, E.sprinklerClearance(T2), E.sprinklerClearance({ sprinklerClearanceIn: 12 })]).toEqual([360, 24, 12])
   })
 
-  it('PS-keeper: on load a layout without a project is given one in that same history entry (one undo step), unused elevation types dropped once; a new empty layout opens the start screen; nothing opens it once a layout exists', async () => {
+  it('PS-start-screen: Hub → New project (Draw on an empty layout) opens the start screen at once; File → New with the CAD already open opens it at once; a refresh on an empty new project too; an existing project never; nothing while the CAD is off screen', () => {
+    const was = globalThis.confirm; globalThis.confirm = () => true
+    const open = () => P.useProjectSetup.getState().open && P.useProjectSetup.getState().reason === 'new'
+    const shut = () => P.useProjectSetup.setState({ open: false, reason: null })
+    const existing = { objects: [{ id: 'r', type: 'rect', x: 0, y: 0, width: 10, height: 10 }], elevations: P.withProject(null, P.newProject()), history: ['{}'], historyIndex: 0 }
+    // an existing project: entering the CAD (ProjectSetup mounted) opens nothing
+    shut(); store.setState(existing)
+    let leave = P.installStartScreen(store)
+    expect(open()).toBe(false)
+    // File → New while the CAD is open: the scene resets (history [] / -1) — the start screen opens at once, not on the
+    // next visit
+    store.getState().newScene()
+    expect([store.getState().historyIndex, open()]).toEqual([-1, true])
+    leave()
+    // Hub → New project: the CAD entered on an empty layout with no project — at once, on mount
+    shut()
+    leave = P.installStartScreen(store)
+    expect(open()).toBe(true)
+    // Draw it myself (a project written): it stays shut afterwards; Undo back to nothing: a new project again
+    shut(); store.setState({ elevations: P.withProject(null, P.newProject()) })
+    expect(open()).toBe(false)
+    store.setState({ elevations: null })
+    expect(open()).toBe(true)
+    leave()
+    // off screen (the Hub): a reset opens nothing; a refresh (a fresh store state, empty, then the CAD entered) opens it
+    shut(); store.setState(existing)
+    store.getState().newScene()
+    expect(open()).toBe(false)
+    store.setState({ objects: [], elevations: null, history: [], historyIndex: -1 })
+    leave = P.installStartScreen(store)
+    expect(open()).toBe(true)
+    leave(); shut()
+    // the wiring: ProjectSetup runs it for as long as it is mounted; App's on-entry check and the keeper's are gone
+    expect(src('components/Project/ProjectSetup.jsx')).toMatch(/useEffect\(\(\) => installStartScreen\(store\), \[\]\)/)
+    expect(/openSetup\('new'\)/.test(src('App.jsx') + src('utils/project.js').replace(/export function installStartScreen[\s\S]*?\n\}/, ''))).toBe(false)
+    globalThis.confirm = was
+  })
+
+  it('PS-keeper: on load a layout without a project is given one in that same history entry (one undo step), unused elevation types dropped once; the keeper opens nothing (the start screen is installStartScreen\'s); nothing opens once a layout exists', async () => {
     stop = P.installProjectKeeper(store, () => ({ mhe: 'reach', wallClearIn: 3, units: 'ft · in' }))
     const o = filled(), m = E.migrate(o)
     const T = { ...m.table, types: [...m.table.types, { ...m.table.types[0], id: 'junk', name: "4 levels · 16' 2" }] }
@@ -53,11 +91,10 @@ describe('PS — the project', () => {
     expect([!!P.projectOf(st.elevations), st.elevations.types.map(t => t.id), st.historyIndex]).toEqual([true, [m.table.defaultId], 0])
     expect(JSON.parse(st.history[0]).elevations.project).toBeTruthy()
     expect(st.objects).toBe(m.objects)                                                 // nothing moves
-    // a new, empty layout: Project setup opens
+    // a new, empty layout: the keeper leaves it alone (no project made, nothing opened — installStartScreen's job)
     P.useProjectSetup.setState({ open: false, reason: null })
     store.setState({ objects: [], elevations: null, history: [JSON.stringify({ objects: [], groups: [], elevations: null })], historyIndex: 0 })
-    expect([P.useProjectSetup.getState().open, P.useProjectSetup.getState().reason]).toEqual([true, 'new'])
-    P.useProjectSetup.setState({ open: false, reason: null })
+    expect([P.useProjectSetup.getState().open, store.getState().elevations]).toEqual([false, null])
     // a project with no ceiling; the first racks go down: nothing opens (never once a layout exists), types made for them
     const pr = P.newProject()
     store.setState({ elevations: P.withProject(null, pr) })
