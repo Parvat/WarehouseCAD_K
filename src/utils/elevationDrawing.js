@@ -76,7 +76,8 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const L = [...t.levels].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
   const top = L[L.length - 1]
   const misfit = misfitLevels(t)
-  const topIssue = topLoadIssue(t, building, sprinklerClearanceIn)
+  // an assumed clear height (none set) is drawn, never checked: no ABOVE CLEAR HEIGHT / sprinkler flag against it
+  const topIssue = building?.assumed ? null : topLoadIssue(t, building, sprinklerClearanceIn)
   const loadH = (lv, i) => { const ph = lv.palletHeightIn || 0, next = i + 1 < L.length ? L[i + 1].beamIn - face : Infinity; return Math.max(0, Math.min(ph, next - lv.beamIn - 0.5)) }
   const topLoad = top.beamIn + loadH(top, L.length - 1)
   const bClear = building?.clearHeightIn > 0 ? building.clearHeightIn : null

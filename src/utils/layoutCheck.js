@@ -266,13 +266,16 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }
 }
 
-/** "Check layout · 3 errors" / "· 2 warnings" / "· no issues". */
+/** The reminders line: "No errors · 2 reminders" (null without reminders). */
+export const remindersLabel = (result) => { const n = result?.reminders?.length || 0; return n ? `No errors · ${n} reminder${n === 1 ? '' : 's'}` : null }
+/** "Check layout · 3 errors" / "· 2 warnings" / "· No errors · 2 reminders" (only reminders left) / "· no issues". */
 export function checkLabel(result) {
   if (!result) return 'Check layout'
   const e = result.errors.length, w = result.warnings.length
   if (e) return `Check layout · ${e} error${e === 1 ? '' : 's'}`
   if (w) return `Check layout · ${w} warning${w === 1 ? '' : 's'}`
-  return 'Check layout · no issues'
+  const r = remindersLabel(result)
+  return r ? `Check layout · ${r}` : 'Check layout · no issues'
 }
 
 /* ── the last check, the export question ─────────────────────────────────────

@@ -100,7 +100,8 @@ capacity, column pick blocks, narrow aisles, usable) reads the **bay-side's type
      chip highlighted (`sameBestFit`: same pair, same beams and upright). Then the hint "Select rows on the plan,
      then click this elevation" (`elevTab.js` `addBestFit`, `useElevTab.made`);
    - **Apply to selected rows** and **Remove unused**.
-- **With no clear height set:** 24' is assumed (fit, drawing, checks). The tab notes it, with a link to Project
+- **With no clear height set:** 24' is assumed for the fit and the drawing only. There are no clear-height or
+  sprinkler checks against it, in Check layout or on the drawing. The tab notes it, with a link to Project
   settings, and Check layout lists it as a reminder.
 
 **No proposals.** When the project has a ceiling entry (its clear height set, or 24' assumed) and no elevation yet, the

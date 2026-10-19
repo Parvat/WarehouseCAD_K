@@ -14,6 +14,8 @@ import { planAreaResize } from '../../generate/rackingArea'
 import * as E from '../../utils/elevations'
 import * as P from '../../utils/project'
 import { checkLayout } from '../../utils/layoutCheck'
+import * as LC from '../../utils/layoutCheck'
+import * as E_D from '../../utils/elevationDrawing'
 import { bestFitFor } from '../../utils/elevFit'
 import * as T_ from '../../utils/elevTab'
 
@@ -140,7 +142,7 @@ describe('PS — the project', () => {
     expect(src('App.jsx')).toMatch(/installProjectKeeper\(useCanvasStore,/)
   })
 
-  it('PS-assumed: a clear height not set is 24\' for the fit, the drawing and the checks; Check layout lists what is unset as reminders (per ceiling in use), never as issues', () => {
+  it('PS-assumed: a clear height not set is 24\' for the fit and the drawing only — no clear-height or sprinkler check against it; Check layout lists what is unset as reminders (per ceiling in use), "No errors · N reminders" when only they remain', () => {
     const p60 = { id: 'p60', name: '48×48', faceIn: 48, depthIn: 48, heightIn: 60, weightLb: 2500, beamFaceIn: 4 }
     const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: null, sprinklerIn: null }], defaultCeilingId: 'c' }
     // the fit: pitch 60 + 6 + 4 = 70; top load (n − 1) × 70 + 60 ≤ 288 → 4 levels; upright 210 + 12 → 228 (19')
@@ -160,12 +162,28 @@ describe('PS — the project', () => {
     const two = { ...pr, ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }, { id: 'm', name: 'Mezz', clearHeightIn: null, sprinklerIn: 230 }] }
     const T2 = P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...bestFitFor(two, two.ceilings[0], p60), id: 'a', name: 'a' }, { ...bestFitFor(two, two.ceilings[1], p60), id: 'b', name: 'b' }] }, two)
     expect(P.projectReminders(T2).map(r => r.text)).toEqual(["Clear height not set for Mezz — elevations assume 24'"])
-    // Check layout: reminders apart from the issues; an upright above the assumed 24' is an error against it
+    // Check layout: no clear height set → no clear-height or sprinkler check at all (a 25' upright, a 26' top beam, a
+    // sprinkler height alone), only the reminders; the same elevation under a set 20' ceiling: the errors
     const o = filled(false), m = E.migrate(o)
-    const tall = P.withProject({ ...m.table, types: m.table.types.map(t => ({ ...t, uprightHeightIn: 300 })) }, pr)
+    const heightKinds = new Set(['elev-height', 'elev-load-clear', 'elev-sprinkler'])
+    const tallT = { ...m.table, types: m.table.types.map(t => ({ ...t, uprightHeightIn: 300, levels: [...t.levels.slice(0, -1), { ...t.levels[t.levels.length - 1], beamIn: 312 }] })) }
+    const tall = P.withProject(tallT, pr)
     const res = checkLayout(m.objects, { gridSize: GS, elevations: tall })
     expect(res.reminders.map(r => r.kind)).toEqual(['unset-clear', 'unset-sprinkler'])
-    expect(res.errors.some(e => e.kind === 'elev-height' && /clear height 24'-0"/.test(e.text))).toBe(true)
+    expect(res.errors.filter(e => heightKinds.has(e.kind))).toEqual([])
+    const sprOnly = checkLayout(m.objects, { gridSize: GS, elevations: P.withProject(tallT, { ...pr, ceilings: [{ id: 'c', name: 'Main', clearHeightIn: null, sprinklerIn: 200 }] }) })
+    expect([sprOnly.errors.filter(e => heightKinds.has(e.kind)).length, sprOnly.reminders.map(r => r.kind)]).toEqual([0, ['unset-clear']])
+    const set = checkLayout(m.objects, { gridSize: GS, elevations: P.withProject(tallT, { ...pr, ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 240, sprinklerIn: 230 }] }) })
+    expect(['elev-height', 'elev-load-clear'].every(k => set.errors.some(e => e.kind === k))).toBe(true)
+    // the drawing: 24' drawn, "(ASSUMED)", never flagged against; a set 24' is flagged
+    const tt = tallT.types[0], draw = (b) => E_D.elevationLayout(tt, 96, { w: 800, h: 600 }, { building: b }).items.filter(i => i.t === 'text').map(i => i.s)
+    const assumedTexts = draw({ clearHeightIn: 288, sprinklerIn: null, assumed: true })
+    expect([assumedTexts.some(x => /ABOVE CLEAR HEIGHT|OF SPRINKLERS/.test(x)), assumedTexts.includes('CLEAR HEIGHT 24\'-0" (ASSUMED)')]).toEqual([false, true])
+    expect(draw({ clearHeightIn: 288, sprinklerIn: null }).includes('ABOVE CLEAR HEIGHT')).toBe(true)
+    // the header: only reminders left → "No errors · N reminders"; errors / warnings still win
+    expect([LC.checkLabel({ errors: [], warnings: [], reminders: [{}, {}] }), LC.checkLabel({ errors: [], warnings: [], reminders: [{}] }), LC.checkLabel({ errors: [{}], warnings: [], reminders: [{}] }), LC.checkLabel({ errors: [], warnings: [{}], reminders: [{}] }), LC.checkLabel({ errors: [], warnings: [] })])
+      .toEqual(['Check layout · No errors · 2 reminders', 'Check layout · No errors · 1 reminder', 'Check layout · 1 error', 'Check layout · 1 warning', 'Check layout · no issues'])
+    expect(src('components/RightPanel/LayoutCheckPanel.jsx')).toMatch(/\{remindersLabel\(result\) \|\| 'No issues found\.'\}/)
     expect('reminders' in checkLayout(m.objects, { gridSize: GS, elevations: P.withProject(m.table, { ...pr, ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }] }) })).toBe(false)
     // the panel lists them and opens Project settings; the drawing says "assumed"
     expect(src('components/RightPanel/LayoutCheckPanel.jsx')).toMatch(/aria-label="Reminders"[\s\S]*onClick=\{\(\) => openSetup\('settings'\)\}/)

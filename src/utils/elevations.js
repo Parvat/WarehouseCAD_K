@@ -462,7 +462,10 @@ export function elevationIssues(objects, T) {
     })
     const floors = new Map()
     const ceil = ceilingOf(T, t)
-    if (ceil) floors.set('ceiling', { fp: { id: 'ceiling', clearHeightFt: ceil.clearHeightIn ? ceil.clearHeightIn / 12 : null, sprinklerFt: ceil.sprinklerIn ? ceil.sprinklerIn / 12 : null }, ids: [...ids] })
+    // no clear height set (24' assumed — for drawing the elevation only): no clear-height or sprinkler check at all;
+    // Check layout's reminders say so (utils/project.js projectReminders)
+    if (ceil?.assumed) { /* nothing checked against a guess */ }
+    else if (ceil) floors.set('ceiling', { fp: { id: 'ceiling', clearHeightFt: ceil.clearHeightIn ? ceil.clearHeightIn / 12 : null, sprinklerFt: ceil.sprinklerIn ? ceil.sprinklerIn / 12 : null }, ids: [...ids] })
     else for (const id of ids) { const r = objects.find(o => o.id === id); const fp = r && objects.find(o => o.id === r.parentId && ((Number.isFinite(o.clearHeightFt) && o.clearHeightFt > 0) || (Number.isFinite(o.sprinklerFt) && o.sprinklerFt > 0))); if (fp) { if (!floors.has(fp.id)) floors.set(fp.id, { fp, ids: [] }); floors.get(fp.id).ids.push(id) } }
     const sprClr = sprinklerClearance(T), zLoad = topOfLoad(t)
     for (const { fp, ids: inFp } of floors.values()) {

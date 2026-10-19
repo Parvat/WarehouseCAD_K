@@ -1,6 +1,6 @@
 import { X, OctagonAlert, TriangleAlert, Info } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
-import { useLayoutCheck, goToIssue, exportAnyway, showIssues } from '../../utils/layoutCheck'
+import { useLayoutCheck, goToIssue, exportAnyway, showIssues, remindersLabel } from '../../utils/layoutCheck'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { openSetup } from '../../utils/project'
 
@@ -49,7 +49,7 @@ export function LayoutCheckPanel() {
           <X size={14} strokeWidth={1.5} absoluteStrokeWidth />
         </button>
       </div>
-      {none && <div style={{ padding: '4px 13px 6px', fontSize: 12, color: 'var(--text2)' }}>No issues found.</div>}
+      {none && <div style={{ padding: '4px 13px 6px', fontSize: 12, color: 'var(--text2)' }}>{remindersLabel(result) || 'No issues found.'}</div>}
       <Group label="Errors" items={result.errors} color="var(--red, #C0392B)" Icon={OctagonAlert} />
       <Group label="Warnings" items={result.warnings} color="var(--amber, #B87309)" Icon={TriangleAlert} />
       {!!result.reminders?.length && (

@@ -2294,7 +2294,27 @@ the 24' note), WC-shared (`generateBrief`).
 - Export → the sheets window, 2 pages; the elevation sheet shows 5 levels 2P and 4 levels 1P.
 - A second job, clear height left empty → Draw it myself → Check layout: "No issues found", with Reminders (2):
   "Clear height not set — elevations assume 24'" and "Sprinkler height not set — sprinkler clearance not checked".
- picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
+
+**Unset means unchecked (v2.1).**
+- No clear height set → no clear-height or sprinkler check at all. elevations.js `elevationIssues` skips the ceiling
+  when `ceilingOf` says `assumed`, even with a sprinkler height set, and the drawing's `topIssue` is null against an
+  assumed ceiling (elevationDrawing.js). 24' remains for the fit and for drawing the elevation.
+- The header with only reminders left: "Check layout · No errors · N reminders" (layoutCheck.js `remindersLabel`,
+  `checkLabel`); the panel shows the same line.
+
+Changed: PS-assumed (no height errors with a 26' top beam and 25' upright under an unset ceiling, nor with only a
+sprinkler height; the same elevation under a set 20' ceiling errs; the drawing flags a set 24' but not an assumed one;
+the header labels).
+
+**Break-it:** the checks run against the assumed ceiling → PS-assumed fails.
+
+**Checked in the app:**
+- New job, clear height left empty → Generate. The elevation was raised to a 26' upright and a 24'-2" top beam. The
+  drawing shows only "CLEAR HEIGHT 24'-0" (ASSUMED)", with no flag. Check layout lists no height error: the real
+  column warning, plus the 2 reminders.
+- Draw it myself → Check layout: header "Check layout · No errors · 2 reminders", and the same line in the panel.
+
+### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click
 (canvas2/useCanvasInteraction.js), Shift+click and the bay marquee (canvas2/selection.js), the half-only highlight

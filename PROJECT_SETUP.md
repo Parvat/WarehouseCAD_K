@@ -36,10 +36,13 @@ moves racks asks Regenerate racking / Keep layout, as before.
 step each) and selects the new entry.
 
 **Anything not set** is assumed and reminded. A clear height not set (or no ceiling entry at all) is **24'**
-(`ASSUMED_CLEAR_IN`) for the best fit, the drawing ("CLEAR HEIGHT 24'-0" (ASSUMED)") and the checks. Check layout
+(`ASSUMED_CLEAR_IN`) for the best fit and for drawing the elevation ("CLEAR HEIGHT 24'-0" (ASSUMED)") only. Nothing is
+checked against it: no clear-height or sprinkler check in Check layout, and no "ABOVE CLEAR HEIGHT" / sprinkler flag on
+the drawing, even when a sprinkler height is set. Check layout
 lists "Clear height not set — elevations assume 24'" and "Sprinkler height not set — sprinkler clearance not checked"
 under **Reminders** (`projectReminders`), per ceiling in use. Reminders are never counted as issues, and clicking one
-opens Project settings.
+opens Project settings. With only reminders left, the header reads "Check layout · No errors · N reminders" and the
+panel "No errors · N reminders".
 
 ## Where each input is read: before → after
 
@@ -80,7 +83,7 @@ opens Project settings.
 | The drawing and PDF (`elevationDrawing.js buildingOf`) | the building's fields | the elevation's ceiling (`project.js ceilingFor`) |
 | Properties, building (Sprinkler, Clear ht, Spr. clr fields) | edit the building | **removed** (Project setup) |
 | Elevation workspace (A) / tab (B) (Clear height, Sprinklers inputs) | edit the building | **removed**; with no clear height set, a note that 24' is assumed, with a link to Project settings |
-| A clear height not set | no checks, no fit | **24' assumed** (fit, drawing, checks); Check layout reminds |
+| A clear height not set | no checks, no fit | **24' assumed** for the fit and the drawing; **no** clear-height or sprinkler check; Check layout reminds |
 
 ### Elevation inputs (load clearance, sprinkler clearance, hole pitch, upright step, flue)
 
