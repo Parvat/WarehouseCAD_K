@@ -8,13 +8,15 @@
 import { create } from 'zustand'
 import { editTable, updateType, removeType, setDefault, uniqueTypeName, typeById, assignCells, PALETTE, ELEV_VERSION } from './elevations'
 import { selectionCells } from './elevSelection'
-import { bestFitFor, pairName } from './elevFit'
-import { projectOf, defaultCeiling, defaultPallet, ceilingById, palletById, dropUnusedTypes } from './project'
+import { bestFitFor } from './elevFit'
+import { projectOf, defaultCeiling, defaultPallet, ceilingById, palletById, dropUnusedTypes, nameOf, refreshNames } from './project'
 
-/** { activeId (the elevation the drawing shows), view ('front' | 'side'), adding (the + Add elevation form open),
- *  made (the last Create's outcome: { id, kind: 'new' | 'exists' | 'none', at } — its chip highlighted, the hint
- *  shown, until the next Create or an assignment) } — presentation state. */
-export const useElevTab = create(() => ({ activeId: null, view: 'front', adding: false, made: null }))
+/** { activeId (the elevation the list's drawing shows), view ('front' | 'side'), editing (the editor: null, or { id
+ *  (null: a new elevation), draft (the elevation being made or changed — nothing is written until Save), touched (the
+ *  drawing has changed its levels) }), made (the last Save's outcome: { id, kind: 'new' | 'exists' | 'saved' | 'none',
+ *  at } — its chip highlighted, the hint shown, until the next Save or an assignment) } — presentation state.
+ *  The list (choosing, assigning) and the editor (making, changing) are never shown at the same time. */
+export const useElevTab = create(() => ({ activeId: null, view: 'front', editing: null, made: null }))
 
 /** The selection as whole ROW SIDES — "select rows": each picked bay brings every bay of its rack on that side. */
 export function rowSideCells(st) {
@@ -23,23 +25,8 @@ export function rowSideCells(st) {
   return out
 }
 
-/** An elevation's shown name: its own when renamed, else its level count and pairing ("5 levels · 48×40 · Main"). */
-export const nameOf = (table, t) => (t.named ? t.name : pairName(projectOf(table), t))
-/** Every elevation not renamed called by its pairing (unique) — after a change to levels, pairing or the project. */
-export function refreshNames(table) {
-  if (!table?.types?.length) return table
-  let changed = false, tb = table
-  for (const t of table.types) {
-    if (t.named) continue
-    const base = pairName(projectOf(table), t)
-    // its name already the pairing (or the pairing + " 2"…) and no one else's: kept — so a copy never renames the first
-    const tail = String(t.name || '').startsWith(base) ? t.name.slice(base.length) : null
-    if (tail !== null && (tail === '' || /^ \d+$/.test(tail)) && !tb.types.some(x => x.id !== t.id && x.name === t.name)) continue
-    const want = uniqueTypeName(tb, base, t.id)
-    if (want !== t.name) { tb = updateType(tb, t.id, { name: want }); changed = true }
-  }
-  return changed ? tb : table
-}
+/** Names (shown and stored, always unique) — utils/project.js, where the keeper also dedupes a layout on load. */
+export { nameOf, refreshNames }
 
 const commit = (store, table, objects = null) => store.getState().commitElevations(table, objects)
 const freshId = (table) => { let k = (table?.types?.length || 0) + 1, id; do { id = `elev-${Date.now().toString(36)}-${k++}` } while (table?.types?.some(t => t.id === id)); return id }
@@ -68,9 +55,79 @@ export function addBestFit(store, { ceilingId = null, palletId = null } = {}) {
   const table = refreshNames({ ...base, defaultId: base.defaultId || id, types: [...base.types, t] })
   const r = editTable(st.objects, table, tb => tb)
   commit(store, r.table, r.objects === st.objects ? null : r.objects)
-  useElevTab.setState({ activeId: id, adding: false })
+  useElevTab.setState({ activeId: id })
   return id
 }
+/* ── the editor: a draft, written once on Save (one undo step) ─────────────────────────────────────────────────────── */
+
+const beamsOf = (t) => t.levels.map(l => l.beamIn).join(',')
+/** An elevation of `table` the same as `t` — same ceiling and pallet, beams, upright and beam face — other than
+ *  `exceptId` → it, or null. */
+export function sameElevation(table, t, exceptId = null) {
+  return (table?.types || []).find(x => x.id !== exceptId && (x.ceilingId ?? null) === (t.ceilingId ?? null) && (x.palletId ?? null) === (t.palletId ?? null)
+    && x.uprightHeightIn === t.uprightHeightIn && (x.beamFaceIn ?? null) === (t.beamFaceIn ?? null) && beamsOf(x) === beamsOf(t)) || null
+}
+/** The best fit for a draft's ceiling, pallet and beam face (its name, colour and id kept) → the refitted draft, or the
+ *  draft unchanged when nothing fits. */
+export function refitDraft(table, draft) {
+  const pr = projectOf(table), c = ceilingById(pr, draft.ceilingId) || defaultCeiling(pr), p = palletById(pr, draft.palletId) || defaultPallet(pr)
+  const d = bestFitFor(pr, c, p, { beamFaceIn: draft.beamFaceIn })
+  return d ? { ...draft, ...d } : draft
+}
+/** "+ Add elevation": the editor opens on the best fit for the default ceiling and pallet (the project's beam face). */
+export function startNew(store) {
+  const T = store.getState().elevations, pr = projectOf(T)
+  const d = bestFitFor(pr, defaultCeiling(pr), defaultPallet(pr))
+  if (!d) return false
+  useElevTab.setState({ editing: { id: null, draft: { ...d, name: '', named: false }, touched: false }, made: null })
+  return true
+}
+/** ✎ on a chip: the editor opens on a copy of that elevation. */
+export function startEdit(store, id) {
+  const t = typeById(store.getState().elevations, id)
+  if (!t) return false
+  useElevTab.setState({ editing: { id, draft: JSON.parse(JSON.stringify(t)), touched: false }, activeId: id, made: null })
+  return true
+}
+/** The draft changed — `patch` from the editor's fields, or `next` from the drawing (`touched`). A new ceiling or
+ *  pallet refits it (the best fit for the new pair); a new beam face refits it until the drawing has changed its
+ *  levels, after which the levels stay and the checks say what no longer fits. */
+export function editDraft(store, patch, { fromDrawing = false } = {}) {
+  const e = useElevTab.getState().editing
+  if (!e) return
+  const T = store.getState().elevations
+  let draft = { ...e.draft, ...patch }, touched = e.touched || fromDrawing
+  const pair = ('ceilingId' in patch && patch.ceilingId !== e.draft.ceilingId) || ('palletId' in patch && patch.palletId !== e.draft.palletId)
+  if (!fromDrawing && (pair || ('beamFaceIn' in patch && !e.touched))) { draft = refitDraft(T, draft); if (pair) touched = false }
+  useElevTab.setState({ editing: { ...e, draft, touched } })
+}
+export const cancelEdit = () => useElevTab.setState({ editing: null })
+/** Save: a new elevation is added (unless the same one exists — then that one is picked and said so); a changed one
+ *  is written everywhere it is used. One undo step. Back to the list, the chip picked, the hint shown → the outcome. */
+export function saveEdit(store) {
+  const e = useElevTab.getState().editing
+  if (!e) return null
+  const st = store.getState(), T = st.elevations, d = e.draft
+  const wanted = String(d.name || '').trim(), named = !!wanted && d.named !== false && wanted !== nameOf(T, { ...d, named: false })
+  if (!e.id) {
+    const same = sameElevation(T, d)
+    if (same) { useElevTab.setState({ editing: null, activeId: same.id, made: { id: same.id, kind: 'exists', at: Date.now() } }); return { kind: 'exists', id: same.id } }
+    const id = freshId(T), base = T || { version: ELEV_VERSION, defaultId: null, types: [] }
+    const t = { ...d, id, color: d.color || PALETTE[base.types.length % PALETTE.length], named, name: named ? uniqueTypeName(base, wanted, id) : '' }
+    const r = editTable(st.objects, refreshNames({ ...base, defaultId: base.defaultId || id, types: [...base.types, t] }), tb => tb)
+    commit(store, r.table, r.objects === st.objects ? null : r.objects)
+    useElevTab.setState({ editing: null, activeId: id, made: { id, kind: 'new', at: Date.now() } })
+    return { kind: 'new', id }
+  }
+  const cur = typeById(T, e.id)
+  if (!cur) { useElevTab.setState({ editing: null }); return null }
+  const next = { ...d, id: e.id, named, name: named ? uniqueTypeName(T, wanted, e.id) : cur.name }
+  const r = editTable(st.objects, T, tb => refreshNames(updateType(tb, e.id, next)))
+  commit(store, r.table, r.objects === st.objects ? null : r.objects)
+  useElevTab.setState({ editing: null, activeId: e.id, made: { id: e.id, kind: 'saved', at: Date.now() } })
+  return { kind: 'saved', id: e.id }
+}
+
 /** Elevation `id` on every selected row side (one undo step) → whether anything changed. */
 export function assignSelected(store, id) {
   const st = store.getState(), T = st.elevations

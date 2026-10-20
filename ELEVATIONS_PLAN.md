@@ -86,20 +86,44 @@ capacity, column pick blocks, narrow aisles, usable) reads the **bay-side's type
   `trace.rightpanel.v1`). Properties keeps its own width.
 - The left toolbar, Generate and the canvas all stay as they are. Rows are selected on the canvas as usual.
 
-**The tab's content, top to bottom** (`components/Elevations/ElevationsTab.jsx`):
-1. **Front | Side** and **Simple | Detailed**.
-2. **The drawing**, taking most of the space (`fill`).
+**The tab: a list and an editor, never shown together** (`components/Elevations/ElevationsTab.jsx`).
+
+**The list is for choosing and assigning:**
+1. **Front | Side** and **Simple | Detailed**, with the beam length on the right ("Beam 8'-0"", read-only).
+2. **The drawing** of the active elevation, taking most of the space (`fill`). Here it is **read-only**: zoom, pan,
+   Fit and full screen work, but nothing is edited.
 3. **The elevation chips:**
    - each chip shows its colour, name and bay count;
-   - names show the pairing, "5 levels · 48×40 · Main" (`elevFit.js` `pairName`), unless renamed;
-   - a menu offers rename (empty goes back to the pairing), ceiling, pallet (a change refits it to the best fit for
-     the new pair), colour, duplicate, set default and delete;
-   - **+ Add elevation** opens an inline form with Ceiling ▾ and Pallet ▾. Each list ends with "+ New ceiling
-     height…" / "+ New pallet size…", which opens a small form that saves to the project and selects the new entry.
-     **Create** always gives visible feedback: either a new chip, selected, or "Already exists: <name>" with that
-     chip highlighted (`sameBestFit`: same pair, same beams and upright). Then the hint "Select rows on the plan,
-     then click this elevation" (`elevTab.js` `addBestFit`, `useElevTab.made`);
-   - **Apply to selected rows** and **Remove unused**.
+   - **✎** opens the editor on that elevation;
+   - **⋯** offers colour, duplicate, set default and delete;
+   - **+ Add elevation** opens the editor on a new one;
+   - **Apply to selected rows** and **Remove unused**;
+   - after a Save, a status line and the chip highlighted: "Created / Saved / Already exists: <name>. Select rows,
+     then click this elevation."
+
+**The editor is for making and changing one elevation.** It replaces the list until Save or Cancel
+(`elevTab.js` `useElevTab.editing`: `{ id, draft, touched }`):
+- **Ceiling ▾** and **Pallet ▾**, each ending with "+ New ceiling height…" / "+ New pallet size…" (a small inline
+  form that saves to the project, one undo step, and picks the new entry). A new pair refits the draft to the best
+  fit for it.
+- **Beam face (in):** the elevation's own; a new elevation starts from the project's default (Advanced). Until the
+  drawing has changed the levels, a new face refits the draft (the pitch follows it); after that the levels stay and
+  the drawing shows what no longer fits.
+- **Name:** empty means it is called by its pairing.
+- **Beam length**, read-only: the selected row's (its most common bay), else the most common length among the
+  elevation's bays. There is no beam-length control in the elevation; it belongs to the rack.
+- **The drawing:** the best fit to start. Levels are edited on it as before (drag a beam, type a dimension, add or
+  remove a level, the upright), into the draft.
+- **Save** (`saveEdit`) writes it in one undo step: a new elevation is added, or a changed one is written everywhere
+  it is used. A new one identical to an existing elevation (same ceiling, pallet, beams, upright and face —
+  `sameElevation`) is not added; that one is picked, and the status says "Already exists". **Cancel** (or Esc)
+  discards the draft.
+
+**Names are always unique** (`project.js` `nameOf`, `refreshNames`, `uniqueNames`). An elevation is called by its
+own name when renamed, otherwise by its level count and pairing, with the unique suffix its stored name carries:
+"5 levels · 48×40 · sf" and "5 levels · 48×40 · sf 2". (Two chips once both read "5 levels · 48×40 · sf": the shown
+name ignored the stored suffix.) The keeper dedupes an existing layout on load, folded into that history entry.
+
 - **With no clear height set:** 24' is assumed for the fit and the drawing only. There are no clear-height or
   sprinkler checks against it, in Check layout or on the drawing. The tab notes it, with a link to Project
   settings, and Check layout lists it as a reminder.
@@ -107,7 +131,8 @@ capacity, column pick blocks, narrow aisles, usable) reads the **bay-side's type
 **No proposals.** When the project has a ceiling entry (its clear height set, or 24' assumed) and no elevation yet, the
 keeper creates the best fit for the default ceiling and pallet silently (`project.js` `firstElevations` → `elevFit.js` `bestFitFor`).
 
-**Best fit** (`bestFitFor(project, ceiling, pallet)`):
+**Best fit** (`bestFitFor(project, ceiling, pallet, { beamFaceIn })` — the face: the elevation's own, else the project's
+default):
 - The first level is on the floor.
 - Pitch = pallet height + load clearance + beam face, rounded up to the hole pitch.
 - Levels are added while the top load is at or under min(clear height, sprinkler − sprinkler clearance).
@@ -115,8 +140,8 @@ keeper creates the best fit for the default ceiling and pallet silently (`projec
 - Worked example (clear 30', sprinklers 29'-6", 48" pallet): pitch 58", 5 levels, upright 21'.
 
 **Assigning:** select rows on the canvas, then click an elevation chip or **Apply to selected rows**. Whole row
-sides take it (`rowSideCells`). Each assignment is one undo step. There is no Apply / Discard: every edit in the tab
-(assign, add, rename, recolour, pairing, a beam dragged) is one `commitElevations`.
+sides take it (`rowSideCells`). Each assignment is one undo step. An elevation changes only through the editor's Save
+(one `commitElevations`); colour, duplicate, default and delete from the chip menu are one step each.
 
 **The drawing:**
 - `elevationLayout` takes `view` (front / side / both) plus `zoom` and `pan`.

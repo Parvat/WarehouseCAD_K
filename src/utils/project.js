@@ -6,10 +6,12 @@
 //
 //   project = {
 //     ceilings: [{ id, name, clearHeightIn | null, sprinklerIn | null }], defaultCeilingId,
-//     pallets:  [{ id, name, faceIn, depthIn, heightIn, weightLb, beamFaceIn }], defaultPalletId,
+//     pallets:  [{ id, name, faceIn, depthIn, heightIn, weightLb }], defaultPalletId,
 //     equipment: { mhe },                       // the forklift; aisle widths follow it (the rules)
 //     rules: { wallClearIn, units },
-//     advanced: { clearanceIn, sprinklerClearanceIn, holePitchIn, uprightStepIn, flueIn },
+//     advanced: { clearanceIn, sprinklerClearanceIn, holePitchIn, uprightStepIn, flueIn, beamFaceIn },
+//                                               // beamFaceIn: the default beam face of NEW elevations — each elevation
+//                                               // carries its own (and a level may override it: another beam profile)
 //     building: { lengthFt, widthFt, gridXFt, gridYFt, columnsAlongWall, orientation, maxRunFt },  // the start screen's
 //   }                                                                                               // brief (Generate's)
 //
@@ -17,12 +19,12 @@
 // it as a reminder (`projectReminders`).
 
 import { create } from 'zustand'
-import { ELEV_VERSION, isBeamRack, typeById, typeIdAt, sidesOf, snapshotOf, SPRINKLER_CLEARANCE_IN, ASSUMED_CLEAR_IN, migrate, syncAllLevels, PALETTE, editTable } from './elevations'
+import { ELEV_VERSION, isBeamRack, typeById, typeIdAt, sidesOf, snapshotOf, SPRINKLER_CLEARANCE_IN, ASSUMED_CLEAR_IN, migrate, syncAllLevels, PALETTE, editTable, updateType, uniqueTypeName, dedupeNames } from './elevations'
 import { bestFitFor, pairName } from './elevFit'
 export { ASSUMED_CLEAR_IN }
 
-export const ADVANCED_DEFAULTS = { clearanceIn: 6, sprinklerClearanceIn: 18, holePitchIn: 2, uprightStepIn: 12, flueIn: 6 }
-export const PALLET_DEFAULT = { name: '48×40', faceIn: 40, depthIn: 48, heightIn: 48, weightLb: 2500, beamFaceIn: 4 }
+export const ADVANCED_DEFAULTS = { clearanceIn: 6, sprinklerClearanceIn: 18, holePitchIn: 2, uprightStepIn: 12, flueIn: 6, beamFaceIn: 4 }
+export const PALLET_DEFAULT = { name: '48×40', faceIn: 40, depthIn: 48, heightIn: 48, weightLb: 2500 }
 export const RULES_DEFAULTS = { wallClearIn: 3, units: 'ft · in' }
 /** The start screen's building and Generate's brief, before anyone changes them. */
 export const BUILDING_DEFAULTS = { lengthFt: 240, widthFt: 120, gridXFt: 50, gridYFt: 54, columnsAlongWall: false, orientation: 'auto', maxRunFt: 150 }
@@ -82,8 +84,8 @@ export function migrateProject(objects, table, current = {}) {
   const pal = {
     faceIn: count('palletWIn') ?? current.palletWIn ?? PALLET_DEFAULT.faceIn, depthIn: count('palletDIn') ?? current.palletDIn ?? PALLET_DEFAULT.depthIn,
     heightIn: lv0?.palletHeightIn ?? table?.fit?.palletHeightIn ?? PALLET_DEFAULT.heightIn, weightLb: lv0?.loadLb ?? PALLET_DEFAULT.weightLb,
-    beamFaceIn: Number.isFinite(def?.beamFaceIn) ? def.beamFaceIn : table?.fit?.beamFaceIn ?? PALLET_DEFAULT.beamFaceIn,
   }
+  const beamFaceIn = Number.isFinite(def?.beamFaceIn) ? def.beamFaceIn : table?.fit?.beamFaceIn ?? ADVANCED_DEFAULTS.beamFaceIn
   const pr = newProject({ mhe: current.mhe || 'reach', wallClearIn: Number.isFinite(current.wallClearIn) ? current.wallClearIn : RULES_DEFAULTS.wallClearIn, units: current.units || RULES_DEFAULTS.units, pallet: pal })
   const fp = objects.find(o => typeof o.type === 'string' && o.type.startsWith('fp_') && ((o.clearHeightFt > 0) || (o.sprinklerFt > 0)))
   if (fp) {
@@ -91,7 +93,7 @@ export function migrateProject(objects, table, current = {}) {
     pr.ceilings = [c]; pr.defaultCeilingId = c.id
   }
   const f = table?.fit || {}
-  pr.advanced = { ...ADVANCED_DEFAULTS, ...(Number.isFinite(f.clearanceIn) ? { clearanceIn: f.clearanceIn } : Number.isFinite(def?.clearanceIn) ? { clearanceIn: def.clearanceIn } : {}), ...(Number.isFinite(table?.sprinklerClearanceIn) ? { sprinklerClearanceIn: table.sprinklerClearanceIn } : {}), ...(Number.isFinite(f.holePitchIn) ? { holePitchIn: f.holePitchIn } : Number.isFinite(def?.holePitchIn) ? { holePitchIn: def.holePitchIn } : {}), ...(Number.isFinite(f.uprightStepIn) ? { uprightStepIn: f.uprightStepIn } : {}) }
+  pr.advanced = { ...ADVANCED_DEFAULTS, beamFaceIn, ...(Number.isFinite(f.clearanceIn) ? { clearanceIn: f.clearanceIn } : Number.isFinite(def?.clearanceIn) ? { clearanceIn: def.clearanceIn } : {}), ...(Number.isFinite(table?.sprinklerClearanceIn) ? { sprinklerClearanceIn: table.sprinklerClearanceIn } : {}), ...(Number.isFinite(f.holePitchIn) ? { holePitchIn: f.holePitchIn } : Number.isFinite(def?.holePitchIn) ? { holePitchIn: def.holePitchIn } : {}), ...(Number.isFinite(f.uprightStepIn) ? { uprightStepIn: f.uprightStepIn } : {}) }
   return pr
 }
 
@@ -111,21 +113,64 @@ export function layoutAffecting(prev, next) {
   return (a?.faceIn !== b?.faceIn) || (a?.depthIn !== b?.depthIn) || (prev.equipment?.mhe !== next.equipment?.mhe) || (prev.rules?.wallClearIn !== next.rules?.wallClearIn)
 }
 
-/** The elevations following the pallets they carry: a type's pallet (its own, else the default) whose height, weight
- *  or beam face changed from `prev` gives every level that pallet height and load, and the type that beam face →
- *  { objects, table }. Levels and beams stay where they are (the checks show what no longer fits). */
+/** The elevations following the pallets they carry: a type's pallet (its own, else the default) whose height or weight
+ *  changed from `prev` gives every level that pallet height and load → { objects, table }. Levels, beams and beam faces
+ *  stay where they are (the beam face is the elevation's own; the checks show what no longer fits). */
 export function syncTypesToPallets(objects, table, prev, next) {
   if (!table?.types?.length || !prev) return { objects, table }
   let changed = false
   const types = table.types.map(t => {
     const p = palletById(next, t.palletId) || defaultPallet(next), q = palletById(prev, t.palletId) || defaultPallet(prev)
     if (!p || !q || p.id !== q.id) return t
-    if (p.heightIn === q.heightIn && p.weightLb === q.weightLb && p.beamFaceIn === q.beamFaceIn) return t
+    if (p.heightIn === q.heightIn && p.weightLb === q.weightLb) return t
     changed = true
-    return { ...t, beamFaceIn: p.beamFaceIn ?? t.beamFaceIn, levels: t.levels.map(l => ({ ...l, palletHeightIn: p.heightIn ?? l.palletHeightIn, loadLb: p.weightLb ?? l.loadLb })) }
+    return { ...t, levels: t.levels.map(l => ({ ...l, palletHeightIn: p.heightIn ?? l.palletHeightIn, loadLb: p.weightLb ?? l.loadLb })) }
   })
   return changed ? { objects, table: { ...table, types } } : { objects, table }
 }
+
+/** A project from before the beam face left the pallet: the default pallet's beam face becomes the project's default
+ *  for new elevations (advanced.beamFaceIn) and the pallets drop theirs. The elevations keep their own faces — nothing
+ *  moves. → the same project when already in shape. */
+export function normalizeProject(pr) {
+  if (!pr) return pr
+  const legacy = pr.pallets?.some(p => 'beamFaceIn' in p), missing = !Number.isFinite(pr.advanced?.beamFaceIn)
+  if (!legacy && !missing) return pr
+  const was = defaultPallet(pr)?.beamFaceIn
+  return {
+    ...pr,
+    pallets: pr.pallets.map(p => { const { beamFaceIn, ...rest } = p; return rest }),     // eslint-disable-line no-unused-vars
+    advanced: { ...ADVANCED_DEFAULTS, ...(pr.advanced || {}), beamFaceIn: Number.isFinite(pr.advanced?.beamFaceIn) ? pr.advanced.beamFaceIn : Number.isFinite(was) && was > 0 ? was : ADVANCED_DEFAULTS.beamFaceIn },
+  }
+}
+
+/* ── names: an elevation is called by its own name when renamed, else by its level count and pairing — always unique ── */
+
+const pairForm = (base, name) => { const n = String(name || ''); if (!n.startsWith(base)) return false; const tail = n.slice(base.length); return tail === '' || /^ \d+$/.test(tail) }
+/** An elevation's shown name: its own when renamed; else its pairing ("5 levels · 48×40 · Main"), with the unique
+ *  suffix its stored name carries ("… 2") — so two elevations with the same pairing never read the same. */
+export const nameOf = (table, t) => {
+  if (t.named) return t.name
+  const base = pairName(projectOf(table), t)
+  return pairForm(base, t.name) ? t.name : base
+}
+/** Every elevation not renamed called by its pairing, unique (" 2", " 3" …); a name already of that form and no one
+ *  else's is kept, so adding a copy never renames the first. */
+export function refreshNames(table) {
+  if (!table?.types?.length) return table
+  let tb = table
+  for (const t of table.types) {
+    if (t.named) continue
+    const cur = typeById(tb, t.id), base = pairName(projectOf(table), cur)
+    if (pairForm(base, cur.name) && !tb.types.some(x => x.id !== cur.id && x.name === cur.name)) continue
+    const want = uniqueTypeName(tb, base, cur.id)
+    if (want !== cur.name) tb = updateType(tb, cur.id, { name: want })
+  }
+  return tb
+}
+/** No two elevations with the same name: the pairings refreshed (refreshNames), then any renamed one sharing a name
+ *  with one before it given the next free suffix. The load's tidy — existing layouts deduped once. */
+export const uniqueNames = (table) => dedupeNames(refreshNames(table))
 
 /** The table with `project` (a layout without a table: one holding only the project — no types yet). */
 export const withProject = (table, project) => (table ? { ...table, project } : { version: ELEV_VERSION, defaultId: null, types: [], project })
@@ -261,12 +306,16 @@ export function installProjectKeeper(store, current = () => ({})) {
     const T = st.elevations, racks = st.objects.some(isBeamRack)
     if (!projectOf(T)) {
       if (!st.objects.length) return                             // a new, empty layout: the start screen's (installStartScreen)
-      fold(st, withProject(dropUnusedTypes(st.objects, T), migrateProject(st.objects, T, current())))
+      fold(st, uniqueNames(withProject(dropUnusedTypes(st.objects, T), migrateProject(st.objects, T, current()))))
       return
     }
-    const pr = projectOf(T)
+    // today's shape, in that same history entry — nothing moves: the beam face out of the pallets (normalizeProject),
+    // every elevation's name unique (uniqueNames — two chips once read "5 levels · 48×40 · sf")
+    const pr0 = projectOf(T), pr = normalizeProject(pr0)
+    let table = uniqueNames(pr === pr0 ? T : withProject(T, pr)), objects = st.objects
     // no elevation yet: the best fit for the default ceiling and pallet, silently (`firstElevations`)
-    if (!T.types?.length && (racks || defaultCeiling(pr))) { const made = firstElevations(st.objects, T); if (made) fold(st, made.table, made.objects) }
+    if (!table.types?.length && (racks || defaultCeiling(pr))) { const made = firstElevations(objects, table); if (made) { table = made.table; objects = made.objects } }
+    if (table !== T || objects !== st.objects) fold(st, table, objects)
   }
   run(store.getState())
   return store.subscribe(run)

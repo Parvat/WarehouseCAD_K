@@ -203,3 +203,9 @@ select { background: var(--surface2) !important; color: var(--text) !important; 
 
 /* Hide fp dim labels when object not selected */
 .dim-labels-hidden { display: none; }
+/* compact number fields (the start screen): no spinner over the unit */
+.no-spin::-webkit-outer-spin-button, .no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.no-spin { -moz-appearance: textfield; appearance: textfield; }
+/* THEME.md: a compact field takes focus as a whole — 2px blue outline, the fill turns white; the unit stays inside */
+.t5-field:focus-within { outline: 2px solid #1B4FD8; outline-offset: 0; background: #fff !important; }
+.t5-field input:focus, .t5-field input:focus-visible { outline: none !important; box-shadow: none !important; }

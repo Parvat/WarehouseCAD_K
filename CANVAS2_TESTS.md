@@ -2367,6 +2367,39 @@ both, Building only, Columns only, none, hidden, plus locked items; the wiring; 
 layers — unlock them in Layers to select"; Delete → `fp_rect`, `column_grid` left, the padlocks shown in Layers; the
 note gone after 6.5 s.
 
+**The elevation editor, the beam face, unique names, the one-step start screen (PS v3).**
+- The Elevations tab is a **list** (choosing and assigning: a read-only drawing, chips with ✎ and ⋯, + Add
+  elevation, Apply to selected rows, Remove unused) or an **editor** (making and changing: Ceiling ▾ and Pallet ▾
+  with "+ New…", beam face, name, the beam length read-only, the drawing, Save / Cancel), never both. utils/elevTab.js
+  `startNew`, `startEdit`, `editDraft`, `saveEdit`, `cancelEdit`, `sameElevation`, `refitDraft`; ElevationDrawing
+  `readOnly`.
+- The beam face left the pallet. The project keeps `advanced.beamFaceIn` as the default for new elevations;
+  `normalizeProject` migrates a layout on load and nothing moves. `bestFitFor(…, { beamFaceIn })`; the pallet's
+  beam face is gone from Project settings, the start screen and "+ New pallet size…".
+- Names are always unique: `nameOf` shows the stored unique form ("… sf 2"), and the keeper runs `uniqueNames` on
+  load (naming moved from elevTab.js to project.js).
+- The start screen is ONE screen (640 px, THEME.md headers, fields and spacing; the units inside the fields; focus
+  on the whole field).
+
+New: PS-names, PS-beam-face, PS-editor. Changed: PS-migrate, PS-changes, PS-inputs, PS-entries, EV-background,
+EV-tab-wiring.
+
+**Break-its:**
+- the shown name ignoring the stored suffix → PS-names;
+- the migration left out → PS-beam-face;
+- Save without the "Already exists" check → PS-editor.
+
+**Checked in the app** (real mouse):
+- The start screen is one step, 640 × 572, with Building, Pallet, Layout and Advanced. Generate layout → 325
+  bay-sides.
+- The list: read-only drawing, "Beam 8'-0"".
+- + Add elevation → the editor alone, with no beam-length control. + New pallet size (48 face, 60") is picked; beam
+  face 5 → 4 levels, upright 19'. Save → "Created: 4 levels · 48×48 · Main. Select rows, then click this
+  elevation.", the chip picked, one undo step. The same again → "Already exists", still 2.
+- ✎, face 6, Cancel → unchanged. ✎, a beam dragged (the store untouched) → Save → beam 116 → 128, one undo step,
+  "Saved".
+- Names are unique; the pallets carry no beam face; the default face is 4.
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click

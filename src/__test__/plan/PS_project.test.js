@@ -35,7 +35,7 @@ describe('PS — the project', () => {
     expect(pr.ceilings.map(c => [c.name, c.clearHeightIn, c.sprinklerIn])).toEqual([['Main', 360, 354]])
     expect(pr.defaultCeilingId).toBe(pr.ceilings[0].id)
     const pal = P.defaultPallet(pr)
-    expect([pal.faceIn, pal.depthIn, pal.heightIn, pal.beamFaceIn, pal.name]).toEqual([40, 48, 48, 4, '48×40'])
+    expect([pal.faceIn, pal.depthIn, pal.heightIn, 'beamFaceIn' in pal, pal.name, pr.advanced.beamFaceIn]).toEqual([40, 48, 48, false, '48×40', 4])   // the beam face: the project's default for new elevations, not the pallet's
     expect([pr.equipment.mhe, pr.rules.wallClearIn, pr.rules.units, pr.advanced.holePitchIn, pr.advanced.sprinklerClearanceIn, pr.advanced.clearanceIn, pr.advanced.uprightStepIn, pr.advanced.flueIn]).toEqual(['turret', 6, 'meters', 3, 24, 6, 12, 6])
     // no heights on the building: no ceiling (the setup asks)
     expect(P.migrateProject(filled(false), null, {}).ceilings).toEqual([])
@@ -140,14 +140,16 @@ describe('PS — the project', () => {
     stop(); stop = null
   })
 
-  it('PS-changes: what moves racks (the default pallet\'s face or depth, the forklift, the wall clearance) asks Regenerate / Keep; a pallet\'s height, weight or beam face updates the elevations that carry it; ceilings drive the checks', () => {
+  it('PS-changes: what moves racks (the default pallet\'s face or depth, the forklift, the wall clearance) asks Regenerate / Keep; a pallet\'s height or weight updates the elevations that carry it (their beam faces their own); ceilings drive the checks', () => {
     const pr = P.newProject(), pal = P.defaultPallet(pr)
     const with_ = (f) => { const n = JSON.parse(JSON.stringify(pr)); f(n); return n }
     expect([P.layoutAffecting(pr, with_(n => { n.pallets[0].faceIn = 42 })), P.layoutAffecting(pr, with_(n => { n.equipment.mhe = 'turret' })), P.layoutAffecting(pr, with_(n => { n.rules.wallClearIn = 9 })), P.layoutAffecting(pr, with_(n => { n.pallets[0].heightIn = 60 })), P.layoutAffecting(pr, with_(n => { n.ceilings.push({ id: 'c', name: 'x', clearHeightIn: 300 }) }))]).toEqual([true, true, true, false, false])
     const T = { version: 1, defaultId: 'a', types: [E.makeType({ id: 'a', levelsCount: 4 })], project: pr }
-    const next = with_(n => { n.pallets[0].heightIn = 54; n.pallets[0].weightLb = 2500; n.pallets[0].beamFaceIn = 5 })
+    const next = with_(n => { n.pallets[0].heightIn = 54; n.pallets[0].weightLb = 2500 })
     const r = P.syncTypesToPallets([], T, pr, next)
-    expect([r.table.types[0].levels.every(l => l.palletHeightIn === 54 && l.loadLb === 2500), r.table.types[0].beamFaceIn, r.table.types[0].levels.map(l => l.beamIn)]).toEqual([true, 5, [0, 60, 120, 180]])
+    expect([r.table.types[0].levels.every(l => l.palletHeightIn === 54 && l.loadLb === 2500), r.table.types[0].beamFaceIn, r.table.types[0].levels.map(l => l.beamIn)]).toEqual([true, 4, [0, 60, 120, 180]])
+    // a new default beam face (Advanced) changes no existing elevation — only new ones start from it
+    expect(P.syncTypesToPallets([], T, pr, with_(n => { n.advanced.beamFaceIn = 6 })).table).toBe(T)
     expect(P.syncTypesToPallets([], T, pr, pr).table).toBe(T)
     // Check layout reads the project's ceiling (the building has none)
     const o = filled(false), m = E.migrate(o)
@@ -181,11 +183,17 @@ describe('PS — the project', () => {
     const ui = src('components/Project/ProjectSetup.jsx')
     const startUi = ui.slice(ui.indexOf('function StartCard'), ui.indexOf('function SettingsCard')), setUi = ui.slice(ui.indexOf('function SettingsCard'))
     const inOrder = (txt, keys) => { const o = keys.map(k => txt.indexOf(k)); return o.every((v, i) => v > 0 && (i === 0 || v > o[i - 1])) }
-    // the start screen: building, pallet, forklift + walls, Advanced; then the layout step; Generate layout / Draw it myself
-    expect(inOrder(startUi, ['aria-label="New project"', 'aria-label="Building"', 'label="Clear height (ft)"', 'label="Sprinkler height (ft)"', 'aria-label="Pallet"', 'label="Beam face (in)"', 'aria-label="Equipment and rules"', 'label="Wall clearance (in)"', '<Advanced ', 'label="Column grid X (ft)"', 'label="Max rack run (ft)"', 'aria="Row direction"', ' Draw it myself</button>', ' Generate layout</button>'])).toBe(true)
+    // the start screen: ONE screen, no second step — building (length × width, clear, sprinkler), pallet (face × depth ×
+    // height, weight), layout (forklift, column grid, row direction, max run, wall clearance), Advanced; the two buttons
+    expect(inOrder(startUi, ['aria-label="New project"', 'aria-label="Building"', '<Times label="Length × width">', 'aria="Length (ft)"', 'aria="Width (ft)"', 'aria="Clear height (ft)"', 'aria="Sprinkler height (ft)"', 'aria-label="Pallet"', '<Times label="Face × depth × height">', 'aria="Pallet face (in)"', 'aria="Pallet depth (in)"', 'aria="Pallet height (in)"', 'aria="Pallet weight (lb)"', 'aria-label="Layout"', '<ForkliftSelect ', '<Times label="Column grid">', 'aria="Row direction"', 'aria="Max rack run (ft)"', 'aria="Wall clearance (in)"', '<Advanced ', ' Draw it myself</button>', '<Sparkles size={14} /> Generate layout</>'])).toBe(true)
+    expect(/setStep|step === 2|Beam face \(in\)"/.test(startUi)).toBe(false)                     // no second step; no beam face on the pallet
+    expect(startUi).toMatch(/width: 'min\(640px, 100%\)'/)                                          // medium-size
+    expect(startUi).toMatch(/gap: 24 \}\}>/)                                                         // more space between groups than within (12)
     // Project settings: the same sections, lists with + Add, delete not when in use, set default
     expect(inOrder(setUi, ['aria-label="Project setup"', 'aria-label="Ceiling heights"', 'aria-label="Pallet sizes"', 'aria-label="Equipment and rules"', '<Advanced '])).toBe(true)
-    for (const k of ['name="defaultCeiling"', 'name="defaultPallet"', 'aria="Pallet weight (lb)"', 'aria="Beam face (in)"', 'aria-label="Add ceiling height"', 'aria-label="Add pallet size"', 'disabled={used}', 'disabled={blocked}', '>Regenerate racking</button>', '>Keep layout</button>']) expect([k, setUi.includes(k)]).toEqual([k, true])
+    expect(setUi.includes('aria="Beam face (in)"')).toBe(false)                                     // not a pallet's any more
+    expect(ui).toMatch(/\['beamFaceIn', 'Beam face, new elevations \(in\)'\]/)                          // Advanced: the default for new elevations
+    for (const k of ['name="defaultCeiling"', 'name="defaultPallet"', 'aria="Pallet weight (lb)"', 'aria-label="Add ceiling height"', 'aria-label="Add pallet size"', 'disabled={used}', 'disabled={blocked}', '>Regenerate racking</button>', '>Keep layout</button>']) expect([k, setUi.includes(k)]).toEqual([k, true])
     for (const k of ["['clearanceIn', 'Load clearance (in)']", "['sprinklerClearanceIn', 'Sprinkler clearance (in)']", "['holePitchIn', 'Hole pitch (in)']", "['flueIn', 'Flue (in)']", 'Upright step (ft)']) expect([k, ui.includes(k)]).toEqual([k, true])
     expect(/>Skip<\/button>/.test(ui)).toBe(false)
     expect(ui).toMatch(/const \[open, setOpen\] = useState\(false\)/)                  // Advanced folded
@@ -263,9 +271,84 @@ describe('PS — the project', () => {
     expect(T_.nameOf(store.getState().elevations, T_.sameBestFit(store.getState().elevations, pair))).toBe('3 levels · 48×48 · Mezz')
     expect(T_.sameBestFit(store.getState().elevations, { ceilingId: 'c', palletId: pid })).toBe(null)   // another pair
     const tab = src('components/Elevations/ElevationsTab.jsx')
-    expect(tab).toMatch(/if \(same\) \{ useElevTab\.setState\(\{ activeId: same\.id, adding: false, made: \{ id: same\.id, kind: 'exists'/)
-    expect(tab).toMatch(/\{made\.kind === 'exists' \? 'Already exists' : 'Created'\}: \{madeType \? nameOf\(T, madeType\) : ''\}<\/strong>\. Select rows on the plan, then click this elevation\./)
+    expect(tab).toMatch(/\{made\.kind === 'exists' \? 'Already exists' : made\.kind === 'saved' \? 'Saved' : 'Created'\}: \{nameOf\(T, madeType\)\}<\/strong>\. Select rows, then click this elevation\./)
     expect(tab).toMatch(/if \(v === NEW\) \{ setNewForm\(key === 'ceilingId' \? 'ceiling' : 'pallet'\); return \}/)
-    expect(tab).toMatch(/const madeNew = \(key\) => \(id\) => \{ setNewForm\(null\); if \(id\) setPick\(p => \(\{ \.\.\.p, \[key\]: id \}\)\) \}/)
+    expect(tab).toMatch(/const madeNew = \(key\) => \(id\) => \{ setNewForm\(null\); if \(id\) editDraft\(store, \{ \[key\]: id \}\) \}/)
+  })
+  it('PS-names: names are always unique — two elevations with the same pairing read "… sf" and "… sf 2" (they once both read "5 levels · 48×40 · sf"); renamed duplicates get a suffix; an existing layout is deduped on load, in that same history entry, nothing moving', () => {
+    const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'sf', clearHeightIn: 360, sprinklerIn: 354 }], defaultCeilingId: 'c' }
+    const fit = bestFitFor(pr, pr.ceilings[0], P.defaultPallet(pr))
+    const pair = '5 levels · 48×40 · sf'
+    // the bug: two un-renamed elevations, the same pairing, the same stored name — shown alike
+    const dup = P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...fit, id: 'a', name: pair, color: '#f00' }, { ...fit, id: 'b', name: pair, color: '#00f' }, { ...fit, id: 'c1', name: 'Mezz racks', named: true }, { ...fit, id: 'c2', name: 'Mezz racks', named: true }] }, pr)
+    const u = P.uniqueNames(dup)
+    expect(u.types.map(t => P.nameOf(u, t))).toEqual([pair + ' 2', pair, 'Mezz racks', 'Mezz racks 2'])
+    expect(new Set(u.types.map(t => t.name)).size).toBe(4)
+    expect(P.uniqueNames(u)).toBe(u)                                                          // already unique: untouched
+    expect(P.nameOf(u, u.types[0])).not.toBe(P.nameOf(u, u.types[1]))
+    // on load: the keeper folds the dedupe into that history entry; the bays and beams don't move
+    stop = P.installProjectKeeper(store, () => ({}))
+    const o = filled(), m = E.migrate(o)
+    store.setState({ objects: m.objects, elevations: dup, history: [JSON.stringify({ objects: m.objects, groups: [], elevations: dup })], historyIndex: 0 })
+    const T = store.getState().elevations
+    expect([new Set(T.types.map(t => P.nameOf(T, t))).size, store.getState().historyIndex, JSON.parse(store.getState().history[0]).elevations.types[0].name, store.getState().objects === m.objects]).toEqual([4, 0, pair + ' 2', true])
+    expect(T.types.map(t => t.levels.map(l => l.beamIn).join('/'))).toEqual(dup.types.map(t => t.levels.map(l => l.beamIn).join('/')))
+    stop(); stop = null
+  })
+
+  it('PS-beam-face: the beam face left the pallet — the project keeps the default for new elevations (Advanced), each elevation its own; a layout from before migrates on load (the default pallet\'s face becomes the default), nothing moving', () => {
+    const old = { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }], defaultCeilingId: 'c' }
+    old.pallets = old.pallets.map(p => ({ ...p, beamFaceIn: 5 })); old.advanced = { ...old.advanced }; delete old.advanced.beamFaceIn
+    const t = { ...E.makeType({ id: 'a', levelsCount: 4 }), beamFaceIn: 4, palletId: old.pallets[0].id, ceilingId: 'c' }
+    const n = P.normalizeProject(old)
+    expect([n.advanced.beamFaceIn, n.pallets.some(p => 'beamFaceIn' in p), P.normalizeProject(n) === n]).toEqual([5, false, true])
+    // new elevations start from the project's face; an elevation keeps its own
+    expect([bestFitFor(n, n.ceilings[0], n.pallets[0]).beamFaceIn, bestFitFor(n, n.ceilings[0], n.pallets[0], { beamFaceIn: 6 }).beamFaceIn]).toEqual([5, 6])
+    // on load
+    stop = P.installProjectKeeper(store, () => ({}))
+    const o = filled(), m = E.migrate(o)
+    const T0 = P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [t] }, old)
+    const objs = E.syncAllLevels(m.objects, T0)
+    store.setState({ objects: objs, elevations: T0, history: [JSON.stringify({ objects: objs, groups: [], elevations: T0 })], historyIndex: 0 })
+    const s1 = store.getState(), pr1 = P.projectOf(s1.elevations)
+    expect([pr1.advanced.beamFaceIn, pr1.pallets.some(p => 'beamFaceIn' in p), s1.elevations.types[0].beamFaceIn, s1.elevations.types[0].levels.map(l => l.beamIn), s1.historyIndex, s1.objects === objs]).toEqual([5, false, 4, [0, 60, 120, 180], 0, true])
+    stop(); stop = null
+  })
+
+  it('PS-editor: + Add elevation and the pencil open the editor on a draft — nothing written until Save (one undo step); a new ceiling or pallet refits it, a new beam face refits it until the drawing has changed it; Save returns to the list with the chip picked ("Created" / "Saved" / "Already exists"); Cancel discards', () => {
+    const p60 = { id: 'p60', name: '48×48', faceIn: 48, depthIn: 48, heightIn: 60, weightLb: 2500 }
+    const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }, { id: 'm', name: 'Mezz', clearHeightIn: 240, sprinklerIn: null }], defaultCeilingId: 'c' }
+    pr.pallets = [...pr.pallets, p60]
+    store.setState({ objects: [], elevations: P.withProject(null, pr), history: ['{}'], historyIndex: 0 })
+    const tab = () => T_.useElevTab.getState(), s = () => store.getState()
+    // + Add elevation: the best fit for the defaults, the project's beam face
+    T_.startNew(store)
+    expect([!!tab().editing, tab().editing.id, tab().editing.draft.levels.length, tab().editing.draft.beamFaceIn, s().historyIndex]).toEqual([true, null, 5, 4, 0])
+    // another pallet: refitted; beam face 5 (untouched): refitted, pitch 60 + 6 + 5 → 72
+    T_.editDraft(store, { palletId: 'p60' })
+    T_.editDraft(store, { beamFaceIn: 5 })
+    expect([tab().editing.draft.levels.map(l => l.beamIn), tab().editing.draft.beamFaceIn, s().historyIndex]).toEqual([[0, 72, 144, 216], 5, 0])
+    // the drawing changes a beam: kept; a later face change no longer refits
+    T_.editDraft(store, { ...tab().editing.draft, levels: tab().editing.draft.levels.map((l, k) => (k === 1 ? { ...l, beamIn: 74 } : l)) }, { fromDrawing: true })
+    T_.editDraft(store, { beamFaceIn: 6 })
+    expect([tab().editing.touched, tab().editing.draft.levels.map(l => l.beamIn), tab().editing.draft.beamFaceIn, s().historyIndex]).toEqual([true, [0, 74, 144, 216], 6, 0])
+    // Save: one undo step, back to the list, the chip picked, "Created"
+    const out = T_.saveEdit(store)
+    const T1 = s().elevations, made = T1.types.find(t => t.id === out.id)
+    expect([out.kind, s().historyIndex, tab().editing, tab().activeId === out.id, tab().made.kind, made.levels.map(l => l.beamIn), made.beamFaceIn, P.nameOf(T1, made)]).toEqual(['new', 1, null, true, 'new', [0, 74, 144, 216], 6, '4 levels · 48×48 · Main'])
+    // the same again: "Already exists", nothing added
+    T_.startNew(store); T_.editDraft(store, { palletId: 'p60' }); T_.editDraft(store, { beamFaceIn: 6 })
+    T_.editDraft(store, { ...tab().editing.draft, levels: tab().editing.draft.levels.map((l, k) => (k === 1 ? { ...l, beamIn: 74 } : l)) }, { fromDrawing: true })
+    const again = T_.saveEdit(store)
+    expect([again.kind, again.id, s().elevations.types.length, s().historyIndex, tab().made.kind]).toEqual(['exists', out.id, 1, 1, 'exists'])
+    // the pencil: a draft of that elevation — the store untouched until Save; Cancel discards
+    T_.startEdit(store, out.id); T_.editDraft(store, { ceilingId: 'm' })
+    expect([tab().editing.id, tab().editing.draft.levels.length, s().elevations.types[0].ceilingId ?? null, s().historyIndex]).toEqual([out.id, 3, 'c', 1])
+    T_.cancelEdit()
+    expect([tab().editing, s().elevations.types[0].ceilingId, s().historyIndex]).toEqual([null, 'c', 1])
+    // the pencil, Mezz, Save: written once, everywhere it is used; named by its new pairing; "Saved"
+    T_.startEdit(store, out.id); T_.editDraft(store, { ceilingId: 'm' })
+    const saved = T_.saveEdit(store), t2 = s().elevations.types[0]
+    expect([saved.kind, s().historyIndex, t2.ceilingId, t2.levels.length, P.nameOf(s().elevations, t2), tab().made.kind]).toEqual(['saved', 2, 'm', 3, '3 levels · 48×48 · Mezz', 'saved'])
   })
 })

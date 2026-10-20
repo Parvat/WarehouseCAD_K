@@ -21,14 +21,19 @@ in a scene it was already shown for. (It used to be checked only on entering the
 and on a history reset to index 0, which File → New, at −1, never matched.) Nothing opens it once a layout exists, and there is no "set it up first" trigger on Generate, Fill or
 placing racks.
 
-- **Building:** length, width, clear height, sprinkler height. The clear height may stay empty (see below).
-- **Pallet:** face, depth, height, weight, beam face. Pre-filled 48×40×48", 2,500 lb, beam face 4".
-- **Forklift** (reach truck) and **wall clearance** (3").
-- **Advanced** (folded): load clearance 6", sprinkler clearance 18", hole pitch 2", upright step 1', flue 6",
-  units.
-- **[Generate layout]** continues on the same screen with the column grid, row direction, columns along the wall and
-  max run, then generates (`generateBrief`, the brief the Generate panel also uses). **[Draw it myself]** keeps the
-  project and closes. Esc or ✕ do the same as Draw it myself, so a project always exists afterwards.
+**One screen, no second step**, medium-size (640 px) in THEME.md's spacing and type. Each group has a header (a mono
+number, an Oswald title and a muted note). Labels sit above compact 32 px inputs placed side by side, with the units
+inside the field. Groups are 24 px apart, fields 12 px.
+- **01 Building:** length × width on one row, clear height, sprinkler height. The clear height may stay empty (see
+  below).
+- **02 Pallet:** face × depth × height on one row, then weight. Pre-filled 40 × 48 × 48" (48×40), 2,500 lb.
+- **03 Layout:** forklift (reach truck; the aisle follows it), column grid X × Y, row direction, max run, wall
+  clearance (3").
+- **Advanced** (folded): load clearance 6", sprinkler clearance 18", hole pitch 2", upright step 1', flue 6", the
+  beam face new elevations start with (4"), units, columns along the wall.
+- **[Generate layout]** writes the project and generates (`generateBrief`, the brief the Generate panel also uses).
+  **[Draw it myself]** writes the project and closes. Esc or ✕ do the same as Draw it myself, so a project always
+  exists afterwards.
 - The building values are kept on the project (`project.building`), and the Generate panel starts from them when
   opened later. That panel now starts closed: it is for regenerating, or starting over at another size.
 
@@ -37,7 +42,12 @@ each with + Add, edit, set default, and delete. Delete is disabled for an entry 
 `palletInUse`: its own, or the saved default for an elevation without one), and for the last pallet. A change that
 moves racks asks Regenerate racking / Keep layout, as before.
 
-**From the Elevations tab:** the + Add elevation form's Ceiling ▾ and Pallet ▾ each end with "+ New ceiling height…" /
+**The beam face is the elevation's.** It left the pallet entry. The project keeps only the default for new
+elevations (`advanced.beamFaceIn`), and each elevation carries its own, set in the editor. A layout from before
+migrates on load (`normalizeProject`): the default pallet's beam face becomes that default, the pallets drop theirs,
+and the elevations keep their own faces, so nothing moves.
+
+**From the Elevations tab:** the editor's Ceiling ▾ and Pallet ▾ each end with "+ New ceiling height…" /
 "+ New pallet size…". These open a small inline form that saves to the project (`addCeiling` / `addPallet`, one undo
 step each) and selects the new entry.
 

@@ -734,7 +734,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
 
   it('EV-background: the drawing sits on the panel\'s own background in Properties (labels haloed in it, frames and ground in the theme\'s colours), on white paper in the PDF in the reference\'s', () => {
     const pane = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
-    expect(pane).toMatch(/aria-label="Elevation drawing" data-zoom=\{[^}]*\} style=\{\{[^}]*background: 'var\(--surface\)', cursor: 'grab' \}\}/)
+    expect(pane).toMatch(/aria-label="Elevation drawing" data-readonly=\{[^}]*\} data-zoom=\{[^}]*\} style=\{\{[^}]*background: 'var\(--surface\)', cursor: 'grab' \}\}/)
     expect(pane).toMatch(/bg: 'var\(--surface\)', frame: 'var\(--elev-frame\)', ink: 'var\(--elev-ink\)'/)
     expect(pane.includes("background: '#fff'")).toBe(false)
     const panel = readFileSync(new URL('../../components/Elevations/ElevationsTab.jsx', import.meta.url), 'utf8')
@@ -782,13 +782,21 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1'))).toEqual({ tab: 'elevations', elevW: 555 })
     RP.setRightPanel({ tab: 'properties', elevW: 480 })
     const tab = src('components/Elevations/ElevationsTab.jsx')
-    const order = ['aria-label="View"', 'aria-label="Drawing detail"', '<ElevationDrawing ', 'aria-label="Elevation chips"', '> Add elevation</button>', '>Apply to selected rows</button>', '>Remove unused</button>'].map(k => tab.indexOf(k))
+    // the list (choosing, assigning) and the editor (making, changing) — never both
+    const listUi = tab.slice(tab.indexOf('function List()'), tab.indexOf('function Editor(')), editUi = tab.slice(tab.indexOf('function Editor('))
+    expect(tab).toMatch(/return editing \? <Editor e=\{editing\} \/> : <List \/>/)
+    const order = ['<ViewBar ', '<ElevationDrawing ', 'aria-label="Elevation chips"', '> Add elevation</button>', '>Apply to selected rows</button>', '>Remove unused</button>'].map(k => listUi.indexOf(k))
     expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))).toBe(true)
+    expect(listUi).toMatch(/fill readOnly onCommit=\{\(\) => \{\}\}/)                                 // the list's drawing: read-only
+    const eorder = ['aria-label="Elevation ceiling"', 'aria-label="Elevation pallet"', 'aria-label="Beam face (in)"', 'aria-label="Elevation name"', '<ViewBar ', '<ElevationDrawing ', '>Cancel</button>', '>Save</button>'].map(k => editUi.indexOf(k))
+    expect(eorder.every((v, i) => v > 0 && (i === 0 || v > eorder[i - 1]))).toBe(true)
+    expect(editUi).toMatch(/onCommit=\{\(next\) => editDraft\(store, \{ \.\.\.next, id: d\.id \}, \{ fromDrawing: true \}\)\}/)   // into the draft
+    expect(/aria-label="[^"]*Beam length[^"]*" (type|value)|<select[^>]*Beam length/i.test(tab)).toBe(false)        // no beam-length control
+    expect(tab).toMatch(/aria-label="Beam length"/)
     expect(tab).toMatch(/Clear height not set — elevations assume \{ASSUMED_FT\}'\. Set it in <button type="button" style=\{S\.link\} onClick=\{\(\) => openSetup\('settings'\)\}>Project settings<\/button>/)
     expect(tab).toMatch(/const clickChip = \(t\) => \{ useElevTab\.setState\(\{ activeId: t\.id \}\); if \(rowsSelected && assignSelected\(store, t\.id\)\) useElevTab\.setState\(\{ made: null \}\) \}/)
-    for (const k of ['aria-label="Elevation name"', 'aria-label="Elevation ceiling"', 'aria-label="Elevation pallet"', '>Duplicate</button>', 'Set default</button>', '>Delete</button>', '>Create</button>', '>+ New ceiling height…</option>', '>+ New pallet size…</option>']) expect([k, tab.includes(k)]).toEqual([k, true])
+    for (const k of ['onClick={() => startEdit(store, t.id)}', 'onClick={() => startNew(store)}', '>Duplicate</button>', 'Set default</button>', '>Delete</button>', '>+ New ceiling height…</option>', '>+ New pallet size…</option>', 'Select rows, then click this elevation.']) expect([k, tab.includes(k)]).toEqual([k, true])
     expect(/Proposals|Use for layout|> Apply</.test(tab)).toBe(false)                     // no proposals, no Apply / Discard
-    expect(tab).toMatch(/view=\{view\} fill onCommit=\{\(next\) => changeElevation\(store, active\.id, next\)\}/)
     // the pallets drawn on a beam: the elevation's own pallet face — in the tab and on the PDF
     expect(tab).toMatch(/const face = active\?\.palletId \? palletFor\(T, active\)\?\.faceIn : null/)
     expect(tab).toMatch(/entry=\{shownEntry\}/)

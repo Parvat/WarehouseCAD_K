@@ -84,16 +84,18 @@ export const isAutoName = (name) => /^\d+ levels? · \d+'(-\d+")?( \d+)?$/.test(
 
 /* ── an elevation for a ceiling + pallet pair (the Elevations tab, the project's first elevation) ───────────────── */
 
-/** The fit inputs for pallet `pallet` under project `project` (its advanced settings). */
-export const fitForPallet = (project, pallet) => fitInputs({ palletHeightIn: pallet?.heightIn, clearanceIn: project?.advanced?.clearanceIn, beamFaceIn: pallet?.beamFaceIn, holePitchIn: project?.advanced?.holePitchIn, uprightStepIn: project?.advanced?.uprightStepIn, sprinklerClearanceIn: project?.advanced?.sprinklerClearanceIn })
+/** The fit inputs for pallet `pallet` under project `project` (its advanced settings; the beam face: the project's
+ *  default for new elevations — a pallet from before the beam face left it still read for its own). */
+export const fitForPallet = (project, pallet) => fitInputs({ palletHeightIn: pallet?.heightIn, clearanceIn: project?.advanced?.clearanceIn, beamFaceIn: project?.advanced?.beamFaceIn ?? pallet?.beamFaceIn, holePitchIn: project?.advanced?.holePitchIn, uprightStepIn: project?.advanced?.uprightStepIn, sprinklerClearanceIn: project?.advanced?.sprinklerClearanceIn })
 /** The ceiling entry as a building ({ clearHeightIn, sprinklerIn }) for the fit — a clear height not set (or no
  *  ceiling at all) assumed ASSUMED_CLEAR_IN (24'). */
 export const ceilingBuilding = (c) => ({ clearHeightIn: c?.clearHeightIn > 0 ? c.clearHeightIn : ASSUMED_CLEAR_IN, sprinklerIn: c?.sprinklerIn > 0 ? c.sprinklerIn : null })
 /** The best-fit elevation design for ceiling `ceiling` and pallet `pallet` — the most levels that fit, the pallet's
  *  height, weight and beam face on every level — tagged with the pair (a type without id / name / colour); null when
  *  not even one level fits. No ceiling (or none set): 24' assumed. */
-export function bestFitFor(project, ceiling, pallet) {
-  const b = ceilingBuilding(ceiling), f = fitForPallet(project, pallet), n = maxLevels(b, f)
+export function bestFitFor(project, ceiling, pallet, { beamFaceIn = null } = {}) {
+  // `beamFaceIn`: the elevation's own beam face (the editor's), else the project's default
+  const b = ceilingBuilding(ceiling), f = { ...fitForPallet(project, pallet), ...(beamFaceIn > 0 ? { beamFaceIn } : {}) }, n = maxLevels(b, f)
   if (!n) return null
   const d = designFor(n, b, f)
   return { ...d, levels: d.levels.map(l => ({ ...l, loadLb: pallet?.weightLb ?? l.loadLb })), ceilingId: ceiling?.id ?? null, palletId: pallet?.id ?? null }

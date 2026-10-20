@@ -38,8 +38,9 @@ export function ElevationDrawing(props) {
   </>
 }
 
-function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null }) {
-  const commit = (fn) => { const next = fn(t); if (next && JSON.stringify(next) !== JSON.stringify(t)) onCommit(next) }
+function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null, readOnly = false }) {
+  // readOnly (the list's drawing — choosing and assigning only): zoom, pan and Fit, no beam, upright or dimension edit
+  const commit = (fn) => { if (readOnly) return; const next = fn(t); if (next && JSON.stringify(next) !== JSON.stringify(t)) onCommit(next) }
   const host = useRef(null)
   const [box, setBox] = useState({ w: 454, h: 431 })
   const [snap, setSnap] = useState({ x: 0, y: 0 })
@@ -172,11 +173,11 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
   const render = (i, n) => {
     const r = i.role
     const handlers = {}
-    if (r?.kind === 'beam' || r?.kind === 'top') handlers.onPointerDown = (e) => startDrag(e, r)
-    if (r?.kind === 'upright') handlers.onClick = onUprightClick
-    if (r?.kind === 'dim') { handlers.onDoubleClick = (e) => startTyping(e, r); handlers.style = { cursor: 'text' } }
+    if (!readOnly && (r?.kind === 'beam' || r?.kind === 'top')) handlers.onPointerDown = (e) => startDrag(e, r)
+    if (!readOnly && r?.kind === 'upright') handlers.onClick = onUprightClick
+    if (!readOnly && r?.kind === 'dim') { handlers.onDoubleClick = (e) => startTyping(e, r); handlers.style = { cursor: 'text' } }
     const role = r ? (r.kind + ':' + (r.id ?? '') + ':' + (r.k ?? '')) : undefined
-    if (i.t === 'rect') return <rect key={n} data-role={role} shapeRendering="crispEdges" x={i.x} y={i.y} width={Math.max(0, i.w)} height={Math.max(0, i.h)} fill={i.fill || 'none'} stroke={i.stroke} strokeWidth={i.sw} opacity={i.opacity} style={{ cursor: i.cursor || (r?.kind === 'upright' ? 'copy' : undefined) }} {...handlers} />
+    if (i.t === 'rect') return <rect key={n} data-role={role} shapeRendering="crispEdges" x={i.x} y={i.y} width={Math.max(0, i.w)} height={Math.max(0, i.h)} fill={i.fill || 'none'} stroke={i.stroke} strokeWidth={i.sw} opacity={i.opacity} style={{ cursor: readOnly ? undefined : i.cursor || (r?.kind === 'upright' ? 'copy' : undefined) }} {...handlers} />
     if (i.t === 'line') return <line key={n} shapeRendering={i.x1 === i.x2 || i.y1 === i.y2 ? 'crispEdges' : undefined} x1={i.x1} y1={i.y1} x2={i.x2} y2={i.y2} stroke={i.stroke} strokeWidth={i.sw} strokeDasharray={i.dash} opacity={i.opacity} pointerEvents="none" />
     if (i.t === 'path') return <path key={n} d={i.d} fill="none" stroke={i.stroke} strokeWidth={i.sw} opacity={i.opacity} pointerEvents="none" />
     if (i.t === 'polygon') return <polygon key={n} points={i.points.map(q => q.join(',')).join(' ')} fill={i.fill} pointerEvents="none" />
@@ -186,13 +187,13 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
     return null
   }
   return (
-    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" data-zoom={Math.round(zv.zoom * 100) / 100} style={{ height: box.h, flexShrink: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: 'var(--surface)', cursor: 'grab' }}>
+    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" data-readonly={readOnly ? 'true' : undefined} data-zoom={Math.round(zv.zoom * 100) / 100} style={{ height: box.h, flexShrink: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: 'var(--surface)', cursor: 'grab' }}>
       <svg width={box.w} height={box.h} style={{ display: 'block', position: 'relative', left: snap.x, top: snap.y }}
         onPointerDown={(e) => { host.current.focus({ preventScroll: true }); startPan(e) }} onDoubleClick={(e) => { if (empty(e)) fit() }}>
         {d.items.map(render)}
         {/* the beams and the upright tops grabbed first: a transparent strip over each, drawn last, so a label lying on a
             beam at a small scale never takes its drag */}
-        {d.items.filter(i => i.t === 'rect' && (i.role?.kind === 'beam' || i.role?.kind === 'top')).map((i, n) => {
+        {!readOnly && d.items.filter(i => i.t === 'rect' && (i.role?.kind === 'beam' || i.role?.kind === 'top')).map((i, n) => {
           const h = Math.max(8, i.h), y = i.y + i.h / 2 - h / 2
           return <rect key={'grab' + n} data-grab={i.role.kind + ':' + (i.role.k ?? '')} x={i.x} y={y} width={i.w} height={h} fill="transparent" style={{ cursor: 'ns-resize' }} onPointerDown={(e) => startDrag(e, i.role)} />
         })}
