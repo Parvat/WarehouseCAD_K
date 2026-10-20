@@ -1,133 +1,79 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@300;400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { height: 100%; overflow: hidden; }
-
-:root {
-  --font-ui:      'Montserrat', sans-serif;
-  --font-mono:    'JetBrains Mono', monospace;
-  --font-display: 'Montserrat', sans-serif;
-}
+/* THEME.md §3 — without antialiased, Plus Jakarta Sans reads bold at any weight. The faces (Oswald, Plus Jakarta Sans,
+   JetBrains Mono) are loaded by index.html. */
+body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
 
 /* Font scale */
 [data-scale="sm"] { --fs-xs:9px;  --fs-sm:10px; --fs-md:11px; --fs-lg:13px; --fs-xl:15px; }
 [data-scale="md"] { --fs-xs:10px; --fs-sm:11px; --fs-md:13px; --fs-lg:15px; --fs-xl:17px; }
 [data-scale="lg"] { --fs-xs:12px; --fs-sm:13px; --fs-md:15px; --fs-lg:17px; --fs-xl:20px; }
 
-/* ── Obsidian (dark) ── */
-[data-theme="obsidian"] {
-  --bg:#0b0d11; --surface:#13151a; --surface2:#1a1d25; --surface3:#20242e;
-  --border:#252a36; --border2:#2e3444;
-  --accent:#f0b429; --accent-dim:rgba(240,180,41,0.13); --accent-dimmer:rgba(240,180,41,0.06);
-  --accent-bdr:rgba(240,180,41,0.30);
-  /* keeps Dark's existing tinted-active look */
-  --accent-solid:rgba(240,180,41,0.13); --accent-fg:#f0b429;
-  --blue:#4e9eff; --blue-dim:rgba(78,158,255,0.12);
-  --green:#34d399; --red:#f87171;
-  --green-dim:rgba(52,211,153,0.13); --green-bdr:rgba(52,211,153,0.35);
-  --red-dim:rgba(248,113,113,0.13);  --red-bdr:rgba(248,113,113,0.35);
-  --blue-bdr:rgba(78,158,255,0.32);
-  --purple:#a855f7; --purple-dim:rgba(168,85,247,0.13); --purple-bdr:rgba(168,85,247,0.32);
-  --text:#e2e5f0; --text2:#8892a4; --text3:#4e5668;
-  /* panel family aliases the theme surfaces — warm tint is studio-only */
-  --panel-bg:var(--surface); --panel-hover:var(--surface2); --panel-border:var(--border);
-  --panel-text2:var(--text2); --panel-text3:var(--text3); --panel-text4:var(--text3);
-  --panel-label:var(--text); --panel-muted:var(--text2); --panel-branch:var(--border);
-  /* the elevation drawing's frames and beams, ground and base plates, dimensions, clearances (ElevationEditor.jsx) — readable on this panel */
-  --elev-frame:#5DBB93; --elev-ink:#C9CED8; --elev-dim:#7FA6FF; --elev-clr:#FF8C75;
-  --canvas-bg:#0b0d11;
-  --grid-major:rgba(37,42,54,0.75); --grid-minor:rgba(37,42,54,0.32);
-  --shadow:0 4px 24px rgba(0,0,0,0.5);
-  color:var(--text); background:var(--bg); font-family:var(--font-ui);
-}
-/* ── Studio (light) — clean white + near-black ── */
-[data-theme="studio"] {
-  --bg:#F7F8FA; --surface:#FFFFFF; --surface2:#F1F3F6; --surface3:#E8EBF1;
-  --border:#E6E9EF; --border2:#D5DAE3;
-  --accent:#0B101D; --accent-dim:#F1F3F6; --accent-dimmer:#F7F8FA;
-  --accent-bdr:rgba(11,16,29,0.18);
-  /* active/selected chrome: solid ink fill, white glyph */
-  --accent-solid:#0B101D; --accent-fg:#FFFFFF;
-  --blue:#0B101D; --blue-dim:#F1F3F6;
-  --green:#059669; --red:#dc2626;
-  --green-dim:rgba(5,150,105,0.12);  --green-bdr:rgba(5,150,105,0.32);
-  --red-dim:rgba(220,38,38,0.10);    --red-bdr:rgba(220,38,38,0.30);
-  --blue-bdr:rgba(11,16,29,0.18);
-  --purple:#8B5CF6; --purple-dim:rgba(139,92,246,0.12); --purple-bdr:rgba(139,92,246,0.30);
-  --text:#0B101D; --text2:#3A4152; --text3:#6B7280; --text4:#9AA1AE;
-  /* Left-panel surface family — slightly warmer than the app's cool greys, so
-     the library reads as its own plane against the canvas. Scoped to the panel;
-     obsidian/blueprint alias these back to their own surfaces below. */
-  --panel-bg:#FBFAF8; --panel-hover:#F1F0EB; --panel-border:#ECEAE5;
-  --panel-text2:#3A3833; --panel-text3:#6B675F; --panel-text4:#9A968C;
-  /* label ink runs warm to match the panel plane, rather than the cool --text */
-  --panel-label:#2A2823; --panel-muted:#57534B; --panel-branch:#E5E3DC;
-  --pin-accent:#378ADD; --pin-bg:#EAF1FE;
-  --tile-bg:#F4F4F2; --tile-hover:#ECECE9; --tool-muted:#8A8578;
-  /* the elevation drawing's frames and beams, ground and base plates, dimensions, clearances (ElevationEditor.jsx) — readable on this panel */
-  --elev-frame:#123A2E; --elev-ink:#15181C; --elev-dim:#1B4FD8; --elev-clr:#A8341C;
-  --canvas-bg:#F7F8FA;
-  --grid-major:rgba(107,114,128,0.34); --grid-minor:rgba(107,114,128,0.14);
-  --shadow:0 4px 24px rgba(11,16,29,0.08);
-  color:var(--text); background:var(--bg); font-family:var(--font-ui);
-}
-/* ── Trace (pine on paper) — the Trace brand skin ── */
-[data-theme="trace"] {
-  --font-ui:'Plus Jakarta Sans', sans-serif;
+/* ── Trace — the one theme (THEME.md) ───────────────────────────────────────
+   Every token lives in this one block: THEME.md's own names first, then the
+   app's working names (--surface, --text, --accent …) mapped onto them. A dark
+   set, if one comes, is a second block that redefines these same names — no
+   component keeps its own hex. `[data-theme]` stays on the CAD's root div
+   (App.jsx) because the portals look it up; any value gets these tokens. */
+:root, [data-theme] {
+  /* THEME.md §1 — ground, brand, text, lines, signal */
+  --bg:#F2F1EC; --bg2:#EAE8E1; --paper:#FFFFFF; --sand:#E7E4DB;
+  --pine:#14392B; --pine-2:#1D5340; --pine-3:#0C2620; --mint:#E7EFEA;
+  --ink:#171A18; --ink-2:#41483F; --steel:#767C74;
+  --line:#DEDACF; --line-2:#C3BEB1;
+  --blue:#1B4FD8;   /* dimensions, section numbers, focus, links — never selection in the panels */
+  --yellow:#F2C230; --gold:#C8A34A;
+  --amber:#D98324;  /* warnings */
+  --flag:#A8341C;   /* errors */
+
+  /* THEME.md message boxes — left border 3px / background / text */
+  --error-bd:#A8341C; --error-bg:#F5E7E3; --error-fg:#6B2413;
+  --warn-bd:#C07A12;  --warn-bg:#F8F0DF;  --warn-fg:#6B4A0B;
+  --note-bd:#1B4FD8;  --note-bg:#E9EEFB;  --note-fg:#1B3A8C;
+
+  /* overlay backdrop and the popover shadow (THEME.md §4, §5) */
+  --overlay:rgb(26 29 27 / .55);
+  --shadow-pop:0 6px 16px rgba(26,29,27,.13);
+
+  /* canvas selection and handles — THEME blue; src/theme/tokens.js SELECT_BLUE is the same value for Konva */
+  --select-blue:#1B4FD8;
+
+  /* type (THEME.md §3) */
+  --font-ui:'Plus Jakarta Sans', system-ui, sans-serif;
   --font-display:'Oswald', sans-serif;
-  --bg:#F2F1EC; --surface:#ECEAE1; --surface2:#E4E2D8; --surface3:#DAD8CD;
-  --border:#D6D4C9; --border2:#C9C7BB;
-  --accent:#14392B; --accent-dim:#E4E2D8; --accent-dimmer:#ECEAE1;
+  --font-mono:'JetBrains Mono', ui-monospace, monospace;
+
+  /* ── the app's working names ── */
+  --surface:#ECEAE1; --surface2:var(--bg2); --surface3:#DAD8CD;
+  --border:var(--line); --border2:var(--line-2);
+  /* selected chrome in the panels is pine */
+  --accent:var(--pine); --accent-dim:#E4E2D8; --accent-dimmer:#ECEAE1;
   --accent-bdr:rgba(20,57,43,0.20);
-  --accent-solid:#14392B; --accent-fg:#F2F1EC;
-  --blue:#14392B; --blue-dim:#E4E2D8;
-  --green:#2F7A50; --red:#B4442E;
+  --accent-solid:var(--pine); --accent-fg:#F2F1EC;
+  --blue-dim:rgba(27,79,216,0.10); --blue-bdr:rgba(27,79,216,0.30);
+  --green:#2F7A50; --red:var(--flag);
   --green-dim:rgba(47,122,80,0.12);  --green-bdr:rgba(47,122,80,0.32);
-  --red-dim:rgba(180,68,46,0.10);    --red-bdr:rgba(180,68,46,0.30);
-  --blue-bdr:rgba(20,57,43,0.20);
+  --red-dim:rgba(168,52,28,0.10);    --red-bdr:rgba(168,52,28,0.30);
   --purple:#8B5CF6; --purple-dim:rgba(139,92,246,0.12); --purple-bdr:rgba(139,92,246,0.30);
-  --text:#161C18; --text2:#3F4A40; --text3:#6E7A6F; --text4:#96A093;
-  --panel-bg:#EFEDE6; --panel-hover:#E7E4DB; --panel-border:#DED9CE;
-  --panel-text2:#3F4A40; --panel-text3:#6E7A6F; --panel-text4:#96A093;
-  --panel-label:#1B2620; --panel-muted:#57534B; --panel-branch:#DED9CE;
-  --pin-accent:#14392B; --pin-bg:#E4EAE0;
+  --text:var(--ink); --text2:var(--ink-2); --text3:var(--steel); --text4:#96A093;
+  /* the library panel's plane */
+  --panel-bg:#EFEDE6; --panel-hover:#E7E4DB; --panel-border:var(--line);
+  --panel-text2:var(--ink-2); --panel-text3:var(--steel); --panel-text4:#96A093;
+  --panel-label:#1B2620; --panel-muted:#57534B; --panel-branch:var(--line);
+  --pin-accent:var(--pine); --pin-bg:#E4EAE0;
   --tile-bg:#E9E7DE; --tile-hover:#E1DFD4; --tool-muted:#7E8A7C;
-  /* the elevation drawing's frames and beams, ground and base plates, dimensions, clearances (ElevationEditor.jsx) — readable on this panel */
+  /* the elevation drawing's frames and beams, ground and base plates, dimensions, clearances (ElevationEditor.jsx) */
   --elev-frame:#123A2E; --elev-ink:#15181C; --elev-dim:#1B4FD8; --elev-clr:#A8341C;
+  /* the plan canvas (Canvas2.jsx reads these) — unchanged */
   --canvas-bg:#EDEBE4;
   --grid-major:rgba(20,57,43,0.18); --grid-minor:rgba(20,57,43,0.08);
   --shadow:0 4px 24px rgba(20,57,43,0.08);
-  color:var(--text); background:var(--bg); font-family:var(--font-ui);
 }
-/* ── Blueprint (engineering) ── */
-[data-theme="blueprint"] {
-  --bg:#081525; --surface:#0d1e3a; --surface2:#122448; --surface3:#182d58;
-  --border:#1c3668; --border2:#24437e;
-  --accent:#5bc8ff; --accent-dim:rgba(91,200,255,0.13); --accent-dimmer:rgba(91,200,255,0.05);
-  --accent-bdr:rgba(91,200,255,0.30);
-  /* keeps Blueprint's existing tinted-active look */
-  --accent-solid:rgba(91,200,255,0.13); --accent-fg:#5bc8ff;
-  --blue:#5bc8ff; --blue-dim:rgba(91,200,255,0.1);
-  --green:#4ade80; --red:#fb7185;
-  --green-dim:rgba(74,222,128,0.13); --green-bdr:rgba(74,222,128,0.35);
-  --red-dim:rgba(251,113,133,0.13);  --red-bdr:rgba(251,113,133,0.35);
-  --blue-bdr:rgba(91,200,255,0.32);
-  --purple:#a78bfa; --purple-dim:rgba(167,139,250,0.14); --purple-bdr:rgba(167,139,250,0.32);
-  --text:#cce5ff; --text2:#6b9fc4; --text3:#2e5c82;
-  /* panel family aliases the theme surfaces — warm tint is studio-only */
-  --panel-bg:var(--surface); --panel-hover:var(--surface2); --panel-border:var(--border);
-  --panel-text2:var(--text2); --panel-text3:var(--text3); --panel-text4:var(--text3);
-  --panel-label:var(--text); --panel-muted:var(--text2); --panel-branch:var(--border);
-  /* the elevation drawing's frames and beams, ground and base plates, dimensions, clearances (ElevationEditor.jsx) — readable on this panel */
-  --elev-frame:#5CC9A0; --elev-ink:#CCE5FF; --elev-dim:#8EC5FF; --elev-clr:#FF9A85;
-  --canvas-bg:#070e1c;
-  --grid-major:rgba(28,54,104,0.95); --grid-minor:rgba(28,54,104,0.5);
-  --shadow:0 4px 24px rgba(0,0,0,0.6);
-  color:var(--text); background:var(--bg); font-family:var(--font-ui);
-}
+[data-theme] { color:var(--text); background:var(--bg); font-family:var(--font-ui); }
 
 /* ── Focus & press states ──────────────────────────────────────────────────
    Inputs across the app set inline `outline:none`, which removes the only
@@ -207,5 +153,5 @@ select { background: var(--surface2) !important; color: var(--text) !important; 
 .no-spin::-webkit-outer-spin-button, .no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .no-spin { -moz-appearance: textfield; appearance: textfield; }
 /* THEME.md: a compact field takes focus as a whole — 2px blue outline, the fill turns white; the unit stays inside */
-.t5-field:focus-within { outline: 2px solid #1B4FD8; outline-offset: 0; background: #fff !important; }
+.t5-field:focus-within { outline: 2px solid var(--blue); outline-offset: 0; background: #fff !important; }
 .t5-field input:focus, .t5-field input:focus-visible { outline: none !important; box-shadow: none !important; }

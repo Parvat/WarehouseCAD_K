@@ -35,10 +35,10 @@ export function parseFtIn(text) {
   return NaN
 }
 
-// the reference sheet's visual language: IBM Plex Mono, dark green frames and beams, kraft loads on a deck board, an
+// the reference sheet's visual language: JetBrains Mono (the app's mono), dark green frames and beams, kraft loads on a deck board, an
 // ink ground line with grey hatching, a dashed clear-height line over a yellow clearance band; dimensions blue,
 // clearances red, tags grey
-const FONT = "'IBM Plex Mono', 'JetBrains Mono', monospace"
+const FONT = "'JetBrains Mono', monospace"
 const AMBER = '#B5730F'   // warnings on the drawing (THEME.md's warning)
 const INK = '#15181C', PINE = '#123A2E', LOAD = '#E8DCC2', LOAD_EDGE = '#B08F52', DECK = '#C9A870', BLUE = '#1B4FD8', RED = '#A8341C', GREY = '#7A828C', HATCH = '#B6BAB3', BAND = '#F2C230', MISFIT = '#F5E7E3', MISFIT_EDGE = '#A8341C'
 

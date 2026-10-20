@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
+import { placeFloat, floatAvoidRects, floatFreeHeight } from '../../utils/floatPlace'
 import { openSetup } from '../../utils/project'
 import { createPortal } from 'react-dom'
 import {
@@ -295,6 +296,7 @@ const SHORT_LABEL = {
 /*  body resolves them all to nothing and the panel renders invisible.         */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 const EDGE = 8
+const FLOAT_Z = 150
 function clampPos(x, y, w, h) {
   const vw = window.innerWidth, vh = window.innerHeight
   return {
@@ -309,22 +311,34 @@ function useThemeHost() {
   return host
 }
 
-function FloatingPanel({ ariaLabel, pos, setPos, defaultPos, horizontal, children }) {
+/* re-render on a window resize, so a float is re-placed inside the new viewport */
+function useViewportTick() {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const on = () => setTick(t => t + 1)
+    window.addEventListener('resize', on)
+    return () => window.removeEventListener('resize', on)
+  }, [])
+}
+
+function FloatingPanel({ ariaLabel, pos, setPos, defaultPos, horizontal, onSize, children }) {
   const host     = useThemeHost()
   const ref      = useRef(null)
   const dragRef  = useRef(null)
   const schedule = useRafWriter()
   const [dragging, setDragging] = useState(false)
+  const [size, setSize] = useState(null)
+  useViewportTick()
 
-  /* First paint uses defaultPos; the moment it lands, snap it inside the
-     viewport so a remembered position survives a smaller window. */
-  useEffect(() => {
+  /* Its own size, measured before paint: what it is placed by (utils/floatPlace.js). The remembered spot is
+     never rewritten here — it is drawn clamped inside the viewport and off the top bar and the Hub button,
+     and goes back to where it was when the window grows again. */
+  useLayoutEffect(() => {
     if (!ref.current) return
     const r = ref.current.getBoundingClientRect()
-    const p = pos || defaultPos
-    const c = clampPos(p.x, p.y, r.width, r.height)
-    if (c.x !== p.x || c.y !== p.y) setPos(c)
-  }, [host, horizontal])            // eslint-disable-line react-hooks/exhaustive-deps
+    const w = Math.round(r.width), h = Math.round(r.height)
+    if (!size || size.w !== w || size.h !== h) { setSize({ w, h }); onSize?.({ w, h, horizontal }) }
+  })
 
   const onDown = e => {
     if (e.button !== 0) return
@@ -347,12 +361,14 @@ function FloatingPanel({ ariaLabel, pos, setPos, defaultPos, horizontal, childre
     try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already gone */ }
   }
 
-  const p = pos || defaultPos
+  const asked = pos || defaultPos
+  const p = size ? placeFloat(asked.x, asked.y, size.w, size.h, window.innerWidth, window.innerHeight, floatAvoidRects()) : asked
   const Gripper = horizontal ? GripVertical : GripHorizontal
   const node = (
     <div ref={ref} role="group" aria-label={ariaLabel} data-floating={ariaLabel}
       style={{
-        position:'fixed', left:p.x, top:p.y, zIndex:9998,
+        /* under the modal layer (dialogs are 200+), over the canvas chrome (≤ 61) */
+        position:'fixed', left:p.x, top:p.y, zIndex:FLOAT_Z,
         display:'flex', flexDirection: horizontal ? 'row' : 'column',
         alignItems: horizontal ? 'center' : 'stretch',
         background:'var(--panel-bg)', border:'0.5px solid var(--panel-border)',
@@ -545,6 +561,15 @@ function DrawToolbar({ pos, setPos, defaultPos, horizontal, onToggleOrient, onCl
   const showPen  = activeTool === TOOLS.FREEHAND
   /* 21px glyph + 8px padding on every side */
   const CELL = TOOLBAR_ICON + 16
+  /* Stacked, it is ~564px tall. In a window too short for that between the top bar and the Hub button it is
+     laid out horizontally instead — shown only, the stored orientation is kept for a taller window. */
+  useViewportTick()
+  const [vertH, setVertH] = useState(0)
+  const at = pos || defaultPos
+  const tooTall = !horizontal && vertH > 0 && vertH > floatFreeHeight(at.x, CELL + 12, window.innerHeight, floatAvoidRects())
+  const asked = horizontal
+  horizontal = horizontal || tooTall
+  const onSize = ({ h, horizontal: hz }) => { if (!hz) setVertH(h) }
   const btn = (t) => {
     const on = activeTool === t.tool
     return (
@@ -581,21 +606,22 @@ function DrawToolbar({ pos, setPos, defaultPos, horizontal, onToggleOrient, onCl
       ...(horizontal ? { width:1, height:22, margin:'0 3px' } : { height:1, width:22, margin:'3px auto' }),
     }}/>
   )
-  const chrome = (label, Icon, onClick) => (
-    <button key={label} aria-label={label} title={label} onClick={onClick}
+  const chrome = (label, Icon, onClick, disabled = false, hint = label) => (
+    <button key={label} aria-label={label} title={hint} onClick={onClick} disabled={disabled}
       style={{
         width:CELL, height:CELL, flexShrink:0, padding:0, borderRadius:9, border:'none',
-        background:'transparent', color:'var(--panel-text3)', cursor:'pointer',
+        background:'transparent', color:'var(--panel-text3)', cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.38 : 1,
         display:'flex', alignItems:'center', justifyContent:'center',
       }}
-      onMouseEnter={e => e.currentTarget.style.background = 'var(--panel-hover)'}
+      onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = 'var(--panel-hover)' }}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
       <Icon size={18} strokeWidth={ICON_STROKE} absoluteStrokeWidth/>
     </button>
   )
   return (
     <FloatingPanel ariaLabel="Drawing tools" pos={pos} setPos={setPos} horizontal={horizontal}
-      defaultPos={defaultPos}>
+      defaultPos={defaultPos} onSize={onSize}>
       <div style={{
         position:'relative',
         display:'flex', flexDirection: horizontal ? 'row' : 'column', alignItems:'center', gap:2,
@@ -604,7 +630,8 @@ function DrawToolbar({ pos, setPos, defaultPos, horizontal, onToggleOrient, onCl
         {TOOLBAR_TOOLS.map((t, i) => t ? btn(t) : rule(i))}
         {rule('end')}
         {chrome(horizontal ? 'Stack vertically' : 'Lay out horizontally',
-          horizontal ? ArrowUpDown : ArrowLeftRight, onToggleOrient)}
+          horizontal ? ArrowUpDown : ArrowLeftRight, onToggleOrient,
+          tooTall && !asked, tooTall && !asked ? 'Stack vertically — the window is too short' : undefined)}
         {chrome('Hide drawing tools', X, onClose)}
       </div>
     </FloatingPanel>

@@ -1,3 +1,4 @@
+import { SELECT_BLUE, selectTint } from '../theme/tokens'
 import { Rect, Line, Group } from 'react-konva'
 import { SelectionOutline } from './shapes'
 import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, FaceAisleLabels, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
@@ -163,7 +164,7 @@ function OverlaysView({
       {marquee && (
         <Rect
           x={marquee.x} y={marquee.y} width={marquee.width} height={marquee.height}
-          fill="rgba(74,158,255,0.10)" stroke="#4a9eff" strokeWidth={1}
+          fill={selectTint(0.10)} stroke={SELECT_BLUE} strokeWidth={1}
           dash={[4, 3]} strokeScaleEnabled={false} listening={false}
         />
       )}

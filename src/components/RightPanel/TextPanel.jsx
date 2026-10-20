@@ -1,3 +1,4 @@
+import { TEXT_FONTS, textFace } from '../../theme/tokens'
 import { Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { SectionHeader } from '../shared/SectionHeader'
@@ -6,7 +7,6 @@ import { cn } from '../../utils/cn'
 /* Only faces the app actually loads (index.html) plus generics. An unloaded
    family renders as a silent system fallback, which is how every canvas label
    ended up in the wrong face. */
-const FONTS = ['Montserrat', 'Inter', 'JetBrains Mono', 'monospace']
 
 export function TextPanel() {
   const ts = useCanvasStore(s => s.textSettings)
@@ -48,11 +48,11 @@ export function TextPanel() {
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-[var(--text3)] w-9 shrink-0 font-mono">Font</span>
           <select
-            value={ts.fontFamily}
+            value={textFace(ts.fontFamily)}
             onChange={e => setTextSetting('fontFamily', e.target.value)}
             className="flex-1 bg-[var(--surface3)] border border-[var(--border)] rounded text-[11px] text-[var(--text)] px-2 py-1 focus:outline-none focus:border-[var(--accent)]/50"
           >
-            {FONTS.map(f => <option key={f}>{f}</option>)}
+            {TEXT_FONTS.map(f => <option key={f}>{f}</option>)}
           </select>
         </div>
         {/* Size + style */}

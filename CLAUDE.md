@@ -39,9 +39,18 @@ comment saying to restore them the moment the import lands.
 
 ## Design System
 
-Themes are CSS variable blocks in `src/index.css`, selected by `data-theme` on the root div
-(`App.jsx`). Three themes: `studio` (light), `obsidian` (dark), `blueprint`.
-Type roles: `--font-ui` / `--font-display` (labels, headers), `--font-mono` (figures, dimensions).
+**One theme: Trace (THEME.md).** Every token is in ONE block in `src/index.css` (`:root, [data-theme]`) —
+THEME.md's names (`--pine`, `--ink`, `--steel`, `--line`, `--bg2`, `--blue`, `--amber`, `--flag`, the
+`--error-*` / `--warn-*` / `--note-*` box triplets, `--overlay`) and the app's working names mapped onto them.
+Obsidian, blueprint and studio are gone (theme-pine); a dark set would be a second block redefining the same names.
+`data-theme` stays on the root div because the portals look it up. Panel selection = pine (`--accent`); `--blue`
+is dimensions / focus / links only. Canvas selection and handles = `--select-blue` = `theme/tokens.js` SELECT_BLUE.
+Type: `--font-ui` Plus Jakarta Sans, `--font-display` Oswald, `--font-mono` JetBrains Mono — nothing else is
+loaded (index.html). Text objects pick from `TEXT_FONTS`; a retired saved face draws via `textFace()`.
+Floating panels sit at z 150 (under every modal, 200+) and are placed by `utils/floatPlace.js`: inside the
+viewport and off anything marked `data-float-avoid` (the top bar, the Hub button).
+
+> The sections below still describe the earlier studio palette in places; where they disagree, THEME.md wins.
 
 ---
 

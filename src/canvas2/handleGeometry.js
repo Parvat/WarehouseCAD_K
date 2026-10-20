@@ -15,6 +15,7 @@
 // before comparing it to the same UNROTATED positions CanvasUI computes.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { SELECT_BLUE } from '../theme/tokens'
 import { getObjectBounds, getHandlePositions, HANDLES } from '../utils/canvas'
 
 /* Handle sizes, in SCREEN px at every zoom (divided by the zoom for world
@@ -27,7 +28,7 @@ export const GRIP_PX = 10           // the rotate grip, drawn (diameter)
 export const GRIP_HIT_PX = 16       // the rotate grip, hit (diameter)
 export const GRIP_STEM_PX = 12      // the grip's stem, from the handle gap to the grip
 export const HANDLE_FILL = '#ffffff'
-export const HANDLE_ACCENT = '#4a9eff'
+export const HANDLE_ACCENT = SELECT_BLUE
 
 /* CanvasUI.jsx's own per-type suppression, verbatim:
      - beam racks (bays/towers only stretch along their length) -> ml/mr only

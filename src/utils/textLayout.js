@@ -1,3 +1,4 @@
+import { TEXT_FONT_DEFAULT } from '../theme/tokens'
 /* ═══════════════════════════════════════════════════════════════════════════
    TEXT LAYOUT — word wrapping for SVG text.
 
@@ -23,7 +24,7 @@ function sharedCtx() {
 }
 
 /** CSS font shorthand for an object, in WORLD units (unscaled by zoom). */
-export function fontSpec({ bold, italic, fontSize = 14, fontFamily = 'Montserrat' }) {
+export function fontSpec({ bold, italic, fontSize = 14, fontFamily = TEXT_FONT_DEFAULT }) {
   return `${italic ? 'italic ' : ''}${bold ? '700 ' : '400 '}${fontSize}px ${fontFamily}`
 }
 

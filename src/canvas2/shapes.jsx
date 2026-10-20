@@ -1,3 +1,4 @@
+import { SELECT_BLUE, selectTint, textFace } from '../theme/tokens'
 import { useCallback, useMemo, memo } from 'react'
 import { Group, Rect, Path, Shape, Circle, Line, Text } from 'react-konva'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
@@ -315,12 +316,12 @@ function RackShapeView({ obj, ops, gridSize, listening = false, bind, activeBayS
           perfectDrawEnabled={false} listening={false} />
       ))}
       {flueRects.map((r, i) => (
-        <Rect key={'fh' + i} {...r} fill="rgba(74,158,255,0.14)" stroke="#4a9eff" strokeWidth={1}
+        <Rect key={'fh' + i} {...r} fill={selectTint(0.14)} stroke={SELECT_BLUE} strokeWidth={1}
           dash={[2, 3]} strokeScaleEnabled={false} perfectDrawEnabled={false}
           shadowForStrokeEnabled={false} listening={false} />
       ))}
       {activeBayRects(obj, gridSize).map((r, i) => (
-        <Rect key={i} {...r} stroke="#4a9eff" strokeWidth={2}
+        <Rect key={i} {...r} stroke={SELECT_BLUE} strokeWidth={2}
           dash={[4, 3]} strokeScaleEnabled={false} perfectDrawEnabled={false}
           shadowForStrokeEnabled={false} listening={false} />
       ))}
@@ -468,7 +469,7 @@ function FallbackShapeView({ obj, listening = false, bind }) {
     return (
       <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...(bind ? bind(obj) : null)}>
         <Text x={obj.x} y={obj.y} text={obj.text || ''}
-          fontSize={obj.fontSize || 14} fontFamily={obj.fontFamily || 'sans-serif'}
+          fontSize={obj.fontSize || 14} fontFamily={textFace(obj.fontFamily)}
           fill={obj.fill || stroke} listening={listening} />
       </Group>
     )
@@ -662,7 +663,7 @@ export function SelectionOutline({ obj, gridSize = 40, objects = [] }) {
     return (
       <Line name={'sel:' + obj.id}
         points={pts} closed
-        stroke="#4a9eff" strokeWidth={2}
+        stroke={SELECT_BLUE} strokeWidth={2}
         strokeScaleEnabled={false} perfectDrawEnabled={false}
         shadowForStrokeEnabled={false} listening={false}
       />
@@ -674,7 +675,7 @@ export function SelectionOutline({ obj, gridSize = 40, objects = [] }) {
     <Group name={'sel:' + obj.id} listening={false} {...spin(obj)}>
       <Rect
         x={b.x} y={b.y} width={b.width} height={b.height}
-        stroke="#4a9eff" strokeWidth={2}
+        stroke={SELECT_BLUE} strokeWidth={2}
         strokeScaleEnabled={false} perfectDrawEnabled={false}
         shadowForStrokeEnabled={false} listening={false}
       />
@@ -718,7 +719,7 @@ function ZoneShapeView({ obj, gridSize = 40, listening = false, bind }) {
       <Rect x={obj.x} y={obj.y} width={obj.width} height={obj.height} fill={obj.fill || stroke + '22'} stroke={stroke}
         strokeWidth={1.5} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={listening} />
       <Text x={obj.x} y={obj.y + obj.height / 2 - fs / 2} width={obj.width} align="center" text={obj.label || 'Zone'}
-        fontSize={fs} fontStyle="600" fontFamily="Inter, sans-serif" fill={stroke} listening={false} />
+        fontSize={fs} fontStyle="600" fontFamily="'Plus Jakarta Sans', sans-serif" fill={stroke} listening={false} />
     </Group>
   )
 }

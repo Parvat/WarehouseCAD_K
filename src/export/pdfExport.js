@@ -23,6 +23,12 @@
 // entry for why that's a deliberate boundary, not an oversight.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { Printer, X } from 'lucide-react'
+/* the export window's button glyphs: the app's Lucide icons as markup (it is a plain HTML page, no React) */
+const icon = (I) => renderToStaticMarkup(createElement(I, { size: 16, strokeWidth: 1.5, absoluteStrokeWidth: true, 'aria-hidden': true }))
+const ICON_X = icon(X), ICON_PRINTER = icon(Printer)
 import { levelsResolver, legendCounts } from '../utils/elevations'
 import { bandRects, useElevView, tint, tintOn, ELEV_FILL_OPACITY } from '../utils/elevationDraw'
 import { elevationLayout, itemSVG, lengthsByType, ceilingForDrawing, ftInDash, archScale } from '../utils/elevationDrawing'
@@ -136,7 +142,7 @@ function zoneSVG(obj, gridSize) {
   const name = esc(obj.label || 'Zone')
   return `<g data-zone="${esc(obj.id || '')}">` +
     `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" fill="${stroke}" fill-opacity="0.13" stroke="${stroke}" stroke-width="${gridSize * 0.0375}"/>` +
-    `<text x="${obj.x + obj.width / 2}" y="${obj.y + obj.height / 2}" text-anchor="middle" dominant-baseline="central" font-family="Inter, sans-serif" font-weight="600" font-size="${fs}" fill="${stroke}">${name}</text></g>`
+    `<text x="${obj.x + obj.width / 2}" y="${obj.y + obj.height / 2}" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="600" font-size="${fs}" fill="${stroke}">${name}</text></g>`
 }
 
 function columnGridSVG(obj, gridSize) {
@@ -486,7 +492,7 @@ export function exportLayoutToPDF(filename, storeState) {
 <head>
 <meta charset="utf-8">
 <title>${esc(title)}</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; background: #888; }
@@ -500,15 +506,20 @@ export function exportLayoutToPDF(filename, storeState) {
     .no-print { display: none !important; }
   }
   .toolbar { position: fixed; top: 12px; right: 12px; z-index: 999; display: flex; gap: 8px; }
-  .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; font-family: Arial, sans-serif; }
-  .btn-primary { background: #f0b429; color: #13151a; }
-  .btn-secondary { background: #e5e7eb; color: #374151; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 2px; cursor: pointer;
+         font-size: 14px; font-weight: 500; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .btn svg { flex-shrink: 0; background: none; box-shadow: none; }
+  .btn-primary { background: #14392B; color: #FFFFFF; border: 1px solid #14392B; }
+  .btn-primary:hover { background: #1D5340; border-color: #1D5340; }
+  .btn-secondary { background: #FFFFFF; color: #171A18; border: 1px solid #DEDACF; }
+  .btn-secondary:hover { border-color: #C3BEB1; }
+  .btn:focus-visible { outline: 3px solid rgba(20,57,43,.28); outline-offset: 2px; }
 </style>
 </head>
 <body>
   <div class="toolbar no-print">
-    <button class="btn btn-secondary" onclick="window.close()">✕ Close</button>
-    <button class="btn btn-primary" onclick="window.print()">🖨 Print / Save as PDF</button>
+    <button class="btn btn-secondary" onclick="window.close()">${ICON_X}Close</button>
+    <button class="btn btn-primary" onclick="window.print()">${ICON_PRINTER}Print / Save as PDF</button>
   </div>
   <div class="page">${svg}</div>
   ${sheets.map(p => `<div class="page" style="page-break-before: always">${p.svg}</div>`).join('')}

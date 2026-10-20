@@ -14,10 +14,10 @@ function getStatus(minAisleFt, aisleWidthFt) {
 function ForkliftIcon({ size = 'md' }) {
   const [w, h] = size === 'sm' ? [16, 24] : [20, 32]
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} fill="none" stroke="var(--blue)" strokeWidth="1.2">
-      <rect x="2" y="4" width={w - 4} height={h - 10} rx="2" fill="var(--blue-dim)" />
-      <rect x="2" y="0" width="4" height="8" fill="var(--blue-bdr)" />
-      <rect x="7" y="0" width="4" height="8" fill="var(--blue-bdr)" />
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} fill="none" stroke="var(--accent)" strokeWidth="1.2">
+      <rect x="2" y="4" width={w - 4} height={h - 10} rx="2" fill="var(--accent-dim)" />
+      <rect x="2" y="0" width="4" height="8" fill="var(--accent-bdr)" />
+      <rect x="7" y="0" width="4" height="8" fill="var(--accent-bdr)" />
       <circle cx="5"    cy={h - 5} r="3.5" />
       <circle cx={w - 5} cy={h - 5} r="3.5" />
     </svg>
@@ -41,8 +41,8 @@ export function ForkliftPanel() {
               className={cn(
                 'flex items-center gap-2 px-2 py-1.5 rounded-md border text-left w-full transition-all duration-150',
                 active
-                  ? 'bg-[var(--blue)]/10 border-[var(--blue)]'
-                  : 'bg-[var(--surface2)] border-[var(--border)] hover:border-[var(--blue)]/40 hover:bg-[var(--surface3)]'
+                  ? 'bg-[var(--accent)]/10 border-[var(--accent)]'
+                  : 'bg-[var(--surface2)] border-[var(--border)] hover:border-[var(--accent)]/40 hover:bg-[var(--surface3)]'
               )}
             >
               <ForkliftIcon size="sm" />

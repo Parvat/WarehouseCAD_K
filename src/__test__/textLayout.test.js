@@ -60,9 +60,9 @@ describe('wrapLines', () => {
 
 describe('fontSpec', () => {
   it('builds a CSS shorthand canvas can parse', () => {
-    expect(fontSpec({ fontSize: 20, fontFamily: 'Inter' })).toBe('400 20px Inter')
-    expect(fontSpec({ bold: true, italic: true, fontSize: 14, fontFamily: 'Montserrat' }))
-      .toBe('italic 700 14px Montserrat')
+    expect(fontSpec({ fontSize: 20, fontFamily: 'Oswald' })).toBe('400 20px Oswald')
+    expect(fontSpec({ bold: true, italic: true, fontSize: 14, fontFamily: 'Plus Jakarta Sans' }))
+      .toBe('italic 700 14px Plus Jakarta Sans')
   })
 })
 

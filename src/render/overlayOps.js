@@ -14,6 +14,7 @@
 // scale(zoom) transform, so a `/ zoom` world size lands on the same pixels.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { SELECT_BLUE } from '../theme/tokens'
 import {
   getObjectBounds, getHandlePositions, HANDLES, pxToFtIn,
   getFpWallSegments, ANNOT_LINE_TYPES, ANNOT_RECT_TYPES,
@@ -23,7 +24,7 @@ import {
    the same blue and the same ink. Canvas drawing colours stay literal by
    design — CLAUDE.md keeps them out of the theme system. */
 export const OVERLAY = {
-  edge:    '#4a9eff',   // selection box + handle outline
+  edge:    SELECT_BLUE, // selection box + handle outline (theme/tokens.js)
   handle:  '#0e1420',   // handle fill
   accent:  '#f0b429',   // rotate handle + active wall dimension
   rotateBg:'#16181d',

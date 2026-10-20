@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { X, OctagonAlert, TriangleAlert, Info } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { useLayoutCheck, goToIssue, exportAnyway, showIssues, remindersLabel } from '../../utils/layoutCheck'
@@ -70,23 +71,41 @@ export function LayoutCheckPanel() {
 }
 
 /* PDF export with errors: asked, never blocked. */
+/* THEME.md overlay: dimmed backdrop, white box, 1px line, radius 2; X, Esc and a click outside close it (nothing
+   exported, the result stays for the top bar's count). */
+const dlgBtn = { height: 36, padding: '0 14px', borderRadius: 2, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 14, fontWeight: 500 }
 export function ExportCheckDialog({ onExport }) {
   const ask = useLayoutCheck(s => s.askExport)
+  const close = () => useLayoutCheck.setState({ askExport: null })
+  useEffect(() => {
+    if (!ask) return
+    const k = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close() } }
+    window.addEventListener('keydown', k, true)
+    return () => window.removeEventListener('keydown', k, true)
+  }, [ask])
   if (!ask) return null
   const n = ask.errors
   return (
-    <div role="alertdialog" aria-label="Export anyway?" style={{
-      position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    <div onMouseDown={e => { if (e.target === e.currentTarget) close() }} style={{
+      position: 'fixed', inset: 0, zIndex: 200, background: 'var(--overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
     }}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px', boxShadow: '0 8px 30px rgba(0,0,0,0.2)', maxWidth: 360, fontFamily: 'var(--font-ui)' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>{n} error{n === 1 ? '' : 's'} found. Export anyway?</div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <div role="alertdialog" aria-modal="true" aria-label="Export anyway?" aria-labelledby="export-ask-title"
+        style={{ width: 400, maxWidth: '100%', background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 2, fontFamily: 'var(--font-ui)', color: 'var(--ink)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--line)' }}>
+          <span id="export-ask-title" style={{ fontSize: 15, fontWeight: 600 }}>Export with errors</span>
+          <button type="button" aria-label="Close" title="Close (Esc)" onClick={close}
+            style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 2, background: 'transparent', color: 'var(--steel)', cursor: 'pointer' }}>
+            <X size={16} strokeWidth={1.5} absoluteStrokeWidth />
+          </button>
+        </div>
+        <div style={{ padding: '16px', fontSize: 14, lineHeight: 1.5 }}>{n} error{n === 1 ? '' : 's'} found. Export anyway?</div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '0 16px 16px' }}>
           <button type="button" onClick={showIssues}
-            style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+            style={{ ...dlgBtn, border: '1px solid var(--line)', background: 'var(--paper)', color: 'var(--ink)' }}>
             Show issues
           </button>
           <button type="button" onClick={() => exportAnyway(onExport)}
-            style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--accent-solid)', background: 'var(--accent-solid)', color: 'var(--accent-fg)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+            style={{ ...dlgBtn, border: '1px solid var(--pine)', background: 'var(--pine)', color: '#FFFFFF' }}>
             Export anyway
           </button>
         </div>

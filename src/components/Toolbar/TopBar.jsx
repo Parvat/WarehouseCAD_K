@@ -31,9 +31,10 @@ const C = {
 }
 
 /* Quiet icon button — the only shape that stays in the always-visible bar. */
-function IBtn({ icon: Icon, label, onClick, active, danger, title }) {
+function IBtn({ icon: Icon, label, onClick, active, danger, title, menu }) {
   return (
     <button onClick={onClick} title={title || label} aria-label={title || label}
+      {...(menu ? { 'aria-haspopup': 'menu', 'aria-expanded': !!active } : null)}
       style={{
         display:'flex', alignItems:'center', justifyContent:'center',
         width:30, height:30, borderRadius:7, border:'none', cursor:'pointer',
@@ -73,7 +74,7 @@ function MenuLabel({ children }) {
 
 function MenuGroup({ label, children, first }) {
   return (
-    <div style={{
+    <div role="group" aria-label={label} style={{
       padding:'14px 12px',
       borderTop: first ? 'none' : '0.5px solid var(--border)',
     }}>
@@ -86,7 +87,7 @@ function MenuGroup({ label, children, first }) {
 /* A full-width action: icon + name on the left, shortcut hint on the right. */
 function MenuItem({ icon: Icon, children, onClick, hint, danger }) {
   return (
-    <button onClick={onClick}
+    <button onClick={onClick} role="menuitem" tabIndex={-1}
       style={{
         display:'flex', alignItems:'center', gap:10, width:'100%',
         padding:'7px 8px', borderRadius:7, border:'none', background:'transparent',
@@ -120,7 +121,8 @@ function MenuRow({ label, children }) {
 /* Pill-group segment — one shared shape for grid size, UI size and theme. */
 function Seg({ active, onClick, title, children, wide }) {
   return (
-    <button onClick={onClick} title={title}
+    <button onClick={onClick} title={title} tabIndex={-1} aria-label={title}
+      {...(active === undefined ? { role: 'menuitem' } : { role: 'menuitemradio', 'aria-checked': !!active })}
       style={{
         minWidth: wide ? undefined : 28, height:26, padding: wide ? '0 9px' : '0 6px',
         display:'flex', alignItems:'center', justifyContent:'center', gap:5,
@@ -149,7 +151,7 @@ function SegGroup({ children }) {
 
 function Switch({ on, onClick, label }) {
   return (
-    <button onClick={onClick} role="switch" aria-checked={on} aria-label={label}
+    <button onClick={onClick} role="menuitemcheckbox" aria-checked={on} aria-label={label} tabIndex={-1}
       style={{
         position:'relative', width:34, height:20, borderRadius:999, border:'none',
         cursor:'pointer', flexShrink:0, padding:0,
@@ -211,6 +213,20 @@ export function TopBar() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
   const menuRef = useRef(null)
+  const menuBox = useRef(null)
+  const menuItems = () => [...(menuBox.current?.querySelectorAll('[role^="menuitem"], select') || [])]
+  useEffect(() => { if (menuOpen) menuItems()[0]?.focus() }, [menuOpen])
+  const onMenuKey = e => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
+    if (e.target.tagName === 'SELECT' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) return
+    const items = menuItems()
+    if (!items.length) return
+    e.preventDefault()
+    const i = items.indexOf(document.activeElement)
+    const n = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1
+      : e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length
+    items[n].focus()
+  }
 
   useEffect(() => {
     if (!menuOpen) return
@@ -225,7 +241,7 @@ export function TopBar() {
   }, [menuOpen])
 
   return (
-    <div style={{
+    <div data-float-avoid style={{
       height:56, background:C.bg, borderBottom:`1px solid ${C.border}`,
       display:'flex', alignItems:'center', padding:'0 20px', gap:16,
       flexShrink:0, zIndex:50,
@@ -290,12 +306,12 @@ export function TopBar() {
 
       {/* Everything else — file, edit, view, appearance — lives behind this. */}
       <div ref={menuRef} style={{ position:'relative', flexShrink:0 }}>
-        <IBtn icon={MoreHorizontal} label="Settings"
+        <IBtn icon={MoreHorizontal} label="Settings" menu
           onClick={() => setMenuOpen(o => !o)} active={menuOpen}
           title="Settings and more" />
 
         {menuOpen && (
-          <div style={{
+          <div role="menu" aria-label="Settings and more" ref={menuBox} onKeyDown={onMenuKey} style={{
             position:'absolute', top:'calc(100% + 10px)', right:0, width:296,
             background:C.bg, border:`0.5px solid ${C.border}`, borderRadius:12,
             boxShadow:'var(--shadow)', zIndex:100,
@@ -379,29 +395,6 @@ export function TopBar() {
             </MenuGroup>
 
             <MenuGroup label="Appearance">
-              <MenuRow label="Theme">
-                <SegGroup>
-                  {[
-                    /* Trace is the app's default skin (App.jsx), so it has to be
-                       reachable — without it the switcher is a one-way door. */
-                    { id:'trace',     label:'Trace',     dot1:'#ECEAE1', dot2:'#14392B' },
-                    { id:'obsidian',  label:'Dark',      dot1:'#161b22', dot2:'#f97316' },
-                    { id:'studio',    label:'Light',     dot1:'#ECEAE5', dot2:'#388BFD' },
-                    { id:'blueprint', label:'Blueprint', dot1:'#0d1829', dot2:'#38bdf8' },
-                  ].map(t => (
-                    <Seg key={t.id} active={uiTheme===t.id} onClick={() => setUiTheme(t.id)} title={t.label}>
-                      {/* Swatches stay literal — they preview a theme, so they
-                          must not follow the active one. The neutral-grey ring
-                          reads against both the light track and the ink pill,
-                          which otherwise swallows a dark swatch whole. */}
-                      <span style={{ display:'flex', gap:2 }}>
-                        <span style={{ width:7, height:7, borderRadius:2, background:t.dot1, boxShadow:'0 0 0 1px rgba(128,128,128,0.45)' }}/>
-                        <span style={{ width:7, height:7, borderRadius:2, background:t.dot2, boxShadow:'0 0 0 1px rgba(128,128,128,0.45)' }}/>
-                      </span>
-                    </Seg>
-                  ))}
-                </SegGroup>
-              </MenuRow>
               <MenuRow label="Interface size">
                 <SegGroup>
                   {[['sm','S'],['md','M'],['lg','L']].map(([val,lbl]) => (

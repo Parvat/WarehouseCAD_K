@@ -15,7 +15,7 @@ import { bayLedger } from '../../utils/bayLedger'
 import { ElevationDrawing } from './ElevationDrawing'
 
 /* ── The Elevations tab (ELEVATIONS_PLAN.md §3) — next to Properties; the panel widens on it ─────────────────────────
-   1. The TOP never moves or resizes between states: the toolbar (Front | Side · "BEAM 8'-0" · 2 PALLETS" · Fit · ⤢) and
+   1. The TOP never moves or resizes between states: the toolbar (Front | Side · "BEAM 8'-0" · 2P" · Fit · ⤢) and
       the drawing, a fixed-height box on graph paper. The list's drawing is read-only; beams drag only in the editor,
       into its draft — an elevation used by 325 bays changes only through Save.
    2. The BOTTOM, section 02, swaps in place:
@@ -169,8 +169,8 @@ export function ElevationsTab() {
         <div role="group" aria-label="Drawing detail" style={{ ...segGroup(26), flexShrink: 0 }}>
           {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={detail === k} style={seg(detail === k)} onClick={() => setPane({ detail: k })}>{label}</button>)}
         </div>
-        <span aria-label="Beam length" title={from ? `Beam length: ${from} (set on the rack, not here)` : 'Beam length (set on the rack, not here)'} style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.04em', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
-          BEAM {ftInDash(shownEntry.beamIn)} · {per} PALLET{per === 1 ? '' : 'S'}
+        <span aria-label="Beam length" title={`Beam ${ftInDash(shownEntry.beamIn)}, ${per} pallet${per === 1 ? '' : 's'} per level${from ? ` — from ${from}` : ''} (set on the rack, not here)`} style={{ flex: '1 0 auto', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.04em', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+          BEAM {ftInDash(shownEntry.beamIn)} · {per}P
         </span>
         <button type="button" aria-label="Fit" title="Fit (double-click empty space)" onClick={() => setFit(n => n + 1)} style={{ ...S.btn, height: 26, flexShrink: 0 }}>Fit</button>
         <button type="button" aria-label="Full screen" title="Full screen (Esc closes)" onClick={() => setFull(n => n + 1)} style={{ ...S.btn, height: 26, width: 26, padding: 0 }}><Maximize2 size={12} /></button>

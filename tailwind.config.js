@@ -9,9 +9,9 @@ export default {
         red: '#ef4444', purple: '#a855f7', text: '#e8eaf0', text2: '#8b90a0', text3: '#555a6a',
       },
       fontFamily: {
-        sans: ['DM Sans','sans-serif'],
-        mono: ['DM Mono','monospace'],
-        display: ['Syne','sans-serif'],
+        sans: ['Plus Jakarta Sans','system-ui','sans-serif'],
+        mono: ['JetBrains Mono','ui-monospace','monospace'],
+        display: ['Oswald','sans-serif'],
       },
     },
   },

@@ -1,3 +1,4 @@
+import { SELECT_BLUE } from '../theme/tokens'
 import { Group, Rect } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { rackFootprint } from '../generate/columnCheck'
@@ -11,7 +12,7 @@ import { useRowGroup } from '../utils/rowGroupTool'
        have warnings in orange, long dashes) and the rows it SKIPS (amber, outlined over the row where
        it is). */
 
-export const GROUP = '#2F7BD8'
+export const GROUP = SELECT_BLUE   // the group's rows are a selection
 export const SKIPPED = '#E67E22'
 export const WARNED = '#D35400'
 

@@ -50,8 +50,8 @@ export function FloorPlanTools() {
                   className={cn(
                     'rounded border flex flex-col items-center justify-center gap-0.5 transition-all w-full py-1.5',
                     active
-                      ? 'bg-[var(--blue)]/15 border-[var(--blue)] text-[var(--blue)]'
-                      : 'bg-[var(--surface2)] border-[var(--border)] text-[var(--text3)] hover:border-[var(--blue)]/40 hover:bg-[var(--surface3)] hover:text-[var(--text2)]',
+                      ? 'bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)]'
+                      : 'bg-[var(--surface2)] border-[var(--border)] text-[var(--text3)] hover:border-[var(--accent)]/40 hover:bg-[var(--surface3)] hover:text-[var(--text2)]',
                   )}
                 >
                   {tool.icon}
@@ -99,7 +99,7 @@ function WallThicknessControl() {
         type="range" min="0.25" max="2" step="0.25"
         value={thickness}
         onChange={e => applyThickness(Number(e.target.value))}
-        className="accent-[var(--blue)] h-1 w-full"
+        className="accent-[var(--accent)] h-1 w-full"
       />
       <div className="flex gap-1">
         {[0.25, 0.5, 0.75, 1].map(v => (
@@ -107,7 +107,7 @@ function WallThicknessControl() {
             onClick={() => applyThickness(v)}
             className={cn(
               'flex-1 text-[8px] font-mono py-0.5 rounded border transition-colors',
-              thickness === v ? 'border-[var(--blue)] text-[var(--blue)] bg-[var(--blue)]/10' : 'border-[var(--border)] text-[var(--text3)] hover:text-[var(--text2)]'
+              thickness === v ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10' : 'border-[var(--border)] text-[var(--text3)] hover:text-[var(--text2)]'
             )}
           >
             {v * 12}"

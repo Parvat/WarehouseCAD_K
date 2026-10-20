@@ -640,14 +640,14 @@ describe('EV — the editor (v2 §B–C, E)', () => {
 
   const C = { ink: '#15181C', pine: '#123A2E', load: '#E8DCC2', loadEdge: '#B08F52', deck: '#C9A870', blue: '#1B4FD8', red: '#A8341C', grey: '#7A828C', hatch: '#B6BAB3', band: '#F2C230', misfit: '#F5E7E3' }
 
-  it('EV-drawing: Simple, in the reference sheet\'s visual language — IBM Plex Mono; dark green frames and beams; kraft loads on a deck board; the ink ground line with grey hatching; the dashed clear-height line over the yellow clearance band; level tags L1–L4 grey; the frame height, the pitch and the beam with its pallets per level blue; the pallets\' side clearance and the clearance band red; no beam elevations, no weights', () => {
+  it('EV-drawing: Simple, in the reference sheet\'s visual language — JetBrains Mono; dark green frames and beams; kraft loads on a deck board; the ink ground line with grey hatching; the dashed clear-height line over the yellow clearance band; level tags L1–L4 grey; the frame height, the pitch and the beam with its pallets per level blue; the pallets\' side clearance and the clearance band red; no beam elevations, no weights', () => {
     const t = sampleT(), d = elevationLayout(t, 96, { w: 1100, h: 460 }, sampleO)
     const texts = d.items.filter(i => i.t === 'text'), by = (str) => texts.find(i => i.s === str)
     for (const want of ['L1', 'L2', 'L3', 'L4', 'FRAME 19\'-0"', 'PITCH 6\'-2"', 'BEAM 8\'-0" · 2P', 'CLEAR HEIGHT 24\'-2"', 'SPRINKLERS 24\'-7"', 'CLEARANCE 1\'-6"', '5.3" CLR', '4\'-0"', '1\'-0"']) expect([want, !!by(want)]).toEqual([want, true])
     expect(['L1', 'L2', 'L3', 'L4'].map(x => by(x).fill)).toEqual([C.grey, C.grey, C.grey, C.grey])
     expect([by('FRAME 19\'-0"').fill, by('PITCH 6\'-2"').fill, by('BEAM 8\'-0" · 2P').fill]).toEqual([C.blue, C.blue, C.blue])
     expect([by('5.3" CLR').fill, by('CLEARANCE 1\'-6"').fill, by('CLEAR HEIGHT 24\'-2"').fill]).toEqual([C.red, C.red, C.grey])
-    expect(texts.every(i => /IBM Plex Mono/.test(i.font))).toBe(true)
+    expect(texts.every(i => i.font === "'JetBrains Mono', monospace")).toBe(true)
     expect(d.items.filter(i => i.role?.kind === 'upright').every(i => i.fill === C.pine)).toBe(true)
     expect(d.items.filter(i => i.role?.kind === 'beam').map(i => i.fill)).toEqual([C.pine, C.pine, C.pine])
     const loads = d.items.filter(i => i.tag === 'load')
@@ -739,12 +739,12 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(pane.includes("background: '#fff'")).toBe(false)
     const panel = readFileSync(new URL('../../components/Elevations/ElevationsTab.jsx', import.meta.url), 'utf8')
     expect(panel.includes("background: '#fff'")).toBe(false)
-    // the theme tokens: in every theme block, light frames on the dark panels
-    const css = readFileSync(new URL('../../index.css', import.meta.url), 'utf8')
-    const tok = (th) => { const a = css.indexOf(`[data-theme="${th}"] {`), b = css.indexOf('\n}', a); const m = css.slice(a, b).match(/--elev-frame:(#[0-9A-Fa-f]{6}); --elev-ink:(#[0-9A-Fa-f]{6});/); return m ? [m[1], m[2]] : null }
-    const lum = (h) => { const n = parseInt(h.slice(1), 16); return 0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255) }
-    expect([tok('trace'), tok('studio')]).toEqual([['#123A2E', '#15181C'], ['#123A2E', '#15181C']])
-    for (const th of ['obsidian', 'blueprint']) expect([th, lum(tok(th)[0]) > 120, lum(tok(th)[1]) > 120]).toEqual([th, true, true])
+    // the theme tokens: the one token block (index.css) — no dark theme in the planner (THEME.md)
+    const css = readFileSync(new URL('../../index.css', import.meta.url), 'utf8').split('\r\n').join('\n')
+    const a0 = css.indexOf(':root, [data-theme] {'), block = css.slice(a0, css.indexOf('\n}', a0))
+    const tok = () => { const m = block.match(/--elev-frame:(#[0-9A-Fa-f]{6}); --elev-ink:(#[0-9A-Fa-f]{6});/); return m ? [m[1], m[2]] : null }
+    expect(tok()).toEqual(['#123A2E', '#15181C'])
+    expect(/\[data-theme="(obsidian|blueprint|studio)"\]/.test(css)).toBe(false)
     // frame / ink: the frames, beams, uprights, bracing and spacers, the ground and base plates; the default the reference's
     const th = elevationLayout(sampleT(), 96, { w: 900, h: 400 }, { ...sampleO, frame: 'var(--elev-frame)', ink: 'var(--elev-ink)' }).items
     expect(th.filter(i => ['beam', 'upright', 'frame', 'spacer'].includes(i.tag)).every(i => i.fill === 'var(--elev-frame)')).toBe(true)
@@ -756,9 +756,8 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect([fills.includes('var(--elev-dim)'), fills.includes('var(--elev-clr)'), fills.includes('#1B4FD8'), fills.includes('#A8341C')]).toEqual([true, true, false, false])
     expect(tk.find(i => i.t === 'text' && /^FRAME/.test(i.s)).fill).toBe('var(--elev-dim)')
     expect(tk.find(i => i.t === 'text' && / CLR$/.test(i.s)).fill).toBe('var(--elev-clr)')
-    const tok2 = (th) => { const a = css.indexOf(`[data-theme="${th}"] {`), b = css.indexOf('\n}', a); const m = css.slice(a, b).match(/--elev-dim:(#[0-9A-Fa-f]{6}); --elev-clr:(#[0-9A-Fa-f]{6});/); return m ? [m[1], m[2]] : null }
-    expect([tok2('trace'), tok2('studio')]).toEqual([['#1B4FD8', '#A8341C'], ['#1B4FD8', '#A8341C']])
-    for (const th of ['obsidian', 'blueprint']) expect([th, lum(tok2(th)[0]) > 120, lum(tok2(th)[1]) > 120]).toEqual([th, true, true])
+    const tok2 = () => { const m = block.match(/--elev-dim:(#[0-9A-Fa-f]{6}); --elev-clr:(#[0-9A-Fa-f]{6});/); return m ? [m[1], m[2]] : null }
+    expect(tok2()).toEqual(['#1B4FD8', '#A8341C'])
     expect(readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')).toMatch(/blue: 'var\(--elev-dim\)', red: 'var\(--elev-clr\)'/)
     const d = elevationLayout(sampleT(), 96, { w: 900, h: 400 }, { ...sampleO, bg: 'var(--surface)' })
     expect(d.items.filter(i => i.t === 'text').every(i => i.haloColor === 'var(--surface)')).toBe(true)
@@ -786,7 +785,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     const tTop = tab.indexOf('role="toolbar" aria-label="Drawing toolbar"'), tBox = tab.indexOf('data-drawing-box'), tSwap = tab.indexOf('? <Editor ')
     expect([tTop > 0, tBox > tTop, tSwap > tBox]).toEqual([true, true, true])
     const tBar = tab.slice(tTop, tBox)
-    expect(['aria-label="View"', 'BEAM {ftInDash(shownEntry.beamIn)} · {per} PALLET', 'aria-label="Fit"', 'aria-label="Full screen"'].map(k => tBar.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
+    expect(['aria-label="View"', 'BEAM {ftInDash(shownEntry.beamIn)} · {per}P', 'aria-label="Fit"', 'aria-label="Full screen"'].map(k => tBar.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
     // the split: the drawing its share of the body below the toolbar (65% to start), the same in both states; a handle between
     expect(tab).toMatch(/const drawH = Math\.max\(120, Math\.round\(\(bodyH - HANDLE\) \* split\)\)/)
     expect(tab).toMatch(/<div style=\{\{ height: drawH, flexShrink: 0,/)

@@ -137,7 +137,7 @@ export default function App() {
             <Canvas2 />
             {/* back to the hub: in the plan's own bottom-left corner — never over the left panel's footer (Project
                 settings) — the elevation legend starts past it */}
-            <button onClick={() => setView('hub')} title="Back to hub" style={{
+            <button onClick={() => setView('hub')} title="Back to hub" data-float-avoid style={{
               position: 'absolute', left: 12, bottom: 12, zIndex: 55,
               display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
               background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,

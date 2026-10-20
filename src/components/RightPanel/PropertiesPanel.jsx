@@ -1,3 +1,4 @@
+import { TEXT_FONTS, textFace } from '../../theme/tokens'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { SectionHeader } from '../shared/SectionHeader'
@@ -20,11 +21,9 @@ import { ElevationLine } from '../Elevations/ElevationLine'
 import { isBeamRack } from '../../utils/elevations'
 import { setRackDepths } from '../../utils/rackDepthAction'
 
-/* The app's locked type system. Montserrat and JetBrains Mono are loaded by
-   index.html; Inter was added alongside them. `monospace` is the generic
-   fallback. Nothing else — an unloaded family silently renders as a system
-   fallback, which is how every label once ended up in the wrong face. */
-const TEXT_FONTS = ['Montserrat', 'Inter', 'JetBrains Mono', 'monospace']
+/* A text object's face: one of the app's three (theme/tokens.js TEXT_FONTS, loaded by index.html). Nothing else —
+   an unloaded family silently renders as a system fallback. A face saved before the type change shows (and draws)
+   as its successor. */
 
 /* ─── Shared Styles ────────────────────────────────────────────────────────── */
 
@@ -548,20 +547,20 @@ export function PropertiesPanel() {
               {/* Wall thickness */}
               <div style={{ paddingTop:8, borderTop:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:6 }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                  <span style={{ ...S.mono9, color:'var(--blue)', textTransform:'uppercase', letterSpacing:'0.06em' }}>Wall Thickness</span>
+                  <span style={{ ...S.mono9, color:'var(--accent)', textTransform:'uppercase', letterSpacing:'0.06em' }}>Wall Thickness</span>
                   <span style={{ ...S.mono11, color:'var(--text)' }}>{(wallT*12).toFixed(0)}"</span>
                 </div>
                 <input type="range" min={0.25} max={2} step={0.25} value={wallT}
                   onChange={e => setWall(Number(e.target.value))}
-                  style={{ accentColor:'var(--blue)', height:4, width:'100%' }} />
+                  style={{ accentColor:'var(--accent)', height:4, width:'100%' }} />
                 <div style={{ display:'flex', gap:4 }}>
                   {[0.25,0.5,0.75,1].map(v => (
                     <button key={v} onClick={() => setWall(v)}
                       style={{
                         flex:1, ...S.mono9, padding:'4px 0', borderRadius:5,
-                        border: wallT===v ? '1px solid var(--blue)' : '1px solid var(--border)',
-                        background: wallT===v ? 'var(--blue-dim)' : 'transparent',
-                        color: wallT===v ? 'var(--blue)' : 'var(--text3)', cursor:'pointer',
+                        border: wallT===v ? '1px solid var(--accent)' : '1px solid var(--border)',
+                        background: wallT===v ? 'var(--accent-dim)' : 'transparent',
+                        color: wallT===v ? 'var(--accent)' : 'var(--text3)', cursor:'pointer',
                         transition:'all 0.15s',
                       }}>
                       {v*12}"
@@ -574,7 +573,7 @@ export function PropertiesPanel() {
                     style={{
                       position:'relative', width:32, height:16, borderRadius:8, flexShrink:0,
                       transition:'all 0.2s', cursor:'pointer', border:'none',
-                      background: obj.showWallLabel ? 'var(--blue)' : 'var(--border2)',
+                      background: obj.showWallLabel ? 'var(--accent)' : 'var(--border2)',
                     }}>
                     <div style={{
                       position:'absolute', top:2, width:12, height:12, borderRadius:6,
@@ -658,7 +657,7 @@ export function PropertiesPanel() {
         {obj.type==='text' && (<>
           <div style={{ display:'flex', alignItems:'center', gap:6 }}>
             <span style={S.label}>Font</span>
-            <select value={obj.fontFamily || 'Montserrat'}
+            <select value={textFace(obj.fontFamily)}
               onChange={e => commit('fontFamily', e.target.value)}
               style={{ ...S.input, flex:1, cursor:'pointer' }}>
               {TEXT_FONTS.map(f => <option key={f} value={f} style={{ fontFamily:f }}>{f}</option>)}
