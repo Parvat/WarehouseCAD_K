@@ -181,11 +181,12 @@ export function autoNames(table) {
 /** An elevation's shown name: its own when renamed; else its auto name (unique within its table). A draft not in the
  *  table yet: its auto name as it would be once saved there (`previewName`). */
 export const nameOf = (table, t) => (t.named ? t.name : autoNames(table).get(t.id) ?? previewName(table, t))
-/** The auto name draft `t` (elevation `id`, or a new one) would take once saved into `table`. */
+/** The auto name draft `t` (elevation `id`, or a new one) would take once saved into `table` — never "· copy": a draft
+ *  the same as an existing elevation is told so in the editor ("Same as …"), not named after it. */
 export function previewName(table, t, id = t.id) {
   const key = id || '__draft__', types = table?.types || []
   const tb = { ...(table || {}), types: types.some(x => x.id === key) ? types.map(x => (x.id === key ? { ...t, id: key, named: false } : x)) : [...types, { ...t, id: key, named: false }] }
-  return autoNames(tb).get(key)
+  return String(autoNames(tb).get(key) ?? '').replace(/ · copy( d+)?$/, '')
 }
 /** Every elevation not renamed called by its auto name (stored, so the legend, the PDF and the BOM read it). */
 export function refreshNames(table) {

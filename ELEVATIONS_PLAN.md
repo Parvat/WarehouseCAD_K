@@ -93,7 +93,10 @@ capacity, column pick blocks, narrow aisles, usable) reads the **bay-side's type
 - The toolbar: Front | Side, "BEAM 8'-0" · 2 PALLETS" (mono; the beam length is read-only — the selected row's most
   common bay, else the most common length among the elevation's bays), Fit and ⤢ full screen. Fit and ⤢ drive the
   drawing through signals (`fitSignal`, `fullSignal`); Simple | Detailed sits in the full-screen view.
-- The drawing: a fixed 320 px box on graph paper (`ElevationDrawing` `controls={false} paper`). In the list it is
+- The drawing on a plain white sheet (`ElevationDrawing` `controls={false} paper`), taking 65% of the panel below the
+  toolbar; section 02 has the rest. A handle between them (grip dots, row-resize) drags the split between 30% and 80%;
+  a double-click resets it to 65%. The split is the user's own (localStorage `trace.elevsplit.v1`, `elevTab.js`
+  `useElevSplit`), never the layout's, and the same in both states; the drawing refits to it. In the list it is
   **read-only**. Beams drag only in the editor, into its draft, so an elevation used by 325 bays changes only through
   Save.
 
@@ -111,9 +114,11 @@ capacity, column pick blocks, narrow aisles, usable) reads the **bay-side's type
 **2B. The editor is for making and changing one elevation** — "02 NEW ELEVATION", or "02 EDIT ELEVATION · 325 bays use
 it", with "Drag a beam to move it" on the right (`elevTab.js` `useElevTab.editing`: `{ id, draft, touched, newCeiling,
 newPallet }`).
-- **Name:** auto (shown as the placeholder), editable.
+- **Name:** auto (shown as the placeholder; it follows the ceiling, pallet and beam live), editable. A draft is never
+  called "· copy": when it matches an existing elevation exactly, a blue note says "Same as <name> — use that one
+  instead?", and the link picks that one and returns to the list.
 - **Ceiling box:** a select of the project's ceilings plus "+ New ceiling height". That opens Name · Clear height ·
-  Sprinkler inside the box, in one row. The "clear height not set" note sits here too.
+  Sprinkler inside the box, in one row. The "clear height not set" note sits here too — blue: a reminder, not an error.
 - **Pallet box:** a select of the project's pallets plus "+ New pallet size". That opens Face · Depth · Height · Weight
   inside the box, in one row. Under it, the amber pallet-depth note (below).
 - **Beam face:** 3 · 4 · 5 · 6 in.
@@ -162,7 +167,7 @@ back: `elevations.js` `frameNeededFor`, `frameDepthNote`). When an elevation's p
 it would go on, three places say so:
 - an amber note in the editor's pallet box: "60 in deep pallet needs about 54 in frames. Selected rows are 42 in." (the
   selected rows, else the rows using it);
-- red under the drawing;
+- amber under the drawing (a warning);
 - a Check layout warning per frame depth (`elev-frame-depth`): "Elevation …: 60 in deep pallet needs about 54 in
   frames. These rows are 42 in."
 

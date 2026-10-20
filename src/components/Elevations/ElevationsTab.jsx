@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Plus, MoreHorizontal, Pencil, Maximize2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
@@ -8,7 +8,7 @@ import { lengthsByType, ftInDash } from '../../utils/elevationDrawing'
 import { positionsPerBeam } from '../../utils/palletFit'
 import { tint, tintOn, ELEV_FILL_OPACITY } from '../../utils/elevationDraw'
 import { useElevEditor } from '../../utils/elevEditor'
-import { useElevTab, nameOf, assignSelected, recolorElevation, duplicateElevation, deleteElevation, defaultElevation, removeUnused, rowSideCells, startNew, startEdit, editDraft, cancelEdit, saveEdit, draftTable, NEW_CEILING, NEW_PALLET } from '../../utils/elevTab'
+import { useElevTab, nameOf, assignSelected, recolorElevation, duplicateElevation, deleteElevation, defaultElevation, removeUnused, rowSideCells, startNew, startEdit, editDraft, cancelEdit, saveEdit, draftTable, sameElevation, NEW_CEILING, NEW_PALLET, useElevSplit, setElevSplit, SPLIT_DEFAULT, SPLIT_MIN, SPLIT_MAX } from '../../utils/elevTab'
 import { projectOf, ceilingFor, palletFor, openSetup, previewName, ASSUMED_CLEAR_IN } from '../../utils/project'
 import { bayLedger } from '../../utils/bayLedger'
 import { ElevationDrawing } from './ElevationDrawing'
@@ -27,7 +27,7 @@ import { ElevationDrawing } from './ElevationDrawing'
          which also adds a new ceiling or pallet to the project (one undo step). Cancel or Save returns to the list. */
 
 const store = useCanvasStore
-const DRAW_H = 320
+const HANDLE = 10                 // the split handle (px)
 const S = {
   note: { fontSize: 11, color: 'var(--text3)', lineHeight: 1.45 },
   label: { fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', fontFamily: 'var(--font-ui)' },
@@ -120,6 +120,29 @@ export function ElevationsTab() {
   const per = Math.max(0, positionsPerBeam(shownEntry.beamIn, shownEntry.palletWIn))
   const rowsSelected = useMemo(() => rowSideCells({ objects, selectedIds, activeBaySelection }).size, [objects, selectedIds, activeBaySelection])
   const [fitSignal, setFit] = useState(0), [fullSignal, setFull] = useState(0)
+  // the split: the body's height measured, the drawing its share (the same in both states); the handle drags it
+  const split = useElevSplit(s => s.split)
+  const body = useRef(null)
+  const [bodyH, setBodyH] = useState(600)
+  useLayoutEffect(() => {
+    const el = body.current
+    if (!el) return
+    const read = () => setBodyH(el.clientHeight || 600)
+    read()
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read)
+    ro?.observe(el)
+    return () => ro?.disconnect()
+  }, [])
+  const drawH = Math.max(120, Math.round((bodyH - HANDLE) * split))
+  const startSplit = (ev) => {
+    if (ev.button !== 0) return
+    ev.preventDefault()
+    const r = body.current.getBoundingClientRect()
+    let raf = 0, last = null
+    const move = (m) => { last = (m.clientY - r.top - HANDLE / 2) / Math.max(1, r.height - HANDLE); if (!raf) raf = requestAnimationFrame(() => { raf = 0; setElevSplit(last, { save: false }) }) }
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cancelAnimationFrame(raf); if (last != null) setElevSplit(last) }
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+  }
 
   return (
     <div aria-label="Elevations" data-mode={e ? 'editor' : 'list'} data-pane="open" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -134,18 +157,30 @@ export function ElevationsTab() {
         <button type="button" aria-label="Fit" title="Fit (double-click empty space)" onClick={() => setFit(n => n + 1)} style={{ ...S.btn, height: 26, marginLeft: 'auto' }}>Fit</button>
         <button type="button" aria-label="Full screen" title="Full screen (Esc closes)" onClick={() => setFull(n => n + 1)} style={{ ...S.btn, height: 26, width: 26, padding: 0 }}><Maximize2 size={12} /></button>
       </div>
-      <div style={{ height: DRAW_H, flexShrink: 0, padding: '0 8px', overflow: 'hidden' }} data-drawing-box>
-        {shown
-          ? <ElevationDrawing t={shown} title={e ? previewName(dT, e.draft, e.id) : nameOf(T, shown)} entry={shownEntry} building={building} sel={e ? sel : null} sprClr={sprinklerClearance(T)} detail={detail} view={view} height={DRAW_H} controls={false} paper fitSignal={fitSignal} fullSignal={fullSignal}
-              readOnly={!e} onCommit={e ? (next) => editDraft(store, { ...next, id: e.draft.id }, { fromDrawing: true }) : () => {}} />
-          : <div style={{ ...S.note, padding: 12 }}>No elevation yet — + New elevation below.</div>}
-      </div>
+      {/* below the toolbar: the drawing (the split's share, 65% to start) | the handle | section 02 (the rest) */}
+      <div ref={body} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ height: drawH, flexShrink: 0, padding: '0 8px', overflow: 'hidden' }} data-drawing-box>
+          {shown
+            ? <ElevationDrawing t={shown} title={e ? previewName(dT, e.draft, e.id) : nameOf(T, shown)} entry={shownEntry} building={building} sel={e ? sel : null} sprClr={sprinklerClearance(T)} detail={detail} view={view} height={drawH} controls={false} paper fitSignal={fitSignal} fullSignal={fullSignal}
+                readOnly={!e} onCommit={e ? (next) => editDraft(store, { ...next, id: e.draft.id }, { fromDrawing: true }) : () => {}} />
+            : <div style={{ ...S.note, padding: 12 }}>No elevation yet — + New elevation below.</div>}
+        </div>
 
-      {/* 2. section 02 — the list or the editor, in place */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--border)' }}>
-        {e
-          ? <Editor e={e} T={T} dT={dT} objects={objects} selectedIds={selectedIds} activeBaySelection={activeBaySelection} bays={e.id ? counts.get(e.id) || 0 : 0} building={building} sel={sel} />
-          : <List T={T} active={active} counts={counts} made={made} rowsSelected={rowsSelected} />}
+        {/* the handle: drag the split (30–80%), double-click back to 65% */}
+        <div role="separator" aria-orientation="horizontal" aria-label="Resize drawing" aria-valuemin={SPLIT_MIN * 100} aria-valuemax={SPLIT_MAX * 100} aria-valuenow={Math.round(split * 100)} title="Drag to resize · double-click to reset"
+          onPointerDown={startSplit} onDoubleClick={() => setElevSplit(SPLIT_DEFAULT)}
+          style={{ height: HANDLE, flexShrink: 0, cursor: 'row-resize', display: 'flex', alignItems: 'center', justifyContent: 'center', borderTop: '1px solid var(--border)', background: 'var(--surface)', touchAction: 'none' }}>
+          <span aria-hidden style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 3px)', gap: 3 }}>
+            {Array.from({ length: 3 }, (_, i) => <span key={i} style={{ width: 3, height: 3, borderRadius: '50%', background: 'var(--text4, #96A093)' }} />)}
+          </span>
+        </div>
+
+        {/* 2. section 02 — the list or the editor, in place */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          {e
+            ? <Editor e={e} T={T} dT={dT} objects={objects} selectedIds={selectedIds} activeBaySelection={activeBaySelection} bays={e.id ? counts.get(e.id) || 0 : 0} building={building} sel={sel} />
+            : <List T={T} active={active} counts={counts} made={made} rowsSelected={rowsSelected} />}
+        </div>
       </div>
     </div>
   )
@@ -199,6 +234,9 @@ function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, buil
   const pr = projectOf(dT), d = e.draft
   const [name, setName] = useState(d.named ? d.name : '')
   const auto = previewName(dT, d, e.id)
+  // the draft the same as an existing elevation in every way: say so, and offer that one
+  const same = sameElevation(dT, d, e.id)
+  const useSame = () => { cancelEdit(); useElevTab.setState({ activeId: same.id, made: null }) }
   useEffect(() => { const k = (ev) => { if (ev.key === 'Escape' && !sel && !(ev.target instanceof Element && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName))) cancelEdit() }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [sel])
   const save = () => { editDraft(store, { name, named: !!name.trim() }); saveEdit(store) }
   // the pallet's depth against the frames it would go on: the selected rows', else (editing) the rows using it
@@ -218,6 +256,11 @@ function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, buil
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={S.label}>Name</span>
           <input aria-label="Elevation name" value={name} placeholder={auto} style={S.ctl} onChange={ev => setName(ev.target.value)} />
         </label>
+        {same && (
+          <div role="note" aria-label="Same as an existing elevation" style={BLUE_NOTE}>
+            Same as <strong>{nameOf(T, same)}</strong> — <button type="button" onClick={useSame} style={{ ...S.link, color: '#1B3A8C' }}>use that one instead?</button>
+          </div>
+        )}
 
         <div role="group" aria-label="Ceiling" style={S.box}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={S.label}>Ceiling</span>
@@ -237,7 +280,7 @@ function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, buil
             </div>
           )}
           {building?.assumed && (
-            <div role="note" style={{ ...S.note, color: 'var(--elev-clr, #A8341C)' }}>
+            <div role="note" aria-label="Clear height not set" style={BLUE_NOTE}>
               Clear height not set — elevations assume {ASSUMED_FT}'. Set it in <button type="button" style={S.link} onClick={() => openSetup('settings')}>Project settings</button>.
             </div>
           )}

@@ -39,6 +39,7 @@ export function parseFtIn(text) {
 // ink ground line with grey hatching, a dashed clear-height line over a yellow clearance band; dimensions blue,
 // clearances red, tags grey
 const FONT = "'IBM Plex Mono', 'JetBrains Mono', monospace"
+const AMBER = '#B5730F'   // warnings on the drawing (THEME.md's warning)
 const INK = '#15181C', PINE = '#123A2E', LOAD = '#E8DCC2', LOAD_EDGE = '#B08F52', DECK = '#C9A870', BLUE = '#1B4FD8', RED = '#A8341C', GREY = '#7A828C', HATCH = '#B6BAB3', BAND = '#F2C230', MISFIT = '#F5E7E3', MISFIT_EDGE = '#A8341C'
 
 /** Which levels of `t` don't fit — a pallet plus the clearance taller than the top of its beam (the floor) to the
@@ -94,7 +95,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const cTag = fO * 0.8, cElev = cTag + fT * 2.4, cPitch = (detailed ? cElev + longestElev + fO * 0.8 : cTag + fT * 2.6) + fO * 0.6
   const cChain = fO * 1.4, cFrame = detailed ? cChain + fO * 3.4 : fO * 1.8
   const mL = compact ? 6 : cFrame + fO * 1.6, mR = compact ? 6 : Math.max(cPitch + fO * 1.6, tw('0.0" CLR', fT) + cTag + fO)
-  // the pallet deeper than these frames allow: a red note under the drawing, a line of its own below the beam label
+  // the pallet deeper than these frames allow: an amber note under the drawing (a warning), a line of its own below the beam label
   const deepNote = !compact && frameDepthNote(palletDIn, depthIn)
   const mT = compact ? 6 : fO * (bClear || bSprink ? 2.0 : 1.2), mB = compact ? 6 : fO * (deepNote ? 6 : 4.4)
   const sideL = compact ? 6 : fO * 3.2, sideR = compact ? 6 : fO * 1.2, sideT = compact ? 6 : fO * (pair ? 4.4 : 2.8)
@@ -291,7 +292,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const drawn = [...items.filter(i => i.t !== 'text'), ...items.filter(i => i.t === 'text')]
   items.length = 0; items.push(...drawn)
   // the elevation's pallet deeper than these frames allow (~3" overhang each side): said in red under the drawing
-  if (deepNote) text(ox + cw / 2, oy + ch - fT * 0.4, deepNote.toUpperCase(), { size: fT, fill: red, weight: 600, pri: 1, tag: 'frame-depth' })
+  if (deepNote) text(ox + cw / 2, oy + ch - fT * 0.4, deepNote.toUpperCase(), { size: fT, fill: AMBER, weight: 600, pri: 1, tag: 'frame-depth' })
 
   return { w: box.w, h: box.h, scale: s, items, floor, Y, Xf, upW, frontW, bayIn, bottom: Math.max(floor, floorS) + mB }
 }

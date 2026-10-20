@@ -2462,6 +2462,33 @@ EV-background.
 - ✎: "02 EDIT ELEVATION · 13 bays use it".
 - Every row's menu is fully visible, at 1050 px and at 640 px (flipped above).
 
+**Split, white sheet, names, note colours (PS v4.1).**
+- The drawing sits on a plain white sheet.
+- The split is 65% drawing and 35% section 02 below the toolbar, the same in both states. The handle (row-resize, grip
+  dots) drags it between 30% and 80%; a double-click resets it to 65%. It is remembered in localStorage
+  (`trace.elevsplit.v1`), not the layout, and the drawing refits to it.
+- A new draft is never "· copy" (`previewName`). An exact match shows "Same as <name> — use that one instead?", and the
+  link picks that elevation and returns to the list.
+- The clear-height note is blue; the pallet-depth note on the drawing is amber.
+
+Changed: EV-tab-wiring (the split and its store, the white sheet, the notes), PS-names (the draft name, live with the
+beam), PS-frame-depth (amber).
+
+**Break-its:**
+- a draft named "copy" → PS-names;
+- no clamp on the split → EV-tab-wiring;
+- the note red again → PS-frame-depth.
+
+**Checked in the app** (real mouse):
+- The drawing is on white (rgb 255,255,255, no image); the split is 65% (591 of 909 px) in the list and the editor; the
+  handle's cursor is row-resize.
+- Dragging gives 49%; the limits hold at 80% and 30%; a double-click goes back to 65%. 54% survived a reload (stored),
+  and nothing is in the layout. The drawing's SVG followed every height.
+- A new draft is "5 levels · 40×48 · Main" with "Same as 5 levels · 40×48 · Main — use that one instead?"; 5 in → "… ·
+  5 in beam" and the note goes; the link → the list with that row picked.
+- The clear-height note is blue (#E9EEFB, a #1B4FD8 border). The drawing note "60 IN DEEP PALLET NEEDS ABOUT 54 IN
+  FRAMES. THESE ROWS ARE 42 IN." is in #B5730F.
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click

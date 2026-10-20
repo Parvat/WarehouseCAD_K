@@ -18,6 +18,21 @@ import { projectOf, defaultCeiling, defaultPallet, ceilingById, palletById, drop
  *  The list (choosing, assigning) and the editor (making, changing) are never shown at the same time. */
 export const useElevTab = create(() => ({ activeId: null, view: 'front', editing: null, made: null }))
 
+/** The tab's split: the drawing's share of the panel below the toolbar (section 02 has the rest) — 65% to start,
+ *  dragged between 30% and 80%, double-click back to 65%. The user's own (localStorage), never the layout's. */
+export const SPLIT_DEFAULT = 0.65, SPLIT_MIN = 0.3, SPLIT_MAX = 0.8
+const SPLIT_KEY = 'trace.elevsplit.v1'
+export const clampSplit = (v) => (Number.isFinite(v) ? Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, v)) : SPLIT_DEFAULT)
+const readSplit = () => { try { const v = JSON.parse(localStorage.getItem(SPLIT_KEY)); return typeof v === 'number' ? clampSplit(v) : SPLIT_DEFAULT } catch { return SPLIT_DEFAULT } }
+export const useElevSplit = create(() => ({ split: readSplit() }))
+/** The split set (clamped); `save` false while dragging (written on release). → the split. */
+export function setElevSplit(v, { save = true } = {}) {
+  const split = clampSplit(v)
+  useElevSplit.setState({ split })
+  if (save) { try { localStorage.setItem(SPLIT_KEY, JSON.stringify(split)) } catch { /* private window: this session only */ } }
+  return split
+}
+
 /** The selection as whole ROW SIDES — "select rows": each picked bay brings every bay of its rack on that side. */
 export function rowSideCells(st) {
   const cells = selectionCells(st), byId = new Map(st.objects.map(o => [o.id, o])), out = new Map()

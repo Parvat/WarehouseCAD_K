@@ -44,11 +44,11 @@ export function ElevationDrawing(props) {
   </>
 }
 
-/* THEME.md's graph paper: hairlines every 24 px on white */
-const PAPER = 'linear-gradient(var(--surface2) 1px, transparent 1px) 0 0/100% 24px, linear-gradient(90deg, var(--surface2) 1px, transparent 1px) 0 0/24px 100%, #FFFFFF'
+/* the sheet the drawing sits on in the Elevations tab: plain white */
+const PAPER = '#FFFFFF'
 
 function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null, readOnly = false, controls = true, paper = false, fitSignal = 0 }) {
-  // controls false: Fit and ⤢ are the host's (the Elevations tab's toolbar — `fitSignal`); paper: the graph-paper ground
+  // controls false: Fit and ⤢ are the host's (the Elevations tab's toolbar — `fitSignal`); paper: the white sheet
   // readOnly (the list's drawing — choosing and assigning only): zoom, pan and Fit, no beam, upright or dimension edit
   const commit = (fn) => { if (readOnly) return; const next = fn(t); if (next && JSON.stringify(next) !== JSON.stringify(t)) onCommit(next) }
   const host = useRef(null)

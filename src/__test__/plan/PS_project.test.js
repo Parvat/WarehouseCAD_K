@@ -286,6 +286,9 @@ describe('PS — the project', () => {
     expect(u.types.map(t => P.nameOf(u, t))).toEqual([pair + ' · 4 in beam', pair + ' · 5 in beam', 'Mezz racks'])
     expect(P.uniqueNames(u)).toBe(u)                                                          // already unique: untouched
     expect(u.types.some(t => / \d+$/.test(t.name))).toBe(false)                               // no number suffixes
+    // a NEW draft the same as an existing one: named like it, never "· copy" (the editor says "Same as …" instead)
+    const one = P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...fit, id: 'a', name: pair }] }, pr)
+    expect([P.previewName(one, { ...fit }, null), T_.sameElevation(one, { ...fit })?.id, P.previewName(one, { ...fit, beamFaceIn: 5 }, null)]).toEqual([pair, 'a', pair + ' · 5 in beam'])   // the name follows the beam live
     // the same in every way (a duplicate): "· copy" — the beam (the same) not added
     const same = P.uniqueNames(P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...fit, id: 'a', name: '' }, { ...fit, id: 'b', name: '' }] }, pr))
     expect(same.types.map(t => t.name)).toEqual([pair, pair + ' · copy'])
@@ -378,7 +381,7 @@ describe('PS — the project', () => {
     // the drawing: the note in red under it, only when short
     const t = T.types[0], texts = (o2) => E_D.elevationLayout(t, 96, { w: 800, h: 600 }, o2).items.filter(i => i.t === 'text')
     const note = texts({ palletDIn: 60, depthIn: 42 }).find(i => i.tag === 'frame-depth')
-    expect([note?.s, note?.fill]).toEqual(['60 IN DEEP PALLET NEEDS ABOUT 54 IN FRAMES. THESE ROWS ARE 42 IN.', '#A8341C'])
+    expect([note?.s, note?.fill]).toEqual(['60 IN DEEP PALLET NEEDS ABOUT 54 IN FRAMES. THESE ROWS ARE 42 IN.', '#B5730F'])   // amber: a warning, not an error
     expect([texts({ palletDIn: 48, depthIn: 42 }).some(i => i.tag === 'frame-depth'), texts({ palletDIn: 60, depthIn: 54 }).some(i => i.tag === 'frame-depth'), texts({ depthIn: 42 }).some(i => i.tag === 'frame-depth')]).toEqual([false, false, false])
     // the tab and the PDF hand the drawing the elevation's pallet depth
     const tab = src('components/Elevations/ElevationsTab.jsx')
