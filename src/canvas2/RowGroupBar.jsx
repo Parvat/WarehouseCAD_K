@@ -2,6 +2,8 @@ import { usePlacement } from '../utils/placement'
 import { useRowGroup, clearGroup, applyPending, dismissPending } from '../utils/rowGroupTool'
 import { rowsOf } from '../utils/rowGroup'
 import { useCanvasStore } from '../store/useCanvasStore'
+import { useEffect } from 'react'
+import { useNotice, clearNotice, NOTICE_MS } from '../utils/notice'
 
 /* The bottom-of-canvas bar (replaces the section-copy bar and its Copy / Don't copy question):
      - a row being placed (paste, duplicate, the left panel): where it goes, or why it can't;
@@ -75,7 +77,16 @@ function Body() {
   const setHover = useRowGroup(s => s.setHover)
   const objects = useCanvasStore(s => s.objects)
   const gridSize = useCanvasStore(s => s.gridSize) || 40
+  // a short note (utils/notice.js) — what Ctrl+A kept; it goes after NOTICE_MS
+  const notice = useNotice()
+  useEffect(() => { if (!notice.text) return; const k = setTimeout(clearNotice, NOTICE_MS); return () => clearTimeout(k) }, [notice.at, notice.text])
   const out = []
+  if (notice.text) {
+    out.push(
+      <div key="notice" role="status" aria-label="Notice" style={box}>
+        <div><span>{notice.text}</span>{notice.hint && <span style={{ color: 'var(--text3, #6B7280)' }}> · {notice.hint}</span>}</div>
+      </div>)
+  }
   if (placing) {
     out.push(
       <div key="place" role="status" aria-label="Placing row" style={box}>

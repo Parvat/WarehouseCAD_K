@@ -80,6 +80,28 @@ export function isPickable(layers, obj) {
 
 /** A predicate over objects for a fixed layer list — one Map for the lot. */
 export const pickableIn = (layers) => { const m = asMap(layers); return (o) => isPickable(m, o) }
+
+/** What Ctrl+A leaves out that the user can SEE — objects on a locked layer (Generate locks Building and Columns) and
+ *  objects locked one by one — as the status bar says it: "Building and columns are kept" / "Building is kept" /
+ *  "2 locked items are kept"; null when nothing visible is left out (hidden layers are out of sight, so unsaid). */
+export function keptBySelectAll(objects, layers) {
+  const m = asMap(layers), locked = new Set()
+  let items = 0
+  for (const o of objects || []) {
+    if (isPickable(m, o) || !isShown(m, o)) continue
+    const l = m.get(layerOf(o, m))
+    if (l?.locked) locked.add(l.id)
+    else if (o.locked) items++
+  }
+  // the layers in panel order, by name ("Building and columns"); then the one-by-one locked items
+  const rank = (id) => { const i = LAYER_IDS.indexOf(id); return i < 0 ? LAYER_IDS.length : i }
+  const parts = [...locked].sort((a, b) => rank(a) - rank(b)).map(id => String(m.get(id)?.name || id).toLowerCase())
+  if (items) parts.push(`${items} locked item${items === 1 ? '' : 's'}`)
+  if (!parts.length) return null
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+  const plural = parts.length > 1 || items > 1 || (!items && /s$/.test(parts[0]))
+  return `${list.charAt(0).toUpperCase()}${list.slice(1)} ${plural ? 'are' : 'is'} kept`
+}
 export const shownIn = (layers) => { const m = asMap(layers); return (o) => isShown(m, o) }
 
 /** What a drag may snap to: the objects being moved (the guides measure

@@ -7,7 +7,8 @@ import { cancelPlacement } from '../utils/placement'
 import { useRowGroup, clearGroup, cancelGroupBox, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
 import { FILL_TOOL, cancelFill } from '../utils/fillTool'
 import { SPLIT_TOOL, useSplit } from '../utils/splitTool'
-import { pickableIn } from '../utils/layers'
+import { pickableIn, keptBySelectAll } from '../utils/layers'
+import { notify, clearNotice } from '../utils/notice'
 import { deleteBaySelection } from '../utils/baySides'
 
 export function useKeyboardShortcuts() {
@@ -158,6 +159,11 @@ export function useKeyboardShortcuts() {
             const ids = st.objects.filter(ok).map(o => o.id)
             if (ids.length) st.selectGroup(ids)
             else st.clearSelection()
+            // what it leaves out on purpose (a locked layer — Generate locks Building and Columns), said in the bar so a
+            // Delete that follows doesn't look like it missed them
+            const kept = keptBySelectAll(st.objects, st.layers)
+            if (kept) notify(kept, 'locked layers — unlock them in Layers to select')
+            else clearNotice()
           }
           break
         case 'd': {

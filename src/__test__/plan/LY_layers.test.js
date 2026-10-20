@@ -218,6 +218,34 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/const ids = st\.objects\.filter\(ok\)\.map\(o => o\.id\)/)
   })
 
+  it('LY-select-all-kept: Ctrl+A + Delete on a generated layout keeps exactly the building and its column grid (their layers locked — intended), and the bar says "Building and columns are kept"', async () => {
+    // select-all as Ctrl+A does it (pickable only), then Delete
+    const ok = m.L.pickableIn(st().layers)
+    st().selectGroup(st().objects.filter(ok).map(o => o.id))
+    st().deleteSelected()
+    expect(st().objects.map(o => o.type).sort()).toEqual(['column_grid', 'fp_rect'])
+    // the bar's words
+    const { objects, layers } = st()
+    expect(m.L.keptBySelectAll(objects, layers)).toBe('Building and columns are kept')
+    expect(m.L.keptBySelectAll(objects, withLayer(layers, 'columns', { locked: false }))).toBe('Building is kept')
+    expect(m.L.keptBySelectAll(objects, withLayer(layers, 'building', { locked: false }))).toBe('Columns are kept')
+    expect(m.L.keptBySelectAll(objects, allOpen(layers))).toBe(null)                                      // nothing left out
+    expect(m.L.keptBySelectAll(objects, withLayer(withLayer(layers, 'building', { visible: false }), 'columns', { visible: false }))).toBe(null)   // hidden: out of sight, unsaid
+    expect(m.L.keptBySelectAll([...objects, { id: 'n', type: 'text', locked: true }], layers)).toBe('Building, columns and 1 locked item are kept')
+    expect(m.L.keptBySelectAll([{ id: 'n', type: 'text', locked: true }, { id: 'p', type: 'rect', locked: true }], allOpen(layers))).toBe('2 locked items are kept')
+    // the wiring: Ctrl+A notifies through the bar (utils/notice.js), which shows it and clears it after a while
+    const ks = readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')
+    expect(ks).toMatch(/const kept = keptBySelectAll\(st\.objects, st\.layers\)\r?\n\s*if \(kept\) notify\(kept, 'locked layers — unlock them in Layers to select'\)\r?\n\s*else clearNotice\(\)/)
+    const bar = readFileSync('src/canvas2/RowGroupBar.jsx', 'utf8')
+    expect(bar).toMatch(/aria-label="Notice"[\s\S]*\{notice\.text\}/)
+    expect(bar).toMatch(/setTimeout\(clearNotice, NOTICE_MS\)/)
+    const N = await import('../../utils/notice')
+    N.notify(m.L.keptBySelectAll(objects, layers), 'locked layers')
+    expect([N.useNotice.getState().text, N.useNotice.getState().hint]).toEqual(['Building and columns are kept', 'locked layers'])
+    N.clearNotice()
+    expect(N.useNotice.getState().text).toBe(null)
+  })
+
   it('LY-save: layer state is saved with the layout and survives a reload; an older layout (the old five layers) loads onto the six', async () => {
     m.L.setLayer(m.useCanvasStore, 'notes', { visible: false })
     m.L.setLayer(m.useCanvasStore, 'building', { locked: false })

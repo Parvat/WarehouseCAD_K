@@ -2350,6 +2350,23 @@ at once; a refresh: at once).
 Ctrl+Z ×12, back to an empty entry 0: none; File → New: the start screen once; Draw it myself; a rect, Ctrl+A,
 Delete (0 objects): none; Ctrl+Z ×8: none.
 
+**Ctrl+A keeps the building and columns, and says so.** Ctrl+A + Delete on a generated layout left 2 objects: the
+building outline (`fp_rect`) and its column grid. That is intended. Generate locks the Building and Columns layers
+(utils/layers.js `LOCKED_AFTER_GENERATE`), and Ctrl+A takes only pickable objects, so they are never selected and
+Delete never sees them. Ctrl+A now says so in the canvas status bar (canvas2/RowGroupBar.jsx, utils/notice.js):
+"Building and columns are kept · locked layers — unlock them in Layers to select". The words come from
+utils/layers.js `keptBySelectAll`: the visible locked layers in panel order, then any one-by-one locked items; hidden
+layers are not mentioned. The note clears itself after 6 s.
+
+New: LY-select-all-kept (both orientations: select-all + Delete keeps exactly `column_grid` + `fp_rect`; the words for
+both, Building only, Columns only, none, hidden, plus locked items; the wiring; the notice store).
+
+**Break-it:** `keptBySelectAll` silent → LY-select-all-kept fails (both orientations).
+
+**Checked in the app** (real mouse and keys): generate → Ctrl+A → the bar: "Building and columns are kept · locked
+layers — unlock them in Layers to select"; Delete → `fp_rect`, `column_grid` left, the padlocks shown in Layers; the
+note gone after 6.5 s.
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click
