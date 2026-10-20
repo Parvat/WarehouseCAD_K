@@ -23,6 +23,8 @@ export function ElevationDrawing(props) {
   const [full, setFull] = useState(false)
   const [host, setHost] = useState(null)
   useEffect(() => { setHost(document.querySelector('[data-theme]') || document.body) }, [])
+  // the tab's own ⤢ (its toolbar): a new signal opens full screen
+  useEffect(() => { if (props.fullSignal) setFull(true) }, [props.fullSignal])
   useEffect(() => { if (!full) return; const k = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setFull(false) } }; window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true) }, [full])
   return <>
     <DrawingCore {...props} onFull={() => setFull(true)} />
@@ -31,14 +33,22 @@ export function ElevationDrawing(props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{props.title || props.t?.name}</span>
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>Esc closes</span>
+          {/* Simple | Detailed — the full-size view is where the detailed dimensions are read */}
+          <div role="group" aria-label="Drawing detail" style={{ display: 'flex', gap: 2, padding: 2, marginLeft: 12, borderRadius: 2, border: '1px solid var(--border)', background: 'var(--surface2)' }}>
+            {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={props.detail === k} onClick={() => setPane({ detail: k })} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 2, border: 'none', cursor: 'pointer', background: props.detail === k ? 'var(--accent-solid, #0B101D)' : 'transparent', color: props.detail === k ? 'var(--accent-fg, #fff)' : 'var(--text2)' }}>{label}</button>)}
+          </div>
           <button type="button" aria-label="Close full screen" onClick={() => setFull(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><X size={16} /></button>
         </div>
-        <div style={{ flex: 1, minHeight: 0 }}><DrawingCore {...props} fill height={null} /></div>
+        <div style={{ flex: 1, minHeight: 0 }}><DrawingCore {...props} fill height={null} controls paper={false} fitSignal={0} /></div>
       </div>, host)}
   </>
 }
 
-function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null, readOnly = false }) {
+/* THEME.md's graph paper: hairlines every 24 px on white */
+const PAPER = 'linear-gradient(var(--surface2) 1px, transparent 1px) 0 0/100% 24px, linear-gradient(90deg, var(--surface2) 1px, transparent 1px) 0 0/24px 100%, #FFFFFF'
+
+function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null, readOnly = false, controls = true, paper = false, fitSignal = 0 }) {
+  // controls false: Fit and ⤢ are the host's (the Elevations tab's toolbar — `fitSignal`); paper: the graph-paper ground
   // readOnly (the list's drawing — choosing and assigning only): zoom, pan and Fit, no beam, upright or dimension edit
   const commit = (fn) => { if (readOnly) return; const next = fn(t); if (next && JSON.stringify(next) !== JSON.stringify(t)) onCommit(next) }
   const host = useRef(null)
@@ -72,12 +82,13 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
   useEffect(() => { setZv({ zoom: 1, pan: { x: 0, y: 0 } }) }, [t?.id, view, entry?.beamIn])
   const zvRef = useRef(zv); zvRef.current = zv
   const fit = () => setZv({ zoom: 1, pan: { x: 0, y: 0 } })
+  useEffect(() => { if (fitSignal) fit() }, [fitSignal])
   const [draft, setDraft] = useState(null)          // { type, active, removing } while dragging
   const [editing, setEditing] = useState(null)      // a dimension being typed: { id, k, x, y, value }
   const shown = draft ? draft.type : t
   // centred and fitted to the pane (elevationLayout centres it in the box), labels in proportion with a readable minimum
   const fontPx = paneFontPx(box)
-  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, palletDIn: entry.palletDIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, view, zoom: zv.zoom, pan: zv.pan, bg: 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail, view, zv])
+  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, palletDIn: entry.palletDIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, view, zoom: zv.zoom, pan: zv.pan, bg: paper ? '#FFFFFF' : 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail, view, zv])
 
   const at = (ev) => { const r = host.current.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
   useEffect(() => {
@@ -187,7 +198,7 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
     return null
   }
   return (
-    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" data-readonly={readOnly ? 'true' : undefined} data-zoom={Math.round(zv.zoom * 100) / 100} style={{ height: box.h, flexShrink: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: 'var(--surface)', cursor: 'grab' }}>
+    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" data-readonly={readOnly ? 'true' : undefined} data-zoom={Math.round(zv.zoom * 100) / 100} style={{ height: box.h, flexShrink: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: paper ? PAPER : 'var(--surface)', cursor: 'grab' }}>
       <svg width={box.w} height={box.h} style={{ display: 'block', position: 'relative', left: snap.x, top: snap.y }}
         onPointerDown={(e) => { host.current.focus({ preventScroll: true }); startPan(e) }} onDoubleClick={(e) => { if (empty(e)) fit() }}>
         {d.items.map(render)}
@@ -199,10 +210,10 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
         })}
       </svg>
       {/* Fit, and full screen */}
-      <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 2 }}>
+      {controls && <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 2 }}>
         <button type="button" onClick={fit} title="Fit (double-click empty space)" style={{ padding: '3px 9px', fontSize: 11, borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer' }}>Fit</button>
         {onFull && <button type="button" aria-label="Full screen" onClick={onFull} title="Full screen (Esc closes)" style={{ padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', display: 'flex' }}><Maximize2 size={13} /></button>}
-      </div>
+      </div>}
       {editing && (
         <input autoFocus aria-label="Dimension" value={editing.text} onChange={e => setEditing({ ...editing, text: e.target.value })}
           onBlur={commitTyping} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') commitTyping(); if (e.key === 'Escape') setEditing(null) }}

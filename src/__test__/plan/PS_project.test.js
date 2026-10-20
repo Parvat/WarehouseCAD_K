@@ -129,7 +129,7 @@ describe('PS — the project', () => {
     P.useProjectSetup.setState({ open: false })
     store.getState().commitElevations(T0)
     const T = store.getState().elevations
-    expect([T.types.length, T.types[0].name, T.types[0].levels.length, T.types[0].uprightHeightIn, T.defaultId === T.types[0].id]).toEqual([1, '5 levels · 48×40 · Main', 5, 252, true])
+    expect([T.types.length, T.types[0].name, T.types[0].levels.length, T.types[0].uprightHeightIn, T.defaultId === T.types[0].id]).toEqual([1, '5 levels · 40×48 · Main', 5, 252, true])
     expect(JSON.parse(store.getState().history[store.getState().historyIndex]).elevations.types.length).toBe(1)   // folded
     // no ceiling: the racks placed take types from their own levels
     store.setState({ objects: [], elevations: P.withProject(null, P.newProject()), history: ['{}'], historyIndex: 0 })
@@ -271,28 +271,31 @@ describe('PS — the project', () => {
     expect(T_.nameOf(store.getState().elevations, T_.sameBestFit(store.getState().elevations, pair))).toBe('3 levels · 48×48 · Mezz')
     expect(T_.sameBestFit(store.getState().elevations, { ceilingId: 'c', palletId: pid })).toBe(null)   // another pair
     const tab = src('components/Elevations/ElevationsTab.jsx')
-    expect(tab).toMatch(/\{made\.kind === 'exists' \? 'Already exists' : made\.kind === 'saved' \? 'Saved' : 'Created'\}: \{nameOf\(T, madeType\)\}<\/strong>\. Select rows, then click this elevation\./)
-    expect(tab).toMatch(/if \(v === NEW\) \{ setNewForm\(key === 'ceilingId' \? 'ceiling' : 'pallet'\); return \}/)
-    expect(tab).toMatch(/const madeNew = \(key\) => \(id\) => \{ setNewForm\(null\); if \(id\) editDraft\(store, \{ \[key\]: id \}\) \}/)
+    expect(tab).toMatch(/\{made\.kind === 'exists' \? 'Already exists' : made\.kind === 'saved' \? 'Saved' : 'Created'\}: \{nameOf\(T, madeType\)\}\.<\/strong>/)
+    expect(tab).toMatch(/onChange=\{ev => editDraft\(store, \{ ceilingId: ev\.target\.value \|\| null \}\)\}/)
+    expect(tab).toMatch(/onChange=\{ev => editDraft\(store, \{ newPallet: \{ \[k\]: ev\.target\.value \} \}\)\}/)
   })
-  it('PS-names: names are always unique — two elevations with the same pairing read "… sf" and "… sf 2" (they once both read "5 levels · 48×40 · sf"); renamed duplicates get a suffix; an existing layout is deduped on load, in that same history entry, nothing moving', () => {
+  it('PS-names: auto names are "N levels · FACE×DEPTH · CEILING"; " · X in beam" only where two would read the same (they once both read "5 levels · 48×40 · sf"); no number suffixes ("· copy" only for two the same in every way); an existing layout is renamed on load, in that same history entry, nothing moving', () => {
     const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'sf', clearHeightIn: 360, sprinklerIn: 354 }], defaultCeilingId: 'c' }
     const fit = bestFitFor(pr, pr.ceilings[0], P.defaultPallet(pr))
-    const pair = '5 levels · 48×40 · sf'
-    // the bug: two un-renamed elevations, the same pairing, the same stored name — shown alike
-    const dup = P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...fit, id: 'a', name: pair, color: '#f00' }, { ...fit, id: 'b', name: pair, color: '#00f' }, { ...fit, id: 'c1', name: 'Mezz racks', named: true }, { ...fit, id: 'c2', name: 'Mezz racks', named: true }] }, pr)
-    const u = P.uniqueNames(dup)
-    expect(u.types.map(t => P.nameOf(u, t))).toEqual([pair + ' 2', pair, 'Mezz racks', 'Mezz racks 2'])
-    expect(new Set(u.types.map(t => t.name)).size).toBe(4)
+    const pair = '5 levels · 40×48 · sf'
+    expect(P.nameOf(P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...fit, id: 'a', name: '' }] }, pr), { ...fit, id: 'a' })).toBe(pair)   // alone: no extras
+    // the same pairing, different beam faces: the beam says which
+    const two = P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...fit, id: 'a', name: pair, color: '#f00' }, { ...fit, id: 'b', name: pair, beamFaceIn: 5, color: '#00f' }, { ...fit, id: 'c1', name: 'Mezz racks', named: true }] }, pr)
+    const u = P.uniqueNames(two)
+    expect(u.types.map(t => P.nameOf(u, t))).toEqual([pair + ' · 4 in beam', pair + ' · 5 in beam', 'Mezz racks'])
     expect(P.uniqueNames(u)).toBe(u)                                                          // already unique: untouched
-    expect(P.nameOf(u, u.types[0])).not.toBe(P.nameOf(u, u.types[1]))
-    // on load: the keeper folds the dedupe into that history entry; the bays and beams don't move
+    expect(u.types.some(t => / \d+$/.test(t.name))).toBe(false)                               // no number suffixes
+    // the same in every way (a duplicate): "· copy" — the beam (the same) not added
+    const same = P.uniqueNames(P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...fit, id: 'a', name: '' }, { ...fit, id: 'b', name: '' }] }, pr))
+    expect(same.types.map(t => t.name)).toEqual([pair, pair + ' · copy'])
+    // on load: the keeper folds the renaming into that history entry; the bays and beams don't move
     stop = P.installProjectKeeper(store, () => ({}))
     const o = filled(), m = E.migrate(o)
+    const dup = P.withProject({ ...two, types: two.types.map(t => (t.named ? t : { ...t, name: pair })) }, pr)   // as saved before: the same stored name
     store.setState({ objects: m.objects, elevations: dup, history: [JSON.stringify({ objects: m.objects, groups: [], elevations: dup })], historyIndex: 0 })
     const T = store.getState().elevations
-    expect([new Set(T.types.map(t => P.nameOf(T, t))).size, store.getState().historyIndex, JSON.parse(store.getState().history[0]).elevations.types[0].name, store.getState().objects === m.objects]).toEqual([4, 0, pair + ' 2', true])
-    expect(T.types.map(t => t.levels.map(l => l.beamIn).join('/'))).toEqual(dup.types.map(t => t.levels.map(l => l.beamIn).join('/')))
+    expect([T.types.map(t => P.nameOf(T, t)), store.getState().historyIndex, JSON.parse(store.getState().history[0]).elevations.types[0].name, store.getState().objects === m.objects]).toEqual([[pair + ' · 4 in beam', pair + ' · 5 in beam', 'Mezz racks'], 0, pair + ' · 4 in beam', true])
     stop(); stop = null
   })
 
@@ -352,7 +355,8 @@ describe('PS — the project', () => {
     expect([saved.kind, s().historyIndex, t2.ceilingId, t2.levels.length, P.nameOf(s().elevations, t2), tab().made.kind]).toEqual(['saved', 2, 'm', 3, '3 levels · 48×48 · Mezz', 'saved'])
   })
   it('PS-frame-depth: an elevation whose pallet needs deeper frames than the racks carrying it (frame ≈ pallet depth − 6", 3" overhang each side) is said on the drawing and as a Check layout warning — "Pallet 60" deep needs ~54" frames — these racks are 42"" — and the racks are not changed', () => {
-    expect([E.frameNeededFor(60), E.frameDepthNote(60, 42), E.frameDepthNote(48, 42), E.frameDepthNote(60, 54), E.frameDepthNote(null, 42)]).toEqual([54, 'Pallet 60" deep needs ~54" frames — these racks are 42"', null, null, null])
+    expect([E.frameNeededFor(60), E.frameDepthNote(60, 42), E.frameDepthNote(60, [42, 36, 54], 'Selected rows'), E.frameDepthNote(48, 42), E.frameDepthNote(60, 54), E.frameDepthNote(null, 42)])
+      .toEqual([54, '60 in deep pallet needs about 54 in frames. These rows are 42 in.', '60 in deep pallet needs about 54 in frames. Selected rows are 36 and 42 in.', null, null, null])
     const o = filled(), m = E.migrate(o)
     const racks = m.objects.filter(E.isBeamRack), d = racks[0].depthIn ?? 42, deep = d + 18
     const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }], defaultCeilingId: 'c' }
@@ -362,7 +366,7 @@ describe('PS — the project', () => {
     const before = JSON.stringify(m.objects.map(r => [r.id, r.depthIn]))
     const issues = E.elevationIssues(m.objects, T).filter(e => e.kind === 'elev-frame-depth')
     expect(issues.length).toBeGreaterThan(0)
-    expect(issues.every(e => e.severity === 'warning' && e.text.startsWith(`Pallet ${deep}" deep needs ~${deep - 6}" frames — these racks are `))).toBe(true)
+    expect(issues.every(e => e.severity === 'warning' && e.text.startsWith('Elevation ') && e.text.includes(`${deep} in deep pallet needs about ${deep - 6} in frames. These rows are `))).toBe(true)
     const flagged = new Set(issues.flatMap(e => e.ids))
     expect(racks.filter(r => (r.depthIn ?? 42) < deep - 6 && flagged.has(r.id)).length).toBe(flagged.size)
     expect(JSON.stringify(m.objects.map(r => [r.id, r.depthIn]))).toBe(before)                // no automatic change to the racks
@@ -374,17 +378,45 @@ describe('PS — the project', () => {
     // the drawing: the note in red under it, only when short
     const t = T.types[0], texts = (o2) => E_D.elevationLayout(t, 96, { w: 800, h: 600 }, o2).items.filter(i => i.t === 'text')
     const note = texts({ palletDIn: 60, depthIn: 42 }).find(i => i.tag === 'frame-depth')
-    expect([note?.s, note?.fill]).toEqual(['PALLET 60" DEEP NEEDS ~54" FRAMES — THESE RACKS ARE 42"', '#A8341C'])
+    expect([note?.s, note?.fill]).toEqual(['60 IN DEEP PALLET NEEDS ABOUT 54 IN FRAMES. THESE ROWS ARE 42 IN.', '#A8341C'])
     expect([texts({ palletDIn: 48, depthIn: 42 }).some(i => i.tag === 'frame-depth'), texts({ palletDIn: 60, depthIn: 54 }).some(i => i.tag === 'frame-depth'), texts({ depthIn: 42 }).some(i => i.tag === 'frame-depth')]).toEqual([false, false, false])
     // the tab and the PDF hand the drawing the elevation's pallet depth
     const tab = src('components/Elevations/ElevationsTab.jsx')
-    expect(tab).toMatch(/palletDIn: pdepth/)
     expect(tab).toMatch(/palletDIn: pal\?\.depthIn \?\? null/)
+    // the panel: the amber note in the pallet box — the selected rows, else (editing) the rows using it
+    expect(tab).toMatch(/frameDepthNote\(pallet\.depthIn, rows\.map\(r => r\.depthIn \?\? 42\), selRacks\.length \? 'Selected rows' : 'Rows using it'\)/)
+    expect(tab).toMatch(/\{depthNote && <div role="note" aria-label="Pallet depth" style=\{AMBER_NOTE\}>\{depthNote\}<\/div>\}/)
     expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/palletDIn: entry\.palletDIn/)
     expect(src('export/pdfExport.js')).toMatch(/palletDIn: palletOfType\(T, type\)\?\.depthIn \?\? null/)
-    // the chip menu: portalled to the themed root, fixed, over everything — never clipped by the chips' box
+    // the row menu: portalled to the themed root, fixed, over everything — below the row, flipped above near the bottom
     expect(tab).toMatch(/return createPortal\(\s*<div ref=\{ref\} role="menu"[^>]*position: 'fixed', left, \.\.\.pos, zIndex: 500/)
     expect(tab).toMatch(/const host = document\.querySelector\('\[data-theme\]'\) \|\| document\.body/)
-    expect(tab).toMatch(/<ChipMenu t=\{t\} T=\{T\} anchor=\{menu\.el\} onClose=\{closeMenu\} \/>/)
+    expect(tab).toMatch(/<RowMenu t=\{t\} T=\{T\} anchor=\{menu\.el\} onClose=\{closeMenu\} \/>/)
+    expect(tab).toMatch(/const pos = r\.bottom \+ 6 \+ MENU_H > window\.innerHeight - 8 \? \{ bottom: window\.innerHeight - r\.top \+ 6 \} : \{ top: r\.bottom \+ 6 \}/)
+  })
+
+  it('PS-editor-new: "+ New ceiling height" and "+ New pallet size" stay in the editor draft — the fit and the name follow them, the project untouched — until the ONE Save adds both and the elevation in one undo step; Cancel discards them', () => {
+    const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }], defaultCeilingId: 'c' }
+    store.setState({ objects: [], elevations: P.withProject(null, pr), history: [JSON.stringify({ objects: [], groups: [], elevations: P.withProject(null, pr) })], historyIndex: 0 })
+    const tab = () => T_.useElevTab.getState(), s = () => store.getState()
+    T_.startNew(store)
+    T_.editDraft(store, { ceilingId: T_.NEW_CEILING }); T_.editDraft(store, { newCeiling: { name: 'Mezz', clearFt: '20' } })
+    T_.editDraft(store, { palletId: T_.NEW_PALLET }); T_.editDraft(store, { newPallet: { faceIn: '40', depthIn: '60', heightIn: '48' } })
+    // the draft: refitted to the new pair (20' → 4 levels of 48"), named after it; the project and history untouched
+    const dT = T_.draftTable(s().elevations, tab().editing)
+    expect([tab().editing.draft.levels.length, P.previewName(dT, tab().editing.draft, null), P.projectOf(s().elevations).ceilings.length, P.projectOf(s().elevations).pallets.length, s().historyIndex]).toEqual([4, '4 levels · 40×60 · Mezz', 1, 1, 0])
+    // Cancel: nothing written
+    T_.cancelEdit()
+    expect([P.projectOf(s().elevations).ceilings.length, P.projectOf(s().elevations).pallets.length, s().historyIndex, (s().elevations.types || []).length]).toEqual([1, 1, 0, 0])
+    // again, and Save: the ceiling, the pallet and the elevation — one undo step, the elevation pointing at both
+    T_.startNew(store)
+    T_.editDraft(store, { ceilingId: T_.NEW_CEILING }); T_.editDraft(store, { newCeiling: { name: 'Mezz', clearFt: '20' } })
+    T_.editDraft(store, { palletId: T_.NEW_PALLET }); T_.editDraft(store, { newPallet: { faceIn: '40', depthIn: '60', heightIn: '48' } })
+    const out = T_.saveEdit(store), T = s().elevations, pr2 = P.projectOf(T), t = T.types.find(x => x.id === out.id)
+    const c = pr2.ceilings.find(x => x.name === 'Mezz'), p = pr2.pallets.find(x => x.depthIn === 60)
+    expect([out.kind, s().historyIndex, !!c, c?.clearHeightIn, !!p, p?.name, t.ceilingId === c?.id, t.palletId === p?.id, P.nameOf(T, t)]).toEqual(['new', 1, true, 240, true, '60×40', true, true, '4 levels · 40×60 · Mezz'])
+    // one undo: all three gone
+    s().undo()
+    expect([P.projectOf(s().elevations).ceilings.length, P.projectOf(s().elevations).pallets.length, (s().elevations.types || []).length]).toEqual([1, 1, 0])
   })
 })

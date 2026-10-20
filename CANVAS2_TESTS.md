@@ -2425,6 +2425,43 @@ an error; a 48" pallet says nothing; the drawing's note only when short; the wir
   — THESE RACKS ARE 42"" under the beam label; Check layout warns "Pallet 60" deep needs ~54" frames — these racks
   are 42" (elevation 5 levels · 60×40 · Main)"; the racks are still 42".
 
+**The Elevations tab rebuilt (PS v4).**
+- **Top, fixed:** the toolbar (Front | Side · "BEAM 8'-0" · 2 PALLETS" · Fit · ⤢; Fit and ⤢ by signal) and a 320 px
+  graph-paper drawing box, the same box in both states. The drawing is read-only in the list; beams drag only in the
+  editor's draft.
+- **Section 02, swapping in place:**
+  - the list: rows with colour · name · bays · DEFAULT · ✎ · ⋯; Apply to N selected rows; + New elevation; the blue
+    note;
+  - the editor: Name; the Ceiling and Pallet boxes, whose "+ New" fields sit inside them and stay in the draft
+    (`draftTable`); the amber pallet-depth note; beam face 3–6 in; a pinned footer with ONE Save elevation, which adds
+    the new entries and the elevation in one undo step.
+- **Fix 1:** the row menu is a portal at z 500, below the row, flipped above near the bottom.
+- **Fix 2:** "60 in deep pallet needs about 54 in frames. Selected rows are 42 in." in the pallet box, under the drawing,
+  and as a Check layout warning ("Elevation …: … These rows are 42 in.").
+- **Fix 3:** auto names "N levels · FACE×DEPTH · CEILING"; " · X in beam" only where needed (then upright, top beam,
+  "· copy" for an exact twin); no number suffixes.
+
+New: PS-editor-new. Rewritten: PS-names, EV-tab-wiring. Changed: PS-frame-depth, PS-bestfit, PS-entries, EV-tab,
+EV-background.
+
+**Break-its:**
+- no beam extra → PS-names;
+- Save not adding the new entries → PS-editor-new;
+- the note giving one depth only → PS-frame-depth;
+- the menu never flipping → PS-frame-depth.
+
+**Checked in the app** (real mouse):
+- The drawing box is 1221,131 · 479×320 in the list, the new editor, the edit editor and after Save (and at a 640 px
+  window).
+- The list: "5 levels · 40×48 · Main · 325 bays · DEFAULT", the blue note.
+- A row selected → "Apply to 1 selected row". + New elevation with + New ceiling (Mezz 20') and + New pallet (40 × 60):
+  ONE Save button; the amber note "60 in deep pallet needs about 54 in frames. Selected rows are 42 in."; the store
+  untouched while drafting.
+- Save → "4 levels · 40×60 · Mezz", the ceiling and the pallet in the project, one undo step, back to the list. Apply →
+  the Check layout warning; rows still 42".
+- ✎: "02 EDIT ELEVATION · 13 bays use it".
+- Every row's menu is fully visible, at 1050 px and at 640 px (flipped above).
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click

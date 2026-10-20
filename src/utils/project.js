@@ -19,7 +19,7 @@
 // it as a reminder (`projectReminders`).
 
 import { create } from 'zustand'
-import { ELEV_VERSION, isBeamRack, typeById, typeIdAt, sidesOf, snapshotOf, SPRINKLER_CLEARANCE_IN, ASSUMED_CLEAR_IN, migrate, syncAllLevels, PALETTE, editTable, updateType, uniqueTypeName, dedupeNames } from './elevations'
+import { ELEV_VERSION, isBeamRack, typeById, typeIdAt, sidesOf, snapshotOf, SPRINKLER_CLEARANCE_IN, ASSUMED_CLEAR_IN, migrate, syncAllLevels, PALETTE, editTable, updateType, uniqueTypeName, dedupeNames, beamFace } from './elevations'
 import { bestFitFor, pairName } from './elevFit'
 export { ASSUMED_CLEAR_IN }
 
@@ -146,26 +146,53 @@ export function normalizeProject(pr) {
 
 /* ── names: an elevation is called by its own name when renamed, else by its level count and pairing — always unique ── */
 
-const pairForm = (base, name) => { const n = String(name || ''); if (!n.startsWith(base)) return false; const tail = n.slice(base.length); return tail === '' || /^ \d+$/.test(tail) }
-/** An elevation's shown name: its own when renamed; else its pairing ("5 levels · 48×40 · Main"), with the unique
- *  suffix its stored name carries ("… 2") — so two elevations with the same pairing never read the same. */
-export const nameOf = (table, t) => {
-  if (t.named) return t.name
-  const base = pairName(projectOf(table), t)
-  return pairForm(base, t.name) ? t.name : base
+const inch = (v) => `${Math.round(v * 100) / 100} in`
+const ftIn = (v) => { const r = Math.round(v), f = Math.floor(r / 12), i = r - f * 12; return `${f}'-${i}"` }
+/** The auto names of `table`'s un-renamed elevations → Map(id → name): "N levels · FACE×DEPTH · CEILING"
+ *  (elevFit.js pairName); only where two would read the same, " · X in beam" is added — then, as a last resort, the
+ *  upright and the top beam. No number suffixes ("Main 2"). A renamed elevation's name counts as taken. */
+const autoMemo = new WeakMap()
+export function autoNames(table) {
+  if (!table?.types) return new Map()
+  if (autoMemo.has(table)) return autoMemo.get(table)
+  const pr = projectOf(table), auto = table.types.filter(t => !t.named), taken = table.types.filter(t => t.named).map(t => t.name)
+  let names = new Map(auto.map(t => [t.id, pairName(pr, t)]))
+  const extras = [(t) => ` · ${inch(beamFace(t))} beam`, (t) => ` · upright ${ftIn(t.uprightHeightIn)}`, (t) => ` · top beam ${ftIn(Math.max(...t.levels.map(l => l.beamIn)))}`]
+  const clashes = () => { const n = new Map(); for (const v of [...names.values(), ...taken]) n.set(v, (n.get(v) || 0) + 1); return n }
+  for (const extra of extras) {
+    const n = clashes()
+    if (![...names.values()].some(v => n.get(v) > 1)) break
+    // per clashing group, the extra only where it tells them apart (two that share it would just grow longer)
+    const groups = new Map()
+    for (const t of auto) { const v = names.get(t.id); if (n.get(v) > 1) { if (!groups.has(v)) groups.set(v, []); groups.get(v).push(t) } }
+    for (const [, g] of groups) if (new Set(g.map(extra)).size > 1 || taken.includes(names.get(g[0].id))) for (const t of g) names.set(t.id, names.get(t.id) + extra(t))
+    names = new Map(names)
+  }
+  // still the same in every way (a duplicate, say): " · copy", " · copy 2" … on the later ones
+  const seen = new Map(taken.map(v => [v, 1]))
+  for (const t of auto) {
+    const v = names.get(t.id), k = seen.get(v) || 0
+    if (k) names.set(t.id, `${v} · copy${k > 1 ? ' ' + k : ''}`)
+    seen.set(v, k + 1)
+  }
+  autoMemo.set(table, names)
+  return names
 }
-/** Every elevation not renamed called by its pairing, unique (" 2", " 3" …); a name already of that form and no one
- *  else's is kept, so adding a copy never renames the first. */
+/** An elevation's shown name: its own when renamed; else its auto name (unique within its table). A draft not in the
+ *  table yet: its auto name as it would be once saved there (`previewName`). */
+export const nameOf = (table, t) => (t.named ? t.name : autoNames(table).get(t.id) ?? previewName(table, t))
+/** The auto name draft `t` (elevation `id`, or a new one) would take once saved into `table`. */
+export function previewName(table, t, id = t.id) {
+  const key = id || '__draft__', types = table?.types || []
+  const tb = { ...(table || {}), types: types.some(x => x.id === key) ? types.map(x => (x.id === key ? { ...t, id: key, named: false } : x)) : [...types, { ...t, id: key, named: false }] }
+  return autoNames(tb).get(key)
+}
+/** Every elevation not renamed called by its auto name (stored, so the legend, the PDF and the BOM read it). */
 export function refreshNames(table) {
   if (!table?.types?.length) return table
+  const names = autoNames(table)
   let tb = table
-  for (const t of table.types) {
-    if (t.named) continue
-    const cur = typeById(tb, t.id), base = pairName(projectOf(table), cur)
-    if (pairForm(base, cur.name) && !tb.types.some(x => x.id !== cur.id && x.name === cur.name)) continue
-    const want = uniqueTypeName(tb, base, cur.id)
-    if (want !== cur.name) tb = updateType(tb, cur.id, { name: want })
-  }
+  for (const t of table.types) if (!t.named && names.get(t.id) !== t.name) tb = updateType(tb, t.id, { name: names.get(t.id) })
   return tb
 }
 /** No two elevations with the same name: the pairings refreshed (refreshNames), then any renamed one sharing a name

@@ -47,9 +47,9 @@ elevations (`advanced.beamFaceIn`), and each elevation carries its own, set in t
 migrates on load (`normalizeProject`): the default pallet's beam face becomes that default, the pallets drop theirs,
 and the elevations keep their own faces, so nothing moves.
 
-**From the Elevations tab:** the editor's Ceiling ▾ and Pallet ▾ each end with "+ New ceiling height…" /
-"+ New pallet size…". These open a small inline form that saves to the project (`addCeiling` / `addPallet`, one undo
-step each) and selects the new entry.
+**From the Elevations tab:** the editor's Ceiling and Pallet selects each end with "+ New ceiling height" / "+ New
+pallet size", which open their fields inside the box. The new entry stays in the editor's draft until its one Save,
+which adds it to the project together with the elevation (one undo step); Cancel discards it.
 
 **Anything not set** is assumed and reminded. A clear height not set (or no ceiling entry at all) is **24'**
 (`ASSUMED_CLEAR_IN`) for the best fit and for drawing the elevation ("CLEAR HEIGHT 24'-0" (ASSUMED)") only. Nothing is

@@ -57,12 +57,15 @@ export const ASSUMED_CLEAR_IN = 288
 export const FRAME_OVERHANG_IN = 3
 /** The frame depth (in) a pallet `palletDIn` deep needs. */
 export const frameNeededFor = (palletDIn) => palletDIn - 2 * FRAME_OVERHANG_IN
-/** The pallet-depth note for racks with `frameIn`-deep frames → 'Pallet 60" deep needs ~54" frames — these racks are 42"',
- *  or null when the frames are deep enough. Nothing is changed on the racks — it only says so. */
-export function frameDepthNote(palletDIn, frameIn) {
-  if (!(palletDIn > 0) || !(frameIn > 0)) return null
-  const need = frameNeededFor(palletDIn)
-  return frameIn < need - 1e-6 ? `Pallet ${palletDIn}" deep needs ~${need}" frames — these racks are ${frameIn}"` : null
+/** The pallet-depth note for frames `frameIn` deep (one depth, or the depths of several rows) →
+ *  "60 in deep pallet needs about 54 in frames. Selected rows are 42 in." (`who`: whose frames), or null when they
+ *  are all deep enough. Nothing is changed on the racks — it only says so. */
+export function frameDepthNote(palletDIn, frameIn, who = 'These rows') {
+  if (!(palletDIn > 0)) return null
+  const need = frameNeededFor(palletDIn), short = [...new Set([frameIn].flat().filter(d => d > 0 && d < need - 1e-6))].sort((a, b) => a - b)
+  if (!short.length) return null
+  const list = short.length === 1 ? `${short[0]} in` : `${short.slice(0, -1).join(', ')} and ${short[short.length - 1]} in`
+  return `${palletDIn} in deep pallet needs about ${need} in frames. ${who} are ${list}.`
 }
 /** The pallet elevation type `t` carries (its own entry, else the project's default) from `table.project`. */
 export const palletOfType = (table, t) => { const pr = table?.project; return pr?.pallets?.find(p => p.id === t?.palletId) || pr?.pallets?.find(p => p.id === pr.defaultPalletId) || pr?.pallets?.[0] || null }
@@ -493,7 +496,7 @@ export function elevationIssues(objects, T) {
     if (pal?.depthIn > 0) {
       const byDepth = new Map()
       for (const id of ids) { const r = objects.find(o => o.id === id); const d = r?.depthIn ?? 42; if (frameDepthNote(pal.depthIn, d)) { if (!byDepth.has(d)) byDepth.set(d, []); byDepth.get(d).push(id) } }
-      for (const [d, inD] of byDepth) out.push({ kind: 'elev-frame-depth', severity: 'warning', typeId: t.id, ids: inD, text: `${frameDepthNote(pal.depthIn, d)} (elevation ${t.name})` })
+      for (const [d, inD] of byDepth) out.push({ kind: 'elev-frame-depth', severity: 'warning', typeId: t.id, ids: inD, text: `Elevation ${t.name}: ${frameDepthNote(pal.depthIn, d)}` })
     }
     for (const { fp, ids: inFp } of floors.values()) if (fp.clearHeightFt > 0 && t.uprightHeightIn > fp.clearHeightFt * 12 + 1e-6)
       out.push({ kind: 'elev-height', typeId: t.id, ids: inFp, text: `Elevation ${t.name}: top of upright ${ftIn(t.uprightHeightIn)} is above the building's clear height ${ftIn(fp.clearHeightFt * 12)}` })
