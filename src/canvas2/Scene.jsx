@@ -27,7 +27,11 @@ import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape, 
    the ground everything else stands on, and the column grids LAST: a column is
    structure, and one inside a rack's footprint is exactly the conflict the
    column check reports — a rack painted over it would hide it. (Picking is
-   unaffected: hitTest tries racks before column squares either way.) */
+   unaffected: hitTest tries racks before column squares either way.)
+
+   `part`: the canvas draws the scene in two layers (Canvas2.jsx) — 'body' (everything but the columns) under
+   the aisle labels, arrows and X marks, and 'columns' above them, so no label or mark ever hides a column.
+   Each object is still drawn exactly once. Left out: all of it, in one piece. */
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 
@@ -41,7 +45,7 @@ function opsFor(o, gridSize) {
   return ops
 }
 
-function SceneView({ listening = false, bind }) {
+function SceneView({ listening = false, bind, part = 'all' }) {
   const objects = useCanvasStore(s => s.objects)
   const gridSize = useCanvasStore(s => s.gridSize)
   // the racks' travel arrows are drawing size, sized by the Label size (not the zoom)
@@ -88,9 +92,11 @@ function SceneView({ listening = false, bind }) {
       }
       rest.push({ kind: 'fallback', obj: o })
     }
-    return { floors, rest: rest.concat(columns) }
+    return { floors, rest, columns }
   }, [objects, gridSize, isVisible])
 
+  const colEls = scene.columns.map(e => <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />)
+  if (part === 'columns') return <>{colEls}</>
   return (
     <>
       {scene.floors.map(o => (
@@ -101,9 +107,6 @@ function SceneView({ listening = false, bind }) {
           return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} gridSize={gridSize} lz={lz} listening={listening} bind={bind}
             activeBaySelection={activeBaySelection} elev={elev} />
         }
-        if (e.kind === 'columns') {
-          return <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
-        }
         if (e.kind === 'aisle') {
           return <AisleShape key={e.obj.id} obj={e.obj} row1={byId.get(e.obj.row1Id)} row2={byId.get(e.obj.row2Id)} listening={listening} bind={bind} />
         }
@@ -111,6 +114,7 @@ function SceneView({ listening = false, bind }) {
         if (e.kind === 'zone') return <ZoneShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
         return <FallbackShape key={e.obj.id} obj={e.obj} listening={listening} bind={bind} />
       })}
+      {part === 'all' && colEls}
     </>
   )
 }

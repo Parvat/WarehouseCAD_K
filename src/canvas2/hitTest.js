@@ -16,7 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { objectContains, getFpWallSegments, distToSegment, getObjectBounds, pxToFtIn } from '../utils/canvas'
-import { rackFootprint, rowAisleLevel, MHE_PROFILES } from '../generate/columnCheck'
+import { rackFootprint, rowAisleLevel, MHE_PROFILES, expandColumnGrid } from '../generate/columnCheck'
 import { fmtLenDown } from '../utils/copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { aisleLabelScale } from '../render/labelSize'
@@ -152,23 +152,71 @@ function aisleGeom(aisle, objects) {
  *  long aisles; one is enough to read and a third of the nodes. Shared by the
  *  drawing (DimensionLabels.jsx's AisleLabel) and the pick below, so what you
  *  can click is exactly what you can see. World px. */
-export function aisleLabelLayout(aisle, objects, gridSize = 40, { profile = null } = {}) {
+export function aisleLabelLayout(aisle, objects, gridSize = 40, { profile = null, columns, lz } = {}) {
   const g = aisleGeom(aisle, objects)
   if (!g) return null
   const { rect: r, isHoriz } = g
   const gapLo = isHoriz ? r.y : r.x, gapHi = isHoriz ? r.y + r.height : r.x + r.width
   const runLo = isHoriz ? r.x : r.y, runLen = isHoriz ? r.width : r.height
-  const positions = [runLo + runLen * 0.5]
   const userLabel = aisle.label ? `${aisle.label} · ` : ''
   /* With a forklift `profile` (the warning colours on: Checks layer shown, markings on) the label is graded
      as Check layout grades the aisle — rowAisleLevel, the same function — and a failing width reads rounded
      DOWN to the inch, as Check layout lists it (10.49 ft is 10' 5", never the 10' 6" it needs). */
   const w = gapHi - gapLo
   const level = profile ? rowAisleLevel(w, profile, gridSize) : 3
-  return {
-    isHoriz, gapLo, gapHi, labelMid: (gapLo + gapHi) / 2, positions, level,
-    text: `${userLabel}${level < 3 ? fmtLenDown(w, gridSize) : pxToFtIn(w, gridSize)}`,
+  const text = `${userLabel}${level < 3 ? fmtLenDown(w, gridSize) : pxToFtIn(w, gridSize)}`
+  const labelMid = (gapLo + gapHi) / 2
+  /* The label sits mid-run unless a column is there: then its pill and arrow slide along the aisle to the
+     nearest spot clear of every column (aisleLabelStation). `columns`: the column squares (world px); left
+     out, they are read from `objects` — the whole layout's column grids, as the column check reads them.
+     `lz`: the size it is drawn at (left out: the aisle's own Label size, as the canvas draws it). */
+  const cols = columns === undefined ? columnRectsOf(objects, gridSize) : (columns || [])
+  const scale = lz || aisleLabelScale(aisle, useLabelPrefs.getState().labelSize, gridSize)
+  const pos = aisleLabelStation({ isHoriz, gapLo, gapHi, labelMid, runLo, runLen, text }, cols, scale)
+  return { isHoriz, gapLo, gapHi, labelMid, positions: [pos], level, text }
+}
+
+/* The visible column grids' squares of a layout, kept per objects array (a frame asks many times). */
+const colCache = new WeakMap()
+export function columnRectsOf(objects, gridSize = 40) {
+  if (!Array.isArray(objects)) return []
+  const hit = colCache.get(objects)
+  if (hit && hit.gridSize === gridSize) return hit.cols
+  const cols = objects.filter(o => o && o.type === 'column_grid' && o.showGrid !== false).flatMap(g => expandColumnGrid(g, gridSize))
+  colCache.set(objects, { gridSize, cols })
+  return cols
+}
+
+/** Where along its run an aisle label is drawn: mid-run, or — when a column is under its pill or its
+ *  arrow (the arrow spans the whole gap) — the nearest station clear of every column, kept inside the
+ *  run. A column in the aisle blocks the arrow over its own length, and the pill over that length plus
+ *  half the pill. With no clear station at all, mid-run (the column is drawn above it either way). */
+export function aisleLabelStation(L, columns, lz) {
+  const mid = L.runLo + L.runLen / 2
+  if (!columns || !columns.length) return mid
+  const fs = AISLE_LABEL_FONT_PX / lz
+  const pw = L.text.length * fs * 0.62 + (AISLE_LABEL_PADX_PX / lz) * 2, ph = fs * 1.5
+  const pillRun = L.isHoriz ? pw : ph, pillGap = L.isHoriz ? ph : pw   // text is always horizontal
+  const half = pillRun / 2, m = 2 / lz
+  const blocks = []
+  for (const c of columns) {
+    const g0 = L.isHoriz ? c.y : c.x, g1 = g0 + (L.isHoriz ? c.h : c.w)
+    if (g1 <= L.gapLo || g0 >= L.gapHi) continue                       // not in this aisle's gap
+    const r0 = L.isHoriz ? c.x : c.y, r1 = r0 + (L.isHoriz ? c.w : c.h)
+    const underPill = g0 < L.labelMid + pillGap / 2 && g1 > L.labelMid - pillGap / 2
+    const ext = underPill ? half + m : m
+    blocks.push([r0 - ext, r1 + ext])
   }
+  const clear = (p) => !blocks.some(([a, b]) => p > a + 1e-9 && p < b - 1e-9)
+  if (clear(mid)) return mid
+  const lo = L.runLo + half, hi = L.runLo + L.runLen - half
+  if (hi < lo) return mid
+  let best = null
+  for (const p of [lo, hi, ...blocks.flat()]) {
+    if (p < lo - 1e-9 || p > hi + 1e-9 || !clear(p)) continue
+    if (best === null || Math.abs(p - mid) < Math.abs(best - mid)) best = p
+  }
+  return best === null ? mid : best
 }
 
 /** The forklift the aisle width labels are graded against, or null when their warning colours are off:

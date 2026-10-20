@@ -193,10 +193,17 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     for (const f of ['src/generate/usableCapacity.js', 'src/generate/useColumnCheck.jsx', 'src/generate/columnCheck.js']) expect(readFileSync(f, 'utf8')).not.toMatch(/\blayers\b|layerShown|isShown/)
     // the canvas: every mark behind marksOn = the column check's showMarks AND the Checks layer
     const ov = readFileSync('src/canvas2/Overlays.jsx', 'utf8')
-    expect(ov).toMatch(/const marksOn = showMarks && layerShown\(layers, 'checks'\)/)
-    expect(ov).toMatch(/const aislesOn = showAisles && layerShown\(layers, 'aisles'\)/)
-    for (const comp of ['ColumnClearanceLabels', 'BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) expect(ov).toMatch(new RegExp('\\{marksOn && <' + comp + ' '))
+    expect(ov).toMatch(/const marksOn = marksPart && showMarks && layerShown\(layers, 'checks'\)/)
+    expect(ov).toMatch(/const aislesOn = marksPart && showAisles && layerShown\(layers, 'aisles'\)/)
+    for (const comp of ['BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) expect(ov).toMatch(new RegExp('\\{marksOn && <' + comp + ' '))
     for (const comp of ['CrossAisleLabels']) expect(ov).toMatch(new RegExp('\\{aislesOn && <' + comp + ' '))
+    /* the column clearance labels (canvas2-fixes item 3): shown whenever the aisle labels are — or the Checks
+       layer is; their red pinched shade only with the Checks layer */
+    expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ColumnClearanceLabels [^>]*warnings=\{marksOn\}/)
+    const aislesOnly = m.buildLayoutSVG(objects, withLayer(layers, 'checks', { visible: false }), gridSize, {}).svg
+    const labelsG = (svg) => svg.slice(svg.indexOf('<g class="labels">'))
+    expect(labelsG(aislesOnly)).toMatch(/' clear</)                    // the clearance labels still print
+    expect(labelsG(aislesOnly)).not.toMatch(/rgba\(192,57,43,0\.16\)/)  // no red pinched shade, no checks
   })
 
   it('LY-select: locking or hiding a layer drops its objects from the selection, so nothing locked can be dragged; select-all and a drag take only pickable objects', () => {

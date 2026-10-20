@@ -122,7 +122,9 @@ describe.each(['horizontal', 'vertical'])('HF — %s', (orientation) => {
     const want = redSet(clearanceSource({ ...held, objects: p, preview: null, gridSize: GS, profile: MHE_PROFILES.reach }), 0, 0)
     for (const [dx, dy] of frames.slice(0, 40)) {
       const s = clearanceSource({ ...held, objects: p, preview: { ids: all, dx, dy }, gridSize: GS, profile: MHE_PROFILES.reach })
-      expect(s.blocks).toBe(held.aisleBlocks)
+      // the held rack-to-rack blocks themselves (the face blocks — a column between a rack and a zone or wall — follow them)
+      expect(s.blocks.filter(b => b.kind !== 'face')).toEqual(held.aisleBlocks)
+      expect(s.blocks.filter(b => b.kind !== 'face').every((b, i) => b === held.aisleBlocks[i])).toBe(true)
       expect(redSet(s, dx, dy)).toBe(want)
     }
     // a partial selection: one rack, not pinched, moved a little along its row

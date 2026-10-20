@@ -118,7 +118,8 @@ describe('LB — Column labels (now part of the Checks layer)', () => {
     const prefs = readFileSync('src/canvas2/labelPrefs.js', 'utf8')
     expect(prefs).not.toMatch(/showColumnLabels|KEY_COLUMN_LABELS/)
     const ov = readFileSync('src/canvas2/Overlays.jsx', 'utf8')
-    expect(ov).toMatch(/\{marksOn && <ColumnClearanceLabels [^>]*showLabels \/>\}/)
+    // the clearance labels: with the Checks layer OR the aisle labels (canvas2-fixes item 3); the shade only with Checks
+    expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ColumnClearanceLabels [^>]*showLabels warnings=\{marksOn\} \/>\}/)
     expect(ov).not.toMatch(/showColumnLabels/)
     for (const comp of ['BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) {
       const line = ov.split('\n').find(l => l.includes('<' + comp + ' '))

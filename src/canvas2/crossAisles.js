@@ -2,7 +2,7 @@ import { rackFootprint } from '../generate/columnCheck'
 import { pxToFtIn } from '../utils/canvas'
 import { failingCrossAisles, fmtLenDown, sectionCrossAisles, isRow } from '../utils/copyChange'
 import { labelScale } from '../render/labelSize'
-import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX } from './hitTest'
+import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX, columnRectsOf, aisleLabelStation } from './hitTest'
 
 /* ── Cross-aisle width labels ─────────────────────────────────────────────────
    A cross-aisle is not an object: it is a gap along the run between sections
@@ -71,7 +71,7 @@ export function crossAisleLabels(objects, gridSize = 40, { profile = null, lz = 
   const out = []
   for (const [k, g] of groups) {
     if (g.sectioned) out.push(...lineLabels(k, g, objects, gridSize, profile, lz))
-    else out.push(...envelopeLabels(k, g, gridSize))
+    else out.push(...envelopeLabels(k, g, gridSize, columnRectsOf(objects, gridSize), lz))
   }
   return out
 }
@@ -96,9 +96,10 @@ function lineLabels(k, { parentId, rot, feet }, objects, gridSize, profile, lz) 
     cl.lines.push(q)
     cl.lo = Math.min(cl.lo, q.lo); cl.hi = Math.max(cl.hi, q.hi); cl.c0 = Math.min(cl.c0, q.cross[0]); cl.c1 = Math.max(cl.c1, q.cross[1])
   }
-  // what a label may not touch: every rack and every zone
+  // what a label may not touch: every rack, every zone and every column (a column is never under a label)
   const obstacles = objects.filter(o => o && typeof o.type === 'string' && (o.type.startsWith('rack_') || o.type.startsWith('zone_')))
     .map(o => (o.type.startsWith('rack_') ? rackFootprint(o) : { x: o.x, y: o.y, w: o.width, h: o.height }))
+    .concat(columnRectsOf(objects, gridSize))
   const hit = (p, q) => p.x < q.x + q.w - EPS && q.x < p.x + p.w - EPS && p.y < q.y + q.h - EPS && q.y < p.y + p.h - EPS
   const fs = AISLE_LABEL_FONT_PX / lz, aw = 5 / lz          // aisleLabelOps' own pill and arrowhead sizes
   return clusters.sort((a, b) => a.lo - b.lo || a.c0 - b.c0).flatMap((cl, i) => {
@@ -141,7 +142,7 @@ function lineLabels(k, { parentId, rot, feet }, objects, gridSize, profile, lz) 
 }
 
 /** A building with no section stamps: the gaps between the racks merged along the run (as ever). */
-function envelopeLabels(k, { rot, feet }, gridSize) {
+function envelopeLabels(k, { rot, feet }, gridSize, columns = [], lz = labelScale(undefined, gridSize)) {
   const run = (f) => (rot ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
   const cross = (f) => (rot ? [f.x, f.x + f.w] : [f.y, f.y + f.h])
   // sections: racks merged along the run
@@ -161,13 +162,15 @@ function envelopeLabels(k, { rot, feet }, gridSize) {
     // split pieces and the racks they were cut from, alone on both sides: no label
     if ([...a.families, ...b.families].every(fam => (a.cutFamilies.has(fam) || b.cutFamilies.has(fam)) && a.families.has(fam) && b.families.has(fam))) continue
     const c0 = Math.min(a.c0, b.c0), c1 = Math.max(a.c1, b.c1)
+    const text = pxToFtIn(gapHi - gapLo, gridSize), labelMid = (gapLo + gapHi) / 2
     out.push({
       key: k + '|' + i,
       isHoriz: rot,
-      gapLo, gapHi, labelMid: (gapLo + gapHi) / 2,
-      positions: [(c0 + c1) / 2],
+      gapLo, gapHi, labelMid,
+      // mid-way across, or slid off a column standing in the cross-aisle (hitTest.js aisleLabelStation)
+      positions: [aisleLabelStation({ isHoriz: rot, gapLo, gapHi, labelMid, runLo: c0, runLen: c1 - c0, text }, columns, lz)],
       level: 3,                             // no sections: Check layout lists no cross-aisle here
-      text: pxToFtIn(gapHi - gapLo, gridSize),
+      text,
     })
   }
   return out

@@ -2539,6 +2539,30 @@ check re-run; undo; only-shallower; the four callers on the one action).
   12" outward on each side; one undo step; Check layout ran again.
 - Properties' Frame depth 54 on the other wall row (3" off the right wall) → still 3", 12" away from the wall.
 
+### CF — canvas2 fixes: columns above labels, zone resize snap, clearances both sides · `CF_canvas2Fixes.test.js` (30 tests)
+Code: canvas2/hitTest.js (`aisleLabelLayout` with `columns` / `lz`, `aisleLabelStation`, `columnRectsOf`),
+canvas2/crossAisles.js (columns are obstacles), canvas2/Scene.jsx and Overlays.jsx (`part`), Canvas2.jsx (layer order),
+canvas2/zoneResizeSnap.js (`zoneResizeBox`, `snapOffKey`), canvas2/useCanvasInteraction.js (zone resize, Alt/Shift),
+generate/faceAisles.js (`columnFaceBlocks`), canvas2/clearanceSource.js (`withFaceBlocks`), canvas2/aisleMarks.js
+(stubs), render/labelOps.js (`clearanceOps`: both labels, joint placement), export/pdfExport.js (the same, columns last).
+
+1. The canvas draws the scene body, then the labels and marks, then the columns, then the selection chrome — no
+   aisle label, arrow or X mark hides a column; the PDF prints the columns after its labels layer. An aisle or
+   cross-aisle label whose pill or arrow would sit on a column slides along the aisle to the nearest clear spot (the
+   pick tests the same station); with none, it stays mid-aisle under the column.
+2. A zone's edge or corner snaps exactly as a zone move: smartGuides' rack faces, walls, other zones and columns (a
+   zero-width stand-in on the moving edge), then the grid; its own old edge is never a target; guide lines live,
+   cleared on release; the W × L label as before. Alt or Shift = no snap, for a resize and a move alike.
+3. A column in an aisle always shows its clear distance on both sides: to the rack on each side, or — between a rack
+   face and a zone or the wall — to that (drawing only; capacity and Check layout are untouched). Never a label
+   dropped: two that would overlap go one each side of the arrow; a label on an aisle label slides along its arrow or
+   steps off it; a zero gap reads "0' clear" with no arrow. Drawn whenever the aisle labels are (or the Checks layer);
+   the red pinched shade only with the Checks layer.
+
+Both orientations throughout: a synthetic aisle / zone / wall scene and the saved real layout (23 columns in aisles).
+Rules changed with it (tests updated): CA-labels (both labels, never dropped or hidden), LY-checks / LB-toggle-wire
+(clearances with the aisle labels too), FU-columns-top (columns above the labels), O-wire / HF-multi (face blocks).
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click

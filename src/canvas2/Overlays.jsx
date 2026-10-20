@@ -1,7 +1,7 @@
 import { Rect, Line, Group } from 'react-konva'
 import { SelectionOutline } from './shapes'
 import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, FaceAisleLabels, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
-import { useMemo, memo } from 'react'
+import { useMemo, useRef, memo } from 'react'
 import { aisleLabelBoxes } from '../render/labelOps'
 import { useColumnCheck } from '../generate/useColumnCheck'
 import { BlockedFaceMarks, firstById } from './BlockedFaceMarks'
@@ -9,7 +9,7 @@ import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
 import { useDragPreview, previewObjects } from './dragPreview'
 import { UprightConflictMarks } from './UprightConflictMarks'
 import { OversizedBayMarks } from './OversizedBayMarks'
-import { aisleLabelLayout } from './hitTest'
+import { aisleLabelLayout, columnRectsOf } from './hitTest'
 import { useLabelPrefs } from './labelPrefs'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { layerShown } from '../utils/layers'
@@ -23,8 +23,8 @@ function aisleLabelsMoveRigidly(objects, shifted, dx, dy, gridSize) {
   const base = firstById(objects), moved = firstById(shifted)
   for (const a of objects) {
     if (!a || a.type !== 'aisle') continue
-    const L0 = aisleLabelLayout(a, [base.get(a.row1Id), base.get(a.row2Id)].filter(Boolean), gridSize)
-    const L1 = aisleLabelLayout(moved.get(a.id) || a, [moved.get(a.row1Id), moved.get(a.row2Id)].filter(Boolean), gridSize)
+    const L0 = aisleLabelLayout(a, [base.get(a.row1Id), base.get(a.row2Id)].filter(Boolean), gridSize, { columns: columnRectsOf(objects, gridSize) })
+    const L1 = aisleLabelLayout(moved.get(a.id) || a, [moved.get(a.row1Id), moved.get(a.row2Id)].filter(Boolean), gridSize, { columns: columnRectsOf(shifted, gridSize) })
     if (!L0 || !L1) { if (L0 !== L1) return false; continue }
     if (L0.text !== L1.text || L0.isHoriz !== L1.isHoriz || L0.positions.length !== L1.positions.length) return false
     const along = L0.isHoriz ? dx : dy, across = L0.isHoriz ? dy : dx
@@ -32,6 +32,15 @@ function aisleLabelsMoveRigidly(objects, shifted, dx, dy, gridSize) {
     if (!L0.positions.every((q, i) => near(L1.positions[i], q + along))) return false
   }
   return true
+}
+/* The same column squares as last time while none moved, so an aisle label (memoised on them) redraws only
+   when a column it could slide off did. */
+function useSteadyColumns(cols) {
+  const ref = useRef(cols)
+  const a = ref.current
+  const same = a === cols || (a.length === cols.length && a.every((c, i) => c.x === cols[i].x && c.y === cols[i].y && c.w === cols[i].w && c.h === cols[i].h))
+  if (!same) ref.current = cols
+  return ref.current
 }
 /* What the derived overlays (aisle labels, column-check marks) are drawn from. */
 const feedsOverlays = (o) => o && ((typeof o.type === 'string' && o.type.startsWith('rack_')) || o.type === 'aisle' || o.type === 'column_grid' || FP_TYPES.has(o.type))
@@ -48,11 +57,16 @@ const feedsOverlays = (o) => o && ((typeof o.type === 'string' && o.type.startsW
    the same `selectedObjects` list SelectionOutline already draws from, so
    there is no second "what's selected" query to drift out of sync. Aisle
    labels are the one exception: always on (subject to `showAisles`),
-   independent of selection, so they need the full `objects` list too. */
+   independent of selection, so they need the full `objects` list too.
+
+   `part`: drawn in two layers (Canvas2.jsx) with the columns between them — 'marks' (aisle and cross-aisle
+   labels, column clearances, X marks, upright flags, oversized bays) under the columns, 'chrome' (selection
+   outlines, dimension labels, smart guides, the marquee) over them. Left out: both. */
 function OverlaysView({
   selectedObjects, gridSize, marquee, objects = [], showAisles = true, activeWall = null, smartGuides = [],
-  showMarks = true, aisleBlocks = [], columns = [], rackConflicts = [], pickBlocks = [], uprightHits = [],
+  showMarks = true, aisleBlocks = [], columns = [], rackConflicts = [], pickBlocks = [], uprightHits = [], part = 'all',
 }) {
+  const marksPart = part !== 'chrome', chromePart = part !== 'marks'
   /* Every label and mark here is DRAWING size (render/labelSize.js): sized by
      the Label size setting, never by the view zoom, so zooming re-renders
      none of it — the stage transform scales it with the racks. */
@@ -63,8 +77,8 @@ function OverlaysView({
      Checks only stops the drawing: the check still runs, so capacity and
      usable are unchanged. */
   const layers = useCanvasStore(s => s.layers)
-  const aislesOn = showAisles && layerShown(layers, 'aisles')
-  const marksOn = showMarks && layerShown(layers, 'checks')
+  const aislesOn = marksPart && showAisles && layerShown(layers, 'aisles')
+  const marksOn = marksPart && showMarks && layerShown(layers, 'checks')
   const lz = labelScale(labelSize, gridSize)
   /* The aisle width labels are coloured by the aisle's grade (rowAisleLevel — the same function Check layout
      lists it by) against the column check's forklift, while the Checks layer and the markings are on; with
@@ -112,10 +126,14 @@ function OverlaysView({
   const aisleSrc = aisleRigid || !rigid ? pObjects : shifted
   const aisleById = aisleSrc === pObjects ? byId : firstById(aisleSrc)
   const aisles = aislesOn ? aisleSrc.filter(o => o.type === 'aisle') : []
+  // the column squares the aisle labels slide off (hitTest.js aisleLabelStation) — from the same layout as the labels
+  const aisleCols = useSteadyColumns(aislesOn ? columnRectsOf(aisleSrc, gridSize) : EMPTY_COLS)
   /* The aisle width labels' boxes exactly where they are drawn (the aisle labels from aisleSrc, riding the
      drag offset while rigid; the cross-aisle labels from the shifted layout): a column clearance label keeps
      clear of them — the aisle width label has priority. */
-  const on = aislesOn && marksOn
+  // the clearance labels keep clear of the aisle labels whenever both are drawn — the clearances now draw
+  // whenever the aisle labels do (not only with the Checks layer)
+  const on = aislesOn
   const ownBoxes = useMemo(() => (on ? aisleLabelBoxes(aisleSrc, gridSize, labelSize, { cross: false, profile: warnProfile }) : []), [on, aisleSrc, gridSize, labelSize, warnProfile])
   const crossBoxes = useMemo(() => (on ? aisleLabelBoxes(shifted, gridSize, labelSize, { aisles: false, profile: warnProfile }) : []), [on, shifted, gridSize, labelSize, warnProfile])
   const avoid = useMemo(() => {
@@ -124,21 +142,23 @@ function OverlaysView({
   }, [ownBoxes, crossBoxes, aisleRigid, dx, dy])
   return (
     <>
-      {selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} objects={objects} />)}
-      {selectedObjects.map(o => rackLabelsEligible(o.type)
+      {chromePart && selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} objects={objects} />)}
+      {chromePart && selectedObjects.map(o => rackLabelsEligible(o.type)
         ? <RackLabels key={'rl:' + o.id} obj={o} zoom={lz} gridSize={gridSize} /> : null)}
-      {selectedObjects.map(o => (FP_TYPES.has(o.type) && o.fpVerts)
+      {chromePart && selectedObjects.map(o => (FP_TYPES.has(o.type) && o.fpVerts)
         ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={lz} gridSize={gridSize}
             activeWallIdx={activeWall && activeWall.objId === o.id ? activeWall.wallIdx : null} /> : null)}
       <Group x={aisleRigid ? dx : 0} y={aisleRigid ? dy : 0} listening={false}>
-      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={aisleLabelScale(a, labelSize, gridSize)} gridSize={gridSize} profile={warnProfile} />)}
+      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={aisleLabelScale(a, labelSize, gridSize)} gridSize={gridSize} profile={warnProfile} columns={aisleCols} />)}
       </Group>
       {/* one width label per cross-aisle; few, so drawn from the previewed layout every drag frame */}
       {aislesOn && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} profile={warnProfile} />}
       {aislesOn && <FaceAisleLabels objects={shifted} lz={lz} gridSize={gridSize} profile={warnProfile} />}
       {/* the Checks layer: clearance arrows and distances, red "under travel"
           marks and aisle shading, X marks, upright flags, oversized bays */}
-      {marksOn && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels />}
+      {/* a column in an aisle shows its clear distance on both sides whenever the aisle labels are shown (or
+          the Checks layer is); the red "pinched" shade is a check mark — only with the Checks layer */}
+      {(marksOn || aislesOn) && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels warnings={marksOn} />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
       {marksOn && <BlockedFaceMarks rackConflicts={xMarks} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}
@@ -149,7 +169,7 @@ function OverlaysView({
           object snaps green) and dash, ported. Stroke width is a plain
           literal with strokeScaleEnabled, matching every other piece of
           canvas2 chrome (BUG 20's lesson) rather than SVG's raw /zoom. */}
-      {smartGuides.map((g, i) => {
+      {chromePart && smartGuides.map((g, i) => {
         const color = g.isWall ? '#a78bfa' : '#22c55e'
         const sw = g.isWall ? 1.5 : 1
         const points = g.axis === 'x' ? [g.val, g.from, g.val, g.to] : [g.from, g.val, g.to, g.val]
@@ -160,7 +180,7 @@ function OverlaysView({
             shadowForStrokeEnabled={false} listening={false} />
         )
       })}
-      {marquee && (
+      {chromePart && marquee && (
         <Rect
           x={marquee.x} y={marquee.y} width={marquee.width} height={marquee.height}
           fill="rgba(74,158,255,0.10)" stroke="#4a9eff" strokeWidth={1}
@@ -170,5 +190,7 @@ function OverlaysView({
     </>
   )
 }
+
+const EMPTY_COLS = []
 
 export const Overlays = memo(OverlaysView)

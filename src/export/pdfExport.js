@@ -43,6 +43,7 @@ import { useLabelPrefs } from '../canvas2/labelPrefs'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { checkColumns } from '../generate/columnCheck'
 import { layoutColumns, layoutFloors } from '../generate/usableCapacity'
+import { withFaceBlocks } from '../canvas2/clearanceSource'
 import { isShown, layerShown } from '../utils/layers'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -207,30 +208,39 @@ export function labelsSVG(objects, gridSize, opts) {
   if (opts.showAisles) {
     for (const a of objects) {
       if (a.type !== 'aisle') continue
-      const L = aisleLabelLayout(a, objects, gridSize, { profile: warnProfile })
-      if (L) ops.push(...aisleLabelOps(L, aisleLabelScale(a, opts.labelSize, gridSize)))
+      const az = aisleLabelScale(a, opts.labelSize, gridSize)
+      const L = aisleLabelLayout(a, objects, gridSize, { profile: warnProfile, lz: az })
+      if (L) ops.push(...aisleLabelOps(L, az))
     }
     for (const L of crossAisleLabels(objects, gridSize, { profile: warnProfile, lz })) ops.push(...aisleLabelOps(L, lz))
     // a face with a zone or a wall in front of it, failing (generate/faceAisles.js): as on screen
     if (warnProfile) for (const L of faceAisleLabels(objects, gridSize, { profile: warnProfile })) ops.push(...aisleLabelOps(L, lz))
   }
-  if (opts.showMarks) {
+  if (opts.showMarks || opts.showAisles) {
     const racks = objects.filter(o => typeof o.type === 'string' && o.type.startsWith('rack_'))
     const columns = layoutColumns(objects, gridSize)
     const byId = new Map()
     for (const o of objects) if (!byId.has(o.id)) byId.set(o.id, o)
-    let res = null
-    if (racks.length && columns.length) {
-      res = checkColumns({ racks, columns, profile: opts.profile, gridSize, pickBothSides: opts.pickBothSides, floors: layoutFloors(objects), levelsAt: levelsResolver(opts.elevations) })
+    const res = racks.length && columns.length
+      ? checkColumns({ racks, columns, profile: opts.profile, gridSize, pickBothSides: opts.pickBothSides, floors: layoutFloors(objects), levelsAt: levelsResolver(opts.elevations) })
+      : null
+    if (res) {
       // a clearance label keeps clear of the aisle width labels drawn above (they have priority)
       const avoid = opts.showAisles ? aisleLabelBoxes(objects, gridSize, opts.labelSize, { profile: warnProfile }) : []
-      for (const b of res.aisleBlocks) ops.push(...clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid))
-      for (const c of [...res.rackConflicts, ...res.pickBlocks]) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
-      for (const h of res.uprightHits) ops.push(...uprightOps(h, byId.get(h.rackId), gridSize, lz))
+      /* a column in an aisle: its clear distance on both sides, to the rack — or the zone or wall — on each
+         side (withFaceBlocks), whenever the aisle labels or the marks are printed, as on screen; the red
+         pinched shade only with the marks */
+      for (const b of withFaceBlocks(res.aisleBlocks, columns, objects, { gridSize, profile: opts.profile })) ops.push(...clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid, { warnings: !!opts.showMarks }))
     }
-    // a face with less than the pick width in front of it (narrowAisles.js): the same X marks, as on screen
-    for (const c of narrowAisleBlocks(objects, { profile: opts.profile, gridSize, already: blockedKeys(res), elevations: opts.elevations })) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
-    for (const o of racks) if ((o.type === 'rack_row' || o.type === 'rack_double_row') && Array.isArray(o.beams) && o.beams.length) ops.push(...oversizedOps(o, gridSize, lz))
+    if (opts.showMarks) {
+      if (res) {
+        for (const c of [...res.rackConflicts, ...res.pickBlocks]) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
+        for (const h of res.uprightHits) ops.push(...uprightOps(h, byId.get(h.rackId), gridSize, lz))
+      }
+      // a face with less than the pick width in front of it (narrowAisles.js): the same X marks, as on screen
+      for (const c of narrowAisleBlocks(objects, { profile: opts.profile, gridSize, already: blockedKeys(res), elevations: opts.elevations })) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
+      for (const o of racks) if ((o.type === 'rack_row' || o.type === 'rack_double_row') && Array.isArray(o.beams) && o.beams.length) ops.push(...oversizedOps(o, gridSize, lz))
+    }
   }
   return `<g class="labels">${ops.map(labelOpToSVG).join('')}</g>`
 }
@@ -379,9 +389,10 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   const u = 1 / mmPerUnitPaper // world units per PAPER mm — sizes the print furniture below
   const scaleRatio = Math.round(mmPerWorldPx(gridSize) / mmPerUnitPaper)
 
-  // Draw order matches canvas2's Scene.jsx: floor plans first (the ground),
-  // then racks, then the columns on top (structure: a column inside a rack is
-  // the conflict the check reports, so no rack may hide it), then the labels.
+  // Draw order matches the canvas: floor plans first (the ground), then racks,
+  // then the labels and marks, then the columns on top of all of it (structure:
+  // a column inside a rack is the conflict the check reports, and no rack, aisle
+  // label, arrow or X mark may hide it).
   const floors = [], zones = [], columns = [], racks = []
   for (const o of objects) {
     if (!o || !usable(o)) continue
@@ -414,10 +425,11 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     ...floors.map(o => floorPlanSVG(o, gridSize)),
     ...zones.map(o => zoneSVG(o, gridSize)),
     ...racks.map(o => rackSVG(o, gridSize, lz, elevTable)),
-    ...columns.map(o => columnGridSVG(o, gridSize)),
     /* labels and marks are worked out from the whole layout, as on the canvas
        (a hidden Columns layer still has columns); only their drawing is gated */
     labelsSVG(objects.filter(Boolean), gridSize, labelOpts),
+    // the columns above the labels and marks, as on the canvas: a column is never hidden under an aisle label
+    ...columns.map(o => columnGridSVG(o, gridSize)),
     scaleBarSVG(vb.x + 10 * u, titleY + titleH * 0.45, gridSize, u),
     titleBlockSVG(titleX, titleY, u, { title, scaleRatio, date }),
     legend,

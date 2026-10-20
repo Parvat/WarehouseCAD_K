@@ -82,22 +82,30 @@ export function aisleLabelBoxes(objects, gridSize = 40, labelSize, { aisles = tr
   const out = [], take = (ops) => { for (const o of ops) if (o.op === 'rect') out.push({ x: o.x, y: o.y, w: o.w, h: o.h }) }
   if (aisles) for (const a of objects) {
     if (!a || a.type !== 'aisle') continue
-    const L = aisleLabelLayout(a, objects, gridSize, { profile })
-    if (L) take(aisleLabelOps(L, aisleLabelScale(a, labelSize, gridSize)))
+    const lz = aisleLabelScale(a, labelSize, gridSize)
+    const L = aisleLabelLayout(a, objects, gridSize, { profile, lz })
+    if (L) take(aisleLabelOps(L, lz))
   }
   if (cross) { const lz = labelScale(labelSize, gridSize); for (const L of crossAisleLabels(objects, gridSize, { profile, lz })) take(aisleLabelOps(L, lz)) }
   return out
 }
 
-/** One column standing in an aisle: the red aisle shade when pinched (always),
- *  and the clearance arrows + distance pills (only the red "under travel"
+/** One column standing in an aisle: the red aisle shade when pinched (with `warnings` — the Checks layer
+ *  shown), and the clearance arrows + distance pills on BOTH sides, always (only the red "under travel"
  *  ones when the Column labels switch is off). */
-export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, avoid = []) {
+export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, avoid = [], { warnings = true } = {}) {
   if (!col || !block.axis) return []
+  /* only the aisle labels a pill could reach (the PDF hands every label on the sheet) */
+  if (avoid.length) {
+    const R = (Math.max(Math.abs(block.nearClearFt || 0), Math.abs(block.farClearFt || 0)) + 1) * gridSize + 160 / lz
+    const x0 = col.x - R, x1 = col.x + col.w + R, y0 = col.y - R, y1 = col.y + col.h + R
+    avoid = avoid.filter(r => r.x < x1 && r.x + r.w > x0 && r.y < y1 && r.y + r.h > y0)
+  }
   const fs = 9 / lz, sw = 1.6 / lz
   const out = []
-  const warn = aisleWarningRect(block, col)
+  const warn = warnings ? aisleWarningRect(block, col) : null
   if (warn) out.push({ op: 'rect', name: 'aisle-warning', x: warn.x, y: warn.y, w: warn.w, h: warn.h, fill: 'rgba(192,57,43,0.16)', stroke: SHORT_COLOR, strokeWidth: 1.5 / lz, dash: [6 / lz, 4 / lz] })
+  const vertArrow = block.axis === 'y'                // the gap runs along y: the arrow is vertical, a pill steps off it in x
   const marks = visibleClearanceMarks(block, col, lz, gridSize, showLabels).map(m => {
     /* A gap shorter than its own label can't hold it: slide the pill off to
        the side of the arrow instead of over the column and rack (text is
@@ -105,45 +113,67 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, a
        orientation). */
     const pillW = m.label.text.length * fs * 0.62 + (3 / lz) * 2, pillH = fs * 1.4
     const gapLen = Math.hypot(m.arrowhead[0].x - m.shaft[0].x, m.arrowhead[0].y - m.shaft[0].y)
-    const along = block.axis === 'y' ? pillH : pillW, across = block.axis === 'y' ? pillW : pillH
-    const off = gapLen < along + 4 / lz ? across / 2 + 6 / lz : 0
-    const lx = m.label.x + (block.axis === 'y' ? off : 0), ly = m.label.y - (block.axis === 'x' ? off : 0)
-    return { m, lx, ly, pill: { x: lx - pillW / 2, y: ly - pillH / 2, w: pillW, h: pillH } }
+    const along = vertArrow ? pillH : pillW, across = vertArrow ? pillW : pillH
+    const step = across / 2 + 6 / lz                  // a pill beside the arrow: its centre this far off the line
+    const off = m.stub || gapLen < along + 4 / lz ? step : 0
+    const lx = m.label.x + (vertArrow ? off : 0), ly = m.label.y - (vertArrow ? 0 : off)
+    return { m, lx, ly, step, w: pillW, h: pillH, pill: { x: lx - pillW / 2, y: ly - pillH / 2, w: pillW, h: pillH } }
   })
   const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-  /* The aisle width label has priority: a clearance label on one slides along its arrow (its centre kept
-     on the arrow, column edge to rack face) to the nearest place clear of every aisle label; with none, it
-     is hidden. The arrows always stay. */
-  const hidden = new Set()
-  if (avoid.length) {
-    const u = block.axis === 'y' ? 'y' : 'x', len = u === 'y' ? 'h' : 'w'
-    for (const k of marks) {
-      const clashes = (p) => avoid.some(r => hit(p, r))
-      if (!clashes(k.pill)) continue
-      const ends = [k.m.shaft[0][u], k.m.arrowhead[0][u]], lo = Math.min(...ends), hi = Math.max(...ends)
-      const half = k.pill[len] / 2, c0 = k.pill[u] + half, eps = 0.5 / lz
-      const at = (c) => ({ ...k.pill, [u]: c - half })
-      const cands = [lo, hi]
-      for (const r of avoid) cands.push(r[u] - half - eps, r[u] + r[len] + half + eps)
-      let best = null
-      for (const c of cands) {
-        if (c < lo - 1e-9 || c > hi + 1e-9 || clashes(at(c))) continue
-        if (best === null || Math.abs(c - c0) < Math.abs(best - c0)) best = c
+  const clashes = (p) => avoid.some(r => hit(p, r))
+  const rectAt = (k, x, y) => ({ x: x - k.w / 2, y: y - k.h / 2, w: k.w, h: k.h })
+  const place = (k, lx, ly) => { k.lx = lx; k.ly = ly; k.pill = rectAt(k, lx, ly) }
+  /* Where each label may go, nearest its own place first: along its arrow (column edge to what stands on that
+     side — its own place, the arrow's ends, just past each aisle label) and, at each, on the arrow or stepped
+     off it to either side (one or two pill-widths). The aisle width labels have priority and the column's two
+     labels may not overlap each other: the pair nearest home that meets both is drawn; with none, the pair
+     that breaks the fewest. Never hidden — a column always shows its clear distance on both sides. */
+  const u = vertArrow ? 'y' : 'x', len = u === 'y' ? 'h' : 'w'
+  const spots = (k) => {
+    const ends = [k.m.shaft[0][u], k.m.arrowhead[0][u]], lo = Math.min(...ends), hi = Math.max(...ends)
+    const half = k[len] / 2, eps = 0.5 / lz, c0 = u === 'x' ? k.lx : k.ly
+    const along = [c0, lo, hi]
+    for (const r of avoid) along.push(r[u] - half - eps, r[u] + r[len] + half + eps)
+    const line = vertArrow ? k.m.label.x : k.m.label.y
+    const v = vertArrow ? 'x' : 'y', vlen = v === 'x' ? 'w' : 'h', vhalf = k[vlen] / 2
+    // across the arrow: on it, one or two steps either side, and just past any aisle label within four steps
+    const offs = [0, k.step, -k.step, 2 * k.step, -2 * k.step]
+    for (const r of avoid) for (const e of [r[v] - vhalf - eps, r[v] + r[vlen] + vhalf + eps]) {
+      const o = vertArrow ? e - line : line - e
+      if (Math.abs(o) <= 4 * k.step) offs.push(o)
+    }
+    const out = []
+    for (const c of along) {
+      if (c !== c0 && (c < lo - 1e-9 || c > hi + 1e-9)) continue
+      for (const o of offs) {
+        const x = vertArrow ? line + o : c, y = vertArrow ? c : line - o
+        const r = rectAt(k, x, y)
+        out.push({ x, y, r, d: Math.hypot(x - k.lx, y - k.ly), bad: clashes(r) ? 1 : 0 })
       }
-      if (best === null) { hidden.add(k); continue }
-      k.pill = at(best)
-      if (u === 'x') k.lx += best - c0; else k.ly += best - c0
+    }
+    return out.sort((p, q) => p.d - q.d).slice(0, 60)          // the nearest few dozen are plenty
+  }
+  if (marks.length === 1) {
+    const k = marks[0]
+    if (clashes(k.pill)) { const ok = spots(k).find(p => !p.bad); if (ok) place(k, ok.x, ok.y) }
+  } else if (marks.length === 2) {
+    const [p, q] = marks
+    if (clashes(p.pill) || clashes(q.pill) || hit(p.pill, q.pill)) {
+      const sp = spots(p), sq = spots(q)
+      let best = null
+      for (const a of sp) for (const b of sq) {
+        const bad = (hit(a.r, b.r) ? 10 : 0) + a.bad + b.bad, d = a.d + b.d
+        if (!best || bad < best.bad || (bad === best.bad && d < best.d)) best = { a, b, bad, d }
+      }
+      place(p, best.a.x, best.a.y); place(q, best.b.x, best.b.y)
     }
   }
-  /* The column's two labels would overlap (a column at or near a rack face): only the wider side's label
-     is drawn — both arrows stay. */
-  const shown = marks.filter(k => !hidden.has(k))
-  if (shown.length === 2 && hit(shown[0].pill, shown[1].pill)) hidden.add((shown[0].m.ft ?? 0) >= (shown[1].m.ft ?? 0) ? shown[1] : shown[0])
   for (const k of marks) {
     const { m, lx, ly } = k
-    out.push({ op: 'line', points: [m.shaft[0].x, m.shaft[0].y, m.shaft[1].x, m.shaft[1].y], stroke: m.color, strokeWidth: sw },
-      { op: 'poly', points: m.arrowhead.flatMap(q => [q.x, q.y]), fill: m.color })
-    if (hidden.has(k)) continue
+    if (!m.stub) {
+      out.push({ op: 'line', points: [m.shaft[0].x, m.shaft[0].y, m.shaft[1].x, m.shaft[1].y], stroke: m.color, strokeWidth: sw },
+        { op: 'poly', points: m.arrowhead.flatMap(q => [q.x, q.y]), fill: m.color })
+    }
     out.push(...pillOps(lx, ly, m.label.text, fs, lz, { color: m.color, bg: m.short ? 'rgba(254,226,226,0.95)' : 'rgba(224,242,254,0.92)', padX: 3 / lz, heightScale: 1.4, rx: 2 / lz, stroke: m.short ? SHORT_COLOR : '#7dd3fc', strokeWidth: 0.5 / lz, opacity: 0.95 }))
   }
   return out
