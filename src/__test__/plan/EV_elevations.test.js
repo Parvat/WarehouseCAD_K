@@ -790,7 +790,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     // the split: the drawing its share of the body below the toolbar (65% to start), the same in both states; a handle between
     expect(tab).toMatch(/const drawH = Math\.max\(120, Math\.round\(\(bodyH - HANDLE\) \* split\)\)/)
     expect(tab).toMatch(/<div style=\{\{ height: drawH, flexShrink: 0,/)
-    expect(tab).toMatch(/height=\{drawH\} controls=\{false\} paper fitSignal=\{fitSignal\} fullSignal=\{fullSignal\}\s+readOnly=\{!e\}/)   // read-only in the list; beams drag only in the editor
+    expect(tab).toMatch(/height=\{drawFix \? drawH - FIX_H : drawH\} controls=\{false\} paper fitSignal=\{fitSignal\} fullSignal=\{fullSignal\}\s+readOnly=\{!e\}/)   // read-only in the list; beams drag only in the editor
     const hIdx = tab.indexOf('role="separator" aria-orientation="horizontal" aria-label="Resize drawing"')
     expect([hIdx > tBox, tSwap > hIdx]).toEqual([true, true])                                         // drawing | handle | section 02
     expect(tab).toMatch(/onPointerDown=\{startSplit\} onDoubleClick=\{\(\) => setElevSplit\(SPLIT_DEFAULT\)\}/)

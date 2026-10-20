@@ -6,7 +6,8 @@
 // here is ONE undo step through the store's commitElevations; there is no draft.
 
 import { create } from 'zustand'
-import { editTable, updateType, removeType, setDefault, uniqueTypeName, typeById, assignCells, PALETTE, ELEV_VERSION } from './elevations'
+import { editTable, updateType, removeType, setDefault, uniqueTypeName, typeById, assignCells, PALETTE, ELEV_VERSION, frameNeededFor } from './elevations'
+import { rackDepthUpdate } from './rackDepth'
 import { selectionCells } from './elevSelection'
 import { bestFitFor } from './elevFit'
 import { projectOf, defaultCeiling, defaultPallet, ceilingById, palletById, dropUnusedTypes, nameOf, refreshNames, previewName, newId, withProject, palletName, PALLET_DEFAULT } from './project'
@@ -174,6 +175,31 @@ export function saveEdit(store) {
   commit(store, r.table, r.objects === st.objects ? null : r.objects)
   useElevTab.setState({ editing: null, activeId: e.id, made: { id: e.id, kind: 'saved', at: Date.now() } })
   return { kind: 'saved', id: e.id }
+}
+
+/* ── frames too shallow for a pallet: fixed only on the user's click ─────────────────────────────────────────────── */
+
+/** The frame depth (in) to set for pallets `palletDIn` deep: the pallet less 6", rounded up to the nearest frame depth
+ *  the app uses (the rules' `selective.frameDepthsIn`); past the deepest of them, the need itself, to the inch. */
+export function frameDepthFor(palletDIn, depths = [36, 42, 48]) {
+  const need = frameNeededFor(palletDIn)
+  return [...depths].filter(d => d > 0).sort((a, b) => a - b).find(d => d >= need - 1e-6) ?? Math.ceil(need - 1e-6)
+}
+/** "Set these rows to N in": the rows `ids` shallower than `depthIn` deepened to it, each about its centre
+ *  (utils/rackDepth.js — the rack panel's own) — ONE undo step; rows already deep enough, and every other row,
+ *  untouched → how many changed. Nothing calls it but that button. */
+export function deepenRows(store, ids, depthIn) {
+  const st = store.getState(), gs = st.gridSize || 40, want = new Set(ids)
+  let n = 0
+  const objects = st.objects.map(o => {
+    if (!want.has(o.id) || !((o.depthIn ?? 42) < depthIn - 1e-6)) return o
+    const u = rackDepthUpdate(o, depthIn, gs)
+    if (!u) return o
+    n++
+    return { ...o, ...u }
+  })
+  if (n) st.commitElevations(st.elevations, objects)
+  return n
 }
 
 /** Elevation `id` on every selected row side (one undo step) → whether anything changed. */

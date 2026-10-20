@@ -2489,6 +2489,30 @@ beam), PS-frame-depth (amber).
 - The clear-height note is blue (#E9EEFB, a #1B4FD8 border). The drawing note "60 IN DEEP PALLET NEEDS ABOUT 54 IN
   FRAMES. THESE ROWS ARE 42 IN." is in #B5730F.
 
+**Simple | Detailed back, side-view pallets, "Set these rows to N in" (PS v4.2).**
+- Simple | Detailed is in the drawing toolbar again (and in full screen).
+- The side view draws each level's pallets at their real depth, centred on the frame; past frame + 6" the overhang is
+  amber.
+- Under both depth notes, "Set these rows to 54 in" (`frameDepthFor`: the pallet less 6", up to the rules' frame
+  depths, else to the inch) deepens only the target rows that are too shallow, about their centres, in one undo step
+  (`deepenRows`), on the click only.
+
+New: PS-frame-fix. Changed: EV-tab-wiring (the drawing height with the fix strip), PS-frame-depth (the note's markup).
+
+**Break-its:**
+- no amber overhang → PS-frame-fix;
+- every short row deepened, not only the targets → PS-frame-fix;
+- the depth not rounded to the frame depths → PS-frame-fix.
+
+**Checked in the app** (real mouse):
+- The toolbar reads "Front Side Simple Detailed BEAM 8'-0" · 2 PALL…"; Detailed takes the drawing from 12 to 31 labels.
+- A 40×60 elevation applied to one 42" row → the side view shows 5 pallets and 10 amber overhang parts; the drawing's
+  note has "Set these rows to 54 in" under it.
+- The click: that row only to 54", one undo step; the button, the note and the amber gone. Undo: back to 42", the
+  button back.
+- ✎ → the pallet box: "60 in deep pallet needs about 54 in frames. Rows using it are 42 in. Set these rows to 54 in" →
+  the click: 54", one undo step, the note gone, still in the editor.
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click

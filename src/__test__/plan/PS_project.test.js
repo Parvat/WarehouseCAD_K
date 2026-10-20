@@ -388,7 +388,7 @@ describe('PS — the project', () => {
     expect(tab).toMatch(/palletDIn: pal\?\.depthIn \?\? null/)
     // the panel: the amber note in the pallet box — the selected rows, else (editing) the rows using it
     expect(tab).toMatch(/frameDepthNote\(pallet\.depthIn, rows\.map\(r => r\.depthIn \?\? 42\), selRacks\.length \? 'Selected rows' : 'Rows using it'\)/)
-    expect(tab).toMatch(/\{depthNote && <div role="note" aria-label="Pallet depth" style=\{AMBER_NOTE\}>\{depthNote\}<\/div>\}/)
+    expect(tab).toMatch(/\{depthNote && \(\s*<div role="note" aria-label="Pallet depth" style=\{AMBER_NOTE\}>\s*\{depthNote\}/)
     expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/palletDIn: entry\.palletDIn/)
     expect(src('export/pdfExport.js')).toMatch(/palletDIn: palletOfType\(T, type\)\?\.depthIn \?\? null/)
     // the row menu: portalled to the themed root, fixed, over everything — below the row, flipped above near the bottom
@@ -421,5 +421,43 @@ describe('PS — the project', () => {
     // one undo: all three gone
     s().undo()
     expect([P.projectOf(s().elevations).ceilings.length, P.projectOf(s().elevations).pallets.length, (s().elevations.types || []).length]).toEqual([1, 1, 0])
+  })
+  it('PS-frame-fix: the side view draws each level\'s pallets at their real depth, centred on the frame, the overhang past frame + 6" in amber; "Set these rows to N in" (the pallet less 6", up to the app\'s frame depths) deepens only the target rows that are too shallow, one undo step, only on the click', () => {
+    // the depth: the pallet less 6", rounded up to the frame depths the app uses; past the deepest, the need itself
+    expect([T_.frameDepthFor(60), T_.frameDepthFor(46), T_.frameDepthFor(54), T_.frameDepthFor(60, [36, 42, 48, 54, 60]), T_.frameDepthFor(47)]).toEqual([54, 42, 48, 54, 42])
+    // the side view
+    const t = E.makeType({ id: 's', levelsCount: 3 }), side = (o) => E_D.elevationLayout(t, 96, { w: 800, h: 600 }, { view: 'side', ...o })
+    const d = side({ palletDIn: 60, depthIn: 42 }), loads = d.items.filter(i => i.tag === 'side-load' && i.fill === '#E8DCC2'), over = d.items.filter(i => i.tag === 'side-overhang')
+    expect(loads.length).toBe(3)                                                               // one per level
+    expect(Math.round(loads[0].w / d.scale)).toBe(60)                                          // its real depth
+    const frames = d.items.filter(i => i.tag === 'frame'), fx0 = Math.min(...frames.map(f => f.x)), fx1 = Math.max(...frames.map(f => f.x + f.w))
+    expect(Math.abs((loads[0].x + loads[0].w / 2) - (fx0 + fx1) / 2)).toBeLessThan(0.5)        // centred on the frame
+    expect([over.length, over.every(o => o.fill === '#B5730F'), Math.round(over[0].w / d.scale)]).toEqual([6, true, 6])   // 60 − (42 + 6) = 12: 6" a side, per level
+    expect(side({ palletDIn: 48, depthIn: 42 }).items.some(i => i.tag === 'side-overhang')).toBe(false)   // within frame + 6": none
+    const pair = E_D.elevationLayout(t, 96, { w: 800, h: 600 }, { view: 'side', palletDIn: 60, depthIn: 42, pair: true, flueIn: 9 })
+    expect(pair.items.filter(i => i.tag === 'side-load' && i.fill === '#E8DCC2').length).toBe(6)  // back-to-back: both frames
+    // the fix: only the target rows that are too shallow, one undo step; undo puts them back
+    const o = filled(), m = E.migrate(o)
+    const racks = m.objects.filter(E.isBeamRack), deepOne = { ...racks[1], depthIn: 60 }
+    const objs = m.objects.map(r => (r.id === deepOne.id ? deepOne : r))
+    store.setState({ objects: objs, elevations: m.table, history: [JSON.stringify({ objects: objs, groups: [], elevations: m.table })], historyIndex: 0 })
+    const targets = [racks[0].id, deepOne.id], h0 = store.getState().historyIndex
+    const n = T_.deepenRows(store, targets, 54)
+    const s1 = store.getState(), byId = (id) => s1.objects.find(x => x.id === id)
+    expect([n, s1.historyIndex - h0, byId(racks[0].id).depthIn, byId(deepOne.id).depthIn, byId(racks[2].id).depthIn]).toEqual([1, 1, 54, 60, racks[2].depthIn ?? 42])
+    expect(Math.abs((byId(racks[0].id).y + byId(racks[0].id).height / 2) - (racks[0].y + racks[0].height / 2))).toBeLessThan(1e-6)   // about its centre
+    expect(T_.deepenRows(store, targets, 54)).toBe(0)                                          // deep enough: nothing (no empty undo step)
+    s1.undo()
+    expect(store.getState().objects.find(x => x.id === racks[0].id).depthIn).toBe(racks[0].depthIn ?? 42)
+    // the wiring: the button under both notes; deepenRows only from it; the toolbar's Simple | Detailed
+    const tab = src('components/Elevations/ElevationsTab.jsx')
+    expect(tab).toMatch(/onClick=\{\(\) => deepenRows\(store, rows\.map\(r => r\.id\), to\)\}/)
+    expect(tab).toMatch(/Set these rows to \{to\} in/)
+    expect(tab).toMatch(/\{drawFix && \(\s*<div style=\{\{ height: FIX_H,[\s\S]*?<FixButton rows=\{fixRows\} to=\{fixTo\}/)
+    expect(tab).toMatch(/<FixButton rows=\{rows\.filter\(r => \(r\.depthIn \?\? 42\) < frameNeededFor\(pallet\.depthIn\) - 1e-6\)\} to=\{frameDepthFor\(pallet\.depthIn, frameDepths\)\}/)
+    expect((tab.match(/deepenRows\(/g) || []).length).toBe(1)                                  // never without the click
+    const bar = tab.slice(tab.indexOf('role="toolbar" aria-label="Drawing toolbar"'), tab.indexOf('data-drawing-box'))
+    expect(['aria-label="View"', 'aria-label="Drawing detail"', 'aria-label="Beam length"'].map(k => bar.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
+    expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/role="group" aria-label="Drawing detail"/)   // full screen keeps it
   })
 })

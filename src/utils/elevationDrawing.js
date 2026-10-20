@@ -268,6 +268,20 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   shell(Ys, sx0, sx1)
   ground(sx0, sx1, floorS)
   const frames = pair ? [0, depthIn + flueIn + upW] : [0]
+  // the pallets on each level, at their real depth, centred on the frame; past the frame + 6" (3" a side) the overhang
+  // is amber — the pallet needs a deeper frame (frameDepthNote)
+  const pd = palletDIn > 0 ? palletDIn : depthIn + 6, allow = depthIn + 6
+  for (const f0 of frames) {
+    const c = f0 + (depthIn + upW) / 2, a0 = c - pd / 2, a1 = c + pd / 2, o0 = c - allow / 2, o1 = c + allow / 2
+    L.forEach((lv, i) => {
+      const h = loadH(lv, i)
+      if (!(h > 0)) return
+      const z0 = lv.beamIn
+      rect(Xs(a0), Ys(z0 + h), pd * s, h * s, { fill: LOAD, stroke: LOAD_EDGE, sw: sw * 0.8, tag: 'side-load', level: lv.k })
+      rect(Xs(a0), Ys(z0) - Math.max(2, 4 * s), pd * s, Math.max(2, 4 * s), { fill: DECK, tag: 'side-load', level: lv.k })
+      if (pd > allow + 1e-6) for (const [x0, x1] of [[a0, o0], [o1, a1]]) rect(Xs(x0), Ys(z0 + h), (x1 - x0) * s, h * s, { fill: AMBER, opacity: 0.55, stroke: AMBER, sw: sw * 0.8, tag: 'side-overhang', level: lv.k })
+    })
+  }
   for (const f0 of frames) {
     for (const x of [f0, f0 + depthIn]) rect(Xs(x), Ys(hTop), colPx, hTop * s, { fill: frame, tag: 'frame' })
     const n = Math.max(3, Math.round((hTop - 6) / 28)), step = (hTop - 6) / n

@@ -90,9 +90,9 @@ capacity, column pick blocks, narrow aisles, usable) reads the **bay-side's type
 **The tab** (`components/Elevations/ElevationsTab.jsx`) has a fixed top and a bottom section, "02", that swaps in place.
 
 **1. The top never moves or resizes between states.**
-- The toolbar: Front | Side, "BEAM 8'-0" · 2 PALLETS" (mono; the beam length is read-only — the selected row's most
+- The toolbar: Front | Side, Simple | Detailed (also in full screen), "BEAM 8'-0" · 2 PALLETS" (mono; the beam length is read-only — the selected row's most
   common bay, else the most common length among the elevation's bays), Fit and ⤢ full screen. Fit and ⤢ drive the
-  drawing through signals (`fitSignal`, `fullSignal`); Simple | Detailed sits in the full-screen view.
+  drawing through signals (`fitSignal`, `fullSignal`). The beam label truncates with an ellipsis when the panel is narrow.
 - The drawing on a plain white sheet (`ElevationDrawing` `controls={false} paper`), taking 65% of the panel below the
   toolbar; section 02 has the rest. A handle between them (grip dots, row-resize) drags the split between 30% and 80%;
   a double-click resets it to 65%. The split is the user's own (localStorage `trace.elevsplit.v1`, `elevTab.js`
@@ -171,7 +171,14 @@ it would go on, three places say so:
 - a Check layout warning per frame depth (`elev-frame-depth`): "Elevation …: 60 in deep pallet needs about 54 in
   frames. These rows are 42 in."
 
-The rows are never changed.
+The rows change only when the user asks: a button under the panel note and under the drawing's note, "Set these
+rows to 54 in" (the pallet less 6", rounded up to the rules' frame depths `selective.frameDepthsIn`, else to the inch —
+`elevTab.js` `frameDepthFor`). Its click deepens only the target rows that are too shallow — the selected rows, else
+the rows using the elevation — each about its centre (`utils/rackDepth.js`, the rack panel's own), in one undo step
+(`deepenRows`). The note then goes.
+
+**The side view draws the pallets** on each level at their real depth, centred on each frame (both frames of a
+back-to-back). Past the frame depth + 6" (3" a side), the overhang parts are amber.
 
 **BOM:** reads the table and assignments (`elevationBays`, `uprightHeights`); unchanged.
 
