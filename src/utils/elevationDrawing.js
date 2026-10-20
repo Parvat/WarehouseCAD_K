@@ -12,7 +12,7 @@
 // at its own height (above the bottom chord, within the truss, as a rule). Side view beside it: the frame depth (two frames and
 // the flue for a back-to-back), the upright height, a simple diagonal bracing pattern. Weights stay off the drawing.
 
-import { beamFace, topLoadIssue, topOfLoad, SPRINKLER_CLEARANCE_IN, ceilingOf } from './elevations'
+import { beamFace, topLoadIssue, topOfLoad, SPRINKLER_CLEARANCE_IN, ceilingOf, frameDepthNote } from './elevations'
 import { positionsPerBeam } from './palletFit'
 
 /** 6'-2" / 26'-0" / 8" — feet and inches as on a rack drawing: a length of a foot or more always with its inches,
@@ -69,7 +69,7 @@ export function misfitLevels(t) {
  *  'text'|'poly'|'polygon'|'path', ..., role, tag } — role { kind: 'beam', k } | { kind: 'upright', x } | { kind: 'top' } |
  *  { kind: 'dim', id, k?, value } for the editor. No label overlaps a load, a beam or another label (declutter). */
 export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = {}) {
-  const { palletWIn = 40, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED, view = 'both', zoom = 1, pan = null } = opts
+  const { palletWIn = 40, palletDIn = null, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED, view = 'both', zoom = 1, pan = null } = opts
   const showFront = view !== 'side', showSide = view !== 'front'
   const detailed = detail === 'detailed'
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
@@ -94,7 +94,9 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const cTag = fO * 0.8, cElev = cTag + fT * 2.4, cPitch = (detailed ? cElev + longestElev + fO * 0.8 : cTag + fT * 2.6) + fO * 0.6
   const cChain = fO * 1.4, cFrame = detailed ? cChain + fO * 3.4 : fO * 1.8
   const mL = compact ? 6 : cFrame + fO * 1.6, mR = compact ? 6 : Math.max(cPitch + fO * 1.6, tw('0.0" CLR', fT) + cTag + fO)
-  const mT = compact ? 6 : fO * (bClear || bSprink ? 2.0 : 1.2), mB = compact ? 6 : fO * 4.4
+  // the pallet deeper than these frames allow: a red note under the drawing, a line of its own below the beam label
+  const deepNote = !compact && frameDepthNote(palletDIn, depthIn)
+  const mT = compact ? 6 : fO * (bClear || bSprink ? 2.0 : 1.2), mB = compact ? 6 : fO * (deepNote ? 6 : 4.4)
   const sideL = compact ? 6 : fO * 3.2, sideR = compact ? 6 : fO * 1.2, sideT = compact ? 6 : fO * (pair ? 4.4 : 2.8)
   const gap = compact ? 14 : fO * 2.4
   let fit
@@ -288,6 +290,9 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   // every label over the linework, so its halo clears the dashed building lines and the dimension lines beneath it
   const drawn = [...items.filter(i => i.t !== 'text'), ...items.filter(i => i.t === 'text')]
   items.length = 0; items.push(...drawn)
+  // the elevation's pallet deeper than these frames allow (~3" overhang each side): said in red under the drawing
+  if (deepNote) text(ox + cw / 2, oy + ch - fT * 0.4, deepNote.toUpperCase(), { size: fT, fill: red, weight: 600, pri: 1, tag: 'frame-depth' })
+
   return { w: box.w, h: box.h, scale: s, items, floor, Y, Xf, upW, frontW, bayIn, bottom: Math.max(floor, floorS) + mB }
 }
 

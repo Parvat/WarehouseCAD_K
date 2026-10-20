@@ -156,6 +156,11 @@ sides take it (`rowSideCells`). Each assignment is one undo step. An elevation c
 - The PDF prints, per elevation and beam length in use, the front and side as separate figures, with the
   elevation's own ceiling and pallet face.
 
+**Pallet depth against frame depth.** A frame should be about the pallet's depth less 6" (a 3" overhang front and
+back: `elevations.js` `frameNeededFor`, `frameDepthNote`). When an elevation's pallet needs deeper frames than the racks
+carrying it, the drawing says so in red under the beam label, and Check layout lists a warning per frame depth:
+"Pallet 60" deep needs ~54" frames — these racks are 42"" (`elev-frame-depth`). The racks are never changed.
+
 **BOM:** reads the table and assignments (`elevationBays`, `uprightHeights`); unchanged.
 
 **Regenerate keeps elevation choices.** Each new rack side takes the elevation of the old generated bay-sides it

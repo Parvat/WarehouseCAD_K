@@ -53,6 +53,19 @@ export const SPRINKLER_CLEARANCE_IN = 18
 /** The clear height (in) elevations assume while the project has none set — Check layout reminds (utils/project.js
  *  `projectReminders`). */
 export const ASSUMED_CLEAR_IN = 288
+/** A pallet overhangs its frame by about 3" front and back: a frame ≈ the pallet's depth − 6". */
+export const FRAME_OVERHANG_IN = 3
+/** The frame depth (in) a pallet `palletDIn` deep needs. */
+export const frameNeededFor = (palletDIn) => palletDIn - 2 * FRAME_OVERHANG_IN
+/** The pallet-depth note for racks with `frameIn`-deep frames → 'Pallet 60" deep needs ~54" frames — these racks are 42"',
+ *  or null when the frames are deep enough. Nothing is changed on the racks — it only says so. */
+export function frameDepthNote(palletDIn, frameIn) {
+  if (!(palletDIn > 0) || !(frameIn > 0)) return null
+  const need = frameNeededFor(palletDIn)
+  return frameIn < need - 1e-6 ? `Pallet ${palletDIn}" deep needs ~${need}" frames — these racks are ${frameIn}"` : null
+}
+/** The pallet elevation type `t` carries (its own entry, else the project's default) from `table.project`. */
+export const palletOfType = (table, t) => { const pr = table?.project; return pr?.pallets?.find(p => p.id === t?.palletId) || pr?.pallets?.find(p => p.id === pr.defaultPalletId) || pr?.pallets?.[0] || null }
 export const sprinklerClearance = (table) => {
   // the project's advanced setting (utils/project.js); a table from before the project: its own; else 18"
   const a = table?.project?.advanced?.sprinklerClearanceIn
@@ -473,6 +486,14 @@ export function elevationIssues(objects, T) {
       const issue = topLoadIssue(t, b, sprClr)
       if (issue === 'clear') out.push({ kind: 'elev-load-clear', typeId: t.id, ids: inFp, text: `Elevation ${t.name}: top of load ${ftIn(zLoad)} is above the building's clear height ${ftIn(b.clearHeightIn)}` })
       if (issue === 'sprinkler') out.push({ kind: 'elev-sprinkler', typeId: t.id, ids: inFp, text: `Top load within ${sprClr}" of sprinklers — elevation ${t.name}: top of load ${ftIn(zLoad)}, sprinkler heads at ${ftIn(b.sprinklerIn)}` })
+    }
+    // its pallet deeper than the frames carrying it allow (~3" overhang each side): a warning per frame depth — the
+    // racks are never changed
+    const pal = palletOfType(T, t)
+    if (pal?.depthIn > 0) {
+      const byDepth = new Map()
+      for (const id of ids) { const r = objects.find(o => o.id === id); const d = r?.depthIn ?? 42; if (frameDepthNote(pal.depthIn, d)) { if (!byDepth.has(d)) byDepth.set(d, []); byDepth.get(d).push(id) } }
+      for (const [d, inD] of byDepth) out.push({ kind: 'elev-frame-depth', severity: 'warning', typeId: t.id, ids: inD, text: `${frameDepthNote(pal.depthIn, d)} (elevation ${t.name})` })
     }
     for (const { fp, ids: inFp } of floors.values()) if (fp.clearHeightFt > 0 && t.uprightHeightIn > fp.clearHeightFt * 12 + 1e-6)
       out.push({ kind: 'elev-height', typeId: t.id, ids: inFp, text: `Elevation ${t.name}: top of upright ${ftIn(t.uprightHeightIn)} is above the building's clear height ${ftIn(fp.clearHeightFt * 12)}` })

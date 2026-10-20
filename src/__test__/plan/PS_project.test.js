@@ -351,4 +351,40 @@ describe('PS — the project', () => {
     const saved = T_.saveEdit(store), t2 = s().elevations.types[0]
     expect([saved.kind, s().historyIndex, t2.ceilingId, t2.levels.length, P.nameOf(s().elevations, t2), tab().made.kind]).toEqual(['saved', 2, 'm', 3, '3 levels · 48×48 · Mezz', 'saved'])
   })
+  it('PS-frame-depth: an elevation whose pallet needs deeper frames than the racks carrying it (frame ≈ pallet depth − 6", 3" overhang each side) is said on the drawing and as a Check layout warning — "Pallet 60" deep needs ~54" frames — these racks are 42"" — and the racks are not changed', () => {
+    expect([E.frameNeededFor(60), E.frameDepthNote(60, 42), E.frameDepthNote(48, 42), E.frameDepthNote(60, 54), E.frameDepthNote(null, 42)]).toEqual([54, 'Pallet 60" deep needs ~54" frames — these racks are 42"', null, null, null])
+    const o = filled(), m = E.migrate(o)
+    const racks = m.objects.filter(E.isBeamRack), d = racks[0].depthIn ?? 42, deep = d + 18
+    const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }], defaultCeilingId: 'c' }
+    pr.pallets = [...pr.pallets, { id: 'pd', name: 'deep', faceIn: 40, depthIn: deep, heightIn: 48, weightLb: 2500 }]
+    // every rack carries the default elevation; give it the deep pallet
+    const T = P.withProject({ ...m.table, types: m.table.types.map(t => ({ ...t, palletId: t.id === m.table.defaultId ? 'pd' : t.palletId })) }, pr)
+    const before = JSON.stringify(m.objects.map(r => [r.id, r.depthIn]))
+    const issues = E.elevationIssues(m.objects, T).filter(e => e.kind === 'elev-frame-depth')
+    expect(issues.length).toBeGreaterThan(0)
+    expect(issues.every(e => e.severity === 'warning' && e.text.startsWith(`Pallet ${deep}" deep needs ~${deep - 6}" frames — these racks are `))).toBe(true)
+    const flagged = new Set(issues.flatMap(e => e.ids))
+    expect(racks.filter(r => (r.depthIn ?? 42) < deep - 6 && flagged.has(r.id)).length).toBe(flagged.size)
+    expect(JSON.stringify(m.objects.map(r => [r.id, r.depthIn]))).toBe(before)                // no automatic change to the racks
+    // Check layout: a warning, not an error
+    const res = checkLayout(m.objects, { gridSize: GS, elevations: T })
+    expect([res.warnings.some(w => w.kind === 'elev-frame-depth'), res.errors.some(e => e.kind === 'elev-frame-depth')]).toEqual([true, false])
+    // the default pallet (48" deep) on these frames: nothing said
+    expect(E.elevationIssues(m.objects, P.withProject(m.table, pr)).some(e => e.kind === 'elev-frame-depth')).toBe(false)
+    // the drawing: the note in red under it, only when short
+    const t = T.types[0], texts = (o2) => E_D.elevationLayout(t, 96, { w: 800, h: 600 }, o2).items.filter(i => i.t === 'text')
+    const note = texts({ palletDIn: 60, depthIn: 42 }).find(i => i.tag === 'frame-depth')
+    expect([note?.s, note?.fill]).toEqual(['PALLET 60" DEEP NEEDS ~54" FRAMES — THESE RACKS ARE 42"', '#A8341C'])
+    expect([texts({ palletDIn: 48, depthIn: 42 }).some(i => i.tag === 'frame-depth'), texts({ palletDIn: 60, depthIn: 54 }).some(i => i.tag === 'frame-depth'), texts({ depthIn: 42 }).some(i => i.tag === 'frame-depth')]).toEqual([false, false, false])
+    // the tab and the PDF hand the drawing the elevation's pallet depth
+    const tab = src('components/Elevations/ElevationsTab.jsx')
+    expect(tab).toMatch(/palletDIn: pdepth/)
+    expect(tab).toMatch(/palletDIn: pal\?\.depthIn \?\? null/)
+    expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/palletDIn: entry\.palletDIn/)
+    expect(src('export/pdfExport.js')).toMatch(/palletDIn: palletOfType\(T, type\)\?\.depthIn \?\? null/)
+    // the chip menu: portalled to the themed root, fixed, over everything — never clipped by the chips' box
+    expect(tab).toMatch(/return createPortal\(\s*<div ref=\{ref\} role="menu"[^>]*position: 'fixed', left, \.\.\.pos, zIndex: 500/)
+    expect(tab).toMatch(/const host = document\.querySelector\('\[data-theme\]'\) \|\| document\.body/)
+    expect(tab).toMatch(/<ChipMenu t=\{t\} T=\{T\} anchor=\{menu\.el\} onClose=\{closeMenu\} \/>/)
+  })
 })

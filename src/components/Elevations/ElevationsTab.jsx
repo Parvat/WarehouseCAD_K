@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Plus, MoreHorizontal, Star, Pencil } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../../store/useCanvasStore'
@@ -75,19 +76,33 @@ const AssumedNote = () => (
   </div>
 )
 
-/** A chip's menu (choosing only): colour, duplicate, set default, delete. Changing an elevation is the editor's (✎). */
-function ChipMenu({ t, T, onClose }) {
+/** A chip's menu (choosing only): colour, duplicate, set default, delete. Changing an elevation is the editor's (✎).
+ *  Portalled to the themed root and placed from the chip's screen rect — over the drawing, the panel and everything
+ *  else, never clipped by the chips' scrolling box; above the chip, or below it when there is no room. */
+const MENU_W = 236, MENU_H = 120
+function ChipMenu({ t, T, anchor, onClose }) {
   const ref = useRef(null)
-  useEffect(() => { const d = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose() }; window.addEventListener('pointerdown', d, true); return () => window.removeEventListener('pointerdown', d, true) }, [onClose])
-  return (
-    <div ref={ref} role="menu" aria-label={`${nameOf(T, t)} menu`} style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 6, zIndex: 20, width: 236, padding: 10, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 6px 16px rgba(26,29,27,.13)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+  const host = document.querySelector('[data-theme]') || document.body
+  const r = anchor.getBoundingClientRect()
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - MENU_W - 8))
+  const pos = r.top > MENU_H + 16 ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }
+  useEffect(() => {
+    // a press outside closes it (the chip itself toggles it); so do a scroll or a resize (it would float off its chip)
+    const d = (e) => { if (ref.current && !ref.current.contains(e.target) && !anchor.contains(e.target)) onClose() }
+    const away = (e) => { if (!(e.target instanceof Node && ref.current?.contains(e.target))) onClose() }
+    window.addEventListener('pointerdown', d, true); window.addEventListener('scroll', away, true); window.addEventListener('resize', onClose)
+    return () => { window.removeEventListener('pointerdown', d, true); window.removeEventListener('scroll', away, true); window.removeEventListener('resize', onClose) }
+  }, [onClose, anchor])
+  return createPortal(
+    <div ref={ref} role="menu" aria-label={`${nameOf(T, t)} menu`} style={{ position: 'fixed', left, ...pos, zIndex: 500, width: MENU_W, padding: 10, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 6px 16px rgba(26,29,27,.13)', display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'var(--font-ui)' }}>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ ...S.note, width: 52 }}>Colour</span><input aria-label="Elevation colour" type="color" value={tint(t.color)} onChange={e => recolorElevation(store, t.id, e.target.value)} /></label>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         <button type="button" role="menuitem" style={S.btn} onClick={() => { duplicateElevation(store, t.id); onClose() }}>Duplicate</button>
         <button type="button" role="menuitem" style={{ ...S.btn, opacity: t.id === T.defaultId ? 0.45 : 1 }} disabled={t.id === T.defaultId} onClick={() => { defaultElevation(store, t.id); onClose() }}><Star size={11} /> Set default</button>
         <button type="button" role="menuitem" style={{ ...S.btn, color: 'var(--red)', opacity: T.types.length <= 1 ? 0.45 : 1 }} disabled={T.types.length <= 1} onClick={() => { deleteElevation(store, t.id); onClose() }}>Delete</button>
       </div>
-    </div>
+    </div>,
+    host,
   )
 }
 
@@ -132,15 +147,17 @@ function List() {
   const { objects, T, gridSize, selectedIds, activeBaySelection } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, gridSize: s.gridSize || 40, selectedIds: s.selectedIds, activeBaySelection: s.activeBaySelection })))
   const { activeId, view, made } = useElevTab()
   const { detail } = useElevEditor()
-  const [menu, setMenu] = useState(null)
+  const [menu, setMenu] = useState(null)              // { id, el (the chip) } — its menu open
+  const closeMenu = useCallback(() => setMenu(null), [])
   const pr = projectOf(T)
   const counts = useMemo(() => { if (!T) return new Map(); const L = bayLedger(objects, gridSize, T); return new Map(legendCounts(objects, T, (r) => L.racks.get(r.id)?.counted || null).map(x => [x.type.id, x.bays])) }, [objects, gridSize, T])
   const active = T?.types?.length ? typeById(T, activeId) || typeById(T, T.defaultId) || T.types[0] : null
   const { entry, from } = useMemo(() => beamEntry(objects, T, active, selectedIds), [objects, T, active, selectedIds])
   const building = useMemo(() => (active ? ceilingFor(T, active, objects, entry.parentId) : null), [T, active, objects, entry])
   // the pallets drawn on a beam: the elevation's own pallet face (Project setup), else the racks'
-  const face = active?.palletId ? palletFor(T, active)?.faceIn : null
-  const shownEntry = useMemo(() => (face ? { ...entry, palletWIn: face } : entry), [entry, face])
+  // the pallets drawn on a beam: the elevation's own pallet face; its depth against these frames (the drawing's note)
+  const face = active?.palletId ? palletFor(T, active)?.faceIn : null, pdepth = active ? palletFor(T, active)?.depthIn : null
+  const shownEntry = useMemo(() => ({ ...entry, ...(face ? { palletWIn: face } : {}), palletDIn: pdepth }), [entry, face, pdepth])
   const rowsSelected = useMemo(() => rowSideCells({ objects, selectedIds, activeBaySelection }).size, [objects, selectedIds, activeBaySelection])
   const tinted = tintOn(T)
   const clickChip = (t) => { useElevTab.setState({ activeId: t.id }); if (rowsSelected && assignSelected(store, t.id)) useElevTab.setState({ made: null }) }
@@ -174,8 +191,8 @@ function List() {
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text3)' }}>{counts.get(t.id) || 0}</span>
                 </button>
                 <button type="button" aria-label={`Edit ${nameOf(T, t)}`} title="Change this elevation" onClick={() => startEdit(store, t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 2 }}><Pencil size={12} /></button>
-                <button type="button" aria-label={`${nameOf(T, t)} menu`} onClick={() => setMenu(m => (m === t.id ? null : t.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 2 }}><MoreHorizontal size={14} /></button>
-                {menu === t.id && <ChipMenu t={t} T={T} onClose={() => setMenu(null)} />}
+                <button type="button" aria-label={`${nameOf(T, t)} menu`} onClick={(ev) => { const el = ev.currentTarget.closest('[role="listitem"]'); setMenu(m => (m?.id === t.id ? null : { id: t.id, el })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 2 }}><MoreHorizontal size={14} /></button>
+                {menu?.id === t.id && <ChipMenu t={t} T={T} anchor={menu.el} onClose={closeMenu} />}
               </div>
             )
           })}
@@ -207,7 +224,7 @@ function Editor({ e }) {
   const { entry, from } = useMemo(() => beamEntry(objects, T, editingType || d, selectedIds), [objects, T, editingType, d, selectedIds])
   const building = useMemo(() => ceilingFor(T, d, objects, entry.parentId), [T, d, objects, entry])
   const pal = palletFor(T, d)
-  const shownEntry = useMemo(() => (pal?.faceIn ? { ...entry, palletWIn: pal.faceIn } : entry), [entry, pal])
+  const shownEntry = useMemo(() => ({ ...entry, ...(pal?.faceIn ? { palletWIn: pal.faceIn } : {}), palletDIn: pal?.depthIn ?? null }), [entry, pal])
   const choose = (key, v) => { if (v === NEW) { setNewForm(key === 'ceilingId' ? 'ceiling' : 'pallet'); return } setNewForm(null); editDraft(store, { [key]: v || null }) }
   const madeNew = (key) => (id) => { setNewForm(null); if (id) editDraft(store, { [key]: id }) }
   const pairing = nameOf(T, { ...d, named: false, name: '' })

@@ -258,9 +258,11 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
   for (const e of elevationIssues(objects, elevations)) {
     const boxes = e.ids.map(id => foot.get(id)).filter(Boolean).map(boxOf)
     if (!boxes.length) continue
-    errors.push({ severity: 'error', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => shade(b, HL.red)), text: e.text })
+    // a pallet deeper than its frames: a warning (it says so; the racks are left as they are)
+    if (e.severity === 'warning') warnings.push({ severity: 'warning', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => outline(b, HL.amber)), text: e.text })
+    else errors.push({ severity: 'error', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => shade(b, HL.red)), text: e.text })
   }
-  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'angled']
+  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled']
   const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
   const reminders = projectReminders(elevations)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }

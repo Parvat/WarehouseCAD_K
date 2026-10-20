@@ -2406,6 +2406,25 @@ scrolls those fields into view. Changed: EV-tab-wiring (the editor order, the sc
 new and edit, at 1050 px and 640 px windows: the view at y 99, the drawing at 136, the fields at 895 (485), Save at
 1011 (601), all in view; Save is one undo step; Cancel returns to the list.
 
+**The chip menu over everything; pallet depth vs frame depth (PS v3.2).**
+- The ⋯ menu is portalled to the themed root, `position: fixed` at z 500, and placed from the chip's screen rect: above
+  the chip, or below it when there is no room. It closes on a press outside, a scroll or a resize, and ⋯ toggles it.
+- A frame ≈ pallet depth − 6". An elevation's pallet deeper than its racks' frames allow gives the red note under the
+  drawing (`elevationLayout` `palletDIn`, from the tab and the PDF) and a Check layout warning per frame depth
+  (`elevationIssues` `elev-frame-depth`, severity warning). No change to the racks.
+
+New: PS-frame-depth (the rule and its words; the warning on exactly the short racks; racks unchanged; a warning, not
+an error; a 48" pallet says nothing; the drawing's note only when short; the wiring; the menu's portal).
+
+**Break-it:** the note never given → PS-frame-depth.
+
+**Checked in the app** (real mouse):
+- ⋯ on a chip: the menu over the drawing (y 827–945, the drawing to 940), topmost at its centre, all four corners
+  visible, outside the chips box; ⋯ again closes it.
+- + New pallet size 40 × 60 → its elevation on a row of 42" racks: the drawing shows "PALLET 60" DEEP NEEDS ~54" FRAMES
+  — THESE RACKS ARE 42"" under the beam label; Check layout warns "Pallet 60" deep needs ~54" frames — these racks
+  are 42" (elevation 5 levels · 60×40 · Main)"; the racks are still 42".
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click
