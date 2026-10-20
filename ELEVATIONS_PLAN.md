@@ -101,7 +101,10 @@ capacity, column pick blocks, narrow aisles, usable) reads the **bay-side's type
    - after a Save, a status line and the chip highlighted: "Created / Saved / Already exists: <name>. Select rows,
      then click this elevation."
 
-**The editor is for making and changing one elevation.** It replaces the list until Save or Cancel
+**The editor is for making and changing one elevation.** It is laid out in the list's order: on top, Front | Side,
+Simple | Detailed, Fit / ⤢ and the drawing; below it, where the list has its chips, Ceiling, Pallet, Beam face, Name, the
+"clear height not set" note, then Save / Cancel. Opening it scrolls the panel so those fields are in view. It replaces
+the list until Save or Cancel
 (`elevTab.js` `useElevTab.editing`: `{ id, draft, touched }`):
 - **Ceiling ▾** and **Pallet ▾**, each ending with "+ New ceiling height…" / "+ New pallet size…" (a small inline
   form that saves to the project, one undo step, and picks the new entry). A new pair refits the draft to the best

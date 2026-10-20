@@ -788,8 +788,10 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     const order = ['<ViewBar ', '<ElevationDrawing ', 'aria-label="Elevation chips"', '> Add elevation</button>', '>Apply to selected rows</button>', '>Remove unused</button>'].map(k => listUi.indexOf(k))
     expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]))).toBe(true)
     expect(listUi).toMatch(/fill readOnly onCommit=\{\(\) => \{\}\}/)                                 // the list's drawing: read-only
-    const eorder = ['aria-label="Elevation ceiling"', 'aria-label="Elevation pallet"', 'aria-label="Beam face (in)"', 'aria-label="Elevation name"', '<ViewBar ', '<ElevationDrawing ', '>Cancel</button>', '>Save</button>'].map(k => editUi.indexOf(k))
+    // the editor in the list's order: the view and the drawing on top; ceiling, pallet, beam face, name, the note, Save / Cancel below — and in view on opening
+    const eorder = ['<ViewBar ', '<ElevationDrawing ', 'aria-label="Elevation settings"', 'aria-label="Elevation ceiling"', 'aria-label="Elevation pallet"', 'aria-label="Beam face (in)"', 'aria-label="Elevation name"', '<AssumedNote />', '>Save</button>', '>Cancel</button>'].map(k => editUi.indexOf(k))
     expect(eorder.every((v, i) => v > 0 && (i === 0 || v > eorder[i - 1]))).toBe(true)
+    expect(editUi.includes("useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }) }, [])")).toBe(true)
     expect(editUi).toMatch(/onCommit=\{\(next\) => editDraft\(store, \{ \.\.\.next, id: d\.id \}, \{ fromDrawing: true \}\)\}/)   // into the draft
     expect(/aria-label="[^"]*Beam length[^"]*" (type|value)|<select[^>]*Beam length/i.test(tab)).toBe(false)        // no beam-length control
     expect(tab).toMatch(/aria-label="Beam length"/)

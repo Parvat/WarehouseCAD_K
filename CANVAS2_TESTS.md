@@ -2400,6 +2400,12 @@ EV-tab-wiring.
   "Saved".
 - Names are unique; the pallets carry no beam face; the default face is 4.
 
+**The editor in the list's order (PS v3.1).** On top: Front | Side, Simple | Detailed, Fit / ⤢, then the drawing
+(min 180 px). Below, where the chips are: Ceiling, Pallet, Beam face, Name, the note, then Save / Cancel. Opening it
+scrolls those fields into view. Changed: EV-tab-wiring (the editor order, the scroll on opening). Checked in the app:
+new and edit, at 1050 px and 640 px windows: the view at y 99, the drawing at 136, the fields at 895 (485), Save at
+1011 (601), all in view; Save is one undo step; Cancel returns to the list.
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click

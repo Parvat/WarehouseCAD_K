@@ -17,7 +17,8 @@ import { ElevationDrawing } from './ElevationDrawing'
      zoom, pan, Fit, full screen), the beam length it is drawn at (read-only), then the chips (colour, name, bay count,
      ✎ to change it, ⋯ for colour / duplicate / default / delete), + Add elevation, Apply to selected rows, Remove
      unused. Assigning: select rows on the canvas, then click a chip — one undo step.
-   - the EDITOR — making and changing one elevation: Name, Ceiling ▾ and Pallet ▾ (each ending "+ New …", saved to the
+   - the EDITOR — making and changing one elevation, in the list's order: the view and the drawing on top, the fields
+     below where the chips are: Ceiling ▾ and Pallet ▾ (each ending "+ New …", saved to the
      project and picked), Beam face, the beam length (read-only: the selected row's, else the most common among its
      bays — no beam-length control here), the drawing (the best fit to start; levels edited on it as before), then
      Save / Cancel. Nothing is written until Save (one undo step); Save returns to the list with the chip picked and
@@ -214,51 +215,57 @@ function Editor({ e }) {
   useEffect(() => { const k = (ev) => { if (ev.key === 'Escape' && !newForm && !sel) cancelEdit() }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [newForm, sel])
   const save = () => { editDraft(store, { name, named: !!name.trim() }); saveEdit(store) }
 
+  // opening the editor: its fields in view (the panel scrolled to them — never a jump back to the top)
+  const bottom = useRef(null)
+  useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }) }, [])
+
   return (
     <div aria-label="Elevation editor" data-mode="editor" data-pane="open" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '10px 12px 2px', flexShrink: 0 }}>
-        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text)' }}>{e.id ? 'Edit elevation' : 'New elevation'}</span>
-        <span style={S.note}>{e.id ? nameOf(T, editingType || d) : 'the best fit to start — adjust it on the drawing'}</span>
-      </div>
-      {/* the pairing, the beam face, the name */}
-      <div role="group" aria-label="Elevation settings" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8, padding: '8px 12px', flexShrink: 0 }}>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}><span style={S.label}>Ceiling</span>
-          <select aria-label="Elevation ceiling" value={newForm === 'ceiling' ? NEW : d.ceilingId || ''} style={S.sel} onChange={ev => choose('ceilingId', ev.target.value)}>
-            {!pr?.ceilings?.length && <option value="">Not set ({ASSUMED_FT}')</option>}
-            {(pr?.ceilings || []).map(c => <option key={c.id} value={c.id}>{c.name}{c.clearHeightIn > 0 ? '' : ` (${ASSUMED_FT}' assumed)`}</option>)}
-            <option value={NEW}>+ New ceiling height…</option>
-          </select>
-        </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}><span style={S.label}>Pallet</span>
-          <select aria-label="Elevation pallet" value={newForm === 'pallet' ? NEW : d.palletId || ''} style={S.sel} onChange={ev => choose('palletId', ev.target.value)}>
-            {!d.palletId && <option value="">—</option>}
-            {(pr?.pallets || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            <option value={NEW}>+ New pallet size…</option>
-          </select>
-        </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}><span style={S.label}>Beam face (in)</span>
-          <input aria-label="Beam face (in)" type="number" min={1} step={0.5} value={beamFace(d)} style={{ ...S.sel, fontFamily: 'var(--font-mono)' }} onChange={ev => { const v = num(ev.target.value); if (v) editDraft(store, { beamFaceIn: v }) }} />
-        </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}><span style={S.label}>Name</span>
-          <input aria-label="Elevation name" value={name} placeholder={pairing} style={S.sel} onChange={ev => setName(ev.target.value)} />
-        </label>
-      </div>
-      {newForm === 'ceiling' && <div style={{ padding: '0 12px 8px' }}><NewCeiling onDone={madeNew('ceilingId')} /></div>}
-      {newForm === 'pallet' && <div style={{ padding: '0 12px 8px' }}><NewPallet onDone={madeNew('palletId')} /></div>}
-
+      {/* the list's order: the view and the drawing on top… */}
       <ViewBar right={<BeamLength entry={entry} from={from} />} />
-      {building?.assumed && <AssumedNote />}
       {/* the drawing: levels edited on it as before — into the draft */}
-      <div style={{ flex: 1, minHeight: 220, padding: '0 8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 180, padding: '0 8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <ElevationDrawing t={{ ...d, id: e.id || 'draft' }} title={name || pairing} entry={shownEntry} building={building} sel={sel} sprClr={sprinklerClearance(T)} detail={detail} view={view} fill onCommit={(next) => editDraft(store, { ...next, id: d.id }, { fromDrawing: true })} />
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-        <span style={S.note}>{d.levels.length} level{d.levels.length === 1 ? '' : 's'} · upright {ftInDash(d.uprightHeightIn)}</span>
-        <button type="button" onClick={cancelEdit} style={{ ...S.btn, marginLeft: 'auto' }}>Cancel</button>
-        <button type="button" disabled={!!newForm} onClick={save} style={{ ...S.btn, ...solid, opacity: newForm ? 0.45 : 1 }}>Save</button>
+      {/* …the fields below, where the list has its chips: ceiling, pallet, beam face, name, the note, Save / Cancel */}
+      <div ref={bottom} role="group" aria-label="Elevation settings" style={{ flexShrink: 0, maxHeight: '46%', overflowY: 'auto', padding: '10px 12px 12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text)' }}>{e.id ? 'Edit elevation' : 'New elevation'}</span>
+          <span style={S.note}>{e.id ? nameOf(T, editingType || d) : 'the best fit to start — adjust it on the drawing'}</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}><span style={S.label}>Ceiling</span>
+            <select aria-label="Elevation ceiling" value={newForm === 'ceiling' ? NEW : d.ceilingId || ''} style={S.sel} onChange={ev => choose('ceilingId', ev.target.value)}>
+              {!pr?.ceilings?.length && <option value="">Not set ({ASSUMED_FT}')</option>}
+              {(pr?.ceilings || []).map(c => <option key={c.id} value={c.id}>{c.name}{c.clearHeightIn > 0 ? '' : ` (${ASSUMED_FT}' assumed)`}</option>)}
+              <option value={NEW}>+ New ceiling height…</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}><span style={S.label}>Pallet</span>
+            <select aria-label="Elevation pallet" value={newForm === 'pallet' ? NEW : d.palletId || ''} style={S.sel} onChange={ev => choose('palletId', ev.target.value)}>
+              {!d.palletId && <option value="">—</option>}
+              {(pr?.pallets || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <option value={NEW}>+ New pallet size…</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}><span style={S.label}>Beam face (in)</span>
+            <input aria-label="Beam face (in)" type="number" min={1} step={0.5} value={beamFace(d)} style={{ ...S.sel, fontFamily: 'var(--font-mono)' }} onChange={ev => { const v = num(ev.target.value); if (v) editDraft(store, { beamFaceIn: v }) }} />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}><span style={S.label}>Name</span>
+            <input aria-label="Elevation name" value={name} placeholder={pairing} style={S.sel} onChange={ev => setName(ev.target.value)} />
+          </label>
+        </div>
+        {newForm === 'ceiling' && <NewCeiling onDone={madeNew('ceilingId')} />}
+        {newForm === 'pallet' && <NewPallet onDone={madeNew('palletId')} />}
+        {building?.assumed && <div style={{ margin: '0 -12px -8px' }}><AssumedNote /></div>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 2 }}>
+          <button type="button" disabled={!!newForm} onClick={save} style={{ ...S.btn, ...solid, opacity: newForm ? 0.45 : 1 }}>Save</button>
+          <button type="button" onClick={cancelEdit} style={S.btn}>Cancel</button>
+          <span style={{ ...S.note, marginLeft: 'auto' }}>{d.levels.length} level{d.levels.length === 1 ? '' : 's'} · upright {ftInDash(d.uprightHeightIn)}</span>
+        </div>
       </div>
     </div>
   )
