@@ -2516,7 +2516,11 @@ New: PS-frame-fix. Changed: EV-tab-wiring (the drawing height with the fix strip
 **One depth change, wall-aware (PS v4.3).** "Set these rows to N in", Properties' Frame depth (one rack and several
 racks) and the Row group's replay now share one action: `utils/rackDepthAction.js` `setRackDepths` → `utils/rackDepth.js`
 `rackDepthAt`. (Before, all of them resized about the rack's centre, which ate a wall row's clearance.)
-- `wallSideOf` finds a long face against an inner wall edge (parallel, overlapping, within 18" outward).
+- `wallSideOf` asks Fill's and Generate's own on-wall rule, `generate/wallRun.js` `wallLineFor` (also
+  `fillRacking.js` `snapToWalls`): a face counts as on a wall when it stops short of one — an inner wall edge parallel to
+  it and overlapping it — by no more than the rack's depth (`wallReachFt`: 3 ft 6 in for a 42" frame). No threshold of
+  its own (the 18" first used is gone). PS-depth-action covers the rule (30" on, 43" off for a 42" rack, 50" on for a 54"),
+  with break-its: the 18" back → PS-depth-action; the reach strict → PS-depth-action.
 - That face stays — the wall clearance with it — and the rack grows away from the wall, turned racks included.
 - Others keep their centre line: a pair's flue stays and both halves grow outward.
 - One undo step, committed as Properties always did; the aisle keeper re-pairs; an open Check layout runs again.

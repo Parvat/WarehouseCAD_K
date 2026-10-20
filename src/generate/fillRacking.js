@@ -41,7 +41,7 @@ import { getRackCapacity } from '../utils/capacity'
 import { usableCapacity, mheProfile } from './usableCapacity'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { nanoid } from 'nanoid'
-import { wallRun } from './wallRun'
+import { wallRun, WALL_REACH_FT, wallLineFor } from './wallRun'
 import { WALL_CLEAR_IN } from './wallClear'
 import { typeById } from '../utils/elevations'
 
@@ -256,14 +256,15 @@ const rsRect = (vert, gridSize, b) => {
  *  same rule: an end within `reachFt` of a wall counts as on it, and the rows start at the wall clearance from
  *  that wall. Without it (a saved area not edited since) they stay as drawn. The lines are the clearance
  *  floor's (clearOutline). World px. */
-export function snapToWalls(boxPx, fp, gridSize = 40, reachFt = 3.5, vert = false, clearIn = 0, ends = false) {
-  const poly = clearOutline(fp, gridSize, vert, clearIn, ends), reach = reachFt * gridSize + 1e-6
+export function snapToWalls(boxPx, fp, gridSize = 40, reachFt = WALL_REACH_FT, vert = false, clearIn = 0, ends = false) {
+  const poly = clearOutline(fp, gridSize, vert, clearIn, ends), reach = reachFt * gridSize
   const x0 = boxPx.x, y0 = boxPx.y, x1 = boxPx.x + boxPx.w, y1 = boxPx.y + boxPx.h
   const edges = poly.map((a, i) => [a, poly[(i + 1) % poly.length]])
   const xs = edges.filter(([a, c]) => Math.abs(a.x - c.x) < 1e-6 && Math.min(Math.max(a.y, c.y), y1) - Math.max(Math.min(a.y, c.y), y0) > 1e-6).map(([a]) => a.x)
   const ys = edges.filter(([a, c]) => Math.abs(a.y - c.y) < 1e-6 && Math.min(Math.max(a.x, c.x), x1) - Math.max(Math.min(a.x, c.x), x0) > 1e-6).map(([a]) => a.y)
-  const lo = (v, lines) => { const c = lines.filter(l => l < v - 1e-6 && l >= v - reach); return c.length ? Math.max(...c) : v }
-  const hi = (v, lines) => { const c = lines.filter(l => l > v + 1e-6 && l <= v + reach); return c.length ? Math.min(...c) : v }
+  // the on-wall rule (wallRun.js wallLineFor) — the one the frame-depth change asks too
+  const lo = (v, lines) => wallLineFor(v, lines, -1, reach) ?? v
+  const hi = (v, lines) => wallLineFor(v, lines, +1, reach) ?? v
   const a = vert || ends ? lo(x0, xs) : x0, b = !vert || ends ? lo(y0, ys) : y0, c = vert || ends ? hi(x1, xs) : x1, d = !vert || ends ? hi(y1, ys) : y1
   return { x: a, y: b, w: c - a, h: d - b }
 }

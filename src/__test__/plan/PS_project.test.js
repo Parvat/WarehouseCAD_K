@@ -471,6 +471,18 @@ describe('PS — the project', () => {
     const cx = 10 + ft(3) + ft(42) / 2, turned = { id: 't', type: 'rack_row', parentId: 'fp', x: cx - 500, y: 1200 - ft(42) / 2, width: 1000, height: ft(42), depthIn: 42, beams, rotation: 90 }   // turned, 3" off the left wall
     const objs = [fp, wall, pair, turned]
     expect([RD.wallSideOf(wall, objs, GS), RD.wallSideOf(pair, objs, GS), RD.wallSideOf(turned, objs, GS)]).toEqual([-1, 0, 1])
+    // ONE on-wall rule, Fill's and Generate's (generate/wallRun.js wallLineFor): within the rack's depth — 3 ft 6 in for a
+    // 42" frame — of a wall counts as on it; no second threshold of its own
+    const WR = await import('../../generate/wallRun')
+    expect([WR.WALL_REACH_FT, WR.wallReachFt(42), WR.wallReachFt(54), WR.wallReachFt(null)]).toEqual([3.5, 3.5, 4.5, 3.5])
+    expect([WR.wallLineFor(100, [10, 70, 200], -1, 40), WR.wallLineFor(100, [10, 50], -1, 40), WR.wallLineFor(100, [130, 160], +1, 40), WR.wallLineFor(100, [150], +1, 40)]).toEqual([70, null, 130, null])
+    const at = (gapIn, depthIn = 42) => RD.wallSideOf({ ...wall, y: 10 + ft(gapIn), depthIn, height: ft(depthIn) }, objs, GS)
+    expect([at(3), at(30), at(42), at(43), at(50), at(50, 54)]).toEqual([-1, -1, -1, 0, 0, -1])   // 30" on the wall (the old 18" said no); 50" off: a 54" rack's reach, not a 42"'s
+    expect(src('utils/rackDepth.js')).toMatch(/return wallLineFor\(m\.x \* n\.x \+ m\.y \* n\.y, lines, \+1, reach\) != null/)
+    expect(src('utils/rackDepth.js')).toMatch(/reach = wallReachFt\(r\.depthIn \?\? 42\) \* gridSize/)
+    expect(/WALL_FACE_IN|\b18\b/.test(src('utils/rackDepth.js'))).toBe(false)
+    expect(src('generate/fillRacking.js')).toMatch(/const lo = \(v, lines\) => wallLineFor\(v, lines, -1, reach\) \?\? v/)
+    expect(src('generate/fillRacking.js')).toMatch(/export function snapToWalls\(boxPx, fp, gridSize = 40, reachFt = WALL_REACH_FT,/)
     store.setState({ objects: objs, gridSize: GS, history: [JSON.stringify({ objects: objs, groups: [] })], historyIndex: 0 })
     LCm.useLayoutCheck.setState({ open: true, result: { errors: [], warnings: [], at: 0 } })
     const n = RA.setRackDepths(store, ['w', 'p', 't'], 54)
