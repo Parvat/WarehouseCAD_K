@@ -11,7 +11,7 @@ import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
 import { useBayLedger } from '../useBayLedger'
 import { Field, Fold } from '../../shared/Fold'
 import { ElevationLine } from '../../Elevations/ElevationLine'
-import { rackDepthUpdate } from '../../../utils/rackDepth'
+import { setRackDepths } from '../../../utils/rackDepthAction'
 import {
   BEAM_PRESETS_IN, parseBeamIn, wallClearAlong, planBayBeamChange,
   changeIssues, rackIssues, issuesText,
@@ -366,10 +366,10 @@ export function RackRowPanel({ obj }) {
 
       {/* ── Rack: frame depth, upright, pallet size, flue (collapsed) ── */}
       <Fold title="Rack" defaultOpen={false} aria="Rack">
-        {/* frame depth: this rack only, about its centre (utils/rackDepth.js) — overlaps show as warnings and X marks;
-            the Row group replays it; nothing is regenerated */}
-        <Field label="Frame depth" aria="Rack depth" value={obj.depthIn ?? 42} title="This rack only — resized about its centre; overlaps show as warnings"
-          onCommit={v => { const u = rackDepthUpdate(obj, v, gridSize || 40); if (u) commitObjectUpdate(obj.id, u) }} />
+        {/* frame depth: this rack only, the one depth change (utils/rackDepthAction.js — against a wall the wall face
+            stays, else about its centre) — overlaps show as warnings and X marks; the Row group replays it */}
+        <Field label="Frame depth" aria="Rack depth" value={obj.depthIn ?? 42} title="This rack only — against a wall it keeps its wall clearance and grows away from the wall; otherwise about its centre"
+          onCommit={v => { setRackDepths(useCanvasStore, [obj.id], v) }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {label('Upright', 86)}
           {[3, 4].map(u => (

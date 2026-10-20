@@ -174,8 +174,11 @@ it would go on, three places say so:
 The rows change only when the user asks: a button under the panel note and under the drawing's note, "Set these
 rows to 54 in" (the pallet less 6", rounded up to the rules' frame depths `selective.frameDepthsIn`, else to the inch —
 `elevTab.js` `frameDepthFor`). Its click deepens only the target rows that are too shallow — the selected rows, else
-the rows using the elevation — each about its centre (`utils/rackDepth.js`, the rack panel's own), in one undo step
-(`deepenRows`). The note then goes.
+the rows using the elevation — by THE depth change Properties uses (`utils/rackDepthAction.js` `setRackDepths`, also
+the Row group's replay through `rackDepthAt`): a row against a wall keeps its wall face, so its wall clearance, and
+grows away from the wall (turned rows too); any other keeps its centre line, so a back-to-back pair keeps its flue and
+grows outward. One undo step; the aisle keeper re-pairs the aisles and an open Check layout runs again. The note then
+goes.
 
 **The side view draws the pallets** on each level at their real depth, centred on each frame (both frames of a
 back-to-back). Past the frame depth + 6" (3" a side), the overhang parts are amber.

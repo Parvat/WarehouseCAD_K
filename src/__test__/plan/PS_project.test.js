@@ -460,4 +460,45 @@ describe('PS — the project', () => {
     expect(['aria-label="View"', 'aria-label="Drawing detail"', 'aria-label="Beam length"'].map(k => bar.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
     expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/role="group" aria-label="Drawing detail"/)   // full screen keeps it
   })
+  it('PS-depth-action: "Set these rows to N in" and Properties\' Frame depth are ONE action — a wall row keeps its wall face (its clearance) and grows away from the wall, also turned; a back-to-back pair keeps its centre and flue and grows outward; one undo step; the aisle checks run after', async () => {
+    const RD = await import('../../utils/rackDepth'), RA = await import('../../utils/rackDepthAction'), LCm = await import('../../utils/layoutCheck')
+    const GS = 40, ft = (inch) => inch / 12 * GS
+    // a building with 3" walls (10 px): the inner face at 10 px
+    const fp = { id: 'fp', type: 'fp_rect', x: 0, y: 0, width: 4000, height: 2400, wallThicknessFt: 0.25 }
+    const beams = Array(10).fill(96)
+    const wall = { id: 'w', type: 'rack_row', parentId: 'fp', x: 400, y: 10 + ft(3), width: 1000, height: ft(42), depthIn: 42, beams, rotation: 0 }                            // 3" off the top wall
+    const pair = { id: 'p', type: 'rack_double_row', parentId: 'fp', x: 400, y: 1000, width: 1000, height: ft(2 * 42 + 9), depthIn: 42, flueSpaceIn: 9, beams, rotation: 0 }      // in the open
+    const cx = 10 + ft(3) + ft(42) / 2, turned = { id: 't', type: 'rack_row', parentId: 'fp', x: cx - 500, y: 1200 - ft(42) / 2, width: 1000, height: ft(42), depthIn: 42, beams, rotation: 90 }   // turned, 3" off the left wall
+    const objs = [fp, wall, pair, turned]
+    expect([RD.wallSideOf(wall, objs, GS), RD.wallSideOf(pair, objs, GS), RD.wallSideOf(turned, objs, GS)]).toEqual([-1, 0, 1])
+    store.setState({ objects: objs, gridSize: GS, history: [JSON.stringify({ objects: objs, groups: [] })], historyIndex: 0 })
+    LCm.useLayoutCheck.setState({ open: true, result: { errors: [], warnings: [], at: 0 } })
+    const n = RA.setRackDepths(store, ['w', 'p', 't'], 54)
+    const s1 = store.getState(), by = (id) => s1.objects.find(o => o.id === id)
+    expect([n, s1.historyIndex]).toEqual([3, 1])                                               // one undo step
+    // the wall row: its wall face where it was (3" clearance kept), the new depth all away from the wall
+    expect([by('w').y, by('w').height, by('w').depthIn]).toEqual([wall.y, ft(54), 54])
+    // the turned wall row: its wall face (the left, in the world) where it was
+    const leftFace = (r) => r.x + r.width / 2 - r.height / 2
+    expect([Math.round(leftFace(by('t')) * 1000) / 1000, Math.round(leftFace(turned) * 1000) / 1000, by('t').height]).toEqual([Math.round(leftFace(turned) * 1000) / 1000, Math.round(leftFace(turned) * 1000) / 1000, ft(54)])
+    // the pair: centre and flue kept, both halves outward by the same
+    expect([by('p').y + by('p').height / 2, by('p').height, by('p').flueSpaceIn]).toEqual([pair.y + pair.height / 2, ft(2 * 54 + 9), 9])
+    // the aisle checks: an open Check layout ran again
+    expect(LCm.useLayoutCheck.getState().result.at).toBeGreaterThan(0)
+    LCm.useLayoutCheck.setState({ open: false, result: null })
+    // undo: all three back
+    s1.undo()
+    expect(store.getState().objects.find(o => o.id === 'w').y).toBe(wall.y)
+    expect(store.getState().objects.find(o => o.id === 'w').depthIn).toBe(42)
+    // the fix only deepens what is too shallow
+    store.setState({ objects: objs.map(o => (o.id === 'p' ? { ...o, depthIn: 60, height: ft(129) } : o)), history: ['{}'], historyIndex: 0 })
+    expect(T_.deepenRows(store, ['w', 'p'], 54)).toBe(1)
+    expect(store.getState().objects.find(o => o.id === 'p').depthIn).toBe(60)
+    // ONE action: Properties (several racks, one rack), the Row group's replay and the button all go through it
+    expect(src('components/RightPanel/PropertiesPanel.jsx')).toMatch(/const setDepth = \(v\) => \{ setRackDepths\(useCanvasStore, racks\.map\(r => r\.id\), v\) \}/)
+    expect(src('components/RightPanel/panels/RackRowPanelCore.jsx')).toMatch(/onCommit=\{v => \{ setRackDepths\(useCanvasStore, \[obj\.id\], v\) \}\}/)
+    expect(src('utils/elevTab.js')).toMatch(/export const deepenRows = \(store, ids, depthIn\) => setRackDepths\(store, ids, depthIn, \{ onlyShallower: true \}\)/)
+    expect(src('utils/rowGroup.js')).toMatch(/rackDepthAt\(o, edit\.depthIn, after, gridSize\)/)
+    expect(/rackDepthUpdate\(/.test(src('components/RightPanel/PropertiesPanel.jsx') + src('components/RightPanel/panels/RackRowPanelCore.jsx') + src('utils/elevTab.js') + src('utils/rowGroup.js'))).toBe(false)
+  })
 })

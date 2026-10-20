@@ -43,7 +43,7 @@ import { narrowAisleBlocks } from '../generate/narrowAisles'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { piecesFromStates } from '../generate/faceReach'
 import { faceIndex } from '../generate/faceAisles'
-import { rackDepthUpdate } from './rackDepth'
+import { rackDepthAt } from './rackDepth'
 import { carryElev, withElev, ELEV_FIELDS, typeIdAt, typeMap, compressElev, syncLevels, paintRack, sidesOf } from './elevations'
 
 export const BEAM = new Set(['rack_row', 'rack_double_row'])
@@ -435,7 +435,7 @@ export function planReplay(after, edit, groupKeys, ctx) {
     if (edit.kind === 'side-delete') { targets.push(sideDeleteOn(key, mine, edit, { gridSize, newId, byId, tol })); continue }
     if (edit.kind === 'elev') { targets.push(elevOn(key, mine, edit, { gridSize, tol, table: ctx.elevations || null })); continue }
     if (edit.kind === 'depth') {
-      const racks = mine.filter(o => o.type === edit.rackType).map(o => { const u = rackDepthUpdate(o, edit.depthIn, gridSize); return u ? { ...o, ...u } : null }).filter(Boolean)
+      const racks = mine.filter(o => o.type === edit.rackType).map(o => { const u = rackDepthAt(o, edit.depthIn, after, gridSize); return u ? { ...o, ...u } : null }).filter(Boolean)
       targets.push(racks.length ? { key, status: 'apply', racks, removeIds: [], addRacks: [] } : { key, status: 'none' })
       continue
     }

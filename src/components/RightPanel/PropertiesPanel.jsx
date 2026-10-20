@@ -18,7 +18,7 @@ import { PALETTE_COLORS } from '../../constants'
 import { Field, Fold } from '../shared/Fold'
 import { ElevationLine } from '../Elevations/ElevationLine'
 import { isBeamRack } from '../../utils/elevations'
-import { rackDepthUpdate } from '../../utils/rackDepth'
+import { setRackDepths } from '../../utils/rackDepthAction'
 
 /* The app's locked type system. Montserrat and JetBrains Mono are loaded by
    index.html; Inter was added alongside them. `monospace` is the generic
@@ -267,20 +267,14 @@ function SelectionRacks({ selected }) {
   const anyBays = useCanvasStore(s => (s.activeBaySelection || []).length > 0)
   if (!racks.length && !anyBays) return null
   const depths = [...new Set(racks.map(r => r.depthIn ?? 42))]
-  const setDepth = (v) => {
-    const st = useCanvasStore.getState(), gs = st.gridSize || 40, ids = new Set(racks.map(r => r.id))
-    let changed = false
-    const objects = st.objects.map(o => { if (!ids.has(o.id)) return o; const u = rackDepthUpdate(o, v, gs); if (!u) return o; changed = true; return { ...o, ...u } })
-    if (!changed) return
-    useCanvasStore.setState({ objects })
-    st.commitObjectUpdate(racks[0].id, {})
-  }
+  // the one depth change (utils/rackDepthAction.js): a wall row keeps its wall face, a pair its flue
+  const setDepth = (v) => { setRackDepths(useCanvasStore, racks.map(r => r.id), v) }
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:12, marginTop:10 }}>
       <ElevationLine />
       {racks.length > 0 && (
         <Fold title="Rack" defaultOpen={false} aria="Rack">
-          <Field label="Frame depth" aria="Rack depth" value={depths.length === 1 ? depths[0] : ''} title={`The ${racks.length} selected rack${racks.length === 1 ? '' : 's'} — each resized about its centre`} onCommit={setDepth} />
+          <Field label="Frame depth" aria="Rack depth" value={depths.length === 1 ? depths[0] : ''} title={`The ${racks.length} selected rack${racks.length === 1 ? '' : 's'} — a wall row keeps its wall clearance and grows away from the wall; others about their centre`} onCommit={setDepth} />
           {depths.length > 1 && <span style={{ ...S.mono9, color:'var(--text3)' }}>Mixed: {depths.map(d => d + '"').join(', ')}</span>}
         </Fold>
       )}

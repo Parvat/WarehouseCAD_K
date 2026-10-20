@@ -2513,6 +2513,28 @@ New: PS-frame-fix. Changed: EV-tab-wiring (the drawing height with the fix strip
 - ✎ → the pallet box: "60 in deep pallet needs about 54 in frames. Rows using it are 42 in. Set these rows to 54 in" →
   the click: 54", one undo step, the note gone, still in the editor.
 
+**One depth change, wall-aware (PS v4.3).** "Set these rows to N in", Properties' Frame depth (one rack and several
+racks) and the Row group's replay now share one action: `utils/rackDepthAction.js` `setRackDepths` → `utils/rackDepth.js`
+`rackDepthAt`. (Before, all of them resized about the rack's centre, which ate a wall row's clearance.)
+- `wallSideOf` finds a long face against an inner wall edge (parallel, overlapping, within 18" outward).
+- That face stays — the wall clearance with it — and the rack grows away from the wall, turned racks included.
+- Others keep their centre line: a pair's flue stays and both halves grow outward.
+- One undo step, committed as Properties always did; the aisle keeper re-pairs; an open Check layout runs again.
+
+New: PS-depth-action (a wall row along the top wall, a turned one against the left wall, an open pair; one step; the
+check re-run; undo; only-shallower; the four callers on the one action).
+
+**Break-its:**
+- always about the centre → PS-depth-action;
+- the turn ignored → PS-depth-action;
+- no check after → PS-depth-action.
+
+**Checked in the app** (real mouse; a generated layout, the rows turned):
+- A wall row (3" off the left wall) and an open pair, selected; a 40×60 elevation applied; the check open. "Set these
+  rows to 54 in" → the wall row still 3" off the wall, 12" grown away from it; the pair's centre unchanged, flue 9",
+  12" outward on each side; one undo step; Check layout ran again.
+- Properties' Frame depth 54 on the other wall row (3" off the right wall) → still 3", 12" away from the wall.
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click
