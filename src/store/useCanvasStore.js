@@ -718,7 +718,7 @@ export const useCanvasStore = create(
     toggleSnap:   () => set((s) => { s.snapToGrid = !s.snapToGrid }),
 
     // ─── Text settings ───────────────────────────────────────────────────────
-    textSettings: { fontFamily:'Montserrat', fontSize:14, bold:false, italic:false, underline:false, align:'left' },
+    textSettings: { fontFamily:'Plus Jakarta Sans', fontSize:14, bold:false, italic:false, underline:false, align:'left' },
     uiTheme: 'studio',     // 'obsidian' | 'studio' | 'blueprint'
     uiScale: 'md',         // 'sm' | 'md' | 'lg'
     setUiTheme: (theme) => set((s) => { s.uiTheme = theme }),

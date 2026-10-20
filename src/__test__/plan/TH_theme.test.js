@@ -16,11 +16,12 @@ const SRC = new URL('../../', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '
 describe('TH — type and tokens', () => {
   it('TH-fonts: no Inter, Montserrat, DM Mono / DM Sans or IBM Plex Mono is loaded or drawn with — only the retired-face table maps old saved text to its successor', () => {
     const bad = /Montserrat|\bInter\b|IBM[ +]Plex|DM[ +]Mono|DM Sans/
-    const hits = walk(SRC).filter(f => /\.(jsx?|css)$/.test(f) && !/components[\\/]Canvas[\\/]FloorPlan\.jsx$|store[\\/]useCanvasStore\.js$/.test(f))
+    const hits = walk(SRC).filter(f => /\.(jsx?|css)$/.test(f) && !/components[\\/]Canvas[\\/]FloorPlan\.jsx$/.test(f))
       .filter(f => bad.test(readFileSync(f, 'utf8'))).map(f => f.slice(SRC.length))
     expect(hits).toEqual([])
     expect(bad.test(read('../index.html'))).toBe(false)
     expect(bad.test(read('../tailwind.config.js'))).toBe(false)
+    expect(read('store/useCanvasStore.js')).toMatch(/textSettings: { fontFamily:'Plus Jakarta Sans'/)
     expect(read('../index.html')).toMatch(/family=JetBrains\+Mono:wght@400;500&family=Oswald:wght@500;600;700&family=Plus\+Jakarta\+Sans:wght@400;500;600;700/)
     // a text object saved in a retired face draws in its successor; the font list is the app's three
     expect(TEXT_FONTS).toEqual(['Plus Jakarta Sans', 'Oswald', 'JetBrains Mono'])
