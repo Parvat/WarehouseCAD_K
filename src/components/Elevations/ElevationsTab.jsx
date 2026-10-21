@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, MoreHorizontal, Pencil, Maximize2 } from 'lucide-react'
+import { Plus, MoreHorizontal, Pencil, Maximize, Maximize2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { typeById, typeIdAt, legendCounts, sprinklerClearance, isBeamRack, beamFace, sidesOf, frameDepthNote, frameNeededFor } from '../../utils/elevations'
@@ -30,6 +30,10 @@ import { Note } from '../shared/Note'
 
 const store = useCanvasStore
 const HANDLE = 10                 // the split handle (px)
+/* section 02 at its smallest: three list rows (3 × 36 + 2 × 4 gaps), its heading, the Apply row and the note, with
+   their padding — the drawing takes its share of the split but never squeezes the list under three rows */
+const SECTION_MIN = 276
+const LIST_MIN = 3 * 36 + 2 * 4   // three rows and their gaps
 const FIX_H = 34                  // the drawing's "Set these rows to N in" strip (px)
 const S = {
   note: { fontSize: 12, color: 'var(--steel)', lineHeight: 1.5 },
@@ -40,8 +44,10 @@ const S = {
 }
 const ICON = { size: 16, strokeWidth: 1.5, absoluteStrokeWidth: true }
 /* a segmented toggle: one bordered strip of secondaries, the pressed one pine (the .t-btn--secondary[aria-pressed]) */
-const segGroup = () => ({ display: 'flex', height: 32, borderRadius: 2, border: '1px solid var(--line)', background: 'var(--paper)', overflow: 'hidden', minWidth: 0 })
-const seg = () => ({ flex: 1, height: '100%', padding: '0 10px', border: 'none', borderRadius: 0, fontSize: 12 })
+/* a segmented control: 32px secondaries side by side, their 1px lines shared (each overlaps the one before), the
+   group's corners radius 2; the pressed one pine */
+const segGroup = () => ({ display: 'flex', height: 32, paddingLeft: 1, borderRadius: 2, overflow: 'hidden', minWidth: 0 })
+const seg = () => ({ flex: 1, height: 32, marginLeft: -1, padding: '0 8px', borderRadius: 0, fontSize: 12 })
 const ASSUMED_FT = Math.round(ASSUMED_CLEAR_IN / 12)
 const BEAM_FACES = [3, 4, 5, 6]
 
@@ -64,7 +70,7 @@ const racksUsing = (objects, T, id) => objects.filter(r => isBeamRack(r) && Arra
 /** THEME.md's section header: the number, the title, a muted note, something on the right. */
 function Head({ title, note, right }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 8, rowGap: 4, flexShrink: 0, minWidth: 0 }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 8, rowGap: 4, flexShrink: 0, minWidth: 0 }}>
       <span className="t-num" style={{ fontSize: 11, color: 'var(--elev-dim)' }}>02</span>
       <span className="t-head" style={{ color: 'var(--ink)' }}>{title}</span>
       {note && <span style={S.note}>{note}</span>}
@@ -146,7 +152,16 @@ export function ElevationsTab() {
     ro?.observe(el)
     return () => ro?.disconnect()
   }, [])
-  const drawH = Math.max(120, Math.round((bodyH - HANDLE) * split))
+  /* section 02's smallest height, measured: what it holds besides the list (the heading, the Apply row, the note — it
+     wraps on a narrow panel) plus three rows; SECTION_MIN until the list is on screen (the editor keeps the last) */
+  const [secMin, setSecMin] = useState(SECTION_MIN)
+  useLayoutEffect(() => {
+    const sec = body.current?.querySelector('[aria-label="Elevation list section"]'), list = sec?.querySelector('[aria-label="Elevation list"]')
+    if (!sec || !list) return
+    const need = Math.round(sec.offsetHeight - list.clientHeight + LIST_MIN)
+    if (Math.abs(need - secMin) > 1) setSecMin(need)
+  })
+  const drawH = Math.max(120, Math.min(Math.round((bodyH - HANDLE) * split), bodyH - HANDLE - secMin))
   const startSplit = (ev) => {
     if (ev.button !== 0) return
     ev.preventDefault()
@@ -167,11 +182,14 @@ export function ElevationsTab() {
         <div role="group" aria-label="Drawing detail" style={{ ...segGroup(), flexShrink: 0 }}>
           {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={detail === k} className="t-btn t-btn--secondary" style={seg(detail === k)} onClick={() => setPane({ detail: k })}>{label}</button>)}
         </div>
-        <span aria-label="Beam length" title={`Beam ${ftInDash(shownEntry.beamIn)}, ${per} pallet${per === 1 ? '' : 's'} per level${from ? ` — from ${from}` : ''} (set on the rack, not here)`} className="t-num" style={{ flex: '1 0 auto', fontSize: 12, color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>
+        <span aria-label="Beam length" title={`Beam ${ftInDash(shownEntry.beamIn)}, ${per} pallet${per === 1 ? '' : 's'} per level${from ? ` — from ${from}` : ''} (set on the rack, not here)`} className="t-num" style={{ flex: '1 0 auto', fontSize: 11, color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>
           BEAM {ftInDash(shownEntry.beamIn)} · {per}P
         </span>
-        <button type="button" aria-label="Fit" title="Fit (double-click empty space)" onClick={() => setFit(n => n + 1)} className="t-btn t-btn--secondary">Fit</button>
-        <button type="button" aria-label="Full screen" title="Full screen (Esc closes)" onClick={() => setFull(n => n + 1)} className="t-icon"><Maximize2 {...ICON} /></button>
+        {/* Fit and full screen: a pair of icon buttons, no gap between them — at 440 the toolbar fits on one row */}
+        <div style={{ display: 'flex', flexShrink: 0 }}>
+          <button type="button" aria-label="Fit" title="Fit (double-click empty space)" onClick={() => setFit(n => n + 1)} className="t-icon"><Maximize {...ICON} /></button>
+          <button type="button" aria-label="Full screen" title="Full screen (Esc closes)" onClick={() => setFull(n => n + 1)} className="t-icon"><Maximize2 {...ICON} /></button>
+        </div>
       </div>
       {/* below the toolbar: the drawing (the split's share, 65% to start) | the handle | section 02 (the rest) */}
       <div ref={body} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -229,7 +247,7 @@ function List({ T, active, counts, made, rowsSelected }) {
   const madeType = made?.id ? typeById(T, made.id) : null
   return (
     <div aria-label="Elevation list section" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, padding: '12px 16px 16px', gap: 8 }}>
-      <Head title="Elevations in this layout" right={<button type="button" onClick={() => removeUnused(store)} title="Remove the elevations no bay uses" style={{ ...S.link, color: 'var(--steel)', fontSize: 12 }}>Remove unused</button>} />
+      <Head title="Elevations in this layout" right={<button type="button" onClick={() => removeUnused(store)} title="Remove the elevations no bay uses" className="t-btn" style={{ background: 'transparent', color: 'var(--steel)', fontWeight: 500, fontSize: 12, padding: '0 8px', marginRight: -8, textDecoration: 'underline' }}>Remove unused</button>} />
       <div role="list" aria-label="Elevation list" style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
         {(T?.types || []).map(t => {
           const on = active && t.id === active.id, lit = made?.id === t.id
@@ -241,18 +259,18 @@ function List({ T, active, counts, made, rowsSelected }) {
               <span aria-label="Elevation name" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ink)' }} title={nameOf(T, t)}>{nameOf(T, t)}</span>
               <span style={{ fontSize: 12, color: 'var(--steel)', whiteSpace: 'nowrap' }}><span className="t-num">{counts.get(t.id) || 0}</span> bays</span>
               {t.id === T.defaultId && <span aria-label="default" className="t-cap" style={{ padding: '0 4px', borderRadius: 2, background: 'var(--bg2)', color: 'var(--ink-2)', border: '1px solid var(--line)' }}>DEFAULT</span>}
-              <button type="button" aria-label={`Edit ${nameOf(T, t)}`} title="Change this elevation" onClick={(ev) => { ev.stopPropagation(); startEdit(store, t.id) }} className="t-icon" style={{ width: 24 }}><Pencil size={14} strokeWidth={1.5} absoluteStrokeWidth /></button>
-              <button type="button" aria-label={`${nameOf(T, t)} menu`} onClick={(ev) => { ev.stopPropagation(); const el = ev.currentTarget.closest('[role="listitem"]'); setMenu(m => (m?.id === t.id ? null : { id: t.id, el })) }} className="t-icon" style={{ width: 24 }}><MoreHorizontal size={14} strokeWidth={1.5} absoluteStrokeWidth /></button>
+              <button type="button" aria-label={`Edit ${nameOf(T, t)}`} title="Change this elevation" onClick={(ev) => { ev.stopPropagation(); startEdit(store, t.id) }} className="t-icon" style={{ width: 28 }}><Pencil size={16} strokeWidth={1.5} absoluteStrokeWidth /></button>
+              <button type="button" aria-label={`${nameOf(T, t)} menu`} onClick={(ev) => { ev.stopPropagation(); const el = ev.currentTarget.closest('[role="listitem"]'); setMenu(m => (m?.id === t.id ? null : { id: t.id, el })) }} className="t-icon" style={{ width: 28 }}><MoreHorizontal size={16} strokeWidth={1.5} absoluteStrokeWidth /></button>
               {menu?.id === t.id && <RowMenu t={t} T={T} anchor={menu.el} onClose={closeMenu} />}
             </div>
           )
         })}
       </div>
-      <div style={{ display: 'flex', gap: 4, flexShrink: 0, minWidth: 0 }}>
-        <button type="button" disabled={!rowsSelected || !active} onClick={() => active && assignSelected(store, active.id) && useElevTab.setState({ made: null })} className="t-btn t-btn--primary" style={{ flex: '1 1 0', minWidth: 0, padding: '0 8px', fontSize: 12, fontWeight: 500 }}>
+      <div style={{ display: 'flex', gap: 8, flexShrink: 0, minWidth: 0 }}>
+        <button type="button" disabled={!rowsSelected || !active} onClick={() => active && assignSelected(store, active.id) && useElevTab.setState({ made: null })} className="t-btn t-btn--primary" style={{ flex: '1 1 0', minWidth: 0, padding: '0 12px' }}>
           <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>Apply to {rowsSelected} selected row{rowsSelected === 1 ? '' : 's'}</span>
         </button>
-        <button type="button" disabled={!pr} onClick={() => startNew(store)} className="t-btn t-btn--secondary" style={{ gap: 4, padding: '0 8px', fontSize: 12, fontWeight: 500 }}><Plus size={14} strokeWidth={1.5} absoluteStrokeWidth /> New elevation</button>
+        <button type="button" disabled={!pr} onClick={() => startNew(store)} className="t-btn t-btn--secondary"><Plus {...ICON} /> New elevation</button>
       </div>
       <Note level="note" role="note" aria-label="How to assign" style={{ flexShrink: 0 }}>
         <span>{made && madeType && <><strong style={{ fontWeight: 600 }}>{made.kind === 'exists' ? 'Already exists' : made.kind === 'saved' ? 'Saved' : 'Created'}: {nameOf(T, madeType)}.</strong>{' '}</>}

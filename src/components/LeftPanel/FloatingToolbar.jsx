@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { placeFloat, floatAvoidRects, floatFreeHeight } from '../../utils/floatPlace'
-import { RP_W, PANEL_HEAD_H } from '../../utils/rightPanel'
+import { useRightPanelWidth, PANEL_HEAD_H } from '../../utils/rightPanel'
 import { openSetup } from '../../utils/project'
 import { createPortal } from 'react-dom'
 import {
@@ -1046,8 +1046,9 @@ export function FloatingToolbar() {
   const showWordmark = !collapsed
   /* the drawing toolbar's default: centred on the canvas (between the panels), 12px under the ruler */
   const showRulers = useCanvasStore(s => s.showRulers)
+  const rightW = useRightPanelWidth().width
   const dockedPos = ({ w }) => {
-    const canvasW = window.innerWidth - W - RP_W
+    const canvasW = window.innerWidth - W - rightW
     return { x: Math.round(W + Math.max(8, (canvasW - w) / 2)), y: 48 + (showRulers ? 20 : 0) + 12 }
   }
 

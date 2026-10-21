@@ -67,7 +67,10 @@ The `.t-*` classes at the end of `index.css` are the only control styles; use th
   theme shadow, 48px title row with an X; Esc and an outside click close). Floats and chips: `t-float`.
 - One message box: `components/shared/Note.jsx`, levels error / warning / note from the theme box tokens.
 - Frame: top bar **48** (Generate sits in it, left of Check layout); the left panel **240** fixed (rail 50, no drag
-  handle) and the right panel **320** fixed on both tabs; their header rows (Library / the tabs) are both **40**
+  handle); the right panel resizable by its canvas-side edge, **300–560**, each tab its own width (Properties **320**,
+  Elevations **440** to start; `utils/rightPanel.js`, localStorage, never the layout; double-click the edge resets
+  the shown tab). The Elevations list never drops under three rows: the drawing's split share is capped by section
+  02's measured floor (`ElevationsTab.jsx` secMin). Their header rows (Library / the tabs) are both **40**
   (`PANEL_HEAD_H`) on one 1px line; panel padding 16; one 1px line on each panel's canvas side. The canvas's bottom
   row (`Canvas2.jsx` BOTTOM_ROW): Hub + the Elevations chip | the notices, centred | the corner buttons (measure,
   aisle labels, double-click fit, fit), all 32 high, 12 from the bottom. The drawing toolbar opens docked at the

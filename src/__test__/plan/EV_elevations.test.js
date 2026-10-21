@@ -776,20 +776,21 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     const rp = src('components/RightPanel/index.jsx')
     expect(rp).toMatch(/>Properties<\/button>[\s\S]*>Elevations<\/button>/)
     expect(rp).toMatch(/<ElevationsTab \/>/)
-    // theme-p2: the panel is a fixed 320 on both tabs — no resize handle; the tab is remembered
-    expect(/Resize right panel/.test(rp)).toBe(false)
-    expect([RP.panelWidth({ tab: 'elevations' }), RP.panelWidth({ tab: 'properties' })]).toEqual([320, 320])
-    RP.setRightPanel({ tab: 'elevations' })
-    expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1'))).toEqual({ tab: 'elevations' })
-    RP.setRightPanel({ tab: 'properties' })
+    // the canvas-side edge resizes the panel; each tab its own width (Elevations 440 to start), remembered per browser
+    expect(rp).toMatch(/<div role="separator" aria-orientation="vertical" aria-label="Resize right panel"[\s\S]*?onPointerDown=\{startResize\}/)
+    expect([RP.panelWidth({ tab: 'elevations', propsW: 320, elevW: 520 }), RP.panelWidth({ tab: 'properties', propsW: 320, elevW: 520 })]).toEqual([520, 320])
+    RP.setRightPanel({ tab: 'elevations', elevW: 555 })
+    expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1'))).toMatchObject({ tab: 'elevations', elevW: 555 })
+    RP.setRightPanel({ tab: 'properties', elevW: 440 })
     const tab = src('components/Elevations/ElevationsTab.jsx')
     // 1. the top never moves: the toolbar and the fixed-height drawing box sit above the swap, shared by both states
     const tTop = tab.indexOf('role="toolbar" aria-label="Drawing toolbar"'), tBox = tab.indexOf('data-drawing-box'), tSwap = tab.indexOf('? <Editor ')
     expect([tTop > 0, tBox > tTop, tSwap > tBox]).toEqual([true, true, true])
     const tBar = tab.slice(tTop, tBox)
     expect(['aria-label="View"', 'BEAM {ftInDash(shownEntry.beamIn)} · {per}P', 'aria-label="Fit"', 'aria-label="Full screen"'].map(k => tBar.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
-    // the split: the drawing its share of the body below the toolbar (65% to start), the same in both states; a handle between
-    expect(tab).toMatch(/const drawH = Math\.max\(120, Math\.round\(\(bodyH - HANDLE\) \* split\)\)/)
+    // the split: the drawing its share of the body below the toolbar (65% to start), the same in both states; a handle
+    // between; never so much that the list (section 02) drops under three rows
+    expect(tab).toMatch(/const drawH = Math\.max\(120, Math\.min\(Math\.round\(\(bodyH - HANDLE\) \* split\), bodyH - HANDLE - secMin\)\)/)
     expect(tab).toMatch(/<div style=\{\{ height: drawH, flexShrink: 0,/)
     expect(tab).toMatch(/height=\{drawFix \? drawH - FIX_H : drawH\} controls=\{false\} paper fitSignal=\{fitSignal\} fullSignal=\{fullSignal\}\s+readOnly=\{!e\}/)   // read-only in the list; beams drag only in the editor
     const hIdx = tab.indexOf('role="separator" aria-orientation="horizontal" aria-label="Resize drawing"')

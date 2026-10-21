@@ -1,9 +1,13 @@
 // TP — theme-p2 (UI-AUDIT.md T3–T15, A2–A9, E2–E3, M1–M8, C2–C12): the chrome is one system. Type only on the scale
 // (11 12 13 14 15 16 18 26), weights to 600, one caption tracking (.08em), radii 2 / 4, tokens instead of hex,
-// one Note, one Modal, the frame's fixed sizes (top bar 48, panel headers 40, left 240, right 320, bottom row 32).
+// one Note, one Modal, the frame's sizes (top bar 48, panel headers 40, left 240, the right panel 300–560 by its edge,
+// bottom row 32).
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { RP_W, PANEL_HEAD_H, panelWidth } from '../../utils/rightPanel'
+import * as M from '../../utils/rightPanel'
+const { PANEL_HEAD_H, panelWidth } = M
+const mem = new Map()
+globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) }
 
 const read = (p) => readFileSync(new URL('../../' + p, import.meta.url), 'utf8').split('\r\n').join('\n')
 
@@ -100,16 +104,61 @@ describe('TP — colour and shape', () => {
 })
 
 describe('TP — the frame', () => {
-  it('TP-frame: top bar 48; the left header and the right tabs 40 on one line; left 240 fixed (rail 50), right 320 on both tabs, no drag handles', () => {
+  it('TP-frame: top bar 48; the left header and the right tabs 40 on one line; left 240 fixed (rail 50); the right panel resizable by its canvas-side edge, below the tabs', () => {
     expect(read('components/Toolbar/TopBar.jsx')).toMatch(/export const TOP_BAR_H = 48/)
-    expect([PANEL_HEAD_H, RP_W, panelWidth({ tab: 'elevations' }), panelWidth({ tab: 'properties' })]).toEqual([40, 320, 320, 320])
+    expect(PANEL_HEAD_H).toBe(40)
     const ft = read('components/LeftPanel/FloatingToolbar.jsx')
     expect(ft).toMatch(/const PANEL_W {5}= 240/)
     expect(ft).toMatch(/const RAIL_W {6}= 50/)
     expect(/aria-label="Resize library"|data-resize/.test(ft)).toBe(false)
-    expect(/Resize right panel/.test(read('components/RightPanel/index.jsx'))).toBe(false)
-    expect(read('components/RightPanel/index.jsx')).toMatch(/height:PANEL_HEAD_H, borderBottom:'1px solid var\(--line\)'/)
+    const rp = read('components/RightPanel/index.jsx')
+    expect(rp).toMatch(/height:PANEL_HEAD_H, borderBottom:'1px solid var\(--line\)'/)
+    expect(rp).toMatch(/aria-label="Resize right panel"[\s\S]*?onPointerDown=\{startResize\} onDoubleClick=\{resetPanelWidth\}/)
+    expect(rp).toMatch(/position:'absolute', top:PANEL_HEAD_H, bottom:0, left:-7, width:12/)
+    expect(rp).toMatch(/transition: drag \? 'none' : 'width/)
     expect(ft).toMatch(/top:0, height:PANEL_HEAD_H,\n\s+borderBottom:'1px solid var\(--panel-border\)'/)
+    // the toolbar's docked spot follows the live right-panel width
+    expect(ft).toMatch(/const canvasW = window\.innerWidth - W - rightW/)
+  })
+  it('TP-right-width: Properties 320 and Elevations 440 to start; 300–560; each tab its own width, remembered per browser (never the layout); double-click resets the shown tab', () => {
+    const RP = { ...M }
+    RP.useRightPanel.setState({ tab: 'properties', propsW: RP.RP_W, elevW: RP.ELEV_W })
+    expect([RP.RP_W, RP.ELEV_W, RP.RP_MIN, RP.RP_MAX]).toEqual([320, 440, 300, 560])
+    expect([panelWidth({ tab: 'properties', propsW: 320, elevW: 440 }), panelWidth({ tab: 'elevations', propsW: 320, elevW: 440 })]).toEqual([320, 440])
+    RP.setPanelWidth(400)
+    expect(RP.useRightPanel.getState().propsW).toBe(400)
+    RP.setRightPanel({ tab: 'elevations' }); RP.setPanelWidth(9999)
+    expect([RP.useRightPanel.getState().elevW, RP.useRightPanel.getState().propsW]).toEqual([560, 400])
+    RP.setPanelWidth(10)
+    expect(RP.useRightPanel.getState().elevW).toBe(300)
+    expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1'))).toEqual({ tab: 'elevations', propsW: 400, elevW: 300 })
+    RP.resetPanelWidth()
+    expect(RP.useRightPanel.getState().elevW).toBe(440)
+    RP.setRightPanel({ tab: 'properties' }); RP.resetPanelWidth()
+    expect(RP.useRightPanel.getState().propsW).toBe(320)
+    // a drag writes once, on release
+    localStorage.removeItem('trace.rightpanel.v1'); RP.setPanelWidth(350, { persist: false })
+    expect([RP.useRightPanel.getState().propsW, localStorage.getItem('trace.rightpanel.v1')]).toEqual([350, null])
+    expect([RP.clampPanelW(NaN, 440), RP.clampPanelW(299.6), RP.clampPanelW(560.4)]).toEqual([440, 300, 560])
+    // nothing about the panel goes into the canvas store
+    expect(/useCanvasStore/.test(read('utils/rightPanel.js'))).toBe(false)
+  })
+  it('TP-elevations: controls on the height scale; row buttons 28 wide; the Apply / New elevation row at the button size (13); the list keeps three rows under any split', () => {
+    const t = read('components/Elevations/ElevationsTab.jsx')
+    const off = []
+    for (const m of t.matchAll(/<(button|select|input)\b[^>]*?style=\{\{([^}]*)\}\}/g)) for (const h of m[2].matchAll(/(?:^|[ ,{])(?:height|minHeight)\s*:\s*'?(\d+)/g)) if (![32, 36, 40, 44].includes(Number(h[1]))) off.push(m[0].slice(0, 80))
+    expect(off).toEqual([])
+    expect(t.match(/className="t-icon" style=\{\{ width: 28 \}\}/g)).toHaveLength(2)
+    expect(/style=\{\{ width: 24 \}\}/.test(t)).toBe(false)
+    const foot = t.slice(t.indexOf('disabled={!rowsSelected || !active}'), t.indexOf('New elevation</button>'))
+    expect(/fontSize|fontWeight/.test(foot)).toBe(false)
+    expect(t).toMatch(/const SECTION_MIN = 276/)
+    expect(t).toMatch(/const drawH = Math\.max\(120, Math\.min\(Math\.round\(\(bodyH - HANDLE\) \* split\), bodyH - HANDLE - secMin\)\)/)
+    // section 02's floor is measured: everything but the list, plus three rows
+    expect(t).toMatch(/const LIST_MIN = 3 \* 36 \+ 2 \* 4/)
+    expect(t).toMatch(/const need = Math\.round\(sec\.offsetHeight - list\.clientHeight \+ LIST_MIN\)/)
+    // segments are full 32px buttons sharing their lines
+    expect(t).toMatch(/const seg = \(\) => \(\{ flex: 1, height: 32, marginLeft: -1/)
   })
   it('TP-generate (S5): Generate is in the top bar, left of Check layout, the same 32px secondary; Esc and a click outside close its panel', () => {
     const top = read('components/Toolbar/TopBar.jsx')
