@@ -11,9 +11,8 @@
 // frame: the two share that frame, as a real rack does (utils/bayBeam.js does
 // not count a shared end frame as an overlap).
 //
-// A half of a pair that a zone stands on is gone the same way (a zone dropped on racks, rackingArea.js
-// cutForZones): the other half stays as a single row while its own face has an aisle; a single row's bay
-// under a zone goes.
+// A half of a pair that a zone stands on is gone the same way. (A zone dropped on racks afterwards does NOT
+// come through here: utils/zoneCut.js takes only its footprint and warns about faces; piecesFromStates shared.)
 //
 // "Clear floor" is the building's floor (its inner wall face) with no zone on
 // it, an aisle deep, over the bay's whole length. Other racks are not read:

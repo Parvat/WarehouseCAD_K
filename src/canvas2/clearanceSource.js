@@ -14,6 +14,16 @@
 import { aisleColumnBlocks } from '../generate/columnCheck'
 import { layoutColumns } from '../generate/usableCapacity'
 import { previewObjects } from './dragPreview'
+import { columnFaceBlocks } from '../generate/faceAisles'
+
+/** The check's rack-to-rack blocks plus every column between a rack face and a zone or the wall
+ *  (faceAisles.js columnFaceBlocks) — measured on `objs`, the layout the blocks are drawn from. */
+export function withFaceBlocks(blocks, cols, objs, { gridSize = 40, profile } = {}) {
+  if (!cols || !cols.length) return blocks || []
+  const skip = new Set((blocks || []).map(b => b.columnIndex))
+  const face = columnFaceBlocks(objs || [], cols, { gridSize, profile: profile || undefined, skip })
+  return face.length ? [...(blocks || []), ...face] : (blocks || [])
+}
 
 const isRack = (o) => o && typeof o.type === 'string' && o.type.startsWith('rack_')
 /** Everything the aisle check reads. */
@@ -27,13 +37,15 @@ export function dragCarriesCheck(objects, ids) {
 /** { blocks, cols, x, y }: the blocks and columns to draw, and the offset to
  *  draw them at. `aisleBlocks` / `columns` = the check's last full result. */
 export function clearanceSource({ aisleBlocks, columns, objects, preview, gridSize = 40, profile, pickBothSides = false }) {
-  const held = { blocks: aisleBlocks || [], cols: columns || [], x: 0, y: 0 }
   const { ids, dx = 0, dy = 0 } = preview || {}
-  if (!ids || (!dx && !dy)) return held
-  // the drag carries everything the check reads: the same result, moved
-  if (dragCarriesCheck(objects || [], ids)) return { ...held, x: dx, y: dy }
+  // the columns between a rack face and a zone / the wall join the check's rack-to-rack blocks (withFaceBlocks)
+  const still = () => ({ blocks: withFaceBlocks(aisleBlocks, columns, objects, { gridSize, profile }), cols: columns || [], x: 0, y: 0 })
+  if (!ids || (!dx && !dy)) return still()
+  // the drag carries everything the check reads: the same result, moved (the face blocks with it — measured
+  // where the drag began, they settle on the drop like the rest)
+  if (dragCarriesCheck(objects || [], ids)) return { ...still(), x: dx, y: dy }
   const objs = previewObjects(objects || [], preview)
   const cols = layoutColumns(objs, gridSize)
   const blocks = aisleColumnBlocks({ racks: objs.filter(isRack), columns: cols, profile, gridSize, pickBothSides }).aisleBlocks
-  return { blocks, cols, x: 0, y: 0 }
+  return { blocks: withFaceBlocks(blocks, cols, objs, { gridSize, profile }), cols, x: 0, y: 0 }
 }

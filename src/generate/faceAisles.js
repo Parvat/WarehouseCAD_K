@@ -16,7 +16,7 @@
 // (faceAisleLabels) and by narrowAisles.js: every bay of such a face loses its positions (X marks, off usable).
 // Pure.
 
-import { rackFootprint, aisleLevel, rowAisleLevel, AISLE_MIN_FT, MHE_PROFILES } from './columnCheck'
+import { rackFootprint, aisleLevel, rowAisleLevel, AISLE_MIN_FT, MHE_PROFILES, underTravel } from './columnCheck'
 import { uprightXs } from '../render/rackOps'
 import { innerOutline, floorSection } from '../utils/floorGeom'
 import { fmtLenDown } from '../utils/copyChange'
@@ -176,4 +176,83 @@ export function faceAisleLabels(objects, gridSize = 40, { profile = MHE_PROFILES
     const runLo = isHoriz ? b.x : b.y, runLen = isHoriz ? b.w : b.h
     return { isHoriz, gapLo, gapHi, labelMid: (gapLo + gapHi) / 2, positions: [runLo + runLen / 2], level: g.level, text: fmtLenDown(g.width, gridSize), rackId: g.rack.id }
   })
+}
+
+/** Columns standing in the aisle in front of a rack face with a ZONE or the WALL across it, not a rack — the
+ *  clearance labels' other half (aisleColumnBlocks has the rack-to-rack aisles): one block per column, in
+ *  aisleColumnBlocks' own shape (axis, gapStart / gapEnd, near / far clear, short flags), so the same arrows
+ *  and pills draw it, measured from the column to the rack face on one side and to the zone edge or the
+ *  wall's inner face on the other. A column already in a rack-to-rack aisle (`skip`: its column indices) is
+ *  that aisle's. Drawing only — capacity, usable and Check layout read none of it. `columns`: the layout's
+ *  column squares (layoutColumns), the indices the blocks carry. */
+export function columnFaceBlocks(objects, columns, { gridSize = 40, profile = MHE_PROFILES.reach, skip = null } = {}) {
+  if (!columns || !columns.length) return []
+  const racks = objects.filter(o => o && typeof o.type === 'string' && o.type.startsWith('rack_') && o.width > 0 && o.height > 0 && ((o.rotation || 0) % 90) === 0)
+  if (!racks.length) return []
+  const zones = objects.filter(isZone)
+  const polys = new Map()
+  const polyOf = (r) => {
+    const fp = objects.find(o => o.id === r.parentId && typeof o.type === 'string' && o.type.startsWith('fp_'))
+    if (!fp) return null
+    if (!polys.has(fp.id)) polys.set(fp.id, innerOutline(fp, gridSize))
+    return polys.get(fp.id)
+  }
+  const reach = 2 * profile.aisleFt * gridSize                      // past this in front of a face it is open floor, not an aisle
+  const travelPx = (profile.travelFt ?? 8) * gridSize
+  const foots = new Map(racks.map(r => [r.id, rackFootprint(r)]))
+  const out = []
+  columns.forEach((col, ci) => {
+    if (skip && skip.has(ci)) return
+    let best = null
+    for (const r of racks) {
+      const f = foots.get(r.id), vert = !!f.rotated
+      const R = (q) => (vert ? [q.y, q.y + q.h] : [q.x, q.x + q.w]), S = (q) => (vert ? [q.x, q.x + q.w] : [q.y, q.y + q.h])
+      const [fr0, fr1] = R(f), [s0, s1] = S(f), [cr0, cr1] = R(col), [cs0, cs1] = S(col)
+      if (!(Math.min(fr1, cr1) - Math.max(fr0, cr0) > E)) continue   // not in front of this face's run
+      let face, dir, toCol
+      if (cs0 >= s1 - E) { face = s1; dir = 1; toCol = cs0 - s1 } else if (cs1 <= s0 + E) { face = s0; dir = -1; toCol = s0 - cs1 } else continue
+      if (best && toCol >= best.toCol) continue
+      // what stands nearest in front of the face, over the column's own run span
+      let d = Infinity, kind = null, zone = null
+      const take = (v, k, z = null) => { if (v > -E && v < d) { d = Math.max(0, v); kind = k; zone = z } }
+      for (const z of zones) {
+        const zb = { x: z.x, y: z.y, w: z.width, h: z.height }, [zr0, zr1] = R(zb), [zs0, zs1] = S(zb)
+        if (!(Math.min(cr1, zr1) - Math.max(cr0, zr0) > E)) continue
+        take(dir > 0 ? zs0 - face : face - zs1, 'zone', z)
+      }
+      for (const o of racks) {
+        if (o.id === r.id) continue
+        const g = foots.get(o.id), [gr0, gr1] = R(g), [gs0, gs1] = S(g)
+        if (!(Math.min(cr1, gr1) - Math.max(cr0, gr0) > E)) continue
+        if (Math.min(s1, gs1) - Math.max(s0, gs0) > E) continue      // in line with it, not in front
+        take(dir > 0 ? gs0 - face : face - gs1, 'rack')
+      }
+      const poly = polyOf(r)
+      if (poly) for (const u of [cr0, (cr0 + cr1) / 2, cr1]) {
+        const far = face + dir * 1e6
+        const iv = floorSection(poly, vert ? 'y' : 'x', u, Math.min(face, far), Math.max(face, far))
+          .find(([p, q]) => (dir > 0 ? Math.abs(p - face) < 1 : Math.abs(q - face) < 1))
+        if (iv) take(dir > 0 ? iv[1] - face : face - iv[0], 'wall')
+      }
+      if (kind !== 'zone' && kind !== 'wall') continue                // a rack across: the rack-to-rack aisle's
+      if (d > reach + E || toCol + (cs1 - cs0) > d + E) continue       // open floor, or the column is past the obstacle
+      best = { r, vert, face, dir, d, kind, zone, toCol, fr0, fr1 }
+    }
+    if (!best) return
+    const { vert, face, dir, d, kind, zone, fr0, fr1 } = best
+    const gapStart = Math.min(face, face + dir * d), gapEnd = Math.max(face, face + dir * d)
+    const colNear = vert ? col.x : col.y, colFar = vert ? col.x + col.w : col.y + col.h
+    const nearClear = colNear - gapStart, farClear = gapEnd - colFar
+    const clearPx = Math.max(nearClear, farClear)
+    out.push({
+      kind: 'face', toward: kind, zoneId: zone ? zone.id : null, betweenRows: [best.r.id], columnIndex: ci,
+      aisleFt: +(d / gridSize).toFixed(1), clearFt: +(clearPx / gridSize).toFixed(1),
+      level: aisleLevel(clearPx, profile, gridSize), blocked: false,
+      nearClearFt: +(nearClear / gridSize).toFixed(1), farClearFt: +(farClear / gridSize).toFixed(1),
+      nearShort: underTravel(nearClear, travelPx, gridSize), farShort: underTravel(farClear, travelPx, gridSize),
+      pinched: underTravel(clearPx, travelPx, gridSize),
+      axis: vert ? 'x' : 'y', gapStart, gapEnd, crossStart: fr0, crossEnd: fr1,
+    })
+  })
+  return out
 }

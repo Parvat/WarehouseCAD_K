@@ -197,12 +197,13 @@ describe('FU — arrows, sizes, columns', () => {
     const marks = blockedFaceOps(c, rk.find(r => r.id === c.rackId), GS, labelScale('medium', GS))
     expect(marks.every(m => m.stroke === '#C0392B')).toBe(true)
     const canvas = readFileSync('src/canvas2/Canvas2.jsx', 'utf8')
-    expect(canvas.indexOf('<Scene listening />')).toBeLessThan(canvas.indexOf('<Overlays '))
+    expect(canvas.indexOf('<Scene listening part="body" />')).toBeGreaterThan(0)
+    expect(canvas.indexOf('<Scene listening part="body" />')).toBeLessThan(canvas.indexOf('<Overlays part="marks"'))
     // the PDF prints the same column look
     expect(buildLayoutSVG([grid], [], GS).svg).toContain(`fill="${grid.stroke}" opacity="0.85"`)
   })
 
-  it.each(['horizontal', 'vertical'])('FU-columns-top (%s): columns paint ABOVE racks — on the canvas and in the PDF — even though the grid comes first in the array', (orientation) => {
+  it.each(['horizontal', 'vertical'])('FU-columns-top (%s): columns paint ABOVE racks AND above the labels and marks — on the canvas and in the PDF — even though the grid comes first in the array', (orientation) => {
     const objs = layout(orientation)
     const iGrid = objs.findIndex(o => o.type === 'column_grid'), iRack = objs.findIndex(o => o.type && o.type.startsWith('rack_'))
     expect(iGrid).toBeLessThan(iRack)                                                  // the array alone would bury them
@@ -217,9 +218,14 @@ describe('FU — arrows, sizes, columns', () => {
     expect(racksLen).toBeGreaterThan(1000)
     expect(svg.slice(s0, s0 + racksLen)).toBe(without.slice(w0, w0 + racksLen))
     expect(col).toBeGreaterThanOrEqual(s0 + racksLen)
-    expect(col).toBeLessThan(svg.indexOf('<g class="labels">'))                      // below the labels and marks
+    expect(col).toBeGreaterThan(svg.indexOf('<g class="labels">'))                   // above the labels and marks
     const scene = readFileSync('src/canvas2/Scene.jsx', 'utf8')
     expect(scene).toMatch(/if \(o\.type === 'column_grid'\) \{ columns\.push\(/)
-    expect(scene).toMatch(/return \{ floors, rest: rest\.concat\(columns\) \}/)
+    expect(scene).toMatch(/return \{ floors, rest, columns \}/)
+    expect(scene).toMatch(/if \(part === 'columns'\) return <>\{colEls\}<\/>/)
+    // the canvas: the scene body, then the labels and marks, then the columns, then the selection chrome
+    const canvas = readFileSync('src/canvas2/Canvas2.jsx', 'utf8')
+    const at = ['<Scene listening part="body" />', '<Overlays part="marks"', '<Scene listening part="columns" />', '<Overlays part="chrome"'].map(k => canvas.indexOf(k))
+    expect(at.every((v, i) => v > 0 && (i === 0 || v > at[i - 1]))).toBe(true)
   })
 })

@@ -4,7 +4,7 @@
 //      (generate/aisleAccess.js). Fill racking / racking areas / Generate leave a
 //      travel path where rows run wall to wall, and place no rack only a dead-end
 //      pocket reaches (an aisle an office closes against a wall). Check layout
-//      reports such racks: "No way in: aisle closed at both ends", the pocket
+//      reports such racks: "No way in: aisle closed at both ends" (a WARNING when only a zone closes it — zone-fix), the pocket
 //      highlighted.
 //   2. A racking area whose far edge lies on a wall's inner face ends with a single
 //      row flush against the wall, in the leftover, when it fits an aisle off the
@@ -126,11 +126,13 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     m.useCanvasStore.setState({ objects: objs })
     cutRows.forEach((r, i) => { const { areaId, ...hand } = r; void areaId; s().addObject({ ...hand, id: 'hand' + i }) })
     await tick()
-    const err = check().errors.filter(e => e.kind === 'no-way-in')
+    // flagged "No way in", the pocket lit: an ERROR where the aisle is closed with no zone at all, a WARNING where
+    // only the office closes it (zone-fix rule 2 — a zone never removes racks for it)
+    const c = check()
+    const err = [...c.errors.filter(e => e.kind === 'no-way-in'), ...c.warnings.filter(e => e.kind === 'zone-no-way-in')]
     expect(err.length).toBeGreaterThan(0)
-    expect(err[0].text).toBe('No way in: aisle closed at both ends')
     expect(err.flatMap(e => e.highlight).some(b => overlap(b, pocket))).toBe(true)
-    expect(err[0].highlight[0].color).toBe(m.LC.HL.red)
+    for (const e of err) expect([e.text, e.highlight[0].color]).toEqual(e.severity === 'error' ? ['No way in: aisle closed at both ends', m.LC.HL.red] : ['No way in: a zone closes this aisle at both ends', m.LC.HL.amber])
   })
 
   it('AA-tie (rectangle): vertical, an office 48–85\' across — opening its pocket costs the same bays (2) on the office\'s side as against the wall: the strip is cut on the office\'s side, in its lane on the bay grid, and the rows stay flush against the building wall. Horizontal, the office 40–70\' across overlaps a pair\'s half by 3": that half runs on from the pair\'s last frame (no hole), so a strip against the office would cut it — the wall\'s strip is cheaper and is taken, no tie', async () => {
@@ -210,8 +212,9 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     const cut = (travelFt) => m.AA.cutOffRacks(s().objects, fp, { gridSize: GS, travelFt, aisleFt: 10.5 }).cutOff.map(c => c.id).sort()
     build(8); expect(cut(8)).toEqual([])
     build(6); expect(cut(8)).toEqual(['ra']); expect(cut(6)).toEqual([])
-    expect(m.LC.checkLayout(s().objects, { gridSize: GS, profile: m.MHE_PROFILES.reach }).errors.some(e => e.kind === 'no-way-in')).toBe(true)
-    expect(m.LC.checkLayout(s().objects, { gridSize: GS, profile: m.MHE_PROFILES.vna }).errors.some(e => e.kind === 'no-way-in')).toBe(false)
+    // the staging zone closes it: a warning (zone-fix), read with the forklift's travel width
+    expect(m.LC.checkLayout(s().objects, { gridSize: GS, profile: m.MHE_PROFILES.reach }).warnings.some(e => e.kind === 'zone-no-way-in')).toBe(true)
+    expect(m.LC.checkLayout(s().objects, { gridSize: GS, profile: m.MHE_PROFILES.vna }).warnings.some(e => e.kind === 'zone-no-way-in')).toBe(false)
   })
 
   /* ── 2. A far edge on a wall ── */

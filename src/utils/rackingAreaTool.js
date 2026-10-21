@@ -12,15 +12,15 @@
 //     leaves everything as it was.
 //   - A zone placed, moved, resized or deleted (any way at all — the left
 //     panel, a drag, a resize, a nudge, a paste) is caught after the fact by
-//     the area keeper and taken back. Inside or beside a racking area (within
-//     an aisle of its box) it refits that area at once, as one history entry
-//     with the zone change: racks come back at their pattern places where the
-//     zone left, go where it now stands, and faces beside it lose their bays.
-//     Racks under it that no area manages are cut at once, no question
-//     (rackingArea.js cutForZones: a half a zone covers goes, a face it leaves
-//     without an aisle goes) — the zone stays where it was dropped, the whole
-//     change is one entry, and the bar notes it: "Office placed · 12 bays
-//     removed". They don't come back when the zone shrinks — undo does that.
+//     the area keeper and taken back, then landed with its consequences as ONE
+//     history entry (utils/zoneCut.js applyZones): only the bays its footprint
+//     covers go (a pair's half it covers goes, the other half stays a single
+//     row), a piece shorter than two bays left beside it goes too, and every
+//     bay a zone no longer covers comes back exactly as it was — moved off,
+//     shrunk, deleted. A face the zone leaves without an aisle is a warning
+//     (Check layout, the plan), never a delete. Any rack: Generate's, a Fill
+//     area's, hand-placed. The bar notes it: "Office moved · 13 bays removed ·
+//     9 restored".
 //   - A racking area deleted (any way — Delete, the panel's bin, a cut) while
 //     its racks are still there: taken back the same way, and asked "Delete
 //     the racks in this area too?" [Keep racks] [Delete racks]; either answer
@@ -30,8 +30,8 @@
 
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
-import { planAreaResize, planAreaRebuild, areaEdits, areaSettings, cutForZones, removedRowBays, isArea, isZone, boxOf } from '../generate/rackingArea'
-import { useRackingSettings } from './fillTool'
+import { planAreaResize, planAreaRebuild, areaEdits, areaSettings, removedRowBays, isArea, isZone, boxOf } from '../generate/rackingArea'
+import { applyZones } from './zoneCut'
 import { skipNextAction } from './rowGroupTool'
 import { rebuildAisles } from './aisleRebuild'
 import { floorFor, clampGrowth } from './floorClamp'
@@ -115,57 +115,45 @@ export function requestAreaRebuild(store, areaId, settings, { gridSize } = {}) {
   return askOr(areaEdits(st.objects, area).count ? EDIT_WARNING : null, run)
 }
 
-/** The racking areas a zone change reaches: the zone (where it is now, or where it was) inside the
- *  area or beside it — within a forklift aisle of its box, where a face could lose its aisle. */
-function areasNear(objects, boxes, gridSize) {
-  const reach = (a) => (a.pattern?.aisleFt ?? areaSettings(a).aisleFt) * gridSize
-  const meets = (p, q) => Math.min(p.x + p.w, q.x + q.w) - Math.max(p.x, q.x) > 1e-6 && Math.min(p.y + p.h, q.y + q.h) - Math.max(p.y, q.y) > 1e-6
-  return objects.filter(o => isArea(o) && boxes.some(b => { const a = boxOf(o), d = reach(o); return meets({ x: a.x - d, y: a.y - d, w: a.w + 2 * d, h: a.h + 2 * d }, b) }))
-}
-
-/** Refit areas `ids` in `objects`: each shows its pattern through its box again with the zones as
- *  they are now — racks come back where a zone left, go where it now is, and faces beside it lose
- *  their bays (planAreaResize to its own box). */
-function refitAreas(objects, ids, gridSize, newId = nanoid) {
-  let objs = objects
-  for (const id of ids) {
-    const a = objs.find(o => o.id === id)
-    if (a) objs = planAreaResize(objs, id, boxOf(a), { gridSize, newId }) || objs
-  }
-  return objs
-}
-
 const zb = (o) => ({ x: o.x, y: o.y, w: o.width, h: o.height })
-/** A zone change landed: the racking areas it reaches refitted (where the zones are now, and where they were:
- *  `was`), then the racks no area manages cut for the zones (cutForZones). The keeper commits it; the resize
- *  preview draws what it removes (zonePreview) — the same function, so they cannot disagree. */
-export function landZones(objects, zones, was = [], { gridSize = 40, newId = nanoid } = {}) {
-  const boxes = [...zones.map(zb), ...was.map(zb)]
-  const areas = boxes.length ? areasNear(objects, boxes, gridSize).map(a => a.id) : []
-  const objs = refitAreas(objects, areas, gridSize, newId)
-  // (an area's own racks are clear of the zones after its refit: untouched)
-  return cutForZones(objs, zones.map(z => zb(objs.find(o => o.id === z.id) || z)), { gridSize, aisleFt: useRackingSettings.getState().aisleFt ?? 10.5, newId }).objects
+const isRackObj = (o) => typeof o?.type === 'string' && o.type.startsWith('rack_')
+/** A zone change landed (utils/zoneCut.js applyZones): every rack worked out again from what it was before any zone
+ *  cut it, against the zones as they are now. `before`: the layout before the change (its zones tell a cut rack
+ *  edited by hand since from one simply waiting; a zone it deleted hands back what it covered — unless the same
+ *  action deleted racks too: a bulk delete brings nothing back). The keeper commits it; the resize preview draws
+ *  what it removes (zonePreview) — the same function, so they cannot disagree. */
+export function landZones(objects, before = [], { gridSize = 40, newId = nanoid } = {}) {
+  const ids = new Set(objects.map(o => o.id))
+  const droppedZones = before.filter(o => isZone(o) && !ids.has(o.id))
+  const bulk = before.some(o => isRackObj(o) && !ids.has(o.id))
+  return applyZones(objects, {
+    gridSize, newId,
+    prevZones: before.filter(isZone).map(zb),
+    extraBases: bulk ? [] : droppedZones.flatMap(z => z.cutRacks || []),
+  })
 }
 /** While zone `zoneId` is resized: the bays (per row) it will remove on release, as world px boxes. */
 export function zonePreview(objects, zoneId, was, { gridSize = 40 } = {}) {
   const z = objects.find(o => o.id === zoneId)
   if (!z) return []
   let n = 0
-  return removedRowBays(objects, landZones(objects, [z], was ? [was] : [], { gridSize, newId: () => 'preview' + (++n) }), gridSize)
+  const before = objects.map(o => (o.id === zoneId && was ? { ...o, ...was } : o))
+  return removedRowBays(objects, landZones(objects, before, { gridSize, newId: () => 'preview' + (++n) }).objects, gridSize)
 }
 
-/** The bar's note for zone `z`: placed / resized / moved, and the bays (per row) the change removed. */
-const zoneNote = (z, was, removed) => {
-  const how = !was ? 'placed' : (Math.abs(was.width - z.width) > 1e-6 || Math.abs(was.height - z.height) > 1e-6) ? 'resized' : 'moved'
-  return `${z.label || 'Zone'} ${how}${removed > 0 ? ` · ${removed} bay${removed === 1 ? '' : 's'} removed` : ''}`
+/** The bar's note for zone `z`: placed / resized / moved / deleted, and the bays (per row) the change removed and
+ *  brought back — "Office moved · 13 bays removed · 9 restored". */
+export const zoneNote = (z, was, removed, restored = 0, deleted = false) => {
+  const how = deleted ? 'deleted' : !was ? 'placed' : (Math.abs(was.width - z.width) > 1e-6 || Math.abs(was.height - z.height) > 1e-6) ? 'resized' : 'moved'
+  const n = (k) => `${k} bay${k === 1 ? '' : 's'}`
+  return `${z.label || 'Zone'} ${how}${removed > 0 ? ` · ${n(removed)} removed` : ''}${restored > 0 ? ` · ${restored} restored` : ''}`
 }
 
 /** Zones placed / moved / resized / deleted, and racking areas deleted with their racks still
  *  there: take the action back, then
- *    - a zone inside or beside a racking area refits that area at once (refitAreas), as ONE
- *      history entry with the zone change;
- *    - racks it reaches that no area manages are cut at once (cutForZones), in the same entry, and
- *      the bar notes it ("Office placed · 12 bays removed");
+ *    - land the zone change with its consequences (landZones → zoneCut.js applyZones) as ONE
+ *      history entry — covered bays go, uncovered ones come back — and the bar notes it
+ *      ("Office moved · 13 bays removed · 9 restored");
  *    - a deleted area with its racks asks "Delete the racks in this area too?".
  *  Returns the unsubscribe. */
 export function installAreaKeeper(store) {
@@ -190,18 +178,15 @@ export function installAreaKeeper(store) {
     // zones placed, moved or resized (and deleted): where they are now, and where they were
     const moved = st.objects.filter(o => isZone(o) && geo(o) !== geo(B.get(o.id)))
     const dropped = before.filter(o => isZone(o) && !afterIds.has(o.id))
-    const touched = [...moved.map(zb), ...moved.map(o => B.get(o.id)).filter(Boolean).map(zb), ...dropped.map(zb)]
     // racking areas this action deleted whose racks are still there
     const gone = before.filter(o => isArea(o) && !afterIds.has(o.id)).map(o => o.id)
     const orphaned = new Set(gone.filter(id => st.objects.some(o => o.areaId === id)))
-    // the areas the zones reach refit; racks a zone reaches that none of them manages are cut
-    const areas = touched.length ? areasNear(st.objects, touched, gs).map(a => a.id) : []
-    const managed = new Set(areas)
-    const isManaged = (id) => { const r = st.objects.find(o => o.id === id); return !!(r && r.areaId && managed.has(r.areaId)) }
-    // racks a zone change reaches that no refitted area manages: cut at once (cutForZones)
-    const cutNow = moved.length ? cutForZones(st.objects, moved.map(zb), { gridSize: gs, aisleFt: useRackingSettings.getState().aisleFt ?? 10.5, newId: () => 'probe', skip: (r) => isManaged(r.id) }).count : 0
+    // does the zone change cut or bring back anything? (zoneCut.js: probed, not committed)
+    const zoneChange = moved.length > 0 || dropped.length > 0
+    const probe = zoneChange ? landZones(st.objects, before, { gridSize: gs, newId: () => 'probe' }).changed : false
     if (useAreaPrompt.getState().note) useAreaPrompt.setState({ note: null })
-    if (!cutNow && !orphaned.size && !areas.length) { if (moved.length === 1) useAreaPrompt.setState({ note: zoneNote(moved[0], B.get(moved[0].id), 0) }); return }
+    const one = moved.length + dropped.length === 1 ? (moved[0] || dropped[0]) : null
+    if (!probe && !orphaned.size) { if (one) useAreaPrompt.setState({ note: zoneNote(one, B.get(one.id), 0, 0, !moved.length) }); return }
     // take the action back (its entry dropped), then land it with its consequences at once (or ask, for an area deleted)
     const after = st.objects
     queueMicrotask(() => {
@@ -226,17 +211,16 @@ export function installAreaKeeper(store) {
         })
         return
       }
-      /* the zone change with its consequences, as one entry, at once: the areas refitted, then the racks
-         no area manages cut for the zones (cutForZones) */
+      /* the zone change with its consequences, as one entry, at once (zoneCut.js applyZones) */
       const land = () => {
-        const objs = landZones(after, moved, [...moved.map(o => B.get(o.id)).filter(Boolean), ...dropped], { gridSize: gs, newId: nanoid })
+        const objs = landZones(after, before, { gridSize: gs, newId: nanoid }).objects
         const anchor = (moved[0] || objs.find(o => isZone(o)) || objs.find(o => isArea(o)) || {}).id
         // written while this keeper looks away: it is the zone change's own result, not a new one
         busy = true
         try { commitAll(store, objs, anchor) } finally { busy = false }
         const c = store.getState()
         lastHistory = c.history; lastIndex = c.historyIndex; lastObjects = c.objects
-        if (moved.length === 1) useAreaPrompt.setState({ note: zoneNote(moved[0], B.get(moved[0].id), removedRowBays(after, c.objects, gs).length) })
+        if (one) useAreaPrompt.setState({ note: zoneNote(one, B.get(one.id), removedRowBays(before, c.objects, gs).length, removedRowBays(c.objects, before, gs).length, !moved.length) })
       }
       land()
     })

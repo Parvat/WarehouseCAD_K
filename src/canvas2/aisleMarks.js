@@ -17,11 +17,11 @@ const HEAD_PX = 9, MIN_DRAW_PX = 1
 
 const toXY = (axis) => (d, r) => (axis === 'y' ? { x: r, y: d } : { x: d, y: r })
 
-/** The two clearance arrows for one aisle block. Each runs from the column's
- *  edge to the rack face on that side, arrowhead at the rack, label centred
- *  on the shaft. A side with no gap (column touching the rack) has nothing
- *  to measure and is skipped. When the aisle is pinched (neither side
- *  reaches travelFt) both are drawn in red and say so. */
+/** The two clearance arrows for one aisle block — ALWAYS both. Each runs from the column's edge to what
+ *  stands on that side (a rack face, or a zone or the wall: columnFaceBlocks), arrowhead at it, label
+ *  centred on the shaft. A side with no gap to draw (the column against it) keeps its label — "0' clear" —
+ *  as a `stub`, with no arrow. When the aisle is pinched (neither side reaches travelFt) both are drawn in
+ *  red and say so. */
 export function clearanceMarks(block, col, zoom = 1, gridSize = 40) {
   const axis = block.axis
   const P = toXY(axis)
@@ -36,13 +36,13 @@ export function clearanceMarks(block, col, zoom = 1, gridSize = 40) {
   const out = []
   for (const s of sides) {
     const len = Math.abs(s.to - s.from)
-    if (len * zoom < MIN_DRAW_PX) continue
-    const dir = Math.sign(s.to - s.from)
+    const stub = len * zoom < MIN_DRAW_PX
+    const dir = Math.sign(s.to - s.from) || (s.side === 'near' ? -1 : 1)
     const h = Math.min(head, len)
     const color = s.short ? SHORT_COLOR : CLEAR_COLOR
     const base = s.to - dir * h
     out.push({
-      side: s.side, ft: s.ft, color, short: s.short, style: 'arrow', dash: null,
+      side: s.side, ft: s.ft, color, short: s.short, style: 'arrow', dash: null, stub,
       shaft: [P(s.from, rMid), P(base, rMid)],
       arrowhead: [P(s.to, rMid), P(base, rMid - h / 2), P(base, rMid + h / 2)],
       label: { ...P((s.from + s.to) / 2, rMid), text: s.short ? `${s.ft}' — under travel` : `${s.ft}' clear` },

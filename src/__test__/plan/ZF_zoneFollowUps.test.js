@@ -155,9 +155,13 @@ describe.each(ORIENT)('ZF — %s', (_, vert) => {
     const g = geom(single), f = rackFootprint(single), mid = g.r0 + (99 / 12) * GS * 1.5, rot = g.vert
     const zb = rot ? { x: f.x - GS, y: mid - 2 * GS, w: f.w + 2 * GS, h: 4 * GS } : { x: mid - 2 * GS, y: f.y - GS, w: 4 * GS, h: f.h + 2 * GS }
     s().addObject({ type: 'zone_washroom', label: 'Washroom', x: zb.x, y: zb.y, width: zb.w, height: zb.h, parentId: single.parentId, layerId: 'zones' }); await tick(); await tick()
-    expect(row().filter(o => o.type === 'rack_row').length).toBe(2)
+    // the washroom over its 2nd bay: that bay goes, and the 1-bay piece left beside it goes with the cut (zoneCut.js,
+    // shorter than 2 bays) — the 2-bay piece stays
+    expect(row().filter(o => o.type === 'rack_row').map(o => o.beams.length)).toEqual([2])
     const z = s().objects.find(o => o.type === 'zone_washroom' && Math.abs(o.x - zb.x) < 1)
     s().commitObjectUpdate(z.id, rot ? { x: z.x + 60 * GS } : { y: z.y + 60 * GS }); await tick(); await tick()
+    // moved away: the single comes back whole, exactly as it was (4 bays, its own id)
+    expect(row().filter(o => o.type === 'rack_row').map(o => [o.id, o.beams.length])).toEqual([[single.id, 4]])
     const pair = row().find(o => o.type === 'rack_double_row')
     let grown = pair
     for (let i = 0; i < 4; i++) grown = { ...grown, ...Panel.addBayUpdate(grown, 96, GS) }

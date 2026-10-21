@@ -13,6 +13,7 @@ import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from '.
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
+import { zoneResizeBox, snapOffKey } from './zoneResizeSnap'
 import { computeLiveFlue, resolveFlueBase, flueCommitFields, flueDragCentre, flueDragPlacement } from './liveFlue'
 import { usePlacement, movePlacement, commitPlacement } from '../utils/placement'
 import { rebuildAisles } from '../utils/aisleRebuild'
@@ -752,7 +753,20 @@ export function useCanvasInteraction({
         const snapFn = SNAP_FREE.has(origObj.type)
           ? (v => v)
           : (v => (st.snapToGrid ? snapToGrid(v, st.gridSize, st.snapUnit) : v))
-        const updates = applyResize(origObj, handle, dx, dy, snapFn, !!evt.shiftKey)
+        /* A zone's edge or corner snaps exactly as a zone MOVE does (zoneResizeSnap.js: the move's own smart
+           guides — rack faces, walls, other zones, columns — then the grid), the guide lines shown live; Alt
+           held: no snap, as for a move. */
+        const zoneEdge = typeof origObj.type === 'string' && origObj.type.startsWith('zone_') && !rot
+        const noSnap = snapOffKey(evt)
+        let updates
+        if (zoneEdge) {
+          const z = zoneResizeBox(origObj, handle, pos.x - startWorld.x, pos.y - startWorld.y, {
+            objects: snapTargets(st.objects, st.layers, null), gridSize: st.gridSize, zoom: view.current.zoom,
+            snapToGrid: st.snapToGrid, snapUnit: st.snapUnit, noSnap,
+          })
+          updates = z.box
+          setSmartGuides(z.guides)
+        } else updates = applyResize(origObj, handle, dx, dy, snapFn, !!evt.shiftKey)
 
         /* Anchor-point correction for a rotated rect: growing/shrinking
            shifts the rotation pivot (the object's own centre) unless the
@@ -793,7 +807,7 @@ export function useCanvasInteraction({
         /* A racking area or zone stays inside its building: an edge dragged out stops at the
            wall's inner face, and snaps onto it within 8 screen px (utils/floorClamp.js). */
         if (origObj.type === 'racking_area' || (typeof origObj.type === 'string' && origObj.type.startsWith('zone_'))) {
-          Object.assign(updates, clampResizeUpdates(st.objects, origObj, updates, { gridSize: st.gridSize, snap: 8 / view.current.zoom }))
+          Object.assign(updates, clampResizeUpdates(st.objects, origObj, updates, { gridSize: st.gridSize, snap: zoneEdge && noSnap ? 0 : 8 / view.current.zoom }))
         }
 
         st.updateObject(objId, updates)
@@ -973,17 +987,19 @@ export function useCanvasInteraction({
           const guideObjects = st.objects.map(o => o.id === d.ids[0]
             ? { ...o, x: d.origin.x, y: d.origin.y + yShift, height: liveFlue.targetHeight, flueSpaceIn: liveFlue.targetFlueIn }
             : o)
-          const { guides, snapDx, snapDy } = computeSmartGuides(
+          // Alt held: no snap at all — no guides, no grid, no in-line (zoneResizeSnap.js snapOffKey)
+          const noSnap = snapOffKey(evt)
+          const { guides, snapDx, snapDy } = noSnap ? { guides: [], snapDx: null, snapDy: null } : computeSmartGuides(
             d.ids, targetsFor(guideObjects), st.gridSize, view.current.zoom, dx, dy)
 
           if (snapDx != null) dx = snapDx
-          else if (st.snapToGrid) dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
+          else if (st.snapToGrid && !noSnap) dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
           if (snapDy != null) dy = snapDy
-          else if (st.snapToGrid) dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
+          else if (st.snapToGrid && !noSnap) dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
           /* in-line snap (canvas2/inlineSnap.js): an end near another rack's end in its line goes onto
              that rack's end upright, shared — it wins over the guides and the grid on both axes (a dragged
              Row group row: its excluded racks aren't in-line targets either, and the axis lock still wins) */
-          {
+          if (!noSnap) {
             const pre = flueDragPlacement(d.origin, d.size, dx, dy, liveFlue.targetHeight)
             const here = { ...st.objects.find(o => o.id === d.ids[0]), x: pre.x, y: pre.y, height: liveFlue.targetHeight, flueSpaceIn: liveFlue.targetFlueIn }
             const inl = inlineSnap(here, targetsFor(st.objects), st.gridSize, Math.min(12 / view.current.zoom, st.gridSize))
@@ -1022,11 +1038,13 @@ export function useCanvasInteraction({
            precise, deliberately-aimed adjustment; grid-snap is still the
            fallback on an axis with no nearby guide, preserving that
            already-existing canvas2 behaviour rather than replacing it. */
-        const { guides, snapDx, snapDy } = computeSmartGuides(
+        // Alt held: no snap at all — no guides, no grid, no wall magnet, no in-line (snapOffKey)
+        const noSnap = snapOffKey(evt)
+        const { guides, snapDx, snapDy } = noSnap ? { guides: [], snapDx: null, snapDy: null } : computeSmartGuides(
           d.ids, targetsFor(st.objects), st.gridSize, view.current.zoom, dx, dy)
 
         if (snapDx != null) dx = snapDx
-        else if (st.snapToGrid) {
+        else if (st.snapToGrid && !noSnap) {
           /* Snap the resulting POSITION, not the delta — snapping the delta
              would preserve whatever sub-grid offset the object started with.
              Only the GRABBED object snaps; the rest of the selection moves by
@@ -1035,21 +1053,21 @@ export function useCanvasInteraction({
           dx = snapToGrid(d.origin.x + dx, st.gridSize, st.snapUnit) - d.origin.x
         }
         if (snapDy != null) dy = snapDy
-        else if (st.snapToGrid) {
+        else if (st.snapToGrid && !noSnap) {
           dy = snapToGrid(d.origin.y + dy, st.gridSize, st.snapUnit) - d.origin.y
         }
         /* a racking area or zone dragged as a body stays inside its building: its leading
            edges stop at (and snap onto) the wall's inner face (utils/floorClamp.js) */
         if (d.ids.length === 1) {
           const g = st.objects.find(o => o.id === d.ids[0])
-          if (g && (g.type === 'racking_area' || g.type.startsWith('zone_'))) ({ dx, dy } = clampDragDelta(st.objects, g, dx, dy, { gridSize: st.gridSize, snap: 8 / view.current.zoom }))
+          if (g && (g.type === 'racking_area' || g.type.startsWith('zone_'))) ({ dx, dy } = clampDragDelta(st.objects, g, dx, dy, { gridSize: st.gridSize, snap: noSnap ? 0 : 8 / view.current.zoom }))
         }
         /* in-line snap (canvas2/inlineSnap.js): the grabbed rack's end near another rack's end in its
            line goes onto that rack's end upright, shared — it wins over the guides and the grid (a dragged
            Row group row: its excluded racks aren't in-line targets either, and the axis lock still wins) */
         {
           const g = st.objects.find(o => o.id === d.grabbedId)
-          if (g && PORTED_RACK_TYPES.has(g.type)) {
+          if (g && PORTED_RACK_TYPES.has(g.type) && !noSnap) {
             const inl = inlineSnap({ ...g, x: d.origin.x + dx, y: d.origin.y + dy }, targetsFor(st.objects), st.gridSize, Math.min(12 / view.current.zoom, st.gridSize))
             if (inl) { dx += inl.ddx; dy += inl.ddy; guides.push(inl.guide) }
           }
@@ -1087,6 +1105,7 @@ export function useCanvasInteraction({
       const rd = resizeDrag.current
       resizeDrag.current = null
       if (useZoneEdit.getState().zoneId) useZoneEdit.setState({ zoneId: null, was: null })
+      if (rd) setSmartGuides([])   // a zone edge's snap guides
       if (rd) {
         /* ONE history entry for the whole gesture — commitObjectUpdate pushes
            history; updateObject (used for every frame of the live preview

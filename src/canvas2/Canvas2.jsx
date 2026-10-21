@@ -475,7 +475,22 @@ export function Canvas2() {
               listening layer redraws that unused hit canvas on every frame —
               pan, zoom and drag included. */}
           <Layer listening={false}>
-            <Scene listening />
+            <Scene listening part="body" />
+          </Layer>
+          {/* the labels and marks — aisle and cross-aisle labels, column clearances, X marks, upright flags,
+              oversized bays — between the scene and its columns: a column is always drawn above them */}
+          <Layer listening={false}>
+            <Overlays part="marks" selectedObjects={selectedObjects} gridSize={gridSize} marquee={marquee}
+              objects={objects} showAisles={showAisles} activeWall={activeWall}
+              smartGuides={smartGuides} showMarks={columnCheckShowMarks}
+              aisleBlocks={columnCheckResult.aisleBlocks} columns={columnCheckColumns}
+              rackConflicts={columnCheckResult.rackConflicts}
+              pickBlocks={columnCheckResult.pickBlocks}
+              uprightHits={columnCheckResult.uprightHits} />
+          </Layer>
+          {/* the columns, above every label and mark (Scene.jsx `part`) */}
+          <Layer listening={false}>
+            <Scene listening part="columns" />
           </Layer>
           {/* overlay — selection outline(s), marquee, resize/rotate handles.
               Never listens: all of it is pure paint (CANVAS2.md rule 4) —
@@ -484,7 +499,7 @@ export function Canvas2() {
               path selection and object drag already use. Nothing here is a
               second, independent input surface. */}
           <Layer listening={false}>
-            <Overlays selectedObjects={selectedObjects} gridSize={gridSize} marquee={marquee}
+            <Overlays part="chrome" selectedObjects={selectedObjects} gridSize={gridSize} marquee={marquee}
               objects={objects} showAisles={showAisles} activeWall={activeWall}
               smartGuides={smartGuides} showMarks={columnCheckShowMarks}
               aisleBlocks={columnCheckResult.aisleBlocks} columns={columnCheckColumns}

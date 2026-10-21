@@ -25,13 +25,12 @@
 //
 // A ZONE (`zone_*`: office, staging, washroom, custom area) is a rectangle
 // no racking may enter: Fill racking treats it as a hole with wall edges, and
-// racks under a zone that is placed, moved or resized over them are trimmed
-// to their bays outside it (clearZone).
+// racks under a zone that is placed, moved or resized over them lose only the
+// bays its footprint covers — and get them back when it leaves (utils/zoneCut.js).
 
 import { planFill, areaPattern, patternFill, innerOutline, snapToWalls, DEFAULT_FILL_SETTINGS, isZone } from './fillRacking'
 import { rackFootprint } from './columnCheck'
 import { splitRackForBayDelete } from '../utils/baySplit'
-import { dropUnreachableFaces } from './faceReach'
 import { rebuildAisles } from '../utils/aisleRebuild'
 import { uprightXs } from '../render/rackOps'
 import { nanoid } from 'nanoid'
@@ -246,12 +245,6 @@ export function planAreaRebuild(objects, areaId, settings, { gridSize = 40, newI
   return rebuildAisles(next, newId).objects
 }
 
-/** The racks with a bay under `zone`. */
-export function racksUnderZone(objects, zone, gridSize = 40) {
-  const z = boxOf(zone)
-  return objects.filter(o => isRack(o) && o.width > 0 && bayBoxes(o, gridSize).some(b => overlaps(b, z))).map(o => o.id)
-}
-
 /** A rack's bays per row as world px boxes: a single's bay full depth, a pair's bay as its two halves. */
 export function rowBayBoxes(obj, gridSize = 40) {
   const { xs, upW } = uprightXs(obj, gridSize)
@@ -279,40 +272,3 @@ export function removedRowBays(before, after, gridSize = 40) {
 
 /** Bays per row: a back-to-back pair's bay is two (its two rows), a single's one — what "N bays removed" counts. */
 export const rowBays = (objects) => objects.filter(o => isRack(o) && Array.isArray(o.beams)).reduce((t, o) => t + o.beams.length * (o.type === 'rack_double_row' ? 2 : 1), 0)
-
-/** The ONE rule for a zone dropped, moved or resized on racks (Generate's, hand-placed, an area's hand-edited
- *  ones — the caller leaves a racking area's own racks to its refit, `skip`): every rack under a zone of
- *  `zones` (world px boxes) or within an aisle of one is cut for EVERY zone on the floor — a bay half a zone
- *  covers goes (the other half stays, a single row on the same uprights), a single's bay under it goes, and a
- *  pick face the zone leaves without an aisle in front of it goes (faceReach.js, the rule Fill racking and
- *  Generate use). Faces against a wall are not this rule's business: walls don't count here. Nothing comes
- *  back when a zone shrinks (undo does that). Returns { objects, removedBays (rowBays), count (racks cut) }. */
-export function cutForZones(objects, zones, { gridSize = 40, aisleFt = 10.5, newId = nanoid, skip = () => false } = {}) {
-  const aislePx = aisleFt * gridSize
-  const reach = zones.map(z => ({ x: z.x - aislePx, y: z.y - aislePx, w: z.w + 2 * aislePx, h: z.h + 2 * aislePx }))
-  const foot = (o) => { const f = rackFootprint(o); return { x: f.x, y: f.y, w: f.w, h: f.h } }
-  const cand = objects.filter(o => isRack(o) && o.width > 0 && Array.isArray(o.beams) && !skip(o) && reach.some(q => overlaps(foot(o), q)))
-  if (!cand.length) return { objects, removedBays: 0, count: 0 }
-  const every = objects.filter(isZone).map(boxOf)
-  const far = 1e9, open = [{ x: -far, y: -far }, { x: far, y: -far }, { x: far, y: far }, { x: -far, y: far }]
-  // one rack at a time: its pieces are exactly what comes back for it (a rack already a piece of another keeps its own)
-  const piecesOf = new Map(cand.map(r => [r.id, dropUnreachableFaces([r], { poly: open, zones: every, aislePx, gridSize, newId })]))
-  const became = new Map()
-  for (const r of cand) { const ps = piecesOf.get(r.id); if (!(ps.length === 1 && ps[0] === r)) became.set(r.id, ps.map(p => p.id)) }
-  if (!became.size) return { objects, removedBays: 0, count: 0 }
-  const out = objects.flatMap(o => (became.has(o.id) ? piecesOf.get(o.id) : [o]))
-  const next = carryPlaced(objects, out, became)
-  return { objects: rebuildAisles(next, newId).objects, removedBays: rowBays(objects) - rowBays(next), count: became.size }
-}
-
-/** Clear the racks under `zone`: each keeps only its bays outside it (a row
- *  crossing the zone becomes pieces either side; a rack wholly under it goes).
- *  Returns { objects, count } (count = racks touched). */
-export function clearZone(objects, zone, { gridSize = 40, newId = nanoid } = {}) {
-  const z = boxOf(zone)
-  const ids = racksUnderZone(objects, zone, gridSize)
-  if (!ids.length) return { objects, count: 0 }
-  const t = trimBays(objects, ids, (b) => overlaps(b, z), gridSize, newId)
-  const next = carryPlaced(objects, t.objects, t.became)
-  return { objects: rebuildAisles(next, newId).objects, count: ids.length }
-}

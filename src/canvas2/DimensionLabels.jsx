@@ -239,19 +239,21 @@ export function FpDimLabels({ obj, zoom, gridSize, activeWallIdx = null }) {
 /* An aisle's label depends on the aisle and its two rows only, so it is a
    memoised item fed exactly those: a drag redraws only the labels of aisles
    beside a moved rack, a selection change redraws none. */
-export const AisleLabelItem = memo(function AisleLabelItem({ aisle, row1, row2, lz, gridSize, profile = null }) {
-  return <AisleLabel aisle={aisle} objects={[row1, row2].filter(Boolean)} lz={lz} gridSize={gridSize} profile={profile} />
+export const AisleLabelItem = memo(function AisleLabelItem({ aisle, row1, row2, lz, gridSize, profile = null, columns = EMPTY }) {
+  return <AisleLabel aisle={aisle} objects={[row1, row2].filter(Boolean)} lz={lz} gridSize={gridSize} profile={profile} columns={columns} />
 })
 
 /* Drawing size: `lz` is the Label size scale (render/labelSize.js), never
    the view zoom — a label is a fixed size in feet, like CAD text. */
-export function AisleLabel({ aisle, objects, lz, gridSize, profile = null }) {
+export function AisleLabel({ aisle, objects, lz, gridSize, profile = null, columns }) {
   /* Geometry from aisleLabelLayout (hitTest.js) — the same stations the pick
      tests against, so a label is exactly as clickable as it is visible.
      rackFootprint-based (BUG 45) through aisleRect, so a 90°-rotated pair
      measures its true gap. */
   /* `profile`: the forklift to grade the aisle against (the warning colours), null when they are off */
-  const L = aisleLabelLayout(aisle, objects, gridSize, { profile })
+  /* `columns`: the layout's column squares — the label slides along the aisle off any column (hitTest.js
+     aisleLabelStation), at the size it is drawn */
+  const L = aisleLabelLayout(aisle, objects, gridSize, { profile, columns, lz })
   if (!L) return null
   return <AisleLabelView L={L} name={'aisle:' + aisle.id} lz={lz} />
 }
@@ -288,10 +290,10 @@ export const FaceAisleLabels = memo(function FaceAisleLabels({ objects, lz, grid
    compared by content. */
 const sameContent = (x, y) => x === y || JSON.stringify(x) === JSON.stringify(y)
 
-const ClearanceItem = memo(function ClearanceItem({ a, i, col, lz, gridSize, showLabels = true, avoid }) {
-  const ops = useMemo(() => clearanceOps(a, col, lz, gridSize, showLabels, avoid), [a, col, lz, gridSize, showLabels, avoid])
+const ClearanceItem = memo(function ClearanceItem({ a, i, col, lz, gridSize, showLabels = true, avoid, warnings = true }) {
+  const ops = useMemo(() => clearanceOps(a, col, lz, gridSize, showLabels, avoid, { warnings }), [a, col, lz, gridSize, showLabels, avoid, warnings])
   return <LabelOps ops={ops} name={'aisle-column:' + i} />
-}, (p, n) => p.i === n.i && p.lz === n.lz && p.gridSize === n.gridSize && p.showLabels === n.showLabels && sameContent(p.a, n.a) && sameContent(p.col, n.col) && sameContent(p.avoid, n.avoid))
+}, (p, n) => p.i === n.i && p.lz === n.lz && p.gridSize === n.gridSize && p.showLabels === n.showLabels && p.warnings === n.warnings && sameContent(p.a, n.a) && sameContent(p.col, n.col) && sameContent(p.avoid, n.avoid))
 
 /* The aisle-label boxes near one column — all its clearance labels could reach (each arrow's length plus a
    long pill) — so an item compares and redraws only for the labels around it. */
@@ -322,7 +324,7 @@ const EMPTY = []
    held warnings with it, unchanged; any other drag re-runs just the cheap
    aisle part of the column check on the previewed layout
    (clearanceSource.js). Otherwise it draws the full check's own aisleBlocks. */
-export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridSize = 40, showLabels = true, avoid = EMPTY }) {
+export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridSize = 40, showLabels = true, avoid = EMPTY, warnings = true }) {
   const ids = useDragPreview(s => s.ids), dx = useDragPreview(s => s.dx), dy = useDragPreview(s => s.dy)
   const { profile, pickBothSides } = useColumnCheck()
   /* clearanceSource.js: a drag carrying every rack and column (a building
@@ -337,7 +339,7 @@ export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridS
 
   return (
     <Group name="column-clearance-labels" listening={false} x={src.x} y={src.y}>
-      {src.blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={src.cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} avoid={avoidNear(local, a, src.cols[a.columnIndex], lz, gridSize)} />)}
+      {src.blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={src.cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} avoid={avoidNear(local, a, src.cols[a.columnIndex], lz, gridSize)} warnings={warnings} />)}
     </Group>
   )
 }

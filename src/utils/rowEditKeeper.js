@@ -30,14 +30,19 @@ export function keepRowEdits(objects, prevObjects, gridSize = 40) {
     // a racking area's own racks (it recorded them as placed): their stamps are its pattern's
     const areaOwned = new Set(objects.filter(o => o.type === 'racking_area' && o.placed).flatMap(o => Object.keys(o.placed)))
     const fresh = objects.map((o, i) => [o, i]).filter(([o]) => BEAM.has(o.type) && o.rowIndex != null && o.genSection != null && !prev.has(o.id) && !areaOwned.has(o.id))
+    // racks a zone had cut, coming back (utils/zoneCut.js): kept whole on a zone, or the original of a cut rack's pieces
+    const fromZones = fresh.length ? new Set(prevObjects.flatMap(q => [...(q.cutRacks || []).map(b => b.id), ...(q.zoneBase ? [q.zoneBase.id] : [])])) : null
     for (const [o, i] of fresh) {
       if (keepOnce.delete(o.id)) continue                                    // a cut-off piece (the Split tool)
+      if (fromZones.has(o.id)) continue                                      // a rack a zone gives back: the same row
       const k = key(o)
       const others = objects.filter(q => q !== o && q.parentId === o.parentId && BEAM.has(q.type) && q.rowIndex != null && key(q) === k)
       if (!others.length) continue                                           // a row coming back (undo/redo, generation)
       const f = rackFootprint(o)
       const pieceOf = prevObjects.some(q => q.parentId === o.parentId && BEAM.has(q.type) && q.rowIndex != null && key(q) === k && inside(f, rackFootprint(q)))
       if (pieceOf) continue                                                  // a split piece
+      // a piece of a rack a zone cut (utils/zoneCut.js), inside that rack as it was: the same row, growing back
+      if (o.zoneBase && key(o.zoneBase) === k && inside(f, rackFootprint(o.zoneBase))) continue
       if (!others.some(q => prev.has(q.id))) continue                        // all of them new together (a whole layout)
       edit(i, { rowIndex: undefined, genSection: undefined, genRunFt: undefined, genCrossFt: undefined, pieceOf: undefined })
     }

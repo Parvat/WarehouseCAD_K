@@ -2539,6 +2539,57 @@ check re-run; undo; only-shallower; the four callers on the one action).
   12" outward on each side; one undo step; Check layout ran again.
 - Properties' Frame depth 54 on the other wall row (3" off the right wall) → still 3", 12" away from the wall.
 
+### CF — canvas2 fixes: columns above labels, zone resize snap, clearances both sides · `CF_canvas2Fixes.test.js` (30 tests)
+Code: canvas2/hitTest.js (`aisleLabelLayout` with `columns` / `lz`, `aisleLabelStation`, `columnRectsOf`),
+canvas2/crossAisles.js (columns are obstacles), canvas2/Scene.jsx and Overlays.jsx (`part`), Canvas2.jsx (layer order),
+canvas2/zoneResizeSnap.js (`zoneResizeBox`, `snapOffKey`), canvas2/useCanvasInteraction.js (zone resize, Alt/Shift),
+generate/faceAisles.js (`columnFaceBlocks`), canvas2/clearanceSource.js (`withFaceBlocks`), canvas2/aisleMarks.js
+(stubs), render/labelOps.js (`clearanceOps`: both labels, joint placement), export/pdfExport.js (the same, columns last).
+
+1. The canvas draws the scene body, then the labels and marks, then the columns, then the selection chrome — no
+   aisle label, arrow or X mark hides a column; the PDF prints the columns after its labels layer. An aisle or
+   cross-aisle label whose pill or arrow would sit on a column slides along the aisle to the nearest clear spot (the
+   pick tests the same station); with none, it stays mid-aisle under the column.
+2. A zone's edge or corner snaps exactly as a zone move: smartGuides' rack faces, walls, other zones and columns (a
+   zero-width stand-in on the moving edge), then the grid; its own old edge is never a target; guide lines live,
+   cleared on release; the W × L label as before. Alt = no snap, for a resize and a move alike (Shift keeps add-to-selection, the 45° rotate step and a line end's axis lock).
+3. A column in an aisle always shows its clear distance on both sides: to the rack on each side, or — between a rack
+   face and a zone or the wall — to that (drawing only; capacity and Check layout are untouched). Never a label
+   dropped: two that would overlap go one each side of the arrow; a label on an aisle label slides along its arrow or
+   steps off it; a zero gap reads "0' clear" with no arrow. Drawn whenever the aisle labels are (or the Checks layer);
+   the red pinched shade only with the Checks layer.
+
+Both orientations throughout: a synthetic aisle / zone / wall scene and the saved real layout (23 columns in aisles).
+Rules changed with it (tests updated): CA-labels (both labels, never dropped or hidden), LY-checks / LB-toggle-wire
+(clearances with the aisle labels too), FU-columns-top (columns above the labels), O-wire / HF-multi (face blocks).
+
+### ZX — zone-fix: a zone takes only its footprint, and gives it back · `ZX_zoneFix.test.js` (17 tests)
+Code: utils/zoneCut.js (`applyZones`, `cutRack`, `zoneBase` on pieces, `cutRacks` on a zone), utils/rackingAreaTool.js
+(`landZones`, `zonePreview`, `zoneNote`, the area keeper), utils/layoutCheck.js (`zone-face`, `zone-no-way-in`
+warnings), utils/rowEditKeeper.js (a rack a zone gives back keeps its row stamps).
+
+Root cause of the bug: a zone change re-cut the racks with the face-reach rule (every rack within an aisle of ANY zone
+lost every face with less than an aisle in front — far past the footprint), a racking area refitted its whole pattern
+round the zone (rows slid, halves dropped, way-in lanes cut), and nothing was remembered — so a move cut again and a
+delete gave nothing back.
+
+1. A zone removes only the bays its footprint covers (a pair's half it covers: that half; the other half a single).
+2. A face or an aisle it leaves unreachable is a Check layout WARNING (zone-face, zone-no-way-in) and the plan's
+   labels / X marks — never a delete. A dead end with no zone needed stays an error.
+3. Moving / resizing / deleting it puts back every bay it no longer covers, exactly (same id, row stamps, elevation
+   types, position): every cut rack is worked out again from its `zoneBase` against the zones as they are now.
+4. A piece shorter than 2 bays left within 2' of it goes with the cut, and comes back with it.
+5. A drop, move or delete is one undo step; undo is the exact previous layout. "Office moved · 13 bays removed · 9
+   restored".
+
+Covered: the real fixture (a Fill area's racks and the same racks hand-placed) and Generate, both orientations, the
+zone at a corner, the middle, a wall, a cross-aisle; bay count before the drop = after the delete. Break-it: a zone
+in an aisle (nothing removed, warned), a stub, two zones on one rack, a rack wholly under it (kept on the zone; a
+pasted copy never duplicates it; a bulk delete brings nothing back), a piece edited by hand keeps its edit.
+Rules changed with it (tests updated): ZR-face / ZR-shrink, RA-slide → RA-zone-near (no slide on a zone change),
+RA-half-on / RA-wall-zone (warnings expected), ZF-take-split (the 1-bay stub goes), AA-pocket / AA-width (a pocket
+only a zone closes is a warning).
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click
