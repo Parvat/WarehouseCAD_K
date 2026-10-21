@@ -157,14 +157,14 @@ describe.each([['horizontal', false], ['vertical', true]])('CF-2 — %s', (_, ve
     expect(edgeOf(toWall.box)).toBeCloseTo(F(99.5), 6)
     expect(toWall.guides.some(g => g.isWall && Math.abs(g.val - F(99.5)) < 1e-6)).toBe(true)
   })
-  it('CF-snap-grid-off: far from everything the edge lands on the grid step; with snap off, on the pointer; Alt or Shift: on the pointer, no guides — the same keys as a move', () => {
+  it('CF-snap-grid-off: far from everything the edge lands on the grid step; with snap off, on the pointer; Alt: on the pointer, no guides — the same key as a move; Shift does not turn snapping off', () => {
     const raw = F(7.3)
     expect(edgeOf(zoneResizeBox(zone, E, ...alongD(raw), opts()).box)).toBeCloseTo(F(47), 6)
     expect(edgeOf(zoneResizeBox(zone, E, ...alongD(raw), opts({ snapToGrid: false })).box)).toBeCloseTo(F(40) + raw, 6)
     const free = zoneResizeBox(zone, E, ...alongD(F(52.3) - F(40) - 4), opts({ noSnap: true }))
     expect(edgeOf(free.box)).toBeCloseTo(F(52.3) - 4, 6)
     expect(free.guides).toEqual([])
-    expect([snapOffKey({ altKey: true }), snapOffKey({ shiftKey: true }), snapOffKey({}), snapOffKey(null)]).toEqual([true, true, false, false])
+    expect([snapOffKey({ altKey: true }), snapOffKey({ shiftKey: true }), snapOffKey({ altKey: true, shiftKey: true }), snapOffKey({}), snapOffKey(null)]).toEqual([true, false, true, false, false])
   })
   it('CF-snap-break: its own old edge is never a target; a corner snaps on both axes at once; an edge dragged past the opposite one stops at the minimum size', () => {
     // 3 px out from where it started: with itself as a target it would snap back to its old edge
@@ -175,7 +175,7 @@ describe.each([['horizontal', false], ['vertical', true]])('CF-2 — %s', (_, ve
     const past = zoneResizeBox(zone, E, ...alongD(-F(100)), opts())
     expect(vert ? past.box.height : past.box.width).toBe(8)
   })
-  it('CF-wire: the resize uses it for zones (guide lines live, cleared on release, Alt/Shift = no snap, the wall magnet off with it); a move takes the same no-snap keys; the live W × L still shows', () => {
+  it('CF-wire: the resize uses it for zones (guide lines live, cleared on release, Alt = no snap, the wall magnet off with it); a move takes the same no-snap key; Shift keeps add-to-selection, the 45° rotate step and a line end\'s axis lock; the live W × L still shows', () => {
     const ci = read('canvas2/useCanvasInteraction.js')
     expect(ci).toMatch(/const zoneEdge = typeof origObj\.type === 'string' && origObj\.type\.startsWith\('zone_'\) && !rot/)
     expect(ci).toMatch(/const z = zoneResizeBox\(origObj, handle, pos\.x - startWorld\.x, pos\.y - startWorld\.y, \{/)
@@ -183,6 +183,11 @@ describe.each([['horizontal', false], ['vertical', true]])('CF-2 — %s', (_, ve
     expect(ci).toMatch(/if \(rd\) setSmartGuides\(\[\]\)/)
     expect(ci).toMatch(/snap: zoneEdge && noSnap \? 0 : 8 \/ view\.current\.zoom/)
     expect(ci.match(/const noSnap = snapOffKey\(evt\)/g).length).toBe(3)                  // resize, flue drag, plain drag
+    expect(read('canvas2/zoneResizeSnap.js')).toMatch(/export const snapOffKey = \(evt\) => !!\(evt && evt\.altKey\)/)
+    // Shift's own jobs untouched: a click adds to the selection, rotation steps 45°, a line end locks to an axis
+    expect(ci).toMatch(/selectFromHit\(hitId, !!evt\.shiftKey, world\)/)
+    expect(ci.match(/const snapDeg = evt\.shiftKey \? 45 : 5/g).length).toBe(3)
+    expect(ci).toMatch(/applyResize\(origObj, handle, dx, dy, snapFn, !!evt\.shiftKey\)/)
     expect(read('canvas2/ZoneEdit.jsx')).toMatch(/<ZoneSizeLabel box=\{\{ x: zone\.x, y: zone\.y, w: zone\.width, h: zone\.height \}\}/)
   })
 })

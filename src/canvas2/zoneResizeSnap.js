@@ -5,14 +5,15 @@
 // axis with no guide. A resize moves only one edge per axis, so each moving edge is handed to that SAME
 // function as a box of zero width (or height) standing on that edge: its left, right and centre are all the
 // edge, so it meets exactly the targets — and draws exactly the guide lines — a move would. The zone being
-// resized is never its own target. With `noSnap` (Alt or Shift held, the same keys as a move) the edge
+// resized is never its own target. With `noSnap` (Alt held, the same key as a move) the edge
 // follows the pointer. Pure: no React, Konva or store.
 
 import { computeSmartGuides } from './smartGuides'
 import { snapToGrid } from '../utils/canvas'
 
-/** Shift or Alt held: no snapping — for a move and a zone resize alike. */
-export const snapOffKey = (evt) => !!(evt && (evt.altKey || evt.shiftKey))
+/** Alt held: no snapping — for a move and a zone resize alike. Alt only: Shift keeps its own jobs (add to the
+ *  selection on a click, the 45° rotate step, a line end's horizontal / vertical lock). */
+export const snapOffKey = (evt) => !!(evt && evt.altKey)
 
 const EDGE_ID = '__zone-edge'
 const MIN = 8    // applyResize's own minimum box side (world px)

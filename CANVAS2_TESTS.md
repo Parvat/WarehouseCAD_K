@@ -2552,7 +2552,7 @@ generate/faceAisles.js (`columnFaceBlocks`), canvas2/clearanceSource.js (`withFa
    pick tests the same station); with none, it stays mid-aisle under the column.
 2. A zone's edge or corner snaps exactly as a zone move: smartGuides' rack faces, walls, other zones and columns (a
    zero-width stand-in on the moving edge), then the grid; its own old edge is never a target; guide lines live,
-   cleared on release; the W × L label as before. Alt or Shift = no snap, for a resize and a move alike.
+   cleared on release; the W × L label as before. Alt = no snap, for a resize and a move alike (Shift keeps add-to-selection, the 45° rotate step and a line end's axis lock).
 3. A column in an aisle always shows its clear distance on both sides: to the rack on each side, or — between a rack
    face and a zone or the wall — to that (drawing only; capacity and Check layout are untouched). Never a label
    dropped: two that would overlap go one each side of the arrow; a label on an aisle label slides along its arrow or

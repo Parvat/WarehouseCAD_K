@@ -754,8 +754,8 @@ export function useCanvasInteraction({
           ? (v => v)
           : (v => (st.snapToGrid ? snapToGrid(v, st.gridSize, st.snapUnit) : v))
         /* A zone's edge or corner snaps exactly as a zone MOVE does (zoneResizeSnap.js: the move's own smart
-           guides — rack faces, walls, other zones, columns — then the grid), the guide lines shown live; Alt or
-           Shift held: no snap, as for a move. */
+           guides — rack faces, walls, other zones, columns — then the grid), the guide lines shown live; Alt
+           held: no snap, as for a move. */
         const zoneEdge = typeof origObj.type === 'string' && origObj.type.startsWith('zone_') && !rot
         const noSnap = snapOffKey(evt)
         let updates
@@ -987,7 +987,7 @@ export function useCanvasInteraction({
           const guideObjects = st.objects.map(o => o.id === d.ids[0]
             ? { ...o, x: d.origin.x, y: d.origin.y + yShift, height: liveFlue.targetHeight, flueSpaceIn: liveFlue.targetFlueIn }
             : o)
-          // Alt or Shift held: no snap at all — no guides, no grid, no in-line (zoneResizeSnap.js snapOffKey)
+          // Alt held: no snap at all — no guides, no grid, no in-line (zoneResizeSnap.js snapOffKey)
           const noSnap = snapOffKey(evt)
           const { guides, snapDx, snapDy } = noSnap ? { guides: [], snapDx: null, snapDy: null } : computeSmartGuides(
             d.ids, targetsFor(guideObjects), st.gridSize, view.current.zoom, dx, dy)
@@ -1038,7 +1038,7 @@ export function useCanvasInteraction({
            precise, deliberately-aimed adjustment; grid-snap is still the
            fallback on an axis with no nearby guide, preserving that
            already-existing canvas2 behaviour rather than replacing it. */
-        // Alt or Shift held: no snap at all — no guides, no grid, no wall magnet, no in-line (snapOffKey)
+        // Alt held: no snap at all — no guides, no grid, no wall magnet, no in-line (snapOffKey)
         const noSnap = snapOffKey(evt)
         const { guides, snapDx, snapDy } = noSnap ? { guides: [], snapDx: null, snapDy: null } : computeSmartGuides(
           d.ids, targetsFor(st.objects), st.gridSize, view.current.zoom, dx, dy)
