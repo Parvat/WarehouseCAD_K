@@ -25,6 +25,7 @@ import { AreaPrompt } from './AreaPrompt'
 import { ZoneEditPreview, SelectedZoneSizes } from './ZoneEdit'
 import { hasResizeHandles } from './handleGeometry'
 import { FILL_TOOL, startFill, moveFill, commitFill } from '../utils/fillTool'
+import { useMeasureMode, endTool } from '../utils/toolSwitch'
 import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupBox } from '../utils/rowGroupTool'
 import { hitTest } from './hitTest'
 import { SPLIT_TOOL, useSplit, hoverSplit, splitAt } from '../utils/splitTool'
@@ -289,12 +290,18 @@ export function Canvas2() {
      rAF-synced copy) — the same source onStageMouseDown itself reads for
      every other hit-test, so a measurement taken mid-gesture is never a
      frame stale. */
-  const [measuring, setMeasuring] = useState(false)
+  /* the measure mode lives in utils/toolSwitch.js (useMeasureMode): choosing any tool or a library item ends it,
+     and turning it on ends the tool that was running (endTool) */
+  const measuring = useMeasureMode(s => s.on)
+  const setMeasuring = (on) => useMeasureMode.setState({ on: !!on })
   const [measurePts, setMeasurePts] = useState([])
   const [measureHover, setMeasureHover] = useState(null)
+  useEffect(() => { if (!measuring) { setMeasurePts([]); setMeasureHover(null) } }, [measuring])
 
   const toggleMeasuring = () => {
-    setMeasuring((on) => !on)
+    const on = !useMeasureMode.getState().on
+    if (on) endTool(useCanvasStore)
+    setMeasuring(on)
     setMeasurePts([])
     setMeasureHover(null)
   }

@@ -38,6 +38,7 @@ import { levelsFor } from '../../utils/rackLevels'
 import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
 import { FILL_TOOL } from '../../utils/fillTool'
+import { endTool } from '../../utils/toolSwitch'
 import { ROW_GROUP_TOOL } from '../../utils/rowGroupTool'
 import { SPLIT_TOOL } from '../../utils/splitTool'
 import { ANNOT } from './AnnotationPanel'
@@ -1021,9 +1022,10 @@ export function FloatingToolbar() {
   const secItems = sec => sec.cats.flatMap(catItems)
   const colorOf  = item => CAT_COLOR[item.catId] || 'var(--panel-text2)'
 
-  const selectItem  = item => { bumpUsage(item.id); placeObject(item) }
-  const selectShape = item => { setActiveTool(item.tool) }
-  const selectFp    = item => { placeFpObject({ type:item.type, widthFt:item.wFt, heightFt:item.hFt }) }
+  /* a library item fully ends the tool before it (utils/toolSwitch.js endTool): its cursor, preview, ghost, keys */
+  const selectItem  = item => { endTool(useCanvasStore); bumpUsage(item.id); placeObject(item) }
+  const selectShape = item => { endTool(useCanvasStore); setActiveTool(item.tool) }
+  const selectFp    = item => { endTool(useCanvasStore); placeFpObject({ type:item.type, widthFt:item.wFt, heightFt:item.hFt }) }
   const pickItem    = item =>
       item.catId === 'shapes' ? selectShape(item)
     : item.catId === 'fp'     ? selectFp(item)

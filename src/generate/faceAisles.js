@@ -4,10 +4,10 @@
 // with an office, a washroom, a custom area or the building's wall in front of it had no grade at all: a
 // washroom dropped below a pair, its facing half removed, then the bays put back by hand left a 9' 9" aisle
 // that nothing flagged. Here every such face is measured and graded the same way:
-//   - a pair has a face on both long sides; a single on the side that isn't its back — a side with a wall,
-//     a zone or a rack within AISLE_MIN_FT (2') is its back, as rack-to-rack aisles treat two rows set back
-//     to back. A pair has no back: a pair 1' from a zone has no aisle, so it is graded without that
-//     exemption (aisleLevel); a single's face with rowAisleLevel;
+//   - a pair has a face on both long sides; a single on the side that isn't its back — a side with a WALL or
+//     a RACK within AISLE_MIN_FT (2') over most of its bays is its back (a zone never is: a zone in front of a
+//     face blocks it). Every face is graded with aisleLevel — no back-to-back exemption: a zone or the wall
+//     0', touching or inside 2' of a face leaves it no aisle;
 //   - per bay, the clear width is to the nearest zone edge or wall face anywhere in front of that bay's own
 //     run span (a zone covering part of the bay counts for it); runs of bays with the same obstacle form a
 //     stretch, read at its narrowest;
@@ -16,7 +16,7 @@
 // (faceAisleLabels) and by narrowAisles.js: every bay of such a face loses its positions (X marks, off usable).
 // Pure.
 
-import { rackFootprint, aisleLevel, rowAisleLevel, AISLE_MIN_FT, MHE_PROFILES, underTravel } from './columnCheck'
+import { rackFootprint, aisleLevel, AISLE_MIN_FT, MHE_PROFILES, underTravel } from './columnCheck'
 import { uprightXs } from '../render/rackOps'
 import { innerOutline, floorSection } from '../utils/floorGeom'
 import { fmtLenDown } from '../utils/copyChange'
@@ -127,8 +127,11 @@ export function faceObstacleGaps(objects, { gridSize = 40, profile = MHE_PROFILE
     }
     // per side: the bays' nearest obstacles
     const sides = { lo: spans.map(([a, c]) => nearest(s0, -1, a, c)), hi: spans.map(([a, c]) => nearest(s1, 1, a, c)) }
-    // a single's back: the side with something within AISLE_MIN_FT over most of its bays — its face is the other
-    const backed = (list) => list.filter(n => n.d <= backPx + E).length * 2 >= list.length
+    /* a single's back: the side with a WALL or a RACK within AISLE_MIN_FT over most of its bays — its face is the
+       other. A zone is never a back: a zone in front of a face blocks it, however close (zone-flags — an office
+       touching a wall row's face, or covering most of a short piece's face, made that face its "back" and the row
+       was skipped) */
+    const backed = (list) => list.filter(n => (n.kind === 'wall' || n.kind === 'rack') && n.d <= backPx + E).length * 2 >= list.length
     let faces = ['lo', 'hi']
     if (r.type === 'rack_row') {
       if (backed(sides.lo) && !backed(sides.hi)) faces = ['hi']
@@ -146,7 +149,9 @@ export function faceObstacleGaps(objects, { gridSize = 40, profile = MHE_PROFILE
         const same = (m) => m.kind === n.kind && m.zone === n.zone && m.d < look
         while (j + 1 < list.length && same(list[j + 1])) j++
         const width = Math.min(...list.slice(i, j + 1).map(m => m.d))
-        const level = r.type === 'rack_double_row' ? aisleLevel(width, profile, gridSize) : rowAisleLevel(width, profile, gridSize)
+        /* a zone or the wall in front: no back-to-back exemption (rowAisleLevel's 2' rule is for two racks set back to
+           back) — 0', touching, inside 2': all graded as the aisle they leave */
+        const level = aisleLevel(width, profile, gridSize)
         if (level < 3) {
           const a = spans[i][0], c = spans[j][1], face = side === 'lo' ? s0 : s1, o0 = side === 'lo' ? face - width : face
           const box = vert ? { x: o0, y: a, w: width, h: c - a } : { x: a, y: o0, w: c - a, h: width }

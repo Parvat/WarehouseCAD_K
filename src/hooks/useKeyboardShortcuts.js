@@ -31,6 +31,9 @@ export function useKeyboardShortcuts() {
         if (useCanvasStore.getState().activeTool === ROW_GROUP_TOOL) { cancelGroupBox(); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         // the Split tool (utils/splitTool.js), before a cut: Esc leaves it (after a cut the piece is a placement, above)
         if (useCanvasStore.getState().activeTool === SPLIT_TOOL) { useSplit.setState({ hover: null }); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
+        // any other tool (Pan, Line, Text, Freehand, a shape …): Esc ends it — back to Select (utils/toolSwitch.js
+        // clears what it left behind)
+        if (useCanvasStore.getState().activeTool !== TOOLS.SELECT) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         { const g = useRowGroup.getState()
           if (g.keys.length || g.pending) { clearGroup(); return } }
         useCanvasStore.getState().clearSelection()

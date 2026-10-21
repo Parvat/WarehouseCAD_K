@@ -149,14 +149,16 @@ function narrowed(objects, aId, bId, ft) {
 const aisleItems = (objects, ids) => { const c = checkLayout(objects, { gridSize: GS }); return [...c.errors, ...c.warnings].filter(i => (i.kind === 'aisle-drive' || i.kind === 'aisle-pick') && ids.every(id => i.ids.includes(id))) }
 
 describe.each([['vertical', true], ['horizontal', false]])('RW — %s', (_, vert) => {
-  it('RW-narrow: the layout as saved, rows 7 and 8 of section 2 — an aisle the old pairing never saw — at 7.99 ft an ERROR "7\' 11", needs 8\' to drive", at 10.49 ft nothing listed (its faces lose their positions; before: a warning "10\' 5", needs 10\' 6" to pick"), at 10.5 ft nothing', () => {
+  it('RW-narrow: the layout as saved, rows 7 and 8 of section 2 — an aisle the old pairing never saw — at 7.99 ft an ERROR "7\' 11", needs 8\' to drive", at 10.49 ft ONE warning (its faces lose their positions; zone-flags lists it again, as before: a warning "10\' 5", needs 10\' 6" to pick"), at 10.5 ft nothing', () => {
     const base = savedFill(vert)
     const a = base.find(o => o.type === 'rack_double_row' && o.genSection === 2 && o.rowIndex === 7)
     const b = base.find(o => o.type === 'rack_double_row' && o.genSection === 2 && o.rowIndex === 8)
     expect(rowGaps(square(base)).some(g => pairKey(g.top.id, g.bot.id) === pairKey(a.id, b.id)), 'the old pairing: not seen').toBe(false)
     const at = (ft) => aisleItems(narrowed(base, a.id, b.id, ft), [a.id, b.id])
     expect(at(7.99).map(i => [i.severity, i.kind, i.text])).toEqual([['error', 'aisle-drive', `Aisle between rows 7 and 8, section 2: 7' 11", needs 8' to drive`]])
-    expect(at(10.49)).toEqual([])
+    // under the pick width: ONE warning (zone-flags)
+    expect(at(10.49).map(i => [i.severity, i.kind])).toEqual([['warning', 'aisle-pick']])
+    expect(at(10.49)[0].text).toMatch(/^Aisle between rows 7 and 8, section 2: 10' 5", needs 10' 6" to pick — \d+ pallet positions lost$/)
     expect(at(10.5)).toEqual([])
   })
 

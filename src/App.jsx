@@ -23,6 +23,7 @@ import { installLevelsKeeper } from './utils/rackLevels'
 import { installElevationsKeeper } from './utils/elevations'
 import { installLiveRecheck } from './utils/layoutCheck'
 import { installAreaKeeper } from './utils/rackingAreaTool'
+import { installToolKeeper } from './utils/toolSwitch'
 import { installProjectKeeper } from './utils/project'
 import { useRackingSettings } from './utils/fillTool'
 import { ProjectSync } from './components/Project/ProjectSync'
@@ -62,6 +63,9 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopLiveRecheck())
    after the copy watcher on purpose. */
 const stopAreaKeeper = installAreaKeeper(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopAreaKeeper())
+/* a tool ends fully when another is chosen: its box, hover, ghost, the measure mode (utils/toolSwitch.js) */
+const stopToolKeeper = installToolKeeper(useCanvasStore)
+if (import.meta.hot) import.meta.hot.dispose(() => stopToolKeeper())
 /* The project (utils/project.js): a layout without one is given one from what it uses — the forklift, wall clearance
    and pallet in the Racking settings, the units — nothing moves; a new empty layout opens Project setup. After the
    elevations keeper, which gives a layout its types first. */

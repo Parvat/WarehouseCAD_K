@@ -132,7 +132,12 @@ describe.each(['horizontal', 'vertical'])('ZP — %s', (orientation) => {
     expect(m.PL.startPlacement(m.useCanvasStore, [zoneItem()], { at: mid })).toBe(true)
     m.PL.movePlacement(m.useCanvasStore, mid, 1)
     let g = ghost()
-    expect(g.x + g.w / 2).toBeCloseTo(mid.x, 6); expect(g.y + g.h / 2).toBeCloseTo(mid.y, 6)
+    // centred on the pointer — or, an edge within 12 px of a rack's face or a zone's edge, snapped onto it (zone-flags)
+    const sn = m.PL.usePlacement.getState().active.snapped
+    for (const [c, p, why] of [[g.x + g.w / 2, mid.x, sn.run], [g.y + g.h / 2, mid.y, sn.cross]]) {
+      if (why) { expect(['a rack', 'a zone']).toContain(why); expect(Math.abs(c - p)).toBeLessThanOrEqual(12 + 1e-6) }
+      else expect(c).toBeCloseTo(p, 6)
+    }
     // 8 px off the inner top-left corner: snapped onto both wall faces
     m.PL.movePlacement(m.useCanvasStore, { x: ib.x + 20 * GS + 8, y: ib.y + 15 * GS + 8 }, 1)
     g = ghost()
