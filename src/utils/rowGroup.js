@@ -386,7 +386,7 @@ export const WARN_KINDS = {
   zone: 'inside a zone',
   overlap: 'an overlap',
   'aisle-drive': 'an aisle under the travel width',
-  'aisle-pick': 'an aisle under the pick width',
+  // (an aisle under the pick width: Check layout's aisle-pick warning — the bar counts it as positions lost to narrow aisles, not again here)
   'cross-aisle': 'a cross-aisle under the travel width',
   'no-way-in': 'a cross-aisle blocked — no way in',
   upright: 'a column on an upright',

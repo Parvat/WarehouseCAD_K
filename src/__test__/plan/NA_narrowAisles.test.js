@@ -35,10 +35,12 @@ describe.each([['horizontal rows', false], ['vertical rows', true]])('NA — %s'
     const across = (b) => (vert ? b.x + b.w / 2 : b.y + b.h / 2)
     const tag = turned ? ' (turned 180°)' : ''
 
-    it(`NA-pick${tag}: two pairs 9' apart — no Check layout item; both facing faces X-marked on every bay (the faces toward the aisle, not the far ones), 24 positions each off usable; the label amber`, () => {
+    it(`NA-pick${tag}: two pairs 9' apart — ONE Check layout warning for the aisle (zone-flags); both facing faces X-marked on every bay (the faces toward the aisle, not the far ones), 24 positions each off usable; the label amber`, () => {
       const objs = two(9)
       const c = checkLayout(objs, { gridSize: GS, profile: REACH })
-      expect([...c.errors, ...c.warnings].filter(i => /aisle/.test(i.kind))).toEqual([])
+      const items = [...c.errors, ...c.warnings].filter(i => /aisle/.test(i.kind))
+      expect(items.map(i => [i.severity, i.kind])).toEqual([['warning', 'aisle-pick']])
+      expect(items[0].text).toMatch(/^Aisle between .+: 9', needs 10' 6" to pick — \d+ pallet positions lost$/)
       const blocks = narrowAisleBlocks(objs, { profile: REACH, gridSize: GS })
       expect(blocks.map(b => b.rackId + ':' + b.bayIndex).sort()).toEqual(['a:0', 'a:1', 'a:2', 'b:0', 'b:1', 'b:2'])
       // each X sits on the half toward the aisle (between the two racks)

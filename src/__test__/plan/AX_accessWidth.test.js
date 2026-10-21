@@ -287,8 +287,10 @@ describe.each([['horizontal', false], ['vertical', true]])('AX-short — %s', (_
     expect(drive.kind).toBe('aisle-drive')
     expect(drive.text).toMatch(/^Aisle between .+: 7' 11", needs 8' to drive$/)
     expect(drive.highlight[0].label).toBe(`7' 11" · needs 8'`)
-    // under the pick width: not listed (its faces lose their positions — narrowAisles.js); before: a warning "10' 5", needs 10' 6" to pick"
-    expect(across(10.49)).toBeUndefined()
+    // under the pick width: ONE warning (zone-flags), its faces' positions lost — the width rounded down
+    const pick = across(10.49)
+    expect(pick.kind).toBe('aisle-pick')
+    expect(pick.text).toMatch(/^Aisle between .+: 10' 5", needs 10' 6" to pick — \d+ pallet positions lost$/)
     expect(across(10.5)).toBeUndefined()                                            // a passing width: nothing to show
   })
 })

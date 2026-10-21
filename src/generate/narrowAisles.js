@@ -8,11 +8,13 @@
 //   - a rack-to-rack aisle (rowAisles.js rowAisleGaps, the pairs the aisle labels show): both faces, over the run the
 //     two rows share; a gap of AISLE_MIN_FT or less is racks set back to back, not an aisle — nothing lost;
 //   - a face with a zone or the wall nearest in front (faceAisles.js faceObstacleGaps): that face's stretch.
-// The width labels stay amber / red (they read the same grades). Check layout no longer lists these as warnings: a
-// rack-to-rack aisle under the drive width stays an ERROR there (a truck can't drive it); faces against a zone or a
-// wall are not listed at all. Positions a column already blocks (`already`: "rack:bay:face:position") count once.
+// The width labels stay amber / red (they read the same grades). THE one reachability check: the X marks, usable and
+// Check layout's list (utils/layoutCheck.js — one WARNING per blocked face; a rack-to-rack aisle under the drive
+// width is its ERROR instead) all read these blocks, so they can never disagree. Positions a column already blocks
+// (`already`: "rack:bay:face:position") count once.
 // Returns blocks in the column check's pick-block shape: [{ rackId, bayIndex, faces: [face], positionIndices,
-// positionsLost, level, kind: 'narrow-aisle' }]. Pure.
+// positionsLost, level, kind: 'narrow-aisle', cause, width }] — `cause`: { kind: 'zone', zone } | { kind: 'wall' } |
+// { kind: 'rack', otherId }, `width`: the clear floor in front (px). Pure.
 
 import { rackFootprint, rowAisleLevel, MHE_PROFILES } from './columnCheck'
 import { rowAisleGaps } from './rowAisles'
@@ -27,30 +29,30 @@ export function narrowAisleBlocks(objects, { profile = MHE_PROFILES.reach, gridS
   const racks = objects.filter(o => BEAM.has(o.type) && o.width > 0 && o.height > 0 && ((o.rotation || 0) % 90) === 0 && Array.isArray(o.beams))
   if (!racks.length) return []
   const hit = new Map()                                            // "rack:bay:face" → { r, bay, face, level, ps (positions) }
-  const add = (r, bay, face, level, ps) => {
+  const add = (r, bay, face, level, ps, cause, width) => {
     if (!ps.length) return
     const k = r.id + ':' + bay + ':' + face, was = hit.get(k)
-    if (!was) hit.set(k, { r, bay, face, level, ps: new Set(ps) })
-    else { for (const p of ps) was.ps.add(p); was.level = Math.min(was.level, level) }
+    if (!was) hit.set(k, { r, bay, face, level, ps: new Set(ps), cause, width })
+    else { for (const p of ps) was.ps.add(p); was.level = Math.min(was.level, level); if (width < was.width) { was.width = width; was.cause = cause } }
   }
   // rack-to-rack aisles under the pick width: both faces, over the run the two rows share
   for (const g of rowAisleGaps(racks)) {
     if (!BEAM.has(g.top.type) || !BEAM.has(g.bot.type)) continue
     const level = rowAisleLevel(g.gapLen, profile, gridSize)
     if (level === 3) continue
-    for (const [r, side] of [[g.top, 'hi'], [g.bot, 'lo']]) {
+    for (const [r, side, other] of [[g.top, 'hi', g.bot], [g.bot, 'lo', g.top]]) {
       const face = faceIndex(r, side)
       // only the positions whose own slot faces the stretch the two rows share
-      for (const [bay, slots] of positionRunSpans(r, gridSize)) add(r, bay, face, level, slots.filter(q => Math.min(q.c, g.crossEnd) - Math.max(q.a, g.crossStart) > E).map(q => q.p))
+      for (const [bay, slots] of positionRunSpans(r, gridSize)) add(r, bay, face, level, slots.filter(q => Math.min(q.c, g.crossEnd) - Math.max(q.a, g.crossStart) > E).map(q => q.p), { kind: 'rack', otherId: other.id }, g.gapLen)
     }
   }
   // faces with a zone or the wall nearest in front
-  for (const g of faceObstacleGaps(objects, { gridSize, profile })) for (const bay of g.bays) add(g.rack, bay, g.face, g.level, (g.slots && g.slots[bay]) || [])
+  for (const g of faceObstacleGaps(objects, { gridSize, profile })) for (const bay of g.bays) add(g.rack, bay, g.face, g.level, (g.slots && g.slots[bay]) || [], g.obstacle, g.width)
   const out = [], lv = levelsResolver(elevations)   // each face's levels from its elevation type
-  for (const { r, bay, face, level, ps } of hit.values()) {
+  for (const { r, bay, face, level, ps, cause, width } of hit.values()) {
     const positionIndices = [...ps].sort((a, b) => a - b).filter(p => !already.has(r.id + ':' + bay + ':' + face + ':' + p))
     if (!positionIndices.length) continue
-    out.push({ rackId: r.id, bayIndex: bay, faces: [face], positionIndices, positionsLost: positionIndices.length * (lv ? lv(r, bay, face) : r.levels || 1), level, kind: 'narrow-aisle' })
+    out.push({ rackId: r.id, bayIndex: bay, faces: [face], positionIndices, positionsLost: positionIndices.length * (lv ? lv(r, bay, face) : r.levels || 1), level, kind: 'narrow-aisle', cause, width })
   }
   return out
 }

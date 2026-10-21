@@ -47,7 +47,8 @@ import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate
 import { rackIssues } from './bayBeam'
 import { cutOffRacks } from '../generate/aisleAccess'
 import { rowAisleGaps } from '../generate/rowAisles'
-import { faceObstacleGaps, zoneName } from '../generate/faceAisles'
+import { zoneName } from '../generate/faceAisles'
+import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
 export { rowAisleGaps }
 import { oversizedBayIndices } from './capacity'
 import { fmtLen, fmtLenDown, sectionLabel, failingCrossAisles } from './copyChange'
@@ -264,14 +265,36 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
         highlight: g.boxes.map(b => shade(b, HL.red, 'No way in')), text: 'No way in: aisle closed at both ends' })
     }
   }
-  /* a pick face a zone leaves without its aisle (generate/faceAisles.js): a WARNING — a zone never removes a bay
-     outside its footprint (utils/zoneCut.js); the face's positions come off usable with X marks (narrowAisles.js) */
-  for (const g of faceObstacleGaps(objects, { gridSize, profile })) {
-    if (g.obstacle.kind !== 'zone') continue
-    const z = g.obstacle.zone
-    warnings.push({ severity: 'warning', kind: 'zone-face', ids: [g.rack.id, z.id], box: union([g.box, boxOf(rackFootprint(g.rack))]),
-      highlight: [shade(g.box, HL.amber, `${short(g.width)} · needs ${len(aislePx)}`)],
-      text: `${name(g.rack)}: the ${zoneName(z)} leaves its face ${short(g.width)} of aisle, needs ${len(aislePx)} to pick` })
+  /* every pick face with less than the pick width of clear floor in front — a zone, the wall or a rack across, 0' and
+     touching included: ONE warning per blocked face, lit on exactly the positions its X marks are on. THE one
+     reachability check (generate/narrowAisles.js narrowAisleBlocks): the X marks and usable read the same blocks. A
+     rack-to-rack aisle under the drive width is its ERROR above instead (aisle-drive). A zone never removes a bay for
+     it (utils/zoneCut.js). */
+  {
+    const faces = new Map()
+    for (const b of narrowAisleBlocks(objects, { profile, gridSize, elevations, already: res ? blockedKeys(res) : new Set() })) {
+      const c = b.cause || { kind: 'wall' }
+      if (c.kind === 'rack' && b.level === 1) continue
+      // a zone or the wall: one item per face; a rack-to-rack aisle: one item for the aisle (both its faces)
+      const k = c.kind === 'rack' ? 'a:' + [b.rackId, c.otherId].sort().join('|') : b.rackId + ':' + b.faces[0] + ':' + (c.kind === 'zone' ? 'z' + c.zone.id : 'w')
+      if (!faces.has(k)) faces.set(k, { rackId: b.rackId, cause: c, width: b.width, n: 0, spots: [] })
+      const g = faces.get(k), r = byId.get(b.rackId)
+      g.width = Math.min(g.width, b.width); g.n += b.positionsLost
+      if (r) for (const q of blockedPositionRects(b, r, gridSize)) g.spots.push(localRectToWorld(r, { x: q.x, y: q.y, w: q.width, h: q.height }))
+    }
+    for (const g of faces.values()) {
+      const r = byId.get(g.rackId)
+      if (!r) continue
+      const c = g.cause, other = c.kind === 'rack' ? byId.get(c.otherId) : null
+      const lost = `${g.n} pallet position${g.n === 1 ? '' : 's'} lost`
+      const text = c.kind === 'rack'
+        ? `Aisle between ${other ? pairName(r, other, racks) : name(r)}: ${short(g.width)}, needs ${len(aislePx)} to pick — ${lost}`
+        : `${name(r)}: ${c.kind === 'zone' ? `the ${zoneName(c.zone)}` : 'the wall'} leaves its face ${short(g.width)} of aisle, needs ${len(aislePx)} to pick — ${lost}`
+      warnings.push({ severity: 'warning', kind: c.kind === 'zone' ? 'zone-face' : c.kind === 'wall' ? 'wall-face' : 'aisle-pick',
+        ids: [r.id, ...(c.kind === 'zone' ? [c.zone.id] : other ? [other.id] : [])], positions: g.n,
+        box: union([...g.spots, boxOf(foot.get(r.id)), ...(other ? [boxOf(foot.get(other.id))] : [])]),
+        highlight: g.spots.map(b => xmark(b, HL.amber)), text })
+    }
   }
   /* elevation types (utils/elevations.js): the top of the upright above the building's clear height; a pallet and
      its clearance that don't fit between two beams — one error per type, every rack carrying it lit */
@@ -282,7 +305,7 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
     if (e.severity === 'warning') warnings.push({ severity: 'warning', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => outline(b, HL.amber)), text: e.text })
     else errors.push({ severity: 'error', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => shade(b, HL.red)), text: e.text })
   }
-  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled']
+  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled']
   const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
   const reminders = projectReminders(elevations)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }

@@ -60,13 +60,13 @@ const pill = (L) => aisleLabelOps(L, labelScale('medium', GS)).find(o => o.op ==
 const CASES = [
   // ft, the label's level, Check layout's item for the pair, the label's text, its pill stroke
   // (10.49 ft was a Check layout warning, 'aisle-pick'; under the pick width its faces now lose their positions instead)
-  [10.49, 2, null, `10' 5"`, AISLE_PICK_COLOR],
+  [10.49, 2, 'aisle-pick', `10' 5"`, AISLE_PICK_COLOR],      // listed again as ONE warning (zone-flags), its faces' positions lost
   [10.5, 3, null, `10' 6"`, '#f0b429'],
   [7.99, 1, 'aisle-drive', `7' 11"`, AISLE_DRIVE_COLOR],
 ]
 
 describe.each([['vertical', true], ['horizontal', false]])('AW — %s', (_, vert) => {
-  it.each(CASES)('AW-grade: the aisle at %s ft — the label is graded (level %s; Check layout: %s — under the drive width an error, under the pick width not listed), reads %s (a failing width rounded down) in its colour; under the pick width both facing faces get X marks', (ft, level, kind, text, stroke) => {
+  it.each(CASES)('AW-grade: the aisle at %s ft — the label is graded (level %s; Check layout: %s — under the drive width an error, under the pick width one warning), reads %s (a failing width rounded down) in its colour; under the pick width both facing faces get X marks', (ft, level, kind, text, stroke) => {
     const { out, aisle, ids } = narrowed(vert, ft)
     expect(aisle, 'the pair has its aisle label').toBeTruthy()
     const L = aisleLabelLayout(aisle, out, GS, { profile: REACH })

@@ -100,7 +100,10 @@ export function snapPlacement(items, objects, world, gridSize = 40, zoom = 1, pr
 }
 
 /** A zone being placed, centred on the pointer: over (or hanging over) a building it stays within the walls' inner
- *  faces, and an edge within 12 screen px of a wall face snaps onto it. */
+ *  faces, and an edge within 12 screen px of a wall face, a rack's face or another zone's edge snaps onto it — so a
+ *  zone dropped against a row lands exactly on its face (zone-flags: it used to snap to walls only, and a drop by hand
+ *  "against" a wall row overlapped it by a hair — those bays cut — or stopped a hair short — its face flagged —
+ *  by luck; moving and resizing a zone already snapped to faces). */
 function snapZone(z, objects, world, gridSize, zoom) {
   let x = world.x - z.width / 2, y = world.y - z.height / 2
   // the building it is over: under its centre, else the one its box overlaps most (one hanging over a wall)
@@ -112,10 +115,23 @@ function snapZone(z, objects, world, gridSize, zoom) {
     if (z.width <= hi(xs) - lo(xs)) x = Math.min(Math.max(x, lo(xs)), hi(xs) - z.width)
     if (z.height <= hi(ys) - lo(ys)) y = Math.min(Math.max(y, lo(ys)), hi(ys) - z.height)
     const snapR = SNAP_PX / (zoom || 1)                    // 12 px on screen, at any zoom: a wall is worth reaching for
-    const pick = (faces, a, len) => faces.flatMap(f => [f - a, f - (a + len)]).filter(d => Math.abs(d) <= snapR + 1e-9).sort((p, q) => Math.abs(p) - Math.abs(q))[0]
-    const sx = pick(xs, x, z.width), sy = pick(ys, y, z.height)
-    if (sx !== undefined) { x += sx; snapped.run = 'a wall' }
-    if (sy !== undefined) { y += sy; snapped.cross = 'a wall' }
+    // what an edge may land on: the walls' inner faces, the faces of the building's racks, other zones' edges
+    const cands = { x: xs.map(at => ({ at, why: 'a wall' })), y: ys.map(at => ({ at, why: 'a wall' })) }
+    for (const o of objects) {
+      if (o.id === z.id) continue
+      const isR = typeof o.type === 'string' && o.type.startsWith('rack_') && o.width > 0
+      if (!isR && !(isZone(o) && o.width > 0)) continue
+      if (isR && o.parentId && o.parentId !== fp.id) continue
+      const b = isR ? rackFootprint(o) : { x: o.x, y: o.y, w: o.width, h: o.height }, why = isR ? 'a rack' : 'a zone'
+      cands.x.push({ at: b.x, why }, { at: b.x + b.w, why }); cands.y.push({ at: b.y, why }, { at: b.y + b.h, why })
+    }
+    const pick = (list, a, len) => list.flatMap(c => [{ d: c.at - a, why: c.why }, { d: c.at - (a + len), why: c.why }]).filter(q => Math.abs(q.d) <= snapR + 1e-9).sort((p, q) => (p.why === 'a wall' ? 0 : 1) - (q.why === 'a wall' ? 0 : 1) || Math.abs(p.d) - Math.abs(q.d))[0]   // a wall in reach wins (a corner drop stays on the walls)
+    const sx = pick(cands.x, x, z.width), sy = pick(cands.y, y, z.height)
+    if (sx) { x += sx.d; snapped.run = sx.why }
+    if (sy) { y += sy.d; snapped.cross = sy.why }
+    // still inside the walls after a snap
+    if (z.width <= hi(xs) - lo(xs)) x = Math.min(Math.max(x, lo(xs)), hi(xs) - z.width)
+    if (z.height <= hi(ys) - lo(ys)) y = Math.min(Math.max(y, lo(ys)), hi(ys) - z.height)
   }
   return { dx: x - z.x, dy: y - z.y, snapped, fpId: fp ? fp.id : null }
 }

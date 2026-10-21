@@ -2590,6 +2590,26 @@ Rules changed with it (tests updated): ZR-face / ZR-shrink, RA-slide → RA-zone
 RA-half-on / RA-wall-zone (warnings expected), ZF-take-split (the 1-bay stub goes), AA-pocket / AA-width (a pocket
 only a zone closes is a warning).
 
+### ZG — zone-flags: blocked faces flagged the same everywhere; a tool ends fully · `ZG_zoneFlags.test.js` (18 tests)
+Code: generate/faceAisles.js (a single's back is a wall or a rack, never a zone; every face graded with aisleLevel),
+generate/narrowAisles.js (blocks carry `cause` and `width`), utils/layoutCheck.js (one warning per blocked face:
+zone-face / wall-face, one per rack-to-rack aisle: aisle-pick), utils/placement.js (a zone dropped snaps onto rack
+faces and zone edges too, a wall in reach first), utils/toolSwitch.js (`endTool`, `installToolKeeper`,
+`useMeasureMode`), useKeyboardShortcuts (Esc ends any tool), FloatingToolbar (a library item ends the tool first).
+
+1. Root cause: a single row's face was graded with rowAisleLevel's back-to-back exemption (≤ 2' "is not an aisle"), and a
+   zone in front of most of a short piece's face made that side its "back" — an office touching a wall row flagged
+   nothing; dropped by hand "against" a row it also overlapped it by a hair (bays cut) or stopped short (flagged) by
+   luck — it snapped to walls only. Now every face under the pick width because of a zone, the wall or a rack (0',
+   touching, inside 2', across the aisle) gets its X marks, comes off usable, and is ONE Check layout warning — the
+   three read the same narrowAisleBlocks. Every corner and side, both orientations, after a drop, a move, a resize.
+   The threshold stays the pick width (asked: kept).
+2. Switching to any tool, Esc, or a library item ends the tool before: its box / plan, the Row group box, the Split
+   hover, a placement on the mouse, the measure mode — every pair of the toolbar's tools checked.
+Rules changed with it (tests updated): an aisle under the pick width is listed again, one warning (NA-pick, AW-grade,
+AX-short, RW-narrow, LC-aisle); the row-group bar counts it as positions lost, not a warning (PD-flue); ZP-place (a zone
+mid-floor may snap onto a rack face).
+
 ### BS — Bays of a back-to-back row picked and deleted one side at a time · `BS_baySides.test.js` (27 tests)
 Code: utils/baySides.js (`bayHalfAt`, `selectedBays`, `hasOneSide`, `planBaySideDelete`, `deleteBaySelection`);
 `piecesFromStates` split out of generate/faceReach.js (shared with the face rule); the side through the click

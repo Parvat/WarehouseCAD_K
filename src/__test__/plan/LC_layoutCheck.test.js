@@ -69,7 +69,7 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(check()).toEqual({ errors: [], warnings: [] })
   })
 
-  it('LC-aisle: an aisle too narrow to drive is an ERROR ("… 7\', needs 8\' to drive"); one it can drive but not pick from is not listed — both faces lose their positions (X marks, off usable; before: a WARNING "… 9\', needs 10\' 6\" to pick"); generated rows are named "rows 4 and 5, section 3"', async () => {
+  it('LC-aisle: an aisle too narrow to drive is an ERROR ("… 7\', needs 8\' to drive"); one it can drive but not pick from is ONE warning — both faces lose their positions (X marks, off usable; listed again since zone-flags, as before: a WARNING "… 9\', needs 10\' 6\" to pick"); generated rows are named "rows 4 and 5, section 3"', async () => {
     handDrawn()
     const [a, b] = racks()
     move(b, -(AISLE - 7 * GS))                                               // 7' from row a
@@ -80,7 +80,9 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     move(racks()[1], 2 * GS)                                                 // 9'
     r = check()
     expect(r.errors).toEqual([])
-    expect(kinds(r.warnings)).toEqual([])
+    // drivable but not pickable: ONE warning for the aisle (zone-flags), its faces' positions lost
+    expect(kinds(r.warnings)).toEqual(['aisle-pick'])
+    expect(r.warnings[0].text).toBe("Aisle between double row 1 and double row 2: 9', needs 10' 6\" to pick — 48 pallet positions lost")
     const u = m.UC.usableCapacity(s().objects, { profile: m.MHE_PROFILES.reach, gridSize: GS })
     expect(u.narrowLost).toBe(2 * 3 * 2 * 4)                                 // both facing faces: 3 bays × 2 positions × 4 levels each
     expect(u.usable).toBe(u.gross - u.narrowLost)
