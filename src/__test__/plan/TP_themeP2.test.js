@@ -191,6 +191,41 @@ describe('TP — the frame', () => {
   })
 })
 
+describe('TP — white frame', () => {
+  it('TP-paper: the top bar, the left panel and the right panel are paper; the canvas and its rulers stay the warm ground', () => {
+    const css = read('index.css')
+    expect(css).toMatch(/--surface:var\(--paper\);/)
+    expect(css).toMatch(/--panel-bg:var\(--paper\);/)
+    expect(css).toMatch(/--canvas-bg:#EDEBE4; --ruler-bg:#ECEAE1;/)
+    expect(read('canvas2/Rulers.jsx')).toMatch(/background: 'var\(--ruler-bg\)'/)
+    expect(read('components/Toolbar/TopBar.jsx')).toMatch(/height:TOP_BAR_H, background:'var\(--surface\)', borderBottom:'1px solid var\(--line\)'/)
+    expect(read('components/RightPanel/index.jsx')).toMatch(/background:'var\(--surface\)', borderLeft:'1px solid var\(--line\)'/)
+    expect(read('components/LeftPanel/FloatingToolbar.jsx')).toMatch(/background:'var\(--panel-bg\)', borderRight:'1px solid var\(--panel-border\)'/)
+  })
+  it('TP-fields: inputs, selects and search fill bg2 with a 1px line and turn white with focus; segments and toggles bg2, pine when on; a plain secondary stays white; the tabs bg2 / pine', () => {
+    const css = read('index.css')
+    expect(css).toMatch(/\.t-input \{[\s\S]*?border:1px solid var\(--line\);\s*background:var\(--bg2\);/)
+    expect(css).toMatch(/\.t-input:focus, \.t-field:focus-within > \.t-input \{ background:var\(--paper\); \}/)
+    expect(css).toMatch(/select \{ background: var\(--bg2\) !important;[^\n]*\nselect:focus \{ background: var\(--paper\) !important; \}/)
+    expect(css).toMatch(/\.t-btn--secondary \{ background:var\(--paper\); color:var\(--ink\); border-color:var\(--line\); \}/)
+    expect(css).toMatch(/\.t-btn--secondary\[aria-pressed="false"\], \.t-btn--secondary\[aria-checked="false"\], \.t-seg \{ background:var\(--bg2\); \}/)
+    // every is-on toggle is a segment
+    for (const f of ALL) { const s = src(f); for (const m of s.matchAll(/'t-btn t-btn--secondary([^']*)' \+ \(/g)) expect([f, m[1].includes('t-seg')]).toEqual([f, true]) }
+    expect(read('components/RightPanel/index.jsx')).toMatch(/background: on \? 'var\(--pine\)' : 'var\(--bg2\)', cursor: 'pointer',/)
+    expect(read('components/LeftPanel/FloatingToolbar.jsx')).toMatch(/placeholder="Search" aria-label="Search library"\n\s+className="t-input t-words"/)
+  })
+  it('TP-no-cards: inside the panels the figures are plain sections — a 1px line, no fill, no box', () => {
+    const files = ['components/RightPanel/PropertiesPanel.jsx', 'components/RightPanel/ColumnCheckPanel.jsx', 'components/RightPanel/panels/RackRowPanelCore.jsx',
+      'components/RightPanel/panels/LaneRackPanels.jsx', 'components/RightPanel/panels/CantileverPanel.jsx', 'components/RightPanel/panels/ColumnGridPanel.jsx',
+      'components/Elevations/ElevationsTab.jsx', 'components/Generate/GeneratePanel.jsx']
+    const card = /(borderRadius: ?(4|CARD_R)[^}\n]*background: ?'var\(--(paper|bg)\)'[^}\n]*border: ?'1px solid)|(background: ?'var\(--(paper|bg)\)'[^}\n]*border: ?'1px solid var\(--line\)'[^}\n]*borderRadius: ?4)|(borderRadius:4, padding:'12px 12px',\s*background:'var\(--paper\)')/
+    expect(files.filter(f => card.test(read(f)))).toEqual([])
+    const pp = read('components/RightPanel/PropertiesPanel.jsx')
+    expect(pp).toMatch(/Total — a plain section[^\n]*\n\s+<div style=\{\{ borderTop:'1px solid var\(--line\)', paddingTop:12 \}\}>/)
+    expect(pp).toMatch(/Breakdown — a plain section[^\n]*\n\s+<div style=\{\{ borderTop:'1px solid var\(--line\)', paddingTop:12 \}\}>/)
+  })
+})
+
 describe('TP — overlays and messages', () => {
   it('TP-modal: one recipe — THEME backdrop, white box, 1px line, radius 2, THEME shadow, a title row with an X; Esc and a click outside close it', () => {
     const css = read('index.css')

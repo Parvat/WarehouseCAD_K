@@ -10,11 +10,12 @@ import { ElevationsTab }   from '../Elevations/ElevationsTab'
 import { useState } from 'react'
 import { setRightPanel, setPanelWidth, resetPanelWidth, useRightPanelWidth, PANEL_HEAD_H, RP_MIN, RP_MAX } from '../../utils/rightPanel'
 
-/* Tab headings: Oswald 13, tracked .08em; the active one ink with a 2px pine rule on the shared 1px line. */
+/* Tab headings: Oswald 13, tracked .08em; like a segmented control — inactive bg2, the active one pine with white
+   text — over the shared 1px line. */
 const tabStyle = (on) => ({
-  flex: 1, height: '100%', padding: 0, border: 'none', borderBottom: `2px solid ${on ? 'var(--pine)' : 'transparent'}`, marginBottom: -1,
-  background: 'transparent', cursor: 'pointer',
-  fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: on ? 'var(--ink)' : 'var(--steel)',
+  flex: 1, height: '100%', padding: 0, border: 'none',
+  background: on ? 'var(--pine)' : 'var(--bg2)', cursor: 'pointer',
+  fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: on ? 'var(--paper)' : 'var(--steel)',
 })
 
 /* One right panel, two tabs — Properties (the selection, Check layout, the column check, groups, colour, layers, text,

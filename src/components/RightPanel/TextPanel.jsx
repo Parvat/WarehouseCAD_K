@@ -16,7 +16,7 @@ export function TextPanel() {
     <button
       title={t}
       onClick={() => setTextSetting(field, !ts[field])}
-      className={'t-btn t-btn--secondary' + (ts[field] ? ' is-on' : '')}
+      className={'t-btn t-btn--secondary t-seg' + (ts[field] ? ' is-on' : '')}
       style={{ width: 32, padding: 0 }}
     >
       <Icon size={16} strokeWidth={1.5} absoluteStrokeWidth />
@@ -26,7 +26,7 @@ export function TextPanel() {
   const AlignBtn = ({ icon: Icon, align }) => (
     <button
       onClick={() => setTextSetting('align', align)}
-      className={'t-btn t-btn--secondary' + (ts.align === align ? ' is-on' : '')}
+      className={'t-btn t-btn--secondary t-seg' + (ts.align === align ? ' is-on' : '')}
       style={{ width: 32, padding: 0 }}
     >
       <Icon size={16} strokeWidth={1.5} absoluteStrokeWidth />
@@ -80,7 +80,7 @@ export function TextPanel() {
           suppressContentEditableWarning
           className="italic cursor-text focus:not-italic"
           style={{
-            minHeight: 40, padding: 8, borderRadius: 2, border: '1px solid var(--line)', background: 'var(--paper)', color: 'var(--ink-2)',
+            minHeight: 40, padding: 8, borderRadius: 2, border: '1px solid var(--line)', background: 'var(--bg2)', color: 'var(--ink-2)',
             fontFamily:     ts.fontFamily,
             fontSize:       ts.fontSize,
             fontWeight:     ts.bold      ? 'bold'      : 'normal',

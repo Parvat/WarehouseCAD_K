@@ -7,12 +7,12 @@ import { TriangleAlert } from 'lucide-react'
 
 /* Presentation (THEME.md): words PJS, figures mono (.t-num). Option buttons are 32px secondaries, the picked one
    pine (.is-on); inputs .t-input; the status is a white card (radius 4). The Properties body pads 16. */
-const btnCls  = (active) => 't-btn t-btn--secondary' + (active ? ' is-on' : '')
+const btnCls  = (active) => 't-btn t-btn--secondary t-seg' + (active ? ' is-on' : '')
 const NUMB    = { padding: '0 8px', fontFamily: 'var(--font-mono)', fontWeight: 400 }
 const LBL_ST  = { width: 72, flexShrink: 0 }
 const IN_ST   = { width: 64, textAlign: 'right' }
 const HINT    = { fontSize: 12, fontFamily: 'var(--font-ui)', color: 'var(--steel)', minWidth: 0 }
-const STATUS  = { padding: '8px 12px', borderRadius: 4, background: 'var(--paper)', border: '1px solid var(--line)', fontFamily: 'var(--font-ui)', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }
+const STATUS  = { borderTop: '1px solid var(--line)', paddingTop: 12, fontFamily: 'var(--font-ui)', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }
 const SROW    = { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }
 const SLBL    = { color: 'var(--steel)' }
 const SNUM    = { color: 'var(--ink)', fontWeight: 600, fontSize: 13 }

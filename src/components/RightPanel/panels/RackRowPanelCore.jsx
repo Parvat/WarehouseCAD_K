@@ -151,10 +151,8 @@ export function MultiBayPanel() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-      {/* Header — a white card, the count in ink */}
+      {/* Header — a plain section, the count in ink */}
       <div style={{
-        padding: '8px 12px', borderRadius: 4,
-        background: 'var(--paper)', border: '1px solid var(--line)',
         fontFamily: 'var(--font-ui)', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4,
       }}>
         <div style={{ color: 'var(--ink)', fontSize: 13, fontWeight: 600 }}>
@@ -287,7 +285,7 @@ export function RackRowPanel({ obj }) {
   const label = (s, w = 56) => (
     <span className="t-label" style={{ width: w, flexShrink: 0, lineHeight: '32px' }}>{s}</span>
   )
-  const chip = (on) => 't-btn t-btn--secondary' + (on ? ' is-on' : '')
+  const chip = (on) => 't-btn t-btn--secondary t-seg' + (on ? ' is-on' : '')
   const chipSt = { padding: '0 12px', fontFamily: 'var(--font-mono)', fontWeight: 400 }
   /* a summary row: the word steel, the figure ink (flag when it is the problem); `words` sets a value of words in PJS */
   const row = (k, v, color, words) => (
@@ -301,7 +299,7 @@ export function RackRowPanel({ obj }) {
 
       {/* ── Summary: pallets, length, bays ── */}
       <Fold title="Summary" aria="Rack summary">
-        <div style={{ padding: '8px 12px', borderRadius: 4, background: overBy > 0 ? 'var(--error-bg)' : 'var(--paper)', border: `1px solid ${overBy > 0 ? 'var(--error-bd)' : 'var(--line)'}`, fontFamily: 'var(--font-ui)', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+        <div style={{ fontFamily: 'var(--font-ui)', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
             <span style={{ color: 'var(--steel)' }}>Pallets</span>
             <span className="t-num" style={{ color: 'var(--ink)', fontWeight: 600, fontSize: 18 }}>{capacity ? capacity.total : 0} PAL</span>

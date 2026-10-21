@@ -66,7 +66,7 @@ export function ColumnGridPanel({ obj }) {
   /* Words PJS (labels steel 12), figures mono (.t-num). Option buttons are 32px secondaries, the picked one pine
      (.is-on); "+ Bay" secondary, "- Bay" danger, disabled by the attribute alone. Status is a white card, radius 4. */
   const lbl = (s) => <span className="t-label" style={{ width: 56, flexShrink: 0 }}>{s}</span>
-  const opt = (active) => 't-btn t-btn--secondary' + (active ? ' is-on' : '')
+  const opt = (active) => 't-btn t-btn--secondary t-seg' + (active ? ' is-on' : '')
   const statRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }
   const statLbl = { fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--steel)' }
 
@@ -113,7 +113,7 @@ export function ColumnGridPanel({ obj }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
 
       {/* Status */}
-      <div style={{ padding: '8px 12px', borderRadius: 4, background: 'var(--paper)', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={statRow}>
           <span style={statLbl}>Columns</span>
           <span className="t-num" style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>{(spacingX.length+1) * (spacingY.length+1)}</span>

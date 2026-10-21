@@ -47,13 +47,13 @@ export function rowLabel(key, objects, gridSize = 40) {
 function AskAuto({ auto, onChange }) {
   const seg = (on) => ({
     height: 30, padding: '0 8px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center',
-    background: on ? 'var(--pine)' : 'transparent', color: on ? 'var(--paper)' : 'var(--ink-2)',
+    background: on ? 'var(--pine)' : 'var(--bg2)', color: on ? 'var(--paper)' : 'var(--ink-2)',
   })
   return (
     <button type="button" role="switch" aria-checked={auto} aria-label="Auto apply"
       title={auto ? 'Auto apply: an edit to one row is applied to the others at once (one undo step)' : 'Ask: after an edit to one row, the bar asks before applying it to the others'}
       onClick={() => onChange(!auto)}
-      style={{ display: 'flex', height: 32, padding: 0, overflow: 'hidden', borderRadius: 2, cursor: 'pointer', border: '1px solid var(--line)', background: 'var(--paper)', fontFamily: 'var(--font-ui)' }}>
+      style={{ display: 'flex', height: 32, padding: 0, overflow: 'hidden', borderRadius: 2, cursor: 'pointer', border: '1px solid var(--line)', background: 'var(--bg2)', fontFamily: 'var(--font-ui)' }}>
       <span style={seg(!auto)}>Ask</span>
       <span style={seg(auto)}>Auto apply</span>
     </button>

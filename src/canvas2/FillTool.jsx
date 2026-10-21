@@ -56,7 +56,7 @@ export function FillOptionsBar() {
         {[['horizontal', 'H'], ['vertical', 'V']].map(([o, t]) => (
           <button key={o} type="button" aria-pressed={s.orientation === o} onClick={() => s.setSetting('orientation', o)}
             style={{ width: 32, height: 30, border: 'none', cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 600,
-              background: s.orientation === o ? 'var(--pine)' : 'var(--paper)', color: s.orientation === o ? 'var(--paper)' : 'var(--ink-2)' }}>{t}</button>
+              background: s.orientation === o ? 'var(--pine)' : 'var(--bg2)', color: s.orientation === o ? 'var(--paper)' : 'var(--ink-2)' }}>{t}</button>
         ))}
       </div>
       <label style={field}>Beam

@@ -132,12 +132,12 @@ export function ColorPanel() {
             style={{
               display:'flex', alignItems:'center', gap:12, width:'100%', minWidth:0,
               padding:'8px', borderRadius:2, cursor:'pointer',
-              background:'var(--paper)', border:'1px solid var(--line)',
+              background:'var(--bg2)', border:'1px solid var(--line)',
               fontFamily:'var(--font-ui)', textAlign:'left',
               transition:'background 0.12s',
             }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'var(--paper)'}>
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--surface3)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'var(--bg2)'}>
             {chip}
             <span style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:2 }}>
               <span style={{ fontSize:13, fontWeight:500, color:'var(--ink)' }}>
@@ -171,7 +171,7 @@ export function ColorPanel() {
               <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0, 1fr))', gap:4 }}>
                 {['fill','stroke'].map(ch => (
                   <button key={ch} onClick={() => setActive(ch)}
-                    className={'t-btn t-btn--secondary' + (active===ch ? ' is-on' : '')}
+                    className={'t-btn t-btn--secondary t-seg' + (active===ch ? ' is-on' : '')}
                     style={{ minWidth:0, textTransform:'capitalize' }}>
                     <span style={{
                       width:12, height:12, borderRadius:2, flexShrink:0,
@@ -243,7 +243,7 @@ export function ColorPanel() {
                   { lbl:'None',  on:(noFill && active === 'fill'), act:() => { if (active === 'fill') toggleNoFill(true) } },
                 ].map(q => (
                   <button key={q.lbl} onClick={q.act}
-                    className={'t-btn t-btn--secondary' + (q.on ? ' is-on' : '')}
+                    className={'t-btn t-btn--secondary t-seg' + (q.on ? ' is-on' : '')}
                     style={{ minWidth:0 }}>
                     {q.lbl}
                   </button>

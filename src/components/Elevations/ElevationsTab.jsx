@@ -39,7 +39,7 @@ const S = {
   note: { fontSize: 12, color: 'var(--steel)', lineHeight: 1.5 },
   label: { fontSize: 11, fontWeight: 600, color: 'var(--steel)', textTransform: 'uppercase', letterSpacing: '.08em', fontFamily: 'var(--font-ui)' },
   inner: { width: '100%', padding: '0 6px' },
-  box: { border: '1px solid var(--line)', borderRadius: 4, padding: 12, background: 'var(--paper)', display: 'flex', flexDirection: 'column', gap: 8 },
+  box: { borderTop: '1px solid var(--line)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 },
   link: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--pine)', textDecoration: 'underline', fontSize: 'inherit', fontFamily: 'inherit' },
 }
 const ICON = { size: 16, strokeWidth: 1.5, absoluteStrokeWidth: true }

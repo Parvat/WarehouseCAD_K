@@ -17,7 +17,6 @@ import { Note } from '../shared/Note'
    cards get 4px. Anything rounder reads as a web widget pasted onto a
    drawing tool. */
 const R      = 2
-const CARD_R = 4
 
 /* words are PJS (captions steel); only the figures are mono (.t-num) */
 const S = {
@@ -98,12 +97,11 @@ function ConflictCard({ conflict, index }) {
   const canRemove = Array.isArray(rack?.beams) && rack.beams.length > 1
 
   /* Absorb / Remove section: two 32px secondaries; the chosen one is pine (.is-on). Disabled is the attribute only. */
-  const btnCls = (active) => 't-btn t-btn--secondary' + (active ? ' is-on' : '')
+  const btnCls = (active) => 't-btn t-btn--secondary t-seg' + (active ? ' is-on' : '')
 
   return (
     <div style={{
-      padding: 12, borderRadius: CARD_R,
-      background: 'var(--paper)', border: '1px solid var(--line)',
+      borderTop: '1px solid var(--line)', paddingTop: 12,
       display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
@@ -174,8 +172,7 @@ export function ColumnCheckPanel() {
           <>
             {/* Layout-wide totals, straight off summary */}
             <div style={{
-              display: 'flex', gap: 12, padding: 12, borderRadius: CARD_R,
-              background: 'var(--paper)', border: '1px solid var(--line)',
+              display: 'flex', gap: 12, borderTop: '1px solid var(--line)', paddingTop: 12, paddingBottom: 12, borderBottom: '1px solid var(--line)',
             }}>
               <Stat big label="If absorbed" value={`−${summary.positionsLostIfAbsorb}`} />
               <Stat big label="If removed" value={`−${summary.sectionsLostIfRemove}`} tone="bad" />

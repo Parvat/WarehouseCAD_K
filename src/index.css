@@ -49,7 +49,8 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   --font-mono:'JetBrains Mono', ui-monospace, monospace;
 
   /* ── the app's working names ── */
-  --surface:#ECEAE1; --surface2:var(--bg2); --surface3:#DAD8CD;
+  /* the frame (top bar, left panel, right panel) is paper; the canvas between them stays the warm ground */
+  --surface:var(--paper); --surface2:var(--bg2); --surface3:#DAD8CD;
   --border:var(--line); --border2:var(--line-2);
   /* selected chrome in the panels is pine */
   --accent:var(--pine); --accent-dim:#E4E2D8; --accent-dimmer:#ECEAE1;
@@ -62,7 +63,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   --purple:#8B5CF6; --purple-dim:rgba(139,92,246,0.12); --purple-bdr:rgba(139,92,246,0.30);
   --text:var(--ink); --text2:var(--ink-2); --text3:var(--steel); --text4:#96A093;
   /* the library panel's plane */
-  --panel-bg:#EFEDE6; --panel-hover:#E7E4DB; --panel-border:var(--line);
+  --panel-bg:var(--paper); --panel-hover:#EFEDE6; --panel-border:var(--line);
   --panel-text2:var(--ink-2); --panel-text3:var(--steel); --panel-text4:#96A093;
   --panel-label:#1B2620; --panel-muted:#57534B; --panel-branch:var(--line);
   --pin-accent:var(--pine); --pin-bg:#E4EAE0;
@@ -70,7 +71,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   /* the elevation drawing's frames and beams, ground and base plates, dimensions, clearances (ElevationEditor.jsx) */
   --elev-frame:#123A2E; --elev-ink:#15181C; --elev-dim:#1B4FD8; --elev-clr:#A8341C;
   /* the plan canvas (Canvas2.jsx reads these) — unchanged */
-  --canvas-bg:#EDEBE4;
+  --canvas-bg:#EDEBE4; --ruler-bg:#ECEAE1;
   --grid-major:rgba(20,57,43,0.18); --grid-minor:rgba(20,57,43,0.08);
   --shadow:0 4px 24px rgba(20,57,43,0.08);
 }
@@ -143,7 +144,8 @@ button:not(:disabled):active {
 input[type=range], input[type=checkbox], input[type=radio] { accent-color: var(--pine); }
 
 /* Select dropdowns */
-select { background: var(--paper) !important; color: var(--text) !important; border-color: var(--border) !important; }
+select { background: var(--bg2) !important; color: var(--text) !important; border-color: var(--border) !important; }
+select:focus { background: var(--paper) !important; }
 
 /* Toggle switch backgrounds */
 .bg-\[\#2a2d36\] { background: var(--border2) !important; }
@@ -154,7 +156,7 @@ select { background: var(--paper) !important; color: var(--text) !important; bor
 .no-spin::-webkit-outer-spin-button, .no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .no-spin { -moz-appearance: textfield; appearance: textfield; }
 /* THEME.md: a compact field takes focus as a whole — 2px blue outline, the fill turns white; the unit stays inside */
-.t5-field:focus-within { outline: 2px solid var(--blue); outline-offset: 0; background: #fff !important; }
+.t5-field:focus-within { outline: 2px solid var(--blue); outline-offset: 0; background: var(--paper) !important; }
 .t5-field input:focus, .t5-field input:focus-visible { outline: none !important; box-shadow: none !important; }
 
 /* ── The control system (THEME.md) ───────────────────────────────────────────
@@ -179,6 +181,9 @@ select { background: var(--paper) !important; color: var(--text) !important; bor
 .t-btn--danger { background:var(--paper); color:var(--flag); border-color:var(--line); }
 .t-btn--danger:hover:not(:disabled) { background:var(--flag); color:var(--paper); border-color:var(--flag); }
 /* a pressed toggle among secondaries (segments, Yes / No) is pine */
+/* segmented controls and toggle chips: inactive bg2, active pine (a plain secondary stays white) */
+.t-btn--secondary[aria-pressed="false"], .t-btn--secondary[aria-checked="false"], .t-seg { background:var(--bg2); }
+.t-btn--secondary[aria-pressed="false"]:hover:not(:disabled), .t-seg:hover:not(:disabled):not(.is-on) { background:var(--surface3); }
 .t-btn--secondary[aria-pressed="true"], .t-btn--secondary[aria-checked="true"], .t-btn--secondary.is-on { background:var(--pine); color:var(--paper); border-color:var(--pine); }
 .t-btn--secondary[aria-pressed="true"]:hover:not(:disabled), .t-btn--secondary.is-on:hover:not(:disabled) { background:var(--pine-2); border-color:var(--pine-2); }
 .t-icon {
@@ -199,8 +204,10 @@ select { background: var(--paper) !important; color: var(--text) !important; bor
 
 .t-input {
   height:32px; min-width:0; padding:0 8px; border-radius:2px; border:1px solid var(--line);
-  background:var(--paper); color:var(--ink); font-family:var(--font-mono); font-size:13px; font-weight:400;
+  background:var(--bg2); color:var(--ink); font-family:var(--font-mono); font-size:13px; font-weight:400;
 }
+/* fields are bg2 on the white panels and turn white with focus */
+.t-input:focus, .t-field:focus-within > .t-input { background:var(--paper); }
 .t-input.t-words, select.t-input { font-family:var(--font-ui); }
 .t-input:disabled { opacity:.45; cursor:not-allowed; }
 input.t-input:focus, select.t-input:focus, textarea.t-input:focus, .t-field input:focus { outline:2px solid var(--blue) !important; outline-offset:-1px !important; }

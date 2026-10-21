@@ -60,7 +60,7 @@ export function CantileverPanel({ obj }) {
   const label = (s) => (
     <span className="t-label" style={{ width: 56, flexShrink: 0 }}>{s}</span>
   )
-  const opt = (active) => 't-btn t-btn--secondary' + (active ? ' is-on' : '')
+  const opt = (active) => 't-btn t-btn--secondary t-seg' + (active ? ' is-on' : '')
   const numBtn = { flex: 1, minWidth: 0, padding: 0, fontFamily: 'var(--font-mono)', fontWeight: 400 }
   const statRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }
   const statLbl = { fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--steel)' }
@@ -69,7 +69,7 @@ export function CantileverPanel({ obj }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
 
       {/* Status */}
-      <div style={{ padding: '8px 12px', borderRadius: 4, background: 'var(--paper)', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={statRow}>
           <span style={statLbl}>Total length</span>
           <span className="t-num" style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>{fmtIn(totalIn)}</span>
@@ -111,7 +111,7 @@ export function CantileverPanel({ obj }) {
 
       {/* Active tower arm selector */}
       {activeTower !== null && (
-        <div style={{ padding: 12, borderRadius: 4, background: 'var(--paper)', border: '1px solid var(--pine)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div className="t-cap" style={{ color: 'var(--pine)' }}>
             All arms -- select length
           </div>

@@ -84,7 +84,7 @@ function WallThicknessDefault() {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4, minmax(0, 1fr))', gap:4 }}>
         {[0.25,0.5,0.75,1].map(v => (
           <button key={v} onClick={() => setFpDefaults({ wallThicknessFt: v })}
-            className={'t-btn t-btn--secondary t-num' + (thickness===v ? ' is-on' : '')}
+            className={'t-btn t-btn--secondary t-seg t-num' + (thickness===v ? ' is-on' : '')}
             style={{ padding:0, fontFamily:'var(--font-mono)', fontWeight:400 }}>
             {v*12}"
           </button>

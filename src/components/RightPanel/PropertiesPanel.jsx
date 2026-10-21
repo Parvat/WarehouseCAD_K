@@ -117,14 +117,10 @@ function CapacityHero({ objects }) {
   const rackCount = objects.filter(o => RACK_TYPE_META[o.type]).length
 
   return (
-    <div style={{ margin:'0 16px 16px', display:'flex', flexDirection:'column', gap:8 }}>
+    <div style={{ margin:'0 16px 16px', display:'flex', flexDirection:'column', gap:12 }}>
 
-      {/* ── Total — hero card ────────────────────────────────────── */}
-      <div style={{
-        borderRadius:4, padding:'12px 12px',
-        background:'var(--paper)',
-        border:'1px solid var(--line)',
-      }}>
+      {/* ── Total — a plain section ─────────────────────────────── */}
+      <div style={{ borderTop:'1px solid var(--line)', paddingTop:12 }}>
         <span className="t-cap" style={{ display:'block', marginBottom:8 }}>
           Total pallet positions
         </span>
@@ -171,16 +167,11 @@ function CapacityHero({ objects }) {
         </div>
       </div>
 
-      {/* ── Breakdown card ───────────────────────────────────────── */}
-      <div style={{
-        borderRadius:4, overflow:'hidden',
-        border:'1px solid var(--line)',
-        background:'var(--paper)',
-      }}>
+      {/* ── Breakdown — a plain section ─────────────────────────── */}
+      <div style={{ borderTop:'1px solid var(--line)', paddingTop:12 }}>
         <div style={{
-          padding:'8px 12px', borderBottom:'1px solid var(--line)',
+          paddingBottom:8,
           display:'flex', justifyContent:'space-between', alignItems:'center',
-          background:'var(--bg2)',
         }}>
           <span className="t-cap">
             By type
@@ -194,8 +185,8 @@ function CapacityHero({ objects }) {
 
           return (
             <div key={type} style={{
-              padding:'8px 12px',
-              borderBottom: i < entries.length - 1 ? '1px solid var(--line)' : 'none',
+              padding:'8px 0',
+              borderTop:'1px solid var(--line)',
               display:'flex', flexDirection:'column', gap:4,
             }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>

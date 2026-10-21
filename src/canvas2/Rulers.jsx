@@ -63,7 +63,7 @@ function HRuler({ view, gridSize, widthPx }) {
     <div
       style={{
         position: 'absolute', top: 0, left: RULER_PX, right: 0, height: RULER_PX,
-        background: 'var(--surface)', borderBottom: '1px solid var(--border)',
+        background: 'var(--ruler-bg)', borderBottom: '1px solid var(--border)',
         overflow: 'hidden', zIndex: 10, pointerEvents: 'none',
       }}
     >
@@ -102,7 +102,7 @@ function VRuler({ view, gridSize, heightPx }) {
     <div
       style={{
         position: 'absolute', top: RULER_PX, left: 0, bottom: 0, width: RULER_PX,
-        background: 'var(--surface)', borderRight: '1px solid var(--border)',
+        background: 'var(--ruler-bg)', borderRight: '1px solid var(--border)',
         overflow: 'hidden', zIndex: 10, pointerEvents: 'none',
       }}
     >
@@ -145,7 +145,7 @@ export function Rulers({ view, gridSize, size }) {
       <div
         style={{
           position: 'absolute', top: 0, left: 0, width: RULER_PX, height: RULER_PX,
-          background: 'var(--surface)', borderRight: '1px solid var(--border)',
+          background: 'var(--ruler-bg)', borderRight: '1px solid var(--border)',
           borderBottom: '1px solid var(--border)', zIndex: 20, pointerEvents: 'none',
         }}
       />

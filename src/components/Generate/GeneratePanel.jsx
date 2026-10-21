@@ -252,7 +252,7 @@ export function GeneratePanel() {
             </button>
 
             {ask && (
-              <div ref={askRef} role="dialog" aria-label="Regenerate or start over" style={{ padding: 12, background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, lineHeight: 1.5 }}>
+              <div ref={askRef} role="dialog" aria-label="Regenerate or start over" style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, lineHeight: 1.5 }}>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>This building already has a layout.</div>
                 <div>
                   <strong style={{ fontWeight: 600 }}>Regenerate racking</strong> keeps the building, zones{ask.zones ? ` (${ask.zones})` : ''}, hand-placed racks{ask.handPlaced ? ` (${ask.handPlaced})` : ''}, text, dimensions, layers and elevation types,
@@ -277,7 +277,7 @@ export function GeneratePanel() {
               <Note level="error" role="alert">Nothing fits — the layout is unchanged.</Note>
             )}
             {result != null && !result.failed && !generating && (
-              <div style={{ padding: 12, background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 4 }}>
+              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
                 <div className="t-num" style={{ fontSize: 18, fontWeight: 500, color: 'var(--pine)' }}>
                   {result.total.toLocaleString()} <span style={{ fontSize: 12, color: 'var(--steel)' }}>·</span> {result.usable.toLocaleString()}
                 </div>

@@ -21,13 +21,13 @@ export function LabelsPanel() {
         <Plus size={16} strokeWidth={1.5} absoluteStrokeWidth />
       </button>
     }>
-      <div style={{ padding: '0 16px 12px', display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+      <div style={{ padding: '0 16px 12px', display: 'flex', flexDirection: 'column', gap: 0, minWidth: 0 }}>
         {labels.map(label => (
           <div
             key={label.id}
             className="group"
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 0 0 8px', minWidth: 0,
-              borderRadius: 2, border: '1px solid var(--line)', background: 'var(--paper)', cursor: 'pointer' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 0, minWidth: 0,
+              borderTop: '1px solid var(--line)', cursor: 'pointer' }}
           >
             <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: label.color }} />
             <Tag size={14} strokeWidth={1.5} absoluteStrokeWidth style={{ flexShrink: 0, color: label.color }} />

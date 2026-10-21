@@ -75,6 +75,12 @@ The `.t-*` classes at the end of `index.css` are the only control styles; use th
   row (`Canvas2.jsx` BOTTOM_ROW): Hub + the Elevations chip | the notices, centred | the corner buttons (measure,
   aisle labels, double-click fit, fit), all 32 high, 12 from the bottom. The drawing toolbar opens docked at the
   top centre of the canvas, 12px under the ruler, flat; its ⋯ menu has Reset position and the orientation.
+- The frame is paper: top bar, left panel and right panel are white (`--surface` / `--panel-bg` = `--paper`), one
+  1px line on each canvas side; the canvas and its rulers stay the warm ground (`--canvas-bg`, `--ruler-bg`).
+  Inside the panels there are no card boxes — figures are plain sections divided by 1px lines, no fill, no border
+  box. Fields (inputs, selects, search) fill `--bg2` with a 1px line and turn white on focus; plain secondaries are
+  white; segments, toggle chips (`t-seg`, or `aria-pressed`) and the tabs are bg2, pine when on. Floats over the
+  canvas stay white with the theme shadow.
 - `src/__test__/plan/TP_themeP2.test.js` scans the chrome files for off-scale sizes, weights, tracking, radii and hex.
 
 ---

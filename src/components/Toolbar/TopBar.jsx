@@ -89,13 +89,13 @@ function Seg({ active, onClick, title, children, wide, mono }) {
         minWidth: wide ? undefined : 32, height:30, padding: wide ? '0 8px' : '0 4px',
         display:'flex', alignItems:'center', justifyContent:'center', gap:4,
         borderRadius:0, cursor:'pointer', border:'none',
-        background: active ? 'var(--pine)' : 'transparent',
+        background: active ? 'var(--pine)' : 'var(--bg2)',
         color: active ? 'var(--paper)' : 'var(--ink-2)',
         fontSize:12, fontWeight:600, fontFamily: mono ? 'var(--font-mono)' : 'var(--font-ui)',
         transition:'background 0.12s, color 0.12s',
       }}
-      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--bg2)' }}
-      onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--surface3)' }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'var(--bg2)' }}>
       {children}
     </button>
   )
@@ -106,7 +106,7 @@ function SegGroup({ children }) {
   return (
     <div style={{
       display:'flex', alignItems:'center', height:32, overflow:'hidden',
-      background:'var(--paper)', border:'1px solid var(--line)', borderRadius:2,
+      background:'var(--bg2)', border:'1px solid var(--line)', borderRadius:2,
     }}>{children}</div>
   )
 }

@@ -450,7 +450,7 @@ function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, 
         minWidth:32, height:32, padding:'0 8px', borderRadius:2, cursor:'pointer',
         display:'flex', alignItems:'center', justifyContent:'center',
         fontSize:12, fontFamily:'var(--font-ui)', whiteSpace:'nowrap',
-        background: on ? 'var(--pine)' : 'var(--paper)',
+        background: on ? 'var(--pine)' : 'var(--bg2)',
         color:      on ? 'var(--paper)' : 'var(--panel-text2)',
         border:`1px solid ${on ? 'var(--pine)' : 'var(--panel-border)'}`,
       }}>{kids}</button>
@@ -535,7 +535,7 @@ function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, 
               cursor: isStroked ? 'pointer' : 'not-allowed', opacity: isStroked ? 1 : 0.45,
               display:'flex', alignItems:'center', justifyContent:'center',
               fontSize:12, fontFamily:'var(--font-ui)', whiteSpace:'nowrap',
-              background: on ? 'var(--pine)' : 'var(--paper)',
+              background: on ? 'var(--pine)' : 'var(--bg2)',
               color:      on ? 'var(--paper)' : 'var(--panel-text2)',
               border:`1px solid ${on ? 'var(--pine)' : 'var(--panel-border)'}`,
             }}>{j}</button>
@@ -683,7 +683,7 @@ function ViewToggle({ mode, onChange }) {
         style={{
           width:30, height:30, padding:0, border:'none', borderRadius:0, cursor:'pointer',
           display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
-          background: on ? 'var(--pine)' : 'transparent',
+          background: on ? 'var(--pine)' : 'var(--bg2)',
           color:      on ? 'var(--paper)' : 'var(--panel-text3)',
           transition:'background .12s, color .12s',
         }}>
@@ -693,7 +693,7 @@ function ViewToggle({ mode, onChange }) {
   }
   return (
     <div style={{ display:'flex', height:32, overflow:'hidden', borderRadius:2,
-      border:'1px solid var(--panel-border)', background:'var(--paper)', flexShrink:0 }}>
+      border:'1px solid var(--panel-border)', background:'var(--bg2)', flexShrink:0 }}>
       {seg('list', List, 'List view')}
       {seg('grid', LayoutGrid, 'Grid view')}
     </div>
