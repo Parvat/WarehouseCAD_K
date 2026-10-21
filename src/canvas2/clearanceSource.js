@@ -18,8 +18,17 @@ import { columnFaceBlocks } from '../generate/faceAisles'
 
 /** The check's rack-to-rack blocks plus every column between a rack face and a zone or the wall
  *  (faceAisles.js columnFaceBlocks) — measured on `objs`, the layout the blocks are drawn from. */
+let lastFace = null
 export function withFaceBlocks(blocks, cols, objs, { gridSize = 40, profile } = {}) {
   if (!cols || !cols.length) return blocks || []
+  /* the same inputs (a held drag: every frame hands the same arrays): the same result, not worked out again */
+  const L = lastFace
+  if (L && L.blocks === blocks && L.cols === cols && L.objs === objs && L.gridSize === gridSize && L.profile === profile) return L.out
+  const out = faceBlocksOf(blocks, cols, objs, gridSize, profile)
+  lastFace = { blocks, cols, objs, gridSize, profile, out }
+  return out
+}
+function faceBlocksOf(blocks, cols, objs, gridSize, profile) {
   const skip = new Set((blocks || []).map(b => b.columnIndex))
   const face = columnFaceBlocks(objs || [], cols, { gridSize, profile: profile || undefined, skip })
   return face.length ? [...(blocks || []), ...face] : (blocks || [])
