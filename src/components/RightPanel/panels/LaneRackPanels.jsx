@@ -3,6 +3,24 @@ import { useShallow } from 'zustand/react/shallow'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getObjectBounds } from '../../../utils/canvas'
 import { getRackCapacity } from '../../../utils/capacity'
+import { TriangleAlert } from 'lucide-react'
+
+/* Presentation (THEME.md): words PJS, figures mono (.t-num). Option buttons are 32px secondaries, the picked one
+   pine (.is-on); inputs .t-input; the status is a white card (radius 4). The Properties body pads 16. */
+const btnCls  = (active) => 't-btn t-btn--secondary' + (active ? ' is-on' : '')
+const NUMB    = { padding: '0 8px', fontFamily: 'var(--font-mono)', fontWeight: 400 }
+const LBL_ST  = { width: 72, flexShrink: 0 }
+const IN_ST   = { width: 64, textAlign: 'right' }
+const HINT    = { fontSize: 12, fontFamily: 'var(--font-ui)', color: 'var(--steel)', minWidth: 0 }
+const STATUS  = { padding: '8px 12px', borderRadius: 4, background: 'var(--paper)', border: '1px solid var(--line)', fontFamily: 'var(--font-ui)', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }
+const SROW    = { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }
+const SLBL    = { color: 'var(--steel)' }
+const SNUM    = { color: 'var(--ink)', fontWeight: 600, fontSize: 13 }
+const SWORD   = { color: 'var(--ink-2)', textAlign: 'right', minWidth: 0 }
+const BOX     = { display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }
+const ROW     = { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }
+const OPTROW  = { display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }
+const SUBBOX  = { display: 'flex', flexDirection: 'column', gap: 8 }
 
 // ── Drive-In Panel ───────────────────────────────────────────────────────────
 export function DriveInPanel({ obj }) {
@@ -28,28 +46,21 @@ export function DriveInPanel({ obj }) {
     }))
   }
 
-  const btnStyle = (active) => ({
-    padding: '3px 8px', borderRadius: 4, cursor: 'pointer',
-    fontSize: 9, fontFamily: 'var(--font-mono)',
-    background: active ? 'var(--accent-solid)' : 'var(--surface3)',
-    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-    color: active ? 'var(--accent-fg)' : 'var(--text2)',
-  })
 
-  const lbl = (s) => <span style={{ fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)', minWidth:50 }}>{s}</span>
+  const lbl = (s) => <span className="t-label" style={LBL_ST}>{s}</span>
 
   return (
-    <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:8 }}>
+    <div style={BOX}>
 
       {/* Status */}
-      <div style={{ padding:'6px 8px', borderRadius:5, background:'var(--green-dim)', border:'1px solid var(--green-bdr)', fontFamily:'var(--font-mono)', fontSize:9 }}>
-        <div style={{ display:'flex', justifyContent:'space-between' }}>
-          <span style={{color:'var(--text3)'}}>Capacity</span>
-          <span style={{color:'var(--green)', fontWeight:700, fontSize:11}}>{lanes * palletDeep} PAL</span>
+      <div style={STATUS}>
+        <div style={SROW}>
+          <span style={SLBL}>Capacity</span>
+          <span className="t-num" style={SNUM}>{lanes * palletDeep} PAL</span>
         </div>
-        <div style={{ display:'flex', justifyContent:'space-between', marginTop:2 }}>
-          <span style={{color:'var(--text3)'}}>Footprint</span>
-          <span style={{color:'var(--text)'}}>{Math.round(obj.width/gridSize*10)/10}' x {Math.round(obj.height/gridSize*10)/10}'</span>
+        <div style={SROW}>
+          <span style={SLBL}>Footprint</span>
+          <span className="t-num" style={{ color:'var(--ink)' }}>{Math.round(obj.width/gridSize*10)/10}' x {Math.round(obj.height/gridSize*10)/10}'</span>
         </div>
       </div>
 
@@ -58,41 +69,36 @@ export function DriveInPanel({ obj }) {
         { label: 'Lanes', val: lanes,      onCommit: v => recalc(v, palletDeep, palletWIn, palletDIn, upIn) },
         { label: 'Deep',  val: palletDeep, onCommit: v => recalc(lanes, v, palletWIn, palletDIn, upIn) },
       ].map(({ label, val, onCommit }) => (
-        <div key={label} style={{ display:'flex', alignItems:'center', gap:8 }}>
+        <div key={label} style={ROW}>
           {lbl(label)}
           <input type="text" defaultValue={val} key={`${label}-${obj.id}-${val}`}
             onFocus={e => e.target.select()}
             onBlur={e => { const v=parseInt(e.target.value); if(v>0) onCommit(v); else e.target.value=val }}
             onKeyDown={e => { if(e.key==='Enter') e.target.blur() }}
-            style={{
-              width:60, padding:'3px 6px', borderRadius:4, fontSize:11,
-              fontFamily:'var(--font-mono)', textAlign:'right',
-              background:'var(--surface3)', border:'1px solid var(--border)',
-              color:'var(--text)', outline:'none',
-            }}/>
-          <span style={{fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)'}}>
+            className="t-input" style={IN_ST}/>
+          <span style={HINT}>
             {label==='Lanes' ? `${val+1} uprights` : `${lanes*val} pal total`}
           </span>
         </div>
       ))}
 
       {/* Upright width */}
-      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+      <div style={OPTROW}>
         {lbl('Upright')}
         {[3,4].map(n => (
           <button key={n} onClick={() => recalc(lanes, palletDeep, palletWIn, palletDIn, n)}
-            style={btnStyle(upIn===n)}>{n}"</button>
+            className={btnCls(upIn===n)} style={NUMB}>{n}"</button>
         ))}
       </div>
 
       {/* Pallet size */}
-      <div>
-        <div style={{ fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.06em' }}>Pallet size (in)</div>
-        <div style={{ display:'flex', gap:4 }}>
+      <div style={SUBBOX}>
+        <div className="t-cap">Pallet size (in)</div>
+        <div style={OPTROW}>
           {[{w:48,d:48},{w:40,d:48},{w:48,d:40}].map(p => (
             <button key={`${p.w}x${p.d}`}
               onClick={() => recalc(lanes, palletDeep, p.w, p.d, upIn)}
-              style={btnStyle(palletWIn===p.w&&palletDIn===p.d)}>
+              className={btnCls(palletWIn===p.w&&palletDIn===p.d)} style={NUMB}>
               {p.w}x{p.d}"
             </button>
           ))}
@@ -121,34 +127,33 @@ export function DriveThroughPanel({ obj }) {
     commitObjectUpdate(obj.id, withAnchoredPosition(obj, { lanes: newLanes, palletDeep: newDeep, palletWIn: newPWIn, palletDIn: newPDIn, uprightWidth: newUpIn, width: newW, height: newH }))
   }
 
-  const btnStyle = (active) => ({ padding:'3px 8px', borderRadius:4, cursor:'pointer', fontSize:9, fontFamily:'var(--font-mono)', background: active? 'var(--accent-solid)':'var(--surface3)', border:`1px solid ${active?'var(--accent)':'var(--border)'}`, color: active?'var(--accent-fg)':'var(--text2)' })
-  const lbl = (s) => <span style={{ fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)', minWidth:50 }}>{s}</span>
+  const lbl = (s) => <span className="t-label" style={LBL_ST}>{s}</span>
 
   return (
-    <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:8 }}>
-      <div style={{ padding:'6px 8px', borderRadius:5, background:'var(--green-dim)', border:'1px solid var(--green-bdr)', fontFamily:'var(--font-mono)', fontSize:9 }}>
-        <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{color:'var(--text3)'}}>Capacity</span><span style={{color:'var(--green)', fontWeight:700, fontSize:11}}>{lanes*palletDeep} PAL</span></div>
-        <div style={{ display:'flex', justifyContent:'space-between', marginTop:2 }}><span style={{color:'var(--text3)'}}>Mode</span><span style={{color:'var(--accent)'}}>FIFO — load back, pick front</span></div>
+    <div style={BOX}>
+      <div style={STATUS}>
+        <div style={SROW}><span style={SLBL}>Capacity</span><span className="t-num" style={SNUM}>{lanes*palletDeep} PAL</span></div>
+        <div style={SROW}><span style={SLBL}>Mode</span><span style={SWORD}>FIFO — load back, pick front</span></div>
       </div>
       {[{label:'Lanes',val:lanes,onCommit:v=>recalc(v,palletDeep,palletWIn,palletDIn,upIn)},{label:'Deep',val:palletDeep,onCommit:v=>recalc(lanes,v,palletWIn,palletDIn,upIn)}].map(({label,val,onCommit})=>(
-        <div key={label} style={{display:'flex',alignItems:'center',gap:8}}>
+        <div key={label} style={ROW}>
           {lbl(label)}
           <input type="text" defaultValue={val} key={`${label}-${obj.id}-${val}`}
             onFocus={e=>e.target.select()} onKeyDown={e=>{if(e.key==='Enter')e.target.blur()}}
             onBlur={e=>{const v=parseInt(e.target.value);if(v>0)onCommit(v);else e.target.value=val}}
-            style={{width:60,padding:'3px 6px',borderRadius:4,fontSize:11,fontFamily:'var(--font-mono)',textAlign:'right',background:'var(--surface3)',border:'1px solid var(--border)',color:'var(--text)',outline:'none'}}/>
-          <span style={{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--text3)'}}>{label==='Lanes'?`${val+1} uprights`:`${lanes*val} pal`}</span>
+            className="t-input" style={IN_ST}/>
+          <span style={HINT}>{label==='Lanes'?`${val+1} uprights`:`${lanes*val} pal`}</span>
         </div>
       ))}
-      <div style={{display:'flex',alignItems:'center',gap:6}}>
+      <div style={OPTROW}>
         {lbl('Upright')}
-        {[3,4].map(n=><button key={n} onClick={()=>recalc(lanes,palletDeep,palletWIn,palletDIn,n)} style={btnStyle(upIn===n)}>{n}"</button>)}
+        {[3,4].map(n=><button key={n} onClick={()=>recalc(lanes,palletDeep,palletWIn,palletDIn,n)} className={btnCls(upIn===n)} style={NUMB}>{n}"</button>)}
       </div>
-      <div>
-        <div style={{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--text3)',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.06em'}}>Pallet size (in)</div>
-        <div style={{display:'flex',gap:4}}>
+      <div style={SUBBOX}>
+        <div className="t-cap">Pallet size (in)</div>
+        <div style={OPTROW}>
           {[{w:48,d:48},{w:40,d:48},{w:48,d:40}].map(p=>(
-            <button key={`${p.w}x${p.d}`} onClick={()=>recalc(lanes,palletDeep,p.w,p.d,upIn)} style={btnStyle(palletWIn===p.w&&palletDIn===p.d)}>{p.w}x{p.d}"</button>
+            <button key={`${p.w}x${p.d}`} onClick={()=>recalc(lanes,palletDeep,p.w,p.d,upIn)} className={btnCls(palletWIn===p.w&&palletDIn===p.d)} style={NUMB}>{p.w}x{p.d}"</button>
           ))}
         </div>
       </div>
@@ -175,35 +180,34 @@ export function PushbackPanel({ obj }) {
     commitObjectUpdate(obj.id, withAnchoredPosition(obj, { lanes: newLanes, palletDeep: newDeep, palletWIn: newPWIn, palletDIn: newPDIn, uprightWidth: newUpIn, width: newW, height: newH }))
   }
 
-  const btnStyle = (active) => ({ padding:'3px 8px', borderRadius:4, cursor:'pointer', fontSize:9, fontFamily:'var(--font-mono)', background: active? 'var(--accent-solid)':'var(--surface3)', border:`1px solid ${active?'var(--accent)':'var(--border)'}`, color: active?'var(--accent-fg)':'var(--text2)' })
-  const lbl = (s) => <span style={{ fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)', minWidth:50 }}>{s}</span>
+  const lbl = (s) => <span className="t-label" style={LBL_ST}>{s}</span>
 
   return (
-    <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:8 }}>
-      <div style={{ padding:'6px 8px', borderRadius:5, background:'var(--green-dim)', border:'1px solid var(--green-bdr)', fontFamily:'var(--font-mono)', fontSize:9 }}>
-        <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{color:'var(--text3)'}}>Capacity</span><span style={{color:'var(--green)', fontWeight:700, fontSize:11}}>{lanes*palletDeep} PAL</span></div>
-        <div style={{ display:'flex', justifyContent:'space-between', marginTop:2 }}><span style={{color:'var(--text3)'}}>Mode</span><span style={{color:'var(--accent)'}}>LIFO — carts on inclined rails</span></div>
-        {palletDeep > 5 && <div style={{color:'var(--color-text-danger,var(--red))',fontSize:9,marginTop:2}}>⚠ Pushback typically max 5-deep</div>}
+    <div style={BOX}>
+      <div style={STATUS}>
+        <div style={SROW}><span style={SLBL}>Capacity</span><span className="t-num" style={SNUM}>{lanes*palletDeep} PAL</span></div>
+        <div style={SROW}><span style={SLBL}>Mode</span><span style={SWORD}>LIFO — carts on inclined rails</span></div>
+        {palletDeep > 5 && <div style={{ display:'flex', alignItems:'center', gap:4, color:'var(--warn-fg)', fontSize:12 }}><TriangleAlert size={14} strokeWidth={1.5} absoluteStrokeWidth style={{ color:'var(--amber)', flexShrink:0 }} aria-hidden="true" />Pushback typically max 5-deep</div>}
       </div>
       {[{label:'Lanes',val:lanes,onCommit:v=>recalc(v,palletDeep,palletWIn,palletDIn,upIn)},{label:'Deep',val:palletDeep,onCommit:v=>recalc(lanes,v,palletWIn,palletDIn,upIn)}].map(({label,val,onCommit})=>(
-        <div key={label} style={{display:'flex',alignItems:'center',gap:8}}>
+        <div key={label} style={ROW}>
           {lbl(label)}
           <input type="text" defaultValue={val} key={`${label}-${obj.id}-${val}`}
             onFocus={e=>e.target.select()} onKeyDown={e=>{if(e.key==='Enter')e.target.blur()}}
             onBlur={e=>{const v=parseInt(e.target.value);if(v>0)onCommit(v);else e.target.value=val}}
-            style={{width:60,padding:'3px 6px',borderRadius:4,fontSize:11,fontFamily:'var(--font-mono)',textAlign:'right',background:'var(--surface3)',border:'1px solid var(--border)',color:'var(--text)',outline:'none'}}/>
-          <span style={{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--text3)'}}>{label==='Lanes'?`${val+1} uprights`:`${lanes*val} pal`}</span>
+            className="t-input" style={IN_ST}/>
+          <span style={HINT}>{label==='Lanes'?`${val+1} uprights`:`${lanes*val} pal`}</span>
         </div>
       ))}
-      <div style={{display:'flex',alignItems:'center',gap:6}}>
+      <div style={OPTROW}>
         {lbl('Upright')}
-        {[3,4].map(n=><button key={n} onClick={()=>recalc(lanes,palletDeep,palletWIn,palletDIn,n)} style={btnStyle(upIn===n)}>{n}"</button>)}
+        {[3,4].map(n=><button key={n} onClick={()=>recalc(lanes,palletDeep,palletWIn,palletDIn,n)} className={btnCls(upIn===n)} style={NUMB}>{n}"</button>)}
       </div>
-      <div>
-        <div style={{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--text3)',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.06em'}}>Pallet size (in)</div>
-        <div style={{display:'flex',gap:4}}>
+      <div style={SUBBOX}>
+        <div className="t-cap">Pallet size (in)</div>
+        <div style={OPTROW}>
           {[{w:48,d:48},{w:40,d:48},{w:48,d:40}].map(p=>(
-            <button key={`${p.w}x${p.d}`} onClick={()=>recalc(lanes,palletDeep,p.w,p.d,upIn)} style={btnStyle(palletWIn===p.w&&palletDIn===p.d)}>{p.w}x{p.d}"</button>
+            <button key={`${p.w}x${p.d}`} onClick={()=>recalc(lanes,palletDeep,p.w,p.d,upIn)} className={btnCls(palletWIn===p.w&&palletDIn===p.d)} style={NUMB}>{p.w}x{p.d}"</button>
           ))}
         </div>
       </div>
@@ -218,42 +222,35 @@ export function PalletFlowPanel({ obj }) {
   const palletDeep = obj.palletDeep || 2
   const palletDIn  = obj.palletDIn  || 48
 
-  const btnStyle = (active) => ({
-    padding: '3px 8px', borderRadius: 4, cursor: 'pointer',
-    fontSize: 9, fontFamily: 'var(--font-mono)',
-    background: active ? 'var(--accent-solid)' : 'var(--surface3)',
-    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-    color: active ? 'var(--accent-fg)' : 'var(--text2)',
-  })
 
-  const lbl = (s) => <span style={{ fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)', minWidth:70 }}>{s}</span>
+  const lbl = (s) => <span className="t-label" style={LBL_ST}>{s}</span>
 
   return (
-    <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:8 }}>
-      <div style={{ padding:'6px 8px', borderRadius:5, background:'var(--surface2)', border:'1px solid var(--border)', fontFamily:'var(--font-mono)', fontSize:9 }}>
-        <div style={{ display:'flex', justifyContent:'space-between' }}>
-          <span style={{color:'var(--text3)'}}>Mode</span>
-          <span style={{color:'var(--accent)'}}>FIFO — gravity fed rollers</span>
+    <div style={BOX}>
+      <div style={STATUS}>
+        <div style={SROW}>
+          <span style={SLBL}>Mode</span>
+          <span style={SWORD}>FIFO — gravity fed rollers</span>
         </div>
       </div>
 
       {/* Pallet deep */}
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+      <div style={ROW}>
         {lbl('Pallet deep')}
         <input type="text" defaultValue={palletDeep} key={`pd-${obj.id}-${palletDeep}`}
           onFocus={e => e.target.select()}
           onKeyDown={e => { if(e.key==='Enter') e.target.blur() }}
           onBlur={e => { const v=parseInt(e.target.value); if(v>0) commitObjectUpdate(obj.id,{palletDeep:v}); else e.target.value=palletDeep }}
-          style={{width:60,padding:'3px 6px',borderRadius:4,fontSize:11,fontFamily:'var(--font-mono)',textAlign:'right',background:'var(--surface3)',border:'1px solid var(--border)',color:'var(--text)',outline:'none'}}/>
-        <span style={{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--text3)'}}>positions</span>
+          className="t-input" style={IN_ST}/>
+        <span style={HINT}>positions</span>
       </div>
 
       {/* Pallet depth */}
-      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+      <div style={OPTROW}>
         {lbl('Pallet depth')}
         {[40,48].map(d => (
           <button key={d} onClick={() => commitObjectUpdate(obj.id,{palletDIn:d})}
-            style={btnStyle(palletDIn===d)}>{d}"</button>
+            className={btnCls(palletDIn===d)} style={NUMB}>{d}"</button>
         ))}
       </div>
     </div>

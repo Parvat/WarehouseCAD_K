@@ -13,6 +13,7 @@ import { useElevTab, nameOf, assignSelected, recolorElevation, duplicateElevatio
 import { projectOf, ceilingFor, palletFor, openSetup, previewName, ASSUMED_CLEAR_IN } from '../../utils/project'
 import { bayLedger } from '../../utils/bayLedger'
 import { ElevationDrawing } from './ElevationDrawing'
+import { Note } from '../shared/Note'
 
 /* ── The Elevations tab (ELEVATIONS_PLAN.md §3) — next to Properties; the panel widens on it ─────────────────────────
    1. The TOP never moves or resizes between states: the toolbar (Front | Side · "BEAM 8'-0" · 2P" · Fit · ⤢) and
@@ -31,19 +32,16 @@ const store = useCanvasStore
 const HANDLE = 10                 // the split handle (px)
 const FIX_H = 34                  // the drawing's "Set these rows to N in" strip (px)
 const S = {
-  note: { fontSize: 11, color: 'var(--text3)', lineHeight: 1.45 },
-  label: { fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', fontFamily: 'var(--font-ui)' },
-  ctl: { height: 28, minWidth: 0, borderRadius: 2, padding: '0 8px', background: 'var(--surface2)', border: '1px solid var(--border)', fontSize: 12, color: 'var(--text)', fontFamily: 'var(--font-ui)' },
-  inner: { height: 24, width: '100%', minWidth: 0, borderRadius: 2, padding: '0 6px', background: 'var(--surface)', border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text)', fontFamily: 'var(--font-mono)' },
-  btn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, height: 28, padding: '0 10px', borderRadius: 2, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'var(--font-ui)' },
-  primary: { background: 'var(--accent-solid, #14392B)', color: 'var(--accent-fg, #fff)', border: '1px solid transparent' },
-  box: { border: '1px solid var(--border)', borderRadius: 4, padding: 10, background: 'var(--surface)', display: 'flex', flexDirection: 'column', gap: 8 },
-  link: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent)', textDecoration: 'underline', fontSize: 'inherit' },
+  note: { fontSize: 12, color: 'var(--steel)', lineHeight: 1.5 },
+  label: { fontSize: 11, fontWeight: 600, color: 'var(--steel)', textTransform: 'uppercase', letterSpacing: '.08em', fontFamily: 'var(--font-ui)' },
+  inner: { width: '100%', padding: '0 6px' },
+  box: { border: '1px solid var(--line)', borderRadius: 4, padding: 12, background: 'var(--paper)', display: 'flex', flexDirection: 'column', gap: 8 },
+  link: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--pine)', textDecoration: 'underline', fontSize: 'inherit', fontFamily: 'inherit' },
 }
-const segGroup = (h) => ({ display: 'flex', height: h, borderRadius: 2, border: '1px solid var(--border)', background: 'var(--surface2)', overflow: 'hidden' })
-const seg = (on) => ({ flex: 1, padding: '0 9px', whiteSpace: 'nowrap', fontSize: 11.5, border: 'none', cursor: 'pointer', fontFamily: 'var(--font-ui)', fontWeight: on ? 500 : 400, background: on ? 'var(--accent-solid, #14392B)' : 'transparent', color: on ? 'var(--accent-fg, #fff)' : 'var(--text2)' })
-const BLUE_NOTE = { borderLeft: '3px solid #1B4FD8', background: '#E9EEFB', color: '#1B3A8C', borderRadius: 2, padding: '7px 10px', fontSize: 11.5, lineHeight: 1.45 }
-const AMBER_NOTE = { borderLeft: '3px solid #C07A12', background: '#F8F0DF', color: '#6B4A0B', borderRadius: 2, padding: '6px 9px', fontSize: 11, lineHeight: 1.45 }
+const ICON = { size: 16, strokeWidth: 1.5, absoluteStrokeWidth: true }
+/* a segmented toggle: one bordered strip of secondaries, the pressed one pine (the .t-btn--secondary[aria-pressed]) */
+const segGroup = () => ({ display: 'flex', height: 32, borderRadius: 2, border: '1px solid var(--line)', background: 'var(--paper)', overflow: 'hidden', minWidth: 0 })
+const seg = () => ({ flex: 1, height: '100%', padding: '0 10px', border: 'none', borderRadius: 0, fontSize: 12 })
 const ASSUMED_FT = Math.round(ASSUMED_CLEAR_IN / 12)
 const BEAM_FACES = [3, 4, 5, 6]
 
@@ -66,9 +64,9 @@ const racksUsing = (objects, T, id) => objects.filter(r => isBeamRack(r) && Arra
 /** THEME.md's section header: the number, the title, a muted note, something on the right. */
 function Head({ title, note, right }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexShrink: 0 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.14em', color: 'var(--elev-dim, #1B4FD8)' }}>02</span>
-      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text)' }}>{title}</span>
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 8, rowGap: 4, flexShrink: 0, minWidth: 0 }}>
+      <span className="t-num" style={{ fontSize: 11, color: 'var(--elev-dim)' }}>02</span>
+      <span className="t-head" style={{ color: 'var(--ink)' }}>{title}</span>
       {note && <span style={S.note}>{note}</span>}
       {right && <span style={{ marginLeft: 'auto' }}>{right}</span>}
     </div>
@@ -93,12 +91,12 @@ function RowMenu({ t, T, anchor, onClose }) {
     return () => { window.removeEventListener('pointerdown', d, true); window.removeEventListener('scroll', away, true); window.removeEventListener('resize', onClose) }
   }, [onClose, anchor])
   return createPortal(
-    <div ref={ref} role="menu" aria-label={`${nameOf(T, t)} menu`} style={{ position: 'fixed', left, ...pos, zIndex: 500, width: MENU_W, padding: 10, borderRadius: 4, background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 6px 16px rgba(26,29,27,.13)', display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'var(--font-ui)' }}>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ ...S.note, width: 52 }}>Colour</span><input aria-label="Elevation colour" type="color" value={tint(t.color)} onChange={e => recolorElevation(store, t.id, e.target.value)} /></label>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <button type="button" role="menuitem" style={S.btn} onClick={() => { duplicateElevation(store, t.id); onClose() }}>Duplicate</button>
-        <button type="button" role="menuitem" style={{ ...S.btn, opacity: t.id === T.defaultId ? 0.45 : 1 }} disabled={t.id === T.defaultId} onClick={() => { defaultElevation(store, t.id); onClose() }}>Set default</button>
-        <button type="button" role="menuitem" style={{ ...S.btn, color: 'var(--red)', opacity: T.types.length <= 1 ? 0.45 : 1 }} disabled={T.types.length <= 1} onClick={() => { deleteElevation(store, t.id); onClose() }}>Delete</button>
+    <div ref={ref} role="menu" aria-label={`${nameOf(T, t)} menu`} className="t-float" style={{ position: 'fixed', left, ...pos, zIndex: 500, width: MENU_W, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ ...S.note, width: 52 }}>Colour</span><input aria-label="Elevation colour" type="color" value={tint(t.color)} onChange={e => recolorElevation(store, t.id, e.target.value)} /></label>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" role="menuitem" className="t-btn t-btn--secondary" onClick={() => { duplicateElevation(store, t.id); onClose() }}>Duplicate</button>
+        <button type="button" role="menuitem" className="t-btn t-btn--secondary" disabled={t.id === T.defaultId} onClick={() => { defaultElevation(store, t.id); onClose() }}>Set default</button>
+        <button type="button" role="menuitem" className="t-btn t-btn--danger" disabled={T.types.length <= 1} onClick={() => { deleteElevation(store, t.id); onClose() }}>Delete</button>
       </div>
     </div>,
     host,
@@ -162,18 +160,18 @@ export function ElevationsTab() {
   return (
     <div aria-label="Elevations" data-mode={e ? 'editor' : 'list'} data-pane="open" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* 1. the top — the same in both states */}
-      <div role="toolbar" aria-label="Drawing toolbar" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, padding: '0 12px', flexShrink: 0 }}>
-        <div role="group" aria-label="View" style={{ ...segGroup(26), flexShrink: 0 }}>
-          {[['front', 'Front'], ['side', 'Side']].map(([k, label]) => <button key={k} type="button" aria-pressed={view === k} style={seg(view === k)} onClick={() => useElevTab.setState({ view: k })}>{label}</button>)}
+      <div role="toolbar" aria-label="Drawing toolbar" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '8px 16px', flexShrink: 0, minWidth: 0 }}>
+        <div role="group" aria-label="View" style={{ ...segGroup(), flexShrink: 0 }}>
+          {[['front', 'Front'], ['side', 'Side']].map(([k, label]) => <button key={k} type="button" aria-pressed={view === k} className="t-btn t-btn--secondary" style={seg(view === k)} onClick={() => useElevTab.setState({ view: k })}>{label}</button>)}
         </div>
-        <div role="group" aria-label="Drawing detail" style={{ ...segGroup(26), flexShrink: 0 }}>
-          {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={detail === k} style={seg(detail === k)} onClick={() => setPane({ detail: k })}>{label}</button>)}
+        <div role="group" aria-label="Drawing detail" style={{ ...segGroup(), flexShrink: 0 }}>
+          {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={detail === k} className="t-btn t-btn--secondary" style={seg(detail === k)} onClick={() => setPane({ detail: k })}>{label}</button>)}
         </div>
-        <span aria-label="Beam length" title={`Beam ${ftInDash(shownEntry.beamIn)}, ${per} pallet${per === 1 ? '' : 's'} per level${from ? ` — from ${from}` : ''} (set on the rack, not here)`} style={{ flex: '1 0 auto', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.04em', color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+        <span aria-label="Beam length" title={`Beam ${ftInDash(shownEntry.beamIn)}, ${per} pallet${per === 1 ? '' : 's'} per level${from ? ` — from ${from}` : ''} (set on the rack, not here)`} className="t-num" style={{ flex: '1 0 auto', fontSize: 12, color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>
           BEAM {ftInDash(shownEntry.beamIn)} · {per}P
         </span>
-        <button type="button" aria-label="Fit" title="Fit (double-click empty space)" onClick={() => setFit(n => n + 1)} style={{ ...S.btn, height: 26, flexShrink: 0 }}>Fit</button>
-        <button type="button" aria-label="Full screen" title="Full screen (Esc closes)" onClick={() => setFull(n => n + 1)} style={{ ...S.btn, height: 26, width: 26, padding: 0 }}><Maximize2 size={12} /></button>
+        <button type="button" aria-label="Fit" title="Fit (double-click empty space)" onClick={() => setFit(n => n + 1)} className="t-btn t-btn--secondary">Fit</button>
+        <button type="button" aria-label="Full screen" title="Full screen (Esc closes)" onClick={() => setFull(n => n + 1)} className="t-icon"><Maximize2 {...ICON} /></button>
       </div>
       {/* below the toolbar: the drawing (the split's share, 65% to start) | the handle | section 02 (the rest) */}
       <div ref={body} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -183,7 +181,7 @@ export function ElevationsTab() {
                 readOnly={!e} onCommit={e ? (next) => editDraft(store, { ...next, id: e.draft.id }, { fromDrawing: true }) : () => {}} />
             : <div style={{ ...S.note, padding: 12 }}>No elevation yet — + New elevation below.</div>}
           {drawFix && (
-            <div style={{ height: FIX_H, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF' }}>
+            <div style={{ height: FIX_H, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--paper)' }}>
               <FixButton rows={fixRows} to={fixTo} label="Set the rows under the drawing note" />
             </div>
           )}
@@ -192,9 +190,9 @@ export function ElevationsTab() {
         {/* the handle: drag the split (30–80%), double-click back to 65% */}
         <div role="separator" aria-orientation="horizontal" aria-label="Resize drawing" aria-valuemin={SPLIT_MIN * 100} aria-valuemax={SPLIT_MAX * 100} aria-valuenow={Math.round(split * 100)} title="Drag to resize · double-click to reset"
           onPointerDown={startSplit} onDoubleClick={() => setElevSplit(SPLIT_DEFAULT)}
-          style={{ height: HANDLE, flexShrink: 0, cursor: 'row-resize', display: 'flex', alignItems: 'center', justifyContent: 'center', borderTop: '1px solid var(--border)', background: 'var(--surface)', touchAction: 'none' }}>
+          style={{ height: HANDLE, flexShrink: 0, cursor: 'row-resize', display: 'flex', alignItems: 'center', justifyContent: 'center', borderTop: '1px solid var(--line)', background: 'var(--surface)', touchAction: 'none' }}>
           <span aria-hidden style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 3px)', gap: 3 }}>
-            {Array.from({ length: 3 }, (_, i) => <span key={i} style={{ width: 3, height: 3, borderRadius: '50%', background: 'var(--text4, #96A093)' }} />)}
+            {Array.from({ length: 3 }, (_, i) => <span key={i} style={{ width: 3, height: 3, borderRadius: 2, background: 'var(--steel)' }} />)}
           </span>
         </div>
 
@@ -215,7 +213,7 @@ function FixButton({ rows, to, label }) {
   if (!rows.length || !(to > 0)) return null
   return (
     <button type="button" aria-label={label} title={`${rows.length} row${rows.length === 1 ? '' : 's'} — one undo step`} onClick={() => deepenRows(store, rows.map(r => r.id), to)}
-      style={{ ...S.btn, height: 24, padding: '0 10px', fontSize: 11.5, borderColor: '#C07A12', color: '#6B4A0B', background: '#FFF7E8' }}>
+      className="t-btn" style={{ fontSize: 12, borderColor: 'var(--warn-bd)', color: 'var(--warn-fg)', background: 'var(--warn-bg)' }}>
       Set these rows to {to} in
     </button>
   )
@@ -230,36 +228,36 @@ function List({ T, active, counts, made, rowsSelected }) {
   useEffect(() => { if (!made?.id) return; setFlash(true); const k = setTimeout(() => setFlash(false), 1600); return () => clearTimeout(k) }, [made])
   const madeType = made?.id ? typeById(T, made.id) : null
   return (
-    <div aria-label="Elevation list section" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, padding: '10px 12px 12px', gap: 8 }}>
-      <Head title="Elevations in this layout" right={<button type="button" onClick={() => removeUnused(store)} title="Remove the elevations no bay uses" style={{ ...S.link, color: 'var(--text3)', fontSize: 11 }}>Remove unused</button>} />
+    <div aria-label="Elevation list section" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, padding: '12px 16px 16px', gap: 8 }}>
+      <Head title="Elevations in this layout" right={<button type="button" onClick={() => removeUnused(store)} title="Remove the elevations no bay uses" style={{ ...S.link, color: 'var(--steel)', fontSize: 12 }}>Remove unused</button>} />
       <div role="list" aria-label="Elevation list" style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
         {(T?.types || []).map(t => {
           const on = active && t.id === active.id, lit = made?.id === t.id
           return (
             <div key={t.id} role="listitem" data-type-id={t.id} aria-selected={!!on} data-highlight={lit && flash ? 'flash' : lit ? 'made' : undefined}
               onClick={() => useElevTab.setState({ activeId: t.id })}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 32, padding: '0 6px 0 10px', borderRadius: 4, cursor: 'pointer', background: on ? 'var(--surface2)' : 'var(--surface)', border: `1px solid ${on ? 'var(--text2)' : 'var(--border)'}`, boxShadow: lit ? `0 0 0 ${flash ? 3 : 2}px var(--pin-accent, #378ADD)` : 'none', transition: 'box-shadow .25s ease' }}>
-              <span style={{ position: 'relative', width: 12, height: 12, borderRadius: 2, background: 'white', border: '1px solid rgba(0,0,0,0.25)', flexShrink: 0 }}><span style={{ position: 'absolute', inset: 0, borderRadius: 1, background: tint(t.color), opacity: tinted ? ELEV_FILL_OPACITY : 0.25 }} /></span>
-              <span aria-label="Elevation name" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--text)' }} title={nameOf(T, t)}>{nameOf(T, t)}</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{counts.get(t.id) || 0} bays</span>
-              {t.id === T.defaultId && <span aria-label="default" style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '.1em', padding: '1px 5px', borderRadius: 2, background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>DEFAULT</span>}
-              <button type="button" aria-label={`Edit ${nameOf(T, t)}`} title="Change this elevation" onClick={(ev) => { ev.stopPropagation(); startEdit(store, t.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 3 }}><Pencil size={12} /></button>
-              <button type="button" aria-label={`${nameOf(T, t)} menu`} onClick={(ev) => { ev.stopPropagation(); const el = ev.currentTarget.closest('[role="listitem"]'); setMenu(m => (m?.id === t.id ? null : { id: t.id, el })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 3 }}><MoreHorizontal size={14} /></button>
+              style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 36, padding: '0 4px 0 8px', borderRadius: 4, cursor: 'pointer', background: on ? 'var(--bg2)' : 'var(--paper)', border: `1px solid ${on ? 'var(--ink-2)' : 'var(--line)'}`, boxShadow: lit ? `0 0 0 ${flash ? 3 : 2}px var(--pin-accent)` : 'none', transition: 'box-shadow .25s ease' }}>
+              <span style={{ position: 'relative', width: 12, height: 12, borderRadius: 2, background: 'white', border: '1px solid rgba(0,0,0,0.25)', flexShrink: 0, marginRight: 4 }}><span style={{ position: 'absolute', inset: 0, borderRadius: 1, background: tint(t.color), opacity: tinted ? ELEV_FILL_OPACITY : 0.25 }} /></span>
+              <span aria-label="Elevation name" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ink)' }} title={nameOf(T, t)}>{nameOf(T, t)}</span>
+              <span style={{ fontSize: 12, color: 'var(--steel)', whiteSpace: 'nowrap' }}><span className="t-num">{counts.get(t.id) || 0}</span> bays</span>
+              {t.id === T.defaultId && <span aria-label="default" className="t-cap" style={{ padding: '0 4px', borderRadius: 2, background: 'var(--bg2)', color: 'var(--ink-2)', border: '1px solid var(--line)' }}>DEFAULT</span>}
+              <button type="button" aria-label={`Edit ${nameOf(T, t)}`} title="Change this elevation" onClick={(ev) => { ev.stopPropagation(); startEdit(store, t.id) }} className="t-icon" style={{ width: 24 }}><Pencil size={14} strokeWidth={1.5} absoluteStrokeWidth /></button>
+              <button type="button" aria-label={`${nameOf(T, t)} menu`} onClick={(ev) => { ev.stopPropagation(); const el = ev.currentTarget.closest('[role="listitem"]'); setMenu(m => (m?.id === t.id ? null : { id: t.id, el })) }} className="t-icon" style={{ width: 24 }}><MoreHorizontal size={14} strokeWidth={1.5} absoluteStrokeWidth /></button>
               {menu?.id === t.id && <RowMenu t={t} T={T} anchor={menu.el} onClose={closeMenu} />}
             </div>
           )
         })}
       </div>
-      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-        <button type="button" disabled={!rowsSelected || !active} onClick={() => active && assignSelected(store, active.id) && useElevTab.setState({ made: null })} style={{ ...S.btn, ...S.primary, flex: 1, height: 32, opacity: rowsSelected && active ? 1 : 0.45, cursor: rowsSelected && active ? 'pointer' : 'not-allowed' }}>
-          Apply to {rowsSelected} selected row{rowsSelected === 1 ? '' : 's'}
+      <div style={{ display: 'flex', gap: 4, flexShrink: 0, minWidth: 0 }}>
+        <button type="button" disabled={!rowsSelected || !active} onClick={() => active && assignSelected(store, active.id) && useElevTab.setState({ made: null })} className="t-btn t-btn--primary" style={{ flex: '1 1 0', minWidth: 0, padding: '0 8px', fontSize: 12, fontWeight: 500 }}>
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>Apply to {rowsSelected} selected row{rowsSelected === 1 ? '' : 's'}</span>
         </button>
-        <button type="button" disabled={!pr} onClick={() => startNew(store)} style={{ ...S.btn, height: 32, opacity: pr ? 1 : 0.45 }}><Plus size={12} /> New elevation</button>
+        <button type="button" disabled={!pr} onClick={() => startNew(store)} className="t-btn t-btn--secondary" style={{ gap: 4, padding: '0 8px', fontSize: 12, fontWeight: 500 }}><Plus size={14} strokeWidth={1.5} absoluteStrokeWidth /> New elevation</button>
       </div>
-      <div role="note" aria-label="How to assign" style={{ ...BLUE_NOTE, flexShrink: 0 }}>
-        {made && madeType && <><strong>{made.kind === 'exists' ? 'Already exists' : made.kind === 'saved' ? 'Saved' : 'Created'}: {nameOf(T, madeType)}.</strong>{' '}</>}
-        Select rows on the plan, pick an elevation above, then apply.
-      </div>
+      <Note level="note" role="note" aria-label="How to assign" style={{ flexShrink: 0 }}>
+        <span>{made && madeType && <><strong style={{ fontWeight: 600 }}>{made.kind === 'exists' ? 'Already exists' : made.kind === 'saved' ? 'Saved' : 'Created'}: {nameOf(T, madeType)}.</strong>{' '}</>}
+        Select rows on the plan, pick an elevation above, then apply.</span>
+      </Note>
     </div>
   )
 }
@@ -283,81 +281,81 @@ function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, buil
 
   return (
     <div aria-label="Elevation editor" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
-      <div style={{ padding: '10px 12px 8px', flexShrink: 0 }}>
+      <div style={{ padding: '12px 16px 8px', flexShrink: 0 }}>
         <Head title={e.id ? 'Edit elevation' : 'New elevation'} note={e.id ? `${bays} bays use it` : null} right={<span style={S.note}>Drag a beam to move it</span>} />
       </div>
       {/* the form — the only part that scrolls */}
-      <div role="group" aria-label="Elevation settings" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div role="group" aria-label="Elevation settings" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={S.label}>Name</span>
-          <input aria-label="Elevation name" value={name} placeholder={auto} style={S.ctl} onChange={ev => setName(ev.target.value)} />
+          <input aria-label="Elevation name" value={name} placeholder={auto} className="t-input t-words" onChange={ev => setName(ev.target.value)} />
         </label>
         {same && (
-          <div role="note" aria-label="Same as an existing elevation" style={BLUE_NOTE}>
-            Same as <strong>{nameOf(T, same)}</strong> — <button type="button" onClick={useSame} style={{ ...S.link, color: '#1B3A8C' }}>use that one instead?</button>
-          </div>
+          <Note level="note" role="note" aria-label="Same as an existing elevation">
+            <span>Same as <strong style={{ fontWeight: 600 }}>{nameOf(T, same)}</strong> — <button type="button" onClick={useSame} style={{ ...S.link, color: 'var(--note-fg)' }}>use that one instead?</button></span>
+          </Note>
         )}
 
         <div role="group" aria-label="Ceiling" style={S.box}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={S.label}>Ceiling</span>
-            <select aria-label="Elevation ceiling" value={d.ceilingId || ''} style={S.ctl} onChange={ev => editDraft(store, { ceilingId: ev.target.value || null })}>
+            <select aria-label="Elevation ceiling" value={d.ceilingId || ''} className="t-input t-words" onChange={ev => editDraft(store, { ceilingId: ev.target.value || null })}>
               {!pr?.ceilings?.some(c => c.id !== NEW_CEILING) && !nc && <option value="">Not set ({ASSUMED_FT}')</option>}
               {(projectOf(T)?.ceilings || []).map(c => <option key={c.id} value={c.id}>{c.name}{c.clearHeightIn > 0 ? ` · ${ftInDash(c.clearHeightIn)}` : ` (${ASSUMED_FT}' assumed)`}</option>)}
               <option value={NEW_CEILING}>+ New ceiling height</option>
             </select>
           </label>
           {nc && (
-            <div role="group" aria-label="New ceiling height" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+            <div role="group" aria-label="New ceiling height" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
               {[['name', 'Name', 'text', 'Mezzanine'], ['clearFt', 'Clear height (ft)', 'number', `${ASSUMED_FT}`], ['sprFt', 'Sprinkler (ft)', 'number', 'optional']].map(([k, label, type, ph]) => (
-                <label key={k} style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}><span style={S.label}>{label}</span>
-                  <input aria-label={`New ceiling ${label.toLowerCase()}`} type={type} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 0.5 : undefined} value={nc[k] ?? ''} placeholder={ph} style={{ ...S.inner, fontFamily: type === 'number' ? 'var(--font-mono)' : 'var(--font-ui)' }} onChange={ev => editDraft(store, { newCeiling: { [k]: ev.target.value } })} />
+                <label key={k} style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}><span style={S.label}>{label}</span>
+                  <input aria-label={`New ceiling ${label.toLowerCase()}`} type={type} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 0.5 : undefined} value={nc[k] ?? ''} placeholder={ph} className={type === 'number' ? 't-input' : 't-input t-words'} style={S.inner} onChange={ev => editDraft(store, { newCeiling: { [k]: ev.target.value } })} />
                 </label>
               ))}
             </div>
           )}
           {building?.assumed && (
-            <div role="note" aria-label="Clear height not set" style={BLUE_NOTE}>
-              Clear height not set — elevations assume {ASSUMED_FT}'. Set it in <button type="button" style={S.link} onClick={() => openSetup('settings')}>Project settings</button>.
-            </div>
+            <Note level="note" role="note" aria-label="Clear height not set">
+              <span>Clear height not set — elevations assume {ASSUMED_FT}'. Set it in <button type="button" style={S.link} onClick={() => openSetup('settings')}>Project settings</button>.</span>
+            </Note>
           )}
         </div>
 
         <div role="group" aria-label="Pallet" style={S.box}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={S.label}>Pallet</span>
-            <select aria-label="Elevation pallet" value={d.palletId || ''} style={S.ctl} onChange={ev => editDraft(store, { palletId: ev.target.value || null })}>
+            <select aria-label="Elevation pallet" value={d.palletId || ''} className="t-input t-words" onChange={ev => editDraft(store, { palletId: ev.target.value || null })}>
               {!d.palletId && <option value="">—</option>}
               {(projectOf(T)?.pallets || []).map(p => <option key={p.id} value={p.id}>{p.name} · {p.faceIn}×{p.depthIn}×{p.heightIn} in</option>)}
               <option value={NEW_PALLET}>+ New pallet size</option>
             </select>
           </label>
           {np && (
-            <div role="group" aria-label="New pallet size" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
+            <div role="group" aria-label="New pallet size" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
               {[['faceIn', 'Face (in)'], ['depthIn', 'Depth (in)'], ['heightIn', 'Height (in)'], ['weightLb', 'Weight (lb)']].map(([k, label]) => (
-                <label key={k} style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}><span style={S.label}>{label}</span>
-                  <input aria-label={`New pallet ${label.toLowerCase()}`} type="number" min={0} value={np[k] ?? ''} style={S.inner} onChange={ev => editDraft(store, { newPallet: { [k]: ev.target.value } })} />
+                <label key={k} style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}><span style={S.label}>{label}</span>
+                  <input aria-label={`New pallet ${label.toLowerCase()}`} type="number" min={0} value={np[k] ?? ''} className="t-input" style={S.inner} onChange={ev => editDraft(store, { newPallet: { [k]: ev.target.value } })} />
                 </label>
               ))}
             </div>
           )}
           {depthNote && (
-            <div role="note" aria-label="Pallet depth" style={AMBER_NOTE}>
+            <Note level="warning" role="note" aria-label="Pallet depth">
               {depthNote}
-              <div style={{ marginTop: 6 }}><FixButton rows={rows.filter(r => (r.depthIn ?? 42) < frameNeededFor(pallet.depthIn) - 1e-6)} to={frameDepthFor(pallet.depthIn, frameDepths)} label="Set the rows in the pallet note" /></div>
-            </div>
+              <div><FixButton rows={rows.filter(r => (r.depthIn ?? 42) < frameNeededFor(pallet.depthIn) - 1e-6)} to={frameDepthFor(pallet.depthIn, frameDepths)} label="Set the rows in the pallet note" /></div>
+            </Note>
           )}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={S.label}>Beam face</span>
-          <div role="group" aria-label="Beam face" style={segGroup(26)}>
-            {BEAM_FACES.map(v => <button key={v} type="button" aria-pressed={beamFace(d) === v} style={seg(beamFace(d) === v)} onClick={() => editDraft(store, { beamFaceIn: v })}>{v} in</button>)}
+          <div role="group" aria-label="Beam face" style={segGroup()}>
+            {BEAM_FACES.map(v => <button key={v} type="button" aria-pressed={beamFace(d) === v} className="t-btn t-btn--secondary t-num" style={{ ...seg(beamFace(d) === v), fontFamily: 'var(--font-mono)' }} onClick={() => editDraft(store, { beamFaceIn: v })}>{v} in</button>)}
           </div>
         </div>
-        <span style={S.note}>{d.levels.length} level{d.levels.length === 1 ? '' : 's'} · upright {ftInDash(d.uprightHeightIn)}</span>
+        <span style={S.note}><span className="t-num">{d.levels.length}</span> level{d.levels.length === 1 ? '' : 's'} · upright <span className="t-num">{ftInDash(d.uprightHeightIn)}</span></span>
       </div>
 
       {/* the footer — pinned; the ONE save */}
-      <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-        <button type="button" onClick={cancelEdit} style={{ ...S.btn, height: 40, padding: '0 16px', fontSize: 13 }}>Cancel</button>
-        <button type="button" onClick={save} style={{ ...S.btn, ...S.primary, height: 40, flex: 1, fontSize: 13, fontWeight: 500 }}>Save elevation</button>
+      <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: '1px solid var(--line)', flexShrink: 0 }}>
+        <button type="button" onClick={cancelEdit} className="t-btn t-btn--secondary t-btn--40">Cancel</button>
+        <button type="button" onClick={save} className="t-btn t-btn--primary t-btn--40" style={{ flex: 1 }}>Save elevation</button>
       </div>
     </div>
   )

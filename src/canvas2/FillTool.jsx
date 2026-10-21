@@ -36,39 +36,42 @@ export function FillOverlay() {
   )
 }
 
+/* the bar: a floating bar in the canvas's bottom row (Canvas2.jsx) — white, 1px line, radius 4, the theme shadow;
+   its controls 32px, radius 2; words in PJS, figures in mono, the unit inside the field */
 const bar = {
-  position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 60,
-  display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 8,
-  background: 'var(--surface, #fff)', border: '1px solid var(--border, #E6E9EF)', boxShadow: '0 2px 10px rgba(0,0,0,0.12)',
-  fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--text, #0B101D)', whiteSpace: 'nowrap',
+  display: 'flex', alignItems: 'center', gap: 8, padding: 4, paddingLeft: 12, maxWidth: '100%', flexWrap: 'wrap',
+  fontSize: 12, whiteSpace: 'nowrap',
 }
-const field = { display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text3, #6B7280)', fontSize: 11 }
-const input = { width: 52, padding: '3px 5px', border: '1px solid var(--border, #E6E9EF)', borderRadius: 5, background: 'var(--surface2, #F1F3F6)', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 11 }
-const seg = (on) => ({ padding: '3px 8px', border: '1px solid var(--border, #E6E9EF)', borderRadius: 5, cursor: 'pointer', fontSize: 11, fontWeight: 600,
-  background: on ? 'var(--accent-solid, #0B101D)' : 'var(--surface, #fff)', color: on ? 'var(--accent-fg, #fff)' : 'var(--text2, #3A4152)' })
+const field = { display: 'flex', alignItems: 'center', gap: 8, color: 'var(--steel)', fontSize: 12 }
 
 /* The Racking settings the fill uses, while the tool is on. */
 export function FillOptionsBar() {
   const s = useRackingSettings()
   const num = (k, v) => { const n = Number(v); if (Number.isFinite(n) && n > 0) s.setSetting(k, n) }
   return (
-    <div role="toolbar" aria-label="Fill racking options" style={bar}>
+    <div role="toolbar" aria-label="Fill racking options" className="t-float" style={bar}>
       <span style={{ fontWeight: 600 }}>Fill racking</span>
-      <span style={{ color: 'var(--text3, #6B7280)', fontSize: 11 }}>drag a box · Esc cancels</span>
-      <div style={field}>
-        <button type="button" style={seg(s.orientation === 'horizontal')} aria-pressed={s.orientation === 'horizontal'} onClick={() => s.setSetting('orientation', 'horizontal')}>H</button>
-        <button type="button" style={seg(s.orientation === 'vertical')} aria-pressed={s.orientation === 'vertical'} onClick={() => s.setSetting('orientation', 'vertical')}>V</button>
+      <span style={{ color: 'var(--steel)' }}>drag a box · Esc cancels</span>
+      <div role="group" aria-label="Row direction" style={{ display: 'flex', height: 32, border: '1px solid var(--line)', borderRadius: 2, overflow: 'hidden' }}>
+        {[['horizontal', 'H'], ['vertical', 'V']].map(([o, t]) => (
+          <button key={o} type="button" aria-pressed={s.orientation === o} onClick={() => s.setSetting('orientation', o)}
+            style={{ width: 32, height: 30, border: 'none', cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 600,
+              background: s.orientation === o ? 'var(--pine)' : 'var(--paper)', color: s.orientation === o ? 'var(--paper)' : 'var(--ink-2)' }}>{t}</button>
+        ))}
       </div>
       <label style={field}>Beam
-        <select aria-label="Beam" value={s.beamIn} onChange={e => num('beamIn', e.target.value)} style={{ ...input, width: 62 }}>
+        <select aria-label="Beam" value={s.beamIn} onChange={e => num('beamIn', e.target.value)} className="t-input" style={{ width: 72, fontFamily: 'var(--font-mono)' }}>
           {[72, 84, 96, 108, 120, 144].map(v => <option key={v} value={v}>{v}"</option>)}
         </select>
       </label>
       <label style={field}>Max run
-        <input aria-label="Max rack run (ft)" style={input} defaultValue={s.maxRunFt} key={'m' + s.maxRunFt} onBlur={e => num('maxRunFt', e.target.value)} />ft
+        <span className="t-field" style={{ width: 80, flex: 'none' }}>
+          <input aria-label="Max rack run (ft)" className="t-input" defaultValue={s.maxRunFt} key={'m' + s.maxRunFt} onBlur={e => num('maxRunFt', e.target.value)} />
+          <span className="t-unit">ft</span>
+        </span>
       </label>
       {/* the pallet, the forklift (its aisle) and the wall clearance: Project setup (utils/project.js) */}
-      <span style={{ color: 'var(--text3, #6B7280)', fontSize: 11 }}>pallet, forklift, wall clearance: Project setup</span>
+      <span style={{ color: 'var(--steel)', paddingRight: 8 }}>pallet, forklift, wall clearance: Project setup</span>
     </div>
   )
 }

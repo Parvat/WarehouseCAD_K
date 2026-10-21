@@ -10,18 +10,12 @@ import { pxToFtIn } from '../../../utils/canvas'
    asked first when racks in it were edited by hand (utils/rackingAreaTool.js).
    And for a zone: its name. */
 
-const row = { display: 'flex', alignItems: 'center', gap: 8 }
-const lbl = { fontSize: 11, color: 'var(--text3)', minWidth: 64, fontFamily: 'var(--font-ui)' }
-const input = {
-  width: 64, padding: '3px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'var(--font-mono)',
-  background: 'var(--surface3)', border: '1px solid var(--border)', color: 'var(--text)', outline: 'none',
-}
-const seg = (on) => ({
-  padding: '3px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 11, fontWeight: 600,
-  background: on ? 'var(--accent-solid)' : 'var(--surface3)', color: on ? 'var(--accent-fg)' : 'var(--text3)',
-  border: `1px solid ${on ? 'var(--accent-bdr)' : 'var(--border)'}`,
-})
-const note = { fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-ui)', lineHeight: 1.4 }
+/* Field rows are .t-row (a 96px label column, the input filling the rest); inputs .t-input (mono — figures);
+   H / V are 32px secondaries, the picked one pine (aria-pressed). The parent Properties body pads 16. */
+const SEG = 't-btn t-btn--secondary'
+const segW = { width: 48, padding: 0 }
+const note = { fontSize: 12, color: 'var(--steel)', fontFamily: 'var(--font-ui)', lineHeight: 1.5 }
+const box = { display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }
 
 export function RackingAreaPanel({ obj }) {
   const objects = useCanvasStore(s => s.objects)
@@ -31,20 +25,22 @@ export function RackingAreaPanel({ obj }) {
   const change = (patch) => requestAreaRebuild(useCanvasStore, obj.id, patch)
   const num = (k) => (e) => { const n = Number(e.target.value); if (Number.isFinite(n) && n > 0 && n !== set[k]) change({ [k]: n }) }
   return (
-    <div aria-label="Racking area settings" style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div aria-label="Racking area settings" style={box}>
       <div style={note}>{racks} rack{racks === 1 ? '' : 's'}{edits ? ` · ${edits} changed by hand` : ''}. Drag an edge to extend or shrink the area; a change here rebuilds it.</div>
-      <div style={row}>
-        <span style={lbl}>Direction</span>
-        <button type="button" aria-pressed={set.orientation === 'horizontal'} style={seg(set.orientation === 'horizontal')} onClick={() => set.orientation !== 'horizontal' && change({ orientation: 'horizontal' })}>H</button>
-        <button type="button" aria-pressed={set.orientation === 'vertical'} style={seg(set.orientation === 'vertical')} onClick={() => set.orientation !== 'vertical' && change({ orientation: 'vertical' })}>V</button>
+      <div className="t-row">
+        <span className="t-label">Direction</span>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button type="button" aria-pressed={set.orientation === 'horizontal'} className={SEG} style={segW} onClick={() => set.orientation !== 'horizontal' && change({ orientation: 'horizontal' })}>H</button>
+          <button type="button" aria-pressed={set.orientation === 'vertical'} className={SEG} style={segW} onClick={() => set.orientation !== 'vertical' && change({ orientation: 'vertical' })}>V</button>
+        </div>
       </div>
-      <label style={row}><span style={lbl}>Beam</span>
-        <select aria-label="Area beam" value={set.beamIn} onChange={e => change({ beamIn: Number(e.target.value) })} style={{ ...input, width: 76 }}>
+      <label className="t-row"><span className="t-label">Beam</span>
+        <select aria-label="Area beam" value={set.beamIn} onChange={e => change({ beamIn: Number(e.target.value) })} className="t-input" style={{ fontFamily: 'var(--font-mono)' }}>
           {[72, 84, 96, 108, 120, 144].map(v => <option key={v} value={v}>{v}"</option>)}
         </select>
       </label>
-      <div style={row}><span style={lbl}>Max run (ft)</span>
-        <input aria-label="Area max rack run" key={'m' + obj.id + set.maxRunFt} defaultValue={set.maxRunFt} onBlur={num('maxRunFt')} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} style={input} />
+      <div className="t-row"><span className="t-label">Max run (ft)</span>
+        <input aria-label="Area max rack run" key={'m' + obj.id + set.maxRunFt} defaultValue={set.maxRunFt} onBlur={num('maxRunFt')} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} className="t-input" />
       </div>
     </div>
   )
@@ -72,21 +68,22 @@ export function ZonePanel({ obj }) {
     commitObjectUpdate(obj.id, zoneSized(st.objects, cur, { [key]: ft * gridSize }, { gridSize }))
   }
   return (
-    <div aria-label="Zone settings" style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={row}>
-        <span style={lbl}>Name</span>
+    <div aria-label="Zone settings" style={box}>
+      <div className="t-row">
+        <span className="t-label">Name</span>
         <input type="text" aria-label="Zone name" defaultValue={obj.label || ''} key={'zn' + obj.id + (obj.label || '')}
           onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
           onBlur={e => { if (e.target.value !== (obj.label || '')) commitObjectUpdate(obj.id, { label: e.target.value }) }}
-          style={{ ...input, width: 'auto', flex: 1 }} />
+          className="t-input t-words" />
       </div>
-      <div style={row}>
-        <span style={lbl}>Width</span>
+      {/* Width and Length side by side: two label / input pairs that share the 288px row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto minmax(0, 1fr)', alignItems: 'center', columnGap: 8, minWidth: 0 }}>
+        <span className="t-label">Width</span>
         <input type="text" aria-label="Zone width" defaultValue={pxToFtIn(obj.width, gridSize)} key={'zw' + obj.id + obj.width}
-          onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} onBlur={size('width')} style={input} />
-        <span style={lbl}>Length</span>
+          onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} onBlur={size('width')} className="t-input" />
+        <span className="t-label">Length</span>
         <input type="text" aria-label="Zone length" defaultValue={pxToFtIn(obj.height, gridSize)} key={'zl' + obj.id + obj.height}
-          onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} onBlur={size('height')} style={input} />
+          onFocus={e => e.target.select()} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} onBlur={size('height')} className="t-input" />
       </div>
       <div style={note}>No racking is placed inside a zone; its edges count as walls. A typed size keeps the edge against a wall.</div>
     </div>

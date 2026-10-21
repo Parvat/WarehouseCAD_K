@@ -43,13 +43,9 @@ export function parseLabelInches(text) {
   return v >= MIN_LABEL_IN && v <= MAX_LABEL_IN ? Math.round(v * 100) / 100 : null
 }
 
-const mono = { fontSize: 9, fontFamily: 'var(--font-mono)' }
-const btn = (active) => ({
-  padding: '4px 7px', borderRadius: 5, cursor: 'pointer', ...mono,
-  background: active ? 'var(--accent-solid)' : 'var(--surface3)',
-  border: `1px solid ${active ? 'var(--accent-bdr)' : 'var(--border)'}`,
-  color: active ? 'var(--accent-fg)' : 'var(--text3)',
-})
+/* words PJS 12 (steel); the size buttons are 32px secondaries, the picked one pine (aria-pressed) */
+const note = { fontSize: 12, fontFamily: 'var(--font-ui)', lineHeight: 1.5 }
+const BTN = 't-btn t-btn--secondary'
 
 export function AisleLabelSize({ ids }) {
   const objects = useCanvasStore(s => s.objects)
@@ -72,26 +68,25 @@ export function AisleLabelSize({ ids }) {
     : presetKey ? `${LABEL_SIZE_NAMES[presetKey]} — ${current} in text`
     : `Custom — ${current} in text`
   return (
-    <div role="group" aria-label="Aisle label size" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={{ ...mono, color: 'var(--text3)' }}>Label size{aisles.length > 1 ? ` · ${aisles.length} aisles` : ''}</span>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-        <button style={btn(current === null)} aria-pressed={current === null} onClick={() => set(null)}>Default</button>
+    <div role="group" aria-label="Aisle label size" style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+      <span className="t-cap">Label size{aisles.length > 1 ? ` · ${aisles.length} aisles` : ''}</span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, minWidth: 0 }}>
+        <button className={BTN} style={{ padding: '0 8px' }} aria-pressed={current === null} onClick={() => set(null)}>Default</button>
         {Object.keys(LABEL_SIZES).map(k => (
-          <button key={k} style={btn(presetKey === k)} aria-pressed={presetKey === k} onClick={() => set(LABEL_SIZES[k])}
+          <button key={k} className={BTN} style={{ padding: '0 8px' }} aria-pressed={presetKey === k} onClick={() => set(LABEL_SIZES[k])}
             title={`${LABEL_SIZES[k]} in text`}>{LABEL_SIZE_NAMES[k]}</button>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 4 }}>
+      <div style={{ display: 'flex', gap: 8, minWidth: 0 }}>
         <input type="text" value={text} placeholder="custom (inches)" aria-label="Custom aisle label size (inches)"
           onChange={e => { setText(e.target.value); setBad(false) }}
           onKeyDown={e => { if (e.key === 'Enter') applyCustom() }}
-          style={{ flex: 1, minWidth: 0, padding: '3px 6px', borderRadius: 5, ...mono, background: 'var(--surface3)',
-            border: `1px solid ${bad ? 'var(--red)' : 'var(--border)'}`, color: 'var(--text)', outline: 'none' }} />
-        <button style={btn(false)} onClick={applyCustom}>Set</button>
+          className="t-input" style={{ flex: 1, ...(bad ? { borderColor: 'var(--flag)' } : null) }} />
+        <button className={BTN} onClick={applyCustom}>Set</button>
       </div>
-      {bad && <span style={{ ...mono, color: 'var(--red)' }}>{MIN_LABEL_IN}–{MAX_LABEL_IN} in, e.g. 30 or 2.5'</span>}
-      <span style={{ ...mono, color: 'var(--text3)' }}>{status}</span>
-      <button style={{ ...btn(false), width: '100%' }} disabled={current === undefined}
+      {bad && <span style={{ ...note, color: 'var(--flag)' }}>{MIN_LABEL_IN}–{MAX_LABEL_IN} in, e.g. 30 or 2.5'</span>}
+      <span style={{ ...note, color: 'var(--steel)' }}>{status}</span>
+      <button className={BTN + ' t-btn--block'} disabled={current === undefined}
         title={current === undefined ? 'Pick one size for the selection first' : 'Give every aisle this label size'}
         onClick={() => setAisleLabelSize(useCanvasStore, allAisles, current)}>
         Apply to all aisles ({allAisles.length})

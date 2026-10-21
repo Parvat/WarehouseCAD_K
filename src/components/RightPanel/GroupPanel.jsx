@@ -20,39 +20,28 @@ export function GroupPanel() {
   // All members of active groups are considered "highlighted"
   const activeGroupMemberIds = new Set(activeGroups.flatMap(g => g.ids))
 
-  const Btn = ({ icon: Icon, label, onClick, disabled, color = 'var(--text2)', flex }) => (
+  /* every Arrange button is a 32px secondary in a 3-column grid; disabled is only the attribute (45%, not-allowed).
+     The label truncates inside its column — the title carries it in full. */
+  const Btn = ({ icon: Icon, label, onClick, disabled }) => (
     <button
       onClick={onClick}
       disabled={disabled}
       title={label}
-      style={{
-        color: disabled ? 'var(--text3)' : color,
-        border: '1px solid var(--border)',
-        background: 'var(--surface2)',
-        fontSize: 'var(--fs-xs)',
-        fontFamily: 'var(--font-mono)',
-        opacity: disabled ? 0.3 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        display: 'flex', alignItems: 'center', gap: 6,
-        padding: '5px 8px', borderRadius: 5,
-        width: flex ? undefined : '100%',
-        flex: flex ? 1 : undefined,
-        transition: 'background 0.1s',
-      }}
-      onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = 'var(--surface3)' }}
-      onMouseLeave={e => { e.currentTarget.style.background = 'var(--surface2)' }}
+      className="t-btn t-btn--secondary"
+      style={{ minWidth: 0, width: '100%', padding: '0 4px', gap: 4 }}
     >
-      <Icon size={11} />
-      {label}
+      <Icon size={16} strokeWidth={1.5} absoluteStrokeWidth />
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
     </button>
   )
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }
 
   return (
     <SectionHeader title="Arrange" defaultOpen={true}>
-      <div className="p-2 flex flex-col gap-1">
+      <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
 
         {/* Copy / Paste / Cut */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
+        <div style={grid}>
           <Btn icon={Copy}      label="Copy"  onClick={copySelected}  disabled={!hasSelection} />
           <Btn icon={Clipboard} label="Paste" onClick={() => pasteAt(useCanvasStore, 'cursor', nanoid)} />
           {/* Cut is a clipboard move, not a destructive act — the red pulled the
@@ -60,28 +49,26 @@ export function GroupPanel() {
           <Btn icon={Scissors}  label="Cut"   onClick={cutSelected}   disabled={!hasSelection} />
         </div>
 
-        <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-
         {/* Group / Ungroup row */}
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={grid}>
           <Btn icon={Layers}  label={canGroup ? `Group (${selectedIds.length})` : 'Group'}
-            onClick={groupSelected} disabled={!canGroup} color="var(--purple)" flex />
+            onClick={groupSelected} disabled={!canGroup} />
           <Btn icon={Ungroup} label="Ungroup"
-            onClick={ungroupSelected} disabled={!canUngroup} color="var(--accent)" flex />
+            onClick={ungroupSelected} disabled={!canUngroup} />
         </div>
 
-        {/* Active group members — click × to remove from group */}
+        {/* Active group members — click × to remove from group (purple = the canvas group highlight) */}
         {activeGroups.map(grp => (
-          <div key={grp.id} style={{ marginTop: 4 }}>
+          <div key={grp.id} style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
             <div style={{
-              fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-mono)',
-              color: 'var(--purple)', padding: '2px 4px 4px',
-              display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 12, fontFamily: 'var(--font-ui)',
+              color: 'var(--purple)',
+              display: 'flex', alignItems: 'center', gap: 8,
             }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--purple)', flexShrink: 0 }} />
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--purple)', flexShrink: 0 }} />
               Group · {grp.ids.length} objects · drag ↻ to rotate
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {grp.ids.map(id => {
                 const obj = objects.find(o => o.id === id)
                 if (!obj) return null
@@ -89,28 +76,21 @@ export function GroupPanel() {
                 const isSelected = activeGroupMemberIds.has(id)
                 return (
                   <div key={id} style={{
-                    display: 'flex', alignItems: 'center', gap: 4,
-                    padding: '3px 6px', borderRadius: 4,
-                    border: `1px solid ${isSelected ? 'var(--purple-bdr)' : 'var(--border)'}`,
-                    background: isSelected ? 'var(--purple-dim)' : 'var(--surface2)',
+                    display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
+                    padding: '0 0 0 8px', borderRadius: 2,
+                    border: `1px solid ${isSelected ? 'var(--purple-bdr)' : 'var(--line)'}`,
+                    background: isSelected ? 'var(--purple-dim)' : 'var(--paper)',
                   }}>
-                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: isSelected ? 'var(--purple)' : 'var(--text3)', flexShrink: 0 }} />
-                    <span style={{ flex: 1, fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-mono)', color: isSelected ? 'var(--purple)' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ width: 6, height: 6, borderRadius: 2, background: isSelected ? 'var(--purple)' : 'var(--steel)', flexShrink: 0 }} />
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontFamily: 'var(--font-ui)', color: isSelected ? 'var(--purple)' : 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {label}
                     </span>
                     <button
                       title="Remove from group"
                       onClick={() => removeFromGroup(id)}
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: 'var(--text3)', padding: '1px 2px', borderRadius: 3,
-                        display: 'flex', alignItems: 'center',
-                        flexShrink: 0,
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--red)' }}
-                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--text3)' }}
+                      className="t-icon t-icon--danger"
                     >
-                      <X size={10} />
+                      <X size={14} strokeWidth={1.5} absoluteStrokeWidth />
                     </button>
                   </div>
                 )
@@ -120,7 +100,7 @@ export function GroupPanel() {
         ))}
 
         {!hasSelection && activeGroups.length === 0 && (
-          <p style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--font-mono)', color: 'var(--text3)', padding: '2px 4px' }}>
+          <p style={{ fontSize: 12, fontFamily: 'var(--font-ui)', color: 'var(--steel)', margin: 0, lineHeight: 1.5 }}>
             Select 2+ objects to group · Ctrl+G
           </p>
         )}

@@ -20,6 +20,7 @@ import { Field, Fold } from '../shared/Fold'
 import { ElevationLine } from '../Elevations/ElevationLine'
 import { isBeamRack } from '../../utils/elevations'
 import { setRackDepths } from '../../utils/rackDepthAction'
+import { Note } from '../shared/Note'
 
 /* A text object's face: one of the app's three (theme/tokens.js TEXT_FONTS, loaded by index.html). Nothing else —
    an unloaded family silently renders as a system fallback. A face saved before the type change shows (and draws)
@@ -27,63 +28,76 @@ import { setRackDepths } from '../../utils/rackDepthAction'
 
 /* ─── Shared Styles ────────────────────────────────────────────────────────── */
 
+/* Words in PJS, figures in mono (t-num). Inputs are the shared 32px box (index.css .t-input); a field row is a fixed
+   label column with the input filling the rest (.t-row). The panel is 320 wide, 16 in from each edge. */
 const S = {
-  label:  { fontSize:10, fontFamily:'var(--font-mono)', color:'var(--text3)', width:36, flexShrink:0 },
-  mono9:  { fontSize:9,  fontFamily:'var(--font-mono)' },
-  mono10: { fontSize:10, fontFamily:'var(--font-mono)' },
-  mono11: { fontSize:11, fontFamily:'var(--font-mono)' },
+  label:  { fontSize:12, fontFamily:'var(--font-ui)', fontWeight:500, color:'var(--steel)', minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' },
+  word:   { fontSize:12, fontFamily:'var(--font-ui)' },
+  num:    { fontSize:12, fontFamily:'var(--font-mono)' },
   input: {
     /* minWidth:0 is load-bearing. A flex child floors at its min-content width,
        and a number input's min-content is its full default box (~145px) — so
-       two of these side by side (the floor-plan W/H row) blew straight through
-       the 272px panel and the second field was clipped off the edge. */
-    flex:1, minWidth:0, borderRadius:6, padding:'5px 8px',
-    background:'var(--surface2)', border:'1px solid var(--border)',
-    fontSize:11, color:'var(--text)', fontFamily:'var(--font-mono)', outline:'none',
-    transition:'border-color 0.15s',
+       two of these side by side blew straight through the panel. */
+    flex:1, minWidth:0, width:'100%',
   },
+}
+const ICON = { size:16, strokeWidth:1.5, absoluteStrokeWidth:true }
+
+/* a toggle switch: radius 2, 32×18, pine when on */
+function Toggle({ on, onClick, label }) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={!!on} aria-label={label}
+      style={{ position:'relative', width:32, height:18, borderRadius:2, flexShrink:0, cursor:'pointer', border:'none', padding:0,
+        background: on ? 'var(--pine)' : 'var(--line-2)', transition:'background 0.2s' }}>
+      <span style={{ position:'absolute', top:3, left: on ? 17 : 3, width:12, height:12, borderRadius:1, background:'var(--paper)', transition:'left 0.2s' }} />
+    </button>
+  )
 }
 
 /* ─── Field Components ─────────────────────────────────────────────────────── */
 
 function NumField({ label, value, onChange, onCommit, unit = '' }) {
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+    <label className="t-row">
       <span style={S.label}>{label}</span>
+      <span className="t-field">
       <input
         type="number" step="1"
         defaultValue={Math.round(value ?? 0)}
         key={Math.round(value ?? 0)}
         onChange={(e) => onChange(Number(e.target.value))}
-        onBlur={(e) => { e.target.style.borderColor='var(--border)'; onCommit && onCommit(Number(e.target.value)) }}
+        onBlur={(e) => { onCommit && onCommit(Number(e.target.value)) }}
         onKeyDown={(e) => { if (e.key === 'Enter') { onCommit && onCommit(Number(e.target.value)); e.target.blur() } }}
-        onFocus={e => e.target.style.borderColor='var(--accent)'}
-        style={S.input}
+        className="t-input" style={S.input}
       />
-      {unit && <span style={{...S.mono10, color:'var(--text3)'}}>{unit}</span>}
-    </div>
+      {unit && <span className="t-unit">{unit}</span>}
+      </span>
+    </label>
   )
 }
 
 function DimReadout({ label, px, gridSize = 40 }) {
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+    <div className="t-row">
       <span style={S.label}>{label}</span>
-      <span style={{...S.mono11, color:'var(--accent)'}}>{pxToFtIn(px, gridSize)}</span>
-      <span style={{...S.mono9, color:'var(--text3)', opacity:0.5}}>({Math.round(px)}px)</span>
+      <span style={{ display:'flex', gap:8, alignItems:'baseline', minWidth:0 }}>
+        <span style={{...S.num, fontSize:13, color:'var(--ink)'}}>{pxToFtIn(px, gridSize)}</span>
+        <span style={{...S.num, fontSize:11, color:'var(--steel)'}}>({Math.round(px)}px)</span>
+      </span>
     </div>
   )
 }
 
 /* ─── Capacity Hero ────────────────────────────────────────────────────────── */
 
+/* the bars are pine (A7): a count, not a category colour */
 const RACK_TYPE_META = {
-  rack_row:           { name: 'Selective',      color: '#818cf8' },
-  rack_double_row:    { name: 'Double Deep',    color: '#a78bfa' },
-  rack_drive_in:      { name: 'Drive-In',       color: '#34d399' },
-  rack_drive_through: { name: 'Drive-Through',  color: '#2dd4bf' },
-  rack_pushback:      { name: 'Pushback',       color: '#fbbf24' },
-  rack_pallet_flow:   { name: 'Pallet Flow',    color: '#f472b6' },
+  rack_row:           { name: 'Selective' },
+  rack_double_row:    { name: 'Double Deep' },
+  rack_drive_in:      { name: 'Drive-In' },
+  rack_drive_through: { name: 'Drive-Through' },
+  rack_pushback:      { name: 'Pushback' },
+  rack_pallet_flow:   { name: 'Pallet Flow' },
 }
 
 function CapacityHero({ objects }) {
@@ -103,102 +117,96 @@ function CapacityHero({ objects }) {
   const rackCount = objects.filter(o => RACK_TYPE_META[o.type]).length
 
   return (
-    <div style={{ margin:'0 10px 10px', display:'flex', flexDirection:'column', gap:6 }}>
+    <div style={{ margin:'0 16px 16px', display:'flex', flexDirection:'column', gap:8 }}>
 
       {/* ── Total — hero card ────────────────────────────────────── */}
       <div style={{
-        borderRadius:8, padding:'14px 12px 12px',
-        background:'var(--surface2)',
-        border:'1px solid var(--border)',
+        borderRadius:4, padding:'12px 12px',
+        background:'var(--paper)',
+        border:'1px solid var(--line)',
       }}>
-        <span style={{
-          fontSize:9, fontWeight:600, color:'var(--text3)',
-          textTransform:'uppercase', letterSpacing:'0.1em', display:'block', marginBottom:6,
-        }}>
+        <span className="t-cap" style={{ display:'block', marginBottom:8 }}>
           Total pallet positions
         </span>
 
-        <div style={{ display:'flex', alignItems:'baseline', flexWrap:'wrap', columnGap:6, rowGap:4 }}>
-          <span style={{
-            fontSize:32, fontWeight:800, fontFamily:'var(--font-mono)',
-            color:'var(--text)', letterSpacing:'-0.03em', lineHeight:1,
+        <div style={{ display:'flex', alignItems:'baseline', flexWrap:'wrap', columnGap:8, rowGap:4 }}>
+          <span className="t-num" style={{
+            fontSize:26, fontWeight:600,
+            color:'var(--ink)', lineHeight:1,
           }}>
             {layoutCap.total.toLocaleString()}
           </span>
-          <span style={{ fontSize:11, color:'var(--text3)', fontWeight:500 }}>positions</span>
+          <span style={{ fontSize:12, color:'var(--steel)', fontWeight:500 }}>positions</span>
           {/* "· M usable" wraps as one unit on a narrow panel, never split */}
-          <span style={{ display:'inline-flex', alignItems:'baseline', gap:5, whiteSpace:'nowrap' }}>
-            <span style={{ fontSize:11, color:'var(--text3)' }}>·</span>
-            <span data-testid="capacity-usable" style={{
-              fontSize:20, fontWeight:700, fontFamily:'var(--font-mono)',
-              color:'var(--text)', letterSpacing:'-0.02em', lineHeight:1,
+          <span style={{ display:'inline-flex', alignItems:'baseline', gap:4, whiteSpace:'nowrap' }}>
+            <span style={{ fontSize:12, color:'var(--steel)' }}>·</span>
+            <span data-testid="capacity-usable" className="t-num" style={{
+              fontSize:18, fontWeight:600,
+              color:'var(--ink)', lineHeight:1,
             }}>
               {usable.toLocaleString()}
             </span>
-            <span style={{ fontSize:11, color:'var(--text3)', fontWeight:500 }}>usable</span>
+            <span style={{ fontSize:12, color:'var(--steel)', fontWeight:500 }}>usable</span>
           </span>
         </div>
         {layoutCap.uncountedBays > 0 && (
-          <div data-testid="capacity-overlap" title="A bay more than half covered by another rack's bay is counted once — Check layout lists the overlaps"
-            style={{ marginTop:6, fontSize:10, color:'var(--amber, #B87309)', fontFamily:'var(--font-mono)' }}>
-            {layoutCap.uncountedBays} overlapping bay{layoutCap.uncountedBays === 1 ? '' : 's'} not counted
-          </div>
+          <Note level="warning" data-testid="capacity-overlap" title="A bay more than half covered by another rack's bay is counted once — Check layout lists the overlaps"
+            style={{ marginTop:8 }}>
+            <span><span className="t-num">{layoutCap.uncountedBays}</span> overlapping bay{layoutCap.uncountedBays === 1 ? '' : 's'} not counted</span>
+          </Note>
         )}
 
         <div style={{
-          marginTop:10, display:'flex', gap:16,
-          paddingTop:10, borderTop:'1px solid var(--border)',
+          marginTop:12, display:'flex', gap:16,
+          paddingTop:12, borderTop:'1px solid var(--line)',
         }}>
           <div>
-            <div style={{ fontSize:9, color:'var(--text3)', marginBottom:2 }}>Racks</div>
-            <div style={{ fontSize:11, color:'var(--text)', fontWeight:600, fontFamily:'var(--font-mono)' }}>{rackCount}</div>
+            <div style={{ fontSize:11, color:'var(--steel)', marginBottom:4 }}>Racks</div>
+            <div className="t-num" style={{ fontSize:13, color:'var(--ink)', fontWeight:500 }}>{rackCount}</div>
           </div>
           <div>
-            <div style={{ fontSize:9, color:'var(--text3)', marginBottom:2 }}>Types</div>
-            <div style={{ fontSize:11, color:'var(--text)', fontWeight:600, fontFamily:'var(--font-mono)' }}>{entries.length}</div>
+            <div style={{ fontSize:11, color:'var(--steel)', marginBottom:4 }}>Types</div>
+            <div className="t-num" style={{ fontSize:13, color:'var(--ink)', fontWeight:500 }}>{entries.length}</div>
           </div>
         </div>
       </div>
 
       {/* ── Breakdown card ───────────────────────────────────────── */}
       <div style={{
-        borderRadius:8, overflow:'hidden',
-        border:'1px solid var(--border)',
-        background:'var(--surface2)',
+        borderRadius:4, overflow:'hidden',
+        border:'1px solid var(--line)',
+        background:'var(--paper)',
       }}>
         <div style={{
-          padding:'6px 10px', borderBottom:'1px solid var(--border)',
+          padding:'8px 12px', borderBottom:'1px solid var(--line)',
           display:'flex', justifyContent:'space-between', alignItems:'center',
-          background:'var(--surface3)',
+          background:'var(--bg2)',
         }}>
-          <span style={{ fontSize:9, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:600 }}>
+          <span className="t-cap">
             By type
           </span>
-          <span style={{ fontSize:9, color:'var(--text3)' }}>positions</span>
+          <span style={{ fontSize:11, color:'var(--steel)' }}>positions</span>
         </div>
 
         {entries.map(([type, count], i) => {
-          const meta = RACK_TYPE_META[type] || { name: type, color: '#888' }
+          const meta = RACK_TYPE_META[type] || { name: type }
           const pct = maxCount > 0 ? (count / maxCount) * 100 : 0
 
           return (
             <div key={type} style={{
-              padding:'7px 10px',
-              borderBottom: i < entries.length - 1 ? '1px solid var(--border)' : 'none',
+              padding:'8px 12px',
+              borderBottom: i < entries.length - 1 ? '1px solid var(--line)' : 'none',
               display:'flex', flexDirection:'column', gap:4,
             }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                  <div style={{ width:6, height:6, borderRadius:2, background:meta.color, flexShrink:0 }}/>
-                  <span style={{ fontSize:11, color:'var(--text2)', fontFamily:'var(--font-mono)' }}>{meta.name}</span>
-                </div>
-                <span style={{ fontSize:11, color:'var(--text)', fontWeight:700, fontFamily:'var(--font-mono)' }}>
+                <span style={{ fontSize:12, color:'var(--ink-2)', fontFamily:'var(--font-ui)' }}>{meta.name}</span>
+                <span className="t-num" style={{ fontSize:12, color:'var(--ink)', fontWeight:600 }}>
                   {count.toLocaleString()}
                 </span>
               </div>
-              <div style={{ height:3, borderRadius:2, background:'var(--surface3)', overflow:'hidden' }}>
+              <div style={{ height:4, borderRadius:2, background:'var(--bg2)', overflow:'hidden' }}>
                 <div style={{
-                  height:'100%', borderRadius:2, background:meta.color,
+                  height:'100%', borderRadius:2, background:'var(--pine)',
                   width:`${pct}%`, transition:'width 0.3s ease',
                 }}/>
               </div>
@@ -217,41 +225,32 @@ function AislePanel({ obj }) {
   const direction = obj.direction || 'both'
   const label     = obj.label || ''
 
-  const btnStyle = (active) => ({
-    padding:'4px 10px', borderRadius:5, cursor:'pointer',
-    ...S.mono9,
-    background: active ? 'var(--accent-solid)' : 'var(--surface3)',
-    border: `1px solid ${active ? 'var(--accent-bdr)' : 'var(--border)'}`,
-    color: active ? 'var(--accent-fg)' : 'var(--text3)',
-    transition:'all 0.15s',
-  })
+
 
   return (
-    <div style={{ padding:8, display:'flex', flexDirection:'column', gap:8 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-        <span style={{ ...S.mono9, color:'var(--text3)', minWidth:50 }}>Name</span>
+    <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+      <label className="t-row">
+        <span style={S.label}>Name</span>
         <input type="text" defaultValue={label} key={`label-${obj.id}`}
           placeholder="e.g. Main Aisle"
           onFocus={e => e.target.select()}
           onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
           onBlur={e => commitObjectUpdate(obj.id, { label: e.target.value })}
-          style={{
-            flex:1, padding:'3px 6px', borderRadius:5, ...S.mono11,
-            background:'var(--surface3)', border:'1px solid var(--border)',
-            color:'var(--text)', outline:'none',
-          }}/>
-      </div>
-      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-        <span style={{ ...S.mono9, color:'var(--text3)', minWidth:50 }}>Traffic</span>
+          className="t-input t-words" style={S.input}/>
+      </label>
+      <div className="t-row">
+        <span style={S.label}>Traffic</span>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4, minmax(0, 1fr))', gap:4 }}>
         {[
           { val:'up',   label:'↑' },
           { val:'down', label:'↓' },
           { val:'both', label:'↕' },
           { val:'none', label:'—' },
         ].map(({ val, label: lbl }) => (
-          <button key={val} onClick={() => commitObjectUpdate(obj.id, { direction: val })}
-            style={btnStyle(direction === val)}>{lbl}</button>
+          <button key={val} type="button" onClick={() => commitObjectUpdate(obj.id, { direction: val })} aria-pressed={direction === val}
+            className="t-btn t-btn--secondary" style={{ padding:0 }}>{lbl}</button>
         ))}
+        </div>
       </div>
       <AisleLabelSize ids={[obj.id]} />
     </div>
@@ -269,12 +268,12 @@ function SelectionRacks({ selected }) {
   // the one depth change (utils/rackDepthAction.js): a wall row keeps its wall face, a pair its flue
   const setDepth = (v) => { setRackDepths(useCanvasStore, racks.map(r => r.id), v) }
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:12, marginTop:10 }}>
+    <div style={{ display:'flex', flexDirection:'column', gap:12, marginTop:8 }}>
       <ElevationLine />
       {racks.length > 0 && (
         <Fold title="Rack" defaultOpen={false} aria="Rack">
           <Field label="Frame depth" aria="Rack depth" value={depths.length === 1 ? depths[0] : ''} title={`The ${racks.length} selected rack${racks.length === 1 ? '' : 's'} — a wall row keeps its wall clearance and grows away from the wall; others about their centre`} onCommit={setDepth} />
-          {depths.length > 1 && <span style={{ ...S.mono9, color:'var(--text3)' }}>Mixed: {depths.map(d => d + '"').join(', ')}</span>}
+          {depths.length > 1 && <span style={{ ...S.word, color:'var(--steel)' }}>Mixed: <span className="t-num">{depths.map(d => d + '"').join(', ')}</span></span>}
         </Fold>
       )}
     </div>
@@ -288,7 +287,7 @@ function SelectionRacks({ selected }) {
 export function PropertiesPanel() {
   const { selectedIds, objects, groups, updateObject, commitObjectUpdate, deleteSelected, gridSize,
           bringForward, sendBackward, bringToFront, sendToBack, toggleLockSelected, createAisle,
-          showAisles, toggleAisles } = useCanvasStore(useShallow(s => ({ selectedIds: s.selectedIds, objects: s.objects, groups: s.groups, updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, deleteSelected: s.deleteSelected, gridSize: s.gridSize, bringForward: s.bringForward, sendBackward: s.sendBackward, bringToFront: s.bringToFront, sendToBack: s.sendToBack, toggleLockSelected: s.toggleLockSelected, createAisle: s.createAisle, showAisles: s.showAisles, toggleAisles: s.toggleAisles })))
+        } = useCanvasStore(useShallow(s => ({ selectedIds: s.selectedIds, objects: s.objects, groups: s.groups, updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, deleteSelected: s.deleteSelected, gridSize: s.gridSize, bringForward: s.bringForward, sendBackward: s.sendBackward, bringToFront: s.bringToFront, sendToBack: s.sendToBack, toggleLockSelected: s.toggleLockSelected, createAisle: s.createAisle })))
   const selected = objects.filter(o => selectedIds.includes(o.id))
 
   /* ── Nothing selected → layout overview ──────────────────────────────────── */
@@ -297,11 +296,11 @@ export function PropertiesPanel() {
       <>
       <SectionHeader title="Properties" defaultOpen={true}>
         <div style={{
-          padding:'14px 12px', ...S.mono10, color:'var(--text3)',
+          padding:'0 16px 16px', ...S.word, color:'var(--steel)',
           display:'flex', flexDirection:'column', gap:4,
         }}>
-          <span style={{ color:'var(--text2)', fontWeight:500 }}>No object selected</span>
-          <span style={{ opacity:0.5, fontSize:9 }}>Draw or click a shape to edit properties.</span>
+          <span style={{ color:'var(--ink-2)', fontWeight:600, fontSize:13 }}>No object selected</span>
+          <span style={{ lineHeight:1.5 }}>Draw or click a shape to edit properties.</span>
         </div>
         <CapacityHero objects={objects} />
       </SectionHeader>
@@ -315,21 +314,16 @@ export function PropertiesPanel() {
   if (activeGroup) {
     return (
       <SectionHeader title="Properties" defaultOpen={true}>
-        <div style={{ padding:12, ...S.mono10, color:'var(--text3)' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
-            <div style={{ width:7, height:7, borderRadius:'50%', background:'var(--purple)' }} />
-            <span style={{ color:'var(--purple)' }}>Group · {activeGroup.ids.length} objects</span>
+        <div style={{ padding:'0 16px 16px', ...S.word, color:'var(--steel)' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+            <span style={{ color:'var(--ink)', fontWeight:600, fontSize:13 }}>Group · {activeGroup.ids.length} objects</span>
           </div>
-          <p style={{ opacity:0.6 }}>Use the Arrange panel to edit group properties, rotate, or remove members.</p>
+          <p style={{ margin:0, lineHeight:1.5 }}>Use the Arrange panel to edit group properties, rotate, or remove members.</p>
           {/* Bays picked on grouped racks get the same multi-bay box. */}
-          <div style={{ margin:'8px -8px 0' }}><MultiBayPanel /></div>
+          <div style={{ marginTop:8 }}><MultiBayPanel /></div>
           <SelectionRacks selected={selected} />
-          <button onClick={deleteSelected} style={{
-            marginTop:10, display:'flex', alignItems:'center', gap:5,
-            background:'none', border:'none', cursor:'pointer',
-            color:'var(--red)', ...S.mono10,
-          }}>
-            <Trash2 size={11} /> Delete group
+          <button type="button" onClick={deleteSelected} className="t-btn t-btn--danger" style={{ marginTop:12 }}>
+            <Trash2 {...ICON} /> Delete group
           </button>
         </div>
       </SectionHeader>
@@ -343,35 +337,26 @@ export function PropertiesPanel() {
     const twoRacks = selected.length === 2 && selected.every(o => RACK_TYPES.has(o.type))
     return (
       <SectionHeader title={`Properties (${selected.length})`} defaultOpen={true}>
-        <div style={{ padding:12 }}>
-          <p style={{ ...S.mono10, color:'var(--text3)' }}>{selected.length} objects selected.</p>
+        <div style={{ padding:'0 16px 16px' }}>
+          <p style={{ ...S.word, margin:0, color:'var(--steel)' }}><span className="t-num">{selected.length}</span> objects selected.</p>
           {/* Bays picked across several racks (a bay marquee / Shift+click
               puts every rack they belong to in selectedIds) — the same
               multi-bay box a single rack shows. */}
-          <div style={{ margin:'8px -8px 0' }}><MultiBayPanel /></div>
+          <div style={{ marginTop:8 }}><MultiBayPanel /></div>
           <SelectionRacks selected={selected} />
           {/* aisles among the selection: their own label size */}
           {selected.some(o => o.type === 'aisle') && (
             <div style={{ marginTop:8 }}><AisleLabelSize ids={selected.filter(o => o.type === 'aisle').map(o => o.id)} /></div>
           )}
           {twoRacks && (
-            <button
+            <button type="button"
               onClick={() => createAisle(selected[0].id, selected[1].id)}
-              style={{
-                marginTop:8, width:'100%', padding:'7px 0', borderRadius:5,
-                ...S.mono9, fontWeight:600, cursor:'pointer',
-                background:'var(--accent-dim)', border:'1px solid var(--accent-bdr)', color:'var(--accent)',
-                transition:'all 0.15s',
-              }}>
+              className="t-btn t-btn--secondary t-btn--block" style={{ marginTop:8 }}>
               + Create Aisle Label
             </button>
           )}
-          <button onClick={deleteSelected} style={{
-            marginTop:8, display:'flex', alignItems:'center', gap:5,
-            background:'none', border:'none', cursor:'pointer',
-            color:'var(--red)', ...S.mono10,
-          }}>
-            <Trash2 size={11} /> Delete all
+          <button type="button" onClick={deleteSelected} className="t-btn t-btn--danger" style={{ marginTop:12 }}>
+            <Trash2 {...ICON} /> Delete all
           </button>
         </div>
       </SectionHeader>
@@ -379,7 +364,6 @@ export function PropertiesPanel() {
   }
 
   /* ── Single object ───────────────────────────────────────────────────────── */
-  const hasAisles = objects.some(o => o.type === 'aisle')
   const obj = selected[0]
   const up     = (k, v) => updateObject(obj.id, { [k]: v })
   const commit = (k, v) => commitObjectUpdate(obj.id, { [k]: v })
@@ -393,71 +377,45 @@ export function PropertiesPanel() {
 
   return (
     <>
-    {hasAisles && (
-      <div style={{ padding:'4px 8px', borderBottom:'1px solid var(--border)' }}>
-        <button onClick={toggleAisles} style={{
-          width:'100%', padding:'6px 0', borderRadius:5, cursor:'pointer',
-          ...S.mono9, fontWeight:600,
-          background: showAisles ? 'var(--accent-solid)' : 'var(--surface2)',
-          border: `1px solid ${showAisles ? 'var(--accent-bdr)' : 'var(--border)'}`,
-          color: showAisles ? 'var(--accent-fg)' : 'var(--text3)',
-          transition:'all 0.15s',
-        }}>
-          {showAisles ? '● Aisle labels visible' : '○ Aisle labels hidden'}
-        </button>
-      </div>
-    )}
     <SectionHeader title="Properties" defaultOpen={true}>
-      <div style={{ padding:'12px 13px 14px', display:'flex', flexDirection:'column', gap:11 }}>
+      <div style={{ padding:'0 16px 16px', display:'flex', flexDirection:'column', gap:12, minWidth:0 }}>
 
         {/* ── Object header ───────────────────────────────────────────── */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <span style={{
-              ...S.mono9, padding:'3px 8px',
-              background:'var(--surface3)', borderRadius:4,
-              color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em',
-              border:'1px solid var(--border)',
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+            <span className="t-cap" style={{
+              padding:'0 8px', height:24, display:'inline-flex', alignItems:'center',
+              background:'var(--bg2)', borderRadius:2, color:'var(--ink-2)',
+              border:'1px solid var(--line)',
             }}>
               {obj.type?.replace(/_/g,' ') || 'shape'}
             </span>
             {bayLabel && (
               <span style={{
-                ...S.mono9, padding:'3px 8px',
-                background:'var(--accent-dim)', borderRadius:4,
-                color:'var(--accent)', fontWeight:600,
-                border:'1px solid var(--accent-bdr)',
+                ...S.word, padding:'0 8px', height:24, display:'inline-flex', alignItems:'center',
+                background:'var(--pine)', borderRadius:2,
+                color:'var(--paper)', fontWeight:600,
               }}>
                 {bayLabel}
               </span>
             )}
           </div>
 
-          <div style={{ display:'flex', alignItems:'center', gap:2 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:0, marginRight:-8 }}>
             {[
-              { action: toggleLockSelected, title: obj.locked ? 'Unlock (Ctrl+L)' : 'Lock', icon: obj.locked ? <Lock size={11}/> : <Unlock size={11}/>, activeColor: obj.locked ? 'var(--accent)' : null },
-              { action: sendToBack,    title: 'Send to back',    icon: <SendToBack size={11}/> },
-              { action: sendBackward,  title: 'Send backward',   icon: <ChevronDown size={11}/> },
-              { action: bringForward,  title: 'Bring forward',   icon: <ChevronUp size={11}/> },
-              { action: bringToFront,  title: 'Bring to front',  icon: <BringToFront size={11}/> },
+              { action: toggleLockSelected, title: obj.locked ? 'Unlock (Ctrl+L)' : 'Lock', icon: obj.locked ? <Lock {...ICON}/> : <Unlock {...ICON}/>, on: !!obj.locked },
+              { action: sendToBack,    title: 'Send to back',    icon: <SendToBack {...ICON}/> },
+              { action: sendBackward,  title: 'Send backward',   icon: <ChevronDown {...ICON}/> },
+              { action: bringForward,  title: 'Bring forward',   icon: <ChevronUp {...ICON}/> },
+              { action: bringToFront,  title: 'Bring to front',  icon: <BringToFront {...ICON}/> },
             ].map((btn, i) => (
-              <button key={i} onClick={btn.action} title={btn.title}
-                style={{
-                  background:'none', border:'none', cursor:'pointer',
-                  color: btn.activeColor || 'var(--text3)', padding:3,
-                  borderRadius:3, transition:'color 0.15s',
-                }}
-                onMouseEnter={e => { if (!btn.activeColor) e.currentTarget.style.color='var(--text)' }}
-                onMouseLeave={e => { if (!btn.activeColor) e.currentTarget.style.color='var(--text3)' }}>
+              <button key={i} type="button" onClick={btn.action} title={btn.title} className={'t-icon' + (btn.on ? ' is-on' : '')}>
                 {btn.icon}
               </button>
             ))}
-            <div style={{ width:1, height:14, background:'var(--border)', margin:'0 2px' }}/>
-            <button onClick={deleteSelected} title="Delete (Del)"
-              style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)', padding:3, borderRadius:3 }}
-              onMouseEnter={e => e.currentTarget.style.color='var(--red)'}
-              onMouseLeave={e => e.currentTarget.style.color='var(--text3)'}>
-              <Trash2 size={11} />
+            <div style={{ width:1, height:16, background:'var(--line)', margin:'0 4px' }}/>
+            <button type="button" onClick={deleteSelected} title="Delete (Del)" className="t-icon t-icon--danger">
+              <Trash2 {...ICON} />
             </button>
           </div>
         </div>
@@ -492,102 +450,82 @@ export function PropertiesPanel() {
           }
           return (
             <>
-              <div style={{ display:'flex', gap:8 }}>
-                <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', gap:6 }}>
-                  <span style={S.label}>W</span>
-                  <input type="number" min={1} max={9999} step={1}
+              <label className="t-row">
+                <span style={S.label}>Width</span>
+                <span className="t-field">
+                  <input type="number" min={1} max={9999} step={1} aria-label="Width (ft)"
                     defaultValue={Math.round(obj.width / gridSize * 10) / 10}
                     key={`w-${obj.id}-${Math.round(obj.width)}`}
                     onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) up('width', v * gridSize) }}
-                    onBlur={e => { e.target.style.borderColor='var(--border)'; const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) commit('width', v * gridSize) }}
+                    onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) commit('width', v * gridSize) }}
                     onKeyDown={e => { if (e.key==='Enter') { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) commit('width', v * gridSize); e.target.blur() } }}
-                    onFocus={e => e.target.style.borderColor='var(--accent)'}
-                    style={S.input}
+                    className="t-input" style={S.input}
                   />
-                  <span style={{...S.mono10, color:'var(--text3)'}}>ft</span>
-                </div>
-                <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', gap:6 }}>
-                  <span style={S.label}>H</span>
-                  <input type="number" min={1} max={9999} step={1}
+                  <span className="t-unit">ft</span>
+                </span>
+              </label>
+              <label className="t-row">
+                <span style={S.label}>Length</span>
+                <span className="t-field">
+                  <input type="number" min={1} max={9999} step={1} aria-label="Length (ft)"
                     defaultValue={Math.round(obj.height / gridSize * 10) / 10}
                     key={`h-${obj.id}-${Math.round(obj.height)}`}
                     onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) up('height', v * gridSize) }}
-                    onBlur={e => { e.target.style.borderColor='var(--border)'; const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) commit('height', v * gridSize) }}
+                    onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) commit('height', v * gridSize) }}
                     onKeyDown={e => { if (e.key==='Enter') { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) commit('height', v * gridSize); e.target.blur() } }}
-                    onFocus={e => e.target.style.borderColor='var(--accent)'}
-                    style={S.input}
+                    className="t-input" style={S.input}
                   />
-                  <span style={{...S.mono10, color:'var(--text3)'}}>ft</span>
-                </div>
-              </div>
+                  <span className="t-unit">ft</span>
+                </span>
+              </label>
               <NumField label="Rot" value={obj.rotation||0} onChange={v => up('rotation',v)} onCommit={v => commit('rotation',v)} unit="°" />
-              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <label className="t-row">
                 <span style={S.label}>Label</span>
                 <input type="text" defaultValue={obj.label||''} key={obj.id}
                   onChange={e => up('label', e.target.value)}
                   placeholder="Floor label…"
-                  onFocus={e => e.target.style.borderColor='var(--accent)'}
-                  onBlur={e => e.target.style.borderColor='var(--border)'}
-                  style={{...S.input, fontFamily:'var(--font-mono)'}}
+                  className="t-input t-words" style={S.input}
                 />
-              </div>
-              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <span style={S.label}>Size</span>
+              </label>
+              <label className="t-row">
+                <span style={S.label}>Label size</span>
+                <span className="t-field">
                 <input type="number" min={1} max={80} step={1}
                   defaultValue={Math.round((obj.labelFontSize ?? Math.round(Math.min(obj.width, obj.height) * 0.10)) / gridSize)}
                   key={`fs-${obj.id}-${Math.round((obj.labelFontSize ?? 0) / gridSize)}`}
                   onChange={e => up('labelFontSize', Math.max(1, Number(e.target.value)) * gridSize)}
-                  onFocus={e => e.target.style.borderColor='var(--accent)'}
-                  onBlur={e => e.target.style.borderColor='var(--border)'}
-                  style={{...S.input, width:60, flex:'none'}}
+                  className="t-input" style={S.input}
                 />
-                <span style={{...S.mono10, color:'var(--text3)'}}>ft</span>
-              </div>
+                <span className="t-unit">ft</span>
+                </span>
+              </label>
 
               {/* Wall thickness */}
-              <div style={{ paddingTop:8, borderTop:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:6 }}>
+              <div style={{ paddingTop:12, borderTop:'1px solid var(--line)', display:'flex', flexDirection:'column', gap:8 }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                  <span style={{ ...S.mono9, color:'var(--accent)', textTransform:'uppercase', letterSpacing:'0.06em' }}>Wall Thickness</span>
-                  <span style={{ ...S.mono11, color:'var(--text)' }}>{(wallT*12).toFixed(0)}"</span>
+                  <span className="t-cap">Wall thickness</span>
+                  <span className="t-num" style={{ fontSize:13, color:'var(--ink)' }}>{(wallT*12).toFixed(0)}"</span>
                 </div>
                 <input type="range" min={0.25} max={2} step={0.25} value={wallT}
                   onChange={e => setWall(Number(e.target.value))}
-                  style={{ accentColor:'var(--accent)', height:4, width:'100%' }} />
-                <div style={{ display:'flex', gap:4 }}>
+                  style={{ accentColor:'var(--pine)', height:4, width:'100%' }} />
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(4, minmax(0, 1fr))', gap:8 }}>
                   {[0.25,0.5,0.75,1].map(v => (
-                    <button key={v} onClick={() => setWall(v)}
-                      style={{
-                        flex:1, ...S.mono9, padding:'4px 0', borderRadius:5,
-                        border: wallT===v ? '1px solid var(--accent)' : '1px solid var(--border)',
-                        background: wallT===v ? 'var(--accent-dim)' : 'transparent',
-                        color: wallT===v ? 'var(--accent)' : 'var(--text3)', cursor:'pointer',
-                        transition:'all 0.15s',
-                      }}>
+                    <button key={v} type="button" onClick={() => setWall(v)} aria-pressed={wallT===v}
+                      className="t-btn t-btn--secondary t-num" style={{ padding:0, fontFamily:'var(--font-mono)', fontWeight:500 }}>
                       {v*12}"
                     </button>
                   ))}
                 </div>
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', paddingTop:2 }}>
-                  <span style={{ ...S.mono9, color:'var(--text3)' }}>Show clear interior dim</span>
-                  <button onClick={() => up('showWallLabel', !(obj.showWallLabel ?? false))}
-                    style={{
-                      position:'relative', width:32, height:16, borderRadius:8, flexShrink:0,
-                      transition:'all 0.2s', cursor:'pointer', border:'none',
-                      background: obj.showWallLabel ? 'var(--accent)' : 'var(--border2)',
-                    }}>
-                    <div style={{
-                      position:'absolute', top:2, width:12, height:12, borderRadius:6,
-                      background:'white', boxShadow:'0 1px 2px rgba(0,0,0,0.2)',
-                      transition:'all 0.2s',
-                      left: obj.showWallLabel ? 17 : 2,
-                    }} />
-                  </button>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+                  <span style={{ ...S.word, color:'var(--ink-2)' }}>Show clear interior dim</span>
+                  <Toggle on={obj.showWallLabel} label="Show clear interior dim" onClick={() => up('showWallLabel', !(obj.showWallLabel ?? false))} />
                 </div>
               </div>
 
-              <div style={{ ...S.mono10, color:'var(--text3)', paddingTop:4, borderTop:'1px solid var(--border)' }}>
-                Area: <span style={{ color:'var(--text)' }}>{Math.round(wFt * hFt).toLocaleString()} sq ft</span>
-                <span style={{ marginLeft:8, opacity:0.5 }}>({(wFt*hFt/43560).toFixed(3)} ac)</span>
+              <div style={{ ...S.word, color:'var(--steel)', paddingTop:12, borderTop:'1px solid var(--line)' }}>
+                Area: <span className="t-num" style={{ color:'var(--ink)' }}>{Math.round(wFt * hFt).toLocaleString()} sq ft</span>
+                <span className="t-num" style={{ marginLeft:8 }}>({(wFt*hFt/43560).toFixed(3)} ac)</span>
               </div>
             </>
           )
@@ -617,19 +555,19 @@ export function PropertiesPanel() {
           <DimReadout label="Len" px={Math.hypot(obj.x2-obj.x1, obj.y2-obj.y1)} gridSize={gridSize} />
           {obj.type==='arc' && (<>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-              <span style={{ ...S.mono10, color:'var(--text3)' }}>Bend</span>
-              <span style={{ ...S.mono10, color:'var(--text)' }}>{(obj.bend??0.35).toFixed(2)}</span>
+              <span style={{ ...S.label }}>Bend</span>
+              <span style={{ ...S.num, color:'var(--ink)' }}>{(obj.bend??0.35).toFixed(2)}</span>
             </div>
             <input type="range" min="-0.8" max="0.8" step="0.05"
               value={obj.bend??0.35} onChange={e => up('bend',Number(e.target.value))}
-              style={{ accentColor:'var(--accent)', height:4, width:'100%' }} />
+              style={{ accentColor:'var(--pine)', height:4, width:'100%' }} />
           </>)}
         </>)}
 
         {/* ── Dimension label override ─────────────────────────────── */}
         {obj.type === 'annot_dimension' && (
           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-            <span style={{ ...S.mono10, color:'var(--text3)' }}>Label override</span>
+            <span style={S.label}>Label override</span>
             <input type="text"
               placeholder="auto"
               defaultValue={obj.customLabel || ''}
@@ -638,9 +576,9 @@ export function PropertiesPanel() {
               onChange={e => up('customLabel', e.target.value || undefined)}
               onBlur={e => commit('customLabel', e.target.value || undefined)}
               onKeyDown={e => { if (e.key==='Enter') e.target.blur() }}
-              style={{...S.input, flex:'none'}}
+              className="t-input" style={{...S.input, flex:'none'}}
             />
-            <span style={{ ...S.mono9, color:'var(--text3)', opacity:0.6 }}>
+            <span style={{ ...S.word, color:'var(--steel)' }}>
               Leave empty to show auto-measured value
             </span>
           </div>
@@ -655,92 +593,80 @@ export function PropertiesPanel() {
            second, live-writing-on-every-keystroke content field here was
            redundant with that and has been removed. */}
         {obj.type==='text' && (<>
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <label className="t-row">
             <span style={S.label}>Font</span>
             <select value={textFace(obj.fontFamily)}
               onChange={e => commit('fontFamily', e.target.value)}
-              style={{ ...S.input, flex:1, cursor:'pointer' }}>
+              className="t-input t-words" style={{ ...S.input, cursor:'pointer' }}>
               {TEXT_FONTS.map(f => <option key={f} value={f} style={{ fontFamily:f }}>{f}</option>)}
             </select>
-          </div>
+          </label>
 
           <NumField label="Size" value={obj.fontSize||14} onChange={v => up('fontSize',v)} onCommit={v => commit('fontSize',v)} />
 
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <div className="t-row">
             <span style={S.label}>Style</span>
-            <div style={{ display:'flex', gap:4, flex:1 }}>
+            <div style={{ display:'flex', gap:4, minWidth:0 }}>
               {[['bold',Bold,'Bold'],['italic',Italic,'Italic'],
                 ['underline',Underline,'Underline'],['strike',Strikethrough,'Strikethrough']].map(([k,Icon,title]) => {
                 const on = !!obj[k]
                 return (
                   <button key={k} aria-pressed={on} title={title} onClick={() => commit(k, !on)}
-                    style={{
-                      width:26, height:24, borderRadius:5, cursor:'pointer', display:'flex',
-                      alignItems:'center', justifyContent:'center',
-                      background: on ? 'var(--accent)' : 'var(--surface2)',
-                      color:      on ? 'white'          : 'var(--text2)',
-                      border:`1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
-                    }}>
-                    <Icon size={13} strokeWidth={2.2}/>
+                    className="t-btn t-btn--secondary" style={{ width:32, padding:0 }}>
+                    <Icon {...ICON}/>
                   </button>
                 )
               })}
             </div>
           </div>
 
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <div className="t-row">
             <span style={S.label}>Align</span>
-            <div style={{ display:'flex', gap:4, flex:1 }}>
+            <div style={{ display:'flex', gap:4, minWidth:0 }}>
               {[['left',AlignLeft],['center',AlignCenter],['right',AlignRight]].map(([a,Icon]) => {
                 const on = (obj.align || 'left') === a
                 return (
                   <button key={a} aria-pressed={on} title={`Align ${a}`} onClick={() => commit('align', a)}
-                    style={{
-                      width:26, height:24, borderRadius:5, cursor:'pointer', display:'flex',
-                      alignItems:'center', justifyContent:'center',
-                      background: on ? 'var(--accent)' : 'var(--surface2)',
-                      color:      on ? 'white'          : 'var(--text2)',
-                      border:`1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
-                    }}>
-                    <Icon size={13} strokeWidth={2.2}/>
+                    className="t-btn t-btn--secondary" style={{ width:32, padding:0 }}>
+                    <Icon {...ICON}/>
                   </button>
                 )
               })}
             </div>
           </div>
 
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <div className="t-row">
             <span style={S.label}>Color</span>
-            <div style={{ display:'flex', gap:4, flex:1, flexWrap:'wrap', alignItems:'center' }}>
+            <div style={{ display:'flex', gap:4, minWidth:0, flexWrap:'wrap', alignItems:'center' }}>
               {PALETTE_COLORS.slice(16, 24).map(c => (
                 <button key={c} title={c} onClick={() => commit('fill', c)}
-                  style={{ width:18, height:18, borderRadius:4, cursor:'pointer', background:c,
-                    border:`1.5px solid ${obj.fill === c ? 'var(--text)' : 'transparent'}` }}/>
+                  style={{ width:18, height:18, borderRadius:2, cursor:'pointer', background:c,
+                    border:`2px solid ${obj.fill === c ? 'var(--ink)' : 'transparent'}` }}/>
               ))}
               {/* writes obj.fill directly via this panel's own commit — deliberately
                   NOT through ColorPanel/applyFillToSelected's global-opacity-baking
                   path, so text has exactly one fill mechanism, not two competing ones */}
               <input type="color" title="Custom text color"
-                value={/^#[0-9a-f]{6}$/i.test(obj.fill) ? obj.fill : '#0B101D'}
+                value={/^#[0-9a-f]{6}$/i.test(obj.fill) ? obj.fill : '#171A18'}
                 onChange={e => commit('fill', e.target.value)}
-                style={{ width:22, height:20, padding:0, border:'1px solid var(--border)',
-                  borderRadius:4, background:'transparent', cursor:'pointer' }}/>
+                style={{ width:24, height:20, padding:0, border:'1px solid var(--line)',
+                  borderRadius:2, background:'transparent', cursor:'pointer' }}/>
             </div>
           </div>
 
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <div className="t-row">
             <span style={S.label}>Spacing</span>
-            <div style={{ display:'flex', gap:6, flex:1 }}>
+            <div style={{ display:'flex', gap:8, minWidth:0 }}>
               <input type="number" min="0.8" max="3" step="0.05" title="Line height"
                 value={obj.lineHeight ?? 1.25}
                 onChange={e => up('lineHeight', Number(e.target.value))}
                 onBlur={e => commit('lineHeight', Number(e.target.value))}
-                style={{ ...S.input, flex:1 }}/>
+                className="t-input" style={{ ...S.input, flex:1 }}/>
               <input type="number" min="-2" max="20" step="0.5" title="Letter spacing"
                 value={obj.letterSpacing ?? 0}
                 onChange={e => up('letterSpacing', Number(e.target.value))}
                 onBlur={e => commit('letterSpacing', Number(e.target.value))}
-                style={{ ...S.input, flex:1 }}/>
+                className="t-input" style={{ ...S.input, flex:1 }}/>
             </div>
           </div>
         </>)}
@@ -755,51 +681,38 @@ export function PropertiesPanel() {
         {/* ── Stroke width ─────────────────────────────────────────── */}
         {/* "S.W" / "Opac" were abbreviated to survive a cramped row. Now that
             the group is folded away it can afford whole words. */}
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <span style={{...S.label, width:46}}>Stroke</span>
+        <div style={{ display:'grid', gridTemplateColumns:'96px minmax(0,1fr) 40px', alignItems:'center', columnGap:8 }}>
+          <span style={S.label}>Stroke</span>
           <input type="range" min="0.5" max="12" step="0.5"
             value={obj.strokeWidth||1.5} onChange={e => up('strokeWidth',Number(e.target.value))}
             onMouseUp={e => commit('strokeWidth', Number(e.target.value))}
-            style={{ flex:1, accentColor:'var(--accent)', height:4 }} />
-          <span style={{...S.mono10, color:'var(--text3)', width:20, textAlign:'right'}}>{obj.strokeWidth||1.5}</span>
+            style={{ width:'100%', minWidth:0, accentColor:'var(--pine)', height:4 }} />
+          <span style={{...S.num, color:'var(--steel)', textAlign:'right'}}>{obj.strokeWidth||1.5}</span>
         </div>
 
         {/* ── Opacity ──────────────────────────────────────────────── */}
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <span style={{...S.label, width:46}}>Opacity</span>
+        <div style={{ display:'grid', gridTemplateColumns:'96px minmax(0,1fr) 40px', alignItems:'center', columnGap:8 }}>
+          <span style={S.label}>Opacity</span>
           <input type="range" min="0" max="1" step="0.05"
             value={obj.opacity??1} onChange={e => up('opacity',Number(e.target.value))}
             onMouseUp={e => commit('opacity', Number(e.target.value))}
-            style={{ flex:1, accentColor:'var(--accent)', height:4 }} />
-          <span style={{...S.mono10, color:'var(--text3)', width:28, textAlign:'right'}}>{Math.round((obj.opacity??1)*100)}%</span>
+            style={{ width:'100%', minWidth:0, accentColor:'var(--pine)', height:4 }} />
+          <span style={{...S.num, color:'var(--steel)', textAlign:'right'}}>{Math.round((obj.opacity??1)*100)}%</span>
         </div>
 
         {/* ── No fill toggle ───────────────────────────────────────── */}
         {obj.type !== 'line' && obj.type !== 'arc' && obj.type !== 'text' && (
           <div style={{
             display:'flex', alignItems:'center', justifyContent:'space-between',
-            padding:'6px 0', borderTop:'1px solid var(--border)',
+            padding:'8px 0', borderTop:'1px solid var(--line)',
           }}>
-            <span style={{ ...S.mono10, color:'var(--text)' }}>No fill</span>
-            <button
-              onClick={() => commit('noFill', !obj.noFill)}
-              style={{
-                position:'relative', width:36, height:20, borderRadius:10, flexShrink:0,
-                transition:'all 0.2s', cursor:'pointer', border:'none',
-                background: obj.noFill ? 'var(--accent)' : 'var(--border2)',
-              }}>
-              <div style={{
-                position:'absolute', top:2, width:16, height:16, borderRadius:8,
-                background:'white', boxShadow:'0 1px 2px rgba(0,0,0,0.2)',
-                transition:'all 0.2s',
-                left: obj.noFill ? 18 : 2,
-              }} />
-            </button>
+            <span style={{ ...S.word, color:'var(--ink)' }}>No fill</span>
+            <Toggle on={obj.noFill} label="No fill" onClick={() => commit('noFill', !obj.noFill)} />
           </div>
         )}
 
         {/* ── Layer selector ───────────────────────────────────────── */}
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        <div className="t-row">
           <span style={S.label}>Layer</span>
           <LayerSelect value={obj.layerId} onChange={v => commit('layerId',v)} />
         </div>
@@ -818,11 +731,7 @@ function LayerSelect({ value, onChange }) {
   const { layers } = useCanvasStore(useShallow(s => ({ layers: s.layers })))
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
-      style={{
-        flex:1, borderRadius:5, padding:'4px 8px',
-        background:'var(--surface2)', border:'1px solid var(--border)',
-        fontSize:11, color:'var(--text)', fontFamily:'var(--font-mono)', outline:'none',
-      }}>
+      className="t-input t-words" style={{ width:'100%', minWidth:0, fontSize:12 }}>
       {layers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
     </select>
   )

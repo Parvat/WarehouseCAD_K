@@ -52,6 +52,28 @@ viewport and off anything marked `data-float-avoid` (the top bar, the Hub button
 
 > The sections below still describe the earlier studio palette in places; where they disagree, THEME.md wins.
 
+### The control system and the frame (theme-p2)
+
+The `.t-*` classes at the end of `index.css` are the only control styles; use them, don't restyle inline.
+- Buttons: `t-btn t-btn--primary` (pine), `t-btn--secondary` (white, line border; `aria-pressed` makes it pine),
+  `t-btn--danger` (flag text, flag on hover: Delete all, trash), `t-icon` (32×32 ghost; `t-icon--danger`,
+  `t-icon--float` on the canvas). Heights **32 / 36 / 40 / 44** only. Disabled = the same style at 45% (`disabled`).
+- Radius **2** for controls, **4** for panels, cards, popovers, menus. Nothing else.
+- Inputs `t-input` (32px, mono figures; `t-words` for words); a unit sits **inside** the box (`t-field` + `t-unit`,
+  steel, right). Focus = 2px blue outline. Field rows `t-row`: a fixed 96px label column, the input fills the rest.
+- Type: sizes **11 12 13 14 15 16 18 26** only, weight ≤ 600. Every word PJS; only figures and units mono (`t-num`).
+  Captions `t-cap` (11, .08em, caps); tab and fold headings `t-head` (Oswald 13, .08em). One tracking value: .08em.
+- One modal: `components/shared/Modal.jsx` (`t-backdrop` / `t-modal`: theme backdrop, white, 1px line, radius 2,
+  theme shadow, 48px title row with an X; Esc and an outside click close). Floats and chips: `t-float`.
+- One message box: `components/shared/Note.jsx`, levels error / warning / note from the theme box tokens.
+- Frame: top bar **48** (Generate sits in it, left of Check layout); the left panel **240** fixed (rail 50, no drag
+  handle) and the right panel **320** fixed on both tabs; their header rows (Library / the tabs) are both **40**
+  (`PANEL_HEAD_H`) on one 1px line; panel padding 16; one 1px line on each panel's canvas side. The canvas's bottom
+  row (`Canvas2.jsx` BOTTOM_ROW): Hub + the Elevations chip | the notices, centred | the corner buttons (measure,
+  aisle labels, double-click fit, fit), all 32 high, 12 from the bottom. The drawing toolbar opens docked at the
+  top centre of the canvas, 12px under the ruler, flat; its ⋯ menu has Reset position and the orientation.
+- `src/__test__/plan/TP_themeP2.test.js` scans the chrome files for off-scale sizes, weights, tracking, radii and hex.
+
 ---
 
 ## Trace Design Standard (current)
@@ -141,8 +163,8 @@ rendered by `App.jsx`.) Docked in both states — the canvas starts at the panel
 
 | | |
 |---|---|
-| **Collapsed** | 50px icon rail — logo, pin, tools, search, then one bare icon per section. Clicking a section icon expands the panel and opens that section. |
-| **Expanded** | Drag-resizable 150–420px column, 240px on first run. Seven sections (Floor Plans, Racking, Ops, Structural, Safety, Zones, Blocks) expand **inline**, accordion-style. |
+| **Collapsed** | 50px icon rail — the expand chevron in the 40px header, pin, tools, search, then one bare icon per section. Clicking a section icon expands the panel and opens that section. |
+| **Expanded** | A fixed 240px column (theme-p2: no drag handle). A 40px header row — "Library" (Oswald 13) left, pin, tools and the collapse chevron right — on the same 1px line as the right panel's tabs. Seven sections (Floor Plans, Racking, Ops, Structural, Safety, Zones, Blocks) expand **inline**, accordion-style. |
 
 **No flyouts.** That interaction is deleted — it put the primary browse action outside the panel
 and needed a second render path that drifted out of sync with the first. Exactly **two** things
@@ -158,8 +180,8 @@ previous flyout hardcoded tiles and silently ignored the toggle — if you add a
 shows items, route it through `ItemBody` rather than writing a third path.
 
 - Section header = category icon (22px, category colour, the **same glyph the collapsed rail
-  shows** so the two states stay in sync) + tracked-caps label + chevron on the **right**. No
-  count badges.
+  shows** so the two states stay in sync) + Oswald 13 caps label (the fold heading style) + chevron on
+  the **right**. No count badges.
 - **List rows are indented under their header and connected by tree lines.** This reverses the
   earlier "no tree or guide lines anywhere" rule — it is intent, not drift. Grid mode has none.
   The geometry is exact, so build it rather than eyeballing it:
@@ -174,15 +196,15 @@ shows items, route it through `ItemBody` rather than writing a third path.
     the section header itself.
   - branches are opt-in (`<ItemBody branches/>`): section bodies get them, search results and
     the pinned tray do not, because neither has a parent header to branch from.
-- Tiles are borderless, ~9px radius, `--tile-bg`. Grid columns are
+- Tiles are borderless, 4px radius, `--tile-bg`. Grid columns are
   `repeat(auto-fill, minmax(62px, 1fr))` — **never a hardcoded column count**, so the count
-  falls out of whatever width the drag handle left behind and there are no breakpoints to drift.
+  falls out of the width (the panel and the pinned tray differ) and there are no breakpoints to drift.
 - Tile labels stay **visible**, not hover-only: hover does not exist on touch. They drop the
   redundant "Rack" (Selective, Cantilever, Drive-In, Drive-Thru, Pushback, Pallet Flow,
   Shelving) and truncate with an ellipsis; the `title` always carries the full name. "Rack Row"
   keeps its noun — cutting to "Row" collides with "Double Row". Ellipsis needs `minWidth:0` on
   the tile *and* the label, or the track sizes to the longest word instead.
-- Pin affordance appears on **hover only** (`#B4B0A4` outline). Already-pinned items keep theirs
+- Pin affordance appears on **hover only** (`--line-2` outline). Already-pinned items keep theirs
   visible — otherwise nothing signals what is pinned.
 - Drawing tools (Select, Pan, Line, Arrow, Arc, Dimension, Freehand, Text, and Fill racking — drag a box, it becomes the racking area) live in the **floating toolbar**, not
   in the panel — they are actions. Placeable shape *objects* stay in Blocks. The panel's top-row
@@ -196,27 +218,20 @@ shows items, route it through `ItemBody` rather than writing a third path.
 - **Zones** (Office, Staging, Washroom, Custom area) are a local list (`ZONE_KINDS` in
   `generate/rackingArea.js`), not `constants/`. They sit on their own Zones layer, and no racking
   is placed inside one; their edges count as walls.
-- Panel preferences — collapsed, **width**, view mode, pinned, usage, **toolbar open/orientation/
+- Panel preferences — collapsed, view mode, pinned, usage, **toolbar open/orientation/
   position, tray position** — are presentation state: component state + `localStorage` under
   `trace.leftpanel.v1`, never the canvas store.
-- Width has **two writers**, the collapse toggle and the drag handle, sharing **one** stored
-  value. Collapsing goes to 50px without overwriting it, so expanding restores the last dragged
-  width rather than snapping back to 240.
-- The resize handle is a 3px pill you can see inside a 24px strip you can hit, `col-resize`,
-  hidden until hover. Drag writes are rAF-coalesced (`useRafWriter`) exactly like the canvas pan
-  fix, and `transition` is switched to `none` while dragging or every absolutely-positioned
-  control lags a third of a second behind the edge.
-- Resizing the panel writes **nothing** to the store — there is no `ResizeObserver` anywhere and
-  `panX/panY` are untouched, so world coordinates hold by construction. Verify by measuring a
-  placed object's rect against `#canvas-container`'s origin before and after a drag; it must not
-  move.
+- The width is fixed (theme-p2 removed the drag handle): 240 expanded, 50 collapsed. Collapsing
+  writes **nothing** to the store — `panX/panY` are untouched, so world coordinates hold.
 
 ### Floating toolbar palette
 
 The toolbar is the **same surface family as the panel**, not its own shade: `--panel-bg`,
-0.5px `--panel-border`, 11px radius, glyphs `--panel-text2`. Active is a soft `--panel-hover`
-pill with a `--text` glyph — **not** the solid ink fill used elsewhere for active chrome, which
-at toolbar size reads as a heavy black block. Cells are 21px glyph + 8px padding = 37px.
+1px `--panel-border`, 4px radius, the theme shadow, glyphs `--panel-text2`. Active is a soft `--panel-hover`
+cell (radius 2) with a `--text` glyph — **not** the pine fill used elsewhere for active chrome, which
+at toolbar size reads as a heavy block. Cells are 20px glyph + 8px padding = 36px. It opens docked at
+the top centre of the canvas, 12px under the ruler, laid out flat (`dockedPos`); its ⋯ menu holds
+Reset position (back to that spot) and the orientation; × hides it.
 
 The grip is a 2×3 dot grid (Lucide's `Grip*` glyphs are literally that) spanning the full
 cross-axis with a 24px hit area — the touch-target floor — and `grab`/`grabbing` cursors.
@@ -232,8 +247,9 @@ it is a CSS variable and those variables are scoped to the themed div — portal
 resolves them all to nothing and the panel renders fully transparent. The portal target must be
 read in an effect, not during render: on first mount the div is not committed yet.
 
-Defaults are computed from the live panel width (`W + 24` / `W + 96`) so neither float opens
-underneath the panel, and they are offset from each other so opening both does not stack them.
+Defaults are computed from the live panel width so neither float opens underneath the panel: the
+toolbar centred on the canvas (`defaultPos` may be a function of the float's measured size), the
+tray at `W + 16`, below it, so opening both does not stack them.
 
 **Expand/collapse is a real animation, not a layout swap.** Logo, pin, tool and chevron are
 absolutely positioned and transition `top`/`left`; the search + sections block transitions its

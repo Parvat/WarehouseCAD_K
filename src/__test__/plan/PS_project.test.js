@@ -163,7 +163,8 @@ describe('PS — the project', () => {
   it('PS-inputs: Generate keeps only building size, column grid, row direction and max rack run (pallet, forklift, aisle, wall clearance from the project); the Fill bar, a racking area, the column check, a building\'s and a rack\'s properties show none of them; Project settings opens Project setup', () => {
     const gen = src('components/Generate/GeneratePanel.jsx')
     expect(/PALLET SIZE|>FORKLIFT<|AISLE \(ft\)|WALL CLEARANCE/.test(gen)).toBe(false)
-    for (const k of ['LENGTH (ft)', 'WIDTH (ft)', 'COLUMN GRID (ft)', 'ROW DIRECTION', 'MAX RACK RUN (ft)']) expect([k, gen.includes(k)]).toEqual([k, true])
+    // theme-p2: captions are written in sentence case (t-cap uppercases them) and the unit sits inside the input
+    for (const k of ['label="Length"', 'label="Width"', '>Column grid<', '>Row direction<', 'label="Max rack run"', 'aria-label="Max rack run (ft)"']) expect([k, gen.includes(k)]).toEqual([k, true])
     expect(gen).toMatch(/const brief = \(\) => generateBrief\(project, mheOptions, \{ lengthFt, widthFt, gridXFt, gridYFt, maxRunFt, columnsAlongWall, orientation \}\)/)
     expect(gen).toMatch(/const aisleFt = mheOptions\[mhe\]\?\.aisleFt \?\? 10\.5/)
     expect(gen).toMatch(/const \[open, setOpen\]     = useState\(false\)/)            // the start screen is a new project's first step
@@ -185,7 +186,7 @@ describe('PS — the project', () => {
     const inOrder = (txt, keys) => { const o = keys.map(k => txt.indexOf(k)); return o.every((v, i) => v > 0 && (i === 0 || v > o[i - 1])) }
     // the start screen: ONE screen, no second step — building (length × width, clear, sprinkler), pallet (face × depth ×
     // height, weight), layout (forklift, column grid, row direction, max run, wall clearance), Advanced; the two buttons
-    expect(inOrder(startUi, ['aria-label="New project"', 'aria-label="Building"', '<Times label="Length × width">', 'aria="Length (ft)"', 'aria="Width (ft)"', 'aria="Clear height (ft)"', 'aria="Sprinkler height (ft)"', 'aria-label="Pallet"', '<Times label="Face × depth × height">', 'aria="Pallet face (in)"', 'aria="Pallet depth (in)"', 'aria="Pallet height (in)"', 'aria="Pallet weight (lb)"', 'aria-label="Layout"', '<ForkliftSelect ', '<Times label="Column grid">', 'aria="Row direction"', 'aria="Max rack run (ft)"', 'aria="Wall clearance (in)"', '<Advanced ', ' Draw it myself</button>', '<Sparkles size={14} /> Generate layout</>'])).toBe(true)
+    expect(inOrder(startUi, ['aria-label="New project"', 'aria-label="Building"', '<Times label="Length × width">', 'aria="Length (ft)"', 'aria="Width (ft)"', 'aria="Clear height (ft)"', 'aria="Sprinkler height (ft)"', 'aria-label="Pallet"', '<Times label="Face × depth × height">', 'aria="Pallet face (in)"', 'aria="Pallet depth (in)"', 'aria="Pallet height (in)"', 'aria="Pallet weight (lb)"', 'aria-label="Layout"', '<ForkliftSelect ', '<Times label="Column grid">', 'aria="Row direction"', 'aria="Max rack run (ft)"', 'aria="Wall clearance (in)"', '<Advanced ', ' Draw it myself</button>', '<Sparkles {...ICON} /> Generate layout</>'])).toBe(true)
     expect(/setStep|step === 2|Beam face \(in\)"/.test(startUi)).toBe(false)                     // no second step; no beam face on the pallet
     expect(startUi).toMatch(/width: 'min\(640px, 100%\)'/)                                          // medium-size
     expect(startUi).toMatch(/gap: 24 \}\}>/)                                                         // more space between groups than within (12)
@@ -388,7 +389,7 @@ describe('PS — the project', () => {
     expect(tab).toMatch(/palletDIn: pal\?\.depthIn \?\? null/)
     // the panel: the amber note in the pallet box — the selected rows, else (editing) the rows using it
     expect(tab).toMatch(/frameDepthNote\(pallet\.depthIn, rows\.map\(r => r\.depthIn \?\? 42\), selRacks\.length \? 'Selected rows' : 'Rows using it'\)/)
-    expect(tab).toMatch(/\{depthNote && \(\s*<div role="note" aria-label="Pallet depth" style=\{AMBER_NOTE\}>\s*\{depthNote\}/)
+    expect(tab).toMatch(/\{depthNote && \(\s*<Note level="warning" role="note" aria-label="Pallet depth">\s*\{depthNote\}/)
     expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/palletDIn: entry\.palletDIn/)
     expect(src('export/pdfExport.js')).toMatch(/palletDIn: palletOfType\(T, type\)\?\.depthIn \?\? null/)
     // the row menu: portalled to the themed root, fixed, over everything — below the row, flipped above near the bottom

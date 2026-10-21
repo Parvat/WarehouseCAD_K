@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react'
 import { TopBar }     from './components/Toolbar/TopBar'
-import { LeftPanel }  from './components/LeftPanel/index'
 import { RightPanel } from './components/RightPanel/index'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useCanvasStore } from './store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { FloatingToolbar } from './components/LeftPanel/FloatingToolbar'
-import { GeneratePanel } from './components/Generate/GeneratePanel'
+import { ArrowLeft } from 'lucide-react'
 import { Canvas2 } from './canvas2/Canvas2'
 import { ColumnCheckProvider } from './generate/useColumnCheck'
 import { RulesProvider } from './rules/useRules'
@@ -78,21 +77,22 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopPointer())
 // Simple placeholder for apps that don't exist yet (Inspect / Label).
 function Placeholder({ title, onBack }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#F2F1EC', color: '#161C18',
-      fontFamily: "'Plus Jakarta Sans', sans-serif", display: 'flex', flexDirection: 'column' }}>
-      <div style={{ height: 56, borderBottom: '1.5px solid #14392B', background: '#ECEAE1',
-        display: 'flex', alignItems: 'center', gap: 16, padding: '0 22px' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, fontFamily: "'Oswald', sans-serif",
-          fontWeight: 700, fontSize: 19, color: '#14392B' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--bg)', color: 'var(--ink)',
+      fontFamily: 'var(--font-ui)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ height: 48, borderBottom: '1px solid var(--line)', background: 'var(--surface)',
+        display: 'flex', alignItems: 'center', gap: 16, padding: '0 16px' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: 'var(--font-display)',
+          fontWeight: 600, fontSize: 18, color: 'var(--pine)' }}>
           <span style={{ width: 8, height: 8, background: 'currentColor', borderRadius: 1, transform: 'rotate(45deg)', display: 'inline-block' }} />Trace
         </div>
-        <button onClick={onBack} style={{ fontSize: 13, color: '#6E7A6F', background: 'none', border: 'none',
-          cursor: 'pointer', fontWeight: 500 }}>← Hub</button>
-        <span style={{ fontSize: 13, color: '#161C18', fontWeight: 600 }}>/ {title}</span>
+        <button type="button" onClick={onBack} className="t-btn t-btn--secondary">
+          <ArrowLeft size={16} strokeWidth={1.5} absoluteStrokeWidth /> Hub
+        </button>
+        <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>/ {title}</span>
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 24, color: '#14392B' }}>{title}</div>
-        <div style={{ color: '#6E7A6F', fontSize: 14 }}>This app reads a layout from Draw. Coming next.</div>
+        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 26, color: 'var(--pine)' }}>{title}</div>
+        <div style={{ color: 'var(--steel)', fontSize: 14 }}>This app reads a layout from Draw. Coming next.</div>
       </div>
     </div>
   )
@@ -138,20 +138,17 @@ export default function App() {
         <div className="flex flex-1 min-h-0 overflow-hidden">
                     <FloatingToolbar />
           <div className="flex flex-col flex-1 min-w-0 min-h-0" style={{ position: 'relative' }}>
-            <Canvas2 />
-            {/* back to the hub: in the plan's own bottom-left corner — never over the left panel's footer (Project
-                settings) — the elevation legend starts past it */}
-            <button onClick={() => setView('hub')} title="Back to hub" data-float-avoid style={{
-              position: 'absolute', left: 12, bottom: 12, zIndex: 55,
-              display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
-              cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--text)',
-              fontFamily: 'var(--font-ui)', boxShadow: '0 2px 8px rgba(20,57,43,0.12)',
-            }}>← Hub</button>
+            {/* back to the hub: first in the canvas's bottom row (Canvas2.jsx), the elevation chip beside it —
+                never over the left panel's footer (Project settings). Generate lives in the top bar. */}
+            <Canvas2 hubButton={
+              <button type="button" onClick={() => setView('hub')} title="Back to hub" data-float-avoid className="t-btn t-btn--secondary"
+                style={{ boxShadow: 'var(--shadow-pop)' }}>
+                <ArrowLeft size={16} strokeWidth={1.5} absoluteStrokeWidth /> Hub
+              </button>
+            } />
           </div>
           <RightPanel />
         </div>
-        <GeneratePanel />
       </ColumnCheckProvider>
       </RulesProvider>
     </div>

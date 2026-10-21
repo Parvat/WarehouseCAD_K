@@ -1,35 +1,30 @@
 import { useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 
+/* A right-panel section: a 40px heading row (Oswald 13, tracked .08em) with its chevron, 16px in from the panel's
+   edges, a 1px line under the section. */
 export function SectionHeader({ title, children, defaultOpen = true, action }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div style={{ borderBottom: '0.5px solid var(--border)' }}>
+    <div style={{ borderBottom: '1px solid var(--line)', minWidth: 0 }}>
       <div
         style={{
-          display:'flex', alignItems:'center', justifyContent:'space-between',
-          padding:'12px 13px', cursor:'pointer', userSelect:'none',
+          display:'flex', alignItems:'center', justifyContent:'space-between', gap:8,
+          height:40, padding:'0 16px', cursor:'pointer', userSelect:'none',
           transition:'background 0.1s',
         }}
-        onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg2)'}
         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         onClick={() => setOpen(o => !o)}
       >
-        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-          <ChevronRight size={11} style={{
-            color:'var(--text3)',
+        <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+          <ChevronRight size={16} strokeWidth={1.5} absoluteStrokeWidth style={{
+            color:'var(--steel)',
             transform: open ? 'rotate(90deg)' : 'none',
             transition:'transform 0.2s',
             flexShrink:0,
           }} />
-          <span style={{
-            fontFamily:'var(--font-display)',
-            fontSize:'var(--fs-xs)',
-            fontWeight:600,
-            letterSpacing:'0.07em',
-            textTransform:'uppercase',
-            color:'var(--text3)',
-          }}>
+          <span className="t-head">
             {title}
           </span>
         </div>

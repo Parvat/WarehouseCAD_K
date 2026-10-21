@@ -104,23 +104,23 @@ export function ColorPanel() {
      stroke is the ring around it. One control instead of a wall of swatches. */
   const chip = (
     <span style={{
-      width:22, height:22, borderRadius:6, flexShrink:0,
+      width:22, height:22, borderRadius:2, flexShrink:0,
       border:`3px solid ${strokeColor}`,
       background: noFill ? 'transparent' : fillColor,
       backgroundImage: noFill
-        ? 'repeating-linear-gradient(-45deg,var(--red),var(--red) 2px,transparent 2px,transparent 6px)'
+        ? 'repeating-linear-gradient(-45deg,var(--flag),var(--flag) 2px,transparent 2px,transparent 6px)'
         : undefined,
-      boxShadow:'0 0 0 1px var(--border)',
+      boxShadow:'0 0 0 1px var(--line)',
     }}/>
   )
 
   return (
     <SectionHeader title="Color" defaultOpen={true}>
-      <div style={{ padding:'10px 12px 12px', display:'flex', flexDirection:'column', gap:8 }}>
+      <div style={{ padding:'0 16px 16px', display:'flex', flexDirection:'column', gap:8, minWidth:0 }}>
 
         {hasSelection && (
           <div style={{
-            fontSize:9.5, fontFamily:'var(--font-mono)', color:'var(--text3)',
+            fontSize:12, fontFamily:'var(--font-ui)', color:'var(--steel)',
           }}>
             Applies to {selectedIds.length} selected object{selectedIds.length > 1 ? 's' : ''}
           </div>
@@ -130,61 +130,55 @@ export function ColorPanel() {
         <div ref={triggerRef}>
           <button onClick={() => setOpen(o => !o)} aria-expanded={open}
             style={{
-              display:'flex', alignItems:'center', gap:10, width:'100%',
-              padding:'7px 9px', borderRadius:9, cursor:'pointer',
-              background:'var(--surface2)', border:'0.5px solid var(--border)',
-              fontFamily:'inherit', textAlign:'left',
+              display:'flex', alignItems:'center', gap:12, width:'100%', minWidth:0,
+              padding:'8px', borderRadius:2, cursor:'pointer',
+              background:'var(--paper)', border:'1px solid var(--line)',
+              fontFamily:'var(--font-ui)', textAlign:'left',
               transition:'background 0.12s',
             }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--surface3)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'var(--surface2)'}>
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'var(--paper)'}>
             {chip}
-            <span style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:1 }}>
-              <span style={{ fontSize:11.5, fontWeight:500, color:'var(--text)' }}>
+            <span style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:2 }}>
+              <span style={{ fontSize:13, fontWeight:500, color:'var(--ink)' }}>
                 {noFill ? 'Stroke only' : 'Fill & stroke'}
               </span>
               <span style={{
-                fontSize:9.5, fontFamily:'var(--font-mono)', color:'var(--text3)',
+                fontSize:11, fontFamily:'var(--font-ui)', color:'var(--steel)',
                 overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
               }}>
-                {noFill ? (strokeColor || '').toUpperCase() : `${(fillColor || '').toUpperCase()} · ${opacity}%`}
+                {/* a hex code and the percent are figures (mono); a named colour such as TRANSPARENT is a word (PJS) */}
+                {noFill
+                  ? <span className={/^#/.test(strokeColor || '') ? 't-num' : undefined}>{(strokeColor || '').toUpperCase()}</span>
+                  : <><span className={/^#/.test(fillColor || '') ? 't-num' : undefined}>{(fillColor || '').toUpperCase()}</span> · <span className="t-num">{opacity}%</span></>}
               </span>
             </span>
-            <ChevronDown size={13} strokeWidth={1.6} absoluteStrokeWidth
-              style={{ color:'var(--text3)', flexShrink:0,
+            <ChevronDown size={16} strokeWidth={1.5} absoluteStrokeWidth
+              style={{ color:'var(--steel)', flexShrink:0,
                 transform: open ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }}/>
           </button>
 
           {/* ── Popover: everything the flat panel used to show at once ── */}
           {open && portalTarget && createPortal(
-            <div ref={popRef} style={{
+            <div ref={popRef} className="t-float" style={{
               position:'fixed', zIndex:200,
               top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: pos?.width ?? 248,
               visibility: pos ? 'visible' : 'hidden',
-              background:'var(--surface)', border:'0.5px solid var(--border)',
-              borderRadius:11, boxShadow:'var(--shadow)',
-              padding:12, display:'flex', flexDirection:'column', gap:11,
+              padding:12, display:'flex', flexDirection:'column', gap:12,
             }}>
 
               {/* Which channel am I editing */}
-              <div style={{ display:'flex', gap:2, padding:2, background:'var(--surface2)', borderRadius:8 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0, 1fr))', gap:4 }}>
                 {['fill','stroke'].map(ch => (
                   <button key={ch} onClick={() => setActive(ch)}
-                    style={{
-                      flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                      padding:'5px 0', borderRadius:6, border:'none', cursor:'pointer',
-                      fontFamily:'inherit', fontSize:11, fontWeight:600, textTransform:'capitalize',
-                      background: active===ch ? 'var(--surface)' : 'transparent',
-                      color:      active===ch ? 'var(--text)'    : 'var(--text3)',
-                      boxShadow:  active===ch ? '0 1px 3px rgba(0,0,0,0.07)' : 'none',
-                      transition:'background 0.12s, color 0.12s',
-                    }}>
+                    className={'t-btn t-btn--secondary' + (active===ch ? ' is-on' : '')}
+                    style={{ minWidth:0, textTransform:'capitalize' }}>
                     <span style={{
-                      width:11, height:11, borderRadius:3, flexShrink:0,
-                      boxShadow:'0 0 0 1px var(--border)',
+                      width:12, height:12, borderRadius:2, flexShrink:0,
+                      boxShadow:'0 0 0 1px var(--line)',
                       background: ch==='stroke' ? strokeColor : (noFill ? 'transparent' : fillColor),
                       backgroundImage: (ch==='fill' && noFill)
-                        ? 'repeating-linear-gradient(-45deg,var(--red),var(--red) 2px,transparent 2px,transparent 5px)'
+                        ? 'repeating-linear-gradient(-45deg,var(--flag),var(--flag) 2px,transparent 2px,transparent 5px)'
                         : undefined,
                     }}/>
                     {ch}
@@ -193,13 +187,13 @@ export function ColorPanel() {
               </div>
 
               {/* Hex + native picker */}
-              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+              <div style={{ display:'flex', gap:8, alignItems:'center', minWidth:0 }}>
                 <input type="text" value={color}
                   onChange={e => setColor(e.target.value)}
-                  className="flex-1 min-w-0 bg-[var(--surface2)] border border-[var(--border)] rounded-md text-[11px] text-[var(--text)] font-mono px-2 py-1.5 focus:outline-none focus:border-[var(--accent)]/50" />
+                  className="t-input" style={{ flex:1 }} />
                 <input type="color" value={color.length === 7 ? color : '#000000'}
                   onChange={e => setColor(e.target.value)}
-                  className="w-8 h-8 shrink-0 rounded-md cursor-pointer border border-[var(--border)] p-0.5" />
+                  style={{ width:32, height:32, flexShrink:0, borderRadius:2, cursor:'pointer', border:'1px solid var(--line)', padding:2, background:'var(--paper)' }} />
               </div>
 
               {/* Palette — the rainbow grid, now behind the chip rather than
@@ -208,54 +202,49 @@ export function ColorPanel() {
                 {PALETTE_COLORS.map((c, i) => (
                   <button key={i} onClick={() => { setColor(c); if (noFill && active === 'fill') toggleNoFill(false) }}
                     style={{ background: c }}
-                    className={cn('aspect-square rounded-[5px] transition-transform hover:scale-110',
-                      color === c ? 'scale-110 ring-2 ring-[var(--text)] ring-offset-1 ring-offset-[var(--surface)]' : '')}
+                    className={cn('aspect-square rounded-[2px] transition-transform hover:scale-110',
+                      color === c ? 'scale-110 ring-2 ring-[var(--ink)] ring-offset-1 ring-offset-[var(--paper)]' : '')}
                     title={c} />
                 ))}
               </div>
 
               {/* Opacity */}
-              <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-                <span style={{ fontSize:11, color:'var(--text2)', width:52, flexShrink:0 }}>Opacity</span>
+              <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+                <span style={{ fontFamily:'var(--font-ui)', fontSize:12, fontWeight:500, color:'var(--steel)', width:56, flexShrink:0 }}>Opacity</span>
                 <input type="range" min="0" max="100" value={opacity}
                   onChange={e => setOpacity(Number(e.target.value))}
-                  style={{ flex:1, accentColor:'var(--accent)', height:4 }} />
-                <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:'var(--text3)', width:30, textAlign:'right' }}>{opacity}%</span>
+                  style={{ flex:1, minWidth:0, accentColor:'var(--pine)', height:4 }} />
+                <span className="t-num" style={{ fontSize:12, color:'var(--ink-2)', width:40, textAlign:'right' }}>{opacity}%</span>
               </div>
 
               {/* Transparent fill */}
               <div style={{
                 display:'flex', alignItems:'center', justifyContent:'space-between',
-                gap:10, paddingTop:10, borderTop:'0.5px solid var(--border)',
+                gap:12, paddingTop:12, borderTop:'1px solid var(--line)',
               }}>
-                <div style={{ minWidth:0 }}>
-                  <p style={{ fontSize:11, color:'var(--text)' }}>Transparent fill</p>
-                  <p style={{ fontSize:9.5, color:'var(--text3)', fontFamily:'var(--font-mono)' }}>Stroke only</p>
+                <div style={{ minWidth:0, fontFamily:'var(--font-ui)' }}>
+                  <p style={{ margin:0, fontSize:13, color:'var(--ink)' }}>Transparent fill</p>
+                  <p style={{ margin:0, fontSize:12, color:'var(--steel)' }}>Stroke only</p>
                 </div>
                 <button onClick={() => toggleNoFill(!noFill)} role="switch" aria-checked={noFill}
                   aria-label="Transparent fill"
-                  className={cn('relative w-9 h-5 rounded-full transition-all shrink-0 border-0 cursor-pointer',
-                    noFill ? 'bg-[var(--accent-solid)]' : 'bg-[var(--surface3)]')}>
-                  <span className={cn('absolute top-0.5 w-4 h-4 rounded-full transition-all',
-                    noFill ? 'left-[18px] bg-[var(--accent-fg)]' : 'left-0.5 bg-[var(--text3)]')} />
+                  className="relative transition-all shrink-0 border-0 cursor-pointer"
+                  style={{ width:32, height:18, borderRadius:2, padding:0, background: noFill ? 'var(--pine)' : 'var(--line-2)' }}>
+                  <span className="absolute transition-all"
+                    style={{ top:2, left: noFill ? 16 : 2, width:14, height:14, borderRadius:2, background:'var(--paper)' }} />
                 </button>
               </div>
 
               {/* Quick values */}
-              <div style={{ display:'flex', gap:5 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(0, 1fr))', gap:4 }}>
                 {[
                   { lbl:'White', on:false, act:() => setColor('#ffffff') },
                   { lbl:'Black', on:false, act:() => setColor('#000000') },
                   { lbl:'None',  on:(noFill && active === 'fill'), act:() => { if (active === 'fill') toggleNoFill(true) } },
                 ].map(q => (
                   <button key={q.lbl} onClick={q.act}
-                    style={{
-                      flex:1, padding:'5px 0', borderRadius:7, cursor:'pointer', border:'none',
-                      fontSize:10, fontFamily:'var(--font-mono)', fontWeight:600,
-                      background: q.on ? 'var(--accent-solid)' : 'var(--surface2)',
-                      color:      q.on ? 'var(--accent-fg)'    : 'var(--text2)',
-                      transition:'background 0.12s, color 0.12s',
-                    }}>
+                    className={'t-btn t-btn--secondary' + (q.on ? ' is-on' : '')}
+                    style={{ minWidth:0 }}>
                     {q.lbl}
                   </button>
                 ))}

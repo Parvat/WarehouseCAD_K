@@ -4,6 +4,7 @@ import { useRowGroup, clearGroup, applyPending, dismissPending } from '../utils/
 import { rowsOf } from '../utils/rowGroup'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useEffect } from 'react'
+import { X } from 'lucide-react'
 import { useNotice, clearNotice, NOTICE_MS } from '../utils/notice'
 
 /* The bottom-of-canvas bar (replaces the section-copy bar and its Copy / Don't copy question):
@@ -18,25 +19,17 @@ import { useNotice, clearNotice, NOTICE_MS } from '../utils/notice'
        it warned about or skipped listed under it — in Auto apply too, which never asks.
    Plain DOM — no Konva — so it renders anywhere. */
 
-const wrap = {
-  position: 'absolute', left: '50%', bottom: 14, transform: 'translateX(-50%)', zIndex: 60,
-  width: 'max-content', maxWidth: 'min(680px, calc(100% - 32px))', display: 'flex', flexDirection: 'column', gap: 6,
-}
+/* white, 1px line, radius 4, the theme shadow (index.css .t-float); a text-only chip is 32px high, a bar with
+   buttons grows around its 32px buttons. Words in PJS 12; warnings in the amber text, errors in flag. */
+const wrap = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, maxWidth: 680, minWidth: 0 }
 const box = {
-  padding: '8px 10px', borderRadius: 8,
-  background: 'var(--surface, #fff)', border: '1px solid var(--border, #E6E9EF)',
-  boxShadow: '0 2px 10px rgba(0,0,0,0.14)', fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--text, #0B101D)',
-  display: 'flex', flexDirection: 'column', gap: 6,
+  padding: '4px 12px', minHeight: 32, maxWidth: '100%', fontSize: 12, lineHeight: '22px',
+  display: 'flex', flexDirection: 'column', gap: 4,
 }
-const line = (color) => ({ fontSize: 11, color, fontFamily: 'var(--font-mono)', lineHeight: 1.35 })
-const btn = {
-  padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600,
-  background: 'var(--accent-solid, #0B101D)', color: 'var(--accent-fg, #fff)', border: '1px solid var(--accent-solid, #0B101D)',
-  whiteSpace: 'nowrap',
-}
-const btn2 = { ...btn, fontWeight: 500, background: 'var(--surface, #fff)', color: 'var(--text, #0B101D)', border: '1px solid var(--border, #E6E9EF)' }
-const closeBtn = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3, #6B7280)', fontSize: 14, lineHeight: 1, padding: '0 2px', marginLeft: 'auto' }
-const row = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }
+const line = (color) => ({ fontSize: 12, color, fontFamily: 'var(--font-ui)', lineHeight: 1.5 })
+const WARN = 'var(--warn-fg)', ERR = 'var(--flag)', MUTED = 'var(--steel)'
+const row = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }
+const closeIcon = <X size={16} strokeWidth={1.5} absoluteStrokeWidth />
 
 /** A row as the bar names it: "Section 4, row 7" (stamped), else "Row at 93' across". */
 export function rowLabel(key, objects, gridSize = 40) {
@@ -53,14 +46,14 @@ export function rowLabel(key, objects, gridSize = 40) {
 /** "Ask / Auto apply": one switch, both words shown, the current one filled. */
 function AskAuto({ auto, onChange }) {
   const seg = (on) => ({
-    padding: '3px 8px', fontSize: 11, borderRadius: 5, whiteSpace: 'nowrap',
-    background: on ? 'var(--accent-solid, #0B101D)' : 'transparent', color: on ? 'var(--accent-fg, #fff)' : 'var(--text2, #3A4152)',
+    height: 30, padding: '0 8px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center',
+    background: on ? 'var(--pine)' : 'transparent', color: on ? 'var(--paper)' : 'var(--ink-2)',
   })
   return (
     <button type="button" role="switch" aria-checked={auto} aria-label="Auto apply"
       title={auto ? 'Auto apply: an edit to one row is applied to the others at once (one undo step)' : 'Ask: after an edit to one row, the bar asks before applying it to the others'}
       onClick={() => onChange(!auto)}
-      style={{ display: 'flex', gap: 2, padding: 2, borderRadius: 7, cursor: 'pointer', border: '1px solid var(--border, #E6E9EF)', background: 'var(--surface2, #F1F3F6)', fontFamily: 'var(--font-ui)' }}>
+      style={{ display: 'flex', height: 32, padding: 0, overflow: 'hidden', borderRadius: 2, cursor: 'pointer', border: '1px solid var(--line)', background: 'var(--paper)', fontFamily: 'var(--font-ui)' }}>
       <span style={seg(!auto)}>Ask</span>
       <span style={seg(auto)}>Auto apply</span>
     </button>
@@ -84,58 +77,58 @@ function Body() {
   const out = []
   if (notice.text) {
     out.push(
-      <div key="notice" role="status" aria-label="Notice" style={box}>
-        <div><span>{notice.text}</span>{notice.hint && <span style={{ color: 'var(--text3, #6B7280)' }}> · {notice.hint}</span>}</div>
+      <div key="notice" role="status" aria-label="Notice" className="t-float" style={box}>
+        <div><span>{notice.text}</span>{notice.hint && <span style={{ color: MUTED }}> · {notice.hint}</span>}</div>
       </div>)
   }
   if (placing) {
     out.push(
-      <div key="place" role="status" aria-label={`Placing ${placingName(placing.items)}`} style={box}>
-        <div><span style={{ fontWeight: 600 }}>Placing {placingName(placing.items)}</span><span style={{ color: 'var(--text3, #6B7280)' }}> · </span>{placing.blocked
-          ? <span style={{ color: 'var(--red, #C0392B)', fontWeight: 600 }}>Can't place here — {placing.blocked}</span>
-          : <span>Click to place{placing.snapped?.cross || placing.snapped?.run ? <span style={{ color: 'var(--text3, #6B7280)' }}> · snapped to {[placing.snapped.cross, placing.snapped.run].filter(Boolean).join(', ')}</span> : null}</span>}
-          <span style={{ color: 'var(--text3, #6B7280)' }}> · {placing.escHint || 'Esc to cancel'}</span></div>
-        {!placing.blocked && placing.warnings?.length > 0 && placing.warnings.map((t, i) => <div key={i} style={line('var(--amber, #B87309)')}>Check — {t}</div>)}
+      <div key="place" role="status" aria-label={`Placing ${placingName(placing.items)}`} className="t-float" style={box}>
+        <div><span style={{ fontWeight: 600 }}>Placing {placingName(placing.items)}</span><span style={{ color: MUTED }}> · </span>{placing.blocked
+          ? <span style={{ color: ERR, fontWeight: 600 }}>Can't place here — {placing.blocked}</span>
+          : <span>Click to place{placing.snapped?.cross || placing.snapped?.run ? <span style={{ color: MUTED }}> · snapped to {[placing.snapped.cross, placing.snapped.run].filter(Boolean).join(', ')}</span> : null}</span>}
+          <span style={{ color: MUTED }}> · {placing.escHint || 'Esc to cancel'}</span></div>
+        {!placing.blocked && placing.warnings?.length > 0 && placing.warnings.map((t, i) => <div key={i} style={line(WARN)}>Check — {t}</div>)}
       </div>)
   }
   if (keys.length || pending || message) {
     const s = pending && pending.summary
     out.push(
-      <div key="group" role="status" aria-label="Row group" style={box}>
+      <div key="group" role="status" aria-label="Row group" className="t-float" style={box}>
         {keys.length > 0 && (
           <div style={row}>
             <span style={{ fontWeight: 600 }}>Row group · {keys.length} row{keys.length === 1 ? '' : 's'}</span>
             <AskAuto auto={alwaysApply} onChange={setAlwaysApply} />
-            <button style={closeBtn} aria-label="Clear the row group" title="Clear the row group (Esc)" onClick={clearGroup}>✕</button>
+            <button type="button" className="t-icon" style={{ marginLeft: 'auto' }} aria-label="Clear the row group" title="Clear the row group (Esc)" onClick={clearGroup}>{closeIcon}</button>
           </div>
         )}
         {s && (
           <div role="alertdialog" aria-label="Apply to the other rows?" style={row}>
             <span>{s.text}</span>
             {s.apply > 0 && (
-              <button style={btn} aria-label="Apply to the other rows"
+              <button type="button" className="t-btn t-btn--primary" aria-label="Apply to the other rows"
                 onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
                 onFocus={() => setHover(true)} onBlur={() => setHover(false)}
                 onClick={applyPending}>Apply</button>
             )}
-            <button style={btn2} aria-label="Skip" title="Skip — the edit stays on its own row" onClick={dismissPending}>Skip</button>
+            <button type="button" className="t-btn t-btn--secondary" aria-label="Skip" title="Skip — the edit stays on its own row" onClick={dismissPending}>Skip</button>
           </div>
         )}
         {s && s.warned.length > 0 && (
           <div aria-label="Rows with warnings" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {s.warned.map((t, i) => <div key={i} style={line('var(--amber, #B87309)')}>Warning — {rowLabel(t.key, objects, gridSize)}: {t.reasons.join(', ')}</div>)}
+            {s.warned.map((t, i) => <div key={i} style={line(WARN)}>Warning — {rowLabel(t.key, objects, gridSize)}: {t.reasons.join(', ')}</div>)}
           </div>
         )}
         {s && s.skipped.length > 0 && (
           <div role="alert" aria-label="Rows skipped" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {s.skipped.map((t, i) => <div key={i} style={line('var(--red, #C0392B)')}>Skipped — {rowLabel(t.key, objects, gridSize)}: {t.reason}</div>)}
+            {s.skipped.map((t, i) => <div key={i} style={line(ERR)}>Skipped — {rowLabel(t.key, objects, gridSize)}: {t.reason}</div>)}
           </div>
         )}
-        {message && !pending && <div aria-label="Row group result" style={{ fontSize: 12, color: 'var(--text, #0B101D)' }}>{message}</div>}
+        {message && !pending && <div aria-label="Row group result" style={{ fontSize: 12, color: 'var(--ink)' }}>{message}</div>}
         {message && !pending && report && (
           <div aria-label="Row group result rows" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {report.warned.map((t, i) => <div key={'w' + i} style={line('var(--amber, #B87309)')}>Warning — {rowLabel(t.key, objects, gridSize)}: {t.reasons.join(', ')}</div>)}
-            {report.skipped.map((t, i) => <div key={'s' + i} style={line('var(--red, #C0392B)')}>Skipped — {rowLabel(t.key, objects, gridSize)}: {t.reason}</div>)}
+            {report.warned.map((t, i) => <div key={'w' + i} style={line(WARN)}>Warning — {rowLabel(t.key, objects, gridSize)}: {t.reasons.join(', ')}</div>)}
+            {report.skipped.map((t, i) => <div key={'s' + i} style={line(ERR)}>Skipped — {rowLabel(t.key, objects, gridSize)}: {t.reason}</div>)}
           </div>
         )}
       </div>)

@@ -10,6 +10,8 @@ import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
 import { useBayLedger } from '../useBayLedger'
 import { Field, Fold } from '../../shared/Fold'
+import { Note } from '../../shared/Note'
+import { TriangleAlert } from 'lucide-react'
 import { ElevationLine } from '../../Elevations/ElevationLine'
 import { setRackDepths } from '../../../utils/rackDepthAction'
 import {
@@ -84,12 +86,9 @@ export function changeBayUpdate(obj, bayIdx, newBeamIn, gridSize = 40) {
 export function RackWarning({ text }) {
   if (!text) return null
   return (
-    <div role="alert" style={{
-      padding: '5px 8px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 9,
-      background: 'var(--red-dim)', border: '1px solid var(--red)', color: 'var(--red)', fontWeight: 600,
-    }}>
-      ! {text}
-    </div>
+    <Note level="error" icon={TriangleAlert} role="alert">
+      {text}
+    </Note>
   )
 }
 
@@ -110,7 +109,7 @@ function OneSideHint() {
   const one = useCanvasStore(s => oneSidePicked(s))
   if (!one) return null
   return (
-    <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 4 }}>
+    <div style={{ fontSize: 12, fontFamily: 'var(--font-ui)', color: 'var(--steel)', lineHeight: 1.5 }}>
       One side selected · click between the sides to select both
     </div>
   )
@@ -151,25 +150,25 @@ export function MultiBayPanel() {
   const allSame = beamSizes.length === 1
 
   return (
-    <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {/* Header */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+      {/* Header — a white card, the count in ink */}
       <div style={{
-        padding: '6px 8px', borderRadius: 5,
-        background: 'var(--accent-dim)', border: '1px solid var(--accent-bdr)',
-        fontFamily: 'var(--font-mono)', fontSize: 9,
+        padding: '8px 12px', borderRadius: 4,
+        background: 'var(--paper)', border: '1px solid var(--line)',
+        fontFamily: 'var(--font-ui)', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4,
       }}>
-        <div style={{ color: 'var(--accent)', fontWeight: 700, marginBottom: 2 }}>
+        <div style={{ color: 'var(--ink)', fontSize: 13, fontWeight: 600 }}>
           {bayCount} bay{bayCount > 1 ? 's' : ''} selected across {rowCount} row{rowCount > 1 ? 's' : ''}
         </div>
-        <div style={{ color: 'var(--text3)' }}>
+        <div style={{ color: 'var(--steel)' }}>
           {allSame ? `All ${fmtIn(beamSizes[0])} beams` : `Mixed: ${beamSizes.map(fmtIn).join(', ')}`}
         </div>
         <OneSideHint />
       </div>
 
       {/* one beam length for every bay picked */}
-      <div>
-        <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+        <div className="t-cap">
           Change all to
         </div>
         <BeamSelect value={allSame ? beamSizes[0] : null} aria="Selected bays beam" warnFor={warnFor} onPick={b => changeSelectedBaysBeam(b)} />
@@ -177,23 +176,15 @@ export function MultiBayPanel() {
       <RackWarning text={nowWarn} />
 
       {/* Delete + Clear */}
-      <div style={{ display: 'flex', gap: 4 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
         <button
           onClick={deleteSelectedBaysAndClear}
-          style={{
-            flex: 1, padding: '5px 0', borderRadius: 4, cursor: 'pointer',
-            fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
-            background: 'var(--red-dim)', border: '1px solid var(--red-bdr)', color: 'var(--red)',
-          }}>
+          className="t-btn t-btn--danger" style={{ flex: 1, minWidth: 0 }}>
           Delete {bayCount} bay{bayCount > 1 ? 's' : ''}
         </button>
         <button
           onClick={clearBaySelection}
-          style={{
-            padding: '5px 10px', borderRadius: 4, cursor: 'pointer',
-            fontSize: 9, fontFamily: 'var(--font-mono)',
-            background: 'transparent', border: '1px solid var(--border)', color: 'var(--text3)',
-          }}>
+          className="t-btn t-btn--secondary">
           Clear
         </button>
       </div>
@@ -211,25 +202,27 @@ export function BeamSelect({ value, onPick, warnFor = () => null, aria = 'Beam l
   const preset = BEAM_PRESETS_IN.includes(value)
   const apply = () => { const v = parseBeamIn(text); if (v == null) { setBad(text.trim() !== ''); return } setBad(false); setText(''); setCustom(false); onPick(v) }
   const warn = value != null ? warnFor(value) : null
-  const sel = { flex: 1, minWidth: 0, padding: '4px 6px', borderRadius: 6, fontSize: 11, fontFamily: 'var(--font-mono)', background: 'var(--surface2)', border: `1px solid ${warn ? 'var(--red)' : 'var(--border)'}`, color: 'var(--text)', outline: 'none' }
+  /* a select of lengths (figures): .t-input in mono; a length that would cause a warning gets a flag border */
+  const sel = { flex: 1, width: '100%', fontFamily: 'var(--font-mono)', ...(warn ? { borderColor: 'var(--flag)' } : null) }
+  const msg = { fontSize: 12, fontFamily: 'var(--font-ui)', color: 'var(--flag)', lineHeight: 1.5 }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
-      <select aria-label={aria} value={custom ? 'custom' : preset ? String(value) : value != null ? 'other' : ''} style={sel}
+      <select aria-label={aria} value={custom ? 'custom' : preset ? String(value) : value != null ? 'other' : ''} className="t-input" style={sel}
         onChange={e => { const v = e.target.value; if (v === 'custom') { setCustom(true); return } setCustom(false); if (v !== 'other' && v !== '') onPick(Number(v)) }}>
         {!preset && value != null && <option value="other">{fmtFtIn(value)} ({value}")</option>}
         {BEAM_PRESETS_IN.map(b => { const w = warnFor(b); return <option key={b} value={String(b)}>{`${b / 12}' (${b}")${w ? '  ⚠' : ''}`}</option> })}
         <option value="custom">Custom…</option>
       </select>
       {custom && (
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 8, minWidth: 0 }}>
           <input autoFocus type="text" value={text} placeholder={'inches or feet — 102, 8\'6"'} aria-label={`Custom ${aria.toLowerCase()}`}
             onChange={e => { setText(e.target.value); setBad(false) }} onKeyDown={e => { if (e.key === 'Enter') apply(); if (e.key === 'Escape') setCustom(false) }}
-            style={{ ...sel, border: `1px solid ${bad ? 'var(--red)' : 'var(--border)'}` }} />
-          <button type="button" onClick={apply} aria-label={`Apply custom ${aria.toLowerCase()}`} style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 11, background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)' }}>Set</button>
+            className="t-input" style={{ flex: 1, ...(bad ? { borderColor: 'var(--flag)' } : null) }} />
+          <button type="button" onClick={apply} aria-label={`Apply custom ${aria.toLowerCase()}`} className="t-btn t-btn--secondary">Set</button>
         </div>
       )}
-      {bad && <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>12" to 360", e.g. 102, 8'6", 9'</div>}
-      {warn && <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>{warn}</div>}
+      {bad && <div style={msg}>12" to 360", e.g. 102, 8'6", 9'</div>}
+      {warn && <div style={msg}>{warn}</div>}
     </div>
   )
 }
@@ -289,42 +282,38 @@ export function RackRowPanel({ obj }) {
     deleteSingleBay(obj.id, idxToRemove)
   }
 
+  /* Words PJS (labels steel 12, .t-label), figures mono (.t-num). Option chips are 32px secondaries, the picked one
+     pine (aria-pressed / .is-on); "+ Bay" secondary, "− Bay" danger; disabled by the attribute alone. */
   const label = (s, w = 56) => (
-    <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text3)', width: w, flexShrink: 0 }}>{s}</span>
+    <span className="t-label" style={{ width: w, flexShrink: 0, lineHeight: '32px' }}>{s}</span>
   )
-  const chip = (on) => ({
-    padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontFamily: 'var(--font-mono)',
-    background: on ? 'var(--accent-solid)' : 'var(--surface3)', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
-    color: on ? 'var(--accent-fg)' : 'var(--text2)',
-  })
-  const btn = (enabled, color = 'var(--text)') => ({
-    flex: 1, padding: '5px 8px', borderRadius: 5, fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600,
-    cursor: enabled ? 'pointer' : 'not-allowed', background: 'var(--surface2)', border: '1px solid var(--border)', color: enabled ? color : 'var(--text3)',
-  })
-  const row = (k, v, color) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-      <span style={{ color: 'var(--text3)' }}>{k}</span><span style={{ color: color || 'var(--text2)', fontWeight: color ? 700 : 400 }}>{v}</span>
+  const chip = (on) => 't-btn t-btn--secondary' + (on ? ' is-on' : '')
+  const chipSt = { padding: '0 12px', fontFamily: 'var(--font-mono)', fontWeight: 400 }
+  /* a summary row: the word steel, the figure ink (flag when it is the problem); `words` sets a value of words in PJS */
+  const row = (k, v, color, words) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+      <span style={{ color: 'var(--steel)' }}>{k}</span><span className={words ? undefined : 't-num'} style={{ color: color || 'var(--ink)', fontSize: 13, fontWeight: color ? 600 : 400, textAlign: 'right', minWidth: 0 }}>{v}</span>
     </div>
   )
 
   return (
-    <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
 
       {/* ── Summary: pallets, length, bays ── */}
       <Fold title="Summary" aria="Rack summary">
-        <div style={{ padding: '6px 8px', borderRadius: 5, background: overBy > 0 ? 'var(--red-dim)' : 'var(--surface2)', border: `1px solid ${overBy > 0 ? 'var(--red)' : 'var(--border)'}`, fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <span style={{ color: 'var(--text3)' }}>Pallets</span>
-            <span style={{ color: 'var(--text)', fontWeight: 700, fontSize: 13 }}>{capacity ? capacity.total : 0} PAL</span>
+        <div style={{ padding: '8px 12px', borderRadius: 4, background: overBy > 0 ? 'var(--error-bg)' : 'var(--paper)', border: `1px solid ${overBy > 0 ? 'var(--error-bd)' : 'var(--line)'}`, fontFamily: 'var(--font-ui)', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+            <span style={{ color: 'var(--steel)' }}>Pallets</span>
+            <span className="t-num" style={{ color: 'var(--ink)', fontWeight: 600, fontSize: 18 }}>{capacity ? capacity.total : 0} PAL</span>
           </div>
-          {capacity && row('Ground level', `${capacity.groundTotal} × ${levels} level${levels > 1 ? 's' : ''}`)}
-          {row('Total length', fmtIn(totalIn), overBy > 0 ? 'var(--red)' : undefined)}
+          {capacity && row('Ground level', <><span className="t-num">{capacity.groundTotal} × {levels}</span>{` level${levels > 1 ? 's' : ''}`}</>, undefined, true)}
+          {row('Total length', fmtIn(totalIn), overBy > 0 ? 'var(--flag)' : undefined)}
           {row('Bays', beams.length)}
           {clearIn != null && row('Wall clear', fmtIn(clearIn))}
-          {clearIn != null && row(overBy > 0 ? 'Exceeds by' : 'Remaining', overBy > 0 ? `${fmtIn(overBy)} !` : fmtIn(remainIn), overBy > 0 ? 'var(--red)' : 'var(--green)')}
-          {clearIn == null && <div style={{ color: 'var(--text3)', marginTop: 2 }}>No floor plan — length only</div>}
+          {clearIn != null && row(overBy > 0 ? 'Exceeds by' : 'Remaining', overBy > 0 ? `${fmtIn(overBy)} !` : fmtIn(remainIn), overBy > 0 ? 'var(--flag)' : undefined)}
+          {clearIn == null && <div style={{ color: 'var(--steel)' }}>No floor plan — length only</div>}
           {overlapBays > 0 && (
-            <div data-testid="rack-overlap-bays" style={{ marginTop: 2, color: 'var(--amber, #B87309)' }}>
+            <div data-testid="rack-overlap-bays" style={{ color: 'var(--warn-fg)' }}>
               {overlapBays} bay{overlapBays === 1 ? '' : 's'} overlap another rack — not counted
             </div>
           )}
@@ -335,32 +324,33 @@ export function RackRowPanel({ obj }) {
 
       {/* ── Bays: the list, + Bay / − Bay, one beam length ── */}
       <Fold title={`Bays (${beams.length})`} aria="Bays">
-        <div role="list" aria-label="Bay list" style={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 168, overflowY: 'auto' }}>
+        <div role="list" aria-label="Bay list" style={{ display: 'flex', flexDirection: 'column', gap: 0, maxHeight: 168, overflowY: 'auto' }}>
           {beams.map((beamIn, i) => {
             const isActive = activeBay === i
             const pal = positionsPerBeam(beamIn, obj.palletWIn || 40)
             return (
               <div key={i} role="listitem" onClick={() => updateObject(obj.id, { activeBayIdx: activeBay === i ? null : i, activeBaySide: null })}   // from the list: the whole bay, both sides
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontFamily: 'var(--font-mono)',
-                  background: isActive ? 'var(--accent-solid)' : 'transparent', color: isActive ? 'var(--accent-fg)' : 'var(--text)' }}>
-                <span style={{ minWidth: 22, color: isActive ? 'var(--accent-fg)' : 'var(--text3)' }}>B{i + 1}</span>
+                className="t-num"
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderRadius: 2, cursor: 'pointer', fontSize: 12,
+                  background: isActive ? 'var(--pine)' : 'transparent', color: isActive ? 'var(--paper)' : 'var(--ink)' }}>
+                <span style={{ minWidth: 24, color: isActive ? 'var(--paper)' : 'var(--steel)' }}>B{i + 1}</span>
                 <span style={{ flex: 1 }}>{fmtIn(beamIn)}</span>
                 <span title={pal ? `${pal} pallet${pal > 1 ? 's' : ''} per level per face` : 'Beam too short for one pallet'}
-                  style={{ color: pal ? (isActive ? 'var(--accent-fg)' : 'var(--text2)') : 'var(--red)', fontWeight: pal ? 400 : 700 }}>{pal ? `${pal} pal` : '0 ✕'}</span>
+                  style={{ color: pal ? (isActive ? 'var(--paper)' : 'var(--ink-2)') : (isActive ? 'var(--paper)' : 'var(--flag)'), fontWeight: pal ? 400 : 600 }}>{pal ? `${pal} pal` : '0 ✕'}</span>
               </div>
             )
           })}
         </div>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
           {label(activeBay !== null ? `Bay ${activeBay + 1}` : 'New bay', 56)}
           <BeamSelect value={beamShown} aria={activeBay !== null ? `Bay ${activeBay + 1} beam` : 'New bay beam'}
             warnFor={activeBay !== null ? warnChange : warnAdd}
             onPick={b => (activeBay !== null ? changeBay(activeBay, b) : setNewBeam(b))} />
         </div>
         <OneSideHint />
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button type="button" onClick={() => addBay(beamShown)} aria-label={`+ Bay ${fmtIn(beamShown)}`} title={warnAdd(beamShown) || `Add a ${fmtIn(beamShown)} bay at the far end`} style={btn(true, warnAdd(beamShown) ? 'var(--red)' : 'var(--text)')}>+ Bay</button>
-          <button type="button" onClick={removeBay} disabled={beams.length <= 1} style={btn(beams.length > 1, 'var(--red)')}>− Bay</button>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+          <button type="button" onClick={() => addBay(beamShown)} aria-label={`+ Bay ${fmtIn(beamShown)}`} title={warnAdd(beamShown) || `Add a ${fmtIn(beamShown)} bay at the far end`} className="t-btn t-btn--secondary" style={{ minWidth: 0, ...(warnAdd(beamShown) ? { color: 'var(--flag)' } : null) }}>+ Bay</button>
+          <button type="button" onClick={removeBay} disabled={beams.length <= 1} className="t-btn t-btn--danger" style={{ minWidth: 0 }}>− Bay</button>
         </div>
       </Fold>
 
@@ -370,8 +360,8 @@ export function RackRowPanel({ obj }) {
             stays, else about its centre) — overlaps show as warnings and X marks; the Row group replays it */}
         <Field label="Frame depth" aria="Rack depth" value={obj.depthIn ?? 42} title="This rack only — against a wall it keeps its wall clearance and grows away from the wall; otherwise about its centre"
           onCommit={v => { setRackDepths(useCanvasStore, [obj.id], v) }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {label('Upright', 86)}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+          {label('Upright', 100)}
           {[3, 4].map(u => (
             <button key={u} type="button" aria-pressed={upIn === u}
               onClick={() => {
@@ -379,17 +369,17 @@ export function RackRowPanel({ obj }) {
                 const newW = (newTotalIn / 12) * gridSize
                 commitObjectUpdate(obj.id, withAnchoredPosition(obj, { uprightWidth: u, width: newW }))
               }}
-              style={chip(upIn === u)}>{u}"</button>
+              className={chip(upIn === u)} style={chipSt}>{u}"</button>
           ))}
         </div>
         {/* the pallet size: the project's default (Project setup) — Generate and Fill stamp it on the racks */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{label('Pallet', 86)}<span aria-label="Pallet size" style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text2)' }}>{obj.palletWIn || 40}" face × {obj.palletDIn || 48}"</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>{label('Pallet', 100)}<span aria-label="Pallet size" style={{ fontSize: 13, fontFamily: 'var(--font-ui)', color: 'var(--ink-2)' }}><span className="t-num">{obj.palletWIn || 40}"</span> face × <span className="t-num">{obj.palletDIn || 48}"</span></span></div>
         {/* ── Flue space (double row only) ── */}
         {obj.type === 'rack_double_row' && (() => {
           const flue = obj.flueSpaceIn || 9
           return (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {label('Flue', 86)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+              {label('Flue', 100)}
               {[6, 9, 12].map(f => (
                 <button key={f} type="button"
                   onClick={() => {
@@ -403,7 +393,7 @@ export function RackRowPanel({ obj }) {
                        beginDrag) reverts to away from a column, not just this instant's rendered value. */
                     commitObjectUpdate(obj.id, withAnchoredPosition(obj, { flueSpaceIn: f, flueBaseIn: f, height: newH }))
                   }}
-                  style={chip(flue === f)}>{f}"</button>
+                  className={chip(flue === f)} style={chipSt}>{f}"</button>
               ))}
             </div>
           )

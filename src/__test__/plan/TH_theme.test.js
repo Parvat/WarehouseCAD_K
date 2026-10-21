@@ -88,7 +88,9 @@ describe('TH — broken items', () => {
     expect(ft.includes('zIndex:9998')).toBe(false)
     expect(ft).toMatch(/const tooTall = !horizontal && vertH > 0 && vertH > floatFreeHeight\(/)
     expect(read('App.jsx')).toMatch(/title="Back to hub" data-float-avoid/)
-    expect(read('components/Toolbar/TopBar.jsx')).toMatch(/<div data-float-avoid style=\{\{\n\s+height:56/)
+    // theme-p2: the top bar is a fixed 48px
+    expect(read('components/Toolbar/TopBar.jsx')).toMatch(/<div data-float-avoid style=\{\{\n\s+height:TOP_BAR_H/)
+    expect(read('components/Toolbar/TopBar.jsx')).toMatch(/export const TOP_BAR_H = 48/)
   })
 
   it('TH-modal-z (B3): every overlay with a backdrop sits above the floats (200+ vs 150)', () => {

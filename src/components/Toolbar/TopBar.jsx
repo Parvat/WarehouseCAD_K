@@ -13,47 +13,20 @@ import { pasteAt } from '../../utils/pasteAt'
 import { useLabelPrefs } from '../../canvas2/labelPrefs'
 import { useLayoutCheck, runLayoutCheck, checkLabel, exportWithCheck } from '../../utils/layoutCheck'
 import { ExportCheckDialog } from '../RightPanel/LayoutCheckPanel'
+import { GeneratePanel } from '../Generate/GeneratePanel'
 import { LABEL_SIZES, LABEL_SIZE_NAMES } from '../../render/labelSize'
 
-/* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
-const C = {
-  bg:       'var(--surface)',
-  border:   'var(--border)',
-  text:     'var(--text)',
-  muted:    'var(--text3)',
-  subtle:   'var(--text2)',
-  surface:  'var(--surface3)',
-  accent:   'var(--accent)',
-  accentBg: 'var(--accent-solid)',
-  danger:   'var(--red)',
-  active:   'var(--accent-solid)',
-  activeTxt:'var(--accent-fg)',
-}
+/* The top bar (theme-p2): fixed 48px; every button in it 32px — the ghost icon buttons (undo, redo, the menu), the
+   secondaries (Generate, Check layout) and the one primary (Export). 8px steps, 16px from each edge. */
+export const TOP_BAR_H = 48
+const ICON = { size: 16, strokeWidth: 1.5, absoluteStrokeWidth: true }
 
 /* Quiet icon button — the only shape that stays in the always-visible bar. */
-function IBtn({ icon: Icon, label, onClick, active, danger, title, menu }) {
+function IBtn({ icon: Icon, label, onClick, active, title, menu }) {
   return (
-    <button onClick={onClick} title={title || label} aria-label={title || label}
-      {...(menu ? { 'aria-haspopup': 'menu', 'aria-expanded': !!active } : null)}
-      style={{
-        display:'flex', alignItems:'center', justifyContent:'center',
-        width:30, height:30, borderRadius:7, border:'none', cursor:'pointer',
-        fontSize:12, fontFamily:'inherit', fontWeight:500,
-        background: active ? C.active : 'transparent',
-        color: active ? C.activeTxt : danger ? C.danger : C.subtle,
-        transition:'background 0.12s, color 0.12s',
-      }}
-      onMouseEnter={e => {
-        if (!active) {
-          e.currentTarget.style.background = C.surface
-          e.currentTarget.style.color = danger ? C.danger : C.text
-        }
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.background = active ? C.active : 'transparent'
-        e.currentTarget.style.color = active ? C.activeTxt : danger ? C.danger : C.subtle
-      }}>
-      <Icon size={15} strokeWidth={1.6} absoluteStrokeWidth/>
+    <button type="button" onClick={onClick} title={title || label} aria-label={title || label} className="t-icon"
+      {...(menu ? { 'aria-haspopup': 'menu', 'aria-expanded': !!active } : null)}>
+      <Icon {...ICON}/>
     </button>
   )
 }
@@ -62,45 +35,34 @@ function IBtn({ icon: Icon, label, onClick, active, danger, title, menu }) {
    Everything that used to crowd the bar lives in here. Rows are label-left /
    control-right so the menu reads as one column, not a second toolbar. */
 
-function MenuLabel({ children }) {
-  return (
-    <div style={{
-      fontFamily:'var(--font-display)', fontSize:10, fontWeight:600,
-      letterSpacing:'0.10em', textTransform:'uppercase', color:C.muted,
-      padding:'0 4px', marginBottom:8,
-    }}>{children}</div>
-  )
-}
-
 function MenuGroup({ label, children, first }) {
   return (
     <div role="group" aria-label={label} style={{
-      padding:'14px 12px',
-      borderTop: first ? 'none' : '0.5px solid var(--border)',
+      padding:'12px 8px',
+      borderTop: first ? 'none' : '1px solid var(--line)',
     }}>
-      <MenuLabel>{label}</MenuLabel>
+      <div className="t-cap" style={{ padding:'0 8px', marginBottom:8 }}>{label}</div>
       {children}
     </div>
   )
 }
 
 /* A full-width action: icon + name on the left, shortcut hint on the right. */
-function MenuItem({ icon: Icon, children, onClick, hint, danger }) {
+function MenuItem({ icon: Icon, children, onClick, hint }) {
   return (
     <button onClick={onClick} role="menuitem" tabIndex={-1}
       style={{
-        display:'flex', alignItems:'center', gap:10, width:'100%',
-        padding:'7px 8px', borderRadius:7, border:'none', background:'transparent',
+        display:'flex', alignItems:'center', gap:8, width:'100%', height:32,
+        padding:'0 8px', borderRadius:2, border:'none', background:'transparent',
         cursor:'pointer', textAlign:'left',
-        fontFamily:'inherit', fontSize:12.5, fontWeight:500,
-        color: danger ? C.danger : C.text,
+        fontFamily:'var(--font-ui)', fontSize:13, fontWeight:500, color:'var(--ink)',
         transition:'background 0.12s',
       }}
-      onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg2)'}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-      <Icon size={14} strokeWidth={1.6} absoluteStrokeWidth style={{ color: danger ? C.danger : C.subtle, flexShrink:0 }}/>
+      <Icon {...ICON} style={{ color:'var(--ink-2)', flexShrink:0 }}/>
       <span style={{ flex:1 }}>{children}</span>
-      {hint && <span style={{ fontSize:10.5, color:C.muted, fontFamily:'var(--font-mono)' }}>{hint}</span>}
+      {hint && <span style={{ fontSize:11, color:'var(--steel)', fontFamily:'var(--font-ui)' }}>{hint}</span>}
     </button>
   )
 }
@@ -110,41 +72,41 @@ function MenuRow({ label, children }) {
   return (
     <div style={{
       display:'flex', alignItems:'center', justifyContent:'space-between',
-      gap:10, padding:'6px 8px', minHeight:32,
+      gap:8, padding:'4px 8px', minHeight:40,
     }}>
-      <span style={{ fontSize:12.5, fontWeight:500, color:C.text }}>{label}</span>
+      <span style={{ fontSize:13, fontWeight:500, color:'var(--ink)' }}>{label}</span>
       <div style={{ display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>{children}</div>
     </div>
   )
 }
 
-/* Pill-group segment — one shared shape for grid size, UI size and theme. */
-function Seg({ active, onClick, title, children, wide }) {
+/* One segment of a segmented control — the chosen one pine. Words in PJS, figures in mono. */
+function Seg({ active, onClick, title, children, wide, mono }) {
   return (
     <button onClick={onClick} title={title} tabIndex={-1} aria-label={title}
       {...(active === undefined ? { role: 'menuitem' } : { role: 'menuitemradio', 'aria-checked': !!active })}
       style={{
-        minWidth: wide ? undefined : 28, height:26, padding: wide ? '0 9px' : '0 6px',
-        display:'flex', alignItems:'center', justifyContent:'center', gap:5,
-        borderRadius:6, cursor:'pointer', border:'none',
-        background: active ? C.accentBg : 'transparent',
-        color: active ? C.activeTxt : C.muted,
-        fontSize:10.5, fontWeight:600, fontFamily:'var(--font-mono)',
+        minWidth: wide ? undefined : 32, height:30, padding: wide ? '0 8px' : '0 4px',
+        display:'flex', alignItems:'center', justifyContent:'center', gap:4,
+        borderRadius:0, cursor:'pointer', border:'none',
+        background: active ? 'var(--pine)' : 'transparent',
+        color: active ? 'var(--paper)' : 'var(--ink-2)',
+        fontSize:12, fontWeight:600, fontFamily: mono ? 'var(--font-mono)' : 'var(--font-ui)',
         transition:'background 0.12s, color 0.12s',
       }}
-      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--surface2)' }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--bg2)' }}
       onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
       {children}
     </button>
   )
 }
 
-/* The pill-group's own container, so segments sit in one recessed track. */
+/* The segmented control's frame: one 32px box, a 1px line, radius 2. */
 function SegGroup({ children }) {
   return (
     <div style={{
-      display:'flex', alignItems:'center', gap:2, padding:2,
-      background:'var(--surface2)', borderRadius:8,
+      display:'flex', alignItems:'center', height:32, overflow:'hidden',
+      background:'var(--paper)', border:'1px solid var(--line)', borderRadius:2,
     }}>{children}</div>
   )
 }
@@ -153,19 +115,21 @@ function Switch({ on, onClick, label }) {
   return (
     <button onClick={onClick} role="menuitemcheckbox" aria-checked={on} aria-label={label} tabIndex={-1}
       style={{
-        position:'relative', width:34, height:20, borderRadius:999, border:'none',
+        position:'relative', width:32, height:18, borderRadius:2, border:'none',
         cursor:'pointer', flexShrink:0, padding:0,
-        background: on ? C.accentBg : 'var(--surface3)',
+        background: on ? 'var(--pine)' : 'var(--line-2)',
         transition:'background 0.16s',
       }}>
       <span style={{
-        position:'absolute', top:3, left: on ? 17 : 3, width:14, height:14,
-        borderRadius:'50%', background: on ? C.activeTxt : 'var(--text4, var(--text3))',
+        position:'absolute', top:3, left: on ? 17 : 3, width:12, height:12,
+        borderRadius:1, background:'var(--paper)',
         transition:'left 0.16s',
       }}/>
     </button>
   )
 }
+
+const selectSt = { height:32, padding:'0 8px', borderRadius:2, border:'1px solid var(--line)', background:'var(--paper)', color:'var(--ink)', fontSize:12, fontFamily:'var(--font-ui)', cursor:'pointer' }
 
 function doZoom(factor) {
   const s = useCanvasStore.getState()
@@ -176,21 +140,25 @@ function doZoom(factor) {
   s.setViewport(nz, cx - (cx - s.panX) * (nz / s.zoom), cy - (cy - s.panY) * (nz / s.zoom))
 }
 
-/* "Check layout · 3 errors": runs the check again every press. */
+/* "Check layout": runs the check again every press. A secondary button that stays secondary (A8) — the count
+   rides in a small chip: flag for errors, amber for warnings, none when clean. The full label is its name. */
 function CheckLayoutButton() {
   const result = useLayoutCheck(s => s.result)
   const errors = result ? result.errors.length : 0
+  const warnings = result ? result.warnings.length : 0
   const label = checkLabel(result)
+  const chip = errors ? { n: errors, bg: 'var(--flag)', fg: 'var(--paper)' } : warnings ? { n: warnings, bg: 'var(--warn-bg)', fg: 'var(--warn-fg)', bd: 'var(--warn-bd)' } : null
   return (
     <button type="button" aria-label={label} title="List every problem in the layout — nothing is changed"
-      onClick={() => runLayoutCheck(useCanvasStore)}
-      style={{
-        display:'flex', alignItems:'center', gap:7, height:34, padding:'0 12px', borderRadius:8, cursor:'pointer',
-        border:`1px solid ${C.border}`, background:C.bg, color: errors ? C.danger : C.text,
-        fontFamily:'inherit', fontSize:12.5, fontWeight:600, whiteSpace:'nowrap',
-      }}>
-      <ClipboardCheck size={14} strokeWidth={1.7} absoluteStrokeWidth/>
-      {label}
+      onClick={() => runLayoutCheck(useCanvasStore)} className="t-btn t-btn--secondary">
+      <ClipboardCheck {...ICON}/>
+      Check layout
+      {chip && (
+        <span data-check-chip={errors ? 'error' : 'warning'} className="t-num" style={{
+          minWidth:20, height:18, padding:'0 4px', borderRadius:2, display:'inline-flex', alignItems:'center', justifyContent:'center',
+          background:chip.bg, color:chip.fg, border: chip.bd ? `1px solid ${chip.bd}` : 'none', fontSize:11, fontWeight:500,
+        }}>{chip.n}</span>
+      )}
     </button>
   )
 }
@@ -242,17 +210,17 @@ export function TopBar() {
 
   return (
     <div data-float-avoid style={{
-      height:56, background:C.bg, borderBottom:`1px solid ${C.border}`,
-      display:'flex', alignItems:'center', padding:'0 20px', gap:16,
-      flexShrink:0, zIndex:50,
+      height:TOP_BAR_H, background:'var(--surface)', borderBottom:'1px solid var(--line)',
+      display:'flex', alignItems:'center', padding:'0 16px', gap:8,
+      flexShrink:0, zIndex:50, position:'relative',
     }}>
 
       {/* Wordmark — the same mark the Hub and Login wear, so the app reads as
           one product across its shells. */}
       <div style={{
-        display:'inline-flex', alignItems:'center', gap:9, flexShrink:0,
-        fontFamily:'var(--font-display)', fontWeight:700, fontSize:19,
-        letterSpacing:'0.01em', color:C.accent, userSelect:'none',
+        display:'inline-flex', alignItems:'center', gap:8, flexShrink:0,
+        fontFamily:'var(--font-display)', fontWeight:600, fontSize:18,
+        color:'var(--pine)', userSelect:'none',
       }}>
         <span style={{
           width:8, height:8, background:'currentColor', borderRadius:1,
@@ -262,17 +230,17 @@ export function TopBar() {
       </div>
 
       {/* Project name */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
-        <span style={{ color:C.border, fontSize:15, userSelect:'none' }}>/</span>
+      <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0, marginLeft:8 }}>
+        <span style={{ color:'var(--line-2)', fontSize:15, userSelect:'none' }}>/</span>
         <span style={{
-          fontSize:13, fontWeight:500, color:C.subtle,
+          fontSize:13, fontWeight:500, color:'var(--ink-2)',
           maxWidth:260, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
         }}>
           {currentFilename || 'Untitled layout'}
         </span>
         {hasUnsavedChanges && (
           <div title="Unsaved changes"
-            style={{ width:5, height:5, borderRadius:'50%', background:C.accent, flexShrink:0 }}/>
+            style={{ width:6, height:6, borderRadius:'50%', background:'var(--pine)', flexShrink:0 }}/>
         )}
       </div>
 
@@ -280,27 +248,21 @@ export function TopBar() {
 
       {/* History stays in the bar: CLAUDE.md gives the top bar ownership of undo
           /redo, and the left panel's footer dropped its copies on that basis. */}
-      <div style={{ display:'flex', alignItems:'center', gap:2 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:0 }}>
         <IBtn icon={Undo2} label="Undo" onClick={undo} title="Undo (Ctrl+Z)" />
         <IBtn icon={Redo2} label="Redo" onClick={redo} title="Redo (Ctrl+Y)" />
       </div>
+
+      {/* Generate: the button and the panel it opens under itself (components/Generate/GeneratePanel.jsx) */}
+      <GeneratePanel />
 
       {/* Check layout: every problem listed in the right panel (utils/layoutCheck.js); the count shows here */}
       <CheckLayoutButton />
 
       {/* Export — the one primary action; with errors in the layout it asks first, never blocks */}
       <ExportCheckDialog onExport={exportAsPDF} />
-      <button onClick={() => exportWithCheck(useCanvasStore, exportAsPDF)} title="Export PDF"
-        style={{
-          display:'flex', alignItems:'center', gap:7,
-          height:34, padding:'0 15px', borderRadius:8, border:'none', cursor:'pointer',
-          background:C.accentBg, color:C.activeTxt,
-          fontFamily:'inherit', fontSize:12.5, fontWeight:600, letterSpacing:'0.01em',
-          transition:'opacity 0.12s',
-        }}
-        onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
-        onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
-        <FileDown size={14} strokeWidth={1.7} absoluteStrokeWidth/>
+      <button type="button" onClick={() => exportWithCheck(useCanvasStore, exportAsPDF)} title="Export PDF" className="t-btn t-btn--primary">
+        <FileDown {...ICON}/>
         Export
       </button>
 
@@ -311,11 +273,9 @@ export function TopBar() {
           title="Settings and more" />
 
         {menuOpen && (
-          <div role="menu" aria-label="Settings and more" ref={menuBox} onKeyDown={onMenuKey} style={{
-            position:'absolute', top:'calc(100% + 10px)', right:0, width:296,
-            background:C.bg, border:`0.5px solid ${C.border}`, borderRadius:12,
-            boxShadow:'var(--shadow)', zIndex:100,
-            maxHeight:'calc(100vh - 90px)', overflowY:'auto',
+          <div role="menu" aria-label="Settings and more" ref={menuBox} onKeyDown={onMenuKey} className="t-float" style={{
+            position:'absolute', top:'calc(100% + 16px)', right:0, width:296, zIndex:100,
+            maxHeight:'calc(100vh - 72px)', overflowY:'auto',
           }}>
 
             <MenuGroup label="File" first>
@@ -348,8 +308,7 @@ export function TopBar() {
                 </SegGroup>
               </MenuRow>
               <MenuRow label="PDF label size">
-                <select value={pdfLabelSize} onChange={e => setPdfLabelSize(e.target.value)} aria-label="PDF label size"
-                  style={{ fontSize:11, fontFamily:'var(--font-mono)', background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', borderRadius:6, padding:'3px 4px' }}>
+                <select value={pdfLabelSize} onChange={e => setPdfLabelSize(e.target.value)} aria-label="PDF label size" style={{ ...selectSt, maxWidth:140 }}>
                   <option value="auto">Auto (≥ 2.5 mm)</option>
                   <option value="screen">Same as screen</option>
                   {Object.keys(LABEL_SIZES).map(k => <option key={k} value={k}>{LABEL_SIZE_NAMES[k]} ({LABEL_SIZES[k]} in)</option>)}
@@ -361,25 +320,20 @@ export function TopBar() {
               <MenuRow label="Grid size">
                 <SegGroup>
                   {[['ft','1ft'],['in','1"'],['half-in','½"']].map(([val,lbl]) => (
-                    <Seg key={val} active={snapUnit===val} onClick={() => setSnapUnit(val)}>{lbl}</Seg>
+                    <Seg key={val} mono active={snapUnit===val} onClick={() => setSnapUnit(val)}>{lbl}</Seg>
                   ))}
                 </SegGroup>
               </MenuRow>
               <MenuRow label="Units">
-                <select value={unit} onChange={e => setUnit(e.target.value)}
-                  style={{
-                    background:'var(--surface2)', border:'none', borderRadius:7,
-                    fontSize:11, color:C.text, fontFamily:'var(--font-mono)',
-                    padding:'6px 8px', cursor:'pointer', outline:'none',
-                  }}>
+                <select value={unit} onChange={e => setUnit(e.target.value)} style={selectSt}>
                   {Object.values(UNITS).map(u => <option key={u}>{u}</option>)}
                 </select>
               </MenuRow>
               <MenuRow label="Zoom">
                 <SegGroup>
-                  <Seg onClick={() => doZoom(0.85)} title="Zoom out"><ZoomOut size={13} strokeWidth={1.6} absoluteStrokeWidth/></Seg>
-                  <Seg onClick={() => setViewport(1, 80, 80)} title="Reset zoom" wide>{Math.round(zoom * 100)}%</Seg>
-                  <Seg onClick={() => doZoom(1.18)} title="Zoom in"><ZoomIn size={13} strokeWidth={1.6} absoluteStrokeWidth/></Seg>
+                  <Seg onClick={() => doZoom(0.85)} title="Zoom out"><ZoomOut {...ICON}/></Seg>
+                  <Seg mono onClick={() => setViewport(1, 80, 80)} title="Reset zoom" wide>{Math.round(zoom * 100)}%</Seg>
+                  <Seg onClick={() => doZoom(1.18)} title="Zoom in"><ZoomIn {...ICON}/></Seg>
                 </SegGroup>
               </MenuRow>
             </MenuGroup>

@@ -55,48 +55,54 @@ export function CantileverPanel({ obj }) {
     commitObjectUpdate(obj.id, withAnchoredPosition(obj, { doubleSided: val, height: newH }))
   }
 
+  /* Words PJS (labels steel 12), figures mono (.t-num). Option buttons are 32px secondaries, the picked one pine
+     (.is-on); "+ Tower" secondary, "- Tower" danger, disabled by the attribute alone. Status is a white card. */
   const label = (s) => (
-    <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', minWidth: 48 }}>{s}</span>
+    <span className="t-label" style={{ width: 56, flexShrink: 0 }}>{s}</span>
   )
+  const opt = (active) => 't-btn t-btn--secondary' + (active ? ' is-on' : '')
+  const numBtn = { flex: 1, minWidth: 0, padding: 0, fontFamily: 'var(--font-mono)', fontWeight: 400 }
+  const statRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }
+  const statLbl = { fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--steel)' }
 
   return (
-    <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
 
       {/* Status */}
-      <div style={{ padding: '6px 8px', borderRadius: 5, background: 'var(--surface2)', border: '1px solid var(--border)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span style={{ color: 'var(--text3)' }}>Total length</span>
-          <span style={{ color: 'var(--text)', fontWeight: 700 }}>{fmtIn(totalIn)}</span>
+      <div style={{ padding: '8px 12px', borderRadius: 4, background: 'var(--paper)', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={statRow}>
+          <span style={statLbl}>Total length</span>
+          <span className="t-num" style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>{fmtIn(totalIn)}</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-          <span style={{ color: 'var(--text3)' }}>Towers</span>
-          <span style={{ color: 'var(--text)' }}>{towers.length}</span>
+        <div style={statRow}>
+          <span style={statLbl}>Towers</span>
+          <span className="t-num" style={{ fontSize: 13, color: 'var(--ink)' }}>{towers.length}</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-          <span style={{ color: 'var(--text3)' }}>Type</span>
-          <span style={{ color: 'var(--text)' }}>{doubleSided ? 'Double-sided' : 'Single-sided'}</span>
+        <div style={statRow}>
+          <span style={statLbl}>Type</span>
+          <span style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--ink)' }}>{doubleSided ? 'Double-sided' : 'Single-sided'}</span>
         </div>
       </div>
 
       {/* Tower list */}
-      <div>
-        <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="t-cap">
           Towers ({towers.length})
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {towers.map((armIn, i) => {
             const isActive = activeTower === i
             return (
               <div key={i} onClick={() => updateObject(obj.id, { activeTowerIdx: isActive ? null : i })}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '4px 6px', borderRadius: 4, cursor: 'pointer',
-                  background: isActive ? 'var(--accent-solid)' : 'var(--surface2)',
-                  border: `1px solid ${isActive ? 'var(--accent)' : 'var(--border)'}`,
+                  display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
+                  height: 32, padding: '0 8px', borderRadius: 2, cursor: 'pointer',
+                  background: isActive ? 'var(--pine)' : 'var(--paper)',
+                  border: `1px solid ${isActive ? 'var(--pine)' : 'var(--line)'}`,
                 }}>
-                <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: isActive ? 'var(--accent-fg)' : 'var(--text3)', minWidth: 20 }}>T{i+1}</span>
-                <span style={{ flex: 1, fontSize: 10, fontFamily: 'var(--font-mono)', color: isActive ? 'var(--accent-fg)' : 'var(--text)' }}>{fmtIn(armIn)} arm</span>
-                <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: isActive ? 'var(--accent-fg)' : 'var(--text3)' }}>{armIn}"</span>
+                <span className="t-num" style={{ fontSize: 12, color: isActive ? 'var(--paper)' : 'var(--steel)', width: 24, flexShrink: 0 }}>T{i+1}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontFamily: 'var(--font-ui)', color: isActive ? 'var(--paper)' : 'var(--ink)' }}><span className="t-num">{fmtIn(armIn)}</span> arm</span>
+                <span className="t-num" style={{ fontSize: 12, color: isActive ? 'var(--paper)' : 'var(--steel)' }}>{armIn}"</span>
               </div>
             )
           })}
@@ -105,20 +111,14 @@ export function CantileverPanel({ obj }) {
 
       {/* Active tower arm selector */}
       {activeTower !== null && (
-        <div style={{ padding: '6px 8px', borderRadius: 5, background: 'var(--surface2)', border: '1px solid var(--accent)' }}>
-          <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--accent)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        <div style={{ padding: 12, borderRadius: 4, background: 'var(--paper)', border: '1px solid var(--pine)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="t-cap" style={{ color: 'var(--pine)' }}>
             All arms -- select length
           </div>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {CANT_ARM_LENGTHS.map(a => (
               <button key={a} onClick={() => changeTowerArm(activeTower, a)}
-                style={{
-                  flex: 1, padding: '4px 0', borderRadius: 4, cursor: 'pointer',
-                  fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
-                  background: towers[activeTower] === a ? 'var(--accent-solid)' : 'var(--surface3)',
-                  border: `1px solid ${towers[activeTower] === a ? 'var(--accent)' : 'var(--border)'}`,
-                  color: towers[activeTower] === a ? 'var(--accent-fg)' : 'var(--text2)',
-                }}>
+                className={opt(towers[activeTower] === a)} style={numBtn}>
                 {a}"
               </button>
             ))}
@@ -127,33 +127,32 @@ export function CantileverPanel({ obj }) {
       )}
 
       {/* Add / Remove tower */}
-      <div style={{ display: 'flex', gap: 4 }}>
-        <button onClick={addTower} style={{ flex: 1, padding: '5px 0', borderRadius: 4, cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600, background: 'var(--green-dim)', border: '1px solid var(--green-bdr)', color: 'var(--green)' }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={addTower} className="t-btn t-btn--secondary" style={{ flex: 1 }}>
           + Tower
         </button>
-        <button onClick={removeTower} disabled={towers.length <= 2}
-          style={{ padding: '5px 10px', borderRadius: 4, cursor: towers.length > 2 ? 'pointer' : 'not-allowed', fontSize: 9, fontFamily: 'var(--font-mono)', background: 'transparent', border: '1px solid var(--border)', color: towers.length > 2 ? 'var(--red)' : 'var(--text3)' }}>
+        <button onClick={removeTower} disabled={towers.length <= 2} className="t-btn t-btn--danger">
           - Tower
         </button>
       </div>
 
       {/* Single / Double sided */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {label('Sides')}
         {[false, true].map(v => (
           <button key={String(v)} onClick={() => toggleSide(v)}
-            style={{ flex: 1, padding: '4px 0', borderRadius: 4, cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)', background: doubleSided === v ? 'var(--accent-solid)' : 'var(--surface3)', border: `1px solid ${doubleSided === v ? 'var(--accent)' : 'var(--border)'}`, color: doubleSided === v ? 'var(--accent-fg)' : 'var(--text2)' }}>
+            className={opt(doubleSided === v)} style={{ flex: 1, minWidth: 0 }}>
             {v ? 'Double' : 'Single'}
           </button>
         ))}
       </div>
 
       {/* Tower width */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {label('Tower')}
         {TOWER_WIDTHS.map(t => (
           <button key={t} onClick={() => commitObjectUpdate(obj.id, { towerWidthIn: t })}
-            style={{ flex: 1, padding: '4px 0', borderRadius: 4, cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)', background: towerWidthIn === t ? 'var(--accent-solid)' : 'var(--surface3)', border: `1px solid ${towerWidthIn === t ? 'var(--accent)' : 'var(--border)'}`, color: towerWidthIn === t ? 'var(--accent-fg)' : 'var(--text2)' }}>
+            className={opt(towerWidthIn === t)} style={numBtn}>
             {t}"
           </button>
         ))}

@@ -1,28 +1,29 @@
-// rightPanel.js — the right panel's tab (Properties | Elevations) and the Elevations tab's width.
+// rightPanel.js — the right panel's tab (Properties | Elevations).
 //
-// Presentation state, per browser (localStorage), never the canvas store. The Elevations tab holds the drawing, so the
-// panel widens on it (ELEV_W at first, drag its edge, remembered); Properties keeps the normal width. GeneratePanel
-// reads the width to stay clear of the panel.
+// Presentation state, per browser (localStorage), never the canvas store. The frame is fixed (theme-p2): the left
+// panel 240, the right panel RP_W on both tabs — nothing drags it wider. GeneratePanel and the drawing toolbar's
+// default spot read the width to stay clear of it.
 
 import { create } from 'zustand'
 
 const KEY = 'trace.rightpanel.v1'
-export const RP_W = 272, ELEV_W = 480, ELEV_MIN = 360
-export const elevMax = () => Math.max(ELEV_MIN, Math.min(900, (typeof window !== 'undefined' ? window.innerWidth : 1600) * 0.6))
+export const RP_W = 320
+/** the frame's shared header height: the left panel's Library row and the right panel's tabs */
+export const PANEL_HEAD_H = 40
 
 const read = () => {
-  try { const v = JSON.parse(localStorage.getItem(KEY) || '{}'); return { tab: v?.tab === 'elevations' ? 'elevations' : 'properties', elevW: Number.isFinite(v?.elevW) ? v.elevW : ELEV_W } }
-  catch { return { tab: 'properties', elevW: ELEV_W } }
+  try { const v = JSON.parse(localStorage.getItem(KEY) || '{}'); return { tab: v?.tab === 'elevations' ? 'elevations' : 'properties' } }
+  catch { return { tab: 'properties' } }
 }
 
-/** { tab: 'properties' | 'elevations', elevW } */
+/** { tab: 'properties' | 'elevations' } */
 export const useRightPanel = create(() => read())
 export function setRightPanel(patch) {
   useRightPanel.setState(patch)
   const s = useRightPanel.getState()
-  try { localStorage.setItem(KEY, JSON.stringify({ tab: s.tab, elevW: s.elevW })) } catch { /* private window */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ tab: s.tab })) } catch { /* private window */ }
 }
-/** The panel's width for that state: the Elevations tab its own, Properties the normal one. */
-export const panelWidth = (s) => (s.tab === 'elevations' ? s.elevW : RP_W)
-/** The panel's live width, for the panel itself and what keeps clear of it. */
-export function useRightPanelWidth() { const s = useRightPanel(); return { width: panelWidth(s), tab: s.tab, elevW: s.elevW } }
+/** The panel's width: fixed, the same on both tabs. */
+export const panelWidth = () => RP_W
+/** The panel's live width and tab, for the panel itself and what keeps clear of it. */
+export function useRightPanelWidth() { const s = useRightPanel(); return { width: panelWidth(s), tab: s.tab } }

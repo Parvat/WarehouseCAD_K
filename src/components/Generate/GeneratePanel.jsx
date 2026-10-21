@@ -6,21 +6,11 @@ import { regenBuilding, regenSummary } from '../../generate/regenerate'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { openSetup, defaultPallet, projectOf, generateBrief, BUILDING_DEFAULTS } from '../../utils/project'
 import { useRules } from '../../rules/useRules'
-import { useRightPanelWidth } from '../../utils/rightPanel'
+import { Note } from '../shared/Note'
 
 // Trace CAD — "Describe → Generate" Brief.
-// A self-contained floating card. It only CALLS the store (via generateAndPlace);
-// it never modifies store logic.
-
-/* The CAD's own panels sit at 2px — anything rounder reads as a web card
-   dropped on top of a drawing. Cards keep 4px. */
-const R = 2
-
-const labelSt = { fontSize: 10, color: 'var(--text3)', fontWeight: 600, letterSpacing: '.02em' }
-const sectionSt = {
-  fontSize: 10.5, color: 'var(--text)', fontWeight: 700, letterSpacing: '.04em',
-  paddingBottom: 4, marginTop: 2, borderBottom: '1px solid var(--border)',
-}
+// The Generate button in the top bar and the panel it opens under itself. It only CALLS the store (via
+// generateAndPlace); it never modifies store logic. Esc, a click outside and its X close the panel.
 
 /* Module scope, NOT inside GeneratePanel. A component declared in a render body
    is a brand-new function identity every render, so React tears down the old
@@ -29,18 +19,40 @@ const sectionSt = {
    reason to live in the component. */
 function Field({ label, children }) {
   return (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={labelSt}>{label}</div>
+    <label style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span className="t-cap">{label}</span>
       {children}
-    </div>
+    </label>
+  )
+}
+
+/** A number input with its unit inside, right-aligned in steel. */
+function Num({ unit = 'ft', ...props }) {
+  return (
+    <span className="t-field">
+      <input className="t-input" type="number" {...props} />
+      <span className="t-unit">{unit}</span>
+    </span>
   )
 }
 
 function Section({ title, children }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={sectionSt}>{title}</div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="t-head" style={{ color: 'var(--ink)', paddingBottom: 8, borderBottom: '1px solid var(--line)' }}>{title}</div>
       {children}
+    </div>
+  )
+}
+
+/** A segmented row of secondary buttons; the chosen one pine. */
+function Seg({ options, value, onChange, label }) {
+  return (
+    <div role="group" aria-label={label} style={{ display: 'flex', gap: 8 }}>
+      {options.map(o => (
+        <button key={String(o.key)} type="button" aria-pressed={value === o.key} onClick={() => onChange(o.key)}
+          className="t-btn t-btn--secondary" style={{ flex: 1, minWidth: 0, padding: '0 8px' }}>{o.label}</button>
+      ))}
     </div>
   )
 }
@@ -142,191 +154,151 @@ export function GeneratePanel() {
     setOpen(true)
   }
 
-  /* over the canvas's top right: past the right panel, as wide as it is (a rack selected widens it) */
-  const right = useRightPanelWidth().width + 24
+  /* Esc and a click outside close it, like every other popover (the Project setup link opens a modal over it —
+     a click in that modal is not "outside"; its own Esc closes the modal first) */
+  const wrapRef = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e) => {
+      if (wrapRef.current?.contains(e.target)) return
+      if (e.target.closest?.('[role="dialog"], .t-backdrop')) return
+      setOpen(false)
+    }
+    const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.t-backdrop')) setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
+  /* under the button, right-aligned to it: a popover off the top bar */
   const box = {
-    position: 'fixed', right, top: 60, zIndex: 40, width: 236,
+    position: 'absolute', right: 0, top: 'calc(100% + 16px)', zIndex: 120, width: 320,
     // never past the window's bottom: the panel scrolls, so Generate and the Regenerate question stay reachable
     maxHeight: 'calc(100vh - 76px)', overflowY: 'auto',
-    background: 'var(--surface)', border: '1px solid var(--border)',
-    borderRadius: R, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-    fontFamily: 'var(--font-ui)', color: 'var(--text)',
-  }
-  const inputSt = {
-    width: '100%', minWidth: 0, padding: '6px 8px', marginTop: 3,
-    background: 'var(--surface2)', border: '1px solid var(--border)',
-    borderRadius: R, color: 'var(--text)',
-    fontFamily: 'var(--font-mono)', fontSize: 12,
-  }
-
-  if (!open) {
-    return (
-      <button onClick={openPanel} style={{
-        position: 'fixed', right, top: 60, zIndex: 40,
-        display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px',
-        background: 'var(--accent)', color: '#fff', border: 'none',
-        borderRadius: R, cursor: 'pointer', fontSize: 12, fontWeight: 600,
-        fontFamily: 'var(--font-ui)', boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-      }}>
-        <Sparkles size={14} /> Generate
-      </button>
-    )
   }
 
   return (
-    <div style={box}>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '9px 12px', borderBottom: '1px solid var(--border)',
-      }}>
-        <span style={{ fontSize: 12, fontWeight: 600 }}>Describe the building</span>
-        <button onClick={() => setOpen(false)} style={{
-          background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)',
-          display: 'flex', padding: 0,
-        }}><X size={14} /></button>
-      </div>
+    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0 }}>
+      <button type="button" onClick={() => (open ? setOpen(false) : openPanel())} aria-expanded={open} aria-haspopup="dialog"
+        title="Describe the building and generate a layout" className="t-btn t-btn--secondary">
+        <Sparkles size={16} strokeWidth={1.5} absoluteStrokeWidth /> Generate
+      </button>
 
-      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <Section title="BUILDING">
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Field label="LENGTH (ft)">
-              <input style={inputSt} type="number" value={lengthFt} onChange={e => setL(e.target.value)} />
-            </Field>
-            <Field label="WIDTH (ft)">
-              <input style={inputSt} type="number" value={widthFt} onChange={e => setW(e.target.value)} />
-            </Field>
+      {open && (
+        <div role="dialog" aria-label="Describe the building" className="t-float" style={box}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 48, padding: '0 8px 0 16px', borderBottom: '1px solid var(--line)' }}>
+            <span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>Describe the building</span>
+            <button type="button" className="t-icon" aria-label="Close" title="Close (Esc)" onClick={() => setOpen(false)}>
+              <X size={16} strokeWidth={1.5} absoluteStrokeWidth />
+            </button>
           </div>
 
-          <div>
-            <div style={labelSt}>COLUMN GRID (ft)</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input style={inputSt} type="number" value={gridXFt} onChange={e => setGridX(e.target.value)} />
-              <span style={{ ...labelSt, marginTop: 3, flexShrink: 0 }}>×</span>
-              <input style={inputSt} type="number" value={gridYFt} onChange={e => setGridY(e.target.value)} />
-            </div>
+          <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <Section title="Building">
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Field label="Length">
+                  <Num aria-label="Length (ft)" value={lengthFt} onChange={e => setL(e.target.value)} />
+                </Field>
+                <Field label="Width">
+                  <Num aria-label="Width (ft)" value={widthFt} onChange={e => setW(e.target.value)} />
+                </Field>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span className="t-cap">Column grid</span>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Num aria-label="Column grid across (ft)" value={gridXFt} onChange={e => setGridX(e.target.value)} />
+                  <span className="t-num" style={{ color: 'var(--steel)', fontSize: 13, flexShrink: 0 }}>×</span>
+                  <Num aria-label="Column grid along (ft)" value={gridYFt} onChange={e => setGridY(e.target.value)} />
+                </div>
+              </div>
+
+              <Field label="Max rack run">
+                <Num min="20" value={maxRunFt} onChange={e => setMaxRun(e.target.value)}
+                  aria-label="Max rack run (ft)" title="Longest continuous rack run before a cross-aisle" />
+              </Field>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span className="t-cap">Columns along wall</span>
+                <Seg label="Columns along wall" value={columnsAlongWall} onChange={setColumnsAlongWall}
+                  options={[{ key: true, label: 'Yes' }, { key: false, label: 'No' }]} />
+                <div style={{ fontSize: 12, color: 'var(--steel)', lineHeight: 1.5 }}>
+                  {columnsAlongWall
+                    ? 'Column grid starts at the wall — a line sits on it.'
+                    : 'Column grid inset one pitch from the wall — no column on it.'}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span className="t-cap">Row direction</span>
+                <Seg label="Row direction" value={orientation} onChange={setOrientation}
+                  options={[{ key: 'auto', label: 'Auto' }, { key: 'horizontal', label: 'Horizontal' }, { key: 'vertical', label: 'Vertical' }]} />
+              </div>
+            </Section>
+
+            {/* the pallet, the forklift (its aisle) and the wall clearance come from Project setup */}
+            <Note level="note" aria-label="From Project setup">
+              <span>
+                Pallet {pallet ? <>{pallet.name} (<span className="t-num">{pallet.faceIn}"</span> face)</> : '—'} · {mheOptions[mhe]?.label || mhe} · aisle <span className="t-num">{aisleFt} ft</span> · wall clearance <span className="t-num">{wallClearIn}"</span> —{' '}
+                <button type="button" onClick={() => openSetup('settings')} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit', fontWeight: 600, textDecoration: 'underline' }}>Project setup</button>
+              </span>
+            </Note>
+
+            <button type="button" onClick={run} disabled={generating} className="t-btn t-btn--primary t-btn--40 t-btn--block"
+              style={generating ? { cursor: 'progress', opacity: 0.75 } : undefined}>
+              {generating
+                ? <><Loader2 size={16} className="animate-spin" /> Generating… <span className="t-num">{Math.round(progress * 100)}%</span></>
+                : <><Sparkles size={16} strokeWidth={1.5} absoluteStrokeWidth /> Generate layout</>}
+            </button>
+
+            {ask && (
+              <div ref={askRef} role="dialog" aria-label="Regenerate or start over" style={{ padding: 12, background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>This building already has a layout.</div>
+                <div>
+                  <strong style={{ fontWeight: 600 }}>Regenerate racking</strong> keeps the building, zones{ask.zones ? ` (${ask.zones})` : ''}, hand-placed racks{ask.handPlaced ? ` (${ask.handPlaced})` : ''}, text, dimensions, layers and elevation types,
+                  and refills <strong style={{ fontWeight: 600 }}>{ask.rows} row{ask.rows === 1 ? '' : 's'}</strong> ({ask.racks.length} rack{ask.racks.length === 1 ? '' : 's'}) with the settings above.
+                </div>
+                {ask.handEdits || !ask.editsKnown
+                  ? <Note level="warning" data-testid="regen-edits">
+                      {!ask.editsKnown ? "Hand edits to these racks can't be detected — any will be lost."
+                        : `${ask.handEdits} hand edit${ask.handEdits === 1 ? '' : 's'} to generated racks will be lost.`}
+                    </Note>
+                  : <div data-testid="regen-edits" style={{ color: 'var(--steel)' }}>No hand edits to generated racks.</div>}
+                <div style={{ color: 'var(--steel)' }}><strong style={{ fontWeight: 600 }}>Start over</strong> draws a new building from the size above; everything in the old one goes.</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={regenerate} className="t-btn t-btn--primary" style={{ flex: 1 }}>Regenerate racking</button>
+                  <button type="button" onClick={startOver} className="t-btn t-btn--secondary">Start over</button>
+                  <button type="button" onClick={() => setAsk(null)} className="t-btn t-btn--secondary">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {result?.failed && !generating && (
+              <Note level="error" role="alert">Nothing fits — the layout is unchanged.</Note>
+            )}
+            {result != null && !result.failed && !generating && (
+              <div style={{ padding: 12, background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 4 }}>
+                <div className="t-num" style={{ fontSize: 18, fontWeight: 500, color: 'var(--pine)' }}>
+                  {result.total.toLocaleString()} <span style={{ fontSize: 12, color: 'var(--steel)' }}>·</span> {result.usable.toLocaleString()}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--steel)', marginTop: 4 }}>
+                  positions · usable after column and narrow-aisle losses
+                </div>
+                {result.regenerated && (
+                  <div data-testid="regen-result" style={{ fontSize: 12, color: 'var(--steel)', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--line)' }}>
+                    Regenerated <strong style={{ fontWeight: 600, color: 'var(--ink)', textTransform: 'capitalize' }}>{result.orientation}</strong> — {result.rows} row{result.rows === 1 ? '' : 's'} replaced{result.handPlaced ? `, ${result.handPlaced} hand-placed kept` : ''}
+                  </div>
+                )}
+                {result.horizontalTotal != null && (
+                  <div style={{ fontSize: 12, color: 'var(--steel)', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--line)' }}>
+                    Auto-picked <strong style={{ fontWeight: 600, color: 'var(--ink)', textTransform: 'capitalize' }}>{result.orientation}</strong> — <span className="t-num">{result.horizontalUsable.toLocaleString()}</span> usable horizontal vs <span className="t-num">{result.verticalUsable.toLocaleString()}</span> vertical
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-
-          <Field label="MAX RACK RUN (ft)">
-            <input style={inputSt} type="number" min="20" value={maxRunFt} onChange={e => setMaxRun(e.target.value)}
-              aria-label="Max rack run (ft)" title="Longest continuous rack run before a cross-aisle" />
-          </Field>
-
-          <div>
-            <div style={labelSt}>COLUMNS ALONG WALL</div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
-              {[
-                { key: true,  label: 'Yes' },
-                { key: false, label: 'No' },
-              ].map(o => (
-                <button key={String(o.key)} onClick={() => setColumnsAlongWall(o.key)} style={{
-                  flex: 1, padding: '6px 8px',
-                  background: columnsAlongWall === o.key ? 'var(--accent)' : 'var(--surface2)',
-                  color: columnsAlongWall === o.key ? '#fff' : 'var(--text)',
-                  border: '1px solid var(--border)', borderRadius: R,
-                  cursor: 'pointer', fontSize: 11.5, fontWeight: 600,
-                  fontFamily: 'var(--font-ui)',
-                }}>{o.label}</button>
-              ))}
-            </div>
-            <div style={{ fontSize: 9.5, color: 'var(--text3)', marginTop: 4, lineHeight: 1.35 }}>
-              {columnsAlongWall
-                ? 'Column grid starts at the wall — a line sits on it.'
-                : 'Column grid inset one pitch from the wall — no column on it.'}
-            </div>
-          </div>
-
-          <div>
-            <div style={labelSt}>ROW DIRECTION</div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
-              {[
-                { key: 'auto',       label: 'Auto' },
-                { key: 'horizontal', label: 'Horizontal' },
-                { key: 'vertical',   label: 'Vertical' },
-              ].map(o => (
-                <button key={o.key} onClick={() => setOrientation(o.key)} style={{
-                  flex: 1, padding: '6px 8px',
-                  background: orientation === o.key ? 'var(--accent)' : 'var(--surface2)',
-                  color: orientation === o.key ? '#fff' : 'var(--text)',
-                  border: '1px solid var(--border)', borderRadius: R,
-                  cursor: 'pointer', fontSize: 11.5, fontWeight: 600,
-                  fontFamily: 'var(--font-ui)',
-                }}>{o.label}</button>
-              ))}
-            </div>
-          </div>
-        </Section>
-
-        {/* the pallet, the forklift (its aisle) and the wall clearance come from Project setup */}
-        <div aria-label="From Project setup" style={{ fontSize: 10.5, color: 'var(--text3)', lineHeight: 1.45 }}>
-          Pallet {pallet ? `${pallet.name} (${pallet.faceIn}" face)` : '—'} · {mheOptions[mhe]?.label || mhe} · aisle {aisleFt} ft · wall clearance {wallClearIn}" —{' '}
-          <button type="button" onClick={() => openSetup('settings')} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent)', fontSize: 10.5, textDecoration: 'underline' }}>Project setup</button>
         </div>
-
-        <button onClick={run} disabled={generating} style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-          padding: '9px', marginTop: 2,
-          background: 'var(--accent)', color: '#fff',
-          border: 'none', borderRadius: R,
-          cursor: generating ? 'progress' : 'pointer',
-          opacity: generating ? 0.75 : 1,
-          fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font-ui)',
-        }}>
-          {generating
-            ? <><Loader2 size={14} className="animate-spin" /> Generating… {Math.round(progress * 100)}%</>
-            : <><Sparkles size={14} /> Generate layout</>}
-        </button>
-
-        {ask && (
-          <div ref={askRef} role="dialog" aria-label="Regenerate or start over" style={{ padding: '9px 10px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 7, fontSize: 11, lineHeight: 1.45 }}>
-            <div style={{ fontWeight: 600, fontSize: 12 }}>This building already has a layout.</div>
-            <div>
-              <strong>Regenerate racking</strong> keeps the building, zones{ask.zones ? ` (${ask.zones})` : ''}, hand-placed racks{ask.handPlaced ? ` (${ask.handPlaced})` : ''}, text, dimensions, layers and elevation types,
-              and refills <strong>{ask.rows} row{ask.rows === 1 ? '' : 's'}</strong> ({ask.racks.length} rack{ask.racks.length === 1 ? '' : 's'}) with the settings above.
-            </div>
-            <div data-testid="regen-edits" style={{ color: ask.handEdits || !ask.editsKnown ? 'var(--red)' : 'var(--text3)' }}>
-              {!ask.editsKnown ? "Hand edits to these racks can't be detected — any will be lost."
-                : ask.handEdits ? `${ask.handEdits} hand edit${ask.handEdits === 1 ? '' : 's'} to generated racks will be lost.`
-                : 'No hand edits to generated racks.'}
-            </div>
-            <div style={{ color: 'var(--text3)' }}><strong>Start over</strong> draws a new building from the size above; everything in the old one goes.</div>
-            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-              <button type="button" onClick={regenerate} style={{ flex: 1, padding: '6px 8px', borderRadius: R, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#fff', fontSize: 11.5, fontWeight: 600 }}>Regenerate racking</button>
-              <button type="button" onClick={startOver} style={{ padding: '6px 8px', borderRadius: R, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--surface)', color: 'var(--text)', fontSize: 11.5 }}>Start over</button>
-              <button type="button" onClick={() => setAsk(null)} style={{ padding: '6px 8px', borderRadius: R, border: '1px solid var(--border)', cursor: 'pointer', background: 'transparent', color: 'var(--text3)', fontSize: 11.5 }}>Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {result?.failed && !generating && (
-          <div role="alert" style={{ fontSize: 11, color: 'var(--red)' }}>Nothing fits — the layout is unchanged.</div>
-        )}
-        {result != null && !result.failed && !generating && (
-          <div style={{
-            padding: '8px 10px', background: 'var(--surface2)',
-            border: '1px solid var(--border)', borderRadius: 4,
-          }}>
-            <div style={{ fontSize: 18, fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--accent)' }}>
-              {result.total.toLocaleString()} <span style={{ fontSize: 11, color: 'var(--text3)' }}>·</span> {result.usable.toLocaleString()}
-            </div>
-            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>
-              positions · usable after column and narrow-aisle losses
-            </div>
-            {result.regenerated && (
-              <div data-testid="regen-result" style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
-                Regenerated <strong style={{ color: 'var(--text)', textTransform: 'capitalize' }}>{result.orientation}</strong> — {result.rows} row{result.rows === 1 ? '' : 's'} replaced{result.handPlaced ? `, ${result.handPlaced} hand-placed kept` : ''}
-              </div>
-            )}
-            {result.horizontalTotal != null && (
-              <div style={{
-                fontSize: 10, color: 'var(--text3)', marginTop: 6,
-                paddingTop: 6, borderTop: '1px solid var(--border)',
-              }}>
-                Auto-picked <strong style={{ color: 'var(--text)', textTransform: 'capitalize' }}>{result.orientation}</strong> — {result.horizontalUsable.toLocaleString()} usable horizontal vs {result.verticalUsable.toLocaleString()} vertical
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   )
 }

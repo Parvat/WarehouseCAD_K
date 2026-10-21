@@ -6,7 +6,7 @@ import { lShapePath, lMirrorPath, tShapePath, uShapePath, crossPath } from '../.
 function PlanPreview({ type }) {
   const pad = 4, vw = 54, vh = 40
   const W = vw-pad*2, H = vh-pad*2
-  const s = { fill:'var(--surface)', stroke:'var(--accent)', strokeWidth:2.5, strokeLinejoin:'round' }
+  const s = { fill:'var(--surface)', stroke:'var(--pine)', strokeWidth:2.5, strokeLinejoin:'round' }
   switch (type) {
     case 'fp_rect':     return <rect {...s} x={pad} y={pad} width={W} height={H} rx={1} />
     case 'fp_l':        return <path {...s} d={lShapePath(pad,pad,W,H)} />
@@ -31,33 +31,33 @@ export function FloorPlanPicker() {
   const { placeFpObject } = useCanvasStore(useShallow(s => ({ placeFpObject: s.placeFpObject })))
   return (
     <SectionHeader title="Floor Plans" defaultOpen={true}>
-      <div style={{ padding:'4px 8px 12px' }}>
-        <p style={{ fontSize:'var(--fs-xs)', color:'var(--text3)', fontFamily:'var(--font-mono)', marginBottom:8, lineHeight:1.5 }}>
+      <div style={{ padding:'0 16px 16px', minWidth:0 }}>
+        <p style={{ fontSize:12, color:'var(--steel)', fontFamily:'var(--font-ui)', margin:'0 0 8px', lineHeight:1.5 }}>
           Click to place a floor plan on the canvas.
         </p>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0, 1fr))', gap:8 }}>
           {PLANS.map(plan => (
             <button key={plan.type} onClick={() => placeFpObject(plan)}
               style={{
-                display:'flex', flexDirection:'column', alignItems:'center', gap:5,
-                borderRadius:8, border:'1px solid var(--border)', padding:6,
-                background:'var(--surface2)', cursor:'pointer', transition:'all 0.12s',
+                display:'flex', flexDirection:'column', alignItems:'center', gap:4, minWidth:0,
+                borderRadius:4, border:'1px solid var(--line)', padding:8,
+                background:'var(--paper)', cursor:'pointer', transition:'all 0.12s',
               }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.background='var(--surface3)' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface2)' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor='var(--pine)'; e.currentTarget.style.background='var(--bg)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor='var(--line)'; e.currentTarget.style.background='var(--paper)' }}
             >
-              <div style={{ width:'100%', borderRadius:5, overflow:'hidden', background:'var(--canvas-bg)', border:'1px solid var(--border)' }}>
+              <div style={{ width:'100%', borderRadius:2, overflow:'hidden', background:'var(--canvas-bg)', border:'1px solid var(--line)' }}>
                 <svg viewBox="0 0 54 40" width="100%" style={{ display:'block' }}>
                   {[14,27,40].flatMap(cx => [13,27].map(cy => (
-                    <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r={0.8} fill="var(--accent)" opacity={0.2} />
+                    <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r={0.8} fill="var(--pine)" opacity={0.2} />
                   )))}
                   <PlanPreview type={plan.type} />
                 </svg>
               </div>
-              <span style={{ fontSize:'var(--fs-xs)', fontWeight:600, color:'var(--text2)', fontFamily:'var(--font-display)', letterSpacing:'0.05em', textTransform:'uppercase' }}>
+              <span style={{ fontSize:12, fontWeight:600, color:'var(--ink)', fontFamily:'var(--font-ui)' }}>
                 {plan.label}
               </span>
-              <span style={{ fontSize:'var(--fs-xs)', color:'var(--text3)', fontFamily:'var(--font-mono)' }}>
+              <span className="t-num" style={{ fontSize:11, color:'var(--steel)' }}>
                 {plan.widthFt}′ × {plan.heightFt}′
               </span>
             </button>
@@ -73,23 +73,19 @@ function WallThicknessDefault() {
   const { fpDefaults, setFpDefaults } = useCanvasStore(useShallow(s => ({ fpDefaults: s.fpDefaults, setFpDefaults: s.setFpDefaults })))
   const thickness = fpDefaults?.wallThicknessFt ?? 0.5
   return (
-    <div style={{ marginTop:10, paddingTop:8, borderTop:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:6 }}>
+    <div style={{ marginTop:12, paddingTop:12, borderTop:'1px solid var(--line)', display:'flex', flexDirection:'column', gap:8 }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        <span style={{ fontSize:'var(--fs-xs)', color:'var(--text3)', fontFamily:'var(--font-mono)', textTransform:'uppercase', letterSpacing:'0.06em' }}>Default Wall</span>
-        <span style={{ fontSize:'var(--fs-xs)', color:'var(--text)', fontFamily:'var(--font-mono)' }}>{(thickness*12).toFixed(0)}"</span>
+        <span className="t-cap">Default Wall</span>
+        <span className="t-num" style={{ fontSize:12, color:'var(--ink)' }}>{(thickness*12).toFixed(0)}"</span>
       </div>
       <input type="range" min={0.25} max={2} step={0.25} value={thickness}
         onChange={e => setFpDefaults({ wallThicknessFt: Number(e.target.value) })}
-        style={{ accentColor:'var(--accent)', height:3, width:'100%' }} />
-      <div style={{ display:'flex', gap:3 }}>
+        style={{ accentColor:'var(--pine)', height:3, width:'100%' }} />
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4, minmax(0, 1fr))', gap:4 }}>
         {[0.25,0.5,0.75,1].map(v => (
           <button key={v} onClick={() => setFpDefaults({ wallThicknessFt: v })}
-            style={{
-              flex:1, fontSize:'var(--fs-xs)', fontFamily:'var(--font-mono)', padding:'3px 0',
-              borderRadius:5, border: thickness===v ? '1px solid var(--accent)' : '1px solid var(--border)',
-              background: thickness===v ? 'var(--accent-dim)' : 'transparent',
-              color: thickness===v ? 'var(--accent)' : 'var(--text3)', cursor:'pointer',
-            }}>
+            className={'t-btn t-btn--secondary t-num' + (thickness===v ? ' is-on' : '')}
+            style={{ padding:0, fontFamily:'var(--font-mono)', fontWeight:400 }}>
             {v*12}"
           </button>
         ))}

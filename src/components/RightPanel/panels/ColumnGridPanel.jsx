@@ -63,25 +63,25 @@ export function ColumnGridPanel({ obj }) {
     commitObjectUpdate(obj.id, { colSizeIn: sizeIn, columnW: colPx, columnH: colPx, width: newW, height: newH })
   }
 
-  const lbl = (s) => <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', minWidth: 40 }}>{s}</span>
-  const btnStyle = (active) => ({
-    padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)',
-    background: active ? 'var(--accent-solid)' : 'var(--surface3)',
-    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-    color: active ? 'var(--accent-fg)' : 'var(--text2)',
-  })
+  /* Words PJS (labels steel 12), figures mono (.t-num). Option buttons are 32px secondaries, the picked one pine
+     (.is-on); "+ Bay" secondary, "- Bay" danger, disabled by the attribute alone. Status is a white card, radius 4. */
+  const lbl = (s) => <span className="t-label" style={{ width: 56, flexShrink: 0 }}>{s}</span>
+  const opt = (active) => 't-btn t-btn--secondary' + (active ? ' is-on' : '')
+  const statRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }
+  const statLbl = { fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--steel)' }
 
   const SpacingRow = ({ label, arr, axis }) => (
-    <div style={{ marginBottom: 6 }}>
-      <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+      <div className="t-cap">
         {label} bays ({arr.length})
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {arr.map((s, i) => {
           const ftVal = Math.round((s / gridSize) * 10) / 10
           return (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', minWidth: 18 }}>B{i+1}</span>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <span className="t-num" style={{ fontSize: 12, color: 'var(--steel)', width: 24, flexShrink: 0 }}>B{i+1}</span>
+              <span className="t-field" style={{ flex: '0 1 96px' }}>
               <input
                 type="text"
                 defaultValue={Math.round(ftVal)}
@@ -92,69 +92,65 @@ export function ColumnGridPanel({ obj }) {
                   else e.target.value = Math.round(ftVal)
                 }}
                 onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                style={{
-                  width: 52, padding: '2px 4px', borderRadius: 3, fontSize: 10,
-                  fontFamily: 'var(--font-mono)', textAlign: 'right',
-                  background: 'var(--surface3)', border: '1px solid var(--border)',
-                  color: 'var(--text)', outline: 'none',
-                  MozAppearance: 'textfield',
-                }}
+                className="t-input"
+                style={{ textAlign: 'right' }}
               />
-              <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>ft</span>
-              <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text2)', marginLeft: 2 }}>{fmtIn(s)}</span>
+              <span className="t-unit">ft</span>
+              </span>
+              <span className="t-num" style={{ fontSize: 12, color: 'var(--ink-2)', minWidth: 0 }}>{fmtIn(s)}</span>
             </div>
           )
         })}
       </div>
-      <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-        <button onClick={() => addBay(axis)} style={{ flex:1, padding:'4px 0', borderRadius:4, cursor:'pointer', fontSize:9, fontFamily:'var(--font-mono)', fontWeight:600, background:'var(--green-dim)', border:'1px solid var(--green-bdr)', color:'var(--green)' }}>+ Bay</button>
-        <button onClick={() => removeBay(axis)} disabled={arr.length<=1} style={{ padding:'4px 8px', borderRadius:4, cursor:arr.length>1?'pointer':'not-allowed', fontSize:9, fontFamily:'var(--font-mono)', background:'transparent', border:'1px solid var(--border)', color:arr.length>1?'var(--red)':'var(--text3)' }}>- Bay</button>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => addBay(axis)} className="t-btn t-btn--secondary" style={{ flex: 1 }}>+ Bay</button>
+        <button onClick={() => removeBay(axis)} disabled={arr.length<=1} className="t-btn t-btn--danger">- Bay</button>
       </div>
     </div>
   )
 
   return (
-    <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
 
       {/* Status */}
-      <div style={{ padding: '6px 8px', borderRadius: 5, background: 'var(--surface2)', border: '1px solid var(--border)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span style={{ color: 'var(--text3)' }}>Columns</span>
-          <span style={{ color: 'var(--text)', fontWeight: 700 }}>{(spacingX.length+1) * (spacingY.length+1)}</span>
+      <div style={{ padding: '8px 12px', borderRadius: 4, background: 'var(--paper)', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={statRow}>
+          <span style={statLbl}>Columns</span>
+          <span className="t-num" style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>{(spacingX.length+1) * (spacingY.length+1)}</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-          <span style={{ color: 'var(--text3)' }}>Grid size</span>
-          <span style={{ color: 'var(--text)' }}>{fmtIn(obj.width)} x {fmtIn(obj.height)}</span>
+        <div style={statRow}>
+          <span style={statLbl}>Grid size</span>
+          <span className="t-num" style={{ fontSize: 13, color: 'var(--ink)' }}>{fmtIn(obj.width)} x {fmtIn(obj.height)}</span>
         </div>
       </div>
 
       {/* Column size */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {lbl('Column')}
         {COL_SIZES_IN.map(s => (
-          <button key={s} onClick={() => changeColSize(s)} style={btnStyle(colSizeIn === s)}>{s}"</button>
+          <button key={s} onClick={() => changeColSize(s)} className={opt(colSizeIn === s) + ' t-num'} style={{ flex: 1, minWidth: 0, fontFamily: 'var(--font-mono)', fontWeight: 400 }}>{s}"</button>
         ))}
       </div>
 
       {/* Show/hide grid lines */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {lbl('Grid')}
         <button onClick={() => commitObjectUpdate(obj.id, { showGrid: !showGrid })}
-          style={btnStyle(showGrid)}>
+          className={opt(showGrid)} style={{ flex: 1, minWidth: 0 }}>
           {showGrid ? '* Visible' : 'o Hidden'}
         </button>
       </div>
 
       {/* Wall-attached toggle (Fix 3) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {lbl('Walls')}
         <button onClick={() => commitObjectUpdate(obj.id, { wallAttached: true })}
-          style={btnStyle(wallAttached)}>Attached</button>
+          className={opt(wallAttached)} style={{ flex: 1, minWidth: 0 }}>Attached</button>
         <button onClick={() => commitObjectUpdate(obj.id, { wallAttached: false })}
-          style={btnStyle(!wallAttached)}>Free</button>
+          className={opt(!wallAttached)} style={{ flex: 1, minWidth: 0 }}>Free</button>
       </div>
       {!wallAttached && (
-        <div style={{ padding: '4px 6px', borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border)', fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>
+        <div style={{ fontSize: 12, fontFamily: 'var(--font-ui)', color: 'var(--steel)', lineHeight: 1.5 }}>
           Free-standing -- columns do not connect to walls
         </div>
       )}

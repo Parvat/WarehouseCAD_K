@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, memo } from 'react'
 import { Stage, Layer, Shape } from 'react-konva'
-import { Maximize, ToggleLeft, ToggleRight, Ruler } from 'lucide-react'
+import { Maximize, ToggleLeft, ToggleRight, Ruler, Captions, CaptionsOff } from 'lucide-react'
 import { Scene } from './Scene'
 import { Overlays } from './Overlays'
 import { ResizeHandlesOverlay } from './ResizeHandlesOverlay'
@@ -156,7 +156,14 @@ function StoreRulers({ gridSize, size }) {
   return <Rulers view={{ zoom, panX, panY }} gridSize={gridSize} size={size} />
 }
 
-export function Canvas2() {
+/* The canvas's bottom row (theme-p2): one line 12px from the bottom, everything 32px high — the Hub button and the
+   Elevations chip on the left, the notices centred, the corner buttons on the right. A grid of 1fr | auto | 1fr
+   keeps the notices on the canvas's centre line, and the side columns never shrink under their contents, so
+   nothing overlaps; a long notice wraps inside the middle. */
+export const BOTTOM_ROW = { inset: 12, h: 32, gap: 8 }
+const ICON16 = { size: 16, strokeWidth: 1.5, absoluteStrokeWidth: true }
+
+export function Canvas2({ hubButton = null }) {
   const [host, setHost] = useState(null)
   const stageRef = useRef(null)
   const size = useContainerSize(host)
@@ -167,6 +174,7 @@ export function Canvas2() {
   const showRulers = useCanvasStore(s => s.showRulers)
   const uiTheme  = useCanvasStore(s => s.uiTheme)
   const showAisles = useCanvasStore(s => s.showAisles ?? true)
+  const toggleAisles = useCanvasStore(s => s.toggleAisles)
   const activeWall = useCanvasStore(s => s.activeWall)
   const activeBaySelection = useCanvasStore(s => s.activeBaySelection)
 
@@ -229,10 +237,10 @@ export function Canvas2() {
       return {
         major: cs.getPropertyValue('--grid-major').trim() || 'rgba(107,114,128,0.34)',
         minor: cs.getPropertyValue('--grid-minor').trim() || 'rgba(107,114,128,0.14)',
-        bg:    cs.getPropertyValue('--canvas-bg').trim() || '#ECEAE1',
+        bg:    cs.getPropertyValue('--canvas-bg').trim() || 'var(--canvas-bg)',
       }
     } catch {
-      return { major: 'rgba(107,114,128,0.34)', minor: 'rgba(107,114,128,0.14)', bg: '#ECEAE1' }
+      return { major: 'rgba(107,114,128,0.34)', minor: 'rgba(107,114,128,0.14)', bg: 'var(--canvas-bg)' }
     }
   }, [uiTheme])
 
@@ -404,56 +412,59 @@ export function Canvas2() {
       className="flex-1 relative overflow-hidden min-h-0"
       style={{ background: colors.bg, cursor: effectiveCursor }}
     >
-      {/* The primary fit-to-content control. Double-click can do the same
-          thing, but only when the setting to its right is turned on — off by
-          default, since double-click is also reached for while editing and a
-          big view jump firing by accident there is disorienting. */}
-      <div style={{ position: 'absolute', right: 12, bottom: 12, zIndex: 50, display: 'flex', gap: 6 }}>
-        <button
-          onClick={toggleMeasuring}
-          title={measuring ? 'Exit measure tool (Esc)' : 'Measure — click two points for the distance between them'}
-          aria-label="Measure"
-          aria-pressed={measuring}
-          style={{
-            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: measuring ? 'var(--accent-solid, #0B101D)' : 'var(--surface, #fff)',
-            color: measuring ? 'var(--accent-fg, #fff)' : 'var(--text2, #3A4152)',
-            border: '1px solid var(--border, #E6E9EF)', borderRadius: 8,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.12)', cursor: 'pointer',
-          }}
-        >
-          <Ruler size={15} strokeWidth={1.6} absoluteStrokeWidth />
-        </button>
-        <button
-          onClick={toggleDblClickFit}
-          title={(dblClickFitEnabled ? 'Disable' : 'Enable') + ' double-click to fit'}
-          aria-label={(dblClickFitEnabled ? 'Disable' : 'Enable') + ' double-click to fit'}
-          aria-pressed={dblClickFitEnabled}
-          style={{
-            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: dblClickFitEnabled ? 'var(--accent-solid, #0B101D)' : 'var(--surface, #fff)',
-            color: dblClickFitEnabled ? 'var(--accent-fg, #fff)' : 'var(--text2, #3A4152)',
-            border: '1px solid var(--border, #E6E9EF)', borderRadius: 8,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.12)', cursor: 'pointer',
-          }}
-        >
-          {dblClickFitEnabled
-            ? <ToggleRight size={16} strokeWidth={1.6} absoluteStrokeWidth />
-            : <ToggleLeft size={16} strokeWidth={1.6} absoluteStrokeWidth />}
-        </button>
-        <button
-          onClick={fitToContent}
-          title="Fit to content"
-          aria-label="Fit to content"
-          style={{
-            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'var(--surface, #fff)', color: 'var(--text2, #3A4152)',
-            border: '1px solid var(--border, #E6E9EF)', borderRadius: 8,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.12)', cursor: 'pointer',
-          }}
-        >
-          <Maximize size={15} strokeWidth={1.6} absoluteStrokeWidth />
-        </button>
+      {/* the bottom row (BOTTOM_ROW above): Hub and the Elevations chip | the notices | the corner buttons */}
+      <div data-bottom-row style={{
+        position: 'absolute', left: BOTTOM_ROW.inset, right: BOTTOM_ROW.inset, bottom: BOTTOM_ROW.inset, zIndex: 55,
+        display: 'grid', gridTemplateColumns: 'minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr)',
+        alignItems: 'end', columnGap: BOTTOM_ROW.gap, pointerEvents: 'none',
+      }}>
+        <div data-bottom-left style={{ display: 'flex', alignItems: 'flex-end', gap: BOTTOM_ROW.gap, justifySelf: 'start', pointerEvents: 'auto' }}>
+          {hubButton}
+          <ElevLegend />
+        </div>
+        <div data-bottom-notices style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: BOTTOM_ROW.gap, minWidth: 0, pointerEvents: 'auto' }}>
+          {filling && <FillOptionsBar />}
+          <AreaPrompt />
+          <RowGroupBar />
+        </div>
+        {/* The primary fit-to-content control. Double-click can do the same
+            thing, but only when the setting to its left is turned on — off by
+            default, since double-click is also reached for while editing and a
+            big view jump firing by accident there is disorienting. */}
+        <div data-corner-buttons style={{ display: 'flex', gap: BOTTOM_ROW.gap, justifySelf: 'end', pointerEvents: 'auto' }}>
+          <button type="button" className="t-icon t-icon--float"
+            onClick={toggleMeasuring}
+            title={measuring ? 'Exit measure tool (Esc)' : 'Measure — click two points for the distance between them'}
+            aria-label="Measure"
+            aria-pressed={measuring}
+          >
+            <Ruler {...ICON16} />
+          </button>
+          {/* the aisle labels on the plan, on or off (it was a pill at the top of Properties) */}
+          <button type="button" className="t-icon t-icon--float"
+            onClick={toggleAisles}
+            title={showAisles ? 'Hide aisle labels' : 'Show aisle labels'}
+            aria-label="Aisle labels"
+            aria-pressed={showAisles}
+          >
+            {showAisles ? <Captions {...ICON16} /> : <CaptionsOff {...ICON16} />}
+          </button>
+          <button type="button" className="t-icon t-icon--float"
+            onClick={toggleDblClickFit}
+            title={(dblClickFitEnabled ? 'Disable' : 'Enable') + ' double-click to fit'}
+            aria-label={(dblClickFitEnabled ? 'Disable' : 'Enable') + ' double-click to fit'}
+            aria-pressed={dblClickFitEnabled}
+          >
+            {dblClickFitEnabled ? <ToggleRight {...ICON16} /> : <ToggleLeft {...ICON16} />}
+          </button>
+          <button type="button" className="t-icon t-icon--float"
+            onClick={fitToContent}
+            title="Fit to content"
+            aria-label="Fit to content"
+          >
+            <Maximize {...ICON16} />
+          </button>
+        </div>
       </div>
       {size.w > 0 && size.h > 0 && (
         <Stage
@@ -541,10 +552,6 @@ export function Canvas2() {
         </Stage>
       )}
       <ViewAdopter view={view} apply={apply} />
-      <RowGroupBar />
-      <AreaPrompt />
-      <ElevLegend />
-      {filling && <FillOptionsBar />}
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>
   )

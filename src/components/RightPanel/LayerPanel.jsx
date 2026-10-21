@@ -9,35 +9,33 @@ import { setLayer } from '../../utils/layers'
 export function LayerPanel() {
   const layers = useCanvasStore(s => s.layers)
 
-  const iconBtn = (on) => ({
-    width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-    border: 'none', borderRadius: 5, cursor: 'pointer', flexShrink: 0,
-    background: 'transparent', color: on ? 'var(--text)' : 'var(--text3)',
-  })
+  /* ghost icon buttons (.t-icon); an eye / padlock that is on reads ink, off reads steel — not the pine pressed fill,
+     which on seven always-visible eyes would be a column of solid blocks */
+  const iconBtn = (on) => ({ background: 'transparent', color: on ? 'var(--ink)' : 'var(--steel)' })
 
   return (
     <SectionHeader title="Layers">
-      <div style={{ padding: '2px 8px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <div style={{ padding: '0 16px 8px', display: 'flex', flexDirection: 'column', gap: 0 }}>
         {layers.map(layer => {
           const hidden = layer.visible === false, locked = !!layer.locked
           return (
             <div key={layer.id} data-layer={layer.id}
-              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 4px', borderRadius: 6 }}>
-              <button type="button" style={iconBtn(!hidden)}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+              <button type="button" className="t-icon" style={iconBtn(!hidden)}
                 aria-label={`${hidden ? 'Show' : 'Hide'} ${layer.name} layer`} aria-pressed={!hidden}
                 title={hidden ? 'Show' : 'Hide'}
                 onClick={() => setLayer(useCanvasStore, layer.id, { visible: hidden })}>
-                {hidden ? <EyeOff size={14} strokeWidth={1.5} absoluteStrokeWidth /> : <Eye size={14} strokeWidth={1.5} absoluteStrokeWidth />}
+                {hidden ? <EyeOff size={16} strokeWidth={1.5} absoluteStrokeWidth /> : <Eye size={16} strokeWidth={1.5} absoluteStrokeWidth />}
               </button>
-              <button type="button" style={iconBtn(locked)}
+              <button type="button" className="t-icon" style={iconBtn(locked)}
                 aria-label={`${locked ? 'Unlock' : 'Lock'} ${layer.name} layer`} aria-pressed={locked}
                 title={locked ? 'Unlock' : 'Lock'}
                 onClick={() => setLayer(useCanvasStore, layer.id, { locked: !locked })}>
-                {locked ? <Lock size={13} strokeWidth={1.5} absoluteStrokeWidth /> : <LockOpen size={13} strokeWidth={1.5} absoluteStrokeWidth style={{ opacity: 0.45 }} />}
+                {locked ? <Lock size={16} strokeWidth={1.5} absoluteStrokeWidth /> : <LockOpen size={16} strokeWidth={1.5} absoluteStrokeWidth style={{ opacity: 0.45 }} />}
               </button>
               <span style={{
-                flex: 1, minWidth: 0, marginLeft: 4, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                color: hidden ? 'var(--text3)' : 'var(--text)',
+                flex: 1, minWidth: 0, marginLeft: 4, fontFamily: 'var(--font-ui)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                color: hidden ? 'var(--steel)' : 'var(--ink)',
               }}>
                 {layer.name}
               </span>

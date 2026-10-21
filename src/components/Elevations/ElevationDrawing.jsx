@@ -30,14 +30,14 @@ export function ElevationDrawing(props) {
     <DrawingCore {...props} onFull={() => setFull(true)} />
     {full && host && createPortal(
       <div role="dialog" aria-label="Elevation full screen" style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{props.title || props.t?.name}</span>
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Esc closes</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 48, flexShrink: 0, padding: '0 8px 0 16px', borderBottom: '1px solid var(--line)', background: 'var(--paper)', fontFamily: 'var(--font-ui)' }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{props.title || props.t?.name}</span>
+          <span style={{ fontSize: 12, color: 'var(--steel)', whiteSpace: 'nowrap' }}>Esc closes</span>
           {/* Simple | Detailed — the full-size view is where the detailed dimensions are read */}
-          <div role="group" aria-label="Drawing detail" style={{ display: 'flex', gap: 2, padding: 2, marginLeft: 12, borderRadius: 2, border: '1px solid var(--border)', background: 'var(--surface2)' }}>
-            {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={props.detail === k} onClick={() => setPane({ detail: k })} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 2, border: 'none', cursor: 'pointer', background: props.detail === k ? 'var(--accent-solid, #0B101D)' : 'transparent', color: props.detail === k ? 'var(--accent-fg, #fff)' : 'var(--text2)' }}>{label}</button>)}
+          <div role="group" aria-label="Drawing detail" style={{ display: 'flex', height: 32, marginLeft: 12, flexShrink: 0, borderRadius: 2, border: '1px solid var(--line)', background: 'var(--paper)', overflow: 'hidden' }}>
+            {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={props.detail === k} onClick={() => setPane({ detail: k })} className="t-btn t-btn--secondary" style={{ height: '100%', padding: '0 12px', fontSize: 12, border: 'none', borderRadius: 0 }}>{label}</button>)}
           </div>
-          <button type="button" aria-label="Close full screen" onClick={() => setFull(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><X size={16} /></button>
+          <button type="button" aria-label="Close full screen" onClick={() => setFull(false)} className="t-icon" style={{ marginLeft: 'auto' }}><X size={16} strokeWidth={1.5} absoluteStrokeWidth /></button>
         </div>
         <div style={{ flex: 1, minHeight: 0 }}><DrawingCore {...props} fill height={null} controls paper={false} fitSignal={0} /></div>
       </div>, host)}
@@ -211,13 +211,13 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
       </svg>
       {/* Fit, and full screen */}
       {controls && <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 2 }}>
-        <button type="button" onClick={fit} title="Fit (double-click empty space)" style={{ padding: '3px 9px', fontSize: 11, borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer' }}>Fit</button>
-        {onFull && <button type="button" aria-label="Full screen" onClick={onFull} title="Full screen (Esc closes)" style={{ padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', display: 'flex' }}><Maximize2 size={13} /></button>}
+        <button type="button" onClick={fit} title="Fit (double-click empty space)" className="t-btn t-btn--secondary">Fit</button>
+        {onFull && <button type="button" aria-label="Full screen" onClick={onFull} title="Full screen (Esc closes)" className="t-icon t-icon--float"><Maximize2 size={16} strokeWidth={1.5} absoluteStrokeWidth /></button>}
       </div>}
       {editing && (
         <input autoFocus aria-label="Dimension" value={editing.text} onChange={e => setEditing({ ...editing, text: e.target.value })}
           onBlur={commitTyping} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') commitTyping(); if (e.key === 'Escape') setEditing(null) }}
-          style={{ position: 'absolute', left: Math.max(4, editing.x - 34), top: Math.max(4, editing.y - 11), width: 68, fontSize: 12, fontFamily: 'var(--font-mono)', padding: '2px 4px', border: '1px solid var(--accent, #2F7BD8)', borderRadius: 3, zIndex: 3 }} />
+          className="t-input" style={{ position: 'absolute', left: Math.max(4, editing.x - 34), top: Math.max(4, editing.y - 16), width: 68, padding: '0 4px', zIndex: 3 }} />
       )}
     </div>
   )

@@ -402,7 +402,7 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(exported).toBe(2)
     expect(m.LC.useLayoutCheck.getState().askExport).toBe(null)
     const dlg = readFileSync('src/components/RightPanel/LayoutCheckPanel.jsx', 'utf8')
-    expect(dlg).toMatch(/\{n\} error\{n === 1 \? '' : 's'\} found\. Export anyway\?/)
+    expect(dlg).toMatch(/\{n\}(<\/span>)? error\{n === 1 \? '' : 's'\} found\. Export anyway\?/)
     expect(readFileSync('src/components/Toolbar/TopBar.jsx', 'utf8')).toMatch(/onClick=\{\(\) => exportWithCheck\(useCanvasStore, exportAsPDF\)\}/)
   })
 })

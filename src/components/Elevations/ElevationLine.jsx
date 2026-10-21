@@ -13,8 +13,8 @@ export function ElevationLine() {
   if (!types.length) return null
   const name = (id) => typeById(T, id)?.name || '—'
   return (
-    <div aria-label="Elevation" title="Set elevations in the Elevations tab" style={{ display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text2)', padding: '2px 0' }}>
-      <span style={{ color: 'var(--text3)' }}>Elevation:</span>
+    <div aria-label="Elevation" title="Set elevations in the Elevations tab" style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12, fontFamily: 'var(--font-ui)', color: 'var(--ink-2)', padding: '4px 0', minWidth: 0 }}>
+      <span style={{ color: 'var(--steel)', flexShrink: 0 }}>Elevation:</span>
       <span>{types.length === 1 ? name(types[0].id) : `mixed — ${types.map(x => `${name(x.id)} (${x.bays})`).join(', ')}`}</span>
     </div>
   )

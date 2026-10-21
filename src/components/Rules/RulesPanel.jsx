@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus, RotateCcw, Lock, AlertTriangle } from 'lucide-react'
+import { X, Plus, RotateCcw, Lock, TriangleAlert } from 'lucide-react'
+import { Note } from '../shared/Note'
 import { useRules } from '../../rules/useRules'
 import { resolveRules, setAt, unsetAt, explainValue } from '../../rules/resolve'
 import { DEFAULT_PROFILE_ID, LANE_TYPES, MHE_LABELS } from '../../rules/defaults'
@@ -17,28 +18,22 @@ import { DEFAULT_PROFILE_ID, LANE_TYPES, MHE_LABELS } from '../../rules/defaults
 const R = 2
 
 const S = {
-  label: { fontSize: 10, color: 'var(--text3)', fontWeight: 600, letterSpacing: '.02em' },
-  mono:  { fontFamily: 'var(--font-mono)', fontSize: 11 },
+  mono:  { fontFamily: 'var(--font-mono)', fontSize: 12 },
+  // a word beside a field ("aisle", "min", "lanes", "deep"): PJS, steel
+  word:  { fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--steel)' },
 }
-
-const input = {
-  padding: '5px 7px', background: 'var(--surface2)',
-  border: '1px solid var(--border)', borderRadius: R,
-  color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 11,
-  outline: 'none', minWidth: 0,
-}
+const ICON = { size: 16, strokeWidth: 1.5, absoluteStrokeWidth: true }
+/* every field row: the label column (the name, where its value came from under it), then the inputs — one grid, so
+   the inputs line up down the whole form */
+const ROW = { display: 'grid', gridTemplateColumns: '160px minmax(0, 1fr)', columnGap: 12, alignItems: 'center' }
 
 const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
 
 function Section({ title, children }) {
   return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{
-        fontFamily: 'var(--font-display)', fontSize: 10, fontWeight: 600,
-        letterSpacing: '.10em', textTransform: 'uppercase', color: 'var(--text3)',
-        paddingBottom: 7, marginBottom: 10, borderBottom: '0.5px solid var(--border)',
-      }}>{title}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
+    <div style={{ marginBottom: 16 }}>
+      <div className="t-head" style={{ paddingBottom: 8, marginBottom: 12, borderBottom: '1px solid var(--line)' }}>{title}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>
     </div>
   )
 }
@@ -50,16 +45,16 @@ function Origin({ sourceId, sourceName, isOwn, onRevert }) {
     return (
       <button onClick={onRevert} title="Revert to the inherited value"
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 3,
+          display: 'inline-flex', alignItems: 'center', gap: 4,
           background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-          fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--accent)',
+          fontSize: 11, fontFamily: 'var(--font-ui)', color: 'var(--pine)',
         }}>
-        <RotateCcw size={9} /> this profile
+        <RotateCcw size={12} strokeWidth={1.5} absoluteStrokeWidth /> this profile
       </button>
     )
   }
   return (
-    <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text4, var(--text3))' }}>
+    <span style={{ fontSize: 11, fontFamily: 'var(--font-ui)', color: 'var(--steel)' }}>
       from {sourceName || sourceId}
     </span>
   )
@@ -67,12 +62,12 @@ function Origin({ sourceId, sourceName, isOwn, onRevert }) {
 
 function Row({ label, origin, children }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{ width: 116, flexShrink: 0 }}>
-        <div style={{ fontSize: 11.5, color: 'var(--text)' }}>{label}</div>
+    <div style={ROW}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: 'var(--ink)' }}>{label}</div>
         {origin}
       </div>
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         {children}
       </div>
     </div>
@@ -93,32 +88,30 @@ function NumberList({ values, onChange, disabled, unit = '"' }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
       {values.map(v => (
-        <span key={v} style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '3px 5px 3px 7px', borderRadius: R,
-          background: 'var(--surface3)', ...S.mono, color: 'var(--text)',
+        <span key={v} className="t-num" style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4, height: 24,
+          padding: disabled ? '0 8px' : '0 4px 0 8px', borderRadius: R,
+          background: 'var(--bg2)', border: '1px solid var(--line)', fontSize: 12, color: 'var(--ink)',
         }}>
           {v}{unit}
           {!disabled && (
             <button onClick={() => onChange(values.filter(x => x !== v))}
               aria-label={`Remove ${v}${unit}`}
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                display: 'flex', color: 'var(--text3)' }}>
-              <X size={10} />
+                display: 'flex', color: 'var(--steel)' }}>
+              <X size={12} strokeWidth={1.5} absoluteStrokeWidth />
             </button>
           )}
         </span>
       ))}
       {!disabled && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <input value={draft} onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
             placeholder="add" type="number"
-            style={{ ...input, width: 54 }} />
-          <button onClick={add} aria-label="Add value"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex',
-              color: 'var(--text3)', padding: 2 }}>
-            <Plus size={12} />
+            className="t-input" style={{ width: 64 }} />
+          <button onClick={add} aria-label="Add value" className="t-icon">
+            <Plus {...ICON} />
           </button>
         </span>
       )}
@@ -185,16 +178,18 @@ export function RulesPanel({ onClose }) {
 
   const field = (path, { unit, step = 1, locked = false } = {}) => (
     <>
-      <input type="number" step={step} value={at(path) ?? ''}
-        disabled={locked || editingLocked}
-        onChange={e => set(path, num(e.target.value))}
-        style={{ ...input, width: 76, opacity: (locked || editingLocked) ? 0.55 : 1 }} />
-      {unit && <span style={{ ...S.mono, color: 'var(--text3)' }}>{unit}</span>}
+      <span className="t-field" style={{ flex: '0 0 96px' }}>
+        <input type="number" step={step} value={at(path) ?? ''}
+          disabled={locked || editingLocked}
+          onChange={e => set(path, num(e.target.value))}
+          className="t-input" style={unit ? undefined : { paddingRight: 8 }} />
+        {unit && <span className="t-unit">{unit}</span>}
+      </span>
       {locked && (
         <span title="Code/safety value — not a preference"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 3,
-            fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>
-          <Lock size={9} /> locked
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontSize: 11, fontFamily: 'var(--font-ui)', color: 'var(--steel)' }}>
+          <Lock size={12} strokeWidth={1.5} absoluteStrokeWidth /> locked
         </span>
       )}
     </>
@@ -244,65 +239,62 @@ export function RulesPanel({ onClose }) {
   return createPortal(
     <div style={{
       position: 'fixed', inset: 0, zIndex: 300,
-      background: 'rgba(0,0,0,0.32)', display: 'flex',
-      alignItems: 'center', justifyContent: 'center', padding: 24,
+      background: 'var(--overlay)', display: 'flex',
+      alignItems: 'center', justifyContent: 'center', padding: 16,
     }} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={{
-        width: 760, maxWidth: '100%', maxHeight: '100%',
-        display: 'flex', flexDirection: 'column',
-        background: 'var(--surface)', border: '1px solid var(--border)',
-        borderRadius: R, boxShadow: 'var(--shadow)', color: 'var(--text)',
-        fontFamily: 'var(--font-ui)',
+        width: 760, maxWidth: '100%', maxHeight: 'calc(100vh - 32px)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        background: 'var(--paper)', border: '1px solid var(--line)',
+        borderRadius: R, boxShadow: 'var(--shadow-pop)', color: 'var(--ink)',
+        fontFamily: 'var(--font-ui)', fontSize: 13,
       }}>
 
         {/* ── Header ── */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Rules profiles</span>
-          <button onClick={onClose} aria-label="Close"
-            style={{ background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--text3)', display: 'flex', padding: 0 }}>
-            <X size={15} />
+        <div className="t-modal-head">
+          <span className="t-modal-title">Rules profiles</span>
+          <button onClick={onClose} aria-label="Close" title="Close (Esc)" className="t-icon">
+            <X {...ICON} />
           </button>
         </div>
 
         {/* ── Cascade selector ── */}
-        <div style={{ display: 'flex', gap: 10, padding: '11px 14px',
-          borderBottom: '1px solid var(--border)', alignItems: 'flex-end' }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={S.label}>DEALER PROFILE</div>
-            <select value={profileId} style={{ ...input, width: '100%', marginTop: 3 }}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '12px 16px',
+          borderBottom: '1px solid var(--line)', alignItems: 'flex-end' }}>
+          <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+            <div className="t-cap">DEALER PROFILE</div>
+            <select value={profileId} className="t-input t-words" style={{ width: '100%', marginTop: 4 }}
               onChange={e => setDraft(d => ({ ...d, activeProfileId: e.target.value }))}>
               {draft.profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
-          <button onClick={newProfile} style={{ ...input, cursor: 'pointer', whiteSpace: 'nowrap' }}>+ Profile</button>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={S.label}>CUSTOMER OVERRIDE</div>
-            <select value={customerId || ''} style={{ ...input, width: '100%', marginTop: 3 }}
+          <button onClick={newProfile} className="t-btn t-btn--secondary">+ Profile</button>
+          <div style={{ flex: '1 1 180px', minWidth: 0, marginLeft: 8 }}>
+            <div className="t-cap">CUSTOMER OVERRIDE</div>
+            <select value={customerId || ''} className="t-input t-words" style={{ width: '100%', marginTop: 4 }}
               onChange={e => setDraft(d => ({ ...d, activeCustomerId: e.target.value || null }))}>
               <option value="">— none —</option>
               {Object.entries(draft.customerOverrides).map(([id, c]) =>
                 <option key={id} value={id}>{c.name}</option>)}
             </select>
           </div>
-          <button onClick={newCustomer} style={{ ...input, cursor: 'pointer', whiteSpace: 'nowrap' }}>+ Customer</button>
+          <button onClick={newCustomer} className="t-btn t-btn--secondary">+ Customer</button>
         </div>
 
         {/* ── Which layer am I editing ── */}
-        <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--border)',
-          ...S.mono, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--line)',
+          fontSize: 12, color: 'var(--steel)', display: 'flex', alignItems: 'center', gap: 8 }}>
           {editingLocked
-            ? <><Lock size={11} /> Trace Default is read-only — add a profile to change anything.</>
-            : <>Editing <span style={{ color: 'var(--text)' }}>{layerName}</span> · edits are stored as changes only</>}
+            ? <Note level="note" icon={Lock} style={{ flex: 1 }}>Trace Default is read-only — add a profile to change anything.</Note>
+            : <span>Editing <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{layerName}</span> · edits are stored as changes only</span>}
         </div>
 
         {/* ── The table ── */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 4px' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 16px 4px' }}>
           {!editingLocked && (
             <Section title="Identity">
               <Row label="Name">
-                <input value={layerName} style={{ ...input, flex: 1 }}
+                <input value={layerName} className="t-input t-words" style={{ flex: 1 }}
                   onChange={e => {
                     const name = e.target.value
                     setDraft(d => editingCustomer
@@ -329,17 +321,17 @@ export function RulesPanel({ onClose }) {
 
           <Section title="Materials handling">
             {Object.keys(resolved.mhe || {}).map(key => (
-              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 116, flexShrink: 0 }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--text)' }}>
+              <div key={key} style={ROW}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: 'var(--ink)' }}>
                     {resolved.mhe[key]?.label || MHE_LABELS[key] || key}
                   </div>
                   {originFor(`mhe.${key}.aisleFt`)}
                 </div>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <span style={{ ...S.mono, color: 'var(--text3)' }}>aisle</span>
+                <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={S.word}>aisle</span>
                   {field(`mhe.${key}.aisleFt`, { unit: 'ft', step: 0.5 })}
-                  <span style={{ ...S.mono, color: 'var(--text3)', marginLeft: 6 }}>min</span>
+                  <span style={{ ...S.word, marginLeft: 8 }}>min</span>
                   {field(`mhe.${key}.minAisleFt`, { unit: 'ft', step: 0.5, locked: true })}
                 </div>
               </div>
@@ -351,25 +343,25 @@ export function RulesPanel({ onClose }) {
               const d = resolved[t].depth || [1, 1]
               const lanes = resolved[t].lanes || []
               return (
-                <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 116, flexShrink: 0 }}>
-                    <div style={{ fontSize: 11.5, color: 'var(--text)', textTransform: 'capitalize' }}>
+                <div key={t} style={ROW}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: 'var(--ink)', textTransform: 'capitalize' }}>
                       {t.replace(/([A-Z])/g, ' $1')}
                     </div>
                     {originFor(`${t}.depth`)}
                   </div>
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ ...S.mono, color: 'var(--text3)' }}>lanes</span>
+                  <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={S.word}>lanes</span>
                     <NumberList values={lanes} unit="" disabled={editingLocked}
                       onChange={v => set(`${t}.lanes`, v)} />
-                    <span style={{ ...S.mono, color: 'var(--text3)', marginLeft: 6 }}>deep</span>
+                    <span style={{ ...S.word, marginLeft: 8 }}>deep</span>
                     <input type="number" value={d[0]} disabled={editingLocked}
                       onChange={e => set(`${t}.depth`, [num(e.target.value), d[1]])}
-                      style={{ ...input, width: 54 }} />
-                    <span style={{ ...S.mono, color: 'var(--text3)' }}>–</span>
+                      className="t-input" style={{ width: 64 }} />
+                    <span style={{ ...S.mono, color: 'var(--steel)' }}>–</span>
                     <input type="number" value={d[1]} disabled={editingLocked}
                       onChange={e => set(`${t}.depth`, [d[0], num(e.target.value)])}
-                      style={{ ...input, width: 54 }} />
+                      className="t-input" style={{ width: 64 }} />
                   </div>
                 </div>
               )
@@ -384,44 +376,32 @@ export function RulesPanel({ onClose }) {
         </div>
 
         {/* ── Validation + save ── */}
-        <div style={{ borderTop: '1px solid var(--border)', padding: '10px 14px' }}>
+        <div style={{ borderTop: '1px solid var(--line)', padding: '12px 16px' }}>
           {(result.errors.length > 0 || result.warnings.length > 0) && (
-            <div style={{ marginBottom: 9, display: 'flex', flexDirection: 'column', gap: 5,
-              maxHeight: 110, overflowY: 'auto' }}>
+            <div style={{ marginBottom: 8, display: 'flex', flexDirection: 'column', gap: 4,
+              maxHeight: 112, overflowY: 'auto' }}>
               {result.errors.map((e, i) => (
-                <div key={`e${i}`} style={{ display: 'flex', gap: 6, alignItems: 'flex-start',
-                  ...S.mono, fontSize: 10, color: 'var(--red)' }}>
-                  {e.kind === 'locked' ? <Lock size={10} style={{ marginTop: 1, flexShrink: 0 }} />
-                                       : <AlertTriangle size={10} style={{ marginTop: 1, flexShrink: 0 }} />}
+                <Note key={`e${i}`} level="error" icon={e.kind === 'locked' ? Lock : TriangleAlert}>
                   <span>{e.message}</span>
-                </div>
+                </Note>
               ))}
               {result.warnings.map((w, i) => (
-                <div key={`w${i}`} style={{ display: 'flex', gap: 6, alignItems: 'flex-start',
-                  ...S.mono, fontSize: 10, color: 'var(--text3)' }}>
-                  <AlertTriangle size={10} style={{ marginTop: 1, flexShrink: 0 }} />
+                <Note key={`w${i}`} level="warning" icon={TriangleAlert}>
                   <span>{w.message}</span>
-                </div>
+                </Note>
               ))}
             </div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ ...S.mono, fontSize: 10, flex: 1,
-              color: saveMsg ? (saveMsg.ok ? 'var(--green)' : 'var(--red)') : 'var(--text3)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontFamily: 'var(--font-ui)', fontSize: 12, flex: 1,
+              color: saveMsg ? (saveMsg.ok ? 'var(--pine)' : 'var(--flag)') : 'var(--steel)' }}>
               {saveMsg ? saveMsg.text
                 : result.ok ? 'Ready to save.'
                 : 'Fix the problems above to save.'}
             </span>
-            <button onClick={onClose} style={{ ...input, cursor: 'pointer' }}>Cancel</button>
-            <button onClick={onSave} disabled={!result.ok}
-              style={{
-                padding: '6px 14px', borderRadius: R, border: 'none',
-                background: 'var(--accent-solid)', color: 'var(--accent-fg)',
-                fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
-                cursor: result.ok ? 'pointer' : 'not-allowed',
-                opacity: result.ok ? 1 : 0.5,
-              }}>
+            <button onClick={onClose} className="t-btn t-btn--secondary">Cancel</button>
+            <button onClick={onSave} disabled={!result.ok} className="t-btn t-btn--primary">
               Save &amp; apply
             </button>
           </div>

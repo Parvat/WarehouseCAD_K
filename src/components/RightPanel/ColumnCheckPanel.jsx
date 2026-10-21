@@ -4,6 +4,7 @@ import { SectionHeader } from '../shared/SectionHeader'
 import { useColumnCheck, conflictKey } from '../../generate/useColumnCheck'
 import { useRules } from '../../rules/useRules'
 import { Forklift } from '../icons'
+import { Note } from '../shared/Note'
 
 /* ── Column check — the absorb vs remove decision ────────────────────────────
    checkColumns hands back both numbers for every conflict. The whole point of
@@ -18,9 +19,9 @@ import { Forklift } from '../icons'
 const R      = 2
 const CARD_R = 4
 
+/* words are PJS (captions steel); only the figures are mono (.t-num) */
 const S = {
-  mono9:  { fontSize: 9,  fontFamily: 'var(--font-mono)' },
-  mono10: { fontSize: 10, fontFamily: 'var(--font-mono)' },
+  cap:  { fontSize: 12, fontFamily: 'var(--font-ui)', color: 'var(--steel)', lineHeight: 1.5 },
 }
 
 /* Which bay does the column land in?
@@ -51,13 +52,15 @@ function uprightBayText(h) {
   return `frame ${h.upright + 1}`
 }
 
-function Stat({ label, value, tone }) {
+/* A count is information, not an error: ink, weight 600 — no red even for the costlier choice (`tone` is kept for
+   the call sites but no longer colours the figure). `big` sets the layout-wide totals at 26, a card's at 18. */
+function Stat({ label, value, tone, big }) {
   return (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ ...S.mono9, color: 'var(--text3)', marginBottom: 3 }}>{label}</div>
-      <div style={{
-        fontSize: 15, fontFamily: 'var(--font-mono)', fontWeight: 700,
-        color: tone === 'bad' ? 'var(--red)' : 'var(--text)', lineHeight: 1,
+    <div style={{ flex: 1, minWidth: 0 }} data-tone={tone}>
+      <div style={{ ...S.cap, marginBottom: 4 }}>{label}</div>
+      <div className="t-num" style={{
+        fontSize: big ? 26 : 18, fontWeight: 600,
+        color: 'var(--ink)', lineHeight: 1,
       }}>
         {value}
       </div>
@@ -94,54 +97,44 @@ function ConflictCard({ conflict, index }) {
 
   const canRemove = Array.isArray(rack?.beams) && rack.beams.length > 1
 
-  const btn = (active) => ({
-    flex: 1, padding: '6px 0', borderRadius: R, cursor: 'pointer',
-    ...S.mono9, fontWeight: 600,
-    border: 'none',
-    background: active ? 'var(--accent-solid)' : 'var(--surface2)',
-    color:      active ? 'var(--accent-fg)'    : 'var(--text2)',
-    transition: 'background 0.12s, color 0.12s',
-  })
+  /* Absorb / Remove section: two 32px secondaries; the chosen one is pine (.is-on). Disabled is the attribute only. */
+  const btnCls = (active) => 't-btn t-btn--secondary' + (active ? ' is-on' : '')
 
   return (
     <div style={{
-      padding: 10, borderRadius: CARD_R,
-      background: 'var(--surface2)', border: '0.5px solid var(--border)',
-      display: 'flex', flexDirection: 'column', gap: 9,
+      padding: 12, borderRadius: CARD_R,
+      background: 'var(--paper)', border: '1px solid var(--line)',
+      display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
+        <span style={{ fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 600, color: 'var(--ink)', minWidth: 0, overflowWrap: 'anywhere' }}>
           {rack?.label || 'Rack'} · column {conflict.columnIndex + 1}
         </span>
-        <span style={{ ...S.mono9, color: 'var(--text3)' }}>#{index + 1}</span>
+        <span className="t-num" style={{ fontSize: 11, color: 'var(--steel)', flexShrink: 0 }}>#{index + 1}</span>
       </div>
 
       {/* Both numbers, always together — the trade-off is the content. */}
-      <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 12 }}>
         <Stat label="Absorb" value={`−${conflict.positionsLost}`} />
         <Stat label="Remove section" value={`−${conflict.sectionsLost}`} tone="bad" />
       </div>
 
       {mode === 'removed' ? (
-        <div style={{ ...S.mono9, color: 'var(--text3)' }}>
+        <div style={S.cap}>
           Section removed · {conflict.sectionsLost} positions gone
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 5 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
           <button onClick={() => setResolution(key, 'absorb')}
             title="Keep the rack, mark the blocked slots unusable"
-            style={btn(mode === 'absorb')}>
+            className={btnCls(mode === 'absorb')} style={{ minWidth: 0 }}>
             Absorb
           </button>
           <button onClick={removeSection} disabled={!canRemove}
             title={canRemove
               ? 'Delete the bay the column lands in'
               : 'This rack has no separate bay to remove'}
-            style={{
-              ...btn(false),
-              cursor: canRemove ? 'pointer' : 'not-allowed',
-              opacity: canRemove ? 1 : 0.45,
-            }}>
+            className={btnCls(false)} style={{ minWidth: 0 }}>
             Remove section
           </button>
         </div>
@@ -162,33 +155,33 @@ export function ColumnCheckPanel() {
 
   return (
     <SectionHeader title="Column Check" defaultOpen={true}>
-      <div style={{ padding: '12px 13px 14px', display: 'flex', flexDirection: 'column', gap: 11 }}>
+      <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
 
         {/* Forklift — the project's (Project setup), the same value that drives the generated aisle width */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Forklift size={15} absoluteStrokeWidth
-            style={{ color: 'var(--text3)', flexShrink: 0 }} aria-hidden="true" />
-          <span style={{ ...S.mono10, color: 'var(--text3)', width: 28, flexShrink: 0 }}>MHE</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <Forklift size={16} strokeWidth={1.5} absoluteStrokeWidth
+            style={{ color: 'var(--steel)', flexShrink: 0 }} aria-hidden="true" />
+          <span style={{ fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 500, color: 'var(--steel)', width: 32, flexShrink: 0 }}>MHE</span>
           {/* the project's forklift (Project setup); the aisle widths follow it */}
-          <span aria-label="Forklift" title="Set in Project setup" style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{mheOptions[mheKey]?.label || mheKey}</span>
+          <span aria-label="Forklift" title="Set in Project setup" style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--ink)', fontFamily: 'var(--font-ui)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mheOptions[mheKey]?.label || mheKey}</span>
         </div>
 
         {clean ? (
-          <div style={{ ...S.mono10, color: 'var(--text3)' }}>
+          <div style={S.cap}>
             No column interference.
           </div>
         ) : (
           <>
             {/* Layout-wide totals, straight off summary */}
             <div style={{
-              display: 'flex', gap: 10, padding: 10, borderRadius: CARD_R,
-              background: 'var(--surface2)', border: '0.5px solid var(--border)',
+              display: 'flex', gap: 12, padding: 12, borderRadius: CARD_R,
+              background: 'var(--paper)', border: '1px solid var(--line)',
             }}>
-              <Stat label="If absorbed" value={`−${summary.positionsLostIfAbsorb}`} />
-              <Stat label="If removed" value={`−${summary.sectionsLostIfRemove}`} tone="bad" />
+              <Stat big label="If absorbed" value={`−${summary.positionsLostIfAbsorb}`} />
+              <Stat big label="If removed" value={`−${summary.sectionsLostIfRemove}`} tone="bad" />
             </div>
 
-            <div style={{ ...S.mono9, color: 'var(--text3)' }}>
+            <div style={{ ...S.cap, overflowWrap: 'anywhere' }}>
               {rackConflicts.length} column{rackConflicts.length === 1 ? '' : 's'} in racks
               {blocked.length > 0 && ` · ${blocked.length} aisle${blocked.length === 1 ? '' : 's'} blocked`}
               {summary.positionsLostToPickZone > 0 && ` · −${summary.positionsLostToPickZone} blocked from the aisle`}
@@ -196,32 +189,24 @@ export function ColumnCheckPanel() {
             </div>
 
             {blocked.map((a, i) => (
-              <div key={i} style={{
-                padding: '8px 10px', borderRadius: CARD_R,
-                background: 'var(--red-dim)', border: '0.5px solid var(--red-bdr)',
-                ...S.mono9, color: 'var(--red)',
-              }}>
+              <Note key={i} level="error">
                 {a.level === 1
                   ? <>Aisle blocked · {a.clearFt}ft clear of {a.aisleFt}ft
                       — {summary.profile} needs {profileTravelFt}ft to drive through</>
                   : <>One-side pick only · {a.clearFt}ft clear of {a.aisleFt}ft
                       — {summary.profile} needs {mheOptions[mheKey]?.aisleFt}ft to pick both sides</>}
-              </div>
+              </Note>
             ))}
 
             {/* Can't be built: a column through an upright frame. Flagged only —
                 nothing here moves the rack; the dealer resolves it. */}
             {uprightHits.map((h, i) => (
-              <div key={'up' + i} data-testid="column-on-upright" style={{
-                padding: '8px 10px', borderRadius: CARD_R,
-                background: 'rgba(230,126,34,0.10)', border: '0.5px solid #E67E22',
-                ...S.mono9, color: 'var(--text)',
-              }}>
-                <strong style={{ color: '#B85F12' }}>Column on upright frame</strong>
+              <Note key={'up' + i} level="warning" data-testid="column-on-upright">
+                <span><strong style={{ fontWeight: 600 }}>Column on upright frame</strong>
                 {' · '}{objects.find(o => o.id === h.rackId)?.label || 'Rack'}
                 {' · '}{uprightBayText(h)}
-                {' · column '}{h.columnIndex + 1}
-              </div>
+                {' · column '}{h.columnIndex + 1}</span>
+              </Note>
             ))}
 
             {rackConflicts.map((c, i) => (
@@ -232,44 +217,44 @@ export function ColumnCheckPanel() {
 
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 10, paddingTop: 10, borderTop: '0.5px solid var(--border)',
+          gap: 12, paddingTop: 12, borderTop: '1px solid var(--line)',
         }}>
-          <span style={{ fontSize: 11, color: 'var(--text2)' }} title="A column with clear space on only one side is accessible by default (drivable + pickable from the far side). Turn this on to flag those too.">
+          <span style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--ink-2)', minWidth: 0 }} title="A column with clear space on only one side is accessible by default (drivable + pickable from the far side). Turn this on to flag those too.">
             Require pick from both sides
           </span>
           <button onClick={() => setPickBothSides(!pickBothSides)} role="switch" aria-checked={pickBothSides}
             aria-label="Require pick from both sides"
             style={{
-              position: 'relative', width: 34, height: 20, borderRadius: 999, border: 'none',
+              position: 'relative', width: 32, height: 18, borderRadius: 2, border: 'none',
               cursor: 'pointer', flexShrink: 0, padding: 0,
-              background: pickBothSides ? 'var(--accent-solid)' : 'var(--surface3)',
+              background: pickBothSides ? 'var(--pine)' : 'var(--line-2)',
               transition: 'background 0.16s',
             }}>
             <span style={{
-              position: 'absolute', top: 3, left: pickBothSides ? 17 : 3, width: 14, height: 14,
-              borderRadius: '50%', transition: 'left 0.16s',
-              background: pickBothSides ? 'var(--accent-fg)' : 'var(--text3)',
+              position: 'absolute', top: 2, left: pickBothSides ? 16 : 2, width: 14, height: 14,
+              borderRadius: 2, transition: 'left 0.16s',
+              background: 'var(--paper)',
             }} />
           </button>
         </div>
 
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 10, paddingTop: 10, borderTop: '0.5px solid var(--border)',
+          gap: 12, paddingTop: 12, borderTop: '1px solid var(--line)',
         }}>
-          <span style={{ fontSize: 11, color: 'var(--text2)' }}>Show markings</span>
+          <span style={{ fontFamily: 'var(--font-ui)', fontSize: 13, color: 'var(--ink-2)', minWidth: 0 }}>Show markings</span>
           <button onClick={() => setShowMarks(!showMarks)} role="switch" aria-checked={showMarks}
             aria-label="Show markings"
             style={{
-              position: 'relative', width: 34, height: 20, borderRadius: 999, border: 'none',
+              position: 'relative', width: 32, height: 18, borderRadius: 2, border: 'none',
               cursor: 'pointer', flexShrink: 0, padding: 0,
-              background: showMarks ? 'var(--accent-solid)' : 'var(--surface3)',
+              background: showMarks ? 'var(--pine)' : 'var(--line-2)',
               transition: 'background 0.16s',
             }}>
             <span style={{
-              position: 'absolute', top: 3, left: showMarks ? 17 : 3, width: 14, height: 14,
-              borderRadius: '50%', transition: 'left 0.16s',
-              background: showMarks ? 'var(--accent-fg)' : 'var(--text3)',
+              position: 'absolute', top: 2, left: showMarks ? 16 : 2, width: 14, height: 14,
+              borderRadius: 2, transition: 'left 0.16s',
+              background: 'var(--paper)',
             }} />
           </button>
         </div>

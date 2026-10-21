@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { placeFloat, floatAvoidRects, floatFreeHeight } from '../../utils/floatPlace'
+import { RP_W, PANEL_HEAD_H } from '../../utils/rightPanel'
 import { openSetup } from '../../utils/project'
 import { createPortal } from 'react-dom'
 import {
@@ -28,7 +29,7 @@ import {
   /* floor plans — the L/T/U/cross outlines are drawn below, Lucide has none */
   Scan,
   /* toolbar chrome */
-  ArrowUpDown, ArrowLeftRight,
+  ArrowUpDown, ArrowLeftRight, MoreHorizontal, LocateFixed,
   /* zones */
   LandPlot, Briefcase, PackageOpen, Bath, BoxSelect,
 } from 'lucide-react'
@@ -66,18 +67,15 @@ const ROW_TYPES = new Set(['rack_row','rack_double_row'])
 /* ═══════════════════════════════════════════════════════════════════════════ */
 const PREFS_KEY = 'trace.leftpanel.v1'
 
-/* Width has two writers — the collapse toggle and the drag handle. They share a
-   single stored value: collapsing goes to RAIL_W, expanding restores whatever
-   the drag last left behind, never a hardcoded default. */
+/* The frame is fixed (theme-p2): the panel is PANEL_W wide expanded, RAIL_W collapsed — no drag handle. Its
+   header row is PANEL_HEAD_H, the same as the right panel's tabs, on the same 1px line. */
 const RAIL_W      = 50
-const PANEL_MIN   = 150
-const PANEL_MAX   = 420
-const PANEL_START = 240
-/* Below this the "Library" wordmark collides with the pin button. */
-const LABEL_MIN_W = 190
-/* Two footer rows + padding. The scroll body stops here, so it has to track the
-   footer or the last section row hides underneath it. */
-const FOOTER_H    = 80
+const PANEL_W     = 240
+/* the footer: two 32px rows, 8px padding, its 1px rule. The scroll body stops here, so it has to track the footer
+   or the last section row hides underneath it. */
+const FOOTER_H    = 81
+/* the frame's spacing step and the panel's inner padding */
+const PAD         = 16
 
 function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {} } catch { return {} }
@@ -85,7 +83,6 @@ function loadPrefs() {
 function savePrefs(p) {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)) } catch { /* private mode */ }
 }
-const clampW = w => Math.max(PANEL_MIN, Math.min(PANEL_MAX, Math.round(w)))
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  rAF COALESCING — same shape as the canvas pan fix: hold the pending frame   */
@@ -109,7 +106,7 @@ export const ICON_STROKE = 1.5           // thinner, lighter line
 export const ICON_SIZE   = 18            // list rows, chrome
 export const HEADER_ICON = 22            // expanded section headers AND the rail,
                                          // so both states describe a section identically
-export const TOOLBAR_ICON = 21           // floating drawing tools
+export const TOOLBAR_ICON = 20           // floating drawing tools: 20 + 16 padding = 36px cells
 /* List-row tree geometry. Sub-items indent INDENT from the section header; the
    spine sits CONNECTOR back from that so the connector lands on the row. */
 const ROW_H     = 32
@@ -362,7 +359,9 @@ function FloatingPanel({ ariaLabel, pos, setPos, defaultPos, horizontal, onSize,
     try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already gone */ }
   }
 
-  const asked = pos || defaultPos
+  /* the default spot may depend on the panel's own size (the toolbar docks top centre): until it is measured it is
+     drawn off screen for the one layout pass before paint */
+  const asked = pos || (typeof defaultPos === 'function' ? (size ? defaultPos(size) : { x: -9999, y: -9999 }) : defaultPos)
   const p = size ? placeFloat(asked.x, asked.y, size.w, size.h, window.innerWidth, window.innerHeight, floatAvoidRects()) : asked
   const Gripper = horizontal ? GripVertical : GripHorizontal
   const node = (
@@ -372,8 +371,8 @@ function FloatingPanel({ ariaLabel, pos, setPos, defaultPos, horizontal, onSize,
         position:'fixed', left:p.x, top:p.y, zIndex:FLOAT_Z,
         display:'flex', flexDirection: horizontal ? 'row' : 'column',
         alignItems: horizontal ? 'center' : 'stretch',
-        background:'var(--panel-bg)', border:'0.5px solid var(--panel-border)',
-        borderRadius:11, boxShadow:'0 8px 22px rgba(11,16,29,0.14)',
+        background:'var(--panel-bg)', border:'1px solid var(--panel-border)',
+        borderRadius:4, boxShadow:'var(--shadow-pop)',
         userSelect:'none', touchAction:'none',
         cursor: dragging ? 'grabbing' : 'default',
       }}>
@@ -439,8 +438,8 @@ const BROKEN_HINT = ' — unavailable: CanvasObjectCore.jsx is missing its path-
 /* ═══════════════════════════════════════════════════════════════════════════ */
 function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, selectedStroke }) {
   const row = (label, children) => (
-    <div style={{ display:'flex', alignItems:'center', gap:8, minHeight:26 }}>
-      <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:'var(--panel-text3)',
+    <div style={{ display:'flex', alignItems:'center', gap:8, minHeight:32 }}>
+      <span style={{ fontSize:12, fontFamily:'var(--font-ui)', color:'var(--panel-text3)',
         width:44, flexShrink:0 }}>{label}</span>
       <div style={{ display:'flex', gap:4, flex:1, flexWrap:'wrap', alignItems:'center', minWidth:0 }}>{children}</div>
     </div>
@@ -448,12 +447,12 @@ function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, 
   const chip = (on, key, title, kids, onClick) => (
     <button key={key} title={title} aria-label={title} aria-pressed={on} onClick={onClick}
       style={{
-        minWidth:26, height:24, padding:'0 7px', borderRadius:6, cursor:'pointer',
+        minWidth:32, height:32, padding:'0 8px', borderRadius:2, cursor:'pointer',
         display:'flex', alignItems:'center', justifyContent:'center',
-        fontSize:10, fontFamily:'var(--font-mono)', whiteSpace:'nowrap',
-        background: on ? 'var(--panel-hover)' : 'transparent',
-        color:      on ? 'var(--text)'        : 'var(--panel-text2)',
-        border:`1px solid ${on ? 'var(--panel-text4)' : 'var(--panel-border)'}`,
+        fontSize:12, fontFamily:'var(--font-ui)', whiteSpace:'nowrap',
+        background: on ? 'var(--pine)' : 'var(--paper)',
+        color:      on ? 'var(--paper)' : 'var(--panel-text2)',
+        border:`1px solid ${on ? 'var(--pine)' : 'var(--panel-border)'}`,
       }}>{kids}</button>
   )
   const pen = PEN_TYPES[prefs.pen] || PEN_TYPES.pencil
@@ -465,11 +464,11 @@ function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, 
   return (
     <div role="dialog" aria-label="Pen options" data-pen-options
       style={{
-        position:'absolute', zIndex:10000, width:244,
-        ...(horizontal ? { top:'100%', left:0, marginTop:6 } : { left:'100%', top:0, marginLeft:6 }),
-        display:'flex', flexDirection:'column', gap:7, padding:'10px 11px 11px',
-        background:'var(--panel-bg)', border:'0.5px solid var(--panel-border)',
-        borderRadius:11, boxShadow:'0 8px 22px rgba(11,16,29,0.14)',
+        position:'absolute', zIndex:10000, width:264,
+        ...(horizontal ? { top:'100%', left:0, marginTop:8 } : { left:'100%', top:0, marginLeft:8 }),
+        display:'flex', flexDirection:'column', gap:8, padding:12,
+        background:'var(--paper)', border:'1px solid var(--line)',
+        borderRadius:4, boxShadow:'var(--shadow-pop)',
       }}>
       {row('Pen', PEN_ORDER.map(k => {
         const P = PEN_TYPES[k], Icon = PEN_ICONS[k], active = prefs.pen === k
@@ -481,10 +480,10 @@ function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, 
                slider lands mid-range instead of pinning to a clamped edge */
             onClick={() => setPrefs({ pen:k, width: penDefaultWidth(k) })}
             style={{
-              width:32, height:32, padding:6, borderRadius:8, cursor:'pointer',
+              width:32, height:32, padding:6, borderRadius:2, cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center',
-              background: active ? 'var(--accent-solid)' : 'transparent',
-              color:      active ? 'var(--accent-fg)'    : 'var(--panel-text2)',
+              background: active ? 'var(--pine)' : 'transparent',
+              color:      active ? 'var(--paper)' : 'var(--panel-text2)',
               border:`1px solid ${active ? 'transparent' : 'var(--panel-border)'}`,
               transition:'background .12s, color .12s',
             }}>
@@ -498,29 +497,27 @@ function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, 
             the slider clamped back and looked stuck */}
         <input type="range" min={pen.min} max={pen.max} step="0.5" aria-label="Stroke width"
           value={prefs.width} onChange={e => setWidth(e.target.value)}
-          style={{ flex:1, minWidth:70, accentColor:'var(--text)', height:4 }}/>
+          style={{ flex:1, minWidth:70, accentColor:'var(--pine)', height:4 }}/>
         {/* anything draggable also accepts a typed exact value */}
         <input type="number" min={pen.min} max={pen.max} step="0.5" aria-label="Exact stroke width"
           value={prefs.width} onChange={e => setWidth(e.target.value)}
-          style={{ width:50, height:24, borderRadius:6, padding:'0 6px',
-            background:'var(--surface2)', border:'1px solid var(--panel-border)',
-            fontSize:10, fontFamily:'var(--font-mono)', color:'var(--text)', outline:'none' }}/>
+          className="t-input" style={{ width:56, padding:'0 8px', fontSize:12 }}/>
       </>)}
-      <div style={{ fontSize:9.5, fontFamily:'var(--font-mono)', color:'var(--panel-text4)',
+      <div style={{ fontSize:11, fontFamily:'var(--font-ui)', color:'var(--panel-text3)',
         marginTop:-4, paddingLeft:52 }}>
-        {pen.label} {pen.min}–{pen.max}px{pen.alpha < 1 ? ` · ${Math.round(pen.alpha*100)}% alpha` : ''}
+        {pen.label} <span className="t-num">{pen.min}–{pen.max}px</span>{pen.alpha < 1 ? <> · <span className="t-num">{Math.round(pen.alpha*100)}%</span> alpha</> : ''}
       </div>
 
       {row('Color', <>
         {PALETTE_COLORS.slice(0, 8).map(c => (
           <button key={c} aria-label={`Color ${c}`} title={c} onClick={() => setStrokeColor(c)}
-            style={{ width:18, height:18, borderRadius:4, cursor:'pointer', background:c,
-              border:`1.5px solid ${strokeColor === c ? 'var(--text)' : 'transparent'}` }}/>
+            style={{ width:18, height:18, borderRadius:2, cursor:'pointer', background:c,
+              border:`2px solid ${strokeColor === c ? 'var(--ink)' : 'transparent'}` }}/>
         ))}
         <input type="color" aria-label="Custom color" value={/^#[0-9a-f]{6}$/i.test(strokeColor) ? strokeColor : '#888888'}
           onChange={e => setStrokeColor(e.target.value)}
-          style={{ width:22, height:20, padding:0, border:'1px solid var(--panel-border)',
-            borderRadius:4, background:'transparent', cursor:'pointer' }}/>
+          style={{ width:24, height:20, padding:0, border:'1px solid var(--panel-border)',
+            borderRadius:2, background:'transparent', cursor:'pointer' }}/>
       </>)}
 
       {row('Cap', ['round','square','butt'].map(c =>
@@ -534,18 +531,18 @@ function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, 
               : 'Join applies to Technical only — the other pens draw a filled outline, which has no joins'}
             onClick={() => setPrefs({ join:j })}
             style={{
-              minWidth:26, height:24, padding:'0 7px', borderRadius:6,
-              cursor: isStroked ? 'pointer' : 'not-allowed', opacity: isStroked ? 1 : 0.4,
+              minWidth:32, height:32, padding:'0 8px', borderRadius:2,
+              cursor: isStroked ? 'pointer' : 'not-allowed', opacity: isStroked ? 1 : 0.45,
               display:'flex', alignItems:'center', justifyContent:'center',
-              fontSize:10, fontFamily:'var(--font-mono)', whiteSpace:'nowrap',
-              background: on ? 'var(--panel-hover)' : 'transparent',
-              color:      on ? 'var(--text)'        : 'var(--panel-text2)',
-              border:`1px solid ${on ? 'var(--panel-text4)' : 'var(--panel-border)'}`,
+              fontSize:12, fontFamily:'var(--font-ui)', whiteSpace:'nowrap',
+              background: on ? 'var(--pine)' : 'var(--paper)',
+              color:      on ? 'var(--paper)' : 'var(--panel-text2)',
+              border:`1px solid ${on ? 'var(--pine)' : 'var(--panel-border)'}`,
             }}>{j}</button>
         )
       }))}
-      <p style={{ margin:0, fontSize:9.5, lineHeight:1.45, fontFamily:'var(--font-mono)',
-        color:'var(--panel-text4)' }}>
+      <p style={{ margin:0, fontSize:11, lineHeight:1.5, fontFamily:'var(--font-ui)',
+        color:'var(--panel-text3)' }}>
         {selectedStroke
           ? 'Editing the selected stroke — each change is one undo step.'
           : isStroked
@@ -556,17 +553,27 @@ function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, 
   )
 }
 
-function DrawToolbar({ pos, setPos, defaultPos, horizontal, onToggleOrient, onClose, activeTool, setActiveTool,
+function DrawToolbar({ pos, setPos, defaultPos, horizontal, onToggleOrient, onReset, onClose, activeTool, setActiveTool,
                        penPrefs, setPenPrefs, strokeColor, setStrokeColor, selectedStroke }) {
   /* Contextual: the sub-toolbar exists only while its tool is active (§7). */
   const showPen  = activeTool === TOOLS.FREEHAND
-  /* 21px glyph + 8px padding on every side */
+  /* 20px glyph + 8px padding on every side: 36 */
   const CELL = TOOLBAR_ICON + 16
+  /* the toolbar's own menu: Reset position, and the orientation */
+  const [menu, setMenu] = useState(false)
+  const menuRef = useRef(null)
+  useEffect(() => {
+    if (!menu) return
+    const onDown = e => { if (!menuRef.current?.contains(e.target)) setMenu(false) }
+    const onKey = e => { if (e.key === 'Escape') setMenu(false) }
+    document.addEventListener('mousedown', onDown); document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [menu])
   /* Stacked, it is ~564px tall. In a window too short for that between the top bar and the Hub button it is
      laid out horizontally instead — shown only, the stored orientation is kept for a taller window. */
   useViewportTick()
   const [vertH, setVertH] = useState(0)
-  const at = pos || defaultPos
+  const at = pos || (typeof defaultPos === 'function' ? defaultPos({ w: CELL + 12, h: 0 }) : defaultPos)
   const tooTall = !horizontal && vertH > 0 && vertH > floatFreeHeight(at.x, CELL + 12, window.innerHeight, floatAvoidRects())
   const asked = horizontal
   horizontal = horizontal || tooTall
@@ -579,8 +586,8 @@ function DrawToolbar({ pos, setPos, defaultPos, horizontal, onToggleOrient, onCl
         title={t.broken ? t.label + BROKEN_HINT : t.label}
         onClick={() => setActiveTool(t.tool)}
         style={{
-          width:CELL, height:CELL, flexShrink:0, padding:0, borderRadius:9, border:'none',
-          cursor: t.broken ? 'not-allowed' : 'pointer', opacity: t.broken ? 0.38 : 1,
+          width:CELL, height:CELL, flexShrink:0, padding:0, borderRadius:2, border:'none',
+          cursor: t.broken ? 'not-allowed' : 'pointer', opacity: t.broken ? 0.45 : 1,
           display:'flex', alignItems:'center', justifyContent:'center',
           /* active is a soft hover-tone pill, NOT a solid ink fill */
           background: on ? 'var(--panel-hover)' : 'transparent',
@@ -604,20 +611,32 @@ function DrawToolbar({ pos, setPos, defaultPos, horizontal, onToggleOrient, onCl
   const rule = (i) => (
     <span key={`r${i}`} style={{
       flexShrink:0, background:'var(--panel-border)',
-      ...(horizontal ? { width:1, height:22, margin:'0 3px' } : { height:1, width:22, margin:'3px auto' }),
+      ...(horizontal ? { width:1, height:20, margin:'0 4px' } : { height:1, width:20, margin:'4px auto' }),
     }}/>
   )
-  const chrome = (label, Icon, onClick, disabled = false, hint = label) => (
-    <button key={label} aria-label={label} title={hint} onClick={onClick} disabled={disabled}
+  const chrome = (label, Icon, onClick, disabled = false, hint = label, extra = null) => (
+    <button key={label} aria-label={label} title={hint} onClick={onClick} disabled={disabled} {...extra}
       style={{
-        width:CELL, height:CELL, flexShrink:0, padding:0, borderRadius:9, border:'none',
+        width:CELL, height:CELL, flexShrink:0, padding:0, borderRadius:2, border:'none',
         background:'transparent', color:'var(--panel-text3)', cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.38 : 1,
+        opacity: disabled ? 0.45 : 1,
         display:'flex', alignItems:'center', justifyContent:'center',
       }}
       onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = 'var(--panel-hover)' }}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
       <Icon size={18} strokeWidth={ICON_STROKE} absoluteStrokeWidth/>
+    </button>
+  )
+  const menuItem = (label, Icon, onClick, disabled = false, hint = label) => (
+    <button key={label} type="button" role="menuitem" aria-label={label} title={hint} disabled={disabled}
+      onClick={() => { setMenu(false); onClick() }}
+      style={{ display:'flex', alignItems:'center', gap:8, width:'100%', height:32, padding:'0 8px', border:'none', borderRadius:2,
+        background:'transparent', color:'var(--ink)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1,
+        fontFamily:'var(--font-ui)', fontSize:13, fontWeight:500, textAlign:'left', whiteSpace:'nowrap' }}
+      onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = 'var(--bg2)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+      <Icon size={16} strokeWidth={ICON_STROKE} absoluteStrokeWidth style={{ color:'var(--ink-2)', flexShrink:0 }}/>
+      {label}
     </button>
   )
   return (
@@ -626,13 +645,26 @@ function DrawToolbar({ pos, setPos, defaultPos, horizontal, onToggleOrient, onCl
       <div style={{
         position:'relative',
         display:'flex', flexDirection: horizontal ? 'row' : 'column', alignItems:'center', gap:2,
-        padding: horizontal ? '5px 6px' : '0 5px 6px',
+        padding: horizontal ? '4px 4px 4px 0' : '0 4px 4px',
       }}>
         {TOOLBAR_TOOLS.map((t, i) => t ? btn(t) : rule(i))}
         {rule('end')}
-        {chrome(horizontal ? 'Stack vertically' : 'Lay out horizontally',
-          horizontal ? ArrowUpDown : ArrowLeftRight, onToggleOrient,
-          tooTall && !asked, tooTall && !asked ? 'Stack vertically — the window is too short' : undefined)}
+        <div ref={menuRef} style={{ position:'relative', display:'flex', flexShrink:0 }}>
+          {chrome('Drawing tools menu', MoreHorizontal, () => setMenu(m => !m), false, 'More — reset position, orientation',
+            { 'aria-haspopup':'menu', 'aria-expanded':menu })}
+          {menu && (
+            <div role="menu" aria-label="Drawing tools menu" style={{
+              position:'absolute', zIndex:10000, minWidth:208, padding:8,
+              ...(horizontal ? { top:'100%', right:0, marginTop:8 } : { left:'100%', top:0, marginLeft:8 }),
+              background:'var(--paper)', border:'1px solid var(--line)', borderRadius:4, boxShadow:'var(--shadow-pop)',
+            }}>
+              {menuItem('Reset position', LocateFixed, onReset, false, 'Back to the top centre of the canvas')}
+              {menuItem(horizontal ? 'Stack vertically' : 'Lay out horizontally',
+                horizontal ? ArrowUpDown : ArrowLeftRight, onToggleOrient,
+                tooTall && !asked, tooTall && !asked ? 'Stack vertically — the window is too short' : undefined)}
+            </div>
+          )}
+        </div>
         {chrome('Hide drawing tools', X, onClose)}
       </div>
     </FloatingPanel>
@@ -649,20 +681,19 @@ function ViewToggle({ mode, onChange }) {
       <button key={m} data-viewtoggle aria-label={label} title={label}
         onClick={e => { e.stopPropagation(); onChange(m) }}
         style={{
-          width:24, height:22, padding:0, border:'none', borderRadius:5, cursor:'pointer',
+          width:30, height:30, padding:0, border:'none', borderRadius:0, cursor:'pointer',
           display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
-          background: on ? '#FFFFFF' : 'transparent',
-          color:      on ? 'var(--text)' : 'var(--panel-text4)',
-          boxShadow:  on ? '0 1px 2px rgba(11,16,29,0.12)' : 'none',
-          transition:'background .12s, color .12s, box-shadow .12s',
+          background: on ? 'var(--pine)' : 'transparent',
+          color:      on ? 'var(--paper)' : 'var(--panel-text3)',
+          transition:'background .12s, color .12s',
         }}>
-        <Glyph size={13} strokeWidth={ICON_STROKE} absoluteStrokeWidth/>
+        <Glyph size={16} strokeWidth={ICON_STROKE} absoluteStrokeWidth/>
       </button>
     )
   }
   return (
-    <div style={{ display:'flex', gap:2, padding:2, borderRadius:7,
-      background:'var(--panel-hover)', flexShrink:0 }}>
+    <div style={{ display:'flex', height:32, overflow:'hidden', borderRadius:2,
+      border:'1px solid var(--panel-border)', background:'var(--paper)', flexShrink:0 }}>
       {seg('list', List, 'List view')}
       {seg('grid', LayoutGrid, 'Grid view')}
     </div>
@@ -676,10 +707,10 @@ function PinDot({ id, pinned, onTogglePin, style }) {
     <span data-pin onClick={e => onTogglePin(id, e)} title={on ? 'Unpin' : 'Pin'}
       style={{
         display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer',
-        color: on ? 'var(--pin-accent)' : '#B4B0A4', flexShrink:0,
+        color: on ? 'var(--pin-accent)' : 'var(--line-2)', flexShrink:0,
         opacity: on ? 1 : 0, transition:'opacity .12s', ...style,
       }}>
-      <Pin size={12} strokeWidth={ICON_STROKE} absoluteStrokeWidth fill={on ? 'currentColor' : 'none'}/>
+      <Pin size={14} strokeWidth={ICON_STROKE} absoluteStrokeWidth fill={on ? 'currentColor' : 'none'}/>
     </span>
   )
 }
@@ -689,19 +720,19 @@ const showPin = (el, v) => { const p = el.querySelector('[data-pin]'); if (p) p.
 function ItemRow({ item, color, onPick, pinned, onTogglePin }) {
   const on = pinned.includes(item.id)
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:9, width:'100%', height:32,
-      padding:'0 8px', borderRadius:7, transition:'background .1s' }}
+    <div style={{ display:'flex', alignItems:'center', gap:8, width:'100%', height:32,
+      padding:'0 8px', borderRadius:2, transition:'background .1s' }}
       onMouseEnter={e => { e.currentTarget.style.background='var(--panel-hover)'; showPin(e.currentTarget, '1') }}
       onMouseLeave={e => { e.currentTarget.style.background='transparent';        showPin(e.currentTarget, on?'1':'0') }}>
       <button onClick={() => onPick(item)} title={item.hint || item.label}
-        style={{ display:'flex', alignItems:'center', gap:9, flex:1, minWidth:0, height:'100%',
+        style={{ display:'flex', alignItems:'center', gap:8, flex:1, minWidth:0, height:'100%',
           padding:0, border:'none', background:'transparent', cursor:'pointer',
           font:'inherit', textAlign:'left', color:'var(--panel-label)' }}>
         <span style={{ width:21, height:21, flexShrink:0, display:'flex',
           alignItems:'center', justifyContent:'center', color }}>
           <ItemIcon item={item} size={21}/>
         </span>
-        <span style={{ flex:1, minWidth:0, fontSize:12.5, fontWeight:500, lineHeight:1.35,
+        <span style={{ flex:1, minWidth:0, fontSize:13, fontWeight:500, lineHeight:1.35,
           overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.label}</span>
       </button>
       <PinDot id={item.id} pinned={pinned} onTogglePin={onTogglePin}/>
@@ -723,21 +754,21 @@ function ItemTile({ item, color, onPick, pinned, onTogglePin }) {
       <button onClick={() => onPick(item)} title={item.hint || item.label}
         style={{
           display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6,
-          width:'100%', minWidth:0, padding:'13px 5px 10px', borderRadius:9,
+          width:'100%', minWidth:0, padding:'12px 4px 8px', borderRadius:4,
           border:'none', background:'var(--tile-bg)', cursor:'pointer', font:'inherit',
           color, transition:'background .1s', overflow:'hidden',
         }}
         onMouseEnter={e => { e.currentTarget.style.background='var(--tile-hover)' }}
         onMouseLeave={e => { e.currentTarget.style.background='var(--tile-bg)' }}>
         <ItemIcon item={item} size={21}/>
-        <span style={{ fontSize:10, fontWeight:600, color:'var(--panel-label)', lineHeight:1.25,
+        <span style={{ fontSize:11, fontWeight:600, color:'var(--panel-label)', lineHeight:1.25,
           textAlign:'center', width:'100%', minWidth:0,
           overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
           {text}
         </span>
       </button>
       <PinDot id={item.id} pinned={pinned} onTogglePin={onTogglePin}
-        style={{ position:'absolute', top:5, right:5, width:14, height:14, borderRadius:4 }}/>
+        style={{ position:'absolute', top:4, right:4, width:16, height:16, borderRadius:2 }}/>
     </div>
   )
 }
@@ -786,7 +817,7 @@ function ItemBody({ items, mode, colorOf, onPick, pinned, onTogglePin,
   return (
     <div style={{
       display:'grid', gridTemplateColumns:`repeat(auto-fill, minmax(${minTile}px, 1fr))`,
-      gap:6, padding:`2px ${padX}px ${padB}px`,
+      gap:8, padding:`2px ${padX}px ${padB}px`,
     }}>
       {items.map(it => (
         <ItemTile key={it.id} item={it} color={colorOf(it)} onPick={onPick}
@@ -804,22 +835,20 @@ function PinnedTray({ items, mode, colorOf, onPick, pinned, onTogglePin, onClose
   return (
     <FloatingPanel ariaLabel="Pinned objects" pos={pos} setPos={setPos} defaultPos={defaultPos}>
       <div style={{ width:212, overflow:'hidden' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:7, padding:'2px 10px 6px' }}>
-          <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.09em', color:'var(--panel-text3)' }}>PINNED</span>
-          <span style={{ fontSize:10, fontWeight:600, color:'var(--panel-text4)' }}>{items.length}</span>
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'0 4px 4px 12px' }}>
+          <span className="t-cap">Pinned</span>
+          <span className="t-num" style={{ fontSize:11, color:'var(--panel-text3)' }}>{items.length}</span>
           <span style={{ flex:1, minWidth:12 }}/>
-          <button aria-label="Close pinned" title="Close pinned" onClick={onClose}
-            style={{ width:18, height:18, border:'none', background:'transparent', borderRadius:4,
-              display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'var(--panel-text4)' }}>
-            <X size={12} strokeWidth={ICON_STROKE} absoluteStrokeWidth/>
+          <button type="button" aria-label="Close pinned" title="Close pinned" onClick={onClose} className="t-icon">
+            <X size={16} strokeWidth={ICON_STROKE} absoluteStrokeWidth/>
           </button>
         </div>
         {items.length ? (
           <ItemBody items={items} mode={mode} colorOf={colorOf} onPick={onPick}
-            pinned={pinned} onTogglePin={onTogglePin} minTile={58} padX={10} padB={10}/>
+            pinned={pinned} onTogglePin={onTogglePin} minTile={58} padX={12} padB={12}/>
         ) : (
-          <p style={{ margin:0, padding:'0 10px 12px', fontSize:11.5, lineHeight:1.5,
-            color:'var(--panel-text4)' }}>
+          <p style={{ margin:0, padding:'0 12px 12px', fontSize:12, lineHeight:1.5,
+            color:'var(--panel-text3)' }}>
             Pin an object to keep it here.
           </p>
         )}
@@ -879,21 +908,20 @@ export function FloatingToolbar() {
   const [usage,     setUsage]     = useState(prefs0.usage     ?? {})
   const [query,     setQuery]     = useState('')
 
-  /* ONE stored width. Collapsing does not overwrite it, so expanding restores
-     the last dragged width rather than snapping back to a constant. */
-  const [panelW,   setPanelW]   = useState(clampW(prefs0.panelW ?? PANEL_START))
-  const [resizing, setResizing] = useState(false)
+  /* the width is fixed (PANEL_W); collapsing goes to the RAIL_W icon rail */
+  const panelW = PANEL_W
 
-  const [toolbarOpen,   setToolbarOpen]   = useState(prefs0.toolbarOpen   ?? false)
-  const [toolbarHoriz,  setToolbarHoriz]  = useState(prefs0.toolbarHoriz  ?? false)
+  /* the drawing toolbar starts open, laid out flat and docked at the top centre of the canvas (dockedPos below) */
+  const [toolbarOpen,   setToolbarOpen]   = useState(prefs0.toolbarOpen   ?? true)
+  const [toolbarHoriz,  setToolbarHoriz]  = useState(prefs0.toolbarHoriz  ?? true)
   const [toolbarPos,    setToolbarPos]    = useState(prefs0.toolbarPos    ?? null)
   const [trayOpen,      setTrayOpen]      = useState(false)
   const [trayPos,       setTrayPos]       = useState(prefs0.trayPos       ?? null)
 
   useEffect(() => {
-    savePrefs({ collapsed, viewMode, pinned, usage, panelW,
+    savePrefs({ collapsed, viewMode, pinned, usage,
                 toolbarOpen, toolbarHoriz, toolbarPos, trayPos })
-  }, [collapsed, viewMode, pinned, usage, panelW,
+  }, [collapsed, viewMode, pinned, usage,
       toolbarOpen, toolbarHoriz, toolbarPos, trayPos])
 
   /* every placeable warehouse item, flattened once, for search */
@@ -1007,17 +1035,21 @@ export function FloatingToolbar() {
   /* ── geometry ───────────────────────────────────────────────────────────── */
   const W        = collapsed ? RAIL_W : panelW
   const MOVE     = 'cubic-bezier(.4,0,.2,1)'
-  /* Dragging the edge must track the pointer exactly — a transition here makes
-     every absolutely-positioned control lag a third of a second behind it. */
-  const T_MOVE   = resizing ? 'none' : `top .32s ${MOVE}, left .32s ${MOVE}`
+  const T_MOVE   = `top .32s ${MOVE}, left .32s ${MOVE}`
   const FADE     = 'opacity .18s ease .1s'
-  const BTN      = 32     // collapsed-rail cells, sized to hold a 22px glyph
-  const GHOST    = 30     // circular pin / tools buttons in the top row
-  const LOGO_Y   = 9
-  /* Collapsed the trio stacks down the rail; expanded it sits in the top row.
-     Only `top` changes for the block below, which is what closes the gap. */
-  const BODY_TOP = collapsed ? 126 : 46
-  const showWordmark = !collapsed && panelW >= LABEL_MIN_W
+  const BTN      = 32     // every button in the panel: the rail cells, the pin / tools / chevron in the header
+  const HEAD_Y   = (PANEL_HEAD_H - BTN) / 2
+  const RAIL_X   = (RAIL_W - BTN) / 2
+  /* Collapsed the pin and tools stack down the rail under the header; expanded they sit in the header row, left
+     of the chevron. Only `top` changes for the block below, which is what closes the gap. */
+  const BODY_TOP = collapsed ? PANEL_HEAD_H + 8 + (BTN + 8) * 2 : PANEL_HEAD_H
+  const showWordmark = !collapsed
+  /* the drawing toolbar's default: centred on the canvas (between the panels), 12px under the ruler */
+  const showRulers = useCanvasStore(s => s.showRulers)
+  const dockedPos = ({ w }) => {
+    const canvasW = window.innerWidth - W - RP_W
+    return { x: Math.round(W + Math.max(8, (canvasW - w) / 2)), y: 48 + (showRulers ? 20 : 0) + 12 }
+  }
 
   /* Category identity colours — literal by design, never tokens (CLAUDE.md).
      Headers run a shade deeper than their own children, so the hierarchy reads
@@ -1077,35 +1109,12 @@ export function FloatingToolbar() {
   const toggleSection = id =>
     setOpenSections(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
-  /* ── drag-to-resize ─────────────────────────────────────────────────────── */
-  const resizeRef = useRef(null)
-  const schedule  = useRafWriter()
-  const onResizeDown = e => {
-    if (e.button !== 0 || collapsed) return
-    resizeRef.current = { x0:e.clientX, w0:panelW }
-    e.currentTarget.setPointerCapture(e.pointerId)
-    setResizing(true)
-    e.preventDefault()
-  }
-  const onResizeMove = e => {
-    const r = resizeRef.current
-    if (!r) return
-    const next = clampW(r.w0 + (e.clientX - r.x0))
-    schedule(() => setPanelW(next))
-  }
-  const onResizeUp = e => {
-    if (!resizeRef.current) return
-    resizeRef.current = null
-    setResizing(false)
-    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already gone */ }
-  }
-
   /* ── the animating controls ─────────────────────────────────────────────── */
   const ghostBtn = ({ key, label, top, left, color, active, onClick, children }) => (
     <button key={key} aria-label={label} title={label} aria-pressed={!!active} onClick={onClick}
       style={{
-        position:'absolute', top, left, width:GHOST, height:GHOST, transition:T_MOVE, zIndex:6,
-        borderRadius:'50%', border:'none', color, cursor:'pointer', padding:0,
+        position:'absolute', top, left, width:BTN, height:BTN, transition:T_MOVE, zIndex:6,
+        borderRadius:2, border:'none', color, cursor:'pointer', padding:0,
         background: active ? 'var(--panel-hover)' : 'transparent',
         display:'flex', alignItems:'center', justifyContent:'center',
       }}
@@ -1120,89 +1129,63 @@ export function FloatingToolbar() {
       style={{
         width:W, flexShrink:0, position:'relative', zIndex:30, minHeight:0,
         background:'var(--panel-bg)', borderRight:'1px solid var(--panel-border)',
-        transition: resizing ? 'none' : `width .32s ${MOVE}`,
+        transition: `width .32s ${MOVE}`,
       }}>
 
-      {/* logo — anchored, never moves */}
+      {/* the header row: PANEL_HEAD_H, the same as the right panel's tabs, one 1px line under both */}
+      <div aria-hidden="true" style={{ position:'absolute', left:0, right:0, top:0, height:PANEL_HEAD_H,
+        borderBottom:'1px solid var(--panel-border)', pointerEvents:'none' }}/>
       <span style={{
-        position:'absolute', top:LOGO_Y, left:collapsed ? 13 : 9, width:24, height:24,
-        borderRadius:7, background:'#0B101D', color:'#FFFFFF', zIndex:6,
-        transition:T_MOVE,
-        display:'flex', alignItems:'center', justifyContent:'center',
-        fontSize:12, fontWeight:700, lineHeight:1,
-      }}>T</span>
-
-      <span style={{
-        position:'absolute', top:LOGO_Y + 4, left:40, zIndex:6,
-        fontSize:14, fontWeight:500, color:'var(--panel-label)', whiteSpace:'nowrap',
+        position:'absolute', top:0, height:PANEL_HEAD_H - 1, left:PAD, zIndex:6, display:'flex', alignItems:'center',
+        fontFamily:'var(--font-display)', fontSize:13, fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase',
+        color:'var(--ink)', whiteSpace:'nowrap',
         opacity: showWordmark ? 1 : 0, transition:FADE, pointerEvents:'none',
       }}>Library</span>
 
       {ghostBtn({ key:'pin', label:'Pinned tray',
-        top:  collapsed ? 50 : LOGO_Y - 3,
-        left: collapsed ? 10 : panelW - 82,
+        top:  collapsed ? PANEL_HEAD_H + 8 : HEAD_Y,
+        left: collapsed ? RAIL_X : panelW - 8 - BTN * 3,
         color:'var(--pin-accent)', active:trayOpen, onClick:() => setTrayOpen(o => !o),
-        children:<Pin size={20} strokeWidth={2} absoluteStrokeWidth fill={trayOpen?'currentColor':'none'}/>,
+        children:<Pin size={18} strokeWidth={ICON_STROKE} absoluteStrokeWidth fill={trayOpen?'currentColor':'none'}/>,
       })}
       {/* Stable name, state carried by aria-pressed — the toolbar's own close
           button is the one called "Hide drawing tools", and two controls must
           not share an accessible name. */}
       {ghostBtn({ key:'tools', label:'Drawing tools',
-        top:  collapsed ? 86 : LOGO_Y - 3,
-        left: collapsed ? 10 : panelW - 48,
+        top:  collapsed ? PANEL_HEAD_H + 8 + BTN + 8 : HEAD_Y,
+        left: collapsed ? RAIL_X : panelW - 8 - BTN * 2,
         color:'var(--panel-text2)', active:toolbarOpen, onClick:() => setToolbarOpen(o => !o),
-        children:<PencilRuler size={20} strokeWidth={2} absoluteStrokeWidth/>,
+        children:<PencilRuler size={18} strokeWidth={ICON_STROKE} absoluteStrokeWidth/>,
       })}
 
-      {/* chevron — circular, straddles the right edge in both states */}
+      {/* chevron — the header's last button expanded, the rail's header collapsed */}
       <button aria-label={collapsed ? 'Expand library' : 'Collapse library'}
         title={collapsed ? 'Expand library' : 'Collapse library'}
         onClick={() => setCollapsed(c => !c)}
         style={{
-          position:'absolute', top:LOGO_Y - 2, left:W - 14, width:28, height:28,
-          transition:T_MOVE, zIndex:9, borderRadius:'50%', padding:0, cursor:'pointer',
-          background:'var(--panel-bg)', color:'var(--panel-text3)',
-          border:'1px solid var(--panel-border)', boxShadow:'0 1px 4px rgba(11,16,29,0.10)',
+          position:'absolute', top:HEAD_Y, left: collapsed ? RAIL_X : panelW - 8 - BTN, width:BTN, height:BTN,
+          transition:T_MOVE, zIndex:9, borderRadius:2, padding:0, cursor:'pointer',
+          background:'transparent', color:'var(--panel-text3)', border:'none',
           display:'flex', alignItems:'center', justifyContent:'center',
-        }}>
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background='var(--panel-hover)' }}
+        onMouseLeave={e => { e.currentTarget.style.background='transparent' }}>
         {collapsed
-          ? <ChevronsRight size={20} strokeWidth={2} absoluteStrokeWidth/>
-          : <ChevronsLeft  size={20} strokeWidth={2} absoluteStrokeWidth/>}
+          ? <ChevronsRight size={18} strokeWidth={ICON_STROKE} absoluteStrokeWidth/>
+          : <ChevronsLeft  size={18} strokeWidth={ICON_STROKE} absoluteStrokeWidth/>}
       </button>
-
-      {/* ── resize handle — 3px pill you can see, 24px strip you can hit ───── */}
-      {!collapsed && (
-        <div data-resize role="separator" aria-orientation="vertical"
-          aria-label="Resize library" title="Drag to resize"
-          onPointerDown={onResizeDown} onPointerMove={onResizeMove}
-          onPointerUp={onResizeUp} onPointerCancel={onResizeUp}
-          onDoubleClick={() => setPanelW(PANEL_START)}
-          onMouseEnter={e => { e.currentTarget.firstChild.style.opacity = 1 }}
-          onMouseLeave={e => { if (!resizing) e.currentTarget.firstChild.style.opacity = 0 }}
-          style={{
-            position:'absolute', top:40, bottom:0, left:W - 12, width:24, zIndex:8,
-            cursor:'col-resize', touchAction:'none',
-            transition:T_MOVE,
-          }}>
-          <span style={{
-            position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
-            width:3, height:40, borderRadius:2, background:'var(--panel-text4)',
-            opacity: resizing ? 1 : 0, transition:'opacity .12s', pointerEvents:'none',
-          }}/>
-        </div>
-      )}
 
       {/* ── body — `top` slides up to close the vacated pin/tool gap ───────── */}
       <div style={{
         position:'absolute', left:0, right:0, top:BODY_TOP, bottom:FOOTER_H,
         transition:T_MOVE, overflowY:'auto', overflowX:'hidden',
-        padding: collapsed ? '0 0 6px' : '0 6px 6px',
+        padding: collapsed ? '8px 0' : `${PAD}px ${PAD}px 8px`,
       }}>
         {collapsed ? (
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:11 }}>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
             <button aria-label="Search library" title="Search library"
               onClick={() => { setCollapsed(false); setFocusSearch(true) }}
-              style={{ width:BTN, height:BTN, border:'none', borderRadius:7, background:'transparent',
+              style={{ width:BTN, height:BTN, border:'none', borderRadius:2, background:'transparent',
                 color:'var(--panel-text2)', cursor:'pointer', display:'flex',
                 alignItems:'center', justifyContent:'center' }}
               onMouseEnter={e => e.currentTarget.style.background='var(--panel-hover)'}
@@ -1212,7 +1195,7 @@ export function FloatingToolbar() {
             {SECTIONS.map(sec => (
               <button key={sec.id} aria-label={sec.label} title={sec.label}
                 onClick={() => { setCollapsed(false); setOpenSections(s => new Set([...s, sec.id])) }}
-                style={{ width:BTN, height:BTN, border:'none', borderRadius:7, cursor:'pointer',
+                style={{ width:BTN, height:BTN, border:'none', borderRadius:2, cursor:'pointer',
                   background:'transparent', color:CAT_HEADER[sec.icon],
                   display:'flex', alignItems:'center', justifyContent:'center' }}
                 onMouseEnter={e => e.currentTarget.style.background='var(--panel-hover)'}
@@ -1223,15 +1206,12 @@ export function FloatingToolbar() {
           </div>
         ) : (
           <div style={{ opacity: collapsed ? 0 : 1, transition:FADE }}>
-            <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
               <div style={{ position:'relative', flex:1, display:'flex', alignItems:'center', minWidth:0 }}>
-                <Search size={13} strokeWidth={ICON_STROKE} absoluteStrokeWidth
-                  style={{ position:'absolute', left:8, color:'var(--panel-text4)', pointerEvents:'none' }}/>
-                <input ref={searchRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search"
-                  style={{ width:'100%', height:28, boxSizing:'border-box', borderRadius:8,
-                    border:'0.5px solid var(--panel-border)', background:'#FFFFFF',
-                    padding:'0 8px 0 26px', fontSize:12, color:'var(--text)',
-                    outline:'none', font:'inherit', fontWeight:500 }}/>
+                <Search size={16} strokeWidth={ICON_STROKE} absoluteStrokeWidth
+                  style={{ position:'absolute', left:8, color:'var(--panel-text3)', pointerEvents:'none' }}/>
+                <input ref={searchRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search" aria-label="Search library"
+                  className="t-input t-words" style={{ width:'100%', padding:'0 8px 0 32px', fontSize:13, fontWeight:500 }}/>
               </div>
               <ViewToggle mode={viewMode} onChange={setViewMode}/>
             </div>
@@ -1240,7 +1220,7 @@ export function FloatingToolbar() {
               results.length
                 ? <ItemBody items={results} mode={viewMode}
                     colorOf={colorOf} onPick={pickItem} pinned={pinned} onTogglePin={togglePin}/>
-                : <p style={{ margin:0, padding:'14px 6px', fontSize:11.5, color:'var(--panel-text4)', textAlign:'center' }}>
+                : <p style={{ margin:0, padding:'16px 8px', fontSize:12, color:'var(--panel-text3)', textAlign:'center' }}>
                     No objects match “{query}”.
                   </p>
             ) : SECTIONS.map(sec => {
@@ -1250,9 +1230,9 @@ export function FloatingToolbar() {
                   <button aria-label={sec.label + ' section'} aria-expanded={open}
                     onClick={() => toggleSection(sec.id)}
                     style={{
-                      display:'flex', alignItems:'center', gap:9, width:'100%', height:36,
-                      padding:'0 8px', marginTop:6, border:'none', background:'transparent',
-                      cursor:'pointer', font:'inherit', textAlign:'left', borderRadius:7,
+                      display:'flex', alignItems:'center', gap:8, width:'100%', height:36,
+                      padding:0, marginTop:4, border:'none', background:'transparent',
+                      cursor:'pointer', font:'inherit', textAlign:'left', borderRadius:2,
                       transition:'background .1s',
                     }}
                     onMouseEnter={e => e.currentTarget.style.background='var(--panel-hover)'}
@@ -1265,10 +1245,10 @@ export function FloatingToolbar() {
                         near-black --panel-label to the muted grey: six headers
                         all shouting at full contrast is what made the column
                         read as dense. The category glyph carries the identity. */}
-                    <span style={{ flex:1, minWidth:0, fontSize:11, fontWeight:600, letterSpacing:'0.10em',
+                    <span style={{ flex:1, minWidth:0, fontFamily:'var(--font-display)', fontSize:13, fontWeight:600, letterSpacing:'0.08em',
                       textTransform:'uppercase', color:'var(--panel-muted)',
                       overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sec.label}</span>
-                    <ChevronRight size={12} strokeWidth={ICON_STROKE} absoluteStrokeWidth
+                    <ChevronRight size={16} strokeWidth={ICON_STROKE} absoluteStrokeWidth
                       style={{ color:'var(--panel-text4)', flexShrink:0,
                         transform:`rotate(${open?90:0}deg)`, transition:'transform 150ms ease' }}/>
                   </button>
@@ -1286,22 +1266,22 @@ export function FloatingToolbar() {
       {/* Footer — Undo/Redo moved out; the top bar and the drawing toolbar
           already own history, and three copies of it read as clutter. */}
       <div style={{ position:'absolute', left:0, right:0, bottom:0,
-        borderTop:'0.5px solid var(--panel-border)', padding: collapsed ? '6px 0' : '6px 4px',
-        display:'flex', flexDirection:'column', alignItems: collapsed ? 'center' : 'stretch', gap:2 }}>
+        borderTop:'1px solid var(--panel-border)', padding: collapsed ? '8px 0' : `8px ${PAD}px`,
+        display:'flex', flexDirection:'column', alignItems: collapsed ? 'center' : 'stretch', gap:0 }}>
         {FOOTER_ITEMS.map(({ id, label, Icon }) => (
           <button key={id} aria-label={label} title={label}
             style={{
-              display:'flex', alignItems:'center', gap:9, border:'none', background:'transparent',
-              cursor:'pointer', font:'inherit', color:'var(--panel-muted)', borderRadius:7,
+              display:'flex', alignItems:'center', gap:8, border:'none', background:'transparent',
+              cursor:'pointer', font:'inherit', color:'var(--panel-muted)', borderRadius:2,
               transition:'background .1s',
               ...(collapsed
                 ? { width:BTN, height:BTN, justifyContent:'center', padding:0 }
-                : { width:'100%', height:30, padding:'0 8px', textAlign:'left' }),
+                : { width:'100%', height:32, padding:0, textAlign:'left' }),
             }}
             onClick={id === 'settings' ? () => openSetup('settings') : undefined}
             onMouseEnter={e => e.currentTarget.style.background='var(--panel-hover)'}
             onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-            <Icon size={17} strokeWidth={ICON_STROKE} absoluteStrokeWidth style={{ flexShrink:0 }}/>
+            <Icon size={18} strokeWidth={ICON_STROKE} absoluteStrokeWidth style={{ flexShrink:0 }}/>
             {!collapsed && (
               <span style={{ flex:1, minWidth:0, fontSize:12, fontWeight:500,
                 overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</span>
@@ -1314,11 +1294,11 @@ export function FloatingToolbar() {
       {trayOpen && (
         <PinnedTray items={pinnedItems} mode={viewMode} colorOf={colorOf} onPick={pickItem}
           pinned={pinned} onTogglePin={togglePin} onClose={() => setTrayOpen(false)}
-          pos={trayPos} setPos={setTrayPos} defaultPos={{ x:W + 96, y:96 }}/>
+          pos={trayPos} setPos={setTrayPos} defaultPos={{ x:W + 16, y:136 }}/>
       )}
       {toolbarOpen && (
-        <DrawToolbar pos={toolbarPos} setPos={setToolbarPos} defaultPos={{ x:W + 24, y:130 }}
-          horizontal={toolbarHoriz} onToggleOrient={() => setToolbarHoriz(h => !h)}
+        <DrawToolbar pos={toolbarPos} setPos={setToolbarPos} defaultPos={dockedPos}
+          horizontal={toolbarHoriz} onToggleOrient={() => setToolbarHoriz(h => !h)} onReset={() => setToolbarPos(null)}
           onClose={() => setToolbarOpen(false)}
           activeTool={activeTool} setActiveTool={setActiveTool}
           penPrefs={penPrefs} setPenPrefs={setPenPrefs} selectedStroke={selectedStroke}
