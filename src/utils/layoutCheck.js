@@ -47,6 +47,7 @@ import { runColumnCheck, layoutColumns, layoutFloors, isRack } from '../generate
 import { rackIssues } from './bayBeam'
 import { cutOffRacks } from '../generate/aisleAccess'
 import { rowAisleGaps } from '../generate/rowAisles'
+import { faceObstacleGaps, zoneName } from '../generate/faceAisles'
 export { rowAisleGaps }
 import { oversizedBayIndices } from './capacity'
 import { fmtLen, fmtLenDown, sectionLabel, failingCrossAisles } from './copyChange'
@@ -237,9 +238,14 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
     }
   }
   // ── a way in: racks only a dead-end pocket reaches (an aisle closed at both ends) ──
+  const zonesIn = objects.some(o => typeof o.type === 'string' && o.type.startsWith('zone_'))
   for (const fp of objects.filter(o => FP.has(o.type))) {
     if (!racks.some(r => r.parentId === fp.id)) continue
     const { pockets } = cutOffRacks(objects, fp, { gridSize, travelFt: profile.travelFt ?? 8, aisleFt: profile.aisleFt })
+    /* a pocket only a zone closes (none without the zones) is the zone's doing: a WARNING — a zone never removes
+       racks for it (utils/zoneCut.js); one that is closed without any zone stays an error */
+    const noZones = zonesIn ? cutOffRacks(objects.filter(o => !(typeof o.type === 'string' && o.type.startsWith('zone_'))), fp, { gridSize, travelFt: profile.travelFt ?? 8, aisleFt: profile.aisleFt }).cutOff : []
+    const closedAnyway = new Set(noZones.map(c => c.id))
     // pockets that share a rack (one on each side of it) are one place: one item, every pocket lit
     const groups = []
     for (const [, pk] of pockets) {
@@ -249,9 +255,23 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       groups.push(g)
     }
     for (const g of groups) {
+      if (zonesIn && [...g.ids].every(id => !closedAnyway.has(id))) {
+        warnings.push({ severity: 'warning', kind: 'zone-no-way-in', ids: [...g.ids], box: union(g.boxes),
+          highlight: g.boxes.map(b => shade(b, HL.amber, 'No way in')), text: 'No way in: a zone closes this aisle at both ends' })
+        continue
+      }
       errors.push({ severity: 'error', kind: 'no-way-in', ids: [...g.ids], box: union(g.boxes),
         highlight: g.boxes.map(b => shade(b, HL.red, 'No way in')), text: 'No way in: aisle closed at both ends' })
     }
+  }
+  /* a pick face a zone leaves without its aisle (generate/faceAisles.js): a WARNING — a zone never removes a bay
+     outside its footprint (utils/zoneCut.js); the face's positions come off usable with X marks (narrowAisles.js) */
+  for (const g of faceObstacleGaps(objects, { gridSize, profile })) {
+    if (g.obstacle.kind !== 'zone') continue
+    const z = g.obstacle.zone
+    warnings.push({ severity: 'warning', kind: 'zone-face', ids: [g.rack.id, z.id], box: union([g.box, boxOf(rackFootprint(g.rack))]),
+      highlight: [shade(g.box, HL.amber, `${short(g.width)} · needs ${len(aislePx)}`)],
+      text: `${name(g.rack)}: the ${zoneName(z)} leaves its face ${short(g.width)} of aisle, needs ${len(aislePx)} to pick` })
   }
   /* elevation types (utils/elevations.js): the top of the upright above the building's clear height; a pallet and
      its clearance that don't fit between two beams — one error per type, every rack carrying it lit */
@@ -262,7 +282,7 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
     if (e.severity === 'warning') warnings.push({ severity: 'warning', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => outline(b, HL.amber)), text: e.text })
     else errors.push({ severity: 'error', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => shade(b, HL.red)), text: e.text })
   }
-  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled']
+  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled']
   const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
   const reminders = projectReminders(elevations)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }

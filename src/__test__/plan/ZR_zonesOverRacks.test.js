@@ -1,15 +1,14 @@
 // Area ZR — zones placed on a layout after its racks (utils/rackingAreaTool.js installAreaKeeper / landZones,
-// generate/rackingArea.js cutForZones, generate/faceReach.js, canvas2/ZoneEdit.jsx, utils/floorClamp.js
-// zoneSized). On the hand-check layout (realLayout.fixture.js) — rows horizontal as saved, vertical on the
-// layout turned 90° — three ways the racks got there: a Fill racking area (it refits round the zone, and
-// gets racks back when the zone shrinks), the same racks with the area gone (placed by hand), and Generate's
-// 500 × 250 on the fixture's 50' × 54' grid. One rule cuts them all:
+// utils/zoneCut.js applyZones, canvas2/ZoneEdit.jsx, utils/floorClamp.js zoneSized). On the hand-check layout
+// (realLayout.fixture.js) — rows horizontal as saved, vertical on the layout turned 90° — three ways the racks
+// got there: a Fill racking area, the same racks with the area gone (placed by hand), and Generate's 500 × 250
+// on the fixture's 50' × 54' grid. One rule cuts them all (zone-fix):
 //   - a zone dropped on racks stays where it is dropped and cuts them at once — nothing asked, one undo
 //     step, the bar: "Office placed · N bays removed";
-//   - a bay half a zone covers goes, the other half stays a single row;
-//   - a pick face the zone leaves without an aisle goes (Fill racking's rule, faceReach.js);
+//   - only the bays its footprint covers go; a bay half a zone covers goes, the other half stays a single row;
+//   - a pick face the zone leaves without an aisle is a WARNING (Check layout), never a delete;
 //   - resized: no question, the bays its release will remove previewed red, one undo step;
-//   - racks it removed don't come back when it shrinks (undo does) — but for a Fill area's;
+//   - every bay it no longer covers comes back exactly as it was, for every kind of rack (zone-fix);
 //   - an exact width / length typed: the edge against a wall stays, else the left / top edge.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { GS } from './fixtures'
@@ -29,6 +28,7 @@ async function fresh() {
   const AT = await import('../../utils/rackingAreaTool')
   const FC = await import('../../utils/floorClamp')
   const TG = await import('../../generate/traceGenerate')
+  const LC = await import('../../utils/layoutCheck')
   const RG = await import('../../utils/rowGroupTool')
   const L = await import('../../utils/layers')
   const { rackFootprint } = await import('../../generate/columnCheck')
@@ -40,7 +40,7 @@ async function fresh() {
   installRowEditKeeper(useCanvasStore)
   RG.installRowGroupWatcher(useCanvasStore, nanoid)
   AT.installAreaKeeper(useCanvasStore)
-  return { useCanvasStore, FT, FR, RA, AT, FC, TG, rackFootprint }
+  return { useCanvasStore, FT, FR, RA, AT, FC, TG, LC, rackFootprint }
 }
 
 const RACK = new Set(['rack_row', 'rack_double_row'])
@@ -107,17 +107,20 @@ describe.each([['horizontal rows', false], ['vertical rows', true]])('ZR — %s'
     expect(doc()).toEqual(before)
   })
 
-  it.each(KINDS)('ZR-face (%s): a zone against one long face of a pair (6\' deep, in its aisle) — along it, the pair becomes the single on its far half, facing its remaining aisle', async (kind) => {
+  it.each(KINDS)('ZR-face (%s): a zone against one long face of a pair (6\' deep, in its aisle, touching none of it) — nothing is removed (zone-fix: never outside the footprint); the face it leaves without an aisle is a Check layout WARNING', async (kind) => {
     await load(kind)
-    const { o, f } = midPair(), [r0, r1] = R(f), [s0, s1] = S(f), rm = (r0 + r1) / 2, row = o.rowIndex
+    const { o, f } = midPair(), [r0, r1] = R(f), [s0, s1] = S(f), rm = (r0 + r1) / 2
     const zb = boxRS(rm - 15 * GS, rm + 15 * GS, s1, s1 + 6 * GS)
+    const before = doc()
     s().addObject(zoneAt(zb)); await tick(); await tick()
-    // the racks of that row across [s0, s1] with a bay wholly within the zone's stretch
+    // every bay that went was under the zone (here: the row across the aisle, if the 6' reaches it)
+    for (const b of m.RA.removedRowBays(before.objects, s().objects, GS)) expect(meets(b, zb), 'a bay removed outside the zone').toBe(true)
+    // the pair itself: still a pair, whole
     const here = racks().filter(q => { const g = m.rackFootprint(q); return S(g)[0] >= s0 - E && S(g)[1] <= s1 + E && R(g)[0] < rm + E && R(g)[1] > rm - E })
-    expect(here.length).toBe(1)
-    expect(here[0].type).toBe('rack_row')
-    expect(S(m.rackFootprint(here[0]))).toEqual([s0, s0 + depth].map(v => expect.closeTo(v, 3)))
-    void row
+    expect(here.map(q => q.type)).toEqual(['rack_double_row'])
+    expect(here[0].id).toBe(o.id)
+    const warn = m.LC.checkLayout(s().objects, { gridSize: GS }).warnings.filter(w => w.kind === 'zone-face')
+    expect(warn.some(w => w.ids.includes(o.id)), 'the face is warned').toBe(true)
   })
 
   it.each(KINDS)('ZR-half (%s): a zone over exactly one half of a pair — that half goes along it, the other half stays a single row (it still has its aisle)', async (kind) => {
@@ -131,7 +134,7 @@ describe.each([['horizontal rows', false], ['vertical rows', true]])('ZR — %s'
     expect(S(m.rackFootprint(here[0]))).toEqual([s0, s0 + depth].map(v => expect.closeTo(v, 3)))
   })
 
-  it.each(KINDS)('ZR-shrink (%s): the office shrunk after the drop — no question, one undo step; a Fill area gets its racks back where the zone left, racks placed otherwise stay removed (undo brings them back)', async (kind) => {
+  it.each(KINDS)('ZR-shrink (%s): the office shrunk after the drop — no question, one undo step; every kind of rack gets back exactly the bays the zone no longer covers (zone-fix), "Office resized · N restored"; one undo is the drop again', async (kind) => {
     await load(kind)
     const { f } = midPair(), [r0, r1] = R(f), [s0, s1] = S(f), rm = (r0 + r1) / 2
     const zb = boxRS(rm - 20 * GS, rm + 20 * GS, s0 - GS, s1 + GS)
@@ -142,9 +145,13 @@ describe.each([['horizontal rows', false], ['vertical rows', true]])('ZR — %s'
     s().commitObjectUpdate(z.id, { x: small.x, y: small.y, width: small.w, height: small.h }); await tick(); await tick()
     expect(m.AT.useAreaPrompt.getState().question).toBeNull()
     expect(s().historyIndex).toBe(h0 + 1)
-    if (kind === 'Fill area') expect(m.RA.rowBays(s().objects)).toBeGreaterThan(bays0)
-    else expect(m.RA.rowBays(s().objects)).toBe(bays0)
-    expect(m.AT.useAreaPrompt.getState().note).toMatch(/^Office resized/)
+    expect(m.RA.rowBays(s().objects)).toBeGreaterThan(bays0)
+    // nothing under the smaller office; what came back is what it left
+    expect(halvesUnder(small)).toEqual([])
+    const back = m.RA.removedRowBays(s().objects, dropped.objects, GS)
+    expect(back.length).toBeGreaterThan(0)
+    for (const b of back) expect(meets(b, zb) && !meets(b, small), 'restored: under the old box, not the new').toBe(true)
+    expect(m.AT.useAreaPrompt.getState().note).toBe(`Office resized · ${back.length} restored`)
     s().undo()
     expect(doc()).toEqual(dropped)
   })

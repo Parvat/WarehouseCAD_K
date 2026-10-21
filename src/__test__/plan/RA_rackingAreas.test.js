@@ -595,6 +595,9 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   }
   const rackKeys = () => racks().map(o => [o.type, Math.round(o.x * 1e4), Math.round(o.y * 1e4), Math.round(o.width * 1e4), Math.round(o.height * 1e4), o.rotation || 0, o.beams.join('/'), o.rowIndex, o.genSection, o.areaId].join(':')).sort()
   const clean = () => { expect(check()).toEqual({ errors: [], warnings: [] }); expectOnPattern(); expectAisles(); expectSinglesCut(); expectRegular() }
+  /* zone-fix: a zone never removes bays outside its footprint — a face it leaves without an aisle is a WARNING */
+  const zoneWarnings = () => { const c = check(); expect(c.errors).toEqual([]); expect(c.warnings.every(w => w.kind === 'zone-face' || w.kind === 'zone-no-way-in'), c.warnings.map(w => w.kind).join(',')).toBe(true); return c.warnings }
+  const cleanZone = () => { zoneWarnings(); expectOnPattern() }
   // [name, type, width, height, the area's share of each] — the area reaches into the L's bar and the T's stem
   const SHAPES = [['rectangle', 'fp_rect', 240, 120, 0.55, 0.6], ['L', 'fp_l', 300, 200, 0.55, 0.8], ['T', 'fp_t', 360, 240, 0.55, 0.6]]
   /** An area over the top-left of the building, dragged from its top-left corner (a little past the
@@ -836,62 +839,42 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   }
   const SLIDE = [['rectangle', 'fp_rect', 240, 120], ['L', 'fp_l', 300, 200], ['T', 'fp_t', 360, 240]]
 
-  it.each(SLIDE)('RA-slide (%s): an office on the start side of the last pair before the far-wall single, closer than an aisle — the WHOLE row slides toward the wall by exactly the aisle less that clearance: a full pair beside the office, its start face an aisle off its edge, nothing of its run lost, the aisle before it that much wider, every aisle ≥ the aisle; shrink → extend back identical; clean', async (_, type, w, h) => {
+  it.each(SLIDE)('RA-zone-near (%s): an office on the start side of the last pair, closer than an aisle — nothing outside its footprint moves or goes (zone-fix): the row stays at its pattern place with every bay, the pairs beside it stay pairs, and Check layout warns that the office leaves their face short of an aisle', async (_, type, w, h) => {
     const { fp, L } = await fitBuilding(type, w, h)
     clean()
-    const by = Math.min(1.5, L.slack), before = baysOf(rowNow(L.row))
+    const by = Math.min(1.5, L.slack), before = baysOf(rowNow(L.row)), objs0 = s().objects
     const [r0, r1] = ftR(foot(L.rk))
     const office = officeOff(fp, L.u, L.aisle - by, (r0 + r1) / 2, 20)
     await tick()
-    // the strict helpers first: a row off its place by anything but its Δ fails here
-    clean()
-    expect(slideOf(L.row)).toBeCloseTo(by, 6)
-    // the whole row, along its full length: at the pattern place moved by exactly Δ
     const row = rowNow(L.row)
-    expect(acrossAt(row, L.u.s0 + by, L.u.d), 'every rack of the row slid by Δ').toBe(true)
-    // beside the office: a full pair, its start face exactly an aisle off the office's edge
+    expect(acrossAt(row, L.u.s0, L.u.d), 'the row at its pattern place').toBe(true)
+    expect(baysOf(row), 'nothing of the row lost').toBe(before)
+    // every bay that went was under the office's footprint (the row across its aisle, where it stands)
+    const ob = { x: office.x, y: office.y, w: office.w, h: office.h }
+    for (const b of m.RA.removedRowBays(objs0, s().objects, GS)) expect(overlap(b, ob), 'a removed bay outside the office').toBe(true)
     const beside = row.filter(r => meetR(ftR(foot(r)), ftR(office)))
     expect(beside.length).toBeGreaterThan(0)
-    for (const r of beside) {
-      expect(r.type).toBe('rack_double_row')
-      expect(ftS(foot(r))[0] - ftS(office)[1]).toBeCloseTo(L.aisle, 6)
-    }
-    expect(baysOf(row), 'nothing of the row\'s run lost').toBe(before)
-    clean()
-    // shrink → extend back: identical — across (the far edge off the wall: no wall row, so no slide), and
-    // along. Shallow cuts: an edge dragged back across a T's inner corner stops at that wall (floorClamp)
-    const keys = rackKeys(), b0 = boxNow()
-    for (const cut of vert ? [{ w: b0.w - 15.3 * GS }, { h: b0.h - 20.3 * GS }] : [{ h: b0.h - 15.3 * GS }, { w: b0.w - 20.3 * GS }]) {
-      resizeArea({ ...b0, ...cut })
-      const cutRow = rowNow(L.row)
-      if (('w' in cut) === vert && cutRow.length) expect(acrossAt(cutRow, L.u.s0 + by, L.u.d), 'across: no wall row, so the row is not slid').toBe(false)
-      clean()
-      resizeArea(b0)
-      expect(boxNow()).toEqual(b0)
-      expect(rackKeys()).toEqual(keys)
-    }
-    clean()
+    for (const r of beside) expect(r.type).toBe('rack_double_row')
+    const warn = zoneWarnings().filter(w => w.kind === 'zone-face')
+    expect(warn.some(w => beside.some(r => w.ids.includes(r.id))), 'the face the office crowds is warned').toBe(true)
   })
 
-  it.each(SLIDE)('RA-slide-slack (%s, the building cut across to leave 2\' of slack): when the last aisle\'s slack is less than the slide the office needs, the row stays at its pattern place (the half facing the office loses its bays there, as before); clean', async (_, type, w, h) => {
+  it.each(SLIDE)('RA-zone-near-slack (%s, 2\' of slack): the same with too little slack to have slid — still nothing moves or goes, the same warning', async (_, type, w, h) => {
     const { fp, L } = await fitBuilding(type, w, h, 2)
     clean()
-    const need = L.slack + 0.75
-    expect(need, 'a clearance to the office that the slack can\'t make up').toBeLessThan(L.aisle)
+    const need = L.slack + 0.75, before = baysOf(rowNow(L.row))
+    expect(need).toBeLessThan(L.aisle)
     const [r0, r1] = ftR(foot(L.rk))
     const office = officeOff(fp, L.u, L.aisle - need, (r0 + r1) / 2, 20)
     await tick()
-    expect(slideOf(L.row)).toBe(0)
     const row = rowNow(L.row)
     expect(acrossAt(row, L.u.s0, L.u.d), 'the row at its pattern place').toBe(true)
-    // beside the office only the far half is left
-    const beside = row.filter(r => meetR(ftR(foot(r)), ftR(office)))
-    expect(beside.length).toBeGreaterThan(0)
-    for (const r of beside) expect(r.type).toBe('rack_row')
-    clean()
+    expect(baysOf(row)).toBe(before)
+    for (const r of row.filter(r => meetR(ftR(foot(r)), ftR(office)))) expect(r.type).toBe('rack_double_row')
+    expect(zoneWarnings().some(w => w.kind === 'zone-face')).toBe(true)
   })
 
-  it('RA-slide-column (rectangle): building columns standing in the row\'s flue, where the slid row\'s face would land on them — the slide would lose usable positions (X marks), so the row stays where it is; the same office with no columns: the row slides', async () => {
+  it('RA-zone-near-column (rectangle): columns in the row\'s flue or not, an office crowding its face moves nothing — the row stays at its pattern place, no errors', async () => {
     const run = async (columns) => {
       m = await fresh(); s = () => m.useCanvasStore.getState()
       m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation })
@@ -899,29 +882,23 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
       const fp = fillWhole('fp_rect', 240, 120)
       const L = lastPair(), by = Math.min(1.5, L.slack), p = areaNow().pattern
       const [r0, r1] = ftR(foot(L.rk))
-      // the columns: on the row's flue line, one in each of three bays along the rack (not under the office)
       const flue = L.u.s0 + p.depthIn / 12 + p.flueIn / 24
       const bayMid = (k) => r0 + L.upFt + L.beamFt / 2 + k * L.pitch
-      const along = [1, 3, 5].map(bayMid)
-      if (columns) for (const a of along) {
+      if (columns) for (const a of [1, 3, 5].map(bayMid)) {
         const c = vert ? { x: flue * GS, y: a * GS } : { x: a * GS, y: flue * GS }
         s().addObject({ type: 'column_grid', x: c.x, y: c.y, spacingX: [], spacingY: [], columnW: GS, columnH: GS, colSizeIn: 12, parentId: fp.id })
       }
       await tick()
-      // the office faces one bay of the row, away from the columns
       const n = Math.floor((r1 - r0) / L.pitch)
-      const office = officeOff(fp, L.u, L.aisle - by, bayMid(n - 2), 2)
+      officeOff(fp, L.u, L.aisle - by, bayMid(n - 2), 2)
       await tick()
-      return { L, by, row: rowNow(L.row), office }
+      return { L, row: rowNow(L.row) }
     }
-    const bare = await run(false)
-    expect(acrossAt(bare.row, bare.L.u.s0 + bare.by, bare.L.u.d), 'no columns: the row slides').toBe(true)
-    const held = await run(true)
-    expect(acrossAt(held.row, held.L.u.s0, held.L.u.d), 'columns: the row stays at its pattern place').toBe(true)
-    // the reason: slid, it would lose usable positions to the columns; here none are lost in the row
-    const res = m.LC.checkLayout(s().objects, { gridSize: GS })
-    expect(res.errors).toEqual([])
-    clean()
+    for (const columns of [false, true]) {
+      const got = await run(columns)
+      expect(acrossAt(got.row, got.L.u.s0, got.L.u.d), columns ? 'columns' : 'no columns').toBe(true)
+      expect(m.LC.checkLayout(s().objects, { gridSize: GS }).errors).toEqual([])
+    }
   })
 
   it('RA-regular-strict: the strict aisle check still catches a real over-wide aisle — one row of a regular fill moved 1\' 6" across by hand: the check fails', () => {
@@ -972,7 +949,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const zb = vert ? { x: (p0 - 6) * GS, y: o0 * GS, w: 6.25 * GS, h: 20 * GS } : { x: o0 * GS, y: (p0 - 6) * GS, w: 20 * GS, h: 6.25 * GS }
     s().addObject({ type: 'zone_office', label: 'Office', x: zb.x, y: zb.y, width: zb.w, height: zb.h, parentId: fp.id, layerId: 'zones' })
     await tick()
-    clean()
+    cleanZone()                                                    // the row across the office's aisle: warned, not cut
     const mine = racks().filter(o => o.rowIndex === row)
     const before = mine.find(o => o.type === 'rack_double_row' && Math.abs(ftS(foot(o))[0] - p0) < 1e-6 && ftR(foot(o))[1] <= o0 + 1e-6 && ftR(foot(o))[1] > o0 - pitch)
     const half = mine.find(o => o.type === 'rack_row' && Math.abs(ftS(foot(o))[0] - (p1 - single)) < 1e-6 && Math.abs(ftS(foot(o))[1] - p1) < 1e-6 && ftR(foot(o))[0] < o0 + 20)
@@ -1049,7 +1026,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const z = vert ? { x: ib.x + ib.w - 12 * GS, y: ib.y + ib.h / 2 - 10 * GS, w: 12 * GS, h: 20 * GS } : { x: ib.x + ib.w / 2 - 10 * GS, y: ib.y + ib.h - 12 * GS, w: 20 * GS, h: 12 * GS }
     s().addObject({ type: 'zone_office', label: 'Office', x: z.x, y: z.y, width: z.w, height: z.h, parentId: fp.id, layerId: 'zones' })
     await tick()
-    clean()
+    cleanZone()                                                    // faces it crowds: warned, not cut
     const far = vert ? ib.x + ib.w : ib.y + ib.h
     const farWall = racks().filter(o => flushOnWall(o) && Math.abs((vert ? foot(o).x + foot(o).w : foot(o).y + foot(o).h) - far) < 1e-3)
     expect(farWall).toHaveLength(2)
