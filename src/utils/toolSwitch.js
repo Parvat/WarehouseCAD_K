@@ -34,6 +34,13 @@ export function endTool(store) {
   if (st.activeTool !== TOOLS.SELECT) st.setActiveTool(TOOLS.SELECT)
 }
 
+/** The measure mode on or off (the tool pill's Measure, the M key): turning it on ends the running tool first. */
+export function toggleMeasure(store) {
+  const on = !useMeasureMode.getState().on
+  if (on) endTool(store)
+  useMeasureMode.setState({ on })
+}
+
 /** Subscribe: whenever the active tool changes, the previous tool's leftovers go, a placement on the mouse ends, the
  *  measure mode ends. Returns the unsubscribe. */
 export function installToolKeeper(store) {

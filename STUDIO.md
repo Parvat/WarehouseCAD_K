@@ -108,6 +108,9 @@ Warning action button: background `#F2C77A`, text `#3A2E17`.
 - **Toggle**: 30×18, off `#3A403C`, on accent with on-accent knob.
 - **Scrollbars (everywhere, every scrolling area)**: thin, 8px; thumb `#3A403C` radius 4 with a 2px `#1F2321` border, hover `#4A514D`; track transparent. Firefox: `scrollbar-width: thin; scrollbar-color: #3A403C transparent`. Set once globally, never per component; no browser-default scrollbar anywhere.
 - **Icons**: see section 9 (box style, 24px).
+- **Hover** (island buttons): background `#2A2F2C` (inset); an active button (pressed tool, on toggle, open section) hovers `#355A47`.
+- **Disabled**: the same control at 45% opacity, cursor not-allowed.
+- **Tool shortcuts** (shown in the tool pill's hint, key in mono): V Select · P Pan · F Fill racking · G Row group · S Split · M Measure · L Line · T Text.
 
 ## 6. Selection bar contents
 

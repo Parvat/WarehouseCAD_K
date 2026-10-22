@@ -85,7 +85,7 @@ function TopRight() {
         Check<CheckChip />
       </button>
       <ExportCheckDialog onExport={exportAsPDF} />
-      <button type="button" title="Export PDF" onClick={() => exportWithCheck(useCanvasStore, exportAsPDF)}
+      <button type="button" className="st-primary" title="Export PDF" onClick={() => exportWithCheck(useCanvasStore, exportAsPDF)}
         style={{ height: 32, padding: '0 14px', border: 0, borderRadius: 6, background: '#7BD3A4', color: '#0F2A1F', fontSize: 13, fontWeight: 600 }}>Export</button>
     </div>
   )

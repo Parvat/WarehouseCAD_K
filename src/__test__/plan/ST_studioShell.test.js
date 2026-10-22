@@ -56,4 +56,20 @@ describe('ST — the frame', () => {
     // box style: solid shapes, crisp edges on rects
     expect(RAIL.Racking.body).toMatch(/shape-rendering="crispEdges"/)
   })
+  it('ST-hover: island buttons hover the inset fill, an active one #355A47 — not the mint primary, the selected tab, the card content or the pen options', () => {
+    const css = read('studio/studio.css')
+    // the idle rule leaves pressed buttons out — its :not() chain outranks the active rule otherwise
+    expect(css).toMatch(/\.st-island button:not\(:disabled\):not\(\.st-primary\):not\(\[aria-selected="true"\]\):not\(\[aria-pressed="true"\]\):not\(\[data-card-body\] \*\):hover,\n\.st-pill button:not\(:disabled\):not\(\[aria-pressed="true"\]\):not\(\[data-pen-options\] \*\):hover \{ background:#2A2F2C !important; \}/)
+    expect(css).toMatch(/\[aria-pressed="true"\]:not\(:disabled\):not\(\[data-pen-options\] \*\):hover \{ background:#355A47 !important; \}/)
+    expect(read('studio/StudioFrame.jsx')).toMatch(/className="st-primary" title="Export PDF"/)
+  })
+  it('ST-keys: F Fill racking, G Row group, S Split, M Measure (and V P L T) — the keyboard and the tool hints agree; STUDIO.md §5 lists them', () => {
+    const kb = read('hooks/useKeyboardShortcuts.js'), ft = read('components/LeftPanel/FloatingToolbar.jsx')
+    expect(kb).toMatch(/if \(e\.key\.toLowerCase\(\) === 'm'\) \{ toggleMeasure\(useCanvasStore\); return \}/)
+    expect(kb).toMatch(/'f': FILL_TOOL,\n\s+'g': ROW_GROUP_TOOL,\n\s+'s': SPLIT_TOOL,/)
+    expect(/MULTI_SELECT/.test(kb)).toBe(false)
+    for (const [id, k] of [['fill', 'F'], ['rowgroup', 'G'], ['split', 'S'], ['select', 'V'], ['pan', 'P'], ['text', 'T']]) expect([id, ft.split('\n').some(l => l.includes(`tool('${id}'`) && new RegExp(`tool\\('${id}'[^)]*\\)?[^)]*keyName:'${k}'`).test(l))]).toEqual([id, true])
+    expect(ft).toMatch(/icon:'Measure', keyName:'M'/)
+    expect(readFileSync(new URL('../../../STUDIO.md', import.meta.url), 'utf8')).toMatch(/V Select · P Pan · F Fill racking · G Row group · S Split · M Measure · L Line · T Text/)
+  })
 })

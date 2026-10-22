@@ -223,6 +223,7 @@ describe('ZG-2 — a tool ends fully', () => {
     expect(app).toMatch(/const stopToolKeeper = installToolKeeper\(useCanvasStore\)/)
     expect(c2).toMatch(/const measuring = useMeasureMode\(s => s\.on\)/)
     // Studio: the tool pill's Measure turns the mode on and ends the running tool first
-    expect(ft).toMatch(/const toggleMeasure = \(\) => \{ const on = !useMeasureMode\.getState\(\)\.on; if \(on\) endTool\(useCanvasStore\); useMeasureMode\.setState\(\{ on \}\) \}/)
+    expect(ft).toMatch(/onClick: \(\) => toggleMeasure\(useCanvasStore\)/)
+    expect(read('utils/toolSwitch.js')).toMatch(/export function toggleMeasure\(store\) \{\n  const on = !useMeasureMode\.getState\(\)\.on\n  if \(on\) endTool\(store\)/)
   })
 })

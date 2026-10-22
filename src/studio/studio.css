@@ -33,4 +33,11 @@
 }
 .st-island button, .st-pill button { font-family:inherit; cursor:pointer; }
 .st-island button:disabled, .st-pill button:disabled { cursor:not-allowed; opacity:.45; }
+/* hover (Studio): an island button turns the inset fill; an active one (pressed tool, toggle, open section) #355A47.
+   Not the mint primary, not the selected tab, not the card's content or the pen options (they keep their own until
+   their restyle). !important: the buttons' fills are inline. */
+.st-island button:not(:disabled):not(.st-primary):not([aria-selected="true"]):not([aria-pressed="true"]):not([data-card-body] *):hover,
+.st-pill button:not(:disabled):not([aria-pressed="true"]):not([data-pen-options] *):hover { background:#2A2F2C !important; }
+.st-island button[aria-pressed="true"]:not(:disabled):not([data-card-body] *):hover,
+.st-pill button[aria-pressed="true"]:not(:disabled):not([data-pen-options] *):hover { background:#355A47 !important; }
 .st-sep-v { width:1px; height:18px; background:#3A403C; flex-shrink:0; }

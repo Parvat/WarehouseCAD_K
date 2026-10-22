@@ -10,6 +10,7 @@ import { SPLIT_TOOL, useSplit } from '../utils/splitTool'
 import { pickableIn, keptBySelectAll } from '../utils/layers'
 import { notify, clearNotice } from '../utils/notice'
 import { deleteBaySelection } from '../utils/baySides'
+import { toggleMeasure } from '../utils/toolSwitch'
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -102,9 +103,14 @@ export function useKeyboardShortcuts() {
       if (!ctrl) {
         if (isInput) return
         // ── Tool shortcuts ─────────────────────────────────────────────────
+        // Studio (STUDIO.md §5): F Fill racking, G Row group, S Split, M Measure — shown in the tool pill's hints.
+        // M was Multi-select, a tool only the retired SVG engine had.
+        if (e.key.toLowerCase() === 'm') { toggleMeasure(useCanvasStore); return }
         const toolMap = {
           'v': TOOLS.SELECT,
-          'm': TOOLS.MULTI_SELECT,
+          'f': FILL_TOOL,
+          'g': ROW_GROUP_TOOL,
+          's': SPLIT_TOOL,
           'p': TOOLS.PAN,
           'l': TOOLS.LINE,
           'a': TOOLS.ARC,

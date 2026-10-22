@@ -39,7 +39,7 @@ import { levelsFor } from '../../utils/rackLevels'
 import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
 import { FILL_TOOL } from '../../utils/fillTool'
-import { endTool, useMeasureMode } from '../../utils/toolSwitch'
+import { endTool, useMeasureMode, toggleMeasure } from '../../utils/toolSwitch'
 import { StudioRail, StudioFlyout, StudioToolPill } from '../../studio/StudioTools'
 import { ROW_GROUP_TOOL } from '../../utils/rowGroupTool'
 import { SPLIT_TOOL } from '../../utils/splitTool'
@@ -1118,11 +1118,10 @@ export function FloatingToolbar({ studio = false } = {}) {
   /* ── the animating controls ─────────────────────────────────────────────── */
   if (studio) {
     const tool = (id, t, label, icon, extra = {}) => ({ id, label, icon, on: !measuring && activeTool === t, onClick: () => setActiveTool(t), ...extra })
-    const toggleMeasure = () => { const on = !useMeasureMode.getState().on; if (on) endTool(useCanvasStore); useMeasureMode.setState({ on }) }
     const groups = [
       [tool('select', TOOLS.SELECT, 'Select', 'Select', { keyName:'V' }), tool('pan', TOOLS.PAN, 'Pan', 'Pan', { keyName:'P' })],
-      [tool('fill', FILL_TOOL, 'Fill racking', 'Fill racking'), tool('rowgroup', ROW_GROUP_TOOL, 'Row group', 'Row group'), tool('split', SPLIT_TOOL, 'Split', 'Split')],
-      [{ id:'measure', label:'Measure', icon:'Measure', on: measuring, onClick: toggleMeasure, title: measuring ? 'Exit measure tool (Esc)' : 'Measure — click two points for the distance between them' },
+      [tool('fill', FILL_TOOL, 'Fill racking', 'Fill racking', { keyName:'F' }), tool('rowgroup', ROW_GROUP_TOOL, 'Row group', 'Row group', { keyName:'G' }), tool('split', SPLIT_TOOL, 'Split', 'Split', { keyName:'S' })],
+      [{ id:'measure', label:'Measure', icon:'Measure', keyName:'M', on: measuring, onClick: () => toggleMeasure(useCanvasStore), title: measuring ? 'Exit measure tool (Esc)' : 'Measure — click two points for the distance between them' },
        tool('text', TOOLS.TEXT, 'Text', 'Text', { kind:'object', keyName:'T' })],
     ]
     const lineTools = LINE_TOOLS.map(t => ({ ...t, on: !measuring && activeTool === t.tool, onClick: () => setActiveTool(t.tool) }))
