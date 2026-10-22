@@ -23,21 +23,30 @@
 .st-island {
   position:fixed; z-index:150; display:flex; align-items:center;
   background:#1F2321; border:1px solid #323835; border-radius:10px; box-shadow:0 8px 24px rgba(15,18,16,.18);
-  font-family:'Plus Jakarta Sans', system-ui, sans-serif; font-size:13px; color:#E8EAE6;
+  font-family:'Plus Jakarta Sans', system-ui, sans-serif; font-size:13px; line-height:normal; color:#E8EAE6;
 }
 /* the tool pill (and later the selection and mode bars) */
 .st-pill {
   position:fixed; z-index:150; display:flex; align-items:center;
   background:#1F2321; border:1px solid #323835; border-radius:12px; box-shadow:0 10px 28px rgba(15,18,16,.22);
-  font-family:'Plus Jakarta Sans', system-ui, sans-serif; font-size:13px; color:#E8EAE6;
+  font-family:'Plus Jakarta Sans', system-ui, sans-serif; font-size:13px; line-height:normal; color:#E8EAE6;
 }
 .st-island button, .st-pill button { font-family:inherit; cursor:pointer; }
 .st-island button:disabled, .st-pill button:disabled { cursor:not-allowed; opacity:.45; }
 /* hover (Studio): an island button turns the inset fill; an active one (pressed tool, toggle, open section) #355A47.
    Not the mint primary, not the selected tab, not the card's content or the pen options (they keep their own until
    their restyle). !important: the buttons' fills are inline. */
-.st-island button:not(:disabled):not(.st-primary):not([aria-selected="true"]):not([aria-pressed="true"]):not([data-card-body] *):hover,
+.st-island button:not(:disabled):not(.st-primary):not([aria-selected="true"]):not([aria-pressed="true"]):not([data-card-body] *):not([data-card-dark] *):hover,
 .st-pill button:not(:disabled):not([aria-pressed="true"]):not([data-pen-options] *):hover { background:#2A2F2C !important; }
-.st-island button[aria-pressed="true"]:not(:disabled):not([data-card-body] *):hover,
+.st-island button[aria-pressed="true"]:not(:disabled):not([data-card-body] *):not([data-card-dark] *):hover,
 .st-pill button[aria-pressed="true"]:not(:disabled):not([data-pen-options] *):hover { background:#355A47 !important; }
 .st-sep-v { width:1px; height:18px; background:#3A403C; flex-shrink:0; }
+
+/* the right card's fields (src/studio/cardParts.jsx): inset, no border; being edited = a 1px select border
+   (STUDIO.md §5). The global select / focus rules in index.css are for the old light panels. */
+.st-field:focus, .st-field:focus-visible { outline:none !important; box-shadow:inset 0 0 0 1px #2E7D5B; }
+select.st-field { background:#2A2F2C !important; color:#F2F4F1 !important; border:0 !important; }
+select.st-field option { background:#1F2321; color:#E8EAE6; }
+input.st-field::-webkit-outer-spin-button, input.st-field::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+input.st-field[type=number] { -moz-appearance:textfield; appearance:textfield; }
+input.st-field::placeholder { color:#7E8680; }

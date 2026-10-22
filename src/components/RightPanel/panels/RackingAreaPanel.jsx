@@ -4,6 +4,7 @@ import { areaSettings, areaEdits } from '../../../generate/rackingArea'
 import { MHE_PROFILES } from '../../../generate/columnCheck'
 import { zoneSized } from '../../../utils/floorClamp'
 import { pxToFtIn } from '../../../utils/canvas'
+import { fieldBox, Grid2, Seg, SelectField, SecLabel, Hint } from '../../../studio/cardParts'
 
 /* The right panel for a racking area (generate/rackingArea.js): its Racking
    settings. Changing one rebuilds the whole area with it — one undo step,
@@ -16,13 +17,14 @@ const input = {
   width: 64, padding: '3px 6px', borderRadius: 5, fontSize: 11, fontFamily: 'var(--font-mono)',
   background: 'var(--surface3)', border: '1px solid var(--border)', color: 'var(--text)', outline: 'none',
 }
-const seg = (on) => ({
-  padding: '3px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 11, fontWeight: 600,
-  background: on ? 'var(--accent-solid)' : 'var(--surface3)', color: on ? 'var(--accent-fg)' : 'var(--text3)',
-  border: `1px solid ${on ? 'var(--accent-bdr)' : 'var(--border)'}`,
-})
 const note = { fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-ui)', lineHeight: 1.4 }
 
+/* a caption over a control group (a div, not a <label>: a label would forward its clicks to the first button) */
+const Labeled = ({ label, children }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}><SecLabel>{label}</SecLabel>{children}</div>
+)
+
+/* Studio card: a column of card parts; PropertiesPanel wraps it in the card block (padding 12px 16px). */
 export function RackingAreaPanel({ obj }) {
   const objects = useCanvasStore(s => s.objects)
   const set = areaSettings(obj)
@@ -31,21 +33,22 @@ export function RackingAreaPanel({ obj }) {
   const change = (patch) => requestAreaRebuild(useCanvasStore, obj.id, patch)
   const num = (k) => (e) => { const n = Number(e.target.value); if (Number.isFinite(n) && n > 0 && n !== set[k]) change({ [k]: n }) }
   return (
-    <div aria-label="Racking area settings" style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={note}>{racks} rack{racks === 1 ? '' : 's'}{edits ? ` · ${edits} changed by hand` : ''}. Drag an edge to extend or shrink the area; a change here rebuilds it.</div>
-      <div style={row}>
-        <span style={lbl}>Direction</span>
-        <button type="button" aria-pressed={set.orientation === 'horizontal'} style={seg(set.orientation === 'horizontal')} onClick={() => set.orientation !== 'horizontal' && change({ orientation: 'horizontal' })}>H</button>
-        <button type="button" aria-pressed={set.orientation === 'vertical'} style={seg(set.orientation === 'vertical')} onClick={() => set.orientation !== 'vertical' && change({ orientation: 'vertical' })}>V</button>
-      </div>
-      <label style={row}><span style={lbl}>Beam</span>
-        <select aria-label="Area beam" value={set.beamIn} onChange={e => change({ beamIn: Number(e.target.value) })} style={{ ...input, width: 76 }}>
-          {[72, 84, 96, 108, 120, 144].map(v => <option key={v} value={v}>{v}"</option>)}
-        </select>
-      </label>
-      <div style={row}><span style={lbl}>Max run (ft)</span>
-        <input aria-label="Area max rack run" key={'m' + obj.id + set.maxRunFt} defaultValue={set.maxRunFt} onBlur={num('maxRunFt')} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} style={input} />
-      </div>
+    <div aria-label="Racking area settings" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+      <Hint>{racks} rack{racks === 1 ? '' : 's'}{edits ? ` · ${edits} changed by hand` : ''}. Drag an edge to extend or shrink the area; a change here rebuilds it.</Hint>
+      <Labeled label="Direction">
+        <Seg aria="Area direction" value={set.orientation} onChange={v => set.orientation !== v && change({ orientation: v })}
+          options={[{ value: 'horizontal', label: 'H' }, { value: 'vertical', label: 'V' }]} />
+      </Labeled>
+      <Grid2>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}><SecLabel>Beam</SecLabel>
+          <SelectField aria="Area beam" value={set.beamIn} onChange={e => change({ beamIn: Number(e.target.value) })}>
+            {[72, 84, 96, 108, 120, 144].map(v => <option key={v} value={v}>{v}"</option>)}
+          </SelectField>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}><SecLabel>Max run (ft)</SecLabel>
+          <input aria-label="Area max rack run" className="st-field" key={'m' + obj.id + set.maxRunFt} defaultValue={set.maxRunFt} onBlur={num('maxRunFt')} onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} style={fieldBox()} />
+        </label>
+      </Grid2>
     </div>
   )
 }

@@ -1,9 +1,15 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { getObjectBounds } from '../../../utils/canvas'
+import { C, MONO, fieldBox, Grid2, Seg, Btn, Totals, SecLabel, Hint, ToggleRow } from '../../../studio/cardParts'
 
 // ── Column Grid Panel ─────────────────────────────────────────────────────────
 const COL_SIZES_IN = [12, 18, 24]
+
+/* a caption over a control group (a div, not a <label>: a label would forward its clicks to the first button) */
+const Labeled = ({ label, children }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}><SecLabel>{label}</SecLabel>{children}</div>
+)
 
 export function ColumnGridPanel({ obj }) {
   const { updateObject, commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize })))
@@ -63,27 +69,20 @@ export function ColumnGridPanel({ obj }) {
     commitObjectUpdate(obj.id, { colSizeIn: sizeIn, columnW: colPx, columnH: colPx, width: newW, height: newH })
   }
 
-  const lbl = (s) => <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', minWidth: 40 }}>{s}</span>
-  const btnStyle = (active) => ({
-    padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)',
-    background: active ? 'var(--accent-solid)' : 'var(--surface3)',
-    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-    color: active ? 'var(--accent-fg)' : 'var(--text2)',
-  })
+  const unit = { fontFamily: MONO, fontSize: 12, color: C.muted }
 
   const SpacingRow = ({ label, arr, axis }) => (
-    <div style={{ marginBottom: 6 }}>
-      <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        {label} bays ({arr.length})
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+      <SecLabel>{label} bays ({arr.length})</SecLabel>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {arr.map((s, i) => {
           const ftVal = Math.round((s / gridSize) * 10) / 10
           return (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', minWidth: 18 }}>B{i+1}</span>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <span style={{ ...unit, minWidth: 22 }}>B{i+1}</span>
               <input
                 type="text"
+                className="st-field"
                 defaultValue={Math.round(ftVal)}
                 onFocus={e => e.target.select()}
                 onBlur={e => {
@@ -92,72 +91,52 @@ export function ColumnGridPanel({ obj }) {
                   else e.target.value = Math.round(ftVal)
                 }}
                 onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                style={{
-                  width: 52, padding: '2px 4px', borderRadius: 3, fontSize: 10,
-                  fontFamily: 'var(--font-mono)', textAlign: 'right',
-                  background: 'var(--surface3)', border: '1px solid var(--border)',
-                  color: 'var(--text)', outline: 'none',
-                  MozAppearance: 'textfield',
-                }}
+                style={{ ...fieldBox(), width: 64, flex: 'none', textAlign: 'right' }}
               />
-              <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>ft</span>
-              <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text2)', marginLeft: 2 }}>{fmtIn(s)}</span>
+              <span style={unit}>ft</span>
+              <span style={{ ...unit, marginLeft: 'auto', color: C.text }}>{fmtIn(s)}</span>
             </div>
           )
         })}
       </div>
-      <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-        <button onClick={() => addBay(axis)} style={{ flex:1, padding:'4px 0', borderRadius:4, cursor:'pointer', fontSize:9, fontFamily:'var(--font-mono)', fontWeight:600, background:'var(--green-dim)', border:'1px solid var(--green-bdr)', color:'var(--green)' }}>+ Bay</button>
-        <button onClick={() => removeBay(axis)} disabled={arr.length<=1} style={{ padding:'4px 8px', borderRadius:4, cursor:arr.length>1?'pointer':'not-allowed', fontSize:9, fontFamily:'var(--font-mono)', background:'transparent', border:'1px solid var(--border)', color:arr.length>1?'var(--red)':'var(--text3)' }}>- Bay</button>
-      </div>
+      <Grid2>
+        <Btn kind="ghost" onClick={() => addBay(axis)}>+ Bay</Btn>
+        <Btn kind="danger" onClick={() => removeBay(axis)} disabled={arr.length<=1}
+          style={arr.length>1 ? undefined : { color: C.faint, cursor: 'not-allowed' }}>- Bay</Btn>
+      </Grid2>
     </div>
   )
 
+  /* Studio card: a column of card parts; PropertiesPanel wraps it in the card block (padding 12px 16px). */
   return (
-    <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
 
       {/* Status */}
-      <div style={{ padding: '6px 8px', borderRadius: 5, background: 'var(--surface2)', border: '1px solid var(--border)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span style={{ color: 'var(--text3)' }}>Columns</span>
-          <span style={{ color: 'var(--text)', fontWeight: 700 }}>{(spacingX.length+1) * (spacingY.length+1)}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-          <span style={{ color: 'var(--text3)' }}>Grid size</span>
-          <span style={{ color: 'var(--text)' }}>{fmtIn(obj.width)} x {fmtIn(obj.height)}</span>
-        </div>
-      </div>
+      <Totals items={[
+        { label: 'Columns', value: (spacingX.length+1) * (spacingY.length+1) },
+        { label: 'Grid size', value: `${fmtIn(obj.width)} x ${fmtIn(obj.height)}` },
+      ]} />
 
       {/* Column size */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {lbl('Column')}
-        {COL_SIZES_IN.map(s => (
-          <button key={s} onClick={() => changeColSize(s)} style={btnStyle(colSizeIn === s)}>{s}"</button>
-        ))}
-      </div>
+      <Labeled label="Column">
+        <Seg mono aria="Column size" value={colSizeIn} onChange={changeColSize}
+          options={COL_SIZES_IN.map(s => ({ value: s, label: `${s}"` }))} />
+      </Labeled>
 
       {/* Show/hide grid lines */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {lbl('Grid')}
-        <button onClick={() => commitObjectUpdate(obj.id, { showGrid: !showGrid })}
-          style={btnStyle(showGrid)}>
-          {showGrid ? '* Visible' : 'o Hidden'}
-        </button>
-      </div>
+      <ToggleRow label={<span style={{ color: C.text, fontSize: 13 }}>Grid <span style={{ color: C.muted, fontSize: 12 }}>{showGrid ? 'Visible' : 'Hidden'}</span></span>}
+        aria="Grid lines" on={showGrid} onClick={() => commitObjectUpdate(obj.id, { showGrid: !showGrid })} />
 
       {/* Wall-attached toggle (Fix 3) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {lbl('Walls')}
-        <button onClick={() => commitObjectUpdate(obj.id, { wallAttached: true })}
-          style={btnStyle(wallAttached)}>Attached</button>
-        <button onClick={() => commitObjectUpdate(obj.id, { wallAttached: false })}
-          style={btnStyle(!wallAttached)}>Free</button>
-      </div>
+      <Labeled label="Walls">
+        <Seg aria="Walls" value={wallAttached} onChange={v => commitObjectUpdate(obj.id, { wallAttached: v })}
+          options={[{ value: true, label: 'Attached' }, { value: false, label: 'Free' }]} />
+      </Labeled>
       {!wallAttached && (
-        <div style={{ padding: '4px 6px', borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border)', fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>
-          Free-standing -- columns do not connect to walls
-        </div>
+        <Hint>Free-standing -- columns do not connect to walls</Hint>
       )}
+
+      <div style={{ height: 1, background: C.divider, margin: '4px 0' }} />
 
       {/* X spacing */}
       <SpacingRow label="Column (X)" arr={spacingX} axis="x" />
@@ -168,4 +147,3 @@ export function ColumnGridPanel({ obj }) {
     </div>
   )
 }
-

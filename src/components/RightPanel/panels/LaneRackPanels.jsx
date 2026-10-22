@@ -3,6 +3,64 @@ import { useShallow } from 'zustand/react/shallow'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getObjectBounds } from '../../../utils/canvas'
 import { getRackCapacity } from '../../../utils/capacity'
+import { C, fieldBox, Grid2, Seg, Totals, SecLabel, Hint, Note, Row } from '../../../studio/cardParts'
+
+/* ── Studio card parts shared by the lane racks (presentation only; every panel keeps its own recalc) ──
+   Each panel returns a column of card parts; PropertiesPanel wraps it in the card block (padding 12px 16px). */
+const col = { display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }
+
+/* a caption over a control group (a div, not a <label>: a label would forward its clicks to the first button) */
+const Labeled = ({ label, children }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}><SecLabel>{label}</SecLabel>{children}</div>
+)
+
+/** "Mode  FIFO — …" read-out line. */
+const ModeLine = ({ children }) => (
+  <Row label={<SecLabel>Mode</SecLabel>}><span style={{ color: C.accent, fontSize: 12, textAlign: 'right' }}>{children}</span></Row>
+)
+
+/** A whole-number field written on blur / Enter (uncontrolled, re-keyed on the value as before). */
+const CountInput = ({ label, val, inputKey, onCommit, hint, aria }) => (
+  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+    <SecLabel>{label}</SecLabel>
+    <input type="text" className="st-field" aria-label={aria} defaultValue={val} key={inputKey}
+      onFocus={e => e.target.select()}
+      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+      onBlur={e => { const v = parseInt(e.target.value); if (v > 0) onCommit(v); else e.target.value = val }}
+      style={fieldBox()} />
+    {hint != null && <Hint>{hint}</Hint>}
+  </label>
+)
+
+const PALLET_SIZES = [{w:48,d:48},{w:40,d:48},{w:48,d:40}]
+
+/** Lanes + Deep fields, Upright, Pallet size — the body every lane rack shares. */
+function LaneControls({ obj, lanes, palletDeep, palletWIn, palletDIn, upIn, recalc, deepUnit }) {
+  return (
+    <>
+      {/* Lanes + Deep — input boxes, select on focus */}
+      <Grid2>
+        <CountInput label="Lanes" val={lanes} inputKey={`Lanes-${obj.id}-${lanes}`} hint={`${lanes+1} uprights`}
+          onCommit={v => recalc(v, palletDeep, palletWIn, palletDIn, upIn)} />
+        <CountInput label="Deep" val={palletDeep} inputKey={`Deep-${obj.id}-${palletDeep}`} hint={`${lanes*palletDeep} ${deepUnit}`}
+          onCommit={v => recalc(lanes, v, palletWIn, palletDIn, upIn)} />
+      </Grid2>
+
+      {/* Upright width */}
+      <Labeled label="Upright">
+        <Seg mono aria="Upright width" value={upIn} onChange={n => recalc(lanes, palletDeep, palletWIn, palletDIn, n)}
+          options={[3,4].map(n => ({ value: n, label: `${n}"` }))} />
+      </Labeled>
+
+      {/* Pallet size */}
+      <Labeled label="Pallet size (in)">
+        <Seg mono aria="Pallet size"
+          options={PALLET_SIZES.map(p => ({ value: `${p.w}x${p.d}`, label: `${p.w}x${p.d}"`, on: palletWIn===p.w&&palletDIn===p.d,
+            onClick: () => recalc(lanes, palletDeep, p.w, p.d, upIn) }))} />
+      </Labeled>
+    </>
+  )
+}
 
 // ── Drive-In Panel ───────────────────────────────────────────────────────────
 export function DriveInPanel({ obj }) {
@@ -28,76 +86,15 @@ export function DriveInPanel({ obj }) {
     }))
   }
 
-  const btnStyle = (active) => ({
-    padding: '3px 8px', borderRadius: 4, cursor: 'pointer',
-    fontSize: 9, fontFamily: 'var(--font-mono)',
-    background: active ? 'var(--accent-solid)' : 'var(--surface3)',
-    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-    color: active ? 'var(--accent-fg)' : 'var(--text2)',
-  })
-
-  const lbl = (s) => <span style={{ fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)', minWidth:50 }}>{s}</span>
-
   return (
-    <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:8 }}>
-
+    <div style={col}>
       {/* Status */}
-      <div style={{ padding:'6px 8px', borderRadius:5, background:'var(--green-dim)', border:'1px solid var(--green-bdr)', fontFamily:'var(--font-mono)', fontSize:9 }}>
-        <div style={{ display:'flex', justifyContent:'space-between' }}>
-          <span style={{color:'var(--text3)'}}>Capacity</span>
-          <span style={{color:'var(--green)', fontWeight:700, fontSize:11}}>{lanes * palletDeep} PAL</span>
-        </div>
-        <div style={{ display:'flex', justifyContent:'space-between', marginTop:2 }}>
-          <span style={{color:'var(--text3)'}}>Footprint</span>
-          <span style={{color:'var(--text)'}}>{Math.round(obj.width/gridSize*10)/10}' x {Math.round(obj.height/gridSize*10)/10}'</span>
-        </div>
-      </div>
-
-      {/* Lanes + Deep — input boxes, select on focus */}
-      {[
-        { label: 'Lanes', val: lanes,      onCommit: v => recalc(v, palletDeep, palletWIn, palletDIn, upIn) },
-        { label: 'Deep',  val: palletDeep, onCommit: v => recalc(lanes, v, palletWIn, palletDIn, upIn) },
-      ].map(({ label, val, onCommit }) => (
-        <div key={label} style={{ display:'flex', alignItems:'center', gap:8 }}>
-          {lbl(label)}
-          <input type="text" defaultValue={val} key={`${label}-${obj.id}-${val}`}
-            onFocus={e => e.target.select()}
-            onBlur={e => { const v=parseInt(e.target.value); if(v>0) onCommit(v); else e.target.value=val }}
-            onKeyDown={e => { if(e.key==='Enter') e.target.blur() }}
-            style={{
-              width:60, padding:'3px 6px', borderRadius:4, fontSize:11,
-              fontFamily:'var(--font-mono)', textAlign:'right',
-              background:'var(--surface3)', border:'1px solid var(--border)',
-              color:'var(--text)', outline:'none',
-            }}/>
-          <span style={{fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)'}}>
-            {label==='Lanes' ? `${val+1} uprights` : `${lanes*val} pal total`}
-          </span>
-        </div>
-      ))}
-
-      {/* Upright width */}
-      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-        {lbl('Upright')}
-        {[3,4].map(n => (
-          <button key={n} onClick={() => recalc(lanes, palletDeep, palletWIn, palletDIn, n)}
-            style={btnStyle(upIn===n)}>{n}"</button>
-        ))}
-      </div>
-
-      {/* Pallet size */}
-      <div>
-        <div style={{ fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.06em' }}>Pallet size (in)</div>
-        <div style={{ display:'flex', gap:4 }}>
-          {[{w:48,d:48},{w:40,d:48},{w:48,d:40}].map(p => (
-            <button key={`${p.w}x${p.d}`}
-              onClick={() => recalc(lanes, palletDeep, p.w, p.d, upIn)}
-              style={btnStyle(palletWIn===p.w&&palletDIn===p.d)}>
-              {p.w}x{p.d}"
-            </button>
-          ))}
-        </div>
-      </div>
+      <Totals items={[
+        { label: 'Capacity', value: `${lanes * palletDeep} PAL`, accent: true },
+        { label: 'Footprint', value: `${Math.round(obj.width/gridSize*10)/10}' x ${Math.round(obj.height/gridSize*10)/10}'` },
+      ]} />
+      <LaneControls obj={obj} lanes={lanes} palletDeep={palletDeep} palletWIn={palletWIn} palletDIn={palletDIn} upIn={upIn}
+        recalc={recalc} deepUnit="pal total" />
     </div>
   )
 }
@@ -121,37 +118,12 @@ export function DriveThroughPanel({ obj }) {
     commitObjectUpdate(obj.id, withAnchoredPosition(obj, { lanes: newLanes, palletDeep: newDeep, palletWIn: newPWIn, palletDIn: newPDIn, uprightWidth: newUpIn, width: newW, height: newH }))
   }
 
-  const btnStyle = (active) => ({ padding:'3px 8px', borderRadius:4, cursor:'pointer', fontSize:9, fontFamily:'var(--font-mono)', background: active? 'var(--accent-solid)':'var(--surface3)', border:`1px solid ${active?'var(--accent)':'var(--border)'}`, color: active?'var(--accent-fg)':'var(--text2)' })
-  const lbl = (s) => <span style={{ fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)', minWidth:50 }}>{s}</span>
-
   return (
-    <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:8 }}>
-      <div style={{ padding:'6px 8px', borderRadius:5, background:'var(--green-dim)', border:'1px solid var(--green-bdr)', fontFamily:'var(--font-mono)', fontSize:9 }}>
-        <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{color:'var(--text3)'}}>Capacity</span><span style={{color:'var(--green)', fontWeight:700, fontSize:11}}>{lanes*palletDeep} PAL</span></div>
-        <div style={{ display:'flex', justifyContent:'space-between', marginTop:2 }}><span style={{color:'var(--text3)'}}>Mode</span><span style={{color:'var(--accent)'}}>FIFO — load back, pick front</span></div>
-      </div>
-      {[{label:'Lanes',val:lanes,onCommit:v=>recalc(v,palletDeep,palletWIn,palletDIn,upIn)},{label:'Deep',val:palletDeep,onCommit:v=>recalc(lanes,v,palletWIn,palletDIn,upIn)}].map(({label,val,onCommit})=>(
-        <div key={label} style={{display:'flex',alignItems:'center',gap:8}}>
-          {lbl(label)}
-          <input type="text" defaultValue={val} key={`${label}-${obj.id}-${val}`}
-            onFocus={e=>e.target.select()} onKeyDown={e=>{if(e.key==='Enter')e.target.blur()}}
-            onBlur={e=>{const v=parseInt(e.target.value);if(v>0)onCommit(v);else e.target.value=val}}
-            style={{width:60,padding:'3px 6px',borderRadius:4,fontSize:11,fontFamily:'var(--font-mono)',textAlign:'right',background:'var(--surface3)',border:'1px solid var(--border)',color:'var(--text)',outline:'none'}}/>
-          <span style={{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--text3)'}}>{label==='Lanes'?`${val+1} uprights`:`${lanes*val} pal`}</span>
-        </div>
-      ))}
-      <div style={{display:'flex',alignItems:'center',gap:6}}>
-        {lbl('Upright')}
-        {[3,4].map(n=><button key={n} onClick={()=>recalc(lanes,palletDeep,palletWIn,palletDIn,n)} style={btnStyle(upIn===n)}>{n}"</button>)}
-      </div>
-      <div>
-        <div style={{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--text3)',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.06em'}}>Pallet size (in)</div>
-        <div style={{display:'flex',gap:4}}>
-          {[{w:48,d:48},{w:40,d:48},{w:48,d:40}].map(p=>(
-            <button key={`${p.w}x${p.d}`} onClick={()=>recalc(lanes,palletDeep,p.w,p.d,upIn)} style={btnStyle(palletWIn===p.w&&palletDIn===p.d)}>{p.w}x{p.d}"</button>
-          ))}
-        </div>
-      </div>
+    <div style={col}>
+      <Totals items={[{ label: 'Capacity', value: `${lanes*palletDeep} PAL`, accent: true }]} />
+      <ModeLine>FIFO — load back, pick front</ModeLine>
+      <LaneControls obj={obj} lanes={lanes} palletDeep={palletDeep} palletWIn={palletWIn} palletDIn={palletDIn} upIn={upIn}
+        recalc={recalc} deepUnit="pal" />
     </div>
   )
 }
@@ -175,38 +147,13 @@ export function PushbackPanel({ obj }) {
     commitObjectUpdate(obj.id, withAnchoredPosition(obj, { lanes: newLanes, palletDeep: newDeep, palletWIn: newPWIn, palletDIn: newPDIn, uprightWidth: newUpIn, width: newW, height: newH }))
   }
 
-  const btnStyle = (active) => ({ padding:'3px 8px', borderRadius:4, cursor:'pointer', fontSize:9, fontFamily:'var(--font-mono)', background: active? 'var(--accent-solid)':'var(--surface3)', border:`1px solid ${active?'var(--accent)':'var(--border)'}`, color: active?'var(--accent-fg)':'var(--text2)' })
-  const lbl = (s) => <span style={{ fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)', minWidth:50 }}>{s}</span>
-
   return (
-    <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:8 }}>
-      <div style={{ padding:'6px 8px', borderRadius:5, background:'var(--green-dim)', border:'1px solid var(--green-bdr)', fontFamily:'var(--font-mono)', fontSize:9 }}>
-        <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{color:'var(--text3)'}}>Capacity</span><span style={{color:'var(--green)', fontWeight:700, fontSize:11}}>{lanes*palletDeep} PAL</span></div>
-        <div style={{ display:'flex', justifyContent:'space-between', marginTop:2 }}><span style={{color:'var(--text3)'}}>Mode</span><span style={{color:'var(--accent)'}}>LIFO — carts on inclined rails</span></div>
-        {palletDeep > 5 && <div style={{color:'var(--color-text-danger,var(--red))',fontSize:9,marginTop:2}}>⚠ Pushback typically max 5-deep</div>}
-      </div>
-      {[{label:'Lanes',val:lanes,onCommit:v=>recalc(v,palletDeep,palletWIn,palletDIn,upIn)},{label:'Deep',val:palletDeep,onCommit:v=>recalc(lanes,v,palletWIn,palletDIn,upIn)}].map(({label,val,onCommit})=>(
-        <div key={label} style={{display:'flex',alignItems:'center',gap:8}}>
-          {lbl(label)}
-          <input type="text" defaultValue={val} key={`${label}-${obj.id}-${val}`}
-            onFocus={e=>e.target.select()} onKeyDown={e=>{if(e.key==='Enter')e.target.blur()}}
-            onBlur={e=>{const v=parseInt(e.target.value);if(v>0)onCommit(v);else e.target.value=val}}
-            style={{width:60,padding:'3px 6px',borderRadius:4,fontSize:11,fontFamily:'var(--font-mono)',textAlign:'right',background:'var(--surface3)',border:'1px solid var(--border)',color:'var(--text)',outline:'none'}}/>
-          <span style={{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--text3)'}}>{label==='Lanes'?`${val+1} uprights`:`${lanes*val} pal`}</span>
-        </div>
-      ))}
-      <div style={{display:'flex',alignItems:'center',gap:6}}>
-        {lbl('Upright')}
-        {[3,4].map(n=><button key={n} onClick={()=>recalc(lanes,palletDeep,palletWIn,palletDIn,n)} style={btnStyle(upIn===n)}>{n}"</button>)}
-      </div>
-      <div>
-        <div style={{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--text3)',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.06em'}}>Pallet size (in)</div>
-        <div style={{display:'flex',gap:4}}>
-          {[{w:48,d:48},{w:40,d:48},{w:48,d:40}].map(p=>(
-            <button key={`${p.w}x${p.d}`} onClick={()=>recalc(lanes,palletDeep,p.w,p.d,upIn)} style={btnStyle(palletWIn===p.w&&palletDIn===p.d)}>{p.w}x{p.d}"</button>
-          ))}
-        </div>
-      </div>
+    <div style={col}>
+      <Totals items={[{ label: 'Capacity', value: `${lanes*palletDeep} PAL`, accent: true }]} />
+      <ModeLine>LIFO — carts on inclined rails</ModeLine>
+      {palletDeep > 5 && <Note level="warning">⚠ Pushback typically max 5-deep</Note>}
+      <LaneControls obj={obj} lanes={lanes} palletDeep={palletDeep} palletWIn={palletWIn} palletDIn={palletDIn} upIn={upIn}
+        recalc={recalc} deepUnit="pal" />
     </div>
   )
 }
@@ -218,44 +165,21 @@ export function PalletFlowPanel({ obj }) {
   const palletDeep = obj.palletDeep || 2
   const palletDIn  = obj.palletDIn  || 48
 
-  const btnStyle = (active) => ({
-    padding: '3px 8px', borderRadius: 4, cursor: 'pointer',
-    fontSize: 9, fontFamily: 'var(--font-mono)',
-    background: active ? 'var(--accent-solid)' : 'var(--surface3)',
-    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-    color: active ? 'var(--accent-fg)' : 'var(--text2)',
-  })
-
-  const lbl = (s) => <span style={{ fontSize:9, fontFamily:'var(--font-mono)', color:'var(--text3)', minWidth:70 }}>{s}</span>
-
   return (
-    <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:8 }}>
-      <div style={{ padding:'6px 8px', borderRadius:5, background:'var(--surface2)', border:'1px solid var(--border)', fontFamily:'var(--font-mono)', fontSize:9 }}>
-        <div style={{ display:'flex', justifyContent:'space-between' }}>
-          <span style={{color:'var(--text3)'}}>Mode</span>
-          <span style={{color:'var(--accent)'}}>FIFO — gravity fed rollers</span>
-        </div>
-      </div>
+    <div style={col}>
+      <ModeLine>FIFO — gravity fed rollers</ModeLine>
 
-      {/* Pallet deep */}
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-        {lbl('Pallet deep')}
-        <input type="text" defaultValue={palletDeep} key={`pd-${obj.id}-${palletDeep}`}
-          onFocus={e => e.target.select()}
-          onKeyDown={e => { if(e.key==='Enter') e.target.blur() }}
-          onBlur={e => { const v=parseInt(e.target.value); if(v>0) commitObjectUpdate(obj.id,{palletDeep:v}); else e.target.value=palletDeep }}
-          style={{width:60,padding:'3px 6px',borderRadius:4,fontSize:11,fontFamily:'var(--font-mono)',textAlign:'right',background:'var(--surface3)',border:'1px solid var(--border)',color:'var(--text)',outline:'none'}}/>
-        <span style={{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--text3)'}}>positions</span>
-      </div>
+      <Grid2>
+        {/* Pallet deep */}
+        <CountInput label="Pallet deep" val={palletDeep} inputKey={`pd-${obj.id}-${palletDeep}`} hint="positions"
+          onCommit={v => commitObjectUpdate(obj.id,{palletDeep:v})} />
 
-      {/* Pallet depth */}
-      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-        {lbl('Pallet depth')}
-        {[40,48].map(d => (
-          <button key={d} onClick={() => commitObjectUpdate(obj.id,{palletDIn:d})}
-            style={btnStyle(palletDIn===d)}>{d}"</button>
-        ))}
-      </div>
+        {/* Pallet depth */}
+        <Labeled label="Pallet depth">
+          <Seg mono aria="Pallet depth" value={palletDIn} onChange={d => commitObjectUpdate(obj.id,{palletDIn:d})}
+            options={[40,48].map(d => ({ value: d, label: `${d}"` }))} />
+        </Labeled>
+      </Grid2>
     </div>
   )
 }

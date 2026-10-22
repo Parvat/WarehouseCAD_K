@@ -66,3 +66,15 @@ export function usableCapacity(objects, { profile, gridSize = GS, rules = DEFAUL
   const narrowLost = narrowAisleBlocks(objects, { profile: prof, gridSize, already: blockedKeys(res), elevations }).filter(counts).reduce((t, c) => t + c.positionsLost, 0)
   return { gross, usable: gross - inRackLost - pickZoneLost - narrowLost, inRackLost, pickZoneLost, narrowLost }
 }
+
+/** One rack's positions lost to the same three causes as usableCapacity — in-rack columns, blocked pick zones,
+ *  narrow aisles — each counted bay once (the card's "N usable" for the selected rack). */
+export function rackPositionsLost(rackId, objects, { profile, gridSize = GS, check, ledger, elevations = null } = {}) {
+  const L = ledger || bayLedger(objects, gridSize, elevations)
+  const res = check !== undefined ? check : runColumnCheck(objects, { profile, gridSize, elevations })
+  const mine = (c) => { if (c.rackId !== rackId) return false; const e = L.racks.get(c.rackId); return !e || c.bayIndex == null || e.counted[c.bayIndex] !== false }
+  const sum = (list) => list.filter(mine).reduce((t, c) => t + (c.positionsLost || 0), 0)
+  const prof = profile || MHE_PROFILES.reach
+  return (res ? sum(res.rackConflicts || []) + sum(res.pickBlocks || []) : 0)
+    + sum(narrowAisleBlocks(objects, { profile: prof, gridSize, already: blockedKeys(res), elevations }))
+}

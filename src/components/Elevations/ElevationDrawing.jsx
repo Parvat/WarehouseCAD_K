@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Maximize2, X } from 'lucide-react'
+import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9)
 import { elevationLayout, ftInDash, parseFtIn } from '../../utils/elevationDrawing'
 import { setPane, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, paneFontPx } from '../../utils/elevEditor'
 
@@ -37,7 +37,7 @@ export function ElevationDrawing(props) {
           <div role="group" aria-label="Drawing detail" style={{ display: 'flex', gap: 2, padding: 2, marginLeft: 12, borderRadius: 2, border: '1px solid var(--border)', background: 'var(--surface2)' }}>
             {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={props.detail === k} onClick={() => setPane({ detail: k })} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 2, border: 'none', cursor: 'pointer', background: props.detail === k ? 'var(--accent-solid, #0B101D)' : 'transparent', color: props.detail === k ? 'var(--accent-fg, #fff)' : 'var(--text2)' }}>{label}</button>)}
           </div>
-          <button type="button" aria-label="Close full screen" onClick={() => setFull(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><X size={16} /></button>
+          <button type="button" aria-label="Close full screen" onClick={() => setFull(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><Icon name="Close" color="currentColor" /></button>
         </div>
         <div style={{ flex: 1, minHeight: 0 }}><DrawingCore {...props} fill height={null} controls paper={false} fitSignal={0} /></div>
       </div>, host)}
@@ -212,7 +212,7 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
       {/* Fit, and full screen */}
       {controls && <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 2 }}>
         <button type="button" onClick={fit} title="Fit (double-click empty space)" style={{ padding: '3px 9px', fontSize: 11, borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer' }}>Fit</button>
-        {onFull && <button type="button" aria-label="Full screen" onClick={onFull} title="Full screen (Esc closes)" style={{ padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', display: 'flex' }}><Maximize2 size={13} /></button>}
+        {onFull && <button type="button" aria-label="Full screen" onClick={onFull} title="Full screen (Esc closes)" style={{ padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', display: 'flex' }}><Icon name="Full screen" color="currentColor" /></button>}
       </div>}
       {editing && (
         <input autoFocus aria-label="Dimension" value={editing.text} onChange={e => setEditing({ ...editing, text: e.target.value })}

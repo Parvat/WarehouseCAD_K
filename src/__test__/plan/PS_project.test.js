@@ -508,7 +508,7 @@ describe('PS — the project', () => {
     expect(store.getState().objects.find(o => o.id === 'p').depthIn).toBe(60)
     // ONE action: Properties (several racks, one rack), the Row group's replay and the button all go through it
     expect(src('components/RightPanel/PropertiesPanel.jsx')).toMatch(/const setDepth = \(v\) => \{ setRackDepths\(useCanvasStore, racks\.map\(r => r\.id\), v\) \}/)
-    expect(src('components/RightPanel/panels/RackRowPanelCore.jsx')).toMatch(/onCommit=\{v => \{ setRackDepths\(useCanvasStore, \[obj\.id\], v\) \}\}/)
+    expect(src('studio/cards.jsx')).toMatch(/setRackDepths\(useCanvasStore, \[obj\.id\], v\)/)   // Studio C1: the rack's Depth field
     expect(src('utils/elevTab.js')).toMatch(/export const deepenRows = \(store, ids, depthIn\) => setRackDepths\(store, ids, depthIn, \{ onlyShallower: true \}\)/)
     expect(src('utils/rowGroup.js')).toMatch(/rackDepthAt\(o, edit\.depthIn, after, gridSize\)/)
     expect(/rackDepthUpdate\(/.test(src('components/RightPanel/PropertiesPanel.jsx') + src('components/RightPanel/panels/RackRowPanelCore.jsx') + src('utils/elevTab.js') + src('utils/rowGroup.js'))).toBe(false)

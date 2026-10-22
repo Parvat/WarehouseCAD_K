@@ -809,7 +809,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(/elevSplit|SPLIT/.test(src('store/useCanvasStore.js') + src('utils/project.js'))).toBe(false)   // never in the layout
     // 2A. the list
     const listUi = tab.slice(tab.indexOf('function List('), tab.indexOf('function Editor('))
-    expect(['<Head title="Elevations in this layout"', 'role="list" aria-label="Elevation list"', 'bays</span>', '>DEFAULT</span>', 'startEdit(store, t.id)', '<MoreHorizontal ', 'Apply to {rowsSelected} selected row', ' New elevation</button>', 'Select rows on the plan, pick an elevation above, then apply.'].map(k => listUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
+    expect(['<Head title="Elevations in this layout"', 'role="list" aria-label="Elevation list"', 'bays</span>', '>DEFAULT</span>', 'startEdit(store, t.id)', '<Icon name="More" ', 'Apply to {rowsSelected} selected row', ' New elevation</button>', 'Select rows on the plan, pick an elevation above, then apply.'].map(k => listUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
     expect(listUi).toMatch(/onClick=\{\(\) => useElevTab\.setState\(\{ activeId: t\.id \}\)\}/)                  // a click picks it; Apply assigns
     // 2B. the editor: header, name, the ceiling and pallet boxes (their "+ New" fields inside), the note, beam face; the footer
     const editUi = tab.slice(tab.indexOf('function Editor('))
@@ -847,7 +847,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(dr).toMatch(/if \(e\.key === 'Escape'\) \{ e\.stopPropagation\(\); setFull\(false\) \}/)
     // the legend clear of "← Hub"; Properties keeps its one line
     expect(src('canvas2/ElevationsCanvas.jsx')).toMatch(/position: 'absolute', left: 104, bottom: 12/)
-    expect(src('components/RightPanel/panels/RackRowPanelCore.jsx')).toMatch(/<ElevationLine \/>/)
+    expect(src('studio/cards.jsx')).toMatch(/<ElevationChip \/>/)   // Studio C1: the selection's elevation as the card's chip
   })
 
   it('EV-crisp: the drawing sits on the device-pixel grid (a fractional panel offset snapped out), straight lines and rects with crisp edges, labels with geometric precision and a touch bolder (500)', () => {

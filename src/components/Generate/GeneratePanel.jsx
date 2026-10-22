@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRackingSettings } from '../../utils/fillTool'
-import { Sparkles, X, Loader2 } from 'lucide-react'
+import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9)
 import { generateAndPlaceBatched, regenerateRacking } from '../../generate/traceGenerate'
 import { regenBuilding, regenSummary } from '../../generate/regenerate'
 import { useCanvasStore } from '../../store/useCanvasStore'
@@ -172,7 +172,7 @@ export function GeneratePanel({ embedded = false, onClose } = {}) {
         borderRadius: R, cursor: 'pointer', fontSize: 12, fontWeight: 600,
         fontFamily: 'var(--font-ui)', boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
       }}>
-        <Sparkles size={14} /> Generate
+        <Icon name="Generate" color="currentColor" /> Generate
       </button>
     )
   }
@@ -187,7 +187,7 @@ export function GeneratePanel({ embedded = false, onClose } = {}) {
         <button aria-label="Close" onClick={() => (embedded ? onClose?.() : setOpen(false))} style={{
           background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)',
           display: 'flex', padding: 0,
-        }}><X size={14} /></button>
+        }}><Icon name="Close" color="currentColor" /></button>
       </div>
 
       <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -276,8 +276,8 @@ export function GeneratePanel({ embedded = false, onClose } = {}) {
           fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font-ui)',
         }}>
           {generating
-            ? <><Loader2 size={14} className="animate-spin" /> Generating… {Math.round(progress * 100)}%</>
-            : <><Sparkles size={14} /> Generate layout</>}
+            ? <>Generating… {Math.round(progress * 100)}%</>
+            : <><Icon name="Generate" color="currentColor" /> Generate layout</>}
         </button>
 
         {ask && (

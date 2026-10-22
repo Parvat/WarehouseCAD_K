@@ -50,7 +50,11 @@ the mockup .dc.html files win over STUDIO.md; never invent a value — ask.** St
   design/studio/Icons.dc.html — never hand-drawn, never Lucide. `<Icon name kind active />` (src/studio/Icon.jsx).
   Re-run the script whenever the icon file changes.
 - Scrollbars are set once in `src/studio/studio.css`. The layout menu (project name ▾) is `TopBar.jsx` `LayoutMenu`.
-- Later steps restyle the flyout rows, the card contents, the selection bar, mode bars, notices and modals — the
+- Step 2a (the card): every card section is built from `src/studio/cardParts.jsx` (Head, Sec, Field, NumInput /
+  TextInput / SelectField, Grid2, Toggle, Seg, Btn, IconBtn, Totals, Tag, CountChip, Note, Fold). The states drawn in
+  the mockups are `src/studio/cards.jsx` (nothing selected C7, rack C1, zone C6, Check layout C5 — its own card
+  state); everything else sits in Properties' one collapsed **More** fold. No light tokens and no Lucide in the card.
+- Later steps restyle the flyout rows, the selection bar, mode bars, notices and modals — the
   sections below still describe the pre-Studio panels those steps replace.
 
 ---

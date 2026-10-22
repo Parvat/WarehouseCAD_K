@@ -59,7 +59,7 @@ describe('ST — the frame', () => {
   it('ST-hover: island buttons hover the inset fill, an active one #355A47 — not the mint primary, the selected tab, the card content or the pen options', () => {
     const css = read('studio/studio.css')
     // the idle rule leaves pressed buttons out — its :not() chain outranks the active rule otherwise
-    expect(css).toMatch(/\.st-island button:not\(:disabled\):not\(\.st-primary\):not\(\[aria-selected="true"\]\):not\(\[aria-pressed="true"\]\):not\(\[data-card-body\] \*\):hover,\n\.st-pill button:not\(:disabled\):not\(\[aria-pressed="true"\]\):not\(\[data-pen-options\] \*\):hover \{ background:#2A2F2C !important; \}/)
+    expect(css).toMatch(/\.st-island button:not\(:disabled\):not\(\.st-primary\):not\(\[aria-selected="true"\]\):not\(\[aria-pressed="true"\]\):not\(\[data-card-body\] \*\):not\(\[data-card-dark\] \*\):hover,\n\.st-pill button:not\(:disabled\):not\(\[aria-pressed="true"\]\):not\(\[data-pen-options\] \*\):hover \{ background:#2A2F2C !important; \}/)
     expect(css).toMatch(/\[aria-pressed="true"\]:not\(:disabled\):not\(\[data-pen-options\] \*\):hover \{ background:#355A47 !important; \}/)
     expect(read('studio/StudioFrame.jsx')).toMatch(/className="st-primary" title="Export PDF"/)
   })

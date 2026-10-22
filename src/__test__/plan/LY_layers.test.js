@@ -294,8 +294,8 @@ describe('LY — hand-placed objects and the panel', () => {
 
   it('LY-panel: the Layers panel lists the six with an eye and a padlock each, both through setLayer; no add, rename or delete (custom layers later)', () => {
     const src = readFileSync('src/components/RightPanel/LayerPanel.jsx', 'utf8')
-    expect(src).toMatch(/aria-label=\{`\$\{hidden \? 'Show' : 'Hide'\} \$\{layer\.name\} layer`\}/)
-    expect(src).toMatch(/aria-label=\{`\$\{locked \? 'Unlock' : 'Lock'\} \$\{layer\.name\} layer`\}/)
+    expect(src).toMatch(/(?:aria-)?label=\{`\$\{hidden \? 'Show' : 'Hide'\} \$\{layer\.name\} layer`\}/)
+    expect(src).toMatch(/(?:aria-)?label=\{`\$\{locked \? 'Unlock' : 'Lock'\} \$\{layer\.name\} layer`\}/)
     expect(src).toMatch(/setLayer\(useCanvasStore, layer\.id, \{ visible: hidden \}\)/)
     expect(src).toMatch(/setLayer\(useCanvasStore, layer\.id, \{ locked: !locked \}\)/)
     expect(src).not.toMatch(/addLayer|deleteLayer|rename/)

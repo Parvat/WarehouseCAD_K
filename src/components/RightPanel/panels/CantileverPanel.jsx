@@ -2,11 +2,17 @@ import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getObjectBounds } from '../../../utils/canvas'
+import { C, MONO, Grid2, Seg, Btn, Totals, SecLabel } from '../../../studio/cardParts'
 
 // ── Cantilever Properties Panel ───────────────────────────────────────────────
 const CANT_ARM_LENGTHS = [36, 48, 52, 60, 72]
 const TOWER_WIDTHS     = [8, 10]
 const TSPACE_IN        = 48
+
+/* a caption over a control group (a div, not a <label>: a label would forward its clicks to the first button) */
+const Labeled = ({ label, children }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}><SecLabel>{label}</SecLabel>{children}</div>
+)
 
 export function CantileverPanel({ obj }) {
   const { updateObject, commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize })))
@@ -55,48 +61,35 @@ export function CantileverPanel({ obj }) {
     commitObjectUpdate(obj.id, withAnchoredPosition(obj, { doubleSided: val, height: newH }))
   }
 
-  const label = (s) => (
-    <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', minWidth: 48 }}>{s}</span>
-  )
+  const canRemove = towers.length > 2
 
+  /* Studio card: a column of card parts; PropertiesPanel wraps it in the card block (padding 12px 16px). */
   return (
-    <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
 
       {/* Status */}
-      <div style={{ padding: '6px 8px', borderRadius: 5, background: 'var(--surface2)', border: '1px solid var(--border)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span style={{ color: 'var(--text3)' }}>Total length</span>
-          <span style={{ color: 'var(--text)', fontWeight: 700 }}>{fmtIn(totalIn)}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-          <span style={{ color: 'var(--text3)' }}>Towers</span>
-          <span style={{ color: 'var(--text)' }}>{towers.length}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-          <span style={{ color: 'var(--text3)' }}>Type</span>
-          <span style={{ color: 'var(--text)' }}>{doubleSided ? 'Double-sided' : 'Single-sided'}</span>
-        </div>
-      </div>
+      <Totals items={[
+        { label: 'Total length', value: fmtIn(totalIn) },
+        { label: 'Towers', value: towers.length },
+        { label: 'Type', value: doubleSided ? 'Double-sided' : 'Single-sided' },
+      ]} />
 
       {/* Tower list */}
-      <div>
-        <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          Towers ({towers.length})
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+        <SecLabel>Towers ({towers.length})</SecLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {towers.map((armIn, i) => {
             const isActive = activeTower === i
             return (
               <div key={i} onClick={() => updateObject(obj.id, { activeTowerIdx: isActive ? null : i })}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '4px 6px', borderRadius: 4, cursor: 'pointer',
-                  background: isActive ? 'var(--accent-solid)' : 'var(--surface2)',
-                  border: `1px solid ${isActive ? 'var(--accent)' : 'var(--border)'}`,
+                  display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
+                  height: 30, padding: '0 10px', borderRadius: 6, cursor: 'pointer',
+                  background: isActive ? C.active : C.inset, fontFamily: MONO, fontSize: 12,
                 }}>
-                <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: isActive ? 'var(--accent-fg)' : 'var(--text3)', minWidth: 20 }}>T{i+1}</span>
-                <span style={{ flex: 1, fontSize: 10, fontFamily: 'var(--font-mono)', color: isActive ? 'var(--accent-fg)' : 'var(--text)' }}>{fmtIn(armIn)} arm</span>
-                <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: isActive ? 'var(--accent-fg)' : 'var(--text3)' }}>{armIn}"</span>
+                <span style={{ color: isActive ? C.accent : C.muted, minWidth: 22 }}>T{i+1}</span>
+                <span style={{ flex: 1, minWidth: 0, color: isActive ? C.accent : C.strong }}>{fmtIn(armIn)} arm</span>
+                <span style={{ color: isActive ? C.accent : C.muted }}>{armIn}"</span>
               </div>
             )
           })}
@@ -105,61 +98,32 @@ export function CantileverPanel({ obj }) {
 
       {/* Active tower arm selector */}
       {activeTower !== null && (
-        <div style={{ padding: '6px 8px', borderRadius: 5, background: 'var(--surface2)', border: '1px solid var(--accent)' }}>
-          <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--accent)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            All arms -- select length
-          </div>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {CANT_ARM_LENGTHS.map(a => (
-              <button key={a} onClick={() => changeTowerArm(activeTower, a)}
-                style={{
-                  flex: 1, padding: '4px 0', borderRadius: 4, cursor: 'pointer',
-                  fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
-                  background: towers[activeTower] === a ? 'var(--accent-solid)' : 'var(--surface3)',
-                  border: `1px solid ${towers[activeTower] === a ? 'var(--accent)' : 'var(--border)'}`,
-                  color: towers[activeTower] === a ? 'var(--accent-fg)' : 'var(--text2)',
-                }}>
-                {a}"
-              </button>
-            ))}
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <SecLabel>All arms -- select length</SecLabel>
+          <Seg mono aria="Arm length" value={towers[activeTower]} onChange={a => changeTowerArm(activeTower, a)}
+            options={CANT_ARM_LENGTHS.map(a => ({ value: a, label: `${a}"` }))} />
         </div>
       )}
 
       {/* Add / Remove tower */}
-      <div style={{ display: 'flex', gap: 4 }}>
-        <button onClick={addTower} style={{ flex: 1, padding: '5px 0', borderRadius: 4, cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600, background: 'var(--green-dim)', border: '1px solid var(--green-bdr)', color: 'var(--green)' }}>
-          + Tower
-        </button>
-        <button onClick={removeTower} disabled={towers.length <= 2}
-          style={{ padding: '5px 10px', borderRadius: 4, cursor: towers.length > 2 ? 'pointer' : 'not-allowed', fontSize: 9, fontFamily: 'var(--font-mono)', background: 'transparent', border: '1px solid var(--border)', color: towers.length > 2 ? 'var(--red)' : 'var(--text3)' }}>
-          - Tower
-        </button>
-      </div>
+      <Grid2>
+        <Btn kind="ghost" onClick={addTower}>+ Tower</Btn>
+        <Btn kind="danger" onClick={removeTower} disabled={!canRemove}
+          style={canRemove ? undefined : { color: C.faint, cursor: 'not-allowed' }}>- Tower</Btn>
+      </Grid2>
 
-      {/* Single / Double sided */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {label('Sides')}
-        {[false, true].map(v => (
-          <button key={String(v)} onClick={() => toggleSide(v)}
-            style={{ flex: 1, padding: '4px 0', borderRadius: 4, cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)', background: doubleSided === v ? 'var(--accent-solid)' : 'var(--surface3)', border: `1px solid ${doubleSided === v ? 'var(--accent)' : 'var(--border)'}`, color: doubleSided === v ? 'var(--accent-fg)' : 'var(--text2)' }}>
-            {v ? 'Double' : 'Single'}
-          </button>
-        ))}
-      </div>
-
-      {/* Tower width */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {label('Tower')}
-        {TOWER_WIDTHS.map(t => (
-          <button key={t} onClick={() => commitObjectUpdate(obj.id, { towerWidthIn: t })}
-            style={{ flex: 1, padding: '4px 0', borderRadius: 4, cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)', background: towerWidthIn === t ? 'var(--accent-solid)' : 'var(--surface3)', border: `1px solid ${towerWidthIn === t ? 'var(--accent)' : 'var(--border)'}`, color: towerWidthIn === t ? 'var(--accent-fg)' : 'var(--text2)' }}>
-            {t}"
-          </button>
-        ))}
-      </div>
+      {/* Single / Double sided · tower width */}
+      <Grid2>
+        <Labeled label="Sides">
+          <Seg aria="Sides" value={doubleSided} onChange={toggleSide}
+            options={[false, true].map(v => ({ value: v, label: v ? 'Double' : 'Single' }))} />
+        </Labeled>
+        <Labeled label="Tower">
+          <Seg mono aria="Tower width" value={towerWidthIn} onChange={t => commitObjectUpdate(obj.id, { towerWidthIn: t })}
+            options={TOWER_WIDTHS.map(t => ({ value: t, label: `${t}"` }))} />
+        </Labeled>
+      </Grid2>
 
     </div>
   )
 }
-

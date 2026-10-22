@@ -9,8 +9,7 @@ import { rebuildAisles } from '../../../utils/aisleRebuild'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getRackCapacity, positionsPerBeam } from '../../../utils/capacity'
 import { useBayLedger } from '../useBayLedger'
-import { Field, Fold } from '../../shared/Fold'
-import { ElevationLine } from '../../Elevations/ElevationLine'
+import { Sec, Field, SelectField, Grid2, Row, Seg, Btn, Note, Hint, SecLabel, fieldBox, C, MONO, LEVEL } from '../../../studio/cardParts'
 import { setRackDepths } from '../../../utils/rackDepthAction'
 import {
   BEAM_PRESETS_IN, parseBeamIn, wallClearAlong, planBayBeamChange,
@@ -80,17 +79,10 @@ export function changeBayUpdate(obj, bayIdx, newBeamIn, gridSize = 40) {
   return withAnchoredPosition(obj, { beams: newBeams, width: newW })
 }
 
-/* Red warning: a rack overlaps another or passes the wall. Never blocks. */
+/* Red warning: a rack overlaps another or passes the wall. Never blocks. (Studio: the error message box.) */
 export function RackWarning({ text }) {
   if (!text) return null
-  return (
-    <div role="alert" style={{
-      padding: '5px 8px', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 9,
-      background: 'var(--red-dim)', border: '1px solid var(--red)', color: 'var(--red)', fontWeight: 600,
-    }}>
-      ! {text}
-    </div>
-  )
+  return <Note level="error" role="alert">{text}</Note>
 }
 
 // ── Max additional bays that fit ──────────────────────────────────────────────
@@ -109,29 +101,19 @@ function maxFitBays(obj, allObjects, gridSize, newBeamIn = 96) {
 function OneSideHint() {
   const one = useCanvasStore(s => oneSidePicked(s))
   if (!one) return null
-  return (
-    <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginTop: 4 }}>
-      One side selected · click between the sides to select both
-    </div>
-  )
+  return <Hint>One side selected · click between the sides to select both</Hint>
 }
 
+/* Bays picked (one rack or several): their count, one beam length for all of them, Delete N bays / Clear — a card
+   block at the top of the card (src/studio/cardParts.jsx). */
 export function MultiBayPanel() {
   const { activeBaySelection, objects, deleteSelectedBays, changeSelectedBaysBeam, clearBaySelection, clearSelection, gridSize } = useCanvasStore(useShallow(s => ({ activeBaySelection: s.activeBaySelection, objects: s.objects, deleteSelectedBays: s.deleteSelectedBays, changeSelectedBaysBeam: s.changeSelectedBaysBeam, clearBaySelection: s.clearBaySelection, clearSelection: s.clearSelection, gridSize: s.gridSize })))
   if (!activeBaySelection || activeBaySelection.length === 0) return null
 
-  /* deleteSelectedBays (the store action) only ever clears
-     activeBaySelection, not selectedIds — the rack ROWS a bay marquee
-     added to selectedIds (so this panel and Properties would show them)
-     stay selected after their bays are gone. With activeBaySelection now
-     empty, canvas2's GroupRotateOverlay gate (selectedObjects.length >= 2
-     && no active bay selection) is satisfied again, so the group-rotate
-     outline/handle reappeared around racks nothing was actually asking to
-     rotate (BUG 31). clearSelection() afterward drops selectedIds too, so
-     a bay delete leaves nothing selected at all — matching "the bays are
-     gone, so is the selection that picked them," not "now select the
-     whole rows instead." Kept as a wrapper here rather than a change to
-     the protected deleteSelectedBays action itself. */
+  /* deleteSelectedBays (the store action) only ever clears activeBaySelection, not selectedIds — the rack ROWS a bay
+     marquee added to selectedIds stay selected after their bays are gone, and canvas2's group-rotate gate would show
+     its outline again (BUG 31). clearSelection() afterward drops selectedIds too, so a bay delete leaves nothing
+     selected. Kept as a wrapper here rather than a change to the protected deleteSelectedBays action itself. */
   // a pair's bays picked on one side go from that side only (utils/baySides.js); otherwise the store's own delete
   const deleteSelectedBaysAndClear = () => { if (deleteBaySelection(useCanvasStore, nanoid)) return; deleteSelectedBays(); clearSelection() }
 
@@ -141,7 +123,6 @@ export function MultiBayPanel() {
   const racksNow = [...new Set(activeBaySelection.map(e => e.objId))].map(id => objects.find(o => o.id === id)).filter(Boolean)
   const nowWarn = issuesText(racksNow.map(o => rackIssues(o, objects, gridSize)), fmtIn)
 
-  // Summarise selected bays
   const rowCount = new Set(activeBaySelection.map(e => e.objId)).size
   const bayCount = activeBaySelection.length
   const beamSizes = [...new Set(activeBaySelection.map(({ objId, bayIdx }) => {
@@ -151,59 +132,28 @@ export function MultiBayPanel() {
   const allSame = beamSizes.length === 1
 
   return (
-    <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {/* Header */}
-      <div style={{
-        padding: '6px 8px', borderRadius: 5,
-        background: 'var(--accent-dim)', border: '1px solid var(--accent-bdr)',
-        fontFamily: 'var(--font-mono)', fontSize: 9,
-      }}>
-        <div style={{ color: 'var(--accent)', fontWeight: 700, marginBottom: 2 }}>
-          {bayCount} bay{bayCount > 1 ? 's' : ''} selected across {rowCount} row{rowCount > 1 ? 's' : ''}
-        </div>
-        <div style={{ color: 'var(--text3)' }}>
-          {allSame ? `All ${fmtIn(beamSizes[0])} beams` : `Mixed: ${beamSizes.map(fmtIn).join(', ')}`}
-        </div>
+    <Sec aria-label="Selected bays">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ color: C.strong }}>{bayCount} bay{bayCount > 1 ? 's' : ''} selected across {rowCount} row{rowCount > 1 ? 's' : ''}</span>
+        <Hint>{allSame ? `All ${fmtIn(beamSizes[0])} beams` : `Mixed: ${beamSizes.map(fmtIn).join(', ')}`}</Hint>
         <OneSideHint />
       </div>
-
       {/* one beam length for every bay picked */}
-      <div>
-        <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          Change all to
-        </div>
+      <Field label="Change all to">
         <BeamSelect value={allSame ? beamSizes[0] : null} aria="Selected bays beam" warnFor={warnFor} onPick={b => changeSelectedBaysBeam(b)} />
-      </div>
+      </Field>
       <RackWarning text={nowWarn} />
-
-      {/* Delete + Clear */}
-      <div style={{ display: 'flex', gap: 4 }}>
-        <button
-          onClick={deleteSelectedBaysAndClear}
-          style={{
-            flex: 1, padding: '5px 0', borderRadius: 4, cursor: 'pointer',
-            fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 600,
-            background: 'var(--red-dim)', border: '1px solid var(--red-bdr)', color: 'var(--red)',
-          }}>
-          Delete {bayCount} bay{bayCount > 1 ? 's' : ''}
-        </button>
-        <button
-          onClick={clearBaySelection}
-          style={{
-            padding: '5px 10px', borderRadius: 4, cursor: 'pointer',
-            fontSize: 9, fontFamily: 'var(--font-mono)',
-            background: 'transparent', border: '1px solid var(--border)', color: 'var(--text3)',
-          }}>
-          Clear
-        </button>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Btn kind="danger" style={{ flex: 1 }} onClick={deleteSelectedBaysAndClear}>Delete {bayCount} bay{bayCount > 1 ? 's' : ''}</Btn>
+        <Btn kind="ghost" onClick={clearBaySelection}>Clear</Btn>
       </div>
-    </div>
+    </Sec>
   )
 }
 
 /* One beam-length dropdown: the common sizes 4'–16' and Custom… (inches or feet, typed). `warnFor(b)` — the red
    warning that length would cause (an overlap, past the wall), shown under it and marked on the option; never a
-   block. Replaces the two button grids (change a bay, add a bay). */
+   block. */
 export function BeamSelect({ value, onPick, warnFor = () => null, aria = 'Beam length' }) {
   const [custom, setCustom] = useState(false)
   const [text, setText] = useState('')
@@ -211,33 +161,35 @@ export function BeamSelect({ value, onPick, warnFor = () => null, aria = 'Beam l
   const preset = BEAM_PRESETS_IN.includes(value)
   const apply = () => { const v = parseBeamIn(text); if (v == null) { setBad(text.trim() !== ''); return } setBad(false); setText(''); setCustom(false); onPick(v) }
   const warn = value != null ? warnFor(value) : null
-  const sel = { flex: 1, minWidth: 0, padding: '4px 6px', borderRadius: 6, fontSize: 11, fontFamily: 'var(--font-mono)', background: 'var(--surface2)', border: `1px solid ${warn ? 'var(--red)' : 'var(--border)'}`, color: 'var(--text)', outline: 'none' }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
-      <select aria-label={aria} value={custom ? 'custom' : preset ? String(value) : value != null ? 'other' : ''} style={sel}
+      <SelectField aria={aria} value={custom ? 'custom' : preset ? String(value) : value != null ? 'other' : ''}
+        style={warn ? { boxShadow: `inset 0 0 0 1px ${C.danger}` } : undefined}
         onChange={e => { const v = e.target.value; if (v === 'custom') { setCustom(true); return } setCustom(false); if (v !== 'other' && v !== '') onPick(Number(v)) }}>
         {!preset && value != null && <option value="other">{fmtFtIn(value)} ({value}")</option>}
+        {value == null && <option value="">—</option>}
         {BEAM_PRESETS_IN.map(b => { const w = warnFor(b); return <option key={b} value={String(b)}>{`${b / 12}' (${b}")${w ? '  ⚠' : ''}`}</option> })}
         <option value="custom">Custom…</option>
-      </select>
+      </SelectField>
       {custom && (
-        <div style={{ display: 'flex', gap: 4 }}>
-          <input autoFocus type="text" value={text} placeholder={'inches or feet — 102, 8\'6"'} aria-label={`Custom ${aria.toLowerCase()}`}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input autoFocus type="text" value={text} placeholder={'inches or feet — 102, 8\'6"'} aria-label={`Custom ${aria.toLowerCase()}`} className="st-field"
             onChange={e => { setText(e.target.value); setBad(false) }} onKeyDown={e => { if (e.key === 'Enter') apply(); if (e.key === 'Escape') setCustom(false) }}
-            style={{ ...sel, border: `1px solid ${bad ? 'var(--red)' : 'var(--border)'}` }} />
-          <button type="button" onClick={apply} aria-label={`Apply custom ${aria.toLowerCase()}`} style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 11, background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)' }}>Set</button>
+            style={{ ...fieldBox(), ...(bad ? { boxShadow: `inset 0 0 0 1px ${C.danger}` } : null) }} />
+          <Btn kind="inset" onClick={apply} aria-label={`Apply custom ${aria.toLowerCase()}`} style={{ height: 30, padding: '0 10px', fontSize: 12 }}>Set</Btn>
         </div>
       )}
-      {bad && <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>12" to 360", e.g. 102, 8'6", 9'</div>}
-      {warn && <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>{warn}</div>}
+      {bad && <Hint style={{ color: C.danger }}>12" to 360", e.g. 102, 8'6", 9'</Hint>}
+      {warn && <Hint style={{ color: LEVEL.error.fg }}>{warn}</Hint>}
     </div>
   )
 }
 
-/* The rack panel, in collapsible sections: Summary (pallets, length, bays, and the elevation as one read-only line —
-   elevations are set in the Elevations tab, components/Elevations/ElevationsTab.jsx), Bays (the list, + Bay / − Bay,
-   one beam length), Rack, collapsed (frame depth, upright, pallet size, flue). */
-export function RackRowPanel({ obj }) {
+/* The rack's detail under More (the card's C1 block — Bays · Beam · Depth · Flue — is src/studio/cards.jsx RackMain):
+   the summary (pallets, ground level, length, wall clear, remaining), its warnings, the bay list (click a bay to pick
+   it), the picked bay's beam or the next new bay's, + Bay / − Bay, the pallet. `newBeam` / `setNewBeam` are shared
+   with the Beam field; without them the panel keeps its own (RackRowPanel). */
+export function RackRowExtras({ obj, newBeam: sharedBeam, setNewBeam: setSharedBeam }) {
   const { objects, updateObject, commitObjectUpdate, deleteSingleBay, gridSize } = useCanvasStore(useShallow(s => ({ objects: s.objects, updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, deleteSingleBay: s.deleteSingleBay, gridSize: s.gridSize })))
 
   const beams   = obj.beams || [96]
@@ -263,7 +215,8 @@ export function RackRowPanel({ obj }) {
 
   const fmtIn = fmtFtIn
   /* the beam the dropdown shows: the picked bay's (a change to it), else the length a new bay gets */
-  const [newBeam, setNewBeam] = useState(beams[beams.length - 1] || 96)
+  const [ownBeam, setOwnBeam] = useState(beams[beams.length - 1] || 96)
+  const newBeam = sharedBeam ?? ownBeam, setNewBeam = setSharedBeam ?? setOwnBeam
   const beamShown = activeBay !== null ? beams[activeBay] : newBeam
 
   /* Red warnings, never a block: what a pick would cause, and the rack as it stands now (overlaps another rack /
@@ -289,126 +242,83 @@ export function RackRowPanel({ obj }) {
     deleteSingleBay(obj.id, idxToRemove)
   }
 
-  const label = (s, w = 56) => (
-    <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text3)', width: w, flexShrink: 0 }}>{s}</span>
-  )
-  const chip = (on) => ({
-    padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontFamily: 'var(--font-mono)',
-    background: on ? 'var(--accent-solid)' : 'var(--surface3)', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
-    color: on ? 'var(--accent-fg)' : 'var(--text2)',
-  })
-  const btn = (enabled, color = 'var(--text)') => ({
-    flex: 1, padding: '5px 8px', borderRadius: 5, fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600,
-    cursor: enabled ? 'pointer' : 'not-allowed', background: 'var(--surface2)', border: '1px solid var(--border)', color: enabled ? color : 'var(--text3)',
-  })
+  /* a summary row: <span>label</span><span>value</span> — muted label, value in mono */
   const row = (k, v, color) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-      <span style={{ color: 'var(--text3)' }}>{k}</span><span style={{ color: color || 'var(--text2)', fontWeight: color ? 700 : 400 }}>{v}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+      <span style={{ color: C.muted, fontSize: 12 }}>{k}</span><span style={{ fontFamily: MONO, fontSize: 12, color: color || C.strong }}>{v}</span>
     </div>
   )
 
   return (
-    <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-
+    <>
       {/* ── Summary: pallets, length, bays ── */}
-      <Fold title="Summary" aria="Rack summary">
-        <div style={{ padding: '6px 8px', borderRadius: 5, background: overBy > 0 ? 'var(--red-dim)' : 'var(--surface2)', border: `1px solid ${overBy > 0 ? 'var(--red)' : 'var(--border)'}`, fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <span style={{ color: 'var(--text3)' }}>Pallets</span>
-            <span style={{ color: 'var(--text)', fontWeight: 700, fontSize: 13 }}>{capacity ? capacity.total : 0} PAL</span>
-          </div>
-          {capacity && row('Ground level', `${capacity.groundTotal} × ${levels} level${levels > 1 ? 's' : ''}`)}
-          {row('Total length', fmtIn(totalIn), overBy > 0 ? 'var(--red)' : undefined)}
-          {row('Bays', beams.length)}
-          {clearIn != null && row('Wall clear', fmtIn(clearIn))}
-          {clearIn != null && row(overBy > 0 ? 'Exceeds by' : 'Remaining', overBy > 0 ? `${fmtIn(overBy)} !` : fmtIn(remainIn), overBy > 0 ? 'var(--red)' : 'var(--green)')}
-          {clearIn == null && <div style={{ color: 'var(--text3)', marginTop: 2 }}>No floor plan — length only</div>}
-          {overlapBays > 0 && (
-            <div data-testid="rack-overlap-bays" style={{ marginTop: 2, color: 'var(--amber, #B87309)' }}>
-              {overlapBays} bay{overlapBays === 1 ? '' : 's'} overlap another rack — not counted
-            </div>
-          )}
-        </div>
-        <RackWarning text={nowWarn} />
-        <ElevationLine />
-      </Fold>
+      <SecLabel>Summary</SecLabel>
+      <div aria-label="Rack summary" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {row('Pallets', `${capacity ? capacity.total : 0} PAL`)}
+        {capacity && row('Ground level', `${capacity.groundTotal} × ${levels} level${levels > 1 ? 's' : ''}`)}
+        {row('Total length', fmtIn(totalIn), overBy > 0 ? LEVEL.error.fg : undefined)}
+        {row('Bays', beams.length)}
+        {clearIn != null && row('Wall clear', fmtIn(clearIn))}
+        {clearIn != null && row(overBy > 0 ? 'Exceeds by' : 'Remaining', overBy > 0 ? `${fmtIn(overBy)} !` : fmtIn(remainIn), overBy > 0 ? LEVEL.error.fg : C.accent)}
+        {clearIn == null && <Hint>No floor plan — length only</Hint>}
+      </div>
+      {overlapBays > 0 && (
+        <Note level="warning" data-testid="rack-overlap-bays">
+          {overlapBays} bay{overlapBays === 1 ? '' : 's'} overlap another rack — not counted
+        </Note>
+      )}
+      <RackWarning text={nowWarn} />
 
       {/* ── Bays: the list, + Bay / − Bay, one beam length ── */}
-      <Fold title={`Bays (${beams.length})`} aria="Bays">
-        <div role="list" aria-label="Bay list" style={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 168, overflowY: 'auto' }}>
-          {beams.map((beamIn, i) => {
-            const isActive = activeBay === i
-            const pal = positionsPerBeam(beamIn, obj.palletWIn || 40)
-            return (
-              <div key={i} role="listitem" onClick={() => updateObject(obj.id, { activeBayIdx: activeBay === i ? null : i, activeBaySide: null })}   // from the list: the whole bay, both sides
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontFamily: 'var(--font-mono)',
-                  background: isActive ? 'var(--accent-solid)' : 'transparent', color: isActive ? 'var(--accent-fg)' : 'var(--text)' }}>
-                <span style={{ minWidth: 22, color: isActive ? 'var(--accent-fg)' : 'var(--text3)' }}>B{i + 1}</span>
-                <span style={{ flex: 1 }}>{fmtIn(beamIn)}</span>
-                <span title={pal ? `${pal} pallet${pal > 1 ? 's' : ''} per level per face` : 'Beam too short for one pallet'}
-                  style={{ color: pal ? (isActive ? 'var(--accent-fg)' : 'var(--text2)') : 'var(--red)', fontWeight: pal ? 400 : 700 }}>{pal ? `${pal} pal` : '0 ✕'}</span>
-              </div>
-            )
-          })}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-          {label(activeBay !== null ? `Bay ${activeBay + 1}` : 'New bay', 56)}
-          <BeamSelect value={beamShown} aria={activeBay !== null ? `Bay ${activeBay + 1} beam` : 'New bay beam'}
-            warnFor={activeBay !== null ? warnChange : warnAdd}
-            onPick={b => (activeBay !== null ? changeBay(activeBay, b) : setNewBeam(b))} />
-        </div>
-        <OneSideHint />
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button type="button" onClick={() => addBay(beamShown)} aria-label={`+ Bay ${fmtIn(beamShown)}`} title={warnAdd(beamShown) || `Add a ${fmtIn(beamShown)} bay at the far end`} style={btn(true, warnAdd(beamShown) ? 'var(--red)' : 'var(--text)')}>+ Bay</button>
-          <button type="button" onClick={removeBay} disabled={beams.length <= 1} style={btn(beams.length > 1, 'var(--red)')}>− Bay</button>
-        </div>
-      </Fold>
-
-      {/* ── Rack: frame depth, upright, pallet size, flue (collapsed) ── */}
-      <Fold title="Rack" defaultOpen={false} aria="Rack">
-        {/* frame depth: this rack only, the one depth change (utils/rackDepthAction.js — against a wall the wall face
-            stays, else about its centre) — overlaps show as warnings and X marks; the Row group replays it */}
-        <Field label="Frame depth" aria="Rack depth" value={obj.depthIn ?? 42} title="This rack only — against a wall it keeps its wall clearance and grows away from the wall; otherwise about its centre"
-          onCommit={v => { setRackDepths(useCanvasStore, [obj.id], v) }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {label('Upright', 86)}
-          {[3, 4].map(u => (
-            <button key={u} type="button" aria-pressed={upIn === u}
-              onClick={() => {
-                const newTotalIn = u * (beams.length + 1) + beams.reduce((s,b)=>s+b,0)
-                const newW = (newTotalIn / 12) * gridSize
-                commitObjectUpdate(obj.id, withAnchoredPosition(obj, { uprightWidth: u, width: newW }))
-              }}
-              style={chip(upIn === u)}>{u}"</button>
-          ))}
-        </div>
-        {/* the pallet size: the project's default (Project setup) — Generate and Fill stamp it on the racks */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{label('Pallet', 86)}<span aria-label="Pallet size" style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text2)' }}>{obj.palletWIn || 40}" face × {obj.palletDIn || 48}"</span></div>
-        {/* ── Flue space (double row only) ── */}
-        {obj.type === 'rack_double_row' && (() => {
-          const flue = obj.flueSpaceIn || 9
+      <SecLabel>Bays ({beams.length})</SecLabel>
+      <div role="list" aria-label="Bay list" style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 168, overflowY: 'auto' }}>
+        {beams.map((beamIn, i) => {
+          const isActive = activeBay === i
+          const pal = positionsPerBeam(beamIn, obj.palletWIn || 40)
           return (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {label('Flue', 86)}
-              {[6, 9, 12].map(f => (
-                <button key={f} type="button"
-                  onClick={() => {
-                    // Update height: newH = rowH*2 + newFlue; rowH = (obj.height - oldFlueH) / 2
-                    const oldFlueH = (flue / 12) * gridSize
-                    const rowH    = (obj.height - oldFlueH) / 2
-                    const newFlueH = (f / 12) * gridSize
-                    const newH    = rowH * 2 + newFlueH
-                    /* flueBaseIn alongside flueSpaceIn — a dealer picking a Flue value here is a deliberate, genuine
-                       choice, so it becomes the new base the live-auto-flue drag (see useCanvasInteraction.js's
-                       beginDrag) reverts to away from a column, not just this instant's rendered value. */
-                    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { flueSpaceIn: f, flueBaseIn: f, height: newH }))
-                  }}
-                  style={chip(flue === f)}>{f}"</button>
-              ))}
+            <div key={i} role="listitem" onClick={() => updateObject(obj.id, { activeBayIdx: activeBay === i ? null : i, activeBaySide: null })}   // from the list: the whole bay, both sides
+              style={{ display: 'flex', alignItems: 'center', gap: 8, height: 26, padding: '0 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontFamily: MONO,
+                background: isActive ? C.active : 'transparent', color: isActive ? C.accent : C.strong }}>
+              <span style={{ minWidth: 22, color: isActive ? C.accent : C.muted }}>B{i + 1}</span>
+              <span style={{ flex: 1 }}>{fmtIn(beamIn)}</span>
+              <span title={pal ? `${pal} pallet${pal > 1 ? 's' : ''} per level per face` : 'Beam too short for one pallet'}
+                style={{ color: pal ? (isActive ? C.accent : C.text) : LEVEL.error.fg }}>{pal ? `${pal} pal` : '0 ✕'}</span>
             </div>
           )
-        })()}
-      </Fold>
-    </div>
+        })}
+      </div>
+      <Field label={activeBay !== null ? `Bay ${activeBay + 1}` : 'New bay'}>
+        <BeamSelect value={beamShown} aria={activeBay !== null ? `Bay ${activeBay + 1} beam` : 'New bay beam'}
+          warnFor={activeBay !== null ? warnChange : warnAdd}
+          onPick={b => (activeBay !== null ? changeBay(activeBay, b) : setNewBeam(b))} />
+      </Field>
+      <OneSideHint />
+      <Grid2>
+        <Btn kind="ghost" onClick={() => addBay(beamShown)} aria-label={`+ Bay ${fmtIn(beamShown)}`} title={warnAdd(beamShown) || `Add a ${fmtIn(beamShown)} bay at the far end`}
+          style={warnAdd(beamShown) ? { color: LEVEL.error.fg } : undefined}>+ Bay</Btn>
+        <Btn kind="danger" onClick={removeBay} disabled={beams.length <= 1} style={beams.length <= 1 ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>− Bay</Btn>
+      </Grid2>
+
+      {/* ── Rack: the upright (a pair's; a single row's is in the C1 block) and the pallet ── */}
+      <SecLabel>Rack</SecLabel>
+      {obj.type === 'rack_double_row' && (
+        <Field label="Upright">
+          <Seg aria="Upright" mono value={upIn} onChange={u => {
+            const newTotalIn = u * (beams.length + 1) + beams.reduce((s, b) => s + b, 0)
+            const newW = (newTotalIn / 12) * gridSize
+            commitObjectUpdate(obj.id, withAnchoredPosition(obj, { uprightWidth: u, width: newW }))
+          }} options={[3, 4].map(u => ({ value: u, label: `${u}"` }))} />
+        </Field>
+      )}
+      {/* the pallet size: the project's default (Project setup) — Generate and Fill stamp it on the racks */}
+      <Row label={<span style={{ color: C.muted, fontSize: 12 }}>Pallet</span>}>
+        <span aria-label="Pallet size" style={{ fontFamily: MONO, fontSize: 12, color: C.strong }}>{obj.palletWIn || 40}" face × {obj.palletDIn || 48}"</span>
+      </Row>
+    </>
   )
+}
+
+/** The rack panel as one block (tests and older callers): the detail with its own new-bay beam. */
+export function RackRowPanel({ obj }) {
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}><RackRowExtras obj={obj} /></div>
 }

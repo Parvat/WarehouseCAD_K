@@ -1,103 +1,82 @@
 import { TEXT_FONTS, textFace } from '../../theme/tokens'
-import { Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
 import { useCanvasStore } from '../../store/useCanvasStore'
-import { SectionHeader } from '../shared/SectionHeader'
-import { cn } from '../../utils/cn'
+import { C, SecLabel, Field, Grid2, SelectField, Seg, fieldBox } from '../../studio/cardParts'
 
 /* Only faces the app actually loads (index.html) plus generics. An unloaded
    family renders as a silent system fallback, which is how every canvas label
-   ended up in the wrong face. */
+   ended up in the wrong face. Text defaults — a body for the card's "More" fold. */
 
-export function TextPanel() {
+/* a label over a group of buttons: a div, not a <label> (a label would click its first button) */
+const Labeled = ({ label, children }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+    <span style={{ color: C.muted, fontSize: 12 }}>{label}</span>
+    {children}
+  </div>
+)
+
+export function TextBody() {
   const ts = useCanvasStore(s => s.textSettings)
   const setTextSetting = useCanvasStore(s => s.setTextSetting)
 
-  const StyleBtn = ({ icon: Icon, field, title: t }) => (
-    <button
-      title={t}
-      onClick={() => setTextSetting(field, !ts[field])}
-      className={cn(
-        'w-7 h-7 flex items-center justify-center rounded border text-xs font-bold transition-all',
-        ts[field]
-          ? 'bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)]'
-          : 'bg-[var(--surface3)] border-[var(--border)] text-[var(--text2)] hover:text-[var(--text)]'
-      )}
-    >
-      <Icon size={12} />
-    </button>
-  )
-
-  const AlignBtn = ({ icon: Icon, align }) => (
-    <button
-      onClick={() => setTextSetting('align', align)}
-      className={cn(
-        'w-7 h-7 flex items-center justify-center rounded border transition-all',
-        ts.align === align
-          ? 'bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)]'
-          : 'bg-[var(--surface3)] border-[var(--border)] text-[var(--text2)] hover:text-[var(--text)]'
-      )}
-    >
-      <Icon size={12} />
-    </button>
-  )
+  const style = (field, title, label, look) => ({
+    value: field, title, on: !!ts[field], onClick: () => setTextSetting(field, !ts[field]),
+    label: <span style={look}>{label}</span>,
+  })
 
   return (
-    <SectionHeader title="Text" defaultOpen={true}>
-      <div className="p-2 flex flex-col gap-2">
-        {/* Font */}
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-[var(--text3)] w-9 shrink-0 font-mono">Font</span>
-          <select
-            value={textFace(ts.fontFamily)}
-            onChange={e => setTextSetting('fontFamily', e.target.value)}
-            className="flex-1 bg-[var(--surface3)] border border-[var(--border)] rounded text-[11px] text-[var(--text)] px-2 py-1 focus:outline-none focus:border-[var(--accent)]/50"
-          >
-            {TEXT_FONTS.map(f => <option key={f}>{f}</option>)}
-          </select>
-        </div>
-        {/* Size + style */}
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-[var(--text3)] w-9 shrink-0 font-mono">Size</span>
+    <>
+      <SecLabel>Text</SecLabel>
+      <Field label="Font">
+        <SelectField words value={textFace(ts.fontFamily)} onChange={e => setTextSetting('fontFamily', e.target.value)}>
+          {TEXT_FONTS.map(f => <option key={f}>{f}</option>)}
+        </SelectField>
+      </Field>
+      <Grid2>
+        <Field label="Size">
           <input
             type="number"
             value={ts.fontSize}
             onChange={e => setTextSetting('fontSize', Number(e.target.value))}
-            className="w-12 bg-[var(--surface3)] border border-[var(--border)] rounded text-[11px] text-[var(--text)] font-mono px-2 py-1 text-center focus:outline-none focus:border-[var(--accent)]/50"
+            className="st-field"
+            style={fieldBox()}
           />
-          <div className="flex gap-1">
-            <StyleBtn icon={Bold}      field="bold"      title="Bold" />
-            <StyleBtn icon={Italic}    field="italic"    title="Italic" />
-            <StyleBtn icon={Underline} field="underline" title="Underline" />
-          </div>
-        </div>
-        {/* Align */}
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-[var(--text3)] w-9 shrink-0 font-mono">Align</span>
-          <div className="flex gap-1">
-            <AlignBtn icon={AlignLeft}   align="left" />
-            <AlignBtn icon={AlignCenter} align="center" />
-            <AlignBtn icon={AlignRight}  align="right" />
-          </div>
-        </div>
-        {/* Preview */}
-        <div
-          contentEditable
-          suppressContentEditableWarning
-          className="bg-[var(--surface2)] border border-[var(--border)] rounded p-2 min-h-[40px] text-[var(--text2)] italic cursor-text focus:outline-none focus:border-[var(--accent)]/40 focus:not-italic"
-          style={{
-            fontFamily:     ts.fontFamily,
-            fontSize:       ts.fontSize,
-            fontWeight:     ts.bold      ? 'bold'      : 'normal',
-            fontStyle:      ts.italic    ? 'italic'    : 'normal',
-            textDecoration: ts.underline ? 'underline' : 'none',
-            textAlign:      ts.align,
-          }}
-          onFocus={e  => { if (e.target.textContent === 'Click to add text…') e.target.textContent = '' }}
-          onBlur={e   => { if (!e.target.textContent.trim()) e.target.textContent = 'Click to add text…' }}
-        >
-          Click to add text…
-        </div>
+        </Field>
+        <Labeled label="Style">
+          <Seg options={[
+            style('bold',      'Bold',      'B', { fontWeight: 600 }),
+            style('italic',    'Italic',    'I', { fontStyle: 'italic' }),
+            style('underline', 'Underline', 'U', { textDecoration: 'underline' }),
+          ]} />
+        </Labeled>
+      </Grid2>
+      <Labeled label="Align">
+        <Seg value={ts.align} onChange={v => setTextSetting('align', v)} options={[
+          { value: 'left',   label: 'Left' },
+          { value: 'center', label: 'Centre' },
+          { value: 'right',  label: 'Right' },
+        ]} />
+      </Labeled>
+      {/* Preview — the face, size and style are the text's own (data) */}
+      <div
+        contentEditable
+        suppressContentEditableWarning
+        style={{
+          minHeight: 40, padding: '8px 10px', borderRadius: 6, background: C.inset, color: C.text,
+          outline: 'none', cursor: 'text', overflowWrap: 'anywhere', minWidth: 0,
+          fontFamily:     ts.fontFamily,
+          fontSize:       ts.fontSize,
+          fontWeight:     ts.bold      ? 'bold'      : 'normal',
+          fontStyle:      ts.italic    ? 'italic'    : 'normal',
+          textDecoration: ts.underline ? 'underline' : 'none',
+          textAlign:      ts.align,
+        }}
+        onFocus={e  => { if (e.target.textContent === 'Click to add text…') e.target.textContent = '' }}
+        onBlur={e   => { if (!e.target.textContent.trim()) e.target.textContent = 'Click to add text…' }}
+      >
+        Click to add text…
       </div>
-    </SectionHeader>
+    </>
   )
 }
+
+export const TextPanel = TextBody

@@ -1,11 +1,4 @@
 import { PropertiesPanel } from './PropertiesPanel'
-import { LayerPanel }      from './LayerPanel'
-import { TextPanel }       from './TextPanel'
-import { ColorPanel }      from './ColorPanel'
-import { LabelsPanel }     from './LabelsPanel'
-import { GroupPanel }      from './GroupPanel'
-import { ColumnCheckPanel } from './ColumnCheckPanel'
-import { LayoutCheckPanel } from './LayoutCheckPanel'
 import { ElevationsTab }   from '../Elevations/ElevationsTab'
 
 /* The right card's two tabs' content (Studio: the card itself, its tabs and its size are src/studio/StudioFrame.jsx).
@@ -15,14 +8,9 @@ import { ElevationsTab }   from '../Elevations/ElevationsTab'
 export function RightPanelTabs({ tab }) {
   return tab === 'properties'
     ? <div role="tabpanel" aria-label="Properties" style={{ display:'flex', flexDirection:'column', minWidth:0 }}>
-        <LayoutCheckPanel />
+        {/* Studio: the selection's block, then More (Arrange, colour, layers, text, labels, the column check); Check
+            layout is its own card state (src/studio/StudioFrame.jsx) */}
         <PropertiesPanel />
-        <ColumnCheckPanel />
-        <GroupPanel />
-        <ColorPanel />
-        <LayerPanel />
-        <TextPanel />
-        <LabelsPanel />
       </div>
     : <div role="tabpanel" aria-label="Elevations" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column' }}><ElevationsTab /></div>
 }

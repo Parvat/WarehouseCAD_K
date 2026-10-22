@@ -418,7 +418,7 @@ describe('LC — one rule each', () => {
     expect(cc).toMatch(/export function rowAisleLevel\([^)]*\) \{\s*if \(gapPx <= AISLE_MIN_FT \* gridSize\) return 3\s*return aisleLevel\(gapPx, profile, gridSize\)/)
     for (const f of ['rowAisleGaps', 'rowAisleLevel', 'rackReachable', 'runColumnCheck', 'rackIssues', 'oversizedBayIndices']) expect(lc).toMatch(new RegExp(f + '\\('))
     expect(lc).not.toMatch(/aisleFt \* gridSize\) *[<>]|travelFt \?\? 8\) \* gridSize *[<>]/)   // no width compared by hand
-    expect(src('src/components/RightPanel/index.jsx')).toMatch(/<LayoutCheckPanel \/>/)
+    expect(src('src/studio/StudioFrame.jsx')).toMatch(/<CheckCard \/>/)   // Studio C5: Check layout is the card's own state
     expect(src('src/studio/StudioFrame.jsx')).toMatch(/runLayoutCheck\(useCanvasStore\)/)
   })
 })

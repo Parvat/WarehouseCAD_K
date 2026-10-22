@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, MoreHorizontal, Pencil, Maximize2 } from 'lucide-react'
+import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9); no Lucide in the card
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { typeById, typeIdAt, legendCounts, sprinklerClearance, isBeamRack, beamFace, sidesOf, frameDepthNote, frameNeededFor } from '../../utils/elevations'
@@ -173,7 +173,7 @@ export function ElevationsTab() {
           BEAM {ftInDash(shownEntry.beamIn)} · {per}P
         </span>
         <button type="button" aria-label="Fit" title="Fit (double-click empty space)" onClick={() => setFit(n => n + 1)} style={{ ...S.btn, height: 26, flexShrink: 0 }}>Fit</button>
-        <button type="button" aria-label="Full screen" title="Full screen (Esc closes)" onClick={() => setFull(n => n + 1)} style={{ ...S.btn, height: 26, width: 26, padding: 0 }}><Maximize2 size={12} /></button>
+        <button type="button" aria-label="Full screen" title="Full screen (Esc closes)" onClick={() => setFull(n => n + 1)} style={{ ...S.btn, height: 26, width: 26, padding: 0 }}><Icon name="Full screen" color="currentColor" /></button>
       </div>
       {/* below the toolbar: the drawing (the split's share, 65% to start) | the handle | section 02 (the rest) */}
       <div ref={body} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -243,8 +243,8 @@ function List({ T, active, counts, made, rowsSelected }) {
               <span aria-label="Elevation name" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: 'var(--text)' }} title={nameOf(T, t)}>{nameOf(T, t)}</span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{counts.get(t.id) || 0} bays</span>
               {t.id === T.defaultId && <span aria-label="default" style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '.1em', padding: '1px 5px', borderRadius: 2, background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>DEFAULT</span>}
-              <button type="button" aria-label={`Edit ${nameOf(T, t)}`} title="Change this elevation" onClick={(ev) => { ev.stopPropagation(); startEdit(store, t.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 3 }}><Pencil size={12} /></button>
-              <button type="button" aria-label={`${nameOf(T, t)} menu`} onClick={(ev) => { ev.stopPropagation(); const el = ev.currentTarget.closest('[role="listitem"]'); setMenu(m => (m?.id === t.id ? null : { id: t.id, el })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 3 }}><MoreHorizontal size={14} /></button>
+              <button type="button" aria-label={`Edit ${nameOf(T, t)}`} title="Change this elevation" onClick={(ev) => { ev.stopPropagation(); startEdit(store, t.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 3 }}>Edit</button>
+              <button type="button" aria-label={`${nameOf(T, t)} menu`} onClick={(ev) => { ev.stopPropagation(); const el = ev.currentTarget.closest('[role="listitem"]'); setMenu(m => (m?.id === t.id ? null : { id: t.id, el })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 3 }}><Icon name="More" color="currentColor" /></button>
               {menu?.id === t.id && <RowMenu t={t} T={T} anchor={menu.el} onClose={closeMenu} />}
             </div>
           )
@@ -254,7 +254,7 @@ function List({ T, active, counts, made, rowsSelected }) {
         <button type="button" disabled={!rowsSelected || !active} onClick={() => active && assignSelected(store, active.id) && useElevTab.setState({ made: null })} style={{ ...S.btn, ...S.primary, flex: 1, height: 32, opacity: rowsSelected && active ? 1 : 0.45, cursor: rowsSelected && active ? 'pointer' : 'not-allowed' }}>
           Apply to {rowsSelected} selected row{rowsSelected === 1 ? '' : 's'}
         </button>
-        <button type="button" disabled={!pr} onClick={() => startNew(store)} style={{ ...S.btn, height: 32, opacity: pr ? 1 : 0.45 }}><Plus size={12} /> New elevation</button>
+        <button type="button" disabled={!pr} onClick={() => startNew(store)} style={{ ...S.btn, height: 32, opacity: pr ? 1 : 0.45 }}>+ New elevation</button>
       </div>
       <div role="note" aria-label="How to assign" style={{ ...BLUE_NOTE, flexShrink: 0 }}>
         {made && madeType && <><strong>{made.kind === 'exists' ? 'Already exists' : made.kind === 'saved' ? 'Saved' : 'Created'}: {nameOf(T, madeType)}.</strong>{' '}</>}
