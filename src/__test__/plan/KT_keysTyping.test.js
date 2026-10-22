@@ -2,7 +2,8 @@
 // Delete / Backspace, the arrows and the single-letter tool keys act on the text only — the layout, the selection,
 // the tool and the history never change. With focus anywhere else they do what they always did.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 
 const mem = new Map()
 globalThis.localStorage = globalThis.localStorage || { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) }
@@ -81,7 +82,93 @@ describe('KT — the same keys with focus on the page', () => {
   it('KT-wire: the shortcut handler asks utils/typing.js first; the space-to-pan key ignores a space typed into a field', () => {
     const kb = readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')
     expect(kb).toMatch(/const isInput = isTypingTarget\(document\.activeElement\) \|\| isTypingTarget\(e\.target\)/)
-    expect(kb).toMatch(/if \(ctrl && isInput && TEXT_EDIT_KEYS\.has\(String\(e\.key\)\.toLowerCase\(\)\)\) return/)
-    expect(readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')).toMatch(/if \(e\.code === 'Space' && !isTypingTarget\(e\.target\)\)/)
+    expect(kb).toMatch(/if \(textOwnsKey\(e\)\) return/)
+    expect(readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')).toMatch(/if \(e\.code === 'Space' && !textOwnsKey\(e\)\)/)
+  })
+})
+
+/* ── every key listener in the app ─────────────────────────────────────────────
+   Finds each keydown / keyup / keypress listener — window, document, an element, capture or not — and each React
+   onKeyDown / onKeyUp / onKeyPress on an element that is not itself a field, takes its handler's code, and fails when
+   a handler that acts on a guarded key (Delete, Backspace, an arrow, a letter, a Ctrl/Cmd combination, or a delegate
+   like the shortcut handler) does not ask textOwnsKey first. Escape / Enter / Space-only handlers need no check. */
+
+const SRC_DIR = new URL('../../', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1')
+const walkSrc = (d) => readdirSync(d).flatMap(n => { const f = join(d, n); return statSync(f).isDirectory() ? (/__test__|_svg_reference/.test(n) ? [] : walkSrc(f)) : [f] })
+
+/** the code of the function starting at `from` (an arrow or a function body), by brace matching */
+function bodyAt(src, from) {
+  const open = src.indexOf('{', from), arrow = src.indexOf('=>', from)
+  // an arrow without braces: up to the end of the line
+  if (arrow >= 0 && (open < 0 || src.slice(arrow + 2, open).trim() !== '')) return src.slice(from, src.indexOf('\n', arrow))
+  let depth = 0
+  for (let i = open; i < src.length; i++) { if (src[i] === '{') depth++; else if (src[i] === '}' && --depth === 0) return src.slice(from, i + 1) }
+  return src.slice(from)
+}
+/** a named handler's code in the same file */
+function named(src, id) {
+  const m = new RegExp(`(?:const|let|var)\\s+${id}\\s*=|function\\s+${id}\\s*\\(`).exec(src)
+  return m ? bodyAt(src, m.index) : null
+}
+/* does the handler act on a key the field owns? */
+const GUARDED = /'Delete'|"Delete"|'Backspace'|"Backspace"|'Arrow|"Arrow|ctrlKey|metaKey|toLowerCase\(\)|toolMap|e\.key\.length|key\.length|\['?[a-z]'?\]|=== '[a-z]'|=== "[a-z]"|case '[a-z]'/
+
+/** every key listener in a file's code: { where, code, guarded, acts } */
+function keyListeners(src, file = '') {
+  const out = []
+  const push = (where, code) => { const acts = GUARDED.test(code) || /shortcutHandler/.test(where); out.push({ file, where, code, acts, guarded: /textOwnsKey\(/.test(code) }) }
+  for (const m of src.matchAll(/addEventListener\(\s*['"](keydown|keyup|keypress)['"]\s*,\s*([A-Za-z_$][\w$]*)?/g)) {
+    const line = src.slice(0, m.index).split('\n').length
+    if (m[2] === 'function' || m[2] === 'async') m[2] = undefined          // an inline function, not a name
+    const code = m[2] ? (named(src, m[2]) || (m[2] === 'shortcutHandler' ? named(src, 'shortcutHandler') : null)) : bodyAt(src, m.index + m[0].length)
+    push(`${file}:${line} ${m[1]} ${m[2] || 'inline'}`, code ?? '')
+  }
+  for (const m of src.matchAll(/onKey(Down|Up|Press)=\{/g)) {
+    const tagStart = src.lastIndexOf('<', m.index), tag = (src.slice(tagStart + 1).match(/^[A-Za-z]+/) || [''])[0]
+    if (/^(input|textarea|select)$/i.test(tag)) continue          // a field's own keys (Enter to commit) — the field's by definition
+    const line = src.slice(0, m.index).split('\n').length
+    const v = src.slice(m.index + m[0].length).match(/^\s*([A-Za-z_$][\w$]*)\s*\}/)
+    const code = v ? (named(src, v[1]) || '') : bodyAt(src, m.index + m[0].length)
+    push(`${file}:${line} onKey${m[1]} <${tag}>`, code)
+  }
+  return out
+}
+
+describe('KT — every key listener asks first', () => {
+  it('KT-scan: every listener that acts on Ctrl/Cmd + A C V X Z Y, Delete, Backspace, an arrow or a tool letter asks textOwnsKey before acting', () => {
+    const all = walkSrc(SRC_DIR).filter(f => /\.(jsx?|tsx?)$/.test(f)).flatMap(f => keyListeners(readFileSync(f, 'utf8').split('\r\n').join('\n'), f.slice(SRC_DIR.length)))
+    expect(all.length).toBeGreaterThan(10)
+    const missing = all.filter(l => l.acts && !l.guarded).map(l => l.where)
+    expect(missing).toEqual([])
+    // the ones that act on those keys today — each guarded
+    const acting = all.filter(l => l.acts).map(l => l.where.split(':')[0].replace(/\\/g, '/'))
+    for (const f of ['hooks/useKeyboardShortcuts.js', 'components/Elevations/ElevationDrawing.jsx', 'components/Toolbar/TopBar.jsx']) expect([f, acting.includes(f)]).toEqual([f, true])
+  })
+  it('KT-scan-self: the scan catches a listener that skips the check — window, document, capture, a React handler on a div — and passes one that asks', () => {
+    const bad = [
+      `window.addEventListener('keydown', (e) => { if (e.ctrlKey && e.key === 'a') selectAll() })`,
+      `const k = (e) => { if (e.key === 'Delete') del() }\ndocument.addEventListener('keydown', k, true)`,
+      `<div tabIndex={0} onKeyDown={e => { if (e.key === 'Backspace') remove() }} />`,
+      `stage.container().addEventListener('keydown', function (e) { switch (e.key.toLowerCase()) { case 'v': tool() } })`,
+    ]
+    for (const code of bad) expect([code.slice(0, 40), keyListeners(code).some(l => l.acts && !l.guarded)]).toEqual([code.slice(0, 40), true])
+    const good = [
+      `window.addEventListener('keydown', (e) => { if (textOwnsKey(e)) return; if (e.ctrlKey && e.key === 'a') selectAll() })`,
+      `document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close() })`,
+      `<input onKeyDown={e => { if (e.key === 'Enter') commit() }} />`,
+    ]
+    for (const code of good) expect([code.slice(0, 40), keyListeners(code).some(l => l.acts && !l.guarded)]).toEqual([code.slice(0, 40), false])
+  })
+  it('KT-owns: textOwnsKey — the field keeps Ctrl/Cmd + A C V X Z Y, Delete, Backspace, arrows and single characters; Escape, Enter and Ctrl+S are not its', async () => {
+    const { textOwnsKey } = await import('../../utils/typing')
+    const input = { tagName: 'INPUT', type: 'number' }
+    const owns = (key, mods = {}, target = input) => { document.activeElement = target; return textOwnsKey({ key, target, ...mods }) }
+    for (const k of ['a', 'c', 'v', 'x', 'z', 'y', 'A']) expect([k, owns(k, { ctrlKey: true }), owns(k, { metaKey: true })]).toEqual([k, true, true])
+    for (const k of ['Delete', 'Backspace', 'ArrowLeft', 'f', 'g', 's', 'm', 'v', ' ']) expect([k, owns(k)]).toEqual([k, true])
+    for (const [k, m] of [['Escape', {}], ['Enter', {}], ['s', { ctrlKey: true }], ['d', { ctrlKey: true }]]) expect([k, owns(k, m)]).toEqual([k, false])
+    expect([owns('a', { ctrlKey: true }, { tagName: 'INPUT', type: 'checkbox' }), owns('Delete', {}, { tagName: 'DIV' })]).toEqual([false, false])
+    // the focus counts too: a key whose target is the page while a field has the focus
+    document.activeElement = { tagName: 'TEXTAREA' }
+    expect(textOwnsKey({ key: 'a', ctrlKey: true, target: { tagName: 'BODY' } })).toBe(true)
   })
 })

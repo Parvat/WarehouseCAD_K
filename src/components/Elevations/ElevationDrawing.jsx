@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9)
+import { textOwnsKey } from '../../utils/typing'
 import { elevationLayout, ftInDash, parseFtIn } from '../../utils/elevationDrawing'
 import { setPane, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, paneFontPx } from '../../utils/elevEditor'
 
@@ -153,9 +154,9 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
     if (sel == null) return
     const onWin = (e) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      if (textOwnsKey(e)) return                                              // typing in a field: the text's
       const a = document.activeElement
       if (a && a !== document.body && !a.closest?.('[data-pane="open"]')) return
-      if (a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) return            // typing in a field
       e.preventDefault(); e.stopImmediatePropagation()
       commit(x => removeLevel(x, sel)); setPane({ sel: null })
     }
@@ -166,6 +167,7 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
     return () => { window.removeEventListener('keydown', onWin, true); window.removeEventListener('pointerdown', onDown, true) }
   }, [sel, t, onCommit])
   const onKey = (e) => {
+    if (textOwnsKey(e)) return                                                // typing in a field: the text's
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel != null) { e.preventDefault(); e.stopPropagation(); commit(x => removeLevel(x, sel)); setPane({ sel: null }) }
     if (e.key === 'Escape' && sel != null) { e.stopPropagation(); setPane({ sel: null }) }
   }

@@ -889,7 +889,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(pane).toMatch(/window\.addEventListener\('keydown', onWin, true\)/)
     // focusing the drawing never scrolls the panel: a beam grabbed low in a long panel stays under the pointer
     expect([/\.focus\(\)/.test(pane), (pane.match(/focus\(\{ preventScroll: true \}\)/g) || []).length]).toEqual([false, 2])
-    expect(pane).toMatch(/\/\^\(INPUT\|SELECT\|TEXTAREA\)\$\/\.test\(a\.tagName\)/)
+    expect((pane.match(/if \(textOwnsKey\(e\)\) return/g) || []).length).toBe(2)          // the window listener and the drawing's own: typing in a field keeps Delete
     expect(pane).toMatch(/closest\('\[data-pane="open"\]'\)\)\) setPane\(\{ sel: null \}\)/)
   })
 })

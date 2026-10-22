@@ -11,7 +11,7 @@ import { pickableIn, keptBySelectAll } from '../utils/layers'
 import { notify, clearNotice } from '../utils/notice'
 import { deleteBaySelection } from '../utils/baySides'
 import { toggleMeasure } from '../utils/toolSwitch'
-import { isTypingTarget, TEXT_EDIT_KEYS } from '../utils/typing'
+import { isTypingTarget, textOwnsKey } from '../utils/typing'
 
 /** The app's keyboard shortcuts, one keydown handler (exported so a test can press keys at it). */
 export function shortcutHandler(e) {
@@ -19,7 +19,7 @@ export function shortcutHandler(e) {
          Delete / Backspace, the arrows and the single-letter tools act on the text, never on the canvas (utils/typing.js) */
       const isInput = isTypingTarget(document.activeElement) || isTypingTarget(e.target)
       const ctrl = e.ctrlKey || e.metaKey
-      if (ctrl && isInput && TEXT_EDIT_KEYS.has(String(e.key).toLowerCase())) return
+      if (textOwnsKey(e)) return
 
 
       // ── Escape — deselect, cancel draw ──────────────────────────────────

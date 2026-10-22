@@ -8,6 +8,7 @@ import { pasteAt } from '../../utils/pasteAt'
 import { useLabelPrefs } from '../../canvas2/labelPrefs'
 import { LABEL_SIZES, LABEL_SIZE_NAMES } from '../../render/labelSize'
 import { useViewPrefs } from '../../studio/viewPrefs'
+import { textOwnsKey } from '../../utils/typing'
 
 /* The layout menu (Studio, STUDIO.md §1: the project name ▾ in the top-left island opens it). It holds everything the
    old top bar's "Settings and more" menu held — File, Edit, View, Standards, Appearance — so no action is lost while
@@ -154,7 +155,7 @@ export function LayoutMenu({ onClose, onRules, onHub, style }) {
   useEffect(() => { menuItems()[0]?.focus() }, [])
   const onMenuKey = e => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
-    if (e.target.tagName === 'SELECT' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) return
+    if (textOwnsKey(e)) return                       // an arrow in the menu's select is the select's (utils/typing.js)
     const items = menuItems()
     if (!items.length) return
     e.preventDefault()
