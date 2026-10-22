@@ -222,23 +222,23 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     // both drag paths take their snap targets through targetsFor, which is snapTargets (layers) minus a dragged Row group row's no-snap racks
     expect(ci.match(/computeSmartGuides\(\s*d\.ids, targetsFor\(/g)).toHaveLength(2)
     expect(ci).toMatch(/const targetsFor = \(objs\) => \{ const t = snapTargets\(objs, st\.layers, d\.movedIds\);/)
-    expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/const ids = st\.objects\.filter\(ok\)\.map\(o => o\.id\)/)
+    expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/const ids = selectAllIds\(st\.objects, st\.layers\)/)
   })
 
-  it('LY-select-all-kept: Ctrl+A + Delete on a generated layout keeps exactly the building and its column grid (their layers locked — intended), and the bar says "Building and columns are kept"', async () => {
-    // select-all as Ctrl+A does it (pickable only), then Delete
-    const ok = m.L.pickableIn(st().layers)
-    st().selectGroup(st().objects.filter(ok).map(o => o.id))
-    st().deleteSelected()
-    expect(st().objects.map(o => o.type).sort()).toEqual(['column_grid', 'fp_rect'])
-    // the bar's words
+  it('LY-select-all-kept: Ctrl+A + Delete on a generated layout keeps exactly the building and its column grid (the building outline is never Ctrl+A\'s; the columns\' layer is locked — intended), and the bar says "Columns are kept"', async () => {
+    // select-all as Ctrl+A does it (real, pickable objects only), then Delete as the key does it
+    st().selectGroup(m.L.selectAllIds(st().objects, st().layers))
+    const { deleteSelectionWithAreas } = await import('../../utils/deleteSelection')
+    deleteSelectionWithAreas(m.useCanvasStore)
+    expect(st().objects.map(o => o.type).sort()).toEqual(['column_grid', 'fp_rect'])      // the aisles went with their rows (aisleKeeper)
+    // the bar's words — the building outline is a helper, never selected, so never "kept"
     const { objects, layers } = st()
-    expect(m.L.keptBySelectAll(objects, layers)).toBe('Building and columns are kept')
-    expect(m.L.keptBySelectAll(objects, withLayer(layers, 'columns', { locked: false }))).toBe('Building is kept')
+    expect(m.L.keptBySelectAll(objects, layers)).toBe('Columns are kept')
+    expect(m.L.keptBySelectAll(objects, withLayer(layers, 'columns', { locked: false }))).toBe(null)
     expect(m.L.keptBySelectAll(objects, withLayer(layers, 'building', { locked: false }))).toBe('Columns are kept')
     expect(m.L.keptBySelectAll(objects, allOpen(layers))).toBe(null)                                      // nothing left out
     expect(m.L.keptBySelectAll(objects, withLayer(withLayer(layers, 'building', { visible: false }), 'columns', { visible: false }))).toBe(null)   // hidden: out of sight, unsaid
-    expect(m.L.keptBySelectAll([...objects, { id: 'n', type: 'text', locked: true }], layers)).toBe('Building, columns and 1 locked item are kept')
+    expect(m.L.keptBySelectAll([...objects, { id: 'n', type: 'text', locked: true }], layers)).toBe('Columns and 1 locked item are kept')
     expect(m.L.keptBySelectAll([{ id: 'n', type: 'text', locked: true }, { id: 'p', type: 'rect', locked: true }], allOpen(layers))).toBe('2 locked items are kept')
     // the wiring: Ctrl+A notifies through the bar (utils/notice.js), which shows it and clears it after a while
     const ks = readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')
@@ -248,7 +248,7 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect(bar).toMatch(/setTimeout\(clearNotice, NOTICE_MS\)/)
     const N = await import('../../utils/notice')
     N.notify(m.L.keptBySelectAll(objects, layers), 'locked layers')
-    expect([N.useNotice.getState().text, N.useNotice.getState().hint]).toEqual(['Building and columns are kept', 'locked layers'])
+    expect([N.useNotice.getState().text, N.useNotice.getState().hint]).toEqual(['Columns are kept', 'locked layers'])
     N.clearNotice()
     expect(N.useNotice.getState().text).toBe(null)
   })

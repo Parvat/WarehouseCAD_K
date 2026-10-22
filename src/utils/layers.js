@@ -81,14 +81,30 @@ export function isPickable(layers, obj) {
 /** A predicate over objects for a fixed layer list — one Map for the lot. */
 export const pickableIn = (layers) => { const m = asMap(layers); return (o) => isPickable(m, o) }
 
+/** Not a layout object of its own, so never in Ctrl+A: the building outline (fp_*), an aisle (the gap between two
+ *  rows, rebuilt from them — utils/aisleKeeper.js drops it with its rows), a racking area (the Fill / Regenerate box
+ *  that owns its racks; picked on its own edge to resize or rebuild it) and the layout's elevation types (data). */
+export const isHelper = (o) => {
+  const t = typeof o?.type === 'string' ? o.type : ''
+  return t.startsWith('fp_') || t === 'aisle' || t === 'racking_area' || t === 'elevation_types'
+}
+
+/** What Ctrl+A selects: every real layout object that can be picked — racks, zones, walls, doors, columns,
+ *  equipment, text, dimensions, shapes — never a helper (isHelper), nothing hidden or locked. */
+export function selectAllIds(objects, layers) {
+  const ok = pickableIn(layers)
+  return (objects || []).filter(o => o && !isHelper(o) && ok(o)).map(o => o.id)
+}
+
 /** What Ctrl+A leaves out that the user can SEE — objects on a locked layer (Generate locks Building and Columns) and
- *  objects locked one by one — as the status bar says it: "Building and columns are kept" / "Building is kept" /
- *  "2 locked items are kept"; null when nothing visible is left out (hidden layers are out of sight, so unsaid). */
+ *  objects locked one by one — as the status bar says it: "Columns are kept" / "2 locked items are kept"; null when
+ *  nothing visible is left out (hidden layers are out of sight, so unsaid). Helpers are never selected anyway, so a
+ *  locked building outline is not one of them. */
 export function keptBySelectAll(objects, layers) {
   const m = asMap(layers), locked = new Set()
   let items = 0
   for (const o of objects || []) {
-    if (isPickable(m, o) || !isShown(m, o)) continue
+    if (isHelper(o) || isPickable(m, o) || !isShown(m, o)) continue
     const l = m.get(layerOf(o, m))
     if (l?.locked) locked.add(l.id)
     else if (o.locked) items++

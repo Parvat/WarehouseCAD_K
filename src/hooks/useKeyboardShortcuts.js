@@ -7,7 +7,8 @@ import { cancelPlacement } from '../utils/placement'
 import { useRowGroup, clearGroup, cancelGroupBox, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
 import { FILL_TOOL, cancelFill } from '../utils/fillTool'
 import { SPLIT_TOOL, useSplit } from '../utils/splitTool'
-import { pickableIn, keptBySelectAll } from '../utils/layers'
+import { selectAllIds, keptBySelectAll } from '../utils/layers'
+import { deleteSelectionWithAreas } from '../utils/deleteSelection'
 import { notify, clearNotice } from '../utils/notice'
 import { deleteBaySelection } from '../utils/baySides'
 import { toggleMeasure } from '../utils/toolSwitch'
@@ -86,7 +87,7 @@ export function shortcutHandler(e) {
             return
           }
         }
-        s.deleteSelected()
+        deleteSelectionWithAreas(useCanvasStore)        // with each racking area the delete empties (utils/deleteSelection.js)
         return
       }
 
@@ -165,9 +166,10 @@ export function shortcutHandler(e) {
         case 'a':
           e.preventDefault()
           {
-            // everything that can be picked: nothing on a hidden or locked layer
-            const st = useCanvasStore.getState(), ok = pickableIn(st.layers)
-            const ids = st.objects.filter(ok).map(o => o.id)
+            // every real layout object that can be picked: no helper (building outline, aisle, racking area),
+            // nothing on a hidden or locked layer (utils/layers.js selectAllIds)
+            const st = useCanvasStore.getState()
+            const ids = selectAllIds(st.objects, st.layers)
             if (ids.length) st.selectGroup(ids)
             else st.clearSelection()
             // what it leaves out on purpose (a locked layer — Generate locks Building and Columns), said in the bar so a

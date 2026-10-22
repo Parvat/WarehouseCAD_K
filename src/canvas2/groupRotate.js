@@ -70,7 +70,7 @@
 // call.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { boundsOf } from './hitTest'
+import { boundsOf, worldBoundsOf } from './hitTest'
 import { GRIP_PX, GRIP_HIT_PX, GRIP_STEM_PX } from './handleGeometry'
 
 /** Rotate world point `p` by `angleDeg` about `pivot`. */
@@ -102,7 +102,7 @@ export function computeGroupOutline(objs, zoom, allObjects = objs) {
      one that can't is left out of the outline rather than put at (0, 0). */
   const centres = objs.map(obj => {
     const b = boundsOf(obj, allObjects)
-    return b ? { x: b.x + b.width / 2, y: b.y + b.height / 2, b } : null
+    return b ? { x: b.x + b.width / 2, y: b.y + b.height / 2, b, obj } : null
   }).filter(Boolean)
   if (!centres.length) return null
   const P = {
@@ -111,10 +111,23 @@ export function computeGroupOutline(objs, zoom, allObjects = objs) {
   }
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  centres.forEach(({ x, y, b }) => {
-    const lc = rotateAround({ x, y }, -R, P)
-    minX = Math.min(minX, lc.x - b.width / 2); minY = Math.min(minY, lc.y - b.height / 2)
-    maxX = Math.max(maxX, lc.x + b.width / 2); maxY = Math.max(maxY, lc.y + b.height / 2)
+  /* A member turned the same way as the group is its own box in the group's frame. One that isn't — an aisle (no
+     rotation: its box is the world gap between its rows) beside vertical racks at 90°, or a rack at another angle —
+     has its WORLD box's corners carried into the group's frame. Reading its box as if it were already in that frame
+     laid every aisle sideways: Ctrl+A on a vertical layout drew the outline far wider than the building. */
+  const norm = (a) => (((a || 0) % 360) + 360) % 360
+  centres.forEach(({ x, y, b, obj }) => {
+    if (norm(obj.type === 'aisle' ? 0 : obj.rotation) === norm(R)) {
+      const lc = rotateAround({ x, y }, -R, P)
+      minX = Math.min(minX, lc.x - b.width / 2); minY = Math.min(minY, lc.y - b.height / 2)
+      maxX = Math.max(maxX, lc.x + b.width / 2); maxY = Math.max(maxY, lc.y + b.height / 2)
+      return
+    }
+    const w = worldBoundsOf(obj, allObjects) || b
+    for (const q of [[w.x, w.y], [w.x + w.width, w.y], [w.x, w.y + w.height], [w.x + w.width, w.y + w.height]]) {
+      const lc = rotateAround({ x: q[0], y: q[1] }, -R, P)
+      minX = Math.min(minX, lc.x); minY = Math.min(minY, lc.y); maxX = Math.max(maxX, lc.x); maxY = Math.max(maxY, lc.y)
+    }
   })
 
   const pad = 10

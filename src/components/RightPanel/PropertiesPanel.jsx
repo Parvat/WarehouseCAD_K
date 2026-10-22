@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { TEXT_FONTS, textFace } from '../../theme/tokens'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { deleteSelectionWithAreas } from '../../utils/deleteSelection'
 import { useShallow } from 'zustand/react/shallow'
 import { pxToFtIn } from '../../utils/canvas'
 import { AisleLabelSize } from './panels/AisleLabelSize'
@@ -146,7 +147,7 @@ function ObjectActions({ obj }) {
         <Btn kind="inset" style={small} title="Send backward" onClick={sendBackward}>Back</Btn>
         <Btn kind="inset" style={small} title="Bring forward" onClick={bringForward}>Forward</Btn>
         <Btn kind="inset" style={small} title="Bring to front" onClick={bringToFront}>To front</Btn>
-        <span style={{ marginLeft: 'auto' }}><IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelected} /></span>
+        <span style={{ marginLeft: 'auto' }}><IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={() => deleteSelectionWithAreas(useCanvasStore)} /></span>
       </div>
       {divider}
     </>
@@ -187,7 +188,7 @@ export function PropertiesPanel() {
         <MultiBayPanel />
         <Sec>
           <SelectionRacks selected={selected} />
-          <Btn kind="danger" onClick={deleteSelected}>Delete group</Btn>
+          <Btn kind="danger" onClick={() => deleteSelectionWithAreas(useCanvasStore)}>Delete group</Btn>
         </Sec>
         <More />
       </>
@@ -213,7 +214,7 @@ export function PropertiesPanel() {
             <AisleLabelSize ids={selected.filter(o => o.type === 'aisle').map(o => o.id)} />
           )}
           {twoRacks && <Btn kind="ghost" onClick={() => createAisle(selected[0].id, selected[1].id)}>+ Create Aisle Label</Btn>}
-          <Btn kind="danger" onClick={deleteSelected}>Delete all</Btn>
+          <Btn kind="danger" onClick={() => deleteSelectionWithAreas(useCanvasStore)}>Delete all</Btn>
         </Sec>
         <More />
       </>

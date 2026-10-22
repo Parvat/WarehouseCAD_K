@@ -695,15 +695,18 @@ export const FallbackShape = memo(FallbackShapeView)
 
 /* ── Racking area and zones (generate/rackingArea.js) ───────────────────── */
 
-/** A racking area: its box as a dashed outline, nothing inside (the racks it
- *  placed are drawn by their own painters). The dash is in world units — the
- *  scene never re-renders for a zoom — 2' on, 1' off. */
-function RackingAreaShapeView({ obj, gridSize = 40, listening = false, bind }) {
+/** A racking area, drawn faintly as the Fill racking box is in the mockup (design/studio/Studio.dc.html, panel
+ *  "fill"): fill #7BD3A4 at 6%, edge #2E7D5B 1.5px dashed 6 4 — so the box that owns its racks is always seen, never an
+ *  outline that only shows when selected (a Regenerate area runs along the inner walls, where an edge alone hides
+ *  under the wall). The racks it placed are drawn over it by their own painters. The tint never takes a press: the
+ *  area is picked on its edge (hitTest.js). Edge and dash are screen pixels (strokeScaleEnabled off). */
+function RackingAreaShapeView({ obj, listening = false, bind }) {
   if (!(obj.width > 0) || !(obj.height > 0)) return null
   return (
     <Group name={nodeName(obj.id)} listening={listening} {...(bind ? bind(obj) : null)}>
-      <Rect x={obj.x} y={obj.y} width={obj.width} height={obj.height} stroke="#2F7BD8" strokeWidth={1.5}
-        dash={[2 * gridSize, gridSize]} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={listening} />
+      <Rect x={obj.x} y={obj.y} width={obj.width} height={obj.height} fill="#7BD3A4" opacity={0.06} perfectDrawEnabled={false} listening={false} />
+      <Rect x={obj.x} y={obj.y} width={obj.width} height={obj.height} stroke="#2E7D5B" strokeWidth={1.5}
+        dash={[6, 4]} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={listening} />
     </Group>
   )
 }

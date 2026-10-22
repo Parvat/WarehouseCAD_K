@@ -133,6 +133,7 @@ Warning action button: background `#F2C77A`, text `#3A2E17`.
 - Elevations: Depth and full-screen buttons sit in the "In this layout" row (editor: in its header). The drawing has no buttons on it.
 - Elevation drawing labels (panel): Ceiling · Max load height (sprinklers −N) · free headroom + top of load stacked in one column on the far left · Frame dimension · beam heights at each beam (right) · L tags inside right pallet · pallet height and width arrows inside L1 pallets · face (4″) and lift-off (6″) as extension lines on the left of L1 · Beam length · pallets · capacity under the rack.
 - Exports and printing always use the paper palette, never the dark chrome.
+- **Nothing on the plan is invisible but selectable.** A racking area (from Fill racking or Regenerate) is drawn faintly as the Fill box: fill `#7BD3A4` at 6%, edge `#2E7D5B` 1.5 dashed 6 4; it is picked on its edge. **Ctrl+A** selects only real layout objects (racks, zones, walls, doors, columns, equipment, text, dimensions, shapes), never helpers: the building outline, aisles, racking areas. Deleting every rack of a racking area deletes the area too.
 
 ## 8. How to build from this
 
