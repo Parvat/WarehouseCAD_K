@@ -53,10 +53,11 @@ function Section({ title, children }) {
 // builds that from the object library or edits a placed row by hand.
 // (utils/project.js generateBrief: rackType 'rack_double_row')
 
-export function GeneratePanel() {
+export function GeneratePanel({ embedded = false, onClose } = {}) {
   /* closed to start: a new project's first step is the start screen (components/Project/ProjectSetup.jsx), which
-     generates itself; this panel is for later — regenerate, or start over with another size */
-  const [open, setOpen]     = useState(false)
+     generates itself; this panel is for later — regenerate, or start over with another size. Studio: `embedded`, it
+     is the right card's content (src/studio/StudioFrame.jsx), open while shown; its X calls `onClose`. */
+  const [open, setOpen]     = useState(embedded)
   const [lengthFt, setL]    = useState(BUILDING_DEFAULTS.lengthFt)
   const [widthFt, setW]     = useState(BUILDING_DEFAULTS.widthFt)
   // Auto (BUG 47) is the default — generateAndPlaceBatched runs both
@@ -142,9 +143,12 @@ export function GeneratePanel() {
     setOpen(true)
   }
 
+  /* embedded: the project's building fills the fields once, as opening the floating panel did */
+  useEffect(() => { if (embedded) openPanel() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   /* over the canvas's top right: past the right panel, as wide as it is (a rack selected widens it) */
   const right = useRightPanelWidth().width + 24
-  const box = {
+  const box = embedded ? { fontFamily: 'var(--font-ui)', color: 'var(--text)' } : {
     position: 'fixed', right, top: 60, zIndex: 40, width: 236,
     // never past the window's bottom: the panel scrolls, so Generate and the Regenerate question stay reachable
     maxHeight: 'calc(100vh - 76px)', overflowY: 'auto',
@@ -180,7 +184,7 @@ export function GeneratePanel() {
         padding: '9px 12px', borderBottom: '1px solid var(--border)',
       }}>
         <span style={{ fontSize: 12, fontWeight: 600 }}>Describe the building</span>
-        <button onClick={() => setOpen(false)} style={{
+        <button aria-label="Close" onClick={() => (embedded ? onClose?.() : setOpen(false))} style={{
           background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)',
           display: 'flex', padding: 0,
         }}><X size={14} /></button>

@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, memo } from 'react'
 import { Stage, Layer, Shape } from 'react-konva'
-import { Maximize, ToggleLeft, ToggleRight, Ruler } from 'lucide-react'
 import { Scene } from './Scene'
 import { Overlays } from './Overlays'
 import { ResizeHandlesOverlay } from './ResizeHandlesOverlay'
@@ -13,7 +12,6 @@ import { RowGroupPreview } from './RowGroupPreview'
 import { SplitPreview } from './SplitPreview'
 import { IssueHighlight } from './IssueHighlight'
 import { RowGroupBar } from './RowGroupBar'
-import { ElevLegend } from './ElevationsCanvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useCanvasInteraction } from './useCanvasInteraction'
@@ -32,6 +30,7 @@ import { SPLIT_TOOL, useSplit, hoverSplit, splitAt } from '../utils/splitTool'
 import { rebuildAisles } from '../utils/aisleRebuild'
 import { nanoid } from 'nanoid'
 import { TOOLS } from '../constants'
+import { useViewPrefs, fitRef } from '../studio/viewPrefs'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
    A Konva Stage that owns its own pointer events. No router, no forwarding, no
@@ -110,24 +109,19 @@ const Grid = memo(function Grid({ gridSize, major, minor }) {
   )
 })
 
-/* Whether double-click also fits-to-content, defaulting OFF: double-click is
-   a gesture people reach for while editing (renaming, drilling into a bay),
-   and a big view jump firing by accident there is disorienting. The Fit
-   button (below) is always available regardless of this setting. Presentation
-   state, not canvas document state — localStorage, like the left panel's own
-   prefs, never the canvas store. */
-const DBLCLICK_FIT_KEY = 'trace.canvas2.dblClickFit'
+/* Whether double-click also fits-to-content, defaulting OFF: double-click is a gesture people reach for while
+   editing, and a big view jump firing by accident there is disorienting. The Fit button (the bottom-right island) is
+   always there. Presentation state (src/studio/viewPrefs.js, localStorage), toggled from the layout menu. */
 
-function useDblClickFitSetting() {
-  const [enabled, setEnabled] = useState(() => {
-    try { return localStorage.getItem(DBLCLICK_FIT_KEY) === '1' } catch { return false }
-  })
-  const toggle = () => setEnabled(prev => {
-    const next = !prev
-    try { localStorage.setItem(DBLCLICK_FIT_KEY, next ? '1' : '0') } catch { /* ignore */ }
-    return next
-  })
-  return [enabled, toggle]
+/* Studio ground (STUDIO.md §2): #F4F3EF with a 1px #D9D6CC dot every 20px — the grid. It moves with the pan, so the
+   dots stay put under the plan; the Grid switch shows or hides it. Its own component: the pan writes the store every
+   frame, and only this (and the rulers) re-render for it. */
+function DotGround() {
+  const panX = useCanvasStore(s => s.panX)
+  const panY = useCanvasStore(s => s.panY)
+  return <div aria-hidden="true" data-ground style={{ position: 'absolute', inset: 0, pointerEvents: 'none',
+    backgroundImage: 'radial-gradient(#D9D6CC 1px, transparent 1.2px)', backgroundSize: '20px 20px',
+    backgroundPosition: `${Math.round(panX) % 20}px ${Math.round(panY) % 20}px` }} />
 }
 
 /* Adopt view changes made OUTSIDE the canvas — the zoom buttons, fit, a
@@ -274,10 +268,12 @@ export function Canvas2() {
 
   useEffect(() => { apply() }, [size.w, size.h])
 
-  const [dblClickFitEnabled, toggleDblClickFit] = useDblClickFitSetting()
+  const dblClickFitEnabled = useViewPrefs(s => s.dblClickFit)
 
   const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides } =
     useCanvasInteraction({ stageRef, view, setView, size, objects, dblClickFitEnabled })
+  /* the bottom-right island's Fit calls this (src/studio/StudioFrame.jsx) */
+  useEffect(() => { fitRef.current = fitToContent; return () => { if (fitRef.current === fitToContent) fitRef.current = null } })
 
   /* ── Measure tool — a modal click-two-points-get-distance aid, entirely
      local state (never written to the store — it's a ruler, not a document
@@ -298,13 +294,7 @@ export function Canvas2() {
   const [measureHover, setMeasureHover] = useState(null)
   useEffect(() => { if (!measuring) { setMeasurePts([]); setMeasureHover(null) } }, [measuring])
 
-  const toggleMeasuring = () => {
-    const on = !useMeasureMode.getState().on
-    if (on) endTool(useCanvasStore)
-    setMeasuring(on)
-    setMeasurePts([])
-    setMeasureHover(null)
-  }
+  /* the measure mode is turned on and off by the tool pill's Measure (it ends the running tool first) */
 
   useEffect(() => {
     if (!measuring) return
@@ -402,59 +392,9 @@ export function Canvas2() {
       id="canvas2-container"
       ref={setHost}
       className="flex-1 relative overflow-hidden min-h-0"
-      style={{ background: colors.bg, cursor: effectiveCursor }}
+      style={{ background: '#F4F3EF', cursor: effectiveCursor }}
     >
-      {/* The primary fit-to-content control. Double-click can do the same
-          thing, but only when the setting to its right is turned on — off by
-          default, since double-click is also reached for while editing and a
-          big view jump firing by accident there is disorienting. */}
-      <div style={{ position: 'absolute', right: 12, bottom: 12, zIndex: 50, display: 'flex', gap: 6 }}>
-        <button
-          onClick={toggleMeasuring}
-          title={measuring ? 'Exit measure tool (Esc)' : 'Measure — click two points for the distance between them'}
-          aria-label="Measure"
-          aria-pressed={measuring}
-          style={{
-            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: measuring ? 'var(--accent-solid, #0B101D)' : 'var(--surface, #fff)',
-            color: measuring ? 'var(--accent-fg, #fff)' : 'var(--text2, #3A4152)',
-            border: '1px solid var(--border, #E6E9EF)', borderRadius: 8,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.12)', cursor: 'pointer',
-          }}
-        >
-          <Ruler size={15} strokeWidth={1.6} absoluteStrokeWidth />
-        </button>
-        <button
-          onClick={toggleDblClickFit}
-          title={(dblClickFitEnabled ? 'Disable' : 'Enable') + ' double-click to fit'}
-          aria-label={(dblClickFitEnabled ? 'Disable' : 'Enable') + ' double-click to fit'}
-          aria-pressed={dblClickFitEnabled}
-          style={{
-            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: dblClickFitEnabled ? 'var(--accent-solid, #0B101D)' : 'var(--surface, #fff)',
-            color: dblClickFitEnabled ? 'var(--accent-fg, #fff)' : 'var(--text2, #3A4152)',
-            border: '1px solid var(--border, #E6E9EF)', borderRadius: 8,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.12)', cursor: 'pointer',
-          }}
-        >
-          {dblClickFitEnabled
-            ? <ToggleRight size={16} strokeWidth={1.6} absoluteStrokeWidth />
-            : <ToggleLeft size={16} strokeWidth={1.6} absoluteStrokeWidth />}
-        </button>
-        <button
-          onClick={fitToContent}
-          title="Fit to content"
-          aria-label="Fit to content"
-          style={{
-            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'var(--surface, #fff)', color: 'var(--text2, #3A4152)',
-            border: '1px solid var(--border, #E6E9EF)', borderRadius: 8,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.12)', cursor: 'pointer',
-          }}
-        >
-          <Maximize size={15} strokeWidth={1.6} absoluteStrokeWidth />
-        </button>
-      </div>
+      {showGrid && <DotGround />}
       {size.w > 0 && size.h > 0 && (
         <Stage
           ref={stageRef}
@@ -475,7 +415,7 @@ export function Canvas2() {
         >
           {/* background — the grid alone; it never intercepts anything */}
           <Layer listening={false}>
-            {showGrid && <Grid gridSize={gridSize} major={colors.major} minor={colors.minor} />}
+            {/* the grid is the ground's dot grid (DotGround) — nothing is drawn here */}
           </Layer>
           {/* objects — the real scene. Not listening: picking is geometry
               (hitTest.js, CANVAS2.md rule 4), never Konva's hit graph, and a
@@ -543,7 +483,6 @@ export function Canvas2() {
       <ViewAdopter view={view} apply={apply} />
       <RowGroupBar />
       <AreaPrompt />
-      <ElevLegend />
       {filling && <FillOptionsBar />}
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>

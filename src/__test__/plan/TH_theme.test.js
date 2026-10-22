@@ -87,8 +87,9 @@ describe('TH — broken items', () => {
     expect(ft).toMatch(/zIndex:FLOAT_Z/)
     expect(ft.includes('zIndex:9998')).toBe(false)
     expect(ft).toMatch(/const tooTall = !horizontal && vertH > 0 && vertH > floatFreeHeight\(/)
-    expect(read('App.jsx')).toMatch(/title="Back to hub" data-float-avoid/)
-    expect(read('components/Toolbar/TopBar.jsx')).toMatch(/<div data-float-avoid style=\{\{\n\s+height:56/)
+    // Studio: the top bar and the Hub button are islands now (src/studio/StudioFrame.jsx)
+    expect(read('studio/StudioFrame.jsx')).toMatch(/data-island="top-left" style=\{\{ left: 16, top: 16, height: 44/)
+    expect(read('studio/StudioFrame.jsx')).toMatch(/<button type="button" title="Back to hub" onClick=\{onHub\}/)
   })
 
   it('TH-modal-z (B3): every overlay with a backdrop sits above the floats (200+ vs 150)', () => {
@@ -127,14 +128,15 @@ describe('TH — broken items', () => {
 
   it('TH-menu (B8): the top-bar menu is a menu — roles, focus on open, arrow keys / Home / End', () => {
     const t = read('components/Toolbar/TopBar.jsx')
-    expect(t).toMatch(/<div role="menu" aria-label="Settings and more" ref=\{menuBox\} onKeyDown=\{onMenuKey\}/)
-    expect(t).toMatch(/'aria-haspopup': 'menu', 'aria-expanded': !!active/)
+    // Studio: the menu is the layout menu, opened from the project name in the top-left island
+    expect(t).toMatch(/<div role="menu" aria-label="Layout menu" ref=\{menuBox\} onKeyDown=\{onMenuKey\}/)
+    expect(read('studio/StudioFrame.jsx')).toMatch(/aria-haspopup="menu" aria-expanded=\{menu\} aria-label="Layout menu"/)
     expect(t).toMatch(/role="menuitem" tabIndex=\{-1\}/)
     expect(t).toMatch(/role: 'menuitemradio', 'aria-checked': !!active/)
     expect(t).toMatch(/role="menuitemcheckbox" aria-checked=\{on\}/)
     expect(t).toMatch(/<div role="group" aria-label=\{label\}/)
     expect(t).toMatch(/\['ArrowDown', 'ArrowUp', 'Home', 'End'\]/)
-    expect(t).toMatch(/useEffect\(\(\) => \{ if \(menuOpen\) menuItems\(\)\[0\]\?\.focus\(\) \}, \[menuOpen\]\)/)
+    expect(t).toMatch(/useEffect\(\(\) => \{ menuItems\(\)\[0\]\?\.focus\(\) \}, \[\]\)/)
   })
 
   it('TH-export-window (B9): its chrome is PJS, pine primary, white secondary, radius 2, Lucide Printer and X; the drawing is untouched', () => {

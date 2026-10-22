@@ -37,7 +37,7 @@ export function FillOverlay() {
 }
 
 const bar = {
-  position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 60,
+  position: 'absolute', top: 76, left: '50%', transform: 'translateX(-50%)', zIndex: 60,
   display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 8,
   background: 'var(--surface, #fff)', border: '1px solid var(--border, #E6E9EF)', boxShadow: '0 2px 10px rgba(0,0,0,0.12)',
   fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--text, #0B101D)', whiteSpace: 'nowrap',

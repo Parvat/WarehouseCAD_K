@@ -403,7 +403,7 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(m.LC.useLayoutCheck.getState().askExport).toBe(null)
     const dlg = readFileSync('src/components/RightPanel/LayoutCheckPanel.jsx', 'utf8')
     expect(dlg).toMatch(/\{n\} error\{n === 1 \? '' : 's'\} found\. Export anyway\?/)
-    expect(readFileSync('src/components/Toolbar/TopBar.jsx', 'utf8')).toMatch(/onClick=\{\(\) => exportWithCheck\(useCanvasStore, exportAsPDF\)\}/)
+    expect(readFileSync('src/studio/StudioFrame.jsx', 'utf8')).toMatch(/onClick=\{\(\) => exportWithCheck\(useCanvasStore, exportAsPDF\)\}/)
   })
 })
 
@@ -419,6 +419,6 @@ describe('LC — one rule each', () => {
     for (const f of ['rowAisleGaps', 'rowAisleLevel', 'rackReachable', 'runColumnCheck', 'rackIssues', 'oversizedBayIndices']) expect(lc).toMatch(new RegExp(f + '\\('))
     expect(lc).not.toMatch(/aisleFt \* gridSize\) *[<>]|travelFt \?\? 8\) \* gridSize *[<>]/)   // no width compared by hand
     expect(src('src/components/RightPanel/index.jsx')).toMatch(/<LayoutCheckPanel \/>/)
-    expect(src('src/components/Toolbar/TopBar.jsx')).toMatch(/<CheckLayoutButton \/>/)
+    expect(src('src/studio/StudioFrame.jsx')).toMatch(/runLayoutCheck\(useCanvasStore\)/)
   })
 })

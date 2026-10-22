@@ -5,7 +5,7 @@ import { useAreaPrompt, answerArea, answerChoice, dismissAreaNote } from '../uti
    racks. Continue does it (one undo step); Cancel leaves everything as it was.
    Same bar as the Row group (RowGroupBar), just above it. */
 const wrap = {
-  position: 'absolute', left: '50%', bottom: 64, transform: 'translateX(-50%)', zIndex: 61,
+  position: 'absolute', left: '50%', bottom: 126, transform: 'translateX(-50%)', zIndex: 61,
   width: 'max-content', maxWidth: 'min(640px, calc(100% - 32px))',
 }
 const box = {

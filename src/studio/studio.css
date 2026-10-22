@@ -1,0 +1,36 @@
+/* Trace Studio — the frame (STUDIO.md; values copied from design/studio/Studio.dc.html).
+   The canvas fills the window; everything else floats on it as dark islands. */
+
+:root, [data-theme] {
+  --st-ground:#F4F3EF; --st-ground-dot:#D9D6CC;
+  --st-island:#1F2321; --st-island-line:#323835; --st-inset:#2A2F2C; --st-divider:#2E3431; --st-separator:#3A403C;
+  --st-active:#2E4A3C;
+  --st-text-strong:#F2F4F1; --st-text:#E8EAE6; --st-icon:#C9CEC9; --st-muted:#9AA29C; --st-faint:#7E8680;
+  --st-accent:#7BD3A4; --st-on-accent:#0F2A1F; --st-select:#2E7D5B; --st-danger-icon:#FF9C86;
+  --st-error-bg:#4A231B; --st-error-fg:#FFB4A3; --st-warn-bg:#3A2E17; --st-warn-fg:#F2C77A; --st-note-bg:#1E2E4A; --st-note-fg:#A9C4FF;
+  --st-shadow-island:0 8px 24px rgba(15,18,16,.18);
+  --st-shadow-pill:0 10px 28px rgba(15,18,16,.22);
+}
+
+/* Scrollbars — everywhere, set once (STUDIO.md §5) */
+* { scrollbar-width:thin; scrollbar-color:#3A403C transparent; }
+::-webkit-scrollbar { width:8px; height:8px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:#3A403C; border-radius:4px; border:2px solid #1F2321; }
+::-webkit-scrollbar-thumb:hover { background:#4A514D; }
+
+/* an island: the top bars, the rail, the right card, the flyout, the bottom bars */
+.st-island {
+  position:fixed; z-index:150; display:flex; align-items:center;
+  background:#1F2321; border:1px solid #323835; border-radius:10px; box-shadow:0 8px 24px rgba(15,18,16,.18);
+  font-family:'Plus Jakarta Sans', system-ui, sans-serif; font-size:13px; color:#E8EAE6;
+}
+/* the tool pill (and later the selection and mode bars) */
+.st-pill {
+  position:fixed; z-index:150; display:flex; align-items:center;
+  background:#1F2321; border:1px solid #323835; border-radius:12px; box-shadow:0 10px 28px rgba(15,18,16,.22);
+  font-family:'Plus Jakarta Sans', system-ui, sans-serif; font-size:13px; color:#E8EAE6;
+}
+.st-island button, .st-pill button { font-family:inherit; cursor:pointer; }
+.st-island button:disabled, .st-pill button:disabled { cursor:not-allowed; opacity:.45; }
+.st-sep-v { width:1px; height:18px; background:#3A403C; flex-shrink:0; }

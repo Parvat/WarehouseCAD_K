@@ -39,7 +39,8 @@ import { levelsFor } from '../../utils/rackLevels'
 import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
 import { FILL_TOOL } from '../../utils/fillTool'
-import { endTool } from '../../utils/toolSwitch'
+import { endTool, useMeasureMode } from '../../utils/toolSwitch'
+import { StudioRail, StudioFlyout, StudioToolPill } from '../../studio/StudioTools'
 import { ROW_GROUP_TOOL } from '../../utils/rowGroupTool'
 import { SPLIT_TOOL } from '../../utils/splitTool'
 import { ANNOT } from './AnnotationPanel'
@@ -437,7 +438,7 @@ const BROKEN_HINT = ' — unavailable: CanvasObjectCore.jsx is missing its path-
 /*  reuses the store's existing strokeColor rather than adding a second source */
 /*  of draw colour.                                                            */
 /* ═══════════════════════════════════════════════════════════════════════════ */
-function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, selectedStroke }) {
+function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, selectedStroke, place }) {
   const row = (label, children) => (
     <div style={{ display:'flex', alignItems:'center', gap:8, minHeight:26 }}>
       <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:'var(--panel-text3)',
@@ -466,7 +467,7 @@ function PenOptions({ prefs, setPrefs, strokeColor, setStrokeColor, horizontal, 
     <div role="dialog" aria-label="Pen options" data-pen-options
       style={{
         position:'absolute', zIndex:10000, width:244,
-        ...(horizontal ? { top:'100%', left:0, marginTop:6 } : { left:'100%', top:0, marginLeft:6 }),
+        ...(place === 'above' ? { bottom:'100%', left:0, marginBottom:12 } : horizontal ? { top:'100%', left:0, marginTop:6 } : { left:'100%', top:0, marginLeft:6 }),
         display:'flex', flexDirection:'column', gap:7, padding:'10px 11px 11px',
         background:'var(--panel-bg)', border:'0.5px solid var(--panel-border)',
         borderRadius:11, boxShadow:'0 8px 22px rgba(11,16,29,0.14)',
@@ -831,7 +832,18 @@ function PinnedTray({ items, mode, colorOf, onPick, pinned, onTogglePin, onClose
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  MAIN                                                                      */
 /* ═══════════════════════════════════════════════════════════════════════════ */
-export function FloatingToolbar() {
+/* Studio (STUDIO.md §1): `studio` renders the library as the left rail and its flyout, and the drawing tools as the
+   bottom tool pill (src/studio/StudioTools.jsx) — the same sections, placement, tools and pen options as below. */
+const LINE_TOOLS = [
+  { id:'line',      tool:TOOLS.LINE,      label:'Line',      icon:'Line',      keyName:'L' },
+  { id:'arrow',     tool:TOOLS.ARROW,     label:'Arrow',     icon:'Arrow' },
+  { id:'arc',       tool:TOOLS.ARC,       label:'Arc',       icon:'Arc' },
+  { id:'dimension', tool:ANNOT.DIMENSION, label:'Dimension', icon:'Dimension', kind:'object' },
+  { id:'freehand',  tool:TOOLS.FREEHAND,  label:'Freehand',  icon:'Freehand' },
+]
+const ZONE_ICON = { zone_office:'Office', zone_staging:'Staging', zone_washroom:'Washroom', zone_custom:'Custom area' }
+
+export function FloatingToolbar({ studio = false } = {}) {
   const {
     activeTool, setActiveTool,
     addObject, objects, zoom, panX, panY, activeLayerId, gridSize,
@@ -1074,6 +1086,9 @@ export function FloatingToolbar() {
   /* No section is open until asked for. Expanding into a pre-opened Racking
      list put ~10 rows on screen before the user had chosen a category. */
   const [openSections, setOpenSections] = useState(() => new Set())
+  /* studio: the section whose flyout is open; the measure mode (utils/toolSwitch.js) */
+  const [flyout, setFlyout] = useState(null)
+  const measuring = useMeasureMode(st => st.on)
   const toggleSection = id =>
     setOpenSections(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
@@ -1101,6 +1116,31 @@ export function FloatingToolbar() {
   }
 
   /* ── the animating controls ─────────────────────────────────────────────── */
+  if (studio) {
+    const tool = (id, t, label, icon, extra = {}) => ({ id, label, icon, on: !measuring && activeTool === t, onClick: () => setActiveTool(t), ...extra })
+    const toggleMeasure = () => { const on = !useMeasureMode.getState().on; if (on) endTool(useCanvasStore); useMeasureMode.setState({ on }) }
+    const groups = [
+      [tool('select', TOOLS.SELECT, 'Select', 'Select', { keyName:'V' }), tool('pan', TOOLS.PAN, 'Pan', 'Pan', { keyName:'P' })],
+      [tool('fill', FILL_TOOL, 'Fill racking', 'Fill racking'), tool('rowgroup', ROW_GROUP_TOOL, 'Row group', 'Row group'), tool('split', SPLIT_TOOL, 'Split', 'Split')],
+      [{ id:'measure', label:'Measure', icon:'Measure', on: measuring, onClick: toggleMeasure, title: measuring ? 'Exit measure tool (Esc)' : 'Measure — click two points for the distance between them' },
+       tool('text', TOOLS.TEXT, 'Text', 'Text', { kind:'object', keyName:'T' })],
+    ]
+    const lineTools = LINE_TOOLS.map(t => ({ ...t, on: !measuring && activeTool === t.tool, onClick: () => setActiveTool(t.tool) }))
+    const zones = ZONE_ITEMS.map(z => ({ id: z.id, label: z.label, icon: ZONE_ICON[z.id] || 'Custom area', onClick: () => pickItem({ ...z, catId:'zones' }) }))
+    const sec = SECTIONS.find(x => x.id === flyout)
+    return (
+      <>
+        <StudioRail sections={SECTIONS} open={flyout} onOpen={setFlyout} onSettings={() => openSetup('settings')} />
+        {sec && <StudioFlyout section={sec} items={secItems(sec)} onPick={pickItem} onClose={() => setFlyout(null)} />}
+        <StudioToolPill groups={groups} lineTools={lineTools} zones={zones}
+          penOptions={activeTool === TOOLS.FREEHAND && !measuring && (
+            <PenOptions prefs={penPrefs} setPrefs={setPenPrefs} place="above"
+              strokeColor={strokeColor} setStrokeColor={setStrokeColor} selectedStroke={selectedStroke}/>
+          )} />
+      </>
+    )
+  }
+
   const ghostBtn = ({ key, label, top, left, color, active, onClick, children }) => (
     <button key={key} aria-label={label} title={label} aria-pressed={!!active} onClick={onClick}
       style={{

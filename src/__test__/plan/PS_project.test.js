@@ -166,7 +166,7 @@ describe('PS — the project', () => {
     for (const k of ['LENGTH (ft)', 'WIDTH (ft)', 'COLUMN GRID (ft)', 'ROW DIRECTION', 'MAX RACK RUN (ft)']) expect([k, gen.includes(k)]).toEqual([k, true])
     expect(gen).toMatch(/const brief = \(\) => generateBrief\(project, mheOptions, \{ lengthFt, widthFt, gridXFt, gridYFt, maxRunFt, columnsAlongWall, orientation \}\)/)
     expect(gen).toMatch(/const aisleFt = mheOptions\[mhe\]\?\.aisleFt \?\? 10\.5/)
-    expect(gen).toMatch(/const \[open, setOpen\]     = useState\(false\)/)            // the start screen is a new project's first step
+    expect(gen).toMatch(/const \[open, setOpen\]     = useState\(embedded\)/)         // closed unless it is the Studio card's content: the start screen is a new project's first step
     expect(/openSetup\('ceiling'|setupPrompted/.test(gen + src('utils/project.js'))).toBe(false)   // no "set up first" trigger
     expect(/aria-label="Pallet face"|aria-label="Forklift"|aria-label="Aisle \(ft\)"|aria-label="Wall clearance/.test(src('canvas2/FillTool.jsx'))).toBe(false)
     expect(/Area pallet|Area forklift|Area aisle/.test(src('components/RightPanel/panels/RackingAreaPanel.jsx'))).toBe(false)

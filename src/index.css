@@ -109,11 +109,7 @@ button:not(:disabled):active {
     linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width:4px; height:4px; }
-::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:var(--border2,#2a2d36); border-radius:2px; }
-::-webkit-scrollbar-thumb:hover { background:var(--text3,#555a6a); }
+/* Scrollbars: set once, globally, in src/studio/studio.css (STUDIO.md §5) */
 
 /* ── Global theme overrides — replaces Tailwind hardcoded colors ─────────── */
 /* These !important rules override hardcoded Tailwind classes for theme support */

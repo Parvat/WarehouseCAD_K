@@ -332,9 +332,9 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     expect(lg).toMatch(/const tinted = showColors && tintOn\(elevations\)/)
     expect(lg).toMatch(/\{tinted \? <Swatch color=\{tint\(type\.color\)\} \/>/)
     expect(lg).toMatch(/background: color, opacity: ELEV_FILL_OPACITY/)
-    // clear of the fixed "← Hub" button (left 12, about 90 px wide): the legend starts past it
-    expect(lg).toMatch(/position: 'absolute', left: 104, bottom: 12/)
-    expect(src('App.jsx')).toMatch(/position: 'absolute', left: 12, bottom: 12, zIndex: 55/)
+    // Studio: the colours are switched by the bottom-right island's Elevations toggle; the legend chip left the canvas
+    expect(src('studio/StudioFrame.jsx')).toMatch(/aria-label="Elevation colours" aria-pressed=\{showColors\} onClick=\{\(\) => setShowColors\(!showColors\)\}/)
+    expect(/<ElevLegend/.test(src('canvas2/Canvas2.jsx'))).toBe(false)
     expect(src('components/Elevations/ElevationsTab.jsx')).toMatch(/background: tint\(t\.color\), opacity: tinted \? ELEV_FILL_OPACITY : 0\.25/)
   })
 
@@ -770,12 +770,15 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     const src = (f) => readFileSync(new URL('../../' + f, import.meta.url), 'utf8')
     for (const f of ['utils/elevMode.js', 'components/Elevations/ModeSwitch.jsx', 'components/Elevations/ElevationWorkspace.jsx']) expect([f, existsSync(new URL('../../' + f, import.meta.url))]).toEqual([f, false])
     const app = src('App.jsx'), top = src('components/Toolbar/TopBar.jsx')
-    expect([/elevMode|ElevationWorkspace/.test(app), app.includes('          <FloatingToolbar />'), app.includes('        <GeneratePanel />'), /ModeSwitch/.test(top)]).toEqual([false, true, true, false])
+    // Studio: the library in studio mode (rail, flyout, tool pill), the frame's islands; Generate opens in the right card
+    expect([/elevMode|ElevationWorkspace/.test(app), app.includes('        <FloatingToolbar studio />'), app.includes('        <StudioFrame onHub='), /ModeSwitch/.test(top)]).toEqual([false, true, true, false])
+    expect(src('studio/StudioFrame.jsx')).toMatch(/<GeneratePanel embedded onClose=\{\(\) => useViewPrefs\.getState\(\)\.setCard\('tabs'\)\} \/>/)
     expect(/useElevMode/.test(src('canvas2/Canvas2.jsx') + src('canvas2/Scene.jsx') + src('canvas2/useCanvasInteraction.js') + src('hooks/useKeyboardShortcuts.js') + src('canvas2/ElevationsCanvas.jsx'))).toBe(false)
-    const rp = src('components/RightPanel/index.jsx')
-    expect(rp).toMatch(/>Properties<\/button>[\s\S]*>Elevations<\/button>/)
+    // Studio: the right card (300 wide, StudioFrame.jsx) holds the two tabs; their content is RightPanelTabs
+    const rp = src('components/RightPanel/index.jsx'), card = src('studio/StudioFrame.jsx')
+    expect(card).toMatch(/>Properties<\/button>[\s\S]*>Elevations<\/button>/)
+    expect(card).toMatch(/right: 16, top: 76, width: 300, maxHeight: 'calc\(100vh - 152px\)'/)
     expect(rp).toMatch(/<ElevationsTab \/>/)
-    expect(rp).toMatch(/\{tab === 'elevations' && \(\s*<div role="separator" aria-orientation="vertical" aria-label="Resize right panel" onPointerDown=\{startResize\}/)
     expect([RP.panelWidth({ tab: 'elevations', elevW: 520 }), RP.panelWidth({ tab: 'properties', elevW: 520 })]).toEqual([520, 272])
     RP.setRightPanel({ tab: 'elevations', elevW: 555 })
     expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1'))).toEqual({ tab: 'elevations', elevW: 555 })
@@ -895,10 +898,10 @@ describe('EV — the wiring', () => {
   it('EV-wire: no paint tool on the canvas (types are set from a selection); the legend stays; the keeper is installed; the editor is in Properties (never floating); Simple / Detailed remembered per browser', async () => {
     const c2 = readFileSync(new URL('../../canvas2/Canvas2.jsx', import.meta.url), 'utf8')
     expect(c2).toMatch(/splitting \? splitMouseDown : onStageMouseDown/)
-    expect(c2).toMatch(/<ElevLegend \/>/)
+    expect(/<ElevLegend \/>/.test(c2)).toBe(false)   // Studio: the colours toggle is the bottom-right island's Elevations
     const app = readFileSync(new URL('../../App.jsx', import.meta.url), 'utf8')
     expect(app).toMatch(/installElevationsKeeper\(useCanvasStore\)/)
-    expect(app).toMatch(/<div className="flex flex-col flex-1 min-w-0 min-h-0" style=\{\{ position: 'relative' \}\}>\s*<Canvas2 \/>/)
+    expect(app).toMatch(/<div className="flex flex-1 min-h-0 overflow-hidden" style=\{\{ position: 'relative' \}\}>\s*<Canvas2 \/>/)
     const pane = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
     // never floating — only its full-screen view, on purpose
     expect([(pane.match(/position: 'fixed'/g) || []).length, /createPortal\(\s*<div role="dialog" aria-label="Elevation full screen" style=\{\{ position: 'fixed'/.test(pane)]).toEqual([1, true])

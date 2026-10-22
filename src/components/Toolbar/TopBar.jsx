@@ -1,66 +1,27 @@
-import { useState, useRef, useEffect } from 'react'
-/* Grid3X3 / Ruler / Magnet left with the icon toggles they labelled — those
-   three are switches in the settings menu now, named in words. */
-import { Scissors, Copy, Clipboard, Undo2, Redo2, ZoomIn, ZoomOut,
-         Save, FolderOpen, FilePlus, FileDown, MoreHorizontal, SlidersHorizontal, ClipboardCheck } from 'lucide-react'
+import { useRef, useEffect } from 'react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { UNITS } from '../../constants'
-import { RulesPanel } from '../Rules/RulesPanel'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { nanoid } from 'nanoid'
 import { pasteAt } from '../../utils/pasteAt'
 import { useLabelPrefs } from '../../canvas2/labelPrefs'
-import { useLayoutCheck, runLayoutCheck, checkLabel, exportWithCheck } from '../../utils/layoutCheck'
-import { ExportCheckDialog } from '../RightPanel/LayoutCheckPanel'
 import { LABEL_SIZES, LABEL_SIZE_NAMES } from '../../render/labelSize'
+import { useViewPrefs } from '../../studio/viewPrefs'
 
-/* ── palette — reads the active theme's CSS variables (see index.css) ──────── */
+/* The layout menu (Studio, STUDIO.md §1: the project name ▾ in the top-left island opens it). It holds everything the
+   old top bar's "Settings and more" menu held — File, Edit, View, Standards, Appearance — so no action is lost while
+   the Studio frame replaces the bar. Its rows are restyled with the menu's own step (C14); here they keep their
+   working shape, text only (no Lucide: STUDIO.md §9). Roles and arrow keys as before. */
+
 const C = {
   bg:       'var(--surface)',
   border:   'var(--border)',
   text:     'var(--text)',
   muted:    'var(--text3)',
-  subtle:   'var(--text2)',
-  surface:  'var(--surface3)',
-  accent:   'var(--accent)',
   accentBg: 'var(--accent-solid)',
-  danger:   'var(--red)',
-  active:   'var(--accent-solid)',
   activeTxt:'var(--accent-fg)',
 }
-
-/* Quiet icon button — the only shape that stays in the always-visible bar. */
-function IBtn({ icon: Icon, label, onClick, active, danger, title, menu }) {
-  return (
-    <button onClick={onClick} title={title || label} aria-label={title || label}
-      {...(menu ? { 'aria-haspopup': 'menu', 'aria-expanded': !!active } : null)}
-      style={{
-        display:'flex', alignItems:'center', justifyContent:'center',
-        width:30, height:30, borderRadius:7, border:'none', cursor:'pointer',
-        fontSize:12, fontFamily:'inherit', fontWeight:500,
-        background: active ? C.active : 'transparent',
-        color: active ? C.activeTxt : danger ? C.danger : C.subtle,
-        transition:'background 0.12s, color 0.12s',
-      }}
-      onMouseEnter={e => {
-        if (!active) {
-          e.currentTarget.style.background = C.surface
-          e.currentTarget.style.color = danger ? C.danger : C.text
-        }
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.background = active ? C.active : 'transparent'
-        e.currentTarget.style.color = active ? C.activeTxt : danger ? C.danger : C.subtle
-      }}>
-      <Icon size={15} strokeWidth={1.6} absoluteStrokeWidth/>
-    </button>
-  )
-}
-
-/* ── settings-menu primitives ──────────────────────────────────────────────
-   Everything that used to crowd the bar lives in here. Rows are label-left /
-   control-right so the menu reads as one column, not a second toolbar. */
 
 function MenuLabel({ children }) {
   return (
@@ -84,21 +45,19 @@ function MenuGroup({ label, children, first }) {
   )
 }
 
-/* A full-width action: icon + name on the left, shortcut hint on the right. */
-function MenuItem({ icon: Icon, children, onClick, hint, danger }) {
+/* A full-width action: name on the left, shortcut hint on the right. */
+function MenuItem({ children, onClick, hint }) {
   return (
     <button onClick={onClick} role="menuitem" tabIndex={-1}
       style={{
         display:'flex', alignItems:'center', gap:10, width:'100%',
         padding:'7px 8px', borderRadius:7, border:'none', background:'transparent',
         cursor:'pointer', textAlign:'left',
-        fontFamily:'inherit', fontSize:12.5, fontWeight:500,
-        color: danger ? C.danger : C.text,
+        fontFamily:'inherit', fontSize:12.5, fontWeight:500, color:C.text,
         transition:'background 0.12s',
       }}
       onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-      <Icon size={14} strokeWidth={1.6} absoluteStrokeWidth style={{ color: danger ? C.danger : C.subtle, flexShrink:0 }}/>
       <span style={{ flex:1 }}>{children}</span>
       {hint && <span style={{ fontSize:10.5, color:C.muted, fontFamily:'var(--font-mono)' }}>{hint}</span>}
     </button>
@@ -118,7 +77,7 @@ function MenuRow({ label, children }) {
   )
 }
 
-/* Pill-group segment — one shared shape for grid size, UI size and theme. */
+/* Pill-group segment — one shared shape for grid size, UI size and zoom. */
 function Seg({ active, onClick, title, children, wide }) {
   return (
     <button onClick={onClick} title={title} tabIndex={-1} aria-label={title}
@@ -139,7 +98,6 @@ function Seg({ active, onClick, title, children, wide }) {
   )
 }
 
-/* The pill-group's own container, so segments sit in one recessed track. */
 function SegGroup({ children }) {
   return (
     <div style={{
@@ -167,7 +125,8 @@ function Switch({ on, onClick, label }) {
   )
 }
 
-function doZoom(factor) {
+/** Zoom about the canvas centre (the bottom-left island's − / +, the menu's zoom). */
+export function doZoom(factor) {
   const s = useCanvasStore.getState()
   const { w, h } = getCanvasContainerSize({ w: 1200, h: 800 })
   const cx = w / 2
@@ -176,46 +135,23 @@ function doZoom(factor) {
   s.setViewport(nz, cx - (cx - s.panX) * (nz / s.zoom), cy - (cy - s.panY) * (nz / s.zoom))
 }
 
-/* "Check layout · 3 errors": runs the check again every press. */
-function CheckLayoutButton() {
-  const result = useLayoutCheck(s => s.result)
-  const errors = result ? result.errors.length : 0
-  const label = checkLabel(result)
-  return (
-    <button type="button" aria-label={label} title="List every problem in the layout — nothing is changed"
-      onClick={() => runLayoutCheck(useCanvasStore)}
-      style={{
-        display:'flex', alignItems:'center', gap:7, height:34, padding:'0 12px', borderRadius:8, cursor:'pointer',
-        border:`1px solid ${C.border}`, background:C.bg, color: errors ? C.danger : C.text,
-        fontFamily:'inherit', fontSize:12.5, fontWeight:600, whiteSpace:'nowrap',
-      }}>
-      <ClipboardCheck size={14} strokeWidth={1.7} absoluteStrokeWidth/>
-      {label}
-    </button>
-  )
-}
-
-export function TopBar() {
+/** The layout menu. `onClose` closes it; `onRules` opens Rules profiles; `onHub` goes back to the Hub. Positioned by
+ *  its caller (the top-left island), which also closes it on Esc and a click outside. */
+export function LayoutMenu({ onClose, onRules, onHub, style }) {
   const { labelSize, setLabelSize, pdfLabelSize, setPdfLabelSize } = useLabelPrefs()
   const {
-    undo, redo, copySelected, paste, cutSelected,
+    copySelected, cutSelected,
     zoom, setViewport,
     unit, setUnit,
     showGrid, toggleGrid, showRulers, toggleRulers,
     snapToGrid, toggleSnap, snapUnit, setSnapUnit,
-    uiTheme, setUiTheme,
     uiScale, setUiScale,
-    saveToFile, loadFromFile, newScene, exportAsPDF,
-    currentFilename, hasUnsavedChanges,
-  } = useCanvasStore(useShallow(s => ({ undo: s.undo, redo: s.redo, copySelected: s.copySelected, paste: s.paste, cutSelected: s.cutSelected, zoom: s.zoom, setViewport: s.setViewport, unit: s.unit, setUnit: s.setUnit, showGrid: s.showGrid, toggleGrid: s.toggleGrid, showRulers: s.showRulers, toggleRulers: s.toggleRulers, snapToGrid: s.snapToGrid, toggleSnap: s.toggleSnap, snapUnit: s.snapUnit, setSnapUnit: s.setSnapUnit, uiTheme: s.uiTheme, setUiTheme: s.setUiTheme, uiScale: s.uiScale, setUiScale: s.setUiScale, saveToFile: s.saveToFile, loadFromFile: s.loadFromFile, newScene: s.newScene, exportAsPDF: s.exportAsPDF, currentFilename: s.currentFilename, hasUnsavedChanges: s.hasUnsavedChanges })))
-
-  /* Menu open/closed is presentation state — component-local, never the store. */
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [rulesOpen, setRulesOpen] = useState(false)
-  const menuRef = useRef(null)
+    saveToFile, loadFromFile, newScene,
+  } = useCanvasStore(useShallow(s => ({ copySelected: s.copySelected, cutSelected: s.cutSelected, zoom: s.zoom, setViewport: s.setViewport, unit: s.unit, setUnit: s.setUnit, showGrid: s.showGrid, toggleGrid: s.toggleGrid, showRulers: s.showRulers, toggleRulers: s.toggleRulers, snapToGrid: s.snapToGrid, toggleSnap: s.toggleSnap, snapUnit: s.snapUnit, setSnapUnit: s.setSnapUnit, uiScale: s.uiScale, setUiScale: s.setUiScale, saveToFile: s.saveToFile, loadFromFile: s.loadFromFile, newScene: s.newScene })))
+  const dblClickFit = useViewPrefs(s => s.dblClickFit)
   const menuBox = useRef(null)
   const menuItems = () => [...(menuBox.current?.querySelectorAll('[role^="menuitem"], select') || [])]
-  useEffect(() => { if (menuOpen) menuItems()[0]?.focus() }, [menuOpen])
+  useEffect(() => { menuItems()[0]?.focus() }, [])
   const onMenuKey = e => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
     if (e.target.tagName === 'SELECT' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) return
@@ -227,189 +163,103 @@ export function TopBar() {
       : e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length
     items[n].focus()
   }
-
-  useEffect(() => {
-    if (!menuOpen) return
-    const onDown = e => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false) }
-    const onKey  = e => { if (e.key === 'Escape') setMenuOpen(false) }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menuOpen])
+  const done = (fn) => () => { fn(); onClose() }
 
   return (
-    <div data-float-avoid style={{
-      height:56, background:C.bg, borderBottom:`1px solid ${C.border}`,
-      display:'flex', alignItems:'center', padding:'0 20px', gap:16,
-      flexShrink:0, zIndex:50,
+    <div role="menu" aria-label="Layout menu" ref={menuBox} onKeyDown={onMenuKey} style={{
+      position:'fixed', width:296, zIndex:160,
+      background:C.bg, border:`0.5px solid ${C.border}`, borderRadius:12,
+      boxShadow:'var(--shadow)', color:C.text, fontFamily:'var(--font-ui)',
+      maxHeight:'calc(100vh - 90px)', overflowY:'auto', ...style,
     }}>
 
-      {/* Wordmark — the same mark the Hub and Login wear, so the app reads as
-          one product across its shells. */}
-      <div style={{
-        display:'inline-flex', alignItems:'center', gap:9, flexShrink:0,
-        fontFamily:'var(--font-display)', fontWeight:700, fontSize:19,
-        letterSpacing:'0.01em', color:C.accent, userSelect:'none',
-      }}>
-        <span style={{
-          width:8, height:8, background:'currentColor', borderRadius:1,
-          transform:'rotate(45deg)', display:'inline-block',
-        }}/>
-        Trace
-      </div>
+      <MenuGroup label="File" first>
+        <MenuItem onClick={done(newScene)} hint="Ctrl+N">New</MenuItem>
+        <MenuItem onClick={done(loadFromFile)}>Open…</MenuItem>
+        <MenuItem onClick={done(saveToFile)} hint="Ctrl+S">Save</MenuItem>
+      </MenuGroup>
 
-      {/* Project name */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
-        <span style={{ color:C.border, fontSize:15, userSelect:'none' }}>/</span>
-        <span style={{
-          fontSize:13, fontWeight:500, color:C.subtle,
-          maxWidth:260, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
-        }}>
-          {currentFilename || 'Untitled layout'}
-        </span>
-        {hasUnsavedChanges && (
-          <div title="Unsaved changes"
-            style={{ width:5, height:5, borderRadius:'50%', background:C.accent, flexShrink:0 }}/>
-        )}
-      </div>
+      <MenuGroup label="Edit">
+        <MenuItem onClick={done(cutSelected)}>Cut</MenuItem>
+        <MenuItem onClick={done(copySelected)}>Copy</MenuItem>
+        <MenuItem onClick={done(() => pasteAt(useCanvasStore, 'cursor', nanoid))} hint="Ctrl+V">Paste</MenuItem>
+        <MenuItem onClick={done(() => pasteAt(useCanvasStore, 'inPlace', nanoid))} hint="Ctrl+Shift+V">Paste in place</MenuItem>
+      </MenuGroup>
 
-      <div style={{ flex:1 }} />
+      <MenuGroup label="View">
+        <MenuRow label="Grid">
+          <Switch on={showGrid} onClick={toggleGrid} label="Toggle grid" />
+        </MenuRow>
+        <MenuRow label="Rulers">
+          <Switch on={showRulers} onClick={toggleRulers} label="Toggle rulers" />
+        </MenuRow>
+        <MenuRow label="Double-click to fit">
+          <Switch on={dblClickFit} onClick={() => useViewPrefs.getState().toggleDblClickFit()} label="Toggle double-click to fit" />
+        </MenuRow>
+        <MenuRow label="Label size">
+          <SegGroup>
+            {[['small','S'],['medium','M'],['large','L'],['xlarge','XL']].map(([val,lbl]) => (
+              <Seg key={val} active={labelSize===val} onClick={() => setLabelSize(val)} title={`${LABEL_SIZE_NAMES[val]} — ${LABEL_SIZES[val]} in text`}>{lbl}</Seg>
+            ))}
+          </SegGroup>
+        </MenuRow>
+        <MenuRow label="PDF label size">
+          <select value={pdfLabelSize} onChange={e => setPdfLabelSize(e.target.value)} aria-label="PDF label size"
+            style={{ fontSize:11, fontFamily:'var(--font-mono)', background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', borderRadius:6, padding:'3px 4px' }}>
+            <option value="auto">Auto (≥ 2.5 mm)</option>
+            <option value="screen">Same as screen</option>
+            {Object.keys(LABEL_SIZES).map(k => <option key={k} value={k}>{LABEL_SIZE_NAMES[k]} ({LABEL_SIZES[k]} in)</option>)}
+          </select>
+        </MenuRow>
+        <MenuRow label="Snap to grid">
+          <Switch on={snapToGrid} onClick={toggleSnap} label="Toggle snap" />
+        </MenuRow>
+        <MenuRow label="Grid size">
+          <SegGroup>
+            {[['ft','1ft'],['in','1"'],['half-in','½"']].map(([val,lbl]) => (
+              <Seg key={val} active={snapUnit===val} onClick={() => setSnapUnit(val)}>{lbl}</Seg>
+            ))}
+          </SegGroup>
+        </MenuRow>
+        <MenuRow label="Units">
+          <select value={unit} onChange={e => setUnit(e.target.value)}
+            style={{
+              background:'var(--surface2)', border:'none', borderRadius:7,
+              fontSize:11, color:C.text, fontFamily:'var(--font-mono)',
+              padding:'6px 8px', cursor:'pointer', outline:'none',
+            }}>
+            {Object.values(UNITS).map(u => <option key={u}>{u}</option>)}
+          </select>
+        </MenuRow>
+        <MenuRow label="Zoom">
+          <SegGroup>
+            <Seg onClick={() => doZoom(0.85)} title="Zoom out">−</Seg>
+            <Seg onClick={() => setViewport(1, 80, 80)} title="Reset zoom" wide>{Math.round(zoom * 100)}%</Seg>
+            <Seg onClick={() => doZoom(1.18)} title="Zoom in">+</Seg>
+          </SegGroup>
+        </MenuRow>
+      </MenuGroup>
 
-      {/* History stays in the bar: CLAUDE.md gives the top bar ownership of undo
-          /redo, and the left panel's footer dropped its copies on that basis. */}
-      <div style={{ display:'flex', alignItems:'center', gap:2 }}>
-        <IBtn icon={Undo2} label="Undo" onClick={undo} title="Undo (Ctrl+Z)" />
-        <IBtn icon={Redo2} label="Redo" onClick={redo} title="Redo (Ctrl+Y)" />
-      </div>
+      <MenuGroup label="Standards">
+        {/* The rules table the generator, capacity math and column check all read. */}
+        <MenuItem onClick={done(onRules)}>Rules profiles…</MenuItem>
+      </MenuGroup>
 
-      {/* Check layout: every problem listed in the right panel (utils/layoutCheck.js); the count shows here */}
-      <CheckLayoutButton />
+      <MenuGroup label="Appearance">
+        <MenuRow label="Interface size">
+          <SegGroup>
+            {[['sm','S'],['md','M'],['lg','L']].map(([val,lbl]) => (
+              <Seg key={val} active={uiScale===val} onClick={() => setUiScale(val)}>{lbl}</Seg>
+            ))}
+          </SegGroup>
+        </MenuRow>
+      </MenuGroup>
 
-      {/* Export — the one primary action; with errors in the layout it asks first, never blocks */}
-      <ExportCheckDialog onExport={exportAsPDF} />
-      <button onClick={() => exportWithCheck(useCanvasStore, exportAsPDF)} title="Export PDF"
-        style={{
-          display:'flex', alignItems:'center', gap:7,
-          height:34, padding:'0 15px', borderRadius:8, border:'none', cursor:'pointer',
-          background:C.accentBg, color:C.activeTxt,
-          fontFamily:'inherit', fontSize:12.5, fontWeight:600, letterSpacing:'0.01em',
-          transition:'opacity 0.12s',
-        }}
-        onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
-        onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
-        <FileDown size={14} strokeWidth={1.7} absoluteStrokeWidth/>
-        Export
-      </button>
-
-      {/* Everything else — file, edit, view, appearance — lives behind this. */}
-      <div ref={menuRef} style={{ position:'relative', flexShrink:0 }}>
-        <IBtn icon={MoreHorizontal} label="Settings" menu
-          onClick={() => setMenuOpen(o => !o)} active={menuOpen}
-          title="Settings and more" />
-
-        {menuOpen && (
-          <div role="menu" aria-label="Settings and more" ref={menuBox} onKeyDown={onMenuKey} style={{
-            position:'absolute', top:'calc(100% + 10px)', right:0, width:296,
-            background:C.bg, border:`0.5px solid ${C.border}`, borderRadius:12,
-            boxShadow:'var(--shadow)', zIndex:100,
-            maxHeight:'calc(100vh - 90px)', overflowY:'auto',
-          }}>
-
-            <MenuGroup label="File" first>
-              <MenuItem icon={FilePlus}   onClick={() => { newScene();     setMenuOpen(false) }} hint="Ctrl+N">New</MenuItem>
-              <MenuItem icon={FolderOpen} onClick={() => { loadFromFile(); setMenuOpen(false) }}>Open…</MenuItem>
-              <MenuItem icon={Save}       onClick={() => { saveToFile();   setMenuOpen(false) }} hint="Ctrl+S">Save</MenuItem>
-            </MenuGroup>
-
-            <MenuGroup label="Edit">
-              {/* Cut is a clipboard move, not a destructive act — it carried a red
-                  accent that pulled the eye to the quietest item in the menu. */}
-              <MenuItem icon={Scissors}  onClick={() => { cutSelected();  setMenuOpen(false) }}>Cut</MenuItem>
-              <MenuItem icon={Copy}      onClick={() => { copySelected(); setMenuOpen(false) }}>Copy</MenuItem>
-              <MenuItem icon={Clipboard} onClick={() => { pasteAt(useCanvasStore, 'cursor', nanoid); setMenuOpen(false) }} hint="Ctrl+V">Paste</MenuItem>
-              <MenuItem icon={Clipboard} onClick={() => { pasteAt(useCanvasStore, 'inPlace', nanoid); setMenuOpen(false) }} hint="Ctrl+Shift+V">Paste in place</MenuItem>
-            </MenuGroup>
-
-            <MenuGroup label="View">
-              <MenuRow label="Grid">
-                <Switch on={showGrid} onClick={toggleGrid} label="Toggle grid" />
-              </MenuRow>
-              <MenuRow label="Rulers">
-                <Switch on={showRulers} onClick={toggleRulers} label="Toggle rulers" />
-              </MenuRow>
-              <MenuRow label="Label size">
-                <SegGroup>
-                  {[['small','S'],['medium','M'],['large','L'],['xlarge','XL']].map(([val,lbl]) => (
-                    <Seg key={val} active={labelSize===val} onClick={() => setLabelSize(val)} title={`${LABEL_SIZE_NAMES[val]} — ${LABEL_SIZES[val]} in text`}>{lbl}</Seg>
-                  ))}
-                </SegGroup>
-              </MenuRow>
-              <MenuRow label="PDF label size">
-                <select value={pdfLabelSize} onChange={e => setPdfLabelSize(e.target.value)} aria-label="PDF label size"
-                  style={{ fontSize:11, fontFamily:'var(--font-mono)', background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', borderRadius:6, padding:'3px 4px' }}>
-                  <option value="auto">Auto (≥ 2.5 mm)</option>
-                  <option value="screen">Same as screen</option>
-                  {Object.keys(LABEL_SIZES).map(k => <option key={k} value={k}>{LABEL_SIZE_NAMES[k]} ({LABEL_SIZES[k]} in)</option>)}
-                </select>
-              </MenuRow>
-              <MenuRow label="Snap to grid">
-                <Switch on={snapToGrid} onClick={toggleSnap} label="Toggle snap" />
-              </MenuRow>
-              <MenuRow label="Grid size">
-                <SegGroup>
-                  {[['ft','1ft'],['in','1"'],['half-in','½"']].map(([val,lbl]) => (
-                    <Seg key={val} active={snapUnit===val} onClick={() => setSnapUnit(val)}>{lbl}</Seg>
-                  ))}
-                </SegGroup>
-              </MenuRow>
-              <MenuRow label="Units">
-                <select value={unit} onChange={e => setUnit(e.target.value)}
-                  style={{
-                    background:'var(--surface2)', border:'none', borderRadius:7,
-                    fontSize:11, color:C.text, fontFamily:'var(--font-mono)',
-                    padding:'6px 8px', cursor:'pointer', outline:'none',
-                  }}>
-                  {Object.values(UNITS).map(u => <option key={u}>{u}</option>)}
-                </select>
-              </MenuRow>
-              <MenuRow label="Zoom">
-                <SegGroup>
-                  <Seg onClick={() => doZoom(0.85)} title="Zoom out"><ZoomOut size={13} strokeWidth={1.6} absoluteStrokeWidth/></Seg>
-                  <Seg onClick={() => setViewport(1, 80, 80)} title="Reset zoom" wide>{Math.round(zoom * 100)}%</Seg>
-                  <Seg onClick={() => doZoom(1.18)} title="Zoom in"><ZoomIn size={13} strokeWidth={1.6} absoluteStrokeWidth/></Seg>
-                </SegGroup>
-              </MenuRow>
-            </MenuGroup>
-
-            <MenuGroup label="Standards">
-              {/* The rules table the generator, capacity math and column check
-                  all read. Lives here rather than in the right rail because it
-                  is dealer configuration, not per-drawing state. */}
-              <MenuItem icon={SlidersHorizontal}
-                onClick={() => { setRulesOpen(true); setMenuOpen(false) }}>
-                Rules profiles…
-              </MenuItem>
-            </MenuGroup>
-
-            <MenuGroup label="Appearance">
-              <MenuRow label="Interface size">
-                <SegGroup>
-                  {[['sm','S'],['md','M'],['lg','L']].map(([val,lbl]) => (
-                    <Seg key={val} active={uiScale===val} onClick={() => setUiScale(val)}>{lbl}</Seg>
-                  ))}
-                </SegGroup>
-              </MenuRow>
-            </MenuGroup>
-
-          </div>
-        )}
-      </div>
-
-      {rulesOpen && <RulesPanel onClose={() => setRulesOpen(false)} />}
-
+      {onHub && (
+        <MenuGroup label="Hub">
+          <MenuItem onClick={done(onHub)}>Back to Hub</MenuItem>
+        </MenuGroup>
+      )}
     </div>
   )
 }

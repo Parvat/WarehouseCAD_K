@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react'
-import { TopBar }     from './components/Toolbar/TopBar'
-import { LeftPanel }  from './components/LeftPanel/index'
-import { RightPanel } from './components/RightPanel/index'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useCanvasStore } from './store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { FloatingToolbar } from './components/LeftPanel/FloatingToolbar'
-import { GeneratePanel } from './components/Generate/GeneratePanel'
+import { StudioFrame } from './studio/StudioFrame'
+import './studio/studio.css'
 import { Canvas2 } from './canvas2/Canvas2'
 import { ColumnCheckProvider } from './generate/useColumnCheck'
 import { RulesProvider } from './rules/useRules'
@@ -108,6 +106,12 @@ export default function App() {
     setUiTheme('trace')   // default the CAD to the Trace pine-on-paper skin
   }, []) // eslint-disable-line
 
+  /* Studio: the canvas fills the window under floating islands — the rulers would run under the top islands, so the
+     plan opens without them (the layout menu's Rulers switch brings them back) */
+  useEffect(() => {
+    if (view === 'cad' && useCanvasStore.getState().showRulers) useCanvasStore.getState().toggleRulers()
+  }, [view])
+
   // a new project's start screen: <ProjectSetup /> opens it while the CAD is on screen (utils/project.js
   // installStartScreen) — entering on an empty layout, File → New while already in, a refresh
 
@@ -132,26 +136,16 @@ export default function App() {
           it — see CANVAS2_BUGLOG.md's final entry. */}
       <RulesProvider>
       <ColumnCheckProvider>
-        <TopBar />
         <ProjectSync />
         <ProjectSetup />
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-                    <FloatingToolbar />
-          <div className="flex flex-col flex-1 min-w-0 min-h-0" style={{ position: 'relative' }}>
-            <Canvas2 />
-            {/* back to the hub: in the plan's own bottom-left corner — never over the left panel's footer (Project
-                settings) — the elevation legend starts past it */}
-            <button onClick={() => setView('hub')} title="Back to hub" data-float-avoid style={{
-              position: 'absolute', left: 12, bottom: 12, zIndex: 55,
-              display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6,
-              cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--text)',
-              fontFamily: 'var(--font-ui)', boxShadow: '0 2px 8px rgba(20,57,43,0.12)',
-            }}>← Hub</button>
-          </div>
-          <RightPanel />
+        {/* Studio (STUDIO.md §1): the canvas fills the window; everything else floats on it — the top islands, the
+            right card and the bottom islands (src/studio/StudioFrame.jsx), the rail, its flyout and the tool pill
+            (the library, components/LeftPanel/FloatingToolbar.jsx in studio mode) */}
+        <div className="flex flex-1 min-h-0 overflow-hidden" style={{ position: 'relative' }}>
+          <Canvas2 />
         </div>
-        <GeneratePanel />
+        <FloatingToolbar studio />
+        <StudioFrame onHub={() => setView('hub')} />
       </ColumnCheckProvider>
       </RulesProvider>
     </div>

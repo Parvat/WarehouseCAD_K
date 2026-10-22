@@ -19,7 +19,7 @@ import { useNotice, clearNotice, NOTICE_MS } from '../utils/notice'
    Plain DOM — no Konva — so it renders anywhere. */
 
 const wrap = {
-  position: 'absolute', left: '50%', bottom: 14, transform: 'translateX(-50%)', zIndex: 60,
+  position: 'absolute', left: '50%', bottom: 76, transform: 'translateX(-50%)', zIndex: 60,
   width: 'max-content', maxWidth: 'min(680px, calc(100% - 32px))', display: 'flex', flexDirection: 'column', gap: 6,
 }
 const box = {
