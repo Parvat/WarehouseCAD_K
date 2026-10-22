@@ -81,7 +81,7 @@ export function CantileverPanel({ obj }) {
           {towers.map((armIn, i) => {
             const isActive = activeTower === i
             return (
-              <div key={i} onClick={() => updateObject(obj.id, { activeTowerIdx: isActive ? null : i })}
+              <div key={i} className="st-hov" data-on={isActive || undefined} onClick={() => updateObject(obj.id, { activeTowerIdx: isActive ? null : i })}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, minWidth: 0,
                   height: 30, padding: '0 10px', borderRadius: 6, cursor: 'pointer',

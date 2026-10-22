@@ -276,7 +276,7 @@ export function RackRowExtras({ obj, newBeam: sharedBeam, setNewBeam: setSharedB
           const isActive = activeBay === i
           const pal = positionsPerBeam(beamIn, obj.palletWIn || 40)
           return (
-            <div key={i} role="listitem" onClick={() => updateObject(obj.id, { activeBayIdx: activeBay === i ? null : i, activeBaySide: null })}   // from the list: the whole bay, both sides
+            <div key={i} role="listitem" className="st-hov" data-on={isActive || undefined} onClick={() => updateObject(obj.id, { activeBayIdx: activeBay === i ? null : i, activeBaySide: null })}   // from the list: the whole bay, both sides
               style={{ display: 'flex', alignItems: 'center', gap: 8, height: 26, padding: '0 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontFamily: MONO,
                 background: isActive ? C.active : 'transparent', color: isActive ? C.accent : C.strong }}>
               <span style={{ minWidth: 22, color: isActive ? C.accent : C.muted }}>B{i + 1}</span>

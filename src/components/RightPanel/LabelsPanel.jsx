@@ -21,7 +21,7 @@ export function LabelsBody() {
         <Btn kind="ghost" title="Add label" onClick={handleAdd} style={{ height: 28, padding: '0 10px', fontSize: 12 }}>+ Add</Btn>
       </div>
       {labels.map(label => (
-        <div key={label.id}
+        <div key={label.id} className="st-hov"
           style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, height: 30, padding: '0 2px 0 10px', borderRadius: 6, background: C.inset }}>
           <span style={{ width: 8, height: 8, borderRadius: 4, flexShrink: 0, background: label.color }} />
           <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label.text}</span>

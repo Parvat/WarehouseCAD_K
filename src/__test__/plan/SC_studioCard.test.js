@@ -95,3 +95,19 @@ describe('SC — icons and colours', () => {
     expect(usableCapacity([], { check: null }).usable).toBe(0)
   })
 })
+
+describe('SC — hover', () => {
+  it('SC-hover: list rows, the More row, Check items, secondary / inset / danger and icon buttons turn #2A2F2C; toggles, swatches, the active segment, a picked row and the mint primary do not', () => {
+    const css = read('studio/studio.css'), p = read('studio/cardParts.jsx')
+    expect(css).toMatch(/\[data-card-dark\] \.st-hov:hover:not\(:disabled\):not\(\[data-on\]\):not\(\[aria-pressed="true"\]\) \{ background:#2A2F2C !important; \}/)
+    expect(p).toMatch(/className=\{kind === 'primary' \? undefined : 'st-hov'\}/)
+    expect(p).toMatch(/<button type="button" className="st-hov" aria-expanded=\{open\}/)          // the More row (Fold)
+    expect(p).toMatch(/<button type="button" className="st-hov" aria-label=\{label\}/)            // icon buttons
+    expect(read('studio/cards.jsx')).toMatch(/<button key=\{it\.kind \+ i\} type="button" className="st-hov"/)   // Check items
+    expect(read('components/RightPanel/panels/RackRowPanelCore.jsx')).toMatch(/role="listitem" className="st-hov" data-on=\{isActive \|\| undefined\}/)
+    // never on a toggle or a segment
+    const toggle = p.slice(p.indexOf('export function Toggle'), p.indexOf('export const ToggleRow')), seg = p.slice(p.indexOf('export function Seg'), p.indexOf('export function Btn'))
+    expect([/st-hov/.test(toggle), /st-hov/.test(seg)]).toEqual([false, false])
+    expect(readFileSync(new URL('../../../STUDIO.md', import.meta.url), 'utf8')).toMatch(/\*\*Hover in the right card\*\*: list rows, the More row, Check items, secondary \(ghost\), inset and danger buttons → background `#2A2F2C`/)
+  })
+})

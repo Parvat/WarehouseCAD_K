@@ -172,13 +172,14 @@ export function Btn({ kind = 'ghost', children, style, ...rest }) {
     inset:   { border: 0, background: C.inset, color: C.text },
     danger:  { border: `1px solid ${C.separator}`, background: 'transparent', color: C.danger },
   }[kind]
-  return <button type="button" {...rest} style={{ height: 36, padding: '0 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, whiteSpace: 'nowrap', ...k, ...style }}>{children}</button>
+  /* hover: a secondary / inset / danger button turns the inset fill; the mint primary does not change (studio.css .st-hov) */
+  return <button type="button" className={kind === 'primary' ? undefined : 'st-hov'} {...rest} style={{ height: 36, padding: '0 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, whiteSpace: 'nowrap', ...k, ...style }}>{children}</button>
 }
 
 /** An icon button in the card (28 square, transparent; the danger icon for Delete). */
 export function IconBtn({ name, label, onClick, active, danger, title, kind = 'tool', size = 28, color }) {
   return (
-    <button type="button" aria-label={label} title={title || label} aria-pressed={active == null ? undefined : !!active} onClick={onClick}
+    <button type="button" className="st-hov" aria-label={label} title={title || label} aria-pressed={active == null ? undefined : !!active} onClick={onClick}
       style={{ width: size, height: size, border: 0, borderRadius: 6, background: active ? C.active : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
       <Icon name={name} kind={kind} active={!!active} color={danger ? C.danger : color} />
     </button>
@@ -217,7 +218,7 @@ export function Fold({ title, children, defaultOpen = false, aria, last, gap = 1
   const [open, setOpen] = useState(defaultOpen)
   return (
     <div role="group" aria-label={aria || title} style={{ borderBottom: last ? 'none' : `1px solid ${C.divider}` }}>
-      <button type="button" aria-expanded={open} onClick={() => setOpen(o => !o)}
+      <button type="button" className="st-hov" aria-expanded={open} onClick={() => setOpen(o => !o)}
         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', border: 0, background: 'transparent', color: C.text, fontSize: 13, textAlign: 'left', cursor: 'pointer' }}>
         <span style={{ flex: 1 }}>{title}</span>
         <span style={{ display: 'flex', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><Icon name="Chevron" size={12} color={C.muted} /></span>

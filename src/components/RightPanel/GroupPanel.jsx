@@ -53,7 +53,7 @@ export function GroupBody() {
               const label = obj.label || obj.type || 'object'
               const isSelected = activeGroupMemberIds.has(id)
               return (
-                <div key={id} style={{
+                <div key={id} className="st-hov" data-on={isSelected || undefined} style={{
                   display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
                   height: 30, padding: '0 2px 0 10px', borderRadius: 6,
                   background: isSelected ? C.active : C.inset,

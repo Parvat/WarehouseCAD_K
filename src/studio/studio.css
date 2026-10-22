@@ -50,3 +50,8 @@ select.st-field option { background:#1F2321; color:#E8EAE6; }
 input.st-field::-webkit-outer-spin-button, input.st-field::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
 input.st-field[type=number] { -moz-appearance:textfield; appearance:textfield; }
 input.st-field::placeholder { color:#7E8680; }
+
+/* hover in the right card (STUDIO.md §5): list rows, the More row, Check items, secondary / inset / danger and icon
+   buttons turn the inset fill. Not a picked row (data-on) or a pressed button; toggles, swatches, the segmented
+   control's active segment and the mint primary never carry .st-hov. !important: their fills are inline. */
+[data-card-dark] .st-hov:hover:not(:disabled):not([data-on]):not([aria-pressed="true"]) { background:#2A2F2C !important; }

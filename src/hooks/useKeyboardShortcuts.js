@@ -11,13 +11,15 @@ import { pickableIn, keptBySelectAll } from '../utils/layers'
 import { notify, clearNotice } from '../utils/notice'
 import { deleteBaySelection } from '../utils/baySides'
 import { toggleMeasure } from '../utils/toolSwitch'
+import { isTypingTarget, TEXT_EDIT_KEYS } from '../utils/typing'
 
-export function useKeyboardShortcuts() {
-  useEffect(() => {
-    const handler = (e) => {
-      const tag = document.activeElement?.tagName
-      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+/** The app's keyboard shortcuts, one keydown handler (exported so a test can press keys at it). */
+export function shortcutHandler(e) {
+      /* typing in a field (an input, a select, a textarea): the key is the field's — Ctrl/Cmd + A C V X Z Y,
+         Delete / Backspace, the arrows and the single-letter tools act on the text, never on the canvas (utils/typing.js) */
+      const isInput = isTypingTarget(document.activeElement) || isTypingTarget(e.target)
       const ctrl = e.ctrlKey || e.metaKey
+      if (ctrl && isInput && TEXT_EDIT_KEYS.has(String(e.key).toLowerCase())) return
 
 
       // ── Escape — deselect, cancel draw ──────────────────────────────────
@@ -191,9 +193,11 @@ export function useKeyboardShortcuts() {
         default:
           break
       }
-    }
+}
 
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+export function useKeyboardShortcuts() {
+  useEffect(() => {
+    window.addEventListener('keydown', shortcutHandler)
+    return () => window.removeEventListener('keydown', shortcutHandler)
   }, [])
 }

@@ -1,4 +1,5 @@
 import { setDragPreview, clearDragPreview, setDragging } from './dragPreview'
+import { isTypingTarget } from '../utils/typing'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
@@ -76,7 +77,8 @@ export function useCanvasInteraction({
 
   const spaceDown = useRef(false)
   useEffect(() => {
-    const down = e => { if (e.code === 'Space') { spaceDown.current = true; setCursor('grab') } }
+    /* a space typed into a field is text, not the pan key (utils/typing.js) */
+    const down = e => { if (e.code === 'Space' && !isTypingTarget(e.target)) { spaceDown.current = true; setCursor('grab') } }
     const up   = e => { if (e.code === 'Space') { spaceDown.current = false; setCursor('default') } }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)

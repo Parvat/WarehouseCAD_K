@@ -205,7 +205,7 @@ export function CheckCard() {
           const [t, d] = split(it.text)
           const on = !reminder && hiKey === issueKey(it)
           return (
-            <button key={it.kind + i} type="button" aria-label={it.text} title={reminder ? 'Open Project settings' : 'Show it on the drawing'}
+            <button key={it.kind + i} type="button" className="st-hov" aria-label={it.text} title={reminder ? 'Open Project settings' : 'Show it on the drawing'}
               onClick={() => (reminder ? openSetup('settings') : goToIssue(useCanvasStore, it, getCanvasContainerSize()))}
               style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 10, border: 0, borderRadius: 8, background: on ? C.inset : 'transparent', textAlign: 'left', color: C.text, cursor: 'pointer' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Tag level={level} /><span style={{ fontSize: 13, color: C.strong }}>{t}</span></span>

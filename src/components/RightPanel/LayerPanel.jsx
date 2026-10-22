@@ -16,8 +16,8 @@ export function LayerBody() {
         {layers.map(layer => {
           const hidden = layer.visible === false, locked = !!layer.locked
           return (
-            <div key={layer.id} data-layer={layer.id}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 30, minWidth: 0 }}>
+            <div key={layer.id} data-layer={layer.id} className="st-hov"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 30, minWidth: 0, padding: '0 2px 0 8px', borderRadius: 6 }}>
               <span style={{
                 flex: 1, minWidth: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 color: hidden ? C.faint : C.text,
