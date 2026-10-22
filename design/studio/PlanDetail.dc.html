@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Plan drawing close-up</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; position: relative; overflow: hidden; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-size: 13px; color: #E8EAE6; background-color: #F4F3EF; background-image: radial-gradient(#D9D6CC 1px, transparent 1.2px); background-size: 20px 20px">
+
+<svg style="position: absolute; left: 20px; top: 20px" width="820" height="860" viewBox="80 60 760 800" role="img" aria-label="Close-up of racking with aisle, cross-aisle and column labels">
+<defs><marker id="aB" viewBox="0 0 8 8" refX="7.6" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M1 1L7.6 4L1 7" fill="none" stroke="#1B4FD8" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></marker><marker id="aA" viewBox="0 0 8 8" refX="7.6" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M1 1L7.6 4L1 7" fill="none" stroke="#B8730E" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></marker><marker id="aR" viewBox="0 0 8 8" refX="7.6" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M1 1L7.6 4L1 7" fill="none" stroke="#C0452A" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></marker><marker id="aG" viewBox="0 0 8 8" refX="7.6" refY="4" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M1 1L7.6 4L1 7" fill="none" stroke="#767C74" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></marker></defs>
+<rect x="120" y="100" width="670" height="712" fill="#FFFFFF" stroke="#1F2321" stroke-width="2"></rect>
+
+<g shape-rendering="crispEdges">
+<g stroke="#9FB8A9" stroke-width="1"><sc-for list="{{bays}}" as="b" hint-placeholder-count="60"><line x1="{{b.x1}}" y1="{{b.y}}" x2="{{b.x2}}" y2="{{b.y}}"></line></sc-for></g>
+<g fill="none" stroke="#2E5E48" stroke-width="1"><sc-for list="{{units}}" as="u" hint-placeholder-count="14"><rect x="{{u.x}}" y="{{u.y}}" width="{{u.w}}" height="{{u.h}}"></rect></sc-for></g>
+<g stroke="#2E5E48" stroke-width="1"><sc-for list="{{flues}}" as="f" hint-placeholder-count="20"><line x1="{{f.x}}" y1="{{f.y1}}" x2="{{f.x}}" y2="{{f.y2}}"></line></sc-for></g>
+</g>
+
+<g stroke="#C0452A" stroke-width="1.5" stroke-linecap="round"><sc-for list="{{lost}}" as="l" hint-placeholder-count="30"><path d="{{l.xp}}"></path></sc-for></g>
+
+<rect x="272" y="314" width="9" height="9" fill="#1F2321"></rect>
+<line x1="272" y1="334" x2="269.5" y2="334" stroke="#767C74"></line>
+<g fill="#767C74">
+<line x1="282" y1="318.5" x2="293" y2="318.5" stroke="#9AA29C" stroke-width="1" stroke-dasharray="2 2"></line>
+<line x1="320" y1="318.5" x2="331" y2="318.5" stroke="#9AA29C" stroke-width="1" stroke-dasharray="2 2"></line>
+<text x="306.5" y="322" text-anchor="middle" font-family="Plus Jakarta Sans" font-weight="600" font-size="9.5">8′-8″</text>
+<text x="268" y="347" text-anchor="middle" font-family="Plus Jakarta Sans" font-weight="600" font-size="9.5">0′-6″</text>
+</g>
+
+<line x1="162" y1="320" x2="174.5" y2="320" stroke="#1B4FD8" stroke-width="1" marker-start="url(#aB)"></line><line x1="210.5" y1="320" x2="223" y2="320" stroke="#1B4FD8" stroke-width="1" marker-end="url(#aB)"></line><text x="192.5" y="323.8" text-anchor="middle" font-family="Plus Jakarta Sans" font-weight="600" font-size="10.5" fill="#1B4FD8">10′-6″</text>
+<line x1="270" y1="262" x2="282.5" y2="262" stroke="#1B4FD8" stroke-width="1" marker-start="url(#aB)"></line><line x1="318.5" y1="262" x2="331" y2="262" stroke="#1B4FD8" stroke-width="1" marker-end="url(#aB)"></line><text x="300.5" y="265.8" text-anchor="middle" font-family="Plus Jakarta Sans" font-weight="600" font-size="10.5" fill="#1B4FD8">10′-6″</text>
+<line x1="378" y1="320" x2="388.0" y2="320" stroke="#B8730E" stroke-width="1" marker-start="url(#aA)"></line><line x1="424.0" y1="320" x2="434" y2="320" stroke="#B8730E" stroke-width="1" marker-end="url(#aA)"></line><text x="406.0" y="323.8" text-anchor="middle" font-family="Plus Jakarta Sans" font-weight="600" font-size="10.5" fill="#9A5F0A">9′-8″</text>
+<line x1="481" y1="320" x2="504.0" y2="320" stroke="#C0452A" stroke-width="1" marker-start="url(#aR)"></line><line x1="504.0" y1="320" x2="527" y2="320" stroke="#C0452A" stroke-width="1" marker-end="url(#aR)"></line><text x="504.0" y="315" text-anchor="middle" font-family="Plus Jakarta Sans" font-weight="600" font-size="10.5" fill="#B23A22">8′-0″</text>
+<line x1="574" y1="320" x2="586.5" y2="320" stroke="#1B4FD8" stroke-width="1" marker-start="url(#aB)"></line><line x1="622.5" y1="320" x2="635" y2="320" stroke="#1B4FD8" stroke-width="1" marker-end="url(#aB)"></line><text x="604.5" y="323.8" text-anchor="middle" font-family="Plus Jakarta Sans" font-weight="600" font-size="10.5" fill="#1B4FD8">10′-6″</text>
+<line x1="682" y1="320" x2="694.5" y2="320" stroke="#1B4FD8" stroke-width="1" marker-start="url(#aB)"></line><line x1="730.5" y1="320" x2="743" y2="320" stroke="#1B4FD8" stroke-width="1" marker-end="url(#aB)"></line><text x="712.5" y="323.8" text-anchor="middle" font-family="Plus Jakarta Sans" font-weight="600" font-size="10.5" fill="#1B4FD8">10′-6″</text>
+
+
+<line x1="410" y1="521" x2="410" y2="547" stroke="#1B4FD8" stroke-width="1" marker-start="url(#aB)"></line>
+<line x1="410" y1="565" x2="410" y2="591" stroke="#1B4FD8" stroke-width="1" marker-end="url(#aB)"></line>
+<text x="410" y="559.5" text-anchor="middle" font-family="Plus Jakarta Sans" font-weight="600" font-size="10.5" fill="#1B4FD8">12′-0″</text>
+</svg>
+
+<div style="position: absolute; right: 24px; top: 24px; width: 520px; display: flex; flex-direction: column; background: #1F2321; border: 1px solid #323835; border-radius: 12px; box-shadow: 0 16px 40px rgba(15,18,16,.22); overflow: hidden">
+<div style="padding: 18px 20px 12px; border-bottom: 1px solid #2E3431; display: flex; flex-direction: column; gap: 4px"><span style="font-size: 15px; font-weight: 600; color: #F2F4F1">Plan drawing — close-up</span><span style="color: #9AA29C; font-size: 12px">How racks and labels are drawn on the canvas and in the PDF</span></div>
+<div style="display: flex; flex-direction: column; gap: 10px; padding: 14px 20px 14px">
+<sc-for list="{{legend}}" as="g" hint-placeholder-count="8">
+<div style="display: flex; gap: 14px; align-items: flex-start"><span style="width: 120px; flex-shrink: 0; color: #F2F4F1; font-weight: 600">{{g.k}}</span><span style="color: #C9CEC9; font-size: 12px; line-height: 1.55">{{g.v}}</span></div>
+</sc-for>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 14px 20px 18px; border-top: 1px solid #2E3431">
+<span style="color: #9AA29C; font-size: 11px; letter-spacing: .06em; text-transform: uppercase">Label colours</span>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<span style="height: 22px; padding: 0 8px; display: flex; align-items: center; gap: 6px; border-radius: 4px; background: #FFFFFF; color: #1B4FD8; font-size: 12px"><span style="font-weight: 600; font-variant-numeric: tabular-nums">10′-6″</span> OK</span>
+<span style="height: 22px; padding: 0 8px; display: flex; align-items: center; gap: 6px; border-radius: 4px; background: #FFF4DE; color: #8A5A0B; font-size: 12px"><span style="font-weight: 600; font-variant-numeric: tabular-nums">9′-8″</span> under pick width</span>
+<span style="height: 22px; padding: 0 8px; display: flex; align-items: center; gap: 6px; border-radius: 4px; background: #FDECE8; color: #A8341C; font-size: 12px"><span style="font-weight: 600; font-variant-numeric: tabular-nums">8′-0″</span> under travel width</span>
+<span style="height: 22px; padding: 0 8px; display: flex; align-items: center; gap: 6px; border-radius: 4px; background: #FFFFFF; color: #767C74; font-size: 12px"><span style="font-weight: 600; font-variant-numeric: tabular-nums">8′-8″</span> column clearance</span>
+</div>
+</div>
+</div>
+
+<div style="position: absolute; right: 24px; bottom: 24px; width: 520px; display: flex; gap: 16px; align-items: center; padding: 14px 16px; background: #1F2321; border: 1px solid #323835; border-radius: 12px; box-shadow: 0 16px 40px rgba(15,18,16,.22)">
+<svg width="250" height="120" viewBox="0 0 250 120" role="img" aria-label="Zoomed-in rack with true upright widths" style="flex-shrink: 0; background: #FFFFFF; border-radius: 8px">
+<g shape-rendering="crispEdges"><rect x="14.5" y="14.5" width="222" height="84" fill="#FFFFFF" stroke="#2E5E48"></rect><line x1="14" y1="56.5" x2="236" y2="56.5" stroke="#C9D7CE"></line>
+<rect x="15" y="15" width="6" height="84" fill="#2E5E48"></rect><rect x="122" y="15" width="6" height="84" fill="#2E5E48"></rect><rect x="230" y="15" width="6" height="84" fill="#2E5E48"></rect></g>
+<line x1="122" y1="108" x2="128" y2="108" stroke="#1B4FD8"></line><line x1="122" y1="104" x2="122" y2="112" stroke="#1B4FD8"></line><line x1="128" y1="104" x2="128" y2="112" stroke="#1B4FD8"></line>
+<text x="134" y="112" font-family="Plus Jakarta Sans" font-weight="600" font-size="10" fill="#1B4FD8" style="font-variant-numeric: tabular-nums">3″ upright</text>
+<text x="40" y="112" font-family="Plus Jakarta Sans" font-weight="600" font-size="10" fill="#1B4FD8" style="font-variant-numeric: tabular-nums">96″ beam</text>
+</svg>
+<span style="display: flex; flex-direction: column; gap: 6px"><span style="color: #F2F4F1; font-weight: 600">Uprights: one drawing at every zoom</span><span style="color: #C9CEC9; font-size: 12px; line-height: 1.55">Uprights are always drawn at their true width (3″ or 4″ from the frame), never thinner than 1px on screen. No switch between a zoomed-out and zoomed-in version, so nothing jumps or changes shape while zooming. Zoomed out they simply look like thin lines.</span></span>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+const blocks = [[120, 520], [592, 792]];
+const singles = [140, 744];
+const pairs = [224, 332, 435, 528, 636];
+const units = [], flues = [], bays = [];
+const strips = singles.slice();
+pairs.forEach((x) => { strips.push(x); strips.push(x + 24); });
+blocks.forEach((bk) => {
+  singles.forEach((x) => units.push({ x: x + 0.5, y: bk[0] + 0.5, w: 21, h: bk[1] - bk[0] }));
+  pairs.forEach((x) => {
+    units.push({ x: x + 0.5, y: bk[0] + 0.5, w: 45, h: bk[1] - bk[0] });
+    flues.push({ x: x + 21.5, y1: bk[0], y2: bk[1] });
+    flues.push({ x: x + 24.5, y1: bk[0], y2: bk[1] });
+  });
+  strips.forEach((x) => { for (let y = bk[0] + 50; y < bk[1]; y += 50) bays.push({ x1: x, x2: x + 21, y: y + 0.5 }); });
+});
+const lost = [];
+const mark = (x, y) => { const cx = x + 10.5, cy = y + 12.5, h = 4; lost.push({ x: x + 0.5, y: y + 0.5, xp: 'M' + (cx - h) + ' ' + (cy - h) + 'L' + (cx + h) + ' ' + (cy + h) + 'M' + (cx + h) + ' ' + (cy - h) + 'L' + (cx - h) + ' ' + (cy + h) }); };
+[459, 528, 356, 435].forEach((x) => { for (let y = 120; y < 520; y += 25) mark(x, y); });
+mark(248, 300); mark(248, 325);
+const st = {
+  ok: { c: '#1B4FD8', m: 'url(#aB)', bg: '#FFFFFF', tc: '#1B4FD8' },
+  pick: { c: '#B8730E', m: 'url(#aA)', bg: '#FFF4DE', tc: '#9A5F0A' },
+  travel: { c: '#C0452A', m: 'url(#aR)', bg: '#FDECE8', tc: '#B23A22' }
+};
+const aisles = [[161, 224, 'ok', '10′-6″', 320], [269, 332, 'ok', '10′-6″', 262], [377, 435, 'pick', '9′-8″', 320], [480, 528, 'travel', '8′-0″', 320], [573, 636, 'ok', '10′-6″', 320], [681, 744, 'ok', '10′-6″', 320]].map((a) => {
+  const s = st[a[2]], cx = (a[0] + a[1]) / 2, fits = (a[1] - a[0]) >= 56, half = 18;
+  return { x1: a[0] + 1, x2: a[1] - 1, y: a[4], c: s.c, m: s.m, tc: s.tc, t: a[3], cx: cx,
+    g1: fits ? cx - half : cx, g2: fits ? cx + half : cx, ty: fits ? a[4] + 3.8 : a[4] - 5 };
+});
+return {
+  units: units, flues: flues, bays: bays, lost: lost, aisles: aisles,
+  legend: [
+    { k: 'Racks', v: 'White, 1px pine outline that stays 1px at every zoom, snapped to screen pixels. Bay lines thinner and lighter.' },
+    { k: 'Back to back', v: 'One outline around the pair. The flue is a visible thin gap between the two inner faces.' },
+    { k: 'Aisle width', v: 'Dimension line face to face with slim open arrowheads, value in a break in the line. Too narrow: value just above. One row of labels; slides only to clear a column.' },
+    { k: 'Cross-aisle', v: 'Same arrow style, running the other way.' },
+    { k: 'Column', v: 'Solid dark square. Clearance to each face as a small grey number on a thin dotted line, no arrows, so it stays quieter than the blue aisle widths. Touching a face shows the number only.' },
+    { k: 'Lost positions', v: 'Marked per pallet position, not per bay, so a column can block just one or two. Just a square X: no fill, no border, so the bay lines stay visible.' },
+    { k: 'Zooming', v: 'No object ever changes with zoom; everything is drawn one way and only scales. Only small labels (column clearances, bay numbers) fade in when zoomed in, in place, without flicker.' }
+  ]
+};
+}
+}
+</script>
+</body>
+</html>
