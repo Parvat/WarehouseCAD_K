@@ -2,8 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9)
 import { textOwnsKey } from '../../utils/typing'
-import { elevationLayout, ftInDash, parseFtIn } from '../../utils/elevationDrawing'
-import { setPane, moveBeam, addLevelAt, addTopLevel, removeLevel, setUpright, setDimension, paneFontPx } from '../../utils/elevEditor'
+import { elevationLayout, ftInDash, parseFtIn, sheetScale, CARD_FONT_PX } from '../../utils/elevationDrawing'
+import { useElevEditor, setPane, moveBeam, addLevelAt, addTopLevel, removeLevel, setUpright, setDimension, paneFontPx } from '../../utils/elevEditor'
 
 /* ── The elevation drawing, interactive — the Elevations tab (ElevationsTab.jsx) ─────────────────────────────────────
    Drag a beam up or down (snapping to the type's hole pitch, its elevation live); drag it off the ends of the bay, or
@@ -22,36 +22,68 @@ import { setPane, moveBeam, addLevelAt, addTopLevel, removeLevel, setUpright, se
  *  screen (Esc closes). */
 export function ElevationDrawing(props) {
   const [full, setFull] = useState(false)
-  // full screen draws Simple | Detailed (its own switch); the card's sheet passes its Studio set as `detail` and the choice as `fullDetail`
+  /* full screen draws the card's own sheet (job 2c: one drawing — the Studio layout, scaled up from the card's
+     composition) on the same white, gridded sheet; Simple | Detailed stays in its header (`fullDetail`). A caller
+     drawing the older layout (no Studio `detail`) gets that, at its Simple | Detailed. */
+  const studio = props.detail === 'studio'
   const fullDetail = props.fullDetail ?? props.detail
   const [host, setHost] = useState(null)
   useEffect(() => { setHost(document.querySelector('[data-theme]') || document.body) }, [])
   // the tab's own ⤢ (its toolbar): a new signal opens full screen
   useEffect(() => { if (props.fullSignal) setFull(true) }, [props.fullSignal])
-  useEffect(() => { if (!full) return; const k = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setFull(false) } }; window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true) }, [full])
+  /* Esc, while full screen is open, is its own — taken first, and never also by the card behind it: the typed value's
+     box keeps its own Esc; a picked beam is un-picked; editing on the sheet, Esc cancels the edit (C21); else it closes */
+  const sheetEdit = !!props.sheetEdit, onCancel = props.onCancel
+  useEffect(() => {
+    if (!full) return
+    const k = (e) => {
+      if (e.key !== 'Escape') return
+      if (e.target instanceof Element && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return
+      e.stopPropagation(); e.stopImmediatePropagation()
+      if (useElevEditor.getState().sel != null) { setPane({ sel: null }); return }
+      if (sheetEdit && onCancel) { onCancel(); return }
+      setFull(false)
+    }
+    window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true)
+  }, [full, sheetEdit, onCancel])
+  const hdrBtn = (on) => ({ padding: '3px 10px', fontSize: 11, borderRadius: 2, border: 'none', cursor: 'pointer', background: on ? 'var(--accent-solid, #0B101D)' : 'transparent', color: on ? 'var(--accent-fg, #fff)' : 'var(--text2)' })
   return <>
     <DrawingCore {...props} onFull={() => setFull(true)} />
     {full && host && createPortal(
-      <div role="dialog" aria-label="Elevation full screen" style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
+      <div role="dialog" aria-label="Elevation full screen" data-elev-full data-pane="open" style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{props.title || props.t?.name}</span>
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>Esc closes</span>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{sheetEdit ? 'Drag a beam to move it. Click a blue value to type it. Esc cancels.' : 'Esc closes'}</span>
           {/* Simple | Detailed — the full-size view is where the detailed dimensions are read */}
           <div role="group" aria-label="Drawing detail" style={{ display: 'flex', gap: 2, padding: 2, marginLeft: 12, borderRadius: 2, border: '1px solid var(--border)', background: 'var(--surface2)' }}>
-            {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={fullDetail === k} onClick={() => setPane({ detail: k })} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 2, border: 'none', cursor: 'pointer', background: fullDetail === k ? 'var(--accent-solid, #0B101D)' : 'transparent', color: fullDetail === k ? 'var(--accent-fg, #fff)' : 'var(--text2)' }}>{label}</button>)}
+            {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={fullDetail === k} onClick={() => setPane({ detail: k })} style={hdrBtn(fullDetail === k)}>{label}</button>)}
           </div>
-          <button type="button" aria-label="Close full screen" onClick={() => setFull(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><Icon name="Close" color="currentColor" /></button>
+          {/* edit on the sheet here too (C21): the pencil; while editing, ✕ Cancel and Save — the card's own actions */}
+          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {studio && props.onEdit && !sheetEdit && <button type="button" aria-label="Edit on the sheet" title="Edit on sheet" onClick={props.onEdit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex', padding: 2 }}><Icon name="Edit" color="currentColor" /></button>}
+            {sheetEdit && <>
+              <button type="button" aria-label="Cancel" title="Cancel (Esc)" onClick={onCancel} style={hdrBtn(false)}>✕ Cancel</button>
+              <button type="button" onClick={props.onSave} style={hdrBtn(true)}>Save</button>
+            </>}
+            <button type="button" aria-label="Close full screen" onClick={() => setFull(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex', marginLeft: 6 }}><Icon name="Close" color="currentColor" /></button>
+          </span>
         </div>
-        <div style={{ flex: 1, minHeight: 0 }}><DrawingCore {...props} detail={fullDetail} fill height={null} controls paper={false} fitSignal={0} /></div>
+        <div data-sheet={studio ? 'full' : undefined} style={{ flex: 1, minHeight: 0, ...(studio ? SHEET_BG : {}) }}>
+          <DrawingCore {...props} detail={studio ? 'studio' : fullDetail} fill height={null} controls paper={studio} fitSignal={0} scaleUp={studio} />
+        </div>
       </div>, host)}
   </>
 }
+/** Whether the elevation's full screen is open — the card's own Esc (C21, C3) leaves it to full screen then. */
+export const elevFullOpen = () => typeof document !== 'undefined' && !!document.querySelector?.('[data-elev-full]')
+/* the elevation sheet (STUDIO.md §2): white, the #EFEEE9 grid every 14px — the card's, and full screen's */
+const SHEET_BG = { backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient(#EFEEE9 1px, transparent 1px), linear-gradient(90deg, #EFEEE9 1px, transparent 1px)', backgroundSize: '14px 14px' }
 
 /* the sheet the drawing sits on in the Elevations tab: white with its 14px grid, drawn by the tab's sheet (ElevationsTab.jsx) —
    the drawing itself is transparent there; labels keep a white halo */
 const PAPER = '#FFFFFF'
 
-function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null, readOnly = false, controls = true, paper = false, fitSignal = 0, sheetEdit = false, holePitchIn = null, onValue = null }) {
+function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null, readOnly = false, controls = true, paper = false, fitSignal = 0, sheetEdit = false, holePitchIn = null, onValue = null, scaleUp = false }) {
   /* sheetEdit (C21, the card's sheet in edit mode): handles on the beams, a drag snaps to `holePitchIn` (Project settings →
      Uprights), a click on a blue value types it in place (the pallet's own values go to `onValue`), + Add level, − */
   // controls false: Fit and ⤢ are the host's (the Elevations tab's toolbar — `fitSignal`); paper: the white sheet
@@ -92,8 +124,10 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
   const [draft, setDraft] = useState(null)          // { type, active, removing } while dragging
   const [editing, setEditing] = useState(null)      // a dimension being typed: { id, k, x, y, value }
   const shown = draft ? draft.type : t
-  // centred and fitted to the pane (elevationLayout centres it in the box), labels in proportion with a readable minimum
-  const fontPx = paneFontPx(box)
+  // centred and fitted to the pane (elevationLayout centres it in the box), labels in proportion with a readable minimum;
+  // full screen (scaleUp): the card's sheet scaled up — its 9px labels times how many times the card's sheet fits (sheetScale)
+  const fontPx = scaleUp ? CARD_FONT_PX * sheetScale(box) : paneFontPx(box)
+  const kIn = scaleUp ? fontPx / CARD_FONT_PX : 1   // the typed value's box, at the drawing's scale
   const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, palletDIn: entry.palletDIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, view, zoom: zv.zoom, pan: zv.pan, bg: paper ? PAPER : 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sheetEdit && editing?.id === 'elev' ? 'beam:' + editing.k : null) || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null, edit: sheetEdit ? { hint: (draft?.active || sel != null || editing?.id === 'elev') && holePitchIn > 0 ? `${holePitchIn}″` : null } : null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail, view, zv, sheetEdit, holePitchIn, editing])
 
   const at = (ev) => { const r = host.current.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
@@ -231,7 +265,7 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
         <input autoFocus onFocus={e => e.target.select()} aria-label="Dimension" value={editing.text} onChange={e => setEditing({ ...editing, text: e.target.value })}
           onBlur={commitTyping} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') commitTyping(); if (e.key === 'Escape') setEditing(null) }}
           style={sheetEdit
-            ? { position: 'absolute', left: Math.max(2, Math.min(editing.x - 3.5, (box.w || 999) - 50)), top: Math.max(2, editing.y - 8), width: 46, height: 16, boxSizing: 'border-box', fontSize: 10, fontWeight: 600, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: '#1B4FD8', background: '#FFFFFF', padding: '0 4px', border: '1.2px solid #1B4FD8', borderRadius: 2, outline: 'none', zIndex: 3 }
+            ? { position: 'absolute', left: Math.max(2, Math.min(editing.x - 3.5 * kIn, (box.w || 999) - 50 * kIn)), top: Math.max(2, editing.y - 8 * kIn), width: 46 * kIn, height: 16 * kIn, boxSizing: 'border-box', fontSize: 10 * kIn, fontWeight: 600, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: '#1B4FD8', background: '#FFFFFF', padding: `0 ${4 * kIn}px`, border: '1.2px solid #1B4FD8', borderRadius: 2, outline: 'none', zIndex: 3 }
             : { position: 'absolute', left: Math.max(4, editing.x - 34), top: Math.max(4, editing.y - 11), width: 68, fontSize: 12, fontFamily: 'var(--font-mono)', padding: '2px 4px', border: '1px solid var(--accent, #2F7BD8)', borderRadius: 3, zIndex: 3 }} />
       )}
     </div>

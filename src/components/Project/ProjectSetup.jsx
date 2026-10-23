@@ -288,9 +288,9 @@ function SettingsCard() {
   }
   const regenerate = () => {
     const project = ask.project
-    write(project)
     const pal = project.pallets.find(p => p.id === project.defaultPalletId) || project.pallets[0], r = useRackingSettings.getState()
-    regenerateRacking({ orientation: 'auto', mhe: project.equipment.mhe, aisleFt: mheOptions[project.equipment.mhe]?.aisleFt ?? r.aisleFt, wallClearIn: project.rules.wallClearIn, maxRunFt: r.maxRunFt, palletWIn: pal?.faceIn, palletDIn: pal?.depthIn, levels: 4 }, { beamIn: r.beamIn ?? 96 })
+    // the settings written inside the regenerate's own undo step (one Ctrl+Z: the racks and the settings together)
+    regenerateRacking({ orientation: 'auto', mhe: project.equipment.mhe, aisleFt: mheOptions[project.equipment.mhe]?.aisleFt ?? r.aisleFt, wallClearIn: project.rules.wallClearIn, maxRunFt: r.maxRunFt, palletWIn: pal?.faceIn, palletDIn: pal?.depthIn, levels: 4 }, { beamIn: r.beamIn ?? 96, before: () => write(project) })
     setAsk(null); closeSetup()
   }
   const aisle = mheOptions[pr.equipment?.mhe]?.aisleFt

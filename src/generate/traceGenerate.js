@@ -404,12 +404,14 @@ const nextFrame = () =>
    takes — the click just feels dead. Yielding to a frame between batches lets
    the spinner paint and keeps the window responsive while the layout fills in.
 
-   Returns the same shape the sync entry does. */
+   Returns the same shape the sync entry does. `before`: a write made first, inside the same undo step (Generate's
+   forklift / wall clearance draft into Project settings). */
 export async function generateAndPlaceBatched(
   brief,
-  { generateLayout = sizingSheetLayout, batch = 10, onProgress, rules = DEFAULT_RULES } = {},
+  { generateLayout = sizingSheetLayout, batch = 10, onProgress, rules = DEFAULT_RULES, before = null } = {},
 ) {
   const kept = beginOneStep()
+  before?.()
   const { queue, ...picked } = buildQueue(brief, generateLayout, rules)
   onProgress?.(0)
   await nextFrame()
@@ -431,16 +433,30 @@ export async function generateAndPlaceBatched(
    dimensions, layers, elevation types and hand-placed racks; only the generated racks refilled — one Fill racking over
    the building with Generate's settings (`brief`: aisle, MHE, orientation — 'auto' scores both — run length, pallet,
    wall clearance). ONE undo step. Returns { total, usable, orientation, rows, handEdits, editsKnown, … } or null when
-   there is no building or nothing fits. */
-export function regenerateRacking(brief, { rules = DEFAULT_RULES, beamIn = 96 } = {}) {
+   there is no building or nothing fits.
+   `before`: a write the run makes first (Generate's forklift / wall clearance draft into Project settings, Project
+   settings' own save) — inside the SAME undo step, so one Ctrl+Z brings the racks and those values back together.
+   Nothing fits: that write alone is the step. */
+export function regenerateRacking(brief, { rules = DEFAULT_RULES, beamIn = 96, before = null } = {}) {
+  let start = null
+  if (before) {
+    const s0 = useCanvasStore.getState()
+    start = s0.history.slice(0, s0.historyIndex + 1)
+    if (start.length) start[start.length - 1] = snapOf(s0); else start.push(snapOf(s0))
+    before()
+  }
   const st = useCanvasStore.getState(), fp = regenBuilding(st.objects)
   const settings = {
     orientation: brief.orientation || 'auto', beamIn, palletWIn: brief.palletWIn ?? 40, palletDIn: brief.palletDIn ?? 48,
     mhe: brief.mhe || 'reach', aisleFt: brief.aisleFt ?? 10.5, maxRunFt: brief.maxRunFt ?? 150, wallClearIn: brief.wallClearIn ?? 0, levels: brief.levels ?? 4,
   }
   const r = planRegenerate(st.objects, fp, settings, { gridSize: GS, newId: nanoid, elevations: st.elevations })
-  if (!r) return null
-  const kept = beginOneStep()
+  if (!r) {
+    // the write alone, as one step (none when it changed nothing)
+    if (start) { if (snapOf(useCanvasStore.getState()) !== start[start.length - 1]) endOneStep(start); else useCanvasStore.setState({ history: start, historyIndex: start.length - 1 }) }
+    return null
+  }
+  const kept = start ? (clearGroup(), start) : beginOneStep()
   skipNextAction()                                     // the Row group passes over it: its rows are being replaced
   useCanvasStore.setState({ objects: r.objects, selectedIds: [], activeBaySelection: [] })
   endOneStep(kept)

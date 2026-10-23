@@ -51,14 +51,6 @@ export function GeneratePanel({ onClose } = {}) {
   const pallet = defaultPallet(project)
   const wallClearIn = draft.wallClearIn ?? (project?.rules?.wallClearIn ?? useRackingSettings.getState().wallClearIn ?? 0)
   const spec = useMemo(() => layoutSpec({}, rules), [rules])
-  /** The draft into Project settings (one undo step), as the run starts → the project the run uses. Nothing changed: none. */
-  const commitDraft = () => {
-    const next = projectWithDraft(project, draft)
-    setDraft({})
-    if (!next) return project
-    commitProject(useCanvasStore, next)
-    return next
-  }
 
   /* the project's building fills the fields once, as the card opens */
   useEffect(() => { fillGenFields(project) }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -90,19 +82,23 @@ export function GeneratePanel({ onClose } = {}) {
     else startOver()
   }
   const startOver = async () => {
-    commitDraft()
+    // the draft written inside the Generate's own undo step, as Regenerate does
+    const next = projectWithDraft(project, draft)
+    setDraft({})
     setGenerating(true)
     setProgress(0)
     try {
-      const outcome = await startOverLayout(useCanvasStore, { rules, mheOptions, onProgress: setProgress })
+      const outcome = await startOverLayout(useCanvasStore, { rules, mheOptions, onProgress: setProgress, project: next, before: next ? () => commitProject(useCanvasStore, next) : null })
       setResult(outcome)
     } finally {
       setGenerating(false)
     }
   }
   const regenerate = () => {
-    const pr = commitDraft()
-    const outcome = regenerateRacking(genBrief(pr, mheOptions), { rules, beamIn: useRackingSettings.getState().beamIn ?? 96 })
+    // the draft written inside the regenerate's own undo step: one Ctrl+Z brings the racks and the values back together
+    const next = projectWithDraft(project, draft), pr = next || project
+    setDraft({})
+    const outcome = regenerateRacking(genBrief(pr, mheOptions), { rules, beamIn: useRackingSettings.getState().beamIn ?? 96, before: next ? () => commitProject(useCanvasStore, next) : null })
     setResult(outcome ? { ...outcome, regenerated: true } : { failed: true })
   }
 

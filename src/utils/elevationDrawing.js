@@ -44,6 +44,13 @@ const AMBER = '#B5730F'   // warnings on the drawing (THEME.md's warning)
    "elev"): the right card's sheet. Plus Jakarta Sans for words and numbers alike, numbers 600 in the dimension blue. */
 const S_FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 const S = { sel: '#2E7D5B', up: '#14392B', ink: '#1F2321', blue: '#1B4FD8', words: '#767C74', ceil: '#41483F', maxLine: '#C99A1E', maxText: '#8A6D14', maxNote: '#A89060', band: '#F2C230', hatch: '#C3BEB1', tag: '#8A7A55', red: '#C0452A' }
+/* ONE elevation drawing (job 2c): the card's sheet is the reference — full screen and the PDF draw that same Studio
+   layout, scaled up from the card's own composition: the mockup's list sheet (276 × 420 at the 300 card) with its 9px
+   labels. Everything on the sheet is laid out in label units (u = fontPx / 9.4), so a box k times the card's with
+   fontPx 9k is the card's drawing k times as large — same labels, same positions, same colours. */
+export const CARD_SHEET = { w: 276, h: 420 }, CARD_FONT_PX = 9
+/** How many times the card's sheet fits in `box` ({ w, h }): full screen's labels are CARD_FONT_PX times it. */
+export const sheetScale = (box) => Math.max(0.1, Math.min(box.w / CARD_SHEET.w, box.h / CARD_SHEET.h))
 /** 30'-0" → 30′-0″ (the Studio drawing's primes) */
 const prime = (str) => String(str).replace(/'/g, '′').replace(/"/g, '″')
 const INK = '#15181C', PINE = '#123A2E', LOAD = '#E8DCC2', LOAD_EDGE = '#B08F52', DECK = '#C9A870', BLUE = '#1B4FD8', RED = '#A8341C', GREY = '#7A828C', HATCH = '#B6BAB3', BAND = '#F2C230', MISFIT = '#F5E7E3', MISFIT_EDGE = '#A8341C'
@@ -76,11 +83,14 @@ export function misfitLevels(t) {
  *  'text'|'poly'|'polygon'|'path', ..., role, tag } — role { kind: 'beam', k } | { kind: 'upright', x } | { kind: 'top' } |
  *  { kind: 'dim', id, k?, value } for the editor. No label overlaps a load, a beam or another label (declutter). */
 export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = {}) {
-  const { palletWIn = 40, palletDIn = null, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED, view = 'both', zoom = 1, pan = null, edit = null } = opts
+  const { palletWIn = 40, palletDIn = null, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', view = 'both', zoom = 1, pan = null, edit = null } = opts
   const showFront = view !== 'side', showSide = view !== 'front'
   const detailed = detail === 'detailed'
   // 'studio': the right card's sheet — the label set of STUDIO.md §7, nothing else (no pitch, no chain, no bracing)
   const studio = detail === 'studio', u = fontPx / 9.4
+  /* Studio: the paper palette of STUDIO.md §2 whoever draws it — the card, full screen, the PDF (a print window has no
+     theme variables) — on its white sheet; the older drawing takes the caller's colours */
+  const { bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED } = studio ? { bg: '#FFFFFF', frame: S.up, ink: S.ink, blue: S.blue, red: S.red } : opts
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
   const L = [...t.levels].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
   const top = L[L.length - 1]
@@ -471,7 +481,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   // the elevation's pallet deeper than these frames allow (~3" overhang each side): said in red under the drawing
   if (deepNote) text(ox + cw / 2, oy + ch - fT * 0.4, deepNote.toUpperCase(), { size: fT, fill: AMBER, weight: 600, pri: 1, tag: 'frame-depth' })
 
-  return { w: box.w, h: box.h, scale: s, items, floor, Y, Xf, upW, frontW, bayIn, bottom: Math.max(floor, floorS) + mB }
+  return { w: box.w, h: box.h, scale: s, items, floor, floorS, Y, Xf, upW, frontW, bayIn, bottom: Math.max(floor, floorS) + mB }
 }
 
 /* ── labels never overlap a load, a beam or another label ─────────────────── */

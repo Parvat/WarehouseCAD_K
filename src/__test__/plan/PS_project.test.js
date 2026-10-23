@@ -398,7 +398,7 @@ describe('PS — the project', () => {
     expect(tab).toMatch(/\{depthNote && \(\s*<div role="note" aria-label="Pallet depth" title=\{depthNote\} style=\{\{[^}]*background: '#3A2E17', color: '#F2C77A'/)
     expect(tab.includes("{pallet.depthIn}″ pallet needs about {need}″ frames. Rows are {short.map(x => `${x}″`).join(', ')}.")).toBe(true)
     expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/palletDIn: entry\.palletDIn/)
-    expect(src('export/pdfExport.js')).toMatch(/palletDIn: palletOfType\(T, type\)\?\.depthIn \?\? null/)
+    expect(src('export/pdfExport.js')).toMatch(/const pal = palletFor\(T, type\)\r?\n\s*const opts = \{ palletWIn: pal\?\.faceIn \|\| e\.palletWIn, palletDIn: pal\?\.depthIn \?\? null,/)
     // the row menu: portalled to the themed root, fixed, over everything — below the row, flipped above near the bottom
     expect(tab).toMatch(/return createPortal\(\s*<div ref=\{ref\} role="menu"[^>]*position: 'fixed', left, \.\.\.pos, zIndex: 500/)
     expect(tab).toMatch(/const host = document\.querySelector\('\[data-theme\]'\) \|\| document\.body/)

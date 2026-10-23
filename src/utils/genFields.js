@@ -36,8 +36,9 @@ export function genBrief(project, mheOptions) {
 }
 
 /** Start over with a new building: everything in the layout goes; a new building from the fields, generated. */
-export function startOverLayout(store, { rules, mheOptions, onProgress } = {}) {
-  return generateAndPlaceBatched(genBrief(projectOf(store.getState().elevations), mheOptions), { onProgress, rules })
+export function startOverLayout(store, { rules, mheOptions, onProgress, project = null, before = null } = {}) {
+  // `project` + `before`: the project the run uses, written by `before` inside the Generate's own undo step
+  return generateAndPlaceBatched(genBrief(project || projectOf(store.getState().elevations), mheOptions), { onProgress, rules, before })
 }
 
 /** The Generate card's draft of the project's forklift and wall clearance (`{ mhe?, wallClearIn? }`) on `project` → the

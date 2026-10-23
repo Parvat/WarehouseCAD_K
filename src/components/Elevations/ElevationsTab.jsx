@@ -14,7 +14,7 @@ import { useRules } from '../../rules/useRules'
 import { useElevTab, nameOf, assignSelected, recolorElevation, duplicateElevation, deleteElevation, defaultElevation, removeUnused, rowSideCells, startNew, startEdit, editDraft, cancelEdit, saveEdit, draftTable, sameElevation, frameDepthFor, deepenRows, startSheet, startFull, sheetValue, typePallet, typeCeiling, saveTyped, useElevSplit, setElevSplit, resetElevSplit, SPLIT_MIN, SPLIT_MAX } from '../../utils/elevTab'
 import { projectOf, ceilingFor, palletFor, openSetup, previewName, advancedOf, ASSUMED_CLEAR_IN } from '../../utils/project'
 import { bayLedger } from '../../utils/bayLedger'
-import { ElevationDrawing } from './ElevationDrawing'
+import { ElevationDrawing, elevFullOpen } from './ElevationDrawing'
 
 /* ── The Elevations tab (STUDIO.md §5, §7; design/studio/Studio.dc.html panels "elev" C2 and "edit" C3) ─────────────
    In the 300 wide right card, under its Properties | Elevations segment:
@@ -177,7 +177,8 @@ export function ElevationsTab() {
         {shown
           ? <ElevationDrawing t={shown} title={e ? previewName(dT, e.draft, e.id) : nameOf(T, shown)} entry={shownEntry} building={building} sel={e ? sel : null} sprClr={sprinklerClearance(T)} detail="studio" fullDetail={detail} view={view} height={sheetH} controls={false} paper fullSignal={fullSignal}
               readOnly={!e} onCommit={e ? (next) => editDraft(store, { ...next, id: e.draft.id }, { fromDrawing: true }) : () => {}}
-              sheetEdit={onSheet} holePitchIn={holePitchIn} onValue={(id, v) => sheetValue(store, id, v)} />
+              sheetEdit={onSheet} holePitchIn={holePitchIn} onValue={(id, v) => sheetValue(store, id, v)}
+              onEdit={!e && active ? () => startSheet(store, active.id) : null} onSave={() => saveTyped(store)} onCancel={cancelEdit} />
           : <div style={{ padding: 12, color: '#767C74', fontSize: 12 }}>No elevation yet — New below.</div>}
       </div>
 
@@ -280,7 +281,7 @@ function SheetRow({ e, T, bays }) {
   // Esc cancels (a field being typed, or a beam picked on the drawing, takes Esc first)
   useEffect(() => {
     // (taken in the capture phase and stopped there: the Esc that ends the edit never also clears the plan's selection)
-    const k = (ev) => { if (ev.key !== 'Escape' || textOwnsKey(ev) || useElevEditor.getState().sel != null) return; if (ev.target instanceof Element && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return; ev.stopPropagation(); cancelEdit() }
+    const k = (ev) => { if (ev.key !== 'Escape' || textOwnsKey(ev) || useElevEditor.getState().sel != null || elevFullOpen()) return; if (ev.target instanceof Element && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return; ev.stopPropagation(); cancelEdit() }
     window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true)
   }, [])
   return (
@@ -342,7 +343,7 @@ function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, buil
   // the draft the same as an existing elevation in every way: say so, and offer that one
   const same = sameElevation(dT, d, e.id)
   const useSame = () => { cancelEdit(); useElevTab.setState({ activeId: same.id, made: null }) }
-  useEffect(() => { const k = (ev) => { if (ev.key === 'Escape' && !sel && !(ev.target instanceof Element && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName))) { ev.stopPropagation(); cancelEdit() } }; window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true) }, [sel])
+  useEffect(() => { const k = (ev) => { if (ev.key === 'Escape' && !sel && !elevFullOpen() && !(ev.target instanceof Element && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName))) { ev.stopPropagation(); cancelEdit() } }; window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true) }, [sel])
   const save = () => saveTyped(store, { name })
   // the pallet's depth against the frames it would go on: the selected rows', else (editing) the rows using it
   const pallet = palletFor(dT, d)

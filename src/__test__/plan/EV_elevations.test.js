@@ -514,11 +514,8 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     const bName = (await import('../../utils/project')).nameOf(tb, tb.types.find(t => t.id === 'B'))
     expect(['4 levels · 8\'-0" bay', '4 levels · 9\'-0" bay', `${bName} · 8'-0" bay`, 'RACK ELEVATIONS', 'SCALE: ', '=1\'', 'fill="#1B4FD8"'].map(x => svg.includes(x))).toEqual([true, true, true, true, true, true, true])
     expect(svg.includes('C · ')).toBe(false)
-    // it prints whichever of Simple / Detailed is selected
-    expect([svg.includes('PITCH'), /data-role|6'-0"<\/text>/.test(svg)]).toEqual([true, false])
-    const det = buildElevationSheets(o2, { title: 'T', elevations: tb, detail: 'detailed' })[0].svg
-    expect([det.includes(">5'-0&quot;<"), svg.includes(">5'-0&quot;<")]).toEqual([true, false])   // the beam at 5'-0" dimensioned only in Detailed
-    expect(/\d ?lb|\d#|MAX\./i.test(svg.replace(/#[0-9a-fA-F]{3,8}/g, ''))).toBe(false)   // no weights on the drawing
+    // job 2c: it prints the card's drawing (the Studio set: STUDIO.md §7), never the older Simple / Detailed one
+    expect([svg.includes('PITCH'), svg.includes('Top of load '), svg.includes('Plus Jakarta Sans'), /data-role/.test(svg)]).toEqual([false, true, true, false])
   })
 
   it('EV-keeper: a layout loaded is given its types in the store (not among its objects); an action\'s fix is folded into that action\'s entry; an old types object among the objects is moved to the store', async () => {
@@ -767,7 +764,9 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(d.items.filter(i => i.t === 'text').every(i => i.haloColor === 'var(--surface)')).toBe(true)
     expect(itemSVGOf(d).includes('stroke:var(--surface)')).toBe(true)
     const pdf = readFileSync(new URL('../../export/pdfExport.js', import.meta.url), 'utf8')
-    expect(pdf).toMatch(/detail, bg: '#fff' \}/)
+    // the PDF: the card's Studio drawing, whose paper palette is its own (white halo, §2 colours) — never theme variables
+    expect(pdf).toMatch(/fontPx: CARD_FONT_PX, sprinklerClearanceIn: sprinklerClearance\(T\), detail: 'studio' \}/)
+    expect(readFileSync(new URL('../../utils/elevationDrawing.js', import.meta.url), 'utf8')).toMatch(/studio \? \{ bg: '#FFFFFF', frame: S\.up, ink: S\.ink, blue: S\.blue, red: S\.red \} : opts/)
   })
 
   it('EV-tab-wiring: no Elevation mode — Elevations a tab next to Properties, the panel wider on it (edge dragged, remembered), the toolbar stays; the tab: Front | Side and Simple | Detailed, the drawing taking most of the space, the chips (menu, + Add, Apply to selected rows, Remove unused), the Project setup link; the drawing zooms, pans, fits, goes full screen', () => {
@@ -838,7 +837,9 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(drw).toMatch(/useEffect\(\(\) => \{ if \(props\.fullSignal\) setFull\(true\) \}, \[props\.fullSignal\]\)/)
     expect(drw).toMatch(/\{controls && <div style=\{\{ position: 'absolute', top: 6, right: 6/)
     expect(drw).toMatch(/const PAPER = '#FFFFFF'/)                                                     // a plain white sheet — no grid
-    expect(/linear-gradient/.test(drw)).toBe(false)
+    // the one grid here is full screen's sheet (job 2c: the card's white sheet, its 14px grid)
+    expect((drw.match(/linear-gradient/g) || []).length).toBe(2)
+    expect(drw).toMatch(/const SHEET_BG = \{ backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient\(#EFEEE9 1px, transparent 1px\), linear-gradient\(90deg, #EFEEE9 1px, transparent 1px\)', backgroundSize: '14px 14px' \}/)
     // reminders are blue: the clear-height note; the same-as note offers the existing one
     expect(tab).toMatch(/<Note level="note" role="note" aria-label="Clear height not set">/)
     expect(tab).toMatch(/const same = sameElevation\(dT, d, e\.id\)/)
@@ -847,14 +848,14 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(/Proposals|Use for layout|> Apply</.test(tab)).toBe(false)                     // no proposals, no Apply / Discard
     // the pallets drawn on a beam: the elevation's own pallet face — in the tab and on the PDF
     expect(tab).toMatch(/entry=\{shownEntry\}/)
-    expect(src('export/pdfExport.js')).toMatch(/palletWIn: \(type\.palletId && T\?\.project\?\.pallets\?\.find\(x => x\.id === type\.palletId\)\?\.faceIn\) \|\| e\.palletWIn/)
+    expect(src('export/pdfExport.js')).toMatch(/palletWIn: pal\?\.faceIn \|\| e\.palletWIn/)   // the card's own: palletFor (job 2c)
     const dr = src('components/Elevations/ElevationDrawing.jsx')
     expect(dr).toMatch(/el\.addEventListener\('wheel', onWheel, \{ passive: false \}\)/)
     expect(dr).toMatch(/setZv\(\{ zoom: z2, pan: \{ x: q\.x - \(q\.x - pan\.x\) \* \(z2 \/ zoom\), y: q\.y - \(q\.y - pan\.y\) \* \(z2 \/ zoom\) \} \}\)/)
     expect(dr).toMatch(/onDoubleClick=\{\(e\) => \{ if \(empty\(e\)\) fit\(\) \}\}/)
     expect(dr).toMatch(/aria-label="Full screen"/)
     expect(dr).toMatch(/role="dialog" aria-label="Elevation full screen"/)
-    expect(dr).toMatch(/if \(e\.key === 'Escape'\) \{ e\.stopPropagation\(\); setFull\(false\) \}/)
+    expect(dr).toMatch(/e\.stopPropagation\(\); e\.stopImmediatePropagation\(\)[\s\S]*?if \(sheetEdit && onCancel\) \{ onCancel\(\); return \}\s+setFull\(false\)/)   // Esc closes (editing on the sheet: cancels first)
     // the legend clear of "← Hub"; Properties keeps its one line
     expect(src('canvas2/ElevationsCanvas.jsx')).toMatch(/position: 'absolute', left: 104, bottom: 12/)
     expect(src('studio/cards.jsx')).toMatch(/<ElevationChip \/>/)   // Studio C1: the selection's elevation as the card's chip
@@ -914,7 +915,7 @@ describe('EV — the wiring', () => {
     expect(app).toMatch(/<div className="flex flex-1 min-h-0 overflow-hidden" style=\{\{ position: 'relative' \}\}>\s*<Canvas2 \/>/)
     const pane = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
     // never floating — only its full-screen view, on purpose
-    expect([(pane.match(/position: 'fixed'/g) || []).length, /createPortal\(\s*<div role="dialog" aria-label="Elevation full screen" style=\{\{ position: 'fixed'/.test(pane)]).toEqual([1, true])
+    expect([(pane.match(/position: 'fixed'/g) || []).length, /createPortal\(\s*<div role="dialog" aria-label="Elevation full screen" data-elev-full data-pane="open" style=\{\{ position: 'fixed'/.test(pane)]).toEqual([1, true])
     // the beams and the upright tops are grabbed through strips drawn last, so a label on a beam never takes its drag
     expect(pane.includes("data-grab=")).toBe(true)
     expect(pane.includes("onPointerDown={(e) => startDrag(e, i.role)}")).toBe(true)

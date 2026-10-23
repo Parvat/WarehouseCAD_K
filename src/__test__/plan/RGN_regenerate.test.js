@@ -163,13 +163,13 @@ describe('RGN — Regenerate racking', () => {
     expect(src).toMatch(/Keeps zones, doors and columns\. Replaces racking\./)
     expect(src).toMatch(/Hand edits to these racks can't be detected/)
     expect(src).toMatch(/hand edit\$\{ask\.handEdits === 1 \? '' : 's'\} to generated racks will be lost/)
-    expect(src).toMatch(/regenerateRacking\(genBrief\(pr, mheOptions\), \{ rules, beamIn: useRackingSettings\.getState\(\)\.beamIn \?\? 96 \}\)/)
-    expect(src).toMatch(/const outcome = await startOverLayout\(useCanvasStore, \{ rules, mheOptions, onProgress: setProgress \}\)/)
+    expect(src).toMatch(/regenerateRacking\(genBrief\(pr, mheOptions\), \{ rules, beamIn: useRackingSettings\.getState\(\)\.beamIn \?\? 96, before: /)
+    expect(src).toMatch(/const outcome = await startOverLayout\(useCanvasStore, \{ rules, mheOptions, onProgress: setProgress, project: next, before: /)
     expect(/>Start over</.test(src)).toBe(false)                                                       // not in the card
     // the card never runs past the window: its fields scroll, the footer stays
     expect(src).toMatch(/flex: '0 1 auto', minHeight: 0, overflowY: 'auto'/)
     const gf = readFileSync(new URL('../../utils/genFields.js', import.meta.url), 'utf8')
-    expect(gf).toMatch(/return generateAndPlaceBatched\(genBrief\(projectOf\(store\.getState\(\)\.elevations\), mheOptions\), \{ onProgress, rules \}\)/)
+    expect(gf).toMatch(/return generateAndPlaceBatched\(genBrief\(project \|\| projectOf\(store\.getState\(\)\.elevations\), mheOptions\), \{ onProgress, rules, before \}\)/)
     const menu = readFileSync(new URL('../../components/Toolbar/TopBar.jsx', import.meta.url), 'utf8')
     expect(menu).toMatch(/<MenuItem onClick=\{\(\) => setConfirmStart\(true\)\}>Start over with a new building…<\/MenuItem>/)
     expect(menu).toMatch(/role="group" aria-label="Start over with a new building"[\s\S]*>Cancel<\/button>[\s\S]*onClick=\{startOver\}[^>]*>Start over<\/button>/)

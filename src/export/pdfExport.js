@@ -31,10 +31,9 @@ const icon = (I) => renderToStaticMarkup(createElement(I, { size: 16, strokeWidt
 const ICON_X = icon(X), ICON_PRINTER = icon(Printer)
 import { levelsResolver, legendCounts } from '../utils/elevations'
 import { bandRects, useElevView, tint, tintOn, ELEV_FILL_OPACITY } from '../utils/elevationDraw'
-import { elevationLayout, itemSVG, lengthsByType, ceilingForDrawing, ftInDash, archScale } from '../utils/elevationDrawing'
-import { typeIdAt, sprinklerClearance, palletOfType } from '../utils/elevations'
-import { nameOf } from '../utils/project'
-import { useElevEditor } from '../utils/elevEditor'
+import { elevationLayout, itemSVG, lengthsByType, ftInDash, archScale, CARD_SHEET, CARD_FONT_PX } from '../utils/elevationDrawing'
+import { typeIdAt, sprinklerClearance } from '../utils/elevations'
+import { nameOf, ceilingFor, palletFor } from '../utils/project'
 import { bayLedger } from '../utils/bayLedger'
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
@@ -450,10 +449,13 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
 }
 
 /** The elevation sheets: one elevation per type × beam length in use — "Type A · 8' bay", its colour swatch and
- *  bay count, the front and the side view (utils/elevationDrawing.js, the editor's own drawing), drawn at an architectural
- *  scale — "RACK ELEVATIONS" and "SCALE: 1/4\"=1'" under each, as on the sample — several to an A1 landscape sheet
- *  where they fit. [] when no type is in use. */
-export function buildElevationSheets(objects, { title = 'Untitled Layout', elevations = null, detail = useElevEditor.getState().detail } = {}) {
+ *  bay count, the front and the side view, drawn at an architectural scale — "RACK ELEVATIONS" and "SCALE: 1/4\"=1'"
+ *  under each, as on the sample — several to an A1 landscape sheet where they fit. [] when no type is in use.
+ *  The drawing is the card's sheet (job 2c: one drawing — elevationLayout's Studio set, read from the same ceiling and
+ *  pallet as the card): its front view, and beside it its side view (the card's Depth), each the card's composition —
+ *  the 276 × 420 sheet, 9px labels — scaled onto the paper; the two at one scale on one floor. The paper palette: white,
+ *  square (the sheet's radius 8 and grid are the screen's), no chrome. */
+export function buildElevationSheets(objects, { title = 'Untitled Layout', elevations = null } = {}) {
   const T = elevations
   if (!T) return []
   const L = bayLedger(objects, 40, T)
@@ -467,24 +469,52 @@ export function buildElevationSheets(objects, { title = 'Untitled Layout', eleva
   for (let p = 0; p * per < cells.length; p++) {
     const parts = cells.slice(p * per, (p + 1) * per).map(({ type, e }, i) => {
       const c = i % cols, r = Math.floor(i / cols), x = margin + c * cellW, y = margin + head + r * cellH
-      const fs = Math.max(2.6, cellH / 48)   // text in proportion to the drawing, as on the sample
-      const box = { w: cellW - 8, h: cellH - fs * 7.5 }, opts = { palletWIn: (type.palletId && T?.project?.pallets?.find(x => x.id === type.palletId)?.faceIn) || e.palletWIn, palletDIn: palletOfType(T, type)?.depthIn ?? null, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: ceilingForDrawing(objects, T, type, e.parentId), fontPx: fs, sprinklerClearanceIn: sprinklerClearance(T), detail, bg: '#fff' }   // the editor's Simple / Detailed
-      const fit = elevationLayout(type, e.beamIn, box, opts), sc = archScale(fit.scale)
-      const d = elevationLayout(type, e.beamIn, box, { ...opts, scale: sc.mmPerIn })
+      const fs = Math.max(2.6, cellH / 48)   // the cell's own title and scale lines (mm), as on the sample
+      const box = { w: cellW - 8, h: cellH - fs * 7.5 }
+      const { d, k, sc } = elevationCell(objects, T, type, e, box)
+      const bottom = d.bottom * k
       const label = `${nameOf(T, type)} · ${ftInDash(e.beamIn)} bay`
       return `<g transform="translate(${x + 4} ${y})">` +
         `<rect x="0" y="0" width="${fs * 1.1}" height="${fs * 1.1}" fill="${esc(tint(type.color))}" fill-opacity="${ELEV_FILL_OPACITY}" stroke="#333" stroke-width="0.2"/>` +
         `<text x="${fs * 1.5}" y="${fs}" font-size="${fs * 1.15}" font-weight="700" font-family="Arial, sans-serif" fill="#111">${esc(label)}</text>` +
         `<text x="${box.w}" y="${fs}" font-size="${fs * 0.9}" font-family="Arial, sans-serif" text-anchor="end" fill="#444">${e.bays} bay${e.bays === 1 ? '' : 's'}</text>` +
-        `<g transform="translate(0 ${fs * 2})">${d.items.map(itemSVG).join('')}</g>` +
-        `<text x="${box.w / 2}" y="${d.bottom + fs * 3.4}" font-size="${fs * 1.7}" font-family="Arial, sans-serif" text-anchor="middle" letter-spacing="0.6" fill="#222">RACK ELEVATIONS</text>` +
-        `<text x="${box.w / 2}" y="${d.bottom + fs * 4.9}" font-size="${fs * 1.05}" font-family="Arial, sans-serif" text-anchor="middle" letter-spacing="0.3" fill="#222">SCALE: ${esc(sc.label)}</text></g>`
+        `<g transform="translate(0 ${fs * 2}) scale(${k})" data-elev-drawing>${d.items.map(itemSVG).join('')}</g>` +
+        `<text x="${box.w / 2}" y="${bottom + fs * 3.4}" font-size="${fs * 1.7}" font-family="Arial, sans-serif" text-anchor="middle" letter-spacing="0.6" fill="#222">RACK ELEVATIONS</text>` +
+        `<text x="${box.w / 2}" y="${bottom + fs * 4.9}" font-size="${fs * 1.05}" font-family="Arial, sans-serif" text-anchor="middle" letter-spacing="0.3" fill="#222">SCALE: ${esc(sc.label)}</text></g>`
     })
     const header = `<text x="${paperW - margin}" y="${margin + 9}" font-size="4.5" font-family="Arial, sans-serif" text-anchor="end" fill="#444">${esc(title)} · sheet ${p + 2}</text>`
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${paperW}mm" height="${paperH}mm" viewBox="0 0 ${paperW} ${paperH}"><rect width="${paperW}" height="${paperH}" fill="#fff"/>${header}${parts.join('')}<rect x="2" y="2" width="${paperW - 4}" height="${paperH - 4}" fill="none" stroke="#111" stroke-width="0.4"/></svg>`
     pages.push({ svg, paperW, paperH })
   }
   return pages
+}
+
+/** One PDF cell's drawing (`box` in mm): the card's front view and its side view — elevationLayout's Studio set, at the
+ *  card's composition (CARD_SHEET, CARD_FONT_PX) scaled `k` mm per px — side by side, at the largest architectural scale
+ *  both fit, the side view moved onto the front view's floor → { d: { items (px), bottom (px) }, k, sc }. */
+export function elevationCell(objects, T, type, e, box) {
+  const pal = palletFor(T, type)
+  const opts = { palletWIn: pal?.faceIn || e.palletWIn, palletDIn: pal?.depthIn ?? null, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: ceilingFor(T, type, objects, e.parentId), fontPx: CARD_FONT_PX, sprinklerClearanceIn: sprinklerClearance(T), detail: 'studio' }
+  // the card's sheet as tall as the cell; the front view two thirds of its width (at least the card's: at the smaller
+  // architectural scale its labels keep their room — the max load label whole, as on the card), the side view the rest
+  const k = Math.min(box.h / CARD_SHEET.h, box.w / (CARD_SHEET.w * 1.6)), W = box.w / k
+  const fW = Math.max(CARD_SHEET.w, W * 2 / 3)
+  const fBox = { w: fW, h: CARD_SHEET.h }, sBox = { w: W - fW, h: CARD_SHEET.h }
+  const fit = Math.min(elevationLayout(type, e.beamIn, fBox, { ...opts, view: 'front' }).scale, elevationLayout(type, e.beamIn, sBox, { ...opts, view: 'side' }).scale)
+  const sc = archScale(fit * k)                                   // mm per real inch, an architectural one
+  const front = elevationLayout(type, e.beamIn, fBox, { ...opts, view: 'front', scale: sc.mmPerIn / k })
+  const side = elevationLayout(type, e.beamIn, sBox, { ...opts, view: 'side', scale: sc.mmPerIn / k })
+  const dy = front.floor - side.floorS
+  const items = [...front.items, ...side.items.map(i => shiftItem(i, fW, dy))]
+  return { d: { items, bottom: Math.max(front.bottom, side.bottom + dy) }, k, sc }
+}
+/** A drawing primitive moved by (dx, dy) px. */
+function shiftItem(i, dx, dy) {
+  if (i.t === 'line') return { ...i, x1: i.x1 + dx, y1: i.y1 + dy, x2: i.x2 + dx, y2: i.y2 + dy }
+  if (i.t === 'polygon' || i.t === 'poly') return { ...i, points: i.points.map(([x, y]) => [x + dx, y + dy]) }
+  if (i.t === 'circle') return { ...i, cx: i.cx + dx, cy: i.cy + dy }
+  if (i.t === 'path') return { ...i, d: i.d.replace(/([ML])(-?[\d.]+) (-?[\d.]+)/g, (_, c, x, y) => `${c}${+x + dx} ${+y + dy}`) }
+  return { ...i, x: i.x + dx, y: i.y + dy }
 }
 
 /** Top-level entry — reads the store itself (headless: no mounted-canvas
