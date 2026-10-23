@@ -70,6 +70,6 @@ describe('ST — the frame', () => {
     expect(/MULTI_SELECT/.test(kb)).toBe(false)
     for (const [id, k] of [['fill', 'F'], ['rowgroup', 'G'], ['split', 'S'], ['select', 'V'], ['pan', 'P'], ['text', 'T']]) expect([id, ft.split('\n').some(l => l.includes(`tool('${id}'`) && new RegExp(`tool\\('${id}'[^)]*\\)?[^)]*keyName:'${k}'`).test(l))]).toEqual([id, true])
     expect(ft).toMatch(/icon:'Measure', keyName:'M'/)
-    // (STUDIO.md §5's tool-shortcut line was dropped in the 2c design update — the code above still holds the keys)
+    expect(readFileSync(new URL('../../../STUDIO.md', import.meta.url), 'utf8')).toMatch(/V Select · P Pan · F Fill racking · G Row group · S Split · M Measure · L Line · T Text/)
   })
 })

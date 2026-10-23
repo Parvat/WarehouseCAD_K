@@ -40,6 +40,27 @@ describe('SG-1 — max load height', () => {
   })
 })
 
+describe('SG-1b — the max load label fits', () => {
+  it('SG-maxload-short: where "Max load height N (18″ below sprinklers)" does not fit the sheet\'s width it reads "Max load N" — on the 6-level draft C3 opens on, never running to the edge; with room, the full label', async () => {
+    const P = await import('../../utils/project'), F = await import('../../utils/elevFit'), { elevationLayout } = await import('../../utils/elevationDrawing')
+    const pr = P.newProject(), ceiling = { id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 360 }
+    const draft = { ...F.bestFitFor(pr, ceiling, P.defaultPallet(pr)), id: 'draft' }
+    expect(draft.levels.length).toBe(6)                                                                  // the draft C3 opens on (30′ ceiling)
+    const lab = (box) => elevationLayout(draft, 96, box, { palletWIn: 40, building: { clearHeightIn: 360, sprinklerIn: 360 }, sprinklerClearanceIn: 18, fontPx: 9, detail: 'studio', view: 'front' }).items.find(i => i.t === 'text' && /^Max load/.test(i.s))
+    const right = (l) => l.x + l.s.length * l.size * 0.53
+    const c3 = lab({ w: 274, h: 238 })                                                                    // C3's sheet
+    expect([c3.s, right(c3) <= 274 - 4]).toEqual(['Max load 28′-6″', true])
+    const narrow = lab({ w: 100, h: 238 })                                                               // tighter still: it slides left, off the edge
+    expect([narrow.s, right(narrow) <= 100 - 4, narrow.x >= 0]).toEqual(['Max load 28′-6″', true, true])
+    // C2's elevation on C2's sheet: the full label, slid left (no further than the Ceiling label) to stay off the edge
+    const c2 = elevationLayout(T5, 96, { w: 274, h: 420 }, { palletWIn: 40, building: { clearHeightIn: 360, sprinklerIn: null }, sprinklerClearanceIn: 18, fontPx: 9, detail: 'studio', view: 'front' }).items.filter(i => i.t === 'text')
+    const c2max = c2.find(i => /^Max load/.test(i.s)), c2ceil = c2.find(i => /^Ceiling/.test(i.s))
+    expect([c2max.s, right(c2max) <= 274 - 4, c2max.x >= c2ceil.x]).toEqual(['Max load height 28′-6″ (18″ below sprinklers)', true, true])
+    const wide = lab({ w: 560, h: 420 })                                                                  // the card widened
+    expect([wide.s, right(wide) <= 560 - 4]).toEqual(['Max load height 28′-6″ (18″ below sprinklers)', true])
+  })
+})
+
 describe('SG-2 — square corners', () => {
   it('SG-square: the elevation sheet has square corners (radius 0) — the card\'s sheet in every state', () => {
     const tab = read('components/Elevations/ElevationsTab.jsx')
@@ -54,7 +75,7 @@ describe('SG-3 — edit on the sheet (C21)', () => {
     const handles = d.items.filter(i => i.tag === 'handle')
     expect(handles.length).toBe(8)                                                                       // four beams, two ends
     expect(handles.filter(h => h.fill === '#2E7D5B').length).toBe(2)                                     // the active beam's
-    expect(d.items.find(i => i.tag === 'snap-hint')?.s).toBe('↕ 2″ steps')
+    expect(d.items.find(i => i.tag === 'snap-hint')?.s).toBe('2″ steps')                                 // text only, no arrow glyph
     const under = d.items.filter(i => i.tag === 'editable')
     expect(under.length).toBe(5)                                                                         // three beam heights (the active one boxed) + 48″ + 40″
     const beamLabel = d.items.find(i => i.tag === 'beam-label')

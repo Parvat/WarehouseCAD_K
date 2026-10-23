@@ -210,7 +210,16 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       const maxLoad = maxLoadS, yM = Yv(maxLoad), yC = Yv(base)
       rect(x0, Math.min(yC, yM), x1 - x0, Math.abs(yM - yC), { fill: S.band, opacity: 0.22, tag: 'band' })
       line(x0, yM, x1, yM, { stroke: S.maxLine, sw: 1.2, dash: '5 3', tag: 'max-load' })
-      if (!compact) sText(x0 + 48 * u, yM + 12 * u, ['Max load height ', [prime(ftInDash(maxLoad)), S.maxText], ' ', [`(${sprinklerClearanceIn}″ below sprinklers)`, S.maxNote]], { fill: S.maxText, pri: 2, tag: 'shell', fixed: true })
+      if (!compact) {
+        // the full label slides left — as far as the Ceiling label's own left edge, the two aligned — to stay off the sheet's
+        // edge; where it does not fit even so: Max load N (no sprinkler note), slid as needed — never to the edge
+        const full = ['Max load height ', [prime(ftInDash(maxLoad)), S.maxText], ' ', [`(${sprinklerClearanceIn}″ below sprinklers)`, S.maxNote]], short = ['Max load ', [prime(ftInDash(maxLoad)), S.maxText]]
+        const width = (runs) => runs.map(r => (Array.isArray(r) ? r[0] : r)).join('').length * 10 * u * 0.53, right = box.w - 6 * u
+        const minX = x0 + 24 * u
+        let lx = Math.min(x0 + 48 * u, right - width(full)), runs = full
+        if (lx < minX) { runs = short; lx = Math.max(2 * u, Math.min(x0 + 48 * u, right - width(short))) }
+        sText(lx, yM + 12 * u, runs, { fill: S.maxText, pri: 2, tag: 'shell', fixed: true })
+      }
     }
   }
   /* the ground: a 2.5 ink line, 1px hatching every 16 below it */
@@ -316,7 +325,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       for (const it of items.filter(x => x.t === 'text' && x.role?.kind === 'dim' && ['elev', 'palletH', 'palletW'].includes(x.role.id))) {
         const w = tw5(it.s, it.size), x0 = it.anchor === 'middle' ? it.x - w / 2 : it.anchor === 'end' ? it.x - w : it.x
         if (!act(it.role.k ?? -1)) line(x0, it.y + 2.5 * u, x0 + w, it.y + 2.5 * u, { stroke: S.blue, sw: 0.8, dash: `${1.2 * u} ${1.2 * u}`, tag: 'editable' })
-        else if (edit.hint) items.push({ t: 'text', x: x0 + w / 2 + 2 * u, y: it.y - 17.5 * u, s: `↕ ${edit.hint} steps`, size: 8.5 * u, fill: S.sel, anchor: 'middle', font: S_FONT, halo: 0, weight: 600, tag: 'snap-hint', fixed: true })
+        else if (edit.hint) items.push({ t: 'text', x: x0 + w / 2 + 2 * u, y: it.y - 17.5 * u, s: `${edit.hint} steps`, size: 8.5 * u, fill: S.sel, anchor: 'middle', font: S_FONT, halo: 0, weight: 600, tag: 'snap-hint', fixed: true })
       }
       const top = L[L.length - 1], lhT = loadH(top, L.length - 1), yTopLoad = Y(top.beamIn + lhT)
       rect(Xf(upW) + 0.5, yTopLoad - 7.5 * u - 34 * u, bayIn * s - 1, 34 * u, { fill: '#7BD3A4', opacity: 1, fillOpacity: 0.1, stroke: S.sel, sw: 1, dash: `${4 * u} ${3 * u}`, role: { kind: 'add' }, cursor: 'pointer', tag: 'add-level' })

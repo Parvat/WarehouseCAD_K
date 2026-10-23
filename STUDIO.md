@@ -108,6 +108,11 @@ Warning action button: background `#F2C77A`, text `#3A2E17`.
 - **Toggle**: 30×18, off `#3A403C`, on accent with on-accent knob.
 - **Scrollbars (everywhere, every scrolling area)**: thin, 8px; thumb `#3A403C` radius 4 with a 2px `#1F2321` border, hover `#4A514D`; track transparent. Firefox: `scrollbar-width: thin; scrollbar-color: #3A403C transparent`. Set once globally, never per component; no browser-default scrollbar anywhere.
 - **Icons**: see section 9 (box style, 24px).
+- **Hover** (island buttons): background `#2A2F2C` (inset); an active button (pressed tool, on toggle, open section) hovers `#355A47`.
+- **Hover in the right card**: list rows, the More row, Check items, secondary (ghost), inset and danger buttons → background `#2A2F2C`. No hover change on toggles, colour swatches, the segmented control's active segment, a picked row or the mint primary button.
+- **Keys while typing**: with focus in an input, select or textarea, Ctrl/Cmd + A C V X Z Y, Delete / Backspace, the arrows and the single-letter tool keys act on the text only, never on the canvas.
+- **Disabled**: the same control at 45% opacity, cursor not-allowed.
+- **Tool shortcuts** (shown in the tool pill's hint, key in mono): V Select · P Pan · F Fill racking · G Row group · S Split · M Measure · L Line · T Text.
 
 ## 6. Selection bar contents
 
@@ -124,16 +129,22 @@ Warning action button: background `#F2C77A`, text `#3A2E17`.
 ## 7. Behaviour rules
 
 - Generate opens **inside the right card**. Top bar label: "Generate" on an empty plan, "Regenerate" when racks exist; Regenerate shows the warning line "Keeps zones, doors and columns. Replaces racking."
+  - Fields: Building width · Building length / Column grid (its own row) / Max run · Wall clearance; Row direction; Columns along wall (Yes · No); Forklift. No Clear height (Generate never uses one). Forklift and Wall clearance are the project's — changed here they are a draft, written to Project settings only when Generate / Regenerate runs; Cancel or X drops them.
+  - The warning line also says the hand edits a regenerate loses. The blue note gives the real sources: "Pallet 48×40 comes from Project settings; frame 42″ and flue 9″ from Rules." — each name opens its dialog.
+  - Footer: Cancel · Generate / Regenerate. X and Cancel go back to the card that was showing. **Start over with a new building** is in the layout menu (File), behind a confirm — never in this card.
+  - A pick on the plan (an object, or a building's wall) closes the card and shows Properties for it; the draft goes with it.
 - Empty plan shows a centred card: "Your building is ready" · Generate layout · Draw racks. Gone after the first rack.
 - Elevations: Depth and full-screen buttons sit in the "In this layout" row (editor: in its header). The drawing has no buttons on it, except in edit-on-sheet mode below.
-- Max load height = sprinkler height − 18″ (NFPA clearance below sprinklers). If no sprinkler height is set, use the ceiling − 18″. Sprinkler height can never be above the ceiling (field error in Project settings). Label: Max load height N (18″ below sprinklers).
-- Elevation rows: pencil (24×24) left of More. Pencil = **edit on the sheet** (C21, `StudioSheet`): the list collapses to that row, the sheet grows (560 at 900 tall), the row shows ✕ Cancel and a 24h Save. On the sheet: drag a beam (snaps to Project settings → Uprights → Hole pitch, default 2″; ↕ hint next to the dragged beam's label), click any blue value to type it (input box on the drawing), + Add level ghost box above the top load, − on the top level removes it. Editable values have a dotted blue underline. A load above max load height turns that level red. Save = one undo step, Esc = Cancel.
+- Max load height = sprinkler height − 18″ (NFPA clearance below sprinklers). If no sprinkler height is set, use the ceiling − 18″. Sprinkler height can never be above the ceiling (field error in Project settings). Label: Max load height N (18″ below sprinklers); where that does not fit the sheet's width, Max load N — never to the edge.
+- Elevation rows: pencil (24×24) left of More. Pencil = **edit on the sheet** (C21, `StudioSheet`): the list collapses to that row, the sheet grows (560 at 900 tall), the row shows ✕ Cancel and a 24h Save. On the sheet: drag a beam (snaps to Project settings → Uprights → Hole pitch, default 2″; a text-only "2″ steps" hint over the dragged beam's label), click any blue value to type it (input box on the drawing), + Add level ghost box above the top load, − on the top level removes it. Editable values have a dotted blue underline. A load above max load height turns that level red. Save = one undo step, Esc = Cancel.
 - More menu: Full edit (C3 with this elevation's values, title Edit elevation · N bays), Colour, Duplicate, Set as default, Remove unused elevations, Delete.
+- Elevations list: **Apply** stays in place — "Select rows to apply", dimmed at 45%, with no row selected; "Apply to N selected rows" with rows (the footer never jumps). Simple | Detailed is in the full-screen view; Fit is a double-click on the sheet.
 - C3 (New and Full edit): every value is a typed input, no dropdowns or presets: Name, Ceiling, Pallet Depth / Width / Height / Weight, Rack Frame depth / Beam size / Beam length. The frame warning sits inside the Rack box.
 - Pallet sizes always read depth × width (48×40).
 - Right card width: drag its left edge (6px hit area, 3×32 grip `#4A514D` shown in C21) between 300 and 640; double-click resets to 300; remembered per user; same width for every tab.
 - Elevation drawing labels (panel): Ceiling · Max load height (sprinklers −N) · free headroom + top of load stacked in one column on the far left · Frame dimension · beam heights at each beam (right) · L tags inside right pallet · pallet height and width arrows inside L1 pallets · face (4″) and lift-off (6″) as extension lines on the left of L1 · Beam length · pallets · capacity under the rack.
 - Exports and printing always use the paper palette, never the dark chrome.
+- **Nothing on the plan is invisible but selectable.** A racking area (from Fill racking or Regenerate) is drawn faintly as the Fill box: fill `#7BD3A4` at 6%, edge `#2E7D5B` 1.5 dashed 6 4; it is picked on its edge. **Ctrl+A** selects only real layout objects (racks, zones, walls, doors, columns, equipment, text, dimensions, shapes), never helpers: the building outline, aisles, racking areas. Deleting every rack of a racking area deletes the area too.
 
 ## 8. How to build from this
 
