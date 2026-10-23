@@ -148,7 +148,7 @@ export function normalizeProject(pr) {
 
 const inch = (v) => `${Math.round(v * 100) / 100} in`
 const ftIn = (v) => { const r = Math.round(v), f = Math.floor(r / 12), i = r - f * 12; return `${f}'-${i}"` }
-/** The auto names of `table`'s un-renamed elevations → Map(id → name): "N levels · FACE×DEPTH · CEILING"
+/** The auto names of `table`'s un-renamed elevations → Map(id → name): "N levels · DEPTH×FACE · CEILING"
  *  (elevFit.js pairName); only where two would read the same, " · X in beam" is added — then, as a last resort, the
  *  upright and the top beam. No number suffixes ("Main 2"). A renamed elevation's name counts as taken. */
 const autoMemo = new WeakMap()

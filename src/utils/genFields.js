@@ -39,3 +39,13 @@ export function genBrief(project, mheOptions) {
 export function startOverLayout(store, { rules, mheOptions, onProgress } = {}) {
   return generateAndPlaceBatched(genBrief(projectOf(store.getState().elevations), mheOptions), { onProgress, rules })
 }
+
+/** The Generate card's draft of the project's forklift and wall clearance (`{ mhe?, wallClearIn? }`) on `project` → the
+ *  project to write when Generate / Regenerate runs, or null when the draft changes nothing. The card writes it only
+ *  then — Cancel or X drops the draft and Project settings stays as it was. */
+export function projectWithDraft(project, draft = {}) {
+  if (!project) return null
+  const mhe = draft.mhe ?? project.equipment?.mhe, wallClearIn = draft.wallClearIn ?? project.rules?.wallClearIn
+  if (mhe === project.equipment?.mhe && wallClearIn === project.rules?.wallClearIn) return null
+  return { ...project, equipment: { ...project.equipment, mhe }, rules: { ...project.rules, wallClearIn } }
+}

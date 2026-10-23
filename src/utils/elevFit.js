@@ -100,10 +100,11 @@ export function bestFitFor(project, ceiling, pallet, { beamFaceIn = null } = {})
   const d = designFor(n, b, f)
   return { ...d, levels: d.levels.map(l => ({ ...l, loadLb: pallet?.weightLb ?? l.loadLb })), ceilingId: ceiling?.id ?? null, palletId: pallet?.id ?? null }
 }
-/** An elevation's base auto name: "N levels · FACE×DEPTH · CEILING" — "5 levels · 40×48 · Main" (the pallet's face
+/** An elevation's base auto name: "N levels · DEPTH×FACE · CEILING" — "5 levels · 48×40 · Main": the pallet depth first, as
+ *  the industry says it (a standard pallet is 48×40); the pallet's stored face and depth are unchanged (the pallet's face
  *  across the beam × its depth, the ceiling's name). project.js autoNames keeps them unique. */
 export function pairName(project, t) {
   const p = project?.pallets?.find(x => x.id === t.palletId), c = project?.ceilings?.find(x => x.id === t.ceilingId)
   const n = t.levels.length
-  return [`${n} level${n === 1 ? '' : 's'}`, p ? `${p.faceIn}×${p.depthIn}` : null, c?.name].filter(Boolean).join(' · ')
+  return [`${n} level${n === 1 ? '' : 's'}`, p ? `${p.depthIn}×${p.faceIn}` : null, c?.name].filter(Boolean).join(' · ')
 }

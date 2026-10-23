@@ -16,7 +16,7 @@ import { BeamSelect, changeBayUpdate } from '../components/RightPanel/panels/Rac
 import { BEAM_PRESETS_IN } from '../utils/bayBeam'
 import { useLayoutCheck, goToIssue, issueKey, remindersLabel } from '../utils/layoutCheck'
 import { getCanvasContainerSize } from '../utils/canvasContainer'
-import { openSetup } from '../utils/project'
+import { openSetup, nameOf } from '../utils/project'
 import { ZONE_KINDS } from '../generate/rackingArea'
 import { Head, BigFigure, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, Row, ToggleRow, Totals, Hint,
   Tag, CountChip, IconBtn, C, MONO, LEVEL } from './cardParts'
@@ -77,7 +77,7 @@ function ElevationChip() {
     <Row label="Elevation" title="Set elevations in the Elevations tab">
       <span aria-label="Elevation" style={{ display: 'flex', alignItems: 'center', gap: 6, height: 26, padding: '0 8px', borderRadius: 6, background: C.inset, fontSize: 12, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
         {t && <span style={{ width: 8, height: 8, borderRadius: 2, background: t.color, flexShrink: 0 }} />}
-        {t ? t.name : `mixed — ${types.map(x => `${typeById(T, x.id)?.name || '—'} (${x.bays})`).join(', ')}`}
+        {t ? nameOf(T, t) : `mixed — ${types.map(x => { const y = typeById(T, x.id); return `${y ? nameOf(T, y) : '—'} (${x.bays})` }).join(', ')}`}
       </span>
     </Row>
   )

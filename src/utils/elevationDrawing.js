@@ -197,7 +197,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     const base = bSprink || bClear
     if (bClear) {
       line(x0, Yv(bClear), x1, Yv(bClear), { stroke: S.ceil, sw: 1.2, dash: '6 4', tag: 'clear' })
-      if (!compact) sText(x0 + 24 * u, Yv(bClear) - 5 * u, ['Ceiling ', [prime(ftInDash(bClear)), S.words], building?.assumed ? ' (assumed)' : ''], { pri: 2, tag: 'shell' })
+      if (!compact) sText(x0 + 24 * u, Yv(bClear) - 5 * u, building?.assumed ? `Ceiling ${Math.round(bClear / 12)} ft (assumed)` : ['Ceiling ', [prime(ftInDash(bClear)), S.words]], { pri: 2, tag: 'shell' })   // assumed: all grey, no value in bold
     }
     if (base) {
       const maxLoad = base - sprinklerClearanceIn, yM = Yv(maxLoad), yC = Yv(base)
@@ -280,9 +280,10 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     // far left, one column: the free headroom over the top load (to the max load height), then the top of the load
     const base = bSprink || bClear, xo = X0 - 52 * u, zTop = topLoad
     const maxLoad = base ? base - sprinklerClearanceIn : null
-    if (maxLoad != null) {
+    const free = maxLoad != null ? maxLoad - zTop : null
+    // an assumed ceiling (none set) is drawn, never checked: no red "over" against it — only the free headroom, when there is some
+    if (maxLoad != null && !(building?.assumed && free < 0)) {
       sDim(xo, Y(maxLoad), Y(zTop))
-      const free = maxLoad - zTop
       sText(xo - 13 * u, (Y(maxLoad) + Y(zTop)) / 2, free >= 0 ? [[prime(ftInDash(free))], ' free'] : [[prime(ftInDash(-free)), S.red], ' over'], { anchor: 'middle', rot: -90, size: 9.5 * u, fill: free >= 0 ? S.words : S.red, pri: 2, tag: 'free' })
     }
     sDim(xo, Y(zTop), floor)

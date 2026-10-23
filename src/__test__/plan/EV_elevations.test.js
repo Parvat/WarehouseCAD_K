@@ -265,7 +265,7 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     const h0 = hist()
     const a = TAB.addBestFit(store, {})
     const ta = E.typeById(T(), a)
-    expect([ta.name, ta.ceilingId, ta.palletId, ta.levels.map(l => l.beamIn), ta.uprightHeightIn, hist()]).toEqual(['5 levels · 40×48 · Main', 'main', 'p40', [0, 58, 116, 174, 232], 252, h0 + 1])
+    expect([ta.name, ta.ceilingId, ta.palletId, ta.levels.map(l => l.beamIn), ta.uprightHeightIn, hist()]).toEqual(['5 levels · 48×40 · Main', 'main', 'p40', [0, 58, 116, 174, 232], 252, h0 + 1])
     // the 48×48 pallet (60" high) under the Mezz ceiling (20'): fewer levels, its own name
     const b = TAB.addBestFit(store, { ceilingId: 'mez', palletId: 'p48' })
     const tb = E.typeById(T(), b)
@@ -288,12 +288,12 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     TAB.renameElevation(store, a, 'Main racks')
     expect([E.typeById(T(), a).name, E.typeById(T(), a).named]).toEqual(['Main racks', true])
     TAB.renameElevation(store, a, '')
-    expect(E.typeById(T(), a).name).toBe('5 levels · 40×48 · Main')
+    expect(E.typeById(T(), a).name).toBe('5 levels · 48×40 · Main')
     TAB.changeElevation(store, a, E.withLevelCount(E.typeById(T(), a), 4))
-    expect(E.typeById(T(), a).name).toBe('4 levels · 40×48 · Main')
+    expect(E.typeById(T(), a).name).toBe('4 levels · 48×40 · Main')
     // duplicate: a copy to adjust, unique name, active
     const d = TAB.duplicateElevation(store, a)
-    expect([E.typeById(T(), d).name, TAB.useElevTab.getState().activeId]).toEqual(['4 levels · 40×48 · Main · copy', d])
+    expect([E.typeById(T(), d).name, TAB.useElevTab.getState().activeId]).toEqual(['4 levels · 48×40 · Main · copy', d])
     // change the pairing: refitted for the new pair, still on its rows
     TAB.setPairing(store, b, { ceilingId: 'main' })
     expect([E.typeById(T(), b).name, E.typeById(T(), b).levels.length, ids(rack(objs(), 'p1'), T())[0].every(x => x === b)]).toEqual(['4 levels · 48×48 · Main', 4, true])                // 60" pallets: pitch 70", (n−1)·70 + 60 ≤ 336
@@ -510,7 +510,9 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     const pages = buildElevationSheets(o2, { title: 'T', elevations: tb })
     expect(pages.length).toBe(1)
     const svg = pages[0].svg
-    expect(['4 levels · 8\'-0" bay', '4 levels · 9\'-0" bay', 'B · 8\'-0" bay', 'RACK ELEVATIONS', 'SCALE: ', '=1\'', 'fill="#1B4FD8"'].map(x => svg.includes(x))).toEqual([true, true, true, true, true, true, true])
+    // each sheet names its elevation by its live name (nameOf: a renamed one its own, else the auto name as built now)
+    const bName = (await import('../../utils/project')).nameOf(tb, tb.types.find(t => t.id === 'B'))
+    expect(['4 levels · 8\'-0" bay', '4 levels · 9\'-0" bay', `${bName} · 8'-0" bay`, 'RACK ELEVATIONS', 'SCALE: ', '=1\'', 'fill="#1B4FD8"'].map(x => svg.includes(x))).toEqual([true, true, true, true, true, true, true])
     expect(svg.includes('C · ')).toBe(false)
     // it prints whichever of Simple / Detailed is selected
     expect([svg.includes('PITCH'), /data-role|6'-0"<\/text>/.test(svg)]).toEqual([true, false])

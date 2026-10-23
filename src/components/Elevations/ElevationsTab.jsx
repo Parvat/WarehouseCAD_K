@@ -345,7 +345,7 @@ function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, buil
           <InlineField label="Pallet" labelWidth={48}>
             <SelectField words chevron aria="Elevation pallet" value={d.palletId || ''} onChange={ev => editDraft(store, { palletId: ev.target.value || null })} style={{ color: d.palletId === NEW_PALLET ? C.accent : C.strong }}>
               {!d.palletId && <option value="">—</option>}
-              {(projectOf(T)?.pallets || []).map(p => <option key={p.id} value={p.id}>{p.name} · {p.faceIn}×{p.depthIn}×{p.heightIn} in</option>)}
+              {(projectOf(T)?.pallets || []).map(p => <option key={p.id} value={p.id}>{p.name} · {p.depthIn}×{p.faceIn}×{p.heightIn} in</option>)}
               <option value={NEW_PALLET}>+ New pallet size</option>
             </SelectField>
           </InlineField>

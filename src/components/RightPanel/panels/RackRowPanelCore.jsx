@@ -312,7 +312,7 @@ export function RackRowExtras({ obj, newBeam: sharedBeam, setNewBeam: setSharedB
       )}
       {/* the pallet size: the project's default (Project setup) — Generate and Fill stamp it on the racks */}
       <Row label={<span style={{ color: C.muted, fontSize: 12 }}>Pallet</span>}>
-        <span aria-label="Pallet size" style={{ fontFamily: MONO, fontSize: 12, color: C.strong }}>{obj.palletWIn || 40}" face × {obj.palletDIn || 48}"</span>
+        <span aria-label="Pallet size" style={{ fontFamily: MONO, fontSize: 12, color: C.strong }}>{obj.palletDIn || 48}" × {obj.palletWIn || 40}" face</span>
       </Row>
     </>
   )

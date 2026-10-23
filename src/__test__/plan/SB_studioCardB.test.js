@@ -158,18 +158,17 @@ describe.each(['horizontal', 'vertical'])('SB — Generate / Regenerate (C4), %s
     expect(card).toMatch(/\{ask && \(\s*<Note level="warning" data-testid="regen-edits"/)
   })
 
-  it('SB-gen-project: Forklift and Wall clearance in the card are the project\'s — a change writes Project settings in one undo step', async () => {
+  it('SB-gen-project: Forklift and Wall clearance in the card are the project\'s — the run writes them to Project settings in one undo step', async () => {
     gen.generateAndPlace({ ...R.R1, orientation, rackType: 'rack_double_row', dockDoors: 0 })
     const P = await import('../../utils/project')
     if (!P.projectOf(st().elevations)) P.commitProject(store, P.newProject({ mhe: 'reach', wallClearIn: 3 }))
     const pr = P.projectOf(st().elevations), h0 = st().historyIndex
-    P.commitProject(store, { ...pr, rules: { ...pr.rules, wallClearIn: 6 } })                           // what the field calls
+    P.commitProject(store, G.projectWithDraft(pr, { wallClearIn: 6 }))                                   // what the run calls
     expect([P.projectOf(st().elevations).rules.wallClearIn, st().historyIndex]).toEqual([6, h0 + 1])
     st().undo()
     expect(P.projectOf(st().elevations).rules.wallClearIn).toBe(pr.rules.wallClearIn)
     const card = read('components/Generate/GeneratePanel.jsx')
-    expect(card).toMatch(/const setProject = \(patch\) => \{ if \(project\) commitProject\(useCanvasStore, \{ \.\.\.project, \.\.\.patch \}\) \}/)
-    expect(card).toMatch(/<select aria-label="Forklift" value=\{mhe\} disabled=\{!project\} onChange=\{e => setProject\(\{ equipment: \{ \.\.\.project\.equipment, mhe: e\.target\.value \} \}\)\}/)
+    expect(card).toMatch(/<select aria-label="Forklift" value=\{mhe\} disabled=\{!project\} onChange=\{e => setDraft\(d => \(\{ \.\.\.d, mhe: e\.target\.value \}\)\)\}/)
     expect(card).toMatch(/\{mheOptions\[mhe\]\?\.label \|\| mhe\} · <span style=\{\{ fontFamily: MONO, fontSize: 12 \}\}>\{ftIn\(aisleFt\)\}<\/span><Icon name="Chevron"/)
   })
 })
@@ -210,5 +209,68 @@ describe('SB — the Generate card\'s note, footer and Start over', () => {
     expect(file).toMatch(/onClick=\{\(\) => setConfirmStart\(false\)\}[^>]*>Cancel<\/button>[\s\S]*onClick=\{startOver\}[^>]*>Start over<\/button>/)
     expect(/>Start over|setAsk|Regenerate or start over/.test(card)).toBe(false)
     expect(read('utils/genFields.js')).toMatch(/export function startOverLayout\(store, \{ rules, mheOptions, onProgress \} = \{\}\) \{\s*return generateAndPlaceBatched\(genBrief\(projectOf\(store\.getState\(\)\.elevations\), mheOptions\), \{ onProgress, rules \}\)/)
+  })
+})
+
+describe('SB — review fixes', () => {
+  it('SB-names: a pallet reads depth first, as the industry says it — "48×40", never "40×48" — in an elevation\'s auto name (list rows, the editor\'s auto name, full screen title), the pallet options, a rack\'s pallet size, the PDF and the plan legend; the stored pallet is unchanged', async () => {
+    const P = await import('../../utils/project'), E = await import('../../utils/elevations')
+    const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360 }], defaultCeilingId: 'c' }
+    const pal = pr.pallets[0]
+    expect([pal.faceIn, pal.depthIn]).toEqual([40, 48])                                                 // stored: face 40, depth 48
+    const t = { ...E.makeType ? E.makeType('a', 5) : { id: 'a', levels: [0, 60, 120, 180, 240].map(beamIn => ({ beamIn, palletHeightIn: 48 })) }, id: 'a', named: false, ceilingId: 'c', palletId: pal.id }
+    const T = P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [t] }, pr)
+    expect(P.nameOf(T, t)).toMatch(/^\d+ levels · 48×40 · Main$/)
+    const deep = { ...pal, id: 'p60', faceIn: 40, depthIn: 60 }
+    const T2 = P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...t, palletId: 'p60' }] }, { ...pr, pallets: [pal, deep] })
+    expect(P.nameOf(T2, T2.types[0])).toMatch(/· 60×40 · Main$/)
+    expect(P.previewName(T2, { ...t, palletId: 'p60' }, null)).toMatch(/· 60×40 · Main$/)                // the editor's auto name
+    // a renamed elevation keeps its own name
+    expect(P.nameOf(T, { ...t, named: true, name: 'Bulk 40x48' })).toBe('Bulk 40x48')
+    // every place a pallet size or an elevation name is written
+    expect(read('components/Elevations/ElevationsTab.jsx')).toMatch(/\{p\.name\} · \{p\.depthIn\}×\{p\.faceIn\}×\{p\.heightIn\} in<\/option>/)
+    expect(read('components/RightPanel/panels/RackRowPanelCore.jsx')).toMatch(/\{obj\.palletDIn \|\| 48\}" × \{obj\.palletWIn \|\| 40\}" face/)
+    expect(read('export/pdfExport.js')).toMatch(/\$\{esc\(nameOf\(table, type\)\)\}/)
+    expect(read('export/pdfExport.js').includes('const label = `${nameOf(T, type)} · ')).toBe(true)
+    expect(read('canvas2/ElevationsCanvas.jsx')).toMatch(/\{nameOf\(elevations, type\)\}/)
+    expect(read('studio/cards.jsx')).toMatch(/\{t \? nameOf\(T, t\) :/)
+    expect(read('components/Elevations/ElevationLine.jsx')).toMatch(/return t \? nameOf\(T, t\) : '—'/)
+    for (const f of ['utils/elevFit.js', 'components/Elevations/ElevationsTab.jsx', 'export/pdfExport.js', 'studio/cards.jsx']) expect([f, /faceIn\}×\$?\{?[a-z.]*depthIn/.test(read(f))]).toEqual([f, false])
+  })
+
+  it('SB-assumed: a ceiling not set reads "Ceiling 24 ft (assumed)" in grey, and a load above that assumed ceiling is never flagged red — red only against a ceiling the user set', async () => {
+    const { elevationLayout } = await import('../../utils/elevationDrawing')
+    const tall = { ...MOCK, uprightHeightIn: 300, levels: [0, 60, 120, 180, 240].map(beamIn => ({ beamIn, palletHeightIn: 48, loadLb: 2500 })) }   // top of load 24'
+    const draw = (building) => elevationLayout(tall, 96, { w: 274, h: 420 }, { palletWIn: 40, building, sprinklerClearanceIn: 18, fontPx: 9, detail: 'studio', view: 'front' })
+    const red = (d) => d.items.filter(i => i.fill === '#C0452A' || i.stroke === '#C0452A' || i.runs?.some(r => r.fill === '#C0452A'))
+    const assumed = draw({ clearHeightIn: 288, sprinklerIn: null, assumed: true })
+    const ceil = assumed.items.find(i => i.t === 'text' && /^Ceiling/.test(i.s))
+    expect([ceil.s, ceil.fill, ceil.runs]).toEqual(['Ceiling 24 ft (assumed)', '#767C74', undefined])
+    expect(red(assumed)).toEqual([])                                                                    // no red "over", no red load
+    expect(assumed.items.some(i => i.t === 'text' && / over$/.test(i.s))).toBe(false)
+    const set = draw({ clearHeightIn: 288, sprinklerIn: null })                                         // the same 24', set by the user
+    expect(set.items.some(i => i.t === 'text' && / over$/.test(i.s))).toBe(true)
+    expect(red(set).length).toBeGreaterThan(0)
+    expect(set.items.find(i => i.t === 'text' && /^Ceiling/.test(i.s)).s).toBe('Ceiling 24′-0″')
+  })
+
+  it('SB-gen-cancel: Forklift and Wall clearance changed in the Generate card are a draft — Cancel or X leaves Project settings as it was; they are written only when Generate / Regenerate runs', async () => {
+    const G = await import('../../utils/genFields'), P = await import('../../utils/project')
+    const pr = P.newProject({ mhe: 'reach', wallClearIn: 3 })
+    expect(G.projectWithDraft(pr, {})).toBe(null)
+    expect(G.projectWithDraft(pr, { mhe: 'reach', wallClearIn: 3 })).toBe(null)                          // changed back: nothing to write
+    const next = G.projectWithDraft(pr, { mhe: 'vna', wallClearIn: 6 })
+    expect([next.equipment.mhe, next.rules.wallClearIn, pr.equipment.mhe, pr.rules.wallClearIn]).toEqual(['vna', 6, 'reach', 3])
+    const card = read('components/Generate/GeneratePanel.jsx')
+    // the fields only change the draft; the one write is commitDraft, called by the runs alone
+    expect((card.match(/commitProject\(/g) || []).length).toBe(1)
+    expect(between(card, 'const commitDraft = () => {', '\n  }')).toMatch(/const next = projectWithDraft\(project, draft\)\s+setDraft\(\{\}\)\s+if \(!next\) return project\s+commitProject\(useCanvasStore, next\)/)
+    expect((card.match(/commitDraft\(\)/g) || []).length).toBe(2)
+    expect(between(card, 'const startOver = async () => {', 'setGenerating(true)')).toMatch(/commitDraft\(\)/)
+    expect(between(card, 'const regenerate = () => {', 'setResult')).toMatch(/const pr = commitDraft\(\)\s+const outcome = regenerateRacking\(genBrief\(pr, mheOptions\)/)
+    // Cancel and X only close (the draft is the card's state: it goes with the card)
+    expect(card).toMatch(/<Btn kind="ghost" onClick=\{\(\) => onClose\?\.\(\)\}>Cancel<\/Btn>/)
+    expect(card).toMatch(/aria-label="Close" onClick=\{\(\) => onClose\?\.\(\)\}/)
+    expect(card).toMatch(/const \[draft, setDraft\] = useState\(\{\}\)/)
   })
 })

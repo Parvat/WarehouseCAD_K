@@ -8,7 +8,7 @@ import { regenBuilding, regenSummary } from '../../generate/regenerate'
 import { layoutSpec } from '../../generate/sizingLayout'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { openSetup, defaultPallet, projectOf, commitProject } from '../../utils/project'
-import { useGenFields, setGenField, fillGenFields, genBrief, startOverLayout } from '../../utils/genFields'
+import { useGenFields, setGenField, fillGenFields, genBrief, startOverLayout, projectWithDraft } from '../../utils/genFields'
 import { useViewPrefs } from '../../studio/viewPrefs'
 import { useRules } from '../../rules/useRules'
 
@@ -17,8 +17,9 @@ import { useRules } from '../../rules/useRules'
      header   — the Generate icon, "Generate layout" / "Regenerate layout", X
      fields   — Building width · Building length / Column grid / Max run · Wall clearance (30h, mono, units after)
      Row direction (Auto · Horizontal · Vertical), Columns along wall (Yes · No)
-     Forklift — the project's forklift and its aisle; Wall clearance and Forklift write Project settings (one undo step
-                each — the same values Project settings edits)
+     Forklift — the project's forklift and its aisle. Wall clearance and Forklift are the project's (the same values
+                Project settings edits), held as the card's draft: written to Project settings only when Generate /
+                Regenerate runs — Cancel or X drops them
      amber    — on a layout: "Keeps zones, doors and columns. Replaces racking." and the hand edits it would lose
      blue     — where the rest comes from: the pallet from Project settings, frame and flue from Rules (each opens it)
      footer   — Cancel · Generate / Regenerate (primary)
@@ -43,12 +44,21 @@ export function GeneratePanel({ onClose } = {}) {
      column check follows the same forklift (ProjectSync). */
   const { rules, mheOptions } = useRules()
   const project = useCanvasStore(s => projectOf(s.elevations))
-  const mhe = project?.equipment?.mhe || useRackingSettings.getState().mhe || 'reach'
+  /* the card's draft of the project's forklift and wall clearance: shown at once, written only by the run */
+  const [draft, setDraft] = useState({})
+  const mhe = draft.mhe ?? (project?.equipment?.mhe || useRackingSettings.getState().mhe || 'reach')
   const aisleFt = mheOptions[mhe]?.aisleFt ?? 10.5
   const pallet = defaultPallet(project)
-  const wallClearIn = project?.rules?.wallClearIn ?? useRackingSettings.getState().wallClearIn ?? 0
+  const wallClearIn = draft.wallClearIn ?? (project?.rules?.wallClearIn ?? useRackingSettings.getState().wallClearIn ?? 0)
   const spec = useMemo(() => layoutSpec({}, rules), [rules])
-  const setProject = (patch) => { if (project) commitProject(useCanvasStore, { ...project, ...patch }) }
+  /** The draft into Project settings (one undo step), as the run starts → the project the run uses. Nothing changed: none. */
+  const commitDraft = () => {
+    const next = projectWithDraft(project, draft)
+    setDraft({})
+    if (!next) return project
+    commitProject(useCanvasStore, next)
+    return next
+  }
 
   /* the project's building fills the fields once, as the card opens */
   useEffect(() => { fillGenFields(project) }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -80,6 +90,7 @@ export function GeneratePanel({ onClose } = {}) {
     else startOver()
   }
   const startOver = async () => {
+    commitDraft()
     setGenerating(true)
     setProgress(0)
     try {
@@ -90,7 +101,8 @@ export function GeneratePanel({ onClose } = {}) {
     }
   }
   const regenerate = () => {
-    const outcome = regenerateRacking(genBrief(project, mheOptions), { rules, beamIn: useRackingSettings.getState().beamIn ?? 96 })
+    const pr = commitDraft()
+    const outcome = regenerateRacking(genBrief(pr, mheOptions), { rules, beamIn: useRackingSettings.getState().beamIn ?? 96 })
     setResult(outcome ? { ...outcome, regenerated: true } : { failed: true })
   }
 
@@ -112,7 +124,7 @@ export function GeneratePanel({ onClose } = {}) {
             <Field label="Column grid"><span style={box()}><UnitNum aria="Column grid X (ft)" value={f.gridXFt} onChange={v => setGenField('gridXFt', v)} />′<span style={{ margin: '0 6px' }}>×</span><UnitNum aria="Column grid Y (ft)" value={f.gridYFt} onChange={v => setGenField('gridYFt', v)} />′</span></Field>
           </div>
           <Field label="Max run" title="Longest continuous rack run before a cross-aisle"><span style={box()}><UnitNum aria="Max rack run (ft)" min={20} value={f.maxRunFt} onChange={v => setGenField('maxRunFt', v)} />′</span></Field>
-          <Field label="Wall clearance" title="From each wall's inner face — Project settings' value"><span style={box({ opacity: project ? 1 : 0.45 })}><UnitNum aria="Wall clearance (in)" disabled={!project} value={wallClearIn} onChange={v => setProject({ rules: { ...project.rules, wallClearIn: Math.max(0, Number(v) || 0) } })} />″</span></Field>
+          <Field label="Wall clearance" title="From each wall's inner face — Project settings' value"><span style={box({ opacity: project ? 1 : 0.45 })}><UnitNum aria="Wall clearance (in)" disabled={!project} value={wallClearIn} onChange={v => setDraft(d => ({ ...d, wallClearIn: Math.max(0, Number(v) || 0) }))} />″</span></Field>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 16px 12px' }}>
@@ -128,7 +140,7 @@ export function GeneratePanel({ onClose } = {}) {
           <span style={{ flex: 1, color: C.muted, fontSize: 12 }}>Forklift</span>
           <span style={{ position: 'relative', height: 30, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', borderRadius: 6, background: C.inset, color: C.strong, opacity: project ? 1 : 0.45 }}>
             {mheOptions[mhe]?.label || mhe} · <span style={{ fontFamily: MONO, fontSize: 12 }}>{ftIn(aisleFt)}</span><Icon name="Chevron" size={12} color={C.muted} />
-            <select aria-label="Forklift" value={mhe} disabled={!project} onChange={e => setProject({ equipment: { ...project.equipment, mhe: e.target.value } })}
+            <select aria-label="Forklift" value={mhe} disabled={!project} onChange={e => setDraft(d => ({ ...d, mhe: e.target.value }))}
               style={{ position: 'absolute', inset: 0, opacity: 0, cursor: project ? 'pointer' : 'not-allowed', width: '100%' }}>
               {Object.entries(mheOptions).map(([k, o]) => <option key={k} value={k}>{o.label || k} · {ftIn(o.aisleFt)}</option>)}
             </select>

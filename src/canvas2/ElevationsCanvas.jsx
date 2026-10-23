@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { legendCounts } from '../utils/elevations'
+import { nameOf } from '../utils/project'
 import { useElevView, setShowColors, tint, tintOn, ELEV_FILL_OPACITY } from '../utils/elevationDraw'
 import { bayLedger } from '../utils/bayLedger'
 
@@ -36,7 +37,7 @@ export function ElevLegend() {
       {showColors && rows.map(({ type, bays }) => (
         <div key={type.id} data-legend-type={type.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {tinted ? <Swatch color={tint(type.color)} /> : <span style={{ width: 12, flexShrink: 0 }} />}
-          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{type.name}</span>
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{nameOf(elevations, type)}</span>
           <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text2, #3A4152)' }}>{bays} bay{bays === 1 ? '' : 's'}</span>
         </div>
       ))}

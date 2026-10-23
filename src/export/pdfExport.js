@@ -33,6 +33,7 @@ import { levelsResolver, legendCounts } from '../utils/elevations'
 import { bandRects, useElevView, tint, tintOn, ELEV_FILL_OPACITY } from '../utils/elevationDraw'
 import { elevationLayout, itemSVG, lengthsByType, ceilingForDrawing, ftInDash, archScale } from '../utils/elevationDrawing'
 import { typeIdAt, sprinklerClearance, palletOfType } from '../utils/elevations'
+import { nameOf } from '../utils/project'
 import { useElevEditor } from '../utils/elevEditor'
 import { bayLedger } from '../utils/bayLedger'
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
@@ -308,14 +309,14 @@ function scaleBarSVG(x, y, gridSize, u) {
    not assumed — it is exactly what the sheet prints at, whatever the plan's
    real size turns out to be. */
 /** The elevation legend beside the title block: swatch, type, bay count (the canvas legend's rows). */
-function elevLegendSVG(x, y, u, rows) {
+function elevLegendSVG(x, y, u, rows, table) {
   const rowH = 4.2 * u, w = 60 * u, h = rowH * (rows.length + 1.4)
   let inner = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff" stroke="#111" stroke-width="${0.3 * u}"/>` +
     `<text x="${x + 2 * u}" y="${y + rowH * 0.85}" font-size="${3 * u}" font-weight="700" font-family="Arial, sans-serif" fill="#111">ELEVATIONS</text>`
   rows.forEach(({ type, bays }, i) => {
     const ry = y + rowH * (i + 1.25)
     inner += `<rect x="${x + 2 * u}" y="${ry + 0.6 * u}" width="${3 * u}" height="${3 * u}" fill="${esc(tint(type.color))}" fill-opacity="${ELEV_FILL_OPACITY}" stroke="#333" stroke-width="${0.15 * u}"/>` +
-      `<text x="${x + 6.5 * u}" y="${ry + 3.1 * u}" font-size="${2.8 * u}" font-family="Arial, sans-serif" fill="#111">${esc(type.name)}</text>` +
+      `<text x="${x + 6.5 * u}" y="${ry + 3.1 * u}" font-size="${2.8 * u}" font-family="Arial, sans-serif" fill="#111">${esc(nameOf(table, type))}</text>` +
       `<text x="${x + w - 2 * u}" y="${ry + 3.1 * u}" font-size="${2.8 * u}" font-family="Arial, sans-serif" text-anchor="end" fill="#111">${bays} bay${bays === 1 ? '' : 's'}</text>`
   })
   return { svg: `<g>${inner}</g>`, w, h }
@@ -423,7 +424,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   if (elevTable) {
     const L = bayLedger(objects, gridSize, elevations)
     const rows = legendCounts(objects, elevations, (r) => L.racks.get(r.id)?.counted || null)
-    if (rows.length) { const lg = elevLegendSVG(0, 0, u, rows); legend = `<g transform="translate(${titleX - lg.w - 4 * u} ${titleY + titleH - lg.h})">${lg.svg}</g>` }
+    if (rows.length) { const lg = elevLegendSVG(0, 0, u, rows, elevations); legend = `<g transform="translate(${titleX - lg.w - 4 * u} ${titleY + titleH - lg.h})">${lg.svg}</g>` }
   }
 
   const body = [
@@ -470,7 +471,7 @@ export function buildElevationSheets(objects, { title = 'Untitled Layout', eleva
       const box = { w: cellW - 8, h: cellH - fs * 7.5 }, opts = { palletWIn: (type.palletId && T?.project?.pallets?.find(x => x.id === type.palletId)?.faceIn) || e.palletWIn, palletDIn: palletOfType(T, type)?.depthIn ?? null, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: ceilingForDrawing(objects, T, type, e.parentId), fontPx: fs, sprinklerClearanceIn: sprinklerClearance(T), detail, bg: '#fff' }   // the editor's Simple / Detailed
       const fit = elevationLayout(type, e.beamIn, box, opts), sc = archScale(fit.scale)
       const d = elevationLayout(type, e.beamIn, box, { ...opts, scale: sc.mmPerIn })
-      const label = `${type.name} · ${ftInDash(e.beamIn)} bay`
+      const label = `${nameOf(T, type)} · ${ftInDash(e.beamIn)} bay`
       return `<g transform="translate(${x + 4} ${y})">` +
         `<rect x="0" y="0" width="${fs * 1.1}" height="${fs * 1.1}" fill="${esc(tint(type.color))}" fill-opacity="${ELEV_FILL_OPACITY}" stroke="#333" stroke-width="0.2"/>` +
         `<text x="${fs * 1.5}" y="${fs}" font-size="${fs * 1.15}" font-weight="700" font-family="Arial, sans-serif" fill="#111">${esc(label)}</text>` +

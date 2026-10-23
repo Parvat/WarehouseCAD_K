@@ -129,7 +129,7 @@ describe('PS — the project', () => {
     P.useProjectSetup.setState({ open: false })
     store.getState().commitElevations(T0)
     const T = store.getState().elevations
-    expect([T.types.length, T.types[0].name, T.types[0].levels.length, T.types[0].uprightHeightIn, T.defaultId === T.types[0].id]).toEqual([1, '5 levels · 40×48 · Main', 5, 252, true])
+    expect([T.types.length, T.types[0].name, T.types[0].levels.length, T.types[0].uprightHeightIn, T.defaultId === T.types[0].id]).toEqual([1, '5 levels · 48×40 · Main', 5, 252, true])
     expect(JSON.parse(store.getState().history[store.getState().historyIndex]).elevations.types.length).toBe(1)   // folded
     // no ceiling: the racks placed take types from their own levels
     store.setState({ objects: [], elevations: P.withProject(null, P.newProject()), history: ['{}'], historyIndex: 0 })
@@ -166,9 +166,9 @@ describe('PS — the project', () => {
     // edited here too (the same values Project settings edits); the pallet stays in Project settings
     expect(/PALLET SIZE|aria-label="Pallet face"/.test(gen)).toBe(false)
     for (const k of ['label="Building width"', 'label="Building length"', 'label="Column grid"', 'label="Max run"', 'label="Wall clearance"', '>Row direction</span>', '>Columns along wall</span>', '>Forklift</span>']) expect([k, gen.includes(k)]).toEqual([k, true])
-    expect(gen).toMatch(/onChange=\{v => setProject\(\{ rules: \{ \.\.\.project\.rules, wallClearIn: Math\.max\(0, Number\(v\) \|\| 0\) \} \}\)\}/)
-    expect(gen).toMatch(/onChange=\{e => setProject\(\{ equipment: \{ \.\.\.project\.equipment, mhe: e\.target\.value \} \}\)\}/)
-    expect(gen).toMatch(/const setProject = \(patch\) => \{ if \(project\) commitProject\(useCanvasStore, \{ \.\.\.project, \.\.\.patch \}\) \}/)
+    // held as the card's draft; written to the project only when Generate / Regenerate runs (SB-gen-cancel)
+    expect(gen).toMatch(/onChange=\{v => setDraft\(d => \(\{ \.\.\.d, wallClearIn: Math\.max\(0, Number\(v\) \|\| 0\) \}\)\)\}/)
+    expect(gen).toMatch(/onChange=\{e => setDraft\(d => \(\{ \.\.\.d, mhe: e\.target\.value \}\)\)\}/)
     expect(src('utils/genFields.js')).toMatch(/return generateBrief\(project, mheOptions, Object\.fromEntries\(FIELDS\.map\(k => \[k, f\[k\]\]\)\)\)/)
     expect(gen).toMatch(/const aisleFt = mheOptions\[mhe\]\?\.aisleFt \?\? 10\.5/)
     expect(/position: 'fixed'|useState\(embedded\)/.test(gen)).toBe(false)                      // only ever the right card's content (C4)
@@ -283,7 +283,7 @@ describe('PS — the project', () => {
   it('PS-names: auto names are "N levels · FACE×DEPTH · CEILING"; " · X in beam" only where two would read the same (they once both read "5 levels · 48×40 · sf"); no number suffixes ("· copy" only for two the same in every way); an existing layout is renamed on load, in that same history entry, nothing moving', () => {
     const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'sf', clearHeightIn: 360, sprinklerIn: 354 }], defaultCeilingId: 'c' }
     const fit = bestFitFor(pr, pr.ceilings[0], P.defaultPallet(pr))
-    const pair = '5 levels · 40×48 · sf'
+    const pair = '5 levels · 48×40 · sf'
     expect(P.nameOf(P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...fit, id: 'a', name: '' }] }, pr), { ...fit, id: 'a' })).toBe(pair)   // alone: no extras
     // the same pairing, different beam faces: the beam says which
     const two = P.withProject({ version: E.ELEV_VERSION, defaultId: 'a', types: [{ ...fit, id: 'a', name: pair, color: '#f00' }, { ...fit, id: 'b', name: pair, beamFaceIn: 5, color: '#00f' }, { ...fit, id: 'c1', name: 'Mezz racks', named: true }] }, pr)
@@ -414,7 +414,7 @@ describe('PS — the project', () => {
     T_.editDraft(store, { palletId: T_.NEW_PALLET }); T_.editDraft(store, { newPallet: { faceIn: '40', depthIn: '60', heightIn: '48' } })
     // the draft: refitted to the new pair (20' → 4 levels of 48"), named after it; the project and history untouched
     const dT = T_.draftTable(s().elevations, tab().editing)
-    expect([tab().editing.draft.levels.length, P.previewName(dT, tab().editing.draft, null), P.projectOf(s().elevations).ceilings.length, P.projectOf(s().elevations).pallets.length, s().historyIndex]).toEqual([4, '4 levels · 40×60 · Mezz', 1, 1, 0])
+    expect([tab().editing.draft.levels.length, P.previewName(dT, tab().editing.draft, null), P.projectOf(s().elevations).ceilings.length, P.projectOf(s().elevations).pallets.length, s().historyIndex]).toEqual([4, '4 levels · 60×40 · Mezz', 1, 1, 0])
     // Cancel: nothing written
     T_.cancelEdit()
     expect([P.projectOf(s().elevations).ceilings.length, P.projectOf(s().elevations).pallets.length, s().historyIndex, (s().elevations.types || []).length]).toEqual([1, 1, 0, 0])
@@ -424,7 +424,7 @@ describe('PS — the project', () => {
     T_.editDraft(store, { palletId: T_.NEW_PALLET }); T_.editDraft(store, { newPallet: { faceIn: '40', depthIn: '60', heightIn: '48' } })
     const out = T_.saveEdit(store), T = s().elevations, pr2 = P.projectOf(T), t = T.types.find(x => x.id === out.id)
     const c = pr2.ceilings.find(x => x.name === 'Mezz'), p = pr2.pallets.find(x => x.depthIn === 60)
-    expect([out.kind, s().historyIndex, !!c, c?.clearHeightIn, !!p, p?.name, t.ceilingId === c?.id, t.palletId === p?.id, P.nameOf(T, t)]).toEqual(['new', 1, true, 240, true, '60×40', true, true, '4 levels · 40×60 · Mezz'])
+    expect([out.kind, s().historyIndex, !!c, c?.clearHeightIn, !!p, p?.name, t.ceilingId === c?.id, t.palletId === p?.id, P.nameOf(T, t)]).toEqual(['new', 1, true, 240, true, '60×40', true, true, '4 levels · 60×40 · Mezz'])
     // one undo: all three gone
     s().undo()
     expect([P.projectOf(s().elevations).ceilings.length, P.projectOf(s().elevations).pallets.length, (s().elevations.types || []).length]).toEqual([1, 1, 0])

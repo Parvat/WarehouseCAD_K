@@ -163,7 +163,7 @@ describe('RGN — Regenerate racking', () => {
     expect(src).toMatch(/Keeps zones, doors and columns\. Replaces racking\./)
     expect(src).toMatch(/Hand edits to these racks can't be detected/)
     expect(src).toMatch(/hand edit\$\{ask\.handEdits === 1 \? '' : 's'\} to generated racks will be lost/)
-    expect(src).toMatch(/regenerateRacking\(genBrief\(project, mheOptions\), \{ rules, beamIn: useRackingSettings\.getState\(\)\.beamIn \?\? 96 \}\)/)
+    expect(src).toMatch(/regenerateRacking\(genBrief\(pr, mheOptions\), \{ rules, beamIn: useRackingSettings\.getState\(\)\.beamIn \?\? 96 \}\)/)
     expect(src).toMatch(/const outcome = await startOverLayout\(useCanvasStore, \{ rules, mheOptions, onProgress: setProgress \}\)/)
     expect(/>Start over</.test(src)).toBe(false)                                                       // not in the card
     // the card never runs past the window: its fields scroll, the footer stays
