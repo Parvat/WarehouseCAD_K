@@ -6,7 +6,8 @@ Values are in the inline styles. Studio.dc.html holds every Studio screen; the o
 |---|---|---|
 | Studio.dc.html | C1 plan, rack selected | props |
 | StudioElev.dc.html | C2 Elevations list | elev |
-| StudioEdit.dc.html | C3 New elevation | edit |
+| StudioEdit.dc.html | C3 New elevation / Full edit (all inputs) | edit |
+| StudioSheet.dc.html | C21 Edit elevation on the sheet | sheet |
 | StudioGen.dc.html | C4 Regenerate | gen |
 | StudioCheck.dc.html | C5 Check layout | check |
 | StudioZone.dc.html | C6 Zone selected + undo notice | zone |
