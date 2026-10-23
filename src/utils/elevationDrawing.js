@@ -92,7 +92,11 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const bClear = building?.clearHeightIn > 0 ? building.clearHeightIn : null
   const bSprink = building?.sprinklerIn > 0 ? building.sprinklerIn : null
   const hTop = t.uprightHeightIn
-  const H = Math.max(hTop, topLoad + clearance, bClear || 0, bSprink || 0) + 6
+  /* Studio: ONE ceiling for every label and line on the sheet — the one shown (the elevation's clear height; with only
+     a sprinkler height, that) — and the max load height is it less the sprinkler clearance. The drawing stops at it: no
+     room above (the sheet is anchored at its top, a fixed margin over the ceiling's label). */
+  const ceilS = bClear || bSprink || null
+  const H = studio ? Math.max(hTop, topLoad + clearance, ceilS || 0) : Math.max(hTop, topLoad + clearance, bClear || 0, bSprink || 0) + 6
   const frontW = bayIn + 2 * upW, sideW = pair ? 2 * depthIn + flueIn + 2 * upW : depthIn + upW
   const fO = fontPx, fT = Math.max(8, fontPx * 0.85), fE = fontPx * 1.05
   const tw = (str, size) => String(str).length * size * 0.6
@@ -106,7 +110,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   // the pallet deeper than these frames allow: an amber note under the drawing (a warning), a line of its own below the
   // beam label (Studio: the editor's warning box says it, with its action — never on the sheet)
   const deepNote = !compact && !studio && frameDepthNote(palletDIn, depthIn)
-  const mT = compact ? 6 : studio ? 30 * u : fO * (bClear || bSprink ? 2.0 : 1.2), mB = compact ? 6 : studio ? 50 * u : fO * (deepNote ? 6 : 4.4)
+  const mT = compact ? 6 : studio ? 20 * u : fO * (bClear || bSprink ? 2.0 : 1.2), mB = compact ? 6 : studio ? 58 * u : fO * (deepNote ? 6 : 4.4)
   const sideL = compact ? 6 : fO * 3.2, sideR = compact ? 6 : fO * 1.2, sideT = compact ? 6 : fO * (pair ? 4.4 : 2.8)
   const gap = compact ? 14 : fO * 2.4
   let fit
@@ -123,7 +127,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const sideBoxW = sideL + sideW * s + sideR, sideBoxH = Math.max(sideT, mT) + H * s + mB
   const cw = view === 'front' ? frontBoxW : view === 'side' ? sideBoxW : stacked ? Math.max(frontBoxW, sideBoxW) : frontBoxW + gap + sideBoxW
   const ch = view === 'front' ? frontBoxH : view === 'side' ? sideBoxH : stacked ? frontBoxH + gap + sideBoxH : Math.max(frontBoxH, sideBoxH)
-  const ox = zoomed ? (box.w - cw) / 2 + (pan?.x || 0) : Math.max(0, (box.w - cw) / 2), oy = zoomed ? (box.h - ch) / 2 + (pan?.y || 0) : Math.max(0, (box.h - ch) / 2)
+  const ox = zoomed ? (box.w - cw) / 2 + (pan?.x || 0) : Math.max(0, (box.w - cw) / 2), oy = zoomed ? (box.h - ch) / 2 + (pan?.y || 0) : studio ? 0 : Math.max(0, (box.h - ch) / 2)
   const X0 = ox + (stacked ? (cw - frontBoxW) / 2 : 0) + mL, floor = oy + mT + H * s
   const Y = (z) => floor - z * s, Xf = (x) => X0 + x * s
   const XS0 = view === 'side' ? ox + sideL : stacked ? ox + (cw - sideBoxW) / 2 + sideL : X0 + frontW * s + mR + gap + sideL
@@ -194,12 +198,11 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const sText = (x, y, str, o = {}) => items.push({ t: 'text', x, y, s: Array.isArray(str) ? str.map(r => (Array.isArray(r) ? r[0] : r)).join('') : str, runs: Array.isArray(str) ? str.map(r => (Array.isArray(r) ? { s: r[0], fill: r[1] || o.value || S.blue, weight: 600 } : { s: r })) : undefined, size: o.size || 10 * u, fill: o.fill || S.words, anchor: o.anchor || 'start', font: S_FONT, halo: Math.max(1.5, (o.size || 10 * u) * 0.45), haloColor: bg, ...o, weight: o.weight ?? 400 })
   const sArrowHead = (x, y, dx, dy) => { const l = 5 * u, w = 2.1 * u, px = -dy, py = dx; items.push({ t: 'polygon', points: [[x, y], [x - dx * l + px * w, y - dy * l + py * w], [x - dx * l - px * w, y - dy * l - py * w]], fill: S.blue }) }
   function studioShell(Yv, x0, x1) {
-    const base = bSprink || bClear
-    if (bClear) {
-      line(x0, Yv(bClear), x1, Yv(bClear), { stroke: S.ceil, sw: 1.2, dash: '6 4', tag: 'clear' })
-      if (!compact) sText(x0 + 24 * u, Yv(bClear) - 5 * u, building?.assumed ? `Ceiling ${Math.round(bClear / 12)} ft (assumed)` : ['Ceiling ', [prime(ftInDash(bClear)), S.words]], { pri: 2, tag: 'shell' })   // assumed: all grey, no value in bold
-    }
+    const base = ceilS
     if (base) {
+      line(x0, Yv(base), x1, Yv(base), { stroke: S.ceil, sw: 1.2, dash: '6 4', tag: 'clear' })
+      if (!compact) sText(x0 + 24 * u, Yv(base) - 5 * u, building?.assumed ? `Ceiling ${Math.round(base / 12)} ft (assumed)` : ['Ceiling ', [prime(ftInDash(base)), S.words]], { pri: 2, tag: 'shell' })   // assumed: all grey, no value in bold
+      // the band from the ceiling down to the max load height (the ceiling less the sprinkler clearance)
       const maxLoad = base - sprinklerClearanceIn, yM = Yv(maxLoad), yC = Yv(base)
       rect(x0, yC, x1 - x0, yM - yC, { fill: S.band, opacity: 0.22, tag: 'band' })
       line(x0, yM, x1, yM, { stroke: S.maxLine, sw: 1.2, dash: '5 3', tag: 'max-load' })
@@ -278,7 +281,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       }
     }
     // far left, one column: the free headroom over the top load (to the max load height), then the top of the load
-    const base = bSprink || bClear, xo = X0 - 52 * u, zTop = topLoad
+    const base = ceilS, xo = X0 - 52 * u, zTop = topLoad
     const maxLoad = base ? base - sprinklerClearanceIn : null
     const free = maxLoad != null ? maxLoad - zTop : null
     // an assumed ceiling (none set) is drawn, never checked: no red "over" against it — only the free headroom, when there is some
@@ -294,9 +297,9 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     sDim(xf, Y(hTop), floor)
     sText(xf - 10 * u, (Y(hTop) + floor) / 2, ['Frame ', [prime(ftInDash(hTop))]], { anchor: 'middle', rot: -90, pri: 2, tag: 'frame', role: { kind: 'dim', id: 'upright', value: hTop } })
     // under the rack: the beam, its pallets and the load
-    const yb = floor + 18 * u, lb = Math.max(0, ...L.map(l => l.loadLb || 0))
+    const yb = floor + 13 * u + 6 + 2, lb = Math.max(0, ...L.map(l => l.loadLb || 0))   // its ticks clear the hatch by 6px+
     line(Xf(upW), yb, Xf(upW + bayIn), yb, { stroke: S.blue, sw: 1 }); for (const x of [Xf(upW), Xf(upW + bayIn)]) line(x, yb - 5 * u, x, yb + 5 * u, { stroke: S.blue, sw: 1 })
-    sText(Xf(upW + bayIn / 2), floor + 36 * u, ['Beam ', [`${Math.round(bayIn)}″`], ` · ${per} pallet${per === 1 ? '' : 's'}`, ...(lb ? [' · ', [lb.toLocaleString('en-US')], ' lb'] : [])], { anchor: 'middle', pri: 1, tag: 'beam-label' })
+    sText(Xf(upW + bayIn / 2), yb + 18 * u, ['Beam ', [`${Math.round(bayIn)}″`], ` · ${per} pallet${per === 1 ? '' : 's'}`, ...(lb ? [' · ', [lb.toLocaleString('en-US')], ' lb'] : [])], { anchor: 'middle', pri: 1, tag: 'beam-label' })
   }
 
   // ── front view, Studio (the right card's sheet)

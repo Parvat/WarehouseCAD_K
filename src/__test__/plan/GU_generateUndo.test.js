@@ -49,7 +49,8 @@ describe.each(['horizontal', 'vertical'])('GU — %s', (orientation) => {
     expect(doc(s())).toEqual(before)
     s().redo()
     expect(doc(s())).toEqual(after)
-    expect(s().layers.find(l => l.id === 'building').locked).toBe(true)
+    // Generate locks Columns only — the building is picked by its walls (utils/layers.js LOCKED_AFTER_GENERATE)
+    expect([s().layers.find(l => l.id === 'columns').locked, s().layers.find(l => l.id === 'building').locked]).toEqual([true, false])
   })
 
   it('GU-first: Generate on an empty canvas (no history yet) — one Ctrl+Z empties it again, one Ctrl+Y brings it back', () => {

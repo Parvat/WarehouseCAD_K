@@ -156,6 +156,18 @@ export const TOOLS = {
    "body": "<rect x=\"4\" y=\"4\" width=\"11\" height=\"1\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/><rect x=\"4\" y=\"4\" width=\"1\" height=\"11\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/><rect x=\"14\" y=\"4\" width=\"1\" height=\"4\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/><rect x=\"4\" y=\"14\" width=\"4\" height=\"1\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/><rect x=\"9\" y=\"9\" width=\"11\" height=\"11\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/>"
   }
  },
+ "Edit": {
+  "idle": {
+   "viewBox": "0 0 24 24",
+   "size": 24,
+   "body": "<path d=\"M4 20l1.4-4.9L15.6 4.9l3.5 3.5L8.9 18.6z\" fill=\"#C9CEC9\"/><path d=\"M13.5 7l3.5 3.5M6.6 14l3.5 3.5\" stroke=\"#1F2321\" stroke-width=\"1.2\" fill=\"none\"/>"
+  },
+  "active": {
+   "viewBox": "0 0 24 24",
+   "size": 24,
+   "body": "<path d=\"M4 20l1.4-4.9L15.6 4.9l3.5 3.5L8.9 18.6z\" fill=\"#7BD3A4\"/><path d=\"M13.5 7l3.5 3.5M6.6 14l3.5 3.5\" stroke=\"#1F2321\" stroke-width=\"1.2\" fill=\"none\"/>"
+  }
+ },
  "Delete": {
   "idle": {
    "viewBox": "0 0 24 24",

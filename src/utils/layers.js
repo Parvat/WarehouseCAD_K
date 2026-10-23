@@ -34,9 +34,10 @@ export const STANDARD_LAYERS = [
 ]
 export const LAYER_IDS = STANDARD_LAYERS.map(l => l.id)
 
-/* Generate locks these two: the building and its columns are the frame the
-   layout is drawn in, so a drag across the floor must not grab them. */
-export const LOCKED_AFTER_GENERATE = ['building', 'columns']
+/* Generate locks the columns: the frame the layout is drawn in, so a drag across the floor must not grab them. The
+   building is not locked — the floor never picks it (only its walls do, useCanvasInteraction.js), so every building,
+   generated or dropped, is picked by its walls. A Building layer locked by hand stays locked. */
+export const LOCKED_AFTER_GENERATE = ['columns']
 
 const NOTE_TYPES = new Set([
   'text', 'line', 'arrow', 'arc', 'freehand', 'dimension', 'rect', 'circle',
@@ -96,7 +97,7 @@ export function selectAllIds(objects, layers) {
   return (objects || []).filter(o => o && !isHelper(o) && ok(o)).map(o => o.id)
 }
 
-/** What Ctrl+A leaves out that the user can SEE — objects on a locked layer (Generate locks Building and Columns) and
+/** What Ctrl+A leaves out that the user can SEE — objects on a locked layer (Generate locks Columns) and
  *  objects locked one by one — as the status bar says it: "Columns are kept" / "2 locked items are kept"; null when
  *  nothing visible is left out (hidden layers are out of sight, so unsaid). Helpers are never selected anyway, so a
  *  locked building outline is not one of them. */
@@ -149,7 +150,7 @@ export function standardLayers(layers) {
   })
 }
 
-/** The standard seven as Generate leaves them: Building and Columns locked (and shown). */
+/** The standard seven as Generate leaves them: Columns locked (and shown); the rest as they were. */
 export function generatedLayers(layers) {
   return standardLayers(layers).map(l => LOCKED_AFTER_GENERATE.includes(l.id) ? { ...l, visible: true, locked: true } : l)
 }

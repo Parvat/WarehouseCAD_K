@@ -219,7 +219,7 @@ describe('ZG-2 — a tool ends fully', () => {
     expect(ft).toMatch(/const selectItem {2}= item => \{ endTool\(useCanvasStore\); bumpUsage/)
     expect(ft).toMatch(/const selectShape = item => \{ endTool\(useCanvasStore\); setActiveTool/)
     expect(ft).toMatch(/const selectFp {4}= item => \{ endTool\(useCanvasStore\); placeFpObject/)
-    expect(kb).toMatch(/if \(useCanvasStore\.getState\(\)\.activeTool !== TOOLS\.SELECT\) \{ useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); return \}/)
+    expect(kb).toMatch(/if \(useCanvasStore\.getState\(\)\.activeTool !== TOOLS\.SELECT\) \{ useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); useCanvasStore\.getState\(\)\.clearSelection\(\); useCanvasStore\.getState\(\)\.setActiveWall\(null\); return \}/)
     expect(app).toMatch(/const stopToolKeeper = installToolKeeper\(useCanvasStore\)/)
     expect(c2).toMatch(/const measuring = useMeasureMode\(s => s\.on\)/)
     // Studio: the tool pill's Measure turns the mode on and ends the running tool first

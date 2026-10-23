@@ -37,7 +37,8 @@ export function shortcutHandler(e) {
         if (useCanvasStore.getState().activeTool === SPLIT_TOOL) { useSplit.setState({ hover: null }); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         // any other tool (Pan, Line, Text, Freehand, a shape …): Esc ends it — back to Select (utils/toolSwitch.js
         // clears what it left behind)
-        if (useCanvasStore.getState().activeTool !== TOOLS.SELECT) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
+        // (Esc also clears the selection: leaving Pan — the tool a fresh plan opens in — with the building picked must not keep it)
+        if (useCanvasStore.getState().activeTool !== TOOLS.SELECT) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return }
         { const g = useRowGroup.getState()
           if (g.keys.length || g.pending) { clearGroup(); return } }
         useCanvasStore.getState().clearSelection()
@@ -172,7 +173,7 @@ export function shortcutHandler(e) {
             const ids = selectAllIds(st.objects, st.layers)
             if (ids.length) st.selectGroup(ids)
             else st.clearSelection()
-            // what it leaves out on purpose (a locked layer — Generate locks Building and Columns), said in the bar so a
+            // what it leaves out on purpose (a locked layer — Generate locks Columns), said in the bar so a
             // Delete that follows doesn't look like it missed them
             const kept = keptBySelectAll(st.objects, st.layers)
             if (kept) notify(kept, 'locked layers — unlock them in Layers to select')

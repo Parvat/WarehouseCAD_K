@@ -798,7 +798,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(tab).toMatch(/detail="studio" fullDetail=\{detail\} view=\{view\} height=\{sheetH\} controls=\{false\} paper fullSignal=\{fullSignal\}\s+readOnly=\{!e\}/)   // read-only in the list; beams drag only in the editor
     // its height: the mockup's (420 under the list, 290 over the editor) shortened to leave the list or the form room; once dragged, the user's share
     expect(tab).toMatch(/const SHEET_LIST = 420, SHEET_EDIT = 290/)
-    expect(tab).toMatch(/const sheetH = Math\.max\(SHEET_MIN, split != null \? Math\.round\(room \* split\) : Math\.min\(e \? SHEET_EDIT : SHEET_LIST, room - \(e \? EDIT_MIN : LIST_MIN\)\)\)/)
+    expect(tab).toMatch(/const sheetH = Math\.max\(SHEET_MIN, split != null \? Math\.round\(room \* split\) : Math\.min\(full \? SHEET_EDIT : SHEET_LIST, room - \(full \? EDIT_MIN : e \? QUICK_MIN : LIST_MIN\)\)\)/)
     expect(tab).toMatch(/<span aria-hidden style=\{\{ width: 32, height: 3, borderRadius: 2, background: C\.separator \}\} \/>/)   // the grab handle
     expect(tab).toMatch(/onPointerDown=\{startSplit\} onDoubleClick=\{resetElevSplit\}/)
     expect(tab).toMatch(/cursor: 'row-resize'/)
@@ -816,7 +816,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(/elevSplit|SPLIT/.test(src('store/useCanvasStore.js') + src('utils/project.js'))).toBe(false)   // never in the layout
     // 2A. the list (C2): "In this layout" with Depth and Full screen; 48h rows (swatch, name, sub line, DEFAULT, More); Apply (primary) and New (ghost)
     const listUi = tab.slice(tab.indexOf('function List('), tab.indexOf('function Editor('))
-    expect(['>In this layout</span>', '<SheetButtons view={view} onFull={onFull} />', 'role="list" aria-label="Elevation list"', 'height: 48, flexShrink: 0', "background: on ? C.active : 'transparent'", '{counts.get(t.id) || 0}</span> bays', '>DEFAULT</span>', '<IconBtn name="More" ', 'Apply to {rowsSelected} selected row', '<Plus />New</Btn>'].map(k => listUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
+    expect(['>In this layout</span>', '<SheetButtons view={view} onFull={onFull} />', 'role="list" aria-label="Elevation list"', "background: on || open ? C.active : 'transparent'", 'height: 48, flexShrink: 0', '{counts.get(t.id) || 0}</span> bays', '>DEFAULT</span>', '<IconBtn name="Edit" ', '<IconBtn name="More" ', '<QuickEdit e={e} T={T} />', 'Apply to ${rowsSelected} selected row', 'Select rows to apply', '<Plus />New</Btn>'].map(k => listUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
     expect(listUi).toMatch(/onClick=\{\(\) => useElevTab\.setState\(\{ activeId: t\.id \}\)\}/)                  // a click picks it; Apply assigns
     expect(listUi.includes("{ceil?.name ? `${ceil.name} · ` : ''}{face !== faceDefault ? `${face}″ beam · ` : ''}")).toBe(true)   // the sub line: ceiling · beam if not the default · bays
     expect(listUi).toMatch(/<Btn kind="primary" disabled=\{!canApply\}/)                                   // Apply: disabled (45%) with no row selected
@@ -830,7 +830,8 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(/aria-label="[^"]*Beam length[^"]*" (type|value)|<select[^>]*Beam length/i.test(tab)).toBe(false)        // no beam-length control
     expect(tab).toMatch(/Clear height not set — elevations assume \{ASSUMED_FT\}'\. Set it in <button type="button" style=\{link\} onClick=\{\(\) => openSetup\('settings'\)\}>Project settings<\/button>/)
     // the row's More: Edit, colour, duplicate, set default, remove unused, delete
-    for (const k of ["item('Edit', () => startEdit(store, t.id))", "item('Duplicate',", "item('Set default',", "item('Remove unused elevations', () => removeUnused(store))", "item('Delete',"]) expect([k, tab.includes(k)]).toEqual([k, true])
+    // the row's More: colour, duplicate, set as default, remove unused, delete (Edit is the row's pencil — quick edit)
+    for (const k of ["item('Duplicate',", "item('Set as default',", "item('Remove unused elevations', () => removeUnused(store))", "item('Delete',", 'startQuick(store, t.id)']) expect([k, tab.includes(k)]).toEqual([k, true])
     // the drawing: Fit and ⤢ are the tab's (signals); graph paper
     const drw = src('components/Elevations/ElevationDrawing.jsx')
     expect(drw).toMatch(/useEffect\(\(\) => \{ if \(fitSignal\) fit\(\) \}, \[fitSignal\]\)/)

@@ -59,11 +59,11 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect([...seen].sort()).toEqual(['aisles', 'building', 'columns', 'racking'])
   })
 
-  it('LY-generate-locked: after Generate, Building and Columns are locked (and shown); the rest open. A press or drag on the building floor, or on its wall, picks nothing — the drag pans instead of moving the building', () => {
+  it('LY-generate-locked: after Generate, Columns are locked (and shown); the rest open — Building too: the building is picked by its walls, never by its floor (a press there picks nothing, a drag pans)', () => {
     const { layers, objects, gridSize } = st()
     const by = Object.fromEntries(layers.map(l => [l.id, l]))
-    expect([by.building.locked, by.columns.locked, by.building.visible, by.columns.visible]).toEqual([true, true, true, true])
-    for (const id of ['racking', 'aisles', 'checks', 'notes']) expect([by[id].visible, by[id].locked]).toEqual([true, false])
+    expect([by.building.locked, by.columns.locked, by.building.visible, by.columns.visible]).toEqual([false, true, true, true])
+    for (const id of ['building', 'racking', 'aisles', 'checks', 'notes']) expect([by[id].visible, by[id].locked]).toEqual([true, false])
     // floor points that pick the building when it is unlocked
     const open = allOpen(layers), z = 0.2
     const floor = []
@@ -72,11 +72,12 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
       if (m.hitTest(objects, open, x, y, z, gridSize) === fp.id) floor.push({ x, y })
     }
     expect(floor.length).toBeGreaterThan(3)
-    for (const p of floor) expect(m.hitTest(objects, layers, p.x, p.y, z, gridSize)).toBe(null)
-    // its wall: grabbed when unlocked, not when locked
+    // the press on the floor: hitTest finds the building's footprint, the canvas drops it — a building is picked by its walls
+    expect(readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')).toMatch(/if \(hitObj && FP_SET_INPUT\.has\(hitObj\.type\)\) \{ hitId = null; hitObj = null \}/)
+    // its wall: grabbed, as Generate leaves the layers; not on a Building layer locked by hand
     const wall = { x: fp.x, y: fp.y + fp.height / 2 }
-    expect(m.fpWallHitTest(objects, open, wall.x, wall.y, z, gridSize)?.objId).toBe(fp.id)
-    expect(m.fpWallHitTest(objects, layers, wall.x, wall.y, z, gridSize)).toBe(null)
+    expect(m.fpWallHitTest(objects, layers, wall.x, wall.y, z, gridSize)?.objId).toBe(fp.id)
+    expect(m.fpWallHitTest(objects, withLayer(layers, 'building', { locked: true }), wall.x, wall.y, z, gridSize)).toBe(null)
     // a column square: picked when Columns is unlocked, not locked
     const grid = objects.find(o => o.type === 'column_grid')
     const xs = [grid.x], ys = [grid.y]
@@ -129,7 +130,7 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     const gen = state()
     m.L.setLayer(m.useCanvasStore, 'racking', { visible: false })
     const hid = state()
-    m.L.setLayer(m.useCanvasStore, 'building', { locked: false })
+    m.L.setLayer(m.useCanvasStore, 'columns', { locked: false })
     const unlocked = state()
     expect(hid).not.toBe(gen)
     expect(unlocked).not.toBe(hid)

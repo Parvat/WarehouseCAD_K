@@ -9,7 +9,7 @@ import { create } from 'zustand'
 import { editTable, updateType, removeType, setDefault, uniqueTypeName, typeById, assignCells, PALETTE, ELEV_VERSION, frameNeededFor } from './elevations'
 import { setRackDepths } from './rackDepthAction'
 import { selectionCells } from './elevSelection'
-import { bestFitFor } from './elevFit'
+import { bestFitFor, designForLevels } from './elevFit'
 import { projectOf, defaultCeiling, defaultPallet, ceilingById, palletById, dropUnusedTypes, nameOf, refreshNames, previewName, newId, withProject, palletName, PALLET_DEFAULT } from './project'
 
 /** { activeId (the elevation the list's drawing shows), view ('front' | 'side'), editing (the editor: null, or { id
@@ -182,6 +182,41 @@ export function saveEdit(store) {
   commit(store, r.table, r.objects === st.objects ? null : r.objects)
   useElevTab.setState({ editing: null, activeId: e.id, made: { id: e.id, kind: 'saved', at: Date.now() } })
   return { kind: 'saved', id: e.id }
+}
+
+/* ── quick edit on a row (the Elevations list): Levels, Pallet, Beam — the editor's draft, opened in the row ───────── */
+
+/** The pencil on a row: that elevation's draft, open in its row (`quick`) — the sheet follows it. One row at a time:
+ *  opening another drops the first, asking nothing (the editor's draft is single). */
+export function startQuick(store, id) {
+  if (!startEdit(store, id)) return false
+  useElevTab.setState(s => ({ editing: { ...s.editing, quick: true, quickN: null } }))
+  return true
+}
+/** A quick-edit field changed: `{ levels }` (a count), `{ palletId }` or `{ beamFaceIn }`. The pallet and beam follow the
+ *  editor's own rules (a new pair or beam face refits the draft); once Levels is set, that count is kept through them. */
+export function quickEdit(store, patch) {
+  const e = useElevTab.getState().editing
+  if (!e?.quick) return
+  const n = 'levels' in patch ? Math.floor(Number(patch.levels)) : e.quickN
+  if ('levels' in patch && !(n >= 1)) return
+  if ('palletId' in patch || 'beamFaceIn' in patch) editDraft(store, { ...('palletId' in patch ? { palletId: patch.palletId } : {}), ...('beamFaceIn' in patch ? { beamFaceIn: patch.beamFaceIn } : {}) })
+  if (n >= 1) {
+    const e2 = useElevTab.getState().editing, T = store.getState().elevations, pr = projectOf(T), d = e2.draft
+    const c = ceilingById(pr, d.ceilingId) || defaultCeiling(pr), p = palletById(pr, d.palletId) || defaultPallet(pr)
+    const des = designForLevels(pr, c, p, n, { beamFaceIn: d.beamFaceIn })
+    if (des) useElevTab.setState({ editing: { ...e2, draft: { ...d, ...des, ceilingId: d.ceilingId, palletId: d.palletId }, quickN: n, touched: true } })
+  }
+}
+/** Full edit: the C3 editor on the same draft, its values as the row left them. */
+export const quickToFull = () => useElevTab.setState(s => (s.editing ? { editing: { ...s.editing, quick: false } } : {}))
+/** Save from the row: the editor's ONE save (one undo step; Saved). The row has no Name field, so an elevation not
+ *  renamed keeps its auto name — the editor's own rule (its empty Name field). */
+export function quickSave(store) {
+  const e = useElevTab.getState().editing
+  if (!e?.quick) return null
+  if (!e.draft.named) editDraft(store, { name: '', named: false })
+  return saveEdit(store)
 }
 
 /* ── frames too shallow for a pallet: fixed only on the user's click ─────────────────────────────────────────────── */

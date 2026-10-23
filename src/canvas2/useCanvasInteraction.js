@@ -21,6 +21,7 @@ import { rebuildAisles } from '../utils/aisleRebuild'
 import { nanoid } from 'nanoid'
 import { inlineSnap, planInlineDrop, applyJoin } from './inlineSnap'
 import { pickableIn, snapTargets } from '../utils/layers'
+import { pickedOnPlan } from '../studio/viewPrefs'
 import { groupDragFor, skipNextAction } from '../utils/rowGroupTool'
 import { lockToAxis } from '../utils/rowGroup'
 import { clearIssueHighlight } from '../utils/layoutCheck'
@@ -99,6 +100,7 @@ export function useCanvasInteraction({
      picking, so there is nothing left to read off `e`. */
   const selectFromHit = (hitId, shiftKey, world) => {
     if (!shiftKey) setStickyBayMode(false)   // a plain click ends bay-by-bay editing
+    pickedOnPlan()                            // the Generate card closes on a pick (studio/viewPrefs.js)
     const st = useCanvasStore.getState()
     const prevSelectedIds = st.selectedIds
 
@@ -511,8 +513,8 @@ export function useCanvasInteraction({
          falling back to it at mouseup, ONLY if the gesture never actually
          moved (movedEnough) — a real drag still means marquee, matching
          the drag/click split every other gesture here already makes. */
-      const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
-      const hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
+      let hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+      let hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
 
       /* A floor plan's wall, checked whenever the plain hitTest above didn't
          land on something standing IN FRONT of the building (a rack parked
@@ -531,6 +533,7 @@ export function useCanvasInteraction({
         if (wallHit) {
           const fpObj = st.objects.find(o => o.id === wallHit.objId)
           if (fpObj) {
+            pickedOnPlan()
             st.selectObject(wallHit.objId)
             st.setActiveWall({ objId: wallHit.objId, wallIdx: wallHit.wallIdx })
             beginHandleDrag(fpObj, 'wall_' + wallHit.wallIdx, world)
@@ -538,6 +541,10 @@ export function useCanvasInteraction({
           }
         }
       }
+
+      /* A building is picked by its walls only (the check above): a press on its floor picks nothing — it is empty
+         floor, so a click there clears the selection and a drag pans, like empty canvas. */
+      if (hitObj && FP_SET_INPUT.has(hitObj.type)) { hitId = null; hitObj = null }
 
       /* Shift held → ALWAYS arm a marquee candidate over a plain object
          BODY (a floor plan's interior included) — CanvasArea's own rule
@@ -578,7 +585,8 @@ export function useCanvasInteraction({
       }
     }
 
-    pan.current = { sx: evt.clientX, sy: evt.clientY, panX: view.current.panX, panY: view.current.panY }
+    /* `force`: space or the middle button — a pan by intent, never a deselect; `moved`: set once it really moves */
+    pan.current = { sx: evt.clientX, sy: evt.clientY, panX: view.current.panX, panY: view.current.panY, force: forcePan, moved: false }
     setCursor('grabbing')
   }
 
@@ -911,6 +919,7 @@ export function useCanvasInteraction({
 
       if (pan.current) {
         const d = pan.current
+        if (!d.moved && movedEnough({ x: d.sx, y: d.sy }, { x: evt.clientX, y: evt.clientY })) d.moved = true
         setView({
           zoom: view.current.zoom,
           panX: d.panX + (evt.clientX - d.sx),
@@ -1102,7 +1111,15 @@ export function useCanvasInteraction({
       setMarquee(normalizeRect(m.from, m.to))
     }
     const upGesture = () => {
+      const pn = pan.current
       pan.current = null
+      /* a click on empty canvas or on a building's floor (a left press that never moved): the selection clears and the
+         card shows nothing selected */
+      if (pn && !pn.force && !pn.moved) {
+        const st = useCanvasStore.getState()
+        if (st.selectedIds.length || st.activeBaySelection?.length) st.clearSelection()
+        st.setActiveWall(null)
+      }
 
       const rd = resizeDrag.current
       resizeDrag.current = null
@@ -1123,7 +1140,9 @@ export function useCanvasInteraction({
         if (obj && obj.type === 'racking_area') {
           const o = rd.origObj
           finishAreaResize(useCanvasStore, rd.objId, { x: o.x, y: o.y, w: o.width, h: o.height }, { gridSize: st.gridSize })
-        } else if (obj) st.commitObjectUpdate(rd.objId, obj)
+        // nothing moved (a click on a wall or a handle only selects): no history entry — so one Ctrl+Z right after
+        // dropping a building and clicking its wall still takes the building away
+        } else if (obj && JSON.stringify(obj) !== JSON.stringify(rd.origObj)) st.commitObjectUpdate(rd.objId, obj)
         /* Wall highlight is only for the duration of the drag that's ending —
            CanvasUI clears activeWall on the next click anywhere; canvas2 has
            no WallInputOverlay to keep it alive for, so clearing it here

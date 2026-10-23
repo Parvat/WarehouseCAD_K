@@ -21,7 +21,7 @@ describe('SB — the sheet (C2, C3)', () => {
     expect(/<button|<Btn|FixButton|IconBtn/.test(sheet)).toBe(false)                                   // no buttons on the drawing
     expect(sheet).toMatch(/controls=\{false\}/)
     expect(tab).toMatch(/const SHEET_LIST = 420, SHEET_EDIT = 290/)
-    expect(tab).toMatch(/Math\.min\(e \? SHEET_EDIT : SHEET_LIST, room - \(e \? EDIT_MIN : LIST_MIN\)\)/)
+    expect(tab).toMatch(/Math\.min\(full \? SHEET_EDIT : SHEET_LIST, room - \(full \? EDIT_MIN : e \? QUICK_MIN : LIST_MIN\)\)/)
     expect(between(tab, 'role="separator"', '{/* 2.')).toMatch(/height: HANDLE[\s\S]*width: 32, height: 3, borderRadius: 2, background: C\.separator/)
     expect(tab).toMatch(/const HANDLE = 12 /)
     // the drawing is transparent on the sheet, so the grid shows; its labels keep a white halo
@@ -71,7 +71,8 @@ describe('SB — the list (C2)', () => {
     const tab = read('components/Elevations/ElevationsTab.jsx'), list = between(tab, 'function List(', 'function Editor(')
     expect(list).toMatch(/<span style=\{caption\}>In this layout<\/span>\s*<SheetButtons view=\{view\} onFull=\{onFull\} \/>/)
     expect(tab).toMatch(/const inset28 = \(on\) => \(\{ height: 28, padding: '0 10px',[^)]*background: on \? C\.active : C\.inset/)
-    expect(list).toMatch(/height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '0 6px 0 10px', borderRadius: 8, cursor: 'pointer', background: on \? C\.active : 'transparent'/)
+    expect(list).toMatch(/borderRadius: 8, background: on \|\| open \? C\.active : 'transparent'/)
+    expect(list).toMatch(/height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '0 6px 0 10px', cursor: 'pointer'/)
     expect(list).toMatch(/const title = !t\.named && ceil\?\.name \? name\.replace\(` · \$\{ceil\.name\}`, ''\) : name/)
     expect(list).toMatch(/<span style=\{\{ fontFamily: MONO \}\}>\{counts\.get\(t\.id\) \|\| 0\}<\/span> bays/)
     expect(list).toMatch(/background: C\.island, color: C\.accent, fontSize: 10, fontWeight: 600, letterSpacing: '\.06em'[^>]*>DEFAULT<\/span>/)
@@ -79,12 +80,13 @@ describe('SB — the list (C2)', () => {
     expect(list).toMatch(/<Btn kind="primary" disabled=\{!canApply\}[\s\S]*opacity: canApply \? 1 : 0\.45, cursor: canApply \? 'pointer' : 'not-allowed'/)
     expect(list).toMatch(/<Btn kind="ghost" disabled=\{!pr\} onClick=\{\(\) => startNew\(store\)\}[^>]*><Plus \/>New<\/Btn>/)
     // a picked row has no hover change (STUDIO.md §5): it carries data-on, the hover rule skips it
-    expect(list).toMatch(/className="st-hov" data-on=\{on \|\| undefined\}/)
+    expect(list).toMatch(/className=\{open \? undefined : 'st-hov'\} data-on=\{on \|\| open \|\| undefined\}/)
   })
 
-  it('SB-more: a row\'s More opens a menu in the layout menu\'s look — Edit (the editor, C3), colour, Duplicate, Set default, Remove unused elevations, Delete', () => {
+  it('SB-more: a row\'s More opens a menu in the layout menu\'s look — colour, Duplicate, Set as default, Remove unused elevations, Delete (Edit is the row\'s pencil)', () => {
     const menu = between(read('components/Elevations/ElevationsTab.jsx'), 'function RowMenu(', 'export function ElevationsTab(')
-    const order = ["item('Edit', () => startEdit(store, t.id))", 'aria-label="Elevation colour"', "item('Duplicate',", "item('Set default',", "item('Remove unused elevations', () => removeUnused(store))", "item('Delete',"]
+    expect(/item\('Edit'/.test(menu)).toBe(false)
+    const order = ['aria-label="Elevation colour"', "item('Duplicate',", "item('Set as default',", "item('Remove unused elevations', () => removeUnused(store))", "item('Delete',"]
     expect(order.map(k => menu.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
     expect(menu).toMatch(/width: MENU_W, padding: 6, borderRadius: 10, background: C\.island, border: '1px solid #323835', boxShadow: '0 16px 40px rgba\(15,18,16,\.3\)'/)
     expect(read('components/Elevations/ElevationsTab.jsx')).toMatch(/const menuRow = \{ height: 34, display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px', border: 0, borderRadius: 6,/)
