@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9)
 import { textOwnsKey } from '../../utils/typing'
 import { elevationLayout, ftInDash, parseFtIn } from '../../utils/elevationDrawing'
-import { setPane, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, paneFontPx } from '../../utils/elevEditor'
+import { setPane, moveBeam, addLevelAt, addTopLevel, removeLevel, setUpright, setDimension, paneFontPx } from '../../utils/elevEditor'
 
 /* ── The elevation drawing, interactive — the Elevations tab (ElevationsTab.jsx) ─────────────────────────────────────
    Drag a beam up or down (snapping to the type's hole pitch, its elevation live); drag it off the ends of the bay, or
@@ -51,7 +51,9 @@ export function ElevationDrawing(props) {
    the drawing itself is transparent there; labels keep a white halo */
 const PAPER = '#FFFFFF'
 
-function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null, readOnly = false, controls = true, paper = false, fitSignal = 0 }) {
+function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null, readOnly = false, controls = true, paper = false, fitSignal = 0, sheetEdit = false, holePitchIn = null, onValue = null }) {
+  /* sheetEdit (C21, the card's sheet in edit mode): handles on the beams, a drag snaps to `holePitchIn` (Project settings →
+     Uprights), a click on a blue value types it in place (the pallet's own values go to `onValue`), + Add level, − */
   // controls false: Fit and ⤢ are the host's (the Elevations tab's toolbar — `fitSignal`); paper: the white sheet
   // readOnly (the list's drawing — choosing and assigning only): zoom, pan and Fit, no beam, upright or dimension edit
   const commit = (fn) => { if (readOnly) return; const next = fn(t); if (next && JSON.stringify(next) !== JSON.stringify(t)) onCommit(next) }
@@ -92,7 +94,7 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
   const shown = draft ? draft.type : t
   // centred and fitted to the pane (elevationLayout centres it in the box), labels in proportion with a readable minimum
   const fontPx = paneFontPx(box)
-  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, palletDIn: entry.palletDIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, view, zoom: zv.zoom, pan: zv.pan, bg: paper ? PAPER : 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail, view, zv])
+  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, palletDIn: entry.palletDIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, view, zoom: zv.zoom, pan: zv.pan, bg: paper ? PAPER : 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sheetEdit && editing?.id === 'elev' ? 'beam:' + editing.k : null) || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null, edit: sheetEdit ? { hint: (draft?.active || sel != null || editing?.id === 'elev') && holePitchIn > 0 ? `${holePitchIn}″` : null } : null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail, view, zv, sheetEdit, holePitchIn, editing])
 
   const at = (ev) => { const r = host.current.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
   useEffect(() => {
@@ -131,7 +133,7 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
       if (!moved) return
       if (role.kind === 'beam') {
         const off = p.x < d.Xf(0) - fontPx * 1.5 || p.x > d.Xf(d.frontW) + fontPx * 1.5      // dragged past the end of the bay
-        last = off ? { type: t, active: null, removing: role.k } : { type: moveBeam(t, role.k, zAt(p)), active: 'dim:elev', removing: null, k: role.k }
+        last = off ? { type: t, active: null, removing: role.k } : { type: moveBeam(t, role.k, zAt(p), { pitch: sheetEdit ? holePitchIn : null }), active: 'dim:elev', removing: null, k: role.k }
         if (!off) last.active = 'beam:' + role.k
       } else last = { type: setUpright(t, zAt(p)), active: 'top:' }
       setDraft(last)
@@ -176,14 +178,18 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
   }
   const startTyping = (ev, role) => {
     ev.stopPropagation()
-    const p = at(ev)
-    setEditing({ id: role.id, k: role.k, x: p.x, y: p.y, text: ftInDash(role.value) })
+    // on the sheet: the box sits on the value itself — the label's own box (its SVG extent), the text selected
+    let p = at(ev)
+    if (sheetEdit && ev.currentTarget?.getBBox) { try { const b = ev.currentTarget.getBBox(); p = { x: b.x + snap.x, y: b.y + b.height / 2 + snap.y } } catch { /* not laid out */ } }
+    setEditing({ id: role.id, k: role.k, x: p.x, y: p.y, text: (role.id === 'palletH' || role.id === 'palletW') ? `${Math.round(role.value)}″` : sheetEdit ? ftInDash(role.value).replace(/'/g, '′').replace(/"/g, '″') : ftInDash(role.value) })
   }
   const commitTyping = () => {
     const e = editing; setEditing(null)
     if (!e) return
     const v = parseFtIn(e.text)
-    if (Number.isFinite(v)) commit(x => setDimension(x, e.id, e.k, v))
+    if (!Number.isFinite(v)) return
+    if ((e.id === 'palletH' || e.id === 'palletW') && onValue) { if (v > 0 && !readOnly) onValue(e.id, v); return }
+    commit(x => setDimension(x, e.id, e.k, v))
   }
 
   const render = (i, n) => {
@@ -191,15 +197,17 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
     const handlers = {}
     if (!readOnly && (r?.kind === 'beam' || r?.kind === 'top')) handlers.onPointerDown = (e) => startDrag(e, r)
     if (!readOnly && r?.kind === 'upright') handlers.onClick = onUprightClick
-    if (!readOnly && r?.kind === 'dim') { handlers.onDoubleClick = (e) => startTyping(e, r); handlers.style = { cursor: 'text' } }
+    if (!readOnly && r?.kind === 'dim') { if (sheetEdit) handlers.onClick = (e) => startTyping(e, r); else handlers.onDoubleClick = (e) => startTyping(e, r); handlers.style = { cursor: 'text' } }
+    if (!readOnly && sheetEdit && r?.kind === 'add') { handlers.onClick = (e) => { e.stopPropagation(); commit(x => addTopLevel(x, holePitchIn)) }; handlers.style = { cursor: 'pointer' } }
+    if (!readOnly && sheetEdit && r?.kind === 'remove') { handlers.onClick = (e) => { e.stopPropagation(); commit(x => removeLevel(x, r.k)); setPane({ sel: null }) }; handlers.style = { cursor: 'pointer' } }
     const role = r ? (r.kind + ':' + (r.id ?? '') + ':' + (r.k ?? '')) : undefined
-    if (i.t === 'rect') return <rect key={n} data-role={role} shapeRendering="crispEdges" x={i.x} y={i.y} width={Math.max(0, i.w)} height={Math.max(0, i.h)} fill={i.fill || 'none'} stroke={i.stroke} strokeWidth={i.sw} opacity={i.opacity} style={{ cursor: readOnly ? undefined : i.cursor || (r?.kind === 'upright' ? 'copy' : undefined) }} {...handlers} />
+    if (i.t === 'rect') return <rect key={n} data-role={role} data-tag={i.tag} shapeRendering={i.rx ? undefined : 'crispEdges'} x={i.x} y={i.y} width={Math.max(0, i.w)} height={Math.max(0, i.h)} rx={i.rx} fill={i.fill || 'none'} fillOpacity={i.fillOpacity} stroke={i.stroke} strokeWidth={i.sw} strokeDasharray={i.dash} opacity={i.opacity} style={{ cursor: readOnly ? undefined : i.cursor || (r?.kind === 'upright' ? 'copy' : undefined) }} {...handlers} />
     if (i.t === 'line') return <line key={n} shapeRendering={i.x1 === i.x2 || i.y1 === i.y2 ? 'crispEdges' : undefined} x1={i.x1} y1={i.y1} x2={i.x2} y2={i.y2} stroke={i.stroke} strokeWidth={i.sw} strokeDasharray={i.dash} opacity={i.opacity} pointerEvents="none" />
     if (i.t === 'path') return <path key={n} d={i.d} fill="none" stroke={i.stroke} strokeWidth={i.sw} opacity={i.opacity} pointerEvents="none" />
     if (i.t === 'polygon') return <polygon key={n} points={i.points.map(q => q.join(',')).join(' ')} fill={i.fill} pointerEvents="none" />
     if (i.t === 'circle') return <circle key={n} cx={i.cx} cy={i.cy} r={i.r} fill={i.fill} stroke={i.stroke} strokeWidth={i.sw} pointerEvents="none" />
     if (i.t === 'poly') return <polyline key={n} points={i.points.map(q => q.join(',')).join(' ')} fill="none" stroke={i.stroke} strokeWidth={i.sw} pointerEvents="none" />
-    if (i.t === 'text') return <text key={n} data-role={role} textRendering="geometricPrecision" x={i.x} y={i.y} fontSize={i.size} fontFamily={i.font || 'Arial, sans-serif'} textAnchor={i.anchor} fill={i.fill} fontWeight={i.weight} transform={i.rot ? `rotate(${i.rot} ${i.x} ${i.y})` : undefined} style={{ userSelect: 'none', ...(i.halo ? { stroke: i.haloColor || 'var(--surface)', strokeWidth: i.halo, paintOrder: 'stroke', strokeLinejoin: 'round' } : {}), ...(handlers.style || {}) }} onDoubleClick={handlers.onDoubleClick}>{i.runs ? i.runs.map((r, k) => <tspan key={k} fill={r.fill} fontWeight={r.weight}>{r.s}</tspan>) : i.s}</text>
+    if (i.t === 'text') return <text key={n} data-role={role} textRendering="geometricPrecision" x={i.x} y={i.y} fontSize={i.size} fontFamily={i.font || 'Arial, sans-serif'} textAnchor={i.anchor} fill={i.fill} fontWeight={i.weight} transform={i.rot ? `rotate(${i.rot} ${i.x} ${i.y})` : undefined} data-tag={i.tag} pointerEvents={r ? undefined : 'none'} style={{ userSelect: 'none', ...(i.halo ? { stroke: i.haloColor || 'var(--surface)', strokeWidth: i.halo, paintOrder: 'stroke', strokeLinejoin: 'round' } : {}), ...(handlers.style || {}) }} onDoubleClick={handlers.onDoubleClick} onClick={handlers.onClick}>{i.runs ? i.runs.map((r, k) => <tspan key={k} fill={r.fill} fontWeight={r.weight}>{r.s}</tspan>) : i.s}</text>
     return null
   }
   return (
@@ -220,9 +228,11 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
         {onFull && <button type="button" aria-label="Full screen" onClick={onFull} title="Full screen (Esc closes)" style={{ padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer', display: 'flex' }}><Icon name="Full screen" color="currentColor" /></button>}
       </div>}
       {editing && (
-        <input autoFocus aria-label="Dimension" value={editing.text} onChange={e => setEditing({ ...editing, text: e.target.value })}
+        <input autoFocus onFocus={e => e.target.select()} aria-label="Dimension" value={editing.text} onChange={e => setEditing({ ...editing, text: e.target.value })}
           onBlur={commitTyping} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') commitTyping(); if (e.key === 'Escape') setEditing(null) }}
-          style={{ position: 'absolute', left: Math.max(4, editing.x - 34), top: Math.max(4, editing.y - 11), width: 68, fontSize: 12, fontFamily: 'var(--font-mono)', padding: '2px 4px', border: '1px solid var(--accent, #2F7BD8)', borderRadius: 3, zIndex: 3 }} />
+          style={sheetEdit
+            ? { position: 'absolute', left: Math.max(2, Math.min(editing.x - 3.5, (box.w || 999) - 50)), top: Math.max(2, editing.y - 8), width: 46, height: 16, boxSizing: 'border-box', fontSize: 10, fontWeight: 600, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: '#1B4FD8', background: '#FFFFFF', padding: '0 4px', border: '1.2px solid #1B4FD8', borderRadius: 2, outline: 'none', zIndex: 3 }
+            : { position: 'absolute', left: Math.max(4, editing.x - 34), top: Math.max(4, editing.y - 11), width: 68, fontSize: 12, fontFamily: 'var(--font-mono)', padding: '2px 4px', border: '1px solid var(--accent, #2F7BD8)', borderRadius: 3, zIndex: 3 }} />
       )}
     </div>
   )

@@ -24,8 +24,9 @@ export const snapTo = (z, pitch) => Math.round(z / pitch) * pitch
 
 /** Level `k`'s beam moved to `z` (to its top), snapped to the hole pitch unless `exact`, kept between its neighbours
  *  (a beam face clear of the one below, the next beam's face clear above) and under the top of the upright. */
-export function moveBeam(t, k, z, { exact = false } = {}) {
-  const face = beamFace(t), pitch = holePitch(t), L = sorted(t), i = L.findIndex(l => l.k === k)
+export function moveBeam(t, k, z, { exact = false, pitch: P = null } = {}) {
+  // `pitch`: the step to snap to — the sheet passes Project settings → Uprights → Hole pitch; else the type's own
+  const face = beamFace(t), pitch = P > 0 ? P : holePitch(t), L = sorted(t), i = L.findIndex(l => l.k === k)
   if (i < 0) return t
   const lo = i > 0 ? L[i - 1].beamIn + face : 0
   const hi = i + 1 < L.length ? L[i + 1].beamIn - face : t.uprightHeightIn
@@ -42,6 +43,15 @@ export function addLevelAt(t, z) {
   const below = sorted(t).filter(l => l.beamIn < v).pop() || t.levels[0]
   const levels = [...t.levels, { beamIn: v, palletHeightIn: below.palletHeightIn, loadLb: below.loadLb }].sort((a, b) => a.beamIn - b.beamIn)
   return { ...t, levels }
+}
+/** A level added over the top one, its pallet and load: its beam a level pitch (pallet + clearance + beam face) over the
+ *  top beam, up to the hole pitch `pitch`; the upright grows to the new top beam + 12", up to the pitch, when it must
+ *  (the sheet's + Add level). */
+export function addTopLevel(t, pitch = holePitch(t)) {
+  const L = sorted(t), top = L[L.length - 1], p = pitch > 0 ? pitch : 1
+  const raw = top.beamIn + (top.palletHeightIn || 0) + (t.clearanceIn || 0) + beamFace(t), z = Math.ceil(raw / p - 1e-9) * p
+  const levels = [...t.levels, { beamIn: z, palletHeightIn: top.palletHeightIn, loadLb: top.loadLb }]
+  return { ...t, levels, uprightHeightIn: Math.max(t.uprightHeightIn, Math.ceil((z + 12) / p - 1e-9) * p) }
 }
 /** Level `k` removed (never the last one). */
 export const removeLevel = (t, k) => (t.levels.length <= 1 ? t : { ...t, levels: t.levels.filter((_, j) => j !== k) })

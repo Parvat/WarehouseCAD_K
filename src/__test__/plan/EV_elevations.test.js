@@ -781,7 +781,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     // Studio: the right card (300 wide, StudioFrame.jsx) holds the two tabs; their content is RightPanelTabs
     const rp = src('components/RightPanel/index.jsx'), card = src('studio/StudioFrame.jsx')
     expect(card).toMatch(/>Properties<\/button>[\s\S]*>Elevations<\/button>/)
-    expect(card).toMatch(/right: 16, top: 76, width: 300, maxHeight: 'calc\(100vh - 152px\)'/)
+    expect(card).toMatch(/right: 16, top: 76, width: cardW, maxHeight: 'calc\(100vh - 152px\)'/)
     expect(rp).toMatch(/<ElevationsTab \/>/)
     expect([RP.panelWidth({ tab: 'elevations', elevW: 520 }), RP.panelWidth({ tab: 'properties', elevW: 520 })]).toEqual([520, 272])
     RP.setRightPanel({ tab: 'elevations', elevW: 555 })
@@ -794,11 +794,11 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     const hIdx = tab.indexOf('role="separator" aria-orientation="horizontal" aria-label="Resize drawing"')
     expect([tBox > 0, hIdx > tBox, tSwap > hIdx]).toEqual([true, true, true])                          // sheet | handle | list or editor
     expect(/role="toolbar"|aria-label="Fit"|BEAM \{/.test(tab)).toBe(false)                               // no toolbar above it
-    expect(tab).toMatch(/margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 8, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient\(#EFEEE9 1px, transparent 1px\), linear-gradient\(90deg, #EFEEE9 1px, transparent 1px\)', backgroundSize: '14px 14px'/)
+    expect(tab).toMatch(/margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 0, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient\(#EFEEE9 1px, transparent 1px\), linear-gradient\(90deg, #EFEEE9 1px, transparent 1px\)', backgroundSize: '14px 14px'/)
     expect(tab).toMatch(/detail="studio" fullDetail=\{detail\} view=\{view\} height=\{sheetH\} controls=\{false\} paper fullSignal=\{fullSignal\}\s+readOnly=\{!e\}/)   // read-only in the list; beams drag only in the editor
     // its height: the mockup's (420 under the list, 290 over the editor) shortened to leave the list or the form room; once dragged, the user's share
     expect(tab).toMatch(/const SHEET_LIST = 420, SHEET_EDIT = 290/)
-    expect(tab).toMatch(/const sheetH = Math\.max\(SHEET_MIN, split != null \? Math\.round\(room \* split\) : Math\.min\(full \? SHEET_EDIT : SHEET_LIST, room - \(full \? EDIT_MIN : e \? QUICK_MIN : LIST_MIN\)\)\)/)
+    expect(tab).toMatch(/const sheetH = Math\.max\(SHEET_MIN, onSheet \? Math\.min\(SHEET_EDITING, room - ROW_MIN\) : split != null \? Math\.round\(room \* split\) : full \? Math\.max\(Math\.min\(200, SHEET_EDIT\), Math\.min\(SHEET_EDIT, room - formNeed\)\) : Math\.min\(SHEET_LIST, room - LIST_MIN\)\)/)
     expect(tab).toMatch(/<span aria-hidden style=\{\{ width: 32, height: 3, borderRadius: 2, background: C\.separator \}\} \/>/)   // the grab handle
     expect(tab).toMatch(/onPointerDown=\{startSplit\} onDoubleClick=\{resetElevSplit\}/)
     expect(tab).toMatch(/cursor: 'row-resize'/)
@@ -816,22 +816,22 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(/elevSplit|SPLIT/.test(src('store/useCanvasStore.js') + src('utils/project.js'))).toBe(false)   // never in the layout
     // 2A. the list (C2): "In this layout" with Depth and Full screen; 48h rows (swatch, name, sub line, DEFAULT, More); Apply (primary) and New (ghost)
     const listUi = tab.slice(tab.indexOf('function List('), tab.indexOf('function Editor('))
-    expect(['>In this layout</span>', '<SheetButtons view={view} onFull={onFull} />', 'role="list" aria-label="Elevation list"', "background: on || open ? C.active : 'transparent'", 'height: 48, flexShrink: 0', '{counts.get(t.id) || 0}</span> bays', '>DEFAULT</span>', '<IconBtn name="Edit" ', '<IconBtn name="More" ', '<QuickEdit e={e} T={T} />', 'Apply to ${rowsSelected} selected row', 'Select rows to apply', '<Plus />New</Btn>'].map(k => listUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
+    expect(['>In this layout</span>', '<SheetButtons view={view} onFull={onFull} />', 'role="list" aria-label="Elevation list"', 'height: 48, flexShrink: 0', "background: on ? C.active : 'transparent'", '{counts.get(t.id) || 0}</span> bays', '>DEFAULT</span>', 'startSheet(store, t.id)', '<Icon name="Edit" />', '<IconBtn name="More" ', 'Apply to ${rowsSelected} selected row', 'Select rows to apply', '<Plus />New</Btn>'].map(k => listUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
     expect(listUi).toMatch(/onClick=\{\(\) => useElevTab\.setState\(\{ activeId: t\.id \}\)\}/)                  // a click picks it; Apply assigns
     expect(listUi.includes("{ceil?.name ? `${ceil.name} · ` : ''}{face !== faceDefault ? `${face}″ beam · ` : ''}")).toBe(true)   // the sub line: ceiling · beam if not the default · bays
     expect(listUi).toMatch(/<Btn kind="primary" disabled=\{!canApply\}/)                                   // Apply: disabled (45%) with no row selected
-    // 2B. the editor (C3): Back · title · Depth · Full screen; Name; Ceiling (+ New ceiling height inside); the Pallet box; Beam; Cancel and Save
+    // 2B. the editor (C3): Back · title · Depth · Full screen; Name; Ceiling typed; the Pallet box (four typed values); the Rack box (Frame depth, Beam size, Beam length; the frame warning); Cancel and Save
     const editUi = tab.slice(tab.indexOf('function Editor('))
-    expect(['aria-label="Back"', "{e.id ? 'Edit elevation' : 'New elevation'}", '<SheetButtons view={view} onFull={onFull} />', 'aria-label="Elevation name"', 'role="group" aria-label="Ceiling"', '>+ New ceiling height</option>', 'aria-label="New ceiling height"', "gridTemplateColumns: 'repeat(3, minmax(0, 1fr))'", 'role="group" aria-label="Pallet"', '>+ New pallet size</option>', 'aria-label="New pallet size"', "gridTemplateColumns: 'repeat(4, minmax(0, 1fr))'", 'aria-label="Pallet depth"', 'aria-label="Beam face"', '>Cancel</Btn>', '>Save elevation</Btn>'].map(k => editUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
+    expect(['aria-label="Back"', 'Edit elevation <span', "'New elevation'", '<SheetButtons view={view} onFull={onFull} />', 'aria-label="Elevation name"', '<InlineField label="Ceiling">', 'role="group" aria-label="Pallet"', "gridTemplateColumns: 'repeat(4, minmax(0, 1fr))'", 'role="group" aria-label="Rack"', "gridTemplateColumns: 'repeat(3, minmax(0, 1fr))'", 'aria-label="Pallet depth"', '>Cancel</Btn>', '>Save elevation</Btn>'].map(k => editUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
     expect((editUi.match(/>Save/g) || []).length).toBe(1)                                              // ONE save, even with both "+ New" open
     expect(/>Save<\/button>|setNewForm/.test(editUi)).toBe(false)                                     // the inner forms have no buttons
-    expect(tab).toMatch(/const BEAM_FACES = \[3, 4, 5, 6\]/)
+    expect(/BEAM_FACES|<select/.test(editUi)).toBe(false)                                               // Beam size typed; no dropdowns
     expect(tab).toMatch(/onCommit=\{e \? \(next\) => editDraft\(store, \{ \.\.\.next, id: e\.draft\.id \}, \{ fromDrawing: true \}\) : \(\) => \{\}\}/)   // into the draft
     expect(/aria-label="[^"]*Beam length[^"]*" (type|value)|<select[^>]*Beam length/i.test(tab)).toBe(false)        // no beam-length control
     expect(tab).toMatch(/Clear height not set — elevations assume \{ASSUMED_FT\}'\. Set it in <button type="button" style=\{link\} onClick=\{\(\) => openSetup\('settings'\)\}>Project settings<\/button>/)
     // the row's More: Edit, colour, duplicate, set default, remove unused, delete
     // the row's More: colour, duplicate, set as default, remove unused, delete (Edit is the row's pencil — quick edit)
-    for (const k of ["item('Duplicate',", "item('Set as default',", "item('Remove unused elevations', () => removeUnused(store))", "item('Delete',", 'startQuick(store, t.id)']) expect([k, tab.includes(k)]).toEqual([k, true])
+    for (const k of ["item('Duplicate',", "item('Set as default',", "item('Remove unused elevations', () => removeUnused(store))", "item('Delete',", "item('Full edit', () => startFull(store, t.id))", 'startSheet(store, t.id)']) expect([k, tab.includes(k)]).toEqual([k, true])
     // the drawing: Fit and ⤢ are the tab's (signals); graph paper
     const drw = src('components/Elevations/ElevationDrawing.jsx')
     expect(drw).toMatch(/useEffect\(\(\) => \{ if \(fitSignal\) fit\(\) \}, \[fitSignal\]\)/)
@@ -864,7 +864,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     const dr = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
     expect(dr).toMatch(/Math\.round\(r\.left \* dpr\) - r\.left \* dpr\) \/ dpr/)
     expect(dr).toMatch(/style=\{\{ display: 'block', position: 'relative', left: snap\.x, top: snap\.y \}\}/)
-    expect(dr).toMatch(/<rect key=\{n\} data-role=\{role\} shapeRendering="crispEdges"/)
+    expect(dr).toMatch(/<rect key=\{n\} data-role=\{role\} data-tag=\{i\.tag\} shapeRendering=\{i\.rx \? undefined : 'crispEdges'\}/)   // crisp, but a rounded box (the sheet's −) smooth
     expect(dr).toMatch(/shapeRendering=\{i\.x1 === i\.x2 \|\| i\.y1 === i\.y2 \? 'crispEdges' : undefined\}/)
     expect(dr).toMatch(/textRendering="geometricPrecision"/)
     expect(/transform: `?scale|style=\{\{[^}]*\bzoom:/.test(dr)).toBe(false)                   // no CSS scaling (zoom redraws the layout)

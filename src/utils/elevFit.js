@@ -109,13 +109,3 @@ export function pairName(project, t) {
   return [`${n} level${n === 1 ? '' : 's'}`, p ? `${p.depthIn}×${p.faceIn}` : null, c?.name].filter(Boolean).join(' · ')
 }
 
-/** The design of exactly `n` levels for ceiling `ceiling` and pallet `pallet` — bestFitFor's inputs (the pallet's height,
- *  weight and beam face, the project's clearance and hole pitch), the count given instead of the most that fit (the
- *  Elevations row's quick edit: Levels). Tagged with the pair; null when `n` is not a whole number ≥ 1. */
-export function designForLevels(project, ceiling, pallet, n, { beamFaceIn = null } = {}) {
-  const N = Math.floor(Number(n))
-  if (!(N >= 1)) return null
-  const b = ceilingBuilding(ceiling), f = { ...fitForPallet(project, pallet), ...(beamFaceIn > 0 ? { beamFaceIn } : {}) }
-  const d = designFor(N, b, f)
-  return { ...d, levels: d.levels.map(l => ({ ...l, loadLb: pallet?.weightLb ?? l.loadLb })), ceilingId: ceiling?.id ?? null, palletId: pallet?.id ?? null }
-}

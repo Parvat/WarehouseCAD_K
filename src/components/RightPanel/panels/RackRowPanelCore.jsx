@@ -310,9 +310,9 @@ export function RackRowExtras({ obj, newBeam: sharedBeam, setNewBeam: setSharedB
           }} options={[3, 4].map(u => ({ value: u, label: `${u}"` }))} />
         </Field>
       )}
-      {/* the pallet size: the project's default (Project setup) — Generate and Fill stamp it on the racks */}
+      {/* the pallet size, depth × width once (48×40): the project's default (Project setup) — Generate and Fill stamp it on the racks */}
       <Row label={<span style={{ color: C.muted, fontSize: 12 }}>Pallet</span>}>
-        <span aria-label="Pallet size" style={{ fontFamily: MONO, fontSize: 12, color: C.strong }}>{obj.palletDIn || 48}" × {obj.palletWIn || 40}" face</span>
+        <span aria-label="Pallet size" style={{ fontFamily: MONO, fontSize: 12, color: C.strong }}>{obj.palletDIn || 48}×{obj.palletWIn || 40}</span>
       </Row>
     </>
   )

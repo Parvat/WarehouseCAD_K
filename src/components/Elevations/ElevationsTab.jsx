@@ -1,37 +1,41 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9); no Lucide in the card
-import { C, MONO, fieldBox, InlineField, SelectField, Note, Btn, IconBtn } from '../../studio/cardParts'
+import { C, MONO, fieldBox, InlineField, Note, Btn, IconBtn } from '../../studio/cardParts'
+import { textOwnsKey } from '../../utils/typing'
+import { layoutSpec } from '../../generate/sizingLayout'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { typeById, typeIdAt, legendCounts, sprinklerClearance, isBeamRack, beamFace, sidesOf, frameDepthNote, frameNeededFor } from '../../utils/elevations'
-import { lengthsByType } from '../../utils/elevationDrawing'
+import { lengthsByType, ftInDash, parseFtIn } from '../../utils/elevationDrawing'
 import { tint } from '../../utils/elevationDraw'
 import { useElevEditor } from '../../utils/elevEditor'
 import { useRules } from '../../rules/useRules'
-import { useElevTab, nameOf, assignSelected, recolorElevation, duplicateElevation, deleteElevation, defaultElevation, removeUnused, rowSideCells, startNew, startEdit, editDraft, cancelEdit, saveEdit, draftTable, sameElevation, frameDepthFor, deepenRows, NEW_CEILING, NEW_PALLET, startQuick, quickEdit, quickToFull, quickSave, useElevSplit, setElevSplit, resetElevSplit, SPLIT_MIN, SPLIT_MAX } from '../../utils/elevTab'
-import { projectOf, ceilingFor, palletFor, defaultPallet, openSetup, previewName, advancedOf, ASSUMED_CLEAR_IN } from '../../utils/project'
+import { useElevTab, nameOf, assignSelected, recolorElevation, duplicateElevation, deleteElevation, defaultElevation, removeUnused, rowSideCells, startNew, startEdit, editDraft, cancelEdit, saveEdit, draftTable, sameElevation, frameDepthFor, deepenRows, startSheet, startFull, sheetValue, typePallet, typeCeiling, saveTyped, useElevSplit, setElevSplit, resetElevSplit, SPLIT_MIN, SPLIT_MAX } from '../../utils/elevTab'
+import { projectOf, ceilingFor, palletFor, openSetup, previewName, advancedOf, ASSUMED_CLEAR_IN } from '../../utils/project'
 import { bayLedger } from '../../utils/bayLedger'
 import { ElevationDrawing } from './ElevationDrawing'
 
 /* ── The Elevations tab (STUDIO.md §5, §7; design/studio/Studio.dc.html panels "elev" C2 and "edit" C3) ─────────────
    In the 300 wide right card, under its Properties | Elevations segment:
-   1. The SHEET — white, a 14px #EFEEE9 grid, radius 8 — with the drawing on it and nothing else (no buttons on the
-      drawing). The list's drawing is read-only; beams drag only in the editor, into its draft — an elevation used by
+   1. The SHEET — white, a 14px #EFEEE9 grid, square corners — with the drawing on it and nothing else (no buttons on
+      the drawing, except in edit on the sheet, C21). The list's drawing is read-only; beams drag only in the editor, into its draft — an elevation used by
       325 bays changes only through Save. Its height: the mockup's (420 under the list, 290 over the editor), shortened
       so the list or the form below still fits a short window; once the grab handle under it is dragged, the user's
       share of the card (utils/elevTab.js), double-click back to the mockup's.
    2. Below it, swapped in place:
       A) the LIST (C2): "In this layout" with Depth and Full screen (inset 28h) on the right; a 48h row per elevation —
-         colour, name, a sub line (ceiling · beam if not the default · bays), DEFAULT, More (Edit, colour, duplicate,
-         set default, delete, remove unused); a click picks it for the drawing (active fill). Apply to N selected rows
-         (primary — disabled at 45% when no row is selected, so the footer never jumps) and New (ghost).
-      B) the EDITOR (C3, from New or More → Edit): Back · title · Depth · Full screen; Name; Ceiling (a select, "+ New
-         ceiling height" opening Name · Clear height · Sprinkler); the Pallet box (a select, "+ New pallet size" opening
-         Face · Depth · Height · Weight, then the amber note with its Set to N″ action when the pallet is deeper than the
-         rows' frames); Beam 3″ 4″ 5″ 6″. Only this form scrolls. The footer is pinned: Cancel and Save elevation — ONE
-         save, which also adds a new ceiling or pallet to the project (one undo step). Cancel or Save returns to the
-         list. The sheet above follows the draft as it is edited.
+         colour, name, a sub line (ceiling · beam if not the default · bays), DEFAULT, the pencil (24×24) and More (Full
+         edit, colour, duplicate, set as default, remove unused, delete); a click picks it for the drawing (active fill).
+         Apply to N selected rows (primary; "Select rows to apply", dimmed, with none) and New (ghost).
+      B) EDIT ON THE SHEET (C21, the pencil): the list collapses to that row (✕ Cancel, a 24h Save, the hint), the sheet
+         grows (560 at 900 tall); beams drag (snapping to Project settings → Uprights → Hole pitch), a click on a blue
+         value types it, + Add level, −. Save is one undo step; Esc cancels.
+      C) the EDITOR (C3, New or More → Full edit): every value typed — Name, Ceiling, the Pallet box (Depth · Width ·
+         Height · Weight) and the Rack box (Frame depth and Beam length from the rows, read-only; Beam size), the frame
+         warning inside the Rack box with its Set to N″. A typed ceiling or pallet takes the project's entry with those
+         values, else Save adds one. Only this form scrolls; the footer is pinned: Cancel and Save elevation — ONE save,
+         one undo step. The sheet above follows the draft as it is edited.
    Simple | Detailed is set in the full-screen view; Fit is a double-click on empty sheet. */
 
 const store = useCanvasStore
@@ -40,9 +44,9 @@ const SHEET_LIST = 420, SHEET_EDIT = 290   // the mockup's sheet heights (C2, C3
 const LIST_MIN = 252              // under the sheet in the list: caption 34 + three 48h rows (gap 4) + footer 44 + padding
 const EDIT_MIN = 220              // under the sheet in the editor: the header, Name and Ceiling at least, and the footer
 const SHEET_MIN = 120
-const QUICK_MIN = 320            // under the sheet with a row open: caption 34 + the open row (48 + three 30h fields + its footer) + the list footer
+const SHEET_EDITING = 560        // C21: the sheet grown while its elevation is edited on it (at 900 tall)
+const ROW_MIN = 110               // under it: the row (48), the hint and the paddings
 const ASSUMED_FT = Math.round(ASSUMED_CLEAR_IN / 12)
-const BEAM_FACES = [3, 4, 5, 6]
 const caption = { color: C.muted, fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase' }
 const link = { background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', textDecoration: 'underline', fontSize: 'inherit', fontFamily: 'inherit' }
 const inset28 = (on) => ({ height: 28, padding: '0 10px', display: 'flex', alignItems: 'center', gap: 6, border: 0, borderRadius: 6, background: on ? C.active : C.inset, color: on ? C.accent : C.text, fontSize: 12, cursor: 'pointer', flexShrink: 0 })
@@ -79,7 +83,7 @@ function SheetButtons({ view, onFull }) {
   )
 }
 
-/** A row's menu (choosing only): colour, duplicate, set as default, remove unused, delete — Edit is the row's pencil. Portalled to the themed
+/** A row's menu: Full edit (C3 on this elevation), colour, duplicate, set as default, remove unused, delete. Portalled to the themed
  *  root at the top z-index and placed from the row's screen rect — over the drawing and everything else, never
  *  clipped; below the row, flipped above it near the bottom of the window. The layout menu's look (C14). */
 const MENU_W = 240, MENU_H = 250
@@ -105,6 +109,7 @@ function RowMenu({ t, T, anchor, onClose }) {
   )
   return createPortal(
     <div ref={ref} role="menu" aria-label={`${nameOf(T, t)} menu`} data-card-dark style={{ position: 'fixed', left, ...pos, zIndex: 500, width: MENU_W, padding: 6, borderRadius: 10, background: C.island, border: '1px solid #323835', boxShadow: '0 16px 40px rgba(15,18,16,.3)', display: 'flex', flexDirection: 'column', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
+      {item('Full edit', () => startFull(store, t.id))}
       <label style={{ ...menuRow, cursor: 'default' }}><span style={{ flex: 1 }}>Colour</span><input aria-label="Elevation colour" type="color" value={tint(t.color)} onChange={e => recolorElevation(store, t.id, e.target.value)} style={{ width: 28, height: 22, padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }} /></label>
       {item('Duplicate', () => duplicateElevation(store, t.id))}
       {item('Set as default', () => defaultElevation(store, t.id), { disabled: isDefault })}
@@ -150,8 +155,11 @@ export function ElevationsTab() {
     return () => window.removeEventListener('resize', read)
   }, [])
   const room = bodyH - HANDLE
-  const full = !!e && !e.quick            // the C3 editor (New, Full edit); a quick edit stays in the list, its row open
-  const sheetH = Math.max(SHEET_MIN, split != null ? Math.round(room * split) : Math.min(full ? SHEET_EDIT : SHEET_LIST, room - (full ? EDIT_MIN : e ? QUICK_MIN : LIST_MIN)))
+  const onSheet = !!e?.sheet, full = !!e && !onSheet   // C21 (the pencil) · the C3 editor (New, Full edit)
+  // C3: the form's own height, measured — the sheet gives up what the form needs to show whole (down to 200)
+  const [formNeed, setFormNeed] = useState(EDIT_MIN)
+  const sheetH = Math.max(SHEET_MIN, onSheet ? Math.min(SHEET_EDITING, room - ROW_MIN) : split != null ? Math.round(room * split) : full ? Math.max(Math.min(200, SHEET_EDIT), Math.min(SHEET_EDIT, room - formNeed)) : Math.min(SHEET_LIST, room - LIST_MIN))
+  const holePitchIn = advancedOf(projectOf(T)).holePitchIn
   const startSplit = (ev) => {
     if (ev.button !== 0) return
     ev.preventDefault()
@@ -163,12 +171,13 @@ export function ElevationsTab() {
   }
 
   return (
-    <div ref={body} aria-label="Elevations" data-mode={full ? 'editor' : e ? 'quick' : 'list'} data-pane="open" style={{ display: 'flex', flexDirection: 'column', maxHeight: bodyH, minHeight: 0 }}>
-      {/* 1. the sheet: white, 14px grid, radius 8 — the drawing and nothing else on it */}
-      <div data-drawing-box data-sheet style={{ margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 8, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient(#EFEEE9 1px, transparent 1px), linear-gradient(90deg, #EFEEE9 1px, transparent 1px)', backgroundSize: '14px 14px' }}>
+    <div ref={body} aria-label="Elevations" data-mode={full ? 'editor' : onSheet ? 'sheet' : 'list'} data-pane="open" style={{ display: 'flex', flexDirection: 'column', maxHeight: bodyH, minHeight: 0 }}>
+      {/* 1. the sheet: white, 14px grid, square corners — the drawing, and in edit on the sheet its handles */}
+      <div data-drawing-box data-sheet style={{ margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 0, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient(#EFEEE9 1px, transparent 1px), linear-gradient(90deg, #EFEEE9 1px, transparent 1px)', backgroundSize: '14px 14px' }}>
         {shown
           ? <ElevationDrawing t={shown} title={e ? previewName(dT, e.draft, e.id) : nameOf(T, shown)} entry={shownEntry} building={building} sel={e ? sel : null} sprClr={sprinklerClearance(T)} detail="studio" fullDetail={detail} view={view} height={sheetH} controls={false} paper fullSignal={fullSignal}
-              readOnly={!e} onCommit={e ? (next) => editDraft(store, { ...next, id: e.draft.id }, { fromDrawing: true }) : () => {}} />
+              readOnly={!e} onCommit={e ? (next) => editDraft(store, { ...next, id: e.draft.id }, { fromDrawing: true }) : () => {}}
+              sheetEdit={onSheet} holePitchIn={holePitchIn} onValue={(id, v) => sheetValue(store, id, v)} />
           : <div style={{ padding: 12, color: '#767C74', fontSize: 12 }}>No elevation yet — New below.</div>}
       </div>
 
@@ -182,8 +191,10 @@ export function ElevationsTab() {
       {/* 2. the list or the editor, in place */}
       <div style={{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {full
-          ? <Editor e={e} T={T} dT={dT} objects={objects} selectedIds={selectedIds} activeBaySelection={activeBaySelection} bays={e.id ? counts.get(e.id) || 0 : 0} building={building} sel={sel} frameDepths={frameDepths} view={view} onFull={onFull} />
-          : <List T={T} active={active} counts={counts} made={made} rowsSelected={rowsSelected} view={view} onFull={onFull} e={e} />}
+          ? <Editor e={e} T={T} dT={dT} objects={objects} selectedIds={selectedIds} activeBaySelection={activeBaySelection} bays={e.id ? counts.get(e.id) || 0 : 0} building={building} sel={sel} frameDepths={frameDepths} view={view} onFull={onFull} rules={rules} onNeed={setFormNeed} />
+          : onSheet
+          ? <SheetRow e={e} T={T} bays={counts.get(e.id) || 0} />
+          : <List T={T} active={active} counts={counts} made={made} rowsSelected={rowsSelected} view={view} onFull={onFull} />}
       </div>
     </div>
   )
@@ -202,7 +213,7 @@ function FixButton({ rows, to, label }) {
 }
 
 /* ── A) the list: choosing and assigning (C2) ────────────────────────────────────────────────────────────────────── */
-function List({ T, active, counts, made, rowsSelected, view, onFull, e }) {
+function List({ T, active, counts, made, rowsSelected, view, onFull }) {
   const [menu, setMenu] = useState(null)              // { id, el (the row) } — its menu open
   const closeMenu = useCallback(() => setMenu(null), [])
   const pr = projectOf(T), faceDefault = advancedOf(pr).beamFaceIn
@@ -222,13 +233,10 @@ function List({ T, active, counts, made, rowsSelected, view, onFull, e }) {
           const ceil = ceilingFor(T, t), face = beamFace(t), name = nameOf(T, t)
           // the row's title: an auto name without its ceiling — the sub line says it (C2); the full name in the tooltip
           const title = !t.named && ceil?.name ? name.replace(` · ${ceil.name}`, '') : name
-          // the row open in quick edit (its pencil): it keeps the active fill and grows its fields under the name line
-          const open = !!e?.quick && e.id === t.id
           return (
-            <div key={t.id} role="listitem" className={open ? undefined : 'st-hov'} data-on={on || open || undefined} data-quick={open || undefined} data-type-id={t.id} aria-selected={!!on} data-highlight={lit && flash ? 'flash' : lit ? 'made' : undefined}
-              style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 8, background: on || open ? C.active : 'transparent', boxShadow: lit ? `0 0 0 ${flash ? 3 : 2}px ${C.select}` : 'none', transition: 'box-shadow .25s ease' }}>
-            <div onClick={() => useElevTab.setState({ activeId: t.id })}
-              style={{ height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '0 6px 0 10px', cursor: 'pointer' }}>
+            <div key={t.id} role="listitem" className="st-hov" data-on={on || undefined} data-type-id={t.id} aria-selected={!!on} data-highlight={lit && flash ? 'flash' : lit ? 'made' : undefined}
+              onClick={() => useElevTab.setState({ activeId: t.id })}
+              style={{ height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '0 6px 0 10px', borderRadius: 8, cursor: 'pointer', background: on ? C.active : 'transparent', boxShadow: lit ? `0 0 0 ${flash ? 3 : 2}px ${C.select}` : 'none', transition: 'box-shadow .25s ease' }}>
               <span aria-hidden style={{ width: 10, height: 10, flexShrink: 0, borderRadius: 2, background: tint(t.color) }} />
               <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <span aria-label="Elevation name" title={name} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.strong }}>{title}</span>
@@ -237,16 +245,13 @@ function List({ T, active, counts, made, rowsSelected, view, onFull, e }) {
                 </span>
               </span>
               {t.id === T.defaultId && <span aria-label="default" style={{ height: 18, padding: '0 6px', display: 'flex', alignItems: 'center', borderRadius: 4, background: C.island, color: C.accent, fontSize: 10, fontWeight: 600, letterSpacing: '.06em', flexShrink: 0 }}>DEFAULT</span>}
-              {/* the pencil: this row in quick edit (another row open is dropped, asking nothing); again: closes it */}
-              <span onClick={(ev) => { ev.stopPropagation(); if (open) cancelEdit(); else startQuick(store, t.id) }} style={{ display: 'flex' }}>
-                <IconBtn name="Edit" label={`Edit ${name}`} title="Quick edit" active={open} />
-              </span>
+              {/* the pencil (24×24): edit this elevation on the sheet (C21) */}
+              <button type="button" className="st-hov" aria-label={`Edit ${name} on the sheet`} title="Edit on sheet" onClick={(ev) => { ev.stopPropagation(); startSheet(store, t.id) }}
+                style={{ width: 24, height: 24, flexShrink: 0, padding: 0, border: 0, borderRadius: 6, background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="Edit" /></button>
               <span onClick={(ev) => { ev.stopPropagation(); const el = ev.currentTarget.closest('[role="listitem"]'); setMenu(m => (m?.id === t.id ? null : { id: t.id, el })) }} style={{ display: 'flex' }}>
                 <IconBtn name="More" label={`${name} menu`} title="More" />
               </span>
               {menu?.id === t.id && <RowMenu t={t} T={T} anchor={menu.el} onClose={closeMenu} />}
-            </div>
-            {open && <QuickEdit e={e} T={T} />}
             </div>
           )
         })}
@@ -268,73 +273,77 @@ function List({ T, active, counts, made, rowsSelected, view, onFull, e }) {
   )
 }
 
-/* ── a row in quick edit: Levels, Pallet, Beam (30h, as C3); Cancel · Save (30h) and Full edit ──────────────────────── */
-function QuickEdit({ e, T }) {
-  const d = e.draft, pr = projectOf(T)
-  const [levels, setLevels] = useState(String(d.levels.length))
-  useEffect(() => setLevels(String(d.levels.length)), [d.levels.length])
-  const typed = (v) => { setLevels(v); const n = Math.floor(Number(v)); if (String(v).trim() !== '' && n >= 1 && n <= 30) quickEdit(store, { levels: n }) }
-  const stop = (ev) => ev.stopPropagation()       // a press in the fields never picks the row
-  const box = useRef(null)
-  useEffect(() => { box.current?.scrollIntoView?.({ block: 'nearest' }) }, [])   // the open row in view, its footer too
+/* ── C21: the row of the elevation being edited on the sheet — ✕ Cancel and a 24h Save; the hint under it ──────────── */
+function SheetRow({ e, T, bays }) {
+  const t = typeById(T, e.id), name = t ? nameOf(T, t) : previewName(T, e.draft, e.id), ceil = t ? ceilingFor(T, t) : null
+  const title = t && !t.named && ceil?.name ? name.replace(` · ${ceil.name}`, '') : name
+  // Esc cancels (a field being typed, or a beam picked on the drawing, takes Esc first)
+  useEffect(() => {
+    // (taken in the capture phase and stopped there: the Esc that ends the edit never also clears the plan's selection)
+    const k = (ev) => { if (ev.key !== 'Escape' || textOwnsKey(ev) || useElevEditor.getState().sel != null) return; if (ev.target instanceof Element && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return; ev.stopPropagation(); cancelEdit() }
+    window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true)
+  }, [])
   return (
-    <div ref={box} role="group" aria-label="Quick edit" onClick={stop} style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 8px 10px 30px' }}>
-      <InlineField label="Levels">
-        <input type="number" min={1} max={30} aria-label="Levels" className="st-field" value={levels} style={fieldBox()} onChange={ev => typed(ev.target.value)}
-          onBlur={() => setLevels(String(useElevTab.getState().editing?.draft?.levels?.length ?? d.levels.length))} />
-      </InlineField>
-      <InlineField label="Pallet">
-        <SelectField words chevron aria="Quick edit pallet" value={d.palletId || defaultPallet(pr)?.id || ''} onChange={ev => quickEdit(store, { palletId: ev.target.value })}>
-          {(pr?.pallets || []).map(p => <option key={p.id} value={p.id}>{p.name} · {p.depthIn}×{p.faceIn}×{p.heightIn} in</option>)}
-        </SelectField>
-      </InlineField>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ width: 56, flexShrink: 0, color: C.muted, fontSize: 12 }}>Beam</span>
-        <div role="group" aria-label="Quick edit beam" style={{ display: 'flex', padding: 2, borderRadius: 6, background: C.inset }}>
-          {BEAM_FACES.map(v => { const on = beamFace(d) === v; return <button key={v} type="button" aria-pressed={on} aria-label={`${v} in`} onClick={() => quickEdit(store, { beamFaceIn: v })} style={{ height: 26, width: 40, border: 0, borderRadius: 4, background: on ? C.active : 'transparent', color: on ? C.accent : C.muted, fontFamily: MONO, fontSize: 12, cursor: 'pointer' }}>{v}″</button> })}
-        </div>
+    <div aria-label="Editing on the sheet" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 12px 12px' }}>
+      <div data-sheet-row style={{ height: 48, display: 'flex', alignItems: 'center', gap: 10, padding: '0 8px 0 10px', borderRadius: 8, background: C.active }}>
+        <span aria-hidden style={{ width: 10, height: 10, flexShrink: 0, borderRadius: 2, background: tint(e.draft.color || t?.color) }} />
+        <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span title={name} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.strong }}>{title}</span>
+          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.accent, fontSize: 12 }}>Editing · <span style={{ fontFamily: MONO }}>{bays}</span> bays</span>
+        </span>
+        <button type="button" className="st-hov" aria-label="Cancel" title="Cancel (Esc)" onClick={cancelEdit} style={{ width: 24, height: 24, flexShrink: 0, padding: 0, border: 0, borderRadius: 6, background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" stroke="#C9CEC9" strokeWidth="1.6" strokeLinecap="round" /></svg>
+        </button>
+        <button type="button" onClick={() => saveTyped(store)} style={{ height: 24, padding: '0 10px', flexShrink: 0, border: 0, borderRadius: 6, background: C.accent, color: C.onAccent, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Save</button>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-        <button type="button" onClick={quickToFull} style={{ ...link, color: C.muted, fontSize: 12 }}>Full edit</button>
-        <span style={{ flex: 1 }} />
-        <Btn kind="ghost" onClick={cancelEdit} style={{ height: 30, padding: '0 12px', borderRadius: 6 }}>Cancel</Btn>
-        <Btn kind="primary" onClick={() => quickSave(store)} style={{ height: 30, padding: '0 14px', borderRadius: 6 }}>Save</Btn>
-      </div>
+      <div style={{ padding: '0 4px', color: C.muted, fontSize: 11, lineHeight: '16px' }}>Drag a beam to move it. Click a blue value to type it. Esc cancels.</div>
     </div>
   )
 }
 
-/** 30′ 0″ — the Ceiling select's height, as the mockup writes it */
-const ftInSp = (inches) => { const v = Math.round(inches), f = Math.floor(v / 12); return `${f}′ ${v - f * 12}″` }
-/** A pallet field (C3): the number with its unit after it (40″, outside the input), the weight with its thousands (2,500)
- *  — a plain number while focused, all of it selected so typing replaces it; the draft gets the digits only */
-function PalletNum({ value, onChange, aria, weight }) {
-  const [focus, setFocus] = useState(false)
-  const raw = String(value ?? '')
-  if (!weight) return (
-    <span style={{ ...small, gap: 0 }}><input type="number" min={0} aria-label={aria} className="st-field" value={raw} onChange={ev => onChange(ev.target.value)}
-      style={{ width: `${Math.max(1, raw.length)}ch`, minWidth: 0, padding: 0, border: 0, background: 'transparent', outline: 'none', color: C.strong, fontFamily: MONO, fontSize: 12 }} />″</span>
-  )
-  const shown = focus || raw === '' ? raw : (Number(raw) || 0).toLocaleString('en-US')
-  return <input type="text" inputMode="numeric" aria-label={aria} className="st-field" value={shown} style={small}
-    onFocus={ev => { setFocus(true); const el = ev.currentTarget; requestAnimationFrame(() => el.select()) }} onBlur={() => setFocus(false)} onChange={ev => onChange(ev.target.value.replace(/[^\d.]/g, ''))} />
-}
-/* the editor's small fields (C3 pallet box): 11px label over a 26h mono field */
+/* the editor's small fields (C3 boxes): 11px label over a 26h mono field */
 const small = { ...fieldBox(), height: 26, padding: '0 8px' }
 function SmallField({ label, children }) {
   return <label style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}><span style={{ color: C.muted, fontSize: 11 }}>{label}</span>{children}</label>
 }
+/** A typed value (C3): shown formatted (30′-0″, 60″, 2,500), all of it selected on focus; Enter or leaving commits a
+ *  value that parses, anything else goes back. `kind`: 'ftin' (feet-inches), 'in' (inches), 'lb' (thousands). */
+function Typed({ value, kind = 'in', aria, onCommit, style, readOnly = false }) {
+  const shown = !(value > 0) ? '' : kind === 'ftin' ? primes(ftInDash(value)) : kind === 'lb' ? Math.round(value).toLocaleString('en-US') : `${Math.round(value * 100) / 100}″`
+  const [text, setText] = useState(shown)
+  useEffect(() => setText(shown), [shown])
+  const done = () => {
+    const raw = String(text).replace(/,/g, '').trim(), v = kind === 'ftin' ? parseFtIn(raw) : Number(raw.replace(/[″"in\s]/g, ''))
+    if (raw && Number.isFinite(v) && v > 0 && v !== value) onCommit(v); else setText(shown)
+  }
+  if (readOnly) return <span aria-label={aria} style={{ ...small, color: C.muted, ...style }}>{shown}</span>
+  return <input type="text" aria-label={aria} className="st-field" value={text} style={{ ...small, ...style }}
+    onFocus={ev => { const el = ev.currentTarget; requestAnimationFrame(() => el.select()) }} onChange={ev => setText(ev.target.value)}
+    onKeyDown={ev => { if (ev.key === 'Enter') ev.currentTarget.blur(); if (ev.key === 'Escape') { setText(shown); ev.currentTarget.blur() } }} onBlur={done} />
+}
+const primes = (s) => String(s).replace(/'/g, '′').replace(/"/g, '″')
+/** The most common of `xs` (the smaller on a tie). */
+const mostCommon = (xs) => { const n = new Map(); for (const x of xs) n.set(x, (n.get(x) || 0) + 1); return [...n].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] }
 
-/* ── B) the editor: making and changing one elevation (C3) ───────────────────────────────────────────────────────── */
-function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, building, sel, frameDepths, view, onFull }) {
-  const pr = projectOf(dT), d = e.draft
+/* ── B) the editor: making and changing one elevation (C3 — New, and More → Full edit) ───────────────────────────── */
+function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, building, sel, frameDepths, view, onFull, rules, onNeed }) {
+  const d = e.draft
+  // its natural height (the form unscrolled + the footer), told to the tab so the sheet can make room for it
+  const formRef = useRef(null), footRef = useRef(null)
+  useLayoutEffect(() => {
+    const read = () => { const f = formRef.current, t = footRef.current; if (f && t && onNeed) onNeed(f.scrollHeight + t.offsetHeight) }
+    read()
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read)
+    if (formRef.current) { ro?.observe(formRef.current); for (const c of formRef.current.children) ro?.observe(c) }
+    return () => ro?.disconnect()
+  })
   const [name, setName] = useState(d.named ? d.name : '')
   const auto = previewName(dT, d, e.id)
   // the draft the same as an existing elevation in every way: say so, and offer that one
   const same = sameElevation(dT, d, e.id)
   const useSame = () => { cancelEdit(); useElevTab.setState({ activeId: same.id, made: null }) }
-  useEffect(() => { const k = (ev) => { if (ev.key === 'Escape' && !sel && !(ev.target instanceof Element && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName))) cancelEdit() }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [sel])
-  const save = () => { editDraft(store, { name, named: !!name.trim() }); saveEdit(store) }
+  useEffect(() => { const k = (ev) => { if (ev.key === 'Escape' && !sel && !(ev.target instanceof Element && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName))) { ev.stopPropagation(); cancelEdit() } }; window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true) }, [sel])
+  const save = () => saveTyped(store, { name })
   // the pallet's depth against the frames it would go on: the selected rows', else (editing) the rows using it
   const pallet = palletFor(dT, d)
   const selRacks = useMemo(() => [...rowSideCells({ objects, selectedIds, activeBaySelection }).keys()].map(id => objects.find(o => o.id === id)).filter(Boolean), [objects, selectedIds, activeBaySelection])
@@ -342,16 +351,20 @@ function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, buil
   const depthNote = pallet?.depthIn ? frameDepthNote(pallet.depthIn, rows.map(r => r.depthIn ?? 42), selRacks.length ? 'Selected rows' : 'Rows using it') : null
   const need = pallet?.depthIn ? frameNeededFor(pallet.depthIn) : 0
   const short = [...new Set(rows.map(r => r.depthIn ?? 42).filter(x => x < need - 1e-6))].sort((a, b) => a - b)
-  const nc = e.newCeiling, np = e.newPallet
+  // Frame depth and Beam length: the rows' (the selected rows first, else those using it; none: the project's defaults)
+  const spec = useMemo(() => layoutSpec({}, rules || undefined), [rules])
+  const frameDepth = rows.length ? mostCommon(rows.map(r => r.depthIn ?? 42)) : spec.depthIn
+  const beamLength = rows.length ? mostCommon(rows.flatMap(r => r.beams || [])) ?? spec.beamIn : spec.beamIn
+  const ceilIn = building?.clearHeightIn ?? null
+  const box = { display: 'flex', flexDirection: 'column', gap: 8, padding: 8, borderRadius: 8, border: '1px solid #323835' }
 
   return (
     <div aria-label="Elevation editor" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: '0 1 auto' }}>
       {/* the form — the only part that scrolls */}
-      <div role="group" aria-label="Elevation settings" style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', padding: '4px 12px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div ref={formRef} role="group" aria-label="Elevation settings" style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', padding: '4px 12px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button type="button" className="st-hov" aria-label="Back" title="Back to the list (Esc)" onClick={cancelEdit} style={{ width: 26, height: 26, border: 0, borderRadius: 6, background: 'transparent', color: C.icon, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}><Back /></button>
-          <span style={{ fontWeight: 600, color: C.strong, whiteSpace: 'nowrap' }}>{e.id ? 'Edit elevation' : 'New elevation'}</span>
-          {e.id ? <span title={`${bays} bays use it`} style={{ color: C.muted, fontSize: 12, whiteSpace: 'nowrap' }}><span style={{ fontFamily: MONO }}>{bays}</span> bays</span> : null}
+          <span style={{ fontWeight: 600, color: C.strong, whiteSpace: 'nowrap' }}>{e.id ? <>Edit elevation <span style={{ color: C.muted, fontWeight: 400 }}>· <span style={{ fontFamily: MONO }}>{bays}</span> bays</span></> : 'New elevation'}</span>
           <SheetButtons view={view} onFull={onFull} />
         </div>
         <InlineField label="Name">
@@ -362,48 +375,32 @@ function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, buil
             Same as <strong>{nameOf(T, same)}</strong> — <button type="button" onClick={useSame} style={link}>use that one instead?</button>
           </Note>
         )}
+        <InlineField label="Ceiling">
+          <Typed kind="ftin" aria="Elevation ceiling" value={building?.assumed ? null : ceilIn} onCommit={v => typeCeiling(store, v)} style={{ height: 30, padding: '0 10px' }} />
+        </InlineField>
+        {building?.assumed && (
+          <Note level="note" role="note" aria-label="Clear height not set">
+            Clear height not set — elevations assume {ASSUMED_FT}'. Set it in <button type="button" style={link} onClick={() => openSetup('settings')}>Project settings</button>.
+          </Note>
+        )}
 
-        <div role="group" aria-label="Ceiling" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <InlineField label="Ceiling">
-            <SelectField words chevron aria="Elevation ceiling" value={d.ceilingId || ''} onChange={ev => editDraft(store, { ceilingId: ev.target.value || null })} style={{ color: d.ceilingId === NEW_CEILING ? C.accent : C.strong }}>
-              {!pr?.ceilings?.some(c => c.id !== NEW_CEILING) && !nc && <option value="">Not set ({ASSUMED_FT}′)</option>}
-              {(projectOf(T)?.ceilings || []).map(c => <option key={c.id} value={c.id}>{c.name}{c.clearHeightIn > 0 ? ` · ${ftInSp(c.clearHeightIn)}` : ` (${ASSUMED_FT}′ assumed)`}</option>)}
-              <option value={NEW_CEILING}>+ New ceiling height</option>
-            </SelectField>
-          </InlineField>
-          {nc && (
-            <div role="group" aria-label="New ceiling height" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, padding: 8, borderRadius: 8, border: '1px solid #323835' }}>
-              {[['name', 'Name', 'text', 'Mezzanine'], ['clearFt', 'Clear height (ft)', 'number', `${ASSUMED_FT}`], ['sprFt', 'Sprinkler (ft)', 'number', 'optional']].map(([k, label, type, ph]) => (
-                <SmallField key={k} label={label}>
-                  <input aria-label={`New ceiling ${label.toLowerCase()}`} className="st-field" type={type} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 0.5 : undefined} value={nc[k] ?? ''} placeholder={ph} style={type === 'number' ? small : { ...small, fontFamily: 'inherit' }} onChange={ev => editDraft(store, { newCeiling: { [k]: ev.target.value } })} />
-                </SmallField>
-              ))}
-            </div>
-          )}
-          {building?.assumed && (
-            <Note level="note" role="note" aria-label="Clear height not set">
-              Clear height not set — elevations assume {ASSUMED_FT}'. Set it in <button type="button" style={link} onClick={() => openSetup('settings')}>Project settings</button>.
-            </Note>
-          )}
+        <div role="group" aria-label="Pallet" style={box}>
+          <span style={caption}>Pallet</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
+            {[['depthIn', 'Depth', 'in'], ['faceIn', 'Width', 'in'], ['heightIn', 'Height', 'in'], ['weightLb', 'Weight', 'lb']].map(([k, label, kind]) => (
+              <SmallField key={k} label={label}><Typed kind={kind} aria={`Pallet ${label.toLowerCase()} (${kind === 'lb' ? 'lb' : 'in'})`} value={pallet?.[k]} onCommit={v => typePallet(store, k, v)} /></SmallField>
+            ))}
+          </div>
         </div>
 
-        <div role="group" aria-label="Pallet" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8, borderRadius: 8, border: '1px solid #323835' }}>
-          <InlineField label="Pallet" labelWidth={48}>
-            <SelectField words chevron aria="Elevation pallet" value={d.palletId || ''} onChange={ev => editDraft(store, { palletId: ev.target.value || null })} style={{ color: d.palletId === NEW_PALLET ? C.accent : C.strong }}>
-              {!d.palletId && <option value="">—</option>}
-              {(projectOf(T)?.pallets || []).map(p => <option key={p.id} value={p.id}>{p.name} · {p.depthIn}×{p.faceIn}×{p.heightIn} in</option>)}
-              <option value={NEW_PALLET}>+ New pallet size</option>
-            </SelectField>
-          </InlineField>
-          {np && (
-            <div role="group" aria-label="New pallet size" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
-              {[['faceIn', 'Face'], ['depthIn', 'Depth'], ['heightIn', 'Height'], ['weightLb', 'Weight']].map(([k, label]) => (
-                <SmallField key={k} label={label}>
-                  <PalletNum aria={`New pallet ${label.toLowerCase()} (${k === 'weightLb' ? 'lb' : 'in'})`} value={np[k] ?? ''} weight={k === 'weightLb'} onChange={v => editDraft(store, { newPallet: { [k]: v } })} />
-                </SmallField>
-              ))}
-            </div>
-          )}
+        <div role="group" aria-label="Rack" style={box}>
+          <span style={caption}>Rack</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+            <SmallField label="Frame depth"><Typed readOnly aria="Frame depth (in)" value={frameDepth} /></SmallField>
+            <SmallField label="Beam size"><Typed aria="Beam size (in)" value={beamFace(d)} onCommit={v => editDraft(store, { beamFaceIn: v })} /></SmallField>
+            <SmallField label="Beam length"><Typed readOnly aria="Beam length (in)" value={beamLength} /></SmallField>
+          </div>
+          <span style={{ color: C.muted, fontSize: 11 }}>From the rows. Change in rack Properties.</span>
           {depthNote && (
             <div role="note" aria-label="Pallet depth" title={depthNote} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, background: '#3A2E17', color: '#F2C77A', fontSize: 12, lineHeight: 1.45 }}>
               <span style={{ flex: 1 }}>{pallet.depthIn}″ pallet needs about {need}″ frames. Rows are {short.map(x => `${x}″`).join(', ')}.</span>
@@ -411,17 +408,10 @@ function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, buil
             </div>
           )}
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <span style={{ width: 56, flexShrink: 0, color: C.muted, fontSize: 12 }}>Beam</span>
-          <div role="group" aria-label="Beam face" style={{ display: 'flex', padding: 2, borderRadius: 6, background: C.inset }}>
-            {BEAM_FACES.map(v => { const on = beamFace(d) === v; return <button key={v} type="button" aria-pressed={on} aria-label={`${v} in`} onClick={() => editDraft(store, { beamFaceIn: v })} style={{ height: 26, width: 40, border: 0, borderRadius: 4, background: on ? C.active : 'transparent', color: on ? C.accent : C.muted, fontFamily: MONO, fontSize: 12, cursor: 'pointer' }}>{v}″</button> })}
-          </div>
-        </div>
       </div>
 
       {/* the footer — pinned; the ONE save */}
-      <div style={{ display: 'flex', gap: 8, padding: 12, borderTop: `1px solid ${C.divider}`, flexShrink: 0 }}>
+      <div ref={footRef} style={{ display: 'flex', gap: 8, padding: 12, borderTop: `1px solid ${C.divider}`, flexShrink: 0 }}>
         <Btn kind="ghost" onClick={cancelEdit}>Cancel</Btn>
         <Btn kind="primary" onClick={save} style={{ flex: 1 }}>Save elevation</Btn>
       </div>

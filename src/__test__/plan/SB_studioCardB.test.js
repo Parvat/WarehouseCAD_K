@@ -17,11 +17,11 @@ describe('SB — the sheet (C2, C3)', () => {
   it('SB-sheet: the drawing sits on a white sheet with a 14px #EFEEE9 grid and radius 8, nothing on it but the drawing; a grab handle under it; 420 high under the list and 290 over the editor until dragged; double-click forgets the drag', async () => {
     const tab = read('components/Elevations/ElevationsTab.jsx')
     const sheet = between(tab, 'data-drawing-box data-sheet', 'role="separator"')
-    expect(sheet).toMatch(/margin: '0 12px', height: sheetH,[^}]*borderRadius: 8, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient\(#EFEEE9 1px, transparent 1px\), linear-gradient\(90deg, #EFEEE9 1px, transparent 1px\)', backgroundSize: '14px 14px'/)
+    expect(sheet).toMatch(/margin: '0 12px', height: sheetH,[^}]*borderRadius: 0, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient\(#EFEEE9 1px, transparent 1px\), linear-gradient\(90deg, #EFEEE9 1px, transparent 1px\)', backgroundSize: '14px 14px'/)
     expect(/<button|<Btn|FixButton|IconBtn/.test(sheet)).toBe(false)                                   // no buttons on the drawing
     expect(sheet).toMatch(/controls=\{false\}/)
     expect(tab).toMatch(/const SHEET_LIST = 420, SHEET_EDIT = 290/)
-    expect(tab).toMatch(/Math\.min\(full \? SHEET_EDIT : SHEET_LIST, room - \(full \? EDIT_MIN : e \? QUICK_MIN : LIST_MIN\)\)/)
+    expect(tab).toMatch(/full \? Math\.max\(Math\.min\(200, SHEET_EDIT\), Math\.min\(SHEET_EDIT, room - formNeed\)\) : Math\.min\(SHEET_LIST, room - LIST_MIN\)/)
     expect(between(tab, 'role="separator"', '{/* 2.')).toMatch(/height: HANDLE[\s\S]*width: 32, height: 3, borderRadius: 2, background: C\.separator/)
     expect(tab).toMatch(/const HANDLE = 12 /)
     // the drawing is transparent on the sheet, so the grid shows; its labels keep a white halo
@@ -35,7 +35,7 @@ describe('SB — the sheet (C2, C3)', () => {
     const { elevationLayout } = await import('../../utils/elevationDrawing')
     const d = elevationLayout(MOCK, 96, { w: 274, h: 420 }, { palletWIn: 40, depthIn: 42, building: { clearHeightIn: 360, sprinklerIn: null }, sprinklerClearanceIn: 18, fontPx: 9, detail: 'studio', view: 'front', bg: '#FFFFFF' })
     const texts = d.items.filter(i => i.t === 'text'), s = texts.map(i => i.s)
-    for (const want of ['Ceiling 30′-0″', 'Max load height 28′-6″ (sprinklers −18″)', '5′-2″ free', 'Top of load 23′-4″', 'Frame 21′-0″', '4′-10″', '9′-8″', '14′-6″', '19′-4″', 'L1', 'L2', 'L3', 'L4', 'L5', '48″', '40″', '4″', '6″', 'Beam 96″ · 2 pallets · 2,500 lb']) expect([want, s.includes(want)]).toEqual([want, true])
+    for (const want of ['Ceiling 30′-0″', 'Max load height 28′-6″ (18″ below sprinklers)', '5′-2″ free', 'Top of load 23′-4″', 'Frame 21′-0″', '4′-10″', '9′-8″', '14′-6″', '19′-4″', 'L1', 'L2', 'L3', 'L4', 'L5', '48″', '40″', '4″', '6″', 'Beam 96″ · 2 pallets · 2,500 lb']) expect([want, s.includes(want)]).toEqual([want, true])
     expect(s.length).toBe(19)                                                                           // nothing else: no pitch, no clearances, no chain
     expect(s.some(x => /PITCH|CLR|CLEAR HEIGHT|FRAME|BEAM /.test(x))).toBe(false)
     expect(texts.every(i => /Plus Jakarta Sans/.test(i.font))).toBe(true)
@@ -71,8 +71,7 @@ describe('SB — the list (C2)', () => {
     const tab = read('components/Elevations/ElevationsTab.jsx'), list = between(tab, 'function List(', 'function Editor(')
     expect(list).toMatch(/<span style=\{caption\}>In this layout<\/span>\s*<SheetButtons view=\{view\} onFull=\{onFull\} \/>/)
     expect(tab).toMatch(/const inset28 = \(on\) => \(\{ height: 28, padding: '0 10px',[^)]*background: on \? C\.active : C\.inset/)
-    expect(list).toMatch(/borderRadius: 8, background: on \|\| open \? C\.active : 'transparent'/)
-    expect(list).toMatch(/height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '0 6px 0 10px', cursor: 'pointer'/)
+    expect(list).toMatch(/height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '0 6px 0 10px', borderRadius: 8, cursor: 'pointer', background: on \? C\.active : 'transparent'/)
     expect(list).toMatch(/const title = !t\.named && ceil\?\.name \? name\.replace\(` · \$\{ceil\.name\}`, ''\) : name/)
     expect(list).toMatch(/<span style=\{\{ fontFamily: MONO \}\}>\{counts\.get\(t\.id\) \|\| 0\}<\/span> bays/)
     expect(list).toMatch(/background: C\.island, color: C\.accent, fontSize: 10, fontWeight: 600, letterSpacing: '\.06em'[^>]*>DEFAULT<\/span>/)
@@ -80,7 +79,7 @@ describe('SB — the list (C2)', () => {
     expect(list).toMatch(/<Btn kind="primary" disabled=\{!canApply\}[\s\S]*opacity: canApply \? 1 : 0\.45, cursor: canApply \? 'pointer' : 'not-allowed'/)
     expect(list).toMatch(/<Btn kind="ghost" disabled=\{!pr\} onClick=\{\(\) => startNew\(store\)\}[^>]*><Plus \/>New<\/Btn>/)
     // a picked row has no hover change (STUDIO.md §5): it carries data-on, the hover rule skips it
-    expect(list).toMatch(/className=\{open \? undefined : 'st-hov'\} data-on=\{on \|\| open \|\| undefined\}/)
+    expect(list).toMatch(/className="st-hov" data-on=\{on \|\| undefined\}/)
   })
 
   it('SB-more: a row\'s More opens a menu in the layout menu\'s look — colour, Duplicate, Set as default, Remove unused elevations, Delete (Edit is the row\'s pencil)', () => {
@@ -94,28 +93,26 @@ describe('SB — the list (C2)', () => {
 })
 
 describe('SB — the editor (C3)', () => {
-  it('SB-editor: Back · title · Depth · Full screen; Name and Ceiling 30h with their 56px labels; the Pallet box (1px line) with + New pallet size and a 4-column grid of 26h mono fields; the amber box with "Set to 54″"; Beam 3″ 4″ 5″ 6″; Cancel (ghost) and Save elevation (primary)', () => {
+  it('SB-editor: Back · title · Depth · Full screen; Name and Ceiling typed (30h, 56px labels); the Pallet box (Depth · Width · Height · Weight, 26h mono) and the Rack box (Frame depth · Beam size · Beam length, the frame warning inside it with its amber Set to N″); Cancel (ghost) and Save elevation (primary)', () => {
     const ed = between(read('components/Elevations/ElevationsTab.jsx'), 'function Editor(')
     expect(ed).toMatch(/aria-label="Back" title="Back to the list \(Esc\)" onClick=\{cancelEdit\}/)
     expect(ed).toMatch(/<InlineField label="Name">/)
-    expect(ed).toMatch(/<InlineField label="Ceiling">\s*<SelectField words chevron aria="Elevation ceiling"/)
-    expect(ed).toMatch(/role="group" aria-label="Pallet" style=\{\{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8, borderRadius: 8, border: '1px solid #323835' \}\}/)
-    expect(ed).toMatch(/<InlineField label="Pallet" labelWidth=\{48\}>\s*<SelectField words chevron aria="Elevation pallet"[\s\S]*?style=\{\{ color: d\.palletId === NEW_PALLET \? C\.accent : C\.strong \}\}/)
-    expect(read('components/Elevations/ElevationsTab.jsx')).toMatch(/const small = \{ \.\.\.fieldBox\(\), height: 26, padding: '0 8px' \}/)
-    expect(ed).toMatch(/background: '#3A2E17', color: '#F2C77A'/)
+    expect(ed).toMatch(/<InlineField label="Ceiling">\s*<Typed kind="ftin" aria="Elevation ceiling"/)
+    expect(/<select|SelectField|<option/.test(ed)).toBe(false)                                          // no dropdowns, no presets
+    expect(ed).toMatch(/role="group" aria-label="Pallet" style=\{box\}>\s*<span style=\{caption\}>Pallet<\/span>/)
+    expect(ed).toMatch(/\[\['depthIn', 'Depth', 'in'\], \['faceIn', 'Width', 'in'\], \['heightIn', 'Height', 'in'\], \['weightLb', 'Weight', 'lb'\]\]/)
+    expect(ed).toMatch(/role="group" aria-label="Rack" style=\{box\}>\s*<span style=\{caption\}>Rack<\/span>/)
+    expect(ed.indexOf('aria-label="Pallet depth"') > ed.indexOf('aria-label="Rack"')).toBe(true)          // the frame warning inside the Rack box
     expect(read('components/Elevations/ElevationsTab.jsx')).toMatch(/background: '#F2C77A', color: '#3A2E17', fontSize: 12, fontWeight: 600[\s\S]{0,120}Set to \{to\}″/)
-    expect(ed).toMatch(/BEAM_FACES\.map\(v => \{ const on = beamFace\(d\) === v; return <button[\s\S]*?height: 26, width: 40, border: 0, borderRadius: 4, background: on \? C\.active : 'transparent', color: on \? C\.accent : C\.muted, fontFamily: MONO/)
     expect(ed).toMatch(/<Btn kind="ghost" onClick=\{cancelEdit\}>Cancel<\/Btn>\s*<Btn kind="primary" onClick=\{save\} style=\{\{ flex: 1 \}\}>Save elevation<\/Btn>/)
-    // the sheet above follows the draft as it is edited (the draft table, the draft's pallet)
-    expect(read('components/Elevations/ElevationsTab.jsx')).toMatch(/const shown = e \? \{ \.\.\.e\.draft, id: e\.id \|\| 'draft' \} : active/)
+    expect(read('components/Elevations/ElevationsTab.jsx')).toMatch(/const shown = e \? \{ \.\.\.e\.draft, id: e\.id \|\| 'draft' \} : active/)   // the sheet follows the draft
   })
 
-  it('SB-pallet-fields: a pallet field shows its unit after the number (40″) and the weight with its thousands (2,500); the draft gets the digits only', () => {
-    const tab = read('components/Elevations/ElevationsTab.jsx'), f = between(tab, 'function PalletNum(', '/* the editor')
-    expect(f).toMatch(/<input type="number"[^>]*value=\{raw\}[\s\S]*\/>″<\/span>/)
-    expect(f).toMatch(/\(Number\(raw\) \|\| 0\)\.toLocaleString\('en-US'\)/)
-    expect(f).toMatch(/onChange\(ev\.target\.value\.replace\(\/\[\^\\d\.\]\/g, ''\)\)/)
-    expect(f).toMatch(/requestAnimationFrame\(\(\) => el\.select\(\)\)/)                                // focused: all of it selected, typing replaces it
+  it('SB-pallet-fields: a typed value shows its unit (40″, 30′-0″) and the weight its thousands (2,500), all of it selected on focus; a value that does not parse goes back', () => {
+    const f = between(read('components/Elevations/ElevationsTab.jsx'), 'function Typed(', 'const primes')
+    expect(f).toMatch(/kind === 'ftin' \? primes\(ftInDash\(value\)\) : kind === 'lb' \? Math\.round\(value\)\.toLocaleString\('en-US'\) : `\$\{Math\.round\(value \* 100\) \/ 100\}″`/)
+    expect(f).toMatch(/requestAnimationFrame\(\(\) => el\.select\(\)\)/)
+    expect(f).toMatch(/if \(raw && Number\.isFinite\(v\) && v > 0 && v !== value\) onCommit\(v\); else setText\(shown\)/)
   })
 })
 
@@ -193,7 +190,7 @@ describe('SB — the Generate card\'s note, footer and Start over', () => {
     const frame = read('studio/StudioFrame.jsx'), card = read('components/Generate/GeneratePanel.jsx')
     expect(frame).toMatch(/: card === 'generate'\s*\? <div data-card-dark style=\{\{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' \}\}>/)
     expect(frame).toMatch(/<GeneratePanel embedded onClose=\{\(\) => useViewPrefs\.getState\(\)\.setCard\('tabs'\)\} \/>/)
-    expect(frame).toMatch(/right: 16, top: 76, width: 300, maxHeight: 'calc\(100vh - 152px\)',/)
+    expect(frame).toMatch(/right: 16, top: 76, width: cardW, maxHeight: 'calc\(100vh - 152px\)',/)
     expect(/height: full \?/.test(frame)).toBe(false)                                                 // every state as tall as its content
     expect(card).toMatch(/<Icon name="Generate" active \/>/)
     expect(card).toMatch(/aria-label="Close" onClick=\{\(\) => onClose\?\.\(\)\}/)
@@ -230,8 +227,8 @@ describe('SB — review fixes', () => {
     // a renamed elevation keeps its own name
     expect(P.nameOf(T, { ...t, named: true, name: 'Bulk 40x48' })).toBe('Bulk 40x48')
     // every place a pallet size or an elevation name is written
-    expect(read('components/Elevations/ElevationsTab.jsx')).toMatch(/\{p\.name\} · \{p\.depthIn\}×\{p\.faceIn\}×\{p\.heightIn\} in<\/option>/)
-    expect(read('components/RightPanel/panels/RackRowPanelCore.jsx')).toMatch(/\{obj\.palletDIn \|\| 48\}" × \{obj\.palletWIn \|\| 40\}" face/)
+    expect(/\{p\.name\} · \{p\.depthIn\}/.test(read('components/Elevations/ElevationsTab.jsx'))).toBe(false)     // a size never twice
+    expect(read('components/RightPanel/panels/RackRowPanelCore.jsx')).toMatch(/\{obj\.palletDIn \|\| 48\}×\{obj\.palletWIn \|\| 40\}<\/span>/)
     expect(read('export/pdfExport.js')).toMatch(/\$\{esc\(nameOf\(table, type\)\)\}/)
     expect(read('export/pdfExport.js').includes('const label = `${nameOf(T, type)} · ')).toBe(true)
     expect(read('canvas2/ElevationsCanvas.jsx')).toMatch(/\{nameOf\(elevations, type\)\}/)

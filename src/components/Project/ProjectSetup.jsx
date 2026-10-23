@@ -52,8 +52,11 @@ const ftOf = (inch) => (inch > 0 ? Math.round((inch / 12) * 100) / 100 : '')
 const inOf = (ft) => { const v = Number(ft); return Number.isFinite(v) && v > 0 ? Math.round(v * 12) : null }
 const ASSUMED_FT = Math.round(ASSUMED_CLEAR_IN / 12)
 
-function NumIn({ value, onChange, aria, step = 1, placeholder }) {
-  return <input aria-label={aria} type="number" min={0} step={step} value={value ?? ''} placeholder={placeholder} style={S.in} onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))} />
+/** A ceiling's field error: its sprinkler height above its clear height → the message, else null. */
+export const sprinklerError = (c) => (c?.sprinklerIn > 0 && c?.clearHeightIn > 0 && c.sprinklerIn > c.clearHeightIn + 1e-6 ? 'Sprinkler height above the ceiling' : null)
+function NumIn({ value, onChange, aria, step = 1, placeholder, error = null }) {
+  // `error`: a field error — the field outlined red, the message as its title and for screen readers
+  return <input aria-label={aria} aria-invalid={error ? 'true' : undefined} title={error || undefined} type="number" min={0} step={step} value={value ?? ''} placeholder={placeholder} style={error ? { ...S.in, borderColor: 'var(--red, #C0452A)', boxShadow: '0 0 0 1px var(--red, #C0452A)' } : S.in} onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))} />
 }
 /** A labelled number field (Project settings' tables). */
 function Num({ label, ...p }) {
@@ -118,11 +121,11 @@ function Advanced({ value, onChange, units, onUnits, extra = null, style = null 
     <div style={style || S.sec} role="group" aria-label="Advanced">
       <button type="button" aria-expanded={open} onClick={() => setOpen(a => !a)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: 0, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
         <ChevronRight size={12} style={{ color: 'var(--text3)', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} /><span style={S.h}>Advanced</span>
-        {!open && <span style={{ ...S.note, marginLeft: 6 }}>load clearance {value.clearanceIn ?? 6}" · sprinkler clearance {value.sprinklerClearanceIn ?? 18}" · hole pitch {value.holePitchIn ?? 2}" · upright step {(value.uprightStepIn ?? 12) / 12}' · flue {value.flueIn ?? 6}" · beam face {value.beamFaceIn ?? ADVANCED_DEFAULTS.beamFaceIn}"</span>}
+        {!open && <span style={{ ...S.note, marginLeft: 6 }}>load clearance {value.clearanceIn ?? 6}" · sprinkler clearance {value.sprinklerClearanceIn ?? 18}" · upright step {(value.uprightStepIn ?? 12) / 12}' · flue {value.flueIn ?? 6}" · beam face {value.beamFaceIn ?? ADVANCED_DEFAULTS.beamFaceIn}"</span>}
       </button>
       {open && (
         <div style={{ ...S.grid, marginTop: 10 }}>
-          {[['clearanceIn', 'Load clearance (in)'], ['sprinklerClearanceIn', 'Sprinkler clearance (in)'], ['holePitchIn', 'Hole pitch (in)'], ['flueIn', 'Flue (in)'], ['beamFaceIn', 'Beam face, new elevations (in)']].map(([k, label]) => (
+          {[['clearanceIn', 'Load clearance (in)'], ['sprinklerClearanceIn', 'Sprinkler clearance (in)'], ['flueIn', 'Flue (in)'], ['beamFaceIn', 'Beam face, new elevations (in)']].map(([k, label]) => (
             <Num key={k} label={label} value={value?.[k] ?? ADVANCED_DEFAULTS[k]} onChange={v => onChange({ ...value, [k]: v ?? ADVANCED_DEFAULTS[k] })} />
           ))}
           <Num label="Upright step (ft)" step={0.5} value={(value?.uprightStepIn ?? 12) / 12} onChange={v => onChange({ ...value, uprightStepIn: v > 0 ? v * 12 : 12 })} />
@@ -212,9 +215,9 @@ function StartCard() {
           <div role="group" aria-label="Pallet" style={group}>
             <Head n="02" title="Pallet" note={palletName(pal)} />
             <div style={row('3fr 1fr')}>
-              <Times label="Face × depth × height">
-                <Field aria="Pallet face (in)" unit="in" value={pal.faceIn} onChange={v => setP({ faceIn: v })} />
+              <Times label="Depth × width × height">
                 <Field aria="Pallet depth (in)" unit="in" value={pal.depthIn} onChange={v => setP({ depthIn: v })} />
+                <Field aria="Pallet face (in)" unit="in" value={pal.faceIn} onChange={v => setP({ faceIn: v })} />
                 <Field aria="Pallet height (in)" unit="in" value={pal.heightIn} onChange={v => setP({ heightIn: v })} />
               </Times>
               <Field label="Weight" aria="Pallet weight (lb)" unit="lb" step={50} value={pal.weightLb} onChange={v => setP({ weightLb: v })} />
@@ -268,6 +271,8 @@ function SettingsCard() {
   const setRow = (key, id, patch) => setPr(p => ({ ...p, [key]: p[key].map(x => (x.id === id ? { ...x, ...patch } : x)) }))
   useEffect(() => { const k = (e) => { if (e.key === 'Escape' && !ask) closeSetup() }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [ask])
 
+  /* a sprinkler height above its ceiling (STUDIO.md §7): a field error — it cannot be saved */
+  const hasError = pr.ceilings.some(sprinklerError)
   const write = (project) => {
     const st = store.getState(), old = projectOf(st.elevations)
     const r = syncTypesToPallets(st.objects, st.elevations, old, project)
@@ -275,6 +280,7 @@ function SettingsCard() {
     st.commitElevations(refreshNames(withProject(r.table, project)), r.objects)
   }
   const save = () => {
+    if (hasError) return                        // a field error is never saved
     const st = store.getState(), old = projectOf(st.elevations)
     const fp = regenBuilding(st.objects), gen = fp ? regenSummary(st.objects, fp).racks.length : 0
     if (old && gen && layoutAffecting(old, pr)) { setAsk({ project: pr }); return }
@@ -315,7 +321,7 @@ function SettingsCard() {
                       <td style={{ textAlign: 'center' }}><input type="radio" name="defaultCeiling" aria-label={`Default ceiling ${c.name}`} checked={pr.defaultCeilingId === c.id} onChange={() => set({ defaultCeilingId: c.id })} /></td>
                       <td><input aria-label="Ceiling name" value={c.name} style={S.in} onChange={e => setRow('ceilings', c.id, { name: e.target.value })} /></td>
                       <td><NumIn aria="Clear height (ft)" step={0.5} value={ftOf(c.clearHeightIn)} placeholder={`not set — ${ASSUMED_FT}'`} onChange={v => setRow('ceilings', c.id, { clearHeightIn: inOf(v) })} /></td>
-                      <td><NumIn aria="Sprinkler height (ft)" step={0.5} value={ftOf(c.sprinklerIn)} placeholder="optional" onChange={v => setRow('ceilings', c.id, { sprinklerIn: inOf(v) })} /></td>
+                      <td><NumIn aria="Sprinkler height (ft)" step={0.5} value={ftOf(c.sprinklerIn)} placeholder="optional" error={sprinklerError(c)} onChange={v => setRow('ceilings', c.id, { sprinklerIn: inOf(v) })} /></td>
                       <td><button type="button" aria-label={`Remove ceiling ${c.name}`} title={used ? 'An elevation uses it' : 'Remove'} disabled={used} onClick={() => setPr(p => { const ceilings = p.ceilings.filter(x => x.id !== c.id); return { ...p, ceilings, defaultCeilingId: p.defaultCeilingId === c.id ? ceilings[0]?.id ?? null : p.defaultCeilingId } })} style={{ ...S.btn, padding: '4px 6px', opacity: used ? 0.4 : 1, cursor: used ? 'not-allowed' : 'pointer' }}><Trash2 size={12} /></button></td>
                     </tr>
                   )
@@ -323,6 +329,7 @@ function SettingsCard() {
               </tbody>
             </table>
             {!pr.ceilings.some(c => c.clearHeightIn > 0) && <div style={{ ...S.note, color: 'var(--elev-clr, #A8341C)' }}>Clear height not set — elevations assume {ASSUMED_FT}'.</div>}
+            {pr.ceilings.some(sprinklerError) && <div role="alert" aria-label="Sprinkler height error" style={{ ...S.note, color: 'var(--red, #C0452A)' }}>A sprinkler height can't be above its ceiling ({pr.ceilings.filter(sprinklerError).map(c => c.name).join(', ')}). Fix it to save.</div>}
             <button type="button" aria-label="Add ceiling height" onClick={addCeiling} style={{ ...S.btn, alignSelf: 'flex-start' }}><Plus size={13} /> Add</button>
           </div>
 
@@ -330,7 +337,7 @@ function SettingsCard() {
           <div style={S.sec} role="group" aria-label="Pallet sizes">
             <span style={S.h}>Pallet sizes</span>
             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '4px 4px' }}>
-              <thead><tr><th style={{ ...S.th, width: 56 }}>Default</th><th style={S.th}>Name</th><th style={S.th}>Face (in)</th><th style={S.th}>Depth (in)</th><th style={S.th}>Height (in)</th><th style={S.th}>Weight (lb)</th><th style={{ width: 30 }} /></tr></thead>
+              <thead><tr><th style={{ ...S.th, width: 56 }}>Default</th><th style={S.th}>Name</th><th style={S.th}>Depth (in)</th><th style={S.th}>Width (in)</th><th style={S.th}>Height (in)</th><th style={S.th}>Weight (lb)</th><th style={{ width: 30 }} /></tr></thead>
               <tbody>
                 {pr.pallets.map(p => {
                   const blocked = palUsed(p.id) || pr.pallets.length <= 1
@@ -338,8 +345,8 @@ function SettingsCard() {
                     <tr key={p.id} data-pallet={p.id}>
                       <td style={{ textAlign: 'center' }}><input type="radio" name="defaultPallet" aria-label={`Default pallet ${p.name}`} checked={pr.defaultPalletId === p.id} onChange={() => set({ defaultPalletId: p.id })} /></td>
                       <td><input aria-label="Pallet name" value={p.name} style={S.in} onChange={e => setRow('pallets', p.id, { name: e.target.value })} /></td>
-                      <td><NumIn aria="Pallet face (in)" value={p.faceIn} onChange={v => setRow('pallets', p.id, { faceIn: v })} /></td>
                       <td><NumIn aria="Pallet depth (in)" value={p.depthIn} onChange={v => setRow('pallets', p.id, { depthIn: v })} /></td>
+                      <td><NumIn aria="Pallet width (in)" value={p.faceIn} onChange={v => setRow('pallets', p.id, { faceIn: v })} /></td>
                       <td><NumIn aria="Pallet height (in)" value={p.heightIn} onChange={v => setRow('pallets', p.id, { heightIn: v })} /></td>
                       <td><NumIn aria="Pallet weight (lb)" step={50} value={p.weightLb} onChange={v => setRow('pallets', p.id, { weightLb: v })} /></td>
                       <td><button type="button" aria-label={`Remove pallet ${p.name}`} title={palUsed(p.id) ? 'An elevation uses it' : pr.pallets.length <= 1 ? 'The project needs one pallet' : 'Remove'} disabled={blocked} onClick={() => setPr(q => { const pallets = q.pallets.filter(x => x.id !== p.id); return { ...q, pallets, defaultPalletId: q.defaultPalletId === p.id ? pallets[0].id : q.defaultPalletId } })} style={{ ...S.btn, padding: '4px 6px', opacity: blocked ? 0.4 : 1, cursor: blocked ? 'not-allowed' : 'pointer' }}><Trash2 size={12} /></button></td>
@@ -349,6 +356,15 @@ function SettingsCard() {
               </tbody>
             </table>
             <button type="button" aria-label="Add pallet size" onClick={addPallet} style={{ ...S.btn, alignSelf: 'flex-start' }}><Plus size={13} /> Add</button>
+          </div>
+
+          {/* uprights: the hole pitch — the step a beam snaps to when dragged on an elevation (C21) */}
+          <div style={S.sec} role="group" aria-label="Uprights">
+            <span style={S.h}>Uprights</span>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+              <div style={{ width: 120 }}><Num label="Hole pitch (in)" value={pr.advanced?.holePitchIn ?? ADVANCED_DEFAULTS.holePitchIn} onChange={v => set({ advanced: { ...(pr.advanced || {}), holePitchIn: v > 0 ? v : ADVANCED_DEFAULTS.holePitchIn } })} /></div>
+              <span style={{ ...S.note, paddingBottom: 6 }}>Beams snap to this step when dragged on an elevation.</span>
+            </div>
           </div>
 
           {/* forklift, walls */}
@@ -379,7 +395,7 @@ function SettingsCard() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 18px', borderTop: '1px solid var(--border)' }}>
           <button type="button" onClick={closeSetup} style={S.btn}>Cancel</button>
-          <button type="button" disabled={!!ask} onClick={save} style={{ ...S.btn, ...S.solid, marginLeft: 'auto', opacity: ask ? 0.5 : 1 }}>Save</button>
+          <button type="button" disabled={!!ask || hasError} title={hasError ? 'A sprinkler height is above its ceiling' : undefined} onClick={save} style={{ ...S.btn, ...S.solid, marginLeft: 'auto', opacity: ask || hasError ? 0.5 : 1, cursor: hasError ? 'not-allowed' : 'pointer' }}>Save</button>
         </div>
       </div>
     </div>

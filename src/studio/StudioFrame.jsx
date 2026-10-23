@@ -10,7 +10,8 @@ import { GeneratePanel } from '../components/Generate/GeneratePanel'
 import { useRightPanel, setRightPanel } from '../utils/rightPanel'
 import { useColumnCheck } from '../generate/useColumnCheck'
 import { useElevView, setShowColors } from '../utils/elevationDraw'
-import { useViewPrefs, fitRef } from './viewPrefs'
+import { useViewPrefs, fitRef, CARD_W } from './viewPrefs'
+import { useElevTab } from '../utils/elevTab'
 import { Icon } from './Icon'
 import { CheckCard } from './cards'
 
@@ -101,11 +102,30 @@ function RightCard() {
   const seg = (on) => ({ flex: 1, height: 28, border: 0, borderRadius: 6, background: on ? '#3A403C' : 'transparent', fontSize: 13, fontWeight: on ? 500 : 400, color: on ? '#F2F4F1' : '#9AA29C' })
   /* the Elevations tab sizes its sheet from the room the card has (C2, C3); nothing in it scrolls the card itself */
   const full = card === 'tabs' && tab === 'elevations'
+  /* its width: the left edge dragged (300–640), double-click back to 300 — remembered, the same for every tab (STUDIO.md
+     §7); the grip shows on the edge's hover, and while an elevation is edited on the sheet (C21) */
+  const cardW = useViewPrefs(s => s.cardW), onSheet = useElevTab(s => !!s.editing?.sheet)
+  const [edgeHover, setEdgeHover] = useState(false)
+  const startEdge = (ev) => {
+    if (ev.button !== 0) return
+    ev.preventDefault()
+    const x0 = ev.clientX, w0 = useViewPrefs.getState().cardW
+    let raf = 0, last = w0
+    const move = (m) => { last = w0 + (x0 - m.clientX); if (!raf) raf = requestAnimationFrame(() => { raf = 0; useViewPrefs.getState().setCardW(last, { save: false }) }) }
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cancelAnimationFrame(raf); useViewPrefs.getState().setCardW(last) }
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+  }
   return (
     <div className="st-island" aria-label="Right panel" data-island="right-card" style={{
-      right: 16, top: 76, width: 300, maxHeight: 'calc(100vh - 152px)',
+      right: 16, top: 76, width: cardW, maxHeight: 'calc(100vh - 152px)',
       flexDirection: 'column', alignItems: 'stretch', overflow: 'hidden',
     }}>
+      {/* the left edge: a 6px strip to drag, the 3×32 grip */}
+      <div role="separator" aria-orientation="vertical" aria-label="Resize right panel" title="Drag to widen · double-click to reset"
+        onPointerDown={startEdge} onDoubleClick={() => useViewPrefs.getState().setCardW(CARD_W)} onPointerEnter={() => setEdgeHover(true)} onPointerLeave={() => setEdgeHover(false)}
+        style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 6, cursor: 'col-resize', zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none' }}>
+        {(edgeHover || onSheet) && <span aria-hidden style={{ width: 3, height: 32, borderRadius: 2, background: '#4A514D' }} />}
+      </div>
       {card === 'tabs' && checkOpen
         ? <div data-card-dark style={{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}><CheckCard /></div>
         : card === 'generate'

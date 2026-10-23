@@ -9,7 +9,7 @@ import { create } from 'zustand'
 import { editTable, updateType, removeType, setDefault, uniqueTypeName, typeById, assignCells, PALETTE, ELEV_VERSION, frameNeededFor } from './elevations'
 import { setRackDepths } from './rackDepthAction'
 import { selectionCells } from './elevSelection'
-import { bestFitFor, designForLevels } from './elevFit'
+import { bestFitFor } from './elevFit'
 import { projectOf, defaultCeiling, defaultPallet, ceilingById, palletById, dropUnusedTypes, nameOf, refreshNames, previewName, newId, withProject, palletName, PALLET_DEFAULT } from './project'
 
 /** { activeId (the elevation the list's drawing shows), view ('front' | 'side'), editing (the editor: null, or { id
@@ -184,38 +184,65 @@ export function saveEdit(store) {
   return { kind: 'saved', id: e.id }
 }
 
-/* ── quick edit on a row (the Elevations list): Levels, Pallet, Beam — the editor's draft, opened in the row ───────── */
+/* ── edit on the sheet (C21) and the typed values (C3, the sheet) ──────────────────────────────────────────────────── */
 
-/** The pencil on a row: that elevation's draft, open in its row (`quick`) — the sheet follows it. One row at a time:
- *  opening another drops the first, asking nothing (the editor's draft is single). */
-export function startQuick(store, id) {
+/** The pencil on a row: that elevation's draft, edited on the sheet (`sheet`) — the list collapses to its row, the sheet
+ *  grows. The editor's draft is single: any other edit open is dropped. */
+export function startSheet(store, id) {
   if (!startEdit(store, id)) return false
-  useElevTab.setState(s => ({ editing: { ...s.editing, quick: true, quickN: null } }))
+  useElevTab.setState(s => ({ editing: { ...s.editing, sheet: true } }))
   return true
 }
-/** A quick-edit field changed: `{ levels }` (a count), `{ palletId }` or `{ beamFaceIn }`. The pallet and beam follow the
- *  editor's own rules (a new pair or beam face refits the draft); once Levels is set, that count is kept through them. */
-export function quickEdit(store, patch) {
-  const e = useElevTab.getState().editing
-  if (!e?.quick) return
-  const n = 'levels' in patch ? Math.floor(Number(patch.levels)) : e.quickN
-  if ('levels' in patch && !(n >= 1)) return
-  if ('palletId' in patch || 'beamFaceIn' in patch) editDraft(store, { ...('palletId' in patch ? { palletId: patch.palletId } : {}), ...('beamFaceIn' in patch ? { beamFaceIn: patch.beamFaceIn } : {}) })
-  if (n >= 1) {
-    const e2 = useElevTab.getState().editing, T = store.getState().elevations, pr = projectOf(T), d = e2.draft
-    const c = ceilingById(pr, d.ceilingId) || defaultCeiling(pr), p = palletById(pr, d.palletId) || defaultPallet(pr)
-    const des = designForLevels(pr, c, p, n, { beamFaceIn: d.beamFaceIn })
-    if (des) useElevTab.setState({ editing: { ...e2, draft: { ...d, ...des, ceilingId: d.ceilingId, palletId: d.palletId }, quickN: n, touched: true } })
-  }
+/** Full edit (the row's More): the C3 editor on that elevation. */
+export const startFull = (store, id) => startEdit(store, id)
+
+const ftInPrimes = (inches) => { const v = Math.round(inches), ft = Math.floor(v / 12); return `${ft}′-${v - ft * 12}″` }
+/** The pallet the draft carries now (its typed values if it has them) → { faceIn, depthIn, heightIn, weightLb }. */
+function draftPallet(store, e) {
+  const p = newPalletOf(e) && e.draft.palletId === NEW_PALLET ? newPalletOf(e) : (palletById(projectOf(store.getState().elevations), e.draft.palletId) || defaultPallet(projectOf(store.getState().elevations)) || PALLET_DEFAULT)
+  return { faceIn: p.faceIn, depthIn: p.depthIn, heightIn: p.heightIn, weightLb: p.weightLb }
 }
-/** Full edit: the C3 editor on the same draft, its values as the row left them. */
-export const quickToFull = () => useElevTab.setState(s => (s.editing ? { editing: { ...s.editing, quick: false } } : {}))
-/** Save from the row: the editor's ONE save (one undo step; Saved). The row has no Name field, so an elevation not
- *  renamed keeps its auto name — the editor's own rule (its empty Name field). */
-export function quickSave(store) {
+/** A pallet value typed (C3: depthIn, faceIn, heightIn, weightLb): the project's pallet with those four values if there is
+ *  one, else the draft's own (added to the project on Save, named depth×width). `fromSheet`: no refit — the sheet's
+ *  levels stay where the user put them; the pallet height on the sheet is every level's pallet height too. */
+export function typePallet(store, field, v, { fromSheet = false } = {}) {
   const e = useElevTab.getState().editing
-  if (!e?.quick) return null
-  if (!e.draft.named) editDraft(store, { name: '', named: false })
+  if (!e || !(v > 0)) return
+  const vals = { ...draftPallet(store, e), [field]: v }
+  const pr = projectOf(store.getState().elevations)
+  const hit = pr?.pallets?.find(p => p.faceIn === vals.faceIn && p.depthIn === vals.depthIn && p.heightIn === vals.heightIn && p.weightLb === vals.weightLb)
+  const levels = field === 'heightIn' && fromSheet ? { levels: e.draft.levels.map(l => ({ ...l, palletHeightIn: v })) } : {}
+  if (hit) editDraft(store, { palletId: hit.id, ...levels }, { fromDrawing: fromSheet })
+  else editDraft(store, { palletId: NEW_PALLET, newPallet: vals, ...levels }, { fromDrawing: fromSheet })
+}
+/** The sheet's two pallet values: its height (palletH) and its width (palletW). */
+export const sheetValue = (store, id, v) => typePallet(store, id === 'palletH' ? 'heightIn' : 'faceIn', v, { fromSheet: true })
+/** A ceiling typed (C3): the project's ceiling with that clear height if there is one, else the draft's own (added on
+ *  Save, named by its height, its sprinklers at the ceiling). */
+export function typeCeiling(store, inches) {
+  if (!(inches > 0)) return
+  const pr = projectOf(store.getState().elevations)
+  const hit = pr?.ceilings?.find(c => c.clearHeightIn === inches)
+  if (hit) editDraft(store, { ceilingId: hit.id })
+  else editDraft(store, { ceilingId: NEW_CEILING, newCeiling: { name: ftInPrimes(inches), clearFt: inches / 12, sprFt: inches / 12 } })
+}
+/** Before a save: typed values that a project entry already holds take that entry (nothing added). */
+function matchTyped(store) {
+  const e = useElevTab.getState().editing
+  if (!e) return
+  const pr = projectOf(store.getState().elevations), d = { ...e.draft }, next = { ...e }
+  if (d.palletId === NEW_PALLET) { const p = newPalletOf(e), hit = p && pr?.pallets?.find(q => q.faceIn === p.faceIn && q.depthIn === p.depthIn && q.heightIn === p.heightIn && q.weightLb === p.weightLb); if (hit) { d.palletId = hit.id; next.newPallet = null } }
+  if (d.ceilingId === NEW_CEILING) { const c = newCeilingOf(e), hit = c && pr?.ceilings?.find(q => q.clearHeightIn === c.clearHeightIn); if (hit) { d.ceilingId = hit.id; next.newCeiling = null } }
+  useElevTab.setState({ editing: { ...next, draft: d } })
+}
+/** Save (the sheet's, C3's): typed values matched or added, the editor's ONE save — one undo step, "Saved". An elevation
+ *  not renamed keeps its auto name (the sheet has no Name field). */
+export function saveTyped(store, { name = null } = {}) {
+  const e = useElevTab.getState().editing
+  if (!e) return null
+  matchTyped(store)
+  if (name != null) editDraft(store, { name, named: !!String(name).trim() })
+  else if (!useElevTab.getState().editing.draft.named) editDraft(store, { name: '', named: false })
   return saveEdit(store)
 }
 

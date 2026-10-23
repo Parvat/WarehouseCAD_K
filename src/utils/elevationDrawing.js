@@ -43,7 +43,7 @@ const AMBER = '#B5730F'   // warnings on the drawing (THEME.md's warning)
 /* Studio (STUDIO.md §2 drawing palette, §3 drawing type, §7 the panel's labels; design/studio/Studio.dc.html panel
    "elev"): the right card's sheet. Plus Jakarta Sans for words and numbers alike, numbers 600 in the dimension blue. */
 const S_FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
-const S = { up: '#14392B', ink: '#1F2321', blue: '#1B4FD8', words: '#767C74', ceil: '#41483F', maxLine: '#C99A1E', maxText: '#8A6D14', maxNote: '#A89060', band: '#F2C230', hatch: '#C3BEB1', tag: '#8A7A55', red: '#C0452A' }
+const S = { sel: '#2E7D5B', up: '#14392B', ink: '#1F2321', blue: '#1B4FD8', words: '#767C74', ceil: '#41483F', maxLine: '#C99A1E', maxText: '#8A6D14', maxNote: '#A89060', band: '#F2C230', hatch: '#C3BEB1', tag: '#8A7A55', red: '#C0452A' }
 /** 30'-0" → 30′-0″ (the Studio drawing's primes) */
 const prime = (str) => String(str).replace(/'/g, '′').replace(/"/g, '″')
 const INK = '#15181C', PINE = '#123A2E', LOAD = '#E8DCC2', LOAD_EDGE = '#B08F52', DECK = '#C9A870', BLUE = '#1B4FD8', RED = '#A8341C', GREY = '#7A828C', HATCH = '#B6BAB3', BAND = '#F2C230', MISFIT = '#F5E7E3', MISFIT_EDGE = '#A8341C'
@@ -76,7 +76,7 @@ export function misfitLevels(t) {
  *  'text'|'poly'|'polygon'|'path', ..., role, tag } — role { kind: 'beam', k } | { kind: 'upright', x } | { kind: 'top' } |
  *  { kind: 'dim', id, k?, value } for the editor. No label overlaps a load, a beam or another label (declutter). */
 export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = {}) {
-  const { palletWIn = 40, palletDIn = null, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED, view = 'both', zoom = 1, pan = null } = opts
+  const { palletWIn = 40, palletDIn = null, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED, view = 'both', zoom = 1, pan = null, edit = null } = opts
   const showFront = view !== 'side', showSide = view !== 'front'
   const detailed = detail === 'detailed'
   // 'studio': the right card's sheet — the label set of STUDIO.md §7, nothing else (no pitch, no chain, no bracing)
@@ -96,7 +96,11 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
      a sprinkler height, that) — and the max load height is it less the sprinkler clearance. The drawing stops at it: no
      room above (the sheet is anchored at its top, a fixed margin over the ceiling's label). */
   const ceilS = bClear || bSprink || null
-  const H = studio ? Math.max(hTop, topLoad + clearance, ceilS || 0) : Math.max(hTop, topLoad + clearance, bClear || 0, bSprink || 0) + 6
+  /* the max load height (STUDIO.md §7): the sprinkler height less the sprinkler clearance (18″, NFPA); no sprinkler height:
+     the ceiling less it. A load above it turns its level red (never against an assumed ceiling). */
+  const maxLoadS = ceilS ? (bSprink || bClear) - sprinklerClearanceIn : null
+  const overMax = (lv, lh) => studio && !building?.assumed && maxLoadS != null && lv.beamIn + lh > maxLoadS + 1e-6
+  const H = studio ? Math.max(hTop, topLoad + clearance, ceilS || 0, maxLoadS || 0) : Math.max(hTop, topLoad + clearance, bClear || 0, bSprink || 0) + 6
   const frontW = bayIn + 2 * upW, sideW = pair ? 2 * depthIn + flueIn + 2 * upW : depthIn + upW
   const fO = fontPx, fT = Math.max(8, fontPx * 0.85), fE = fontPx * 1.05
   const tw = (str, size) => String(str).length * size * 0.6
@@ -201,12 +205,12 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     const base = ceilS
     if (base) {
       line(x0, Yv(base), x1, Yv(base), { stroke: S.ceil, sw: 1.2, dash: '6 4', tag: 'clear' })
-      if (!compact) sText(x0 + 24 * u, Yv(base) - 5 * u, building?.assumed ? `Ceiling ${Math.round(base / 12)} ft (assumed)` : ['Ceiling ', [prime(ftInDash(base)), S.words]], { pri: 2, tag: 'shell' })   // assumed: all grey, no value in bold
-      // the band from the ceiling down to the max load height (the ceiling less the sprinkler clearance)
-      const maxLoad = base - sprinklerClearanceIn, yM = Yv(maxLoad), yC = Yv(base)
-      rect(x0, yC, x1 - x0, yM - yC, { fill: S.band, opacity: 0.22, tag: 'band' })
+      if (!compact) sText(x0 + 24 * u, Yv(base) - 5 * u, building?.assumed ? `Ceiling ${Math.round(base / 12)} ft (assumed)` : ['Ceiling ', [prime(ftInDash(base)), S.words]], { pri: 2, tag: 'shell', fixed: true })   // assumed: all grey, no value in bold
+      // the band between the ceiling and the max load height (the sprinklers less the clearance, else the ceiling less it)
+      const maxLoad = maxLoadS, yM = Yv(maxLoad), yC = Yv(base)
+      rect(x0, Math.min(yC, yM), x1 - x0, Math.abs(yM - yC), { fill: S.band, opacity: 0.22, tag: 'band' })
       line(x0, yM, x1, yM, { stroke: S.maxLine, sw: 1.2, dash: '5 3', tag: 'max-load' })
-      if (!compact) sText(x0 + 48 * u, yM + 12 * u, ['Max load height ', [prime(ftInDash(maxLoad)), S.maxText], ' ', [`(sprinklers −${sprinklerClearanceIn}″)`, S.maxNote]], { fill: S.maxText, pri: 2, tag: 'shell' })
+      if (!compact) sText(x0 + 48 * u, yM + 12 * u, ['Max load height ', [prime(ftInDash(maxLoad)), S.maxText], ' ', [`(${sprinklerClearanceIn}″ below sprinklers)`, S.maxNote]], { fill: S.maxText, pri: 2, tag: 'shell', fixed: true })
     }
   }
   /* the ground: a 2.5 ink line, 1px hatching every 16 below it */
@@ -224,8 +228,8 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     const gapIn = per ? (bayIn - per * palletWIn) / (per + 1) : 0
     const xR = Xf(frontW)
     L.forEach((lv, i) => {
-      const isTop = i === L.length - 1, z = lv.beamIn, gone = removing === lv.k, bad = misfit.has(lv.k) || (isTop && !!topIssue)
-      if (z > 0) rect(Xf(upW), Y(z), bayIn * s, beamPx, { fill: gone ? '#d0392b' : isActive({ kind: 'beam', k: lv.k }) ? '#2a7a5f' : S.up, opacity: gone ? 0.5 : 1, role: { kind: 'beam', k: lv.k }, cursor: 'ns-resize', tag: 'beam' })
+      const isTop = i === L.length - 1, z = lv.beamIn, gone = removing === lv.k, lh0 = loadH(lv, i), over = overMax(lv, lh0), bad = misfit.has(lv.k) || (isTop && !!topIssue) || over
+      if (z > 0) rect(Xf(upW), Y(z), bayIn * s, beamPx, { fill: gone ? '#d0392b' : isActive({ kind: 'beam', k: lv.k }) ? (edit ? S.sel : '#2a7a5f') : S.up, opacity: gone ? 0.5 : 1, role: { kind: 'beam', k: lv.k }, cursor: 'ns-resize', tag: 'beam' })
       const lh = loadH(lv, i)
       let lastX = null
       for (let p = 0; p < per; p++) {
@@ -235,14 +239,14 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
         lastX = x
       }
       if (compact || !per) return
-      if (bad) sText(Xf(frontW / 2), Y(z + lh / 2) + 3.5 * u, misfit.has(lv.k) ? "Doesn't fit" : topIssue === 'clear' ? 'Above the ceiling' : `Within ${sprinklerClearanceIn}″ of sprinklers`, { anchor: 'middle', size: 9 * u, fill: S.red, weight: 600, tag: 'misfit', pri: 1.5, level: lv.k })
+      if (bad && !(over && !misfit.has(lv.k) && !(isTop && topIssue))) sText(Xf(frontW / 2), Y(z + lh / 2) + 3.5 * u, misfit.has(lv.k) ? "Doesn't fit" : topIssue === 'clear' ? 'Above the ceiling' : `Within ${sprinklerClearanceIn}″ of sprinklers`, { anchor: 'middle', size: 9 * u, fill: S.red, weight: 600, tag: 'misfit', pri: 1.5, level: lv.k })
       // the level tag inside the right pallet, top-right (PJS 8.5 / 600)
       if (lh * s > 14 * u) sText(Xf(lastX + palletWIn) - 3 * u, Y(z + lh) + 10 * u, `L${i + 1}`, { anchor: 'end', size: 8.5 * u, fill: S.tag, weight: 600, tag: 'level-tag', halo: 0, fixed: true })
       // the beam's height to its top, on a short tick off the right upright
       if (z > 0) {
         const role = { kind: 'dim', id: 'elev', k: lv.k, value: z }, hot = isActive(role) || isActive({ kind: 'beam', k: lv.k })
-        line(xR + 1 * u, Y(z) + 2 * u, xR + 7 * u, Y(z) + 2 * u, { stroke: hot ? '#d0392b' : S.blue, sw: 1 })
-        sText(xR + 9 * u, Y(z) + 5.5 * u, prime(ftInDash(z)), { fill: hot ? '#d0392b' : S.blue, weight: 600, role, pri: 1 })
+        line(xR + 1 * u, Y(z) + 2 * u, xR + 7 * u, Y(z) + 2 * u, { stroke: hot && !edit ? '#d0392b' : S.blue, sw: 1 })
+        sText(xR + 9 * u, Y(z) + 5.5 * u, prime(ftInDash(z)), { fill: hot && !edit ? '#d0392b' : S.blue, weight: 600, role, pri: 1 })
       }
     })
     // the frames: uprights and base plates (no bracing on the front view)
@@ -261,19 +265,19 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       const xa = Xf(upW + gapIn), ya0 = Y(lv0.beamIn + lh0) + 3 * u, ya1 = Y(lv0.beamIn) - deckPx - 3 * u, xl = xa + 8 * u
       if (ya1 - ya0 > 14 * u) {
         line(xl, ya0, xl, ya1, { stroke: S.blue, sw: 1 }); sArrowHead(xl, ya0, 0, -1); sArrowHead(xl, ya1, 0, 1)
-        sText(xl + 4 * u, (ya0 + ya1) / 2 + 3 * u, `${Math.round(lv0.palletHeightIn || lh0)}″`, { size: 9.5 * u, fill: S.blue, weight: 600, halo: 0, tag: 'pallet-h', fixed: true })
+        sText(xl + 4 * u, (ya0 + ya1) / 2 + 3 * u, `${Math.round(lv0.palletHeightIn || lh0)}″`, { size: 9.5 * u, fill: S.blue, weight: 600, halo: 0, tag: 'pallet-h', fixed: true, role: edit ? { kind: 'dim', id: 'palletH', value: lv0.palletHeightIn || lh0 } : undefined })
       }
       const xp = upW + gapIn + (per - 1) * (palletWIn + gapIn), xb0 = Xf(xp) + 3 * u, xb1 = Xf(xp + palletWIn) - 1 * u, yb = Y(lv0.beamIn) - deckPx - 8 * u
       if (xb1 - xb0 > 18 * u) {
         line(xb0, yb, xb1, yb, { stroke: S.blue, sw: 1 }); sArrowHead(xb0, yb, -1, 0); sArrowHead(xb1, yb, 1, 0)
-        sText((xb0 + xb1) / 2, yb - 5 * u, `${Math.round(palletWIn)}″`, { anchor: 'middle', size: 9.5 * u, fill: S.blue, weight: 600, halo: 0, tag: 'pallet-w', fixed: true })
+        sText((xb0 + xb1) / 2, yb - 5 * u, `${Math.round(palletWIn)}″`, { anchor: 'middle', size: 9.5 * u, fill: S.blue, weight: 600, halo: 0, tag: 'pallet-w', fixed: true, role: edit ? { kind: 'dim', id: 'palletW', value: palletWIn } : undefined })
       }
     }
     // left of L1: the beam above it — its face (top and underside) and the lift-off (underside to the top of the load)
     if (lv1 && lv1.beamIn > 0) {
       const xu = X0, yt = Y(lv1.beamIn), yu = Y(lv1.beamIn - face), yl = Y(lv0.beamIn + lh0)
       for (const y of [yt, yu]) line(xu - 13 * u, y, xu - 1 * u, y, { stroke: S.blue, sw: 0.8 })
-      sText(xu - 15 * u, yu, prime(ftInDash(face)), { anchor: 'end', size: 8.5 * u, fill: S.blue, weight: 600, pri: 3, tag: 'face', role: { kind: 'dim', id: 'face', value: face } })
+      sText(xu - 15 * u, yu, prime(ftInDash(face)), { anchor: 'end', size: 8.5 * u, fill: S.blue, weight: 600, pri: 3, tag: 'face', role: edit ? undefined : { kind: 'dim', id: 'face', value: face } })
       const lift = lv1.beamIn - face - (lv0.beamIn + lh0)
       if (lift > 0) {
         line(xu - 13 * u, yl, Xf(upW + gapIn) - 2 * u, yl, { stroke: S.blue, sw: 0.8 })
@@ -281,8 +285,8 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       }
     }
     // far left, one column: the free headroom over the top load (to the max load height), then the top of the load
-    const base = ceilS, xo = X0 - 52 * u, zTop = topLoad
-    const maxLoad = base ? base - sprinklerClearanceIn : null
+    const xo = X0 - 52 * u, zTop = topLoad
+    const maxLoad = maxLoadS
     const free = maxLoad != null ? maxLoad - zTop : null
     // an assumed ceiling (none set) is drawn, never checked: no red "over" against it — only the free headroom, when there is some
     if (maxLoad != null && !(building?.assumed && free < 0)) {
@@ -295,11 +299,34 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     // the frame, the column inside it
     const xf = X0 - 26 * u
     sDim(xf, Y(hTop), floor)
-    sText(xf - 10 * u, (Y(hTop) + floor) / 2, ['Frame ', [prime(ftInDash(hTop))]], { anchor: 'middle', rot: -90, pri: 2, tag: 'frame', role: { kind: 'dim', id: 'upright', value: hTop } })
+    sText(xf - 10 * u, (Y(hTop) + floor) / 2, ['Frame ', [prime(ftInDash(hTop))]], { anchor: 'middle', rot: -90, pri: 2, tag: 'frame', role: edit ? undefined : { kind: 'dim', id: 'upright', value: hTop } })
     // under the rack: the beam, its pallets and the load
     const yb = floor + 13 * u + 6 + 2, lb = Math.max(0, ...L.map(l => l.loadLb || 0))   // its ticks clear the hatch by 6px+
     line(Xf(upW), yb, Xf(upW + bayIn), yb, { stroke: S.blue, sw: 1 }); for (const x of [Xf(upW), Xf(upW + bayIn)]) line(x, yb - 5 * u, x, yb + 5 * u, { stroke: S.blue, sw: 1 })
     sText(Xf(upW + bayIn / 2), yb + 18 * u, ['Beam ', [`${Math.round(bayIn)}″`], ` · ${per} pallet${per === 1 ? '' : 's'}`, ...(lb ? [' · ', [lb.toLocaleString('en-US')], ' lb'] : [])], { anchor: 'middle', pri: 1, tag: 'beam-label' })
+    /* ── edit on the sheet (C21): a handle at each beam's ends (the active one filled), the snap hint over the active
+       beam's label, a dotted underline under every value a click types, + Add level over the top load, − on the top level */
+    if (edit) {
+      const hs = 7 * u, act = (k) => isActive({ kind: 'beam', k }) || isActive({ kind: 'dim', id: 'elev', k })
+      for (const lv of L) if (lv.beamIn > 0) {
+        const cy = Y(lv.beamIn) + beamPx / 2, on = act(lv.k)
+        for (const cx of [Xf(0), Xf(frontW)]) rect(cx - hs / 2, cy - hs / 2, hs, hs, { fill: on ? S.sel : '#FFFFFF', stroke: S.sel, sw: 1, role: { kind: 'beam', k: lv.k }, cursor: 'ns-resize', tag: 'handle' })
+      }
+      const tw5 = (str, size) => String(str).length * size * 0.53
+      for (const it of items.filter(x => x.t === 'text' && x.role?.kind === 'dim' && ['elev', 'palletH', 'palletW'].includes(x.role.id))) {
+        const w = tw5(it.s, it.size), x0 = it.anchor === 'middle' ? it.x - w / 2 : it.anchor === 'end' ? it.x - w : it.x
+        if (!act(it.role.k ?? -1)) line(x0, it.y + 2.5 * u, x0 + w, it.y + 2.5 * u, { stroke: S.blue, sw: 0.8, dash: `${1.2 * u} ${1.2 * u}`, tag: 'editable' })
+        else if (edit.hint) items.push({ t: 'text', x: x0 + w / 2 + 2 * u, y: it.y - 17.5 * u, s: `↕ ${edit.hint} steps`, size: 8.5 * u, fill: S.sel, anchor: 'middle', font: S_FONT, halo: 0, weight: 600, tag: 'snap-hint', fixed: true })
+      }
+      const top = L[L.length - 1], lhT = loadH(top, L.length - 1), yTopLoad = Y(top.beamIn + lhT)
+      rect(Xf(upW) + 0.5, yTopLoad - 7.5 * u - 34 * u, bayIn * s - 1, 34 * u, { fill: '#7BD3A4', opacity: 1, fillOpacity: 0.1, stroke: S.sel, sw: 1, dash: `${4 * u} ${3 * u}`, role: { kind: 'add' }, cursor: 'pointer', tag: 'add-level' })
+      items.push({ t: 'text', x: Xf(upW + bayIn / 2), y: yTopLoad - 7.5 * u - 13 * u, s: '+ Add level', size: 10 * u, fill: S.sel, anchor: 'middle', font: S_FONT, halo: 0, weight: 600, tag: 'add-level-text', fixed: true, role: { kind: 'add' } })
+      if (L.length > 1) {
+        const bx = Xf(frontW) + 3.5 * u, by = yTopLoad + 1.5 * u, bs = 13 * u
+        rect(bx, by, bs, bs, { fill: '#FFFFFF', stroke: '#B9B3A4', sw: 1, rx: 2, role: { kind: 'remove', k: top.k }, cursor: 'pointer', tag: 'remove-level' })
+        rect(bx + 3.5 * u, by + 6 * u, 6 * u, 1.2 * u, { fill: '#41483F', tag: 'remove-level-bar', role: { kind: 'remove', k: top.k }, cursor: 'pointer' })   // its bar takes the click too
+      }
+    }
   }
 
   // ── front view, Studio (the right card's sheet)
@@ -428,7 +455,9 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   }
   if (!compact) declutter(items, box)
   // every label over the linework, so its halo clears the dashed building lines and the dimension lines beneath it
-  const drawn = [...items.filter(i => i.t !== 'text'), ...items.filter(i => i.t === 'text')]
+  // ...and the sheet's edit controls (C21) over everything, labels too, so a label never takes their click
+  const ctl = (i) => ['handle', 'add-level', 'add-level-text', 'remove-level', 'remove-level-bar'].includes(i.tag)
+  const drawn = [...items.filter(i => i.t !== 'text' && !ctl(i)), ...items.filter(i => i.t === 'text' && !ctl(i)), ...items.filter(ctl)]
   items.length = 0; items.push(...drawn)
   // the elevation's pallet deeper than these frames allow (~3" overhang each side): said in red under the drawing
   if (deepNote) text(ox + cw / 2, oy + ch - fT * 0.4, deepNote.toUpperCase(), { size: fT, fill: AMBER, weight: 600, pri: 1, tag: 'frame-depth' })

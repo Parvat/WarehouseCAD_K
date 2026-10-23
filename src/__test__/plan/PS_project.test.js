@@ -190,7 +190,7 @@ describe('PS — the project', () => {
     const inOrder = (txt, keys) => { const o = keys.map(k => txt.indexOf(k)); return o.every((v, i) => v > 0 && (i === 0 || v > o[i - 1])) }
     // the start screen: ONE screen, no second step — building (length × width, clear, sprinkler), pallet (face × depth ×
     // height, weight), layout (forklift, column grid, row direction, max run, wall clearance), Advanced; the two buttons
-    expect(inOrder(startUi, ['aria-label="New project"', 'aria-label="Building"', '<Times label="Length × width">', 'aria="Length (ft)"', 'aria="Width (ft)"', 'aria="Clear height (ft)"', 'aria="Sprinkler height (ft)"', 'aria-label="Pallet"', '<Times label="Face × depth × height">', 'aria="Pallet face (in)"', 'aria="Pallet depth (in)"', 'aria="Pallet height (in)"', 'aria="Pallet weight (lb)"', 'aria-label="Layout"', '<ForkliftSelect ', '<Times label="Column grid">', 'aria="Row direction"', 'aria="Max rack run (ft)"', 'aria="Wall clearance (in)"', '<Advanced ', ' Draw it myself</button>', '<Sparkles size={14} /> Generate layout</>'])).toBe(true)
+    expect(inOrder(startUi, ['aria-label="New project"', 'aria-label="Building"', '<Times label="Length × width">', 'aria="Length (ft)"', 'aria="Width (ft)"', 'aria="Clear height (ft)"', 'aria="Sprinkler height (ft)"', 'aria-label="Pallet"', '<Times label="Depth × width × height">', 'aria="Pallet depth (in)"', 'aria="Pallet face (in)"', 'aria="Pallet height (in)"', 'aria="Pallet weight (lb)"', 'aria-label="Layout"', '<ForkliftSelect ', '<Times label="Column grid">', 'aria="Row direction"', 'aria="Max rack run (ft)"', 'aria="Wall clearance (in)"', '<Advanced ', ' Draw it myself</button>', '<Sparkles size={14} /> Generate layout</>'])).toBe(true)
     expect(/setStep|step === 2|Beam face \(in\)"/.test(startUi)).toBe(false)                     // no second step; no beam face on the pallet
     expect(startUi).toMatch(/width: 'min\(640px, 100%\)'/)                                          // medium-size
     expect(startUi).toMatch(/gap: 24 \}\}>/)                                                         // more space between groups than within (12)
@@ -199,7 +199,7 @@ describe('PS — the project', () => {
     expect(setUi.includes('aria="Beam face (in)"')).toBe(false)                                     // not a pallet's any more
     expect(ui).toMatch(/\['beamFaceIn', 'Beam face, new elevations \(in\)'\]/)                          // Advanced: the default for new elevations
     for (const k of ['name="defaultCeiling"', 'name="defaultPallet"', 'aria="Pallet weight (lb)"', 'aria-label="Add ceiling height"', 'aria-label="Add pallet size"', 'disabled={used}', 'disabled={blocked}', '>Regenerate racking</button>', '>Keep layout</button>']) expect([k, setUi.includes(k)]).toEqual([k, true])
-    for (const k of ["['clearanceIn', 'Load clearance (in)']", "['sprinklerClearanceIn', 'Sprinkler clearance (in)']", "['holePitchIn', 'Hole pitch (in)']", "['flueIn', 'Flue (in)']", 'Upright step (ft)']) expect([k, ui.includes(k)]).toEqual([k, true])
+    for (const k of ["['clearanceIn', 'Load clearance (in)']", "['sprinklerClearanceIn', 'Sprinkler clearance (in)']", "['flueIn', 'Flue (in)']", 'Upright step (ft)', '<Num label="Hole pitch (in)"']) expect([k, ui.includes(k)]).toEqual([k, true])   // the hole pitch: Storage → Uprights, in sight
     expect(/>Skip<\/button>/.test(ui)).toBe(false)
     expect(ui).toMatch(/const \[open, setOpen\] = useState\(false\)/)                  // Advanced folded
     expect(setUi).toMatch(/if \(old && gen && layoutAffecting\(old, pr\)\) \{ setAsk/)
@@ -277,8 +277,9 @@ describe('PS — the project', () => {
     expect(T_.sameBestFit(store.getState().elevations, { ceilingId: 'c', palletId: pid })).toBe(null)   // another pair
     const tab = src('components/Elevations/ElevationsTab.jsx')
     expect(tab).toMatch(/\{made\.kind === 'exists' \? 'Already exists' : made\.kind === 'saved' \? 'Saved' : 'Created'\}: \{nameOf\(T, madeType\)\}\.<\/strong>/)
-    expect(tab).toMatch(/onChange=\{ev => editDraft\(store, \{ ceilingId: ev\.target\.value \|\| null \}\)\}/)
-    expect(tab).toMatch(/onChange=\{v => editDraft\(store, \{ newPallet: \{ \[k\]: v \} \}\)\}/)
+    // C3: the ceiling and the pallet typed — the project's entry with those values, else Save adds one (utils/elevTab.js)
+    expect(tab).toMatch(/onCommit=\{v => typeCeiling\(store, v\)\}/)
+    expect(tab).toMatch(/onCommit=\{v => typePallet\(store, k, v\)\}/)
   })
   it('PS-names: auto names are "N levels · FACE×DEPTH · CEILING"; " · X in beam" only where two would read the same (they once both read "5 levels · 48×40 · sf"); no number suffixes ("· copy" only for two the same in every way); an existing layout is renamed on load, in that same history entry, nothing moving', () => {
     const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'sf', clearHeightIn: 360, sprinklerIn: 354 }], defaultCeilingId: 'c' }

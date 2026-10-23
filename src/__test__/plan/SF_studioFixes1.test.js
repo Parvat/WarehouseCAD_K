@@ -106,16 +106,17 @@ describe.each(['horizontal', 'vertical'])('SF-3 — buildings, %s', (orientation
 describe('SF-4 — the sheet', () => {
   const T5 = { id: 'a', name: 'x', color: '#D98324', uprightHeightIn: 252, clearanceIn: 6, beamFaceIn: 4, holePitchIn: 2, levels: [0, 58, 116, 174, 232].map(beamIn => ({ beamIn, palletHeightIn: 48, loadLb: 2500 })) }
   const draw = async (building) => (await import('../../utils/elevationDrawing')).elevationLayout(T5, 96, { w: 274, h: 420 }, { palletWIn: 40, building, sprinklerClearanceIn: 18, fontPx: 9, detail: 'studio', view: 'front', bg: '#FFFFFF' })
-  it('SF-sheet-ceiling: every label uses the one ceiling shown — 30′ with sprinklers at 32′ reads Ceiling 30′-0″ and Max load height 28′-6″ (never 30′-6″); the band runs from the ceiling down to the max load height', async () => {
-    const d = await draw({ clearHeightIn: 360, sprinklerIn: 384 }), s = d.items.filter(i => i.t === 'text').map(i => i.s)
-    expect(s).toEqual(expect.arrayContaining(['Ceiling 30′-0″', 'Max load height 28′-6″ (sprinklers −18″)', '5′-2″ free']))
-    expect(s.some(x => /30′-6″/.test(x))).toBe(false)
+  it('SF-sheet-ceiling: the max load height is the sprinkler height less 18″ (no sprinkler height: the ceiling less 18″) — 30′ with sprinklers at 28′ reads Max load height 26′-6″ (18″ below sprinklers); the band runs between the ceiling and it', async () => {
+    const d = await draw({ clearHeightIn: 360, sprinklerIn: 336 }), s = d.items.filter(i => i.t === 'text').map(i => i.s)
+    expect(s).toEqual(expect.arrayContaining(['Ceiling 30′-0″', 'Max load height 26′-6″ (18″ below sprinklers)', '3′-2″ free']))
+    const none = (await draw({ clearHeightIn: 360, sprinklerIn: null })).items.filter(i => i.t === 'text').map(i => i.s)
+    expect(none).toEqual(expect.arrayContaining(['Max load height 28′-6″ (18″ below sprinklers)']))
     const ceil = d.items.find(i => i.tag === 'clear'), max = d.items.find(i => i.tag === 'max-load'), band = d.items.find(i => i.tag === 'band')
     expect([Math.abs(band.y - ceil.y1) < 0.01, Math.abs(band.y + band.h - max.y1) < 0.01]).toEqual([true, true])
-    expect(Math.round((max.y1 - ceil.y1) / d.scale)).toBe(18)                                          // the clearance, 18″
+    expect(Math.round((max.y1 - ceil.y1) / d.scale)).toBe(42)                                          // the ceiling to 28′ less 18″
   })
   it('SF-sheet-top: the ceiling line sits near the top of the sheet — a small fixed margin, no empty space above it; the Beam line under the rack is 6px+ clear of the ground hatch', async () => {
-    const d = await draw({ clearHeightIn: 360, sprinklerIn: 384 }), ceil = d.items.find(i => i.tag === 'clear')
+    const d = await draw({ clearHeightIn: 360, sprinklerIn: 360 }), ceil = d.items.find(i => i.tag === 'clear')
     const label = d.items.find(i => i.t === 'text' && /^Ceiling/.test(i.s))
     expect([ceil.y1 <= 22, label.y - label.size > 0]).toEqual([true, true])                            // its label still on the sheet
     // a sheet taller than the drawing needs (dragged taller): the ceiling stays at the top, the room goes below
@@ -133,73 +134,9 @@ describe('SF-4 — the sheet', () => {
 
 describe('SF-5 — Apply', () => {
   it('SF-apply: with no row selected the button reads "Select rows to apply", dimmed; with rows "Apply to N selected rows"', () => {
-    const list = between(read('components/Elevations/ElevationsTab.jsx'), 'function List(', 'function QuickEdit(')
+    const list = between(read('components/Elevations/ElevationsTab.jsx'), 'function List(', 'function SheetRow(')
     expect(list).toMatch(/\{rowsSelected \? `Apply to \$\{rowsSelected\} selected row\$\{rowsSelected === 1 \? '' : 's'\}` : 'Select rows to apply'\}/)
     expect(list).toMatch(/<Btn kind="primary" disabled=\{!canApply\}[\s\S]*opacity: canApply \? 1 : 0\.45/)
   })
 })
 
-describe('SF-6 — quick edit on a row', () => {
-  let store, T_, P
-  beforeEach(async () => {
-    vi.resetModules()
-    ;({ useCanvasStore: store } = await import('../../store/useCanvasStore'))
-    T_ = await import('../../utils/elevTab'); P = await import('../../utils/project')
-    const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: null }], defaultCeilingId: 'c' }
-    pr.pallets = [...pr.pallets, { id: 'p60', name: '60×40', faceIn: 40, depthIn: 60, heightIn: 54, weightLb: 2000 }]
-    store.setState({ objects: [], elevations: P.withProject(null, pr), history: [JSON.stringify({ objects: [], groups: [], elevations: null })], historyIndex: 0 })
-    T_.addBestFit(store, { ceilingId: 'c', palletId: pr.defaultPalletId })
-  })
-  const st = () => store.getState(), ed = () => T_.useElevTab.getState().editing, type0 = () => st().elevations.types[0]
-
-  it('SF-quick-edit: the pencil opens the row\'s draft in place; Levels / Pallet / Beam change the draft (the sheet follows it); Save is ONE undo step and keeps the auto name; Cancel changes nothing', () => {
-    const id = type0().id, before = JSON.stringify(type0()), n = type0().levels.length
-    expect(T_.startQuick(store, id)).toBe(true)
-    expect([ed().id, ed().quick]).toEqual([id, true])
-    T_.quickEdit(store, { levels: 3 })
-    expect(ed().draft.levels.length).toBe(3)
-    T_.quickEdit(store, { beamFaceIn: 6 })
-    expect([ed().draft.beamFaceIn, ed().draft.levels.length]).toEqual([6, 3])                         // the count is kept through it
-    T_.quickEdit(store, { palletId: 'p60' })                                                            // a new pair refits — the count stays
-    expect([ed().draft.palletId, ed().draft.levels.length, ed().draft.levels[0].palletHeightIn]).toEqual(['p60', 3, 54])
-    expect(JSON.stringify(type0())).toBe(before)                                                         // nothing written yet
-    T_.cancelEdit()
-    expect([ed(), JSON.stringify(type0())]).toEqual([null, before])
-    // again, then Save: one undo step, the elevation's name its auto name (not frozen as a rename)
-    T_.startQuick(store, id); T_.quickEdit(store, { levels: n - 1 })
-    const h0 = st().historyIndex
-    expect(T_.quickSave(store)?.kind).toBe('saved')
-    expect([st().historyIndex - h0, type0().levels.length, type0().named, ed()]).toEqual([1, n - 1, false, null])
-    expect(P.nameOf(st().elevations, type0())).toMatch(new RegExp(`^${n - 1} levels · 48×40 · Main$`))
-    st().undo()
-    expect(type0().levels.length).toBe(n)
-  })
-
-  it('SF-quick-one: one row open at a time — the pencil on another drops the first, asking nothing; Full edit opens the C3 editor on the same draft', () => {
-    const a = type0().id
-    T_.duplicateElevation(store, a)
-    const b = st().elevations.types[1].id
-    T_.startQuick(store, a); T_.quickEdit(store, { levels: 2 })
-    T_.startQuick(store, b)
-    expect([ed().id, ed().quick, ed().draft.levels.length]).toEqual([b, true, type0().levels.length])
-    T_.quickEdit(store, { levels: 3 })
-    T_.quickToFull()
-    expect([ed().id, ed().quick, ed().draft.levels.length]).toEqual([b, false, 3])
-    const tab = read('components/Elevations/ElevationsTab.jsx')
-    expect(tab).toMatch(/const full = !!e && !e\.quick/)                                                // C3 only for a full edit
-    expect(tab).toMatch(/\{full\s+\? <Editor e=\{e\}/)
-  })
-
-  it('SF-quick-ui: each row has the pencil (the Edit icon, 28×28, §9) left of More; open, the row keeps the active fill and shows Levels (number), Pallet (the project\'s pallets), Beam 3″–6″ and Cancel / Save (30h) with a muted Full edit link; Edit is out of the More menu', () => {
-    const tab = read('components/Elevations/ElevationsTab.jsx'), list = between(tab, 'function List(', 'function QuickEdit('), q = between(tab, 'function QuickEdit(', '/** 30′ 0″')
-    expect(list.indexOf('<IconBtn name="Edit" ') > 0 && list.indexOf('<IconBtn name="Edit" ') < list.indexOf('<IconBtn name="More" ')).toBe(true)
-    expect(list).toMatch(/<IconBtn name="Edit" label=\{`Edit \$\{name\}`\} title="Quick edit" active=\{open\} \/>/)
-    expect(read('studio/iconData.js')).toMatch(/"Edit": \{/)
-    expect(read('../design/studio/Icons.dc.html')).toMatch(/M4 20l1\.4-4\.9L15\.6 4\.9l3\.5 3\.5L8\.9 18\.6z" fill="#C9CEC9"[\s\S]*?fill="#7BD3A4"[\s\S]*?>Edit<\/span><\/div>/)
-    expect(list).toMatch(/if \(open\) cancelEdit\(\); else startQuick\(store, t\.id\)/)
-    expect(list).toMatch(/\{open && <QuickEdit e=\{e\} T=\{T\} \/>\}/)
-    expect(['<InlineField label="Levels">', 'type="number" min={1} max={30} aria-label="Levels"', '<InlineField label="Pallet">', '(pr?.pallets || []).map(p =>', 'aria-label="Quick edit beam"', 'BEAM_FACES.map(v =>', '>Full edit</button>', "<Btn kind=\"ghost\" onClick={cancelEdit} style={{ height: 30,", "<Btn kind=\"primary\" onClick={() => quickSave(store)} style={{ height: 30,"].map(k => q.indexOf(k)).every(v => v > 0)).toBe(true)
-    expect(q).toMatch(/onClick=\{quickToFull\} style=\{\{ \.\.\.link, color: C\.muted, fontSize: 12 \}\}/)
-    expect(/item\('Edit'/.test(between(tab, 'function RowMenu(', 'export function ElevationsTab('))).toBe(false)
-  })
-})

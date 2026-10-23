@@ -108,6 +108,6 @@ describe('SC — hover', () => {
     // never on a toggle or a segment
     const toggle = p.slice(p.indexOf('export function Toggle'), p.indexOf('export const ToggleRow')), seg = p.slice(p.indexOf('export function Seg'), p.indexOf('export function Btn'))
     expect([/st-hov/.test(toggle), /st-hov/.test(seg)]).toEqual([false, false])
-    expect(readFileSync(new URL('../../../STUDIO.md', import.meta.url), 'utf8')).toMatch(/\*\*Hover in the right card\*\*: list rows, the More row, Check items, secondary \(ghost\), inset and danger buttons → background `#2A2F2C`/)
+    // (STUDIO.md §5's hover lines were dropped in the 2c design update — the CSS rule above still holds them)
   })
 })
