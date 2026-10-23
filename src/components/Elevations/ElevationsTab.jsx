@@ -18,7 +18,7 @@ import { ElevationDrawing } from './ElevationDrawing'
 
 /* ── The Elevations tab (STUDIO.md §5, §7; design/studio/Studio.dc.html panels "elev" C2 and "edit" C3) ─────────────
    In the 300 wide right card, under its Properties | Elevations segment:
-   1. The SHEET — white, a 14px #EFEEE9 grid, square corners — with the drawing on it and nothing else (no buttons on
+   1. The SHEET — white, a 14px #EFEEE9 grid, radius 8 — with the drawing on it and nothing else (no buttons on
       the drawing, except in edit on the sheet, C21). The list's drawing is read-only; beams drag only in the editor, into its draft — an elevation used by
       325 bays changes only through Save. Its height: the mockup's (420 under the list, 290 over the editor), shortened
       so the list or the form below still fits a short window; once the grab handle under it is dragged, the user's
@@ -172,8 +172,8 @@ export function ElevationsTab() {
 
   return (
     <div ref={body} aria-label="Elevations" data-mode={full ? 'editor' : onSheet ? 'sheet' : 'list'} data-pane="open" style={{ display: 'flex', flexDirection: 'column', maxHeight: bodyH, minHeight: 0 }}>
-      {/* 1. the sheet: white, 14px grid, square corners — the drawing, and in edit on the sheet its handles */}
-      <div data-drawing-box data-sheet style={{ margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 0, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient(#EFEEE9 1px, transparent 1px), linear-gradient(90deg, #EFEEE9 1px, transparent 1px)', backgroundSize: '14px 14px' }}>
+      {/* 1. the sheet: white, 14px grid, radius 8 in every state (the list, C21, C3) — the drawing, and in edit on the sheet its handles */}
+      <div data-drawing-box data-sheet style={{ margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 8, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient(#EFEEE9 1px, transparent 1px), linear-gradient(90deg, #EFEEE9 1px, transparent 1px)', backgroundSize: '14px 14px' }}>
         {shown
           ? <ElevationDrawing t={shown} title={e ? previewName(dT, e.draft, e.id) : nameOf(T, shown)} entry={shownEntry} building={building} sel={e ? sel : null} sprClr={sprinklerClearance(T)} detail="studio" fullDetail={detail} view={view} height={sheetH} controls={false} paper fullSignal={fullSignal}
               readOnly={!e} onCommit={e ? (next) => editDraft(store, { ...next, id: e.draft.id }, { fromDrawing: true }) : () => {}}

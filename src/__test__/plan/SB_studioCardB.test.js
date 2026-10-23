@@ -17,7 +17,7 @@ describe('SB — the sheet (C2, C3)', () => {
   it('SB-sheet: the drawing sits on a white sheet with a 14px #EFEEE9 grid and radius 8, nothing on it but the drawing; a grab handle under it; 420 high under the list and 290 over the editor until dragged; double-click forgets the drag', async () => {
     const tab = read('components/Elevations/ElevationsTab.jsx')
     const sheet = between(tab, 'data-drawing-box data-sheet', 'role="separator"')
-    expect(sheet).toMatch(/margin: '0 12px', height: sheetH,[^}]*borderRadius: 0, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient\(#EFEEE9 1px, transparent 1px\), linear-gradient\(90deg, #EFEEE9 1px, transparent 1px\)', backgroundSize: '14px 14px'/)
+    expect(sheet).toMatch(/margin: '0 12px', height: sheetH,[^}]*borderRadius: 8, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient\(#EFEEE9 1px, transparent 1px\), linear-gradient\(90deg, #EFEEE9 1px, transparent 1px\)', backgroundSize: '14px 14px'/)
     expect(/<button|<Btn|FixButton|IconBtn/.test(sheet)).toBe(false)                                   // no buttons on the drawing
     expect(sheet).toMatch(/controls=\{false\}/)
     expect(tab).toMatch(/const SHEET_LIST = 420, SHEET_EDIT = 290/)

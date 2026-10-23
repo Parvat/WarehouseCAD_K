@@ -794,7 +794,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     const hIdx = tab.indexOf('role="separator" aria-orientation="horizontal" aria-label="Resize drawing"')
     expect([tBox > 0, hIdx > tBox, tSwap > hIdx]).toEqual([true, true, true])                          // sheet | handle | list or editor
     expect(/role="toolbar"|aria-label="Fit"|BEAM \{/.test(tab)).toBe(false)                               // no toolbar above it
-    expect(tab).toMatch(/margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 0, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient\(#EFEEE9 1px, transparent 1px\), linear-gradient\(90deg, #EFEEE9 1px, transparent 1px\)', backgroundSize: '14px 14px'/)
+    expect(tab).toMatch(/margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 8, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient\(#EFEEE9 1px, transparent 1px\), linear-gradient\(90deg, #EFEEE9 1px, transparent 1px\)', backgroundSize: '14px 14px'/)
     expect(tab).toMatch(/detail="studio" fullDetail=\{detail\} view=\{view\} height=\{sheetH\} controls=\{false\} paper fullSignal=\{fullSignal\}\s+readOnly=\{!e\}/)   // read-only in the list; beams drag only in the editor
     // its height: the mockup's (420 under the list, 290 over the editor) shortened to leave the list or the form room; once dragged, the user's share
     expect(tab).toMatch(/const SHEET_LIST = 420, SHEET_EDIT = 290/)

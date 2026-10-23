@@ -2,7 +2,7 @@
 // One break-it test per behaviour:
 //   1 max load = the sprinkler height − 18″ (no sprinkler height: the ceiling − 18″); a sprinkler height above its ceiling
 //     is a field error in Project settings and cannot be saved
-//   2 the elevation sheet has square corners
+//   2 the elevation sheet has radius 8 corners in every state (the list, C21, C3)
 //   3 edit on the sheet (C21): the pencil; the list collapses to the row, the sheet grows; drag snaps to the hole pitch;
 //     a click types a blue value; + Add level; − on the top level; dotted underlines; a level over max load red; one
 //     undo step; Esc cancels
@@ -61,11 +61,13 @@ describe('SG-1b — the max load label fits', () => {
   })
 })
 
-describe('SG-2 — square corners', () => {
-  it('SG-square: the elevation sheet has square corners (radius 0) — the card\'s sheet in every state', () => {
+describe('SG-2 — the sheet\'s corners', () => {
+  it('SG-radius: the elevation sheet has radius 8 corners in every state — one sheet serves the list (C2), the sheet edit (C21) and the editor (C3); STUDIO.md says radius 8', () => {
     const tab = read('components/Elevations/ElevationsTab.jsx')
-    expect(tab).toMatch(/data-drawing-box data-sheet style=\{\{ margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 0,/)
-    expect(/data-sheet style=\{\{[^}]*borderRadius: 8/.test(tab)).toBe(false)
+    expect(tab).toMatch(/data-drawing-box data-sheet style=\{\{ margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 8,/)
+    expect((tab.match(/data-sheet style=/g) || []).length).toBe(1)                                    // the one sheet, every state
+    expect(/data-sheet style=\{\{[^}]*borderRadius: 0/.test(tab)).toBe(false)
+    expect(readFileSync(new URL('../../../STUDIO.md', import.meta.url), 'utf8')).toMatch(/\| Elevation sheet \| `#FFFFFF` with grid `#EFEEE9` every 14px, radius 8 \|/)
   })
 })
 

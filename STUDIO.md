@@ -64,7 +64,7 @@ Warning action button: background `#F2C77A`, text `#3A2E17`.
 | Max load line | `#C99A1E`, dashed 5 3; band to ceiling `#F2C230` at 22% |
 | Zone | fill `#EFEDE6`, edge `#B9B3A4` |
 | Lost position X | `#C0452A` |
-| Elevation sheet | `#FFFFFF` with grid `#EFEEE9` every 14px, square corners (radius 0) |
+| Elevation sheet | `#FFFFFF` with grid `#EFEEE9` every 14px, radius 8 |
 
 ### Plan drawing rules (see design/studio/PlanDetail.dc.html)
 - **One drawing at every zoom, for every object in the layout.** No switch at all: racks, uprights, flues, walls, columns, doors, zones, MHE, safety items, blocks, text objects, dimension lines and X marks are each drawn one way only, at true size. Zooming only scales them; there is never a moment where one version swaps for another, so nothing jumps, appears, disappears or changes shape while zooming. Lines that would go under 1px stay at 1px.
