@@ -98,12 +98,10 @@ describe('TH — broken items', () => {
     expect(read('components/RightPanel/LayoutCheckPanel.jsx')).toMatch(/position: 'fixed', inset: 0, zIndex: 200/)
   })
 
-  it('TH-beam (B5): the Elevations toolbar\'s beam label is the short form and never ellipsed', () => {
-    const tab = read('components/Elevations/ElevationsTab.jsx')
-    expect(tab).toMatch(/BEAM \{ftInDash\(shownEntry\.beamIn\)\} · \{per\}P\n/)
-    const span = tab.slice(tab.indexOf('aria-label="Beam length"'), tab.indexOf('BEAM {ftInDash(shownEntry.beamIn)}'))
-    expect(/textOverflow|overflow: 'hidden'/.test(span)).toBe(false)
-    expect(span).toMatch(/flex: '1 0 auto'/)
+  it('TH-beam (B5): the beam is said under the rack on the sheet (C2) — "Beam 96″ · 2 pallets · 2,500 lb", a drawing label, never ellipsed — and the card has no toolbar label for it', () => {
+    const tab = read('components/Elevations/ElevationsTab.jsx'), dr = read('utils/elevationDrawing.js')
+    expect(/BEAM \{ftInDash|aria-label="Beam length"/.test(tab)).toBe(false)
+    expect(dr.includes("['Beam ', [`${Math.round(bayIn)}″`], ` · ${per} pallet${per === 1 ? '' : 's'}`, ...(lb ? [' · ', [lb.toLocaleString('en-US')], ' lb'] : [])], { anchor: 'middle', pri: 1, tag: 'beam-label' })")).toBe(true)
   })
 
   it('TH-placing (B6): the placing status names what is placed — a zone by its kind', () => {

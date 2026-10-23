@@ -129,6 +129,10 @@ Warning action button: background `#F2C77A`, text `#3A2E17`.
 ## 7. Behaviour rules
 
 - Generate opens **inside the right card**. Top bar label: "Generate" on an empty plan, "Regenerate" when racks exist; Regenerate shows the warning line "Keeps zones, doors and columns. Replaces racking."
+  - Fields: Building width · Building length / Column grid (its own row) / Max run · Wall clearance; Row direction; Columns along wall (Yes · No); Forklift. No Clear height (Generate never uses one). Forklift and Wall clearance are the project's — editing them here writes Project settings (one undo step).
+  - The warning line also says the hand edits a regenerate loses. The blue note gives the real sources: "Pallet 48×40 comes from Project settings; frame 42″ and flue 9″ from Rules." — each name opens its dialog.
+  - Footer: Cancel · Generate / Regenerate. X and Cancel go back to the card that was showing. **Start over with a new building** is in the layout menu (File), behind a confirm — never in this card.
+- Elevations list: **Apply to N selected rows** stays in place, disabled at 45%, when no row is selected (the footer never jumps). A row's More: Edit · Colour · Duplicate · Set default · Remove unused elevations · Delete. Simple | Detailed is in the full-screen view; Fit is a double-click on the sheet.
 - Empty plan shows a centred card: "Your building is ready" · Generate layout · Draw racks. Gone after the first rack.
 - Elevations: Depth and full-screen buttons sit in the "In this layout" row (editor: in its header). The drawing has no buttons on it.
 - Elevation drawing labels (panel): Ceiling · Max load height (sprinklers −N) · free headroom + top of load stacked in one column on the far left · Frame dimension · beam heights at each beam (right) · L tags inside right pallet · pallet height and width arrows inside L1 pallets · face (4″) and lift-off (6″) as extension lines on the left of L1 · Beam length · pallets · capacity under the rack.

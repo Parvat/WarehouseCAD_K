@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { UNITS } from '../../constants'
@@ -9,6 +9,8 @@ import { useLabelPrefs } from '../../canvas2/labelPrefs'
 import { LABEL_SIZES, LABEL_SIZE_NAMES } from '../../render/labelSize'
 import { useViewPrefs } from '../../studio/viewPrefs'
 import { textOwnsKey } from '../../utils/typing'
+import { useGenFields, startOverLayout } from '../../utils/genFields'
+import { useRules } from '../../rules/useRules'
 
 /* The layout menu (Studio, STUDIO.md §1: the project name ▾ in the top-left island opens it). It holds everything the
    old top bar's "Settings and more" menu held — File, Edit, View, Standards, Appearance — so no action is lost while
@@ -165,6 +167,12 @@ export function LayoutMenu({ onClose, onRules, onHub, style }) {
     items[n].focus()
   }
   const done = (fn) => () => { fn(); onClose() }
+  /* Start over with a new building (moved here from the Generate card): asks first — everything in the layout goes,
+     and a new building is drawn from the Generate card's fields (utils/genFields.js) */
+  const [confirmStart, setConfirmStart] = useState(false)
+  const gen = useGenFields()
+  const { rules, mheOptions } = useRules()
+  const startOver = () => { onClose(); startOverLayout(useCanvasStore, { rules, mheOptions }) }
 
   return (
     <div role="menu" aria-label="Layout menu" ref={menuBox} onKeyDown={onMenuKey} style={{
@@ -178,6 +186,17 @@ export function LayoutMenu({ onClose, onRules, onHub, style }) {
         <MenuItem onClick={done(newScene)} hint="Ctrl+N">New</MenuItem>
         <MenuItem onClick={done(loadFromFile)}>Open…</MenuItem>
         <MenuItem onClick={done(saveToFile)} hint="Ctrl+S">Save</MenuItem>
+        {!confirmStart
+          ? <MenuItem onClick={() => setConfirmStart(true)}>Start over with a new building…</MenuItem>
+          : (
+            <div role="group" aria-label="Start over with a new building" style={{ padding: '7px 8px', display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12, lineHeight: 1.45, color: C.text }}>
+              <span>Everything in this layout goes. A new {gen.widthFt}′ × {gen.lengthFt}′ building is drawn and generated (the Generate card's size).</span>
+              <span style={{ display: 'flex', gap: 6 }}>
+                <button type="button" role="menuitem" onClick={() => setConfirmStart(false)} style={{ flex: 1, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'inherit', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                <button type="button" role="menuitem" onClick={startOver} style={{ flex: 1, height: 28, borderRadius: 6, border: 0, background: 'var(--red, #C0452A)', color: '#fff', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>Start over</button>
+              </span>
+            </div>
+          )}
       </MenuGroup>
 
       <MenuGroup label="Edit">

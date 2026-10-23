@@ -335,7 +335,8 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     // Studio: the colours are switched by the bottom-right island's Elevations toggle; the legend chip left the canvas
     expect(src('studio/StudioFrame.jsx')).toMatch(/aria-label="Elevation colours" aria-pressed=\{showColors\} onClick=\{\(\) => setShowColors\(!showColors\)\}/)
     expect(/<ElevLegend/.test(src('canvas2/Canvas2.jsx'))).toBe(false)
-    expect(src('components/Elevations/ElevationsTab.jsx')).toMatch(/background: tint\(t\.color\), opacity: tinted \? ELEV_FILL_OPACITY : 0\.25/)
+    // the card's list (C2): each row's 10px swatch in the elevation's own colour
+    expect(src('components/Elevations/ElevationsTab.jsx')).toMatch(/<span aria-hidden style=\{\{ width: 10, height: 10, flexShrink: 0, borderRadius: 2, background: tint\(t\.color\) \}\} \/>/)
   })
 
   it('EV-view: the drawing\'s Front | Side — one view fitted alone (front: beams and uprights, no frames; side: frames, no beams); both for the PDF', () => {
@@ -734,8 +735,9 @@ describe('EV — the editor (v2 §B–C, E)', () => {
 
   it('EV-background: the drawing sits on the panel\'s own background in Properties (labels haloed in it, frames and ground in the theme\'s colours), on white paper in the PDF in the reference\'s', () => {
     const pane = readFileSync(new URL('../../components/Elevations/ElevationDrawing.jsx', import.meta.url), 'utf8')
-    expect(pane).toMatch(/aria-label="Elevation drawing" data-readonly=\{[^}]*\} data-zoom=\{[^}]*\} style=\{\{[^}]*background: paper \? PAPER : 'var\(--surface\)', cursor: 'grab' \}\}/)
-    expect(pane).toMatch(/bg: paper \? '#FFFFFF' : 'var\(--surface\)', frame: 'var\(--elev-frame\)', ink: 'var\(--elev-ink\)'/)
+    // on the card's sheet (white, its 14px grid drawn by the tab) the drawing is transparent; its labels keep a white halo
+    expect(pane).toMatch(/aria-label="Elevation drawing" data-readonly=\{[^}]*\} data-zoom=\{[^}]*\} style=\{\{[^}]*background: paper \? 'transparent' : 'var\(--surface\)', cursor: 'grab' \}\}/)
+    expect(pane).toMatch(/bg: paper \? PAPER : 'var\(--surface\)', frame: 'var\(--elev-frame\)', ink: 'var\(--elev-ink\)'/)
     expect(pane.includes("background: '#fff'")).toBe(false)
     const panel = readFileSync(new URL('../../components/Elevations/ElevationsTab.jsx', import.meta.url), 'utf8')
     expect(panel.includes("background: '#fff'")).toBe(false)
@@ -784,18 +786,19 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(JSON.parse(localStorage.getItem('trace.rightpanel.v1'))).toEqual({ tab: 'elevations', elevW: 555 })
     RP.setRightPanel({ tab: 'properties', elevW: 480 })
     const tab = src('components/Elevations/ElevationsTab.jsx')
-    // 1. the top never moves: the toolbar and the fixed-height drawing box sit above the swap, shared by both states
-    const tTop = tab.indexOf('role="toolbar" aria-label="Drawing toolbar"'), tBox = tab.indexOf('data-drawing-box'), tSwap = tab.indexOf('? <Editor ')
-    expect([tTop > 0, tBox > tTop, tSwap > tBox]).toEqual([true, true, true])
-    const tBar = tab.slice(tTop, tBox)
-    expect(['aria-label="View"', 'BEAM {ftInDash(shownEntry.beamIn)} · {per}P', 'aria-label="Fit"', 'aria-label="Full screen"'].map(k => tBar.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
-    // the split: the drawing its share of the body below the toolbar (65% to start), the same in both states; a handle between
-    expect(tab).toMatch(/const drawH = Math\.max\(120, Math\.round\(\(bodyH - HANDLE\) \* split\)\)/)
-    expect(tab).toMatch(/<div style=\{\{ height: drawH, flexShrink: 0,/)
-    expect(tab).toMatch(/height=\{drawFix \? drawH - FIX_H : drawH\} controls=\{false\} paper fitSignal=\{fitSignal\} fullSignal=\{fullSignal\}\s+readOnly=\{!e\}/)   // read-only in the list; beams drag only in the editor
+    // 1. the sheet (C2, C3): white, a 14px #EFEEE9 grid, radius 8 — the drawing and no buttons on it; the grab handle under
+    // it; then the list or the editor in place
+    const tBox = tab.indexOf('data-drawing-box'), tSwap = tab.indexOf('? <Editor ')
     const hIdx = tab.indexOf('role="separator" aria-orientation="horizontal" aria-label="Resize drawing"')
-    expect([hIdx > tBox, tSwap > hIdx]).toEqual([true, true])                                         // drawing | handle | section 02
-    expect(tab).toMatch(/onPointerDown=\{startSplit\} onDoubleClick=\{\(\) => setElevSplit\(SPLIT_DEFAULT\)\}/)
+    expect([tBox > 0, hIdx > tBox, tSwap > hIdx]).toEqual([true, true, true])                          // sheet | handle | list or editor
+    expect(/role="toolbar"|aria-label="Fit"|BEAM \{/.test(tab)).toBe(false)                               // no toolbar above it
+    expect(tab).toMatch(/margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 8, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient\(#EFEEE9 1px, transparent 1px\), linear-gradient\(90deg, #EFEEE9 1px, transparent 1px\)', backgroundSize: '14px 14px'/)
+    expect(tab).toMatch(/detail="studio" fullDetail=\{detail\} view=\{view\} height=\{sheetH\} controls=\{false\} paper fullSignal=\{fullSignal\}\s+readOnly=\{!e\}/)   // read-only in the list; beams drag only in the editor
+    // its height: the mockup's (420 under the list, 290 over the editor) shortened to leave the list or the form room; once dragged, the user's share
+    expect(tab).toMatch(/const SHEET_LIST = 420, SHEET_EDIT = 290/)
+    expect(tab).toMatch(/const sheetH = Math\.max\(SHEET_MIN, split != null \? Math\.round\(room \* split\) : Math\.min\(e \? SHEET_EDIT : SHEET_LIST, room - \(e \? EDIT_MIN : LIST_MIN\)\)\)/)
+    expect(tab).toMatch(/<span aria-hidden style=\{\{ width: 32, height: 3, borderRadius: 2, background: C\.separator \}\} \/>/)   // the grab handle
+    expect(tab).toMatch(/onPointerDown=\{startSplit\} onDoubleClick=\{resetElevSplit\}/)
     expect(tab).toMatch(/cursor: 'row-resize'/)
     expect(tab).toMatch(/setElevSplit\(last, \{ save: false \}\)/)                                         // live while dragging, written on release
     // the split store: 65% to start, clamped 30–80%, the user's own (localStorage), not the layout's
@@ -806,22 +809,26 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect([TAB.useElevSplit.getState().split, JSON.parse(localStorage.getItem('trace.elevsplit.v1'))]).toEqual([0.8, 0.72])
     TAB.setElevSplit(TAB.SPLIT_DEFAULT)
     expect(TAB.useElevSplit.getState().split).toBe(0.65)
+    TAB.resetElevSplit()                                                                                // double-click: the mockup's heights again
+    expect([TAB.useElevSplit.getState().split, localStorage.getItem('trace.elevsplit.v1')]).toEqual([null, null])
     expect(/elevSplit|SPLIT/.test(src('store/useCanvasStore.js') + src('utils/project.js'))).toBe(false)   // never in the layout
-    // 2A. the list
+    // 2A. the list (C2): "In this layout" with Depth and Full screen; 48h rows (swatch, name, sub line, DEFAULT, More); Apply (primary) and New (ghost)
     const listUi = tab.slice(tab.indexOf('function List('), tab.indexOf('function Editor('))
-    expect(['<Head title="Elevations in this layout"', 'role="list" aria-label="Elevation list"', 'bays</span>', '>DEFAULT</span>', 'startEdit(store, t.id)', '<Icon name="More" ', 'Apply to {rowsSelected} selected row', ' New elevation</button>', 'Select rows on the plan, pick an elevation above, then apply.'].map(k => listUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
+    expect(['>In this layout</span>', '<SheetButtons view={view} onFull={onFull} />', 'role="list" aria-label="Elevation list"', 'height: 48, flexShrink: 0', "background: on ? C.active : 'transparent'", '{counts.get(t.id) || 0}</span> bays', '>DEFAULT</span>', '<IconBtn name="More" ', 'Apply to {rowsSelected} selected row', '<Plus />New</Btn>'].map(k => listUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
     expect(listUi).toMatch(/onClick=\{\(\) => useElevTab\.setState\(\{ activeId: t\.id \}\)\}/)                  // a click picks it; Apply assigns
-    // 2B. the editor: header, name, the ceiling and pallet boxes (their "+ New" fields inside), the note, beam face; the footer
+    expect(listUi.includes("{ceil?.name ? `${ceil.name} · ` : ''}{face !== faceDefault ? `${face}″ beam · ` : ''}")).toBe(true)   // the sub line: ceiling · beam if not the default · bays
+    expect(listUi).toMatch(/<Btn kind="primary" disabled=\{!canApply\}/)                                   // Apply: disabled (45%) with no row selected
+    // 2B. the editor (C3): Back · title · Depth · Full screen; Name; Ceiling (+ New ceiling height inside); the Pallet box; Beam; Cancel and Save
     const editUi = tab.slice(tab.indexOf('function Editor('))
-    expect(["<Head title={e.id ? 'Edit elevation' : 'New elevation'} note={e.id ? `${bays} bays use it` : null}", 'Drag a beam to move it', 'aria-label="Elevation name"', 'role="group" aria-label="Ceiling"', '>+ New ceiling height</option>', 'aria-label="New ceiling height"', "gridTemplateColumns: 'repeat(3, minmax(0, 1fr))'", 'role="group" aria-label="Pallet"', '>+ New pallet size</option>', 'aria-label="New pallet size"', "gridTemplateColumns: 'repeat(4, minmax(0, 1fr))'", 'aria-label="Pallet depth"', 'aria-label="Beam face"', '>Cancel</button>', '>Save elevation</button>'].map(k => editUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
+    expect(['aria-label="Back"', "{e.id ? 'Edit elevation' : 'New elevation'}", '<SheetButtons view={view} onFull={onFull} />', 'aria-label="Elevation name"', 'role="group" aria-label="Ceiling"', '>+ New ceiling height</option>', 'aria-label="New ceiling height"', "gridTemplateColumns: 'repeat(3, minmax(0, 1fr))'", 'role="group" aria-label="Pallet"', '>+ New pallet size</option>', 'aria-label="New pallet size"', "gridTemplateColumns: 'repeat(4, minmax(0, 1fr))'", 'aria-label="Pallet depth"', 'aria-label="Beam face"', '>Cancel</Btn>', '>Save elevation</Btn>'].map(k => editUi.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
     expect((editUi.match(/>Save/g) || []).length).toBe(1)                                              // ONE save, even with both "+ New" open
     expect(/>Save<\/button>|setNewForm/.test(editUi)).toBe(false)                                     // the inner forms have no buttons
     expect(tab).toMatch(/const BEAM_FACES = \[3, 4, 5, 6\]/)
     expect(tab).toMatch(/onCommit=\{e \? \(next\) => editDraft\(store, \{ \.\.\.next, id: e\.draft\.id \}, \{ fromDrawing: true \}\) : \(\) => \{\}\}/)   // into the draft
     expect(/aria-label="[^"]*Beam length[^"]*" (type|value)|<select[^>]*Beam length/i.test(tab)).toBe(false)        // no beam-length control
-    expect(tab).toMatch(/aria-label="Beam length"/)
-    expect(tab).toMatch(/Clear height not set — elevations assume \{ASSUMED_FT\}'\. Set it in <button type="button" style=\{S\.link\} onClick=\{\(\) => openSetup\('settings'\)\}>Project settings<\/button>/)
-    for (const k of ['>Duplicate</button>', '>Set default</button>', '>Delete</button>']) expect([k, tab.includes(k)]).toEqual([k, true])
+    expect(tab).toMatch(/Clear height not set — elevations assume \{ASSUMED_FT\}'\. Set it in <button type="button" style=\{link\} onClick=\{\(\) => openSetup\('settings'\)\}>Project settings<\/button>/)
+    // the row's More: Edit, colour, duplicate, set default, remove unused, delete
+    for (const k of ["item('Edit', () => startEdit(store, t.id))", "item('Duplicate',", "item('Set default',", "item('Remove unused elevations', () => removeUnused(store))", "item('Delete',"]) expect([k, tab.includes(k)]).toEqual([k, true])
     // the drawing: Fit and ⤢ are the tab's (signals); graph paper
     const drw = src('components/Elevations/ElevationDrawing.jsx')
     expect(drw).toMatch(/useEffect\(\(\) => \{ if \(fitSignal\) fit\(\) \}, \[fitSignal\]\)/)
@@ -830,7 +837,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(drw).toMatch(/const PAPER = '#FFFFFF'/)                                                     // a plain white sheet — no grid
     expect(/linear-gradient/.test(drw)).toBe(false)
     // reminders are blue: the clear-height note; the same-as note offers the existing one
-    expect(tab).toMatch(/<div role="note" aria-label="Clear height not set" style=\{BLUE_NOTE\}>/)
+    expect(tab).toMatch(/<Note level="note" role="note" aria-label="Clear height not set">/)
     expect(tab).toMatch(/const same = sameElevation\(dT, d, e\.id\)/)
     expect(tab).toMatch(/Same as <strong>\{nameOf\(T, same\)\}<\/strong> — <button type="button" onClick=\{useSame\}[^>]*>use that one instead\?<\/button>/)
     expect(tab).toMatch(/const useSame = \(\) => \{ cancelEdit\(\); useElevTab\.setState\(\{ activeId: same\.id, made: null \}\) \}/)

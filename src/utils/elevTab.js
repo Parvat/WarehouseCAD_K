@@ -19,12 +19,14 @@ import { projectOf, defaultCeiling, defaultPallet, ceilingById, palletById, drop
  *  The list (choosing, assigning) and the editor (making, changing) are never shown at the same time. */
 export const useElevTab = create(() => ({ activeId: null, view: 'front', editing: null, made: null }))
 
-/** The tab's split: the drawing's share of the panel below the toolbar (section 02 has the rest) — 65% to start,
- *  dragged between 30% and 80%, double-click back to 65%. The user's own (localStorage), never the layout's. */
+/** The tab's split: the sheet's share of the card below the tabs, once the user drags the handle under it (30%–80%).
+ *  Until then — and after a double-click, resetElevSplit — it is null: the sheet takes the mockup's heights (C2 list
+ *  420, C3 editor 290; ElevationsTab.jsx), shortened so the list or the form still fits a short window. The user's
+ *  own (localStorage), never the layout's. */
 export const SPLIT_DEFAULT = 0.65, SPLIT_MIN = 0.3, SPLIT_MAX = 0.8
 const SPLIT_KEY = 'trace.elevsplit.v1'
 export const clampSplit = (v) => (Number.isFinite(v) ? Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, v)) : SPLIT_DEFAULT)
-const readSplit = () => { try { const v = JSON.parse(localStorage.getItem(SPLIT_KEY)); return typeof v === 'number' ? clampSplit(v) : SPLIT_DEFAULT } catch { return SPLIT_DEFAULT } }
+const readSplit = () => { try { const v = JSON.parse(localStorage.getItem(SPLIT_KEY)); return typeof v === 'number' ? clampSplit(v) : null } catch { return null } }
 export const useElevSplit = create(() => ({ split: readSplit() }))
 /** The split set (clamped); `save` false while dragging (written on release). → the split. */
 export function setElevSplit(v, { save = true } = {}) {
@@ -32,6 +34,11 @@ export function setElevSplit(v, { save = true } = {}) {
   useElevSplit.setState({ split })
   if (save) { try { localStorage.setItem(SPLIT_KEY, JSON.stringify(split)) } catch { /* private window: this session only */ } }
   return split
+}
+/** Back to the mockup's heights (the handle's double-click): no split, nothing stored. */
+export function resetElevSplit() {
+  useElevSplit.setState({ split: null })
+  try { localStorage.removeItem(SPLIT_KEY) } catch { /* private window */ }
 }
 
 /** The selection as whole ROW SIDES — "select rows": each picked bay brings every bay of its rack on that side. */

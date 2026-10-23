@@ -2,6 +2,7 @@
 // canvas store or the layout).
 //   dblClickFit — double-click on empty canvas also fits to content (off by default: a big jump while editing)
 //   card        — what the right card shows: 'tabs' (Properties | Elevations) or 'generate'
+//   rulesOpen   — the Rules profiles dialog (the layout menu opens it; so does the Generate card's note)
 import { create } from 'zustand'
 
 const DBLCLICK_FIT_KEY = 'trace.canvas2.dblClickFit'
@@ -16,6 +17,8 @@ export const useViewPrefs = create((set, get) => ({
   },
   card: 'tabs',
   setCard: (card) => set({ card }),
+  rulesOpen: false,
+  setRulesOpen: (rulesOpen) => set({ rulesOpen }),
 }))
 
 /** The canvas's fit-to-content, registered by Canvas2 so the bottom-right island's Fit can call it. */

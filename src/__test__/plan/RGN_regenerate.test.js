@@ -155,18 +155,25 @@ describe('RGN — Regenerate racking', () => {
     expect(store.getState().elevations.types.some(x => x.id === 'B')).toBe(true)
   })
 
-  it('RGN-wire: the Generate panel asks when the building has a layout — Regenerate racking (with the rows, racks, zones, hand-placed racks and the hand edits lost, or that they can\'t be detected) or Start over (the old Generate) or Cancel', () => {
+  it('RGN-wire: on a layout the Generate card (C4) says what Regenerate keeps and loses — "Keeps zones, doors and columns. Replaces racking." and the hand edits lost, or that they can\'t be detected — and its primary regenerates; Start over with a new building is the layout menu\'s, behind a confirm', () => {
     const src = readFileSync(new URL('../../components/Generate/GeneratePanel.jsx', import.meta.url), 'utf8')
-    expect(src).toMatch(/if \(fp && objects\.some\(o => o\.parentId === fp\.id\)\) \{ setAsk\(regenSummary\(objects, fp\)\); return \}/)
-    expect(src).toMatch(/role="dialog" aria-label="Regenerate or start over"/)
-    // the panel never runs past the window: it scrolls, and the question scrolls into view
-    expect(src).toMatch(/maxHeight: 'calc\(100vh - 76px\)', overflowY: 'auto'/)
-    expect(src).toMatch(/if \(ask\) askRef\.current\?\.scrollIntoView\(\{ block: 'nearest' \}\)/)
-    expect(src).toMatch(/>Regenerate racking<\/button>[\s\S]*>Start over<\/button>[\s\S]*>Cancel<\/button>/)
+    expect(src).toMatch(/const onLayout = !!fp && objects\.some\(o => o\.parentId === fp\.id\)/)
+    expect(src).toMatch(/const ask = useMemo\(\(\) => \(onLayout \? regenSummary\(objects, fp\) : null\), \[onLayout, objects, fp\]\)/)
+    expect(src).toMatch(/if \(onLayout\) regenerate\(\)\s+else startOver\(\)/)
+    expect(src).toMatch(/Keeps zones, doors and columns\. Replaces racking\./)
     expect(src).toMatch(/Hand edits to these racks can't be detected/)
     expect(src).toMatch(/hand edit\$\{ask\.handEdits === 1 \? '' : 's'\} to generated racks will be lost/)
-    expect(src).toMatch(/regenerateRacking\(brief\(\), \{ rules, beamIn: useRackingSettings\.getState\(\)\.beamIn \?\? 96 \}\)/)
-    expect(src).toMatch(/const outcome = await generateAndPlaceBatched\(brief\(\), \{ onProgress: setProgress, rules \}\)/)
+    expect(src).toMatch(/regenerateRacking\(genBrief\(project, mheOptions\), \{ rules, beamIn: useRackingSettings\.getState\(\)\.beamIn \?\? 96 \}\)/)
+    expect(src).toMatch(/const outcome = await startOverLayout\(useCanvasStore, \{ rules, mheOptions, onProgress: setProgress \}\)/)
+    expect(/>Start over</.test(src)).toBe(false)                                                       // not in the card
+    // the card never runs past the window: its fields scroll, the footer stays
+    expect(src).toMatch(/flex: '0 1 auto', minHeight: 0, overflowY: 'auto'/)
+    const gf = readFileSync(new URL('../../utils/genFields.js', import.meta.url), 'utf8')
+    expect(gf).toMatch(/return generateAndPlaceBatched\(genBrief\(projectOf\(store\.getState\(\)\.elevations\), mheOptions\), \{ onProgress, rules \}\)/)
+    const menu = readFileSync(new URL('../../components/Toolbar/TopBar.jsx', import.meta.url), 'utf8')
+    expect(menu).toMatch(/<MenuItem onClick=\{\(\) => setConfirmStart\(true\)\}>Start over with a new building…<\/MenuItem>/)
+    expect(menu).toMatch(/role="group" aria-label="Start over with a new building"[\s\S]*>Cancel<\/button>[\s\S]*onClick=\{startOver\}[^>]*>Start over<\/button>/)
+    expect(menu).toMatch(/const startOver = \(\) => \{ onClose\(\); startOverLayout\(useCanvasStore, \{ rules, mheOptions \}\) \}/)
     const tg = readFileSync(new URL('../../generate/traceGenerate.js', import.meta.url), 'utf8')
     expect((tg.match(/stampGenPlaced\(queue\)\r?\n\s*endOneStep\(kept\)/g) || []).length).toBe(2)
   })

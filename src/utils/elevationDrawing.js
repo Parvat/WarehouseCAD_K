@@ -40,6 +40,12 @@ export function parseFtIn(text) {
 // clearances red, tags grey
 const FONT = "'JetBrains Mono', monospace"
 const AMBER = '#B5730F'   // warnings on the drawing (THEME.md's warning)
+/* Studio (STUDIO.md §2 drawing palette, §3 drawing type, §7 the panel's labels; design/studio/Studio.dc.html panel
+   "elev"): the right card's sheet. Plus Jakarta Sans for words and numbers alike, numbers 600 in the dimension blue. */
+const S_FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
+const S = { up: '#14392B', ink: '#1F2321', blue: '#1B4FD8', words: '#767C74', ceil: '#41483F', maxLine: '#C99A1E', maxText: '#8A6D14', maxNote: '#A89060', band: '#F2C230', hatch: '#C3BEB1', tag: '#8A7A55', red: '#C0452A' }
+/** 30'-0" → 30′-0″ (the Studio drawing's primes) */
+const prime = (str) => String(str).replace(/'/g, '′').replace(/"/g, '″')
 const INK = '#15181C', PINE = '#123A2E', LOAD = '#E8DCC2', LOAD_EDGE = '#B08F52', DECK = '#C9A870', BLUE = '#1B4FD8', RED = '#A8341C', GREY = '#7A828C', HATCH = '#B6BAB3', BAND = '#F2C230', MISFIT = '#F5E7E3', MISFIT_EDGE = '#A8341C'
 
 /** Which levels of `t` don't fit — a pallet plus the clearance taller than the top of its beam (the floor) to the
@@ -73,6 +79,8 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const { palletWIn = 40, palletDIn = null, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED, view = 'both', zoom = 1, pan = null } = opts
   const showFront = view !== 'side', showSide = view !== 'front'
   const detailed = detail === 'detailed'
+  // 'studio': the right card's sheet — the label set of STUDIO.md §7, nothing else (no pitch, no chain, no bracing)
+  const studio = detail === 'studio', u = fontPx / 9.4
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
   const L = [...t.levels].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
   const top = L[L.length - 1]
@@ -94,10 +102,11 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   // the columns, px from the frames
   const cTag = fO * 0.8, cElev = cTag + fT * 2.4, cPitch = (detailed ? cElev + longestElev + fO * 0.8 : cTag + fT * 2.6) + fO * 0.6
   const cChain = fO * 1.4, cFrame = detailed ? cChain + fO * 3.4 : fO * 1.8
-  const mL = compact ? 6 : cFrame + fO * 1.6, mR = compact ? 6 : Math.max(cPitch + fO * 1.6, tw('0.0" CLR', fT) + cTag + fO)
-  // the pallet deeper than these frames allow: an amber note under the drawing (a warning), a line of its own below the beam label
-  const deepNote = !compact && frameDepthNote(palletDIn, depthIn)
-  const mT = compact ? 6 : fO * (bClear || bSprink ? 2.0 : 1.2), mB = compact ? 6 : fO * (deepNote ? 6 : 4.4)
+  const mL = compact ? 6 : studio ? 80 * u : cFrame + fO * 1.6, mR = compact ? 6 : studio ? 70 * u : Math.max(cPitch + fO * 1.6, tw('0.0" CLR', fT) + cTag + fO)
+  // the pallet deeper than these frames allow: an amber note under the drawing (a warning), a line of its own below the
+  // beam label (Studio: the editor's warning box says it, with its action — never on the sheet)
+  const deepNote = !compact && !studio && frameDepthNote(palletDIn, depthIn)
+  const mT = compact ? 6 : studio ? 30 * u : fO * (bClear || bSprink ? 2.0 : 1.2), mB = compact ? 6 : studio ? 50 * u : fO * (deepNote ? 6 : 4.4)
   const sideL = compact ? 6 : fO * 3.2, sideR = compact ? 6 : fO * 1.2, sideT = compact ? 6 : fO * (pair ? 4.4 : 2.8)
   const gap = compact ? 14 : fO * 2.4
   let fit
@@ -178,8 +187,121 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     }
   }
 
+
+  /* ── Studio: the building over a view — the dashed ceiling line, the max load height (the sprinkler heads less their
+     clearance) with the band up to the ceiling, both labelled at the left */
+  /* a Studio label: `str` a string, or runs — [word, [value]] — the value 600 in `o.value` colour (the dimension blue) */
+  const sText = (x, y, str, o = {}) => items.push({ t: 'text', x, y, s: Array.isArray(str) ? str.map(r => (Array.isArray(r) ? r[0] : r)).join('') : str, runs: Array.isArray(str) ? str.map(r => (Array.isArray(r) ? { s: r[0], fill: r[1] || o.value || S.blue, weight: 600 } : { s: r })) : undefined, size: o.size || 10 * u, fill: o.fill || S.words, anchor: o.anchor || 'start', font: S_FONT, halo: Math.max(1.5, (o.size || 10 * u) * 0.45), haloColor: bg, ...o, weight: o.weight ?? 400 })
+  const sArrowHead = (x, y, dx, dy) => { const l = 5 * u, w = 2.1 * u, px = -dy, py = dx; items.push({ t: 'polygon', points: [[x, y], [x - dx * l + px * w, y - dy * l + py * w], [x - dx * l - px * w, y - dy * l - py * w]], fill: S.blue }) }
+  function studioShell(Yv, x0, x1) {
+    const base = bSprink || bClear
+    if (bClear) {
+      line(x0, Yv(bClear), x1, Yv(bClear), { stroke: S.ceil, sw: 1.2, dash: '6 4', tag: 'clear' })
+      if (!compact) sText(x0 + 24 * u, Yv(bClear) - 5 * u, ['Ceiling ', [prime(ftInDash(bClear)), S.words], building?.assumed ? ' (assumed)' : ''], { pri: 2, tag: 'shell' })
+    }
+    if (base) {
+      const maxLoad = base - sprinklerClearanceIn, yM = Yv(maxLoad), yC = Yv(base)
+      rect(x0, yC, x1 - x0, yM - yC, { fill: S.band, opacity: 0.22, tag: 'band' })
+      line(x0, yM, x1, yM, { stroke: S.maxLine, sw: 1.2, dash: '5 3', tag: 'max-load' })
+      if (!compact) sText(x0 + 48 * u, yM + 12 * u, ['Max load height ', [prime(ftInDash(maxLoad)), S.maxText], ' ', [`(sprinklers −${sprinklerClearanceIn}″)`, S.maxNote]], { fill: S.maxText, pri: 2, tag: 'shell' })
+    }
+  }
+  /* the ground: a 2.5 ink line, 1px hatching every 16 below it */
+  function studioGround(x0, x1, y) {
+    line(x0, y, x1, y, { stroke: S.ink, sw: 2.5 })
+    if (!compact) for (let x = x0 + 20 * u; x <= x1; x += 16 * u) line(x, y, x - 8 * u, y + 8 * u, { stroke: S.hatch, sw: 1 })
+  }
+  /* a Studio dimension: a thin blue line with 10 px end ticks */
+  const sDim = (x, y0, y1) => { line(x, y0, x, y1, { stroke: S.blue, sw: 1 }); for (const y of [y0, y1]) line(x - 5 * u, y, x + 5 * u, y, { stroke: S.blue, sw: 1 }) }
+  function studioFront() {
+    const fx0 = X0 - 88 * u, fx1 = Xf(frontW) + 88 * u
+    studioShell(Y, fx0, fx1)
+    studioGround(fx0, fx1, floor)
+    const per = Math.max(0, positionsPerBeam(bayIn, palletWIn))
+    const gapIn = per ? (bayIn - per * palletWIn) / (per + 1) : 0
+    const xR = Xf(frontW)
+    L.forEach((lv, i) => {
+      const isTop = i === L.length - 1, z = lv.beamIn, gone = removing === lv.k, bad = misfit.has(lv.k) || (isTop && !!topIssue)
+      if (z > 0) rect(Xf(upW), Y(z), bayIn * s, beamPx, { fill: gone ? '#d0392b' : isActive({ kind: 'beam', k: lv.k }) ? '#2a7a5f' : S.up, opacity: gone ? 0.5 : 1, role: { kind: 'beam', k: lv.k }, cursor: 'ns-resize', tag: 'beam' })
+      const lh = loadH(lv, i)
+      let lastX = null
+      for (let p = 0; p < per; p++) {
+        const x = upW + gapIn + p * (palletWIn + gapIn)
+        rect(Xf(x), Y(z + lh), palletWIn * s, Math.max(0, lh * s - deckPx), { fill: bad ? MISFIT : LOAD, stroke: bad ? S.red : LOAD_EDGE, sw: 1, opacity: gone ? 0.35 : 1, tag: 'load', level: lv.k })
+        rect(Xf(x), Y(z) - Math.min(deckPx, lh * s), palletWIn * s, Math.min(deckPx, lh * s), { fill: bad ? S.red : DECK, opacity: gone ? 0.35 : 1, tag: 'load', level: lv.k })
+        lastX = x
+      }
+      if (compact || !per) return
+      if (bad) sText(Xf(frontW / 2), Y(z + lh / 2) + 3.5 * u, misfit.has(lv.k) ? "Doesn't fit" : topIssue === 'clear' ? 'Above the ceiling' : `Within ${sprinklerClearanceIn}″ of sprinklers`, { anchor: 'middle', size: 9 * u, fill: S.red, weight: 600, tag: 'misfit', pri: 1.5, level: lv.k })
+      // the level tag inside the right pallet, top-right (PJS 8.5 / 600)
+      if (lh * s > 14 * u) sText(Xf(lastX + palletWIn) - 3 * u, Y(z + lh) + 10 * u, `L${i + 1}`, { anchor: 'end', size: 8.5 * u, fill: S.tag, weight: 600, tag: 'level-tag', halo: 0, fixed: true })
+      // the beam's height to its top, on a short tick off the right upright
+      if (z > 0) {
+        const role = { kind: 'dim', id: 'elev', k: lv.k, value: z }, hot = isActive(role) || isActive({ kind: 'beam', k: lv.k })
+        line(xR + 1 * u, Y(z) + 2 * u, xR + 7 * u, Y(z) + 2 * u, { stroke: hot ? '#d0392b' : S.blue, sw: 1 })
+        sText(xR + 9 * u, Y(z) + 5.5 * u, prime(ftInDash(z)), { fill: hot ? '#d0392b' : S.blue, weight: 600, role, pri: 1 })
+      }
+    })
+    // the frames: uprights and base plates (no bracing on the front view)
+    for (const x of [0, frontW - upW]) {
+      const fxp = Xf(x)
+      rect(fxp, Y(hTop), colPx, hTop * s, { fill: S.up, role: { kind: 'upright', x }, tag: 'upright' })
+      if (!compact) {
+        rect(fxp - 4.5 * u, floor - 3 * u, colPx + 9 * u, 3 * u, { fill: S.ink })
+        rect(fxp - 2, Y(hTop) - 3, colPx + 4, 6, { fill: isActive({ kind: 'top' }) ? '#d0392b' : 'transparent', role: { kind: 'top' }, cursor: 'ns-resize' })
+      }
+    }
+    if (compact) return
+    const lv0 = L[0], lh0 = loadH(lv0, 0), lv1 = L[1]
+    // inside the L1 pallets: the pallet's height (left pallet) and width (right pallet), arrowed
+    if (per && lh0 > 0) {
+      const xa = Xf(upW + gapIn), ya0 = Y(lv0.beamIn + lh0) + 3 * u, ya1 = Y(lv0.beamIn) - deckPx - 3 * u, xl = xa + 8 * u
+      if (ya1 - ya0 > 14 * u) {
+        line(xl, ya0, xl, ya1, { stroke: S.blue, sw: 1 }); sArrowHead(xl, ya0, 0, -1); sArrowHead(xl, ya1, 0, 1)
+        sText(xl + 4 * u, (ya0 + ya1) / 2 + 3 * u, `${Math.round(lv0.palletHeightIn || lh0)}″`, { size: 9.5 * u, fill: S.blue, weight: 600, halo: 0, tag: 'pallet-h', fixed: true })
+      }
+      const xp = upW + gapIn + (per - 1) * (palletWIn + gapIn), xb0 = Xf(xp) + 3 * u, xb1 = Xf(xp + palletWIn) - 1 * u, yb = Y(lv0.beamIn) - deckPx - 8 * u
+      if (xb1 - xb0 > 18 * u) {
+        line(xb0, yb, xb1, yb, { stroke: S.blue, sw: 1 }); sArrowHead(xb0, yb, -1, 0); sArrowHead(xb1, yb, 1, 0)
+        sText((xb0 + xb1) / 2, yb - 5 * u, `${Math.round(palletWIn)}″`, { anchor: 'middle', size: 9.5 * u, fill: S.blue, weight: 600, halo: 0, tag: 'pallet-w', fixed: true })
+      }
+    }
+    // left of L1: the beam above it — its face (top and underside) and the lift-off (underside to the top of the load)
+    if (lv1 && lv1.beamIn > 0) {
+      const xu = X0, yt = Y(lv1.beamIn), yu = Y(lv1.beamIn - face), yl = Y(lv0.beamIn + lh0)
+      for (const y of [yt, yu]) line(xu - 13 * u, y, xu - 1 * u, y, { stroke: S.blue, sw: 0.8 })
+      sText(xu - 15 * u, yu, prime(ftInDash(face)), { anchor: 'end', size: 8.5 * u, fill: S.blue, weight: 600, pri: 3, tag: 'face', role: { kind: 'dim', id: 'face', value: face } })
+      const lift = lv1.beamIn - face - (lv0.beamIn + lh0)
+      if (lift > 0) {
+        line(xu - 13 * u, yl, Xf(upW + gapIn) - 2 * u, yl, { stroke: S.blue, sw: 0.8 })
+        sText(xu - 15 * u, yl + 4 * u, prime(ftInDash(lift)), { anchor: 'end', size: 8.5 * u, fill: S.blue, weight: 600, pri: 3, tag: 'lift-off' })
+      }
+    }
+    // far left, one column: the free headroom over the top load (to the max load height), then the top of the load
+    const base = bSprink || bClear, xo = X0 - 52 * u, zTop = topLoad
+    const maxLoad = base ? base - sprinklerClearanceIn : null
+    if (maxLoad != null) {
+      sDim(xo, Y(maxLoad), Y(zTop))
+      const free = maxLoad - zTop
+      sText(xo - 13 * u, (Y(maxLoad) + Y(zTop)) / 2, free >= 0 ? [[prime(ftInDash(free))], ' free'] : [[prime(ftInDash(-free)), S.red], ' over'], { anchor: 'middle', rot: -90, size: 9.5 * u, fill: free >= 0 ? S.words : S.red, pri: 2, tag: 'free' })
+    }
+    sDim(xo, Y(zTop), floor)
+    line(xo + 5 * u, Y(zTop), Xf(upW + gapIn) - 2 * u, Y(zTop), { stroke: S.blue, sw: 0.6, dash: '2 2' })
+    sText(xo - 13 * u, (Y(zTop) + floor) / 2, ['Top of load ', [prime(ftInDash(zTop))]], { anchor: 'middle', rot: -90, pri: 2, tag: 'top-load' })
+    // the frame, the column inside it
+    const xf = X0 - 26 * u
+    sDim(xf, Y(hTop), floor)
+    sText(xf - 10 * u, (Y(hTop) + floor) / 2, ['Frame ', [prime(ftInDash(hTop))]], { anchor: 'middle', rot: -90, pri: 2, tag: 'frame', role: { kind: 'dim', id: 'upright', value: hTop } })
+    // under the rack: the beam, its pallets and the load
+    const yb = floor + 18 * u, lb = Math.max(0, ...L.map(l => l.loadLb || 0))
+    line(Xf(upW), yb, Xf(upW + bayIn), yb, { stroke: S.blue, sw: 1 }); for (const x of [Xf(upW), Xf(upW + bayIn)]) line(x, yb - 5 * u, x, yb + 5 * u, { stroke: S.blue, sw: 1 })
+    sText(Xf(upW + bayIn / 2), floor + 36 * u, ['Beam ', [`${Math.round(bayIn)}″`], ` · ${per} pallet${per === 1 ? '' : 's'}`, ...(lb ? [' · ', [lb.toLocaleString('en-US')], ' lb'] : [])], { anchor: 'middle', pri: 1, tag: 'beam-label' })
+  }
+
+  // ── front view, Studio (the right card's sheet)
+  if (showFront && studio) studioFront()
   // ── front view
-  if (showFront) {
+  if (showFront && !studio) {
   const fx0 = X0 - (compact ? 0 : fO * 1.4), fx1 = Xf(frontW) + (compact ? 0 : fO * 1.2)
   shell(Y, fx0, fx1)
   ground(fx0, fx1, floor)
@@ -265,8 +387,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   // ── side view: dark green frames (two and the flue for a back-to-back), horizontals and diagonals, flue spacers
   if (showSide) {
   const sx0 = Xs(0) - (compact ? 0 : fO * 1.2), sx1 = Xs(sideW) + (compact ? 0 : fO * 1.0)
-  shell(Ys, sx0, sx1)
-  ground(sx0, sx1, floorS)
+  if (studio) { studioShell(Ys, sx0, sx1); studioGround(sx0, sx1, floorS) } else { shell(Ys, sx0, sx1); ground(sx0, sx1, floorS) }
   const frames = pair ? [0, depthIn + flueIn + upW] : [0]
   // the pallets on each level, at their real depth, centred on the frame; past the frame + 6" (3" a side) the overhang
   // is amber — the pallet needs a deeper frame (frameDepthNote)
@@ -298,7 +419,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     const yb = floorS + fO * 2.4
     dimH(yb, Xs(0), Xs(depthIn + upW), ftInDash(depthIn), { outboard: pair ? 'left' : null })
     if (pair) { dimH(yb, Xs(depthIn + upW), Xs(depthIn + upW + flueIn), ftInDash(flueIn), { below: false }); dimH(yb, Xs(depthIn + flueIn + upW), Xs(sideW), ftInDash(depthIn), { outboard: 'right' }) }
-    dimV(Xs(0) - fO * 1.8, Ys(0), Ys(hTop), `FRAME ${ftInDash(hTop)}`, { kind: 'dim', id: 'upright', value: hTop }, { pri: 2, out: -1 })
+    dimV(Xs(0) - fO * 1.8, Ys(0), Ys(hTop), studio ? prime(`Frame ${ftInDash(hTop)}`) : `FRAME ${ftInDash(hTop)}`, { kind: 'dim', id: 'upright', value: hTop }, { pri: 2, out: -1 })
   }
   }
   if (!compact) declutter(items, box)
@@ -315,7 +436,8 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
 
 /** A label's box (px). */
 export function labelBox(i) {
-  const len = String(i.s).length * i.size * 0.6   // a monospace advance
+  // a monospace advance; the Studio sheet's Plus Jakarta Sans runs narrower
+  const len = String(i.s).length * i.size * (/Jakarta/.test(i.font || '') ? 0.53 : 0.6)
   if (i.rot === -90) return { x0: i.x - i.size * 0.85, x1: i.x + i.size * 0.2, y0: i.y - len / 2, y1: i.y + len / 2 }
   const x0 = i.anchor === 'start' ? i.x : i.anchor === 'end' ? i.x - len : i.x - len / 2
   return { x0, x1: x0 + len, y0: i.y - i.size * 0.8, y1: i.y + i.size * 0.22 }
@@ -332,6 +454,7 @@ export function declutter(items, box = null) {
   const labels = items.filter(i => i.t === 'text').sort((a, b) => (a.pri ?? 2) - (b.pri ?? 2))
   const placed = [], drop = new Set()
   for (const l of labels) {
+    if (l.fixed) { placed.push(l); continue }      // drawn inside its own shape (a level tag, a pallet's size): it stays
     let inBox = !!box
     const ok = () => { const b = labelBox(l), g = l.size * 0.5, bg = { x0: b.x0 - g, x1: b.x1 + g, y0: b.y0, y1: b.y1 }; if (l.keepIn && (b.y0 < l.keepIn[0] - 0.5 || b.y1 > l.keepIn[1] + 0.5)) return false; if (inBox && (b.x0 < 0 || b.x1 > box.w || b.y0 < 0 || b.y1 > box.h)) return false; return !placed.some(p => hit(bg, labelBox(p))) && !solids.some(r => !(l.tag === 'misfit' && r.level === l.level && r.tag === 'load') && hit(b, rectBox(r))) }
     if (ok()) { placed.push(l); continue }
@@ -372,7 +495,7 @@ export function itemSVG(i) {
   if (i.t === 'circle') return `<circle cx="${i.cx}" cy="${i.cy}" r="${i.r}" fill="${i.fill}"${i.stroke ? ` stroke="${i.stroke}" stroke-width="${i.sw || 1}"` : ''}/>`
   if (i.t === 'poly') return `<polyline points="${i.points.map(p => p.join(',')).join(' ')}" fill="none" stroke="${i.stroke}" stroke-width="${i.sw}"/>`
   // the label's halo in the colour behind it (the panel's, or the paper's): a style, so a CSS variable works too
-  if (i.t === 'text') return `<text x="${i.x}" y="${i.y}" font-size="${i.size}" font-family="${esc(i.font || 'Arial, sans-serif')}" text-anchor="${i.anchor}" fill="${i.fill}"${i.halo ? ` style="stroke:${esc(i.haloColor || '#fff')};stroke-width:${i.halo}px;paint-order:stroke;stroke-linejoin:round"` : ''}${i.weight ? ` font-weight="${i.weight}"` : ''}${i.rot ? ` transform="rotate(${i.rot} ${i.x} ${i.y})"` : ''}>${esc(i.s)}</text>`
+  if (i.t === 'text') return `<text x="${i.x}" y="${i.y}" font-size="${i.size}" font-family="${esc(i.font || 'Arial, sans-serif')}" text-anchor="${i.anchor}" fill="${i.fill}"${i.halo ? ` style="stroke:${esc(i.haloColor || '#fff')};stroke-width:${i.halo}px;paint-order:stroke;stroke-linejoin:round"` : ''}${i.weight ? ` font-weight="${i.weight}"` : ''}${i.rot ? ` transform="rotate(${i.rot} ${i.x} ${i.y})"` : ''}>${i.runs ? i.runs.map(r => `<tspan${r.fill ? ` fill="${r.fill}"` : ''}${r.weight ? ` font-weight="${r.weight}"` : ''}>${esc(r.s)}</tspan>`).join('') : esc(i.s)}</text>`
   return ''
 }
 /** The drawing as an SVG string, `w` × `h` px (or the units the caller wraps it in). */

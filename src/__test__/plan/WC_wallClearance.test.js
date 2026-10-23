@@ -50,10 +50,11 @@ describe('WC — the setting', () => {
     expect([clearFromOutline(6), clearFromOutline(6, 6), clearFromOutline(2), clearFromOutline(12, 3)]).toEqual([3, 0, 0, 9])
     expect([wallClearOf({ wallClearIn: 0 }), wallClearOf({ wallClearanceIn: 6 }), wallClearOf({}), WALL_CLEAR_IN]).toEqual([0, 3, 3, 3])
   })
-  it('WC-shared: the wall clearance is the project\'s (Project setup): Generate sends it as the wall clearance, Fill racking reads the ONE Racking setting the project keeps in step — neither shows a field', () => {
+  it('WC-shared: the wall clearance is the project\'s (Project setup): Generate sends it as the wall clearance (its field in the card writes the project\'s — C4), Fill racking reads the ONE Racking setting the project keeps in step and shows no field', () => {
     const gen = readFileSync('src/components/Generate/GeneratePanel.jsx', 'utf8'), bar = readFileSync('src/canvas2/FillTool.jsx', 'utf8'), sync = readFileSync('src/components/Project/ProjectSync.jsx', 'utf8')
     expect(gen.includes('const wallClearIn = project?.rules?.wallClearIn ?? useRackingSettings.getState().wallClearIn ?? 0')).toBe(true)
-    expect(gen).toMatch(/const brief = \(\) => generateBrief\(project, mheOptions,/)
+    expect(gen).toMatch(/regenerateRacking\(genBrief\(project, mheOptions\),/)
+    expect(gen).toMatch(/<UnitNum aria="Wall clearance \(in\)" disabled=\{!project\} value=\{wallClearIn\} onChange=\{v => setProject\(\{ rules: \{ \.\.\.project\.rules, wallClearIn:/)
     expect(readFileSync('src/utils/project.js', 'utf8')).toMatch(/wallClearIn: Number\(project\?\.rules\?\.wallClearIn\) \|\| 0/)
     expect(sync.includes('wallClearIn: pr.rules?.wallClearIn ?? rs.wallClearIn')).toBe(true)
     for (const src of [gen, bar]) expect(src.includes('aria-label="Wall clearance (in from the wall\'s inner face)"')).toBe(false)

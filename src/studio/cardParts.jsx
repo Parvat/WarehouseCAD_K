@@ -111,11 +111,13 @@ export function NumInput({ value, onCommit, aria, min = 0, step, inputProps }) {
   )
 }
 
-/** A select in the field box (words or numbers) — drawn as the plain field, as the mockups draw it. */
-export function SelectField({ value, onChange, aria, children, words = false, style }) {
+/** A select in the field box (words or numbers) — drawn as the plain field, as the mockups draw it; `chevron` adds the
+ *  12px Chevron at its right where the mockup draws one (C3 Ceiling, Pallet). */
+export function SelectField({ value, onChange, aria, children, words = false, style, chevron = false }) {
   return (
     <span style={{ position: 'relative', display: 'flex', width: '100%', minWidth: 0 }}>
-      <select aria-label={aria} value={value} onChange={onChange} className="st-field st-select" style={{ ...fieldBox(words), appearance: 'none', cursor: 'pointer', ...style }}>{children}</select>
+      <select aria-label={aria} value={value} onChange={onChange} className="st-field st-select" style={{ ...fieldBox(words), appearance: 'none', cursor: 'pointer', ...(chevron ? { paddingRight: 28 } : null), ...style }}>{children}</select>
+      {chevron && <span aria-hidden style={{ position: 'absolute', right: 10, top: 9, pointerEvents: 'none', display: 'flex' }}><Icon name="Chevron" size={12} color={C.muted} /></span>}
     </span>
   )
 }

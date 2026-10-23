@@ -22,6 +22,8 @@ import { setPane, moveBeam, addLevelAt, removeLevel, setUpright, setDimension, p
  *  screen (Esc closes). */
 export function ElevationDrawing(props) {
   const [full, setFull] = useState(false)
+  // full screen draws Simple | Detailed (its own switch); the card's sheet passes its Studio set as `detail` and the choice as `fullDetail`
+  const fullDetail = props.fullDetail ?? props.detail
   const [host, setHost] = useState(null)
   useEffect(() => { setHost(document.querySelector('[data-theme]') || document.body) }, [])
   // the tab's own ⤢ (its toolbar): a new signal opens full screen
@@ -36,16 +38,17 @@ export function ElevationDrawing(props) {
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>Esc closes</span>
           {/* Simple | Detailed — the full-size view is where the detailed dimensions are read */}
           <div role="group" aria-label="Drawing detail" style={{ display: 'flex', gap: 2, padding: 2, marginLeft: 12, borderRadius: 2, border: '1px solid var(--border)', background: 'var(--surface2)' }}>
-            {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={props.detail === k} onClick={() => setPane({ detail: k })} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 2, border: 'none', cursor: 'pointer', background: props.detail === k ? 'var(--accent-solid, #0B101D)' : 'transparent', color: props.detail === k ? 'var(--accent-fg, #fff)' : 'var(--text2)' }}>{label}</button>)}
+            {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={fullDetail === k} onClick={() => setPane({ detail: k })} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 2, border: 'none', cursor: 'pointer', background: fullDetail === k ? 'var(--accent-solid, #0B101D)' : 'transparent', color: fullDetail === k ? 'var(--accent-fg, #fff)' : 'var(--text2)' }}>{label}</button>)}
           </div>
           <button type="button" aria-label="Close full screen" onClick={() => setFull(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex' }}><Icon name="Close" color="currentColor" /></button>
         </div>
-        <div style={{ flex: 1, minHeight: 0 }}><DrawingCore {...props} fill height={null} controls paper={false} fitSignal={0} /></div>
+        <div style={{ flex: 1, minHeight: 0 }}><DrawingCore {...props} detail={fullDetail} fill height={null} controls paper={false} fitSignal={0} /></div>
       </div>, host)}
   </>
 }
 
-/* the sheet the drawing sits on in the Elevations tab: plain white */
+/* the sheet the drawing sits on in the Elevations tab: white with its 14px grid, drawn by the tab's sheet (ElevationsTab.jsx) —
+   the drawing itself is transparent there; labels keep a white halo */
 const PAPER = '#FFFFFF'
 
 function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null, readOnly = false, controls = true, paper = false, fitSignal = 0 }) {
@@ -89,7 +92,7 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
   const shown = draft ? draft.type : t
   // centred and fitted to the pane (elevationLayout centres it in the box), labels in proportion with a readable minimum
   const fontPx = paneFontPx(box)
-  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, palletDIn: entry.palletDIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, view, zoom: zv.zoom, pan: zv.pan, bg: paper ? '#FFFFFF' : 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail, view, zv])
+  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, palletDIn: entry.palletDIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, view, zoom: zv.zoom, pan: zv.pan, bg: paper ? PAPER : 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail, view, zv])
 
   const at = (ev) => { const r = host.current.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
   useEffect(() => {
@@ -196,11 +199,11 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
     if (i.t === 'polygon') return <polygon key={n} points={i.points.map(q => q.join(',')).join(' ')} fill={i.fill} pointerEvents="none" />
     if (i.t === 'circle') return <circle key={n} cx={i.cx} cy={i.cy} r={i.r} fill={i.fill} stroke={i.stroke} strokeWidth={i.sw} pointerEvents="none" />
     if (i.t === 'poly') return <polyline key={n} points={i.points.map(q => q.join(',')).join(' ')} fill="none" stroke={i.stroke} strokeWidth={i.sw} pointerEvents="none" />
-    if (i.t === 'text') return <text key={n} data-role={role} textRendering="geometricPrecision" x={i.x} y={i.y} fontSize={i.size} fontFamily={i.font || 'Arial, sans-serif'} textAnchor={i.anchor} fill={i.fill} fontWeight={i.weight} transform={i.rot ? `rotate(${i.rot} ${i.x} ${i.y})` : undefined} style={{ userSelect: 'none', ...(i.halo ? { stroke: i.haloColor || 'var(--surface)', strokeWidth: i.halo, paintOrder: 'stroke', strokeLinejoin: 'round' } : {}), ...(handlers.style || {}) }} onDoubleClick={handlers.onDoubleClick}>{i.s}</text>
+    if (i.t === 'text') return <text key={n} data-role={role} textRendering="geometricPrecision" x={i.x} y={i.y} fontSize={i.size} fontFamily={i.font || 'Arial, sans-serif'} textAnchor={i.anchor} fill={i.fill} fontWeight={i.weight} transform={i.rot ? `rotate(${i.rot} ${i.x} ${i.y})` : undefined} style={{ userSelect: 'none', ...(i.halo ? { stroke: i.haloColor || 'var(--surface)', strokeWidth: i.halo, paintOrder: 'stroke', strokeLinejoin: 'round' } : {}), ...(handlers.style || {}) }} onDoubleClick={handlers.onDoubleClick}>{i.runs ? i.runs.map((r, k) => <tspan key={k} fill={r.fill} fontWeight={r.weight}>{r.s}</tspan>) : i.s}</text>
     return null
   }
   return (
-    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" data-readonly={readOnly ? 'true' : undefined} data-zoom={Math.round(zv.zoom * 100) / 100} style={{ height: box.h, flexShrink: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: paper ? PAPER : 'var(--surface)', cursor: 'grab' }}>
+    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" data-readonly={readOnly ? 'true' : undefined} data-zoom={Math.round(zv.zoom * 100) / 100} style={{ height: box.h, flexShrink: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: paper ? 'transparent' : 'var(--surface)', cursor: 'grab' }}>
       <svg width={box.w} height={box.h} style={{ display: 'block', position: 'relative', left: snap.x, top: snap.y }}
         onPointerDown={(e) => { host.current.focus({ preventScroll: true }); startPan(e) }} onDoubleClick={(e) => { if (empty(e)) fit() }}>
         {d.items.map(render)}

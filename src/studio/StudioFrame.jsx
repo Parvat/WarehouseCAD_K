@@ -29,7 +29,7 @@ const ghost = (extra) => ({ border: 0, borderRadius: 6, background: 'transparent
 function TopLeft({ onHub }) {
   const name = useCanvasStore(s => s.currentFilename)
   const [menu, setMenu] = useState(false)
-  const [rules, setRules] = useState(false)
+  const rules = useViewPrefs(s => s.rulesOpen), setRules = useViewPrefs.getState().setRulesOpen
   const wrap = useRef(null)
   useEffect(() => {
     if (!menu) return
@@ -99,17 +99,18 @@ function RightCard() {
   /* Check layout open: the card is the check (C5) until its X — Generate, opened after, comes first */
   const checkOpen = useLayoutCheck(s => s.open && !!s.result)
   const seg = (on) => ({ flex: 1, height: 28, border: 0, borderRadius: 6, background: on ? '#3A403C' : 'transparent', fontSize: 13, fontWeight: on ? 500 : 400, color: on ? '#F2F4F1' : '#9AA29C' })
-  /* the Elevations tab lays its drawing out against a fixed height: the card takes its full height there */
+  /* the Elevations tab sizes its sheet from the room the card has (C2, C3); nothing in it scrolls the card itself */
   const full = card === 'tabs' && tab === 'elevations'
   return (
     <div className="st-island" aria-label="Right panel" data-island="right-card" style={{
-      right: 16, top: 76, width: 300, maxHeight: 'calc(100vh - 152px)', height: full ? 'calc(100vh - 152px)' : undefined,
+      right: 16, top: 76, width: 300, maxHeight: 'calc(100vh - 152px)',
       flexDirection: 'column', alignItems: 'stretch', overflow: 'hidden',
     }}>
       {card === 'tabs' && checkOpen
         ? <div data-card-dark style={{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}><CheckCard /></div>
         : card === 'generate'
-        ? <div data-card-body style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: 'var(--surface)', color: 'var(--text)' }}>
+        ? <div data-card-dark style={{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            {/* C4: its X and Cancel go back to the card that was showing (Properties / Elevations, or the check) */}
             <GeneratePanel embedded onClose={() => useViewPrefs.getState().setCard('tabs')} />
           </div>
         : <>
@@ -119,9 +120,9 @@ function RightCard() {
                 <button type="button" role="tab" aria-selected={tab === 'elevations'} style={seg(tab === 'elevations')} onClick={() => setRightPanel({ tab: 'elevations' })}>Elevations</button>
               </div>
             </div>
-            {/* Properties: the Studio card contents (src/studio/cards.jsx, cardParts.jsx). Elevations keeps its light
-                ground until its own step (2b). */}
-            <div data-card-body={full ? '' : undefined} data-card-dark={full ? undefined : ''} style={{ flex: full ? 1 : '0 1 auto', minHeight: 0, overflowY: full ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', ...(full ? { background: 'var(--surface)', color: 'var(--text)' } : null) }}>
+            {/* Properties: the Studio card contents (src/studio/cards.jsx, cardParts.jsx); Elevations: the sheet, then
+                the list or the editor (components/Elevations/ElevationsTab.jsx — C2, C3) */}
+            <div data-card-dark style={{ flex: '0 1 auto', minHeight: 0, overflowY: full ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
               <RightPanelTabs tab={tab} />
             </div>
           </>}

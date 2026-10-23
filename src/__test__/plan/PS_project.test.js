@@ -162,11 +162,16 @@ describe('PS — the project', () => {
 
   it('PS-inputs: Generate keeps only building size, column grid, row direction and max rack run (pallet, forklift, aisle, wall clearance from the project); the Fill bar, a racking area, the column check, a building\'s and a rack\'s properties show none of them; Project settings opens Project setup', () => {
     const gen = src('components/Generate/GeneratePanel.jsx')
-    expect(/PALLET SIZE|>FORKLIFT<|AISLE \(ft\)|WALL CLEARANCE/.test(gen)).toBe(false)
-    for (const k of ['LENGTH (ft)', 'WIDTH (ft)', 'COLUMN GRID (ft)', 'ROW DIRECTION', 'MAX RACK RUN (ft)']) expect([k, gen.includes(k)]).toEqual([k, true])
-    expect(gen).toMatch(/const brief = \(\) => generateBrief\(project, mheOptions, \{ lengthFt, widthFt, gridXFt, gridYFt, maxRunFt, columnsAlongWall, orientation \}\)/)
+    // C4: the building's fields, Row direction, Columns along wall; the forklift and wall clearance are the PROJECT's,
+    // edited here too (the same values Project settings edits); the pallet stays in Project settings
+    expect(/PALLET SIZE|aria-label="Pallet face"/.test(gen)).toBe(false)
+    for (const k of ['label="Building width"', 'label="Building length"', 'label="Column grid"', 'label="Max run"', 'label="Wall clearance"', '>Row direction</span>', '>Columns along wall</span>', '>Forklift</span>']) expect([k, gen.includes(k)]).toEqual([k, true])
+    expect(gen).toMatch(/onChange=\{v => setProject\(\{ rules: \{ \.\.\.project\.rules, wallClearIn: Math\.max\(0, Number\(v\) \|\| 0\) \} \}\)\}/)
+    expect(gen).toMatch(/onChange=\{e => setProject\(\{ equipment: \{ \.\.\.project\.equipment, mhe: e\.target\.value \} \}\)\}/)
+    expect(gen).toMatch(/const setProject = \(patch\) => \{ if \(project\) commitProject\(useCanvasStore, \{ \.\.\.project, \.\.\.patch \}\) \}/)
+    expect(src('utils/genFields.js')).toMatch(/return generateBrief\(project, mheOptions, Object\.fromEntries\(FIELDS\.map\(k => \[k, f\[k\]\]\)\)\)/)
     expect(gen).toMatch(/const aisleFt = mheOptions\[mhe\]\?\.aisleFt \?\? 10\.5/)
-    expect(gen).toMatch(/const \[open, setOpen\]     = useState\(embedded\)/)         // closed unless it is the Studio card's content: the start screen is a new project's first step
+    expect(/position: 'fixed'|useState\(embedded\)/.test(gen)).toBe(false)                      // only ever the right card's content (C4)
     expect(/openSetup\('ceiling'|setupPrompted/.test(gen + src('utils/project.js'))).toBe(false)   // no "set up first" trigger
     expect(/aria-label="Pallet face"|aria-label="Forklift"|aria-label="Aisle \(ft\)"|aria-label="Wall clearance/.test(src('canvas2/FillTool.jsx'))).toBe(false)
     expect(/Area pallet|Area forklift|Area aisle/.test(src('components/RightPanel/panels/RackingAreaPanel.jsx'))).toBe(false)
@@ -273,7 +278,7 @@ describe('PS — the project', () => {
     const tab = src('components/Elevations/ElevationsTab.jsx')
     expect(tab).toMatch(/\{made\.kind === 'exists' \? 'Already exists' : made\.kind === 'saved' \? 'Saved' : 'Created'\}: \{nameOf\(T, madeType\)\}\.<\/strong>/)
     expect(tab).toMatch(/onChange=\{ev => editDraft\(store, \{ ceilingId: ev\.target\.value \|\| null \}\)\}/)
-    expect(tab).toMatch(/onChange=\{ev => editDraft\(store, \{ newPallet: \{ \[k\]: ev\.target\.value \} \}\)\}/)
+    expect(tab).toMatch(/onChange=\{v => editDraft\(store, \{ newPallet: \{ \[k\]: v \} \}\)\}/)
   })
   it('PS-names: auto names are "N levels · FACE×DEPTH · CEILING"; " · X in beam" only where two would read the same (they once both read "5 levels · 48×40 · sf"); no number suffixes ("· copy" only for two the same in every way); an existing layout is renamed on load, in that same history entry, nothing moving', () => {
     const pr = { ...P.newProject(), ceilings: [{ id: 'c', name: 'sf', clearHeightIn: 360, sprinklerIn: 354 }], defaultCeilingId: 'c' }
@@ -388,7 +393,9 @@ describe('PS — the project', () => {
     expect(tab).toMatch(/palletDIn: pal\?\.depthIn \?\? null/)
     // the panel: the amber note in the pallet box — the selected rows, else (editing) the rows using it
     expect(tab).toMatch(/frameDepthNote\(pallet\.depthIn, rows\.map\(r => r\.depthIn \?\? 42\), selRacks\.length \? 'Selected rows' : 'Rows using it'\)/)
-    expect(tab).toMatch(/\{depthNote && \(\s*<div role="note" aria-label="Pallet depth" style=\{AMBER_NOTE\}>\s*\{depthNote\}/)
+    // C3: the warning box — "60″ pallet needs about 54″ frames. Rows are 42″." with its amber action
+    expect(tab).toMatch(/\{depthNote && \(\s*<div role="note" aria-label="Pallet depth" title=\{depthNote\} style=\{\{[^}]*background: '#3A2E17', color: '#F2C77A'/)
+    expect(tab.includes("{pallet.depthIn}″ pallet needs about {need}″ frames. Rows are {short.map(x => `${x}″`).join(', ')}.")).toBe(true)
     expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/palletDIn: entry\.palletDIn/)
     expect(src('export/pdfExport.js')).toMatch(/palletDIn: palletOfType\(T, type\)\?\.depthIn \?\? null/)
     // the row menu: portalled to the themed root, fixed, over everything — below the row, flipped above near the bottom
@@ -452,12 +459,14 @@ describe('PS — the project', () => {
     // the wiring: the button under both notes; deepenRows only from it; the toolbar's Simple | Detailed
     const tab = src('components/Elevations/ElevationsTab.jsx')
     expect(tab).toMatch(/onClick=\{\(\) => deepenRows\(store, rows\.map\(r => r\.id\), to\)\}/)
-    expect(tab).toMatch(/Set these rows to \{to\} in/)
-    expect(tab).toMatch(/\{drawFix && \(\s*<div style=\{\{ height: FIX_H,[\s\S]*?<FixButton rows=\{fixRows\} to=\{fixTo\}/)
-    expect(tab).toMatch(/<FixButton rows=\{rows\.filter\(r => \(r\.depthIn \?\? 42\) < frameNeededFor\(pallet\.depthIn\) - 1e-6\)\} to=\{frameDepthFor\(pallet\.depthIn, frameDepths\)\}/)
+    expect(tab).toMatch(/Set to \{to\}″/)
+    expect(tab).toMatch(/background: '#F2C77A', color: '#3A2E17'/)                                       // the warning's action (STUDIO.md §2)
+    expect(/drawFix|FIX_H/.test(tab)).toBe(false)                                                     // no button on the drawing (C2)
+    expect(tab).toMatch(/<FixButton rows=\{rows\.filter\(r => \(r\.depthIn \?\? 42\) < need - 1e-6\)\} to=\{frameDepthFor\(pallet\.depthIn, frameDepths\)\}/)
     expect((tab.match(/deepenRows\(/g) || []).length).toBe(1)                                  // never without the click
-    const bar = tab.slice(tab.indexOf('role="toolbar" aria-label="Drawing toolbar"'), tab.indexOf('data-drawing-box'))
-    expect(['aria-label="View"', 'aria-label="Drawing detail"', 'aria-label="Beam length"'].map(k => bar.indexOf(k)).every((v, i, a) => v > 0 && (i === 0 || v > a[i - 1]))).toBe(true)
+    // Depth switches the sheet to the side view; Simple | Detailed is the full-screen view's
+    expect(tab).toMatch(/onClick=\{\(\) => useElevTab\.setState\(\{ view: side \? 'front' : 'side' \}\)\}/)
+    expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/role="group" aria-label="Drawing detail"/)
     expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/role="group" aria-label="Drawing detail"/)   // full screen keeps it
   })
   it('PS-depth-action: "Set these rows to N in" and Properties\' Frame depth are ONE action — a wall row keeps its wall face (its clearance) and grows away from the wall, also turned; a back-to-back pair keeps its centre and flue and grows outward; one undo step; the aisle checks run after', async () => {
