@@ -178,7 +178,8 @@ export function ElevationsTab() {
           ? <ElevationDrawing t={shown} title={e ? previewName(dT, e.draft, e.id) : nameOf(T, shown)} entry={shownEntry} building={building} sel={e ? sel : null} sprClr={sprinklerClearance(T)} view={view} height={sheetH} controls={false} fullSignal={fullSignal}
               readOnly={!e} onCommit={e ? (next) => editDraft(store, { ...next, id: e.draft.id }, { fromDrawing: true }) : () => {}}
               sheetEdit={onSheet} holePitchIn={holePitchIn} onValue={(id, v) => sheetValue(store, id, v)}
-              onEdit={!e && active ? () => startSheet(store, active.id) : null} onSave={() => saveTyped(store)} onCancel={cancelEdit} />
+              onEdit={!e && active ? () => startSheet(store, active.id) : null} onSave={() => saveTyped(store)} onCancel={cancelEdit}
+              onView={(v) => useElevTab.setState({ view: v })} />
           : <div style={{ padding: 12, color: '#767C74', fontSize: 12 }}>No elevation yet — New below.</div>}
       </div>
 

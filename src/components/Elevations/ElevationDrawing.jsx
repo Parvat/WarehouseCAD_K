@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9)
+import { C } from '../../studio/cardParts'
 import { textOwnsKey } from '../../utils/typing'
 import { elevationLayout, ftInDash, parseFtIn, sheetScale, CARD_FONT_PX } from '../../utils/elevationDrawing'
 import { useElevEditor, setPane, moveBeam, addLevelAt, addTopLevel, removeLevel, setUpright, setDimension, paneFontPx } from '../../utils/elevEditor'
@@ -43,6 +44,19 @@ export function ElevationDrawing(props) {
     }
     window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true)
   }, [full, sheetEdit, onCancel])
+  /* Front | Depth: the card's own view (`view` / `onView` — utils/elevTab.js), so switching here shows the same in the
+     card and back. D toggles it while full screen is open — never while typing (STUDIO.md §5 keys while typing). */
+  const side = props.view === 'side', onView = props.onView
+  useEffect(() => {
+    if (!full || !onView) return
+    const k = (e) => {
+      if (e.key !== 'd' && e.key !== 'D') return
+      if (e.ctrlKey || e.metaKey || e.altKey || textOwnsKey(e)) return
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation()
+      onView(side ? 'front' : 'side')
+    }
+    window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true)
+  }, [full, side, onView])
   const hdrBtn = (on) => ({ padding: '3px 10px', fontSize: 11, borderRadius: 2, border: 'none', cursor: 'pointer', background: on ? 'var(--accent-solid, #0B101D)' : 'transparent', color: on ? 'var(--accent-fg, #fff)' : 'var(--text2)' })
   return <>
     <DrawingCore {...props} onFull={() => setFull(true)} />
@@ -53,16 +67,25 @@ export function ElevationDrawing(props) {
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>{sheetEdit ? 'Drag a beam to move it. Click a blue value to type it. Esc cancels.' : 'Esc closes'}</span>
           {/* edit on the sheet here too (C21): the pencil; while editing, ✕ Cancel and Save — the card's own actions */}
           <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-            {props.onEdit && !sheetEdit && <button type="button" aria-label="Edit on the sheet" title="Edit on sheet" onClick={props.onEdit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex', padding: 2 }}><Icon name="Edit" color="currentColor" /></button>}
+            {/* edit on the sheet is the front view's: in Depth the pencil is disabled (STUDIO.md §5: 45%, not-allowed) */}
+            {props.onEdit && !sheetEdit && <button type="button" aria-label="Edit on the sheet" title={side ? 'Edit in Front view' : 'Edit on sheet'} disabled={side} onClick={side ? undefined : props.onEdit} style={{ background: 'none', border: 'none', cursor: side ? 'not-allowed' : 'pointer', opacity: side ? 0.45 : 1, color: 'var(--text2)', display: 'flex', padding: 2 }}><Icon name="Edit" color="currentColor" /></button>}
             {sheetEdit && <>
               <button type="button" aria-label="Cancel" title="Cancel (Esc)" onClick={onCancel} style={hdrBtn(false)}>✕ Cancel</button>
               <button type="button" onClick={props.onSave} style={hdrBtn(true)}>Save</button>
             </>}
+            {/* Front | Depth — the neutral segmented control (STUDIO.md §5: inset track, active = separator fill + strong text), 28 high */}
+            {onView && <div role="group" aria-label="Elevation view" title="Front or Depth (D)" style={{ display: 'flex', height: 28, boxSizing: 'border-box', padding: 2, gap: 2, borderRadius: 6, background: C.inset }}>
+              {[['front', 'Front'], ['side', 'Depth']].map(([v, label]) => {
+                const on = (props.view === 'side' ? 'side' : 'front') === v
+                return <button key={v} type="button" aria-pressed={on} onClick={() => onView(v)} style={{ height: 24, padding: '0 12px', border: 0, borderRadius: 4, background: on ? C.separator : 'transparent', color: on ? C.strong : C.muted, fontSize: 12, fontWeight: on ? 500 : 400, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", cursor: 'pointer' }}>{label}</button>
+              })}
+            </div>}
             <button type="button" aria-label="Close full screen" onClick={() => setFull(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex', marginLeft: 6 }}><Icon name="Close" color="currentColor" /></button>
           </span>
         </div>
         <div data-sheet="full" style={{ flex: 1, minHeight: 0, ...SHEET_BG }}>
-          <DrawingCore {...props} fill height={null} controls fitSignal={0} scaleUp />
+          {/* in Depth nothing on the drawing edits (edit on the sheet is the front view's); Save and Cancel stay */}
+          <DrawingCore {...props} sheetEdit={sheetEdit && !side} readOnly={props.readOnly || (sheetEdit && side)} fill height={null} controls fitSignal={0} scaleUp />
         </div>
       </div>, host)}
   </>

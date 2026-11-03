@@ -43,7 +43,7 @@ describe('SH-1 — full screen is the card\'s drawing, scaled up', () => {
     expect(cols(fs)).toEqual(cols(card))
     // wired: full screen draws 'studio' scaled up, on the card's white gridded sheet
     const dr = read('components/Elevations/ElevationDrawing.jsx')
-    expect(dr).toMatch(/<DrawingCore \{\.\.\.props\} fill height=\{null\} controls fitSignal=\{0\} scaleUp \/>/)
+    expect(dr).toMatch(/<DrawingCore \{\.\.\.props\} sheetEdit=\{[^}]*\} readOnly=\{[^}]*\} fill height=\{null\} controls fitSignal=\{0\} scaleUp \/>/)
     expect(dr).toMatch(/const fontPx = scaleUp \? CARD_FONT_PX \* sheetScale\(box\) : paneFontPx\(box\)/)
     expect(dr).toMatch(/data-sheet="full" style=\{\{ flex: 1, minHeight: 0, \.\.\.SHEET_BG \}\}/)
   })
@@ -53,11 +53,11 @@ describe('SH-2 — edit on the sheet in full screen (C21)', () => {
   it('SH-full-edit: the pencil starts edit on the sheet; while editing, ✕ Cancel and Save are the card\'s own; drag, typed values, + Add level and − are the same DrawingCore; Esc cancels the edit there first, then closes — never also taken by the card behind it', () => {
     const dr = read('components/Elevations/ElevationDrawing.jsx'), tab = read('components/Elevations/ElevationsTab.jsx')
     const head = between(dr, 'edit on the sheet here too', '</span>\n        </div>')
-    expect(head).toMatch(/\{props\.onEdit && !sheetEdit && <button type="button" aria-label="Edit on the sheet"[^>]*onClick=\{props\.onEdit\}/)
+    expect(head).toMatch(/\{props\.onEdit && !sheetEdit && <button type="button" aria-label="Edit on the sheet"[^>]*onClick=\{side \? undefined : props\.onEdit\}/)
     expect(head).toMatch(/\{sheetEdit && <>\s*<button type="button" aria-label="Cancel" title="Cancel \(Esc\)" onClick=\{onCancel\}[^>]*>✕ Cancel<\/button>\s*<button type="button" onClick=\{props\.onSave\}[^>]*>Save<\/button>/)
     expect(tab).toMatch(/onEdit=\{!e && active \? \(\) => startSheet\(store, active\.id\) : null\} onSave=\{\(\) => saveTyped\(store\)\} onCancel=\{cancelEdit\}/)
     // the same core, so the drag (hole pitch), the typed box, + Add level and − all come along (props spread: sheetEdit, holePitchIn)
-    expect(dr).toMatch(/<DrawingCore \{\.\.\.props\} fill height=\{null\}/)
+    expect(dr).toMatch(/<DrawingCore \{\.\.\.props\} sheetEdit=\{sheetEdit && !side\}/)
     // the typed value's box follows the drawing's scale
     expect(dr).toMatch(/const kIn = scaleUp \? fontPx \/ CARD_FONT_PX : 1/)
     expect(dr).toMatch(/width: 46 \* kIn, height: 16 \* kIn, boxSizing: 'border-box', fontSize: 10 \* kIn/)
@@ -185,5 +185,35 @@ describe('SH-6 — no Simple | Detailed', () => {
     const doc = read('../STUDIO.md')
     expect(doc).toMatch(/There is no Simple \| Detailed switch: one drawing, one label set\. The per-level install chain \(pallet, gap and beam face at every level\) may return later as an \*\*Install guide\*\* export option — not on screen\./)
     expect(/Simple \| Detailed is in the full-screen view/.test(doc)).toBe(false)
+  })
+})
+
+describe('SH-7 — Front | Depth in full screen', () => {
+  it('SH-full-view: full screen\'s header has a Front | Depth control left of the close button — the neutral segmented style (inset track, active = separator fill + strong text), 28 high — on the card\'s own view state (one switch shows in both); D toggles it unless typing; edit on the sheet is the front view\'s: in Depth the pencil is disabled, titled "Edit in Front view", and nothing on the drawing edits', async () => {
+    const dr = read('components/Elevations/ElevationDrawing.jsx'), tab = read('components/Elevations/ElevationsTab.jsx')
+    const head = between(dr, 'edit on the sheet here too', '</span>\n        </div>')
+    // left of the close button, after the edit actions
+    expect(head.indexOf('aria-label="Elevation view"')).toBeGreaterThan(head.indexOf('Save</button>'))
+    expect(head.indexOf('aria-label="Elevation view"')).toBeLessThan(head.indexOf('aria-label="Close full screen"'))
+    // the neutral style, 28 high
+    expect(head).toMatch(/role="group" aria-label="Elevation view"[^>]*style=\{\{ display: 'flex', height: 28, boxSizing: 'border-box', padding: 2, gap: 2, borderRadius: 6, background: C\.inset \}\}/)
+    expect(head).toMatch(/\[\['front', 'Front'\], \['side', 'Depth'\]\]/)
+    expect(head).toMatch(/aria-pressed=\{on\} onClick=\{\(\) => onView\(v\)\} style=\{\{ height: 24, [^}]*background: on \? C\.separator : 'transparent', color: on \? C\.strong : C\.muted/)
+    const { C } = await import('../../studio/cardParts')
+    expect([C.inset, C.separator, C.strong]).toEqual(['#2A2F2C', '#3A403C', '#F2F4F1'])
+    // one state: the card's (useElevTab.view) — the card's Depth button and full screen's control both write it
+    expect(tab).toMatch(/onView=\{\(v\) => useElevTab\.setState\(\{ view: v \}\)\} \/>/)
+    expect(tab).toMatch(/onClick=\{\(\) => useElevTab\.setState\(\{ view: side \? 'front' : 'side' \}\)\}/)
+    expect(tab).toMatch(/view=\{view\} height=\{sheetH\}/)
+    // D, while full screen is open, unless typing or with a modifier
+    const keyD = between(dr, "if (e.key !== 'd' && e.key !== 'D') return", 'window.addEventListener')
+    expect(keyD).toMatch(/if \(e\.ctrlKey \|\| e\.metaKey \|\| e\.altKey \|\| textOwnsKey\(e\)\) return\s+e\.preventDefault\(\); e\.stopPropagation\(\); e\.stopImmediatePropagation\(\)\s+onView\(side \? 'front' : 'side'\)/)
+    expect(between(dr, "const side = props.view === 'side', onView = props.onView", "if (e.key !== 'd'")).toMatch(/if \(!full \|\| !onView\) return/)
+    const T = await import('../../utils/typing')
+    globalThis.document.activeElement = null
+    expect(T.textOwnsKey({ key: 'd', target: { tagName: 'INPUT', isContentEditable: false } })).toBe(true)   // typing: the text's
+    // Depth: the pencil disabled with its title; the drawing read-only there
+    expect(head).toMatch(/aria-label="Edit on the sheet" title=\{side \? 'Edit in Front view' : 'Edit on sheet'\} disabled=\{side\} onClick=\{side \? undefined : props\.onEdit\} style=\{\{[^}]*cursor: side \? 'not-allowed' : 'pointer', opacity: side \? 0\.45 : 1/)
+    expect(dr).toMatch(/<DrawingCore \{\.\.\.props\} sheetEdit=\{sheetEdit && !side\} readOnly=\{props\.readOnly \|\| \(sheetEdit && side\)\} fill height=\{null\}/)
   })
 })
