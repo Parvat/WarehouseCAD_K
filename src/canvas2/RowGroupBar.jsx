@@ -1,6 +1,7 @@
 import { usePlacement, cancelPlacement } from '../utils/placement'
 import { placingName } from '../utils/placingName'
-import { useRowGroup, clearGroup, applyPending, dismissPending } from '../utils/rowGroupTool'
+import { useRowGroup, clearGroup, applyPending, dismissPending, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
+import { TOOLS } from '../constants'
 import { rowsOf } from '../utils/rowGroup'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useEffect } from 'react'
@@ -62,8 +63,11 @@ function GroupBar() {
   const setAlwaysApply = useRowGroup(s => s.setAlwaysApply)
   const setHover = useRowGroup(s => s.setHover)
   const tool = useCanvasStore(s => s.activeTool)
-  if (!(keys.length || pending) || tool === FILL_TOOL || tool === SPLIT_TOOL) return null
+  const picking = tool === ROW_GROUP_TOOL
+  if (!(keys.length || pending || picking) || tool === FILL_TOOL || tool === SPLIT_TOOL) return null
   const s = pending && pending.summary
+  // ✕: the group cleared, and the tool (when on) off — Esc leaves the tool and keeps the group
+  const close = () => { clearGroup(); if (picking) useCanvasStore.getState().setActiveTool(TOOLS.SELECT) }
   return (
     <div role="toolbar" aria-label="Row group" data-mode-bar="row-group" className="st-pill" style={modePill}>
       <span style={{ fontWeight: 600, color: B.strong }}>Row group</span>
@@ -87,7 +91,8 @@ function GroupBar() {
           )}
         </span>
       )}
-      <CloseBtn label="Clear the row group" title="Clear the row group (Esc)" onClick={clearGroup} />
+      {picking && !s && <><Sep /><span data-mode-hint style={{ color: B.muted, fontSize: 12 }}>Click or drag rows to group</span></>}
+      <CloseBtn label="Clear the row group" title="Clear the row group (Esc)" onClick={close} />
     </div>
   )
 }

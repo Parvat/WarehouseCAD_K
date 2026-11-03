@@ -159,12 +159,15 @@ As built (step 3) — every action is the one the card, a key or the library alr
 - **Regenerate is one undo step**: the racks and the Forklift / Wall clearance it wrote come back together with one Ctrl+Z (Generate, and Project settings' regenerate, likewise).
 - Exports and printing always use the paper palette, never the dark chrome.
 - **Nothing on the plan is invisible but selectable.** A racking area (from Fill racking or Regenerate) is drawn faintly as the Fill box: fill `#7BD3A4` at 6%, edge `#2E7D5B` 1.5 dashed 6 4; it is picked on its edge. **Ctrl+A** selects only real layout objects (racks, zones, walls, doors, columns, equipment, text, dimensions, shapes), never helpers: the building outline, aisles, racking areas. Deleting every rack of a racking area deletes the area too.
+- **Rack clicks: first click the row, second click the bay.** The first click on a rack selects the whole row, no bay; a second click on the same spot drills into the bay under it. A back-to-back pair's flue follows the same rule: the first click selects the pair as one row, a second click at the same spot selects the two facing bays, one each side. Shift and bay-by-bay mode pick bays from the first click.
+- **Row group mode** (the tool pill or G; the selection bar's Row group starts it from the selection): a click on a row toggles it in or out of the group; dragging a box adds every row inside. The tool stays on until Esc (the group stays) or the mode bar's ✕ (the group cleared). The mode bar's hint while the tool is on: "Click or drag rows to group". Same in both orientations.
 
 ## 8. How to build from this
 
 1. One screen per prompt. Open the matching mockup file, match it exactly.
 2. Screenshot your build at 1440×900 next to the mockup screenshot. List every difference. Fix until none. Put both images in the report.
 3. Never invent a value. If something is missing here and in the mockup, stop and ask.
+4. **Every hand-check bug becomes a REG test.** Each bug from a hand check gets a test in `src/__test__/plan/REG_handCheck.test.js` that drives a real click: the app in Chromium, real mouse and keys on the canvas (`handCheck/browser.js`), never a direct function call. REG_handCheck runs on the saved fixtures in `src/__test__/plan/handCheck/`: an **older layout** (saved by an older Generate) and a **crowded layout** (a rack along a wall, a rack beside a column, labels near the selection bar), each in both orientations. **Never delete a REG test**; when a rule changes, update the test's expectation and keep the test.
 
 ## 9. Icons (locked) — see design/studio/Icons.dc.html
 

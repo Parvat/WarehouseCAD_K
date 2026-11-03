@@ -8,7 +8,7 @@
 //   5 a click in a pair's flue: the pair, no bays                                           — e728492
 //   6 the Row group tool from the pill (or G) starts empty; only the selection bar's Row group starts from the selection
 //   7 the right-click menus: a section-9 icon on the left (an empty slot where none), the shortcut on the right
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -108,13 +108,15 @@ describe.each(['horizontal', 'vertical'])('REG — the hand check, %s', (orienta
     expect(SEL.bayForClick({ obj: r, hitId: r.id, prevSelectedIds: [], shiftKey: true, bayAt: () => bay, half: () => 0 })).toBe(bay)   // Shift keeps picking bays
   })
 
-  it('REG-flue-pair: a click in a pair\'s flue selects the pair as one row — no bays — on any click', async () => {
+  it('REG-flue-pair: a click in a pair\'s flue selects the pair as one row — no bays; a second click there (the rack rule: row, then bay) the two facing bays', async () => {
     const SEL = await import('../../canvas2/selection'), H = await import('../../canvas2/hitTest'), BS = await import('../../utils/baySides')
     const r = store.getState().objects.find(o => o.type === 'rack_double_row'), gs = store.getState().gridSize || 40
     const rot = ((r.rotation || 0) * Math.PI) / 180, cx = r.x + r.width / 2, cy = r.y + r.height / 2, lx = r.width / 7
     const pt = { x: cx + lx * Math.cos(rot), y: cy + lx * Math.sin(rot) }                 // the flue's middle line
     expect(BS.bayHalfAt(r, pt.x, pt.y, gs)).toBe(null)
-    for (const prev of [[], [r.id]]) expect(SEL.bayForClick({ obj: r, hitId: r.id, prevSelectedIds: prev, bayAt: () => H.hitTestBay(r, pt.x, pt.y, gs), half: () => BS.bayHalfAt(r, pt.x, pt.y, gs) })).toBe(null)
+    const bay = H.hitTestBay(r, pt.x, pt.y, gs)
+    expect(bay).not.toBe(null)
+    expect([[], [r.id]].map(prev => SEL.bayForClick({ obj: r, hitId: r.id, prevSelectedIds: prev, bayAt: () => H.hitTestBay(r, pt.x, pt.y, gs) }))).toEqual([null, bay])
   })
 
   it('REG-row-group-start: the Row group tool from the pill (or G) starts empty — a group the selection bar seeded, or the last one, does not carry over; the selection bar\'s Row group starts from the selection', async () => {
@@ -155,5 +157,168 @@ describe.each(['horizontal', 'vertical'])('REG — the hand check, %s', (orienta
     // the shortcuts shown all work (the keyboard handler): Ctrl+L, Ctrl+C, Ctrl+X, Ctrl+V, F
     const ks = read('hooks/useKeyboardShortcuts.js')
     for (const k of ["case 'l':", "case 'c':", "case 'x':", "case 'v':", "'f': FILL_TOOL"]) expect([k, ks.includes(k)]).toEqual([k, true])
+  })
+})
+
+
+/* ── the same bugs by real clicks (STUDIO.md §8): the app in Chromium, the mouse and keys on the canvas, on a saved
+   older layout and a crowded one, both orientations (handCheck/browser.js) ── */
+describe('REG — the hand check by real clicks', () => {
+  let app
+  beforeAll(async () => { const B = await import('./handCheck/browser.js'); app = await B.startApp() }, 240000)
+  afterAll(async () => { await app?.close() })
+  const FIXTURES = ['older-horizontal', 'older-vertical', 'crowded-horizontal', 'crowded-vertical']
+  const T = 120000
+
+  describe.each(FIXTURES)('%s', (name) => {
+    let L
+    const open = async () => { const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, B.fixture(name)); return L }
+    afterEach(async () => { if (L) { expect(L.errors).toEqual([]); await L.page.close(); L = null } })
+    const crowded = name.startsWith('crowded')
+    const fpOf = () => L.S('return S.getState().objects.find(o => /^fp_/.test(o.type))')
+    /** a double row, a point on one half over a bay and a point in its flue (the rack's own frame, turned with it) */
+    const pairPoints = async (id) => {
+      const r = await L.S('const rs = S.getState().objects.filter(o => o.type === "rack_double_row"); return arg ? rs.find(o => o.id === arg) : rs[Math.floor(rs.length / 2)]', id || null)
+      const rot = ((r.rotation || 0) * Math.PI) / 180, cx = r.x + r.width / 2, cy = r.y + r.height / 2
+      const at = (lx, ly) => ({ x: cx + lx * Math.cos(rot) - ly * Math.sin(rot), y: cy + lx * Math.sin(rot) + ly * Math.cos(rot) })
+      return { r, half: at(r.width / 7, -r.height / 4), flue: at(r.width / 7, 0) }
+    }
+
+    it('REG-wall-pick (click): a click on a wall selects the building — an older layout\'s Generate lock is gone on load; a wall a rack stands 3″ off; a hand lock stays locked after a reload', async () => {
+      await open()
+      const fp = await fpOf()
+      await L.click({ x: fp.x + fp.width / 2, y: fp.y })
+      expect(await L.selected()).toEqual([fp.type])
+      // the wall beside a rack whose pick padding reaches over it (made so in the crowded layouts)
+      const wp = await L.S(`const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), ids = arg ? [arg] : st.objects.filter(o => /^rack_/.test(o.type)).map(o => o.id)
+        for (const id of ids) { const r = st.objects.find(o => o.id === id), b = H.worldBoundsOf(r, st.objects)
+          for (const [x, y] of [[fp.x, b.y + b.height / 2], [fp.x + fp.width, b.y + b.height / 2], [b.x + b.width / 2, fp.y], [b.x + b.width / 2, fp.y + fp.height]])
+            if (H.hitTest(st.objects, st.layers, x, y, st.zoom, st.gridSize) === r.id) return { x, y, rack: r.id, type: r.type, c: { x: b.x + b.width / 2, y: b.y + b.height / 2 } } }
+        return null`, crowded ? L.meta.wallRack : null)
+      if (crowded) expect(wp).toBeTruthy()
+      if (wp) {
+        await L.page.keyboard.press('Escape'); await L.click(wp)
+        expect(await L.selected()).toEqual([fp.type])
+        await L.page.keyboard.press('Escape'); await L.click(wp.c)
+        expect(await L.selected()).toEqual([wp.type])                                    // inside the rack: the rack
+      }
+      // a hand lock: the card's padlock (More), then saved and reopened — the wall stays unpickable
+      await L.page.getByRole('group', { name: 'More properties' }).getByRole('button').first().click()
+      await L.page.getByRole('button', { name: 'Lock Building layer' }).click()
+      const saved = await L.S('return SL.serializeScene(S.getState())')
+      await L.page.close()
+      const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, saved)
+      await L.click({ x: fp.x + fp.width / 2, y: fp.y })
+      expect(await L.selected()).not.toContain(fp.type)
+    }, T)
+
+    it('REG-delete-building (click): click the wall, Delete — the building only goes, racks, zones and columns stay; one undo step; the notice\'s Undo brings it back', async () => {
+      await open()
+      const fp = await fpOf()
+      const kept = () => L.S('return S.getState().objects.filter(o => /^rack_|^zone_|column_grid|^aisle$|racking_area/.test(o.type)).length')
+      const n0 = await kept(), h0 = await L.S('return S.getState().historyIndex')
+      await L.click({ x: fp.x + fp.width / 2, y: fp.y })
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      expect([await L.S('return S.getState().objects.some(o => /^fp_/.test(o.type))'), await kept(), (await L.S('return S.getState().historyIndex')) - h0]).toEqual([false, n0, 1])
+      const notice = L.page.locator('[aria-label="Notice"]')
+      expect(await notice.textContent()).toMatch(/Building deleted.*racks, zones and columns kept/)
+      await notice.getByRole('button', { name: 'Undo' }).click(); await L.page.waitForTimeout(300)
+      expect([await L.S('return S.getState().objects.some(o => /^fp_/.test(o.type))'), await kept()]).toEqual([true, n0])
+    }, T)
+
+    it('REG-building-labels (click): a clicked building\'s top dimension label is never under the selection bar', async () => {
+      await open()
+      const fp = await fpOf()
+      await L.click({ x: fp.x + fp.width / 2, y: fp.y })
+      await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
+      const lz = await L.S('return LS.labelScale(P.useLabelPrefs.getState().labelSize, S.getState().gridSize)')
+      const top = await L.toScreen({ x: fp.x + fp.width / 2, y: fp.y }), z = await L.S('return S.getState().zoom')
+      const band = { y0: top.y - ((22 + 8.25 + 2) / lz) * z, y1: top.y }                // the top label's reach
+      const bar = await L.page.locator('[data-selection-bar]').boundingBox()
+      expect(bar).toBeTruthy()
+      expect(bar.y + bar.height <= band.y0 || bar.y >= band.y1).toBe(true)
+      const at = await L.page.evaluate(({ x, y }) => { const el = document.elementFromPoint(x, y); return el?.closest('[data-selection-bar]') ? 'bar' : el?.tagName }, { x: top.x, y: (band.y0 + band.y1) / 2 })
+      expect(at).toBe('CANVAS')
+    }, T)
+
+    it('REG-first-click-row (click): the first click on a rack selects the row, no bay; a second click on the same spot its bay — the rack beside a column too', async () => {
+      await open()
+      const { r, half } = await pairPoints()
+      const bay = await L.S('const st = S.getState(); return H.hitTestBay(st.objects.find(o => o.id === arg.id), arg.p.x, arg.p.y, st.gridSize)', { id: r.id, p: half })
+      expect(bay).not.toBe(null)
+      await L.click(half)
+      expect([await L.selected(), (await L.bayOf(r.id)).idx]).toEqual([['rack_double_row'], null])
+      await L.click(half)
+      expect((await L.bayOf(r.id)).idx).toBe(bay)
+      if (crowded) {
+        // the rack 3″ off a column: a click just inside its edge by the column is the rack's — the row, no bay
+        await L.page.keyboard.press('Escape')
+        const p = await L.S(`const st = S.getState(), r = st.objects.find(o => o.id === arg.id), b = H.worldBoundsOf(r, st.objects), c = arg.c, m = 20
+          const cx = Math.min(Math.max(c.x + c.width / 2, b.x + m), b.x + b.width - m), cy = Math.min(Math.max(c.y + c.height / 2, b.y + m), b.y + b.height - m)
+          return { x: cx, y: cy, type: r.type }`, { id: L.meta.columnRack, c: L.meta.column })
+        await L.click(p)
+        expect([await L.selected(), (await L.bayOf(L.meta.columnRack)).idx]).toEqual([[p.type], null])
+      }
+    }, T)
+
+    it('REG-flue-pair (click): a click in a pair\'s flue selects the pair, no bay; a second click on the same spot the two facing bays, one each side', async () => {
+      await open()
+      const { r, flue } = await pairPoints()
+      const bay = await L.S('const st = S.getState(); return H.hitTestBay(st.objects.find(o => o.id === arg.id), arg.p.x, arg.p.y, st.gridSize)', { id: r.id, p: flue })
+      expect(bay).not.toBe(null)
+      await L.click(flue)
+      expect([await L.selected(), await L.bayOf(r.id)]).toEqual([['rack_double_row'], { idx: null, side: null }])
+      await L.click(flue)
+      expect([await L.selected(), await L.bayOf(r.id)]).toEqual([['rack_double_row'], { idx: bay, side: null }])   // side null: both halves
+    }, T)
+
+    it('REG-row-group-start (click): the selection bar\'s Row group starts from the selection, the tool on; the pill starts empty; a box takes only the rows it touches', async () => {
+      await open()
+      const { r, half } = await pairPoints()
+      await L.click(half)
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Row group' }).click(); await L.page.waitForTimeout(200)
+      expect([await L.groupRows(), await L.S('return S.getState().activeTool')]).toEqual([1, 'row_group'])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      const pill = L.page.locator('button[aria-label^="Row group"]:not([data-selection-bar] *)').last()
+      await pill.click(); await L.page.waitForTimeout(200)
+      expect(await L.groupRows()).toBe(0)
+      const other = await L.S('const rs = S.getState().objects.filter(o => o.type === "rack_double_row" && o.id !== arg); const o = rs[0]; return { id: o.id, x: o.x + o.width / 2, y: o.y + o.height / 2 }', r.id)
+      await L.drag({ x: other.x - 10, y: other.y - 10 }, { x: other.x + 10, y: other.y + 10 })
+      const inGroup = await L.S('const rows = RW.rowsOf(S.getState().objects, S.getState().gridSize || 40), k = RG.useRowGroup.getState().keys.map(x => RW.resolveKey(rows, x)); return arg.map(id => k.includes(RW.rowOfRack(rows, id)))', [other.id, r.id])
+      expect([await L.groupRows(), inGroup]).toEqual([1, [true, false]])
+    }, T)
+
+    it('REG-row-group-toggle (click): in Row group mode a click on a row puts it in or takes it out, a box adds every row inside; the tool stays on; the bar says "Click or drag rows to group"', async () => {
+      await open()
+      const ids = await L.S('return S.getState().objects.filter(o => o.type === "rack_double_row").map(o => o.id)')
+      const a = await pairPoints(ids[0]), b = await pairPoints(ids[ids.length - 1])
+      await L.page.locator('button[aria-label^="Row group"]:not([data-selection-bar] *)').last().click(); await L.page.waitForTimeout(200)
+      const bar = L.page.locator('[data-mode-bar="row-group"]')
+      expect(await bar.locator('[data-mode-hint]').textContent()).toBe('Click or drag rows to group')
+      const rowsIn = (list) => L.S('const rows = RW.rowsOf(S.getState().objects, S.getState().gridSize || 40), k = RG.useRowGroup.getState().keys.map(x => RW.resolveKey(rows, x)); return arg.map(id => k.includes(RW.rowOfRack(rows, id)))', list)
+      await L.click(a.half)
+      expect([await rowsIn([ids[0]]), await L.S('return S.getState().activeTool')]).toEqual([[true], 'row_group'])
+      await L.click(b.half)
+      expect(await rowsIn([ids[0], ids[ids.length - 1]])).toEqual([true, true])
+      await L.click(a.half)                                                             // again: out
+      expect([await rowsIn([ids[0], ids[ids.length - 1]]), await L.S('return S.getState().activeTool')]).toEqual([[false, true], 'row_group'])
+      // a box over two more rows: both join, the tool still on
+      const box = await L.S('const st = S.getState(), rs = arg.map(id => H.worldBoundsOf(st.objects.find(o => o.id === id), st.objects)); return { x0: Math.min(...rs.map(b => b.x + b.width / 2)), y0: Math.min(...rs.map(b => b.y + b.height / 2)), x1: Math.max(...rs.map(b => b.x + b.width / 2)), y1: Math.max(...rs.map(b => b.y + b.height / 2)) }', [ids[1], ids[2]])
+      await L.drag({ x: box.x0 - 5, y: box.y0 - 5 }, { x: box.x1 + 5, y: box.y1 + 5 })
+      expect([await rowsIn([ids[1], ids[2], ids[ids.length - 1]]), await L.S('return S.getState().activeTool')]).toEqual([[true, true, true], 'row_group'])
+      // ✕: the group cleared and Select back
+      await bar.getByRole('button', { name: 'Clear the row group' }).click(); await L.page.waitForTimeout(150)
+      expect([await L.groupRows(), await L.S('return S.getState().activeTool')]).toEqual([0, 'select'])
+    }, T)
+
+    it('REG-menu-icons (click): a right-click on a rack — each item its section-9 icon (an empty slot where none) and its working shortcut', async () => {
+      await open()
+      const { half } = await pairPoints()
+      await L.click(half, { button: 'right' })
+      const rows = await L.page.evaluate(() => [...document.querySelectorAll('[role="menu"][aria-label="Object"] [role="menuitem"]')].map(b => [b.querySelector('span[style*="flex: 1"]')?.textContent, b.querySelector('[data-menu-icon]')?.getAttribute('data-menu-icon') ?? 'none', b.querySelector('[data-menu-keys]')?.textContent || '']))
+      expect(rows).toEqual([['Lock', 'Lock', 'Ctrl+L'], ['To back', '', ''], ['Back', '', ''], ['Forward', '', ''], ['To front', '', ''], ['Copy', '', 'Ctrl+C'], ['Cut', '', 'Ctrl+X']])
+      const slot = await L.page.locator('[role="menu"][aria-label="Object"] [data-menu-icon]').first().boundingBox()
+      expect([slot.width, slot.height]).toEqual([24, 24])
+    }, T)
   })
 })

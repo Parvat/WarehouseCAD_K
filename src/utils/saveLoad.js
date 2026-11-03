@@ -75,10 +75,11 @@ export function deserializeScene(json, s) {
   // Colors — intentionally not restored so defaults always apply
   if (data.opacity !== undefined) s.opacity = data.opacity
 
-  // Clear transient state
+  // Clear transient state — the history starts at the layout as opened (the store's snapshot shape), so the first
+  // action after opening it can be undone
   s.selectedIds  = []
-  s.history      = []
-  s.historyIndex = -1
+  s.history      = [JSON.stringify({ objects: s.objects, groups: s.groups, layers: s.layers, elevations: s.elevations ?? null })]
+  s.historyIndex = 0
 }
 
 /** Download a .wcad JSON file */

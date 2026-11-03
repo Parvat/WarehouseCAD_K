@@ -4,7 +4,7 @@
 //   - The group is presentation state: it lives here, never in the canvas store, never in a saved file.
 //     It stays outlined until Esc or ✕. A row deleted outside the group drops out of it.
 //   - The Row group tool (ROW_GROUP_TOOL, next to Fill racking): a box adds every row it touches, a click
-//     on a row adds or removes it — one action, then the tool goes back to Select (canvas2/Canvas2.jsx).
+//     on a row adds or removes it; the tool stays on until Esc or the mode bar's ✕ (canvas2/Canvas2.jsx).
 //   - An action (a new history entry following the one seen before) that edits a group row is planned on
 //     the others. "Ask": the bar asks "Apply to the other N rows?" with a live preview; Apply writes it as
 //     ONE history entry, Skip leaves it. "Auto apply": applied at once, folded into the action's own
@@ -100,12 +100,12 @@ export function startGroupFromSelection(store) {
   return n
 }
 
-/* ── the tool: one box or one click, then back to Select ── */
+/* ── the tool: each box or click, the tool staying on (the canvas passes no selectTool) ── */
 /** Press: the box starts here; `hitRackId` is the rack under the press, if any (a click toggles its row). */
 export function startGroupBox(world, hitRackId = null) { useRowGroup.setState({ drag: { from: world, to: world, hit: hitRackId } }) }
 export function moveGroupBox(world) { const d = useRowGroup.getState().drag; if (d) useRowGroup.setState({ drag: { ...d, to: world } }) }
-/** Release: a box (`moved`) adds the rows it touches; a click toggles the row under it. Either way the tool is
- *  done and Select is back. Returns the rows added (box) or whether a row was toggled (click). */
+/** Release: a box (`moved`) adds the rows it touches; a click toggles the row under it. With `selectTool`, that
+ *  tool comes back after; without, the Row group tool stays on. Returns the rows added (box) or whether a row was toggled (click). */
 export function commitGroupBox(store, moved, selectTool) {
   const d = useRowGroup.getState().drag
   useRowGroup.setState({ drag: null })

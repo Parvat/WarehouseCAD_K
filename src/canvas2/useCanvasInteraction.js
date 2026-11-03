@@ -143,8 +143,9 @@ export function useCanvasInteraction({
     if (!live) return
     const isCant = live.type === 'rack_cantilever'
     const curIdx = isCant ? live.activeTowerIdx : live.activeBayIdx
-    /* the first click on a rack: the row; a second on the same row: its bay; the flue: the pair (selection.js bayForClick) */
-    const bay = bayForClick({ obj: live, hitId, prevSelectedIds, shiftKey, sticky: isStickyBayMode(), bayAt: () => hitTestBay(live, world.x, world.y, st.gridSize), half: () => bayHalfAt(live, world.x, world.y, st.gridSize) })
+    /* the first click on a rack: the row; a second on the same row: its bay — in a pair's flue, the two facing bays
+       (selection.js bayForClick) */
+    const bay = bayForClick({ obj: live, hitId, prevSelectedIds, shiftKey, sticky: isStickyBayMode(), bayAt: () => hitTestBay(live, world.x, world.y, st.gridSize) })
     if (bay != null) {
       /* a pair's bay is picked on the half clicked (utils/baySides.js): the same bay on the same side again
          unpicks it, the other side switches to it; the flue picks both */
@@ -618,8 +619,14 @@ export function useCanvasInteraction({
       return
     }
 
-    /* (a press in a pair's flue picks the pair, never its bays — so the flue paints no bay on hover) */
-    setFlueHover(null, null)
+    /* the flue of a pair's bay under the pointer, once the pair is the one selected: that bay painted on BOTH halves,
+       so the next click there reads as picking both sides (utils/baySides.js) — before that, a click picks the pair */
+    {
+      const id = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+      const o = id && st.selectedIds.length === 1 && st.selectedIds[0] === id && st.objects.find(q => q.id === id)
+      const bay = o && o.type === 'rack_double_row' && bayHalfAt(o, world.x, world.y, st.gridSize) == null ? hitTestBay(o, world.x, world.y, st.gridSize) : null
+      setFlueHover(bay != null ? o.id : null, bay != null ? bay : null)
+    }
 
     let next = 'default'
     if (st.selectedIds.length === 1) {

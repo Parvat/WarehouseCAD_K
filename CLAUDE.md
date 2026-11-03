@@ -16,6 +16,13 @@ This file holds the rules; `CODEBASE.md` holds the map.
    do not edit it silently. Wait for explicit approval.
 5. Verify visual work in the running app, not by reading CSS. Token edits are routinely defeated
    by hardcoded component colors — only pixels prove it.
+6. **Every hand-check bug the user reports becomes a test in `src/__test__/plan/REG_handCheck.test.js`
+   that drives a real click** (Chromium via `handCheck/browser.js`: real mouse and keys on the canvas),
+   never a direct function call. REG_handCheck runs on the saved fixtures in `src/__test__/plan/handCheck/`:
+   an older layout (`older-*.wcad`, saved by 86b4db1's Generate) and a crowded one (`crowded-*.wcad`: a rack
+   along a wall, a rack beside a column, labels near the selection bar), both orientations each.
+   **Never delete a REG test.** When the user changes a rule, update the expectation and keep the test.
+   (STUDIO.md §8.)
 
 ---
 

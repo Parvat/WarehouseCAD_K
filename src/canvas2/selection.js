@@ -290,13 +290,12 @@ export const isStickyBayMode = () => stickyBayMode
 
 /** The bay a plain click on rack `obj` picks, or null for the whole row (useCanvasInteraction.js selectFromHit):
  *  the first click on a rack selects the row — no bay; a second click on the same row (already the one selected)
- *  drills into the bay under it; Shift and the bay-by-bay mode pick bays as before. A press in a pair's flue is a press
- *  on the pair: the row, never a bay (both halves) — on any click. `bayAt` → the bay under the press (hitTestBay),
- *  `half` → which half of a pair it is on, null in the flue (utils/baySides.js bayHalfAt). */
-export function bayForClick({ obj, hitId, prevSelectedIds = [], shiftKey = false, sticky = false, bayAt, half }) {
+ *  drills into the bay under it; Shift and the bay-by-bay mode pick bays as before. A pair's flue follows the same
+ *  rule: the first click the pair, a second the two facing bays (one each side — the caller picks both halves when
+ *  the press is in the flue). `bayAt` → the bay under the press (hitTestBay). */
+export function bayForClick({ obj, hitId, prevSelectedIds = [], shiftKey = false, sticky = false, bayAt }) {
   if (!obj) return null
   const drilling = shiftKey || sticky || (prevSelectedIds.length === 1 && prevSelectedIds[0] === hitId)
   if (!drilling) return null
-  if (obj.type === 'rack_double_row' && half() == null) return null
   return bayAt()
 }

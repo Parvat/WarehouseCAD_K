@@ -345,8 +345,8 @@ export function Canvas2() {
   }
 
   /* "Row group" (utils/rowGroupTool.js) — the same way: a press starts a box, the release adds the rows it
-     touches; a press and release without a drag toggles the row under it. One action, then back to Select.
-     It takes the press before anything else, so a box may start on a wall or a rack. */
+     touches; a press and release without a drag toggles the row under it. The tool stays on for the next click or
+     box until Esc or the bar's ✕. It takes the press before anything else, so a box may start on a wall or a rack. */
   const grouping = !measuring && activeTool === ROW_GROUP_TOOL
   const groupMouseDown = (e) => {
     const stage = e.target.getStage()
@@ -362,7 +362,7 @@ export function Canvas2() {
       if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 4) moved = true
       moveGroupBox(screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }))
     }
-    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); commitGroupBox(useCanvasStore, moved, TOOLS.SELECT) }
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); commitGroupBox(useCanvasStore, moved, null) }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
   }

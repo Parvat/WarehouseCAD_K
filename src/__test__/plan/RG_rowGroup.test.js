@@ -131,18 +131,18 @@ const bayCount = (k) => racksOf(k).reduce((t, o) => t + o.beams.length, 0)
 
 describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the hand-check layout', (_, vert) => {
   /* ── 1. picking ── */
-  it('RG-pick: the Row group tool — a box adds every row it touches and the tool goes back to Select; with the tool again a click toggles one row and Select is back; the bar shows "Row group · N rows", Ask / Auto apply and ✕ — and none of the old buttons', async () => {
+  it('RG-pick: the Row group tool — a box adds every row it touches, a click toggles one row, and the tool stays on (Row group mode, STUDIO.md §7); the bar shows "Row group · N rows", Ask / Auto apply and ✕ — and none of the old buttons', async () => {
     load(filled(vert))
     const tool = () => store.getState().activeTool
-    const box = (b) => { store.getState().setActiveTool(ROW_GROUP_TOOL); startGroupBox({ x: b.x, y: b.y }); moveGroupBox({ x: b.x + b.w, y: b.y + b.h }); return commitGroupBox(store, true, TOOLS.SELECT) }
-    const click = (id) => { store.getState().setActiveTool(ROW_GROUP_TOOL); const f = rackFootprint(get(id)); startGroupBox({ x: f.x + f.w / 2, y: f.y + f.h / 2 }, id); return commitGroupBox(store, false, TOOLS.SELECT) }
+    const box = (b) => { store.getState().setActiveTool(ROW_GROUP_TOOL); startGroupBox({ x: b.x, y: b.y }); moveGroupBox({ x: b.x + b.w, y: b.y + b.h }); return commitGroupBox(store, true, null) }
+    const click = (id) => { store.getState().setActiveTool(ROW_GROUP_TOOL); const f = rackFootprint(get(id)); startGroupBox({ x: f.x + f.w / 2, y: f.y + f.h / 2 }, id); return commitGroupBox(store, false, null) }
     expect(box(runBox(vert, ...SEC4))).toBe(14)
-    expect(tool()).toBe(TOOLS.SELECT)
+    expect(tool()).toBe(ROW_GROUP_TOOL)
     expect(st().keys).toEqual(expect.arrayContaining([...sectionKeys(4), key(2, 14)]))
     expect(st().keys).toHaveLength(14)
     const r = pairOf(key(2, 7))
     expect(click(r.id)).toBe(1)
-    expect(tool()).toBe(TOOLS.SELECT)
+    expect(tool()).toBe(ROW_GROUP_TOOL)
     expect(st().keys).toContain(key(2, 7))
     expect(click(r.id)).toBe(1)
     expect(st().keys).not.toContain(key(2, 7))
@@ -158,6 +158,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(html).toContain('aria-label="Clear the row group"')
     expect(html).not.toMatch(/This row|Same row in other sections|Pick rows|Always apply/)
     store.setState({ selectedIds: [] })
+    store.getState().setActiveTool(TOOLS.SELECT)                                        // Esc / ✕ leave the mode
     clearGroup()
     expect(st()).toMatchObject({ keys: [], pending: null, drag: null })
     // the wiring: the toolbar button beside Fill racking, the canvas routing, Esc leaving the tool
@@ -165,7 +166,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(tb.indexOf("label:'Row group'")).toBeGreaterThan(tb.indexOf("label:'Fill racking'"))
     const c2 = readFileSync('src/canvas2/Canvas2.jsx', 'utf8')
     expect(c2).toMatch(/const grouping = !measuring && activeTool === ROW_GROUP_TOOL/)
-    expect(c2).toMatch(/commitGroupBox\(useCanvasStore, moved, TOOLS\.SELECT\)/)
+    expect(c2).toMatch(/commitGroupBox\(useCanvasStore, moved, null\)/)
     expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/activeTool === ROW_GROUP_TOOL\) \{ cancelGroupBox\(\); useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); return \}/)
     // the select tool no longer picks rows (it only asks the Row group which racks a dragged group row skips)
     expect(readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')).not.toMatch(/toggleRowOf|addRowsInBox|picking\)/)

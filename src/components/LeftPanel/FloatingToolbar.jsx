@@ -426,7 +426,7 @@ const TOOLBAR_TOOLS = [
   null,
   /* drag a box over part of the building: it fills with racking (utils/fillTool.js) */
   { id:'fill',      tool:FILL_TOOL,       label:'Fill racking', Icon:PaintBucket },
-  /* drag a box over rows (or click one): they join the Row group; then back to Select (utils/rowGroupTool.js) */
+  /* click a row (in or out) or drag a box over rows (they join): the Row group; the tool stays on until Esc (utils/rowGroupTool.js) */
   { id:'rowgroup',  tool:ROW_GROUP_TOOL,  label:'Row group', Icon:Rows3 },
   /* click a rack at an upright: it is cut in two there, the cursor's piece follows the mouse (utils/splitTool.js) */
   { id:'split',     tool:SPLIT_TOOL,      label:'Split',     Icon:Scissors },
