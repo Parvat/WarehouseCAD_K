@@ -4,12 +4,12 @@ import { useRowGroup, clearGroup, applyPending, dismissPending, ROW_GROUP_TOOL }
 import { TOOLS } from '../constants'
 import { rowsOf } from '../utils/rowGroup'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { useEffect } from 'react'
-import { useNotice, clearNotice, NOTICE_MS } from '../utils/notice'
+import { useEffect, useRef, useState } from 'react'
+import { useNotice, clearNotice, NOTICE_MS, NOTICE_UNDO_MS } from '../utils/notice'
 import { useAreaPrompt, answerArea, answerChoice, dismissAreaNote } from '../utils/rackingAreaTool'
 import { FILL_TOOL } from '../utils/fillTool'
 import { SPLIT_TOOL } from '../utils/splitTool'
-import { B, MONO, modePill, Sep, barBtn, CloseBtn, NoticePill } from '../studio/barParts'
+import { B, MONO, modePill, Sep, barBtn, btnClass, CloseBtn, NoticePill } from '../studio/barParts'
 
 /* The Row group's mode bar and the notices (STUDIO.md §1; design/studio/Studio.dc.html C8 and C6):
      - the Row group (utils/rowGroupTool.js; rows picked with the Row group tool, or the selection bar's Row group):
@@ -82,16 +82,16 @@ function GroupBar() {
               <span style={{ fontFamily: MONO }}>−{s.narrowLost.toLocaleString('en-US')}</span>&nbsp;positions
             </span>
           )}
-          <button type="button" aria-label="Skip" title="Skip — the edit stays on its own row" onClick={dismissPending} style={barBtn(false)}>Skip</button>
+          <button type="button" aria-label="Skip" title="Skip — the edit stays on its own row" onClick={dismissPending} className={btnClass(false)} style={barBtn(false)}>Skip</button>
           {s.apply > 0 && (
-            <button type="button" aria-label="Apply to the other rows" title={s.text} style={barBtn(true)}
+            <button type="button" aria-label="Apply to the other rows" title={s.text} className={btnClass(true)} style={barBtn(true)}
               onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
               onFocus={() => setHover(true)} onBlur={() => setHover(false)}
               onClick={applyPending}>Apply to {s.apply}</button>
           )}
         </span>
       )}
-      {picking && !s && <><Sep /><span data-mode-hint style={{ color: B.muted, fontSize: 12 }}>Click or drag rows to group</span></>}
+      {picking && !s && <><Sep /><span data-mode-hint style={{ color: B.muted, fontSize: 12 }}>Drag or Shift+click rows. Click a row to edit.</span></>}
       <CloseBtn label="Clear the row group" title="Clear the row group (Esc)" onClick={close} />
     </div>
   )
@@ -134,6 +134,23 @@ function zoneNoteText(note) {
 /** The Row group results a Ctrl+Z takes back (the step just made): an apply, a split — not a "Nothing applied". */
 const undoableResult = (message) => /^(Applied to|Split )/.test(String(message || ''))
 
+/** A notice that goes by itself (STUDIO.md §7): after `ms` (plain info NOTICE_MS 5 s, one with Undo NOTICE_UNDO_MS
+ *  8 s), `onDone` — the pointer over it pauses the clock, leaving restarts what was left. A new `stamp` (the next
+ *  notice) starts it again. Questions and a placement are never timed: they stay until answered. */
+export function Timed({ ms, stamp, onDone, label, children }) {
+  const [hover, setHover] = useState(false)
+  const left = useRef(ms), started = useRef(0), done = useRef(onDone)
+  done.current = onDone
+  useEffect(() => { left.current = ms }, [stamp, ms])
+  useEffect(() => {
+    if (hover) return undefined
+    started.current = Date.now()
+    const k = setTimeout(() => done.current?.(), Math.max(0, left.current))
+    return () => { clearTimeout(k); left.current -= Date.now() - started.current }
+  }, [hover, stamp, ms])
+  return <div style={live} data-notice-ms={ms} data-notice-for={label} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>{children}</div>
+}
+
 function Notices() {
   const placing = usePlacement(s => s.active)
   const pending = useRowGroup(s => s.pending)
@@ -142,9 +159,8 @@ function Notices() {
   const objects = useCanvasStore(s => s.objects)
   const gridSize = useCanvasStore(s => s.gridSize) || 40
   const q = useAreaPrompt(s => s.question), areaNote = useAreaPrompt(s => s.note)
-  // a short note (utils/notice.js) — what Ctrl+A kept; it goes after NOTICE_MS
+  // a short note (utils/notice.js) — what Ctrl+A kept, a delete with Undo; it goes by itself (Timed)
   const notice = useNotice()
-  useEffect(() => { if (!notice.text) return; const k = setTimeout(clearNotice, NOTICE_MS); return () => clearTimeout(k) }, [notice.at, notice.text])
   const undo = (then) => () => { useCanvasStore.getState().undo(); then?.() }
   const out = []
   if (q) {
@@ -152,14 +168,14 @@ function Notices() {
       <div key="area-q" style={live}>
         <NoticePill role="alertdialog" label="Racking area question"
           actions={q.choices
-            ? q.choices.map((c, i) => <button key={c.label} type="button" style={barBtn(i === q.choices.length - 1)} onClick={() => answerChoice(i)}>{c.label}</button>)
-            : <><button type="button" style={barBtn(false)} onClick={() => answerArea(false)}>Cancel</button><button type="button" style={barBtn(true)} onClick={() => answerArea(true)}>Continue</button></>}>
+            ? q.choices.map((c, i) => <button key={c.label} type="button" className={btnClass(i === q.choices.length - 1)} style={barBtn(i === q.choices.length - 1)} onClick={() => answerChoice(i)}>{c.label}</button>)
+            : <><button type="button" className={btnClass(false)} style={barBtn(false)} onClick={() => answerArea(false)}>Cancel</button><button type="button" className={btnClass(true)} style={barBtn(true)} onClick={() => answerArea(true)}>Continue</button></>}>
           {q.text}
         </NoticePill>
       </div>)
   } else if (areaNote) {
     // the zone's change and the bays it took or gave back are one undo step (rackingAreaTool's keeper)
-    out.push(<div key="area-note" style={live}><NoticePill label="Zone change" onUndo={undo(dismissAreaNote)} onClose={dismissAreaNote} closeLabel="Dismiss">{zoneNoteText(areaNote)}</NoticePill></div>)
+    out.push(<Timed key="area-note" label="Zone change" ms={NOTICE_UNDO_MS} stamp={areaNote} onDone={dismissAreaNote}><NoticePill label="Zone change" onUndo={undo(dismissAreaNote)} onClose={dismissAreaNote} closeLabel="Dismiss">{zoneNoteText(areaNote)}</NoticePill></Timed>)
   }
   if (placing) {
     const lines = !placing.blocked && placing.warnings?.length ? placing.warnings.map(t => ({ text: `Check — ${t}`, tone: 'amber' })) : []
@@ -176,13 +192,13 @@ function Notices() {
   if (message && !pending) {
     const lines = report ? [...report.warned.map(t => ({ text: `Warning — ${rowLabel(t.key, objects, gridSize)}: ${t.reasons.join(', ')}`, tone: 'amber' })), ...report.skipped.map(t => ({ text: `Skipped — ${rowLabel(t.key, objects, gridSize)}: ${t.reason}`, tone: 'red' }))] : []
     const close = () => useRowGroup.setState({ message: null, report: null })
-    out.push(<div key="group-result" style={live}><NoticePill label="Row group result" lines={lines} onUndo={undoableResult(message) ? undo(close) : null} onClose={close}>{message}</NoticePill></div>)
+    out.push(<Timed key="group-result" label="Row group result" ms={undoableResult(message) ? NOTICE_UNDO_MS : NOTICE_MS} stamp={message} onDone={close}><NoticePill label="Row group result" lines={lines} onUndo={undoableResult(message) ? undo(close) : null} onClose={close}>{message}</NoticePill></Timed>)
   }
   if (notice.text) {
     out.push(
-      <div key="notice" style={live}>
+      <Timed key="notice" label="Notice" ms={notice.undo ? NOTICE_UNDO_MS : NOTICE_MS} stamp={notice.at} onDone={clearNotice}>
         <NoticePill label="Notice" onUndo={notice.undo ? undo(clearNotice) : null} onClose={clearNotice}>{notice.text}{notice.hint && <span style={{ color: B.muted }}> · {notice.hint}</span>}</NoticePill>
-      </div>)
+      </Timed>)
   }
   return out.length ? <div style={stack}>{out}</div> : null
 }

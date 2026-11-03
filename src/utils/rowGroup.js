@@ -109,6 +109,8 @@ export function rowsOf(objects, gridSize = 40) {
   for (const list of comps.values()) {
     const roots = [...new Set(list.map(o => o.pieceOf || o.id))].sort()
     const key = `h|${roots.join(',')}`
+    // pieces of one rack a wide gap left apart (a bay delete) are still that row: both stay in a Row group
+    if (rows.has(key)) { rows.get(key).ids.push(...list.map(o => o.id)); continue }
     rows.set(key, { key, ids: list.map(o => o.id), fpId: list[0].parentId ?? null, vert: !!rackFootprint(list[0]).rotated, roots })
   }
   return rows

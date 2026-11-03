@@ -15,6 +15,8 @@ import { useLabelPrefs } from './labelPrefs'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { layerShown } from '../utils/layers'
 import { labelScale, aisleLabelScale } from '../render/labelSize'
+import { isPiece, withSections, sectionsOf, sectionView } from './sections'
+import { useClearanceView, clearanceTagsOn } from './clearanceView'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const near = (a, b) => Math.abs(a - b) < 1e-6
@@ -97,6 +99,7 @@ function OverlaysView({
      The clearance labels apply the preview themselves (they re-run the aisle
      check on the previewed layout). */
   const ids = useDragPreview(s => s.ids), dx = useDragPreview(s => s.dx), dy = useDragPreview(s => s.dy)
+  const dragging = useDragPreview(s => s.dragging), showClearances = useClearanceView(s => s.show)
   /* A drag that carries EVERYTHING these overlays come from — a building
      dragged with all its racks, aisles and columns — moves them rigidly: they
      are drawn once from the store's objects inside a group offset by the
@@ -141,11 +144,26 @@ function OverlaysView({
     const ox = aisleRigid ? dx : 0, oy = aisleRigid ? dy : 0
     return [...(ox || oy ? ownBoxes.map(r => ({ ...r, x: r.x + ox, y: r.y + oy })) : ownBoxes), ...crossBoxes]
   }, [ownBoxes, crossBoxes, aisleRigid, dx, dy])
+  /* One selection rule (STUDIO.md §7): rows selected — the 2px outline; bays picked — their rows (whole sections)
+     outlined thin and dashed. The dimension labels: one row (one section — sections.js, drawn as one rack) shows its
+     own; several rows show none (the selection bar carries the count). */
+  const activeBaySelection = useCanvasStore(s => s.activeBaySelection)
+  const bayLevel = !!(activeBaySelection && activeBaySelection.length) || selectedObjects.some(o => o.activeBayIdx != null && isPiece(o))
+  const outlined = useMemo(() => {
+    if (!bayLevel) return selectedObjects
+    const ids = withSections(objects, selectedObjects.map(o => o.id), gridSize)
+    return objects.filter(o => ids.includes(o.id))
+  }, [bayLevel, selectedObjects, objects, gridSize])
+  const rackSel = selectedObjects.filter(o => rackLabelsEligible(o.type))
+  const labelled = useMemo(() => {
+    const secs = sectionsOf(objects, rackSel.map(o => o.id), gridSize)
+    if (secs.length !== 1) return []
+    return secs[0].length > 1 ? [sectionView(objects, withSections(objects, secs[0], gridSize), gridSize)].filter(Boolean) : rackSel.filter(o => o.id === secs[0][0])
+  }, [objects, rackSel.map(o => o.id).join('|'), gridSize])   // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
-      {chromePart && selectedObjects.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} objects={objects} />)}
-      {chromePart && selectedObjects.map(o => rackLabelsEligible(o.type)
-        ? <RackLabels key={'rl:' + o.id} obj={o} zoom={lz} gridSize={gridSize} /> : null)}
+      {chromePart && outlined.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} objects={objects} dashed={bayLevel && isPiece(o)} />)}
+      {chromePart && labelled.map(o => <RackLabels key={'rl:' + o.id} obj={o} zoom={lz} gridSize={gridSize} />)}
       {chromePart && selectedObjects.map(o => (FP_TYPES.has(o.type) && o.fpVerts)
         ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={lz} gridSize={gridSize}
             activeWallIdx={activeWall && activeWall.objId === o.id ? activeWall.wallIdx : null} /> : null)}
@@ -159,7 +177,9 @@ function OverlaysView({
           marks and aisle shading, X marks, upright flags, oversized bays */}
       {/* a column in an aisle shows its clear distance on both sides whenever the aisle labels are shown (or
           the Checks layer is); the red "pinched" shade is a check mark — only with the Checks layer */}
-      {(marksOn || aislesOn) && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels warnings={marksOn} />}
+      {/* the blue "N′ clear" tags only while an action is under way or a column's Show clearances is on — they go
+          when the action ends (clearanceView.js); the red under-travel warnings stay */}
+      {(marksOn || aislesOn) && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels={clearanceTagsOn(dragging, showClearances)} warnings={marksOn} />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
       {marksOn && <BlockedFaceMarks rackConflicts={xMarks} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}

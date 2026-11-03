@@ -22,6 +22,8 @@ import { rebuildAisles } from './aisleRebuild'
 import { autoSave, serializeScene } from './saveLoad'
 import { takeOverCarriedBays } from './pairCarryOn'
 import { reconcileElevations, snapshotOf } from './elevations'
+import { rackFootprint } from '../generate/columnCheck'
+import { selectRows } from '../canvas2/selectionLevel'
 
 /** The Row group tool's id (the store's activeTool), beside Fill racking's. */
 export const ROW_GROUP_TOOL = 'row_group'
@@ -118,6 +120,35 @@ export function commitGroupBox(store, moved, selectTool) {
   return out
 }
 export function cancelGroupBox() { useRowGroup.setState({ drag: null }) }
+
+/** The Row group tool's release on the canvas (STUDIO.md §7, the selection rule): a box (`moved`) adds every row it
+ *  touches and the row nearest where the drag started becomes the edit row; Shift+click puts the row under it in or
+ *  takes it out; a plain click on a row makes it the edit row — selected, its handles and its bar at once, so it can
+ *  be expanded straight away; a click on nothing selects nothing. The tool stays on. → what it did. */
+export function commitGroupPress(store, moved, shiftKey) {
+  const d = useRowGroup.getState().drag
+  useRowGroup.setState({ drag: null })
+  if (!d) return null
+  if (moved) {
+    const box = { x: Math.min(d.from.x, d.to.x), y: Math.min(d.from.y, d.to.y), w: Math.abs(d.to.x - d.from.x), h: Math.abs(d.to.y - d.from.y) }
+    const objects = store.getState().objects, touched = rowsInBox(objects, box, gs())
+    addRowsInBox(box)
+    const rows = rowsOf(objects, gs())
+    let best = null
+    for (const k of touched) for (const id of rows.get(k)?.ids || []) {
+      const o = objects.find(x => x.id === id); if (!o) continue
+      const f = rackFootprint(o), dx = Math.max(f.x - d.from.x, 0, d.from.x - f.x - f.w), dy = Math.max(f.y - d.from.y, 0, d.from.y - f.y - f.h)
+      const dist = Math.hypot(dx, dy)
+      if (!best || dist < best.dist) best = { id, dist }
+    }
+    if (best) selectRows(store, [best.id])
+    return 'box'
+  }
+  if (d.hit && shiftKey) { toggleRowOf(d.hit); return 'toggle' }
+  if (d.hit) { selectRows(store, [d.hit]); return 'edit' }
+  store.getState().clearSelection()
+  return 'none'
+}
 
 /** The group's rows as they are now (gone ones left out). */
 export function groupRowsNow(objects = objectsNow()) {

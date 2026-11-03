@@ -119,7 +119,8 @@ describe('LB — Column labels (now part of the Checks layer)', () => {
     expect(prefs).not.toMatch(/showColumnLabels|KEY_COLUMN_LABELS/)
     const ov = readFileSync('src/canvas2/Overlays.jsx', 'utf8')
     // the clearance labels: with the Checks layer OR the aisle labels (canvas2-fixes item 3); the shade only with Checks
-    expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ColumnClearanceLabels [^>]*showLabels warnings=\{marksOn\} \/>\}/)
+    // the blue clear tags: only while an action is under way or Show clearances is on (STUDIO.md §7, clearanceView.js)
+    expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ColumnClearanceLabels [^>]*showLabels=\{clearanceTagsOn\(dragging, showClearances\)\} warnings=\{marksOn\} \/>\}/)
     expect(ov).not.toMatch(/showColumnLabels/)
     for (const comp of ['BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) {
       const line = ov.split('\n').find(l => l.includes('<' + comp + ' '))

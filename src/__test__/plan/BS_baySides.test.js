@@ -259,7 +259,7 @@ describe.each([['vertical', true], ['horizontal', false]])('BS — the flue made
     expect([click(q, []), click(q, [p.id]), click(h, []), click(h, [p.id])]).toEqual([null, 3, null, 3])
     const src = (await import('node:fs')).readFileSync(new URL('../../canvas2/useCanvasInteraction.js', import.meta.url), 'utf8')
     expect(src).toMatch(/const bay = bayForClick\(\{ obj: live, hitId, prevSelectedIds, shiftKey, sticky: isStickyBayMode\(\), bayAt: \(\) => hitTestBay\(live, world\.x, world\.y, st\.gridSize\) \}\)/)
-    expect(src).toMatch(/const o = id && st\.selectedIds\.length === 1 && st\.selectedIds\[0\] === id && st\.objects\.find\(q => q\.id === id\)/)
+    expect(src).toMatch(/const o = id && st\.selectedIds\.length === sec\.length && sec\.every\(x => st\.selectedIds\.includes\(x\)\) && st\.objects\.find\(q => q\.id === id\)/)
     expect(useFlueHover.getState().objId ?? null).toBe(null)
     expect(src).toMatch(/onStageMouseLeave = \(\) => \{\s*setFlueHover\(null, null\)/)
     const shapes = (await import('node:fs')).readFileSync(new URL('../../canvas2/shapes.jsx', import.meta.url), 'utf8')

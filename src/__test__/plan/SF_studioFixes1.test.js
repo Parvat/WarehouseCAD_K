@@ -30,7 +30,7 @@ async function fresh() {
 describe('SF-1 — deselect', () => {
   it('SF-deselect: a left click on empty canvas or on a building\'s floor (a press that never moves) clears the selection; a building is picked by its walls only — its floor never; space / middle-button pans never deselect', () => {
     const ci = read('canvas2/useCanvasInteraction.js')
-    expect(ci).toMatch(/if \(hitObj && FP_SET_INPUT\.has\(hitObj\.type\)\) \{ hitId = null; hitObj = null \}/)
+    expect(ci).toMatch(/const onFloor = !!\(hitObj && FP_SET_INPUT\.has\(hitObj\.type\)\)\r?\n\s*if \(onFloor\) \{ hitId = null; hitObj = null \}/)
     // the floor check sits after the wall check (a wall still picks it) and before any pick of a hit
     expect(ci.indexOf('fpWallHitTest(st.objects') < ci.indexOf('hitId = null; hitObj = null') && ci.indexOf('hitId = null; hitObj = null') < ci.indexOf('selectFromHit(hitId, !!evt.shiftKey, world)')).toBe(true)
     expect(ci).toMatch(/pan\.current = \{ sx: evt\.clientX, sy: evt\.clientY, panX: view\.current\.panX, panY: view\.current\.panY, force: forcePan, moved: false \}/)

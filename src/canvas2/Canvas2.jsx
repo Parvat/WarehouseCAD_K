@@ -23,10 +23,10 @@ import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
 import { SelectionBar, FloorMenu, openFloorMenu } from '../studio/SelectionBar'
 import { ZoneEditPreview, SelectedZoneSizes } from './ZoneEdit'
-import { hasResizeHandles } from './handleGeometry'
+import { hasResizeHandles, handleHitTest } from './handleGeometry'
 import { FILL_TOOL, startFill, moveFill, commitFill } from '../utils/fillTool'
 import { useMeasureMode, endTool } from '../utils/toolSwitch'
-import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupBox } from '../utils/rowGroupTool'
+import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupPress } from '../utils/rowGroupTool'
 import { hitTest } from './hitTest'
 import { SPLIT_TOOL, useSplit, hoverSplit, splitAt } from '../utils/splitTool'
 import { rebuildAisles } from '../utils/aisleRebuild'
@@ -353,6 +353,12 @@ export function Canvas2() {
     const p = stage?.getPointerPosition()
     if (!p || (e.evt && e.evt.button !== 0)) return
     const st = useCanvasStore.getState(), world = screenToWorld(view.current, p)
+    // the edit row's handles take the press as in Select: it can be expanded straight away (STUDIO.md §7)
+    if (st.selectedIds.length === 1) {
+      const sel = st.objects.find(o => o.id === st.selectedIds[0])
+      if (sel && hasResizeHandles(sel.type, PORTED_RACK_TYPES) && handleHitTest(sel, world.x, world.y, view.current.zoom)) { onStageMouseDown(e); return }
+    }
+    const shiftKey = !!e.evt?.shiftKey
     const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
     const hit = hitId ? st.objects.find(o => o.id === hitId) : null
     startGroupBox(world, hit && (hit.type === 'rack_row' || hit.type === 'rack_double_row') ? hitId : null)
@@ -362,7 +368,7 @@ export function Canvas2() {
       if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 4) moved = true
       moveGroupBox(screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }))
     }
-    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); commitGroupBox(useCanvasStore, moved, null) }
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); commitGroupPress(useCanvasStore, moved, shiftKey) }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
   }

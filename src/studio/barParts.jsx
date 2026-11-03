@@ -40,7 +40,7 @@ export function IconBtn({ name, label, title, onClick, danger = false, active = 
 /** The 32h chip: a swatch (optional), its words, the chevron (§9's Chevron, 12px muted — as the frame's dropdowns). */
 export function Chip({ swatch, children, label, title, onClick, chipRef, open }) {
   return (
-    <button ref={chipRef} type="button" aria-label={label} title={title} aria-haspopup="menu" aria-expanded={!!open} onClick={onClick}
+    <button ref={chipRef} type="button" className="st-ghost" aria-label={label} title={title} aria-haspopup="menu" aria-expanded={!!open} onClick={onClick}
       style={{ height: 32, display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px', border: 0, borderRadius: 8, background: B.inset, fontSize: 12, color: B.text, maxWidth: 200, flexShrink: 0 }}>
       {swatch && <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: swatch, flexShrink: 0 }} />}
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{children}</span>
@@ -66,6 +66,8 @@ export const barBtn = (primary = false) => ({
   height: 28, padding: '0 12px', border: 0, borderRadius: 6, fontSize: 12, fontWeight: primary ? 600 : 400, flexShrink: 0,
   background: primary ? B.accent : B.inset, color: primary ? B.onAccent : B.text,
 })
+/** Its class: hover a step lighter, never darker (studio.css) — every barBtn carries one. */
+export const btnClass = (primary = false) => (primary ? 'st-primary' : 'st-ghost')
 /** The ✕ of a bar or a notice: 28×28, §9's Close. */
 export function CloseBtn({ label = 'Close', title, onClick }) {
   return (
@@ -127,7 +129,7 @@ export function NoticePill({ role = 'status', label, children, lines = [], onUnd
         <span style={{ color: B.text, whiteSpace: 'normal' }}>{children}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {actions}
-          {onUndo && <button type="button" onClick={onUndo} style={{ height: 26, padding: '0 10px', border: 0, borderRadius: 6, background: B.inset, color: B.accent, fontSize: 12, fontWeight: 600 }}>Undo</button>}
+          {onUndo && <button type="button" className="st-ghost" onClick={onUndo} style={{ height: 26, padding: '0 10px', border: 0, borderRadius: 6, background: B.inset, color: B.accent, fontSize: 12, fontWeight: 600 }}>Undo</button>}
           {onClose && <CloseBtn label={closeLabel} title={closeTitle} onClick={onClose} />}
         </span>
       </div>

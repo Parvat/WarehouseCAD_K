@@ -9,7 +9,13 @@ import { useDragPreview } from '../canvas2/dragPreview'
 import { useLabelPrefs } from '../canvas2/labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { usePlacement } from '../utils/placement'
-import { useRowGroup } from '../utils/rowGroupTool'
+import { useRowGroup, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
+import { pickedBays } from '../canvas2/selectionLevel'
+import { withSections, isOneSection, sectionsOf } from '../canvas2/sections'
+import { useClearanceView, setShowClearances } from '../canvas2/clearanceView'
+import { getRackCapacity } from '../utils/capacity'
+import { levelsResolver } from '../utils/elevations'
+import { useBayLedger } from '../components/RightPanel/useBayLedger'
 import { SPLIT_TOOL } from '../utils/splitTool'
 import { FILL_TOOL } from '../utils/fillTool'
 import { endTool } from '../utils/toolSwitch'
@@ -46,10 +52,21 @@ const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 const isColumn = (o) => o?.type === 'column_grid' || o?.type === 'column'
 const store = useCanvasStore
 
-/** What the bar is for, and on what: { kind, objs } or null. */
-export function barFor(objects, selectedIds, activeWall) {
+/** What the bar is for, and on what: { kind, objs } or null. One selection rule (STUDIO.md §7): bays picked — the bay
+ *  bar ('bay': in one row; 'bays': in several); rows — the rack bar for one row (one section: its pieces are one
+ *  object — canvas2/sections.js), the rows bar for several. `activeBaySelection`: the store's (left out: none). */
+export function barFor(objects, selectedIds, activeWall, activeBaySelection = [], gridSize = 40) {
   const sel = objects.filter(o => selectedIds.includes(o.id))
   if (!sel.length && activeWall) { const fp = objects.find(o => o.id === activeWall.objId); return fp ? { kind: 'building', objs: [fp] } : null }
+  const picked = pickedBays({ objects, selectedIds, activeBaySelection })
+  if (picked.length) {
+    const owners = [...new Set(picked.map(e => e.objId))].map(id => objects.find(o => o.id === id)).filter(Boolean)
+    return { kind: owners.length === 1 ? 'bay' : 'bays', objs: objects.filter(o => withSections(objects, owners.map(x => x.id), gridSize).includes(o.id)), bays: picked, owner: owners[0] }
+  }
+  if (sel.length > 1 && sel.every(isBeamRack) && isOneSection(objects, sel.map(o => o.id), gridSize)) {
+    const main = [...sel].sort((a, b) => (b.beams?.length || 0) - (a.beams?.length || 0))[0]
+    return { kind: 'rack', objs: sel, main }
+  }
   if (sel.length === 1) {
     const o = sel[0]
     if (isBeamRack(o)) return { kind: 'rack', objs: sel }
@@ -100,6 +117,51 @@ export function placeBar(box, w, h, win, avoid = null) {
   left = Math.max(RAIL_RIGHT + EDGE, Math.min(left, win.w - w - EDGE))
   if (avoid && left + w > avoid.left - EDGE && top < avoid.bottom && top + h > avoid.top) left = Math.max(RAIL_RIGHT + EDGE, avoid.left - EDGE - w)
   return { left, top, flipped }
+}
+
+/** Every label pill drawn on the plan (canvas2/LabelOps.jsx and LabelPill name them `label-pill`: dimensions, aisle and
+ *  cross-aisle labels, column clearances), as screen rects in `hostEl`'s px { x0, y0, x1, y1 } — only those on screen. */
+export function labelRectsOnScreen(hostEl) {
+  // the browser's Konva (it sets window.Konva) — not imported: the server render and the tests have no canvas
+  const stage = hostEl && ((typeof window !== 'undefined' && window.Konva?.stages) || []).find(s => hostEl.contains(s.container()))
+  if (!stage) return EMPTY
+  const hr = hostEl.getBoundingClientRect(), cr = stage.container().getBoundingClientRect()
+  const ox = cr.left - hr.left, oy = cr.top - hr.top, W = hr.width, H = hr.height
+  const out = []
+  for (const n of stage.find('.label-pill')) {
+    if (!n.isVisible()) continue
+    const r = n.getClientRect({ skipShadow: true, skipStroke: true })
+    const x0 = r.x + ox, y0 = r.y + oy, x1 = x0 + r.width, y1 = y0 + r.height
+    if (x1 < 0 || y1 < 0 || x0 > W || y0 > H || !(r.width > 0)) continue
+    out.push({ x0, y0, x1, y1 })
+  }
+  return out
+}
+const EMPTY = []
+const sameRects = (a, b) => a.length === b.length && a.every((r, i) => Math.abs(r.x0 - b[i].x0) < 0.5 && Math.abs(r.y0 - b[i].y0) < 0.5 && Math.abs(r.x1 - b[i].x1) < 0.5 && Math.abs(r.y1 - b[i].y1) < 0.5)
+
+/** Where the bar goes (canvas px), `w` × `h`, so it covers no label (STUDIO.md §7): above the selection (`box`; just
+ *  above it, then above its own labels' reach `reach`), then below, then slid sideways along it, then further up past
+ *  whatever label is in the way — inside the window, off the rail and the right card (`card`), never over the selection
+ *  or any of `labels` (screen rects). With nowhere clear: placeBar's spot. */
+export function placeBarClear(box, reach, w, h, win, card = null, labels = EMPTY) {
+  const hits = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
+  const cardBox = card ? { x0: card.left - EDGE, y0: card.top, x1: card.right ?? win.w, y1: card.bottom } : null
+  const clear = (l, t) => {
+    if (t < TOP_SAFE || t + h > win.h - EDGE || l < RAIL_RIGHT + EDGE || l + w > win.w - EDGE) return false
+    const q = { x0: l, y0: t, x1: l + w, y1: t + h }
+    return !hits(q, box) && !(cardBox && hits(q, cardBox)) && !labels.some(L => hits(q, L))
+  }
+  const out = (l, t) => ({ left: l, top: t, flipped: t > box.y0 })
+  const cx = (box.x0 + box.x1) / 2 - w / 2
+  const above = [box.y0 - GAP - h, (reach || box).y0 - GAP - h], below = [box.y1 + GAP, (reach || box).y1 + GAP]
+  for (const t of above) if (clear(cx, t)) return out(cx, t)
+  for (const t of below) if (clear(cx, t)) return out(cx, t)
+  const reachW = Math.max(box.x1 - box.x0, w) / 2 + w
+  for (let d = 24; d <= reachW; d += 24) for (const s of [1, -1]) for (const t of [...above, ...below]) if (clear(cx + s * d, t)) return out(cx + s * d, t)
+  for (let t = above[1] - 12; t >= TOP_SAFE; t -= 12) if (clear(cx, t)) return out(cx, t)
+  for (let t = below[1] + 12; t + h <= win.h - EDGE; t += 12) if (clear(cx, t)) return out(cx, t)
+  return placeBar(reach || box, w, h, win, card)
 }
 
 /* ── the bars, per selection ── */
@@ -186,9 +248,45 @@ function RackBar({ obj }) {
   )
 }
 
-function RowsBar() {
+/** The rows' figures for the bar: "6 rows · 642 positions" — rows counted by section, positions as the card counts
+ *  them (the bay ledger's, else the rack's full capacity). */
+export function rowsFigure(objects, ids, gridSize, ledger, elevations) {
+  const rows = sectionsOf(objects, ids, gridSize).length
+  let positions = 0
+  for (const id of ids) {
+    const o = objects.find(x => x.id === id), e = ledger?.racks?.get(id), full = o && getRackCapacity(o, undefined, levelsResolver(elevations))
+    positions += full && e && e.uncounted ? e.positions : (full?.total || 0)
+  }
+  return { rows, positions }
+}
+function RowsCount({ ids }) {
+  const { objects, gridSize, elevations } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize || 40, elevations: s.elevations })))
+  const ledger = useBayLedger(objects, gridSize)
+  const f = useMemo(() => rowsFigure(objects, ids, gridSize, ledger, elevations), [objects, ids.join('|'), gridSize, ledger, elevations])   // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <span aria-label="Rows selected" data-bar-count style={{ padding: '0 8px 0 6px', fontSize: 12, color: B.muted }}>
+      <span style={{ fontFamily: MONO, color: B.text }}>{f.rows}</span> rows · <span style={{ fontFamily: MONO, color: B.text }}>{f.positions.toLocaleString('en-US')}</span> positions
+    </span>
+  )
+}
+
+/** Bays picked: Delete bay · the elevation for the bay · Split here (the Split tool, as S) — actions that exist today. */
+function BayBar({ several }) {
   return (
     <>
+      <ElevationChip />
+      <Sep />
+      {!several && <IconBtn name="Split" label="Split here" title="Split here (S) — cut at the upright nearest the pointer" onClick={tool(SPLIT_TOOL)} />}
+      <IconBtn name="Delete" label={several ? 'Delete bays' : 'Delete bay'} title={several ? 'Delete the bays (Del) — the rows stay' : 'Delete the bay (Del) — the row stays'} danger onClick={deleteSelection} />
+    </>
+  )
+}
+
+function RowsBar({ ids }) {
+  return (
+    <>
+      <RowsCount ids={ids} />
+      <Sep />
       <ElevationChip several />
       <Sep />
       <IconBtn name="Row group" label="Row group" title="Put these rows in a Row group (G)" onClick={groupSelectedRows} />
@@ -238,9 +336,11 @@ function ZoneBar({ obj }) {
 /** A text toggle in a bar (Show clearances): pressed = active fill + accent. */
 const toggleBtn = (on) => ({ height: 32, padding: '0 10px', border: 0, borderRadius: 8, fontSize: 12, background: on ? B.active : 'transparent', color: on ? B.accent : B.text, flexShrink: 0 })
 
+/* Show clearances: the column clearance tags on the plan while it is on (canvas2/clearanceView.js — otherwise they
+   show only during an action) */
 function ColumnBar() {
-  const { showMarks, setShowMarks } = useColumnCheck()
-  return <button type="button" aria-pressed={!!showMarks} title="The column check's clearances and marks on the plan" onClick={() => setShowMarks(!showMarks)} style={toggleBtn(!!showMarks)}>Show clearances</button>
+  const show = useClearanceView(s => s.show)
+  return <button type="button" aria-pressed={!!show} title="The columns' clear distances on the plan" onClick={() => setShowClearances(!show)} style={toggleBtn(!!show)}>Show clearances</button>
 }
 
 function AisleBar({ obj }) {
@@ -276,34 +376,43 @@ function BuildingBar({ obj }) {
 
 /** The bar, placed over the selection. */
 export function SelectionBar() {
-  const { objects, selectedIds, activeWall, activeTool, zoom, panX, panY } = useCanvasStore(useShallow(s => ({ objects: s.objects, selectedIds: s.selectedIds, activeWall: s.activeWall, activeTool: s.activeTool, zoom: s.zoom, panX: s.panX, panY: s.panY })))
+  const { objects, selectedIds, activeWall, activeTool, zoom, panX, panY, activeBaySelection } = useCanvasStore(useShallow(s => ({ objects: s.objects, selectedIds: s.selectedIds, activeWall: s.activeWall, activeTool: s.activeTool, zoom: s.zoom, panX: s.panX, panY: s.panY, activeBaySelection: s.activeBaySelection })))
   const dragging = useDragPreview(s => s.dragging)
   const labelSize = useLabelPrefs(s => s.labelSize), gridSize = useCanvasStore(s => s.gridSize) || 40
   const placing = usePlacement(s => s.active)
-  const grouped = useRowGroup(s => s.keys.length > 0 || !!s.pending)
+  const pending = useRowGroup(s => !!s.pending)
   const ref = useRef(null)
   const [size, setSize] = useState(null)
-  const what = useMemo(() => barFor(objects, selectedIds, activeWall), [objects, selectedIds, activeWall])
-  const hidden = !what || activeTool !== TOOLS.SELECT || dragging || !!placing || grouped
+  const [labels, setLabels] = useState(EMPTY)
+  const what = useMemo(() => barFor(objects, selectedIds, activeWall, activeBaySelection, gridSize), [objects, selectedIds, activeWall, activeBaySelection, gridSize])
+  // the Row group's edit row has its bar at once (STUDIO.md §7); not while an apply is asked (the mode bar asks)
+  const hidden = !what || (activeTool !== TOOLS.SELECT && activeTool !== ROW_GROUP_TOOL) || dragging || !!placing || pending
   useLayoutEffect(() => {
     if (hidden || !ref.current) return
     const w = ref.current.offsetWidth, h = ref.current.offsetHeight
     setSize(s => (s && s.w === w && s.h === h ? s : { w, h }))
+    // every label drawn on the plan, as it is on screen now: the bar never covers one (canvas2/LabelOps.jsx names them)
+    const next = labelRectsOnScreen(ref.current.parentElement)
+    setLabels(l => (sameRects(l, next) ? l : next))
   })
   if (hidden) return null
-  const box = screenBox(what.objs, objects, { zoom, panX, panY }, labelScale(labelSize, gridSize))
+  const view = { zoom, panX, panY }, lz = labelScale(labelSize, gridSize)
+  const box = screenBox(what.objs, objects, view), reach = screenBox(what.objs, objects, view, lz)
   if (!box) return null
   const host = ref.current?.parentElement?.getBoundingClientRect()
   const win = { w: host?.width || window.innerWidth, h: host?.height || window.innerHeight }
   const card = typeof document !== 'undefined' ? document.querySelector('[data-island="right-card"]')?.getBoundingClientRect() : null
-  const at = size ? placeBar(box, size.w, size.h, win, card ? { left: card.left - (host?.left || 0), top: card.top - (host?.top || 0), bottom: card.bottom - (host?.top || 0) } : null) : null
-  const obj = what.objs[0]
+  const cardRect = card ? { left: card.left - (host?.left || 0), top: card.top - (host?.top || 0), right: card.right - (host?.left || 0), bottom: card.bottom - (host?.top || 0) } : null
+  const at = size ? placeBarClear(box, reach, size.w, size.h, win, cardRect, labels) : null
+  const obj = what.main || what.objs[0]
   return (
     <div ref={ref} role="toolbar" aria-label="Selection" data-selection-bar={what.kind} data-flipped={at?.flipped ? 'true' : undefined} className="st-pill"
       onPointerDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}
       style={{ ...pill, position: 'absolute', zIndex: 140, left: at ? at.left : -9999, top: at ? at.top : -9999, visibility: at ? 'visible' : 'hidden' }}>
       {what.kind === 'rack' && <RackBar obj={obj} />}
-      {what.kind === 'rows' && <RowsBar />}
+      {what.kind === 'rows' && <RowsBar ids={what.objs.map(o => o.id)} />}
+      {what.kind === 'bay' && <BayBar />}
+      {what.kind === 'bays' && <BayBar several />}
       {what.kind === 'zone' && <ZoneBar obj={obj} />}
       {what.kind === 'column' && <ColumnBar />}
       {what.kind === 'aisle' && <AisleBar obj={obj} />}

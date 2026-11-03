@@ -113,7 +113,7 @@ describe.each(['horizontal', 'vertical'])('ZP — %s', (orientation) => {
     for (const o of others) { const now = s().objects.find(q => q.id === o.id); expect([now.x, now.y]).toEqual([o.x, o.y]) }
     // and nothing left for the next Esc
     expect(esc()).toBe(false)
-    expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/if \(g\.keys\.length \|\| g\.pending\) \{ clearGroup\(\); return \}/)
+    expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/if \(g\.keys\.length \|\| g\.pending\) \{ clearGroup\(\); useCanvasStore\.getState\(\)\.clearSelection\(\); useCanvasStore\.getState\(\)\.setActiveWall\(null\); return \}/)
   })
 
   /* ── 2. Placing a zone ── */

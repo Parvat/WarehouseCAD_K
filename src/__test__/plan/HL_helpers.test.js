@@ -95,7 +95,8 @@ describe.each(['horizontal', 'vertical'])('HL — %s', (orientation) => {
     st().undo()
     expect(st().objects.length).toBe(before)
     // every Delete in the app goes through it: the key and the card's buttons
-    expect(read('hooks/useKeyboardShortcuts.js')).toMatch(/deleteSelectionWithAreas\(useCanvasStore\)/)
+    expect(read('hooks/useKeyboardShortcuts.js')).toMatch(/deleteSelection\(\)/)
+    expect(read('studio/selectionActions.js')).toMatch(/if \(selectionLevel\(s\) === 'bays'\) \{[\s\S]*?return\s*\}\s*deleteSelectionWithAreas\(store\)/)
     const pp = read('components/RightPanel/PropertiesPanel.jsx')
     expect([(pp.match(/onClick=\{\(\) => deleteSelectionWithAreas\(useCanvasStore\)\}/g) || []).length, /onClick=\{deleteSelected\}/.test(pp)]).toEqual([3, false])
   })

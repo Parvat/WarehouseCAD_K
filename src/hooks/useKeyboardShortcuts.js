@@ -13,6 +13,8 @@ import { notify, clearNotice } from '../utils/notice'
 import { deleteBaySelection } from '../utils/baySides'
 import { toggleMeasure } from '../utils/toolSwitch'
 import { isTypingTarget, textOwnsKey } from '../utils/typing'
+import { selectionLevel, stepUp } from '../canvas2/selectionLevel'
+import { deleteSelection } from '../studio/selectionActions'
 
 /** The app's keyboard shortcuts, one keydown handler (exported so a test can press keys at it). */
 export function shortcutHandler(e) {
@@ -31,8 +33,10 @@ export function shortcutHandler(e) {
         if (useCanvasStore.getState().activeTool === FILL_TOOL) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         // a row being placed (paste, duplicate, left panel): Esc cancels it, nothing else
         if (cancelPlacement()) return
-        // the Row group (utils/rowGroupTool.js): Esc leaves the Row group tool, then clears the group (and a pending apply)
-        if (useCanvasStore.getState().activeTool === ROW_GROUP_TOOL) { cancelGroupBox(); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
+        // picked bays step up to their rows first, everywhere (STUDIO.md §7 — canvas2/selectionLevel.js)
+        if (selectionLevel(useCanvasStore.getState()) === 'bays') { stepUp(useCanvasStore); return }
+        // the Row group (utils/rowGroupTool.js): Esc leaves it — the tool, the group, the edit row: nothing selected, no bar
+        if (useCanvasStore.getState().activeTool === ROW_GROUP_TOOL) { cancelGroupBox(); clearGroup(); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return }
         // the Split tool (utils/splitTool.js), before a cut: Esc leaves it (after a cut the piece is a placement, above)
         if (useCanvasStore.getState().activeTool === SPLIT_TOOL) { useSplit.setState({ hover: null }); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
         // any other tool (Pan, Line, Text, Freehand, a shape …): Esc ends it — back to Select (utils/toolSwitch.js
@@ -40,7 +44,7 @@ export function shortcutHandler(e) {
         // (Esc also clears the selection: leaving Pan — the tool a fresh plan opens in — with the building picked must not keep it)
         if (useCanvasStore.getState().activeTool !== TOOLS.SELECT) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return }
         { const g = useRowGroup.getState()
-          if (g.keys.length || g.pending) { clearGroup(); return } }
+          if (g.keys.length || g.pending) { clearGroup(); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return } }
         useCanvasStore.getState().clearSelection()
         useCanvasStore.getState().setActiveWall(null)
         return
@@ -49,46 +53,9 @@ export function shortcutHandler(e) {
       // ── Delete / Backspace — delete selected ─────────────────────────────
       if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
         e.preventDefault()
-        const s = useCanvasStore.getState()
-        // a pair's bays picked on one side: removed from that side only (utils/baySides.js), one undo step
-        if (deleteBaySelection(useCanvasStore, nanoid)) return
-        const { selectedIds, objects, activeBaySelection } = s
-        /* A cross-row bay marquee (activeBaySelection, canvas2's own
-           marquee-mouseup) takes priority over the single-object
-           activeBayIdx check below — the same action the multi-bay panel's
-           own "Delete selected bays" button calls (deleteSelectedBays),
-           so the keyboard and the panel can never disagree about what
-           Delete does while a bay selection is active. Previously this
-           block never looked at activeBaySelection at all, so Delete fell
-           through to deleteSelected() (whole-object) even with a bay
-           marquee active — deleting entire rows instead of just the
-           picked bays. */
-        if (activeBaySelection && activeBaySelection.length > 0) {
-          s.deleteSelectedBays()
-          /* deleteSelectedBays only clears activeBaySelection, not
-             selectedIds — the rack rows a bay marquee added there (BUG
-             29) stay selected, which re-satisfies GroupRotateOverlay's
-             own selectedObjects.length >= 2 gate now that
-             activeBaySelection is empty again, bringing back the
-             group-rotate outline/handle around racks nothing asked to
-             rotate (BUG 31). Clearing the selection too leaves nothing
-             selected after a bay delete, matching MultiBayPanel's own
-             "Delete selected bays" button (RackRowPanelCore.jsx), which
-             does the same pairing. */
-          s.clearSelection()
-          return
-        }
-        if (selectedIds.length === 1) {
-          const obj = objects.find(o => o.id === selectedIds[0])
-          const BEAM_RACK = new Set(['rack_row','rack_double_row'])
-          if (obj && BEAM_RACK.has(obj.type) && obj.beams?.length > 1  && obj.activeBayIdx != null) {
-            // Delete active bay if one is selected, else delete last bay
-            const bayIdx = obj.activeBayIdx != null ? obj.activeBayIdx : obj.beams.length - 1
-            s.deleteSingleBay(obj.id, bayIdx)
-            return
-          }
-        }
-        deleteSelectionWithAreas(useCanvasStore)        // with each racking area the delete empties (utils/deleteSelection.js)
+        // one Delete for the key and the bars (studio/selectionActions.js deleteSelection): bays picked — only those
+        // bays, the rows stay; rows — the rows
+        deleteSelection()
         return
       }
 

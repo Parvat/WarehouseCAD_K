@@ -68,7 +68,7 @@ export function LabelPill({ cx, cy, text, fontSize, zoom, color = '#4a9eff', bg 
   const h = fontSize * heightScale
   return (
     <Group listening={false}>
-      <Rect x={cx - w / 2} y={cy - h / 2} width={w} height={h}
+      <Rect name="label-pill" x={cx - w / 2} y={cy - h / 2} width={w} height={h}
         fill={bg} stroke={stroke} strokeWidth={strokeWidth} opacity={opacity} cornerRadius={rx}
         perfectDrawEnabled={false} shadowForStrokeEnabled={false} listening={false} />
       <Text x={cx - w / 2} y={cy - h / 2} width={w} height={h}

@@ -11,6 +11,8 @@ import { deleteBaySelection } from '../utils/baySides'
 import { deleteSelectionWithAreas } from '../utils/deleteSelection'
 import { pasteAt } from '../utils/pasteAt'
 import { useRowGroup, startGroupFromSelection } from '../utils/rowGroupTool'
+import { selectionLevel, pickedBays } from '../canvas2/selectionLevel'
+import { sectionIds } from '../canvas2/sections'
 
 const store = useCanvasStore
 
@@ -40,8 +42,27 @@ export function duplicateSelection() {
   store.getState().copySelected()
   pasteAt(store, 'nudge', nanoid)
 }
-/** Delete (the Delete key): the selection and each racking area it empties. One undo step. */
-export const deleteSelection = () => deleteSelectionWithAreas(store)
+/** Delete (the Delete key, and the bars' Delete): bays picked delete only those bays — a pair's bay picked on one side
+ *  comes off that side only (utils/baySides.js), the rows stay; rows selected delete the rows, with each racking
+ *  area that empties. One undo step. */
+export function deleteSelection() {
+  if (deleteBaySelection(store, nanoid)) return
+  const s = store.getState()
+  if (s.activeBaySelection?.length) { s.deleteSelectedBays(); s.clearSelection(); return }
+  if (s.selectedIds.length === 1) {
+    const obj = s.objects.find(o => o.id === s.selectedIds[0])
+    if (obj && (obj.type === 'rack_row' || obj.type === 'rack_double_row') && obj.beams?.length > 1 && obj.activeBayIdx != null) { s.deleteSingleBay(obj.id, obj.activeBayIdx); return }
+  }
+  if (selectionLevel(s) === 'bays') {
+    /* the one bay of a piece of a longer section (a pair's other side, left by a one-side delete): that piece goes —
+       the section is what stays, split where both facing bays are now gone (canvas2/sections.js). A rack's only bay
+       otherwise: nothing to keep the row by — it stays. */
+    const one = pickedBays(s), r = one.length === 1 && s.objects.find(o => o.id === one[0].objId)
+    if (r && r.beams?.length === 1 && sectionIds(s.objects, r.id, s.gridSize || 40).length > 1) { s.selectGroup([r.id]); s.clearBaySelection(); deleteSelectionWithAreas(store) }
+    return
+  }
+  deleteSelectionWithAreas(store)
+}
 /** Paste (Ctrl+V): where the pointer is. */
 export const pasteHere = () => pasteAt(store, 'cursor', nanoid)
 /** Row group (the selection bar's): the group starts from the selected rows and the Row group tool is on to add more —

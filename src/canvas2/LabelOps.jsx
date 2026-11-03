@@ -18,7 +18,9 @@ export function LabelOps({ ops, name }) {
             perfectDrawEnabled={false} shadowForStrokeEnabled={false} listening={false} />
         }
         if (o.op === 'rect') {
-          return <Rect key={i} name={o.name} x={o.x} y={o.y} width={o.w} height={o.h} fill={o.fill} stroke={o.stroke} strokeWidth={o.strokeWidth}
+          // a pill (pillOps: its rect, then its text in the same box) is named, so the selection bar keeps off it
+          const t = ops[i + 1], pill = !o.name && t && t.op === 'text' && t.x === o.x && t.y === o.y
+          return <Rect key={i} name={pill ? 'label-pill' : o.name} x={o.x} y={o.y} width={o.w} height={o.h} fill={o.fill} stroke={o.stroke} strokeWidth={o.strokeWidth}
             dash={o.dash} cornerRadius={o.cornerRadius} opacity={o.opacity ?? 1}
             perfectDrawEnabled={false} shadowForStrokeEnabled={false} listening={false} />
         }

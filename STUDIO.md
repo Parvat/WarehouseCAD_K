@@ -159,8 +159,28 @@ As built (step 3) — every action is the one the card, a key or the library alr
 - **Regenerate is one undo step**: the racks and the Forklift / Wall clearance it wrote come back together with one Ctrl+Z (Generate, and Project settings' regenerate, likewise).
 - Exports and printing always use the paper palette, never the dark chrome.
 - **Nothing on the plan is invisible but selectable.** A racking area (from Fill racking or Regenerate) is drawn faintly as the Fill box: fill `#7BD3A4` at 6%, edge `#2E7D5B` 1.5 dashed 6 4; it is picked on its edge. **Ctrl+A** selects only real layout objects (racks, zones, walls, doors, columns, equipment, text, dimensions, shapes), never helpers: the building outline, aisles, racking areas. Deleting every rack of a racking area deletes the area too.
-- **Rack clicks: first click the row, second click the bay.** The first click on a rack selects the whole row, no bay; a second click on the same spot drills into the bay under it. A back-to-back pair's flue follows the same rule: the first click selects the pair as one row, a second click at the same spot selects the two facing bays, one each side. Shift and bay-by-bay mode pick bays from the first click.
-- **Row group mode** (the tool pill or G; the selection bar's Row group starts it from the selection): a click on a row toggles it in or out of the group; dragging a box adds every row inside. The tool stays on until Esc (the group stays) or the mode bar's ✕ (the group cleared). The mode bar's hint while the tool is on: "Click or drag rows to group". Same in both orientations.
+- **One selection rule for the whole app: a selection is rows or bays, never both.**
+
+  | Action | Rows selected (or nothing) | Bays selected |
+  |---|---|---|
+  | Click a rack | Selects its row (its section) | Selects that row; a click on a row whose bays are picked picks the bay under it |
+  | Click the same selected row again | Selects that bay | The same bay again: back to its row |
+  | Shift+click | Adds or removes rows | Adds or removes bays, in any row |
+  | Drag a box on the floor | Selects rows (Shift+drag adds rows) | Selects rows (Shift+drag: their rows plus the new ones) |
+  | Esc | Clears the selection | Steps back up to their rows |
+  | Delete | Deletes the rows | Deletes only those bays; the rows stay |
+  | Look | Blue outline, no bay highlight | Bay filled; its row a thin dashed outline |
+  | Selection bar | Row bar (one row); rows bar for several: "6 rows · 642 positions" | Bay bar: Elevation · Split here · Delete bay (several: Elevation · Delete bays) |
+  | Flue of a back-to-back pair | First click: the pair (row level) | Second click at the same spot: the two facing bays (bay level) |
+  | Dimension labels | One row: its labels. Several: none (the bar shows the count) | The row's labels |
+
+  A drag on the floor outside the building, with Space or the middle button, or with the Pan tool still pans.
+- **Row group** uses the same rule. Drag or Shift+click adds or removes rows (a drag adds the rows it touches). A plain click on a row makes it the edit row, with its handles and the selection bar at once, so it can be expanded straight away. After a drag, the row nearest where the drag started becomes the edit row. Mode bar hint: "Drag or Shift+click rows. Click a row to edit." Esc leaves Row group with nothing selected and no bar. The tool pill or G start it empty; the selection bar's Row group starts it from the selection.
+- **Sections (back-to-back pairs).** Deleting a bay on one side keeps the pair as ONE section, because the other side's bay still connects it. It splits into two sections only when both facing bays at that position are deleted. A single row splits when a middle bay is deleted. A section is read from its pieces (the pieces of one rack that touch end to end), so layouts saved before this rule read the same way. Selection, the selection bar, the dimension labels and the Row group treat a section as one object: one bar, one label set. A split inside a Row group keeps both pieces in the group.
+- **The selection bar never covers a label**: its own dimensions, aisle labels, column clearances. It tries above, then below, then slides sideways along the object.
+- **Column clearance tags** ("9′ clear", "0.5′ clear" with the blue arrow) show while an action is under way (a drag, a resize) and while a column's Show clearances is on; when the action ends they go. The red "under travel" warnings stay with the Checks layer; the PDF prints every tag.
+- **Notices**: plain info fades after 5 s, a notice with Undo after 8 s; the pointer over a notice pauses its timer; questions (Continue / Cancel) stay until answered.
+- **Bar buttons**: the mint primary (Apply, Continue, Export) hovers slightly lighter, never darker; ghost buttons (Skip, Cancel, Undo, a chip) hover a step lighter; disabled is 45% and still readable.
 
 ## 8. How to build from this
 

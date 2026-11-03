@@ -320,19 +320,11 @@ function RackShapeView({ obj, ops, gridSize, listening = false, bind, activeBayS
           dash={[2, 3]} strokeScaleEnabled={false} perfectDrawEnabled={false}
           shadowForStrokeEnabled={false} listening={false} />
       ))}
-      {activeBayRects(obj, gridSize).map((r, i) => (
-        <Rect key={i} {...r} stroke={SELECT_BLUE} strokeWidth={2}
-          dash={[4, 3]} strokeScaleEnabled={false} perfectDrawEnabled={false}
-          shadowForStrokeEnabled={false} listening={false} />
-      ))}
-      {/* Cross-row marquee bay selection — amber tint + dashed outline,
-          CanvasUI.jsx's own two-part paint for isMultiSel (a filled tint
-          rect UNDER a stroked outline rect), kept visually distinct from
-          the blue single-active outline above. */}
-      {msRects.map((r, i) => <Rect key={'ms' + i} {...r} fill="rgba(240,180,41,0.27)" listening={false} />)}
-      {msRects.map((r, i) => (
-        <Rect key={'mso' + i} {...r} stroke="#f0b429" strokeWidth={2}
-          dash={[4, 2]} strokeScaleEnabled={false} perfectDrawEnabled={false}
+      {/* a picked bay (one, or several — STUDIO.md §7): the bay filled in the selection blue, a solid edge; its row is
+          outlined thin and dashed (SelectionOutline `dashed`) */}
+      {[...activeBayRects(obj, gridSize), ...msRects].map((r, i) => (
+        <Rect key={'bay' + i} {...r} name="bay-pick" fill={selectTint(0.32)} stroke={SELECT_BLUE} strokeWidth={1.5}
+          strokeScaleEnabled={false} perfectDrawEnabled={false}
           shadowForStrokeEnabled={false} listening={false} />
       ))}
     </Group>
@@ -647,7 +639,9 @@ export function outlineBounds(obj, gridSize = 40, objects = []) {
    `objects` is only ever read for an aisle (outlineBounds's own aisleRect
    branch) — every other type ignores it, so callers that never select an
    aisle can omit it exactly as before. */
-export function SelectionOutline({ obj, gridSize = 40, objects = [] }) {
+export function SelectionOutline({ obj, gridSize = 40, objects = [], dashed = false }) {
+  /* a row whose bays are picked: thin and dashed (STUDIO.md §7); a selected row: the 2px solid outline */
+  const line = dashed ? { strokeWidth: 1, dash: [5, 4] } : { strokeWidth: 2 }
   /* A floor plan traces its OWN fpVerts directly — always the true,
      exact polygon, tight at any orientation — rather than an
      outlineBounds Rect wrapped in spin(). A building's rotation is baked
@@ -675,7 +669,7 @@ export function SelectionOutline({ obj, gridSize = 40, objects = [] }) {
     <Group name={'sel:' + obj.id} listening={false} {...spin(obj)}>
       <Rect
         x={b.x} y={b.y} width={b.width} height={b.height}
-        stroke={SELECT_BLUE} strokeWidth={2}
+        stroke={SELECT_BLUE} {...line}
         strokeScaleEnabled={false} perfectDrawEnabled={false}
         shadowForStrokeEnabled={false} listening={false}
       />
