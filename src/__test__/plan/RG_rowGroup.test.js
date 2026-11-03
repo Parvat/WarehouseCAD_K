@@ -22,7 +22,7 @@
 import { narrowAisleBlocks } from '../../generate/narrowAisles'
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
-import { createElement } from 'react'
+import { createElement, Fragment } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { GS } from './fixtures'
 import { REAL_LAYOUT } from './realLayout.fixture'
@@ -121,7 +121,7 @@ const SEC4 = [140, 245], SEC3 = [5, 100]
 /** Select bay `i` of `rack` and change its beam (the multi-bay "Change beam"). */
 const changeBeam = async (rack, i, beam) => { store.setState({ activeBaySelection: [{ objId: rack.id, bayIdx: i }] }); store.getState().changeSelectedBaysBeam(beam); await settle() }
 const moveRow = async (k, dAcross, dAlong, vert) => { store.getState().moveObjects(rows().get(k).ids, vert ? dAcross : dAlong, vert ? dAlong : dAcross); await settle() }
-const render = () => { for (const x of [useRowGroup, usePlacement, store]) Object.assign(x.getInitialState(), x.getState()); return renderToStaticMarkup(createElement(Bar.RowGroupBar)) }
+const render = () => { for (const x of [useRowGroup, usePlacement, store]) Object.assign(x.getInitialState(), x.getState()); return renderToStaticMarkup(createElement(Fragment, null, createElement(Bar.RowGroupBar), createElement(Bar.RowGroupNote))) }   // the mode bar, the notices and the C8 card's note (Studio step 3)
 const meets = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 1e-3 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 1e-3
 const overlaps = (list) => { const rs = list.filter(o => BEAM.has(o.type)), out = []; for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) if (meets(rackFootprint(rs[i]), rackFootprint(rs[j]))) out.push([rs[i].id, rs[j].id].sort().join('|')); return out.sort() }
 const pin = (poly, x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c } return c }
@@ -152,7 +152,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     // the bar: the count, one switch, ✕ — no + This row / + Same row in other sections / Pick rows, even with a rack selected
     store.setState({ selectedIds: [r.id] })
     const html = render()
-    expect(html).toMatch(/Row group · \d+ rows/)
+    expect(html).toMatch(/>Row group<\/span><span[^>]*><span[^>]*>\d+<\/span> rows</)
     expect(html).toContain('role="switch" aria-checked="false" aria-label="Auto apply"')
     expect(html).toMatch(/>Ask<\/span><span[^>]*>Auto apply</)
     expect(html).toContain('aria-label="Clear the row group"')
@@ -1014,7 +1014,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, Gene
     await generateAndPlaceBatched(brief)
     await settle()
     expect(st()).toMatchObject({ keys: [], pending: null, message: null })
-    expect(render()).not.toMatch(/Row group ·|Apply to the other/)
+    expect(render()).not.toMatch(/>Row group<|Apply to the other/)
     expect(objs().some(o => o.id === 'handrow')).toBe(true)                      // the hand row itself is untouched
   })
 })
@@ -1039,6 +1039,6 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, a ha
     store.getState().moveObjects(['A'], vert ? GS : 0, vert ? 0 : GS); await settle(); quiet()
     store.setState({ selectedIds: ['B'] }); store.getState().deleteSelected(); await settle(); quiet()
     expect(get('E').beams).toEqual(B5)
-    expect(render()).not.toMatch(/Apply to the other|Row group ·/)
+    expect(render()).not.toMatch(/Apply to the other|>Row group</)
   })
 })

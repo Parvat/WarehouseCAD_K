@@ -18,6 +18,7 @@ import { useLayoutCheck, goToIssue, issueKey, remindersLabel } from '../utils/la
 import { getCanvasContainerSize } from '../utils/canvasContainer'
 import { openSetup, nameOf } from '../utils/project'
 import { ZONE_KINDS } from '../generate/rackingArea'
+import { RowGroupNote } from '../canvas2/RowGroupBar'
 import { Head, BigFigure, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, Row, ToggleRow, Totals, Hint,
   Tag, CountChip, IconBtn, C, MONO, LEVEL } from './cardParts'
 
@@ -83,18 +84,11 @@ function ElevationChip() {
   )
 }
 
-/** C1: a beam rack row — its name, positions and usable, Bays · Beam · Depth · Flue, the elevation, the column
- *  check's two switches. `beam` is the rack panel's beam state (the picked bay's, else the next new bay's). */
-export function RackMain({ obj, newBeam, setNewBeam }) {
-  const { objects, commitObjectUpdate, gridSize, elevations } = useCanvasStore(useShallow(s => ({ objects: s.objects, commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize || 40, elevations: s.elevations })))
-  const ledger = useBayLedger(objects, gridSize)
-  const { result, showMarks, setShowMarks, pickBothSides, setPickBothSides } = useColumnCheck()
-  const beams = obj.beams || [96], upIn = obj.uprightWidth || 3, levels = obj.levels || 1
-  const entry = ledger.racks.get(obj.id)
-  const full = getRackCapacity(obj, undefined, levelsResolver(elevations))
-  const total = full && entry && entry.uncounted ? entry.positions : (full?.total || 0)
-  const lost = useMemo(() => rackPositionsLost(obj.id, objects, { check: result, ledger, gridSize, elevations }), [obj.id, objects, result, ledger, gridSize, elevations])
-  const usable = Math.max(0, total - lost)
+/** The rack's four fields — Bays · Beam · Depth · Flue (or Upright) — one undo step each; `group`: the C8 order (Bays ·
+ *  Depth · Beam · Flue). The card's own writes, shared by C1 and the Row group's C8. */
+export function RackFields({ obj, newBeam, setNewBeam, group = false }) {
+  const { commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize || 40 })))
+  const beams = obj.beams || [96], upIn = obj.uprightWidth || 3
   const activeBay = obj.activeBayIdx ?? null
   const beamShown = activeBay !== null ? beams[activeBay] : newBeam
   /* Bays: a count — bays added (the next new bay's beam) or taken off the far end, one undo step, the start held */
@@ -110,15 +104,11 @@ export function RackMain({ obj, newBeam, setNewBeam }) {
     const oldFlueH = (flue / 12) * gridSize, rowH = (obj.height - oldFlueH) / 2, newH = rowH * 2 + (f / 12) * gridSize
     commitObjectUpdate(obj.id, withAnchoredPosition(obj, { flueSpaceIn: f, flueBaseIn: f, height: newH }))
   }
-  const row = obj.rowIndex != null ? ` · row ${obj.rowIndex}` : ''
-  return (
-    <>
-      <Head caption={`${RACK_NAME[obj.type] || 'Rack'}${row}`}>
-        <BigFigure value={n(total)} unit="positions" right={`${n(usable)} usable`} />
-      </Head>
-      <Sec aria-label="Rack fields">
-        <Grid2>
+  const f = {
+    bays: (
           <Field label="Bays"><NumInput aria="Bays" value={beams.length} min={1} onCommit={setBays} /></Field>
+    ),
+    beam: (
           <Field label={activeBay !== null ? `Bay ${activeBay + 1} beam` : 'Beam'}>
             <SelectField aria={activeBay !== null ? `Bay ${activeBay + 1} beam` : 'New bay beam'} value={BEAM_PRESETS_IN.includes(beamShown) ? String(beamShown) : 'other'}
               onChange={e => { const v = Number(e.target.value); if (!Number.isFinite(v)) return; activeBay !== null ? commitObjectUpdate(obj.id, changeBayUpdate(obj, activeBay, v, gridSize)) : setNewBeam(v) }}>
@@ -126,10 +116,14 @@ export function RackMain({ obj, newBeam, setNewBeam }) {
               {BEAM_PRESETS_IN.map(b => <option key={b} value={String(b)}>{ftIn(b)}</option>)}
             </SelectField>
           </Field>
+    ),
+    depth: (
           <Field label="Depth" title="This rack only — against a wall it keeps its wall clearance and grows away from the wall; otherwise about its centre">
             <TextInput aria="Rack depth" value={`${obj.depthIn ?? 42}″`} onCommit={t => { const v = parseFloat(String(t).replace(/[″"s]|in/g, '')); if (Number.isFinite(v) && v > 0 && v !== (obj.depthIn ?? 42)) setRackDepths(useCanvasStore, [obj.id], v) }} />
           </Field>
-          {obj.type === 'rack_double_row'
+    ),
+    flue: (
+          obj.type === 'rack_double_row'
             ? <Field label="Flue"><SelectField aria="Flue" value={String(flue)} onChange={e => setFlue(Number(e.target.value))}>
                 {[6, 9, 12].map(f => <option key={f} value={String(f)}>{f}″</option>)}
                 {![6, 9, 12].includes(flue) && <option value={String(flue)}>{flue}″</option>}
@@ -137,14 +131,68 @@ export function RackMain({ obj, newBeam, setNewBeam }) {
             : <Field label="Upright"><SelectField aria="Upright" value={String(upIn)} onChange={e => {
                 const u = Number(e.target.value), w = ((u * (beams.length + 1) + beams.reduce((s, b) => s + b, 0)) / 12) * gridSize
                 commitObjectUpdate(obj.id, withAnchoredPosition(obj, { uprightWidth: u, width: w }))
-              }}>{[3, 4].map(u => <option key={u} value={String(u)}>{u}″</option>)}</SelectField></Field>}
-        </Grid2>
-      </Sec>
+              }}>{[3, 4].map(u => <option key={u} value={String(u)}>{u}″</option>)}</SelectField></Field>
+    ),
+  }
+  return (
+    <Sec aria-label="Rack fields">
+      <Grid2>
+        {group ? <>{f.bays}{f.depth}{f.beam}{f.flue}</> : <>{f.bays}{f.beam}{f.depth}{f.flue}</>}
+      </Grid2>
+    </Sec>
+  )
+}
+
+/** C1: a beam rack row — its name, positions and usable, Bays · Beam · Depth · Flue, the elevation, the column
+ *  check's two switches. `beam` is the rack panel's beam state (the picked bay's, else the next new bay's). */
+export function RackMain({ obj, newBeam, setNewBeam }) {
+  const { objects, gridSize, elevations } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize || 40, elevations: s.elevations })))
+  const ledger = useBayLedger(objects, gridSize)
+  const { result, showMarks, setShowMarks, pickBothSides, setPickBothSides } = useColumnCheck()
+  const entry = ledger.racks.get(obj.id)
+  const full = getRackCapacity(obj, undefined, levelsResolver(elevations))
+  const total = full && entry && entry.uncounted ? entry.positions : (full?.total || 0)
+  const lost = useMemo(() => rackPositionsLost(obj.id, objects, { check: result, ledger, gridSize, elevations }), [obj.id, objects, result, ledger, gridSize, elevations])
+  const usable = Math.max(0, total - lost)
+  const row = obj.rowIndex != null ? ` · row ${obj.rowIndex}` : ''
+  return (
+    <>
+      <Head caption={`${RACK_NAME[obj.type] || 'Rack'}${row}`}>
+        <BigFigure value={n(total)} unit="positions" right={`${n(usable)} usable`} />
+      </Head>
+      <RackFields obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} />
       <Sec aria-label="Rack checks">
         <ElevationChip />
         <ToggleRow label="Require pick both sides" aria="Require pick from both sides" title="A column with clear space on only one side is accessible by default (drivable + pickable from the far side). Turn this on to flag those too." on={pickBothSides} onClick={() => setPickBothSides(!pickBothSides)} />
         <ToggleRow label="Show markings" on={showMarks} onClick={() => setShowMarks(!showMarks)} />
       </Sec>
+    </>
+  )
+}
+
+/** C8: a Row group's row being edited — "Editing row 14 · changes go to all 6", the group's positions, the rack's fields
+ *  (Bays · Depth · Beam · Flue), the pending edit's note (canvas2/RowGroupBar.jsx RowGroupNote). An edit here goes to
+ *  every row of the group as the Row group says (Ask / Auto apply — utils/rowGroupTool.js). */
+export function RowGroupMain({ obj, newBeam, setNewBeam, rows }) {
+  const { objects, gridSize, elevations } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize || 40, elevations: s.elevations })))
+  const ledger = useBayLedger(objects, gridSize)
+  const total = useMemo(() => {
+    let t = 0
+    for (const r of rows) for (const id of r.ids) {
+      const o = objects.find(x => x.id === id), e = ledger.racks.get(id), full = o && getRackCapacity(o, undefined, levelsResolver(elevations))
+      t += full && e && e.uncounted ? e.positions : (full?.total || 0)
+    }
+    return t
+  }, [rows, objects, ledger, elevations])
+  const name = obj.rowIndex != null ? `row ${obj.rowIndex}` : 'this row'
+  return (
+    <>
+      <div aria-label="Row group edit" style={{ padding: '8px 16px 12px', display: 'flex', flexDirection: 'column', gap: 4, borderBottom: `1px solid ${C.divider}` }}>
+        <span style={{ color: C.muted, fontSize: 12 }}>Editing {name} · changes go to all {rows.length}</span>
+        <BigFigure value={n(total)} unit="positions in group" />
+      </div>
+      <RackFields obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} group />
+      <RowGroupNote />
     </>
   )
 }

@@ -18,7 +18,8 @@ import { LayerBody } from './LayerPanel'
 import { TextBody } from './TextPanel'
 import { LabelsBody } from './LabelsPanel'
 import { ColumnCheckBody } from './ColumnCheckPanel'
-import { RackMain, ZoneMain, NothingSelected, LayoutBlock } from '../../studio/cards'
+import { RackMain, RowGroupMain, ZoneMain, NothingSelected, LayoutBlock } from '../../studio/cards'
+import { useRowGroup, groupRowsNow } from '../../utils/rowGroupTool'
 import { Head, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, StaticField, Row, ToggleRow, Seg, Btn,
   IconBtn, Note, Hint, SecLabel, Fold, C, MONO } from '../../studio/cardParts'
 
@@ -161,6 +162,8 @@ function ObjectActions({ obj }) {
 export function PropertiesPanel() {
   const { selectedIds, objects, groups, updateObject, commitObjectUpdate, deleteSelected, gridSize, createAisle } = useCanvasStore(useShallow(s => ({ selectedIds: s.selectedIds, objects: s.objects, groups: s.groups, updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, deleteSelected: s.deleteSelected, gridSize: s.gridSize, createAisle: s.createAisle })))
   const selected = objects.filter(o => selectedIds.includes(o.id))
+  // the Row group's rows (utils/rowGroupTool.js): a selected group row shows the group's card (C8)
+  const groupKeys = useRowGroup(s => s.keys)
   /* the rack's beam for a new bay (the rack panel's own choice, shared by the Beam field and the bay list) */
   const [newBeam, setNewBeam] = useState(96)
 
@@ -226,13 +229,16 @@ export function PropertiesPanel() {
   const up     = (k, v) => updateObject(obj.id, { [k]: v })
   const commit = (k, v) => commitObjectUpdate(obj.id, { [k]: v })
 
-  /* a rack (C1) */
+  /* a rack (C1); a Row group's row: the group's card (C8) */
+  const groupRows = RACK_TYPES.has(obj.type) && groupKeys.length ? groupRowsNow(objects) : []
+  const inGroup = groupRows.some(r => r.ids.includes(obj.id))
   if (RACK_TYPES.has(obj.type)) {
     return (
       <>
         <MultiBayPanel />
-        <RackMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} />
-        <LayoutBlock last={false} />
+        {inGroup
+          ? <RowGroupMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} rows={groupRows} />
+          : <><RackMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} /><LayoutBlock last={false} /></>}
         <More rack>
           <ObjectActions obj={obj} />
           <RackRowExtras obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} />

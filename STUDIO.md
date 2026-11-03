@@ -15,6 +15,7 @@ Source of truth: the mockup files in `design/studio/*.dc.html`. When this file a
   - **Bottom-left**: Hub · | · zoom − 100% +. Height 40.
   - **Bottom-right**: Aisles · Checks · Elevations layer toggles · Fit. Height 40.
 - **Selection bar**: dark pill (radius 12) floating just above the selected object. Contents per object type (section 6).
+  - 8px above the selection, centred on it, never over it; below it when there is no room under the top islands; kept off the rail and the right card; it follows the pan and the zoom. Not shown while another tool is on, during a drag or a placement, or while a Row group is open (its mode bar is).
 - **Mode bars** (Row group, Split, Fill): dark pill at top of canvas, centred, top 76.
 - **Notices**: dark pill above the tool pill, 76px from bottom, with an action (Undo) and ✕.
 - **Modals** (Project settings, Rules, Export, New project): backdrop + centred dark card.
@@ -127,6 +128,14 @@ Warning action button: background `#F2C77A`, text `#3A2E17`.
 | Wall / building | Thickness 3″ 6″ 9″ 12″ · Add door · Wall clearance |
 | Right-click empty floor | Paste · Fill racking here · Add zone ▾ |
 
+As built (step 3) — every action is the one the card, a key or the library already makes:
+- One rack row: Elevation ▾ (applies an elevation, as the Elevations tab's Apply) · Add bay · Remove bay · Split (the tool) · Row group (the row into the group) · Rotate (90° about its centre, one undo step) · Duplicate (Ctrl+D) · Delete · ⋯ (Lock, To back, Back, Forward, To front, Copy, Cut).
+- Wall / building: Wall clearance shows the value and opens Project settings (which asks before it regenerates); Add door places a Man door from the library.
+- Column: Show clearances (the column check's markings). Absorb / Remove section stays per conflict in the check's detail.
+- Not in the app yet, left out: Even spacing, Align (several rows); the zone's Type ▾; the aisle label's Width field.
+- Mode bars: Fill racking also keeps Beam and Max run; it fills on release, so no Fill button and no Back to back ▾. Row group keeps Skip beside Apply to N; the −N positions chip is the apply's narrow-aisle loss. ✕ and Esc leave every mode.
+- Notices stack above the tool pill: a racking area's question (its own answers), a zone's result (Undo, ✕), a placement (✕ cancels), the Row group's result (Undo when it is the step just made, ✕), Ctrl+A's note (✕).
+
 ## 7. Behaviour rules
 
 - Generate opens **inside the right card**. Top bar label: "Generate" on an empty plan, "Regenerate" when racks exist; Regenerate shows the warning line "Keeps zones, doors and columns. Replaces racking."
@@ -170,6 +179,7 @@ One icon style everywhere: **D, box style.** Objects, rail categories, tools, se
 - Forklift, reach truck and pallet jack always show two forks.
 - The same thing always uses the same icon (rail, flyout row, selection bar, zone label).
 - No other icon set. Not Lucide, not line icons.
+- **Add bay** and **Remove bay** (the rack's selection bar): next to Duplicate and Delete in Icons.dc.html — a bay with a plus, a bay with a minus.
 
 ## 10. Illustrations (later)
 

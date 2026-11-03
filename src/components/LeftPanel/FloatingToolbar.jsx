@@ -51,6 +51,7 @@ import { PALETTE_COLORS } from '../../constants'
 import { PEN_TYPES, PEN_ORDER, clampPenWidth, penDefaultWidth, loadPenPrefs, savePenPrefs } from '../../utils/freehand'
 import { dropRotation } from '../../utils/rowRotation'
 import { startPlacement } from '../../utils/placement'
+import { setLibraryPick } from '../../studio/selectionActions'
 import { nanoid } from 'nanoid'
 
 /* One glyph per preset — the text badges ate the popover's width. */
@@ -1078,6 +1079,12 @@ export function FloatingToolbar({ studio = false } = {}) {
     ...FP_ITEMS.map(o => ({ ...o, catId:'fp' })),
     ...ZONE_ITEMS.map(o => ({ ...o, catId:'zones' })),
   ], [allItems])
+  /* the selection bar and the floor's right-click menu place from the library too (Add door, Add zone ▾ —
+     src/studio/selectionActions.js): the same pick, by the item's id */
+  useEffect(() => {
+    setLibraryPick((id) => { const it = everyItem.find(i => i.id === id); if (!it) return false; pickItem(it); return true })
+    return () => setLibraryPick(null)
+  })
   const results = useMemo(() => !q ? []
     : everyItem.filter(i => i.label.toLowerCase().includes(q)), [q, everyItem])
   const pinnedItems = useMemo(() =>

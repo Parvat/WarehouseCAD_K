@@ -173,7 +173,7 @@ describe('PS — the project', () => {
     expect(gen).toMatch(/const aisleFt = mheOptions\[mhe\]\?\.aisleFt \?\? 10\.5/)
     expect(/position: 'fixed'|useState\(embedded\)/.test(gen)).toBe(false)                      // only ever the right card's content (C4)
     expect(/openSetup\('ceiling'|setupPrompted/.test(gen + src('utils/project.js'))).toBe(false)   // no "set up first" trigger
-    expect(/aria-label="Pallet face"|aria-label="Forklift"|aria-label="Aisle \(ft\)"|aria-label="Wall clearance/.test(src('canvas2/FillTool.jsx'))).toBe(false)
+    expect(/aria-label="Pallet face"|aria-label="Forklift"|aria-label="Aisle \(ft\)"|aria-label="Wall clearance/.test(src('canvas2/FillBar.jsx'))).toBe(false)
     expect(/Area pallet|Area forklift|Area aisle/.test(src('components/RightPanel/panels/RackingAreaPanel.jsx'))).toBe(false)
     expect(src('components/RightPanel/ColumnCheckPanel.jsx')).not.toMatch(/<select value=\{mheKey\}/)
     const pp = src('components/RightPanel/PropertiesPanel.jsx')

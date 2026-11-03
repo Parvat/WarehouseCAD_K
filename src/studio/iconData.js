@@ -180,6 +180,30 @@ export const TOOLS = {
    "body": "<rect x=\"5\" y=\"6\" width=\"14\" height=\"2\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/><rect x=\"10\" y=\"4\" width=\"4\" height=\"2\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/><path d=\"M6.5 9h11l-1 11h-9z\" fill=\"#7BD3A4\"/><rect x=\"10\" y=\"11\" width=\"1\" height=\"7\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/><rect x=\"13\" y=\"11\" width=\"1\" height=\"7\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/>"
   }
  },
+ "Add bay": {
+  "idle": {
+   "viewBox": "0 0 24 24",
+   "size": 24,
+   "body": "<rect x=\"2\" y=\"7\" width=\"13\" height=\"10\" fill=\"#C9CEC9\" shape-rendering=\"crispEdges\"/><rect x=\"8\" y=\"8\" width=\"1\" height=\"8\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/><rect x=\"16\" y=\"11\" width=\"6\" height=\"2\" fill=\"#C9CEC9\" shape-rendering=\"crispEdges\"/><rect x=\"18\" y=\"9\" width=\"2\" height=\"6\" fill=\"#C9CEC9\" shape-rendering=\"crispEdges\"/>"
+  },
+  "active": {
+   "viewBox": "0 0 24 24",
+   "size": 24,
+   "body": "<rect x=\"2\" y=\"7\" width=\"13\" height=\"10\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/><rect x=\"8\" y=\"8\" width=\"1\" height=\"8\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/><rect x=\"16\" y=\"11\" width=\"6\" height=\"2\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/><rect x=\"18\" y=\"9\" width=\"2\" height=\"6\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/>"
+  }
+ },
+ "Remove bay": {
+  "idle": {
+   "viewBox": "0 0 24 24",
+   "size": 24,
+   "body": "<rect x=\"2\" y=\"7\" width=\"13\" height=\"10\" fill=\"#C9CEC9\" shape-rendering=\"crispEdges\"/><rect x=\"8\" y=\"8\" width=\"1\" height=\"8\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/><rect x=\"16\" y=\"11\" width=\"6\" height=\"2\" fill=\"#C9CEC9\" shape-rendering=\"crispEdges\"/>"
+  },
+  "active": {
+   "viewBox": "0 0 24 24",
+   "size": 24,
+   "body": "<rect x=\"2\" y=\"7\" width=\"13\" height=\"10\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/><rect x=\"8\" y=\"8\" width=\"1\" height=\"8\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/><rect x=\"16\" y=\"11\" width=\"6\" height=\"2\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/>"
+  }
+ },
  "More": {
   "idle": {
    "viewBox": "0 0 24 24",

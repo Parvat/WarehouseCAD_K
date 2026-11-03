@@ -109,7 +109,7 @@ describe('TH — broken items', () => {
       placingName([{ type: 'rack_row' }, { type: 'rack_double_row' }]), placingName([{ type: 'text' }]), placingName([{ type: 'text' }, { type: 'rack_row' }])])
       .toEqual(['office', 'custom area', 'row', '2 rows', 'object', '2 objects'])
     const bar = read('canvas2/RowGroupBar.jsx')
-    expect(bar).toMatch(/aria-label=\{`Placing \$\{placingName\(placing\.items\)\}`\}/)
+    expect(bar).toMatch(/label=\{`Placing \$\{placingName\(placing\.items\)\}`\}/)
     expect(bar.includes('aria-label="Placing row"')).toBe(false)
   })
 

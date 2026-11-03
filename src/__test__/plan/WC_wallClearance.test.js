@@ -51,7 +51,7 @@ describe('WC — the setting', () => {
     expect([wallClearOf({ wallClearIn: 0 }), wallClearOf({ wallClearanceIn: 6 }), wallClearOf({}), WALL_CLEAR_IN]).toEqual([0, 3, 3, 3])
   })
   it('WC-shared: the wall clearance is the project\'s (Project setup): Generate sends it as the wall clearance (its field in the card writes the project\'s — C4), Fill racking reads the ONE Racking setting the project keeps in step and shows no field', () => {
-    const gen = readFileSync('src/components/Generate/GeneratePanel.jsx', 'utf8'), bar = readFileSync('src/canvas2/FillTool.jsx', 'utf8'), sync = readFileSync('src/components/Project/ProjectSync.jsx', 'utf8')
+    const gen = readFileSync('src/components/Generate/GeneratePanel.jsx', 'utf8'), bar = readFileSync('src/canvas2/FillBar.jsx', 'utf8'), sync = readFileSync('src/components/Project/ProjectSync.jsx', 'utf8')
     expect(gen.includes('const wallClearIn = draft.wallClearIn ?? (project?.rules?.wallClearIn ?? useRackingSettings.getState().wallClearIn ?? 0)')).toBe(true)
     expect(gen).toMatch(/regenerateRacking\(genBrief\(pr, mheOptions\),/)
     expect(gen).toMatch(/<UnitNum aria="Wall clearance \(in\)" disabled=\{!project\} value=\{wallClearIn\} onChange=\{v => setDraft\(d => \(\{ \.\.\.d, wallClearIn:/)

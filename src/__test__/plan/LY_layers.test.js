@@ -245,7 +245,7 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     const ks = readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')
     expect(ks).toMatch(/const kept = keptBySelectAll\(st\.objects, st\.layers\)\r?\n\s*if \(kept\) notify\(kept, 'locked layers — unlock them in Layers to select'\)\r?\n\s*else clearNotice\(\)/)
     const bar = readFileSync('src/canvas2/RowGroupBar.jsx', 'utf8')
-    expect(bar).toMatch(/aria-label="Notice"[\s\S]*\{notice\.text\}/)
+    expect(bar).toMatch(/<NoticePill label="Notice" onClose=\{clearNotice\}>\{notice\.text\}/)
     expect(bar).toMatch(/setTimeout\(clearNotice, NOTICE_MS\)/)
     const N = await import('../../utils/notice')
     N.notify(m.L.keptBySelectAll(objects, layers), 'locked layers')

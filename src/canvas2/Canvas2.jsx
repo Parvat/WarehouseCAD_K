@@ -18,8 +18,10 @@ import { useCanvasInteraction } from './useCanvasInteraction'
 import { clampZoom, screenToWorld } from './viewport'
 import { isFloorPlan } from './selection'
 import { useColumnCheck } from '../generate/useColumnCheck'
-import { FillOverlay, FillOptionsBar } from './FillTool'
-import { AreaPrompt } from './AreaPrompt'
+import { FillOverlay } from './FillTool'
+import { FillOptionsBar } from './FillBar'
+import { SplitBar } from './SplitBar'
+import { SelectionBar, FloorMenu, openFloorMenu } from '../studio/SelectionBar'
 import { ZoneEditPreview, SelectedZoneSizes } from './ZoneEdit'
 import { hasResizeHandles } from './handleGeometry'
 import { FILL_TOOL, startFill, moveFill, commitFill } from '../utils/fillTool'
@@ -393,6 +395,7 @@ export function Canvas2() {
       ref={setHost}
       className="flex-1 relative overflow-hidden min-h-0"
       style={{ background: '#F4F3EF', cursor: effectiveCursor }}
+      onContextMenu={(e) => openFloorMenu(e, e.currentTarget)}
     >
       {showGrid && <DotGround />}
       {size.w > 0 && size.h > 0 && (
@@ -481,9 +484,13 @@ export function Canvas2() {
         </Stage>
       )}
       <ViewAdopter view={view} apply={apply} />
+      {/* the Studio bars (STUDIO.md §1, §6): the selection bar over the selection, the mode bars at the top (Row
+          group, Split, Fill racking), the notices above the tool pill, the floor's right-click menu */}
+      <SelectionBar />
       <RowGroupBar />
-      <AreaPrompt />
+      <SplitBar />
       {filling && <FillOptionsBar />}
+      <FloorMenu />
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>
   )
