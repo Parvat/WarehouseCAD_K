@@ -113,6 +113,7 @@ Warning action button: background `#F2C77A`, text `#3A2E17`.
 - **Keys while typing**: with focus in an input, select or textarea, Ctrl/Cmd + A C V X Z Y, Delete / Backspace, the arrows and the single-letter tool keys act on the text only, never on the canvas.
 - **Disabled**: the same control at 45% opacity, cursor not-allowed.
 - **Tool shortcuts** (shown in the tool pill's hint, key in mono): V Select · P Pan · F Fill racking · G Row group · S Split · M Measure · L Line · T Text.
+- **Elevation full screen**: D toggles Front | Depth while full screen is open (never while typing, never with Ctrl / Cmd / Alt).
 
 ## 6. Selection bar contents
 
@@ -135,7 +136,9 @@ Warning action button: background `#F2C77A`, text `#3A2E17`.
   - A pick on the plan (an object, or a building's wall) closes the card and shows Properties for it; the draft goes with it.
 - Empty plan shows a centred card: "Your building is ready" · Generate layout · Draw racks. Gone after the first rack.
 - Elevations: Depth and full-screen buttons sit in the "In this layout" row (editor: in its header). The drawing has no buttons on it, except in edit-on-sheet mode below.
-- Max load height = sprinkler height − 18″ (NFPA clearance below sprinklers). If no sprinkler height is set, use the ceiling − 18″. Sprinkler height can never be above the ceiling (field error in Project settings). Label: Max load height N (18″ below sprinklers); where that does not fit the sheet's width, Max load N — never to the edge.
+- Elevation full screen: a **Front | Depth** segmented control in its header, left of the close button — the neutral segment style (§5: inset track, active = separator fill + strong text), 28h. It shares state with the card's Depth button: switching in one shows the same view in the other. Shortcut D (§5). Edit on the sheet works in Front only: in Depth the pencil is disabled (title "Edit in Front view") and nothing on the drawing edits; Save and Cancel stay.
+- Max load height = sprinkler height − 18″ (NFPA clearance below sprinklers). If no sprinkler height is set, use the ceiling − 18″. Sprinkler height can never be above the ceiling (field error in Project settings). Label: Max load height N (18″ below sprinklers), placed by the max load label rule below.
+- **Max load label** (front and side view): just below the max load line; if that overlaps any pallet or rack, it moves above the line inside the yellow band; if it still does not fit the width, the short form Max load N. It never overlaps a load or runs past the sheet. (Where a load reaches through the band so neither side of the line is clear in place, the label slides along the line to clear space.)
 - Elevation rows: pencil (24×24) left of More. Pencil = **edit on the sheet** (C21, `StudioSheet`): the list collapses to that row, the sheet grows (560 at 900 tall), the row shows ✕ Cancel and a 24h Save. On the sheet: drag a beam (snaps to Project settings → Uprights → Hole pitch, default 2″; a text-only "2″ steps" hint over the dragged beam's label), click any blue value to type it (input box on the drawing), + Add level ghost box above the top load, − on the top level removes it. Editable values have a dotted blue underline. A load above max load height turns that level red. Save = one undo step, Esc = Cancel.
 - More menu: Full edit (C3 with this elevation's values, title Edit elevation · N bays), Colour, Duplicate, Set as default, Remove unused elevations, Delete.
 - Elevations list: **Apply** stays in place — "Select rows to apply", dimmed at 45%, with no row selected; "Apply to N selected rows" with rows (the footer never jumps). Fit is a double-click on the sheet.

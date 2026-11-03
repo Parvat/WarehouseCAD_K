@@ -217,3 +217,36 @@ describe('SH-7 — Front | Depth in full screen', () => {
     expect(dr).toMatch(/<DrawingCore \{\.\.\.props\} sheetEdit=\{sheetEdit && !side\} readOnly=\{props\.readOnly \|\| \(sheetEdit && side\)\} fill height=\{null\}/)
   })
 })
+
+describe('SH-8 — the max load label, both views', () => {
+  const SOLID = new Set(['load', 'side-load', 'side-overhang', 'beam', 'upright', 'frame', 'spacer'])
+  const place = async (box, fontPx, view, building) => {
+    const { elevationLayout, labelBox } = await import('../../utils/elevationDrawing')
+    const d = elevationLayout(MOCK, 96, box, { palletWIn: 40, depthIn: 42, pair: true, flueIn: 9, building, sprinklerClearanceIn: 18, fontPx, view })
+    const l = d.items.find(i => i.tag === 'max-load-label'), b = labelBox(l)
+    const yM = d.items.find(i => i.tag === 'max-load').y1, yC = d.items.find(i => i.tag === 'clear').y1
+    const hits = d.items.filter(i => i.t === 'rect' && SOLID.has(i.tag)).filter(r => b.x0 < r.x + r.w && r.x < b.x1 && b.y0 < r.y + r.h && r.y < b.y1)
+    return { s: l.s, where: l.y > yM ? 'below' : 'above', inBand: b.y0 >= Math.min(yC, yM) - 0.5 && b.y1 <= Math.max(yC, yM) + 0.5, onSheet: b.x0 >= 0 && b.x1 <= box.w, hits: hits.length }
+  }
+  const CARD = [{ w: 276, h: 420 }, 9], FULL = [{ w: 1440, h: 850 }, 9 * (850 / 420)]
+  const FULL_FORM = (n) => `Max load height ${n} (18″ below sprinklers)`
+
+  it('SH-maxload-label: just below the max load line; where that lies on a pallet or the rack, above the line inside the yellow band; where the full label does not fit the width, "Max load N" — in the front view and the side view (Depth), the card and full screen; never on a load or the rack, never past the sheet; STUDIO.md says so', async () => {
+    // room below the line: below, the full label where the width allows
+    expect(await place(...CARD, 'front', { clearHeightIn: 360, sprinklerIn: 360 })).toEqual({ s: FULL_FORM('28′-6″'), where: 'below', inBand: false, onSheet: true, hits: 0 })
+    expect(await place(...FULL, 'side', { clearHeightIn: 360, sprinklerIn: 360 })).toEqual({ s: FULL_FORM('28′-6″'), where: 'below', inBand: false, onSheet: true, hits: 0 })
+    // the side view on the card: the full label does not fit its width — the short form
+    expect(await place(...CARD, 'side', { clearHeightIn: 360, sprinklerIn: 360 })).toEqual({ s: 'Max load 28′-6″', where: 'below', inBand: false, onSheet: true, hits: 0 })
+    // the top load 2″ under the line: below would lie on the top pallet — above the line, inside the band
+    for (const [box, fp, view, s] of [[...CARD, 'side', 'Max load 23′-6″'], [...CARD, 'front', FULL_FORM('23′-6″')], [...FULL, 'side', FULL_FORM('23′-6″')], [...FULL, 'front', FULL_FORM('23′-6″')]]) {
+      expect([view, box.w, await place(box, fp, view, { clearHeightIn: 300, sprinklerIn: null })]).toEqual([view, box.w, { s, where: 'above', inBand: true, onSheet: true, hits: 0 }])
+    }
+    // the full-screen side view of the screenshot (an assumed 24′: the top pallet reaches into the band): on no load, on the sheet
+    for (const [box, fp] of [CARD, FULL]) for (const view of ['front', 'side']) {
+      const p = await place(box, fp, view, { clearHeightIn: 288, sprinklerIn: null, assumed: true })
+      expect([view, box.w, p.hits, p.onSheet]).toEqual([view, box.w, 0, true])
+    }
+    const doc = read('../STUDIO.md')
+    expect(doc).toMatch(/- \*\*Max load label\*\* \(front and side view\): just below the max load line; if that overlaps any pallet or rack, it moves above the line inside the yellow band; if it still does not fit the width, the short form Max load N\. It never overlaps a load or runs past the sheet\./)
+  })
+})

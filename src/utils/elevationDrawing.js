@@ -50,6 +50,8 @@ export const sheetScale = (box) => Math.max(0.1, Math.min(box.w / CARD_SHEET.w, 
 /** 30'-0" → 30′-0″ (the Studio drawing's primes) */
 const prime = (str) => String(str).replace(/'/g, '′').replace(/"/g, '″')
 const LOAD = '#E8DCC2', LOAD_EDGE = '#B08F52', DECK = '#C9A870', MISFIT = '#F5E7E3'
+/** What a label never lies on: the loads (both views), the beams, the uprights, the frames and the flue spacers. */
+const SOLID_TAGS = new Set(['load', 'side-load', 'side-overhang', 'beam', 'upright', 'frame', 'spacer'])
 
 /** Which levels of `t` don't fit — a pallet plus the clearance taller than the top of its beam (the floor) to the
  *  underside of the next beam (the top level has none above it): the Check layout error's own rule
@@ -132,6 +134,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const sw = Math.max(0.8, fontPx / 11)
   const colPx = Math.max(3.5, upW * s), beamPx = Math.max(4, face * s), deckPx = Math.max(3, 4 * s)
   const items = []
+  const maxLoadLabels = []   // the max load labels, placed after the drawing (placeMaxLoadLabels)
   const rect = (x, y, w, h, o = {}) => items.push({ t: 'rect', x, y, w, h, ...o })
   const line = (x1, y1, x2, y2, o = {}) => items.push({ t: 'line', x1, y1, x2, y2, stroke: o.stroke || blue, sw: o.sw || sw, ...o })
   const text = (x, y, str, o = {}) => items.push({ t: 'text', x, y, s: str, size: o.size || fO, fill: o.fill || blue, anchor: o.anchor || 'middle', font: FONT, halo: Math.max(1.5, (o.size || fO) * 0.45), haloColor: bg, ...o, weight: o.weight ?? 500 })   // (500: a touch bolder than book, to read at small sizes)
@@ -170,14 +173,41 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       const maxLoad = maxLoadS, yM = Yv(maxLoad), yC = Yv(base)
       rect(x0, Math.min(yC, yM), x1 - x0, Math.abs(yM - yC), { fill: S.band, opacity: 0.22, tag: 'band' })
       line(x0, yM, x1, yM, { stroke: S.maxLine, sw: 1.2, dash: '5 3', tag: 'max-load' })
-      // the full label slides left — as far as the Ceiling label's own left edge, the two aligned — to stay off the sheet's
-      // edge; where it does not fit even so: Max load N (no sprinkler note), slid as needed — never to the edge
+      // its label: placed once the loads and the rack are drawn (placeMaxLoadLabels — the rule is there)
+      const label = { t: 'text', x: 0, y: 0, s: '', size: 10 * u, fill: S.maxText, anchor: 'start', font: S_FONT, halo: Math.max(1.5, 4.5 * u), haloColor: bg, pri: 2, tag: 'max-load-label', fixed: true, weight: 400 }
+      items.push(label)
+      maxLoadLabels.push({ label, x0, yM, yC })
+    }
+  }
+  /* The max load label (STUDIO.md §7), each view's: just below the max load line; where that overlaps a pallet or the
+     rack, above the line inside the yellow band; where the full label does not fit the sheet's width, the short form
+     "Max load N". It slides along its line — the full label no further left than the Ceiling label's own left edge,
+     the two aligned — and never runs past the sheet. It never lies on a load or the rack: a place with none is taken
+     first; only when no place on either side of the line is clear does it fall back to the short form above the line. */
+  function placeMaxLoadLabels() {
+    const solids = items.filter(i => i.t === 'rect' && SOLID_TAGS.has(i.tag)).map(r => ({ x0: r.x, x1: r.x + r.w, y0: r.y, y1: r.y + r.h }))
+    const runsText = (runs) => runs.map(r => (Array.isArray(r) ? r[0] : r)).join('')
+    const width = (runs) => runsText(runs).length * 10 * u * 0.53, right = box.w - 6 * u, size = 10 * u
+    const clear = (x, y, w) => { const b = { x0: x, x1: x + w, y0: y - size * 0.8, y1: y + size * 0.22 }; return !solids.some(r => b.x0 < r.x1 && r.x0 < b.x1 && b.y0 < r.y1 && r.y0 < b.y1) }
+    for (const { label, x0, yM, yC } of maxLoadLabels) {
+      const maxLoad = maxLoadS
       const full = ['Max load height ', [prime(ftInDash(maxLoad)), S.maxText], ' ', [`(${sprinklerClearanceIn}″ below sprinklers)`, S.maxNote]], short = ['Max load ', [prime(ftInDash(maxLoad)), S.maxText]]
-      const width = (runs) => runs.map(r => (Array.isArray(r) ? r[0] : r)).join('').length * 10 * u * 0.53, right = box.w - 6 * u
-      const minX = x0 + 24 * u
-      let lx = Math.min(x0 + 48 * u, right - width(full)), runs = full
-      if (lx < minX) { runs = short; lx = Math.max(2 * u, Math.min(x0 + 48 * u, right - width(short))) }
-      sText(lx, yM + 12 * u, runs, { fill: S.maxText, pri: 2, tag: 'shell', fixed: true })
+      const below = yM + 12 * u, above = Math.max(Math.min(yC, yM) + size * 0.8, yM - 3.5 * u)   // above: its baseline just over the line, its top in the band
+      const pick = () => {
+        for (const [runs, lo] of [[full, x0 + 24 * u], [short, 2 * u]]) {
+          const w = width(runs), hi = right - w
+          if (hi < lo) continue                                                    // doesn't fit the width: the short form
+          // its place: below the line, else above it in the band — then, only where both lie on a load, along the line
+          const pref = Math.max(lo, Math.min(x0 + 48 * u, hi))
+          for (const y of [below, above]) if (clear(pref, y, w)) return { runs, x: pref, y }
+          const xs = []; for (let k = 1; k <= 80; k++) for (const d of [-k, k]) { const x = pref + d * 4 * u; if (x >= lo && x <= hi) xs.push(x) }
+          for (const y of [below, above]) for (const x of xs) if (clear(x, y, w)) return { runs, x, y }
+        }
+        const w = width(short)
+        return { runs: short, x: Math.max(2 * u, Math.min(x0 + 48 * u, right - w)), y: above }
+      }
+      const p = pick()
+      Object.assign(label, { x: p.x, y: p.y, s: runsText(p.runs), runs: p.runs.map(r => (Array.isArray(r) ? { s: r[0], fill: r[1], weight: 600 } : { s: r })) })
     }
   }
   /* the ground: a 2.5 ink line, 1px hatching every 16 below it */
@@ -332,6 +362,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   if (pair) { dimH(yb, Xs(depthIn + upW), Xs(depthIn + upW + flueIn), ftInDash(flueIn), { below: false }); dimH(yb, Xs(depthIn + flueIn + upW), Xs(sideW), ftInDash(depthIn), { outboard: 'right' }) }
   dimV(Xs(0) - fO * 1.8, Ys(0), Ys(hTop), prime(`Frame ${ftInDash(hTop)}`), { kind: 'dim', id: 'upright', value: hTop }, { pri: 2, out: -1 })
   }
+  placeMaxLoadLabels()
   declutter(items, box)
   // every label over the linework, so its halo clears the dashed building lines and the dimension lines beneath it
   // ...and the sheet's edit controls (C21) over everything, labels too, so a label never takes their click
