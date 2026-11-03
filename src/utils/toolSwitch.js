@@ -10,7 +10,7 @@
 import { create } from 'zustand'
 import { TOOLS } from '../constants'
 import { useFillTool } from './fillTool'
-import { cancelGroupBox } from './rowGroupTool'
+import { cancelGroupBox, onRowGroupToolStart, ROW_GROUP_TOOL } from './rowGroupTool'
 import { useSplit } from './splitTool'
 import { cancelPlacement } from './placement'
 
@@ -51,5 +51,7 @@ export function installToolKeeper(store) {
     clearTransients()                                       // every tool's leftovers, not only the last one's
     cancelPlacement()
     if (useMeasureMode.getState().on) useMeasureMode.setState({ on: false })
+    // the Row group tool starts empty (the pill, G) — not from what the last group or the selection left
+    if (st.activeTool === ROW_GROUP_TOOL) onRowGroupToolStart()
   })
 }

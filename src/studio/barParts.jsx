@@ -102,12 +102,17 @@ export function Menu({ label, anchor, at, onClose, children, width = MENU_W }) {
       {children}
     </div>, host)
 }
-export function MenuItem({ children, onClick, disabled = false, danger = false, swatch, title, right }) {
+/** A menu row. `icon`: its section-9 icon on the left, 24px ({ name, kind }) — `icon={null}` keeps the slot empty (an
+ *  item with no icon yet), so every row's words line up; `keys`: its shortcut on the right, faint, mono 11 (only one
+ *  that works) — as the layout menu shows them. */
+export function MenuItem({ children, onClick, disabled = false, danger = false, swatch, title, right, icon, keys }) {
   return (
     <button type="button" role="menuitem" className="st-hov" disabled={disabled} title={title} onClick={onClick}
       style={{ ...menuRow, color: danger ? B.danger : B.text, opacity: disabled ? 0.45 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
+      {icon !== undefined && <span aria-hidden="true" data-menu-icon={icon ? icon.name : ''} style={{ width: 24, height: 24, flexShrink: 0, display: 'flex' }}>{icon && <Icon name={icon.name} kind={icon.kind || 'tool'} />}</span>}
       {swatch && <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 2, background: swatch, flexShrink: 0 }} />}
       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{children}</span>
+      {keys && <span data-menu-keys style={{ fontFamily: MONO, fontSize: 11, color: '#7E8680', flexShrink: 0 }}>{keys}</span>}
       {right}
     </button>
   )

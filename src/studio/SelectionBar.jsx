@@ -3,9 +3,11 @@ import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
-import { worldBoundsOf, hitTest, fpWallHitTest } from '../canvas2/hitTest'
+import { worldBoundsOf, hitTest, fpWallHitTest, wallBeatsPadding } from '../canvas2/hitTest'
 import { screenToWorld } from '../canvas2/viewport'
 import { useDragPreview } from '../canvas2/dragPreview'
+import { useLabelPrefs } from '../canvas2/labelPrefs'
+import { labelScale } from '../render/labelSize'
 import { usePlacement } from '../utils/placement'
 import { useRowGroup } from '../utils/rowGroupTool'
 import { SPLIT_TOOL } from '../utils/splitTool'
@@ -20,7 +22,7 @@ import { parseFeet } from '../components/RightPanel/panels/RackingAreaPanel'
 import { useColumnCheck } from '../generate/useColumnCheck'
 import { ZONE_KINDS } from '../generate/rackingArea'
 import { B, MONO, pill, Sep, IconBtn, Chip, Menu, MenuItem, MenuLine } from './barParts'
-import { Icon } from './Icon'
+import { Icon, hasIcon } from './Icon'
 import { addBayTo, removeBayFrom, rotateQuarter, duplicateSelection, deleteSelection, pasteHere, groupSelectedRows, pickLibraryItem } from './selectionActions'
 
 /* ── The selection bar (STUDIO.md §1, §6; design/studio/Studio.dc.html C1 and C6) ──────────────────────────────────
@@ -61,13 +63,28 @@ export function barFor(objects, selectedIds, activeWall) {
   return null
 }
 
-/** The selection's box on screen (canvas px): the union of its world boxes, through the view. */
-export function screenBox(objs, objects, view) {
+/** How far a selected object's own dimension labels reach past its box (world px; canvas2/DimensionLabels.jsx, drawn at
+ *  the label size `lz`): a building's (FpDimLabels) stand 22 out from every wall with an 11-tall pill; a rack's
+ *  (RackLabels) run below it and to its right, 14 out — on top only when it is turned 180° or 270°. The bar keeps clear
+ *  of them, so a selected object's labels are never under it. */
+export function labelReach(o, lz) {
+  const pillHalf = (11 * 1.5) / 2
+  if (FP.has(o.type)) { const r = (22 + pillHalf + 2) / lz; return { top: r, side: r, bottom: r } }
+  if (o.type === 'rack_row' || o.type === 'rack_double_row') {
+    const rot = ((((o.rotation || 0) % 360) + 360) % 360), r = (14 + pillHalf + 2) / lz
+    return { top: rot === 180 || rot === 270 ? r : 0, side: r, bottom: r }
+  }
+  return { top: 0, side: 0, bottom: 0 }
+}
+/** The selection's box on screen (canvas px): the union of its world boxes (with its labels' reach, at label size
+ *  `lz`), through the view. */
+export function screenBox(objs, objects, view, lz = null) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
   for (const o of objs) {
     const b = worldBoundsOf(o, objects)
     if (!b) continue
-    x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.width); y1 = Math.max(y1, b.y + b.height)
+    const m = lz ? labelReach(o, lz) : { top: 0, side: 0, bottom: 0 }
+    x0 = Math.min(x0, b.x - m.side); y0 = Math.min(y0, b.y - m.top); x1 = Math.max(x1, b.x + b.width + m.side); y1 = Math.max(y1, b.y + b.height + m.bottom)
   }
   if (!Number.isFinite(x0)) return null
   return { x0: x0 * view.zoom + view.panX, y0: y0 * view.zoom + view.panY, x1: x1 * view.zoom + view.panX, y1: y1 * view.zoom + view.panY }
@@ -119,15 +136,16 @@ export function MoreItems({ obj, close }) {
   const run = (fn) => () => { fn(); close() }
   return (
     <>
-      <MenuItem onClick={run(st.toggleLockSelected)}>{obj?.locked ? 'Unlock' : 'Lock'}</MenuItem>
+      {/* the icon on the left (section 9; none yet: an empty slot), the shortcut on the right (only those that work) */}
+      <MenuItem icon={{ name: 'Lock' }} keys="Ctrl+L" onClick={run(st.toggleLockSelected)}>{obj?.locked ? 'Unlock' : 'Lock'}</MenuItem>
       <MenuLine />
-      <MenuItem onClick={run(st.sendToBack)}>To back</MenuItem>
-      <MenuItem onClick={run(st.sendBackward)}>Back</MenuItem>
-      <MenuItem onClick={run(st.bringForward)}>Forward</MenuItem>
-      <MenuItem onClick={run(st.bringToFront)}>To front</MenuItem>
+      <MenuItem icon={null} onClick={run(st.sendToBack)}>To back</MenuItem>
+      <MenuItem icon={null} onClick={run(st.sendBackward)}>Back</MenuItem>
+      <MenuItem icon={null} onClick={run(st.bringForward)}>Forward</MenuItem>
+      <MenuItem icon={null} onClick={run(st.bringToFront)}>To front</MenuItem>
       <MenuLine />
-      <MenuItem onClick={run(st.copySelected)}>Copy</MenuItem>
-      <MenuItem onClick={run(st.cutSelected)}>Cut</MenuItem>
+      <MenuItem icon={null} keys="Ctrl+C" onClick={run(st.copySelected)}>Copy</MenuItem>
+      <MenuItem icon={null} keys="Ctrl+X" onClick={run(st.cutSelected)}>Cut</MenuItem>
     </>
   )
 }
@@ -260,6 +278,7 @@ function BuildingBar({ obj }) {
 export function SelectionBar() {
   const { objects, selectedIds, activeWall, activeTool, zoom, panX, panY } = useCanvasStore(useShallow(s => ({ objects: s.objects, selectedIds: s.selectedIds, activeWall: s.activeWall, activeTool: s.activeTool, zoom: s.zoom, panX: s.panX, panY: s.panY })))
   const dragging = useDragPreview(s => s.dragging)
+  const labelSize = useLabelPrefs(s => s.labelSize), gridSize = useCanvasStore(s => s.gridSize) || 40
   const placing = usePlacement(s => s.active)
   const grouped = useRowGroup(s => s.keys.length > 0 || !!s.pending)
   const ref = useRef(null)
@@ -272,7 +291,7 @@ export function SelectionBar() {
     setSize(s => (s && s.w === w && s.h === h ? s : { w, h }))
   })
   if (hidden) return null
-  const box = screenBox(what.objs, objects, { zoom, panX, panY })
+  const box = screenBox(what.objs, objects, { zoom, panX, panY }, labelScale(labelSize, gridSize))
   if (!box) return null
   const host = ref.current?.parentElement?.getBoundingClientRect()
   const win = { w: host?.width || window.innerWidth, h: host?.height || window.innerHeight }
@@ -306,7 +325,10 @@ export function openFloorMenu(e, host) {
   const w = screenToWorld({ zoom: st.zoom, panX: st.panX, panY: st.panY }, p), gs = st.gridSize || 40
   const hit = hitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs)
   let obj = hit && st.objects.find(o => o.id === hit)
-  if (!obj || FP.has(obj.type)) { const wall = fpWallHitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs); obj = wall ? st.objects.find(o => o.id === wall.objId) : null }
+  // a press on a wall that a rack only reached by its pick padding is the wall's (hitTest.js wallBeatsPadding)
+  const padWall = wallBeatsPadding(st.objects, st.layers, w.x, w.y, st.zoom, gs, obj)
+  if (padWall) obj = st.objects.find(o => o.id === padWall.objId)
+  else if (!obj || FP.has(obj.type)) { const wall = fpWallHitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs); obj = wall ? st.objects.find(o => o.id === wall.objId) : null }
   const at = { x: e.clientX, y: e.clientY }
   if (!obj) { useFloorMenu.setState({ at, objId: null }); return 'floor' }
   if (!st.selectedIds.includes(obj.id)) {
@@ -327,10 +349,10 @@ export function FloorMenu() {
   if (objId) return <Menu label="Object" at={at} onClose={close}><MoreItems obj={obj} close={close} /></Menu>
   return (
     <Menu label="Floor" at={at} onClose={close}>
-      <MenuItem disabled={!clipboard?.length} title="Paste (Ctrl+V)" onClick={run(pasteHere)}>Paste</MenuItem>
-      <MenuItem title="Fill racking (F) — drag a box" onClick={run(tool(FILL_TOOL))}>Fill racking</MenuItem>
-      <MenuItem onClick={() => setZones(z => !z)} right={<Icon name="Chevron" size={12} color={B.muted} style={zones ? { transform: 'rotate(180deg)' } : undefined} />}>Add zone</MenuItem>
-      {zones && ZONE_KINDS.map(z => <MenuItem key={z.type} swatch={z.color} onClick={run(() => pickLibraryItem(z.type))}><span style={{ paddingLeft: 8 }}>{z.label}</span></MenuItem>)}
+      <MenuItem icon={null} keys="Ctrl+V" disabled={!clipboard?.length} title="Paste (Ctrl+V)" onClick={run(pasteHere)}>Paste</MenuItem>
+      <MenuItem icon={{ name: 'Fill racking' }} keys="F" title="Fill racking (F) — drag a box" onClick={run(tool(FILL_TOOL))}>Fill racking</MenuItem>
+      <MenuItem icon={{ name: 'Zones', kind: 'rail' }} onClick={() => setZones(z => !z)} right={<Icon name="Chevron" size={12} color={B.muted} style={zones ? { transform: 'rotate(180deg)' } : undefined} />}>Add zone</MenuItem>
+      {zones && ZONE_KINDS.map(z => <MenuItem key={z.type} icon={hasIcon(z.label, 'object') ? { name: z.label, kind: 'object' } : null} onClick={run(() => pickLibraryItem(z.type))}>{z.label}</MenuItem>)}
     </Menu>
   )
 }

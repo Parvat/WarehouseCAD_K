@@ -146,8 +146,15 @@ export function standardLayers(layers) {
   const m = asMap(layers)
   return STANDARD_LAYERS.map(d => {
     const had = m.get(d.id)
-    return had ? { ...d, visible: had.visible !== false, locked: !!had.locked } : { ...d }
+    return had ? { ...d, visible: had.visible !== false, locked: !!had.locked, ...(had.lockedByHand ? { lockedByHand: true } : {}) } : { ...d }
   })
+}
+
+/** A layout from before Generate stopped locking the building: its Building layer locked by Generate (not by hand —
+ *  setLayer records a hand lock) is unlocked on load, so its building is picked by its walls; a hand lock stays. */
+export function releaseGeneratedLocks(layers) {
+  if (!Array.isArray(layers)) return layers
+  return layers.map(l => (l && l.id === 'building' && l.locked && !l.lockedByHand ? { ...l, locked: false } : l))
 }
 
 /** The standard seven as Generate leaves them: Columns locked (and shown); the rest as they were. */
@@ -159,7 +166,8 @@ export function generatedLayers(layers) {
  *  be picked leaves the selection, so a drag can never move a locked object
  *  that happened to be selected before the lock. */
 export function setLayer(store, id, patch) {
-  store.getState().updateLayer(id, patch)
+  // the padlock, by hand: remembered as the user's (a lock Generate set never is — releaseGeneratedLocks)
+  store.getState().updateLayer(id, 'locked' in patch ? { ...patch, lockedByHand: !!patch.locked } : patch)
   const st = store.getState()
   const ok = pickableIn(st.layers)
   const keep = st.selectedIds.filter(sid => { const o = st.objects.find(x => x.id === sid); return o && ok(o) })

@@ -72,7 +72,7 @@ describe.each(['horizontal', 'vertical'])('SBR — the selection bar, %s', (orie
     expect(zoomed.x1 - zoomed.x0).toBeCloseTo((box.x1 - box.x0) * 2, 6)
     // wired: the bar reads the store's view and places itself with placeBar, absolute in the canvas, under the islands
     const src = read('studio/SelectionBar.jsx')
-    expect(src).toMatch(/const box = screenBox\(what\.objs, objects, \{ zoom, panX, panY \}\)/)
+    expect(src).toMatch(/const box = screenBox\(what\.objs, objects, \{ zoom, panX, panY \}, labelScale\(labelSize, gridSize\)\)/)
     expect(src).toMatch(/style=\{\{ \.\.\.pill, position: 'absolute', zIndex: 140,/)
     expect(read('canvas2/Canvas2.jsx')).toMatch(/<SelectionBar \/>/)
   })
@@ -144,7 +144,7 @@ describe.each(['horizontal', 'vertical'])('SBR — the selection bar, %s', (orie
     expect(src).toMatch(/export const deleteSelection = \(\) => deleteSelectionWithAreas\(store\)/)
     expect(src).toMatch(/st\.commitObjectUpdate\(obj\.id, addBayUpdate\(obj, beamIn \?\? beams\[beams\.length - 1\] \?\? 96, st\.gridSize \|\| 40\)\)/)
     expect(src).toMatch(/if \(deleteBaySelection\(store, nanoid\)\) return true[\s\S]*store\.getState\(\)\.deleteSingleBay\(obj\.id, obj\.activeBayIdx != null \? obj\.activeBayIdx : beams\.length - 1\)/)
-    expect(src).toMatch(/for \(const id of st\.selectedIds\) n \+= addRowOf\(id\)/)
+    expect(src).toMatch(/export const groupSelectedRows = \(\) => startGroupFromSelection\(store\)/)
     expect(store.getState().objects.length).toBe(count)
   })
 })
@@ -262,7 +262,7 @@ describe('SBR — the mode bars and the notices', () => {
     expect(SB.openFloorMenu(at(fp.x - 400, fp.y - 400), host)).toBe(false)
     store.setState({ activeTool: 'select' })
     const src = read('studio/SelectionBar.jsx')
-    expect(src).toMatch(/<MenuItem disabled=\{!clipboard\?\.length\} title="Paste \(Ctrl\+V\)" onClick=\{run\(pasteHere\)\}>Paste<\/MenuItem>\s*<MenuItem title="Fill racking \(F\) — drag a box" onClick=\{run\(tool\(FILL_TOOL\)\)\}>Fill racking<\/MenuItem>\s*<MenuItem onClick=\{\(\) => setZones\(z => !z\)\}[\s\S]*?>Add zone<\/MenuItem>\s*\{zones && ZONE_KINDS\.map/)
+    expect(src).toMatch(/<MenuItem icon=\{null\} keys="Ctrl\+V" disabled=\{!clipboard\?\.length\} title="Paste \(Ctrl\+V\)" onClick=\{run\(pasteHere\)\}>Paste<\/MenuItem>\s*<MenuItem icon=\{\{ name: 'Fill racking' \}\} keys="F" title="Fill racking \(F\) — drag a box" onClick=\{run\(tool\(FILL_TOOL\)\)\}>Fill racking<\/MenuItem>\s*<MenuItem icon=\{\{ name: 'Zones', kind: 'rail' \}\} onClick=\{\(\) => setZones\(z => !z\)\}[\s\S]*?>Add zone<\/MenuItem>\s*\{zones && ZONE_KINDS\.map/)
     expect(read('canvas2/Canvas2.jsx')).toMatch(/onContextMenu=\{\(e\) => openFloorMenu\(e, e\.currentTarget\)\}/)
   })
 
@@ -301,7 +301,7 @@ describe('SBR — the mode bars and the notices', () => {
     SB.useFloorMenu.setState({ at: null, objId: null })
     // its items: the More items, one list with the ⋯ menu's
     const items = renderToStaticMarkup(createElement(SB.MoreItems, { obj: r, close: () => {} }))
-    expect([...items.matchAll(/role="menuitem"[^>]*>(?:<span[^>]*>)?([^<]+)</g)].map(m => m[1])).toEqual(['Lock', 'To back', 'Back', 'Forward', 'To front', 'Copy', 'Cut'])
+    expect([...items.matchAll(/<span style="flex:1[^"]*">([^<]+)<\/span>/g)].map(m => m[1])).toEqual(['Lock', 'To back', 'Back', 'Forward', 'To front', 'Copy', 'Cut'])
     expect(renderToStaticMarkup(createElement(SB.MoreItems, { obj: { ...r, locked: true }, close: () => {} }))).toMatch(/>Unlock</)
     const src = read('studio/SelectionBar.jsx')
     expect(src).toMatch(/if \(objId\) return <Menu label="Object" at=\{at\} onClose=\{close\}><MoreItems obj=\{obj\} close=\{close\} \/><\/Menu>/)

@@ -81,6 +81,25 @@ export function groupDragFor(objects, ids) {
   return keys.length ? groupDragExclusions(objects, ids, keys, gs()) : null
 }
 
+/* ── starting the tool: empty from the tool pill or G; from the selection by the selection bar's Row group ── */
+let fromSelection = false
+/** The Row group tool has just come on (utils/toolSwitch.js installToolKeeper): it starts empty — the group the last
+ *  one left goes — unless the selection bar's Row group started it from the selection (startGroupFromSelection). */
+export function onRowGroupToolStart() {
+  if (fromSelection) { fromSelection = false; return }
+  clearGroup()
+}
+/** The selection bar's Row group: the group is the selected rows, and the tool is on to add more by box or click. */
+export function startGroupFromSelection(store) {
+  clearGroup()
+  let n = 0
+  for (const id of store.getState().selectedIds) n += addRowOf(id)
+  fromSelection = true
+  store.getState().setActiveTool(ROW_GROUP_TOOL)
+  if (store.getState().activeTool !== ROW_GROUP_TOOL) fromSelection = false
+  return n
+}
+
 /* ── the tool: one box or one click, then back to Select ── */
 /** Press: the box starts here; `hitRackId` is the rack under the press, if any (a click toggles its row). */
 export function startGroupBox(world, hitRackId = null) { useRowGroup.setState({ drag: { from: world, to: world, hit: hitRackId } }) }

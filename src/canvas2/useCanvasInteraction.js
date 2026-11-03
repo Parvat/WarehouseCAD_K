@@ -2,7 +2,7 @@ import { setDragPreview, clearDragPreview, setDragging } from './dragPreview'
 import { textOwnsKey } from '../utils/typing'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
-import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
+import { hitTest, hitTestBay, fpWallHitTest, wallBeatsPadding } from './hitTest'
 import { handleHitTest, cursorForHandle, hasResizeHandles } from './handleGeometry'
 import { finishAreaResize } from '../utils/rackingAreaTool'
 import { bayHalfAt, setFlueHover } from '../utils/baySides'
@@ -27,7 +27,7 @@ import { lockToAxis } from '../utils/rowGroup'
 import { clearIssueHighlight } from '../utils/layoutCheck'
 import {
   nextSelection, normalizeRect, objectsInMarquee, movedEnough,
-  movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee, inBayMode, toggleBaySelection, setStickyBayMode, isStickyBayMode,
+  movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee, inBayMode, toggleBaySelection, setStickyBayMode, isStickyBayMode, bayForClick,
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
@@ -143,7 +143,8 @@ export function useCanvasInteraction({
     if (!live) return
     const isCant = live.type === 'rack_cantilever'
     const curIdx = isCant ? live.activeTowerIdx : live.activeBayIdx
-    const bay = hitTestBay(live, world.x, world.y, st.gridSize)
+    /* the first click on a rack: the row; a second on the same row: its bay; the flue: the pair (selection.js bayForClick) */
+    const bay = bayForClick({ obj: live, hitId, prevSelectedIds, shiftKey, sticky: isStickyBayMode(), bayAt: () => hitTestBay(live, world.x, world.y, st.gridSize), half: () => bayHalfAt(live, world.x, world.y, st.gridSize) })
     if (bay != null) {
       /* a pair's bay is picked on the half clicked (utils/baySides.js): the same bay on the same side again
          unpicks it, the other side switches to it; the flue picks both */
@@ -528,8 +529,11 @@ export function useCanvasInteraction({
          handle, is a real DOM element with its own onMouseDown in the SVG
          engine, so it wins the press whether or not shift is held there —
          shift only ever forces a marquee over a plain object BODY. */
-      if (evt.button === 0 && (!hitObj || FP_SET_INPUT.has(hitObj.type))) {
-        const wallHit = fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+      /* ...and a press ON a wall that a rack only reached by its pick padding (a wall row 3″ in, at plan zoom) is the
+         wall's: the building is always picked by its wall (hitTest.js wallBeatsPadding) */
+      const padWall = evt.button === 0 ? wallBeatsPadding(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize, hitObj) : null
+      if (evt.button === 0 && (!hitObj || FP_SET_INPUT.has(hitObj.type) || padWall)) {
+        const wallHit = padWall || fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
         if (wallHit) {
           const fpObj = st.objects.find(o => o.id === wallHit.objId)
           if (fpObj) {
@@ -614,14 +618,8 @@ export function useCanvasInteraction({
       return
     }
 
-    /* the flue of a pair's bay under the pointer: that bay painted on BOTH halves, so a click there reads as
-       picking both sides (utils/baySides.js) */
-    {
-      const id = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
-      const o = id && st.objects.find(q => q.id === id)
-      const bay = o && o.type === 'rack_double_row' && bayHalfAt(o, world.x, world.y, st.gridSize) == null ? hitTestBay(o, world.x, world.y, st.gridSize) : null
-      setFlueHover(bay != null ? o.id : null, bay != null ? bay : null)
-    }
+    /* (a press in a pair's flue picks the pair, never its bays — so the flue paints no bay on hover) */
+    setFlueHover(null, null)
 
     let next = 'default'
     if (st.selectedIds.length === 1) {

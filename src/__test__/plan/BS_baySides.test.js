@@ -248,16 +248,19 @@ describe('BS — a rack drawn over a zone', () => {
 })
 
 describe.each([['vertical', true], ['horizontal', false]])('BS — the flue made discoverable, %s', (_, vert) => {
-  it('BS-flue-hover: the pointer over a pair bay\'s flue is that bay on both halves (useFlueHover, set from the same pick as the click: bayHalfAt null); over a half, nothing; the canvas wires it on idle mouse moves and clears it on leave', async () => {
-    const { useFlueHover, setFlueHover } = await import('../../utils/baySides')
+  it('BS-flue-click: a press in a pair\'s flue is a press on the pair — the row, never its bays, on the first click or the second (selection.js bayForClick); a half drills into its bay on the second click only; the flue paints no bay on hover', async () => {
+    const { useFlueHover } = await import('../../utils/baySides')
+    const { bayForClick } = await import('../../canvas2/selection')
+    const { hitTestBay } = await import('../../canvas2/hitTest')
     load(savedFill(vert))
     const p = pairOf(12), q = pointIn(p, 3, null), h = pointIn(p, 3, 0)
     expect([bayHalfAt(p, q.x, q.y, GS), bayHalfAt(p, h.x, h.y, GS)]).toEqual([null, 0])
-    setFlueHover(p.id, 3)
-    expect(useFlueHover.getState()).toEqual({ objId: p.id, bayIdx: 3 })
-    setFlueHover(null, null)
+    const click = (pt, prev) => bayForClick({ obj: p, hitId: p.id, prevSelectedIds: prev, bayAt: () => hitTestBay(p, pt.x, pt.y, GS), half: () => bayHalfAt(p, pt.x, pt.y, GS) })
+    expect([click(q, []), click(q, [p.id]), click(h, []), click(h, [p.id])]).toEqual([null, null, null, 3])
     const src = (await import('node:fs')).readFileSync(new URL('../../canvas2/useCanvasInteraction.js', import.meta.url), 'utf8')
-    expect(src).toMatch(/bayHalfAt\(o, world\.x, world\.y, st\.gridSize\) == null \? hitTestBay\(o, world\.x, world\.y, st\.gridSize\) : null\s*setFlueHover\(/)
+    expect(src).toMatch(/const bay = bayForClick\(\{ obj: live, hitId, prevSelectedIds, shiftKey, sticky: isStickyBayMode\(\), bayAt: \(\) => hitTestBay\(live, world\.x, world\.y, st\.gridSize\), half: \(\) => bayHalfAt\(live, world\.x, world\.y, st\.gridSize\) \}\)/)
+    expect(src).toMatch(/\(a press in a pair's flue picks the pair, never its bays — so the flue paints no bay on hover\) \*\/\s*setFlueHover\(null, null\)/)
+    expect(useFlueHover.getState().objId ?? null).toBe(null)
     expect(src).toMatch(/onStageMouseLeave = \(\) => \{\s*setFlueHover\(null, null\)/)
     const shapes = (await import('node:fs')).readFileSync(new URL('../../canvas2/shapes.jsx', import.meta.url), 'utf8')
     expect(shapes).toMatch(/flueBay != null && obj\.type === 'rack_double_row' \? bayRectForIndex\(obj, gridSize, flueBay\) : \[\]/)

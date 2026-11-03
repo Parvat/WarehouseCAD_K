@@ -4,7 +4,8 @@
 import { create } from 'zustand'
 
 export const NOTICE_MS = 6000
-export const useNotice = create(() => ({ text: null, hint: null, at: 0 }))
-/** Show `text` (with a muted `hint`) in the bar; null clears it. */
-export const notify = (text, hint = null) => useNotice.setState(text ? { text, hint, at: Date.now() } : { text: null, hint: null, at: 0 })
+export const useNotice = create(() => ({ text: null, hint: null, at: 0, undo: false }))
+/** Show `text` (with a muted `hint`) in the bar; null clears it. `undo`: what it reports is the step just made — the
+ *  notice offers Undo. */
+export const notify = (text, hint = null, { undo = false } = {}) => useNotice.setState(text ? { text, hint, at: Date.now(), undo: !!undo } : { text: null, hint: null, at: 0, undo: false })
 export const clearNotice = () => notify(null)

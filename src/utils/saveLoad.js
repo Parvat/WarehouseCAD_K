@@ -1,5 +1,6 @@
 import { exportLayoutToPDF } from '../export/pdfExport'
 import { extractLegacy } from './elevations'
+import { releaseGeneratedLocks } from './layers'
 // ─── Scene serialization / deserialization ────────────────────────────────────
 // Format version — bump when breaking changes are made to the schema
 const SCHEMA_VERSION = 2      // 2: the elevation types as their own field (`elevations`)
@@ -52,7 +53,8 @@ export function deserializeScene(json, s) {
   s.objects      = legacy.objects
   s.elevations   = data.elevations ?? legacy.table ?? null
   s.groups       = data.groups || []
-  s.layers       = data.layers || s.layers
+  // a Building layer an older Generate locked is released (a hand lock stays) — utils/layers.js releaseGeneratedLocks
+  s.layers       = releaseGeneratedLocks(data.layers || s.layers)
   s.activeLayerId= data.activeLayerId || s.activeLayerId
 
   // Viewport

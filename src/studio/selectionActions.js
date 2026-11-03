@@ -10,7 +10,7 @@ import { addBayUpdate } from '../components/RightPanel/panels/RackRowPanelCore.j
 import { deleteBaySelection } from '../utils/baySides'
 import { deleteSelectionWithAreas } from '../utils/deleteSelection'
 import { pasteAt } from '../utils/pasteAt'
-import { useRowGroup, addRowOf } from '../utils/rowGroupTool'
+import { useRowGroup, startGroupFromSelection } from '../utils/rowGroupTool'
 
 const store = useCanvasStore
 
@@ -44,13 +44,9 @@ export function duplicateSelection() {
 export const deleteSelection = () => deleteSelectionWithAreas(store)
 /** Paste (Ctrl+V): where the pointer is. */
 export const pasteHere = () => pasteAt(store, 'cursor', nanoid)
-/** Row group: the selection's rows into the group (the Row group tool's click, for every selected row). */
-export function groupSelectedRows() {
-  const st = store.getState()
-  let n = 0
-  for (const id of st.selectedIds) n += addRowOf(id)
-  return n
-}
+/** Row group (the selection bar's): the group starts from the selected rows and the Row group tool is on to add more —
+ *  the only start that takes the selection (the tool pill's and G start empty). */
+export const groupSelectedRows = () => startGroupFromSelection(store)
 
 /* the left panel's library placement (FloatingToolbar's pickItem): an item by its id — Man door, a zone kind */
 let libraryPick = null

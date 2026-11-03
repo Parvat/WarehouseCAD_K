@@ -176,7 +176,7 @@ function Notices() {
   if (notice.text) {
     out.push(
       <div key="notice" style={live}>
-        <NoticePill label="Notice" onClose={clearNotice}>{notice.text}{notice.hint && <span style={{ color: B.muted }}> · {notice.hint}</span>}</NoticePill>
+        <NoticePill label="Notice" onUndo={notice.undo ? undo(clearNotice) : null} onClose={clearNotice}>{notice.text}{notice.hint && <span style={{ color: B.muted }}> · {notice.hint}</span>}</NoticePill>
       </div>)
   }
   return out.length ? <div style={stack}>{out}</div> : null

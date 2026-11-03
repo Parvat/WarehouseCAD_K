@@ -354,12 +354,12 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
  *  hitTest() pass — a rack standing on top of a wall must still win, which
  *  the caller does by checking hitTest() first and only falling back to this
  *  when that pass found nothing or found the floor plan itself. */
-export function fpWallHitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
+export function fpWallHitTest(objects, layers, wx, wy, zoom, gridSize = 40, band = null) {
   const layerMap = new Map((layers || []).map(l => [l.id, l]))
-  const hitW = Math.max(18, 24 / zoom)
   for (const obj of objects) {
     if (!FP_SET.has(obj.type)) continue
     if (!isLayerUsable(layerMap, obj)) continue
+    const hitW = band ? band(obj) : Math.max(18, 24 / zoom)
     const walls = getFpWallSegments(obj, gridSize)
     for (const seg of walls) {
       if (distToSegment({ x: wx, y: wy }, seg.a, seg.b) < hitW) {
@@ -368,6 +368,17 @@ export function fpWallHitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
     }
   }
   return null
+}
+
+/** A press ON a building's wall (within its drawn thickness and a few screen px) that the pick gave to an object only
+ *  through that object's pick padding — the press is outside the object itself (a rack standing 3″ off the wall, its
+ *  8px padding reaching over the wall at plan zoom): the wall wins, so the building can always be picked by its wall.
+ *  An object really on the wall (the press inside it) still wins. → the wall hit, or null. */
+export function wallBeatsPadding(objects, layers, wx, wy, zoom, gridSize, hitObj) {
+  if (!hitObj || FP_SET.has(hitObj.type)) return null
+  const b = worldBoundsOf(hitObj, objects)
+  if (b && wx >= b.x && wx <= b.x + b.width && wy >= b.y && wy <= b.y + b.height) return null
+  return fpWallHitTest(objects, layers, wx, wy, zoom, gridSize, (fp) => ((fp.wallThicknessFt || 0.25) * gridSize) + 6 / zoom)
 }
 
 /** Which bay, lane or tower a world point falls in, or null — the object
