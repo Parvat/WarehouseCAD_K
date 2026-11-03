@@ -54,8 +54,8 @@ describe('N — red aisle warning (neither side of a column reaches travelFt)', 
     expect(aisleWarningRect(b, COL)).toEqual({ x: 0, y: 140, w: 660, h: 640 })
     const marks = clearanceMarks(b, COL)
     expect(marks.map(m => [m.side, m.color, m.label.text])).toEqual([
-      ['near', SHORT_COLOR, "7.5' — under travel"],
-      ['far', SHORT_COLOR, "7.5' — under travel"],
+      ['near', SHORT_COLOR, '7′-6″'],
+      ['far', SHORT_COLOR, '7′-6″'],
     ])
     // dragged back to where it was
     const back = previewObjects(objects, { ids: new Set(['B']), dx: 0, dy: 0 })
@@ -76,8 +76,8 @@ describe('N — column clearance labels: both sides, one style, both orientation
     const [b] = blocksFor([A, B])
     const marks = clearanceMarks(b, COL)
     expect(marks.map(m => [m.side, m.label.text, m.color])).toEqual([
-      ['near', "7.5' clear", CLEAR_COLOR],
-      ['far', "8.5' clear", CLEAR_COLOR],
+      ['near', '7′-6″', CLEAR_COLOR],
+      ['far', '8′-6″', CLEAR_COLOR],
     ])
     const near = marks[0], far = marks[1]
     expect(near.shaft[0]).toEqual({ x: 320, y: 440 })     // column's near edge, centred on the column

@@ -33,6 +33,7 @@ import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
 import { isBayRack, selectionLevel, pickedBays, bayOwners, selectRows, selectBays, toggleBay } from './selectionLevel'
 import { sectionIds, withSections } from './sections'
+import { setAreaHover } from './areaHover'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
 
 /* Beam/lane racks whose applyResize branch handles its own snapping
@@ -72,6 +73,17 @@ const EMPTY_CANVAS_ZOOM = 0.15
    It is handed the live view (a ref, pushed to the Stage imperatively per
    CANVAS2.md rule 6) and a setter for it, and returns the handlers Canvas2.jsx
    wires onto the Stage plus the cursor/marquee state those gestures drive. */
+/** The bay of rack `r` along its run under world point `w` — the pointer held inside the rack (across: at `from`'s
+ *  place), so a run drag that leaves the row still reads the bay it is level with. null on an upright. */
+function bayAlongRun(r, w, from, gridSize) {
+  const t = ((r.rotation || 0) * Math.PI) / 180, cx = r.x + r.width / 2, cy = r.y + r.height / 2, c = Math.cos(t), sn = Math.sin(t)
+  const loc = (p) => ({ x: cx + (p.x - cx) * c + (p.y - cy) * sn, y: cy - (p.x - cx) * sn + (p.y - cy) * c })
+  const lw = loc(w), lf = loc(from), up = ((r.uprightWidth || 3) / 12) * gridSize
+  const lx = Math.max(r.x + up * 1.01, Math.min(r.x + r.width - up * 1.01, lw.x)), ly = Math.max(r.y, Math.min(r.y + r.height, lf.y))
+  const wx = cx + (lx - cx) * c - (ly - cy) * sn, wy = cy + (lx - cx) * sn + (ly - cy) * c
+  return hitTestBay(r, wx, wy, gridSize)
+}
+
 export function useCanvasInteraction({
   stageRef, view, setView, size, objects, dblClickFitEnabled = false,
 }) {
@@ -92,6 +104,7 @@ export function useCanvasInteraction({
   const pan = useRef(null)
   const objDrag = useRef(null)
   const marqueeRef = useRef(null)
+  const bayRun = useRef(null)   // a drag along a row whose bays are picked: { rackId, from (world), start, side, moved }
   const resizeDrag = useRef(null)
   const groupRotateDrag = useRef(null)
   const fpRotateDrag = useRef(null)
@@ -618,6 +631,14 @@ export function useCanvasInteraction({
 
       if (hitId) {
         if (evt.button !== 0) return
+        /* Bay runs (STUDIO.md §7): with bays picked, a press on a row that owns them starts a run — a drag picks the
+           bays it crosses in that row; a press with no drag is the click as ever (on the release). Elsewhere a drag
+           moves the rack or, on the floor, selects rows. */
+        if (hitObj && isBayRack(hitObj) && selectionLevel(st) === 'bays' && pickedBays(st).some(e => sectionIds(st.objects, hitId, st.gridSize || 40).includes(e.objId))) {
+          const start = hitTestBay(hitObj, world.x, world.y, st.gridSize)
+          bayRun.current = { rackId: hitId, from: world, sx: evt.clientX, sy: evt.clientY, start, side: start == null ? null : bayHalfAt(hitObj, world.x, world.y, st.gridSize), moved: false }
+          return
+        }
         /* forcePan (space/middle) already sent us past this whole block, so
            reaching here means neither is held — a plain left-press on an
            object always selects it and arms its drag. */
@@ -667,6 +688,9 @@ export function useCanvasInteraction({
       const o = id && st.selectedIds.length === sec.length && sec.every(x => st.selectedIds.includes(x)) && st.objects.find(q => q.id === id)
       const bay = o && o.type === 'rack_double_row' && bayHalfAt(o, world.x, world.y, st.gridSize) == null ? hitTestBay(o, world.x, world.y, st.gridSize) : null
       setFlueHover(bay != null ? o.id : null, bay != null ? bay : null)
+      // a racking area under the pointer (by its edge) is drawn while hovered (areaHover.js)
+      const ao = id && st.objects.find(q => q.id === id)
+      setAreaHover(ao && ao.type === 'racking_area' ? ao.id : null)
     }
 
     let next = 'default'
@@ -710,6 +734,7 @@ export function useCanvasInteraction({
      going (and setting its own cursor) even off-canvas. */
   const onStageMouseLeave = () => {
     setFlueHover(null, null)
+    setAreaHover(null)
     if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current) return
     setCursor(spaceDown.current ? 'grab' : 'default')
   }
@@ -722,6 +747,21 @@ export function useCanvasInteraction({
      own drag capture is gone. */
   useEffect(() => {
     const move = (evt) => {
+      const br = bayRun.current
+      if (br) {
+        if (!br.moved && !movedEnough({ x: br.sx, y: br.sy }, { x: evt.clientX, y: evt.clientY })) return
+        br.moved = true
+        const stage = stageRef.current, st = useCanvasStore.getState(), r = st.objects.find(o => o.id === br.rackId)
+        if (!stage || !r || br.start == null) return
+        const box = stage.container().getBoundingClientRect()
+        const w = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+        const end = bayAlongRun(r, w, br.from, st.gridSize)
+        if (end == null) return
+        const lo = Math.min(br.start, end), hi = Math.max(br.start, end), entries = []
+        for (let i = lo; i <= hi; i++) entries.push({ objId: r.id, bayIdx: i, side: br.side })
+        selectBays(useCanvasStore, entries)
+        return
+      }
       const rd = resizeDrag.current
       if (rd) {
         setDragging(true)
@@ -1157,6 +1197,9 @@ export function useCanvasInteraction({
       setMarquee(normalizeRect(m.from, m.to))
     }
     const upGesture = () => {
+      const br = bayRun.current
+      bayRun.current = null
+      if (br) { if (!br.moved) selectFromHit(br.rackId, false, br.from); return }
       const pn = pan.current
       pan.current = null
       /* a click on empty canvas or on a building's floor (a left press that never moved): the selection clears and the

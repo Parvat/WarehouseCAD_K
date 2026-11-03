@@ -39,7 +39,7 @@ import { bayLedger } from '../utils/bayLedger'
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
-import { aisleLabelOps, aisleLabelBoxes, clearanceOps, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
+import { aisleLabelOps, aisleLabelBoxes, clearanceOps, clearanceSolids, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
 import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
 import { columnGridOps } from '../render/columnDraw'
 import { aisleLabelLayout } from '../canvas2/hitTest'
@@ -199,7 +199,7 @@ export function labelOpToSVG(o) {
   if (o.op === 'line') return `<polyline points="${pts(o.points)}" fill="none" stroke="${o.stroke}" stroke-width="${o.strokeWidth}"${dashAttr(o.dash)}${op}/>`
   if (o.op === 'poly') return `<polygon points="${pts(o.points)}" fill="${o.fill || 'none'}" stroke="${o.stroke || 'none'}" stroke-width="${o.strokeWidth ?? 0}"${op}/>`
   if (o.op === 'rect') return `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="${o.cornerRadius ?? 0}" fill="${o.fill || 'none'}" stroke="${o.stroke || 'none'}" stroke-width="${o.strokeWidth ?? 0}"${dashAttr(o.dash)}${op}/>`
-  if (o.op === 'text') return `<text x="${o.x + o.w / 2}" y="${o.y + o.h / 2}" font-size="${o.fontSize}" font-family="${o.fontFamily}" fill="${o.fill}" text-anchor="middle" dominant-baseline="central">${esc(o.text)}</text>`
+  if (o.op === 'text') return `<text x="${o.x + o.w / 2}" y="${o.y + o.h / 2}" font-size="${o.fontSize}" font-family="${o.fontFamily}"${o.fontStyle ? ` font-weight="${o.fontStyle}"` : ''} fill="${o.fill}" text-anchor="middle" dominant-baseline="central">${esc(o.text)}</text>`
   return ''
 }
 
@@ -234,10 +234,11 @@ export function labelsSVG(objects, gridSize, opts) {
     if (res) {
       // a clearance label keeps clear of the aisle width labels drawn above (they have priority)
       const avoid = opts.showAisles ? aisleLabelBoxes(objects, gridSize, opts.labelSize, { profile: warnProfile }) : []
+      const solids = clearanceSolids(objects, gridSize)   // a number never on a rack or a column (as on screen)
       /* a column in an aisle: its clear distance on both sides, to the rack — or the zone or wall — on each
          side (withFaceBlocks), whenever the aisle labels or the marks are printed, as on screen; the red
          pinched shade only with the marks */
-      for (const b of withFaceBlocks(res.aisleBlocks, columns, objects, { gridSize, profile: opts.profile })) ops.push(...clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid, { warnings: !!opts.showMarks }))
+      for (const b of withFaceBlocks(res.aisleBlocks, columns, objects, { gridSize, profile: opts.profile })) ops.push(...clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid, { warnings: !!opts.showMarks, solids }))
     }
     if (opts.showMarks) {
       if (res) {

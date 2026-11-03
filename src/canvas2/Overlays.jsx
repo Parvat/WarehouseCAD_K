@@ -16,7 +16,8 @@ import { useCanvasStore } from '../store/useCanvasStore'
 import { layerShown } from '../utils/layers'
 import { labelScale, aisleLabelScale } from '../render/labelSize'
 import { isPiece, withSections, sectionsOf, sectionView } from './sections'
-import { useClearanceView, clearanceTagsOn } from './clearanceView'
+import { useClearanceView } from './clearanceView'
+import { ClearanceNumbers } from './ClearanceNumbers'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const near = (a, b) => Math.abs(a - b) < 1e-6
@@ -177,9 +178,10 @@ function OverlaysView({
           marks and aisle shading, X marks, upright flags, oversized bays */}
       {/* a column in an aisle shows its clear distance on both sides whenever the aisle labels are shown (or
           the Checks layer is); the red "pinched" shade is a check mark — only with the Checks layer */}
-      {/* the blue "N′ clear" tags only while an action is under way or a column's Show clearances is on — they go
-          when the action ends (clearanceView.js); the red under-travel warnings stay */}
-      {(marksOn || aislesOn) && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels={clearanceTagsOn(dragging, showClearances)} warnings={marksOn} />}
+      {/* the red under-travel warnings (and the pinched shade): always, as checks; the grey clearance numbers: zoomed
+          in, a column selected, or during a drag or resize — faded in place (clearanceView.js, ClearanceNumbers) */}
+      {(marksOn || aislesOn) && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels={false} warnings={marksOn} />}
+      {(marksOn || aislesOn) && <ClearanceNumbers aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} selectedObjects={selectedObjects} dragging={dragging} show={showClearances} />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
       {marksOn && <BlockedFaceMarks rackConflicts={xMarks} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}
@@ -213,5 +215,6 @@ function OverlaysView({
 }
 
 const EMPTY_COLS = []
+
 
 export const Overlays = memo(OverlaysView)

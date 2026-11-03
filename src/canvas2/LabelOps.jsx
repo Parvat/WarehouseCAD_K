@@ -26,7 +26,7 @@ export function LabelOps({ ops, name }) {
         }
         if (o.op === 'text') {
           return <Text key={i} x={o.x} y={o.y} width={o.w} height={o.h} text={o.text} align="center" verticalAlign="middle"
-            fontSize={o.fontSize} fontFamily={o.fontFamily} fill={o.fill} listening={false} />
+            fontSize={o.fontSize} fontFamily={o.fontFamily} fontStyle={o.fontStyle} fill={o.fill} listening={false} />
         }
         return null
       })}

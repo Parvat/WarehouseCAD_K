@@ -175,16 +175,13 @@ describe('FU — arrows, sizes, columns', () => {
     expect(props).toMatch(/<AisleLabelSize ids=\{selected\.filter\(o => o\.type === 'aisle'\)\.map\(o => o\.id\)\} \/>/)   // several
   })
 
-  it('FU-columns: solid body at >= 0.8 opacity in the strong column colour, I-beam web and flanges, outline in drawing units (1") inset to the real size; conflict marks still drawn above them', () => {
+  it('FU-columns: a column is a solid #1F2321 square at its true size (STUDIO.md §2, PlanDetail C18) — no web, no flanges, no outline; conflict marks still drawn above them', () => {
     const grid = { ...columnGridObject({ lengthFt: 240, widthFt: 120, gridXFt: 25, gridYFt: 30, columnsAlongWall: true }, 0, 0), id: 'cg' }
     const g = columnGridOps(grid, GS)
-    expect(g.opacity.body).toBeGreaterThanOrEqual(0.8)
-    expect(COLUMN_OPACITY).toEqual({ body: 0.85, web: 0.5, flanges: 0.9 })
-    expect(g.color).toBe(grid.stroke)                                                  // the strong colour, not the pale fill wash
-    expect(g.outlineWidth).toBeCloseTo(GS / 12, 9)                                    // 1 inch, a drawing unit
-    const first = g.outline.match(/M([\d.]+) ([\d.]+)h([\d.]+)v([\d.]+)/), body = g.body.match(/M([\d.]+) ([\d.]+)h([\d.]+)v([\d.]+)/)
-    expect(+first[1] - g.outlineWidth / 2).toBeCloseTo(+body[1], 9)                   // outer edge of the outline = the column edge
-    expect(+first[3] + g.outlineWidth).toBeCloseTo(+body[3], 9)
+    expect(COLUMN_OPACITY).toEqual({ body: 1, web: 0, flanges: 0 })
+    expect([g.color, g.opacity.body, g.web, g.flanges, g.outline]).toEqual(['#1F2321', 1, '', '', ''])
+    const body = g.body.match(/M([\d.-]+) ([\d.-]+)h([\d.]+)v([\d.]+)/)
+    expect(+body[3]).toBeCloseTo((grid.colSizeIn || 12) / 12 * GS, 6)                // its true size
     const shapes = readFileSync('src/canvas2/shapes.jsx', 'utf8').split(String.fromCharCode(13)).join('')
     const view = shapes.slice(shapes.indexOf('function ColumnGridShapeView('), shapes.indexOf('\n}\n', shapes.indexOf('function ColumnGridShapeView(')))
     expect(view).toMatch(/opacity=\{g\.opacity\.body\}/)
@@ -200,7 +197,7 @@ describe('FU — arrows, sizes, columns', () => {
     expect(canvas.indexOf('<Scene listening part="body" />')).toBeGreaterThan(0)
     expect(canvas.indexOf('<Scene listening part="body" />')).toBeLessThan(canvas.indexOf('<Overlays part="marks"'))
     // the PDF prints the same column look
-    expect(buildLayoutSVG([grid], [], GS).svg).toContain(`fill="${grid.stroke}" opacity="0.85"`)
+    expect(buildLayoutSVG([grid], [], GS).svg).toContain('fill="#1F2321" opacity="1"')
   })
 
   it.each(['horizontal', 'vertical'])('FU-columns-top (%s): columns paint ABOVE racks AND above the labels and marks — on the canvas and in the PDF — even though the grid comes first in the array', (orientation) => {
@@ -208,9 +205,9 @@ describe('FU — arrows, sizes, columns', () => {
     const iGrid = objs.findIndex(o => o.type === 'column_grid'), iRack = objs.findIndex(o => o.type && o.type.startsWith('rack_'))
     expect(iGrid).toBeLessThan(iRack)                                                  // the array alone would bury them
     const noLabels = { labels: { showAisles: false, showMarks: false } }
-    const svg = buildLayoutSVG(objs, [], GS, noLabels).svg, color = objs[iGrid].stroke
+    const svg = buildLayoutSVG(objs, [], GS, noLabels).svg
     const without = buildLayoutSVG(objs.filter(o => o.type !== 'column_grid'), [], GS, noLabels).svg
-    const col = svg.indexOf(`fill="${color}" opacity="0.85"`)
+    const col = svg.indexOf('fill="#1F2321" opacity="1"')                              // the solid column square (C18)
     expect(col).toBeGreaterThan(0)
     // everything up to and including the last rack is identical with or without the grid: the columns come after it
     // (from the first newline: the header's viewBox may differ, the grid can widen the bounds)

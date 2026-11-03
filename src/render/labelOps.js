@@ -20,7 +20,7 @@ import { crossAisleLabels } from '../canvas2/crossAisles'
 import { labelScale, aisleLabelScale } from './labelSize'
 import { visibleClearanceMarks, aisleWarningRect, SHORT_COLOR } from '../canvas2/aisleMarks'
 import { positionRectForIndex, bayRectForIndex } from './bayGeom'
-import { uprightFramesLocal } from '../generate/columnCheck'
+import { uprightFramesLocal, rackFootprint, expandColumnGrid } from '../generate/columnCheck'
 import { oversizedBayIndices } from '../utils/capacity'
 
 export const LABEL_FONT = 'JetBrains Mono, monospace'
@@ -93,7 +93,7 @@ export function aisleLabelBoxes(objects, gridSize = 40, labelSize, { aisles = tr
 /** One column standing in an aisle: the red aisle shade when pinched (with `warnings` — the Checks layer
  *  shown), and the clearance arrows + distance pills on BOTH sides, always (only the red "under travel"
  *  ones when the Column labels switch is off). */
-export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, avoid = [], { warnings = true } = {}) {
+export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, avoid = [], { warnings = true, solids = [] } = {}) {
   if (!col || !block.axis) return []
   /* only the aisle labels a pill could reach (the PDF hands every label on the sheet) */
   if (avoid.length) {
@@ -101,7 +101,10 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, a
     const x0 = col.x - R, x1 = col.x + col.w + R, y0 = col.y - R, y1 = col.y + col.h + R
     avoid = avoid.filter(r => r.x < x1 && r.x + r.w > x0 && r.y < y1 && r.y + r.h > y0)
   }
-  const fs = 9 / lz, sw = 1.6 / lz
+  /* `solids`: the racks and columns ({ x, y, w, h }) — a number is never drawn on one (STUDIO.md §7) */
+  { const R = 4 * gridSize + 120 / lz, x0 = col.x - R, x1 = col.x + col.w + R, y0 = col.y - R, y1 = col.y + col.h + R
+    solids = solids.filter(r => r.x < x1 && r.x + r.w > x0 && r.y < y1 && r.y + r.h > y0) }
+  const cfs = 9.5 / lz                                // the number: 9.5 at the label size (C18)
   const out = []
   const warn = warnings ? aisleWarningRect(block, col) : null
   if (warn) out.push({ op: 'rect', name: 'aisle-warning', x: warn.x, y: warn.y, w: warn.w, h: warn.h, fill: 'rgba(192,57,43,0.16)', stroke: SHORT_COLOR, strokeWidth: 1.5 / lz, dash: [6 / lz, 4 / lz] })
@@ -111,16 +114,16 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, a
        the side of the arrow instead of over the column and rack (text is
        always horizontal, so the pill's extent along the arrow differs by
        orientation). */
-    const pillW = m.label.text.length * fs * 0.62 + (3 / lz) * 2, pillH = fs * 1.4
-    const gapLen = Math.hypot(m.arrowhead[0].x - m.shaft[0].x, m.arrowhead[0].y - m.shaft[0].y)
-    const along = vertArrow ? pillH : pillW, across = vertArrow ? pillW : pillH
-    const step = across / 2 + 6 / lz                  // a pill beside the arrow: its centre this far off the line
-    const off = m.stub || gapLen < along + 4 / lz ? step : 0
+    const pillW = m.label.text.length * cfs * 0.56, pillH = cfs * 1.25
+    const across = vertArrow ? pillW : pillH
+    const step = across / 2 + 6 / lz                  // a number touching a face: beside the column, this far off the line
+    const off = m.stub ? step : 0
     const lx = m.label.x + (vertArrow ? off : 0), ly = m.label.y - (vertArrow ? 0 : off)
     return { m, lx, ly, step, w: pillW, h: pillH, pill: { x: lx - pillW / 2, y: ly - pillH / 2, w: pillW, h: pillH } }
   })
   const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-  const clashes = (p) => avoid.some(r => hit(p, r))
+  const onSolid = (p) => solids.some(r => hit(p, r))
+  const clashes = (p) => avoid.some(r => hit(p, r)) || onSolid(p)
   const rectAt = (k, x, y) => ({ x: x - k.w / 2, y: y - k.h / 2, w: k.w, h: k.h })
   const place = (k, lx, ly) => { k.lx = lx; k.ly = ly; k.pill = rectAt(k, lx, ly) }
   /* Where each label may go, nearest its own place first: along its arrow (column edge to what stands on that
@@ -132,19 +135,22 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, a
   const spots = (k) => {
     const ends = [k.m.shaft[0][u], k.m.arrowhead[0][u]], lo = Math.min(...ends), hi = Math.max(...ends)
     const half = k[len] / 2, eps = 0.5 / lz, c0 = u === 'x' ? k.lx : k.ly
-    const along = [c0, lo, hi]
+    // a number in its gap stays wholly in it: its centre at least half its length from either end
+    const lo2 = k.m.stub ? lo : lo + half + 2 / lz, hi2 = k.m.stub ? hi : hi - half - 2 / lz
+    const along = [c0, lo2, hi2]
     for (const r of avoid) along.push(r[u] - half - eps, r[u] + r[len] + half + eps)
     const line = vertArrow ? k.m.label.x : k.m.label.y
     const v = vertArrow ? 'x' : 'y', vlen = v === 'x' ? 'w' : 'h', vhalf = k[vlen] / 2
     // across the arrow: on it, one or two steps either side, and just past any aisle label within four steps
-    const offs = [0, k.step, -k.step, 2 * k.step, -2 * k.step]
-    for (const r of avoid) for (const e of [r[v] - vhalf - eps, r[v] + r[vlen] + vhalf + eps]) {
+    // a number in its line's break stays on the line; one touching a face may step either side
+    const offs = k.m.stub ? [0, k.step, -k.step, 2 * k.step, -2 * k.step] : [0]
+    if (k.m.stub) for (const r of avoid) for (const e of [r[v] - vhalf - eps, r[v] + r[vlen] + vhalf + eps]) {
       const o = vertArrow ? e - line : line - e
       if (Math.abs(o) <= 4 * k.step) offs.push(o)
     }
     const out = []
     for (const c of along) {
-      if (c !== c0 && (c < lo - 1e-9 || c > hi + 1e-9)) continue
+      if (c !== c0 && (c < lo2 - 1e-9 || c > hi2 + 1e-9)) continue
       for (const o of offs) {
         const x = vertArrow ? line + o : c, y = vertArrow ? c : line - o
         const r = rectAt(k, x, y)
@@ -168,16 +174,48 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, a
       place(p, best.a.x, best.a.y); place(q, best.b.x, best.b.y)
     }
   }
+  /* The look (STUDIO.md §2, PlanDetail C18): a thin dotted #9AA29C line from the column to the face, no arrowheads,
+     the number (ft-in, #767C74, Plus Jakarta Sans 600) in a break in the line; under travel in red. Touching a face:
+     the number only, beside the column. A number whose gap is shorter than the number itself is not drawn (the line
+     is) — so a number never sits on a rack or a column. Its box is kept (an invisible rect before the text, as a pill)
+     so the selection bar keeps off it. */
   for (const k of marks) {
-    const { m, lx, ly } = k
-    if (!m.stub) {
-      out.push({ op: 'line', points: [m.shaft[0].x, m.shaft[0].y, m.shaft[1].x, m.shaft[1].y], stroke: m.color, strokeWidth: sw },
-        { op: 'poly', points: m.arrowhead.flatMap(q => [q.x, q.y]), fill: m.color })
+    const { m } = k
+    const a = m.stub ? null : { x0: m.shaft[0].x, y0: m.shaft[0].y, x1: m.arrowhead[0].x, y1: m.arrowhead[0].y }
+    const gapLen = a ? Math.hypot(a.x1 - a.x0, a.y1 - a.y0) : 0
+    const tw = m.label.text.length * cfs * 0.56, th = cfs * 1.25, along = vertArrow ? th : tw
+    // hidden: a gap narrower than its number, or (touching a face) no spot beside the column clear of a rack or column
+    const fits = (m.stub || gapLen >= along + 4 / lz) && !clashes(k.pill)
+    const { lx, ly } = k
+    const line = m.short ? SHORT_COLOR : CLEAR_LINE, ink = m.short ? SHORT_COLOR : CLEAR_INK
+    if (a) {
+      if (fits) {
+        // the line, broken round the number (where it was placed along the line)
+        const c = vertArrow ? ly : lx, lo = Math.min(vertArrow ? a.y0 : a.x0, vertArrow ? a.y1 : a.x1), hi = Math.max(vertArrow ? a.y0 : a.x0, vertArrow ? a.y1 : a.x1)
+        const b0 = Math.max(lo, c - along / 2 - 2 / lz), b1 = Math.min(hi, c + along / 2 + 2 / lz)
+        const seg = (p, q) => (q - p > 1e-6 ? [{ op: 'line', points: vertArrow ? [a.x0, p, a.x0, q] : [p, a.y0, q, a.y0], stroke: line, strokeWidth: 1 / lz, dash: [2 / lz, 2 / lz] }] : [])
+        out.push(...seg(lo, b0), ...seg(b1, hi))
+      } else {
+        out.push({ op: 'line', points: [a.x0, a.y0, a.x1, a.y1], stroke: line, strokeWidth: 1 / lz, dash: [2 / lz, 2 / lz] })
+      }
     }
-    out.push(...pillOps(lx, ly, m.label.text, fs, lz, { color: m.color, bg: m.short ? 'rgba(254,226,226,0.95)' : 'rgba(224,242,254,0.92)', padX: 3 / lz, heightScale: 1.4, rx: 2 / lz, stroke: m.short ? SHORT_COLOR : '#7dd3fc', strokeWidth: 0.5 / lz, opacity: 0.95 }))
+    if (!fits) continue
+    out.push({ op: 'rect', x: lx - tw / 2, y: ly - th / 2, w: tw, h: th, fill: 'rgba(0,0,0,0)', opacity: 0 },
+      { op: 'text', x: lx - tw / 2, y: ly - th / 2, w: tw, h: th, text: m.label.text, fontSize: cfs, fill: ink, fontFamily: CLEAR_FONT, fontStyle: '600' })
   }
   return out
 }
+/** What a clearance number may never sit on: every rack's footprint and every column ({ x, y, w, h }, world px). */
+export function clearanceSolids(objects, gridSize = 40) {
+  const out = []
+  for (const o of objects || []) {
+    if (!o) continue
+    if (typeof o.type === 'string' && o.type.startsWith('rack_')) { const f = rackFootprint(o); if (f && f.w > 0) out.push({ x: f.x, y: f.y, w: f.w, h: f.h }) }
+    else if (o.type === 'column_grid' && o.showGrid !== false) for (const c of expandColumnGrid(o, gridSize)) out.push({ x: c.x, y: c.y, w: c.w, h: c.h })
+  }
+  return out
+}
+const CLEAR_LINE = '#9AA29C', CLEAR_INK = '#767C74', CLEAR_FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 
 /* ── marks on a rack, drawn in its local frame and turned with it ─────────── */
 const grow = (r, lz) => {

@@ -13,6 +13,7 @@ import { pasteAt } from '../utils/pasteAt'
 import { useRowGroup, startGroupFromSelection } from '../utils/rowGroupTool'
 import { selectionLevel, pickedBays } from '../canvas2/selectionLevel'
 import { sectionIds } from '../canvas2/sections'
+import { notify } from '../utils/notice'
 
 const store = useCanvasStore
 
@@ -54,11 +55,15 @@ export function deleteSelection() {
     if (obj && (obj.type === 'rack_row' || obj.type === 'rack_double_row') && obj.beams?.length > 1 && obj.activeBayIdx != null) { s.deleteSingleBay(obj.id, obj.activeBayIdx); return }
   }
   if (selectionLevel(s) === 'bays') {
-    /* the one bay of a piece of a longer section (a pair's other side, left by a one-side delete): that piece goes —
-       the section is what stays, split where both facing bays are now gone (canvas2/sections.js). A rack's only bay
-       otherwise: nothing to keep the row by — it stays. */
+    /* The only bay of a rack: that rack goes. A piece of a longer section (a pair's other side, left by a one-side
+       delete): the section stays, split where both facing bays are now gone (canvas2/sections.js). A whole row (its
+       only bay): the row is deleted — one undo step, and the notice offers Undo (STUDIO.md §7). */
     const one = pickedBays(s), r = one.length === 1 && s.objects.find(o => o.id === one[0].objId)
-    if (r && r.beams?.length === 1 && sectionIds(s.objects, r.id, s.gridSize || 40).length > 1) { s.selectGroup([r.id]); s.clearBaySelection(); deleteSelectionWithAreas(store) }
+    if (r && r.beams?.length === 1) {
+      const piece = sectionIds(s.objects, r.id, s.gridSize || 40).length > 1
+      s.selectGroup([r.id]); s.clearBaySelection(); deleteSelectionWithAreas(store)
+      if (!piece) notify('Row deleted', 'its only bay', { undo: true })
+    }
     return
   }
   deleteSelectionWithAreas(store)

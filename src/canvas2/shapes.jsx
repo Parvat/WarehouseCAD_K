@@ -690,9 +690,8 @@ export const FallbackShape = memo(FallbackShapeView)
 /* ── Racking area and zones (generate/rackingArea.js) ───────────────────── */
 
 /** A racking area, drawn faintly as the Fill racking box is in the mockup (design/studio/Studio.dc.html, panel
- *  "fill"): fill #7BD3A4 at 6%, edge #2E7D5B 1.5px dashed 6 4 — so the box that owns its racks is always seen, never an
- *  outline that only shows when selected (a Regenerate area runs along the inner walls, where an edge alone hides
- *  under the wall). The racks it placed are drawn over it by their own painters. The tint never takes a press: the
+ *  "fill"): fill #7BD3A4 at 6%, edge #2E7D5B 1.5px dashed 6 4 — only while Fill racking is on, or while the area is
+ *  hovered or selected (Scene.jsx, areaHover.js; STUDIO.md §7); otherwise nothing is drawn. The racks it placed are drawn over it by their own painters. The tint never takes a press: the
  *  area is picked on its edge (hitTest.js). Edge and dash are screen pixels (strokeScaleEnabled off). */
 function RackingAreaShapeView({ obj, listening = false, bind }) {
   if (!(obj.width > 0) || !(obj.height > 0)) return null

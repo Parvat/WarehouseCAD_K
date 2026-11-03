@@ -15,6 +15,9 @@ export const SHORT_COLOR = '#C0392B'
 /** Screen-constant sizes (px), divided by zoom by the caller's `zoom`. */
 const HEAD_PX = 9, MIN_DRAW_PX = 1
 
+/** A clearance as C18 writes it: 8.67 ft → 8′-8″, 0.5 → 0′-6″. */
+export const ftInDash = (ft) => { const t = Math.round(Math.abs(ft || 0) * 12), f = Math.floor(t / 12), i = t - f * 12; return `${(ft || 0) < 0 ? '-' : ''}${f}′-${i}″` }
+
 const toXY = (axis) => (d, r) => (axis === 'y' ? { x: r, y: d } : { x: d, y: r })
 
 /** The two clearance arrows for one aisle block — ALWAYS both. Each runs from the column's edge to what
@@ -45,7 +48,8 @@ export function clearanceMarks(block, col, zoom = 1, gridSize = 40) {
       side: s.side, ft: s.ft, color, short: s.short, style: 'arrow', dash: null, stub,
       shaft: [P(s.from, rMid), P(base, rMid)],
       arrowhead: [P(s.to, rMid), P(base, rMid - h / 2), P(base, rMid + h / 2)],
-      label: { ...P((s.from + s.to) / 2, rMid), text: s.short ? `${s.ft}' — under travel` : `${s.ft}' clear` },
+      // the number only (C18) — under travel it is red, with its line and the pinched shade
+      label: { ...P((s.from + s.to) / 2, rMid), text: ftInDash(s.ft) },
     })
   }
   return out
@@ -57,6 +61,8 @@ export function clearanceMarks(block, col, zoom = 1, gridSize = 40) {
  *  never switched off here. */
 export function visibleClearanceMarks(block, col, zoom = 1, gridSize = 40, showLabels = true) {
   const marks = clearanceMarks(block, col, zoom, gridSize)
+  // 'clear': the grey numbers alone (the canvas fades them on their own — canvas2/Overlays.jsx ClearanceNumbers)
+  if (showLabels === 'clear') return marks.filter(m => !m.short)
   return showLabels ? marks : marks.filter(m => m.short)
 }
 

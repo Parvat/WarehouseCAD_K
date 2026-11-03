@@ -105,7 +105,7 @@ describe('LB — Column labels (now part of the Checks layer)', () => {
     expect(visibleClearanceMarks(ok, col, 1, GS, false)).toEqual([])                 // plain clearances: hidden
     const red = visibleClearanceMarks(bad, col, 1, GS, false)
     expect(red).toHaveLength(2)                                                        // under travel: still shown
-    expect(red.every(m => m.short && m.color === SHORT_COLOR && /under travel/.test(m.label.text))).toBe(true)
+    expect(red.every(m => m.short && m.color === SHORT_COLOR && /^\d+′-\d+″$/.test(m.label.text))).toBe(true)   // the number only, red (C18)
     expect(aisleWarningRect(bad, col)).not.toBe(null)                                 // the shade doesn't depend on the switch
     // a mixed block: only the short side stays
     const mixed = { ...bad, farShort: false }
@@ -119,8 +119,9 @@ describe('LB — Column labels (now part of the Checks layer)', () => {
     expect(prefs).not.toMatch(/showColumnLabels|KEY_COLUMN_LABELS/)
     const ov = readFileSync('src/canvas2/Overlays.jsx', 'utf8')
     // the clearance labels: with the Checks layer OR the aisle labels (canvas2-fixes item 3); the shade only with Checks
-    // the blue clear tags: only while an action is under way or Show clearances is on (STUDIO.md §7, clearanceView.js)
-    expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ColumnClearanceLabels [^>]*showLabels=\{clearanceTagsOn\(dragging, showClearances\)\} warnings=\{marksOn\} \/>\}/)
+    // the grey numbers: zoomed in, a column selected, Show clearances, or a drag (STUDIO.md §7, ClearanceNumbers.jsx); the red ones always
+    expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ColumnClearanceLabels [^>]*showLabels=\{false\} warnings=\{marksOn\} \/>\}/)
+    expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ClearanceNumbers [^>]*dragging=\{dragging\} show=\{showClearances\} \/>\}/)
     expect(ov).not.toMatch(/showColumnLabels/)
     for (const comp of ['BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) {
       const line = ov.split('\n').find(l => l.includes('<' + comp + ' '))

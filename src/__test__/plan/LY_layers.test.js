@@ -203,7 +203,7 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ColumnClearanceLabels [^>]*warnings=\{marksOn\}/)
     const aislesOnly = m.buildLayoutSVG(objects, withLayer(layers, 'checks', { visible: false }), gridSize, {}).svg
     const labelsG = (svg) => svg.slice(svg.indexOf('<g class="labels">'))
-    expect(labelsG(aislesOnly)).toMatch(/' clear</)                    // the clearance labels still print
+    expect(labelsG(aislesOnly)).toMatch(/\d+′-\d+″</)                 // the clearance numbers still print
     expect(labelsG(aislesOnly)).not.toMatch(/rgba\(192,57,43,0\.16\)/)  // no red pinched shade, no checks
   })
 

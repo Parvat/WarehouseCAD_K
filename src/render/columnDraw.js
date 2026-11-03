@@ -14,7 +14,10 @@
 import { expandColumnGrid } from '../generate/columnCheck'
 
 export const STRUCT_BLUE = '#3B6FB5'
-export const COLUMN_OPACITY = { body: 0.85, web: 0.5, flanges: 0.9 }
+/* STUDIO.md §2 (PlanDetail C18): a column is a SOLID #1F2321 square at its true size — no web, no flanges, no
+   outline. The canvas and the PDF both draw it from here. */
+export const COLUMN_COLOR = '#1F2321'
+export const COLUMN_OPACITY = { body: 1, web: 0, flanges: 0 }
 /** Outline width, inches (drawing units). */
 export const COLUMN_OUTLINE_IN = 1
 
@@ -34,13 +37,6 @@ export function columnGridPath(obj, gridSize = 40) {
 export function columnGridOps(obj, gridSize = 40) {
   const body = columnGridPath(obj, gridSize)
   if (!body) return null
-  const cols = expandColumnGrid(obj, gridSize)
-  const sw = (COLUMN_OUTLINE_IN / 12) * gridSize
-  let web = '', flanges = '', outline = ''
-  for (const c of cols) {
-    web += rect(c.x + c.w * 0.3, c.y, c.w * 0.4, c.h)
-    flanges += rect(c.x, c.y, c.w, c.h * 0.15) + rect(c.x, c.y + c.h * 0.85, c.w, c.h * 0.15)
-    outline += rect(c.x + sw / 2, c.y + sw / 2, c.w - sw, c.h - sw)
-  }
-  return { color: obj.stroke || STRUCT_BLUE, body, web, flanges, outline, outlineWidth: sw, opacity: COLUMN_OPACITY }
+  // the solid square only (C18): the web, flanges and outline paths stay, empty, so every drawer reads one shape
+  return { color: COLUMN_COLOR, body, web: '', flanges: '', outline: '', outlineWidth: 0, opacity: COLUMN_OPACITY }
 }

@@ -123,8 +123,8 @@ export function cancelGroupBox() { useRowGroup.setState({ drag: null }) }
 
 /** The Row group tool's release on the canvas (STUDIO.md §7, the selection rule): a box (`moved`) adds every row it
  *  touches and the row nearest where the drag started becomes the edit row; Shift+click puts the row under it in or
- *  takes it out; a plain click on a row makes it the edit row — selected, its handles and its bar at once, so it can
- *  be expanded straight away; a click on nothing selects nothing. The tool stays on. → what it did. */
+ *  takes it out; a plain click on a row makes it the edit row — a row not in the group joins it first — selected, its
+ *  handles and its bar at once, so it can be expanded straight away; a click on nothing selects nothing. The tool stays on. → what it did. */
 export function commitGroupPress(store, moved, shiftKey) {
   const d = useRowGroup.getState().drag
   useRowGroup.setState({ drag: null })
@@ -145,7 +145,13 @@ export function commitGroupPress(store, moved, shiftKey) {
     return 'box'
   }
   if (d.hit && shiftKey) { toggleRowOf(d.hit); return 'toggle' }
-  if (d.hit) { selectRows(store, [d.hit]); return 'edit' }
+  if (d.hit) {
+    // a row not in the group joins it; either way it is the edit row
+    const rows = rowsOf(store.getState().objects, gs()), key = rowOfRack(rows, d.hit)
+    if (key && !useRowGroup.getState().keys.some(k => resolveKey(rows, k) === key)) addRowOf(d.hit)
+    selectRows(store, [d.hit])
+    return 'edit'
+  }
   store.getState().clearSelection()
   return 'none'
 }

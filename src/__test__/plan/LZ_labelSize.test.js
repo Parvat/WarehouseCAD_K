@@ -69,6 +69,8 @@ describe.each(['horizontal', 'vertical'])('LZ — %s', (orientation) => {
     for (const [name, gen] of Object.entries(gens)) {
       const S = gen(labelScale('small', GS)), L = gen(labelScale('large', GS))
       expect(S.length, name).toBeGreaterThan(0)
+      // a clearance number is not drawn where its gap is narrower than it (STUDIO.md §7) — a bigger size can drop one
+      if (name === 'clearance') { const fs = (ops) => ops.filter(o => o.op === 'text').map(o => o.fontSize); expect(fs(L).every(v => Math.abs(v / fs(S)[0] - 3) < 1e-9 || !fs(S).length)).toBe(true); continue }
       expect(L.length, name).toBe(S.length)
       // every size (font, stroke, pill box) grows 3x; text stays centred on the same point
       const s = sizes(S).filter(v => v > 1e-9), l = sizes(L).filter(v => v > 1e-9)
@@ -110,13 +112,16 @@ describe.each(['horizontal', 'vertical'])('LZ — %s', (orientation) => {
     // aisle + cross-aisle labels at exactly the Label size
     expect(fontSizes(med).filter(v => Math.abs(inFt(v) - 2) < 1e-9)).toHaveLength(nAisle + nCross)
     expect(fontSizes(big).filter(v => Math.abs(inFt(v) - 3) < 1e-9)).toHaveLength(nAisle + nCross)
-    // switch off: the blue "clear" labels go, the red "under travel" labels and shades stay
+    // switch off: the grey numbers go, the red "under travel" ones and the shades stay
     const off = at({ labelSize: 'medium', showColumnLabels: false })
-    expect((med.match(/' clear</g) || []).length).toBeGreaterThan(0)
-    expect((off.match(/' clear</g) || []).length).toBe(0)
-    expect((off.match(/under travel</g) || []).length).toBe((med.match(/under travel</g) || []).length)
-    expect((off.match(/under travel</g) || []).length).toBeGreaterThan(0)
-    expect((off.match(/stroke-dasharray/g) || []).length).toBe((med.match(/stroke-dasharray/g) || []).length)   // the red shades
+    const grey = (svg) => (svg.match(/fill="#767C74"[^>]*>\d+′-\d+″</g) || []).length
+    expect(grey(med)).toBeGreaterThan(0)
+    expect(grey(off)).toBe(0)
+    // the red ones: their lines (and, where the gap holds it, the number) stay with the switch off, as do the shades
+    const redText = (svg) => (svg.match(/fill="#C0392B"[^>]*>\d+′-\d+″</g) || []).length, redLine = (svg) => (svg.match(/<polyline[^>]*stroke="#C0392B"[^>]*stroke-dasharray/g) || []).length
+    expect([redText(off), redLine(off)]).toEqual([redText(med), redLine(med)])
+    expect(redLine(off)).toBeGreaterThan(0)
+    expect((off.match(/rgba\(192,57,43,0\.16\)/g) || []).length).toBe((med.match(/rgba\(192,57,43,0\.16\)/g) || []).length)   // the red shades
     // X marks (red polylines) and upright flags (orange polygons) unchanged by the switch
     const red = (svg) => (svg.match(/<polyline[^>]*stroke="#C0392B"/g) || []).length, orange = (svg) => (svg.match(/stroke="#E67E22"/g) || []).length
     expect(red(off)).toBe(red(med))                                                    // X marks, oversized crosses, under-travel arrows

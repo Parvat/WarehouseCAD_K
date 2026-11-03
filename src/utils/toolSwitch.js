@@ -12,6 +12,7 @@ import { TOOLS } from '../constants'
 import { useFillTool } from './fillTool'
 import { cancelGroupBox, onRowGroupToolStart, ROW_GROUP_TOOL } from './rowGroupTool'
 import { useSplit } from './splitTool'
+import { clearDoorHover } from './doorTool'
 import { cancelPlacement } from './placement'
 
 /** The measure mode: on while the ruler is measuring (Canvas2's MeasureOverlay). */
@@ -22,6 +23,7 @@ function clearTransients() {
   { const f = useFillTool.getState(); if (f.drag || f.plan || f.created) useFillTool.setState({ drag: null, plan: null, created: null }) }
   cancelGroupBox()
   { if (useSplit.getState().hover) useSplit.setState({ hover: null }) }
+  clearDoorHover()
 }
 
 /** End whatever is running — the tool, its box or hover, a placement on the mouse, the measure mode — and go back

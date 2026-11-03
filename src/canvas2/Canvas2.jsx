@@ -21,6 +21,8 @@ import { useColumnCheck } from '../generate/useColumnCheck'
 import { FillOverlay } from './FillTool'
 import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
+import { DoorBar, DoorPreview } from './DoorBar'
+import { DOOR_TOOL, hoverDoor, placeDoor, clearDoorHover } from '../utils/doorTool'
 import { SelectionBar, FloorMenu, openFloorMenu } from '../studio/SelectionBar'
 import { ZoneEditPreview, SelectedZoneSizes } from './ZoneEdit'
 import { hasResizeHandles, handleHitTest } from './handleGeometry'
@@ -390,10 +392,18 @@ export function Canvas2() {
     if (t && t.hitId) splitAt(useCanvasStore, t.world, t.hitId, { newId: nanoid, rebuildAisles })
   }
 
-  const stageMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : onStageMouseDown
-  const stageMouseMove = measuring ? measureMouseMove : splitting ? splitMouseMove : filling || grouping ? undefined : onStageMouseMove
-  const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : filling || grouping ? undefined : onStageMouseLeave
-  const effectiveCursor = measuring || filling || grouping || splitting ? 'crosshair' : cursor
+  /* Add door (utils/doorTool.js): hovering a wall shows the door against its inner face; a click places it; the tool
+     stays on until Esc or its bar's ✕ */
+  const dooring = !measuring && activeTool === DOOR_TOOL
+  useEffect(() => { if (!dooring) clearDoorHover() }, [dooring])
+  const doorWorld = (e) => { const p = e.target.getStage()?.getPointerPosition(); return p ? screenToWorld(view.current, p) : null }
+  const doorMouseMove = (e) => { const w = doorWorld(e); const st = useCanvasStore.getState(); if (w) hoverDoor(st.objects, w, st.gridSize || 40, view.current.zoom) }
+  const doorMouseDown = (e) => { if (e.evt && e.evt.button !== 0) return; const w = doorWorld(e); if (w) { placeDoor(useCanvasStore, w, nanoid, view.current.zoom); hoverDoor(useCanvasStore.getState().objects, w, useCanvasStore.getState().gridSize || 40, view.current.zoom) } }
+
+  const stageMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
+  const stageMouseMove = measuring ? measureMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : filling || grouping ? undefined : onStageMouseMove
+  const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : dooring ? clearDoorHover : filling || grouping ? undefined : onStageMouseLeave
+  const effectiveCursor = measuring || filling || grouping || splitting || dooring ? 'crosshair' : cursor
 
   return (
     <div
@@ -478,6 +488,8 @@ export function Canvas2() {
             <RowGroupPreview />
             {/* the Split tool's cut line (SplitPreview.jsx) */}
             {splitting && <SplitPreview />}
+            {/* Add door's preview on the hovered wall (DoorBar.jsx) */}
+            {dooring && <DoorPreview />}
             {/* Check layout: the clicked problem, until the next click (utils/layoutCheck.js) */}
             <IssueHighlight />
             <PlacementGhost gridSize={gridSize} />
@@ -496,6 +508,7 @@ export function Canvas2() {
       <RowGroupBar />
       <SplitBar />
       {filling && <FillOptionsBar />}
+      {dooring && <DoorBar />}
       <FloorMenu />
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>

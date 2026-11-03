@@ -9,7 +9,7 @@ import { planAreaResize } from '../../generate/rackingArea'
 import { rackFootprint, MHE_PROFILES, aisleColumnBlocks } from '../../generate/columnCheck'
 import { layoutColumns } from '../../generate/usableCapacity'
 import { aisleLabelLayout, aisleLabelStation, aisleLabelHit, columnRectsOf, AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX } from '../../canvas2/hitTest'
-import { aisleLabelOps, aisleLabelBoxes, clearanceOps } from '../../render/labelOps'
+import { aisleLabelOps, aisleLabelBoxes, clearanceOps, clearanceSolids } from '../../render/labelOps'
 import { aisleLabelScale, labelScale } from '../../render/labelSize'
 import { crossAisleLabels } from '../../canvas2/crossAisles'
 import { zoneResizeBox, snapOffKey } from '../../canvas2/zoneResizeSnap'
@@ -127,8 +127,8 @@ describe('CF-1 — drawing order', () => {
     const ov = read('canvas2/Overlays.jsx')
     expect(ov).toMatch(/const marksPart = part !== 'chrome', chromePart = part !== 'marks'/)
     for (const v of [false, true]) {
-      const objs = savedFill(v), svg = buildLayoutSVG(objs, [], GS).svg, color = objs.find(o => o.type === 'column_grid').stroke || '#3B6FB5'
-      expect(svg.indexOf(`fill="${color}" opacity="0.85"`)).toBeGreaterThan(svg.indexOf('<g class="labels">'))
+      const objs = savedFill(v), svg = buildLayoutSVG(objs, [], GS).svg
+      expect(svg.indexOf('fill="#1F2321" opacity="1"')).toBeGreaterThan(svg.indexOf('<g class="labels">'))   // columns: solid #1F2321 (C18)
     }
   })
 })
@@ -202,9 +202,13 @@ describe.each([['horizontal', false], ['vertical', true]])('CF-3 — %s', (_, ve
     const b = blocks(objs)
     expect(b).toHaveLength(1)
     expect(b[0]).toMatchObject({ kind: 'face', toward: 'wall', nearClearFt: 4.5, farClearFt: 5, axis: vert ? 'x' : 'y' })
-    // 10.5 ft aisle with the column in it: neither side reaches travel, so both read "under travel" — both drawn
-    const t = clearanceOps(b[0], layoutColumns(objs, GS)[0], labelScale('medium', GS), GS, true).filter(o => o.op === 'text').map(o => o.text).sort()
-    expect(t).toEqual(["4.5' — under travel", "5' — under travel"])
+    // 10.5 ft aisle with the column in it: neither side reaches travel, so both are "under travel" (red) — each drawn
+    // where its gap holds the number, at a small Label size (C18: a number never overlaps a rack or column)
+    const t = clearanceOps(b[0], layoutColumns(objs, GS)[0], labelScale('small', GS), GS, true).filter(o => o.op === 'text').map(o => o.text).sort()
+    expect(t.every(x => /^\d+′-\d+″$/.test(x))).toBe(true)
+    const all = clearanceMarks(b[0], layoutColumns(objs, GS)[0], 1, GS).map(m => m.label.text).sort()
+    expect(all).toEqual(['4′-6″', '5′-0″'])
+    expect(clearanceMarks(b[0], layoutColumns(objs, GS)[0], 1, GS).every(m => m.color === '#C0392B')).toBe(true)
   })
   it('CF-zone: a column between a rack face and a zone — measured to the zone\'s edge', () => {
     const objs = scene(vert, { racks: [['r', 20, 10, 60, 9]], zones: [['z', 20, 31, 60, 10]], col: [50, 25] })
@@ -219,7 +223,7 @@ describe.each([['horizontal', false], ['vertical', true]])('CF-3 — %s', (_, ve
     expect(b[0].kind).toBeUndefined()
     expect([b[0].nearClearFt, b[0].farClearFt]).toEqual([3.5, 7.5])
   })
-  it('CF-break: past the reach in front of a face (open floor), inside a zone, beside a rack\'s end or touching the face: no face block where there is no aisle; touching the face it still shows "0\' clear" on that side', () => {
+  it('CF-break: past the reach in front of a face (open floor), inside a zone, beside a rack\'s end or touching the face: no face block where there is no aisle; touching the face it shows "0′-0″" on that side (the number only)', () => {
     expect(blocks(scene(vert, { racks: [['r', 20, 5, 60, 9]], col: [50, 40], H: 80 }))).toEqual([])          // 26 ft out: open floor
     expect(blocks(scene(vert, { racks: [['r', 20, 10, 60, 9]], zones: [['z', 20, 24, 60, 10]], col: [50, 28] }))).toEqual([])   // in the zone
     expect(blocks(scene(vert, { racks: [['r', 20, 10, 30, 9]], col: [60, 14] }))).toEqual([])                 // past the rack's end
@@ -230,18 +234,18 @@ describe.each([['horizontal', false], ['vertical', true]])('CF-3 — %s', (_, ve
     const marks = clearanceMarks(b[0], layoutColumns(touch, GS)[0], 1, GS)
     expect(marks.map(m => [m.side, m.stub])).toEqual([['near', true], ['far', false]])
     const t = clearanceOps(b[0], layoutColumns(touch, GS)[0], labelScale('medium', GS), GS, true).filter(o => o.op === 'text').map(o => o.text).sort()
-    expect(t.map(x => x.split(' ')[0])).toEqual(["0'", "9.5'"])
+    expect(t).toEqual(['0′-0″', '9′-6″'])
   })
-  it('CF-labels: on the saved layout every column in an aisle shows BOTH its labels at every size — never one dropped, never on top of each other or of an aisle label', () => {
+  it('CF-labels: on the saved layout, at every size, a column\'s numbers never sit on each other, on an aisle label, a rack or a column — a number with no room is not drawn (STUDIO.md §7)', () => {
     const base = savedFill(vert), cols = layoutColumns(base, GS), bs = blocks(base)
     expect(bs.length).toBeGreaterThanOrEqual(23)
     for (const size of ['small', 'medium', 'large', 'xlarge']) {
-      const lz = labelScale(size, GS), avoid = aisleLabelBoxes(base, GS, size)
+      const lz = labelScale(size, GS), avoid = aisleLabelBoxes(base, GS, size), solids = clearanceSolids(base, GS)
       for (const b of bs) {
-        const t = clearanceOps(b, cols[b.columnIndex], lz, GS, true, avoid).filter(o => o.op === 'text')
-        expect(t).toHaveLength(2)
-        expect(hit(t[0], t[1])).toBe(false)
-        for (const x of t) expect(avoid.some(r => hit(x, r)), `${size}: ${x.text}`).toBe(false)
+        const t = clearanceOps(b, cols[b.columnIndex], lz, GS, true, avoid, { solids }).filter(o => o.op === 'text')
+        expect(t.length).toBeLessThanOrEqual(2)
+        if (t.length === 2) expect(hit(t[0], t[1])).toBe(false)
+        for (const x of t) expect([avoid.some(r => hit(x, r)), solids.some(r => hit(x, r))], `${size}: ${x.text}`).toEqual([false, false])
       }
     }
   })
@@ -257,14 +261,15 @@ describe.each([['horizontal', false], ['vertical', true]])('CF-3 — %s', (_, ve
 })
 
 describe('CF-3 — shown with the aisle labels', () => {
-  it('CF-gate: the clearance labels draw whenever the aisle labels do (or the Checks layer); their red shade only with the Checks layer — canvas and PDF', () => {
+  it('CF-gate: the clearance numbers are drawn with the aisle labels (or the Checks layer) — on the canvas when zoomed in, a column selected, or during a drag (ClearanceNumbers.jsx); always in the PDF; their red shade only with the Checks layer', () => {
     const ov = read('canvas2/Overlays.jsx')
     expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ColumnClearanceLabels [^>]*warnings=\{marksOn\}/)
+    expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ClearanceNumbers /)
     expect(ov).toMatch(/const on = aislesOn\n/)
     const base = savedFill(true), labelsOf = (svg) => svg.slice(svg.indexOf('<g class="labels">'))
     const aislesOnly = labelsOf(buildLayoutSVG(base, [], GS, { labels: { showAisles: true, showMarks: false } }).svg)
-    expect((aislesOnly.match(/' clear</g) || []).length).toBeGreaterThanOrEqual(46)     // 23 columns × both sides
+    expect((aislesOnly.match(/\d+′-\d+″</g) || []).length).toBeGreaterThan(0)          // the numbers, where their gaps hold them
     const none = labelsOf(buildLayoutSVG(base, [], GS, { labels: { showAisles: false, showMarks: false } }).svg)
-    expect(none).not.toMatch(/' clear</)
+    expect(none).not.toMatch(/\d+′-\d+″</)
   })
 })

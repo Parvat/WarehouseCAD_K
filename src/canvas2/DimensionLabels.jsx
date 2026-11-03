@@ -8,7 +8,7 @@ import { useColumnCheck } from '../generate/useColumnCheck'
 import { useDragPreview } from './dragPreview'
 import { clearanceSource } from './clearanceSource'
 import { LabelOps } from './LabelOps'
-import { aisleLabelOps, clearanceOps } from '../render/labelOps'
+import { aisleLabelOps, clearanceOps, clearanceSolids } from '../render/labelOps'
 import { crossAisleLabels } from './crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 
@@ -290,10 +290,10 @@ export const FaceAisleLabels = memo(function FaceAisleLabels({ objects, lz, grid
    compared by content. */
 const sameContent = (x, y) => x === y || JSON.stringify(x) === JSON.stringify(y)
 
-const ClearanceItem = memo(function ClearanceItem({ a, i, col, lz, gridSize, showLabels = true, avoid, warnings = true }) {
-  const ops = useMemo(() => clearanceOps(a, col, lz, gridSize, showLabels, avoid, { warnings }), [a, col, lz, gridSize, showLabels, avoid, warnings])
+const ClearanceItem = memo(function ClearanceItem({ a, i, col, lz, gridSize, showLabels = true, avoid, warnings = true, solids = EMPTY }) {
+  const ops = useMemo(() => clearanceOps(a, col, lz, gridSize, showLabels, avoid, { warnings, solids }), [a, col, lz, gridSize, showLabels, avoid, warnings, solids])
   return <LabelOps ops={ops} name={'aisle-column:' + i} />
-}, (p, n) => p.i === n.i && p.lz === n.lz && p.gridSize === n.gridSize && p.showLabels === n.showLabels && p.warnings === n.warnings && sameContent(p.a, n.a) && sameContent(p.col, n.col) && sameContent(p.avoid, n.avoid))
+}, (p, n) => p.i === n.i && p.lz === n.lz && p.gridSize === n.gridSize && p.showLabels === n.showLabels && p.warnings === n.warnings && sameContent(p.a, n.a) && sameContent(p.col, n.col) && sameContent(p.avoid, n.avoid) && p.solids === n.solids)
 
 /* The aisle-label boxes near one column — all its clearance labels could reach (each arrow's length plus a
    long pill) — so an item compares and redraws only for the labels around it. */
@@ -335,11 +335,13 @@ export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridS
   /* `avoid`: the aisle width labels' boxes as drawn (Overlays.jsx); this group sits at (src.x, src.y), so
      they come into its frame */
   const local = useMemo(() => (src.x || src.y) ? avoid.map(r => ({ ...r, x: r.x - (src.x || 0), y: r.y - (src.y || 0) })) : avoid, [avoid, src.x, src.y])
+  // the racks and columns a number may never sit on, in this group's frame
+  const solids = useMemo(() => clearanceSolids(objects, gridSize).map(r => ({ ...r, x: r.x - (src.x || 0), y: r.y - (src.y || 0) })), [objects, gridSize, src.x, src.y])
   if (!src.blocks?.length || !src.cols?.length) return null
 
   return (
     <Group name="column-clearance-labels" listening={false} x={src.x} y={src.y}>
-      {src.blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={src.cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} avoid={avoidNear(local, a, src.cols[a.columnIndex], lz, gridSize)} warnings={warnings} />)}
+      {src.blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={src.cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} avoid={avoidNear(local, a, src.cols[a.columnIndex], lz, gridSize)} warnings={warnings} solids={solids} />)}
     </Group>
   )
 }

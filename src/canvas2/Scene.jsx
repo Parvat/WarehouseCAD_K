@@ -5,6 +5,8 @@ import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
 import { useElevView, tintOn } from '../utils/elevationDraw'
+import { FILL_TOOL } from '../utils/fillTool'
+import { useAreaHover, areaShown } from './areaHover'
 import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape, RackingAreaShape, ZoneShape } from './shapes'
 
 /* ── STEP 2 · the scene ──────────────────────────────────────────────────────
@@ -52,6 +54,10 @@ function SceneView({ listening = false, bind, part = 'all' }) {
   const lz = labelScale(useLabelPrefs(s => s.labelSize), gridSize)
   const layers = useCanvasStore(s => s.layers)
   const activeBaySelection = useCanvasStore(s => s.activeBaySelection)
+  // a racking area is drawn only while Fill racking is on, or while it is hovered or selected (STUDIO.md §7)
+  const filling = useCanvasStore(s => s.activeTool === FILL_TOOL)
+  const areaHoverId = useAreaHover(s => s.id)
+  const selectedIds = useCanvasStore(s => s.selectedIds)
   /* Nothing here reads the zoom: every object — columns included — is drawn
      at its real size and the stage transform scales it, so zooming re-renders
      none of the scene. */
@@ -110,7 +116,7 @@ function SceneView({ listening = false, bind, part = 'all' }) {
         if (e.kind === 'aisle') {
           return <AisleShape key={e.obj.id} obj={e.obj} row1={byId.get(e.obj.row1Id)} row2={byId.get(e.obj.row2Id)} listening={listening} bind={bind} />
         }
-        if (e.kind === 'area') return <RackingAreaShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
+        if (e.kind === 'area') return areaShown(e.obj.id, { filling, hoverId: areaHoverId, selectedIds }) ? <RackingAreaShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} /> : null
         if (e.kind === 'zone') return <ZoneShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
         return <FallbackShape key={e.obj.id} obj={e.obj} listening={listening} bind={bind} />
       })}

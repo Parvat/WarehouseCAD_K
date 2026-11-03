@@ -203,34 +203,47 @@ describe.each([['vertical', true], ['horizontal', false]])('CA — %s', (_, vert
 })
 
 describe.each([['vertical', true, 'medium'], ['horizontal', false, 60]])('CA-labels — %s', (_, vert, faceSize) => {
-  const kinds = (ops) => ({ lines: ops.filter(o => o.op === 'line').length, polys: ops.filter(o => o.op === 'poly').length, texts: ops.filter(o => o.op === 'text').map(o => o.text) })
+  const kinds = (ops) => ({ lines: ops.filter(o => o.op === 'line').length, polys: ops.filter(o => o.op === 'poly').length, texts: ops.filter(o => o.op === 'text').map(o => o.text), dotted: ops.filter(o => o.op === 'line').every(o => o.dash && o.dash.length && (o.stroke === '#9AA29C' || o.stroke === '#C0392B')) })
+  /* STUDIO.md §7 (C18): no arrowheads; dotted grey lines; a number (ft-in) where its gap holds it (or touching a face) */
+  const ftIn = (ft) => { const t = Math.round(Math.abs(ft) * 12); return `${Math.floor(t / 12)}′-${t % 12}″` }
+  const shown = (b, col, lz, ops) => {
+    const marks = clearanceMarks(b, col, lz, GS), cfs = 9.5 / lz, out = []
+    for (const m of marks) {
+      const gap = m.stub ? 0 : Math.hypot(m.arrowhead[0].x - m.shaft[0].x, m.arrowhead[0].y - m.shaft[0].y)
+      const along = b.axis === 'y' ? cfs * 1.25 : m.label.text.length * cfs * 0.56
+      if (m.stub || gap >= along + 4 / lz) out.push(m.label.text)
+    }
+    return out.sort()
+  }
+
   const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-  it('CA-labels: a column at a rack face (9 ft / 0.5 ft) whose two clearance labels would overlap — BOTH are labelled, one each side of the arrow line, not overlapping; both arrows stay (canvas2-fixes item 3: a column always shows both sides)', () => {
+  it('CA-labels: a column at a rack face (9 ft / 0.5 ft): the 9 ft gap holds its number; the 0.5 ft gap is narrower than its number, so that number is hidden (STUDIO.md §7) — dotted lines, no arrowheads', () => {
     const base = savedFill(vert), cols = layoutColumns(base, GS), LZ = labelScale(faceSize, GS)
     const face = blocksOf(base).aisleBlocks.find(x => Math.min(x.nearClearFt, x.farClearFt) <= 0.5 && Math.max(x.nearClearFt, x.farClearFt) >= 9)
     expect(face, 'a column 0.5 ft off a face').toBeTruthy()
     const ops = clearanceOps(face, cols[face.columnIndex], LZ, GS, true), k = kinds(ops)
-    expect([k.lines, k.polys]).toEqual([2, 2])
-    expect(k.texts.sort()).toEqual(["0.5' clear", "9' clear"])
+    expect([k.polys, k.dotted, k.lines > 0]).toEqual([0, true, true])
+    expect(k.texts.sort()).toEqual(shown(face, cols[face.columnIndex], LZ, ops))
+    expect(k.texts).toContain(ftIn(Math.max(face.nearClearFt, face.farClearFt)))
     const t = ops.filter(o => o.op === 'text')
-    expect(hit(t[0], t[1])).toBe(false)
+    if (t.length === 2) expect(hit(t[0], t[1])).toBe(false)
   })
-  it('CA-labels-all: every column in an aisle, every Label size — both labels always drawn, never overlapping each other, both arrows always draw. Sizes: the four presets and a custom 60 in', () => {
+  it('CA-labels-all: every column in an aisle, every Label size — a number is drawn exactly where its gap holds it (or touching a face), never two overlapping; dotted lines, no arrowheads. Sizes: the four presets and a custom 60 in', () => {
     const base = savedFill(vert), cols = layoutColumns(base, GS), blocks = blocksOf(base).aisleBlocks
     let n = 0
     for (const size of [...Object.keys(LABEL_SIZES), 60]) {
       for (const b of blocks) {
-        const ops = clearanceOps(b, cols[b.columnIndex], labelScale(size, GS), GS, true), k = kinds(ops)
-        expect([k.lines, k.polys]).toEqual([2, 2])
+        const lz = labelScale(size, GS), ops = clearanceOps(b, cols[b.columnIndex], lz, GS, true), k = kinds(ops)
+        expect([k.polys, k.dotted]).toEqual([0, true])
         const t = ops.filter(o => o.op === 'text')
-        expect(t.map(x => x.text).sort()).toEqual([`${b.nearClearFt}' clear`, `${b.farClearFt}' clear`].sort())
-        expect(hit(t[0], t[1])).toBe(false)
+        expect(t.map(x => x.text).sort()).toEqual(shown(b, cols[b.columnIndex], lz, ops))
+        if (t.length === 2) expect(hit(t[0], t[1])).toBe(false)
         n++
       }
     }
     expect(n).toBe(blocks.length * 5)
   })
-  it('CA-labels-all (aisle labels): at every preset Label size a clearance label keeps clear of the aisle and cross-aisle width labels — sliding along its arrow, else stepping off it to a clear side — and is NEVER hidden: both labels always draw, never overlapping each other, both arrows always draw', () => {
+  it('CA-labels-all (aisle labels): at every preset Label size a clearance number keeps clear of the aisle and cross-aisle width labels — sliding along its line, staying in its gap (touching a face: stepping beside the column) — never two overlapping; dotted lines, no arrowheads', () => {
     const base = savedFill(vert), cols = layoutColumns(base, GS), blocks = blocksOf(base).aisleBlocks
     // the width labels' pills, straight from aisleLabelOps at the size they are drawn (what the canvas and the PDF draw)
     const aisleBoxes = (size) => [
@@ -244,20 +257,20 @@ describe.each([['vertical', true, 'medium'], ['horizontal', false, 60]])('CA-lab
       for (const b of blocks) {
         const col = cols[b.columnIndex], before = clearanceOps(b, col, lz, GS, true).filter(o => o.op === 'text')
         const ops = clearanceOps(b, col, lz, GS, true, avoid), k = kinds(ops), t = ops.filter(o => o.op === 'text')
-        expect([k.lines, k.polys]).toEqual([2, 2])
-        expect(t).toHaveLength(2)
-        expect(hit(t[0], t[1])).toBe(false)
+        expect([k.polys, k.dotted]).toEqual([0, true])
+        expect(t.length).toBeLessThanOrEqual(2)
+        if (t.length === 2) expect(hit(t[0], t[1])).toBe(false)
         for (const y of before) if (avoid.some(r => hit(y, r))) clashedBefore++
         for (const x of t) if (avoid.some(r => hit(x, r))) clashAfter++
       }
     }
-    // every label that met an aisle label found clear floor (along its arrow or beside it)
+    // every number that met an aisle label found clear floor along its line, or beside the column
     expect(clashAfter).toBe(0)
     if (!vert) expect(clashedBefore).toBeGreaterThan(0)
   })
   it('CA-labels-wire: the canvas (Overlays.jsx) and the PDF pass the aisle labels\' boxes to the clearance labels', () => {
     expect(readFileSync('src/canvas2/Overlays.jsx', 'utf8')).toMatch(/<ColumnClearanceLabels [^>]*avoid=\{avoid\}/)
-    expect(readFileSync('src/export/pdfExport.js', 'utf8').includes('clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid, { warnings: !!opts.showMarks })')).toBe(true)
+    expect(readFileSync('src/export/pdfExport.js', 'utf8').includes('clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid, { warnings: !!opts.showMarks, solids })')).toBe(true)
   })
 })
 

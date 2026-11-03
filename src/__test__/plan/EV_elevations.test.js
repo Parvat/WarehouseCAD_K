@@ -858,7 +858,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
 describe('EV — the wiring', () => {
   it('EV-wire: no paint tool on the canvas (types are set from a selection); the legend stays; the keeper is installed; the editor is in Properties (never floating); no Simple / Detailed, nothing of it stored', async () => {
     const c2 = readFileSync(new URL('../../canvas2/Canvas2.jsx', import.meta.url), 'utf8')
-    expect(c2).toMatch(/splitting \? splitMouseDown : onStageMouseDown/)
+    expect(c2).toMatch(/splitting \? splitMouseDown : dooring \? doorMouseDown : onStageMouseDown/)
     expect(/<ElevLegend \/>/.test(c2)).toBe(false)   // Studio: the colours toggle is the bottom-right island's Elevations
     const app = readFileSync(new URL('../../App.jsx', import.meta.url), 'utf8')
     expect(app).toMatch(/installElevationsKeeper\(useCanvasStore\)/)

@@ -18,6 +18,7 @@ import { levelsResolver } from '../utils/elevations'
 import { useBayLedger } from '../components/RightPanel/useBayLedger'
 import { SPLIT_TOOL } from '../utils/splitTool'
 import { FILL_TOOL } from '../utils/fillTool'
+import { DOOR_TOOL } from '../utils/doorTool'
 import { endTool } from '../utils/toolSwitch'
 import { isBeamRack, typeById } from '../utils/elevations'
 import { selectionCells, cellTypes } from '../utils/elevSelection'
@@ -365,7 +366,7 @@ function BuildingBar({ obj }) {
         ))}
       </div>
       <Sep />
-      <button type="button" title="A man door from the library" onClick={() => pickLibraryItem('man_door')} style={toggleBtn(false)}>Add door</button>
+      <button type="button" title="Add door — hover a wall, click to place (Esc ends)" onClick={tool(DOOR_TOOL)} style={toggleBtn(false)}>Add door</button>
       {/* the project's wall clearance — set in Project settings, which asks before it regenerates */}
       <button type="button" title="Wall clearance — Project settings" onClick={() => openSetup('settings')} style={toggleBtn(false)}>
         Wall clearance{clear != null && <span style={{ fontFamily: MONO, color: B.muted, marginLeft: 6 }}>{clear}″</span>}
