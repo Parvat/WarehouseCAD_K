@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { X, OctagonAlert, TriangleAlert, Info } from 'lucide-react'
+import { X, OctagonAlert, TriangleAlert, Info } from 'lucide-react'   // (the unused LayoutCheckPanel's; the export dialog uses the icon set)
+import { Icon } from '../../studio/Icon'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { useLayoutCheck, goToIssue, exportAnyway, showIssues, remindersLabel } from '../../utils/layoutCheck'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
@@ -95,7 +96,7 @@ export function ExportCheckDialog({ onExport }) {
           <span id="export-ask-title" style={{ fontSize: 15, fontWeight: 600 }}>Export with errors</span>
           <button type="button" aria-label="Close" title="Close (Esc)" onClick={close}
             style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 2, background: 'transparent', color: 'var(--steel)', cursor: 'pointer' }}>
-            <X size={16} strokeWidth={1.5} absoluteStrokeWidth />
+            <Icon name="Close" size={16} color="currentColor" />
           </button>
         </div>
         <div style={{ padding: '16px', fontSize: 14, lineHeight: 1.5 }}>{n} error{n === 1 ? '' : 's'} found. Export anyway?</div>

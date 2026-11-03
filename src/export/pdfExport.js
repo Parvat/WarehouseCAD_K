@@ -25,10 +25,11 @@
 
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Printer, X } from 'lucide-react'
-/* the export window's button glyphs: the app's Lucide icons as markup (it is a plain HTML page, no React) */
-const icon = (I) => renderToStaticMarkup(createElement(I, { size: 16, strokeWidth: 1.5, absoluteStrokeWidth: true, 'aria-hidden': true }))
-const ICON_X = icon(X), ICON_PRINTER = icon(Printer)
+import { Icon } from '../studio/Icon'
+/* the export window's button glyphs: the icon set's (STUDIO.md §9) as markup — it is a plain HTML page, no React —
+   in the button's own text colour */
+const icon = (name) => renderToStaticMarkup(createElement(Icon, { name, size: 16, color: 'currentColor' }))
+const ICON_X = icon('Close'), ICON_PRINTER = icon('Export')
 import { levelsResolver, legendCounts } from '../utils/elevations'
 import { bandRects, useElevView, tint, tintOn, ELEV_FILL_OPACITY } from '../utils/elevationDraw'
 import { elevationLayout, itemSVG, lengthsByType, ftInDash, archScale, CARD_SHEET, CARD_FONT_PX } from '../utils/elevationDrawing'

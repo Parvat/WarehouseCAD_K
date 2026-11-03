@@ -212,6 +212,27 @@ describe('SBR — the mode bars and the notices', () => {
     expect(read('canvas2/Canvas2.jsx')).not.toMatch(/AreaPrompt/)
   })
 
+  it('SBR-icon-moves: the rendered icons with a section-9 equivalent come from the icon set — Project settings (Close, Chevron, Edit, Generate, Delete), Rules (Close, Lock), the export check (Close), the Elevations card (Close, Back = Chevron), the print window (Close, Export); only those with none stay (Plus, the spinner, reset, warning)', async () => {
+    const PSu = read('components/Project/ProjectSetup.jsx'), RU = read('components/Rules/RulesPanel.jsx'), LC = read('components/RightPanel/LayoutCheckPanel.jsx'), EL = read('components/Elevations/ElevationsTab.jsx'), PDF = read('export/pdfExport.js')
+    expect(PSu).toMatch(/^import \{ Plus, Loader2 \} from 'lucide-react'/m)
+    expect(/<(ChevronRight|X|PenLine|Sparkles|Trash2)\b/.test(PSu)).toBe(false)
+    for (const n of ['Chevron', 'Close', 'Edit', 'Generate', 'Delete']) expect([n, PSu.includes(`<Icon name="${n}"`)]).toEqual([n, true])
+    expect(RU).toMatch(/^import \{ Plus, RotateCcw, AlertTriangle \} from 'lucide-react'/m)
+    expect(/<(X|Lock)\b/.test(RU)).toBe(false)
+    expect((RU.match(/<Icon name="Lock"/g) || []).length + (RU.match(/<Icon name="Close"/g) || []).length).toBe(5)
+    expect(LC.slice(LC.indexOf('export function ExportCheckDialog'))).not.toMatch(/<X\b/)
+    // the hand-drawn ✕ and back chevron gone; only the Depth arrow and New's plus (no section-9 icon) are drawn here
+    expect([EL.includes('M7 7l10 10'), EL.includes('M15 18l-6-6 6-6'), (EL.match(/<svg/g) || []).length]).toEqual([false, false, 2])
+    expect(EL).toMatch(/const Arrow = \(\) => <svg/)
+    expect(EL).toMatch(/const Plus = \(\) => <svg/)
+    expect(EL).toMatch(/const Back = \(\) => <Icon name="Chevron" size=\{14\} color="currentColor" style=\{\{ transform: 'rotate\(90deg\)' \}\} \/>/)
+    expect(PDF).toMatch(/const ICON_X = icon\('Close'\), ICON_PRINTER = icon\('Export'\)/)
+    // a light dialog's icon: its grey the text colour, its cut-outs the dialog's surface (not the dark island's #1F2321)
+    const { Icon } = await import('../../studio/Icon')
+    const lock = renderToStaticMarkup(createElement(Icon, { name: 'Lock', size: 10, color: 'currentColor', cut: 'var(--surface)' }))
+    expect([lock.includes('#1F2321'), lock.includes('fill:var(--surface)'), lock.includes('currentColor'), lock.includes('#C9CEC9')]).toEqual([false, true, true, false])
+  })
+
   it('SBR-icons: every bar icon is §9\'s (the generated set) — Add bay and Remove bay among them, from Icons.dc.html; no hand-drawn svg in the bars', async () => {
     const I = await import('../../studio/iconData')
     for (const n of ['Add bay', 'Remove bay', 'Split', 'Row group', 'Rotate', 'Duplicate', 'Delete', 'More', 'Lock', 'Close', 'Chevron']) expect([n, !!I.TOOLS[n]?.idle, !!I.TOOLS[n]?.active]).toEqual([n, true, true])
@@ -224,23 +245,84 @@ describe('SBR — the mode bars and the notices', () => {
     for (const fl of ['studio/SelectionBar.jsx', 'studio/barParts.jsx', 'canvas2/RowGroupBar.jsx', 'canvas2/SplitBar.jsx']) expect([fl, /<svg|<path/.test(read(fl))]).toEqual([fl, false])
   })
 
-  it('SBR-floor-menu: a right-click on empty floor opens Paste · Fill racking · Add zone ▾ there (the browser\'s own menu never); on an object it does not open', async () => {
+  it('SBR-floor-menu: a right-click on empty floor (outside every object, or inside the building) opens Paste · Fill racking · Add zone ▾ there (the browser\'s own menu never)', async () => {
     const SB = await import('../../studio/SelectionBar')
     const st = store.getState(), fp = st.objects.find(o => o.type === 'fp_rect')
     let prevented = 0
     const host = { getBoundingClientRect: () => ({ left: 0, top: 0 }) }
     const at = (wx, wy) => ({ clientX: wx * st.zoom + st.panX, clientY: wy * st.zoom + st.panY, preventDefault: () => { prevented++ } })
+    store.setState({ selectedIds: [] })
     // outside every object
-    expect(SB.openFloorMenu(at(fp.x - 400, fp.y - 400), host)).toBe(true)
-    expect(SB.useFloorMenu.getState().at).toBeTruthy()
+    expect(SB.openFloorMenu(at(fp.x - 400, fp.y - 400), host)).toBe('floor')
+    expect([!!SB.useFloorMenu.getState().at, SB.useFloorMenu.getState().objId, store.getState().selectedIds]).toEqual([true, null, []])
     SB.useFloorMenu.setState({ at: null })
-    // on a rack: no menu
-    const r = rackOf(store), c = { x: r.x + r.width / 2, y: r.y + r.height / 2 }
-    expect(SB.openFloorMenu(at(c.x, c.y), host)).toBe(false)
-    expect([SB.useFloorMenu.getState().at, prevented]).toEqual([null, 2])
+    expect(prevented).toBe(1)
+    // another tool on: nothing opens
+    store.setState({ activeTool: 'split' })
+    expect(SB.openFloorMenu(at(fp.x - 400, fp.y - 400), host)).toBe(false)
+    store.setState({ activeTool: 'select' })
     const src = read('studio/SelectionBar.jsx')
     expect(src).toMatch(/<MenuItem disabled=\{!clipboard\?\.length\} title="Paste \(Ctrl\+V\)" onClick=\{run\(pasteHere\)\}>Paste<\/MenuItem>\s*<MenuItem title="Fill racking \(F\) — drag a box" onClick=\{run\(tool\(FILL_TOOL\)\)\}>Fill racking<\/MenuItem>\s*<MenuItem onClick=\{\(\) => setZones\(z => !z\)\}[\s\S]*?>Add zone<\/MenuItem>\s*\{zones && ZONE_KINDS\.map/)
     expect(read('canvas2/Canvas2.jsx')).toMatch(/onContextMenu=\{\(e\) => openFloorMenu\(e, e\.currentTarget\)\}/)
+  })
+
+  it('SBR-object-menu: a right-click on any object selects it (its group, as a click) and opens its More items — Lock, To back, Back, Forward, To front, Copy, Cut — in the floor menu\'s card style; a building by its wall', async () => {
+    const SB = await import('../../studio/SelectionBar')
+    const st = store.getState(), fp = st.objects.find(o => o.type === 'fp_rect'), r = rackOf(store)
+    const host = { getBoundingClientRect: () => ({ left: 0, top: 0 }) }
+    const at = (wx, wy) => ({ clientX: wx * st.zoom + st.panX, clientY: wy * st.zoom + st.panY, preventDefault: () => {} })
+    store.setState({ selectedIds: [] })
+    // a rack: selected, its menu
+    expect(SB.openFloorMenu(at(r.x + r.width / 2, r.y + r.height / 2), host)).toBe('object')
+    expect([store.getState().selectedIds, SB.useFloorMenu.getState().objId]).toEqual([[r.id], r.id])
+    // in a group: the group, as a click picks it
+    const other = st.objects.find(o => o !== r && /^rack_/.test(o.type))
+    store.setState({ groups: [{ id: 'g', ids: [r.id, other.id] }], selectedIds: [] })
+    expect(SB.openFloorMenu(at(r.x + r.width / 2, r.y + r.height / 2), host)).toBe('object')
+    expect(store.getState().selectedIds.slice().sort()).toEqual([r.id, other.id].sort())
+    store.setState({ groups: [], selectedIds: [] })
+    // a building by its wall (its inside is the floor): a point on its wall with nothing else on it
+    const H = await import('../../canvas2/hitTest')
+    let wp = null
+    for (let k = 1; k < 40 && !wp; k++) for (const p of [{ x: fp.x + fp.width * k / 40, y: fp.y }, { x: fp.x, y: fp.y + fp.height * k / 40 }]) {
+      const id = H.hitTest(st.objects, st.layers, p.x, p.y, st.zoom, st.gridSize || 40)
+      if ((!id || id === fp.id) && H.fpWallHitTest(st.objects, st.layers, p.x, p.y, st.zoom, st.gridSize || 40)) { wp = p; break }
+    }
+    expect(SB.openFloorMenu(at(wp.x, wp.y), host)).toBe('object')
+    expect([store.getState().selectedIds, SB.useFloorMenu.getState().objId]).toEqual([[fp.id], fp.id])
+    // ...its inside (hit as the building, off its walls, nothing else there) is the floor: the floor menu, no selection
+    let ip = null
+    for (let i = 1; i < 30 && !ip; i++) for (let j = 1; j < 30; j++) {
+      const p = { x: fp.x + fp.width * i / 30, y: fp.y + fp.height * j / 30 }
+      if (H.hitTest(st.objects, st.layers, p.x, p.y, st.zoom, st.gridSize || 40) === fp.id && !H.fpWallHitTest(st.objects, st.layers, p.x, p.y, st.zoom, st.gridSize || 40)) { ip = p; break }
+    }
+    store.setState({ selectedIds: [] })
+    expect([SB.openFloorMenu(at(ip.x, ip.y), host), SB.useFloorMenu.getState().objId, store.getState().selectedIds]).toEqual(['floor', null, []])
+    SB.useFloorMenu.setState({ at: null, objId: null })
+    // its items: the More items, one list with the ⋯ menu's
+    const items = renderToStaticMarkup(createElement(SB.MoreItems, { obj: r, close: () => {} }))
+    expect([...items.matchAll(/role="menuitem"[^>]*>(?:<span[^>]*>)?([^<]+)</g)].map(m => m[1])).toEqual(['Lock', 'To back', 'Back', 'Forward', 'To front', 'Copy', 'Cut'])
+    expect(renderToStaticMarkup(createElement(SB.MoreItems, { obj: { ...r, locked: true }, close: () => {} }))).toMatch(/>Unlock</)
+    const src = read('studio/SelectionBar.jsx')
+    expect(src).toMatch(/if \(objId\) return <Menu label="Object" at=\{at\} onClose=\{close\}><MoreItems obj=\{obj\} close=\{close\} \/><\/Menu>/)
+    expect(src).toMatch(/<Menu label="More" anchor=\{ref\.current\} onClose=\{\(\) => setOpen\(false\)\}>\s*<MoreItems obj=\{obj\} close=\{\(\) => setOpen\(false\)\} \/>/)
+  })
+
+  it('SBR-elev-chip: the rack bar\'s Elevation chip is the swatch and the level count only ("5 levels"); the full name is its hover title and in its dropdown', async () => {
+    const SB = await import('../../studio/SelectionBar'), P = await import('../../utils/project'), E = await import('../../utils/elevations')
+    const r = rackOf(store), T0 = store.getState().elevations
+    const ids = new Set(); for (let b = 0; b < r.beams.length; b++) for (let s = 0; s < 2; s++) ids.add(E.typeIdAt(r, b, s, T0))
+    // a full name of its own (the app's are "5 levels · 48×40 · Main"), so the chip's count and the title differ
+    const id = [...ids][0]
+    store.setState({ elevations: { ...T0, types: T0.types.map(x => (x.id === id ? { ...x, name: 'Bulk 4 levels high bay', named: true } : x)) }, selectedIds: [r.id], activeTool: 'select' })
+    const T = store.getState().elevations, t = E.typeById(T, id), name = P.nameOf(T, t), n = t.levels.length
+    expect(name).toBe('Bulk 4 levels high bay')
+    const bar = await ssr(SB.SelectionBar)
+    const chip = bar.match(/<button[^>]*aria-label="Elevation"[^>]*>[\s\S]*?<\/button>/)[0]
+    expect(chip).toContain(`title="${name}"`)
+    expect(chip).toMatch(new RegExp(`background:${t.color}[\\s\\S]*>${n} levels<\\/span>`))
+    expect(chip.includes(name) && !chip.replace(/title="[^"]*"/, '').includes(name)).toBe(true)   // the name only as the title
+    expect(read('studio/SelectionBar.jsx')).toMatch(/\{T\.types\.map\(t => <MenuItem key=\{t\.id\} swatch=\{t\.color\} onClick=\{\(\) => \{ assignSelected\(store, t\.id\); setOpen\(false\) \}\}>\{nameOf\(T, t\)\}<\/MenuItem>\)\}/)
   })
 
   it('SBR-c8-card: a selected Row group row shows C8 — "Editing row N · changes go to all M", the group\'s positions, Bays · Depth · Beam · Flue, the pending edit\'s note; a row outside the group keeps C1', async () => {

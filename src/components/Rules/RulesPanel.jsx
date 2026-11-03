@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus, RotateCcw, Lock, AlertTriangle } from 'lucide-react'
+import { Plus, RotateCcw, AlertTriangle } from 'lucide-react'   // (no section-9 icon for these three)
+import { Icon } from '../../studio/Icon'
 import { useRules } from '../../rules/useRules'
 import { resolveRules, setAt, unsetAt, explainValue } from '../../rules/resolve'
 import { DEFAULT_PROFILE_ID, LANE_TYPES, MHE_LABELS } from '../../rules/defaults'
@@ -104,7 +105,7 @@ function NumberList({ values, onChange, disabled, unit = '"' }) {
               aria-label={`Remove ${v}${unit}`}
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0,
                 display: 'flex', color: 'var(--text3)' }}>
-              <X size={10} />
+              <Icon name="Close" size={10} color="currentColor" />
             </button>
           )}
         </span>
@@ -194,7 +195,7 @@ export function RulesPanel({ onClose }) {
         <span title="Code/safety value — not a preference"
           style={{ display: 'inline-flex', alignItems: 'center', gap: 3,
             fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>
-          <Lock size={9} /> locked
+          <Icon name="Lock" size={9} color="currentColor" cut="var(--surface)" /> locked
         </span>
       )}
     </>
@@ -262,7 +263,7 @@ export function RulesPanel({ onClose }) {
           <button onClick={onClose} aria-label="Close"
             style={{ background: 'none', border: 'none', cursor: 'pointer',
               color: 'var(--text3)', display: 'flex', padding: 0 }}>
-            <X size={15} />
+            <Icon name="Close" size={15} color="currentColor" />
           </button>
         </div>
 
@@ -293,7 +294,7 @@ export function RulesPanel({ onClose }) {
         <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--border)',
           ...S.mono, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6 }}>
           {editingLocked
-            ? <><Lock size={11} /> Trace Default is read-only — add a profile to change anything.</>
+            ? <><Icon name="Lock" size={11} color="currentColor" cut="var(--surface)" /> Trace Default is read-only — add a profile to change anything.</>
             : <>Editing <span style={{ color: 'var(--text)' }}>{layerName}</span> · edits are stored as changes only</>}
         </div>
 
@@ -391,7 +392,7 @@ export function RulesPanel({ onClose }) {
               {result.errors.map((e, i) => (
                 <div key={`e${i}`} style={{ display: 'flex', gap: 6, alignItems: 'flex-start',
                   ...S.mono, fontSize: 10, color: 'var(--red)' }}>
-                  {e.kind === 'locked' ? <Lock size={10} style={{ marginTop: 1, flexShrink: 0 }} />
+                  {e.kind === 'locked' ? <Icon name="Lock" size={10} color="currentColor" cut="var(--surface)" style={{ marginTop: 1, flexShrink: 0 }} />
                                        : <AlertTriangle size={10} style={{ marginTop: 1, flexShrink: 0 }} />}
                   <span>{e.message}</span>
                 </div>

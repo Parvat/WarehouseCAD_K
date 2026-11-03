@@ -7,8 +7,9 @@ import { TOOLS, RAIL, OBJECTS } from './iconData'
      object — the object drawings; used as a tool (Text, Custom area) the idle grey turns mint when active (§9) */
 const IDLE = '#C9CEC9', ACTIVE = '#7BD3A4'
 
-/* `color` repaints the idle grey — the frame's dropdown Chevron is 12px in #9AA29C (the muted text) */
-export function Icon({ name, kind = 'tool', active = false, size = 24, color, title, style }) {
+/* `color` repaints the idle grey — the frame's dropdown Chevron is 12px in #9AA29C (the muted text); `cut` repaints the
+   cut-outs (#1F2321 — the dark island they show through to) for a surface that isn't dark (a light dialog's) */
+export function Icon({ name, kind = 'tool', active = false, size = 24, color, cut, title, style }) {
   let d
   if (kind === 'tool') d = TOOLS[name] && (active ? TOOLS[name].active : TOOLS[name].idle)
   else if (kind === 'rail') d = RAIL[name]
@@ -16,6 +17,7 @@ export function Icon({ name, kind = 'tool', active = false, size = 24, color, ti
   if (!d) return null
   let body = kind === 'object' && active ? d.body.split(IDLE).join(ACTIVE) : d.body
   if (color && !active) body = body.split(IDLE).join(color)
+  if (cut) body = body.split('fill="#1F2321"').join(`style="fill:${cut}"`).split('stroke="#1F2321"').join(`style="stroke:${cut}"`)
   return (
     <svg width={size} height={size} viewBox={d.viewBox} aria-hidden={title ? undefined : 'true'} role={title ? 'img' : undefined}
       aria-label={title} style={{ display: 'block', flexShrink: 0, ...style }} dangerouslySetInnerHTML={{ __html: body }} />

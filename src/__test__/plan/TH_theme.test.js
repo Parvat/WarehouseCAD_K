@@ -143,7 +143,9 @@ describe('TH — broken items', () => {
     expect(p).toMatch(/\.btn-primary \{ background: #14392B; color: #FFFFFF;/)
     expect(p).toMatch(/border-radius: 2px;/)
     expect(p).toMatch(/font-family: 'Plus Jakarta Sans'/)
-    expect(p).toMatch(/import \{ Printer, X \} from 'lucide-react'/)
+    // the buttons' glyphs: the icon set's Close and Export (STUDIO.md §9), in the button's text colour
+    expect(p).toMatch(/const ICON_X = icon\('Close'\), ICON_PRINTER = icon\('Export'\)/)
+    expect(/lucide-react/.test(p)).toBe(false)
     expect(p).toMatch(/\$\{ICON_PRINTER\}Print \/ Save as PDF/)
     // the drawing keeps its own type: the plan's sheet text in Arial, the zone label a plain sans
     expect(p).toMatch(/font-family="Arial, sans-serif" fill="#111">SCALE \(FEET\)/)

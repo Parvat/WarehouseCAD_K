@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Trash2, ChevronRight, X, Sparkles, Loader2, PenLine } from 'lucide-react'
+import { Plus, Loader2 } from 'lucide-react'   // (no section-9 icon for these two)
+import { Icon } from '../../studio/Icon'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { useRules } from '../../rules/useRules'
 import { useRackingSettings } from '../../utils/fillTool'
@@ -120,7 +121,7 @@ function Advanced({ value, onChange, units, onUnits, extra = null, style = null 
   return (
     <div style={style || S.sec} role="group" aria-label="Advanced">
       <button type="button" aria-expanded={open} onClick={() => setOpen(a => !a)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: 0, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-        <ChevronRight size={12} style={{ color: 'var(--text3)', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} /><span style={S.h}>Advanced</span>
+        <Icon name="Chevron" size={12} color="currentColor" style={{ color: 'var(--text3)', transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.2s' }} /><span style={S.h}>Advanced</span>
         {!open && <span style={{ ...S.note, marginLeft: 6 }}>load clearance {value.clearanceIn ?? 6}" · sprinkler clearance {value.sprinklerClearanceIn ?? 18}" · upright step {(value.uprightStepIn ?? 12) / 12}' · flue {value.flueIn ?? 6}" · beam face {value.beamFaceIn ?? ADVANCED_DEFAULTS.beamFaceIn}"</span>}
       </button>
       {open && (
@@ -198,7 +199,7 @@ function StartCard() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 24px 4px' }}>
           <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18, letterSpacing: '.02em', textTransform: 'uppercase', color: 'var(--text)' }}>New project</span>
           <span style={{ fontSize: 12, color: 'var(--text3)' }}>Common values are filled in.</span>
-          <button type="button" aria-label="Close" onClick={drawMyself} disabled={!!busy} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex' }}><X size={16} /></button>
+          <button type="button" aria-label="Close" onClick={drawMyself} disabled={!!busy} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex' }}><Icon name="Close" size={16} color="currentColor" /></button>
         </div>
         <div style={{ overflowY: 'auto', padding: '16px 24px 8px', display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div role="group" aria-label="Building" style={group}>
@@ -245,9 +246,9 @@ function StartCard() {
           {failed && <span role="alert" style={{ ...S.note, color: 'var(--red)' }}>Nothing fits — change the building or the pallet.</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 24px 20px' }}>
-          <button type="button" onClick={drawMyself} disabled={!!busy} style={{ ...S.btn, height: 40, padding: '0 16px', fontSize: 14 }}><PenLine size={14} /> Draw it myself</button>
+          <button type="button" onClick={drawMyself} disabled={!!busy} style={{ ...S.btn, height: 40, padding: '0 16px', fontSize: 14 }}><Icon name="Edit" size={14} color="currentColor" cut="var(--surface)" /> Draw it myself</button>
           <button type="button" disabled={!!busy} onClick={generate} style={{ ...S.btn, ...S.solid, height: 40, padding: '0 18px', fontSize: 14, fontWeight: 500, marginLeft: 'auto', cursor: busy ? 'progress' : 'pointer' }}>
-            {busy ? <><Loader2 size={14} className="animate-spin" /> Generating… {Math.round(busy.progress * 100)}%</> : <><Sparkles size={14} /> Generate layout</>}
+            {busy ? <><Loader2 size={14} className="animate-spin" /> Generating… {Math.round(busy.progress * 100)}%</> : <><Icon name="Generate" size={14} color="currentColor" /> Generate layout</>}
           </button>
         </div>
       </div>
@@ -305,7 +306,7 @@ function SettingsCard() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px' }}>
           <span style={{ fontSize: 16, fontWeight: 600 }}>Project settings</span>
           <span style={S.note}>Used by Generate, Fill racking, the elevations and the checks.</span>
-          <button type="button" aria-label="Close" onClick={closeSetup} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex' }}><X size={16} /></button>
+          <button type="button" aria-label="Close" onClick={closeSetup} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex' }}><Icon name="Close" size={16} color="currentColor" /></button>
         </div>
         <div style={{ overflowY: 'auto' }}>
           {/* the building: ceiling heights */}
@@ -322,7 +323,7 @@ function SettingsCard() {
                       <td><input aria-label="Ceiling name" value={c.name} style={S.in} onChange={e => setRow('ceilings', c.id, { name: e.target.value })} /></td>
                       <td><NumIn aria="Clear height (ft)" step={0.5} value={ftOf(c.clearHeightIn)} placeholder={`not set — ${ASSUMED_FT}'`} onChange={v => setRow('ceilings', c.id, { clearHeightIn: inOf(v) })} /></td>
                       <td><NumIn aria="Sprinkler height (ft)" step={0.5} value={ftOf(c.sprinklerIn)} placeholder="optional" error={sprinklerError(c)} onChange={v => setRow('ceilings', c.id, { sprinklerIn: inOf(v) })} /></td>
-                      <td><button type="button" aria-label={`Remove ceiling ${c.name}`} title={used ? 'An elevation uses it' : 'Remove'} disabled={used} onClick={() => setPr(p => { const ceilings = p.ceilings.filter(x => x.id !== c.id); return { ...p, ceilings, defaultCeilingId: p.defaultCeilingId === c.id ? ceilings[0]?.id ?? null : p.defaultCeilingId } })} style={{ ...S.btn, padding: '4px 6px', opacity: used ? 0.4 : 1, cursor: used ? 'not-allowed' : 'pointer' }}><Trash2 size={12} /></button></td>
+                      <td><button type="button" aria-label={`Remove ceiling ${c.name}`} title={used ? 'An elevation uses it' : 'Remove'} disabled={used} onClick={() => setPr(p => { const ceilings = p.ceilings.filter(x => x.id !== c.id); return { ...p, ceilings, defaultCeilingId: p.defaultCeilingId === c.id ? ceilings[0]?.id ?? null : p.defaultCeilingId } })} style={{ ...S.btn, padding: '4px 6px', opacity: used ? 0.4 : 1, cursor: used ? 'not-allowed' : 'pointer' }}><Icon name="Delete" size={12} color="currentColor" cut="var(--surface)" /></button></td>
                     </tr>
                   )
                 })}
@@ -349,7 +350,7 @@ function SettingsCard() {
                       <td><NumIn aria="Pallet width (in)" value={p.faceIn} onChange={v => setRow('pallets', p.id, { faceIn: v })} /></td>
                       <td><NumIn aria="Pallet height (in)" value={p.heightIn} onChange={v => setRow('pallets', p.id, { heightIn: v })} /></td>
                       <td><NumIn aria="Pallet weight (lb)" step={50} value={p.weightLb} onChange={v => setRow('pallets', p.id, { weightLb: v })} /></td>
-                      <td><button type="button" aria-label={`Remove pallet ${p.name}`} title={palUsed(p.id) ? 'An elevation uses it' : pr.pallets.length <= 1 ? 'The project needs one pallet' : 'Remove'} disabled={blocked} onClick={() => setPr(q => { const pallets = q.pallets.filter(x => x.id !== p.id); return { ...q, pallets, defaultPalletId: q.defaultPalletId === p.id ? pallets[0].id : q.defaultPalletId } })} style={{ ...S.btn, padding: '4px 6px', opacity: blocked ? 0.4 : 1, cursor: blocked ? 'not-allowed' : 'pointer' }}><Trash2 size={12} /></button></td>
+                      <td><button type="button" aria-label={`Remove pallet ${p.name}`} title={palUsed(p.id) ? 'An elevation uses it' : pr.pallets.length <= 1 ? 'The project needs one pallet' : 'Remove'} disabled={blocked} onClick={() => setPr(q => { const pallets = q.pallets.filter(x => x.id !== p.id); return { ...q, pallets, defaultPalletId: q.defaultPalletId === p.id ? pallets[0].id : q.defaultPalletId } })} style={{ ...S.btn, padding: '4px 6px', opacity: blocked ? 0.4 : 1, cursor: blocked ? 'not-allowed' : 'pointer' }}><Icon name="Delete" size={12} color="currentColor" cut="var(--surface)" /></button></td>
                     </tr>
                   )
                 })}

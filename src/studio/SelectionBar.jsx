@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
-import { worldBoundsOf, hitTest } from '../canvas2/hitTest'
+import { worldBoundsOf, hitTest, fpWallHitTest } from '../canvas2/hitTest'
 import { screenToWorld } from '../canvas2/viewport'
 import { useDragPreview } from '../canvas2/dragPreview'
 import { usePlacement } from '../utils/placement'
@@ -96,10 +96,13 @@ function ElevationChip({ several = false }) {
   const types = useMemo(() => (T ? cellTypes(objects, T, selectionCells({ objects, selectedIds, activeBaySelection })) : []), [objects, T, selectedIds, activeBaySelection])
   if (!T?.types?.length) return null
   const one = types.length === 1 ? typeById(T, types[0].id) : null
-  const label = several ? 'Apply elevation' : one ? nameOf(T, one) : 'Mixed elevations'
+  // the chip: the level count (C1's "6 levels"); its full name is the hover title and the menu's
+  const levels = (t) => `${t.levels?.length || 0} level${t.levels?.length === 1 ? '' : 's'}`
+  const label = several ? 'Apply elevation' : one ? levels(one) : 'Mixed'
+  const title = several ? 'Apply an elevation to the selected rows' : one ? nameOf(T, one) : `Mixed: ${types.map(x => { const y = typeById(T, x.id); return y ? nameOf(T, y) : '—' }).join(', ')}`
   return (
     <>
-      <Chip chipRef={ref} open={open} swatch={!several && one ? one.color : null} label={several ? 'Apply elevation' : 'Elevation'} title={several ? 'Apply an elevation to the selected rows' : 'The row\'s elevation — pick one to apply it'} onClick={() => setOpen(o => !o)}>{label}</Chip>
+      <Chip chipRef={ref} open={open} swatch={!several && one ? one.color : null} label={several ? 'Apply elevation' : 'Elevation'} title={title} onClick={() => setOpen(o => !o)}>{label}</Chip>
       {open && (
         <Menu label="Elevations" anchor={ref.current} onClose={() => setOpen(false)}>
           {T.types.map(t => <MenuItem key={t.id} swatch={t.color} onClick={() => { assignSelected(store, t.id); setOpen(false) }}>{nameOf(T, t)}</MenuItem>)}
@@ -109,26 +112,35 @@ function ElevationChip({ several = false }) {
   )
 }
 
-/** ⋯ More: Lock, the order, Copy, Cut (the card's More → Object, Arrange). */
+/** The More items: Lock, the order, Copy, Cut (the card's More → Object, Arrange) — the ⋯ menu's and the object's
+ *  right-click menu's, one list. */
+export function MoreItems({ obj, close }) {
+  const st = store.getState()
+  const run = (fn) => () => { fn(); close() }
+  return (
+    <>
+      <MenuItem onClick={run(st.toggleLockSelected)}>{obj?.locked ? 'Unlock' : 'Lock'}</MenuItem>
+      <MenuLine />
+      <MenuItem onClick={run(st.sendToBack)}>To back</MenuItem>
+      <MenuItem onClick={run(st.sendBackward)}>Back</MenuItem>
+      <MenuItem onClick={run(st.bringForward)}>Forward</MenuItem>
+      <MenuItem onClick={run(st.bringToFront)}>To front</MenuItem>
+      <MenuLine />
+      <MenuItem onClick={run(st.copySelected)}>Copy</MenuItem>
+      <MenuItem onClick={run(st.cutSelected)}>Cut</MenuItem>
+    </>
+  )
+}
+/** ⋯ More (the rack bar's last button). */
 function MoreMenu({ obj }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
-  const st = store.getState()
-  const run = (fn) => () => { fn(); setOpen(false) }
   return (
     <span ref={ref} style={{ display: 'flex' }}>
       <IconBtn name="More" label="More" onClick={() => setOpen(o => !o)} />
       {open && (
         <Menu label="More" anchor={ref.current} onClose={() => setOpen(false)}>
-          <MenuItem onClick={run(st.toggleLockSelected)}>{obj.locked ? 'Unlock' : 'Lock'}</MenuItem>
-          <MenuLine />
-          <MenuItem onClick={run(st.sendToBack)}>To back</MenuItem>
-          <MenuItem onClick={run(st.sendBackward)}>Back</MenuItem>
-          <MenuItem onClick={run(st.bringForward)}>Forward</MenuItem>
-          <MenuItem onClick={run(st.bringToFront)}>To front</MenuItem>
-          <MenuLine />
-          <MenuItem onClick={run(st.copySelected)}>Copy</MenuItem>
-          <MenuItem onClick={run(st.cutSelected)}>Cut</MenuItem>
+          <MoreItems obj={obj} close={() => setOpen(false)} />
         </Menu>
       )}
     </span>
@@ -281,28 +293,38 @@ export function SelectionBar() {
   )
 }
 
-/* ── the floor's right-click menu (§6): Paste · Fill racking · Add zone ▾ ── */
-export const useFloorMenu = create(() => ({ at: null }))
-/** A right-click on the canvas: on empty floor (nothing under it but the building's floor) the menu opens there. */
+/* ── the right-click menus: on empty floor (§6) Paste · Fill racking · Add zone ▾; on an object, its More items ── */
+export const useFloorMenu = create(() => ({ at: null, objId: null }))
+/** A right-click on the canvas (the browser's own menu never): on an object it is selected — its group, as a click
+ *  picks it — and its More menu opens there; a building is an object by its wall, its inside is the floor; on empty
+ *  floor the floor menu opens. → 'object' | 'floor' | false (another tool on). */
 export function openFloorMenu(e, host) {
   e.preventDefault()
   const st = store.getState()
   if (st.activeTool !== TOOLS.SELECT) return false
   const r = host.getBoundingClientRect(), p = { x: e.clientX - r.left, y: e.clientY - r.top }
-  const w = screenToWorld({ zoom: st.zoom, panX: st.panX, panY: st.panY }, p)
-  const hit = hitTest(st.objects, st.layers, w.x, w.y, st.zoom, st.gridSize || 40)
-  const obj = hit && st.objects.find(o => o.id === hit)
-  if (obj && !FP.has(obj.type)) return false
-  useFloorMenu.setState({ at: { x: e.clientX, y: e.clientY } })
-  return true
+  const w = screenToWorld({ zoom: st.zoom, panX: st.panX, panY: st.panY }, p), gs = st.gridSize || 40
+  const hit = hitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs)
+  let obj = hit && st.objects.find(o => o.id === hit)
+  if (!obj || FP.has(obj.type)) { const wall = fpWallHitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs); obj = wall ? st.objects.find(o => o.id === wall.objId) : null }
+  const at = { x: e.clientX, y: e.clientY }
+  if (!obj) { useFloorMenu.setState({ at, objId: null }); return 'floor' }
+  if (!st.selectedIds.includes(obj.id)) {
+    const g = (st.groups || []).find(x => x.ids.includes(obj.id))
+    if (g) st.selectGroup(g.ids); else st.selectObject(obj.id, false)
+  }
+  useFloorMenu.setState({ at, objId: obj.id })
+  return 'object'
 }
 export function FloorMenu() {
-  const at = useFloorMenu(s => s.at)
+  const at = useFloorMenu(s => s.at), objId = useFloorMenu(s => s.objId)
   const clipboard = useCanvasStore(s => s.clipboard)
+  const obj = useCanvasStore(s => (objId ? s.objects.find(o => o.id === objId) : null))
   const [zones, setZones] = useState(false)
   if (!at) return null
-  const close = () => { setZones(false); useFloorMenu.setState({ at: null }) }
+  const close = () => { setZones(false); useFloorMenu.setState({ at: null, objId: null }) }
   const run = (fn) => () => { close(); fn() }
+  if (objId) return <Menu label="Object" at={at} onClose={close}><MoreItems obj={obj} close={close} /></Menu>
   return (
     <Menu label="Floor" at={at} onClose={close}>
       <MenuItem disabled={!clipboard?.length} title="Paste (Ctrl+V)" onClick={run(pasteHere)}>Paste</MenuItem>

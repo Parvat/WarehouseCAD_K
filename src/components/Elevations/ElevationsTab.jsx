@@ -52,7 +52,8 @@ const link = { background: 'none', border: 'none', padding: 0, cursor: 'pointer'
 const inset28 = (on) => ({ height: 28, padding: '0 10px', display: 'flex', alignItems: 'center', gap: 6, border: 0, borderRadius: 6, background: on ? C.active : C.inset, color: on ? C.accent : C.text, fontSize: 12, cursor: 'pointer', flexShrink: 0 })
 /* the mockup's plain glyphs (a chevron, an arrow, a plus — STUDIO.md §9 draws no box icon for these) */
 const Arrow = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-const Back = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+/* Back: §9's Chevron, turned to point back */
+const Back = () => <Icon name="Chevron" size={14} color="currentColor" style={{ transform: 'rotate(90deg)' }} />
 const Plus = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
 
 /** The beam length an elevation is drawn at (read-only) → { entry, from }: the selected row's own (its most common
@@ -294,7 +295,7 @@ function SheetRow({ e, T, bays }) {
           <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.accent, fontSize: 12 }}>Editing · <span style={{ fontFamily: MONO }}>{bays}</span> bays</span>
         </span>
         <button type="button" className="st-hov" aria-label="Cancel" title="Cancel (Esc)" onClick={cancelEdit} style={{ width: 24, height: 24, flexShrink: 0, padding: 0, border: 0, borderRadius: 6, background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" stroke="#C9CEC9" strokeWidth="1.6" strokeLinecap="round" /></svg>
+          <Icon name="Close" />
         </button>
         <button type="button" onClick={() => saveTyped(store)} style={{ height: 24, padding: '0 10px', flexShrink: 0, border: 0, borderRadius: 6, background: C.accent, color: C.onAccent, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Save</button>
       </div>
