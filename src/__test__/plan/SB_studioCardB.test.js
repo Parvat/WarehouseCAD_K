@@ -25,7 +25,7 @@ describe('SB — the sheet (C2, C3)', () => {
     expect(between(tab, 'role="separator"', '{/* 2.')).toMatch(/height: HANDLE[\s\S]*width: 32, height: 3, borderRadius: 2, background: C\.separator/)
     expect(tab).toMatch(/const HANDLE = 12 /)
     // the drawing is transparent on the sheet, so the grid shows; its labels keep a white halo
-    expect(read('components/Elevations/ElevationDrawing.jsx')).toMatch(/background: paper \? 'transparent' : 'var\(--surface\)'/)
+    expect(read('components/Elevations/ElevationDrawing.jsx')).toMatch(/background: 'transparent', cursor: 'grab'/)
     const T = await import('../../utils/elevTab')
     T.setElevSplit(0.5); expect(T.useElevSplit.getState().split).toBe(0.5)
     T.resetElevSplit(); expect([T.useElevSplit.getState().split, localStorage.getItem('trace.elevsplit.v1')]).toEqual([null, null])
@@ -60,9 +60,9 @@ describe('SB — the sheet (C2, C3)', () => {
     // the paper palette: uprights and beams #14392B, the ceiling dashed 6 4, the max load line dashed 5 3, the band at 22%
     expect(d.items.filter(i => i.tag === 'upright' || i.tag === 'beam').every(i => i.fill === '#14392B')).toBe(true)
     expect([d.items.find(i => i.tag === 'clear').dash, d.items.find(i => i.tag === 'max-load').dash, d.items.find(i => i.tag === 'band').opacity]).toEqual(['6 4', '5 3', 0.22])
-    // the other drawings (full screen, the PDF) keep their own set
-    const old = elevationLayout(MOCK, 96, { w: 600, h: 500 }, { palletWIn: 40, building: { clearHeightIn: 360 }, view: 'front' }).items.filter(i => i.t === 'text').map(i => i.s)
-    expect(old.some(x => /^FRAME /.test(x))).toBe(true)
+    // one drawing: every caller gets this set (full screen and the PDF too) — there is no other
+    const any = elevationLayout(MOCK, 96, { w: 600, h: 500 }, { palletWIn: 40, building: { clearHeightIn: 360 }, view: 'front' }).items.filter(i => i.t === 'text').map(i => i.s)
+    expect([any.some(x => /^FRAME /.test(x)), any.includes('Frame 21′-0″')]).toEqual([false, true])
   })
 })
 

@@ -36,7 +36,7 @@ import { ElevationDrawing, elevFullOpen } from './ElevationDrawing'
          warning inside the Rack box with its Set to N″. A typed ceiling or pallet takes the project's entry with those
          values, else Save adds one. Only this form scrolls; the footer is pinned: Cancel and Save elevation — ONE save,
          one undo step. The sheet above follows the draft as it is edited.
-   Simple | Detailed is set in the full-screen view; Fit is a double-click on empty sheet. */
+   One drawing everywhere (no Simple | Detailed); Fit is a double-click on empty sheet. */
 
 const store = useCanvasStore
 const HANDLE = 12                 // the grab handle under the sheet (px)
@@ -124,7 +124,7 @@ function RowMenu({ t, T, anchor, onClose }) {
 export function ElevationsTab() {
   const { objects, T, gridSize, selectedIds, activeBaySelection } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, gridSize: s.gridSize || 40, selectedIds: s.selectedIds, activeBaySelection: s.activeBaySelection })))
   const { activeId, view, editing: e, made } = useElevTab()
-  const { detail, sel } = useElevEditor()
+  const { sel } = useElevEditor()
   const counts = useMemo(() => { if (!T) return new Map(); const L = bayLedger(objects, gridSize, T); return new Map(legendCounts(objects, T, (r) => L.racks.get(r.id)?.counted || null).map(x => [x.type.id, x.bays])) }, [objects, gridSize, T])
   const active = T?.types?.length ? typeById(T, activeId) || typeById(T, T.defaultId) || T.types[0] : null
   // what the drawing shows: the editor's draft (with its new ceiling / pallet), else the picked elevation
@@ -175,7 +175,7 @@ export function ElevationsTab() {
       {/* 1. the sheet: white, 14px grid, radius 8 in every state (the list, C21, C3) — the drawing, and in edit on the sheet its handles */}
       <div data-drawing-box data-sheet style={{ margin: '0 12px', height: sheetH, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRadius: 8, overflow: 'hidden', backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient(#EFEEE9 1px, transparent 1px), linear-gradient(90deg, #EFEEE9 1px, transparent 1px)', backgroundSize: '14px 14px' }}>
         {shown
-          ? <ElevationDrawing t={shown} title={e ? previewName(dT, e.draft, e.id) : nameOf(T, shown)} entry={shownEntry} building={building} sel={e ? sel : null} sprClr={sprinklerClearance(T)} detail="studio" fullDetail={detail} view={view} height={sheetH} controls={false} paper fullSignal={fullSignal}
+          ? <ElevationDrawing t={shown} title={e ? previewName(dT, e.draft, e.id) : nameOf(T, shown)} entry={shownEntry} building={building} sel={e ? sel : null} sprClr={sprinklerClearance(T)} view={view} height={sheetH} controls={false} fullSignal={fullSignal}
               readOnly={!e} onCommit={e ? (next) => editDraft(store, { ...next, id: e.draft.id }, { fromDrawing: true }) : () => {}}
               sheetEdit={onSheet} holePitchIn={holePitchIn} onValue={(id, v) => sheetValue(store, id, v)}
               onEdit={!e && active ? () => startSheet(store, active.id) : null} onSave={() => saveTyped(store)} onCancel={cancelEdit} />

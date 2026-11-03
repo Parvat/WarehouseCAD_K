@@ -239,11 +239,11 @@ describe('PS — the project', () => {
     expect([sprOnly.errors.filter(e => heightKinds.has(e.kind)).length, sprOnly.reminders.map(r => r.kind)]).toEqual([0, ['unset-clear']])
     const set = checkLayout(m.objects, { gridSize: GS, elevations: P.withProject(tallT, { ...pr, ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 240, sprinklerIn: 230 }] }) })
     expect(['elev-height', 'elev-load-clear'].every(k => set.errors.some(e => e.kind === k))).toBe(true)
-    // the drawing: 24' drawn, "(ASSUMED)", never flagged against; a set 24' is flagged
+    // the drawing: 24' drawn, "(assumed)", never flagged against; a set 24' is flagged
     const tt = tallT.types[0], draw = (b) => E_D.elevationLayout(tt, 96, { w: 800, h: 600 }, { building: b }).items.filter(i => i.t === 'text').map(i => i.s)
     const assumedTexts = draw({ clearHeightIn: 288, sprinklerIn: null, assumed: true })
-    expect([assumedTexts.some(x => /ABOVE CLEAR HEIGHT|OF SPRINKLERS/.test(x)), assumedTexts.includes('CLEAR HEIGHT 24\'-0" (ASSUMED)')]).toEqual([false, true])
-    expect(draw({ clearHeightIn: 288, sprinklerIn: null }).includes('ABOVE CLEAR HEIGHT')).toBe(true)
+    expect([assumedTexts.some(x => /Above the ceiling|of sprinklers/.test(x)), assumedTexts.includes('Ceiling 24 ft (assumed)')]).toEqual([false, true])
+    expect(draw({ clearHeightIn: 288, sprinklerIn: null }).includes('Above the ceiling')).toBe(true)
     // the header: only reminders left → "No errors · N reminders"; errors / warnings still win
     expect([LC.checkLabel({ errors: [], warnings: [], reminders: [{}, {}] }), LC.checkLabel({ errors: [], warnings: [], reminders: [{}] }), LC.checkLabel({ errors: [{}], warnings: [], reminders: [{}] }), LC.checkLabel({ errors: [], warnings: [{}], reminders: [{}] }), LC.checkLabel({ errors: [], warnings: [] })])
       .toEqual(['Check layout · No errors · 2 reminders', 'Check layout · No errors · 1 reminder', 'Check layout · 1 error', 'Check layout · 1 warning', 'Check layout · no issues'])
@@ -251,7 +251,7 @@ describe('PS — the project', () => {
     expect('reminders' in checkLayout(m.objects, { gridSize: GS, elevations: P.withProject(m.table, { ...pr, ceilings: [{ id: 'c', name: 'Main', clearHeightIn: 360, sprinklerIn: 354 }] }) })).toBe(false)
     // the panel lists them and opens Project settings; the drawing says "assumed"
     expect(src('components/RightPanel/LayoutCheckPanel.jsx')).toMatch(/aria-label="Reminders"[\s\S]*onClick=\{\(\) => openSetup\('settings'\)\}/)
-    expect(src('utils/elevationDrawing.js')).toMatch(/\$\{building\?\.assumed \? ' \(ASSUMED\)' : ''\}/)
+    expect(src('utils/elevationDrawing.js')).toMatch(/building\?\.assumed \? `Ceiling \$\{Math\.round\(base \/ 12\)\} ft \(assumed\)`/)
   })
 
   it('PS-entries: Project settings deletes no ceiling or pallet an elevation uses; the Elevations tab adds a ceiling or pallet to the project (one undo step) and Create says when that elevation already exists', () => {
@@ -384,11 +384,10 @@ describe('PS — the project', () => {
     expect([res.warnings.some(w => w.kind === 'elev-frame-depth'), res.errors.some(e => e.kind === 'elev-frame-depth')]).toEqual([true, false])
     // the default pallet (48" deep) on these frames: nothing said
     expect(E.elevationIssues(m.objects, P.withProject(m.table, pr)).some(e => e.kind === 'elev-frame-depth')).toBe(false)
-    // the drawing: the note in red under it, only when short
+    // the drawing: never a note on the sheet — the editor's warning box says it, with its action (below); the side view
+    // shows the overhang in amber (PS-frame-fix)
     const t = T.types[0], texts = (o2) => E_D.elevationLayout(t, 96, { w: 800, h: 600 }, o2).items.filter(i => i.t === 'text')
-    const note = texts({ palletDIn: 60, depthIn: 42 }).find(i => i.tag === 'frame-depth')
-    expect([note?.s, note?.fill]).toEqual(['60 IN DEEP PALLET NEEDS ABOUT 54 IN FRAMES. THESE ROWS ARE 42 IN.', '#B5730F'])   // amber: a warning, not an error
-    expect([texts({ palletDIn: 48, depthIn: 42 }).some(i => i.tag === 'frame-depth'), texts({ palletDIn: 60, depthIn: 54 }).some(i => i.tag === 'frame-depth'), texts({ depthIn: 42 }).some(i => i.tag === 'frame-depth')]).toEqual([false, false, false])
+    expect(texts({ palletDIn: 60, depthIn: 42 }).some(i => i.tag === 'frame-depth' || /PALLET NEEDS|pallet needs/.test(i.s))).toBe(false)
     // the tab and the PDF hand the drawing the elevation's pallet depth
     const tab = src('components/Elevations/ElevationsTab.jsx')
     expect(tab).toMatch(/palletDIn: pal\?\.depthIn \?\? null/)
@@ -465,10 +464,9 @@ describe('PS — the project', () => {
     expect(/drawFix|FIX_H/.test(tab)).toBe(false)                                                     // no button on the drawing (C2)
     expect(tab).toMatch(/<FixButton rows=\{rows\.filter\(r => \(r\.depthIn \?\? 42\) < need - 1e-6\)\} to=\{frameDepthFor\(pallet\.depthIn, frameDepths\)\}/)
     expect((tab.match(/deepenRows\(/g) || []).length).toBe(1)                                  // never without the click
-    // Depth switches the sheet to the side view; Simple | Detailed is the full-screen view's
+    // Depth switches the sheet to the side view; there is no Simple | Detailed anywhere
     expect(tab).toMatch(/onClick=\{\(\) => useElevTab\.setState\(\{ view: side \? 'front' : 'side' \}\)\}/)
-    expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/role="group" aria-label="Drawing detail"/)
-    expect(src('components/Elevations/ElevationDrawing.jsx')).toMatch(/role="group" aria-label="Drawing detail"/)   // full screen keeps it
+    expect(/aria-label="Drawing detail"|Detailed/.test(src('components/Elevations/ElevationDrawing.jsx'))).toBe(false)
   })
   it('PS-depth-action: "Set these rows to N in" and Properties\' Frame depth are ONE action — a wall row keeps its wall face (its clearance) and grows away from the wall, also turned; a back-to-back pair keeps its centre and flue and grows outward; one undo step; the aisle checks run after', async () => {
     const RD = await import('../../utils/rackDepth'), RA = await import('../../utils/rackDepthAction'), LCm = await import('../../utils/layoutCheck')

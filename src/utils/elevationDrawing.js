@@ -1,18 +1,16 @@
-// elevationDrawing.js — the rack elevation drawing of one type at one beam length (Elevations v2 §D–F): ONE pure
-// layout of primitives in pixel space, drawn by the editor (components/Elevations/ElevationDrawing.jsx — the same
-// primitives made interactive by their `role`) and the PDF (toSVG), so the two never differ.
-//
-// Dimensioned and labelled as on the reference rack elevation (the sample sheet); drawn in Trace's own colours (blue
-// frames, orange beams, beige loads). Weights stay off.
-// Front view, one bay: the uprights, the beams (to the TOP of the beam, the face below), the loads on each level (as
-// many as the beam length holds), the bay width across the top. Dimensions in feet-inches: beam elevations to the top
-// of the beam on the right; the clear opening between beams inside the bay; the chain of load + clearance per level on
-// the left; overall on the far left: top of the top load, top of the upright, and — when the building has them — its
-// clear height, to the underside of the roof structure (the truss's bottom chord, drawn there), and the sprinkler head
-// at its own height (above the bottom chord, within the truss, as a rule). Side view beside it: the frame depth (two frames and
-// the flue for a back-to-back), the upright height, a simple diagonal bracing pattern. Weights stay off the drawing.
+// elevationDrawing.js — the rack elevation drawing of one type at one beam length: ONE pure layout of primitives in
+// pixel space — the right card's sheet (STUDIO.md §2 palette, §7 labels) — drawn by the card and full screen
+// (components/Elevations/ElevationDrawing.jsx, the same primitives made interactive by their `role`) and by the PDF's
+// elevation sheets (export/pdfExport.js), so none of them ever differs. There is no second drawing: no Simple /
+// Detailed. (A per-level install chain — pallet, gap, face per level — may return as an Install guide export option,
+// never on screen: STUDIO.md §7.)
+// Front view, one bay: the ceiling and the max load height, the uprights, the beams (to the TOP of the beam), the loads
+// on each level (as many as the beam length holds), the beam heights, the L tags, the L1 pallet's height and width, the
+// face and lift-off at L1, free headroom, top of load and frame on the far left, beam · pallets · load under the rack.
+// Side view (the card's Depth): the frame depth (two frames and the flue for a back-to-back), the upright height, a
+// simple diagonal bracing pattern, the pallets at their real depth.
 
-import { beamFace, topLoadIssue, topOfLoad, SPRINKLER_CLEARANCE_IN, ceilingOf, frameDepthNote } from './elevations'
+import { beamFace, topLoadIssue, SPRINKLER_CLEARANCE_IN, ceilingOf } from './elevations'
 import { positionsPerBeam } from './palletFit'
 
 /** 6'-2" / 26'-0" / 8" — feet and inches as on a rack drawing: a length of a foot or more always with its inches,
@@ -35,9 +33,7 @@ export function parseFtIn(text) {
   return NaN
 }
 
-// the reference sheet's visual language: JetBrains Mono (the app's mono), dark green frames and beams, kraft loads on a deck board, an
-// ink ground line with grey hatching, a dashed clear-height line over a yellow clearance band; dimensions blue,
-// clearances red, tags grey
+// the side view's depth and frame dimensions: JetBrains Mono (the app's mono)
 const FONT = "'JetBrains Mono', monospace"
 const AMBER = '#B5730F'   // warnings on the drawing (THEME.md's warning)
 /* Studio (STUDIO.md §2 drawing palette, §3 drawing type, §7 the panel's labels; design/studio/Studio.dc.html panel
@@ -53,7 +49,7 @@ export const CARD_SHEET = { w: 276, h: 420 }, CARD_FONT_PX = 9
 export const sheetScale = (box) => Math.max(0.1, Math.min(box.w / CARD_SHEET.w, box.h / CARD_SHEET.h))
 /** 30'-0" → 30′-0″ (the Studio drawing's primes) */
 const prime = (str) => String(str).replace(/'/g, '′').replace(/"/g, '″')
-const INK = '#15181C', PINE = '#123A2E', LOAD = '#E8DCC2', LOAD_EDGE = '#B08F52', DECK = '#C9A870', BLUE = '#1B4FD8', RED = '#A8341C', GREY = '#7A828C', HATCH = '#B6BAB3', BAND = '#F2C230', MISFIT = '#F5E7E3', MISFIT_EDGE = '#A8341C'
+const LOAD = '#E8DCC2', LOAD_EDGE = '#B08F52', DECK = '#C9A870', MISFIT = '#F5E7E3'
 
 /** Which levels of `t` don't fit — a pallet plus the clearance taller than the top of its beam (the floor) to the
  *  underside of the next beam (the top level has none above it): the Check layout error's own rule
@@ -69,33 +65,28 @@ export function misfitLevels(t) {
   return out
 }
 
-/** The drawing of type `t` with `bayIn` beams, fitted into and centred in `box` ({ w, h } px): { w, h (the box), scale
- *  (px per inch), items, bottom }. In the reference sheet's style. opts: palletWIn, depthIn (frame depth, the racks'),
- *  pair + flueIn (back-to-back side view), building ({ clearHeightIn, sprinklerIn } or null), sprinklerClearanceIn,
- *  fontPx (the base label size), detail ('simple': level tags, frame height, the beam with its pallets, the clear-height
- *  line and clearance band, pitch and the pallets' side clearance; 'detailed': those plus each beam's elevation to its top
- *  and per level the pallet height and the ACTUAL gap to the underside of the beam above, red under the clearance, and
- *  that beam's face), compact (the panel's preview: no labels), stacked (the side view under the front view), scale, bg
- *  (the colour behind the labels' halo: the panel's), frame / ink (the frames' and beams' colour, the ground's and base
- *  plates'), view ('both' — the PDF's figure —, 'front' or 'side': one view, fitted alone; the Elevation workspace's
- *  Front | Side switch), blue / red (the dimensions', the clearances') — the editor passes theme tokens so a dark panel keeps them
- *  readable; the PDF the reference's own colours — draft overrides { active, removing }. Items: { t: 'rect'|'line'|
- *  'text'|'poly'|'polygon'|'path', ..., role, tag } — role { kind: 'beam', k } | { kind: 'upright', x } | { kind: 'top' } |
- *  { kind: 'dim', id, k?, value } for the editor. No label overlaps a load, a beam or another label (declutter). */
+/** The drawing of type `t` with `bayIn` beams, fitted into `box` ({ w, h } px), centred across and anchored at its top:
+ *  { w, h (the box), scale (px per inch), items, floor, floorS, bottom, Y, Xf, … }. The label set of STUDIO.md §7 and
+ *  nothing else, in the §2 paper palette whoever draws it (the card, full screen, the PDF — a print window has no theme
+ *  variables), on its white sheet. opts: palletWIn, palletDIn, depthIn (frame depth, the racks'), pair + flueIn
+ *  (back-to-back side view), building ({ clearHeightIn, sprinklerIn, assumed? } or null), sprinklerClearanceIn, fontPx
+ *  (the label size: everything is laid out in label units, u = fontPx / 9.4, so a box k times as large with fontPx k
+ *  times is the same drawing k times as large), view ('front' | 'side' — one view, fitted alone — or 'both'), stacked
+ *  (both: the side view under the front view), scale, zoom / pan, draft overrides { active, removing }, edit (edit on
+ *  the sheet, C21: { hint }). Items: { t: 'rect'|'line'|'text'|'poly'|'polygon'|'path', ..., role, tag } — role
+ *  { kind: 'beam', k } | { kind: 'upright', x } | { kind: 'top' } | { kind: 'dim', id, k?, value } | { kind: 'add' } |
+ *  { kind: 'remove', k } for the editor. No label overlaps a load, a beam or another label (declutter). */
 export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = {}) {
-  const { palletWIn = 40, palletDIn = null, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, compact = false, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, detail = 'simple', view = 'both', zoom = 1, pan = null, edit = null } = opts
+  const { palletWIn = 40, palletDIn = null, depthIn = 42, pair = false, flueIn = 9, building = null, fontPx = 11, stacked = false, active = null, removing = null, scale = null, sprinklerClearanceIn = SPRINKLER_CLEARANCE_IN, view = 'both', zoom = 1, pan = null, edit = null } = opts
   const showFront = view !== 'side', showSide = view !== 'front'
-  const detailed = detail === 'detailed'
-  // 'studio': the right card's sheet — the label set of STUDIO.md §7, nothing else (no pitch, no chain, no bracing)
-  const studio = detail === 'studio', u = fontPx / 9.4
-  /* Studio: the paper palette of STUDIO.md §2 whoever draws it — the card, full screen, the PDF (a print window has no
-     theme variables) — on its white sheet; the older drawing takes the caller's colours */
-  const { bg = '#fff', frame = PINE, ink = INK, blue = BLUE, red = RED } = studio ? { bg: '#FFFFFF', frame: S.up, ink: S.ink, blue: S.blue, red: S.red } : opts
+  const u = fontPx / 9.4
+  // the paper palette (STUDIO.md §2): the label halo the sheet's white, frames and beams pine, the ground ink, dimensions blue
+  const bg = '#FFFFFF', frame = S.up, ink = S.ink, blue = S.blue
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
   const L = [...t.levels].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
   const top = L[L.length - 1]
   const misfit = misfitLevels(t)
-  // an assumed clear height (none set) is drawn, never checked: no ABOVE CLEAR HEIGHT / sprinkler flag against it
+  // an assumed clear height (none set) is drawn, never checked: no "Above the ceiling" / sprinkler flag against it
   const topIssue = building?.assumed ? null : topLoadIssue(t, building, sprinklerClearanceIn)
   const loadH = (lv, i) => { const ph = lv.palletHeightIn || 0, next = i + 1 < L.length ? L[i + 1].beamIn - face : Infinity; return Math.max(0, Math.min(ph, next - lv.beamIn - 0.5)) }
   const topLoad = top.beamIn + loadH(top, L.length - 1)
@@ -109,24 +100,15 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   /* the max load height (STUDIO.md §7): the sprinkler height less the sprinkler clearance (18″, NFPA); no sprinkler height:
      the ceiling less it. A load above it turns its level red (never against an assumed ceiling). */
   const maxLoadS = ceilS ? (bSprink || bClear) - sprinklerClearanceIn : null
-  const overMax = (lv, lh) => studio && !building?.assumed && maxLoadS != null && lv.beamIn + lh > maxLoadS + 1e-6
-  const H = studio ? Math.max(hTop, topLoad + clearance, ceilS || 0, maxLoadS || 0) : Math.max(hTop, topLoad + clearance, bClear || 0, bSprink || 0) + 6
+  const overMax = (lv, lh) => !building?.assumed && maxLoadS != null && lv.beamIn + lh > maxLoadS + 1e-6
+  const H = Math.max(hTop, topLoad + clearance, ceilS || 0, maxLoadS || 0)
   const frontW = bayIn + 2 * upW, sideW = pair ? 2 * depthIn + flueIn + 2 * upW : depthIn + upW
-  const fO = fontPx, fT = Math.max(8, fontPx * 0.85), fE = fontPx * 1.05
+  const fO = fontPx
   const tw = (str, size) => String(str).length * size * 0.6
-  // a uniform level spacing gives the pitch
-  const steps = L.slice(1).map((l, i) => l.beamIn - L[i].beamIn), pitch = steps.length && steps.every(x => Math.abs(x - steps[0]) < 1e-6) ? steps[0] : null
-  const longestElev = detailed ? Math.max(0, ...L.filter(l => l.beamIn > 0).map(l => tw(ftInDash(l.beamIn), fE))) : 0
-  // the columns, px from the frames
-  const cTag = fO * 0.8, cElev = cTag + fT * 2.4, cPitch = (detailed ? cElev + longestElev + fO * 0.8 : cTag + fT * 2.6) + fO * 0.6
-  const cChain = fO * 1.4, cFrame = detailed ? cChain + fO * 3.4 : fO * 1.8
-  const mL = compact ? 6 : studio ? 80 * u : cFrame + fO * 1.6, mR = compact ? 6 : studio ? 70 * u : Math.max(cPitch + fO * 1.6, tw('0.0" CLR', fT) + cTag + fO)
-  // the pallet deeper than these frames allow: an amber note under the drawing (a warning), a line of its own below the
-  // beam label (Studio: the editor's warning box says it, with its action — never on the sheet)
-  const deepNote = !compact && !studio && frameDepthNote(palletDIn, depthIn)
-  const mT = compact ? 6 : studio ? 20 * u : fO * (bClear || bSprink ? 2.0 : 1.2), mB = compact ? 6 : studio ? 58 * u : fO * (deepNote ? 6 : 4.4)
-  const sideL = compact ? 6 : fO * 3.2, sideR = compact ? 6 : fO * 1.2, sideT = compact ? 6 : fO * (pair ? 4.4 : 2.8)
-  const gap = compact ? 14 : fO * 2.4
+  // the margins round each view (a pallet deeper than its frames is said by the editor's warning box, never on the sheet)
+  const mL = 80 * u, mR = 70 * u, mT = 20 * u, mB = 58 * u
+  const sideL = fO * 3.2, sideR = fO * 1.2, sideT = fO * (pair ? 4.4 : 2.8)
+  const gap = fO * 2.4
   let fit
   if (view === 'front') fit = Math.min((box.w - mL - mR) / frontW, (box.h - mT - mB) / H)
   else if (view === 'side') fit = Math.min((box.w - sideL - sideR) / sideW, (box.h - Math.max(sideT, mT) - mB) / H)
@@ -141,7 +123,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const sideBoxW = sideL + sideW * s + sideR, sideBoxH = Math.max(sideT, mT) + H * s + mB
   const cw = view === 'front' ? frontBoxW : view === 'side' ? sideBoxW : stacked ? Math.max(frontBoxW, sideBoxW) : frontBoxW + gap + sideBoxW
   const ch = view === 'front' ? frontBoxH : view === 'side' ? sideBoxH : stacked ? frontBoxH + gap + sideBoxH : Math.max(frontBoxH, sideBoxH)
-  const ox = zoomed ? (box.w - cw) / 2 + (pan?.x || 0) : Math.max(0, (box.w - cw) / 2), oy = zoomed ? (box.h - ch) / 2 + (pan?.y || 0) : studio ? 0 : Math.max(0, (box.h - ch) / 2)
+  const ox = zoomed ? (box.w - cw) / 2 + (pan?.x || 0) : Math.max(0, (box.w - cw) / 2), oy = zoomed ? (box.h - ch) / 2 + (pan?.y || 0) : 0
   const X0 = ox + (stacked ? (cw - frontBoxW) / 2 : 0) + mL, floor = oy + mT + H * s
   const Y = (z) => floor - z * s, Xf = (x) => X0 + x * s
   const XS0 = view === 'side' ? ox + sideL : stacked ? ox + (cw - sideBoxW) / 2 + sideL : X0 + frontW * s + mR + gap + sideL
@@ -159,7 +141,6 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   /* a vertical dimension (the reference's: a thin line with short ticks at its ends, the label turned along it on its
      outer side); too short for its label, the label sits beside it */
   const dimV = (x, y0, y1, label, role, { from = null, color = blue, size = fO, pri = 2, out = -1 } = {}) => {
-    if (compact) return
     const hot = isActive(role), c = hot ? '#d0392b' : color, w = hot ? sw * 1.6 : sw * 0.9
     if (from != null) for (const y of [y0, y1]) line(from, y, x + (from < x ? size * 0.4 : -size * 0.4), y, { stroke: c, sw: sw * 0.5 })
     line(x, y0, x, y1, { stroke: c, sw: w })
@@ -170,43 +151,12 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   }
   // (`outboard` 'left' | 'right': a label wider than its span goes beyond that end, on the line's own row, as drafted)
   const dimH = (y, x0, x1, label, { color = blue, size = fO, below = true, outboard = null } = {}) => {
-    if (compact) return
     line(x0, y, x1, y, { stroke: color, sw: sw * 0.9 })
     for (const x of [x0, x1]) line(x, y - size * 0.45, x, y + size * 0.45, { stroke: color, sw: sw * 0.9 })
     if (outboard && tw(label, size) + size > x1 - x0) text(outboard === 'left' ? x0 - size * 0.6 : x1 + size * 0.6, y + size * 0.35, label, { anchor: outboard === 'left' ? 'end' : 'start', size, fill: color, pri: 2 })
     else text((x0 + x1) / 2, below ? y + size * 1.45 : y - size * 0.55, label, { size, fill: color, pri: 2 })
   }
-  /* the ground: an ink line, grey hatching below it */
-  const ground = (x0, x1, y) => {
-    line(x0, y, x1, y, { stroke: ink, sw: compact ? 2 : 3 })
-    if (!compact) for (let x = x0 + fO * 1.4; x < x1 - fO * 0.6; x += fO * 2.2) line(x, y, x - fO, y + fO, { stroke: HATCH, sw: 1 })
-  }
-  /* the building over a view: the clearance band under the sprinkler heads (yellow), the dashed clear-height line, the
-     sprinkler line — Simple: dashed, as on the reference; Detailed: red, labelled with its height — their labels grey,
-     the clearance red */
-  const shell = (Yv, x0, x1) => {
-    if (bSprink) {
-      const top = Yv(bSprink), bot = top + sprinklerClearanceIn * s
-      rect(x0, top, x1 - x0, bot - top, { fill: BAND, opacity: 0.2, tag: 'band' })
-      line(x0, top, x1, top, detailed ? { stroke: red, sw: sw * 1.4, tag: 'sprinkler' } : { stroke: ink, sw: sw * 1.2, dash: `${fO * 0.7} ${fO * 0.4}` })
-      if (!compact) {
-        // (Simple, the sprinklers at the clear height itself: one line, labelled as the clear height, as on the reference)
-        if (detailed || !(bClear && Math.abs(bClear - bSprink) < 0.5)) text(x1 - 2, top - fT * 0.55, `SPRINKLERS ${ftInDash(bSprink)}`, { anchor: 'end', size: fT, fill: detailed ? red : GREY, pri: 2, tag: 'shell' })
-        // the band's label inside the band, under the clear-height line where that line crosses it — never on the line;
-        // no room there: none (it stays in that strip when it gives way, or goes)
-        const lineY = bClear ? Yv(bClear) : null
-        const y0 = lineY != null && lineY > top - 0.5 && lineY < bot ? lineY + sw * 2 : top + 1, y1 = bot - 1
-        if (y1 - y0 >= fT * 1.05) text(x0 + 2, (y0 + y1) / 2 + fT * 0.29, `CLEARANCE ${ftInDash(sprinklerClearanceIn)}`, { anchor: 'start', size: fT, fill: red, pri: 3, tag: 'shell', keepIn: [y0, y1] })
-      }
-    }
-    if (bClear) {
-      line(x0, Yv(bClear), x1, Yv(bClear), { stroke: ink, sw: sw * 1.5, dash: `${fO * 0.8} ${fO * 0.45}`, tag: 'clear' })
-      if (!compact) text(x1 - 2, Yv(bClear) + (bSprink && bSprink > bClear ? fT * 1.25 : -fT * 0.55), `CLEAR HEIGHT ${ftInDash(bClear)}${building?.assumed ? ' (ASSUMED)' : ''}`, { anchor: 'end', size: fT, fill: GREY, pri: 2, tag: 'shell' })
-    }
-  }
-
-
-  /* ── Studio: the building over a view — the dashed ceiling line, the max load height (the sprinkler heads less their
+  /* ── the building over a view — the dashed ceiling line, the max load height (the sprinkler heads less their
      clearance) with the band up to the ceiling, both labelled at the left */
   /* a Studio label: `str` a string, or runs — [word, [value]] — the value 600 in `o.value` colour (the dimension blue) */
   const sText = (x, y, str, o = {}) => items.push({ t: 'text', x, y, s: Array.isArray(str) ? str.map(r => (Array.isArray(r) ? r[0] : r)).join('') : str, runs: Array.isArray(str) ? str.map(r => (Array.isArray(r) ? { s: r[0], fill: r[1] || o.value || S.blue, weight: 600 } : { s: r })) : undefined, size: o.size || 10 * u, fill: o.fill || S.words, anchor: o.anchor || 'start', font: S_FONT, halo: Math.max(1.5, (o.size || 10 * u) * 0.45), haloColor: bg, ...o, weight: o.weight ?? 400 })
@@ -215,27 +165,25 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     const base = ceilS
     if (base) {
       line(x0, Yv(base), x1, Yv(base), { stroke: S.ceil, sw: 1.2, dash: '6 4', tag: 'clear' })
-      if (!compact) sText(x0 + 24 * u, Yv(base) - 5 * u, building?.assumed ? `Ceiling ${Math.round(base / 12)} ft (assumed)` : ['Ceiling ', [prime(ftInDash(base)), S.words]], { pri: 2, tag: 'shell', fixed: true })   // assumed: all grey, no value in bold
+      sText(x0 + 24 * u, Yv(base) - 5 * u, building?.assumed ? `Ceiling ${Math.round(base / 12)} ft (assumed)` : ['Ceiling ', [prime(ftInDash(base)), S.words]], { pri: 2, tag: 'shell', fixed: true })   // assumed: all grey, no value in bold
       // the band between the ceiling and the max load height (the sprinklers less the clearance, else the ceiling less it)
       const maxLoad = maxLoadS, yM = Yv(maxLoad), yC = Yv(base)
       rect(x0, Math.min(yC, yM), x1 - x0, Math.abs(yM - yC), { fill: S.band, opacity: 0.22, tag: 'band' })
       line(x0, yM, x1, yM, { stroke: S.maxLine, sw: 1.2, dash: '5 3', tag: 'max-load' })
-      if (!compact) {
-        // the full label slides left — as far as the Ceiling label's own left edge, the two aligned — to stay off the sheet's
-        // edge; where it does not fit even so: Max load N (no sprinkler note), slid as needed — never to the edge
-        const full = ['Max load height ', [prime(ftInDash(maxLoad)), S.maxText], ' ', [`(${sprinklerClearanceIn}″ below sprinklers)`, S.maxNote]], short = ['Max load ', [prime(ftInDash(maxLoad)), S.maxText]]
-        const width = (runs) => runs.map(r => (Array.isArray(r) ? r[0] : r)).join('').length * 10 * u * 0.53, right = box.w - 6 * u
-        const minX = x0 + 24 * u
-        let lx = Math.min(x0 + 48 * u, right - width(full)), runs = full
-        if (lx < minX) { runs = short; lx = Math.max(2 * u, Math.min(x0 + 48 * u, right - width(short))) }
-        sText(lx, yM + 12 * u, runs, { fill: S.maxText, pri: 2, tag: 'shell', fixed: true })
-      }
+      // the full label slides left — as far as the Ceiling label's own left edge, the two aligned — to stay off the sheet's
+      // edge; where it does not fit even so: Max load N (no sprinkler note), slid as needed — never to the edge
+      const full = ['Max load height ', [prime(ftInDash(maxLoad)), S.maxText], ' ', [`(${sprinklerClearanceIn}″ below sprinklers)`, S.maxNote]], short = ['Max load ', [prime(ftInDash(maxLoad)), S.maxText]]
+      const width = (runs) => runs.map(r => (Array.isArray(r) ? r[0] : r)).join('').length * 10 * u * 0.53, right = box.w - 6 * u
+      const minX = x0 + 24 * u
+      let lx = Math.min(x0 + 48 * u, right - width(full)), runs = full
+      if (lx < minX) { runs = short; lx = Math.max(2 * u, Math.min(x0 + 48 * u, right - width(short))) }
+      sText(lx, yM + 12 * u, runs, { fill: S.maxText, pri: 2, tag: 'shell', fixed: true })
     }
   }
   /* the ground: a 2.5 ink line, 1px hatching every 16 below it */
   function studioGround(x0, x1, y) {
     line(x0, y, x1, y, { stroke: S.ink, sw: 2.5 })
-    if (!compact) for (let x = x0 + 20 * u; x <= x1; x += 16 * u) line(x, y, x - 8 * u, y + 8 * u, { stroke: S.hatch, sw: 1 })
+    for (let x = x0 + 20 * u; x <= x1; x += 16 * u) line(x, y, x - 8 * u, y + 8 * u, { stroke: S.hatch, sw: 1 })
   }
   /* a Studio dimension: a thin blue line with 10 px end ticks */
   const sDim = (x, y0, y1) => { line(x, y0, x, y1, { stroke: S.blue, sw: 1 }); for (const y of [y0, y1]) line(x - 5 * u, y, x + 5 * u, y, { stroke: S.blue, sw: 1 }) }
@@ -257,7 +205,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
         rect(Xf(x), Y(z) - Math.min(deckPx, lh * s), palletWIn * s, Math.min(deckPx, lh * s), { fill: bad ? S.red : DECK, opacity: gone ? 0.35 : 1, tag: 'load', level: lv.k })
         lastX = x
       }
-      if (compact || !per) return
+      if (!per) return
       if (bad && !(over && !misfit.has(lv.k) && !(isTop && topIssue))) sText(Xf(frontW / 2), Y(z + lh / 2) + 3.5 * u, misfit.has(lv.k) ? "Doesn't fit" : topIssue === 'clear' ? 'Above the ceiling' : `Within ${sprinklerClearanceIn}″ of sprinklers`, { anchor: 'middle', size: 9 * u, fill: S.red, weight: 600, tag: 'misfit', pri: 1.5, level: lv.k })
       // the level tag inside the right pallet, top-right (PJS 8.5 / 600)
       if (lh * s > 14 * u) sText(Xf(lastX + palletWIn) - 3 * u, Y(z + lh) + 10 * u, `L${i + 1}`, { anchor: 'end', size: 8.5 * u, fill: S.tag, weight: 600, tag: 'level-tag', halo: 0, fixed: true })
@@ -272,12 +220,9 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     for (const x of [0, frontW - upW]) {
       const fxp = Xf(x)
       rect(fxp, Y(hTop), colPx, hTop * s, { fill: S.up, role: { kind: 'upright', x }, tag: 'upright' })
-      if (!compact) {
-        rect(fxp - 4.5 * u, floor - 3 * u, colPx + 9 * u, 3 * u, { fill: S.ink })
-        rect(fxp - 2, Y(hTop) - 3, colPx + 4, 6, { fill: isActive({ kind: 'top' }) ? '#d0392b' : 'transparent', role: { kind: 'top' }, cursor: 'ns-resize' })
-      }
+      rect(fxp - 4.5 * u, floor - 3 * u, colPx + 9 * u, 3 * u, { fill: S.ink })
+      rect(fxp - 2, Y(hTop) - 3, colPx + 4, 6, { fill: isActive({ kind: 'top' }) ? '#d0392b' : 'transparent', role: { kind: 'top' }, cursor: 'ns-resize' })
     }
-    if (compact) return
     const lv0 = L[0], lh0 = loadH(lv0, 0), lv1 = L[1]
     // inside the L1 pallets: the pallet's height (left pallet) and width (right pallet), arrowed
     if (per && lh0 > 0) {
@@ -348,96 +293,13 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
     }
   }
 
-  // ── front view, Studio (the right card's sheet)
-  if (showFront && studio) studioFront()
-  // ── front view
-  if (showFront && !studio) {
-  const fx0 = X0 - (compact ? 0 : fO * 1.4), fx1 = Xf(frontW) + (compact ? 0 : fO * 1.2)
-  shell(Y, fx0, fx1)
-  ground(fx0, fx1, floor)
-  const per = Math.max(0, positionsPerBeam(bayIn, palletWIn))
-  const gapIn = per ? (bayIn - per * palletWIn) / (per + 1) : 0
-  L.forEach((lv, i) => {
-    const isTop = i === L.length - 1, z = lv.beamIn, gone = removing === lv.k, bad = misfit.has(lv.k) || (isTop && !!topIssue)
-    if (z > 0) rect(Xf(upW), Y(z), bayIn * s, beamPx, { fill: gone ? '#d0392b' : isActive({ kind: 'beam', k: lv.k }) ? '#2a7a5f' : frame, opacity: gone ? 0.5 : 1, role: { kind: 'beam', k: lv.k }, cursor: 'ns-resize', tag: 'beam' })
-    const lh = loadH(lv, i)
-    for (let p = 0; p < per; p++) {
-      const x = upW + gapIn + p * (palletWIn + gapIn)
-      rect(Xf(x), Y(z + lh), palletWIn * s, Math.max(0, lh * s - deckPx), { fill: bad ? MISFIT : LOAD, stroke: bad ? MISFIT_EDGE : LOAD_EDGE, sw: bad ? sw * 1.2 : 1, opacity: gone ? 0.35 : 1, tag: 'load', level: lv.k })
-      rect(Xf(x), Y(z) - Math.min(deckPx, lh * s), palletWIn * s, Math.min(deckPx, lh * s), { fill: bad ? MISFIT_EDGE : DECK, stroke: bad ? MISFIT_EDGE : LOAD_EDGE, sw: 1, opacity: gone ? 0.35 : 1, tag: 'load', level: lv.k })
-    }
-    if (bad && per && !compact) text(Xf(frontW / 2), Y(z + lh / 2) + fT * 0.35, misfit.has(lv.k) ? "DOESN'T FIT" : topIssue === 'clear' ? 'ABOVE CLEAR HEIGHT' : `WITHIN ${sprinklerClearanceIn}" OF SPRINKLERS`, { size: fT, fill: red, weight: 600, tag: 'misfit', pri: 1.5, level: lv.k })
-    // the level tag, grey, beside the right frame
-    if (!compact && per) text(Xf(frontW) + cTag, Y(z + lh / 2) + fT * 0.35, `L${i + 1}`, { anchor: 'start', size: fT, fill: GREY, pri: 2, tag: 'tag' })
-  })
-  // the frames: dark green uprights with a zigzag of bracing, base plates
-  for (const x of [0, frontW - upW]) {
-    const fxp = Xf(x)
-    rect(fxp, Y(hTop), colPx, hTop * s, { fill: frame, role: { kind: 'upright', x }, tag: 'upright' })
-    if (!compact) {
-      const cx = fxp + colPx / 2, step = Math.max(fO * 1.6, 26 * s * 0.5), zz = []
-      let d = true
-      for (let y = Y(hTop) + step * 0.5; y < floor - step * 0.4; y += step) { zz.push(d ? `M${cx - colPx * 0.4} ${y}L${cx + colPx * 0.4} ${Math.min(floor, y + step)}` : `M${cx + colPx * 0.4} ${y}L${cx - colPx * 0.4} ${Math.min(floor, y + step)}`); d = !d }
-      items.push({ t: 'path', d: zz.join(''), stroke: frame, sw: 1.4, opacity: 0.65 })
-      rect(fxp - fO * 0.5, floor - fO * 0.45, colPx + fO, fO * 0.45, { fill: ink })
-      rect(fxp - 2, Y(hTop) - 3, colPx + 4, 6, { fill: isActive({ kind: 'top' }) ? '#d0392b' : 'transparent', role: { kind: 'top' }, cursor: 'ns-resize' })
-    }
-  }
-  if (!compact) {
-    // the frame height, blue, on the left
-    dimV(X0 - cFrame, Y(0), Y(hTop), `FRAME ${ftInDash(hTop)}`, { kind: 'dim', id: 'upright', value: hTop }, { pri: 2, out: -1 })
-    // the pitch, blue, on the right (a uniform level spacing)
-    if (pitch && L.length > 1) dimV(Xf(frontW) + cPitch, Y(L[0].beamIn), Y(L[1].beamIn), `PITCH ${ftInDash(pitch)}`, { kind: 'info', id: 'pitch' }, { pri: 2, out: 1 })
-    // the pallets' side clearance to the frames, red, under the bay
-    if (per) {
-      const yc = floor + fO * 1.1, g = gapIn * s
-      line(Xf(upW), yc, Xf(upW) + g, yc, { stroke: red, sw: sw * 0.9 }); line(Xf(upW + bayIn) - g, yc, Xf(upW + bayIn), yc, { stroke: red, sw: sw * 0.9 })
-      text(Xf(frontW) + cTag, yc + fT * 0.35, `${(Math.round(gapIn * 10) / 10)}" CLR`, { anchor: 'start', size: fT, fill: red, pri: 2, tag: 'clr' })
-    }
-    // the beam, with its pallets per level, blue, under the bay
-    dimH(floor + fO * 2.4, Xf(upW), Xf(upW + bayIn), `BEAM ${ftInDash(bayIn)} · ${per}P`)
-    if (detailed) {
-      // each beam's elevation to its top, blue, on a leader off the beam's end
-      for (const lv of L) if (lv.beamIn > 0) {
-        const y = Y(lv.beamIn), role = { kind: 'dim', id: 'elev', k: lv.k, value: lv.beamIn }, hot = isActive(role) || isActive({ kind: 'beam', k: lv.k })
-        line(Xf(frontW), y, Xf(frontW) + cElev - fE * 0.3, y, { stroke: hot ? '#d0392b' : blue, sw: hot ? sw * 1.6 : sw * 0.9 })
-        text(Xf(frontW) + cElev, y + fE * 0.36, ftInDash(lv.beamIn), { anchor: 'start', size: fE, fill: hot ? '#d0392b' : blue, weight: 600, role, pri: 1 })
-      }
-      // per level: the pallet, the ACTUAL gap to the underside of the beam above (red under the clearance), that beam's face
-      const xc = X0 - cChain, ext = X0 - fO * 0.35, chainO = { from: ext, size: fT, pri: 3, out: -1 }
-      L.forEach((lv, i) => {
-        const z0 = lv.beamIn, ph = lv.palletHeightIn || 0
-        if (i + 1 < L.length) {
-          const under = L[i + 1].beamIn - face, g = under - (z0 + ph)
-          if (ph > 0) dimV(xc, Y(z0), Y(Math.min(z0 + ph, under)), ftInDash(ph), { kind: 'dim', id: 'pallet', k: lv.k, value: ph }, chainO)
-          if (g > 0) dimV(xc, Y(z0 + ph), Y(under), ftInDash(g), { kind: 'dim', id: 'gap', k: lv.k, value: g }, { ...chainO, color: g < clearance - 1e-6 ? red : blue })
-          else text(xc - fT * 0.6, Y(under) + fT * 0.35, 'GAP ' + ftInDash(g), { anchor: 'end', size: fT, fill: red, weight: 600, pri: 3, tag: 'gap', level: lv.k })
-          const y0 = Y(under), y1 = Y(L[i + 1].beamIn)
-          line(xc, y0, xc, y1, { stroke: blue, sw: sw * 0.9 })
-          text(xc - fT * 1.6, (y0 + y1) / 2 + fT * 0.32, ftInDash(face), { anchor: 'end', size: fT, fill: GREY, pri: 3, role: { kind: 'dim', id: 'face', value: face }, tag: 'face' })
-        } else {
-          // the top level: its pallet, then the gaps up to the clear height and the sprinkler heads (red: above the clear
-          // height, or within the sprinkler clearance)
-          const zTop = topOfLoad(t)
-          if (ph > 0) dimV(xc, Y(z0), Y(zTop), ftInDash(ph), { kind: 'dim', id: 'pallet', k: lv.k, value: ph }, chainO)
-          const marks = [bClear ? [bClear, 'clear'] : null, bSprink ? [bSprink, 'sprinkler'] : null].filter(Boolean).sort((a, b) => a[0] - b[0])
-          let from = zTop
-          for (const [h, id] of marks) {
-            const red = id === 'clear' ? h < zTop - 1e-6 : h - zTop < sprinklerClearanceIn - 1e-6
-            if (h > from + 1e-6) { dimV(xc, Y(from), Y(h), ftInDash(h - from), { kind: 'info', id: 'gap-' + id }, { ...chainO, color: red ? red : blue }); from = h }
-            else if (h < zTop) text(xc - fT * 0.6, Y(h) + fT * 0.35, (id === 'clear' ? 'CLEAR ' : 'SPRINKLER ') + ftInDash(h - zTop), { anchor: 'end', size: fT, fill: red, weight: 600, pri: 3, tag: 'gap', level: lv.k })
-          }
-        }
-      })
-    }
-  }
-
-  }
+  // ── front view (the right card's sheet)
+  if (showFront) studioFront()
 
   // ── side view: dark green frames (two and the flue for a back-to-back), horizontals and diagonals, flue spacers
   if (showSide) {
-  const sx0 = Xs(0) - (compact ? 0 : fO * 1.2), sx1 = Xs(sideW) + (compact ? 0 : fO * 1.0)
-  if (studio) { studioShell(Ys, sx0, sx1); studioGround(sx0, sx1, floorS) } else { shell(Ys, sx0, sx1); ground(sx0, sx1, floorS) }
+  const sx0 = Xs(0) - fO * 1.2, sx1 = Xs(sideW) + fO * 1.0
+  studioShell(Ys, sx0, sx1); studioGround(sx0, sx1, floorS)
   const frames = pair ? [0, depthIn + flueIn + upW] : [0]
   // the pallets on each level, at their real depth, centred on the frame; past the frame + 6" (3" a side) the overhang
   // is amber — the pallet needs a deeper frame (frameDepthNote)
@@ -461,25 +323,21 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       const a = Ys(6 + i * step), b = Ys(6 + (i + 1) * step), lr = ((i - 1) / 2) % 2 === 0
       line(Xs(lr ? f0 + upW : f0 + depthIn), a, Xs(lr ? f0 + depthIn : f0 + upW), b, { stroke: frame, sw: sw * 0.9, opacity: 0.65 })
     }
-    if (!compact) for (const x of [f0, f0 + depthIn]) rect(Xs(x) - fO * 0.4, floorS - fO * 0.45, colPx + fO * 0.8, fO * 0.45, { fill: ink })
+    for (const x of [f0, f0 + depthIn]) rect(Xs(x) - fO * 0.4, floorS - fO * 0.45, colPx + fO * 0.8, fO * 0.45, { fill: ink })
   }
   if (pair) for (const z of [hTop / 3, (2 * hTop) / 3]) rect(Xs(depthIn + upW), Ys(z) - 2, flueIn * s, 4, { fill: frame, tag: 'spacer' })
-  if (!compact) {
-    // under the ground, like the front view's beam: over the frames they would run into the building's labels
-    const yb = floorS + fO * 2.4
-    dimH(yb, Xs(0), Xs(depthIn + upW), ftInDash(depthIn), { outboard: pair ? 'left' : null })
-    if (pair) { dimH(yb, Xs(depthIn + upW), Xs(depthIn + upW + flueIn), ftInDash(flueIn), { below: false }); dimH(yb, Xs(depthIn + flueIn + upW), Xs(sideW), ftInDash(depthIn), { outboard: 'right' }) }
-    dimV(Xs(0) - fO * 1.8, Ys(0), Ys(hTop), studio ? prime(`Frame ${ftInDash(hTop)}`) : `FRAME ${ftInDash(hTop)}`, { kind: 'dim', id: 'upright', value: hTop }, { pri: 2, out: -1 })
+  // under the ground, like the front view's beam: over the frames they would run into the building's labels
+  const yb = floorS + fO * 2.4
+  dimH(yb, Xs(0), Xs(depthIn + upW), ftInDash(depthIn), { outboard: pair ? 'left' : null })
+  if (pair) { dimH(yb, Xs(depthIn + upW), Xs(depthIn + upW + flueIn), ftInDash(flueIn), { below: false }); dimH(yb, Xs(depthIn + flueIn + upW), Xs(sideW), ftInDash(depthIn), { outboard: 'right' }) }
+  dimV(Xs(0) - fO * 1.8, Ys(0), Ys(hTop), prime(`Frame ${ftInDash(hTop)}`), { kind: 'dim', id: 'upright', value: hTop }, { pri: 2, out: -1 })
   }
-  }
-  if (!compact) declutter(items, box)
+  declutter(items, box)
   // every label over the linework, so its halo clears the dashed building lines and the dimension lines beneath it
   // ...and the sheet's edit controls (C21) over everything, labels too, so a label never takes their click
   const ctl = (i) => ['handle', 'add-level', 'add-level-text', 'remove-level', 'remove-level-bar'].includes(i.tag)
   const drawn = [...items.filter(i => i.t !== 'text' && !ctl(i)), ...items.filter(i => i.t === 'text' && !ctl(i)), ...items.filter(ctl)]
   items.length = 0; items.push(...drawn)
-  // the elevation's pallet deeper than these frames allow (~3" overhang each side): said in red under the drawing
-  if (deepNote) text(ox + cw / 2, oy + ch - fT * 0.4, deepNote.toUpperCase(), { size: fT, fill: AMBER, weight: 600, pri: 1, tag: 'frame-depth' })
 
   return { w: box.w, h: box.h, scale: s, items, floor, floorS, Y, Xf, upW, frontW, bayIn, bottom: Math.max(floor, floorS) + mB }
 }

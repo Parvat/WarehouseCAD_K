@@ -10,8 +10,8 @@ import { useElevEditor, setPane, moveBeam, addLevelAt, addTopLevel, removeLevel,
    click it and press Delete, to remove its level; click an empty upright to add a level there; drag the top of the
    upright to change its height; double-click a dimension to type it exactly. Each gesture hands the edited type to
    `onCommit` once (the section saves it for the selection — ONE undo step). Only the vertical design changes.
-   Frames and beams take the theme's --elev-frame, the ground --elev-ink, the dimensions --elev-dim, the clearances
-   --elev-clr, so a dark panel keeps them readable (the PDF prints the reference's own colours).
+   ONE drawing (utils/elevationDrawing.js): the card's sheet, in its own paper palette (STUDIO.md §2) — full screen
+   is that sheet scaled up, the PDF that sheet on paper. One label set, no detail switch.
    Crisp on screen: the SVG sits on the device-pixel grid (a half-pixel offset from the panel's 0.5 px rules blurred
    every line on a scaled display), straight lines and rects draw with crisp edges, labels with geometric precision. */
 
@@ -22,11 +22,8 @@ import { useElevEditor, setPane, moveBeam, addLevelAt, addTopLevel, removeLevel,
  *  screen (Esc closes). */
 export function ElevationDrawing(props) {
   const [full, setFull] = useState(false)
-  /* full screen draws the card's own sheet (job 2c: one drawing — the Studio layout, scaled up from the card's
-     composition) on the same white, gridded sheet; Simple | Detailed stays in its header (`fullDetail`). A caller
-     drawing the older layout (no Studio `detail`) gets that, at its Simple | Detailed. */
-  const studio = props.detail === 'studio'
-  const fullDetail = props.fullDetail ?? props.detail
+  /* full screen draws the card's own sheet (job 2c: one drawing, scaled up from the card's composition) on the same
+     white, gridded sheet */
   const [host, setHost] = useState(null)
   useEffect(() => { setHost(document.querySelector('[data-theme]') || document.body) }, [])
   // the tab's own ⤢ (its toolbar): a new signal opens full screen
@@ -54,13 +51,9 @@ export function ElevationDrawing(props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{props.title || props.t?.name}</span>
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>{sheetEdit ? 'Drag a beam to move it. Click a blue value to type it. Esc cancels.' : 'Esc closes'}</span>
-          {/* Simple | Detailed — the full-size view is where the detailed dimensions are read */}
-          <div role="group" aria-label="Drawing detail" style={{ display: 'flex', gap: 2, padding: 2, marginLeft: 12, borderRadius: 2, border: '1px solid var(--border)', background: 'var(--surface2)' }}>
-            {[['simple', 'Simple'], ['detailed', 'Detailed']].map(([k, label]) => <button key={k} type="button" aria-pressed={fullDetail === k} onClick={() => setPane({ detail: k })} style={hdrBtn(fullDetail === k)}>{label}</button>)}
-          </div>
           {/* edit on the sheet here too (C21): the pencil; while editing, ✕ Cancel and Save — the card's own actions */}
           <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-            {studio && props.onEdit && !sheetEdit && <button type="button" aria-label="Edit on the sheet" title="Edit on sheet" onClick={props.onEdit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex', padding: 2 }}><Icon name="Edit" color="currentColor" /></button>}
+            {props.onEdit && !sheetEdit && <button type="button" aria-label="Edit on the sheet" title="Edit on sheet" onClick={props.onEdit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex', padding: 2 }}><Icon name="Edit" color="currentColor" /></button>}
             {sheetEdit && <>
               <button type="button" aria-label="Cancel" title="Cancel (Esc)" onClick={onCancel} style={hdrBtn(false)}>✕ Cancel</button>
               <button type="button" onClick={props.onSave} style={hdrBtn(true)}>Save</button>
@@ -68,8 +61,8 @@ export function ElevationDrawing(props) {
             <button type="button" aria-label="Close full screen" onClick={() => setFull(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text2)', display: 'flex', marginLeft: 6 }}><Icon name="Close" color="currentColor" /></button>
           </span>
         </div>
-        <div data-sheet={studio ? 'full' : undefined} style={{ flex: 1, minHeight: 0, ...(studio ? SHEET_BG : {}) }}>
-          <DrawingCore {...props} detail={studio ? 'studio' : fullDetail} fill height={null} controls paper={studio} fitSignal={0} scaleUp={studio} />
+        <div data-sheet="full" style={{ flex: 1, minHeight: 0, ...SHEET_BG }}>
+          <DrawingCore {...props} fill height={null} controls fitSignal={0} scaleUp />
         </div>
       </div>, host)}
   </>
@@ -79,14 +72,12 @@ export const elevFullOpen = () => typeof document !== 'undefined' && !!document.
 /* the elevation sheet (STUDIO.md §2): white, the #EFEEE9 grid every 14px — the card's, and full screen's */
 const SHEET_BG = { backgroundColor: '#FFFFFF', backgroundImage: 'linear-gradient(#EFEEE9 1px, transparent 1px), linear-gradient(90deg, #EFEEE9 1px, transparent 1px)', backgroundSize: '14px 14px' }
 
-/* the sheet the drawing sits on in the Elevations tab: white with its 14px grid, drawn by the tab's sheet (ElevationsTab.jsx) —
-   the drawing itself is transparent there; labels keep a white halo */
-const PAPER = '#FFFFFF'
-
-function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view = 'both', height = null, fill = false, onFull = null, readOnly = false, controls = true, paper = false, fitSignal = 0, sheetEdit = false, holePitchIn = null, onValue = null, scaleUp = false }) {
+/* the drawing itself is transparent: it sits on its sheet — the card's (ElevationsTab.jsx) or full screen's (SHEET_BG),
+   white with the 14px grid; its labels keep a white halo */
+function DrawingCore({ t, entry, building, sel, sprClr, onCommit, view = 'both', height = null, fill = false, onFull = null, readOnly = false, controls = true, fitSignal = 0, sheetEdit = false, holePitchIn = null, onValue = null, scaleUp = false }) {
   /* sheetEdit (C21, the card's sheet in edit mode): handles on the beams, a drag snaps to `holePitchIn` (Project settings →
      Uprights), a click on a blue value types it in place (the pallet's own values go to `onValue`), + Add level, − */
-  // controls false: Fit and ⤢ are the host's (the Elevations tab's toolbar — `fitSignal`); paper: the white sheet
+  // controls false: Fit and ⤢ are the host's (the Elevations tab's toolbar — `fitSignal`)
   // readOnly (the list's drawing — choosing and assigning only): zoom, pan and Fit, no beam, upright or dimension edit
   const commit = (fn) => { if (readOnly) return; const next = fn(t); if (next && JSON.stringify(next) !== JSON.stringify(t)) onCommit(next) }
   const host = useRef(null)
@@ -128,7 +119,7 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
   // full screen (scaleUp): the card's sheet scaled up — its 9px labels times how many times the card's sheet fits (sheetScale)
   const fontPx = scaleUp ? CARD_FONT_PX * sheetScale(box) : paneFontPx(box)
   const kIn = scaleUp ? fontPx / CARD_FONT_PX : 1   // the typed value's box, at the drawing's scale
-  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, palletDIn: entry.palletDIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, detail, view, zoom: zv.zoom, pan: zv.pan, bg: paper ? PAPER : 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)', active: draft?.active || (sheetEdit && editing?.id === 'elev' ? 'beam:' + editing.k : null) || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null, edit: sheetEdit ? { hint: (draft?.active || sel != null || editing?.id === 'elev') && holePitchIn > 0 ? `${holePitchIn}″` : null } : null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, detail, view, zv, sheetEdit, holePitchIn, editing])
+  const d = useMemo(() => elevationLayout(shown, entry.beamIn, box, { palletWIn: entry.palletWIn, palletDIn: entry.palletDIn, depthIn: entry.depthIn, pair: entry.pair, flueIn: entry.flueIn, building, fontPx, stacked, sprinklerClearanceIn: sprClr, view, zoom: zv.zoom, pan: zv.pan, active: draft?.active || (sheetEdit && editing?.id === 'elev' ? 'beam:' + editing.k : null) || (sel != null ? 'beam:' + sel : null), removing: draft?.removing ?? null, edit: sheetEdit ? { hint: (draft?.active || sel != null || editing?.id === 'elev') && holePitchIn > 0 ? `${holePitchIn}″` : null } : null }), [shown, entry, box, building, fontPx, draft, sel, stacked, sprClr, view, zv, sheetEdit, holePitchIn, editing])
 
   const at = (ev) => { const r = host.current.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top } }
   useEffect(() => {
@@ -245,7 +236,7 @@ function DrawingCore({ t, entry, building, sel, sprClr, detail, onCommit, view =
     return null
   }
   return (
-    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" data-readonly={readOnly ? 'true' : undefined} data-zoom={Math.round(zv.zoom * 100) / 100} style={{ height: box.h, flexShrink: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: paper ? 'transparent' : 'var(--surface)', cursor: 'grab' }}>
+    <div ref={host} tabIndex={0} onKeyDown={onKey} aria-label="Elevation drawing" data-readonly={readOnly ? 'true' : undefined} data-zoom={Math.round(zv.zoom * 100) / 100} style={{ height: box.h, flexShrink: 0, position: 'relative', outline: 'none', overflow: 'hidden', background: 'transparent', cursor: 'grab' }}>
       <svg width={box.w} height={box.h} style={{ display: 'block', position: 'relative', left: snap.x, top: snap.y }}
         onPointerDown={(e) => { host.current.focus({ preventScroll: true }); startPan(e) }} onDoubleClick={(e) => { if (empty(e)) fit() }}>
         {d.items.map(render)}

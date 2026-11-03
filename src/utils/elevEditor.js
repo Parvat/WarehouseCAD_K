@@ -3,19 +3,15 @@
 // The editor is the Elevations tab (components/Elevations/ElevationsTab.jsx, utils/elevTab.js): the drawing shows the
 // active elevation. The edits below are pure — a type in, a type out; the tab writes the result to that elevation
 // everywhere it is used, ONE undo step. Never the floor plan.
-// Simple / Detailed is presentation state, per browser (localStorage); the PDF prints the one chosen.
+// One drawing everywhere — no Simple / Detailed (STUDIO.md §7).
 
 import { create } from 'zustand'
 import { beamFace, holePitch, editTable, updateType, typeById } from './elevations'
 
-const LS_KEY = 'trace.elevpane.v1'
-const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { detail: v.detail === 'detailed' ? 'detailed' : 'simple' } } catch { return { detail: 'simple' } } }
-const save = (s) => { try { localStorage.setItem(LS_KEY, JSON.stringify({ detail: s.detail })) } catch { /* private window */ } }
-
-/** { typeId (the tab shown), detail ('simple' | 'detailed': what the drawing — and the PDF — dimensions), sel (a level
- *  index picked on the drawing), hint (what the last edit was saved as) } */
-export const useElevEditor = create(() => ({ typeId: null, sel: null, hint: null, ...read() }))
-export function setPane(patch) { useElevEditor.setState(patch); save(useElevEditor.getState()) }
+/** { typeId (the tab shown), sel (a level index picked on the drawing), hint (what the last edit was saved as) } —
+ *  presentation state, never saved */
+export const useElevEditor = create(() => ({ typeId: null, sel: null, hint: null }))
+export function setPane(patch) { useElevEditor.setState(patch) }
 
 /* ── the edits: a type in, a type out (pure) ─────────────────────────────── */
 
@@ -61,24 +57,13 @@ export function setUpright(t, z, { exact = false } = {}) {
   const v = Math.max(topBeam + beamFace(t), exact ? z : snapTo(z, holePitch(t)))
   return { ...t, uprightHeightIn: Math.round(v * 1000) / 1000 }
 }
-/** A typed dimension (the drawing's role ids) → the type: 'elev' level k's beam top; 'open' the clear opening under
- *  level k's beam (it moves to the lower beam's top + the opening + its face); 'chain' level k's load + clearance
- *  (its pallet height follows; the top level: its load); 'upright' the upright height; 'face' the beam face height;
- *  'pallet' level k's pallet height; 'gap' the gap over level k's pallet (the beam above moves). */
+/** A typed dimension (the drawing's role ids) → the type: 'elev' level k's beam top; 'upright' the upright height;
+ *  'face' the beam face height. (The pallet's own height and width go to the elevation's pallet: ElevationsTab's onValue.) */
 export function setDimension(t, id, k, inches) {
   if (!(inches >= 0)) return t
   if (id === 'elev') return moveBeam(t, k, inches, { exact: true })
   if (id === 'upright') return setUpright(t, inches, { exact: true })
   if (id === 'face') return inches > 0 ? { ...t, beamFaceIn: inches } : t
-  // the chain: a pallet height (that level's), a gap (moves the beam above: pallet + gap + face over this beam)
-  if (id === 'pallet') return inches > 0 ? { ...t, levels: t.levels.map((l, j) => (j === k ? { ...l, palletHeightIn: inches } : l)) } : t
-  if (id === 'gap') { const L2 = sorted(t), i2 = L2.findIndex(l => l.k === k); if (i2 < 0 || i2 + 1 >= L2.length) return t; return moveBeam(t, L2[i2 + 1].k, L2[i2].beamIn + (L2[i2].palletHeightIn || 0) + inches + beamFace(t), { exact: true }) }
-  const L = sorted(t), i = L.findIndex(l => l.k === k)
-  if (id === 'open' && i > 0) return moveBeam(t, k, L[i - 1].beamIn + inches + beamFace(t), { exact: true })
-  if (id === 'chain' && i >= 0) {
-    const ph = Math.max(1, inches - (i + 1 < L.length ? t.clearanceIn || 0 : 0))
-    return { ...t, levels: t.levels.map((l, j) => (j === k ? { ...l, palletHeightIn: ph } : l)) }
-  }
   return t
 }
 /** The small fields: pallet height (every level), clearance, beam face height, hole pitch. */

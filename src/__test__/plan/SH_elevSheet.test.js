@@ -4,9 +4,10 @@
 //   2 edit on the sheet works in full screen: the pencil, Save, ✕ Cancel; Esc cancels the edit there, then closes
 //   3 the PDF's elevation sheets draw the card's drawing on the paper palette — white, square, no theme variables —
 //     its labels readable at print size (the smallest at least 12 pt)
-//   4 one drawing function: the card, full screen and the PDF all draw elevationLayout's Studio set, in its own palette
+//   4 one drawing function: the card, full screen and the PDF all draw elevationLayout, in its own palette
 //   5 Regenerate (and Generate) is one undo step: the racks and the Forklift / Wall clearance it wrote come back
 //     together with one Ctrl+Z
+//   6 no Simple | Detailed: the switch, its stored choice and the old drawing behind it are gone
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { R } from './fixtures'
@@ -19,7 +20,7 @@ const read = (p) => readFileSync(new URL('../../' + p, import.meta.url), 'utf8')
 const between = (s, a, b) => s.slice(s.indexOf(a), b ? s.indexOf(b, s.indexOf(a)) : undefined)
 /* the mockup's elevation (C2): beams at 4′-10″ … 19′-4″, a 21′ frame, 48″ loads; ceiling and sprinklers at 30′ */
 const MOCK = { id: 'a', name: 'x', color: '#D98324', uprightHeightIn: 252, clearanceIn: 6, beamFaceIn: 4, holePitchIn: 2, levels: [0, 58, 116, 174, 232].map(beamIn => ({ beamIn, palletHeightIn: 48, loadLb: 2500 })) }
-const OPTS = { palletWIn: 40, depthIn: 42, building: { clearHeightIn: 360, sprinklerIn: 360 }, sprinklerClearanceIn: 18, detail: 'studio', view: 'front' }
+const OPTS = { palletWIn: 40, depthIn: 42, building: { clearHeightIn: 360, sprinklerIn: 360 }, sprinklerClearanceIn: 18, view: 'front' }
 
 describe('SH-1 — full screen is the card\'s drawing, scaled up', () => {
   it('SH-full-scaled: full screen lays out the Studio sheet with the card\'s labels times how many times the card\'s sheet fits — every label the card draws, at the same place on the rack, k times as large', async () => {
@@ -42,10 +43,9 @@ describe('SH-1 — full screen is the card\'s drawing, scaled up', () => {
     expect(cols(fs)).toEqual(cols(card))
     // wired: full screen draws 'studio' scaled up, on the card's white gridded sheet
     const dr = read('components/Elevations/ElevationDrawing.jsx')
-    expect(dr).toMatch(/<DrawingCore \{\.\.\.props\} detail=\{studio \? 'studio' : fullDetail\} fill height=\{null\} controls paper=\{studio\} fitSignal=\{0\} scaleUp=\{studio\} \/>/)
+    expect(dr).toMatch(/<DrawingCore \{\.\.\.props\} fill height=\{null\} controls fitSignal=\{0\} scaleUp \/>/)
     expect(dr).toMatch(/const fontPx = scaleUp \? CARD_FONT_PX \* sheetScale\(box\) : paneFontPx\(box\)/)
-    expect(dr).toMatch(/data-sheet=\{studio \? 'full' : undefined\} style=\{\{ flex: 1, minHeight: 0, \.\.\.\(studio \? SHEET_BG : \{\}\) \}\}/)
-    expect(read('components/Elevations/ElevationsTab.jsx')).toMatch(/detail="studio" fullDetail=\{detail\}/)
+    expect(dr).toMatch(/data-sheet="full" style=\{\{ flex: 1, minHeight: 0, \.\.\.SHEET_BG \}\}/)
   })
 })
 
@@ -53,11 +53,11 @@ describe('SH-2 — edit on the sheet in full screen (C21)', () => {
   it('SH-full-edit: the pencil starts edit on the sheet; while editing, ✕ Cancel and Save are the card\'s own; drag, typed values, + Add level and − are the same DrawingCore; Esc cancels the edit there first, then closes — never also taken by the card behind it', () => {
     const dr = read('components/Elevations/ElevationDrawing.jsx'), tab = read('components/Elevations/ElevationsTab.jsx')
     const head = between(dr, 'edit on the sheet here too', '</span>\n        </div>')
-    expect(head).toMatch(/\{studio && props\.onEdit && !sheetEdit && <button type="button" aria-label="Edit on the sheet"[^>]*onClick=\{props\.onEdit\}/)
+    expect(head).toMatch(/\{props\.onEdit && !sheetEdit && <button type="button" aria-label="Edit on the sheet"[^>]*onClick=\{props\.onEdit\}/)
     expect(head).toMatch(/\{sheetEdit && <>\s*<button type="button" aria-label="Cancel" title="Cancel \(Esc\)" onClick=\{onCancel\}[^>]*>✕ Cancel<\/button>\s*<button type="button" onClick=\{props\.onSave\}[^>]*>Save<\/button>/)
     expect(tab).toMatch(/onEdit=\{!e && active \? \(\) => startSheet\(store, active\.id\) : null\} onSave=\{\(\) => saveTyped\(store\)\} onCancel=\{cancelEdit\}/)
     // the same core, so the drag (hole pitch), the typed box, + Add level and − all come along (props spread: sheetEdit, holePitchIn)
-    expect(dr).toMatch(/<DrawingCore \{\.\.\.props\} detail=\{studio/)
+    expect(dr).toMatch(/<DrawingCore \{\.\.\.props\} fill height=\{null\}/)
     // the typed value's box follows the drawing's scale
     expect(dr).toMatch(/const kIn = scaleUp \? fontPx \/ CARD_FONT_PX : 1/)
     expect(dr).toMatch(/width: 46 \* kIn, height: 16 \* kIn, boxSizing: 'border-box', fontSize: 10 \* kIn/)
@@ -102,7 +102,7 @@ describe('SH-3 / SH-4 — the PDF, and one drawing function', () => {
     const type = used[0].type, e = D.lengthsByType(st.objects, T, E.typeIdAt).get(type.id)[0]
     const cell = X.elevationCell(st.objects, T, type, e, { w: 260, h: 230 })
     const pal = P.palletFor(T, type)
-    const card = D.elevationLayout(type, e.beamIn, D.CARD_SHEET, { palletWIn: pal?.faceIn || e.palletWIn, palletDIn: pal?.depthIn ?? null, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: P.ceilingFor(T, type, st.objects, e.parentId), fontPx: D.CARD_FONT_PX, sprinklerClearanceIn: E.sprinklerClearance(T), detail: 'studio', view: 'front' })
+    const card = D.elevationLayout(type, e.beamIn, D.CARD_SHEET, { palletWIn: pal?.faceIn || e.palletWIn, palletDIn: pal?.depthIn ?? null, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: P.ceilingFor(T, type, st.objects, e.parentId), fontPx: D.CARD_FONT_PX, sprinklerClearanceIn: E.sprinklerClearance(T), view: 'front' })
     const cardTexts = card.items.filter(i => i.t === 'text').map(i => i.s)
     expect(cell.d.items.filter(i => i.t === 'text').slice(0, cardTexts.length).map(i => i.s)).toEqual(cardTexts)
     expect(cardTexts).toEqual(expect.arrayContaining(['Ceiling 30′-0″', 'Max load height 28′-6″ (18″ below sprinklers)']))
@@ -112,14 +112,11 @@ describe('SH-3 / SH-4 — the PDF, and one drawing function', () => {
     expect(Math.min(...pts)).toBeGreaterThanOrEqual(12)
   })
 
-  it('SH-one-drawing: the card, full screen and the PDF all draw elevationLayout\'s Studio set — no other drawing in the export — and the Studio set keeps the paper palette whatever colours its caller passes', async () => {
+  it('SH-one-drawing: the card, full screen and the PDF all draw elevationLayout — no other drawing in the export — and it keeps the paper palette whatever colours its caller passes', async () => {
     const { elevationLayout } = await import('../../utils/elevationDrawing')
     const pdf = read('export/pdfExport.js'), sheets = between(pdf, 'export function buildElevationSheets', '/** Top-level entry')
     expect((sheets.match(/elevationLayout\(/g) || []).length).toBe(4)                                   // the front and side views, fitted then at scale
-    expect((sheets.match(/detail: '/g) || []).length).toBe(1)
-    expect(sheets).toMatch(/detail: 'studio' \}/)
-    expect(/useElevEditor|detail = /.test(pdf)).toBe(false)                                            // never the pane's Simple / Detailed
-    expect(read('components/Elevations/ElevationsTab.jsx')).toMatch(/detail="studio"/)
+    expect(/useElevEditor|detail/.test(pdf.slice(pdf.indexOf('export function buildElevationSheets')))).toBe(false)
     // the theme's variables never reach the Studio set (a print window has none): its own §2 colours
     const d = elevationLayout(MOCK, 96, { w: 600, h: 420 }, { ...OPTS, view: 'both', fontPx: 9, bg: 'var(--surface)', frame: 'var(--elev-frame)', ink: 'var(--elev-ink)', blue: 'var(--elev-dim)', red: 'var(--elev-clr)' })
     expect(JSON.stringify(d.items).includes('var(--')).toBe(false)
@@ -167,5 +164,26 @@ describe.each(['horizontal', 'vertical'])('SH-5 — Regenerate is one undo step,
     expect([st().historyIndex - h0, P.projectOf(st().elevations).rules.wallClearIn, st().objects.some(o => /^rack_/.test(o.type))]).toEqual([1, 9, true])
     st().undo()
     expect([P.projectOf(st().elevations).rules.wallClearIn, st().objects.some(o => /^rack_/.test(o.type)), st().historyIndex]).toEqual([3, false, h0])
+  })
+})
+
+describe('SH-6 — no Simple | Detailed', () => {
+  it('SH-no-detail: full screen has no Simple | Detailed switch and nothing stores a choice; the old drawing behind it is gone — any `detail` asked for draws the one sheet, never the pitch, the side clearances, the per-level chain (an Install guide export option later, never on screen) or the old uppercase labels; STUDIO.md says so', async () => {
+    const dr = read('components/Elevations/ElevationDrawing.jsx'), tab = read('components/Elevations/ElevationsTab.jsx'), ed = read('utils/elevEditor.js'), drawing = read('utils/elevationDrawing.js')
+    expect([/Drawing detail|'detailed'|Simple/.test(dr), /fullDetail|detail=/.test(tab), /localStorage|detail/.test(ed.slice(0, ed.indexOf('/* ── the edits')))]).toEqual([false, false, false])
+    // the old drawing's code: its building lines, its chain, its uppercase labels
+    expect(/const shell = |const ground = |detailed|'simple'|PITCH|CLEARANCE |CLEAR HEIGHT |DOESN'T FIT|frameDepthNote\(|compact/.test(drawing)).toBe(false)
+    const { elevationLayout } = await import('../../utils/elevationDrawing'), ED = await import('../../utils/elevEditor')
+    const one = (o) => elevationLayout(MOCK, 96, { w: 900, h: 600 }, { ...OPTS, view: 'both', fontPx: 9, ...o })
+    for (const detail of [undefined, 'simple', 'detailed']) {
+      const d = one({ detail }), s = d.items.filter(i => i.t === 'text').map(i => i.s)
+      expect([detail, s.some(x => /PITCH|CLR|FRAME |BEAM |SPRINKLERS|CLEARANCE/.test(x)), d.items.some(i => ['pallet', 'gap', 'open', 'chain'].includes(i.role?.id)), s.includes('Top of load 23′-4″')]).toEqual([detail, false, false, true])
+    }
+    expect(JSON.stringify(one({ detail: 'detailed' }).items)).toBe(JSON.stringify(one({}).items))
+    expect(['open', 'chain', 'gap', 'pallet'].every(id => ED.setDimension(MOCK, id, 1, 60) === MOCK)).toBe(true)
+    expect('detail' in ED.useElevEditor.getState()).toBe(false)
+    const doc = read('../STUDIO.md')
+    expect(doc).toMatch(/There is no Simple \| Detailed switch: one drawing, one label set\. The per-level install chain \(pallet, gap and beam face at every level\) may return later as an \*\*Install guide\*\* export option — not on screen\./)
+    expect(/Simple \| Detailed is in the full-screen view/.test(doc)).toBe(false)
   })
 })

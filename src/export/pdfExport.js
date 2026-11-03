@@ -451,7 +451,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
 /** The elevation sheets: one elevation per type × beam length in use — "Type A · 8' bay", its colour swatch and
  *  bay count, the front and the side view, drawn at an architectural scale — "RACK ELEVATIONS" and "SCALE: 1/4\"=1'"
  *  under each, as on the sample — several to an A1 landscape sheet where they fit. [] when no type is in use.
- *  The drawing is the card's sheet (job 2c: one drawing — elevationLayout's Studio set, read from the same ceiling and
+ *  The drawing is the card's sheet (job 2c: one drawing — elevationLayout, read from the same ceiling and
  *  pallet as the card): its front view, and beside it its side view (the card's Depth), each the card's composition —
  *  the 276 × 420 sheet, 9px labels — scaled onto the paper; the two at one scale on one floor. The paper palette: white,
  *  square (the sheet's radius 8 and grid are the screen's), no chrome. */
@@ -489,12 +489,12 @@ export function buildElevationSheets(objects, { title = 'Untitled Layout', eleva
   return pages
 }
 
-/** One PDF cell's drawing (`box` in mm): the card's front view and its side view — elevationLayout's Studio set, at the
+/** One PDF cell's drawing (`box` in mm): the card's front view and its side view — elevationLayout, at the
  *  card's composition (CARD_SHEET, CARD_FONT_PX) scaled `k` mm per px — side by side, at the largest architectural scale
  *  both fit, the side view moved onto the front view's floor → { d: { items (px), bottom (px) }, k, sc }. */
 export function elevationCell(objects, T, type, e, box) {
   const pal = palletFor(T, type)
-  const opts = { palletWIn: pal?.faceIn || e.palletWIn, palletDIn: pal?.depthIn ?? null, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: ceilingFor(T, type, objects, e.parentId), fontPx: CARD_FONT_PX, sprinklerClearanceIn: sprinklerClearance(T), detail: 'studio' }
+  const opts = { palletWIn: pal?.faceIn || e.palletWIn, palletDIn: pal?.depthIn ?? null, depthIn: e.depthIn, pair: e.pair, flueIn: e.flueIn, building: ceilingFor(T, type, objects, e.parentId), fontPx: CARD_FONT_PX, sprinklerClearanceIn: sprinklerClearance(T) }
   // the card's sheet as tall as the cell; the front view two thirds of its width (at least the card's: at the smaller
   // architectural scale its labels keep their room — the max load label whole, as on the card), the side view the rest
   const k = Math.min(box.h / CARD_SHEET.h, box.w / (CARD_SHEET.w * 1.6)), W = box.w / k
