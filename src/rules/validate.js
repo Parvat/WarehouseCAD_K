@@ -68,6 +68,10 @@ export function validateRules(rules) {
     }
   }
 
+  // ── A zone's walkway (its way in) ────────────────────────────────────────
+  const walk = at(rules, 'zones.walkwayIn')
+  if (walk != null && (!num(walk) || walk <= 0)) err('zones.walkwayIn', 'Zone walkway must be a positive number.', 'shape')
+
   // ── Lane depth within the type's allowed range ───────────────────────────
   for (const type of LANE_TYPES) {
     const cfg = at(rules, type)

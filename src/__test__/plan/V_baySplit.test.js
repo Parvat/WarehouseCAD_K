@@ -230,7 +230,10 @@ describe('V — Shift+click toggles single bays in a bay selection', () => {
   it('V-wire: the canvas Shift+click path toggles a bay in bay mode, and bay mode is sticky until a plain click', () => {
     const src = readFileSync(new URL('../../canvas2/useCanvasInteraction.js', import.meta.url), 'utf8')
     // Shift+click stays at its level (STUDIO.md §7): with bays picked it toggles the bay (selectionLevel.js toggleBay)
-    expect(src).toMatch(/if \(selectionLevel\(st\) === 'bays'\) \{\s*const bay = isBayRack\(hit\) \? hitTestBay\(hit, m\.from\.x, m\.from\.y, st\.gridSize\) : null\s*if \(bay != null\) toggleBay\(useCanvasStore,/)
+    // (one Shift+click for both releases — a Shift+press on a row, a Shift+press elsewhere: shiftClick)
+    expect(src).toMatch(/else if \(selectionLevel\(st\) === 'bays'\) \{\s*const bay = isBayRack\(hit\) \? hitTestBay\(hit, from\.x, from\.y, st\.gridSize\) : null\s*if \(bay != null\) toggleBay\(useCanvasStore,/)
+    expect(src).toMatch(/if \(br\) \{ if \(!br\.moved\) shiftClick\(br\.rackId, br\.from\); return \}/)
+    expect(src).toMatch(/shiftClick\(m\.clickHitId, m\.from\)/)
     expect(readFileSync(new URL('../../canvas2/selectionLevel.js', import.meta.url), 'utf8')).toMatch(/export function toggleBay\(store, e\) \{/)
     expect(src).toMatch(/if \(!shiftKey\) setStickyBayMode\(false\)/)
   })

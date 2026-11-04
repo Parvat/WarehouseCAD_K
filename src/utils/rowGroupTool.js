@@ -22,8 +22,6 @@ import { rebuildAisles } from './aisleRebuild'
 import { autoSave, serializeScene } from './saveLoad'
 import { takeOverCarriedBays } from './pairCarryOn'
 import { reconcileElevations, snapshotOf } from './elevations'
-import { rackFootprint } from '../generate/columnCheck'
-import { selectRows } from '../canvas2/selectionLevel'
 
 /** The Row group tool's id (the store's activeTool), beside Fill racking's. */
 export const ROW_GROUP_TOOL = 'row_group'
@@ -99,6 +97,8 @@ export function startGroupFromSelection(store) {
   fromSelection = true
   store.getState().setActiveTool(ROW_GROUP_TOOL)
   if (store.getState().activeTool !== ROW_GROUP_TOOL) fromSelection = false
+  // no edit row (STUDIO.md §7a Modes): the rows are the group, with their handles — nothing stays selected
+  else store.getState().clearSelection()
   return n
 }
 
@@ -121,38 +121,20 @@ export function commitGroupBox(store, moved, selectTool) {
 }
 export function cancelGroupBox() { useRowGroup.setState({ drag: null }) }
 
-/** The Row group tool's release on the canvas (STUDIO.md §7, the selection rule): a box (`moved`) adds every row it
- *  touches and the row nearest where the drag started becomes the edit row; Shift+click puts the row under it in or
- *  takes it out; a plain click on a row makes it the edit row — a row not in the group joins it first — selected, its
- *  handles and its bar at once, so it can be expanded straight away; a click on nothing selects nothing. The tool stays on. → what it did. */
-export function commitGroupPress(store, moved, shiftKey) {
+/** The Row group tool's release on the canvas (STUDIO.md §7a Modes): a box (`moved`) adds every row it touches; a
+ *  click on a row (Shift or not) puts it in the group or takes it out; a click on empty floor does nothing — the group
+ *  stays. No edit row: nothing is selected (every group row has its handles — canvas2/Canvas2.jsx). The tool stays
+ *  on. → what it did. (`shiftKey`: kept for the callers; a Shift+click toggles as a click does.) */
+export function commitGroupPress(store, moved, shiftKey) {   // eslint-disable-line no-unused-vars
   const d = useRowGroup.getState().drag
   useRowGroup.setState({ drag: null })
   if (!d) return null
   if (moved) {
     const box = { x: Math.min(d.from.x, d.to.x), y: Math.min(d.from.y, d.to.y), w: Math.abs(d.to.x - d.from.x), h: Math.abs(d.to.y - d.from.y) }
-    const objects = store.getState().objects, touched = rowsInBox(objects, box, gs())
     addRowsInBox(box)
-    const rows = rowsOf(objects, gs())
-    let best = null
-    for (const k of touched) for (const id of rows.get(k)?.ids || []) {
-      const o = objects.find(x => x.id === id); if (!o) continue
-      const f = rackFootprint(o), dx = Math.max(f.x - d.from.x, 0, d.from.x - f.x - f.w), dy = Math.max(f.y - d.from.y, 0, d.from.y - f.y - f.h)
-      const dist = Math.hypot(dx, dy)
-      if (!best || dist < best.dist) best = { id, dist }
-    }
-    if (best) selectRows(store, [best.id])
     return 'box'
   }
-  if (d.hit && shiftKey) { toggleRowOf(d.hit); return 'toggle' }
-  if (d.hit) {
-    // a row not in the group joins it; either way it is the edit row
-    const rows = rowsOf(store.getState().objects, gs()), key = rowOfRack(rows, d.hit)
-    if (key && !useRowGroup.getState().keys.some(k => resolveKey(rows, k) === key)) addRowOf(d.hit)
-    selectRows(store, [d.hit])
-    return 'edit'
-  }
-  store.getState().clearSelection()
+  if (d.hit) { toggleRowOf(d.hit); return 'toggle' }
   return 'none'
 }
 

@@ -9,8 +9,8 @@ import { useDragPreview } from '../canvas2/dragPreview'
 import { useLabelPrefs } from '../canvas2/labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { usePlacement } from '../utils/placement'
-import { useRowGroup, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
-import { pickedBays } from '../canvas2/selectionLevel'
+import { useRowGroup } from '../utils/rowGroupTool'
+import { pickedBays, kindOf } from '../canvas2/selectionLevel'
 import { withSections, isOneSection, sectionsOf } from '../canvas2/sections'
 import { useClearanceView, setShowClearances } from '../canvas2/clearanceView'
 import { useColumnPick, setColumnClearances } from '../canvas2/columnPick'
@@ -83,6 +83,8 @@ export function barFor(objects, selectedIds, activeWall, activeBaySelection = []
     return null
   }
   if (sel.length > 1 && sel.every(isBeamRack)) return { kind: 'rows', objs: sel }
+  // several kinds together (racks, zones, doors, text — STUDIO.md §7a Levels): only what all of them share, and the count
+  if (sel.length > 1 && new Set(sel.map(kindOf)).size > 1) return { kind: 'mixed', objs: sel }
   return null
 }
 
@@ -301,6 +303,22 @@ function RowsBar({ ids }) {
   )
 }
 
+/** Several kinds selected together: the count, then only the actions every one of them has — Lock, Duplicate, Delete. */
+function MixedBar({ objs }) {
+  const st = store.getState(), locked = objs.every(o => o.locked)
+  return (
+    <>
+      <span aria-label="Items selected" data-bar-count style={{ padding: '0 8px 0 6px', fontSize: 12, color: B.muted }}>
+        <span style={{ fontFamily: MONO, color: B.text }}>{objs.length}</span> selected
+      </span>
+      <Sep />
+      <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={st.toggleLockSelected} />
+      <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={duplicateSelection} />
+      <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} />
+    </>
+  )
+}
+
 /** 40 ft → 40′; 40.5 → 40′ 6″ (C6's size fields) */
 const feet = (px, gs) => { const t = Math.round(px / gs * 12), f = Math.floor(t / 12), i = t - f * 12; return i ? `${f}′ ${i}″` : `${f}′` }
 /** A zone's width or length, typed (40′, 40' 6", 40) — the card's own write: zoneSized, one undo step. */
@@ -394,8 +412,8 @@ export function SelectionBar() {
   const [labels, setLabels] = useState(EMPTY)
   const column = useColumnPick(s => s.pick)
   const what = useMemo(() => barFor(objects, selectedIds, activeWall, activeBaySelection, gridSize, column), [objects, selectedIds, activeWall, activeBaySelection, gridSize, column])
-  // the Row group's edit row has its bar at once (STUDIO.md §7); not while an apply is asked (the mode bar asks)
-  const hidden = !what || (!isPlainTool(activeTool) && activeTool !== ROW_GROUP_TOOL) || dragging || !!placing || pending
+  // not in the Row group (no edit row: its mode bar — STUDIO.md §7a Modes), nor while an apply is asked
+  const hidden = !what || !isPlainTool(activeTool) || dragging || !!placing || pending
   useLayoutEffect(() => {
     if (hidden || !ref.current) return
     const w = ref.current.offsetWidth, h = ref.current.offsetHeight
@@ -420,6 +438,7 @@ export function SelectionBar() {
       style={{ ...pill, position: 'absolute', zIndex: 140, left: at ? at.left : -9999, top: at ? at.top : -9999, visibility: at ? 'visible' : 'hidden' }}>
       {what.kind === 'rack' && <RackBar obj={obj} />}
       {what.kind === 'rows' && <RowsBar ids={what.objs.map(o => o.id)} />}
+      {what.kind === 'mixed' && <MixedBar objs={what.objs} />}
       {what.kind === 'bay' && <BayBar />}
       {what.kind === 'bays' && <BayBar several />}
       {what.kind === 'zone' && <ZoneBar obj={obj} />}

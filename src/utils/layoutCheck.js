@@ -22,7 +22,7 @@
 // ERRORS (can't be built or reached): an aisle a truck can't drive, a
 // cross-aisle between sections under the travel width, racks overlapping, a rack past a wall or outside the building, a column on an
 // upright frame, a rack nobody can reach, racks with no way in (the pocket
-// highlighted).
+// highlighted), a zone with no way in — no access from any aisle (utils/zoneCheck.js).
 // WARNINGS (cost positions, or need a look):
 // columns blocking pallets, a bay too short for a pallet, angled racks whose column losses weren't checked. (An aisle a
 // truck can drive but not pick from is not listed: its faces lose their positions — narrowAisles.js.)
@@ -57,6 +57,8 @@ import { getColumnCheckView } from '../generate/columnCheckView'
 import { elevationIssues } from './elevations'
 import { projectReminders } from './project'
 import { useDragPreview } from '../canvas2/dragPreview'
+import { closedZones, walkwayInNow } from './zoneCheck'
+import { DEFAULT_RULES } from '../rules/defaults'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const TYPE_NAMES = {
@@ -104,7 +106,7 @@ const union = (boxes) => {
 
 
 /** Every problem in \`objects\`: { errors: [item], warnings: [item] }. */
-export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 40, pickBothSides = false, elevations = null } = {}) {
+export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 40, pickBothSides = false, elevations = null, walkwayIn = DEFAULT_RULES.zones.walkwayIn } = {}) {
   const errors = [], warnings = []
   const racks = objects.filter(isRack)
   const byId = new Map(objects.map(o => [o.id, o]))
@@ -313,6 +315,13 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
         highlight: g.spots.map(b => xmark(b, HL.amber)), text })
     }
   }
+  /* ── a zone with no way in — no access from any aisle: no clear floor beside it joins the main floor (staging: the
+     travel width; an office, washroom or custom area: the Rules' walkway) — an ERROR, whatever placed it (STUDIO.md
+     §7a Zone) ── */
+  for (const { zone } of closedZones(objects, { gridSize, travelFt: profile.travelFt ?? 8, walkwayIn })) {
+    const b = { x: zone.x, y: zone.y, w: zone.width, h: zone.height }
+    errors.push({ severity: 'error', kind: 'zone-closed', ids: [zone.id], box: b, highlight: [shade(b, HL.red, 'No way in')], text: `${zoneName(zone)}: no way in` })
+  }
   /* elevation types (utils/elevations.js): the top of the upright above the building's clear height; a pallet and
      its clearance that don't fit between two beams — one error per type, every rack carrying it lit */
   for (const e of elevationIssues(objects, elevations)) {
@@ -322,7 +331,7 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
     if (e.severity === 'warning') warnings.push({ severity: 'warning', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => outline(b, HL.amber)), text: e.text })
     else errors.push({ severity: 'error', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => shade(b, HL.red)), text: e.text })
   }
-  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled']
+  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled']
   const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
   const reminders = projectReminders(elevations)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }
@@ -357,7 +366,7 @@ export function clearIssueHighlight() {
 }
 
 /* the truck and "pick both sides" the Column Check panel is set to */
-const viewOpts = () => { try { const v = getColumnCheckView(); return { profile: v.profile || MHE_PROFILES.reach, pickBothSides: !!v.pickBothSides } } catch { return {} } }
+const viewOpts = () => { try { const v = getColumnCheckView(); return { profile: v.profile || MHE_PROFILES.reach, pickBothSides: !!v.pickBothSides, walkwayIn: walkwayInNow() } } catch { return {} } }
 
 /** Run the check on the store's layout now; the panel opens. */
 export function runLayoutCheck(store, opts = {}) {

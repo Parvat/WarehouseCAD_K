@@ -60,6 +60,11 @@ export const DEFAULT_RULES = {
   },
 
   clearances: { esfrBelowDeflectorIn: 18, locked: true },
+
+  /* walkwayIn: the clear walkway an office, a washroom or a custom area needs for a way in (Check layout's "no way
+     in", utils/zoneCheck.js) — 44" the common egress corridor minimum; the dealer confirms local code. Staging needs the
+     truck's travel width instead. */
+  zones: { walkwayIn: 44 },
 }
 
 /* Labels for the MHE keys. Kept beside the rules rather than inside them so a

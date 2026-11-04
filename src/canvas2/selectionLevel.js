@@ -70,28 +70,37 @@ export function selectBays(store, entriesIn) {
     store.setState({ selectedIds: owners, activeBaySelection: entries.map(e => ({ objId: e.objId, bayIdx: e.bayIdx, ...(e.side === 0 || e.side === 1 ? { side: e.side } : {}) })), objects })
   }
 }
-/** The bay selection is a SET of bay positions: one entry per bay (side 0, side 1, or null — both sides / a single
- *  row), never the same bay twice. Two entries for one bay (both halves, or a half and "both") read as one. */
+/** The bay selection is a SET of bays: one entry per bay picked — in a pair, per side (side 0, side 1), or null (the
+ *  flue's both sides at once / a single row) — never the same bay twice. A pair's two facing bays picked one by one
+ *  are two items (STUDIO.md §7a); a half picked again, or a half with its bay's "both", reads as one. */
 export function bayKeySet(entries, objects = []) {
   const out = new Map()
   for (const e of entries || []) {
     const k = e.objId + '|' + e.bayIdx, s = sideOf(e.side), o = objects.find(x => x.id === e.objId)
     const pair = !o || o.type === 'rack_double_row'
     const prev = out.get(k)
-    const sides = new Set(prev ? prev.sides : [])
-    if (s == null || !pair) { sides.add(0); sides.add(1) } else sides.add(s)
-    out.set(k, { objId: e.objId, bayIdx: e.bayIdx, sides })
+    const sides = prev ? prev.sides : { both: false, one: new Set() }
+    if (s == null || !pair) sides.both = true; else sides.one.add(s)
+    if (!prev) out.set(k, { objId: e.objId, bayIdx: e.bayIdx, sides })
   }
-  return [...out.values()].map(x => ({ objId: x.objId, bayIdx: x.bayIdx, side: x.sides.size === 2 ? null : [...x.sides][0] }))
+  return [...out.values()].flatMap(x => (x.sides.both ? [{ objId: x.objId, bayIdx: x.bayIdx, side: null }]
+    : [...x.sides.one].sort().map(s => ({ objId: x.objId, bayIdx: x.bayIdx, side: s }))))
 }
-/** Bay `e` in or out of the bay selection (Shift+click at the bay level): a bay already picked where it is clicked —
- *  on that half, or on both — comes off; one picked on the other half only becomes both; else it is added. */
+/** Bay `e` in or out of the bay selection (Shift+click at the bay level): only the bay clicked changes — a half
+ *  picked comes off (its facing half stays); a bay picked on both sides at once, clicked on one half, keeps the other
+ *  half; a single row's bay comes off whole; else it is added. */
 export function toggleBay(store, e) {
   const st = store.getState(), cur = bayKeySet(pickedBays(st), st.objects), side = sideOf(e.side)
-  const i = cur.findIndex(x => x.objId === e.objId && x.bayIdx === e.bayIdx)
+  const same = (x) => x.objId === e.objId && x.bayIdx === e.bayIdx
+  const both = cur.findIndex(x => same(x) && x.side == null)
+  if (both >= 0) {
+    // the flue's both sides: a click on one half leaves the other; a click in the flue again takes both off
+    selectBays(store, side == null ? cur.filter((_, j) => j !== both) : cur.map((y, j) => (j === both ? { ...y, side: 1 - side } : y)))
+    return
+  }
+  const i = cur.findIndex(x => same(x) && (side == null || x.side === side))
   if (i < 0) { selectBays(store, [...cur, { objId: e.objId, bayIdx: e.bayIdx, side }]); return }
-  const x = cur[i], covered = x.side == null || side == null || x.side === side
-  selectBays(store, covered ? cur.filter((_, j) => j !== i) : cur.map((y, j) => (j === i ? { ...y, side: null } : y)))
+  selectBays(store, side == null ? cur.filter(x => !same(x)) : cur.filter((_, j) => j !== i))
 }
 /** Esc: from bays up to their rows; from rows, nothing selected. Returns the level it left ('bays' | 'rows' | null). */
 export function stepUp(store) {

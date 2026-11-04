@@ -382,6 +382,11 @@ export function RulesPanel({ onClose }) {
               {field('clearances.esfrBelowDeflectorIn', { unit: 'in', locked: true })}
             </Row>
           </Section>
+
+          <Section title="Zones">
+            {/* an office, washroom or custom area's way in (Check layout); staging needs the truck's travel width */}
+            <Row label="Walkway" origin={originFor('zones.walkwayIn')}>{field('zones.walkwayIn', { unit: 'in' })}</Row>
+          </Section>
         </div>
 
         {/* ── Validation + save ── */}

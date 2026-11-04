@@ -125,6 +125,9 @@ export function objectsInMarquee(objects = [], rect, { isVisible } = {}) {
 /** A drag has to travel before it counts as one, so a shaky click does not
  *  begin a one-pixel marquee or nudge the view. Screen px. */
 export const DRAG_THRESHOLD = 3
+/** A press on an object moves it only after this much travel (screen px); under it the press is a click
+ *  (STUDIO.md §7a Moving). The pan and the box keep DRAG_THRESHOLD. */
+export const MOVE_THRESHOLD = 6
 
 export function movedEnough(a, b, threshold = DRAG_THRESHOLD) {
   return Math.hypot(b.x - a.x, b.y - a.y) >= threshold

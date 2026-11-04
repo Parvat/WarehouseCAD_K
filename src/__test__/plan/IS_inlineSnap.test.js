@@ -258,7 +258,7 @@ describe('IS — wiring', () => {
     expect(inter).toMatch(/st\.moveObjects\(d\.ids, plan\.dx, plan\.dy\)/)
     expect(inter).toMatch(/grabbedId: hitId/)
     // the join is passed over by the Row group: its skipNextAction, from utils/rowGroupTool.js
-    expect(inter).toMatch(/import \{ groupDragFor, skipNextAction \} from '\.\.\/utils\/rowGroupTool'/)
+    expect(inter).toMatch(/import \{ groupDragFor, skipNextAction, groupRowsNow, toggleRowOf \} from '\.\.\/utils\/rowGroupTool'/)
     expect(inter).not.toMatch(/copyPrompt/)
   })
 })

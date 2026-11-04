@@ -26,10 +26,11 @@ import { DoorBar, DoorPreview } from './DoorBar'
 import { DOOR_TOOL, hoverDoor, placeDoor, clearDoorHover } from '../utils/doorTool'
 import { SelectionBar, FloorMenu, openFloorMenu } from '../studio/SelectionBar'
 import { ZoneEditPreview, SelectedZoneSizes } from './ZoneEdit'
-import { hasResizeHandles, handleHitTest } from './handleGeometry'
+import { ZoneCheckPreview } from './ZoneCheck'
+import { hasResizeHandles } from './handleGeometry'
 import { FILL_TOOL, startFill, moveFill, commitFill } from '../utils/fillTool'
 import { useMeasureMode, endTool } from '../utils/toolSwitch'
-import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupPress } from '../utils/rowGroupTool'
+import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupPress, useRowGroup, groupRowsNow } from '../utils/rowGroupTool'
 import { hitTest } from './hitTest'
 import { SPLIT_TOOL, useSplit, hoverSplit, splitAt } from '../utils/splitTool'
 import { rebuildAisles } from '../utils/aisleRebuild'
@@ -275,7 +276,7 @@ export function Canvas2() {
 
   const dblClickFitEnabled = useViewPrefs(s => s.dblClickFit)
 
-  const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides, isForcePan } =
+  const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides, isForcePan, groupRowPress, groupCursorAt } =
     useCanvasInteraction({ stageRef, view, setView, size, objects, dblClickFitEnabled })
   /* the bottom-right island's Fit calls this (src/studio/StudioFrame.jsx) */
   useEffect(() => { fitRef.current = fitToContent; return () => { if (fitRef.current === fitToContent) fitRef.current = null } })
@@ -351,16 +352,16 @@ export function Canvas2() {
      touches; a press and release without a drag toggles the row under it. The tool stays on for the next click or
      box until Esc or the bar's ✕. It takes the press before anything else, so a box may start on a wall or a rack. */
   const grouping = !measuring && activeTool === ROW_GROUP_TOOL
+  const groupKeys = useRowGroup(s => s.keys)
+  const groupRacks = useMemo(() => (grouping ? groupRowsNow(objects).flatMap(r => r.ids).map(id => objects.find(o => o.id === id)).filter(o => o && hasResizeHandles(o.type, PORTED_RACK_TYPES)) : []),
+    [grouping, groupKeys, objects])   // eslint-disable-line react-hooks/exhaustive-deps
   const groupMouseDown = (e) => {
     const stage = e.target.getStage()
     const p = stage?.getPointerPosition()
     if (!p || (e.evt && e.evt.button !== 0)) return
     const st = useCanvasStore.getState(), world = screenToWorld(view.current, p)
-    // the edit row's handles take the press as in Select: it can be expanded straight away (STUDIO.md §7)
-    if (st.selectedIds.length === 1) {
-      const sel = st.objects.find(o => o.id === st.selectedIds[0])
-      if (sel && hasResizeHandles(sel.type, PORTED_RACK_TYPES) && handleHitTest(sel, world.x, world.y, view.current.zoom)) { onStageMouseDown(e); return }
-    }
+    // a group row's handle edits it, its body moves the whole group (a click there toggles it) — STUDIO.md §7a Modes
+    if (groupRowPress(e)) return
     const shiftKey = !!e.evt?.shiftKey
     const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
     const hit = hitId ? st.objects.find(o => o.id === hitId) : null
@@ -404,9 +405,12 @@ export function Canvas2() {
   const modeMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
   // Space+drag or a middle drag pans in any tool (STUDIO.md §7a)
   const stageMouseDown = (e) => (isForcePan(e && e.evt) ? onStageMouseDown(e) : modeMouseDown(e))
-  const stageMouseMove = measuring ? measureMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : filling || grouping ? undefined : onStageMouseMove
+  // the Row group's cursor: resize over a group row's handle, move over its body, crosshair over the floor (STUDIO.md §7a)
+  const [groupCursor, setGroupCursor] = useState('crosshair')
+  const groupMouseMove = (e) => { const c = groupCursorAt(e); if (c !== groupCursor) setGroupCursor(c) }
+  const stageMouseMove = measuring ? measureMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : grouping ? groupMouseMove : filling ? undefined : onStageMouseMove
   const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : dooring ? clearDoorHover : filling || grouping ? undefined : onStageMouseLeave
-  const effectiveCursor = measuring || filling || grouping || splitting || dooring ? 'crosshair' : cursor
+  const effectiveCursor = grouping ? groupCursor : measuring || filling || splitting || dooring ? 'crosshair' : cursor
 
   return (
     <div
@@ -475,7 +479,9 @@ export function Canvas2() {
               rackConflicts={columnCheckResult.rackConflicts}
               pickBlocks={columnCheckResult.pickBlocks}
               uprightHits={columnCheckResult.uprightHits} />
-            {handleTarget && (
+            {/* the Row group: every group row has its handles (no edit row — STUDIO.md §7a Modes) */}
+            {grouping && groupRacks.map(o => <ResizeHandlesOverlay key={o.id} obj={o} zoom={zoom} gridSize={gridSize} />)}
+            {handleTarget && !(grouping && groupRacks.some(o => o.id === handleTarget.id)) && (
               <ResizeHandlesOverlay obj={handleTarget} zoom={zoom} gridSize={gridSize} />
             )}
             {fpRotateTarget && (
@@ -500,6 +506,8 @@ export function Canvas2() {
             <PlacementGhost gridSize={gridSize} />
             {/* a zone's edge dragged: the bays its release removes, red, and its size (ZoneEdit.jsx) */}
             <ZoneEditPreview gridSize={gridSize} />
+            {/* a zone dragged or resized: red with the reason when it blocks an aisle, cuts off faces or closes a zone in (ZoneCheck.jsx) */}
+            <ZoneCheckPreview />
             {/* a selected zone's size (ZoneEdit.jsx) */}
             <SelectedZoneSizes gridSize={gridSize} />
             <FillOverlay />

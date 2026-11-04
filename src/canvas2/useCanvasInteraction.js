@@ -22,11 +22,11 @@ import { nanoid } from 'nanoid'
 import { inlineSnap, planInlineDrop, applyJoin } from './inlineSnap'
 import { pickableIn, snapTargets, isPickable } from '../utils/layers'
 import { pickedOnPlan } from '../studio/viewPrefs'
-import { groupDragFor, skipNextAction } from '../utils/rowGroupTool'
+import { groupDragFor, skipNextAction, groupRowsNow, toggleRowOf } from '../utils/rowGroupTool'
 import { lockToAxis } from '../utils/rowGroup'
 import { clearIssueHighlight } from '../utils/layoutCheck'
 import {
-  nextSelection, normalizeRect, objectsInMarquee, movedEnough,
+  nextSelection, normalizeRect, objectsInMarquee, movedEnough, MOVE_THRESHOLD,
   movedIdsFor, objectCentre, isFloorPlan, isMarqueeExcluded, bayEntriesInMarquee, inBayMode, toggleBaySelection, setStickyBayMode, isStickyBayMode, bayForClick,
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
@@ -118,6 +118,27 @@ export function useCanvasInteraction({
     if (t && t.fp && st.objects.some(o => o.id === t.fp)) { pickedOnPlan(); selectRows(useCanvasStore, [t.fp]); st.setActiveWall(null); return }
     if (st.selectedIds.length || st.activeBaySelection?.length) st.clearSelection()
     st.setActiveWall(null)
+  }
+  /* A Shift+click on `hitId` at world point `from` (the release of a Shift+press that never moved). */
+  const shiftClick = (hitId, from) => {
+    const st = useCanvasStore.getState()
+    const hit = st.objects.find(o => o.id === hitId)
+    /* never mixed (STUDIO.md §7a Levels): rows with bays, or the building or a column with anything — other kinds
+       (racks, zones, doors, text) mix */
+    const cur = selectionKind(st), k = kindOf(hit), alone = (x) => x === 'building' || x === 'column'
+    if (cur && cur !== 'bays' && cur !== k && (alone(cur) || alone(k))) { /* never mixed */ }
+    else if (cur === 'column' && k === 'column') { /* one column, never with others */ }
+    else if (selectionLevel(st) === 'bays') {
+      const bay = isBayRack(hit) ? hitTestBay(hit, from.x, from.y, st.gridSize) : null
+      if (bay != null) toggleBay(useCanvasStore, { objId: hit.id, bayIdx: bay, side: bayHalfAt(hit, from.x, from.y, st.gridSize) })
+    } else if (isBayRack(hit)) {
+      pickedOnPlan()
+      const sec = sectionIds(st.objects, hit.id, st.gridSize || 40)
+      const on = sec.every(id => st.selectedIds.includes(id))
+      selectRows(useCanvasStore, on ? st.selectedIds.filter(id => !sec.includes(id)) : [...st.selectedIds, ...sec])
+    } else {
+      selectFromHit(hitId, true, from)
+    }
   }
   const objDrag = useRef(null)
   const marqueeRef = useRef(null)
@@ -280,7 +301,8 @@ export function useCanvasInteraction({
     return nodes
   }
 
-  const beginDrag = (hitId, world, evt) => {
+  /* `idsIn`: what moves when it is not the selection — the rows of the picked bays, a Row group's rows (STUDIO.md §7a) */
+  const beginDrag = (hitId, world, evt, idsIn = null) => {
     const stage = stageRef.current
     if (!stage) return
     const st = useCanvasStore.getState()
@@ -297,7 +319,7 @@ export function useCanvasInteraction({
        was selected before its layer was locked. */
     const ok = pickableIn(st.layers)
     if (!ok(grabbed)) return
-    const ids = st.selectedIds.filter(id => { const o = st.objects.find(x => x.id === id); return o && ok(o) })
+    const ids = (idsIn || st.selectedIds).filter(id => { const o = st.objects.find(x => x.id === id); return o && ok(o) })
     const nodes = collectDragNodes(stage, ids)
     if (!nodes.length) return
 
@@ -399,6 +421,51 @@ export function useCanvasInteraction({
     resizeDrag.current = { objId: obj.id, handle, origObj: { ...obj }, startWorld: world }
     // a zone's edge: the bays the release will remove show red meanwhile (ZoneEdit.jsx)
     if (typeof obj.type === 'string' && obj.type.startsWith('zone_')) useZoneEdit.setState({ zoneId: obj.id, was: { ...obj } })
+  }
+
+  /* ── the Row group tool on its own rows (STUDIO.md §7a Modes; Canvas2.jsx groupMouseDown) ── no edit row: every
+     group row has its handles, and a drag on any of them edits that row (the watcher applies it to the others, Ask or
+     Auto apply as set); a press on a group row's body moves the whole group past MOVE_THRESHOLD — one undo — and is
+     the click toggle under it. */
+  const groupRackIds = () => {
+    const st = useCanvasStore.getState(), ok = pickableIn(st.layers)
+    return groupRowsNow(st.objects).flatMap(r => r.ids).filter(id => { const o = st.objects.find(x => x.id === id); return o && ok(o) })
+  }
+  const groupHandleAt = (world) => {
+    const st = useCanvasStore.getState()
+    for (const id of groupRackIds()) {
+      const o = st.objects.find(x => x.id === id)
+      const h = o && hasResizeHandles(o.type, PORTED_RACK_TYPES) ? handleHitTest(o, world.x, world.y, view.current.zoom) : null
+      if (h) return { obj: o, handle: h }
+    }
+    return null
+  }
+  const groupBodyAt = (world) => {
+    const st = useCanvasStore.getState()
+    const id = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+    return id && groupRackIds().includes(id) ? id : null
+  }
+  /** A plain press with the Row group tool: true when a group row's handle or body took it. */
+  const groupRowPress = (e) => {
+    const stage = stageRef.current, evt = e && e.evt, p = stage && stage.getPointerPosition()
+    if (!p || !evt || evt.button !== 0 || evt.shiftKey) return false
+    const world = screenToWorld(view.current, p)
+    const h = groupHandleAt(world)
+    if (h) { beginHandleDrag(h.obj, h.handle, world); return true }
+    const id = groupBodyAt(world)
+    if (!id) return false
+    beginDrag(id, world, evt, groupRackIds())
+    if (objDrag.current) { objDrag.current.click = () => toggleRowOf(id); objDrag.current.groupMove = true }
+    else toggleRowOf(id)
+    return true
+  }
+  /** The Row group tool's cursor at a pointer: resize over a group row's handle, move over its body, else crosshair. */
+  const groupCursorAt = (e) => {
+    const p = stageRef.current && stageRef.current.getPointerPosition()
+    if (!p) return 'crosshair'
+    const world = screenToWorld(view.current, p)
+    const h = groupHandleAt(world)
+    return h ? cursorForHandle(h.handle, h.obj.rotation) : groupBodyAt(world) ? 'move' : 'crosshair'
   }
 
   /* Group rotate handle mousedown — CanvasArea's onGroupRotateStart, ported.
@@ -672,6 +739,14 @@ export function useCanvasInteraction({
          mouseup, ONLY if the gesture never actually moved (movedEnough) —
          a real drag still means marquee, the same drag/click split every
          other gesture here already makes. */
+      /* Bay runs (STUDIO.md §7a Moving): Shift+drag along a row picks the bays it crosses in that row and adds them to
+         the bays picked (a row selection is replaced: never rows and bays). A Shift+press with no drag is the Shift+click. */
+      if (evt.shiftKey && evt.button === 0 && hitObj && isBayRack(hitObj)) {
+        const start = hitTestBay(hitObj, world.x, world.y, st.gridSize)
+        const base = selectionLevel(st) === 'bays' ? pickedBays(st) : []
+        bayRun.current = { rackId: hitId, from: world, sx: evt.clientX, sy: evt.clientY, start, side: start == null ? null : bayHalfAt(hitObj, world.x, world.y, st.gridSize), base, moved: false }
+        return
+      }
       if (evt.shiftKey) {
         marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false, clickHitId: hitId, shift: true }
         return
@@ -686,12 +761,13 @@ export function useCanvasInteraction({
 
       if (hitId) {
         if (evt.button !== 0) return
-        /* Bay runs (STUDIO.md §7): with bays picked, a press on a row that owns them starts a run — a drag picks the
-           bays it crosses in that row; a press with no drag is the click as ever (on the release). Elsewhere a drag
-           moves the rack or, on the floor, selects rows. */
+        /* With bays picked, a press on a row that owns them arms the MOVE of the rows of the picked bays, the bays
+           staying picked (STUDIO.md §7a Moving); only a click — released under the move threshold — is the click as
+           ever (on the release, objDrag.drill). */
         if (hitObj && isBayRack(hitObj) && selectionLevel(st) === 'bays' && pickedBays(st).some(e => sectionIds(st.objects, hitId, st.gridSize || 40).includes(e.objId))) {
-          const start = hitTestBay(hitObj, world.x, world.y, st.gridSize)
-          bayRun.current = { rackId: hitId, from: world, sx: evt.clientX, sy: evt.clientY, start, side: start == null ? null : bayHalfAt(hitObj, world.x, world.y, st.gridSize), moved: false }
+          beginDrag(hitId, world, evt, withSections(st.objects, bayOwners(st), st.gridSize || 40))
+          if (objDrag.current) objDrag.current.drill = { hitId, world }
+          else selectFromHit(hitId, false, world)
           return
         }
         /* A press on the row already selected (a pair too, its flue included) arms its MOVE: a drag moves it, and
@@ -825,7 +901,7 @@ export function useCanvasInteraction({
         if (end == null) return
         const lo = Math.min(br.start, end), hi = Math.max(br.start, end), entries = []
         for (let i = lo; i <= hi; i++) entries.push({ objId: r.id, bayIdx: i, side: br.side })
-        selectBays(useCanvasStore, entries)
+        selectBays(useCanvasStore, [...(br.base || []), ...entries])
         return
       }
       const rd = resizeDrag.current
@@ -1086,7 +1162,8 @@ export function useCanvasInteraction({
         if (!stage) return
         const box = stage.container().getBoundingClientRect()
         const world = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
-        if (!d.moved && !movedEnough({ x: d.sx, y: d.sy }, { x: evt.clientX, y: evt.clientY })) return
+        // a move starts only past MOVE_THRESHOLD (6 screen px); under it the press is a click (STUDIO.md §7a)
+        if (!d.moved && !movedEnough({ x: d.sx, y: d.sy }, { x: evt.clientX, y: evt.clientY }, MOVE_THRESHOLD)) return
         if (!d.moved) {
           // re-collect now that React has had a chance to mount a freshly-selected node's outline
           const fresh = collectDragNodes(stage, d.ids)
@@ -1270,7 +1347,8 @@ export function useCanvasInteraction({
     const upGesture = () => {
       const br = bayRun.current
       bayRun.current = null
-      if (br) { if (!br.moved) selectFromHit(br.rackId, false, br.from); return }
+      // a Shift+press on a row that never moved: the Shift+click
+      if (br) { if (!br.moved) shiftClick(br.rackId, br.from); return }
       const pn = pan.current
       pan.current = null
       /* a click (a left press that never moved): on a building's blank floor, the building; on a locked column, that
@@ -1352,6 +1430,8 @@ export function useCanvasInteraction({
       clearDragPreview()
       // a press on the selected row that never moved: the click — it drills to the bay under it
       if (d && !d.moved && d.drill) selectFromHit(d.drill.hitId, false, d.drill.world)
+      // a Row group row pressed and not moved: the click toggle (groupRowPress)
+      if (d && !d.moved && d.click) d.click()
       if (d) {
         if (d.flueBase) {
           /* The live-auto-flue path (mousemove above) already wrote the
@@ -1420,6 +1500,8 @@ export function useCanvasInteraction({
             applyJoin(useCanvasStore, plan.join, { rebuildAisles, skipNextAction, newId: nanoid })
             reparentMoved([plan.join.keep])
           } else {
+            // the whole Row group moved: its own move, not an edit of one group row to apply to the others
+            if (d.groupMove) skipNextAction()
             st.moveObjects(d.ids, plan.dx, plan.dy)
             reparentMoved(d.ids)
           }
@@ -1456,11 +1538,11 @@ export function useCanvasInteraction({
            moment before it existed. isMarqueeExcluded is the SAME
            predicate objectsInMarquee itself uses, so the two can never
            disagree on what "the marquee excludes" means. */
-        /* One selection rule (STUDIO.md §7): a box selects ROWS — the racks it touches, each with its whole section
-           (anything else only when it caught no rack) — never bays. Shift+drag adds them to the rows selected (a bay
+        /* One selection rule (STUDIO.md §7): a box selects ROWS — the racks it touches, each with its whole section,
+           and the other objects it touches — never bays. Shift+drag adds them to the rows selected (a bay
            selection first steps up to its rows); a plain drag replaces the selection. */
-        const racks = ids.filter(id => isBayRack(st.objects.find(o => o.id === id)) || /^rack_/.test(st.objects.find(o => o.id === id)?.type || ''))
-        const caught = racks.length ? racks : ids
+        // ... and with the racks, every other kind it catches — zones, doors, text (STUDIO.md §7a Levels: kinds mix)
+        const caught = ids
         const base = !m.shift ? [] : (selectionLevel(st) === 'bays' ? bayOwners(st) : st.selectedIds.filter(id => !isMarqueeExcluded(st.objects.find(o => o.id === id))))
         selectRows(useCanvasStore, [...base, ...caught.filter(id => !base.includes(id))])
         setStickyBayMode(false)
@@ -1487,22 +1569,7 @@ export function useCanvasInteraction({
         /* Shift+click stays at the level the selection is at (STUDIO.md §7): with bays picked it adds or removes the
            bay under it, in any row (in a pair's flue, both sides); with rows, it adds or removes the row — its whole
            section. Never a mix: a Shift+click at the bay level on anything that is not a bay does nothing. */
-        const st = useCanvasStore.getState()
-        const hit = st.objects.find(o => o.id === m.clickHitId)
-        // one kind only (STUDIO.md §7a Levels): a Shift+click on another kind than the selection's adds nothing
-        const cur = selectionKind(st)
-        if (cur && cur !== 'bays' && cur !== kindOf(hit)) { /* never mixed */ }
-        else if (selectionLevel(st) === 'bays') {
-          const bay = isBayRack(hit) ? hitTestBay(hit, m.from.x, m.from.y, st.gridSize) : null
-          if (bay != null) toggleBay(useCanvasStore, { objId: hit.id, bayIdx: bay, side: bayHalfAt(hit, m.from.x, m.from.y, st.gridSize) })
-        } else if (isBayRack(hit)) {
-          pickedOnPlan()
-          const sec = sectionIds(st.objects, hit.id, st.gridSize || 40)
-          const on = sec.every(id => st.selectedIds.includes(id))
-          selectRows(useCanvasStore, on ? st.selectedIds.filter(id => !sec.includes(id)) : [...st.selectedIds, ...sec])
-        } else {
-          selectFromHit(m.clickHitId, true, m.from)
-        }
+        shiftClick(m.clickHitId, m.from)
       }
       setMarquee(null)
       setCursor(spaceDown.current ? 'grab' : 'default')
@@ -1643,5 +1710,5 @@ export function useCanvasInteraction({
 
   /* Space+drag or a middle-button drag pans in any tool (STUDIO.md §7a): the mode tools' own presses hand it here */
   const isForcePan = (evt) => !!evt && (evt.button === 1 || spaceDown.current)
-  return { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides, isForcePan }
+  return { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides, isForcePan, groupRowPress, groupCursorAt }
 }

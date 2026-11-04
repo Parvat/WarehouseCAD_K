@@ -93,7 +93,7 @@ function GroupBar() {
           )}
         </span>
       )}
-      {picking && !s && <><Sep /><span data-mode-hint style={{ color: B.muted, fontSize: 12 }}>Drag or Shift+click rows. Click a row to edit.</span></>}
+      {picking && !s && <><Sep /><span data-mode-hint style={{ color: B.muted, fontSize: 12 }}>Click rows or drag a box. Drag a handle to edit.</span></>}
       <Sep />
       <button type="button" aria-label="Done" title="Done — end the Row group (Esc)" onClick={close} className={btnClass(true)} style={barBtn(true)}>Done</button>
       <CloseBtn label="Clear the row group" title="Clear the row group (Esc)" onClick={close} />

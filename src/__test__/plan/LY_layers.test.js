@@ -217,7 +217,8 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     m.L.setLayer(m.useCanvasStore, 'racking', { visible: false })
     expect(st().selectedIds).toEqual([])
     const ci = readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')
-    expect(ci).toMatch(/const ok = pickableIn\(st\.layers\)\r?\n\s*if \(!ok\(grabbed\)\) return\r?\n\s*const ids = st\.selectedIds\.filter/)   // \r?: a fresh checkout is CRLF
+    // what moves: the selection — or the rows of the picked bays, a Row group's rows (STUDIO.md §7a) — less anything not pickable
+    expect(ci).toMatch(/const ok = pickableIn\(st\.layers\)\r?\n\s*if \(!ok\(grabbed\)\) return\r?\n\s*const ids = \(idsIn \|\| st\.selectedIds\)\.filter\(id => \{ const o = st\.objects\.find\(x => x\.id === id\); return o && ok\(o\) \}\)/)   // \r?: a fresh checkout is CRLF
     expect(ci).toMatch(/objectsInMarquee\(st\.objects, rect, \{ isVisible: ok \}\)/)
     // a box selects rows only (STUDIO.md §7): never bays
     expect(ci).not.toMatch(/bayEntriesInMarquee\(st\.objects\.filter\(ok\), rect/)
