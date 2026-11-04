@@ -8,17 +8,24 @@ import { clearanceTagsOn, clearancePx, zoomedIn, FADE_MS } from './clearanceView
    fade in when zoomed in (STUDIO.md §2: the only zoom-based change allowed) — so a zoom re-renders only this. */
 /* The grey clearance numbers, faded in and out in place: on when zoomed in enough (with the buffer), a column grid
    selected, Show clearances on, or a drag / resize under way (clearanceView.js). Their own layer, so only they fade. */
-export function ClearanceNumbers({ aisleBlocks, columns, objects, lz, gridSize, avoid, selectedObjects, dragging, show }) {
+/* `column`: one column picked out of its grid (columnPick.js) — then the grid is not "selected" as a whole: that
+   column's numbers show, while its bar's Show clearances (`columnShow`) is on. */
+export function ClearanceNumbers({ aisleBlocks, columns, objects, lz, gridSize, avoid, selectedObjects, dragging, show, column = null, columnShow = true }) {
   const zoom = useCanvasStore(s => s.zoom)
   const was = useRef(false)
   const zoomOn = zoomedIn(clearancePx(zoom, lz), was.current)
   was.current = zoomOn
-  const on = clearanceTagsOn({ dragging, show, zoom: zoomOn, columnSelected: selectedObjects.some(o => o.type === 'column_grid') })
-  const opacity = useFade(on, FADE_MS)
+  const all = clearanceTagsOn({ dragging, show, zoom: zoomOn, columnSelected: !column && selectedObjects.some(o => o.type === 'column_grid') })
+  const only = !all && column && columnShow ? column : null
+  const opacity = useFade(all || !!only, FADE_MS)
+  // what is drawn while it fades out stays what was shown (one column's, or all)
+  const kept = useRef(null)
+  if (all) kept.current = null
+  else if (only) kept.current = only
   if (opacity <= 0) return null
   return (
     <Group name="clearance-numbers" opacity={opacity} listening={false}>
-      <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels="clear" warnings={false} />
+      <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels="clear" warnings={false} only={all ? null : kept.current} />
     </Group>
   )
 }

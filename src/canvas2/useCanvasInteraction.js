@@ -34,6 +34,7 @@ import { TOOLS } from '../constants'
 import { isBayRack, selectionLevel, pickedBays, bayOwners, selectRows, selectBays, toggleBay } from './selectionLevel'
 import { sectionIds, withSections } from './sections'
 import { setAreaHover } from './areaHover'
+import { columnAt, clickColumn } from './columnPick'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
 
 /* Beam/lane racks whose applyResize branch handles its own snapping
@@ -578,6 +579,24 @@ export function useCanvasInteraction({
          shift only ever forces a marquee over a plain object BODY. */
       /* ...and a press ON a wall that a rack only reached by its pick padding (a wall row 3″ in, at plan zoom) is the
          wall's: the building is always picked by its wall (hitTest.js wallBeatsPadding) */
+      /* A column (STUDIO.md §7, columnPick.js): a click picks that one column out of its grid — even on a locked
+         Columns layer (locked: it cannot be moved, not clicked). Only an unlocked grid then drags. */
+      if (evt.button === 0 && !evt.shiftKey && (!hitObj || hitObj.type === 'column_grid' || FP_SET_INPUT.has(hitObj.type))) {
+        const col = columnAt(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize || 40)
+        const locked = col && !pickableIn(st.layers)(st.objects.find(o => o.id === col.gridId))
+        /* locked: nothing to drag — a drag from it is the floor's (a box of rows), a click picks it (on the release);
+           with Pan it pans, as before */
+        if (col && locked && st.activeTool !== TOOLS.PAN) {
+          marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false, clickHitId: null, shift: false, floor: true, column: col }
+          return
+        }
+        if (col && !locked) {
+          setStickyBayMode(false); pickedOnPlan()
+          clickColumn(useCanvasStore, col)
+          beginDrag(col.gridId, world, evt)
+          return
+        }
+      }
       const padWall = evt.button === 0 ? wallBeatsPadding(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize, hitObj) : null
       if (evt.button === 0 && (!hitObj || FP_SET_INPUT.has(hitObj.type) || padWall)) {
         const wallHit = padWall || fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
@@ -1392,6 +1411,10 @@ export function useCanvasInteraction({
         selectRows(useCanvasStore, [...base, ...caught.filter(id => !base.includes(id))])
         setStickyBayMode(false)
         if (!m.shift) st.setActiveWall(null)
+      } else if (m && !m.moved && m.column) {
+        // a click on a locked column: that column (columnPick.js)
+        setStickyBayMode(false); pickedOnPlan()
+        clickColumn(useCanvasStore, m.column)
       } else if (m && !m.moved && m.floor) {
         // a click on the floor: nothing selected
         const st = useCanvasStore.getState()

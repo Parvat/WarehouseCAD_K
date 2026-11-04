@@ -14,6 +14,8 @@ import { useRowGroup, startGroupFromSelection } from '../utils/rowGroupTool'
 import { selectionLevel, pickedBays } from '../canvas2/selectionLevel'
 import { sectionIds } from '../canvas2/sections'
 import { notify } from '../utils/notice'
+import { pickableIn } from '../utils/layers'
+import { pickedColumn } from '../canvas2/columnPick'
 
 const store = useCanvasStore
 
@@ -49,6 +51,11 @@ export function duplicateSelection() {
 export function deleteSelection() {
   if (deleteBaySelection(store, nanoid)) return
   const s = store.getState()
+  /* a column picked out of its grid (canvas2/columnPick.js): one column is not deleted on its own — Esc, then Delete,
+     deletes the grid; a locked layer's (or locked) objects are never deleted, only clicked */
+  if (pickedColumn(s)) { notify('A column stays with its grid', 'Esc, then Delete, deletes the column grid'); return }
+  const ok = pickableIn(s.layers)
+  if (s.selectedIds.length && !s.selectedIds.some(id => ok(s.objects.find(o => o.id === id)))) { notify('Locked', 'unlock it to delete'); return }
   if (s.activeBaySelection?.length) { s.deleteSelectedBays(); s.clearSelection(); return }
   if (s.selectedIds.length === 1) {
     const obj = s.objects.find(o => o.id === s.selectedIds[0])

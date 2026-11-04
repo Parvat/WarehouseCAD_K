@@ -630,25 +630,77 @@ describe('REG — the hand check by real clicks', () => {
       expect(over).toEqual([])
     }, T)
 
-    it('REG-clear-column (click): with a column selected its clearances show even zoomed out', async () => {
+    // a column the canvas picks (in an aisle, off the walls — one inside a rack or by a wall is the rack's or the wall's)
+    const colAt = 'const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), cs = H.columnRectsOf(st.objects, st.gridSize || 40).map(c => ({ x: c.x + c.w / 2, y: c.y + c.h / 2 })); const inset = (p) => Math.min(p.x - fp.x, fp.x + fp.width - p.x, p.y - fp.y, fp.y + fp.height - p.y); return cs.filter(p => inset(p) > 4 * (st.gridSize || 40) && !st.objects.some(o => /^rack_/.test(o.type) && (() => { const b = H.worldBoundsOf(o, st.objects); return p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height })())).sort((a, b) => inset(b) - inset(a))[0]'
+    /** the clearance numbers' centres on the canvas (canvas px) */
+    const numberSpots = () => L.page.evaluate(() => { const g = window.Konva.stages[0].findOne('.clearance-numbers'); return g ? g.find('Text').filter(t => t.isVisible()).map(t => { const r = t.getClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } }) : [] })
+
+    it('REG-clear-column (click): a column clicked shows its own clearances even zoomed out; Esc to the whole grid shows all of them; Esc again none', async () => {
       await open()
       await zoomOutTill(7)
-      // a column the canvas picks (in an aisle, off the walls — one inside a rack or by a wall is the rack's or the wall's)
-      const colAt = 'const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), cs = H.columnRectsOf(st.objects, st.gridSize || 40).map(c => ({ x: c.x + c.w / 2, y: c.y + c.h / 2 })); const inset = (p) => Math.min(p.x - fp.x, fp.x + fp.width - p.x, p.y - fp.y, fp.y + fp.height - p.y); return cs.filter(p => inset(p) > 4 * (st.gridSize || 40) && !st.objects.some(o => /^rack_/.test(o.type) && (() => { const b = H.worldBoundsOf(o, st.objects); return p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height })())).sort((a, b) => inset(b) - inset(a))[0]'
-      // the Columns layer is locked by Generate: unlock it in the card (More), as a user would
-      const ids = await openRacks()
-      await L.click((await pairPoints(ids[0])).far)
-      await L.page.getByRole('group', { name: 'More properties' }).getByRole('button').first().click()
-      await L.page.getByRole('button', { name: 'Unlock Columns layer' }).click()
-      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       const col = await L.S(colAt)
       expect(col).toBeTruthy()
       await L.click(col)
       expect(await L.selected()).toEqual(['column_grid'])
       await L.page.waitForTimeout(300)
-      expect((await numbers()).length).toBeGreaterThan(0)
+      const one = await numbers()
+      expect(one.length).toBeGreaterThan(0)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(400)
+      const all = await numbers()
+      expect([await L.selected(), all.length >= one.length]).toEqual([['column_grid'], true])
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(400)
       expect(await numbers()).toEqual([])
+    }, T)
+
+    /* ── one column: a click picks it, the Columns layer locked or not ── */
+    it('REG-column-pick (click): a click on a column on the LOCKED Columns layer picks that one column — outlined alone, its bar\'s Show clearances that column\'s only; it cannot be moved (drag, arrows) or deleted; Esc steps up to the grid; Ctrl+A still skips it', async () => {
+      await open()
+      await zoomOutTill(7)
+      // the layout as Generate leaves it: the Columns layer locked
+      await L.S('const st = S.getState(), l = st.layers.find(x => x.id === "columns"); if (l && !l.locked) st.updateLayer("columns", { locked: true })')
+      expect(await L.S('return !!S.getState().layers.find(x => x.id === "columns")?.locked')).toBe(true)
+      const c = await L.S(colAt)
+      expect(c).toBeTruthy()
+      const g0 = await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return { id: g.id, x: g.x, y: g.y }')
+      await L.click(c)
+      const pick = await L.S('return CP.useColumnPick.getState().pick')
+      expect([await L.selected(), !!pick && Math.abs(pick.x + pick.w / 2 - c.x) < 1 && Math.abs(pick.y + pick.h / 2 - c.y) < 1]).toEqual([['column_grid'], true])
+      // outlined alone: the outline is the column's square, not the grid's box
+      const ol = await L.page.evaluate(() => window.Konva.stages[0].find(x => /^sel:/.test(x.name() || '')).map(x => { const r = x.getClientRect({ skipStroke: true }); return [r.width, r.height] }))
+      const z = await L.S('return S.getState().zoom')
+      expect([ol.length, Math.abs(ol[0][0] - pick.w * z) < 3, Math.abs(ol[0][1] - pick.h * z) < 3]).toEqual([1, true, true])
+      // its bar: Show clearances, on — that column's numbers only, on its own lines
+      const btn = L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Show clearances' })
+      expect([(await L.bar())?.kind, await btn.getAttribute('aria-pressed')]).toEqual(['column', 'true'])
+      await L.page.waitForTimeout(300)
+      const spots = await numberSpots(), cs = await L.toScreen(c), cv = await L.page.locator('#canvas2-container').boundingBox()
+      expect(spots.length).toBeGreaterThan(0)
+      // every number is in line with the column (its lines run straight out of it across the aisle)
+      const half = Math.max(pick.w, pick.h) * z / 2 + 2
+      expect(spots.filter(p => !(Math.abs(p.x + cv.x - cs.x) <= half || Math.abs(p.y + cv.y - cs.y) <= half))).toEqual([])
+      await btn.click(); await L.page.waitForTimeout(400)
+      expect([await btn.getAttribute('aria-pressed'), await numbers()]).toEqual(['false', []])
+      await btn.click(); await L.page.waitForTimeout(400)
+      expect((await numbers()).length).toBeGreaterThan(0)
+      // locked: a drag from it moves nothing; the arrows move nothing; Delete deletes nothing
+      const gs = await L.S('return S.getState().gridSize || 40')
+      await L.drag(c, { x: c.x + 3 * gs, y: c.y + 3 * gs })
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.click(c)
+      expect(await L.S('return !!CP.useColumnPick.getState().pick')).toBe(true)
+      await L.page.keyboard.press('ArrowRight'); await L.page.keyboard.press('Shift+ArrowDown'); await L.page.waitForTimeout(100)
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(150)
+      expect(await L.S('const g = S.getState().objects.find(o => o.id === arg.id); return g ? { id: g.id, x: g.x, y: g.y } : null', g0)).toEqual(g0)
+      // Esc: the whole grid — no pick, the grid still selected, its bar; Delete still deletes nothing; Esc again: nothing
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      expect([await L.S('return CP.useColumnPick.getState().pick'), await L.selected(), (await L.bar())?.kind]).toEqual([null, ['column_grid'], 'column'])
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(150)
+      expect(await L.S('return !!S.getState().objects.find(o => o.id === arg)', g0.id)).toBe(true)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      expect(await L.selected()).toEqual([])
+      // Ctrl+A still skips the locked layer
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(150)
+      expect((await L.selected()).includes('column_grid')).toBe(false)
     }, T)
 
     /* ── bay runs ── */
@@ -720,7 +772,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.click({ x: fp.x + fp.width * 0.3, y: fp.y })                              // the building, by its top wall
       await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door' }).click(); await L.page.waitForTimeout(150)
       const bar = L.page.locator('[data-mode-bar="door"]')
-      expect([await L.S('return S.getState().activeTool'), await bar.getByRole('group', { name: 'Door type' }).getByRole('button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')))]).toEqual(['door', ['Loading Dock Door', 'Egress Door']])
+      expect([await L.S('return S.getState().activeTool'), await bar.getByRole('group', { name: 'Door type' }).getByRole('button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')))]).toEqual(['door', ['Man Door', 'Dock Door', 'Drive-in Door']])
       // the top wall from outside: the preview against the inner face
       const outside = await L.toScreen({ x: fp.x + fp.width * 0.4, y: fp.y - wt * 0.5 })
       await L.page.mouse.move(outside.x, outside.y); await L.page.waitForTimeout(150)
@@ -731,8 +783,8 @@ describe('REG — the hand check by real clicks', () => {
       const d1 = await L.S('const o = S.getState().objects; return o[o.length - 1]')
       expect([d1.type, Math.round(d1.width), Math.abs(d1.y - (fp.y + wt)) < 1, (await L.S('return S.getState().objects.length')) - n0, (await L.S('return S.getState().historyIndex')) - h0, await L.S('return S.getState().activeTool')])
         .toEqual(['struct_loading_dock', 9 * gs, true, 1, 1, 'door'])
-      // Egress, typed 5 ft, on the left wall from inside
-      await bar.getByRole('button', { name: 'Egress Door' }).click()
+      // Man door, typed 5 ft, on the left wall from inside
+      await bar.getByRole('button', { name: 'Man Door' }).click()
       await bar.getByLabel('Door width (ft)').fill('5'); await bar.getByLabel('Door width (ft)').press('Enter')
       const inside = await L.toScreen({ x: fp.x + wt * 1.5, y: fp.y + fp.height * 0.5 })
       await L.page.mouse.move(inside.x, inside.y); await L.page.waitForTimeout(150); await L.page.mouse.click(inside.x, inside.y); await L.page.waitForTimeout(200)
@@ -740,6 +792,27 @@ describe('REG — the hand check by real clicks', () => {
       expect([d2.type, Math.round(d2.width), d2.rotation % 180 === 90, Math.abs(d2.x + d2.width / 2 - d2.height / 2 - (fp.x + wt)) < 1]).toEqual(['struct_egress', 5 * gs, true, true])   // 5 ft along the wall, against its inner face
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       expect([await L.S('return S.getState().activeTool'), await bar.count(), await L.page.evaluate(() => !!window.Konva.stages[0].findOne('.door-preview'))]).toEqual(['select', 0, false])
+    }, T)
+
+    it('REG-door-types (click): the door tool offers Man door · Dock door · Drive-in door, in that order; each places at its own width — Man 3 ft, Dock 9 ft, Drive-in 12 ft overhead', async () => {
+      await open()
+      const fp = await fpOf(), gs = await L.S('return S.getState().gridSize || 40'), wt = (fp.wallThicknessFt || 0.25) * gs
+      await L.click({ x: fp.x + fp.width * 0.3, y: fp.y })
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door' }).click(); await L.page.waitForTimeout(150)
+      const bar = L.page.locator('[data-mode-bar="door"]'), seg = bar.getByRole('group', { name: 'Door type' }).getByRole('button')
+      expect(await seg.evaluateAll(bs => bs.map(b => b.textContent.trim()))).toEqual(['Man door', 'Dock door', 'Drive-in door'])
+      const place = async (name, fx) => {
+        await bar.getByRole('button', { name }).click()
+        const width = await bar.getByLabel('Door width (ft)').inputValue()
+        const p = await L.toScreen({ x: fp.x + fp.width * fx, y: fp.y - wt * 0.5 })
+        await L.page.mouse.move(p.x, p.y); await L.page.waitForTimeout(150); await L.page.mouse.click(p.x, p.y); await L.page.waitForTimeout(200)
+        const d = await L.S('const o = S.getState().objects; return o[o.length - 1]')
+        return [width, d.type, Math.round(d.width / gs), d.label, d.meta?.doorType ?? null, Math.abs(d.y - (fp.y + wt)) < 1]
+      }
+      expect(await place('Man Door', 0.25)).toEqual(['3', 'struct_egress', 3, 'Man Door', null, true])
+      expect(await place('Dock Door', 0.5)).toEqual(['9', 'struct_loading_dock', 9, 'Dock Door', 'roll-up', true])
+      expect(await place('Drive-in Door', 0.75)).toEqual(['12', 'struct_drive_in', 12, 'Drive-in Door', 'overhead', true])
+      await L.page.keyboard.press('Escape')
     }, T)
 
     /* ── racking areas: invisible by default ── */

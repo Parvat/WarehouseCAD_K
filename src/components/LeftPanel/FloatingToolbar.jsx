@@ -188,6 +188,7 @@ const ITEM_ICONS = {
   struct_loading_dock: DoorOpen,
   struct_partition:    SeparatorHorizontal,
   struct_egress:       LogOut,
+  struct_drive_in:     DoorOpen,
   struct_window:       Blinds,
   /* safety */
   safety_bollard:      TrafficCone,

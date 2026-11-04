@@ -484,7 +484,7 @@ export const WAREHOUSE_CATEGORIES = [
       {
         id: 'struct_loading_dock',
         type: 'struct_loading_dock',
-        label: 'Loading Dock Door',
+        label: 'Dock Door',
         description: '8–10ft door + leveler — anchors to wall',
         color: '#6366f1',
         snapType: SNAP_TYPES.WALL,
@@ -530,16 +530,36 @@ export const WAREHOUSE_CATEGORIES = [
       {
         id: 'struct_egress',
         type: 'struct_egress',
-        label: 'Egress Door',
+        label: 'Man Door',
         description: 'Personnel or emergency exit',
         color: '#6366f1',
         snapType: SNAP_TYPES.WALL,
-        w: 4, h: 4,
+        w: 3, h: 4,
         variants: [
           { label: '3ft door', w: 3, h: 4 },
           { label: '4ft door', w: 4, h: 4 },
         ],
         meta: { swingDir: 'out', fireExit: true },
+        getSnapPoints: (obj) => {
+          const { x, y, width: w, height: h } = obj
+          return [
+            { id: 'wall',   x: x+w/2, y: y,     role: 'wall' },
+            { id: 'center', x: x+w/2, y: y+h/2, role: 'center' },
+          ]
+        },
+      },
+      {
+        id: 'struct_drive_in',
+        type: 'struct_drive_in',
+        label: 'Drive-in Door',
+        description: 'Overhead door at grade — trucks and forklifts drive through',
+        color: '#6366f1',
+        snapType: SNAP_TYPES.WALL,
+        w: 12, h: 4,
+        variants: [
+          { label: '12ft door', w: 12, h: 4 },
+        ],
+        meta: { doorWidth: 12, doorType: 'overhead' },
         getSnapPoints: (obj) => {
           const { x, y, width: w, height: h } = obj
           return [

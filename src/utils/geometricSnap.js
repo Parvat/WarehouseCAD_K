@@ -19,6 +19,7 @@ export const WALL_SNAP_THRESHOLD_PX = 15   // screen pixels — converted to wor
 export const WALL_SNAP_TYPES = new Set([
   'struct_loading_dock',
   'struct_egress',
+  'struct_drive_in',
   'struct_window',
   'util_charging',
   'mhe_dock_leveler',

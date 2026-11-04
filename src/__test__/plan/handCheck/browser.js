@@ -53,7 +53,7 @@ export async function openLayout(app, json) {
     RG: await import('/src/utils/rowGroupTool.js'), RW: await import('/src/utils/rowGroup.js'), SL: await import('/src/utils/saveLoad.js'),
     LS: await import('/src/render/labelSize.js'), P: await import('/src/canvas2/labelPrefs.js'),
     HG: await import('/src/canvas2/handleGeometry.js'), SC: await import('/src/canvas2/sections.js').catch(() => null), N: await import('/src/utils/notice.js'),
-    AP: await import('/src/utils/rackingAreaTool.js') } })()`)
+    AP: await import('/src/utils/rackingAreaTool.js'), CP: await import('/src/canvas2/columnPick.js').catch(() => null) } })()`)
   await page.waitForFunction(() => window.__hc.S.getState().objects.length > 0, null, { timeout: 30000 })
   await page.waitForTimeout(400)
   // a layout opens with Pan (the store's default tool): V for Select, as a user would
@@ -63,7 +63,7 @@ export async function openLayout(app, json) {
    *  SL (utils/saveLoad), LS (render/labelSize), P (canvas2/labelPrefs) and `arg`. */
   const S = (src, arg) => page.evaluate(({ src, arg }) => {
     const m = window.__hc
-    return new Function('S', 'H', 'RG', 'RW', 'SL', 'LS', 'P', 'HG', 'SC', 'N', 'AP', 'arg', src)(m.S, m.H, m.RG, m.RW, m.SL, m.LS, m.P, m.HG, m.SC, m.N, m.AP, arg)
+    return new Function('S', 'H', 'RG', 'RW', 'SL', 'LS', 'P', 'HG', 'SC', 'N', 'AP', 'CP', 'arg', src)(m.S, m.H, m.RG, m.RW, m.SL, m.LS, m.P, m.HG, m.SC, m.N, m.AP, m.CP, arg)
   }, { src, arg })
   const cv = await page.locator('#canvas2-container').boundingBox()
   /** A world point → the page point the mouse goes to (the live view). */
@@ -103,6 +103,7 @@ export async function openLayout(app, json) {
     for (let fy = 0.04; fy < 0.97; fy += 0.01) for (let fx = 0.04; fx < 0.97; fx += 0.01) {
       const x = fp.x + fp.width * fx, y = fp.y + fp.height * fy
       if (H.hitTest(st.objects, st.layers, x, y, z, gs) !== fp.id || H.fpWallHitTest(st.objects, st.layers, x, y, z, gs)) continue
+      if (CP && CP.columnAt(st.objects, st.layers, x, y, z, gs)) continue   // a column: a click there picks it, locked or not
       const d = arg ? Math.hypot(x - arg.x, y - arg.y) : 0
       if (!best || d < best.d) best = { x, y, d }
       if (!arg) return best

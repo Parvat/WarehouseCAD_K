@@ -18,6 +18,7 @@ import { labelScale, aisleLabelScale } from '../render/labelSize'
 import { isPiece, withSections, sectionsOf, sectionView } from './sections'
 import { useClearanceView } from './clearanceView'
 import { ClearanceNumbers } from './ClearanceNumbers'
+import { useColumnPick } from './columnPick'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const near = (a, b) => Math.abs(a - b) < 1e-6
@@ -150,11 +151,15 @@ function OverlaysView({
      own; several rows show none (the selection bar carries the count). */
   const activeBaySelection = useCanvasStore(s => s.activeBaySelection)
   const bayLevel = !!(activeBaySelection && activeBaySelection.length) || selectedObjects.some(o => o.activeBayIdx != null && isPiece(o))
+  /* a column picked out of its grid (columnPick.js): that column is outlined, not the grid */
+  const colPick = useColumnPick(s => s.pick), colShow = useColumnPick(s => s.show)
+  const onlyCol = colPick && selectedObjects.length === 1 && selectedObjects[0].id === colPick.gridId ? colPick : null
   const outlined = useMemo(() => {
+    if (onlyCol) return [{ id: onlyCol.gridId, type: 'column', x: onlyCol.x, y: onlyCol.y, width: onlyCol.w, height: onlyCol.h }]
     if (!bayLevel) return selectedObjects
     const ids = withSections(objects, selectedObjects.map(o => o.id), gridSize)
     return objects.filter(o => ids.includes(o.id))
-  }, [bayLevel, selectedObjects, objects, gridSize])
+  }, [bayLevel, selectedObjects, objects, gridSize, onlyCol])
   const rackSel = selectedObjects.filter(o => rackLabelsEligible(o.type))
   const labelled = useMemo(() => {
     const secs = sectionsOf(objects, rackSel.map(o => o.id), gridSize)
@@ -181,7 +186,7 @@ function OverlaysView({
       {/* the red under-travel warnings (and the pinched shade): always, as checks; the grey clearance numbers: zoomed
           in, a column selected, or during a drag or resize — faded in place (clearanceView.js, ClearanceNumbers) */}
       {(marksOn || aislesOn) && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels={false} warnings={marksOn} />}
-      {(marksOn || aislesOn) && <ClearanceNumbers aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} selectedObjects={selectedObjects} dragging={dragging} show={showClearances} />}
+      {(marksOn || aislesOn) && <ClearanceNumbers aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} selectedObjects={selectedObjects} dragging={dragging} show={showClearances} column={onlyCol} columnShow={colShow} />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
       {marksOn && <BlockedFaceMarks rackConflicts={xMarks} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}

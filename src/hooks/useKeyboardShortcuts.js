@@ -7,7 +7,8 @@ import { cancelPlacement } from '../utils/placement'
 import { useRowGroup, clearGroup, cancelGroupBox, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
 import { FILL_TOOL, cancelFill } from '../utils/fillTool'
 import { SPLIT_TOOL, useSplit } from '../utils/splitTool'
-import { selectAllIds, keptBySelectAll } from '../utils/layers'
+import { selectAllIds, keptBySelectAll, pickableIn } from '../utils/layers'
+import { pickedColumn, clearColumnPick } from '../canvas2/columnPick'
 import { deleteSelectionWithAreas } from '../utils/deleteSelection'
 import { notify, clearNotice } from '../utils/notice'
 import { deleteBaySelection } from '../utils/baySides'
@@ -35,6 +36,8 @@ export function shortcutHandler(e) {
         if (cancelPlacement()) return
         // picked bays step up to their rows first, everywhere (STUDIO.md §7 — canvas2/selectionLevel.js)
         if (selectionLevel(useCanvasStore.getState()) === 'bays') { stepUp(useCanvasStore); return }
+        // a column picked steps up to its grid (canvas2/columnPick.js)
+        if (pickedColumn()) { clearColumnPick(); return }
         // the Row group (utils/rowGroupTool.js): Esc leaves it — the tool, the group, the edit row: nothing selected, no bar
         if (useCanvasStore.getState().activeTool === ROW_GROUP_TOOL) { cancelGroupBox(); clearGroup(); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return }
         // the Split tool (utils/splitTool.js), before a cut: Esc leaves it (after a cut the piece is a placement, above)
@@ -63,7 +66,9 @@ export function shortcutHandler(e) {
       if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key) && !isInput) {
         e.preventDefault()
         const step = e.shiftKey ? 40 : 4
-        const { selectedIds, moveObjects } = useCanvasStore.getState()
+        // nothing on a locked layer (or itself locked) moves — a locked column is clicked, never moved
+        const { objects, layers, moveObjects } = useCanvasStore.getState(), ok = pickableIn(layers)
+        const selectedIds = useCanvasStore.getState().selectedIds.filter(id => ok(objects.find(o => o.id === id)))
         if (!selectedIds.length) return
         const dx = e.key==='ArrowLeft' ? -step : e.key==='ArrowRight' ? step : 0
         const dy = e.key==='ArrowUp'   ? -step : e.key==='ArrowDown'  ? step : 0
@@ -124,6 +129,9 @@ export function shortcutHandler(e) {
           break
         case 'x':
           e.preventDefault()
+          // a cut deletes: never a locked layer's objects (a column clicked on the locked Columns layer)
+          { const st = useCanvasStore.getState(), ok = pickableIn(st.layers)
+            if (!st.selectedIds.some(id => ok(st.objects.find(o => o.id === id)))) break }
           useCanvasStore.getState().cutSelected()
           break
         case 'v':

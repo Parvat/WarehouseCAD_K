@@ -13,6 +13,7 @@ import { useRowGroup, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
 import { pickedBays } from '../canvas2/selectionLevel'
 import { withSections, isOneSection, sectionsOf } from '../canvas2/sections'
 import { useClearanceView, setShowClearances } from '../canvas2/clearanceView'
+import { useColumnPick, setColumnClearances } from '../canvas2/columnPick'
 import { getRackCapacity } from '../utils/capacity'
 import { levelsResolver } from '../utils/elevations'
 import { useBayLedger } from '../components/RightPanel/useBayLedger'
@@ -41,6 +42,7 @@ import { addBayTo, removeBayFrom, rotateQuarter, duplicateSelection, deleteSelec
      several rows   Apply elevation ▾ | Row group · Delete
      zone           W × L | Lock · Duplicate · Delete
      column grid    Show clearances
+     one column     Show clearances — that column's only (a click picks one column: canvas2/columnPick.js)
      aisle label    Lock
      building/wall  Thickness 3″ 6″ 9″ 12″ | Add door · Wall clearance
    Not drawn while another tool is on, during a drag or a placement, or while a Row group is open (its mode bar is).
@@ -56,8 +58,10 @@ const store = useCanvasStore
 /** What the bar is for, and on what: { kind, objs } or null. One selection rule (STUDIO.md §7): bays picked — the bay
  *  bar ('bay': in one row; 'bays': in several); rows — the rack bar for one row (one section: its pieces are one
  *  object — canvas2/sections.js), the rows bar for several. `activeBaySelection`: the store's (left out: none). */
-export function barFor(objects, selectedIds, activeWall, activeBaySelection = [], gridSize = 40) {
+export function barFor(objects, selectedIds, activeWall, activeBaySelection = [], gridSize = 40, column = null) {
   const sel = objects.filter(o => selectedIds.includes(o.id))
+  // one column picked out of its grid: its own bar, over that column
+  if (column && sel.length === 1 && sel[0].id === column.gridId) return { kind: 'column', one: true, objs: [{ id: column.gridId, type: 'column', x: column.x, y: column.y, width: column.w, height: column.h }] }
   if (!sel.length && activeWall) { const fp = objects.find(o => o.id === activeWall.objId); return fp ? { kind: 'building', objs: [fp] } : null }
   const picked = pickedBays({ objects, selectedIds, activeBaySelection })
   if (picked.length) {
@@ -339,8 +343,10 @@ const toggleBtn = (on) => ({ height: 32, padding: '0 10px', border: 0, borderRad
 
 /* Show clearances: the column clearance tags on the plan while it is on (canvas2/clearanceView.js — otherwise they
    show only during an action) */
-function ColumnBar() {
-  const show = useClearanceView(s => s.show)
+function ColumnBar({ one = false }) {
+  const show = useClearanceView(s => s.show), mine = useColumnPick(s => s.show)
+  // one column picked: Show clearances is that column's only — on when it is picked
+  if (one) return <button type="button" aria-pressed={!!mine} title="This column's clear distances on the plan" onClick={() => setColumnClearances(!mine)} style={toggleBtn(!!mine)}>Show clearances</button>
   return <button type="button" aria-pressed={!!show} title="The columns' clear distances on the plan" onClick={() => setShowClearances(!show)} style={toggleBtn(!!show)}>Show clearances</button>
 }
 
@@ -385,7 +391,8 @@ export function SelectionBar() {
   const ref = useRef(null)
   const [size, setSize] = useState(null)
   const [labels, setLabels] = useState(EMPTY)
-  const what = useMemo(() => barFor(objects, selectedIds, activeWall, activeBaySelection, gridSize), [objects, selectedIds, activeWall, activeBaySelection, gridSize])
+  const column = useColumnPick(s => s.pick)
+  const what = useMemo(() => barFor(objects, selectedIds, activeWall, activeBaySelection, gridSize, column), [objects, selectedIds, activeWall, activeBaySelection, gridSize, column])
   // the Row group's edit row has its bar at once (STUDIO.md §7); not while an apply is asked (the mode bar asks)
   const hidden = !what || (activeTool !== TOOLS.SELECT && activeTool !== ROW_GROUP_TOOL) || dragging || !!placing || pending
   useLayoutEffect(() => {
@@ -415,7 +422,7 @@ export function SelectionBar() {
       {what.kind === 'bay' && <BayBar />}
       {what.kind === 'bays' && <BayBar several />}
       {what.kind === 'zone' && <ZoneBar obj={obj} />}
-      {what.kind === 'column' && <ColumnBar />}
+      {what.kind === 'column' && <ColumnBar one={!!what.one} />}
       {what.kind === 'aisle' && <AisleBar obj={obj} />}
       {what.kind === 'building' && <BuildingBar obj={obj} />}
     </div>

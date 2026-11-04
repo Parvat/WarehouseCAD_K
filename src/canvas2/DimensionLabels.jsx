@@ -324,7 +324,7 @@ const EMPTY = []
    held warnings with it, unchanged; any other drag re-runs just the cheap
    aisle part of the column check on the previewed layout
    (clearanceSource.js). Otherwise it draws the full check's own aisleBlocks. */
-export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridSize = 40, showLabels = true, avoid = EMPTY, warnings = true }) {
+export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridSize = 40, showLabels = true, avoid = EMPTY, warnings = true, only = null }) {
   const ids = useDragPreview(s => s.ids), dx = useDragPreview(s => s.dx), dy = useDragPreview(s => s.dy)
   const { profile, pickBothSides } = useColumnCheck()
   /* clearanceSource.js: a drag carrying every rack and column (a building
@@ -338,10 +338,12 @@ export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridS
   // the racks and columns a number may never sit on, in this group's frame
   const solids = useMemo(() => clearanceSolids(objects, gridSize).map(r => ({ ...r, x: r.x - (src.x || 0), y: r.y - (src.y || 0) })), [objects, gridSize, src.x, src.y])
   if (!src.blocks?.length || !src.cols?.length) return null
+  /* `only`: one column's (a column picked — canvas2/columnPick.js), its square in world px */
+  const mine = (a) => { const c = src.cols[a.columnIndex]; return !only || (c && Math.abs(c.x + (src.x || 0) - only.x) < 1e-3 && Math.abs(c.y + (src.y || 0) - only.y) < 1e-3) }
 
   return (
     <Group name="column-clearance-labels" listening={false} x={src.x} y={src.y}>
-      {src.blocks.map((a, i) => <ClearanceItem key={i} a={a} i={i} col={src.cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} avoid={avoidNear(local, a, src.cols[a.columnIndex], lz, gridSize)} warnings={warnings} solids={solids} />)}
+      {src.blocks.map((a, i) => mine(a) && <ClearanceItem key={i} a={a} i={i} col={src.cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} avoid={avoidNear(local, a, src.cols[a.columnIndex], lz, gridSize)} warnings={warnings} solids={solids} />)}
     </Group>
   )
 }

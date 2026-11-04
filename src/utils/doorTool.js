@@ -3,8 +3,9 @@
 // the next one; Esc ends it. Its mode bar (canvas2/DoorBar.jsx): Add door · the door types in the library today ·
 // the width (the type's, or typed).
 //
-// The door types are the library's own (constants/warehouseObjects.js, the Structural section): Loading Dock Door
-// and Egress Door — their default width, their depth into the building and their look come from there. Presentation
+// The door types are the library's own (constants/warehouseObjects.js, the Structural section), in this order: Man
+// door (3′), Dock door (9′), Drive-in door (12′, overhead) — their default width, their depth into the building and
+// their look come from there. Presentation
 // state (the type, the width, the hover) lives here, never in the store.
 
 import { create } from 'zustand'
@@ -15,11 +16,15 @@ import { layerForType } from './layers'
 export const DOOR_TOOL = 'door'
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 
+/* the tool's segmented, in order, and what it calls each */
+const DOOR_IDS = ['struct_egress', 'struct_loading_dock', 'struct_drive_in']
+const DOOR_NAMES = { struct_egress: 'Man door', struct_loading_dock: 'Dock door', struct_drive_in: 'Drive-in door' }
+
 /** The door types in the library today: { id, type, label, short, widthFt, depthFt, color, snapType, meta }. */
 export function doorTypes() {
   const cat = WAREHOUSE_CATEGORIES.find(c => c.id === 'structural'), items = cat ? cat.objects.map(o => ({ ...o, color: o.color || cat.color })) : []
-  return items.filter(i => i.id === 'struct_loading_dock' || i.id === 'struct_egress').map(i => ({
-    id: i.id, type: i.type, label: i.label, short: i.id === 'struct_loading_dock' ? 'Dock' : 'Egress',
+  return DOOR_IDS.map(id => items.find(i => i.id === id)).filter(Boolean).map(i => ({
+    id: i.id, type: i.type, label: i.label, short: DOOR_NAMES[i.id],
     widthFt: i.w, depthFt: i.h, color: i.color, snapType: i.snapType, meta: i.meta,
   }))
 }
