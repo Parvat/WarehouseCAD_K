@@ -21,6 +21,7 @@ import { SPLIT_TOOL } from '../utils/splitTool'
 import { FILL_TOOL } from '../utils/fillTool'
 import { DOOR_TOOL } from '../utils/doorTool'
 import { endTool } from '../utils/toolSwitch'
+import { isPlainTool } from '../utils/homeTool'
 import { isBeamRack, typeById } from '../utils/elevations'
 import { selectionCells, cellTypes } from '../utils/elevSelection'
 import { assignSelected } from '../utils/elevTab'
@@ -394,7 +395,7 @@ export function SelectionBar() {
   const column = useColumnPick(s => s.pick)
   const what = useMemo(() => barFor(objects, selectedIds, activeWall, activeBaySelection, gridSize, column), [objects, selectedIds, activeWall, activeBaySelection, gridSize, column])
   // the Row group's edit row has its bar at once (STUDIO.md §7); not while an apply is asked (the mode bar asks)
-  const hidden = !what || (activeTool !== TOOLS.SELECT && activeTool !== ROW_GROUP_TOOL) || dragging || !!placing || pending
+  const hidden = !what || (!isPlainTool(activeTool) && activeTool !== ROW_GROUP_TOOL) || dragging || !!placing || pending
   useLayoutEffect(() => {
     if (hidden || !ref.current) return
     const w = ref.current.offsetWidth, h = ref.current.offsetHeight
@@ -437,7 +438,7 @@ export const useFloorMenu = create(() => ({ at: null, objId: null }))
 export function openFloorMenu(e, host) {
   e.preventDefault()
   const st = store.getState()
-  if (st.activeTool !== TOOLS.SELECT) return false
+  if (!isPlainTool(st.activeTool)) return false
   const r = host.getBoundingClientRect(), p = { x: e.clientX - r.left, y: e.clientY - r.top }
   const w = screenToWorld({ zoom: st.zoom, panX: st.panX, panY: st.panY }, p), gs = st.gridSize || 40
   const hit = hitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs)

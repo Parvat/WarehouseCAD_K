@@ -20,6 +20,7 @@ import { rackFootprint, rowAisleLevel, MHE_PROFILES } from './columnCheck'
 import { rowAisleGaps } from './rowAisles'
 import { faceObstacleGaps, positionRunSpans, faceIndex } from './faceAisles'
 import { levelsResolver } from '../utils/elevations'
+import { isEmptySide } from '../utils/bayEmpty'
 
 const E = 1e-6
 const BEAM = new Set(['rack_row', 'rack_double_row'])
@@ -51,7 +52,7 @@ export function narrowAisleBlocks(objects, { profile = MHE_PROFILES.reach, gridS
   const out = [], lv = levelsResolver(elevations)   // each face's levels from its elevation type
   for (const { r, bay, face, level, ps, cause, width } of hit.values()) {
     const positionIndices = [...ps].sort((a, b) => a - b).filter(p => !already.has(r.id + ':' + bay + ':' + face + ':' + p))
-    if (!positionIndices.length) continue
+    if (!positionIndices.length || isEmptySide(r, bay, face)) continue   // an empty bay side loses nothing (utils/bayEmpty.js)
     out.push({ rackId: r.id, bayIndex: bay, faces: [face], positionIndices, positionsLost: positionIndices.length * (lv ? lv(r, bay, face) : r.levels || 1), level, kind: 'narrow-aisle', cause, width })
   }
   return out

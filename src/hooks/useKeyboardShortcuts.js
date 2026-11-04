@@ -16,6 +16,7 @@ import { toggleMeasure } from '../utils/toolSwitch'
 import { isTypingTarget, textOwnsKey } from '../utils/typing'
 import { selectionLevel, stepUp } from '../canvas2/selectionLevel'
 import { deleteSelection } from '../studio/selectionActions'
+import { HOME_TOOL, isPlainTool } from '../utils/homeTool'
 
 /** The app's keyboard shortcuts, one keydown handler (exported so a test can press keys at it). */
 export function shortcutHandler(e) {
@@ -31,7 +32,7 @@ export function shortcutHandler(e) {
         useRowGroup.setState({ message: null })   // a shown result ("Applied to 11 rows") is over
         // a fill box being dragged: Esc drops it, nothing placed; with none, Esc leaves the fill tool
         if (cancelFill()) return
-        if (useCanvasStore.getState().activeTool === FILL_TOOL) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
+        if (useCanvasStore.getState().activeTool === FILL_TOOL) { useCanvasStore.getState().setActiveTool(HOME_TOOL); return }
         // a row being placed (paste, duplicate, left panel): Esc cancels it, nothing else
         if (cancelPlacement()) return
         // picked bays step up to their rows first, everywhere (STUDIO.md §7 — canvas2/selectionLevel.js)
@@ -39,13 +40,13 @@ export function shortcutHandler(e) {
         // a column picked steps up to its grid (canvas2/columnPick.js)
         if (pickedColumn()) { clearColumnPick(); return }
         // the Row group (utils/rowGroupTool.js): Esc leaves it — the tool, the group, the edit row: nothing selected, no bar
-        if (useCanvasStore.getState().activeTool === ROW_GROUP_TOOL) { cancelGroupBox(); clearGroup(); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return }
+        if (useCanvasStore.getState().activeTool === ROW_GROUP_TOOL) { cancelGroupBox(); clearGroup(); useCanvasStore.getState().setActiveTool(HOME_TOOL); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return }
         // the Split tool (utils/splitTool.js), before a cut: Esc leaves it (after a cut the piece is a placement, above)
-        if (useCanvasStore.getState().activeTool === SPLIT_TOOL) { useSplit.setState({ hover: null }); useCanvasStore.getState().setActiveTool(TOOLS.SELECT); return }
-        // any other tool (Pan, Line, Text, Freehand, a shape …): Esc ends it — back to Select (utils/toolSwitch.js
+        if (useCanvasStore.getState().activeTool === SPLIT_TOOL) { useSplit.setState({ hover: null }); useCanvasStore.getState().setActiveTool(HOME_TOOL); return }
+        // any other tool (Line, Text, Freehand, a shape …): Esc ends it — back to Pan, the home tool (utils/homeTool.js, toolSwitch.js
         // clears what it left behind)
-        // (Esc also clears the selection: leaving Pan — the tool a fresh plan opens in — with the building picked must not keep it)
-        if (useCanvasStore.getState().activeTool !== TOOLS.SELECT) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return }
+        // (Pan and Select are the plain tools: Esc there only clears the selection — utils/homeTool.js)
+        if (!isPlainTool(useCanvasStore.getState().activeTool)) { useCanvasStore.getState().setActiveTool(HOME_TOOL); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return }
         { const g = useRowGroup.getState()
           if (g.keys.length || g.pending) { clearGroup(); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return } }
         useCanvasStore.getState().clearSelection()

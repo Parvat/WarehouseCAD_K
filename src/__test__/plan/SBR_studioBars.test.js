@@ -169,7 +169,7 @@ describe('SBR — the mode bars and the notices', () => {
     expect((await ssr(SPL.SplitBar))).toBe('')
     store.setState({ activeTool: 'split' })
     expect((await ssr(SPL.SplitBar))).toMatch(/data-mode-bar="split"[\s\S]*>Split<\/span>[\s\S]*Click a row where to cut · drag the piece away[\s\S]*>Esc<\/span> to finish[\s\S]*aria-label="Close Split"/)
-    expect(read('canvas2/SplitBar.jsx')).toMatch(/const close = \(\) => \{ useSplit\.setState\(\{ hover: null \}\); useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\) \}/)
+    expect(read('canvas2/SplitBar.jsx')).toMatch(/const close = \(\) => \{ useSplit\.setState\(\{ hover: null \}\); useCanvasStore\.getState\(\)\.setActiveTool\(HOME_TOOL\) \}/)
     // Fill racking: the settings, the aisle, the live estimate
     const FT = await import('../../canvas2/FillBar'), FL = await import('../../utils/fillTool')
     FL.useRackingSettings.getState().setSetting('orientation', 'vertical')
@@ -177,7 +177,7 @@ describe('SBR — the mode bars and the notices', () => {
     const f = (await ssr(FT.FillOptionsBar))
     expect(f).toMatch(/data-mode-bar="fill"[\s\S]*>Fill racking<\/span>[\s\S]*aria-pressed="false"[^>]*>Rows ↔<\/button><button[^>]*aria-pressed="true"[^>]*>Rows ↕<[\s\S]*aria-label="Beam"[\s\S]*aria-label="Max rack run \(ft\)"[\s\S]*>Aisle<\/span><span aria-label="Aisle"[^>]*>10′ 6″<[\s\S]*>16<\/span> rows · <span[^>]*>1,920<\/span> pos[\s\S]*aria-label="Close Fill racking"/)
     FL.useFillTool.setState({ plan: null })
-    expect(read('canvas2/FillBar.jsx')).toMatch(/const close = \(\) => \{ cancelFill\(\); useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\) \}/)
+    expect(read('canvas2/FillBar.jsx')).toMatch(/const close = \(\) => \{ cancelFill\(\); useCanvasStore\.getState\(\)\.setActiveTool\(HOME_TOOL\) \}/)
     // the old light chrome is gone from the bars
     for (const fl of ['canvas2/RowGroupBar.jsx', 'canvas2/FillBar.jsx', 'canvas2/FillTool.jsx', 'canvas2/SplitBar.jsx', 'studio/SelectionBar.jsx']) expect([fl, /var\(--surface|var\(--accent-solid|var\(--border/.test(read(fl))]).toEqual([fl, false])
   })

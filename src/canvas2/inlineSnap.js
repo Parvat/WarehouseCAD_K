@@ -21,6 +21,7 @@
 import { rackFootprint } from '../generate/columnCheck'
 import { sharesFrame, beamsUpdate } from '../utils/bayBeam'
 import { ELEV_FIELDS, effectiveRef, sidesOf } from '../utils/elevations'
+import { hasEmpty, isEmptySide, normEmpty } from '../utils/bayEmpty'
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const EPS = 1e-6
@@ -130,6 +131,12 @@ export function joinRacks(stationary, moved, gridSize) {
     const S = sidesOf(out), mine = (r) => r === stationary
     out.elevBays = Array.from({ length: S }, (_, s) => [...first.beams.map((_, b) => (mine(first) ? first.elevBays?.[s]?.[b] ?? null : effectiveRef(first, b, s))), ...second.beams.map((_, b) => (mine(second) ? second.elevBays?.[s]?.[b] ?? null : effectiveRef(second, b, s)))])
     if (!out.elevBays.some(a => a.some(v => v != null))) delete out.elevBays
+  }
+  // a pair's empty bay sides ride with their bays (utils/bayEmpty.js)
+  delete out.bayEmpty
+  if (hasEmpty(first) || hasEmpty(second)) {
+    const sides = (r, s) => r.beams.map((_, b) => isEmptySide(r, b, s))
+    Object.assign(out, normEmpty({ ...out, bayEmpty: [0, 1].map(s => [...sides(first, s), ...sides(second, s)]) }))
   }
   // the stamp of where it was generated follows its start
   if (stationary.genRunFt != null) {

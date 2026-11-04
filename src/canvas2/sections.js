@@ -1,8 +1,8 @@
 // canvas2/sections.js — a section: the racks that are one row piece on the plan (STUDIO.md §7, the section rule).
 //
 // A bay delete replaces a rack with its pieces (utils/baySplit.js, generate/faceReach.js). A bay deleted on ONE side
-// of a back-to-back pair leaves the other side's bay standing — a one-side piece sharing an upright with the pair
-// pieces either side — so the pair is still ONE section. Only when both facing bays at a position go is there a gap,
+// of a back-to-back pair now leaves the pair ONE object, that side empty (utils/bayEmpty.js); a layout saved before
+// that is joined back on load (utils/pairJoin.js). Pieces of one pair that still touch (a zone's cut) are one section. Only when both facing bays at a position go is there a gap,
 // and two sections; a single row splits at a middle bay the same way (a gap). So a section is the chain of pieces of
 // one rack (the same root: `pieceOf`, else its own id) that touch end to end in one line — sharing an upright, or
 // butting — never across a gap. The Split tool's pieces (`splitOf`) are two sections even where they still touch.

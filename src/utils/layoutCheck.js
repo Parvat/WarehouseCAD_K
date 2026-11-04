@@ -51,6 +51,7 @@ import { zoneName } from '../generate/faceAisles'
 import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
 export { rowAisleGaps }
 import { oversizedBayIndices } from './capacity'
+import { buildingOutline, boxOnFloor } from './floorGeom'
 import { fmtLen, fmtLenDown, sectionLabel, failingCrossAisles } from './copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { elevationIssues } from './elevations'
@@ -238,6 +239,22 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
       warnings.push({ severity: 'warning', kind: 'angled', ids: [r.id], box: boxOf(f), highlight: [outline(f, HL.amber)], text: `${name(r)}: angled ${Math.round(r.rotation)}° — its column losses weren't checked` })
     }
   }
+  // ── zones and columns past the walls (a building shrunk from its handles leaves them: flagged, never deleted) ──
+  if (hasBuilding) {
+    // past the building's OUTER edge: a zone against a wall or a column in the wall line is inside
+    const inner = objects.filter(o => FP.has(o.type)).map(fp => buildingOutline(fp))
+    const inside = (b) => inner.some(p => boxOnFloor(p, { x: b.x + 0.5, y: b.y + 0.5, w: Math.max(0, b.w - 1), h: Math.max(0, b.h - 1) }))
+    for (const z of zones) {
+      const b = { x: z.x, y: z.y, w: z.width, h: z.height }
+      if (!inside(b)) warnings.push({ severity: 'warning', kind: 'outside-item', ids: [z.id], box: b, highlight: [outline(b, HL.amber)], text: `${z.label || zoneName(z) || 'A zone'}: past the building's walls` })
+    }
+    const out = cols.filter(c => !inside({ x: c.x, y: c.y, w: c.w, h: c.h }))
+    if (out.length) {
+      const grid = objects.find(o => o.type === 'column_grid')
+      warnings.push({ severity: 'warning', kind: 'outside-item', ids: grid ? [grid.id] : [], box: union(out.map(c => ({ x: c.x, y: c.y, w: c.w, h: c.h }))),
+        highlight: out.map(c => outline({ x: c.x, y: c.y, w: c.w, h: c.h }, HL.amber)), text: `${out.length} column${out.length === 1 ? '' : 's'} past the building's walls` })
+    }
+  }
   // ── a way in: racks only a dead-end pocket reaches (an aisle closed at both ends) ──
   const zonesIn = objects.some(o => typeof o.type === 'string' && o.type.startsWith('zone_'))
   for (const fp of objects.filter(o => FP.has(o.type))) {
@@ -305,7 +322,7 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
     if (e.severity === 'warning') warnings.push({ severity: 'warning', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => outline(b, HL.amber)), text: e.text })
     else errors.push({ severity: 'error', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => shade(b, HL.red)), text: e.text })
   }
-  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled']
+  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled']
   const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
   const reminders = projectReminders(elevations)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }

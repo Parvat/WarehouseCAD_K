@@ -3,7 +3,7 @@ import { Group, Rect } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { rackFootprint } from '../generate/columnCheck'
 import { rowsOf, previewRects } from '../utils/rowGroup'
-import { useRowGroup } from '../utils/rowGroupTool'
+import { useRowGroup, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
 
 /* The Row group on the canvas (utils/rowGroupTool.js) — pure paint, never listening:
      - the Row group tool's box while it is dragged;
@@ -27,7 +27,9 @@ export function RowGroupPreview() {
   const drag = useRowGroup(s => s.drag)
   const objects = useCanvasStore(s => s.objects)
   const gridSize = useCanvasStore(s => s.gridSize) || 40
-  if (!keys.length && !pending && !drag) return null
+  // the purple outline is the Row group tool's: only while it is on (utils/toolSwitch.js ends the group with it)
+  const on = useCanvasStore(s => s.activeTool === ROW_GROUP_TOOL)
+  if (!on || (!keys.length && !pending && !drag)) return null
   const rows = rowsOf(objects, gridSize), byId = new Map(objects.map(o => [o.id, o]))
   const outlined = []
   for (const k of keys) { const r = rows.get(k) || [...rows.values()].find(x => k.startsWith('h|') && x.roots && k.slice(2).split(',').some(id => x.roots.includes(id))); for (const id of r ? r.ids : []) if (byId.has(id)) outlined.push(rect(rackFootprint(byId.get(id)), 'g' + id, GROUP, { width: 2 })) }
@@ -36,5 +38,5 @@ export function RowGroupPreview() {
       : rect(p.f, p.key, SKIPPED, { dash: [3, 3], fill: 'rgba(230,126,34,0.10)', width: 2 }))) : []
   // the Row group tool's box while it is dragged
   const box = drag && rect({ x: Math.min(drag.from.x, drag.to.x), y: Math.min(drag.from.y, drag.to.y), w: Math.abs(drag.to.x - drag.from.x), h: Math.abs(drag.to.y - drag.from.y) }, 'box', GROUP, { dash: [6, 4], fill: 'rgba(47,123,216,0.06)' })
-  return <Group listening={false}>{outlined}{paint}{box}</Group>
+  return <Group name="row-group-outline" listening={false}>{outlined}{paint}{box}</Group>
 }

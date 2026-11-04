@@ -2,16 +2,17 @@
 //
 // A click on a bay of a pair picks that bay on the half clicked (face 0, the rack's local top band; face 1 its bottom
 // band — render/bayGeom.js bayRectForIndex draws them in that order); a click in the flue picks both. Shift+click and a
-// bay marquee carry the side the same way. Delete removes the picked bays from that side only: the pair splits at
-// that upright and the other half carries on as a single row sharing it (generate/faceReach.js piecesFromStates — the
-// reverse of a pair taking over its single's bay, utils/pairCarryOn.js). A bay picked on both sides, or with no side
-// (a whole rack, a single row), goes whole. One undo step. The selection itself is the store's: `activeBayIdx` /
+// bay marquee carry the side the same way. Delete removes the picked bays from that side only: the pair stays ONE
+// object, those bay positions EMPTY on that side (utils/bayEmpty.js — no beams, no positions, the outline and shared
+// uprights kept); only a bay gone on both sides cuts it there (generate/faceReach.js piecesFromStates). A bay picked on
+// both sides, or with no side (a whole rack, a single row), goes whole. One undo step. The selection itself is the store's: `activeBayIdx` /
 // `activeBaySide` on the rack for a single click, `{ objId, bayIdx, side }` entries in activeBaySelection otherwise.
 // Per-bay beam changes and the bay panel act on the whole bay — both sides share the pair's one beam list.
 
 import { create } from 'zustand'
 import { piecesFromStates } from '../generate/faceReach'
 import { rebuildAisles } from './aisleRebuild'
+import { isEmptySide, withEmpty } from './bayEmpty'
 
 const isPair = (o) => o?.type === 'rack_double_row'
 
@@ -77,9 +78,19 @@ export function planBaySideDelete(objects, entries, { gridSize = 40, newId }) {
       if (isPair(r) && (e.side === 0 || e.side === 1)) gone[e.bayIdx].add(e.side)
       else { gone[e.bayIdx].add(0); gone[e.bayIdx].add(1) }
     }
-    const state = gone.map(g => (g.size === 0 ? 'D' : g.size === 2 || !isPair(r) ? '-' : g.has(0) ? 'B' : 'A'))
+    /* A pair stays ONE object (utils/bayEmpty.js): a bay gone on one side is marked empty on that side; only a bay
+       gone on both sides (or on the side that was left, the other already empty) cuts the pair there. */
+    const marks = []
+    const state = gone.map((g, b) => {
+      if (!isPair(r)) return g.size ? '-' : 'D'
+      const both = [0, 1].every(s => g.has(s) || isEmptySide(r, b, s))
+      if (both) return '-'
+      for (const s of g) marks.push({ b, s })
+      return 'D'
+    })
     if (state.every(x => x === '-')) continue                     // never every bay of a rack, as the store's own delete
-    const pieces = state.every(s => s === 'D') ? [r] : piecesFromStates(r, state, { gridSize, newId })
+    const r2 = marks.length ? withEmpty(r, marks) : r
+    const pieces = state.every(s => s === 'D') ? [r2] : piecesFromStates(r2, state, { gridSize, newId })
     replace.set(id, pieces)
     became.set(id, pieces.map(p => p.id))
   }

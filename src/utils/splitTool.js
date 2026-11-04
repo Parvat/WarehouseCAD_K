@@ -31,6 +31,8 @@
 //     The live distances are the piece under the cursor's. The bar reports it: "Split 3 rows · 1 moved
 //     without a cut · 1 skipped", the skipped rows listed.
 
+import { HOME_TOOL } from './homeTool'
+import { carryElev, withElev } from './elevations'
 import { create } from 'zustand'
 import { geom, uprightsOf, withRun, isRowRack, rowsOf, rowOfRack, resolveKey, UP_TOL_FT, fmtIn } from './rowGroup'
 import { startPlacement } from './placement'
@@ -66,8 +68,12 @@ export function cutRack(rack, k, gridSize = 40, newId = () => Math.random().toSt
   const g = geom(rack), up = ((rack.uprightWidth || 3) / 12) * gridSize
   const ups = uprightsOf(g.r0, g.beams, up, gridSize)
   const root = rack.pieceOf || rack.id
+  const n = g.beams.length, rev = ((((rack.rotation || 0) % 360) + 360) % 360) === 180 || ((((rack.rotation || 0) % 360) + 360) % 360) === 270
   const piece = (s, e, own) => {
-    const out = withRun(own ? rack : { ...rack, id: newId(), pieceOf: root, splitOf: rack.splitOf || rack.id }, ups[s], g.beams.slice(s, e), gridSize)
+    const built = withRun(own ? rack : { ...rack, id: newId(), pieceOf: root, splitOf: rack.splitOf || rack.id }, ups[s], g.beams.slice(s, e), gridSize)
+    // each piece keeps its own bays' elevation types and empty sides (utils/elevations.js carryElev, utils/bayEmpty.js)
+    const idx = Array.from({ length: e - s }, (_, i) => (rev ? n - 1 - (s + i) : s + i))
+    const out = withElev(built, carryElev(rack, rev ? idx.reverse() : idx))
     if (rack.genRunFt != null) out.genRunFt = rack.genRunFt + (ups[s] - ups[0]) / gridSize
     return out
   }
@@ -148,7 +154,7 @@ export function splitAt(store, world, rackId, { newId, rebuildAisles } = {}) {
   const rack = st.objects.find(o => o.id === rackId)
   const c = rack ? cutOf(rack, world, gridSize) : null
   useSplit.setState({ hover: null })
-  st.setActiveTool(TOOLS.SELECT)
+  st.setActiveTool(HOME_TOOL)
   if (!c) return false
   const movesFirst = c.side === 'first'
   const group = groupCuts(st.objects, rack, c, useRowGroup.getState().keys, gridSize)

@@ -57,7 +57,7 @@ function savedFill(vert) {
   const objs = REAL_LAYOUT.map(o => ({ ...o })), area = objs.find(o => o.type === 'racking_area')
   const out = planAreaResize(objs, area.id, { x: area.x, y: area.y, w: area.width, h: area.height }, { gridSize: GS })
   if (vert) return out
-  return out.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x } })
+  return out.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x, ...(o.bayEmpty ? { bayEmpty: [o.bayEmpty[1], o.bayEmpty[0]] } : {}) } })
 }
 function load(objects) {
   const clean = strip(objects)
@@ -134,7 +134,7 @@ describe.each([['vertical', true], ['horizontal', false]])('SP — %s', (_, vert
     const r = rowRacks(2, 7)[0], before = rowRacks(2, 7).map(strip), t0 = totals(), h = hist()
     expect(r.beams.length).toBe(14)
     expect(splitAt(store, near(r, 5, 0.5), r.id, { newId, rebuildAisles })).toBe(true)
-    expect(store.getState().activeTool).toBe(TOOLS.SELECT)
+    expect(store.getState().activeTool).toBe(TOOLS.PAN)   // the home tool (utils/homeTool.js)
     const a = usePlacement.getState().active
     expect(a.items.map(o => o.beams.length)).toEqual([9])
     expect(rowRacks(2, 7).map(o => [o.id, o.beams.length])).toEqual([[r.id, 5]])
@@ -444,7 +444,7 @@ describe('SP-wire', () => {
     expect(cv).toMatch(/splitting \? splitMouseMove/)
     expect(cv).toMatch(/\{splitting && <SplitPreview \/>\}/)
     const kb = readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')
-    expect(kb).toMatch(/activeTool === SPLIT_TOOL\) \{ useSplit\.setState\(\{ hover: null \}\); useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); return \}/)
+    expect(kb).toMatch(/activeTool === SPLIT_TOOL\) \{ useSplit\.setState\(\{ hover: null \}\); useCanvasStore\.getState\(\)\.setActiveTool\(HOME_TOOL\); return \}/)
     expect(readFileSync('src/canvas2/RowGroupBar.jsx', 'utf8')).toContain("> · {placing.escHint || 'Esc to cancel'}</span>")
     const gh = readFileSync('src/canvas2/CopyChange.jsx', 'utf8')
     expect(gh).toContain('const distances = placementDistances(a, objects, gridSize)')

@@ -20,6 +20,7 @@ import { installPairKeeper } from '../../utils/pairCarryOn'
 import { bayHalfAt, hasOneSide, selectedBays, planBaySideDelete, deleteBaySelection } from '../../utils/baySides'
 import { toggleBaySelection, bayEntriesInMarquee } from '../../canvas2/selection'
 import { useRowGroup, installRowGroupWatcher, flushRowGroupWatcher, clearGroup, addRowOf, applyPending } from '../../utils/rowGroupTool'
+import { isEmptySide } from '../../utils/bayEmpty'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
 const mem = new Map()
@@ -47,7 +48,7 @@ function savedFill(vert) {
   const objs = REAL_LAYOUT.map(o => ({ ...o })), area = objs.find(o => o.type === 'racking_area')
   const out = planAreaResize(objs, area.id, { x: area.x, y: area.y, w: area.width, h: area.height }, { gridSize: GS })
   if (vert) return out
-  return out.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x } })
+  return out.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x, ...(o.bayEmpty ? { bayEmpty: [o.bayEmpty[1], o.bayEmpty[0]] } : {}) } })
 }
 function load(objects) {
   store.setState({ objects: strip(objects), groups: [], activeBaySelection: [], selectedIds: [], gridSize: GS, history: [JSON.stringify({ objects, groups: [] })], historyIndex: 0 })
@@ -136,9 +137,10 @@ describe.each([['vertical', true], ['horizontal', false]])('BS — %s', (_, vert
     const h = hist()
     expect(deleteBaySelection(store, newId)).toBe(true); await settle()
     expect(hist()).toBe(h + 1)
-    const s = singlesOf(12)
-    expect([run(pairOf(12)), pairOf(12).beams.length, pairOf(12).id]).toEqual([[9, 108.25], 12, p.id])
-    expect([s.length, run(s[0]), s[0].beams.length, across(s[0])]).toEqual([1, [108, 124.75], 2, across(was.single)])
+    // the pair stays ONE object (STUDIO.md §7, utils/bayEmpty.js): its two far bays empty on that side, nothing cut
+    expect([run(pairOf(12)), pairOf(12).beams.length, pairOf(12).id, singlesOf(12).length]).toEqual([[9, 124.75], 14, p.id, 0])
+    expect([far.every(i => isEmptySide(pairOf(12), i, side)), far.some(i => isEmptySide(pairOf(12), i, 1 - side))]).toEqual([true, false])
+    // as before the takeover: the same bays, the same positions, the same frames in the bay ledger (a frame between two empty bays goes)
     expect([bays(12), positions(12), ledgerOf(12)]).toEqual([was.bays, was.positions, was.ledger])
     expect(overlapsIn(12)).toEqual([])
     expect([store.getState().selectedIds, store.getState().activeBaySelection]).toEqual([[], []])
@@ -152,9 +154,8 @@ describe.each([['vertical', true], ['horizontal', false]])('BS — %s', (_, vert
     store.setState({ selectedIds: [p.id], activeBaySelection: [], objects: objs().map(o => (o.id === p.id ? { ...o, activeBayIdx: last, activeBaySide: 1 } : o)) })
     expect(selectedBays(store.getState())).toEqual([{ objId: p.id, bayIdx: last, side: 1 }])
     expect(deleteBaySelection(store, newId)).toBe(true); await settle()
-    const s = singlesOf(12)
-    expect([pairOf(12).beams.length, s.length, s[0]?.beams.length, run(s[0])]).toEqual([13, 1, 1, [116.25, 124.75]])
-    expect(sideOfSingle(p, s[0])).toBe(0)                         // the half kept is the other side
+    // the pair stays one object: that bay empty on side 1, side 0 kept
+    expect([pairOf(12).beams.length, singlesOf(12).length, isEmptySide(pairOf(12), last, 1), isEmptySide(pairOf(12), last, 0)]).toEqual([14, 0, true, false])
   })
 
   it('BS-both: the same bays picked on BOTH sides, or with no side, or a single row\'s bays — not a one-side pick: the store\'s own delete takes them whole, as before', async () => {
@@ -172,14 +173,14 @@ describe.each([['vertical', true], ['horizontal', false]])('BS — %s', (_, vert
 
   it('BS-middle: two middle bays deleted on side 0 → three pieces: the pair up to them, a single on side 1 through them sharing both uprights, the pair after; bays and positions down by exactly two half-bays', async () => {
     load(savedFill(vert))
-    const p = pairOf(12), b0 = bays(12), pos0 = positions(12), L0 = ledgerOf(12)
+    const p = pairOf(12), b0 = bays(12), pos0 = positions(12), L0 = ledgerOf(12), nS = singlesOf(12).length
     const half = getRackCapacity({ type: 'rack_row', beams: [p.beams[4]], levels: p.levels, palletWIn: p.palletWIn }).total
     store.setState({ selectedIds: [p.id], activeBaySelection: [4, 5].map(i => ({ objId: p.id, bayIdx: i, side: 0 })) })
     expect(deleteBaySelection(store, newId)).toBe(true); await settle()
+    // ONE pair still: bays 4 and 5 empty on side 0 (no pieces — utils/bayEmpty.js)
     const pairs = rowRacks(12, 'rack_double_row'), singles = singlesOf(12)
-    expect([pairs.length, singles.length]).toEqual([2, 2])
-    const mid = singles.find(o => o.beams.length === 2)
-    expect(sideOfSingle(p, mid)).toBe(1)
+    expect([pairs.length, singles.length, pairs[0].id]).toEqual([1, nS, p.id])
+    expect([4, 5].map(i => [isEmptySide(pairs[0], i, 0), isEmptySide(pairs[0], i, 1)])).toEqual([[true, false], [true, false]])
     expect([bays(12), positions(12), ledgerOf(12).bays]).toEqual([b0, pos0 - 2 * half, L0.bays])     // the pair's bays there now a single's: the same count, half the positions
     expect(overlapsIn(12)).toEqual([])
   })
@@ -208,12 +209,12 @@ describe.each([['vertical', true], ['horizontal', false]])('BS — %s', (_, vert
     expect(deleteBaySelection(store, newId)).toBe(true); await settle()
     expect(hist()).toBe(h + 1)
     expect(useRowGroup.getState().message).toMatch(/^Applied to 1 row/)
-    const s12 = singlesOf(12)[0], s14 = singlesOf(14)[0]
-    expect([pairOf(14).beams.length, singlesOf(14).length, s14.beams.length, run(s14)]).toEqual([12, 1, 2, run(s12)])
-    // the single left is on the same side across the floor in both rows: the deleted band faced the same way
-    const lo12 = RG.geom(s12).s0 - RG.geom(pairOf(12)).s0 < 0.5, lo14 = RG.geom(s14).s0 - RG.geom(pairOf(14)).s0 < 0.5
-    expect(lo12).toBe(lo14)
-    expect(worldLo(p, side)).toBe(!lo12)
+    // row 14's pair stays one object too: the same two bays empty, on the SAME side across the floor
+    const q2 = pairOf(14), farQ = baysIn(q2, 108, 124.75)
+    expect([q2.beams.length, singlesOf(14).length, farQ.length]).toEqual([14, 0, 2])
+    const sideQ = [0, 1].find(sd => farQ.every(i => isEmptySide(q2, i, sd)))
+    expect([sideQ != null, farQ.some(i => isEmptySide(q2, i, 1 - sideQ))]).toEqual([true, false])
+    expect(worldLo(q2, sideQ)).toBe(worldLo(p, side))
     expect(positions(14)).toBe(pos14 - getRackCapacity({ type: 'rack_row', beams: [96, 96], levels: q.levels, palletWIn: q.palletWIn }).total)
     expect(overlapsIn(14)).toEqual([])
   })
@@ -288,6 +289,6 @@ describe.each([['vertical', true], ['horizontal', false]])('BS — the flue made
     const src = (await import('node:fs')).readFileSync(new URL('../../components/RightPanel/panels/RackRowPanelCore.jsx', import.meta.url), 'utf8')
     expect(src).toMatch(/const removeBay = \(\) => \{[\s\S]{0,200}if \(deleteBaySelection\(useCanvasStore, nanoid\)\) return/)
     expect(deleteBaySelection(store, newId)).toBe(true); await settle()
-    expect([pairOf(12).beams.length, singlesOf(12).length, singlesOf(12)[0].beams.length]).toEqual([13, 1, 1])
+    expect([pairOf(12).beams.length, singlesOf(12).length, isEmptySide(pairOf(12), last, 0), isEmptySide(pairOf(12), last, 1)]).toEqual([14, 0, true, false])
   })
 })

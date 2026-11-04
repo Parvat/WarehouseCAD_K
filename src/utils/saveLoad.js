@@ -1,6 +1,8 @@
 import { exportLayoutToPDF } from '../export/pdfExport'
 import { extractLegacy } from './elevations'
 import { releaseGeneratedLocks } from './layers'
+import { joinSplitPairs } from './pairJoin'
+import { rebuildAisles } from './aisleRebuild'
 // ─── Scene serialization / deserialization ────────────────────────────────────
 // Format version — bump when breaking changes are made to the schema
 const SCHEMA_VERSION = 2      // 2: the elevation types as their own field (`elevations`)
@@ -74,6 +76,13 @@ export function deserializeScene(json, s) {
 
   // Colors — intentionally not restored so defaults always apply
   if (data.opacity !== undefined) s.opacity = data.opacity
+
+  // a back-to-back pair is one object (utils/bayEmpty.js): the pieces an older layout cut one into are joined back
+  { const j = joinSplitPairs(s.objects, s.gridSize || 40)
+    if (j.joined.size) {
+      s.objects = rebuildAisles(j.objects).objects
+      s.groups = (s.groups || []).map(g => ({ ...g, ids: [...new Set((g.ids || []).map(id => j.joined.get(id) || id))] }))
+    } }
 
   // Clear transient state — the history starts at the layout as opened (the store's snapshot shape), so the first
   // action after opening it can be undone

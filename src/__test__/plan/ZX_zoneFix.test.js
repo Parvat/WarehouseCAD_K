@@ -67,7 +67,7 @@ describe.each([['vertical rows', true], ['horizontal rows', false]])('ZX — %s'
     } else {
       const o0 = REAL_LAYOUT.map(o => ({ ...o })), area = o0.find(o => o.type === 'racking_area')
       objs = m.RA.planAreaResize(o0, area.id, { x: area.x, y: area.y, w: area.width, h: area.height }, { gridSize: GS })
-      if (!vert) objs = objs.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = m.rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x } })
+      if (!vert) objs = objs.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = m.rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x, ...(o.bayEmpty ? { bayEmpty: [o.bayEmpty[1], o.bayEmpty[0]] } : {}) } })
       if (kind === 'hand-placed') objs = objs.filter(o => o.type !== 'racking_area').map(o => (o.areaId ? (({ areaId, ...r }) => r)(o) : o))
     }
     objs = JSON.parse(JSON.stringify(objs))

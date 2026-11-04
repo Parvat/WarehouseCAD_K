@@ -22,6 +22,7 @@ import { visibleClearanceMarks, aisleWarningRect, SHORT_COLOR } from '../canvas2
 import { positionRectForIndex, bayRectForIndex } from './bayGeom'
 import { uprightFramesLocal, rackFootprint, expandColumnGrid } from '../generate/columnCheck'
 import { oversizedBayIndices } from '../utils/capacity'
+import { isEmptySide } from '../utils/bayEmpty'
 
 export const LABEL_FONT = 'JetBrains Mono, monospace'
 const RED = '#C0392B'
@@ -243,6 +244,7 @@ export function blockedPositionRects(c, obj, gridSize) {
   if (c.bayIndex == null || !obj) return []
   const out = []
   for (const f of c.faces || [0]) for (const p of c.positionIndices || []) {
+    if (isEmptySide(obj, c.bayIndex, f)) continue   // an empty bay side holds nothing to block (utils/bayEmpty.js)
     const raw = positionRectForIndex(obj, gridSize, c.bayIndex, p, f)
     if (raw && raw.width > 0) out.push(raw)
   }
@@ -272,6 +274,6 @@ export function oversizedOps(obj, gridSize, lz) {
   const bad = oversizedBayIndices(obj.beams, obj.palletWIn || 40)
   if (!bad.length) return []
   const T = turner(obj), out = []
-  for (const b of bad) for (const raw of bayRectForIndex(obj, gridSize, b)) out.push(...crossOps(grow(raw, lz), T, RED, 2 / lz))
+  for (const b of bad) for (const [s, raw] of bayRectForIndex(obj, gridSize, b).entries()) if (!isEmptySide(obj, b, s)) out.push(...crossOps(grow(raw, lz), T, RED, 2 / lz))
   return out
 }

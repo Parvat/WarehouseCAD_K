@@ -144,7 +144,7 @@ describe.each(ORIENT)('ZF — %s', (_, vert) => {
     // the layout as saved (row 12's pair carrying on as a single), its area gone: racks placed by hand
     const objs0 = REAL_LAYOUT.map(o => ({ ...o })), area = objs0.find(o => o.type === 'racking_area')
     let saved = planAreaResize(objs0, area.id, { x: area.x, y: area.y, w: area.width, h: area.height }, { gridSize: GS })
-    if (!vert) saved = saved.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x } })
+    if (!vert) saved = saved.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x, ...(o.bayEmpty ? { bayEmpty: [o.bayEmpty[1], o.bayEmpty[0]] } : {}) } })
     saved = JSON.parse(JSON.stringify(saved.filter(o => o.type !== 'racking_area').map(o => (o.areaId ? (({ areaId, ...r }) => r)(o) : o))))
     St.setState({ objects: saved, groups: [], selectedIds: [], gridSize: GS, history: [JSON.stringify({ objects: saved, groups: [] })], historyIndex: 0 })
     await tick()
@@ -174,7 +174,7 @@ describe.each(ORIENT)('ZF — %s', (_, vert) => {
   it('ZF-take-rules: every piece on the half gives up the bays the new ones cover exactly; a piece whose bay is off the grid (a 108" beam) keeps it — that overlap stays, and Check layout reads it apart: "Row 12, section 2: the pair overlaps the single by …"', () => {
     const objs0 = REAL_LAYOUT.map(o => ({ ...o })), area = objs0.find(o => o.type === 'racking_area')
     let before = planAreaResize(objs0, area.id, { x: area.x, y: area.y, w: area.width, h: area.height }, { gridSize: GS })
-    if (!vert) before = before.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x } })
+    if (!vert) before = before.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x, ...(o.bayEmpty ? { bayEmpty: [o.bayEmpty[1], o.bayEmpty[0]] } : {}) } })
     const isRow = (o) => BEAM.has(o.type) && o.genSection === 2 && o.rowIndex === 12
     // the single cut in two by hand: its first bay one piece, its second another (same uprights)
     const single = before.find(o => isRow(o) && o.type === 'rack_row'), g = geom(single)
@@ -203,7 +203,7 @@ describe.each(ORIENT)('ZF — %s', (_, vert) => {
     const s = () => St.getState()
     const objs0 = REAL_LAYOUT.map(o => ({ ...o })), area = objs0.find(o => o.type === 'racking_area')
     let saved = planAreaResize(objs0, area.id, { x: area.x, y: area.y, w: area.width, h: area.height }, { gridSize: GS })
-    if (!vert) saved = saved.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x } })
+    if (!vert) saved = saved.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x, ...(o.bayEmpty ? { bayEmpty: [o.bayEmpty[1], o.bayEmpty[0]] } : {}) } })
     saved = JSON.parse(JSON.stringify(saved))
     St.setState({ objects: saved, groups: [], selectedIds: [], gridSize: GS, history: [JSON.stringify({ objects: saved, groups: [] })], historyIndex: 0 })
     await tick()

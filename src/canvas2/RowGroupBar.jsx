@@ -1,3 +1,4 @@
+import { HOME_TOOL } from '../utils/homeTool'
 import { usePlacement, cancelPlacement } from '../utils/placement'
 import { placingName } from '../utils/placingName'
 import { useRowGroup, clearGroup, applyPending, dismissPending, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
@@ -64,10 +65,11 @@ function GroupBar() {
   const setHover = useRowGroup(s => s.setHover)
   const tool = useCanvasStore(s => s.activeTool)
   const picking = tool === ROW_GROUP_TOOL
-  if (!(keys.length || pending || picking) || tool === FILL_TOOL || tool === SPLIT_TOOL) return null
+  // the mode bar is the Row group tool's: it goes with the tool (Done, Esc, ✕, another tool — utils/toolSwitch.js)
+  if (!(picking || pending) || tool === FILL_TOOL || tool === SPLIT_TOOL) return null
   const s = pending && pending.summary
-  // ✕: the group cleared, and the tool (when on) off — Esc leaves the tool and keeps the group
-  const close = () => { clearGroup(); if (picking) useCanvasStore.getState().setActiveTool(TOOLS.SELECT) }
+  // Done and ✕ (and Esc, another tool): the mode ends — the group, its outline, the selection, the bar
+  const close = () => { clearGroup(); if (picking) useCanvasStore.getState().setActiveTool(HOME_TOOL); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null) }
   return (
     <div role="toolbar" aria-label="Row group" data-mode-bar="row-group" className="st-pill" style={modePill}>
       <span style={{ fontWeight: 600, color: B.strong }}>Row group</span>
@@ -92,6 +94,8 @@ function GroupBar() {
         </span>
       )}
       {picking && !s && <><Sep /><span data-mode-hint style={{ color: B.muted, fontSize: 12 }}>Drag or Shift+click rows. Click a row to edit.</span></>}
+      <Sep />
+      <button type="button" aria-label="Done" title="Done — end the Row group (Esc)" onClick={close} className={btnClass(true)} style={barBtn(true)}>Done</button>
       <CloseBtn label="Clear the row group" title="Clear the row group (Esc)" onClick={close} />
     </div>
   )
@@ -197,7 +201,8 @@ function Notices() {
   if (notice.text) {
     out.push(
       <Timed key="notice" label="Notice" ms={notice.undo ? NOTICE_UNDO_MS : NOTICE_MS} stamp={notice.at} onDone={clearNotice}>
-        <NoticePill label="Notice" onUndo={notice.undo ? undo(clearNotice) : null} onClose={clearNotice}>{notice.text}{notice.hint && <span style={{ color: B.muted }}> · {notice.hint}</span>}</NoticePill>
+        <NoticePill label="Notice" onUndo={notice.undo ? undo(clearNotice) : null} onClose={clearNotice}
+          actions={notice.action ? <button type="button" className={btnClass(true)} onClick={() => { const a = notice.action; clearNotice(); a.run() }} style={{ ...barBtn(true), height: 26 }}>{notice.action.label}</button> : null}>{notice.text}{notice.hint && <span style={{ color: B.muted }}> · {notice.hint}</span>}</NoticePill>
       </Timed>)
   }
   return out.length ? <div style={stack}>{out}</div> : null

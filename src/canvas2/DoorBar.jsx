@@ -1,3 +1,4 @@
+import { HOME_TOOL } from '../utils/homeTool'
 import { useState } from 'react'
 import { Rect, Line } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
@@ -17,7 +18,7 @@ export function DoorBar() {
   useDoorTool(s => s.widthFt)                                   // the width shown follows a typed one
   const [text, setText] = useState(null)
   const spec = doorSpec(), types = doorTypes()
-  const close = () => { clearDoorHover(); useCanvasStore.getState().setActiveTool(TOOLS.SELECT) }
+  const close = () => { clearDoorHover(); useCanvasStore.getState().setActiveTool(HOME_TOOL) }
   const commit = () => { const v = parseFloat(String(text ?? '').replace(/[′']/g, '')); setText(null); if (Number.isFinite(v) && v > 0) setDoorWidth(v) }
   return (
     <div role="toolbar" aria-label="Add door" data-mode-bar="door" className="st-pill" style={modePill}>

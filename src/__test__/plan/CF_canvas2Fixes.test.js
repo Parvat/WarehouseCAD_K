@@ -33,7 +33,7 @@ function savedFill(vert) {
   const objs = REAL_LAYOUT.map(o => ({ ...o })), area = objs.find(o => o.type === 'racking_area')
   const out = planAreaResize(objs, area.id, { x: area.x, y: area.y, w: area.width, h: area.height }, { gridSize: GS })
   if (vert) return out
-  return out.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x } })
+  return out.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x, ...(o.bayEmpty ? { bayEmpty: [o.bayEmpty[1], o.bayEmpty[0]] } : {}) } })
 }
 /* a rack whose WORLD footprint is { x, y, w, h } (ft): run along x when horizontal, along y when vertical (turned 90°) */
 function rack(id, fx, fy, fw, fh, vert, type = 'rack_double_row') {

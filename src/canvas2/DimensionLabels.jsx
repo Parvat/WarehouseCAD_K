@@ -11,6 +11,7 @@ import { LabelOps } from './LabelOps'
 import { aisleLabelOps, clearanceOps, clearanceSolids } from '../render/labelOps'
 import { crossAisleLabels } from './crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
+import { isEmptySide } from '../utils/bayEmpty'
 
 /* ── Dimension labels — ported from the SVG engine, render-only ──────────────
    CanvasUI.jsx's RackLabels/FpSegmentDimLabels and CanvasOverlays.jsx's live
@@ -120,9 +121,10 @@ export function RackLabels({ obj, zoom, gridSize }) {
       const cx = cursor + beamPx / 2
       if (beamPx > fs * 3.5 + (4 / zoom) * 2) {
         const txt = `${beamIn}"`
-        nodes.push(<LabelPill key={'b' + i} cx={cx} cy={by + rowH / 2} text={txt} fontSize={fs} zoom={zoom} color={clr} />)
+        // an empty bay side has no beam to measure (utils/bayEmpty.js)
+        if (!isEmptySide(obj, i, 0)) nodes.push(<LabelPill key={'b' + i} cx={cx} cy={by + rowH / 2} text={txt} fontSize={fs} zoom={zoom} color={clr} />)
         const backY = by + rowH + flueH + rowH / 2
-        nodes.push(<LabelPill key={'bb' + i} cx={cx} cy={backY} text={txt} fontSize={fs} zoom={zoom} color={clr} />)
+        if (!isEmptySide(obj, i, 1)) nodes.push(<LabelPill key={'bb' + i} cx={cx} cy={backY} text={txt} fontSize={fs} zoom={zoom} color={clr} />)
       }
       cursor += beamPx + upW
     })

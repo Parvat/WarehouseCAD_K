@@ -20,7 +20,7 @@ import { usePlacement, movePlacement, commitPlacement } from '../utils/placement
 import { rebuildAisles } from '../utils/aisleRebuild'
 import { nanoid } from 'nanoid'
 import { inlineSnap, planInlineDrop, applyJoin } from './inlineSnap'
-import { pickableIn, snapTargets } from '../utils/layers'
+import { pickableIn, snapTargets, isPickable } from '../utils/layers'
 import { pickedOnPlan } from '../studio/viewPrefs'
 import { groupDragFor, skipNextAction } from '../utils/rowGroupTool'
 import { lockToAxis } from '../utils/rowGroup'
@@ -35,6 +35,8 @@ import { isBayRack, selectionLevel, pickedBays, bayOwners, selectRows, selectBay
 import { sectionIds, withSections } from './sections'
 import { setAreaHover } from './areaHover'
 import { columnAt, clickColumn } from './columnPick'
+import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
+import { afterBuildingResize } from '../utils/buildingResize'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
 
 /* Beam/lane racks whose applyResize branch handles its own snapping
@@ -103,6 +105,16 @@ export function useCanvasInteraction({
   }, [])
 
   const pan = useRef(null)
+  /* A click that picked nothing under it by its press: `t` the building whose floor it was on ({ fp }), a locked column
+     ({ column }), or nothing (outside every building: the selection clears). */
+  const clickOn = (t) => {
+    const st = useCanvasStore.getState()
+    setStickyBayMode(false)
+    if (t && t.column) { pickedOnPlan(); clickColumn(useCanvasStore, t.column); return }
+    if (t && t.fp && st.objects.some(o => o.id === t.fp)) { pickedOnPlan(); selectRows(useCanvasStore, [t.fp]); st.setActiveWall(null); return }
+    if (st.selectedIds.length || st.activeBaySelection?.length) st.clearSelection()
+    st.setActiveWall(null)
+  }
   const objDrag = useRef(null)
   const marqueeRef = useRef(null)
   const bayRun = useRef(null)   // a drag along a row whose bays are picked: { rackId, from (world), start, side, moved }
@@ -495,6 +507,9 @@ export function useCanvasInteraction({
       return
     }
 
+    /* what a press that never moves picks on its release (a pan's or a floor box's click): the building whose blank
+       floor it was on, or a locked column */
+    let clickTarget = null
     if (!forcePan) {
       const st = useCanvasStore.getState()
 
@@ -522,6 +537,9 @@ export function useCanvasInteraction({
             beginFpRotateDrag(selected)
             return
           }
+          /* its resize handles — the ONLY way a building is resized (fpHandles.js) */
+          const fh = isPickable(st.layers, selected) ? fpHandleHit(selected, world.x, world.y, view.current.zoom) : null
+          if (fh) { beginHandleDrag(selected, fh, world); return }
         }
       } else if (evt.button === 0 && st.selectedIds.length >= 2) {
         /* Group rotate handle — checked before the plain object hitTest for
@@ -590,6 +608,7 @@ export function useCanvasInteraction({
           marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false, clickHitId: null, shift: false, floor: true, column: col }
           return
         }
+        if (col && locked) clickTarget = { column: col }   // Pan: a drag pans, a click picks it
         if (col && !locked) {
           setStickyBayMode(false); pickedOnPlan()
           clickColumn(useCanvasStore, col)
@@ -603,19 +622,21 @@ export function useCanvasInteraction({
         if (wallHit) {
           const fpObj = st.objects.find(o => o.id === wallHit.objId)
           if (fpObj) {
+            /* a press on a wall selects the building (that wall active) and a drag MOVES it — never a resize: a
+               building is resized from its handles only (fpHandles.js) */
             pickedOnPlan()
             st.selectObject(wallHit.objId)
             st.setActiveWall({ objId: wallHit.objId, wallIdx: wallHit.wallIdx })
-            beginHandleDrag(fpObj, 'wall_' + wallHit.wallIdx, world)
+            beginDrag(wallHit.objId, world, evt)
             return
           }
         }
       }
 
-      /* A building is picked by its walls only (the check above): a press on its floor picks nothing — it is empty
-         floor, so a click there clears the selection and a drag pans, like empty canvas. */
+      /* A press on a building's blank floor (STUDIO.md §7): a click there selects the building; a drag pans (Pan) or
+         draws a box of rows (Select). A click outside every building clears the selection. */
       const onFloor = !!(hitObj && FP_SET_INPUT.has(hitObj.type))
-      if (onFloor) { hitId = null; hitObj = null }
+      if (onFloor) { if (!clickTarget) clickTarget = { fp: hitObj.id }; hitId = null; hitObj = null }
 
       /* Shift held → ALWAYS arm a marquee candidate over a plain object
          BODY (a floor plan's interior included) — CanvasArea's own rule
@@ -644,7 +665,7 @@ export function useCanvasInteraction({
       /* A drag on a building's floor draws a box: it selects rows (STUDIO.md §7) — Shift+drag adds them. A click there
          (no drag) clears the selection. Outside the building, and with the Pan tool, a drag still pans. */
       if (!hitId && onFloor && evt.button === 0 && st.activeTool !== TOOLS.PAN) {
-        marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false, clickHitId: null, shift: false, floor: true }
+        marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false, clickHitId: null, shift: false, floor: true, click: clickTarget }
         return
       }
 
@@ -657,6 +678,18 @@ export function useCanvasInteraction({
           const start = hitTestBay(hitObj, world.x, world.y, st.gridSize)
           bayRun.current = { rackId: hitId, from: world, sx: evt.clientX, sy: evt.clientY, start, side: start == null ? null : bayHalfAt(hitObj, world.x, world.y, st.gridSize), moved: false }
           return
+        }
+        /* A press on the row already selected (a pair too, its flue included) arms its MOVE: a drag moves it, and
+           only a click — released under the drag threshold — drills to the bay (on the release, objDrag.drill).
+           Drilling at the press made every drag of a selected row start at the bay level (STUDIO.md §7). */
+        if (hitObj && isBayRack(hitObj) && selectionLevel(st) === 'rows') {
+          const sec = sectionIds(st.objects, hitId, st.gridSize || 40)
+          if (st.selectedIds.length === sec.length && sec.every(id => st.selectedIds.includes(id))) {
+            beginDrag(hitId, world, evt)
+            if (objDrag.current) objDrag.current.drill = { hitId, world }
+            else selectFromHit(hitId, false, world)
+            return
+          }
         }
         /* forcePan (space/middle) already sent us past this whole block, so
            reaching here means neither is held — a plain left-press on an
@@ -671,7 +704,7 @@ export function useCanvasInteraction({
     }
 
     /* `force`: space or the middle button — a pan by intent, never a deselect; `moved`: set once it really moves */
-    pan.current = { sx: evt.clientX, sy: evt.clientY, panX: view.current.panX, panY: view.current.panY, force: forcePan, moved: false }
+    pan.current = { sx: evt.clientX, sy: evt.clientY, panX: view.current.panX, panY: view.current.panY, force: forcePan, moved: false, click: clickTarget }
     setCursor('grabbing')
   }
 
@@ -720,27 +753,22 @@ export function useCanvasInteraction({
         if (handle) next = cursorForHandle(handle, selected.rotation)
       } else if (selected && isFloorPlan(selected)) {
         if (fpRotateHandleHitTest(selected, st.gridSize, view.current.zoom, world.x, world.y)) next = 'alias'
+        else {
+          // its resize handles (fpHandles.js): a side square resizes along its wall's normal, a corner both ways
+          const fh = isPickable(st.layers, selected) ? fpHandleHit(selected, world.x, world.y, view.current.zoom) : null
+          if (fh) {
+            const v = selected.fpVerts || [], i = parseInt(fh.split('_')[1], 10), a = v[i], b = v[(i + 1) % v.length]
+            if (fh.startsWith('wall_')) next = a && b && Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? 'ns-resize' : 'ew-resize'
+            else { const c = v.reduce((s, p) => ({ x: s.x + p.x / v.length, y: s.y + p.y / v.length }), { x: 0, y: 0 }); next = a && (a.x - c.x) * (a.y - c.y) > 0 ? 'nwse-resize' : 'nesw-resize' }
+          }
+        }
       }
     }
     if (next === 'default') {
       const wallHit = fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       if (wallHit) {
-        /* CanvasUI shows a plain 'move' cursor on an unselected building's
-           wall — the click still starts a wall drag regardless (matched in
-           onStageMouseDown), this only affects what hovering shows before
-           that first click. */
-        if (!(st.selectedIds.length === 1 && st.selectedIds[0] === wallHit.objId)) {
-          next = 'move'
-        } else {
-          const fpObj = st.objects.find(o => o.id === wallHit.objId)
-          const axis = fpObj ? getWallDragAxis(fpObj.type, wallHit.wallIdx) : null
-          if (axis === 'y') next = 'ns-resize'
-          else if (axis === 'x') next = 'ew-resize'
-          else {
-            const seg = fpObj ? getFpWallSegments(fpObj, st.gridSize)[wallHit.wallIdx] : null
-            next = seg && Math.abs(seg.b.x - seg.a.x) > Math.abs(seg.b.y - seg.a.y) ? 'ns-resize' : 'ew-resize'
-          }
-        }
+        /* a wall selects or moves the building — it never resizes it (its handles do: fpHandles.js) */
+        next = 'move'
       }
     }
     setCursor(next)
@@ -832,10 +860,10 @@ export function useCanvasInteraction({
            doesn't). mouseup's existing commitObjectUpdate(rd.objId, obj)
            already reads the live object generically, so it needs no
            wall-specific change to land this as one undo entry. */
-        if (typeof handle === 'string' && handle.startsWith('wall_')) {
-          const wallIdx = parseInt(handle.slice(5), 10)
+        if (typeof handle === 'string' && (handle.startsWith('wall_') || handle.startsWith('corner_'))) {
+          const corner = handle.startsWith('corner_'), idx = parseInt(handle.slice(corner ? 7 : 5), 10)
           const liveObj = st.objects.find(o => o.id === objId) || origObj
-          const updates = applyFpWallDrag(liveObj, wallIdx, pos)
+          const updates = corner ? applyFpCornerDrag(liveObj, idx, pos) : applyFpWallDrag(liveObj, idx, pos)
           if (Object.keys(updates).length > 0) {
             st.updateObject(objId, updates)
             stage.batchDraw()
@@ -1221,13 +1249,9 @@ export function useCanvasInteraction({
       if (br) { if (!br.moved) selectFromHit(br.rackId, false, br.from); return }
       const pn = pan.current
       pan.current = null
-      /* a click on empty canvas or on a building's floor (a left press that never moved): the selection clears and the
-         card shows nothing selected */
-      if (pn && !pn.force && !pn.moved) {
-        const st = useCanvasStore.getState()
-        if (st.selectedIds.length || st.activeBaySelection?.length) st.clearSelection()
-        st.setActiveWall(null)
-      }
+      /* a click (a left press that never moved): on a building's blank floor, the building; on a locked column, that
+         column; on empty canvas, nothing selected */
+      if (pn && !pn.force && !pn.moved) clickOn(pn.click)
 
       const rd = resizeDrag.current
       resizeDrag.current = null
@@ -1250,7 +1274,11 @@ export function useCanvasInteraction({
           finishAreaResize(useCanvasStore, rd.objId, { x: o.x, y: o.y, w: o.width, h: o.height }, { gridSize: st.gridSize })
         // nothing moved (a click on a wall or a handle only selects): no history entry — so one Ctrl+Z right after
         // dropping a building and clicking its wall still takes the building away
-        } else if (obj && JSON.stringify(obj) !== JSON.stringify(rd.origObj)) st.commitObjectUpdate(rd.objId, obj)
+        } else if (obj && JSON.stringify(obj) !== JSON.stringify(rd.origObj)) {
+          st.commitObjectUpdate(rd.objId, obj)
+          // a building resized from its handles: the bays that no longer fit go in the same undo step (buildingResize.js)
+          if (isFloorPlan(obj) && typeof rd.handle === 'string' && /^(wall|corner)_/.test(rd.handle)) afterBuildingResize(useCanvasStore, rd.origObj)
+        }
         /* Wall highlight is only for the duration of the drag that's ending —
            CanvasUI clears activeWall on the next click anywhere; canvas2 has
            no WallInputOverlay to keep it alive for, so clearing it here
@@ -1298,6 +1326,8 @@ export function useCanvasInteraction({
       const d = objDrag.current
       objDrag.current = null
       clearDragPreview()
+      // a press on the selected row that never moved: the click — it drills to the bay under it
+      if (d && !d.moved && d.drill) selectFromHit(d.drill.hitId, false, d.drill.world)
       if (d) {
         if (d.flueBase) {
           /* The live-auto-flue path (mousemove above) already wrote the
@@ -1416,10 +1446,8 @@ export function useCanvasInteraction({
         setStickyBayMode(false); pickedOnPlan()
         clickColumn(useCanvasStore, m.column)
       } else if (m && !m.moved && m.floor) {
-        // a click on the floor: nothing selected
-        const st = useCanvasStore.getState()
-        if (st.selectedIds.length || st.activeBaySelection?.length) st.clearSelection()
-        st.setActiveWall(null)
+        // a click on the floor: the building
+        clickOn(m.click)
       } else if (m && !m.moved && m.clickHitId) {
         /* The shift+drag never actually moved — a plain shift+click on an
            object's body, which still has to toggle it (see the mousedown

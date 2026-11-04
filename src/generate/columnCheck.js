@@ -12,6 +12,7 @@
 import { bayAtPoint, uprightXs } from '../render/rackOps'
 import { positionsPerBeam, blockedPositionIndices, positionFootprintIn } from '../utils/capacity'
 import { rackFootprint } from './rackFootprint'
+import { isEmptySide } from '../utils/bayEmpty'
 // the rows' pairing lives in rowAisles.js (one pairing for the aisle labels, Check layout, this check and Generate)
 import { groupBySegment, rowGaps, rowAisleGaps } from './rowAisles'
 export { rackFootprint, groupBySegment, rowGaps }
@@ -307,7 +308,7 @@ export function pickZoneBlocks({ racks = [], columns = [], profile = MHE_PROFILE
             hitting.forEach(ci => cols.add(ci))
           }
         }
-        if (lost.length) {
+        if (lost.length && !isEmptySide(r, bayIndex, face)) {
           out.push({
             rackId: r.id, bayIndex, faces: [face], positionIndices: lost,
             columnIndices: [...cols], positionsLost: lost.length * (levelsAt ? levelsAt(r, bayIndex, face) : levels), kind: 'pick-zone',
@@ -557,9 +558,13 @@ export function checkColumns({ racks = [], columns = [], profile = MHE_PROFILES.
          when `rb.rotated`. A single row has exactly one face — index 0 —
          and the legacy no-depthIn fallback marks both, matching the
          existing conservative "any overlap costs every face" cost read. */
-      const faces = !isDouble ? [0]
+      const faces0 = !isDouble ? [0]
         : isNearFace == null ? [0, 1]
         : [rb.rotated ? (isNearFace ? 1 : 0) : (isNearFace ? 0 : 1)]
+      // a pair's empty bay side holds nothing for a column to cost (utils/bayEmpty.js)
+      const faces = bayIndex != null ? faces0.filter(f => !isEmptySide(r, bayIndex, f)) : faces0
+      if (!faces.length) continue
+      if (faces.length < faces0.length) facesHit = Math.min(facesHit, faces.length)
 
       /* BUG 62 — exactly which pallet position(s) the column's own footprint
          touches on THIS bay's own beam, not a coarse ceil(columnWidth /

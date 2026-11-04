@@ -12,6 +12,7 @@
 
 import { beamFace, topLoadIssue, SPRINKLER_CLEARANCE_IN, ceilingOf } from './elevations'
 import { positionsPerBeam } from './palletFit'
+import { isEmptySide } from './bayEmpty'
 
 /** 6'-2" / 26'-0" / 8" — feet and inches as on a rack drawing: a length of a foot or more always with its inches,
  *  under a foot in inches. */
@@ -464,6 +465,7 @@ export function lengthsByType(objects, table, typeIdAt) {
     if (!r || !Array.isArray(r.beams) || (r.type !== 'rack_row' && r.type !== 'rack_double_row')) continue
     const sides = r.type === 'rack_double_row' ? 2 : 1
     for (let s = 0; s < sides; s++) r.beams.forEach((len, b) => {
+      if (isEmptySide(r, b, s)) return   // an empty bay side carries no beams (utils/bayEmpty.js)
       const id = typeIdAt(r, b, s, table)
       if (!out.has(id)) out.set(id, new Map())
       const m = out.get(id), e = m.get(len) || { beamIn: len, bays: 0, pair: false, depthIn: r.depthIn ?? 42, flueIn: r.flueSpaceIn ?? 9, palletWIn: r.palletWIn || 40, parentId: r.parentId ?? null }

@@ -73,7 +73,7 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     }
     expect(floor.length).toBeGreaterThan(3)
     // the press on the floor: hitTest finds the building's footprint, the canvas drops it — a building is picked by its walls
-    expect(readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')).toMatch(/const onFloor = !!\(hitObj && FP_SET_INPUT\.has\(hitObj\.type\)\)\r?\n\s*if \(onFloor\) \{ hitId = null; hitObj = null \}/)
+    expect(readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')).toMatch(/const onFloor = !!\(hitObj && FP_SET_INPUT\.has\(hitObj\.type\)\)\r?\n\s*if \(onFloor\) \{ if \(!clickTarget\) clickTarget = \{ fp: hitObj\.id \}; hitId = null; hitObj = null \}/)
     // its wall: grabbed, as Generate leaves the layers; not on a Building layer locked by hand
     const wall = { x: fp.x, y: fp.y + fp.height / 2 }
     expect(m.fpWallHitTest(objects, layers, wall.x, wall.y, z, gridSize)?.objId).toBe(fp.id)
@@ -246,7 +246,7 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     const ks = readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')
     expect(ks).toMatch(/const kept = keptBySelectAll\(st\.objects, st\.layers\)\r?\n\s*if \(kept\) notify\(kept, 'locked layers — unlock them in Layers to select'\)\r?\n\s*else clearNotice\(\)/)
     const bar = readFileSync('src/canvas2/RowGroupBar.jsx', 'utf8')
-    expect(bar).toMatch(/<NoticePill label="Notice" onUndo=\{notice\.undo \? undo\(clearNotice\) : null\} onClose=\{clearNotice\}>\{notice\.text\}/)
+    expect(bar).toMatch(/<NoticePill label="Notice" onUndo=\{notice\.undo \? undo\(clearNotice\) : null\} onClose=\{clearNotice\}[\s\S]{0,400}?>\{notice\.text\}/)
     expect(bar).toMatch(/<Timed key="notice" label="Notice" ms=\{notice\.undo \? NOTICE_UNDO_MS : NOTICE_MS\} stamp=\{notice\.at\} onDone=\{clearNotice\}>/)
     const N = await import('../../utils/notice')
     N.notify(m.L.keptBySelectAll(objects, layers), 'locked layers')

@@ -19,6 +19,8 @@
 // the bay-side's own type. With no table (the generator's own layouts, the test fixtures) everything reads
 // `rack.levels`, exactly as before. Pure, except installElevationsKeeper.
 
+import { carryEmpty, EMPTY_FIELD, isEmptySide } from './bayEmpty'
+
 export const ELEV_TYPE = 'elevation_types'
 export const ELEV_ID = 'elevation-types'
 export const ELEV_VERSION = 1
@@ -139,6 +141,7 @@ export const typeAt = (rack, bay, side, table) => typeById(table, typeIdAt(rack,
 export const rackTypeId = (rack, table) => { const v = rack.elevType ?? DEFAULT_REF; return v === DEFAULT_REF ? table?.defaultId ?? null : v }
 /** Levels on bay `bay`, side `side`: its type's, else the rack's own `levels`. */
 export function levelsAt(rack, bay, side, table) {
+  if (isEmptySide(rack, bay, side)) return 0   // a pair's empty bay side holds nothing (utils/bayEmpty.js)
   const t = table ? typeAt(rack, bay, side, table) : null
   return t ? t.levels.length : rack.levels || 1
 }
@@ -200,6 +203,9 @@ export function syncAllLevels(objects, table) {
  *  type as its own). Table-free: the layers above the bays are carried as they are. */
 export function carryElev(src, idx, keepSide = null) {
   const out = {}
+  // a pair's empty bay sides ride with their bays (utils/bayEmpty.js)
+  const empty = carryEmpty(src, idx, keepSide)
+  if (empty) out[EMPTY_FIELD] = empty
   if (!ELEV_FIELDS.some(k => src[k] != null)) return out
   const half = keepSide === 0 || keepSide === 1
   const rackT = half ? src.elevSides?.[keepSide] ?? src.elevType : src.elevType
@@ -211,7 +217,7 @@ export function carryElev(src, idx, keepSide = null) {
   return out
 }
 /** Replace `piece`'s elevation fields with `fields`. */
-export const withElev = (piece, fields) => { const o = { ...piece }; for (const k of ELEV_FIELDS) delete o[k]; return { ...o, ...fields } }
+export const withElev = (piece, fields) => { const o = { ...piece }; for (const k of ELEV_FIELDS) delete o[k]; delete o[EMPTY_FIELD]; return { ...o, ...fields } }
 /** What bay `b`, side `s` of `rack` carries, explicit ('*' = the default) — for a join, where the bays of two racks
  *  come under one rack-level type. */
 export const effectiveRef = (rack, b, s) => rack.elevBays?.[s]?.[b] ?? rack.elevSides?.[s] ?? rack.elevType ?? DEFAULT_REF
@@ -443,7 +449,7 @@ export function legendCounts(objects, T, counted = null) {
   const n = new Map()
   for (const r of objects.filter(isBeamRack)) {
     const c = counted ? counted(r) : null
-    for (let s = 0; s < sidesOf(r); s++) r.beams.forEach((_, b) => { if (c && !c[b]) return; const id = typeIdAt(r, b, s, T); n.set(id, (n.get(id) || 0) + 1) })
+    for (let s = 0; s < sidesOf(r); s++) r.beams.forEach((_, b) => { if ((c && !c[b]) || isEmptySide(r, b, s)) return; const id = typeIdAt(r, b, s, T); n.set(id, (n.get(id) || 0) + 1) })
   }
   return T.types.filter(t => n.has(t.id)).map(t => ({ type: t, bays: n.get(t.id) }))
 }
@@ -516,6 +522,7 @@ export function typeDepths(objects, T, id) {
 export function elevationBays(objects, T) {
   const out = []
   for (const r of objects.filter(isBeamRack)) for (let s = 0; s < sidesOf(r); s++) r.beams.forEach((beamIn, bay) => {
+    if (isEmptySide(r, bay, s)) return   // an empty bay side: no beams (utils/bayEmpty.js)
     const t = typeAt(r, bay, s, T)
     out.push({ rackId: r.id, bay, side: s, typeId: t ? t.id : null, levels: t ? t.levels.map(l => l.beamIn) : Array.from({ length: r.levels || 1 }, (_, k) => k * SPACING_IN), uprightHeightIn: t ? t.uprightHeightIn : null, beamIn, frameDepthIn: r.depthIn ?? null })
   })
@@ -526,7 +533,8 @@ export function elevationBays(objects, T) {
 export function uprightHeights(objects, T) {
   const out = []
   for (const r of objects.filter(isBeamRack)) for (let s = 0; s < sidesOf(r); s++) {
-    const h = r.beams.map((_, b) => typeAt(r, b, s, T)?.uprightHeightIn ?? null)
+    // an empty bay side has no frame of its own: a frame between two empty bays goes, one beside a full bay stays
+    const h = r.beams.map((_, b) => (isEmptySide(r, b, s) ? null : typeAt(r, b, s, T)?.uprightHeightIn ?? null))
     out.push({ rackId: r.id, side: s, heights: Array.from({ length: r.beams.length + 1 }, (_, k) => Math.max(h[k - 1] ?? -Infinity, h[k] ?? -Infinity)).map(v => (Number.isFinite(v) ? v : null)) })
   }
   return out

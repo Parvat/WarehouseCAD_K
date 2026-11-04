@@ -2,15 +2,16 @@
 // clicking a library item fully ends the tool before it: its cursor (Canvas2 derives it from the tool and the
 // measure mode), its preview and ghost (a fill box, a Row group box, the Split hover, a placement following the
 // mouse), its options bar, and its key handling (each reads the active tool, so they go with it).
-//   - endTool(store): end whatever is running and go back to Select — a library item calls it before it places;
+//   - endTool(store): end whatever is running and go back to Pan (utils/homeTool.js; Select stays Select) — a library item calls it before it places;
 //   - installToolKeeper(store): every change of the active tool ends what the previous one left behind, whoever
 //     changed it.
 // The measure mode (the ruler button) is a mode beside the tools: useMeasureMode, ended by both.
 
+import { HOME_TOOL, isPlainTool } from './homeTool'
 import { create } from 'zustand'
 import { TOOLS } from '../constants'
 import { useFillTool } from './fillTool'
-import { cancelGroupBox, onRowGroupToolStart, ROW_GROUP_TOOL } from './rowGroupTool'
+import { cancelGroupBox, onRowGroupToolStart, clearGroup, ROW_GROUP_TOOL } from './rowGroupTool'
 import { useSplit } from './splitTool'
 import { clearDoorHover } from './doorTool'
 import { cancelPlacement } from './placement'
@@ -33,7 +34,7 @@ export function endTool(store) {
   cancelPlacement()
   if (useMeasureMode.getState().on) useMeasureMode.setState({ on: false })
   const st = store.getState()
-  if (st.activeTool !== TOOLS.SELECT) st.setActiveTool(TOOLS.SELECT)
+  if (!isPlainTool(st.activeTool)) st.setActiveTool(HOME_TOOL)
 }
 
 /** The measure mode on or off (the tool pill's Measure, the M key): turning it on ends the running tool first. */
@@ -49,7 +50,11 @@ export function installToolKeeper(store) {
   let last = store.getState().activeTool
   return store.subscribe((st) => {
     if (st.activeTool === last) return
+    const was = last
     last = st.activeTool
+    /* leaving the Row group (Done, Esc, ✕, or any other tool): the mode ends — its group and purple outline go at
+       once, nothing selected, no bar (STUDIO.md §7) */
+    if (was === ROW_GROUP_TOOL) { clearGroup(); store.getState().clearSelection?.(); store.getState().setActiveWall?.(null) }
     clearTransients()                                       // every tool's leftovers, not only the last one's
     cancelPlacement()
     if (useMeasureMode.getState().on) useMeasureMode.setState({ on: false })

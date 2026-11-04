@@ -208,18 +208,18 @@ describe('ZG-2 — a tool ends fully', () => {
   it('ZG-endTool: a library item ends the tool first — the Fill tool with a box half drawn: endTool → Select, no box, no plan, no measure mode, no placement; then a zone placement starts clean', async () => {
     s().setActiveTool(m.FT.FILL_TOOL); dirty()
     m.TS.endTool(m.useCanvasStore)
-    expect(s().activeTool).toBe(m.TOOLS.SELECT)
+    expect(s().activeTool).toBe(m.TOOLS.PAN)   // the home tool (utils/homeTool.js)
     expect(leftovers()).toEqual(none)
     m.PL.startPlacement(m.useCanvasStore, [{ id: 'z1', type: 'zone_office', x: 0, y: 0, width: 400, height: 300 }], { at: { x: 200, y: 150 } })
     expect(m.PL.usePlacement.getState().active).toBeTruthy()
-    expect(s().activeTool).toBe(m.TOOLS.SELECT)
+    expect(s().activeTool).toBe(m.TOOLS.PAN)
   })
   it('ZG-wire: the library calls endTool before it places (items, shapes, floor plans); Esc ends any tool back to Select; the keeper is installed; the measure mode is the shared one and turning it on ends the tool', () => {
     const ft = read('components/LeftPanel/FloatingToolbar.jsx'), kb = read('hooks/useKeyboardShortcuts.js'), app = read('App.jsx'), c2 = read('canvas2/Canvas2.jsx')
     expect(ft).toMatch(/const selectItem {2}= item => \{ endTool\(useCanvasStore\); bumpUsage/)
     expect(ft).toMatch(/const selectShape = item => \{ endTool\(useCanvasStore\); setActiveTool/)
     expect(ft).toMatch(/const selectFp {4}= item => \{ endTool\(useCanvasStore\); placeFpObject/)
-    expect(kb).toMatch(/if \(useCanvasStore\.getState\(\)\.activeTool !== TOOLS\.SELECT\) \{ useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); useCanvasStore\.getState\(\)\.clearSelection\(\); useCanvasStore\.getState\(\)\.setActiveWall\(null\); return \}/)
+    expect(kb).toMatch(/if \(!isPlainTool\(useCanvasStore\.getState\(\)\.activeTool\)\) \{ useCanvasStore\.getState\(\)\.setActiveTool\(HOME_TOOL\); useCanvasStore\.getState\(\)\.clearSelection\(\); useCanvasStore\.getState\(\)\.setActiveWall\(null\); return \}/)
     expect(app).toMatch(/const stopToolKeeper = installToolKeeper\(useCanvasStore\)/)
     expect(c2).toMatch(/const measuring = useMeasureMode\(s => s\.on\)/)
     // Studio: the tool pill's Measure turns the mode on and ends the running tool first

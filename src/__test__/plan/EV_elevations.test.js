@@ -60,7 +60,7 @@ function savedFill(vert) {
   const objs = REAL_LAYOUT.map(o => ({ ...o })), area = objs.find(o => o.type === 'racking_area')
   const out = planAreaResize(objs, area.id, { x: area.x, y: area.y, w: area.width, h: area.height }, { gridSize: GS })
   if (vert) return out
-  return out.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x } })
+  return out.map(o => { if (!BEAM.has(o.type)) return turn(o); const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360; return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x, ...(o.bayEmpty ? { bayEmpty: [o.bayEmpty[1], o.bayEmpty[0]] } : {}) } })
 }
 /** A layout set into the store without types: the keeper gives it its types. */
 const load = (objects, elevations = null) => store.setState({ objects: strip(objects), elevations, groups: [], activeBaySelection: [], selectedIds: [], gridSize: GS, history: [JSON.stringify({ objects, groups: [], elevations })], historyIndex: 0 })
@@ -393,8 +393,9 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     expect(pieces.map(x => E.typeMap(x, tb))).toEqual([[[tb.defaultId], ['B']], [['C'], ['B']]])
     const o2 = o.map(x => (x.id === 'p1' ? p : x))
     const { objects: o3 } = planBaySideDelete(o2, [1, 2].map(b => ({ objId: 'p1', bayIdx: b, side: 0 })), { gridSize: GS, newId })
-    const half = o3.find(x => x.pieceOf === 'p1')
-    expect([half.type, E.typeMap(half, tb)]).toEqual(['rack_row', [['B', 'B']]])
+    // a one-side delete keeps the pair ONE object (utils/bayEmpty.js): those bays empty on side 0, side 1 keeps its type
+    const pair = o3.find(x => x.id === 'p1')
+    expect([pair.type, o3.some(x => x.pieceOf === 'p1'), [1, 2].map(b => [pair.bayEmpty?.[0]?.[b], E.typeIdAt(pair, b, 1, tb)])]).toEqual(['rack_double_row', false, [[true, 'B'], [true, 'B']]])
     const j = joinRacks(p, rack(o, 'p2'), GS)
     expect(E.typeMap(j, tb)).toEqual([[tb.defaultId, tb.defaultId, 'C', tb.defaultId, tb.defaultId, tb.defaultId], ['B', 'B', 'B', tb.defaultId, tb.defaultId, tb.defaultId]])
   })

@@ -45,6 +45,7 @@ import { piecesFromStates } from '../generate/faceReach'
 import { faceIndex } from '../generate/faceAisles'
 import { rackDepthAt } from './rackDepth'
 import { carryElev, withElev, ELEV_FIELDS, typeIdAt, typeMap, compressElev, syncLevels, paintRack, sidesOf } from './elevations'
+import { isEmptySide, withEmpty, EMPTY_FIELD } from './bayEmpty'
 
 export const BEAM = new Set(['rack_row', 'rack_double_row'])
 export const UP_TOL_FT = 0.5 / 12                          // uprights line up within ½"
@@ -150,7 +151,7 @@ const GEOM_KEYS = ['x', 'y', 'width', 'height', 'rotation', 'beams']
 const UI_KEYS = ['activeBayIdx', 'activeBaySide', 'activeTowerIdx']
 const without = (o, keys) => { const c = { ...o }; for (const k of keys) delete c[k]; return JSON.stringify(c) }
 const sameRack = (a, b) => without(a, UI_KEYS) === without(b, UI_KEYS)
-const sameExceptGeom = (a, b) => without(a, [...GEOM_KEYS, ...UI_KEYS, ...ELEV_FIELDS, 'pieceOf', 'genRunFt', 'genCrossFt', 'id', 'flueSpaceIn']) === without(b, [...GEOM_KEYS, ...UI_KEYS, ...ELEV_FIELDS, 'pieceOf', 'genRunFt', 'genCrossFt', 'id', 'flueSpaceIn'])
+const sameExceptGeom = (a, b) => without(a, [...GEOM_KEYS, ...UI_KEYS, ...ELEV_FIELDS, EMPTY_FIELD, 'pieceOf', 'genRunFt', 'genCrossFt', 'id', 'flueSpaceIn']) === without(b, [...GEOM_KEYS, ...UI_KEYS, ...ELEV_FIELDS, EMPTY_FIELD, 'pieceOf', 'genRunFt', 'genCrossFt', 'id', 'flueSpaceIn'])
 /** Only the levels differ (geometry, bays, depth, kind the same). */
 const onlyLevels = (a, b) => a.levels !== b.levels && without(a, [...UI_KEYS, 'levels']) === without(b, [...UI_KEYS, 'levels'])   /* elevation fields unchanged: a type painted is the elev kind */
 
@@ -303,6 +304,8 @@ function sideDeleteOf(pairs, gridSize) {
     if (s.length === 1 && sameRack(r, s[0])) continue
     const a = geom(r), up = upPxOf(r, gridSize), U = uprightsOf(a.r0, a.beams, up, gridSize), dbl = r.type === 'rack_double_row'
     const kept = a.beams.map(() => new Set())                     // per bay (run order): the bands still there
+    // the bands each bay had before: a pair's empty sides (utils/bayEmpty.js) were already gone
+    const nB = r.beams.length, had = a.beams.map((_, i) => { const own = reversed(r) ? nB - 1 - i : i; return new Set(dbl ? [0, 1].filter(sd => !isEmptySide(r, own, sd)).map(sd => (faceIndex(r, 'lo') === sd ? 'lo' : 'hi')) : ['lo', 'hi']) })
     for (const o of s) {
       const b = geom(o)
       if (!sameExceptGeom(r, o.type === r.type ? o : asPair(o, r))) return null
@@ -311,12 +314,18 @@ function sideDeleteOf(pairs, gridSize) {
       if (!band) return null
       const V = uprightsOf(b.r0, b.beams, up, gridSize), i0 = U.findIndex(u => Math.abs(u - V[0]) < tol)
       if (i0 < 0 || b.beams.some((x, k) => x !== a.beams[i0 + k] || Math.abs(V[k + 1] - U[i0 + k + 1]) >= tol)) return null
-      b.beams.forEach((_, k) => band.forEach(x => kept[i0 + k].add(x)))
+      // a pair successor keeps its bays' bands less the sides now empty
+      const nO = o.beams.length
+      b.beams.forEach((_, k) => {
+        const own = reversed(o) ? nO - 1 - k : k
+        band.forEach(x => { if (!(full && dbl && o.type === 'rack_double_row' && isEmptySide(o, own, faceIndex(o, x) === 0 ? 0 : 1))) kept[i0 + k].add(x) })
+      })
     }
     kept.forEach((k, i) => {
-      if (k.size === 2) return
+      const gone = [...had[i]].filter(x => !k.has(x))
+      if (!gone.length) return
       if (k.size === 1) oneSide = true
-      removed.push({ a: U[i], b: U[i + 1], side: k.size === 0 ? 'both' : k.has('lo') ? 'hi' : 'lo' })
+      removed.push({ a: U[i], b: U[i + 1], side: k.size === 0 ? 'both' : gone[0] })
     })
   }
   return oneSide ? removed : null
@@ -524,21 +533,28 @@ function sideDeleteOn(key, mine, edit, { gridSize, newId, byId, tol }) {
   let lined = false
   mine.forEach((o, j) => {
     const g = gs[j], t = uprightsOf(g.r0, g.beams, upPxOf(o, gridSize), gridSize), n = g.beams.length
-    const state = Array(n).fill('D')
+    const state = Array(n).fill('D'), marks = []
     for (let i = 0; i < n; i++) {
       const e = edit.removed.find(q => Math.abs(t[i] - q.a) <= tol && Math.abs(t[i + 1] - q.b) <= tol)
       if (!e) continue
       lined = true
       let st = '-'
-      if (e.side !== 'both' && o.type === 'rack_double_row') st = faceIndex(o, e.side) === 0 ? 'B' : 'A'
-      else if (e.side !== 'both') {
+      const own = reversed(o) ? n - 1 - i : i
+      if (e.side !== 'both' && o.type === 'rack_double_row') {
+        // a pair stays one object: that side of the bay goes empty; both sides gone cuts it (utils/bayEmpty.js)
+        const sd = faceIndex(o, e.side) === 0 ? 0 : 1
+        if (isEmptySide(o, own, 1 - sd)) st = '-'
+        else if (isEmptySide(o, own, sd)) st = 'D'
+        else { st = 'D'; marks.push({ b: own, s: sd }) }
+      } else if (e.side !== 'both') {
         const on = e.side === 'lo' ? Math.abs(g.s0 - ext[0]) < 0.5 && g.s1 < ext[1] - 0.5 : Math.abs(g.s1 - ext[1]) < 0.5 && g.s0 > ext[0] + 0.5
         st = on ? '-' : 'D'
       }
-      state[reversed(o) ? n - 1 - i : i] = st
+      state[own] = st
     }
-    if (state.every(x => x === 'D')) return
-    const pieces = piecesFromStates(o, state, { gridSize, newId }).map(p => (p.id === o.id ? p : { ...p, pieceOf: o.pieceOf || o.id }))
+    if (state.every(x => x === 'D') && !marks.length) return
+    const o2 = marks.length ? withEmpty(o, marks) : o
+    const pieces = state.every(x => x === 'D') ? [o2] : piecesFromStates(o2, state, { gridSize, newId }).map(p => (p.id === o.id ? p : { ...p, pieceOf: o.pieceOf || o.id }))
     for (const p of pieces) (byId.has(p.id) ? racks : addRacks).push(p)
     if (!pieces.some(p => p.id === o.id)) removeIds.push(o.id)
   })

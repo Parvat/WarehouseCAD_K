@@ -5,6 +5,7 @@
 import { create } from 'zustand'
 import { typeAt, sidesOf, isBeamRack, PALETTE, OLD_PALETTE } from './elevations'
 import { bayRectForIndex } from '../render/bayGeom'
+import { isEmptySide } from './bayEmpty'
 
 const LS_KEY = 'trace.elev.v1'
 const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { showColors: v.showColors !== false } } catch { return { showColors: true } } }
@@ -36,7 +37,7 @@ export function bandRects(rack, table, gridSize = 40) {
     const rects = bayRectForIndex(rack, gridSize, b)
     for (let s = 0; s < sidesOf(rack); s++) {
       const r = rects[sidesOf(rack) === 2 && rects.length === 2 ? s : 0]
-      const t = typeAt(rack, b, s, table)
+      const t = isEmptySide(rack, b, s) ? null : typeAt(rack, b, s, table)   // an empty bay side: no tint
       if (r && t) out.push({ ...r, color: tint(t.color), typeId: t.id, bay: b, side: s })
     }
   })

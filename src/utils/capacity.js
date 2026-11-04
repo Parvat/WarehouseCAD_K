@@ -11,6 +11,7 @@ import { DEFAULT_RULES } from '../rules/defaults'
 // The pallet spacing along a beam and positionsPerBeam live in palletFit.js (shared with bayLedger.js, so the two
 // never import each other); re-exported here, where they have always been imported from.
 import { UPRIGHT_CLEARANCE_IN, PALLET_GAP_IN, positionsPerBeam } from './palletFit'
+import { isEmptySide } from './bayEmpty'
 export { UPRIGHT_CLEARANCE_IN, PALLET_GAP_IN, positionsPerBeam }
 
 /** Position `i`'s own [startIn, endIn) footprint along the beam — LOCAL to
@@ -101,7 +102,9 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
     const palletWIn  = obj.palletWIn  || rPalletW
     const levels     = obj.levels     || 1
     const palletsPerBay = beams.map(b => positionsPerBeam(b, palletWIn))
-    const groundTotal   = palletsPerBay.reduce((s, p) => s + p, 0) * 2  // × 2 rows
+    // × 2 rows — less a pair's empty bay sides (utils/bayEmpty.js), which hold nothing
+    const sidesAt = (i) => (isEmptySide(obj, i, 0) ? 0 : 1) + (isEmptySide(obj, i, 1) ? 0 : 1)
+    const groundTotal   = palletsPerBay.reduce((s, p, i) => s + p * sidesAt(i), 0)
     const per = (i, side) => (levelsAt?.face ? positionsPerBeam(beams[i], levelsAt.face(obj, i, side)) : palletsPerBay[i])
     const total         = levelsAt ? beams.reduce((s, _, i) => s + per(i, 0) * levelsAt(obj, i, 0) + per(i, 1) * levelsAt(obj, i, 1), 0) : groundTotal * levels
     return {
@@ -111,7 +114,7 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
       groundTotal,
       total,
       label:   `${total} PAL (${groundTotal} × ${levels}L × 2 rows)`,
-      detail:  palletsPerBay.map((p, i) => `Bay ${i+1}: ${p*2} pal`),
+      detail:  palletsPerBay.map((p, i) => `Bay ${i+1}: ${p * sidesAt(i)} pal`),
     }
   }
 

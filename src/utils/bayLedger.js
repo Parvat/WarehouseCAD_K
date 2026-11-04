@@ -27,6 +27,7 @@
 
 import { positionsPerBeam } from './palletFit'
 import { levelsResolver } from './elevations'
+import { isEmptySide } from './bayEmpty'
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const EPS = 1e-6
@@ -77,14 +78,15 @@ function frameLines(r, gridSize) {
  *  elevation type (utils/elevations.js), else the rack's own `levels`. */
 const bayPositions = (r, b, bi, lv) => {
   const per = positionsPerBeam(b, r.palletWIn || 40)
-  if (!lv) return per * (r.levels || 1) * (r.type === 'rack_double_row' ? 2 : 1)
+  // a pair's empty bay side holds nothing (utils/bayEmpty.js)
+  if (!lv) return per * (r.levels || 1) * (r.type === 'rack_double_row' ? (isEmptySide(r, bi, 0) ? 0 : 1) + (isEmptySide(r, bi, 1) ? 0 : 1) : 1)
   // each face's pallets on the beam from its elevation's pallet face (Project setup), its levels from its elevation
   const f = lv.face, at = (s) => (f ? positionsPerBeam(b, f(r, bi, s)) : per) * lv(r, bi, s)
   return at(0) + (r.type === 'rack_double_row' ? at(1) : 0)
 }
 
 let cache = { objects: null, key: null, ledger: null }
-const keyOf = (racks) => racks.map(r => [r.id, r.type, r.x, r.y, r.width, r.height, r.rotation || 0, r.beams.join('/'), r.levels, r.palletWIn, r.uprightWidth, JSON.stringify([r.elevType, r.elevSides, r.elevBays])].join(',')).join(';')
+const keyOf = (racks) => racks.map(r => [r.id, r.type, r.x, r.y, r.width, r.height, r.rotation || 0, r.beams.join('/'), r.levels, r.palletWIn, r.uprightWidth, JSON.stringify([r.elevType, r.elevSides, r.elevBays, r.bayEmpty])].join(',')).join(';')
 /* the types' level counts (a type edited to more levels changes every bay that carries it) */
 const tableKey = (T) => { return T ? T.defaultId + ':' + T.types.map(t => t.id + '=' + t.levels.length + '/' + (t.palletId || '')).join(',') + '|' + (T.project?.pallets || []).map(p => p.id + '=' + p.faceIn).join(',') : '' }
 
@@ -139,10 +141,16 @@ export function bayLedger(objects, gridSize = 40, elevations = null) {
     const bays = c.filter(Boolean).length
     const frames = Array.from({ length: r.beams.length + 1 }, (_, k) => !!(c[k - 1] || c[k]))
     const lines = frameLines(r, gridSize)
+    /* a pair's frame on one side stands only beside a counted bay that is not empty on that side (utils/bayEmpty.js):
+       the shared upright beside a full bay stays, one between two empty bays goes. lines[k][j]: j the world-low
+       band (0) or high (1) — local face j at 0° / 270°, the other face at 90° / 180° */
+    const rot = norm(r.rotation), flip = rot === 90 || rot === 180
+    const sideHas = (k, j) => { const f = flip ? 1 - j : j; return (c[k - 1] && !isEmptySide(r, k - 1, f)) || (c[k] && !isEmptySide(r, k, f)) }
     const frameCount = frames.map((on, k) => {
       if (!on) return 0
       let n = 0
-      for (const fr of lines[k]) {
+      for (const [j, fr] of lines[k].entries()) {
+        if (r.type === 'rack_double_row' && !sideHas(k, j)) continue
         if (already(fr)) continue
         const key = bucket(fr); if (!taken.has(key)) taken.set(key, []); taken.get(key).push(fr)
         n++

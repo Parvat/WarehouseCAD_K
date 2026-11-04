@@ -1,3 +1,4 @@
+import { HOME_TOOL } from '../utils/homeTool'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
 import { SPLIT_TOOL, useSplit } from '../utils/splitTool'
@@ -10,7 +11,7 @@ import { B, MONO, modePill, Sep, CloseBtn } from '../studio/barParts'
 export function SplitBar() {
   const tool = useCanvasStore(s => s.activeTool)
   if (tool !== SPLIT_TOOL) return null
-  const close = () => { useSplit.setState({ hover: null }); useCanvasStore.getState().setActiveTool(TOOLS.SELECT) }
+  const close = () => { useSplit.setState({ hover: null }); useCanvasStore.getState().setActiveTool(HOME_TOOL) }
   return (
     <div role="toolbar" aria-label="Split" data-mode-bar="split" className="st-pill" style={modePill}>
       <Icon name="Split" active />

@@ -91,7 +91,7 @@ function savedFill(vert) {
   return out.map(o => {
     if (!BEAM.has(o.type)) return turn(o)
     const f = rackFootprint(o), r = ((o.rotation || 0) % 360 + 360) % 360
-    return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x }
+    return { ...o, rotation: r === 270 ? 180 : 0, x: f.y, y: f.x, ...(o.bayEmpty ? { bayEmpty: [o.bayEmpty[1], o.bayEmpty[0]] } : {}) }
   })
 }
 function load(objects) {
@@ -167,7 +167,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     const c2 = readFileSync('src/canvas2/Canvas2.jsx', 'utf8')
     expect(c2).toMatch(/const grouping = !measuring && activeTool === ROW_GROUP_TOOL/)
     expect(c2).toMatch(/commitGroupPress\(useCanvasStore, moved, shiftKey\)/)
-    expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/activeTool === ROW_GROUP_TOOL\) \{ cancelGroupBox\(\); clearGroup\(\); useCanvasStore\.getState\(\)\.setActiveTool\(TOOLS\.SELECT\); useCanvasStore\.getState\(\)\.clearSelection\(\); useCanvasStore\.getState\(\)\.setActiveWall\(null\); return \}/)
+    expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/activeTool === ROW_GROUP_TOOL\) \{ cancelGroupBox\(\); clearGroup\(\); useCanvasStore\.getState\(\)\.setActiveTool\(HOME_TOOL\); useCanvasStore\.getState\(\)\.clearSelection\(\); useCanvasStore\.getState\(\)\.setActiveWall\(null\); return \}/)
     // the select tool no longer picks rows (it only asks the Row group which racks a dragged group row skips)
     expect(readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')).not.toMatch(/toggleRowOf|addRowsInBox|picking\)/)
   })
@@ -528,6 +528,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
 
   it('RG-always: Auto apply applies at once, folded into the edit\'s own history entry — one Ctrl+Z undoes the edit and its apply together; the switch is remembered', async () => {
     load(filled(vert))
+    store.getState().setActiveTool(ROW_GROUP_TOOL)   // the mode bar is the tool's (STUDIO.md §7)
     addRowsInBox(runBox(vert, ...SEC4))
     useRowGroup.getState().setAlwaysApply(true)
     expect(localStorage.getItem('trace.rowGroup.always')).toBe('1')
@@ -543,6 +544,7 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     store.getState().redo()
     expect(racksOf(key(4, 6)).find(o => o.type === 'rack_row').beams[4]).toBe(84)
     useRowGroup.getState().setAlwaysApply(false)
+    store.getState().setActiveTool(TOOLS.SELECT)
   })
 
   it('RG-undo: undo, redo and a new layout end a pending apply; ✕ leaves the edit on its own row; with no group nothing is offered', async () => {

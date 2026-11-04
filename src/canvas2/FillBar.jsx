@@ -1,3 +1,4 @@
+import { HOME_TOOL } from '../utils/homeTool'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
 import { useFillTool, useRackingSettings, cancelFill } from '../utils/fillTool'
@@ -17,7 +18,7 @@ export function FillOptionsBar() {
   const s = useRackingSettings()
   const plan = useFillTool(st => st.plan)
   const num = (k, v) => { const n = Number(v); if (Number.isFinite(n) && n > 0) s.setSetting(k, n) }
-  const close = () => { cancelFill(); useCanvasStore.getState().setActiveTool(TOOLS.SELECT) }
+  const close = () => { cancelFill(); useCanvasStore.getState().setActiveTool(HOME_TOOL) }
   return (
     <div role="toolbar" aria-label="Fill racking options" data-mode-bar="fill" className="st-pill" style={modePill}>
       <span style={{ fontWeight: 600, color: B.strong }}>Fill racking</span>

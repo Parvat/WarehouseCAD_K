@@ -24,6 +24,8 @@
 // same world width.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { hasEmpty, isEmptySide } from '../utils/bayEmpty'
+
 /* The locked rack symbology. Literal by design: CLAUDE.md keeps canvas object
    colours out of the theme system, since a token here would repaint the
    drawing when the UI theme changes. */
@@ -145,6 +147,26 @@ export function rackDoubleRowOps(obj, gridSize) {
 
   const topY = y
   const botY = y + rowH + flueH
+  /* A pair's empty bay sides (utils/bayEmpty.js): that band keeps its outline, but an empty bay is drawn empty — no
+     fill, and no upright between two empty bays (an upright beside a full bay is that bay's frame and stays). */
+  if (hasEmpty(obj)) {
+    const ops = []
+    const n = xs.length - 1
+    const rects = []
+    for (const [s, by] of [[0, topY], [1, botY]]) {
+      for (let i = 0; i < n;) {
+        if (isEmptySide(obj, i, s)) { i++; continue }
+        let j = i
+        while (j + 1 < n && !isEmptySide(obj, j + 1, s)) j++
+        ops.push({ op: 'rect', x: xs[i], y: by, w: xs[j + 1] + upW - xs[i], h: rowH, fill: RACK_PALETTE.fill })
+        i = j + 1
+      }
+      ops.push({ ...band(by), fill: null })
+      for (let k = 0; k <= n; k++) if (!(isEmptySide(obj, k - 1, s) || k === 0) || !(isEmptySide(obj, k, s) || k === n)) rects.push({ x: xs[k], y: by, w: upW, h: rowH })
+    }
+    if (rects.length) ops.push({ op: 'uprights', rects, fill: RACK_PALETTE.upright })
+    return ops
+  }
   const ops = [
     band(topY),
     band(botY),

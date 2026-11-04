@@ -30,12 +30,14 @@ async function fresh() {
 describe('SF-1 — deselect', () => {
   it('SF-deselect: a left click on empty canvas or on a building\'s floor (a press that never moves) clears the selection; a building is picked by its walls only — its floor never; space / middle-button pans never deselect', () => {
     const ci = read('canvas2/useCanvasInteraction.js')
-    expect(ci).toMatch(/const onFloor = !!\(hitObj && FP_SET_INPUT\.has\(hitObj\.type\)\)\r?\n\s*if \(onFloor\) \{ hitId = null; hitObj = null \}/)
+    expect(ci).toMatch(/const onFloor = !!\(hitObj && FP_SET_INPUT\.has\(hitObj\.type\)\)\r?\n\s*if \(onFloor\) \{ if \(!clickTarget\) clickTarget = \{ fp: hitObj\.id \}; hitId = null; hitObj = null \}/)
     // the floor check sits after the wall check (a wall still picks it) and before any pick of a hit
     expect(ci.indexOf('fpWallHitTest(st.objects') < ci.indexOf('hitId = null; hitObj = null') && ci.indexOf('hitId = null; hitObj = null') < ci.indexOf('selectFromHit(hitId, !!evt.shiftKey, world)')).toBe(true)
-    expect(ci).toMatch(/pan\.current = \{ sx: evt\.clientX, sy: evt\.clientY, panX: view\.current\.panX, panY: view\.current\.panY, force: forcePan, moved: false \}/)
+    expect(ci).toMatch(/pan\.current = \{ sx: evt\.clientX, sy: evt\.clientY, panX: view\.current\.panX, panY: view\.current\.panY, force: forcePan, moved: false, click: clickTarget \}/)
     expect(ci).toMatch(/if \(!d\.moved && movedEnough\(\{ x: d\.sx, y: d\.sy \}, \{ x: evt\.clientX, y: evt\.clientY \}\)\) d\.moved = true/)
-    expect(between(ci, 'const upGesture = () => {', 'const rd = resizeDrag.current')).toMatch(/const pn = pan\.current\s+pan\.current = null[\s\S]*if \(pn && !pn\.force && !pn\.moved\) \{[\s\S]*st\.clearSelection\(\)/)
+    expect(between(ci, 'const upGesture = () => {', 'const rd = resizeDrag.current')).toMatch(/const pn = pan\.current\s+pan\.current = null[\s\S]*if \(pn && !pn\.force && !pn\.moved\) clickOn\(pn\.click\)/)
+    // a click on a building's blank floor selects the building; elsewhere it clears (STUDIO.md §7 — the floor rule replaced)
+    expect(between(ci, 'const clickOn = (t) => {', 'const objDrag')).toMatch(/selectRows\(useCanvasStore, \[t\.fp\]\)[\s\S]*st\.clearSelection\(\)/)
   })
 
   it('SF-esc: Esc clears the selection — also when it first leaves another tool (Pan, the tool a fresh plan opens in, with the generated building picked)', async () => {
@@ -44,7 +46,7 @@ describe('SF-1 — deselect', () => {
     globalThis.document.activeElement = null
     m.useCanvasStore.setState({ objects: [{ id: 'r', type: 'rack_row', x: 0, y: 0, width: 400, height: 42, rotation: 0 }], selectedIds: ['r'], activeTool: 'pan' })
     shortcutHandler({ key: 'Escape', target: null, preventDefault() {}, stopPropagation() {} })
-    expect([m.useCanvasStore.getState().selectedIds, m.useCanvasStore.getState().activeTool]).toEqual([[], 'select'])
+    expect([m.useCanvasStore.getState().selectedIds, m.useCanvasStore.getState().activeTool]).toEqual([[], 'pan'])   // Pan is the home tool: Esc there only clears (utils/homeTool.js)
     m.useCanvasStore.setState({ selectedIds: ['r'] })
     shortcutHandler({ key: 'Escape', target: null, preventDefault() {}, stopPropagation() {} })
     expect(m.useCanvasStore.getState().selectedIds).toEqual([])
@@ -65,7 +67,7 @@ describe('SF-2 — the Generate card closes on a pick', () => {
     expect(RP.useRightPanel.getState().tab).toBe('elevations')
     const ci = read('canvas2/useCanvasInteraction.js')
     expect(between(ci, 'const selectFromHit = (hitId, shiftKey, world) => {', 'const st = useCanvasStore.getState()')).toMatch(/pickedOnPlan\(\)/)
-    expect(ci).toMatch(/if \(fpObj\) \{\s+pickedOnPlan\(\)\s+st\.selectObject\(wallHit\.objId\)/)
+    expect(ci).toMatch(/if \(fpObj\) \{[\s\S]{0,400}?pickedOnPlan\(\)\s+st\.selectObject\(wallHit\.objId\)/)
     // the draft is the card's own state (GeneratePanel): closing the card drops it
     expect(read('components/Generate/GeneratePanel.jsx')).toMatch(/const \[draft, setDraft\] = useState\(\{\}\)/)
   })
@@ -99,7 +101,7 @@ describe.each(['horizontal', 'vertical'])('SF-3 — buildings, %s', (orientation
     const fp = st().objects.find(o => o.type === 'fp_rect'), seg = m.getFpWallSegments(fp, st().gridSize)[0]
     expect(m.fpWallHitTest(st().objects, st().layers, (seg.a.x + seg.b.x) / 2, (seg.a.y + seg.b.y) / 2, 0.2, st().gridSize)?.objId).toBe(fp.id)
     expect(m.L.LOCKED_AFTER_GENERATE).toEqual(['columns'])
-    expect(read('canvas2/useCanvasInteraction.js')).toMatch(/\} else if \(obj && JSON\.stringify\(obj\) !== JSON\.stringify\(rd\.origObj\)\) st\.commitObjectUpdate\(rd\.objId, obj\)/)
+    expect(read('canvas2/useCanvasInteraction.js')).toMatch(/\} else if \(obj && JSON\.stringify\(obj\) !== JSON\.stringify\(rd\.origObj\)\) \{\s+st\.commitObjectUpdate\(rd\.objId, obj\)/)
   })
 })
 

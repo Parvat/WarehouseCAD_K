@@ -1,7 +1,10 @@
 import { memo } from 'react'
 import { RotateGrip } from './ResizeHandlesOverlay'
 import { Group } from 'react-konva'
+import { Rect } from 'react-konva'
 import { computeFpRotateHandle } from './fpRotate'
+import { fpHandlePoints, FP_HANDLE_PX } from './fpHandles'
+import { HANDLE_FILL, HANDLE_ACCENT } from './handleGeometry'
 
 /* ── Floor-plan rotate handle — pure paint, no Konva input ───────────────────
    FpRotateHandle ported (same stalk/circle/glyph geometry and colours). No
@@ -38,6 +41,11 @@ function FpRotateHandleOverlayView({ obj, gridSize, zoom }) {
   return (
     <Group name={'fprotate:' + obj.id} listening={false}>
       <RotateGrip x={rx} y={ry} r={r} sx={lx} sy={ly} zoom={zoom} />
+      {/* the resize handles (fpHandles.js): the building is resized from these only, never from a wall */}
+      {fpHandlePoints(obj).map(p => { const s = FP_HANDLE_PX / zoom; return (
+        <Rect key={p.id} name={'fphandle:' + p.id} x={p.x - s / 2} y={p.y - s / 2} width={s} height={s}
+          fill={HANDLE_FILL} stroke={HANDLE_ACCENT} strokeWidth={1} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={false} />
+      ) })}
     </Group>
   )
 }
