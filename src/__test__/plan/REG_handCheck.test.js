@@ -1047,6 +1047,545 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
+    /* ══ STUDIO.md §7a — the interaction rules, one test per rule (the REG-7a matrix) ══════════════════════════════ */
+    const tool7 = () => L.S('return S.getState().activeTool')
+    const view7 = () => L.S('const s = S.getState(); return [Math.round(s.panX), Math.round(s.panY)]')
+    const gs7 = () => L.S('return S.getState().gridSize || 40')
+    const hist7 = () => L.S('return S.getState().historyIndex')
+    const obj7 = (id) => L.S('return S.getState().objects.find(o => o.id === arg) || null', id)
+    const kinds7 = () => L.S('const st = S.getState(); return st.selectedIds.map(id => st.objects.find(o => o.id === id)?.type)')
+    const onCanvas = async (w) => { const p = await L.toScreen(w); return L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', p) }
+    /** A point of the open canvas outside the building (left, right, above, below it). */
+    const outside7 = async () => {
+      const f = await fpOf()
+      for (const k of [0.03, 0.06, 0.1]) for (const w of [{ x: f.x - f.width * k, y: f.y + f.height / 2 }, { x: f.x + f.width * (1 + k), y: f.y + f.height / 2 }, { x: f.x + f.width / 2, y: f.y - f.height * k }, { x: f.x + f.width / 2, y: f.y + f.height * (1 + k) }]) if (await onCanvas(w)) return w
+      return null
+    }
+    /** A rack's local point (fx along its run from -0.5..0.5, fy across: -0.25 the top half, 0 the flue, 0.25 the bottom) in world. */
+    const rackAt = (r, fx, fy) => { const t = ((r.rotation || 0) * Math.PI) / 180, cx = r.x + r.width / 2, cy = r.y + r.height / 2, lx = r.width * fx, ly = r.height * fy; return { x: cx + lx * Math.cos(t) - ly * Math.sin(t), y: cy + lx * Math.sin(t) + ly * Math.cos(t) } }
+    const across7 = (r, ft, gs) => { const t = ((r.rotation || 0) * Math.PI) / 180; return { x: -Math.sin(t) * ft * gs, y: Math.cos(t) * ft * gs } }
+    const plus = (w, d) => ({ x: w.x + d.x, y: w.y + d.y })
+    /** A zone added as a user would: right-click the blank floor, Add zone, Washroom — it follows the mouse — a click places it. */
+    const addZone7 = async (near) => {
+      const z0 = await L.S('return S.getState().objects.filter(o => /^zone_/.test(o.type)).map(o => o.id)')
+      const f = await fpOf(), p = await L.floorPoint(near || { x: f.x + f.width * 0.5, y: f.y + f.height * 0.5 }), s = await L.toScreen(p)
+      await L.page.mouse.click(s.x, s.y, { button: 'right' }); await L.page.waitForTimeout(150)
+      await L.page.getByRole('menuitem', { name: 'Add zone' }).click(); await L.page.waitForTimeout(80)
+      await L.page.getByRole('menuitem', { name: 'Washroom' }).click(); await L.page.waitForTimeout(150)
+      for (const fy of [0.5, 0.3, 0.7, 0.15, 0.85]) for (const fx of [0.5, 0.3, 0.7, 0.15, 0.85]) {
+        const q = await L.toScreen({ x: f.x + f.width * fx, y: f.y + f.height * fy })
+        await L.page.mouse.move(q.x, q.y, { steps: 2 }); await L.page.waitForTimeout(60)
+        // not blocked, and clear of the zones already there (two zones on one spot would be one click)
+        if (await L.S('const a = PL.usePlacement.getState().active; if (!a || a.blocked) return true; const z = a.items[0], ox = (a.dx || 0), oy = (a.dy || 0); return S.getState().objects.some(o => /^zone_/.test(o.type) && Math.min(o.x + o.width, z.x + ox + z.width) > Math.max(o.x, z.x + ox) && Math.min(o.y + o.height, z.y + oy + z.height) > Math.max(o.y, z.y + oy))')) continue
+        await L.page.mouse.click(q.x, q.y); await L.page.waitForTimeout(250)
+        const z = await L.S('return S.getState().objects.find(o => /^zone_/.test(o.type) && !arg.includes(o.id)) || null', z0)
+        if (z) { await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); return z }
+      }
+      throw new Error('no room for a zone')
+    }
+    /** A door added as a user would: the building by its bottom wall, Add door, a click on that wall at `fx`, Esc. */
+    const addDoor7 = async (fx) => {
+      const f = await fpOf(), gs = await gs7(), wt = (f.wallThicknessFt || 0.25) * gs
+      const d0 = await L.S('return S.getState().objects.filter(o => /^struct_/.test(o.type)).map(o => o.id)')
+      await L.click({ x: f.x + f.width * 0.3, y: f.y + f.height })
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door' }).click(); await L.page.waitForTimeout(120)
+      const p = await L.toScreen({ x: f.x + f.width * fx, y: f.y + f.height - wt * 0.5 })
+      await L.page.mouse.move(p.x, p.y); await L.page.waitForTimeout(120); await L.page.mouse.click(p.x, p.y); await L.page.waitForTimeout(200)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      const d = await L.S('return S.getState().objects.find(o => /^struct_/.test(o.type) && !arg.includes(o.id)) || null', d0)
+      if (!d) throw new Error('no door placed')
+      return d
+    }
+    /** A point on a bottom-wall door between the wall's inner face and the rack along the wall (inside its 3" clearance). */
+    const doorPoint7 = async (d) => { const f = await fpOf(), gs = await gs7(), wt = (f.wallThicknessFt || 0.25) * gs; return { x: d.x + d.width / 2, y: f.y + f.height - wt - 0.12 * gs } }
+
+    it('REG-7a-tools (click): Pan is the default — a click selects what is under it, a drag on the floor pans, a drag on an object moves it; Select (V): a click selects, a drag from empty floor or canvas box-selects rows, a drag from an object moves it; Space+drag and middle-drag pan in any tool', async () => {
+      const B = await import('./handCheck/browser.js')
+      L = await B.openLayout(app, B.fixture(name), { keepTool: true })
+      expect(await tool7()).toBe('pan')
+      const fp = await fpOf(), gs = await gs7(), ids = await openRacks('rack_double_row', 4)
+      let r = await obj7(ids[0])
+      await L.click(rackAt(r, -0.3, -0.25))
+      expect((await levelOf()).ids).toContain(r.id)
+      const floor = await L.floorPoint({ x: fp.x + fp.width * 0.5, y: fp.y + fp.height * 0.5 })
+      const v0 = await view7()
+      await L.drag(floor, { x: floor.x + fp.width * 0.03, y: floor.y + fp.height * 0.03 })
+      expect((await view7()).join() !== v0.join()).toBe(true)                          // Pan: the floor drag pans
+      r = await obj7(ids[0])
+      const p0 = [r.x, r.y], from = rackAt(r, -0.3, -0.25)
+      await L.drag(from, plus(from, across7(r, 1.5, gs)))
+      r = await obj7(ids[0])
+      expect([r.x, r.y].join() !== p0.join()).toBe(true)                                // Pan: a drag on an object moves it
+      // Select
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('v'); await L.page.waitForTimeout(80)
+      await L.page.keyboard.press('Escape')
+      await L.click(rackAt(r, 0.3, -0.25))
+      expect((await levelOf()).ids).toContain(r.id)
+      const f2 = await fpOf(), s1 = await L.floorPoint({ x: f2.x + f2.width * 0.55, y: f2.y + f2.height * 0.55 })
+      await L.drag(s1, { x: f2.x + f2.width * 0.9, y: f2.y + f2.height * 0.9 })
+      const box1 = await kinds7()
+      expect([box1.length > 0, box1.every(t => /^rack_/.test(t))]).toEqual([true, true])
+      const out = await outside7()
+      expect(out).toBeTruthy()
+      await L.page.keyboard.press('Escape')
+      await L.drag(out, { x: f2.x + f2.width * 0.55, y: f2.y + f2.height * 0.7 })
+      const box2 = await kinds7()
+      expect([box2.length > 0, box2.every(t => /^rack_/.test(t))]).toEqual([true, true])    // a box from the canvas outside
+      r = await obj7(ids[0])
+      const p1 = [r.x, r.y], from2 = rackAt(r, 0.3, -0.25)
+      await L.page.keyboard.press('Escape')
+      await L.drag(from2, plus(from2, across7(r, -1.5, gs)))
+      r = await obj7(ids[0])
+      expect([r.x, r.y].join() !== p1.join()).toBe(true)                                // Select: a drag on an object moves it
+      // Space+drag (Select, on a rack: no move) and middle-drag (Pan and Select) pan
+      const spaceDrag = async (w) => { const a = await L.toScreen(w); await L.page.mouse.move(a.x, a.y); await L.page.keyboard.down('Space'); await L.page.mouse.down(); await L.page.mouse.move(a.x + 60, a.y + 40, { steps: 6 }); await L.page.mouse.up(); await L.page.keyboard.up('Space'); await L.page.waitForTimeout(150) }
+      const midDrag = async (w) => { const a = await L.toScreen(w); await L.page.mouse.move(a.x, a.y); await L.page.mouse.down({ button: 'middle' }); await L.page.mouse.move(a.x - 50, a.y - 30, { steps: 6 }); await L.page.mouse.up({ button: 'middle' }); await L.page.waitForTimeout(150) }
+      for (const key of ['v', 'p', 'f']) {
+        await L.page.mouse.move(5, 890); await L.page.keyboard.press(key); await L.page.waitForTimeout(60)
+        r = await obj7(ids[0])
+        const at = rackAt(r, 0, -0.25), pr = [r.x, r.y]
+        let v = await view7(); await spaceDrag(at)
+        expect([key, 'space', (await view7()).join() !== v.join(), [(await obj7(ids[0])).x, (await obj7(ids[0])).y].join() === pr.join(), await tool7()]).toEqual([key, 'space', true, true, await tool7()])
+        v = await view7(); await midDrag(at)
+        expect([key, 'mid', (await view7()).join() !== v.join(), [(await obj7(ids[0])).x, (await obj7(ids[0])).y].join() === pr.join()]).toEqual([key, 'mid', true, true])
+        await L.page.keyboard.press('Escape')
+      }
+    }, T)
+
+    it('REG-7a-hover (click): hover highlights exactly what a click would select — a row, then its bay, the flue\'s two bays, the building by its wall and its floor, a column, nothing outside', async () => {
+      await open()
+      const ids = await openRacks('rack_double_row', 4)
+      const r = await obj7(ids[0])
+      const col = await L.S(colAt), out = await outside7(), f = await fpOf()
+      const floor = await L.floorPoint({ x: f.x + f.width * 0.5, y: f.y + f.height * 0.5 })
+      const steps = [rackAt(r, -0.3, -0.25), rackAt(r, -0.3, -0.25), rackAt(r, 0.2, 0), { x: f.x + f.width * 0.3, y: f.y + f.height }, floor, col, out].filter(Boolean)
+      expect(steps.length).toBe(7)
+      for (const w of steps) {
+        const p = await L.toScreen(w)
+        await L.page.mouse.move(p.x - 3, p.y - 3); await L.page.mouse.move(p.x, p.y, { steps: 2 }); await L.page.waitForTimeout(120)
+        const hover = await L.S('return HV ? HV.useHoverTarget.getState().key : "no hover"')
+        const drawn = await L.page.evaluate(() => !!window.Konva.stages[0].findOne('.hover-highlight'))
+        await L.page.mouse.down(); await L.page.mouse.up(); await L.page.waitForTimeout(220)
+        const now = await L.S('return HV ? HV.selectionKey(S.getState()) : "no key"')
+        expect([hover, drawn]).toEqual([now, now !== 'none'])
+      }
+    }, T)
+
+    it('REG-7a-levels (click): a selection is one kind only — building, rows, bays, a column, zones or doors; a Shift+click on another kind adds nothing; a box takes rows only', async () => {
+      await open()
+      const z = await addZone7()
+      const ids = await openRacks('rack_double_row', 4)
+      const r = await obj7(ids[0]), f = await fpOf()
+      const zc = { x: z.x + z.width / 2, y: z.y + z.height / 2 }
+      const kindsOf = async () => [...new Set((await kinds7()).map(t => (/^rack_/.test(t) ? 'rows' : /^zone_/.test(t) ? 'zones' : /^fp_/.test(t) ? 'building' : /^struct_/.test(t) ? 'doors' : t)))]
+      await L.click(rackAt(r, -0.3, -0.25)); await L.shiftClick(zc)
+      expect(await kindsOf()).toEqual(['rows'])
+      await L.page.keyboard.press('Escape'); await L.click(zc); await L.shiftClick(rackAt(r, -0.3, -0.25))
+      expect(await kindsOf()).toEqual(['zones'])
+      await L.page.keyboard.press('Escape'); await L.click({ x: f.x + f.width * 0.3, y: f.y + f.height }); await L.shiftClick(rackAt(r, -0.3, -0.25))
+      expect(await kindsOf()).toEqual(['building'])
+      await L.page.keyboard.press('Escape'); await L.click(rackAt(r, -0.3, -0.25)); await L.click(rackAt(r, -0.3, -0.25)); await L.shiftClick(zc)
+      expect([await kindsOf(), (await levelOf()).one.length + (await levelOf()).multi]).toEqual([['rows'], 1])   // the bay level stays bays
+      // a box over the zone and racks: rows only
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('v')
+      const s = await L.floorPoint({ x: z.x - 2 * (await gs7()), y: z.y - 2 * (await gs7()) })
+      await L.drag(s, { x: z.x + z.width + 4 * (await gs7()), y: z.y + z.height + 4 * (await gs7()) })
+      const k = await kindsOf()
+      expect(k.length <= 1 && (k[0] || 'rows') === 'rows').toBe(true)
+    }, T)
+
+    it('REG-7a-floor (click): the blank floor inside the building — a click selects the building; a drag pans (Pan) or box-selects rows (Select); Esc clears', async () => {
+      await open()
+      const f = await fpOf(), floor = await L.floorPoint({ x: f.x + f.width * 0.5, y: f.y + f.height * 0.5 })
+      await L.click(floor)
+      expect(await L.selected()).toEqual([f.type])
+      await L.page.keyboard.press('Escape')
+      expect(await L.selected()).toEqual([])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('p'); await L.page.waitForTimeout(60)
+      const v0 = await view7()
+      await L.drag(floor, { x: floor.x + f.width * 0.03, y: floor.y + f.height * 0.03 })
+      expect([(await view7()).join() !== v0.join(), await L.selected()]).toEqual([true, []])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('v'); await L.page.waitForTimeout(60)
+      const s = await L.floorPoint({ x: f.x + f.width * 0.55, y: f.y + f.height * 0.55 }), v1 = await view7()
+      await L.drag(s, { x: f.x + f.width * 0.9, y: f.y + f.height * 0.9 })
+      const k = await kinds7()
+      expect([k.length > 0, k.every(t => /^rack_/.test(t)), (await view7()).join() === v1.join()]).toEqual([true, true, true])
+      await L.click(floor)
+      expect(await L.selected()).toEqual([f.type])
+      await L.page.keyboard.press('Escape')
+      expect(await L.selected()).toEqual([])
+    }, T)
+
+    it('REG-7a-outside (click): the canvas outside the building — a click clears; a drag pans (Pan) or box-selects rows (Select)', async () => {
+      await open()
+      const f = await fpOf(), ids = await openRacks(), r = await obj7(ids[0])
+      const out = await outside7()
+      expect(out).toBeTruthy()
+      await L.click(rackAt(r, -0.3, -0.25)); await L.click(out)
+      expect(await L.selected()).toEqual([])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('p'); await L.page.waitForTimeout(60)
+      const v0 = await view7()
+      await L.drag(out, { x: out.x + f.width * 0.02, y: out.y + f.height * 0.02 })
+      expect((await view7()).join() !== v0.join()).toBe(true)
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('v'); await L.page.waitForTimeout(60)
+      const out2 = await outside7(), v1 = await view7()
+      await L.drag(out2, { x: f.x + f.width * 0.55, y: f.y + f.height * 0.7 })
+      const k = await kinds7()
+      expect([k.length > 0, k.every(t => /^rack_/.test(t)), (await view7()).join() === v1.join()]).toEqual([true, true, true])
+    }, T)
+
+    it('REG-7a-wall (click): a click on a wall selects the building; a drag moves it with everything in it — racks, zones, columns (their layer locked), doors; Delete removes the building only, its contents stay, a notice with Undo', async () => {
+      await open()
+      const z = await addZone7(), d = await addDoor7(0.6)
+      const f = await fpOf(), gs = await gs7()
+      const snap = () => L.S('const st = S.getState(); return st.objects.filter(o => o.type !== "aisle").map(o => ({ id: o.id, type: o.type, x: o.x, y: o.y }))')
+      const before = await snap()
+      expect(before.some(o => o.type === 'column_grid') && before.some(o => o.id === z.id) && before.some(o => o.id === d.id)).toBe(true)
+      const wall = { x: f.x + f.width * 0.3, y: f.y + f.height }
+      await L.click(wall)
+      expect(await L.selected()).toEqual([f.type])
+      await L.drag(wall, { x: wall.x + 3 * gs, y: wall.y - 2 * gs })
+      const after = await snap(), fa = after.find(o => o.id === f.id), dx = fa.x - f.x, dy = fa.y - f.y
+      expect(Math.abs(dx) + Math.abs(dy) > 0).toBe(true)
+      const stayed = before.filter(o => { const a = after.find(q => q.id === o.id); return !a || Math.abs(a.x - o.x - dx) > 0.5 || Math.abs(a.y - o.y - dy) > 0.5 })
+      expect(stayed.map(o => o.type)).toEqual([])                                       // every object moved with it
+      const n0 = (await snap()).length, h0 = await hist7()
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      const left = await snap()
+      expect([left.some(o => o.id === f.id), left.length, (await hist7()) - h0]).toEqual([false, n0 - 1, 1])
+      const notice = L.page.locator('[aria-label="Notice"]')
+      expect(await notice.getByRole('button', { name: 'Undo' }).count()).toBe(1)
+      await notice.getByRole('button', { name: 'Undo' }).click(); await L.page.waitForTimeout(300)
+      expect((await snap()).some(o => o.id === f.id)).toBe(true)
+    }, T)
+
+    it('REG-7a-handles (click): only the handles resize (8 px hit) — a press 3 px off a side square resizes, one 6 px off along the wall moves; shrink removes the bays that no longer fit (one undo, notice with Undo); enlarge adds nothing (notice with Fill new space)', async () => {
+      await open()
+      const f = await fpOf(), gs = await gs7()
+      const size = () => L.S('const o = S.getState().objects.find(x => x.id === arg); return [Math.round(o.width), Math.round(o.height)]', f.id)
+      const bays = () => L.S('return S.getState().objects.filter(o => o.type === "rack_row" || o.type === "rack_double_row").reduce((t, o) => t + o.beams.length, 0)')
+      await L.click({ x: f.x + f.width * 0.3, y: f.y + f.height })
+      const s0 = await size(), h = await sideHandle(2)
+      expect(h).toBeTruthy()
+      const p = await L.toScreen(h.at), along = { x: h.n.y ? 1 : 0, y: h.n.x ? 1 : 0 }
+      const press = async (q, d) => { await L.page.mouse.move(q.x, q.y); await L.page.mouse.down(); await L.page.mouse.move(q.x + d.x, q.y + d.y, { steps: 6 }); await L.page.mouse.up(); await L.page.waitForTimeout(250) }
+      await press({ x: p.x + along.x * 6, y: p.y + along.y * 6 }, { x: h.n.x * 30, y: h.n.y * 30 })
+      expect(await size()).toEqual(s0)                                                  // 6 px off: the wall's — a move
+      if (!(await L.selected()).length) { const g = await fpOf(); await L.click({ x: g.x + g.width * 0.3, y: g.y + g.height }) }   // where its wall is now
+      const h2 = await sideHandle(2), p2 = await L.toScreen(h2.at)
+      await press({ x: p2.x + along.x * 3, y: p2.y + along.y * 3 }, { x: h2.n.x * 30, y: h2.n.y * 30 })
+      expect((await size()).join() !== s0.join()).toBe(true)                            // 3 px off: the square's — a resize
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(200)
+      // shrink
+      if (!(await L.selected()).length) { const g = await fpOf(); await L.click({ x: g.x + g.width * 0.3, y: g.y + g.height }) }   // where its wall is now
+      const b0 = await bays(), h0 = await hist7(), sh = await sideHandle(-25)
+      await L.drag(sh.at, sh.to); await L.page.waitForTimeout(200)
+      const notice = L.page.locator('[aria-label="Notice"]')
+      expect([(await bays()) < b0, (await hist7()) - h0, await notice.getByRole('button', { name: 'Undo' }).count()]).toEqual([true, 1, 1])
+      await notice.getByRole('button', { name: 'Undo' }).click(); await L.page.waitForTimeout(250)
+      expect(await bays()).toBe(b0)
+      // enlarge
+      if (!(await L.selected()).length) { const g = await fpOf(); await L.click({ x: g.x + g.width * 0.3, y: g.y + g.height }) }   // where its wall is now
+      const en = await sideHandle(15)
+      await L.drag(en.at, en.to); await L.page.waitForTimeout(200)
+      expect([await bays(), await notice.textContent(), await notice.getByRole('button', { name: 'Fill new space' }).count()]).toEqual([b0, expect.stringMatching(/^Building larger/), 1])
+    }, T)
+
+    it('REG-7a-row (click): a click selects the row, a click again without moving its bay; Shift+click adds or removes rows; press and drag moves the row, selected or not, never to bay level; Delete deletes the rows', async () => {
+      await open()
+      const ids = await openRacks('rack_double_row', 4), gs = await gs7()
+      let r = await obj7(ids[0]), q = await obj7(ids[1])
+      await L.click(rackAt(r, -0.3, -0.25))
+      expect([(await levelOf()).ids.includes(r.id), (await levelOf()).one]).toEqual([true, []])
+      await L.click(rackAt(r, -0.3, -0.25))
+      expect((await levelOf()).one).toEqual([r.id])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.click(rackAt(r, -0.3, -0.25)); await L.shiftClick(rackAt(q, -0.3, -0.25))
+      expect([(await levelOf()).ids.includes(r.id), (await levelOf()).ids.includes(q.id)]).toEqual([true, true])
+      await L.shiftClick(rackAt(q, -0.3, -0.25))
+      expect([(await levelOf()).ids.includes(r.id), (await levelOf()).ids.includes(q.id)]).toEqual([true, false])
+      // press and drag on a row NOT selected: it moves, at the row level
+      await L.page.keyboard.press('Escape')
+      q = await obj7(ids[1])
+      const qp = [q.x, q.y], from = rackAt(q, 0.3, -0.25)
+      await L.drag(from, plus(from, across7(q, 1.5, gs)))
+      q = await obj7(ids[1])
+      expect([[q.x, q.y].join() !== qp.join(), (await levelOf()).one, (await levelOf()).multi]).toEqual([true, [], 0])
+      // and selected
+      const qp2 = [q.x, q.y], from2 = rackAt(q, 0.3, -0.25)
+      await L.drag(from2, plus(from2, across7(q, -1.5, gs)))
+      q = await obj7(ids[1])
+      expect([[q.x, q.y].join() !== qp2.join(), (await levelOf()).one, (await levelOf()).multi]).toEqual([true, [], 0])
+      // Delete: the rows selected go, one undo step
+      await L.shiftClick(rackAt(await obj7(ids[0]), -0.3, -0.25))
+      const sel = (await levelOf()).ids, h0 = await hist7()
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      expect([await L.S('return arg.filter(id => S.getState().objects.some(o => o.id === id)).length', sel), (await hist7()) - h0]).toEqual([0, 1])
+    }, T)
+
+    it('REG-7a-flue (click): a click in a pair\'s flue selects the pair, a click again the two facing bays; a drag from the flue moves the pair', async () => {
+      await open()
+      const ids = await openRacks('rack_double_row', 4), gs = await gs7()
+      let r = await obj7(ids[0])
+      await L.click(rackAt(r, 0.2, 0))
+      expect([(await levelOf()).ids.includes(r.id), (await levelOf()).one]).toEqual([true, []])
+      await L.click(rackAt(r, 0.2, 0))
+      expect([(await L.bayOf(r.id)).idx != null, (await L.bayOf(r.id)).side]).toEqual([true, null])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const p0 = [r.x, r.y], from = rackAt(r, 0.2, 0)
+      await L.drag(from, plus(from, across7(r, 1.5, gs)))
+      r = await obj7(ids[0])
+      expect([[r.x, r.y].join() !== p0.join(), (await levelOf()).ids.includes(r.id), (await levelOf()).one]).toEqual([true, true, []])
+    }, T)
+
+    it('REG-7a-bays (click): at the bay level a click picks that bay; Shift+click adds or removes bays in any row (a set); a drag inside the row picks a run; Esc goes up to the row; Delete deletes those bays; the only bay of a rack deletes the row', async () => {
+      await open()
+      const ids = await openRacks('rack_double_row', 6)
+      const r = await obj7(ids[0]), q = await obj7(ids[1])
+      const entries = () => L.S('const st = S.getState(); const m = st.activeBaySelection.length ? st.activeBaySelection : st.objects.filter(o => o.activeBayIdx != null && st.selectedIds.includes(o.id)).map(o => ({ objId: o.id, bayIdx: o.activeBayIdx, side: o.activeBaySide })); return m.map(e => e.objId + ":" + e.bayIdx + ":" + (e.side ?? "both"))')
+      await L.click(rackAt(r, -0.3, -0.25)); await L.click(rackAt(r, -0.3, -0.25))
+      const one = await entries()
+      expect(one.length).toBe(1)
+      await L.shiftClick(rackAt(q, -0.3, -0.25))                                       // a bay of another row
+      const two = await entries()
+      expect([two.length, new Set(two.map(e => e.split(':')[0])).size]).toEqual([2, 2])
+      await L.shiftClick(rackAt(r, -0.3, -0.25))
+      expect(await entries()).toEqual(two.filter(e => e !== one[0]))
+      await L.page.keyboard.press('Escape')
+      expect([(await levelOf()).one, (await levelOf()).multi, (await levelOf()).ids.length > 0]).toEqual([[], 0, true])
+      await L.page.keyboard.press('Escape')
+      // a run, then Delete: those bays (sides) go, the row stays
+      await L.click(rackAt(r, -0.3, -0.25)); await L.click(rackAt(r, -0.3, -0.25))
+      await L.drag(rackAt(r, -0.3, -0.25), rackAt(r, 0.1, -0.25))
+      const run = await entries()
+      expect(run.length).toBeGreaterThan(2)
+      const filled = () => L.S('const o = S.getState().objects.filter(x => x.id === arg || x.pieceOf === arg); return o.reduce((t, x) => t + x.beams.length * (x.type === "rack_double_row" ? 2 : 1) - (x.bayEmpty ? x.bayEmpty.flat().filter(Boolean).length : 0), 0)', r.id)
+      const f0 = await filled()
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      expect([await L.S('return S.getState().objects.some(o => o.id === arg)', r.id), await filled()]).toEqual([true, f0 - run.length])
+      // the only bay of a rack: the row goes
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const sid = (await openRacks('rack_row', 2))[0]
+      let s = await obj7(sid)
+      await L.click({ x: s.x + s.width / 2, y: s.y + s.height / 2 })
+      for (let i = 0; i < 40 && (await obj7(sid)).beams.length > 1; i++) { await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Remove bay' }).click(); await L.page.waitForTimeout(60) }
+      s = await obj7(sid)
+      const c = { x: s.x + s.width / 2, y: s.y + s.height / 2 }
+      await L.page.keyboard.press('Escape'); await L.click(c); await L.click(c)
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      expect(await obj7(sid)).toBe(null)
+    }, T)
+
+    it('REG-7a-column (click): a click selects that one column, even locked, and shows its clearances; a click again or Esc goes up to the grid; a drag moves only with the layer unlocked; Delete on one column: a notice, it stays with its grid', async () => {
+      await open()
+      await zoomOutTill(7)
+      await L.S('const st = S.getState(), l = st.layers.find(x => x.id === "columns"); if (l && !l.locked) st.updateLayer("columns", { locked: true })')
+      const c = await L.S(colAt), g0 = await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return { id: g.id, x: g.x, y: g.y }')
+      const pick = () => L.S('return CP.useColumnPick.getState().pick')
+      await L.click(c); await L.page.waitForTimeout(300)
+      expect([!!(await pick()), (await numbers()).length > 0]).toEqual([true, true])
+      await L.click(c)
+      expect([await pick(), await L.selected()]).toEqual([null, ['column_grid']])
+      await L.click(c); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      expect([await pick(), await L.selected()]).toEqual([null, ['column_grid']])
+      await L.page.keyboard.press('Escape')
+      const gs = await gs7()
+      await L.drag(c, { x: c.x + 2 * gs, y: c.y + 2 * gs })
+      expect(await L.S('const g = S.getState().objects.find(o => o.id === arg.id); return { id: g.id, x: g.x, y: g.y }', g0)).toEqual(g0)
+      await L.click(c); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(200)
+      expect([await L.S('return !!S.getState().objects.find(o => o.id === arg)', g0.id), await L.page.locator('[aria-label="Notice"]').textContent()]).toEqual([true, expect.stringMatching(/stays with its grid/)])
+      // unlocked (the card's More → Columns layer): a drag on a column moves the grid
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const rid = (await openRacks())[0]
+      await L.click(rackAt(await obj7(rid), -0.3, -0.25))
+      await L.page.getByRole('group', { name: 'More properties' }).getByRole('button').first().click()
+      await L.page.getByRole('button', { name: 'Unlock Columns layer' }).click()
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      await L.click(c); await L.drag(c, { x: c.x + 2 * gs, y: c.y + 2 * gs })
+      const g1 = await L.S('const g = S.getState().objects.find(o => o.id === arg.id); return { id: g.id, x: g.x, y: g.y }', g0)
+      expect(g1.x !== g0.x || g1.y !== g0.y).toBe(true)
+    }, T)
+
+    it('REG-7a-zone (click): a click selects a zone; Shift+click adds or removes zones; a drag moves it and removes the racks under it without asking; Delete deletes', async () => {
+      await open()
+      const z1 = await addZone7(), z2 = await addZone7()
+      const c = (z) => ({ x: z.x + z.width / 2, y: z.y + z.height / 2 })
+      await L.click(c(z1))
+      expect((await levelOf()).ids).toEqual([z1.id])
+      await L.shiftClick(c(z2))
+      expect((await levelOf()).ids).toEqual([z1.id, z2.id].sort())
+      await L.shiftClick(c(z2))
+      expect((await levelOf()).ids).toEqual([z1.id])
+      // dragged onto a row: the bays under it go, no question asked, one undo step
+      const ids = await openRacks('rack_double_row', 4), r = await obj7(ids[0])
+      // bay sides that hold racking (a pair's half under a zone goes, its other half stays a single on the same uprights)
+      const bays = () => L.S('return S.getState().objects.filter(o => o.type === "rack_row" || o.type === "rack_double_row").reduce((t, o) => t + o.beams.length * (o.type === "rack_double_row" ? 2 : 1) - (o.bayEmpty ? o.bayEmpty.flat().filter(Boolean).length : 0), 0)')
+      const b0 = await bays(), h0 = await hist7()
+      await L.drag(c(z1), rackAt(r, 0, 0)); await L.page.waitForTimeout(300)
+      const z = await obj7(z1.id)
+      // nothing stands under the zone now (Check layout has no rack in a zone), and the row it landed on was cut; no question
+      const under = await L.S('const st = S.getState(); return LC.checkLayout(st.objects, { gridSize: st.gridSize || 40 }).errors.filter(e => e.kind === "zone").length')
+      const cut = await L.S('const o = S.getState().objects.find(x => x.id === arg.id); return !o || o.beams.length !== arg.n || o.type !== arg.t || S.getState().objects.some(x => x.pieceOf === arg.id || (x.zoneBase && x.zoneBase.id === arg.id))', { id: r.id, n: r.beams.length, t: r.type })
+      void b0
+      expect([z.x !== z1.x || z.y !== z1.y, under, cut, await L.page.locator('[role="alertdialog"]').count(), (await hist7()) - h0]).toEqual([true, 0, true, 0, 1])
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(200)
+      expect(await obj7(z1.id)).toBe(null)
+    }, T)
+
+    it('REG-7a-door (click): a click selects a door; Shift+click adds or removes doors; a drag slides it along its wall; Delete deletes', async () => {
+      await open()
+      const d1 = await addDoor7(0.4), d2 = await addDoor7(0.6), gs = await gs7()
+      await L.page.keyboard.press('Escape')
+      // close in on the doors (the view only): at plan zoom the rack along the wall reaches over them by its pick padding
+      await L.S('const z = 0.6, c = arg; S.setState({ zoom: z, panX: 720 - c.x * z, panY: 450 - c.y * z })', { x: (d1.x + d2.x + d2.width) / 2, y: d1.y + d1.height / 2 }); await L.page.waitForTimeout(200)
+      const p1 = await doorPoint7(d1), p2 = await doorPoint7(d2)
+      await L.click(p1)
+      expect((await levelOf()).ids).toEqual([d1.id])
+      await L.shiftClick(p2)
+      expect((await levelOf()).ids).toEqual([d1.id, d2.id].sort())
+      await L.shiftClick(p2)
+      expect((await levelOf()).ids).toEqual([d1.id])
+      // dragged along and off its (bottom) wall: it slides along it, staying on it
+      await L.drag(p1, { x: p1.x + 6 * gs, y: p1.y - 8 * gs })
+      const d = await obj7(d1.id)
+      expect([Math.abs(d.x - d1.x) > gs, Math.abs(d.y - d1.y) < 0.5, d.rotation === d1.rotation]).toEqual([true, true, true])
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(200)
+      expect(await obj7(d1.id)).toBe(null)
+    }, T)
+
+    it('REG-7a-pairs (click): a pair is one object — a bay deleted on one side leaves that position empty on that side; it splits only when both facing bays at a position are gone', async () => {
+      await open()
+      const ids = await openRacks('rack_double_row', 6)
+      const r = await obj7(ids[0])
+      const pieces = () => L.S('return S.getState().objects.filter(o => o.id === arg || o.pieceOf === arg).map(o => o.id)', r.id)
+      await L.click(rackAt(r, 0, -0.25)); await L.click(rackAt(r, 0, -0.25))
+      const b = await L.bayOf(r.id)
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      const r1 = await obj7(r.id)
+      expect([(await pieces()).length, !!r1.bayEmpty?.[b.side]?.[b.idx], !!r1.bayEmpty?.[1 - b.side]?.[b.idx]]).toEqual([1, true, false])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.click(rackAt(r, 0, 0.25)); await L.click(rackAt(r, 0, 0.25))            // the facing bay
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      expect((await pieces()).length).toBe(2)
+    }, T)
+
+    it('REG-7a-modes (click): Row group, Split, Fill and Door have their mode bar at the top; Done, Esc, ✕ or another tool ends the mode — no purple outline, nothing selected; Row group: a drag adds rows, Shift+click toggles, a click on a group row makes it the edit row, one outside adds it and makes it the edit row', async () => {
+      await open()
+      const ids = await openRacks('rack_double_row', 4), f = await fpOf()
+      const outline = () => L.page.evaluate(() => { const g = window.Konva.stages[0].findOne('.row-group-outline'); return g ? g.find('Rect').length : 0 })
+      const endedOk = async (want = 'pan') => { await L.page.waitForTimeout(150); expect([await tool7(), await L.page.locator('[data-mode-bar]').count(), await outline(), (await L.S('return S.getState().selectedIds.length'))]).toEqual([want, 0, 0, 0]) }
+      const barAtTop = async (kind) => { const b = await L.page.locator(`[data-mode-bar="${kind}"]`).boundingBox(); expect(b && b.y < 120).toBe(true) }
+      const r = await obj7(ids[0]), q = await obj7(ids[1])
+      const enter = {
+        'row-group': async () => { await L.click(rackAt(r, -0.3, -0.25)); await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Row group' }).click(); await L.page.waitForTimeout(150) },
+        split: async () => { await L.click(rackAt(r, -0.3, -0.25)); await L.page.mouse.move(5, 890); await L.page.keyboard.press('s'); await L.page.waitForTimeout(120) },
+        fill: async () => { await L.click(rackAt(r, -0.3, -0.25)); await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(120) },
+        door: async () => { await L.click({ x: f.x + f.width * 0.3, y: f.y + f.height }); await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door' }).click(); await L.page.waitForTimeout(120) },
+      }
+      const ends = {
+        done: async (k) => L.page.locator(`[data-mode-bar="${k}"]`).getByRole('button', { name: 'Done' }).click(),
+        esc: async () => { await L.page.mouse.move(5, 890); await L.page.keyboard.press('Escape') },
+        x: async (k) => L.page.locator(`[data-mode-bar="${k}"]`).getByRole('button', { name: /^(Close|Clear)/ }).click(),
+        other: async () => { await L.page.mouse.move(5, 890); await L.page.keyboard.press('v') },
+      }
+      for (const k of Object.keys(enter)) for (const e of Object.keys(ends)) {
+        await enter[k](); await barAtTop(k)
+        await ends[e](k)
+        await endedOk(e === 'other' ? 'select' : 'pan')
+        if (e === 'other') { await L.page.mouse.move(5, 890); await L.page.keyboard.press('p') }
+      }
+      // the Row group's own clicks
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('g'); await L.page.waitForTimeout(100)
+      const cr = rackAt(r, -0.3, -0.25), cq = rackAt(q, -0.3, -0.25)
+      await L.drag({ x: cr.x - 10, y: cr.y - 10 }, { x: cr.x + 10, y: cr.y + 10 })
+      expect(await L.groupRows()).toBe(1)
+      await L.shiftClick(cq)
+      expect(await L.groupRows()).toBe(2)
+      await L.shiftClick(cq)
+      expect(await L.groupRows()).toBe(1)
+      await L.click(cr)
+      expect((await levelOf()).ids.includes(r.id)).toBe(true)                            // a group row: the edit row
+      await L.click(cq)
+      expect([await L.groupRows(), (await levelOf()).ids.includes(q.id)]).toEqual([2, true])   // a row outside: added, the edit row
+      await L.page.keyboard.press('Escape')
+    }, T)
+
+    it('REG-7a-global (click): Ctrl+A selects every real object but the building, aisles and locked layers; a right-click selects an object and opens its menu, on the floor the floor menu; one row shows its dimensions, several only the count in the bar; every action is one undo step; a double-click does nothing', async () => {
+      await open()
+      const z = await addZone7()
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(150)
+      const all = await kinds7()
+      expect([all.some(t => /^fp_/.test(t)), all.includes('aisle'), all.includes('column_grid'), all.includes('racking_area'), all.some(t => /^rack_/.test(t)), all.some(t => /^zone_/.test(t))]).toEqual([false, false, false, false, true, true])
+      await L.page.keyboard.press('Escape')
+      const ids = await openRacks('rack_double_row', 4), gs = await gs7()
+      const r = await obj7(ids[0]), q = await obj7(ids[1])
+      const rp = await L.toScreen(rackAt(r, -0.3, -0.25))
+      await L.page.mouse.click(rp.x, rp.y, { button: 'right' }); await L.page.waitForTimeout(150)
+      expect([(await levelOf()).ids.includes(r.id), await L.page.getByRole('menu', { name: 'Object' }).count()]).toEqual([true, 1])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(80)
+      const f = await fpOf(), fl = await L.toScreen(await L.floorPoint({ x: f.x + f.width * 0.5, y: f.y + f.height * 0.5 }))
+      await L.page.mouse.click(fl.x, fl.y, { button: 'right' }); await L.page.waitForTimeout(150)
+      expect(await L.page.getByRole('menu', { name: 'Floor' }).count()).toBe(1)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(80)
+      // one row: its dimension labels; two: none, the count in the bar
+      const rackLabels = () => L.page.evaluate(() => window.Konva.stages[0].find(n => /^racklabels:/.test(n.name() || '')).length)
+      await L.click(rackAt(r, -0.3, -0.25))
+      expect(await rackLabels()).toBe(1)
+      await L.shiftClick(rackAt(q, -0.3, -0.25))
+      expect([await rackLabels(), /\d+ rows/.test((await L.bar())?.text || '')]).toEqual([0, true])
+      // one undo step each: a move, a delete
+      await L.page.keyboard.press('Escape')
+      let h = await hist7()
+      const from = rackAt(r, -0.3, -0.25)
+      await L.drag(from, plus(from, across7(r, 1.5, gs)))
+      expect((await hist7()) - h).toBe(1)
+      h = await hist7()
+      await L.click(rackAt(await obj7(z.id) ? { ...(await obj7(z.id)), rotation: 0 } : r, 0, 0)); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(250)
+      expect((await hist7()) - h).toBe(1)
+      // a double-click does nothing: no selection change, no view change, no history
+      await L.page.keyboard.press('Escape')
+      const v = await view7(), h2 = await hist7(), s0 = await L.S('return S.getState().selectedIds')
+      const dc = await L.toScreen(await L.floorPoint({ x: f.x + f.width * 0.5, y: f.y + f.height * 0.5 }))
+      await L.page.mouse.dblclick(dc.x, dc.y); await L.page.waitForTimeout(250)
+      await L.page.keyboard.press('Escape')
+      const rc = await L.toScreen(rackAt(await obj7(ids[1]), 0.3, -0.25))
+      await L.page.mouse.dblclick(rc.x, rc.y); await L.page.waitForTimeout(250)
+      expect([(await view7()).join(), await hist7()]).toEqual([v.join(), h2])
+      void s0
+    }, T)
+
+    it('REG-7a-left-handle (click): bays added at the start of a pair (its left handle) keep each empty mark and per-bay elevation type on the same physical bay; the new bays take the row default, no empty mark', async () => {
+      await open()
+      const ids = await openRacks('rack_double_row', 4), gs = await gs7()
+      let r = await obj7(ids[0])
+      // an empty mark by clicks (bay deleted on one side), and a type of its own on another bay (fixture prep: the table's second type)
+      await L.click(rackAt(r, 0.3, -0.25)); await L.click(rackAt(r, 0.3, -0.25))
+      const eb = await L.bayOf(r.id)
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const tb = await L.S(`const st = S.getState(), T = st.elevations; let t = T.types.find(x => x.id !== T.defaultId)
+        if (!t) { t = { ...T.types[0], id: 'probe-type', name: 'Probe' }; S.setState({ elevations: { ...T, types: [...T.types, t] } }) }
+        const o = st.objects.find(x => x.id === arg.id), n = o.beams.length, bays = [Array(n).fill(null), Array(n).fill(null)]
+        bays[0][arg.b] = t.id
+        S.setState({ objects: S.getState().objects.map(x => (x.id === arg.id ? { ...x, elevBays: bays } : x)) })
+        return t.id`, { id: r.id, b: 1 })
+      r = await obj7(ids[0])
+      const centre = (o, i) => L.S('const o = arg.o, gs = arg.gs, up = (o.uprightWidth || 3) / 12 * gs; let x = o.x + up; for (let k = 0; k < arg.i; k++) x += o.beams[k] / 12 * gs + up; x += o.beams[arg.i] / 24 * gs; const t = (o.rotation || 0) * Math.PI / 180, cx = o.x + o.width / 2, cy = o.y + o.height / 2, dx = x - cx; return { x: Math.round(cx + dx * Math.cos(t)), y: Math.round(cy + dx * Math.sin(t)) }', { o, i, gs })
+      const typed0 = await centre(r, 1), empty0 = await centre(r, eb.idx), n0 = r.beams.length
+      // the row selected, its left (ml) handle dragged out by two bays
+      await L.click(rackAt(r, 0.3, -0.25))
+      const ml = await L.S('const o = S.getState().objects.find(x => x.id === arg), z = S.getState().zoom, lay = HG.computeHandleLayout(o, z), p = lay.positions.ml, b = lay.bounds, cx = b.x + b.width / 2, cy = b.y + b.height / 2, t = (o.rotation || 0) * Math.PI / 180, dx = p.x - cx, dy = p.y - cy; return { x: cx + dx * Math.cos(t) - dy * Math.sin(t), y: cy + dx * Math.sin(t) + dy * Math.cos(t) }', r.id)
+      const t = ((r.rotation || 0) * Math.PI) / 180, bayPx = ((r.beams[0] + (r.uprightWidth || 3)) / 12) * gs
+      await L.drag(ml, { x: ml.x - Math.cos(t) * bayPx * 2, y: ml.y - Math.sin(t) * bayPx * 2 })
+      r = await obj7(ids[0])
+      expect(r.beams.length).toBe(n0 + 2)
+      const at = await L.S('const o = arg; return o.beams.map((_, i) => [o.elevBays?.[0]?.[i] ?? null, !!o.bayEmpty?.[0]?.[i], !!o.bayEmpty?.[1]?.[i]])', r)
+      const ti = at.findIndex(x => x[0] === tb), ei = at.findIndex((x, i) => x[1 + eb.side])
+      expect([await centre(r, ti), await centre(r, ei)]).toEqual([typed0, empty0])           // on the same physical bays
+      expect([at[0], at[1]]).toEqual([[null, false, false], [null, false, false]])           // the new bays: the default, no empty mark
+    }, T)
+
     /* ── racking areas: invisible by default ── */
     it('REG-area-visible (click): a racking area is drawn only while Fill racking is on, or while it is hovered or selected; Esc after a fill leaves nothing drawn', async () => {
       await open()

@@ -31,7 +31,11 @@ import {
 } from './selection'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
-import { isBayRack, selectionLevel, pickedBays, bayOwners, selectRows, selectBays, toggleBay } from './selectionLevel'
+import { isBayRack, selectionLevel, pickedBays, bayOwners, selectRows, selectBays, toggleBay, kindOf, selectionKind } from './selectionLevel'
+import { isDoor } from '../utils/doorTool'
+import { predictClick, setHoverTarget, clearHoverTarget } from './hoverTarget'
+import { isPlainTool } from '../utils/homeTool'
+import { innerOutline } from '../utils/floorGeom'
 import { sectionIds, withSections } from './sections'
 import { setAreaHover } from './areaHover'
 import { columnAt, clickColumn } from './columnPick'
@@ -363,6 +367,16 @@ export function useCanvasInteraction({
          group rows and every rack lined up with where it started are not snap targets — they could only
          pull it back to where it was. null for any other drag. */
       groupNoSnap: groupDragFor(st.objects, ids),
+      /* a door dragged alone slides along its wall (STUDIO.md §7a): its axis, and its centre's range on it */
+      doorSlide: (() => {
+        if (ids.length !== 1 || !isDoor(grabbed)) return null
+        const fp = st.objects.find(o => o.id === grabbed.parentId)
+        const poly = fp ? innerOutline(fp, st.gridSize || 40) : null
+        const axis = (((grabbed.rotation || 0) % 180) + 180) % 180 === 0 ? 'x' : 'y'
+        if (!poly) return { axis, lo: -Infinity, hi: Infinity, half: grabbed.width / 2 }
+        const vs = poly.map(p => (axis === 'x' ? p.x : p.y))
+        return { axis, lo: Math.min(...vs), hi: Math.max(...vs), half: grabbed.width / 2 }
+      })(),
       moved: false,
       delta: null,
       flueBase,
@@ -664,7 +678,8 @@ export function useCanvasInteraction({
       }
       /* A drag on a building's floor draws a box: it selects rows (STUDIO.md §7) — Shift+drag adds them. A click there
          (no drag) clears the selection. Outside the building, and with the Pan tool, a drag still pans. */
-      if (!hitId && onFloor && evt.button === 0 && st.activeTool !== TOOLS.PAN) {
+      // ... and with Select, a drag from the canvas outside the building too (STUDIO.md §7a); a click there clears
+      if (!hitId && evt.button === 0 && (onFloor ? st.activeTool !== TOOLS.PAN : st.activeTool === TOOLS.SELECT)) {
         marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false, clickHitId: null, shift: false, floor: true, click: clickTarget }
         return
       }
@@ -716,8 +731,8 @@ export function useCanvasInteraction({
      gesture (pan/drag/marquee/resize) keeps setting it from its own
      mousemove/mouseup, and held space always means grab. */
   const onStageMouseMove = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current) { setFlueHover(null, null); return }
-    if (spaceDown.current) return
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current) { setFlueHover(null, null); clearHoverTarget(); return }
+    if (spaceDown.current) { clearHoverTarget(); return }
     const stage = stageRef.current
     if (!stage) return
     const p = stage.getPointerPosition()
@@ -744,6 +759,9 @@ export function useCanvasInteraction({
       const ao = id && st.objects.find(q => q.id === id)
       setAreaHover(ao && ao.type === 'racking_area' ? ao.id : null)
     }
+    // hover highlights exactly what a click would select (STUDIO.md §7a — hoverTarget.js)
+    if (isPlainTool(st.activeTool)) setHoverTarget(predictClick(st, world, view.current.zoom))
+    else clearHoverTarget()
 
     let next = 'default'
     if (st.selectedIds.length === 1) {
@@ -782,6 +800,7 @@ export function useCanvasInteraction({
   const onStageMouseLeave = () => {
     setFlueHover(null, null)
     setAreaHover(null)
+    clearHoverTarget()
     if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current) return
     setCursor(spaceDown.current ? 'grab' : 'default')
   }
@@ -1217,6 +1236,11 @@ export function useCanvasInteraction({
           }
         }
         lock()
+        if (d.doorSlide) {
+          const s = d.doorSlide, c0 = s.axis === 'x' ? d.origin.x + d.size.w / 2 : d.origin.y + d.size.h / 2
+          const c = Math.max(s.lo + s.half, Math.min(s.hi - s.half, c0 + (s.axis === 'x' ? dx : dy)))
+          if (s.axis === 'x') { dx = c - c0; dy = 0 } else { dy = c - c0; dx = 0 }
+        }
         d.delta = { dx, dy }
         setSmartGuides(guides)
 
@@ -1465,7 +1489,10 @@ export function useCanvasInteraction({
            section. Never a mix: a Shift+click at the bay level on anything that is not a bay does nothing. */
         const st = useCanvasStore.getState()
         const hit = st.objects.find(o => o.id === m.clickHitId)
-        if (selectionLevel(st) === 'bays') {
+        // one kind only (STUDIO.md §7a Levels): a Shift+click on another kind than the selection's adds nothing
+        const cur = selectionKind(st)
+        if (cur && cur !== 'bays' && cur !== kindOf(hit)) { /* never mixed */ }
+        else if (selectionLevel(st) === 'bays') {
           const bay = isBayRack(hit) ? hitTestBay(hit, m.from.x, m.from.y, st.gridSize) : null
           if (bay != null) toggleBay(useCanvasStore, { objId: hit.id, bayIdx: bay, side: bayHalfAt(hit, m.from.x, m.from.y, st.gridSize) })
         } else if (isBayRack(hit)) {
@@ -1614,5 +1641,7 @@ export function useCanvasInteraction({
     return () => cancelAnimationFrame(raf)
   }, [size.w, size.h, objects])
 
-  return { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides }
+  /* Space+drag or a middle-button drag pans in any tool (STUDIO.md §7a): the mode tools' own presses hand it here */
+  const isForcePan = (evt) => !!evt && (evt.button === 1 || spaceDown.current)
+  return { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides, isForcePan }
 }

@@ -19,6 +19,8 @@ import { cancelPlacement } from './placement'
 /** The measure mode: on while the ruler is measuring (Canvas2's MeasureOverlay). */
 export const useMeasureMode = create(() => ({ on: false }))
 
+const MODE_TOOLS = new Set([ROW_GROUP_TOOL, 'split', 'fill_racking', 'door'])
+
 /* what a tool leaves behind */
 function clearTransients() {
   { const f = useFillTool.getState(); if (f.drag || f.plan || f.created) useFillTool.setState({ drag: null, plan: null, created: null }) }
@@ -54,7 +56,9 @@ export function installToolKeeper(store) {
     last = st.activeTool
     /* leaving the Row group (Done, Esc, ✕, or any other tool): the mode ends — its group and purple outline go at
        once, nothing selected, no bar (STUDIO.md §7) */
-    if (was === ROW_GROUP_TOOL) { clearGroup(); store.getState().clearSelection?.(); store.getState().setActiveWall?.(null) }
+    if (was === ROW_GROUP_TOOL) clearGroup()
+    // any mode ending (Row group, Split, Fill, Door — Done, Esc, ✕, another tool): nothing selected (STUDIO.md §7a)
+    if (MODE_TOOLS.has(was)) { store.getState().clearSelection?.(); store.getState().setActiveWall?.(null) }
     clearTransients()                                       // every tool's leftovers, not only the last one's
     cancelPlacement()
     if (useMeasureMode.getState().on) useMeasureMode.setState({ on: false })

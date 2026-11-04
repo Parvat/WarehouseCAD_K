@@ -14,6 +14,9 @@ import { innerOutline } from './floorGeom'
 import { layerForType } from './layers'
 
 export const DOOR_TOOL = 'door'
+/** The door types (the library's wall doors): a door slides along its wall when dragged (STUDIO.md §7a). */
+export const DOOR_TYPES = new Set(['struct_egress', 'struct_loading_dock', 'struct_drive_in'])
+export const isDoor = (o) => !!o && DOOR_TYPES.has(o.type)
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 
 /* the tool's segmented, in order, and what it calls each */

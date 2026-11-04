@@ -443,6 +443,14 @@ export function applyResize(obj, handle, dx, dy, snapFn, shiftKey = false) {
     const lastPx    = (lastBeam/12)*GS
     const firstPx   = (firstBeam/12)*GS
     const curW      = upW*(beams.length+1) + beams.reduce((s,b)=>s+(b/12)*GS, 0)
+    /* the per-bay arrays (elevBays: each bay-side's elevation type; bayEmpty: a pair's empty bay sides) stay on the
+       same physical bays: bays added at the start shift them along, new bays get the row default and no empty mark */
+    const perBay = (fn) => {
+      const out = {}
+      if (Array.isArray(obj.elevBays)) out.elevBays = obj.elevBays.map(a => (Array.isArray(a) ? fn(a, null) : a))
+      if (Array.isArray(obj.bayEmpty)) out.bayEmpty = obj.bayEmpty.map(a => (Array.isArray(a) ? fn(a, false) : a))
+      return out
+    }
 
     if (handle === 'mr' || handle === 'tr' || handle === 'br') {
       const add = Math.round(dx / (lastPx + upW))
@@ -453,7 +461,7 @@ export function applyResize(obj, handle, dx, dy, snapFn, shiftKey = false) {
       } else if (add < 0 && beams.length + add >= 1) {
         const updated = beams.slice(0, beams.length + add)
         const newW = upW*(updated.length+1) + updated.reduce((s,b)=>s+(b/12)*GS, 0)
-        return { beams: updated, width: newW, height: obj.height }
+        return { beams: updated, width: newW, height: obj.height, ...perBay(a => a.slice(0, updated.length)) }
       }
       return {}
     }
@@ -462,11 +470,11 @@ export function applyResize(obj, handle, dx, dy, snapFn, shiftKey = false) {
       if (add > 0) {
         const updated = [...Array(add).fill(firstBeam), ...beams]
         const newW = upW*(updated.length+1) + updated.reduce((s,b)=>s+(b/12)*GS, 0)
-        return { beams: updated, width: newW, height: obj.height, x: obj.x - (newW - curW) }
+        return { beams: updated, width: newW, height: obj.height, x: obj.x - (newW - curW), ...perBay((a, none) => [...Array(add).fill(none), ...a]) }
       } else if (add < 0 && beams.length + add >= 1) {
         const updated = beams.slice(-add)
         const newW = upW*(updated.length+1) + updated.reduce((s,b)=>s+(b/12)*GS, 0)
-        return { beams: updated, width: newW, height: obj.height, x: obj.x + (curW - newW) }
+        return { beams: updated, width: newW, height: obj.height, x: obj.x + (curW - newW), ...perBay(a => a.slice(-add)) }
       }
       return {}
     }

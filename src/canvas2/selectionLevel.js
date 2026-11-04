@@ -6,6 +6,26 @@
 // Every write here replaces the whole selection, so the two levels can never mix.
 
 import { sectionIds, withSections } from './sections'
+import { isDoor } from '../utils/doorTool'
+
+const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
+/** The kind an object is selected as (STUDIO.md §7a Levels): building, rows, column, zones, doors — else its type. */
+export function kindOf(o) {
+  const t = (o && typeof o.type === 'string') ? o.type : ''
+  if (!t) return null
+  if (FP_TYPES.has(t)) return 'building'
+  if (t.startsWith('rack_')) return 'rows'
+  if (t === 'column_grid') return 'column'
+  if (t.startsWith('zone_')) return 'zones'
+  if (isDoor(o)) return 'doors'
+  return t
+}
+/** The one kind the selection in `st` is (bays at the bay level), or null when nothing is selected. */
+export function selectionKind(st) {
+  if (selectionLevel(st) === 'bays') return 'bays'
+  const ks = new Set((st.selectedIds || []).map(id => kindOf((st.objects || []).find(o => o.id === id))).filter(Boolean))
+  return ks.size ? (ks.size === 1 ? [...ks][0] : 'mixed') : null
+}
 
 const BAY_TYPES = new Set(['rack_row', 'rack_double_row'])
 export const isBayRack = (o) => !!o && BAY_TYPES.has(o.type) && Array.isArray(o.beams) && o.beams.length > 0

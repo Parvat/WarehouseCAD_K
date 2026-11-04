@@ -5,6 +5,7 @@ import { Overlays } from './Overlays'
 import { ResizeHandlesOverlay } from './ResizeHandlesOverlay'
 import { GroupRotateOverlay } from './GroupRotateOverlay'
 import { FpRotateHandleOverlay } from './FpRotateHandleOverlay'
+import { HoverHighlight } from './HoverHighlight'
 import { Rulers } from './Rulers'
 import { MeasureOverlay } from './MeasureTool'
 import { PlacementGhost } from './CopyChange'
@@ -274,7 +275,7 @@ export function Canvas2() {
 
   const dblClickFitEnabled = useViewPrefs(s => s.dblClickFit)
 
-  const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides } =
+  const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides, isForcePan } =
     useCanvasInteraction({ stageRef, view, setView, size, objects, dblClickFitEnabled })
   /* the bottom-right island's Fit calls this (src/studio/StudioFrame.jsx) */
   useEffect(() => { fitRef.current = fitToContent; return () => { if (fitRef.current === fitToContent) fitRef.current = null } })
@@ -400,7 +401,9 @@ export function Canvas2() {
   const doorMouseMove = (e) => { const w = doorWorld(e); const st = useCanvasStore.getState(); if (w) hoverDoor(st.objects, w, st.gridSize || 40, view.current.zoom) }
   const doorMouseDown = (e) => { if (e.evt && e.evt.button !== 0) return; const w = doorWorld(e); if (w) { placeDoor(useCanvasStore, w, nanoid, view.current.zoom); hoverDoor(useCanvasStore.getState().objects, w, useCanvasStore.getState().gridSize || 40, view.current.zoom) } }
 
-  const stageMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
+  const modeMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
+  // Space+drag or a middle drag pans in any tool (STUDIO.md §7a)
+  const stageMouseDown = (e) => (isForcePan(e && e.evt) ? onStageMouseDown(e) : modeMouseDown(e))
   const stageMouseMove = measuring ? measureMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : filling || grouping ? undefined : onStageMouseMove
   const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : dooring ? clearDoorHover : filling || grouping ? undefined : onStageMouseLeave
   const effectiveCursor = measuring || filling || grouping || splitting || dooring ? 'crosshair' : cursor
@@ -478,6 +481,8 @@ export function Canvas2() {
             {fpRotateTarget && (
               <FpRotateHandleOverlay obj={fpRotateTarget} gridSize={gridSize} zoom={zoom} />
             )}
+            {/* what a click would select (STUDIO.md §7a — hoverTarget.js) */}
+            <HoverHighlight />
             {selectedObjects.length >= 2 && !(activeBaySelection && activeBaySelection.length > 0) && (
               <GroupRotateOverlay objects={selectedObjects} zoom={zoom} allObjects={objects} />
             )}

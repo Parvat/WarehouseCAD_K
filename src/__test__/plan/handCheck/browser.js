@@ -36,7 +36,7 @@ export async function startApp() {
 }
 
 /** A page with the saved layout `json` open (restored from the autosave, as a reload restores it); its helpers. */
-export async function openLayout(app, json) {
+export async function openLayout(app, json, { keepTool = false } = {}) {
   const page = await app.browser.newPage({ viewport: { width: 1440, height: 900 } })
   const errors = []
   page.on('pageerror', e => errors.push(e.message))
@@ -53,17 +53,20 @@ export async function openLayout(app, json) {
     RG: await import('/src/utils/rowGroupTool.js'), RW: await import('/src/utils/rowGroup.js'), SL: await import('/src/utils/saveLoad.js'),
     LS: await import('/src/render/labelSize.js'), P: await import('/src/canvas2/labelPrefs.js'),
     HG: await import('/src/canvas2/handleGeometry.js'), SC: await import('/src/canvas2/sections.js').catch(() => null), N: await import('/src/utils/notice.js'),
-    AP: await import('/src/utils/rackingAreaTool.js'), CP: await import('/src/canvas2/columnPick.js').catch(() => null), LC: await import('/src/utils/layoutCheck.js') } })()`)
+    AP: await import('/src/utils/rackingAreaTool.js'), CP: await import('/src/canvas2/columnPick.js').catch(() => null), LC: await import('/src/utils/layoutCheck.js'), HV: await import('/src/canvas2/hoverTarget.js').catch(() => null), PL: await import('/src/utils/placement.js') } })()`)
   await page.waitForFunction(() => window.__hc.S.getState().objects.length > 0, null, { timeout: 30000 })
   await page.waitForTimeout(400)
   // a layout opens with Pan (the store's default tool): V for Select, as a user would
-  await page.mouse.move(5, 890); await page.keyboard.press('v'); await page.waitForTimeout(100)
-  if (await page.evaluate(() => window.__hc.S.getState().activeTool) !== 'select') throw new Error('V did not turn Select on')
+  // (`keepTool`: as it opens — the home tool, Pan — for the test of the default tool)
+  if (!keepTool) {
+    await page.mouse.move(5, 890); await page.keyboard.press('v'); await page.waitForTimeout(100)
+    if (await page.evaluate(() => window.__hc.S.getState().activeTool) !== 'select') throw new Error('V did not turn Select on')
+  }
   /** Runs `src` in the page with S (the canvas store), H (canvas2/hitTest), RG (utils/rowGroupTool), RW (utils/rowGroup),
    *  SL (utils/saveLoad), LS (render/labelSize), P (canvas2/labelPrefs) and `arg`. */
   const S = (src, arg) => page.evaluate(({ src, arg }) => {
     const m = window.__hc
-    return new Function('S', 'H', 'RG', 'RW', 'SL', 'LS', 'P', 'HG', 'SC', 'N', 'AP', 'CP', 'LC', 'arg', src)(m.S, m.H, m.RG, m.RW, m.SL, m.LS, m.P, m.HG, m.SC, m.N, m.AP, m.CP, m.LC, arg)
+    return new Function('S', 'H', 'RG', 'RW', 'SL', 'LS', 'P', 'HG', 'SC', 'N', 'AP', 'CP', 'LC', 'HV', 'PL', 'arg', src)(m.S, m.H, m.RG, m.RW, m.SL, m.LS, m.P, m.HG, m.SC, m.N, m.AP, m.CP, m.LC, m.HV, m.PL, arg)
   }, { src, arg })
   const cv = await page.locator('#canvas2-container').boundingBox()
   /** A world point → the page point the mouse goes to (the live view). */

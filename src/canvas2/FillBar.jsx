@@ -2,7 +2,7 @@ import { HOME_TOOL } from '../utils/homeTool'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
 import { useFillTool, useRackingSettings, cancelFill } from '../utils/fillTool'
-import { B, MONO, modePill, Sep, Seg, CloseBtn } from '../studio/barParts'
+import { B, MONO, modePill, Sep, Seg, CloseBtn, barBtn, btnClass } from '../studio/barParts'
 
 /* the bar's 26h inset value (C10's Aisle) and its fields (Beam, Max run) */
 const valueBox = { height: 26, padding: '0 8px', display: 'flex', alignItems: 'center', borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, border: 0, boxSizing: 'border-box' }
@@ -41,6 +41,8 @@ export function FillOptionsBar() {
       {plan
         ? <span aria-label="Fill estimate" style={word}><span style={{ fontFamily: MONO, color: B.text }}>{plan.rows}</span> row{plan.rows === 1 ? '' : 's'} · <span style={{ fontFamily: MONO, color: B.accent }}>{plan.positions.toLocaleString('en-US')}</span> pos</span>
         : <span style={word}>Drag a box · Esc cancels</span>}
+      <Sep />
+      <button type="button" aria-label="Done" title="Done (Esc)" onClick={close} className={btnClass(true)} style={barBtn(true)}>Done</button>
       <CloseBtn label="Close Fill racking" title="Done (Esc)" onClick={close} />
     </div>
   )

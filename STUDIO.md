@@ -190,6 +190,28 @@ As built (step 3) — every action is the one the card, a key or the library alr
 - **Notices**: plain info fades after 5 s, a notice with Undo after 8 s; the pointer over a notice pauses its timer; questions (Continue / Cancel) stay until answered.
 - **Bar buttons**: the mint primary (Apply, Continue, Export) hovers slightly lighter, never darker; ghost buttons (Skip, Cancel, Undo, a chip) hover a step lighter; disabled is 45% and still readable.
 
+## 7a. Interaction rules
+
+Frozen for the Studio build. It replaces any earlier selection rule that disagrees: if something in code or an older rule disagrees, 7a wins; if 7a is unclear, stop and ask. Each rule is a test in `src/__test__/plan/REG_handCheck.test.js` (the REG-7a matrix).
+
+- **Tools:** Pan is the default; click selects what is under the cursor, drag pans. Select (V): click selects; a drag that starts on empty floor or canvas box-selects rows; a drag that starts on an object moves it. Space+drag or middle-drag pans in any tool. Hover highlights exactly what a click would select.
+- **Levels:** a selection is one kind only: building, rows, bays, a column, zones or doors. Never mixed.
+- **Blank floor inside the building:** click selects the building. Drag: Pan pans, Select box-selects rows. Esc clears.
+- **Canvas outside the building:** click clears. Drag: Pan pans, Select box-selects rows.
+- **Wall:** click selects the building. Drag moves the building with everything inside it (racks, zones, columns, doors). Delete removes the building only; contents stay; notice with Undo.
+- **Building handles:** only the handles resize (8 px hit area); a press on a wall or edge never resizes. Shrink removes bays that no longer fit with wall clearance, one undo, notice with Undo. Enlarge adds nothing; notice with Fill new space.
+- **Row or section:** click selects the row. Click again without moving selects that bay. Shift+click adds or removes rows. Press and drag moves the row, selected or not, never drops to bay level. Delete deletes the rows.
+- **Flue of a pair:** click selects the pair; click again selects the two facing bays; drag moves the pair.
+- **Bay level:** click selects that bay; Shift+click adds or removes bays in any row, selection is a set; a drag inside the row selects a run of bays; Esc goes up to the row; Delete deletes those bays, and the only bay of a rack deletes the row.
+- **Column:** click selects that one column, even when locked, and shows its clearances; click again or Esc goes up to the grid; drag moves only when the layer is unlocked; Delete on one column shows a notice that it stays with its grid.
+- **Zone:** click selects; Shift+click adds or removes zones; drag moves it and removes racks under it without asking; Delete deletes.
+- **Door:** click selects; Shift+click adds or removes doors; drag slides it along its wall; Delete deletes.
+- **Pairs:** a back-to-back pair is one object; deleting a bay on one side leaves that position empty on that side; it splits only when both facing bays at a position are gone.
+- **Modes (Row group, Split, Fill, Door):** mode bar at top; Done, Esc, X or another tool ends the mode, clears the purple outline, selects nothing. Row group: drag adds rows, Shift+click toggles, click a group row makes it the edit row, click a row outside the group adds it and makes it the edit row.
+- **Global:** Ctrl+A selects all real objects except building, aisles and locked layers. Right-click an object selects it and opens its menu; right-click floor opens the floor menu. One row selected shows its dimensions; several show no per-row tags, only the count in the bar. Every action is one undo step. Double-click does nothing for now.
+
+Clarified by the user (2026-11-04), as 7a asks: with Pan, a press and drag that starts **on an object** moves it (the object rules apply in both tools; Pan pans only from blank floor or canvas). A building drag carries its columns even while the Columns layer is locked (a drag on a locked column alone still moves nothing).
+
 ## 8. How to build from this
 
 1. One screen per prompt. Open the matching mockup file, match it exactly.

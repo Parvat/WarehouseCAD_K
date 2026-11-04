@@ -4,7 +4,7 @@ import { Rect, Line } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
 import { useDoorTool, doorTypes, doorSpec, setDoorType, setDoorWidth, clearDoorHover } from '../utils/doorTool'
-import { B, MONO, modePill, Sep, Seg, CloseBtn } from '../studio/barParts'
+import { B, MONO, modePill, Sep, Seg, CloseBtn, barBtn, btnClass } from '../studio/barParts'
 import { SELECT_BLUE, selectTint } from '../theme/tokens'
 
 /* Add door's mode bar (STUDIO.md §7; the mode bars' look, C9 / C10): top 76 — "Add door", the door types in the
@@ -31,6 +31,8 @@ export function DoorBar() {
       <span style={word}>ft</span>
       <Sep />
       <span data-mode-hint style={word}>Hover a wall · click to place · Esc ends</span>
+      <Sep />
+      <button type="button" aria-label="Done" title="Done (Esc)" onClick={close} className={btnClass(true)} style={barBtn(true)}>Done</button>
       <CloseBtn label="Close Add door" title="Done (Esc)" onClick={close} />
     </div>
   )

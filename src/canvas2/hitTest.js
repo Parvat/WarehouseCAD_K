@@ -281,7 +281,12 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
   const sorted = [...objects].sort((a, b) => priority(b) - priority(a))
 
   // Pass 1 — everything except the grid and the building.
+  /* An object reached only by its pick padding (the press outside the object itself) loses to one of the same
+     priority that really holds the point — a door against the wall, under the padding of the rack along it
+     (STUDIO.md §7a: a click selects what is under the cursor). */
+  let padOnly = null
   for (const obj of sorted) {
+    if (padOnly && priority(obj) !== padOnly.p) return padOnly.id
     if (!isLayerUsable(layerMap, obj)) continue
     if (COL_GRID.has(obj.type) || FP_SET.has(obj.type)) continue
     if (obj.type === 'elevation_types') continue   // data (utils/elevations.js), nothing to pick
@@ -310,8 +315,13 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
       if (aisleLabelHit(obj, objects, wx, wy, zoom, gridSize, aisleWarnProfile(layerMap))) return obj.id
       continue
     }
-    if (objectContains(obj, wx, wy, zoom)) return obj.id
+    if (objectContains(obj, wx, wy, zoom)) {
+      const b = worldBoundsOf(obj, objects)
+      if (!b || !(b.width > 0) || !(b.height > 0) || (wx >= b.x && wx <= b.x + b.width && wy >= b.y && wy <= b.y + b.height)) return obj.id
+      if (!padOnly) padOnly = { id: obj.id, p: priority(obj) }
+    }
   }
+  if (padOnly) return padOnly.id
 
   // Pass 2 — column_grid, hit only ON a column square.
   for (const obj of sorted) {
