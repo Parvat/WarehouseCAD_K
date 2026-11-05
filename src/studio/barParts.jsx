@@ -39,10 +39,11 @@ export function IconBtn({ name, label, title, onClick, danger = false, active = 
 }
 
 /** The 32h chip: a swatch (optional), its words, the chevron (§9's Chevron, 12px muted — as the frame's dropdowns). */
-export function Chip({ swatch, children, label, title, onClick, chipRef, open }) {
+/* `locked`: the selection is locked (STUDIO.md §7a Locks) — disabled, at 45 %, titled Locked */
+export function Chip({ swatch, children, label, title, onClick, chipRef, open, locked = false }) {
   return (
-    <button ref={chipRef} type="button" className="st-ghost" aria-label={label} title={title} aria-haspopup="menu" aria-expanded={!!open} onClick={onClick}
-      style={{ height: 32, display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px', border: 0, borderRadius: 8, background: B.inset, fontSize: 12, color: B.text, maxWidth: 200, flexShrink: 0 }}>
+    <button ref={chipRef} type="button" className="st-ghost" aria-label={label} title={locked ? 'Locked' : title} aria-haspopup="menu" aria-expanded={!!open} onClick={onClick} disabled={locked}
+      style={{ height: 32, display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px', border: 0, borderRadius: 8, background: B.inset, fontSize: 12, color: B.text, maxWidth: 200, flexShrink: 0, ...(locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>
       {swatch && <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: swatch, flexShrink: 0 }} />}
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{children}</span>
       <Icon name="Chevron" size={12} color={B.muted} />

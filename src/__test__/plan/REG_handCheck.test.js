@@ -1410,6 +1410,8 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.getByRole('group', { name: 'More properties' }).getByRole('button').first().click()
       await L.page.getByRole('button', { name: 'Unlock Columns layer' }).click()
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      // the grid itself opens locked as Generate locks it (Fix 6): Ctrl+L on the picked column unlocks it by hand
+      await L.click(c); await L.page.keyboard.press('Control+l'); await L.page.waitForTimeout(150)
       await L.click(c); await L.drag(c, { x: c.x + 2 * gs, y: c.y + 2 * gs })
       const g1 = await L.S('const g = S.getState().objects.find(o => o.id === arg.id); return { id: g.id, x: g.x, y: g.y }', g0)
       expect(g1.x !== g0.x || g1.y !== g0.y).toBe(true)
@@ -1974,7 +1976,10 @@ describe('REG — the hand check by real clicks', () => {
       await L.click(c)
       expect(await L.selected()).toEqual(['column_grid'])
       const lockBtn = L.page.locator('[data-selection-bar]').getByRole('button', { name: /^(Lock|Unlock)$/ })
-      expect([await lockBtn.count(), await lockBtn.getAttribute('aria-label')]).toEqual([1, 'Lock'])
+      // it opens locked as Generate locks it (Fix 6): Ctrl+L unlocks it by hand first
+      expect([await lockBtn.count(), await lockBtn.getAttribute('aria-label')]).toEqual([1, 'Unlock'])
+      await L.page.keyboard.press('Control+l'); await L.page.waitForTimeout(150)
+      expect([(await gridOf()).locked, await lockBtn.getAttribute('aria-label')]).toEqual([false, 'Lock'])
       await L.page.keyboard.press('Control+l'); await L.page.waitForTimeout(150)
       const g0 = await gridOf()
       expect([g0.locked, await lockBtn.getAttribute('aria-label')]).toEqual([true, 'Unlock'])
@@ -2082,6 +2087,50 @@ describe('REG — the hand check by real clicks', () => {
       // unlocked: the same field and Rotate work again
       await bar.getByRole('button', { name: 'Unlock' }).click(); await L.page.waitForTimeout(150)
       expect([await bays.isDisabled(), await bar.getByRole('button', { name: 'Rotate', exact: true }).isDisabled()]).toEqual([false, false])
+    }, T)
+
+    it('REG-load-grid-lock (click): a layout opens with its column grid locked as Generate locks it — a column drag moves nothing; unlocked by hand (one click in its bar), saved and reopened, it stays unlocked and drags', async () => {
+      const B = await import('./handCheck/browser.js')
+      expect(JSON.parse(B.fixture(name)).objects.filter(o => o.type === 'column_grid' && o.locked).length).toBe(0)   // the file has no object lock
+      await open()
+      await zoomOutTill(7)
+      const c = await L.S(colAt), g0 = await gridOf(), gs = await gs7()
+      expect([!!c, g0.locked, await L.S('return S.getState().objects.find(o => o.type === "column_grid").lockedBy')]).toEqual([true, true, 'generate'])
+      await L.drag(c, { x: c.x + 3 * gs, y: c.y + 3 * gs }); await L.page.waitForTimeout(250)
+      expect(await gridOf()).toEqual(g0)
+      // unlocked by hand: recorded, so a reopen keeps it unlocked
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.click(c)
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Unlock' }).click(); await L.page.waitForTimeout(150)
+      const saved = await L.S('return SL.serializeScene(S.getState())')
+      await L.page.close()
+      L = await B.openLayout(app, saved)
+      await zoomOutTill(7)
+      const c2 = await L.S(colAt), g1 = await gridOf()
+      expect(g1.locked).toBe(false)
+      await L.drag(c2, { x: c2.x + 3 * gs, y: c2.y + 3 * gs }); await L.page.waitForTimeout(250)
+      const g2 = await gridOf()
+      expect([Math.abs(g2.x - g1.x) > gs, Math.abs(g2.y - g1.y) > gs]).toEqual([true, true])
+    }, T)
+
+    it('REG-lock-elevation (click): on a locked rack the bar\u2019s Elevation chip is disabled at 45 % titled Locked, and a real click on it opens nothing and changes nothing', async () => {
+      await open()
+      const a = await pairPoints(), id = a.r.id
+      await L.click(a.far)
+      const bar = L.page.locator('[data-selection-bar]')
+      const chip = bar.getByRole('button', { name: 'Elevation' })
+      expect(await chip.isDisabled()).toBe(false)
+      await bar.getByRole('button', { name: 'Lock' }).click(); await L.page.waitForTimeout(150)
+      const snap = () => L.S('const st = S.getState(); return JSON.stringify({ o: st.objects.find(x => x.id === arg), h: st.historyIndex })', id)
+      const s0 = await snap()
+      expect([await chip.isDisabled(), await chip.getAttribute('title'), await chip.evaluate(el => getComputedStyle(el).opacity)]).toEqual([true, 'Locked', '0.45'])
+      const box = await chip.boundingBox()
+      await L.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); await L.page.waitForTimeout(200)
+      expect([await L.page.getByRole('menu', { name: 'Elevations' }).count(), await snap()]).toEqual([0, s0])
+      // unlocked: the chip opens its menu again
+      await bar.getByRole('button', { name: 'Unlock' }).click(); await L.page.waitForTimeout(150)
+      await chip.click(); await L.page.waitForTimeout(150)
+      expect(await L.page.getByRole('menu', { name: 'Elevations' }).count()).toBe(1)
     }, T)
 
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {

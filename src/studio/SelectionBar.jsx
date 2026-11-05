@@ -184,14 +184,16 @@ function ElevationChip({ several = false }) {
   const types = useMemo(() => (T ? cellTypes(objects, T, selectionCells({ objects, selectedIds, activeBaySelection })) : []), [objects, T, selectedIds, activeBaySelection])
   if (!T?.types?.length) return null
   const one = types.length === 1 ? typeById(T, types[0].id) : null
+  // a locked rack's elevation is not changed (STUDIO.md §7a Locks)
+  const locked = [...selectedIds, ...(activeBaySelection || []).map(e => e.objId)].some(id => objects.find(o => o.id === id)?.locked)
   // the chip: the level count (C1's "6 levels"); its full name is the hover title and the menu's
   const levels = (t) => `${t.levels?.length || 0} level${t.levels?.length === 1 ? '' : 's'}`
   const label = several ? 'Apply elevation' : one ? levels(one) : 'Mixed'
   const title = several ? 'Apply an elevation to the selected rows' : one ? nameOf(T, one) : `Mixed: ${types.map(x => { const y = typeById(T, x.id); return y ? nameOf(T, y) : '—' }).join(', ')}`
   return (
     <>
-      <Chip chipRef={ref} open={open} swatch={!several && one ? one.color : null} label={several ? 'Apply elevation' : 'Elevation'} title={title} onClick={() => setOpen(o => !o)}>{label}</Chip>
-      {open && (
+      <Chip chipRef={ref} open={open} swatch={!several && one ? one.color : null} label={several ? 'Apply elevation' : 'Elevation'} title={title} locked={locked} onClick={() => setOpen(o => !o)}>{label}</Chip>
+      {open && !locked && (
         <Menu label="Elevations" anchor={ref.current} onClose={() => setOpen(false)}>
           {T.types.map(t => <MenuItem key={t.id} swatch={t.color} onClick={() => { assignSelected(store, t.id); setOpen(false) }}>{nameOf(T, t)}</MenuItem>)}
         </Menu>

@@ -42,6 +42,13 @@ export const GENERATE_LOCK = { locked: true, lockedBy: 'generate' }
 /** Locked by Generate (not by hand): Ctrl+A takes it and the clear-all Delete removes it. */
 export const lockedByGenerate = (o) => !!(o && o.locked && o.lockedBy === 'generate')
 
+/** On load: every column grid locked as Generate locks it (Generate's lock) — unless it is locked already (Generate's
+ *  or the user's lock, kept) or the user unlocked it by hand (`handUnlocked`, recorded by toggleLock). */
+export function lockGridsOnLoad(objects) {
+  if (!Array.isArray(objects)) return objects
+  return objects.map(o => (o && o.type === 'column_grid' && !o.locked && !o.handUnlocked ? { ...o, ...GENERATE_LOCK } : o))
+}
+
 const NOTE_TYPES = new Set([
   'text', 'line', 'arrow', 'arc', 'freehand', 'dimension', 'rect', 'circle',
   'triangle', 'diamond', 'star', 'cross', 'l_shape', 't_shape', 'u_shape',
@@ -188,8 +195,9 @@ export function toggleLock(store) {
   const anyUnlocked = st.objects.some(o => sel.has(o.id) && !o.locked)
   const objects = st.objects.map(o => {
     if (!sel.has(o.id)) return o
-    const { lockedBy, ...rest } = o; void lockedBy
-    return { ...rest, locked: anyUnlocked }
+    const { lockedBy, handUnlocked, ...rest } = o; void lockedBy; void handUnlocked
+    // an unlock by hand is recorded, so a reload does not lock it again (lockGridsOnLoad)
+    return anyUnlocked ? { ...rest, locked: true } : { ...rest, locked: false, handUnlocked: true }
   })
   store.setState({ objects })
   store.getState().commitObjectUpdate(st.selectedIds[0], {})
