@@ -122,6 +122,13 @@ export function SelectField({ value, onChange, aria, children, words = false, st
   )
 }
 
+/** A locked object's fields (STUDIO.md §7a Locks): every control inside is disabled, drawn at 45 % (studio.css
+ *  fieldset[data-locked]) with the title Locked. Not locked: a plain wrapper, nothing changes. */
+export function LockedFields({ locked, children }) {
+  if (!locked) return children
+  return <fieldset disabled data-locked="" title="Locked" style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</fieldset>
+}
+
 /** A read-only value in the field box. */
 export const StaticField = ({ children, words, aria }) => <span aria-label={aria} style={fieldBox(words)}>{children}</span>
 

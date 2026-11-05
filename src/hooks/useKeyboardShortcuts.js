@@ -7,7 +7,7 @@ import { cancelPlacement } from '../utils/placement'
 import { useRowGroup, clearGroup, cancelGroupBox, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
 import { FILL_TOOL, cancelFill } from '../utils/fillTool'
 import { SPLIT_TOOL, useSplit } from '../utils/splitTool'
-import { selectAllIds, keptBySelectAll, pickableIn } from '../utils/layers'
+import { selectAllIds, keptBySelectAll, pickableIn, toggleLock } from '../utils/layers'
 import { pickedColumn, clearColumnPick } from '../canvas2/columnPick'
 import { deleteSelectionWithAreas } from '../utils/deleteSelection'
 import { notify, clearNotice } from '../utils/notice'
@@ -113,7 +113,7 @@ export function shortcutHandler(e) {
           break
         case 'l':
           e.preventDefault()
-          useCanvasStore.getState().toggleLockSelected()
+          toggleLock(useCanvasStore)
           break
         case 'z':
           e.preventDefault()

@@ -34,9 +34,13 @@ export const STANDARD_LAYERS = [
 ]
 export const LAYER_IDS = STANDARD_LAYERS.map(l => l.id)
 
-/* Generate locks nothing (STUDIO.md §7a): a lock exists only when the user sets it — a layer's padlock (setLayer,
-   lockedByHand) or an object's Lock (Ctrl+L, the bar, the right-click menu). */
+/* Generate locks no layer (STUDIO.md §7a Locks). It locks the column grid it places — the columns are building
+   structure — as an object lock marked `lockedBy: 'generate'` (GENERATE_LOCK); every other lock is the user's: a layer's
+   padlock (setLayer, lockedByHand) or an object's Lock (toggleLock: Ctrl+L, the bar, the right-click menu). */
 export const LOCKED_AFTER_GENERATE = []
+export const GENERATE_LOCK = { locked: true, lockedBy: 'generate' }
+/** Locked by Generate (not by hand): Ctrl+A takes it and the clear-all Delete removes it. */
+export const lockedByGenerate = (o) => !!(o && o.locked && o.lockedBy === 'generate')
 
 const NOTE_TYPES = new Set([
   'text', 'line', 'arrow', 'arc', 'freehand', 'dimension', 'rect', 'circle',
@@ -103,7 +107,7 @@ export const isHelper = (o) => {
 const handLocked = (l) => !!(l && l.locked && l.lockedByHand)
 /** Can Ctrl+A take `o`? Everything drawn — the building, aisles and racking areas included — except what is on a layer
  *  the user locked by hand, hidden, or locked one by one. The layout's elevation types are data, never selected. */
-const takenBySelectAll = (m, o) => !!o && o.type !== 'elevation_types' && !o.locked && isShown(m, o) && !handLocked(m.get(layerOf(o, m)))
+const takenBySelectAll = (m, o) => !!o && o.type !== 'elevation_types' && (!o.locked || lockedByGenerate(o)) && isShown(m, o) && !handLocked(m.get(layerOf(o, m)))
 
 /** What Ctrl+A selects: everything (as before 5bdecf8), the building included — only layers the user locked by hand
  *  are skipped (a lock Generate set is not), with hidden layers and objects locked one by one. */
@@ -174,6 +178,21 @@ export function releaseGeneratedLocks(layers) {
 /** The standard seven as Generate leaves them: Columns shown, nothing locked; the rest as they were. */
 export function generatedLayers(layers) {
   return standardLayers(layers).map(l => (l.id === 'columns' ? { ...l, visible: true } : l))
+}
+
+/** Lock / Unlock the selection by hand (Ctrl+L, the bars, the right-click menu, the card): locked when any of it is
+ *  unlocked, else unlocked — one undo step. A hand toggle drops Generate's mark, so the lock is the user's from then. */
+export function toggleLock(store) {
+  const st = store.getState(), sel = new Set(st.selectedIds)
+  if (!sel.size) return
+  const anyUnlocked = st.objects.some(o => sel.has(o.id) && !o.locked)
+  const objects = st.objects.map(o => {
+    if (!sel.has(o.id)) return o
+    const { lockedBy, ...rest } = o; void lockedBy
+    return { ...rest, locked: anyUnlocked }
+  })
+  store.setState({ objects })
+  store.getState().commitObjectUpdate(st.selectedIds[0], {})
 }
 
 /** Flip a layer's eye or padlock. Anything selected on it that can no longer

@@ -60,3 +60,5 @@ input.st-field::placeholder { color:#7E8680; }
    buttons turn the inset fill. Not a picked row (data-on) or a pressed button; toggles, swatches, the segmented
    control's active segment and the mint primary never carry .st-hov. !important: their fills are inline. */
 [data-card-dark] .st-hov:hover:not(:disabled):not([data-on]):not([aria-pressed="true"]) { background:#2A2F2C !important; }
+/* a locked object's controls (cardParts.jsx LockedFields): disabled, at 45 % */
+fieldset[data-locked] :is(input, select, textarea, button) { opacity:.45; cursor:not-allowed; }

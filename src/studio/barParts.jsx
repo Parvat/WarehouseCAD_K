@@ -28,10 +28,11 @@ export const modePill = { ...pill, position: 'fixed', left: '50%', top: 76, tran
 
 export const Sep = () => <span aria-hidden="true" style={{ width: 1, height: 20, background: B.separator, margin: '0 4px', flexShrink: 0 }} />
 
-export function IconBtn({ name, label, title, onClick, danger = false, active = false, disabled = false, pressed }) {
+/* `locked`: the selection is locked (STUDIO.md §7a Locks) — disabled, at 45 %, titled Locked */
+export function IconBtn({ name, label, title, onClick, danger = false, active = false, disabled = false, pressed, locked = false }) {
   return (
-    <button type="button" aria-label={label} title={title || label} onClick={onClick} disabled={disabled} aria-pressed={pressed}
-      style={{ width: 32, height: 32, border: 0, borderRadius: 8, padding: 0, background: active ? B.active : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <button type="button" aria-label={label} title={locked ? 'Locked' : (title || label)} onClick={onClick} disabled={disabled || locked} aria-pressed={pressed}
+      style={{ width: 32, height: 32, border: 0, borderRadius: 8, padding: 0, background: active ? B.active : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, ...(locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>
       <Icon name={name} active={active} color={danger ? B.danger : undefined} />
     </button>
   )

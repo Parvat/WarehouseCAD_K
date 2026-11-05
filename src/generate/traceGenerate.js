@@ -19,7 +19,7 @@
 import { snapshotOf } from '../utils/elevations'
 import { nanoid } from 'nanoid'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { generatedLayers, layerForType } from '../utils/layers'
+import { generatedLayers, layerForType, GENERATE_LOCK } from '../utils/layers'
 import { autoSave, serializeScene } from '../utils/saveLoad'
 import { sizingSheetLayout, generateFixtures } from './sizingLayout'
 import { DEFAULT_RULES } from '../rules/defaults'
@@ -345,7 +345,7 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
   const queue = parentGenerated(
     [...racks, ...aisleObjectsForRacks(racks), ...generateFixtures(brief, ox, oy)],
     fp?.id,
-  ).map(o => ({ ...o, layerId: layerForType(o.type) }))
+  ).map(o => ({ ...o, layerId: layerForType(o.type), ...(o.type === 'column_grid' ? GENERATE_LOCK : null) }))   // the columns: building structure, locked (STUDIO.md §7a Locks)
   return {
     queue,
     orientation:     auto ? pick.orientation : (brief.orientation ?? 'horizontal'),

@@ -1915,19 +1915,55 @@ describe('REG — the hand check by real clicks', () => {
 
     /* ── Fix 6: no automatic locks — a lock exists only when the user sets it ── */
     const gridOf = () => L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return g ? { id: g.id, x: Math.round(g.x), y: Math.round(g.y), locked: !!g.locked } : null')
-    it('REG-gen-no-locks (click): a fresh Generate locks nothing — every layer and object open — and a column drags straight away (a real press and drag on it moves its grid)', async () => {
+    /** a fresh Generate in the open page (the app's own generateAndPlace), the plan cleared first */
+    const generateFresh = () => L.S(`S.setState({ objects: [], groups: [], selectedIds: [], activeBaySelection: [] })
+        return import('/src/generate/traceGenerate.js').then(G => { G.generateAndPlace(arg); const st = S.getState(); return { layers: st.layers.filter(l => l.locked).map(l => l.id), locked: st.objects.filter(o => o.locked).map(o => o.type + ':' + (o.lockedBy || 'hand')), racks: st.objects.filter(o => /^rack_/.test(o.type)).length } })`,
+      { ...R.R1, orientation: name.endsWith('vertical') ? 'vertical' : 'horizontal', rackType: 'rack_double_row', dockDoors: 0 })
+    it('REG-gen-no-locks (click): a fresh Generate locks no layer and only the column grid (building structure, Fix 6 round 4) — a column drag moves nothing; Unlock (one click in its bar) then a drag moves it', async () => {
       await open()
-      const brief = { ...R.R1, orientation: name.endsWith('vertical') ? 'vertical' : 'horizontal', rackType: 'rack_double_row', dockDoors: 0 }
-      const locks = await L.S(`S.setState({ objects: [], groups: [], selectedIds: [], activeBaySelection: [] })
-        return import('/src/generate/traceGenerate.js').then(G => { G.generateAndPlace(arg); const st = S.getState(); return { layers: st.layers.filter(l => l.locked).map(l => l.id), objects: st.objects.filter(o => o.locked).length, racks: st.objects.filter(o => /^rack_/.test(o.type)).length } })`, brief)
-      expect([locks.layers, locks.objects, locks.racks > 0]).toEqual([[], 0, true])
+      const locks = await generateFresh()
+      expect([locks.layers, locks.locked, locks.racks > 0]).toEqual([[], ['column_grid:generate'], true])
       await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(300)
       await zoomOutTill(7)
       const c = await L.S(colAt), g0 = await gridOf(), gs = await gs7()
-      expect([!!c, !!g0]).toEqual([true, true])
+      expect([!!c, !!g0, g0.locked]).toEqual([true, true, true])
+      // locked: a drag from a column moves nothing
+      await L.drag(c, { x: c.x + 3 * gs, y: c.y + 3 * gs }); await L.page.waitForTimeout(250)
+      expect(await gridOf()).toEqual(g0)
+      // a click picks that column; its bar shows Unlock — one click
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.click(c)
+      expect(await L.selected()).toEqual(['column_grid'])
+      const lockBtn = L.page.locator('[data-selection-bar]').getByRole('button', { name: /^(Lock|Unlock)$/ })
+      expect(await lockBtn.getAttribute('aria-label')).toBe('Unlock')
+      await lockBtn.click(); await L.page.waitForTimeout(150)
+      expect((await gridOf()).locked).toBe(false)
       await L.drag(c, { x: c.x + 3 * gs, y: c.y + 3 * gs }); await L.page.waitForTimeout(250)
       const g1 = await gridOf()
       expect([g1.x - g0.x, g1.y - g0.y].map(d => Math.abs(d) > gs)).toEqual([true, true])
+    }, T)
+
+    it('REG-gen-clear-all (click): after Generate, Ctrl+A then Delete leaves an empty canvas — the columns Generate locked included — one undo step, and one Ctrl+Z restores all; a rack locked by hand is skipped by Ctrl+A and never deleted', async () => {
+      await open()
+      await generateFresh()
+      await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(300)
+      const all = () => L.S('return JSON.stringify(S.getState().objects)')
+      const s0 = await all(), n0 = JSON.parse(s0).length, h0 = await hist7()
+      expect(JSON.parse(s0).some(o => o.type === 'column_grid' && o.locked)).toBe(true)
+      await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(200)
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      expect([await L.S('return S.getState().objects.length'), (await hist7()) - h0]).toEqual([0, 1])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect([await L.S('return S.getState().objects.length'), await all()]).toEqual([n0, s0])
+      // a rack locked by hand (its bar's Lock): Ctrl+A skips it, Delete never takes it
+      const a = await pairPoints()
+      await L.click(a.far)
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Lock' }).click(); await L.page.waitForTimeout(150)
+      await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890)
+      await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(200)
+      expect(await L.S('return S.getState().selectedIds.includes(arg)', a.r.id)).toBe(false)
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      expect(await L.S('return S.getState().objects.map(o => o.id)')).toEqual([a.r.id])
     }, T)
 
     it('REG-lock-key (click): Ctrl+L on a selected column locks it — a drag then moves nothing; Ctrl+L again unlocks it and it drags; Lock in the bar is one click and shows the state', async () => {
@@ -2011,6 +2047,41 @@ describe('REG — the hand check by real clicks', () => {
       await L.drag(a.far, { x: a.far.x + 3 * gs, y: a.far.y + 3 * gs }); await L.page.waitForTimeout(200)
       const r1 = await rack()
       expect(Math.abs(r1.x - r0.x) + Math.abs(r1.y - r0.y) > gs).toBe(true)
+    }, T)
+
+    it('REG-lock-blocks (click): a locked rack - its Rotate, Split and Row group in the bar and a Properties field are disabled at 45 % titled Locked, and a real click on each, or S then a click on the rack, changes nothing', async () => {
+      await open()
+      const a = await pairPoints(), id = a.r.id
+      const snap = () => L.S('const st = S.getState(), o = st.objects.find(x => x.id === arg); return JSON.stringify({ o, n: st.objects.length, h: st.historyIndex })', id)
+      await L.click(a.far)
+      const bar = L.page.locator('[data-selection-bar]')
+      await bar.getByRole('button', { name: 'Lock' }).click(); await L.page.waitForTimeout(150)
+      const s0 = await snap()
+      expect(JSON.parse(s0).o.locked).toBe(true)
+      // the bar: disabled, 45 %, titled Locked; a real click on each changes nothing
+      for (const name of ['Rotate', 'Split', 'Row group']) {
+        const b = bar.getByRole('button', { name, exact: true })
+        expect([name, await b.isDisabled(), await b.getAttribute('title'), await b.evaluate(el => getComputedStyle(el).opacity)]).toEqual([name, true, 'Locked', '0.45'])
+        const box = await b.boundingBox()
+        await L.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); await L.page.waitForTimeout(150)
+        expect([name, await snap(), await L.S('return S.getState().activeTool')]).toEqual([name, s0, 'select'])
+      }
+      // the Split tool by its key, then a click on the locked rack: no cut
+      await L.page.keyboard.press('s'); await L.page.waitForTimeout(100)
+      await L.click(a.far); await L.page.waitForTimeout(200)
+      expect(await snap()).toEqual(s0)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('v'); await L.page.waitForTimeout(100)
+      if ((await L.S('return S.getState().selectedIds')).join() !== id) await L.click(a.far)
+      // a Properties field: Bays — disabled, 45 %, titled Locked; a click and typing change nothing
+      const bays = L.page.getByRole('spinbutton', { name: 'Bays' })
+      expect([await bays.isDisabled(), await bays.evaluate(el => el.closest('[title]')?.getAttribute('title')), await bays.evaluate(el => getComputedStyle(el).opacity)]).toEqual([true, 'Locked', '0.45'])
+      const fb = await bays.boundingBox()
+      await L.page.mouse.click(fb.x + fb.width / 2, fb.y + fb.height / 2)
+      await L.page.keyboard.type('2'); await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(200)
+      expect(await snap()).toEqual(s0)
+      // unlocked: the same field and Rotate work again
+      await bar.getByRole('button', { name: 'Unlock' }).click(); await L.page.waitForTimeout(150)
+      expect([await bays.isDisabled(), await bar.getByRole('button', { name: 'Rotate', exact: true }).isDisabled()]).toEqual([false, false])
     }, T)
 
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {

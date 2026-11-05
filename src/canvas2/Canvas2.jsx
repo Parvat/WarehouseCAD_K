@@ -33,6 +33,7 @@ import { HOME_TOOL } from '../utils/homeTool'
 import { useMeasureMode, endTool } from '../utils/toolSwitch'
 import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupPress, useRowGroup, groupRowsNow } from '../utils/rowGroupTool'
 import { hitTest } from './hitTest'
+import { isPickable } from '../utils/layers'
 import { SPLIT_TOOL, useSplit, hoverSplit, splitAt } from '../utils/splitTool'
 import { rebuildAisles } from '../utils/aisleRebuild'
 import { nanoid } from 'nanoid'
@@ -364,6 +365,8 @@ export function Canvas2() {
   const groupKeys = useRowGroup(s => s.keys)
   const groupRacks = useMemo(() => (grouping ? groupRowsNow(objects).flatMap(r => r.ids).map(id => objects.find(o => o.id === id)).filter(o => o && hasResizeHandles(o.type, PORTED_RACK_TYPES)) : []),
     [grouping, groupKeys, objects])   // eslint-disable-line react-hooks/exhaustive-deps
+  /* a hit the tools may change: a locked object (picked by hitTest so a click selects it) is none */
+  const unlockedHit = (st, id) => (id && isPickable(st.layers, st.objects.find(o => o.id === id)) ? id : null)
   const groupMouseDown = (e) => {
     const stage = e.target.getStage()
     const p = stage?.getPointerPosition()
@@ -372,7 +375,8 @@ export function Canvas2() {
     // a group row's handle edits it, its body moves the whole group (a click there toggles it) — STUDIO.md §7a Modes
     if (groupRowPress(e)) return
     const shiftKey = !!e.evt?.shiftKey
-    const hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+    // a locked rack is clicked, never changed: the Row group does not take it (STUDIO.md §7a Locks)
+    const hitId = unlockedHit(st, hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize))
     const hit = hitId ? st.objects.find(o => o.id === hitId) : null
     startGroupBox(world, hit && (hit.type === 'rack_row' || hit.type === 'rack_double_row') ? hitId : null)
     const rect = stage.container().getBoundingClientRect(), sx = e.evt.clientX, sy = e.evt.clientY
@@ -394,7 +398,8 @@ export function Canvas2() {
     const p = e.target.getStage()?.getPointerPosition()
     if (!p) return null
     const st = useCanvasStore.getState(), world = screenToWorld(view.current, p)
-    return { st, world, hitId: hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize) }
+    // a locked rack is not split (STUDIO.md §7a Locks)
+    return { st, world, hitId: unlockedHit(st, hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)) }
   }
   const splitMouseMove = (e) => { const t = splitTarget(e); if (t) hoverSplit(t.st.objects, t.world, t.hitId, t.st.gridSize || 40) }
   const splitMouseDown = (e) => {

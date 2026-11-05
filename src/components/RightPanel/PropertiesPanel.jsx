@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { TEXT_FONTS, textFace } from '../../theme/tokens'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { toggleLock } from '../../utils/layers'
 import { deleteSelectionWithAreas } from '../../utils/deleteSelection'
 import { useShallow } from 'zustand/react/shallow'
 import { pxToFtIn } from '../../utils/canvas'
@@ -21,7 +22,7 @@ import { ColumnCheckBody } from './ColumnCheckPanel'
 import { RackMain, RowGroupMain, ZoneMain, NothingSelected, LayoutBlock } from '../../studio/cards'
 import { useRowGroup, groupRowsNow } from '../../utils/rowGroupTool'
 import { Head, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, StaticField, Row, ToggleRow, Seg, Btn,
-  IconBtn, Note, Hint, SecLabel, Fold, C, MONO } from '../../studio/cardParts'
+  IconBtn, Note, Hint, SecLabel, Fold, C, MONO, LockedFields } from '../../studio/cardParts'
 
 /* The right card's Properties (Studio, STUDIO.md; design/studio/Studio.dc.html). Each state leads with its block from
    the mockups — nothing selected (C7), a rack (C1), a zone (C6) — or, for every other selection, the same parts (a
@@ -113,12 +114,15 @@ function SelectionRacks({ selected }) {
 
 /* ─── the "More" fold: the sections every selection shares ─────────────────── */
 
-function Shared({ rack }) {
+function Shared({ rack, locked }) {
   return (
     <>
       <ColumnCheckBody toggles={!rack} />
-      <GroupBody />
-      <ColorBody />
+      {/* a locked object's group and colour are not changed (STUDIO.md §7a Locks); the layers and settings are the app's */}
+      <LockedFields locked={locked}>
+        <GroupBody />
+        <ColorBody />
+      </LockedFields>
       <LayerBody />
       <TextBody />
       <LabelsBody />
@@ -126,24 +130,24 @@ function Shared({ rack }) {
   )
 }
 
-function More({ children, rack }) {
+function More({ children, rack, locked }) {
   return (
     <Fold title="More" aria="More properties" last gap={10}>
       {children}
-      <Shared rack={rack} />
+      <Shared rack={rack} locked={locked} />
     </Fold>
   )
 }
 
 /* the object's order, lock and delete (the selection bar takes these in step 3) */
 function ObjectActions({ obj }) {
-  const { deleteSelected, bringForward, sendBackward, bringToFront, sendToBack, toggleLockSelected } = useCanvasStore(useShallow(s => ({ deleteSelected: s.deleteSelected, bringForward: s.bringForward, sendBackward: s.sendBackward, bringToFront: s.bringToFront, sendToBack: s.sendToBack, toggleLockSelected: s.toggleLockSelected })))
+  const { deleteSelected, bringForward, sendBackward, bringToFront, sendToBack } = useCanvasStore(useShallow(s => ({ deleteSelected: s.deleteSelected, bringForward: s.bringForward, sendBackward: s.sendBackward, bringToFront: s.bringToFront, sendToBack: s.sendToBack })))
   const small = { height: 28, padding: '0 8px', fontSize: 12 }
   return (
     <>
       <SecLabel>Object</SecLabel>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-        <IconBtn name="Lock" label={obj.locked ? 'Unlock' : 'Lock'} title={obj.locked ? 'Unlock (Ctrl+L)' : 'Lock'} active={!!obj.locked} onClick={toggleLockSelected} />
+        <IconBtn name="Lock" label={obj.locked ? 'Unlock' : 'Lock'} title={obj.locked ? 'Unlock (Ctrl+L)' : 'Lock'} active={!!obj.locked} onClick={() => toggleLock(useCanvasStore)} />
         <Btn kind="inset" style={small} title="Send to back" onClick={sendToBack}>To back</Btn>
         <Btn kind="inset" style={small} title="Send backward" onClick={sendBackward}>Back</Btn>
         <Btn kind="inset" style={small} title="Bring forward" onClick={bringForward}>Forward</Btn>
@@ -235,15 +239,17 @@ export function PropertiesPanel() {
   if (RACK_TYPES.has(obj.type)) {
     return (
       <>
-        <MultiBayPanel />
+        <LockedFields locked={obj.locked}><MultiBayPanel /></LockedFields>
         {inGroup
           ? <RowGroupMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} rows={groupRows} />
           : <><RackMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} /><LayoutBlock last={false} /></>}
-        <More rack>
+        <More rack locked={obj.locked}>
           <ObjectActions obj={obj} />
-          <RackRowExtras obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} />
-          {divider}
-          <Appearance obj={obj} up={up} commit={commit} />
+          <LockedFields locked={obj.locked}>
+            <RackRowExtras obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} />
+            {divider}
+            <Appearance obj={obj} up={up} commit={commit} />
+          </LockedFields>
         </More>
       </>
     )
@@ -254,9 +260,9 @@ export function PropertiesPanel() {
     return (
       <>
         <ZoneMain obj={obj} />
-        <More>
+        <More locked={obj.locked}>
           <ObjectActions obj={obj} />
-          <Appearance obj={obj} up={up} commit={commit} />
+          <LockedFields locked={obj.locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
         </More>
       </>
     )
@@ -267,8 +273,9 @@ export function PropertiesPanel() {
   return (
     <>
       <Head caption={bayLabel ? `${typeName(obj)} · ${bayLabel}` : typeName(obj)} />
-      <MultiBayPanel />
+      <LockedFields locked={obj.locked}><MultiBayPanel /></LockedFields>
       <Sec>
+        <LockedFields locked={obj.locked}>
         {obj.type === 'rack_cantilever' && <CantileverPanel obj={obj} />}
         {obj.type === 'column_grid' && <ColumnGridPanel obj={obj} />}
         {obj.type === 'rack_drive_in' && <DriveInPanel obj={obj} />}
@@ -316,10 +323,11 @@ export function PropertiesPanel() {
           </>
         )}
         {obj.type === 'text' && <TextFields obj={obj} up={up} commit={commit} />}
+        </LockedFields>
       </Sec>
-      <More>
+      <More locked={obj.locked}>
         <ObjectActions obj={obj} />
-        <Appearance obj={obj} up={up} commit={commit} />
+        <LockedFields locked={obj.locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
       </More>
     </>
   )

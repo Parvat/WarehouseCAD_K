@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
+import { toggleLock } from '../utils/layers'
 import { TOOLS } from '../constants'
 import { worldBoundsOf, hitTest, fpWallHitTest, wallBeatsPadding } from '../canvas2/hitTest'
 import { screenToWorld } from '../canvas2/viewport'
@@ -207,7 +208,7 @@ export function MoreItems({ obj, close }) {
   return (
     <>
       {/* the icon on the left (section 9; none yet: an empty slot), the shortcut on the right (only those that work) */}
-      <MenuItem icon={{ name: 'Lock' }} keys="Ctrl+L" onClick={run(st.toggleLockSelected)}>{obj?.locked ? 'Unlock' : 'Lock'}</MenuItem>
+      <MenuItem icon={{ name: 'Lock' }} keys="Ctrl+L" onClick={run(() => toggleLock(store))}>{obj?.locked ? 'Unlock' : 'Lock'}</MenuItem>
       <MenuLine />
       <MenuItem icon={null} onClick={run(st.sendToBack)}>To back</MenuItem>
       <MenuItem icon={null} onClick={run(st.sendBackward)}>Back</MenuItem>
@@ -241,7 +242,7 @@ const tool = (t) => () => { endTool(store); store.getState().setActiveTool(t) }
  *  selection is. */
 function LockBtn() {
   const locked = useCanvasStore(s => s.selectedIds.length > 0 && s.selectedIds.every(id => s.objects.find(o => o.id === id)?.locked))
-  return <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => store.getState().toggleLockSelected()} />
+  return <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
 }
 
 function RackBar({ obj }) {
@@ -251,11 +252,11 @@ function RackBar({ obj }) {
       <ElevationChip />
       <Sep />
       {/* a locked rack is not resized: no bay added or removed (STUDIO.md §7a Locks) */}
-      <IconBtn name="Add bay" label="Add bay" title="Add a bay at the far end" disabled={!!obj.locked} onClick={() => addBayTo(obj)} />
-      <IconBtn name="Remove bay" label="Remove bay" title={obj.activeBayIdx != null ? `Remove bay ${obj.activeBayIdx + 1}` : 'Remove the last bay'} disabled={beams.length <= 1 || !!obj.locked} onClick={() => removeBayFrom(obj)} />
-      <IconBtn name="Split" label="Split" title="Split (S)" onClick={tool(SPLIT_TOOL)} />
-      <IconBtn name="Row group" label="Row group" title="Put this row in a Row group (G)" onClick={groupSelectedRows} />
-      <IconBtn name="Rotate" label="Rotate" title="Rotate 90°" onClick={() => rotateQuarter(obj)} />
+      <IconBtn name="Add bay" label="Add bay" title="Add a bay at the far end" locked={!!obj.locked} onClick={() => addBayTo(obj)} />
+      <IconBtn name="Remove bay" label="Remove bay" title={obj.activeBayIdx != null ? `Remove bay ${obj.activeBayIdx + 1}` : 'Remove the last bay'} disabled={beams.length <= 1} locked={!!obj.locked} onClick={() => removeBayFrom(obj)} />
+      <IconBtn name="Split" label="Split" title="Split (S)" locked={!!obj.locked} onClick={tool(SPLIT_TOOL)} />
+      <IconBtn name="Row group" label="Row group" title="Put this row in a Row group (G)" locked={!!obj.locked} onClick={groupSelectedRows} />
+      <IconBtn name="Rotate" label="Rotate" title="Rotate 90°" locked={!!obj.locked} onClick={() => rotateQuarter(obj)} />
       <Sep />
       <LockBtn />
       <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={duplicateSelection} />
@@ -322,7 +323,7 @@ function MixedBar({ objs }) {
         <span style={{ fontFamily: MONO, color: B.text }}>{objs.length}</span> selected
       </span>
       <Sep />
-      <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={st.toggleLockSelected} />
+      <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
       <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={duplicateSelection} />
       <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} />
     </>
@@ -346,9 +347,9 @@ function SizeField({ obj, k, aria }) {
     st.commitObjectUpdate(obj.id, zoneSized(st.objects, cur, { [k]: ft * gs }, { gridSize: gs }))
   }
   return (
-    <input aria-label={aria} className="st-field" value={text ?? shown} disabled={!!obj.locked} onChange={e => setText(e.target.value)} onFocus={e => { setText(shown); requestAnimationFrame(() => e.target.select()) }}
+    <input aria-label={aria} className="st-field" value={text ?? shown} disabled={!!obj.locked} title={obj.locked ? 'Locked' : undefined} onChange={e => setText(e.target.value)} onFocus={e => { setText(shown); requestAnimationFrame(() => e.target.select()) }}
       onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setText(null); e.currentTarget.blur() } }}
-      style={{ height: 28, width: 46, boxSizing: 'border-box', padding: 0, border: 0, borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, textAlign: 'center', flexShrink: 0 }} />
+      style={{ height: 28, width: 46, boxSizing: 'border-box', padding: 0, border: 0, borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, textAlign: 'center', flexShrink: 0, ...(obj.locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }} />
   )
 }
 
@@ -360,7 +361,7 @@ function ZoneBar({ obj }) {
       <span style={{ padding: '0 4px', color: B.muted }}>×</span>
       <SizeField obj={obj} k="height" aria="Zone length" />
       <Sep />
-      <IconBtn name="Lock" label={obj.locked ? 'Unlock' : 'Lock'} title={obj.locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={!!obj.locked} pressed={!!obj.locked} onClick={st.toggleLockSelected} />
+      <IconBtn name="Lock" label={obj.locked ? 'Unlock' : 'Lock'} title={obj.locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={!!obj.locked} pressed={!!obj.locked} onClick={() => toggleLock(store)} />
       <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={duplicateSelection} />
       <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} />
     </>
@@ -381,7 +382,7 @@ function ColumnBar({ one = false }) {
 
 function AisleBar({ obj }) {
   const st = store.getState()
-  return <IconBtn name="Lock" label={obj.locked ? 'Unlock' : 'Lock'} title={obj.locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={!!obj.locked} pressed={!!obj.locked} onClick={st.toggleLockSelected} />
+  return <IconBtn name="Lock" label={obj.locked ? 'Unlock' : 'Lock'} title={obj.locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={!!obj.locked} pressed={!!obj.locked} onClick={() => toggleLock(store)} />
 }
 
 function BuildingBar({ obj }) {
@@ -396,8 +397,8 @@ function BuildingBar({ obj }) {
       <span style={{ color: B.muted, fontSize: 12, padding: '0 6px 0 4px' }}>Thickness</span>
       <div role="group" aria-label="Wall thickness" style={{ display: 'flex', padding: 2, borderRadius: 6, background: B.inset }}>
         {[0.25, 0.5, 0.75, 1].map(v => (
-          <button key={v} type="button" aria-pressed={wallT === v} onClick={() => setWall(v)}
-            style={{ height: 28, padding: '0 8px', border: 0, borderRadius: 6, fontFamily: MONO, fontSize: 12, background: wallT === v ? B.active : 'transparent', color: wallT === v ? B.accent : B.muted }}>{v * 12}″</button>
+          <button key={v} type="button" aria-pressed={wallT === v} onClick={() => setWall(v)} disabled={!!obj.locked} title={obj.locked ? 'Locked' : undefined}
+            style={{ height: 28, padding: '0 8px', border: 0, borderRadius: 6, fontFamily: MONO, fontSize: 12, background: wallT === v ? B.active : 'transparent', color: wallT === v ? B.accent : B.muted, ...(obj.locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>{v * 12}″</button>
         ))}
       </div>
       <Sep />

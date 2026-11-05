@@ -20,7 +20,7 @@ import { openSetup, nameOf } from '../utils/project'
 import { ZONE_KINDS } from '../generate/rackingArea'
 import { RowGroupNote } from '../canvas2/RowGroupBar'
 import { Head, BigFigure, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, Row, ToggleRow, Totals, Hint,
-  Tag, CountChip, IconBtn, C, MONO, LEVEL } from './cardParts'
+  Tag, CountChip, IconBtn, C, MONO, LEVEL, LockedFields } from './cardParts'
 
 /* The right card's blocks for the states drawn in the mockups (design/studio/Studio.dc.html): nothing selected (C7),
    a rack (C1), a zone (C6) and Check layout (C5). Every other section uses the same parts (cardParts.jsx). */
@@ -136,9 +136,11 @@ export function RackFields({ obj, newBeam, setNewBeam, group = false }) {
   }
   return (
     <Sec aria-label="Rack fields">
-      <Grid2>
-        {group ? <>{f.bays}{f.depth}{f.beam}{f.flue}</> : <>{f.bays}{f.beam}{f.depth}{f.flue}</>}
-      </Grid2>
+      <LockedFields locked={obj.locked}>
+        <Grid2>
+          {group ? <>{f.bays}{f.depth}{f.beam}{f.flue}</> : <>{f.bays}{f.beam}{f.depth}{f.flue}</>}
+        </Grid2>
+      </LockedFields>
     </Sec>
   )
 }
@@ -213,11 +215,13 @@ export function ZoneMain({ obj }) {
   return (
     <div aria-label="Zone settings" style={{ padding: '8px 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <span style={{ color: C.muted, fontSize: 12 }}>Zone · {kind}</span>
-      <InlineField label="Name"><TextInput words aria="Zone name" value={obj.label || ''} onCommit={t => commitObjectUpdate(obj.id, { label: t })} /></InlineField>
-      <Grid2>
-        <Field label="Width"><TextInput aria="Zone width" value={ftIn(obj.width / gridSize * 12)} onCommit={size('width')} /></Field>
-        <Field label="Length"><TextInput aria="Zone length" value={ftIn(obj.height / gridSize * 12)} onCommit={size('height')} /></Field>
-      </Grid2>
+      <LockedFields locked={obj.locked}>
+        <InlineField label="Name"><TextInput words aria="Zone name" value={obj.label || ''} onCommit={t => commitObjectUpdate(obj.id, { label: t })} /></InlineField>
+        <Grid2>
+          <Field label="Width"><TextInput aria="Zone width" value={ftIn(obj.width / gridSize * 12)} onCommit={size('width')} /></Field>
+          <Field label="Length"><TextInput aria="Zone length" value={ftIn(obj.height / gridSize * 12)} onCommit={size('height')} /></Field>
+        </Grid2>
+      </LockedFields>
       <Hint>No racking is placed inside a zone. Its edges count as walls.</Hint>
     </div>
   )

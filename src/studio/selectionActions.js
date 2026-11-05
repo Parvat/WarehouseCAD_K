@@ -8,7 +8,7 @@ import { nanoid } from 'nanoid'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { addBayUpdate } from '../components/RightPanel/panels/RackRowPanelCore.jsx'
 import { deleteBaySelection } from '../utils/baySides'
-import { deleteSelectionWithAreas } from '../utils/deleteSelection'
+import { deleteSelectionWithAreas, deletableIn } from '../utils/deleteSelection'
 import { pasteAt } from '../utils/pasteAt'
 import { useRowGroup, startGroupFromSelection } from '../utils/rowGroupTool'
 import { selectionLevel, pickedBays } from '../canvas2/selectionLevel'
@@ -57,7 +57,7 @@ export function deleteSelection() {
   /* a column picked out of its grid (canvas2/columnPick.js): one column is not deleted on its own — Esc, then Delete,
      deletes the grid; a locked layer's (or locked) objects are never deleted, only clicked */
   if (pickedColumn(s)) { notify('A column stays with its grid', 'Esc, then Delete, deletes the column grid'); return }
-  const ok = pickableIn(s.layers)
+  const ok = deletableIn(s)                                    // clear all (Ctrl+A) takes what Generate locked too
   if (s.selectedIds.length && !s.selectedIds.some(id => ok(s.objects.find(o => o.id === id)))) { notify('Locked', 'unlock it to delete'); return }
   // a locked object clicked into the selection stays: only the rest is deleted
   if (s.selectedIds.some(id => !ok(s.objects.find(o => o.id === id)))) s.selectGroup(s.selectedIds.filter(id => ok(s.objects.find(o => o.id === id))))
