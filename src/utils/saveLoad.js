@@ -55,7 +55,7 @@ export function deserializeScene(json, s) {
   s.objects      = legacy.objects
   s.elevations   = data.elevations ?? legacy.table ?? null
   s.groups       = data.groups || []
-  // a Building layer an older Generate locked is released (a hand lock stays) — utils/layers.js releaseGeneratedLocks
+  // the layers an older Generate locked are released (a hand lock stays) — utils/layers.js releaseGeneratedLocks
   s.layers       = releaseGeneratedLocks(data.layers || s.layers)
   s.activeLayerId= data.activeLayerId || s.activeLayerId
 

@@ -59,10 +59,10 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect([...seen].sort()).toEqual(['aisles', 'building', 'columns', 'racking'])
   })
 
-  it('LY-generate-locked: after Generate, Columns are locked (and shown); the rest open — Building too: the building is picked by its walls, never by its floor (a press there picks nothing, a drag pans)', () => {
+  it('LY-generate-locked: after Generate, nothing is locked (Fix 6), Columns shown; the rest open — Building too: the building is picked by its walls, never by its floor (a press there picks nothing, a drag pans)', () => {
     const { layers, objects, gridSize } = st()
     const by = Object.fromEntries(layers.map(l => [l.id, l]))
-    expect([by.building.locked, by.columns.locked, by.building.visible, by.columns.visible]).toEqual([false, true, true, true])
+    expect([by.building.locked, by.columns.locked, by.building.visible, by.columns.visible]).toEqual([false, false, true, true])
     for (const id of ['building', 'racking', 'aisles', 'checks', 'notes']) expect([by[id].visible, by[id].locked]).toEqual([true, false])
     // floor points that pick the building when it is unlocked
     const open = allOpen(layers), z = 0.2
@@ -87,7 +87,7 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     const c = xs.flatMap(x => ys.map(y => ({ x: x + (grid.columnW || gridSize) / 2, y: y + (grid.columnH || gridSize) / 2 })))
       .find(p => m.hitTest(objects, onlyColumnsOpen, p.x, p.y, z, gridSize) === grid.id)
     expect(c).toBeTruthy()
-    expect(m.hitTest(objects, layers, c.x, c.y, z, gridSize)).not.toBe(grid.id)
+    expect(m.hitTest(objects, layers, c.x, c.y, z, gridSize)).toBe(grid.id)                 // Fix 6: Generate left Columns open — picked at once
   })
 
   it('LY-locked: a locked layer is drawn, printed and still snapped to, but not pickable or caught by a marquee — Racking locked: no rack picked or marqueed; Building and Columns locked: a rack dragged to the wall or a column still gets its guide; hidden: no guide', () => {
@@ -130,7 +130,7 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     const gen = state()
     m.L.setLayer(m.useCanvasStore, 'racking', { visible: false })
     const hid = state()
-    m.L.setLayer(m.useCanvasStore, 'columns', { locked: false })
+    m.L.setLayer(m.useCanvasStore, 'columns', { locked: true })                  // Fix 6: Generate left it open — the padlock, by hand
     const unlocked = state()
     expect(hid).not.toBe(gen)
     expect(unlocked).not.toBe(hid)

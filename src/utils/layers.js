@@ -34,10 +34,9 @@ export const STANDARD_LAYERS = [
 ]
 export const LAYER_IDS = STANDARD_LAYERS.map(l => l.id)
 
-/* Generate locks the columns: the frame the layout is drawn in, so a drag across the floor must not grab them. The
-   building is not locked — the floor never picks it (only its walls do, useCanvasInteraction.js), so every building,
-   generated or dropped, is picked by its walls. A Building layer locked by hand stays locked. */
-export const LOCKED_AFTER_GENERATE = ['columns']
+/* Generate locks nothing (STUDIO.md §7a): a lock exists only when the user sets it — a layer's padlock (setLayer,
+   lockedByHand) or an object's Lock (Ctrl+L, the bar, the right-click menu). */
+export const LOCKED_AFTER_GENERATE = []
 
 const NOTE_TYPES = new Set([
   'text', 'line', 'arrow', 'arc', 'freehand', 'dimension', 'rect', 'circle',
@@ -155,16 +154,16 @@ export function standardLayers(layers) {
   })
 }
 
-/** A layout from before Generate stopped locking the building: its Building layer locked by Generate (not by hand —
- *  setLayer records a hand lock) is unlocked on load, so its building is picked by its walls; a hand lock stays. */
+/** A layout from before Generate stopped locking: every layer Generate locked (not by hand — setLayer records a hand
+ *  lock) is unlocked on load — Building, Columns, any; a hand lock stays. */
 export function releaseGeneratedLocks(layers) {
   if (!Array.isArray(layers)) return layers
-  return layers.map(l => (l && l.id === 'building' && l.locked && !l.lockedByHand ? { ...l, locked: false } : l))
+  return layers.map(l => (l && l.locked && !l.lockedByHand ? { ...l, locked: false } : l))
 }
 
-/** The standard seven as Generate leaves them: Columns locked (and shown); the rest as they were. */
+/** The standard seven as Generate leaves them: Columns shown, nothing locked; the rest as they were. */
 export function generatedLayers(layers) {
-  return standardLayers(layers).map(l => LOCKED_AFTER_GENERATE.includes(l.id) ? { ...l, visible: true, locked: true } : l)
+  return standardLayers(layers).map(l => (l.id === 'columns' ? { ...l, visible: true } : l))
 }
 
 /** Flip a layer's eye or padlock. Anything selected on it that can no longer

@@ -237,6 +237,13 @@ function MoreMenu({ obj }) {
 
 const tool = (t) => () => { endTool(store); store.getState().setActiveTool(t) }
 
+/** Lock / Unlock in one click (Ctrl+L): every bar that has a selection to lock (STUDIO.md §7a) — locked when all of the
+ *  selection is. */
+function LockBtn() {
+  const locked = useCanvasStore(s => s.selectedIds.length > 0 && s.selectedIds.every(id => s.objects.find(o => o.id === id)?.locked))
+  return <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => store.getState().toggleLockSelected()} />
+}
+
 function RackBar({ obj }) {
   const beams = obj.beams || [96]
   return (
@@ -249,6 +256,7 @@ function RackBar({ obj }) {
       <IconBtn name="Row group" label="Row group" title="Put this row in a Row group (G)" onClick={groupSelectedRows} />
       <IconBtn name="Rotate" label="Rotate" title="Rotate 90°" onClick={() => rotateQuarter(obj)} />
       <Sep />
+      <LockBtn />
       <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={duplicateSelection} />
       <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} />
       <MoreMenu obj={obj} />
@@ -298,6 +306,7 @@ function RowsBar({ ids }) {
       <ElevationChip several />
       <Sep />
       <IconBtn name="Row group" label="Row group" title="Put these rows in a Row group (G)" onClick={groupSelectedRows} />
+      <LockBtn />
       <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} />
     </>
   )
@@ -365,8 +374,8 @@ const toggleBtn = (on) => ({ height: 32, padding: '0 10px', border: 0, borderRad
 function ColumnBar({ one = false }) {
   const show = useClearanceView(s => s.show), mine = useColumnPick(s => s.show)
   // one column picked: Show clearances is that column's only — on when it is picked
-  if (one) return <button type="button" aria-pressed={!!mine} title="This column's clear distances on the plan" onClick={() => setColumnClearances(!mine)} style={toggleBtn(!!mine)}>Show clearances</button>
-  return <button type="button" aria-pressed={!!show} title="The columns' clear distances on the plan" onClick={() => setShowClearances(!show)} style={toggleBtn(!!show)}>Show clearances</button>
+  if (one) return <><button type="button" aria-pressed={!!mine} title="This column's clear distances on the plan" onClick={() => setColumnClearances(!mine)} style={toggleBtn(!!mine)}>Show clearances</button><Sep /><LockBtn /></>
+  return <><button type="button" aria-pressed={!!show} title="The columns' clear distances on the plan" onClick={() => setShowClearances(!show)} style={toggleBtn(!!show)}>Show clearances</button><Sep /><LockBtn /></>
 }
 
 function AisleBar({ obj }) {
@@ -396,6 +405,8 @@ function BuildingBar({ obj }) {
       <button type="button" title="Wall clearance — Project settings" onClick={() => openSetup('settings')} style={toggleBtn(false)}>
         Wall clearance{clear != null && <span style={{ fontFamily: MONO, color: B.muted, marginLeft: 6 }}>{clear}″</span>}
       </button>
+      <Sep />
+      <LockBtn />
     </>
   )
 }

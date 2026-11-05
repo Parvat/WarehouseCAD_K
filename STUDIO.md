@@ -120,12 +120,12 @@ Warning action button: background `#F2C77A`, text `#3A2E17`.
 
 | Selected | Bar |
 |---|---|
-| One rack row | Elevation ▾ · add/remove bay · Split · Row group · Rotate · Duplicate · Delete · ⋯ |
-| Several rows | Apply elevation ▾ · Even spacing · Align · Row group · Delete |
+| One rack row | Elevation ▾ · add/remove bay · Split · Row group · Rotate · Lock · Duplicate · Delete · ⋯ |
+| Several rows | Apply elevation ▾ · Even spacing · Align · Row group · Lock · Delete |
 | Zone | Type ▾ · W × L fields · Lock · Duplicate · Delete |
-| Column | Absorbed / Removed · Show clearances (one column picked: that column's only) |
+| Column | Absorbed / Removed · Show clearances (one column picked: that column's only) · Lock |
 | Aisle label | Width field · Lock |
-| Wall / building | Thickness 3″ 6″ 9″ 12″ · Add door · Wall clearance |
+| Wall / building | Thickness 3″ 6″ 9″ 12″ · Add door · Wall clearance · Lock |
 | Right-click empty floor | Paste · Fill racking here · Add zone ▾ |
 
 As built (step 3) — every action is the one the card, a key or the library already makes:
@@ -211,6 +211,7 @@ Frozen for the Studio build. It replaces any earlier selection rule that disagre
 - **Pairs:** a back-to-back pair is one object; deleting a bay on one side leaves that position empty on that side; it splits only when both facing bays at a position are gone.
 - **Modes (Row group, Split, Fill, Door):** mode bar at top; Done, Esc, X or another tool ends the mode, clears the purple outline, selects nothing. Fill ends after one fill: on mouse up the racks are placed and the tool returns to Pan, no Esc needed; Esc before mouse up cancels the box (nothing placed); to fill again, pick the tool again (F). Row group: a plain click on a row toggles it in or out of the group; a drag on empty floor adds every row inside the box. No edit row: every group row shows its resize handles, and dragging any handle edits that row and applies to the others (Ask or Auto apply as set). Press and drag on a group row's body past 6 px moves the whole group, one undo; under 6 px it is a click toggle. Cursor: move over a group row body, resize over handles, crosshair over empty floor. A click on empty floor does nothing; the group stays.
 - **Global:** Ctrl+A selects everything, the building included (as before 5bdecf8); only layers the user locked by hand are skipped (a lock Generate set is not). Delete then clears all: one undo step, notice with Undo. Right-click an object selects it and opens its menu; right-click floor opens the floor menu. One row selected shows its dimensions; several show no per-row tags, only the count in the bar. Every action is one undo step. Double-click does nothing for now.
+- **Locks:** no automatic locks. Generate locks nothing; a lock exists only when the user sets it (a layer's padlock, or Lock on an object). On load, locks an older Generate set are cleared; hand locks stay. Lock / Unlock is one click in the selection bar (rack, rows, zone, column, aisle, building, mixed) and the right-click menu, and Ctrl+L toggles it — never only under Properties > More. A locked column is still clicked (picked), so Ctrl+L again unlocks it.
 
 Clarified by the user (2026-11-04), as 7a asks: with Pan, a press and drag that starts **on an object** moves it (the object rules apply in both tools; Pan pans only from blank floor or canvas). A building drag carries its columns even while the Columns layer is locked (a drag on a locked column alone still moves nothing).
 

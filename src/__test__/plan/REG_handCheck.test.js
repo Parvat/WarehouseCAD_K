@@ -1913,6 +1913,68 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.S('return S.getState().objects.length'), await all()]).toEqual([n0, s0])
     }, T)
 
+    /* ── Fix 6: no automatic locks — a lock exists only when the user sets it ── */
+    const gridOf = () => L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return g ? { id: g.id, x: Math.round(g.x), y: Math.round(g.y), locked: !!g.locked } : null')
+    it('REG-gen-no-locks (click): a fresh Generate locks nothing — every layer and object open — and a column drags straight away (a real press and drag on it moves its grid)', async () => {
+      await open()
+      const brief = { ...R.R1, orientation: name.endsWith('vertical') ? 'vertical' : 'horizontal', rackType: 'rack_double_row', dockDoors: 0 }
+      const locks = await L.S(`S.setState({ objects: [], groups: [], selectedIds: [], activeBaySelection: [] })
+        return import('/src/generate/traceGenerate.js').then(G => { G.generateAndPlace(arg); const st = S.getState(); return { layers: st.layers.filter(l => l.locked).map(l => l.id), objects: st.objects.filter(o => o.locked).length, racks: st.objects.filter(o => /^rack_/.test(o.type)).length } })`, brief)
+      expect([locks.layers, locks.objects, locks.racks > 0]).toEqual([[], 0, true])
+      await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(300)
+      await zoomOutTill(7)
+      const c = await L.S(colAt), g0 = await gridOf(), gs = await gs7()
+      expect([!!c, !!g0]).toEqual([true, true])
+      await L.drag(c, { x: c.x + 3 * gs, y: c.y + 3 * gs }); await L.page.waitForTimeout(250)
+      const g1 = await gridOf()
+      expect([g1.x - g0.x, g1.y - g0.y].map(d => Math.abs(d) > gs)).toEqual([true, true])
+    }, T)
+
+    it('REG-lock-key (click): Ctrl+L on a selected column locks it — a drag then moves nothing; Ctrl+L again unlocks it and it drags; Lock in the bar is one click and shows the state', async () => {
+      await open()
+      await zoomOutTill(7)
+      const c = await L.S(colAt), gs = await gs7()
+      expect(c).toBeTruthy()
+      await L.click(c)
+      expect(await L.selected()).toEqual(['column_grid'])
+      const lockBtn = L.page.locator('[data-selection-bar]').getByRole('button', { name: /^(Lock|Unlock)$/ })
+      expect([await lockBtn.count(), await lockBtn.getAttribute('aria-label')]).toEqual([1, 'Lock'])
+      await L.page.keyboard.press('Control+l'); await L.page.waitForTimeout(150)
+      const g0 = await gridOf()
+      expect([g0.locked, await lockBtn.getAttribute('aria-label')]).toEqual([true, 'Unlock'])
+      // locked: a drag from it moves nothing
+      await L.drag(c, { x: c.x + 3 * gs, y: c.y + 3 * gs }); await L.page.waitForTimeout(250)
+      expect(await gridOf()).toEqual(g0)
+      // picked again (a locked column is still clicked), Ctrl+L again: unlocked — and it drags
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.click(c)
+      expect(await L.selected()).toEqual(['column_grid'])
+      await L.page.keyboard.press('Control+l'); await L.page.waitForTimeout(150)
+      expect((await gridOf()).locked).toBe(false)
+      await L.drag(c, { x: c.x + 3 * gs, y: c.y + 3 * gs }); await L.page.waitForTimeout(250)
+      const g2 = await gridOf()
+      expect([Math.abs(g2.x - g0.x) > gs, Math.abs(g2.y - g0.y) > gs]).toEqual([true, true])
+      // the bar's Lock, one click: locks it, and again unlocks it
+      await lockBtn.click(); await L.page.waitForTimeout(150)
+      expect((await gridOf()).locked).toBe(true)
+      await lockBtn.click(); await L.page.waitForTimeout(150)
+      expect((await gridOf()).locked).toBe(false)
+    }, T)
+
+    it('REG-load-locks (click): an older layout opens with the locks Generate set cleared (its file has them); a padlock set by hand stays after a reload', async () => {
+      const B = await import('./handCheck/browser.js'), file = JSON.parse(B.fixture(name))
+      expect((file.layers || []).filter(l => l.locked).map(l => l.id)).toContain('columns')    // saved with Generate's locks
+      await open()
+      expect(await L.S('return S.getState().layers.filter(l => l.locked).map(l => l.id)')).toEqual([])
+      // a padlock set by hand: the card's More → Layers
+      await L.page.getByRole('group', { name: 'More properties' }).getByRole('button').first().click()
+      await L.page.getByRole('button', { name: 'Lock Columns layer' }).click()
+      const saved = await L.S('return SL.serializeScene(S.getState())')
+      await L.page.close()
+      L = await B.openLayout(app, saved)
+      expect(await L.S('return S.getState().layers.filter(l => l.locked).map(l => l.id)')).toEqual(['columns'])
+    }, T)
+
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {
       await open()
       const z = await addZone7(), gs = await gs7()
