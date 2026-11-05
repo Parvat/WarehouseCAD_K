@@ -1871,6 +1871,27 @@ describe('REG — the hand check by real clicks', () => {
       void gs
     }, T)
 
+    it('REG-fill-once (click): Fill racking ends after one fill — a real fill drag places the racks, then the active tool is Pan and the mode bar is gone; Esc before the release still cancels (nothing placed, Fill stays on)', async () => {
+      await open()
+      const fp = await fpOf()
+      const racks = () => L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).length')
+      // room for a fill: a box of rows on the floor, deleted
+      const s1 = await L.floorPoint({ x: fp.x + fp.width * 0.55, y: fp.y + fp.height * 0.55 })
+      await L.drag(s1, { x: fp.x + fp.width * 0.92, y: fp.y + fp.height * 0.92 }); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      const bar = L.page.locator('[data-mode-bar]')
+      // Esc before the release: the box goes, nothing placed, the tool stays
+      await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      expect([await L.S('return S.getState().activeTool'), await bar.count()]).toEqual(['fill_racking', 1])
+      const k0 = await racks(), f0 = await L.floorPoint({ x: fp.x + fp.width * 0.6, y: fp.y + fp.height * 0.6 })
+      const a = await L.toScreen(f0), b = await L.toScreen({ x: fp.x + fp.width * 0.88, y: fp.y + fp.height * 0.88 })
+      await L.page.mouse.move(a.x, a.y); await L.page.mouse.down(); await L.page.mouse.move(b.x, b.y, { steps: 10 })
+      await L.page.keyboard.press('Escape'); await L.page.mouse.up(); await L.page.waitForTimeout(300)
+      expect([await racks(), await L.S('return S.getState().activeTool')]).toEqual([k0, 'fill_racking'])
+      // one fill drag: racks placed, back to Pan, no mode bar — no Esc
+      await L.page.mouse.move(a.x, a.y); await L.page.mouse.down(); await L.page.mouse.move(b.x, b.y, { steps: 10 }); await L.page.mouse.up(); await L.page.waitForTimeout(400)
+      expect([(await racks()) > k0, await L.S('return S.getState().activeTool'), await bar.count()]).toEqual([true, 'pan', 0])
+    }, T)
+
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {
       await open()
       const z = await addZone7(), gs = await gs7()
@@ -1891,7 +1912,7 @@ describe('REG — the hand check by real clicks', () => {
     }, T)
 
     /* ── racking areas: invisible by default ── */
-    it('REG-area-visible (click): a racking area is drawn only while Fill racking is on, or while it is hovered or selected; Esc after a fill leaves nothing drawn', async () => {
+    it('REG-area-visible (click): a racking area is drawn only while Fill racking is on, or while it is hovered or selected; a fill ends the tool (back to Pan) and leaves nothing drawn; F again draws it, Esc leaves nothing drawn', async () => {
       await open()
       const fp = await fpOf()
       // room for a fill: a box of rows on the floor, deleted
@@ -1904,6 +1925,9 @@ describe('REG — the hand check by real clicks', () => {
       const area = await L.S('const a = S.getState().objects.filter(o => o.type === "racking_area"); return a[a.length - 1] || null')
       expect(area).toBeTruthy()
       const drawn = () => L.page.evaluate((id) => window.Konva.stages[0].find(n => (n.name() || '').includes(id)).filter(n => n.getClassName() === 'Group' && n.findOne('Rect')).length > 0, area.id)
+      await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
+      expect([await L.S('return S.getState().activeTool'), await drawn()]).toEqual(['pan', false])   // one fill: back to Pan (§7a Modes)
+      await L.page.keyboard.press('f'); await L.page.waitForTimeout(200)
       expect([await L.S('return S.getState().activeTool'), await drawn()]).toEqual(['fill_racking', true])
       await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
       expect([await L.S('return S.getState().activeTool'), await drawn()]).toEqual(['pan', false])   // Esc: back to Pan

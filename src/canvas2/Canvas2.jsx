@@ -28,7 +28,8 @@ import { SelectionBar, FloorMenu, openFloorMenu } from '../studio/SelectionBar'
 import { ZoneEditPreview, SelectedZoneSizes } from './ZoneEdit'
 import { ZoneCheckPreview } from './ZoneCheck'
 import { hasResizeHandles } from './handleGeometry'
-import { FILL_TOOL, startFill, moveFill, commitFill } from '../utils/fillTool'
+import { FILL_TOOL, startFill, moveFill, commitFill, useFillTool } from '../utils/fillTool'
+import { HOME_TOOL } from '../utils/homeTool'
 import { useMeasureMode, endTool } from '../utils/toolSwitch'
 import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupPress, useRowGroup, groupRowsNow } from '../utils/rowGroupTool'
 import { hitTest } from './hitTest'
@@ -329,7 +330,7 @@ export function Canvas2() {
 
   /* "Fill racking" (utils/fillTool.js) — another modal tool: a press starts a
      box, the drag grows it (the plan and its estimate follow), the release
-     fills it as one undo step. Moves and the release are taken on window, so
+     fills it as one undo step and the tool ends (back to Pan). Moves and the release are taken on window, so
      the box survives the pointer leaving the canvas. */
   const activeTool = useCanvasStore(s => s.activeTool)
   const filling = !measuring && activeTool === FILL_TOOL
@@ -343,7 +344,13 @@ export function Canvas2() {
       const st = useCanvasStore.getState()
       moveFill(screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }), st.objects, st.gridSize, st.elevations)
     }
-    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); commitFill(useCanvasStore) }
+    // one fill, then the tool ends: back to Pan (STUDIO.md §7a Modes) — unless Esc dropped the box before the release
+    const up = () => {
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+      const live = !!useFillTool.getState().drag
+      commitFill(useCanvasStore)
+      if (live) useCanvasStore.getState().setActiveTool(HOME_TOOL)
+    }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
   }
