@@ -2,7 +2,9 @@
 // (STUDIO.md §7), in the resize's own undo step:
 //   - shrunk: every bay that no longer fits inside the new walls with the wall clearance is removed — whole bays, from
 //     the row ends; a row with no bay left is removed. Zones and columns left outside are not touched: Check layout
-//     flags them (utils/layoutCheck.js). Notice "N bays removed" with Undo.
+//     flags them (utils/layoutCheck.js). Notice "N bays removed" with Undo. Its racking areas shrink with it: each
+//     side the building came in on clips the area to the new inner wall minus the wall clearance; an area left with
+//     no space is removed.
 //   - enlarged: nothing is added and no notice is shown.
 
 import { nanoid } from 'nanoid'
@@ -46,10 +48,12 @@ export function wallClearanceIn(elevations) {
   const v = pr?.rules?.wallClearIn ?? rackingSettings().wallClearIn
   return Number.isFinite(v) ? v : 0
 }
+const bbox = (p) => { const xs = p.map(q => q.x), ys = p.map(q => q.y); return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) } }
 const fits = (poly, b) => boxOnFloor(poly, { x: b.x + E, y: b.y + E, w: Math.max(0, b.w - 2 * E), h: Math.max(0, b.h - 2 * E) })
 
 /** `objects` after building `before` became `after` (same id): the bays that fit before and no longer fit are taken
- *  off the row ends → { objects, removed (bays) }. Pure. */
+ *  off the row ends, and its racking areas clipped on each side it came in on → { objects, removed (bays), areas
+ *  (racking areas clipped or removed) }. Pure. */
 export function planBuildingResize(objects, before, after, { gridSize = 40, clearIn = 0, newId = nanoid } = {}) {
   const was = usableFloor(before, gridSize, clearIn), now = usableFloor(after, gridSize, clearIn)
   let removed = 0
@@ -70,7 +74,21 @@ export function planBuildingResize(objects, before, after, { gridSize = 40, clea
     const state = o.beams.map((_, i) => (i >= lo && i <= hi ? 'D' : '-'))
     out.push(...piecesFromStates(o, state, { gridSize, newId }))
   }
-  return { objects: removed ? rebuildAisles(out, newId).objects : objects, removed }
+  // its racking areas: each side the usable floor came in on clips the area's box to it; no space left, removed
+  const wb = bbox(was), nb = bbox(now)
+  const cut = { x0: nb.x0 > wb.x0 + E ? nb.x0 : -Infinity, y0: nb.y0 > wb.y0 + E ? nb.y0 : -Infinity,
+    x1: nb.x1 < wb.x1 - E ? nb.x1 : Infinity, y1: nb.y1 < wb.y1 - E ? nb.y1 : Infinity }
+  let areas = 0
+  const clipped = []
+  for (const o of out) {
+    if (!o || o.type !== 'racking_area' || o.parentId !== after.id) { clipped.push(o); continue }
+    const x0 = Math.max(o.x, cut.x0), y0 = Math.max(o.y, cut.y0), x1 = Math.min(o.x + o.width, cut.x1), y1 = Math.min(o.y + o.height, cut.y1)
+    if (x0 === o.x && y0 === o.y && x1 === o.x + o.width && y1 === o.y + o.height) { clipped.push(o); continue }
+    areas++
+    if (x1 - x0 > E && y1 - y0 > E) clipped.push({ ...o, x: x0, y: y0, width: x1 - x0, height: y1 - y0 })
+  }
+  const res = areas ? clipped : out
+  return { objects: removed ? rebuildAisles(res, newId).objects : areas ? res : objects, removed, areas }
 }
 
 /** After a handle resize of building `before` → its live object, committed as the store's top history entry: the
@@ -79,11 +97,11 @@ export function afterBuildingResize(store, before) {
   const st = store.getState(), after = st.objects.find(o => o.id === before.id)
   if (!after) return null
   const plan = planBuildingResize(st.objects, before, after, { gridSize: st.gridSize || 40, clearIn: wallClearanceIn(st.elevations) })
-  if (plan.removed) {
+  if (plan.removed || plan.areas) {
     const history = st.history.slice(0, st.historyIndex + 1)
     history[history.length - 1] = snapshotOf(st, plan.objects)
     store.setState({ objects: plan.objects, history, historyIndex: history.length - 1, selectedIds: st.selectedIds.filter(id => plan.objects.some(o => o.id === id)) })
-    notify(`${plan.removed} bay${plan.removed === 1 ? '' : 's'} removed`, 'they no longer fit inside the walls', { undo: true })
+    if (plan.removed) notify(`${plan.removed} bay${plan.removed === 1 ? '' : 's'} removed`, 'they no longer fit inside the walls', { undo: true })
   }
   return plan
 }

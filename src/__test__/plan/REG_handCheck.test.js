@@ -1772,6 +1772,50 @@ describe('REG — the hand check by real clicks', () => {
       expect([await size(), await racks()]).toEqual([s0, k0])
     }, T)
 
+    it('REG-area-shrink (click): shrinking the building from a side handle (a real drag) shrinks its racking area with it — clipped to the new inner wall minus the wall clearance, in the same undo step; one undo restores the walls, the bays and the area', async () => {
+      await open()
+      const fp = await fpOf(), gs = await gs7()
+      // a racking area in the far corner: the rows there deleted, then a Fill racking box out to the walls
+      const s1 = await L.floorPoint({ x: fp.x + fp.width * 0.55, y: fp.y + fp.height * 0.55 })
+      await L.drag(s1, { x: fp.x + fp.width * 0.92, y: fp.y + fp.height * 0.92 }); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      await L.page.keyboard.press('f'); await L.page.waitForTimeout(100)
+      const f0 = await L.floorPoint({ x: fp.x + fp.width * 0.6, y: fp.y + fp.height * 0.6 })
+      await L.drag(f0, { x: fp.x + fp.width * 0.99, y: fp.y + fp.height * 0.99 }); await L.page.waitForTimeout(300)
+      const area = await L.S('const a = S.getState().objects.filter(o => o.type === "racking_area"); return a[a.length - 1] || null')
+      expect(area).toBeTruthy()
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('v'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
+      const state = () => L.S('const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), a = st.objects.find(o => o.id === arg); return { walls: [Math.round(f.width), Math.round(f.height)], bays: st.objects.filter(o => o.type === "rack_row" || o.type === "rack_double_row").reduce((t, o) => t + o.beams.length, 0), area: a ? [a.x, a.y, a.width, a.height].map(Math.round) : null }', area.id)
+      // the building picked; a right or bottom side handle (the area's side), dragged in a quarter of the area across it
+      await L.click({ x: fp.x + fp.width * 0.3, y: fp.y })
+      const s0 = await state(), h0 = await hist7()
+      const inFt = -Math.round(Math.min(area.width, area.height) / gs / 4)
+      const hs = await L.S(`const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), v = f.fpVerts, gs = st.gridSize || 40
+        const cx = f.x + f.width / 2, cy = f.y + f.height / 2, out = []
+        for (let i = 0; i < v.length; i++) { const a = v[i], b = v[(i + 1) % v.length], m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+          const horiz = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y), n = horiz ? { x: 0, y: Math.sign(m.y - cy) || 1 } : { x: Math.sign(m.x - cx) || 1, y: 0 }
+          if (n.x > 0 || n.y > 0) out.push({ at: m, n, to: { x: m.x + n.x * arg * gs, y: m.y + n.y * arg * gs } }) }
+        return out`, inFt)
+      let h = null
+      for (const c of hs) {
+        let ok = true
+        for (const w of [c.at, c.to]) { const q = await L.toScreen(w); if (!(await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', q))) ok = false }
+        if (ok) { h = c; break }
+      }
+      expect(h).toBeTruthy()
+      await L.drag(h.at, h.to); await L.page.waitForTimeout(300)
+      const s1b = await state()
+      // the area shrank on that side, and stands inside the new inner walls minus the wall clearance — one undo step
+      const inside = await L.S(`return import('/src/utils/buildingResize.js').then(BR => { const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), a = st.objects.find(o => o.id === arg), gs = st.gridSize || 40
+        const u = BR.usableFloor(f, gs, BR.wallClearanceIn(st.elevations)), x1 = Math.max(...u.map(p => p.x)), y1 = Math.max(...u.map(p => p.y))
+        return a.x + a.width <= x1 + 0.5 && a.y + a.height <= y1 + 0.5 })`, area.id)
+      const smaller = s1b.area && (h.n.x ? s1b.area[2] < s0.area[2] : s1b.area[3] < s0.area[3])
+      expect([s1b.walls.join() !== s0.walls.join(), !!s1b.area, smaller, inside, (await hist7()) - h0]).toEqual([true, true, true, true, 1])
+      // one undo: walls, bays and area all back
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect(await state()).toEqual(s0)
+      void gs
+    }, T)
+
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {
       await open()
       const z = await addZone7(), gs = await gs7()
