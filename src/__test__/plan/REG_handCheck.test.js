@@ -1020,7 +1020,7 @@ describe('REG — the hand check by real clicks', () => {
     }, T)
 
     /* ── 7: shrinking the building takes the bays that no longer fit ── */
-    it('REG-shrink-bays (click): shrinking the building from a side handle removes the bays that no longer fit with the wall clearance — whole bays, rows fully outside — keeps zones and columns (flagged in Check layout); one undo step, "N bays removed" with Undo. Enlarging adds nothing: "Building larger", Fill new space fills the new floor', async () => {
+    it('REG-shrink-bays (click): shrinking the building from a side handle removes the bays that no longer fit with the wall clearance — whole bays, rows fully outside — keeps zones and columns (flagged in Check layout); one undo step, "N bays removed" with Undo. Enlarging adds nothing and shows no notice', async () => {
       await open()
       const fp = await fpOf()
       const count = () => L.S('const o = S.getState().objects; return { bays: o.filter(x => x.type === "rack_row" || x.type === "rack_double_row").reduce((t, x) => t + x.beams.length, 0), racks: o.filter(x => /^rack_/.test(x.type)).length, zones: o.filter(x => /^zone_/.test(x.type)).length, grids: o.filter(x => x.type === "column_grid").length }')
@@ -1042,16 +1042,13 @@ describe('REG — the hand check by real clicks', () => {
       // one undo: the building and every bay back
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
       expect([await count(), await size()]).toEqual([c0, s0])
-      // enlarged: nothing added; the notice offers Fill new space, which fills it
+      // enlarged: nothing added, no notice (the shrink's notice closed first)
+      if (await notice.count()) { await notice.getByRole('button', { name: /close/i }).first().click(); await L.page.waitForTimeout(150) }
       if (!(await L.selected()).length) await L.click({ x: fp.x + fp.width * 0.3, y: fp.y })
       const g = await sideHandle(20)
       expect(g).toBeTruthy()
       await L.drag(g.at, g.to); await L.page.waitForTimeout(200)
-      expect([(await count()).racks, await notice.textContent()]).toEqual([c0.racks, expect.stringMatching(/^Building larger/)])
-      await notice.getByRole('button', { name: 'Fill new space' }).click(); await L.page.waitForTimeout(400)
-      // the new floor racked: rows run on along their lines, new rows only where none reaches (§7a) — more bays either way
-      expect([(await count()).bays > c0.bays, await L.S('return S.getState().activeTool')]).toEqual([true, 'fill_racking'])
-      await L.page.keyboard.press('Escape')
+      expect([await size() + '' !== s0 + '', await count(), await notice.count()]).toEqual([true, c0, 0])
     }, T)
 
     /* ══ STUDIO.md §7a — the interaction rules, one test per rule (the REG-7a matrix) ══════════════════════════════ */
@@ -1267,7 +1264,7 @@ describe('REG — the hand check by real clicks', () => {
       expect((await snap()).some(o => o.id === f.id)).toBe(true)
     }, T)
 
-    it('REG-7a-handles (click): only the handles resize (8 px hit) — a press 3 px off a side square resizes, one 6 px off along the wall moves; shrink removes the bays that no longer fit (one undo, notice with Undo); enlarge adds nothing (notice with Fill new space)', async () => {
+    it('REG-7a-handles (click): only the handles resize (8 px hit) — a press 3 px off a side square resizes, one 6 px off along the wall moves; shrink removes the bays that no longer fit (one undo, notice with Undo); enlarge adds nothing and shows no notice', async () => {
       await open()
       const f = await fpOf(), gs = await gs7()
       const size = () => L.S('const o = S.getState().objects.find(x => x.id === arg); return [Math.round(o.width), Math.round(o.height)]', f.id)
@@ -1292,11 +1289,12 @@ describe('REG — the hand check by real clicks', () => {
       expect([(await bays()) < b0, (await hist7()) - h0, await notice.getByRole('button', { name: 'Undo' }).count()]).toEqual([true, 1, 1])
       await notice.getByRole('button', { name: 'Undo' }).click(); await L.page.waitForTimeout(250)
       expect(await bays()).toBe(b0)
-      // enlarge
+      // enlarge: nothing added, no notice
+      if (await notice.count()) { await notice.getByRole('button', { name: /close/i }).first().click(); await L.page.waitForTimeout(150) }
       if (!(await L.selected()).length) { const g = await fpOf(); await L.click({ x: g.x + g.width * 0.3, y: g.y + g.height }) }   // where its wall is now
       const en = await sideHandle(15)
       await L.drag(en.at, en.to); await L.page.waitForTimeout(200)
-      expect([await bays(), await notice.textContent(), await notice.getByRole('button', { name: 'Fill new space' }).count()]).toEqual([b0, expect.stringMatching(/^Building larger/), 1])
+      expect([await bays(), await notice.count()]).toEqual([b0, 0])
     }, T)
 
     it('REG-7a-row (click): a click selects the row, a click again without moving its bay; Shift+click adds or removes rows; press and drag moves the row, selected or not, never to bay level; Delete deletes the rows', async () => {
@@ -1756,60 +1754,22 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.page.locator('[data-mode-bar]').count(), await L.S('return S.getState().selectedIds.length'), await L.groupRows()]).toEqual([0, 0, 0])
     }, T)
 
-    it('REG-7b-fill (click): after a shrink and an enlarge, Fill new space runs the rows on into the new floor along their own row lines (whole bays, the aisles kept), adds new rows only where no row line reaches — one undo step', async () => {
+    it('REG-7b-fill (click): Fill new space is gone — enlarging the building from a side handle (a real drag) adds no racks and no bays, shows no notice and no Fill new space; the resize is its own one undo step', async () => {
       await open()
-      const gs = await gs7()
-      const rows = () => L.S('return S.getState().objects.filter(o => o.type === "rack_row" || o.type === "rack_double_row").map(o => ({ id: o.id, n: o.beams.length, rot: ((o.rotation || 0) % 180 + 180) % 180 }))')
-      const total = (rs) => rs.reduce((t, o) => t + o.n, 0)
-      const r0 = await rows(), runX = r0.filter(o => o.rot === 0).length >= r0.filter(o => o.rot === 90).length
-      /** the side handle whose wall is at a row end (n along the run), on screen both ways */
-      const endHandle = async (outFt) => {
-        const hs = await L.S(String.raw`const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), v = f.fpVerts, gs = st.gridSize || 40
-          const cx = f.x + f.width / 2, cy = f.y + f.height / 2, out = []
-          for (let i = 0; i < v.length; i++) { const a = v[i], b = v[(i + 1) % v.length], m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-            const horiz = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y), n = horiz ? { x: 0, y: Math.sign(m.y - cy) || 1 } : { x: Math.sign(m.x - cx) || 1, y: 0 }
-            out.push({ at: m, n, to: { x: m.x + n.x * arg * gs, y: m.y + n.y * arg * gs } }) }
-          return out`, outFt)
-        for (const h of hs) {
-          if (runX ? !h.n.x : !h.n.y) continue
-          let ok = true
-          for (const w of [h.at, h.to]) { const p = await L.toScreen(w); if (!(await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', p))) ok = false }
-          if (ok) return h
-        }
-        return null
-      }
-      const pick = async () => { const g = await fpOf(); await L.click({ x: g.x + g.width * 0.3, y: g.y + g.height }) }
-      // shrink from a row-end wall: whole bays come off the row ends
-      await pick()
-      const sh = await endHandle(-20)
-      expect(sh).toBeTruthy()
-      await L.drag(sh.at, sh.to); await L.page.waitForTimeout(250)
-      const r1 = await rows()
-      expect(total(r1)).toBeLessThan(total(r0))
-      // enlarge it back past where it was: nothing added; the notice offers Fill new space
-      if (!(await L.selected()).length) await pick()
-      const en = await endHandle(30)
-      await L.drag(en.at, en.to); await L.page.waitForTimeout(250)
-      expect(total(await rows())).toBe(total(r1))
-      const notice = L.page.locator('[aria-label="Notice"]'), h0 = await hist7()
-      await notice.getByRole('button', { name: 'Fill new space' }).click(); await L.page.waitForTimeout(400)
-      const r2 = await rows()
-      const grown = r2.filter(o => { const w = r1.find(x => x.id === o.id); return w && o.n > w.n })
-      // the rows ran on along their lines — the same racks, more bays; no new row where a row line reaches
-      expect([grown.length > 0, total(r2) > total(r1), (await hist7()) - h0]).toEqual([true, true, 1])
-      // a new row only where no row line reaches: no new rack stands across the line of a rack that ran on
-      const newOnes = r2.filter(o => !r1.some(x => x.id === o.id))
-      const onALine = await L.S(`const st = S.getState(), byId = (id) => st.objects.find(o => o.id === id)
-        const acr = (o) => { const b = H.worldBoundsOf(o, st.objects); return arg.runX ? [b.y, b.y + b.height] : [b.x, b.x + b.width] }
-        return arg.fresh.filter(id => arg.grown.some(g => { const p = acr(byId(id)), q = acr(byId(g)); return Math.min(p[1], q[1]) - Math.max(p[0], q[0]) > 1 }))`, { fresh: newOnes.map(o => o.id), grown: grown.map(o => o.id), runX })
-      expect(onALine).toEqual([])
-      // the aisles kept: Check layout has no rack overlap and no aisle a truck can't drive
-      const errs = await L.S('const st = S.getState(); return LC.checkLayout(st.objects, { gridSize: st.gridSize || 40 }).errors.filter(e => e.kind === "overlap" || e.kind === "aisle-drive" || e.kind === "outside").map(e => e.text)')
-      expect(errs).toEqual([])
-      // one undo step takes it all back
-      await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
-      expect(total(await rows())).toBe(total(r1))
-      void gs
+      const f = await fpOf()
+      const size = () => L.S('const o = S.getState().objects.find(x => x.id === arg); return [Math.round(o.width), Math.round(o.height)]', f.id)
+      const racks = () => L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => o.id + ":" + (o.beams ? o.beams.length : 0)).sort()')
+      const notice = L.page.locator('[aria-label="Notice"]')
+      await L.click({ x: f.x + f.width * 0.3, y: f.y + f.height })                      // the building, by its wall
+      const s0 = await size(), k0 = await racks(), h0 = await hist7()
+      const en = await sideHandle(15)
+      expect(en).toBeTruthy()
+      await L.drag(en.at, en.to); await L.page.waitForTimeout(400)
+      expect([(await size()).join() !== s0.join(), await racks(), (await hist7()) - h0]).toEqual([true, k0, 1])
+      expect([await notice.count(), await L.page.getByRole('button', { name: 'Fill new space' }).count(), await L.page.getByText('Building larger').count()]).toEqual([0, 0, 0])
+      // one undo puts the walls back, still nothing added
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect([await size(), await racks()]).toEqual([s0, k0])
     }, T)
 
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {

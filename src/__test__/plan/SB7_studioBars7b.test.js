@@ -1,7 +1,6 @@
 // SB7 — the 7a fixes round (STUDIO.md §7a), the pure parts under the REG-7b click tests: the bay set keeps a pair's
 // two facing bays as two items; a mixed selection's bar; a zone's way in (staging: the travel width; an office, washroom
-// or custom area: the Rules' walkway, 44″) — Check layout's one new error; Fill new space running rows on along their
-// row lines, the per-bay marks staying on their bays.
+// or custom area: the Rules' walkway, 44″) — Check layout's one new error.
 import { describe, it, expect, vi } from 'vitest'
 
 globalThis.document = globalThis.document || { getElementById: () => null, querySelector: () => null }
@@ -98,36 +97,5 @@ describe('SB7 — a zone\'s way in', () => {
     const reasons = ZC.zoneProblems([fp, p1, p2, z], { ids: ['z'], gridSize: GS }).map(p => p.text)
     expect(reasons).toContain('Blocks an aisle')
     expect(ZC.zoneProblems([fp, p1, p2], { ids: ['z'], gridSize: GS })).toEqual([])
-  })
-})
-
-describe('SB7 — Fill new space runs the rows on along their row lines', () => {
-  it('SB7-extend: the building grown at a row end — the rack gets whole bays toward the new wall, the gap it kept to the old wall kept; grown at its start, the per-bay marks stay on their bays and the new bays are the default', async () => {
-    const store = await fresh()
-    store.getState().placeFpObject({ type: 'fp_rect', widthFt: 100, heightFt: 60 })
-    const fp = store.getState().objects.find(o => o.type === 'fp_rect')
-    const BR = await import('../../utils/buildingResize'), { innerOutline } = await import('../../utils/floorGeom'), { rackFootprint } = await import('../../generate/rackFootprint')
-    const inner = innerOutline(fp, GS), ix0 = Math.min(...inner.map(p => p.x)), ix1 = Math.max(...inner.map(p => p.x)), iy = Math.min(...inner.map(p => p.y))
-    const n = 6, bayW = (96 + 3) / 12 * GS, w = (3 + n * 99) / 12 * GS
-    const r = { id: 'r', type: 'rack_double_row', x: ix0 + 10 * GS, y: iy + 20 * GS, width: w, height: 93 / 12 * GS, beams: Array(n).fill(96), uprightWidth: 3, flueSpaceIn: 9, rotation: 0, levels: 4, parentId: fp.id,
-      elevBays: [[null, 'T', null, null, null, null], Array(n).fill(null)], bayEmpty: [[false, false, true, false, false, false], Array(n).fill(false)] }
-    const gapR = ix1 - (r.x + r.width)
-    const grow = (dx0, dx1) => ({ ...fp, x: fp.x + dx0, width: fp.width - dx0 + dx1, fpVerts: fp.fpVerts.map(v => ({ x: v.x < fp.x + fp.width / 2 ? v.x + dx0 : v.x + dx1, y: v.y })) })
-    // grown 30′ at the right (the rack's end)
-    const right = grow(0, 30 * GS), planR = BR.planBuildingResize([fp, r], fp, right, { gridSize: GS })
-    const er = BR.extendRowsInto([right, r], fp, right, planR.strips, { gridSize: GS })
-    const r2 = er.objects.find(o => o.id === 'r')
-    expect([r2.beams.length > n, r2.x, Math.round(ix1 + 30 * GS - (r2.x + r2.width)) >= Math.round(gapR) - 1, Math.round(ix1 + 30 * GS - (r2.x + r2.width)) < Math.round(gapR) + bayW]).toEqual([true, r.x, true, true])
-    // grown 20′ at the left (its start): the marks stay on the same physical bays, the new bays are the default
-    const left = grow(-20 * GS, 0), planL = BR.planBuildingResize([fp, r], fp, left, { gridSize: GS })
-    const el = BR.extendRowsInto([left, r], fp, left, planL.strips, { gridSize: GS })
-    const r3 = el.objects.find(o => o.id === 'r'), k = r3.beams.length - n
-    expect(k).toBeGreaterThan(0)
-    expect([r3.elevBays[0].indexOf('T') - k, r3.bayEmpty[0].indexOf(true) - k, r3.elevBays[0].slice(0, k).every(x => x == null), r3.bayEmpty[0].slice(0, k).every(x => !x)]).toEqual([1, 2, true, true])
-    expect(Math.round(rackFootprint(r3).x + rackFootprint(r3).w)).toBe(Math.round(r.x + r.width))   // its end held
-    // grown across the rows (no row line reaches the new floor): nothing extended — the fill places new rows there
-    const down = { ...fp, height: fp.height + 30 * GS, fpVerts: fp.fpVerts.map(v => ({ x: v.x, y: v.y > fp.y + fp.height / 2 ? v.y + 30 * GS : v.y })) }
-    const planD = BR.planBuildingResize([fp, r], fp, down, { gridSize: GS })
-    expect(BR.extendRowsInto([down, r], fp, down, planD.strips, { gridSize: GS }).extended).toBe(0)
   })
 })

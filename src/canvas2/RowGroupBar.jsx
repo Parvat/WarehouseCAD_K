@@ -201,8 +201,7 @@ function Notices() {
   if (notice.text) {
     out.push(
       <Timed key="notice" label="Notice" ms={notice.undo ? NOTICE_UNDO_MS : NOTICE_MS} stamp={notice.at} onDone={clearNotice}>
-        <NoticePill label="Notice" onUndo={notice.undo ? undo(clearNotice) : null} onClose={clearNotice}
-          actions={notice.action ? <button type="button" className={btnClass(true)} onClick={() => { const a = notice.action; clearNotice(); a.run() }} style={{ ...barBtn(true), height: 26 }}>{notice.action.label}</button> : null}>{notice.text}{notice.hint && <span style={{ color: B.muted }}> · {notice.hint}</span>}</NoticePill>
+        <NoticePill label="Notice" onUndo={notice.undo ? undo(clearNotice) : null} onClose={clearNotice}>{notice.text}{notice.hint && <span style={{ color: B.muted }}> · {notice.hint}</span>}</NoticePill>
       </Timed>)
   }
   return out.length ? <div style={stack}>{out}</div> : null
