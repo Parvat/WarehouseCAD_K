@@ -1,8 +1,7 @@
 import { notify } from './notice'
 
 // deleteSelection.js — Delete (the key and the card's Delete buttons): the selection, plus each racking area the delete
-// empties. A racking area is a helper (utils/layers.js isHelper) — Ctrl+A never selects it — so Ctrl+A → Delete would
-// otherwise leave its box on an empty floor. An area that still owns a rack after the delete stays: it keeps its
+// empties, so a delete of its racks never leaves its box on an empty floor. An area that still owns a rack after the delete stays: it keeps its
 // record of the racks removed by hand (generate/rackingArea.js).
 
 /** Ids of the racking areas whose racks are all in `ids` (and that own at least one) — gone with them. */
@@ -32,9 +31,12 @@ function deleteBuildingOnly(store) {
     return rest
   })
   const n = s.objects.filter(o => sel.has(o.id) && FP.has(o.type)).length
+  const kept = s.objects.some(o => o.parentId && sel.has(o.parentId) && !sel.has(o.id)), gone = s.objects.length - objects.length
   store.setState({ groups: (s.groups || []).filter(g => g.ids.some(id => !sel.has(id))), selectedIds: [], activeWall: null })
   store.getState().commitElevations(store.getState().elevations, objects)      // the one history step
-  notify(n === 1 ? 'Building deleted' : `${n} buildings deleted`, 'racks, zones and columns kept', { undo: true })
+  // everything in it deleted too (Ctrl+A, then Delete): nothing was kept, so the notice says what went
+  if (!kept) notify(`${gone} objects deleted`, null, { undo: true })
+  else notify(n === 1 ? 'Building deleted' : `${n} buildings deleted`, 'racks, zones and columns kept', { undo: true })
 }
 
 /** The store's deleteSelected, with the emptied areas added to the selection first — one undo step. A building in the

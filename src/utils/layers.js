@@ -82,7 +82,7 @@ export function isPickable(layers, obj) {
 /** A predicate over objects for a fixed layer list — one Map for the lot. */
 export const pickableIn = (layers) => { const m = asMap(layers); return (o) => isPickable(m, o) }
 
-/** Not a layout object of its own, so never in Ctrl+A: the building outline (fp_*), an aisle (the gap between two
+/** Not a layout object of its own (Ctrl+A takes them all the same — selectAllIds): the building outline (fp_*), an aisle (the gap between two
  *  rows, rebuilt from them — utils/aisleKeeper.js drops it with its rows), a racking area (the Fill / Regenerate box
  *  that owns its racks; picked on its own edge to resize or rebuild it) and the layout's elevation types (data). */
 export const isHelper = (o) => {
@@ -90,24 +90,29 @@ export const isHelper = (o) => {
   return t.startsWith('fp_') || t === 'aisle' || t === 'racking_area' || t === 'elevation_types'
 }
 
-/** What Ctrl+A selects: every real layout object that can be picked — racks, zones, walls, doors, columns,
- *  equipment, text, dimensions, shapes — never a helper (isHelper), nothing hidden or locked. */
+/** A layer the user locked with its padlock (setLayer marks it lockedByHand) — not one Generate locked. */
+const handLocked = (l) => !!(l && l.locked && l.lockedByHand)
+/** Can Ctrl+A take `o`? Everything drawn — the building, aisles and racking areas included — except what is on a layer
+ *  the user locked by hand, hidden, or locked one by one. The layout's elevation types are data, never selected. */
+const takenBySelectAll = (m, o) => !!o && o.type !== 'elevation_types' && !o.locked && isShown(m, o) && !handLocked(m.get(layerOf(o, m)))
+
+/** What Ctrl+A selects: everything (as before 5bdecf8), the building included — only layers the user locked by hand
+ *  are skipped (a lock Generate set is not), with hidden layers and objects locked one by one. */
 export function selectAllIds(objects, layers) {
-  const ok = pickableIn(layers)
-  return (objects || []).filter(o => o && !isHelper(o) && ok(o)).map(o => o.id)
+  const m = asMap(layers)
+  return (objects || []).filter(o => takenBySelectAll(m, o)).map(o => o.id)
 }
 
-/** What Ctrl+A leaves out that the user can SEE — objects on a locked layer (Generate locks Columns) and
- *  objects locked one by one — as the status bar says it: "Columns are kept" / "2 locked items are kept"; null when
- *  nothing visible is left out (hidden layers are out of sight, so unsaid). Helpers are never selected anyway, so a
- *  locked building outline is not one of them. */
+/** What Ctrl+A leaves out that the user can SEE — objects on a layer locked by hand and objects locked one by one —
+ *  as the status bar says it: "Columns are kept" / "2 locked items are kept"; null when nothing visible is left out
+ *  (hidden layers are out of sight, so unsaid). */
 export function keptBySelectAll(objects, layers) {
   const m = asMap(layers), locked = new Set()
   let items = 0
   for (const o of objects || []) {
-    if (isHelper(o) || isPickable(m, o) || !isShown(m, o)) continue
+    if (!o || o.type === 'elevation_types' || takenBySelectAll(m, o) || !isShown(m, o)) continue
     const l = m.get(layerOf(o, m))
-    if (l?.locked) locked.add(l.id)
+    if (handLocked(l)) locked.add(l.id)
     else if (o.locked) items++
   }
   // the layers in panel order, by name ("Building and columns"); then the one-by-one locked items

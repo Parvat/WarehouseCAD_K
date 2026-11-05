@@ -8,7 +8,9 @@
 //   - a light blue box round the building: the building outline (fp_rect) and the Regenerate racking area, whose
 //     dashed edge ran along the inner wall and hid under it.
 //   - a blue box round a middle block of rows: the column grid's frame (a real object: its columns are drawn).
-// Now: Ctrl+A takes no helper (utils/layers.js isHelper — building outline, aisle, racking area, elevation types);
+// Then: Ctrl+A took no helper (utils/layers.js isHelper — building outline, aisle, racking area, elevation types).
+// Fix 5 put it back as before 5bdecf8: Ctrl+A takes everything, the building included — only layers locked by hand
+// are skipped — so Ctrl+A then Delete clears the canvas;
 // a racking area is drawn faintly as the Fill box is in the mockup and still picked on its edge; the group outline
 // carries a member's world box into the group's frame; a delete takes the racking area it empties.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -58,12 +60,14 @@ describe.each(['horizontal', 'vertical'])('HL — %s', (orientation) => {
     m.useCanvasStore.setState({ objects: [...st().objects, ...extra], layers: allOpen(st().layers) })
     const { objects, layers } = st()
     expect(types(objects)).toEqual(expect.arrayContaining(['aisle', 'column_grid', 'fp_rect', 'racking_area']))
-    const ids = new Set(m.L.selectAllIds(objects, layers)), picked = objects.filter(o => ids.has(o.id))
-    expect(picked.filter(m.L.isHelper).map(o => o.type)).toEqual([])
-    expect(types(picked)).toEqual(['annot_dimension', 'column_grid', 'mhe_forklift', 'rack_double_row', 'rack_row', 'struct_column', 'struct_loading_dock', 'struct_partition', 'text', 'zone_office'].filter(t => objects.some(o => o.type === t)))
-    expect(objects.filter(o => !m.L.isHelper(o) && !ids.has(o.id))).toEqual([])            // nothing real left out
-    // locked layers still keep theirs (Generate locks Columns): and the key uses this one function
-    expect(m.L.selectAllIds(objects, layers.map(l => l.id === 'columns' ? { ...l, locked: true } : l)).includes(objects.find(o => o.type === 'column_grid').id)).toBe(false)
+    const ids = new Set(m.L.selectAllIds(objects, layers))
+    // everything, the helpers included (Fix 5: as before 5bdecf8) — only the elevation types (data) are never taken
+    expect(objects.filter(o => o.type !== 'elevation_types' && !ids.has(o.id))).toEqual([])
+    expect(types(objects.filter(o => ids.has(o.id) && m.L.isHelper(o)))).toEqual(expect.arrayContaining(['aisle', 'fp_rect', 'racking_area']))
+    // a lock Generate set does not keep a layer's objects out; a padlock set by hand does: and the key uses this one function
+    const grid = objects.find(o => o.type === 'column_grid').id
+    expect(m.L.selectAllIds(objects, layers.map(l => l.id === 'columns' ? { ...l, locked: true } : l)).includes(grid)).toBe(true)
+    expect(m.L.selectAllIds(objects, layers.map(l => l.id === 'columns' ? { ...l, locked: true, lockedByHand: true } : l)).includes(grid)).toBe(false)
     expect(read('hooks/useKeyboardShortcuts.js')).toMatch(/case 'a':[\s\S]{0,400}const ids = selectAllIds\(st\.objects, st\.layers\)/)
   })
 
@@ -81,7 +85,7 @@ describe.each(['horizontal', 'vertical'])('HL — %s', (orientation) => {
     expect([g.maxX - g.minX, g.maxY - g.minY].map(Math.round)).toEqual([racksOnly.maxX - racksOnly.minX, racksOnly.maxY - racksOnly.minY].map(Math.round))
   })
 
-  it('HL-delete: Ctrl+A + Delete after Regenerate clears the racks, their aisles and the racking area they emptied — one undo brings all back; a delete that leaves the area a rack keeps it', () => {
+  it('HL-delete: Ctrl+A + Delete after Regenerate clears everything (Fix 5), the racking area and the building included — one undo brings all back; a delete that leaves the area a rack keeps it', () => {
     m.regenerateRacking({ orientation })
     const before = st().objects.length, area = st().objects.find(o => o.type === 'racking_area')
     expect(area).toBeTruthy()
@@ -89,9 +93,9 @@ describe.each(['horizontal', 'vertical'])('HL — %s', (orientation) => {
     const some = st().objects.filter(o => o.areaId === area.id).slice(0, 2).map(o => o.id)
     expect(m.D.areasEmptiedBy(st().objects, some)).toEqual([])
     st().selectGroup(m.L.selectAllIds(st().objects, st().layers))
-    expect(m.D.areasEmptiedBy(st().objects, st().selectedIds)).toEqual([area.id])
+    expect(st().selectedIds).toContain(area.id)                                            // Ctrl+A takes the area itself
     m.D.deleteSelectionWithAreas(m.useCanvasStore)
-    expect(types(st().objects)).toEqual(['column_grid', 'fp_rect'])
+    expect(types(st().objects)).toEqual([])
     st().undo()
     expect(st().objects.length).toBe(before)
     // every Delete in the app goes through it: the key and the card's buttons

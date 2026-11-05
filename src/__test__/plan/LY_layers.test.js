@@ -228,15 +228,21 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/const ids = selectAllIds\(st\.objects, st\.layers\)/)
   })
 
-  it('LY-select-all-kept: Ctrl+A + Delete on a generated layout keeps exactly the building and its column grid (the building outline is never Ctrl+A\'s; the columns\' layer is locked — intended), and the bar says "Columns are kept"', async () => {
-    // select-all as Ctrl+A does it (real, pickable objects only), then Delete as the key does it
+  it('LY-select-all-kept: Ctrl+A + Delete on a generated layout clears everything, the building and the columns included (Fix 5: a lock Generate set keeps nothing out); only a layer locked by hand is kept, and the bar says "Columns are kept"', async () => {
+    const { objects: all } = st()
+    // a padlock set by hand: the columns are kept, the bar says so
+    m.L.setLayer(m.useCanvasStore, 'columns', { locked: true })
+    expect([m.L.selectAllIds(all, st().layers).includes(all.find(o => o.type === 'column_grid').id), m.L.keptBySelectAll(all, st().layers)]).toEqual([false, 'Columns are kept'])
+    m.useCanvasStore.setState({ layers: st().layers.map(l => (l.id === 'columns' ? { ...l, lockedByHand: false } : l)) })
+    // select-all as Ctrl+A does it, then Delete as the key does it: nothing left
     st().selectGroup(m.L.selectAllIds(st().objects, st().layers))
     const { deleteSelectionWithAreas } = await import('../../utils/deleteSelection')
     deleteSelectionWithAreas(m.useCanvasStore)
-    expect(st().objects.map(o => o.type).sort()).toEqual(['column_grid', 'fp_rect'])      // the aisles went with their rows (aisleKeeper)
-    // the bar's words — the building outline is a helper, never selected, so never "kept"
-    const { objects, layers } = st()
+    expect(st().objects.map(o => o.type).sort()).toEqual([])
+    // the bar's words: only layers locked by hand, and items locked one by one
+    const objects = all, layers = st().layers.map(l => (l.locked ? { ...l, lockedByHand: true } : l))
     expect(m.L.keptBySelectAll(objects, layers)).toBe('Columns are kept')
+    expect(m.L.keptBySelectAll(objects, st().layers)).toBe(null)                                        // Generate's lock: nothing kept
     expect(m.L.keptBySelectAll(objects, withLayer(layers, 'columns', { locked: false }))).toBe(null)
     expect(m.L.keptBySelectAll(objects, withLayer(layers, 'building', { locked: false }))).toBe('Columns are kept')
     expect(m.L.keptBySelectAll(objects, allOpen(layers))).toBe(null)                                      // nothing left out

@@ -663,7 +663,7 @@ describe('REG — the hand check by real clicks', () => {
     }, T)
 
     /* ── one column: a click picks it, the Columns layer locked or not ── */
-    it('REG-column-pick (click): a click on a column on the LOCKED Columns layer picks that one column — outlined alone, its bar\'s Show clearances that column\'s only; it cannot be moved (drag, arrows) or deleted; Esc steps up to the grid; Ctrl+A still skips it', async () => {
+    it('REG-column-pick (click): a click on a column on the LOCKED Columns layer picks that one column — outlined alone, its bar\'s Show clearances that column\'s only; it cannot be moved (drag, arrows) or deleted; Esc steps up to the grid; Ctrl+A takes it under Generate\'s lock (Fix 5) and skips it under a padlock set by hand', async () => {
       await open()
       await zoomOutTill(7)
       // the layout as Generate leaves it: the Columns layer locked
@@ -708,7 +708,10 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.S('return !!S.getState().objects.find(o => o.id === arg)', g0.id)).toBe(true)
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       expect(await L.selected()).toEqual([])
-      // Ctrl+A still skips the locked layer
+      // Ctrl+A (Fix 5): Generate's lock skips nothing — the grid is taken; a padlock set by hand skips it
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(150)
+      expect((await L.selected()).includes('column_grid')).toBe(true)
+      await L.page.keyboard.press('Escape'); await L.S("return import('/src/utils/layers.js').then(LL => { LL.setLayer(S, 'columns', { locked: true }); return true })")
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(150)
       expect((await L.selected()).includes('column_grid')).toBe(false)
     }, T)
@@ -1516,12 +1519,13 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
-    it('REG-7a-global (click): Ctrl+A selects every real object but the building, aisles and locked layers; a right-click selects an object and opens its menu, on the floor the floor menu; one row shows its dimensions, several only the count in the bar; every action is one undo step; a double-click does nothing', async () => {
+    it('REG-7a-global (click): Ctrl+A selects everything, the building and aisles included — only layers locked by hand are skipped (Fix 5); a right-click selects an object and opens its menu, on the floor the floor menu; one row shows its dimensions, several only the count in the bar; every action is one undo step; a double-click does nothing', async () => {
       await open()
       const z = await addZone7()
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(150)
       const all = await kinds7()
-      expect([all.some(t => /^fp_/.test(t)), all.includes('aisle'), all.includes('column_grid'), all.includes('racking_area'), all.some(t => /^rack_/.test(t)), all.some(t => /^zone_/.test(t))]).toEqual([false, false, false, false, true, true])
+      expect([all.some(t => /^fp_/.test(t)), all.includes('aisle'), all.includes('column_grid'), all.some(t => /^rack_/.test(t)), all.some(t => /^zone_/.test(t))]).toEqual([true, true, true, true, true])
+      expect(await L.S('const st = S.getState(); return st.objects.filter(o => !st.selectedIds.includes(o.id)).map(o => o.type)')).toEqual([])
       await L.page.keyboard.press('Escape')
       const ids = await openRacks('rack_double_row', 4), gs = await gs7()
       const r = await obj7(ids[0]), q = await obj7(ids[1])
@@ -1892,6 +1896,23 @@ describe('REG — the hand check by real clicks', () => {
       expect([(await racks()) > k0, await L.S('return S.getState().activeTool'), await bar.count()]).toEqual([true, 'pan', 0])
     }, T)
 
+    it('REG-select-all-delete (click): Ctrl+A selects everything, the building included (a lock Generate set skips nothing); Delete then clears the canvas — one undo step, a notice with Undo; one Ctrl+Z restores everything', async () => {
+      await open()
+      const all = () => L.S('return JSON.stringify(S.getState().objects)')
+      const s0 = await all(), n0 = await L.S('return S.getState().objects.length'), h0 = await hist7()
+      await L.page.mouse.move(5, 890)
+      await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(200)
+      expect(await L.S('const st = S.getState(); return st.objects.filter(o => !st.selectedIds.includes(o.id)).map(o => o.type)')).toEqual([])
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      const notice = L.page.locator('[aria-label="Notice"]')
+      expect([await L.S('return S.getState().objects.length'), (await hist7()) - h0, await notice.getByRole('button', { name: 'Undo' }).count()]).toEqual([0, 1, 1])
+      // nothing of it drawn on the canvas any more
+      const ids = JSON.parse(s0).map(o => o.id)
+      expect(await L.page.evaluate((ids) => window.Konva.stages[0].find(n => ids.some(id => (n.name() || '').includes(id) || n.id() === id)).length, ids)).toBe(0)
+      await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect([await L.S('return S.getState().objects.length'), await all()]).toEqual([n0, s0])
+    }, T)
+
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {
       await open()
       const z = await addZone7(), gs = await gs7()
@@ -1977,7 +1998,8 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.clock.install()
       const notice = L.page.locator('[aria-label="Notice"]')
       const tick = async (ms) => { await L.page.clock.runFor(ms); await L.page.waitForTimeout(50) }
-      // plain info: Ctrl+A's note on what it kept
+      // plain info: Ctrl+A's note on what it kept — a layer locked by hand (Fix 5: Generate's lock keeps nothing)
+      await L.S("return import('/src/utils/layers.js').then(LL => { LL.setLayer(S, 'columns', { locked: true }); return true })")
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(100)
       expect(await notice.count()).toBe(1)
       await tick(4700); expect(await notice.count()).toBe(1)

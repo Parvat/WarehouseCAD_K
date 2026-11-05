@@ -143,13 +143,13 @@ export function shortcutHandler(e) {
         case 'a':
           e.preventDefault()
           {
-            // every real layout object that can be picked: no helper (building outline, aisle, racking area),
-            // nothing on a hidden or locked layer (utils/layers.js selectAllIds)
+            // everything, the building included: only layers the user locked by hand are skipped (with hidden layers and
+            // objects locked one by one — utils/layers.js selectAllIds)
             const st = useCanvasStore.getState()
             const ids = selectAllIds(st.objects, st.layers)
             if (ids.length) st.selectGroup(ids)
             else st.clearSelection()
-            // what it leaves out on purpose (a locked layer — Generate locks Columns), said in the bar so a
+            // what it leaves out on purpose (a layer locked by hand), said in the bar so a
             // Delete that follows doesn't look like it missed them
             const kept = keptBySelectAll(st.objects, st.layers)
             if (kept) notify(kept, 'locked layers — unlock them in Layers to select')
