@@ -49,6 +49,9 @@ export function duplicateSelection() {
  *  comes off that side only (utils/baySides.js), the rows stay; rows selected delete the rows, with each racking
  *  area that empties. One undo step. */
 export function deleteSelection() {
+  // a locked rack's bays are not deleted either (STUDIO.md §7a Locks)
+  { const s0 = store.getState(), ok = pickableIn(s0.layers), owners = [...new Set((s0.activeBaySelection || []).map(e => e.objId))]
+    if (owners.length && !owners.some(id => ok(s0.objects.find(o => o.id === id)))) { notify('Locked', 'unlock it to delete'); return } }
   if (deleteBaySelection(store, nanoid)) return
   const s = store.getState()
   /* a column picked out of its grid (canvas2/columnPick.js): one column is not deleted on its own — Esc, then Delete,
@@ -56,6 +59,8 @@ export function deleteSelection() {
   if (pickedColumn(s)) { notify('A column stays with its grid', 'Esc, then Delete, deletes the column grid'); return }
   const ok = pickableIn(s.layers)
   if (s.selectedIds.length && !s.selectedIds.some(id => ok(s.objects.find(o => o.id === id)))) { notify('Locked', 'unlock it to delete'); return }
+  // a locked object clicked into the selection stays: only the rest is deleted
+  if (s.selectedIds.some(id => !ok(s.objects.find(o => o.id === id)))) s.selectGroup(s.selectedIds.filter(id => ok(s.objects.find(o => o.id === id))))
   if (s.activeBaySelection?.length) { s.deleteSelectedBays(); s.clearSelection(); return }
   if (s.selectedIds.length === 1) {
     const obj = s.objects.find(o => o.id === s.selectedIds[0])
@@ -74,6 +79,15 @@ export function deleteSelection() {
     return
   }
   deleteSelectionWithAreas(store)
+}
+/** Cut (Ctrl+X, the menu's Cut): a cut deletes, so never a locked object (or a locked layer's — a column clicked on
+ *  the locked Columns layer): only the rest of the selection is cut; nothing else, nothing cut. */
+export function cutSelection() {
+  const s = store.getState(), ok = pickableIn(s.layers)
+  const ids = s.selectedIds.filter(id => ok(s.objects.find(o => o.id === id)))
+  if (!ids.length) { if (s.selectedIds.length) notify('Locked', 'unlock it to cut'); return }
+  if (ids.length !== s.selectedIds.length) s.selectGroup(ids)
+  store.getState().cutSelected()
 }
 /** Paste (Ctrl+V): where the pointer is. */
 export const pasteHere = () => pasteAt(store, 'cursor', nanoid)

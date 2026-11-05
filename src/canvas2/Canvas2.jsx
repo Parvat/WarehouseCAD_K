@@ -211,7 +211,9 @@ export function Canvas2() {
      is untouched — a bay marquee landing on just one row still leaves
      `selectedObjects.length === 1`, so it never reaches this gate at
      all. */
-  const handleTarget = selectedObjects.length === 1 && hasResizeHandles(selectedObjects[0].type, PORTED_RACK_TYPES)
+  // a locked object (on its own) is selected but has no handles: it cannot be resized or rotated (STUDIO.md §7a Locks)
+  const unlockedSel = selectedObjects.every(o => !o.locked)
+  const handleTarget = unlockedSel && selectedObjects.length === 1 && hasResizeHandles(selectedObjects[0].type, PORTED_RACK_TYPES)
     ? selectedObjects[0] : null
 
   /* A floor plan gets its OWN, rotate-only handle (FpRotateHandle — no
@@ -221,7 +223,7 @@ export function Canvas2() {
      (group rotate, BUG 19, already covers "2+ objects turn together";
      this is specifically the container-rotation cascade to an fp's OWN
      children by parentId). */
-  const fpRotateTarget = selectedObjects.length === 1 && isFloorPlan(selectedObjects[0])
+  const fpRotateTarget = unlockedSel && selectedObjects.length === 1 && isFloorPlan(selectedObjects[0])
     ? selectedObjects[0] : null
 
   const colors = useMemo(() => {
@@ -496,7 +498,7 @@ export function Canvas2() {
             )}
             {/* what a click would select (STUDIO.md §7a — hoverTarget.js) */}
             <HoverHighlight />
-            {selectedObjects.length >= 2 && !(activeBaySelection && activeBaySelection.length > 0) && (
+            {unlockedSel && selectedObjects.length >= 2 && !(activeBaySelection && activeBaySelection.length > 0) && (
               <GroupRotateOverlay objects={selectedObjects} zoom={zoom} allObjects={objects} />
             )}
             {measuring && (

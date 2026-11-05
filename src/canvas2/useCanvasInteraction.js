@@ -20,7 +20,7 @@ import { usePlacement, movePlacement, commitPlacement } from '../utils/placement
 import { rebuildAisles } from '../utils/aisleRebuild'
 import { nanoid } from 'nanoid'
 import { inlineSnap, planInlineDrop, applyJoin } from './inlineSnap'
-import { pickableIn, snapTargets, isPickable } from '../utils/layers'
+import { pickableIn, selectableIn, snapTargets, isPickable } from '../utils/layers'
 import { pickedOnPlan } from '../studio/viewPrefs'
 import { groupDragFor, skipNextAction, groupRowsNow, toggleRowOf } from '../utils/rowGroupTool'
 import { lockToAxis } from '../utils/rowGroup'
@@ -181,7 +181,7 @@ export function useCanvasInteraction({
       }
       const g = (st.groups || []).find(x => x.ids && x.ids.includes(hitId))
       if (!g && !(level === 'rows' && sec.every(id => prevSelectedIds.includes(id)))) {
-        const okPick = pickableIn(st.layers)
+        const okPick = selectableIn(st.layers)                   // a locked row is still clicked (its bar: Unlock)
         selectRows(useCanvasStore, sec.filter(id => { const o = st.objects.find(x => x.id === id); return o && okPick(o) }))
         return
       }
@@ -191,8 +191,8 @@ export function useCanvasInteraction({
     const next = nextSelection({
       selectedIds: st.selectedIds, groups: st.groups, id: hitId, shiftKey,
     })
-    /* a group's members on a hidden or locked layer stay out (utils/layers.js) */
-    const okPick = pickableIn(st.layers)
+    /* a group's members on a hidden or locked layer stay out (utils/layers.js); one locked on its own is clicked */
+    const okPick = selectableIn(st.layers)
     const ids = next.ids.filter(id => { const o = st.objects.find(x => x.id === id); return o && okPick(o) })
     const { replaced } = next
     if (replaced) {
@@ -601,7 +601,8 @@ export function useCanvasInteraction({
          or near the rack's own body, and must win the press the same way
          CanvasUI's real DOM handles physically sit above the object. */
       if (evt.button === 0 && st.selectedIds.length === 1) {
-        const selected = st.objects.find(o => o.id === st.selectedIds[0])
+        // a locked object has no handles: it cannot be resized or rotated (STUDIO.md §7a Locks)
+        const sel0 = st.objects.find(o => o.id === st.selectedIds[0]), selected = sel0 && isPickable(st.layers, sel0) ? sel0 : null
         if (selected && hasResizeHandles(selected.type, PORTED_RACK_TYPES)) {
           const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
           if (handle) {
@@ -627,7 +628,7 @@ export function useCanvasInteraction({
            the same reason the single-object handle check above is: the
            handle sits above the selection's bounds and must win the press. */
         const selectedObjs = st.selectedIds.map(id => st.objects.find(o => o.id === id)).filter(Boolean)
-        if (selectedObjs.length >= 2 && groupRotateHandleHitTest(selectedObjs, view.current.zoom, world.x, world.y, st.objects)) {
+        if (selectedObjs.length >= 2 && selectedObjs.every(o => isPickable(st.layers, o)) && groupRotateHandleHitTest(selectedObjs, view.current.zoom, world.x, world.y, st.objects)) {
           beginGroupRotateDrag(selectedObjs)
           return
         }
@@ -841,7 +842,7 @@ export function useCanvasInteraction({
 
     let next = 'default'
     if (st.selectedIds.length === 1) {
-      const selected = st.objects.find(o => o.id === st.selectedIds[0])
+      const sel0 = st.objects.find(o => o.id === st.selectedIds[0]), selected = sel0 && isPickable(st.layers, sel0) ? sel0 : null
       if (selected && hasResizeHandles(selected.type, PORTED_RACK_TYPES)) {
         const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
         if (handle) next = cursorForHandle(handle, selected.rotation)

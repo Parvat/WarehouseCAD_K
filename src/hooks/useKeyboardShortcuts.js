@@ -15,7 +15,7 @@ import { deleteBaySelection } from '../utils/baySides'
 import { toggleMeasure } from '../utils/toolSwitch'
 import { isTypingTarget, textOwnsKey } from '../utils/typing'
 import { selectionLevel, stepUp } from '../canvas2/selectionLevel'
-import { deleteSelection } from '../studio/selectionActions'
+import { deleteSelection, cutSelection } from '../studio/selectionActions'
 import { HOME_TOOL, isPlainTool } from '../utils/homeTool'
 
 /** The app's keyboard shortcuts, one keydown handler (exported so a test can press keys at it). */
@@ -130,10 +130,8 @@ export function shortcutHandler(e) {
           break
         case 'x':
           e.preventDefault()
-          // a cut deletes: never a locked layer's objects (a column clicked on the locked Columns layer)
-          { const st = useCanvasStore.getState(), ok = pickableIn(st.layers)
-            if (!st.selectedIds.some(id => ok(st.objects.find(o => o.id === id)))) break }
-          useCanvasStore.getState().cutSelected()
+          // a cut deletes: never a locked object or a locked layer's (studio/selectionActions.js cutSelection)
+          cutSelection()
           break
         case 'v':
           e.preventDefault()

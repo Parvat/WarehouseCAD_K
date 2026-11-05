@@ -143,7 +143,8 @@ describe.each(['horizontal', 'vertical'])('SBR — the selection bar, %s', (orie
     // wired to the same calls as the keys and the card
     const src = read('studio/selectionActions.js')
     expect(src).toMatch(/store\.getState\(\)\.copySelected\(\)\s+pasteAt\(store, 'nudge', nanoid\)/)
-    expect(src).toMatch(/export function deleteSelection\(\) \{\s*if \(deleteBaySelection\(store, nanoid\)\) return/)
+    // a locked rack's bays are refused first (Fix 6), then the bays
+    expect(src).toMatch(/export function deleteSelection\(\) \{[\s\S]{0,400}?notify\('Locked', 'unlock it to delete'\); return \} \}\s*if \(deleteBaySelection\(store, nanoid\)\) return/)
     expect(src).toMatch(/st\.commitObjectUpdate\(obj\.id, addBayUpdate\(obj, beamIn \?\? beams\[beams\.length - 1\] \?\? 96, st\.gridSize \|\| 40\)\)/)
     expect(src).toMatch(/if \(deleteBaySelection\(store, nanoid\)\) return true[\s\S]*store\.getState\(\)\.deleteSingleBay\(obj\.id, obj\.activeBayIdx != null \? obj\.activeBayIdx : beams\.length - 1\)/)
     expect(src).toMatch(/export const groupSelectedRows = \(\) => startGroupFromSelection\(store\)/)

@@ -32,7 +32,7 @@ import { useColumnCheck } from '../generate/useColumnCheck'
 import { ZONE_KINDS } from '../generate/rackingArea'
 import { B, MONO, pill, Sep, IconBtn, Chip, Menu, MenuItem, MenuLine } from './barParts'
 import { Icon, hasIcon } from './Icon'
-import { addBayTo, removeBayFrom, rotateQuarter, duplicateSelection, deleteSelection, pasteHere, groupSelectedRows, pickLibraryItem } from './selectionActions'
+import { addBayTo, removeBayFrom, rotateQuarter, duplicateSelection, deleteSelection, cutSelection, pasteHere, groupSelectedRows, pickLibraryItem } from './selectionActions'
 
 /* ── The selection bar (STUDIO.md §1, §6; design/studio/Studio.dc.html C1 and C6) ──────────────────────────────────
    A dark pill (radius 12) floating just above the selection — never over it: below it when there is no room above
@@ -215,7 +215,7 @@ export function MoreItems({ obj, close }) {
       <MenuItem icon={null} onClick={run(st.bringToFront)}>To front</MenuItem>
       <MenuLine />
       <MenuItem icon={null} keys="Ctrl+C" onClick={run(st.copySelected)}>Copy</MenuItem>
-      <MenuItem icon={null} keys="Ctrl+X" onClick={run(st.cutSelected)}>Cut</MenuItem>
+      <MenuItem icon={null} keys="Ctrl+X" onClick={run(cutSelection)}>Cut</MenuItem>
     </>
   )
 }
@@ -250,8 +250,9 @@ function RackBar({ obj }) {
     <>
       <ElevationChip />
       <Sep />
-      <IconBtn name="Add bay" label="Add bay" title="Add a bay at the far end" onClick={() => addBayTo(obj)} />
-      <IconBtn name="Remove bay" label="Remove bay" title={obj.activeBayIdx != null ? `Remove bay ${obj.activeBayIdx + 1}` : 'Remove the last bay'} disabled={beams.length <= 1} onClick={() => removeBayFrom(obj)} />
+      {/* a locked rack is not resized: no bay added or removed (STUDIO.md §7a Locks) */}
+      <IconBtn name="Add bay" label="Add bay" title="Add a bay at the far end" disabled={!!obj.locked} onClick={() => addBayTo(obj)} />
+      <IconBtn name="Remove bay" label="Remove bay" title={obj.activeBayIdx != null ? `Remove bay ${obj.activeBayIdx + 1}` : 'Remove the last bay'} disabled={beams.length <= 1 || !!obj.locked} onClick={() => removeBayFrom(obj)} />
       <IconBtn name="Split" label="Split" title="Split (S)" onClick={tool(SPLIT_TOOL)} />
       <IconBtn name="Row group" label="Row group" title="Put this row in a Row group (G)" onClick={groupSelectedRows} />
       <IconBtn name="Rotate" label="Rotate" title="Rotate 90°" onClick={() => rotateQuarter(obj)} />
@@ -345,7 +346,7 @@ function SizeField({ obj, k, aria }) {
     st.commitObjectUpdate(obj.id, zoneSized(st.objects, cur, { [k]: ft * gs }, { gridSize: gs }))
   }
   return (
-    <input aria-label={aria} className="st-field" value={text ?? shown} onChange={e => setText(e.target.value)} onFocus={e => { setText(shown); requestAnimationFrame(() => e.target.select()) }}
+    <input aria-label={aria} className="st-field" value={text ?? shown} disabled={!!obj.locked} onChange={e => setText(e.target.value)} onFocus={e => { setText(shown); requestAnimationFrame(() => e.target.select()) }}
       onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setText(null); e.currentTarget.blur() } }}
       style={{ height: 28, width: 46, boxSizing: 'border-box', padding: 0, border: 0, borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, textAlign: 'center', flexShrink: 0 }} />
   )

@@ -1,4 +1,5 @@
 import { notify } from './notice'
+import { pickableIn } from './layers'
 
 // deleteSelection.js — Delete (the key and the card's Delete buttons): the selection, plus each racking area the delete
 // empties, so a delete of its racks never leaves its box on an empty floor. An area that still owns a rack after the delete stays: it keeps its
@@ -42,6 +43,9 @@ function deleteBuildingOnly(store) {
 /** The store's deleteSelected, with the emptied areas added to the selection first — one undo step. A building in the
  *  selection: the building only (deleteBuildingOnly). */
 export function deleteSelectionWithAreas(store) {
+  // a locked object (or a locked layer's) is never deleted: it leaves the selection first; nothing else, nothing goes
+  { const s0 = store.getState(), ok = pickableIn(s0.layers), keep = s0.selectedIds.filter(id => ok(s0.objects.find(o => o.id === id)))
+    if (keep.length !== s0.selectedIds.length) { if (!keep.length) return; s0.selectGroup(keep) } }
   if (store.getState().selectedIds.some(id => FP.has(store.getState().objects.find(o => o.id === id)?.type))) return deleteBuildingOnly(store)
   const s = store.getState(), extra = areasEmptiedBy(s.objects, s.selectedIds)
   if (extra.length) s.selectGroup([...s.selectedIds, ...extra])

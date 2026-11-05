@@ -1975,6 +1975,44 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.S('return S.getState().layers.filter(l => l.locked).map(l => l.id)')).toEqual(['columns'])
     }, T)
 
+    it('REG-lock-click (click): a locked rack is still clicked — lock it, click away, click it again: it selects, its bar shows Unlock, and Unlock works; locked, it cannot be dragged or deleted', async () => {
+      await open()
+      const a = await pairPoints(), id = a.r.id, gs = await gs7()
+      const rack = () => L.S('const o = S.getState().objects.find(x => x.id === arg); return o ? { x: Math.round(o.x), y: Math.round(o.y), locked: !!o.locked } : null', id)
+      const lockBtn = L.page.locator('[data-selection-bar]').getByRole('button', { name: /^(Lock|Unlock)$/ })
+      await L.click(a.far)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([id])
+      await lockBtn.click(); await L.page.waitForTimeout(150)                         // the bar's Lock, one click
+      expect((await rack()).locked).toBe(true)
+      // click away: the empty canvas outside the building
+      const f = await fpOf()
+      let away = null
+      for (const w of [{ x: f.x - 15 * gs, y: f.y - 15 * gs }, { x: f.x + f.width + 15 * gs, y: f.y + f.height + 15 * gs }, { x: f.x - 15 * gs, y: f.y + f.height + 15 * gs }, { x: f.x + f.width + 15 * gs, y: f.y - 15 * gs }]) {
+        const q = await L.toScreen(w)
+        if (await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', q)) { away = w; break }
+      }
+      expect(away).toBeTruthy()
+      await L.click(away)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([])
+      // click it again: selected, its bar shows Unlock
+      await L.click(a.far)
+      expect([await L.S('return S.getState().selectedIds'), await lockBtn.getAttribute('aria-label'), await lockBtn.getAttribute('aria-pressed')]).toEqual([[id], 'Unlock', 'true'])
+      // locked: a drag moves nothing, Delete deletes nothing
+      const r0 = await rack()
+      await L.drag(a.far, { x: a.far.x + 3 * gs, y: a.far.y + 3 * gs }); await L.page.waitForTimeout(200)
+      expect(await rack()).toEqual(r0)
+      await L.page.keyboard.press('Escape'); await L.click(a.far)
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(200)
+      expect(await rack()).toEqual(r0)
+      // Unlock, one click: unlocked, and it drags
+      if ((await L.S('return S.getState().selectedIds')).join() !== id) { await L.page.keyboard.press('Escape'); await L.click(a.far) }
+      await lockBtn.click(); await L.page.waitForTimeout(150)
+      expect([(await rack()).locked, await lockBtn.getAttribute('aria-label')]).toEqual([false, 'Lock'])
+      await L.drag(a.far, { x: a.far.x + 3 * gs, y: a.far.y + 3 * gs }); await L.page.waitForTimeout(200)
+      const r1 = await rack()
+      expect(Math.abs(r1.x - r0.x) + Math.abs(r1.y - r0.y) > gs).toBe(true)
+    }, T)
+
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {
       await open()
       const z = await addZone7(), gs = await gs7()

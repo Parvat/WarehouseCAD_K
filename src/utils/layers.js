@@ -81,6 +81,16 @@ export function isPickable(layers, obj) {
 /** A predicate over objects for a fixed layer list — one Map for the lot. */
 export const pickableIn = (layers) => { const m = asMap(layers); return (o) => isPickable(m, o) }
 
+/** Can `obj` be clicked (selected)? Its layer shown and not locked — an object locked on its own still is: locked
+ *  means it cannot be moved, nudged, resized, deleted or cut (isPickable), not that it cannot be clicked, so its bar
+ *  shows Unlock (STUDIO.md §7a Locks). */
+export function isSelectable(layers, obj) {
+  if (!obj) return false
+  const m = asMap(layers), l = m.get(layerOf(obj, m))
+  return !l || (l.visible !== false && !l.locked)
+}
+export const selectableIn = (layers) => { const m = asMap(layers); return (o) => isSelectable(m, o) }
+
 /** Not a layout object of its own (Ctrl+A takes them all the same — selectAllIds): the building outline (fp_*), an aisle (the gap between two
  *  rows, rebuilt from them — utils/aisleKeeper.js drops it with its rows), a racking area (the Fill / Regenerate box
  *  that owns its racks; picked on its own edge to resize or rebuild it) and the layout's elevation types (data). */

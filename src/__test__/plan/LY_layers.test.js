@@ -233,16 +233,16 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     // a padlock set by hand: the columns are kept, the bar says so
     m.L.setLayer(m.useCanvasStore, 'columns', { locked: true })
     expect([m.L.selectAllIds(all, st().layers).includes(all.find(o => o.type === 'column_grid').id), m.L.keptBySelectAll(all, st().layers)]).toEqual([false, 'Columns are kept'])
-    m.useCanvasStore.setState({ layers: st().layers.map(l => (l.id === 'columns' ? { ...l, lockedByHand: false } : l)) })
+    m.L.setLayer(m.useCanvasStore, 'columns', { locked: false })                   // Fix 6: no lock but a hand lock exists — unlocked, nothing is kept
     // select-all as Ctrl+A does it, then Delete as the key does it: nothing left
     st().selectGroup(m.L.selectAllIds(st().objects, st().layers))
     const { deleteSelectionWithAreas } = await import('../../utils/deleteSelection')
     deleteSelectionWithAreas(m.useCanvasStore)
     expect(st().objects.map(o => o.type).sort()).toEqual([])
     // the bar's words: only layers locked by hand, and items locked one by one
-    const objects = all, layers = st().layers.map(l => (l.locked ? { ...l, lockedByHand: true } : l))
+    const objects = all, layers = withLayer(st().layers, 'columns', { locked: true, lockedByHand: true })
     expect(m.L.keptBySelectAll(objects, layers)).toBe('Columns are kept')
-    expect(m.L.keptBySelectAll(objects, st().layers)).toBe(null)                                        // Generate's lock: nothing kept
+    expect(m.L.keptBySelectAll(objects, withLayer(layers, 'columns', { lockedByHand: false }))).toBe(null)   // a lock not set by hand: nothing kept
     expect(m.L.keptBySelectAll(objects, withLayer(layers, 'columns', { locked: false }))).toBe(null)
     expect(m.L.keptBySelectAll(objects, withLayer(layers, 'building', { locked: false }))).toBe('Columns are kept')
     expect(m.L.keptBySelectAll(objects, allOpen(layers))).toBe(null)                                      // nothing left out

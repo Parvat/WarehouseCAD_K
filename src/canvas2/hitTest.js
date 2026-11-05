@@ -21,7 +21,7 @@ import { fmtLenDown } from '../utils/copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { aisleLabelScale } from '../render/labelSize'
 import { useLabelPrefs } from './labelPrefs'
-import { isPickable, layerShown } from '../utils/layers'
+import { isSelectable, layerShown } from '../utils/layers'
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 const COL_GRID = new Set(['column_grid'])
@@ -41,9 +41,9 @@ const RACK_BAY_TYPES = new Set([
   'rack_pushback', 'rack_pallet_flow', 'rack_drive_through',
 ])
 
-/* Hidden or locked layer, or the object itself locked: never picked
-   (utils/layers.js — the one rule marquee, Ctrl+A and drag also use). */
-const isLayerUsable = (layerMap, obj) => isPickable(layerMap, obj)
+/* Hidden or locked layer: never picked. An object locked on its own is still clicked (selected, its bar shows
+   Unlock) — what it cannot do, move, resize, delete, cut, is refused where those start (utils/layers.js isPickable). */
+const isLayerUsable = (layerMap, obj) => isSelectable(layerMap, obj)
 
 /** An aisle's own rect — the actual gap between its two referenced rows,
  *  clipped to their overlapping span — ported verbatim from ShapeGeometry.jsx's
