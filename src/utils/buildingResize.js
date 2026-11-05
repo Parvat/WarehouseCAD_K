@@ -2,7 +2,9 @@
 // (STUDIO.md §7), in the resize's own undo step:
 //   - shrunk: every bay that no longer fits inside the new walls with the wall clearance is removed — whole bays, from
 //     the row ends; a row with no bay left is removed. Zones and columns left outside are not touched: Check layout
-//     flags them (utils/layoutCheck.js). Notice "N bays removed" with Undo. Its racking areas shrink with it: each
+//     flags them (utils/layoutCheck.js). A back-to-back pair left with one face against the new wall (no aisle in
+//     front of it, where it had one) loses that dead half; the single row left moves flush to the wall at the wall
+//     clearance, as Generate puts a wall row. Notice "N bays removed" with Undo. Its racking areas shrink with it: each
 //     side the building came in on clips the area to the new inner wall minus the wall clearance; an area left with
 //     no space is removed.
 //   - enlarged: nothing is added and no notice is shown.
@@ -16,6 +18,10 @@ import { rebuildAisles } from './aisleRebuild'
 import { snapshotOf } from './elevations'
 import { projectOf } from './project'
 import { rackingSettings } from './fillTool'
+import { rackFootprint } from '../generate/rackFootprint'
+import { faceObstacleGaps, faceIndex } from '../generate/faceAisles'
+import { MHE_PROFILES } from '../generate/columnCheck'
+import { getColumnCheckView } from '../generate/columnCheckView'
 import { notify } from './notice'
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
@@ -54,7 +60,7 @@ const fits = (poly, b) => boxOnFloor(poly, { x: b.x + E, y: b.y + E, w: Math.max
 /** `objects` after building `before` became `after` (same id): the bays that fit before and no longer fit are taken
  *  off the row ends, and its racking areas clipped on each side it came in on → { objects, removed (bays), areas
  *  (racking areas clipped or removed) }. Pure. */
-export function planBuildingResize(objects, before, after, { gridSize = 40, clearIn = 0, newId = nanoid } = {}) {
+export function planBuildingResize(objects, before, after, { gridSize = 40, clearIn = 0, newId = nanoid, profile = MHE_PROFILES.reach } = {}) {
   const was = usableFloor(before, gridSize, clearIn), now = usableFloor(after, gridSize, clearIn)
   let removed = 0
   const out = []
@@ -73,6 +79,35 @@ export function planBuildingResize(objects, before, after, { gridSize = 40, clea
     removed += lo + (o.beams.length - 1 - hi)
     const state = o.beams.map((_, i) => (i >= lo && i <= hi ? 'D' : '-'))
     out.push(...piecesFromStates(o, state, { gridSize, newId }))
+  }
+  // a pair with one face against the new wall over all its bays (no aisle in front of it, where it had one before):
+  // that half goes, and the single left moves flush to the wall at the wall clearance
+  const wallFaces = (objs) => {
+    const m = new Map()
+    for (const g of faceObstacleGaps(objs, { gridSize, profile })) {
+      if (g.obstacle.kind !== 'wall' || g.rack.type !== 'rack_double_row') continue
+      const k = `${g.rack.id}:${g.side}`, e = m.get(k) || { bays: new Set(), width: Infinity }
+      g.bays.forEach(b => e.bays.add(b)); e.width = Math.min(e.width, g.width); m.set(k, e)
+    }
+    return m
+  }
+  const deadNow = wallFaces(out), deadWas = wallFaces(objects.map(o => (o && o.id === after.id ? before : o)))
+  const clearPx = (Math.max(0, clearIn || 0) / 12) * gridSize
+  for (let i = 0; i < out.length; i++) {
+    const r = out[i]
+    if (!r || r.type !== 'rack_double_row' || r.parentId !== after.id) continue
+    const n = r.beams.length, full = (e) => !!e && e.bays.size === n
+    const lo = deadNow.get(`${r.id}:lo`), hi = deadNow.get(`${r.id}:hi`)
+    if (full(lo) === full(hi)) continue                                           // both faces open, or both dead
+    const side = full(lo) ? 'lo' : 'hi', dead = side === 'lo' ? lo : hi
+    if (deadWas.has(`${r.pieceOf || r.id}:${side}`)) continue                     // no aisle there before the shrink either
+    const keep = faceIndex(r, side) === 0 ? 'B' : 'A'
+    const [single] = piecesFromStates(r, r.beams.map(() => keep), { gridSize, newId })
+    const f = rackFootprint(r), g = rackFootprint(single), vert = !!f.rotated
+    const [s0, s1] = vert ? [f.x, f.x + f.w] : [f.y, f.y + f.h], [g0, g1] = vert ? [g.x, g.x + g.w] : [g.y, g.y + g.h]
+    const shift = side === 'hi' ? (s1 + dead.width - clearPx) - g1 : (s0 - dead.width + clearPx) - g0
+    out[i] = vert ? { ...single, x: single.x + shift } : { ...single, y: single.y + shift }
+    removed += n
   }
   // its racking areas: each side the usable floor came in on clips the area's box to it; no space left, removed
   const wb = bbox(was), nb = bbox(now)
@@ -96,7 +131,9 @@ export function planBuildingResize(objects, before, after, { gridSize = 40, clea
 export function afterBuildingResize(store, before) {
   const st = store.getState(), after = st.objects.find(o => o.id === before.id)
   if (!after) return null
-  const plan = planBuildingResize(st.objects, before, after, { gridSize: st.gridSize || 40, clearIn: wallClearanceIn(st.elevations) })
+  let profile = MHE_PROFILES.reach
+  try { profile = getColumnCheckView()?.profile || profile } catch { /* no column check view yet */ }
+  const plan = planBuildingResize(st.objects, before, after, { gridSize: st.gridSize || 40, clearIn: wallClearanceIn(st.elevations), profile })
   if (plan.removed || plan.areas) {
     const history = st.history.slice(0, st.historyIndex + 1)
     history[history.length - 1] = snapshotOf(st, plan.objects)

@@ -1816,6 +1816,61 @@ describe('REG — the hand check by real clicks', () => {
       void gs
     }, T)
 
+    it('REG-pair-wall (click): a building shrink (a real side-handle drag) that leaves a back-to-back pair with its face against the new wall and no aisle there removes that dead half; the single left stands flush to the wall at the wall clearance, with no X marks — the same undo step, the notice counting the bays; one undo restores the pair and the walls', async () => {
+      await open()
+      const gs = await gs7()
+      // the outermost pair toward a wall parallel to its rows, and the side handle of that wall: dragged in to half an aisle off the pair's face
+      const plan = await L.S(`return Promise.all([import('/src/utils/floorGeom.js'), import('/src/generate/rackFootprint.js'), import('/src/utils/buildingResize.js'), import('/src/generate/columnCheckView.js')]).then(([FG, RF, BR, CV]) => {
+        const st = S.getState(), gs = st.gridSize || 40, f = st.objects.find(o => /^fp_/.test(o.type)), inner = FG.innerOutline(f, gs)
+        const pairs = st.objects.filter(o => o.type === 'rack_double_row' && o.parentId === f.id && ((o.rotation || 0) % 90) === 0)
+        const vert = pairs.filter(o => RF.rackFootprint(o).rotated).length * 2 > pairs.length
+        const S0 = (q) => (vert ? [q.x, q.x + q.w] : [q.y, q.y + q.h]), aisle = ((CV.getColumnCheckView()?.profile?.aisleFt) || 10.5) * gs
+        const i0 = Math.min(...inner.map(p => (vert ? p.x : p.y))), i1 = Math.max(...inner.map(p => (vert ? p.x : p.y)))
+        const cx = f.x + f.width / 2, cy = f.y + f.height / 2, v = f.fpVerts, out = []
+        for (const side of ['hi', 'lo']) {
+          const ps = pairs.filter(o => RF.rackFootprint(o).rotated === vert).sort((a, b) => (side === 'hi' ? S0(RF.rackFootprint(b))[1] - S0(RF.rackFootprint(a))[1] : S0(RF.rackFootprint(a))[0] - S0(RF.rackFootprint(b))[0]))
+          if (!ps.length) continue
+          const r = ps[0], [s0, s1] = S0(RF.rackFootprint(r))
+          const want = side === 'hi' ? s1 + aisle / 2 : s0 - aisle / 2, move = side === 'hi' ? want - i1 : want - i0
+          for (let i = 0; i < v.length; i++) { const a = v[i], b = v[(i + 1) % v.length], m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+            const horiz = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y); if (horiz === vert) continue
+            const n = horiz ? { x: 0, y: Math.sign(m.y - cy) || 1 } : { x: Math.sign(m.x - cx) || 1, y: 0 }
+            if ((vert ? n.x : n.y) !== (side === 'hi' ? 1 : -1)) continue
+            out.push({ id: r.id, side, vert, at: m, to: vert ? { x: m.x + move, y: m.y } : { x: m.x, y: m.y + move }, clearPx: BR.wallClearanceIn(st.elevations) / 12 * gs })
+          } }
+        return out })`)
+      const f = await fpOf()
+      // the building, by its wall: the first wall point that picks it
+      for (const q of [[0.3, 0], [0.3, 1], [0, 0.3], [1, 0.3], [0.7, 0], [0.7, 1]]) { await L.click({ x: f.x + f.width * q[0], y: f.y + f.height * q[1] }); if ((await L.S('return S.getState().selectedIds')).includes(f.id)) break; await L.page.keyboard.press('Escape') }
+      expect(await L.S('return S.getState().selectedIds')).toEqual([f.id])
+      let h = null
+      for (const c of plan) {
+        let ok = true
+        // clear of the floating islands: the canvas under the point and 16 px round it
+        for (const w of [c.at, c.to]) { const q = await L.toScreen(w); if (!(await L.page.evaluate(({ x, y }) => [[0, 0], [16, 0], [-16, 0], [0, 16], [0, -16]].every(([dx, dy]) => document.elementFromPoint(x + dx, y + dy)?.tagName === 'CANVAS'), q))) ok = false }
+        if (ok) { h = c; break }
+      }
+      expect(h).toBeTruthy()
+      const state = () => L.S('const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), r = st.objects.find(o => o.id === arg); return { walls: f.fpVerts.map(p => [Math.round(p.x), Math.round(p.y)]), pair: r ? JSON.stringify(r) : null }', h.id)
+      const s0 = await state(), h0 = await hist7()
+      await L.drag(h.at, h.to); await L.page.waitForTimeout(400)
+      const res = await L.S(`return Promise.all([import('/src/utils/floorGeom.js'), import('/src/generate/rackFootprint.js'), import('/src/generate/narrowAisles.js'), import('/src/generate/columnCheckView.js')]).then(([FG, RF, NA, CV]) => {
+        const st = S.getState(), gs = st.gridSize || 40, f = st.objects.find(o => /^fp_/.test(o.type)), inner = FG.innerOutline(f, gs), r = st.objects.find(o => o.id === arg.id)
+        if (!r) return null
+        const g = RF.rackFootprint(r), [g0, g1] = arg.vert ? [g.x, g.x + g.w] : [g.y, g.y + g.h]
+        const wall = arg.side === 'hi' ? Math.max(...inner.map(p => (arg.vert ? p.x : p.y))) : Math.min(...inner.map(p => (arg.vert ? p.x : p.y)))
+        const back = arg.side === 'hi' ? wall - g1 : g0 - wall
+        const marks = NA.narrowAisleBlocks(st.objects, { profile: CV.getColumnCheckView()?.profile, gridSize: gs, elevations: st.elevations }).filter(b => b.rackId === r.id).length
+        return { type: r.type, back: Math.round(back * 10) / 10, clear: Math.round(arg.clearPx * 10) / 10, marks } })`, h)
+      const notice = L.page.locator('[aria-label="Notice"]')
+      expect(res).toEqual({ type: 'rack_row', back: res && res.clear, clear: res && res.clear, marks: 0 })
+      expect([(await hist7()) - h0, await notice.textContent()]).toEqual([1, expect.stringMatching(/^[0-9]+ bays? removed/)])
+      // one undo: the pair and the walls back
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect(await state()).toEqual(s0)
+      void gs
+    }, T)
+
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {
       await open()
       const z = await addZone7(), gs = await gs7()
