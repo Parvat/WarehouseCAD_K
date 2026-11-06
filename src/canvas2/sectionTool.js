@@ -4,8 +4,8 @@
 // Presentation state here, never the canvas store; the section itself is the store's (utils/sectionAreas.js).
 
 import { create } from 'zustand'
-import { rectSection, polySection } from '../utils/sectionAreas'
-import { penPoint, closeAlongWalls } from '../utils/sectionEdit'
+import { polySection } from '../utils/sectionAreas'
+import { penPoint, closeAlongWalls, drawnRect } from '../utils/sectionEdit'
 import { HOME_TOOL } from '../utils/homeTool'
 
 export const SECTION_RECT_TOOL = 'section_rect'
@@ -46,12 +46,13 @@ export function boxOf(d) {
   const x = Math.min(d.from.x, d.to.x), y = Math.min(d.from.y, d.to.y)
   return { x, y, w: Math.abs(d.to.x - d.from.x), h: Math.abs(d.to.y - d.from.y) }
 }
-/** The release: a box 4 screen px or more each way becomes a section (snapped off its neighbours); smaller, none. */
+/** The release: a box 4 screen px or more each way becomes a section — kept inside the building and off its neighbours'
+ *  real shapes (utils/sectionEdit.js drawnRect); smaller, none. */
 export function commitRect(store, zoom = 1) {
   const d = useSectionTool.getState().drag
   if (!d) return null
-  const b = boxOf(d), min = 4 / (zoom || 1)
-  return finish(store, b.w >= min && b.h >= min ? rectSection(b, store.getState().objects) : null)
+  const st = store.getState()
+  return finish(store, drawnRect(st.objects, d.from, d.to, { gridSize: st.gridSize || 40, min: 4 / (zoom || 1) }))
 }
 
 /* the pen */

@@ -3,7 +3,8 @@ import { Group, Line, Text, Rect, Circle } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { nodeName } from './shapes'
 import { polygonOf, LABEL, isSection, sectionStyle, boundaryOf, wallInOf, edgeRuns } from '../utils/sectionAreas'
-import { useSectionTool, useSectionHover, useSectionRename, boxOf, SECTION_PEN_TOOL } from './sectionTool'
+import { useSectionTool, useSectionHover, useSectionRename, SECTION_PEN_TOOL } from './sectionTool'
+import { drawnBox } from '../utils/sectionEdit'
 
 /* A section on the plan (STUDIO.md §7a Sections), drawn under the racks: a dashed #B9C7BE 1px outline (dash 6 4) and a
    very light #F4F8F5 fill — or its colour (utils/sectionAreas.js sectionStyle: the outline, a tint, a deeper label);
@@ -38,8 +39,10 @@ export function SectionDraft() {
   const drag = useSectionTool(s => s.drag), pen = useSectionTool(s => s.pen), at = useSectionTool(s => s.at)
   const guide = useSectionTool(s => s.guide), len = useSectionTool(s => s.len), gs = useCanvasStore(s => s.gridSize) || 40
   const tool = useCanvasStore(s => s.activeTool), zoom = useCanvasStore(s => s.zoom) || 1
+  const objects = useCanvasStore(s => s.objects)
   if (drag) {
-    const b = boxOf(drag)
+    // the box as the release will make it: kept inside the building and off the neighbours (utils/sectionEdit.js)
+    const b = drawnBox(objects, drag.from, drag.to, gs) || { x: drag.from.x, y: drag.from.y, w: 0, h: 0 }
     return <Rect name="section-draft" x={b.x} y={b.y} width={b.w} height={b.h} fill="rgba(123, 211, 164, 0.10)" stroke="#2E7D5B" strokeWidth={1.5} dash={[6, 4]} strokeScaleEnabled={false} listening={false} />
   }
   if (tool !== SECTION_PEN_TOOL || !pen.length) return null

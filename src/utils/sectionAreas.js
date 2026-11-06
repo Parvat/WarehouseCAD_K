@@ -205,3 +205,31 @@ export function edgeRuns(s, doors = []) {
   }
   return out
 }
+
+/* ── real shapes: do two sections overlap (touching is not overlapping)? ─────────────────────────────────────────── */
+const EPS_IN = 1e-4                              // world px: how far in a point is taken to test "inside" (an overlap thinner than this is none)
+/** Do segments a–b and c–d cross at a point inside both (a proper crossing — not touching, not lying along)? */
+function crosses(a, b, c, d) {
+  const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+  const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d), e = 1e-9
+  return ((d1 > e && d2 < -e) || (d1 < -e && d2 > e)) && ((d3 > e && d4 < -e) || (d3 < -e && d4 > e))
+}
+/** Points just inside polygon `p`: each edge's middle, nudged EPS_IN toward the inside. */
+function insidePoints(p) {
+  const out = []
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], b = p[(i + 1) % p.length], L = Math.hypot(b[0] - a[0], b[1] - a[1])
+    if (L < 1e-9) continue
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L
+    const q1 = [mx + nx * EPS_IN, my + ny * EPS_IN], q2 = [mx - nx * EPS_IN, my - ny * EPS_IN]
+    out.push(pointInPolygon(p, q1[0], q1[1]) ? q1 : q2)
+  }
+  return out
+}
+/** Do polygons `A` and `B` (world points) overlap — share any area? Touching along an edge or at a corner does not. */
+export function polysOverlap(A, B) {
+  for (let i = 0; i < A.length; i++) for (let j = 0; j < B.length; j++) if (crosses(A[i], A[(i + 1) % A.length], B[j], B[(j + 1) % B.length])) return true
+  return insidePoints(A).some(q => pointInPolygon(B, q[0], q[1])) || insidePoints(B).some(q => pointInPolygon(A, q[0], q[1]))
+}
+/** The polygon of a box { x0, y0, x1, y1 }. */
+export const boxPoly = (b) => [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]]

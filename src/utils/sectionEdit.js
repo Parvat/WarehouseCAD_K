@@ -6,13 +6,12 @@
 import { innerOutline } from './floorGeom'
 import { clampMove, clampGrowth } from './floorClamp'
 import { notify } from './notice'
-import { isSection, polygonOf, membership, nextName, normalPoly, edgesOf, pointInPolygon } from './sectionAreas'
+import { isSection, polygonOf, membership, nextName, normalPoly, edgesOf, pointInPolygon, polysOverlap, boxPoly, SECTION } from './sectionAreas'
 
 const FP = /^fp_/
 const E = 1e-6
 const boxOf = (o) => ({ x: o.x, y: o.y, w: o.width, h: o.height })
 const sides = (b) => ({ x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h })
-const overlaps = (a, b) => Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > E && Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > E
 
 /** The building a section stands in: its parent, else the one holding its centre. */
 export function buildingOf(objects, s) {
@@ -24,40 +23,91 @@ export function floorOf(objects, s, gridSize = 40) {
   const fp = buildingOf(objects, s)
   return fp ? innerOutline(fp, gridSize) : null
 }
-const others = (objects, ids) => (objects || []).filter(o => isSection(o) && !ids.has(o.id)).map(o => sides(boxOf(o)))
+/** The other sections as their real shapes (world polygons) — an L is an L, never its box. */
+const others = (objects, ids) => (objects || []).filter(o => isSection(o) && !ids.has(o.id)).map(polygonOf)
+const hitsAny = (poly, ns) => ns.some(n => polysOverlap(poly, n))
+const shift = (poly, dx, dy) => poly.map(([x, y]) => [x + dx, y + dy])
+/** The largest t in [0, 1] for which `at(t)` (a polygon) overlaps none of `ns` — from t = 0, which must be clear: a stop
+ *  on the neighbour's actual edge, touching it (`travel`: the move's length, world px, for the hair it backs off). */
+function reach(at, ns, travel = 0) {
+  if (!hitsAny(at(1), ns)) return 1
+  let lo = 0, hi = 1
+  for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (hitsAny(at(m), ns)) hi = m; else lo = m }
+  // backed off a hair (twice the overlap test's own reach): touching, never a sliver over — a sliver would block the next move
+  return travel > 0 ? Math.max(0, lo - (2 * 1e-4) / travel) : lo
+}
 
-/** A move of section `s` by (dx, dy): stopped at its building's inner wall face and at a neighbour's edge. */
+/** A move of section `s` by (dx, dy): stopped at its building's inner wall face and at a neighbour's actual edge (its
+ *  real shape: a rectangle slides into an L's notch and touches it) — the run first, then across. */
 export function clampSectionMove(objects, s, dx, dy, { gridSize = 40, moving = null } = {}) {
   const b = boxOf(s), poly = floorOf(objects, s, gridSize)
   if (poly) ({ dx, dy } = clampMove(poly, b, dx, dy))
-  const o = sides(b), ns = others(objects, new Set(moving || [s.id]))
-  // the run first, then across (each axis against the neighbours its moving edge meets)
-  for (const n of ns) {
-    if (Math.min(o.y1, n.y1) - Math.max(o.y0, n.y0) <= E) continue
-    if (dx > 0 && n.x0 >= o.x1 - E) dx = Math.min(dx, n.x0 - o.x1)
-    if (dx < 0 && n.x1 <= o.x0 + E) dx = Math.max(dx, n.x1 - o.x0)
-  }
-  for (const n of ns) {
-    if (Math.min(o.x1 + dx, n.x1) - Math.max(o.x0 + dx, n.x0) <= E) continue
-    if (dy > 0 && n.y0 >= o.y1 - E) dy = Math.min(dy, n.y0 - o.y1)
-    if (dy < 0 && n.y1 <= o.y0 + E) dy = Math.max(dy, n.y1 - o.y0)
-  }
+  const ns = others(objects, new Set(moving || [s.id])), base = polygonOf(s)
+  if (hitsAny(base, ns)) return { dx, dy }                             // already over one (an older layout): never trapped
+  if (dx) dx *= reach(t => shift(base, dx * t, 0), ns, Math.abs(dx))
+  if (dy) dy *= reach(t => shift(base, dx, dy * t), ns, Math.abs(dy))
   return { dx, dy }
 }
 /** A resize (or a typed size) of section `s` to box `next` ({ x, y, w, h }): every edge that moved out stopped at the
- *  inner wall face and at a neighbour's edge. */
+ *  inner wall face and at a neighbour's actual edge (its real shape). */
 export function clampSectionBox(objects, s, next, { gridSize = 40 } = {}) {
   const prev = boxOf(s), poly = floorOf(objects, s, gridSize)
-  let b = poly ? clampGrowth(poly, prev, next) : next
-  const p = sides(prev), n = sides(b)
-  for (const q of others(objects, new Set([s.id]))) {
-    if (!overlaps(n, q)) continue
-    if (n.x1 > p.x1 + E && q.x0 >= p.x1 - E) n.x1 = Math.min(n.x1, q.x0)
-    else if (n.x0 < p.x0 - E && q.x1 <= p.x0 + E) n.x0 = Math.max(n.x0, q.x1)
-    else if (n.y1 > p.y1 + E && q.y0 >= p.y1 - E) n.y1 = Math.min(n.y1, q.y0)
-    else if (n.y0 < p.y0 - E && q.y1 <= p.y0 + E) n.y0 = Math.max(n.y0, q.y1)
+  return growClear(sides(prev), sides(poly ? clampGrowth(poly, prev, next) : next), others(objects, new Set([s.id])))
+}
+/** Box `n` grown from `p` ({ x0, y0, x1, y1 }): each edge that moved out pulled back until the box overlaps none of
+ *  `ns` (polygons) — the right, left, bottom, then top edge. → { x, y, w, h }. */
+function growClear(p, n, ns) {
+  n = { ...n }
+  if (!hitsAny(boxPoly(p), ns)) {
+    for (const [k, k0] of [['x1', 'x1'], ['x0', 'x0'], ['y1', 'y1'], ['y0', 'y0']]) {
+      if (Math.abs(n[k] - p[k0]) < E) continue
+      const from = p[k0], to = n[k]
+      const t = reach(u => boxPoly({ ...n, [k]: from + (to - from) * u }), ns, Math.abs(to - from))
+      n[k] = from + (to - from) * t
+    }
   }
   return { x: n.x0, y: n.y0, w: Math.max(1, n.x1 - n.x0), h: Math.max(1, n.y1 - n.y0) }
+}
+
+/* ── drawing, kept in: a rectangle and the pen's points stop at the inner wall face and at a neighbour's edge ── */
+/** The building a point is drawn in: the one whose inner face holds it, else the nearest. → { fp, poly ([x, y][]) } */
+function floorAt(objects, x, y, gridSize = 40) {
+  let best = null
+  for (const fp of (objects || []).filter(o => FP.test(o.type || ''))) {
+    const poly = innerOutline(fp, gridSize).map(v => [v.x, v.y])
+    if (pointInPolygon(poly, x, y)) return { fp, poly }
+    const q = nearestOn(poly, x, y), d = Math.hypot(q[0] - x, q[1] - y)
+    if (!best || d < best.d) best = { fp, poly, d }
+  }
+  return best ? { fp: best.fp, poly: best.poly } : null
+}
+/** A drawn point kept in: on its building's floor (else onto the nearest inner wall face) and out of every section (else
+ *  onto the nearest edge of the one it is in). */
+export function keepPointIn(objects, x, y, gridSize = 40) {
+  let p = [x, y]
+  const f = floorAt(objects, x, y, gridSize)
+  if (f && !pointInPolygon(f.poly, x, y)) p = nearestOn(f.poly, x, y)
+  for (const o of (objects || []).filter(isSection)) { const g = polygonOf(o); if (pointInPolygon(g, p[0], p[1])) p = nearestOn(g, p[0], p[1]) }
+  return p
+}
+/** A rectangle drawn from `from` to `to` (world { x, y }): its start kept in (keepPointIn), the box grown toward `to`
+ *  stopped at the inner wall face and at every neighbour's actual edge. → { x, y, w, h } or null (nothing left). */
+export function drawnBox(objects, from, to, gridSize = 40) {
+  const [sx, sy] = keepPointIn(objects, from.x, from.y, gridSize)
+  const f = floorAt(objects, sx, sy, gridSize)
+  // grown from a hair of a box at the start, on the side drawn toward (the wall stop sweeps an edge with some extent)
+  const hx = to.x >= sx ? 0.01 : -0.01, hy = to.y >= sy ? 0.01 : -0.01
+  const prev = { x: Math.min(sx, sx + hx), y: Math.min(sy, sy + hy), w: 0.01, h: 0.01 }, next = { x: Math.min(sx, to.x), y: Math.min(sy, to.y), w: Math.abs(to.x - sx), h: Math.abs(to.y - sy) }
+  const walled = f ? clampGrowth(f.poly.map(([x, y]) => ({ x, y })), prev, next) : next
+  const b = growClear(sides(prev), sides(walled), others(objects, new Set()))
+  return b.w > E && b.h > E && (b.w > 1 || b.h > 1) ? b : null
+}
+/** A new rectangle section's fields for a drag from `from` to `to` (drawnBox), or null — at least `min` each way. */
+export function drawnRect(objects, from, to, { gridSize = 40, min = 1 } = {}) {
+  const b = drawnBox(objects, from, to, gridSize)
+  if (!b || b.w < min || b.h < min) return null
+  const f = floorAt(objects, b.x + b.w / 2, b.y + b.h / 2, gridSize)
+  return { type: SECTION, layerId: 'sections', label: nextName(objects), shape: 'rect', x: b.x, y: b.y, width: b.w, height: b.h, ...(f ? { parentId: f.fp.id } : {}) }
 }
 /** A custom shape's point dragged to world (x, y): kept on its building's floor and out of every other section. */
 export function clampSectionPoint(objects, s, x, y, gridSize = 40) {
@@ -131,7 +181,7 @@ export function duplicateSections(store) {
     const spot = [[s.width, 0], [0, s.height], [-s.width, 0], [0, -s.height]].find(([dx, dy]) => {
       const b = { x0: s.x + dx, y0: s.y + dy, x1: s.x + dx + s.width, y1: s.y + dy + s.height }
       if (poly) { const xs = poly.map(v => v.x), ys = poly.map(v => v.y); if (b.x0 < Math.min(...xs) - E || b.y0 < Math.min(...ys) - E || b.x1 > Math.max(...xs) + E || b.y1 > Math.max(...ys) + E) return false }
-      return !objects.some(o => isSection(o) && overlaps(b, sides(boxOf(o))))
+      return !hitsAny(shift(polygonOf(s), dx, dy), objects.filter(isSection).map(polygonOf))
     })
     if (!spot) continue
     const { id, ...rest } = s; void id
@@ -188,6 +238,8 @@ export function penPoint(objects, last, raw, { zoom = 1, shift = false, gridSize
     if (guide) { const x = meet(guide.a, guide.b, best.e.a, best.e.b); if (x && Math.hypot(x[0] - p[0], x[1] - p[1]) <= (SNAP_PX * 1.5) / z) q = x }
     p = q
   }
+  // kept in: on the floor, out of every section (drawing stops at the inner wall face and a neighbour's edge)
+  p = keepPointIn(objects, p[0], p[1], gridSize)
   return { p, guide, len: last ? Math.hypot(p[0] - last[0], p[1] - last[1]) : 0 }
 }
 /** Where lines a1–a2 and segment b1–b2 meet, or null. */
