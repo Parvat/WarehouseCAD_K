@@ -14,6 +14,8 @@ import { useViewPrefs, fitRef, CARD_W } from './viewPrefs'
 import { useElevTab } from '../utils/elevTab'
 import { Icon } from './Icon'
 import { CheckCard } from './cards'
+import { LayerBody } from '../components/RightPanel/LayerPanel'
+import { useHelp, toggleHelp, closeHelp, HelpBody } from './HelpCard'
 
 /* The Studio frame (STUDIO.md §1; every value from design/studio/Studio.dc.html, screen C1): the canvas fills the
    window and these islands float on it — top-left (logo, project name ▾, Auto-saved), top-right (undo, redo,
@@ -163,18 +165,55 @@ function BottomLeft({ onHub }) {
   )
 }
 
+/* A small card over the bottom-right island (Layers, the shortcut sheet): closed by a click outside it and its button
+   (`wrap`), or Esc — Esc is the card's alone while it is open (taken before the canvas's keys). */
+function useCloses(open, close, wrap) {
+  useEffect(() => {
+    if (!open) return
+    const down = (e) => { if (!wrap.current?.contains(e.target)) close() }
+    const key = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); close() } }
+    document.addEventListener('mousedown', down); window.addEventListener('keydown', key, true)
+    return () => { document.removeEventListener('mousedown', down); window.removeEventListener('keydown', key, true) }
+  }, [open]) // eslint-disable-line
+}
+/* the cards above the bottom-right island: dark island style, radius 10, right-aligned with it */
+const overIsland = (extra) => ({ right: 16, bottom: 68, flexDirection: 'column', alignItems: 'stretch', borderRadius: 10, ...extra })
+
 function BottomRight() {
   const showAisles = useCanvasStore(s => s.showAisles ?? true)
   const toggleAisles = useCanvasStore(s => s.toggleAisles)
   const { showMarks, setShowMarks } = useColumnCheck()
   const showColors = useElevView(s => s.showColors)
+  const [layers, setLayers] = useState(false)
+  const help = useHelp(s => s.open)
+  const layersWrap = useRef(null), helpWrap = useRef(null)
+  useCloses(layers, () => setLayers(false), layersWrap)
+  useCloses(help, closeHelp, helpWrap)
   const tog = (on) => ({ height: 30, padding: '0 10px', border: 0, borderRadius: 6, background: on ? '#2E4A3C' : 'transparent', color: on ? '#7BD3A4' : '#C9CEC9', fontSize: 12 })
   return (
     <div className="st-island" data-island="bottom-right" style={{ right: 16, bottom: 20, height: 40, gap: 2, padding: '0 4px' }}>
       <button type="button" aria-label="Aisle labels" aria-pressed={showAisles} onClick={toggleAisles} style={tog(showAisles)}>Aisles</button>
       <button type="button" aria-label="Checks" aria-pressed={showMarks} onClick={() => setShowMarks(!showMarks)} style={tog(showMarks)}>Checks</button>
       <button type="button" aria-label="Elevation colours" aria-pressed={showColors} onClick={() => setShowColors(!showColors)} style={tog(showColors)}>Elevations</button>
+      {/* Layers: each layer's show toggle and padlock, in a small card above (STUDIO.md §1) */}
+      <span ref={layersWrap} style={{ display: 'flex' }}>
+        <button type="button" aria-label="Layers" aria-haspopup="dialog" aria-expanded={layers} aria-pressed={layers} onClick={() => setLayers(o => !o)} style={tog(layers)}>Layers</button>
+        {layers && (
+          <div className="st-island" role="dialog" aria-label="Layers card" data-card-dark style={overIsland({ width: 232, padding: 8 })}>
+            <LayerBody />
+          </div>
+        )}
+      </span>
       <button type="button" aria-label="Fit" title="Fit to content" onClick={() => fitRef.current?.()} style={ghost({ width: 30, height: 30 })}><Icon name="Full screen" /></button>
+      {/* ?: every mouse and key action (studio/HelpCard.jsx); the ? key the same */}
+      <span ref={helpWrap} style={{ display: 'flex' }}>
+        <button type="button" aria-label="Shortcuts" title="Shortcuts (?)" aria-haspopup="dialog" aria-expanded={help} aria-pressed={help} onClick={toggleHelp} style={tog(help)}>?</button>
+        {help && (
+          <div className="st-island" data-card-dark style={overIsland({ width: 420, maxHeight: 'calc(100vh - 160px)', overflow: 'hidden' })}>
+            <HelpBody />
+          </div>
+        )}
+      </span>
     </div>
   )
 }

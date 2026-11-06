@@ -378,8 +378,24 @@ const toggleBtn = (on) => ({ height: 32, padding: '0 10px', border: 0, borderRad
 function ColumnBar({ one = false }) {
   const show = useClearanceView(s => s.show), mine = useColumnPick(s => s.show)
   // one column picked: Show clearances is that column's only — on when it is picked
-  if (one) return <><button type="button" aria-pressed={!!mine} title="This column's clear distances on the plan" onClick={() => setColumnClearances(!mine)} style={toggleBtn(!!mine)}>Show clearances</button><Sep /><LockBtn /></>
-  return <><button type="button" aria-pressed={!!show} title="The columns' clear distances on the plan" onClick={() => setShowClearances(!show)} style={toggleBtn(!!show)}>Show clearances</button><Sep /><LockBtn /></>
+  if (one) return <><button type="button" aria-pressed={!!mine} title="This column's clear distances on the plan" onClick={() => setColumnClearances(!mine)} style={toggleBtn(!!mine)}>Show clearances</button><Sep /><ColumnLockBtn /></>
+  return <><button type="button" aria-pressed={!!show} title="The columns' clear distances on the plan" onClick={() => setShowClearances(!show)} style={toggleBtn(!!show)}>Show clearances</button><Sep /><ColumnLockBtn /></>
+}
+/** A column's Lock: the Columns layer's padlock (STUDIO.md §7a Locks) — pressed while the layer is locked; one click
+ *  flips it, the column staying selected (Ctrl+L the same). */
+const columnsLocked = (s) => !!s.layers.find(l => l.id === 'columns')?.locked
+function ColumnLockBtn() {
+  const locked = useCanvasStore(columnsLocked)
+  return <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Columns layer locked — Unlock (Ctrl+L)' : 'Lock the Columns layer (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
+}
+
+/** The bar's one faint hint line per state (STUDIO.md §6): rows, bays, a column whose layer is unlocked; none else (the
+ *  Row group's is in its mode bar). */
+export function barHint(kind, columnsLayerLocked) {
+  if (kind === 'rack' || kind === 'rows') return 'Shift+click to add rows · drag to move'
+  if (kind === 'bay' || kind === 'bays') return 'Shift+click or Shift+drag to add bays'
+  if (kind === 'column' && !columnsLayerLocked) return 'Drag to move its line'
+  return null
 }
 
 function AisleBar({ obj }) {
@@ -426,6 +442,7 @@ export function SelectionBar() {
   const [size, setSize] = useState(null)
   const [labels, setLabels] = useState(EMPTY)
   const column = useColumnPick(s => s.pick)
+  const colsLocked = useCanvasStore(columnsLocked)
   const what = useMemo(() => barFor(objects, selectedIds, activeWall, activeBaySelection, gridSize, column), [objects, selectedIds, activeWall, activeBaySelection, gridSize, column])
   // not in the Row group (no edit row: its mode bar — STUDIO.md §7a Modes), nor while an apply is asked
   const hidden = !what || !isPlainTool(activeTool) || dragging || !!placing || pending
@@ -447,10 +464,9 @@ export function SelectionBar() {
   const cardRect = card ? { left: card.left - (host?.left || 0), top: card.top - (host?.top || 0), right: card.right - (host?.left || 0), bottom: card.bottom - (host?.top || 0) } : null
   const at = size ? placeBarClear(box, reach, size.w, size.h, win, cardRect, labels) : null
   const obj = what.main || what.objs[0]
-  return (
-    <div ref={ref} role="toolbar" aria-label="Selection" data-selection-bar={what.kind} data-flipped={at?.flipped ? 'true' : undefined} className="st-pill"
-      onPointerDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}
-      style={{ ...pill, position: 'absolute', zIndex: 140, left: at ? at.left : -9999, top: at ? at.top : -9999, visibility: at ? 'visible' : 'hidden' }}>
+  const hint = barHint(what.kind, colsLocked)
+  const bar = (
+    <>
       {what.kind === 'rack' && <RackBar obj={obj} />}
       {what.kind === 'rows' && <RowsBar ids={what.objs.map(o => o.id)} />}
       {what.kind === 'mixed' && <MixedBar objs={what.objs} />}
@@ -460,6 +476,19 @@ export function SelectionBar() {
       {what.kind === 'column' && <ColumnBar one={!!what.one} />}
       {what.kind === 'aisle' && <AisleBar obj={obj} />}
       {what.kind === 'building' && <BuildingBar obj={obj} />}
+    </>
+  )
+  return (
+    <div ref={ref} role="toolbar" aria-label="Selection" data-selection-bar={what.kind} data-flipped={at?.flipped ? 'true' : undefined} className="st-pill"
+      onPointerDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}
+      style={{ ...pill, ...(hint ? { flexDirection: 'column', alignItems: 'center', gap: 0 } : null), position: 'absolute', zIndex: 140, left: at ? at.left : -9999, top: at ? at.top : -9999, visibility: at ? 'visible' : 'hidden' }}>
+      {hint
+        ? <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>{bar}</div>
+            {/* the state's one faint hint line (11px, muted) */}
+            <div data-bar-hint style={{ fontSize: 11, color: B.muted, padding: '1px 8px 2px' }}>{hint}</div>
+          </>
+        : bar}
     </div>
   )
 }

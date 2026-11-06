@@ -15,10 +15,10 @@ import { isBeamRack } from '../../utils/elevations'
 import { setRackDepths } from '../../utils/rackDepthAction'
 import { GroupBody } from './GroupPanel'
 import { ColorBody } from './ColorPanel'
-import { LayerBody } from './LayerPanel'
 import { TextBody } from './TextPanel'
 import { LabelsBody } from './LabelsPanel'
 import { ColumnCheckBody } from './ColumnCheckPanel'
+import { ColumnLineFields } from './panels/ColumnLineFields'
 import { RackMain, RowGroupMain, ZoneMain, NothingSelected, LayoutBlock } from '../../studio/cards'
 import { useRowGroup, groupRowsNow } from '../../utils/rowGroupTool'
 import { Head, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, StaticField, Row, ToggleRow, Seg, Btn,
@@ -118,12 +118,12 @@ function Shared({ rack, locked }) {
   return (
     <>
       <ColumnCheckBody toggles={!rack} />
-      {/* a locked object's group and colour are not changed (STUDIO.md §7a Locks); the layers and settings are the app's */}
+      {/* a locked object's group and colour are not changed (STUDIO.md §7a Locks); the settings are the app's (the layers: the
+          bottom-right island's Layers card) */}
       <LockedFields locked={locked}>
         <GroupBody />
         <ColorBody />
       </LockedFields>
-      <LayerBody />
       <TextBody />
       <LabelsBody />
     </>
@@ -277,6 +277,8 @@ export function PropertiesPanel() {
       <Sec>
         <LockedFields locked={obj.locked}>
         {obj.type === 'rack_cantilever' && <CantileverPanel obj={obj} />}
+        {/* one column picked: the distances to its neighbouring lines, typed (canvas2/columnLines.js) */}
+        {obj.type === 'column_grid' && <ColumnLineFields obj={obj} />}
         {obj.type === 'column_grid' && <ColumnGridPanel obj={obj} />}
         {obj.type === 'rack_drive_in' && <DriveInPanel obj={obj} />}
         {obj.type === 'rack_drive_through' && <DriveThroughPanel obj={obj} />}

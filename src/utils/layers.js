@@ -34,19 +34,21 @@ export const STANDARD_LAYERS = [
 ]
 export const LAYER_IDS = STANDARD_LAYERS.map(l => l.id)
 
-/* Generate locks no layer (STUDIO.md §7a Locks). It locks the column grid it places — the columns are building
-   structure — as an object lock marked `lockedBy: 'generate'` (GENERATE_LOCK); every other lock is the user's: a layer's
-   padlock (setLayer, lockedByHand) or an object's Lock (toggleLock: Ctrl+L, the bar, the right-click menu). */
-export const LOCKED_AFTER_GENERATE = []
-export const GENERATE_LOCK = { locked: true, lockedBy: 'generate' }
-/** Locked by Generate (not by hand): Ctrl+A takes it and the clear-all Delete removes it. */
-export const lockedByGenerate = (o) => !!(o && o.locked && o.lockedBy === 'generate')
+/* Generate locks the Columns layer (STUDIO.md §7a Locks): the columns are building structure, so a drag across the floor
+   must not move them by accident. The Layers padlock shows it — one click unlocks or locks — and a load keeps it as
+   saved. The building is not locked (it is picked by its walls). Every other lock is the user's: a layer's padlock
+   (setLayer, lockedByHand) or an object's Lock (toggleLock: Ctrl+L, the bar, the right-click menu). */
+export const LOCKED_AFTER_GENERATE = ['columns']
 
-/** On load: every column grid locked as Generate locks it (Generate's lock) — unless it is locked already (Generate's
- *  or the user's lock, kept) or the user unlocked it by hand (`handUnlocked`, recorded by toggleLock). */
-export function lockGridsOnLoad(objects) {
+/** On load: an object lock an earlier build of Generate set on the column grid (`lockedBy: 'generate'`) is dropped —
+ *  the Columns layer lock is what holds the columns now; a lock the user set stays. */
+export function releaseGeneratedObjectLocks(objects) {
   if (!Array.isArray(objects)) return objects
-  return objects.map(o => (o && o.type === 'column_grid' && !o.locked && !o.handUnlocked ? { ...o, ...GENERATE_LOCK } : o))
+  return objects.map(o => {
+    if (!o || (o.lockedBy == null && o.handUnlocked == null)) return o
+    const { lockedBy, handUnlocked, ...rest } = o; void handUnlocked
+    return lockedBy === 'generate' ? { ...rest, locked: false } : rest
+  })
 }
 
 const NOTE_TYPES = new Set([
@@ -114,7 +116,7 @@ export const isHelper = (o) => {
 const handLocked = (l) => !!(l && l.locked && l.lockedByHand)
 /** Can Ctrl+A take `o`? Everything drawn — the building, aisles and racking areas included — except what is on a layer
  *  the user locked by hand, hidden, or locked one by one. The layout's elevation types are data, never selected. */
-const takenBySelectAll = (m, o) => !!o && o.type !== 'elevation_types' && (!o.locked || lockedByGenerate(o)) && isShown(m, o) && !handLocked(m.get(layerOf(o, m)))
+const takenBySelectAll = (m, o) => !!o && o.type !== 'elevation_types' && !o.locked && isShown(m, o) && !handLocked(m.get(layerOf(o, m)))
 
 /** What Ctrl+A selects: everything (as before 5bdecf8), the building included — only layers the user locked by hand
  *  are skipped (a lock Generate set is not), with hidden layers and objects locked one by one. */
@@ -175,30 +177,36 @@ export function standardLayers(layers) {
   })
 }
 
-/** A layout from before Generate stopped locking: every layer Generate locked (not by hand — setLayer records a hand
- *  lock) is unlocked on load — Building, Columns, any; a hand lock stays. */
+/** A layout from before Generate stopped locking the building: its Building layer locked by Generate (not by hand —
+ *  setLayer records a hand lock) is unlocked on load, so its building is picked by its walls; a hand lock stays. The
+ *  Columns layer keeps its lock as saved. */
 export function releaseGeneratedLocks(layers) {
   if (!Array.isArray(layers)) return layers
-  return layers.map(l => (l && l.locked && !l.lockedByHand ? { ...l, locked: false } : l))
+  return layers.map(l => (l && l.id === 'building' && l.locked && !l.lockedByHand ? { ...l, locked: false } : l))
 }
 
-/** The standard seven as Generate leaves them: Columns shown, nothing locked; the rest as they were. */
+/** The standard seven as Generate leaves them: Columns locked (and shown); the rest as they were. */
 export function generatedLayers(layers) {
-  return standardLayers(layers).map(l => (l.id === 'columns' ? { ...l, visible: true } : l))
+  return standardLayers(layers).map(l => LOCKED_AFTER_GENERATE.includes(l.id) ? { ...l, visible: true, locked: true } : l)
 }
+
+/** The Columns layer's padlock from a column's bar or Ctrl+L on a column (STUDIO.md §7a Locks): flipped by hand, the
+ *  column staying selected — a column on a locked layer is still clicked, never moved. */
+export function toggleColumnsLayer(store) {
+  const l = asMap(store.getState().layers).get('columns'), on = !(l && l.locked)
+  store.getState().updateLayer('columns', { locked: on, lockedByHand: on })
+}
+const isGrid = (o) => !!o && o.type === 'column_grid'
 
 /** Lock / Unlock the selection by hand (Ctrl+L, the bars, the right-click menu, the card): locked when any of it is
  *  unlocked, else unlocked — one undo step. A hand toggle drops Generate's mark, so the lock is the user's from then. */
 export function toggleLock(store) {
   const st = store.getState(), sel = new Set(st.selectedIds)
   if (!sel.size) return
+  // the column grid alone: its lock is the Columns layer's padlock
+  if (st.objects.filter(o => sel.has(o.id)).every(isGrid)) { toggleColumnsLayer(store); return }
   const anyUnlocked = st.objects.some(o => sel.has(o.id) && !o.locked)
-  const objects = st.objects.map(o => {
-    if (!sel.has(o.id)) return o
-    const { lockedBy, handUnlocked, ...rest } = o; void lockedBy; void handUnlocked
-    // an unlock by hand is recorded, so a reload does not lock it again (lockGridsOnLoad)
-    return anyUnlocked ? { ...rest, locked: true } : { ...rest, locked: false, handUnlocked: true }
-  })
+  const objects = st.objects.map(o => (sel.has(o.id) ? { ...o, locked: anyUnlocked } : o))
   store.setState({ objects })
   store.getState().commitObjectUpdate(st.selectedIds[0], {})
 }

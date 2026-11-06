@@ -38,7 +38,8 @@ import { isPlainTool } from '../utils/homeTool'
 import { innerOutline } from '../utils/floorGeom'
 import { sectionIds, withSections } from './sections'
 import { setAreaHover } from './areaHover'
-import { columnAt, clickColumn } from './columnPick'
+import { columnAt, clickColumn, pickedColumn } from './columnPick'
+import { lineIndexOf, dragLine, endLineDrag } from './columnLines'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { afterBuildingResize } from '../utils/buildingResize'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
@@ -146,6 +147,7 @@ export function useCanvasInteraction({
   const resizeDrag = useRef(null)
   const groupRotateDrag = useRef(null)
   const fpRotateDrag = useRef(null)
+  const colLine = useRef(null)   // a column's line being dragged: { g0, col, from (world), sx, sy, axis, i, again }
 
   /* ── selection, from our own geometry pick ────────────────────────────── */
   /* Selection AND bay pick, from a world point and a hit id already decided by
@@ -691,10 +693,14 @@ export function useCanvasInteraction({
           return
         }
         if (col && locked) clickTarget = { column: col }   // Pan: a drag pans, a click picks it
+        /* unlocked: a drag moves that column's line (canvas2/columnLines.js) — sideways its vertical line, up or down
+           its horizontal line, the axis decided by the first 6 px; the press picks the column (the column already
+           picked: a click without a drag steps up to the grid, on the release) */
         if (col && !locked) {
           setStickyBayMode(false); pickedOnPlan()
-          clickColumn(useCanvasStore, col)
-          beginDrag(col.gridId, world, evt)
+          const p = pickedColumn(), again = !!p && p.gridId === col.gridId && Math.abs(p.x - col.x) < 1e-6 && Math.abs(p.y - col.y) < 1e-6
+          if (!again) clickColumn(useCanvasStore, col)
+          colLine.current = { g0: st.objects.find(o => o.id === col.gridId), col, from: world, sx: evt.clientX, sy: evt.clientY, axis: null, i: null, again }
           return
         }
       }
@@ -808,7 +814,7 @@ export function useCanvasInteraction({
      gesture (pan/drag/marquee/resize) keeps setting it from its own
      mousemove/mouseup, and held space always means grab. */
   const onStageMouseMove = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current) { setFlueHover(null, null); clearHoverTarget(); return }
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current || colLine.current) { setFlueHover(null, null); clearHoverTarget(); return }
     if (spaceDown.current) { clearHoverTarget(); return }
     const stage = stageRef.current
     if (!stage) return
@@ -878,7 +884,7 @@ export function useCanvasInteraction({
     setFlueHover(null, null)
     setAreaHover(null)
     clearHoverTarget()
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current) return
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || colLine.current) return
     setCursor(spaceDown.current ? 'grab' : 'default')
   }
 
@@ -1146,6 +1152,25 @@ export function useCanvasInteraction({
         return
       }
 
+      /* a column's line: the axis from the first 6 px of travel, then the line follows the pointer on that axis */
+      const cl = colLine.current
+      if (cl) {
+        const stage = stageRef.current
+        if (!stage || !cl.g0) return
+        if (!cl.axis) {
+          const dx = evt.clientX - cl.sx, dy = evt.clientY - cl.sy
+          if (Math.hypot(dx, dy) < MOVE_THRESHOLD) return
+          cl.axis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y'
+          cl.i = lineIndexOf(cl.g0, cl.col, cl.axis)
+          setDragging(true)
+          setCursor(cl.axis === 'x' ? 'ew-resize' : 'ns-resize')
+        }
+        const box = stage.container().getBoundingClientRect()
+        const w = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+        dragLine(useCanvasStore, cl.g0, cl.axis, cl.i, cl.axis === 'x' ? w.x - cl.from.x : w.y - cl.from.y)
+        return
+      }
+
       if (pan.current) {
         const d = pan.current
         if (!d.moved && movedEnough({ x: d.sx, y: d.sy }, { x: evt.clientX, y: evt.clientY })) d.moved = true
@@ -1346,6 +1371,15 @@ export function useCanvasInteraction({
       setMarquee(normalizeRect(m.from, m.to))
     }
     const upGesture = () => {
+      const cl = colLine.current
+      colLine.current = null
+      if (cl) {
+        // a press that never moved: the click — on the column already picked, back up to the grid
+        if (!cl.axis) { if (cl.again) clickColumn(useCanvasStore, cl.col); return }
+        endLineDrag(useCanvasStore, cl.g0)
+        setCursor(spaceDown.current ? 'grab' : 'default')
+        return
+      }
       const br = bayRun.current
       bayRun.current = null
       // a Shift+press on a row that never moved: the Shift+click

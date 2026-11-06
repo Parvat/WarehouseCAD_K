@@ -1,6 +1,6 @@
 import { exportLayoutToPDF } from '../export/pdfExport'
 import { extractLegacy } from './elevations'
-import { releaseGeneratedLocks, lockGridsOnLoad } from './layers'
+import { releaseGeneratedLocks, releaseGeneratedObjectLocks } from './layers'
 import { joinSplitPairs } from './pairJoin'
 import { rebuildAisles } from './aisleRebuild'
 // ─── Scene serialization / deserialization ────────────────────────────────────
@@ -52,11 +52,11 @@ export function deserializeScene(json, s) {
   // Canvas content
   // the elevation types: their own field; a file from before has them as an object among its objects — moved here
   const legacy = extractLegacy(data.objects)
-  // the column grid locked as Generate locks it, unless the user unlocked it by hand (utils/layers.js lockGridsOnLoad)
-  s.objects      = lockGridsOnLoad(legacy.objects)
+  // an object lock an earlier Generate set on the column grid is dropped (utils/layers.js releaseGeneratedObjectLocks)
+  s.objects      = releaseGeneratedObjectLocks(legacy.objects)
   s.elevations   = data.elevations ?? legacy.table ?? null
   s.groups       = data.groups || []
-  // the layers an older Generate locked are released (a hand lock stays) — utils/layers.js releaseGeneratedLocks
+  // a Building layer an older Generate locked is released (a hand lock stays; Columns as saved) — utils/layers.js releaseGeneratedLocks
   s.layers       = releaseGeneratedLocks(data.layers || s.layers)
   s.activeLayerId= data.activeLayerId || s.activeLayerId
 

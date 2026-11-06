@@ -80,7 +80,9 @@ describe('SC — the states', () => {
   it('SC-more: every other section is under one More fold, in the same parts; a rack keeps its bay list, + / − Bay, order, lock and delete', () => {
     const p = read('components/RightPanel/PropertiesPanel.jsx')
     expect(p).toMatch(/<Fold title="More" aria="More properties" last gap=\{10\}>/)
-    for (const k of ['<ColumnCheckBody toggles={!rack} />', '<GroupBody />', '<ColorBody />', '<LayerBody />', '<TextBody />', '<LabelsBody />', '<RackRowExtras obj={obj}', '<ObjectActions obj={obj} />', '<Appearance obj={obj}']) expect([k, p.includes(k)]).toEqual([k, true])
+    for (const k of ['<ColumnCheckBody toggles={!rack} />', '<GroupBody />', '<ColorBody />', '<TextBody />', '<LabelsBody />', '<RackRowExtras obj={obj}', '<ObjectActions obj={obj} />', '<Appearance obj={obj}']) expect([k, p.includes(k)]).toEqual([k, true])
+    // the layers moved to the bottom-right island's Layers card (Fix 6 round 6): not in the card
+    expect([p.includes('<LayerBody />'), read('studio/StudioFrame.jsx').includes('<LayerBody />')]).toEqual([false, true])
     expect(/SectionHeader|Disclosure|var\(--/.test(p)).toBe(false)
   })
 })

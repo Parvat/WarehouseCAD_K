@@ -100,7 +100,7 @@ describe.each(['horizontal', 'vertical'])('SF-3 — buildings, %s', (orientation
   it('SF-building-generated: the generated building is picked by its walls too; a wall click that moves nothing adds no history entry', () => {
     const fp = st().objects.find(o => o.type === 'fp_rect'), seg = m.getFpWallSegments(fp, st().gridSize)[0]
     expect(m.fpWallHitTest(st().objects, st().layers, (seg.a.x + seg.b.x) / 2, (seg.a.y + seg.b.y) / 2, 0.2, st().gridSize)?.objId).toBe(fp.id)
-    expect(m.L.LOCKED_AFTER_GENERATE).toEqual([])                                  // Fix 6: Generate locks nothing
+    expect(m.L.LOCKED_AFTER_GENERATE).toEqual(['columns'])                         // Fix 6 round 6: Generate locks the Columns layer again
     expect(read('canvas2/useCanvasInteraction.js')).toMatch(/\} else if \(obj && JSON\.stringify\(obj\) !== JSON\.stringify\(rd\.origObj\)\) \{\s+st\.commitObjectUpdate\(rd\.objId, obj\)/)
   })
 })

@@ -25,6 +25,7 @@ import { SplitBar } from './SplitBar'
 import { DoorBar, DoorPreview } from './DoorBar'
 import { DOOR_TOOL, hoverDoor, placeDoor, clearDoorHover } from '../utils/doorTool'
 import { SelectionBar, FloorMenu, openFloorMenu } from '../studio/SelectionBar'
+import { ColumnLineLabels } from './ColumnLineLabels'
 import { ZoneEditPreview, SelectedZoneSizes } from './ZoneEdit'
 import { ZoneCheckPreview } from './ZoneCheck'
 import { hasResizeHandles } from './handleGeometry'
@@ -532,6 +533,8 @@ export function Canvas2() {
       {/* the Studio bars (STUDIO.md §1, §6): the selection bar over the selection, the mode bars at the top (Row
           group, Split, Fill racking), the notices above the tool pill, the floor's right-click menu */}
       <SelectionBar />
+      {/* a column's line being dragged: the distances to its neighbouring lines (columnLines.js) */}
+      <ColumnLineLabels />
       <RowGroupBar />
       <SplitBar />
       {filling && <FillOptionsBar />}

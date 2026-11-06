@@ -17,6 +17,7 @@ import { isTypingTarget, textOwnsKey } from '../utils/typing'
 import { selectionLevel, stepUp } from '../canvas2/selectionLevel'
 import { deleteSelection, cutSelection } from '../studio/selectionActions'
 import { HOME_TOOL, isPlainTool } from '../utils/homeTool'
+import { toggleHelp } from '../studio/HelpCard'
 
 /** The app's keyboard shortcuts, one keydown handler (exported so a test can press keys at it). */
 export function shortcutHandler(e) {
@@ -79,6 +80,8 @@ export function shortcutHandler(e) {
 
       if (!ctrl) {
         if (isInput) return
+        // ? — the shortcut sheet (studio/HelpCard.jsx); Esc closes it
+        if (e.key === '?') { toggleHelp(); return }
         // ── Tool shortcuts ─────────────────────────────────────────────────
         // Studio (STUDIO.md §5): F Fill racking, G Row group, S Split, M Measure — shown in the tool pill's hints.
         // M was Multi-select, a tool only the retired SVG engine had.

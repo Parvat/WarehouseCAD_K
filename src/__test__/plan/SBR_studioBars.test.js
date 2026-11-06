@@ -73,7 +73,8 @@ describe.each(['horizontal', 'vertical'])('SBR — the selection bar, %s', (orie
     // wired: the bar reads the store's view and places itself with placeBar, absolute in the canvas, under the islands
     const src = read('studio/SelectionBar.jsx')
     expect(src).toMatch(/const box = screenBox\(what\.objs, objects, view\), reach = screenBox\(what\.objs, objects, view, lz\)/)
-    expect(src).toMatch(/style=\{\{ \.\.\.pill, position: 'absolute', zIndex: 140,/)
+    // (with a hint line the pill stacks it under the buttons — Fix 6 round 6)
+    expect(src).toMatch(/style=\{\{ \.\.\.pill, \.\.\.\(hint \? \{ flexDirection: 'column', alignItems: 'center', gap: 0 \} : null\), position: 'absolute', zIndex: 140,/)
     expect(read('canvas2/Canvas2.jsx')).toMatch(/<SelectionBar \/>/)
   })
 

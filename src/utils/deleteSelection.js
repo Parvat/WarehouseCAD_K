@@ -1,5 +1,5 @@
 import { notify } from './notice'
-import { pickableIn, selectAllIds, lockedByGenerate, isSelectable } from './layers'
+import { pickableIn, selectAllIds } from './layers'
 
 // deleteSelection.js — Delete (the key and the card's Delete buttons): the selection, plus each racking area the delete
 // empties, so a delete of its racks never leaves its box on an empty floor. An area that still owns a rack after the delete stays: it keeps its
@@ -43,11 +43,12 @@ function deleteBuildingOnly(store) {
 /** The store's deleteSelected, with the emptied areas added to the selection first — one undo step. A building in the
  *  selection: the building only (deleteBuildingOnly). */
 /** What a Delete of state `s`'s selection may remove: what can be changed — and, when the selection is everything
- *  Ctrl+A takes (clear all), what Generate locked too (the column grid). A lock the user set never goes. */
+ *  Ctrl+A takes (clear all), all of that: the columns on the Columns layer Generate locked included. A lock the user set
+ *  (an object's, or a layer's padlock) never goes. */
 export function deletableIn(s) {
   const ok = pickableIn(s.layers), sel = new Set(s.selectedIds), all = selectAllIds(s.objects, s.layers)
-  const clearAll = all.length > 0 && all.every(id => sel.has(id))
-  return (o) => !!o && (ok(o) || (clearAll && lockedByGenerate(o) && isSelectable(s.layers, o)))
+  const clearAll = all.length > 0 && all.every(id => sel.has(id)), taken = new Set(all)
+  return (o) => !!o && (ok(o) || (clearAll && taken.has(o.id)))
 }
 
 export function deleteSelectionWithAreas(store) {
