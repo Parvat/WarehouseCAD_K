@@ -1,4 +1,4 @@
-// rightPanel.js — the right panel's tab (Properties | Elevations) and the Elevations tab's width.
+// rightPanel.js — the right panel's tab (Properties | Elevations | BOM) and the Elevations tab's width.
 //
 // Presentation state, per browser (localStorage), never the canvas store. The Elevations tab holds the drawing, so the
 // panel widens on it (ELEV_W at first, drag its edge, remembered); Properties keeps the normal width. GeneratePanel
@@ -11,11 +11,11 @@ export const RP_W = 272, ELEV_W = 480, ELEV_MIN = 360
 export const elevMax = () => Math.max(ELEV_MIN, Math.min(900, (typeof window !== 'undefined' ? window.innerWidth : 1600) * 0.6))
 
 const read = () => {
-  try { const v = JSON.parse(localStorage.getItem(KEY) || '{}'); return { tab: v?.tab === 'elevations' ? 'elevations' : 'properties', elevW: Number.isFinite(v?.elevW) ? v.elevW : ELEV_W } }
+  try { const v = JSON.parse(localStorage.getItem(KEY) || '{}'); return { tab: v?.tab === 'elevations' || v?.tab === 'bom' ? v.tab : 'properties', elevW: Number.isFinite(v?.elevW) ? v.elevW : ELEV_W } }
   catch { return { tab: 'properties', elevW: ELEV_W } }
 }
 
-/** { tab: 'properties' | 'elevations', elevW } */
+/** { tab: 'properties' | 'elevations' | 'bom', elevW } */
 export const useRightPanel = create(() => read())
 export function setRightPanel(patch) {
   useRightPanel.setState(patch)

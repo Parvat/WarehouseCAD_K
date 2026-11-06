@@ -146,6 +146,8 @@ export function bayLedger(objects, gridSize = 40, elevations = null) {
        band (0) or high (1) — local face j at 0° / 270°, the other face at 90° / 180° */
     const rot = norm(r.rotation), flip = rot === 90 || rot === 180
     const sideHas = (k, j) => { const f = flip ? 1 - j : j; return (c[k - 1] && !isEmptySide(r, k - 1, f)) || (c[k] && !isEmptySide(r, k, f)) }
+    // frameSides[k]: the faces (local side 0 / 1) whose frame position k adds — what the BOM reads (utils/bom.js)
+    const frameSides = frames.map(() => [])
     const frameCount = frames.map((on, k) => {
       if (!on) return 0
       let n = 0
@@ -153,12 +155,13 @@ export function bayLedger(objects, gridSize = 40, elevations = null) {
         if (r.type === 'rack_double_row' && !sideHas(k, j)) continue
         if (already(fr)) continue
         const key = bucket(fr); if (!taken.has(key)) taken.set(key, []); taken.get(key).push(fr)
+        frameSides[k].push(r.type === 'rack_double_row' ? (flip ? 1 - j : j) : 0)
         n++
       }
       return n
     })
     ledger.frames += frameCount.reduce((t, n) => t + n, 0)
-    ledger.racks.set(r.id, { counted: c, positions, bays, uncounted: r.beams.length - bays, frames, frameCount })
+    ledger.racks.set(r.id, { counted: c, positions, bays, uncounted: r.beams.length - bays, frames, frameCount, frameSides })
     ledger.positions += positions; ledger.bays += bays; ledger.uncountedBays += r.beams.length - bays
     if (bays) ledger.rackCount++
     ledger.breakdown[r.type] = (ledger.breakdown[r.type] || 0) + positions

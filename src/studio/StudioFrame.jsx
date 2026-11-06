@@ -140,6 +140,7 @@ function RightCard() {
               <div role="tablist" aria-label="Right panel tabs" style={{ display: 'flex', padding: 3, borderRadius: 8, background: '#2A2F2C' }}>
                 <button type="button" role="tab" aria-selected={tab === 'properties'} style={seg(tab === 'properties')} onClick={() => setRightPanel({ tab: 'properties' })}>Properties</button>
                 <button type="button" role="tab" aria-selected={tab === 'elevations'} style={seg(tab === 'elevations')} onClick={() => setRightPanel({ tab: 'elevations' })}>Elevations</button>
+                <button type="button" role="tab" aria-selected={tab === 'bom'} style={seg(tab === 'bom')} onClick={() => setRightPanel({ tab: 'bom' })}>BOM</button>
               </div>
             </div>
             {/* Properties: the Studio card contents (src/studio/cards.jsx, cardParts.jsx); Elevations: the sheet, then

@@ -10,6 +10,7 @@
 //   7 the right-click menus: a section-9 icon on the left (an empty slot where none), the shortcut on the right
 import { describe, it, expect, beforeEach, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
+import * as fs from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { R } from './fixtures'
@@ -2430,6 +2431,94 @@ describe('REG — the hand check by real clicks', () => {
       await layersCard().getByRole('button', { name: 'Lock Racking layer' }).click(); await L.page.keyboard.press('Escape')
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(200)
       expect(await L.S('const st = S.getState(); return st.selectedIds.filter(i => /^rack_/.test(st.objects.find(o => o.id === i)?.type || "")).length')).toBe(0)
+    }, T)
+
+    /* ── BOM v1: the BOM tab (studio/BomTab.jsx, utils/bom.js) by real clicks. Every fixture: one elevation, 4 levels
+       (level 1 on the floor), 20′ frames, 96″ beams only ── */
+    const bomTab = async () => { await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(200) }
+    /** the tab's lines as shown: [part, size, qty] (a group's later rows keep the part's text, drawn transparent) */
+    const bomRows = async (scope = L.page.getByRole('tabpanel', { name: 'BOM' })) => {
+      const rows = await scope.locator('[data-bom-line]').evaluateAll(rs => rs.map(r => [...r.cells].map(c => c.textContent)))
+      return rows.map(([part, size, qty]) => [part, size, Number(qty.replace(/,/g, ''))])
+    }
+    const qtyOf = (rows, part, size = null) => rows.filter(r => r[0] === part && (size == null || r[1] === size)).reduce((t, r) => t + r[2], 0)
+
+    it('REG-bom-tab (click): the BOM tab beside Properties and Elevations lists the parts grouped (part, size, qty) — frames, beam pairs, pins, decks, spacers, anchors — the pins 4 per beam pair, the decks 2 per 96″ beam level, the anchors 2 per frame; Full view opens the same table wide and Esc closes it', async () => {
+      await open()
+      expect(await L.page.getByRole('tablist', { name: 'Right panel tabs' }).getByRole('tab').allTextContents()).toEqual(['Properties', 'Elevations', 'BOM'])
+      await bomTab()
+      const rows = await bomRows()
+      expect([...new Set(rows.map(r => r[0]))]).toEqual(['Upright frame', 'Beam pair', 'Safety pin', 'Wire deck', 'Row spacer', 'Anchor'])
+      const frames = qtyOf(rows, 'Upright frame'), beams = qtyOf(rows, 'Beam pair')
+      expect([qtyOf(rows, 'Safety pin'), qtyOf(rows, 'Wire deck', '46″ × 42″'), qtyOf(rows, 'Anchor'), qtyOf(rows, 'Upright frame', '20′ × 42″')]).toEqual([
+        beams * 4,          // 2 pins per beam, 2 beams a pair
+        beams * 2,          // 96″ → 46 + 46: 2 decks per beam level
+        frames * 2,         // 2 feet × 1 anchor per foot
+        frames,             // every frame 20′ (240″), 42″ deep
+      ])
+      expect(qtyOf(rows, 'Row spacer') % 3).toBe(0)   // 20′ frames are above 16′: 3 spacers per frame pair
+      // Full view: the same lines, wide; Esc closes it
+      await L.page.getByRole('button', { name: 'Full view' }).click(); await L.page.waitForTimeout(200)
+      const dlg = L.page.getByRole('dialog', { name: 'Bill of materials' })
+      expect(await bomRows(dlg)).toEqual(rows)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      expect(await dlg.count()).toBe(0)
+    }, T)
+
+    it('REG-bom-highlight (click): a click on a BOM line shades on the plan exactly the racks it comes from; a click on it again clears it', async () => {
+      await open()
+      await bomTab()
+      const line = L.page.locator('[data-bom-line]').filter({ hasText: 'Beam pair' }).first()
+      await line.click(); await L.page.waitForTimeout(300)
+      const want = await L.S('return import("/src/utils/bom.js").then(M => { const st = S.getState(), b = M.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 }); return b.lines.find(l => l.part === "Beam pair").ids.length })')
+      const drawn = () => L.page.evaluate(() => window.Konva.stages[0].findOne('.issue-highlight')?.find('Rect').length || 0)
+      expect([await line.getAttribute('aria-selected'), want > 0, await drawn() >= want]).toEqual(['true', true, true])
+      await line.click(); await L.page.waitForTimeout(200)
+      expect([await line.getAttribute('aria-selected'), await drawn()]).toEqual(['false', 0])
+    }, T)
+
+    it('REG-bom-csv (click): Download CSV saves part, size, qty — the rows the tab shows', async () => {
+      await open()
+      await bomTab()
+      const rows = await bomRows()
+      const [dl] = await Promise.all([L.page.waitForEvent('download'), L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Download CSV' }).click()])
+      const text = fs.readFileSync(await dl.path(), 'utf8')
+      const csv = text.trim().split(/\r?\n/).filter(l => !l.startsWith('#'))
+      expect([dl.suggestedFilename().endsWith('-bom.csv'), csv[0], csv.slice(1).map(l => l.split(','))]).toEqual([true, 'Part,Size,Qty', rows.map(r => [r[0], r[1] === '—' ? '' : r[1], String(r[2])])])
+    }, T)
+
+    it('REG-bom-decks (click): the deck table in Project settings changes the count — 96″ beams made 3 decks of 46″ triple the 2 they had; the 96″ row removed: no decks and the flag Set decks for 96 in beams', async () => {
+      await open()
+      await bomTab()
+      const r0 = await bomRows(), levels = qtyOf(r0, 'Beam pair')       // 96″ beam levels (one per beam pair)
+      expect(qtyOf(r0, 'Wire deck', '46″ × 42″')).toBe(levels * 2)
+      const settings = async () => { await L.page.getByRole('button', { name: 'Project settings' }).click(); await L.page.waitForTimeout(200); return L.page.getByRole('group', { name: 'Bill of materials' }) }
+      let sec = await settings()
+      const row96 = sec.locator('[data-deck-row]').filter({ has: L.page.locator('input[aria-label="Deck beam length (in)"]') }).nth(0)
+      expect(await row96.getByRole('spinbutton', { name: 'Deck beam length (in)' }).inputValue()).toBe('96')
+      const w = row96.getByRole('textbox', { name: 'Deck widths (in)' })
+      await w.click(); await w.fill('46 + 46 + 46'); await w.press('Enter')
+      await L.page.getByRole('button', { name: 'Save', exact: true }).click(); await L.page.waitForTimeout(250)
+      expect(qtyOf(await bomRows(), 'Wire deck', '46″ × 42″')).toBe(levels * 3)            // 3 decks per 96″ beam level
+      // the 96″ row removed: no decks for these beams, and the flag
+      sec = await settings()
+      await sec.getByRole('button', { name: 'Remove deck row 96' }).click()
+      await L.page.getByRole('button', { name: 'Save', exact: true }).click(); await L.page.waitForTimeout(250)
+      expect([qtyOf(await bomRows(), 'Wire deck'), await L.page.locator('[data-bom-flag]').allTextContents()]).toEqual([0, ['Set decks for 96 in beams']])
+    }, T)
+
+    it('REG-bom-first-level (click): First level on floor turned off on the sheet (the elevation\u2019s pencil) gives level 1 a beam — 4 beam pairs per bay side instead of 3', async () => {
+      await open()
+      await bomTab()
+      const b0 = qtyOf(await bomRows(), 'Beam pair')                                     // bay sides × 3
+      await L.page.getByRole('tab', { name: 'Elevations' }).click(); await L.page.waitForTimeout(200)
+      await L.page.getByRole('button', { name: /^Edit .* on the sheet$/ }).first().click(); await L.page.waitForTimeout(200)
+      const tg = L.page.getByRole('switch', { name: 'First level on floor' })
+      expect(await tg.getAttribute('aria-checked')).toBe('true')
+      await tg.click()
+      await L.page.getByLabel('Editing on the sheet').getByRole('button', { name: 'Save', exact: true }).click(); await L.page.waitForTimeout(250)
+      await bomTab()
+      expect(qtyOf(await bomRows(), 'Beam pair')).toBe(b0 / 3 * 4)                      // bay sides × 4
     }, T)
 
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {

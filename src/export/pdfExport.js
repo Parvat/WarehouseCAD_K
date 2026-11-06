@@ -23,6 +23,8 @@
 // entry for why that's a deliberate boundary, not an oversight.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { computeBom } from '../utils/bom'
+import { buildBomSheets } from './bomSheet'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Icon } from '../studio/Icon'
@@ -531,6 +533,8 @@ export function exportLayoutToPDF(filename, storeState) {
   const { svg, paperW, paperH } = buildLayoutSVG(objects, layers, gridSize, { title, labels: { showAisles: storeState.showAisles ?? true }, elevations: storeState.elevations })
   // a second sheet: every elevation type in use, drawn (utils/elevationDraw.js)
   const sheets = buildElevationSheets(objects, { title, elevations: storeState.elevations })
+  // then the bill of materials (utils/bom.js; export/bomSheet.js), on the plan's paper size
+  const bomPages = buildBomSheets(computeBom(objects, storeState.elevations, { gridSize }), { title, paperW, paperH })
 
   const html = `<!DOCTYPE html>
 <html>
@@ -568,6 +572,7 @@ export function exportLayoutToPDF(filename, storeState) {
   </div>
   <div class="page">${svg}</div>
   ${sheets.map(p => `<div class="page" style="page-break-before: always">${p.svg}</div>`).join('')}
+  ${bomPages.map(p => `<div class="page" style="page-break-before: always">${p.svg}</div>`).join('')}
   <script>window.focus()</script>
 </body>
 </html>`

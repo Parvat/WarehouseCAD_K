@@ -10,6 +10,7 @@ import { useProjectSetup, closeSetup, installStartScreen, projectOf, newProject,
 import { refreshNames } from '../../utils/elevTab'
 import { regenBuilding, regenSummary } from '../../generate/regenerate'
 import { regenerateRacking, generateAndPlaceBatched } from '../../generate/traceGenerate'
+import { bomSettings } from '../../utils/bom'
 
 /* ── The project screen (PROJECT_SETUP.md) ──────────────────────────────────────────────────────────────────────────
    Two states:
@@ -256,6 +257,55 @@ function StartCard() {
   )
 }
 
+/* The BOM section of Project settings: the deck table (a beam length and the deck widths across it — rows added,
+   edited, removed), anchors per foot, row spacers per frame height, the guards (off unless set: the dealer's choice). */
+const widthsText = (w) => (w || []).join(' + ')
+const widthsOf = (t) => String(t).split(/[+,\s]+/).map(Number).filter(v => Number.isFinite(v) && v > 0)
+function DeckWidths({ value, onChange, aria }) {
+  const [text, setText] = useState(widthsText(value))
+  useEffect(() => setText(widthsText(value)), [value])
+  return <input aria-label={aria} value={text} placeholder="46 + 46" style={S.in} onChange={e => setText(e.target.value)} onBlur={() => onChange(widthsOf(text))} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }} />
+}
+function BomSettings({ value: b, onChange }) {
+  const set = (patch) => onChange({ ...b, ...patch })
+  const setDeck = (i, patch) => set({ decks: b.decks.map((d, k) => (k === i ? { ...d, ...patch } : d)) })
+  const check = (key, label) => (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+      <input type="checkbox" aria-label={label} checked={!!b[key]} onChange={e => set({ [key]: e.target.checked })} />{label}
+    </label>
+  )
+  return (
+    <div style={S.sec} role="group" aria-label="Bill of materials">
+      <span style={S.h}>Bill of materials</span>
+      <span style={S.note}>Wire decks per beam length — a beam length with no row gets no decks, and the BOM asks for one.</span>
+      <table aria-label="Deck table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '4px 4px' }}>
+        <thead><tr><th style={{ ...S.th, width: 140 }}>Beam length (in)</th><th style={S.th}>Deck widths (in)</th><th style={{ width: 30 }} /></tr></thead>
+        <tbody>
+          {b.decks.map((d, i) => (
+            <tr key={i} data-deck-row={i}>
+              <td><NumIn aria="Deck beam length (in)" value={d.beamIn} onChange={v => setDeck(i, { beamIn: v })} /></td>
+              <td><DeckWidths aria="Deck widths (in)" value={d.widthsIn} onChange={w => setDeck(i, { widthsIn: w })} /></td>
+              <td><button type="button" aria-label={`Remove deck row ${d.beamIn ?? ''}`} title="Remove" onClick={() => set({ decks: b.decks.filter((_, k) => k !== i) })} style={{ ...S.btn, padding: '4px 6px' }}><Icon name="Delete" size={12} color="currentColor" cut="var(--surface)" /></button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button type="button" aria-label="Add deck row" onClick={() => set({ decks: [...b.decks, { beamIn: null, widthsIn: [] }] })} style={{ ...S.btn, alignSelf: 'flex-start' }}><Plus size={13} /> Add</button>
+      <div style={S.grid}>
+        <Num label="Anchors per foot" value={b.anchorsPerFoot} onChange={v => set({ anchorsPerFoot: v ?? 0 })} />
+        <Num label="Row spacers up to (ft)" value={b.spacerBreakFt} onChange={v => set({ spacerBreakFt: v ?? 0 })} />
+        <Num label="Spacers per frame, up to it" value={b.spacersUpTo} onChange={v => set({ spacersUpTo: v ?? 0 })} />
+        <Num label="Spacers per frame, above it" value={b.spacersAbove} onChange={v => set({ spacersAbove: v ?? 0 })} />
+      </div>
+      <div style={{ display: 'flex', gap: 18 }}>
+        {check('uprightGuards', 'Upright guards')}
+        {check('endGuards', 'End-of-aisle guards')}
+      </div>
+      <span style={S.note}>Guards go on row ends that face an aisle; off unless you turn them on.</span>
+    </div>
+  )
+}
+
 /* ── an existing project: Project settings ───────────────────────────────────────────────────────────────────────── */
 function SettingsCard() {
   const T = useCanvasStore(s => s.elevations)
@@ -377,6 +427,9 @@ function SettingsCard() {
             </div>
             <span style={S.note}>Aisle {aisle != null ? `${aisle} ft` : '—'} — follows the forklift.</span>
           </div>
+
+          {/* the bill of materials (utils/bom.js): the deck table, anchors, row spacers, guards */}
+          <BomSettings value={bomSettings(pr)} onChange={b => set({ bom: b })} />
 
           <Advanced value={pr.advanced || {}} onChange={v => set({ advanced: v })} units={pr.rules?.units} onUnits={u => set({ rules: { ...pr.rules, units: u } })} />
         </div>
