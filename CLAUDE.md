@@ -23,6 +23,9 @@ This file holds the rules; `CODEBASE.md` holds the map.
    along a wall, a rack beside a column, labels near the selection bar), both orientations each.
    **Never delete a REG test.** When the user changes a rule, update the expectation and keep the test.
    (STUDIO.md §8.)
+   During a fix, run REG tests by name: `npm run test:reg -- "<name pattern>"` (the browser tests run in up to 6
+   parallel workers, one Chromium each — `src/__test__/plan/handCheck/shard.js`). The full suite (`npm test`) still runs
+   once before every push.
 
 ---
 

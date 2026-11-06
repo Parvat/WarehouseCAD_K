@@ -24,23 +24,39 @@ function chromiumPath(chromium) {
   throw new Error('REG_handCheck needs Chromium: run `npx playwright-core install chromium`')
 }
 
-/** The app served and a browser up; `close()` stops both. */
+/** The app served and a browser up; `close()` stops both. Under Vitest the server is the run's one (handCheck/
+ *  globalSetup.js, inject('regAppUrl')) and only the browser is this worker's: Chromium launched once per worker. */
 export async function startApp() {
-  const { createServer } = await import('vite')
   const { chromium } = await import('playwright-core')
-  const server = await createServer({ root: ROOT, logLevel: 'error', server: { port: 5290, strictPort: false, hmr: false } })
-  await server.listen()
-  const url = server.resolvedUrls.local[0]
+  let url = null, server = null
+  try { url = (await import('vitest')).inject('regAppUrl') || null } catch { /* outside Vitest: a server of its own */ }
+  if (!url) {
+    const { createServer } = await import('vite')
+    server = await createServer({ root: ROOT, logLevel: 'error', server: { port: 5290, strictPort: false, hmr: false } })
+    await server.listen()
+    url = server.resolvedUrls.local[0]
+  }
   const browser = await chromium.launch({ executablePath: chromiumPath(chromium) })
-  return { url, browser, close: async () => { await browser.close(); await server.close() } }
+  return { url, browser, page: null, close: async () => { await browser.close(); await server?.close() } }
 }
 
-/** A page with the saved layout `json` open (restored from the autosave, as a reload restores it); its helpers. */
+/** A page with the saved layout `json` open (restored from the autosave, as a reload restores it); its helpers.
+ *  The worker's one page is reused while it is open: the layout goes into the autosave and the page reloads — the app's
+ *  state starts over as on a refresh — rather than a new page each test. */
 export async function openLayout(app, json, { keepTool = false } = {}) {
-  const page = await app.browser.newPage({ viewport: { width: 1440, height: 900 } })
+  let page = app.page && !app.page.isClosed() ? app.page : null
   const errors = []
-  page.on('pageerror', e => errors.push(e.message))
-  await page.goto(app.url)
+  if (!page) {
+    page = await app.browser.newPage({ viewport: { width: 1440, height: 900 } })
+    app.page = page
+    page.on('pageerror', e => page.__errors?.push(e.message))
+    await page.goto(app.url)
+  } else {
+    // whatever the last test left held (a failed drag, a modifier) is let go before the reload
+    await page.mouse.up().catch(() => {})
+    for (const k of ['Shift', 'Control', 'Alt', 'Meta']) await page.keyboard.up(k).catch(() => {})
+  }
+  page.__errors = errors
   await page.evaluate((j) => { localStorage.clear(); localStorage.setItem('warehousecad_autosave', j) }, json)
   await page.reload()
   await page.getByRole('button', { name: 'Sign in' }).click({ timeout: 120000 })

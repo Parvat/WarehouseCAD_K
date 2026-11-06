@@ -13,6 +13,12 @@ import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { R } from './fixtures'
+import { it as vitestIt } from 'vitest'
+import { dealer } from './handCheck/shard.js'
+
+/* In parallel (handCheck/shard.js): this file is shard 0 run alone, or shard N-1 when REG_handCheck.shardN.test.js
+   imports it; the browser tests below are dealt round-robin over the shards, the store tests run in shard 0. */
+const DEAL = dealer()
 
 globalThis.document = globalThis.document || { getElementById: () => null, querySelector: () => null }
 if (!globalThis.document.querySelector) globalThis.document.querySelector = () => null
@@ -31,7 +37,7 @@ async function layout(orientation) {
   return store
 }
 
-describe.each(['horizontal', 'vertical'])('REG — the hand check, %s', (orientation) => {
+if (DEAL.shard === 0) describe.each(['horizontal', 'vertical'])('REG — the hand check, %s', (orientation) => {
   let store
   beforeEach(async () => { store = await layout(orientation) })
 
@@ -164,6 +170,8 @@ describe.each(['horizontal', 'vertical'])('REG — the hand check, %s', (orienta
 /* ── the same bugs by real clicks (STUDIO.md §8): the app in Chromium, the mouse and keys on the canvas, on a saved
    older layout and a crowded one, both orientations (handCheck/browser.js) ── */
 describe('REG — the hand check by real clicks', () => {
+  // this shard's tests only (handCheck/shard.js) — each test as written, in whichever shard it is dealt to
+  const it = (...a) => { if (DEAL.owns()) vitestIt(...a) }
   let app
   beforeAll(async () => { const B = await import('./handCheck/browser.js'); app = await B.startApp() }, 240000)
   afterAll(async () => { await app?.close() })
@@ -173,7 +181,8 @@ describe('REG — the hand check by real clicks', () => {
   describe.each(FIXTURES)('%s', (name) => {
     let L
     const open = async () => { const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, B.fixture(name)); return L }
-    afterEach(async () => { if (L) { expect(L.errors).toEqual([]); await L.page.close(); L = null } })
+    // the page stays open for the next test (handCheck/browser.js openLayout reloads it with the next layout)
+    afterEach(async () => { if (L) { expect(L.errors).toEqual([]); L = null } })
     const crowded = name.startsWith('crowded')
     const fpOf = () => L.S('return S.getState().objects.find(o => /^fp_/.test(o.type))')
     /** a double row, a point on one half over a bay and a point in its flue (the rack's own frame, turned with it) */
