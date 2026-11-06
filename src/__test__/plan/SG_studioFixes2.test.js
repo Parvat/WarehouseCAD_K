@@ -75,11 +75,11 @@ describe('SG-3 — edit on the sheet (C21)', () => {
   it('SG-sheet-marks: in edit mode the sheet draws a handle at each beam end (the active one filled), the snap hint over the active beam, a dotted underline under each typeable value (beam heights, the pallet\'s height and width — never the 96″ beam), + Add level over the top load and − on the top level', async () => {
     const d = await draw({ clearHeightIn: 360, sprinklerIn: 360 }, { edit: { hint: '2″' }, active: 'beam:2' })
     const handles = d.items.filter(i => i.tag === 'handle')
-    expect(handles.length).toBe(8)                                                                       // four beams, two ends
+    expect(handles.length).toBe(10)                                                                      // four beams, two ends; level 1 on the floor too (dragged up, it gets its beam — BOM v1)
     expect(handles.filter(h => h.fill === '#2E7D5B').length).toBe(2)                                     // the active beam's
     expect(d.items.find(i => i.tag === 'snap-hint')?.s).toBe('2″ steps')                                 // text only, no arrow glyph
     const under = d.items.filter(i => i.tag === 'editable')
-    expect(under.length).toBe(5)                                                                         // three beam heights (the active one boxed) + 48″ + 40″
+    expect(under.length).toBe(6)                                                                         // three beam heights (the active one boxed) + level 1's 0″ (typed up, it gets its beam — BOM v1) + 48″ + 40″
     const beamLabel = d.items.find(i => i.tag === 'beam-label')
     expect(under.some(u => Math.abs(u.y1 - beamLabel.y) < 6)).toBe(false)                               // 96″: no underline
     const add = d.items.find(i => i.tag === 'add-level'), topLoad = Math.min(...d.items.filter(i => i.tag === 'load').map(i => i.y))

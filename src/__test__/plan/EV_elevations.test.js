@@ -704,7 +704,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(itemSVGOf(d).includes('stroke:#FFFFFF')).toBe(true)
   })
 
-  it('EV-misfit: a level whose pallet + clearance doesn\'t fit under the next beam — its loads red, "Doesn\'t fit", never over the beam above; the same levels as the Check layout error; the top level (no beam above) never', () => {
+  it('EV-misfit: a level whose pallet + clearance doesn\'t fit under the next beam — its loads red, "Doesn\'t fit", drawn at full height (never trimmed: BOM v1 — this one runs into the beam above); the same levels as the Check layout error; the top level (no beam above) never', () => {
     const t = { ...sampleT(), levels: [0, 74, 148, 222].map((z, k) => ({ beamIn: z, palletHeightIn: k === 1 ? 80 : k === 3 ? 36 : 60, loadLb: 2500 })) }
     expect([...misfitLevels(t).keys()]).toEqual([1])
     const d = elevationLayout(t, 96, { w: 1100, h: 420 }, sampleO)
@@ -712,7 +712,9 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     expect(bad.filter(i => i.stroke).every(i => i.fill === C.misfit && i.stroke === '#C0452A')).toBe(true)
     expect(bad.filter(i => !i.stroke).every(i => i.fill === '#C0452A')).toBe(true)
     const beamAbove = d.items.find(i => i.role?.kind === 'beam' && i.role.k === 2)
-    expect(bad.every(i => i.y >= beamAbove.y + beamAbove.h - 0.01)).toBe(true)
+    // full height: the 80″ load on the beam at 74″ reaches 154″ — past the underside of the beam above (148 − 4 = 144″)
+    const top = Math.min(...bad.filter(i => i.stroke).map(i => i.y))
+    expect([Math.abs(top - d.Y(74 + 80)) < 0.01, top < beamAbove.y + beamAbove.h]).toEqual([true, true])
     expect(d.items.filter(i => i.tag === 'misfit').map(i => i.s)).toEqual(['Doesn\'t fit'])
     expect(d.items.filter(i => i.tag === 'load' && i.level !== 1).every(i => i.fill === C.load || i.fill === C.deck)).toBe(true)
     const L = paintIn(withTypes(hand(false)), 'p1', { typeId: 'B' }), x = edit(L, tb => E.updateType(tb, 'B', { ...t, id: 'B', name: 'B' }))
