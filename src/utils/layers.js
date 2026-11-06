@@ -94,13 +94,20 @@ export function isPickable(layers, obj) {
 /** A predicate over objects for a fixed layer list — one Map for the lot. */
 export const pickableIn = (layers) => { const m = asMap(layers); return (o) => isPickable(m, o) }
 
-/** Can `obj` be clicked (selected)? Its layer shown and not locked — an object locked on its own still is: locked
+/** Can `obj` be clicked (selected)? Its layer shown — locked or not, and the object itself locked or not: locked
  *  means it cannot be moved, nudged, resized, deleted or cut (isPickable), not that it cannot be clicked, so its bar
  *  shows Unlock (STUDIO.md §7a Locks). */
 export function isSelectable(layers, obj) {
   if (!obj) return false
   const m = asMap(layers), l = m.get(layerOf(obj, m))
-  return !l || (l.visible !== false && !l.locked)
+  return !l || l.visible !== false
+}
+/** Is `obj` locked — on its own (Lock) or by its layer's padlock? Its controls are then disabled (STUDIO.md §7a Locks). */
+export function isLockedIn(layers, obj) {
+  if (!obj) return false
+  if (obj.locked) return true
+  const m = asMap(layers), l = m.get(layerOf(obj, m))
+  return !!(l && l.locked)
 }
 export const selectableIn = (layers) => { const m = asMap(layers); return (o) => isSelectable(m, o) }
 
@@ -205,8 +212,14 @@ export function toggleLock(store) {
   if (!sel.size) return
   // the column grid alone: its lock is the Columns layer's padlock
   if (st.objects.filter(o => sel.has(o.id)).every(isGrid)) { toggleColumnsLayer(store); return }
-  const anyUnlocked = st.objects.some(o => sel.has(o.id) && !o.locked)
+  const m = asMap(st.layers)
+  const anyUnlocked = st.objects.some(o => sel.has(o.id) && !isLockedIn(m, o))
   const objects = st.objects.map(o => (sel.has(o.id) ? { ...o, locked: anyUnlocked } : o))
+  // Unlock on what a layer's padlock locks: that layer is unlocked (the selection stays)
+  if (!anyUnlocked) {
+    const ids = new Set(st.objects.filter(o => sel.has(o.id)).map(o => layerOf(o, m)).filter(id => m.get(id)?.locked))
+    if (ids.size) store.setState({ layers: st.layers.map(l => (ids.has(l.id) ? { ...l, locked: false, lockedByHand: false } : l)) })
+  }
   store.setState({ objects })
   store.getState().commitObjectUpdate(st.selectedIds[0], {})
 }
@@ -218,7 +231,8 @@ export function setLayer(store, id, patch) {
   // the padlock, by hand: remembered as the user's (a lock Generate set never is — releaseGeneratedLocks)
   store.getState().updateLayer(id, 'locked' in patch ? { ...patch, lockedByHand: !!patch.locked } : patch)
   const st = store.getState()
-  const ok = pickableIn(st.layers)
+  // locked: the selection stays (its objects are still clicked, never moved — STUDIO.md §7a Locks); hidden: it goes
+  const ok = selectableIn(st.layers)
   const keep = st.selectedIds.filter(sid => { const o = st.objects.find(x => x.id === sid); return o && ok(o) })
   if (keep.length !== st.selectedIds.length) {
     if (keep.length) st.selectGroup(keep)

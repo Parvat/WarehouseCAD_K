@@ -2,7 +2,8 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { toggleLock } from '../utils/layers'
+import { toggleLock, isLockedIn } from '../utils/layers'
+import { useLocked } from './useLocked'
 import { TOOLS } from '../constants'
 import { worldBoundsOf, hitTest, fpWallHitTest, wallBeatsPadding } from '../canvas2/hitTest'
 import { screenToWorld } from '../canvas2/viewport'
@@ -178,14 +179,14 @@ export function placeBarClear(box, reach, w, h, win, card = null, labels = EMPTY
 /** The selection's elevation (C1 chip), and the elevations to apply (one undo step: assignSelected — the Elevations tab's
  *  Apply to selected rows). */
 function ElevationChip({ several = false }) {
-  const { objects, T, selectedIds, activeBaySelection } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, selectedIds: s.selectedIds, activeBaySelection: s.activeBaySelection })))
+  const { objects, T, selectedIds, activeBaySelection, layers } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, selectedIds: s.selectedIds, activeBaySelection: s.activeBaySelection, layers: s.layers })))
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   const types = useMemo(() => (T ? cellTypes(objects, T, selectionCells({ objects, selectedIds, activeBaySelection })) : []), [objects, T, selectedIds, activeBaySelection])
   if (!T?.types?.length) return null
   const one = types.length === 1 ? typeById(T, types[0].id) : null
   // a locked rack's elevation is not changed (STUDIO.md §7a Locks)
-  const locked = [...selectedIds, ...(activeBaySelection || []).map(e => e.objId)].some(id => objects.find(o => o.id === id)?.locked)
+  const locked = [...selectedIds, ...(activeBaySelection || []).map(e => e.objId)].some(id => isLockedIn(layers, objects.find(o => o.id === id)))
   // the chip: the level count (C1's "6 levels"); its full name is the hover title and the menu's
   const levels = (t) => `${t.levels?.length || 0} level${t.levels?.length === 1 ? '' : 's'}`
   const label = several ? 'Apply elevation' : one ? levels(one) : 'Mixed'
@@ -205,12 +206,12 @@ function ElevationChip({ several = false }) {
 /** The More items: Lock, the order, Copy, Cut (the card's More → Object, Arrange) — the ⋯ menu's and the object's
  *  right-click menu's, one list. */
 export function MoreItems({ obj, close }) {
-  const st = store.getState()
+  const st = store.getState(), locked = useLocked(obj)
   const run = (fn) => () => { fn(); close() }
   return (
     <>
       {/* the icon on the left (section 9; none yet: an empty slot), the shortcut on the right (only those that work) */}
-      <MenuItem icon={{ name: 'Lock' }} keys="Ctrl+L" onClick={run(() => toggleLock(store))}>{obj?.locked ? 'Unlock' : 'Lock'}</MenuItem>
+      <MenuItem icon={{ name: 'Lock' }} keys="Ctrl+L" onClick={run(() => toggleLock(store))}>{locked ? 'Unlock' : 'Lock'}</MenuItem>
       <MenuLine />
       <MenuItem icon={null} onClick={run(st.sendToBack)}>To back</MenuItem>
       <MenuItem icon={null} onClick={run(st.sendBackward)}>Back</MenuItem>
@@ -243,22 +244,23 @@ const tool = (t) => () => { endTool(store); store.getState().setActiveTool(t) }
 /** Lock / Unlock in one click (Ctrl+L): every bar that has a selection to lock (STUDIO.md §7a) — locked when all of the
  *  selection is. */
 function LockBtn() {
-  const locked = useCanvasStore(s => s.selectedIds.length > 0 && s.selectedIds.every(id => s.objects.find(o => o.id === id)?.locked))
+  const locked = useCanvasStore(s => s.selectedIds.length > 0 && s.selectedIds.every(id => isLockedIn(s.layers, s.objects.find(o => o.id === id))))
   return <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
 }
 
 function RackBar({ obj }) {
+  const locked = useLocked(obj)
   const beams = obj.beams || [96]
   return (
     <>
       <ElevationChip />
       <Sep />
       {/* a locked rack is not resized: no bay added or removed (STUDIO.md §7a Locks) */}
-      <IconBtn name="Add bay" label="Add bay" title="Add a bay at the far end" locked={!!obj.locked} onClick={() => addBayTo(obj)} />
-      <IconBtn name="Remove bay" label="Remove bay" title={obj.activeBayIdx != null ? `Remove bay ${obj.activeBayIdx + 1}` : 'Remove the last bay'} disabled={beams.length <= 1} locked={!!obj.locked} onClick={() => removeBayFrom(obj)} />
-      <IconBtn name="Split" label="Split" title="Split (S)" locked={!!obj.locked} onClick={tool(SPLIT_TOOL)} />
-      <IconBtn name="Row group" label="Row group" title="Put this row in a Row group (G)" locked={!!obj.locked} onClick={groupSelectedRows} />
-      <IconBtn name="Rotate" label="Rotate" title="Rotate 90°" locked={!!obj.locked} onClick={() => rotateQuarter(obj)} />
+      <IconBtn name="Add bay" label="Add bay" title="Add a bay at the far end" locked={locked} onClick={() => addBayTo(obj)} />
+      <IconBtn name="Remove bay" label="Remove bay" title={obj.activeBayIdx != null ? `Remove bay ${obj.activeBayIdx + 1}` : 'Remove the last bay'} disabled={beams.length <= 1} locked={locked} onClick={() => removeBayFrom(obj)} />
+      <IconBtn name="Split" label="Split" title="Split (S)" locked={locked} onClick={tool(SPLIT_TOOL)} />
+      <IconBtn name="Row group" label="Row group" title="Put this row in a Row group (G)" locked={locked} onClick={groupSelectedRows} />
+      <IconBtn name="Rotate" label="Rotate" title="Rotate 90°" locked={locked} onClick={() => rotateQuarter(obj)} />
       <Sep />
       <LockBtn />
       <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={duplicateSelection} />
@@ -318,7 +320,7 @@ function RowsBar({ ids }) {
 
 /** Several kinds selected together: the count, then only the actions every one of them has — Lock, Duplicate, Delete. */
 function MixedBar({ objs }) {
-  const st = store.getState(), locked = objs.every(o => o.locked)
+  const st = store.getState(), layers = useCanvasStore(s => s.layers), locked = objs.every(o => isLockedIn(layers, o))
   return (
     <>
       <span aria-label="Items selected" data-bar-count style={{ padding: '0 8px 0 6px', fontSize: 12, color: B.muted }}>
@@ -336,6 +338,7 @@ function MixedBar({ objs }) {
 const feet = (px, gs) => { const t = Math.round(px / gs * 12), f = Math.floor(t / 12), i = t - f * 12; return i ? `${f}′ ${i}″` : `${f}′` }
 /** A zone's width or length, typed (40′, 40' 6", 40) — the card's own write: zoneSized, one undo step. */
 function SizeField({ obj, k, aria }) {
+  const locked = useLocked(obj)
   const gs = store.getState().gridSize || 40
   const shown = feet(obj[k], gs)
   const [text, setText] = useState(null)
@@ -349,13 +352,14 @@ function SizeField({ obj, k, aria }) {
     st.commitObjectUpdate(obj.id, zoneSized(st.objects, cur, { [k]: ft * gs }, { gridSize: gs }))
   }
   return (
-    <input aria-label={aria} className="st-field" value={text ?? shown} disabled={!!obj.locked} title={obj.locked ? 'Locked' : undefined} onChange={e => setText(e.target.value)} onFocus={e => { setText(shown); requestAnimationFrame(() => e.target.select()) }}
+    <input aria-label={aria} className="st-field" value={text ?? shown} disabled={locked} title={locked ? 'Locked' : undefined} onChange={e => setText(e.target.value)} onFocus={e => { setText(shown); requestAnimationFrame(() => e.target.select()) }}
       onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setText(null); e.currentTarget.blur() } }}
-      style={{ height: 28, width: 46, boxSizing: 'border-box', padding: 0, border: 0, borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, textAlign: 'center', flexShrink: 0, ...(obj.locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }} />
+      style={{ height: 28, width: 46, boxSizing: 'border-box', padding: 0, border: 0, borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, textAlign: 'center', flexShrink: 0, ...(locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }} />
   )
 }
 
 function ZoneBar({ obj }) {
+  const locked = useLocked(obj)
   const st = store.getState()
   return (
     <>
@@ -363,7 +367,7 @@ function ZoneBar({ obj }) {
       <span style={{ padding: '0 4px', color: B.muted }}>×</span>
       <SizeField obj={obj} k="height" aria="Zone length" />
       <Sep />
-      <IconBtn name="Lock" label={obj.locked ? 'Unlock' : 'Lock'} title={obj.locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={!!obj.locked} pressed={!!obj.locked} onClick={() => toggleLock(store)} />
+      <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
       <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={duplicateSelection} />
       <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} />
     </>
@@ -399,11 +403,13 @@ export function barHint(kind, columnsLayerLocked) {
 }
 
 function AisleBar({ obj }) {
+  const locked = useLocked(obj)
   const st = store.getState()
-  return <IconBtn name="Lock" label={obj.locked ? 'Unlock' : 'Lock'} title={obj.locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={!!obj.locked} pressed={!!obj.locked} onClick={() => toggleLock(store)} />
+  return <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
 }
 
 function BuildingBar({ obj }) {
+  const locked = useLocked(obj)
   const T = useCanvasStore(s => s.elevations)
   const gridSize = useCanvasStore(s => s.gridSize) || 40
   const wallT = obj.wallThicknessFt || 0.25
@@ -415,8 +421,8 @@ function BuildingBar({ obj }) {
       <span style={{ color: B.muted, fontSize: 12, padding: '0 6px 0 4px' }}>Thickness</span>
       <div role="group" aria-label="Wall thickness" style={{ display: 'flex', padding: 2, borderRadius: 6, background: B.inset }}>
         {[0.25, 0.5, 0.75, 1].map(v => (
-          <button key={v} type="button" aria-pressed={wallT === v} onClick={() => setWall(v)} disabled={!!obj.locked} title={obj.locked ? 'Locked' : undefined}
-            style={{ height: 28, padding: '0 8px', border: 0, borderRadius: 6, fontFamily: MONO, fontSize: 12, background: wallT === v ? B.active : 'transparent', color: wallT === v ? B.accent : B.muted, ...(obj.locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>{v * 12}″</button>
+          <button key={v} type="button" aria-pressed={wallT === v} onClick={() => setWall(v)} disabled={locked} title={locked ? 'Locked' : undefined}
+            style={{ height: 28, padding: '0 8px', border: 0, borderRadius: 6, fontFamily: MONO, fontSize: 12, background: wallT === v ? B.active : 'transparent', color: wallT === v ? B.accent : B.muted, ...(locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>{v * 12}″</button>
         ))}
       </div>
       <Sep />

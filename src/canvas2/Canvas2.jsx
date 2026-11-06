@@ -34,7 +34,7 @@ import { HOME_TOOL } from '../utils/homeTool'
 import { useMeasureMode, endTool } from '../utils/toolSwitch'
 import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupPress, useRowGroup, groupRowsNow } from '../utils/rowGroupTool'
 import { hitTest } from './hitTest'
-import { isPickable } from '../utils/layers'
+import { isPickable, isLockedIn } from '../utils/layers'
 import { SPLIT_TOOL, useSplit, hoverSplit, splitAt } from '../utils/splitTool'
 import { rebuildAisles } from '../utils/aisleRebuild'
 import { nanoid } from 'nanoid'
@@ -214,7 +214,8 @@ export function Canvas2() {
      `selectedObjects.length === 1`, so it never reaches this gate at
      all. */
   // a locked object (on its own) is selected but has no handles: it cannot be resized or rotated (STUDIO.md §7a Locks)
-  const unlockedSel = selectedObjects.every(o => !o.locked)
+  const layersNow = useCanvasStore(s => s.layers)
+  const unlockedSel = selectedObjects.every(o => !isLockedIn(layersNow, o))   // on its own or by its layer's padlock
   const handleTarget = unlockedSel && selectedObjects.length === 1 && hasResizeHandles(selectedObjects[0].type, PORTED_RACK_TYPES)
     ? selectedObjects[0] : null
 

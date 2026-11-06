@@ -19,6 +19,7 @@ import { getCanvasContainerSize } from '../utils/canvasContainer'
 import { openSetup, nameOf } from '../utils/project'
 import { ZONE_KINDS } from '../generate/rackingArea'
 import { RowGroupNote } from '../canvas2/RowGroupBar'
+import { useLocked } from './useLocked'
 import { Head, BigFigure, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, Row, ToggleRow, Totals, Hint,
   Tag, CountChip, IconBtn, C, MONO, LEVEL, LockedFields } from './cardParts'
 
@@ -87,6 +88,7 @@ function ElevationChip() {
 /** The rack's four fields — Bays · Beam · Depth · Flue (or Upright) — one undo step each; `group`: the C8 order (Bays ·
  *  Depth · Beam · Flue). The card's own writes, shared by C1 and the Row group's C8. */
 export function RackFields({ obj, newBeam, setNewBeam, group = false }) {
+  const locked = useLocked(obj)
   const { commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize || 40 })))
   const beams = obj.beams || [96], upIn = obj.uprightWidth || 3
   const activeBay = obj.activeBayIdx ?? null
@@ -136,7 +138,7 @@ export function RackFields({ obj, newBeam, setNewBeam, group = false }) {
   }
   return (
     <Sec aria-label="Rack fields">
-      <LockedFields locked={obj.locked}>
+      <LockedFields locked={locked}>
         <Grid2>
           {group ? <>{f.bays}{f.depth}{f.beam}{f.flue}</> : <>{f.bays}{f.beam}{f.depth}{f.flue}</>}
         </Grid2>
@@ -201,6 +203,7 @@ export function RowGroupMain({ obj, newBeam, setNewBeam, rows }) {
 
 /** C6: a zone — its kind, its name, an exact width and length (one undo step; the edge against a wall stays). */
 export function ZoneMain({ obj }) {
+  const locked = useLocked(obj)
   const commitObjectUpdate = useCanvasStore(s => s.commitObjectUpdate)
   const gridSize = useCanvasStore(s => s.gridSize) || 40
   const kind = ZONE_KINDS.find(z => z.type === obj.type)?.label || 'Zone'
@@ -215,7 +218,7 @@ export function ZoneMain({ obj }) {
   return (
     <div aria-label="Zone settings" style={{ padding: '8px 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <span style={{ color: C.muted, fontSize: 12 }}>Zone · {kind}</span>
-      <LockedFields locked={obj.locked}>
+      <LockedFields locked={locked}>
         <InlineField label="Name"><TextInput words aria="Zone name" value={obj.label || ''} onCommit={t => commitObjectUpdate(obj.id, { label: t })} /></InlineField>
         <Grid2>
           <Field label="Width"><TextInput aria="Zone width" value={ftIn(obj.width / gridSize * 12)} onCommit={size('width')} /></Field>

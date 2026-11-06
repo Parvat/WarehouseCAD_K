@@ -25,11 +25,11 @@ describe('canvas2 hitTest — object picking, ported from the SVG', () => {
     expect(hitTest([row, dbl], LAYERS, 1500, 5000, 1, GS)).toBeNull()
   })
 
-  it('never picks an object on a hidden or locked layer; a locked object is still picked (clicked — Fix 6: locked means it cannot be moved, not clicked)', () => {
+  it('never picks an object on a hidden layer; one on a locked layer, or locked itself, is still picked (clicked — Fix 6: locked means it cannot be moved, not clicked)', () => {
     const hidden = [{ id: 'l1', visible: false, locked: false }]
     const locked = [{ id: 'l1', visible: true, locked: true }]
     expect(hitTest([row], hidden, 1500, 70, 1, GS)).toBeNull()
-    expect(hitTest([row], locked, 1500, 70, 1, GS)).toBeNull()
+    expect(hitTest([row], locked, 1500, 70, 1, GS)).toBe(row.id)
     expect(hitTest([{ ...row, locked: true }], LAYERS, 1500, 70, 1, GS)).toBe(row.id)
   })
 

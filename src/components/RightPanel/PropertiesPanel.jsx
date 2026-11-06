@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { TEXT_FONTS, textFace } from '../../theme/tokens'
 import { useCanvasStore } from '../../store/useCanvasStore'
-import { toggleLock } from '../../utils/layers'
+import { toggleLock, isLockedIn } from '../../utils/layers'
+import { useLocked } from '../../studio/useLocked'
 import { deleteSelectionWithAreas } from '../../utils/deleteSelection'
 import { useShallow } from 'zustand/react/shallow'
 import { pxToFtIn } from '../../utils/canvas'
@@ -141,13 +142,14 @@ function More({ children, rack, locked }) {
 
 /* the object's order, lock and delete (the selection bar takes these in step 3) */
 function ObjectActions({ obj }) {
+  const locked = useLocked(obj)
   const { deleteSelected, bringForward, sendBackward, bringToFront, sendToBack } = useCanvasStore(useShallow(s => ({ deleteSelected: s.deleteSelected, bringForward: s.bringForward, sendBackward: s.sendBackward, bringToFront: s.bringToFront, sendToBack: s.sendToBack })))
   const small = { height: 28, padding: '0 8px', fontSize: 12 }
   return (
     <>
       <SecLabel>Object</SecLabel>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-        <IconBtn name="Lock" label={obj.locked ? 'Unlock' : 'Lock'} title={obj.locked ? 'Unlock (Ctrl+L)' : 'Lock'} active={!!obj.locked} onClick={() => toggleLock(useCanvasStore)} />
+        <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock'} active={locked} onClick={() => toggleLock(useCanvasStore)} />
         <Btn kind="inset" style={small} title="Send to back" onClick={sendToBack}>To back</Btn>
         <Btn kind="inset" style={small} title="Send backward" onClick={sendBackward}>Back</Btn>
         <Btn kind="inset" style={small} title="Bring forward" onClick={bringForward}>Forward</Btn>
@@ -166,6 +168,7 @@ function ObjectActions({ obj }) {
 export function PropertiesPanel() {
   const { selectedIds, objects, groups, updateObject, commitObjectUpdate, deleteSelected, gridSize, createAisle } = useCanvasStore(useShallow(s => ({ selectedIds: s.selectedIds, objects: s.objects, groups: s.groups, updateObject: s.updateObject, commitObjectUpdate: s.commitObjectUpdate, deleteSelected: s.deleteSelected, gridSize: s.gridSize, createAisle: s.createAisle })))
   const selected = objects.filter(o => selectedIds.includes(o.id))
+  const layers = useCanvasStore(s => s.layers)                 // a layer's padlock locks its objects' fields too
   // the Row group's rows (utils/rowGroupTool.js): a selected group row shows the group's card (C8)
   const groupKeys = useRowGroup(s => s.keys)
   /* the rack's beam for a new bay (the rack panel's own choice, shared by the Beam field and the bay list) */
@@ -229,7 +232,7 @@ export function PropertiesPanel() {
   }
 
   /* ── Single object ──────────────────────────────────────────────────────── */
-  const obj = selected[0]
+  const obj = selected[0], locked = isLockedIn(layers, obj)
   const up     = (k, v) => updateObject(obj.id, { [k]: v })
   const commit = (k, v) => commitObjectUpdate(obj.id, { [k]: v })
 
@@ -239,13 +242,13 @@ export function PropertiesPanel() {
   if (RACK_TYPES.has(obj.type)) {
     return (
       <>
-        <LockedFields locked={obj.locked}><MultiBayPanel /></LockedFields>
+        <LockedFields locked={locked}><MultiBayPanel /></LockedFields>
         {inGroup
           ? <RowGroupMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} rows={groupRows} />
           : <><RackMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} /><LayoutBlock last={false} /></>}
-        <More rack locked={obj.locked}>
+        <More rack locked={locked}>
           <ObjectActions obj={obj} />
-          <LockedFields locked={obj.locked}>
+          <LockedFields locked={locked}>
             <RackRowExtras obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} />
             {divider}
             <Appearance obj={obj} up={up} commit={commit} />
@@ -260,9 +263,9 @@ export function PropertiesPanel() {
     return (
       <>
         <ZoneMain obj={obj} />
-        <More locked={obj.locked}>
+        <More locked={locked}>
           <ObjectActions obj={obj} />
-          <LockedFields locked={obj.locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
+          <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
         </More>
       </>
     )
@@ -273,9 +276,9 @@ export function PropertiesPanel() {
   return (
     <>
       <Head caption={bayLabel ? `${typeName(obj)} · ${bayLabel}` : typeName(obj)} />
-      <LockedFields locked={obj.locked}><MultiBayPanel /></LockedFields>
+      <LockedFields locked={locked}><MultiBayPanel /></LockedFields>
       <Sec>
-        <LockedFields locked={obj.locked}>
+        <LockedFields locked={locked}>
         {obj.type === 'rack_cantilever' && <CantileverPanel obj={obj} />}
         {/* one column picked: the distances to its neighbouring lines, typed (canvas2/columnLines.js) */}
         {obj.type === 'column_grid' && <ColumnLineFields obj={obj} />}
@@ -327,9 +330,9 @@ export function PropertiesPanel() {
         {obj.type === 'text' && <TextFields obj={obj} up={up} commit={commit} />}
         </LockedFields>
       </Sec>
-      <More locked={obj.locked}>
+      <More locked={locked}>
         <ObjectActions obj={obj} />
-        <LockedFields locked={obj.locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
+        <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
       </More>
     </>
   )

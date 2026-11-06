@@ -74,10 +74,12 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect(floor.length).toBeGreaterThan(3)
     // the press on the floor: hitTest finds the building's footprint, the canvas drops it — a building is picked by its walls
     expect(readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')).toMatch(/const onFloor = !!\(hitObj && FP_SET_INPUT\.has\(hitObj\.type\)\)\r?\n\s*if \(onFloor\) \{ if \(!clickTarget\) clickTarget = \{ fp: hitObj\.id \}; hitId = null; hitObj = null \}/)
-    // its wall: grabbed, as Generate leaves the layers; not on a Building layer locked by hand
+    // its wall: grabbed, as Generate leaves the layers; on a Building layer locked by hand still clicked (Fix 6: a locked
+    // layer's objects are selected, never moved — useCanvasInteraction's beginDrag asks isPickable)
     const wall = { x: fp.x, y: fp.y + fp.height / 2 }
     expect(m.fpWallHitTest(objects, layers, wall.x, wall.y, z, gridSize)?.objId).toBe(fp.id)
-    expect(m.fpWallHitTest(objects, withLayer(layers, 'building', { locked: true }), wall.x, wall.y, z, gridSize)).toBe(null)
+    expect(m.fpWallHitTest(objects, withLayer(layers, 'building', { locked: true }), wall.x, wall.y, z, gridSize)?.objId).toBe(fp.id)
+    expect(m.L.isPickable(withLayer(layers, 'building', { locked: true }), fp)).toBe(false)
     // a column square: picked when Columns is unlocked, not locked
     const grid = objects.find(o => o.type === 'column_grid')
     const xs = [grid.x], ys = [grid.y]
@@ -87,16 +89,17 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     const c = xs.flatMap(x => ys.map(y => ({ x: x + (grid.columnW || gridSize) / 2, y: y + (grid.columnH || gridSize) / 2 })))
       .find(p => m.hitTest(objects, onlyColumnsOpen, p.x, p.y, z, gridSize) === grid.id)
     expect(c).toBeTruthy()
-    expect(m.hitTest(objects, layers, c.x, c.y, z, gridSize)).not.toBe(grid.id)             // the Columns layer Generate locked: not picked as an object (a click picks one column — columnPick.js)
+    expect(m.hitTest(objects, layers, c.x, c.y, z, gridSize)).toBe(grid.id)                 // the Columns layer Generate locked: still clicked (Fix 6), never moved
+    expect(m.L.isPickable(layers, grid)).toBe(false)
   })
 
-  it('LY-locked: a locked layer is drawn, printed and still snapped to, but not pickable or caught by a marquee — Racking locked: no rack picked or marqueed; Building and Columns locked: a rack dragged to the wall or a column still gets its guide; hidden: no guide', () => {
+  it('LY-locked: a locked layer is drawn, printed and still snapped to, clicked but not moved or caught by a marquee — Racking locked: a rack clicked (Fix 6), none movable or marqueed; Building and Columns locked: a rack dragged to the wall or a column still gets its guide; hidden: no guide', () => {
     const { layers, objects, gridSize } = st()
     const rack = objects.find(o => o.type === 'rack_double_row')
     const b = { x: rack.x + rack.width / 2, y: rack.y + rack.height / 2 }
     const racksLocked = withLayer(layers, 'racking', { locked: true })
     expect(m.hitTest(objects, layers, b.x, b.y, 1, gridSize)).toBe(rack.id)
-    expect(m.hitTest(objects, racksLocked, b.x, b.y, 1, gridSize)).not.toBe(rack.id)
+    expect([m.hitTest(objects, racksLocked, b.x, b.y, 1, gridSize), m.L.isPickable(racksLocked, rack)]).toEqual([rack.id, false])
     const all = { x: fp.x - 10, y: fp.y - 10, width: fp.width + 20, height: fp.height + 20 }
     const caught = (ls) => m.objectsInMarquee(objects, all, { isVisible: m.L.pickableIn(ls) }).map(id => objects.find(o => o.id === id).type)
     expect(caught(layers).filter(t => t.startsWith('rack_')).length).toBe(objects.filter(o => o.type.startsWith('rack_')).length)
@@ -207,11 +210,11 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect(labelsG(aislesOnly)).not.toMatch(/rgba\(192,57,43,0\.16\)/)  // no red pinched shade, no checks
   })
 
-  it('LY-select: locking or hiding a layer drops its objects from the selection, so nothing locked can be dragged; select-all and a drag take only pickable objects', () => {
+  it('LY-select: hiding a layer drops its objects from the selection; locking it keeps them (Fix 6: clicked, never moved — a drag takes only pickable objects); select-all and a drag take only pickable objects', () => {
     const rack = st().objects.find(o => o.type === 'rack_double_row')
     st().selectGroup([rack.id])
     m.L.setLayer(m.useCanvasStore, 'racking', { locked: true })
-    expect(st().selectedIds).toEqual([])
+    expect([st().selectedIds, m.L.isLockedIn(st().layers, rack)]).toEqual([[rack.id], true])
     m.L.setLayer(m.useCanvasStore, 'racking', { locked: false })
     st().selectGroup([rack.id])
     m.L.setLayer(m.useCanvasStore, 'racking', { visible: false })

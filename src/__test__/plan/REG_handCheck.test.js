@@ -184,7 +184,7 @@ describe('REG — the hand check by real clicks', () => {
       return { r, half: at(r.width / 7, -r.height / 4), flue: at(r.width / 7, 0), far: at(-r.width / 3, -r.height / 4) }
     }
 
-    it('REG-wall-pick (click): a click on a wall selects the building — an older layout\'s Generate lock is gone on load; a wall a rack stands 3″ off; a hand lock stays locked after a reload', async () => {
+    it('REG-wall-pick (click): a click on a wall selects the building — an older layout\'s Generate lock is gone on load; a wall a rack stands 3″ off; a hand lock stays locked after a reload (clicked, its bar Unlock, never moved — Fix 6)', async () => {
       await open()
       const fp = await fpOf()
       await L.click({ x: fp.x + fp.width / 2, y: fp.y })
@@ -208,8 +208,13 @@ describe('REG — the hand check by real clicks', () => {
       const saved = await L.S('return SL.serializeScene(S.getState())')
       await L.page.close()
       const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, saved)
+      expect(await L.S('return !!S.getState().layers.find(l => l.id === "building").locked')).toBe(true)
+      // a locked layer's object is still clicked (Fix 6): selected, its bar Unlock — and a drag moves nothing
       await L.click({ x: fp.x + fp.width / 2, y: fp.y })
-      expect(await L.selected()).not.toContain(fp.type)
+      expect([await L.selected(), await L.page.locator('[data-selection-bar]').getByRole('button', { name: /^(Lock|Unlock)$/ }).getAttribute('aria-label')]).toEqual([[fp.type], 'Unlock'])
+      const gs = await L.S('return S.getState().gridSize || 40')
+      await L.drag({ x: fp.x + fp.width / 2, y: fp.y }, { x: fp.x + fp.width / 2 + 3 * gs, y: fp.y + 3 * gs })
+      expect(await L.S('const f = S.getState().objects.find(o => o.id === arg); return [f.x, f.y]', fp.id)).toEqual([fp.x, fp.y])
     }, T)
 
     it('REG-delete-building (click): click the wall, Delete — the building only goes, racks, zones and columns stay; one undo step; the notice\'s Undo brings it back', async () => {
@@ -2380,6 +2385,42 @@ describe('REG — the hand check by real clicks', () => {
       const f = L.page.getByRole('spinbutton', { name: 'Bays' })
       await f.click(); await L.page.keyboard.press('?'); await L.page.waitForTimeout(150)
       expect(await sheet().count()).toBe(0)
+    }, T)
+
+    it('REG-layer-lock-select (click): Racking locked in the Layers card with a rack selected keeps it selected, its controls greyed (45 %, Locked) and its bar Unlock; another rack clicked selects, greyed, and does not move; Unlock in the bar unlocks the layer; Ctrl+A still skips the layer locked by hand', async () => {
+      await open()
+      const a = await pairPoints(), id = a.r.id, gs = await gs7()
+      const bar = L.page.locator('[data-selection-bar]')
+      const look = async () => ({
+        sel: await L.S('return S.getState().selectedIds'),
+        lock: await bar.getByRole('button', { name: /^(Lock|Unlock)$/ }).getAttribute('aria-label'),
+        rotate: await bar.getByRole('button', { name: 'Rotate', exact: true }).evaluate(el => [el.disabled, getComputedStyle(el).opacity, el.title]),
+        bays: await L.page.getByRole('spinbutton', { name: 'Bays' }).evaluate(el => [el.matches(':disabled'), getComputedStyle(el).opacity, el.closest('[title]')?.getAttribute('title') || null]),
+      })
+      const racking = () => L.S('return !!S.getState().layers.find(l => l.id === "racking").locked')
+      await L.click(a.far)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([id])
+      // the Layers card: Lock Racking — the rack stays selected, greyed
+      await openLayers()
+      await layersCard().getByRole('button', { name: 'Lock Racking layer' }).click(); await L.page.waitForTimeout(150)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)                 // closes the card only
+      expect([await racking(), await look()]).toEqual([true, { sel: [id], lock: 'Unlock', rotate: [true, '0.45', 'Locked'], bays: [true, '0.45', 'Locked'] }])
+      // another rack: a click selects it, greyed; a drag moves nothing
+      const other = (await openRacks()).find(x => x !== id), o = await obj7(other), at = rackAt(o, -0.3, -0.25)
+      await L.click(at)
+      expect(await look()).toEqual({ sel: [other], lock: 'Unlock', rotate: [true, '0.45', 'Locked'], bays: [true, '0.45', 'Locked'] })
+      await L.drag(at, { x: at.x + 3 * gs, y: at.y + 3 * gs })
+      const geo = (r) => [r.x, r.y, r.width, r.height, r.rotation || 0, (r.beams || []).join()]   // where it stands (a press may still mark its bay)
+      expect(geo(await obj7(other))).toEqual(geo(o))
+      // Unlock in the bar: the layer unlocked, the rack still selected, its controls back
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.click(at)   // the row again (the press may have left its bay picked)
+      await bar.getByRole('button', { name: 'Unlock' }).click(); await L.page.waitForTimeout(150)
+      expect([await racking(), (await look()).sel, (await look()).lock, (await look()).rotate[0]]).toEqual([false, [other], 'Lock', false])
+      // locked by hand again: Ctrl+A skips its racks
+      await openLayers()
+      await layersCard().getByRole('button', { name: 'Lock Racking layer' }).click(); await L.page.keyboard.press('Escape')
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(200)
+      expect(await L.S('const st = S.getState(); return st.selectedIds.filter(i => /^rack_/.test(st.objects.find(o => o.id === i)?.type || "")).length')).toBe(0)
     }, T)
 
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {

@@ -15,7 +15,7 @@ import { columnAt, pickedColumn } from './columnPick'
 import { sectionIds } from './sections'
 import { selectionLevel, pickedBays, isBayRack } from './selectionLevel'
 import { bayHalfAt } from '../utils/baySides'
-import { pickableIn, isPickable } from '../utils/layers'
+import { isPickable, selectableIn } from '../utils/layers'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const round = (v) => Math.round(v * 10) / 10
@@ -75,7 +75,7 @@ export function predictClick(st, w, zoom) {
   // the building's blank floor: the building
   if (hit && FP.has(hit.type)) return { key: 'building:' + hit.id, kind: 'building', ids: [hit.id] }
   if (!hit) return { key: 'none', kind: 'none', ids: [] }
-  const ok = pickableIn(st.layers)
+  const ok = selectableIn(st.layers)                             // as a click picks: a locked row too (useCanvasInteraction.js)
   // a rack: its row (section); on the row selected — or the row whose bays are picked — the bay under it
   if (isBayRack(hit)) {
     const sec = sectionIds(st.objects, hit.id, gs), level = selectionLevel(st), sel = st.selectedIds || []
