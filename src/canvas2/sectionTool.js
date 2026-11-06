@@ -5,7 +5,7 @@
 
 import { create } from 'zustand'
 import { polySection } from '../utils/sectionAreas'
-import { penPoint, closeAlongWalls, drawnRect } from '../utils/sectionEdit'
+import { penPoint, drawnRect, wallSides, sideAt, onWall } from '../utils/sectionEdit'
 import { HOME_TOOL } from '../utils/homeTool'
 
 export const SECTION_RECT_TOOL = 'section_rect'
@@ -14,7 +14,8 @@ export const isSectionTool = (t) => t === SECTION_RECT_TOOL || t === SECTION_PEN
 
 /** drag: { from, to } (world) while a rectangle is dragged; pen: [[x, y], …] the points clicked; at: the pointer */
 /* guide: the dashed line along a snapped angle; len: the live segment length (world px) — both for the pen */
-export const useSectionTool = create(() => ({ drag: null, pen: [], at: null, added: false, guide: null, len: 0 }))   // added: the last press placed a point
+/* sides: the wall close's two sides while one is chosen ([{ pts, ok }] — drawing has stopped), hot: the one under the pointer */
+export const useSectionTool = create(() => ({ drag: null, pen: [], at: null, added: false, guide: null, len: 0, sides: null, hot: -1 }))   // added: the last press placed a point
 /** The section the Sections list (the card) is hovering: drawn highlighted on the plan. */
 export const useSectionHover = create(() => ({ id: null }))
 /** The section whose name is being typed on the plan (a second click on its label). */
@@ -24,12 +25,12 @@ export const useSectionRename = create(() => ({ id: null }))
 export function cancelSection() {
   const s = useSectionTool.getState()
   if (!s.drag && !s.pen.length) return false
-  useSectionTool.setState({ drag: null, pen: [], at: null, added: false, guide: null, len: 0 })
+  useSectionTool.setState({ drag: null, pen: [], at: null, added: false, guide: null, len: 0, sides: null, hot: -1 })
   return true
 }
 
 const finish = (store, fields) => {
-  useSectionTool.setState({ drag: null, pen: [], at: null, added: false, guide: null, len: 0 })
+  useSectionTool.setState({ drag: null, pen: [], at: null, added: false, guide: null, len: 0, sides: null, hot: -1 })
   const st = store.getState()
   st.setActiveTool(HOME_TOOL)
   if (!fields) return null
@@ -66,27 +67,37 @@ const snapped = (store, w, zoom, shift) => {
 /** A click at world `w`: a point added — or, on the first point (3+ placed), the shape closed. A second click on the
  *  same spot (a double-click's) adds nothing. */
 export function penClick(store, w, zoom = 1, shift = false) {
+  // the wall close's sides offered: this click picks the one under it (none under it: nothing)
+  { const s = useSectionTool.getState()
+    if (s.sides) { const i = sideAt(s.sides, w.x, w.y); return i >= 0 ? finish(store, polySection(s.sides[i].pts, store.getState().objects)) : null } }
   const pen = useSectionTool.getState().pen, z = zoom || 1
   if (!(pen.length >= 3 && Math.hypot(w.x - pen[0][0], w.y - pen[0][1]) <= CLOSE_PX / z)) { const q = snapped(store, w, zoom, shift).p; w = { x: q[0], y: q[1] } }
   if (pen.length >= 3 && Math.hypot(w.x - pen[0][0], w.y - pen[0][1]) <= CLOSE_PX / z) return penClose(store, { onFirst: true })
   const last = pen[pen.length - 1]
   if (last && Math.hypot(w.x - last[0], w.y - last[1]) <= 3 / z) { useSectionTool.setState({ added: false }); return null }
   useSectionTool.setState({ pen: [...pen, [w.x, w.y]], added: true })
+  /* started on a wall and now on a wall again: drawing stops — both closing sides, along the walls each way, are offered
+     (those that would overlap another section are not); the next click picks one, Esc cancels */
+  { const st = store.getState(), next = useSectionTool.getState().pen
+    if (next.length >= 2 && onWall(st.objects, next[next.length - 1], st.gridSize || 40)) {
+      const sides = wallSides(st.objects, next, st.gridSize || 40)
+      if (sides && sides.some(sd => sd.ok)) useSectionTool.setState({ sides, hot: sideAt(sides, w.x, w.y), guide: null, len: 0 })
+    } }
   return null
 }
-/** A double-click (or a click on the first point): the shape closed — 3 points or more make a section. A path that
- *  starts on a wall and ends on a wall is finished along the walls, through the corner on the side drawn (two points
- *  are enough then). */
-export function penClose(store, { onFirst = false } = {}) {
+/** A double-click (or a click on the first point): the shape closed — 3 points or more make a section. (A path from a
+ *  wall to a wall stops at the wall instead, its sides offered: penClick.) */
+export function penClose(store, { onFirst = false } = {}) {          // eslint-disable-line no-unused-vars
   const pen = useSectionTool.getState().pen, st = store.getState()
-  const walls = onFirst ? null : closeAlongWalls(st.objects, pen, st.gridSize || 40)
-  if (walls) return finish(store, polySection(walls, st.objects))
+  if (useSectionTool.getState().sides) return null           // a side is being chosen: a click picks it
   if (pen.length < 3) return null                          // not a shape yet: drawing goes on (Esc drops it)
   return finish(store, polySection(pen, st.objects))
 }
 /** The pointer moved with the pen: its snapped point, the guide and the live length. */
 export function penMove(w, store = null, zoom = 1, shift = false) {
   if (!store) { useSectionTool.setState({ at: w }); return }
+  // choosing a side: the one under the pointer lights up
+  { const s = useSectionTool.getState(); if (s.sides) { const hot = sideAt(s.sides, w.x, w.y); if (hot !== s.hot) useSectionTool.setState({ hot, at: null }); return } }
   const r = snapped(store, w, zoom, shift)
   useSectionTool.setState({ at: { x: r.p[0], y: r.p[1] }, guide: r.guide, len: r.len })
 }

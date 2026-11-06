@@ -33,7 +33,8 @@ export function doorTypes() {
   }))
 }
 
-export const useDoorTool = create(() => ({ typeId: 'struct_loading_dock', widthFt: null, hover: null }))
+/* onlySection: the tool started from a section's bar (its Fence or Wall) — doors go on that section's edges only */
+export const useDoorTool = create(() => ({ typeId: 'struct_loading_dock', widthFt: null, hover: null, onlySection: null }))
 /** The type picked, and the width the next door gets (typed, else the type's). */
 export function doorSpec() {
   const s = useDoorTool.getState(), types = doorTypes()
@@ -42,7 +43,12 @@ export function doorSpec() {
 }
 export const setDoorType = (typeId) => useDoorTool.setState({ typeId, widthFt: null })
 export const setDoorWidth = (ft) => { if (Number.isFinite(ft) && ft > 0) useDoorTool.setState({ widthFt: ft }) }
-export const clearDoorHover = () => { if (useDoorTool.getState().hover) useDoorTool.setState({ hover: null }) }
+export const clearDoorHover = () => { const s = useDoorTool.getState(); if (s.hover || s.onlySection) useDoorTool.setState({ hover: null, onlySection: null }) }
+/** Add door from a section's bar (its Boundary a Fence or a Wall): the door tool on that section's edges only. */
+export function startSectionDoors(store, id) {
+  store.getState().setActiveTool(DOOR_TOOL)                 // (the tool keeper ends the last tool first)
+  useDoorTool.setState({ onlySection: id, hover: null })
+}
 
 const inside = (poly, p) => {
   let c = false
@@ -56,10 +62,11 @@ const inside = (poly, p) => {
 /** Where a door goes for the pointer at world `w`: the inner wall face nearest it, within `reach` (world px) of that
  *  face — on either side of the wall — the door `widthFt` wide along it (centred on the pointer, kept on that wall)
  *  and `depthFt` deep into the building. → { fpId, x, y, width, height, rotation, line: [x1, y1, x2, y2] } or null. */
-export function doorAt(objects, w, spec, gridSize = 40, reach = 0) {
+export function doorAt(objects, w, spec, gridSize = 40, reach = 0, only = null) {
   if (!spec) return null
   let best = null
-  for (const fp of objects.filter(o => o && FP.has(o.type))) {
+  // `only`: a section's id — its edges and nothing else (Add door from that section's bar)
+  for (const fp of only ? [] : objects.filter(o => o && FP.has(o.type))) {
     const poly = innerOutline(fp, gridSize)
     if (!poly || poly.length < 3) continue
     const wt = (fp.wallThicknessFt || 0.25) * gridSize
@@ -87,7 +94,7 @@ export function doorAt(objects, w, spec, gridSize = 40, reach = 0) {
   }
   /* a section with a Fence or a Wall: its edges are walls too — the door centred on the edge (it cuts it: the section
      draws its boundary around the door — utils/sectionAreas.js edgeRuns) */
-  for (const s of objects.filter(o => isSection(o) && hasBoundary(o))) {
+  for (const s of objects.filter(o => isSection(o) && hasBoundary(o) && (!only || o.id === only))) {
     const half = s.boundary === 'wall' ? (wallInOf(s) / 12) * gridSize / 2 : 2
     for (const e of edgesOf(s)) {
       const a = { x: e.a[0], y: e.a[1] }, b = { x: e.b[0], y: e.b[1] }, len = Math.hypot(b.x - a.x, b.y - a.y)
@@ -124,13 +131,13 @@ export function doorObject(at, spec, newId) {
 
 /** The pointer moved with the tool on. */
 export function hoverDoor(objects, w, gridSize, zoom) {
-  const at = doorAt(objects, w, doorSpec(), gridSize, 16 / zoom)
+  const at = doorAt(objects, w, doorSpec(), gridSize, 16 / zoom, useDoorTool.getState().onlySection)
   useDoorTool.setState({ hover: at })
   return at
 }
 /** A click with the tool on: the door placed where the preview is (one undo step). Returns the new door or null. */
 export function placeDoor(store, w, newId, zoom) {
-  const st = store.getState(), spec = doorSpec(), at = doorAt(st.objects, w, spec, st.gridSize || 40, 16 / zoom)
+  const st = store.getState(), spec = doorSpec(), at = doorAt(st.objects, w, spec, st.gridSize || 40, 16 / zoom, useDoorTool.getState().onlySection)
   if (!at) return null
   const door = doorObject(at, spec, newId)
   st.addObject(door)

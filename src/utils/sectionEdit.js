@@ -259,9 +259,10 @@ export function onWall(objects, p, gridSize = 40) {
   return null
 }
 const area = (pts) => { let a = 0; for (let i = 0; i < pts.length; i++) { const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % pts.length]; a += x0 * y1 - x1 * y0 } return Math.abs(a) / 2 }
-/** The wall close: a pen path that starts on a wall and ends on a wall (the same building) is finished along the walls,
- *  through the corner on the side drawn — of the two ways round, the one closing the smaller area. → points or null. */
-export function closeAlongWalls(objects, pen, gridSize = 40) {
+/** The wall close's two sides: a pen path that starts on a wall and ends on a wall (the same building) finished along
+ *  the walls one way round, and the other — each { pts, ok }: `ok` false where that side would overlap another section
+ *  (not offered). → [side, side] or null (the path does not run wall to wall). */
+export function wallSides(objects, pen, gridSize = 40) {
   if (pen.length < 2) return null
   const q = onWall(objects, pen[0], gridSize), p = onWall(objects, pen[pen.length - 1], gridSize)
   if (!q || !p || q.fpId !== p.fpId) return null
@@ -269,8 +270,15 @@ export function closeAlongWalls(objects, pen, gridSize = 40) {
   const fwd = [], back = []
   if (!(i === j && q.t > p.t)) { let k = (i + 1) % n; fwd.push(V[k]); while (k !== j) { k = (k + 1) % n; fwd.push(V[k]) } }
   if (!(i === j && q.t < p.t)) { let k = i; back.push(V[k]); while (k !== (j + 1) % n) { k = (k - 1 + n) % n; back.push(V[k]) } }
-  const a = [...pen, ...fwd], b = [...pen, ...back]
-  return area(a) <= area(b) ? a : b
+  const ns = (objects || []).filter(isSection).map(polygonOf)
+  return [[...pen, ...fwd], [...pen, ...back]].map(pts => ({ pts, ok: area(pts) > 1 && !hitsAny(pts, ns) }))
+}
+/** The side (of wallSides) whose area holds world (x, y) and is offered, → its index or -1. */
+export const sideAt = (sides, x, y) => (sides || []).findIndex(sd => sd.ok && pointInPolygon(sd.pts, x, y))
+/** The smaller of the two offered sides (no choice to make): its points, or null. */
+export function closeAlongWalls(objects, pen, gridSize = 40) {
+  const sides = (wallSides(objects, pen, gridSize) || []).filter(sd => sd.ok)
+  return sides.length ? sides.sort((a, b) => area(a.pts) - area(b.pts))[0].pts : null
 }
 /** Generate / Regenerate off (STUDIO.md §7a Sections): the building Generate works on (`fp`) holds 2 or more sections —
  *  each is filled with Fill racking instead. → the title to show, or null (0 or 1 section: as before). */

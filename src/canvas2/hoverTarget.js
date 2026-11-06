@@ -6,6 +6,7 @@
 // a click leaves, so the two can be compared. Presentation state only.
 
 import { create } from 'zustand'
+import { sectionAt } from '../utils/sectionAreas'
 import { hitTest, hitTestBay, fpWallHitTest, wallBeatsPadding } from './hitTest'
 import { handleHitTest, objHasResizeHandles } from './handleGeometry'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
@@ -71,6 +72,11 @@ export function predictClick(st, w, zoom) {
   if (!hit || FP.has(hit.type) || padWall) {
     const wall = padWall || fpWallHitTest(st.objects, st.layers, w.x, w.y, zoom, gs)
     if (wall) return { key: 'building:' + wall.objId, kind: 'building', ids: [wall.objId] }
+  }
+  // a section's empty area: the section (selected already: it stays) — STUDIO.md §7a Sections
+  if (hit && FP.has(hit.type)) {
+    const sec = sectionAt(st.objects, w.x, w.y, o => selectableIn(st.layers)(o))
+    if (sec) return (st.selectedIds || []).length === 1 && st.selectedIds[0] === sec.id ? keep() : { key: sortedKey(kindOfType(sec.type), [sec.id]), kind: 'object', ids: [sec.id] }
   }
   // the building's blank floor: the building
   if (hit && FP.has(hit.type)) return { key: 'building:' + hit.id, kind: 'building', ids: [hit.id] }

@@ -20,7 +20,7 @@ import { usePlacement, movePlacement, commitPlacement } from '../utils/placement
 import { rebuildAisles } from '../utils/aisleRebuild'
 import { nanoid } from 'nanoid'
 import { inlineSnap, planInlineDrop, applyJoin } from './inlineSnap'
-import { pickableIn, selectableIn, snapTargets, isPickable } from '../utils/layers'
+import { pickableIn, selectableIn, snapTargets, isPickable, isSelectable } from '../utils/layers'
 import { pickedOnPlan } from '../studio/viewPrefs'
 import { groupDragFor, skipNextAction, groupRowsNow, toggleRowOf } from '../utils/rowGroupTool'
 import { lockToAxis } from '../utils/rowGroup'
@@ -40,7 +40,7 @@ import { sectionIds, withSections } from './sections'
 import { setAreaHover } from './areaHover'
 import { columnAt, clickColumn, pickedColumn } from './columnPick'
 import { lineIndexOf, dragLine, endLineDrag } from './columnLines'
-import { onLabel, polygonOf, movePoint } from '../utils/sectionAreas'
+import { onLabel, polygonOf, movePoint, sectionAt } from '../utils/sectionAreas'
 import { membersOf, clampSectionMove, clampSectionBox, clampSectionPoint } from '../utils/sectionEdit'
 import { useSectionRename } from './sectionTool'
 import { POINT_HANDLE_PX } from './SectionShape'
@@ -120,6 +120,8 @@ export function useCanvasInteraction({
     const st = useCanvasStore.getState()
     setStickyBayMode(false)
     if (t && t.column) { pickedOnPlan(); clickColumn(useCanvasStore, t.column); return }
+    // a section's empty area: the section (STUDIO.md §7a Sections)
+    if (t && t.section && st.objects.some(o => o.id === t.section)) { pickedOnPlan(); st.selectObject(t.section, false); st.setActiveWall(null); return }
     if (t && t.fp && st.objects.some(o => o.id === t.fp)) { pickedOnPlan(); selectRows(useCanvasStore, [t.fp]); st.setActiveWall(null); return }
     if (st.selectedIds.length || st.activeBaySelection?.length) st.clearSelection()
     st.setActiveWall(null)
@@ -742,6 +744,16 @@ export function useCanvasInteraction({
          draws a box of rows (Select). A click outside every building clears the selection. */
       const onFloor = !!(hitObj && FP_SET_INPUT.has(hitObj.type))
       if (onFloor) { if (!clickTarget) clickTarget = { fp: hitObj.id }; hitId = null; hitObj = null }
+      /* ... inside a section's empty area (STUDIO.md §7a Sections): a click selects the section, not the building; the
+         section selected, a press there moves it with its racks (past 6 px — under that it is a click); not selected, a
+         drag is the floor's as ever (Pan: pans) */
+      if (onFloor && evt.button === 0 && !evt.shiftKey) {
+        const sec = sectionAt(st.objects, world.x, world.y, o => isSelectable(st.layers, o))
+        if (sec) {
+          if (st.selectedIds.length === 1 && st.selectedIds[0] === sec.id && isPickable(st.layers, sec)) { pickedOnPlan(); beginDrag(sec.id, world, evt); return }
+          if (!clickTarget || clickTarget.fp) clickTarget = { section: sec.id }
+        }
+      }
 
       /* Shift held → ALWAYS arm a marquee candidate over a plain object
          BODY (a floor plan's interior included) — CanvasArea's own rule

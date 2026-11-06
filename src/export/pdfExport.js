@@ -160,7 +160,7 @@ function sectionSVG(obj, u, doors = [], gridSize = 40) {
   const runs = b === 'none' ? [] : edgeRuns(obj, doors)
   const edge = b === 'fence' ? { c: '#4A514D', w: 0.35 * u } : { c: '#1F2321', w: (wallInOf(obj) / 12) * gridSize }
   return `<g data-section="${esc(obj.id || '')}">` +
-    `<polygon points="${pts}" fill="${st.fill}"${b === 'none' ? ` stroke="${st.stroke}" stroke-width="${0.3 * u}" stroke-dasharray="${1.8 * u} ${1.2 * u}"` : ''}/>` +
+    `<polygon points="${pts}" fill="${st.fill || 'none'}"${b === 'none' ? ` stroke="${st.stroke}" stroke-width="${0.3 * u}" stroke-dasharray="${1.8 * u} ${1.2 * u}"` : ''}/>` +
     runs.map(r => `<line x1="${r.a[0]}" y1="${r.a[1]}" x2="${r.b[0]}" y2="${r.b[1]}" stroke="${edge.c}" stroke-width="${edge.w}"/>`).join('') +
     `<text x="${obj.x + 4 * u}" y="${obj.y + 4 * u}" dominant-baseline="hanging" font-family="'Plus Jakarta Sans', sans-serif" font-weight="600" font-variant="small-caps" font-size="${3.5 * u}" fill="${st.label}">${esc(obj.label || 'Section')}</text></g>`
 }

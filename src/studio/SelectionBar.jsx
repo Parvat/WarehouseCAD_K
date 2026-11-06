@@ -6,6 +6,8 @@ import { toggleLock, isLockedIn } from '../utils/layers'
 import { useLocked } from './useLocked'
 import { SECTION_COLORS, colorOf } from '../utils/sectionAreas'
 import { setSectionColor, duplicateSections } from '../utils/sectionEdit'
+import { hasBoundary } from '../utils/sectionAreas'
+import { startSectionDoors } from '../utils/doorTool'
 import { TOOLS } from '../constants'
 import { worldBoundsOf, hitTest, fpWallHitTest, wallBeatsPadding } from '../canvas2/hitTest'
 import { screenToWorld } from '../canvas2/viewport'
@@ -361,7 +363,8 @@ function SizeField({ obj, k, aria }) {
   )
 }
 
-/** A section (STUDIO.md §7a Sections): Colour ▾ · Lock · Duplicate · Delete. */
+/** A section (STUDIO.md §7a Sections): Colour ▾ · (with a Fence or a Wall: Add door — the door tool on its edges) · Lock ·
+ *  Duplicate · Delete. */
 function SectionSelBar({ obj }) {
   const locked = useLocked(obj)
   const [open, setOpen] = useState(false)
@@ -377,6 +380,10 @@ function SectionSelBar({ obj }) {
         </Menu>
       )}
       <Sep />
+      {hasBoundary(obj) && (
+        <button type="button" title={locked ? 'Locked' : "Add door — on this section's edges (Esc ends)"} disabled={locked} onClick={() => startSectionDoors(store, obj.id)}
+          style={{ ...toggleBtn(false), ...(locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>Add door</button>
+      )}
       <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
       <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={() => duplicateSections(store)} />
       <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} />

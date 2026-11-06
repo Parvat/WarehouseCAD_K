@@ -3,7 +3,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { HOME_TOOL } from '../utils/homeTool'
 import { B, modePill, Sep, Seg, CloseBtn } from '../studio/barParts'
-import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, cancelSection, useSectionRename } from './sectionTool'
+import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, cancelSection, useSectionRename, useSectionTool } from './sectionTool'
 import { labelBox, LABEL } from '../utils/sectionAreas'
 
 /* The Section tool's mode bar (STUDIO.md §7a Sections; the mode bars' look): "Section", Rectangle · Custom shape, the
@@ -13,6 +13,7 @@ export const SECTION_HINT = { [SECTION_RECT_TOOL]: 'Drag to draw a section', [SE
 
 export function SectionBar() {
   const tool = useCanvasStore(s => s.activeTool)
+  const choosing = useSectionTool(s => !!s.sides)
   const close = () => { cancelSection(); useCanvasStore.getState().setActiveTool(HOME_TOOL) }
   const pick = (t) => { cancelSection(); useCanvasStore.getState().setActiveTool(t) }
   return (
@@ -24,7 +25,7 @@ export function SectionBar() {
         { value: SECTION_PEN_TOOL, label: 'Custom shape', aria: 'Custom shape', title: 'Custom shape — the pen: click points', on: tool === SECTION_PEN_TOOL, onClick: () => pick(SECTION_PEN_TOOL) },
       ]} />
       <Sep />
-      <span data-mode-hint style={word}>{SECTION_HINT[tool] || ''}</span>
+      <span data-mode-hint style={word}>{choosing ? 'Click the side to keep · Esc cancels' : SECTION_HINT[tool] || ''}</span>
       <CloseBtn label="Close Section" title="Close (Esc)" onClick={close} />
     </div>
   )

@@ -21,7 +21,7 @@ function SectionShapeView({ obj, selected = false, listening = false, bind, door
   const runs = b === 'none' ? [] : edgeRuns(obj, doors || [])
   return (
     <Group name={nodeName(obj.id)} listening={listening} {...(bind ? bind(obj) : null)}>
-      <Line points={pts} closed fill={st.fill} stroke={b === 'none' || on ? st.stroke : undefined} strokeWidth={st.width}
+      <Line points={pts} closed fill={st.fill || undefined} stroke={b === 'none' || on ? st.stroke : undefined} strokeWidth={st.width}
         dash={st.dash || undefined} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={listening} />
       {b === 'fence' && runs.map((r, i) => <Line key={'f' + i} name="section-fence" points={[...r.a, ...r.b]} stroke="#4A514D" strokeWidth={1.25} strokeScaleEnabled={false} listening={false} />)}
       {b === 'wall' && runs.map((r, i) => <Line key={'w' + i} name="section-wall" points={[...r.a, ...r.b]} stroke="#1F2321" strokeWidth={(wallInOf(obj) / 12) * gridSize} lineCap="butt" listening={false} />)}
@@ -40,6 +40,14 @@ export function SectionDraft() {
   const guide = useSectionTool(s => s.guide), len = useSectionTool(s => s.len), gs = useCanvasStore(s => s.gridSize) || 40
   const tool = useCanvasStore(s => s.activeTool), zoom = useCanvasStore(s => s.zoom) || 1
   const objects = useCanvasStore(s => s.objects)
+  const sides = useSectionTool(s => s.sides), hot = useSectionTool(s => s.hot)
+  // the wall close: both sides offered, the one under the pointer lit — the next click picks it
+  if (sides) return (
+    <Group name="section-draft" listening={false}>
+      {sides.map((sd, i) => sd.ok && <Line key={i} name={i === hot ? 'section-side-hot' : 'section-side'} points={sd.pts.flat()} closed
+        fill={i === hot ? 'rgba(123, 211, 164, 0.18)' : undefined} stroke="#2E7D5B" strokeWidth={i === hot ? 1.5 : 1} dash={i === hot ? undefined : [6, 4]} strokeScaleEnabled={false} listening={false} />)}
+    </Group>
+  )
   if (drag) {
     // the box as the release will make it: kept inside the building and off the neighbours (utils/sectionEdit.js)
     const b = drawnBox(objects, drag.from, drag.to, gs) || { x: drag.from.x, y: drag.from.y, w: 0, h: 0 }

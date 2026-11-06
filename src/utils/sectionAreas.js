@@ -31,6 +31,8 @@ export function pointInPolygon(poly, x, y) {
   return inside
 }
 export const contains = (s, x, y) => pointInPolygon(polygonOf(s), x, y)
+/** The section whose area holds world (x, y) — `ok`: which sections count (a layer shown and not locked, say). */
+export const sectionAt = (objects, x, y, ok = () => true) => (objects || []).find(o => isSection(o) && ok(o) && contains(o, x, y)) || null
 /** Distance from (x, y) to segment a–b. */
 function segDist(x, y, [ax, ay], [bx, by]) {
   const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy
@@ -156,11 +158,12 @@ export const colorOf = (s) => SECTION_COLORS.find(k => k.id === s?.color) || nul
 const hex = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
 const toHex = (rgb) => '#' + rgb.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase()
 const rgba = (h, a) => { const [r, g, b] = hex(h); return `rgba(${r}, ${g}, ${b}, ${a})` }
-/** A section's look — { stroke, width, dash, fill, label }: plain (#B9C7BE dashed, #F4F8F5), or its colour (the outline,
- *  a tint and a deeper label); selected or hovered, the outline solid and 1.5 — #2E7D5B with #7BD3A4 at 10 % when plain. */
+/** A section's look — { stroke, width, dash, fill (null: none), label }: no colour — no fill and a grey #9AA29C dashed
+ *  outline, selected (or hovered) the green #2E7D5B 1.5 outline only, no tint; a colour — its outline, a tint and a deeper
+ *  label, selected the outline solid and 1.5. */
 export function sectionStyle(s, on = false) {
   const k = colorOf(s)
-  if (!k) return on ? { stroke: '#2E7D5B', width: 1.5, dash: null, fill: 'rgba(123, 211, 164, 0.10)', label: LABEL.color } : { stroke: '#B9C7BE', width: 1, dash: [6, 4], fill: '#F4F8F5', label: LABEL.color }
+  if (!k) return on ? { stroke: '#2E7D5B', width: 1.5, dash: null, fill: null, label: LABEL.color } : { stroke: '#9AA29C', width: 1, dash: [6, 4], fill: null, label: LABEL.color }
   const deep = toHex(hex(k.c).map(v => v * 0.62))
   return { stroke: on ? deep : k.c, width: on ? 1.5 : 1, dash: on ? null : [6, 4], fill: rgba(k.c, on ? 0.16 : 0.10), label: deep }
 }
