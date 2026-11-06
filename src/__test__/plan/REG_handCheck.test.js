@@ -2133,6 +2133,79 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.page.getByRole('menu', { name: 'Elevations' }).count()).toBe(1)
     }, T)
 
+    it('REG-load-paths (click): every way a layout is opened — the autosave restored on a refresh, Open… in the layout menu, Ctrl+O, and back from the Hub with Draw — has its column grid locked as Generate locks it; a column clicked shows Unlock pressed in its bar, a drag moves nothing, and one click unlocks and locks it again', async () => {
+      const B = await import('./handCheck/browser.js'), os = await import('node:os'), path = await import('node:path'), fs = await import('node:fs')
+      const bar = () => L.page.locator('[data-selection-bar]')
+      const grid = () => L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return { locked: !!g.locked, by: g.lockedBy || null }')
+      /** the grid as this path left it, then its padlock with real clicks */
+      const check = async (how, as = { locked: true, by: 'generate' }) => {
+        expect([how, await grid()]).toEqual([how, as])
+        if (await L.S('return S.getState().activeTool') !== 'select') { await L.page.mouse.move(5, 890); await L.page.keyboard.press('v') }
+        await zoomOutTill(7)
+        const c = await L.S(colAt), g0 = await gridOf(), gs = await gs7()
+        await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+        await L.click(c)
+        const lock = bar().getByRole('button', { name: /^(Lock|Unlock)$/ })
+        expect([how, await lock.getAttribute('aria-label'), await lock.getAttribute('aria-pressed')]).toEqual([how, 'Unlock', 'true'])
+        await L.drag(c, { x: c.x + 3 * gs, y: c.y + 3 * gs }); await L.page.waitForTimeout(250)
+        expect([how, await gridOf()]).toEqual([how, g0])
+        await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.click(c)
+        await lock.click(); await L.page.waitForTimeout(150)
+        expect([how, (await grid()).locked, await lock.getAttribute('aria-label'), await lock.getAttribute('aria-pressed')]).toEqual([how, false, 'Lock', 'false'])
+        await lock.click(); await L.page.waitForTimeout(150)
+        expect([how, (await grid()).locked, await lock.getAttribute('aria-label'), await lock.getAttribute('aria-pressed')]).toEqual([how, true, 'Unlock', 'true'])
+      }
+      // 1. a refresh: the autosave restored (the app's own autosave of this layout, reloaded)
+      await open()
+      const own = await L.page.evaluate(() => localStorage.getItem('warehousecad_autosave'))
+      await L.page.close(); L = await B.openLayout(app, own)
+      await check('autosave')
+      // 2. back from the Hub: Draw again (no load — the layout as it was, the padlock still working)
+      await L.page.getByRole('button', { name: 'Hub', exact: true }).click()
+      await L.page.getByRole('button', { name: /^Draw/ }).click(); await L.page.waitForSelector('.konvajs-content'); await L.page.waitForTimeout(300)
+      const left = await grid()                                   // as the refresh check left it: locked again, by hand
+      await check('hub', left)
+      // 3. Open… in the layout menu and 4. Ctrl+O: the grid unlocked by hand first, so only the load locks it again
+      const file = path.join(os.tmpdir(), `reg-load-paths-${name}.wcad`)
+      fs.writeFileSync(file, B.fixture(name))
+      for (const how of ['Open…', 'Ctrl+O']) {
+        await L.S('S.setState({ objects: S.getState().objects.map(o => o.type === "column_grid" ? { ...o, locked: false, lockedBy: undefined } : o) })')
+        expect((await grid()).locked).toBe(false)
+        const chooser = L.page.waitForEvent('filechooser')
+        if (how === 'Open…') { await L.page.getByRole('button', { name: 'Layout menu' }).click(); await L.page.getByRole('menuitem', { name: 'Open…' }).click() }
+        else { await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+o') }
+        await (await chooser).setFiles(file); await L.page.waitForTimeout(600)
+        await check(how)
+      }
+      fs.unlinkSync(file)
+    }, T)
+
+    it('REG-lock-keeps-selection (click): a selected rack locked from its bar, with Ctrl+L or from its right-click menu stays selected — its card stays, the bar shows Unlock, and Rotate, Split, Row group and the Bays field are drawn disabled at 45 %; unlocked the same way, still selected', async () => {
+      await open()
+      const a = await pairPoints(), id = a.r.id
+      const bar = L.page.locator('[data-selection-bar]')
+      const state = async () => ({
+        sel: await L.S('return S.getState().selectedIds'), nothing: await L.page.getByText('Nothing selected').count(),
+        lock: await bar.getByRole('button', { name: /^(Lock|Unlock)$/ }).getAttribute('aria-label'),
+        off: await Promise.all(['Rotate', 'Split', 'Row group'].map(n => bar.getByRole('button', { name: n, exact: true }).evaluate(el => [el.matches(':disabled'), getComputedStyle(el).opacity]))),
+        bays: await L.page.getByRole('spinbutton', { name: 'Bays' }).evaluate(el => [el.matches(':disabled'), getComputedStyle(el).opacity]),
+      })
+      const flip = async (how, to) => {
+        if (how === 'bar') await bar.getByRole('button', { name: to }).click()
+        if (how === 'Ctrl+L') await L.page.keyboard.press('Control+l')
+        if (how === 'menu') { const q = await L.toScreen(a.far); await L.page.mouse.click(q.x, q.y, { button: 'right' }); await L.page.waitForTimeout(200); await L.page.getByRole('menuitem', { name: new RegExp('^' + to) }).click() }
+        await L.page.waitForTimeout(250)
+      }
+      await L.click(a.far)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([id])
+      for (const how of ['bar', 'Ctrl+L', 'menu']) {
+        await flip(how, 'Lock')
+        expect([how, await state()]).toEqual([how, { sel: [id], nothing: 0, lock: 'Unlock', off: [[true, '0.45'], [true, '0.45'], [true, '0.45']], bays: [true, '0.45'] }])
+        await flip(how, 'Unlock')
+        expect([how, await state()]).toEqual([how, { sel: [id], nothing: 0, lock: 'Lock', off: [[false, '1'], [false, '1'], [false, '1']], bays: [false, '1'] }])
+      }
+    }, T)
+
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {
       await open()
       const z = await addZone7(), gs = await gs7()
