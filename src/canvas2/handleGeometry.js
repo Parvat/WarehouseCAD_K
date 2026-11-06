@@ -44,8 +44,10 @@ const isZoneType = (type) => typeof type === 'string' && type.startsWith('zone_'
 
 /** Does a single selection of this type get resize handles in canvas2? */
 export function hasResizeHandles(type, rackTypes) {
-  return (rackTypes && rackTypes.has(type)) || EDGE_ONLY.has(type) || isZoneType(type)
+  return (rackTypes && rackTypes.has(type)) || EDGE_ONLY.has(type) || isZoneType(type) || type === 'section_area'
 }
+/** Does this object get them? A section drawn as a custom shape gets point handles instead (SectionShape.jsx). */
+export const objHasResizeHandles = (o, rackTypes) => !!o && hasResizeHandles(o.type, rackTypes) && !(o.type === 'section_area' && o.shape === 'poly')
 
 export function enabledHandlesFor(type) {
   if (type === 'aisle') return []
@@ -56,7 +58,7 @@ export function enabledHandlesFor(type) {
 }
 
 export function rotateEnabledFor(type) {
-  return type !== 'aisle' && !EDGE_ONLY.has(type) && !isZoneType(type)
+  return type !== 'aisle' && !EDGE_ONLY.has(type) && !isZoneType(type) && type !== 'section_area'
 }
 
 /** World point -> local (pre-rotation) point around the object's own bounds

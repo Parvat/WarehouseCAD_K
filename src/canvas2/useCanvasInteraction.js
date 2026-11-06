@@ -3,7 +3,7 @@ import { textOwnsKey } from '../utils/typing'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest, wallBeatsPadding } from './hitTest'
-import { handleHitTest, cursorForHandle, hasResizeHandles } from './handleGeometry'
+import { handleHitTest, cursorForHandle, hasResizeHandles, objHasResizeHandles } from './handleGeometry'
 import { finishAreaResize } from '../utils/rackingAreaTool'
 import { bayHalfAt, setFlueHover } from '../utils/baySides'
 import { useZoneEdit } from './ZoneEdit'
@@ -40,6 +40,9 @@ import { sectionIds, withSections } from './sections'
 import { setAreaHover } from './areaHover'
 import { columnAt, clickColumn, pickedColumn } from './columnPick'
 import { lineIndexOf, dragLine, endLineDrag } from './columnLines'
+import { onLabel, polygonOf, movePoint } from '../utils/sectionAreas'
+import { useSectionRename } from './sectionTool'
+import { POINT_HANDLE_PX } from './SectionShape'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { afterBuildingResize } from '../utils/buildingResize'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
@@ -147,6 +150,7 @@ export function useCanvasInteraction({
   const resizeDrag = useRef(null)
   const groupRotateDrag = useRef(null)
   const fpRotateDrag = useRef(null)
+  const sectionPoint = useRef(null)   // a custom-shape section's point being dragged: { id, i, orig }
   const colLine = useRef(null)   // a column's line being dragged: { g0, col, from (world), sx, sy, axis, i, again }
 
   /* ── selection, from our own geometry pick ────────────────────────────── */
@@ -605,7 +609,13 @@ export function useCanvasInteraction({
       if (evt.button === 0 && st.selectedIds.length === 1) {
         // a locked object has no handles: it cannot be resized or rotated (STUDIO.md §7a Locks)
         const sel0 = st.objects.find(o => o.id === st.selectedIds[0]), selected = sel0 && isPickable(st.layers, sel0) ? sel0 : null
-        if (selected && hasResizeHandles(selected.type, PORTED_RACK_TYPES)) {
+        /* a custom-shape section: a press on one of its points drags that point (SectionShape.jsx's handles) */
+        if (selected && selected.type === 'section_area' && selected.shape === 'poly') {
+          const r = POINT_HANDLE_PX / 2 / view.current.zoom
+          const i = polygonOf(selected).findIndex(([x, y]) => Math.abs(world.x - x) <= r && Math.abs(world.y - y) <= r)
+          if (i >= 0) { sectionPoint.current = { id: selected.id, i, orig: selected }; return }
+        }
+        if (selected && objHasResizeHandles(selected, PORTED_RACK_TYPES)) {
           const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
           if (handle) {
             beginHandleDrag(selected, handle, world)
@@ -792,11 +802,14 @@ export function useCanvasInteraction({
         /* forcePan (space/middle) already sent us past this whole block, so
            reaching here means neither is held — a plain left-press on an
            object always selects it and arms its drag. */
+        // a section already selected, pressed on its name: a click there renames it in place (a drag still moves it)
+        const renameable = hitObj && hitObj.type === 'section_area' && !evt.shiftKey && st.selectedIds.length === 1 && st.selectedIds[0] === hitId && onLabel(hitObj, world.x, world.y, view.current.zoom)
         selectFromHit(hitId, !!evt.shiftKey, world)
         /* A racking area is selected, never dragged: it is resized by its
            edges, and moving only its outline would leave its racks behind. */
         if (hitObj && hitObj.type === 'racking_area') return
         beginDrag(hitId, world, evt)
+        if (renameable && objDrag.current) objDrag.current.click = () => useSectionRename.setState({ id: hitId })
         return
       }
     }
@@ -814,7 +827,7 @@ export function useCanvasInteraction({
      gesture (pan/drag/marquee/resize) keeps setting it from its own
      mousemove/mouseup, and held space always means grab. */
   const onStageMouseMove = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current || colLine.current) { setFlueHover(null, null); clearHoverTarget(); return }
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current || colLine.current || sectionPoint.current) { setFlueHover(null, null); clearHoverTarget(); return }
     if (spaceDown.current) { clearHoverTarget(); return }
     const stage = stageRef.current
     if (!stage) return
@@ -849,7 +862,7 @@ export function useCanvasInteraction({
     let next = 'default'
     if (st.selectedIds.length === 1) {
       const sel0 = st.objects.find(o => o.id === st.selectedIds[0]), selected = sel0 && isPickable(st.layers, sel0) ? sel0 : null
-      if (selected && hasResizeHandles(selected.type, PORTED_RACK_TYPES)) {
+      if (selected && objHasResizeHandles(selected, PORTED_RACK_TYPES)) {
         const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
         if (handle) next = cursorForHandle(handle, selected.rotation)
       } else if (selected && isFloorPlan(selected)) {
@@ -1152,6 +1165,17 @@ export function useCanvasInteraction({
         return
       }
 
+      /* a custom-shape section's point follows the pointer */
+      const sp = sectionPoint.current
+      if (sp) {
+        const stage = stageRef.current
+        if (!stage) return
+        const box = stage.container().getBoundingClientRect()
+        const w = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+        sp.moved = true
+        useCanvasStore.getState().updateObject(sp.id, movePoint(sp.orig, sp.i, w.x, w.y))
+        return
+      }
       /* a column's line: the axis from the first 6 px of travel, then the line follows the pointer on that axis */
       const cl = colLine.current
       if (cl) {
@@ -1371,6 +1395,14 @@ export function useCanvasInteraction({
       setMarquee(normalizeRect(m.from, m.to))
     }
     const upGesture = () => {
+      const sp = sectionPoint.current
+      sectionPoint.current = null
+      if (sp) {
+        // one undo step for the point moved
+        const o = useCanvasStore.getState().objects.find(x => x.id === sp.id)
+        if (sp.moved && o) useCanvasStore.getState().commitObjectUpdate(sp.id, {})
+        return
+      }
       const cl = colLine.current
       colLine.current = null
       if (cl) {

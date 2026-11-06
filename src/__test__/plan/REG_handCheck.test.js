@@ -2279,7 +2279,7 @@ describe('REG — the hand check by real clicks', () => {
       const card = layersCard()
       const cb = await card.boundingBox(), ib = await island.boundingBox()
       expect([cb.y + cb.height <= ib.y, await card.evaluate(el => getComputedStyle(el).borderRadius), await card.evaluate(el => getComputedStyle(el).backgroundColor)]).toEqual([true, '10px', 'rgb(31, 35, 33)'])
-      expect(await card.locator('[data-layer]').evaluateAll(rs => rs.map(r => r.getAttribute('data-layer')))).toEqual(['building', 'columns', 'zones', 'racking', 'aisles', 'checks', 'notes'])
+      expect(await card.locator('[data-layer]').evaluateAll(rs => rs.map(r => r.getAttribute('data-layer')))).toEqual(['building', 'columns', 'zones', 'sections', 'racking', 'aisles', 'checks', 'notes'])   // + Sections (the Section tool)
       for (const r of await card.locator('[data-layer]').all()) expect([await r.getByRole('switch', { name: /^(Show|Hide) / }).count(), await r.getByRole('button', { name: /^(Lock|Unlock) / }).count()]).toEqual([1, 1])
       // the show toggle and the padlock work
       await card.getByRole('switch', { name: 'Hide Zones layer' }).click(); await L.page.waitForTimeout(100)
@@ -2567,6 +2567,170 @@ describe('REG — the hand check by real clicks', () => {
       await full.getByRole('button', { name: 'Close full screen' }).click(); await L.page.waitForTimeout(150)
       await bomTab()
       expect(qtyOf(await bomRows(), 'Beam pair')).toBe(sides * 4)
+    }, T)
+
+    /* ── Sections (utils/sectionAreas.js, canvas2/sectionTool.js): named areas drawn on the plan, by real mouse ── */
+    const secsNow = () => L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => ({ id: o.id, label: o.label, shape: o.shape, x: o.x, y: o.y, w: o.width, h: o.height, pts: o.pts || null }))')
+    const racksNow = () => L.S('return JSON.stringify(S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => [o.id, o.x, o.y, o.width, o.height, o.rotation || 0]))')
+    const sectionTool = async (which) => {
+      await L.page.getByRole('button', { name: 'Section', exact: true }).click(); await L.page.waitForTimeout(150)
+      await L.page.getByRole('menu', { name: 'Section' }).getByRole('menuitem', { name: which }).click(); await L.page.waitForTimeout(150)
+    }
+    /** a section around world box a–b, with the Rectangle */
+    const drawRect = async (a, b) => { await sectionTool('Rectangle'); await L.drag(a, b); await L.page.waitForTimeout(200) }
+    const ft = async (n) => n * (await gs7())
+    /** the layout a little smaller, off the islands (two wheel notches at the canvas middle) */
+    const openSections = async () => { await open(); await wheel(40, 2) }
+    /** every world point on the canvas itself (not under an island), as a real press needs */
+    const onCanvasAll = async (ws) => { for (const w of ws) { const q = await L.toScreen(w); expect([w, await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, q)]).toEqual([w, 'CANVAS']) } }
+
+    it('REG-section-draw (click): the Section tool after Pan — Rectangle: a drag draws Section 1 (one undo, back to Pan, selected); Custom shape (P in its menu): clicks and a double-click draw Section 2; a click on the first point closes too; a draw over a neighbour snaps to its edge', async () => {
+      await openSections()
+      const f = await fpOf(), at = (fx, fy) => ({ x: f.x + f.width * fx, y: f.y + f.height * fy })
+      const pill = await L.page.getByRole('toolbar', { name: 'Drawing tools' }).getByRole('button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')))
+      expect(pill.slice(0, 3)).toEqual(['Select', 'Pan', 'Section'])
+      const h0 = await hist7()
+      await sectionTool('Rectangle')
+      expect([await L.S('return S.getState().activeTool'), await L.page.locator('[data-mode-bar="section"] [data-mode-hint]').textContent()]).toEqual(['section_rect', 'Drag to draw a section'])
+      await onCanvasAll([at(0.05, 0.1), at(0.3, 0.4)])
+      await L.drag(at(0.05, 0.1), at(0.3, 0.4)); await L.page.waitForTimeout(200)
+      let s1 = (await secsNow())
+      expect([s1.map(x => [x.label, x.shape]), (await hist7()) - h0, await L.S('return S.getState().activeTool'), await L.selected()]).toEqual([[['Section 1', 'rect']], 1, 'pan', ['section_area']])
+      // Custom shape by its key in the open menu (P): clicks, then a double-click closes it
+      await L.page.getByRole('button', { name: 'Section', exact: true }).click(); await L.page.waitForTimeout(150)
+      await L.page.keyboard.press('p'); await L.page.waitForTimeout(150)
+      expect([await L.S('return S.getState().activeTool'), await L.page.locator('[data-mode-bar="section"] [data-mode-hint]').textContent()]).toEqual(['section_pen', 'Pen: click points, double-click to close'])
+      const pts = [at(0.35, 0.1), at(0.6, 0.1), at(0.6, 0.4), at(0.35, 0.4)]
+      await onCanvasAll(pts)
+      for (const q of pts) await L.click(q)
+      const last = await L.toScreen(pts[3]); await L.page.mouse.dblclick(last.x, last.y); await L.page.waitForTimeout(250)
+      const s2 = (await secsNow())[1]
+      expect([s2.label, s2.shape, s2.pts.length, (await hist7()) - h0, await L.S('return S.getState().activeTool')]).toEqual(['Section 2', 'poly', 4, 2, 'pan'])
+      // a click on the first point closes a shape too
+      await sectionTool('Custom shape')
+      const tri = [at(0.35, 0.5), at(0.6, 0.5), at(0.47, 0.8)]
+      await onCanvasAll(tri)
+      for (const q of tri) await L.click(q)
+      await L.click(tri[0]); await L.page.waitForTimeout(200)
+      expect([(await secsNow()).map(x => x.label), (await secsNow())[2].pts.length]).toEqual([['Section 1', 'Section 2', 'Section 3'], 3])
+      // a rectangle drawn over Section 1 snaps to its edge: they touch, never overlap
+      await onCanvasAll([at(0.05, 0.85), at(0.3, 0.95), at(0.2, 0.3), at(0.33, 0.45)])
+      await drawRect(at(0.05, 0.85), at(0.3, 0.95))   // clear of everything: the control
+      await drawRect(at(0.2, 0.3), at(0.33, 0.45))    // over Section 1's corner: snapped below its bottom edge
+      const all = await secsNow(), a = all[0], b = all[all.length - 1]
+      const inter = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y))
+      expect([inter, b.w > 0 && b.h > 0, Math.abs(b.y - (a.y + a.h)) < 1e-6 || Math.abs(b.x + b.w - a.x) < 1e-6 || Math.abs(b.x - (a.x + a.w)) < 1e-6 || Math.abs(b.y + b.h - a.y) < 1e-6]).toEqual([0, true, true])
+      // one Ctrl+Z takes the last section away
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(200)
+      expect((await secsNow()).length).toBe(all.length - 1)
+    }, T)
+
+    it('REG-section-edit (click): a section is selected by its name label (or outline); its name typed in the card or, on a second click on the label, in place; a drag moves the section only — every rack stays; Delete removes the section only and one Ctrl+Z brings it back', async () => {
+      await openSections()
+      const f = await fpOf(), m = await ft(12)   // the name label off the building's racks
+      await onCanvasAll([{ x: f.x - m, y: f.y - m }, { x: f.x + f.width + m, y: f.y + f.height + m }])
+      await drawRect({ x: f.x - m, y: f.y - m }, { x: f.x + f.width + m, y: f.y + f.height + m })
+      const [s] = await secsNow(), r0 = await racksNow()
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      expect(await L.selected()).toEqual([])
+      const z = await L.S('return S.getState().zoom'), label = { x: s.x + 20 / z, y: s.y + 17 / z }
+      // its name label selects it; the card: Name, Width, Length
+      await L.click(label)
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      expect([await L.selected(), await card.getByRole('textbox', { name: 'Name' }).inputValue(), await card.getByLabel('Section width').count(), await card.getByLabel('Section length').count()]).toEqual([['section_area'], 'Section 1', 1, 1])
+      // the card's Name: typed
+      const name = card.getByRole('textbox', { name: 'Name' })
+      await name.click(); await name.fill('Bulk'); await name.press('Enter'); await L.page.waitForTimeout(150)
+      expect((await secsNow())[0].label).toBe('Bulk')
+      // the label clicked again: renamed in place
+      await L.click(label); await L.page.waitForTimeout(150)
+      const box = L.page.getByRole('textbox', { name: 'Rename section' })
+      expect(await box.inputValue()).toBe('Bulk')
+      await box.fill('Pick face'); await box.press('Enter'); await L.page.waitForTimeout(150)
+      expect([(await secsNow())[0].label, await box.count()]).toEqual(['Pick face', 0])
+      // its outline (the left edge) dragged: the section moves, the racks stay
+      const gs = await gs7(), edge = { x: s.x, y: s.y + s.h / 2 }
+      await L.drag(edge, { x: edge.x + 10 * gs, y: edge.y + 4 * gs }); await L.page.waitForTimeout(200)
+      const moved = (await secsNow())[0]
+      // moved (to within a snap: its edges snap to the walls and guides as any object's do) — and not one rack with it
+      expect([Math.abs(moved.x - s.x - 10 * gs) <= gs, await racksNow()]).toEqual([true, r0])
+      // Delete: the section only; one Ctrl+Z brings it back
+      const h0 = await hist7()
+      if ((await L.selected()).join() !== 'section_area') await L.click({ x: moved.x, y: moved.y + moved.h / 2 })
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(200)
+      expect([(await secsNow()).length, await racksNow(), (await hist7()) - h0]).toEqual([0, r0, 1])
+      await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(200)
+      expect((await secsNow()).map(x => x.label)).toEqual(['Pick face'])
+    }, T)
+
+    it('REG-section-list (click): nothing selected, the card lists each section\u2019s rows and positions (the racks whose centre it holds) and Unassigned — together the layout\u2019s; a row\u2019s hover lights its section, a click selects it; moving the section changes the counts live; a click on a rack inside it selects the rack', async () => {
+      await openSections()
+      const f = await fpOf(), m = await ft(12), cx = f.x + f.width / 2   // m: the name label off the building's racks
+      await onCanvasAll([{ x: f.x - m, y: f.y - m }, { x: cx, y: f.y + f.height + m }])
+      await drawRect({ x: f.x - m, y: f.y - m }, { x: cx, y: f.y + f.height + m })
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      /** the list as shown, and as worked out here: the racks' centres left of the section's right edge, or not */
+      const shown = () => L.page.locator('[data-section-row]').evaluateAll(rs => rs.map(r => [...r.cells].map(c => c.textContent.replace(/,/g, ''))).map(([n, a, b]) => [n, Number(a), Number(b)]))
+      const expected = () => L.S(`return import('/src/studio/SelectionBar.jsx').then(SB => import('/src/components/RightPanel/useBayLedger.js').then(() => import('/src/utils/bayLedger.js')).then(BL => {
+          const st = S.getState(), gs = st.gridSize || 40, s = st.objects.find(o => o.type === 'section_area'), ledger = BL.bayLedger(st.objects, gs, st.elevations)
+          const racks = st.objects.filter(o => /^rack_/.test(o.type) && o.width > 0 && o.height > 0)
+          const c = (r) => { const t = ((r.rotation || 0) % 180 + 180) % 180, w = t === 90 ? r.height : r.width, h = t === 90 ? r.width : r.height, x = r.x + r.width / 2 - w / 2, y = r.y + r.height / 2 - h / 2; return { x: x + w / 2, y: y + h / 2 } }
+          const inS = racks.filter(r => { const p = c(r); return p.x > s.x && p.x < s.x + s.width && p.y > s.y && p.y < s.y + s.height }).map(r => r.id)
+          const out = racks.map(r => r.id).filter(id => !inS.includes(id))
+          const fig = (ids) => SB.rowsFigure(st.objects, ids, gs, ledger, st.elevations)
+          const a = fig(inS), b = fig(out)
+          return [[s.label, a.rows, a.positions], ['Unassigned', b.rows, b.positions]]
+        }))`)
+      const want = await expected()
+      expect([await shown(), want[0][1] > 0, want[1][1] > 0]).toEqual([want, true, true])
+      // hover: the section lit on the plan; click: selected
+      const row = L.page.locator('[data-section-row]').first()
+      const sid = (await secsNow())[0].id
+      const strokeOf = () => L.page.evaluate((id) => window.Konva.stages[0].findOne(n => n.name() === 'obj:' + id)?.findOne('Line')?.stroke(), sid)
+      expect(await strokeOf()).toBe('#B9C7BE')
+      await row.hover(); await L.page.waitForTimeout(150)
+      expect(await strokeOf()).toBe('#2E7D5B')
+      await row.click(); await L.page.waitForTimeout(150)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([sid])
+      // the section moved 30 ft right (its left edge dragged): the counts follow, live
+      const s0 = (await secsNow())[0], gs = await gs7(), edge = { x: s0.x, y: s0.y + s0.h / 2 }
+      await L.drag(edge, { x: edge.x + 30 * gs, y: edge.y }); await L.page.waitForTimeout(200)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      const want2 = await expected()
+      expect(await shown()).toEqual(want2)
+      // a click on a rack inside the section selects the rack
+      const ids = await L.S('return import("/src/utils/sectionAreas.js").then(M => [...M.membership(S.getState().objects).bySection.values()][0])')
+      const r = await obj7(ids[0])
+      await L.click(rackAt(r, -0.3, -0.25))
+      expect(await L.S('return S.getState().selectedIds')).toContain(r.id)
+    }, T)
+
+    it('REG-section-layer (click): sections are on their own Sections layer — hidden in the Layers card they are not drawn; locked, a click still selects one and a drag moves nothing; Ctrl+A takes them', async () => {
+      await openSections()
+      const f = await fpOf(), m = await ft(12)
+      await onCanvasAll([{ x: f.x - m, y: f.y - m }, { x: f.x + f.width / 2, y: f.y + f.height + m }])
+      await drawRect({ x: f.x - m, y: f.y - m }, { x: f.x + f.width / 2, y: f.y + f.height + m })
+      const [s] = await secsNow(), z = await L.S('return S.getState().zoom'), label = { x: s.x + 20 / z, y: s.y + 17 / z }
+      expect(await L.S('const st = S.getState(), o = st.objects.find(x => x.type === "section_area"); return o.layerId')).toBe('sections')
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const drawn = () => L.page.evaluate((id) => !!window.Konva.stages[0].findOne(n => n.name() === 'obj:' + id), s.id)
+      await openLayers()
+      await layersCard().getByRole('switch', { name: 'Hide Sections layer' }).click(); await L.page.waitForTimeout(150)
+      expect(await drawn()).toBe(false)
+      await layersCard().getByRole('switch', { name: 'Show Sections layer' }).click()
+      await layersCard().getByRole('button', { name: 'Lock Sections layer' }).click(); await L.page.waitForTimeout(150)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      expect(await drawn()).toBe(true)
+      // locked: a click on its label still selects it; a drag from its outline moves nothing
+      await L.click(label)
+      expect(await L.selected()).toEqual(['section_area'])
+      const gs = await gs7(), edge = { x: s.x, y: s.y + s.h / 2 }
+      await L.drag(edge, { x: edge.x + 10 * gs, y: edge.y }); await L.page.waitForTimeout(200)
+      expect((await secsNow())[0].x).toBe(s.x)
+      // unlocked: Ctrl+A takes it with the rest
+      await openLayers(); await layersCard().getByRole('button', { name: 'Unlock Sections layer' }).click(); await L.page.keyboard.press('Escape')
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(200)
+      expect(await L.S('return S.getState().selectedIds.includes(arg)', s.id)).toBe(true)
     }, T)
 
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {

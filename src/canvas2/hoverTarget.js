@@ -7,7 +7,7 @@
 
 import { create } from 'zustand'
 import { hitTest, hitTestBay, fpWallHitTest, wallBeatsPadding } from './hitTest'
-import { handleHitTest, hasResizeHandles } from './handleGeometry'
+import { handleHitTest, objHasResizeHandles } from './handleGeometry'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { fpRotateHandleHitTest } from './fpRotate'
 import { fpHandleHit } from './fpHandles'
@@ -51,7 +51,7 @@ export function predictClick(st, w, zoom) {
   // a handle of the selection: a click there selects nothing new
   if ((st.selectedIds || []).length === 1) {
     const s = st.objects.find(o => o.id === st.selectedIds[0])
-    if (s && hasResizeHandles(s.type, PORTED_RACK_TYPES) && handleHitTest(s, w.x, w.y, zoom)) return keep()
+    if (s && objHasResizeHandles(s, PORTED_RACK_TYPES) && handleHitTest(s, w.x, w.y, zoom)) return keep()
     if (s && FP.has(s.type) && (fpRotateHandleHitTest(s, gs, zoom, w.x, w.y) || (isPickable(st.layers, s) && fpHandleHit(s, w.x, w.y, zoom)))) return keep()
   } else if ((st.selectedIds || []).length >= 2) {
     /* the group rotate handle is checked by the press too; it is small and rare: left as the plain pick */

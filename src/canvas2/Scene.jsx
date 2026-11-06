@@ -8,6 +8,7 @@ import { useElevView, tintOn } from '../utils/elevationDraw'
 import { FILL_TOOL } from '../utils/fillTool'
 import { useAreaHover, areaShown } from './areaHover'
 import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape, RackingAreaShape, ZoneShape } from './shapes'
+import { SectionShape } from './SectionShape'
 
 /* ── STEP 2 · the scene ──────────────────────────────────────────────────────
    Everything in the store, drawn. One painter per object, chosen once, and no
@@ -82,12 +83,13 @@ function SceneView({ listening = false, bind, part = 'all' }) {
     return m
   }, [objects])
   const scene = useMemo(() => {
-    const floors = [], rest = [], columns = []
+    const floors = [], rest = [], columns = [], sections = []
     for (const o of objects) {
       if (!o || !isVisible(o)) continue
       if (o.type === 'elevation_types') continue   // the layout's elevation types (utils/elevations.js): data, never drawn
       if (FP_TYPES.has(o.type) && o.fpVerts) { floors.push(o); continue }
       if (o.type === 'column_grid') { columns.push({ kind: 'columns', obj: o }); continue }
+      if (o.type === 'section_area') { sections.push(o); continue }   // under everything but the floor (utils/sectionAreas.js)
       if (o.type === 'aisle') { rest.push({ kind: 'aisle', obj: o }); continue }
       if (o.type === 'racking_area') { rest.push({ kind: 'area', obj: o }); continue }
       if (typeof o.type === 'string' && o.type.startsWith('zone_')) { rest.push({ kind: 'zone', obj: o }); continue }
@@ -98,7 +100,7 @@ function SceneView({ listening = false, bind, part = 'all' }) {
       }
       rest.push({ kind: 'fallback', obj: o })
     }
-    return { floors, rest, columns }
+    return { floors, rest, columns, sections }
   }, [objects, gridSize, isVisible])
 
   const colEls = scene.columns.map(e => <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />)
@@ -108,6 +110,7 @@ function SceneView({ listening = false, bind, part = 'all' }) {
       {scene.floors.map(o => (
         <FloorPlanShape key={o.id} obj={o} gridSize={gridSize} listening={listening} bind={bind} />
       ))}
+      {scene.sections.map(o => <SectionShape key={o.id} obj={o} selected={selectedIds.includes(o.id)} listening={listening} bind={bind} />)}
       {scene.rest.map(e => {
         if (e.kind === 'rack') {
           return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} gridSize={gridSize} lz={lz} listening={listening} bind={bind}

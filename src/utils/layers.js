@@ -1,9 +1,10 @@
-// layers.js — the seven standard layers, which layer an object is on, and
+// layers.js — the eight standard layers, which layer an object is on, and
 // what a layer's eye and padlock mean everywhere that asks.
 //
 //   Building  floor plan, walls, doors/docks and other structure
 //   Columns   the column grid (and single columns)
 //   Zones     office, staging, washroom and custom areas — no racking inside
+//   Sections  named areas drawn on the plan (utils/sectionAreas.js) — they never touch the racks
 //   Racking   every rack, the racking areas that placed them, and the floor
 //             equipment placed among them
 //   Aisles    aisle objects; their labels and the cross-aisle labels
@@ -12,7 +13,7 @@
 //   Notes     text, dimensions, lines and drawn shapes
 //
 // An object's layer is its `layerId` when that names a layer in the list,
-// otherwise the layer its type belongs on. Layouts saved before the seven
+// otherwise the layer its type belongs on. Layouts saved before the standard layers
 // existed (layerIds 'racks', 'structural' ...) therefore land where they
 // belong with no migration of the objects themselves.
 //
@@ -27,6 +28,7 @@ export const STANDARD_LAYERS = [
   { id: 'building', name: 'Building', color: '#6B675F', visible: true, locked: false },
   { id: 'columns',  name: 'Columns',  color: '#4547C4', visible: true, locked: false },
   { id: 'zones',    name: 'Zones',    color: '#7c3aed', visible: true, locked: false },
+  { id: 'sections', name: 'Sections', color: '#2E7D5B', visible: true, locked: false },
   { id: 'racking',  name: 'Racking',  color: '#165c45', visible: true, locked: false },
   { id: 'aisles',   name: 'Aisles',   color: '#B87309', visible: true, locked: false },
   { id: 'checks',   name: 'Checks',   color: '#C42B2B', visible: true, locked: false },
@@ -64,6 +66,7 @@ export function layerForType(type) {
   if (t.startsWith('struct_')) return 'building'
   if (t === 'aisle') return 'aisles'
   if (t.startsWith('zone_')) return 'zones'
+  if (t === 'section_area') return 'sections'
   if (t === 'racking_area') return 'racking'
   if (t.startsWith('rack_') || t.startsWith('mhe_') || t.startsWith('safety_') || t.startsWith('util_')) return 'racking'
   if (t.startsWith('annot_') || NOTE_TYPES.has(t)) return 'notes'
@@ -170,12 +173,12 @@ export function layerShown(layers, id) {
   return !l || l.visible !== false
 }
 
-/** Is `layers` exactly the standard seven, in order? */
+/** Is `layers` exactly the standard eight, in order? */
 export function isStandard(layers) {
   return Array.isArray(layers) && layers.length === LAYER_IDS.length && layers.every((l, i) => l && l.id === LAYER_IDS[i])
 }
 
-/** The standard seven, each keeping the eye and padlock it already had in `layers`. */
+/** The standard eight, each keeping the eye and padlock it already had in `layers`. */
 export function standardLayers(layers) {
   const m = asMap(layers)
   return STANDARD_LAYERS.map(d => {
@@ -192,7 +195,7 @@ export function releaseGeneratedLocks(layers) {
   return layers.map(l => (l && l.id === 'building' && l.locked && !l.lockedByHand ? { ...l, locked: false } : l))
 }
 
-/** The standard seven as Generate leaves them: Columns locked (and shown); the rest as they were. */
+/** The standard eight as Generate leaves them: Columns locked (and shown); the rest as they were. */
 export function generatedLayers(layers) {
   return standardLayers(layers).map(l => LOCKED_AFTER_GENERATE.includes(l.id) ? { ...l, visible: true, locked: true } : l)
 }
@@ -240,7 +243,7 @@ export function setLayer(store, id, patch) {
   }
 }
 
-/** Keeps the store's layer list the seven standard layers — on start, after a
+/** Keeps the store's layer list the eight standard layers — on start, after a
  *  load of an older layout, after anything that swaps the list. Eye and
  *  padlock state carry over by id. */
 export function installLayerKeeper(store) {

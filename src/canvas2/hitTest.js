@@ -22,6 +22,7 @@ import { getColumnCheckView } from '../generate/columnCheckView'
 import { aisleLabelScale } from '../render/labelSize'
 import { useLabelPrefs } from './labelPrefs'
 import { isSelectable, layerShown } from '../utils/layers'
+import { onOutline, onLabel } from '../utils/sectionAreas'
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 const COL_GRID = new Set(['column_grid'])
@@ -277,6 +278,8 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
       /* a zone is drawn on the Zones layer, under the racks: a rack standing in one (a pair grown into it) is
          picked where it is drawn over it, not the zone behind it (BUG 87) */
       : (typeof o.type === 'string' && o.type.startsWith('zone_')) ? 0.75
+      /* a section (utils/sectionAreas.js) is drawn under everything: a rack, a zone or a door on its outline wins */
+      : o.type === 'section_area' ? 0.6
       : 1
   const sorted = [...objects].sort((a, b) => priority(b) - priority(a))
 
@@ -306,6 +309,12 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
       const inOuter = wx >= x0 - band && wx <= x1 + band && wy >= y0 - band && wy <= y1 + band
       const inInner = wx > x0 + band && wx < x1 - band && wy > y0 + band && wy < y1 - band
       if (inOuter && !inInner) return obj.id
+      continue
+    }
+    /* A section is picked by its outline (a few screen pixels of it) or its name label: its inside is the racks
+       standing in it and the floor, which a press there reaches (STUDIO.md §7a Sections). */
+    if (obj.type === 'section_area') {
+      if (onOutline(obj, wx, wy, 6 / zoom) || onLabel(obj, wx, wy, zoom)) return obj.id
       continue
     }
     if (obj.type === 'aisle') {

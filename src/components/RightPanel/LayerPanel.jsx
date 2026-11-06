@@ -2,7 +2,7 @@ import { useCanvasStore } from '../../store/useCanvasStore'
 import { setLayer } from '../../utils/layers'
 import { C, SecLabel, Toggle, IconBtn } from '../../studio/cardParts'
 
-/* The seven standard layers (utils/layers.js), each with a visibility switch and a padlock.
+/* The eight standard layers (utils/layers.js), each with a visibility switch and a padlock.
    Hidden: not drawn, not pickable, not in the PDF. Locked: drawn and printed,
    but not pickable, draggable, snappable or marqueed. Custom layers later.
    A body for the card's "More" fold. */

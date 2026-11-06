@@ -74,12 +74,17 @@ function Hint({ label, keyName }) {
   )
 }
 
-/* a small dark menu above a pill button (Line tools, Zone) */
+/* a small dark menu above a pill button (Line tools, Zone, Section). A row's `keyName` is its key while the menu is
+   open (the Section menu's R and P) — taken here, before the canvas's own keys (R, P keep their tools otherwise). */
 function PillMenu({ label, rows, onClose }) {
   const ref = useRef(null)
   useEffect(() => {
     const down = (e) => { if (!ref.current?.parentElement?.contains(e.target)) onClose() }
-    const key = (e) => { if (e.key === 'Escape') onClose() }
+    const key = (e) => {
+      if (e.key === 'Escape') { onClose(); return }
+      const r = !e.ctrlKey && !e.metaKey && !e.altKey && rows.find(x => x.keyName && x.keyName.toLowerCase() === String(e.key).toLowerCase())
+      if (r && !r.disabled) { e.preventDefault(); e.stopPropagation(); r.onClick(); onClose() }
+    }
     document.addEventListener('mousedown', down); document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
   }, [onClose])
@@ -90,6 +95,7 @@ function PillMenu({ label, rows, onClose }) {
           onClick={() => { r.onClick(); onClose() }}
           style={{ height: 36, display: 'flex', alignItems: 'center', gap: 10, padding: '0 8px', border: 0, borderRadius: 6, background: r.on ? '#2E4A3C' : 'transparent', fontSize: 13, color: r.on ? '#7BD3A4' : '#E8EAE6', textAlign: 'left' }}>
           {r.icon}<span style={{ flex: 1 }}>{r.label}</span>
+          {r.keyName && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#7E8680' }}>{r.keyName}</span>}
         </button>
       ))}
     </div>
@@ -99,7 +105,7 @@ function PillMenu({ label, rows, onClose }) {
 /** The tool pill: Select, Pan | Fill racking, Row group, Split | Line tools ▾, Measure, Text, Zone ▾.
  *  `tools` describes each (id, label, icon, kind, key, on, onClick); `lineTools` and `zones` fill the two menus;
  *  `penOptions` is shown above the pill while Freehand is the tool. */
-export function StudioToolPill({ groups, lineTools, zones, penOptions }) {
+export function StudioToolPill({ groups, lineTools, zones, sections = [], penOptions }) {
   const [hover, setHover] = useState(null)
   const [menu, setMenu] = useState(null)
   const lineOn = lineTools.some(t => t.on)
@@ -115,6 +121,19 @@ export function StudioToolPill({ groups, lineTools, zones, penOptions }) {
     <div className="st-pill" role="toolbar" aria-label="Drawing tools" data-island="tool-pill"
       style={{ left: '50%', bottom: 20, transform: 'translateX(-50%)', gap: 2, padding: 5 }}>
       {groups[0].map(btn)}
+      {/* Section ▾ (after Pan): Rectangle (R) · Custom shape (P) — STUDIO.md §7a Sections */}
+      {sections.length > 0 && (
+        <div style={{ position: 'relative', display: 'flex' }} onMouseEnter={() => setHover('section')} onMouseLeave={() => setHover(h => (h === 'section' ? null : h))}>
+          <button type="button" aria-label="Section" aria-haspopup="menu" aria-expanded={menu === 'section'} aria-pressed={sections.some(t => t.on)}
+            onClick={() => setMenu(m => (m === 'section' ? null : 'section'))} style={pillBtn(sections.some(t => t.on), true)}>
+            <Icon name="Zones" kind="rail" active={sections.some(t => t.on)} />
+            <Icon name="Chevron" size={12} color="#9AA29C" />
+          </button>
+          {hover === 'section' && !menu && <Hint label="Section" />}
+          {menu === 'section' && <PillMenu label="Section" onClose={() => setMenu(null)}
+            rows={sections.map(t => ({ ...t, icon: <Icon name={t.icon} kind={t.kind || 'tool'} active={!!t.on} /> }))} />}
+        </div>
+      )}
       <Sep />
       {groups[1].map(btn)}
       <Sep />

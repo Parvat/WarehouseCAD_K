@@ -20,6 +20,9 @@ import { clampZoom, screenToWorld } from './viewport'
 import { isFloorPlan } from './selection'
 import { useColumnCheck } from '../generate/useColumnCheck'
 import { FillOverlay } from './FillTool'
+import { SectionDraft, SectionPointHandles } from './SectionShape'
+import { SectionBar, SectionRename } from './SectionBar'
+import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, startRect, moveRect, commitRect, penClick, penMove, penDblClick, useSectionTool } from './sectionTool'
 import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
 import { DoorBar, DoorPreview } from './DoorBar'
@@ -28,7 +31,7 @@ import { SelectionBar, FloorMenu, openFloorMenu } from '../studio/SelectionBar'
 import { ColumnLineLabels } from './ColumnLineLabels'
 import { ZoneEditPreview, SelectedZoneSizes } from './ZoneEdit'
 import { ZoneCheckPreview } from './ZoneCheck'
-import { hasResizeHandles } from './handleGeometry'
+import { hasResizeHandles, objHasResizeHandles } from './handleGeometry'
 import { FILL_TOOL, startFill, moveFill, commitFill, useFillTool } from '../utils/fillTool'
 import { HOME_TOOL } from '../utils/homeTool'
 import { useMeasureMode, endTool } from '../utils/toolSwitch'
@@ -216,7 +219,7 @@ export function Canvas2() {
   // a locked object (on its own) is selected but has no handles: it cannot be resized or rotated (STUDIO.md §7a Locks)
   const layersNow = useCanvasStore(s => s.layers)
   const unlockedSel = selectedObjects.every(o => !isLockedIn(layersNow, o))   // on its own or by its layer's padlock
-  const handleTarget = unlockedSel && selectedObjects.length === 1 && hasResizeHandles(selectedObjects[0].type, PORTED_RACK_TYPES)
+  const handleTarget = unlockedSel && selectedObjects.length === 1 && objHasResizeHandles(selectedObjects[0], PORTED_RACK_TYPES)
     ? selectedObjects[0] : null
 
   /* A floor plan gets its OWN, rotate-only handle (FpRotateHandle — no
@@ -418,15 +421,34 @@ export function Canvas2() {
   const doorMouseMove = (e) => { const w = doorWorld(e); const st = useCanvasStore.getState(); if (w) hoverDoor(st.objects, w, st.gridSize || 40, view.current.zoom) }
   const doorMouseDown = (e) => { if (e.evt && e.evt.button !== 0) return; const w = doorWorld(e); if (w) { placeDoor(useCanvasStore, w, nanoid, view.current.zoom); hoverDoor(useCanvasStore.getState().objects, w, useCanvasStore.getState().gridSize || 40, view.current.zoom) } }
 
-  const modeMouseDown = measuring ? measureMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
+  /* the Section tool (sectionTool.js; STUDIO.md §7a Sections): Rectangle — a press starts the box, the release makes the
+     section (one undo step) and the tool ends; Custom shape — each click a point, a double-click or a click on the first
+     point closes it. Moves and the rectangle's release are taken on window, as Fill's are. */
+  const sectRect = !measuring && activeTool === SECTION_RECT_TOOL, sectPen = !measuring && activeTool === SECTION_PEN_TOOL
+  const sectioning = sectRect || sectPen
+  const sectWorld = (e) => { const p = e.target.getStage()?.getPointerPosition(); return p ? screenToWorld(view.current, p) : null }
+  const sectionMouseDown = (e) => {
+    if (e.evt && e.evt.button !== 0) return
+    const w = sectWorld(e)
+    if (!w) return
+    if (sectPen) { penClick(useCanvasStore, w, view.current.zoom); return }
+    startRect(w)
+    const rect = e.target.getStage().container().getBoundingClientRect()
+    const move = (ev) => moveRect(screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }))
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); if (useSectionTool.getState().drag) commitRect(useCanvasStore, view.current.zoom) }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+  }
+  const sectionMouseMove = (e) => { if (sectPen) { const w = sectWorld(e); if (w) penMove(w) } }
+
+  const modeMouseDown = measuring ? measureMouseDown : sectioning ? sectionMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
   // Space+drag or a middle drag pans in any tool (STUDIO.md §7a)
   const stageMouseDown = (e) => (isForcePan(e && e.evt) ? onStageMouseDown(e) : modeMouseDown(e))
   // the Row group's cursor: resize over a group row's handle, move over its body, crosshair over the floor (STUDIO.md §7a)
   const [groupCursor, setGroupCursor] = useState('crosshair')
   const groupMouseMove = (e) => { const c = groupCursorAt(e); if (c !== groupCursor) setGroupCursor(c) }
-  const stageMouseMove = measuring ? measureMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : grouping ? groupMouseMove : filling ? undefined : onStageMouseMove
+  const stageMouseMove = measuring ? measureMouseMove : sectioning ? sectionMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : grouping ? groupMouseMove : filling ? undefined : onStageMouseMove
   const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : dooring ? clearDoorHover : filling || grouping ? undefined : onStageMouseLeave
-  const effectiveCursor = grouping ? groupCursor : measuring || filling || splitting || dooring ? 'crosshair' : cursor
+  const effectiveCursor = grouping ? groupCursor : measuring || filling || splitting || dooring || sectioning ? 'crosshair' : cursor
 
   return (
     <div
@@ -453,7 +475,7 @@ export function Canvas2() {
           onMouseMove={stageMouseMove}
           onMouseLeave={stageMouseLeave}
           onWheel={onWheel}
-          onDblClick={onDblClick}
+          onDblClick={sectPen ? () => penDblClick(useCanvasStore) : onDblClick}
         >
           {/* background — the grid alone; it never intercepts anything */}
           <Layer listening={false}>
@@ -527,6 +549,9 @@ export function Canvas2() {
             {/* a selected zone's size (ZoneEdit.jsx) */}
             <SelectedZoneSizes gridSize={gridSize} />
             <FillOverlay />
+            {/* the Section tool's box or pen, and a selected custom-shape section's points (SectionShape.jsx) */}
+            <SectionDraft />
+            {unlockedSel && selectedObjects.length === 1 && <SectionPointHandles obj={selectedObjects[0]} />}
           </Layer>
         </Stage>
       )}
@@ -540,6 +565,8 @@ export function Canvas2() {
       <SplitBar />
       {filling && <FillOptionsBar />}
       {dooring && <DoorBar />}
+      {sectioning && <SectionBar />}
+      <SectionRename />
       <FloorMenu />
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>

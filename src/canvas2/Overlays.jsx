@@ -156,7 +156,8 @@ function OverlaysView({
   const onlyCol = colPick && selectedObjects.length === 1 && selectedObjects[0].id === colPick.gridId ? colPick : null
   const outlined = useMemo(() => {
     if (onlyCol) return [{ id: onlyCol.gridId, type: 'column', x: onlyCol.x, y: onlyCol.y, width: onlyCol.w, height: onlyCol.h }]
-    if (!bayLevel) return selectedObjects
+    // a section draws its own selected look (SectionShape.jsx)
+    if (!bayLevel) return selectedObjects.filter(o => o.type !== 'section_area')
     const ids = withSections(objects, selectedObjects.map(o => o.id), gridSize)
     return objects.filter(o => ids.includes(o.id))
   }, [bayLevel, selectedObjects, objects, gridSize, onlyCol])

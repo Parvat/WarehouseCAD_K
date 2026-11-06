@@ -24,6 +24,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { computeBom } from '../utils/bom'
+import { polygonOf } from '../utils/sectionAreas'
 import { buildBomSheets } from './bomSheet'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -147,6 +148,16 @@ function zoneSVG(obj, gridSize) {
   return `<g data-zone="${esc(obj.id || '')}">` +
     `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" fill="${stroke}" fill-opacity="0.13" stroke="${stroke}" stroke-width="${gridSize * 0.0375}"/>` +
     `<text x="${obj.x + obj.width / 2}" y="${obj.y + obj.height / 2}" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="600" font-size="${fs}" fill="${stroke}">${name}</text></g>`
+}
+
+/* ── Section (utils/sectionAreas.js) — as on the plan: a very light fill, a dashed 1-unit outline, its name in small
+   caps at the top-left inside; `u`: world px per paper mm (the label 3.5 mm tall, 4 mm in, whatever the scale). */
+function sectionSVG(obj, u) {
+  if (!(obj.width > 0) || !(obj.height > 0)) return ''
+  const pts = polygonOf(obj).map(p => p.join(',')).join(' ')
+  return `<g data-section="${esc(obj.id || '')}">` +
+    `<polygon points="${pts}" fill="#F4F8F5" stroke="#B9C7BE" stroke-width="${0.3 * u}" stroke-dasharray="${1.8 * u} ${1.2 * u}"/>` +
+    `<text x="${obj.x + 4 * u}" y="${obj.y + 4 * u}" dominant-baseline="hanging" font-family="'Plus Jakarta Sans', sans-serif" font-weight="600" font-variant="small-caps" font-size="${3.5 * u}" fill="#767C74">${esc(obj.label || 'Section')}</text></g>`
 }
 
 function columnGridSVG(obj, gridSize) {
@@ -403,11 +414,12 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   // then the labels and marks, then the columns on top of all of it (structure:
   // a column inside a rack is the conflict the check reports, and no rack, aisle
   // label, arrow or X mark may hide it).
-  const floors = [], zones = [], columns = [], racks = []
+  const floors = [], zones = [], columns = [], racks = [], sections = []
   for (const o of objects) {
     if (!o || !usable(o)) continue
     if (FP_TYPES.has(o.type)) floors.push(o)
     else if (isZone(o)) zones.push(o)
+    else if (o.type === 'section_area') sections.push(o)
     else if (o.type === 'column_grid') columns.push(o)
     else if (PORTED_RACK_TYPES.has(o.type)) racks.push(o)
   }
@@ -433,6 +445,8 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   const body = [
     `<rect x="${vb.x}" y="${vb.y}" width="${vb.width}" height="${vb.height}" fill="#ffffff"/>`,
     ...floors.map(o => floorPlanSVG(o, gridSize)),
+    // the sections under everything else, as on the plan
+    ...sections.map(o => sectionSVG(o, u)),
     ...zones.map(o => zoneSVG(o, gridSize)),
     ...racks.map(o => rackSVG(o, gridSize, lz, elevTable)),
     /* labels and marks are worked out from the whole layout, as on the canvas

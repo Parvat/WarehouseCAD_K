@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { placeFloat, floatAvoidRects, floatFreeHeight } from '../../utils/floatPlace'
+import { SECTION_RECT_TOOL, SECTION_PEN_TOOL } from '../../canvas2/sectionTool'
 import { openSetup } from '../../utils/project'
 import { createPortal } from 'react-dom'
 import {
@@ -1134,12 +1135,14 @@ export function FloatingToolbar({ studio = false } = {}) {
     ]
     const lineTools = LINE_TOOLS.map(t => ({ ...t, on: !measuring && activeTool === t.tool, onClick: () => setActiveTool(t.tool) }))
     const zones = ZONE_ITEMS.map(z => ({ id: z.id, label: z.label, icon: ZONE_ICON[z.id] || 'Custom area', onClick: () => pickItem({ ...z, catId:'zones' }) }))
+    // the Section tool (canvas2/sectionTool.js): its two ways of drawing, R and P while its menu is open
+    const sectionTools = [tool('section-rect', SECTION_RECT_TOOL, 'Rectangle', 'Custom area', { kind:'object', keyName:'R' }), tool('section-pen', SECTION_PEN_TOOL, 'Custom shape', 'Freehand', { keyName:'P' })]
     const sec = SECTIONS.find(x => x.id === flyout)
     return (
       <>
         <StudioRail sections={SECTIONS} open={flyout} onOpen={setFlyout} onSettings={() => openSetup('settings')} />
         {sec && <StudioFlyout section={sec} items={secItems(sec)} onPick={pickItem} onClose={() => setFlyout(null)} />}
-        <StudioToolPill groups={groups} lineTools={lineTools} zones={zones}
+        <StudioToolPill groups={groups} lineTools={lineTools} zones={zones} sections={sectionTools}
           penOptions={activeTool === TOOLS.FREEHAND && !measuring && (
             <PenOptions prefs={penPrefs} setPrefs={setPenPrefs} place="above"
               strokeColor={strokeColor} setStrokeColor={setStrokeColor} selectedStroke={selectedStroke}/>

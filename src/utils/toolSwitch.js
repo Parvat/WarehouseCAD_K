@@ -15,11 +15,12 @@ import { cancelGroupBox, onRowGroupToolStart, clearGroup, ROW_GROUP_TOOL } from 
 import { useSplit } from './splitTool'
 import { clearDoorHover } from './doorTool'
 import { cancelPlacement } from './placement'
+import { cancelSection, SECTION_RECT_TOOL, SECTION_PEN_TOOL } from '../canvas2/sectionTool'
 
 /** The measure mode: on while the ruler is measuring (Canvas2's MeasureOverlay). */
 export const useMeasureMode = create(() => ({ on: false }))
 
-const MODE_TOOLS = new Set([ROW_GROUP_TOOL, 'split', 'fill_racking', 'door'])
+const MODE_TOOLS = new Set([ROW_GROUP_TOOL, 'split', 'fill_racking', 'door', SECTION_RECT_TOOL, SECTION_PEN_TOOL])
 
 /* what a tool leaves behind */
 function clearTransients() {
@@ -27,6 +28,7 @@ function clearTransients() {
   cancelGroupBox()
   { if (useSplit.getState().hover) useSplit.setState({ hover: null }) }
   clearDoorHover()
+  cancelSection()                              // the Section tool's box or pen points (canvas2/sectionTool.js)
 }
 
 /** End whatever is running — the tool, its box or hover, a placement on the mouse, the measure mode — and go back

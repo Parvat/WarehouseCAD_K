@@ -20,6 +20,7 @@ import { TextBody } from './TextPanel'
 import { LabelsBody } from './LabelsPanel'
 import { ColumnCheckBody } from './ColumnCheckPanel'
 import { ColumnLineFields } from './panels/ColumnLineFields'
+import { SectionMain, SectionsList } from '../../studio/sectionCards'
 import { RackMain, RowGroupMain, ZoneMain, NothingSelected, LayoutBlock } from '../../studio/cards'
 import { useRowGroup, groupRowsNow } from '../../utils/rowGroupTool'
 import { Head, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, StaticField, Row, ToggleRow, Seg, Btn,
@@ -180,6 +181,8 @@ export function PropertiesPanel() {
       <>
         <NothingSelected />
         <LayoutBlock last={false} />
+        {/* the sections: rows and positions each, then Unassigned (studio/sectionCards.jsx) */}
+        <SectionsList />
         <OverlapNote objects={objects} />
         <More />
       </>
@@ -266,6 +269,18 @@ export function PropertiesPanel() {
         <More locked={locked}>
           <ObjectActions obj={obj} />
           <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
+        </More>
+      </>
+    )
+  }
+
+  /* a section (utils/sectionAreas.js): its name, its size or area */
+  if (obj.type === 'section_area') {
+    return (
+      <>
+        <SectionMain obj={obj} />
+        <More locked={locked}>
+          <ObjectActions obj={obj} />
         </More>
       </>
     )
