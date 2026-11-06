@@ -122,13 +122,13 @@ describe('BOM — hand-counted layouts', () => {
     })
   })
 
-  it('BOM-settings: First level on floor off — level 1 gets a beam; 2 anchors per foot; a tall pair takes 3 spacers', () => {
-    const C = { ...A, id: 'C', firstOnFloor: false, uprightHeightIn: 240 }   // 4 beam levels, 20′ frames
+  it('BOM-settings: level 1 above the floor (6″) has a beam; 2 anchors per foot; a tall pair takes 3 spacers', () => {
+    const C = { ...A, id: 'C', uprightHeightIn: 240, levels: [6, 60, 120, 180].map(beamIn => ({ beamIn, palletHeightIn: 48, loadLb: 2000 })) }   // 4 beam levels, 20′ frames
     const r = rack('rack_double_row', [96], 0, 0, { elevType: 'C' })
     const bom = computeBom([r], table([A, C]), { settings: { ...BOM_DEFAULTS, anchorsPerFoot: 2 } })
     expect(parts(bom)).toEqual({
       'Upright frame 20′ × 42″': 4,          // 1 bay → 2 positions × 2 sides
-      'Beam pair 96″ × 4″ face': 8,          // 1 bay × 2 sides × 4 levels (no floor level)
+      'Beam pair 96″ × 4″ face': 8,          // 1 bay × 2 sides × 4 levels, every one above 0
       'Safety pin': 32,                      // 8 × 4
       'Wire deck 46″ × 42″': 16,             // 8 × 2
       'Row spacer 9″ flue': 6,               // 2 frame pairs × 3 (20′ is above 16′)
@@ -166,20 +166,40 @@ describe('BOM — hand-counted layouts', () => {
     expect(bomSettings({ bom: { anchorsPerFoot: 3 } })).toEqual({ ...BOM_DEFAULTS, anchorsPerFoot: 3 })
   })
 
-  it('BOM-drawing-agrees: First level on floor off — the elevation drawing (card, full screen and the PDF draw this one layout) shows a beam under level 1 at the lift-off height (the clearance, 6″) and its height label; on, none; the beams drawn always equal the BOM\'s beam pairs per bay side', async () => {
+  it('BOM-drawing-agrees: the elevation decides — level 1 at 0 sits on the floor, no beam; a level above 0 has one — the elevation drawing (card, full screen and the PDF draw this one layout) shows exactly the beams the BOM counts; a saved First level on floor field is ignored', async () => {
     const { elevationLayout } = await import('../../utils/elevationDrawing')
-    const beams = (t) => elevationLayout(t, 96, { w: 276, h: 420 }, { fontPx: 9 }).items.filter(i => i.t === 'rect' && i.tag === 'beam')
-    const elevLabels = (t) => elevationLayout(t, 96, { w: 276, h: 420 }, { fontPx: 9 }).items.filter(i => i.t === 'text' && i.role?.id === 'elev').map(i => i.role.value).sort((a, b) => a - b)
-    const off = { ...A, firstOnFloor: false }, low = { ...A, firstOnFloor: false, clearanceIn: 8 }
-    expect([beams(A).length, elevLabels(A)]).toEqual([3, [60, 120, 180]])                    // on: levels 2–4 on beams
-    expect([beams(off).length, elevLabels(off)]).toEqual([4, [6, 60, 120, 180]])             // off: level 1 on a beam, its top at 6″
-    expect(elevLabels(low)).toEqual([8, 60, 120, 180])                                       // the elevation's own clearance
-    for (const t of [A, B, off, { ...B, firstOnFloor: false }]) {
+    const lay = (t, edit = null) => elevationLayout(t, 96, { w: 276, h: 420 }, { fontPx: 9, edit })
+    const beams = (t) => lay(t).items.filter(i => i.t === 'rect' && i.tag === 'beam')
+    const elevLabels = (t, edit) => lay(t, edit).items.filter(i => i.t === 'text' && i.role?.id === 'elev').map(i => i.role.value).sort((a, b) => a - b)
+    const up = { ...A, id: 'U', levels: [6, 60, 120, 180].map(beamIn => ({ beamIn, palletHeightIn: 48, loadLb: 2000 })) }
+    const oldSave = { ...A, id: 'O', firstOnFloor: false }                                   // a field an earlier build saved
+    expect([beams(A).length, elevLabels(A)]).toEqual([3, [60, 120, 180]])                    // level 1 at 0: levels 2–4 on beams
+    expect([beams(up).length, elevLabels(up)]).toEqual([4, [6, 60, 120, 180]])               // level 1 at 6″: its beam and its label
+    expect([beams(oldSave).length, elevLabels(oldSave)]).toEqual([3, [60, 120, 180]])        // the old field changes nothing
+    expect(elevLabels(A, {})).toEqual([0, 60, 120, 180])                                     // on the sheet: level 1's 0″, to type it up
+    expect(lay(A, {}).items.filter(i => i.tag === 'handle' && i.role?.k === 0).length).toBe(2)   // and its handles at the floor, to drag it up
+    for (const t of [A, B, up, oldSave]) {
       const bom = computeBom([rack('rack_row', [96])], { version: 3, defaultId: t.id, types: [t], project: null })
-      expect([t.id, t.firstOnFloor ?? true, line(bom, 'Beam pair', `96″ × ${t.beamFaceIn}″ face`)]).toEqual([t.id, t.firstOnFloor ?? true, beams(t).length])   // 1 bay: beam pairs = beams drawn
+      expect([t.id, line(bom, 'Beam pair', `96″ × ${t.beamFaceIn}″ face`)]).toEqual([t.id, beams(t).length])   // 1 bay: beam pairs = beams drawn
     }
     const pdf = readFileSync(new URL('../../export/pdfExport.js', import.meta.url), 'utf8')
     expect(pdf).toMatch(/import \{ elevationLayout,/)                                         // the PDF's sheets: the same layout
+  })
+
+  it('BOM-fit: Check layout measures every level from its beam top, and the drawing never trims a load — one that runs into the beam above is drawn full height, red', async () => {
+    const { elevationIssues } = await import('../../utils/elevations')
+    const { elevationLayout, misfitLevels } = await import('../../utils/elevationDrawing')
+    const at = (l1) => ({ ...A, id: 'F', clearanceIn: 6, levels: [l1, 60, 120, 180].map(beamIn => ({ beamIn, palletHeightIn: 48, loadLb: 2000 })) })
+    const issues = (t) => elevationIssues([rack('rack_row', [96], 0, 0, { elevType: 'F' })], table([t])).filter(i => i.kind === 'elev-fit').map(i => i.level)
+    // level 1 from the floor: 48″ pallet + 6″ clearance = 54″ ≤ 60 − 4 (face) = 56″ → fits
+    expect([issues(at(0)), [...misfitLevels(at(0)).keys()]]).toEqual([[], []])
+    // level 1 on a beam at 6″: 56 − 6 = 50″ < 54″ → level 1 doesn't fit, from its beam top
+    expect([issues(at(6)), [...misfitLevels(at(6)).keys()]]).toEqual([[1], [0]])
+    // drawn full height: a 52″ load on the beam at 6″ reaches 58″ — past the beam above's underside (56″) — red, not cut
+    const tall = { ...at(6), levels: at(6).levels.map((l, k) => (k === 0 ? { ...l, palletHeightIn: 52 } : l)) }
+    const d = elevationLayout(tall, 96, { w: 276, h: 420 }, { fontPx: 9 })
+    const load = d.items.find(i => i.t === 'rect' && i.tag === 'load' && i.level === 0 && i.fill !== '#C9A870' && i.stroke)
+    expect([Math.abs(load.y - d.Y(6 + 52)) < 1e-6, load.stroke]).toEqual([true, '#C0452A'])   // its top at 58″ = 6 + 52 (cut, it would end at 55.5″)
   })
 
   it('BOM-pdf: the proposal PDF gets the BOM table after the plan and the elevations — paper palette, part / size / qty, the flags first', () => {

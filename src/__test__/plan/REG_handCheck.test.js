@@ -2507,39 +2507,64 @@ describe('REG — the hand check by real clicks', () => {
       expect([qtyOf(await bomRows(), 'Wire deck'), await L.page.locator('[data-bom-flag]').allTextContents()]).toEqual([0, ['Set decks for 96 in beams']])
     }, T)
 
-    it('REG-bom-first-level (click): First level on floor turned off on the sheet (the elevation\u2019s pencil) gives level 1 a beam — 4 beam pairs per bay side instead of 3', async () => {
-      await open()
-      await bomTab()
-      const b0 = qtyOf(await bomRows(), 'Beam pair')                                     // bay sides × 3
+    /** the elevation sheet (the card's, or `d`): its beams drawn, and level 1's beam height label value */
+    const sheetOf = () => L.page.getByLabel('Elevation drawing').first()
+    const drawnBeams = (d = sheetOf()) => d.locator('rect[data-tag="beam"]').count()
+    const editSheet = async () => {
       await L.page.getByRole('tab', { name: 'Elevations' }).click(); await L.page.waitForTimeout(200)
       await L.page.getByRole('button', { name: /^Edit .* on the sheet$/ }).first().click(); await L.page.waitForTimeout(200)
-      const tg = L.page.getByRole('switch', { name: 'First level on floor' })
-      expect(await tg.getAttribute('aria-checked')).toBe('true')
-      await tg.click()
-      await L.page.getByLabel('Editing on the sheet').getByRole('button', { name: 'Save', exact: true }).click(); await L.page.waitForTimeout(250)
-      await bomTab()
-      expect(qtyOf(await bomRows(), 'Beam pair')).toBe(b0 / 3 * 4)                      // bay sides × 4
-    }, T)
+    }
+    const saveSheet = async () => { await L.page.getByLabel('Editing on the sheet').getByRole('button', { name: 'Save', exact: true }).click(); await L.page.waitForTimeout(250) }
 
-    it('REG-bom-first-level-sheet (click): First level on floor turned off on the sheet draws a beam under level 1 at the lift-off height (6″) with its height label — on the card, after Save, and in full screen — and the BOM counts exactly the beams drawn', async () => {
+    it('REG-bom-first-level (click): the elevation decides — level 1 typed up from the floor on the sheet (its 0″) gets its beam; typed 0 it loses it; the drawing and the BOM agree each time (beam pairs = bay sides × beams drawn)', async () => {
       await open()
       await bomTab()
       const sides = qtyOf(await bomRows(), 'Beam pair') / 3                               // bay sides: 3 beams each (levels 2–4)
-      await L.page.getByRole('tab', { name: 'Elevations' }).click(); await L.page.waitForTimeout(200)
-      const sheet = () => L.page.getByLabel('Elevation drawing').first()
-      const drawn = async (d = sheet()) => ({ beams: await d.locator('rect[data-tag="beam"]').count(), lift: await d.locator('text').filter({ hasText: /^6″$/ }).count() })
-      expect(await drawn()).toEqual({ beams: 3, lift: 0 })                                 // on: level 1 on the floor, no beam
-      await L.page.getByRole('button', { name: /^Edit .* on the sheet$/ }).first().click(); await L.page.waitForTimeout(200)
-      await L.page.getByRole('switch', { name: 'First level on floor' }).click(); await L.page.waitForTimeout(200)
-      expect(await drawn()).toEqual({ beams: 4, lift: 1 })                                 // off: a beam under level 1, its top 6″ up
-      await L.page.getByLabel('Editing on the sheet').getByRole('button', { name: 'Save', exact: true }).click(); await L.page.waitForTimeout(250)
-      expect(await drawn()).toEqual({ beams: 4, lift: 1 })
-      // full screen: the same drawing
+      await editSheet()
+      expect(await drawnBeams()).toBe(3)                                                   // level 1 at 0: on the floor, no beam
+      const type = async (v) => {
+        await sheetOf().locator('text[data-role="dim:elev:0"]').click(); await L.page.waitForTimeout(100)
+        const box = L.page.getByRole('textbox', { name: 'Dimension' })
+        await box.fill(v); await box.press('Enter'); await L.page.waitForTimeout(200)
+      }
+      await type('6')
+      expect([await drawnBeams(), await sheetOf().locator('text[data-role="dim:elev:0"]').textContent()]).toEqual([4, '6″'])
+      await saveSheet()
+      expect(await drawnBeams()).toBe(4)
+      await bomTab()
+      expect(qtyOf(await bomRows(), 'Beam pair')).toBe(sides * 4)
+      // typed 0: back on the floor, no beam
+      await editSheet()
+      await type('0')
+      expect(await drawnBeams()).toBe(3)
+      await saveSheet()
+      await bomTab()
+      expect(qtyOf(await bomRows(), 'Beam pair')).toBe(sides * 3)
+    }, T)
+
+    it('REG-bom-first-level-sheet (click): level 1 dragged up from the floor on the sheet (its handle at the floor) gets its beam, snapped to the hole pitch, with its height label — on the card, after Save and in full screen — and the BOM counts exactly the beams drawn', async () => {
+      await open()
+      await bomTab()
+      const sides = qtyOf(await bomRows(), 'Beam pair') / 3
+      await editSheet()
+      const d = sheetOf()
+      const h = await d.locator('rect[data-tag="handle"][data-role="beam::0"]').first().boundingBox()
+      const b2 = await d.locator('rect[data-tag="beam"][data-role="beam::1"]').boundingBox()
+      expect([!!h, !!b2]).toEqual([true, true])
+      // from the floor handle, up a third of the way to level 2's beam
+      const x = h.x + h.width / 2, y0 = h.y + h.height / 2, y1 = y0 - (y0 - b2.y) / 3
+      await L.page.mouse.move(x, y0); await L.page.mouse.down(); await L.page.mouse.move(x, y1, { steps: 8 }); await L.page.mouse.up(); await L.page.waitForTimeout(250)
+      const label = await d.locator('text[data-role="dim:elev:0"]').textContent()
+      expect([await drawnBeams(), /″$/.test(label), label !== '0″']).toEqual([4, true, true])
+      await saveSheet()
+      const pitch = await L.S('return (S.getState().elevations?.project?.advanced?.holePitchIn) || 2')
+      const l1 = await L.S('const T = S.getState().elevations; return T.types[0].levels.map(l => l.beamIn).sort((a, b) => a - b)[0]')
+      expect([l1 > 0, Math.abs(l1 / pitch - Math.round(l1 / pitch)) < 1e-9]).toEqual([true, true])   // above the floor, on the hole pitch
+      expect(await drawnBeams()).toBe(4)
       await L.page.getByRole('button', { name: 'Full screen' }).first().click(); await L.page.waitForTimeout(250)
       const full = L.page.getByRole('dialog', { name: 'Elevation full screen' })
-      expect(await drawn(full.getByLabel('Elevation drawing'))).toEqual({ beams: 4, lift: 1 })
+      expect(await drawnBeams(full.getByLabel('Elevation drawing'))).toBe(4)
       await full.getByRole('button', { name: 'Close full screen' }).click(); await L.page.waitForTimeout(150)
-      // the BOM: beam pairs = bay sides × the beams drawn
       await bomTab()
       expect(qtyOf(await bomRows(), 'Beam pair')).toBe(sides * 4)
     }, T)

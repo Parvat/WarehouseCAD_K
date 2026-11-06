@@ -88,8 +88,7 @@ const beamsOf = (t) => t.levels.map(l => l.beamIn).join(',')
  *  `exceptId` → it, or null. */
 export function sameElevation(table, t, exceptId = null) {
   return (table?.types || []).find(x => x.id !== exceptId && (x.ceilingId ?? null) === (t.ceilingId ?? null) && (x.palletId ?? null) === (t.palletId ?? null)
-    && x.uprightHeightIn === t.uprightHeightIn && (x.beamFaceIn ?? null) === (t.beamFaceIn ?? null) && beamsOf(x) === beamsOf(t)
-    && (x.firstOnFloor !== false) === (t.firstOnFloor !== false)) || null   // First level on floor (the BOM's beams) differs: another
+    && x.uprightHeightIn === t.uprightHeightIn && (x.beamFaceIn ?? null) === (t.beamFaceIn ?? null) && beamsOf(x) === beamsOf(t)) || null
 }
 /** The editor's own new ceiling / pallet, until Save: their ids in the draft. */
 export const NEW_CEILING = '__new-ceiling', NEW_PALLET = '__new-pallet'

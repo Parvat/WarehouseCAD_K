@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9); no Lucide in the card
-import { C, MONO, fieldBox, InlineField, Note, Btn, IconBtn, Toggle } from '../../studio/cardParts'
+import { C, MONO, fieldBox, InlineField, Note, Btn, IconBtn } from '../../studio/cardParts'
 import { textOwnsKey } from '../../utils/typing'
 import { layoutSpec } from '../../generate/sizingLayout'
 import { useShallow } from 'zustand/react/shallow'
@@ -300,19 +300,7 @@ function SheetRow({ e, T, bays }) {
         <button type="button" onClick={() => saveTyped(store)} style={{ height: 24, padding: '0 10px', flexShrink: 0, border: 0, borderRadius: 6, background: C.accent, color: C.onAccent, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Save</button>
       </div>
       <div style={{ padding: '0 4px', color: C.muted, fontSize: 11, lineHeight: '16px' }}>Drag a beam to move it. Click a blue value to type it. Esc cancels.</div>
-      <div style={{ padding: '0 4px' }}><FirstOnFloor on={e.draft.firstOnFloor !== false} onChange={v => editDraft(store, { firstOnFloor: v })} /></div>
     </div>
-  )
-}
-
-/* First level on floor (C3 and the sheet): on — level 1 stands on the floor, no beam under it (the BOM counts beams
-   from level 2); off — level 1 has its own beam pair. On unless turned off. */
-function FirstOnFloor({ on, onChange }) {
-  return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: C.text }} title="On: level 1 sits on the floor — no beam under it">
-      <span style={{ flex: 1 }}>First level on floor</span>
-      <Toggle on={on} label="First level on floor" onClick={() => onChange(!on)} />
-    </label>
   )
 }
 
@@ -416,8 +404,6 @@ function Editor({ e, T, dT, objects, selectedIds, activeBaySelection, bays, buil
             <SmallField label="Beam length"><Typed readOnly aria="Beam length (in)" value={beamLength} /></SmallField>
           </div>
           <span style={{ color: C.muted, fontSize: 11 }}>From the rows. Change in rack Properties.</span>
-          {/* the BOM's beams (utils/bom.js): level 1 on the floor has no beam — on unless turned off */}
-          <FirstOnFloor on={d.firstOnFloor !== false} onChange={v => editDraft(store, { firstOnFloor: v })} />
           {depthNote && (
             <div role="note" aria-label="Pallet depth" title={depthNote} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, background: '#3A2E17', color: '#F2C77A', fontSize: 12, lineHeight: 1.45 }}>
               <span style={{ flex: 1 }}>{pallet.depthIn}″ pallet needs about {need}″ frames. Rows are {short.map(x => `${x}″`).join(', ')}.</span>

@@ -86,14 +86,15 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   // the paper palette (STUDIO.md §2): the label halo the sheet's white, frames and beams pine, the ground ink, dimensions blue
   const bg = '#FFFFFF', frame = S.up, ink = S.ink, blue = S.blue
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
-  // the levels as drawn: First level on floor off puts level 1 on a beam at the lift-off height (elevations.js
-  // drawnLevels — the BOM counts beams from the same levels); its labels go with it
+  // the levels as drawn — a level above 0 on its beam, level 1 at 0 on the floor (elevations.js drawnLevels: the BOM
+  // counts beams from the same levels)
   const L = [...drawnLevels(t)].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
   const top = L[L.length - 1]
   const misfit = misfitLevels(t)
   // an assumed clear height (none set) is drawn, never checked: no "Above the ceiling" / sprinkler flag against it
   const topIssue = building?.assumed ? null : topLoadIssue(t, building, sprinklerClearanceIn)
-  const loadH = (lv, i) => { const ph = lv.palletHeightIn || 0, next = i + 1 < L.length ? L[i + 1].beamIn - face : Infinity; return Math.max(0, Math.min(ph, next - lv.beamIn - 0.5)) }
+  // a load is drawn at its full height, never trimmed: one that runs into the beam above shows red (misfitLevels)
+  const loadH = (lv) => Math.max(0, lv.palletHeightIn || 0)
   const topLoad = top.beamIn + loadH(top, L.length - 1)
   const bClear = building?.clearHeightIn > 0 ? building.clearHeightIn : null
   const bSprink = building?.sprinklerIn > 0 ? building.sprinklerIn : null
@@ -242,8 +243,9 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       if (bad && !(over && !misfit.has(lv.k) && !(isTop && topIssue))) sText(Xf(frontW / 2), Y(z + lh / 2) + 3.5 * u, misfit.has(lv.k) ? "Doesn't fit" : topIssue === 'clear' ? 'Above the ceiling' : `Within ${sprinklerClearanceIn}″ of sprinklers`, { anchor: 'middle', size: 9 * u, fill: S.red, weight: 600, tag: 'misfit', pri: 1.5, level: lv.k })
       // the level tag inside the right pallet, top-right (PJS 8.5 / 600)
       if (lh * s > 14 * u) sText(Xf(lastX + palletWIn) - 3 * u, Y(z + lh) + 10 * u, `L${i + 1}`, { anchor: 'end', size: 8.5 * u, fill: S.tag, weight: 600, tag: 'level-tag', halo: 0, fixed: true })
-      // the beam's height to its top, on a short tick off the right upright
-      if (z > 0) {
+      // the beam's height to its top, on a short tick off the right upright — on the sheet, level 1 on the floor too
+      // (0″: typed up from the floor, it gets its beam)
+      if (z > 0 || (edit && i === 0)) {
         const role = { kind: 'dim', id: 'elev', k: lv.k, value: z }, hot = isActive(role) || isActive({ kind: 'beam', k: lv.k })
         line(xR + 1 * u, Y(z) + 2 * u, xR + 7 * u, Y(z) + 2 * u, { stroke: hot && !edit ? '#d0392b' : S.blue, sw: 1 })
         sText(xR + 9 * u, Y(z) + 5.5 * u, prime(ftInDash(z)), { fill: hot && !edit ? '#d0392b' : S.blue, weight: 600, role, pri: 1 })
@@ -305,8 +307,9 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
        beam's label, a dotted underline under every value a click types, + Add level over the top load, − on the top level */
     if (edit) {
       const hs = 7 * u, act = (k) => isActive({ kind: 'beam', k }) || isActive({ kind: 'dim', id: 'elev', k })
-      for (const lv of L) if (lv.beamIn > 0) {
-        const cy = Y(lv.beamIn) + beamPx / 2, on = act(lv.k)
+      // level 1 on the floor has its handles at the floor: dragged up, it gets its beam (snapped to the hole pitch)
+      for (const [i, lv] of L.entries()) if (lv.beamIn > 0 || i === 0) {
+        const cy = lv.beamIn > 0 ? Y(lv.beamIn) + beamPx / 2 : Y(0) - beamPx / 2, on = act(lv.k)
         for (const cx of [Xf(0), Xf(frontW)]) rect(cx - hs / 2, cy - hs / 2, hs, hs, { fill: on ? S.sel : '#FFFFFF', stroke: S.sel, sw: 1, role: { kind: 'beam', k: lv.k }, cursor: 'ns-resize', tag: 'handle' })
       }
       const tw5 = (str, size) => String(str).length * size * 0.53

@@ -10,7 +10,7 @@
 //   Upright frames    one per frame position and side; by height × depth (the taller of the two bays' elevations it
 //                     stands between, on its side; the rack's own frame depth)
 //   Beam pairs        per bay side × beam levels — the levels the elevation sheet draws with a beam (elevations.js
-//                     drawnLevels: level 1 none while First level on floor is on, the default); by length × face
+//                     drawnLevels: a level above 0; level 1 at 0 on the floor has none); by length × face
 //   Safety pins       2 per beam: 4 per beam pair
 //   Wire decks        per bay side × beam level × the deck set for that beam length (the project's deck table); by
 //                     deck width × depth (the frame depth). No deck row for a length: none counted, flagged
@@ -104,8 +104,8 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
     for (let s = 0; s < sides; s++) r.beams.forEach((beamIn, b) => {
       if (!e.counted[b] || isEmptySide(r, b, s)) return
       const t = elevOf(r, b, s)
-      // the beam levels as the elevation sheet draws them (elevations.js drawnLevels: a level above the floor has a
-      // beam pair — First level on floor off gives level 1 one); no elevation at all: the rack's levels, level 1 on the floor
+      // the beam levels as the elevation sheet draws them (elevations.js drawnLevels: a level above 0 has a beam pair);
+      // no elevation at all: the rack's levels, level 1 on the floor
       const beamed = t ? beamLevelCount(t) : Math.max(0, (r.levels || 1) - 1)
       if (!beamed) return
       const face = beamFace(t)
