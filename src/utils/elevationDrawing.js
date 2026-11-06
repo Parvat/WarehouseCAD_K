@@ -10,7 +10,7 @@
 // Side view (the card's Depth): the frame depth (two frames and the flue for a back-to-back), the upright height, a
 // simple diagonal bracing pattern, the pallets at their real depth.
 
-import { beamFace, topLoadIssue, SPRINKLER_CLEARANCE_IN, ceilingOf } from './elevations'
+import { beamFace, topLoadIssue, SPRINKLER_CLEARANCE_IN, ceilingOf, drawnLevels } from './elevations'
 import { positionsPerBeam } from './palletFit'
 import { isEmptySide } from './bayEmpty'
 
@@ -86,7 +86,9 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   // the paper palette (STUDIO.md §2): the label halo the sheet's white, frames and beams pine, the ground ink, dimensions blue
   const bg = '#FFFFFF', frame = S.up, ink = S.ink, blue = S.blue
   const face = beamFace(t), upW = 3, clearance = t.clearanceIn || 0
-  const L = [...t.levels].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
+  // the levels as drawn: First level on floor off puts level 1 on a beam at the lift-off height (elevations.js
+  // drawnLevels — the BOM counts beams from the same levels); its labels go with it
+  const L = [...drawnLevels(t)].map((l, k) => ({ ...l, k })).sort((a, b) => a.beamIn - b.beamIn)
   const top = L[L.length - 1]
   const misfit = misfitLevels(t)
   // an assumed clear height (none set) is drawn, never checked: no "Above the ceiling" / sprinkler flag against it

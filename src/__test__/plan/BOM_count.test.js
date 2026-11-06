@@ -166,6 +166,22 @@ describe('BOM — hand-counted layouts', () => {
     expect(bomSettings({ bom: { anchorsPerFoot: 3 } })).toEqual({ ...BOM_DEFAULTS, anchorsPerFoot: 3 })
   })
 
+  it('BOM-drawing-agrees: First level on floor off — the elevation drawing (card, full screen and the PDF draw this one layout) shows a beam under level 1 at the lift-off height (the clearance, 6″) and its height label; on, none; the beams drawn always equal the BOM\'s beam pairs per bay side', async () => {
+    const { elevationLayout } = await import('../../utils/elevationDrawing')
+    const beams = (t) => elevationLayout(t, 96, { w: 276, h: 420 }, { fontPx: 9 }).items.filter(i => i.t === 'rect' && i.tag === 'beam')
+    const elevLabels = (t) => elevationLayout(t, 96, { w: 276, h: 420 }, { fontPx: 9 }).items.filter(i => i.t === 'text' && i.role?.id === 'elev').map(i => i.role.value).sort((a, b) => a - b)
+    const off = { ...A, firstOnFloor: false }, low = { ...A, firstOnFloor: false, clearanceIn: 8 }
+    expect([beams(A).length, elevLabels(A)]).toEqual([3, [60, 120, 180]])                    // on: levels 2–4 on beams
+    expect([beams(off).length, elevLabels(off)]).toEqual([4, [6, 60, 120, 180]])             // off: level 1 on a beam, its top at 6″
+    expect(elevLabels(low)).toEqual([8, 60, 120, 180])                                       // the elevation's own clearance
+    for (const t of [A, B, off, { ...B, firstOnFloor: false }]) {
+      const bom = computeBom([rack('rack_row', [96])], { version: 3, defaultId: t.id, types: [t], project: null })
+      expect([t.id, t.firstOnFloor ?? true, line(bom, 'Beam pair', `96″ × ${t.beamFaceIn}″ face`)]).toEqual([t.id, t.firstOnFloor ?? true, beams(t).length])   // 1 bay: beam pairs = beams drawn
+    }
+    const pdf = readFileSync(new URL('../../export/pdfExport.js', import.meta.url), 'utf8')
+    expect(pdf).toMatch(/import \{ elevationLayout,/)                                         // the PDF's sheets: the same layout
+  })
+
   it('BOM-pdf: the proposal PDF gets the BOM table after the plan and the elevations — paper palette, part / size / qty, the flags first', () => {
     const bom = computeBom([rack('rack_row', [96, 96, 96]), rack('rack_row', [120], 0, px(200))], table())
     const [page, more] = buildBomSheets(bom, { title: 'Test', paperW: 841, paperH: 594 })

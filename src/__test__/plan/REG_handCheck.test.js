@@ -2521,6 +2521,29 @@ describe('REG — the hand check by real clicks', () => {
       expect(qtyOf(await bomRows(), 'Beam pair')).toBe(b0 / 3 * 4)                      // bay sides × 4
     }, T)
 
+    it('REG-bom-first-level-sheet (click): First level on floor turned off on the sheet draws a beam under level 1 at the lift-off height (6″) with its height label — on the card, after Save, and in full screen — and the BOM counts exactly the beams drawn', async () => {
+      await open()
+      await bomTab()
+      const sides = qtyOf(await bomRows(), 'Beam pair') / 3                               // bay sides: 3 beams each (levels 2–4)
+      await L.page.getByRole('tab', { name: 'Elevations' }).click(); await L.page.waitForTimeout(200)
+      const sheet = () => L.page.getByLabel('Elevation drawing').first()
+      const drawn = async (d = sheet()) => ({ beams: await d.locator('rect[data-tag="beam"]').count(), lift: await d.locator('text').filter({ hasText: /^6″$/ }).count() })
+      expect(await drawn()).toEqual({ beams: 3, lift: 0 })                                 // on: level 1 on the floor, no beam
+      await L.page.getByRole('button', { name: /^Edit .* on the sheet$/ }).first().click(); await L.page.waitForTimeout(200)
+      await L.page.getByRole('switch', { name: 'First level on floor' }).click(); await L.page.waitForTimeout(200)
+      expect(await drawn()).toEqual({ beams: 4, lift: 1 })                                 // off: a beam under level 1, its top 6″ up
+      await L.page.getByLabel('Editing on the sheet').getByRole('button', { name: 'Save', exact: true }).click(); await L.page.waitForTimeout(250)
+      expect(await drawn()).toEqual({ beams: 4, lift: 1 })
+      // full screen: the same drawing
+      await L.page.getByRole('button', { name: 'Full screen' }).first().click(); await L.page.waitForTimeout(250)
+      const full = L.page.getByRole('dialog', { name: 'Elevation full screen' })
+      expect(await drawn(full.getByLabel('Elevation drawing'))).toEqual({ beams: 4, lift: 1 })
+      await full.getByRole('button', { name: 'Close full screen' }).click(); await L.page.waitForTimeout(150)
+      // the BOM: beam pairs = bay sides × the beams drawn
+      await bomTab()
+      expect(qtyOf(await bomRows(), 'Beam pair')).toBe(sides * 4)
+    }, T)
+
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {
       await open()
       const z = await addZone7(), gs = await gs7()

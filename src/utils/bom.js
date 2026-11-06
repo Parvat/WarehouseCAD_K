@@ -9,8 +9,8 @@
 //
 //   Upright frames    one per frame position and side; by height × depth (the taller of the two bays' elevations it
 //                     stands between, on its side; the rack's own frame depth)
-//   Beam pairs        per bay side × beam levels — level 1 has no beam when its elevation's First level on floor is
-//                     on (the default); by beam length × beam face
+//   Beam pairs        per bay side × beam levels — the levels the elevation sheet draws with a beam (elevations.js
+//                     drawnLevels: level 1 none while First level on floor is on, the default); by length × face
 //   Safety pins       2 per beam: 4 per beam pair
 //   Wire decks        per bay side × beam level × the deck set for that beam length (the project's deck table); by
 //                     deck width × depth (the frame depth). No deck row for a length: none counted, flagged
@@ -23,7 +23,7 @@
 // A bay side with no elevation (none resolves) is counted with the layout's default elevation, and flagged.
 
 import { bayLedger } from './bayLedger'
-import { typeAt, typeById, beamFace, sidesOf } from './elevations'
+import { typeAt, typeById, beamFace, sidesOf, beamLevelCount } from './elevations'
 import { isEmptySide } from './bayEmpty'
 import { sectionMap } from '../canvas2/sections'
 
@@ -42,8 +42,6 @@ export function bomSettings(project) {
   const b = project?.bom || {}
   return { ...BOM_DEFAULTS, ...b, decks: Array.isArray(b.decks) ? b.decks : BOM_DEFAULTS.decks }
 }
-/** Is an elevation's first level on the floor (no beam under it)? On unless turned off. */
-export const firstOnFloor = (t) => t?.firstOnFloor !== false
 
 /** How far past a row end the floor must be open to call it an aisle (in): a forklift's turn needs more, a wall
  *  clearance (3") or a flue far less — 4 ft tells them apart. */
@@ -106,8 +104,9 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
     for (let s = 0; s < sides; s++) r.beams.forEach((beamIn, b) => {
       if (!e.counted[b] || isEmptySide(r, b, s)) return
       const t = elevOf(r, b, s)
-      const levels = t ? t.levels.length : (r.levels || 1)
-      const beamed = Math.max(0, levels - (firstOnFloor(t) ? 1 : 0))
+      // the beam levels as the elevation sheet draws them (elevations.js drawnLevels: a level above the floor has a
+      // beam pair — First level on floor off gives level 1 one); no elevation at all: the rack's levels, level 1 on the floor
+      const beamed = t ? beamLevelCount(t) : Math.max(0, (r.levels || 1) - 1)
       if (!beamed) return
       const face = beamFace(t)
       add('Beam pair', `${inch(beamIn)} × ${inch(face)} face`, beamed, r.id, beamIn * 100 + face)

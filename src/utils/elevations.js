@@ -49,6 +49,18 @@ export const OLD_PALETTE = ['#7FA7D9', '#E8A33D', '#6DBE8C', '#C77DCB', '#E46F6F
 export const SPACING_IN = 60, PALLET_H_IN = 48, CLEARANCE_IN = 6, LOAD_LB = 2000, BEAM_FACE_IN = 4, HOLE_PITCH_IN = 2
 /** The beam face height (in) of type `t` — 4" for a type saved before it had one. */
 export const beamFace = (t) => (Number.isFinite(t?.beamFaceIn) ? t.beamFaceIn : BEAM_FACE_IN)
+/** The levels of type `t` as drawn and as the BOM counts them — ONE rule, so the sheet (card, full screen, PDF) and the
+ *  BOM always agree: a level has a beam pair when its beam is above the floor (beamIn > 0). First level on floor on (the
+ *  default): level 1 stands on the floor, no beam. Off: a level 1 stored on the floor gets its own beam, its top at the
+ *  lift-off height — the elevation's clearance (6" when not set) — and its load sits on it; the levels above stay. */
+export function drawnLevels(t) {
+  const lv = t?.levels || []
+  if (!t || t.firstOnFloor !== false) return lv
+  const lift = Number.isFinite(t.clearanceIn) && t.clearanceIn > 0 ? t.clearanceIn : CLEARANCE_IN
+  return lv.map(l => (l.beamIn > 0 ? l : { ...l, beamIn: lift }))
+}
+/** How many beam pairs a bay side of type `t` has: its drawn levels above the floor. */
+export const beamLevelCount = (t) => drawnLevels(t).filter(l => l.beamIn > 0).length
 /** The clearance (in) the top of the top load must keep under the sprinkler heads — the layout's setting (on its
  *  types table, saved and undone with it), 18" when not set. */
 export const SPRINKLER_CLEARANCE_IN = 18
