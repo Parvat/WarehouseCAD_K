@@ -2733,6 +2733,267 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.S('return S.getState().selectedIds.includes(arg)', s.id)).toBe(true)
     }, T)
 
+    /* ── Sections, round 2: objects like any other, kept in the building and off each other, typed size, the pen's
+       helpers and wall close, colour, boundary and doors, Fill inside a section, Generate off with 2+, the check ── */
+    /** the building's inner wall face box (world) */
+    const innerBox = () => L.S(`return import('/src/utils/floorGeom.js').then(G => { const fp = S.getState().objects.find(o => /^fp_/.test(o.type)), p = G.innerOutline(fp, S.getState().gridSize || 40); const xs = p.map(v => v.x), ys = p.map(v => v.y); return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) } })`)
+    /** a point on section `id`'s outline that a press picks it by (no rack, door or label over it) */
+    const grip = (id) => L.S(`const st = S.getState(), s = st.objects.find(o => o.id === arg), z = st.zoom
+      const pts = s.shape === 'poly' ? s.pts.map(([x, y]) => [s.x + x, s.y + y]) : [[s.x, s.y], [s.x + s.width, s.y], [s.x + s.width, s.y + s.height], [s.x, s.y + s.height]]
+      for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]
+        for (let f = 0.1; f < 0.95; f += 0.05) { const x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f
+          if (H.hitTest(st.objects, st.layers, x, y, z, st.gridSize) === s.id) return { x, y } } }
+      return null`, id)
+    const secObj = (id) => L.S('return S.getState().objects.find(o => o.id === arg) || null', id)
+    const racksIn = (id) => L.S('return import("/src/utils/sectionAreas.js").then(M => M.membership(S.getState().objects).bySection.get(arg) || [])', id)
+    const posOf = (ids) => L.S('const st = S.getState(); return arg.map(id => { const o = st.objects.find(x => x.id === id); return o ? [Math.round(o.x), Math.round(o.y)] : null })', ids)
+    /** a rectangle section drawn inside the building, fractions of its inner face */
+    const drawIn = async (b, fx0, fy0, fx1, fy1) => {
+      const a = { x: b.x0 + (b.x1 - b.x0) * fx0, y: b.y0 + (b.y1 - b.y0) * fy0 }, c = { x: b.x0 + (b.x1 - b.x0) * fx1, y: b.y0 + (b.y1 - b.y0) * fy1 }
+      await onCanvasAll([a, c]); await drawRect(a, c)
+      return (await secsNow()).slice(-1)[0]
+    }
+
+    it('REG-section-object (click): a section behaves like any object — its bar Colour · Lock · Duplicate · Delete; a drag on its outline moves it with the racks whose centre is in it (one undo); the arrow keys too; Shift+click adds a rack; a right-click opens its menu; Duplicate puts a copy beside it', async () => {
+      await openSections()
+      const b = await innerBox(), s = await drawIn(b, 0.02, 0.02, 0.5, 0.6)
+      expect([await L.page.locator('[data-selection-bar]').getAttribute('data-selection-bar'), await L.page.locator('[data-selection-bar] button').evaluateAll(bs => bs.map(x => x.getAttribute('aria-label')))]).toEqual(['section', ['Colour', 'Lock', 'Duplicate', 'Delete']])
+      const mine = await racksIn(s.id), all0 = JSON.parse(await racksNow()), p0 = await posOf(mine), gs = await gs7(), h0 = await hist7()
+      expect(mine.length).toBeGreaterThan(0)
+      // dragged by its outline: its racks go with it, the others stay; one undo
+      const g = await grip(s.id)
+      expect(g).toBeTruthy()
+      await L.drag(g, { x: g.x + 3 * gs, y: g.y + 2 * gs }); await L.page.waitForTimeout(250)
+      const s1 = await secObj(s.id), dx = Math.round(s1.x - s.x), dy = Math.round(s1.y - s.y)
+      expect([dx !== 0 || dy !== 0, (await hist7()) - h0]).toEqual([true, 1])
+      expect(await posOf(mine)).toEqual(p0.map(([x, y]) => [x + dx, y + dy]))
+      const others = all0.filter(r => !mine.includes(r[0]))
+      expect(JSON.parse(await racksNow()).filter(r => !mine.includes(r[0]))).toEqual(others)
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(200)
+      expect([await posOf(mine), Math.round((await secObj(s.id)).x)]).toEqual([p0, Math.round(s.x)])
+      // the arrows: it and its racks, one step
+      await L.click(await grip(s.id))
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('ArrowRight'); await L.page.waitForTimeout(150)
+      expect([Math.round((await secObj(s.id)).x - s.x), (await posOf(mine)).map(q => q[0] - p0[mine.indexOf(mine[0])][0])[0]]).toEqual([4, 4])
+      // Shift+click a rack: both selected
+      const rid = mine[0], r = await obj7(rid)
+      await L.shiftClick(rackAt(r, -0.3, -0.25))
+      expect((await L.S('return S.getState().selectedIds')).sort()).toEqual([s.id, rid].sort())
+      // a right-click on it: its menu
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const q = await L.toScreen(await grip(s.id)); await L.page.mouse.click(q.x, q.y, { button: 'right' }); await L.page.waitForTimeout(200)
+      expect([await L.page.getByRole('menu', { name: 'Object' }).count(), await L.S('return S.getState().selectedIds')]).toEqual([1, [s.id]])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      // Duplicate (the bar): a copy beside it, the next name, never over it
+      await L.click(await grip(s.id))
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Duplicate' }).click(); await L.page.waitForTimeout(200)
+      const [a, c] = await secsNow()
+      const inter = Math.max(0, Math.min(a.x + a.w, c.x + c.w) - Math.max(a.x, c.x)) * Math.max(0, Math.min(a.y + a.h, c.y + c.h) - Math.max(a.y, c.y))
+      expect([c.label, inter, await L.S('return S.getState().selectedIds')]).toEqual(['Section 2', 0, [c.id]])
+    }, T)
+
+    it('REG-section-bounds (click): a section stays inside the building — a drag or a resize stops at the inner wall face — and off its neighbours — a drag or a resize stops at the neighbour\u2019s edge', async () => {
+      await openSections()
+      const b = await innerBox(), gs = await gs7()
+      const s = await drawIn(b, 0.6, 0.1, 0.9, 0.4)
+      // dragged far right: stops with its right edge on the inner wall face
+      let g = await grip(s.id)
+      await L.drag(g, { x: g.x + 60 * gs, y: g.y }); await L.page.waitForTimeout(250)
+      let o = await secObj(s.id)
+      expect(Math.abs(o.x + o.width - b.x1) < 0.5).toBe(true)
+      // its left handle dragged far left over a neighbour: stops at the neighbour's edge
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const n = await drawIn(b, 0.05, 0.1, 0.3, 0.4)
+      g = await grip(s.id); await L.click(g)
+      o = await secObj(s.id)
+      const ml = { x: o.x, y: o.y + o.height / 2 }
+      await L.drag(ml, { x: ml.x - 400 * gs, y: ml.y }); await L.page.waitForTimeout(250)
+      const o2 = await secObj(s.id), nb = await secObj(n.id)
+      expect([Math.abs(o2.x - (nb.x + nb.width)) < 0.5, Math.abs(o2.x + o2.width - b.x1) < 0.5]).toEqual([true, true])
+      // the neighbour dragged into it: stops touching it
+      g = await grip(n.id); await L.click(g)
+      await L.drag(g, { x: g.x + 400 * gs, y: g.y }); await L.page.waitForTimeout(250)
+      const n2 = await secObj(n.id), o3 = await secObj(s.id)
+      expect([Math.abs(n2.x + n2.width - o3.x) < 0.5, o3.x]).toEqual([true, o2.x])
+      // its bottom handle dragged far down: stops at the inner wall face
+      await L.click(await grip(s.id))
+      const bc = { x: o3.x + o3.width / 2, y: o3.y + o3.height }
+      await L.drag(bc, { x: bc.x, y: bc.y + 200 * gs }); await L.page.waitForTimeout(250)
+      const o4 = await secObj(s.id)
+      expect(Math.abs(o4.y + o4.height - b.y1) < 0.5).toBe(true)
+    }, T)
+
+    it('REG-section-size (click): a rectangle\u2019s Width and Length typed in the card — one undo each, the top-left stays; too big, it stops at the wall', async () => {
+      await openSections()
+      const b = await innerBox(), gs = await gs7(), s = await drawIn(b, 0.1, 0.1, 0.4, 0.4)
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' }), h0 = await hist7()
+      const w = card.getByRole('textbox', { name: 'Section width' })
+      await w.click(); await w.fill("40'"); await w.press('Enter'); await L.page.waitForTimeout(150)
+      let o = await secObj(s.id)
+      expect([Math.round(o.width), Math.round(o.x), Math.round(o.y), (await hist7()) - h0]).toEqual([40 * gs, Math.round(s.x), Math.round(s.y), 1])
+      const l = card.getByRole('textbox', { name: 'Section length' })
+      await l.click(); await l.fill("30'"); await l.press('Enter'); await L.page.waitForTimeout(150)
+      o = await secObj(s.id)
+      expect([Math.round(o.height), Math.round(o.y), (await hist7()) - h0]).toEqual([30 * gs, Math.round(s.y), 2])
+      await w.click(); await w.fill("5000'"); await w.press('Enter'); await L.page.waitForTimeout(150)
+      o = await secObj(s.id)
+      expect([Math.abs(o.x + o.width - b.x1) < 0.5, Math.round(o.x)]).toEqual([true, Math.round(s.x)])
+    }, T)
+
+    it('REG-section-pen-helper (click): the pen snaps a segment to horizontal, vertical or 45° with a dashed guide and its live length; Shift locks the angle; a point near a wall or a section edge lands on it', async () => {
+      await openSections()
+      const b = await innerBox(), gs = await gs7(), z = await L.S('return S.getState().zoom')
+      await sectionTool('Custom shape')
+      const p1 = { x: b.x0 + (b.x1 - b.x0) * 0.3, y: b.y0 + (b.y1 - b.y0) * 0.3 }
+      await onCanvasAll([p1]); await L.click(p1)
+      // nearly level (3° off): the guide, the length, and the point on the level
+      const p2 = { x: p1.x + 20 * gs, y: p1.y + Math.tan(3 * Math.PI / 180) * 20 * gs }
+      const q2 = await L.toScreen(p2); await L.page.mouse.move(q2.x, q2.y, { steps: 3 }); await L.page.waitForTimeout(150)
+      const draft = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; return { guide: !!st.findOne('.section-guide'), len: st.findOne('.section-length')?.text() ?? null } })
+      // the live length: 20′ (the mouse lands on whole screen pixels: to within 2″)
+      const d0 = await draft(), lm = /^(\d+)′(?:-(\d+)″)?$/.exec(d0.len || ''), inches = lm ? Number(lm[1]) * 12 + Number(lm[2] || 0) : NaN
+      expect([d0.guide, Math.abs(inches - 240) <= 2]).toEqual([true, true])
+      await L.page.mouse.click(q2.x, q2.y); await L.page.waitForTimeout(150)
+      let pen = await L.S('return import("/src/canvas2/sectionTool.js").then(M => M.useSectionTool.getState().pen)')
+      expect(Math.abs(pen[1][1] - pen[0][1]) < 1e-6).toBe(true)                        // level with the first point, as placed
+      // 30° off level with Shift: locked to 45°
+      const p3 = { x: p2.x + 10 * gs, y: p1.y + Math.tan(30 * Math.PI / 180) * 10 * gs }
+      const q3 = await L.toScreen(p3)
+      await L.page.keyboard.down('Shift'); await L.page.mouse.move(q3.x, q3.y, { steps: 3 }); await L.page.mouse.click(q3.x, q3.y); await L.page.keyboard.up('Shift'); await L.page.waitForTimeout(150)
+      pen = await L.S('return import("/src/canvas2/sectionTool.js").then(M => M.useSectionTool.getState().pen)')
+      const a = Math.atan2(pen[2][1] - pen[1][1], pen[2][0] - pen[1][0]) * 180 / Math.PI
+      expect(Math.round(Math.abs(a))).toBe(45)
+      // a point 4 screen px off the right inner wall face: on it
+      const p4 = { x: b.x1 - 4 / z, y: pen[2][1] + 7 * gs }
+      await onCanvasAll([p4]); await L.click(p4)
+      pen = await L.S('return import("/src/canvas2/sectionTool.js").then(M => M.useSectionTool.getState().pen)')
+      expect(Math.abs(pen[3][0] - b.x1) < 1e-6).toBe(true)
+      await L.page.keyboard.press('Escape')
+    }, T)
+
+    it('REG-section-wall-close (click): a pen path from one wall to another is finished along the walls through the corner on the side drawn', async () => {
+      await openSections()
+      const b = await innerBox(), z = await L.S('return S.getState().zoom')
+      await sectionTool('Custom shape')
+      // from the left wall to the bottom wall, near the bottom-left corner (each point snapped onto its wall)
+      const a = { x: b.x0 + 3 / z, y: b.y0 + (b.y1 - b.y0) * 0.6 }, c = { x: b.x0 + (b.x1 - b.x0) * 0.3, y: b.y1 - 3 / z }
+      await onCanvasAll([a, c])
+      await L.click(a); await L.click(c)
+      const q = await L.toScreen(c); await L.page.mouse.dblclick(q.x, q.y); await L.page.waitForTimeout(250)
+      const s = (await secsNow()).slice(-1)[0], pts = s.pts.map(([x, y]) => [s.x + x, s.y + y])
+      const has = (x, y) => pts.some(p => Math.abs(p[0] - x) < 0.5 && Math.abs(p[1] - y) < 0.5)
+      expect([s.shape, pts.length, has(b.x0, b.y1), has(b.x1, b.y0)]).toEqual(['poly', 3, true, false])   // the bottom-left corner only
+    }, T)
+
+    it('REG-section-colour (click): 8 soft colours in the card and the bar — the outline, the tint and the label take it, and the PDF', async () => {
+      await openSections()
+      const b = await innerBox(), s = await drawIn(b, 0.1, 0.1, 0.4, 0.4)
+      const swatches = L.page.getByRole('group', { name: 'Section colour' }).getByRole('button')
+      expect(await swatches.count()).toBe(9)                                       // none + 8
+      await L.page.getByRole('button', { name: 'Colour Sky' }).click(); await L.page.waitForTimeout(150)
+      const look = () => L.page.evaluate((id) => { const g = window.Konva.stages[0].findOne(n => n.name() === 'obj:' + id); return { stroke: g.findOne('Line').stroke(), fill: g.findOne('Line').fill(), label: g.findOne('.section-label').fill() } }, s.id)
+      expect((await secObj(s.id)).color).toBe('sky')
+      const l = await look()
+      expect([l.fill.startsWith('rgba(110, 156, 200'), l.stroke !== '#2E7D5B' && l.stroke !== '#B9C7BE', l.label !== '#767C74']).toEqual([true, true, true])   // its tint, outline and label
+      // the bar's Colour ▾: Rose
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Colour' }).click(); await L.page.waitForTimeout(150)
+      await L.page.getByRole('menu', { name: 'Section colour' }).getByText('Rose').click(); await L.page.waitForTimeout(150)
+      expect((await secObj(s.id)).color).toBe('rose')
+      const svg = await L.S('return import("/src/export/pdfExport.js").then(M => M.buildLayoutSVG(S.getState().objects, S.getState().layers, S.getState().gridSize || 40, { title: "t", elevations: S.getState().elevations }).svg)')
+      expect(svg).toMatch(/data-section="[^"]+"><polygon[^>]*fill="rgba\(201, 133, 133, 0\.1\)"/)
+    }, T)
+
+    it('REG-section-boundary (click): Boundary None · Fence · Wall (typed thickness) in the card; with one, the door tool snaps to the section\u2019s edge and the door cuts it', async () => {
+      await openSections()
+      const b = await innerBox(), gs = await gs7(), s = await drawIn(b, 0.1, 0.1, 0.4, 0.4)
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      const runs = (kind) => L.page.evaluate(([id, k]) => window.Konva.stages[0].findOne(n => n.name() === 'obj:' + id).find('.section-' + k).length, [s.id, kind])
+      await card.getByRole('group', { name: 'Section boundary' }).getByRole('button', { name: 'Fence' }).click(); await L.page.waitForTimeout(150)
+      expect([(await secObj(s.id)).boundary, await runs('fence')]).toEqual(['fence', 4])
+      await card.getByRole('group', { name: 'Section boundary' }).getByRole('button', { name: 'Wall' }).click(); await L.page.waitForTimeout(150)
+      const th = card.getByRole('spinbutton', { name: 'Wall thickness (in)' })
+      await th.fill('8'); await th.press('Enter'); await L.page.waitForTimeout(150)
+      const w = await L.page.evaluate((id) => window.Konva.stages[0].findOne(n => n.name() === 'obj:' + id).findOne('.section-wall').strokeWidth(), s.id)
+      expect([(await secObj(s.id)).boundary, await runs('wall'), Math.abs(w - (8 / 12) * gs) < 1e-6]).toEqual(['wall', 4, true])
+      // the door tool (the building's bar: Add door): the section's top edge (its middle) takes a door; the wall is cut there
+      const f = await fpOf()
+      await L.click({ x: f.x + f.width / 2, y: f.y })
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door' }).click(); await L.page.waitForTimeout(150)
+      const o = await secObj(s.id), mid = { x: o.x + o.width / 2, y: o.y }
+      const q = await L.toScreen(mid); await L.page.mouse.move(q.x, q.y + 2, { steps: 2 }); await L.page.mouse.click(q.x, q.y + 2); await L.page.waitForTimeout(200)
+      const door = await L.S('return S.getState().objects.filter(o => o.sectionId === arg).map(o => ({ type: o.type, cx: o.x + o.width / 2 }))', s.id)
+      expect([door.length, Math.abs(door[0].cx - mid.x) < 1e-6, await runs('wall')]).toEqual([1, true, 5])   // the top edge now two runs
+      await L.page.keyboard.press('Escape')
+    }, T)
+
+    it('REG-section-fill (click): Fill racking started inside a section is clipped to it — every rack it places stands inside the section', async () => {
+      await openSections()
+      const b = await innerBox()
+      // a floor cleared of racks: a box of rows (Select, from outside the building — every row wholly in it) deleted
+      const f = await fpOf(), m = await ft(12)
+      const a0 = { x: f.x - m, y: f.y - m }, a1 = { x: b.x0 + (b.x1 - b.x0) * 0.6, y: f.y + f.height + m }
+      await onCanvasAll([a0, a1])
+      await L.drag(a0, a1); await L.page.mouse.move(5, 890); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      const before = new Set(JSON.parse(await racksNow()).map(r => r[0]))
+      const s = await drawIn(b, 0.05, 0.05, 0.35, 0.6)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(100)
+      // the drag starts inside the section and runs well past it
+      const f0 = { x: s.x + s.w * 0.1, y: s.y + s.h * 0.1 }, f1 = { x: b.x0 + (b.x1 - b.x0) * 0.58, y: b.y0 + (b.y1 - b.y0) * 0.95 }
+      await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(400)
+      const made = await L.S('const st = S.getState(); return st.objects.filter(o => /^rack_/.test(o.type) && !arg.includes(o.id)).map(o => { const t = ((o.rotation || 0) % 180 + 180) % 180, w = t === 90 ? o.height : o.width, h = t === 90 ? o.width : o.height, cx = o.x + o.width / 2, cy = o.y + o.height / 2; return [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2] })', [...before])
+      expect(made.length).toBeGreaterThan(0)
+      expect(made.filter(([x0, y0, x1, y1]) => x0 < s.x - 0.5 || y0 < s.y - 0.5 || x1 > s.x + s.w + 0.5 || y1 > s.y + s.h + 0.5)).toEqual([])
+    }, T)
+
+    it('REG-section-generate (click): Generate / Regenerate is off with 2 or more sections in the building — titled Fill each section with Fill racking; with 1, it works as before', async () => {
+      await openSections()
+      const b = await innerBox(), gen = L.page.locator('[data-island="top-right"] button').filter({ hasText: /Generate|Regenerate/ })
+      await drawIn(b, 0.05, 0.05, 0.3, 0.3)
+      expect([await gen.isDisabled(), await gen.getAttribute('title')]).toEqual([false, null])
+      const s2 = await drawIn(b, 0.5, 0.05, 0.8, 0.3)
+      expect([await gen.isDisabled(), await gen.getAttribute('title')]).toEqual([true, 'Fill each section with Fill racking'])
+      // back to 1: on again, and it opens the Generate card
+      await L.click(await grip(s2.id)); await L.page.mouse.move(5, 890); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(200)
+      expect(await gen.isDisabled()).toBe(false)
+      await gen.click(); await L.page.waitForTimeout(200)
+      expect(await gen.getAttribute('aria-pressed')).toBe('true')
+    }, T)
+
+    it('REG-section-check (click): Check layout warns when racks in two sections face each other across a section edge with less than the aisle width', async () => {
+      await openSections()
+      await wheel(40, 2)                                                            // the whole building on screen, off the islands
+      const gs = await gs7(), b = await innerBox(), m = 2 * gs
+      // two facing rows whose aisle is about the aisle width (generate/rowAisles.js): 2 ft closer, it is too narrow
+      const g = await L.S(`return import("/src/generate/rowAisles.js").then(M => { const st = S.getState(), gs = st.gridSize || 40
+          const rs = st.objects.filter(o => /^rack_/.test(o.type) && ((o.rotation || 0) % 90) === 0)
+          const x = M.rowAisleGaps(rs).find(q => q.gapLen > 6 * gs && q.gapLen < 11.5 * gs)
+          return x ? { box: x.box, gap: x.gapLen } : null })`)
+      expect(g).toBeTruthy()
+      const across = g.box.h < g.box.w ? 'y' : 'x', mid = across === 'y' ? g.box.y + g.box.h / 2 : g.box.x + g.box.w / 2
+      // Section 1: the building's inner face up to 2 ft short of the aisle's middle; Section 2: from the middle on
+      const A = across === 'y' ? [{ x: b.x0 + 1, y: b.y0 + 1 }, { x: b.x1 - 1, y: mid - m }] : [{ x: b.x0 + 1, y: b.y0 + 1 }, { x: mid - m, y: b.y1 - 1 }]
+      const Bb = across === 'y' ? [{ x: b.x0 + 1, y: mid }, { x: b.x1 - 1, y: b.y1 - 1 }] : [{ x: mid, y: b.y0 + 1 }, { x: b.x1 - 1, y: b.y1 - 1 }]
+      // zoomed out until all four corners are on the canvas (a wide building's end under the right card otherwise)
+      const bare = async (ws) => { for (const w of ws) { const q = await L.toScreen(w); if (await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, q) !== 'CANVAS') return false } return true }
+      for (let i = 0; i < 8 && !(await bare([...A, ...Bb])); i++) await wheel(40)
+      await onCanvasAll([...A, ...Bb])
+      await drawRect(A[0], A[1]); const sa = (await secsNow()).slice(-1)[0]
+      await drawRect(Bb[0], Bb[1])
+      // no warning yet: the aisle is as wide as it was
+      await L.page.locator('[data-island="top-right"]').getByRole('button', { name: /^Check/ }).click(); await L.page.waitForTimeout(400)
+      const warned = () => L.S('return [...(LC.useLayoutCheck.getState().result?.warnings || [])].filter(w => w.kind === "section-aisle").map(w => w.text)')
+      const w0 = await warned()
+      // Section 1 dragged toward Section 2: it stops touching it, its racks 2 ft closer to Section 2's
+      await L.click(await grip(sa.id))
+      const h = await grip(sa.id)
+      await L.drag(h, across === 'y' ? { x: h.x, y: h.y + 10 * gs } : { x: h.x + 10 * gs, y: h.y }); await L.page.waitForTimeout(250)
+      await L.page.locator('[data-island="top-right"]').getByRole('button', { name: /^Check/ }).click(); await L.page.waitForTimeout(400)
+      const items = await warned()
+      expect([w0.length < items.length || (g.gap < 10.5 * gs && w0.length > 0), items.length > 0]).toEqual([true, true])
+      expect(items[0]).toMatch(/^Section 1 and Section 2: racks face each other across the section edge .* apart, needs .* aisle$/)
+    }, T)
+
     it('REG-7b-zone (click): a zone dragged into an aisle turns red with the reason before the drop (blocks an aisle); the drop is allowed; nothing red after it', async () => {
       await open()
       const z = await addZone7(), gs = await gs7()

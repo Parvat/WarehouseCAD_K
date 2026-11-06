@@ -18,6 +18,7 @@ import { selectionLevel, stepUp } from '../canvas2/selectionLevel'
 import { deleteSelection, cutSelection } from '../studio/selectionActions'
 import { HOME_TOOL, isPlainTool } from '../utils/homeTool'
 import { toggleHelp } from '../studio/HelpCard'
+import { nudgeWithSections, duplicateSections } from '../utils/sectionEdit'
 
 /** The app's keyboard shortcuts, one keydown handler (exported so a test can press keys at it). */
 export function shortcutHandler(e) {
@@ -74,7 +75,9 @@ export function shortcutHandler(e) {
         if (!selectedIds.length) return
         const dx = e.key==='ArrowLeft' ? -step : e.key==='ArrowRight' ? step : 0
         const dy = e.key==='ArrowUp'   ? -step : e.key==='ArrowDown'  ? step : 0
-        moveObjects(selectedIds, dx, dy)
+        // a section takes its racks, stopped at the walls and its neighbours (utils/sectionEdit.js)
+        const n = nudgeWithSections(objects, selectedIds, dx, dy, useCanvasStore.getState().gridSize || 40)
+        if (n.dx || n.dy) moveObjects(n.ids.filter(id => ok(objects.find(o => o.id === id))), n.dx, n.dy)
         return
       }
 
@@ -160,7 +163,10 @@ export function shortcutHandler(e) {
         case 'd': {
           useRowGroup.setState({ message: null })
           e.preventDefault()
-          // Duplicate: copy, then paste 20 px down-right; the copy is the selection (utils/pasteAt.js)
+          // Duplicate: copy, then paste 20 px down-right; the copy is the selection (utils/pasteAt.js) — sections go
+          // beside themselves instead, never over a neighbour (utils/sectionEdit.js)
+          { const st = useCanvasStore.getState()
+            if (st.selectedIds.length && st.selectedIds.every(id => st.objects.find(o => o.id === id)?.type === 'section_area')) { duplicateSections(useCanvasStore); break } }
           useCanvasStore.getState().copySelected()
           pasteAt(useCanvasStore, 'nudge', nanoid)
           break

@@ -218,7 +218,7 @@ describe('FU — arrows, sizes, columns', () => {
     expect(col).toBeGreaterThan(svg.indexOf('<g class="labels">'))                   // above the labels and marks
     const scene = readFileSync('src/canvas2/Scene.jsx', 'utf8')
     expect(scene).toMatch(/if \(o\.type === 'column_grid'\) \{ columns\.push\(/)
-    expect(scene).toMatch(/return \{ floors, rest, columns, sections \}/)                        // (+ the sections, drawn under the rest)
+    expect(scene).toMatch(/return \{ floors, rest, columns, sections, doors \}/)                 // (+ the sections, drawn under the rest, and the doors that cut their boundaries)
     expect(scene).toMatch(/if \(part === 'columns'\) return <>\{colEls\}<\/>/)
     // the canvas: the scene body, then the labels and marks, then the columns, then the selection chrome
     const canvas = readFileSync('src/canvas2/Canvas2.jsx', 'utf8')

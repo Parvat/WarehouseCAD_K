@@ -5,6 +5,7 @@
 // Add zone the library's own placement (registered by the left panel: setLibraryPick).
 
 import { nanoid } from 'nanoid'
+import { duplicateSections } from '../utils/sectionEdit'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { addBayUpdate } from '../components/RightPanel/panels/RackRowPanelCore.jsx'
 import { deleteBaySelection } from '../utils/baySides'
@@ -39,9 +40,12 @@ export function rotateQuarter(obj) {
   const r = ((((obj.rotation || 0) + 90) % 360) + 360) % 360
   store.getState().commitObjectUpdate(obj.id, { rotation: r })
 }
-/** Duplicate (Ctrl+D): copy, then paste 20 px down-right; the copy is the selection. */
+/** Duplicate (Ctrl+D): copy, then paste 20 px down-right; the copy is the selection. Sections only: each beside itself
+ *  (utils/sectionEdit.js duplicateSections). */
 export function duplicateSelection() {
   useRowGroup.setState({ message: null })
+  { const st = store.getState()
+    if (st.selectedIds.length && st.selectedIds.every(id => st.objects.find(o => o.id === id)?.type === 'section_area')) { duplicateSections(store); return } }
   store.getState().copySelected()
   pasteAt(store, 'nudge', nanoid)
 }

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
+import { generateBlocked } from '../utils/sectionEdit'
+import { regenBuilding } from '../generate/regenerate'
 import { useShallow } from 'zustand/react/shallow'
 import { useLayoutCheck, runLayoutCheck, checkLabel, exportWithCheck } from '../utils/layoutCheck'
 import { ExportCheckDialog } from '../components/RightPanel/LayoutCheckPanel'
@@ -70,6 +72,8 @@ function CheckChip() {
 
 function TopRight() {
   const { undo, redo, exportAsPDF, hasRacks } = useCanvasStore(useShallow(s => ({ undo: s.undo, redo: s.redo, exportAsPDF: s.exportAsPDF, hasRacks: s.objects.some(o => RACK.test(o.type || '')) })))
+  // 2 or more sections in the building: Generate is off — each section is filled with Fill racking (STUDIO.md §7a Sections)
+  const blocked = useCanvasStore(s => generateBlocked(s.objects, regenBuilding(s.objects)))
   const result = useLayoutCheck(s => s.result)
   const card = useViewPrefs(s => s.card)
   /* STUDIO.md §7: "Generate" on an empty plan, "Regenerate" when racks exist */
@@ -80,7 +84,7 @@ function TopRight() {
       <button type="button" aria-label="Undo" title="Undo (Ctrl+Z)" onClick={undo} style={ghost({ width: 32, height: 32 })}><Icon name="Undo" /></button>
       <button type="button" aria-label="Redo" title="Redo (Ctrl+Y)" onClick={redo} style={ghost({ width: 32, height: 32 })}><Icon name="Redo" /></button>
       <span style={{ width: 1, height: 18, background: '#3A403C', margin: '0 4px' }} />
-      <button type="button" aria-label={genLabel} aria-pressed={card === 'generate'} onClick={() => useViewPrefs.getState().setCard(card === 'generate' ? 'tabs' : 'generate')}
+      <button type="button" aria-label={genLabel} aria-pressed={card === 'generate'} disabled={!!blocked} title={blocked || undefined} onClick={() => useViewPrefs.getState().setCard(card === 'generate' ? 'tabs' : 'generate')}
         style={ghost({ height: 32, padding: '0 10px', fontSize: 13, color: '#E8EAE6', gap: 6 })}>
         <Icon name="Generate" active />{genLabel}
       </button>

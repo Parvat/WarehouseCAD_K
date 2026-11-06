@@ -4,6 +4,8 @@ import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { toggleLock, isLockedIn } from '../utils/layers'
 import { useLocked } from './useLocked'
+import { SECTION_COLORS, colorOf } from '../utils/sectionAreas'
+import { setSectionColor, duplicateSections } from '../utils/sectionEdit'
 import { TOOLS } from '../constants'
 import { worldBoundsOf, hitTest, fpWallHitTest, wallBeatsPadding } from '../canvas2/hitTest'
 import { screenToWorld } from '../canvas2/viewport'
@@ -79,6 +81,7 @@ export function barFor(objects, selectedIds, activeWall, activeBaySelection = []
     const o = sel[0]
     if (isBeamRack(o)) return { kind: 'rack', objs: sel }
     if (isZone(o)) return { kind: 'zone', objs: sel }
+    if (o.type === 'section_area') return { kind: 'section', objs: sel }
     if (isColumn(o)) return { kind: 'column', objs: sel }
     if (o.type === 'aisle') return { kind: 'aisle', objs: sel }
     if (FP.has(o.type)) return { kind: 'building', objs: sel }
@@ -358,6 +361,29 @@ function SizeField({ obj, k, aria }) {
   )
 }
 
+/** A section (STUDIO.md §7a Sections): Colour ▾ · Lock · Duplicate · Delete. */
+function SectionSelBar({ obj }) {
+  const locked = useLocked(obj)
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const k = colorOf(obj)
+  return (
+    <>
+      <Chip chipRef={ref} open={open} swatch={k ? k.c : '#F4F8F5'} label="Colour" title={locked ? 'Locked' : 'Colour'} locked={locked} onClick={() => setOpen(o => !o)}>{k ? k.name : 'No colour'}</Chip>
+      {open && !locked && (
+        <Menu label="Section colour" anchor={ref.current} onClose={() => setOpen(false)}>
+          <MenuItem swatch="#F4F8F5" onClick={() => { setSectionColor(store, null); setOpen(false) }}>No colour</MenuItem>
+          {SECTION_COLORS.map(c => <MenuItem key={c.id} swatch={c.c} onClick={() => { setSectionColor(store, c.id); setOpen(false) }}>{c.name}</MenuItem>)}
+        </Menu>
+      )}
+      <Sep />
+      <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
+      <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={() => duplicateSections(store)} />
+      <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} />
+    </>
+  )
+}
+
 function ZoneBar({ obj }) {
   const locked = useLocked(obj)
   const st = store.getState()
@@ -479,6 +505,7 @@ export function SelectionBar() {
       {what.kind === 'bay' && <BayBar />}
       {what.kind === 'bays' && <BayBar several />}
       {what.kind === 'zone' && <ZoneBar obj={obj} />}
+      {what.kind === 'section' && <SectionSelBar obj={obj} />}
       {what.kind === 'column' && <ColumnBar one={!!what.one} />}
       {what.kind === 'aisle' && <AisleBar obj={obj} />}
       {what.kind === 'building' && <BuildingBar obj={obj} />}

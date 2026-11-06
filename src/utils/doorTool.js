@@ -12,6 +12,7 @@ import { create } from 'zustand'
 import { WAREHOUSE_CATEGORIES } from '../constants/warehouseObjects'
 import { innerOutline } from './floorGeom'
 import { layerForType } from './layers'
+import { isSection, hasBoundary, edgesOf, wallInOf } from './sectionAreas'
 
 export const DOOR_TOOL = 'door'
 /** The door types (the library's wall doors): a door slides along its wall when dragged (STUDIO.md §7a). */
@@ -84,6 +85,27 @@ export function doorAt(objects, w, spec, gridSize = 40, reach = 0) {
       best = { d, fpId: fp.id, x: cx - W / 2, y: cy - D / 2, width: W, height: D, rotation, line: [fx - ux * W / 2, fy - uy * W / 2, fx + ux * W / 2, fy + uy * W / 2] }
     }
   }
+  /* a section with a Fence or a Wall: its edges are walls too — the door centred on the edge (it cuts it: the section
+     draws its boundary around the door — utils/sectionAreas.js edgeRuns) */
+  for (const s of objects.filter(o => isSection(o) && hasBoundary(o))) {
+    const half = s.boundary === 'wall' ? (wallInOf(s) / 12) * gridSize / 2 : 2
+    for (const e of edgesOf(s)) {
+      const a = { x: e.a[0], y: e.a[1] }, b = { x: e.b[0], y: e.b[1] }, len = Math.hypot(b.x - a.x, b.y - a.y)
+      if (len < 1e-6) continue
+      const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len
+      const t = (w.x - a.x) * ux + (w.y - a.y) * uy
+      if (t < -half || t > len + half) continue
+      const px = a.x + ux * Math.max(0, Math.min(len, t)), py = a.y + uy * Math.max(0, Math.min(len, t))
+      const d = Math.hypot(w.x - px, w.y - py)
+      if (d > half + reach || (best && d >= best.d)) continue
+      const W = spec.widthFt * gridSize, D = spec.depthFt * gridSize
+      if (W > len) continue
+      const c = Math.max(W / 2, Math.min(len - W / 2, t))
+      const fx = a.x + ux * c, fy = a.y + uy * c
+      const rotation = ((Math.round((Math.atan2(uy, ux) * 180) / Math.PI / 90) * 90) % 360 + 360) % 360
+      best = { d, fpId: s.parentId || null, sectionId: s.id, x: fx - W / 2, y: fy - D / 2, width: W, height: D, rotation, line: [fx - ux * W / 2, fy - uy * W / 2, fx + ux * W / 2, fy + uy * W / 2] }
+    }
+  }
   if (!best) return null
   const { d, ...door } = best
   return door
@@ -96,6 +118,7 @@ export function doorObject(at, spec, newId) {
     id: newId(), type: spec.type, x: at.x, y: at.y, width: at.width, height: at.height, rotation: at.rotation,
     fill: color + '22', stroke: color, strokeWidth: 1.5, opacity: 1, noFill: false, label: spec.label,
     snapType: spec.snapType, meta: { ...(spec.meta || {}), doorWidth: spec.widthFt }, parentId: at.fpId, layerId: layerForType(spec.type),
+    ...(at.sectionId ? { sectionId: at.sectionId } : {}),                 // in a section's Fence or Wall
   }
 }
 

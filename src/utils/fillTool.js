@@ -5,6 +5,9 @@
 // until the fill itself is committed.
 
 import { create } from 'zustand'
+import { isSection, contains, polygonOf, pointInPolygon, onOutline } from './sectionAreas'
+import { rackFootprint } from '../generate/rackFootprint'
+import { getRackCapacity } from './capacity'
 import { DEFAULT_FILL_SETTINGS } from '../generate/fillRacking'
 import { planAreaCreate } from '../generate/rackingArea'
 import { clearFromOutline } from '../generate/wallClear'
@@ -52,6 +55,23 @@ export const useFillTool = create(() => ({ drag: null, plan: null, created: null
 
 export const boxOfDrag = (d) => d && ({ x: Math.min(d.from.x, d.to.x), y: Math.min(d.from.y, d.to.y), w: Math.abs(d.to.x - d.from.x), h: Math.abs(d.to.y - d.from.y) })
 
+/* ── a fill inside a section (STUDIO.md §7a Sections) ── */
+const sectionAt = (objects, p) => (objects || []).find(o => isSection(o) && contains(o, p.x, p.y)) || null
+/** The drag box cut to the section's box (a rectangle: exactly the section), or null when nothing is left. */
+function clipToSection(b, s) {
+  const x0 = Math.max(b.x, s.x), y0 = Math.max(b.y, s.y), x1 = Math.min(b.x + b.w, s.x + s.width), y1 = Math.min(b.y + b.h, s.y + s.height)
+  return x1 - x0 > 0 && y1 - y0 > 0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null
+}
+/** A custom shape: only the racks wholly inside it, and the aisles between them; the counts follow. */
+function keepInside(plan, s) {
+  const poly = polygonOf(s)
+  const inside = (r) => { const f = rackFootprint(r); return [[f.x, f.y], [f.x + f.w, f.y], [f.x + f.w, f.y + f.h], [f.x, f.y + f.h]].every(([x, y]) => pointInPolygon(poly, x, y) || onOutline(s, x, y, 0.5)) }
+  const racks = plan.racks.filter(inside), ids = new Set(racks.map(r => r.id))
+  const aisles = plan.aisles.filter(a => ids.has(a.row1Id) && ids.has(a.row2Id))
+  const positions = racks.reduce((t, r) => t + (getRackCapacity(r)?.total || 0), 0)
+  return { ...plan, racks, aisles, rows: new Set(racks.map(r => r.rowIndex ?? r.id)).size, positions }
+}
+
 /** The press: the box starts here. */
 export function startFill(world) { useFillTool.setState({ drag: { from: world, to: world }, plan: null, created: null }) }
 
@@ -60,7 +80,10 @@ export function moveFill(world, objects, gridSize = 40, elevations = null) {
   const d = useFillTool.getState().drag
   if (!d) return null
   const drag = { ...d, to: world }
-  const created = planAreaCreate(objects, boxOfDrag(drag), rackingSettings(), { gridSize, from: drag.from, newId: nanoid, elevations })
+  // a fill that starts inside a section is clipped to it: its racks never cross the section's edge (utils/sectionAreas.js)
+  const sec = sectionAt(objects, drag.from), box = sec ? clipToSection(boxOfDrag(drag), sec) : boxOfDrag(drag)
+  let created = box ? planAreaCreate(objects, box, rackingSettings(), { gridSize, from: drag.from, newId: nanoid, elevations }) : null
+  if (created && sec && sec.shape === 'poly') created = { ...created, plan: keepInside(created.plan, sec) }
   const plan = created ? created.plan : { racks: [], aisles: [], rows: 0, positions: 0, rects: [] }
   useFillTool.setState({ drag, plan, created })
   return plan

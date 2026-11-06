@@ -431,14 +431,14 @@ export function Canvas2() {
     if (e.evt && e.evt.button !== 0) return
     const w = sectWorld(e)
     if (!w) return
-    if (sectPen) { penClick(useCanvasStore, w, view.current.zoom); return }
+    if (sectPen) { penClick(useCanvasStore, w, view.current.zoom, !!e.evt?.shiftKey); return }
     startRect(w)
     const rect = e.target.getStage().container().getBoundingClientRect()
     const move = (ev) => moveRect(screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }))
     const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); if (useSectionTool.getState().drag) commitRect(useCanvasStore, view.current.zoom) }
     window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
   }
-  const sectionMouseMove = (e) => { if (sectPen) { const w = sectWorld(e); if (w) penMove(w) } }
+  const sectionMouseMove = (e) => { if (sectPen) { const w = sectWorld(e); if (w) penMove(w, useCanvasStore, view.current.zoom, !!e.evt?.shiftKey) } }
 
   const modeMouseDown = measuring ? measureMouseDown : sectioning ? sectionMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
   // Space+drag or a middle drag pans in any tool (STUDIO.md §7a)

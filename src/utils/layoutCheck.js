@@ -40,6 +40,7 @@
 // store below.
 
 import { create } from 'zustand'
+import { membership } from './sectionAreas'
 import { rackFootprint, rowGaps, rowAisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld } from '../generate/columnCheck'
 import { uprightXs } from '../render/rackOps'
 import { blockedPositionRects } from '../render/labelOps'
@@ -331,7 +332,20 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
     if (e.severity === 'warning') warnings.push({ severity: 'warning', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => outline(b, HL.amber)), text: e.text })
     else errors.push({ severity: 'error', kind: e.kind, ids: e.ids, box: union(boxes), highlight: boxes.map(b => shade(b, HL.red)), text: e.text })
   }
-  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled']
+  // ── racks in two sections facing each other across a section edge, closer than the aisle width — a WARNING (STUDIO.md
+  //    §7a Sections: each section is filled on its own, so the aisle between them is the user's to keep) ──
+  { const m = membership(objects), secOf = new Map()
+    for (const [sid, ids] of m.bySection) for (const id of ids) secOf.set(id, sid)
+    if (secOf.size) for (const g of rowAisleGaps(racks.filter(r => ((r.rotation || 0) % 90) === 0))) {
+      const a = secOf.get(g.top.id), b = secOf.get(g.bot.id)
+      if (!a || !b || a === b || !(g.gapLen < aislePx - 1e-6)) continue
+      const na = byId.get(a)?.label || 'Section', nb = byId.get(b)?.label || 'Section'
+      warnings.push({ severity: 'warning', kind: 'section-aisle', ids: [g.top.id, g.bot.id], box: g.box,
+        highlight: [shade(g.box, HL.amber, `${short(g.gapLen)} · needs ${len(aislePx)}`)],
+        text: `${na} and ${nb}: racks face each other across the section edge ${short(g.gapLen)} apart, needs ${len(aislePx)} aisle` })
+    } }
+
+  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle']
   const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
   const reminders = projectReminders(elevations)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }

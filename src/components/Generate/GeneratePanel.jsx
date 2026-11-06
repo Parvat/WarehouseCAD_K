@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { generateBlocked } from '../../utils/sectionEdit'
 import { useRackingSettings } from '../../utils/fillTool'
 import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9)
 import { C, MONO, fieldBox, Field, Seg, Btn, Note } from '../../studio/cardParts'
@@ -72,6 +73,8 @@ export function GeneratePanel({ onClose } = {}) {
 
   /* On a layout (a building with racks or zones): what a regenerate keeps, replaces and loses, said before the click */
   const { objects, hasRacks } = useCanvasStore(useShallow(s => ({ objects: s.objects, hasRacks: s.objects.some(o => /^rack_/.test(o.type || '')) })))
+  // 2 or more sections in the building: off — each section is filled with Fill racking (STUDIO.md §7a Sections)
+  const blocked = generateBlocked(objects, regenBuilding(objects))
   const fp = useMemo(() => regenBuilding(objects), [objects])
   const onLayout = !!fp && objects.some(o => o.parentId === fp.id)
   const ask = useMemo(() => (onLayout ? regenSummary(objects, fp) : null), [onLayout, objects, fp])
@@ -166,7 +169,7 @@ export function GeneratePanel({ onClose } = {}) {
 
       <div style={{ marginTop: 'auto', display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${C.divider}`, flexShrink: 0 }}>
         <Btn kind="ghost" onClick={() => onClose?.()}>Cancel</Btn>
-        <Btn kind="primary" onClick={run} disabled={generating} style={{ flex: 1, cursor: generating ? 'progress' : 'pointer', opacity: generating ? 0.75 : 1 }}>
+        <Btn kind="primary" onClick={run} disabled={generating || !!blocked} title={blocked || undefined} style={{ flex: 1, cursor: generating ? 'progress' : blocked ? 'not-allowed' : 'pointer', opacity: generating ? 0.75 : blocked ? 0.45 : 1 }}>
           {generating ? <>Generating… {Math.round(progress * 100)}%</> : label}
         </Btn>
       </div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { generateBlocked } from '../../utils/sectionEdit'
 import { Plus, Loader2 } from 'lucide-react'   // (no section-9 icon for these two)
 import { Icon } from '../../studio/Icon'
 import { useCanvasStore } from '../../store/useCanvasStore'
@@ -440,7 +441,7 @@ function SettingsCard() {
             <span style={{ fontSize: 13, fontWeight: 600 }}>This changes how racks are laid out.</span>
             <span style={S.note}>The default pallet's face or depth, the forklift or the wall clearance changed. Regenerate the racking with it (the building, zones, hand-placed racks and elevations kept), or keep the layout as it is.</span>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={regenerate} style={{ ...S.btn, ...S.solid }}>Regenerate racking</button>
+              {(() => { const b = generateBlocked(store.getState().objects, regenBuilding(store.getState().objects)); return <button type="button" onClick={regenerate} disabled={!!b} title={b || undefined} style={{ ...S.btn, ...S.solid, ...(b ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>Regenerate racking</button> })()}
               <button type="button" onClick={() => { write(ask.project); setAsk(null); closeSetup() }} style={S.btn}>Keep layout</button>
               <button type="button" onClick={() => setAsk(null)} style={{ ...S.btn, color: 'var(--text3)' }}>Back</button>
             </div>

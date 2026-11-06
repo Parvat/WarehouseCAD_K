@@ -2,26 +2,31 @@ import { memo } from 'react'
 import { Group, Line, Text, Rect, Circle } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { nodeName } from './shapes'
-import { polygonOf, LABEL, isSection } from '../utils/sectionAreas'
+import { polygonOf, LABEL, isSection, sectionStyle, boundaryOf, wallInOf, edgeRuns } from '../utils/sectionAreas'
 import { useSectionTool, useSectionHover, useSectionRename, boxOf, SECTION_PEN_TOOL } from './sectionTool'
 
 /* A section on the plan (STUDIO.md §7a Sections), drawn under the racks: a dashed #B9C7BE 1px outline (dash 6 4) and a
-   very light #F4F8F5 fill; selected (or hovered in the card's Sections list) a #2E7D5B 1.5px outline and #7BD3A4 at 10 %.
-   Its name in small caps — Plus Jakarta Sans 11px 600, #767C74 — at the top-left inside, 12px in (screen px: the
-   label keeps its size at every zoom; only it reads the zoom). */
-function SectionShapeView({ obj, selected = false, listening = false, bind }) {
+   very light #F4F8F5 fill — or its colour (utils/sectionAreas.js sectionStyle: the outline, a tint, a deeper label);
+   selected (or hovered in the card's Sections list) the outline solid 1.5 (#2E7D5B with #7BD3A4 at 10 % when plain).
+   A boundary is drawn on its edges, cut where a door stands in them: a Fence a thin dark line (a wire partition), a
+   Wall a solid band of its thickness. Its name in small caps — Plus Jakarta Sans 11px 600 — at the top-left inside,
+   12px in (screen px: the label keeps its size at every zoom; only it reads the zoom). */
+function SectionShapeView({ obj, selected = false, listening = false, bind, doors = null, gridSize = 40 }) {
   const zoom = useCanvasStore(s => s.zoom) || 1
   const hovered = useSectionHover(s => s.id === obj.id)
   const renaming = useSectionRename(s => s.id === obj.id)
   if (!(obj.width > 0) || !(obj.height > 0)) return null
-  const pts = polygonOf(obj).flat(), on = selected || hovered
+  const pts = polygonOf(obj).flat(), on = selected || hovered, st = sectionStyle(obj, on), b = boundaryOf(obj)
+  const runs = b === 'none' ? [] : edgeRuns(obj, doors || [])
   return (
     <Group name={nodeName(obj.id)} listening={listening} {...(bind ? bind(obj) : null)}>
-      <Line points={pts} closed fill={on ? 'rgba(123, 211, 164, 0.10)' : '#F4F8F5'} stroke={on ? '#2E7D5B' : '#B9C7BE'} strokeWidth={on ? 1.5 : 1}
-        dash={on ? undefined : [6, 4]} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={listening} />
+      <Line points={pts} closed fill={st.fill} stroke={b === 'none' || on ? st.stroke : undefined} strokeWidth={st.width}
+        dash={st.dash || undefined} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={listening} />
+      {b === 'fence' && runs.map((r, i) => <Line key={'f' + i} name="section-fence" points={[...r.a, ...r.b]} stroke="#4A514D" strokeWidth={1.25} strokeScaleEnabled={false} listening={false} />)}
+      {b === 'wall' && runs.map((r, i) => <Line key={'w' + i} name="section-wall" points={[...r.a, ...r.b]} stroke="#1F2321" strokeWidth={(wallInOf(obj) / 12) * gridSize} lineCap="butt" listening={false} />)}
       {!renaming && (
         <Text name="section-label" x={obj.x + LABEL.inset / zoom} y={obj.y + LABEL.inset / zoom} text={obj.label || 'Section'}
-          fontSize={LABEL.px / zoom} fontStyle="600" fontVariant="small-caps" fontFamily={LABEL.font} fill={LABEL.color} listening={false} />
+          fontSize={LABEL.px / zoom} fontStyle="600" fontVariant="small-caps" fontFamily={LABEL.font} fill={st.label} listening={false} />
       )}
     </Group>
   )
@@ -31,6 +36,7 @@ export const SectionShape = memo(SectionShapeView)
 /** The drawing in progress: the rectangle's box, or the pen's points and the line to the pointer. */
 export function SectionDraft() {
   const drag = useSectionTool(s => s.drag), pen = useSectionTool(s => s.pen), at = useSectionTool(s => s.at)
+  const guide = useSectionTool(s => s.guide), len = useSectionTool(s => s.len), gs = useCanvasStore(s => s.gridSize) || 40
   const tool = useCanvasStore(s => s.activeTool), zoom = useCanvasStore(s => s.zoom) || 1
   if (drag) {
     const b = boxOf(drag)
@@ -40,11 +46,17 @@ export function SectionDraft() {
   const pts = [...pen, ...(at ? [[at.x, at.y]] : [])].flat()
   return (
     <Group name="section-draft" listening={false}>
+      {/* the snapped angle's guide (horizontal, vertical or 45°), dashed */}
+      {guide && <Line name="section-guide" points={[...guide.a, ...guide.b]} stroke="#1B4FD8" strokeWidth={1} dash={[4, 4]} opacity={0.7} strokeScaleEnabled={false} listening={false} />}
       <Line points={pts} stroke="#2E7D5B" strokeWidth={1.5} dash={[6, 4]} strokeScaleEnabled={false} listening={false} />
+      {/* the live length of the segment being drawn, beside the pointer */}
+      {at && len > 0 && <Text name="section-length" x={at.x + 10 / zoom} y={at.y + 10 / zoom} text={ftInLen(len, gs)} fontSize={11 / zoom} fontStyle="600" fontFamily="'Plus Jakarta Sans', sans-serif" fill="#1B4FD8" listening={false} />}
       {pen.map(([x, y], i) => <Circle key={i} x={x} y={y} radius={(i === 0 && pen.length >= 3 ? 5 : 3.5) / zoom} fill="#FFFFFF" stroke="#2E7D5B" strokeWidth={1.5} strokeScaleEnabled={false} listening={false} />)}
     </Group>
   )
 }
+
+const ftInLen = (px, gs) => { const t = Math.round(px / gs * 12), f = Math.floor(t / 12), i = t - f * 12; return i ? `${f}′-${i}″` : `${f}′` }
 
 /** A selected custom shape's point handles (white squares, 8 screen px). */
 export const POINT_HANDLE_PX = 8

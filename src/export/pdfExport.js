@@ -24,7 +24,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { computeBom } from '../utils/bom'
-import { polygonOf } from '../utils/sectionAreas'
+import { polygonOf, sectionStyle, boundaryOf, wallInOf, edgeRuns } from '../utils/sectionAreas'
+import { isDoor } from '../utils/doorTool'
 import { buildBomSheets } from './bomSheet'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -152,12 +153,16 @@ function zoneSVG(obj, gridSize) {
 
 /* ── Section (utils/sectionAreas.js) — as on the plan: a very light fill, a dashed 1-unit outline, its name in small
    caps at the top-left inside; `u`: world px per paper mm (the label 3.5 mm tall, 4 mm in, whatever the scale). */
-function sectionSVG(obj, u) {
+function sectionSVG(obj, u, doors = [], gridSize = 40) {
   if (!(obj.width > 0) || !(obj.height > 0)) return ''
-  const pts = polygonOf(obj).map(p => p.join(',')).join(' ')
+  const pts = polygonOf(obj).map(p => p.join(',')).join(' '), st = sectionStyle(obj, false), b = boundaryOf(obj)
+  // its colour (the outline, a tint, the label); a Fence or a Wall on its edges, cut where a door stands
+  const runs = b === 'none' ? [] : edgeRuns(obj, doors)
+  const edge = b === 'fence' ? { c: '#4A514D', w: 0.35 * u } : { c: '#1F2321', w: (wallInOf(obj) / 12) * gridSize }
   return `<g data-section="${esc(obj.id || '')}">` +
-    `<polygon points="${pts}" fill="#F4F8F5" stroke="#B9C7BE" stroke-width="${0.3 * u}" stroke-dasharray="${1.8 * u} ${1.2 * u}"/>` +
-    `<text x="${obj.x + 4 * u}" y="${obj.y + 4 * u}" dominant-baseline="hanging" font-family="'Plus Jakarta Sans', sans-serif" font-weight="600" font-variant="small-caps" font-size="${3.5 * u}" fill="#767C74">${esc(obj.label || 'Section')}</text></g>`
+    `<polygon points="${pts}" fill="${st.fill}"${b === 'none' ? ` stroke="${st.stroke}" stroke-width="${0.3 * u}" stroke-dasharray="${1.8 * u} ${1.2 * u}"` : ''}/>` +
+    runs.map(r => `<line x1="${r.a[0]}" y1="${r.a[1]}" x2="${r.b[0]}" y2="${r.b[1]}" stroke="${edge.c}" stroke-width="${edge.w}"/>`).join('') +
+    `<text x="${obj.x + 4 * u}" y="${obj.y + 4 * u}" dominant-baseline="hanging" font-family="'Plus Jakarta Sans', sans-serif" font-weight="600" font-variant="small-caps" font-size="${3.5 * u}" fill="${st.label}">${esc(obj.label || 'Section')}</text></g>`
 }
 
 function columnGridSVG(obj, gridSize) {
@@ -446,7 +451,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     `<rect x="${vb.x}" y="${vb.y}" width="${vb.width}" height="${vb.height}" fill="#ffffff"/>`,
     ...floors.map(o => floorPlanSVG(o, gridSize)),
     // the sections under everything else, as on the plan
-    ...sections.map(o => sectionSVG(o, u)),
+    ...sections.map(o => sectionSVG(o, u, objects.filter(isDoor), gridSize)),
     ...zones.map(o => zoneSVG(o, gridSize)),
     ...racks.map(o => rackSVG(o, gridSize, lz, elevTable)),
     /* labels and marks are worked out from the whole layout, as on the canvas

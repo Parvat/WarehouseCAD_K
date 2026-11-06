@@ -41,6 +41,7 @@ import { setAreaHover } from './areaHover'
 import { columnAt, clickColumn, pickedColumn } from './columnPick'
 import { lineIndexOf, dragLine, endLineDrag } from './columnLines'
 import { onLabel, polygonOf, movePoint } from '../utils/sectionAreas'
+import { membersOf, clampSectionMove, clampSectionBox, clampSectionPoint } from '../utils/sectionEdit'
 import { useSectionRename } from './sectionTool'
 import { POINT_HANDLE_PX } from './SectionShape'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
@@ -325,7 +326,10 @@ export function useCanvasInteraction({
        was selected before its layer was locked. */
     const ok = pickableIn(st.layers)
     if (!ok(grabbed)) return
-    const ids = (idsIn || st.selectedIds).filter(id => { const o = st.objects.find(x => x.id === id); return o && ok(o) })
+    let ids = (idsIn || st.selectedIds).filter(id => { const o = st.objects.find(x => x.id === id); return o && ok(o) })
+    // a section dragged takes the racks whose centre is in it (utils/sectionEdit.js membersOf) — one undo with it
+    { const secs = ids.filter(id => st.objects.find(x => x.id === id)?.type === 'section_area')
+      if (secs.length) ids = [...new Set([...ids, ...membersOf(st.objects, secs).filter(id => ok(st.objects.find(x => x.id === id)))])] }
     const nodes = collectDragNodes(stage, ids)
     if (!nodes.length) return
 
@@ -398,6 +402,9 @@ export function useCanvasInteraction({
       /* a door dragged alone slides along its wall (STUDIO.md §7a): its axis, and its centre's range on it */
       doorSlide: (() => {
         if (ids.length !== 1 || !isDoor(grabbed)) return null
+        // a door in a section's Fence or Wall slides along that section's edge
+        const sec = grabbed.sectionId && st.objects.find(o => o.id === grabbed.sectionId)
+        if (sec) { const ax = (((grabbed.rotation || 0) % 180) + 180) % 180 === 0 ? 'x' : 'y'; return { axis: ax, lo: ax === 'x' ? sec.x : sec.y, hi: ax === 'x' ? sec.x + sec.width : sec.y + sec.height, half: grabbed.width / 2 } }
         const fp = st.objects.find(o => o.id === grabbed.parentId)
         const poly = fp ? innerOutline(fp, st.gridSize || 40) : null
         const axis = (((grabbed.rotation || 0) % 180) + 180) % 180 === 0 ? 'x' : 'y'
@@ -1067,6 +1074,11 @@ export function useCanvasInteraction({
         if (origObj.type === 'racking_area' || (typeof origObj.type === 'string' && origObj.type.startsWith('zone_'))) {
           Object.assign(updates, clampResizeUpdates(st.objects, origObj, updates, { gridSize: st.gridSize, snap: zoneEdge && noSnap ? 0 : 8 / view.current.zoom }))
         }
+        /* a section's edge stops at the building's inner wall face and at a neighbour's edge (utils/sectionEdit.js) */
+        if (origObj.type === 'section_area') {
+          const b = clampSectionBox(st.objects, origObj, { x: updates.x ?? origObj.x, y: updates.y ?? origObj.y, w: updates.width ?? origObj.width, h: updates.height ?? origObj.height }, { gridSize: st.gridSize })
+          Object.assign(updates, { x: b.x, y: b.y, width: b.w, height: b.h })
+        }
 
         st.updateObject(objId, updates)
 
@@ -1173,7 +1185,9 @@ export function useCanvasInteraction({
         const box = stage.container().getBoundingClientRect()
         const w = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
         sp.moved = true
-        useCanvasStore.getState().updateObject(sp.id, movePoint(sp.orig, sp.i, w.x, w.y))
+        // kept on the building's floor and out of every other section (utils/sectionEdit.js)
+        const q = clampSectionPoint(useCanvasStore.getState().objects, sp.orig, w.x, w.y, useCanvasStore.getState().gridSize || 40)
+        useCanvasStore.getState().updateObject(sp.id, movePoint(sp.orig, sp.i, q[0], q[1]))
         return
       }
       /* a column's line: the axis from the first 6 px of travel, then the line follows the pointer on that axis */
@@ -1352,6 +1366,10 @@ export function useCanvasInteraction({
           const g = st.objects.find(o => o.id === d.ids[0])
           if (g && (g.type === 'racking_area' || g.type.startsWith('zone_'))) ({ dx, dy } = clampDragDelta(st.objects, g, dx, dy, { gridSize: st.gridSize, snap: noSnap ? 0 : 8 / view.current.zoom }))
         }
+        /* a section (and the racks it carries) stays inside its building and off its neighbours: stopped at the inner
+           wall face and at a neighbour's edge (utils/sectionEdit.js) */
+        { const secs = d.ids.map(id => st.objects.find(o => o.id === id)).filter(o => o && o.type === 'section_area')
+          for (const g of secs) ({ dx, dy } = clampSectionMove(st.objects, g, dx, dy, { gridSize: st.gridSize, moving: secs.map(o => o.id) })) }
         /* in-line snap (canvas2/inlineSnap.js): the grabbed rack's end near another rack's end in its
            line goes onto that rack's end upright, shared — it wins over the guides and the grid (a dragged
            Row group row: its excluded racks aren't in-line targets either, and the axis lock still wins) */
