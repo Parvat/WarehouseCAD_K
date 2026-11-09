@@ -93,7 +93,7 @@ export function aisleUnderMinimum(objects = null, from = null) {
    placed, then the notice asks "Make this a section?" with an Equipment picker; Make section adds a section of the
    fill's box with that equipment, folded into the fill's own undo step. Dismissed, the racks stay (Check layout shows
    the narrow aisles). ── */
-export const useSectionAsk = create(() => ({ ask: null }))     // { box, aisleFt, equipment (the project's), pick (key) }
+export const useSectionAsk = create(() => ({ ask: null }))     // { box, under, at; under: aisleFt, equipment (the project's), pick (key) }
 /** The equipment the question offers first: the one the typed aisle fits best — the greatest minimum it meets. */
 export function equipmentFor(aisleFt, profiles = mheProfiles()) {
   const fits = Object.values(profiles).filter(p => Number.isFinite(p.minAisleFt) && p.minAisleFt <= aisleFt + 1e-9)
@@ -163,14 +163,18 @@ export function moveFill(world, objects, gridSize = 40, elevations = null) {
 export function commitFill(store) {
   const { created, drag } = useFillTool.getState()
   // outside every section, under the project forklift's minimum: ask to make it a section, once the racks are placed
-  const under = drag && !sectionAt(store.getState().objects, drag.from) ? aisleUnderMinimum(store.getState().objects, drag.from) : null
+  // outside every section: a notice after every fill (Racks placed · Make section); under the project forklift's minimum
+  // it gives the reason and an Equipment picker and stays until answered (fill-section)
+  const outside = !!drag && !sectionAt(store.getState().objects, drag.from)
+  const under = outside ? aisleUnderMinimum(store.getState().objects, drag.from) : null
   useFillTool.setState({ drag: null, plan: null, created: null, aisleFt: null })        // a typed aisle was for this fill
   if (!created || !created.plan.racks.length) return 0
   const { area, plan } = created
   const st = store.getState()
   store.setState({ objects: [...st.objects, area, ...plan.racks, ...plan.aisles] })
   store.getState().commitObjectUpdate(area.id, {})
-  if (under) useSectionAsk.setState({ ask: { box: boxOfDrag(drag), aisleFt: under.aisleFt, equipment: under.equipment, pick: equipmentFor(under.aisleFt)?.key || null } })
+  if (under) useSectionAsk.setState({ ask: { box: boxOfDrag(drag), aisleFt: under.aisleFt, equipment: under.equipment, pick: equipmentFor(under.aisleFt)?.key || null, under: true, at: Date.now() } })
+  else if (outside) useSectionAsk.setState({ ask: { box: boxOfDrag(drag), under: false, at: Date.now() } })   // a normal aisle: the section on the project's forklift
   return plan.racks.length
 }
 

@@ -3312,6 +3312,47 @@ describe('REG — the hand check by real clicks', () => {
       expect(await ask().count()).toBe(0)
     }, T)
 
+    it('REG-fill-section-notice (click): after every Fill racking outside a section a notice "Racks placed · Make section" — a normal aisle: it fades after 8 s (a second fill left alone: gone), and Make section makes a section of the fill box on the project forklift, one undo with the fill; a narrow aisle: the question with its reason and Equipment picker, which stays', async () => {
+      await open()
+      await clearRacks()
+      const b = await innerBox()
+      const placed = () => L.page.getByRole('status', { name: 'Racks placed' }), ask = () => L.page.getByRole('alertdialog', { name: 'Make this a section?' })
+      const fillBox = async (fx0, fy0, fx1, fy1, aisle) => {
+        await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+        if (aisle) await typeAisle(aisle)
+        const f0 = { x: b.x0 + (b.x1 - b.x0) * fx0, y: b.y0 + (b.y1 - b.y0) * fy0 }, f1 = { x: b.x0 + (b.x1 - b.x0) * fx1, y: b.y0 + (b.y1 - b.y0) * fy1 }
+        await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(500)
+        await L.page.mouse.move(5, 300)                                                          // off the notice (a hover pauses it)
+      }
+      // a normal aisle (the project forklift's): the notice, timed like a notice with Undo (8 s), no question
+      await fillBox(0.04, 0.06, 0.45, 0.94, null)
+      const racks = await rackIdsNow(), h0 = await hist7()
+      expect(racks.length).toBeGreaterThan(1)
+      expect([await placed().count(), await ask().count(), await L.page.locator('[data-notice-for="Racks placed"]').getAttribute('data-notice-ms')]).toEqual([1, 0, '8000'])
+      expect(await placed().getByRole('button', { name: 'Make section' }).count()).toBe(1)
+      // Make section: a section of the fill box on the project forklift, in the fill's own undo step
+      await placed().getByRole('button', { name: 'Make section' }).click(); await L.page.waitForTimeout(250)
+      const secs = await L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => ({ id: o.id, equipment: o.equipment ?? null }))')
+      expect([secs.map(x => x.equipment), await hist7(), await placed().count()]).toEqual([[null], h0, 0])
+      const inSec = await L.S('return import("/src/utils/sectionAreas.js").then(M => [...M.membership(S.getState().objects).bySection.values()].flat())')
+      expect([...inSec].sort()).toEqual([...racks].sort())
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect([(await rackIdsNow()).filter(id => racks.includes(id)).length, (await L.S('return S.getState().objects.filter(o => o.type === "section_area").length'))]).toEqual([0, 0])
+      // a second normal fill, left alone: the notice fades by itself (the floor cleared again: the undo brought the fixture's racks back)
+      await clearRacks()
+      await fillBox(0.04, 0.06, 0.45, 0.94, null)
+      expect(await placed().count()).toBe(1)
+      await L.page.waitForTimeout(8600)
+      expect(await placed().count()).toBe(0)
+      // a narrow aisle (under the project forklift's minimum): the question as before — the reason, the picker; it stays
+      await fillBox(0.55, 0.06, 0.96, 0.94, '7')
+      expect([await ask().count(), await placed().count()]).toEqual([1, 0])
+      expect(await ask().getByRole('combobox', { name: 'Equipment' }).inputValue()).toBe('pallet_jack')
+      expect(await ask().textContent()).toMatch(/is below the .* minimum/)
+      await L.page.waitForTimeout(8600)
+      expect(await ask().count()).toBe(1)
+    }, T)
+
     /* ── Sections (utils/sectionAreas.js, canvas2/sectionTool.js): named areas drawn on the plan, by real mouse ── */
     const secsNow = () => L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => ({ id: o.id, label: o.label, shape: o.shape, x: o.x, y: o.y, w: o.width, h: o.height, pts: o.pts || null }))')
     const racksNow = () => L.S('return JSON.stringify(S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => [o.id, o.x, o.y, o.width, o.height, o.rotation || 0]))')

@@ -200,7 +200,17 @@ function Notices() {
     out.push(<Timed key="group-result" label="Row group result" ms={undoableResult(message) ? NOTICE_UNDO_MS : NOTICE_MS} stamp={message} onDone={close}><NoticePill label="Row group result" lines={lines} onUndo={undoableResult(message) ? undo(close) : null} onClose={close}>{message}</NoticePill></Timed>)
   }
   const ask = useSectionAsk(s => s.ask)
-  if (ask) out.push(<SectionAsk key="section-ask" ask={ask} />)
+  /* after a fill outside every section: "Racks placed · Make section" — it goes by itself (NOTICE_UNDO_MS, hover pauses);
+     under the project forklift's minimum the question with its reason and Equipment picker, which stays until answered */
+  if (ask && ask.under) out.push(<SectionAsk key="section-ask" ask={ask} />)
+  else if (ask) out.push(
+    <Timed key="racks-placed" label="Racks placed" ms={NOTICE_UNDO_MS} stamp={ask.at} onDone={dismissSectionAsk}>
+      <SectionChanges />
+      <NoticePill label="Racks placed" onClose={dismissSectionAsk} closeLabel="Dismiss"
+        actions={<button type="button" className={btnClass(true)} style={barBtn(true)} onClick={() => makeFillSection(useCanvasStore, null)}>Make section</button>}>
+        Racks placed
+      </NoticePill>
+    </Timed>)
   if (notice.text) {
     out.push(
       <Timed key="notice" label="Notice" ms={notice.undo ? NOTICE_UNDO_MS : NOTICE_MS} stamp={notice.at} onDone={clearNotice}>
@@ -215,13 +225,16 @@ function Notices() {
  *  equipment, in the fill's own undo step; ✕ leaves the racks as they are (Check layout lists the narrow aisles). A
  *  question: it stays until answered. */
 const ftIn = (ft) => { const t = Math.round(ft * 12), f = Math.floor(t / 12); return `${f}′ ${t - f * 12}″` }
-function SectionAsk({ ask }) {
-  const P = mheProfiles()
-  /* a section drawn, moved or dropped meanwhile: the question goes (ui-polish-3 — a section asks nothing; its Equipment is
-     set in its card) */
+/* a section drawn, moved or dropped meanwhile: the notice goes (ui-polish-3 — a section asks nothing; its Equipment is set
+   in its card) */
+function SectionChanges() {
   const secs = useCanvasStore(s => s.objects.filter(o => o.type === 'section_area').map(o => [o.id, o.x, o.y, o.width, o.height].join(':')).join('|'))
   const first = useRef(secs)
   useEffect(() => { if (secs !== first.current) dismissSectionAsk() }, [secs])
+  return null
+}
+function SectionAsk({ ask }) {
+  const P = mheProfiles()
   const [pick, setPick] = useState(ask.pick || Object.keys(P)[0])
   // Custom: the two widths, typed (the aisle typed for the fill to pick; the space to move as much, at most 8')
   const [pickFt, setPickFt] = useState(String(ask.aisleFt)), [moveFt, setMoveFt] = useState(String(Math.min(8, ask.aisleFt)))
@@ -229,6 +242,7 @@ function SectionAsk({ ask }) {
   const okCustom = parseFloat(pickFt) > 0 && parseFloat(moveFt) > 0
   return (
     <div style={live}>
+      <SectionChanges />
       <NoticePill role="alertdialog" label="Make this a section?" onClose={dismissSectionAsk} closeLabel="Dismiss" closeTitle="Keep the racks as they are"
         lines={[{ text: `Its aisle, ${ftIn(ask.aisleFt)}, is below the ${ask.equipment.label} minimum ${ftIn(ask.equipment.minAisleFt)}.`, tone: 'amber' }]}
         actions={<>
