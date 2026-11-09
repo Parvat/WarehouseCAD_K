@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { narrowAisleBlocks, blockedKeys } from './narrowAisles'
+import { checkColumnsFor } from '../utils/equipment'
 import { bayLedger } from '../utils/bayLedger'
 import { getLayoutCapacity } from '../utils/capacity'
 import { checkColumns, expandColumnGrid, MHE_PROFILES } from './columnCheck'
@@ -47,7 +48,8 @@ export function runColumnCheck(objects, { profile = MHE_PROFILES.reach, gridSize
   const racks = objects.filter(isRack)
   const columns = layoutColumns(objects, gridSize)
   if (!racks.length || !columns.length) return null
-  return checkColumns({ racks, columns, profile, gridSize, pickBothSides, floors: layoutFloors(objects), levelsAt: levelsResolver(elevations) })
+  // each rack held to its own aisle equipment (utils/equipment.js)
+  return checkColumnsFor(objects, { racks, columns, profile, gridSize, pickBothSides, floors: layoutFloors(objects), levelsAt: levelsResolver(elevations) })
 }
 
 /** usable = gross − in-rack losses − pick-zone losses − narrow-aisle losses (a face with less than the pick width

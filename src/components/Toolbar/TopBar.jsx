@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useMheOptions } from '../../rules/useMheOptions'
 import { useShallow } from 'zustand/react/shallow'
 import { UNITS } from '../../constants'
 import { getCanvasContainerSize } from '../../utils/canvasContainer'
@@ -171,7 +172,7 @@ export function LayoutMenu({ onClose, onRules, onHub, style }) {
      and a new building is drawn from the Generate card's fields (utils/genFields.js) */
   const [confirmStart, setConfirmStart] = useState(false)
   const gen = useGenFields()
-  const { rules, mheOptions } = useRules()
+  const { rules } = useRules(), mheOptions = useMheOptions()
   const startOver = () => { onClose(); startOverLayout(useCanvasStore, { rules, mheOptions }) }
 
   return (

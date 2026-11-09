@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { useMheOptions } from '../../rules/useMheOptions'
 import { generateBlocked } from '../../utils/sectionEdit'
 import { useRackingSettings } from '../../utils/fillTool'
 import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9)
@@ -43,7 +44,7 @@ export function GeneratePanel({ onClose } = {}) {
   const f = useGenFields()
   /* The forklift (its aisle), the default pallet and the wall clearance are the project's (utils/project.js); the
      column check follows the same forklift (ProjectSync). */
-  const { rules, mheOptions } = useRules()
+  const { rules } = useRules(), mheOptions = useMheOptions()
   const project = useCanvasStore(s => projectOf(s.elevations))
   /* the card's draft of the project's forklift and wall clearance: shown at once, written only by the run */
   const [draft, setDraft] = useState({})

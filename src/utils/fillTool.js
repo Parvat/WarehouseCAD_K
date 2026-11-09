@@ -13,7 +13,7 @@ import { planAreaCreate } from '../generate/rackingArea'
 import { clearFromOutline } from '../generate/wallClear'
 import { legacyWallClearanceIn } from '../rules/storage'
 import { nanoid } from 'nanoid'
-import { mheProfiles, equipmentOf } from './equipment'
+import { mheProfiles, sectionProfile, CUSTOM } from './equipment'
 import { drawnRect } from './sectionEdit'
 import { snapshotOf } from './elevations'
 import { autoSave, serializeScene } from './saveLoad'
@@ -67,8 +67,7 @@ export function fillEquipment(objects = null, from = null) {
   const s = rackingSettings(), P = mheProfiles()
   const project = { ...(P[s.mhe] || P.reach), aisleFt: s.aisleFt ?? (P[s.mhe] || P.reach).aisleFt }
   const sec = objects && from ? sectionAt(objects, from) : null
-  const k = equipmentOf(sec)
-  return k && P[k] ? P[k] : project
+  return sectionProfile(sec, P) || project        // a section's own (Custom: its two widths), else the project's
 }
 /** The settings this fill uses: the Racking settings, on the equipment of the section the drag starts in (its aisle,
  *  its truck), with the bar's typed aisle over them. */
@@ -94,15 +93,16 @@ export function equipmentFor(aisleFt, profiles = mheProfiles()) {
 }
 export const dismissSectionAsk = () => useSectionAsk.setState({ ask: null })
 /** Make section: a section of the fill's box (kept inside the building, off every other section) with equipment
- *  `key`, written into the fill's history entry — one Ctrl+Z takes the fill and the section together. → its id or null. */
-export function makeFillSection(store, key) {
+ *  `key` (Custom: `custom` — { pickFt, moveFt }), written into the fill's history entry — one Ctrl+Z takes the fill and
+ *  the section together. → its id or null. */
+export function makeFillSection(store, key, custom = null) {
   const ask = useSectionAsk.getState().ask
   useSectionAsk.setState({ ask: null })
   if (!ask) return null
   const st = store.getState(), b = ask.box
   const sec = drawnRect(st.objects, { x: b.x, y: b.y }, { x: b.x + b.w, y: b.y + b.h }, { gridSize: st.gridSize || 40 })
   if (!sec) return null
-  const obj = { ...sec, id: nanoid(), equipment: key || null }
+  const obj = { ...sec, id: nanoid(), equipment: key || null, ...(key === CUSTOM && custom ? { custom: { pickFt: Number(custom.pickFt), moveFt: Number(custom.moveFt) } } : {}) }
   const objects = [...st.objects, obj], full = { objects }
   if (st.historyIndex >= 0 && st.history?.length > st.historyIndex) {
     const history = st.history.slice()

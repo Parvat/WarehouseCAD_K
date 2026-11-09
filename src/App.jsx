@@ -19,6 +19,7 @@ import { trackCanvasPointer } from './utils/pasteAt'
 import { installLayerKeeper } from './utils/layers'
 import { installLevelsKeeper } from './utils/rackLevels'
 import { installElevationsKeeper } from './utils/elevations'
+import { installTruckKeeper } from './utils/equipment'
 import { installLiveRecheck } from './utils/layoutCheck'
 import { installAreaKeeper } from './utils/rackingAreaTool'
 import { installToolKeeper } from './utils/toolSwitch'
@@ -53,6 +54,9 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopLevelsKeeper())
    action's history entry (utils/elevations.js). */
 const stopElevationsKeeper = installElevationsKeeper(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopElevationsKeeper())
+/* The project's forklift widths (Project settings), for the checks that have no store (utils/equipment.js). */
+const stopTruckKeeper = installTruckKeeper(useCanvasStore)
+if (import.meta.hot) import.meta.hot.dispose(() => stopTruckKeeper())
 /* Check layout: while its list is open, re-checked after every committed change (utils/layoutCheck.js). */
 const stopLiveRecheck = installLiveRecheck(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopLiveRecheck())

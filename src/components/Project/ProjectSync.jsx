@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useCanvasStore } from '../../store/useCanvasStore'
+import { useMheOptions } from '../../rules/useMheOptions'
 import { useColumnCheck } from '../../generate/useColumnCheck'
-import { useRules } from '../../rules/useRules'
 import { useRackingSettings } from '../../utils/fillTool'
 import { defaultPallet } from '../../utils/project'
 
@@ -11,7 +11,7 @@ import { defaultPallet } from '../../utils/project'
 export function ProjectSync() {
   const pr = useCanvasStore(s => s.elevations?.project || null)
   const { mheKey, setMheKey } = useColumnCheck()
-  const { mheOptions } = useRules()
+  const mheOptions = useMheOptions()
   useEffect(() => {
     if (!pr) return
     const mhe = pr.equipment?.mhe || 'reach'

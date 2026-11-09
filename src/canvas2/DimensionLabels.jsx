@@ -1,5 +1,6 @@
 import { useMemo, memo } from 'react'
 import { Group, Rect, Line, Text } from 'react-konva'
+import { equipmentResolver } from '../utils/equipment'
 import { pxToFtIn, getFpWallSegments, getObjectBounds } from '../utils/canvas'
 import { spin } from './shapes'
 import { aisleLabelLayout } from './hitTest'
@@ -283,7 +284,12 @@ export const CrossAisleLabels = memo(function CrossAisleLabels({ objects, lz, gr
    only the failing ones exist, so they draw only with the warning colours on (`profile`), amber / red as
    Check layout lists them. */
 export const FaceAisleLabels = memo(function FaceAisleLabels({ objects, lz, gridSize = 40, profile = null }) {
-  const list = useMemo(() => (profile ? faceAisleLabels(objects, gridSize, { profile }) : []), [objects, gridSize, profile])
+  // each face held to its rack's equipment (utils/equipment.js), as Check layout lists it
+  const list = useMemo(() => {
+    if (!profile) return []
+    const R = equipmentResolver(objects, profile)
+    return R.single ? faceAisleLabels(objects, gridSize, { profile }) : R.inUse.flatMap(p => faceAisleLabels(objects, gridSize, { profile: p }).filter(L => R.of(L.rackId).key === p.key))
+  }, [objects, gridSize, profile])
   return <>{list.map((L, i) => <AisleLabelView key={L.rackId + ':' + i} L={L} name={'face-aisle:' + L.rackId + ':' + i} lz={lz} />)}</>
 })
 

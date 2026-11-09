@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useMheOptions } from '../../rules/useMheOptions'
 import { generateBlocked } from '../../utils/sectionEdit'
 import { Plus, Loader2 } from 'lucide-react'   // (no section-9 icon for these two)
 import { Icon } from '../../studio/Icon'
@@ -155,7 +156,7 @@ export function ProjectSetup() {
 
 /* ── a new project: the start screen — one screen ────────────────────────────────────────────────────────────────── */
 function StartCard() {
-  const { rules, mheOptions } = useRules()
+  const { rules } = useRules(), mheOptions = useMheOptions()
   const [b, setB] = useState({ ...BUILDING_DEFAULTS, clearFt: '', sprFt: '' })
   const [pal, setPal] = useState({ faceIn: PALLET_DEFAULT.faceIn, depthIn: PALLET_DEFAULT.depthIn, heightIn: PALLET_DEFAULT.heightIn, weightLb: PALLET_DEFAULT.weightLb })
   const [mhe, setMhe] = useState('reach')
@@ -258,6 +259,32 @@ function StartCard() {
   )
 }
 
+/* The forklift list (aisle-equip): every truck's two widths — Aisle to pick (turn and put away) and Space to move (drive
+   straight) — typed for this project (`equipment.trucks`, over the Rules); a section's Equipment, the checks and the
+   fill use them. An emptied field goes back to the Rules' value. */
+function ForkliftList({ base, trucks, onChange }) {
+  const set = (k, f, v) => {
+    const t = { ...(trucks || {}) }, row = { ...(t[k] || {}) }
+    if (v == null || !(v > 0) || v === base[k]?.[f]) delete row[f]; else row[f] = v
+    if (Object.keys(row).length) t[k] = row; else delete t[k]
+    onChange(Object.keys(t).length ? t : undefined)
+  }
+  return (
+    <table aria-label="Forklift list" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '4px 4px' }}>
+      <thead><tr><th style={S.th}>Forklift</th><th style={{ ...S.th, width: 120 }} title="Turn and put away">Aisle to pick (ft)</th><th style={{ ...S.th, width: 120 }} title="Drive straight">Space to move (ft)</th></tr></thead>
+      <tbody>
+        {Object.values(base).map(m => (
+          <tr key={m.key} data-forklift={m.key}>
+            <td style={{ fontSize: 12 }}>{m.label}</td>
+            <td><NumIn aria={`${m.label} aisle to pick (ft)`} step={0.5} value={trucks?.[m.key]?.aisleFt ?? m.aisleFt} onChange={v => set(m.key, 'aisleFt', v)} /></td>
+            <td><NumIn aria={`${m.label} space to move (ft)`} step={0.5} value={trucks?.[m.key]?.travelFt ?? m.travelFt} onChange={v => set(m.key, 'travelFt', v)} /></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 /* The BOM section of Project settings: the deck table (a beam length and the deck widths across it — rows added,
    edited, removed), anchors per foot, the row spacers' height (1 per frame pair up to it, 2 above), the guards (off unless set: the dealer's choice). */
 const widthsText = (w) => (w || []).join(' + ')
@@ -309,7 +336,7 @@ function BomSettings({ value: b, onChange }) {
 /* ── an existing project: Project settings ───────────────────────────────────────────────────────────────────────── */
 function SettingsCard() {
   const T = useCanvasStore(s => s.elevations)
-  const { mheOptions } = useRules()
+  const mheOptions = useMheOptions()
   const start = useMemo(() => {
     const pr = projectOf(T)
     if (pr) return JSON.parse(JSON.stringify(pr))
@@ -344,7 +371,8 @@ function SettingsCard() {
     regenerateRacking({ orientation: 'auto', mhe: project.equipment.mhe, aisleFt: mheOptions[project.equipment.mhe]?.aisleFt ?? r.aisleFt, wallClearIn: project.rules.wallClearIn, maxRunFt: r.maxRunFt, palletWIn: pal?.faceIn, palletDIn: pal?.depthIn, levels: 4 }, { beamIn: r.beamIn ?? 96, before: () => write(project) })
     setAsk(null); closeSetup()
   }
-  const aisle = mheOptions[pr.equipment?.mhe]?.aisleFt
+  const rulesMhe = useRules().mheOptions                  // the Rules' widths, under this project's own
+  const aisle = pr.equipment?.trucks?.[pr.equipment?.mhe]?.aisleFt ?? rulesMhe[pr.equipment?.mhe]?.aisleFt
   // an entry an elevation uses (saved layout) can't be deleted; a pallet keeps at least one
   const ceilUsed = (id) => ceilingInUse(T, id), palUsed = (id) => palletInUse(T, id)
   const addCeiling = () => setPr(p => { const c = { id: newId('ceil'), name: p.ceilings.length ? `Ceiling ${p.ceilings.length + 1}` : 'Main', clearHeightIn: null, sprinklerIn: null }; return { ...p, ceilings: [...p.ceilings, c], defaultCeilingId: p.defaultCeilingId || c.id } })
@@ -426,6 +454,8 @@ function SettingsCard() {
               <Num label="Wall clearance (in)" value={pr.rules?.wallClearIn} onChange={v => set({ rules: { ...pr.rules, wallClearIn: v ?? 0 } })} />
             </div>
             <span style={S.note}>Aisle {aisle != null ? `${aisle} ft` : '—'} — follows the forklift.</span>
+            <ForkliftList base={rulesMhe} trucks={pr.equipment?.trucks} onChange={t => set({ equipment: { ...pr.equipment, trucks: t } })} />
+            <span style={S.note}>Each forklift's aisle to pick (turn and put away) and space to move (drive straight), for this project — a section's Equipment, the checks and Fill racking use them.</span>
           </div>
 
           {/* the bill of materials (utils/bom.js): the deck table, anchors, row spacers, guards */}

@@ -141,13 +141,13 @@ describe('K — pick zones: an aisle column blocks a position it never touches',
 })
 
 /* Zone depth follows the selected truck: reach 10.5', counterbalance 12.5',
- * VNA 6' (TEST_PLAN.md §3E table). */
-it('K-depth: zone depth = the selected truck\'s aisleFt (VNA 6\', reach 10.5\', counterbalance 12.5\')', () => {
+ * VNA 7' (TEST_PLAN.md §3E table; aisle-equip — was 6'). */
+it('K-depth: zone depth = the selected truck\'s aisleFt (VNA 7\', reach 10.5\', counterbalance 12.5\')', () => {
   expect(AISLE_PX).toBe(420)
   const at = (profile, columns) => checkColumns({ racks: [double()], columns, profile, gridSize: GS }).pickBlocks.length
-  // column 7' out from face 0 (y -300..-260): inside reach's 10.5', beyond VNA's 6'
-  expect(at(MHE_PROFILES.reach, [col(27, -280)])).toBe(1)
-  expect(at(MHE_PROFILES.vna, [col(27, -280)])).toBe(0)
+  // column 8' out from face 0 (y -340..-300): inside reach's 10.5', beyond VNA's 7' (aisle-equip; was 7' out, VNA 6')
+  expect(at(MHE_PROFILES.reach, [col(27, -320)])).toBe(1)
+  expect(at(MHE_PROFILES.vna, [col(27, -320)])).toBe(0)
   // column 12' out (y -500..-460): beyond reach's 10.5', inside counterbalance's 12.5'
   expect(at(MHE_PROFILES.reach, [col(27, -480)])).toBe(0)
   expect(at(MHE_PROFILES.counterbalance, [col(27, -480)])).toBe(1)

@@ -1,7 +1,7 @@
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
+import { useMheOptions } from '../../rules/useMheOptions'
 import { useColumnCheck, conflictKey } from '../../generate/useColumnCheck'
-import { useRules } from '../../rules/useRules'
 import { Icon } from '../../studio/Icon'
 import { Row, ToggleRow, Seg, Note, Hint, SecLabel, C, MONO } from '../../studio/cardParts'
 
@@ -112,7 +112,7 @@ function ConflictCard({ conflict, index }) {
  *  conflict with Absorb / Remove section; its two switches (the C1 block shows them for a rack, so `toggles` off). */
 export function ColumnCheckBody({ toggles = true }) {
   const { result, mheKey, showMarks, setShowMarks, pickBothSides, setPickBothSides } = useColumnCheck()
-  const { mheOptions } = useRules()
+  const mheOptions = useMheOptions()
   const { rackConflicts, aisleBlocks, pickBlocks = [], uprightHits = [], summary } = result
   const objects = useCanvasStore(s => s.objects)
   const blocked = (aisleBlocks || []).filter(a => a.blocked)

@@ -1,8 +1,9 @@
 import { createContext, useContext, useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
+import { checkColumnsFor, aisleBlocksFor } from '../utils/equipment'
+import { useMheOptions } from '../rules/useMheOptions'
 import { checkColumns, aisleColumnBlocks, MHE_PROFILES } from './columnCheck'
 import { layoutColumns, layoutFloors } from './usableCapacity'
-import { useRules } from '../rules/useRules'
 import { useDragPreview } from '../canvas2/dragPreview'
 import { setColumnCheckView } from './columnCheckView'
 import { levelsAt as elevLevelsAt } from '../utils/elevations'
@@ -94,7 +95,7 @@ export function ColumnCheckProvider({ children }) {
      designs 11ft reach aisles gets their clearance tested here, and a customer
      who overrides it gets theirs, without either editing the check. The
      shipped MHE_PROFILES remain the floor if a profile omits a truck. */
-  const { mheOptions } = useRules()
+  const mheOptions = useMheOptions()
   const profile = mheOptions[mheKey] || MHE_PROFILES[mheKey] || MHE_PROFILES.reach
 
   /* A hidden grid is a grid that is switched off — ColumnGridPanel's
@@ -121,21 +122,25 @@ export function ColumnCheckProvider({ children }) {
      for the drop, where it runs once. The last full result is kept with its
      inputs, so a drop that changed nothing doesn't run it again. */
   const dragging = useDragPreview(s => s.dragging)
+  /* the sections' aisle equipment (utils/equipment.js): a section drawn, moved or set to other equipment checks the
+     racks again, though no rack moved */
+  const equip = useMemo(() => JSON.stringify(objects.filter(o => o.type === 'section_area' && o.equipment).map(o => [o.id, o.equipment, o.custom || null, o.x, o.y, o.width, o.height, o.pts || null])), [objects])
   const last = useRef(null)
   const result = useMemo(() => {
-    const inputs = { racks, columns, profile, gridSize, pickBothSides, floors, levelsAt }
+    const inputs = { racks, columns, profile, gridSize, pickBothSides, floors, levelsAt, equip }
     const l = last.current
     const same = l && Object.keys(inputs).every(k => l.inputs[k] === inputs[k])
     if (dragging) {
       const held = l ? l.result : EMPTY_RESULT
       if (same || !racks.length || !columns.length) return held
-      return { ...held, aisleBlocks: aisleColumnBlocks({ racks, columns, profile, gridSize, pickBothSides }).aisleBlocks }
+      // each aisle held to its own rows' equipment (utils/equipment.js) — the plan's marks and Check layout's list agree
+      return { ...held, aisleBlocks: aisleBlocksFor(objects, { racks, columns, profile, gridSize, pickBothSides }).aisleBlocks }
     }
     if (same) return l.result
-    const full = (!racks.length || !columns.length) ? EMPTY_RESULT : checkColumns(inputs)
+    const full = (!racks.length || !columns.length) ? EMPTY_RESULT : checkColumnsFor(objects, inputs)
     last.current = { inputs, result: full }
     return full
-  }, [dragging, racks, columns, gridSize, profile, pickBothSides, floors, levelsAt])
+  }, [dragging, racks, columns, gridSize, profile, pickBothSides, floors, levelsAt, equip])   // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Absorb is the default, so it is the absence of a decision, not a stored
      one — the customer keeps the rack and eats `positionsLost`. Only "remove

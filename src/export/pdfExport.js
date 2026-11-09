@@ -24,6 +24,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { computeBom } from '../utils/bom'
+import { checkColumnsFor } from '../utils/equipment'
 import { polygonOf, sectionStyle, boundaryOf, wallInOf, edgeRuns } from '../utils/sectionAreas'
 import { isDoor } from '../utils/doorTool'
 import { buildBomSheets } from './bomSheet'
@@ -249,7 +250,7 @@ export function labelsSVG(objects, gridSize, opts) {
     const byId = new Map()
     for (const o of objects) if (!byId.has(o.id)) byId.set(o.id, o)
     const res = racks.length && columns.length
-      ? checkColumns({ racks, columns, profile: opts.profile, gridSize, pickBothSides: opts.pickBothSides, floors: layoutFloors(objects), levelsAt: levelsResolver(opts.elevations) })
+      ? checkColumnsFor(objects, { racks, columns, profile: opts.profile, gridSize, pickBothSides: opts.pickBothSides, floors: layoutFloors(objects), levelsAt: levelsResolver(opts.elevations) })
       : null
     if (res) {
       // a clearance label keeps clear of the aisle width labels drawn above (they have priority)

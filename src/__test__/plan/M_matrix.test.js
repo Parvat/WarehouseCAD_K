@@ -17,7 +17,7 @@ globalThis.document = globalThis.document || { getElementById: () => null }
 const TRUCK = {
   reach:          { aisleFt: 10.5, travelFt: 8, crossAisleFt: 9 },
   counterbalance: { aisleFt: 12.5, travelFt: 8, crossAisleFt: 13 },
-  vna:            { aisleFt: 6,    travelFt: 6, crossAisleFt: 8.5 },
+  vna:            { aisleFt: 7,    travelFt: 6, crossAisleFt: 8.5 },   // aisle to pick 7' (aisle-equip; was 6')
 }
 const SINGLE_FT = 42 / 12                 // 3.5
 const PAIR_FT = (42 + 9 + 42) / 12        // 7.75

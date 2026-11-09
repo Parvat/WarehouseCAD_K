@@ -3090,6 +3090,76 @@ describe('REG — the hand check by real clicks', () => {
       expect([c3.marked, c3.open.length]).toEqual([[], c0.open.length])
     }, T)
 
+    /* ── aisle-equip follow-up: Custom equipment, the column check by equipment ── */
+    /** two back-to-back pairs (3 bays of 96″) placed for a test (setup): `at` their top-left corners, world px */
+    const placePairs = (list) => L.S(`const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type)), px = (i) => i / 12 * gs
+      const w = px(3 * 4 + 96 * 3), h = px(42 * 2 + 9)
+      const racks = arg.map((q, i) => ({ id: q.id, type: 'rack_double_row', x: q.x, y: q.y, width: w, height: h, rotation: 0, beams: [96, 96, 96], uprightWidth: 3, depthIn: 42, flueSpaceIn: 9, levels: 4, parentId: fp.id, ...(q.genSection != null ? { genSection: q.genSection, rowIndex: 1 } : {}) }))
+      S.setState({ objects: [...st.objects.filter(o => !arg.some(q => q.id === o.id)), ...racks] })
+      return { w, h }`, list)
+    /** a section drawn over world box a–b (Rectangle, a real drag), its Equipment chosen in its card */
+    const sectionWith = async (a, c, equipment) => {
+      await onCanvasAll([a, c]); await drawRect(a, c)
+      const sec = (await secsNow()).slice(-1)[0]
+      await L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('combobox', { name: 'Section equipment' }).selectOption(equipment); await L.page.waitForTimeout(150)
+      return sec
+    }
+    const checkItems = async () => {
+      await L.page.locator('[data-island="top-right"]').getByRole('button', { name: /^Check layout/ }).click(); await L.page.waitForTimeout(300)
+      return L.S('return import("/src/utils/layoutCheck.js").then(M => { const sh = M.shownCheck(M.useLayoutCheck.getState().result, S.getState().elevations); return [...sh.errors, ...sh.warnings].map(i => ({ kind: i.kind, ids: i.ids, text: i.text })) })')
+    }
+
+    it('REG-equip-custom-cross (click): a Custom section — its card\u2019s Aisle to pick and Space to move typed (7 ft, 5 ft); the checks use exactly those: a 5 ft cross-aisle between its racks passes, 4 ft errors', async () => {
+      await open()
+      await clearRacks()
+      const b = await innerBox(), gs = await gs7()
+      const x0 = b.x0 + (b.x1 - b.x0) * 0.12, y0 = b.y0 + (b.y1 - b.y0) * 0.4
+      const { w, h } = await placePairs([{ id: 'xa', x: x0, y: y0, genSection: 1 }, { id: 'xb', x: x0 + 25 * gs + 5 * gs, y: y0, genSection: 2 }])
+      await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(300)
+      await sectionTool('Rectangle')
+      await sectionWith({ x: x0 - 3 * gs, y: y0 - 6 * gs }, { x: x0 + 2 * w + 5 * gs + 3 * gs, y: y0 + h + 6 * gs }, 'custom')
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      for (const [name, v] of [['Aisle to pick (ft)', '7'], ['Space to move (ft)', '5']]) { const f = card.getByRole('textbox', { name }); await f.click(); await f.fill(v); await f.press('Enter'); await L.page.waitForTimeout(100) }
+      expect(await L.S('const s = S.getState().objects.find(o => o.type === "section_area"); return [s.equipment, s.custom]')).toEqual(['custom', { pickFt: 7, moveFt: 5 }])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const cross = (items) => items.filter(i => i.kind === 'cross-aisle' && i.ids.includes('xa') && i.ids.includes('xb'))
+      expect(cross(await checkItems())).toEqual([])                                            // 5 ft: the space to move
+      // 4 ft: the second pair a foot closer (setup)
+      await L.S('const st = S.getState(), gs = st.gridSize || 40; S.setState({ objects: st.objects.map(o => o.id === "xb" ? { ...o, x: o.x - gs } : o) })')
+      const c4 = cross(await checkItems())
+      expect(c4.length).toBe(1)
+      expect(c4[0].text).toMatch(/needs 5/)                                                   // the Custom space to move
+    }, T)
+
+    it('REG-equip-column-marks (click): a column in a pallet jack section\u2019s aisle — the plan\u2019s column marks (the red pinched shade) and Check layout\u2019s list agree: both flag it on the project\u2019s reach truck, neither once the section is Pallet jack', async () => {
+      await open()
+      await clearRacks()
+      const gs = await gs7()
+      // a column well inside the building, nothing near it
+      const col = await L.S(`return import("/src/generate/usableCapacity.js").then(U => { const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type))
+        const cols = U.layoutColumns(st.objects, gs), cx = fp.x + fp.width / 2, cy = fp.y + fp.height / 2
+        return cols.filter(c => c.x > fp.x + 40 * gs && c.x + c.w < fp.x + fp.width - 40 * gs && c.y > fp.y + 20 * gs && c.y + c.h < fp.y + fp.height - 20 * gs)
+          .sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy))[0] || null })`)
+      expect(col).toBeTruthy()
+      // two pairs across an 8.5 ft aisle (drivable on the reach truck's 8 ft), the column 0.2 ft under the top pair's face: the far
+      // side under 8 ft clear (the reach truck can't pass it) but over 5 ft (a pallet jack can)
+      const w = 25 * gs, h = (93 / 12) * gs, xL = col.x + col.w / 2 - w / 2, yTop = col.y - 0.2 * gs - h
+      await placePairs([{ id: 'ct', x: xL, y: yTop }, { id: 'cb', x: xL, y: yTop + h + 8.5 * gs }])
+      await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(300)
+      const marks = () => L.page.evaluate(() => window.Konva.stages[0].find('.aisle-warning').length)
+      const listed = (items) => items.filter(i => i.kind === 'aisle-drive' && /column/.test(i.text) && i.ids.includes('ct') && i.ids.includes('cb')).length
+      // on the project's reach truck (8 ft to move): the plan marks it and the list lists it
+      const before = await checkItems()
+      expect([await marks(), listed(before)]).toEqual([1, 1])
+      await L.page.getByLabel('Layout check').getByRole('button', { name: 'Close layout check' }).click(); await L.page.waitForTimeout(150)
+      // a Pallet jack section over both (5 ft to move): neither
+      await sectionTool('Rectangle')
+      await sectionWith({ x: xL - 3 * gs, y: yTop - 4 * gs }, { x: xL + w + 3 * gs, y: yTop + 2 * h + 8.5 * gs + 4 * gs }, 'pallet_jack')
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      const after = await checkItems()
+      expect([await marks(), listed(after)]).toEqual([0, 0])
+    }, T)
+
     /* ── Sections (utils/sectionAreas.js, canvas2/sectionTool.js): named areas drawn on the plan, by real mouse ── */
     const secsNow = () => L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => ({ id: o.id, label: o.label, shape: o.shape, x: o.x, y: o.y, w: o.width, h: o.height, pts: o.pts || null }))')
     const racksNow = () => L.S('return JSON.stringify(S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => [o.id, o.x, o.y, o.width, o.height, o.rotation || 0]))')

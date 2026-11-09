@@ -2,6 +2,7 @@ import { rackFootprint } from '../generate/columnCheck'
 import { pxToFtIn } from '../utils/canvas'
 import { failingCrossAisles, fmtLenDown, sectionCrossAisles, isRow } from '../utils/copyChange'
 import { labelScale } from '../render/labelSize'
+import { equipmentResolver } from '../utils/equipment'
 import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX, columnRectsOf, aisleLabelStation } from './hitTest'
 
 /* ── Cross-aisle width labels ─────────────────────────────────────────────────
@@ -81,7 +82,10 @@ export function crossAisleLabels(objects, gridSize = 40, { profile = null, lz = 
 function lineLabels(k, { parentId, rot, feet }, objects, gridSize, profile, lz) {
   const run = (f) => (rot ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
   const cross = (f) => (rot ? [f.x, f.x + f.w] : [f.y, f.y + f.h])
-  const failing = profile ? failingCrossAisles(objects, parentId, rot, profile, gridSize) : []
+  // each cross-aisle held to its two racks' equipment (utils/equipment.js), as Check layout lists it
+  const R = profile ? equipmentResolver(objects, profile) : null
+  const failing = !profile ? [] : R.single ? failingCrossAisles(objects, parentId, rot, profile, gridSize)
+    : R.inUse.flatMap(p => failingCrossAisles(objects, parentId, rot, p, gridSize).filter(f => R.pair(f.a.id, f.b.id).key === p.key))
   const listed = (q) => failing.some(f => f.a === q.a && f.b === q.b && f.lo === q.lo && f.hi === q.hi)
   // the lines' gaps, taken across in order; each joins the first cross-aisle it overlaps along the run
   // unless a rack stands across the gap between them

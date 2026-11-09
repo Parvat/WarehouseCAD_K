@@ -12,6 +12,7 @@
 // layout, because it really can change what the check sees.
 
 import { aisleColumnBlocks } from '../generate/columnCheck'
+import { aisleBlocksFor } from '../utils/equipment'
 import { layoutColumns } from '../generate/usableCapacity'
 import { previewObjects } from './dragPreview'
 import { columnFaceBlocks } from '../generate/faceAisles'
@@ -55,6 +56,6 @@ export function clearanceSource({ aisleBlocks, columns, objects, preview, gridSi
   if (dragCarriesCheck(objects || [], ids)) return { ...still(), x: dx, y: dy }
   const objs = previewObjects(objects || [], preview)
   const cols = layoutColumns(objs, gridSize)
-  const blocks = aisleColumnBlocks({ racks: objs.filter(isRack), columns: cols, profile, gridSize, pickBothSides }).aisleBlocks
+  const blocks = aisleBlocksFor(objs, { racks: objs.filter(isRack), columns: cols, profile, gridSize, pickBothSides }).aisleBlocks
   return { blocks: withFaceBlocks(blocks, cols, objs, { gridSize, profile }), cols, x: 0, y: 0 }
 }
