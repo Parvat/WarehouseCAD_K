@@ -56,7 +56,9 @@ describe.each(['horizontal', 'vertical'])('GU — %s', (orientation) => {
   it('GU-first: Generate on an empty canvas (no history yet) — one Ctrl+Z empties it again, one Ctrl+Y brings it back', () => {
     expect(s().history.length).toBe(0)
     const before = doc(s())
-    m.generateAndPlace(brief)
+    // the 240 × 120 building: what is under test is the empty start, not the size (the 1080 × 410 Generate, ~1 s alone,
+    // ran past the test's time under the full run's parallel load); GU-undo and GU-regenerate keep the big one
+    m.generateAndPlace({ ...R.R1, orientation, rackType: 'rack_double_row', dockDoors: 0 })
     const after = doc(s())
     expect(s().history.length).toBe(2)                                   // the empty canvas, then the Generate
     s().undo(); expect(doc(s())).toEqual(before); expect(s().objects).toEqual([])

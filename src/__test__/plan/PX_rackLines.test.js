@@ -41,7 +41,10 @@ const PANS = [[0, 0], [0.37, 0.61], [-123.49, 58.5], [777.77, -0.25]]
 
 describe.each(['horizontal', 'vertical'])('PX — %s', (orientation) => {
   const racks = layout(orientation)
-  const opsOf = (r) => rackDrawOps(r, { gridSize: GS })
+  // each rack's draw ops, worked out once (the same for every zoom and pan) — under the full run's parallel load the
+  // loops below are CPU-bound, so nothing in them is recomputed per zoom × pan
+  const ops = new Map()
+  const opsOf = (r) => { if (!ops.has(r.id)) ops.set(r.id, rackDrawOps(r, { gridSize: GS })); return ops.get(r.id) }
   const borders = (r) => opsOf(r).filter(o => o.op === 'rect' && o.border)
   const uprights = (r) => opsOf(r).filter(o => o.op === 'uprights')
 
@@ -59,29 +62,33 @@ describe.each(['horizontal', 'vertical'])('PX — %s', (orientation) => {
   })
 
   it('PX-in: zoomed in (100 %, 300 %, 500 %), outline and upright widths equal their actual size, to the whole pixel', () => {
+    // every check of every rack at every zoom and pan, the misses collected and asserted once (tens of thousands of
+    // single expect() calls were what made this test slow enough to time out under the full run)
+    const bad = []
+    let checked = 0
+    const want = (ok, what) => { checked++; if (!ok) bad.push(what) }
     for (const zoom of [1, 3, 5]) for (const [px, py] of PANS) for (const r of racks) {
-      const m = deviceMatrix(r, zoom, px, py)
+      const m = deviceMatrix(r, zoom, px, py), at = `${r.id} at ${zoom} pan ${px},${py}`
       for (const o of borders(r)) {
         const actual = o.strokeWidth * zoom                          // device px
         const strips = snapBorderRects(m, o, o.strokeWidth, 1)
-        expect(strips).toHaveLength(4)
+        want(strips.length === 4, `${at}: ${strips.length} border strips`)
         // top/bottom strips are the line's thickness in y, left/right in x
         for (const s of [strips[0].h, strips[1].h, strips[2].w, strips[3].w]) {
-          expect(s).toBe(Math.round(actual))
-          expect(Math.abs(s - actual)).toBeLessThanOrEqual(0.5)
+          want(s === Math.round(actual), `${at}: border ${s} px, actual ${actual}`)
+          want(Math.abs(s - actual) <= 0.5, `${at}: border ${s} px more than ½ px off ${actual}`)
         }
       }
       for (const u of uprights(r)) for (const rect of uprightDrawRects(u)) {
         const d = snapFillRect(m, rect, 1), b = deviceBox(m, rect.x, rect.y, rect.w, rect.h)
         const actual = rect.w * zoom
-        expect(Math.abs(acrossPx(r, d) - actual), `upright ${actual}px at ${zoom}`).toBeLessThanOrEqual(1)   // both edges rounded
+        want(Math.abs(acrossPx(r, d) - actual) <= 1, `${at}: upright ${acrossPx(r, d)} px, actual ${actual}`)   // both edges rounded
         // each snapped edge is the actual edge rounded: never more than half a pixel off
-        expect(Math.abs(d.x - b.x0)).toBeLessThanOrEqual(0.5)
-        expect(Math.abs(d.y - b.y0)).toBeLessThanOrEqual(0.5)
-        expect(Math.abs(d.x + d.w - b.x1)).toBeLessThanOrEqual(0.5)
-        expect(Math.abs(d.y + d.h - b.y1)).toBeLessThanOrEqual(0.5)
+        want(Math.abs(d.x - b.x0) <= 0.5 && Math.abs(d.y - b.y0) <= 0.5 && Math.abs(d.x + d.w - b.x1) <= 0.5 && Math.abs(d.y + d.h - b.y1) <= 0.5, `${at}: upright edge more than ½ px off`)
       }
     }
+    expect(checked).toBeGreaterThan(1000)
+    expect(bad.slice(0, 10)).toEqual([])
   })
 
   it('PX-out: zoomed out (2 %, 5 %, 10 %), every outline and every thin upright is EXACTLY 1 px on screen — not thinner, not thicker', () => {

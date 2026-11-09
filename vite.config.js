@@ -24,6 +24,9 @@ export default defineConfig({
     // a few plan tests run Generate on a 1080 × 410 building (2–4 s alone); under the full suite's
     // parallel load that passes the 5 s default
     testTimeout: 20000,
+    // and the setup hooks the same: a beforeEach that re-imports the app's modules and runs a Generate (SBR, GU) is the
+    // same work, and timed out at the 10 s default under that load
+    hookTimeout: 20000,
     // the hand check (REG): one app server for the whole run; its browser tests run in up to 6 workers at once
     // (src/__test__/plan/handCheck/shard.js)
     globalSetup: ['src/__test__/plan/handCheck/globalSetup.js'],
