@@ -1,6 +1,7 @@
 // RackLineLabels.jsx — the rack line numbers on the plan (utils/rackLines.js: R1, R2 …; the BOM's rows, the same
 // computation): ONE label per rack line, at its start end only — the left end of a line running across, the top end of
-// one running up and down; a back-to-back pair's two lines one label, "R2–R3". Drawn like the aisle width labels: a
+// one running up and down. A back-to-back pair running across gets one label per line, each beside its own line (R16 by
+// the top line, R17 by the bottom one); one running up and down keeps one label for both, "R2–R3", at its top. Drawn like the aisle width labels: a
 // size in feet (the Label size — render/labelSize.js), drawings' words style (Plus Jakarta Sans, #767C74). A label never
 // overlaps another or a dimension label (the aisle and cross-aisle width labels): it shifts along the line's end, else
 // it is left out; all are hidden when they would draw under 8 px on screen. Pure paint (never listens); hidden with the
@@ -27,7 +28,8 @@ const meets = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h &&
  *  and off `avoid` (boxes); `fs`: the font size (world px). */
 export function rowLabelPlaces(lines, fs, avoid = []) {
   const groups = new Map()
-  for (const l of lines) { const k = l.ids.join(','); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(l) }
+  // a pair up and down: its two lines one label; across: each line its own (beside its own band)
+  for (const l of lines) { const k = l.ids.join(',') + (l.vert ? '' : ':' + l.ws); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(l) }
   const h = fs * 1.25, gap = fs * 0.5, placed = [], out = []
   for (const [k, ls] of groups) {
     const nos = ls.map(l => l.no).sort((a, b) => a - b), l0 = ls[0]

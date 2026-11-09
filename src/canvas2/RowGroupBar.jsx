@@ -217,6 +217,11 @@ function Notices() {
 const ftIn = (ft) => { const t = Math.round(ft * 12), f = Math.floor(t / 12); return `${f}′ ${t - f * 12}″` }
 function SectionAsk({ ask }) {
   const P = mheProfiles()
+  /* a section drawn, moved or dropped meanwhile: the question goes (ui-polish-3 — a section asks nothing; its Equipment is
+     set in its card) */
+  const secs = useCanvasStore(s => s.objects.filter(o => o.type === 'section_area').map(o => [o.id, o.x, o.y, o.width, o.height].join(':')).join('|'))
+  const first = useRef(secs)
+  useEffect(() => { if (secs !== first.current) dismissSectionAsk() }, [secs])
   const [pick, setPick] = useState(ask.pick || Object.keys(P)[0])
   // Custom: the two widths, typed (the aisle typed for the fill to pick; the space to move as much, at most 8')
   const [pickFt, setPickFt] = useState(String(ask.aisleFt)), [moveFt, setMoveFt] = useState(String(Math.min(8, ask.aisleFt)))

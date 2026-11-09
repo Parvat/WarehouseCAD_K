@@ -32,7 +32,7 @@ import { ColumnLineLabels } from './ColumnLineLabels'
 import { ZoneEditPreview, SelectedZoneSizes } from './ZoneEdit'
 import { ZoneCheckPreview } from './ZoneCheck'
 import { hasResizeHandles, objHasResizeHandles } from './handleGeometry'
-import { FILL_TOOL, startFill, moveFill, commitFill, useFillTool } from '../utils/fillTool'
+import { FILL_TOOL, startFill, moveFill, commitFill, useFillTool, hoverFill } from '../utils/fillTool'
 import { HOME_TOOL } from '../utils/homeTool'
 import { useMeasureMode, endTool } from '../utils/toolSwitch'
 import { ROW_GROUP_TOOL, startGroupBox, moveGroupBox, commitGroupPress, useRowGroup, groupRowsNow } from '../utils/rowGroupTool'
@@ -344,6 +344,8 @@ export function Canvas2() {
      the box survives the pointer leaving the canvas. */
   const activeTool = useCanvasStore(s => s.activeTool)
   const filling = !measuring && activeTool === FILL_TOOL
+  // the pointer over the plan with no box: where a fill would start (the bar's Aisle: a section's own there)
+  const fillHoverMove = (e) => { const p = e.target.getStage()?.getPointerPosition(); if (p && !useFillTool.getState().drag) hoverFill(screenToWorld(view.current, p)) }
   const fillMouseDown = (e) => {
     const stage = e.target.getStage()
     const p = stage?.getPointerPosition()
@@ -448,7 +450,7 @@ export function Canvas2() {
   // the Row group's cursor: resize over a group row's handle, move over its body, crosshair over the floor (STUDIO.md §7a)
   const [groupCursor, setGroupCursor] = useState('crosshair')
   const groupMouseMove = (e) => { const c = groupCursorAt(e); if (c !== groupCursor) setGroupCursor(c) }
-  const stageMouseMove = measuring ? measureMouseMove : sectioning ? sectionMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : grouping ? groupMouseMove : filling ? undefined : onStageMouseMove
+  const stageMouseMove = measuring ? measureMouseMove : sectioning ? sectionMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : grouping ? groupMouseMove : filling ? fillHoverMove : onStageMouseMove
   const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : dooring ? clearDoorHover : filling || grouping ? undefined : onStageMouseLeave
   const effectiveCursor = grouping ? groupCursor : measuring || filling || splitting || dooring || sectioning ? 'crosshair' : cursor
 

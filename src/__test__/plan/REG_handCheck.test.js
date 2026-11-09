@@ -213,8 +213,8 @@ describe('REG — the hand check by real clicks', () => {
         expect(await L.selected()).toEqual([wp.type])                                    // inside the rack: the rack
       }
       // a hand lock: the Layers card's padlock (the bottom-right island — Fix 6 round 6), then saved and reopened — the wall stays unpickable
-      await L.page.getByRole('button', { name: 'View', exact: true }).click()
-      await L.page.getByRole('dialog', { name: 'View card' }).getByRole('button', { name: 'Lock Building layer' }).click()
+      await L.page.getByRole('button', { name: 'Layers', exact: true }).click()
+      await L.page.getByRole('dialog', { name: 'Layers card' }).getByRole('button', { name: 'Lock Building layer' }).click()
       const saved = await L.S('return SL.serializeScene(S.getState())')
       await L.page.close()
       const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, saved)
@@ -1481,8 +1481,8 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.S('return !!S.getState().objects.find(o => o.id === arg)', g0.id), await L.page.locator('[aria-label="Notice"]').textContent()]).toEqual([true, expect.stringMatching(/stays with its grid/)])
       // unlocked (the Layers card's padlock — Fix 6 round 6): a drag on a column moves its line
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
-      await L.page.getByRole('button', { name: 'View', exact: true }).click()
-      await L.page.getByRole('dialog', { name: 'View card' }).getByRole('button', { name: 'Unlock Columns layer' }).click()
+      await L.page.getByRole('button', { name: 'Layers', exact: true }).click()
+      await L.page.getByRole('dialog', { name: 'Layers card' }).getByRole('button', { name: 'Unlock Columns layer' }).click()
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       await L.click(c); await L.drag(c, { x: c.x + 2 * gs, y: c.y + 2 * gs })
       const g1 = await gNow()
@@ -2085,9 +2085,9 @@ describe('REG — the hand check by real clicks', () => {
       await open()
       expect(await L.S('return S.getState().layers.filter(l => l.locked).map(l => l.id)')).toEqual(['columns'])
       // padlocks set by hand: the Layers card (the bottom-right island)
-      await L.page.getByRole('button', { name: 'View', exact: true }).click()
-      await L.page.getByRole('dialog', { name: 'View card' }).getByRole('button', { name: 'Unlock Columns layer' }).click()
-      await L.page.getByRole('dialog', { name: 'View card' }).getByRole('button', { name: 'Lock Zones layer' }).click()
+      await L.page.getByRole('button', { name: 'Layers', exact: true }).click()
+      await L.page.getByRole('dialog', { name: 'Layers card' }).getByRole('button', { name: 'Unlock Columns layer' }).click()
+      await L.page.getByRole('dialog', { name: 'Layers card' }).getByRole('button', { name: 'Lock Zones layer' }).click()
       const saved = await L.S('return SL.serializeScene(S.getState())')
       await L.page.close()
       L = await B.openLayout(app, saved)
@@ -2285,8 +2285,8 @@ describe('REG — the hand check by real clicks', () => {
 
     /* ── Fix 6 round 6: the Columns layer lock, the Layers card, column lines, the bar's hints and the shortcut sheet ── */
     const colsLocked = () => L.S('return !!S.getState().layers.find(l => l.id === "columns")?.locked')
-    const layersCard = () => L.page.getByRole('dialog', { name: 'View card' })
-    const openLayers = async () => { if (!(await layersCard().count())) { await L.page.getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150) } }
+    const layersCard = () => L.page.getByRole('dialog', { name: 'Layers card' })
+    const openLayers = async () => { if (!(await layersCard().count())) { await L.page.getByRole('button', { name: 'Layers', exact: true }).click(); await L.page.waitForTimeout(150) } }
     const unlockColumns = async () => {
       await openLayers()
       const b = layersCard().getByRole('button', { name: 'Unlock Columns layer' })
@@ -2331,16 +2331,20 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return [!!g.locked, g.lockedBy ?? null]'), await colsLocked()]).toEqual([[false, null], true])
     }, T)
 
-    it('REG-layers-card (click): View in the bottom-right island (with Fit and ? only — ui-polish-2: it replaces Aisles, Checks, Elevations, Sections, Rows and Layers) opens a dark card above it (radius 10): the switches Aisle labels, Checks, Elevation colours, Section names, Row numbers, then each layer’s show toggle and padlock; they work; a click outside or Esc closes it; the right card has no Layers block', async () => {
+    it('REG-layers-card (click): the bottom-right island is View · Layers · Fit · ? (ui-polish-3); View opens a dark card above it with the display switches Aisle labels, Checks, Elevation colours, Section names, Row numbers; Layers opens its own dark card above it (radius 10) with each layer’s show toggle and padlock; they work; a click outside or Esc closes it; the right card has no Layers block', async () => {
       await open()
       const island = L.page.locator('[data-island="bottom-right"]')
-      const btn = island.getByRole('button', { name: 'View', exact: true }), help = island.getByRole('button', { name: 'Shortcuts' })
+      const btn = island.getByRole('button', { name: 'Layers', exact: true }), help = island.getByRole('button', { name: 'Shortcuts' })
       const look = (b) => b.evaluate(el => { const c = getComputedStyle(el); return [c.height, c.fontSize, c.borderRadius, c.paddingLeft] })
       expect(await look(btn)).toEqual(await look(help))
-      expect(await island.locator(':scope > span > button, :scope > button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')))).toEqual(['View', 'Fit', 'Shortcuts'])
+      expect(await island.locator(':scope > span > button, :scope > button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')))).toEqual(['View', 'Layers', 'Fit', 'Shortcuts'])
+      // View: the display switches only
+      await island.getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150)
+      const vc = L.page.getByRole('dialog', { name: 'View card' })
+      expect([await vc.getByRole('switch').evaluateAll(ss => ss.map(x => x.getAttribute('aria-label'))), await vc.locator('[data-layer]').count()]).toEqual([['Aisle labels', 'Checks', 'Elevation colours', 'Section names', 'Row numbers'], 0])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       await btn.click(); await L.page.waitForTimeout(150)
       const card = layersCard()
-      expect(await card.getByRole('switch', { name: /^(Aisle labels|Checks|Elevation colours|Section names|Row numbers)$/ }).evaluateAll(ss => ss.map(x => x.getAttribute('aria-label')))).toEqual(['Aisle labels', 'Checks', 'Elevation colours', 'Section names', 'Row numbers'])
       const cb = await card.boundingBox(), ib = await island.boundingBox()
       expect([cb.y + cb.height <= ib.y, await card.evaluate(el => getComputedStyle(el).borderRadius), await card.evaluate(el => getComputedStyle(el).backgroundColor)]).toEqual([true, '10px', 'rgb(31, 35, 33)'])
       expect(await card.locator('[data-layer]').evaluateAll(rs => rs.map(r => r.getAttribute('data-layer')))).toEqual(['building', 'columns', 'zones', 'sections', 'racking', 'aisles', 'checks', 'notes'])   // + Sections (the Section tool)
@@ -3065,28 +3069,33 @@ describe('REG — the hand check by real clicks', () => {
       expect([await fillGone(), (await L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => o.equipment)'))]).toEqual([racks.length, ['pallet_jack']])
     }, T)
 
-    it('REG-equip-section-reach (click): a section set to Reach truck in its card — a fill dragged inside it with a 7 ft aisle shows the amber line before the drop, no question after it, and Check lists its aisles as errors', async () => {
+    it('REG-equip-section-reach (click): 7 ft aisles inside a section set to Reach truck error — the aisle has one source (ui-polish-3: was, a 7 ft aisle typed for a fill inside it): filled on its VNA (7 ft), then its card set to Reach truck — the bar over it reads Reach truck · 10.5 ft (from section), no question, and Check lists the 7 ft aisles as errors', async () => {
       await openSections()
       await clearRacks()
       const b = await innerBox(), s = await drawIn(b, 0.05, 0.08, 0.6, 0.9)
-      // the card: Equipment — Project forklift by default; Reach truck chosen
+      // the card: Equipment — Project forklift by default; VNA / turret chosen, filled (its 7 ft)
       const eqSel = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('combobox', { name: 'Section equipment' })
       expect(await eqSel.inputValue()).toBe('')
-      await eqSel.selectOption('reach'); await L.page.waitForTimeout(150)
-      expect(await L.S('return S.getState().objects.find(o => o.id === arg).equipment', s.id)).toBe('reach')
+      await eqSel.selectOption('vna'); await L.page.waitForTimeout(150)
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
-      await typeAisle('7')
-      // the drag inside the section: amber before the drop, against the section's Reach truck
       const f0 = { x: s.x + s.w * 0.08, y: s.y + s.h * 0.1 }, f1 = { x: s.x + s.w * 0.92, y: s.y + s.h * 0.92 }
-      await onCanvasAll([f0, f1])
-      const p0 = await L.toScreen(f0), p1 = await L.toScreen(f1)
-      await L.page.mouse.move(p0.x, p0.y); await L.page.mouse.down(); await L.page.mouse.move(p1.x, p1.y, { steps: 8 }); await L.page.waitForTimeout(150)
-      expect(await fillBar().getByRole('status', { name: 'Aisle warning' }).textContent()).toBe('7′ 0″ is below Reach truck minimum 10′ 0″. Needs its own section.')
-      await L.page.mouse.up(); await L.page.waitForTimeout(500)
+      await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(500)
       const racks = await rackIdsNow()
       expect(racks.length).toBeGreaterThan(1)
       expect(await L.page.getByRole('alertdialog', { name: 'Make this a section?' }).count()).toBe(0)   // inside a section: no question
+      expect(aisleItems((await checkNow()).open, racks).filter(i => i.kind === 'aisle-drive')).toEqual([])
+      await L.page.getByLabel('Layout check').getByRole('button', { name: 'Close layout check' }).click(); await L.page.waitForTimeout(150)
+      // the section set to Reach truck in its card (its outline clicked)
+      await L.click(await grip(s.id))
+      await L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('combobox', { name: 'Section equipment' }).selectOption('reach'); await L.page.waitForTimeout(150)
+      expect(await L.S('return S.getState().objects.find(o => o.id === arg).equipment', s.id)).toBe('reach')
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      // the bar over it: the section's, read-only
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      const q = await L.toScreen({ x: s.x + s.w * 0.5, y: s.y + s.h * 0.02 }); await L.page.mouse.move(q.x, q.y, { steps: 3 }); await L.page.waitForTimeout(150)
+      expect((await fillBar().getByLabel('Aisle').textContent()).replace(/\s+/g, ' ').trim()).toBe('Reach truck · 10.5 ft (from section)')
+      await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.keyboard.press('v')
       const items = aisleItems((await checkNow()).open, racks)
       expect(items.some(i => i.kind === 'aisle-drive')).toBe(true)                                // under the reach truck's drive width: errors
     }, T)
@@ -3205,10 +3214,9 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       const sec = (await secsNow())[0]
       const f0 = { x: sec.x + sec.w * 0.04, y: sec.y + sec.h * 0.04 }, f1 = { x: sec.x + sec.w * 0.96, y: sec.y + sec.h * 0.96 }
-      const fill = async (aisle) => {
+      const fill = async () => {
         await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
-        if (aisle) await typeAisle(aisle)
-        await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(600)
+          await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(600)
       }
       /** every rack-to-rack aisle: its width (ft) and its label's look as drawn (the pill's stroke) */
       const aisles = () => L.page.evaluate(() => {
@@ -3234,15 +3242,74 @@ describe('REG — the hand check by real clicks', () => {
       expect(aisleItems((await checkItems()), racks7)).toEqual([])                           // nothing listed
       expect(await xMarks()).toBe(0)                                                          // no X marks
       await L.page.getByLabel('Layout check').getByRole('button', { name: 'Close layout check' }).click(); await L.page.waitForTimeout(150)
-      // 6 ft 11 in: under the aisle to pick (drivable: VNA moves in 6 ft)
+      // 6 ft 11 in: under the aisle to pick (drivable: VNA moves in 6 ft) — one source (ui-polish-3): the section filled on a
+      // Custom 6 ft 11 in aisle, then set back to VNA in its card
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
-      await fill('6 11')
+      const setEq = async (v, custom) => {
+        await L.click(await grip(sec.id))
+        const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+        await card.getByRole('combobox', { name: 'Section equipment' }).selectOption(v); await L.page.waitForTimeout(150)
+        if (custom) for (const [name, val] of [['Aisle to pick (ft)', custom.pick], ['Space to move (ft)', custom.move]]) { const f = card.getByRole('textbox', { name }); await f.click(); await f.fill(val); await f.press('Enter'); await L.page.waitForTimeout(100) }
+        await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      }
+      await setEq('custom', { pick: String(6 + 11 / 12), move: '6' })
+      await fill(null)
+      await setEq('vna')
       const narrow = (await lookOf()).filter(g => g.ft < 7 - 1e-6 && g.ft > 2)
       expect(narrow.length).toBeGreaterThan(0)
       expect([...new Set(narrow.map(g => g.stroke))]).toEqual(['#B87309'])                     // the failing pick colour
       const items = aisleItems(await checkItems(), await rackIdsNow())
       for (const g of narrow) expect(items.some(i => i.kind === 'aisle-pick' && g.rows.every(id => i.ids.includes(id)))).toBe(true)   // each listed
       expect(await xMarks()).toBeGreaterThan(0)                                               // and X marked
+    }, T)
+
+    it('REG-equip-one-source (click): the aisle has one source — drawing a section asks nothing (its Equipment is set in its card); Fill over the section shows its aisle read-only, VNA / turret · 7 ft (from section), and a fill there uses it whatever was typed outside; outside every section the Aisle is typed; a question left from a fill outside goes when a section is drawn', async () => {
+      await open()
+      await clearRacks()
+      const b = await innerBox()
+      const ask = () => L.page.getByRole('alertdialog', { name: 'Make this a section?' })
+      // drawn: no question; the card sets its Equipment
+      await sectionTool('Rectangle')
+      const a0 = { x: b.x0 + (b.x1 - b.x0) * 0.04, y: b.y0 + (b.y1 - b.y0) * 0.06 }, a1 = { x: b.x0 + (b.x1 - b.x0) * 0.5, y: b.y0 + (b.y1 - b.y0) * 0.94 }
+      await onCanvasAll([a0, a1]); await drawRect(a0, a1)
+      expect([await ask().count(), await L.page.getByRole('alertdialog').count()]).toEqual([0, 0])
+      await L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('combobox', { name: 'Section equipment' }).selectOption('vna'); await L.page.waitForTimeout(150)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const sec = (await secsNow())[0]
+      // Fill: outside the section the Aisle is typed — 9 typed there
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      const out = { x: b.x0 + (b.x1 - b.x0) * 0.75, y: b.y0 + (b.y1 - b.y0) * 0.5 }
+      await onCanvasAll([out])
+      const qo = await L.toScreen(out); await L.page.mouse.move(qo.x, qo.y, { steps: 3 }); await L.page.waitForTimeout(120)
+      await typeAisle('9')
+      // over the section: read-only, its equipment and width
+      const inside = { x: sec.x + sec.w * 0.5, y: sec.y + sec.h * 0.5 }
+      const qi = await L.toScreen(inside); await L.page.mouse.move(qi.x, qi.y, { steps: 3 }); await L.page.waitForTimeout(150)
+      expect([await fillBar().getByRole('textbox', { name: 'Aisle' }).count(), (await fillBar().getByLabel('Aisle').textContent()).replace(/\s+/g, ' ').trim()]).toEqual([0, 'VNA / turret · 7 ft (from section)'])
+      // a fill there: the section's 7 ft, not the 9 typed outside; no amber, no question
+      const f0 = { x: sec.x + sec.w * 0.05, y: sec.y + sec.h * 0.05 }, f1 = { x: sec.x + sec.w * 0.95, y: sec.y + sec.h * 0.95 }
+      await onCanvasAll([f0, f1])
+      const p0 = await L.toScreen(f0), p1 = await L.toScreen(f1)
+      await L.page.mouse.move(p0.x, p0.y); await L.page.mouse.down(); await L.page.mouse.move(p1.x, p1.y, { steps: 8 }); await L.page.waitForTimeout(150)
+      expect(await fillBar().getByRole('status', { name: 'Aisle warning' }).count()).toBe(0)
+      await L.page.mouse.up(); await L.page.waitForTimeout(600)
+      const gaps = await L.S('return import("/src/generate/rowAisles.js").then(RA => RA.rowAisleGaps(S.getState().objects.filter(o => /^rack_/.test(o.type))).map(g => g.gapLen / (S.getState().gridSize || 40)).filter(ft => ft > 2))')
+      expect(gaps.length).toBeGreaterThan(0)
+      expect(gaps.some(ft => Math.abs(ft - 7) < 1e-6)).toBe(true)                              // VNA's 7 ft
+      expect(gaps.some(ft => Math.abs(ft - 9) < 1e-6)).toBe(false)                              // never the 9 typed outside
+      expect(await ask().count()).toBe(0)
+      // outside: typed, a 7 ft fill under the reach truck asks Make this a section?; a section drawn then: the question goes
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      await L.page.mouse.move(qo.x, qo.y, { steps: 3 }); await L.page.waitForTimeout(120)
+      expect(await fillBar().getByRole('textbox', { name: 'Aisle' }).count()).toBe(1)
+      await typeAisle('7')
+      const g0 = { x: b.x0 + (b.x1 - b.x0) * 0.56, y: b.y0 + (b.y1 - b.y0) * 0.1 }, g1 = { x: b.x0 + (b.x1 - b.x0) * 0.95, y: b.y0 + (b.y1 - b.y0) * 0.6 }
+      await onCanvasAll([g0, g1]); await L.drag(g0, g1); await L.page.waitForTimeout(600)
+      expect(await ask().count()).toBe(1)
+      await sectionTool('Rectangle')
+      const c0 = { x: b.x0 + (b.x1 - b.x0) * 0.56, y: b.y0 + (b.y1 - b.y0) * 0.7 }, c1 = { x: b.x0 + (b.x1 - b.x0) * 0.9, y: b.y0 + (b.y1 - b.y0) * 0.92 }
+      await onCanvasAll([c0, c1]); await drawRect(c0, c1)
+      expect(await ask().count()).toBe(0)
     }, T)
 
     /* ── Sections (utils/sectionAreas.js, canvas2/sectionTool.js): named areas drawn on the plan, by real mouse ── */

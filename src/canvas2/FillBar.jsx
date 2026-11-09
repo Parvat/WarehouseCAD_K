@@ -2,7 +2,7 @@ import { HOME_TOOL } from '../utils/homeTool'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
 import { useEffect, useState } from 'react'
-import { useFillTool, useRackingSettings, cancelFill, setFillAisle, fillEquipment } from '../utils/fillTool'
+import { useFillTool, useRackingSettings, cancelFill, setFillAisle, fillEquipment, fillSection } from '../utils/fillTool'
 import { B, MONO, modePill, Sep, Seg, CloseBtn, barBtn, btnClass } from '../studio/barParts'
 
 /* the bar's 26h inset value (C10's Aisle) and its fields (Beam, Max run) */
@@ -40,18 +40,19 @@ function AisleField({ forkliftFt }) {
 
 /* Fill racking's mode bar (STUDIO.md §1; design/studio/Studio.dc.html C10), top 76, while the tool is on: the
    Racking settings the fill uses — Rows ↔ | Rows ↕ (the orientation), Beam and Max run (kept from the bar before),
-   the aisle it leaves (typed: by default the aisle of the equipment of the section the drag starts in, else the
-   project's forklift's; a length typed is for this fill only, Project settings unchanged — under that equipment's
-   minimum, an amber line: "7′ 0″ is below Reach truck minimum 10′ 0″. Needs its own section."), the box's live rows · positions (a fill commits on release; before a box: the hint), ✕ (Esc
+   the aisle it leaves — one source (ui-polish-3): over a section (the pointer, or the drag started in one) READ-ONLY, the
+   section's equipment and its width — "VNA / turret · 7 ft (from section)"; to change it, change the section's
+   Equipment in its card; outside every section typed — the project's forklift's by default; a length typed is for
+   this fill only, Project settings unchanged — under the forklift's minimum, an amber line: "7′ 0″ is below Reach truck minimum 10′ 0″. Needs its own section."), the box's live rows · positions (a fill commits on release; before a box: the hint), ✕ (Esc
    too) back to Select. */
 export function FillOptionsBar() {
   const s = useRackingSettings()
   const plan = useFillTool(st => st.plan)
   // the equipment this fill works to: the section the drag starts in, else the project's forklift (utils/fillTool.js)
-  const from = useFillTool(st => st.drag?.from || null), typed = useFillTool(st => st.aisleFt)
+  const from = useFillTool(st => st.drag?.from || st.at || null), typed = useFillTool(st => st.aisleFt)
   const objects = useCanvasStore(st => st.objects)
-  const eq = fillEquipment(objects, from)
-  const under = typed && Number.isFinite(eq.minAisleFt) && typed < eq.minAisleFt - 1e-9
+  const eq = fillEquipment(objects, from), inSection = !!fillSection(objects, from)
+  const under = !inSection && typed && Number.isFinite(eq.minAisleFt) && typed < eq.minAisleFt - 1e-9
   // the bar goes when the tool ends: a typed aisle goes with it
   useEffect(() => () => setFillAisle(null), [])
   const num = (k, v) => { const n = Number(v); if (Number.isFinite(n) && n > 0) s.setSetting(k, n) }
@@ -73,7 +74,9 @@ export function FillOptionsBar() {
       <span style={word}>ft</span>
       {/* the pallet, the forklift (its aisle) and the wall clearance: Project settings (utils/project.js) */}
       <span style={word}>Aisle</span>
-      <AisleField forkliftFt={eq.aisleFt ?? 10.5} />
+      {inSection
+        ? <span aria-label="Aisle" data-aisle-from="section" title="The section's equipment — change it in the section's card" style={{ ...valueBox, fontFamily: 'inherit', color: B.text }}>{eq.label} · {+Number(eq.aisleFt).toFixed(2)} ft <span style={{ color: B.muted, marginLeft: 4 }}>(from section)</span></span>
+        : <AisleField forkliftFt={eq.aisleFt ?? 10.5} />}
       <Sep />
       {plan
         ? <span aria-label="Fill estimate" style={word}><span style={{ fontFamily: MONO, color: B.text }}>{plan.rows}</span> row{plan.rows === 1 ? '' : 's'} · <span style={{ fontFamily: MONO, color: B.accent }}>{plan.positions.toLocaleString('en-US')}</span> pos</span>

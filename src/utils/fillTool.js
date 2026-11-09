@@ -57,7 +57,12 @@ export const rackingSettings = () => { const { setSetting, ...plain } = useRacki
  *  racking area it would create (the plan's racks, stamped with its id).
  *  `aisleFt`: an aisle typed in the bar — this fill only (cleared when it is placed, cancelled or the tool ends); null:
  *  the forklift's (the Racking settings', kept in step with Project settings — never written from here). */
-export const useFillTool = create(() => ({ drag: null, plan: null, created: null, aisleFt: null }))
+/* `at`: the pointer over the plan while no box is dragged — where a fill would start (the bar shows a section's aisle there) */
+export const useFillTool = create(() => ({ drag: null, plan: null, created: null, aisleFt: null, at: null }))
+/** The pointer moved with no box dragged: where the next fill would start. */
+export const hoverFill = (world) => { const a = useFillTool.getState().at; if (!a || a.x !== world.x || a.y !== world.y) useFillTool.setState({ at: world }) }
+/** The section a fill started (or would start) at `from` works in, or null — its aisle is that section's (one source). */
+export const fillSection = (objects, from) => (objects && from ? sectionAt(objects, from) : null)
 /** The aisle typed in the bar for this fill (ft, > 0), or null for the forklift's. */
 export const setFillAisle = (ft) => useFillTool.setState({ aisleFt: Number.isFinite(ft) && ft > 0 ? ft : null })
 /** The equipment a fill works to (aisle-equip): the equipment of the section the drag starts in (utils/equipment.js —
@@ -71,12 +76,15 @@ export function fillEquipment(objects = null, from = null) {
 }
 /** The settings this fill uses: the Racking settings, on the equipment of the section the drag starts in (its aisle,
  *  its truck), with the bar's typed aisle over them. */
+/* (ui-polish-3: the aisle has one source — a fill inside a section takes the section's equipment and its width, the typed
+   aisle never; outside every section, the typed aisle, else the project's forklift) */
 export const fillSettings = (objects = null, from = null) => {
-  const s = rackingSettings(), e = fillEquipment(objects, from), a = useFillTool.getState().aisleFt
+  const s = rackingSettings(), e = fillEquipment(objects, from), a = fillSection(objects, from) ? null : useFillTool.getState().aisleFt
   return { ...s, mhe: e.key, aisleFt: a || e.aisleFt }
 }
 /** A typed aisle under the equipment's minimum → { aisleFt, equipment (profile) }, else null: the bar's amber line. */
 export function aisleUnderMinimum(objects = null, from = null) {
+  if (fillSection(objects, from)) return null                            // inside a section: its own aisle, nothing typed
   const a = useFillTool.getState().aisleFt, e = fillEquipment(objects, from)
   return a && Number.isFinite(e.minAisleFt) && a < e.minAisleFt - 1e-9 ? { aisleFt: a, equipment: e } : null
 }

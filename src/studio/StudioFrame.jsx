@@ -188,19 +188,20 @@ function useCloses(open, close, wrap) {
 /* the cards above the bottom-right island: dark island style, radius 10, right-aligned with it */
 const overIsland = (extra) => ({ right: 16, bottom: 68, flexDirection: 'column', alignItems: 'stretch', borderRadius: 10, ...extra })
 
-/* The bottom-right island (STUDIO.md §1): View · Fit · ?. View opens a card above it: the view switches — Aisle labels,
-   Checks, Elevation colours, Section names, Row numbers (each remembered as before) — then the Layers list (each
-   layer's show toggle and padlock). A click outside or Esc closes it. */
+/* The bottom-right island (STUDIO.md §1): View · Layers · Fit · ?. View opens a card above it with the display switches —
+   Aisle labels, Checks, Elevation colours, Section names, Row numbers (each remembered as before); Layers opens its own
+   card, each layer's show toggle and padlock. A click outside or Esc closes either. */
 function BottomRight() {
   const showAisles = useCanvasStore(s => s.showAisles ?? true)
   const toggleAisles = useCanvasStore(s => s.toggleAisles)
   const { showMarks, setShowMarks } = useColumnCheck()
   const showColors = useElevView(s => s.showColors)
   const { sectionNames, setSectionNames, rowLabels, setRowLabels } = useViewPrefs(useShallow(s => ({ sectionNames: s.sectionNames, setSectionNames: s.setSectionNames, rowLabels: s.rowLabels, setRowLabels: s.setRowLabels })))
-  const [view, setView] = useState(false)
+  const [view, setView] = useState(false), [layers, setLayers] = useState(false)
   const help = useHelp(s => s.open)
-  const viewWrap = useRef(null), helpWrap = useRef(null)
+  const viewWrap = useRef(null), layersWrap = useRef(null), helpWrap = useRef(null)
   useCloses(view, () => setView(false), viewWrap)
+  useCloses(layers, () => setLayers(false), layersWrap)
   useCloses(help, closeHelp, helpWrap)
   const tog = (on) => ({ height: 30, padding: '0 10px', border: 0, borderRadius: 6, background: on ? '#2E4A3C' : 'transparent', color: on ? '#7BD3A4' : '#C9CEC9', fontSize: 12 })
   const sw = (label, on, onClick, title) => (
@@ -210,7 +211,7 @@ function BottomRight() {
   )
   return (
     <div className="st-island" data-island="bottom-right" style={{ right: 16, bottom: 20, height: 40, gap: 2, padding: '0 4px' }}>
-      {/* View: the view switches, then the Layers list, in a small card above (STUDIO.md §1) */}
+      {/* View: the display switches, in a small card above (STUDIO.md §1) */}
       <span ref={viewWrap} style={{ display: 'flex' }}>
         <button type="button" aria-label="View" aria-haspopup="dialog" aria-expanded={view} aria-pressed={view} onClick={() => setView(o => !o)} style={tog(view)}>View</button>
         {view && (
@@ -220,7 +221,14 @@ function BottomRight() {
             {sw('Elevation colours', showColors, () => setShowColors(!showColors))}
             {sw('Section names', sectionNames, () => setSectionNames(!sectionNames), "Every section's name (off: only the one hovered or selected)")}
             {sw('Row numbers', rowLabels, () => setRowLabels(!rowLabels), 'The row numbers R1, R2 … at the row starts')}
-            <div style={{ height: 1, background: '#323835', margin: '6px 2px' }} />
+          </div>
+        )}
+      </span>
+      {/* Layers: each layer's show toggle and padlock, in its own card above (STUDIO.md §1) */}
+      <span ref={layersWrap} style={{ display: 'flex' }}>
+        <button type="button" aria-label="Layers" aria-haspopup="dialog" aria-expanded={layers} aria-pressed={layers} onClick={() => setLayers(o => !o)} style={tog(layers)}>Layers</button>
+        {layers && (
+          <div className="st-island" role="dialog" aria-label="Layers card" data-card-dark style={overIsland({ width: 232, padding: 8 })}>
             <LayerBody />
           </div>
         )}
