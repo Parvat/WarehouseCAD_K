@@ -23,6 +23,7 @@ import { aisleLabelScale } from '../render/labelSize'
 import { useLabelPrefs } from './labelPrefs'
 import { isSelectable, layerShown } from '../utils/layers'
 import { onOutline, onLabel } from '../utils/sectionAreas'
+import { nameShown } from './sectionNameShown'
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 const COL_GRID = new Set(['column_grid'])
@@ -283,6 +284,10 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
       : 1
   const sorted = [...objects].sort((a, b) => priority(b) - priority(a))
 
+  /* A section's name tab, while it shows, is drawn above everything (SectionNames.jsx): a press on it is the section's,
+     whatever stands under it */
+  for (const obj of objects) if (obj.type === 'section_area' && isLayerUsable(layerMap, obj) && nameShown(obj.id) && onLabel(obj, wx, wy, zoom, objects)) return obj.id
+
   // Pass 1 — everything except the grid and the building.
   /* An object reached only by its pick padding (the press outside the object itself) loses to one of the same
      priority that really holds the point — a door against the wall, under the padding of the rack along it
@@ -311,10 +316,10 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
       if (inOuter && !inInner) return obj.id
       continue
     }
-    /* A section is picked by its outline (a few screen pixels of it) or its name label: its inside is the racks
-       standing in it and the floor, which a press there reaches (STUDIO.md §7a Sections). */
+    /* A section is picked by its outline (a few screen pixels of it) or its name tab while the tab shows (sectionNameShown.js):
+       its inside is the racks standing in it and the floor, which a press there reaches (STUDIO.md §7a Sections). */
     if (obj.type === 'section_area') {
-      if (onOutline(obj, wx, wy, 6 / zoom) || onLabel(obj, wx, wy, zoom)) return obj.id
+      if (onOutline(obj, wx, wy, 6 / zoom) || (onLabel(obj, wx, wy, zoom, objects) && nameShown(obj.id))) return obj.id
       continue
     }
     if (obj.type === 'aisle') {

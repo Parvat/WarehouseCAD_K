@@ -1,7 +1,8 @@
 // RackLineLabels.jsx — the rack line numbers on the plan (utils/rackLines.js: R1, R2 …; the BOM's rows): a small
 // label at each end of every line, just past the end, in the drawings' words style (STUDIO.md §2: Plus Jakarta Sans,
 // 10 px on screen whatever the zoom, #767C74). A back-to-back pair's two lines each get theirs, side by side across.
-// Pure paint (never listens); hidden with the Racking layer. Each label's Konva name is `rack-line-label`.
+// Pure paint (never listens); hidden with the Racking layer, and by the bottom-right island's Rows (on by default; shown
+// anyway while the BOM's full view is open — studio/viewPrefs.js). Each label's Konva name is `rack-line-label`.
 
 import { useMemo } from 'react'
 import { Group, Text } from 'react-konva'
@@ -9,13 +10,15 @@ import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { rackLinesNow } from '../utils/rackLines'
 import { layerShown } from '../utils/layers'
+import { useViewPrefs } from '../studio/viewPrefs'
 
 const WORDS = '#767C74', FONT = "'Plus Jakarta Sans', system-ui, sans-serif", PX = 10, GAP = 4
 
 export function RackLineLabels() {
   const { objects, gs, zoom, layers } = useCanvasStore(useShallow(s => ({ objects: s.objects, gs: s.gridSize || 40, zoom: s.zoom || 1, layers: s.layers })))
+  const shown = useViewPrefs(s => s.rowLabels || s.bomFull)
   const lines = useMemo(() => rackLinesNow(objects, gs), [objects, gs])
-  if (!lines.length || !layerShown(layers, 'racking')) return null
+  if (!shown || !lines.length || !layerShown(layers, 'racking')) return null
   const fs = PX / zoom, gap = GAP / zoom, w = fs * 2.6, h = fs * 1.2
   const out = []
   for (const l of lines) {

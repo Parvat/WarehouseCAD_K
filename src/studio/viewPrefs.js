@@ -4,6 +4,10 @@
 //   card        — what the right card shows: 'tabs' (Properties | Elevations) or 'generate'
 //   rulesOpen   — the Rules profiles dialog (the layout menu opens it; so does the Generate card's note)
 //   cardW       — the right card's width (its left edge dragged, 300–640; double-click: 300), the same for every tab
+//   sectionNames — the bottom-right island's Sections: every section's name tab shown (off by default; a section's name
+//                  shows anyway while it is hovered or selected — canvas2/SectionNames.jsx)
+//   rowLabels   — the bottom-right island's Rows: the R1, R2 … labels at the row ends (on by default; shown anyway while
+//                  the BOM's full view is open — bomFull)
 import { create } from 'zustand'
 import { setRightPanel } from '../utils/rightPanel'
 
@@ -13,6 +17,9 @@ export const CARD_W = 300, CARD_W_MIN = 300, CARD_W_MAX = 640
 export const clampCardW = (w) => (Number.isFinite(w) ? Math.round(Math.min(CARD_W_MAX, Math.max(CARD_W_MIN, w))) : CARD_W)
 const readCardW = () => { try { const v = Number(localStorage.getItem(CARD_W_KEY)); return v ? clampCardW(v) : CARD_W } catch { return CARD_W } }
 const readFit = () => { try { return localStorage.getItem(DBLCLICK_FIT_KEY) === '1' } catch { return false } }
+const NAMES_KEY = 'trace.studio.sectionNames', ROWS_KEY = 'trace.studio.rowLabels'
+const readFlag = (k, dflt) => { try { const v = localStorage.getItem(k); return v == null ? dflt : v === '1' } catch { return dflt } }
+const saveFlag = (k, on) => { try { localStorage.setItem(k, on ? '1' : '0') } catch { /* private window */ } }
 
 export const useViewPrefs = create((set, get) => ({
   dblClickFit: readFit(),
@@ -25,6 +32,12 @@ export const useViewPrefs = create((set, get) => ({
   setCard: (card) => set({ card }),
   rulesOpen: false,
   setRulesOpen: (rulesOpen) => set({ rulesOpen }),
+  sectionNames: readFlag(NAMES_KEY, false),
+  setSectionNames: (on) => { saveFlag(NAMES_KEY, !!on); set({ sectionNames: !!on }) },
+  rowLabels: readFlag(ROWS_KEY, true),
+  setRowLabels: (on) => { saveFlag(ROWS_KEY, !!on); set({ rowLabels: !!on }) },
+  bomFull: false,
+  setBomFull: (on) => set({ bomFull: !!on }),
   cardW: readCardW(),
   /** the card's width, clamped; `save` false while dragging (written on release) */
   setCardW: (w, { save = true } = {}) => {

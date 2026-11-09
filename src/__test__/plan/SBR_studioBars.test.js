@@ -177,7 +177,7 @@ describe('SBR — the mode bars and the notices', () => {
     FL.useRackingSettings.getState().setSetting('orientation', 'vertical')
     FL.useFillTool.setState({ plan: { rows: 16, positions: 1920, racks: [] } })
     const f = (await ssr(FT.FillOptionsBar))
-    expect(f).toMatch(/data-mode-bar="fill"[\s\S]*>Fill racking<\/span>[\s\S]*aria-pressed="false"[^>]*>Rows ↔<\/button><button[^>]*aria-pressed="true"[^>]*>Rows ↕<[\s\S]*aria-label="Beam"[\s\S]*aria-label="Max rack run \(ft\)"[\s\S]*>Aisle<\/span><span aria-label="Aisle"[^>]*>10′ 6″<[\s\S]*>16<\/span> rows · <span[^>]*>1,920<\/span> pos[\s\S]*aria-label="Close Fill racking"/)
+    expect(f).toMatch(/data-mode-bar="fill"[\s\S]*>Fill racking<\/span>[\s\S]*aria-pressed="false"[^>]*>Rows ↔<\/button><button[^>]*aria-pressed="true"[^>]*>Rows ↕<[\s\S]*aria-label="Beam"[\s\S]*aria-label="Max rack run \(ft\)"[\s\S]*>Aisle<\/span><input aria-label="Aisle"[^>]*value="10′ 6″"[\s\S]*>16<\/span> rows · <span[^>]*>1,920<\/span> pos[\s\S]*aria-label="Close Fill racking"/)
     FL.useFillTool.setState({ plan: null })
     expect(read('canvas2/FillBar.jsx')).toMatch(/const close = \(\) => \{ cancelFill\(\); useCanvasStore\.getState\(\)\.setActiveTool\(HOME_TOOL\) \}/)
     // the old light chrome is gone from the bars

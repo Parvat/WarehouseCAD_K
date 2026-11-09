@@ -37,11 +37,12 @@ export function SectionRename() {
   const id = useSectionRename(s => s.id)
   const obj = useCanvasStore(s => (id ? s.objects.find(o => o.id === id) : null))
   const view = useCanvasStore(useShallow(s => ({ zoom: s.zoom, panX: s.panX, panY: s.panY })))
+  const objects = useCanvasStore(s => s.objects)
   const [text, setText] = useState('')
   const ref = useRef(null)
   useEffect(() => { if (obj) { setText(obj.label || ''); requestAnimationFrame(() => ref.current?.select()) } }, [id])   // eslint-disable-line react-hooks/exhaustive-deps
   if (!obj) return null
-  const b = labelBox(obj, view.zoom)
+  const b = labelBox(obj, view.zoom, objects)                                   // over its name tab, where it stands
   const done = (save) => {
     const t = text.trim()
     useSectionRename.setState({ id: null })

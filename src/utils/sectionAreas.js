@@ -57,14 +57,30 @@ export function onOutline(s, x, y, band) {
   return false
 }
 
-/* the name label: small caps, Plus Jakarta Sans 11px 600, at the top-left inside, 12px in — screen px, so ÷ zoom */
-export const LABEL = { px: 11, inset: 12, color: '#767C74', font: "'Plus Jakarta Sans', sans-serif" }
-/** The name label's box (world px) at `zoom`. */
-export function labelBox(s, zoom = 1) {
-  const z = zoom > 0 ? zoom : 1, h = LABEL.px / z, w = Math.max(3, String(s.label || '').length) * LABEL.px * 0.66 / z
-  return { x: s.x + LABEL.inset / z, y: s.y + LABEL.inset / z, w, h: h * 1.25 }
+/* the name tab: small caps, Plus Jakarta Sans 11px 600 on a white tab (5 px across, 3 px up and down), 12 px in from
+   the section's left — screen px, so ÷ zoom */
+export const LABEL = { px: 11, inset: 12, padX: 5, padY: 3, color: '#767C74', font: "'Plus Jakarta Sans', sans-serif" }
+const rackBoxOf = (o) => { const f = rackFootprint(o); return { x: f.x, y: f.y, w: f.w, h: f.h } }
+const boxesMeet = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+/** The name tab's box (world px) at `zoom`: on the section's outline, its top edge (or its box's), OUTSIDE the section
+ *  where there is room — above it, else below it — room being the building's floor with no rack and no other section
+ *  under the tab; with no room outside, just inside the top edge. → { x, y, w, h, place: 'above' | 'below' | 'inside' }.
+ *  Without `objects` (nothing to measure the room by): above. */
+export function labelBox(s, zoom = 1, objects = null) {
+  const z = zoom > 0 ? zoom : 1, poly = polygonOf(s)
+  const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]), x0 = Math.min(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys)
+  const w = (Math.max(3, String(s.label || 'Section').length) * LABEL.px * 0.66 + LABEL.padX * 2) / z, h = (LABEL.px + LABEL.padY * 2) / z
+  const x = x0 + LABEL.inset / z
+  const at = { above: { x, y: y0 - h, w, h, place: 'above' }, below: { x, y: y1, w, h, place: 'below' }, inside: { x, y: y0 + 2 / z, w, h, place: 'inside' } }
+  if (!objects) return at.above
+  const fp = objects.find(o => o.id === s.parentId && /^fp_/.test(o.type || '')) || objects.find(o => /^fp_/.test(o.type || ''))
+  const onFloor = (b) => !fp || (b.x >= fp.x && b.y >= fp.y && b.x + b.w <= fp.x + fp.width && b.y + b.h <= fp.y + fp.height)
+  const blocks = objects.filter(o => (isRackObj(o) || (isSection(o) && o.id !== s.id)))
+    .map(o => (isSection(o) ? (() => { const p = polygonOf(o), a = p.map(q => q[0]), c = p.map(q => q[1]); return { x: Math.min(...a), y: Math.min(...c), w: Math.max(...a) - Math.min(...a), h: Math.max(...c) - Math.min(...c) } })() : rackBoxOf(o)))
+  const room = (b) => onFloor(b) && !blocks.some(q => boxesMeet(b, q))
+  return room(at.above) ? at.above : room(at.below) ? at.below : at.inside
 }
-export const onLabel = (s, x, y, zoom) => { const b = labelBox(s, zoom); return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h }
+export const onLabel = (s, x, y, zoom, objects = null) => { const b = labelBox(s, zoom, objects); return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h }
 
 /** Area (world px²) — shoelace. */
 export function areaOf(s) {

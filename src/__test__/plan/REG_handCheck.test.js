@@ -2868,6 +2868,113 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
+    /* ── ui-polish-1: the section names off the floor, the Rows toggle, the Fill bar's typed Aisle ── */
+    const island = () => L.page.locator('[data-island="bottom-right"]')
+    /** the name tabs drawn now: { id → { x0, y0, x1, y1 (world), layer (its Konva layer's index) } } */
+    const tabsNow = () => L.page.evaluate(() => {
+      const st = window.Konva.stages[0], out = {}
+      for (const g of st.find(n => /^section-tab:/.test(n.name()))) {
+        const r = g.findOne('.section-tab')
+        out[g.name().slice(12)] = { x0: r.x(), y0: r.y(), x1: r.x() + r.width(), y1: r.y() + r.height(), fill: r.fill(), layer: g.getLayer().index, text: g.findOne('.section-label').text() }
+      }
+      return out
+    })
+
+    it('REG-section-names (click): a section\u2019s name is not on the floor — hidden until it is hovered or selected (the island\u2019s Sections off by default); Sections on shows every name; the name is a white tab on the outline, outside the section where there is room, never under a rack (drawn above them, off them when outside); the Sections list unchanged', async () => {
+      await openSections()
+      const c0 = await freeCorner(), gs = await gs7()
+      expect(c0).toBeTruthy()
+      await onCanvasAll([c0, { x: c0.x + 30 * gs, y: c0.y + 24 * gs }])
+      await drawRect(c0, { x: c0.x + 30 * gs, y: c0.y + 24 * gs })
+      const [sec] = await secsNow()
+      const toggle = island().getByRole('button', { name: 'Section names' })
+      expect([await toggle.textContent(), await toggle.getAttribute('aria-pressed')]).toEqual(['Sections', 'false'])
+      // drawn: selected — its name shows
+      expect(Object.keys(await tabsNow())).toEqual([sec.id])
+      // nothing selected, the pointer away: no name on the plan
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(150)
+      expect(await tabsNow()).toEqual({})
+      // hovered (its empty floor — a click there would select it): shown; away: gone
+      const g = await L.S(`const st = S.getState(), z = st.zoom, s = st.objects.find(o => o.id === arg), fp = st.objects.find(o => /^fp_/.test(o.type))
+        for (let fy = 0.2; fy < 0.95; fy += 0.02) for (let fx = 0.2; fx < 0.95; fx += 0.02) {
+          const x = s.x + s.width * fx, y = s.y + s.height * fy
+          if (H.hitTest(st.objects, st.layers, x, y, z, st.gridSize) === fp.id && !H.fpWallHitTest(st.objects, st.layers, x, y, z, st.gridSize) && [[4, 0], [-4, 0], [0, 4], [0, -4]].every(([dx, dy]) => H.hitTest(st.objects, st.layers, x + dx / z, y + dy / z, z, st.gridSize) === fp.id)) return { x, y }
+        }
+        return null`, sec.id)
+      expect(g).toBeTruthy()
+      const q = await L.toScreen(g)
+      await L.page.mouse.move(q.x - 3, q.y); await L.page.mouse.move(q.x, q.y, { steps: 3 }); await L.page.waitForTimeout(200)
+      expect(Object.keys(await tabsNow())).toEqual([sec.id])
+      await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
+      expect(await tabsNow()).toEqual({})
+      // the island's Sections: every name, as a white tab, above the racks
+      await toggle.click(); await L.page.waitForTimeout(150)
+      expect(await toggle.getAttribute('aria-pressed')).toBe('true')
+      const tab = (await tabsNow())[sec.id]
+      expect([tab.text, tab.fill]).toEqual(['Section 1', '#FFFFFF'])
+      const rackLayer = await L.page.evaluate(() => { const r = window.Konva.stages[0].findOne(n => /^obj:/.test(n.name()) && n.getLayer() && n.getAttr('name') && n.findOne && n.findOne('Rect')); return r ? r.getLayer().index : -1 })
+      expect(tab.layer).toBeGreaterThan(rackLayer)                                              // drawn above the racks
+      // on the outline: outside it where there is room, and then off every rack
+      const where = await tabAt(sec.id), racks = await L.S('const st = S.getState(); return st.objects.filter(o => /^rack_/.test(o.type)).map(o => H.worldBoundsOf(o, st.objects))')
+      const meets = (b) => b.x < tab.x1 && tab.x0 < b.x + b.width && b.y < tab.y1 && tab.y0 < b.y + b.height
+      if (where.place !== 'inside') {
+        expect(where.place === 'above' ? Math.abs(tab.y1 - sec.y) < 1e-6 : Math.abs(tab.y0 - (sec.y + sec.h)) < 1e-6).toBe(true)   // its edge on the outline, outside
+        expect(racks.filter(meets)).toEqual([])
+      }
+      // the Sections list still names it
+      expect(await L.page.getByRole('tabpanel', { name: 'Properties' }).getByText('Section 1', { exact: true }).count()).toBeGreaterThan(0)
+      // off again: hidden
+      await toggle.click(); await L.page.waitForTimeout(150)
+      expect([await toggle.getAttribute('aria-pressed'), await tabsNow()]).toEqual(['false', {}])
+    }, T)
+
+    it('REG-row-labels-toggle (click): the island\u2019s Rows shows or hides the R labels on the plan — on by default; off, none; the BOM\u2019s full view open turns them on while it is open', async () => {
+      await open()
+      const rows = island().getByRole('button', { name: 'Row numbers' })
+      const n = () => L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').length)
+      expect([await rows.textContent(), await rows.getAttribute('aria-pressed'), (await n()) > 0]).toEqual(['Rows', 'true', true])
+      await rows.click(); await L.page.waitForTimeout(150)
+      expect([await rows.getAttribute('aria-pressed'), await n()]).toEqual(['false', 0])
+      // the BOM's full view: on while it is open
+      await bomTab()
+      await fullView()
+      expect((await n()) > 0).toBe(true)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      expect([await rows.getAttribute('aria-pressed'), await n()]).toEqual(['false', 0])
+      await rows.click(); await L.page.waitForTimeout(150)
+      expect([await rows.getAttribute('aria-pressed'), (await n()) > 0]).toEqual(['true', true])
+    }, T)
+
+    it('REG-fill-aisle (click): the Fill racking bar\u2019s Aisle is a typed field showing the forklift\u2019s aisle; a length typed is used for that fill only — the racking area takes it, the Racking settings and Project settings keep the forklift\u2019s, and the next fill shows the forklift\u2019s again; Max run is a typed field too', async () => {
+      await open()
+      // the floor cleared of racks first (setup)
+      await L.S("S.setState({ objects: S.getState().objects.filter(o => !/^rack_/.test(o.type) && o.type !== 'aisle' && o.type !== 'racking_area'), selectedIds: [] })")
+      await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(300)
+      const fork = await L.S('return import("/src/utils/fillTool.js").then(M => M.useRackingSettings.getState().aisleFt)')
+      const fmt = (ft) => { const t = Math.round(ft * 12), f = Math.floor(t / 12); return f + '′ ' + (t - f * 12) + '″' }
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      const bar = L.page.getByRole('toolbar', { name: 'Fill racking options' })
+      const aisle = bar.getByRole('textbox', { name: 'Aisle' }), maxRun = bar.getByRole('textbox', { name: 'Max rack run (ft)' })
+      expect([await aisle.inputValue(), await aisle.isEditable(), await maxRun.isEditable()]).toEqual([fmt(fork), true, true])
+      await aisle.click(); await aisle.fill('13'); await aisle.press('Enter'); await L.page.waitForTimeout(100)
+      expect(await aisle.inputValue()).toBe("13′ 0″")
+      // a fill: the box across the floor
+      const b = await innerBox(), f0 = { x: b.x0 + (b.x1 - b.x0) * 0.08, y: b.y0 + (b.y1 - b.y0) * 0.1 }, f1 = { x: b.x0 + (b.x1 - b.x0) * 0.9, y: b.y0 + (b.y1 - b.y0) * 0.9 }
+      await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(500)
+      const area = await L.S('return S.getState().objects.filter(o => o.type === "racking_area").map(o => o.settings.aisleFt)')
+      expect(area).toEqual([13])                                                                 // this fill took it
+      const after = await L.S('return Promise.all([import("/src/utils/fillTool.js"), import("/src/utils/project.js")]).then(([M]) => [M.useRackingSettings.getState().aisleFt, M.useFillTool.getState().aisleFt])')
+      expect(after).toEqual([fork, null])                                                        // the settings unchanged; the typed one gone
+      // the next fill: the forklift's again
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      expect(await bar.getByRole('textbox', { name: 'Aisle' }).inputValue()).toBe(fmt(fork))
+      // Max run typed
+      const mr = bar.getByRole('textbox', { name: 'Max rack run (ft)' })
+      await mr.click(); await mr.fill('120'); await mr.press('Tab'); await L.page.waitForTimeout(100)
+      expect(await L.S('return import("/src/utils/fillTool.js").then(M => M.useRackingSettings.getState().maxRunFt)')).toBe(120)
+      await L.page.keyboard.press('Escape')
+    }, T)
+
     /* ── Sections (utils/sectionAreas.js, canvas2/sectionTool.js): named areas drawn on the plan, by real mouse ── */
     const secsNow = () => L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => ({ id: o.id, label: o.label, shape: o.shape, x: o.x, y: o.y, w: o.width, h: o.height, pts: o.pts || null }))')
     const racksNow = () => L.S('return JSON.stringify(S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => [o.id, o.x, o.y, o.width, o.height, o.rotation || 0]))')
@@ -2933,7 +3040,7 @@ describe('REG — the hand check by real clicks', () => {
       expect((await secsNow()).length).toBe(all.length - 1)
     }, T)
 
-    it('REG-section-edit (click): a section is selected by its name label (or outline); its name typed in the card or, on a second click on the label, in place; a drag moves the section with the racks whose centre is in it (round 2) — every other rack stays; Delete removes the section only and one Ctrl+Z brings it back', async () => {
+    it('REG-section-edit (click): a section is selected by its name tab (the island’s Sections on — the tab on its outline, ui-polish-1; was: the label inside) or its outline; its name typed in the card or, on a second click on the tab, in place; a drag moves the section with the racks whose centre is in it (round 2) — every other rack stays; Delete removes the section only and one Ctrl+Z brings it back', async () => {
       await openSections()
       const c0 = await freeCorner(), gs0 = await gs7()
       expect(c0).toBeTruthy()
@@ -2943,8 +3050,10 @@ describe('REG — the hand check by real clicks', () => {
       const [s] = await secsNow(), r0 = await racksNow()
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       expect(await L.selected()).toEqual([])
-      const z = await L.S('return S.getState().zoom'), label = { x: s.x + 20 / z, y: s.y + 17 / z }
-      // its name label selects it; the card: Name, Width, Length
+      // every name shown (the island's Sections), its tab clicked: it selects it; the card: Name, Width, Length
+      await L.page.locator('[data-island="bottom-right"]').getByRole('button', { name: 'Section names' }).click(); await L.page.waitForTimeout(150)
+      const label = await tabAt(s.id)
+      await onCanvasAll([label])
       await L.click(label)
       const card = L.page.getByRole('tabpanel', { name: 'Properties' })
       expect([await L.selected(), await card.getByRole('textbox', { name: 'Name' }).inputValue(), await card.getByLabel('Section width').count(), await card.getByLabel('Section length').count()]).toEqual([['section_area'], 'Section 1', 1, 1])
@@ -3058,6 +3167,8 @@ describe('REG — the hand check by real clicks', () => {
         for (let f = 0.1; f < 0.95; f += 0.05) { const x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f
           if (H.hitTest(st.objects, st.layers, x, y, z, st.gridSize) === s.id) return { x, y } } }
       return null`, id)
+    /** the middle of section `id`'s name tab (utils/sectionAreas.js labelBox, where SectionNames.jsx draws it) */
+    const tabAt = (id) => L.S('return import("/src/utils/sectionAreas.js").then(M => { const st = S.getState(), s = st.objects.find(o => o.id === arg), b = M.labelBox(s, st.zoom, st.objects); return { x: b.x + b.w / 2, y: b.y + b.h / 2, place: b.place } })', id)
     const secObj = (id) => L.S('return S.getState().objects.find(o => o.id === arg) || null', id)
     const racksIn = (id) => L.S('return import("/src/utils/sectionAreas.js").then(M => M.membership(S.getState().objects).bySection.get(arg) || [])', id)
     const posOf = (ids) => L.S('const st = S.getState(); return arg.map(id => { const o = st.objects.find(x => x.id === id); return o ? [Math.round(o.x), Math.round(o.y)] : null })', ids)
@@ -3231,7 +3342,7 @@ describe('REG — the hand check by real clicks', () => {
       const swatches = L.page.getByRole('group', { name: 'Section colour' }).getByRole('button')
       expect(await swatches.count()).toBe(9)                                       // none + 8
       await L.page.getByRole('button', { name: 'Colour Sky' }).click(); await L.page.waitForTimeout(150)
-      const look = () => L.page.evaluate((id) => { const g = window.Konva.stages[0].findOne(n => n.name() === 'obj:' + id); return { stroke: g.findOne('Line').stroke(), fill: g.findOne('Line').fill(), label: g.findOne('.section-label').fill() } }, s.id)
+      const look = () => L.page.evaluate((id) => { const st = window.Konva.stages[0], g = st.findOne(n => n.name() === 'obj:' + id), t = st.findOne(n => n.name() === 'section-tab:' + id); return { stroke: g.findOne('Line').stroke(), fill: g.findOne('Line').fill(), label: t.findOne('.section-label').fill() } }, s.id)
       expect((await secObj(s.id)).color).toBe('sky')
       const l = await look()
       expect([l.fill.startsWith('rgba(110, 156, 200'), l.stroke !== '#2E7D5B' && l.stroke !== '#B9C7BE', l.label !== '#767C74']).toEqual([true, true, true])   // its tint, outline and label

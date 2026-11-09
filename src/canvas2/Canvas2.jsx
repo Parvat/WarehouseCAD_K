@@ -44,6 +44,7 @@ import { nanoid } from 'nanoid'
 import { TOOLS } from '../constants'
 import { useViewPrefs, fitRef } from '../studio/viewPrefs'
 import { RackLineLabels } from './RackLineLabels'
+import { SectionNames } from './SectionNames'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
    A Konva Stage that owns its own pointer events. No router, no forwarding, no
@@ -536,6 +537,8 @@ export function Canvas2() {
             )}
             {/* the rack line numbers R1, R2 … at each row end (RackLineLabels.jsx — the BOM's rows) */}
             <RackLineLabels />
+            {/* the sections' names: a tab on the outline, above the racks (SectionNames.jsx) */}
+            <SectionNames />
             {/* the Row group: its rows outlined, a pending apply previewed (RowGroupPreview.jsx); a row being placed */}
             <RowGroupPreview />
             {/* the Split tool's cut line (SplitPreview.jsx) */}

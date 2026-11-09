@@ -8,6 +8,7 @@ import { useLayoutCheck } from '../utils/layoutCheck'
 import { rackFootprint } from '../generate/rackFootprint'
 import { C, MONO, Note, Btn, Sec, Seg } from './cardParts'
 import { Icon } from './Icon'
+import { useViewPrefs } from './viewPrefs'
 
 /* The BOM tab (right card, beside Properties and Elevations): the layout's bill of materials (utils/bom.js) — its
    flags first in the warning style, then the lines grouped by part (part, size, qty), per drawn section (its rows R…)
@@ -134,6 +135,8 @@ export function BomTab() {
   const [full, setFull] = useState(false)
   const [view, setView] = useState('summary')
   const pick = (l) => highlightLine(l, objects)
+  // while the full view is open the plan shows the R labels, whatever the island's Rows says
+  useEffect(() => { useViewPrefs.getState().setBomFull(full); return () => useViewPrefs.getState().setBomFull(false) }, [full])
   useEffect(() => {
     if (!full) return
     const k = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); setFull(false) } }

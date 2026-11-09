@@ -836,7 +836,7 @@ export function useCanvasInteraction({
            reaching here means neither is held — a plain left-press on an
            object always selects it and arms its drag. */
         // a section already selected, pressed on its name: a click there renames it in place (a drag still moves it)
-        const renameable = hitObj && hitObj.type === 'section_area' && !evt.shiftKey && st.selectedIds.length === 1 && st.selectedIds[0] === hitId && onLabel(hitObj, world.x, world.y, view.current.zoom)
+        const renameable = hitObj && hitObj.type === 'section_area' && !evt.shiftKey && st.selectedIds.length === 1 && st.selectedIds[0] === hitId && onLabel(hitObj, world.x, world.y, view.current.zoom, st.objects)
         selectFromHit(hitId, !!evt.shiftKey, world)
         /* A racking area is selected, never dragged: it is resized by its
            edges, and moving only its outline would leave its racks behind. */

@@ -189,6 +189,7 @@ function BottomRight() {
   const toggleAisles = useCanvasStore(s => s.toggleAisles)
   const { showMarks, setShowMarks } = useColumnCheck()
   const showColors = useElevView(s => s.showColors)
+  const { sectionNames, setSectionNames, rowLabels, setRowLabels } = useViewPrefs(useShallow(s => ({ sectionNames: s.sectionNames, setSectionNames: s.setSectionNames, rowLabels: s.rowLabels, setRowLabels: s.setRowLabels })))
   const [layers, setLayers] = useState(false)
   const help = useHelp(s => s.open)
   const layersWrap = useRef(null), helpWrap = useRef(null)
@@ -200,6 +201,9 @@ function BottomRight() {
       <button type="button" aria-label="Aisle labels" aria-pressed={showAisles} onClick={toggleAisles} style={tog(showAisles)}>Aisles</button>
       <button type="button" aria-label="Checks" aria-pressed={showMarks} onClick={() => setShowMarks(!showMarks)} style={tog(showMarks)}>Checks</button>
       <button type="button" aria-label="Elevation colours" aria-pressed={showColors} onClick={() => setShowColors(!showColors)} style={tog(showColors)}>Elevations</button>
+      {/* Sections: every section's name tab (off: only the one hovered or selected); Rows: the R labels at the row ends */}
+      <button type="button" aria-label="Section names" aria-pressed={sectionNames} title="Show every section's name" onClick={() => setSectionNames(!sectionNames)} style={tog(sectionNames)}>Sections</button>
+      <button type="button" aria-label="Row numbers" aria-pressed={rowLabels} title="Show the row numbers R1, R2 … at the row ends" onClick={() => setRowLabels(!rowLabels)} style={tog(rowLabels)}>Rows</button>
       {/* Layers: each layer's show toggle and padlock, in a small card above (STUDIO.md §1) */}
       <span ref={layersWrap} style={{ display: 'flex' }}>
         <button type="button" aria-label="Layers" aria-haspopup="dialog" aria-expanded={layers} aria-pressed={layers} onClick={() => setLayers(o => !o)} style={tog(layers)}>Layers</button>

@@ -50,8 +50,14 @@ export const useRackingSettings = create((set, get) => ({
 export const rackingSettings = () => { const { setSetting, ...plain } = useRackingSettings.getState(); void setSetting; return plain }
 
 /** The box being dragged ({ from, to } world px), its live plan, and the
- *  racking area it would create (the plan's racks, stamped with its id). */
-export const useFillTool = create(() => ({ drag: null, plan: null, created: null }))
+ *  racking area it would create (the plan's racks, stamped with its id).
+ *  `aisleFt`: an aisle typed in the bar — this fill only (cleared when it is placed, cancelled or the tool ends); null:
+ *  the forklift's (the Racking settings', kept in step with Project settings — never written from here). */
+export const useFillTool = create(() => ({ drag: null, plan: null, created: null, aisleFt: null }))
+/** The aisle typed in the bar for this fill (ft, > 0), or null for the forklift's. */
+export const setFillAisle = (ft) => useFillTool.setState({ aisleFt: Number.isFinite(ft) && ft > 0 ? ft : null })
+/** The settings this fill uses: the Racking settings, with the bar's typed aisle over them. */
+export const fillSettings = () => { const s = rackingSettings(), a = useFillTool.getState().aisleFt; return a ? { ...s, aisleFt: a } : s }
 
 export const boxOfDrag = (d) => d && ({ x: Math.min(d.from.x, d.to.x), y: Math.min(d.from.y, d.to.y), w: Math.abs(d.to.x - d.from.x), h: Math.abs(d.to.y - d.from.y) })
 
@@ -82,7 +88,7 @@ export function moveFill(world, objects, gridSize = 40, elevations = null) {
   const drag = { ...d, to: world }
   // a fill that starts inside a section is clipped to it: its racks never cross the section's edge (utils/sectionAreas.js)
   const sec = sectionAt(objects, drag.from), box = sec ? clipToSection(boxOfDrag(drag), sec) : boxOfDrag(drag)
-  let created = box ? planAreaCreate(objects, box, rackingSettings(), { gridSize, from: drag.from, newId: nanoid, elevations }) : null
+  let created = box ? planAreaCreate(objects, box, fillSettings(), { gridSize, from: drag.from, newId: nanoid, elevations }) : null
   if (created && sec && sec.shape === 'poly') created = { ...created, plan: keepInside(created.plan, sec) }
   const plan = created ? created.plan : { racks: [], aisles: [], rows: 0, positions: 0, rects: [] }
   useFillTool.setState({ drag, plan, created })
@@ -93,7 +99,7 @@ export function moveFill(world, objects, gridSize = 40, elevations = null) {
  *  step. Returns how many racks were placed. */
 export function commitFill(store) {
   const { created } = useFillTool.getState()
-  useFillTool.setState({ drag: null, plan: null, created: null })
+  useFillTool.setState({ drag: null, plan: null, created: null, aisleFt: null })        // a typed aisle was for this fill
   if (!created || !created.plan.racks.length) return 0
   const { area, plan } = created
   const st = store.getState()

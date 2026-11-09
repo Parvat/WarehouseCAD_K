@@ -1,7 +1,8 @@
 import { HOME_TOOL } from '../utils/homeTool'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
-import { useFillTool, useRackingSettings, cancelFill } from '../utils/fillTool'
+import { useEffect, useState } from 'react'
+import { useFillTool, useRackingSettings, cancelFill, setFillAisle } from '../utils/fillTool'
 import { B, MONO, modePill, Sep, Seg, CloseBtn, barBtn, btnClass } from '../studio/barParts'
 
 /* the bar's 26h inset value (C10's Aisle) and its fields (Beam, Max run) */
@@ -9,14 +10,44 @@ const valueBox = { height: 26, padding: '0 8px', display: 'flex', alignItems: 'c
 const word = { color: B.muted, fontSize: 12 }
 /** 10.5 → 10′ 6″ (C10's Aisle) */
 const ftInPrime = (ft) => { const t = Math.round(ft * 12), f = Math.floor(t / 12), i = t - f * 12; return `${f}′ ${i}″` }
+/** "11", "10.5", "10' 6", "10′ 6″", "10 6" → feet; null when it isn't a length */
+export function parseAisleFt(t) {
+  const m = String(t ?? '').trim().match(/^(\d+(?:\.\d+)?)\s*(?:ft|'|′)?\s*(?:(\d+(?:\.\d+)?)\s*(?:in|"|″)?)?$/)
+  if (!m) return null
+  const ft = Number(m[1]) + (m[2] != null ? Number(m[2]) / 12 : 0)
+  return ft > 0 ? ft : null
+}
+
+/* The Aisle field: the forklift's aisle until a length is typed — that one for this fill only (utils/fillTool.js
+   setFillAisle), Project settings untouched; emptied, back to the forklift's. */
+function AisleField({ forkliftFt }) {
+  const typed = useFillTool(st => st.aisleFt)
+  const shown = ftInPrime(typed ?? forkliftFt)
+  const [text, setText] = useState(shown)
+  useEffect(() => setText(shown), [shown])
+  const commit = () => {
+    const ft = text.trim() ? parseAisleFt(text) : null
+    if (text.trim() && ft == null) { setText(shown); return }                        // not a length: as it was
+    setFillAisle(ft != null && Math.abs(ft - forkliftFt) > 1e-6 ? ft : null)
+    setText(ftInPrime(ft ?? forkliftFt))
+  }
+  return (
+    <input aria-label="Aisle" className="st-field" title={typed ? `This fill only — the forklift’s is ${ftInPrime(forkliftFt)} (Project settings)` : 'The forklift’s aisle (Project settings) — type another for this fill only'}
+      value={text} onChange={e => setText(e.target.value)} onBlur={commit} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur() }}
+      style={{ ...valueBox, width: 64, color: typed ? B.accent : B.strong }} />
+  )
+}
 
 /* Fill racking's mode bar (STUDIO.md §1; design/studio/Studio.dc.html C10), top 76, while the tool is on: the
    Racking settings the fill uses — Rows ↔ | Rows ↕ (the orientation), Beam and Max run (kept from the bar before),
-   the aisle it leaves (the project's forklift's, read-only — Project settings), the box's live rows · positions (a
-   fill commits on release; before a box: the hint), ✕ (Esc too) back to Select. */
+   the aisle it leaves (typed: the project's forklift's by default; a length typed is for this fill only, Project
+   settings unchanged), the box's live rows · positions (a fill commits on release; before a box: the hint), ✕ (Esc
+   too) back to Select. */
 export function FillOptionsBar() {
   const s = useRackingSettings()
   const plan = useFillTool(st => st.plan)
+  // the bar goes when the tool ends: a typed aisle goes with it
+  useEffect(() => () => setFillAisle(null), [])
   const num = (k, v) => { const n = Number(v); if (Number.isFinite(n) && n > 0) s.setSetting(k, n) }
   const close = () => { cancelFill(); useCanvasStore.getState().setActiveTool(HOME_TOOL) }
   return (
@@ -36,7 +67,7 @@ export function FillOptionsBar() {
       <span style={word}>ft</span>
       {/* the pallet, the forklift (its aisle) and the wall clearance: Project settings (utils/project.js) */}
       <span style={word}>Aisle</span>
-      <span aria-label="Aisle" title="The forklift's aisle — Project settings" style={valueBox}>{ftInPrime(s.aisleFt ?? 10.5)}</span>
+      <AisleField forkliftFt={s.aisleFt ?? 10.5} />
       <Sep />
       {plan
         ? <span aria-label="Fill estimate" style={word}><span style={{ fontFamily: MONO, color: B.text }}>{plan.rows}</span> row{plan.rows === 1 ? '' : 's'} · <span style={{ fontFamily: MONO, color: B.accent }}>{plan.positions.toLocaleString('en-US')}</span> pos</span>
