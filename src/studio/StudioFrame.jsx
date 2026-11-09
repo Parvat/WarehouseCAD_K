@@ -16,6 +16,7 @@ import { useViewPrefs, fitRef, CARD_W } from './viewPrefs'
 import { useElevTab } from '../utils/elevTab'
 import { Icon } from './Icon'
 import { CheckCard } from './cards'
+import { Toggle } from './cardParts'
 import { LayerBody } from '../components/RightPanel/LayerPanel'
 import { useHelp, toggleHelp, closeHelp, HelpBody } from './HelpCard'
 
@@ -187,31 +188,39 @@ function useCloses(open, close, wrap) {
 /* the cards above the bottom-right island: dark island style, radius 10, right-aligned with it */
 const overIsland = (extra) => ({ right: 16, bottom: 68, flexDirection: 'column', alignItems: 'stretch', borderRadius: 10, ...extra })
 
+/* The bottom-right island (STUDIO.md §1): View · Fit · ?. View opens a card above it: the view switches — Aisle labels,
+   Checks, Elevation colours, Section names, Row numbers (each remembered as before) — then the Layers list (each
+   layer's show toggle and padlock). A click outside or Esc closes it. */
 function BottomRight() {
   const showAisles = useCanvasStore(s => s.showAisles ?? true)
   const toggleAisles = useCanvasStore(s => s.toggleAisles)
   const { showMarks, setShowMarks } = useColumnCheck()
   const showColors = useElevView(s => s.showColors)
   const { sectionNames, setSectionNames, rowLabels, setRowLabels } = useViewPrefs(useShallow(s => ({ sectionNames: s.sectionNames, setSectionNames: s.setSectionNames, rowLabels: s.rowLabels, setRowLabels: s.setRowLabels })))
-  const [layers, setLayers] = useState(false)
+  const [view, setView] = useState(false)
   const help = useHelp(s => s.open)
-  const layersWrap = useRef(null), helpWrap = useRef(null)
-  useCloses(layers, () => setLayers(false), layersWrap)
+  const viewWrap = useRef(null), helpWrap = useRef(null)
+  useCloses(view, () => setView(false), viewWrap)
   useCloses(help, closeHelp, helpWrap)
   const tog = (on) => ({ height: 30, padding: '0 10px', border: 0, borderRadius: 6, background: on ? '#2E4A3C' : 'transparent', color: on ? '#7BD3A4' : '#C9CEC9', fontSize: 12 })
+  const sw = (label, on, onClick, title) => (
+    <div key={label} title={title} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, height: 30, padding: '0 6px', fontSize: 12, color: '#E8EAE6' }}>
+      <span>{label}</span><Toggle on={on} onClick={onClick} label={label} />
+    </div>
+  )
   return (
     <div className="st-island" data-island="bottom-right" style={{ right: 16, bottom: 20, height: 40, gap: 2, padding: '0 4px' }}>
-      <button type="button" aria-label="Aisle labels" aria-pressed={showAisles} onClick={toggleAisles} style={tog(showAisles)}>Aisles</button>
-      <button type="button" aria-label="Checks" aria-pressed={showMarks} onClick={() => setShowMarks(!showMarks)} style={tog(showMarks)}>Checks</button>
-      <button type="button" aria-label="Elevation colours" aria-pressed={showColors} onClick={() => setShowColors(!showColors)} style={tog(showColors)}>Elevations</button>
-      {/* Sections: every section's name tab (off: only the one hovered or selected); Rows: the R labels at the row ends */}
-      <button type="button" aria-label="Section names" aria-pressed={sectionNames} title="Show every section's name" onClick={() => setSectionNames(!sectionNames)} style={tog(sectionNames)}>Sections</button>
-      <button type="button" aria-label="Row numbers" aria-pressed={rowLabels} title="Show the row numbers R1, R2 … at the row ends" onClick={() => setRowLabels(!rowLabels)} style={tog(rowLabels)}>Rows</button>
-      {/* Layers: each layer's show toggle and padlock, in a small card above (STUDIO.md §1) */}
-      <span ref={layersWrap} style={{ display: 'flex' }}>
-        <button type="button" aria-label="Layers" aria-haspopup="dialog" aria-expanded={layers} aria-pressed={layers} onClick={() => setLayers(o => !o)} style={tog(layers)}>Layers</button>
-        {layers && (
-          <div className="st-island" role="dialog" aria-label="Layers card" data-card-dark style={overIsland({ width: 232, padding: 8 })}>
+      {/* View: the view switches, then the Layers list, in a small card above (STUDIO.md §1) */}
+      <span ref={viewWrap} style={{ display: 'flex' }}>
+        <button type="button" aria-label="View" aria-haspopup="dialog" aria-expanded={view} aria-pressed={view} onClick={() => setView(o => !o)} style={tog(view)}>View</button>
+        {view && (
+          <div className="st-island" role="dialog" aria-label="View card" data-card-dark style={overIsland({ width: 232, padding: 8, gap: 2, maxHeight: 'calc(100vh - 160px)', overflowY: 'auto' })}>
+            {sw('Aisle labels', showAisles, toggleAisles)}
+            {sw('Checks', showMarks, () => setShowMarks(!showMarks))}
+            {sw('Elevation colours', showColors, () => setShowColors(!showColors))}
+            {sw('Section names', sectionNames, () => setSectionNames(!sectionNames), "Every section's name (off: only the one hovered or selected)")}
+            {sw('Row numbers', rowLabels, () => setRowLabels(!rowLabels), 'The row numbers R1, R2 … at the row starts')}
+            <div style={{ height: 1, background: '#323835', margin: '6px 2px' }} />
             <LayerBody />
           </div>
         )}

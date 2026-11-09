@@ -333,7 +333,7 @@ describe.each([['horizontal', false], ['vertical', true]])('EV — %s', (_, vert
     expect(lg).toMatch(/\{tinted \? <Swatch color=\{tint\(type\.color\)\} \/>/)
     expect(lg).toMatch(/background: color, opacity: ELEV_FILL_OPACITY/)
     // Studio: the colours are switched by the bottom-right island's Elevations toggle; the legend chip left the canvas
-    expect(src('studio/StudioFrame.jsx')).toMatch(/aria-label="Elevation colours" aria-pressed=\{showColors\} onClick=\{\(\) => setShowColors\(!showColors\)\}/)
+    expect(src('studio/StudioFrame.jsx')).toMatch(/sw\('Elevation colours', showColors, \(\) => setShowColors\(!showColors\)\)/)   // the View card's switch (ui-polish-2)
     expect(/<ElevLegend/.test(src('canvas2/Canvas2.jsx'))).toBe(false)
     // the card's list (C2): each row's 10px swatch in the elevation's own colour
     expect(src('components/Elevations/ElevationsTab.jsx')).toMatch(/<span aria-hidden style=\{\{ width: 10, height: 10, flexShrink: 0, borderRadius: 2, background: tint\(t\.color\) \}\} \/>/)

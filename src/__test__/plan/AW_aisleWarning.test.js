@@ -100,7 +100,7 @@ describe('AW — the switches and the PDF', () => {
     setColumnCheckView({ showMarks: true })
     const ov = readFileSync('src/canvas2/Overlays.jsx', 'utf8')
     expect(ov).toMatch(/const warnProfile = marksOn \? mhe : null/)
-    expect(ov).toMatch(/<AisleLabelItem [^>]*profile=\{warnProfile\}/)
+    expect(ov).toMatch(/<AisleLabelItem [^>]*profile=\{warnProfile && equipR\.pair\(a\.row1Id, a\.row2Id\)\}/)   // each label on its rows' equipment (ui-polish-2)
     const { labelsSVG } = await import('../../export/pdfExport')
     const { out } = narrowed(true, 7.99)
     const svg = (showMarks) => labelsSVG(out, GS, { labelSize: 'medium', showAisles: true, showMarks, showColumnLabels: true, profile: REACH, pickBothSides: false })

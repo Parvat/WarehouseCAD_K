@@ -1,5 +1,6 @@
 import { SELECT_BLUE, selectTint } from '../theme/tokens'
 import { Rect, Line, Group } from 'react-konva'
+import { equipmentResolver } from '../utils/equipment'
 import { SelectionOutline } from './shapes'
 import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, FaceAisleLabels, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
 import { useMemo, useRef, memo } from 'react'
@@ -161,6 +162,7 @@ function OverlaysView({
     const ids = withSections(objects, selectedObjects.map(o => o.id), gridSize)
     return objects.filter(o => ids.includes(o.id))
   }, [bayLevel, selectedObjects, objects, gridSize, onlyCol])
+  const equipR = useMemo(() => equipmentResolver(objects, warnProfile), [objects, warnProfile])
   const rackSel = selectedObjects.filter(o => rackLabelsEligible(o.type))
   const labelled = useMemo(() => {
     const secs = sectionsOf(objects, rackSel.map(o => o.id), gridSize)
@@ -175,7 +177,9 @@ function OverlaysView({
         ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={lz} gridSize={gridSize}
             activeWallIdx={activeWall && activeWall.objId === o.id ? activeWall.wallIdx : null} /> : null)}
       <Group x={aisleRigid ? dx : 0} y={aisleRigid ? dy : 0} listening={false}>
-      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={aisleLabelScale(a, labelSize, gridSize)} gridSize={gridSize} profile={warnProfile} columns={aisleCols} />)}
+      {/* each label graded against its own rows' equipment, resolved on the whole layout (its sections — utils/equipment.js):
+          a label is drawn from its two rows alone, which hold no section */}
+      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={aisleLabelScale(a, labelSize, gridSize)} gridSize={gridSize} profile={warnProfile && equipR.pair(a.row1Id, a.row2Id)} columns={aisleCols} />)}
       </Group>
       {/* one width label per cross-aisle; few, so drawn from the previewed layout every drag frame */}
       {aislesOn && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} profile={warnProfile} />}

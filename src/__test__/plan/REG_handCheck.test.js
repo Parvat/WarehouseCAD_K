@@ -213,8 +213,8 @@ describe('REG — the hand check by real clicks', () => {
         expect(await L.selected()).toEqual([wp.type])                                    // inside the rack: the rack
       }
       // a hand lock: the Layers card's padlock (the bottom-right island — Fix 6 round 6), then saved and reopened — the wall stays unpickable
-      await L.page.getByRole('button', { name: 'Layers', exact: true }).click()
-      await L.page.getByRole('dialog', { name: 'Layers card' }).getByRole('button', { name: 'Lock Building layer' }).click()
+      await L.page.getByRole('button', { name: 'View', exact: true }).click()
+      await L.page.getByRole('dialog', { name: 'View card' }).getByRole('button', { name: 'Lock Building layer' }).click()
       const saved = await L.S('return SL.serializeScene(S.getState())')
       await L.page.close()
       const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, saved)
@@ -397,6 +397,12 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
+    /** zoomed in (wheel notches at the canvas middle) until the R labels draw — under 8 px on screen they are hidden (ui-polish-2) */
+    const zoomForRowLabels = async () => {
+      const n = () => L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').length)
+      for (let i = 0; i < 10 && !(await n()); i++) { await L.page.mouse.move(700, 450); await L.page.mouse.wheel(0, -120); await L.page.waitForTimeout(80) }
+      await L.page.waitForTimeout(150)
+    }
     /* ── the selection rule (STUDIO.md §7): rows or bays, never both ── */
     /** Double rows (or `type`) whose click points (half, flue, far, middle) are all on the open canvas now, in plan order. */
     const openRacks = async (type = 'rack_double_row', minBays = 1) => {
@@ -1475,8 +1481,8 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.S('return !!S.getState().objects.find(o => o.id === arg)', g0.id), await L.page.locator('[aria-label="Notice"]').textContent()]).toEqual([true, expect.stringMatching(/stays with its grid/)])
       // unlocked (the Layers card's padlock — Fix 6 round 6): a drag on a column moves its line
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
-      await L.page.getByRole('button', { name: 'Layers', exact: true }).click()
-      await L.page.getByRole('dialog', { name: 'Layers card' }).getByRole('button', { name: 'Unlock Columns layer' }).click()
+      await L.page.getByRole('button', { name: 'View', exact: true }).click()
+      await L.page.getByRole('dialog', { name: 'View card' }).getByRole('button', { name: 'Unlock Columns layer' }).click()
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       await L.click(c); await L.drag(c, { x: c.x + 2 * gs, y: c.y + 2 * gs })
       const g1 = await gNow()
@@ -2079,9 +2085,9 @@ describe('REG — the hand check by real clicks', () => {
       await open()
       expect(await L.S('return S.getState().layers.filter(l => l.locked).map(l => l.id)')).toEqual(['columns'])
       // padlocks set by hand: the Layers card (the bottom-right island)
-      await L.page.getByRole('button', { name: 'Layers', exact: true }).click()
-      await L.page.getByRole('dialog', { name: 'Layers card' }).getByRole('button', { name: 'Unlock Columns layer' }).click()
-      await L.page.getByRole('dialog', { name: 'Layers card' }).getByRole('button', { name: 'Lock Zones layer' }).click()
+      await L.page.getByRole('button', { name: 'View', exact: true }).click()
+      await L.page.getByRole('dialog', { name: 'View card' }).getByRole('button', { name: 'Unlock Columns layer' }).click()
+      await L.page.getByRole('dialog', { name: 'View card' }).getByRole('button', { name: 'Lock Zones layer' }).click()
       const saved = await L.S('return SL.serializeScene(S.getState())')
       await L.page.close()
       L = await B.openLayout(app, saved)
@@ -2279,8 +2285,8 @@ describe('REG — the hand check by real clicks', () => {
 
     /* ── Fix 6 round 6: the Columns layer lock, the Layers card, column lines, the bar's hints and the shortcut sheet ── */
     const colsLocked = () => L.S('return !!S.getState().layers.find(l => l.id === "columns")?.locked')
-    const layersCard = () => L.page.getByRole('dialog', { name: 'Layers card' })
-    const openLayers = async () => { if (!(await layersCard().count())) { await L.page.getByRole('button', { name: 'Layers', exact: true }).click(); await L.page.waitForTimeout(150) } }
+    const layersCard = () => L.page.getByRole('dialog', { name: 'View card' })
+    const openLayers = async () => { if (!(await layersCard().count())) { await L.page.getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150) } }
     const unlockColumns = async () => {
       await openLayers()
       const b = layersCard().getByRole('button', { name: 'Unlock Columns layer' })
@@ -2325,14 +2331,16 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return [!!g.locked, g.lockedBy ?? null]'), await colsLocked()]).toEqual([[false, null], true])
     }, T)
 
-    it('REG-layers-card (click): Layers in the bottom-right island, the same style as Aisles, opens a dark card above it (radius 10) with each layer’s show toggle and padlock; they work; a click outside or Esc closes it; the right card has no Layers block', async () => {
+    it('REG-layers-card (click): View in the bottom-right island (with Fit and ? only — ui-polish-2: it replaces Aisles, Checks, Elevations, Sections, Rows and Layers) opens a dark card above it (radius 10): the switches Aisle labels, Checks, Elevation colours, Section names, Row numbers, then each layer’s show toggle and padlock; they work; a click outside or Esc closes it; the right card has no Layers block', async () => {
       await open()
       const island = L.page.locator('[data-island="bottom-right"]')
-      const btn = island.getByRole('button', { name: 'Layers', exact: true }), aisles = island.getByRole('button', { name: 'Aisle labels' })
+      const btn = island.getByRole('button', { name: 'View', exact: true }), help = island.getByRole('button', { name: 'Shortcuts' })
       const look = (b) => b.evaluate(el => { const c = getComputedStyle(el); return [c.height, c.fontSize, c.borderRadius, c.paddingLeft] })
-      expect(await look(btn)).toEqual(await look(aisles))
+      expect(await look(btn)).toEqual(await look(help))
+      expect(await island.locator(':scope > span > button, :scope > button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')))).toEqual(['View', 'Fit', 'Shortcuts'])
       await btn.click(); await L.page.waitForTimeout(150)
       const card = layersCard()
+      expect(await card.getByRole('switch', { name: /^(Aisle labels|Checks|Elevation colours|Section names|Row numbers)$/ }).evaluateAll(ss => ss.map(x => x.getAttribute('aria-label')))).toEqual(['Aisle labels', 'Checks', 'Elevation colours', 'Section names', 'Row numbers'])
       const cb = await card.boundingBox(), ib = await island.boundingBox()
       expect([cb.y + cb.height <= ib.y, await card.evaluate(el => getComputedStyle(el).borderRadius), await card.evaluate(el => getComputedStyle(el).backgroundColor)]).toEqual([true, '10px', 'rgb(31, 35, 33)'])
       expect(await card.locator('[data-layer]').evaluateAll(rs => rs.map(r => r.getAttribute('data-layer')))).toEqual(['building', 'columns', 'zones', 'sections', 'racking', 'aisles', 'checks', 'notes'])   // + Sections (the Section tool)
@@ -2731,32 +2739,47 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
-    it('REG-bom-rack-labels (click): every rack line has its R number at both ends on the plan, in the drawings\u2019 words style, just past the line\u2019s end; the numbers are the By row table\u2019s R1 … Rn, a pair two of them', async () => {
+    it('REG-bom-rack-labels (click): one R label per rack line at its start end only (left of a line running across, above one running up and down), a back-to-back pair one label R2–R3, in the drawings\u2019 words style; no label over another or over an aisle width label; none under 8 px on screen; the numbers are the By row table\u2019s (ui-polish-2 — was: a label at each end, one per side of a pair)', async () => {
       await open()
-      const labels = await L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(n => ({ text: n.text(), x: n.x() + n.width() / 2, y: n.y() + n.height() / 2, fill: n.fill(), font: n.fontFamily(), px: n.fontSize() * n.getAbsoluteScale().x })))
+      await zoomForRowLabels()
+      const read = () => L.page.evaluate(() => {
+        const st = window.Konva.stages[0], box = (n) => { const r = n.getClientRect(); return { x0: r.x, y0: r.y, x1: r.x + r.width, y1: r.y + r.height } }
+        return {
+          labels: st.find('.rack-line-label').map(n => ({ text: n.text(), x: n.x() + n.width() / 2, y: n.y() + n.height() / 2, fill: n.fill(), px: n.fontSize() * n.getAbsoluteScale().x, ...box(n) })),
+          dims: st.find(n => /^(aisle|cross-aisle):/.test(n.name())).map(box),
+        }
+      })
+      const { labels, dims } = await read()
       expect(labels.length).toBeGreaterThan(0)
-      expect([...new Set(labels.map(l => l.fill))], [...new Set(labels.map(l => Math.round(l.px)))]).toEqual(['#767C74'])
-      expect([...new Set(labels.map(l => Math.round(l.px)))]).toEqual([10])
+      expect([...new Set(labels.map(l => l.fill))]).toEqual(['#767C74'])
+      expect(labels.every(l => l.px >= 8 - 1e-6)).toBe(true)
+      const hit = (a, b) => a.x0 < b.x1 - 0.5 && b.x0 < a.x1 - 0.5 && a.y0 < b.y1 - 0.5 && b.y0 < a.y1 - 0.5
+      expect(labels.filter((l, i) => labels.some((m, j) => j > i && hit(l, m))).map(l => l.text)).toEqual([])    // never over each other
+      expect(labels.filter(l => dims.some(d => hit(l, d))).map(l => l.text)).toEqual([])                         // nor over an aisle width label
+      // one label per line or pair: "R7" or "R2–R3", each number once
+      const nums = labels.flatMap(l => { const m = l.text.match(/^R(\d+)(?:–R(\d+))?$/); return m[2] ? [Number(m[1]), Number(m[2])] : [Number(m[1])] })
+      expect(new Set(nums).size).toBe(nums.length)
       await bomTab()
       await fullView('By row')
       const t = await byRowShown()
-      const byText = new Map()
-      for (const l of labels) byText.set(l.text, [...(byText.get(l.text) || []), l])
-      expect([...byText.keys()].sort()).toEqual([...t.cols].sort())                              // the plan's numbers = the table's
-      for (const [, ls] of byText) expect(ls.length).toBe(2)                                       // one at each end
-      // each label just past an end of its line (the racks the BOM puts on that row), on that side's band
-      const rows = await L.S('return import("/src/utils/bom.js").then(M => { const st = S.getState(); return M.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 }).rows.map(r => ({ label: r.label, ws: r.ws, b: r.ids.map(id => H.worldBoundsOf(st.objects.find(o => o.id === id), st.objects)) })) })')
-      const z = await L.S('return S.getState().zoom')
-      for (const r of rows) {
-        const x0 = Math.min(...r.b.map(b => b.x)), x1 = Math.max(...r.b.map(b => b.x + b.width)), y0 = Math.min(...r.b.map(b => b.y)), y1 = Math.max(...r.b.map(b => b.y + b.height))
-        const vert = (y1 - y0) > (x1 - x0), reach = 40 / z
-        for (const l of byText.get(r.label)) {
-          const past = vert ? (l.y < y0 && y0 - l.y < reach) || (l.y > y1 && l.y - y1 < reach) : (l.x < x0 && x0 - l.x < reach) || (l.x > x1 && l.x - x1 < reach)
-          const across = vert ? l.x > x0 && l.x < x1 : l.y > y0 && l.y < y1
-          expect([r.label, past, across]).toEqual([r.label, true, true])
-        }
-      }
+      for (const n of nums) expect(t.cols).toContain('R' + n)                                   // the table's numbers
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      // each just before the start of its line (or pair), beside it across
+      const rows = await L.S('return import("/src/utils/bom.js").then(M => { const st = S.getState(); return M.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 }).rows.map(r => ({ no: r.no, b: r.ids.map(id => H.worldBoundsOf(st.objects.find(o => o.id === id), st.objects)) })) })')
+      const z = await L.S('return S.getState().zoom')
+      for (const l of labels) {
+        const first = Number(l.text.match(/^R(\d+)/)[1]), r = rows.find(q => q.no === first)
+        const x0 = Math.min(...r.b.map(b => b.x)), x1 = Math.max(...r.b.map(b => b.x + b.width)), y0 = Math.min(...r.b.map(b => b.y)), y1 = Math.max(...r.b.map(b => b.y + b.height))
+        const vert = (y1 - y0) > (x1 - x0), reach = 60 / z
+        const before = vert ? l.y < y0 && y0 - l.y < reach : l.x < x0 && x0 - l.x < reach
+        const across = vert ? l.x > x0 - reach && l.x < x1 + reach : l.y > y0 - reach && l.y < y1 + reach
+        expect([l.text, before, across]).toEqual([l.text, true, true])
+      }
+      // zoomed far out: they would draw under 8 px — none
+      for (let i = 0; i < 8; i++) { await L.page.mouse.move(700, 450); await L.page.mouse.wheel(0, 120); await L.page.waitForTimeout(40) }
+      await L.page.waitForTimeout(200)
+      expect((await read()).labels).toEqual([])
+      await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(300)
       // sequential by position (rule changed — was: a number once given stayed): a row deleted (click, Delete) — the
       // numbers are R1 to Rn again, no gaps, in position order, the plan's the same; Undo puts them back as they were
       const at = () => L.S('return import("/src/utils/bom.js").then(M => { const st = S.getState(); return M.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 }).rows.map(r => r.label + ":" + r.ids.join("+") + ":" + r.ws) })')
@@ -2769,8 +2792,9 @@ describe('REG — the hand check by real clicks', () => {
       expect([sel > 0, await racks()]).toEqual([true, n0 - sel])                            // the row (its section) gone
       expect(after.length).toBe(before.length - 2)                                          // a pair: two lines fewer
       expect(after.map(y => y.split(':')[0])).toEqual(after.map((_, i) => 'R' + (i + 1)))                 // R1 … Rn, no gaps
-      const labelsNow = await L.page.evaluate(() => [...new Set(window.Konva.stages[0].find('.rack-line-label').map(n => n.text()))].sort())
-      expect(labelsNow).toEqual(after.map(y => y.split(':')[0]).sort())
+      const labelsNow = await L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(n => n.text()))
+      const shownNos = labelsNow.flatMap(t => { const m = t.match(/^R(\d+)(?:–R(\d+))?$/); return m[2] ? ['R' + m[1], 'R' + m[2]] : ['R' + m[1]] })
+      for (const n of shownNos) expect(after.map(y => y.split(':')[0])).toContain(n)            // every shown number is the table's
       await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
       expect(await at()).toEqual(before)
     }, T)
@@ -2808,9 +2832,9 @@ describe('REG — the hand check by real clicks', () => {
         await L.page.mouse.move(5, 890); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(200)
         expect([id, await L.S('return S.getState().objects.some(o => o.id === arg)', id)]).toEqual([id, false])
       }
-      // the plan: two labels per row; their order by position reads R1 … R14
+      // the plan: one label per row, at its start (ui-polish-2 — was: one at each end); their order by position reads R1 … R14
       const labels = await L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(n => ({ text: n.text(), x: n.x() + n.width() / 2, y: n.y() + n.height() / 2 })))
-      expect(labels.length).toBe(28)
+      expect(labels.length).toBe(14)
       const ends = new Map()
       for (const l of labels) { const k = l.text; if (!ends.has(k) || (vertical ? l.y < ends.get(k).y : l.x < ends.get(k).x)) ends.set(k, l) }
       const inOrder = [...ends.values()].sort((p, q) => (vertical ? p.x - q.x : p.y - q.y)).map(l => l.text)
@@ -2845,7 +2869,9 @@ describe('REG — the hand check by real clicks', () => {
       }
       /** the BOM's rows: label → "ids:side", by section */
       const rowsNow = () => L.S('return import("/src/utils/bom.js").then(M => { const st = S.getState(); return M.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 }).rows.map(r => ({ label: r.label, line: r.ids.join("+") + ":" + r.ws, sec: r.sectionId })) })')
-      const planLabels = () => L.page.evaluate(() => [...new Set(window.Konva.stages[0].find('.rack-line-label').map(n => n.text()))])
+      // the plan's labels as numbers: one label per line or pair ("R2–R3" — ui-polish-2); a label with no room is left out
+      const planLabels = () => L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(n => n.text())).then(ts => ts.flatMap(t => { const m = t.match(/^R(\d+)(?:–R(\d+))?$/); return m[2] ? ['R' + m[1], 'R' + m[2]] : ['R' + m[1]] }))
+      const within = async (got, want) => { expect(got.length).toBeGreaterThan(0); for (const g of got) expect(want).toContain(g); expect(new Set(got).size).toBe(got.length) }
       const seq = (from, n) => Array.from({ length: n }, (_, i) => 'R' + (from + i))
       // Section 1, on the right half, racked
       const s1 = await drawIn(b, 0.53, 0.05, 0.97, 0.95)
@@ -2853,7 +2879,7 @@ describe('REG — the hand check by real clicks', () => {
       const r1 = await rowsNow(), k = r1.length
       expect(k).toBeGreaterThan(1)
       expect([r1.every(r => r.sec === s1.id), r1.map(r => r.label)]).toEqual([true, seq(1, k)])
-      expect((await planLabels()).sort()).toEqual(seq(1, k).sort())
+      await zoomForRowLabels(); await within(await planLabels(), seq(1, k))
       // Section 2, to its left, racked: it runs on from R(k+1) — though it stands left of Section 1
       const s2 = await drawIn(b, 0.03, 0.05, 0.47, 0.95)
       await fill(s2)
@@ -2863,7 +2889,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(mine.map(r => r.label)).toEqual(seq(k + 1, mine.length))
       expect(r2.map(r => r.label)).toEqual(seq(1, k + mine.length))                                // one run, no gaps
       // the plan and the table agree
-      expect((await planLabels()).sort()).toEqual(r2.map(r => r.label).sort())
+      await zoomForRowLabels(); await within(await planLabels(), r2.map(r => r.label))
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       await bomTab()
       await fullView('By row')
@@ -2873,6 +2899,11 @@ describe('REG — the hand check by real clicks', () => {
 
     /* ── ui-polish-1: the section names off the floor, the Rows toggle, the Fill bar's typed Aisle ── */
     const island = () => L.page.locator('[data-island="bottom-right"]')
+    /* the View card (the bottom-right island's View — ui-polish-2): its switches; each use opens it and closes it again (Esc) */
+    const viewCard = () => L.page.getByRole('dialog', { name: 'View card' })
+    const openView = async () => { if (!(await viewCard().count())) { await island().getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150) } }
+    const viewSwitch = (name) => ({ click: async () => { await openView(); await viewCard().getByRole('switch', { name }).click(); await L.page.waitForTimeout(120); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100) } })
+    const viewState = async (name) => { await openView(); const v = await viewCard().getByRole('switch', { name }).getAttribute('aria-checked'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100); return v }
     /** the name tabs drawn now: { id → { x0, y0, x1, y1 (world), layer (its Konva layer's index) } } */
     const tabsNow = () => L.page.evaluate(() => {
       const st = window.Konva.stages[0], out = {}
@@ -2890,8 +2921,9 @@ describe('REG — the hand check by real clicks', () => {
       await onCanvasAll([c0, { x: c0.x + 30 * gs, y: c0.y + 24 * gs }])
       await drawRect(c0, { x: c0.x + 30 * gs, y: c0.y + 24 * gs })
       const [sec] = await secsNow()
-      const toggle = island().getByRole('button', { name: 'Section names' })
-      expect([await toggle.textContent(), await toggle.getAttribute('aria-pressed')]).toEqual(['Sections', 'false'])
+      // the View card's Section names switch (ui-polish-2 — was: a Sections button in the island)
+      const toggle = viewSwitch('Section names')
+      expect(await viewState('Section names')).toBe('false')
       // drawn: selected — its name shows
       expect(Object.keys(await tabsNow())).toEqual([sec.id])
       // nothing selected, the pointer away: no name on the plan
@@ -2912,7 +2944,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(await tabsNow()).toEqual({})
       // the island's Sections: every name, as a white tab, above the racks
       await toggle.click(); await L.page.waitForTimeout(150)
-      expect(await toggle.getAttribute('aria-pressed')).toBe('true')
+      expect(await viewState('Section names')).toBe('true')
       const tab = (await tabsNow())[sec.id]
       expect([tab.text, tab.fill]).toEqual(['Section 1', '#FFFFFF'])
       const rackLayer = await L.page.evaluate(() => { const r = window.Konva.stages[0].findOne(n => /^obj:/.test(n.name()) && n.getLayer() && n.getAttr('name') && n.findOne && n.findOne('Rect')); return r ? r.getLayer().index : -1 })
@@ -2928,24 +2960,26 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.page.getByRole('tabpanel', { name: 'Properties' }).getByText('Section 1', { exact: true }).count()).toBeGreaterThan(0)
       // off again: hidden
       await toggle.click(); await L.page.waitForTimeout(150)
-      expect([await toggle.getAttribute('aria-pressed'), await tabsNow()]).toEqual(['false', {}])
+      expect([await viewState('Section names'), await tabsNow()]).toEqual(['false', {}])
     }, T)
 
     it('REG-row-labels-toggle (click): the island\u2019s Rows shows or hides the R labels on the plan — on by default; off, none; the BOM\u2019s full view open turns them on while it is open', async () => {
       await open()
-      const rows = island().getByRole('button', { name: 'Row numbers' })
+      // the View card's Row numbers switch (ui-polish-2 — was: a Rows button in the island)
+      const rows = viewSwitch('Row numbers')
       const n = () => L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').length)
-      expect([await rows.textContent(), await rows.getAttribute('aria-pressed'), (await n()) > 0]).toEqual(['Rows', 'true', true])
+      await zoomForRowLabels()
+      expect([await viewState('Row numbers'), (await n()) > 0]).toEqual(['true', true])
       await rows.click(); await L.page.waitForTimeout(150)
-      expect([await rows.getAttribute('aria-pressed'), await n()]).toEqual(['false', 0])
+      expect([await viewState('Row numbers'), await n()]).toEqual(['false', 0])
       // the BOM's full view: on while it is open
       await bomTab()
       await fullView()
       expect((await n()) > 0).toBe(true)
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
-      expect([await rows.getAttribute('aria-pressed'), await n()]).toEqual(['false', 0])
+      expect([await viewState('Row numbers'), await n()]).toEqual(['false', 0])
       await rows.click(); await L.page.waitForTimeout(150)
-      expect([await rows.getAttribute('aria-pressed'), (await n()) > 0]).toEqual(['true', true])
+      expect([await viewState('Row numbers'), (await n()) > 0]).toEqual(['true', true])
     }, T)
 
     it('REG-fill-aisle (click): the Fill racking bar\u2019s Aisle is a typed field showing the forklift\u2019s aisle; a length typed is used for that fill only — the racking area takes it, the Racking settings and Project settings keep the forklift\u2019s, and the next fill shows the forklift\u2019s again; Max run is a typed field too', async () => {
@@ -3160,6 +3194,57 @@ describe('REG — the hand check by real clicks', () => {
       expect([await marks(), listed(after)]).toEqual([0, 0])
     }, T)
 
+    it('REG-equip-vna-exact (click): a VNA section (aisle to pick 7 ft) filled with 7 ft aisles — their width labels pass (the plain label, graded against the section\u2019s VNA, not the project\u2019s reach truck), Check lists nothing, no X marks; filled at 6 ft 11 in — the labels fail (the pick colour: drivable on VNA\u2019s 6 ft, too narrow to pick), Check lists them, X marks — all three agree', async () => {
+      await open()
+      await clearRacks()
+      const b = await innerBox()
+      await sectionTool('Rectangle')
+      const a0 = { x: b.x0 + (b.x1 - b.x0) * 0.04, y: b.y0 + (b.y1 - b.y0) * 0.06 }, a1 = { x: b.x0 + (b.x1 - b.x0) * 0.6, y: b.y0 + (b.y1 - b.y0) * 0.94 }
+      await onCanvasAll([a0, a1]); await drawRect(a0, a1)
+      await L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('combobox', { name: 'Section equipment' }).selectOption('vna'); await L.page.waitForTimeout(150)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const sec = (await secsNow())[0]
+      const f0 = { x: sec.x + sec.w * 0.04, y: sec.y + sec.h * 0.04 }, f1 = { x: sec.x + sec.w * 0.96, y: sec.y + sec.h * 0.96 }
+      const fill = async (aisle) => {
+        await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+        if (aisle) await typeAisle(aisle)
+        await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(600)
+      }
+      /** every rack-to-rack aisle: its width (ft) and its label's look as drawn (the pill's stroke) */
+      const aisles = () => L.page.evaluate(() => {
+        const st = window.Konva.stages[0], S = window.__hc.S.getState(), byId = new Map(S.objects.map(o => [o.id, o]))
+        return S.objects.filter(o => o.type === 'aisle').map(a => {
+          const g = st.findOne(n => n.name() === 'aisle:' + a.id), r = g && g.findOne('Rect')
+          const r1 = byId.get(a.row1Id), r2 = byId.get(a.row2Id)
+          return { id: a.id, rows: [a.row1Id, a.row2Id], stroke: r ? r.stroke() : null, ok: !!(r1 && r2) }
+        }).filter(a => a.ok)
+      })
+      const gapsFt = () => L.S('return import("/src/generate/rowAisles.js").then(RA => RA.rowAisleGaps(S.getState().objects.filter(o => /^rack_/.test(o.type))).map(g => ({ rows: [g.top.id, g.bot.id], ft: g.gapLen / (S.getState().gridSize || 40) })))')
+      const xMarks = () => L.S('return Promise.all([import("/src/generate/narrowAisles.js"), import("/src/generate/columnCheckView.js")]).then(([N, V]) => N.narrowAisleBlocks(S.getState().objects, { profile: V.getColumnCheckView().profile, gridSize: S.getState().gridSize || 40 }).length)')
+      const lookOf = async () => {
+        const as = await aisles(), gaps = await gapsFt()
+        return gaps.map(g => ({ ft: g.ft, stroke: as.find(a => a.rows.includes(g.rows[0]) && a.rows.includes(g.rows[1]))?.stroke ?? null, rows: g.rows }))
+      }
+      // 7 ft: exactly VNA's aisle to pick — passes everywhere
+      await fill(null)
+      const seven = (await lookOf()).filter(g => Math.abs(g.ft - 7) < 1e-6)
+      expect(seven.length).toBeGreaterThan(0)
+      expect([...new Set(seven.map(g => g.stroke))]).toEqual(['#f0b429'])                     // the plain label: it passes
+      const racks7 = await rackIdsNow()
+      expect(aisleItems((await checkItems()), racks7)).toEqual([])                           // nothing listed
+      expect(await xMarks()).toBe(0)                                                          // no X marks
+      await L.page.getByLabel('Layout check').getByRole('button', { name: 'Close layout check' }).click(); await L.page.waitForTimeout(150)
+      // 6 ft 11 in: under the aisle to pick (drivable: VNA moves in 6 ft)
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      await fill('6 11')
+      const narrow = (await lookOf()).filter(g => g.ft < 7 - 1e-6 && g.ft > 2)
+      expect(narrow.length).toBeGreaterThan(0)
+      expect([...new Set(narrow.map(g => g.stroke))]).toEqual(['#B87309'])                     // the failing pick colour
+      const items = aisleItems(await checkItems(), await rackIdsNow())
+      for (const g of narrow) expect(items.some(i => i.kind === 'aisle-pick' && g.rows.every(id => i.ids.includes(id)))).toBe(true)   // each listed
+      expect(await xMarks()).toBeGreaterThan(0)                                               // and X marked
+    }, T)
+
     /* ── Sections (utils/sectionAreas.js, canvas2/sectionTool.js): named areas drawn on the plan, by real mouse ── */
     const secsNow = () => L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => ({ id: o.id, label: o.label, shape: o.shape, x: o.x, y: o.y, w: o.width, h: o.height, pts: o.pts || null }))')
     const racksNow = () => L.S('return JSON.stringify(S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => [o.id, o.x, o.y, o.width, o.height, o.rotation || 0]))')
@@ -3236,7 +3321,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       expect(await L.selected()).toEqual([])
       // every name shown (the island's Sections), its tab clicked: it selects it; the card: Name, Width, Length
-      await L.page.locator('[data-island="bottom-right"]').getByRole('button', { name: 'Section names' }).click(); await L.page.waitForTimeout(150)
+      await viewSwitch('Section names').click()
       const label = await tabAt(s.id)
       await onCanvasAll([label])
       await L.click(label)
