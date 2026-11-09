@@ -14,7 +14,7 @@ import { zoneSized } from '../utils/floorClamp'
 import { parseFeet } from '../components/RightPanel/panels/RackingAreaPanel'
 import { BeamSelect, changeBayUpdate } from '../components/RightPanel/panels/RackRowPanelCore'
 import { BEAM_PRESETS_IN } from '../utils/bayBeam'
-import { useLayoutCheck, goToIssue, issueKey, remindersLabel } from '../utils/layoutCheck'
+import { useLayoutCheck, goToIssue, issueKey, remindersLabel, shownCheck, markCheckItem } from '../utils/layoutCheck'
 import { getCanvasContainerSize } from '../utils/canvasContainer'
 import { openSetup, nameOf } from '../utils/project'
 import { ZONE_KINDS } from '../generate/rackingArea'
@@ -234,9 +234,11 @@ export function ZoneMain({ obj }) {
 const split = (text) => { const i = text.indexOf(' — '); return i > 0 ? [text.slice(0, i), text.slice(i + 3)] : [text, null] }
 
 /** C5: Check layout — the counts, every item with its level tag (a click zooms to it and stays highlighted), the
- *  usable / total figures. Reminders are the Note level and open Project settings. */
+ *  usable / total figures. Reminders are the Note level and open Project settings. Each item has Mark as OK: a marked
+ *  item stays in the list, greyed, at the bottom, with Undo mark — it no longer counts (utils/layoutCheck.js). */
 export function CheckCard() {
-  const result = useLayoutCheck(s => s.result)
+  const T = useCanvasStore(s => s.elevations)
+  const result = shownCheck(useLayoutCheck(s => s.result), T)
   const close = useLayoutCheck(s => s.close)
   const hiKey = useLayoutCheck(s => s.highlight?.key)
   const f = useLayoutFigures()
@@ -245,6 +247,7 @@ export function CheckCard() {
     ...result.errors.map(it => ({ it, level: 'error' })),
     ...result.warnings.map(it => ({ it, level: 'warning' })),
     ...(result.reminders || []).map(it => ({ it, level: 'note', reminder: true })),
+    ...result.marked.map(it => ({ it, level: it.level, marked: true })),
   ]
   const counts = { error: result.errors.length, warning: result.warnings.length, note: (result.reminders || []).length }
   return (
@@ -256,16 +259,23 @@ export function CheckCard() {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '0 8px 8px', overflowY: 'auto', minHeight: 0 }}>
         {!items.length && <span style={{ padding: '0 8px 8px', color: C.muted, fontSize: 12 }}>{remindersLabel(result) || 'No issues found.'}</span>}
-        {items.map(({ it, level, reminder }, i) => {
+        {items.map(({ it, level, reminder, marked }, i) => {
           const [t, d] = split(it.text)
           const on = !reminder && hiKey === issueKey(it)
           return (
-            <button key={it.kind + i} type="button" className="st-hov" aria-label={it.text} title={reminder ? 'Open Project settings' : 'Show it on the drawing'}
-              onClick={() => (reminder ? openSetup('settings') : goToIssue(useCanvasStore, it, getCanvasContainerSize()))}
-              style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 10, border: 0, borderRadius: 8, background: on ? C.inset : 'transparent', textAlign: 'left', color: C.text, cursor: 'pointer' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Tag level={level} /><span style={{ fontSize: 13, color: C.strong }}>{t}</span></span>
-              {d && <span style={{ fontSize: 12, lineHeight: 1.45, color: C.muted }}>{d}</span>}
-            </button>
+            <div key={it.kind + i} data-check-item={reminder ? undefined : issueKey(it)} data-check-marked={marked ? 'true' : undefined} style={{ display: 'flex', alignItems: 'flex-start', gap: 4, borderRadius: 8, background: on ? C.inset : 'transparent', opacity: marked ? 0.45 : 1 }}>
+              <button type="button" className="st-hov" aria-label={it.text} title={reminder ? 'Open Project settings' : 'Show it on the drawing'}
+                onClick={() => (reminder ? openSetup('settings') : goToIssue(useCanvasStore, it, getCanvasContainerSize()))}
+                style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4, padding: 10, border: 0, borderRadius: 8, background: 'transparent', textAlign: 'left', color: C.text, cursor: 'pointer' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Tag level={level} /><span style={{ fontSize: 13, color: C.strong }}>{t}</span>{marked && <span style={{ fontSize: 11, color: C.muted }}>Marked as OK</span>}</span>
+                {d && <span style={{ fontSize: 12, lineHeight: 1.45, color: C.muted }}>{d}</span>}
+              </button>
+              {!reminder && (
+                <button type="button" className="st-hov" aria-label={marked ? 'Undo mark' : 'Mark as OK'} title={marked ? 'Count it again' : 'Accept it: it stays listed, greyed, and no longer counts'}
+                  onClick={() => markCheckItem(useCanvasStore, it, !marked)}
+                  style={{ flexShrink: 0, margin: '8px 6px 0 0', height: 24, padding: '0 8px', border: 0, borderRadius: 6, background: C.inset, color: marked ? C.accent : C.muted, fontSize: 11, whiteSpace: 'nowrap', cursor: 'pointer' }}>{marked ? 'Undo mark' : 'Mark as OK'}</button>
+              )}
+            </div>
           )
         })}
       </div>

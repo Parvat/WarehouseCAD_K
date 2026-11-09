@@ -8,10 +8,12 @@ import { setSectionColor, setSectionBoundary, setSectionWallIn, sizeSection } fr
 import { parseFeet } from '../components/RightPanel/panels/RackingAreaPanel'
 import { useSectionHover } from '../canvas2/sectionTool'
 import { useLocked } from './useLocked'
-import { Head, Sec, Grid2, Field, TextInput, NumInput, StaticField, SecLabel, Seg, C, MONO, LockedFields } from './cardParts'
+import { Head, Sec, Grid2, Field, TextInput, NumInput, StaticField, SecLabel, Seg, SelectField, C, MONO, LockedFields } from './cardParts'
+import { mheProfiles, equipmentOf } from '../utils/equipment'
 
 /* Sections in the right card (STUDIO.md §7a Sections): a selected section's block — its Name (typed: one undo step),
-   its Width and Length (a rectangle, typed: one undo step, the top-left stays, kept inside the walls and off its
+   its Equipment (the aisle checks of its racks: the project's forklift by default, or another of the forklift list —
+   utils/equipment.js), its Width and Length (a rectangle, typed: one undo step, the top-left stays, kept inside the walls and off its
    neighbours) or its Area (a custom shape), its Colour (8 soft colours) and its Boundary (None, Fence, Wall + its
    thickness); and, with nothing selected, the Sections list under
    the Layout summary — each section's rows and positions (the racks whose centre it holds), then Unassigned. A row's
@@ -24,12 +26,21 @@ export function SectionMain({ obj }) {
   const commit = (label) => { const t = String(label || '').trim(); if (t && t !== obj.label) useCanvasStore.getState().commitObjectUpdate(obj.id, { label: t }) }
   const size = (k) => (t) => { const ft = parseFeet(String(t).replace(/′/g, "'").replace(/″/g, '"')); if (ft != null) sizeSection(useCanvasStore, obj.id, k === 'w' ? ft * gs : obj.width, k === 'h' ? ft * gs : obj.height) }
   const b = boundaryOf(obj)
+  const projectKey = useCanvasStore(s => s.elevations?.project?.equipment?.mhe) || 'reach'
+  const P = useMemo(() => mheProfiles(), [])
+  const setEquip = (v) => { const k = v || null; if (k !== equipmentOf(obj)) useCanvasStore.getState().commitObjectUpdate(obj.id, { equipment: k }) }
   return (
     <>
       <Head caption="Section" />
       <Sec aria-label="Section settings">
         <LockedFields locked={locked}>
           <Field label="Name"><TextInput words aria="Name" value={obj.label || ''} onCommit={commit} /></Field>
+          <Field label="Equipment" title="The aisle checks of the racks in this section use it">
+            <SelectField words chevron aria="Section equipment" value={equipmentOf(obj) || ''} onChange={e => setEquip(e.target.value)}>
+              <option value="">Project forklift ({P[projectKey]?.label || projectKey})</option>
+              {Object.values(P).map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </SelectField>
+          </Field>
           {obj.shape === 'poly'
             ? <Field label="Area"><StaticField aria="Section area">{Math.round(areaOf(obj) / (gs * gs)).toLocaleString('en-US')} sq ft</StaticField></Field>
             : <Grid2>

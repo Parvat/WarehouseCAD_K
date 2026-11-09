@@ -66,6 +66,8 @@ export const MHE_PROFILES = {
   reach:          { key: 'reach',          label: 'Reach truck',   aisleFt: 10.5, minAisleFt: 10.0, retrievalFt: 6, travelFt: travelFtFor(10.5) },
   vna:            { key: 'vna',            label: 'VNA / turret',  aisleFt: 6.0,  minAisleFt: 5.5,  retrievalFt: 4, travelFt: travelFtFor(6.0) },
   counterbalance: { key: 'counterbalance', label: 'Counterbalance', aisleFt: 12.5, minAisleFt: 12.0, retrievalFt: 7, travelFt: travelFtFor(12.5) },
+  pallet_jack:    { key: 'pallet_jack',    label: 'Pallet jack',    aisleFt: 7.0,  minAisleFt: 6.5,  retrievalFt: 4, travelFt: travelFtFor(7.0) },
+  walkie_stacker: { key: 'walkie_stacker', label: 'Walkie stacker', aisleFt: 8.5,  minAisleFt: 8.0,  retrievalFt: 5, travelFt: travelFtFor(8.5) },
 }
 
 const overlaps = (a, b) =>

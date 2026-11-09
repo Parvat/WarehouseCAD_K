@@ -2637,7 +2637,10 @@ describe('REG — the hand check by real clicks', () => {
     const twoSections = async () => {
       await openSections()
       const b = await innerBox()
-      const s1 = await drawIn(b, 0.02, 0.02, 0.47, 0.6), s2 = await drawIn(b, 0.53, 0.02, 0.98, 0.6)
+      // (the second one lower and off the right edge: the right card, a section's card with its Equipment, covers the top right)
+      const s1 = await drawIn(b, 0.02, 0.02, 0.47, 0.6)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      const s2 = await drawIn(b, 0.53, 0.35, 0.9, 0.95)
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       await bomTab()
       return [s1, s2]
@@ -2973,6 +2976,118 @@ describe('REG — the hand check by real clicks', () => {
       await mr.click(); await mr.fill('120'); await mr.press('Tab'); await L.page.waitForTimeout(100)
       expect(await L.S('return import("/src/utils/fillTool.js").then(M => M.useRackingSettings.getState().maxRunFt)')).toBe(120)
       await L.page.keyboard.press('Escape')
+    }, T)
+
+    /* ── aisle-equip: aisle equipment per section, the fill's aisle against it, Mark as OK ── */
+    const ftInP = (ft) => { const t = Math.round(ft * 12), f = Math.floor(t / 12); return f + '′ ' + (t - f * 12) + '″' }
+    const clearRacks = async () => {
+      await L.S("S.setState({ objects: S.getState().objects.filter(o => !/^rack_/.test(o.type) && o.type !== 'aisle' && o.type !== 'racking_area'), selectedIds: [] })")
+      await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(300)
+    }
+    /** the project's forklift as a profile (utils/equipment.js) */
+    const projectEq = () => L.S('return import("/src/utils/equipment.js").then(E => { const k = S.getState().elevations?.project?.equipment?.mhe || "reach"; return E.mheProfiles()[k] })')
+    const fillBar = () => L.page.getByRole('toolbar', { name: 'Fill racking options' })
+    const typeAisle = async (v) => { const a = fillBar().getByRole('textbox', { name: 'Aisle' }); await a.click(); await a.fill(v); await a.press('Enter'); await L.page.waitForTimeout(100) }
+    /** Check layout pressed (the top-right island); → the items as listed: { open: [item], marked: [item] } with their racks */
+    const checkNow = async () => {
+      await L.page.locator('[data-island="top-right"]').getByRole('button', { name: /^Check layout/ }).click(); await L.page.waitForTimeout(300)
+      return L.S('return import("/src/utils/layoutCheck.js").then(M => { const sh = M.shownCheck(M.useLayoutCheck.getState().result, S.getState().elevations); return { open: [...sh.errors, ...sh.warnings].map(i => ({ kind: i.kind, ids: i.ids, key: M.issueKey(i) })), marked: sh.marked.map(i => ({ kind: i.kind, key: M.issueKey(i) })) } })')
+    }
+    const AISLE_KINDS = ['aisle-drive', 'cross-aisle', 'aisle-pick', 'no-way-in', 'unreachable']
+    const rackIdsNow = () => L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => o.id)')
+    const aisleItems = (items, racks) => items.filter(i => AISLE_KINDS.includes(i.kind) && i.ids.some(id => racks.includes(id)))
+
+    it('REG-equip-fill-outside (click): a 7 ft aisle typed for a fill outside every section shows the amber line (below the project forklift\u2019s minimum); dropped, the racks stay and the notice asks Make this a section? — Pallet jack offered; Check lists the aisles; Make section makes a Pallet jack section in the fill\u2019s own undo step, and Check clears them', async () => {
+      await open()
+      await clearRacks()
+      const eq = await projectEq()
+      expect(eq.minAisleFt).toBeGreaterThan(7)
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      await typeAisle('7')
+      const warn = fillBar().getByRole('status', { name: 'Aisle warning' })
+      expect(await warn.textContent()).toBe(`7′ 0″ is below ${eq.label} minimum ${ftInP(eq.minAisleFt)}. Needs its own section.`)
+      const b = await innerBox(), f0 = { x: b.x0 + (b.x1 - b.x0) * 0.06, y: b.y0 + (b.y1 - b.y0) * 0.12 }, f1 = { x: b.x0 + (b.x1 - b.x0) * 0.55, y: b.y0 + (b.y1 - b.y0) * 0.88 }
+      await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(500)
+      const racks = await rackIdsNow(), h0 = await hist7()
+      expect(racks.length).toBeGreaterThan(1)
+      // the question: Make this a section?, Pallet jack offered first
+      const ask = L.page.getByRole('alertdialog', { name: 'Make this a section?' })
+      expect([await ask.count(), await ask.getByRole('combobox', { name: 'Equipment' }).inputValue()]).toEqual([1, 'pallet_jack'])
+      // Check, before: the 7 ft aisles are listed against the project's forklift
+      expect(aisleItems((await checkNow()).open, racks).length).toBeGreaterThan(0)
+      // Make section: a Pallet jack section of the fill's box, in the fill's own undo step
+      await ask.getByRole('button', { name: 'Make section' }).click(); await L.page.waitForTimeout(250)
+      const secs = await L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => o.equipment)')
+      expect([secs, await hist7(), await ask.count()]).toEqual([['pallet_jack'], h0, 0])
+      const inSec = await L.S('return import("/src/utils/sectionAreas.js").then(M => { const m = M.membership(S.getState().objects); return [...m.bySection.values()].flat() })')
+      expect([...inSec].sort()).toEqual([...racks].sort())                                        // every rack of the fill in it
+      // Check clears them
+      expect(aisleItems((await checkNow()).open, racks)).toEqual([])
+      // one Ctrl+Z: the fill and the section together (back to the layout before the fill); Ctrl+Y: both back
+      const fillGone = async () => { const now = await rackIdsNow(); return racks.filter(id => now.includes(id)).length }
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect([await fillGone(), (await L.S('return S.getState().objects.filter(o => o.type === "section_area").length'))]).toEqual([0, 0])
+      await L.page.keyboard.press('Control+y'); await L.page.waitForTimeout(250)
+      expect([await fillGone(), (await L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => o.equipment)'))]).toEqual([racks.length, ['pallet_jack']])
+    }, T)
+
+    it('REG-equip-section-reach (click): a section set to Reach truck in its card — a fill dragged inside it with a 7 ft aisle shows the amber line before the drop, no question after it, and Check lists its aisles as errors', async () => {
+      await openSections()
+      await clearRacks()
+      const b = await innerBox(), s = await drawIn(b, 0.05, 0.08, 0.6, 0.9)
+      // the card: Equipment — Project forklift by default; Reach truck chosen
+      const eqSel = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('combobox', { name: 'Section equipment' })
+      expect(await eqSel.inputValue()).toBe('')
+      await eqSel.selectOption('reach'); await L.page.waitForTimeout(150)
+      expect(await L.S('return S.getState().objects.find(o => o.id === arg).equipment', s.id)).toBe('reach')
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      await typeAisle('7')
+      // the drag inside the section: amber before the drop, against the section's Reach truck
+      const f0 = { x: s.x + s.w * 0.08, y: s.y + s.h * 0.1 }, f1 = { x: s.x + s.w * 0.92, y: s.y + s.h * 0.92 }
+      await onCanvasAll([f0, f1])
+      const p0 = await L.toScreen(f0), p1 = await L.toScreen(f1)
+      await L.page.mouse.move(p0.x, p0.y); await L.page.mouse.down(); await L.page.mouse.move(p1.x, p1.y, { steps: 8 }); await L.page.waitForTimeout(150)
+      expect(await fillBar().getByRole('status', { name: 'Aisle warning' }).textContent()).toBe('7′ 0″ is below Reach truck minimum 10′ 0″. Needs its own section.')
+      await L.page.mouse.up(); await L.page.waitForTimeout(500)
+      const racks = await rackIdsNow()
+      expect(racks.length).toBeGreaterThan(1)
+      expect(await L.page.getByRole('alertdialog', { name: 'Make this a section?' }).count()).toBe(0)   // inside a section: no question
+      const items = aisleItems((await checkNow()).open, racks)
+      expect(items.some(i => i.kind === 'aisle-drive')).toBe(true)                                // under the reach truck's drive width: errors
+    }, T)
+
+    it('REG-check-mark-ok (click): Check layout — Mark as OK greys an item and moves it to the bottom with Undo mark; it no longer counts; it is saved with the layout and still marked after a reload; Undo mark counts it again', async () => {
+      await open()
+      await clearRacks()
+      // a 7 ft fill outside every section: aisles the project's forklift can't use (the question dismissed)
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      await typeAisle('7')
+      const b = await innerBox(), f0 = { x: b.x0 + (b.x1 - b.x0) * 0.06, y: b.y0 + (b.y1 - b.y0) * 0.12 }, f1 = { x: b.x0 + (b.x1 - b.x0) * 0.55, y: b.y0 + (b.y1 - b.y0) * 0.88 }
+      await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(500)
+      await L.page.getByRole('alertdialog', { name: 'Make this a section?' }).getByRole('button', { name: 'Dismiss' }).click(); await L.page.waitForTimeout(150)
+      const c0 = await checkNow()
+      expect(c0.open.length).toBeGreaterThan(1)
+      const card = L.page.getByLabel('Layout check')
+      const rows = () => card.locator('[data-check-item]').evaluateAll(rs => rs.map(r => ({ key: r.getAttribute('data-check-item'), marked: r.getAttribute('data-check-marked') === 'true', opacity: getComputedStyle(r).opacity })))
+      const first = (await rows())[0]
+      await card.locator(`[data-check-item="${first.key}"]`).getByRole('button', { name: 'Mark as OK' }).click(); await L.page.waitForTimeout(200)
+      const r1 = await rows(), last = r1[r1.length - 1]
+      expect([last.key, last.marked, last.opacity]).toEqual([first.key, true, '0.45'])          // greyed, at the bottom
+      expect(await card.locator(`[data-check-item="${first.key}"]`).getByRole('button', { name: 'Undo mark' }).count()).toBe(1)
+      const c1 = await checkNow()
+      expect([c1.open.length, c1.marked.map(m => m.key)]).toEqual([c0.open.length - 1, [first.key]])   // it no longer counts
+      // saved with the layout: reopened from the autosave, checked again — still marked, still last
+      const saved = await L.page.evaluate(() => localStorage.getItem('warehousecad_autosave'))
+      const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, saved)
+      const c2 = await checkNow()
+      expect(c2.marked.map(m => m.key)).toEqual([first.key])
+      const r2 = await rows()
+      expect([r2[r2.length - 1].key, r2[r2.length - 1].marked]).toEqual([first.key, true])
+      // Undo mark: it counts again
+      await L.page.getByLabel('Layout check').locator(`[data-check-item="${first.key}"]`).getByRole('button', { name: 'Undo mark' }).click(); await L.page.waitForTimeout(200)
+      const c3 = await checkNow()
+      expect([c3.marked, c3.open.length]).toEqual([[], c0.open.length])
     }, T)
 
     /* ── Sections (utils/sectionAreas.js, canvas2/sectionTool.js): named areas drawn on the plan, by real mouse ── */

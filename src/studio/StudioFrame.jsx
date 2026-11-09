@@ -3,7 +3,7 @@ import { useCanvasStore } from '../store/useCanvasStore'
 import { generateBlocked } from '../utils/sectionEdit'
 import { regenBuilding } from '../generate/regenerate'
 import { useShallow } from 'zustand/react/shallow'
-import { useLayoutCheck, runLayoutCheck, checkLabel, exportWithCheck } from '../utils/layoutCheck'
+import { useLayoutCheck, runLayoutCheck, checkLabel, exportWithCheck, shownCheck } from '../utils/layoutCheck'
 import { ExportCheckDialog } from '../components/RightPanel/LayoutCheckPanel'
 import { RulesPanel } from '../components/Rules/RulesPanel'
 import { LayoutMenu, doZoom } from '../components/Toolbar/TopBar'
@@ -63,7 +63,9 @@ function TopLeft({ onHub }) {
 
 /* Check's count: errors in the mockup's chip colours, warnings in the warning level's; none when clean */
 function CheckChip() {
-  const result = useLayoutCheck(s => s.result)
+  // the items marked as OK don't count (utils/layoutCheck.js shownCheck)
+  const T = useCanvasStore(s => s.elevations)
+  const result = shownCheck(useLayoutCheck(s => s.result), T)
   const e = result ? result.errors.length : 0, w = result ? result.warnings.length : 0
   if (!e && !w) return null
   const c = e ? { bg: '#5A2A20', fg: '#FFB4A3', n: e } : { bg: '#3A2E17', fg: '#F2C77A', n: w }
@@ -74,7 +76,8 @@ function TopRight() {
   const { undo, redo, exportAsPDF, hasRacks } = useCanvasStore(useShallow(s => ({ undo: s.undo, redo: s.redo, exportAsPDF: s.exportAsPDF, hasRacks: s.objects.some(o => RACK.test(o.type || '')) })))
   // 2 or more sections in the building: Generate is off — each section is filled with Fill racking (STUDIO.md §7a Sections)
   const blocked = useCanvasStore(s => generateBlocked(s.objects, regenBuilding(s.objects)))
-  const result = useLayoutCheck(s => s.result)
+  const T = useCanvasStore(s => s.elevations)
+  const result = shownCheck(useLayoutCheck(s => s.result), T)
   const card = useViewPrefs(s => s.card)
   /* STUDIO.md §7: "Generate" on an empty plan, "Regenerate" when racks exist */
   const genLabel = hasRacks ? 'Regenerate' : 'Generate'

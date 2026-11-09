@@ -74,7 +74,7 @@ describe('SC — the states', () => {
     expect(f).toMatch(/card === 'tabs' && checkOpen\n\s+\? <div data-card-dark[^>]*><CheckCard \/><\/div>/)
     expect(c).toMatch(/<span style=\{\{ fontWeight: 600, color: C\.strong \}\}>Check layout<\/span>/)
     expect(c).toMatch(/onClick=\{\(\) => \(reminder \? openSetup\('settings'\) : goToIssue\(useCanvasStore, it, getCanvasContainerSize\(\)\)\)\}/)
-    expect(c).toMatch(/padding: 10, border: 0, borderRadius: 8, background: on \? C\.inset : 'transparent'/)
+    expect(c).toMatch(/data-check-item=\{reminder \? undefined : issueKey\(it\)\}[^>]*borderRadius: 8, background: on \? C\.inset : 'transparent'/)   // the item's row (aisle-equip: with Mark as OK beside it)
     expect(c).toMatch(/Click an item to zoom to it<span style=\{\{ marginLeft: 'auto', fontFamily: MONO, color: C\.text \}\}>\{n\(f\.usable\)\} \/ \{n\(f\.gross\)\}<\/span>/)
   })
   it('SC-more: every other section is under one More fold, in the same parts; a rack keeps its bay list, + / − Bay, order, lock and delete', () => {
@@ -105,7 +105,7 @@ describe('SC — hover', () => {
     expect(p).toMatch(/className=\{kind === 'primary' \? undefined : 'st-hov'\}/)
     expect(p).toMatch(/<button type="button" className="st-hov" aria-expanded=\{open\}/)          // the More row (Fold)
     expect(p).toMatch(/<button type="button" className="st-hov" aria-label=\{label\}/)            // icon buttons
-    expect(read('studio/cards.jsx')).toMatch(/<button key=\{it\.kind \+ i\} type="button" className="st-hov"/)   // Check items
+    expect(read('studio/cards.jsx')).toMatch(/<button type="button" className="st-hov" aria-label=\{it\.text\}/)   // Check items (aisle-equip: the item's own button in its row)   // Check items
     expect(read('components/RightPanel/panels/RackRowPanelCore.jsx')).toMatch(/role="listitem" className="st-hov" data-on=\{isActive \|\| undefined\}/)
     // never on a toggle or a segment
     const toggle = p.slice(p.indexOf('export function Toggle'), p.indexOf('export const ToggleRow')), seg = p.slice(p.indexOf('export function Seg'), p.indexOf('export function Btn'))

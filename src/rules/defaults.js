@@ -57,6 +57,10 @@ export const DEFAULT_RULES = {
     reach:          { aisleFt: 10.5, minAisleFt: 10.0, travelFt: travelFtFor(10.5), crossAisleFt: 9 },
     vna:            { aisleFt: 6.0,  minAisleFt: 5.5,  travelFt: travelFtFor(6.0),  crossAisleFt: 8.5 },
     counterbalance: { aisleFt: 12.5, minAisleFt: 12.0, travelFt: travelFtFor(12.5), crossAisleFt: 13 },
+    /* walk-behind equipment (aisle-equip): a pallet jack works at floor level and turns a 48" pallet at right angles in
+       about 7'; a walkie stacker (straddle) stacks at right angles in about 8' 6" */
+    pallet_jack:    { aisleFt: 7.0,  minAisleFt: 6.5,  travelFt: travelFtFor(7.0),  crossAisleFt: 6 },
+    walkie_stacker: { aisleFt: 8.5,  minAisleFt: 8.0,  travelFt: travelFtFor(8.5),  crossAisleFt: 7 },
   },
 
   clearances: { esfrBelowDeflectorIn: 18, locked: true },
@@ -74,6 +78,8 @@ export const MHE_LABELS = {
   reach:          'Reach truck',
   vna:            'VNA / turret',
   counterbalance: 'Counterbalance',
+  pallet_jack:    'Pallet jack',
+  walkie_stacker: 'Walkie stacker',
 }
 
 /* The lane-storage types, so validation and the form can iterate them without

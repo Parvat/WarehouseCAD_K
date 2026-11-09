@@ -51,6 +51,8 @@ import { crossAisleLabels } from '../canvas2/crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
 import { useLabelPrefs } from '../canvas2/labelPrefs'
+import { buildCheckSheets } from './checkSheet'
+import { checkForExport } from '../utils/layoutCheck'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { checkColumns } from '../generate/columnCheck'
 import { layoutColumns, layoutFloors } from '../generate/usableCapacity'
@@ -554,6 +556,8 @@ export function exportLayoutToPDF(filename, storeState) {
   const sheets = buildElevationSheets(objects, { title, elevations: storeState.elevations })
   // then the bill of materials (utils/bom.js; export/bomSheet.js), on the plan's paper size
   const bomPages = buildBomSheets(computeBom(objects, storeState.elevations, { gridSize }), { title, paperW, paperH })
+  // then the layout check: errors, warnings, and the items marked as OK, listed as accepted (export/checkSheet.js)
+  const checkPages = buildCheckSheets(checkForExport(storeState), { title, paperW, paperH })
 
   const html = `<!DOCTYPE html>
 <html>
@@ -592,6 +596,7 @@ export function exportLayoutToPDF(filename, storeState) {
   <div class="page">${svg}</div>
   ${sheets.map(p => `<div class="page" style="page-break-before: always">${p.svg}</div>`).join('')}
   ${bomPages.map(p => `<div class="page" style="page-break-before: always">${p.svg}</div>`).join('')}
+  ${checkPages.map(p => `<div class="page" style="page-break-before: always">${p.svg}</div>`).join('')}
   <script>window.focus()</script>
 </body>
 </html>`

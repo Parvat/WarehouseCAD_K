@@ -21,11 +21,28 @@ import { rowAisleGaps } from './rowAisles'
 import { faceObstacleGaps, positionRunSpans, faceIndex } from './faceAisles'
 import { levelsResolver } from '../utils/elevations'
 import { isEmptySide } from '../utils/bayEmpty'
+import { equipmentResolver } from '../utils/equipment'
 
 const E = 1e-6
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 
-export function narrowAisleBlocks(objects, { profile = MHE_PROFILES.reach, gridSize = 40, already = new Set(), elevations = null } = {}) {
+/* Each rack is held to its own aisle equipment (utils/equipment.js — its section's, else the project's forklift
+   `profile`): with every rack on `profile` this is one pass; otherwise one pass per equipment in use, each block kept
+   from the pass of the equipment that governs it (its rack's, and across a rack-to-rack aisle the stricter of the two). */
+export function narrowAisleBlocks(objects, opts = {}) {
+  const profile = opts.profile === undefined ? MHE_PROFILES.reach : opts.profile
+  if (!profile) return []
+  const R = equipmentResolver(objects, profile)
+  if (R.single) return narrowAisleBlocksOne(objects, { ...opts, profile })
+  const out = []
+  for (const p of R.inUse) for (const b of narrowAisleBlocksOne(objects, { ...opts, profile: p })) {
+    const gov = b.cause?.kind === 'rack' ? R.pair(b.rackId, b.cause.otherId) : R.of(b.rackId)
+    if (gov.key === p.key) out.push(b)
+  }
+  return out
+}
+
+function narrowAisleBlocksOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, already = new Set(), elevations = null } = {}) {
   if (!profile) return []
   const racks = objects.filter(o => BEAM.has(o.type) && o.width > 0 && o.height > 0 && ((o.rotation || 0) % 90) === 0 && Array.isArray(o.beams))
   if (!racks.length) return []

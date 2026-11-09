@@ -2,7 +2,7 @@ import { HOME_TOOL } from '../utils/homeTool'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
 import { useEffect, useState } from 'react'
-import { useFillTool, useRackingSettings, cancelFill, setFillAisle } from '../utils/fillTool'
+import { useFillTool, useRackingSettings, cancelFill, setFillAisle, fillEquipment } from '../utils/fillTool'
 import { B, MONO, modePill, Sep, Seg, CloseBtn, barBtn, btnClass } from '../studio/barParts'
 
 /* the bar's 26h inset value (C10's Aisle) and its fields (Beam, Max run) */
@@ -40,12 +40,18 @@ function AisleField({ forkliftFt }) {
 
 /* Fill racking's mode bar (STUDIO.md §1; design/studio/Studio.dc.html C10), top 76, while the tool is on: the
    Racking settings the fill uses — Rows ↔ | Rows ↕ (the orientation), Beam and Max run (kept from the bar before),
-   the aisle it leaves (typed: the project's forklift's by default; a length typed is for this fill only, Project
-   settings unchanged), the box's live rows · positions (a fill commits on release; before a box: the hint), ✕ (Esc
+   the aisle it leaves (typed: by default the aisle of the equipment of the section the drag starts in, else the
+   project's forklift's; a length typed is for this fill only, Project settings unchanged — under that equipment's
+   minimum, an amber line: "7′ 0″ is below Reach truck minimum 10′ 0″. Needs its own section."), the box's live rows · positions (a fill commits on release; before a box: the hint), ✕ (Esc
    too) back to Select. */
 export function FillOptionsBar() {
   const s = useRackingSettings()
   const plan = useFillTool(st => st.plan)
+  // the equipment this fill works to: the section the drag starts in, else the project's forklift (utils/fillTool.js)
+  const from = useFillTool(st => st.drag?.from || null), typed = useFillTool(st => st.aisleFt)
+  const objects = useCanvasStore(st => st.objects)
+  const eq = fillEquipment(objects, from)
+  const under = typed && Number.isFinite(eq.minAisleFt) && typed < eq.minAisleFt - 1e-9
   // the bar goes when the tool ends: a typed aisle goes with it
   useEffect(() => () => setFillAisle(null), [])
   const num = (k, v) => { const n = Number(v); if (Number.isFinite(n) && n > 0) s.setSetting(k, n) }
@@ -67,11 +73,12 @@ export function FillOptionsBar() {
       <span style={word}>ft</span>
       {/* the pallet, the forklift (its aisle) and the wall clearance: Project settings (utils/project.js) */}
       <span style={word}>Aisle</span>
-      <AisleField forkliftFt={s.aisleFt ?? 10.5} />
+      <AisleField forkliftFt={eq.aisleFt ?? 10.5} />
       <Sep />
       {plan
         ? <span aria-label="Fill estimate" style={word}><span style={{ fontFamily: MONO, color: B.text }}>{plan.rows}</span> row{plan.rows === 1 ? '' : 's'} · <span style={{ fontFamily: MONO, color: B.accent }}>{plan.positions.toLocaleString('en-US')}</span> pos</span>
         : <span style={word}>Drag a box · Esc cancels</span>}
+      {under && <span role="status" aria-label="Aisle warning" data-fill-warning style={{ color: B.warnFg, fontSize: 12, whiteSpace: 'nowrap' }}>{ftInPrime(typed)} is below {eq.label} minimum {ftInPrime(eq.minAisleFt)}. Needs its own section.</span>}
       <Sep />
       <button type="button" aria-label="Done" title="Done (Esc)" onClick={close} className={btnClass(true)} style={barBtn(true)}>Done</button>
       <CloseBtn label="Close Fill racking" title="Done (Esc)" onClick={close} />

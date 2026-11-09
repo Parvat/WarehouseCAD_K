@@ -60,6 +60,7 @@ import { projectReminders } from './project'
 import { useDragPreview } from '../canvas2/dragPreview'
 import { closedZones, walkwayInNow } from './zoneCheck'
 import { DEFAULT_RULES } from '../rules/defaults'
+import { equipmentResolver } from './equipment'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const TYPE_NAMES = {
@@ -106,8 +107,28 @@ const union = (boxes) => {
 }
 
 
-/** Every problem in \`objects\`: { errors: [item], warnings: [item] }. */
-export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 40, pickBothSides = false, elevations = null, walkwayIn = DEFAULT_RULES.zones.walkwayIn } = {}) {
+/** Every problem in `objects`: { errors: [item], warnings: [item] }. Each rack is checked against its own aisle
+ *  equipment (utils/equipment.js — its section's, else the project's forklift `profile`): with every rack on `profile`
+ *  one pass; otherwise one pass per equipment in use, each item kept from the pass of the equipment that governs it —
+ *  its racks' (the stricter of them), or the project's forklift for an item with no rack. */
+export function checkLayout(objects, opts = {}) {
+  const profile = opts.profile || MHE_PROFILES.reach
+  const R = equipmentResolver(objects, profile)
+  if (R.single) return checkLayoutOne(objects, { ...opts, profile })
+  const rackIds = new Set(objects.filter(isRack).map(o => o.id))
+  const gov = (item) => { const ids = (item.ids || []).filter(id => rackIds.has(id)); return ids.length ? R.pair(...ids) : profile }
+  let first = null
+  const errors = [], warnings = []
+  for (const p of R.inUse) {
+    const res = checkLayoutOne(objects, { ...opts, profile: p })
+    if (!first) first = res
+    for (const i of res.errors) if (gov(i).key === p.key) errors.push(i)
+    for (const i of res.warnings) if (gov(i).key === p.key) warnings.push(i)
+  }
+  return { ...first, errors: errors.sort(byKind), warnings: warnings.sort(byKind) }
+}
+
+function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, pickBothSides = false, elevations = null, walkwayIn = DEFAULT_RULES.zones.walkwayIn } = {}) {
   const errors = [], warnings = []
   const racks = objects.filter(isRack)
   const byId = new Map(objects.map(o => [o.id, o]))
@@ -345,10 +366,34 @@ export function checkLayout(objects, { profile = MHE_PROFILES.reach, gridSize = 
         text: `${na} and ${nb}: racks face each other across the section edge ${short(g.gapLen)} apart, needs ${len(aislePx)} aisle` })
     } }
 
-  const order = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle']
-  const byKind = (a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)
   const reminders = projectReminders(elevations)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }
+}
+
+const KIND_ORDER = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle']
+function byKind(a, b) { return KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) }
+
+/* ── Mark as OK (aisle-equip): an item the user accepts stays listed, greyed, at the bottom, with Undo mark; it no longer
+   counts as an error or a warning (the counts, the label, the export question). The marks are the items' keys
+   (issueKey), saved on the layout's elevation table (`checkMarks`), so they are saved, loaded and undone with it. ── */
+/** The keys marked as OK in table `T`. */
+export const checkMarks = (T) => new Set(Array.isArray(T?.checkMarks) ? T.checkMarks : [])
+/** A check result as shown: { errors, warnings (the open ones), marked: [{ ...item, level }] (accepted), reminders }. */
+export function shownCheck(result, T) {
+  if (!result) return null
+  const m = checkMarks(T), marked = []
+  const open = (list, level) => list.filter(i => { if (m.has(issueKey(i))) { marked.push({ ...i, level }); return false } return true })
+  return { ...result, errors: open(result.errors, 'error'), warnings: open(result.warnings, 'warning'), marked }
+}
+/** Mark item `item` as OK (or, `on` false, undo its mark): one undo step, saved with the layout. */
+export function markCheckItem(store, item, on = true) {
+  const st = store.getState(), T = st.elevations || { version: 3, types: [], defaultId: null }
+  const m = checkMarks(T), k = issueKey(item)
+  if (on === m.has(k)) return
+  if (on) m.add(k); else m.delete(k)
+  const anchor = (item.ids || []).find(id => st.objects.some(o => o.id === id)) || st.objects[0]?.id
+  store.setState({ elevations: { ...T, checkMarks: [...m] } })
+  if (anchor) store.getState().commitObjectUpdate(anchor, {})          // the history entry (it carries the table)
 }
 
 /** The reminders line: "No errors · 2 reminders" (null without reminders). */
@@ -468,11 +513,18 @@ export function installLiveRecheck(store, { delay = LIVE_RECHECK_MS } = {}) {
   return () => { unStore(); unDrag(); clearTimeout(timer) }
 }
 
+/** The check as the PDF reports it (export/checkSheet.js): open items and the ones marked as OK. */
+export function checkForExport(state) {
+  return shownCheck(checkLayout(state.objects, { ...viewOpts(), gridSize: state.gridSize || 40, elevations: state.elevations }), state.elevations)
+}
+
 /** Export: with errors, ask first (never block); otherwise export. */
 export function exportWithCheck(store, exportFn, opts = {}) {
-  const result = checkLayout(store.getState().objects, { ...viewOpts(), gridSize: store.getState().gridSize || 40, elevations: store.getState().elevations, ...opts })
+  // the items marked as OK are accepted: they ask nothing
+  const raw = checkLayout(store.getState().objects, { ...viewOpts(), gridSize: store.getState().gridSize || 40, elevations: store.getState().elevations, ...opts })
+  const result = shownCheck(raw, store.getState().elevations)
   if (result.errors.length) {
-    useLayoutCheck.setState({ result: { ...result, at: Date.now() }, askExport: { errors: result.errors.length } })
+    useLayoutCheck.setState({ result: { ...raw, at: Date.now() }, askExport: { errors: result.errors.length } })
     return false
   }
   exportFn()

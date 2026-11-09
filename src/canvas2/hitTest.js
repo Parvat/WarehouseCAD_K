@@ -24,6 +24,7 @@ import { useLabelPrefs } from './labelPrefs'
 import { isSelectable, layerShown } from '../utils/layers'
 import { onOutline, onLabel } from '../utils/sectionAreas'
 import { nameShown } from './sectionNameShown'
+import { equipmentResolver } from '../utils/equipment'
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 const COL_GRID = new Set(['column_grid'])
@@ -165,7 +166,8 @@ export function aisleLabelLayout(aisle, objects, gridSize = 40, { profile = null
      as Check layout grades the aisle — rowAisleLevel, the same function — and a failing width reads rounded
      DOWN to the inch, as Check layout lists it (10.49 ft is 10' 5", never the 10' 6" it needs). */
   const w = gapHi - gapLo
-  const level = profile ? rowAisleLevel(w, profile, gridSize) : 3
+  // graded against the aisle's own equipment: its two rows' (their sections'), the stricter (utils/equipment.js)
+  const level = profile ? rowAisleLevel(w, equipmentResolver(objects, profile).pair(aisle.row1Id, aisle.row2Id), gridSize) : 3
   const text = `${userLabel}${level < 3 ? fmtLenDown(w, gridSize) : pxToFtIn(w, gridSize)}`
   const labelMid = (gapLo + gapHi) / 2
   /* The label sits mid-run unless a column is there: then its pill and arrow slide along the aisle to the

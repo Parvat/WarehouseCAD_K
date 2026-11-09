@@ -8,7 +8,8 @@ import { useCanvasStore } from '../store/useCanvasStore'
 import { useEffect, useRef, useState } from 'react'
 import { useNotice, clearNotice, NOTICE_MS, NOTICE_UNDO_MS } from '../utils/notice'
 import { useAreaPrompt, answerArea, answerChoice, dismissAreaNote } from '../utils/rackingAreaTool'
-import { FILL_TOOL } from '../utils/fillTool'
+import { FILL_TOOL, useSectionAsk, dismissSectionAsk, makeFillSection } from '../utils/fillTool'
+import { mheProfiles } from '../utils/equipment'
 import { SPLIT_TOOL } from '../utils/splitTool'
 import { B, MONO, modePill, Sep, barBtn, btnClass, CloseBtn, NoticePill } from '../studio/barParts'
 
@@ -198,6 +199,8 @@ function Notices() {
     const close = () => useRowGroup.setState({ message: null, report: null })
     out.push(<Timed key="group-result" label="Row group result" ms={undoableResult(message) ? NOTICE_UNDO_MS : NOTICE_MS} stamp={message} onDone={close}><NoticePill label="Row group result" lines={lines} onUndo={undoableResult(message) ? undo(close) : null} onClose={close}>{message}</NoticePill></Timed>)
   }
+  const ask = useSectionAsk(s => s.ask)
+  if (ask) out.push(<SectionAsk key="section-ask" ask={ask} />)
   if (notice.text) {
     out.push(
       <Timed key="notice" label="Notice" ms={notice.undo ? NOTICE_UNDO_MS : NOTICE_MS} stamp={notice.at} onDone={clearNotice}>
@@ -205,6 +208,31 @@ function Notices() {
       </Timed>)
   }
   return out.length ? <div style={stack}>{out}</div> : null
+}
+
+/** A fill outside every section with an aisle under the project forklift's minimum (utils/fillTool.js): its racks are
+ *  placed; "Make this a section?" with an Equipment picker — Make section adds a section of the fill's box with that
+ *  equipment, in the fill's own undo step; ✕ leaves the racks as they are (Check layout lists the narrow aisles). A
+ *  question: it stays until answered. */
+const ftIn = (ft) => { const t = Math.round(ft * 12), f = Math.floor(t / 12); return `${f}′ ${t - f * 12}″` }
+function SectionAsk({ ask }) {
+  const P = mheProfiles()
+  const [pick, setPick] = useState(ask.pick || Object.keys(P)[0])
+  return (
+    <div style={live}>
+      <NoticePill role="alertdialog" label="Make this a section?" onClose={dismissSectionAsk} closeLabel="Dismiss" closeTitle="Keep the racks as they are"
+        lines={[{ text: `Its aisle, ${ftIn(ask.aisleFt)}, is below the ${ask.equipment.label} minimum ${ftIn(ask.equipment.minAisleFt)}.`, tone: 'amber' }]}
+        actions={<>
+          <select aria-label="Equipment" className="st-field" value={pick} onChange={e => setPick(e.target.value)}
+            style={{ height: 26, padding: '0 6px', borderRadius: 6, background: B.inset, border: 0, color: B.strong, fontSize: 12 }}>
+            {Object.values(P).map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+          </select>
+          <button type="button" className={btnClass(true)} style={barBtn(true)} onClick={() => makeFillSection(useCanvasStore, pick)}>Make section</button>
+        </>}>
+        Make this a section?
+      </NoticePill>
+    </div>
+  )
 }
 
 /** The Row group's mode bar and the notices (both fixed: the mode bar at the top, the notices above the tool pill). */
