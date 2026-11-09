@@ -31,7 +31,9 @@ export const HELP = [
   ] },
   { title: 'Row group', rows: [
     ['G, or Row group in the bar', 'Starts the group (the bar’s from the selection)'],
-    ['Click a row', 'Adds or removes it'],
+    ['Click a row', 'Adds it to the group'],
+    ['Click a group row', 'Picks the bay under it — its edit applies to the others'],
+    ['Shift+click a group row', 'Removes it'],
     ['Drag on empty floor', 'Adds every row in the box'],
     ['Drag a handle', 'Edits that row and applies to the others'],
     ['Drag a group row', 'Moves the whole group'],

@@ -303,13 +303,13 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.groupRows(), inGroup]).toEqual([1, [true, false]])
     }, T)
 
-    it('REG-row-group-toggle (click): Row group — a click (Shift or not) puts a row in or takes it out, a drag adds the rows it touches; no edit row: nothing selected, no bar, every group row has its handles, so a group row can be expanded straight away from its handle; the hint reads "Click rows or drag a box. Drag a handle to edit."; Esc leaves Row group with nothing selected and no bar (rule changed by STUDIO.md §7a Modes — was: a plain click makes the edit row)', async () => {
+    it('REG-row-group-toggle (click): Row group — a click (Shift or not) on a row not in the group puts it in, Shift+click on a group row takes it out, a plain click on a group row picks its bay (it stays in), a drag adds the rows it touches; no edit row: no bar, every group row has its handles, so a group row can be expanded straight away from its handle; the hint reads "Click rows to add · click a bay to edit · Shift+click to remove"; Esc leaves Row group with nothing selected and no bar (rules changed by STUDIO.md §7a Modes — was: a plain click makes the edit row; then: a plain click toggles)', async () => {
       await open()
       const ids = await openRacks()
       const a = await pairPoints(ids[0]), b = await pairPoints(ids[ids.length - 1])
       await L.page.locator('button[aria-label^="Row group"]:not([data-selection-bar] *)').last().click(); await L.page.waitForTimeout(200)
       const mode = L.page.locator('[data-mode-bar="row-group"]')
-      expect(await mode.locator('[data-mode-hint]').textContent()).toBe('Click rows or drag a box. Drag a handle to edit.')
+      expect(await mode.locator('[data-mode-hint]').textContent()).toBe('Click rows to add · click a bay to edit · Shift+click to remove')
       const rowsIn = (list) => L.S('const rows = RW.rowsOf(S.getState().objects, S.getState().gridSize || 40), k = RG.useRowGroup.getState().keys.map(x => RW.resolveKey(rows, x)); return arg.map(id => k.includes(RW.rowOfRack(rows, id)))', list)
       const tool = () => L.S('return S.getState().activeTool')
       await L.shiftClick(a.half)
@@ -317,8 +317,13 @@ describe('REG — the hand check by real clicks', () => {
       expect([await rowsIn([ids[0], ids[ids.length - 1]]), await tool()]).toEqual([[true, true], 'row_group'])
       await L.shiftClick(a.half)                                                        // again: out
       expect(await rowsIn([ids[0], ids[ids.length - 1]])).toEqual([false, true])
-      // a plain click toggles too: out, and in again — nothing selected, no bar
-      await L.click(b.half)
+      // a plain click on a group row picks its bay (it stays in, no bar); Shift+click takes it out (the bay let go); a plain click puts it in again
+      const bayMid = await L.S(`const r = S.getState().objects.find(o => o.id === arg), gs = S.getState().gridSize || 40, rot = (r.rotation || 0) * Math.PI / 180
+        const lx = ((r.uprightWidth || 3) + r.beams[0] / 2) / 12 * gs - r.width / 2, ly = -r.height / 4, cx = r.x + r.width / 2, cy = r.y + r.height / 2
+        return { x: cx + lx * Math.cos(rot) - ly * Math.sin(rot), y: cy + lx * Math.sin(rot) + ly * Math.cos(rot) }`, ids[ids.length - 1])
+      await L.click(bayMid)
+      expect([await rowsIn([ids[ids.length - 1]]), (await levelOf()).one, await L.bar(), await tool()]).toEqual([[true], [ids[ids.length - 1]], null, 'row_group'])
+      await L.shiftClick(b.half)
       expect([await rowsIn([ids[ids.length - 1]]), await L.S('return S.getState().selectedIds.length'), await L.bar(), await tool()]).toEqual([[false], 0, null, 'row_group'])
       await L.click(b.half)
       expect([await rowsIn([ids[ids.length - 1]]), await L.S('return S.getState().selectedIds.length'), await L.bar()]).toEqual([[true], 0, null])
@@ -345,6 +350,51 @@ describe('REG — the hand check by real clicks', () => {
       // Esc: out of Row group — nothing selected, no bar, no mode bar
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
       expect([await tool(), await L.groupRows(), await L.S('return S.getState().selectedIds.length'), await L.bar(), await mode.count()]).toEqual(['pan', 0, 0, null, 0])   // back to Pan, the home tool
+    }, T)
+
+    it('REG-row-group-bay (click): Row group — 3 rows grouped by clicks; a click on a group row picks the bay under it (bay level, as outside the Row group); its beam changed in the card → the same bay position changes in the other two rows (Auto apply); Shift+click on a group row takes it out', async () => {
+      await open()
+      const all = await openRacks()
+      // three rows (not pieces of one row) lined up — the same start along the run and the same bays — their click points on the open canvas
+      const three = await L.S(`const st = S.getState(), rows = RW.rowsOf(st.objects, st.gridSize || 40), seen = new Set(), by = new Map()
+        for (const id of arg) { const k = RW.rowOfRack(rows, id); if (!k || seen.has(k)) continue; seen.add(k)
+          const o = st.objects.find(x => x.id === id), b = H.worldBoundsOf(o, st.objects), along = b.width >= b.height ? Math.round(b.x) : Math.round(b.y)
+          const g = (b.width >= b.height ? 'h' : 'v') + along + '|' + o.beams.join(','); by.set(g, [...(by.get(g) || []), id]) }
+        return [...by.values()].find(l => l.length >= 3)?.slice(0, 3) || null`, all)
+      expect(three).toBeTruthy()
+      const pts = []
+      for (const id of three) pts.push(await pairPoints(id))
+      await L.page.locator('button[aria-label^="Row group"]:not([data-selection-bar] *)').last().click(); await L.page.waitForTimeout(200)
+      const mode = L.page.locator('[data-mode-bar="row-group"]')
+      expect(await mode.locator('[data-mode-hint]').textContent()).toBe('Click rows to add · click a bay to edit · Shift+click to remove')
+      const sw = mode.getByRole('switch', { name: 'Auto apply' })
+      if ((await sw.getAttribute('aria-checked')) !== 'true') await sw.click()
+      const rowsIn = (list) => L.S('const rows = RW.rowsOf(S.getState().objects, S.getState().gridSize || 40), k = RG.useRowGroup.getState().keys.map(x => RW.resolveKey(rows, x)); return arg.map(id => k.includes(RW.rowOfRack(rows, id)))', list)
+      // a click on a row not in the group adds it
+      for (const q of pts) await L.click(q.half)
+      expect([await rowsIn(three), await L.groupRows()]).toEqual([[true, true, true], 3])
+      // a click on a group row: the bay under the pointer, at bay level; the row stays in the group
+      const beamsOf = () => L.S('return arg.map(id => S.getState().objects.find(o => o.id === id).beams.slice())', three)
+      const b0 = await beamsOf()
+      await L.click(pts[0].half)
+      const bay = await L.S('const o = S.getState().objects.find(x => x.id === arg); return o.activeBayIdx', three[0])
+      expect([typeof bay, (await levelOf()).one, await rowsIn([three[0]]), await L.S('return S.getState().activeTool')]).toEqual(['number', [three[0]], [true], 'row_group'])
+      // its beam changed in the card → the same bay changes in the other two rows
+      const sel = L.page.getByRole('combobox', { name: 'Bay ' + (bay + 1) + ' beam' })
+      const vals = await sel.locator('option').evaluateAll(os => os.map(o => o.value))
+      const nv = vals.find(v => v !== 'other' && Number(v) !== b0[0][bay])
+      await sel.selectOption(nv); await L.page.waitForTimeout(300)
+      const b1 = await beamsOf()
+      expect(b1[0][bay]).toBe(Number(nv))
+      for (const i of [1, 2]) {
+        const diff = b1[i].map((v, j) => (v !== b0[i][j] ? j : -1)).filter(j => j >= 0)
+        expect([b1[i].length, diff.length, b1[i][diff[0]]]).toEqual([b0[i].length, 1, Number(nv)])
+      }
+      // Shift+click on a group row takes it out
+      const p2 = await pairPoints(three[2])
+      await L.shiftClick(p2.half)
+      expect([await rowsIn(three), await L.groupRows()]).toEqual([[true, true, false], 2])
+      await L.page.keyboard.press('Escape')
     }, T)
 
     /* ── the selection rule (STUDIO.md §7): rows or bays, never both ── */
@@ -753,7 +803,7 @@ describe('REG — the hand check by real clicks', () => {
     }, T)
 
     /* ── Row group: a plain click adds ── */
-    it('REG-row-group-add (click): in Row group a plain click on a row not in the group adds it; on a group row it takes it out (a toggle — STUDIO.md §7a Modes; was: it made the edit row); Shift+click toggles too; nothing is ever selected', async () => {
+    it('REG-row-group-add (click): in Row group a plain click on a row not in the group adds it (nothing selected); on a group row it stays in and is picked at (its bay — STUDIO.md §7a Modes; was: it made the edit row, then: it took the row out); Shift+click on a group row takes it out, on a row not in the group puts it in', async () => {
       await open()
       const ids = await openRacks()
       const a = await pairPoints(ids[0]), b = await pairPoints(ids[ids.length - 1])
@@ -763,7 +813,9 @@ describe('REG — the hand check by real clicks', () => {
       expect([await rowsIn([a.r.id]), (await levelOf()).ids]).toEqual([[true], []])
       await L.click(b.half)
       expect([await rowsIn([a.r.id, b.r.id]), (await levelOf()).ids, await L.groupRows()]).toEqual([[true, true], [], 2])
-      await L.click(a.half)                                                             // a group row: out
+      await L.click(a.half)                                                             // a group row: it stays in, picked at
+      expect([await L.groupRows(), await rowsIn([a.r.id, b.r.id]), (await levelOf()).ids]).toEqual([2, [true, true], [a.r.id]])
+      await L.shiftClick(a.half)                                                        // Shift+click on a group row: out
       expect([await L.groupRows(), await rowsIn([a.r.id, b.r.id]), (await levelOf()).ids]).toEqual([1, [false, true], []])
       await L.shiftClick(a.half)                                                        // Shift+click: in again
       expect(await rowsIn([a.r.id, b.r.id])).toEqual([true, true])
@@ -1494,7 +1546,7 @@ describe('REG — the hand check by real clicks', () => {
       expect((await pieces()).length).toBe(2)
     }, T)
 
-    it('REG-7a-modes (click): Row group, Split, Fill and Door have their mode bar at the top; Done, Esc, ✕ or another tool ends the mode — no purple outline, nothing selected; Row group: a drag adds rows, a click (Shift or not) toggles a row, nothing is selected (no edit row — was: a click made the edit row)', async () => {
+    it('REG-7a-modes (click): Row group, Split, Fill and Door have their mode bar at the top; Done, Esc, ✕ or another tool ends the mode — no purple outline, nothing selected; Row group: a drag adds rows, a click (Shift or not) on a row not in the group adds it, a plain click on a group row picks at it (its bay), Shift+click on a group row takes it out (no edit row — was: a click made the edit row; then: a click toggled the row)', async () => {
       await open()
       const ids = await openRacks('rack_double_row', 4), f = await fpOf()
       const outline = () => L.page.evaluate(() => { const g = window.Konva.stages[0].findOne('.row-group-outline'); return g ? g.find('Rect').length : 0 })
@@ -1531,7 +1583,9 @@ describe('REG — the hand check by real clicks', () => {
       await L.click(cq)
       expect([await L.groupRows(), (await levelOf()).ids]).toEqual([2, []])               // a row outside: added, nothing selected
       await L.click(cq)
-      expect([await L.groupRows(), (await levelOf()).ids]).toEqual([1, []])               // a group row: out
+      expect([await L.groupRows(), (await levelOf()).ids.includes(q.id)]).toEqual([2, true])   // a group row: it stays in, picked at
+      await L.shiftClick(cq)
+      expect([await L.groupRows(), (await levelOf()).ids]).toEqual([1, []])               // Shift+click on a group row: out
       await L.page.keyboard.press('Escape')
     }, T)
 
@@ -1725,7 +1779,7 @@ describe('REG — the hand check by real clicks', () => {
       expect([left.length, left[0].endsWith(':1')]).toEqual([1, true])
     }, T)
 
-    it('REG-7b-group (click): Row group — a click on a row toggles it, a box on the floor adds rows, a click on the floor does nothing; no edit row, every group row has its handles: a handle drag edits that row and applies to the others; a body drag past 6 px moves the whole group (one undo), under 6 px it toggles; cursors move / resize / crosshair', async () => {
+    it('REG-7b-group (click): Row group — a click on a row not in the group adds it, on a group row picks at it (its bay), Shift+click on a group row takes it out, a box on the floor adds rows, a click on the floor does nothing; no edit row, every group row has its handles: a handle drag edits that row and applies to the others; a body drag past 6 px moves the whole group (one undo), under 6 px it is that click; cursors move / resize / crosshair (was: a click toggled the row)', async () => {
       await open()
       const ids = await openRacks('rack_double_row', 6), gs = await gs7(), f = await fpOf()
       let r = await obj7(ids[0]), q = await obj7(ids[1])
@@ -1736,7 +1790,9 @@ describe('REG — the hand check by real clicks', () => {
       await L.click(cq)
       expect(await L.groupRows()).toBe(2)
       await L.click(cq)
-      expect(await L.groupRows()).toBe(1)
+      expect([await L.groupRows(), (await L.S('return S.getState().selectedIds')).includes(q.id)]).toEqual([2, true])   // a group row: picked at, still in
+      await L.shiftClick(cq)
+      expect([await L.groupRows(), await L.S('return S.getState().selectedIds.length')]).toEqual([1, 0])                 // Shift+click: out
       await L.click(cq)
       expect(await L.groupRows()).toBe(2)
       // a click on the empty floor: nothing — the group stays, nothing selected
@@ -1764,11 +1820,11 @@ describe('REG — the hand check by real clicks', () => {
       r = await obj7(ids[0]); q = await obj7(ids[1])
       const dr = [r.x - p0[0][0], r.y - p0[0][1]], dq = [q.x - p0[1][0], q.y - p0[1][1]]
       expect([Math.abs(dr[0]) + Math.abs(dr[1]) > 0, Math.abs(dr[0] - dq[0]) < 0.5 && Math.abs(dr[1] - dq[1]) < 0.5, (await hist7()) - h0, await L.groupRows()]).toEqual([true, true, 1, 2])
-      // under 6 px: the click toggle, nothing moved
+      // under 6 px: the click — picked at, still in the group, nothing moved
       const h1 = await hist7()
       await jitter(rackAt(q, -0.3, -0.25), 4)
       const q2 = await obj7(ids[1])
-      expect([await L.groupRows(), [q2.x, q2.y].join(), await hist7()]).toEqual([1, [q.x, q.y].join(), h1])
+      expect([await L.groupRows(), (await L.S('return S.getState().selectedIds')).includes(q.id), [q2.x, q2.y].join(), await hist7()]).toEqual([2, true, [q.x, q.y].join(), h1])
       // Done ends it: no outline, nothing selected
       await L.page.locator('[data-mode-bar="row-group"]').getByRole('button', { name: 'Done' }).click(); await L.page.waitForTimeout(150)
       expect([await L.page.locator('[data-mode-bar]').count(), await L.S('return S.getState().selectedIds.length'), await L.groupRows()]).toEqual([0, 0, 0])
@@ -2374,7 +2430,7 @@ describe('REG — the hand check by real clicks', () => {
       // the Row group: its mode bar, no selection bar
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('g'); await L.page.waitForTimeout(150)
-      expect([await L.page.locator('[data-selection-bar]').count(), await L.page.getByText(/Click rows or drag a box/).count() > 0]).toEqual([0, true])
+      expect([await L.page.locator('[data-selection-bar]').count(), await L.page.getByText(/Click rows to add · click a bay to edit/).count() > 0]).toEqual([0, true])
     }, T)
 
     it('REG-shortcut-sheet (click): the ? button in the bottom-right island and the ? key open the sheet — every action grouped Select, Bays, Row group, Tools, Keys; Esc and a click outside close it; ? typed in a field is text', async () => {

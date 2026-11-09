@@ -3,8 +3,9 @@
 //
 //   - The group is presentation state: it lives here, never in the canvas store, never in a saved file.
 //     It stays outlined until Esc or ✕. A row deleted outside the group drops out of it.
-//   - The Row group tool (ROW_GROUP_TOOL, next to Fill racking): a box adds every row it touches, a click
-//     on a row adds or removes it; the tool stays on until Esc or the mode bar's ✕ (canvas2/Canvas2.jsx).
+//   - The Row group tool (ROW_GROUP_TOOL, next to Fill racking): a box adds every row it touches, a click on a
+//     row not in the group adds it, a click on a group row picks its bay (canvas2/useCanvasInteraction.js
+//     groupRowPress), Shift+click on a group row takes it out; the tool stays on until Esc or the mode bar's ✕.
 //   - An action (a new history entry following the one seen before) that edits a group row is planned on
 //     the others. "Ask": the bar asks "Apply to the other N rows?" with a live preview; Apply writes it as
 //     ONE history entry, Skip leaves it. "Auto apply": applied at once, folded into the action's own
@@ -122,9 +123,9 @@ export function commitGroupBox(store, moved, selectTool) {
 export function cancelGroupBox() { useRowGroup.setState({ drag: null }) }
 
 /** The Row group tool's release on the canvas (STUDIO.md §7a Modes): a box (`moved`) adds every row it touches; a
- *  click on a row (Shift or not) puts it in the group or takes it out; a click on empty floor does nothing — the group
- *  stays. No edit row: nothing is selected (every group row has its handles — canvas2/Canvas2.jsx). The tool stays
- *  on. → what it did. (`shiftKey`: kept for the callers; a Shift+click toggles as a click does.) */
+ *  click on a row not in the group adds it, a Shift+click on a group row takes it out (a plain click on a group row
+ *  never reaches here — it picks the bay under it: canvas2/useCanvasInteraction.js groupRowPress); a click on empty
+ *  floor does nothing — the group stays. The tool stays on. → what it did. (`shiftKey`: kept for the callers.) */
 export function commitGroupPress(store, moved, shiftKey) {   // eslint-disable-line no-unused-vars
   const d = useRowGroup.getState().drag
   useRowGroup.setState({ drag: null })
@@ -134,7 +135,13 @@ export function commitGroupPress(store, moved, shiftKey) {   // eslint-disable-l
     addRowsInBox(box)
     return 'box'
   }
-  if (d.hit) { toggleRowOf(d.hit); return 'toggle' }
+  if (d.hit) {
+    toggleRowOf(d.hit)
+    // a row taken out: a bay picked in it is let go
+    const rows = rowsOf(objectsNow(), gs()), key = rowOfRack(rows, d.hit), st = store.getState()
+    if (key && !useRowGroup.getState().keys.some(k => resolveKey(rows, k) === key) && st.selectedIds.some(id => rows.get(key).ids.includes(id))) st.clearSelection()
+    return 'toggle'
+  }
   return 'none'
 }
 

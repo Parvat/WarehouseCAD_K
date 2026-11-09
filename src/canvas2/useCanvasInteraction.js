@@ -22,7 +22,7 @@ import { nanoid } from 'nanoid'
 import { inlineSnap, planInlineDrop, applyJoin } from './inlineSnap'
 import { pickableIn, selectableIn, snapTargets, isPickable, isSelectable } from '../utils/layers'
 import { pickedOnPlan } from '../studio/viewPrefs'
-import { groupDragFor, skipNextAction, groupRowsNow, toggleRowOf } from '../utils/rowGroupTool'
+import { groupDragFor, skipNextAction, groupRowsNow } from '../utils/rowGroupTool'
 import { lockToAxis } from '../utils/rowGroup'
 import { clearIssueHighlight } from '../utils/layoutCheck'
 import {
@@ -440,8 +440,10 @@ export function useCanvasInteraction({
 
   /* ── the Row group tool on its own rows (STUDIO.md §7a Modes; Canvas2.jsx groupMouseDown) ── no edit row: every
      group row has its handles, and a drag on any of them edits that row (the watcher applies it to the others, Ask or
-     Auto apply as set); a press on a group row's body moves the whole group past MOVE_THRESHOLD — one undo — and is
-     the click toggle under it. */
+     Auto apply as set); a press on a group row's body moves the whole group past MOVE_THRESHOLD — one undo — and
+     under it is a click: the bay under the pointer picked (bay level, as outside the Row group), so the card edits it
+     and the watcher applies the edit to the same bay position in the other group rows. Shift+click takes a group row
+     out (Canvas2.jsx groupMouseDown → commitGroupPress). */
   const groupRackIds = () => {
     const st = useCanvasStore.getState(), ok = pickableIn(st.layers)
     return groupRowsNow(st.objects).flatMap(r => r.ids).filter(id => { const o = st.objects.find(x => x.id === id); return o && ok(o) })
@@ -460,6 +462,17 @@ export function useCanvasInteraction({
     const id = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
     return id && groupRackIds().includes(id) ? id : null
   }
+  /** A click on a group row's body: the bay under the pointer (a pair's half, or both at the flue); that bay clicked
+   *  again, or an upright, the row — as a click on a selected row outside the Row group. */
+  const pickGroupBay = (id, world) => {
+    const st = useCanvasStore.getState(), r = st.objects.find(o => o.id === id), gs = st.gridSize || 40
+    if (!r || !isBayRack(r)) return
+    const bay = hitTestBay(r, world.x, world.y, gs)
+    if (bay == null) { selectRows(useCanvasStore, [id]); return }
+    const side = bayHalfAt(r, world.x, world.y, gs) ?? null, cur = pickedBays(st)
+    if (cur.length === 1 && cur[0].objId === id && cur[0].bayIdx === bay && cur[0].side === side) selectRows(useCanvasStore, [id])
+    else selectBays(useCanvasStore, [{ objId: id, bayIdx: bay, side }])
+  }
   /** A plain press with the Row group tool: true when a group row's handle or body took it. */
   const groupRowPress = (e) => {
     const stage = stageRef.current, evt = e && e.evt, p = stage && stage.getPointerPosition()
@@ -470,8 +483,9 @@ export function useCanvasInteraction({
     const id = groupBodyAt(world)
     if (!id) return false
     beginDrag(id, world, evt, groupRackIds())
-    if (objDrag.current) { objDrag.current.click = () => toggleRowOf(id); objDrag.current.groupMove = true }
-    else toggleRowOf(id)
+    const pick = () => pickGroupBay(id, world)
+    if (objDrag.current) { objDrag.current.click = pick; objDrag.current.groupMove = true }
+    else pick()
     return true
   }
   /** The Row group tool's cursor at a pointer: resize over a group row's handle, move over its body, else crosshair. */

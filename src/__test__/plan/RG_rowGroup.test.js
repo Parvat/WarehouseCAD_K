@@ -169,11 +169,12 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(c2).toMatch(/commitGroupPress\(useCanvasStore, moved, shiftKey\)/)
     expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/activeTool === ROW_GROUP_TOOL\) \{ cancelGroupBox\(\); clearGroup\(\); useCanvasStore\.getState\(\)\.setActiveTool\(HOME_TOOL\); useCanvasStore\.getState\(\)\.clearSelection\(\); useCanvasStore\.getState\(\)\.setActiveWall\(null\); return \}/)
     // the select tool no longer picks rows (it only asks the Row group which racks a dragged group row skips); the one
-    // toggle there is the Row group tool's own click on a group row (groupRowPress — STUDIO.md §7a Modes)
+    // Row group tool's own click on a group row picks the bay under it (groupRowPress — STUDIO.md §7a Modes; was: it
+    // toggled the row — Shift+click takes a group row out now, in commitGroupPress)
     const ci = readFileSync('src/canvas2/useCanvasInteraction.js', 'utf8')
     expect(ci).not.toMatch(/addRowsInBox|picking\)/)
     const press = ci.slice(ci.indexOf('const groupRowPress = '), ci.indexOf('const groupCursorAt = '))
-    expect([ci.split('toggleRowOf(').length - 1, press.split('toggleRowOf(').length - 1]).toEqual([2, 2])
+    expect([ci.split('toggleRowOf(').length - 1, press.split('pickGroupBay(').length - 1]).toEqual([0, 1])
   })
 
   /* ── 2. the bay replay — worked example a ── */
