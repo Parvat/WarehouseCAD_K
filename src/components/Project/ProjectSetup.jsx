@@ -259,7 +259,7 @@ function StartCard() {
 }
 
 /* The BOM section of Project settings: the deck table (a beam length and the deck widths across it — rows added,
-   edited, removed), anchors per foot, row spacers per frame height, the guards (off unless set: the dealer's choice). */
+   edited, removed), anchors per foot, the row spacers' height (1 per frame pair up to it, 2 above), the guards (off unless set: the dealer's choice). */
 const widthsText = (w) => (w || []).join(' + ')
 const widthsOf = (t) => String(t).split(/[+,\s]+/).map(Number).filter(v => Number.isFinite(v) && v > 0)
 function DeckWidths({ value, onChange, aria }) {
@@ -294,10 +294,9 @@ function BomSettings({ value: b, onChange }) {
       <button type="button" aria-label="Add deck row" onClick={() => set({ decks: [...b.decks, { beamIn: null, widthsIn: [] }] })} style={{ ...S.btn, alignSelf: 'flex-start' }}><Plus size={13} /> Add</button>
       <div style={S.grid}>
         <Num label="Anchors per foot" value={b.anchorsPerFoot} onChange={v => set({ anchorsPerFoot: v ?? 0 })} />
-        <Num label="Row spacers up to (ft)" value={b.spacerBreakFt} onChange={v => set({ spacerBreakFt: v ?? 0 })} />
-        <Num label="Spacers per frame, up to it" value={b.spacersUpTo} onChange={v => set({ spacersUpTo: v ?? 0 })} />
-        <Num label="Spacers per frame, above it" value={b.spacersAbove} onChange={v => set({ spacersAbove: v ?? 0 })} />
+        <Num label="Row spacers: 1 per frame pair up to (ft)" value={b.spacerBreakFt} onChange={v => set({ spacerBreakFt: v ?? 0 })} />
       </div>
+      <span style={S.note}>Row spacers (back-to-back only) tie the two uprights of each frame pair: 1 up to that frame height, 2 above.</span>
       <div style={{ display: 'flex', gap: 18 }}>
         {check('uprightGuards', 'Upright guards')}
         {check('endGuards', 'End-of-aisle guards')}
