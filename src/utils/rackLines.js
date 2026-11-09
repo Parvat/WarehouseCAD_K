@@ -4,14 +4,17 @@
 // one kind standing end to end in one line — butting or sharing an upright, the same depth across — never across a
 // gap (a cross-aisle starts a new line). A single row is one line; a back-to-back pair is TWO lines, its two sides.
 //
-// Numbering: always R1 to Rn in order, no gaps, recomputed from position whenever rows are added, deleted or moved —
-// left to right across the building for rows that run up and down, top to bottom for rows that run across (then left
+// Numbering: always R1 to Rn in order, no gaps, recomputed whenever rows are added, deleted or moved — section by
+// section, in the Sections list's order (the layout's), then Unassigned (a line is in the drawn section holding its
+// middle), one continuous run, so a row added or deleted in a later section never renumbers an earlier one. Inside each
+// (with no section drawn: the whole building, as one), by position — left to right across the building for rows that run up and down, top to bottom for rows that run across (then left
 // to right along one row line), each building in turn (within one, the up-and-down rows first); a pair's two sides
 // one after the other, its left (top) side first. Nothing is stored: the plan's labels and the BOM read this same
 // computation.
 
 import { rackFootprint } from '../generate/rackFootprint'
 import { faceIndex } from '../generate/faceAisles'
+import { isSection, polygonOf, pointInPolygon } from './sectionAreas'
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const isLineRack = (o) => !!o && BEAM.has(o.type) && Array.isArray(o.beams) && o.beams.length > 0 && o.width > 0 && o.height > 0
@@ -60,10 +63,17 @@ export function rackLinesOf(objects, gridSize = 40) {
       lines.push({ ...base, key: ids[0] + ':lo', ws: 'lo', s0, s1: mid }, { ...base, key: ids[0] + ':hi', ws: 'hi', s0: mid, s1 })
     } else lines.push({ ...base, key: ids[0] + ':one', ws: 'one', s0, s1 })
   }
-  // left to right (rows running up and down), then top to bottom (rows running across); each building in turn
-  // (a pair by its whole band, so its two sides are numbered one after the other)
+  // section by section (the drawn section holding the line's middle, in the layout's order; Unassigned last), then left
+  // to right (rows running up and down), then top to bottom (rows running across); each building in turn (a pair by
+  // its whole band, so its two sides are numbered one after the other)
+  const polys = objects.filter(isSection).map(polygonOf)
+  for (const l of lines) {
+    const a = (l.r0 + l.r1) / 2, x = l.vert ? l.band : a, y = l.vert ? a : l.band
+    const i = polys.findIndex(q => pointInPolygon(q, x, y))
+    l.secAt = i >= 0 ? i : polys.length
+  }
   const wsAt = { lo: 0, one: 0, hi: 1 }
-  lines.sort((a, b) => a.fpAt - b.fpAt || (a.vert === b.vert ? 0 : a.vert ? -1 : 1) || a.band - b.band || a.r0 - b.r0 || wsAt[a.ws] - wsAt[b.ws])
+  lines.sort((a, b) => a.secAt - b.secAt || a.fpAt - b.fpAt || (a.vert === b.vert ? 0 : a.vert ? -1 : 1) || a.band - b.band || a.r0 - b.r0 || wsAt[a.ws] - wsAt[b.ws])
   cache.set(objects, { gridSize, lines })
   return lines
 }

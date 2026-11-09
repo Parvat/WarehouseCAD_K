@@ -93,22 +93,38 @@ describe('BOM2 — sections, rack lines, By row (hand count)', () => {
     expect(BY_ROW_PARTS).not.toContain('Safety pin')
   })
 
-  it('BOM2-sequential: the numbers are always R1 to Rn by position, no gaps — a pair added above takes R1–R2 and the others move down; a pair deleted closes the gap; a pair moved is renumbered where it now stands (rule changed: was, a number once given stayed)', () => {
+  it('BOM2-sequential: with no section drawn, the numbers are R1 to Rn by position, no gaps — a pair added above takes R1–R2 and the others move down; a pair deleted closes the gap; a pair moved is renumbered where it now stands (rule changed: was, a number once given stayed)', () => {
     const rows = (objs) => numberLines(objs, GS).map(l => 'R' + l.no + ' ' + l.ids.join() + ' ' + l.ws)
-    expect(rows(layout)).toEqual(['R1 P1 lo', 'R2 P1 hi', 'R3 P2 lo', 'R4 P2 hi'])
+    const bare = [fp, P1, P2]                                                // no section: the whole building
+    expect(rows(bare)).toEqual(['R1 P1 lo', 'R2 P1 hi', 'R3 P2 lo', 'R4 P2 hi'])
     // added above P1: top to bottom it comes first
     const P0 = pair('P0', [96], 0, -px(240), 'A')
-    expect(rows([...layout, P0])).toEqual(['R1 P0 lo', 'R2 P0 hi', 'R3 P1 lo', 'R4 P1 hi', 'R5 P2 lo', 'R6 P2 hi'])
+    expect(rows([...bare, P0])).toEqual(['R1 P0 lo', 'R2 P0 hi', 'R3 P1 lo', 'R4 P1 hi', 'R5 P2 lo', 'R6 P2 hi'])
     // P1 deleted: no gap — P0 R1–R2, P2 R3–R4
-    expect(rows([fp, S1, S2, P0, P2])).toEqual(['R1 P0 lo', 'R2 P0 hi', 'R3 P2 lo', 'R4 P2 hi'])
+    expect(rows([fp, P0, P2])).toEqual(['R1 P0 lo', 'R2 P0 hi', 'R3 P2 lo', 'R4 P2 hi'])
     // P2 moved above P0: it is first now
     const up = { ...P2, y: -px(480) + px(20) }
     expect(rows([fp, P0, P1, up])).toEqual(['R1 P2 lo', 'R2 P2 hi', 'R3 P0 lo', 'R4 P0 hi', 'R5 P1 lo', 'R6 P1 hi'])
     // a copy of P1 on its row line, right of it: after P1 (left to right along the line), before P2 (below)
     const copy = { ...P1, id: 'P1copy', x: px(600) }
-    expect(rows([...layout, copy])).toEqual(['R1 P1 lo', 'R2 P1 hi', 'R3 P1copy lo', 'R4 P1copy hi', 'R5 P2 lo', 'R6 P2 hi'])
-    // a number saved by the earlier build changes nothing: the BOM reads position only
+    expect(rows([...bare, copy])).toEqual(['R1 P1 lo', 'R2 P1 hi', 'R3 P1copy lo', 'R4 P1copy hi', 'R5 P2 lo', 'R6 P2 hi'])
+    // a number saved by an earlier build changes nothing
     expect(computeBom(layout, table({ 'P1:lo': 7, 'P1:hi': 8 })).rows.map(r => r.label)).toEqual(['R1', 'R2', 'R3', 'R4'])
+  })
+
+  it('BOM2-by-section: with sections, the numbers go section by section in the Sections list’s order, then Unassigned — one run, no gaps; a row added or deleted in a later section never renumbers an earlier one', () => {
+    const rows = (objs) => numberLines(objs, GS).map(l => 'R' + l.no + ' ' + l.ids.join() + ' ' + l.ws)
+    // P0 above P1 but in no section: after both sections, though it stands highest
+    const P0 = pair('P0', [96], 0, -px(240), 'A')
+    expect(rows([...layout, P0])).toEqual(['R1 P1 lo', 'R2 P1 hi', 'R3 P2 lo', 'R4 P2 hi', 'R5 P0 lo', 'R6 P0 hi'])
+    // a pair added in Section 2, left of P2: Section 1 keeps R1–R2; Section 2 runs on from R3, left to right
+    const Q = pair('Q', [96], -px(40), px(240), 'A')
+    const P2r = { ...P2, x: px(200) }
+    expect(rows([fp, S1, S2, P1, P2r, Q])).toEqual(['R1 P1 lo', 'R2 P1 hi', 'R3 Q lo', 'R4 Q hi', 'R5 P2 lo', 'R6 P2 hi'])
+    // P2 deleted from Section 2: Section 1 still R1–R2
+    expect(rows([fp, S1, S2, P1, Q])).toEqual(['R1 P1 lo', 'R2 P1 hi', 'R3 Q lo', 'R4 Q hi'])
+    // the Sections list's order is the layout's: Section 2 listed first, its rows first
+    expect(rows([fp, S2, S1, P1, P2])).toEqual(['R1 P2 lo', 'R2 P2 hi', 'R3 P1 lo', 'R4 P1 hi'])
   })
 
   it('BOM2-files: the CSV per section with the Total; the xlsx is the By row table, numbers as numbers', () => {
@@ -131,8 +147,8 @@ describe('BOM2 — sections, rack lines, By row (hand count)', () => {
   it('BOM2-unassigned: a pair outside both sections is Unassigned, before the Total; no section drawn: the Total alone', () => {
     const P3 = pair('P3', [96], px(600), 0, 'A')
     const b = computeBom([...layout, P3], table())
-    // numbered fresh: P3 stands on P1's row line, right of it — top to bottom, then left to right: P1 R1–R2, P3 R3–R4, P2 R5–R6
-    expect(b.sections.map(s => [s.name, s.rows])).toEqual([['Section 1', [1, 2]], ['Section 2', [5, 6]], ['Unassigned', [3, 4]]])
+    // section by section, then Unassigned: P1 R1–R2 (Section 1), P2 R3–R4 (Section 2), P3 R5–R6
+    expect(b.sections.map(s => [s.name, s.rows])).toEqual([['Section 1', [1, 2]], ['Section 2', [3, 4]], ['Unassigned', [5, 6]]])
     expect(parts(b.sections[2].lines)['Row spacer 9″ flue']).toBe(2)       // 1 bay → 2 frame pairs × 1
     const none = computeBom([fp, P1, P2], table())
     expect([none.hasSections, none.sections.map(s => s.name)]).toEqual([false, ['Unassigned']])

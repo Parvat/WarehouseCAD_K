@@ -2828,6 +2828,46 @@ describe('REG — the hand check by real clicks', () => {
       expect(rows).toEqual(left.map((id, i) => 'R' + (i + 1) + ' ' + id))
     }, T)
 
+    it('REG-bom-rack-by-section (click): rack line numbers go section by section — Section 1 racked (Fill racking, real drags) gets R1 … Rk; Section 2 then drawn to its LEFT and racked gets R(k+1) onward; Section 1 keeps R1 … Rk on the same rows; the plan\u2019s labels match the table', async () => {
+      await openSections()
+      // the floor cleared of racks first (setup)
+      await L.S("S.setState({ objects: S.getState().objects.filter(o => !/^rack_/.test(o.type) && o.type !== 'aisle' && o.type !== 'racking_area'), selectedIds: [] })")
+      await L.page.waitForTimeout(200)
+      const b = await innerBox()
+      const fill = async (sec) => {
+        await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+        await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(100)
+        const f0 = { x: sec.x + sec.w * 0.08, y: sec.y + sec.h * 0.12 }, f1 = { x: sec.x + sec.w * 0.92, y: sec.y + sec.h * 0.92 }
+        await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(500)
+      }
+      /** the BOM's rows: label → "ids:side", by section */
+      const rowsNow = () => L.S('return import("/src/utils/bom.js").then(M => { const st = S.getState(); return M.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 }).rows.map(r => ({ label: r.label, line: r.ids.join("+") + ":" + r.ws, sec: r.sectionId })) })')
+      const planLabels = () => L.page.evaluate(() => [...new Set(window.Konva.stages[0].find('.rack-line-label').map(n => n.text()))])
+      const seq = (from, n) => Array.from({ length: n }, (_, i) => 'R' + (from + i))
+      // Section 1, on the right half, racked
+      const s1 = await drawIn(b, 0.53, 0.05, 0.97, 0.95)
+      await fill(s1)
+      const r1 = await rowsNow(), k = r1.length
+      expect(k).toBeGreaterThan(1)
+      expect([r1.every(r => r.sec === s1.id), r1.map(r => r.label)]).toEqual([true, seq(1, k)])
+      expect((await planLabels()).sort()).toEqual(seq(1, k).sort())
+      // Section 2, to its left, racked: it runs on from R(k+1) — though it stands left of Section 1
+      const s2 = await drawIn(b, 0.03, 0.05, 0.47, 0.95)
+      await fill(s2)
+      const r2 = await rowsNow(), mine = r2.filter(r => r.sec === s2.id), theirs = r2.filter(r => r.sec === s1.id)
+      expect(mine.length).toBeGreaterThan(0)
+      expect(theirs).toEqual(r1)                                                                   // Section 1 keeps R1 … Rk, on the same rows
+      expect(mine.map(r => r.label)).toEqual(seq(k + 1, mine.length))
+      expect(r2.map(r => r.label)).toEqual(seq(1, k + mine.length))                                // one run, no gaps
+      // the plan and the table agree
+      expect((await planLabels()).sort()).toEqual(r2.map(r => r.label).sort())
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await bomTab()
+      await fullView('By row')
+      expect((await byRowShown()).cols).toEqual(r2.map(r => r.label))
+      await L.page.keyboard.press('Escape')
+    }, T)
+
     /* ── Sections (utils/sectionAreas.js, canvas2/sectionTool.js): named areas drawn on the plan, by real mouse ── */
     const secsNow = () => L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => ({ id: o.id, label: o.label, shape: o.shape, x: o.x, y: o.y, w: o.width, h: o.height, pts: o.pts || null }))')
     const racksNow = () => L.S('return JSON.stringify(S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => [o.id, o.x, o.y, o.width, o.height, o.rotation || 0]))')
