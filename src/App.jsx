@@ -19,7 +19,6 @@ import { trackCanvasPointer } from './utils/pasteAt'
 import { installLayerKeeper } from './utils/layers'
 import { installLevelsKeeper } from './utils/rackLevels'
 import { installElevationsKeeper } from './utils/elevations'
-import { installRackLinesKeeper } from './utils/rackLines'
 import { installLiveRecheck } from './utils/layoutCheck'
 import { installAreaKeeper } from './utils/rackingAreaTool'
 import { installToolKeeper } from './utils/toolSwitch'
@@ -54,9 +53,6 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopLevelsKeeper())
    action's history entry (utils/elevations.js). */
 const stopElevationsKeeper = installElevationsKeeper(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopElevationsKeeper())
-/* Rack line numbers R1, R2 …: once given they stay, kept on the elevation table, new lines numbered on (utils/rackLines.js). */
-const stopRackLinesKeeper = installRackLinesKeeper(useCanvasStore)
-if (import.meta.hot) import.meta.hot.dispose(() => stopRackLinesKeeper())
 /* Check layout: while its list is open, re-checked after every committed change (utils/layoutCheck.js). */
 const stopLiveRecheck = installLiveRecheck(useCanvasStore)
 if (import.meta.hot) import.meta.hot.dispose(() => stopLiveRecheck())

@@ -93,18 +93,22 @@ describe('BOM2 — sections, rack lines, By row (hand count)', () => {
     expect(BY_ROW_PARTS).not.toContain('Safety pin')
   })
 
-  it('BOM2-stable: a pair added above keeps R1–R4 and takes R5, R6; a copy of P1 takes new numbers; the numbers ride on the table', () => {
-    const { map } = numberLines(layout, null, GS)
-    expect(map).toEqual({ 'P1:lo': 1, 'P1:hi': 2, 'P2:lo': 3, 'P2:hi': 4 })
-    const P0 = pair('P0', [96], 0, -px(240), 'A')                           // above P1: first top to bottom, but new
-    const b2 = computeBom([...layout, P0], table(map))
-    expect(b2.rows.map(r => [r.label, r.ids.join(), r.ws])).toEqual([['R1', 'P1', 'lo'], ['R2', 'P1', 'hi'], ['R3', 'P2', 'lo'], ['R4', 'P2', 'hi'], ['R5', 'P0', 'lo'], ['R6', 'P0', 'hi']])
-    // without the stored numbers it would be numbered from the top
-    expect(computeBom([...layout, P0], table()).rows.map(r => r.ids.join() + r.ws).slice(0, 2)).toEqual(['P0lo', 'P0hi'])
-    // a copy carrying P1's numbers elsewhere: P1 keeps them (first in order), the copy takes the next
+  it('BOM2-sequential: the numbers are always R1 to Rn by position, no gaps — a pair added above takes R1–R2 and the others move down; a pair deleted closes the gap; a pair moved is renumbered where it now stands (rule changed: was, a number once given stayed)', () => {
+    const rows = (objs) => numberLines(objs, GS).map(l => 'R' + l.no + ' ' + l.ids.join() + ' ' + l.ws)
+    expect(rows(layout)).toEqual(['R1 P1 lo', 'R2 P1 hi', 'R3 P2 lo', 'R4 P2 hi'])
+    // added above P1: top to bottom it comes first
+    const P0 = pair('P0', [96], 0, -px(240), 'A')
+    expect(rows([...layout, P0])).toEqual(['R1 P0 lo', 'R2 P0 hi', 'R3 P1 lo', 'R4 P1 hi', 'R5 P2 lo', 'R6 P2 hi'])
+    // P1 deleted: no gap — P0 R1–R2, P2 R3–R4
+    expect(rows([fp, S1, S2, P0, P2])).toEqual(['R1 P0 lo', 'R2 P0 hi', 'R3 P2 lo', 'R4 P2 hi'])
+    // P2 moved above P0: it is first now
+    const up = { ...P2, y: -px(480) + px(20) }
+    expect(rows([fp, P0, P1, up])).toEqual(['R1 P2 lo', 'R2 P2 hi', 'R3 P0 lo', 'R4 P0 hi', 'R5 P1 lo', 'R6 P1 hi'])
+    // a copy of P1 on its row line, right of it: after P1 (left to right along the line), before P2 (below)
     const copy = { ...P1, id: 'P1copy', x: px(600) }
-    const { map: m3 } = numberLines([...layout, copy], { ...map, 'P1copy:lo': 1, 'P1copy:hi': 2 }, GS)
-    expect([m3['P1:lo'], m3['P1:hi'], m3['P1copy:lo'], m3['P1copy:hi']]).toEqual([1, 2, 5, 6])
+    expect(rows([...layout, copy])).toEqual(['R1 P1 lo', 'R2 P1 hi', 'R3 P1copy lo', 'R4 P1copy hi', 'R5 P2 lo', 'R6 P2 hi'])
+    // a number saved by the earlier build changes nothing: the BOM reads position only
+    expect(computeBom(layout, table({ 'P1:lo': 7, 'P1:hi': 8 })).rows.map(r => r.label)).toEqual(['R1', 'R2', 'R3', 'R4'])
   })
 
   it('BOM2-files: the CSV per section with the Total; the xlsx is the By row table, numbers as numbers', () => {

@@ -4,18 +4,14 @@
 // one kind standing end to end in one line — butting or sharing an upright, the same depth across — never across a
 // gap (a cross-aisle starts a new line). A single row is one line; a back-to-back pair is TWO lines, its two sides.
 //
-// Numbering: left to right across the building for rows that run up and down, top to bottom for rows that run across
-// (each building in turn; within one, the up-and-down rows first) — a pair's two sides one after the other, its left
-// (top) side first. Once given, a
-// number stays: it is kept on the layout's elevation table as `rackLines` ({ "<rackId>:<side>": n }, side 'lo' | 'hi'
-// for a pair's sides across, 'one' for a single row), so it is saved, undone and loaded with the layout. A line with
-// no number yet (a new row, a copy) takes the next numbers after the highest in use, in the same order; two lines
-// claiming one number (a copy of a numbered row) — the first in that order keeps it. The keeper writes the table
-// without a history entry, folded into the current one (as the elevations keeper does).
+// Numbering: always R1 to Rn in order, no gaps, recomputed from position whenever rows are added, deleted or moved —
+// left to right across the building for rows that run up and down, top to bottom for rows that run across (then left
+// to right along one row line), each building in turn (within one, the up-and-down rows first); a pair's two sides
+// one after the other, its left (top) side first. Nothing is stored: the plan's labels and the BOM read this same
+// computation.
 
 import { rackFootprint } from '../generate/rackFootprint'
 import { faceIndex } from '../generate/faceAisles'
-import { snapshotOf } from './elevations'
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const isLineRack = (o) => !!o && BEAM.has(o.type) && Array.isArray(o.beams) && o.beams.length > 0 && o.width > 0 && o.height > 0
@@ -72,57 +68,10 @@ export function rackLinesOf(objects, gridSize = 40) {
   return lines
 }
 
-/** The numbers: `stored` (the table's `rackLines`) kept where they still name a line, new lines given the next ones.
- *  → { lines: [{ ...line, no }] in R order, map: the `rackLines` to store }. */
-export function numberLines(objects, stored, gridSize = 40) {
-  const lines = rackLinesOf(objects, gridSize), byId = new Map((objects || []).map(o => [o.id, o]))
-  const map = stored || {}, used = new Set(), no = new Map()
-  for (const l of lines) {
-    // a number of any of its racks on this side (a split piece: its rack's), the lowest
-    const known = []
-    for (const id of l.ids) {
-      for (const k of [id, byId.get(id)?.pieceOf, byId.get(id)?.splitOf].filter(Boolean)) {
-        const v = map[k + ':' + l.ws]
-        if (Number.isInteger(v) && v > 0) known.push(v)
-      }
-    }
-    const n = known.filter(v => !used.has(v)).sort((a, b) => a - b)[0]
-    if (n) { used.add(n); no.set(l, n) }
-  }
-  let next = Math.max(0, ...used)
-  for (const l of lines) if (!no.has(l)) { next++; used.add(next); no.set(l, next) }
-  const out = {}
-  for (const l of lines) for (const id of l.ids) out[id + ':' + l.ws] = no.get(l)
-  return { lines: lines.map(l => ({ ...l, no: no.get(l) })).sort((a, b) => a.no - b.no), map: out }
+/** The numbers: R1 to Rn in position order (rackLinesOf's), no gaps. → [{ ...line, no }]. */
+export function numberLines(objects, gridSize = 40) {
+  return rackLinesOf(objects, gridSize).map((l, i) => ({ ...l, no: i + 1 }))
 }
 
-const sameMap = (a, b) => { const ka = Object.keys(a || {}), kb = Object.keys(b || {}); return ka.length === kb.length && ka.every(k => a[k] === b[k]) }
-
-/** The numbered lines of the layout in store state `st` (what the BOM and the plan's labels read). */
-export const rackLinesNow = (objects, table, gridSize = 40) => numberLines(objects, table?.rackLines, gridSize).lines
-
-/** Keep the numbers on the table: every change of the racks, the numbers written without a history entry (folded into
- *  the current one). Returns the unsubscribe. */
-export function installRackLinesKeeper(store) {
-  let busy = false, lastObjects = null, lastTable = null
-  const run = (st) => {
-    if (busy || (st.objects === lastObjects && st.elevations === lastTable)) return
-    lastObjects = st.objects; lastTable = st.elevations
-    const T = st.elevations
-    if (!T) return
-    const { map } = numberLines(st.objects, T.rackLines, st.gridSize || 40)
-    if (sameMap(map, T.rackLines)) return
-    const table = { ...T, rackLines: map }, full = { elevations: table }
-    // the current history entry carries them (redo kept: only that entry is rewritten)
-    if (st.historyIndex >= 0 && st.history?.length > st.historyIndex) {
-      const history = st.history.slice()
-      history[st.historyIndex] = snapshotOf(st, st.objects, table)
-      full.history = history
-    }
-    busy = true
-    try { store.setState(full) } finally { busy = false }
-    lastObjects = store.getState().objects; lastTable = store.getState().elevations
-  }
-  run(store.getState())
-  return store.subscribe(run)
-}
+/** The numbered lines of a layout (what the BOM and the plan's labels read). */
+export const rackLinesNow = (objects, gridSize = 40) => numberLines(objects, gridSize)

@@ -95,7 +95,7 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
   const ledger = bayLedger(objects || [], gridSize, T)
   const flags = new Map(), entries = []
   // the rack lines (R1 …) and which line each rack side is on
-  const numbered = numberLines(objects || [], T?.rackLines, gridSize).lines
+  const numbered = numberLines(objects || [], gridSize)
   const lineOf = new Map()
   for (const l of numbered) for (const id of l.ids) lineOf.set(id + ':' + l.ws, l.no)
   const noOf = (r, s) => lineOf.get(r.id + ':' + worldSide(r, s)) ?? 0

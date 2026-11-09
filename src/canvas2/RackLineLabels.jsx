@@ -13,8 +13,8 @@ import { layerShown } from '../utils/layers'
 const WORDS = '#767C74', FONT = "'Plus Jakarta Sans', system-ui, sans-serif", PX = 10, GAP = 4
 
 export function RackLineLabels() {
-  const { objects, T, gs, zoom, layers } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, gs: s.gridSize || 40, zoom: s.zoom || 1, layers: s.layers })))
-  const lines = useMemo(() => rackLinesNow(objects, T, gs), [objects, T, gs])
+  const { objects, gs, zoom, layers } = useCanvasStore(useShallow(s => ({ objects: s.objects, gs: s.gridSize || 40, zoom: s.zoom || 1, layers: s.layers })))
+  const lines = useMemo(() => rackLinesNow(objects, gs), [objects, gs])
   if (!lines.length || !layerShown(layers, 'racking')) return null
   const fs = PX / zoom, gap = GAP / zoom, w = fs * 2.6, h = fs * 1.2
   const out = []

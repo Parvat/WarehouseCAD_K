@@ -2754,25 +2754,78 @@ describe('REG — the hand check by real clicks', () => {
         }
       }
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
-      // stable once given: a row duplicated (its bar's Duplicate) — every number before stays on its line, the copy takes
-      // new ones after the highest; Undo puts the numbers back as they were
+      // sequential by position (rule changed — was: a number once given stayed): a row deleted (click, Delete) — the
+      // numbers are R1 to Rn again, no gaps, in position order, the plan's the same; Undo puts them back as they were
       const at = () => L.S('return import("/src/utils/bom.js").then(M => { const st = S.getState(); return M.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 }).rows.map(r => r.label + ":" + r.ids.join("+") + ":" + r.ws) })')
-      const before = await at(), max = Math.max(...before.map(x => Number(x.split(':')[0].slice(1))))
+      const before = await at(), racks = () => L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).length'), n0 = await racks()
       const ids = await openRacks()
       await L.click((await pairPoints(ids[0])).half)
-      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Duplicate' }).click(); await L.page.waitForTimeout(300)
+      const sel = (await L.S('return S.getState().selectedIds')).length
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
       const after = await at()
-      for (const x of before) {
-        const [label, rest] = [x.split(':')[0], x.split(':').slice(1).join(':')]
-        const now = after.find(y => y.startsWith(label + ':'))
-        expect([label, now && now.split(':').slice(1).join(':').split('+')[0]]).toEqual([label, rest.split('+')[0]])   // the same line (its first rack)
-      }
-      const fresh = after.filter(y => !before.some(x => x.split(':')[0] === y.split(':')[0])).map(y => Number(y.split(':')[0].slice(1)))
-      expect(fresh.every(n => n > max)).toBe(true)
+      expect([sel > 0, await racks()]).toEqual([true, n0 - sel])                            // the row (its section) gone
+      expect(after.length).toBe(before.length - 2)                                          // a pair: two lines fewer
+      expect(after.map(y => y.split(':')[0])).toEqual(after.map((_, i) => 'R' + (i + 1)))                 // R1 … Rn, no gaps
       const labelsNow = await L.page.evaluate(() => [...new Set(window.Konva.stages[0].find('.rack-line-label').map(n => n.text()))].sort())
       expect(labelsNow).toEqual(after.map(y => y.split(':')[0]).sort())
       await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
       expect(await at()).toEqual(before)
+    }, T)
+
+    it('REG-bom-rack-sequence (click): 17 rows, 3 picked at random deleted by real clicks (click, Delete) — the plan\u2019s labels read R1 to R14 in position order (top to bottom for rows across, left to right for rows up and down), no gaps, and match the BOM\u2019s By row table', async () => {
+      await open()
+      const vertical = name.endsWith('vertical')
+      // the layout's racks replaced by 17 single rows, 3 bays of 96″, evenly across the building
+      const b = await innerBox()
+      const n17 = await L.S(`const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type)), b = arg.b, px = (i) => i / 12 * gs
+        const keep = st.objects.filter(o => !/^rack_/.test(o.type) && o.type !== 'aisle' && o.type !== 'racking_area')
+        const w = px(3 * 4 + 96 * 3), h = px(42), rows = []
+        for (let i = 0; i < 17; i++) {
+          const across = arg.vertical ? b.x0 + (b.x1 - b.x0) * (i + 0.5) / 17 : b.y0 + (b.y1 - b.y0) * (i + 0.5) / 17
+          const along = arg.vertical ? b.y0 + (b.y1 - b.y0) * 0.15 + w / 2 : b.x0 + (b.x1 - b.x0) * 0.15 + w / 2
+          const cx = arg.vertical ? across : along, cy = arg.vertical ? along : across
+          rows.push({ id: 'q' + i, type: 'rack_row', x: cx - w / 2, y: cy - h / 2, width: w, height: h, rotation: arg.vertical ? 90 : 0, beams: [96, 96, 96], uprightWidth: 3, depthIn: 42, levels: 4, parentId: fp.id })
+        }
+        S.setState({ objects: [...keep, ...rows], selectedIds: [] })
+        return { gap: ((arg.vertical ? b.x1 - b.x0 : b.y1 - b.y0) / 17) - h }`, { b, vertical })
+      expect(n17.gap).toBeGreaterThan(0)                                                         // the rows stand apart
+      await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(400)
+      const centre = (id) => L.S('const o = S.getState().objects.find(x => x.id === arg); return { x: o.x + o.width / 2, y: o.y + o.height / 2 }', id)
+      const onCanvas = async (w) => { const q = await L.toScreen(w); return L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', q) }
+      // 3 at random among the rows a click reaches
+      const free = []
+      for (let i = 0; i < 17; i++) if (await onCanvas(await centre('q' + i))) free.push('q' + i)
+      expect(free.length).toBeGreaterThanOrEqual(3)
+      const gone = []
+      while (gone.length < 3) { const id = free[Math.floor(Math.random() * free.length)]; if (!gone.includes(id)) gone.push(id) }
+      for (const id of gone) {
+        await L.page.keyboard.press('Escape')
+        await L.click(await centre(id))
+        expect([id, await L.S('return S.getState().selectedIds')]).toEqual([id, [id]])
+        await L.page.mouse.move(5, 890); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(200)
+        expect([id, await L.S('return S.getState().objects.some(o => o.id === arg)', id)]).toEqual([id, false])
+      }
+      // the plan: two labels per row; their order by position reads R1 … R14
+      const labels = await L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(n => ({ text: n.text(), x: n.x() + n.width() / 2, y: n.y() + n.height() / 2 })))
+      expect(labels.length).toBe(28)
+      const ends = new Map()
+      for (const l of labels) { const k = l.text; if (!ends.has(k) || (vertical ? l.y < ends.get(k).y : l.x < ends.get(k).x)) ends.set(k, l) }
+      const inOrder = [...ends.values()].sort((p, q) => (vertical ? p.x - q.x : p.y - q.y)).map(l => l.text)
+      const want = Array.from({ length: 14 }, (_, i) => 'R' + (i + 1))
+      expect(inOrder).toEqual(want)
+      // each label on its own row: the row left at that position, in the same order
+      const left = Array.from({ length: 17 }, (_, i) => 'q' + i).filter(id => !gone.includes(id))
+      for (let i = 0; i < 14; i++) {
+        const c = await centre(left[i]), l = ends.get('R' + (i + 1))
+        expect(['R' + (i + 1), Math.abs((vertical ? l.x - c.x : l.y - c.y)) < 1]).toEqual(['R' + (i + 1), true])
+      }
+      // the table: the same R1 … R14, each on the same row
+      await bomTab()
+      await fullView('By row')
+      expect((await byRowShown()).cols).toEqual(want)
+      await L.page.keyboard.press('Escape')
+      const rows = await L.S('return import("/src/utils/bom.js").then(M => { const st = S.getState(); return M.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 }).rows.map(r => r.label + " " + r.ids.join()) })')
+      expect(rows).toEqual(left.map((id, i) => 'R' + (i + 1) + ' ' + id))
     }, T)
 
     /* ── Sections (utils/sectionAreas.js, canvas2/sectionTool.js): named areas drawn on the plan, by real mouse ── */
