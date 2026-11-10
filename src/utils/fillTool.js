@@ -96,12 +96,13 @@ export function fillEquipment(objects = null, from = null) {
    aisle never; outside every section, the typed aisle, else the project's forklift) */
 /* (fill-place: and the gap it keeps off racks at a run end, endGapFt — its equipment's cross-aisle, else its space to move) */
 /* (fill-design-aisle: a Custom design lays out on its aisle to pick and its space to move, and is stored on the area —
-   `equip`; the project's forklift is stored as its key) */
+   `equip`; the project's forklift is stored as a reference to it — { project: true }) */
 export const fillSettings = (objects = null, from = null) => {
   const s = rackingSettings(), e = fillEquipment(objects, from), inSec = !!fillSection(objects, from)
   if (!inSec && e.design) return { ...s, mhe: s.mhe, aisleFt: e.aisleFt, travelFt: e.travelFt, crossAisleFt: e.crossAisleFt, endGapFt: crossOf(e), equip: { custom: { pickFt: e.aisleFt, moveFt: e.travelFt } } }
   const a = inSec ? null : useFillTool.getState().aisleFt
-  return { ...s, mhe: e.key, aisleFt: a || e.aisleFt, endGapFt: crossOf(e), ...(inSec ? {} : { equip: { key: e.key } }) }
+  // the project's forklift is stored as a reference to it, not its widths: a change of the project forklift rechecks the racks
+  return { ...s, mhe: e.key, aisleFt: a || e.aisleFt, endGapFt: crossOf(e), ...(inSec ? {} : { equip: { project: true } }) }
 }
 /** A truck's required width at a run end: its cross-aisle, else its space to move. */
 const crossOf = (p) => (Number.isFinite(p?.crossAisleFt) && p.crossAisleFt > 0 ? p.crossAisleFt : p?.travelFt)

@@ -656,6 +656,8 @@ describe('REG — the hand check by real clicks', () => {
     const numPx = () => L.S('return (9.5 / LS.labelScale(P.useLabelPrefs.getState().labelSize, S.getState().gridSize)) * S.getState().zoom')
     /** The wheel at the canvas middle, \`dy\` a notch; waits out the fade. */
     const wheel = async (dy, n = 1) => { const c = await L.page.locator('#canvas2-container').boundingBox(); await L.page.mouse.move(c.x + c.width * 0.45, c.y + c.height * 0.5); for (let i = 0; i < n; i++) { await L.page.mouse.wheel(0, dy); await L.page.waitForTimeout(40) } await L.page.waitForTimeout(350) }
+    /** `fn()` until `ok` holds (polled every 100 ms, up to `ms`) → its last value */
+    const until = async (fn, ok, ms = 6000) => { const t0 = Date.now(); let v = await fn(); while (!ok(v) && Date.now() - t0 < ms) { await L.page.waitForTimeout(100); v = await fn() } return v }
     const zoomOutTill = async (px) => { for (let i = 0; i < 40 && (await numPx()) >= px; i++) await wheel(40) }
 
     it('REG-clear-tags (click): the clearance numbers (zoomed out, nothing selected) are not drawn; during a rack drag they are; when the drag ends they go', async () => {
@@ -723,14 +725,15 @@ describe('REG — the hand check by real clicks', () => {
       expect(col).toBeTruthy()
       await L.click(col)
       expect(await L.selected()).toEqual(['column_grid'])
-      await L.page.waitForTimeout(300)
-      const one = await numbers()
+      // the numbers fade in and out in place (clearanceView.js FADE_MS): each state waited for, not a fixed sleep — under
+      // the full run's load a fade can take longer than the old 300-400 ms waits gave it
+      const one = await until(numbers, v => v.length > 0)
       expect(one.length).toBeGreaterThan(0)
-      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(400)
-      const all = await numbers()
+      await L.page.keyboard.press('Escape')
+      const all = await until(numbers, v => v.length >= one.length)
       expect([await L.selected(), all.length >= one.length]).toEqual([['column_grid'], true])
-      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(400)
-      expect(await numbers()).toEqual([])
+      await L.page.keyboard.press('Escape')
+      expect(await until(numbers, v => v.length === 0)).toEqual([])
     }, T)
 
     /* ── one column: a click picks it, the Columns layer locked or not ── */
@@ -3710,7 +3713,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(await fillBar().getByRole('status', { name: 'Aisle warning' }).count()).toBe(1)
       const proj = await drop(at(0.01, 0.02), at(0.99, 0.98))
       expect(proj.length).toBeGreaterThan(4)
-      expect((await L.S('const st = S.getState(), r = st.objects.find(o => o.id === arg); return st.objects.find(o => o.id === r.areaId).equip', proj[0])).key).toBeTruthy()
+      expect(await L.S('const st = S.getState(), r = st.objects.find(o => o.id === arg); return st.objects.find(o => o.id === r.areaId).equip', proj[0])).toEqual({ project: true })   // by reference to the project forklift
       expect(await marks(proj)).toBeGreaterThan(0)
       await fillOff()
       expect(aisleItems((await checkNow()).open, proj).length).toBeGreaterThan(0)

@@ -51,7 +51,9 @@ describe.each(['horizontal', 'vertical'])('GU — %s', (orientation) => {
     expect(doc(s())).toEqual(after)
     // Generate locks the Columns layer only (Fix 6 round 6, as before Fix 6) — the building is picked by its walls (utils/layers.js LOCKED_AFTER_GENERATE)
     expect([s().layers.find(l => l.id === 'columns').locked, s().layers.find(l => l.id === 'building').locked]).toEqual([true, false])
-  })
+  }, 60000)
+  // the full-size Generate is the point (hundreds of objects past the 60-entry history): ~3 s alone, up to ~23 s under the
+  // full run's parallel load (six Chromium REG shards) — its own timeout, not less work
 
   it('GU-first: Generate on an empty canvas (no history yet) — one Ctrl+Z empties it again, one Ctrl+Y brings it back', () => {
     expect(s().history.length).toBe(0)
@@ -74,7 +76,9 @@ describe.each(['horizontal', 'vertical'])('GU — %s', (orientation) => {
     s().undo(); expect(doc(s())).toEqual(first)
     s().redo(); expect(doc(s())).toEqual(second)
     s().undo(); s().undo(); expect(s().objects).toEqual([])
-  })
+  }, 60000)
+  // the full-size Generate is the point (hundreds of objects past the 60-entry history): ~3 s alone, up to ~23 s under the
+  // full run's parallel load (six Chromium REG shards) — its own timeout, not less work
 
   it('GU-batched: the batched Generate the panel runs is one step as well', async () => {
     s().addObject({ type: 'text', x: 0, y: 0, width: 40, height: 20, text: 'note' })

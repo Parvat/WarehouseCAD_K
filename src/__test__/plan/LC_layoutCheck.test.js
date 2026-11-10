@@ -284,7 +284,9 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     expect(item.highlight.every(q => q.mode === 'xmark' && Math.max(q.w, q.h) < bayLen)).toBe(true)
     // the painter draws them as a glowing X
     expect(readFileSync('src/canvas2/IssueHighlight.jsx', 'utf8')).toMatch(/name="issue-hl:xmark"[\s\S]*shadowBlur=\{14\}[\s\S]*<Line points=\{\[0, 0, s\.w, s\.h\]\}/)
-  })
+  }, 60000)
+  // the large generated layout is needed (several sections, each with columns blocking pallets): ~3 s alone, past the
+  // 20 s default under the full run's load — its own timeout
 
   it('LC-zoom: going to an issue keeps the zoom and centres it — at 15 % a column on an upright stays at 15 %, centred; at 5 % (too far out to see) it zooms to 20 %, never more; a long aisle is centred without zooming in', async () => {
     const size = { w: 1200, h: 800 }

@@ -70,8 +70,9 @@ export const areaSettings = (area) => {
   if (area?.settings && !Number.isFinite(area.settings.wallClearIn)) set.wallClearIn = 0
   return set
 }
-/** The equipment a fill or Generate was made for, to store on its area: { custom } or { key }, or null. */
-const equipOf = (s) => (s?.equip && (s.equip.custom || s.equip.key) ? s.equip : typeof s?.mhe === 'string' && s.mhe && !s.mhe.includes(':') ? { key: s.mhe } : null)
+/** The equipment a fill or Generate was made for, to store on its area: a Custom design's widths ({ custom }), else a
+ *  reference to the project's forklift ({ project: true } — Generate's always: it lays out on the project forklift). */
+const equipOf = (s) => (s?.equip && (s.equip.custom || s.equip.key || s.equip.project) ? s.equip : { project: true })
 const SETTING_KEYS = ['orientation', 'beamIn', 'palletWIn', 'palletDIn', 'mhe', 'aisleFt', 'maxRunFt', 'levels', 'wallClearIn']
 const pickSettings = (s) => Object.fromEntries(SETTING_KEYS.filter(k => s[k] !== undefined).map(k => [k, s[k]]))
 
@@ -197,8 +198,8 @@ export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = 
     parentId: plan.fp.id, layerId: 'racking', // the wall clearance it was filled with, always written: an area without one was made before it (flush)
     settings: pickSettings({ ...settings, wallClearIn: plan.pattern.wallClearIn }), anchor, pattern: plan.pattern,
     // the equipment it was designed for (fill-design-aisle — utils/equipment.js areaProfile): a Fill's Custom widths, else
-    // the truck it was laid out for (a Fill's project forklift, Generate's)
-    ...(equipOf(settings) ? { equip: equipOf(settings) } : {}),
+    // the project's forklift, by reference (a Fill's on it, Generate's): changing the project forklift rechecks its racks
+    equip: equipOf(settings),
     placed: Object.fromEntries(plan.racks.map(r => [r.id, rackSig(r)])),
   }
   return { area, plan, objects: [...objects, area, ...plan.racks, ...plan.aisles] }

@@ -74,13 +74,15 @@ export function sectionProfile(s, profiles = null) {
 }
 
 /* ── the equipment a racking area was designed for (fill-design-aisle): each Fill and each Generate stores it on the area
-   it makes — `equip`: { key } (a truck of the forklift list) or { custom: { pickFt, moveFt } } (a Fill's Custom widths:
-   the aisle to pick, and the space to move — as much when left out). ── */
-/** Racking area `area`'s stored equipment as a profile, or null (none stored: an area made before). A Custom design's
- *  key is its two widths, so every area designed for the same widths is one profile. */
+   it makes — `equip`: { project: true } (the project's forklift, by reference: whatever it is now — a change of the
+   project forklift rechecks those racks at once), { custom: { pickFt, moveFt } } (a Fill's Custom widths: the aisle to
+   pick, and the space to move — as much when left out; kept as stored), or { key } (a truck of the list). ── */
+/** Racking area `area`'s stored equipment as a profile, or null — the project's forklift (stored by reference, or none
+ *  stored: an area made before). A Custom design's key is its two widths, so every area designed for the same widths
+ *  is one profile. */
 export function areaProfile(area, profiles = null) {
   const e = area?.equip
-  if (!e || typeof e !== 'object') return null
+  if (!e || typeof e !== 'object' || e.project) return null
   if (e.custom) {
     const pick = Number(e.custom.pickFt), move = Number(e.custom.moveFt)
     if (!(pick > 0)) return null
@@ -120,7 +122,7 @@ export function equipmentResolver(objects, base, profiles = null) {
   if (hit && hit.base === base && hit.trucks === projectTrucks) return hit.r
   const secs = list.filter(o => equipmentOf(o) && equipmentOf(o) !== base.key)
   // only areas designed for other equipment than the project's forklift (a Generate on it adds nothing to resolve)
-  const areas = list.filter(o => o?.type === 'racking_area' && o.equip && (o.equip.custom || o.equip.key !== base.key))
+  const areas = list.filter(o => o?.type === 'racking_area' && o.equip && !o.equip.project && (o.equip.custom || o.equip.key !== base.key))
   let r
   if (!secs.length && !areas.length) r = { single: true, of: () => base, pair: () => base, inUse: [base] }
   else {
