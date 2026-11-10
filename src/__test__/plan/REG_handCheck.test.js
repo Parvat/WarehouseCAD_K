@@ -3208,13 +3208,13 @@ describe('REG — the hand check by real clicks', () => {
     const tabsNow = () => L.page.evaluate(() => {
       const st = window.Konva.stages[0], out = {}
       for (const g of st.find(n => /^section-tab:/.test(n.name()))) {
-        const r = g.findOne('.section-tab')
-        out[g.name().slice(12)] = { x0: r.x(), y0: r.y(), x1: r.x() + r.width(), y1: r.y() + r.height(), fill: r.fill(), layer: g.getLayer().index, text: g.findOne('.section-label').text() }
+        const r = g.findOne('.section-label')
+        out[g.name().slice(12)] = { x0: r.x(), y0: r.y(), x1: r.x() + r.width(), y1: r.y() + r.height(), fill: r.fill(), fs: r.fontSize(), layer: g.getLayer().index, text: r.text() }
       }
       return out
     })
 
-    it('REG-section-names (click): a section\u2019s name is not on the floor — hidden until it is hovered or selected (the island\u2019s Sections off by default); Sections on shows every name; the name is a dark chip (#1F2321, white) inside the section in its largest empty area — no rack or zone under it — else on the outline outside it, off every rack where there is room (sections-3 — was: a white tab on the outline); drawn above the racks; the Sections list unchanged', async () => {
+    it('REG-section-names (click): a section\u2019s name is not on the floor — hidden until it is hovered or selected (the island\u2019s Sections off by default); Sections on shows every name; the name is large text like a zone name (Plus Jakarta Sans 600, the zone size rule, 1 ft at least) in the section’s colour (#767C74 with none), in its biggest open floor area — no rack, zone or label under it — else just outside an edge on open floor, never over a rack (sections-3 round 2 — was: a dark chip; before that a white tab on the outline); drawn above the racks; the Sections list unchanged', async () => {
       await openSections()
       const c0 = await freeCorner(), gs = await gs7()
       expect(c0).toBeTruthy()
@@ -3242,23 +3242,20 @@ describe('REG — the hand check by real clicks', () => {
       expect(Object.keys(await tabsNow())).toEqual([sec.id])
       await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
       expect(await tabsNow()).toEqual({})
-      // the island's Sections: every name, as the dark chip, above the racks
+      // the island's Sections: every name, large text in the section's colour (none: #767C74), above the racks
       await toggle.click(); await L.page.waitForTimeout(150)
       expect(await viewState('Section names')).toBe('true')
       const tab = (await tabsNow())[sec.id]
-      expect([tab.text, tab.fill]).toEqual(['Section 1', '#1F2321'])
+      expect([tab.text, tab.fill, tab.fs >= gs - 1e-6, tab.fs <= 4 * gs + 1e-6]).toEqual(['Section 1', '#767C74', true, true])
       const rackLayer = await L.page.evaluate(() => { const r = window.Konva.stages[0].findOne(n => /^obj:/.test(n.name()) && n.getLayer() && n.getAttr('name') && n.findOne && n.findOne('Rect')); return r ? r.getLayer().index : -1 })
       expect(tab.layer).toBeGreaterThan(rackLayer)                                              // drawn above the racks
-      // inside, in an empty spot (within the section, no rack or zone under it); else on the outline outside it, off every rack
+      // inside in an empty spot (within the section), else just outside it — never over a rack or a zone, nor over a width label
       const where = await tabAt(sec.id), racks = await L.S('const st = S.getState(); return st.objects.filter(o => /^(rack_|zone_)/.test(o.type)).map(o => H.worldBoundsOf(o, st.objects))')
       const meets = (b) => b.x < tab.x1 && tab.x0 < b.x + b.width && b.y < tab.y1 && tab.y0 < b.y + b.height
-      if (where.place === 'inside') {
-        expect([tab.x0 >= sec.x - 1e-6, tab.y0 >= sec.y - 1e-6, tab.x1 <= sec.x + sec.w + 1e-6, tab.y1 <= sec.y + sec.h + 1e-6]).toEqual([true, true, true, true])
-        expect(racks.filter(meets)).toEqual([])
-      } else if (!where.crowded) {   // (crowded — no room inside, above or below: above all the same)
-        expect(where.place === 'above' ? Math.abs(tab.y1 - sec.y) < 1e-6 : Math.abs(tab.y0 - (sec.y + sec.h)) < 1e-6).toBe(true)   // its edge on the outline, outside
-        expect(racks.filter(meets)).toEqual([])
-      }
+      if (where.place === 'inside') expect([tab.x0 >= sec.x - 1e-6, tab.y0 >= sec.y - 1e-6, tab.x1 <= sec.x + sec.w + 1e-6, tab.y1 <= sec.y + sec.h + 1e-6]).toEqual([true, true, true, true])
+      expect(racks.filter(meets)).toEqual([])
+      const dims = await L.page.evaluate(() => window.Konva.stages[0].find(n => /^(aisle|cross-aisle):/.test(n.name())).map(n => { const c = n.getClientRect({ relativeTo: n.getLayer() }); return { x: c.x, y: c.y, width: c.width, height: c.height } }))
+      expect(dims.filter(meets)).toEqual([])
       // the Sections list still names it
       expect(await L.page.getByRole('tabpanel', { name: 'Properties' }).getByText('Section 1', { exact: true }).count()).toBeGreaterThan(0)
       // off again: hidden
@@ -3886,8 +3883,8 @@ describe('REG — the hand check by real clicks', () => {
       const name = card.getByRole('textbox', { name: 'Name' })
       await name.click(); await name.fill('Bulk'); await name.press('Enter'); await L.page.waitForTimeout(150)
       expect((await secsNow())[0].label).toBe('Bulk')
-      // the label clicked again: renamed in place
-      await L.click(label); await L.page.waitForTimeout(150)
+      // the label clicked again — where it is drawn now (a new name finds its own spot: sections-3): renamed in place
+      await L.click(await tabAt(s.id)); await L.page.waitForTimeout(150)
       const box = L.page.getByRole('textbox', { name: 'Rename section' })
       expect(await box.inputValue()).toBe('Bulk')
       await box.fill('Pick face'); await box.press('Enter'); await L.page.waitForTimeout(150)
@@ -3990,10 +3987,11 @@ describe('REG — the hand check by real clicks', () => {
       const pts = s.shape === 'poly' ? s.pts.map(([x, y]) => [s.x + x, s.y + y]) : [[s.x, s.y], [s.x + s.width, s.y], [s.x + s.width, s.y + s.height], [s.x, s.y + s.height]]
       for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]
         for (let f = 0.1; f < 0.95; f += 0.05) { const x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f
-          if (H.hitTest(st.objects, st.layers, x, y, z, st.gridSize) === s.id) return { x, y } } }
+          // (not on a wall: a section edge snapped onto the inner wall — sections-3 — is the building's there)
+          if (H.hitTest(st.objects, st.layers, x, y, z, st.gridSize) === s.id && !H.fpWallHitTest(st.objects, st.layers, x, y, z, st.gridSize)) return { x, y } } }
       return null`, id)
-    /** the middle of section `id`'s name tab (utils/sectionAreas.js labelBox, where SectionNames.jsx draws it) */
-    const tabAt = (id) => L.S('return import("/src/utils/sectionAreas.js").then(M => { const st = S.getState(), s = st.objects.find(o => o.id === arg), b = M.labelBox(s, st.zoom, st.objects); return { x: b.x + b.w / 2, y: b.y + b.h / 2, place: b.place, crowded: !!b.crowded } })', id)
+    /** the middle of section `id`'s name, where SectionNames.jsx draws it (its box as published — canvas2/sectionNameShown.js) */
+    const tabAt = (id) => L.S('return import("/src/canvas2/sectionNameShown.js").then(M => { const b = M.useShownNames.getState().boxes[arg]; return b ? { x: b.x + b.w / 2, y: b.y + b.h / 2, place: b.place, fs: b.fs } : null })', id)
     const secObj = (id) => L.S('return S.getState().objects.find(o => o.id === arg) || null', id)
     const racksIn = (id) => L.S('return import("/src/utils/sectionAreas.js").then(M => M.membership(S.getState().objects).bySection.get(arg) || [])', id)
     const posOf = (ids) => L.S('const st = S.getState(); return arg.map(id => { const o = st.objects.find(x => x.id === id); return o ? [Math.round(o.x), Math.round(o.y)] : null })', ids)
@@ -4462,11 +4460,11 @@ describe('REG — the hand check by real clicks', () => {
       const w0 = await warned()
       // Section 1 dragged toward Section 2: it stops touching it, its racks 2 ft closer to Section 2's
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
-      await L.click(await grip(sa.id))
       // pressed on its outline away from every handle (sections-3: the name chip moved, so the first outline point grip() finds can
       // sit beside a corner handle of this narrow section): its edge facing Section 2, a third of the way along
       const h = await L.S('const st = S.getState(), s = st.objects.find(o => o.id === arg.id), z = st.zoom; for (let f = 0.25; f < 0.75; f += 0.02) { const p = arg.x ? { x: s.x + s.width, y: s.y + s.height * f } : { x: s.x + s.width * f, y: s.y + s.height }; if (H.hitTest(st.objects, st.layers, p.x, p.y, z, st.gridSize) === s.id) return p } return null', { id: sa.id, x: across === 'x' })
       expect(h).toBeTruthy()
+      await L.click(h)                                                              // selected there first
       await L.page.keyboard.down('Alt'); await L.drag(h, across === 'y' ? { x: h.x, y: h.y + 10 * gs } : { x: h.x + 10 * gs, y: h.y }); await L.page.keyboard.up('Alt'); await L.page.waitForTimeout(250)
       await L.page.locator('[data-island="top-right"]').getByRole('button', { name: /^Check/ }).click(); await L.page.waitForTimeout(400)
       const items = await warned()

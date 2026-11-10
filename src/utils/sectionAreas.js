@@ -11,6 +11,7 @@
 // overlaps a neighbour snaps to the neighbour's edge.
 
 import { rackFootprint } from '../generate/rackFootprint'
+import { shownNameBox } from '../canvas2/sectionNameShown'
 
 export const SECTION = 'section_area'
 export const isSection = (o) => !!o && o.type === SECTION
@@ -57,49 +58,78 @@ export function onOutline(s, x, y, band) {
   return false
 }
 
-/* the name chip (sections-3): the size tag's dark chip — #1F2321, white Plus Jakarta Sans 11px 600 (6 px across, 4 px up
-   and down) — screen px, so ÷ zoom; `inset`: 12 px in from the section's left when it sits on the outline */
-export const LABEL = { px: 11, inset: 12, padX: 6, padY: 4, color: '#FFFFFF', bg: '#1F2321', font: "'Plus Jakarta Sans', sans-serif" }
+/* the name: large text like a zone's name — Plus Jakarta Sans 600, the zone's size rule (drawing size: 0.18 of the
+   section's smaller side, 1 ft to 4 ft; down to 1 ft to fit its spot) — in the section's colour, #767C74 with none */
+export const LABEL = { color: '#767C74', font: "'Plus Jakarta Sans', sans-serif", weight: '600' }
 const rackBoxOf = (o) => { const f = rackFootprint(o); return { x: f.x, y: f.y, w: f.w, h: f.h } }
 const boxesMeet = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-/** The name chip's box (world px) at `zoom` (sections-3): INSIDE the section, in its largest empty area — the spot inside
- *  it with no rack and no zone under the chip that lies farthest from every rack, zone and the section's own edges — like
- *  a zone's label; where no empty spot holds the chip, on the outline OUTSIDE the section — above it, else below it, where
- *  there is room (the building's floor with no rack and no other section under it), else above. → { x, y, w, h, place:
- *  'inside' | 'above' | 'below', crowded (no room outside either) }. Without `objects` (nothing to measure by): the middle of the section. */
-export function labelBox(s, zoom = 1, objects = null) {
-  const z = zoom > 0 ? zoom : 1, poly = polygonOf(s)
-  const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]), x0 = Math.min(...xs), y0 = Math.min(...ys), x1 = Math.max(...xs), y1 = Math.max(...ys)
-  const w = (Math.max(3, String(s.label || 'Section').length) * LABEL.px * 0.62 + LABEL.padX * 2) / z, h = (LABEL.px + LABEL.padY * 2) / z
-  if (!objects) return { x: (x0 + x1) / 2 - w / 2, y: (y0 + y1) / 2 - h / 2, w, h, place: 'inside' }
-  const ox = x0 + LABEL.inset / z
-  const at = { above: { x: ox, y: y0 - h, w, h, place: 'above' }, below: { x: ox, y: y1, w, h, place: 'below' } }
-  // inside: the empty spot farthest from everything (racks and zones in it, and its own edges)
-  const obstacles = objects.filter(o => o && o.id !== s.id && (isRackObj(o) || (typeof o.type === 'string' && o.type.startsWith('zone_') && o.width > 0)))
+/** The name's box as drawn now (SectionNames.jsx publishes it — nameBox), else none. */
+export const drawnName = (s) => shownNameBox(s?.id)
+export const onLabel = (s, x, y) => { const b = drawnName(s); return !!b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h }
+
+/** A section's name colour: its own colour, #767C74 with none. */
+export const nameColor = (s) => colorOf(s)?.c || LABEL.color
+/** Text width of `text` at font size `fs` (Plus Jakarta Sans 600, world px). */
+const textW = (text, fs) => String(text).length * fs * 0.6 + fs * 0.1
+
+/** Where section `s`'s name goes (sections-3, round 2) — world px, { x, y, w, h, fs, place: 'inside' | 'outside' }, or
+ *  null where nothing fits. Inside the section, in its biggest open floor area: of the spots where the text has no rack,
+ *  no zone and no label (`avoid`: world px boxes — the width labels, the R labels, other names) under it, the one
+ *  farthest from all of them and from the section's edges (the open strip at its bottom, say — not its centre); at the
+ *  zone's size (0.18 of its smaller side, 1 ft to 4 ft), shrunk to fit down to 1 ft. With no spot inside, just outside
+ *  an edge, on open floor (the building's, no rack, zone, label or other section under it). */
+export function nameBox(s, objects, { gridSize = 40, avoid = [] } = {}) {
+  const poly = polygonOf(s), xs = poly.map(p => p[0]), ys = poly.map(p => p[1])
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), x1 = Math.max(...xs), y1 = Math.max(...ys)
+  const text = s.label || 'Section', MIN = gridSize
+  const fs0 = Math.max(MIN, Math.min(4 * gridSize, Math.min(x1 - x0, y1 - y0) * 0.18))
+  const list = objects || []
+  const solid = list.filter(o => o && o.id !== s.id && (isRackObj(o) || (typeof o.type === 'string' && o.type.startsWith('zone_') && o.width > 0)))
     .map(o => (isRackObj(o) ? rackBoxOf(o) : { x: o.x, y: o.y, w: o.width, h: o.height }))
-    .filter(q => q.x < x1 && q.x + q.w > x0 && q.y < y1 && q.y + q.h > y0)
-  const m = 3 / z                                                          // the chip's own clear margin
-  const inPoly = (b) => [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]].every(([px, py]) => pointInPolygon(poly, px, py))
+  const others = list.filter(o => isSection(o) && o.id !== s.id).map(o => { const p = polygonOf(o), a = p.map(q => q[0]), c = p.map(q => q[1]); return { x: Math.min(...a), y: Math.min(...c), w: Math.max(...a) - Math.min(...a), h: Math.max(...c) - Math.min(...c) } })
+  const blocks = [...solid, ...(avoid || [])]
   const gap = (b, q) => Math.max(q.x - (b.x + b.w), b.x - (q.x + q.w), q.y - (b.y + b.h), b.y - (q.y + q.h))
-  let best = null
-  const N = 24, sx = Math.max((x1 - x0 - w) / N, 1e-6), sy = Math.max((y1 - y0 - h) / N, 1e-6)
-  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
-    const b = { x: x0 + i * sx, y: y0 + j * sy, w, h }
-    if (b.x + b.w > x1 + 1e-6 || b.y + b.h > y1 + 1e-6) continue
-    const grown = { x: b.x - m, y: b.y - m, w: b.w + 2 * m, h: b.h + 2 * m }
-    if (!inPoly(grown) || obstacles.some(q => boxesMeet(grown, q))) continue
-    const clear = Math.min(b.x - x0, x1 - (b.x + b.w), b.y - y0, y1 - (b.y + b.h), ...obstacles.map(q => gap(b, q)))
-    if (!best || clear > best.clear + 1e-9) best = { clear, b }
+  const sizes = []
+  for (let f = fs0; f > MIN + 1e-9; f = Math.max(MIN, f * 0.85)) sizes.push(f)
+  sizes.push(MIN)
+  // inside: the open spot farthest from everything
+  const near = (b, m) => blocks.filter(q => q.x < b.x + b.w + m && q.x + q.w > b.x - m && q.y < b.y + b.h + m && q.y + q.h > b.y - m)
+  const inner = blocks.filter(q => q.x < x1 && q.x + q.w > x0 && q.y < y1 && q.y + q.h > y0)
+  const inPoly = (b) => [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]].every(([px, py]) => pointInPolygon(poly, px, py))
+  const meets = (b, list2) => list2.some(q => boxesMeet(b, q))
+  for (const fs of sizes) {
+    const w = textW(text, fs), h = fs * 1.2, m = fs * 0.25
+    if (w + 2 * m > x1 - x0 || h + 2 * m > y1 - y0) continue
+    let best = null
+    const N = 20, sx = (x1 - x0 - w - 2 * m) / N, sy = (y1 - y0 - h - 2 * m) / N
+    for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+      const b = { x: x0 + m + i * sx, y: y0 + m + j * sy, w, h }
+      const grown = { x: b.x - m, y: b.y - m, w: w + 2 * m, h: h + 2 * m }
+      if (!inPoly(grown) || meets(grown, inner)) continue
+      const clear = Math.min(b.x - x0, x1 - (b.x + b.w), b.y - y0, y1 - (b.y + b.h), ...inner.map(q => gap(b, q)))
+      if (!best || clear > best.clear + 1e-9) best = { clear, b }
+    }
+    if (best) return { ...best.b, fs, place: 'inside' }
   }
-  if (best) return { ...best.b, place: 'inside' }
-  const fp = objects.find(o => o.id === s.parentId && /^fp_/.test(o.type || '')) || objects.find(o => /^fp_/.test(o.type || ''))
+  // outside: just past an edge, on open floor — the building's, with no rack, zone, label or other section under it
+  const fp = list.find(o => o.id === s.parentId && /^fp_/.test(o.type || '')) || list.find(o => /^fp_/.test(o.type || ''))
   const onFloor = (b) => !fp || (b.x >= fp.x && b.y >= fp.y && b.x + b.w <= fp.x + fp.width && b.y + b.h <= fp.y + fp.height)
-  const blocks = objects.filter(o => (isRackObj(o) || (isSection(o) && o.id !== s.id)))
-    .map(o => (isSection(o) ? (() => { const p = polygonOf(o), a = p.map(q => q[0]), c = p.map(q => q[1]); return { x: Math.min(...a), y: Math.min(...c), w: Math.max(...a) - Math.min(...a), h: Math.max(...c) - Math.min(...c) } })() : rackBoxOf(o)))
-  const room = (b) => onFloor(b) && !blocks.some(q => boxesMeet(b, q))
-  return room(at.above) ? at.above : room(at.below) ? at.below : { ...at.above, crowded: true }   // no room anywhere: above all the same (crowded)
+  for (const fs of sizes) {
+    const w = textW(text, fs), h = fs * 1.2, m = fs * 0.2, out = []
+    const along = (a0, a1, len) => { const n = Math.max(1, Math.floor((a1 - a0 - len) / (len / 2))); return Array.from({ length: n + 1 }, (_, k) => a0 + ((a1 - a0 - len) * k) / n) }
+    for (const x of along(x0, x1, w)) { out.push({ x, y: y1 + m, w, h }); out.push({ x, y: y0 - m - h, w, h }) }
+    for (const y of along(y0, y1, h)) { out.push({ x: x1 + m, y, w, h }); out.push({ x: x0 - m - w, y, w, h }) }
+    let best = null
+    for (const b of out) {
+      const grown = { x: b.x - m, y: b.y - m, w: w + 2 * m, h: h + 2 * m }
+      if (!onFloor(b) || meets(grown, near(b, m)) || meets(b, others)) continue
+      const clear = Math.min(...near(b, 4 * fs).map(q => gap(b, q)), 4 * fs)
+      if (!best || clear > best.clear + 1e-9) best = { clear, b }
+    }
+    if (best) return { ...best.b, fs, place: 'outside' }
+  }
+  return null
 }
-export const onLabel = (s, x, y, zoom, objects = null) => { const b = labelBox(s, zoom, objects); return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h }
 
 /** Area (world px²) — shoelace. */
 export function areaOf(s) {

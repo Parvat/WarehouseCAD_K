@@ -9,7 +9,10 @@ import { create } from 'zustand'
 /** Is section `id`'s name shown, given the toggle, the selection and the hover? */
 export const nameShownBy = ({ on, selectedIds, hoverIds, listHover }, id) => !!on || (selectedIds || []).includes(id) || (hoverIds || []).includes(id) || listHover === id
 
-/** The sections whose name is drawn now (SectionNames.jsx keeps it). */
-export const useShownNames = create(() => ({ ids: [] }))
+/** The sections whose name is drawn now, and where (SectionNames.jsx keeps it): `boxes` { id: { x, y, w, h, fs } } — the
+ *  text's box in world px, exactly as drawn (utils/sectionAreas.js nameBox, placed off the plan's labels too). */
+export const useShownNames = create(() => ({ ids: [], boxes: {} }))
+/** Where section `id`'s name is drawn now, or null. */
+export const shownNameBox = (id) => useShownNames.getState().boxes[id] || null
 /** Is section `id`'s name on the plan now? */
 export const nameShown = (id) => useShownNames.getState().ids.includes(id)
