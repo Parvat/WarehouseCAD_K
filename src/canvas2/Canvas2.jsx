@@ -44,6 +44,8 @@ import { nanoid } from 'nanoid'
 import { TOOLS } from '../constants'
 import { useViewPrefs, fitRef } from '../studio/viewPrefs'
 import { RackLineLabels } from './RackLineLabels'
+import { tallyInset } from '../studio/tally'
+import { TallyFill, TallyHighlight } from './TallyHighlight'
 import { SectionNames } from './SectionNames'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
@@ -290,7 +292,11 @@ export function Canvas2() {
   const { onStageMouseDown, onStageMouseMove, onStageMouseLeave, onWheel, onDblClick, fitToContent, cursor, marquee, smartGuides, isForcePan, groupRowPress, groupCursorAt } =
     useCanvasInteraction({ stageRef, view, setView, size, objects, dblClickFitEnabled })
   /* the bottom-right island's Fit calls this (src/studio/StudioFrame.jsx) */
-  useEffect(() => { fitRef.current = fitToContent; return () => { if (fitRef.current === fitToContent) fitRef.current = null } })
+  /* (while the Tally drawer is open, into the room above it — studio/tally.js) */
+  useEffect(() => {
+    const fit = (inset) => fitToContent(inset || tallyInset())
+    fitRef.current = fit; return () => { if (fitRef.current === fit) fitRef.current = null }
+  })
 
   /* ── Measure tool — a modal click-two-points-get-distance aid, entirely
      local state (never written to the store — it's a ruler, not a document
@@ -491,6 +497,8 @@ export function Canvas2() {
               pan, zoom and drag included. */}
           <Layer listening={false}>
             <Scene listening part="body" />
+            {/* the Tally's lit rack lines, tinted over the racks (multiply) */}
+            <TallyFill />
           </Layer>
           {/* the labels and marks — aisle and cross-aisle labels, column clearances, X marks, upright flags,
               oversized bays — between the scene and its columns: a column is always drawn above them */}
@@ -549,6 +557,7 @@ export function Canvas2() {
             {dooring && <DoorPreview />}
             {/* Check layout: the clicked problem, until the next click (utils/layoutCheck.js) */}
             <IssueHighlight />
+            <TallyHighlight />
             <PlacementGhost gridSize={gridSize} />
             {/* a zone's edge dragged: the bays its release removes, red, and its size (ZoneEdit.jsx) */}
             <ZoneEditPreview gridSize={gridSize} />

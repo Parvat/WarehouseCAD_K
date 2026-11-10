@@ -1718,11 +1718,13 @@ export function useCanvasInteraction({
      otherwise fit against whatever was current when that timer was
      SCHEDULED, not when it actually FIRES — stale by exactly the length of
      the delay. */
-  const fitToContent = () => {
+  /* `inset`: { bottom } px of the canvas covered (the Tally drawer, studio/tally.js) — the fit goes in the room above it */
+  const fitToContent = (inset) => {
     const st = useCanvasStore.getState()
     const container = stageRef.current?.container()
     const liveSize = container ? { w: container.clientWidth, h: container.clientHeight } : size
-    const v = fitView(worldBounds(st.objects, st.gridSize), liveSize)
+    const bottom = Math.max(0, Math.min(liveSize.h * 0.8, inset?.bottom || 0))
+    const v = fitView(worldBounds(st.objects, st.gridSize), { w: liveSize.w, h: liveSize.h - bottom })
     if (v) setView(v)
     return v
   }

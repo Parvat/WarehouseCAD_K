@@ -13,6 +13,7 @@ import { useRightPanel, setRightPanel } from '../utils/rightPanel'
 import { useColumnCheck } from '../generate/useColumnCheck'
 import { useElevView, setShowColors } from '../utils/elevationDraw'
 import { useViewPrefs, fitRef, CARD_W } from './viewPrefs'
+import { TallyHost } from './TallyDrawer'
 import { useElevTab } from '../utils/elevTab'
 import { Icon } from './Icon'
 import { CheckCard } from './cards'
@@ -164,7 +165,7 @@ function RightCard() {
 function BottomLeft({ onHub }) {
   const zoom = useCanvasStore(s => s.zoom)
   return (
-    <div className="st-island" data-island="bottom-left" style={{ left: 16, bottom: 20, height: 40, gap: 2, padding: '0 4px' }}>
+    <div className="st-island" data-island="bottom-left" style={{ left: 16, bottom: 'calc(20px + var(--tally-lift, 0px))', height: 40, gap: 2, padding: '0 4px' }}>
       <button type="button" title="Back to hub" onClick={onHub} style={ghost({ height: 30, padding: '0 10px', fontSize: 13, color: '#C9CEC9' })}>Hub</button>
       <span style={{ width: 1, height: 18, background: '#3A403C' }} />
       <button type="button" aria-label="Zoom out" onClick={() => doZoom(0.85)} style={ghost({ width: 30, height: 30, color: '#C9CEC9', fontSize: 16 })}>−</button>
@@ -255,6 +256,7 @@ export function StudioFrame({ onHub }) {
       <RightCard />
       <BottomLeft onHub={onHub} />
       <BottomRight />
+      <TallyHost />
     </>
   )
 }

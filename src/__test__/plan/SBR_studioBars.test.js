@@ -187,7 +187,7 @@ describe('SBR — the mode bars and the notices', () => {
   it('SBR-notices: above the tool pill, 76 from the bottom, stacked — the zone\'s result with Undo (one Ctrl+Z) and ✕, the Row group\'s result with Undo only for the step just made, Ctrl+A\'s note with ✕ and no Undo, a placement with ✕; the racking area\'s question keeps its answers', async () => {
     const RGB = await import('../../canvas2/RowGroupBar'), AT = await import('../../utils/rackingAreaTool'), RG = await import('../../utils/rowGroupTool'), N = await import('../../utils/notice')
     const src = read('canvas2/RowGroupBar.jsx')
-    expect(src).toMatch(/const stack = \{\s*position: 'fixed', left: '50%', bottom: 76, transform: 'translateX\(-50%\)', zIndex: 150,/)
+    expect(src).toMatch(/const stack = \{\s*position: 'fixed', left: '50%', bottom: 'calc\(76px \+ var\(--tally-lift, 0px\)\)', transform: 'translateX\(-50%\)', zIndex: 150,/)   // (tally round: above the open Tally drawer — was: bottom: 76)
     AT.useAreaPrompt.setState({ question: null, note: 'Office moved · 12 bays removed · 9 restored' })
     const z = (await ssr(RGB.RowGroupBar))
     expect(z).toMatch(/aria-label="Zone change"[\s\S]*Office moved<\/span><span> · <span[^>]*>12<\/span> bays removed<\/span><span> · <span[^>]*color:#7BD3A4[^>]*>9<\/span> restored[\s\S]*>Undo<\/button>[\s\S]*aria-label="Dismiss"/)

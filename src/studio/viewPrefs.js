@@ -7,7 +7,7 @@
 //   sectionNames — the bottom-right island's Sections: every section's name tab shown (off by default; a section's name
 //                  shows anyway while it is hovered or selected — canvas2/SectionNames.jsx)
 //   rowLabels   — the bottom-right island's Rows: the R1, R2 … labels at the row ends (on by default; shown anyway while
-//                  the BOM's full view is open — bomFull)
+//                  the Tally drawer or its Pop out is open — bomFull, studio/TallyDrawer.jsx)
 import { create } from 'zustand'
 import { setRightPanel } from '../utils/rightPanel'
 

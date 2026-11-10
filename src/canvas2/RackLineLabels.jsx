@@ -5,7 +5,7 @@
 // size in feet (the Label size — render/labelSize.js), drawings' words style (Plus Jakarta Sans, #767C74). A label never
 // overlaps another or a dimension label (the aisle and cross-aisle width labels): it shifts along the line's end, else
 // it is left out; all are hidden when they would draw under 8 px on screen. Pure paint (never listens); hidden with the
-// Racking layer, and by the View card's Row numbers (on by default; shown anyway while the BOM's full view is open —
+// Racking layer, and by the View card's Row numbers (on by default; shown anyway while the Tally drawer or its Pop out is open —
 // studio/viewPrefs.js). Each label's Konva name is `rack-line-label`.
 
 import { useMemo } from 'react'

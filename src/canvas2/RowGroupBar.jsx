@@ -26,7 +26,7 @@ import { B, MONO, modePill, Sep, barBtn, btnClass, CloseBtn, NoticePill } from '
    Plain DOM — no Konva — so it renders anywhere. */
 
 const stack = {
-  position: 'fixed', left: '50%', bottom: 76, transform: 'translateX(-50%)', zIndex: 150,
+  position: 'fixed', left: '50%', bottom: 'calc(76px + var(--tally-lift, 0px))', transform: 'translateX(-50%)', zIndex: 150,
   display: 'flex', flexDirection: 'column-reverse', alignItems: 'center', gap: 8, pointerEvents: 'none',
 }
 const live = { pointerEvents: 'auto' }

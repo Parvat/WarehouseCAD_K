@@ -119,7 +119,7 @@ export function StudioToolPill({ groups, lineTools, zones, sections = [], penOpt
   )
   return (
     <div className="st-pill" role="toolbar" aria-label="Drawing tools" data-island="tool-pill"
-      style={{ left: '50%', bottom: 20, transform: 'translateX(-50%)', gap: 2, padding: 5 }}>
+      style={{ left: '50%', bottom: 'calc(20px + var(--tally-lift, 0px))', transform: 'translateX(-50%)', gap: 2, padding: 5 }}>
       {groups[0].map(btn)}
       {/* Section ▾ (after Pan): Rectangle (R) · Custom shape (P) — STUDIO.md §7a Sections */}
       {sections.length > 0 && (

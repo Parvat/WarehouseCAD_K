@@ -2504,17 +2504,30 @@ describe('REG — the hand check by real clicks', () => {
     /* ── BOM v1: the BOM tab (studio/BomTab.jsx, utils/bom.js) by real clicks. Every fixture: one elevation, 4 levels
        (level 1 on the floor), 20′ frames, 96″ beams only ── */
     const bomTab = async () => { await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(200) }
-    /** the tab's lines as shown: [part, size, qty, pairs] (a group's later rows keep the part's text, drawn transparent;
-     *  beams read "18 (9 pairs)": qty 18, pairs 9) — the group `group` (default: the Total) */
+    /** the lines shown: [part, size, qty, pairs] — the group `group` (default: the Total). Each line carries its part,
+     *  size and counts (tally round: the tab writes a part on one line, "Frame 20 ft x 42 in"; the modal's table keeps
+     *  Part · Size · Qty); its shown quantity must read the same ("18 (9 pr)" in the tab, "18 (9 pairs)" in the modal) */
     const bomRows = async (scope = L.page.getByRole('tabpanel', { name: 'BOM' }), group = 'total') => {
-      const rows = await scope.locator(`[data-bom-line][data-bom-group="${group}"]`).evaluateAll(rs => rs.map(r => [...r.cells].map(c => c.textContent)))
-      return rows.map(([part, size, qty]) => { const m = qty.replace(/,/g, '').match(/^(\d+)(?: \((\d+) pairs?\))?$/); return [part, size, Number(m[1]), m[2] != null ? Number(m[2]) : null] })
+      const rows = await scope.locator(`[data-bom-line][data-bom-group="${group}"]`).evaluateAll(rs => rs.map(r => ({
+        part: r.getAttribute('data-part'), size: r.getAttribute('data-size'), qty: Number(r.getAttribute('data-qty')), pairs: r.getAttribute('data-pairs'),
+        shown: (r.cells ? r.cells[r.cells.length - 1] : r.lastElementChild).textContent.replace(/,/g, ''),
+      })))
+      return rows.map(r => {
+        const m = r.shown.match(/^(\d+)(?: \((\d+) (?:pairs?|pr)\))?$/)
+        if (!m || Number(m[1]) !== r.qty || (r.pairs != null && Number(m[2]) !== Number(r.pairs))) throw new Error('shown ' + r.shown + ' for ' + r.qty)
+        return [r.part, r.size || '—', r.qty, r.pairs != null ? Number(r.pairs) : null]
+      })
+    }
+    /** the tab's Tally, then its Pop out: the wide modal (tally round — was: the tab's Full view) */
+    const popOut = async () => {
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(250)
+      await L.page.getByRole('region', { name: 'Tally' }).getByRole('button', { name: 'Pop out' }).click(); await L.page.waitForTimeout(200)
     }
     const qtyOf = (rows, part, size = null) => rows.filter(r => r[0] === part && (size == null || r[1] === size)).reduce((t, r) => t + r[2], 0)
     /** the beam pairs the beam lines show */
     const pairsOf = (rows) => rows.filter(r => r[0] === 'Beam').reduce((t, r) => t + r[3], 0)
 
-    it('REG-bom-tab (click): the BOM tab beside Properties and Elevations lists the parts grouped (part, size, qty) — frames, beams (one by one, their pairs beside: 2 beams a pair), pins, decks, spacers, anchors — the pins 4 per beam pair, the decks 2 per 96″ beam level, the anchors 2 per frame, the spacers 2 per frame pair (20′ frames, above 16′); Full view opens the same table wide and Esc closes it (BOM round 2 — was: beam pairs; 3 spacers above 16′)', async () => {
+    it('REG-bom-tab (click): the BOM tab beside Properties and Elevations lists the parts grouped (part, size, qty) — frames, beams (one by one, their pairs beside: 2 beams a pair), pins, decks, spacers, anchors — the pins 4 per beam pair, the decks 2 per 96″ beam level, the anchors 2 per frame, the spacers 2 per frame pair (20′ frames, above 16′); Tally’s Pop out opens the same table wide and Esc closes it (BOM round 2 — was: beam pairs; 3 spacers above 16′; tally round — was: Full view)', async () => {
       await open()
       expect(await L.page.getByRole('tablist', { name: 'Right panel tabs' }).getByRole('tab').allTextContents()).toEqual(['Properties', 'Elevations', 'BOM'])
       await bomTab()
@@ -2529,8 +2542,8 @@ describe('REG — the hand check by real clicks', () => {
         frames,             // every frame 20′ (240″), 42″ deep
       ])
       expect(qtyOf(rows, 'Row spacer') % 2).toBe(0)   // 20′ frames are above 16′: 2 spacers per frame pair
-      // Full view: the same lines, wide; Esc closes it
-      await L.page.getByRole('button', { name: 'Full view' }).click(); await L.page.waitForTimeout(200)
+      // Tally, Pop out: the same lines, wide; Esc closes it
+      await popOut()
       const dlg = L.page.getByRole('dialog', { name: 'Bill of materials' })
       expect(await bomRows(dlg)).toEqual(rows)
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
@@ -2544,9 +2557,9 @@ describe('REG — the hand check by real clicks', () => {
       await line.click(); await L.page.waitForTimeout(300)
       const want = await L.S('return import("/src/utils/bom.js").then(M => { const st = S.getState(), b = M.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 }); return b.lines.find(l => l.part === "Beam").ids.length })')
       const drawn = () => L.page.evaluate(() => window.Konva.stages[0].findOne('.issue-highlight')?.find('Rect').length || 0)
-      expect([await line.getAttribute('aria-selected'), want > 0, await drawn() >= want]).toEqual(['true', true, true])
+      expect([await line.getAttribute('aria-pressed'), want > 0, await drawn() >= want]).toEqual(['true', true, true])     // (tally round: a button, pressed)
       await line.click(); await L.page.waitForTimeout(200)
-      expect([await line.getAttribute('aria-selected'), await drawn()]).toEqual(['false', 0])
+      expect([await line.getAttribute('aria-pressed'), await drawn()]).toEqual(['false', 0])
     }, T)
 
     it('REG-bom-csv (click): Download CSV saves section, rows, part, size, qty, pairs — the rows the tab shows (BOM round 2 — was: part, size, qty)', async () => {
@@ -2669,18 +2682,19 @@ describe('REG — the hand check by real clicks', () => {
       })),
     }))
     const fullView = async (view) => {
-      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Full view' }).click(); await L.page.waitForTimeout(200)
+      await popOut()
       const dlg = L.page.getByRole('dialog', { name: 'Bill of materials' })
       if (view) { await dlg.getByRole('group', { name: 'BOM view' }).getByRole('button', { name: view }).click(); await L.page.waitForTimeout(200) }
       return dlg
     }
 
-    it('REG-bom-sections (click): with two sections drawn, the BOM tab lists each section\u2019s lines and totals (its rows R…), then Unassigned, then the grand Total — every line\u2019s Total is its sections\u2019 and Unassigned\u2019s added up; beams one by one with their pairs', async () => {
+    it('REG-bom-sections (click): with two sections drawn, the BOM tab lists the grand Total first, then each section\u2019s lines and totals (its rows R…), then Unassigned (tally round — was: the Total last) — every line\u2019s Total is its sections\u2019 and Unassigned\u2019s added up; beams one by one with their pairs', async () => {
       const [s1, s2] = await twoSections()
       const tab = L.page.getByRole('tabpanel', { name: 'BOM' })
       const heads = await tab.locator('[data-bom-group-head]').evaluateAll(rs => rs.map(r => r.getAttribute('data-bom-group-head')))
-      expect(heads.slice(0, 2)).toEqual([s1.id, s2.id])
-      expect(heads[heads.length - 1]).toBe('total')
+      expect(heads.slice(0, 3)).toEqual(['total', s1.id, s2.id])                                   // (tally round: the Total card first — was: last)
+      // every section card opened (the first is; the rest are collapsed)
+      for (const h of heads.slice(1)) { const b = tab.locator(`button[data-bom-group-head="${h}"]`); if ((await b.getAttribute('aria-expanded')) !== 'true') { await b.click(); await L.page.waitForTimeout(100) } }
       expect(heads.every(h => [s1.id, s2.id, 'unassigned', 'total'].includes(h))).toBe(true)
       expect(await tab.locator(`[data-bom-group-head="${s1.id}"]`).textContent()).toMatch(/^Section 1R\d/)        // its name, then its rows
       const total = await bomRows(tab, 'total'), groups = []
@@ -2741,6 +2755,104 @@ describe('REG — the hand check by real clicks', () => {
         expect(nums.slice(0, -1).filter((_, k) => /^R\d+$/.test(t.heads[k + 2])).reduce((a, b) => a + b, 0)).toBe(p.grand)
       })
       await L.page.keyboard.press('Escape')
+    }, T)
+
+    it('REG-tally (click): the BOM tab — Tally · xlsx · CSV, the Total card first, the first section open and the rest collapsed (a click on a header: remembered per layout, after a reload); Tally opens the drawer at the bottom of the canvas (left 16, right 332, 330 high), the plan fitted above it, the R labels shown; an R column hovered lights its line on the plan with its tag (R6 · N bays · N positions); a rack clicked on the plan lights its column, in view; a section Total clicked lights all its lines; the top edge dragged resizes it (remembered); Pop out opens the wide modal; Esc closes each', async () => {
+      const [s1, s2] = await twoSections()
+      const tab = L.page.getByRole('tabpanel', { name: 'BOM' }), head = (id) => tab.locator(`button[data-bom-group-head="${id}"]`)
+      const linesIn = (id) => tab.locator(`[data-bom-line][data-bom-group="${id}"]`).count()
+      const opened = async () => [await head(s1.id).getAttribute('aria-expanded'), await head(s2.id).getAttribute('aria-expanded')]
+      // the tab: Tally · xlsx · CSV, the Total card, the sections — the first open
+      expect((await tab.getByRole('button').allTextContents()).slice(0, 3)).toEqual(['Tally', 'xlsx', 'CSV'])
+      expect(await tab.locator('section[data-bom-card]').evaluateAll(c => c.slice(0, 3).map(x => x.getAttribute('data-bom-card')))).toEqual(['total', s1.id, s2.id])
+      expect(await opened()).toEqual(['true', 'false'])
+      expect([(await linesIn(s1.id)) > 0, await linesIn(s2.id)]).toEqual([true, 0])
+      // a click on a header collapses / expands it
+      await head(s1.id).click(); await head(s2.id).click(); await L.page.waitForTimeout(150)
+      expect(await opened()).toEqual(['false', 'true'])
+      expect([await linesIn(s1.id), (await linesIn(s2.id)) > 0]).toEqual([0, true])
+      // Row numbers off in the View card; Tally: the drawer
+      await viewSwitch('Row numbers').click()
+      const labels = () => L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').length)
+      const rowLabelsShown = () => L.page.evaluate(() => !!window.Konva.stages[0].findOne('.rack-line-labels'))
+      await zoomForRowLabels()
+      expect(await labels()).toBe(0)
+      await tab.getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(600)
+      const drawer = L.page.getByRole('region', { name: 'Tally' })
+      const vp = L.page.viewportSize(), box = await drawer.boundingBox()
+      expect([Math.round(box.x), Math.round(vp.width - box.x - box.width), Math.round(vp.height - box.y - box.height), Math.round(box.height)]).toEqual([16, 332, 20, 330])
+      // the plan fitted into the room above it
+      const fp = await fpOf(), top = await L.toScreen({ x: fp.x, y: fp.y }), bot = await L.toScreen({ x: fp.x + fp.width, y: fp.y + fp.height })
+      expect([top.y >= -1, bot.y <= box.y + 1]).toEqual([true, true])
+      // the R labels shown while it is open (Row numbers off): zoomed in until they are big enough to draw
+      await zoomForRowLabels()
+      expect(await labels()).toBeGreaterThan(0)
+      // an R column hovered: its line lit on the plan, its tag
+      const lines = await L.S('return import("/src/utils/rackLines.js").then(M => M.rackLinesNow(S.getState().objects, S.getState().gridSize || 40).map(l => ({ no: l.no, ids: l.ids, ws: l.ws, vert: l.vert, r0: l.r0, r1: l.r1, s0: l.s0, s1: l.s1 })))')
+      const rectOf = (l) => (l.vert ? [l.s0, l.r0, l.s1 - l.s0, l.r1 - l.r0] : [l.r0, l.s0, l.r1 - l.r0, l.s1 - l.s0]).map(v => Math.round(v * 100) / 100)
+      const lit = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; return { lines: st.find('.tally-line').map(n => [n.x(), n.y(), n.width(), n.height()].map(v => Math.round(v * 100) / 100)), tags: st.find('.tally-tag').map(g => g.findOne('Text').text()) } })
+      const k = lines[Math.floor(lines.length / 2)]
+      const col = drawer.locator(`th[data-tally-col="${k.no}"]`)
+      await col.scrollIntoViewIfNeeded()
+      const cb = await col.boundingBox()
+      await L.page.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2, { steps: 3 }); await L.page.waitForTimeout(200)
+      const h = await lit()
+      expect(h.lines).toEqual([rectOf(k)])
+      expect(h.tags.length).toBe(1)
+      expect(h.tags[0]).toMatch(new RegExp(`^R${k.no} · [1-9]\\d* bays? · [1-9][\\d,]* positions?$`))
+      expect(await col.getAttribute('aria-selected')).toBe('true')
+      // off the table: nothing lit
+      await L.page.mouse.move(700, 120, { steps: 3 }); await L.page.waitForTimeout(150)
+      expect((await lit()).lines).toEqual([])
+      // a rack clicked on the plan: its line's column lit and in view (the last line on the open canvas)
+      const ptOf = (l) => { const a = (l.r0 + l.r1) / 2, c = (l.s0 * 3 + l.s1) / 4; return l.vert ? { x: c, y: a } : { x: a, y: c } }
+      let m = null
+      for (const l of lines.slice().reverse()) {
+        if (l.no === k.no) continue
+        const q = await L.toScreen(ptOf(l))
+        if (q.y < box.y - 4 && await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', q)) { m = l; break }
+      }
+      expect(!!m).toBe(true)
+      await L.click(ptOf(m)); await L.page.waitForTimeout(250)
+      const mCol = drawer.locator(`th[data-tally-col="${m.no}"]`)
+      expect(await mCol.getAttribute('aria-selected')).toBe('true')
+      const inView = await mCol.evaluate(th => { const sc = th.closest('div'), a = th.getBoundingClientRect(), b = sc.getBoundingClientRect(), part = sc.querySelector('thead tr:last-child th').getBoundingClientRect(); return a.left >= part.right - 1 && a.right <= b.right + 1 })
+      expect(inView).toBe(true)
+      const litCols = await drawer.locator('th[data-tally-col][aria-selected="true"]').evaluateAll(t => t.map(x => Number(x.getAttribute('data-tally-col'))))
+      expect(litCols.every(no => lines.find(l => l.no === no).ids.some(id => m.ids.includes(id)))).toBe(true)     // only the clicked rack's lines
+      // a section's Total clicked: every line of that section lit on the plan; again: off
+      const nos1 = await L.S('return import("/src/utils/bom.js").then(M => { const st = S.getState(); return M.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 }).sections.find(x => x.id === arg).rows })', s1.id)
+      expect(nos1.length).toBeGreaterThan(0)
+      await drawer.locator(`th[data-tally-total="${s1.id}"]`).click(); await L.page.mouse.move(700, 120); await L.page.waitForTimeout(200)
+      expect((await lit()).lines.map(String).sort()).toEqual(lines.filter(l => nos1.includes(l.no)).map(rectOf).map(String).sort())
+      await drawer.locator(`th[data-tally-total="${s1.id}"]`).click(); await L.page.mouse.move(700, 120); await L.page.waitForTimeout(200)
+      expect((await lit()).lines).toEqual([])
+      // the top edge dragged up 100 px: 430 high
+      const sep = await drawer.getByRole('separator', { name: 'Resize tally' }).boundingBox()
+      await L.page.mouse.move(sep.x + sep.width / 2, sep.y + 3); await L.page.mouse.down(); await L.page.mouse.move(sep.x + sep.width / 2, sep.y + 3 - 100, { steps: 6 }); await L.page.mouse.up(); await L.page.waitForTimeout(200)
+      expect(Math.round((await drawer.boundingBox()).height)).toBe(430)
+      // Pop out: the wide modal in its place; Esc closes it
+      await drawer.getByRole('button', { name: 'Pop out' }).click(); await L.page.waitForTimeout(200)
+      const dlg = L.page.getByRole('dialog', { name: 'Bill of materials' })
+      expect([await dlg.count(), await drawer.count()]).toEqual([1, 0])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      expect(await dlg.count()).toBe(0)
+      // Tally again: 430 kept; Esc closes the drawer
+      await tab.getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(400)
+      expect(Math.round((await drawer.boundingBox()).height)).toBe(430)
+      await L.page.mouse.move(700, 120); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      expect([await drawer.count(), await rowLabelsShown()]).toEqual([0, false])                     // closed: Row numbers off again
+      // a reload: the cards as left, the drawer's height kept
+      await L.page.waitForTimeout(600)
+      await L.page.reload()
+      await L.page.getByRole('button', { name: 'Sign in' }).click({ timeout: 120000 })
+      await L.page.getByRole('button', { name: /^Draw/ }).click(); await L.page.waitForSelector('.konvajs-content'); await L.page.waitForTimeout(800)
+      await bomTab()
+      expect(await opened()).toEqual(['false', 'true'])
+      await tab.getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(400)
+      expect(Math.round((await drawer.boundingBox()).height)).toBe(430)
+      await L.page.mouse.move(700, 120); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      expect(await drawer.count()).toBe(0)
     }, T)
 
     it('REG-bom-rack-labels (click): one R label per rack line at its start end only (left of a line running across, above one running up and down), a back-to-back pair one label R2–R3, in the drawings\u2019 words style; no label over another or over an aisle width label; none under 8 px on screen; the numbers are the By row table\u2019s (ui-polish-2 — was: a label at each end, one per side of a pair)', async () => {
@@ -2967,7 +3079,7 @@ describe('REG — the hand check by real clicks', () => {
       expect([await viewState('Section names'), await tabsNow()]).toEqual(['false', {}])
     }, T)
 
-    it('REG-row-labels-toggle (click): the island\u2019s Rows shows or hides the R labels on the plan — on by default; off, none; the BOM\u2019s full view open turns them on while it is open', async () => {
+    it('REG-row-labels-toggle (click): the island\u2019s Rows shows or hides the R labels on the plan — on by default; off, none; the BOM\u2019s full view — now the Tally open, its drawer then its Pop out — turns them on while it is open (tally round)', async () => {
       await open()
       // the View card's Row numbers switch (ui-polish-2 — was: a Rows button in the island)
       const rows = viewSwitch('Row numbers')
@@ -2976,9 +3088,12 @@ describe('REG — the hand check by real clicks', () => {
       expect([await viewState('Row numbers'), (await n()) > 0]).toEqual(['true', true])
       await rows.click(); await L.page.waitForTimeout(150)
       expect([await viewState('Row numbers'), await n()]).toEqual(['false', 0])
-      // the BOM's full view: on while it is open
+      // the Tally: on while its drawer is open (the plan fitted above it: zoomed in again until they draw), and its Pop out
       await bomTab()
-      await fullView()
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(400)
+      await zoomForRowLabels()
+      expect((await n()) > 0).toBe(true)
+      await L.page.getByRole('region', { name: 'Tally' }).getByRole('button', { name: 'Pop out' }).click(); await L.page.waitForTimeout(200)
       expect((await n()) > 0).toBe(true)
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       expect([await viewState('Row numbers'), await n()]).toEqual(['false', 0])

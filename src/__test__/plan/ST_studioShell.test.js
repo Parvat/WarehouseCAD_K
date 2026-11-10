@@ -14,11 +14,11 @@ describe('ST — the frame', () => {
     expect(f).toMatch(/data-island="top-left" style=\{\{ left: 16, top: 16, height: 44, gap: 10, padding: '0 12px 0 14px' \}\}/)
     expect(f).toMatch(/data-island="top-right" style=\{\{ right: 16, top: 16, height: 44, gap: 4, padding: '0 6px' \}\}/)
     expect(f).toMatch(/right: 16, top: 76, width: cardW, maxHeight: 'calc\(100vh - 152px\)'/)
-    expect(f).toMatch(/data-island="bottom-left" style=\{\{ left: 16, bottom: 20, height: 40, gap: 2, padding: '0 4px' \}\}/)
+    expect(f).toMatch(/data-island="bottom-left" style=\{\{ left: 16, bottom: 'calc\(20px \+ var\(--tally-lift, 0px\)\)', height: 40, gap: 2, padding: '0 4px' \}\}/)   // (tally round: above the open Tally drawer — was: bottom: 20)
     expect(f).toMatch(/data-island="bottom-right" style=\{\{ right: 16, bottom: 20, height: 40, gap: 2, padding: '0 4px' \}\}/)
     expect(t).toMatch(/data-island="rail" style=\{\{ left: 16, top: 76, width: 48, flexDirection: 'column', gap: 4, padding: '6px 0' \}\}/)
     expect(t).toMatch(/style=\{\{ left: 72, top: 76, width: 232, flexDirection: 'column', alignItems: 'stretch', padding: 6/)
-    expect(t).toMatch(/style=\{\{ left: '50%', bottom: 20, transform: 'translateX\(-50%\)', gap: 2, padding: 5 \}\}/)
+    expect(t).toMatch(/style=\{\{ left: '50%', bottom: 'calc\(20px \+ var\(--tally-lift, 0px\)\)', transform: 'translateX\(-50%\)', gap: 2, padding: 5 \}\}/)   // (tally round — was: bottom: 20)
     // islands and pill: the mockup's surface, line, radius and shadow
     expect(css).toMatch(/\.st-island \{[\s\S]*?background:#1F2321; border:1px solid #323835; border-radius:10px; box-shadow:0 8px 24px rgba\(15,18,16,\.18\);/)
     expect(css).toMatch(/\.st-pill \{[\s\S]*?background:#1F2321; border:1px solid #323835; border-radius:12px; box-shadow:0 10px 28px rgba\(15,18,16,\.22\);/)
