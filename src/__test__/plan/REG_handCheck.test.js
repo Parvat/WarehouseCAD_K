@@ -2707,11 +2707,12 @@ describe('REG — the hand check by real clicks', () => {
       }
     }, T)
 
-    it('REG-bom-by-row (click): Full view, By row — the parts down (frames, beams and their pairs, decks, spacers, anchors), R1 … across by section, each section\u2019s Total its rows added up, the Grand total equal to the Summary\u2019s Total; Summary back', async () => {
+    it('REG-bom-by-row (click): Full view, By row — the Bays row, then the parts down (frames, beams, decks, spacers, anchors; ui-polish-4 — was: beams and their pairs, no Bays), Part | Size, R1 … across by section, each section\u2019s Total its rows added up, the Grand total equal to the Summary\u2019s Total; Summary back', async () => {
       const [s1, s2] = await twoSections()
       const dlg = await fullView('By row')
       const t = await byRowShown()
-      expect(t.parts.map(p => p.part).filter((x, i, a) => a.indexOf(x) === i)).toEqual(['Upright frame', 'Beam', 'pairs', 'Wire deck', 'Row spacer', 'Anchor'])
+      expect(t.parts.map(p => p.part).filter((x, i, a) => a.indexOf(x) === i)).toEqual(['Bays', 'Frame', 'Beam', 'Wire deck', 'Row spacer', 'Anchor'])
+      expect(t.parts.find(p => p.part === 'Frame').size).toMatch(/^\d+ ft( \d+ in)? x \d+ in$/)                  // "20 ft x 42 in"
       expect(t.heads.filter(h => h === 'Total').length).toBeGreaterThanOrEqual(2)                // a Total per section
       expect(t.heads[t.heads.length - 1]).toBe('Grand total')
       for (const p of t.parts) {
@@ -2726,10 +2727,10 @@ describe('REG — the hand check by real clicks', () => {
       // Summary: the Total group, its quantities the Grand totals
       await dlg.getByRole('group', { name: 'BOM view' }).getByRole('button', { name: 'Summary' }).click(); await L.page.waitForTimeout(200)
       const sum = await bomRows(dlg, 'total')
-      for (const p of t.parts) {
-        const pairsRow = p.part === 'pairs', key = p.key.replace(/\|pairs$/, ''), [part, size] = key.split('|')
+      for (const p of t.parts.filter(q => q.key !== 'bays')) {
+        const [part, size] = p.key.split('|')
         const r = sum.find(x => x[0] === part && x[1] === (size || '—'))
-        expect([p.key, pairsRow ? r[3] : r[2]]).toEqual([p.key, p.grand])
+        expect([p.key, r[2]]).toEqual([p.key, p.grand])
       }
       await L.page.keyboard.press('Escape')
     }, T)
@@ -2757,7 +2758,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
-    it('REG-tally (click): the BOM tab — Tally · xlsx · CSV, the Total card first, the first section open and the rest collapsed (a click on a header: remembered per layout, after a reload); Tally opens the drawer at the bottom of the canvas (left 16, right 332, 330 high), the plan fitted above it, the R labels shown; an R column hovered lights its line on the plan with its tag (R6 · N bays · N positions); a rack clicked on the plan lights its column, in view; a section Total clicked lights all its lines; the top edge dragged resizes it (remembered); Pop out opens the wide modal; Esc closes each', async () => {
+    it('REG-tally (click): the BOM tab — Tally · xlsx · CSV, the Total card first, the first section open and the rest collapsed (a click on a header: remembered per layout, after a reload); Tally opens the drawer at the bottom of the canvas (full width: left 16, right 16, 330 high — ui-polish-4, was: right 332; the right card ends 12px above it, the bottom-right island hidden; compact R columns, min 36px), the plan fitted above it, the R labels shown; an R column hovered lights its line on the plan with its tag (R6 · N bays · N positions); a rack clicked on the plan lights its column, in view; a section Total clicked lights all its lines; the top edge dragged resizes it (remembered); Pop out opens the wide modal; Esc closes each', async () => {
       const [s1, s2] = await twoSections()
       const tab = L.page.getByRole('tabpanel', { name: 'BOM' }), head = (id) => tab.locator(`button[data-bom-group-head="${id}"]`)
       const linesIn = (id) => tab.locator(`[data-bom-line][data-bom-group="${id}"]`).count()
@@ -2780,7 +2781,12 @@ describe('REG — the hand check by real clicks', () => {
       await tab.getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(600)
       const drawer = L.page.getByRole('region', { name: 'Tally' })
       const vp = L.page.viewportSize(), box = await drawer.boundingBox()
-      expect([Math.round(box.x), Math.round(vp.width - box.x - box.width), Math.round(vp.height - box.y - box.height), Math.round(box.height)]).toEqual([16, 332, 20, 330])
+      expect([Math.round(box.x), Math.round(vp.width - box.x - box.width), Math.round(vp.height - box.y - box.height), Math.round(box.height)]).toEqual([16, 16, 20, 330])
+      const card = await L.page.locator('[data-island="right-card"]').evaluate(c => ({ bottom: c.getBoundingClientRect().bottom, max: getComputedStyle(c).maxHeight }))
+      expect([card.bottom <= box.y - 12 + 0.5, card.max]).toEqual([true, `${vp.height - 76 - 20 - 330 - 12}px`])
+      expect(await L.page.locator('[data-island="bottom-right"]').count()).toBe(0)
+      const widths = await drawer.locator('th[data-tally-col]').evaluateAll(t => t.map(x => x.getBoundingClientRect().width))
+      expect([widths.length > 0, widths.every(w => w >= 36 - 0.5)]).toEqual([true, true])
       // the plan fitted into the room above it
       const fp = await fpOf(), top = await L.toScreen({ x: fp.x, y: fp.y }), bot = await L.toScreen({ x: fp.x + fp.width, y: fp.y + fp.height })
       expect([top.y >= -1, bot.y <= box.y + 1]).toEqual([true, true])
@@ -2816,7 +2822,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.click(ptOf(m)); await L.page.waitForTimeout(250)
       const mCol = drawer.locator(`th[data-tally-col="${m.no}"]`)
       expect(await mCol.getAttribute('aria-selected')).toBe('true')
-      const inView = await mCol.evaluate(th => { const sc = th.closest('div'), a = th.getBoundingClientRect(), b = sc.getBoundingClientRect(), part = sc.querySelector('thead tr:last-child th').getBoundingClientRect(); return a.left >= part.right - 1 && a.right <= b.right + 1 })
+      const inView = await mCol.evaluate(th => { const sc = th.closest('div'), a = th.getBoundingClientRect(), b = sc.getBoundingClientRect(), fixed = Math.max(...[...sc.querySelectorAll('th[data-tally-fixed]')].map(f => f.getBoundingClientRect().right)); return a.left >= fixed - 1 && a.right <= b.right + 1 })
       expect(inView).toBe(true)
       const litCols = await drawer.locator('th[data-tally-col][aria-selected="true"]').evaluateAll(t => t.map(x => Number(x.getAttribute('data-tally-col'))))
       expect(litCols.every(no => lines.find(l => l.no === no).ids.some(id => m.ids.includes(id)))).toBe(true)     // only the clicked rack's lines
@@ -2852,10 +2858,10 @@ describe('REG — the hand check by real clicks', () => {
       await tab.getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(400)
       expect(Math.round((await drawer.boundingBox()).height)).toBe(430)
       await L.page.mouse.move(700, 120); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
-      expect(await drawer.count()).toBe(0)
+      expect([await drawer.count(), await L.page.locator('[data-island="bottom-right"]').count()]).toEqual([0, 1])
     }, T)
 
-    it('REG-bom-rack-labels (click): one R label per rack line at its start end only (left of a line running across, above one running up and down), a back-to-back pair one label R2–R3, in the drawings\u2019 words style; no label over another or over an aisle width label; none under 8 px on screen; the numbers are the By row table\u2019s (ui-polish-2 — was: a label at each end, one per side of a pair)', async () => {
+    it('REG-bom-rack-labels (click): one R label per rack line at its start end only (left of a line running across, above one running up and down), a back-to-back pair one label R2–R3, in the drawings\u2019 words style; no label over another or over an aisle width label; the aisle labels’ size, drawn at any zoom (ui-polish-4 — was: none under 8 px on screen); the numbers are the By row table\u2019s (ui-polish-2 — was: a label at each end, one per side of a pair)', async () => {
       await open()
       await zoomForRowLabels()
       const read = () => L.page.evaluate(() => {
@@ -2868,7 +2874,11 @@ describe('REG — the hand check by real clicks', () => {
       const { labels, dims } = await read()
       expect(labels.length).toBeGreaterThan(0)
       expect([...new Set(labels.map(l => l.fill))]).toEqual(['#767C74'])
-      expect(labels.every(l => l.px >= 8 - 1e-6)).toBe(true)
+      // the aisle labels' size rule: the same drawing size as an aisle width label's text
+      const aisleFs = await L.page.evaluate(() => window.Konva.stages[0].find(n => /^aisle:/.test(n.name()))[0]?.findOne('Text')?.fontSize() ?? null)
+      if (aisleFs != null) expect([...new Set(labels.map(l => Math.round(l.px / labels[0].px * 1000)))]).toEqual([1000])
+      const rowFs = await L.page.evaluate(() => window.Konva.stages[0].findOne('.rack-line-label').fontSize())
+      if (aisleFs != null) expect(Math.abs(rowFs - aisleFs) < 1e-6).toBe(true)
       const hit = (a, b) => a.x0 < b.x1 - 0.5 && b.x0 < a.x1 - 0.5 && a.y0 < b.y1 - 0.5 && b.y0 < a.y1 - 0.5
       expect(labels.filter((l, i) => labels.some((m, j) => j > i && hit(l, m))).map(l => l.text)).toEqual([])    // never over each other
       expect(labels.filter(l => dims.some(d => hit(l, d))).map(l => l.text)).toEqual([])                         // nor over an aisle width label
@@ -2891,10 +2901,11 @@ describe('REG — the hand check by real clicks', () => {
         const across = vert ? l.x > x0 - reach && l.x < x1 + reach : l.y > y0 - reach && l.y < y1 + reach
         expect([l.text, before, across]).toEqual([l.text, true, true])
       }
-      // zoomed far out: they would draw under 8 px — none
+      // zoomed far out: still every one drawn (ui-polish-4 — was: none under 8 px)
       for (let i = 0; i < 8; i++) { await L.page.mouse.move(700, 450); await L.page.mouse.wheel(0, 120); await L.page.waitForTimeout(40) }
       await L.page.waitForTimeout(200)
-      expect((await read()).labels).toEqual([])
+      const far = (await read()).labels
+      expect([far.map(l => l.text).sort(), far.every(l => l.px < labels[0].px)]).toEqual([labels.map(l => l.text).sort(), true])
       await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(300)
       // sequential by position (rule changed — was: a number once given stayed): a row deleted (click, Delete) — the
       // numbers are R1 to Rn again, no gaps, in position order, the plan's the same; Undo puts them back as they were

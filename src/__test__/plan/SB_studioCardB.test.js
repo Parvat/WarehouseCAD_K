@@ -190,7 +190,7 @@ describe('SB — the Generate card\'s note, footer and Start over', () => {
     const frame = read('studio/StudioFrame.jsx'), card = read('components/Generate/GeneratePanel.jsx')
     expect(frame).toMatch(/: card === 'generate'\s*\? <div data-card-dark style=\{\{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' \}\}>/)
     expect(frame).toMatch(/<GeneratePanel embedded onClose=\{\(\) => useViewPrefs\.getState\(\)\.setCard\('tabs'\)\} \/>/)
-    expect(frame).toMatch(/right: 16, top: 76, width: cardW, maxHeight: 'calc\(100vh - 152px\)',/)
+    expect(frame).toMatch(/right: 16, top: 76, width: cardW, maxHeight: tallyH \? `calc\(100vh - \$\{76 \+ TALLY_BOTTOM \+ tallyH \+ TALLY_CARD_GAP\}px\)` : 'calc\(100vh - 152px\)',/)   // (ui-polish-4: ends 12px above the open Tally drawer — was: 152px only)
     expect(/height: full \?/.test(frame)).toBe(false)                                                 // every state as tall as its content
     expect(card).toMatch(/<Icon name="Generate" active \/>/)
     expect(card).toMatch(/aria-label="Close" onClick=\{\(\) => onClose\?\.\(\)\}/)

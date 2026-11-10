@@ -4,7 +4,8 @@
 // the top line, R17 by the bottom one); one running up and down keeps one label for both, "R2–R3", at its top. Drawn like the aisle width labels: a
 // size in feet (the Label size — render/labelSize.js), drawings' words style (Plus Jakarta Sans, #767C74). A label never
 // overlaps another or a dimension label (the aisle and cross-aisle width labels): it shifts along the line's end, else
-// it is left out; all are hidden when they would draw under 8 px on screen. Pure paint (never listens); hidden with the
+// it is left out. Like the aisle labels they are drawing-size and always drawn, at any zoom (ui-polish-4 — was: hidden
+// under 8 px on screen). Pure paint (never listens); hidden with the
 // Racking layer, and by the View card's Row numbers (on by default; shown anyway while the Tally drawer or its Pop out is open —
 // studio/viewPrefs.js). Each label's Konva name is `rack-line-label`.
 
@@ -20,8 +21,8 @@ import { labelScale } from '../render/labelSize'
 import { aisleLabelBoxes } from '../render/labelOps'
 
 const WORDS = '#767C74', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
-/** The label's size in drawing units: the aisle labels' 10 at the Label size; the smallest it may draw on screen. */
-export const ROW_LABEL_PX = 10, ROW_LABEL_MIN_SCREEN_PX = 8
+/** The label's size in drawing units: the aisle labels' 10 at the Label size. */
+export const ROW_LABEL_PX = 10
 const meets = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 
 /** The labels to draw (world px): [{ key, text, x, y, w, h, align }] — one per line or pair, at its start, off each other
@@ -52,14 +53,14 @@ export function rowLabelPlaces(lines, fs, avoid = []) {
 }
 
 export function RackLineLabels() {
-  const { objects, gs, zoom, layers } = useCanvasStore(useShallow(s => ({ objects: s.objects, gs: s.gridSize || 40, zoom: s.zoom || 1, layers: s.layers })))
+  const { objects, gs, layers } = useCanvasStore(useShallow(s => ({ objects: s.objects, gs: s.gridSize || 40, layers: s.layers })))
   const shown = useViewPrefs(s => s.rowLabels || s.bomFull)
   const labelSize = useLabelPrefs(s => s.labelSize)
   const lz = labelScale(labelSize, gs), fs = ROW_LABEL_PX / lz
   const lines = useMemo(() => rackLinesNow(objects, gs), [objects, gs])
   const avoid = useMemo(() => (shown && lines.length ? aisleLabelBoxes(objects, gs, labelSize) : []), [shown, lines.length, objects, gs, labelSize])
   const places = useMemo(() => rowLabelPlaces(lines, fs, avoid), [lines, fs, avoid])
-  if (!shown || !lines.length || !layerShown(layers, 'racking') || fs * zoom < ROW_LABEL_MIN_SCREEN_PX) return null
+  if (!shown || !lines.length || !layerShown(layers, 'racking')) return null
   return (
     <Group name="rack-line-labels" listening={false}>
       {places.map(p => <Text key={p.key} name="rack-line-label" text={p.text} x={p.x} y={p.y} width={p.w} height={p.h} align={p.align} verticalAlign="middle"

@@ -733,7 +733,7 @@ describe('EV — the editor (v2 §B–C, E)', () => {
     // Studio: the right card (300 wide, StudioFrame.jsx) holds the two tabs; their content is RightPanelTabs
     const rp = src('components/RightPanel/index.jsx'), card = src('studio/StudioFrame.jsx')
     expect(card).toMatch(/>Properties<\/button>[\s\S]*>Elevations<\/button>/)
-    expect(card).toMatch(/right: 16, top: 76, width: cardW, maxHeight: 'calc\(100vh - 152px\)'/)
+    expect(card).toMatch(/right: 16, top: 76, width: cardW, maxHeight: tallyH \? `calc\(100vh - \$\{76 \+ TALLY_BOTTOM \+ tallyH \+ TALLY_CARD_GAP\}px\)` : 'calc\(100vh - 152px\)'/)   // (ui-polish-4: ends 12px above the open Tally drawer — was: 152px only)
     expect(rp).toMatch(/<ElevationsTab \/>/)
     expect([RP.panelWidth({ tab: 'elevations', elevW: 520 }), RP.panelWidth({ tab: 'properties', elevW: 520 })]).toEqual([520, 272])
     RP.setRightPanel({ tab: 'elevations', elevW: 555 })

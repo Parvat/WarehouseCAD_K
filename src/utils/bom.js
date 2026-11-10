@@ -60,6 +60,12 @@ export const PARTS = ['Upright frame', 'Beam', 'Safety pin', 'Wire deck', 'Row s
 export const BY_ROW_PARTS = ['Upright frame', 'Beam', 'Wire deck', 'Row spacer', 'Upright guard', 'End-of-aisle guard', 'Anchor']
 /** A line's quantity as shown: beams with their pairs beside ("18 (9 pairs)"). */
 export const qtyText = (l) => (l.part === 'Beam' ? `${l.qty.toLocaleString('en-US')} (${l.pairs.toLocaleString('en-US')} pair${l.pairs === 1 ? '' : 's'})` : l.qty.toLocaleString('en-US'))
+/** A part's name and size as the tables show them (ui-polish-4: Part | Size, "Frame" | "21 ft x 42 in"). */
+const SHORT = { 'Upright frame': 'Frame' }
+export const partShort = (part) => SHORT[part] || part
+export const sizeWords = (s) => String(s || '').replace(/(\d+(?:\.\d+)?)′-(\d+(?:\.\d+)?)″/g, '$1 ft $2 in').replace(/(\d+(?:\.\d+)?)′/g, '$1 ft').replace(/(\d+(?:\.\d+)?)″/g, '$1 in').replace(/ × /g, ' x ')
+/** A part on one line: "Frame 21 ft x 42 in", "Beam 96 in x 4 in face", "Anchor". */
+export const partName = (l) => [partShort(l.part), l.size ? sizeWords(l.size) : ''].filter(Boolean).join(' ')
 export const UNASSIGNED = 'unassigned'
 const BEAM = new Set(['rack_row', 'rack_double_row'])
 const isBomRack = (o) => !!o && BEAM.has(o.type) && Array.isArray(o.beams) && o.beams.length > 0 && o.width > 0 && o.height > 0
@@ -87,13 +93,13 @@ export function deckSet(decks, beamIn) {
  * @param opts      { gridSize = 40, settings (else the project's) }
  * @returns { lines: [{ key, part, size, qty, pairs (beams), ids: [rackId], rows: { [no]: qty, ['p' + no]: pairs } }]
  *   (the total), sections: [{ id, name, rows: [no], lines }] (each drawn section, then Unassigned when it has lines),
- *   rows: [{ no, label 'R1', sectionId, ids, ws }], hasSections, flags: [{ key, text, ids }], counted: { racks, bays } }
+ *   rows: [{ no, label 'R1', sectionId, ids, ws, bays (its counted bays, on its side) }], hasSections, flags: [{ key, text, ids }], counted: { racks, bays } }
  */
 export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) {
   const S = settings || bomSettings(T?.project)
   const racks = (objects || []).filter(isBomRack)
   const ledger = bayLedger(objects || [], gridSize, T)
-  const flags = new Map(), entries = []
+  const flags = new Map(), entries = [], baysOn = new Map()
   // the rack lines (R1 …) and which line each rack side is on
   const numbered = numberLines(objects || [], gridSize)
   const lineOf = new Map()
@@ -118,6 +124,8 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
     const e = ledger.racks.get(r.id)
     if (!e) continue
     const depth = r.depthIn ?? 42, sides = sidesOf(r)
+    // the bays on each line: every counted bay side that is not empty
+    for (let s = 0; s < sides; s++) r.beams.forEach((_, b) => { if (e.counted[b] && !isEmptySide(r, b, s)) { const no = noOf(r, s); baysOn.set(no, (baysOn.get(no) || 0) + 1) } })
     // beams, pins and decks: every counted bay side that is not empty
     for (let s = 0; s < sides; s++) r.beams.forEach((beamIn, b) => {
       if (!e.counted[b] || isEmptySide(r, b, s)) return
@@ -183,7 +191,7 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
   const rows = numbered.filter(l => counted.has(l.no)).map(l => {
     const a = (l.r0 + l.r1) / 2, c = (l.s0 + l.s1) / 2, x = l.vert ? c : a, y = l.vert ? a : c
     const i = polys.findIndex(p => pointInPolygon(p, x, y))
-    return { no: l.no, label: 'R' + l.no, sectionId: i >= 0 ? secs[i].id : UNASSIGNED, ids: l.ids, ws: l.ws }
+    return { no: l.no, label: 'R' + l.no, sectionId: i >= 0 ? secs[i].id : UNASSIGNED, ids: l.ids, ws: l.ws, bays: baysOn.get(l.no) || 0 }
   })
   const secOf = new Map(rows.map(r => [r.no, r.sectionId]))
   const sections = [...secs.map(s => ({ id: s.id, name: s.label || 'Section' })), { id: UNASSIGNED, name: 'Unassigned' }]
@@ -214,24 +222,28 @@ function linesOf(entries) {
     .map(l => ({ key: l.key, part: l.part, size: l.size, qty: l.qty, pairs: l.pairs, ids: [...l.ids], rows: l.rows }))
 }
 
-/** The By row table (the full view's By row, the xlsx): the parts down (BY_ROW_PARTS — a beam's pairs on a row of
- *  their own under it), the lines R1 … Rn across grouped by section, each section's Total, the grand Total.
- *  → { groups: [{ id, name, rows: [no] }], parts: [{ key, part, size, pairs (the pairs row), cells: { [no]: qty },
- *  totals: { [sectionId]: qty }, total }] } — a cell with nothing is 0. */
+/** The By row table (the Tally's By row, the full view's, the xlsx): the Bays row first (each line's counted bays),
+ *  then the parts down (BY_ROW_PARTS; no pairs row — ui-polish-4), the lines R1 … Rn across grouped by section, each
+ *  section's Total, the grand Total.
+ *  → { groups: [{ id, name, rows: [no] }], parts: [{ key, part, size, bays (the Bays row), cells: { [no]: n },
+ *  totals: { [sectionId]: n }, total }] } — a cell with nothing is 0. */
 export function byRowTable(bom) {
   const groups = bom.sections.filter(s => s.rows.length).map(s => ({ id: s.id, name: s.name, rows: s.rows.slice().sort((a, b) => a - b) }))
   const parts = []
   const shown = bom.lines.filter(x => BY_ROW_PARTS.includes(x.part)).sort((a, b) => BY_ROW_PARTS.indexOf(a.part) - BY_ROW_PARTS.indexOf(b.part))
-  for (const l of shown) for (const pairs of l.part === 'Beam' ? [false, true] : [false]) {
+  const row = (key, part, size, at, bays = false) => {
     const cells = {}, totals = {}
     let total = 0
     for (const g of groups) {
       let t = 0
-      for (const no of g.rows) { const v = l.rows[(pairs ? 'p' : '') + no] || 0; cells[no] = v; t += v }
+      for (const no of g.rows) { const v = at(no) || 0; cells[no] = v; t += v }
       totals[g.id] = t; total += t
     }
-    parts.push({ key: l.key + (pairs ? '|pairs' : ''), part: pairs ? 'Beam pairs' : l.part, size: l.size, pairs, cells, totals, total })
+    parts.push({ key, part, size, bays, cells, totals, total })
   }
+  const baysOf = new Map((bom.rows || []).map(r => [r.no, r.bays || 0]))
+  row('bays', 'Bays', '', (no) => baysOf.get(no), true)
+  for (const l of shown) row(l.key, l.part, l.size, (no) => l.rows[no])
   return { groups, parts }
 }
 

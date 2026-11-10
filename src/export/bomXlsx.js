@@ -1,8 +1,8 @@
 // bomXlsx.js — the BOM's By row table as an .xlsx sheet (the full view's Download xlsx), laid out as on screen, like a
 // dealer's sheet: a title line; the sections over their rows (merged); Part · Size · R1 … Rn · Total per section, then
-// the grand Total; one row per part (utils/bom.js byRowTable — a beam's pairs on the row under it).
+// the grand Total; one row per part (utils/bom.js byRowTable — the Bays row first, Part and Size as the tables show them).
 
-import { byRowTable } from '../utils/bom'
+import { byRowTable, partShort, sizeWords } from '../utils/bom'
 import { writeXlsx, colName } from '../utils/xlsx'
 
 /** The sheet's rows (what writeXlsx gets, and what the tests read back): { rows, merges, widths, bold }. */
@@ -21,7 +21,7 @@ export function bomXlsxSheet(bom, title = '') {
   }
   head2.push(''); head3.push(many ? 'Grand total' : 'Total')
   const body = parts.map(p => {
-    const r = [p.pairs ? '  pairs' : p.part, p.pairs ? '' : p.size]
+    const r = [partShort(p.part), sizeWords(p.size)]
     for (const g of groups) { for (const no of g.rows) r.push(p.cells[no] || 0); if (many) r.push(p.totals[g.id] || 0) }
     r.push(p.total)
     return r

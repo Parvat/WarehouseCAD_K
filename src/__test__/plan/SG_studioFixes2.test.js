@@ -230,7 +230,7 @@ describe('SG-6 / SG-7 / SG-8', () => {
     V.useViewPrefs.getState().setCardW(520, { save: false })
     expect(localStorage.getItem('trace.studio.cardw.v1')).toBe('480')
     const f = read('studio/StudioFrame.jsx')
-    expect(f).toMatch(/right: 16, top: 76, width: cardW, maxHeight: 'calc\(100vh - 152px\)'/)
+    expect(f).toMatch(/right: 16, top: 76, width: cardW, maxHeight: tallyH \? `calc\(100vh - \$\{76 \+ TALLY_BOTTOM \+ tallyH \+ TALLY_CARD_GAP\}px\)` : 'calc\(100vh - 152px\)'/)   // (ui-polish-4: ends 12px above the open Tally drawer — was: 152px only)
     expect(f).toMatch(/role="separator" aria-orientation="vertical" aria-label="Resize right panel"[\s\S]*onDoubleClick=\{\(\) => useViewPrefs\.getState\(\)\.setCardW\(CARD_W\)\}[\s\S]*width: 6, cursor: 'col-resize'/)
     expect(f).toMatch(/<span aria-hidden style=\{\{ width: 3, height: 32, borderRadius: 2, background: '#4A514D' \}\} \/>/)
     expect((f.match(/width: cardW/g) || []).length).toBe(1)                                             // the one card, every tab

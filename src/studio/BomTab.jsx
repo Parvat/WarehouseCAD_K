@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { computeBom, bomCsv, bomGroups, byRowTable, qtyText, rowsText } from '../utils/bom'
+import { computeBom, bomCsv, bomGroups, byRowTable, qtyText, rowsText, partName, partShort, sizeWords } from '../utils/bom'
 import { bomXlsx } from '../export/bomXlsx'
 import { useLayoutCheck } from '../utils/layoutCheck'
 import { rackFootprint } from '../generate/rackFootprint'
@@ -39,43 +39,54 @@ export function downloadCsv(bom, filename) { save(new Blob([bomCsv(bom)], { type
 export function downloadXlsx(bom, filename, title) { save(new Blob([bomXlsx(bom, title)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), filename) }
 export const baseName = (name) => String(name || 'warehouse-layout').replace(/\.(wcad|pdf)$/i, '')
 
-/** A part on one line: "Frame 21 ft x 42 in", "Beam 96 in x 4 in face", "Row spacer 9 in flue", "Anchor". */
-const words = (s) => s.replace(/(\d+(?:\.\d+)?)′-(\d+(?:\.\d+)?)″/g, '$1 ft $2 in').replace(/(\d+(?:\.\d+)?)′/g, '$1 ft').replace(/(\d+(?:\.\d+)?)″/g, '$1 in').replace(/ × /g, ' x ')
-const SHORT = { 'Upright frame': 'Frame' }
-export const partName = (l) => [SHORT[l.part] || l.part, l.size ? words(l.size) : ''].filter(Boolean).join(' ')
 const n = (v) => v.toLocaleString('en-US')
 
-/** The BOM table of the wide modal (Summary): part, size, qty, grouped — each section, then the Total. */
+/** Part | Size cells as every table shows them (ui-polish-4): the part bold #F2F4F1, the size muted #9AA29C mono 11.5. */
+export const PART_CELL = { color: C.strong, fontWeight: 600, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", textAlign: 'left', whiteSpace: 'nowrap' }
+export const SIZE_CELL = { color: C.muted, fontFamily: MONO, fontSize: 11.5, textAlign: 'left', whiteSpace: 'nowrap' }
+const BAND = '#252A27'
+
+/** A section's swatch: its colour, else a hollow square (Unassigned, a plain section). */
+export function Swatch({ color }) {
+  return <span aria-hidden style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, flexShrink: 0, background: color || 'transparent', border: color ? 'none' : `1px solid ${C.faint}` }} />
+}
+
+/** The Summary (the Tally's, the wide modal's): as the BOM tab — the Total first, then each section under a header band
+ *  (#252A27: its swatch, name, R range), the parts in Part | Size | Qty columns, 12 px between groups. */
 export function BomTable({ bom, picked, onPick, wide = false }) {
+  const objects = useCanvasStore(s => s.objects)
   const cell = { padding: wide ? '7px 10px' : '6px 8px', fontSize: wide ? 13 : 12, borderTop: `1px solid ${C.divider}`, verticalAlign: 'top' }
   const head = { ...cell, borderTop: 'none', color: C.muted, fontSize: 11, fontWeight: 500, textAlign: 'left' }
-  const groups = bomGroups(bom)
+  const all = bomGroups(bom), groups = [...all.filter(g => g.total), ...all.filter(g => !g.total)]
   return (
-    <table aria-label={wide ? 'Bill of materials, full view' : 'Bill of materials'} style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <table aria-label={wide ? 'Bill of materials, full view' : 'Bill of materials'} style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
       <thead><tr><th style={head}>Part</th><th style={head}>Size</th><th style={{ ...head, textAlign: 'right' }}>Qty</th></tr></thead>
-      {groups.map(g => {
+      {groups.map((g, i) => {
         let last = null
+        const sw = g.total ? null : colorOf(objects.find(o => o.id === g.id))?.c
         return (
           <tbody key={g.id} data-bom-section={g.id}>
-            {(bom.hasSections || g.rows.length > 0) && (
-              <tr data-bom-group-head={g.id}>
-                <td colSpan={3} style={{ ...cell, paddingTop: wide ? 14 : 12, borderTop: g.total ? `1px solid ${C.separator}` : cell.borderTop }}>
-                  <span style={{ color: C.strong, fontWeight: 600, fontSize: wide ? 13 : 12 }}>{g.name}</span>
-                  {g.rows.length > 0 && <span data-bom-rows style={{ color: C.muted, fontSize: 11, marginLeft: 8 }}>{rowsText(g.rows)}</span>}
-                </td>
-              </tr>
-            )}
-            {!g.lines.length && <tr><td colSpan={3} style={{ ...cell, color: C.muted }}>No racks</td></tr>}
-            {g.lines.map(l => {
+            {i > 0 && <tr aria-hidden><td colSpan={3} style={{ height: 12, padding: 0 }} /></tr>}
+            <tr data-bom-group-head={g.id}>
+              <td colSpan={3} style={{ padding: '8px 10px', background: g.total ? C.active : BAND }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {!g.total && <Swatch color={sw} />}
+                  <span style={{ color: C.strong, fontWeight: 600, fontSize: wide ? 13 : 12, flex: 1 }}>{g.name}</span>
+                  {g.rows.length > 0 && <span data-bom-rows style={{ color: C.muted, fontSize: 11 }}>{rowsText(g.rows)}</span>}
+                </span>
+              </td>
+            </tr>
+            {!g.lines.length && <tr><td colSpan={3} style={{ ...cell, borderTop: 'none', color: C.muted }}>No racks</td></tr>}
+            {g.lines.map((l, j) => {
               const first = l.part !== last; last = l.part
-              const key = g.id + '|' + l.key, on = picked === key
+              const key = g.id + '|' + l.key, on = picked === key, top = j === 0 ? { borderTop: 'none' } : null
               return (
                 <tr key={key} data-bom-line={l.key} data-bom-group={g.id} data-part={l.part} data-size={l.size} data-qty={l.qty} data-pairs={l.part === 'Beam' ? l.pairs : undefined}
                   aria-selected={on} className="st-hov" title="Show its racks on the plan" onClick={() => onPick({ ...l, key })}
                   style={{ cursor: 'pointer', background: on ? C.active : undefined }}>
-                  <td style={{ ...cell, color: first ? C.strong : 'transparent', fontWeight: first ? 500 : 400 }}>{l.part}</td>
-                  <td style={{ ...cell, fontFamily: MONO, color: C.text }}>{l.size || '—'}</td>
-                  <td style={{ ...cell, fontFamily: MONO, color: C.strong, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <td style={{ ...cell, ...top, ...PART_CELL, ...(first ? null : { color: 'transparent' }) }}>{partShort(l.part)}</td>
+                  <td style={{ ...cell, ...top, ...SIZE_CELL }}>{sizeWords(l.size) || '—'}</td>
+                  <td style={{ ...cell, ...top, fontFamily: MONO, color: C.strong, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {l.part === 'Beam'
                       ? <>{n(l.qty)}{' '}<span style={{ display: wide ? 'inline' : 'block', color: C.muted, fontSize: 11 }}>{qtyText(l).slice(n(l.qty).length + 1)}</span></>
                       : qtyText(l)}
@@ -90,7 +101,8 @@ export function BomTable({ bom, picked, onPick, wide = false }) {
   )
 }
 
-/** The By row table of the wide modal: parts down, R1 … Rn across by section, each section's Total, the grand Total. */
+/** The By row table of the wide modal: the Bays row, then the parts down (Part | Size), R1 … Rn across by section, each
+ *  section's Total, the grand Total. */
 export function ByRowTable({ bom }) {
   const { groups, parts } = useMemo(() => byRowTable(bom), [bom])
   const many = bom.hasSections
@@ -120,8 +132,8 @@ export function ByRowTable({ bom }) {
         <tbody>
           {parts.map(p => (
             <tr key={p.key} data-byrow-part={p.key}>
-              <td style={{ ...cell, fontFamily: 'inherit', textAlign: 'left', color: p.pairs ? C.muted : C.strong, paddingLeft: p.pairs ? 20 : 8 }}>{p.pairs ? 'pairs' : p.part}</td>
-              <td style={{ ...cell, textAlign: 'left' }}>{p.pairs ? '' : p.size || '—'}</td>
+              <td style={{ ...cell, ...PART_CELL, fontFamily: 'inherit', fontSize: 12 }}>{partShort(p.part)}</td>
+              <td style={{ ...cell, ...SIZE_CELL }}>{sizeWords(p.size)}</td>
               {groups.map(g => [
                 ...g.rows.map(no => <td key={'r' + no} data-row={no} style={{ ...cell, color: p.cells[no] ? C.text : C.faint }}>{p.cells[no] || 0}</td>),
                 ...(many ? [<td key={'t' + g.id} data-section-total={g.id} style={sum}>{p.totals[g.id] || 0}</td>] : []),
@@ -202,7 +214,7 @@ export function BomTab() {
                     <button type="button" data-bom-group-head={g.id} aria-expanded={open} title={open ? 'Collapse' : 'Expand'}
                       onClick={() => useBomCards.getState().setOpen(layout, g.id, !open)}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px 8px 12px', border: 0, background: '#252A27', color: C.strong, cursor: 'pointer', textAlign: 'left', minWidth: 0 }}>
-                      <span aria-hidden style={{ width: 10, height: 10, borderRadius: 3, flexShrink: 0, background: sw || 'transparent', border: sw ? 'none' : `1px solid ${C.faint}` }} />
+                      <Swatch color={sw} />
                       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, fontSize: 12 }}>{g.name}</span>
                       <span data-bom-rows style={{ color: C.muted, fontSize: 11, whiteSpace: 'nowrap' }}>{range(g.rows)}</span>
                       <span aria-hidden style={{ display: 'flex', transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }}><Icon name="Chevron" size={12} color={C.muted} /></span>

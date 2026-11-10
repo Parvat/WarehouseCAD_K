@@ -75,19 +75,21 @@ describe('BOM2 — sections, rack lines, By row (hand count)', () => {
     expect(groups.map(g => [g.name, g.rows])).toEqual([['Section 1', [1, 2]], ['Section 2', [3, 4]]])
     const at = (part, size) => rows.find(p => p.part === part && (size == null || p.size === size))
     const cells = (p) => [1, 2, 3, 4].map(no => p.cells[no])
-    expect(rows.map(p => p.part)).toEqual(['Upright frame', 'Upright frame', 'Beam', 'Beam pairs', 'Wire deck', 'Row spacer', 'Anchor'])   // no pins
+    // the Bays row first, no pairs row (ui-polish-4 — was: a beam's pairs on a row under it); no pins
+    expect(rows.map(p => p.part)).toEqual(['Bays', 'Upright frame', 'Upright frame', 'Beam', 'Wire deck', 'Row spacer', 'Anchor'])
+    expect([cells(at('Bays')), at('Bays').totals.s1, at('Bays').totals.s2, at('Bays').total]).toEqual([[2, 2, 1, 1], 4, 2, 6])   // P1: 2 bays a side; P2: 1
     expect(cells(at('Upright frame', '16′ × 42″'))).toEqual([3, 3, 0, 0])    // P1: 3 positions on each side
     expect(cells(at('Upright frame', '20′ × 42″'))).toEqual([0, 0, 2, 2])    // P2: 2 positions on each side
     expect(cells(at('Beam'))).toEqual([12, 12, 8, 8])                        // P1 side: 2 bays × 3 levels × 2 beams; P2 side: 1 × 4 × 2
-    expect(cells(at('Beam pairs'))).toEqual([6, 6, 4, 4])
     expect(cells(at('Wire deck'))).toEqual([12, 12, 8, 8])                   // a deck pair per beam level: 6 × 2; 4 × 2
     expect(cells(at('Row spacer'))).toEqual([3, 0, 2, 2])                    // P1: 1 per pair, all on R1; P2: 2 per pair, 1 on each line
     expect(cells(at('Anchor'))).toEqual([6, 6, 4, 4])                        // 3 frames × 2; 2 frames × 2
     expect([at('Row spacer').totals.s1, at('Row spacer').totals.s2, at('Row spacer').total]).toEqual([3, 4, 7])
     // every part's grand total is the Summary's
     for (const p of rows) {
-      const l = bom.lines.find(x => x.key === p.key.replace(/\|pairs$/, ''))
-      expect([p.key, p.total]).toEqual([p.key, p.pairs ? l.pairs : l.qty])
+      if (p.bays) { expect(p.total).toBe(bom.rows.reduce((t, r) => t + r.bays, 0)); continue }
+      const l = bom.lines.find(x => x.key === p.key)
+      expect([p.key, p.total]).toEqual([p.key, l.qty])
       expect(p.totals.s1 + p.totals.s2).toBe(p.total)
     }
     expect(BY_ROW_PARTS).not.toContain('Safety pin')
@@ -140,8 +142,9 @@ describe('BOM2 — sections, rack lines, By row (hand count)', () => {
     const cells = sheetCells(readStoredZip(bomXlsx(bom, 'hand'))['xl/worksheets/sheet1.xml'])
     const row = (label, size) => cells.find(r => r && r[0] === label && (size == null || r[1] === size))
     expect(row('Row spacer').slice(2)).toEqual([3, 0, 3, 2, 2, 4, 7])        // R1 R2 | S1 total | R3 R4 | S2 total | grand
-    expect(row('Upright frame', '20′ × 42″').slice(2)).toEqual([0, 0, 0, 2, 2, 4, 4])
-    expect(row('  pairs').slice(2)).toEqual([6, 6, 12, 4, 4, 8, 20])
+    // Part | Size as the tables show them, the Bays row first, no pairs row (ui-polish-4 — was: Upright frame · 20′ × 42″, a pairs row)
+    expect(row('Frame', '20 ft x 42 in').slice(2)).toEqual([0, 0, 0, 2, 2, 4, 4])
+    expect([cells[3][0], row('Bays').slice(2), cells.some(r => r && /pairs/.test(String(r[0])))]).toEqual(['Bays', [2, 2, 4, 1, 1, 2, 6], false])
   })
 
   it('BOM2-unassigned: a pair outside both sections is Unassigned, before the Total; no section drawn: the Total alone', () => {

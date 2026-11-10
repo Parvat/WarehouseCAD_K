@@ -16,8 +16,8 @@ import { bayLedger } from '../utils/bayLedger'
 import { worldSide } from '../utils/rackLines'
 
 export const TALLY_H = 330, TALLY_H_MIN = 200, TALLY_MAX_FRAC = 0.7
-/** The drawer's place: left 16, right clear of the right card (its width + 32: 332 at 300), bottom 20 (the islands'). */
-export const TALLY_LEFT = 16, TALLY_BOTTOM = 20, TALLY_GAP = 32
+/** The drawer's place: full width, left 16 to right 16, bottom 20 (the islands'); the right card ends 12 above it. */
+export const TALLY_LEFT = 16, TALLY_RIGHT = 16, TALLY_BOTTOM = 20, TALLY_CARD_GAP = 12
 const H_KEY = 'trace.studio.tally.h'
 const maxH = () => Math.round((typeof window !== 'undefined' ? window.innerHeight : 1000) * TALLY_MAX_FRAC)
 export const clampTallyH = (h) => (Number.isFinite(h) ? Math.round(Math.min(maxH(), Math.max(TALLY_H_MIN, h))) : TALLY_H)

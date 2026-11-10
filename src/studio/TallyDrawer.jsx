@@ -1,21 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { computeBom, byRowTable, rowsText } from '../utils/bom'
+import { computeBom, byRowTable, rowsText, partShort, sizeWords } from '../utils/bom'
 import { rackLinesNow } from '../utils/rackLines'
 import { useLayoutCheck } from '../utils/layoutCheck'
 import { C, MONO, Note, Btn, Seg } from './cardParts'
 import { Icon } from './Icon'
 import { useViewPrefs } from './viewPrefs'
-import { BomTable, ByRowTable, highlightLine, downloadCsv, downloadXlsx, baseName, partName } from './BomTab'
-import { useTally, closeTally, popOutTally, closeTallyModal, TALLY_LEFT, TALLY_BOTTOM, TALLY_GAP, selectedLineNos } from './tally'
+import { BomTable, ByRowTable, highlightLine, downloadCsv, downloadXlsx, baseName, PART_CELL, SIZE_CELL } from './BomTab'
+import { useTally, closeTally, popOutTally, closeTallyModal, TALLY_LEFT, TALLY_RIGHT, TALLY_BOTTOM, selectedLineNos } from './tally'
 
-/* The Tally (STUDIO.md §1, §7a BOM): the BOM tab's Tally opens a drawer docked at the bottom of the canvas — left 16,
-   right clear of the right card, its height dragged by its top edge (200 … 70% of the window, 330 at first),
+/* The Tally (STUDIO.md §1, §7a BOM): the BOM tab's Tally opens a drawer docked at the bottom of the canvas — full width,
+   left 16 to right 16 (the right card ends 12px above it), its height dragged by its top edge (200 … 70% of the window, 330 at first),
    remembered; island style, radius 10. Header: Tally · Summary / By row · the hint · Pop out (the wide modal, below) ·
-   xlsx · ✕; Esc closes it. By row: the section labels over their rows (LEFT · R1–R9), the parts down, R1 … across, a
-   Total per section and the grand Total (highlighted); it scrolls sideways, the Part column stays. Linked to the plan
+   xlsx · ✕; Esc closes it. By row: the section labels over their rows (LEFT · R1–R9), the Bays row then the parts down (Part | Size), R1 … across (compact, min 36px), a
+   Total per section and the grand Total (highlighted); it scrolls sideways, Part and Size stay. Linked to the plan
    (canvas2/TallyHighlight.jsx): an R column under the pointer lights its line on the plan with a tag (R6 · 12 bays ·
    48 positions); a click on a rack on the plan lights its column and scrolls it into view; a click on a section's Total
    column lights all its racks. The plan stays usable above it; on opening the plan fits into the room above it, and
@@ -23,18 +23,26 @@ import { useTally, closeTally, popOutTally, closeTallyModal, TALLY_LEFT, TALLY_B
 
 const HL = C.select, HL_BG = C.select + '40'
 
-/** The drawer's By row table: one Part column (the part on one line), fixed while the R columns scroll. */
+/** The drawer's By row table: the Bays row, then the parts; Part | Size fixed while the R columns scroll; compact R
+ *  columns (min 36 px) so more lines fit before it scrolls. */
 function TallyTable({ bom, scrollRef }) {
   const { groups, parts } = useMemo(() => byRowTable(bom), [bom])
   const { hover, cols, section } = useTally(useShallow(s => ({ hover: s.hover, cols: s.cols, section: s.section })))
   const { setHover, setSection } = useTally.getState()
   const many = bom.hasSections
+  // the fixed columns' offsets, measured: Size sits right of Part, the second header row under the first
+  const partRef = useRef(null), headRef = useRef(null)
+  const [fix, setFix] = useState({ size: 0, top: 0 })
+  useLayoutEffect(() => {
+    const size = partRef.current?.offsetWidth || 0, top = headRef.current?.offsetHeight || 0
+    if (size !== fix.size || top !== fix.top) setFix({ size, top })
+  })
   const lit = (no) => hover === no || cols.includes(no) || (section && section.nos.includes(no))
-  const cell = { padding: '5px 10px', fontSize: 12, borderTop: `1px solid ${C.divider}`, fontFamily: MONO, color: C.text, textAlign: 'right', whiteSpace: 'nowrap' }
+  const cell = { padding: '5px 6px', minWidth: 36, fontSize: 12, borderTop: `1px solid ${C.divider}`, fontFamily: MONO, color: C.text, textAlign: 'right', whiteSpace: 'nowrap' }
   const head = { ...cell, borderTop: 'none', color: C.muted, fontSize: 11, fontFamily: 'inherit', fontWeight: 500, position: 'sticky', top: 0, background: C.island, zIndex: 1 }
-  const part = { position: 'sticky', left: 0, zIndex: 2, background: C.island, textAlign: 'left', fontFamily: 'inherit', borderRight: `1px solid ${C.divider}` }
-  const grand = { ...cell, color: C.accent, fontWeight: 600, background: C.active }
-  const sum = (on) => ({ ...cell, color: C.strong, fontWeight: 600, background: on ? HL_BG : C.inset, cursor: 'pointer' })
+  const stick = (left, edge) => ({ position: 'sticky', left, zIndex: 2, background: C.island, minWidth: 0, padding: '5px 10px', ...(edge ? { borderRight: `1px solid ${C.divider}` } : null) })
+  const grand = { ...cell, padding: '5px 10px', color: C.accent, fontWeight: 600, background: C.active }
+  const sum = (on) => ({ ...cell, padding: '5px 8px', color: C.strong, fontWeight: 600, background: on ? HL_BG : C.inset, cursor: 'pointer' })
   const rowCell = (no, extra) => (lit(no) ? { ...extra, background: HL_BG, color: C.strong } : extra)
   const pickSection = (g) => setSection(section?.id === g.id ? null : { id: g.id, nos: g.rows })
   const groupLabel = (g) => (many ? g.name : 'Total').toUpperCase() + ' · ' + rowsText(g.rows)
@@ -42,29 +50,31 @@ function TallyTable({ bom, scrollRef }) {
     <div ref={scrollRef} style={{ overflow: 'auto', flex: 1, minHeight: 0 }} onMouseLeave={() => setHover(null)}>
       <table aria-label="Tally by row" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '100%' }}>
         <thead>
-          <tr>
-            <th style={{ ...head, ...part, zIndex: 3 }} />
+          <tr ref={headRef}>
+            <th colSpan={2} style={{ ...head, ...stick(0, true), zIndex: 3 }} />
             {groups.map(g => <th key={g.id} colSpan={g.rows.length + (many ? 1 : 0)} data-tally-section={g.id}
               style={{ ...head, textAlign: 'left', color: C.muted, fontSize: 10.5, letterSpacing: '.06em', fontWeight: 600, borderBottom: `1px solid ${C.separator}` }}>{groupLabel(g)}</th>)}
             <th style={head} />
           </tr>
           <tr>
-            <th style={{ ...head, ...part, zIndex: 3, top: 25 }}>Part</th>
+            <th ref={partRef} data-tally-fixed style={{ ...head, ...stick(0), zIndex: 3, top: fix.top, textAlign: 'left' }}>Part</th>
+            <th data-tally-fixed style={{ ...head, ...stick(fix.size, true), zIndex: 3, top: fix.top, textAlign: 'left' }}>Size</th>
             {groups.map(g => [
               ...g.rows.map(no => (
                 <th key={'r' + no} data-tally-col={no} aria-selected={lit(no)} onMouseEnter={() => setHover(no)} title={`R${no} — hover to see it on the plan`}
-                  style={rowCell(no, { ...head, top: 25, cursor: 'default', ...(lit(no) ? { color: C.strong, boxShadow: `inset 0 -2px 0 ${HL}` } : null) })}>R{no}</th>
+                  style={rowCell(no, { ...head, top: fix.top, cursor: 'default', ...(lit(no) ? { color: C.strong, boxShadow: `inset 0 -2px 0 ${HL}` } : null) })}>R{no}</th>
               )),
               ...(many ? [<th key={'t' + g.id} data-tally-total={g.id} aria-selected={section?.id === g.id} onClick={() => pickSection(g)} title={`Show every rack of ${g.name} on the plan`}
-                style={{ ...head, top: 25, color: C.strong, cursor: 'pointer', ...(section?.id === g.id ? { boxShadow: `inset 0 -2px 0 ${HL}` } : null) }}>Total</th>] : []),
+                style={{ ...head, top: fix.top, padding: '5px 8px', color: C.strong, cursor: 'pointer', ...(section?.id === g.id ? { boxShadow: `inset 0 -2px 0 ${HL}` } : null) }}>Total</th>] : []),
             ])}
-            <th style={{ ...head, top: 25, color: C.accent, background: C.active }}>{many ? 'Grand total' : 'Total'}</th>
+            <th style={{ ...head, top: fix.top, padding: '5px 10px', color: C.accent, background: C.active }}>{many ? 'Grand total' : 'Total'}</th>
           </tr>
         </thead>
         <tbody>
           {parts.map(p => (
             <tr key={p.key} data-tally-part={p.key}>
-              <td style={{ ...cell, ...part, color: p.pairs ? C.muted : C.strong, paddingLeft: p.pairs ? 22 : 10 }}>{p.pairs ? 'pairs' : partName(p)}</td>
+              <td style={{ ...cell, ...PART_CELL, ...stick(0) }}>{partShort(p.part)}</td>
+              <td style={{ ...cell, ...SIZE_CELL, ...stick(fix.size, true) }}>{sizeWords(p.size)}</td>
               {groups.map(g => [
                 ...g.rows.map(no => <td key={'r' + no} data-row={no} onMouseEnter={() => setHover(no)} style={rowCell(no, { ...cell, color: p.cells[no] ? C.text : C.faint })}>{p.cells[no] || 0}</td>),
                 ...(many ? [<td key={'t' + g.id} data-section-total={g.id} onClick={() => pickSection(g)} style={sum(section?.id === g.id)}>{p.totals[g.id] || 0}</td>] : []),
@@ -80,7 +90,6 @@ function TallyTable({ bom, scrollRef }) {
 
 function Drawer({ bom, flags, xlsx }) {
   const { view, height } = useTally(useShallow(s => ({ view: s.view, height: s.height })))
-  const cardW = useViewPrefs(s => s.cardW)
   const scrollRef = useRef(null)
   // a click on a rack on the plan: its column(s) lit and scrolled into view
   useEffect(() => {
@@ -109,7 +118,7 @@ function Drawer({ bom, flags, xlsx }) {
   const small = { height: 28, padding: '0 10px', fontSize: 12 }
   return (
     <div className="st-island" role="region" aria-label="Tally" data-tally-drawer data-card-dark
-      style={{ left: TALLY_LEFT, right: cardW + TALLY_GAP, bottom: TALLY_BOTTOM, height, flexDirection: 'column', alignItems: 'stretch', borderRadius: 10, overflow: 'hidden' }}>
+      style={{ left: TALLY_LEFT, right: TALLY_RIGHT, bottom: TALLY_BOTTOM, height, flexDirection: 'column', alignItems: 'stretch', borderRadius: 10, overflow: 'hidden' }}>
       <div role="separator" aria-orientation="horizontal" aria-label="Resize tally" title="Drag to resize" onPointerDown={startEdge}
         style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 6, cursor: 'row-resize', zIndex: 5, touchAction: 'none' }} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px 10px 16px', borderBottom: `1px solid ${C.divider}`, flexShrink: 0, minWidth: 0 }}>
@@ -171,7 +180,8 @@ export function TallyHost() {
   const any = open || modal
   const bom = useMemo(() => (any ? computeBom(objects, T, { gridSize: gs }) : null), [any, objects, T, gs])
   useEffect(() => { useViewPrefs.getState().setBomFull(any); return () => useViewPrefs.getState().setBomFull(false) }, [any])
-  // the bottom islands (Hub · zoom, the tool pill, the notices) stand above the open drawer
+  // the bottom islands (Hub · zoom, the tool pill, the notices) stand 8px above the open drawer (View · Layers · Fit · ?
+  // is hidden while it is open: StudioFrame BottomRight)
   const height = useTally(s => s.height)
   useEffect(() => {
     const root = document.querySelector('[data-theme]') || document.documentElement
