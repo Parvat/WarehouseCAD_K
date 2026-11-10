@@ -13,7 +13,7 @@ import { planAreaCreate } from '../generate/rackingArea'
 import { clearFromOutline } from '../generate/wallClear'
 import { legacyWallClearanceIn } from '../rules/storage'
 import { nanoid } from 'nanoid'
-import { mheProfiles, sectionProfile, CUSTOM } from './equipment'
+import { mheProfiles, sectionProfile, CUSTOM, equipmentResolver } from './equipment'
 import { drawnRect } from './sectionEdit'
 import { snapshotOf } from './elevations'
 import { autoSave, serializeScene } from './saveLoad'
@@ -78,9 +78,23 @@ export function fillEquipment(objects = null, from = null) {
  *  its truck), with the bar's typed aisle over them. */
 /* (ui-polish-3: the aisle has one source — a fill inside a section takes the section's equipment and its width, the typed
    aisle never; outside every section, the typed aisle, else the project's forklift) */
+/* (fill-place: and the gap it keeps off racks at a run end, endGapFt — its equipment's cross-aisle, else its space to move) */
 export const fillSettings = (objects = null, from = null) => {
   const s = rackingSettings(), e = fillEquipment(objects, from), a = fillSection(objects, from) ? null : useFillTool.getState().aisleFt
-  return { ...s, mhe: e.key, aisleFt: a || e.aisleFt }
+  return { ...s, mhe: e.key, aisleFt: a || e.aisleFt, endGapFt: crossOf(e) }
+}
+/** A truck's required width at a run end: its cross-aisle, else its space to move. */
+const crossOf = (p) => (Number.isFinite(p?.crossAisleFt) && p.crossAisleFt > 0 ? p.crossAisleFt : p?.travelFt)
+/** What a fill keeps clear beyond its own racks (fill-place): each existing rack's required run-end width (its section's
+ *  equipment, else the project's forklift — the stricter of the two sides is taken in patternFill), and every section but
+ *  the one the drag starts in. */
+function fillClear(objects, from) {
+  const s = rackingSettings(), P = mheProfiles(), R = equipmentResolver(objects, P[s.mhe] || P.reach)
+  const own = sectionAt(objects, from)
+  return {
+    rackGap: (o) => crossOf(R.of(o.id)),
+    sections: (objects || []).filter(o => isSection(o) && o !== own).map(o => { const p = polygonOf(o), xs = p.map(v => v[0]), ys = p.map(v => v[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } }),
+  }
 }
 /** A typed aisle under the equipment's minimum → { aisleFt, equipment (profile) }, else null: the bar's amber line. */
 export function aisleUnderMinimum(objects = null, from = null) {
@@ -151,7 +165,7 @@ export function moveFill(world, objects, gridSize = 40, elevations = null) {
   const drag = { ...d, to: world }
   // a fill that starts inside a section is clipped to it: its racks never cross the section's edge (utils/sectionAreas.js)
   const sec = sectionAt(objects, drag.from), box = sec ? clipToSection(boxOfDrag(drag), sec) : boxOfDrag(drag)
-  let created = box ? planAreaCreate(objects, box, fillSettings(objects, drag.from), { gridSize, from: drag.from, newId: nanoid, elevations }) : null
+  let created = box ? planAreaCreate(objects, box, fillSettings(objects, drag.from), { gridSize, from: drag.from, newId: nanoid, elevations, ...fillClear(objects, drag.from) }) : null
   if (created && sec && sec.shape === 'poly') created = { ...created, plan: keepInside(created.plan, sec) }
   const plan = created ? created.plan : { racks: [], aisles: [], rows: 0, positions: 0, rects: [] }
   useFillTool.setState({ drag, plan, created })

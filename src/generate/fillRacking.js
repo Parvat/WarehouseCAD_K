@@ -293,7 +293,7 @@ const PATTERN_MARGIN_FT = 200
  *  `row` / `sec` are the stamps (rowIndex / genSection) a rack there gets.
  *
  *  Returns { pattern, rects, fp }, or null when the box holds no row. */
-export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, from = null, areaId = null, elevations = null } = {}) {
+export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, from = null, areaId = null, elevations = null, wallAnchor = false } = {}) {
   // a fill's racks carry the layout's default elevation type: its level count (utils/elevations.js)
   const elevDefault = typeById(elevations, elevations?.defaultId)
   if (elevDefault) settings = { ...settings, levels: elevDefault.levels.length }
@@ -315,10 +315,21 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
   const poly = clearOutline(fp, gridSize, vert, clearIn, true).map(rsOf(vert, gridSize))
   const pr0 = Math.min(...poly.map(p => p.r)) - PATTERN_MARGIN_FT, pr1 = Math.max(...poly.map(p => p.r)) + PATTERN_MARGIN_FT
   const ps0 = Math.min(...poly.map(p => p.s)) - PATTERN_MARGIN_FT, ps1 = Math.max(...poly.map(p => p.s)) + PATTERN_MARGIN_FT
-  // the drag's start corner: the walks start on its side of each axis
+  // the drag's start corner: the walk across starts on its side
   const start = from ? rsOf(vert, gridSize)(from) : null
-  const flipR = !!start && start.r > (box.r0 + box.r1) / 2
   const flipS = !!start && start.s > (box.s0 + box.s1) / 2
+  /* along the rows: a new fill (`wallAnchor`, fill-place) starts its rows flush at the wall clearance when the box
+     touches a wall at a run end (a zone's edge counts as a wall), the leftover going to the open end; touching none, at the low end — the left (rows running across), the top (rows
+     up and down) — the leftover at the other. Never centred. Touching walls at both ends, the walk starts at the drag's
+     end as before. The area keeps that end as its anchor (rackingArea.js), so a rebuild or resize walks from it again;
+     without `wallAnchor` (a rebuild, an area from before) the walk starts at the drag's (the anchor's) end as before. */
+  const rMin = Math.min(...rects.map(q => q.r0)), rMax = Math.max(...rects.map(q => q.r1))
+  const wallLo = rects.some(q => Math.abs(q.r0 - rMin) < 1e-6 && q.e0 === 'wall'), wallHi = rects.some(q => Math.abs(q.r1 - rMax) < 1e-6 && q.e1 === 'wall')
+  const fromHi = !!start && start.r > (box.r0 + box.r1) / 2
+  const flipR = wallAnchor && !(wallLo && wallHi) ? wallHi : fromHi
+  /* the gap kept off an existing rack at a run end: the required cross-aisle (the fill's equipment's; patternFill takes
+     the stricter of the two sides') — a pattern made before keeps the forklift aisle */
+  const endGapFt = Number.isFinite(set.endGapFt) && set.endGapFt > 0 ? set.endGapFt : null
   // new stamps come after any the building already has (not this area's own)
   const inBuilding = objects.filter(o => isRack(o) && o.parentId === fp.id && !(areaId && o.areaId === areaId))
   const rowBase = Math.max(0, ...inBuilding.map(o => o.rowIndex || 0))
@@ -357,7 +368,8 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
   const units = [...walkRows, ...behind].map((u, i) => ({ s0: toS(u.t, u.d), d: u.d, type: u.type, flueIn: u.flueIn, row: rowBase + i + 1 }))
 
   // ── along the rows ──
-  const rLo = Math.min(...rects.map(q => q.r0 + clear(q.e0))), rHi = Math.max(...rects.map(q => q.r1 - clear(q.e1)))
+  const clearEnd = (kind) => (kind === 'rack' ? (endGapFt ?? aisleFt) : 0)
+  const rLo = Math.min(...rects.map(q => q.r0 + clearEnd(q.e0))), rHi = Math.max(...rects.map(q => q.r1 - clearEnd(q.e1)))
   const len = rHi - rLo
   if (!(len > EPS)) return null
   const rg = walkGrid(runLines, flipR ? rHi : rLo, len, flipR ? -1 : 1)
@@ -397,6 +409,8 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
 
   const pattern = {
     vert, units, pieces, beamIn, upIn, depthIn, flueIn, aisleFt, travelFt, wallClearIn: clearIn,
+    // the gap off a rack at a run end (fill-place: the required cross-aisle; null — a pattern from before — the aisle)
+    endGapFt,
     // the clearance holds at the run ends too (a pattern from before kept its run ends on the walls)
     endsClear: true,
     // and a run end drawn within a rack's depth of a wall counts as on it, like the edges across the rows
@@ -419,7 +433,10 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
  *  from the area by hand). A face against a wall or zone (under an aisle of
  *  clear floor in front of it) loses its bays there (faceReach.js). Returns
  *  { fp, racks, aisles, rows, positions }. */
-export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = nanoid, areaId = null, fp = null, blocked = [], wayIn = true, report = null, snapEnds = false } = {}) {
+/* fill-place: a pattern with `endGapFt` keeps along the run, off an existing rack, the stricter required cross-aisle of the
+   two sides — its own, or `rackGap(rack)` (ft: that rack's equipment's) when wider — and across it the forklift aisle as
+   before; `sections` (world px rects: every section but the fill's own) are kept clear like zones. */
+export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = nanoid, areaId = null, fp = null, blocked = [], wayIn = true, report = null, snapEnds = false, rackGap = null, sections = [] } = {}) {
   const empty = { fp: null, racks: [], aisles: [], rows: 0, positions: 0 }
   fp = fp || buildingForBox(objects, boxPx)
   if (!fp || !pattern || !(boxPx.w > 0) || !(boxPx.h > 0)) return empty
@@ -432,10 +449,13 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
   const raw = rsRect(vert, gridSize, snapToWalls(boxPx, fp, gridSize, depthIn / 12, vert, clearIn, snapEnds || !!pattern.endsSnap))
   const box = { r0: Math.max(raw.r0, Math.min(...poly.map(q => q.r))), r1: Math.min(raw.r1, Math.max(...poly.map(q => q.r))),
     s0: Math.max(raw.s0, Math.min(...poly.map(q => q.s))), s1: Math.min(raw.s1, Math.max(...poly.map(q => q.s))) }
-  const grow = (q, by) => ({ r0: q.r0 - by, r1: q.r1 + by, s0: q.s0 - by, s1: q.s1 + by })
+  const grow = (q, by, alongBy = by) => ({ r0: q.r0 - alongBy, r1: q.r1 + alongBy, s0: q.s0 - by, s1: q.s1 + by })
+  const endGap = Number.isFinite(pattern.endGapFt) ? pattern.endGapFt : null
+  const alongOf = (o) => (endGap == null ? aisleFt : Math.max(endGap, Number(rackGap?.(o)) || 0))
   const blockers = [
-    ...objects.filter(o => isRack(o) && o.width > 0 && o.height > 0).map(o => { const f = rackFootprint(o); return grow(rsRect(vert, gridSize, { x: f.x, y: f.y, w: f.w, h: f.h }), aisleFt) }),
+    ...objects.filter(o => isRack(o) && o.width > 0 && o.height > 0).map(o => { const f = rackFootprint(o); return grow(rsRect(vert, gridSize, { x: f.x, y: f.y, w: f.w, h: f.h }), aisleFt, alongOf(o)) }),
     ...objects.filter(isZone).map(o => rsRect(vert, gridSize, { x: o.x, y: o.y, w: o.width, h: o.height })),
+    ...(endGap == null ? [] : sections).map(b => rsRect(vert, gridSize, b)),
     ...blocked.map(b => rsRect(vert, gridSize, b)),
   ].filter(q => q.r1 > box.r0 && q.r0 < box.r1 && q.s1 > box.s0 && q.s0 < box.s1)
   const polyR = [...new Set(poly.map(p => p.r))].sort((a, b) => a - b)
@@ -733,9 +753,9 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
  *  (patternFill). The racks and aisles (world px, stamped, parented to the
  *  building), how many rows and pallet positions, the rectangles of the
  *  region, and the pattern. */
-export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, newId = nanoid, from = null, areaId = null, report = null, elevations = null } = {}) {
-  const made = areaPattern(objects, boxPx, settings, { gridSize, rules, from, areaId, elevations })
+export function planFill(objects, boxPx, settings = {}, { gridSize = 40, rules = DEFAULT_RULES, newId = nanoid, from = null, areaId = null, report = null, elevations = null, rackGap = null, sections = [], wallAnchor = false } = {}) {
+  const made = areaPattern(objects, boxPx, settings, { gridSize, rules, from, areaId, elevations, wallAnchor })
   if (!made) return { fp: null, racks: [], aisles: [], rows: 0, positions: 0, rects: [], pattern: null }
-  const plan = patternFill(objects, boxPx, made.pattern, { gridSize, newId, areaId, fp: made.fp, report })
+  const plan = patternFill(objects, boxPx, made.pattern, { gridSize, newId, areaId, fp: made.fp, report, rackGap, sections })
   return { ...plan, rects: made.rects, pattern: made.pattern }
 }

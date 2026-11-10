@@ -176,11 +176,15 @@ function showPattern(objects, box, pattern, area, clean, removed, { gridSize, ne
 
 /** A new racking area from a Fill racking box: the area object and the fill
  *  (its pattern clipped to the box). Null when the box places nothing. */
-export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = nanoid, from = null, elevations = null } = {}) {
+export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = nanoid, from = null, elevations = null, rackGap = null, sections = [] } = {}) {
   const id = newId()
-  const plan = planFill(objects, box, settings, { gridSize, newId, from, areaId: id, elevations })
+  const plan = planFill(objects, box, settings, { gridSize, newId, from, areaId: id, elevations, rackGap, sections, wallAnchor: true })
   if (!plan.racks.length) return null
   const anchor = from ? { x: from.x > box.x + box.w / 2 ? 'r' : 'l', y: from.y > box.y + box.h / 2 ? 'b' : 't' } : { x: 'l', y: 't' }
+  // along the rows the walk started at the wall end, else the low end (fill-place): the area remembers that end
+  const runEnd = plan.pattern.runDir < 0 ? 'hi' : 'lo'
+  if (plan.pattern.vert) anchor.y = runEnd === 'hi' ? 'b' : 't'
+  else anchor.x = runEnd === 'hi' ? 'r' : 'l'
   // the area's box stays inside the building: clipped to its inner walls' extent, and an edge within a
   // rack's depth of a wall put on it (it counts as on the wall) — across the rows and at the run ends
   box = snapToWalls(box, plan.fp, gridSize, plan.pattern.depthIn / 12, plan.pattern.vert, plan.pattern.wallClearIn ?? 0, true)

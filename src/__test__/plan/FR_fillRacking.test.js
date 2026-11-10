@@ -308,7 +308,7 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     expect(check().errors).toEqual([])
   })
 
-  it.each([['from the open edge', false], ['from the wall', true]])('FR-edge-run: a box from mid-building past a wall along the run, dragged %s — the racking starts exactly (0") at the edge the drag started from', (_, fromWall) => {
+  it.each([['from the open edge', false], ['from the wall', true]])('FR-edge-run: a box from mid-building past a wall along the run, dragged %s — the racking starts on the wall (fill-place — was: at the edge the drag started from), the leftover at the open edge', (_, fromWall) => {
     const { fp, inner } = edgeCase()
     const mid = vert ? fp.y + Math.round(fp.height / 2 / GS * 12 + 5) / 12 * GS : fp.x + Math.round(fp.width / 2 / GS * 12 + 5) / 12 * GS
     const past = vert ? fp.y + fp.height + 3 * GS : fp.x + fp.width + 3 * GS
@@ -318,8 +318,11 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     expect(n).toBeGreaterThan(4)
     const f = racks().map(r => m.rackFootprint(r))
     const wall = vert ? inner.y1 : inner.x1
-    if (fromWall) expect(Math.max(...f.map(runHi)) - wall).toBeCloseTo(0, 3)         // starts on the wall's inner face
-    else expect(Math.min(...f.map(runLo)) - mid).toBeCloseTo(0, 3)                    // starts on the open edge: no aisle
+    // either way it starts on the wall's inner face (the wall clearance), the leftover at the open edge — less than a bay
+    expect(Math.max(...f.map(runHi)) - wall).toBeCloseTo(0, 3)
+    const pitch = (3 + 96) / 12 * GS
+    expect(Math.min(...f.map(runLo)) - mid).toBeGreaterThanOrEqual(-1e-6)
+    expect(Math.min(...f.map(runLo)) - mid).toBeLessThan(pitch)
     for (const q of f) { expect(runLo(q)).toBeGreaterThanOrEqual(mid - 1e-6); expect(runHi(q)).toBeLessThanOrEqual(wall + 1e-6) }
     expectInside()
     expect(check().errors).toEqual([])

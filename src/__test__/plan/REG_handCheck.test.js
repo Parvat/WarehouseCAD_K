@@ -3583,6 +3583,67 @@ describe('REG — the hand check by real clicks', () => {
       expect(await ask().count()).toBe(0)
     }, T)
 
+    it('REG-fill-place (click): Fill racking along the rows — a box touching the right wall, dragged from its open (left) side, starts its rows flush at the wall clearance (fill-place — was: at the drag’s start edge), the leftover at the open end; there they come as close to the racks on the left as the required cross-aisle (the stricter equipment’s; was: the forklift aisle) — the extra bay when the gap still meets it, not when it would not (one bay more would); a box touching no wall at a run end: flush to its left edge, whichever side the drag started', async () => {
+      await open()
+      await clearRacks()
+      const b = await innerBox(), gs = await L.S('return S.getState().gridSize || 40')
+      const at = (fx, fy) => ({ x: b.x0 + (b.x1 - b.x0) * fx, y: b.y0 + (b.y1 - b.y0) * fy })
+      const fill = async (p, q) => {
+        await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+        await fillBar().getByRole('button', { name: 'Rows across' }).click(); await L.page.waitForTimeout(100)
+        const before = new Set(await rackIdsNow())
+        await onCanvasAll([p, q]); await L.drag(p, q); await L.page.waitForTimeout(500)
+        await L.page.mouse.move(5, 300); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+        return (await rackIdsNow()).filter(id => !before.has(id))
+      }
+      /** racks `ids` as run (x) and stack (y) spans in feet, and the racking area they came with */
+      const spans = (ids) => L.S('return import("/src/generate/rackFootprint.js").then(F => { const st = S.getState(), gs = st.gridSize || 40; return st.objects.filter(o => arg.includes(o.id)).map(o => { const f = F.rackFootprint(o); return { x0: f.x / gs, x1: (f.x + f.w) / gs, y0: f.y / gs, y1: (f.y + f.h) / gs, bays: o.beams.length, up: (o.uprightWidth || 3) / 12, beam: o.beams[0] / 12 } }) })', ids)
+      const areaOf = (ids) => L.S('const st = S.getState(), r = st.objects.find(o => o.id === arg); const a = st.objects.find(o => o.id === r.areaId); return { x0: a.x / (st.gridSize || 40), x1: (a.x + a.width) / (st.gridSize || 40) }', ids[0])
+      const meets = (p, q) => Math.min(p.y1, q.y1) - Math.max(p.y0, q.y0) > 1e-6
+      // the racks on the left: a fill against the left wall, to 40% across
+      const leftIds = await fill(at(0.01, 0.03), at(0.4, 0.97))
+      expect(leftIds.length).toBeGreaterThan(1)
+      const left = await spans(leftIds), E = Math.max(...left.map(q => q.x1))
+      // the fill against the right wall, dragged from just right of the left racks' end
+      const req = await L.S('return import("/src/utils/equipment.js").then(E => import("/src/utils/fillTool.js").then(T => { const P = E.mheProfiles(), p = P[T.rackingSettings().mhe] || P.reach; return p.crossAisleFt ?? p.travelFt }))')
+      const rightIds = await fill({ x: (E + 0.3) * gs, y: at(0, 0.03).y }, at(0.995, 0.97))
+      expect(rightIds.length).toBeGreaterThan(1)
+      const right = await spans(rightIds), area = await areaOf(rightIds)
+      const W = area.x1, pitch = right[0].up + right[0].beam
+      // flush at the wall clearance (the area's right edge — its box is put on the clearance line)
+      expect(Math.abs(Math.max(...right.map(q => q.x1)) - W)).toBeLessThan(1e-3)
+      expect(W).toBeLessThan(b.x1 / gs + 1e-6)
+      // row by row: the end on the wall, the start the leftover off the box's left edge (less than a bay), the gap to the
+      // left racks in line at least the required width — and one bay more would take it under
+      const rows = new Map()
+      for (const q of right) { const k = Math.round((q.y0 + q.y1) * 50); if (!rows.has(k)) rows.set(k, []); rows.get(k).push(q) }
+      let gapped = 0
+      for (const qs of rows.values()) {
+        const x0 = Math.min(...qs.map(q => q.x0)), x1 = Math.max(...qs.map(q => q.x1))
+        expect(Math.abs(x1 - W)).toBeLessThan(1e-3)
+        const inLine = left.filter(l => qs.some(q => meets(l, q)))
+        if (!inLine.length) continue
+        const g = x0 - Math.max(...inLine.map(l => l.x1))
+        expect(g).toBeGreaterThanOrEqual(req - 1e-6)
+        expect(g).toBeLessThan(req + pitch - 1e-6)
+        gapped++
+      }
+      expect(gapped).toBeGreaterThan(0)
+      // rows lined up: one start for every row facing the left racks
+      const starts = [...rows.values()].filter(qs => left.some(l => qs.some(q => meets(l, q)))).map(qs => Math.round(Math.min(...qs.map(q => q.x0)) * 1000))
+      expect(new Set(starts).size).toBe(1)
+      // no wall at either run end: flush to the box's left edge, though the drag starts on the right
+      await clearRacks()
+      const midIds = await fill(at(0.7, 0.03), at(0.3, 0.97))
+      expect(midIds.length).toBeGreaterThan(1)
+      const mid = await spans(midIds), ma = await areaOf(midIds)
+      expect(Math.abs(Math.min(...mid.map(q => q.x0)) - ma.x0)).toBeLessThan(1e-3)
+      const mrows = new Map()
+      for (const q of mid) { const k = Math.round((q.y0 + q.y1) * 50); mrows.set(k, Math.min(mrows.get(k) ?? Infinity, q.x0)) }
+      expect([...mrows.values()].every(x => Math.abs(x - ma.x0) < 1e-3)).toBe(true)
+      expect(ma.x1 - Math.max(...mid.map(q => q.x1))).toBeLessThan(pitch + 1e-6)            // the leftover at the right, under a bay
+    }, T)
+
     it('REG-fill-section-notice (click): after every Fill racking outside a section a notice "Racks placed · Make section" — a normal aisle: it fades after 8 s (a second fill left alone: gone), and Make section makes a section of the fill box on the project forklift, one undo with the fill; a narrow aisle: the question with its reason and Equipment picker, which stays', async () => {
       await open()
       await clearRacks()
