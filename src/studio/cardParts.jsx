@@ -56,6 +56,8 @@ export function Sec({ children, gap = 10, last, label, style, ...rest }) {
   )
 }
 export const SecLabel = ({ children }) => <span style={{ color: C.muted, fontSize: 12 }}>{children}</span>
+/** A summary block's caption (STUDIO.md §7a Summary): 11px, uppercase, muted. */
+export const Caption = ({ children }) => <span data-caption style={{ color: C.muted, fontSize: 11, textTransform: 'uppercase' }}>{children}</span>
 export const Hint = ({ children, style }) => <span style={{ color: C.muted, fontSize: 12, lineHeight: 1.45, ...style }}>{children}</span>
 
 export const Grid2 = ({ children }) => <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>{children}</div>

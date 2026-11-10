@@ -167,3 +167,5 @@ export function useColumnCheck() {
   if (!ctx) throw new Error('useColumnCheck must be used inside <ColumnCheckProvider>')
   return ctx
 }
+/** The column check's value, or null outside a <ColumnCheckProvider> (a card rendered on its own). */
+export const useColumnCheckOptional = () => useContext(Ctx)

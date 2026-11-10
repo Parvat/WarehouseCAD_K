@@ -3,12 +3,12 @@ import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useBayLedger } from '../components/RightPanel/useBayLedger'
 import { rowsFigure } from './SelectionBar'
-import { membership, isSection, areaOf, SECTION_COLORS, BOUNDARIES, boundaryOf, wallInOf } from '../utils/sectionAreas'
+import { membership, isSection, areaOf, SECTION_COLORS, BOUNDARIES, boundaryOf, wallInOf, colorOf } from '../utils/sectionAreas'
 import { setSectionColor, setSectionBoundary, setSectionWallIn, sizeSection } from '../utils/sectionEdit'
 import { parseFeet } from '../components/RightPanel/panels/RackingAreaPanel'
 import { useSectionHover } from '../canvas2/sectionTool'
 import { useLocked } from './useLocked'
-import { Head, Sec, Grid2, Field, TextInput, NumInput, StaticField, SecLabel, Seg, SelectField, C, MONO, LockedFields } from './cardParts'
+import { Head, Sec, Grid2, Field, TextInput, NumInput, StaticField, Caption, Seg, SelectField, C, MONO, LockedFields } from './cardParts'
 import { mheProfiles, equipmentOf, CUSTOM, customProfile } from '../utils/equipment'
 
 /* Sections in the right card (STUDIO.md §7a Sections): a selected section's block — its Name (typed: one undo step),
@@ -90,13 +90,13 @@ export function SectionsList() {
     if (!secs.length) return []
     const m = membership(objects)
     const fig = (ids) => (ids.length ? rowsFigure(objects, ids, gs, ledger, elevations) : { rows: 0, positions: 0 })
-    return [...secs.map(s => ({ id: s.id, name: s.label || 'Section', ...fig(m.bySection.get(s.id) || []) })), { id: null, name: 'Unassigned', ...fig(m.unassigned) }]
+    return [...secs.map(s => ({ id: s.id, name: s.label || 'Section', swatch: colorOf(s)?.c || null, ...fig(m.bySection.get(s.id) || []) })), { id: null, name: 'Unassigned', ...fig(m.unassigned) }]
   }, [objects, gs, ledger, elevations])
   if (!rows.length) return null
   const cell = { padding: '6px 8px', fontSize: 12, borderTop: `1px solid ${C.divider}` }
   return (
-    <Sec aria-label="Sections">
-      <SecLabel>Sections</SecLabel>
+    <Sec aria-label="Sections" gap={8}>
+      <Caption>Sections</Caption>
       <table aria-label="Sections list" style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead><tr>{['Section', 'Rows', 'Positions'].map((h, i) => <th key={h} style={{ ...cell, borderTop: 'none', color: C.muted, fontSize: 11, fontWeight: 500, textAlign: i ? 'right' : 'left' }}>{h}</th>)}</tr></thead>
         <tbody>
@@ -105,7 +105,13 @@ export function SectionsList() {
               style={{ cursor: r.id ? 'pointer' : 'default' }}
               onMouseEnter={() => r.id && useSectionHover.setState({ id: r.id })} onMouseLeave={() => useSectionHover.setState({ id: null })}
               onClick={() => { if (!r.id) return; useSectionHover.setState({ id: null }); useCanvasStore.getState().selectObject(r.id, false) }}>
-              <td style={{ ...cell, color: r.id ? C.strong : C.muted }}>{r.name}</td>
+              <td style={{ ...cell, color: r.id ? C.strong : C.muted }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {/* its colour (none: an empty square; Unassigned has none) */}
+                  {r.id && <span data-section-swatch={r.swatch || 'none'} style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: r.swatch || 'transparent', border: r.swatch ? 'none' : `1px solid ${C.separator}` }} />}
+                  {r.name}
+                </span>
+              </td>
               <td style={{ ...cell, fontFamily: MONO, color: C.text, textAlign: 'right' }}>{r.rows}</td>
               <td style={{ ...cell, fontFamily: MONO, color: C.text, textAlign: 'right' }}>{r.positions.toLocaleString('en-US')}</td>
             </tr>

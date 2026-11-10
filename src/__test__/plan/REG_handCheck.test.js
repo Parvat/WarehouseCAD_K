@@ -2689,7 +2689,14 @@ describe('REG — the hand check by real clicks', () => {
     /** two sections drawn side by side over the racks (Rectangle, real drags), the BOM tab open → [s1, s2] */
     const twoSections = async () => {
       await openSections()
-      const b = await innerBox()
+      // (the right card — nothing selected: the layout summary — is tall: zoomed out till both rectangles' corners are clear of it)
+      let b
+      for (let i = 0; i < 8; i++) {
+        b = await innerBox()
+        const ok = await Promise.all([[0.02, 0.02], [0.47, 0.6], [0.53, 0.35], [0.9, 0.95]].map(([fx, fy]) => onCanvas({ x: b.x0 + (b.x1 - b.x0) * fx, y: b.y0 + (b.y1 - b.y0) * fy })))
+        if (ok.every(Boolean)) break
+        await wheel(40)
+      }
       // (the second one lower and off the right edge: the right card, a section's card with its Equipment, covers the top right)
       const s1 = await drawIn(b, 0.02, 0.02, 0.47, 0.6)
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
@@ -4707,6 +4714,134 @@ describe('REG — the hand check by real clicks', () => {
       expect(rows).toEqual([['Lock', 'Lock', 'Ctrl+L'], ['To back', '', ''], ['Back', '', ''], ['Forward', '', ''], ['To front', '', ''], ['Copy', '', 'Ctrl+C'], ['Cut', '', 'Ctrl+X']])
       const slot = await L.page.locator('[role="menu"][aria-label="Object"] [data-menu-icon]').first().boundingBox()
       expect([slot.width, slot.height]).toEqual([24, 24])
+    }, T)
+
+    /* ── Summary follows selection (STUDIO.md §7a): the right card's Properties tab — the layout's summary with nothing
+       selected, a section's, a rack line's (its mini BOM), a bay's; every number the BOM's, the Tally's, usable's ── */
+    const propsTab = async () => { await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(200) }
+    const card = () => L.page.getByRole('tabpanel', { name: 'Properties' })
+    /** the figures a summary shows, by their data-sum key — `scope`: its aria-label ('Layout summary', 'Section summary', …) */
+    const sums = (scope) => card().getByLabel(scope, { exact: true }).evaluate(el => Object.fromEntries([...el.querySelectorAll('[data-sum]')].map(e => [e.getAttribute('data-sum'), e.textContent])))
+    const num = (t) => Number(String(t).replace(/,/g, '').replace(/ bays?$/, ''))
+    /** its blocks in order (display: contents — the blocks are its children) */
+    const blocksOf = (scope) => card().getByLabel(scope, { exact: true }).evaluate(el => [...el.children].map(c => c.getAttribute('aria-label')))
+    const nothing = async () => { await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200); await propsTab() }
+
+    it('REG-summary-layout (click): nothing selected — the Layout summary: Storage (positions, usable, lost, the bar, Lost to by reason, per 1,000 sq ft) · Building (size, area, clear height, sprinklers) · Racking (lines, bays, frames, a line per elevation) · Aisles · Sections · Checks, in that order; positions and usable as the Check card counts them (reached by Open), bays and rack lines the BOM By row’s, frames the BOM’s, the check chips the Check card’s', async () => {
+      await open()
+      await nothing()
+      const order = await blocksOf('Layout summary')
+      expect(order.filter(b => b !== 'Sections')).toEqual(['Storage', 'Building', 'Racking', 'Aisles', 'Checks'])
+      if (order.includes('Sections')) expect(order.indexOf('Sections')).toBe(4)
+      const f = await sums('Layout summary')
+      const P = num(f.positions), U = num(f.usable), X = num(f.lost)
+      expect(P).toBeGreaterThan(0)
+      expect(U + X).toBe(P)
+      expect(['narrow', 'column', 'zone', 'other'].reduce((t, k) => t + num(f['lost-' + k]), 0)).toBe(X)
+      expect(await card().getByLabel('Usable vs lost').count()).toBe(1)
+      // per 1,000 sq ft: the positions over the building's floor
+      const sqft = await L.S('const st = S.getState(), gs = st.gridSize || 40; return st.objects.filter(o => /^fp_/.test(o.type)).reduce((t, f) => { const v = f.fpVerts; let a = 0; for (let i = 0; i < v.length; i++) { const p = v[i], q = v[(i + 1) % v.length]; a += p.x * q.y - q.x * p.y } return t + Math.abs(a) / 2 / (gs * gs) }, 0)')
+      expect(f['per-1000']).toBe(((P / sqft) * 1000).toFixed(1))
+      expect(f.area).toBe(Math.round(sqft).toLocaleString('en-US') + ' sq ft')
+      // Building: its size; clear height and sprinklers from Project settings ("Not set" when not set)
+      const fp = await fpOf(), gs = await L.S('return S.getState().gridSize || 40')
+      expect(f.size).toBe(Math.round(fp.width / gs) + '′ × ' + Math.round(fp.height / gs) + '′')
+      const ceil = await L.S('const pr = S.getState().elevations?.project; const c = pr ? (pr.ceilings.find(c => c.id === pr.defaultCeilingId) || pr.ceilings[0]) : null; return c ? [c.clearHeightIn, c.sprinklerIn] : [null, null]')
+      expect([f.clear === 'Not set', f.sprinkler === 'Not set']).toEqual([!(ceil[0] > 0), !(ceil[1] > 0)])
+      // Racking: a line per elevation in use, their bays adding up to the bays
+      const elev = Object.entries(f).filter(([k]) => k.startsWith('elev:'))
+      expect(elev.length).toBeGreaterThan(0)
+      expect(elev.reduce((t, [, v]) => t + num(v), 0)).toBe(num(f.bays))
+      // the Checks block's chips; Open: the Check card — the same counts, its footer usable / positions
+      const chipsOf = (loc) => loc.locator('[data-count]').evaluateAll(cs => cs.map(c => [c.getAttribute('data-count'), c.textContent]))
+      const chips = await chipsOf(card().getByLabel('Checks', { exact: true }))
+      await card().getByRole('button', { name: 'Open layout check' }).click(); await L.page.waitForTimeout(300)
+      const chk = L.page.getByLabel('Layout check', { exact: true })
+      expect(await chipsOf(chk)).toEqual(chips)
+      expect(await chk.evaluate(el => el.lastElementChild.lastElementChild.textContent)).toBe(f.usable + ' / ' + f.positions)
+      await chk.getByRole('button', { name: 'Close layout check' }).click(); await L.page.waitForTimeout(150)
+      // the BOM: frames its Total's; bays and rack lines its By row's
+      await bomTab()
+      const frames = qtyOf(await bomRows(), 'Upright frame')
+      await fullView('By row'); const t = await byRowShown()
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      expect([num(f.frames), num(f.bays), num(f.lines)]).toEqual([frames, t.parts.find(x => x.key === 'bays').grand, t.cols.length])
+    }, T)
+
+    it('REG-summary-section (click): a section picked from the Sections list (its colour swatch beside its name) — its fields, then Storage · Racking · Aisles · Checks of that section only: positions the Sections list’s, bays its By row section total, lines its BOM section’s rows, frames its BOM section’s', async () => {
+      const [s1] = await twoSections()
+      const frames = qtyOf(await bomRows(L.page.getByRole('tabpanel', { name: 'BOM' }), s1.id), 'Upright frame')
+      await fullView('By row'); const t = await byRowShown()
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      await nothing()
+      const row = card().locator('[data-section-row="' + s1.id + '"]')
+      const listed = await row.evaluate(r => Number(r.cells[2].textContent.replace(/,/g, '')))
+      expect(await row.locator('[data-section-swatch]').count()).toBe(1)
+      await row.click(); await L.page.waitForTimeout(250)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([s1.id])
+      expect(await blocksOf('Section summary')).toEqual(['Storage', 'Racking', 'Aisles', 'Checks'])
+      const f = await sums('Section summary')
+      const lines = await L.S('return import("/src/utils/bom.js").then(B => B.computeBom(S.getState().objects, S.getState().elevations, { gridSize: S.getState().gridSize || 40 }).sections.find(s => s.id === arg).rows.length)', s1.id)
+      expect([num(f.positions), num(f.bays), num(f.frames), num(f.lines)]).toEqual([listed, t.parts.find(x => x.key === 'bays').totals[s1.id], frames, lines])
+      expect(num(f.usable) + num(f.lost)).toBe(num(f.positions))
+    }, T)
+
+    it('REG-summary-line (click): a pair clicked — its fields, then its two lines’ Storage (the Tally’s positions), Racking (bays, frames, levels) and Parts: its mini BOM equal to its By row columns; a second click, its bay: that bay’s positions and levels', async () => {
+      await open()
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      const { r, half } = await pairPoints()
+      await L.click(half); await L.page.waitForTimeout(250)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([r.id])
+      await propsTab()
+      expect(await blocksOf('Line summary')).toEqual(['Storage', 'Racking', 'Parts'])
+      const f = await sums('Line summary')
+      const head = await card().getByLabel('Parts', { exact: true }).locator('[data-caption]').textContent()
+      const nos = head.replace(/^Parts · /, '').split(', ').map(x => Number(x.replace(/^R/, '')))
+      expect(nos.length).toBe(2)                                                                   // a pair: its two lines
+      // the Tally's positions of those lines
+      const pos = await L.S('return Promise.all([import("/src/studio/tally.js"), import("/src/utils/rackLines.js")]).then(([TY, RL]) => { const st = S.getState(), gs = st.gridSize || 40; return RL.rackLinesNow(st.objects, gs).filter(l => arg.includes(l.no)).reduce((t, l) => t + TY.lineFigures(st.objects, l, gs, st.elevations).positions, 0) })', nos)
+      expect(num(f.positions)).toBe(pos)
+      expect(num(f.usable) + num(f.lost)).toBe(pos)
+      // its By row columns, summed
+      await bomTab()
+      await fullView('By row'); const t = await byRowShown()
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      await propsTab()
+      const col = (key) => nos.reduce((s, no) => s + (t.parts.find(x => x.key === key)?.cells[no] || 0), 0)
+      expect(num(f.bays)).toBe(col('bays'))
+      expect(num(f.frames)).toBe(t.parts.filter(x => x.part === 'Frame' || x.part === 'Upright frame').reduce((s, x) => s + col(x.key), 0))
+      const parts = Object.entries(f).filter(([k]) => k.startsWith('part:')).map(([k, v]) => [k.slice(5), num(v)])
+      expect(parts.length).toBeGreaterThan(0)
+      expect(parts).toEqual(t.parts.filter(x => x.key !== 'bays' && col(x.key) > 0).map(x => [x.key, col(x.key)]))
+      // a second click on the same spot: its bay
+      await L.click(half); await L.page.waitForTimeout(250)
+      expect(await L.S('return S.getState().objects.find(x => x.id === arg).activeBayIdx', r.id)).not.toBeNull()
+      const b = await card().getByLabel('Bay summary', { exact: true }).evaluate(el => Object.fromEntries([...el.querySelectorAll('[data-sum]')].map(e => [e.getAttribute('data-sum'), e.textContent])))
+      expect(num(b.positions)).toBeGreaterThan(0)
+      expect(b.levels).toMatch(/^\d+(–\d+)?$/)
+    }, T)
+
+    it('REG-summary-lost (click): Lost clicked in the layout summary lights on the plan exactly the racks that lose positions; clicked again it clears', async () => {
+      await open()
+      await nothing()
+      let f = await sums('Layout summary')
+      if (num(f.lost) === 0) {
+        // nothing lost in this layout: a pair moved by the arrow keys toward its neighbour until its aisle is too narrow
+        const { half } = await pairPoints()
+        await L.click(half); await L.page.waitForTimeout(150)
+        const key = name.endsWith('horizontal') ? 'ArrowDown' : 'ArrowRight'
+        for (let i = 0; i < 60 && num((await sums('Line summary')).lost) === 0; i++) { await L.page.keyboard.press(key); await L.page.waitForTimeout(60) }
+        await nothing()
+        f = await sums('Layout summary')
+      }
+      expect(num(f.lost)).toBeGreaterThan(0)
+      const want = await L.S('return Promise.all([import("/src/generate/usableCapacity.js"), import("/src/generate/columnCheckView.js")]).then(([U, V]) => { const st = S.getState(), gs = st.gridSize || 40; return [...new Set(U.lostPositions(st.objects, { profile: V.getColumnCheckView().profile, gridSize: gs, elevations: st.elevations }).map(c => c.rackId))].sort() })')
+      await card().getByRole('button', { name: 'Show lost racks' }).click(); await L.page.waitForTimeout(250)
+      const hl = () => L.S('return import("/src/utils/layoutCheck.js").then(LC => { const h = LC.useLayoutCheck.getState().highlight; return h ? { kind: h.kind, ids: h.shapes.map(s => s.id).sort() } : null })')
+      expect(await hl()).toEqual({ kind: 'lost', ids: want })
+      expect(await L.page.evaluate(() => window.Konva.stages[0].find('.issue-highlight').length)).toBe(1)
+      await card().getByRole('button', { name: 'Hide lost racks' }).click(); await L.page.waitForTimeout(200)
+      expect(await hl()).toBe(null)
     }, T)
   })
 })

@@ -80,3 +80,20 @@ export function rackPositionsLost(rackId, objects, { profile, gridSize = GS, che
   return (res ? sum(res.rackConflicts || []) + sum(res.pickBlocks || []) : 0)
     + sum(narrowAisleBlocks(objects, { profile: prof, gridSize, already: blockedKeys(res), elevations }))
 }
+
+/** The positions usableCapacity takes off, one entry per block, with its reason (the layout summary's "Lost to" —
+ *  STUDIO.md §7a): { rackId, bayIndex, faces, n, reason: 'column' (in the rack or a pick zone) | 'narrow' (a
+ *  rack-to-rack aisle under the pick width) | 'zone' (a zone nearest in front) | 'other' (the wall) }. The same blocks
+ *  and the same counting rule as usableCapacity, so gross − Σ n is its usable. */
+export function lostPositions(objects, { profile, gridSize = GS, check, ledger, elevations = null } = {}) {
+  const L = ledger || bayLedger(objects, gridSize, elevations)
+  const res = check !== undefined ? check : runColumnCheck(objects, { profile, gridSize, elevations })
+  const counts = (c) => { const e = L.racks.get(c.rackId); return !e || c.bayIndex == null || e.counted[c.bayIndex] !== false }
+  const out = []
+  const take = (c, reason) => { if (counts(c) && c.positionsLost > 0) out.push({ rackId: c.rackId, bayIndex: c.bayIndex, faces: c.faces || [], n: c.positionsLost, reason }) }
+  if (res) for (const c of [...(res.rackConflicts || []), ...(res.pickBlocks || [])]) take(c, 'column')
+  const prof = profile || MHE_PROFILES.reach
+  for (const c of narrowAisleBlocks(objects, { profile: prof, gridSize, already: blockedKeys(res), elevations }))
+    take(c, c.cause?.kind === 'rack' ? 'narrow' : c.cause?.kind === 'zone' ? 'zone' : 'other')
+  return out
+}

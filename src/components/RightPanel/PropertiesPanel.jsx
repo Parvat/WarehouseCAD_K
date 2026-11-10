@@ -20,8 +20,9 @@ import { TextBody } from './TextPanel'
 import { LabelsBody } from './LabelsPanel'
 import { ColumnCheckBody } from './ColumnCheckPanel'
 import { ColumnLineFields } from './panels/ColumnLineFields'
-import { SectionMain, SectionsList } from '../../studio/sectionCards'
-import { RackMain, RowGroupMain, ZoneMain, NothingSelected, LayoutBlock } from '../../studio/cards'
+import { SectionMain } from '../../studio/sectionCards'
+import { RackMain, RowGroupMain, ZoneMain, NothingSelected } from '../../studio/cards'
+import { LayoutSummary, SectionSummary, LineSummary, BaySummary, SelectionSummary } from '../../studio/summaryCards'
 import { useRowGroup, groupRowsNow } from '../../utils/rowGroupTool'
 import { Head, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, StaticField, Row, ToggleRow, Seg, Btn,
   IconBtn, Note, Hint, SecLabel, Fold, C, MONO, LockedFields } from '../../studio/cardParts'
@@ -180,9 +181,9 @@ export function PropertiesPanel() {
     return (
       <>
         <NothingSelected />
-        <LayoutBlock last={false} />
-        {/* the sections: rows and positions each, then Unassigned (studio/sectionCards.jsx) */}
-        <SectionsList />
+        {/* the layout summary (STUDIO.md §7a Summary follows selection): Storage · Building · Racking · Aisles · Sections ·
+            Checks (studio/summaryCards.jsx) */}
+        <LayoutSummary />
         <OverlapNote objects={objects} />
         <More />
       </>
@@ -203,6 +204,7 @@ export function PropertiesPanel() {
           <SelectionRacks selected={selected} />
           <Btn kind="danger" onClick={() => deleteSelectionWithAreas(useCanvasStore)}>Delete group</Btn>
         </Sec>
+        <SelectionSummary selected={selected} />
         <More />
       </>
     )
@@ -229,6 +231,8 @@ export function PropertiesPanel() {
           {twoRacks && <Btn kind="ghost" onClick={() => createAisle(selected[0].id, selected[1].id)}>+ Create Aisle Label</Btn>}
           <Btn kind="danger" onClick={() => deleteSelectionWithAreas(useCanvasStore)}>Delete all</Btn>
         </Sec>
+        {/* the selection's totals */}
+        <SelectionSummary selected={selected} />
         <More />
       </>
     )
@@ -248,7 +252,9 @@ export function PropertiesPanel() {
         <LockedFields locked={locked}><MultiBayPanel /></LockedFields>
         {inGroup
           ? <RowGroupMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} rows={groupRows} />
-          : <><RackMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} /><LayoutBlock last={false} /></>}
+          : <RackMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} />}
+        {/* its rack lines' summary — a bay picked: that bay's (studio/summaryCards.jsx) */}
+        {obj.activeBayIdx != null ? <BaySummary obj={obj} /> : <LineSummary obj={obj} />}
         <More rack locked={locked}>
           <ObjectActions obj={obj} />
           <LockedFields locked={locked}>
@@ -279,6 +285,7 @@ export function PropertiesPanel() {
     return (
       <>
         <SectionMain obj={obj} />
+        <SectionSummary obj={obj} />
         <More locked={locked}>
           <ObjectActions obj={obj} />
         </More>
@@ -345,6 +352,8 @@ export function PropertiesPanel() {
         {obj.type === 'text' && <TextFields obj={obj} up={up} commit={commit} />}
         </LockedFields>
       </Sec>
+      {/* a building: its fields, then the whole layout's summary */}
+      {obj.type?.startsWith('fp_') && <LayoutSummary />}
       <More locked={locked}>
         <ObjectActions obj={obj} />
         <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>

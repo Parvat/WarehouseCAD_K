@@ -47,19 +47,21 @@ describe('SC — parts', () => {
 })
 
 describe('SC — the states', () => {
-  it('SC-C1: a rack — "Double deep · row N", positions and usable, Bays · Beam · Depth · Flue, the elevation chip, the two switches, the Layout totals', () => {
+  it('SC-C1: a rack — "Double deep · row N", positions and usable, Bays · Beam · Depth · Flue, the elevation chip, the two switches, then its rack lines\' summary (summary round — was: the Layout totals)', () => {
     const c = read('studio/cards.jsx')
     expect(c).toMatch(/<Head caption=\{`\$\{RACK_NAME\[obj\.type\] \|\| 'Rack'\}\$\{row\}`\}>\n\s+<BigFigure value=\{n\(total\)\} unit="positions" right=\{`\$\{n\(usable\)\} usable`\} \/>/)
     for (const k of ['label="Bays"', "'Beam'", 'label="Depth"', 'label="Flue"', '<ElevationChip />', 'label="Require pick both sides"', 'label="Show markings"']) expect([k, c.includes(k)]).toEqual([k, true])
-    expect(c).toMatch(/\[\{ label: 'positions', value: n\(f\.gross\) \}, \{ label: 'usable', value: n\(f\.usable\), accent: true \}, \{ label: 'racks', value: n\(f\.racks\) \}\]/)
+    expect(read('components/RightPanel/PropertiesPanel.jsx')).toMatch(/\{obj\.activeBayIdx != null \? <BaySummary obj=\{obj\} \/> : <LineSummary obj=\{obj\} \/>\}/)
     expect(c).toMatch(/height: 26, padding: '0 8px', borderRadius: 6, background: C\.inset, fontSize: 12/)   // the elevation chip
     expect(c).toMatch(/width: 8, height: 8, borderRadius: 2, background: t\.color/)
   })
-  it('SC-C7: nothing selected — "Nothing selected", the hint, Layout: positions and the building on an empty plan', () => {
+  it('SC-C7: nothing selected — "Nothing selected", the hint, then the layout summary: Storage · Building (its size) · Racking · Aisles · Sections · Checks (summary round — was: Layout: positions and the building)', () => {
     const c = read('studio/cards.jsx')
     expect(c).toMatch(/>Nothing selected<\/span>\n\s+<span style=\{\{ color: C\.muted, fontSize: 12 \}\}>Click a rack, zone or wall to edit it\.<\/span>/)
-    expect(c).toMatch(/\[\{ label: 'positions', value: n\(f\.gross\) \}, \.\.\.\(f\.building \? \[\{ label: 'building', value: f\.building \}\] : \[\]\)\]/)
-    expect(c).toMatch(/`\$\{Math\.round\(fp\.width \/ gridSize\)\}′ × \$\{Math\.round\(fp\.height \/ gridSize\)\}′`/)
+    const sm = read('studio/summaryCards.jsx')
+    expect(sm).toMatch(/<StorageBlock f=\{f\} objects=\{objects\} \/>\n\s+<BuildingBlock objects=\{objects\} T=\{T\} gs=\{gs\} \/>\n\s+<RackingBlock [^\n]+\n\s+<AislesBlock [^\n]+\n\s+<SectionsList \/>\n\s+<ChecksBlock /)
+    expect(sm).toMatch(/`\$\{Math\.round\(fp\.width \/ gs\)\}′ × \$\{Math\.round\(fp\.height \/ gs\)\}′`/)
+    expect(read('components/RightPanel/PropertiesPanel.jsx')).toMatch(/<NothingSelected \/>[\s\S]{0,240}<LayoutSummary \/>/)
   })
   it('SC-C6: a zone — "Zone · kind", Name inline, Width / Length, the zone note; a typed size keeps the edge against a wall', () => {
     const c = read('studio/cards.jsx')

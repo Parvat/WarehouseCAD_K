@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { designNotes } from '../utils/equipment'
 import { useBayLedger } from '../components/RightPanel/useBayLedger'
 import { getLayoutCapacity, getRackCapacity } from '../utils/capacity'
 import { useColumnCheck } from '../generate/useColumnCheck'
@@ -41,32 +40,18 @@ export const ftIn = (inches) => {
 export function useLayoutFigures() {
   const { objects, gridSize, elevations } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize || 40, elevations: s.elevations })))
   const ledger = useBayLedger(objects, gridSize)
-  const { result } = useColumnCheck()
+  const { result, profile } = useColumnCheck()
   return useMemo(() => {
     const gross = getLayoutCapacity(objects, undefined, ledger).total
-    const { usable } = usableCapacity(objects, { check: result, ledger, gridSize, elevations })
+    // held to the project forklift, as the X marks are (canvas2/Overlays.jsx) and the layout summary (utils/summary.js)
+    const { usable } = usableCapacity(objects, { profile, check: result, ledger, gridSize, elevations })
     const racks = objects.filter(o => RACK_NAME[o.type]).length
     const fp = objects.find(isFp)
     return { gross, usable, racks, building: fp ? `${Math.round(fp.width / gridSize)}′ × ${Math.round(fp.height / gridSize)}′` : null }
-  }, [objects, ledger, result, gridSize, elevations])
+  }, [objects, ledger, result, profile, gridSize, elevations])
 }
 
-/** The Layout block (C1: positions · usable · racks; C7, an empty plan: positions · building). */
-export function LayoutBlock({ last = true }) {
-  const f = useLayoutFigures()
-  const items = f.racks > 0
-    ? [{ label: 'positions', value: n(f.gross) }, { label: 'usable', value: n(f.usable), accent: true }, { label: 'racks', value: n(f.racks) }]
-    : [{ label: 'positions', value: n(f.gross) }, ...(f.building ? [{ label: 'building', value: f.building }] : [])]
-  // a fill's Custom design (fill-design-aisle): "Designed for 6 ft aisles, equipment to be confirmed"
-  const objs = useCanvasStore(s => s.objects)
-  const notes = useMemo(() => designNotes(objs), [objs])
-  return (
-    <Sec label="Layout" gap={8} last={last} aria-label="Layout totals">
-      <Totals items={items} />
-      {notes.map(t => <span key={t} data-design-note style={{ color: '#F2C77A', fontSize: 12, lineHeight: 1.45 }}>{t}</span>)}
-    </Sec>
-  )
-}
+/* (the Layout block it fed — positions · usable · racks — is the layout summary now: studio/summaryCards.jsx) */
 
 /** C7: nothing selected. */
 export function NothingSelected() {
@@ -161,11 +146,11 @@ export function RackFields({ obj, newBeam, setNewBeam, group = false }) {
 export function RackMain({ obj, newBeam, setNewBeam }) {
   const { objects, gridSize, elevations } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize || 40, elevations: s.elevations })))
   const ledger = useBayLedger(objects, gridSize)
-  const { result, showMarks, setShowMarks, pickBothSides, setPickBothSides } = useColumnCheck()
+  const { result, profile, showMarks, setShowMarks, pickBothSides, setPickBothSides } = useColumnCheck()
   const entry = ledger.racks.get(obj.id)
   const full = getRackCapacity(obj, undefined, levelsResolver(elevations))
   const total = full && entry && entry.uncounted ? entry.positions : (full?.total || 0)
-  const lost = useMemo(() => rackPositionsLost(obj.id, objects, { check: result, ledger, gridSize, elevations }), [obj.id, objects, result, ledger, gridSize, elevations])
+  const lost = useMemo(() => rackPositionsLost(obj.id, objects, { profile, check: result, ledger, gridSize, elevations }), [obj.id, objects, result, profile, ledger, gridSize, elevations])
   const usable = Math.max(0, total - lost)
   const row = obj.rowIndex != null ? ` · row ${obj.rowIndex}` : ''
   return (
