@@ -11,13 +11,16 @@ import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { rackLinesNow } from '../utils/rackLines'
 import { useTally, lineFigures, lineRect } from '../studio/tally'
+import { useLiveObjects, useView } from './live'
 
 const FILL = '#D7F0E2', LINE = '#2E7D5B', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 
 /** The lit lines: [{ no, rect, tag }] — the hovered one (with its tag), then a picked section's. */
 function useLit() {
   const { open, hover, section } = useTally(useShallow(s => ({ open: s.open, hover: s.hover, section: s.section })))
-  const { objects, gs, T } = useCanvasStore(useShallow(s => ({ objects: s.objects, gs: s.gridSize || 40, T: s.elevations })))
+  // the lines where the racks are drawn now (live.js)
+  const objects = useLiveObjects()
+  const { gs, T } = useCanvasStore(useShallow(s => ({ gs: s.gridSize || 40, T: s.elevations })))
   return useMemo(() => {
     if (!open || (hover == null && !section)) return []
     const lines = rackLinesNow(objects, gs), out = []
@@ -40,7 +43,7 @@ export function TallyFill() {
 
 export function TallyHighlight() {
   const lit = useLit()
-  const zoom = useCanvasStore(s => s.zoom || 1)
+  const zoom = useView().zoom || 1
   if (!lit.length) return null
   const fs = 11 / zoom, pad = 6 / zoom, th = fs + 8 / zoom, gap = 6 / zoom
   return (

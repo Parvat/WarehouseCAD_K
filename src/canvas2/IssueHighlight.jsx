@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import { Group, Rect, Text, Line } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useLayoutCheck } from '../utils/layoutCheck'
+import { useDragPreview } from './dragPreview'
+import { useView } from './live'
 
 /* Check layout's highlight: the PROBLEM of the clicked item (utils/
    layoutCheck.js) — an aisle gap shaded with "7' · needs 8'", an overlap
@@ -15,8 +17,13 @@ const PULSE_MS = 1400
 
 export function IssueHighlight() {
   const hl = useLayoutCheck(s => s.highlight)
-  const zoom = useCanvasStore(s => s.zoom)
+  const zoom = useView().zoom
   const ref = useRef(null)
+  /* kept shapes, moved with what they mark (live.js): the whole highlight while every rack it names is dragged; a shape
+     that names its own rack (`id`) with that rack */
+  const moved = useDragPreview(s => s.ids), ddx = useDragPreview(s => s.dx), ddy = useDragPreview(s => s.dy)
+  const all = !!moved && !!hl?.ids?.length && hl.ids.every(id => moved.has(id))
+  const off = (s) => (!all && moved && s.id && moved.has(s.id) ? { ...s, x: s.x + ddx, y: s.y + ddy } : s)
 
   useEffect(() => {
     const g = ref.current
@@ -36,9 +43,10 @@ export function IssueHighlight() {
 
   if (!hl || !hl.shapes.length) return null
   const fs = 12 / zoom, pad = 4 / zoom
+  const shapes = hl.shapes.map(off)
   return (
-    <Group ref={ref} name="issue-highlight" listening={false}>
-      {hl.shapes.filter(s => s.mode === 'xmark').map((s, i) => (
+    <Group ref={ref} name="issue-highlight" listening={false} x={all ? ddx : 0} y={all ? ddy : 0}>
+      {shapes.filter(s => s.mode === 'xmark').map((s, i) => (
         <Group key={'x' + i} name="issue-hl:xmark" x={s.x} y={s.y} listening={false}>
           <Rect width={s.w} height={s.h} fill={s.color + '33'} stroke={s.color} strokeWidth={1.5} strokeScaleEnabled={false}
             shadowColor={s.color} shadowBlur={14} shadowOpacity={0.9} listening={false} />
@@ -46,12 +54,12 @@ export function IssueHighlight() {
           <Line points={[s.w, 0, 0, s.h]} stroke={s.color} strokeWidth={3} strokeScaleEnabled={false} shadowColor={s.color} shadowBlur={10} listening={false} />
         </Group>
       ))}
-      {hl.shapes.filter(s => s.mode !== 'xmark').map((s, i) => (
+      {shapes.filter(s => s.mode !== 'xmark').map((s, i) => (
         <Rect key={'s' + i} name={'issue-hl:' + s.mode} x={s.x} y={s.y} width={s.w} height={s.h}
           fill={s.mode === 'fill' ? s.color + '4D' : undefined} stroke={s.color} strokeWidth={s.mode === 'outline' ? 3 : 1.5}
           dash={s.mode === 'outline' ? [8, 5] : undefined} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={false} />
       ))}
-      {hl.shapes.filter(s => s.label).map((s, i) => {
+      {shapes.filter(s => s.label).map((s, i) => {
         const w = s.label.length * fs * 0.62 + pad * 2, h = fs + pad * 2
         return (
           <Group key={'l' + i} name="issue-hl-label" x={s.x + s.w / 2 - w / 2} y={s.y + s.h / 2 - h / 2} listening={false}>

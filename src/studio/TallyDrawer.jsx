@@ -9,6 +9,7 @@ import { C, MONO, Note, Btn, Seg } from './cardParts'
 import { Icon } from './Icon'
 import { useViewPrefs } from './viewPrefs'
 import { BomTable, ByRowTable, highlightLine, downloadCsv, downloadXlsx, baseName, PART_CELL, SIZE_CELL } from './BomTab'
+import { setTallyFocus, setTallied, clearTallied, checkedNos } from './tally'
 import { useTally, closeTally, popOutTally, closeTallyModal, TALLY_LEFT, TALLY_RIGHT, TALLY_BOTTOM, TALLY_ISLAND_GAP, selectedLineNos } from './tally'
 
 /* The Tally (STUDIO.md §1, §7a BOM): the BOM tab's Tally opens a drawer docked at the bottom of the canvas — full width,
@@ -22,10 +23,12 @@ import { useTally, closeTally, popOutTally, closeTallyModal, TALLY_LEFT, TALLY_R
    the R labels show while it is open. */
 
 const HL = C.select, HL_BG = C.select + '40'
+/* a tallied column: dimmed, a green tick in its header (tally-2) */
+const TICK = '#2E7D5B', DIM = 0.4
 
 /** The drawer's By row table: the Bays row, then the parts; Part | Size fixed while the R columns scroll; compact R
  *  columns (min 36 px) so more lines fit before it scrolls. */
-function TallyTable({ bom, scrollRef }) {
+function TallyTable({ bom, scrollRef, lineOf, checked }) {
   const { groups, parts } = useMemo(() => byRowTable(bom), [bom])
   const { hover, cols, section } = useTally(useShallow(s => ({ hover: s.hover, cols: s.cols, section: s.section })))
   const { setHover, setSection } = useTally.getState()
@@ -61,8 +64,18 @@ function TallyTable({ bom, scrollRef }) {
             <th data-tally-fixed style={{ ...head, ...stick(fix.size, true), zIndex: 3, top: fix.top, textAlign: 'left' }}>Size</th>
             {groups.map(g => [
               ...g.rows.map(no => (
-                <th key={'r' + no} data-tally-col={no} aria-selected={lit(no)} onMouseEnter={() => setHover(no)} title={`R${no} — hover to see it on the plan`}
-                  style={rowCell(no, { ...head, top: fix.top, cursor: 'default', ...(lit(no) ? { color: C.strong, boxShadow: `inset 0 -2px 0 ${HL}` } : null) })}>R{no}</th>
+                <th key={'r' + no} data-tally-col={no} data-tallied={checked.has(no) || undefined} aria-selected={lit(no)} onMouseEnter={() => setHover(no)} title={`R${no} — hover to see it on the plan`}
+                  style={rowCell(no, { ...head, top: fix.top, cursor: 'default', ...(lit(no) ? { color: C.strong, boxShadow: `inset 0 -2px 0 ${HL}` } : null) })}>
+                  {/* the tallied mark: checked off, the column dims and the line gets a tick on the plan (saved with the layout) */}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    <button type="button" role="checkbox" aria-checked={checked.has(no)} aria-label={`Tallied R${no}`} title={checked.has(no) ? 'Tallied — click to uncheck' : 'Mark this line tallied'}
+                      onClick={(e) => { e.stopPropagation(); const l = lineOf(no); if (l) setTallied(useCanvasStore, l, !checked.has(no)) }}
+                      style={{ width: 13, height: 13, padding: 0, border: `1px solid ${checked.has(no) ? TICK : C.faint}`, borderRadius: 3, background: checked.has(no) ? TICK : 'transparent', color: '#FFFFFF', fontSize: 9, lineHeight: '11px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {checked.has(no) ? '✓' : ''}
+                    </button>
+                    R{no}
+                  </span>
+                </th>
               )),
               ...(many ? [<th key={'t' + g.id} data-tally-total={g.id} aria-selected={section?.id === g.id} onClick={() => pickSection(g)} title={`Show every rack of ${g.name} on the plan`}
                 style={{ ...head, top: fix.top, padding: '5px 8px', color: C.strong, cursor: 'pointer', ...(section?.id === g.id ? { boxShadow: `inset 0 -2px 0 ${HL}` } : null) }}>Total</th>] : []),
@@ -76,7 +89,7 @@ function TallyTable({ bom, scrollRef }) {
               <td style={{ ...cell, ...PART_CELL, ...stick(0) }}>{partShort(p.part)}</td>
               <td style={{ ...cell, ...SIZE_CELL, ...stick(fix.size, true) }}>{sizeWords(p.size)}</td>
               {groups.map(g => [
-                ...g.rows.map(no => <td key={'r' + no} data-row={no} onMouseEnter={() => setHover(no)} style={rowCell(no, { ...cell, color: p.cells[no] ? C.text : C.faint })}>{p.cells[no] || 0}</td>),
+                ...g.rows.map(no => <td key={'r' + no} data-row={no} onMouseEnter={() => setHover(no)} style={rowCell(no, { ...cell, color: p.cells[no] ? C.text : C.faint, ...(checked.has(no) ? { opacity: DIM } : null) })}>{p.cells[no] || 0}</td>),
                 ...(many ? [<td key={'t' + g.id} data-section-total={g.id} onClick={() => pickSection(g)} style={sum(section?.id === g.id)}>{p.totals[g.id] || 0}</td>] : []),
               ])}
               <td data-grand-total style={grand}>{p.total}</td>
@@ -116,6 +129,12 @@ function Drawer({ bom, flags, xlsx }) {
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
   }
   const small = { height: 28, padding: '0 10px', fontSize: 12 }
+  const { objects, gs, T } = useCanvasStore(useShallow(s => ({ objects: s.objects, gs: s.gridSize || 40, T: s.elevations })))
+  const lines = useMemo(() => rackLinesNow(objects, gs), [objects, gs])
+  const checked = useMemo(() => checkedNos(objects, lines, T), [objects, lines, T])
+  const lineOf = (no) => lines.find(l => l.no === no) || null
+  const total = bom.rows.length, done = bom.rows.filter(r => checked.has(r.no)).length
+  const focus = useTally(s => s.focus)
   return (
     <div className="st-island" role="region" aria-label="Tally" data-tally-drawer data-card-dark
       style={{ left: TALLY_LEFT, right: TALLY_RIGHT, bottom: TALLY_BOTTOM, height, flexDirection: 'column', alignItems: 'stretch', borderRadius: 10, overflow: 'hidden' }}>
@@ -127,6 +146,9 @@ function Drawer({ bom, flags, xlsx }) {
           <Seg aria="Tally view" value={view} onChange={useTally.getState().setView} options={[{ value: 'summary', label: 'Summary' }, { value: 'rows', label: 'By row' }]} />
         </div>
         <span style={{ flex: 1, minWidth: 0, color: C.muted, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Hover a column or click a rack to match them</span>
+        <span data-tally-count style={{ color: done ? TICK : C.muted, fontSize: 12, whiteSpace: 'nowrap', fontFamily: MONO }}>{done} / {total} checked</span>
+        <Btn kind="inset" style={small} onClick={() => clearTallied(useCanvasStore)} disabled={!done}>Clear checks</Btn>
+        <Btn kind="inset" style={{ ...small, ...(focus ? { background: C.active, color: C.accent } : null) }} aria-pressed={focus} title={focus ? 'Restore (Esc)' : 'Hide the rest of the chrome'} onClick={() => setTallyFocus(!focus)}>Focus</Btn>
         <Btn kind="inset" style={small} onClick={popOutTally}>Pop out</Btn>
         <Btn kind="inset" style={small} aria-label="Download xlsx" title="Download xlsx" onClick={xlsx}>xlsx</Btn>
         <button type="button" aria-label="Close tally" title="Close (Esc)" onClick={closeTally}
@@ -134,7 +156,7 @@ function Drawer({ bom, flags, xlsx }) {
       </div>
       {flags && <div style={{ padding: '8px 16px 0', flexShrink: 0 }}>{flags}</div>}
       {view === 'rows'
-        ? <TallyTable bom={bom} scrollRef={scrollRef} />
+        ? <TallyTable bom={bom} scrollRef={scrollRef} lineOf={lineOf} checked={checked} />
         : <div ref={scrollRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, padding: '4px 16px 12px' }}><SummaryTable bom={bom} /></div>}
     </div>
   )
@@ -189,6 +211,13 @@ export function TallyHost() {
     root.style.setProperty('--tally-island-lift', open ? `${height + TALLY_ISLAND_GAP}px` : '0px')
     return () => { root.style.setProperty('--tally-lift', '0px'); root.style.setProperty('--tally-island-lift', '0px') }
   }, [open, height])
+  // Focus: the chrome hidden (studio.css [data-tally-focus])
+  const focus = useTally(s => s.open && s.focus)
+  useEffect(() => {
+    const root = document.querySelector('[data-theme]') || document.documentElement
+    if (focus) root.setAttribute('data-tally-focus', '1'); else root.removeAttribute('data-tally-focus')
+    return () => root.removeAttribute('data-tally-focus')
+  }, [focus])
   useEffect(() => {
     if (!any) return
     // Esc: the modal closes (and nothing else hears it); the drawer closes
@@ -196,6 +225,8 @@ export function TallyHost() {
       if (e.key !== 'Escape') return
       if (useTally.getState().modal) { e.stopImmediatePropagation(); closeTallyModal(); return }
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return
+      // in Focus, Esc restores the chrome first; again, it closes the drawer
+      if (useTally.getState().focus) { setTallyFocus(false); return }
       closeTally()
     }
     window.addEventListener('keydown', k, true); return () => window.removeEventListener('keydown', k, true)

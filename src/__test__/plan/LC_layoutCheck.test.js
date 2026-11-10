@@ -193,7 +193,7 @@ describe.each(['horizontal', 'vertical'])('LC — %s', (orientation) => {
     m.LC.runLayoutCheck(m.useCanvasStore)
     expect(m.LC.useLayoutCheck.getState().highlight).toBe(null)
     expect(readFileSync('src/canvas2/Canvas2.jsx', 'utf8')).toMatch(/<IssueHighlight \/>/)
-    expect(readFileSync('src/canvas2/IssueHighlight.jsx', 'utf8')).toMatch(/<Group ref=\{ref\} name="issue-highlight" listening=\{false\}>/)
+    expect(readFileSync('src/canvas2/IssueHighlight.jsx', 'utf8')).toMatch(/<Group ref=\{ref\} name="issue-highlight" listening=\{false\}( x=\{[^}]+\} y=\{[^}]+\})?>/)   // (tally-2: it rides a drag of its racks — was: no x / y)
     const { zoom, panX, panY } = s()                                            // the spot is centred
     expect((item.box.x + item.box.w / 2) * zoom + panX).toBeCloseTo(600, 6)
     expect((item.box.y + item.box.h / 2) * zoom + panY).toBeCloseTo(400, 6)

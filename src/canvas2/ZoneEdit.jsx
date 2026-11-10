@@ -6,6 +6,7 @@ import { zonePreview } from '../utils/rackingAreaTool'
 import { LabelPill } from './DimensionLabels'
 import { pxToFtIn } from '../utils/canvas'
 import { selectedZones } from './zoneSelection'
+import { useLiveObjects, useView } from './live'
 
 /* A zone being resized or placed, on the canvas — pure paint, never listening:
      - while an edge is dragged, the bays (per row) the release will remove, in red: the keeper's own
@@ -48,8 +49,8 @@ export function ZoneEditPreview({ gridSize }) {
 /** The size label on every selected zone (one being resized draws its own, with the preview). */
 export function SelectedZoneSizes({ gridSize }) {
   const selectedIds = useCanvasStore(s => s.selectedIds)
-  const objects = useCanvasStore(s => s.objects)
-  const zoom = useCanvasStore(s => s.zoom) || 1
+  const objects = useLiveObjects()                         // where the zones are drawn now (live.js)
+  const zoom = useView().zoom || 1
   const editing = useZoneEdit(s => s.zoneId)
   if (!selectedIds || !selectedIds.length) return null
   const zones = selectedZones(objects, selectedIds, editing)

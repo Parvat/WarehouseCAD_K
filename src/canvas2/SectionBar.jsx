@@ -5,6 +5,7 @@ import { HOME_TOOL } from '../utils/homeTool'
 import { B, modePill, Sep, Seg, CloseBtn } from '../studio/barParts'
 import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, cancelSection, useSectionRename, useSectionTool } from './sectionTool'
 import { labelBox, LABEL } from '../utils/sectionAreas'
+import { useLiveObjects, useView } from './live'
 
 /* The Section tool's mode bar (STUDIO.md §7a Sections; the mode bars' look): "Section", Rectangle · Custom shape, the
    hint, ✕ (Esc too) back to Pan. */
@@ -35,9 +36,9 @@ export function SectionBar() {
    undo step), Esc drops it. Typing stays the box's (utils/typing.js: an input owns its keys). */
 export function SectionRename() {
   const id = useSectionRename(s => s.id)
-  const obj = useCanvasStore(s => (id ? s.objects.find(o => o.id === id) : null))
-  const view = useCanvasStore(useShallow(s => ({ zoom: s.zoom, panX: s.panX, panY: s.panY })))
-  const objects = useCanvasStore(s => s.objects)
+  // where the section is drawn now, in the view the canvas is drawn with now (live.js)
+  const objects = useLiveObjects(), view = useView()
+  const obj = id ? objects.find(o => o.id === id) || null : null
   const [text, setText] = useState('')
   const ref = useRef(null)
   useEffect(() => { if (obj) { setText(obj.label || ''); requestAnimationFrame(() => ref.current?.select()) } }, [id])   // eslint-disable-line react-hooks/exhaustive-deps

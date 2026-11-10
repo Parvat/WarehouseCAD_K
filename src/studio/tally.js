@@ -7,32 +7,35 @@
 //   hover    — the R column under the pointer (its line lit on the plan, canvas2/TallyHighlight.jsx)
 //   cols     — the R columns lit by a click on a rack on the plan (scrolled into view)
 //   section  — a section Total column clicked: { id, nos } — every line of that section lit on the plan
+//   focus    — the drawer's Focus (tally-2): the rail, the tool pill, the top islands and the right card hidden, the plan
+//              refitted above the drawer, the drawer up to 85% of the window high; Esc or Focus again restores all
+// The tallied marks (tally-2) are the layout's, not presentation: saved on its elevation table (`tallied`), below.
 import { create } from 'zustand'
 import { fitRef } from './viewPrefs'
 import { positionsPerBeam } from '../utils/palletFit'
 import { levelsResolver } from '../utils/elevations'
 import { isEmptySide } from '../utils/bayEmpty'
 import { bayLedger } from '../utils/bayLedger'
-import { worldSide } from '../utils/rackLines'
+import { worldSide, rackLinesNow as rackLinesFor } from '../utils/rackLines'
 
-export const TALLY_H = 330, TALLY_H_MIN = 200, TALLY_MAX_FRAC = 0.7
+export const TALLY_H = 330, TALLY_H_MIN = 200, TALLY_MAX_FRAC = 0.7, TALLY_FOCUS_FRAC = 0.85
 /** The drawer's place: full width, left 16 to right 16, bottom 20 (the islands'). While it is open the bottom-right
  *  island stands 12 above it (at the right) and the right card ends 12 above that island. */
 export const TALLY_LEFT = 16, TALLY_RIGHT = 16, TALLY_BOTTOM = 20, TALLY_ISLAND_GAP = 12, ISLAND_H = 40, TALLY_CARD_GAP = 12
 const H_KEY = 'trace.studio.tally.h'
-const maxH = () => Math.round((typeof window !== 'undefined' ? window.innerHeight : 1000) * TALLY_MAX_FRAC)
-export const clampTallyH = (h) => (Number.isFinite(h) ? Math.round(Math.min(maxH(), Math.max(TALLY_H_MIN, h))) : TALLY_H)
+const maxH = (focus) => Math.round((typeof window !== 'undefined' ? window.innerHeight : 1000) * (focus ? TALLY_FOCUS_FRAC : TALLY_MAX_FRAC))
+export const clampTallyH = (h, focus = false) => (Number.isFinite(h) ? Math.round(Math.min(maxH(focus), Math.max(TALLY_H_MIN, h))) : TALLY_H)
 const readH = () => { try { const v = Number(localStorage.getItem(H_KEY)); return v ? clampTallyH(v) : TALLY_H } catch { return TALLY_H } }
 
 export const useTally = create((set, get) => ({
-  open: false, modal: false, view: 'rows', height: readH(), hover: null, cols: [], section: null,
+  open: false, modal: false, view: 'rows', height: readH(), hover: null, cols: [], section: null, focus: false,
   setView: (view) => set({ view }),
   setHover: (hover) => { if (get().hover !== hover) set({ hover }) },
   setCols: (cols) => set({ cols }),
   setSection: (section) => set({ section }),
   /** the height, clamped; `save` false while dragging (written on release) */
   setHeight: (h, { save = true } = {}) => {
-    const height = clampTallyH(h)
+    const height = clampTallyH(h, get().focus)
     set({ height })
     if (save) { try { localStorage.setItem(H_KEY, String(height)) } catch { /* private window */ } }
   },
@@ -46,9 +49,18 @@ export function openTally() {
   useTally.setState({ open: true, modal: false, hover: null, cols: [], section: null })
   requestAnimationFrame(() => fitRef.current?.(tallyInset()))
 }
-export const closeTally = () => useTally.setState({ open: false, hover: null, cols: [], section: null })
+export const closeTally = () => { setTallyFocus(false, false); useTally.setState({ open: false, hover: null, cols: [], section: null }) }
 /** Pop out: the wide modal in place of the drawer. */
-export const popOutTally = () => useTally.setState({ open: false, modal: true, hover: null, cols: [], section: null })
+export const popOutTally = () => { setTallyFocus(false, false); useTally.setState({ open: false, modal: true, hover: null, cols: [], section: null }) }
+/** Focus on (or off): the chrome hidden but the drawer and the bottom islands; the plan refitted above the drawer. Off,
+ *  a height past the drawer's usual 70% comes back to it. */
+export function setTallyFocus(on, refit = true) {
+  const s = useTally.getState()
+  if (s.focus === !!on) return
+  useTally.setState({ focus: !!on })
+  if (!on && s.height > clampTallyH(s.height)) s.setHeight(s.height)
+  if (refit && s.open) requestAnimationFrame(() => fitRef.current?.(tallyInset()))
+}
 export const closeTallyModal = () => useTally.setState({ modal: false })
 
 /* ── the BOM tab's section cards: open or collapsed, remembered per layout (its name) ── */
@@ -101,4 +113,50 @@ export function selectedLineNos(state, lines) {
     for (const l of lines) if (l.ids.includes(o.id) && (ws == null || l.ws === ws)) out.add(l.no)
   }
   return [...out].sort((a, b) => a - b)
+}
+
+/* ── tallied marks (tally-2): a rack line checked off in By row, saved with the layout on its elevation table
+   (`tallied`: { [line key]: the line's signature }), so they are saved, loaded and undone with it. A line's mark
+   holds only while the line is what was checked: its racks' bays, beams, levels (each bay side's) and depth — any
+   change and the mark is gone (it no longer matches; the next write drops it). ── */
+/** A rack line's signature: what its mark depends on. */
+export function lineSig(objects, line, elevations = null) {
+  const lv = levelsResolver(elevations)
+  const byId = new Map((objects || []).map(o => [o.id, o]))
+  return JSON.stringify(line.ids.map(id => {
+    const r = byId.get(id)
+    if (!r) return null
+    const sides = r.type === 'rack_double_row' ? [0, 1].filter(s => worldSide(r, s) === line.ws) : [0]
+    // each bay side's levels — 0 for a side deleted (a pair's empty side, utils/bayEmpty.js): its bays changed
+    const levels = r.beams.map((_, bi) => sides.map(s => (isEmptySide(r, bi, s) ? 0 : lv ? lv(r, bi, s) : r.levels || 1)))
+    return [r.id, r.beams, r.depthIn ?? 42, levels]
+  }))
+}
+/** The marks as saved: { key: sig }. */
+export const talliedOf = (T) => (T && T.tallied && typeof T.tallied === 'object' ? T.tallied : {})
+/** The line numbers checked now (a mark whose line still matches). */
+export function checkedNos(objects, lines, elevations) {
+  const m = talliedOf(elevations), out = new Set()
+  for (const l of lines) if (m[l.key] && m[l.key] === lineSig(objects, l, elevations)) out.add(l.no)
+  return out
+}
+/** Check (or uncheck) line `line`: one undo step, saved with the layout; stale marks dropped. */
+export function setTallied(store, line, on) {
+  const st = store.getState(), T = st.elevations || { version: 3, types: [], defaultId: null }
+  const lines = rackLinesFor(st.objects, st.gridSize || 40)
+  const live = new Map(lines.map(l => [l.key, l]))
+  const next = {}
+  for (const [k, sig] of Object.entries(talliedOf(T))) { const l = live.get(k); if (l && lineSig(st.objects, l, T) === sig) next[k] = sig }
+  if (on) next[line.key] = lineSig(st.objects, line, T); else delete next[line.key]
+  store.setState({ elevations: { ...T, tallied: next } })
+  const anchor = line.ids.find(id => st.objects.some(o => o.id === id))
+  if (anchor) store.getState().commitObjectUpdate(anchor, {})          // the history entry (it carries the table)
+}
+/** Clear every mark: one undo step. */
+export function clearTallied(store) {
+  const st = store.getState(), T = st.elevations
+  if (!T || !Object.keys(talliedOf(T)).length) return
+  store.setState({ elevations: { ...T, tallied: {} } })
+  const anchor = st.objects.find(o => /^rack_/.test(o.type || ''))?.id
+  if (anchor) store.getState().commitObjectUpdate(anchor, {})
 }

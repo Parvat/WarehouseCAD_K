@@ -5,6 +5,7 @@ import { nodeName } from './shapes'
 import { polygonOf, isSection, sectionStyle, boundaryOf, wallInOf, edgeRuns } from '../utils/sectionAreas'
 import { useSectionTool, useSectionHover, SECTION_PEN_TOOL } from './sectionTool'
 import { drawnBox } from '../utils/sectionEdit'
+import { useLiveObjects, useView } from './live'
 
 /* A section on the plan (STUDIO.md §7a Sections), drawn under the racks: a dashed #B9C7BE 1px outline (dash 6 4) and a
    very light #F4F8F5 fill — or its colour (utils/sectionAreas.js sectionStyle: the outline, a tint, a deeper label);
@@ -65,8 +66,9 @@ const ftInLen = (px, gs) => { const t = Math.round(px / gs * 12), f = Math.floor
 
 /** A selected custom shape's point handles (white squares, 8 screen px). */
 export const POINT_HANDLE_PX = 8
-export function SectionPointHandles({ obj }) {
-  const zoom = useCanvasStore(s => s.zoom) || 1
+export function SectionPointHandles({ obj: picked }) {
+  const zoom = useView().zoom || 1
+  const live = useLiveObjects(), obj = live.find(o => o.id === picked?.id) || picked     // where it is drawn now (live.js)
   if (!isSection(obj) || obj.shape !== 'poly') return null
   const s = POINT_HANDLE_PX / zoom
   return (

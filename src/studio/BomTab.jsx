@@ -25,7 +25,7 @@ export function highlightLine(line, objects) {
   const hl = useLayoutCheck.getState().highlight
   if (!line || (hl?.kind === 'bom' && hl.key === line.key)) { useLayoutCheck.setState({ highlight: null }); return }
   const ids = new Set(line.ids)
-  const shapes = objects.filter(o => ids.has(o.id)).map(r => { const f = rackFootprint(r); return { x: f.x, y: f.y, w: f.w, h: f.h, color: SELECT, mode: 'fill' } })
+  const shapes = objects.filter(o => ids.has(o.id)).map(r => { const f = rackFootprint(r); return { id: r.id, x: f.x, y: f.y, w: f.w, h: f.h, color: SELECT, mode: 'fill' } })
   useLayoutCheck.setState({ highlight: { shapes, at: Date.now(), kind: 'bom', key: line.key } })
 }
 const save = (blob, filename) => {

@@ -458,7 +458,8 @@ export function goToIssue(store, item, size) {
   const st = store.getState()
   if (st.selectedIds.length) st.clearSelection()
   if (size && item.box) { const v = centreBox(item.box, size, st.zoom); st.setViewport(v.zoom, v.panX, v.panY) }
-  useLayoutCheck.setState({ highlight: { shapes: item.highlight || [], at: Date.now(), kind: item.kind, key: issueKey(item) } })
+  // its racks' ids: the highlight moves with them while they are dragged (canvas2/IssueHighlight.jsx)
+  useLayoutCheck.setState({ highlight: { shapes: item.highlight || [], ids: item.ids || [], at: Date.now(), kind: item.kind, key: issueKey(item) } })
   return item.ids.filter(id => st.objects.some(o => o.id === id))
 }
 

@@ -13,9 +13,12 @@ import { useSectionHover, useSectionRename } from './sectionTool'
 import { nameShownBy, useShownNames } from './sectionNameShown'
 import { isSection, labelBox, LABEL, sectionStyle } from '../utils/sectionAreas'
 import { layerShown } from '../utils/layers'
+import { useLiveObjects, useView } from './live'
 
 export function SectionNames() {
-  const { objects, zoom, layers, selectedIds } = useCanvasStore(useShallow(s => ({ objects: s.objects, zoom: s.zoom || 1, layers: s.layers, selectedIds: s.selectedIds })))
+  // where the sections are drawn now — a drag moves them before the store (live.js)
+  const objects = useLiveObjects(), zoom = useView().zoom || 1
+  const { layers, selectedIds } = useCanvasStore(useShallow(s => ({ layers: s.layers, selectedIds: s.selectedIds })))
   const on = useViewPrefs(s => s.sectionNames)
   const hoverIds = useHoverTarget(s => s.target?.ids || null)
   const listHover = useSectionHover(s => s.id), renaming = useSectionRename(s => s.id)

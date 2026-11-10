@@ -4,6 +4,7 @@ import { useCanvasStore } from '../store/useCanvasStore'
 import { rackFootprint } from '../generate/columnCheck'
 import { rowsOf, previewRects } from '../utils/rowGroup'
 import { useRowGroup, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
+import { useLiveObjects } from './live'
 
 /* The Row group on the canvas (utils/rowGroupTool.js) — pure paint, never listening:
      - the Row group tool's box while it is dragged;
@@ -25,7 +26,7 @@ export function RowGroupPreview() {
   const keys = useRowGroup(s => s.keys)
   const pending = useRowGroup(s => s.pending)
   const drag = useRowGroup(s => s.drag)
-  const objects = useCanvasStore(s => s.objects)
+  const objects = useLiveObjects()                         // where the rows are drawn now (live.js)
   const gridSize = useCanvasStore(s => s.gridSize) || 40
   // the purple outline is the Row group tool's: only while it is on (utils/toolSwitch.js ends the group with it)
   const on = useCanvasStore(s => s.activeTool === ROW_GROUP_TOOL)

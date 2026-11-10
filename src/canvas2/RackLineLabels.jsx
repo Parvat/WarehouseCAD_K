@@ -19,8 +19,10 @@ import { useViewPrefs } from '../studio/viewPrefs'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { aisleLabelBoxes } from '../render/labelOps'
+import { useLiveObjects } from './live'
+import { checkedNos } from '../studio/tally'
 
-const WORDS = '#767C74', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
+const WORDS = '#767C74', TICK = '#2E7D5B', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 /** The label's size in drawing units: the aisle labels' 10 at the Label size. */
 export const ROW_LABEL_PX = 10
 const meets = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
@@ -47,24 +49,33 @@ export function rowLabelPlaces(lines, fs, avoid = []) {
     }
     if (!at) continue                                                  // no room: left out
     placed.push(at)
-    out.push({ key: k, text, ...at, align: l0.vert ? 'center' : 'right' })
+    out.push({ key: k, text, nos, ...at, align: l0.vert ? 'center' : 'right' })
   }
   return out
 }
 
 export function RackLineLabels() {
-  const { objects, gs, layers } = useCanvasStore(useShallow(s => ({ objects: s.objects, gs: s.gridSize || 40, layers: s.layers })))
+  // where the racks are drawn now — a drag moves them before the store (live.js)
+  const objects = useLiveObjects()
+  const { gs, layers, T } = useCanvasStore(useShallow(s => ({ gs: s.gridSize || 40, layers: s.layers, T: s.elevations })))
   const shown = useViewPrefs(s => s.rowLabels || s.bomFull)
   const labelSize = useLabelPrefs(s => s.labelSize)
   const lz = labelScale(labelSize, gs), fs = ROW_LABEL_PX / lz
   const lines = useMemo(() => rackLinesNow(objects, gs), [objects, gs])
   const avoid = useMemo(() => (shown && lines.length ? aisleLabelBoxes(objects, gs, labelSize) : []), [shown, lines.length, objects, gs, labelSize])
   const places = useMemo(() => rowLabelPlaces(lines, fs, avoid), [lines, fs, avoid])
+  // the Tally's tallied lines (studio/tally.js): a small green tick just before the label (every line it names checked)
+  const checked = useMemo(() => checkedNos(objects, lines, T), [objects, lines, T])
   if (!shown || !lines.length || !layerShown(layers, 'racking')) return null
   return (
     <Group name="rack-line-labels" listening={false}>
       {places.map(p => <Text key={p.key} name="rack-line-label" text={p.text} x={p.x} y={p.y} width={p.w} height={p.h} align={p.align} verticalAlign="middle"
         fontSize={fs} fontFamily={FONT} fill={WORDS} listening={false} perfectDrawEnabled={false} />)}
+      {places.filter(p => p.nos.length && p.nos.every(n => checked.has(n))).map(p => {
+        const tw = p.text.length * fs * 0.62, start = p.align === 'right' ? p.x + p.w - tw : p.x + p.w / 2 - tw / 2
+        return <Text key={'t' + p.key} name="rack-line-tick" text="✓" x={start - fs * 1.05} y={p.y} width={fs} height={p.h} align="center" verticalAlign="middle"
+          fontSize={fs} fontStyle="700" fontFamily={FONT} fill={TICK} listening={false} perfectDrawEnabled={false} />
+      })}
     </Group>
   )
 }

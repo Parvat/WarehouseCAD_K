@@ -4,6 +4,7 @@ import { useCanvasStore } from '../store/useCanvasStore'
 import { useHoverTarget } from './hoverTarget'
 import { outlineBounds, spin } from './shapes'
 import { bayRectForIndex } from '../render/bayGeom'
+import { useLiveObjects } from './live'
 
 /* Hover highlights exactly what a click would select (STUDIO.md §7a; hoverTarget.js decides what): a thin dashed
    outline round the building, the row (its section), the bay (one half, or both in a pair's flue), the one column or
@@ -12,7 +13,7 @@ const line = { stroke: SELECT_BLUE, strokeWidth: 1, dash: [4, 3], opacity: 0.85,
 
 export function HoverHighlight() {
   const target = useHoverTarget(s => s.target)
-  const objects = useCanvasStore(s => s.objects)
+  const objects = useLiveObjects()                         // where things are drawn now (live.js)
   const gridSize = useCanvasStore(s => s.gridSize) || 40
   if (!target || target.key === 'none' || target.kind === 'keep') return null
   const byId = new Map(objects.map(o => [o.id, o]))

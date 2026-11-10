@@ -2,6 +2,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useColumnLine, linesOf, gapsOf } from './columnLines'
 import { useColumnPick } from './columnPick'
+import { useLiveObjects, useView } from './live'
 
 /* While a column's line is dragged (canvas2/columnLines.js): the distance to the line before and after it, live, each
    midway between the two lines at the dragged column — dimension numbers (STUDIO.md §2: #1B4FD8, Plus Jakarta Sans
@@ -10,7 +11,10 @@ const fmt = (px, gs) => { const t = Math.round(px / gs * 12), f = Math.floor(t /
 
 export function ColumnLineLabels() {
   const live = useColumnLine(s => s.live)
-  const { g, zoom, panX, panY, gs } = useCanvasStore(useShallow(s => ({ g: live ? s.objects.find(o => o.id === live.gridId) : null, zoom: s.zoom, panX: s.panX, panY: s.panY, gs: s.gridSize || 40 })))
+  // the grid where it is drawn now, placed by the view the canvas is drawn with now (live.js)
+  const objects = useLiveObjects(), { zoom, panX, panY } = useView()
+  const g = live ? objects.find(o => o.id === live.gridId) : null
+  const gs = useCanvasStore(s => s.gridSize || 40)
   const pick = useColumnPick(s => s.pick)
   if (!live || !g) return null
   const X = live.axis === 'x', ls = X ? linesOf(g).xs : linesOf(g).ys, at = ls[live.i]

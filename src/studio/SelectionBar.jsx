@@ -12,6 +12,7 @@ import { TOOLS } from '../constants'
 import { worldBoundsOf, hitTest, fpWallHitTest, wallBeatsPadding } from '../canvas2/hitTest'
 import { screenToWorld } from '../canvas2/viewport'
 import { useDragPreview } from '../canvas2/dragPreview'
+import { useView, useLiveView } from '../canvas2/live'
 import { useLabelPrefs } from '../canvas2/labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { usePlacement } from '../utils/placement'
@@ -472,7 +473,10 @@ function BuildingBar({ obj }) {
 
 /** The bar, placed over the selection. */
 export function SelectionBar() {
-  const { objects, selectedIds, activeWall, activeTool, zoom, panX, panY, activeBaySelection } = useCanvasStore(useShallow(s => ({ objects: s.objects, selectedIds: s.selectedIds, activeWall: s.activeWall, activeTool: s.activeTool, zoom: s.zoom, panX: s.panX, panY: s.panY, activeBaySelection: s.activeBaySelection })))
+  const { objects, selectedIds, activeWall, activeTool, activeBaySelection } = useCanvasStore(useShallow(s => ({ objects: s.objects, selectedIds: s.selectedIds, activeWall: s.activeWall, activeTool: s.activeTool, activeBaySelection: s.activeBaySelection })))
+  // anchored by the view the canvas is drawn with now — not the store's pan, a frame behind (canvas2/live.js); hidden
+  // during a drag, so the store's objects are where the selection stands
+  const { zoom, panX, panY } = useView()
   const dragging = useDragPreview(s => s.dragging)
   const labelSize = useLabelPrefs(s => s.labelSize), gridSize = useCanvasStore(s => s.gridSize) || 40
   const placing = usePlacement(s => s.active)
@@ -543,7 +547,8 @@ export function openFloorMenu(e, host) {
   const st = store.getState()
   if (!isPlainTool(st.activeTool)) return false
   const r = host.getBoundingClientRect(), p = { x: e.clientX - r.left, y: e.clientY - r.top }
-  const w = screenToWorld({ zoom: st.zoom, panX: st.panX, panY: st.panY }, p), gs = st.gridSize || 40
+  const lv = useLiveView.getState()
+  const w = screenToWorld(lv.ready ? lv : { zoom: st.zoom, panX: st.panX, panY: st.panY }, p), gs = st.gridSize || 40   // live-ok: the store's only before the canvas first draws
   const hit = hitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs)
   let obj = hit && st.objects.find(o => o.id === hit)
   // a press on a wall that a rack only reached by its pick padding is the wall's (hitTest.js wallBeatsPadding)

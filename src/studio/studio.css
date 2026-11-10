@@ -25,6 +25,10 @@
   background:#1F2321; border:1px solid #323835; border-radius:10px; box-shadow:0 8px 24px rgba(15,18,16,.18);
   font-family:'Plus Jakarta Sans', system-ui, sans-serif; font-size:13px; line-height:normal; color:#E8EAE6;
 }
+/* the Tally drawer's Focus (studio/TallyDrawer.jsx): the rail, its flyout, the tool pill, the top islands and the right
+   card hidden — the drawer, the bottom islands and the plan stay */
+[data-tally-focus="1"] [data-island="rail"], [data-tally-focus="1"] [data-island="flyout"], [data-tally-focus="1"] [data-island="tool-pill"],
+[data-tally-focus="1"] [data-island="top-left"], [data-tally-focus="1"] [data-island="top-right"], [data-tally-focus="1"] [data-island="right-card"] { display:none !important; }
 /* the tool pill (and later the selection and mode bars) */
 .st-pill {
   position:fixed; z-index:150; display:flex; align-items:center;

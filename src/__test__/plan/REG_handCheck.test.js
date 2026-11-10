@@ -2863,6 +2863,149 @@ describe('REG — the hand check by real clicks', () => {
       expect([await drawer.count(), Math.round(vp.height - back.y - back.height)]).toEqual([0, 20])                      // closed: back at the bottom
     }, T)
 
+    it('REG-live-overlays (click): every overlay moves in the same frame as its racks (tally-2 — was: the R labels, section name tabs and the Tally highlight sat where the racks were until the drop, then jumped; the selection bar trailed a pan by a frame) — everything selected (Ctrl+A) and dragged, after each mouse step the R labels, aisle labels, section name tabs and the Tally’s lit lines have moved exactly as the racks; panned (middle button), the selection bar too', async () => {
+      await openSections()
+      const b = await innerBox()
+      const s1 = await drawIn(b, 0.05, 0.05, 0.5, 0.6)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      // the Tally open, Section 1's Total clicked: its lines lit on the plan
+      await bomTab()
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(500)
+      await L.page.getByRole('region', { name: 'Tally' }).locator(`th[data-tally-total="${s1.id}"]`).click(); await L.page.waitForTimeout(200)
+      await zoomForRowLabels()
+      /** every overlay node as drawn now (page px), by a stable key, and the reference rack's */
+      const snap = (refId) => L.page.evaluate((refId) => {
+        const st = window.Konva.stages[0], out = {}
+        const put = (k, n) => { const c = n.getClientRect({ skipShadow: true }); out[k] = [c.x, c.y] }
+        st.find('.rack-line-label').forEach(n => put('R:' + n.text(), n))
+        st.find(n => /^aisle:/.test(n.name())).forEach(n => put(n.name(), n))
+        st.find(n => /^section-tab:/.test(n.name())).forEach(n => put(n.name(), n))
+        st.find('.tally-line').forEach((n, i) => put('tally:' + i, n))
+        const ref = st.findOne(n => n.name() === 'obj:' + refId)
+        const bar = document.querySelector('[data-selection-bar]')?.getBoundingClientRect()
+        return { out, ref: ref ? [ref.getClientRect().x, ref.getClientRect().y] : null, bar: bar ? [bar.left, bar.top] : null }
+      }, refId)
+      const kinds = (o) => new Set(Object.keys(o).map(k => k.split(':')[0]))
+      // a rack on the open canvas to drag by
+      const racks = await L.S('return S.getState().objects.filter(o => o.type === "rack_double_row" || o.type === "rack_row").map(o => ({ id: o.id, x: o.x + o.width / 2, y: o.y + o.height / 2 }))')
+      let grab = null
+      for (const r of racks) { const q = await L.toScreen(r); if (q.y > 90 && q.y < 520 && q.x > 90 && q.x < 1000 && await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', q)) { grab = { ...r, q }; break } }
+      expect(!!grab).toBe(true)
+      await L.page.mouse.move(grab.q.x, grab.q.y); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(200)
+      const s0 = await snap(grab.id)
+      expect([...kinds(s0.out)].sort()).toEqual(['R', 'aisle', 'section-tab', 'tally'])
+      // the drag: after each step, every overlay moved exactly as the rack did
+      await L.page.mouse.down()
+      for (let k = 1; k <= 6; k++) {
+        await L.page.mouse.move(grab.q.x + 11 * k, grab.q.y + 7 * k)
+        const s = await snap(grab.id), d = [s.ref[0] - s0.ref[0], s.ref[1] - s0.ref[1]]
+        if (k >= 2) expect(Math.hypot(...d)).toBeGreaterThan(5)
+        const off = Object.entries(s.out).filter(([key, p]) => s0.out[key] && Math.hypot(p[0] - s0.out[key][0] - d[0], p[1] - s0.out[key][1] - d[1]) > 0.75).map(([key]) => key)
+        expect([k, off]).toEqual([k, []])
+      }
+      await L.page.mouse.up(); await L.page.waitForTimeout(400)
+      // a pan (middle button) with a rack's bay picked: the overlays and the selection bar move with the plan
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const g2 = await L.S('const o = S.getState().objects.find(x => x.id === arg); return { x: o.x + o.width / 2, y: o.y + o.height / 2 }', grab.id)
+      await L.click(g2); await L.page.waitForTimeout(250)
+      const p0 = await snap(grab.id)
+      expect(!!p0.bar).toBe(true)
+      await L.page.mouse.move(700, 300); await L.page.mouse.down({ button: 'middle' })
+      for (let k = 1; k <= 6; k++) {
+        await L.page.mouse.move(700 + 9 * k, 300 + 6 * k)
+        const s = await snap(grab.id), d = [s.ref[0] - p0.ref[0], s.ref[1] - p0.ref[1]]
+        if (k >= 2) expect(Math.hypot(...d)).toBeGreaterThan(5)
+        const off = Object.entries(s.out).filter(([key, p]) => p0.out[key] && Math.hypot(p[0] - p0.out[key][0] - d[0], p[1] - p0.out[key][1] - d[1]) > 0.75).map(([key]) => key)
+        expect([k, off, !!s.bar && Math.hypot(s.bar[0] - p0.bar[0] - d[0], s.bar[1] - p0.bar[1] - d[1]) <= 0.75]).toEqual([k, [], true])
+      }
+      await L.page.mouse.up({ button: 'middle' }); await L.page.waitForTimeout(200)
+    }, T)
+
+    it('REG-tally-focus (click): the drawer’s Focus hides the left rail, the tool pill, the top islands and the right card, refits the plan above the drawer and lets the drawer grow to 85% of the window; Focus again restores all (the height back within 70%); Focus, then Esc restores; Esc again closes the drawer', async () => {
+      await open()
+      await bomTab()
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(500)
+      const drawer = L.page.getByRole('region', { name: 'Tally' }), focusBtn = drawer.getByRole('button', { name: 'Focus' })
+      const CHROME = ['rail', 'tool-pill', 'top-left', 'top-right', 'right-card']
+      const shown = () => L.page.evaluate((ks) => ks.filter(k => { const e = document.querySelector(`[data-island="${k}"]`); return e && e.getBoundingClientRect().width > 0 }), CHROME)
+      expect(await shown()).toEqual(CHROME)
+      await focusBtn.click(); await L.page.waitForTimeout(500)
+      expect([await shown(), await focusBtn.getAttribute('aria-pressed')]).toEqual([[], 'true'])
+      expect(await L.page.locator('[data-island="bottom-left"]').isVisible()).toBe(true)
+      // the plan refitted above the drawer
+      const box = await drawer.boundingBox(), fp = await fpOf()
+      const top = await L.toScreen({ x: fp.x, y: fp.y }), bot = await L.toScreen({ x: fp.x + fp.width, y: fp.y + fp.height })
+      expect([top.y >= -1, bot.y <= box.y + 1]).toEqual([true, true])
+      // the top edge dragged far up: 85% of the window
+      const vp = L.page.viewportSize(), sep = await drawer.getByRole('separator', { name: 'Resize tally' }).boundingBox()
+      await L.page.mouse.move(sep.x + sep.width / 2, sep.y + 3); await L.page.mouse.down(); await L.page.mouse.move(sep.x + sep.width / 2, 5, { steps: 6 }); await L.page.mouse.up(); await L.page.waitForTimeout(200)
+      expect(Math.round((await drawer.boundingBox()).height)).toBe(Math.round(vp.height * 0.85))
+      // Focus again: all back, the drawer within 70%
+      await focusBtn.click(); await L.page.waitForTimeout(400)
+      expect([await shown(), Math.round((await drawer.boundingBox()).height)]).toEqual([CHROME, Math.round(vp.height * 0.7)])
+      // Focus, then Esc: restored, the drawer still open; Esc again: closed
+      await focusBtn.click(); await L.page.waitForTimeout(300)
+      expect(await shown()).toEqual([])
+      await L.page.mouse.move(700, 100); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(300)
+      expect([await shown(), await drawer.count()]).toEqual([CHROME, 1])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      expect(await drawer.count()).toBe(0)
+    }, T)
+
+    it('REG-tally-ticks (click): a check on an R column header marks the line tallied — the column dims with a green tick, the plan shows a small tick by its R label, the header counts N / M checked; Clear checks clears them; saved with the layout (after a reload); a line’s tick goes when its bays change (a bay deleted), the others stay', async () => {
+      await open()
+      await zoomForRowLabels()
+      await bomTab()
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(500)
+      const drawer = L.page.getByRole('region', { name: 'Tally' })
+      const tick = (no) => drawer.getByRole('checkbox', { name: `Tallied R${no}`, exact: true })
+      const count = () => drawer.locator('[data-tally-count]').textContent()
+      const M = await drawer.locator('th[data-tally-col]').count()
+      const planTicks = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; return st.find('.rack-line-tick').map(t => { const c = t.getClientRect(); return { x: c.x, y: c.y + c.height / 2 } }) })
+      const labelOf = (no) => L.page.evaluate((no) => { const re = new RegExp('(^|–)R' + no + '(–|$)'); const n = window.Konva.stages[0].find('.rack-line-label').find(x => re.test(x.text())); if (!n) return null; const c = n.getClientRect(); return { x0: c.x, x1: c.x + c.width, y: c.y + c.height / 2, text: n.text() } }, no)
+      expect([await count(), await planTicks()]).toEqual([`0 / ${M} checked`, []])
+      // a single row's line, labelled on its own (so its tick is its own)
+      const lines = await L.S('return import("/src/utils/rackLines.js").then(M => M.rackLinesNow(S.getState().objects, S.getState().gridSize || 40).map(l => ({ no: l.no, ids: l.ids, ws: l.ws, vert: l.vert, r0: l.r0, r1: l.r1, s0: l.s0, s1: l.s1 })))')
+      const labelled = []
+      for (const l of lines) { const lb = await labelOf(l.no); if (lb && lb.text === 'R' + l.no) labelled.push(l) }
+      expect(labelled.length).toBeGreaterThan(1)
+      const [a, c] = [labelled[0], labelled[labelled.length - 1]]
+      await tick(a.no).click(); await L.page.waitForTimeout(200)
+      expect([await tick(a.no).getAttribute('aria-checked'), await count()]).toEqual(['true', `1 / ${M} checked`])
+      // the column dims; the plan: a tick just before its R label, on its line
+      const op = await drawer.locator(`td[data-row="${a.no}"]`).first().evaluate(td => Number(getComputedStyle(td).opacity))
+      expect(op).toBeLessThan(0.6)
+      const lb = await labelOf(a.no), ts = await planTicks()
+      expect(ts.length).toBe(1)
+      expect([ts[0].x < lb.x1, Math.abs(ts[0].y - lb.y) < 3]).toEqual([true, true])
+      // Clear checks
+      await drawer.getByRole('button', { name: 'Clear checks' }).click(); await L.page.waitForTimeout(200)
+      expect([await tick(a.no).getAttribute('aria-checked'), await count(), (await planTicks()).length]).toEqual(['false', `0 / ${M} checked`, 0])
+      // two checked, then a reload: still checked (saved with the layout)
+      await tick(a.no).click(); await tick(c.no).click(); await L.page.waitForTimeout(600)
+      expect(await count()).toBe(`2 / ${M} checked`)
+      await L.page.reload()
+      await L.page.getByRole('button', { name: 'Sign in' }).click({ timeout: 120000 })
+      await L.page.getByRole('button', { name: /^Draw/ }).click(); await L.page.waitForSelector('.konvajs-content'); await L.page.waitForTimeout(800)
+      await bomTab()
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(500)
+      expect([await tick(a.no).getAttribute('aria-checked'), await tick(c.no).getAttribute('aria-checked'), await count()]).toEqual(['true', 'true', `2 / ${M} checked`])
+      // a bay of line a deleted (clicked on its side, Delete): its tick goes, c's stays
+      await L.page.keyboard.press('Escape')
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('v'); await L.page.waitForTimeout(100)
+      const st = await L.page.evaluate(() => { const s = window.Konva.stages[0]; return { z: s.scaleX(), x: s.x(), y: s.y() } })
+      const cv = await L.page.locator('#canvas2-container').boundingBox()
+      const mid = (a.r0 + a.r1) / 2, across = (a.s0 + a.s1) / 2
+      const w = a.vert ? { x: across, y: mid } : { x: mid, y: across }
+      const q = { x: cv.x + w.x * st.z + st.x, y: cv.y + w.y * st.z + st.y }
+      await L.page.mouse.click(q.x, q.y); await L.page.waitForTimeout(250)
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(400)
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      if (!(await drawer.count())) { await bomTab(); await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(500) }
+      expect(await count()).toBe(`1 / ${await drawer.locator('th[data-tally-col]').count()} checked`)
+      expect(await drawer.locator('th[data-tally-col][data-tallied]').count()).toBe(1)
+    }, T)
+
     it('REG-bom-rack-labels (click): one R label per rack line at its start end only (left of a line running across, above one running up and down), a back-to-back pair one label R2–R3, in the drawings\u2019 words style; no label over another or over an aisle width label; the aisle labels’ size, drawn at any zoom (ui-polish-4 — was: none under 8 px on screen); the numbers are the By row table\u2019s (ui-polish-2 — was: a label at each end, one per side of a pair)', async () => {
       await open()
       await zoomForRowLabels()

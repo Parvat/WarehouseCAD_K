@@ -44,6 +44,7 @@ import { nanoid } from 'nanoid'
 import { TOOLS } from '../constants'
 import { useViewPrefs, fitRef } from '../studio/viewPrefs'
 import { RackLineLabels } from './RackLineLabels'
+import { publishView, useView } from './live'
 import { tallyInset } from '../studio/tally'
 import { TallyFill, TallyHighlight } from './TallyHighlight'
 import { SectionNames } from './SectionNames'
@@ -130,11 +131,10 @@ const Grid = memo(function Grid({ gridSize, major, minor }) {
    always there. Presentation state (src/studio/viewPrefs.js, localStorage), toggled from the layout menu. */
 
 /* Studio ground (STUDIO.md §2): #F4F3EF with a 1px #D9D6CC dot every 20px — the grid. It moves with the pan, so the
-   dots stay put under the plan; the Grid switch shows or hides it. Its own component: the pan writes the store every
-   frame, and only this (and the rulers) re-render for it. */
+   dots stay put under the plan; the Grid switch shows or hides it. Its own component: the pan re-renders only this (and
+   the rulers). It reads the view the Stage is drawn with now (live.js), so it moves in the same frame as the plan. */
 function DotGround() {
-  const panX = useCanvasStore(s => s.panX)
-  const panY = useCanvasStore(s => s.panY)
+  const { panX, panY } = useView()
   return <div aria-hidden="true" data-ground style={{ position: 'absolute', inset: 0, pointerEvents: 'none',
     backgroundImage: 'radial-gradient(#D9D6CC 1px, transparent 1.2px)', backgroundSize: '20px 20px',
     backgroundPosition: `${Math.round(panX) % 20}px ${Math.round(panY) % 20}px` }} />
@@ -147,8 +147,8 @@ function DotGround() {
    canvas tree. */
 function ViewAdopter({ view, apply }) {
   const zoom = useCanvasStore(s => s.zoom)
-  const panX = useCanvasStore(s => s.panX)
-  const panY = useCanvasStore(s => s.panY)
+  const panX = useCanvasStore(s => s.panX)          // live-ok: adopts the store's view (the one reader that must)
+  const panY = useCanvasStore(s => s.panY)          // live-ok: adopts the store's view
   useEffect(() => {
     const v = view.current
     if (zoom === v.zoom && panX === v.panX && panY === v.panY) return
@@ -158,12 +158,10 @@ function ViewAdopter({ view, apply }) {
   return null
 }
 
-/* The rulers follow the pan, so they read it themselves. */
+/* The rulers follow the pan, so they read it themselves — the view the Stage is drawn with now (live.js). */
 function StoreRulers({ gridSize, size }) {
-  const zoom = useCanvasStore(s => s.zoom)
-  const panX = useCanvasStore(s => s.panX)
-  const panY = useCanvasStore(s => s.panY)
-  return <Rulers view={{ zoom, panX, panY }} gridSize={gridSize} size={size} />
+  const view = useView()
+  return <Rulers view={view} gridSize={gridSize} size={size} />
 }
 
 export function Canvas2() {
@@ -190,8 +188,8 @@ export function Canvas2() {
      place, then owned here for the duration of a gesture. */
   const view = useRef({
     zoom: clampZoom(useCanvasStore.getState().zoom),
-    panX: useCanvasStore.getState().panX,
-    panY: useCanvasStore.getState().panY,
+    panX: useCanvasStore.getState().panX,           // live-ok: the seed, before the first draw
+    panY: useCanvasStore.getState().panY,           // live-ok: the seed
   })
 
   /* What to outline. Selection is store state, so this re-renders when it
@@ -257,6 +255,8 @@ export function Canvas2() {
     st.scale({ x: v.zoom, y: v.zoom })
     st.position({ x: v.panX, y: v.panY })
     st.batchDraw()
+    // the DOM overlays read the transform from here, in this same call (live.js) — not the store's, a frame later
+    publishView(v)
   }
 
   /* Store sync, coalesced to a frame: the readout and any other consumer stay
@@ -269,7 +269,7 @@ export function Canvas2() {
       const v = view.current
       const st = useCanvasStore.getState()
       if (st.zoom !== v.zoom) st.setZoom(v.zoom)
-      if (st.panX !== v.panX || st.panY !== v.panY) st.setPan(v.panX, v.panY)
+      if (st.panX !== v.panX || st.panY !== v.panY) st.setPan(v.panX, v.panY)   // live-ok: the writer
     })
   }
   useEffect(() => () => { if (syncRaf.current) cancelAnimationFrame(syncRaf.current) }, [])
