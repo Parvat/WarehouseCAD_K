@@ -2758,7 +2758,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
-    it('REG-tally (click): the BOM tab — Tally · xlsx · CSV, the Total card first, the first section open and the rest collapsed (a click on a header: remembered per layout, after a reload); Tally opens the drawer at the bottom of the canvas (full width: left 16, right 16, 330 high — ui-polish-4, was: right 332; the right card ends 12px above it, the bottom-right island hidden; compact R columns, min 36px), the plan fitted above it, the R labels shown; an R column hovered lights its line on the plan with its tag (R6 · N bays · N positions); a rack clicked on the plan lights its column, in view; a section Total clicked lights all its lines; the top edge dragged resizes it (remembered); Pop out opens the wide modal; Esc closes each', async () => {
+    it('REG-tally (click): the BOM tab — Tally · xlsx · CSV, the Total card first, the first section open and the rest collapsed (a click on a header: remembered per layout, after a reload); Tally opens the drawer at the bottom of the canvas (full width: left 16, right 16, 330 high — ui-polish-4, was: right 332; the bottom-right island 12px above it at the right, the right card 12px above that island — was: the card 12px above the drawer, the island hidden; compact R columns, min 36px), the plan fitted above it, the R labels shown; an R column hovered lights its line on the plan with its tag (R6 · N bays · N positions); a rack clicked on the plan lights its column, in view; a section Total clicked lights all its lines; the top edge dragged resizes it (remembered); Pop out opens the wide modal; Esc closes each', async () => {
       const [s1, s2] = await twoSections()
       const tab = L.page.getByRole('tabpanel', { name: 'BOM' }), head = (id) => tab.locator(`button[data-bom-group-head="${id}"]`)
       const linesIn = (id) => tab.locator(`[data-bom-line][data-bom-group="${id}"]`).count()
@@ -2783,8 +2783,9 @@ describe('REG — the hand check by real clicks', () => {
       const vp = L.page.viewportSize(), box = await drawer.boundingBox()
       expect([Math.round(box.x), Math.round(vp.width - box.x - box.width), Math.round(vp.height - box.y - box.height), Math.round(box.height)]).toEqual([16, 16, 20, 330])
       const card = await L.page.locator('[data-island="right-card"]').evaluate(c => ({ bottom: c.getBoundingClientRect().bottom, max: getComputedStyle(c).maxHeight }))
-      expect([card.bottom <= box.y - 12 + 0.5, card.max]).toEqual([true, `${vp.height - 76 - 20 - 330 - 12}px`])
-      expect(await L.page.locator('[data-island="bottom-right"]').count()).toBe(0)
+      const isl = await L.page.locator('[data-island="bottom-right"]').boundingBox()
+      expect([Math.round(box.y - (isl.y + isl.height)), Math.round(vp.width - isl.x - isl.width)]).toEqual([12, 16])   // 12 above the drawer, at the right
+      expect([card.bottom <= isl.y - 12 + 0.5, card.max]).toEqual([true, `${vp.height - 76 - 20 - 330 - 12 - 40 - 12}px`])
       const widths = await drawer.locator('th[data-tally-col]').evaluateAll(t => t.map(x => x.getBoundingClientRect().width))
       expect([widths.length > 0, widths.every(w => w >= 36 - 0.5)]).toEqual([true, true])
       // the plan fitted into the room above it
@@ -2858,7 +2859,8 @@ describe('REG — the hand check by real clicks', () => {
       await tab.getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(400)
       expect(Math.round((await drawer.boundingBox()).height)).toBe(430)
       await L.page.mouse.move(700, 120); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
-      expect([await drawer.count(), await L.page.locator('[data-island="bottom-right"]').count()]).toEqual([0, 1])
+      const back = await L.page.locator('[data-island="bottom-right"]').boundingBox()
+      expect([await drawer.count(), Math.round(vp.height - back.y - back.height)]).toEqual([0, 20])                      // closed: back at the bottom
     }, T)
 
     it('REG-bom-rack-labels (click): one R label per rack line at its start end only (left of a line running across, above one running up and down), a back-to-back pair one label R2–R3, in the drawings\u2019 words style; no label over another or over an aisle width label; the aisle labels’ size, drawn at any zoom (ui-polish-4 — was: none under 8 px on screen); the numbers are the By row table\u2019s (ui-polish-2 — was: a label at each end, one per side of a pair)', async () => {

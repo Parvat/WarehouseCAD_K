@@ -9,7 +9,7 @@ import { C, MONO, Note, Btn, Seg } from './cardParts'
 import { Icon } from './Icon'
 import { useViewPrefs } from './viewPrefs'
 import { BomTable, ByRowTable, highlightLine, downloadCsv, downloadXlsx, baseName, PART_CELL, SIZE_CELL } from './BomTab'
-import { useTally, closeTally, popOutTally, closeTallyModal, TALLY_LEFT, TALLY_RIGHT, TALLY_BOTTOM, selectedLineNos } from './tally'
+import { useTally, closeTally, popOutTally, closeTallyModal, TALLY_LEFT, TALLY_RIGHT, TALLY_BOTTOM, TALLY_ISLAND_GAP, selectedLineNos } from './tally'
 
 /* The Tally (STUDIO.md §1, §7a BOM): the BOM tab's Tally opens a drawer docked at the bottom of the canvas — full width,
    left 16 to right 16 (the right card ends 12px above it), its height dragged by its top edge (200 … 70% of the window, 330 at first),
@@ -180,13 +180,14 @@ export function TallyHost() {
   const any = open || modal
   const bom = useMemo(() => (any ? computeBom(objects, T, { gridSize: gs }) : null), [any, objects, T, gs])
   useEffect(() => { useViewPrefs.getState().setBomFull(any); return () => useViewPrefs.getState().setBomFull(false) }, [any])
-  // the bottom islands (Hub · zoom, the tool pill, the notices) stand 8px above the open drawer (View · Layers · Fit · ?
-  // is hidden while it is open: StudioFrame BottomRight)
+  // the bottom islands stand above the open drawer: Hub · zoom, the tool pill and the notices 8px; View · Layers · Fit · ?
+  // 12px, at the right (the right card ends 12px above it: StudioFrame RightCard)
   const height = useTally(s => s.height)
   useEffect(() => {
     const root = document.querySelector('[data-theme]') || document.documentElement
     root.style.setProperty('--tally-lift', open ? `${height + 8}px` : '0px')
-    return () => root.style.setProperty('--tally-lift', '0px')
+    root.style.setProperty('--tally-island-lift', open ? `${height + TALLY_ISLAND_GAP}px` : '0px')
+    return () => { root.style.setProperty('--tally-lift', '0px'); root.style.setProperty('--tally-island-lift', '0px') }
   }, [open, height])
   useEffect(() => {
     if (!any) return

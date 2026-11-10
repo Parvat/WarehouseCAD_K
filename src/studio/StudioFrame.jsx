@@ -14,7 +14,7 @@ import { useColumnCheck } from '../generate/useColumnCheck'
 import { useElevView, setShowColors } from '../utils/elevationDraw'
 import { useViewPrefs, fitRef, CARD_W } from './viewPrefs'
 import { TallyHost } from './TallyDrawer'
-import { useTally, TALLY_BOTTOM, TALLY_CARD_GAP } from './tally'
+import { useTally, TALLY_BOTTOM, TALLY_ISLAND_GAP, ISLAND_H, TALLY_CARD_GAP } from './tally'
 import { useElevTab } from '../utils/elevTab'
 import { Icon } from './Icon'
 import { CheckCard } from './cards'
@@ -117,7 +117,7 @@ function RightCard() {
   /* its width: the left edge dragged (300–640), double-click back to 300 — remembered, the same for every tab (STUDIO.md
      §7); the grip shows on the edge's hover, and while an elevation is edited on the sheet (C21) */
   const cardW = useViewPrefs(s => s.cardW), onSheet = useElevTab(s => !!s.editing?.sheet)
-  /* the Tally drawer open: the card ends 12px above it */
+  /* the Tally drawer open: the card ends 12px above the bottom-right island, which stands 12px above the drawer */
   const tallyH = useTally(s => (s.open ? s.height : 0))
   const [edgeHover, setEdgeHover] = useState(false)
   const startEdge = (ev) => {
@@ -131,7 +131,7 @@ function RightCard() {
   }
   return (
     <div className="st-island" aria-label="Right panel" data-island="right-card" style={{
-      right: 16, top: 76, width: cardW, maxHeight: tallyH ? `calc(100vh - ${76 + TALLY_BOTTOM + tallyH + TALLY_CARD_GAP}px)` : 'calc(100vh - 152px)',
+      right: 16, top: 76, width: cardW, maxHeight: tallyH ? `calc(100vh - ${76 + TALLY_BOTTOM + tallyH + TALLY_ISLAND_GAP + ISLAND_H + TALLY_CARD_GAP}px)` : 'calc(100vh - 152px)',
       flexDirection: 'column', alignItems: 'stretch', overflow: 'hidden',
     }}>
       {/* the left edge: a 6px strip to drag, the 3×32 grip */}
@@ -190,14 +190,13 @@ function useCloses(open, close, wrap) {
   }, [open]) // eslint-disable-line
 }
 /* the cards above the bottom-right island: dark island style, radius 10, right-aligned with it */
-const overIsland = (extra) => ({ right: 16, bottom: 68, flexDirection: 'column', alignItems: 'stretch', borderRadius: 10, ...extra })
+const overIsland = (extra) => ({ right: 16, bottom: 'calc(68px + var(--tally-island-lift, 0px))', flexDirection: 'column', alignItems: 'stretch', borderRadius: 10, ...extra })
 
 /* The bottom-right island (STUDIO.md §1): View · Layers · Fit · ?. View opens a card above it with the display switches —
    Aisle labels, Checks, Elevation colours, Section names, Row numbers (each remembered as before); Layers opens its own
-   card, each layer's show toggle and padlock. A click outside or Esc closes either. Hidden while the Tally drawer is
-   open: the drawer runs the full width under it and the right card ends 12px above the drawer (no room left). */
+   card, each layer's show toggle and padlock. A click outside or Esc closes either. While the Tally drawer is
+   open it stands 12px above the drawer's top edge (--tally-island-lift: TallyDrawer.jsx), its cards with it. */
 function BottomRight() {
-  const tallyOpen = useTally(s => s.open)
   const showAisles = useCanvasStore(s => s.showAisles ?? true)
   const toggleAisles = useCanvasStore(s => s.toggleAisles)
   const { showMarks, setShowMarks } = useColumnCheck()
@@ -215,9 +214,8 @@ function BottomRight() {
       <span>{label}</span><Toggle on={on} onClick={onClick} label={label} />
     </div>
   )
-  if (tallyOpen) return null
   return (
-    <div className="st-island" data-island="bottom-right" style={{ right: 16, bottom: 20, height: 40, gap: 2, padding: '0 4px' }}>
+    <div className="st-island" data-island="bottom-right" style={{ right: 16, bottom: 'calc(20px + var(--tally-island-lift, 0px))', height: 40, gap: 2, padding: '0 4px' }}>
       {/* View: the display switches, in a small card above (STUDIO.md §1) */}
       <span ref={viewWrap} style={{ display: 'flex' }}>
         <button type="button" aria-label="View" aria-haspopup="dialog" aria-expanded={view} aria-pressed={view} onClick={() => setView(o => !o)} style={tog(view)}>View</button>
