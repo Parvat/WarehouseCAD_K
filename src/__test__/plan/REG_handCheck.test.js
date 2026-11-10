@@ -2079,6 +2079,31 @@ describe('REG — the hand check by real clicks', () => {
       expect((await gridOf()).locked).toBe(false)
     }, T)
 
+    it('REG-wall-select-look (click): a wall clicked — the building selected with that one wall: the wall line itself lit in the selection green #2E7D5B, 3 px over the wall; every dimension label, the selected wall’s included, in the blue building dimension style (was: the selected wall’s label amber)', async () => {
+      await open()
+      const fp = await fpOf()
+      await L.click({ x: fp.x + fp.width / 2, y: fp.y }); await L.page.waitForTimeout(250)
+      const st = await L.S('const st = S.getState(); return { sel: st.selectedIds, wall: st.activeWall }')
+      expect([st.sel, st.wall && st.wall.objId]).toEqual([[fp.id], fp.id])
+      const look = await L.page.evaluate((id) => {
+        const g = window.Konva.stages[0].findOne(n => n.name() === 'fpdim:' + id)
+        if (!g) return null
+        const t = g.getAbsoluteTransform()
+        const sel = g.find('.wall-select').map(l => { const p = l.points(); const a = t.point({ x: p[0], y: p[1] }), b = t.point({ x: p[2], y: p[3] }); return { stroke: l.stroke(), width: l.strokeWidth(), scaled: l.strokeScaleEnabled(), a, b } })
+        const dims = g.getChildren().map(c => [...new Set(c.find('Line').filter(l => l.name() !== 'wall-select').map(l => l.stroke() || l.fill()))])
+        return { sel, dims, pills: g.find('Text').length }
+      }, fp.id)
+      expect(look).not.toBe(null)
+      // the one selected wall, lit over the wall: green, 3 px on screen, along the top wall
+      expect(look.sel.length).toBe(1)
+      const s = look.sel[0], top = await L.toScreen({ x: fp.x, y: fp.y }), cv = await L.page.locator('#canvas2-container').boundingBox()
+      expect([s.stroke, s.width, s.scaled]).toEqual(['#2E7D5B', 3, false])
+      expect([Math.abs(s.a.y - s.b.y) < 1, Math.abs(s.a.y + cv.y - top.y) < 6, Math.abs(s.b.x - s.a.x) > 100]).toEqual([true, true, true])
+      // every side's dimension blue, the selected one's too
+      expect(look.dims).toEqual(look.dims.map(() => ['#4a9eff']))
+      expect(look.pills).toBe(look.dims.length)
+    }, T)
+
     it('REG-load-locks (click): an older layout opens with its Columns layer locked as saved (Fix 6 round 6) and an older Generate’s Building lock cleared; padlocks set by hand in the Layers card stay after a reload', async () => {
       const B = await import('./handCheck/browser.js'), file = JSON.parse(B.fixture(name))
       expect((file.layers || []).filter(l => l.locked).map(l => l.id)).toContain('columns')    // saved with Generate's locks

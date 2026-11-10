@@ -183,9 +183,9 @@ export function RackLabels({ obj, zoom, gridSize }) {
 /* ── Floor plan per-wall dimension labels — always on while the shape is
    selected. Ported from CanvasUI.jsx's FpSegmentDimLabels: a tick-mark
    dimension line, offset outward along each wall's outward normal, plus a
-   centred length pill. `activeWallIdx` highlights one wall gold — canvas2
-   has no wall-drag interaction yet (render-only scope), so callers simply
-   pass null until that lands. */
+   centred length pill, every one in the blue building dimension style.
+   `activeWallIdx` — the one wall selected (a click on it): the wall line itself is lit in the selection green
+   #2E7D5B, 3 screen px over the wall (`wall-select`); its dimension stays blue like the other sides (was: gold). */
 export function FpDimLabels({ obj, zoom, gridSize, activeWallIdx = null }) {
   const walls = getFpWallSegments(obj, gridSize)
   if (!walls || !walls.length) return null
@@ -205,6 +205,7 @@ export function SectionDimLabels({ obj, zoom, gridSize }) {
 }
 
 /* The building dimension style along a closed outline's edges (`walls`: [{ a, b, lenPx }]), each dimension outside it. */
+const WALL_SELECT = '#2E7D5B'
 function EdgeDims({ walls, zoom, gridSize, activeWallIdx = null }) {
 
   let signedArea = 0
@@ -221,7 +222,7 @@ function EdgeDims({ walls, zoom, gridSize, activeWallIdx = null }) {
     const ax = seg.a.x, ay = seg.a.y
     const bx = seg.b.x, by = seg.b.y
     const isActive = activeWallIdx === i
-    const clr = isActive ? '#f0b429' : '#4a9eff'
+    const clr = '#4a9eff'
     const edx = bx - ax, edy = by - ay
     const elen = Math.hypot(edx, edy) || 1
     const nx = ws * edy / elen
@@ -234,6 +235,7 @@ function EdgeDims({ walls, zoom, gridSize, activeWallIdx = null }) {
 
     return (
       <Group key={i} listening={false}>
+        {isActive && <Line name="wall-select" points={[ax, ay, bx, by]} stroke={WALL_SELECT} strokeWidth={3} strokeScaleEnabled={false} lineCap="butt" listening={false} perfectDrawEnabled={false} />}
         <Line points={[d1x, d1y, d2x, d2y]} stroke={clr} strokeWidth={lw} opacity={0.8} listening={false} />
         <Line points={[ax + nx * 4 / zoom, ay + ny * 4 / zoom, d1x, d1y]} stroke={clr} strokeWidth={lw} opacity={0.5} listening={false} />
         <Line points={[bx + nx * 4 / zoom, by + ny * 4 / zoom, d2x, d2y]} stroke={clr} strokeWidth={lw} opacity={0.5} listening={false} />
