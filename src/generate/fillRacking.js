@@ -241,7 +241,8 @@ function fillParams(settings, rules) {
   const mhe = rules.mhe?.[set.mhe] || {}
   const aisleFt = set.aisleFt ?? mhe.aisleFt ?? 10.5
   const spec = layoutSpec({ beamIn: set.beamIn, palletWIn: set.palletWIn, palletDIn: set.palletDIn }, rules)
-  return { set, aisleFt, travelFt: Math.min(mhe.travelFt ?? 8, aisleFt), crossAisleFt: mhe.crossAisleFt ?? aisleFt, ...spec }
+  // (a Custom design's own space to move — fill-design-aisle)
+  return { set, aisleFt, travelFt: Number.isFinite(set.travelFt) && set.travelFt > 0 ? set.travelFt : Math.min(mhe.travelFt ?? 8, aisleFt), crossAisleFt: Number.isFinite(set.crossAisleFt) && set.crossAisleFt > 0 ? set.crossAisleFt : mhe.crossAisleFt ?? aisleFt, ...spec }
 }
 /** World px ↔ (run, stack) feet. Horizontal: run = x, stack = y. */
 const rsOf = (vert, gridSize) => (p) => (vert ? { r: p.y / gridSize, s: p.x / gridSize } : { r: p.x / gridSize, s: p.y / gridSize })

@@ -9,7 +9,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useNotice, clearNotice, NOTICE_MS, NOTICE_UNDO_MS } from '../utils/notice'
 import { useAreaPrompt, answerArea, answerChoice, dismissAreaNote } from '../utils/rackingAreaTool'
 import { FILL_TOOL, useSectionAsk, dismissSectionAsk, makeFillSection } from '../utils/fillTool'
-import { mheProfiles, CUSTOM } from '../utils/equipment'
 import { SPLIT_TOOL } from '../utils/splitTool'
 import { B, MONO, modePill, Sep, barBtn, btnClass, CloseBtn, NoticePill } from '../studio/barParts'
 
@@ -200,10 +199,9 @@ function Notices() {
     out.push(<Timed key="group-result" label="Row group result" ms={undoableResult(message) ? NOTICE_UNDO_MS : NOTICE_MS} stamp={message} onDone={close}><NoticePill label="Row group result" lines={lines} onUndo={undoableResult(message) ? undo(close) : null} onClose={close}>{message}</NoticePill></Timed>)
   }
   const ask = useSectionAsk(s => s.ask)
-  /* after a fill outside every section: "Racks placed · Make section" — it goes by itself (NOTICE_UNDO_MS, hover pauses);
-     under the project forklift's minimum the question with its reason and Equipment picker, which stays until answered */
-  if (ask && ask.under) out.push(<SectionAsk key="section-ask" ask={ask} />)
-  else if (ask) out.push(
+  /* after every fill outside a section: "Racks placed · Make section" — it goes by itself (NOTICE_UNDO_MS, hover pauses).
+     (fill-design-aisle: the narrow fill's question is gone — a fill is checked against the equipment it was made for) */
+  if (ask) out.push(
     <Timed key="racks-placed" label="Racks placed" ms={NOTICE_UNDO_MS} stamp={ask.at} onDone={dismissSectionAsk}>
       <SectionChanges />
       <NoticePill label="Racks placed" onClose={dismissSectionAsk} closeLabel="Dismiss"
@@ -220,11 +218,6 @@ function Notices() {
   return out.length ? <div style={stack}>{out}</div> : null
 }
 
-/** A fill outside every section with an aisle under the project forklift's minimum (utils/fillTool.js): its racks are
- *  placed; "Make this a section?" with an Equipment picker — Make section adds a section of the fill's box with that
- *  equipment, in the fill's own undo step; ✕ leaves the racks as they are (Check layout lists the narrow aisles). A
- *  question: it stays until answered. */
-const ftIn = (ft) => { const t = Math.round(ft * 12), f = Math.floor(t / 12); return `${f}′ ${t - f * 12}″` }
 /* a section drawn, moved or dropped meanwhile: the notice goes (ui-polish-3 — a section asks nothing; its Equipment is set
    in its card) */
 function SectionChanges() {
@@ -233,36 +226,6 @@ function SectionChanges() {
   useEffect(() => { if (secs !== first.current) dismissSectionAsk() }, [secs])
   return null
 }
-function SectionAsk({ ask }) {
-  const P = mheProfiles()
-  const [pick, setPick] = useState(ask.pick || Object.keys(P)[0])
-  // Custom: the two widths, typed (the aisle typed for the fill to pick; the space to move as much, at most 8')
-  const [pickFt, setPickFt] = useState(String(ask.aisleFt)), [moveFt, setMoveFt] = useState(String(Math.min(8, ask.aisleFt)))
-  const small = { width: 46, height: 26, padding: '0 6px', borderRadius: 6, background: B.inset, border: 0, color: B.strong, fontSize: 12, fontFamily: MONO }
-  const okCustom = parseFloat(pickFt) > 0 && parseFloat(moveFt) > 0
-  return (
-    <div style={live}>
-      <SectionChanges />
-      <NoticePill role="alertdialog" label="Make this a section?" onClose={dismissSectionAsk} closeLabel="Dismiss" closeTitle="Keep the racks as they are"
-        lines={[{ text: `Its aisle, ${ftIn(ask.aisleFt)}, is below the ${ask.equipment.label} minimum ${ftIn(ask.equipment.minAisleFt)}.`, tone: 'amber' }]}
-        actions={<>
-          <select aria-label="Equipment" className="st-field" value={pick} onChange={e => setPick(e.target.value)}
-            style={{ height: 26, padding: '0 6px', borderRadius: 6, background: B.inset, border: 0, color: B.strong, fontSize: 12 }}>
-            {Object.values(P).map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-            <option value={CUSTOM}>Custom</option>
-          </select>
-          {pick === CUSTOM && <>
-            <input aria-label="Aisle to pick (ft)" title="Aisle to pick — turn and put away (ft)" className="st-field" value={pickFt} onChange={e => setPickFt(e.target.value)} style={small} />
-            <input aria-label="Space to move (ft)" title="Space to move — drive straight (ft)" className="st-field" value={moveFt} onChange={e => setMoveFt(e.target.value)} style={small} />
-          </>}
-          <button type="button" className={btnClass(true)} style={barBtn(true)} disabled={pick === CUSTOM && !okCustom} onClick={() => makeFillSection(useCanvasStore, pick, pick === CUSTOM ? { pickFt: parseFloat(pickFt), moveFt: parseFloat(moveFt) } : null)}>Make section</button>
-        </>}>
-        Make this a section?
-      </NoticePill>
-    </div>
-  )
-}
-
 /** The Row group's mode bar and the notices (both fixed: the mode bar at the top, the notices above the tool pill). */
 export function RowGroupBar() {
   return <><GroupBar /><Notices /></>

@@ -2,7 +2,7 @@ import { HOME_TOOL } from '../utils/homeTool'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
 import { useEffect, useState } from 'react'
-import { useFillTool, useRackingSettings, cancelFill, setFillAisle, fillEquipment, fillSection } from '../utils/fillTool'
+import { useFillTool, useRackingSettings, cancelFill, setFillAisle, fillEquipment, fillSection, setFillDesign, setFillCustom } from '../utils/fillTool'
 import { B, MONO, modePill, Sep, Seg, CloseBtn, barBtn, btnClass } from '../studio/barParts'
 
 /* the bar's 26h inset value (C10's Aisle) and its fields (Beam, Max run) */
@@ -38,6 +38,19 @@ function AisleField({ forkliftFt }) {
   )
 }
 
+/* A Custom design's width (fill-design-aisle): typed in feet; `placeholder` while empty (the space to move: as much as the
+   aisle to pick). */
+function WidthField({ k, label, title, placeholder }) {
+  const v = useFillTool(st => st.custom[k])
+  const [text, setText] = useState(v ? String(+v.toFixed(2)) : '')
+  useEffect(() => setText(v ? String(+v.toFixed(2)) : ''), [v])
+  const commit = () => { const ft = text.trim() ? parseAisleFt(text) : null; if (text.trim() && ft == null) { setText(v ? String(+v.toFixed(2)) : ''); return } setFillCustom(k, ft) }
+  return (
+    <input aria-label={label} title={title} className="st-field" value={text} placeholder={placeholder} onChange={e => setText(e.target.value)} onBlur={commit}
+      onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur() }} style={{ ...valueBox, width: 44 }} />
+  )
+}
+
 /* Fill racking's mode bar (STUDIO.md §1; design/studio/Studio.dc.html C10), top 76, while the tool is on: the
    Racking settings the fill uses — Rows ↔ | Rows ↕ (the orientation), Beam and Max run (kept from the bar before),
    the aisle it leaves — one source (ui-polish-3): over a section (the pointer, or the drag started in one) READ-ONLY, the
@@ -50,11 +63,18 @@ export function FillOptionsBar() {
   const plan = useFillTool(st => st.plan)
   // the equipment this fill works to: the section the drag starts in, else the project's forklift (utils/fillTool.js)
   const from = useFillTool(st => st.drag?.from || st.at || null), typed = useFillTool(st => st.aisleFt)
+  const design = useFillTool(st => st.design), custom = useFillTool(st => st.custom)
   const objects = useCanvasStore(st => st.objects)
   const eq = fillEquipment(objects, from), inSection = !!fillSection(objects, from)
-  const under = !inSection && typed && Number.isFinite(eq.minAisleFt) && typed < eq.minAisleFt - 1e-9
-  // the bar goes when the tool ends: a typed aisle goes with it
-  useEffect(() => () => setFillAisle(null), [])
+  const isCustom = !inSection && design === 'custom'
+  const under = !inSection && !isCustom && typed && Number.isFinite(eq.minAisleFt) && typed < eq.minAisleFt - 1e-9
+  // the bar goes when the tool ends: a typed aisle and the Custom design go with it
+  useEffect(() => () => { setFillAisle(null); setFillDesign('project'); setFillCustom('pickFt', null); setFillCustom('moveFt', null) }, [])
+  /* Equipment (fill-design-aisle), outside every section: the project's forklift (its widths; the Aisle typed as before)
+     or Custom — the aisle to pick and the space to move it is designed for (the space to move: as much when left out);
+     Custom starts at the project forklift's aisle */
+  const project = fillEquipment(objects, null)
+  const toCustom = () => { if (!(custom.pickFt > 0)) setFillCustom('pickFt', typed || project.aisleFt); setFillDesign('custom') }
   const num = (k, v) => { const n = Number(v); if (Number.isFinite(n) && n > 0) s.setSetting(k, n) }
   const close = () => { cancelFill(); useCanvasStore.getState().setActiveTool(HOME_TOOL) }
   return (
@@ -73,10 +93,16 @@ export function FillOptionsBar() {
       <input aria-label="Max rack run (ft)" className="st-field" style={{ ...valueBox, width: 52 }} defaultValue={s.maxRunFt} key={'m' + s.maxRunFt} onBlur={e => num('maxRunFt', e.target.value)} />
       <span style={word}>ft</span>
       {/* the pallet, the forklift (its aisle) and the wall clearance: Project settings (utils/project.js) */}
-      <span style={word}>Aisle</span>
+      {!inSection && <Seg aria="Equipment" options={[
+        { value: 'project', label: 'Project forklift', aria: 'Project forklift', title: `${project.label} — its widths (Project settings)`, on: design !== 'custom', onClick: () => setFillDesign('project') },
+        { value: 'custom', label: 'Custom', aria: 'Custom', title: 'The aisle widths this fill is designed for — its racks are checked against them', on: design === 'custom', onClick: toCustom },
+      ]} />}
       {inSection
-        ? <span aria-label="Aisle" data-aisle-from="section" title="The section's equipment — change it in the section's card" style={{ ...valueBox, fontFamily: 'inherit', color: B.text }}>{eq.label} · {+Number(eq.aisleFt).toFixed(2)} ft <span style={{ color: B.muted, marginLeft: 4 }}>(from section)</span></span>
-        : <AisleField forkliftFt={eq.aisleFt ?? 10.5} />}
+        ? <><span style={word}>Aisle</span><span aria-label="Aisle" data-aisle-from="section" title="The section's equipment — change it in the section's card" style={{ ...valueBox, fontFamily: 'inherit', color: B.text }}>{eq.label} · {+Number(eq.aisleFt).toFixed(2)} ft <span style={{ color: B.muted, marginLeft: 4 }}>(from section)</span></span></>
+        : isCustom
+          ? <><span style={word}>Aisle to pick</span><WidthField k="pickFt" label="Aisle to pick (ft)" title="The aisle to pick — turn and put away (ft)" />
+              <span style={word}>Space to move</span><WidthField k="moveFt" label="Space to move (ft)" title="The space to move — drive straight (ft); empty: as much as the aisle to pick" placeholder={custom.pickFt ? String(+custom.pickFt.toFixed(2)) : ''} /></>
+          : <><span style={word}>Aisle</span><AisleField forkliftFt={eq.aisleFt ?? 10.5} /></>}
       <Sep />
       {plan
         ? <span aria-label="Fill estimate" style={word}><span style={{ fontFamily: MONO, color: B.text }}>{plan.rows}</span> row{plan.rows === 1 ? '' : 's'} · <span style={{ fontFamily: MONO, color: B.accent }}>{plan.positions.toLocaleString('en-US')}</span> pos</span>

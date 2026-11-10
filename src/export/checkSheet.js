@@ -7,10 +7,13 @@ const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
 const INK = '#1F2321', WORDS = '#767C74', RULE = '#D9D6CC', ERR = '#B23A2A', WARN = '#9A5F0A'
 const FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 
-/** `shown`: { errors, warnings, marked } → [{ svg }]. Sizes in mm. */
-export function buildCheckSheets(shown, { title = '', paperW = 841, paperH = 594 } = {}) {
-  if (!shown) return []
+/** `shown`: { errors, warnings, marked } → [{ svg }]. Sizes in mm. `notes` (fill-design-aisle): the layout's Custom
+ *  designs — "Designed for 6 ft aisles, equipment to be confirmed" — listed first, in the words colour. */
+export function buildCheckSheets(shown, { title = '', paperW = 841, paperH = 594, notes = [] } = {}) {
+  if (!shown && !notes.length) return []
+  shown = shown || { errors: [], warnings: [], marked: [] }
   const groups = [
+    { name: 'Design', colour: WORDS, items: notes.map(text => ({ text })), note: true },
     { name: 'Errors', colour: ERR, items: shown.errors || [] },
     { name: 'Warnings', colour: WARN, items: shown.warnings || [] },
     { name: 'Accepted — marked as OK', colour: WORDS, items: shown.marked || [], accepted: true },

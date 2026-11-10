@@ -48,7 +48,7 @@ import { aisleLabelOps, aisleLabelBoxes, clearanceOps, clearanceSolids, blockedF
 import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
 import { columnGridOps } from '../render/columnDraw'
 import { aisleLabelLayout, aisleGapShown, gapShown, gapBase } from '../canvas2/hitTest'
-import { equipmentResolver } from '../utils/equipment'
+import { equipmentResolver, designNotes } from '../utils/equipment'
 import { crossAisleLabels } from '../canvas2/crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
@@ -562,7 +562,7 @@ export function exportLayoutToPDF(filename, storeState) {
   // then the bill of materials (utils/bom.js; export/bomSheet.js), on the plan's paper size
   const bomPages = buildBomSheets(computeBom(objects, storeState.elevations, { gridSize }), { title, paperW, paperH })
   // then the layout check: errors, warnings, and the items marked as OK, listed as accepted (export/checkSheet.js)
-  const checkPages = buildCheckSheets(checkForExport(storeState), { title, paperW, paperH })
+  const checkPages = buildCheckSheets(checkForExport(storeState), { title, paperW, paperH, notes: designNotes(storeState.objects || []) })
 
   const html = `<!DOCTYPE html>
 <html>

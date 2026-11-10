@@ -73,27 +73,72 @@ export function sectionProfile(s, profiles = null) {
   return P[k] || MHE_PROFILES[k] || null
 }
 
+/* ── the equipment a racking area was designed for (fill-design-aisle): each Fill and each Generate stores it on the area
+   it makes — `equip`: { key } (a truck of the forklift list) or { custom: { pickFt, moveFt } } (a Fill's Custom widths:
+   the aisle to pick, and the space to move — as much when left out). ── */
+/** Racking area `area`'s stored equipment as a profile, or null (none stored: an area made before). A Custom design's
+ *  key is its two widths, so every area designed for the same widths is one profile. */
+export function areaProfile(area, profiles = null) {
+  const e = area?.equip
+  if (!e || typeof e !== 'object') return null
+  if (e.custom) {
+    const pick = Number(e.custom.pickFt), move = Number(e.custom.moveFt)
+    if (!(pick > 0)) return null
+    const mv = move > 0 ? move : pick
+    return { key: `design:${pick}/${mv}`, label: 'Custom', aisleFt: pick, minAisleFt: pick, travelFt: mv, crossAisleFt: mv, retrievalFt: 4, custom: true, design: true }
+  }
+  if (typeof e.key === 'string' && e.key && !e.key.includes(':')) { const P = profiles || mheProfiles(); return P[e.key] || MHE_PROFILES[e.key] || null }
+  return null
+}
+/** The Custom designs of a layout's racks that no section governs: the layout summary's and the PDF check page's line,
+ *  one per design — "Designed for 6 ft aisles, equipment to be confirmed". */
+export function designNotes(objects) {
+  const list = objects || [], m = membership(list), inSec = new Set([...m.bySection.values()].flat())
+  const areas = new Map(list.filter(o => o?.type === 'racking_area').map(a => [a.id, areaProfile(a)]))
+  const seen = new Map()
+  for (const o of list) {
+    if (!o || !o.areaId || inSec.has(o.id) || !/^rack_/.test(o.type || '')) continue
+    const p = areas.get(o.areaId)
+    if (p && p.design && !seen.has(p.key)) seen.set(p.key, p)
+  }
+  return [...seen.values()].map(p => `Designed for ${+p.aisleFt.toFixed(2)} ft aisles, equipment to be confirmed`)
+}
+
 /** Stricter of two profiles: the wider pick aisle (then the wider drive). */
 export const stricter = (a, b) => (!a ? b : !b ? a : (b.aisleFt > a.aisleFt + 1e-9 || (Math.abs(b.aisleFt - a.aisleFt) < 1e-9 && (b.travelFt ?? 0) > (a.travelFt ?? 0))) ? b : a)
 
 const cache = new WeakMap()
-/** The aisle equipment of every rack in `objects`, the project's forklift `base` for racks in no section (or in one on
- *  the project's forklift). → { single (no rack on other equipment), of(rackId) → profile, pair(...ids) → the stricter
- *  profile of those racks (none of them a rack: base), inUse: [profiles, base first] }. */
+/** The aisle equipment of every rack in `objects` (fill-design-aisle): its section's when it is in one (a section on the
+ *  project's forklift: `base`); else the equipment its racking area was designed for (areaProfile — a Fill's, a
+ *  Generate's); else the project's forklift `base` (racks placed by hand, areas from before). → { single (no rack on
+ *  other equipment), of(rackId) → profile, pair(...ids) → the stricter profile of those racks (none of them a rack: base),
+ *  inUse: [profiles, base first] }. */
 export function equipmentResolver(objects, base, profiles = null) {
   base = base || MHE_PROFILES.reach
   const list = objects || []
   const hit = cache.get(list)
   if (hit && hit.base === base && hit.trucks === projectTrucks) return hit.r
   const secs = list.filter(o => equipmentOf(o) && equipmentOf(o) !== base.key)
+  // only areas designed for other equipment than the project's forklift (a Generate on it adds nothing to resolve)
+  const areas = list.filter(o => o?.type === 'racking_area' && o.equip && (o.equip.custom || o.equip.key !== base.key))
   let r
-  if (!secs.length) r = { single: true, of: () => base, pair: () => base, inUse: [base] }
+  if (!secs.length && !areas.length) r = { single: true, of: () => base, pair: () => base, inUse: [base] }
   else {
     const P = profiles || mheProfiles(), m = membership(list), rackP = new Map()
     for (const s of secs) {
       const p = sectionProfile(s, P)
       if (!p) continue
       for (const id of m.bySection.get(s.id) || []) rackP.set(id, p)
+    }
+    // a rack in no section: its racking area's stored equipment (a section always wins, its own or the project's)
+    if (areas.length) {
+      const inSec = new Set([...m.bySection.values()].flat())
+      const byArea = new Map(areas.map(a => [a.id, areaProfile(a, P)]))
+      for (const o of list) {
+        if (!o || !o.areaId || inSec.has(o.id) || !/^rack_/.test(o.type || '')) continue
+        const p = byArea.get(o.areaId)
+        if (p && p.key !== base.key) rackP.set(o.id, p)
+      }
     }
     const of = (id) => rackP.get(id) || base
     const pair = (...ids) => { let p = null; for (const id of ids.flat()) if (id != null) p = stricter(p, of(id)); return p || base }

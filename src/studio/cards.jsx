@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
+import { designNotes } from '../utils/equipment'
 import { useBayLedger } from '../components/RightPanel/useBayLedger'
 import { getLayoutCapacity, getRackCapacity } from '../utils/capacity'
 import { useColumnCheck } from '../generate/useColumnCheck'
@@ -56,7 +57,15 @@ export function LayoutBlock({ last = true }) {
   const items = f.racks > 0
     ? [{ label: 'positions', value: n(f.gross) }, { label: 'usable', value: n(f.usable), accent: true }, { label: 'racks', value: n(f.racks) }]
     : [{ label: 'positions', value: n(f.gross) }, ...(f.building ? [{ label: 'building', value: f.building }] : [])]
-  return <Sec label="Layout" gap={8} last={last} aria-label="Layout totals"><Totals items={items} /></Sec>
+  // a fill's Custom design (fill-design-aisle): "Designed for 6 ft aisles, equipment to be confirmed"
+  const objs = useCanvasStore(s => s.objects)
+  const notes = useMemo(() => designNotes(objs), [objs])
+  return (
+    <Sec label="Layout" gap={8} last={last} aria-label="Layout totals">
+      <Totals items={items} />
+      {notes.map(t => <span key={t} data-design-note style={{ color: '#F2C77A', fontSize: 12, lineHeight: 1.45 }}>{t}</span>)}
+    </Sec>
+  )
 }
 
 /** C7: nothing selected. */
