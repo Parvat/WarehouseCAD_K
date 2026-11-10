@@ -42,6 +42,7 @@ import { columnAt, clickColumn, pickedColumn } from './columnPick'
 import { lineIndexOf, dragLine, endLineDrag } from './columnLines'
 import { onLabel, polygonOf, movePoint, sectionAt } from '../utils/sectionAreas'
 import { membersOf, clampSectionMove, clampSectionBox, clampSectionPoint } from '../utils/sectionEdit'
+import { sectionSnapLines, snapSectionEdges, sectionBox, SECTION_SNAP_PX } from '../utils/sectionSnap'
 import { useSectionRename } from './sectionTool'
 import { POINT_HANDLE_PX } from './SectionShape'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
@@ -737,7 +738,10 @@ export function useCanvasInteraction({
           return
         }
       }
-      const padWall = evt.button === 0 ? wallBeatsPadding(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize, hitObj) : null
+      // a section's name chip, shown, is drawn above everything: a press on it is the section's, a wall under it too (sections-3 —
+      // the chip can sit on the outline over a wall)
+      const onChip = !!hitObj && hitObj.type === 'section_area' && onLabel(hitObj, world.x, world.y, view.current.zoom, st.objects)
+      const padWall = evt.button === 0 && !onChip ? wallBeatsPadding(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize, hitObj) : null
       if (evt.button === 0 && (!hitObj || FP_SET_INPUT.has(hitObj.type) || padWall)) {
         const wallHit = padWall || fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
         if (wallHit) {
@@ -1041,7 +1045,8 @@ export function useCanvasInteraction({
           dx = rdx; dy = rdy
         }
 
-        const snapFn = SNAP_FREE.has(origObj.type)
+        // (a section's edge with Alt held: no snap at all, the grid's neither — sections-3)
+        const snapFn = SNAP_FREE.has(origObj.type) || (origObj.type === 'section_area' && snapOffKey(evt))
           ? (v => v)
           : (v => (st.snapToGrid ? snapToGrid(v, st.gridSize, st.snapUnit) : v))
         /* A zone's edge or corner snaps exactly as a zone MOVE does (zoneResizeSnap.js: the move's own smart
@@ -1102,8 +1107,23 @@ export function useCanvasInteraction({
         }
         /* a section's edge stops at the building's inner wall face and at a neighbour's edge (utils/sectionEdit.js) */
         if (origObj.type === 'section_area') {
-          const b = clampSectionBox(st.objects, origObj, { x: updates.x ?? origObj.x, y: updates.y ?? origObj.y, w: updates.width ?? origObj.width, h: updates.height ?? origObj.height }, { gridSize: st.gridSize })
+          const nb = { x: updates.x ?? origObj.x, y: updates.y ?? origObj.y, w: updates.width ?? origObj.width, h: updates.height ?? origObj.height }
+          /* sections-3: the edges the handle moves snap (utils/sectionSnap.js), a dashed guide through the matched edge;
+             Alt held: none */
+          let secGuides = []
+          if (!noSnap) {
+            const L = sectionSnapLines(st.objects, new Set([origObj.id]), st.gridSize || 40), tol = SECTION_SNAP_PX / view.current.zoom
+            const mx = [], my = []
+            if (handle.includes('l')) mx.push(['l', nb.x]); if (handle.includes('r')) mx.push(['r', nb.x + nb.w])
+            if (handle.includes('t')) my.push(['t', nb.y]); if (handle.includes('b')) my.push(['b', nb.y + nb.h])
+            const r = snapSectionEdges({ x: mx.map(e => e[1]), y: my.map(e => e[1]) }, L, tol)
+            if (r.dx && mx.length) { if (mx[0][0] === 'l') { nb.x += r.dx; nb.w -= r.dx } else nb.w += r.dx }
+            if (r.dy && my.length) { if (my[0][0] === 't') { nb.y += r.dy; nb.h -= r.dy } else nb.h += r.dy }
+            secGuides = r.guides.map(g => (g.axis === 'x' ? { ...g, from: Math.min(g.from, nb.y), to: Math.max(g.to, nb.y + nb.h) } : { ...g, from: Math.min(g.from, nb.x), to: Math.max(g.to, nb.x + nb.w) }))
+          }
+          const b = clampSectionBox(st.objects, origObj, nb, { gridSize: st.gridSize })
           Object.assign(updates, { x: b.x, y: b.y, width: b.w, height: b.h })
+          setSmartGuides(secGuides)
         }
 
         st.updateObject(objId, updates)
@@ -1395,7 +1415,20 @@ export function useCanvasInteraction({
         /* a section (and the racks it carries) stays inside its building and off its neighbours: stopped at the inner
            wall face and at a neighbour's edge (utils/sectionEdit.js) */
         { const secs = d.ids.map(id => st.objects.find(o => o.id === id)).filter(o => o && o.type === 'section_area')
-          for (const g of secs) ({ dx, dy } = clampSectionMove(st.objects, g, dx, dy, { gridSize: st.gridSize, moving: secs.map(o => o.id) })) }
+          for (const g of secs) ({ dx, dy } = clampSectionMove(st.objects, g, dx, dy, { gridSize: st.gridSize, moving: secs.map(o => o.id) }))
+          /* sections-3: its edges snap onto other sections' edges, the inner walls, zone edges and rack ends within 8 screen
+             px (utils/sectionSnap.js — not what moves with it), a dashed guide through the matched edge; then kept in again */
+          if (secs.length && !noSnap) {
+            if (!d.secLines) d.secLines = sectionSnapLines(st.objects, new Set([...(d.movedIds || []), ...d.ids]), st.gridSize || 40)
+            const bs = secs.map(sectionBox), span = { x0: Math.min(...bs.map(q => q.x0)) + dx, x1: Math.max(...bs.map(q => q.x1)) + dx, y0: Math.min(...bs.map(q => q.y0)) + dy, y1: Math.max(...bs.map(q => q.y1)) + dy }
+            const r = snapSectionEdges({ x: bs.flatMap(q => [q.x0 + dx, q.x1 + dx]), y: bs.flatMap(q => [q.y0 + dy, q.y1 + dy]) }, d.secLines, SECTION_SNAP_PX / view.current.zoom, span)
+            if (r.dx || r.dy) {
+              let ndx = dx + r.dx, ndy = dy + r.dy
+              for (const g of secs) ({ dx: ndx, dy: ndy } = clampSectionMove(st.objects, g, ndx, ndy, { gridSize: st.gridSize, moving: secs.map(o => o.id) }))
+              dx = ndx; dy = ndy
+            }
+            guides.push(...r.guides)
+          } }
         /* in-line snap (canvas2/inlineSnap.js): the grabbed rack's end near another rack's end in its
            line goes onto that rack's end upright, shared — it wins over the guides and the grid (a dragged
            Row group row: its excluded racks aren't in-line targets either, and the axis lock still wins) */

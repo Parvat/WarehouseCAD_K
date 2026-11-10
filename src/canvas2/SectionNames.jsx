@@ -11,7 +11,7 @@ import { useViewPrefs } from '../studio/viewPrefs'
 import { useHoverTarget } from './hoverTarget'
 import { useSectionHover, useSectionRename } from './sectionTool'
 import { nameShownBy, useShownNames } from './sectionNameShown'
-import { isSection, labelBox, LABEL, sectionStyle } from '../utils/sectionAreas'
+import { isSection, labelBox, LABEL } from '../utils/sectionAreas'
 import { layerShown } from '../utils/layers'
 import { useLiveObjects, useView } from './live'
 
@@ -31,13 +31,13 @@ export function SectionNames() {
   return (
     <Group name="section-names" listening={false}>
       {secs.map(s => {
-        const b = labelBox(s, zoom, objects), lit = selectedIds.includes(s.id), st = sectionStyle(s, lit)
+        // the dark chip (sections-3): inside the section in its largest empty area, else on the outline outside it
+        const b = labelBox(s, zoom, objects)
         return (
           <Group key={s.id} name={'section-tab:' + s.id} listening={false}>
-            <Rect name="section-tab" x={b.x} y={b.y} width={b.w} height={b.h} fill="#FFFFFF" stroke={st.stroke} strokeWidth={1}
-              strokeScaleEnabled={false} cornerRadius={2 / zoom} listening={false} perfectDrawEnabled={false} />
-            <Text name="section-label" x={b.x + LABEL.padX / zoom} y={b.y + LABEL.padY / zoom} text={s.label || 'Section'} fontSize={LABEL.px / zoom}
-              fontStyle="600" fontVariant="small-caps" fontFamily={LABEL.font} fill={st.label || LABEL.color} listening={false} />
+            <Rect name="section-tab" x={b.x} y={b.y} width={b.w} height={b.h} fill={LABEL.bg} cornerRadius={4 / zoom} listening={false} perfectDrawEnabled={false} />
+            <Text name="section-label" x={b.x} y={b.y} width={b.w} height={b.h} align="center" verticalAlign="middle" text={s.label || 'Section'} fontSize={LABEL.px / zoom}
+              fontStyle="600" fontFamily={LABEL.font} fill={LABEL.color} listening={false} />
           </Group>
         )
       })}

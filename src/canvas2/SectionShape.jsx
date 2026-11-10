@@ -36,6 +36,7 @@ export function SectionDraft() {
   const tool = useCanvasStore(s => s.activeTool), zoom = useCanvasStore(s => s.zoom) || 1
   const objects = useCanvasStore(s => s.objects)
   const sides = useSectionTool(s => s.sides), hot = useSectionTool(s => s.hot)
+  const snapGuides = useSectionTool(s => s.snapGuides) || []
   // the wall close: both sides offered, the one under the pointer lit — the next click picks it
   if (sides) return (
     <Group name="section-draft" listening={false}>
@@ -46,7 +47,13 @@ export function SectionDraft() {
   if (drag) {
     // the box as the release will make it: kept inside the building and off the neighbours (utils/sectionEdit.js)
     const b = drawnBox(objects, drag.from, drag.to, gs) || { x: drag.from.x, y: drag.from.y, w: 0, h: 0 }
-    return <Rect name="section-draft" x={b.x} y={b.y} width={b.w} height={b.h} fill="rgba(123, 211, 164, 0.10)" stroke="#2E7D5B" strokeWidth={1.5} dash={[6, 4]} strokeScaleEnabled={false} listening={false} />
+    return (
+      <Group name="section-draft" listening={false}>
+        <Rect x={b.x} y={b.y} width={b.w} height={b.h} fill="rgba(123, 211, 164, 0.10)" stroke="#2E7D5B" strokeWidth={1.5} dash={[6, 4]} strokeScaleEnabled={false} listening={false} />
+        {/* the snap's guides (sections-3): dashed, through the matched edge */}
+        {snapGuides.map((g, i) => <Line key={i} name="section-snap-guide" points={g.axis === 'x' ? [g.val, g.from, g.val, g.to] : [g.from, g.val, g.to, g.val]} stroke="#22c55e" strokeWidth={1} dash={[6, 3]} opacity={0.9} strokeScaleEnabled={false} listening={false} />)}
+      </Group>
+    )
   }
   if (tool !== SECTION_PEN_TOOL || !pen.length) return null
   const pts = [...pen, ...(at ? [[at.x, at.y]] : [])].flat()

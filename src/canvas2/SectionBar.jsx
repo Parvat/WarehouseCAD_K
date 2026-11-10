@@ -53,7 +53,7 @@ export function SectionRename() {
     <input ref={ref} aria-label="Rename section" value={text} onChange={e => setText(e.target.value)} autoFocus
       onBlur={() => done(true)} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false) }}
       style={{ position: 'absolute', zIndex: 145, left: b.x * view.zoom + view.panX - 3, top: b.y * view.zoom + view.panY - 3, width: Math.max(120, b.w * view.zoom + 24), height: LABEL.px + 10,
-        boxSizing: 'border-box', padding: '0 3px', border: '1px solid #2E7D5B', borderRadius: 3, outline: 'none', background: '#FFFFFF', color: LABEL.color,
-        fontFamily: LABEL.font, fontSize: LABEL.px, fontWeight: 600, fontVariant: 'small-caps' }} />
+        boxSizing: 'border-box', padding: '0 3px', border: '1px solid #2E7D5B', borderRadius: 3, outline: 'none', background: LABEL.bg, color: LABEL.color,
+        fontFamily: LABEL.font, fontSize: LABEL.px, fontWeight: 600 }} />
   )
 }

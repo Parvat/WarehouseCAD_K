@@ -216,7 +216,7 @@ function OverlaysView({
         const sw = g.isWall ? 1.5 : 1
         const points = g.axis === 'x' ? [g.val, g.from, g.val, g.to] : [g.from, g.val, g.to, g.val]
         return (
-          <Line key={i} points={points}
+          <Line key={i} points={points} name={g.section ? 'section-snap-guide' : undefined}
             stroke={color} strokeWidth={sw} dash={[6, 3]} opacity={0.9}
             strokeScaleEnabled={false} perfectDrawEnabled={false}
             shadowForStrokeEnabled={false} listening={false} />

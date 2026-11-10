@@ -17,6 +17,7 @@ import { mheProfiles, sectionProfile, CUSTOM, equipmentResolver } from './equipm
 import { drawnRect } from './sectionEdit'
 import { snapshotOf } from './elevations'
 import { autoSave, serializeScene } from './saveLoad'
+import { useCanvasStore } from '../store/useCanvasStore'
 
 export const FILL_TOOL = 'fill_racking'
 
@@ -75,7 +76,9 @@ export function fillCustom() {
 /** The pointer moved with no box dragged: where the next fill would start. */
 export const hoverFill = (world) => { const a = useFillTool.getState().at; if (!a || a.x !== world.x || a.y !== world.y) useFillTool.setState({ at: world }) }
 /** The section a fill started (or would start) at `from` works in, or null — its aisle is that section's (one source). */
-export const fillSection = (objects, from) => (objects && from ? sectionAt(objects, from) : null)
+/* (sections-3: a section SELECTED governs the fill — a drag started anywhere is clipped to it, with its equipment;
+   none selected, the section the drag starts in, as before) */
+export const fillSection = (objects, from) => (objects ? governingSection(objects, from) : null)
 /** The aisle typed in the bar for this fill (ft, > 0), or null for the forklift's. */
 export const setFillAisle = (ft) => useFillTool.setState({ aisleFt: Number.isFinite(ft) && ft > 0 ? ft : null })
 /** The equipment a fill works to (aisle-equip): the equipment of the section the drag starts in (utils/equipment.js —
@@ -84,7 +87,7 @@ export const setFillAisle = (ft) => useFillTool.setState({ aisleFt: Number.isFin
 export function fillEquipment(objects = null, from = null) {
   const s = rackingSettings(), P = mheProfiles()
   const project = { ...(P[s.mhe] || P.reach), aisleFt: s.aisleFt ?? (P[s.mhe] || P.reach).aisleFt }
-  const sec = objects && from ? sectionAt(objects, from) : null
+  const sec = objects ? governingSection(objects, from) : null
   if (sec) return sectionProfile(sec, P) || project   // a section's own (Custom: its two widths), else the project's
   // outside every section: the bar's Custom design, else the project's forklift
   const c = fillCustom()
@@ -111,7 +114,7 @@ const crossOf = (p) => (Number.isFinite(p?.crossAisleFt) && p.crossAisleFt > 0 ?
  *  the one the drag starts in. */
 function fillClear(objects, from) {
   const s = rackingSettings(), P = mheProfiles(), R = equipmentResolver(objects, P[s.mhe] || P.reach)
-  const own = sectionAt(objects, from)
+  const own = governingSection(objects, from)
   return {
     rackGap: (o) => crossOf(R.of(o.id)),
     sections: (objects || []).filter(o => isSection(o) && o !== own).map(o => { const p = polygonOf(o), xs = p.map(v => v[0]), ys = p.map(v => v[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } }),
@@ -164,6 +167,41 @@ export const boxOfDrag = (d) => d && ({ x: Math.min(d.from.x, d.to.x), y: Math.m
 
 /* ── a fill inside a section (STUDIO.md §7a Sections) ── */
 const sectionAt = (objects, p) => (objects || []).find(o => isSection(o) && contains(o, p.x, p.y)) || null
+/** The section selected now (the first one), or null. */
+function selectedSection(objects) {
+  let ids = []
+  try { ids = useCanvasStore.getState().selectedIds || [] } catch { /* no store */ }
+  if (!ids.length) return null
+  const set = new Set(ids)
+  return (objects || []).find(o => isSection(o) && set.has(o.id)) || null
+}
+/** The section a fill works in: the one selected, else the one holding `p` (where the drag starts), else none. */
+function governingSection(objects, p) { return selectedSection(objects) || (p ? sectionAt(objects, p) : null) }
+
+/** Fill section (sections-3 — the section's selection bar): the whole of section `id` filled with its equipment in one
+ *  click, clipped to it (a custom shape keeps the racks wholly inside), ONE undo step. → the racks placed (0: none fit). */
+export function fillWholeSection(store, id) {
+  const st = store.getState(), s = st.objects.find(o => o.id === id)
+  if (!s || !isSection(s)) return 0
+  const poly = polygonOf(s), xs = poly.map(q => q[0]), ys = poly.map(q => q[1])
+  const box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
+  // the walk starts at its top-left corner (a point just inside, so it is the section's)
+  const from = { x: box.x + Math.min(1, box.w / 4), y: box.y + Math.min(1, box.h / 4) }
+  const gs = st.gridSize || 40
+  const sel = st.selectedIds
+  useCanvasStore.setState({ selectedIds: [id] })               // the section governs (its equipment, its clip)
+  let created = null
+  try {
+    created = planAreaCreate(st.objects, clipToSection(box, s) || box, fillSettings(st.objects, from), { gridSize: gs, from, newId: nanoid, elevations: st.elevations, ...fillClear(st.objects, from) })
+    if (created && s.shape === 'poly') created = { ...created, plan: keepInside(created.plan, s) }
+  } finally { useCanvasStore.setState({ selectedIds: sel }) }
+  if (!created || !created.plan.racks.length) return 0
+  const { area, plan } = created
+  store.setState({ objects: [...store.getState().objects, area, ...plan.racks, ...plan.aisles] })
+  store.getState().commitObjectUpdate(area.id, {})
+  try { autoSave(serializeScene(store.getState())) } catch { /* storage full */ }
+  return plan.racks.length
+}
 /** The drag box cut to the section's box (a rectangle: exactly the section), or null when nothing is left. */
 function clipToSection(b, s) {
   const x0 = Math.max(b.x, s.x), y0 = Math.max(b.y, s.y), x1 = Math.min(b.x + b.w, s.x + s.width), y1 = Math.min(b.y + b.h, s.y + s.height)
@@ -188,7 +226,7 @@ export function moveFill(world, objects, gridSize = 40, elevations = null) {
   if (!d) return null
   const drag = { ...d, to: world }
   // a fill that starts inside a section is clipped to it: its racks never cross the section's edge (utils/sectionAreas.js)
-  const sec = sectionAt(objects, drag.from), box = sec ? clipToSection(boxOfDrag(drag), sec) : boxOfDrag(drag)
+  const sec = governingSection(objects, drag.from), box = sec ? clipToSection(boxOfDrag(drag), sec) : boxOfDrag(drag)
   let created = box ? planAreaCreate(objects, box, fillSettings(objects, drag.from), { gridSize, from: drag.from, newId: nanoid, elevations, ...fillClear(objects, drag.from) }) : null
   if (created && sec && sec.shape === 'poly') created = { ...created, plan: keepInside(created.plan, sec) }
   const plan = created ? created.plan : { racks: [], aisles: [], rows: 0, positions: 0, rects: [] }
@@ -203,7 +241,7 @@ export function commitFill(store) {
   // outside every section, under the project forklift's minimum: ask to make it a section, once the racks are placed
   // outside every section: a notice after every fill (Racks placed · Make section); under the project forklift's minimum
   // it gives the reason and an Equipment picker and stays until answered (fill-section)
-  const outside = !!drag && !sectionAt(store.getState().objects, drag.from)
+  const outside = !!drag && !governingSection(store.getState().objects, drag.from)
   const custom = outside ? fillCustom() : null
   useFillTool.setState({ drag: null, plan: null, created: null, aisleFt: null })        // a typed aisle was for this fill
   if (!created || !created.plan.racks.length) return 0

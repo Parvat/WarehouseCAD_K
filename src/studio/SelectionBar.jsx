@@ -4,7 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { toggleLock, isLockedIn } from '../utils/layers'
 import { useLocked } from './useLocked'
-import { SECTION_COLORS, colorOf } from '../utils/sectionAreas'
+import { SECTION_COLORS, colorOf, onLabel } from '../utils/sectionAreas'
 import { setSectionColor, duplicateSections } from '../utils/sectionEdit'
 import { hasBoundary } from '../utils/sectionAreas'
 import { startSectionDoors } from '../utils/doorTool'
@@ -25,7 +25,8 @@ import { getRackCapacity } from '../utils/capacity'
 import { levelsResolver } from '../utils/elevations'
 import { useBayLedger } from '../components/RightPanel/useBayLedger'
 import { SPLIT_TOOL } from '../utils/splitTool'
-import { FILL_TOOL } from '../utils/fillTool'
+import { FILL_TOOL, fillWholeSection } from '../utils/fillTool'
+import { notify } from '../utils/notice'
 import { DOOR_TOOL } from '../utils/doorTool'
 import { endTool } from '../utils/toolSwitch'
 import { isPlainTool } from '../utils/homeTool'
@@ -364,8 +365,8 @@ function SizeField({ obj, k, aria }) {
   )
 }
 
-/** A section (STUDIO.md §7a Sections): Colour ▾ · (with a Fence or a Wall: Add door — the door tool on its edges) · Lock ·
- *  Duplicate · Delete. */
+/** A section (STUDIO.md §7a Sections): Colour ▾ · Fill section (sections-3: the whole section filled with its equipment,
+ *  one undo) · (with a Fence or a Wall: Add door — the door tool on its edges) · Lock · Duplicate · Delete. */
 function SectionSelBar({ obj }) {
   const locked = useLocked(obj)
   const [open, setOpen] = useState(false)
@@ -381,6 +382,9 @@ function SectionSelBar({ obj }) {
         </Menu>
       )}
       <Sep />
+      <button type="button" aria-label="Fill section" title={locked ? 'Locked' : 'Fill section — the whole section, with its equipment (one undo)'} disabled={locked}
+        onClick={() => { if (!fillWholeSection(store, obj.id)) notify('No racks fit in this section') }}
+        style={{ ...toggleBtn(false), ...(locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>Fill section</button>
       {hasBoundary(obj) && (
         <button type="button" title={locked ? 'Locked' : "Add door — on this section's edges (Esc ends)"} disabled={locked} onClick={() => startSectionDoors(store, obj.id)}
           style={{ ...toggleBtn(false), ...(locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>Add door</button>
@@ -552,7 +556,9 @@ export function openFloorMenu(e, host) {
   const hit = hitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs)
   let obj = hit && st.objects.find(o => o.id === hit)
   // a press on a wall that a rack only reached by its pick padding is the wall's (hitTest.js wallBeatsPadding)
-  const padWall = wallBeatsPadding(st.objects, st.layers, w.x, w.y, st.zoom, gs, obj)
+  // (a section's shown name chip is above everything: a press on it is the section's, a wall under it too — sections-3)
+  const onChip = !!obj && obj.type === 'section_area' && onLabel(obj, w.x, w.y, st.zoom, st.objects)
+  const padWall = onChip ? null : wallBeatsPadding(st.objects, st.layers, w.x, w.y, st.zoom, gs, obj)
   if (padWall) obj = st.objects.find(o => o.id === padWall.objId)
   else if (!obj || FP.has(obj.type)) { const wall = fpWallHitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs); obj = wall ? st.objects.find(o => o.id === wall.objId) : null }
   const at = { x: e.clientX, y: e.clientY }

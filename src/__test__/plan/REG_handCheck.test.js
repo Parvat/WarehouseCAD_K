@@ -59,7 +59,7 @@ if (DEAL.shard === 0) describe.each(['horizontal', 'vertical'])('REG — the han
     expect(H.wallBeatsPadding(st.objects, st.layers, found.wx, found.wy, zoom, gs, found.r)?.objId).toBe(fp.id)
     const inside = { x: found.b.x + found.b.width / 2, y: found.b.y + found.b.height / 2 }
     expect(H.wallBeatsPadding(st.objects, st.layers, inside.x, inside.y, zoom, gs, found.r)).toBe(null)
-    expect(read('canvas2/useCanvasInteraction.js')).toMatch(/const padWall = evt\.button === 0 \? wallBeatsPadding\(st\.objects, st\.layers, world\.x, world\.y, view\.current\.zoom, st\.gridSize, hitObj\) : null/)
+    expect(read('canvas2/useCanvasInteraction.js')).toMatch(/const padWall = evt\.button === 0 && !onChip \? wallBeatsPadding\(st\.objects, st\.layers, world\.x, world\.y, view\.current\.zoom, st\.gridSize, hitObj\) : null/)   // (sections-3: not over a section's shown name chip)
     // an older layout: the Building layer an older Generate locked — released on load; a hand lock (setLayer) stays
     const SL = await import('../../utils/saveLoad'), L = await import('../../utils/layers')
     const old = JSON.parse(SL.serializeScene(store.getState()))
@@ -3214,7 +3214,7 @@ describe('REG — the hand check by real clicks', () => {
       return out
     })
 
-    it('REG-section-names (click): a section\u2019s name is not on the floor — hidden until it is hovered or selected (the island\u2019s Sections off by default); Sections on shows every name; the name is a white tab on the outline, outside the section where there is room, never under a rack (drawn above them, off them when outside); the Sections list unchanged', async () => {
+    it('REG-section-names (click): a section\u2019s name is not on the floor — hidden until it is hovered or selected (the island\u2019s Sections off by default); Sections on shows every name; the name is a dark chip (#1F2321, white) inside the section in its largest empty area — no rack or zone under it — else on the outline outside it, off every rack where there is room (sections-3 — was: a white tab on the outline); drawn above the racks; the Sections list unchanged', async () => {
       await openSections()
       const c0 = await freeCorner(), gs = await gs7()
       expect(c0).toBeTruthy()
@@ -3242,17 +3242,20 @@ describe('REG — the hand check by real clicks', () => {
       expect(Object.keys(await tabsNow())).toEqual([sec.id])
       await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
       expect(await tabsNow()).toEqual({})
-      // the island's Sections: every name, as a white tab, above the racks
+      // the island's Sections: every name, as the dark chip, above the racks
       await toggle.click(); await L.page.waitForTimeout(150)
       expect(await viewState('Section names')).toBe('true')
       const tab = (await tabsNow())[sec.id]
-      expect([tab.text, tab.fill]).toEqual(['Section 1', '#FFFFFF'])
+      expect([tab.text, tab.fill]).toEqual(['Section 1', '#1F2321'])
       const rackLayer = await L.page.evaluate(() => { const r = window.Konva.stages[0].findOne(n => /^obj:/.test(n.name()) && n.getLayer() && n.getAttr('name') && n.findOne && n.findOne('Rect')); return r ? r.getLayer().index : -1 })
       expect(tab.layer).toBeGreaterThan(rackLayer)                                              // drawn above the racks
-      // on the outline: outside it where there is room, and then off every rack
-      const where = await tabAt(sec.id), racks = await L.S('const st = S.getState(); return st.objects.filter(o => /^rack_/.test(o.type)).map(o => H.worldBoundsOf(o, st.objects))')
+      // inside, in an empty spot (within the section, no rack or zone under it); else on the outline outside it, off every rack
+      const where = await tabAt(sec.id), racks = await L.S('const st = S.getState(); return st.objects.filter(o => /^(rack_|zone_)/.test(o.type)).map(o => H.worldBoundsOf(o, st.objects))')
       const meets = (b) => b.x < tab.x1 && tab.x0 < b.x + b.width && b.y < tab.y1 && tab.y0 < b.y + b.height
-      if (where.place !== 'inside') {
+      if (where.place === 'inside') {
+        expect([tab.x0 >= sec.x - 1e-6, tab.y0 >= sec.y - 1e-6, tab.x1 <= sec.x + sec.w + 1e-6, tab.y1 <= sec.y + sec.h + 1e-6]).toEqual([true, true, true, true])
+        expect(racks.filter(meets)).toEqual([])
+      } else if (!where.crowded) {   // (crowded — no room inside, above or below: above all the same)
         expect(where.place === 'above' ? Math.abs(tab.y1 - sec.y) < 1e-6 : Math.abs(tab.y0 - (sec.y + sec.h)) < 1e-6).toBe(true)   // its edge on the outline, outside
         expect(racks.filter(meets)).toEqual([])
       }
@@ -3990,7 +3993,7 @@ describe('REG — the hand check by real clicks', () => {
           if (H.hitTest(st.objects, st.layers, x, y, z, st.gridSize) === s.id) return { x, y } } }
       return null`, id)
     /** the middle of section `id`'s name tab (utils/sectionAreas.js labelBox, where SectionNames.jsx draws it) */
-    const tabAt = (id) => L.S('return import("/src/utils/sectionAreas.js").then(M => { const st = S.getState(), s = st.objects.find(o => o.id === arg), b = M.labelBox(s, st.zoom, st.objects); return { x: b.x + b.w / 2, y: b.y + b.h / 2, place: b.place } })', id)
+    const tabAt = (id) => L.S('return import("/src/utils/sectionAreas.js").then(M => { const st = S.getState(), s = st.objects.find(o => o.id === arg), b = M.labelBox(s, st.zoom, st.objects); return { x: b.x + b.w / 2, y: b.y + b.h / 2, place: b.place, crowded: !!b.crowded } })', id)
     const secObj = (id) => L.S('return S.getState().objects.find(o => o.id === arg) || null', id)
     const racksIn = (id) => L.S('return import("/src/utils/sectionAreas.js").then(M => M.membership(S.getState().objects).bySection.get(arg) || [])', id)
     const posOf = (ids) => L.S('const st = S.getState(); return arg.map(id => { const o = st.objects.find(x => x.id === id); return o ? [Math.round(o.x), Math.round(o.y)] : null })', ids)
@@ -4074,10 +4077,129 @@ describe('REG — the hand check by real clicks', () => {
       expect(await dims(A.id)).toBe(null)
     }, T)
 
-    it('REG-section-object (click): a section behaves like any object — its bar Colour · Lock · Duplicate · Delete; a drag on its outline moves it with the racks whose centre is in it (one undo); the arrow keys too; Shift+click adds a rack; a right-click opens its menu; Duplicate puts a copy beside it', async () => {
+    /* ── sections-3: a section's edges snap (draw, move, resize); Fill and a selected section ── */
+    /** the vertical lines a section's edges snap to (utils/sectionSnap.js), without `skipIds` (and the racks in them) */
+    const snapXs = (skipIds = []) => L.S(`return Promise.all([import('/src/utils/sectionSnap.js'), import('/src/utils/sectionAreas.js')]).then(([N, A]) => {
+      const st = S.getState(), m = A.membership(st.objects), skip = new Set(arg)
+      for (const id of arg) for (const r of m.bySection.get(id) || []) skip.add(r)
+      return N.sectionSnapLines(st.objects, skip, st.gridSize || 40).x.map(l => l.v) })`, skipIds)
+    /** a line in (lo, hi) with no other within `clear` of it */
+    const lonely = (xs, lo, hi, clear) => xs.filter(v => v > lo && v < hi).sort((a, c) => a - c).find(v => xs.every(u => u === v || Math.abs(u - v) > clear))
+    const guidesNow = () => L.page.evaluate(() => window.Konva.stages[0].find('.section-snap-guide').length)
+    const zoom7 = () => L.S('return S.getState().zoom')
+
+    it('REG-section-snap (click): a section’s edges snap within 8 screen px onto other sections’ edges, the inner walls, zone edges and rack ends, a dashed guide through the matched edge — drawing (its corner), moving (an edge), resizing (the handle’s edge); Alt held: no snap', async () => {
+      await openSections()
+      const b = await innerBox(), W = b.x1 - b.x0, H = b.y1 - b.y0
+      const A = await drawIn(b, 0.04, 0.08, 0.28, 0.42)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const Bs = await drawIn(b, 0.36, 0.55, 0.52, 0.9)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      const z = await zoom7(), tol = 8 / z, off = 4 / z
+      void W
+      // the target: A's right edge — a section edge, with no other line within 16 px of it
+      const Ld = A.x + A.w
+      expect(lonely(await snapXs(), Ld - 1, Ld + 1, tol * 2)).toBe(Ld)
+      // drawing: the first corner pressed 4 px right of it lands on it (a guide shows); with Alt it stays where pressed
+      const drawAt = async (alt) => {
+        await sectionTool('Rectangle')
+        const p0 = await L.toScreen({ x: Ld + off, y: b.y0 + H * 0.12 }), p1 = await L.toScreen({ x: Ld + W * 0.05, y: b.y0 + H * 0.3 })
+        if (alt) await L.page.keyboard.down('Alt')
+        await L.page.mouse.move(p0.x, p0.y); await L.page.mouse.down(); await L.page.mouse.move(p1.x, p1.y, { steps: 6 }); await L.page.waitForTimeout(80)
+        const g = await guidesNow()
+        await L.page.mouse.up(); await L.page.waitForTimeout(200)
+        if (alt) await L.page.keyboard.up('Alt')
+        return { g, s: (await secsNow()).slice(-1)[0] }
+      }
+      const d1 = await drawAt(false)
+      expect([d1.g > 0, Math.abs(d1.s.x - Ld) < 1e-6]).toEqual([true, true])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(200)
+      const d2 = await drawAt(true)
+      expect([d2.g, Math.abs(d2.s.x - (Ld + off)) < 1.5 / z]).toEqual([0, true])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(200)
+      // moving B (lower, right of A): its left edge brought 4 px short of A's right edge lands on it; with Alt it stops where
+      // the mouse leaves it
+      const Lm = Ld
+      expect(lonely(await snapXs([Bs.id]), Lm - 1, Lm + 1, tol * 2)).toBe(Lm)
+      const moveBy = async (alt) => {
+        const g0 = await grip(Bs.id), q0 = await L.toScreen(g0), dxs = (Lm + off - Bs.x) * z
+        if (alt) await L.page.keyboard.down('Alt')
+        await L.page.mouse.move(q0.x, q0.y); await L.page.mouse.down(); await L.page.mouse.move(q0.x + dxs, q0.y, { steps: 8 }); await L.page.waitForTimeout(80)
+        const g = await guidesNow()
+        await L.page.mouse.up(); await L.page.waitForTimeout(250)
+        if (alt) await L.page.keyboard.up('Alt')
+        const o = await secObj(Bs.id)
+        return { g, left: o.x }
+      }
+      const m1 = await moveBy(false)
+      expect([m1.g > 0, Math.abs(m1.left - Lm) < 1e-6]).toEqual([true, true])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect(Math.abs((await secObj(Bs.id)).x - Bs.x) < 1e-6).toBe(true)
+      const m2 = await moveBy(true)
+      expect([m2.g, Math.abs(m2.left - (Lm + off)) < 1.5 / z]).toEqual([0, true])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      // resizing B by its left handle: the edge dragged to 4 px short of A's right edge lands on it; with Alt, where it is dragged
+      const resizeTo = async (alt) => {
+        await L.click(await grip(Bs.id)); await L.page.waitForTimeout(150)
+        const o = await secObj(Bs.id), h0 = await L.toScreen({ x: o.x, y: o.y + o.height / 2 }), dxs = (Lm + off - o.x) * z
+        if (alt) await L.page.keyboard.down('Alt')
+        await L.page.mouse.move(h0.x, h0.y); await L.page.mouse.down(); await L.page.mouse.move(h0.x + dxs, h0.y, { steps: 8 }); await L.page.waitForTimeout(80)
+        const g = await guidesNow()
+        await L.page.mouse.up(); await L.page.waitForTimeout(250)
+        if (alt) await L.page.keyboard.up('Alt')
+        const n = await secObj(Bs.id)
+        return { g, left: n.x, right: n.x + n.width }
+      }
+      const r1 = await resizeTo(false)
+      expect([r1.g > 0, Math.abs(r1.left - Lm) < 1e-6, Math.abs(r1.right - (Bs.x + Bs.w)) < 1e-6]).toEqual([true, true, true])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      const r2 = await resizeTo(true)
+      expect([r2.g, Math.abs(r2.left - (Lm + off)) < 1.5 / z]).toEqual([0, true])
+    }, T)
+
+    it('REG-fill-selected-section (click): with a section selected a Fill drag can start anywhere — the fill is clipped to the selected section; its selection bar’s Fill section fills the whole section with its equipment in one click, one undo', async () => {
+      await openSections()
+      await clearRacks()
+      const b = await innerBox(), at = (fx, fy) => ({ x: b.x0 + (b.x1 - b.x0) * fx, y: b.y0 + (b.y1 - b.y0) * fy })
+      const S1 = await drawIn(b, 0.05, 0.08, 0.5, 0.9)
+      // its Equipment: VNA / turret (7 ft aisles)
+      await L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('combobox', { name: 'Section equipment' }).selectOption('vna'); await L.page.waitForTimeout(150)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([S1.id])
+      const inS = async () => { const ids = await rackIdsNow(), mine = await racksIn(S1.id); return { all: ids.length, inside: ids.filter(id => mine.includes(id)).length } }
+      const gapsFt = () => L.S('return import("/src/generate/rowAisles.js").then(RA => RA.rowAisleGaps(S.getState().objects.filter(o => /^rack_/.test(o.type))).map(g => g.gapLen / (S.getState().gridSize || 40)).filter(ft => ft > 2))')
+      // Fill, the drag started OUTSIDE it (right of it) and run across it: every rack inside the section
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      const f0 = at(0.75, 0.04), f1 = at(0.02, 0.96)
+      await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(600)
+      const c1 = await inS()
+      expect(c1.all).toBeGreaterThan(1)
+      expect(c1.inside).toBe(c1.all)
+      expect((await gapsFt()).some(ft => Math.abs(ft - 7) < 1e-6)).toBe(true)                    // its equipment's 7 ft
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      // Fill section in its bar: the whole section, its equipment, one undo
+      await clearRacks()
+      await L.click(await grip(S1.id)); await L.page.waitForTimeout(200)
+      const bar = L.page.locator('[data-selection-bar]')
+      expect(await bar.getAttribute('data-selection-bar')).toBe('section')
+      const h0 = await hist7(), before2 = new Set(await rackIdsNow())
+      await bar.getByRole('button', { name: 'Fill section' }).click(); await L.page.waitForTimeout(600)
+      const mine2 = (await rackIdsNow()).filter(id => !before2.has(id))
+      const c2 = await inS()
+      expect([c2.all > 1, c2.inside === c2.all, await hist7()]).toEqual([true, true, h0 + 1])
+      expect((await gapsFt()).some(ft => Math.abs(ft - 7) < 1e-6)).toBe(true)
+      // one Ctrl+Z: every rack the Fill section placed gone (the setup's clear keeps no history: only its own racks are counted)
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect(mine2.length).toBeGreaterThan(1)
+      expect((await rackIdsNow()).filter(id => mine2.includes(id))).toEqual([])
+    }, T)
+
+    it('REG-section-object (click): a section behaves like any object — its bar Colour · Fill section · Lock · Duplicate · Delete (sections-3: Fill section); a drag on its outline moves it with the racks whose centre is in it (one undo); the arrow keys too; Shift+click adds a rack; a right-click opens its menu; Duplicate puts a copy beside it', async () => {
       await openSections()
       const b = await innerBox(), s = await drawIn(b, 0.02, 0.02, 0.5, 0.6)
-      expect([await L.page.locator('[data-selection-bar]').getAttribute('data-selection-bar'), await L.page.locator('[data-selection-bar] button').evaluateAll(bs => bs.map(x => x.getAttribute('aria-label')))]).toEqual(['section', ['Colour', 'Lock', 'Duplicate', 'Delete']])
+      expect([await L.page.locator('[data-selection-bar]').getAttribute('data-selection-bar'), await L.page.locator('[data-selection-bar] button').evaluateAll(bs => bs.map(x => x.getAttribute('aria-label')))]).toEqual(['section', ['Colour', 'Fill section', 'Lock', 'Duplicate', 'Delete']])
       const mine = await racksIn(s.id), all0 = JSON.parse(await racksNow()), p0 = await posOf(mine), gs = await gs7(), h0 = await hist7()
       expect(mine.length).toBeGreaterThan(0)
       // dragged by its outline: its racks go with it, the others stay; one undo
@@ -4302,6 +4424,9 @@ describe('REG — the hand check by real clicks', () => {
       const s2 = await drawIn(b, 0.5, 0.05, 0.8, 0.3)
       expect([await gen.isDisabled(), await gen.getAttribute('title')]).toEqual([true, 'Fill each section with Fill racking'])
       // back to 1: on again, and it opens the Generate card
+      // (deselected first: s2 is selected from its draw, and a second click on its name chip — sections-3: it may sit on the
+      // outline — renames it)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       await L.click(await grip(s2.id)); await L.page.mouse.move(5, 890); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(200)
       expect(await gen.isDisabled()).toBe(false)
       await gen.click(); await L.page.waitForTimeout(200)
@@ -4326,16 +4451,23 @@ describe('REG — the hand check by real clicks', () => {
       const bare = async (ws) => { for (const w of ws) { const q = await L.toScreen(w); if (await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, q) !== 'CANVAS') return false } return true }
       for (let i = 0; i < 8 && !(await bare([...A, ...Bb])); i++) await wheel(40)
       await onCanvasAll([...A, ...Bb])
-      await drawRect(A[0], A[1]); const sa = (await secsNow()).slice(-1)[0]
-      await drawRect(Bb[0], Bb[1])
+      // drawn and dragged with Alt held (sections-3): no snap — the 2 ft between them stays (under 8 screen px, Section 2's edge
+      // would snap onto Section 1's), and the drag stops only at Section 2's edge
+      const altRect = async (a, c) => { await sectionTool('Rectangle'); await L.page.keyboard.down('Alt'); await L.drag(a, c); await L.page.waitForTimeout(200); await L.page.keyboard.up('Alt') }
+      await altRect(A[0], A[1]); const sa = (await secsNow()).slice(-1)[0]
+      await altRect(Bb[0], Bb[1])
       // no warning yet: the aisle is as wide as it was
       await L.page.locator('[data-island="top-right"]').getByRole('button', { name: /^Check/ }).click(); await L.page.waitForTimeout(400)
       const warned = () => L.S('return [...(LC.useLayoutCheck.getState().result?.warnings || [])].filter(w => w.kind === "section-aisle").map(w => w.text)')
       const w0 = await warned()
       // Section 1 dragged toward Section 2: it stops touching it, its racks 2 ft closer to Section 2's
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       await L.click(await grip(sa.id))
-      const h = await grip(sa.id)
-      await L.drag(h, across === 'y' ? { x: h.x, y: h.y + 10 * gs } : { x: h.x + 10 * gs, y: h.y }); await L.page.waitForTimeout(250)
+      // pressed on its outline away from every handle (sections-3: the name chip moved, so the first outline point grip() finds can
+      // sit beside a corner handle of this narrow section): its edge facing Section 2, a third of the way along
+      const h = await L.S('const st = S.getState(), s = st.objects.find(o => o.id === arg.id), z = st.zoom; for (let f = 0.25; f < 0.75; f += 0.02) { const p = arg.x ? { x: s.x + s.width, y: s.y + s.height * f } : { x: s.x + s.width * f, y: s.y + s.height }; if (H.hitTest(st.objects, st.layers, p.x, p.y, z, st.gridSize) === s.id) return p } return null', { id: sa.id, x: across === 'x' })
+      expect(h).toBeTruthy()
+      await L.page.keyboard.down('Alt'); await L.drag(h, across === 'y' ? { x: h.x, y: h.y + 10 * gs } : { x: h.x + 10 * gs, y: h.y }); await L.page.keyboard.up('Alt'); await L.page.waitForTimeout(250)
       await L.page.locator('[data-island="top-right"]').getByRole('button', { name: /^Check/ }).click(); await L.page.waitForTimeout(400)
       const items = await warned()
       expect([w0.length < items.length || (g.gap < 10.5 * gs && w0.length > 0), items.length > 0]).toEqual([true, true])

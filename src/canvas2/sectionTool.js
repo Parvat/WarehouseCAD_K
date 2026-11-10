@@ -7,6 +7,7 @@ import { create } from 'zustand'
 import { polySection } from '../utils/sectionAreas'
 import { penPoint, drawnRect, wallSides, sideAt, onWall } from '../utils/sectionEdit'
 import { HOME_TOOL } from '../utils/homeTool'
+import { sectionSnapLines, snapSectionEdges, SECTION_SNAP_PX } from '../utils/sectionSnap'
 
 export const SECTION_RECT_TOOL = 'section_rect'
 export const SECTION_PEN_TOOL = 'section_pen'
@@ -41,8 +42,29 @@ const finish = (store, fields) => {
 }
 
 /* the rectangle */
-export const startRect = (w) => useSectionTool.setState({ drag: { from: w, to: w } })
-export const moveRect = (w) => { const d = useSectionTool.getState().drag; if (d) useSectionTool.setState({ drag: { ...d, to: w } }) }
+/* sections-3: while the rectangle is drawn its corners snap onto other sections' edges, the building's inner walls, zone
+   edges and rack ends within 8 screen px (utils/sectionSnap.js), a dashed guide through the matched edge (`snapGuides`);
+   Alt held: none. `snap`: { objects, zoom, gridSize, alt }. */
+const snapCorner = (w, snap, lines) => {
+  if (!snap || snap.alt || !lines) return { w, guides: [] }
+  const r = snapSectionEdges({ x: [w.x], y: [w.y] }, lines, SECTION_SNAP_PX / (snap.zoom || 1))
+  return { w: { x: w.x + r.dx, y: w.y + r.dy }, guides: r.guides }
+}
+export const startRect = (w, snap = null) => {
+  const lines = snap ? sectionSnapLines(snap.objects, new Set(), snap.gridSize || 40) : null
+  const c = snapCorner(w, snap, lines)
+  useSectionTool.setState({ drag: { from: c.w, to: c.w, lines, fromGuides: c.guides }, snapGuides: c.guides })
+}
+export const moveRect = (w, snap = null) => {
+  const d = useSectionTool.getState().drag
+  if (!d) return
+  const c = snapCorner(w, snap, d.lines)
+  const b = { x0: Math.min(d.from.x, c.w.x), x1: Math.max(d.from.x, c.w.x), y0: Math.min(d.from.y, c.w.y), y1: Math.max(d.from.y, c.w.y) }
+  // the guides run through the box drawn
+  // (the start corner's guides stay while it is drawn)
+  const guides = [...(d.fromGuides || []), ...c.guides].map(g => (g.axis === 'x' ? { ...g, from: Math.min(g.from, b.y0), to: Math.max(g.to, b.y1) } : { ...g, from: Math.min(g.from, b.x0), to: Math.max(g.to, b.x1) }))
+  useSectionTool.setState({ drag: { ...d, to: c.w }, snapGuides: guides })
+}
 export function boxOf(d) {
   const x = Math.min(d.from.x, d.to.x), y = Math.min(d.from.y, d.to.y)
   return { x, y, w: Math.abs(d.to.x - d.from.x), h: Math.abs(d.to.y - d.from.y) }
@@ -51,6 +73,7 @@ export function boxOf(d) {
  *  real shapes (utils/sectionEdit.js drawnRect); smaller, none. */
 export function commitRect(store, zoom = 1) {
   const d = useSectionTool.getState().drag
+  useSectionTool.setState({ snapGuides: [] })
   if (!d) return null
   const st = store.getState()
   return finish(store, drawnRect(st.objects, d.from, d.to, { gridSize: st.gridSize || 40, min: 4 / (zoom || 1) }))

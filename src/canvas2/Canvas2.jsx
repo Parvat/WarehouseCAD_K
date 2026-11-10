@@ -442,9 +442,11 @@ export function Canvas2() {
     const w = sectWorld(e)
     if (!w) return
     if (sectPen) { penClick(useCanvasStore, w, view.current.zoom, !!e.evt?.shiftKey); return }
-    startRect(w)
+    // its corners snap (utils/sectionSnap.js); Alt held: no snap
+    const snapOf = (alt) => { const st = useCanvasStore.getState(); return { objects: st.objects, zoom: view.current.zoom, gridSize: st.gridSize || 40, alt } }
+    startRect(w, snapOf(!!e.evt?.altKey))
     const rect = e.target.getStage().container().getBoundingClientRect()
-    const move = (ev) => moveRect(screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }))
+    const move = (ev) => moveRect(screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }), snapOf(!!ev.altKey))
     const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); if (useSectionTool.getState().drag) commitRect(useCanvasStore, view.current.zoom) }
     window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
   }
