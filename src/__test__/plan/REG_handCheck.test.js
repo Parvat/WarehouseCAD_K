@@ -3342,7 +3342,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
       await typeAisle('7')
       const warn = fillBar().getByRole('status', { name: 'Aisle warning' })
-      expect(await warn.textContent()).toBe(`7′ 0″ is below ${eq.label} minimum ${ftInP(eq.minAisleFt)}. Needs its own section.`)
+      expect(await warn.textContent()).toBe(`7′ 0″ is below ${eq.label} minimum ${ftInP(eq.minAisleFt)}. Needs its own section.Use Custom`)   // (fill-design-aisle: with its Use Custom button)
       const b = await innerBox(), f0 = { x: b.x0 + (b.x1 - b.x0) * 0.06, y: b.y0 + (b.y1 - b.y0) * 0.12 }, f1 = { x: b.x0 + (b.x1 - b.x0) * 0.55, y: b.y0 + (b.y1 - b.y0) * 0.88 }
       await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(500)
       const racks = await rackIdsNow(), h0 = await hist7()
@@ -3737,6 +3737,25 @@ describe('REG — the hand check by real clicks', () => {
       expect(await marks(inSec)).toBe(0)
       await fillOff()
       expect(aisleItems((await checkNow()).open, inSec).filter(i => i.kind === 'aisle-drive' || i.kind === 'aisle-pick')).toEqual([])
+    }, T)
+
+    it('REG-fill-use-custom (click): Fill on Project forklift with an aisle typed under its minimum — the amber line’s Use Custom switches Equipment to Custom with that aisle as Aisle to pick and Space to move; the amber line goes; a fill then is designed for it (one fixture: a bar behaviour)', async () => {
+      if (name !== 'crowded-horizontal') return
+      await open()
+      await clearRacks()
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      await typeAisle('6')
+      const warn = fillBar().getByRole('status', { name: 'Aisle warning' })
+      expect(await warn.count()).toBe(1)
+      await warn.getByRole('button', { name: 'Use Custom' }).click(); await L.page.waitForTimeout(150)
+      const eq = fillBar().getByRole('group', { name: 'Equipment' })
+      expect([await eq.getByRole('button', { name: 'Custom', exact: true }).getAttribute('aria-pressed'), await eq.getByRole('button', { name: 'Project forklift', exact: true }).getAttribute('aria-pressed')]).toEqual(['true', 'false'])
+      expect([await fillBar().getByRole('textbox', { name: 'Aisle to pick (ft)' }).inputValue(), await fillBar().getByRole('textbox', { name: 'Space to move (ft)' }).inputValue(), await warn.count()]).toEqual(['6', '6', 0])
+      const b = await innerBox(), f0 = { x: b.x0 + (b.x1 - b.x0) * 0.02, y: b.y0 + (b.y1 - b.y0) * 0.03 }, f1 = { x: b.x0 + (b.x1 - b.x0) * 0.6, y: b.y0 + (b.y1 - b.y0) * 0.97 }
+      await onCanvasAll([f0, f1]); await L.drag(f0, f1); await L.page.waitForTimeout(500)
+      const ids = await rackIdsNow()
+      expect(ids.length).toBeGreaterThan(1)
+      expect(await L.S('const st = S.getState(), r = st.objects.find(o => o.id === arg); return st.objects.find(o => o.id === r.areaId).equip', ids[0])).toEqual({ custom: { pickFt: 6, moveFt: 6 } })
     }, T)
 
     it('REG-fill-section-notice (click): after every Fill racking outside a section a notice "Racks placed · Make section" — a normal aisle: it fades after 8 s (a second fill left alone: gone), and Make section makes a section of the fill box on the project forklift, one undo with the fill; a narrow aisle: the same fading notice, no question (fill-design-aisle — was: the question with its reason and Equipment picker, which stayed)', async () => {

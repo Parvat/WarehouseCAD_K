@@ -74,6 +74,8 @@ export function FillOptionsBar() {
      or Custom — the aisle to pick and the space to move it is designed for (the space to move: as much when left out);
      Custom starts at the project forklift's aisle */
   const project = fillEquipment(objects, null)
+  // the amber line's Use Custom: the typed aisle as the Custom aisle to pick and space to move
+  const useCustom = () => { const ft = typed; setFillCustom('pickFt', ft); setFillCustom('moveFt', ft); setFillAisle(null); setFillDesign('custom') }
   const toCustom = () => { if (!(custom.pickFt > 0)) setFillCustom('pickFt', typed || project.aisleFt); setFillDesign('custom') }
   const num = (k, v) => { const n = Number(v); if (Number.isFinite(n) && n > 0) s.setSetting(k, n) }
   const close = () => { cancelFill(); useCanvasStore.getState().setActiveTool(HOME_TOOL) }
@@ -107,7 +109,9 @@ export function FillOptionsBar() {
       {plan
         ? <span aria-label="Fill estimate" style={word}><span style={{ fontFamily: MONO, color: B.text }}>{plan.rows}</span> row{plan.rows === 1 ? '' : 's'} · <span style={{ fontFamily: MONO, color: B.accent }}>{plan.positions.toLocaleString('en-US')}</span> pos</span>
         : <span style={word}>Drag a box · Esc cancels</span>}
-      {under && <span role="status" aria-label="Aisle warning" data-fill-warning style={{ color: B.warnFg, fontSize: 12, whiteSpace: 'nowrap' }}>{ftInPrime(typed)} is below {eq.label} minimum {ftInPrime(eq.minAisleFt)}. Needs its own section.</span>}
+      {under && <span role="status" aria-label="Aisle warning" data-fill-warning style={{ color: B.warnFg, fontSize: 12, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 8 }}>{ftInPrime(typed)} is below {eq.label} minimum {ftInPrime(eq.minAisleFt)}. Needs its own section.
+        {/* Use Custom (fill-design-aisle): Equipment to Custom, that aisle as both its widths — the fill is designed for it */}
+        <button type="button" className={btnClass(false)} style={barBtn(false)} title={`Design this fill for ${ftInPrime(typed)} aisles (Custom)`} onClick={useCustom}>Use Custom</button></span>}
       <Sep />
       <button type="button" aria-label="Done" title="Done (Esc)" onClick={close} className={btnClass(true)} style={barBtn(true)}>Done</button>
       <CloseBtn label="Close Fill racking" title="Done (Esc)" onClick={close} />
