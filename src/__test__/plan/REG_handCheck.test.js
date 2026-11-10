@@ -2331,7 +2331,7 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return [!!g.locked, g.lockedBy ?? null]'), await colsLocked()]).toEqual([[false, null], true])
     }, T)
 
-    it('REG-layers-card (click): the bottom-right island is View · Layers · Fit · ? (ui-polish-3); View opens a dark card above it with the display switches Aisle labels, Checks, Elevation colours, Section names, Row numbers; Layers opens its own dark card above it (radius 10) with each layer’s show toggle and padlock; they work; a click outside or Esc closes it; the right card has no Layers block', async () => {
+    it('REG-layers-card (click): the bottom-right island is View · Layers · Fit · ? (ui-polish-3); View opens a dark card above it with the display switches Aisle labels, Checks, Elevation colours, Section names, Section sizes (labels-sections), Row numbers; Layers opens its own dark card above it (radius 10) with each layer’s show toggle and padlock; they work; a click outside or Esc closes it; the right card has no Layers block', async () => {
       await open()
       const island = L.page.locator('[data-island="bottom-right"]')
       const btn = island.getByRole('button', { name: 'Layers', exact: true }), help = island.getByRole('button', { name: 'Shortcuts' })
@@ -2341,7 +2341,7 @@ describe('REG — the hand check by real clicks', () => {
       // View: the display switches only
       await island.getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150)
       const vc = L.page.getByRole('dialog', { name: 'View card' })
-      expect([await vc.getByRole('switch').evaluateAll(ss => ss.map(x => x.getAttribute('aria-label'))), await vc.locator('[data-layer]').count()]).toEqual([['Aisle labels', 'Checks', 'Elevation colours', 'Section names', 'Row numbers'], 0])
+      expect([await vc.getByRole('switch').evaluateAll(ss => ss.map(x => x.getAttribute('aria-label'))), await vc.locator('[data-layer]').count()]).toEqual([['Aisle labels', 'Checks', 'Elevation colours', 'Section names', 'Section sizes', 'Row numbers'], 0])
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       await btn.click(); await L.page.waitForTimeout(150)
       const card = layersCard()
@@ -3828,6 +3828,79 @@ describe('REG — the hand check by real clicks', () => {
       return (await secsNow()).slice(-1)[0]
     }
 
+    it('REG-gap-labels (click): aisle and gap labels and sections (labels-sections) — the cross-aisle between the halves, once each half is its own section, gets no label (a gap label never crosses a section edge; run ends are not racks facing); a real aisle between two sections (its rows facing across the edge, under 3 × the travel width) still shows; a pair deleted inside a section leaves a gap over 3 × the travel width: no label; a selected section shows its width and length along its edges, and the View card’s Section sizes shows them for all', async () => {
+      await open()
+      await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(300)
+      const b = await innerBox()
+      const vert = await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).every(o => (((o.rotation || 0) % 180) + 180) % 180 === 90)')
+      // fractions along the run (the rows' direction) and across, as the inner box's
+      const R = vert ? [b.y0, b.y1] : [b.x0, b.x1], St = vert ? [b.x0, b.x1] : [b.y0, b.y1]
+      const fr = (v, [a, c]) => (v - a) / (c - a)
+      const sec = (r0, r1, s0, s1) => (vert ? drawIn(b, s0, r0, s1, r1) : drawIn(b, r0, s0, r1, s1))
+      const labelsNow = () => L.page.evaluate(() => window.Konva.stages[0].find(n => /^(aisle|cross-aisle|face-aisle):/.test(n.name())).map(n => n.name()))
+      // the horizontal fixtures have a cross-aisle between their halves (labelled); the vertical ones none
+      const hasCross = (await labelsNow()).some(n => n.startsWith('cross-aisle:'))
+      expect(hasCross).toBe(!vert)
+      // the cross-aisle between the halves (its gap along the run), and a real aisle in the low half near the middle across
+      const geo = await L.S(`return Promise.all([import('/src/canvas2/crossAisles.js'), import('/src/canvas2/hitTest.js')]).then(([C, H]) => {
+        const st = S.getState(), gs = st.gridSize || 40, by = new Map(st.objects.map(o => [o.id, o]))
+        const cross = C.crossAisleLabels(st.objects, gs)[0] || null
+        const aisles = st.objects.filter(o => o.type === 'aisle').map(a => ({ id: a.id, r1: a.row1Id, r2: a.row2Id, L: H.aisleLabelLayout(a, [by.get(a.row1Id), by.get(a.row2Id)].filter(Boolean), gs) })).filter(a => a.L)
+        return { gs, cross: cross ? { lo: cross.gapLo, hi: cross.gapHi } : null, aisles: aisles.map(a => ({ id: a.id, r1: a.r1, r2: a.r2, lo: a.L.gapLo, hi: a.L.gapHi, pos: a.L.positions[0] })) }
+      })`)
+      // the run split: inside the cross-aisle's gap, else about the middle
+      const cw = geo.cross ? geo.cross.hi - geo.cross.lo : 0
+      // (no cross-aisle — rows the whole run: A and B take the whole run, no C)
+      const rA = geo.cross ? fr(geo.cross.lo + cw * 0.3, R) : 0.995, rC = geo.cross ? fr(geo.cross.lo + cw * 0.7, R) : null
+      const splitAt = R[0] + (R[1] - R[0]) * rA
+      const mid = (St[0] + St[1]) / 2
+      const real = geo.aisles.filter(a => a.pos < splitAt && (a.hi - a.lo) / geo.gs < 24).sort((p, q) => Math.abs((p.lo + p.hi) / 2 - mid) - Math.abs((q.lo + q.hi) / 2 - mid))[0]
+      expect(!!real).toBe(true)
+      const fS = fr((real.lo + real.hi) / 2, St)
+      // three sections: the low half split across at that aisle (A, B), the high half (C)
+      const A = await sec(0.005, rA, 0.005, fS); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const Bs = await sec(0.005, rA, fS, 0.995)
+      if (rC != null) { await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape') }      // (no C: B, just drawn, is the selected one)
+      const C = rC != null ? await sec(rC, 0.995, 0.005, 0.995) : Bs
+      expect(new Set([A.id, Bs.id, C.id]).size).toBe(rC != null ? 3 : 2)
+      // C just drawn: selected — its sizes along its edges, its width and length among them
+      const dims = (id) => L.page.evaluate((id) => { const g = window.Konva.stages[0].findOne(n => n.name() === 'secdim:' + id); return g ? g.find('Text').map(t => t.text()) : null }, id)
+      const ftIn = (px) => L.S('return import("/src/utils/canvas.js").then(M => M.pxToFtIn(arg, S.getState().gridSize || 40))', px)
+      const dc = await dims(C.id)
+      expect(dc).not.toBe(null)
+      expect([dc.includes(await ftIn(C.w)), dc.includes(await ftIn(C.h))]).toEqual([true, true])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      expect([await dims(A.id), await dims(Bs.id), await dims(C.id)]).toEqual([null, null, null])
+      // the cross-aisle between the halves crosses the sections' edges: no label (it had one)
+      const now = await labelsNow()
+      expect(now.filter(n => n.startsWith('cross-aisle:'))).toEqual([])
+      // the real aisle between A and B (its rows either side of the edge) still shows
+      const inA = await racksIn(A.id), inB = await racksIn(Bs.id)
+      expect([inA.includes(real.r1) || inA.includes(real.r2), inB.includes(real.r1) || inB.includes(real.r2)]).toEqual([true, true])
+      expect(now).toContain('aisle:' + real.id)
+      // a pair inside C deleted (a click selects the row, Delete): the gap left is over 3 × the travel width — no label
+      const pairs = await L.S('const st = S.getState(); return st.objects.filter(o => o.type === "rack_double_row").map(o => ({ id: o.id, x: o.x + o.width / 2, y: o.y + o.height / 2 }))')
+      // (the section holding the most pairs: C, else the larger of A and B)
+      const inS = async (id) => pairs.filter(p => (await0[id] || []).includes(p.id))
+      const await0 = { [A.id]: await racksIn(A.id), [Bs.id]: await racksIn(Bs.id), [C.id]: await racksIn(C.id) }
+      const pool = rC != null ? await inS(C.id) : [await inS(A.id), await inS(Bs.id)].sort((x, y) => y.length - x.length)[0]
+      const cand = pool.sort((p, q) => (vert ? p.x - q.x : p.y - q.y))
+      const victim = cand[Math.floor(cand.length / 2)]
+      await onCanvasAll([victim]); await L.click(victim); await L.page.waitForTimeout(150)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([victim.id])
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(600)
+      const wide = await L.S(`return import('/src/canvas2/hitTest.js').then(H => { const st = S.getState(), gs = st.gridSize || 40, by = new Map(st.objects.map(o => [o.id, o]))
+        return st.objects.filter(o => o.type === 'aisle').map(a => { const L = H.aisleLabelLayout(a, [by.get(a.row1Id), by.get(a.row2Id)].filter(Boolean), gs); return L ? { id: a.id, ft: (L.gapHi - L.gapLo) / gs } : null }).filter(Boolean).filter(a => a.ft > 24) })`)
+      expect(wide.length).toBeGreaterThan(0)
+      const after = await labelsNow()
+      expect(wide.filter(a => after.includes('aisle:' + a.id)).map(a => a.ft)).toEqual([])
+      // View card: Section sizes — every section's
+      await viewSwitch('Section sizes').click()
+      expect([!!(await dims(A.id)), !!(await dims(Bs.id)), !!(await dims(C.id))]).toEqual([true, true, true])   // (C is B with no cross-aisle)
+      await viewSwitch('Section sizes').click()
+      expect(await dims(A.id)).toBe(null)
+    }, T)
+
     it('REG-section-object (click): a section behaves like any object — its bar Colour · Lock · Duplicate · Delete; a drag on its outline moves it with the racks whose centre is in it (one undo); the arrow keys too; Shift+click adds a rack; a right-click opens its menu; Duplicate puts a copy beside it', async () => {
       await openSections()
       const b = await innerBox(), s = await drawIn(b, 0.02, 0.02, 0.5, 0.6)
@@ -4017,6 +4090,8 @@ describe('REG — the hand check by real clicks', () => {
       expect([(await secObj(s.id)).boundary, await runs('wall'), Math.abs(w - (8 / 12) * gs) < 1e-6]).toEqual(['wall', 4, true])
       // the door tool (the building's bar: Add door): the section's top edge (its middle) takes a door; the wall is cut there
       const f = await fpOf()
+      // (the section deselected first: its bar, moved off its size labels — labels-sections — may sit over the wall)
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       await L.click({ x: f.x + f.width / 2, y: f.y })
       await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door' }).click(); await L.page.waitForTimeout(150)
       const o = await secObj(s.id), mid = { x: o.x + o.width / 2, y: o.y }

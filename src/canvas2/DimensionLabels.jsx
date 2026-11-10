@@ -3,7 +3,8 @@ import { Group, Rect, Line, Text } from 'react-konva'
 import { equipmentResolver } from '../utils/equipment'
 import { pxToFtIn, getFpWallSegments, getObjectBounds } from '../utils/canvas'
 import { spin } from './shapes'
-import { aisleLabelLayout } from './hitTest'
+import { aisleLabelLayout, gapShown } from './hitTest'
+import { polygonOf } from '../utils/sectionAreas'
 import { rackFootprint } from '../generate/columnCheck'
 import { useColumnCheck } from '../generate/useColumnCheck'
 import { useDragPreview } from './dragPreview'
@@ -188,6 +189,23 @@ export function RackLabels({ obj, zoom, gridSize }) {
 export function FpDimLabels({ obj, zoom, gridSize, activeWallIdx = null }) {
   const walls = getFpWallSegments(obj, gridSize)
   if (!walls || !walls.length) return null
+  return <Group name={'fpdim:' + obj.id} listening={false} {...spin(obj, gridSize)}><EdgeDims walls={walls} zoom={zoom} gridSize={gridSize} activeWallIdx={activeWallIdx} /></Group>
+}
+
+/* A section's sizes (labels-sections, STUDIO.md §7a Sections): its width and length along its edges — every edge's
+   length, a custom shape's too — in the building dimension style (FpDimLabels: the line off the edge, its ticks and
+   arrowheads, the length in a pill), outside the section. Shown while it is selected, or for every section with the
+   View card's Section sizes on. World px; drawn from the live layout (canvas2/live.js via Overlays' previewed
+   objects), so it follows a drag. */
+export function SectionDimLabels({ obj, zoom, gridSize }) {
+  const p = polygonOf(obj)
+  if (!p || p.length < 3) return null
+  const walls = p.map(([ax, ay], i) => { const [bx, by] = p[(i + 1) % p.length]; return { a: { x: ax, y: ay }, b: { x: bx, y: by }, lenPx: Math.hypot(bx - ax, by - ay) } })
+  return <Group name={'secdim:' + obj.id} listening={false}><EdgeDims walls={walls} zoom={zoom} gridSize={gridSize} /></Group>
+}
+
+/* The building dimension style along a closed outline's edges (`walls`: [{ a, b, lenPx }]), each dimension outside it. */
+function EdgeDims({ walls, zoom, gridSize, activeWallIdx = null }) {
 
   let signedArea = 0
   for (let i = 0; i < walls.length; i++) {
@@ -228,7 +246,7 @@ export function FpDimLabels({ obj, zoom, gridSize, activeWallIdx = null }) {
     )
   })
 
-  return <Group name={'fpdim:' + obj.id} listening={false} {...spin(obj, gridSize)}>{nodes}</Group>
+  return <>{nodes}</>
 }
 
 /* ── Aisle label — always visible (gated only by the store's showAisles
@@ -288,7 +306,9 @@ export const FaceAisleLabels = memo(function FaceAisleLabels({ objects, lz, grid
   const list = useMemo(() => {
     if (!profile) return []
     const R = equipmentResolver(objects, profile)
-    return R.single ? faceAisleLabels(objects, gridSize, { profile }) : R.inUse.flatMap(p => faceAisleLabels(objects, gridSize, { profile: p }).filter(L => R.of(L.rackId).key === p.key))
+    const all = R.single ? faceAisleLabels(objects, gridSize, { profile }) : R.inUse.flatMap(p => faceAisleLabels(objects, gridSize, { profile: p }).filter(L => R.of(L.rackId).key === p.key))
+    // a rack and a wall or zone: never across a section edge, never open floor (hitTest.js gapShown)
+    return all.filter(L => gapShown(L, objects, gridSize, R.of(L.rackId), false))
   }, [objects, gridSize, profile])
   return <>{list.map((L, i) => <AisleLabelView key={L.rackId + ':' + i} L={L} name={'face-aisle:' + L.rackId + ':' + i} lz={lz} />)}</>
 })

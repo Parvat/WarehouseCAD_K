@@ -15,7 +15,8 @@
 //   { op: 'poly',  points, fill?, stroke?, strokeWidth? , opacity? }   (closed)
 //   { op: 'rect',  x, y, w, h, fill?, stroke?, strokeWidth?, dash?, cornerRadius?, opacity?, name? }
 //   { op: 'text',  x, y, w, h, text, fontSize, fill, fontFamily }      (centred in the box)
-import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX, aisleLabelLayout } from '../canvas2/hitTest'
+import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX, aisleLabelLayout, aisleGapShown, gapBase } from '../canvas2/hitTest'
+import { equipmentResolver } from '../utils/equipment'
 import { crossAisleLabels } from '../canvas2/crossAisles'
 import { labelScale, aisleLabelScale } from './labelSize'
 import { visibleClearanceMarks, aisleWarningRect, SHORT_COLOR } from '../canvas2/aisleMarks'
@@ -81,8 +82,10 @@ export function aisleLabelOps(L, lz) {
  *  clear of these (clearanceOps' `avoid`): the aisle width label has priority. */
 export function aisleLabelBoxes(objects, gridSize = 40, labelSize, { aisles = true, cross = true, profile = null } = {}) {
   const out = [], take = (ops) => { for (const o of ops) if (o.op === 'rect') out.push({ x: o.x, y: o.y, w: o.w, h: o.h }) }
+  const gapR = aisles ? equipmentResolver(objects, gapBase()) : null
   if (aisles) for (const a of objects) {
     if (!a || a.type !== 'aisle') continue
+    if (!aisleGapShown(a, objects, gridSize, gapR.pair(a.row1Id, a.row2Id))) continue      // not drawn (hitTest.js gapShown)
     const lz = aisleLabelScale(a, labelSize, gridSize)
     const L = aisleLabelLayout(a, objects, gridSize, { profile, lz })
     if (L) take(aisleLabelOps(L, lz))

@@ -22,7 +22,7 @@ import { getColumnCheckView } from '../generate/columnCheckView'
 import { aisleLabelScale } from '../render/labelSize'
 import { useLabelPrefs } from './labelPrefs'
 import { isSelectable, layerShown } from '../utils/layers'
-import { onOutline, onLabel } from '../utils/sectionAreas'
+import { onOutline, onLabel, isSection, polygonOf, pointInPolygon } from '../utils/sectionAreas'
 import { nameShown } from './sectionNameShown'
 import { equipmentResolver } from '../utils/equipment'
 
@@ -180,6 +180,51 @@ export function aisleLabelLayout(aisle, objects, gridSize = 40, { profile = null
   return { isHoriz, gapLo, gapHi, labelMid, positions: [pos], level, text }
 }
 
+/* ── which gaps get a width label (labels-sections, STUDIO.md §7a) ──
+   A width label measures a gap between racks. It never crosses a section edge — it measures only between racks in the
+   same section (or both in none): a gap whose span, at the label's station, crosses a section's edge (or runs through
+   a section) is between sections, and is labelled only when it is a real aisle — racks facing each other across the
+   edge (an aisle's two rows), closer than GAP_TRAVEL_TIMES × the travel width (Space to move) of the stricter equipment
+   of the two sides. Anywhere, a gap wider than that is open floor, not an aisle: no label. */
+export const GAP_TRAVEL_TIMES = 3
+const segHits = (a, b, c, d) => {
+  const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x))
+  return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0
+}
+/** Is the label of gap `L` ({ isHoriz, gapLo, gapHi, positions | pos }) shown? `objects`: the whole layout (its
+ *  sections); `profile`: the stricter equipment of the two sides (its travelFt); `facing`: the two sides are racks
+ *  facing each other (an aisle), not run ends (a cross-aisle) or a rack and a wall or zone. */
+export function gapShown(L, objects, gridSize = 40, profile = null, facing = false) {
+  if (!L) return false
+  const travel = (profile && Number.isFinite(profile.travelFt) && profile.travelFt > 0 ? profile.travelFt : (MHE_PROFILES.reach.travelFt || 8)) * gridSize
+  const w = L.gapHi - L.gapLo
+  if (w > GAP_TRAVEL_TIMES * travel + 1e-6) return false
+  const secs = (objects || []).filter(isSection)
+  if (!secs.length) return true
+  const pos = L.pos ?? (L.positions && L.positions[0])
+  const e = Math.min(0.5, w / 4)                                              // just inside the gap, off the rack faces
+  const at = (g) => (L.isHoriz ? { x: pos, y: g } : { x: g, y: pos })
+  const A = at(L.gapLo + e), B = at(L.gapHi - e)
+  const crosses = secs.some(s => {
+    const p = polygonOf(s).map(([x, y]) => ({ x, y }))
+    if (pointInPolygon(polygonOf(s), A.x, A.y) !== pointInPolygon(polygonOf(s), B.x, B.y)) return true
+    return p.some((c, i) => segHits(A, B, c, p[(i + 1) % p.length]))
+  })
+  return !crosses || !!facing
+}
+/** An aisle's width label shown (the gap between its two rows, at mid-run)? `objects`: the whole layout; `profile`:
+ *  the stricter equipment of its rows. */
+export function aisleGapShown(aisle, objects, gridSize = 40, profile = null) {
+  const byId = (id) => (objects || []).find(o => o.id === id)
+  const g = aisleGeom(aisle, [byId(aisle.row1Id), byId(aisle.row2Id)].filter(Boolean))
+  if (!g) return false
+  const r = g.rect, isHoriz = g.isHoriz
+  const L = { isHoriz, gapLo: isHoriz ? r.y : r.x, gapHi: isHoriz ? r.y + r.height : r.x + r.width, pos: isHoriz ? r.x + r.width / 2 : r.y + r.height / 2 }
+  return gapShown(L, objects, gridSize, profile, true)
+}
+/** The equipment the gap rules read for racks in no section: the project's forklift (the column check's). */
+export const gapBase = () => getColumnCheckView()?.profile || MHE_PROFILES.reach
+
 /* The visible column grids' squares of a layout, kept per objects array (a frame asks many times). */
 const colCache = new WeakMap()
 export function columnRectsOf(objects, gridSize = 40) {
@@ -328,7 +373,8 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
       /* Only its labels pick an aisle. The whole gap used to: a press on
          empty aisle floor selected the aisle, so the building behind it
          could hardly be grabbed to move the layout. */
-      if (aisleLabelHit(obj, objects, wx, wy, zoom, gridSize, aisleWarnProfile(layerMap))) return obj.id
+      // a label not shown (across a section edge, or open floor: gapShown) is not there to pick
+      if (aisleLabelHit(obj, objects, wx, wy, zoom, gridSize, aisleWarnProfile(layerMap)) && aisleGapShown(obj, objects, gridSize, equipmentResolver(objects, gapBase()).pair(obj.row1Id, obj.row2Id))) return obj.id
       continue
     }
     if (objectContains(obj, wx, wy, zoom)) {

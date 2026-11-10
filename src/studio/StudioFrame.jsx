@@ -201,7 +201,7 @@ function BottomRight() {
   const toggleAisles = useCanvasStore(s => s.toggleAisles)
   const { showMarks, setShowMarks } = useColumnCheck()
   const showColors = useElevView(s => s.showColors)
-  const { sectionNames, setSectionNames, rowLabels, setRowLabels } = useViewPrefs(useShallow(s => ({ sectionNames: s.sectionNames, setSectionNames: s.setSectionNames, rowLabels: s.rowLabels, setRowLabels: s.setRowLabels })))
+  const { sectionNames, setSectionNames, sectionSizes, setSectionSizes, rowLabels, setRowLabels } = useViewPrefs(useShallow(s => ({ sectionNames: s.sectionNames, setSectionNames: s.setSectionNames, sectionSizes: s.sectionSizes, setSectionSizes: s.setSectionSizes, rowLabels: s.rowLabels, setRowLabels: s.setRowLabels })))
   const [view, setView] = useState(false), [layers, setLayers] = useState(false)
   const help = useHelp(s => s.open)
   const viewWrap = useRef(null), layersWrap = useRef(null), helpWrap = useRef(null)
@@ -225,6 +225,7 @@ function BottomRight() {
             {sw('Checks', showMarks, () => setShowMarks(!showMarks))}
             {sw('Elevation colours', showColors, () => setShowColors(!showColors))}
             {sw('Section names', sectionNames, () => setSectionNames(!sectionNames), "Every section's name (off: only the one hovered or selected)")}
+            {sw('Section sizes', sectionSizes, () => setSectionSizes(!sectionSizes), "Every section's width and length (off: only the one selected)")}
             {sw('Row numbers', rowLabels, () => setRowLabels(!rowLabels), 'The row numbers R1, R2 … at the row starts')}
           </div>
         )}

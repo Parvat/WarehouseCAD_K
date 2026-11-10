@@ -17,7 +17,7 @@ export const CARD_W = 300, CARD_W_MIN = 300, CARD_W_MAX = 640
 export const clampCardW = (w) => (Number.isFinite(w) ? Math.round(Math.min(CARD_W_MAX, Math.max(CARD_W_MIN, w))) : CARD_W)
 const readCardW = () => { try { const v = Number(localStorage.getItem(CARD_W_KEY)); return v ? clampCardW(v) : CARD_W } catch { return CARD_W } }
 const readFit = () => { try { return localStorage.getItem(DBLCLICK_FIT_KEY) === '1' } catch { return false } }
-const NAMES_KEY = 'trace.studio.sectionNames', ROWS_KEY = 'trace.studio.rowLabels'
+const NAMES_KEY = 'trace.studio.sectionNames', ROWS_KEY = 'trace.studio.rowLabels', SIZES_KEY = 'trace.studio.sectionSizes'
 const readFlag = (k, dflt) => { try { const v = localStorage.getItem(k); return v == null ? dflt : v === '1' } catch { return dflt } }
 const saveFlag = (k, on) => { try { localStorage.setItem(k, on ? '1' : '0') } catch { /* private window */ } }
 
@@ -34,6 +34,9 @@ export const useViewPrefs = create((set, get) => ({
   setRulesOpen: (rulesOpen) => set({ rulesOpen }),
   sectionNames: readFlag(NAMES_KEY, false),
   setSectionNames: (on) => { saveFlag(NAMES_KEY, !!on); set({ sectionNames: !!on }) },
+  // the View card's Section sizes: every section's width and length along its edges (off by default; a selected one shows them anyway)
+  sectionSizes: readFlag(SIZES_KEY, false),
+  setSectionSizes: (on) => { saveFlag(SIZES_KEY, !!on); set({ sectionSizes: !!on }) },
   rowLabels: readFlag(ROWS_KEY, true),
   setRowLabels: (on) => { saveFlag(ROWS_KEY, !!on); set({ rowLabels: !!on }) },
   bomFull: false,

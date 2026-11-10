@@ -47,7 +47,8 @@ import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects, travelArrowGeom } fro
 import { aisleLabelOps, aisleLabelBoxes, clearanceOps, clearanceSolids, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
 import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
 import { columnGridOps } from '../render/columnDraw'
-import { aisleLabelLayout } from '../canvas2/hitTest'
+import { aisleLabelLayout, aisleGapShown, gapShown, gapBase } from '../canvas2/hitTest'
+import { equipmentResolver } from '../utils/equipment'
 import { crossAisleLabels } from '../canvas2/crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
@@ -234,15 +235,18 @@ export function labelsSVG(objects, gridSize, opts) {
   // the aisle width labels graded as on screen: coloured while the Checks layer and the markings are on
   const warnProfile = opts.showMarks ? (opts.profile || null) : null
   if (opts.showAisles) {
+    // the labels the plan shows: never across a section edge unless a real aisle, never open floor (hitTest.js gapShown)
+    const gapR = equipmentResolver(objects, opts.profile || gapBase())
     for (const a of objects) {
       if (a.type !== 'aisle') continue
+      if (!aisleGapShown(a, objects, gridSize, gapR.pair(a.row1Id, a.row2Id))) continue
       const az = aisleLabelScale(a, opts.labelSize, gridSize)
       const L = aisleLabelLayout(a, objects, gridSize, { profile: warnProfile, lz: az })
       if (L) ops.push(...aisleLabelOps(L, az))
     }
     for (const L of crossAisleLabels(objects, gridSize, { profile: warnProfile, lz })) ops.push(...aisleLabelOps(L, lz))
     // a face with a zone or a wall in front of it, failing (generate/faceAisles.js): as on screen
-    if (warnProfile) for (const L of faceAisleLabels(objects, gridSize, { profile: warnProfile })) ops.push(...aisleLabelOps(L, lz))
+    if (warnProfile) for (const L of faceAisleLabels(objects, gridSize, { profile: warnProfile })) if (gapShown(L, objects, gridSize, gapR.of(L.rackId), false)) ops.push(...aisleLabelOps(L, lz))
   }
   if (opts.showMarks || opts.showAisles) {
     const racks = objects.filter(o => typeof o.type === 'string' && o.type.startsWith('rack_'))

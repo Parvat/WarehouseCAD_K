@@ -3,7 +3,7 @@ import { pxToFtIn } from '../utils/canvas'
 import { failingCrossAisles, fmtLenDown, sectionCrossAisles, isRow } from '../utils/copyChange'
 import { labelScale } from '../render/labelSize'
 import { equipmentResolver } from '../utils/equipment'
-import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX, columnRectsOf, aisleLabelStation } from './hitTest'
+import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX, columnRectsOf, aisleLabelStation, gapShown, gapBase } from './hitTest'
 
 /* ── Cross-aisle width labels ─────────────────────────────────────────────────
    A cross-aisle is not an object: it is a gap along the run between sections
@@ -74,7 +74,10 @@ export function crossAisleLabels(objects, gridSize = 40, { profile = null, lz = 
     if (g.sectioned) out.push(...lineLabels(k, g, objects, gridSize, profile, lz))
     else out.push(...envelopeLabels(k, g, gridSize, columnRectsOf(objects, gridSize), lz))
   }
-  return out
+  /* labels-sections: a cross-aisle is between run ends, never racks facing each other — none across a section edge,
+     none wider than 3 × the travel width (open floor) — of its two racks' stricter equipment (hitTest.js gapShown) */
+  const R = equipmentResolver(objects, gapBase())
+  return out.filter(L => gapShown(L, objects, gridSize, L.ids ? R.pair(...L.ids) : R.pair(), false))
 }
 
 /** A sectioned building: its cross-aisles from the per-line cross-aisles Check layout measures, a label about
@@ -139,6 +142,7 @@ function lineLabels(k, { parentId, rot, feet }, objects, gridSize, profile, lz) 
         positions: [pos],
         level: red ? 1 : 3,
         text,
+        ids: [narrow.a?.id, narrow.b?.id].filter(Boolean),      // its two racks (the gap rules read their equipment)
       })
     })
     return out
