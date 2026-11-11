@@ -2909,7 +2909,9 @@ describe('REG — the hand check by real clicks', () => {
     it('REG-live-overlays (click): every overlay moves in the same frame as its racks (tally-2 — was: the R labels, section name tabs and the Tally highlight sat where the racks were until the drop, then jumped; the selection bar trailed a pan by a frame) — everything selected (Ctrl+A) and dragged, after each mouse step the R labels, aisle labels, section name tabs and the Tally’s lit lines have moved exactly as the racks; panned (middle button), the selection bar too', async () => {
       await openSections()
       const b = await innerBox()
-      const s1 = await drawIn(b, 0.05, 0.05, 0.5, 0.6)
+      // (where its tag finds open floor: the tag is one of the overlays checked)
+      const s1 = await drawTagged(b, [[0.05, 0.05, 0.5, 0.6], [0.1, 0.1, 0.6, 0.7], [0.05, 0.3, 0.55, 0.9], [0.4, 0.05, 0.95, 0.6], [0.3, 0.3, 0.9, 0.95]])
+      expect(s1).toBeTruthy()
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       // the Tally open, Section 1's Total clicked: its lines lit on the plan
       await bomTab()
@@ -3229,7 +3231,7 @@ describe('REG — the hand check by real clicks', () => {
       return out
     })
 
-    it('REG-section-names (click): a section\u2019s label is one dark tag at the middle of its top edge in the zone size tag\u2019s style (the dark label pill, JetBrains Mono 11 px, #D8B4FE) reading Name · W x L — hidden until the section is hovered or selected (the View card\u2019s Section names off by default); Section names on shows every tag; no name text inside the section and no edge dimension labels (section-tag round — was: large name text in its biggest open floor area; before that a dark chip, a white tab); drawn above the racks; the Sections list unchanged', async () => {
+    it('REG-section-names (click): a section\u2019s label is one dark tag (the zone size tag\u2019s pill, JetBrains Mono 11 px, its text white #F2F4F1) reading Name · W × L in the app\u2019s feet-inches, placed on open floor — inside the section along its bottom, right, top or left edge, else just outside it — never over a rack, a zone, an aisle label, an R label or another tag; hidden until the section is hovered or selected (the View card\u2019s Section names off by default); Section names on shows every tag; no name text inside and no edge dimension labels (section-tag round 2 — was: top edge centre, ft/in words, #D8B4FE; before that large name text, a dark chip, a white tab); drawn above the racks; the Sections list unchanged', async () => {
       await openSections()
       const c0 = await freeCorner(), gs = await gs7()
       expect(c0).toBeTruthy()
@@ -3261,9 +3263,15 @@ describe('REG — the hand check by real clicks', () => {
       await toggle.click(); await L.page.waitForTimeout(150)
       expect(await viewState('Section names')).toBe('true')
       const tab = (await tabsNow())[sec.id], z = await L.S('return S.getState().zoom')
-      const words = (px) => { const t = Math.round(px / gs * 12), f = Math.floor(t / 12), i = t - f * 12; return i ? f + ' ft ' + i + ' in' : f + ' ft' }
-      expect([tab.text, tab.fill, tab.bg, /JetBrains Mono/.test(tab.font), Math.abs(tab.fs * z - 11) < 1e-6, tab.texts]).toEqual(['Section 1 · ' + words(sec.w) + ' x ' + words(sec.h), '#D8B4FE', '#0a0d16', true, true, 1])
-      expect([Math.abs((tab.x0 + tab.x1) / 2 - (sec.x + sec.w / 2)) < 1e-6, Math.abs((tab.y0 + tab.y1) / 2 - (sec.y + (11 * 1.4) / z)) < 1e-6]).toEqual([true, true])   // just inside the top edge, as the zone size tag
+      const words = (px) => L.S('return import("/src/utils/bom.js").then(B => B.ftIn(arg / (S.getState().gridSize || 40) * 12))', px)
+      expect([tab.text, tab.fill, tab.bg, /JetBrains Mono/.test(tab.font), Math.abs(tab.fs * z - 11) < 1e-6, tab.texts]).toEqual(['Section 1 · ' + (await words(sec.w)) + ' × ' + (await words(sec.h)), '#F2F4F1', '#0a0d16', true, true, 1])
+      // on open floor: inside the section (else just outside it) — no rack, zone, aisle label or R label under it
+      const where = await tabAt(sec.id)
+      if (where.place === 'inside') expect([tab.x0 >= sec.x - 1e-6, tab.y0 >= sec.y - 1e-6, tab.x1 <= sec.x + sec.w + 1e-6, tab.y1 <= sec.y + sec.h + 1e-6]).toEqual([true, true, true, true])
+      const meets = (b) => b.x < tab.x1 && tab.x0 < b.x + b.width && b.y < tab.y1 && tab.y0 < b.y + b.height
+      const solid = await L.S('const st = S.getState(); return st.objects.filter(o => /^(rack_|zone_)/.test(o.type)).map(o => H.worldBoundsOf(o, st.objects))')
+      const labels = await L.page.evaluate(() => window.Konva.stages[0].find(n => /^(aisle|cross-aisle):/.test(n.name()) || n.name() === 'rack-line-label').map(n => { const c = n.getClientRect({ relativeTo: n.getLayer() }); return { x: c.x, y: c.y, width: c.width, height: c.height } }))
+      expect([solid.filter(meets), labels.filter(meets)]).toEqual([[], []])
       expect(await L.page.evaluate(() => window.Konva.stages[0].find(n => /^secdim:/.test(n.name())).length)).toBe(0)   // no edge dimension labels
       const rackLayer = await L.page.evaluate(() => { const r = window.Konva.stages[0].findOne(n => /^obj:/.test(n.name()) && n.getLayer() && n.getAttr('name') && n.findOne && n.findOne('Rect')); return r ? r.getLayer().index : -1 })
       expect(tab.layer).toBeGreaterThan(rackLayer)                                              // drawn above the racks
@@ -3825,13 +3833,19 @@ describe('REG — the hand check by real clicks', () => {
     const ft = async (n) => n * (await gs7())
     /** a top-left corner inside the building where a section's name label lands on clear floor (a press there picks the
      *  building's floor, no rack) — sections are drawn inside the building since round 3 */
-    const freeCorner = () => L.S(`const st = S.getState(), z = st.zoom, fp = st.objects.find(o => /^fp_/.test(o.type)), gs = st.gridSize || 40
+    /** a free floor corner to draw a section of `w` × `h` ft from — one whose tag finds open floor (SectionNames.jsx: inside
+     *  along an edge, else just outside; never over a rack or a label — summary round: no room, no tag) */
+    const freeCorner = (w = 30, h = 24) => L.S(`return Promise.all([import('/src/canvas2/SectionNames.jsx'), import('/src/canvas2/labelPrefs.js'), import('/src/studio/viewPrefs.js'), import('/src/utils/layers.js')]).then(([N, LP, VP, LY]) => {
+      const st = S.getState(), z = st.zoom, fp = st.objects.find(o => /^fp_/.test(o.type)), gs = st.gridSize || 40
       const ok = (x, y) => H.hitTest(st.objects, st.layers, x, y, z, gs) === fp.id && !H.fpWallHitTest(st.objects, st.layers, x, y, z, gs)
+      const vp = VP.useViewPrefs.getState(), blocks = N.tagBlocks(st.objects, gs, { labelSize: LP.useLabelPrefs.getState().labelSize, rows: (vp.rowLabels || vp.bomFull) && LY.layerShown(st.layers, 'racking') })
       for (let fy = 0.03; fy < 0.9; fy += 0.005) for (let fx = 0.03; fx < 0.7; fx += 0.005) {
         const x = fp.x + fp.width * fx, y = fp.y + fp.height * fy
-        if ([[20, 17], [16, 15], [24, 19]].every(([dx, dy]) => ok(x + dx / z, y + dy / z))) return { x, y }   // the label's click point, and around it
+        if (![[20, 17], [16, 15], [24, 19]].every(([dx, dy]) => ok(x + dx / z, y + dy / z))) continue   // the press point, and around it
+        const s = { id: 'probe', type: 'section_area', shape: 'rect', label: 'Section ' + (st.objects.filter(o => o.type === 'section_area').length + 1), x, y, width: (arg.w - 1 / 12) * gs, height: (arg.h - 1 / 12) * gs, parentId: fp.id }   // (its longest text: a drawn edge snaps, 29′-11″)
+        if (N.sectionTagBox(s, gs, z, { blocks, objects: st.objects })) return { x, y }
       }
-      return null`)
+      return null })`, { w, h })
     /** the layout as opened: Fit has placed it off the islands (between the rail and the card — summary round; was: two
      *  wheel notches at the canvas middle) */
     const openSections = async () => { await open() }
@@ -3881,7 +3895,7 @@ describe('REG — the hand check by real clicks', () => {
 
     it('REG-section-edit (click): a section is selected by its name tab (the island’s Sections on — the tab on its outline, ui-polish-1; was: the label inside) or its outline; its name typed in the card or, on a second click on the tab, in place; a drag moves the section with the racks whose centre is in it (round 2) — every other rack stays; Delete removes the section only and one Ctrl+Z brings it back', async () => {
       await openSections()
-      const c0 = await freeCorner(), gs0 = await gs7()
+      const c0 = await freeCorner(40, 30), gs0 = await gs7()
       expect(c0).toBeTruthy()
       const c1 = { x: c0.x + 40 * gs0, y: c0.y + 30 * gs0 }
       await onCanvasAll([c0, c1])
@@ -3967,7 +3981,7 @@ describe('REG — the hand check by real clicks', () => {
 
     it('REG-section-layer (click): sections are on their own Sections layer — hidden in the Layers card they are not drawn; locked, a click still selects one and a drag moves nothing; Ctrl+A takes them', async () => {
       await openSections()
-      const c0 = await freeCorner(), gs0 = await gs7()
+      const c0 = await freeCorner(40, 30), gs0 = await gs7()
       expect(c0).toBeTruthy()
       const c1 = { x: c0.x + 40 * gs0, y: c0.y + 30 * gs0 }
       await onCanvasAll([c0, c1])
@@ -4019,6 +4033,21 @@ describe('REG — the hand check by real clicks', () => {
     const racksIn = (id) => L.S('return import("/src/utils/sectionAreas.js").then(M => M.membership(S.getState().objects).bySection.get(arg) || [])', id)
     const posOf = (ids) => L.S('const st = S.getState(); return arg.map(id => { const o = st.objects.find(x => x.id === id); return o ? [Math.round(o.x), Math.round(o.y)] : null })', ids)
     /** a rectangle section drawn inside the building, fractions of its inner face */
+    /** the first of `list` ([fx0, fy0, fx1, fy1] fractions of the inner face) whose section would get its tag — open floor
+     *  for it inside or just outside (SectionNames.jsx; summary round: no room, no tag) — drawn → the section */
+    const drawTagged = async (b, list) => {
+      for (const [fx0, fy0, fx1, fy1] of list) {
+        const r = { x: b.x0 + (b.x1 - b.x0) * fx0, y: b.y0 + (b.y1 - b.y0) * fy0, x1: b.x0 + (b.x1 - b.x0) * fx1, y1: b.y0 + (b.y1 - b.y0) * fy1 }
+        const fits = await L.S(`return Promise.all([import('/src/canvas2/SectionNames.jsx'), import('/src/canvas2/labelPrefs.js'), import('/src/studio/viewPrefs.js'), import('/src/utils/layers.js')]).then(([N, LP, VP, LY]) => {
+          const st = S.getState(), gs = st.gridSize || 40, vp = VP.useViewPrefs.getState(), fp = st.objects.find(o => /^fp_/.test(o.type))
+          const blocks = N.tagBlocks(st.objects, gs, { labelSize: LP.useLabelPrefs.getState().labelSize, rows: (vp.rowLabels || vp.bomFull) && LY.layerShown(st.layers, 'racking') })
+          // (its longest text: a drawn edge snaps, 29′-11″)
+          const sec = { id: 'probe', type: 'section_area', shape: 'rect', label: 'Section ' + (st.objects.filter(o => o.type === 'section_area').length + 1), x: arg.x, y: arg.y, width: arg.x1 - arg.x - gs / 12, height: arg.y1 - arg.y - gs / 12, parentId: fp.id }
+          return !!N.sectionTagBox(sec, gs, st.zoom, { blocks, objects: st.objects }) })`, r)
+        if (fits) return drawIn(b, fx0, fy0, fx1, fy1)
+      }
+      return null
+    }
     const drawIn = async (b, fx0, fy0, fx1, fy1) => {
       const a = { x: b.x0 + (b.x1 - b.x0) * fx0, y: b.y0 + (b.y1 - b.y0) * fy0 }, c = { x: b.x0 + (b.x1 - b.x0) * fx1, y: b.y0 + (b.y1 - b.y0) * fy1 }
       await onCanvasAll([a, c]); await drawRect(a, c)
@@ -4063,9 +4092,9 @@ describe('REG — the hand check by real clicks', () => {
       // C just drawn: selected — its width and length on its tag (section-tag round — was: along its edges; no edge
       // dimension labels for a section now)
       const dims = (id) => L.page.evaluate((id) => { const g = window.Konva.stages[0].findOne(n => n.name() === 'section-tab:' + id); return g ? g.findOne('.section-label').text() : null }, id)
-      const words = (px) => L.S('const gs = S.getState().gridSize || 40, t = Math.round(arg / gs * 12), f = Math.floor(t / 12), i = t - f * 12; return i ? f + " ft " + i + " in" : f + " ft"', px)
+      const words = (px) => L.S('return import("/src/utils/bom.js").then(B => B.ftIn(arg / (S.getState().gridSize || 40) * 12))', px)
       const dc = await dims(C.id)
-      expect(dc).toBe((await L.S('return S.getState().objects.find(o => o.id === arg).label', C.id)) + ' · ' + (await words(C.w)) + ' x ' + (await words(C.h)))
+      expect(dc).toBe((await L.S('return S.getState().objects.find(o => o.id === arg).label', C.id)) + ' · ' + (await words(C.w)) + ' × ' + (await words(C.h)))
       expect(await L.page.evaluate(() => window.Konva.stages[0].find(n => /^secdim:/.test(n.name())).length)).toBe(0)
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(150)
       expect([await dims(A.id), await dims(Bs.id), await dims(C.id)]).toEqual([null, null, null])
@@ -4094,7 +4123,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(wide.filter(a => after.includes('aisle:' + a.id)).map(a => a.ft)).toEqual([])
       // View card: Section names — every section's tag, its size on it (the Section sizes switch folded into it)
       await viewSwitch('Section names').click()
-      expect([/ x /.test(await dims(A.id)), / x /.test(await dims(Bs.id)), / x /.test(await dims(C.id))]).toEqual([true, true, true])   // (C is B with no cross-aisle)
+      expect([/ × /.test(await dims(A.id)), / × /.test(await dims(Bs.id)), / × /.test(await dims(C.id))]).toEqual([true, true, true])   // (C is B with no cross-aisle)
       await viewSwitch('Section names').click()
       expect(await dims(A.id)).toBe(null)
     }, T)
@@ -4378,14 +4407,16 @@ describe('REG — the hand check by real clicks', () => {
 
     it('REG-section-colour (click): 8 soft colours in the card and the bar — the outline, the tint and the label take it, and the PDF', async () => {
       await openSections()
-      const b = await innerBox(), s = await drawIn(b, 0.1, 0.1, 0.4, 0.4)
+      // (where its tag finds open floor — it is checked below)
+      const b = await innerBox(), s = await drawTagged(b, [[0.1, 0.1, 0.4, 0.4], [0.05, 0.05, 0.5, 0.6], [0.1, 0.3, 0.6, 0.7], [0.5, 0.1, 0.9, 0.5], [0.3, 0.5, 0.8, 0.95], [0.1, 0.5, 0.6, 0.99], [0.4, 0.6, 0.9, 0.99], [0.05, 0.01, 0.6, 0.4]])   // (a vertical layout: the open strip along a wall)
+      expect(s).toBeTruthy()
       const swatches = L.page.getByRole('group', { name: 'Section colour' }).getByRole('button')
       expect(await swatches.count()).toBe(9)                                       // none + 8
       await L.page.getByRole('button', { name: 'Colour Sky' }).click(); await L.page.waitForTimeout(150)
       const look = () => L.page.evaluate((id) => { const st = window.Konva.stages[0], g = st.findOne(n => n.name() === 'obj:' + id), t = st.findOne(n => n.name() === 'section-tab:' + id); return { stroke: g.findOne('Line').stroke(), fill: g.findOne('Line').fill(), label: t.findOne('.section-label').fill() } }, s.id)
       expect((await secObj(s.id)).color).toBe('sky')
       const l = await look()
-      expect([l.fill.startsWith('rgba(110, 156, 200'), l.stroke !== '#2E7D5B' && l.stroke !== '#B9C7BE', l.label === '#D8B4FE']).toEqual([true, true, true])   // its tint and outline (its tag keeps the zone size tag's look — section-tag round; was: the label took the colour)
+      expect([l.fill.startsWith('rgba(110, 156, 200'), l.stroke !== '#2E7D5B' && l.stroke !== '#B9C7BE', l.label === '#F2F4F1']).toEqual([true, true, true])   // its tint and outline (its tag's text stays white — section-tag round 2; was: the label took the colour)
       // the bar's Colour ▾: Rose
       await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Colour' }).click(); await L.page.waitForTimeout(150)
       await L.page.getByRole('menu', { name: 'Section colour' }).getByText('Rose').click(); await L.page.waitForTimeout(150)

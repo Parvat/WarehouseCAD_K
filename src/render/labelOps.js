@@ -80,8 +80,17 @@ export function aisleLabelOps(L, lz) {
  *  and the cross-aisle width labels (`cross`: the layout's cross-aisles), as `aisleLabelOps` draws them —
  *  read off its own rect ops, so they are exactly what is on the drawing. A column clearance label keeps
  *  clear of these (clearanceOps' `avoid`): the aisle width label has priority. */
-export function aisleLabelBoxes(objects, gridSize = 40, labelSize, { aisles = true, cross = true, profile = null } = {}) {
-  const out = [], take = (ops) => { for (const o of ops) if (o.op === 'rect') out.push({ x: o.x, y: o.y, w: o.w, h: o.h }) }
+export function aisleLabelBoxes(objects, gridSize = 40, labelSize, { aisles = true, cross = true, profile = null, whole = false } = {}) {
+  /* `whole`: one box per label round all it draws — its arrow across the gap too (a section's tag keeps off it) */
+  const out = [], take = (ops) => {
+    if (!whole) { for (const o of ops) if (o.op === 'rect') out.push({ x: o.x, y: o.y, w: o.w, h: o.h }); return }
+    const xs = [], ys = []
+    for (const o of ops) {
+      if (o.op === 'rect') { xs.push(o.x, o.x + o.w); ys.push(o.y, o.y + o.h) }
+      else if (Array.isArray(o.points)) for (let i = 0; i + 1 < o.points.length; i += 2) { xs.push(o.points[i]); ys.push(o.points[i + 1]) }
+    }
+    if (xs.length) { const x0 = Math.min(...xs), y0 = Math.min(...ys); out.push({ x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 }) }
+  }
   const gapR = aisles ? equipmentResolver(objects, gapBase()) : null
   if (aisles) for (const a of objects) {
     if (!a || a.type !== 'aisle') continue
