@@ -2,7 +2,7 @@ import { setDragPreview, clearDragPreview, setDragging } from './dragPreview'
 import { textOwnsKey } from '../utils/typing'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
-import { hitTest, hitTestBay, fpWallHitTest, wallBeatsPadding } from './hitTest'
+import { hitTest, hitTestBay, fpWallHitTest, wallBeatsPadding, worldBoundsOf } from './hitTest'
 import { handleHitTest, cursorForHandle, hasResizeHandles, objHasResizeHandles } from './handleGeometry'
 import { finishAreaResize } from '../utils/rackingAreaTool'
 import { bayHalfAt, setFlueHover } from '../utils/baySides'
@@ -48,6 +48,7 @@ import { POINT_HANDLE_PX } from './SectionShape'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { afterBuildingResize } from '../utils/buildingResize'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
+import { fitInset } from '../studio/fitInset'
 
 /* Beam/lane racks whose applyResize branch handles its own snapping
    internally (bay/tower/lane counts, not raw pixels) — ported verbatim from
@@ -717,7 +718,10 @@ export function useCanvasInteraction({
          wall's: the building is always picked by its wall (hitTest.js wallBeatsPadding) */
       /* A column (STUDIO.md §7, columnPick.js): a click picks that one column out of its grid — even on a locked
          Columns layer (locked: it cannot be moved, not clicked). Only an unlocked grid then drags. */
-      if (evt.button === 0 && !evt.shiftKey && (!hitObj || hitObj.type === 'column_grid' || FP_SET_INPUT.has(hitObj.type))) {
+      /* (a press ON a column square that a rack only reached by its pick padding is the column's — zoomed out, the padding
+         reaches over the column beside it; hitTest.js does the same for an unlocked grid) */
+      const padOver = (o) => { if (!o || !/^rack_/.test(o.type || '') || !columnAt(st.objects, st.layers, world.x, world.y, Infinity, st.gridSize || 40)) return false; const b = worldBoundsOf(o, st.objects); return !!b && !(world.x >= b.x && world.x <= b.x + b.width && world.y >= b.y && world.y <= b.y + b.height) }
+      if (evt.button === 0 && !evt.shiftKey && (!hitObj || hitObj.type === 'column_grid' || FP_SET_INPUT.has(hitObj.type) || padOver(hitObj))) {
         const col = columnAt(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize || 40)
         const locked = col && !pickableIn(st.layers)(st.objects.find(o => o.id === col.gridId))
         /* locked: nothing to drag — a drag from it is the floor's (a box of rows), a click picks it (on the release);
@@ -1751,13 +1755,17 @@ export function useCanvasInteraction({
      otherwise fit against whatever was current when that timer was
      SCHEDULED, not when it actually FIRES — stale by exactly the length of
      the delay. */
-  /* `inset`: { bottom } px of the canvas covered (the Tally drawer, studio/tally.js) — the fit goes in the room above it */
+  /* The plan goes in the canvas's free area (STUDIO.md §1): between the left rail and the right card, above the Tally
+     drawer when it is open — studio/fitInset.js reads them as shown. `inset`: { left, right, bottom } px to use instead. */
   const fitToContent = (inset) => {
     const st = useCanvasStore.getState()
     const container = stageRef.current?.container()
     const liveSize = container ? { w: container.clientWidth, h: container.clientHeight } : size
-    const bottom = Math.max(0, Math.min(liveSize.h * 0.8, inset?.bottom || 0))
-    const v = fitView(worldBounds(st.objects, st.gridSize), { w: liveSize.w, h: liveSize.h - bottom })
+    const I = inset || fitInset(container)
+    const bottom = Math.max(0, Math.min(liveSize.h * 0.8, I.bottom || 0))
+    const left = Math.max(0, Math.min(liveSize.w * 0.4, I.left || 0)), right = Math.max(0, Math.min(liveSize.w * 0.6, I.right || 0))
+    const v0 = fitView(worldBounds(st.objects, st.gridSize), { w: liveSize.w - left - right, h: liveSize.h - bottom })
+    const v = v0 && { ...v0, panX: v0.panX + left }
     if (v) setView(v)
     return v
   }

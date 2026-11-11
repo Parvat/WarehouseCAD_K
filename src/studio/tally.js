@@ -47,7 +47,7 @@ export const tallyInset = () => { const s = useTally.getState(); return { bottom
 /** Open the drawer; the plan fits into the space above it. */
 export function openTally() {
   useTally.setState({ open: true, modal: false, hover: null, cols: [], section: null })
-  requestAnimationFrame(() => fitRef.current?.(tallyInset()))
+  requestAnimationFrame(() => fitRef.current?.())
 }
 export const closeTally = () => { setTallyFocus(false, false); useTally.setState({ open: false, hover: null, cols: [], section: null }) }
 /** Pop out: the wide modal in place of the drawer. */
@@ -59,7 +59,7 @@ export function setTallyFocus(on, refit = true) {
   if (s.focus === !!on) return
   useTally.setState({ focus: !!on })
   if (!on && s.height > clampTallyH(s.height)) s.setHeight(s.height)
-  if (refit && s.open) requestAnimationFrame(() => fitRef.current?.(tallyInset()))
+  if (refit && s.open) requestAnimationFrame(() => fitRef.current?.())
 }
 export const closeTallyModal = () => useTally.setState({ modal: false })
 

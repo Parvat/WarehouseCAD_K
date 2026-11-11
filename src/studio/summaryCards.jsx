@@ -19,6 +19,8 @@ import { pxToFtIn } from '../utils/canvas'
 import { SectionsList } from './sectionCards'
 import { ftIn } from './cards'
 import { Caption, CountChip, Btn, C, MONO } from './cardParts'
+import { Icon } from './Icon'
+import { useViewPrefs } from './viewPrefs'
 
 /* Summary follows selection (STUDIO.md §7a): the right card's Properties tab shows the layout's figures under whatever is
    selected — nothing: the whole layout's Storage · Building · Racking · Aisles · Sections · Checks; a building: its fields,
@@ -208,6 +210,23 @@ export function ChecksBlock({ objects, T, gs, profile, pickBothSides, ids = null
         <Btn kind="inset" aria-label="Open layout check" style={{ marginLeft: 'auto', height: 26, padding: '0 10px', fontSize: 12 }} onClick={() => runLayoutCheck(useCanvasStore)}>Open</Btn>
       </div>
     </Block>
+  )
+}
+
+/** With something selected, the summary blocks sit under its own fields in one **Summary** fold — closed by default, its
+ *  open state remembered (studio/viewPrefs.js summaryOpen); closed, nothing of it is worked out. */
+export function SummaryFold({ children }) {
+  const open = useViewPrefs(s => s.summaryOpen)
+  return (
+    // (open, its last block's own line closes it)
+    <div role="group" aria-label="Summary fold" style={{ display: 'flex', flexDirection: 'column', borderBottom: open ? 'none' : `1px solid ${C.divider}` }}>
+      <button type="button" className="st-hov" aria-expanded={open} aria-label="Summary" onClick={() => useViewPrefs.getState().setSummaryOpen(!open)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', border: 0, borderBottom: open ? `1px solid ${C.divider}` : 'none', background: 'transparent', color: C.text, fontSize: 13, textAlign: 'left', cursor: 'pointer' }}>
+        <span style={{ flex: 1 }}>Summary</span>
+        <span style={{ display: 'flex', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><Icon name="Chevron" size={12} color={C.muted} /></span>
+      </button>
+      {open && <div style={{ display: 'flex', flexDirection: 'column' }}>{children}</div>}
+    </div>
   )
 }
 

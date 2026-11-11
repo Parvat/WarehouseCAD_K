@@ -1043,7 +1043,8 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.selected(), await tool()]).toEqual([[], 'pan'])
       // a click outside the building (on the open canvas) clears
       await L.click(floor)
-      const out = await L.S('const st = S.getState(), f = st.objects.find(o => o.id === arg); return [{ x: f.x - f.width * 0.03, y: f.y + f.height / 2 }, { x: f.x + f.width * 1.03, y: f.y + f.height / 2 }, { x: f.x + f.width / 2, y: f.y - f.height * 0.03 }, { x: f.x + f.width / 2, y: f.y + f.height * 1.03 }]', fp.id)
+      // (past the wall's pick band — screen px: nothing to pick there)
+      const out = await L.S('const st = S.getState(), f = st.objects.find(o => o.id === arg); return [0.03, 0.06, 0.1].flatMap(k => [{ x: f.x - f.width * k, y: f.y + f.height / 2 }, { x: f.x + f.width * (1 + k), y: f.y + f.height / 2 }, { x: f.x + f.width / 2, y: f.y - f.height * k }, { x: f.x + f.width / 2, y: f.y + f.height * (1 + k) }]).filter(w => !H.hitTest(st.objects, st.layers, w.x, w.y, st.zoom, st.gridSize) && !H.fpWallHitTest(st.objects, st.layers, w.x, w.y, st.zoom, st.gridSize))', fp.id)
       let outside = null
       for (const w of out) { const p = await L.toScreen(w); if (await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', p)) { outside = w; break } }
       expect(outside).toBeTruthy()
@@ -1138,10 +1139,11 @@ describe('REG — the hand check by real clicks', () => {
     const obj7 = (id) => L.S('return S.getState().objects.find(o => o.id === arg) || null', id)
     const kinds7 = () => L.S('const st = S.getState(); return st.selectedIds.map(id => st.objects.find(o => o.id === id)?.type)')
     const onCanvas = async (w) => { const p = await L.toScreen(w); return L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', p) }
-    /** A point of the open canvas outside the building (left, right, above, below it). */
+    /** A point of the open canvas outside the building (left, right, above, below it) — nothing there to pick (past the
+     *  wall's pick band, which is screen px: at the fitted zoom 3% of the building can still be within it) */
     const outside7 = async () => {
       const f = await fpOf()
-      for (const k of [0.03, 0.06, 0.1]) for (const w of [{ x: f.x - f.width * k, y: f.y + f.height / 2 }, { x: f.x + f.width * (1 + k), y: f.y + f.height / 2 }, { x: f.x + f.width / 2, y: f.y - f.height * k }, { x: f.x + f.width / 2, y: f.y + f.height * (1 + k) }]) if (await onCanvas(w)) return w
+      for (const k of [0.03, 0.06, 0.1]) for (const w of [{ x: f.x - f.width * k, y: f.y + f.height / 2 }, { x: f.x + f.width * (1 + k), y: f.y + f.height / 2 }, { x: f.x + f.width / 2, y: f.y - f.height * k }, { x: f.x + f.width / 2, y: f.y + f.height * (1 + k) }]) if (await onCanvas(w) && !(await L.S('const st = S.getState(); return H.hitTest(st.objects, st.layers, arg.x, arg.y, st.zoom, st.gridSize) || H.fpWallHitTest(st.objects, st.layers, arg.x, arg.y, st.zoom, st.gridSize)', w))) return w
       return null
     }
     /** A rack's local point (fx along its run from -0.5..0.5, fy across: -0.25 the top half, 0 the flue, 0.25 the bottom) in world. */
@@ -2689,14 +2691,7 @@ describe('REG — the hand check by real clicks', () => {
     /** two sections drawn side by side over the racks (Rectangle, real drags), the BOM tab open → [s1, s2] */
     const twoSections = async () => {
       await openSections()
-      // (the right card — nothing selected: the layout summary — is tall: zoomed out till both rectangles' corners are clear of it)
-      let b
-      for (let i = 0; i < 8; i++) {
-        b = await innerBox()
-        const ok = await Promise.all([[0.02, 0.02], [0.47, 0.6], [0.53, 0.35], [0.9, 0.95]].map(([fx, fy]) => onCanvas({ x: b.x0 + (b.x1 - b.x0) * fx, y: b.y0 + (b.y1 - b.y0) * fy })))
-        if (ok.every(Boolean)) break
-        await wheel(40)
-      }
+      const b = await innerBox()
       // (the second one lower and off the right edge: the right card, a section's card with its Equipment, covers the top right)
       const s1 = await drawIn(b, 0.02, 0.02, 0.47, 0.6)
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
@@ -3823,8 +3818,9 @@ describe('REG — the hand check by real clicks', () => {
         if ([[20, 17], [16, 15], [24, 19]].every(([dx, dy]) => ok(x + dx / z, y + dy / z))) return { x, y }   // the label's click point, and around it
       }
       return null`)
-    /** the layout a little smaller, off the islands (two wheel notches at the canvas middle) */
-    const openSections = async () => { await open(); await wheel(40, 2) }
+    /** the layout as opened: Fit has placed it off the islands (between the rail and the card — summary round; was: two
+     *  wheel notches at the canvas middle) */
+    const openSections = async () => { await open() }
     /** every world point on the canvas itself (not under an island), as a real press needs */
     const onCanvasAll = async (ws) => { for (const w of ws) { const q = await L.toScreen(w); expect([w, await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, q)]).toEqual([w, 'CANVAS']) } }
 
@@ -3994,8 +3990,10 @@ describe('REG — the hand check by real clicks', () => {
       const pts = s.shape === 'poly' ? s.pts.map(([x, y]) => [s.x + x, s.y + y]) : [[s.x, s.y], [s.x + s.width, s.y], [s.x + s.width, s.y + s.height], [s.x, s.y + s.height]]
       for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]
         for (let f = 0.1; f < 0.95; f += 0.05) { const x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f
-          // (not on a wall: a section edge snapped onto the inner wall — sections-3 — is the building's there)
-          if (H.hitTest(st.objects, st.layers, x, y, z, st.gridSize) === s.id && !H.fpWallHitTest(st.objects, st.layers, x, y, z, st.gridSize)) return { x, y } } }
+          // (not on a wall: a section edge snapped onto the inner wall — sections-3 — is the building's there; nor within a
+          // rack's pick padding — screen px, so at the fitted zoom an outline beside a rack is the rack's there)
+          const nearRack = st.objects.some(o => /^rack_/.test(o.type) && (() => { const b = H.worldBoundsOf(o, st.objects), m = 12 / z; return x > b.x - m && x < b.x + b.width + m && y > b.y - m && y < b.y + b.height + m })())
+          if (!nearRack && H.hitTest(st.objects, st.layers, x, y, z, st.gridSize) === s.id && !H.fpWallHitTest(st.objects, st.layers, x, y, z, st.gridSize)) return { x, y } } }
       return null`, id)
     /** the middle of section `id`'s name, where SectionNames.jsx draws it (its box as published — canvas2/sectionNameShown.js) */
     const tabAt = (id) => L.S('return import("/src/canvas2/sectionNameShown.js").then(M => { const b = M.useShownNames.getState().boxes[arg]; return b ? { x: b.x + b.w / 2, y: b.y + b.h / 2, place: b.place, fs: b.fs } : null })', id)
@@ -4725,6 +4723,11 @@ describe('REG — the hand check by real clicks', () => {
     const num = (t) => Number(String(t).replace(/,/g, '').replace(/ bays?$/, ''))
     /** its blocks in order (display: contents — the blocks are its children) */
     const blocksOf = (scope) => card().getByLabel(scope, { exact: true }).evaluate(el => [...el.children].map(c => c.getAttribute('aria-label')))
+    /** the Summary fold under a selection's fields: opened (or closed) by a click on its header */
+    const summaryFold = async (on = true) => {
+      const h = card().getByRole('button', { name: 'Summary', exact: true })
+      if ((await h.getAttribute('aria-expanded')) !== String(on)) { await h.click(); await L.page.waitForTimeout(200) }
+    }
     const nothing = async () => { await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200); await propsTab() }
 
     it('REG-summary-layout (click): nothing selected — the Layout summary: Storage (positions, usable, lost, the bar, Lost to by reason, per 1,000 sq ft) · Building (size, area, clear height, sprinklers) · Racking (lines, bays, frames, a line per elevation) · Aisles · Sections · Checks, in that order; positions and usable as the Check card counts them (reached by Open), bays and rack lines the BOM By row’s, frames the BOM’s, the check chips the Check card’s', async () => {
@@ -4779,6 +4782,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(await row.locator('[data-section-swatch]').count()).toBe(1)
       await row.click(); await L.page.waitForTimeout(250)
       expect(await L.S('return S.getState().selectedIds')).toEqual([s1.id])
+      await summaryFold()
       expect(await blocksOf('Section summary')).toEqual(['Storage', 'Racking', 'Aisles', 'Checks'])
       const f = await sums('Section summary')
       const lines = await L.S('return import("/src/utils/bom.js").then(B => B.computeBom(S.getState().objects, S.getState().elevations, { gridSize: S.getState().gridSize || 40 }).sections.find(s => s.id === arg).rows.length)', s1.id)
@@ -4793,6 +4797,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.click(half); await L.page.waitForTimeout(250)
       expect(await L.S('return S.getState().selectedIds')).toEqual([r.id])
       await propsTab()
+      await summaryFold()
       expect(await blocksOf('Line summary')).toEqual(['Storage', 'Racking', 'Parts'])
       const f = await sums('Line summary')
       const head = await card().getByLabel('Parts', { exact: true }).locator('[data-caption]').textContent()
@@ -4829,6 +4834,7 @@ describe('REG — the hand check by real clicks', () => {
         // nothing lost in this layout: a pair moved by the arrow keys toward its neighbour until its aisle is too narrow
         const { half } = await pairPoints()
         await L.click(half); await L.page.waitForTimeout(150)
+        await summaryFold()
         const key = name.endsWith('horizontal') ? 'ArrowDown' : 'ArrowRight'
         for (let i = 0; i < 60 && num((await sums('Line summary')).lost) === 0; i++) { await L.page.keyboard.press(key); await L.page.waitForTimeout(60) }
         await nothing()
@@ -4842,6 +4848,29 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.page.evaluate(() => window.Konva.stages[0].find('.issue-highlight').length)).toBe(1)
       await card().getByRole('button', { name: 'Hide lost racks' }).click(); await L.page.waitForTimeout(200)
       expect(await hl()).toBe(null)
+    }, T)
+
+    it('REG-summary-fold (click): with something selected the summary sits under its fields in a Summary fold, closed by default; opened it stays open — after another selection, and saved for the next load; nothing selected: the full summary, open, no fold', async () => {
+      await open()
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      const { r, half } = await pairPoints()
+      await L.click(half); await L.page.waitForTimeout(250)
+      await propsTab()
+      const head = card().getByRole('button', { name: 'Summary', exact: true })
+      expect([await head.getAttribute('aria-expanded'), await card().getByLabel('Line summary', { exact: true }).count()]).toEqual(['false', 0])
+      await head.click(); await L.page.waitForTimeout(200)
+      expect([await head.getAttribute('aria-expanded'), await card().getByLabel('Line summary', { exact: true }).count()]).toEqual(['true', 1])
+      // nothing selected: the Layout summary, no fold
+      await nothing()
+      expect([await card().getByRole('button', { name: 'Summary', exact: true }).count(), await card().getByLabel('Layout summary', { exact: true }).count()]).toEqual([0, 1])
+      // remembered: another rack, then after a reload
+      await L.click(half); await L.page.waitForTimeout(250)
+      expect(await card().getByRole('button', { name: 'Summary', exact: true }).getAttribute('aria-expanded')).toBe('true')
+      expect(await L.S('return S.getState().selectedIds')).toEqual([r.id])
+      // (saved per browser — read back on load, studio/viewPrefs.js; handCheck's openLayout starts each test with none)
+      expect(await L.page.evaluate(() => localStorage.getItem('trace.studio.summaryOpen'))).toBe('1')
+      await summaryFold(false)
+      expect(await L.page.evaluate(() => localStorage.getItem('trace.studio.summaryOpen'))).toBe('0')
     }, T)
   })
 })

@@ -339,9 +339,23 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
   /* An object reached only by its pick padding (the press outside the object itself) loses to one of the same
      priority that really holds the point — a door against the wall, under the padding of the rack along it
      (STUDIO.md §7a: a click selects what is under the cursor). */
+  /* a column square that really holds the point beats a rack reached only by its pick padding (the same rule; zoomed
+     out, a rack's padding reaches over the column beside it) */
+  const onColumn = (obj, pad) => {
+    const spacingX = obj.spacingX || [obj.width || 40 * 40]
+    const spacingY = obj.spacingY || [obj.height || 40 * 40]
+    const colW = obj.columnW || (12 / 12) * gridSize
+    const colH = obj.columnH || (12 / 12) * gridSize
+    const colXs = [obj.x]; spacingX.forEach(s => colXs.push(colXs[colXs.length - 1] + s))
+    const colYs = [obj.y]; spacingY.forEach(s => colYs.push(colYs[colYs.length - 1] + s))
+    return colYs.some(cy => colXs.some(cx =>
+      wx >= cx - pad && wx <= cx + colW + pad &&
+      wy >= cy - pad && wy <= cy + colH + pad))
+  }
+  const padHit = (pad) => { for (const obj of sorted) if (COL_GRID.has(obj.type) && isLayerUsable(layerMap, obj) && onColumn(obj, 0)) return obj.id; return pad.id }
   let padOnly = null
   for (const obj of sorted) {
-    if (padOnly && priority(obj) !== padOnly.p) return padOnly.id
+    if (padOnly && priority(obj) !== padOnly.p) return padHit(padOnly)
     if (!isLayerUsable(layerMap, obj)) continue
     if (COL_GRID.has(obj.type) || FP_SET.has(obj.type)) continue
     if (obj.type === 'elevation_types') continue   // data (utils/elevations.js), nothing to pick
@@ -383,23 +397,13 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
       if (!padOnly) padOnly = { id: obj.id, p: priority(obj) }
     }
   }
-  if (padOnly) return padOnly.id
+  if (padOnly) return padHit(padOnly)
 
   // Pass 2 — column_grid, hit only ON a column square.
   for (const obj of sorted) {
     if (!isLayerUsable(layerMap, obj)) continue
     if (!COL_GRID.has(obj.type)) continue
-    const spacingX = obj.spacingX || [obj.width || 40 * 40]
-    const spacingY = obj.spacingY || [obj.height || 40 * 40]
-    const colW = obj.columnW || (12 / 12) * gridSize
-    const colH = obj.columnH || (12 / 12) * gridSize
-    const colXs = [obj.x]; spacingX.forEach(s => colXs.push(colXs[colXs.length - 1] + s))
-    const colYs = [obj.y]; spacingY.forEach(s => colYs.push(colYs[colYs.length - 1] + s))
-    const pad = 4 / zoom
-    const hit = colYs.some(cy => colXs.some(cx =>
-      wx >= cx - pad && wx <= cx + colW + pad &&
-      wy >= cy - pad && wy <= cy + colH + pad))
-    if (hit) return obj.id
+    if (onColumn(obj, 4 / zoom)) return obj.id
   }
 
   // Pass 3 — floor plans, last.

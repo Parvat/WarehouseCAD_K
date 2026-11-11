@@ -45,7 +45,6 @@ import { TOOLS } from '../constants'
 import { useViewPrefs, fitRef } from '../studio/viewPrefs'
 import { RackLineLabels } from './RackLineLabels'
 import { publishView, useView } from './live'
-import { tallyInset } from '../studio/tally'
 import { TallyFill, TallyHighlight } from './TallyHighlight'
 import { SectionNames } from './SectionNames'
 
@@ -294,7 +293,7 @@ export function Canvas2() {
   /* the bottom-right island's Fit calls this (src/studio/StudioFrame.jsx) */
   /* (while the Tally drawer is open, into the room above it — studio/tally.js) */
   useEffect(() => {
-    const fit = (inset) => fitToContent(inset || tallyInset())
+    const fit = (inset) => fitToContent(inset)
     fitRef.current = fit; return () => { if (fitRef.current === fit) fitRef.current = null }
   })
 

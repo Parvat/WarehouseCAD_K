@@ -22,7 +22,7 @@ import { ColumnCheckBody } from './ColumnCheckPanel'
 import { ColumnLineFields } from './panels/ColumnLineFields'
 import { SectionMain } from '../../studio/sectionCards'
 import { RackMain, RowGroupMain, ZoneMain, NothingSelected } from '../../studio/cards'
-import { LayoutSummary, SectionSummary, LineSummary, BaySummary, SelectionSummary } from '../../studio/summaryCards'
+import { LayoutSummary, SectionSummary, LineSummary, BaySummary, SelectionSummary, SummaryFold } from '../../studio/summaryCards'
 import { useRowGroup, groupRowsNow } from '../../utils/rowGroupTool'
 import { Head, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, StaticField, Row, ToggleRow, Seg, Btn,
   IconBtn, Note, Hint, SecLabel, Fold, C, MONO, LockedFields } from '../../studio/cardParts'
@@ -204,7 +204,7 @@ export function PropertiesPanel() {
           <SelectionRacks selected={selected} />
           <Btn kind="danger" onClick={() => deleteSelectionWithAreas(useCanvasStore)}>Delete group</Btn>
         </Sec>
-        <SelectionSummary selected={selected} />
+        {selected.some(o => /^rack_/.test(o.type || '')) && <SummaryFold><SelectionSummary selected={selected} /></SummaryFold>}
         <More />
       </>
     )
@@ -232,7 +232,7 @@ export function PropertiesPanel() {
           <Btn kind="danger" onClick={() => deleteSelectionWithAreas(useCanvasStore)}>Delete all</Btn>
         </Sec>
         {/* the selection's totals */}
-        <SelectionSummary selected={selected} />
+        {selected.some(o => /^rack_/.test(o.type || '')) && <SummaryFold><SelectionSummary selected={selected} /></SummaryFold>}
         <More />
       </>
     )
@@ -254,7 +254,7 @@ export function PropertiesPanel() {
           ? <RowGroupMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} rows={groupRows} />
           : <RackMain obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} />}
         {/* its rack lines' summary — a bay picked: that bay's (studio/summaryCards.jsx) */}
-        {obj.activeBayIdx != null ? <BaySummary obj={obj} /> : <LineSummary obj={obj} />}
+        <SummaryFold>{obj.activeBayIdx != null ? <BaySummary obj={obj} /> : <LineSummary obj={obj} />}</SummaryFold>
         <More rack locked={locked}>
           <ObjectActions obj={obj} />
           <LockedFields locked={locked}>
@@ -285,7 +285,7 @@ export function PropertiesPanel() {
     return (
       <>
         <SectionMain obj={obj} />
-        <SectionSummary obj={obj} />
+        <SummaryFold><SectionSummary obj={obj} /></SummaryFold>
         <More locked={locked}>
           <ObjectActions obj={obj} />
         </More>
@@ -353,7 +353,7 @@ export function PropertiesPanel() {
         </LockedFields>
       </Sec>
       {/* a building: its fields, then the whole layout's summary */}
-      {obj.type?.startsWith('fp_') && <LayoutSummary />}
+      {obj.type?.startsWith('fp_') && <SummaryFold><LayoutSummary /></SummaryFold>}
       <More locked={locked}>
         <ObjectActions obj={obj} />
         <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
