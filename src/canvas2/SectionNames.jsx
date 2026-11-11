@@ -1,62 +1,62 @@
-// SectionNames.jsx — the sections' names on the plan (STUDIO.md §7a Sections): large text like a zone's name (Plus Jakarta
-// Sans 600, the zone's size rule) in the section's colour (#767C74 with none), placed in the section's biggest open floor
-// area — no rack, no zone and no label under it (the aisle and cross-aisle width labels, the R labels, the columns and their
-// clearance numbers, other sections' names) — shrunk to fit down to 1 ft; with no room inside, just outside an edge on open floor; never over a rack
-// (utils/sectionAreas.js nameBox). Shown for every section while the View card's Section names is on, else only for the
-// one hovered or selected (sectionNameShown.js); hidden while its name is typed. Each box is published as drawn
-// (sectionNameShown.js boxes): the click and the rename box read the same place. Pure paint (never listens); hidden with
-// the Sections layer.
+// SectionNames.jsx — a section's label on the plan (STUDIO.md §7a Sections): one dark tag at the middle of its top edge,
+// just inside it, in the zone size tag's style and place (ZoneEdit.jsx ZoneSizeLabel: the dark label pill, JetBrains Mono 11 px), reading
+// "Name · W x L" — "Section 1 · 26 ft 11 in x 37 ft 1 in" — or, for a custom shape, "Name · area" ("Section 2 · 1,240
+// sq ft"). No name inside the section and no dimension labels along its edges. Shown while the section is hovered or
+// selected, or for every section while the View card's Section names is on (sectionNameShown.js); hidden while its name
+// is typed. Each tag's box is published as drawn (sectionNameShown.js boxes, world px): a press on it is the section's
+// (canvas2/hitTest.js), and the rename box opens on it. Pure paint (never listens); hidden with the Sections layer.
 
 import { useEffect, useMemo } from 'react'
-import { Group, Text } from 'react-konva'
+import { Group, Rect, Text } from 'react-konva'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useViewPrefs } from '../studio/viewPrefs'
 import { useHoverTarget } from './hoverTarget'
 import { useSectionHover, useSectionRename } from './sectionTool'
 import { nameShownBy, useShownNames } from './sectionNameShown'
-import { isSection, nameBox, nameColor, LABEL } from '../utils/sectionAreas'
+import { isSection, polygonOf, areaOf } from '../utils/sectionAreas'
 import { layerShown } from '../utils/layers'
-import { useLiveObjects } from './live'
-import { useLabelPrefs } from './labelPrefs'
-import { labelScale } from '../render/labelSize'
-import { aisleLabelBoxes } from '../render/labelOps'
-import { rackLinesNow } from '../utils/rackLines'
-import { rowLabelPlaces, ROW_LABEL_PX } from './RackLineLabels'
-import { columnRectsOf } from './hitTest'
+import { useLiveObjects, useView } from './live'
+
+/* the zone size tag's look (ZoneEdit.jsx ZoneSizeLabel → DimensionLabels.jsx LabelPill) */
+const TAG = { px: 11, bg: '#0a0d16', fg: '#D8B4FE', opacity: 0.85, padX: 4, radius: 2, font: 'JetBrains Mono, monospace' }
+
+/** A length in words: 26 ft 11 in (whole inches; 0 in left out). */
+export const ftInWords = (px, gs) => { const t = Math.round((px / gs) * 12), f = Math.floor(t / 12), i = t - f * 12; return i ? `${f} ft ${i} in` : `${f} ft` }
+/** A section's tag text: "Name · W x L", a custom shape "Name · area". */
+export function sectionTagText(s, gs) {
+  const name = s.label || 'Section'
+  if (s.shape === 'poly') return `${name} · ${Math.round(areaOf(s) / (gs * gs)).toLocaleString('en-US')} sq ft`
+  return `${name} · ${ftInWords(s.width, gs)} x ${ftInWords(s.height, gs)}`
+}
+/** The tag's box (world px) at `zoom`: at the middle of the section's top edge, just inside it as the zone size tag sits
+ *  (its centre 1.4 × 11 px in — clear of the selected section's top handle, which takes a press first) */
+export function sectionTagBox(s, gs, zoom) {
+  const p = polygonOf(s), xs = p.map(q => q[0]), ys = p.map(q => q[1])
+  const fs = TAG.px / zoom, text = sectionTagText(s, gs)
+  const w = text.length * fs * 0.62 + (TAG.padX / zoom) * 2, h = fs * 1.5
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = Math.min(...ys) + (TAG.px * 1.4) / zoom
+  return { x: cx - w / 2, y: cy - h / 2, w, h, fs, text }
+}
 
 export function SectionNames() {
   // where the sections are drawn now — a drag moves them before the store (live.js)
   const objects = useLiveObjects()
+  const zoom = useView().zoom
   const { layers, selectedIds, gs } = useCanvasStore(useShallow(s => ({ layers: s.layers, selectedIds: s.selectedIds, gs: s.gridSize || 40 })))
-  const on = useViewPrefs(s => s.sectionNames), rowsOn = useViewPrefs(s => s.rowLabels || s.bomFull)
-  const labelSize = useLabelPrefs(s => s.labelSize)
+  const on = useViewPrefs(s => s.sectionNames)
   const hoverIds = useHoverTarget(s => s.target?.ids || null)
   const listHover = useSectionHover(s => s.id), renaming = useSectionRename(s => s.id)
   const visible = layerShown(layers, 'sections')
   const shown = visible ? objects.filter(o => isSection(o) && nameShownBy({ on, selectedIds, hoverIds, listHover }, o.id)) : []
   const want = shown.map(s => s.id).concat(renaming && !shown.some(s => s.id === renaming) ? [renaming] : [])
   const key = want.join(',')
-  // the plan's labels a name keeps off: the width labels and (when drawn) the R labels, then each name placed in turn
   const boxes = useMemo(() => {
-    if (!key) return {}
-    const avoid = [...aisleLabelBoxes(objects, gs, labelSize)]
-    // the columns and the clearance numbers drawn beside them (9.5 at the Label size — render/labelOps.js): each column grown
-    // by three of their heights
-    const cg = (3 * 9.5) / labelScale(labelSize, gs)
-    for (const c of columnRectsOf(objects, gs)) avoid.push({ x: c.x - cg, y: c.y - cg, w: c.w + 2 * cg, h: c.h + 2 * cg })
-    if (rowsOn && layerShown(layers, 'racking')) {
-      const fsR = ROW_LABEL_PX / labelScale(labelSize, gs)
-      for (const p of rowLabelPlaces(rackLinesNow(objects, gs), fsR, avoid)) avoid.push({ x: p.x, y: p.y, w: p.w, h: p.h })
-    }
     const out = {}
-    for (const id of key.split(',')) {
-      const s = objects.find(o => o.id === id)
-      const b = s ? nameBox(s, objects, { gridSize: gs, avoid }) : null
-      if (b) { out[id] = b; avoid.push(b) }
-    }
+    if (!key) return out
+    for (const id of key.split(',')) { const s = objects.find(o => o.id === id); if (s) out[id] = sectionTagBox(s, gs, zoom) }
     return out
-  }, [key, objects, gs, labelSize, rowsOn, layers])
+  }, [key, objects, gs, zoom])
   // what is drawn is what a click can reach (canvas2/hitTest.js), and where
   const drawn = shown.filter(s => s.id !== renaming && boxes[s.id])
   const ids = drawn.map(s => s.id).join(',')
@@ -69,8 +69,10 @@ export function SectionNames() {
         const b = boxes[s.id]
         return (
           <Group key={s.id} name={'section-tab:' + s.id} listening={false}>
-            <Text name="section-label" x={b.x} y={b.y} width={b.w} height={b.h} align="center" verticalAlign="middle" text={s.label || 'Section'}
-              fontSize={b.fs} fontStyle={LABEL.weight} fontFamily={LABEL.font} fill={nameColor(s)} listening={false} perfectDrawEnabled={false} />
+            <Rect name="section-tag" x={b.x} y={b.y} width={b.w} height={b.h} fill={TAG.bg} opacity={TAG.opacity} cornerRadius={TAG.radius / zoom}
+              perfectDrawEnabled={false} listening={false} />
+            <Text name="section-label" x={b.x} y={b.y} width={b.w} height={b.h} align="center" verticalAlign="middle" text={b.text}
+              fontSize={b.fs} fontFamily={TAG.font} fill={TAG.fg} listening={false} perfectDrawEnabled={false} />
           </Group>
         )
       })}

@@ -2,7 +2,7 @@ import { SELECT_BLUE, selectTint } from '../theme/tokens'
 import { Rect, Line, Group } from 'react-konva'
 import { equipmentResolver } from '../utils/equipment'
 import { SelectionOutline } from './shapes'
-import { RackLabels, FpDimLabels, SectionDimLabels, AisleLabelItem, CrossAisleLabels, FaceAisleLabels, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
+import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, FaceAisleLabels, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
 import { useMemo, useRef, memo } from 'react'
 import { aisleLabelBoxes } from '../render/labelOps'
 import { useColumnCheck } from '../generate/useColumnCheck'
@@ -15,8 +15,6 @@ import { aisleLabelLayout, columnRectsOf, aisleGapShown } from './hitTest'
 import { useLabelPrefs } from './labelPrefs'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { layerShown } from '../utils/layers'
-import { useViewPrefs } from '../studio/viewPrefs'
-import { isSection } from '../utils/sectionAreas'
 import { labelScale, aisleLabelScale } from '../render/labelSize'
 import { isPiece, withSections, sectionsOf, sectionView } from './sections'
 import { useClearanceView } from './clearanceView'
@@ -168,9 +166,6 @@ function OverlaysView({
   }, [bayLevel, selectedObjects, objects, gridSize, onlyCol])
   const equipR = useMemo(() => equipmentResolver(objects, warnProfile), [objects, warnProfile])
   const rackSel = selectedObjects.filter(o => rackLabelsEligible(o.type))
-  const allSizes = useViewPrefs(s => s.sectionSizes)
-  const selIds = useMemo(() => new Set(selectedObjects.map(o => o.id)), [selectedObjects])
-  const sizedSections = chromePart && layerShown(layers, 'sections') ? pObjects.filter(o => isSection(o) && (allSizes || selIds.has(o.id))) : []
   const labelled = useMemo(() => {
     const secs = sectionsOf(objects, rackSel.map(o => o.id), gridSize)
     if (secs.length !== 1) return []
@@ -183,8 +178,7 @@ function OverlaysView({
       {chromePart && selectedObjects.map(o => (FP_TYPES.has(o.type) && o.fpVerts)
         ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={lz} gridSize={gridSize}
             activeWallIdx={activeWall && activeWall.objId === o.id ? activeWall.wallIdx : null} /> : null)}
-      {/* a section's sizes along its edges: selected, or every section with the View card's Section sizes on */}
-      {chromePart && sizedSections.map(s => <SectionDimLabels key={'sd:' + s.id} obj={s} zoom={lz} gridSize={gridSize} />)}
+      {/* (a section's size is on its tag — SectionNames.jsx; no dimension labels along its edges) */}
       <Group x={aisleRigid ? dx : 0} y={aisleRigid ? dy : 0} listening={false}>
       {/* each label graded against its own rows' equipment, resolved on the whole layout (its sections — utils/equipment.js):
           a label is drawn from its two rows alone, which hold no section */}
