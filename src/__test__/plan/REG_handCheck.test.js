@@ -5216,5 +5216,39 @@ describe('REG — the hand check by real clicks', () => {
       for (const m of c1.lines) expect([m.na <= maxBays, m.nb >= 3]).toEqual([true, true])
       expect(c1.range[1]).toBe(0)                                                                   // no further that way
     }, T)
+
+    /* ── xaisle-tool: Fill no longer splits a row at Max run; the Cross aisle tool cuts rows where it is dragged; Max run is
+       a Check warning — by real mouse on every fixture ── */
+    /** the racks now, without ids (sorted; numbers to 0.01) — Generate's output compared before and after */
+    const rackDump = () => L.S(`const st = S.getState(), r2 = (v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : v)
+      return st.objects.filter(o => /^rack_/.test(o.type)).map(o => JSON.stringify(Object.fromEntries(Object.keys(o).filter(k => !/id$/i.test(k) && !/Id$/.test(k) && k !== 'placed').sort().map(k => [k, r2(o[k])])))).sort()`)
+    /** Generate (Regenerate) by its button in the top-right island, then the card's own button; waits until it is done */
+    const runGenerate = async (maxRunFt = null) => {
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      // (the card may still be open from the last run: the button would close it)
+      if (!await L.page.locator('div[aria-label="Generate"]').count()) { await L.page.locator('[data-island="top-right"] button').filter({ hasText: /Generate|Regenerate/ }).click(); await L.page.waitForTimeout(250) }
+      // the card's Max run typed (a shorter one makes Generate cut its rows with cross-aisles)
+      if (maxRunFt != null) { const f = L.page.locator('div[aria-label="Generate"]').getByLabel('Max rack run (ft)'); await f.click(); await f.fill(String(maxRunFt)); await L.page.waitForTimeout(150) }
+      const go = L.page.locator('div[aria-label="Generate"]').getByRole('button', { name: /^(Regenerate|Generate)$/ })
+      await go.click()
+      for (let i = 0; i < 300 && await L.page.locator('div[aria-label="Generate"]').getByText(/Generating/).count(); i++) await L.page.waitForTimeout(100)
+      await L.page.waitForTimeout(300)
+    }
+
+    it('REG-xaisle-generate-same (click): Generate on the fixture gives exactly the racks it gave before the xaisle-tool round — Fill stopped splitting rows, Generate keeps its automatic cross-aisles (baseline: handCheck/generate-<fixture>.json, written from 27ec968)', async () => {
+      await open()
+      await runGenerate()
+      const plain = await rackDump()
+      // and with Max run 50 ft typed in the card: Generate's own cross-aisles cut every long row
+      await runGenerate(50)
+      const cut = await rackDump()
+      expect([plain.length > 0, cut.length > plain.length]).toEqual([true, true])
+      const now = { plain, cut }
+      const file = new URL('./handCheck/generate-' + name + '.json', import.meta.url)
+      if (process.env.GEN_BASELINE) fs.writeFileSync(file, JSON.stringify(now, null, 1))
+      const was = JSON.parse(readFileSync(file, 'utf8'))
+      expect([now.plain.length, now.cut.length]).toEqual([was.plain.length, was.cut.length])
+      expect(now).toEqual(was)
+    }, T)
   })
 })
