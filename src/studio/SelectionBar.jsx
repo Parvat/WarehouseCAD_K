@@ -4,12 +4,12 @@ import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { toggleLock, isLockedIn } from '../utils/layers'
 import { useLocked } from './useLocked'
-import { SECTION_COLORS, colorOf, onLabel } from '../utils/sectionAreas'
+import { SECTION_COLORS, colorOf } from '../utils/sectionAreas'
 import { setSectionColor, duplicateSections } from '../utils/sectionEdit'
 import { hasBoundary } from '../utils/sectionAreas'
 import { startSectionDoors } from '../utils/doorTool'
 import { TOOLS } from '../constants'
-import { worldBoundsOf, hitTest, fpWallHitTest, wallBeatsPadding } from '../canvas2/hitTest'
+import { worldBoundsOf, hitTest, fpWallHitTest } from '../canvas2/hitTest'
 import { screenToWorld } from '../canvas2/viewport'
 import { useDragPreview } from '../canvas2/dragPreview'
 import { useView, useLiveView } from '../canvas2/live'
@@ -555,12 +555,8 @@ export function openFloorMenu(e, host) {
   const w = screenToWorld(lv.ready ? lv : { zoom: st.zoom, panX: st.panX, panY: st.panY }, p), gs = st.gridSize || 40   // live-ok: the store's only before the canvas first draws
   const hit = hitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs)
   let obj = hit && st.objects.find(o => o.id === hit)
-  // a press on a wall that a rack only reached by its pick padding is the wall's (hitTest.js wallBeatsPadding)
-  // (a section's shown name chip is above everything: a press on it is the section's, a wall under it too — sections-3)
-  const onChip = !!obj && obj.type === 'section_area' && onLabel(obj, w.x, w.y, st.zoom, st.objects)
-  const padWall = onChip ? null : wallBeatsPadding(st.objects, st.layers, w.x, w.y, st.zoom, gs, obj)
-  if (padWall) obj = st.objects.find(o => o.id === padWall.objId)
-  else if (!obj || FP.has(obj.type)) { const wall = fpWallHitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs); obj = wall ? st.objects.find(o => o.id === wall.objId) : null }
+  // (what holds it is the one hit rule's — hitTest.js pickAt; a wall gives its building)
+  if (!obj || FP.has(obj.type)) { const wall = fpWallHitTest(st.objects, st.layers, w.x, w.y, st.zoom, gs); obj = wall ? st.objects.find(o => o.id === wall.objId) : null }
   const at = { x: e.clientX, y: e.clientY }
   if (!obj) { useFloorMenu.setState({ at, objId: null }); return 'floor' }
   if (!st.selectedIds.includes(obj.id)) {

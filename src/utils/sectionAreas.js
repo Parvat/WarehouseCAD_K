@@ -279,8 +279,11 @@ const EPS_IN = 1e-4                              // world px: how far in a point
 /** Do segments a–b and c–d cross at a point inside both (a proper crossing — not touching, not lying along)? */
 function crosses(a, b, c, d) {
   const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
-  const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d), e = 1e-9
-  return ((d1 > e && d2 < -e) || (d1 < -e && d2 > e)) && ((d3 > e && d4 < -e) || (d3 < -e && d4 > e))
+  // the tolerance a distance (1e-6 world px), not a fixed cross product: that grows with the edges' length, so two edges
+  // touching to a float's rounding (a section snapped onto its neighbour) "crossed" once long enough
+  const lab = Math.hypot(b[0] - a[0], b[1] - a[1]), lcd = Math.hypot(d[0] - c[0], d[1] - c[1])
+  const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d), e1 = 1e-6 * lcd, e2 = 1e-6 * lab
+  return ((d1 > e1 && d2 < -e1) || (d1 < -e1 && d2 > e1)) && ((d3 > e2 && d4 < -e2) || (d3 < -e2 && d4 > e2))
 }
 /** Points just inside polygon `p`: each edge's middle, nudged EPS_IN toward the inside. */
 function insidePoints(p) {

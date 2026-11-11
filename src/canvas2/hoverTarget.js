@@ -7,7 +7,7 @@
 
 import { create } from 'zustand'
 import { sectionAt } from '../utils/sectionAreas'
-import { hitTest, hitTestBay, fpWallHitTest, wallBeatsPadding } from './hitTest'
+import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
 import { handleHitTest, objHasResizeHandles } from './handleGeometry'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { fpRotateHandleHitTest } from './fpRotate'
@@ -68,9 +68,8 @@ export function predictClick(st, w, zoom) {
     }
   }
   // a wall: the building
-  const padWall = wallBeatsPadding(st.objects, st.layers, w.x, w.y, zoom, gs, hit)
-  if (!hit || FP.has(hit.type) || padWall) {
-    const wall = padWall || fpWallHitTest(st.objects, st.layers, w.x, w.y, zoom, gs)
+  if (!hit || FP.has(hit.type)) {
+    const wall = fpWallHitTest(st.objects, st.layers, w.x, w.y, zoom, gs)
     if (wall) return { key: 'building:' + wall.objId, kind: 'building', ids: [wall.objId] }
   }
   // a section's empty area: the section (selected already: it stays) — STUDIO.md §7a Sections

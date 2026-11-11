@@ -33,9 +33,10 @@ describe('canvas2 hitTest — object picking, ported from the SVG', () => {
     expect(hitTest([{ ...row, locked: true }], LAYERS, 1500, 70, 1, GS)).toBe(row.id)
   })
 
-  it('checks annotations/text before plain shapes when they overlap', () => {
-    const text = { id: 't1', type: 'text', layerId: 'l1', x: 100, y: 40, width: 40, height: 20 }
-    expect(hitTest([row, text], LAYERS, 110, 50, 1, GS)).toBe('t1')
+  it('checks annotations/text before plain shapes when they overlap — when both truly hold the point; a text reached only by its padding loses to a rack that does (the one hit rule, STUDIO.md §7a — summary round)', () => {
+    const text = { id: 't1', type: 'text', layerId: 'l1', x: 100, y: 40, width: 40, height: 20 }   // its box: y 26–46
+    expect(hitTest([row, text], LAYERS, 110, 36, 1, GS)).toBe('t1')     // inside the text's box (and the rack): the text, on top
+    expect(hitTest([row, text], LAYERS, 110, 50, 1, GS)).toBe('r1')     // 4 px under it — its padding only: the rack
   })
 
   it('hits a column ONLY on its square, not the grid bounding box', () => {

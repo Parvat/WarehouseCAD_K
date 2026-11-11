@@ -45,21 +45,25 @@ if (DEAL.shard === 0) describe.each(['horizontal', 'vertical'])('REG — the han
   it('REG-wall-pick: a press on a wall that a rack beside it reaches only by its pick padding picks the building — the press inside the rack still picks the rack; an older layout\'s Generate-locked Building layer is released on load, a hand lock is kept', async () => {
     const H = await import('../../canvas2/hitTest')
     const st = store.getState(), fp = st.objects.find(o => FP.test(o.type)), gs = st.gridSize || 40, zoom = 0.09
-    // the wall rack: a rack whose box comes within 6″ of a wall
+    // the wall rack: a rack whose pick padding reaches over a wall (the press outside the rack itself)
+    const C = await import('../../utils/canvas')
     const racks = st.objects.filter(o => /^rack_/.test(o.type))
     let found = null
     for (const r of racks) {
       const b = H.worldBoundsOf(r, st.objects)
       for (const [wx, wy] of [[fp.x, b.y + b.height / 2], [fp.x + fp.width, b.y + b.height / 2], [b.x + b.width / 2, fp.y], [b.x + b.width / 2, fp.y + fp.height]]) {
-        if (H.hitTest(st.objects, st.layers, wx, wy, zoom, gs) === r.id && !(wx >= b.x && wx <= b.x + b.width && wy >= b.y && wy <= b.y + b.height)) { found = { r, wx, wy, b }; break }
+        if (C.objectContains(r, wx, wy, zoom) && !(wx >= b.x && wx <= b.x + b.width && wy >= b.y && wy <= b.y + b.height)) { found = { r, wx, wy, b }; break }
       }
       if (found) break
     }
     expect(found).toBeTruthy()                                                         // the padding reaches the wall
-    expect(H.wallBeatsPadding(st.objects, st.layers, found.wx, found.wy, zoom, gs, found.r)?.objId).toBe(fp.id)
+    // the one hit rule (hitTest.js pickAt — summary round; was: wallBeatsPadding asked after the pick): the wall truly holds
+    // the press, the rack only by its padding — the building; inside the rack, the rack
+    expect([H.hitTest(st.objects, st.layers, found.wx, found.wy, zoom, gs), H.pickAt(st.objects, st.layers, found.wx, found.wy, zoom, gs).kind]).toEqual([fp.id, 'wall'])
     const inside = { x: found.b.x + found.b.width / 2, y: found.b.y + found.b.height / 2 }
-    expect(H.wallBeatsPadding(st.objects, st.layers, inside.x, inside.y, zoom, gs, found.r)).toBe(null)
-    expect(read('canvas2/useCanvasInteraction.js')).toMatch(/const padWall = evt\.button === 0 && !onChip \? wallBeatsPadding\(st\.objects, st\.layers, world\.x, world\.y, view\.current\.zoom, st\.gridSize, hitObj\) : null/)   // (sections-3: not over a section's shown name chip)
+    expect(H.hitTest(st.objects, st.layers, inside.x, inside.y, zoom, gs)).toBe(found.r.id)
+    // one rule for every click: the press, the hover and the right-click add no exception of their own
+    for (const f of ['canvas2/useCanvasInteraction.js', 'canvas2/hoverTarget.js', 'studio/SelectionBar.jsx']) expect([f, /\b(wallBeatsPadding|padOver|onChip)\b/.test(read(f))]).toEqual([f, false])
     // an older layout: the Building layer an older Generate locked — released on load; a hand lock (setLayer) stays
     const SL = await import('../../utils/saveLoad'), L = await import('../../utils/layers')
     const old = JSON.parse(SL.serializeScene(store.getState()))
@@ -200,11 +204,13 @@ describe('REG — the hand check by real clicks', () => {
       await L.click({ x: fp.x + fp.width / 2, y: fp.y })
       expect(await L.selected()).toEqual([fp.type])
       // the wall beside a rack whose pick padding reaches over it (made so in the crowded layouts)
-      const wp = await L.S(`const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), ids = arg ? [arg] : st.objects.filter(o => /^rack_/.test(o.type)).map(o => o.id)
+      // (the rack reaches it only by its padding: outside the rack itself — the one hit rule then gives the wall, hitTest.js
+      // pickAt. On the wall's line 1 screen px out: zoomed out, 3″ is under a pixel, and a press lands on whole pixels)
+      const wp = await L.S(`return import('/src/utils/canvas.js').then(C => { const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), ids = arg ? [arg] : st.objects.filter(o => /^rack_/.test(o.type)).map(o => o.id), u = 1 / st.zoom
         for (const id of ids) { const r = st.objects.find(o => o.id === id), b = H.worldBoundsOf(r, st.objects)
-          for (const [x, y] of [[fp.x, b.y + b.height / 2], [fp.x + fp.width, b.y + b.height / 2], [b.x + b.width / 2, fp.y], [b.x + b.width / 2, fp.y + fp.height]])
-            if (H.hitTest(st.objects, st.layers, x, y, st.zoom, st.gridSize) === r.id) return { x, y, rack: r.id, type: r.type, c: { x: b.x + b.width / 2, y: b.y + b.height / 2 } } }
-        return null`, crowded ? L.meta.wallRack : null)
+          for (const [x, y] of [[fp.x - u, b.y + b.height / 2], [fp.x + fp.width + u, b.y + b.height / 2], [b.x + b.width / 2, fp.y - u], [b.x + b.width / 2, fp.y + fp.height + u]])
+            if (C.objectContains(r, x, y, st.zoom) && !(x >= b.x - u && x <= b.x + b.width + u && y >= b.y - u && y <= b.y + b.height + u) && H.pickAt(st.objects, st.layers, x, y, st.zoom, st.gridSize).kind === 'wall') return { x, y, rack: r.id, type: r.type, c: { x: b.x + b.width / 2, y: b.y + b.height / 2 } } }
+        return null })`, crowded ? L.meta.wallRack : null)
       if (crowded) expect(wp).toBeTruthy()
       if (wp) {
         await L.page.keyboard.press('Escape'); await L.click(wp)
@@ -426,6 +432,8 @@ describe('REG — the hand check by real clicks', () => {
         const p = await pairPoints(id)
         let ok = true
         for (const w of [p.half, p.far, p.flue]) { const q = await L.toScreen(w); if (!(await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', q))) { ok = false; break } }
+        // (a bay under its half: with every rack in view — the Fit, summary round — one whose half there has no bay can come up)
+        if (ok && (await L.S('const st = S.getState(); return H.hitTestBay(st.objects.find(o => o.id === arg.id), arg.p.x, arg.p.y, st.gridSize)', { id, p: p.half })) == null) ok = false
         if (ok) return p
       }
       throw new Error('no row on the open canvas')
@@ -1793,6 +1801,11 @@ describe('REG — the hand check by real clicks', () => {
     it('REG-7b-group (click): Row group — a click on a row not in the group adds it, on a group row picks at it (its bay), Shift+click on a group row takes it out, a box on the floor adds rows, a click on the floor does nothing; no edit row, every group row has its handles: a handle drag edits that row and applies to the others; a body drag past 6 px moves the whole group (one undo), under 6 px it is that click; cursors move / resize / crosshair (was: a click toggled the row)', async () => {
       await open()
       const ids = await openRacks('rack_double_row', 6), gs = await gs7(), f = await fpOf()
+      // two rows with as many bays (an edit at one's end replays at the same bay of the other); the Fit puts every rack in
+      // view now, so the first two open racks need not be such a pair (summary round)
+      const lens = await L.S('return arg.map(id => S.getState().objects.find(o => o.id === id).beams.length)', ids)
+      const j = ids.findIndex((id, i) => i > 0 && lens[i] === lens[0])
+      if (j > 1) ids.splice(1, 0, ids.splice(j, 1)[0])
       let r = await obj7(ids[0]), q = await obj7(ids[1])
       const cr = rackAt(r, -0.3, -0.25), cq = rackAt(q, -0.3, -0.25)
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('g'); await L.page.waitForTimeout(100)
@@ -3958,7 +3971,7 @@ describe('REG — the hand check by real clicks', () => {
       const c1 = { x: c0.x + 40 * gs0, y: c0.y + 30 * gs0 }
       await onCanvasAll([c0, c1])
       await drawRect(c0, c1)
-      const [s] = await secsNow(), z = await L.S('return S.getState().zoom'), label = { x: s.x + 20 / z, y: s.y + 17 / z }
+      const [s] = await secsNow()
       expect(await L.S('const st = S.getState(), o = st.objects.find(x => x.type === "section_area"); return o.layerId')).toBe('sections')
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       const drawn = () => L.page.evaluate((id) => !!window.Konva.stages[0].findOne(n => n.name() === 'obj:' + id), s.id)
@@ -3969,8 +3982,12 @@ describe('REG — the hand check by real clicks', () => {
       await layersCard().getByRole('button', { name: 'Lock Sections layer' }).click(); await L.page.waitForTimeout(150)
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       expect(await drawn()).toBe(true)
-      // locked: a click on its label still selects it; a drag from its outline moves nothing
-      await L.click(label)
+      // locked: a click on its name still selects it (shown while the section is hovered — its outline, here); a drag from
+      // its outline moves nothing
+      { const h = await grip(s.id), hq = await L.toScreen(h); await L.page.mouse.move(hq.x, hq.y, { steps: 2 }); await L.page.waitForTimeout(200) }
+      const nb = await tabAt(s.id)
+      expect(nb).toBeTruthy()
+      await L.click(nb)
       expect(await L.selected()).toEqual(['section_area'])
       const gs = await gs7(), edge = await grip(s.id)
       await L.drag(edge, { x: edge.x + 10 * gs, y: edge.y }); await L.page.waitForTimeout(200)
@@ -3990,10 +4007,10 @@ describe('REG — the hand check by real clicks', () => {
       const pts = s.shape === 'poly' ? s.pts.map(([x, y]) => [s.x + x, s.y + y]) : [[s.x, s.y], [s.x + s.width, s.y], [s.x + s.width, s.y + s.height], [s.x, s.y + s.height]]
       for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]
         for (let f = 0.1; f < 0.95; f += 0.05) { const x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f
-          // (not on a wall: a section edge snapped onto the inner wall — sections-3 — is the building's there; nor within a
-          // rack's pick padding — screen px, so at the fitted zoom an outline beside a rack is the rack's there)
-          const nearRack = st.objects.some(o => /^rack_/.test(o.type) && (() => { const b = H.worldBoundsOf(o, st.objects), m = 12 / z; return x > b.x - m && x < b.x + b.width + m && y > b.y - m && y < b.y + b.height + m })())
-          if (!nearRack && H.hitTest(st.objects, st.layers, x, y, z, st.gridSize) === s.id && !H.fpWallHitTest(st.objects, st.layers, x, y, z, st.gridSize)) return { x, y } } }
+          // (not on a wall: a section edge snapped onto the inner wall — sections-3 — is the building's there; the press
+          // point chosen by the one hit rule — hitTest.js pickAt: on the outline itself, so the section truly holds it)
+          const k = H.pickAt(st.objects, st.layers, x, y, z, st.gridSize)
+          if (k.id === s.id && k.real && !H.fpWallHitTest(st.objects, st.layers, x, y, z, st.gridSize)) return { x, y } } }
       return null`, id)
     /** the middle of section `id`'s name, where SectionNames.jsx draws it (its box as published — canvas2/sectionNameShown.js) */
     const tabAt = (id) => L.S('return import("/src/canvas2/sectionNameShown.js").then(M => { const b = M.useShownNames.getState().boxes[arg]; return b ? { x: b.x + b.w / 2, y: b.y + b.h / 2, place: b.place, fs: b.fs } : null })', id)
@@ -4265,7 +4282,8 @@ describe('REG — the hand check by real clicks', () => {
       await L.click(await grip(s.id))
       const bc = { x: o3.x, y: o3.y + o3.height }
       await onCanvasAll([bc])
-      await L.drag(bc, { x: bc.x - 20 * gs, y: bc.y + 200 * gs }); await L.page.waitForTimeout(250)
+      const zb = await L.S('return S.getState().zoom')
+      await L.drag(bc, { x: bc.x - 20 * gs, y: b.y1 + 40 / zb }); await L.page.waitForTimeout(250)   // (past the wall, the pointer still in the window)
       const o4 = await secObj(s.id)
       expect([Math.abs(o4.y + o4.height - b.y1) < 0.5, Math.abs(o4.x - o3.x) < 0.5]).toEqual([true, true])
     }, T)
@@ -4299,7 +4317,7 @@ describe('REG — the hand check by real clicks', () => {
       const draft = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; return { guide: !!st.findOne('.section-guide'), len: st.findOne('.section-length')?.text() ?? null } })
       // the live length: 20′ (the mouse lands on whole screen pixels: to within 2″)
       const d0 = await draft(), lm = /^(\d+)′(?:-(\d+)″)?$/.exec(d0.len || ''), inches = lm ? Number(lm[1]) * 12 + Number(lm[2] || 0) : NaN
-      expect([d0.guide, Math.abs(inches - 240) <= 2]).toEqual([true, true])
+      expect([d0.guide, Math.abs(inches - 240) <= Math.max(2, Math.ceil(12 / (z * gs)))]).toEqual([true, true])   // (a screen px at the fitted zoom)
       await L.page.mouse.click(q2.x, q2.y); await L.page.waitForTimeout(150)
       let pen = await L.S('return import("/src/canvas2/sectionTool.js").then(M => M.useSectionTool.getState().pen)')
       expect(Math.abs(pen[1][1] - pen[0][1]) < 1e-6).toBe(true)                        // level with the first point, as placed
@@ -4395,7 +4413,8 @@ describe('REG — the hand check by real clicks', () => {
       const o = await secObj(s.id), mid = { x: o.x + o.width / 2, y: o.y }
       const q = await L.toScreen(mid); await L.page.mouse.move(q.x, q.y + 2, { steps: 2 }); await L.page.mouse.click(q.x, q.y + 2); await L.page.waitForTimeout(200)
       const door = await L.S('return S.getState().objects.filter(o => o.sectionId === arg).map(o => ({ type: o.type, cx: o.x + o.width / 2 }))', s.id)
-      expect([door.length, Math.abs(door[0].cx - mid.x) < 1e-6, await runs('wall')]).toEqual([1, true, 5])   // the top edge now two runs
+      const zd = await L.S('return S.getState().zoom')
+      expect([door.length, Math.abs(door[0].cx - mid.x) <= 1 / zd, await runs('wall')]).toEqual([1, true, 5])   // (centred where the press lands: whole screen px)   // the top edge now two runs
       await L.page.keyboard.press('Escape')
     }, T)
 
@@ -4533,7 +4552,10 @@ describe('REG — the hand check by real clicks', () => {
       const empty = (id) => L.S(`const st = S.getState(), z = st.zoom, s = st.objects.find(o => o.id === arg), fp = st.objects.find(o => /^fp_/.test(o.type))
         for (let fy = 0.2; fy < 0.95; fy += 0.01) for (let fx = 0.2; fx < 0.95; fx += 0.01) {
           const x = s.x + s.width * fx, y = s.y + s.height * fy
-          if (H.hitTest(st.objects, st.layers, x, y, z, st.gridSize) === fp.id && !H.fpWallHitTest(st.objects, st.layers, x, y, z, st.gridSize) && !(CP && CP.columnAt(st.objects, st.layers, x, y, z, st.gridSize))) return { x, y }
+          // the floor by the one hit rule (hitTest.js pickAt) — and 2 screen px round it, as a real press lands on whole pixels
+          const floor = (u, v) => H.pickAt(st.objects, st.layers, u, v, z, st.gridSize).kind === 'floor' && !H.fpWallHitTest(st.objects, st.layers, u, v, z, st.gridSize) && !(CP && CP.columnAt(st.objects, st.layers, u, v, z, st.gridSize))
+          const d = 2 / z
+          if ([[0, 0], [d, d], [-d, d], [d, -d], [-d, -d]].every(([u, v]) => floor(x + u, y + v))) return { x, y }
         }
         return null`, id)
       const e = await empty(s.id)

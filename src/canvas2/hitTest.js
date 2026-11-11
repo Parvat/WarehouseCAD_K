@@ -318,7 +318,6 @@ export function aisleLabelHit(aisle, objects, wx, wy, zoom = 1, gridSize = 40, p
  *  `layers` is the store's layer list; an object on a hidden or locked layer,
  *  or itself locked, can never be picked — matching CanvasArea exactly. */
 export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
-  const layerMap = new Map((layers || []).map(l => [l.id, l]))
   const priority = o =>
     (o.type?.startsWith('annot_') || o.type === 'text') ? 2
       : FP_SET.has(o.type) ? 0
@@ -329,91 +328,93 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
       /* a section (utils/sectionAreas.js) is drawn under everything: a rack, a zone or a door on its outline wins */
       : o.type === 'section_area' ? 0.6
       : 1
-  const sorted = [...objects].sort((a, b) => priority(b) - priority(a))
+  return pickAt(objects, layers, wx, wy, zoom, gridSize, priority).id
+}
 
-  /* A section's name tab, while it shows, is drawn above everything (SectionNames.jsx): a press on it is the section's,
-     whatever stands under it */
-  for (const obj of objects) if (obj.type === 'section_area' && isLayerUsable(layerMap, obj) && nameShown(obj.id) && onLabel(obj, wx, wy, zoom, objects)) return obj.id
-
-  // Pass 1 — everything except the grid and the building.
-  /* An object reached only by its pick padding (the press outside the object itself) loses to one of the same
-     priority that really holds the point — a door against the wall, under the padding of the rack along it
-     (STUDIO.md §7a: a click selects what is under the cursor). */
-  /* a column square that really holds the point beats a rack reached only by its pick padding (the same rule; zoomed
-     out, a rack's padding reaches over the column beside it) */
+/* ── the one hit rule (STUDIO.md §7a Hit rule) ─────────────────────────────────────────────────────────────────────
+   An object whose real shape holds the point beats an object reached only by its pick padding — whatever the two are:
+   a rack, a wall, a section's outline or its shown name, a door, a column, a zone. Among the objects that truly hold
+   it, the one drawn on top wins (the priorities above); padding decides only when nothing truly holds it (again the
+   one on top), and the building's blank floor comes last. The real shapes: an object's own footprint; a column's
+   square; a wall's drawn thickness (2 screen px at least); a section's or a racking area's outline line (2 screen px) and a section's shown
+   name; an aisle's width label. The padding: a rack's few screen px around it, a column's 4, an outline's 6, a wall's
+   band (24 screen px). The press, the hover, the right-click and every tool read this one function, so a hover always
+   shows what a click takes. → { id: the object (a wall: its building), kind: 'object' | 'wall' | 'column' | 'floor' |
+   'none', real: true when it truly holds the point } */
+export function pickAt(objects, layers, wx, wy, zoom, gridSize = 40, priority = null) {
+  const layerMap = new Map((layers || []).map(l => [l.id, l]))
+  const P = priority || ((o) => (o.type?.startsWith('annot_') || o.type === 'text') ? 2 : FP_SET.has(o.type) ? 0 : COL_GRID.has(o.type) ? 0.5
+    : (typeof o.type === 'string' && o.type.startsWith('zone_')) ? 0.75 : o.type === 'section_area' ? 0.6 : 1)
+  const sorted = [...objects].sort((x, y) => P(y) - P(x))
+  /* A section's name, while it shows, is drawn above everything (SectionNames.jsx): a press on it is the section's */
+  for (const obj of objects) if (obj.type === 'section_area' && isLayerUsable(layerMap, obj) && nameShown(obj.id) && onLabel(obj, wx, wy, zoom, objects)) return { id: obj.id, kind: 'object', real: true }
   const onColumn = (obj, pad) => {
-    const spacingX = obj.spacingX || [obj.width || 40 * 40]
-    const spacingY = obj.spacingY || [obj.height || 40 * 40]
-    const colW = obj.columnW || (12 / 12) * gridSize
-    const colH = obj.columnH || (12 / 12) * gridSize
-    const colXs = [obj.x]; spacingX.forEach(s => colXs.push(colXs[colXs.length - 1] + s))
-    const colYs = [obj.y]; spacingY.forEach(s => colYs.push(colYs[colYs.length - 1] + s))
-    return colYs.some(cy => colXs.some(cx =>
-      wx >= cx - pad && wx <= cx + colW + pad &&
-      wy >= cy - pad && wy <= cy + colH + pad))
+    for (const c of expandColumnGrid(obj, gridSize)) if (wx >= c.x - pad && wx <= c.x + c.w + pad && wy >= c.y - pad && wy <= c.y + c.h + pad) return true
+    return false
   }
-  const padHit = (pad) => { for (const obj of sorted) if (COL_GRID.has(obj.type) && isLayerUsable(layerMap, obj) && onColumn(obj, 0)) return obj.id; return pad.id }
-  let padOnly = null
+  const line = 2 / zoom
+  let real = null, pad = null
+  const take = (cand) => {
+    if (cand.real) { if (!real || cand.p > real.p) real = cand }
+    else if (!pad || cand.p > pad.p) pad = cand
+  }
   for (const obj of sorted) {
-    if (padOnly && priority(obj) !== padOnly.p) return padHit(padOnly)
     if (!isLayerUsable(layerMap, obj)) continue
-    if (COL_GRID.has(obj.type) || FP_SET.has(obj.type)) continue
     if (obj.type === 'elevation_types') continue   // data (utils/elevations.js), nothing to pick
-    /* An aisle carries no x/y/width/height of its own — objectContains
-       (utils/canvas.js, frozen brain) has no case for it and degenerates to
-       a 0×0 box at the origin, never hittable. Its real geometry is the gap
-       rect between its two referenced rows (aisleRect above), so it gets its
-       own point-in-rect test here instead of objectContains — the one place
-       this module already carries geometry objectContains doesn't know
-       (fpWallHitTest is the other). */
-    /* A racking area is picked on its dashed outline only (within a few
-       screen pixels of it): its inside is the racks and aisles it placed,
-       and a press there must reach them, not the area behind them. */
-    if (obj.type === 'racking_area') {
-      const band = 6 / zoom
-      const x0 = obj.x, y0 = obj.y, x1 = obj.x + obj.width, y1 = obj.y + obj.height
-      const inOuter = wx >= x0 - band && wx <= x1 + band && wy >= y0 - band && wy <= y1 + band
-      const inInner = wx > x0 + band && wx < x1 - band && wy > y0 + band && wy < y1 - band
-      if (inOuter && !inInner) return obj.id
+    const p = P(obj)
+    if (FP_SET.has(obj.type)) {
+      /* a wall: its drawn thickness is the wall; the band around it (24 screen px) is its padding */
+      for (const seg of getFpWallSegments(obj, gridSize)) {
+        const d = distToSegment({ x: wx, y: wy }, seg.a, seg.b)
+        // (its drawn line: at least 2 screen px — zoomed out, a 3″ wall is under a pixel)
+        if (d <= Math.max((obj.wallThicknessFt || 0.25) * gridSize, line)) take({ id: obj.id, kind: 'wall', real: true, p })
+        else if (d < Math.max(18, 24 / zoom)) take({ id: obj.id, kind: 'wall', real: false, p })
+      }
       continue
     }
-    /* A section is picked by its outline (a few screen pixels of it) or its name tab while the tab shows (sectionNameShown.js):
-       its inside is the racks standing in it and the floor, which a press there reaches (STUDIO.md §7a Sections). */
-    if (obj.type === 'section_area') {
-      if (onOutline(obj, wx, wy, 6 / zoom) || (onLabel(obj, wx, wy, zoom, objects) && nameShown(obj.id))) return obj.id
+    if (COL_GRID.has(obj.type)) {
+      /* a column grid is hit only ON a column square (the grid spans the whole building) */
+      if (obj.showGrid === false) continue
+      if (onColumn(obj, 0)) take({ id: obj.id, kind: 'column', real: true, p })
+      else if (onColumn(obj, 4 / zoom)) take({ id: obj.id, kind: 'column', real: false, p })
       continue
     }
+    /* An aisle carries no x/y/width/height of its own — objectContains (utils/canvas.js, frozen brain) has no case
+       for it. Only its width label picks it (a label not shown — across a section edge, or open floor — is not there) */
     if (obj.type === 'aisle') {
-      /* Only its labels pick an aisle. The whole gap used to: a press on
-         empty aisle floor selected the aisle, so the building behind it
-         could hardly be grabbed to move the layout. */
-      // a label not shown (across a section edge, or open floor: gapShown) is not there to pick
-      if (aisleLabelHit(obj, objects, wx, wy, zoom, gridSize, aisleWarnProfile(layerMap)) && aisleGapShown(obj, objects, gridSize, equipmentResolver(objects, gapBase()).pair(obj.row1Id, obj.row2Id))) return obj.id
+      if (aisleLabelHit(obj, objects, wx, wy, zoom, gridSize, aisleWarnProfile(layerMap)) && aisleGapShown(obj, objects, gridSize, equipmentResolver(objects, gapBase()).pair(obj.row1Id, obj.row2Id))) take({ id: obj.id, kind: 'object', real: true, p })
+      continue
+    }
+    /* A racking area is picked on its dashed outline only: its inside is the racks and aisles it placed */
+    if (obj.type === 'racking_area') {
+      const dx = Math.max(obj.x - wx, 0, wx - (obj.x + obj.width)), dy = Math.max(obj.y - wy, 0, wy - (obj.y + obj.height))
+      const out = Math.hypot(dx, dy), inn = Math.min(wx - obj.x, obj.x + obj.width - wx, wy - obj.y, obj.y + obj.height - wy)
+      const d = out > 0 ? out : Math.max(0, inn)
+      if (d <= line) take({ id: obj.id, kind: 'object', real: true, p })
+      else if (d <= 6 / zoom) take({ id: obj.id, kind: 'object', real: false, p })
+      continue
+    }
+    /* A section is picked by its outline (its inside is the racks standing in it and the floor — §7a Sections) */
+    if (obj.type === 'section_area') {
+      if (onOutline(obj, wx, wy, line)) take({ id: obj.id, kind: 'object', real: true, p })
+      else if (onOutline(obj, wx, wy, 6 / zoom)) take({ id: obj.id, kind: 'object', real: false, p })
       continue
     }
     if (objectContains(obj, wx, wy, zoom)) {
-      const b = worldBoundsOf(obj, objects)
-      if (!b || !(b.width > 0) || !(b.height > 0) || (wx >= b.x && wx <= b.x + b.width && wy >= b.y && wy <= b.y + b.height)) return obj.id
-      if (!padOnly) padOnly = { id: obj.id, p: priority(obj) }
+      // (a text's box is the one objectContains pads — worldBoundsOf measures its words)
+      const b = obj.type === 'text' ? getObjectBounds(obj) : worldBoundsOf(obj, objects)
+      const inside = !b || !(b.width > 0) || !(b.height > 0) || (wx >= b.x && wx <= b.x + b.width && wy >= b.y && wy <= b.y + b.height)
+      take({ id: obj.id, kind: 'object', real: inside, p })
     }
   }
-  if (padOnly) return padHit(padOnly)
-
-  // Pass 2 — column_grid, hit only ON a column square.
+  if (real) return { id: real.id, kind: real.kind, real: true }
+  if (pad) return { id: pad.id, kind: pad.kind, real: false }
+  // the building's blank floor, last
   for (const obj of sorted) {
-    if (!isLayerUsable(layerMap, obj)) continue
-    if (!COL_GRID.has(obj.type)) continue
-    if (onColumn(obj, 4 / zoom)) return obj.id
+    if (!isLayerUsable(layerMap, obj) || !FP_SET.has(obj.type)) continue
+    if (objectContains(obj, wx, wy, zoom)) return { id: obj.id, kind: 'floor', real: false }
   }
-
-  // Pass 3 — floor plans, last.
-  for (const obj of sorted) {
-    if (!isLayerUsable(layerMap, obj)) continue
-    if (!FP_SET.has(obj.type)) continue
-    if (objectContains(obj, wx, wy, zoom)) return obj.id
-  }
-
-  return null
+  return { id: null, kind: 'none', real: false }
 }
 
 /** Which floor plan's wall a world point falls on, as { objId, wallIdx }, or
@@ -446,7 +447,9 @@ export function fpWallHitTest(objects, layers, wx, wy, zoom, gridSize = 40, band
   return null
 }
 
-/** A press ON a building's wall (within its drawn thickness and a few screen px) that the pick gave to an object only
+/** (Before the one hit rule — pickAt — the press, the hover and the right-click asked this after the pick. Kept for the
+ *  wall-row check, REG_handCheck's Fix test.)
+ *  A press ON a building's wall (within its drawn thickness and a few screen px) that the pick gave to an object only
  *  through that object's pick padding — the press is outside the object itself (a rack standing 3″ off the wall, its
  *  8px padding reaching over the wall at plan zoom): the wall wins, so the building can always be picked by its wall.
  *  An object really on the wall (the press inside it) still wins. → the wall hit, or null. */

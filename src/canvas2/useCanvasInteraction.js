@@ -2,7 +2,7 @@ import { setDragPreview, clearDragPreview, setDragging } from './dragPreview'
 import { textOwnsKey } from '../utils/typing'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
-import { hitTest, hitTestBay, fpWallHitTest, wallBeatsPadding, worldBoundsOf } from './hitTest'
+import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
 import { handleHitTest, cursorForHandle, hasResizeHandles, objHasResizeHandles } from './handleGeometry'
 import { finishAreaResize } from '../utils/rackingAreaTool'
 import { bayHalfAt, setFlueHover } from '../utils/baySides'
@@ -715,13 +715,12 @@ export function useCanvasInteraction({
          engine, so it wins the press whether or not shift is held there —
          shift only ever forces a marquee over a plain object BODY. */
       /* ...and a press ON a wall that a rack only reached by its pick padding (a wall row 3″ in, at plan zoom) is the
-         wall's: the building is always picked by its wall (hitTest.js wallBeatsPadding) */
+         wall's: hitTest gives the building there (the one hit rule — hitTest.js pickAt) */
       /* A column (STUDIO.md §7, columnPick.js): a click picks that one column out of its grid — even on a locked
          Columns layer (locked: it cannot be moved, not clicked). Only an unlocked grid then drags. */
-      /* (a press ON a column square that a rack only reached by its pick padding is the column's — zoomed out, the padding
-         reaches over the column beside it; hitTest.js does the same for an unlocked grid) */
-      const padOver = (o) => { if (!o || !/^rack_/.test(o.type || '') || !columnAt(st.objects, st.layers, world.x, world.y, Infinity, st.gridSize || 40)) return false; const b = worldBoundsOf(o, st.objects); return !!b && !(world.x >= b.x && world.x <= b.x + b.width && world.y >= b.y && world.y <= b.y + b.height) }
-      if (evt.button === 0 && !evt.shiftKey && (!hitObj || hitObj.type === 'column_grid' || FP_SET_INPUT.has(hitObj.type) || padOver(hitObj))) {
+      /* (what holds the press is decided once, by the one hit rule — hitTest.js pickAt: a column square, a wall or a
+         section's shown name that truly holds it beats a rack reached only by its padding) */
+      if (evt.button === 0 && !evt.shiftKey && (!hitObj || hitObj.type === 'column_grid' || FP_SET_INPUT.has(hitObj.type))) {
         const col = columnAt(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize || 40)
         const locked = col && !pickableIn(st.layers)(st.objects.find(o => o.id === col.gridId))
         /* locked: nothing to drag — a drag from it is the floor's (a box of rows), a click picks it (on the release);
@@ -742,12 +741,8 @@ export function useCanvasInteraction({
           return
         }
       }
-      // a section's name chip, shown, is drawn above everything: a press on it is the section's, a wall under it too (sections-3 —
-      // the chip can sit on the outline over a wall)
-      const onChip = !!hitObj && hitObj.type === 'section_area' && onLabel(hitObj, world.x, world.y, view.current.zoom, st.objects)
-      const padWall = evt.button === 0 && !onChip ? wallBeatsPadding(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize, hitObj) : null
-      if (evt.button === 0 && (!hitObj || FP_SET_INPUT.has(hitObj.type) || padWall)) {
-        const wallHit = padWall || fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+      if (evt.button === 0 && (!hitObj || FP_SET_INPUT.has(hitObj.type))) {
+        const wallHit = fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
         if (wallHit) {
           const fpObj = st.objects.find(o => o.id === wallHit.objId)
           if (fpObj) {
