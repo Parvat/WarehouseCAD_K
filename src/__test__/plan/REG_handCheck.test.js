@@ -4975,7 +4975,7 @@ describe('REG — the hand check by real clicks', () => {
     /** the aisles between rows next to each other across that share some run (ft) */
     const aislesOf = (rows) => { const out = []; for (const a of rows) for (const c of rows) { if (c.s0 <= a.s1 - 1e-6 || Math.min(a.r1, c.r1) - Math.max(a.r0, c.r0) < 1e-6) continue; if (rows.some(m => m !== a && m !== c && m.s0 >= a.s1 - 1e-6 && m.s1 <= c.s0 + 1e-6 && Math.min(m.r1, a.r1) - Math.max(m.r0, a.r0) > 1e-6)) continue; out.push(c.s0 - a.s1) } return out }
 
-    it('REG-fill-extend (click): a fill’s area extended outward by its edge handles continues its rows — every pair row on the same run start and end lines and bay grid, no aisle under the forklift aisle, the rows already there unchanged; one undo each (shrink-fill — was: an extension ended its rows short of a Fill’s, off racks and sections, and slid lane-shortened racks to the wall)', async () => {
+    it('REG-fill-extend (click): a fill’s area extended outward by its edge handles continues its rows — every pair row on the same run start and end lines and bay grid, no aisle under the forklift aisle, the rows already there on their lines and starts (a row past Max run split again — cross-aisle round); one undo each (shrink-fill — was: an extension ended its rows short of a Fill’s, off racks and sections, and slid lane-shortened racks to the wall)', async () => {
       await open()
       await clearRacks()
       const b = await innerBox(), at = (u, v) => ({ x: b.x0 + (b.x1 - b.x0) * u, y: b.y0 + (b.y1 - b.y0) * v })
@@ -5003,9 +5003,14 @@ describe('REG — the hand check by real clicks', () => {
         expect(len(rows)).toBeGreaterThan(len(before) + 1)                                    // it grew
         expect(new Set(runsOf(rows)).size).toBe(1)                                              // every pair row on the same runs
         expect(aislesOf(rows).filter(w => w < aisle - 1e-6)).toEqual([])                       // no aisle under the forklift's
-        // the rows already there: none moved (each still there, its low run end where it was)
-        const now = new Map(rows.map(r => [r.s0.toFixed(2) + ':' + r.r0.toFixed(2), r]))
-        expect(before.filter(r => r.type === 'rack_double_row' && !now.has(r.s0.toFixed(2) + ':' + r.r0.toFixed(2))).length).toBe(0)
+        // the rows already there: none moved across (each row line still there) and each row still starts where it did; a row
+        // lengthened past Max run is split again by the cross-aisle rule (cross-aisle round), so its runs may move along —
+        // every run within Max run
+        const start = (rs) => { const m = new Map(); for (const r of rs.filter(r => r.type === 'rack_double_row')) { const k = r.s0.toFixed(2); m.set(k, Math.min(m.get(k) ?? Infinity, r.r0)) } return m }
+        const s0 = start(before), s1 = start(rows)
+        expect([...s0].filter(([k, r0]) => !s1.has(k) || Math.abs(s1.get(k) - r0) > 1e-6)).toEqual([])
+        const maxRun = await L.S('return import("/src/utils/fillTool.js").then(F => F.useRackingSettings.getState().maxRunFt)')
+        expect(rows.filter(r => r.type === 'rack_double_row' && r.r1 - r.r0 > maxRun + 1e-6)).toEqual([])
         expect((await hist7()) - h0).toBe(1)
         await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
         expect(len(await areaRows(area))).toBeCloseTo(len(before), 6)
@@ -5099,7 +5104,9 @@ describe('REG — the hand check by real clicks', () => {
       expect(rows.every(r => r.r0 > near + 1e-6)).toBe(true)                                     // the leftover at the end facing racks
       expect(new Set(rows.map(r => r.r0.toFixed(3) + '..' + r.r1.toFixed(3))).size).toBe(1)     // all on the same lines
       await L.S('return import("/src/utils/fillTool.js").then(F => F.useRackingSettings.getState().setSetting("orientation", "horizontal"))')
-    }, T)\n\n    /* ── cross-aisle round: a long row split by the rule; the Fill bar's Cross aisle; a cross-aisle picked and moved —
+    }, T)
+
+    /* ── cross-aisle round: a long row split by the rule; the Fill bar's Cross aisle; a cross-aisle picked and moved —
        by real mouse on every fixture ── */
     /** every cross-aisle now (utils/crossAisleTool.js): [{ key, rot, lo, hi, lines: [{ lo, hi, cross, na, nb, a, b }] }] */
     const crossNow = () => L.S(`return import('/src/utils/crossAisleTool.js').then(X => { const st = S.getState(), gs = st.gridSize || 40

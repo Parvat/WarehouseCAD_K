@@ -98,6 +98,7 @@ export function FillOptionsBar() {
       <span style={word}>ft</span>
       {/* where a row longer than Max run gets its cross-aisles (cross-aisle round): Centre — near-equal runs; Left / Right
           — toward that end of the box (left or top, right or bottom), the first run as short as allowed (3 bays) */}
+      <span style={word}>Cross aisle</span>
       <select aria-label="Cross aisle" title="Cross aisle — where a row longer than Max run gets its cross-aisles: Centre (near-equal runs), Left or Right (toward that end)" className="st-field" value={s.crossAisle || 'centre'} onChange={e => s.setSetting('crossAisle', e.target.value)} style={{ ...valueBox, width: 76 }}>
         <option value="centre">Centre</option><option value="left">Left</option><option value="right">Right</option>
       </select>

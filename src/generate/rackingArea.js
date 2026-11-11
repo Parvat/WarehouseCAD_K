@@ -249,7 +249,12 @@ export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = na
     const rb = Array.isArray(pattern.runBox) ? pattern.runBox : runOf(boxOf(now)), [b0, b1] = runOf(box)
     if (edited && (b0 < rb[0] - 1e-3 || b1 > rb[1] + 1e-3)) {
       const fresh = areaPattern(kept, box, areaSettings(now), { gridSize, from: cornerOf(box, now.anchor), areaId, wallAnchor: true })?.pattern
-      pattern = fresh && fresh.vert === pattern.vert ? { ...pattern, pieces: fresh.pieces, runDir: fresh.runDir, runBox: [b0, b1] } : { ...pattern, runBox: [Math.min(rb[0], b0), Math.max(rb[1], b1)] }
+      /* split again only when the longer rows need more runs (a cross-aisle more) — within Max run as they are, the rows
+         simply continue (shrink-fill: on the same lines, starting where they did) */
+      const runsBySec = (p) => { const m = new Map(); for (const q of p?.pieces || []) m.set(q.sec, (m.get(q.sec) || 0) + 1); return m }
+      const was = runsBySec(pattern), will = runsBySec(fresh)
+      const more = [...will].some(([k, n]) => n > (was.get(k) || 0))
+      pattern = more && fresh && fresh.vert === pattern.vert ?{ ...pattern, pieces: fresh.pieces, runDir: fresh.runDir, runBox: [b0, b1] } : { ...pattern, runBox: [Math.min(rb[0], b0), Math.max(rb[1], b1)] }
     } else if (!Array.isArray(pattern.runBox)) pattern = { ...pattern, runBox: rb }
   }
   const racks = pattern ? showPattern(kept, box, pattern, now, clean, removedBoxes(objects, area), { gridSize, newId, snapEnds: edited, rackGap, sections }) : []
