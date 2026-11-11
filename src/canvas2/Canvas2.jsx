@@ -48,6 +48,8 @@ import { publishView, useView } from './live'
 import { TallyFill, TallyHighlight } from './TallyHighlight'
 import { SectionNames } from './SectionNames'
 import { CrossAislePick } from './CrossAislePick'
+import { CrossAisleBandPreview, CrossAisleBar, liveBand } from './CrossAisleBand'
+import { CROSS_AISLE_TOOL, useCrossAisleTool, commitCut } from '../utils/crossAisleCut'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
    A Konva Stage that owns its own pointer events. No router, no forwarding, no
@@ -423,6 +425,32 @@ export function Canvas2() {
     if (t && t.hitId) splitAt(useCanvasStore, t.world, t.hitId, { newId: nanoid, rebuildAisles })
   }
 
+  /* the Cross aisle tool (utils/crossAisleCut.js, xaisle-tool): a press starts the band, the drag lays it across the rows
+     (the preview: CrossAisleBand.jsx), the release cuts every row it crosses — one undo step — the new cross-aisle picked,
+     and the tool ends (back to the home tool), as Fill's does. Moves and the release are taken on window. */
+  const xaisling = !measuring && activeTool === CROSS_AISLE_TOOL
+  useEffect(() => { if (!xaisling) useCrossAisleTool.setState({ drag: null, at: null }) }, [xaisling])
+  const xaisleHoverMove = (e) => { const p = e.target.getStage()?.getPointerPosition(); if (p && !useCrossAisleTool.getState().drag) useCrossAisleTool.setState({ at: screenToWorld(view.current, p) }) }
+  const xaisleMouseDown = (e) => {
+    const stage = e.target.getStage()
+    const p = stage?.getPointerPosition()
+    if (!p || (e.evt && e.evt.button !== 0)) return
+    const from = screenToWorld(view.current, p)
+    useCrossAisleTool.setState({ drag: { from, to: from } })
+    const rect = stage.container().getBoundingClientRect()
+    const move = (ev) => { if (useCrossAisleTool.getState().drag) useCrossAisleTool.setState(s => ({ drag: { ...s.drag, to: screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }) } })) }
+    const up = () => {
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+      const drag = useCrossAisleTool.getState().drag
+      useCrossAisleTool.setState({ drag: null })
+      if (!drag) return                                                     // Esc dropped it
+      const band = liveBand(useCanvasStore.getState(), drag)
+      if (band && commitCut(useCanvasStore, band)) useCanvasStore.getState().setActiveTool(HOME_TOOL)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
   /* Add door (utils/doorTool.js): hovering a wall shows the door against its inner face; a click places it; the tool
      stays on until Esc or its bar's ✕ */
   const dooring = !measuring && activeTool === DOOR_TOOL
@@ -452,15 +480,15 @@ export function Canvas2() {
   }
   const sectionMouseMove = (e) => { if (sectPen) { const w = sectWorld(e); if (w) penMove(w, useCanvasStore, view.current.zoom, !!e.evt?.shiftKey) } }
 
-  const modeMouseDown = measuring ? measureMouseDown : sectioning ? sectionMouseDown : filling ? fillMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
+  const modeMouseDown = measuring ? measureMouseDown : sectioning ? sectionMouseDown : filling ? fillMouseDown : xaisling ? xaisleMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
   // Space+drag or a middle drag pans in any tool (STUDIO.md §7a)
   const stageMouseDown = (e) => (isForcePan(e && e.evt) ? onStageMouseDown(e) : modeMouseDown(e))
   // the Row group's cursor: resize over a group row's handle, move over its body, crosshair over the floor (STUDIO.md §7a)
   const [groupCursor, setGroupCursor] = useState('crosshair')
   const groupMouseMove = (e) => { const c = groupCursorAt(e); if (c !== groupCursor) setGroupCursor(c) }
-  const stageMouseMove = measuring ? measureMouseMove : sectioning ? sectionMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : grouping ? groupMouseMove : filling ? fillHoverMove : onStageMouseMove
-  const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : dooring ? clearDoorHover : filling || grouping ? undefined : onStageMouseLeave
-  const effectiveCursor = grouping ? groupCursor : measuring || filling || splitting || dooring || sectioning ? 'crosshair' : cursor
+  const stageMouseMove = measuring ? measureMouseMove : sectioning ? sectionMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : grouping ? groupMouseMove : filling ? fillHoverMove : xaisling ? xaisleHoverMove : onStageMouseMove
+  const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : dooring ? clearDoorHover : filling || grouping || xaisling ? undefined : onStageMouseLeave
+  const effectiveCursor = grouping ? groupCursor : measuring || filling || splitting || dooring || sectioning || xaisling ? 'crosshair' : cursor
 
   return (
     <div
@@ -555,6 +583,8 @@ export function Canvas2() {
             <RowGroupPreview />
             {/* the Split tool's cut line (SplitPreview.jsx) */}
             {splitting && <SplitPreview />}
+            {/* the Cross aisle tool's band (CrossAisleBand.jsx) */}
+            {xaisling && <CrossAisleBandPreview />}
             {/* Add door's preview on the hovered wall (DoorBar.jsx) */}
             {dooring && <DoorPreview />}
             {/* Check layout: the clicked problem, until the next click (utils/layoutCheck.js) */}
@@ -584,6 +614,7 @@ export function Canvas2() {
       <ColumnLineLabels />
       <RowGroupBar />
       <SplitBar />
+      <CrossAisleBar />
       {filling && <FillOptionsBar />}
       {dooring && <DoorBar />}
       {sectioning && <SectionBar />}

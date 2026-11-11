@@ -106,7 +106,8 @@ describe('WR-fill', () => {
     const { objs, fp, walls } = await generated(spec)
     const keep = objs.filter(o => !(typeof o.type === 'string' && o.type.startsWith('rack_')) && o.type !== 'aisle')
     const box = { x: fp.x + 0.5 * GS, y: fp.y + 0.5 * GS, w: fp.width - GS, h: fp.height - GS }
-    const settings = { orientation: spec.orientation, beamIn: 96, palletWIn: 40, palletDIn: 48, mhe: 'reach', aisleFt: 10.5, maxRunFt: 150, levels: 4 }
+    // (xaisle-tool: a Fill makes no cross-aisles; Generate's area — autoCross — keeps them: this test is about parity with Generate's rows)
+    const settings = { orientation: spec.orientation, beamIn: 96, palletWIn: 40, palletDIn: 48, mhe: 'reach', aisleFt: 10.5, maxRunFt: 150, levels: 4, autoCross: true }
     const fill = planAreaCreate(keep, box, settings, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
     const along = (list) => list.map(o => `${runOf(o)[0].toFixed(4)}..${runOf(o)[1].toFixed(4)} (${o.beams.length})`).sort()
     const fillWalls = fill.filter(o => o.type === 'rack_row' && fill.filter(q => q.type === 'rack_row' && Math.abs(crossOf(q)[0] - crossOf(o)[0]) < 1e-6).length === 1 && runOf(o)[1] - runOf(o)[0] > MAX_RUN_FT)

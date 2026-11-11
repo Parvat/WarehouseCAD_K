@@ -73,7 +73,7 @@ export const areaSettings = (area) => {
 /** The equipment a fill or Generate was made for, to store on its area: a Custom design's widths ({ custom }), else a
  *  reference to the project's forklift ({ project: true } — Generate's always: it lays out on the project forklift). */
 const equipOf = (s) => (s?.equip && (s.equip.custom || s.equip.key || s.equip.project) ? s.equip : { project: true })
-const SETTING_KEYS = ['orientation', 'beamIn', 'palletWIn', 'palletDIn', 'mhe', 'aisleFt', 'maxRunFt', 'levels', 'wallClearIn', 'crossAisle']
+const SETTING_KEYS = ['orientation', 'beamIn', 'palletWIn', 'palletDIn', 'mhe', 'aisleFt', 'maxRunFt', 'levels', 'wallClearIn', 'crossAisle', 'autoCross']
 const pickSettings = (s) => Object.fromEntries(SETTING_KEYS.filter(k => s[k] !== undefined).map(k => [k, s[k]]))
 
 /** Each bay's world box (axis-aligned bounds, any rotation). */
@@ -240,21 +240,19 @@ export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = na
   const now = kept.find(o => o.id === areaId)
   // an area from before patterns: its pattern from the box it had, as it was anchored
   let pattern = now.pattern || areaPattern(kept, boxOf(now), areaSettings(now), { gridSize, from: cornerOf(boxOf(now), now.anchor), areaId })?.pattern
-  /* extended along the run (cross-aisle round): the rows lengthen and the run is split again by the same rule — its
-     cross-aisles where the Cross aisle option and Max run put them over the new length (the rows across stay) */
-  /* — past the farthest the area has reached along the run (`runBox`; an area from before: its box now), so a shrink
-     then an extend back over ground it had keeps exactly the racks it had */
-  if (pattern) {
+  /* extended along the run, a Fill's rows simply continue (shrink-fill) and are never split again (xaisle-tool: a Fill
+     makes no cross-aisles; one is cut by hand with the Cross aisle tool, utils/crossAisleCut.js). Generate's area
+     (`autoCross`, regenerate.js) keeps the cross-aisle round's rule: past the farthest it has reached along the run
+     (`runBox`), its rows are split again when they need a cross-aisle more. */
+  if (pattern && areaSettings(now).autoCross) {
     const runOf = (b) => (pattern.vert ? [b.y, b.y + b.h] : [b.x, b.x + b.w])
     const rb = Array.isArray(pattern.runBox) ? pattern.runBox : runOf(boxOf(now)), [b0, b1] = runOf(box)
     if (edited && (b0 < rb[0] - 1e-3 || b1 > rb[1] + 1e-3)) {
       const fresh = areaPattern(kept, box, areaSettings(now), { gridSize, from: cornerOf(box, now.anchor), areaId, wallAnchor: true })?.pattern
-      /* split again only when the longer rows need more runs (a cross-aisle more) — within Max run as they are, the rows
-         simply continue (shrink-fill: on the same lines, starting where they did) */
       const runsBySec = (p) => { const m = new Map(); for (const q of p?.pieces || []) m.set(q.sec, (m.get(q.sec) || 0) + 1); return m }
       const was = runsBySec(pattern), will = runsBySec(fresh)
       const more = [...will].some(([k, n]) => n > (was.get(k) || 0))
-      pattern = more && fresh && fresh.vert === pattern.vert ?{ ...pattern, pieces: fresh.pieces, runDir: fresh.runDir, runBox: [b0, b1] } : { ...pattern, runBox: [Math.min(rb[0], b0), Math.max(rb[1], b1)] }
+      pattern = more && fresh && fresh.vert === pattern.vert ? { ...pattern, pieces: fresh.pieces, runDir: fresh.runDir, runBox: [b0, b1] } : { ...pattern, runBox: [Math.min(rb[0], b0), Math.max(rb[1], b1)] }
     } else if (!Array.isArray(pattern.runBox)) pattern = { ...pattern, runBox: rb }
   }
   const racks = pattern ? showPattern(kept, box, pattern, now, clean, removedBoxes(objects, area), { gridSize, newId, snapEnds: edited, rackGap, sections }) : []

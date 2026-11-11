@@ -96,12 +96,6 @@ export function FillOptionsBar() {
       <span style={word}>Max run</span>
       <input aria-label="Max rack run (ft)" className="st-field" style={{ ...valueBox, width: 52 }} defaultValue={s.maxRunFt} key={'m' + s.maxRunFt} onBlur={e => num('maxRunFt', e.target.value)} />
       <span style={word}>ft</span>
-      {/* where a row longer than Max run gets its cross-aisles (cross-aisle round): Centre — near-equal runs; Left / Right
-          — toward that end of the box (left or top, right or bottom), the first run as short as allowed (3 bays) */}
-      <span style={word}>Cross aisle</span>
-      <select aria-label="Cross aisle" title="Cross aisle — where a row longer than Max run gets its cross-aisles: Centre (near-equal runs), Left or Right (toward that end)" className="st-field" value={s.crossAisle || 'centre'} onChange={e => s.setSetting('crossAisle', e.target.value)} style={{ ...valueBox, width: 76 }}>
-        <option value="centre">Centre</option><option value="left">Left</option><option value="right">Right</option>
-      </select>
       {/* the pallet, the forklift (its aisle) and the wall clearance: Project settings (utils/project.js) */}
       {!inSection && <Seg aria="Equipment" options={[
         { value: 'project', label: 'Project forklift', aria: 'Project forklift', title: `${project.label} — its widths (Project settings)`, on: design !== 'custom', onClick: () => setFillDesign('project') },

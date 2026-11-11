@@ -61,7 +61,9 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   /** The building's inner wall faces' bounding box (world px). */
   const innerBox = (fp) => { const p = m.FR.innerOutline(fp, GS), xs = p.map(q => q.x), ys = p.map(q => q.y); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } }
   const doc = () => JSON.parse(JSON.stringify({ objects: s().objects }))
-  const check = () => m.LC.checkLayout(s().objects, { gridSize: GS })
+  /* (xaisle-tool: a Fill no longer cuts its rows, so a row longer than Max run is now a Check warning — 'max-run', its own test
+     REG-xaisle-check; set aside here, where "clean" means nothing else is wrong) */
+  const check = () => { const r = m.LC.checkLayout(s().objects, { gridSize: GS }); return { ...r, warnings: r.warnings.filter(w => w.kind !== 'max-run') } }
   const drag = (a, b) => { m.FT.startFill(a); m.FT.moveFill(b, s().objects, GS); return m.FT.commitFill(m.useCanvasStore) }
   /** Drag the area's edge (the canvas writes the live box, then calls finishAreaResize on release). */
   const resizeArea = (box) => {
@@ -113,7 +115,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     // (not the rows under the office: they reach the floor by a travel path, area AA, and the extend changes that way in)
     const underOffice = (r) => vert && foot(r).x + foot(r).w > office.x + EPS
     const away = oldRacks.filter(r => foot(r).y > oldTop + 99 / 12 * GS && !underOffice(r))
-    if (!vert) expect(away.length).toBeGreaterThan(4)
+    // (xaisle-tool: a Fill's row is one run now, not two either side of a cross-aisle — half the racks: was > 4)
+    if (!vert) expect(away.length).toBeGreaterThan(2)
     for (const r of away) expect(s().objects.find(o => o.id === r.id)).toEqual(r)
     const strip = racks().filter(r => foot(r).y < fp.y + 40 * GS - EPS)
     expect(strip.length).toBeGreaterThan(1)
@@ -327,7 +330,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   /** Every new row lines up with the template where the template reaches: its uprights there are the
    *  template's (same positions), and a piece the template had whole keeps its exact start, end and
    *  bays. Past the template's reach a piece carries the pattern's own bays on. */
-  const expectAligned = (template, added) => {
+  const expectAligned = (template, added, needWhole = true) => {
     const tUp = template.flatMap(uprights)
     const h0 = Math.min(...template.map(t => runOf(t)[0])) / GS, h1 = Math.max(...template.map(t => runOf(t)[1])) / GS
     expect(added.length).toBeGreaterThan(1)
@@ -344,7 +347,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
       const same = template.find(t => Math.abs(runOf(t)[0] - r0) < 1e-3 && Math.abs(runOf(t)[1] - r1) < 1e-3)
       if (same) { expect(r.beams).toEqual(same.beams); whole++ }
     }
-    expect(whole).toBeGreaterThan(0)
+    if (needWhole) expect(whole).toBeGreaterThan(0)
   }
 
   it('RA-align: extending the area across its rows (up / to the left, to the wall) gives new rows on the area\'s pattern — the same starts, ends, uprights and bays as the rows it placed; a row given its own bays by hand (Match bays) stays as it is and the pattern goes round it; Check layout clean; one undo', () => {
@@ -382,7 +385,9 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     else drag({ x: fp.x, y: fp.y + fp.height }, { x: fp.x + fp.width, y: fp.y + fp.height * 0.55 })
     expect(racks().length).toBeGreaterThan(2)
     const { template, added } = extendAcross(vert ? fp.x : fp.y)
-    expectAligned(template, added)
+    // (xaisle-tool: a row runs through the elbow as one run now, so a new row past it ends elsewhere than the row beside it —
+    // its uprights still line up with it; was: some new row the very same start, end and bays as one beside it)
+    expectAligned(template, added, false)
     const pointIn = (px, py) => { let c = false; for (let i = 0, j = inner.length - 1; i < inner.length; j = i++) { const a = inner[i], b = inner[j]; if ((a.y > py) !== (b.y > py) && px < (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x) c = !c } return c }
     for (const o of racks()) { const f = foot(o); for (const [x, y] of [[f.x + 0.01, f.y + 0.01], [f.x + f.w - 0.01, f.y + f.h - 0.01]]) expect(pointIn(x, y)).toBe(true) }
     expect(check().errors).toEqual([])
@@ -933,11 +938,14 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     drag({ x: fp.x - 13.7, y: fp.y - 21.3 }, { x: fp.x + fp.width + 7.1, y: fp.y + fp.height + 3.3 })
     expect(wayInLanes().length, 'a lane cut').toBeGreaterThan(0)
     expectRegular()
-    // an interior pair at least 20' from every lane (across or along) and from the office, moved by hand
+    // an interior pair clear of every lane (not in it) and an aisle clear of the office across (10'), or 20' along, moved by hand
+    // (xaisle-tool: a lane now cuts across every row — a row is one run the length of the fill — so no pair is 20' from one;
+    // was: at least 20' from every lane too)
     const lanes = wayInLanes(), s0s = racks().map(o => ftS(foot(o))[0]), lo = Math.min(...s0s), hi = Math.max(...s0s)
     const far = (q0, q1, a0, a1) => q1 < a0 - 20 || q0 > a1 + 20
+    const near = (q0, q1, a0, a1) => q1 < a0 - 10 || q0 > a1 + 10              // (an office's own pocket aisle off it)
     const pairs = racks().filter(o => { if (o.type !== 'rack_double_row') return false; const [s0, s1] = ftS(foot(o)), [r0, r1] = ftR(foot(o))
-      return s0 > lo + 20 && s1 < hi - 20 && [...lanes, { s: ftS(ob), r: ftR(ob) }].every(l => far(s0, s1, l.s[0], l.s[1]) || far(r0, r1, l.r[0], l.r[1])) })
+      return s0 > lo + 20 && s1 < hi - 20 && lanes.every(l => s1 <= l.s[0] + 1e-6 || s0 >= l.s[1] - 1e-6 || r1 <= l.r[0] + 1e-6 || r0 >= l.r[1] - 1e-6) && (near(s0, s1, ftS(ob)[0], ftS(ob)[1]) || far(r0, r1, ftR(ob)[0], ftR(ob)[1])) })
       .sort((p, q) => ftS(foot(p))[0] - ftS(foot(q))[0])
     const r = pairs[0]
     expect(r).toBeTruthy()
@@ -1006,7 +1014,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   }
 
   it.each(SLIDE)('RA-wall-row (%s, max run 60\'): a single flush on a wall — the start wall\'s and the far wall\'s — is one rack per stretch of wall: not broken where a cross-aisle meets it (it runs on through, longer than the max run), its bays on the pattern\'s grid, as far as whole bays fit; shrink → extend back identical; clean', async (_, type, w, h) => {
-    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation, maxRunFt: 60 })
+    // (xaisle-tool: a Fill makes no cross-aisles; Generate's area — autoCross — keeps them: this test is about the rows beside them)
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation, maxRunFt: 60, autoCross: true })
     fillWhole(type, w, h)
     clean()
     const walls = expectWallRowsWhole()
@@ -1029,7 +1038,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   })
 
   it('RA-wall-zone (rectangle, max run 60\'): a zone against the far wall still interrupts its wall row — two racks, one either side of it, each running up to it by whole bays; none under it; clean', async () => {
-    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation, maxRunFt: 60 })
+    // (xaisle-tool: a Fill makes no cross-aisles; Generate's area — autoCross — keeps them: this test is about the rows beside them)
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation, maxRunFt: 60, autoCross: true })
     const fp = fillWhole('fp_rect', 240, 120)
     const ib = innerBox(fp)
     // an office 20' along × 12' across, against the far wall, in the middle along the run
@@ -1067,7 +1077,10 @@ describe('RA — the app\'s own coordinates', () => {
     expect([a.x, a.y, a.width, a.height]).toEqual([-4790, -401.19504908237303, 9580, 2390 + 401.19504908237303])
     s().updateObject(a.id, { y: -2483.3333333333335, height: 4941.72001707213 })
     m.AT.finishAreaResize(m.useCanvasStore, a.id, { x: a.x, y: a.y, w: a.width, h: a.height })
-    expect(s().objects.filter(o => o.type === 'rack_double_row' || o.type === 'rack_row').length).toBeGreaterThan(12)
-    expect(m.LC.checkLayout(s().objects, { gridSize: GS })).toEqual({ errors: [], warnings: [] })
+    // (xaisle-tool: one run per row, not two either side of a cross-aisle — half the racks: was > 12)
+    expect(s().objects.filter(o => o.type === 'rack_double_row' || o.type === 'rack_row').length).toBeGreaterThan(6)
+    // (the Max run warning set aside — xaisle-tool, REG-xaisle-check)
+    const r = m.LC.checkLayout(s().objects, { gridSize: GS })
+    expect({ ...r, warnings: r.warnings.filter(w => w.kind !== 'max-run') }).toEqual({ errors: [], warnings: [] })
   })
 })

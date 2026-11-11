@@ -80,7 +80,9 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
   const building = (type, widthFt, heightFt) => { s().placeFpObject({ type, widthFt, heightFt }); return fpOf() }
   const sig = (o) => [o.type, r3(o.x), r3(o.y), r3(o.width), r3(o.height), o.rotation || 0, (o.beams || []).join('/'), o.levels, o.rowIndex, o.genSection].join(':')
   const aisleSig = (o) => [r3(o.x), r3(o.y), r3(o.width), r3(o.height), o.rotation || 0].join(':')
-  const check = () => m.LC.checkLayout(s().objects, { gridSize: GS })
+  /* (xaisle-tool: a Fill no longer cuts its rows, so a row longer than Max run is now a Check warning — 'max-run', its own test
+     REG-xaisle-check; set aside here, where "clean" means nothing else is wrong) */
+  const check = () => { const r = m.LC.checkLayout(s().objects, { gridSize: GS }); return { ...r, warnings: r.warnings.filter(w => w.kind !== 'max-run') } }
 
   /** No rack past a wall: every corner inside the walls' inner face, and no inner-face vertex inside a rack. */
   const expectInside = () => {
@@ -129,6 +131,9 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
     let n = 0
     const want = m.AA.giveWayIn([fp, ...walk], fp, walk.map(o => o.id), { gridSize: GS, travelFt: 8, aisleFt: 10.5, dir: 1, newId: () => 'w' + (++n) }).filter(o => RACK.has(o.type))
     expect(want.length).toBeGreaterThan(4)
+    // (xaisle-tool: Generate's walk has its automatic cross-aisles; the same walk over an area is Generate's area — autoCross;
+    // a plain Fill lays the same rows across, one run each: CX-fill-rect)
+    m.FT.useRackingSettings.setState({ autoCross: true })
     const { plan } = fill(bbox(outline()))
     expect(plan.rects).toHaveLength(1)
     const lo = (q) => (vert ? q.x : q.y), hi = (q) => (vert ? q.x + q.w : q.y + q.h)
@@ -346,7 +351,8 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
   })
 
   it('FR-stamps: filled rows carry rowIndex and genSection (after the building\'s own), and a Row group of the same row in every section replays a row moved across the aisles on the others', async () => {
-    m.FT.useRackingSettings.setState({ maxRunFt: 120 })
+    // (xaisle-tool: a Fill makes no cross-aisles; Generate's area — autoCross — keeps them: this test is about the rows beside them)
+    m.FT.useRackingSettings.setState({ maxRunFt: 120, autoCross: true })
     if (vert) building('fp_rect', 200, 480); else building('fp_rect', 480, 200)
     m.RG.clearGroup()
     const { n } = fill(bbox(outline())); await m.RG.flushRowGroupWatcher()

@@ -108,7 +108,7 @@ export const fillSettings = (objects = null, from = null) => {
   return { ...s, mhe: e.key, aisleFt: a || e.aisleFt, endGapFt: crossOf(e), ...(inSec ? {} : { equip: { project: true } }) }
 }
 /** A truck's required width at a run end: its cross-aisle, else its space to move. */
-const crossOf = (p) => (Number.isFinite(p?.crossAisleFt) && p.crossAisleFt > 0 ? p.crossAisleFt : p?.travelFt)
+export const crossOf = (p) => (Number.isFinite(p?.crossAisleFt) && p.crossAisleFt > 0 ? p.crossAisleFt : p?.travelFt)
 /** What a fill keeps clear beyond its own racks (fill-place): each existing rack's required run-end width (its section's
  *  equipment, else the project's forklift — the stricter of the two sides is taken in patternFill), and every section but
  *  the one the drag starts in. */

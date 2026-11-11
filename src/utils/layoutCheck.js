@@ -61,6 +61,8 @@ import { useDragPreview } from '../canvas2/dragPreview'
 import { closedZones, walkwayInNow } from './zoneCheck'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { equipmentResolver } from './equipment'
+import { rackLinesNow } from './rackLines'
+import { DEFAULT_FILL_SETTINGS } from '../generate/fillRacking'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const TYPE_NAMES = {
@@ -366,11 +368,32 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
         text: `${na} and ${nb}: racks face each other across the section edge ${short(g.gapLen)} apart, needs ${len(aislePx)} aisle` })
     } }
 
+  /* ── a Fill's row longer than its Max run with no cross-aisle in it — a WARNING (xaisle-tool: a Fill never cuts its rows;
+     a cross-aisle is cut by hand with the Cross aisle tool). A row is a rack line (utils/rackLines.js: racks end to end, a
+     cross-aisle starts a new one) holding a Fill's racks; Max run is that Fill's (its area's settings). A pair's two sides
+     are one item, named as the plan names it ("R3–R4"). ── */
+  { const lines = rackLinesNow(objects, gridSize), seen = new Set()
+    for (const l of lines) {
+      const area = l.ids.map(id => byId.get(id)).find(o => o?.areaId)?.areaId
+      const a = area ? byId.get(area) : null
+      if (!a || a.settings?.autoCross || seen.has(l.ids.join(','))) continue                 // a Fill's rows only (not Generate's area)
+      const maxRunFt = Number(a.settings?.maxRunFt) || DEFAULT_FILL_SETTINGS.maxRunFt
+      const ft = (l.r1 - l.r0) / gridSize
+      if (!(ft > maxRunFt + 1e-6)) continue
+      seen.add(l.ids.join(','))
+      const nos = lines.filter(m => m.ids.join(',') === l.ids.join(',')).map(m => m.no).sort((p, q) => p - q)
+      const name = nos.length > 1 ? `R${nos[0]}–R${nos[nos.length - 1]}` : `R${nos[0]}`
+      const b = l.vert ? { x: Math.min(...l.ids.map(id => foot.get(id)?.x ?? Infinity)), y: l.r0, w: 0, h: l.r1 - l.r0 } : { x: l.r0, y: Math.min(...l.ids.map(id => foot.get(id)?.y ?? Infinity)), w: l.r1 - l.r0, h: 0 }
+      const box = union(l.ids.map(id => foot.get(id)).filter(Boolean).map(boxOf).concat([b]))
+      warnings.push({ severity: 'warning', kind: 'max-run', ids: [...l.ids], box, highlight: [outline(box, HL.amber)],
+        text: `${name} runs ${Math.round(ft)} ft without a cross aisle, max ${+maxRunFt.toFixed(1)} ft` })
+    } }
+
   const reminders = projectReminders(elevations)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }
 }
 
-const KIND_ORDER = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle']
+const KIND_ORDER = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle', 'max-run']
 function byKind(a, b) { return KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) }
 
 /* ── Mark as OK (aisle-equip): an item the user accepts stays listed, greyed, at the bottom, with Undo mark; it no longer

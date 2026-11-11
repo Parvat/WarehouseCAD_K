@@ -76,6 +76,8 @@ describe.each(['horizontal', 'vertical'])('ZP — %s', (orientation) => {
     else {
       s().placeFpObject({ type, widthFt: w, heightFt: h })
       const fp = fpNow()
+      // (xaisle-tool: a Fill makes no sections; Generate's area — autoCross — keeps its cross-aisles: the sectioned layout this needs)
+      m.FT.useRackingSettings.setState({ autoCross: true })
       drag({ x: fp.x - 13.7, y: fp.y - 21.3 }, { x: fp.x + fp.width + 7.1, y: fp.y + fp.height + 3.3 })
     }
     // a row number found in at least two sections

@@ -35,7 +35,7 @@ function newFill({ shape = 'rectangle', turned = false, orientation = 'horizonta
   const objs = REAL_LAYOUT.map(o => (o.type.startsWith('fp_') ? shaped(o, SHAPE_CUTS[shape]) : { ...o })).map(o => (turned ? turn(o) : o))
   const area = objs.find(o => o.type === 'racking_area'), fp = objs.find(o => o.type.startsWith('fp_'))
   const box = { x: area.x, y: area.y, w: area.width, h: area.height }
-  const out = planAreaCreate(objs.filter(o => o !== area), box, { ...area.settings, orientation, ...settings }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
+  const out = planAreaCreate(objs.filter(o => o !== area), box, { ...area.settings, autoCross: true, orientation, ...settings }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
   return { out, fp, box, area: out.find(o => o.type === 'racking_area'), vert: orientation === 'vertical' }
 }
 const acrossOf = (o, vert) => { const f = rackFootprint(o); return (vert ? [f.x, f.x + f.w] : [f.y, f.y + f.h]).map(v => v / GS) }

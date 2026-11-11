@@ -141,7 +141,7 @@ function fillOf(turned, orientation, stored) {
   const objs = REAL_LAYOUT.map(o => ({ ...o })).map(o => (turned ? turn(o) : o))
   const area = objs.find(o => o.type === 'racking_area')
   const box = { x: area.x, y: area.y, w: area.width, h: area.height }
-  return stored ? planAreaResize(objs, area.id, box, { gridSize: GS }) : planAreaCreate(objs.filter(o => o !== area), box, { ...area.settings, orientation }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
+  return stored ? planAreaResize(objs, area.id, box, { gridSize: GS }) : planAreaCreate(objs.filter(o => o !== area), box, { ...area.settings, autoCross: true, orientation }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
 }
 const square = (objects) => objects.filter(o => typeof o.type === 'string' && o.type.startsWith('rack_') && ((o.rotation || 0) % 90) === 0)
 const blocksOf = (objects, pickBothSides = false) => aisleColumnBlocks({ racks: square(objects), columns: layoutColumns(objects, GS), profile: MHE_PROFILES.reach, gridSize: GS, pickBothSides })

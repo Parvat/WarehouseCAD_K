@@ -4,7 +4,9 @@
 // next's (utils/copyChange.js sectionCrossAisles, per line). The lines whose gaps line up across are ONE cross-aisle.
 // A click in it picks it (the canvas's press, canvas2/useCanvasInteraction.js); a drag along the run moves it in whole
 // bays — in every line it crosses the run on one side gains the bays the other loses, the aisle's width unchanged — and
-// stops where a run would pass Max run or fall under MIN_RUN_BAYS (3). The card types its place from the start wall
+// stops where a run would fall under MIN_RUN_BAYS (3) (xaisle-tool: Max run no longer stops it — a run longer than Max run
+// is a Check warning). Its width is typed in the card and Delete rejoins its rows (utils/crossAisleCut.js, which also
+// makes one: the Cross aisle tool). The card types its place from the start wall
 // (its low end: the left, or the top). One undo per move. A Fill's racks stay its own: the area's pattern and the racks'
 // signatures follow the move (generate/rackingArea.js), so a later resize carries the new split on.
 
@@ -13,9 +15,8 @@ import { sectionCrossAisles } from './copyChange'
 import { rackFootprint } from '../generate/rackFootprint'
 import { piecesFromStates } from '../generate/faceReach'
 import { innerOutline } from './floorGeom'
-import { rackSig, areaSettings } from '../generate/rackingArea'
+import { rackSig, sigMatch } from '../generate/rackingArea'
 import { MIN_RUN_BAYS } from '../generate/sizingLayout'
-import { rackingSettings } from './fillTool'
 import { rebuildAisles } from './aisleRebuild'
 import { nanoid } from 'nanoid'
 
@@ -70,21 +71,14 @@ function runBays(objects, rack, rot) {
   return objects.filter(o => RACK.has(o.type) && o.parentId === rack.parentId && o.genSection === rack.genSection && (() => { const [d0, d1] = acrossOf(o, rot); return Math.min(d1, c1) - Math.max(d0, c0) > EPS })())
     .reduce((t, o) => t + (o.beams?.length || 0), 0)
 }
-/** The longest run allowed, in bays: the area's Max run when its racks are a Fill's, else the Racking settings'. */
-function maxBaysFor(objects, rack) {
-  const area = rack.areaId ? objects.find(o => o.id === rack.areaId) : null
-  const maxRunFt = (area ? areaSettings(area).maxRunFt : rackingSettings().maxRunFt) || 150
-  const beam = rack.beams?.[0] || 96, up = rack.uprightWidth || 3
-  return Math.max(1, Math.floor((maxRunFt * 12 - up) / (beam + up)))
-}
-/** How far (whole bays) cross-aisle `c` may move: [dMin, dMax] — every run either side kept within MIN_RUN_BAYS and Max
- *  run (a positive move: toward the run's high end). */
+/** How far (whole bays) cross-aisle `c` may move: [dMin, dMax] — every run either side kept at MIN_RUN_BAYS at least
+ *  (a positive move: toward the run's high end). Max run does not stop it (xaisle-tool: a Check warning). */
 export function moveRange(objects, c) {
   let lo = -Infinity, hi = Infinity
   for (const l of c.lines) {
-    const na = runBays(objects, l.a, c.rot), nb = runBays(objects, l.b, c.rot), M = maxBaysFor(objects, l.a)
-    hi = Math.min(hi, M - na, nb - MIN_RUN_BAYS)
-    lo = Math.max(lo, MIN_RUN_BAYS - na, nb - M)
+    const na = runBays(objects, l.a, c.rot), nb = runBays(objects, l.b, c.rot)
+    hi = Math.min(hi, nb - MIN_RUN_BAYS)
+    lo = Math.max(lo, MIN_RUN_BAYS - na)
   }
   return [Math.min(0, lo), Math.max(0, hi)]
 }
@@ -142,7 +136,8 @@ export function planCrossAisleMove(objects, c, d, { gridSize = 40 } = {}) {
       return p
     })
     const placed = { ...(o.placed || {}) }
-    for (const r of changed.values()) if (r.areaId === o.id && placed[r.id] != null) placed[r.id] = rackSig(r)
+    // (only a rack the area still holds as it placed it: one cut or changed by hand stays hand-edited — xaisle-tool)
+    for (const r of changed.values()) { const was = objects.find(x => x.id === r.id); if (r.areaId === o.id && placed[r.id] != null && sigMatch(placed[r.id], was)) placed[r.id] = rackSig(r) }
     return { ...o, pattern: { ...P, pieces }, placed }
   })
   return { objects: rebuildAisles(out, nanoid).objects, d }

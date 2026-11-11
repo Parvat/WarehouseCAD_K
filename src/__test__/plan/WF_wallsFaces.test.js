@@ -78,6 +78,9 @@ describe.each(['horizontal', 'vertical'])('WF — %s', (orientation) => {
   const building = (type, w, h) => { s().placeFpObject({ type, widthFt: w, heightFt: h }); return fpNow() }
   const areaOver = (type, w, h, fw, fh) => {
     const fp = building(type, w, h)
+    // (xaisle-tool: a Fill makes no cross-aisles — on the L its full-length rows then need a way-in lane beside the zone; Generate's
+    // area — autoCross — keeps the cross-aisles these tests were laid out with: they are about the face beside a zone)
+    m.FT.useRackingSettings.setState({ autoCross: true })
     drag({ x: fp.x - 13.7, y: fp.y - 21.3 }, { x: fp.x + fp.width * fw + 7.1, y: fp.y + fp.height * fh + 3.3 })
     expect(racks().length).toBeGreaterThan(3)
     return fp

@@ -138,7 +138,7 @@ function fillOf(turned, orientation, stored) {
   const objs = REAL_LAYOUT.map(o => ({ ...o })).map(o => (turned ? turn(o) : o))
   const area = objs.find(o => o.type === 'racking_area')
   const box = { x: area.x, y: area.y, w: area.width, h: area.height }
-  return stored ? planAreaResize(objs, area.id, box, { gridSize: GS }) : planAreaCreate(objs.filter(o => o !== area), box, { ...area.settings, orientation }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
+  return stored ? planAreaResize(objs, area.id, box, { gridSize: GS }) : planAreaCreate(objs.filter(o => o !== area), box, { ...area.settings, autoCross: true, orientation }, { gridSize: GS, from: { x: box.x, y: box.y } }).objects
 }
 /** The fill with the 11.2 ft cross-aisle between sections 2 and 3: horizontal rows, or the turned layout's vertical ones. */
 const crossFill = (vert) => (vert ? fillOf(true, 'vertical', false) : fillOf(false, 'horizontal', false))

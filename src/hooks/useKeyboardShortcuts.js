@@ -19,7 +19,8 @@ import { deleteSelection, cutSelection } from '../studio/selectionActions'
 import { HOME_TOOL, isPlainTool } from '../utils/homeTool'
 import { toggleHelp } from '../studio/HelpCard'
 import { nudgeWithSections, duplicateSections } from '../utils/sectionEdit'
-import { useCrossAislePick, clearCrossAislePick } from '../utils/crossAisleTool'
+import { useCrossAislePick, clearCrossAislePick, pickedCrossAisle } from '../utils/crossAisleTool'
+import { CROSS_AISLE_TOOL, cancelCut, deleteCrossAisle } from '../utils/crossAisleCut'
 
 /** The app's keyboard shortcuts, one keydown handler (exported so a test can press keys at it). */
 export function shortcutHandler(e) {
@@ -36,6 +37,9 @@ export function shortcutHandler(e) {
         // a fill box being dragged: Esc drops it, nothing placed; with none, Esc leaves the fill tool
         if (cancelFill()) return
         if (useCanvasStore.getState().activeTool === FILL_TOOL) { useCanvasStore.getState().setActiveTool(HOME_TOOL); return }
+        // the Cross aisle tool (utils/crossAisleCut.js): a band being dragged — Esc drops it; with none, Esc leaves the tool
+        if (cancelCut()) return
+        if (useCanvasStore.getState().activeTool === CROSS_AISLE_TOOL) { useCanvasStore.getState().setActiveTool(HOME_TOOL); return }
         // a row being placed (paste, duplicate, left panel): Esc cancels it, nothing else
         if (cancelPlacement()) return
         // picked bays step up to their rows first, everywhere (STUDIO.md §7 — canvas2/selectionLevel.js)
@@ -62,6 +66,9 @@ export function shortcutHandler(e) {
       // ── Delete / Backspace — delete selected ─────────────────────────────
       if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
         e.preventDefault()
+        // a cross-aisle picked, nothing selected: Delete rejoins its rows (utils/crossAisleCut.js, xaisle-tool)
+        { const st = useCanvasStore.getState(), c = !st.selectedIds.length && useCrossAislePick.getState().pick ? pickedCrossAisle(st.objects) : null
+          if (c) { deleteCrossAisle(useCanvasStore, c); return } }
         // one Delete for the key and the bars (studio/selectionActions.js deleteSelection): bays picked — only those
         // bays, the rows stay; rows — the rows
         deleteSelection()

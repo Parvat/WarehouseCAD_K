@@ -83,7 +83,8 @@ export function planRegenerate(objects, fp, settings, { gridSize = 40, newId = n
   const tries = settings.orientation === 'auto' ? ['horizontal', 'vertical'] : [settings.orientation || 'horizontal']
   let best = null
   for (const orientation of tries) {
-    const made = planAreaCreate(kept, box, { ...settings, orientation }, { gridSize, newId, from, elevations })
+    // (autoCross: Generate's area keeps its automatic cross-aisles at Max run — a Fill's never cuts, xaisle-tool)
+    const made = planAreaCreate(kept, box, { ...settings, orientation, autoCross: true }, { gridSize, newId, from, elevations })
     if (made && (!best || made.plan.positions > best.made.plan.positions)) best = { made, orientation }
   }
   if (!best) return null

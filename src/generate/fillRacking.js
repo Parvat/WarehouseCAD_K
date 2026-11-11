@@ -387,16 +387,23 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
   const len = rHi - rLo
   if (!(len > EPS)) return null
   const rg = walkGrid(runLines, flipR ? rHi : rLo, len, flipR ? -1 : 1)
-  /* the Cross aisle option (cross-aisle round) is about the box's ends as drawn — left / top, right / bottom — whichever
-     end the walk starts from */
+  /* xaisle-tool: a Fill never cuts its rows — every row runs the full length of the fill, one run (no Max run here: a row
+     longer than it is a Check warning, utils/layoutCheck; a cross-aisle is cut by hand with the Cross aisle tool,
+     utils/crossAisleCut.js). Generate keeps its automatic cross-aisles: its own walk (sizingLayout.js) and Regenerate's
+     area (generate/regenerate.js — `autoCross` in its settings) split at Max run exactly as before, by the Cross aisle
+     option (left / top, right / bottom — whichever end the walk starts from). */
+  const auto = !!set.autoCross
   const pos = set.crossAisle === 'left' || set.crossAisle === 'right' ? ((set.crossAisle === 'left') !== flipR ? 'left' : 'right') : 'centre'
-  const { segments } = rowSegments(len, { crossAisleFt, endClearFt: 0, beamIn, upIn, runGridFt: rg.pitch, runGridOffsetFt: rg.offset, runGridMaxFt: rg.max, maxRunFt: set.maxRunFt, crossAislePos: pos })
+  const { segments } = auto
+    ? rowSegments(len, { crossAisleFt, endClearFt: 0, beamIn, upIn, runGridFt: rg.pitch, runGridOffsetFt: rg.offset, runGridMaxFt: rg.max, maxRunFt: set.maxRunFt, crossAislePos: pos })
+    : rowSegments(len, { crossAisleFt, endClearFt: 0, beamIn, upIn, runGridFt: rg.pitch, runGridOffsetFt: rg.offset, runGridMaxFt: rg.max, maxRunFt: Infinity })
   if (!segments.length) return null
   const pitch = (upIn + beamIn) / 12
   const runLen = (n) => (upIn * (n + 1) + n * beamIn) / 12
   // walk order: from the start edge in. Each piece kept as { a (its start-edge end), n }, in walk distance
   const walkPieces = segments.map(seg => ({ a: seg.xFt, n: seg.bays }))
-  const maxBays = Number.isFinite(set.maxRunFt) ? Math.max(1, Math.floor((set.maxRunFt * 12 - upIn) / (beamIn + upIn))) : Infinity
+  // a Fill: one run, past the box both ways (xaisle-tool); Generate's area: up to Max run, then a cross-aisle, as before
+  const maxBays = auto && Number.isFinite(set.maxRunFt) ? Math.max(1, Math.floor((set.maxRunFt * 12 - upIn) / (beamIn + upIn))) : Infinity
   const toR = (a, n) => (flipR ? rHi - a - runLen(n) : rLo + a)          // a piece's low-end run position
   const fwdLen = (flipR ? rHi - pr0 : pr1 - rLo), backRun = (flipR ? pr1 - rHi : rLo - pr0)
   const extra = []

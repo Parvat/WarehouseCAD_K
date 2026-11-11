@@ -160,7 +160,9 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     }
     const { fp, ib } = await officePocket('fp_rect', 240, 120)
     const report = []
-    const plan = m.FR.planFill(s().objects, ib, { orientation, wallClearIn: 0 }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
+    // (xaisle-tool: a Fill makes no cross-aisles — its full-length rows then need two lanes more here; Generate's area — autoCross
+    // — keeps the cross-aisle this test was laid out with: it is about the office's own lane)
+    const plan = m.FR.planFill(s().objects, ib, { orientation, wallClearIn: 0, autoCross: true }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
     // the strip on the bay grid inside the office's lane (17'–25': the half's first frame and the bay before it)
     // ties with the wall's (1 bay each) and takes it: the pair stays on the near wall
     expect(report).toHaveLength(1)
@@ -182,7 +184,8 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     s().placeFpObject({ type, widthFt: w, heightFt: h })
     const fp = fpNow(), ib = innerBox(fp)
     drag({ x: ib.x - 13.7, y: ib.y - 21.3 }, { x: ib.x + ib.w + 7.1, y: ib.y + ib.h + 3.3 })
-    expect(racks().length).toBeGreaterThan(8)
+    // (xaisle-tool: one run per row, not two either side of a cross-aisle — half the racks: was > 8)
+    expect(racks().length).toBeGreaterThan(4)
     expect(m.AA.cutOffRacks(s().objects, fp, { gridSize: GS, travelFt: 8, aisleFt: 10.5 }).cutOff).toEqual([])
     expect(check().errors).toEqual([])
   })

@@ -44,6 +44,7 @@ import { endTool, useMeasureMode, toggleMeasure } from '../../utils/toolSwitch'
 import { StudioRail, StudioFlyout, StudioToolPill } from '../../studio/StudioTools'
 import { ROW_GROUP_TOOL } from '../../utils/rowGroupTool'
 import { SPLIT_TOOL } from '../../utils/splitTool'
+import { CROSS_AISLE_TOOL } from '../../utils/crossAisleCut'
 import { ANNOT } from './AnnotationPanel'
 import { WAREHOUSE_CATEGORIES } from '../../constants/warehouseObjects'
 import { objectContains } from '../../utils/canvas'
@@ -1129,7 +1130,9 @@ export function FloatingToolbar({ studio = false } = {}) {
     const tool = (id, t, label, icon, extra = {}) => ({ id, label, icon, on: !measuring && activeTool === t, onClick: () => setActiveTool(t), ...extra })
     const groups = [
       [tool('select', TOOLS.SELECT, 'Select', 'Select', { keyName:'V' }), tool('pan', TOOLS.PAN, 'Pan', 'Pan', { keyName:'P' })],
-      [tool('fill', FILL_TOOL, 'Fill racking', 'Fill racking', { keyName:'F' }), tool('rowgroup', ROW_GROUP_TOOL, 'Row group', 'Row group', { keyName:'G' }), tool('split', SPLIT_TOOL, 'Split', 'Split', { keyName:'S' })],
+      [tool('fill', FILL_TOOL, 'Fill racking', 'Fill racking', { keyName:'F' }), tool('rowgroup', ROW_GROUP_TOOL, 'Row group', 'Row group', { keyName:'G' }), tool('split', SPLIT_TOOL, 'Split', 'Split', { keyName:'S' }),
+       // the Cross aisle tool (utils/crossAisleCut.js, xaisle-tool): drag across rows — they are cut there (icon: the set's Aisles)
+       tool('crossaisle', CROSS_AISLE_TOOL, 'Cross aisle', 'Aisles', { title: 'Cross aisle — drag across rows to cut them there' })],
       [{ id:'measure', label:'Measure', icon:'Measure', keyName:'M', on: measuring, onClick: () => toggleMeasure(useCanvasStore), title: measuring ? 'Exit measure tool (Esc)' : 'Measure — click two points for the distance between them' },
        tool('text', TOOLS.TEXT, 'Text', 'Text', { kind:'object', keyName:'T' })],
     ]

@@ -110,13 +110,13 @@ describe.each(['horizontal', 'vertical'])('CX — %s', (orientation) => {
     for (const k of rows) expect(k).toBe(n + 1)
   })
 
-  it('CX-fill-rect: Fill racking a 240 × 120 rectangle — the 240\' run (horizontal) split once, the 120\' run (vertical) one piece', () => {
+  it('CX-fill-rect: Fill racking a 240 × 120 rectangle — every row one piece, the 240\' run too (xaisle-tool: a Fill never cuts at Max run; was: the 240\' run split once)', () => {
     s().placeFpObject({ type: 'fp_rect', widthFt: 240, heightFt: 120 })
     fillAll()
     const rows = piecesPerRow()
     expect(rows.length).toBeGreaterThan(3)
-    for (const k of rows) expect(k).toBe(vert ? 1 : 2)
-    // the wall rows (the start wall's single, the far wall's): one piece, through the cross-aisle
+    for (const k of rows) expect(k).toBe(1)
+    // the wall rows (the start wall's single, the far wall's): one piece
     const walls = piecesPerRow(undefined, true)
     expect(walls.length).toBeGreaterThan(0)
     for (const k of walls) expect(k).toBe(1)
@@ -136,20 +136,22 @@ describe.each(['horizontal', 'vertical'])('CX — %s', (orientation) => {
     const fp = (s().placeFpObject({ type: 'fp_l', widthFt: 300, heightFt: 200 }), fillAll())
     const barTop = fp.y + fp.height * 0.7
     const above = (f) => f.y + f.h <= barTop + 1, inBar = (f) => f.y >= barTop - 1
-    const one = vert ? [above, inBar] : [above]
+    // (xaisle-tool: a Fill never cuts at Max run — rows up and down run the whole 200' through the elbow, one pattern, so no
+    // row lies wholly in the stem or the bar; was: the stem and the bar one piece each, a part past 150' split)
+    const one = vert ? [] : [above]
     for (const part of one) {
       const rows = piecesPerRow(part)
       expect(rows.length).toBeGreaterThan(1)
       for (const k of rows) expect(k).toBe(1)
     }
-    if (!vert) {
-      // one area, one pattern: the bar's rows run on through the elbow, under the stem too — 300', split
-      // by its cross-aisle (and cut once more where the stem's travel path comes down through them, area AA)
-      const rows = piecesPerRow(inBar)
+    {
+      // one area, one pattern: the bar's rows (horizontal) / every row (vertical) run on through the elbow — no cross-aisle,
+      // cut only where the stem's travel path comes through them (area AA): one piece or two
+      const rows = piecesPerRow(vert ? () => true : inBar)
       expect(rows.length).toBeGreaterThan(1)
-      for (const k of rows) expect(k).toBeGreaterThanOrEqual(2)
+      for (const k of rows) expect(k).toBeLessThanOrEqual(2)
       // its wall row on the bar's far wall: one piece through the cross-aisle, cut only where the travel path comes down
-      const walls = piecesPerRow(inBar, true)
+      const walls = piecesPerRow(vert ? () => true : inBar, true)
       expect(walls.length).toBeGreaterThan(0)
       for (const k of walls) expect(k).toBeLessThanOrEqual(2)
     }

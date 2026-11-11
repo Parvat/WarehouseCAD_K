@@ -69,7 +69,7 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     let out
     if (stored) out = m.RA.planAreaResize(objs, area.id, box, { gridSize: GS })
     else {
-      const made = m.RA.planAreaCreate(objs.filter(o => o !== area), box, { ...area.settings, orientation }, { gridSize: GS, from: { x: box.x, y: box.y } })
+      const made = m.RA.planAreaCreate(objs.filter(o => o !== area), box, { ...area.settings, autoCross: true, orientation }, { gridSize: GS, from: { x: box.x, y: box.y } })
       out = made.objects
     }
     return { m, out, fp, box, areaId: (out.find(o => o.type === 'racking_area') || area).id }
