@@ -5416,5 +5416,48 @@ describe('REG — the hand check by real clicks', () => {
       await card().getByRole('button', { name: 'Delete cross-aisle' }).click(); await L.page.waitForTimeout(300)
       expect([...(await rowsBy(area)).values()].every(q => q.length === 1)).toBe(true)
     }, T)
+
+    it('REG-xaisle-way-in (click): on an L (the fixture’s building made a 300 × 200 L), Fill over all of it carves no way-in lane — every row one piece; Check layout lists "Aisles between R3–R8 have no way in. Add a cross aisle."; a click on it lights those aisles; a cross-aisle cut with the tool through every row clears it (xaisle-tool)', async () => {
+      await open()
+      // the building an L, nothing else (committed: one undo step, as a load would)
+      await L.S(`const st = S.getState(); S.setState({ objects: [], selectedIds: [] }); st.placeFpObject({ type: 'fp_l', widthFt: 300, heightFt: 200 })
+        const f = S.getState().objects.find(o => o.type === 'fp_l'); S.getState().commitObjectUpdate(f.id, {}); return f.id`)
+      await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(300)
+      const b = await innerBox(), gs = await gs7()
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      await L.page.getByRole('toolbar', { name: 'Fill racking options' }).getByRole('button', { name: 'Rows across' }).click()
+      const a = { x: b.x0 + gs, y: b.y0 + gs }, c = { x: b.x1 - gs, y: b.y1 - gs }
+      await onCanvasAll([a, c]); await L.drag(a, c); await L.page.waitForTimeout(700)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      const area = await lastArea()
+      expect(area).toBeTruthy()
+      // no lane: every row line one piece (a way-in lane would cut the rows it crosses in two)
+      const lines = new Map()
+      for (const q of await areaRows(area)) { const k = q.type + ':' + q.s0.toFixed(2); lines.set(k, (lines.get(k) || 0) + 1) }
+      expect(lines.size).toBeGreaterThan(4)
+      expect([...lines.values()].every(n => n === 1)).toBe(true)
+      expect(await L.S('return !!S.getState().objects.find(o => o.id === arg).pattern.autoCross', area)).toBe(false)
+      // Check: the error, named by the rows either side
+      const errs = (await checkItems()).filter(i => i.kind === 'no-way-in')
+      expect(errs.length).toBeGreaterThan(0)
+      for (const e of errs) expect(e.text).toMatch(/^Aisles (between R\d+–R\d+|beside R\d+) have no way in\. Add a cross aisle\.$/)
+      // a click on it lights those aisles
+      await L.page.getByRole('button', { name: errs[0].text }).click(); await L.page.waitForTimeout(300)
+      const hl = await L.S('return import("/src/utils/layoutCheck.js").then(LC => { const h = LC.useLayoutCheck.getState().highlight; return h ? { kind: h.kind, n: h.shapes.length } : null })')
+      expect(hl.kind).toBe('no-way-in')
+      expect(hl.n).toBeGreaterThan(0)
+      expect(await L.page.evaluate(() => window.Konva.stages[0].find('.issue-highlight').length)).toBe(1)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      // the Cross aisle tool through every row, near the stem's inner wall: the error goes
+      const ids = await L.S('return S.getState().objects.filter(o => o.areaId === arg && /^rack_/.test(o.type)).map(o => o.id)', area)
+      const stemEnd = await L.S(`return import('/src/generate/columnCheck.js').then(CC => { const st = S.getState(), gs = st.gridSize || 40
+        const fs = st.objects.filter(o => arg.includes(o.id)).map(o => CC.rackFootprint(o)), x0 = Math.min(...fs.map(f => f.x)), x1 = Math.max(...fs.map(f => f.x + f.w))
+        const ends = fs.map(f => f.x + f.w).filter(x => x < x1 - 1); return { u: (Math.max(...ends) - 6 * gs - x0) / (x1 - x0) } })`, ids)
+      // (the click took the view to the pocket: the whole building back on screen first)
+      await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(300)
+      await cutAcross(ids, stemEnd.u)
+      expect((await crossNow()).length).toBeGreaterThan(0)
+      expect((await checkItems()).filter(i => i.kind === 'no-way-in')).toEqual([])
+    }, T)
   })
 })

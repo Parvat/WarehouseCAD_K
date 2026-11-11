@@ -304,8 +304,13 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
           highlight: g.boxes.map(b => shade(b, HL.amber, 'No way in')), text: 'No way in: a zone closes this aisle at both ends' })
         continue
       }
+      // (xaisle-tool: named by the rack lines either side — "Aisles between R3–R8 have no way in. Add a cross aisle."; a click on
+      // the item lights those aisles)
+      const nos = rackLinesNow(objects, gridSize).filter(l => l.ids.some(id => g.ids.has(id))).map(l => l.no).sort((p, q) => p - q)
+      const span = nos.length ? (nos.length > 1 ? `R${nos[0]}–R${nos[nos.length - 1]}` : `R${nos[0]}`) : null
       errors.push({ severity: 'error', kind: 'no-way-in', ids: [...g.ids], box: union(g.boxes),
-        highlight: g.boxes.map(b => shade(b, HL.red, 'No way in')), text: 'No way in: aisle closed at both ends' })
+        highlight: g.boxes.map(b => shade(b, HL.red, 'No way in')),
+        text: span ? `Aisles ${nos.length > 1 ? 'between' : 'beside'} ${span} have no way in. Add a cross aisle.` : 'Aisles here have no way in. Add a cross aisle.' })
     }
   }
   /* every pick face with less than the pick width of clear floor in front — a zone, the wall or a rack across, 0' and

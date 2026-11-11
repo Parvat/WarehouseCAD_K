@@ -80,9 +80,12 @@ describe.each(['horizontal', 'vertical'])('FR — %s', (orientation) => {
   const building = (type, widthFt, heightFt) => { s().placeFpObject({ type, widthFt, heightFt }); return fpOf() }
   const sig = (o) => [o.type, r3(o.x), r3(o.y), r3(o.width), r3(o.height), o.rotation || 0, (o.beams || []).join('/'), o.levels, o.rowIndex, o.genSection].join(':')
   const aisleSig = (o) => [r3(o.x), r3(o.y), r3(o.width), r3(o.height), o.rotation || 0].join(':')
-  /* (xaisle-tool: a Fill no longer cuts its rows, so a row longer than Max run is now a Check warning — 'max-run', its own test
-     REG-xaisle-check; set aside here, where "clean" means nothing else is wrong) */
-  const check = () => { const r = m.LC.checkLayout(s().objects, { gridSize: GS }); return { ...r, warnings: r.warnings.filter(w => w.kind !== 'max-run') } }
+  /* (xaisle-tool: a Fill no longer cuts its rows nor carves way-in lanes, so a row longer than Max run is now a Check warning —
+     'max-run', REG-xaisle-check — and aisles closed at both ends an error — 'no-way-in', REG-xaisle-way-in; set aside here,
+     where "clean" means nothing else is wrong — with no lane, a zone the rows close in has no way in either: 'zone-closed' /
+     'zone-no-way-in', the same family) */
+  const ACCESS = new Set(['no-way-in', 'zone-closed', 'zone-no-way-in', 'max-run'])
+  const check = () => { const r = m.LC.checkLayout(s().objects, { gridSize: GS }); return { ...r, errors: r.errors.filter(e => !ACCESS.has(e.kind)), warnings: r.warnings.filter(w => !ACCESS.has(w.kind)) } }
 
   /** No rack past a wall: every corner inside the walls' inner face, and no inner-face vertex inside a rack. */
   const expectInside = () => {

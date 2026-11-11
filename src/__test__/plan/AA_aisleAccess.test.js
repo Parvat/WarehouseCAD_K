@@ -52,7 +52,9 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
   let m, s
   beforeEach(async () => {
     m = await fresh(); s = () => m.useCanvasStore.getState()
-    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation })
+    /* (xaisle-tool: a Fill carves no way-in lane — an aisle closed at both ends is a Check error instead, REG-xaisle-way-in. The
+       lanes these tests are about are Generate's area's — autoCross, regenerate.js — so they fill in that mode) */
+    m.FT.useRackingSettings.setState({ ...m.FR.DEFAULT_FILL_SETTINGS, wallClearIn: 0, orientation, autoCross: true })
     m.AT.useAreaPrompt.setState({ question: null })
   })
   const racks = () => s().objects.filter(o => RACK.has(o.type))
@@ -102,7 +104,7 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     const made = m.FR.areaPattern(s().objects, ib, { orientation, wallClearIn: 0 }, { gridSize: GS, from: { x: ib.x, y: ib.y } })
     const bare = m.FR.patternFill(s().objects, ib, made.pattern, { gridSize: GS, wayIn: false }).racks
     const report = []
-    m.FR.planFill(s().objects, ib, { orientation, wallClearIn: 0 }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
+    m.FR.planFill(s().objects, ib, { orientation, wallClearIn: 0, autoCross: true }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
     drag({ x: ib.x, y: ib.y }, { x: ib.x + ib.w, y: ib.y + ib.h })
     const rowOf = (r, list) => list.filter(q => Math.abs(across(q)[0] - across(r)[0]) < EPS && Math.abs(across(q)[1] - across(r)[1]) < EPS && Math.min(along(q)[1], along(r)[1]) - Math.max(along(q)[0], along(r)[0]) > EPS)
     const baysIn = (list) => list.reduce((t, q) => t + q.beams.length, 0)
@@ -132,14 +134,18 @@ describe.each(['horizontal', 'vertical'])('AA — %s', (orientation) => {
     const err = [...c.errors.filter(e => e.kind === 'no-way-in'), ...c.warnings.filter(e => e.kind === 'zone-no-way-in')]
     expect(err.length).toBeGreaterThan(0)
     expect(err.flatMap(e => e.highlight).some(b => overlap(b, pocket))).toBe(true)
-    for (const e of err) expect([e.text, e.highlight[0].color]).toEqual(e.severity === 'error' ? ['No way in: aisle closed at both ends', m.LC.HL.red] : ['No way in: a zone closes this aisle at both ends', m.LC.HL.amber])
+    // (xaisle-tool: the error names the rows either side and says what to do — was "No way in: aisle closed at both ends")
+    for (const e of err) {
+      if (e.severity === 'error') { expect(e.text).toMatch(/^Aisles (between R\d+–R\d+|beside R\d+) have no way in\. Add a cross aisle\.$/); expect(e.highlight[0].color).toBe(m.LC.HL.red) }
+      else expect([e.text, e.highlight[0].color]).toEqual(['No way in: a zone closes this aisle at both ends', m.LC.HL.amber])
+    }
   })
 
   it('AA-tie (rectangle): vertical, an office 48–85\' across — opening its pocket costs the same bays (2) on the office\'s side as against the wall: the strip is cut on the office\'s side, in its lane on the bay grid, and the rows stay flush against the building wall. Horizontal, the office 40–70\' across overlaps a pair\'s half by 3": that half runs on from the pair\'s last frame (no hole), so a strip against the office would cut it — the wall\'s strip is cheaper and is taken, no tie', async () => {
     if (vert) {
       const { ib, office, inPocket } = await officePocket('fp_rect', 240, 120, [48, 85])
       const report = []
-      const plan = m.FR.planFill(s().objects, ib, { orientation, wallClearIn: 0 }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
+      const plan = m.FR.planFill(s().objects, ib, { orientation, wallClearIn: 0, autoCross: true }, { gridSize: GS, from: { x: ib.x, y: ib.y }, report })
       const tie = report.find(q => q.tiedWith)
       expect(tie, 'a pocket whose strip against the office and strip against the wall cost the same').toBeTruthy()
       expect(tie.kind).toBe('zone')

@@ -61,9 +61,12 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
   /** The building's inner wall faces' bounding box (world px). */
   const innerBox = (fp) => { const p = m.FR.innerOutline(fp, GS), xs = p.map(q => q.x), ys = p.map(q => q.y); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } }
   const doc = () => JSON.parse(JSON.stringify({ objects: s().objects }))
-  /* (xaisle-tool: a Fill no longer cuts its rows, so a row longer than Max run is now a Check warning — 'max-run', its own test
-     REG-xaisle-check; set aside here, where "clean" means nothing else is wrong) */
-  const check = () => { const r = m.LC.checkLayout(s().objects, { gridSize: GS }); return { ...r, warnings: r.warnings.filter(w => w.kind !== 'max-run') } }
+  /* (xaisle-tool: a Fill no longer cuts its rows nor carves way-in lanes, so a row longer than Max run is now a Check warning —
+     'max-run', REG-xaisle-check — and aisles closed at both ends an error — 'no-way-in', REG-xaisle-way-in; set aside here,
+     where "clean" means nothing else is wrong — with no lane, a zone the rows close in has no way in either: 'zone-closed' /
+     'zone-no-way-in', the same family) */
+  const ACCESS = new Set(['no-way-in', 'zone-closed', 'zone-no-way-in', 'max-run'])
+  const check = () => { const r = m.LC.checkLayout(s().objects, { gridSize: GS }); return { ...r, errors: r.errors.filter(e => !ACCESS.has(e.kind)), warnings: r.warnings.filter(w => !ACCESS.has(w.kind)) } }
   const drag = (a, b) => { m.FT.startFill(a); m.FT.moveFill(b, s().objects, GS); return m.FT.commitFill(m.useCanvasStore) }
   /** Drag the area's edge (the canvas writes the live box, then calls finishAreaResize on release). */
   const resizeArea = (box) => {
@@ -912,7 +915,7 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     for (const columns of [false, true]) {
       const got = await run(columns)
       expect(acrossAt(got.row, got.L.u.s0, got.L.u.d), columns ? 'columns' : 'no columns').toBe(true)
-      expect(m.LC.checkLayout(s().objects, { gridSize: GS }).errors).toEqual([])
+      expect(check().errors).toEqual([])
     }
   })
 
@@ -935,6 +938,8 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
     const ob = vert ? { x: fp.x + 40 * GS, y: fp.y + 30 * GS, w: 30 * GS, h: 30 * GS } : { x: fp.x + 30 * GS, y: fp.y + 40 * GS, w: 30 * GS, h: 30 * GS }
     s().addObject({ type: 'zone_office', label: 'Office', x: ob.x, y: ob.y, width: ob.w, height: ob.h, parentId: fp.id, layerId: 'zones' })
     await tick()
+    // (xaisle-tool: a Fill carves no lane — lanes are Generate's area's: autoCross)
+    m.FT.useRackingSettings.setState({ autoCross: true })
     drag({ x: fp.x - 13.7, y: fp.y - 21.3 }, { x: fp.x + fp.width + 7.1, y: fp.y + fp.height + 3.3 })
     expect(wayInLanes().length, 'a lane cut').toBeGreaterThan(0)
     expectRegular()
@@ -1080,7 +1085,7 @@ describe('RA — the app\'s own coordinates', () => {
     // (xaisle-tool: one run per row, not two either side of a cross-aisle — half the racks: was > 12)
     expect(s().objects.filter(o => o.type === 'rack_double_row' || o.type === 'rack_row').length).toBeGreaterThan(6)
     // (the Max run warning set aside — xaisle-tool, REG-xaisle-check)
-    const r = m.LC.checkLayout(s().objects, { gridSize: GS })
-    expect({ ...r, warnings: r.warnings.filter(w => w.kind !== 'max-run') }).toEqual({ errors: [], warnings: [] })
+    const r = m.LC.checkLayout(s().objects, { gridSize: GS }), A = new Set(['no-way-in', 'zone-closed', 'zone-no-way-in', 'max-run'])
+    expect({ ...r, errors: r.errors.filter(e => !A.has(e.kind)), warnings: r.warnings.filter(w => !A.has(w.kind)) }).toEqual({ errors: [], warnings: [] })
   })
 })

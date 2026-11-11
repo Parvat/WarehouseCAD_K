@@ -444,6 +444,8 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
     dirS, runDir: flipR ? -1 : 1,
     // the truck: the usable-positions check (column X marks) a slid row must not lose against
     mhe: set.mhe,
+    // Generate's area (regenerate.js): its automatic cross-aisles and way-in lanes; a Fill has neither (xaisle-tool)
+    ...(auto ? { autoCross: true } : {}),
   }
   return { pattern, rects, fp }
 }
@@ -744,7 +746,10 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
     })
     // and every aisle with a way in: wall-to-wall rows leave a travel path; a pocket is opened by its cheapest strip (aisleAccess.js)
     const mine = new Set(faced.map(r => r.id))
-    if (!wayIn) return faced
+    /* xaisle-tool: a Fill carves no way-in lane — that is an automatic cross-aisle. An aisle closed at both ends is a Check
+       error instead ("Aisles between R3–R8 have no way in. Add a cross aisle."); the Cross aisle tool opens it. Generate's
+       area (`autoCross`, regenerate.js) keeps its lanes as before. */
+    if (!wayIn || !pattern.autoCross) return faced
     const opened = giveWayIn([...objects.filter(o => !mine.has(o.id)), ...faced], fp, [...mine], {
       gridSize, aisleFt, travelFt: pattern.travelFt ?? Math.min(8, aisleFt), dir: pattern.runDir || 1, newId, report: rep,
       // racks a lane shortens move up to the wall clearance, never past it
