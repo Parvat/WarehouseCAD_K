@@ -170,8 +170,8 @@ const cleanRacks = (objects, area) => {
  *  taken out): the racks, reusing `clean` ones that come out exactly the same
  *  (id and all), so a rack the change doesn't touch stays the very same rack.
  *  `removed`: where racks removed by hand stood (left empty). */
-function showPattern(objects, box, pattern, area, clean, removed, { gridSize, newId, snapEnds = false }) {
-  const plan = patternFill(objects, box, pattern, { gridSize, newId, areaId: area.id, blocked: removed, snapEnds })
+function showPattern(objects, box, pattern, area, clean, removed, { gridSize, newId, snapEnds = false, rackGap = null, sections = [] }) {
+  const plan = patternFill(objects, box, pattern, { gridSize, newId, areaId: area.id, blocked: removed, snapEnds, rackGap, sections })
   const bySig = new Map()
   for (const r of clean) { const k = shapeKey(r); if (!bySig.has(k)) bySig.set(k, []); bySig.get(k).push(r) }
   return plan.racks.map(r => { const same = bySig.get(shapeKey(r)); return same && same.length ? same.shift() : r })
@@ -212,7 +212,7 @@ export function planAreaCreate(objects, box, settings, { gridSize = 40, newId = 
  *  stay as they are (trimmed to their whole bays inside the box); the pattern
  *  goes round them, and leaves empty where a rack was removed by hand.
  *  Returns the new objects. */
-export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = nanoid } = {}) {
+export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = nanoid, rackGap = null, sections = [] } = {}) {
   const area = objects.find(o => o.id === areaId)
   if (!area) return null
   const clean = cleanRacks(objects, area), cleanIds = new Set(clean.map(o => o.id))
@@ -227,7 +227,7 @@ export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = na
   const now = kept.find(o => o.id === areaId)
   // an area from before patterns: its pattern from the box it had, as it was anchored
   const pattern = now.pattern || areaPattern(kept, boxOf(now), areaSettings(now), { gridSize, from: cornerOf(boxOf(now), now.anchor), areaId })?.pattern
-  const racks = pattern ? showPattern(kept, box, pattern, now, clean, removedBoxes(objects, area), { gridSize, newId, snapEnds: edited }) : []
+  const racks = pattern ? showPattern(kept, box, pattern, now, clean, removedBoxes(objects, area), { gridSize, newId, snapEnds: edited, rackGap, sections }) : []
   const keepPlaced = Object.fromEntries(Object.entries(now.placed || {}).filter(([id]) => !cleanIds.has(id)))
   const next = [...kept, ...racks].map(o => (o.id !== areaId ? o : {
     ...o, x: box.x, y: box.y, width: box.w, height: box.h, ...(pattern ? { pattern } : {}),

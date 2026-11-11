@@ -7,6 +7,7 @@ import { innerOutline } from './floorGeom'
 import { clampMove, clampGrowth } from './floorClamp'
 import { notify } from './notice'
 import { isSection, polygonOf, membership, nextName, normalPoly, edgesOf, pointInPolygon, polysOverlap, boxPoly, SECTION } from './sectionAreas'
+import { afterSectionResize } from './sectionShrink'
 
 const FP = /^fp_/
 const E = 1e-6
@@ -165,6 +166,8 @@ export function sizeSection(store, id, w, h) {
   const b = clampSectionBox(st.objects, s, { x: s.x, y: s.y, w: w > 0 ? w : s.width, h: h > 0 ? h : s.height }, { gridSize: st.gridSize || 40 })
   if (Math.abs(b.w - s.width) < E && Math.abs(b.h - s.height) < E) return
   st.commitObjectUpdate(id, { width: b.w, height: b.h })
+  // made smaller: its rows' bays that no longer fit go in the same undo step (sectionShrink.js)
+  afterSectionResize(store, s)
 }
 
 /** Duplicate (the bar, Ctrl+D) for a selection of sections: each copy goes beside its section — right, below, left or

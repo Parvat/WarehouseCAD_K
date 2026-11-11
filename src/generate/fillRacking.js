@@ -320,14 +320,25 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
   const start = from ? rsOf(vert, gridSize)(from) : null
   const flipS = !!start && start.s > (box.s0 + box.s1) / 2
   /* along the rows: a new fill (`wallAnchor`, fill-place) starts its rows flush at the wall clearance when the box
-     touches a wall at a run end (a zone's edge counts as a wall), the leftover going to the open end; touching none, at the low end — the left (rows running across), the top (rows
-     up and down) — the leftover at the other. Never centred. Touching walls at both ends, the walk starts at the drag's
+     touches a wall at a run end (a zone's edge counts as a wall), the leftover going to the open end; touching none, at
+     the closed end — one with no rack beyond it (shrink-fill) — the leftover going to the end that faces racks; both
+     closed or both open, at the low end — the left (rows running across), the top (rows up and down) — the leftover at
+     the other. Never centred. Touching walls at both ends, the walk starts at the drag's
      end as before. The area keeps that end as its anchor (rackingArea.js), so a rebuild or resize walks from it again;
      without `wallAnchor` (a rebuild, an area from before) the walk starts at the drag's (the anchor's) end as before. */
   const rMin = Math.min(...rects.map(q => q.r0)), rMax = Math.max(...rects.map(q => q.r1))
   const wallLo = rects.some(q => Math.abs(q.r0 - rMin) < 1e-6 && q.e0 === 'wall'), wallHi = rects.some(q => Math.abs(q.r1 - rMax) < 1e-6 && q.e1 === 'wall')
   const fromHi = !!start && start.r > (box.r0 + box.r1) / 2
-  const flipR = wallAnchor && !(wallLo && wallHi) ? wallHi : fromHi
+  /* shrink-fill: touching no wall at either run end, an end is closed when no rack lies beyond it along the rows (a
+     section's edge facing an office or staging zone, open floor) and open when it faces racks (the aisle side): the rows
+     start flush at the closed end, the leftover going to the end that faces racks. Both closed or both open: the low end. */
+  const racksRS = objects.filter(o => isRack(o) && o.width > 0 && o.height > 0 && !(areaId && o.areaId === areaId)).map(o => { const f = rackFootprint(o); return rsRect(vert, gridSize, { x: f.x, y: f.y, w: f.w, h: f.h }) })
+  const facesRacks = (hi) => rects.some(q => Math.abs((hi ? q.r1 : q.r0) - (hi ? rMax : rMin)) < 1e-6 && ((hi ? q.e1 : q.e0) === 'rack'
+    || racksRS.some(o => o.s1 > q.s0 + EPS && o.s0 < q.s1 - EPS && (hi ? o.r0 >= q.r1 - EPS : o.r1 <= q.r0 + EPS))))
+  const openLo = facesRacks(false), openHi = facesRacks(true)
+  const flipR = wallAnchor && !(wallLo && wallHi)
+    ? (wallLo || wallHi ? wallHi : openLo && !openHi)
+    : fromHi
   /* the gap kept off an existing rack at a run end: the required cross-aisle (the fill's equipment's; patternFill takes
      the stricter of the two sides') — a pattern made before keeps the forklift aisle */
   const endGapFt = Number.isFinite(set.endGapFt) && set.endGapFt > 0 ? set.endGapFt : null

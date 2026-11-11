@@ -4961,5 +4961,143 @@ describe('REG — the hand check by real clicks', () => {
       await summaryFold(false)
       expect(await L.page.evaluate(() => localStorage.getItem('trace.studio.summaryOpen'))).toBe('0')
     }, T)
+
+    /* ── shrink-fill: an extended fill continues its rows; a building or section made smaller takes what no longer fits;
+       Fill flush to the closed end — by real mouse on every fixture ── */
+    /** the racks of racking area `id` (pieces too) as rows: { id, type, s0, s1 (across), r0, r1 (along) } in ft */
+    const areaRows = (id) => L.S(`return import('/src/generate/columnCheck.js').then(CC => { const st = S.getState(), gs = st.gridSize || 40
+      const mine = (o) => o.areaId === arg || (o.pieceOf && st.objects.find(p => p.id === o.pieceOf)?.areaId === arg)
+      return st.objects.filter(o => /^rack_/.test(o.type) && mine(o)).map(o => { const f = CC.rackFootprint(o), v = f.h > f.w
+        return { id: o.id, type: o.type, s0: (v ? f.x : f.y) / gs, s1: (v ? f.x + f.w : f.y + f.h) / gs, r0: (v ? f.y : f.x) / gs, r1: (v ? f.y + f.h : f.x + f.w) / gs } }) })`, id)
+    /** the pair rows' runs: every pair row's sorted [r0, r1] list (ft, 0.01) */
+    const runsOf = (rows) => { const by = new Map(); for (const q of rows.filter(q => q.type === 'rack_double_row')) { const k = q.s0.toFixed(2); if (!by.has(k)) by.set(k, []); by.get(k).push([+q.r0.toFixed(2), +q.r1.toFixed(2)]) } return [...by.values()].map(l => JSON.stringify(l.sort((a, c) => a[0] - c[0]))) }
+    /** the aisles between rows next to each other across that share some run (ft) */
+    const aislesOf = (rows) => { const out = []; for (const a of rows) for (const c of rows) { if (c.s0 <= a.s1 - 1e-6 || Math.min(a.r1, c.r1) - Math.max(a.r0, c.r0) < 1e-6) continue; if (rows.some(m => m !== a && m !== c && m.s0 >= a.s1 - 1e-6 && m.s1 <= c.s0 + 1e-6 && Math.min(m.r1, a.r1) - Math.max(m.r0, a.r0) > 1e-6)) continue; out.push(c.s0 - a.s1) } return out }
+
+    it('REG-fill-extend (click): a fill’s area extended outward by its edge handles continues its rows — every pair row on the same run start and end lines and bay grid, no aisle under the forklift aisle, the rows already there unchanged; one undo each (shrink-fill — was: an extension ended its rows short of a Fill’s, off racks and sections, and slid lane-shortened racks to the wall)', async () => {
+      await open()
+      await clearRacks()
+      const b = await innerBox(), at = (u, v) => ({ x: b.x0 + (b.x1 - b.x0) * u, y: b.y0 + (b.y1 - b.y0) * v })
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      await onCanvasAll([at(0.45, 0.3), at(0.7, 0.6)]); await L.drag(at(0.45, 0.3), at(0.7, 0.6)); await L.page.waitForTimeout(600)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      const area = await L.S('return S.getState().objects.find(o => o.type === "racking_area")?.id')
+      expect(area).toBeTruthy()
+      const aisle = await L.S('return S.getState().objects.find(o => o.id === arg).pattern.aisleFt', area)
+      const rows0 = await areaRows(area)
+      expect(rows0.length).toBeGreaterThan(1)
+      // its edge: a point on the area's outline the rule gives to it, a click there selects it
+      const edgePt = await L.S(`const st = S.getState(), a = st.objects.find(o => o.id === arg), z = st.zoom
+        for (let f = 0.1; f < 0.95; f += 0.05) for (const [x, y] of [[a.x + a.width * f, a.y], [a.x + a.width * f, a.y + a.height], [a.x, a.y + a.height * f], [a.x + a.width, a.y + a.height * f]]) { const k = H.pickAt(st.objects, st.layers, x, y, z, st.gridSize); if (k.id === arg && k.real) return { x, y } }
+        return null`, area)
+      expect(edgePt).toBeTruthy()
+      for (const [key, to] of [['mr', (p) => ({ x: b.x1 + 2 * (b.x1 - b.x0) / 100, y: p.y })], ['bc', (p) => ({ x: p.x, y: b.y1 + 2 * (b.y1 - b.y0) / 100 })]]) {
+        await L.click(edgePt); await L.page.waitForTimeout(150)
+        expect(await L.S('return S.getState().selectedIds')).toEqual([area])
+        const h0 = await hist7(), before = await areaRows(area)
+        const p = await handle7(area, key), q = to(p)
+        await L.drag(p, q); await L.page.waitForTimeout(700)
+        const rows = await areaRows(area)
+        const len = (rs) => rs.reduce((t, r) => t + (r.r1 - r.r0), 0)
+        expect(len(rows)).toBeGreaterThan(len(before) + 1)                                    // it grew
+        expect(new Set(runsOf(rows)).size).toBe(1)                                              // every pair row on the same runs
+        expect(aislesOf(rows).filter(w => w < aisle - 1e-6)).toEqual([])                       // no aisle under the forklift's
+        // the rows already there: none moved (each still there, its low run end where it was)
+        const now = new Map(rows.map(r => [r.s0.toFixed(2) + ':' + r.r0.toFixed(2), r]))
+        expect(before.filter(r => r.type === 'rack_double_row' && !now.has(r.s0.toFixed(2) + ':' + r.r0.toFixed(2))).length).toBe(0)
+        expect((await hist7()) - h0).toBe(1)
+        await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+        expect(len(await areaRows(area))).toBeCloseTo(len(before), 6)
+        await L.page.keyboard.press('Control+y'); await L.page.waitForTimeout(250)
+      }
+    }, T)
+
+    it('REG-building-shrink (click): the building made smaller by its wall handle — its sections and zones clipped to the new inner wall in the same undo step, one left with nothing inside removed; the notice counts them, with Undo; columns untouched (shrink-fill)', async () => {
+      await openSections()
+      const b = await innerBox(), W = b.x1 - b.x0
+      // a section and an office over the right part; a staging zone wholly in the strip the shrink takes
+      const s = await drawIn(b, 0.72, 0.15, 0.95, 0.45)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.S(`const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)); S.setState({ objects: [...st.objects,
+        { id: 'zOff', type: 'zone_office', label: 'Office', layerId: 'zones', parentId: fp.id, x: arg.b.x0 + arg.W * 0.75, y: arg.b.y0 + (arg.b.y1 - arg.b.y0) * 0.55, width: arg.W * 0.2, height: (arg.b.y1 - arg.b.y0) * 0.2 },
+        { id: 'zStg', type: 'zone_staging', label: 'Staging', layerId: 'zones', parentId: fp.id, x: arg.b.x0 + arg.W * 0.92, y: arg.b.y0 + (arg.b.y1 - arg.b.y0) * 0.8, width: arg.W * 0.06, height: (arg.b.y1 - arg.b.y0) * 0.15 }] }); S.getState().commitObjectUpdate('zStg', {})`, { b, W })
+      const cols0 = await L.S('return JSON.stringify(S.getState().objects.filter(o => o.type === "column_grid"))')
+      // the building selected (its top wall), its right wall's handle dragged in 15% of the width
+      const fp = await fpOf()
+      await L.click({ x: fp.x + fp.width / 2, y: fp.y }); await L.page.waitForTimeout(150)
+      const hd = await L.S('return import("/src/canvas2/fpHandles.js").then(M => { const fp = S.getState().objects.find(o => /^fp_/.test(o.type)); const h = M.fpHandlePoints(fp).filter(q => q.kind === "side").sort((a, c) => c.x - a.x)[0]; return { x: h.x, y: h.y } })')
+      const h0 = await hist7()
+      await L.drag(hd, { x: hd.x - W * 0.15, y: hd.y }); await L.page.waitForTimeout(500)
+      const nb = await innerBox()
+      expect(nb.x1).toBeLessThan(b.x1 - W * 0.1)
+      const now = await L.S('const st = S.getState(); return { sec: st.objects.find(o => o.id === arg), off: st.objects.find(o => o.id === "zOff"), stg: st.objects.find(o => o.id === "zStg") }', s.id)
+      expect([now.sec.x + now.sec.width <= nb.x1 + 1e-6, now.off.x + now.off.width <= nb.x1 + 1e-6, now.stg]).toEqual([true, true, undefined])
+      expect([now.sec.width > 0, now.off.width > 0]).toEqual([true, true])
+      expect((await hist7()) - h0).toBe(1)                                                       // one undo step
+      expect(await L.S('return JSON.stringify(S.getState().objects.filter(o => o.type === "column_grid"))')).toBe(cols0)
+      const notice = L.page.locator('[aria-label="Notice"]')
+      expect(await notice.textContent()).toMatch(/1 section clipped.*1 zone clipped.*1 zone removed/)
+      await notice.getByRole('button', { name: 'Undo' }).click(); await L.page.waitForTimeout(300)
+      const back = await L.S('const st = S.getState(); return { sec: st.objects.find(o => o.id === arg)?.width, stg: !!st.objects.find(o => o.id === "zStg") }', s.id)
+      expect([Math.abs(back.sec - s.w) < 1e-6, back.stg]).toEqual([true, true])
+    }, T)
+
+    it('REG-section-shrink (click): a section made smaller by its handle — the bays of its rows that no longer fit inside it removed, whole bays from the row ends, one undo step, the notice N bays removed with Undo; made bigger again, nothing added (shrink-fill)', async () => {
+      await openSections()
+      const b = await innerBox()
+      const s = await drawIn(b, 0.05, 0.05, 0.6, 0.6)
+      const rows = (ids) => L.S('const st = S.getState(); return arg.map(id => st.objects.filter(o => o.id === id || o.pieceOf === id)).flat().map(o => o.beams.length).reduce((t, n) => t + n, 0)', ids)
+      const mine = await L.S('return import("/src/utils/sectionAreas.js").then(M => M.membership(S.getState().objects).bySection.get(arg) || [])', s.id)
+      expect(mine.length).toBeGreaterThan(0)
+      const bays0 = await rows(mine), h0 = await hist7()
+      // selected (just drawn): its right handle dragged in 40% of its width
+      expect(await L.S('return S.getState().selectedIds')).toEqual([s.id])
+      const p = await handle7(s.id, 'mr')
+      await L.drag(p, { x: p.x - s.w * 0.4, y: p.y }); await L.page.waitForTimeout(400)
+      const s1 = await L.S('return S.getState().objects.find(o => o.id === arg)', s.id)
+      const out = await L.S(`return import('/src/utils/buildingResize.js').then(BR => { const st = S.getState(), sec = st.objects.find(o => o.id === arg.id)
+        return st.objects.filter(o => arg.ids.includes(o.id) || arg.ids.includes(o.pieceOf)).flatMap(o => BR.bayBoxes(o, st.gridSize || 40)).filter(q => q.x + q.w > sec.x + sec.width + 0.5).length })`, { id: s.id, ids: mine })
+      expect(out).toBe(0)                                                                         // no bay past the edge it moved (bays already outside it before stay)
+      const bays1 = await rows(mine), gone = bays0 - bays1
+      expect(gone).toBeGreaterThan(0)
+      expect((await hist7()) - h0).toBe(1)
+      expect(await L.page.locator('[aria-label="Notice"]').textContent()).toMatch(new RegExp('^' + gone + ' bays? removed'))
+      // bigger again: nothing added
+      const p2 = await handle7(s.id, 'mr')
+      await L.drag(p2, { x: p2.x + s.w * 0.3, y: p2.y }); await L.page.waitForTimeout(400)
+      expect([(await L.S('return S.getState().objects.find(o => o.id === arg).width', s.id)) > s1.width, await rows(mine)]).toEqual([true, bays1])
+      // one undo each: the grow, then the shrink — its bays back
+      await L.page.keyboard.press('Control+z'); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect(await rows(mine)).toBe(bays0)
+    }, T)
+
+    it('REG-fill-closed-end (click): Fill with no wall at either run end — a section in the lower floor, an office and a staging zone below it, racks above it: Fill section lays every row flush to the section’s bottom edge (the closed end), the leftover at the top (the end facing racks), every row on the same lines (the vertical fixtures, whose racks run the full height: the same turned — the section on the right, the zones past it, racks to the left; flush to its right edge) (shrink-fill — was: the low end)', async () => {
+      await openSections()
+      const b = await innerBox(), gs = await gs7()
+      const turned = await L.S('return S.getState().objects.some(o => /^rack_/.test(o.type) && ((o.rotation || 0) % 180 + 180) % 180 === 90)')
+      // along the run: y (rows up and down) on the horizontal fixtures, x on the turned ones
+      const R0 = turned ? b.x0 : b.y0, R1 = turned ? b.x1 : b.y1, len = R1 - R0
+      // the racks in the far part go (a committed action), the rows of the fill run along that way
+      await L.S(`const st = S.getState(), t = arg.turned, cut = arg.cut; S.setState({ objects: st.objects.filter(o => !(/^rack_|^aisle$/.test(o.type) && (t ? o.x + (o.width || 0) / 2 : o.y + (o.height || 0) / 2) > cut)) }); const fp = st.objects.find(o => /^fp_/.test(o.type)); S.getState().commitObjectUpdate(fp.id, {})`, { turned, cut: R0 + len * 0.5 })
+      await L.S('return import("/src/utils/fillTool.js").then(F => F.useRackingSettings.getState().setSetting("orientation", arg))', turned ? 'horizontal' : 'vertical')
+      const s = turned ? await drawIn(b, 0.6, 0.1, 0.86, 0.6) : await drawIn(b, 0.1, 0.6, 0.6, 0.86)
+      // an office and a staging zone past the section's far end (a committed action, as the zone tool places them)
+      await L.S(`const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), s = arg.s, t = arg.turned, g = 2 * 40
+        const z = (id, type, f0, f1) => t ? { id, type, label: id, layerId: 'zones', parentId: fp.id, x: s.x + s.w + g, y: s.y + s.h * f0, width: arg.R1 - (s.x + s.w) - g, height: s.h * (f1 - f0) }
+          : { id, type, label: id, layerId: 'zones', parentId: fp.id, x: s.x + s.w * f0, y: s.y + s.h + g, width: s.w * (f1 - f0), height: arg.R1 - (s.y + s.h) - g }
+        S.setState({ objects: [...st.objects, z('zOf2', 'zone_office', 0, 0.4), z('zSt2', 'zone_staging', 0.5, 0.9)] }); S.getState().commitObjectUpdate('zSt2', {})`, { s, turned, R1 })
+      // the section selected: its bar's Fill section
+      await L.click(await grip(s.id)); await L.page.waitForTimeout(150)
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Fill section' }).click(); await L.page.waitForTimeout(800)
+      const area = await L.S('return S.getState().objects.filter(o => o.type === "racking_area").map(o => o.id).pop()')
+      const rows = await areaRows(area)
+      expect(rows.length).toBeGreaterThan(1)
+      const sec = await L.S('return S.getState().objects.find(o => o.id === arg)', s.id)
+      const far = (turned ? sec.x + sec.width : sec.y + sec.height) / gs, near = (turned ? sec.x : sec.y) / gs
+      expect(rows.every(r => Math.abs(r.r1 - far) < 1e-6)).toBe(true)                            // flush to the closed end
+      expect(rows.every(r => r.r0 > near + 1e-6)).toBe(true)                                     // the leftover at the end facing racks
+      expect(new Set(rows.map(r => r.r0.toFixed(3) + '..' + r.r1.toFixed(3))).size).toBe(1)     // all on the same lines
+      await L.S('return import("/src/utils/fillTool.js").then(F => F.useRackingSettings.getState().setSetting("orientation", "horizontal"))')
+    }, T)
   })
 })

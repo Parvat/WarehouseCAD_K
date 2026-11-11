@@ -35,6 +35,7 @@ import { applyZones } from './zoneCut'
 import { skipNextAction } from './rowGroupTool'
 import { rebuildAisles } from './aisleRebuild'
 import { floorFor, clampGrowth } from './floorClamp'
+import { fillClear } from './fillTool'
 
 export const EDIT_WARNING = "You've changed racks in this area. The new part will use the default settings; your changes stay as they are."
 
@@ -95,7 +96,9 @@ export function finishAreaResize(store, areaId, oldBox, { gridSize } = {}) {
   if (sameBox(newBox, oldBox)) return false
   const run = () => {
     const now = store.getState().objects
-    const next = planAreaResize(now, areaId, newBox, { gridSize: gs, newId: nanoid })
+    // the Fill's own context (shrink-fill): the cross-aisle off racks beyond a run end, the other sections kept clear
+    const ctx = fillClear(now, { x: newBox.x + newBox.w / 2, y: newBox.y + newBox.h / 2 })
+    const next = planAreaResize(now, areaId, newBox, { gridSize: gs, newId: nanoid, rackGap: ctx.rackGap, sections: ctx.sections })
     if (next) commitAll(store, next, areaId)
   }
   return askOr(areaEdits(before, area).count ? EDIT_WARNING : null, run)

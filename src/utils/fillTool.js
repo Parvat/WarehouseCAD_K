@@ -112,7 +112,10 @@ const crossOf = (p) => (Number.isFinite(p?.crossAisleFt) && p.crossAisleFt > 0 ?
 /** What a fill keeps clear beyond its own racks (fill-place): each existing rack's required run-end width (its section's
  *  equipment, else the project's forklift — the stricter of the two sides is taken in patternFill), and every section but
  *  the one the drag starts in. */
-function fillClear(objects, from) {
+/** What a fill keeps off along its run ends (fill-place): `rackGap` — an existing rack's required cross-aisle (its
+ *  equipment's) — and `sections` (every section but the one governing `from`) as obstacles. A Fill passes it; so does an
+ *  area's resize (shrink-fill), so an extension ends its rows where the Fill would. */
+export function fillClear(objects, from) {
   const s = rackingSettings(), P = mheProfiles(), R = equipmentResolver(objects, P[s.mhe] || P.reach)
   const own = governingSection(objects, from)
   return {

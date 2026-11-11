@@ -4,9 +4,11 @@
 //     the row ends; a row with no bay left is removed. Zones and columns left outside are not touched: Check layout
 //     flags them (utils/layoutCheck.js). A back-to-back pair left with one face against the new wall (no aisle in
 //     front of it, where it had one) loses that dead half; the single row left moves flush to the wall at the wall
-//     clearance, as Generate puts a wall row. Notice "N bays removed" with Undo. Its racking areas shrink with it: each
-//     side the building came in on clips the area to the new inner wall minus the wall clearance; an area left with
-//     no space is removed.
+//     clearance, as Generate puts a wall row. Its racking areas shrink with it: each side the building came in on clips
+//     the area to the new inner wall minus the wall clearance; an area left with no space is removed. Its sections and
+//     zones (shrink-fill) are clipped the same way to the new inner wall face (a custom shape cut along it); one left with
+//     nothing inside is removed. Columns are not touched (Check layout flags one outside). Notice — the bays removed,
+//     the sections and zones clipped or removed — with Undo.
 //   - enlarged: nothing is added and no notice is shown.
 
 import { nanoid } from 'nanoid'
@@ -53,6 +55,39 @@ export function wallClearanceIn(elevations) {
   const pr = projectOf(elevations)
   const v = pr?.rules?.wallClearIn ?? rackingSettings().wallClearIn
   return Number.isFinite(v) ? v : 0
+}
+/** Polygon `pts` ([x, y][]) clipped to box `b` ({ x0, y0, x1, y1 }, any side ±Infinity: open). */
+function clipToBox(pts, b) {
+  let out = pts
+  for (const [inside, cross] of [
+    [(q) => q[0] >= b.x0, (p, q) => [b.x0, p[1] + ((q[1] - p[1]) * (b.x0 - p[0])) / (q[0] - p[0])]],
+    [(q) => q[0] <= b.x1, (p, q) => [b.x1, p[1] + ((q[1] - p[1]) * (b.x1 - p[0])) / (q[0] - p[0])]],
+    [(q) => q[1] >= b.y0, (p, q) => [p[0] + ((q[0] - p[0]) * (b.y0 - p[1])) / (q[1] - p[1]), b.y0]],
+    [(q) => q[1] <= b.y1, (p, q) => [p[0] + ((q[0] - p[0]) * (b.y1 - p[1])) / (q[1] - p[1]), b.y1]],
+  ]) {
+    if (!out.length) break
+    const inp = out; out = []
+    for (let i = 0; i < inp.length; i++) {
+      const cur = inp[i], prev = inp[(i + inp.length - 1) % inp.length]
+      if (inside(cur)) { if (!inside(prev)) out.push(cross(prev, cur)); out.push(cur) } else if (inside(prev)) out.push(cross(prev, cur))
+    }
+  }
+  return out
+}
+const polyArea = (p) => { let a = 0; for (let i = 0; i < p.length; i++) { const [x0, y0] = p[i], [x1, y1] = p[(i + 1) % p.length]; a += x0 * y1 - x1 * y0 } return Math.abs(a) / 2 }
+/** A section or zone clipped to `cut` → the object (the same when untouched), or null (nothing inside). */
+function clipShape(o, cut) {
+  if (o.type === 'section_area' && o.shape === 'poly' && Array.isArray(o.pts)) {
+    const world = o.pts.map(([x, y]) => [o.x + x, o.y + y]), xs = world.map(q => q[0]), ys = world.map(q => q[1])
+    if (Math.min(...xs) >= cut.x0 && Math.min(...ys) >= cut.y0 && Math.max(...xs) <= cut.x1 && Math.max(...ys) <= cut.y1) return o
+    const c = clipToBox(world, cut)
+    if (c.length < 3 || polyArea(c) <= E * E) return null
+    const nx = Math.min(...c.map(q => q[0])), ny = Math.min(...c.map(q => q[1]))
+    return { ...o, x: nx, y: ny, width: Math.max(...c.map(q => q[0])) - nx, height: Math.max(...c.map(q => q[1])) - ny, pts: c.map(([x, y]) => [x - nx, y - ny]) }
+  }
+  const x0 = Math.max(o.x, cut.x0), y0 = Math.max(o.y, cut.y0), x1 = Math.min(o.x + o.width, cut.x1), y1 = Math.min(o.y + o.height, cut.y1)
+  if (x0 === o.x && y0 === o.y && x1 === o.x + o.width && y1 === o.y + o.height) return o
+  return x1 - x0 > E && y1 - y0 > E ? { ...o, x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null
 }
 const bbox = (p) => { const xs = p.map(q => q.x), ys = p.map(q => q.y); return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) } }
 const fits = (poly, b) => boxOnFloor(poly, { x: b.x + E, y: b.y + E, w: Math.max(0, b.w - 2 * E), h: Math.max(0, b.h - 2 * E) })
@@ -122,8 +157,23 @@ export function planBuildingResize(objects, before, after, { gridSize = 40, clea
     areas++
     if (x1 - x0 > E && y1 - y0 > E) clipped.push({ ...o, x: x0, y: y0, width: x1 - x0, height: y1 - y0 })
   }
-  const res = areas ? clipped : out
-  return { objects: removed ? rebuildAisles(res, newId).objects : areas ? res : objects, removed, areas }
+  // its sections and zones: clipped to the new inner wall face on each side it came in on; nothing inside, removed
+  const wi = bbox(innerOutline(before, gridSize)), ni = bbox(innerOutline(after, gridSize))
+  const cutIn = { x0: ni.x0 > wi.x0 + E ? ni.x0 : -Infinity, y0: ni.y0 > wi.y0 + E ? ni.y0 : -Infinity,
+    x1: ni.x1 < wi.x1 - E ? ni.x1 : Infinity, y1: ni.y1 < wi.y1 - E ? ni.y1 : Infinity }
+  const inBuilding = (o) => o.parentId === after.id || (o.parentId == null && o.x + o.width / 2 >= wi.x0 && o.x + o.width / 2 <= wi.x1 && o.y + o.height / 2 >= wi.y0 && o.y + o.height / 2 <= wi.y1)
+  const shapes = { sections: { clipped: 0, removed: 0 }, zones: { clipped: 0, removed: 0 } }
+  const final = []
+  for (const o of areas ? clipped : out) {
+    const kind = o && o.type === 'section_area' ? 'sections' : o && typeof o.type === 'string' && o.type.startsWith('zone_') && o.width > 0 ? 'zones' : null
+    if (!kind || !inBuilding(o)) { final.push(o); continue }
+    const c = clipShape(o, cutIn)
+    if (c === o) { final.push(o); continue }
+    if (c) { final.push(c); shapes[kind].clipped++ } else shapes[kind].removed++
+  }
+  const shaped = shapes.sections.clipped + shapes.sections.removed + shapes.zones.clipped + shapes.zones.removed
+  const res = areas || shaped ? final : out
+  return { objects: removed ? rebuildAisles(res, newId).objects : areas || shaped ? res : objects, removed, areas, shapes }
 }
 
 /** After a handle resize of building `before` → its live object, committed as the store's top history entry: the
@@ -134,11 +184,19 @@ export function afterBuildingResize(store, before) {
   let profile = MHE_PROFILES.reach
   try { profile = getColumnCheckView()?.profile || profile } catch { /* no column check view yet */ }
   const plan = planBuildingResize(st.objects, before, after, { gridSize: st.gridSize || 40, clearIn: wallClearanceIn(st.elevations), profile })
-  if (plan.removed || plan.areas) {
+  const sh = plan.shapes, shaped = sh.sections.clipped + sh.sections.removed + sh.zones.clipped + sh.zones.removed
+  if (plan.removed || plan.areas || shaped) {
     const history = st.history.slice(0, st.historyIndex + 1)
     history[history.length - 1] = snapshotOf(st, plan.objects)
     store.setState({ objects: plan.objects, history, historyIndex: history.length - 1, selectedIds: st.selectedIds.filter(id => plan.objects.some(o => o.id === id)) })
-    if (plan.removed) notify(`${plan.removed} bay${plan.removed === 1 ? '' : 's'} removed`, 'they no longer fit inside the walls', { undo: true })
+    // the notice: what the shrink took — "4 bays removed · 1 section clipped · 1 zone removed" — with Undo
+    const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`
+    const parts = [
+      plan.removed ? n(plan.removed, 'bay') + ' removed' : null,
+      sh.sections.clipped ? n(sh.sections.clipped, 'section') + ' clipped' : null, sh.sections.removed ? n(sh.sections.removed, 'section') + ' removed' : null,
+      sh.zones.clipped ? n(sh.zones.clipped, 'zone') + ' clipped' : null, sh.zones.removed ? n(sh.zones.removed, 'zone') + ' removed' : null,
+    ].filter(Boolean)
+    if (parts.length) notify(parts.join(' · '), 'they no longer fit inside the walls', { undo: true })
   }
   return plan
 }

@@ -47,6 +47,7 @@ import { useSectionRename } from './sectionTool'
 import { POINT_HANDLE_PX } from './SectionShape'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { afterBuildingResize } from '../utils/buildingResize'
+import { afterSectionResize } from '../utils/sectionShrink'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
 import { fitInset } from '../studio/fitInset'
 
@@ -1476,7 +1477,7 @@ export function useCanvasInteraction({
       if (sp) {
         // one undo step for the point moved
         const o = useCanvasStore.getState().objects.find(x => x.id === sp.id)
-        if (sp.moved && o) useCanvasStore.getState().commitObjectUpdate(sp.id, {})
+        if (sp.moved && o) { useCanvasStore.getState().commitObjectUpdate(sp.id, {}); afterSectionResize(useCanvasStore, sp.orig) }
         return
       }
       const cl = colLine.current
@@ -1523,6 +1524,8 @@ export function useCanvasInteraction({
           st.commitObjectUpdate(rd.objId, obj)
           // a building resized from its handles: the bays that no longer fit go in the same undo step (buildingResize.js)
           if (isFloorPlan(obj) && typeof rd.handle === 'string' && /^(wall|corner)_/.test(rd.handle)) afterBuildingResize(useCanvasStore, rd.origObj)
+          // a section made smaller: its rows' bays that no longer fit go in the same undo step (sectionShrink.js)
+          if (obj.type === 'section_area') afterSectionResize(useCanvasStore, rd.origObj)
         }
         /* Wall highlight is only for the duration of the drag that's ending —
            CanvasUI clears activeWall on the next click anywhere; canvas2 has

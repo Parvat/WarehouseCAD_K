@@ -24,8 +24,10 @@ This file holds the rules; `CODEBASE.md` holds the map.
    **Never delete a REG test.** When the user changes a rule, update the expectation and keep the test.
    (STUDIO.md §8.)
    During a fix, run REG tests by name: `npm run test:reg -- "<name pattern>"` (the browser tests run in up to 6
-   parallel workers, one Chromium each — `src/__test__/plan/handCheck/shard.js`). The full suite (`npm test`) still runs
-   once before every push.
+   parallel workers, one Chromium each — `src/__test__/plan/handCheck/shard.js`).
+   **When the full suite runs:** a small fix runs only its related tests, then pushes. A big behaviour round runs the
+   full suite (`npm test`) once before its push. And when the user says "ready to merge <branch>": run the full suite on
+   that branch, fix anything it finds, then report it green.
 
 ---
 
