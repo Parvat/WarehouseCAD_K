@@ -19,6 +19,7 @@ import { deleteSelection, cutSelection } from '../studio/selectionActions'
 import { HOME_TOOL, isPlainTool } from '../utils/homeTool'
 import { toggleHelp } from '../studio/HelpCard'
 import { nudgeWithSections, duplicateSections } from '../utils/sectionEdit'
+import { useCrossAislePick, clearCrossAislePick } from '../utils/crossAisleTool'
 
 /** The app's keyboard shortcuts, one keydown handler (exported so a test can press keys at it). */
 export function shortcutHandler(e) {
@@ -41,6 +42,8 @@ export function shortcutHandler(e) {
         if (selectionLevel(useCanvasStore.getState()) === 'bays') { stepUp(useCanvasStore); return }
         // a column picked steps up to its grid (canvas2/columnPick.js)
         if (pickedColumn()) { clearColumnPick(); return }
+        // a cross-aisle picked: Esc lets it go (utils/crossAisleTool.js)
+        if (useCrossAislePick.getState().pick) { clearCrossAislePick(); return }
         // the Row group (utils/rowGroupTool.js): Esc leaves it — the tool, the group, the edit row: nothing selected, no bar
         if (useCanvasStore.getState().activeTool === ROW_GROUP_TOOL) { cancelGroupBox(); clearGroup(); useCanvasStore.getState().setActiveTool(HOME_TOOL); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return }
         // the Split tool (utils/splitTool.js), before a cut: Esc leaves it (after a cut the piece is a placement, above)

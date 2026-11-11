@@ -4,6 +4,7 @@ import { TOOLS } from '../constants'
 import { useEffect, useState } from 'react'
 import { useFillTool, useRackingSettings, cancelFill, setFillAisle, fillEquipment, fillSection, setFillDesign, setFillCustom } from '../utils/fillTool'
 import { B, MONO, modePill, Sep, Seg, CloseBtn, barBtn, btnClass } from '../studio/barParts'
+import { useViewPrefs } from '../studio/viewPrefs'
 
 /* the bar's 26h inset value (C10's Aisle) and its fields (Beam, Max run) */
 const valueBox = { height: 26, padding: '0 8px', display: 'flex', alignItems: 'center', borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, border: 0, boxSizing: 'border-box' }
@@ -79,8 +80,9 @@ export function FillOptionsBar() {
   const toCustom = () => { if (!(custom.pickFt > 0)) setFillCustom('pickFt', typed || project.aisleFt); setFillDesign('custom') }
   const num = (k, v) => { const n = Number(v); if (Number.isFinite(n) && n > 0) s.setSetting(k, n) }
   const close = () => { cancelFill(); useCanvasStore.getState().setActiveTool(HOME_TOOL) }
+  const cardW = useViewPrefs(v => v.cardW)
   return (
-    <div role="toolbar" aria-label="Fill racking options" data-mode-bar="fill" className="st-pill" style={modePill}>
+    <div role="toolbar" aria-label="Fill racking options" data-mode-bar="fill" className="st-pill" style={{ ...modePill, maxWidth: `min(calc((50vw - ${cardW + 24}px) / 0.38), calc((50vw - 72px) / 0.62))`, ...(under ? { flexWrap: 'wrap', rowGap: 4 } : {}) }}>
       <span style={{ fontWeight: 600, color: B.strong }}>Fill racking</span>
       <Sep />
       <Seg aria="Row direction" options={[
@@ -94,6 +96,11 @@ export function FillOptionsBar() {
       <span style={word}>Max run</span>
       <input aria-label="Max rack run (ft)" className="st-field" style={{ ...valueBox, width: 52 }} defaultValue={s.maxRunFt} key={'m' + s.maxRunFt} onBlur={e => num('maxRunFt', e.target.value)} />
       <span style={word}>ft</span>
+      {/* where a row longer than Max run gets its cross-aisles (cross-aisle round): Centre — near-equal runs; Left / Right
+          — toward that end of the box (left or top, right or bottom), the first run as short as allowed (3 bays) */}
+      <select aria-label="Cross aisle" title="Cross aisle — where a row longer than Max run gets its cross-aisles: Centre (near-equal runs), Left or Right (toward that end)" className="st-field" value={s.crossAisle || 'centre'} onChange={e => s.setSetting('crossAisle', e.target.value)} style={{ ...valueBox, width: 76 }}>
+        <option value="centre">Centre</option><option value="left">Left</option><option value="right">Right</option>
+      </select>
       {/* the pallet, the forklift (its aisle) and the wall clearance: Project settings (utils/project.js) */}
       {!inSection && <Seg aria="Equipment" options={[
         { value: 'project', label: 'Project forklift', aria: 'Project forklift', title: `${project.label} — its widths (Project settings)`, on: design !== 'custom', onClick: () => setFillDesign('project') },
@@ -108,7 +115,7 @@ export function FillOptionsBar() {
       <Sep />
       {plan
         ? <span aria-label="Fill estimate" style={word}><span style={{ fontFamily: MONO, color: B.text }}>{plan.rows}</span> row{plan.rows === 1 ? '' : 's'} · <span style={{ fontFamily: MONO, color: B.accent }}>{plan.positions.toLocaleString('en-US')}</span> pos</span>
-        : <span style={word}>Drag a box · Esc cancels</span>}
+        : <span style={{ ...word, flex: '0 100 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title="Drag a box · Esc cancels">Drag a box · Esc cancels</span>}
       {under && <span role="status" aria-label="Aisle warning" data-fill-warning style={{ color: B.warnFg, fontSize: 12, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 8 }}>{ftInPrime(typed)} is below {eq.label} minimum {ftInPrime(eq.minAisleFt)}. Needs its own section.
         {/* Use Custom (fill-design-aisle): Equipment to Custom, that aisle as both its widths — the fill is designed for it */}
         <button type="button" className={btnClass(false)} style={barBtn(false)} title={`Design this fill for ${ftInPrime(typed)} aisles (Custom)`} onClick={useCustom}>Use Custom</button></span>}

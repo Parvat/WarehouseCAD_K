@@ -47,6 +47,7 @@ import { RackLineLabels } from './RackLineLabels'
 import { publishView, useView } from './live'
 import { TallyFill, TallyHighlight } from './TallyHighlight'
 import { SectionNames } from './SectionNames'
+import { CrossAislePick } from './CrossAislePick'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
    A Konva Stage that owns its own pointer events. No router, no forwarding, no
@@ -558,6 +559,8 @@ export function Canvas2() {
             {dooring && <DoorPreview />}
             {/* Check layout: the clicked problem, until the next click (utils/layoutCheck.js) */}
             <IssueHighlight />
+            {/* a picked cross-aisle, and where a drag takes it (utils/crossAisleTool.js) */}
+            <CrossAislePick />
             <TallyHighlight />
             <PlacementGhost gridSize={gridSize} />
             {/* a zone's edge dragged: the bays its release removes, red, and its size (ZoneEdit.jsx) */}

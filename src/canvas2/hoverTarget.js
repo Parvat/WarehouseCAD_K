@@ -17,6 +17,7 @@ import { sectionIds } from './sections'
 import { selectionLevel, pickedBays, isBayRack } from './selectionLevel'
 import { bayHalfAt } from '../utils/baySides'
 import { isPickable, selectableIn } from '../utils/layers'
+import { crossAisleAt } from '../utils/crossAisleTool'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const round = (v) => Math.round(v * 10) / 10
@@ -67,6 +68,8 @@ export function predictClick(st, w, zoom) {
       return again ? { key: 'grid:' + col.gridId, kind: 'grid', ids: [col.gridId] } : { key: 'column:' + col.gridId + ':' + round(col.x) + ':' + round(col.y), kind: 'column', ids: [col.gridId], column: col }
     }
   }
+  // a cross-aisle (utils/crossAisleTool.js): it, not the floor under it
+  if ((!hit || FP.has(hit.type)) && crossAisleAt(st.objects, w)) { const c = crossAisleAt(st.objects, w); return { key: 'cross:' + c.key, kind: 'cross', ids: [] } }
   // a wall: the building
   if (!hit || FP.has(hit.type)) {
     const wall = fpWallHitTest(st.objects, st.layers, w.x, w.y, zoom, gs)

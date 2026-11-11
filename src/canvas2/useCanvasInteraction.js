@@ -48,6 +48,7 @@ import { POINT_HANDLE_PX } from './SectionShape'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { afterBuildingResize } from '../utils/buildingResize'
 import { afterSectionResize } from '../utils/sectionShrink'
+import { crossAisleAt, useCrossAislePick, clearCrossAislePick, moveRange, bayPitch, runsAt, moveCrossAisle } from '../utils/crossAisleTool'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
 import { fitInset } from '../studio/fitInset'
 
@@ -158,6 +159,7 @@ export function useCanvasInteraction({
   const fpRotateDrag = useRef(null)
   const sectionPoint = useRef(null)   // a custom-shape section's point being dragged: { id, i, orig }
   const colLine = useRef(null)   // a column's line being dragged: { g0, col, from (world), sx, sy, axis, i, again }
+  const crossDrag = useRef(null)   // a cross-aisle pressed (crossAisleTool.js): { c, from (world), d (bays) }
 
   /* ── selection, from our own geometry pick ────────────────────────────── */
   /* Selection AND bay pick, from a world point and a hit id already decided by
@@ -762,6 +764,18 @@ export function useCanvasInteraction({
          draws a box of rows (Select). A click outside every building clears the selection. */
       const onFloor = !!(hitObj && FP_SET_INPUT.has(hitObj.type))
       if (onFloor) { if (!clickTarget) clickTarget = { fp: hitObj.id }; hitId = null; hitObj = null }
+      /* ... in a cross-aisle (cross-aisle round, utils/crossAisleTool.js): a click picks it, a drag along the run moves
+         it in whole bays (with Pan too — a press on an object moves it); anything else pressed: the pick goes */
+      if (onFloor && evt.button === 0 && !evt.shiftKey) {
+        const ca = crossAisleAt(st.objects, world)
+        if (ca) {
+          pickedOnPlan(); st.clearSelection(); st.setActiveWall(null)
+          useCrossAislePick.setState({ pick: { fpId: ca.fpId, rot: ca.rot, at: (ca.lo + ca.hi) / 2 }, drag: null })
+          crossDrag.current = { c: ca, from: world, d: 0 }
+          return
+        }
+      }
+      clearCrossAislePick()
       /* ... inside a section's empty area (STUDIO.md §7a Sections): a click selects the section, not the building; the
          section selected, a press there moves it with its racks (past 6 px — under that it is a click); not selected, a
          drag is the floor's as ever (Pan: pans) */
@@ -864,7 +878,7 @@ export function useCanvasInteraction({
      gesture (pan/drag/marquee/resize) keeps setting it from its own
      mousemove/mouseup, and held space always means grab. */
   const onStageMouseMove = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current || colLine.current || sectionPoint.current) { setFlueHover(null, null); clearHoverTarget(); return }
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current || colLine.current || sectionPoint.current || crossDrag.current) { setFlueHover(null, null); clearHoverTarget(); return }
     if (spaceDown.current) { clearHoverTarget(); return }
     const stage = stageRef.current
     if (!stage) return
@@ -946,6 +960,18 @@ export function useCanvasInteraction({
      own drag capture is gone. */
   useEffect(() => {
     const move = (evt) => {
+      const cd = crossDrag.current
+      if (cd) {
+        // whole bays along the run, stopped where a run would pass Max run or fall under 3 bays; the runs read live
+        const stage = stageRef.current
+        if (!stage) return
+        const box = stage.container().getBoundingClientRect(), st = useCanvasStore.getState(), gs = st.gridSize || 40
+        const w = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+        const [dMin, dMax] = moveRange(st.objects, cd.c)
+        const d = Math.max(dMin, Math.min(dMax, Math.round((cd.c.rot ? w.y - cd.from.y : w.x - cd.from.x) / bayPitch(cd.c, gs))))
+        if (d !== cd.d || !useCrossAislePick.getState().drag) { cd.d = d; useCrossAislePick.setState({ drag: { d, labels: runsAt(st.objects, cd.c, d, gs) } }) }
+        return
+      }
       const br = bayRun.current
       if (br) {
         if (!br.moved && !movedEnough({ x: br.sx, y: br.sy }, { x: evt.clientX, y: evt.clientY })) return
@@ -1472,6 +1498,14 @@ export function useCanvasInteraction({
       setMarquee(normalizeRect(m.from, m.to))
     }
     const upGesture = () => {
+      const cd = crossDrag.current
+      crossDrag.current = null
+      if (cd) {
+        // one undo per move; a press that never moved: the pick alone
+        if (cd.d) moveCrossAisle(useCanvasStore, cd.c, cd.d)
+        else useCrossAislePick.setState({ drag: null })
+        return
+      }
       const sp = sectionPoint.current
       sectionPoint.current = null
       if (sp) {

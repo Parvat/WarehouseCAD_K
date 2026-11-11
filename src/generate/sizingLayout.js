@@ -536,7 +536,27 @@ function intervalHitsColumn(startFt, endFt, colLinesFt) {
  *      used as the FLOOR the aisle must clear — reserved UP FRONT (the
  *      extra upright deducted before bays are even counted, not after), so
  *      the actual built width can end up larger (never smaller). */
-export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn = UP_IN, runGridFt = 0, runGridOffsetFt = 0, runGridMaxFt = lengthFt, maxRunFt = Infinity }) {
+/* (cross-aisle round: no run under MIN_RUN_BAYS; the split follows the Fill bar's Cross aisle option — runCounts.) */
+/** The shortest run a cross-aisle may leave (cross-aisle round): no stub of 1 or 2 bays. */
+export const MIN_RUN_BAYS = 3
+/** Run sizes for `total` bays in `S` runs of MIN_RUN_BAYS..maxBays (cross-aisle round), by the Fill bar's Cross aisle:
+ *  'centre' — near-equal runs; 'left' — the runs from the low end as short as allowed, the cross-aisles packed toward
+ *  it; 'right' — the mirror. → counts, or null when `total` can't be split so. */
+export function runCounts(total, S, maxBays, pos = 'centre') {
+  const lo = Math.min(MIN_RUN_BAYS, maxBays)
+  if (S < 1 || total < S * lo || total > S * maxBays) return null
+  if (pos === 'left' || pos === 'right') {
+    const out = []
+    let rest = total
+    for (let k = 0; k < S - 1; k++) { const n = Math.max(lo, rest - (S - 1 - k) * maxBays); out.push(n); rest -= n }
+    out.push(rest)
+    return pos === 'left' ? out : out.reverse()
+  }
+  // near-equal, the odd bays toward the low end (as the even split always rounded: 27 bays → 14 | 13)
+  return Array.from({ length: S }, (_, k) => Math.round((total * (k + 1)) / S) - Math.round((total * k) / S))
+}
+
+export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn = UP_IN, runGridFt = 0, runGridOffsetFt = 0, runGridMaxFt = lengthFt, maxRunFt = Infinity, crossAislePos = 'centre' }) {
   const x0     = endClearFt
   const x1     = lengthFt - endClearFt
   const usable = x1 - x0
@@ -565,31 +585,27 @@ export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn =
     return capacityFt >= beamIn / 12 ? baysInRun(capacityFt, beamIn, upIn) : 0
   }
 
-  /* Where the cross-aisles go for S sections: choose all the section sizes
-     together (a small dynamic program over "cross-aisle k ends after P
-     bays"), so that no cross-aisle strip touches a column line, every
-     section stays within 1..maxBays, and the boundaries slide as little as
-     possible from an even split — the fewest whole bays moved in total.
-     Deciding one boundary at a time could box a later one in (a column
-     forced an early slide, and the remaining sections then had no room to
-     dodge the next column without going over maxBays). Every cross-aisle is
-     the same width: the leftover after the bays and the extra uprights,
-     shared equally — at least crossAisleFt, at most crossAisleFt + one bay
-     pitch / (S - 1). The combined length of the sections doesn't depend on
-     how the bays are split, so steering the split costs no capacity. */
+  /* Where the cross-aisles go for S sections: the sizes the Cross aisle option asks (runCounts — Centre near-equal,
+     Left / Right packed toward that end), slid as little as possible so no cross-aisle strip touches a column line —
+     a small dynamic program over "cross-aisle k ends after P bays", every section within MIN_RUN_BAYS..maxBays (no
+     stub), the fewest whole bays moved from the asked sizes. The combined length doesn't depend on the split, so
+     steering it costs no capacity. */
   const plan = (S, total) => {
+    const want = runCounts(total, S, maxBays, crossAislePos)
+    // every cross-aisle the same width: the leftover after the bays and the extra uprights, shared — the required width at least
     const aisleWidthFt = (usable - runLenFt(total) - (S - 1) * extraUprightFt) / (S - 1)
     const aisleStart = (k, P) => x0 + (upIn * (P + k + 1) + P * beamIn) / 12 + k * aisleWidthFt
-    const ideal = (k) => Math.round((total * (k + 1)) / S)
+    const ideal = (k) => want.slice(0, k + 1).reduce((t, n) => t + n, 0)
+    const lo = Math.min(MIN_RUN_BAYS, maxBays)
     let prev = new Map([[0, { hits: 0, slide: 0, path: [] }]])
     const better = (a, b) => !b || a.hits < b.hits || (a.hits === b.hits && a.slide < b.slide)
     for (let k = 0; k < S - 1; k++) {
       const next = new Map()
       for (const [P0, st] of prev) {
-        for (let n = 1; n <= Math.min(maxBays, total); n++) {
+        for (let n = lo; n <= Math.min(maxBays, total); n++) {
           const P = P0 + n
           const rest = total - P, secsLeft = S - k - 1
-          if (rest < secsLeft || rest > secsLeft * maxBays) continue
+          if (rest < secsLeft * lo || rest > secsLeft * maxBays) continue
           const a0 = aisleStart(k, P)
           const cand = {
             hits:  st.hits + (intervalHitsColumn(a0, a0 + aisleWidthFt, colLinesFt) ? 1 : 0),
@@ -604,23 +620,23 @@ export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn =
     let best = null
     for (const [P, st] of prev) {
       const last = total - P
-      if (last < 1 || last > maxBays) continue
+      if (last < lo || last > maxBays) continue
       const cand = { ...st, path: [...st.path, last] }
       if (better(cand, best)) best = cand
     }
-    const counts = best ? best.path : Array.from({ length: S }, (_, k) => ideal(k) - (k ? ideal(k - 1) : 0))
+    const counts = best ? best.path : want
     return { S, total, aisleWidthFt, counts, hits: best ? best.hits : Infinity }
   }
 
-  /* Multiple cross-aisles (PP): the FEWEST so that no continuous rack run
-     is longer than maxRunFt, bays spread as evenly as whole bays allow
-     (S >= 2: only runs longer than maxRunFt reach here). */
+  /* The FEWEST cross-aisles so that no run is longer than maxRunFt; a remainder that would leave a run under
+     MIN_RUN_BAYS bays is left as open floor (the total cut down until every run holds MIN_RUN_BAYS at least). */
   let S = 2, total = baysFor(2)
   while (total >= S && Math.ceil(total / S) > maxBays) total = baysFor(++S)
+  while (total > 0 && !runCounts(total, S, maxBays, crossAislePos)) total--
 
-  /* Too narrow to be worth splitting — one run beats two stubs. */
-  if (total < S || total < 2) {
-    const bays = baysInRun(usable, beamIn, upIn)
+  /* Too short to be worth splitting — one run beats two stubs. */
+  if (total < S * Math.min(MIN_RUN_BAYS, maxBays)) {
+    const bays = Math.min(baysInRun(usable, beamIn, upIn), Number.isFinite(maxBays) ? maxBays : Infinity)
     return bays > 0
       ? { segments: [{ xFt: x0, bays }], bays, crossAisle: null, crossAisles: [] }
       : { segments: [], bays: 0, crossAisle: null, crossAisles: [] }
@@ -630,16 +646,18 @@ export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn =
      no split at this count clears them all — the maxRunFt cap can leave a
      cross-aisle only positions that straddle a column line — add one more
      cross-aisle and try again (a few at most). If none clears, keep the
-     fewest cross-aisles and the split hitting the fewest columns, as the
-     single cross-aisle always kept its even spot with no clear position. */
+     fewest cross-aisles and the split hitting the fewest columns. */
   let chosen = plan(S, total)
   for (let extra = 1; chosen.hits > 0 && extra <= 3; extra++) {
-    const S2 = S + extra, t2 = baysFor(S2)
-    if (t2 < S2) break
+    const S2 = S + extra
+    let t2 = baysFor(S2)
+    while (t2 > 0 && !runCounts(t2, S2, maxBays, crossAislePos)) t2--
+    if (t2 < S2 * Math.min(MIN_RUN_BAYS, maxBays)) break
     const alt = plan(S2, t2)
     if (alt.hits === 0) { chosen = alt; break }
   }
   const { counts, aisleWidthFt } = chosen
+  const placed = counts.reduce((t, n) => t + n, 0)
 
   const segments = []
   const crossAisles = []
@@ -650,7 +668,7 @@ export function rowSegments(lengthFt, { crossAisleFt, endClearFt, beamIn, upIn =
     if (k < counts.length - 1) { crossAisles.push({ xFt: x, widthFt: aisleWidthFt }); x += aisleWidthFt }
   })
 
-  return { segments, bays: total, crossAisle: crossAisles[0] || null, crossAisles }
+  return { segments, bays: placed, crossAisle: crossAisles[0] || null, crossAisles }
 }
 
 /** Frame/beam/flue/depth the layout is built from, resolved from the rules

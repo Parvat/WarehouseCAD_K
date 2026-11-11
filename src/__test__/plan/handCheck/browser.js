@@ -117,17 +117,19 @@ export async function openLayout(app, json, { keepTool = false } = {}) {
   const bayOf = (id) => S('const o = S.getState().objects.find(x => x.id === arg); return o ? { idx: o.activeBayIdx ?? null, side: o.activeBaySide ?? null } : null', id)
   const groupRows = () => S('return RG.useRowGroup.getState().keys.length')
   /** An empty spot of the building's floor (no object, no wall under it) nearest world point `near`. */
-  const floorPoint = (near) => S(`const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), z = st.zoom, gs = st.gridSize || 40
+  const floorPoint = (near) => S(`return import('/src/utils/crossAisleTool.js').then(X => { const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), z = st.zoom, gs = st.gridSize || 40
     let best = null
     for (let fy = 0.04; fy < 0.97; fy += 0.01) for (let fx = 0.04; fx < 0.97; fx += 0.01) {
       const x = fp.x + fp.width * fx, y = fp.y + fp.height * fy
       if (H.hitTest(st.objects, st.layers, x, y, z, gs) !== fp.id || H.fpWallHitTest(st.objects, st.layers, x, y, z, gs)) continue
       if (CP && CP.columnAt(st.objects, st.layers, x, y, z, gs)) continue   // a column: a click there picks it, locked or not
+      // a cross-aisle, and a few screen px round it: a click there picks the cross-aisle (cross-aisle round)
+      if ([[0, 0], [4, 0], [-4, 0], [0, 4], [0, -4]].some(([dx, dy]) => X.crossAisleAt(st.objects, { x: x + dx / z, y: y + dy / z }))) continue
       const d = arg ? Math.hypot(x - arg.x, y - arg.y) : 0
       if (!best || d < best.d) best = { x, y, d }
       if (!arg) return best
     }
-    return best`, near || null)
+    return best })`, near || null)
   /** Every selection outline on the canvas: { id, dashed, width } (shapes.jsx SelectionOutline). */
   const outlines = () => page.evaluate(() => {
     const st = (window.Konva?.stages || [])[0]

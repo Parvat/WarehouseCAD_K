@@ -77,6 +77,8 @@ export const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('z
 export const DEFAULT_FILL_SETTINGS = {
   orientation: 'horizontal', beamIn: 96, palletWIn: 40, palletDIn: 48,
   mhe: 'reach', aisleFt: 10.5, maxRunFt: 150, wallClearIn: WALL_CLEAR_IN, levels: 4,
+  // where a long row's cross-aisles go (cross-aisle round): 'centre' — near-equal runs; 'left' / 'right' — toward that end
+  crossAisle: 'centre',
 }
 
 /** The building a box belongs to: the one containing its centre, else the one it overlaps most. */
@@ -385,7 +387,10 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
   const len = rHi - rLo
   if (!(len > EPS)) return null
   const rg = walkGrid(runLines, flipR ? rHi : rLo, len, flipR ? -1 : 1)
-  const { segments } = rowSegments(len, { crossAisleFt, endClearFt: 0, beamIn, upIn, runGridFt: rg.pitch, runGridOffsetFt: rg.offset, runGridMaxFt: rg.max, maxRunFt: set.maxRunFt })
+  /* the Cross aisle option (cross-aisle round) is about the box's ends as drawn — left / top, right / bottom — whichever
+     end the walk starts from */
+  const pos = set.crossAisle === 'left' || set.crossAisle === 'right' ? ((set.crossAisle === 'left') !== flipR ? 'left' : 'right') : 'centre'
+  const { segments } = rowSegments(len, { crossAisleFt, endClearFt: 0, beamIn, upIn, runGridFt: rg.pitch, runGridOffsetFt: rg.offset, runGridMaxFt: rg.max, maxRunFt: set.maxRunFt, crossAislePos: pos })
   if (!segments.length) return null
   const pitch = (upIn + beamIn) / 12
   const runLen = (n) => (upIn * (n + 1) + n * beamIn) / 12

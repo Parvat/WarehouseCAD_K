@@ -642,23 +642,33 @@ describe.each(['horizontal', 'vertical'])('RA — %s', (orientation) => {
       if (b.type === 'rack_double_row') expect(over.type, `double row ${b.rowIndex} stays a double`).toBe('rack_double_row')
     }
   }
-  it.each(SHAPES)('RA-extend-right (%s): extending the right edge to the wall carries the pattern on — every rack there stays (doubles stay doubles), the new part is the same rows and bays, no single where a pair fits; clean', (_, type, w, h, fw, fh) => {
+  /** Each row of `before` is still there, lengthened and split again by the rule (cross-aisle round — was: every rack
+   *  kept exactly): a rack of its type at its place across, overlapping it along (a building's outline may still cut a run short). */
+  const expectRows = (before) => {
+    for (const b of before) {
+      const fb = foot(b), [s0, s1] = ftS(fb), [r0, r1] = ftR(fb)
+      const on = racks().find(r => { const f = foot(r), [a0, a1] = ftS(f), [q0, q1] = ftR(f); return a0 <= s0 + 1e-6 && a1 >= s1 - 1e-6 && Math.min(q1, r1) - Math.max(q0, r0) > 1e-6 })
+      expect(on, `${b.type} row ${b.rowIndex} kept`).toBeTruthy()
+      if (b.type === 'rack_double_row') expect(on.type, `double row ${b.rowIndex} stays a double`).toBe('rack_double_row')
+    }
+  }
+  it.each(SHAPES)('RA-extend-right (%s): extending the right edge to the wall carries the rows on — each row there lengthened and split again by the rule (cross-aisle round — was: every rack kept as it was), doubles stay doubles, no single where a pair fits; clean', (_, type, w, h, fw, fh) => {
     const fp = patternArea(type, w, h, fw, fh)
     const before = JSON.parse(JSON.stringify(racks())), n0 = bays()
     const b0 = boxNow()
     resizeArea({ ...b0, w: fp.x + fp.width + 17.9 - b0.x })
     expect(bays()).toBeGreaterThan(n0)
-    expectKept(before)
+    expectRows(before)
     clean()
   })
 
-  it.each(SHAPES)('RA-extend-down (%s): extending the bottom edge to the wall carries the pattern on — no extra single rows, every rack there stays (the edge single becomes its pair where the pair now fits); clean', (_, type, w, h, fw, fh) => {
+  it.each(SHAPES)('RA-extend-down (%s): extending the bottom edge to the wall carries the rows on — no extra single rows, each row there lengthened and split again by the rule (cross-aisle round — was: every rack kept as it was; the edge single becomes its pair where the pair now fits); clean', (_, type, w, h, fw, fh) => {
     const fp = patternArea(type, w, h, fw, fh)
     const before = JSON.parse(JSON.stringify(racks())), n0 = bays()
     const b0 = boxNow()
     resizeArea({ ...b0, h: fp.y + fp.height + 11.3 - b0.y })
     expect(bays()).toBeGreaterThan(n0)
-    expectKept(before)
+    expectRows(before)
     clean()
   })
 

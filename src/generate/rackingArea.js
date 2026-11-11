@@ -73,7 +73,7 @@ export const areaSettings = (area) => {
 /** The equipment a fill or Generate was made for, to store on its area: a Custom design's widths ({ custom }), else a
  *  reference to the project's forklift ({ project: true } — Generate's always: it lays out on the project forklift). */
 const equipOf = (s) => (s?.equip && (s.equip.custom || s.equip.key || s.equip.project) ? s.equip : { project: true })
-const SETTING_KEYS = ['orientation', 'beamIn', 'palletWIn', 'palletDIn', 'mhe', 'aisleFt', 'maxRunFt', 'levels', 'wallClearIn']
+const SETTING_KEYS = ['orientation', 'beamIn', 'palletWIn', 'palletDIn', 'mhe', 'aisleFt', 'maxRunFt', 'levels', 'wallClearIn', 'crossAisle']
 const pickSettings = (s) => Object.fromEntries(SETTING_KEYS.filter(k => s[k] !== undefined).map(k => [k, s[k]]))
 
 /** Each bay's world box (axis-aligned bounds, any rotation). */
@@ -174,7 +174,20 @@ function showPattern(objects, box, pattern, area, clean, removed, { gridSize, ne
   const plan = patternFill(objects, box, pattern, { gridSize, newId, areaId: area.id, blocked: removed, snapEnds, rackGap, sections })
   const bySig = new Map()
   for (const r of clean) { const k = shapeKey(r); if (!bySig.has(k)) bySig.set(k, []); bySig.get(k).push(r) }
-  return plan.racks.map(r => { const same = bySig.get(shapeKey(r)); return same && same.length ? same.shift() : r })
+  const used = new Set()
+  const out = plan.racks.map(r => { const same = bySig.get(shapeKey(r)); if (same && same.length) { const o = same.shift(); used.add(o.id); return o } return r })
+  /* a row re-split (cross-aisle round): a new rack standing where one of the area's racks of the same row stood (same
+     type, the same place across, overlapping along) is that rack carried on — its id, its elevation */
+  const foot = (o) => rackFootprint(o)
+  const across = (f) => (pattern.vert ? [f.x, f.x + f.w] : [f.y, f.y + f.h]), along = (f) => (pattern.vert ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
+  return out.map(r => {
+    if (clean.includes(r)) return r
+    const fr = foot(r), [c0, c1] = across(fr), [r0, r1] = along(fr)
+    const old = clean.find(o => !used.has(o.id) && o.type === r.type && (() => { const f = foot(o), [d0, d1] = across(f), [q0, q1] = along(f); return Math.abs(d0 - c0) < 1e-6 && Math.abs(d1 - c1) < 1e-6 && Math.min(q1, r1) - Math.max(q0, r0) > 1e-6 })())
+    if (!old) return r
+    used.add(old.id)
+    return { ...r, id: old.id, ...(old.elevType !== undefined ? { elevType: old.elevType } : {}), ...(old.elevSides !== undefined ? { elevSides: old.elevSides } : {}), ...(old.levels !== undefined ? { levels: old.levels } : {}) }
+  })
 }
 
 /** A new racking area from a Fill racking box: the area object and the fill
@@ -226,7 +239,19 @@ export function planAreaResize(objects, areaId, box, { gridSize = 40, newId = na
   const kept = carryPlaced(objects, t.objects, t.became).filter(o => !cleanIds.has(o.id))
   const now = kept.find(o => o.id === areaId)
   // an area from before patterns: its pattern from the box it had, as it was anchored
-  const pattern = now.pattern || areaPattern(kept, boxOf(now), areaSettings(now), { gridSize, from: cornerOf(boxOf(now), now.anchor), areaId })?.pattern
+  let pattern = now.pattern || areaPattern(kept, boxOf(now), areaSettings(now), { gridSize, from: cornerOf(boxOf(now), now.anchor), areaId })?.pattern
+  /* extended along the run (cross-aisle round): the rows lengthen and the run is split again by the same rule — its
+     cross-aisles where the Cross aisle option and Max run put them over the new length (the rows across stay) */
+  /* — past the farthest the area has reached along the run (`runBox`; an area from before: its box now), so a shrink
+     then an extend back over ground it had keeps exactly the racks it had */
+  if (pattern) {
+    const runOf = (b) => (pattern.vert ? [b.y, b.y + b.h] : [b.x, b.x + b.w])
+    const rb = Array.isArray(pattern.runBox) ? pattern.runBox : runOf(boxOf(now)), [b0, b1] = runOf(box)
+    if (edited && (b0 < rb[0] - 1e-3 || b1 > rb[1] + 1e-3)) {
+      const fresh = areaPattern(kept, box, areaSettings(now), { gridSize, from: cornerOf(box, now.anchor), areaId, wallAnchor: true })?.pattern
+      pattern = fresh && fresh.vert === pattern.vert ? { ...pattern, pieces: fresh.pieces, runDir: fresh.runDir, runBox: [b0, b1] } : { ...pattern, runBox: [Math.min(rb[0], b0), Math.max(rb[1], b1)] }
+    } else if (!Array.isArray(pattern.runBox)) pattern = { ...pattern, runBox: rb }
+  }
   const racks = pattern ? showPattern(kept, box, pattern, now, clean, removedBoxes(objects, area), { gridSize, newId, snapEnds: edited, rackGap, sections }) : []
   const keepPlaced = Object.fromEntries(Object.entries(now.placed || {}).filter(([id]) => !cleanIds.has(id)))
   const next = [...kept, ...racks].map(o => (o.id !== areaId ? o : {

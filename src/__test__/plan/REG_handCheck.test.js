@@ -3419,7 +3419,7 @@ describe('REG — the hand check by real clicks', () => {
       // the bar over it: the section's, read-only
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
       const q = await L.toScreen({ x: s.x + s.w * 0.5, y: s.y + s.h * 0.02 }); await L.page.mouse.move(q.x, q.y, { steps: 3 }); await L.page.waitForTimeout(150)
-      expect((await fillBar().getByLabel('Aisle').textContent()).replace(/\s+/g, ' ').trim()).toBe('Reach truck · 10.5 ft (from section)')
+      expect((await fillBar().getByLabel('Aisle', { exact: true }).textContent()).replace(/\s+/g, ' ').trim()).toBe('Reach truck · 10.5 ft (from section)')
       await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.keyboard.press('v')
       const items = aisleItems((await checkNow()).open, racks)
       expect(items.some(i => i.kind === 'aisle-drive')).toBe(true)                                // under the reach truck's drive width: errors
@@ -3610,7 +3610,7 @@ describe('REG — the hand check by real clicks', () => {
       // over the section: read-only, its equipment and width
       const inside = { x: sec.x + sec.w * 0.5, y: sec.y + sec.h * 0.5 }
       const qi = await L.toScreen(inside); await L.page.mouse.move(qi.x, qi.y, { steps: 3 }); await L.page.waitForTimeout(150)
-      expect([await fillBar().getByRole('textbox', { name: 'Aisle' }).count(), (await fillBar().getByLabel('Aisle').textContent()).replace(/\s+/g, ' ').trim()]).toEqual([0, 'VNA / turret · 7 ft (from section)'])
+      expect([await fillBar().getByRole('textbox', { name: 'Aisle' }).count(), (await fillBar().getByLabel('Aisle', { exact: true }).textContent()).replace(/\s+/g, ' ').trim()]).toEqual([0, 'VNA / turret · 7 ft (from section)'])
       // a fill there: the section's 7 ft, not the 9 typed outside; no amber, no question
       const f0 = { x: sec.x + sec.w * 0.05, y: sec.y + sec.h * 0.05 }, f1 = { x: sec.x + sec.w * 0.95, y: sec.y + sec.h * 0.95 }
       await onCanvasAll([f0, f1])
@@ -3753,7 +3753,7 @@ describe('REG — the hand check by real clicks', () => {
       const pk = fillBar().getByRole('textbox', { name: 'Aisle to pick (ft)' })
       await pk.click(); await pk.fill('6'); await pk.press('Enter'); await L.page.waitForTimeout(100)
       const q = await L.toScreen({ x: s.x + s.w * 0.5, y: s.y + s.h * 0.5 }); await L.page.mouse.move(q.x, q.y, { steps: 3 }); await L.page.waitForTimeout(150)
-      expect([await fillBar().getByRole('group', { name: 'Equipment' }).count(), (await fillBar().getByLabel('Aisle').textContent()).replace(/\s+/g, ' ').trim()]).toEqual([0, 'Reach truck · 10.5 ft (from section)'])
+      expect([await fillBar().getByRole('group', { name: 'Equipment' }).count(), (await fillBar().getByLabel('Aisle', { exact: true }).textContent()).replace(/\s+/g, ' ').trim()]).toEqual([0, 'Reach truck · 10.5 ft (from section)'])
       const inSec = await drop({ x: s.x + s.w * 0.06, y: s.y + s.h * 0.08 }, { x: s.x + s.w * 0.94, y: s.y + s.h * 0.92 })
       expect(inSec.length).toBeGreaterThan(1)
       const g2 = await L.S('return import("/src/generate/rowAisles.js").then(RA => RA.rowAisleGaps(S.getState().objects.filter(o => /^rack_/.test(o.type))).map(g => g.gapLen / (S.getState().gridSize || 40)).filter(ft => ft > 2))')
@@ -4616,15 +4616,16 @@ describe('REG — the hand check by real clicks', () => {
       const b = await innerBox(), gs = await gs7(), s = await drawIn(b, 0.05, 0.05, 0.55, 0.7)
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       /** a point of the section's empty floor — no rack, wall, column, outline or name under it */
-      const empty = (id) => L.S(`const st = S.getState(), z = st.zoom, s = st.objects.find(o => o.id === arg), fp = st.objects.find(o => /^fp_/.test(o.type))
+      const empty = (id) => L.S(`return import('/src/utils/crossAisleTool.js').then(X => { const st = S.getState(), z = st.zoom, s = st.objects.find(o => o.id === arg), fp = st.objects.find(o => /^fp_/.test(o.type))
         for (let fy = 0.2; fy < 0.95; fy += 0.01) for (let fx = 0.2; fx < 0.95; fx += 0.01) {
           const x = s.x + s.width * fx, y = s.y + s.height * fy
           // the floor by the one hit rule (hitTest.js pickAt) — and 2 screen px round it, as a real press lands on whole pixels
-          const floor = (u, v) => H.pickAt(st.objects, st.layers, u, v, z, st.gridSize).kind === 'floor' && !H.fpWallHitTest(st.objects, st.layers, u, v, z, st.gridSize) && !(CP && CP.columnAt(st.objects, st.layers, u, v, z, st.gridSize))
+          // (and not in a cross-aisle: a click there picks it — cross-aisle round)
+          const floor = (u, v) => H.pickAt(st.objects, st.layers, u, v, z, st.gridSize).kind === 'floor' && !H.fpWallHitTest(st.objects, st.layers, u, v, z, st.gridSize) && !(CP && CP.columnAt(st.objects, st.layers, u, v, z, st.gridSize)) && !X.crossAisleAt(st.objects, { x: u, y: v })
           const d = 2 / z
           if ([[0, 0], [d, d], [-d, d], [d, -d], [-d, -d]].every(([u, v]) => floor(x + u, y + v))) return { x, y }
         }
-        return null`, id)
+        return null })`, id)
       const e = await empty(s.id)
       expect(e).toBeTruthy()
       await onCanvasAll([e])
@@ -5098,6 +5099,115 @@ describe('REG — the hand check by real clicks', () => {
       expect(rows.every(r => r.r0 > near + 1e-6)).toBe(true)                                     // the leftover at the end facing racks
       expect(new Set(rows.map(r => r.r0.toFixed(3) + '..' + r.r1.toFixed(3))).size).toBe(1)     // all on the same lines
       await L.S('return import("/src/utils/fillTool.js").then(F => F.useRackingSettings.getState().setSetting("orientation", "horizontal"))')
+    }, T)\n\n    /* ── cross-aisle round: a long row split by the rule; the Fill bar's Cross aisle; a cross-aisle picked and moved —
+       by real mouse on every fixture ── */
+    /** every cross-aisle now (utils/crossAisleTool.js): [{ key, rot, lo, hi, lines: [{ lo, hi, cross, na, nb, a, b }] }] */
+    const crossNow = () => L.S(`return import('/src/utils/crossAisleTool.js').then(X => { const st = S.getState(), gs = st.gridSize || 40
+      return X.crossAislesNow(st.objects).map(c => ({ key: c.key, rot: c.rot, lo: c.lo, hi: c.hi, pitch: X.bayPitch(c, gs), pos: X.positionFt(st.objects, c, gs), range: X.moveRange(st.objects, c),
+        lines: c.lines.map(l => ({ lo: l.lo, hi: l.hi, cross: l.cross, a: l.a.id, b: l.b.id, na: X.runsAt(st.objects, { ...c, lines: [l] }).a, nb: X.runsAt(st.objects, { ...c, lines: [l] }).b })) })) })`)
+    /** the bays of each run of the rows the fill placed, run by run along each row: [[n, n, …] per row] */
+    const runsPerRow = (ids) => L.S(`return import('/src/generate/columnCheck.js').then(CC => { const st = S.getState(), rows = new Map()
+      for (const o of st.objects.filter(o => arg.includes(o.id) && o.type === 'rack_double_row')) { const f = CC.rackFootprint(o), v = f.h > f.w, k = Math.round(v ? f.x : f.y); if (!rows.has(k)) rows.set(k, []); rows.get(k).push({ r0: v ? f.y : f.x, n: o.beams.length }) }
+      return [...rows.values()].map(l => l.sort((p, q) => p.r0 - q.r0).map(q => q.n)) })`, ids)
+    const fillRow = async (maxRun, pos) => {
+      await clearRacks()
+      const b = await innerBox(), at = (u, v) => ({ x: b.x0 + (b.x1 - b.x0) * u, y: b.y0 + (b.y1 - b.y0) * v })
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      const bar = L.page.getByRole('toolbar', { name: 'Fill racking options' })
+      await bar.getByRole('button', { name: 'Rows across' }).click()
+      const mr = bar.getByRole('textbox', { name: 'Max rack run (ft)' }); await mr.click(); await mr.fill(String(maxRun)); await mr.press('Tab'); await L.page.waitForTimeout(100)
+      await bar.getByRole('combobox', { name: 'Cross aisle' }).selectOption(pos); await L.page.waitForTimeout(80)
+      const before = new Set(await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => o.id)'))
+      const a = at(0.005, 0.3), c = at(0.995, 0.55)
+      await onCanvasAll([a, c]); await L.drag(a, c); await L.page.waitForTimeout(700)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      const ids = (await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => o.id)')).filter(id => !before.has(id))
+      return { ids, runs: await runsPerRow(ids), maxBays: Math.floor((maxRun * 12 - 3) / 99) }
+    }
+
+    /** a cross-aisle to pick: the layout's own, else (rows shorter than Max run — the vertical fixtures) one a fill of
+     *  rows across, longer than its 140 ft Max run, makes → { c0, maxBays } */
+    const aCross = async () => {
+      let c0 = (await crossNow())[0], maxBays = Math.floor((150 * 12 - 3) / 99)
+      if (!c0) { await fillRow(140, 'centre'); c0 = (await crossNow())[0]; maxBays = Math.floor((140 * 12 - 3) / 99) }
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      return { c0, maxBays }
+    }
+
+    it('REG-cross-split (click): Fill a row just over Max run — it splits into near-equal runs within Max run, none under 3 bays (no stub); the default Cross aisle is Centre (cross-aisle round)', async () => {
+      await open()
+      // the whole width: 27 bays or so; Max run 140 ft = 16 bays, just under it — two runs
+      const f = await fillRow(140, 'centre')
+      expect(f.runs.length).toBeGreaterThan(0)
+      for (const r of f.runs) {
+        expect(r.length).toBe(2)
+        expect([Math.abs(r[0] - r[1]) <= 1, r.every(n => n >= 3 && n <= f.maxBays)]).toEqual([true, true])
+      }
+      await L.S('return import("/src/utils/fillTool.js").then(F => F.useRackingSettings.getState().setSetting("maxRunFt", 150))')
+    }, T)
+
+    it('REG-cross-left-right (click): the Fill bar’s Cross aisle Left puts the cross-aisle toward the left end — the first run as short as allowed (3 bays at least) — and Right the mirror (cross-aisle round)', async () => {
+      await open()
+      const L1 = await fillRow(140, 'left')
+      for (const r of L1.runs) expect([r.length, r[0] < r[1], r[0] >= 3, r[1] <= L1.maxBays]).toEqual([2, true, true, true])
+      const R1 = await fillRow(140, 'right')
+      for (const r of R1.runs) expect([r.length, r[0] > r[1], r[1] >= 3, r[0] <= R1.maxBays]).toEqual([2, true, true, true])
+      await L.S('return import("/src/utils/fillTool.js").then(F => { const s = F.useRackingSettings.getState(); s.setSetting("crossAisle", "centre"); s.setSetting("maxRunFt", 150) })')
+    }, T)
+
+    it('REG-cross-drag (click): a click in a cross-aisle picks it (its card: the position from the start wall); a drag of two bays moves it — every row across it: one side two bays more, the other two fewer, the aisle as wide — with the runs shown live; one undo puts it back (cross-aisle round)', async () => {
+      await open()
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      const { c0 } = await aCross()
+      expect(c0).toBeTruthy()
+      const l = c0.lines[Math.floor(c0.lines.length / 2)]
+      const p = c0.rot ? { x: (l.cross[0] + l.cross[1]) / 2, y: (l.lo + l.hi) / 2 } : { x: (l.lo + l.hi) / 2, y: (l.cross[0] + l.cross[1]) / 2 }
+      await onCanvasAll([p]); await L.click(p)
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      expect([await L.S('return S.getState().selectedIds.length'), await card.getByRole('textbox', { name: 'Cross-aisle position' }).count()]).toEqual([0, 1])
+      // the drag, held mid-way: the runs live
+      const h0 = await hist7(), q = await L.toScreen(p), dpx = 2 * c0.pitch * (await L.S('return S.getState().zoom'))
+      await L.page.mouse.move(q.x, q.y); await L.page.mouse.down()
+      await L.page.mouse.move(c0.rot ? q.x : q.x + dpx, c0.rot ? q.y + dpx : q.y, { steps: 8 }); await L.page.waitForTimeout(150)
+      expect(await L.page.evaluate(() => window.Konva.stages[0].findOne('.cross-aisle-runs-text')?.text())).toBe(`${l.na + 2} bays · ${await L.S('return import("/src/utils/bom.js").then(B => B.sizeWords(B.ftIn(arg * 12)))', (l.hi - l.lo) / (await gs7()))} · ${l.nb - 2} bays`)
+      await L.page.mouse.up(); await L.page.waitForTimeout(300)
+      const c1 = (await crossNow()).find(c => c.rot === c0.rot && Math.abs(c.lo - (c0.lo + 2 * c0.pitch)) < 1)
+      expect(c1).toBeTruthy()
+      for (const m of c1.lines) {
+        const was = c0.lines.find(k => Math.abs(k.cross[0] - m.cross[0]) < 1)
+        expect([m.na, m.nb, Math.abs((m.hi - m.lo) - (was.hi - was.lo)) < 1e-6]).toEqual([was.na + 2, was.nb - 2, true])
+      }
+      expect((await hist7()) - h0).toBe(1)
+      await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect((await crossNow()).some(c => c.rot === c0.rot && Math.abs(c.lo - c0.lo) < 1e-6)).toBe(true)
+    }, T)
+
+    it('REG-cross-typed (click): the picked cross-aisle’s position typed in its card — two bays further from the start wall — moves it there, one undo (cross-aisle round)', async () => {
+      await open()
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      const { c0 } = await aCross(), l = c0.lines[Math.floor(c0.lines.length / 2)]
+      const p = c0.rot ? { x: (l.cross[0] + l.cross[1]) / 2, y: (l.lo + l.hi) / 2 } : { x: (l.lo + l.hi) / 2, y: (l.cross[0] + l.cross[1]) / 2 }
+      await onCanvasAll([p]); await L.click(p)
+      const box = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('textbox', { name: 'Cross-aisle position' })
+      const h0 = await hist7(), gs = await gs7()
+      await box.click(); await box.fill(String(c0.pos + 2 * c0.pitch / gs)); await box.press('Enter'); await L.page.waitForTimeout(300)
+      expect((await crossNow()).some(c => c.rot === c0.rot && Math.abs(c.lo - (c0.lo + 2 * c0.pitch)) < 1)).toBe(true)
+      expect((await hist7()) - h0).toBe(1)
+    }, T)
+
+    it('REG-cross-limit (click): a drag that would take a run past Max run or under 3 bays stops at the limit (cross-aisle round)', async () => {
+      await open()
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      const { c0, maxBays } = await aCross(), l = c0.lines[Math.floor(c0.lines.length / 2)]
+      const p = c0.rot ? { x: (l.cross[0] + l.cross[1]) / 2, y: (l.lo + l.hi) / 2 } : { x: (l.lo + l.hi) / 2, y: (l.cross[0] + l.cross[1]) / 2 }
+      await onCanvasAll([p])
+      // far past the range: it goes as far as the range allows, no further
+      const far = c0.range[1] + 6
+      await L.drag(p, c0.rot ? { x: p.x, y: p.y + far * c0.pitch } : { x: p.x + far * c0.pitch, y: p.y }); await L.page.waitForTimeout(300)
+      const c1 = (await crossNow()).find(c => c.rot === c0.rot && Math.abs(c.lo - (c0.lo + c0.range[1] * c0.pitch)) < 1)
+      expect(c1).toBeTruthy()
+      for (const m of c1.lines) expect([m.na <= maxBays, m.nb >= 3]).toEqual([true, true])
+      expect(c1.range[1]).toBe(0)                                                                   // no further that way
     }, T)
   })
 })

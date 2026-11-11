@@ -22,6 +22,7 @@ import { installElevationsKeeper } from './utils/elevations'
 import { installTruckKeeper } from './utils/equipment'
 import { installLiveRecheck } from './utils/layoutCheck'
 import { installAreaKeeper } from './utils/rackingAreaTool'
+import { installCrossAisleKeeper } from './utils/crossAisleTool'
 import { installToolKeeper } from './utils/toolSwitch'
 import { installProjectKeeper } from './utils/project'
 import { useRackingSettings } from './utils/fillTool'
@@ -64,6 +65,9 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopLiveRecheck())
    racks: taken back and asked about (utils/rackingAreaTool.js). Installed
    after the copy watcher on purpose. */
 const stopAreaKeeper = installAreaKeeper(useCanvasStore)
+/* a picked cross-aisle goes when anything is selected (utils/crossAisleTool.js) */
+const stopCrossKeeper = installCrossAisleKeeper(useCanvasStore)
+if (import.meta.hot) import.meta.hot.dispose(() => stopCrossKeeper())
 if (import.meta.hot) import.meta.hot.dispose(() => stopAreaKeeper())
 /* a tool ends fully when another is chosen: its box, hover, ghost, the measure mode (utils/toolSwitch.js) */
 const stopToolKeeper = installToolKeeper(useCanvasStore)
