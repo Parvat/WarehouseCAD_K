@@ -24,13 +24,18 @@ import { joinRacks } from '../canvas2/inlineSnap'
 import { rebuildAisles } from './aisleRebuild'
 import { fillEquipment, crossOf } from './fillTool'
 import { useCrossAislePick, crossAislesNow } from './crossAisleTool'
+import { wallSideOf } from './rackDepth'
 
 export const CROSS_AISLE_TOOL = 'cross_aisle'
 const EPS = 1e-6
 
 /** The tool's state: the drag ({ from, to } world px), the pointer (`at`: the equipment there gives the default width),
  *  and the width typed in the mode bar (ft; null — the equipment's). */
-export const useCrossAisleTool = create(() => ({ drag: null, at: null, widthFt: null }))
+/* (tunnel round: `mode` — 'cross' cuts the rows, 'tunnel' takes the bottom `levels` levels out of the bays under the band,
+   utils/tunnel.js) */
+export const useCrossAisleTool = create(() => ({ drag: null, at: null, widthFt: null, mode: 'cross', levels: 2 }))
+export const setCutMode = (mode) => useCrossAisleTool.setState({ mode: mode === 'tunnel' ? 'tunnel' : 'cross' })
+export const setTunnelRemove = (n) => useCrossAisleTool.setState({ levels: Number.isFinite(n) && n >= 1 ? Math.round(n) : 2 })
 export const setCutWidth = (ft) => useCrossAisleTool.setState({ widthFt: Number.isFinite(ft) && ft > 0 ? ft : null })
 export const cancelCut = () => { const had = !!useCrossAisleTool.getState().drag; if (had) useCrossAisleTool.setState({ drag: null }); return had }
 
@@ -67,7 +72,10 @@ export function bandOf(objects, from, to, widthFt, gs = 40, skip = () => false) 
   const vert = Math.abs(dx) > Math.abs(dy)                    // dragged left / right: the rows run up and down
   const c0 = vert ? Math.min(from.x, to.x) : Math.min(from.y, to.y), c1 = vert ? Math.max(from.x, to.x) : Math.max(from.y, to.y)
   const along = vert ? from.y : from.x, W = widthFt * gs
-  const rows = objects.filter(o => isRowRack(o) && !skip(o)).map(o => ({ o, g: geom(o) })).filter(({ g }) => g.vert === vert && Math.min(g.s1, c1) - Math.max(g.s0, c0) > EPS)
+  const all = objects.filter(o => isRowRack(o) && !skip(o)).map(o => ({ o, g: geom(o) })).filter(({ g }) => g.vert === vert && Math.min(g.s1, c1) - Math.max(g.s0, c0) > EPS)
+  /* a row that stands along a wall is never cut, nor tunnelled (the wall-row rule — generate/wallRun.js, utils/rackDepth.js
+     wallSideOf): it runs unbroken; the band passes it by (`walls`: shown as not cut) */
+  const rows = all.filter(({ o }) => !wallSideOf(o, objects, gs))
   // the band's start on the nearest bay line (an upright's far face) of a row it crosses, to where the pointer pressed
   let s0 = along - W / 2, best = Infinity
   for (const { o, g } of rows) {
@@ -77,7 +85,8 @@ export function bandOf(objects, from, to, widthFt, gs = 40, skip = () => false) 
   }
   const s1 = s0 + W
   const racks = rows.filter(({ g }) => Math.min(g.r1, s1) - Math.max(g.r0, s0) > EPS).map(({ o }) => o.id)
-  return { vert, s0, s1, c0, c1, racks }
+  const walls = all.filter(({ o, g }) => wallSideOf(o, objects, gs) && Math.min(g.r1, s1) - Math.max(g.r0, s0) > EPS).map(({ o, g }) => ({ id: o.id, s0: g.s0, s1: g.s1 }))
+  return { vert, s0, s1, c0, c1, racks, walls }
 }
 
 /** Rack `o` cut by the band [s0, s1] along its run → [low, high] (either may be null: the band over that end). */

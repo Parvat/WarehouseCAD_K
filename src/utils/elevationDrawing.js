@@ -142,6 +142,23 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
   const rect = (x, y, w, h, o = {}) => items.push({ t: 'rect', x, y, w, h, ...o })
   const line = (x1, y1, x2, y2, o = {}) => items.push({ t: 'line', x1, y1, x2, y2, stroke: o.stroke || blue, sw: o.sw || sw, ...o })
   const text = (x, y, str, o = {}) => items.push({ t: 'text', x, y, s: str, size: o.size || fO, fill: o.fill || blue, anchor: o.anchor || 'middle', font: FONT, halo: Math.max(1.5, (o.size || fO) * 0.45), haloColor: bg, ...o, weight: o.weight ?? 500 })   // (500: a touch bolder than book, to read at small sizes)
+  /* a tunnel bay's elevation (tunnel round, utils/tunnel.js): the opening under its lowest kept level, hatched and
+     labelled — its frames as drawn, the upper levels kept */
+  if (t.tunnel > 0 && showFront) {
+    const kept = L.filter(l => l.beamIn > 0), topO = kept.length ? kept[0].beamIn - face : hTop
+    const x0 = Xf(upW), x1 = Xf(upW + bayIn), y0 = Y(topO), y1 = Y(0)
+    rect(x0, y0, x1 - x0, y1 - y0, { fill: '#F4F3EF', stroke: S.hatch, sw, tag: 'tunnel-opening' })
+    const step = Math.max(6, 10 * u)
+    // 45° hatch: each line from the bottom edge up to the left, clipped to the opening
+    const W = x1 - x0, H = y1 - y0
+    for (let k = step; k < W + H; k += step) {
+      let sx = x0 + k, sy = y1, ex = x0 + k - H, ey = y0
+      if (sx > x1) { sy = y1 - (sx - x1); sx = x1 }
+      if (ex < x0) { ey = y0 + (x0 - ex); ex = x0 }
+      if (sx > ex && sy > ey) line(sx, sy, ex, ey, { stroke: S.hatch, sw: Math.max(0.6, sw * 0.7), tag: 'tunnel-hatch' })
+    }
+    text((x0 + x1) / 2, (y0 + y1) / 2, `TUNNEL · L1–L${t.tunnel} out`, { fill: S.tag, size: fO, weight: 700, tag: 'tunnel-label' })
+  }
   const keyOf = (r) => (r ? r.kind + ':' + (r.k ?? r.id ?? '') : null)
   const isActive = (r) => active && keyOf(r) === active
 
@@ -242,7 +259,7 @@ export function elevationLayout(t, bayIn = 96, box = { w: 800, h: 500 }, opts = 
       if (!per) return
       if (bad && !(over && !misfit.has(lv.k) && !(isTop && topIssue))) sText(Xf(frontW / 2), Y(z + lh / 2) + 3.5 * u, misfit.has(lv.k) ? "Doesn't fit" : topIssue === 'clear' ? 'Above the ceiling' : `Within ${sprinklerClearanceIn}″ of sprinklers`, { anchor: 'middle', size: 9 * u, fill: S.red, weight: 600, tag: 'misfit', pri: 1.5, level: lv.k })
       // the level tag inside the right pallet, top-right (PJS 8.5 / 600)
-      if (lh * s > 14 * u) sText(Xf(lastX + palletWIn) - 3 * u, Y(z + lh) + 10 * u, `L${i + 1}`, { anchor: 'end', size: 8.5 * u, fill: S.tag, weight: 600, tag: 'level-tag', halo: 0, fixed: true })
+      if (lh * s > 14 * u) sText(Xf(lastX + palletWIn) - 3 * u, Y(z + lh) + 10 * u, `L${i + 1 + (t.tunnel || 0)}`, { anchor: 'end', size: 8.5 * u, fill: S.tag, weight: 600, tag: 'level-tag', halo: 0, fixed: true })
       // the beam's height to its top, on a short tick off the right upright — on the sheet, level 1 on the floor too
       // (0″: typed up from the floor, it gets its beam)
       if (z > 0 || (edit && i === 0)) {

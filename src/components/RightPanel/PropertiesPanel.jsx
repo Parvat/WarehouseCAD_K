@@ -23,6 +23,8 @@ import { ColumnLineFields } from './panels/ColumnLineFields'
 import { SectionMain } from '../../studio/sectionCards'
 import { CrossAisleCard } from '../../studio/crossAisleCard'
 import { useCrossAislePick } from '../../utils/crossAisleTool'
+import { TunnelCard } from '../../studio/tunnelCard'
+import { useTunnelPick } from '../../utils/tunnel'
 import { RackMain, RowGroupMain, ZoneMain, NothingSelected } from '../../studio/cards'
 import { LayoutSummary, SectionSummary, LineSummary, BaySummary, SelectionSummary, SummaryFold } from '../../studio/summaryCards'
 import { useRowGroup, groupRowsNow } from '../../utils/rowGroupTool'
@@ -178,9 +180,12 @@ export function PropertiesPanel() {
   /* the rack's beam for a new bay (the rack panel's own choice, shared by the Beam field and the bay list) */
   const [newBeam, setNewBeam] = useState(96)
   const crossPick = useCrossAislePick(s => s.pick)
+  const tunnelPick = useTunnelPick(s => s.pick)
 
   /* ── a cross-aisle picked (utils/crossAisleTool.js): its card ───────────── */
   if (!selected.length && crossPick) return <CrossAisleCard />
+  /* ── a tunnel picked (utils/tunnel.js): its card ───────────────────────── */
+  if (!selected.length && tunnelPick) return <TunnelCard />
 
   /* ── Nothing selected (C7) ─────────────────────────────────────────────── */
   if (!selected.length) {

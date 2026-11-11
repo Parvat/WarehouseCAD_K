@@ -48,7 +48,8 @@ import { POINT_HANDLE_PX } from './SectionShape'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { afterBuildingResize } from '../utils/buildingResize'
 import { afterSectionResize } from '../utils/sectionShrink'
-import { crossAisleAt, useCrossAislePick, clearCrossAislePick, moveRange, bayPitch, runsAt, moveCrossAisle } from '../utils/crossAisleTool'
+import { crossAisleAt, useCrossAislePick, clearCrossAislePick, snapMove, bayPitch, runsAt, moveCrossAisle } from '../utils/crossAisleTool'
+import { tunnelAt, useTunnelPick, clearTunnelPick, tunnelRange, tunnelPitch, moveTunnel } from '../utils/tunnel'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
 import { fitInset } from '../studio/fitInset'
 
@@ -160,6 +161,7 @@ export function useCanvasInteraction({
   const sectionPoint = useRef(null)   // a custom-shape section's point being dragged: { id, i, orig }
   const colLine = useRef(null)   // a column's line being dragged: { g0, col, from (world), sx, sy, axis, i, again }
   const crossDrag = useRef(null)   // a cross-aisle pressed (crossAisleTool.js): { c, from (world), d (bays) }
+  const tunnelDrag = useRef(null)  // a tunnel pressed (utils/tunnel.js): { t, from (world), d (bays) }
 
   /* ── selection, from our own geometry pick ────────────────────────────── */
   /* Selection AND bay pick, from a world point and a hit id already decided by
@@ -704,6 +706,18 @@ export function useCanvasInteraction({
          the drag/click split every other gesture here already makes. */
       let hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       let hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
+      /* a press in a tunnel's bays (tunnel round, utils/tunnel.js): a click picks the tunnel, a drag along the run moves it in
+         whole bays — before the rack under it */
+      if (evt.button === 0 && !evt.shiftKey && hitObj && typeof hitObj.type === 'string' && hitObj.type.startsWith('rack_') && isPickable(st.layers, hitObj)) {
+        const tu = tunnelAt(st.objects, world, st.gridSize || 40)
+        if (tu) {
+          pickedOnPlan(); st.clearSelection(); st.setActiveWall(null); clearCrossAislePick()
+          useTunnelPick.setState({ pick: { fpId: tu.fpId, rot: tu.rot, at: (tu.lo + tu.hi) / 2 }, drag: null })
+          tunnelDrag.current = { t: tu, from: world, d: 0 }
+          return
+        }
+      }
+      clearTunnelPick()
 
       /* A floor plan's wall, checked whenever the plain hitTest above didn't
          land on something standing IN FRONT of the building (a rack parked
@@ -878,7 +892,7 @@ export function useCanvasInteraction({
      gesture (pan/drag/marquee/resize) keeps setting it from its own
      mousemove/mouseup, and held space always means grab. */
   const onStageMouseMove = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current || colLine.current || sectionPoint.current || crossDrag.current) { setFlueHover(null, null); clearHoverTarget(); return }
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current || colLine.current || sectionPoint.current || crossDrag.current || tunnelDrag.current) { setFlueHover(null, null); clearHoverTarget(); return }
     if (spaceDown.current) { clearHoverTarget(); return }
     const stage = stageRef.current
     if (!stage) return
@@ -960,15 +974,26 @@ export function useCanvasInteraction({
      own drag capture is gone. */
   useEffect(() => {
     const move = (evt) => {
-      const cd = crossDrag.current
-      if (cd) {
-        // whole bays along the run, stopped where a run would pass Max run or fall under 3 bays; the runs read live
+      const td = tunnelDrag.current
+      if (td) {
+        // whole bays along the run, kept inside its racks
         const stage = stageRef.current
         if (!stage) return
         const box = stage.container().getBoundingClientRect(), st = useCanvasStore.getState(), gs = st.gridSize || 40
         const w = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
-        const [dMin, dMax] = moveRange(st.objects, cd.c)
-        const d = Math.max(dMin, Math.min(dMax, Math.round((cd.c.rot ? w.y - cd.from.y : w.x - cd.from.x) / bayPitch(cd.c, gs))))
+        const [lo, hi] = tunnelRange(td.t)
+        const d = Math.max(lo, Math.min(hi, Math.round((td.t.rot ? w.y - td.from.y : w.x - td.from.x) / tunnelPitch(td.t, gs))))
+        if (d !== td.d || !useTunnelPick.getState().drag) { td.d = d; useTunnelPick.setState({ drag: { d } }) }
+        return
+      }
+      const cd = crossDrag.current
+      if (cd) {
+        // whole bays along the run — a run 3 bays or more, or 0 (the row's end): never 1 or 2 (tunnel round); the runs read live
+        const stage = stageRef.current
+        if (!stage) return
+        const box = stage.container().getBoundingClientRect(), st = useCanvasStore.getState(), gs = st.gridSize || 40
+        const w = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+        const d = snapMove(st.objects, cd.c, (cd.c.rot ? w.y - cd.from.y : w.x - cd.from.x) / bayPitch(cd.c, gs))
         if (d !== cd.d || !useCrossAislePick.getState().drag) { cd.d = d; useCrossAislePick.setState({ drag: { d, labels: runsAt(st.objects, cd.c, d, gs) } }) }
         return
       }
@@ -1498,6 +1523,13 @@ export function useCanvasInteraction({
       setMarquee(normalizeRect(m.from, m.to))
     }
     const upGesture = () => {
+      const td = tunnelDrag.current
+      tunnelDrag.current = null
+      if (td) {
+        if (td.d) moveTunnel(useCanvasStore, td.t, td.d)
+        else useTunnelPick.setState({ drag: null })
+        return
+      }
       const cd = crossDrag.current
       crossDrag.current = null
       if (cd) {

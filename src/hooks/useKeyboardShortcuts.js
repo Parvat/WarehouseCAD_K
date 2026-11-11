@@ -21,6 +21,7 @@ import { toggleHelp } from '../studio/HelpCard'
 import { nudgeWithSections, duplicateSections } from '../utils/sectionEdit'
 import { useCrossAislePick, clearCrossAislePick, pickedCrossAisle } from '../utils/crossAisleTool'
 import { CROSS_AISLE_TOOL, cancelCut, deleteCrossAisle } from '../utils/crossAisleCut'
+import { useTunnelPick, clearTunnelPick, pickedTunnel, deleteTunnel } from '../utils/tunnel'
 
 /** The app's keyboard shortcuts, one keydown handler (exported so a test can press keys at it). */
 export function shortcutHandler(e) {
@@ -48,6 +49,8 @@ export function shortcutHandler(e) {
         if (pickedColumn()) { clearColumnPick(); return }
         // a cross-aisle picked: Esc lets it go (utils/crossAisleTool.js)
         if (useCrossAislePick.getState().pick) { clearCrossAislePick(); return }
+        // a tunnel picked: Esc lets it go (utils/tunnel.js)
+        if (useTunnelPick.getState().pick) { clearTunnelPick(); return }
         // the Row group (utils/rowGroupTool.js): Esc leaves it — the tool, the group, the edit row: nothing selected, no bar
         if (useCanvasStore.getState().activeTool === ROW_GROUP_TOOL) { cancelGroupBox(); clearGroup(); useCanvasStore.getState().setActiveTool(HOME_TOOL); useCanvasStore.getState().clearSelection(); useCanvasStore.getState().setActiveWall(null); return }
         // the Split tool (utils/splitTool.js), before a cut: Esc leaves it (after a cut the piece is a placement, above)
@@ -69,6 +72,9 @@ export function shortcutHandler(e) {
         // a cross-aisle picked, nothing selected: Delete rejoins its rows (utils/crossAisleCut.js, xaisle-tool)
         { const st = useCanvasStore.getState(), c = !st.selectedIds.length && useCrossAislePick.getState().pick ? pickedCrossAisle(st.objects) : null
           if (c) { deleteCrossAisle(useCanvasStore, c); return } }
+        // a tunnel picked, nothing selected: Delete gives its levels back (utils/tunnel.js)
+        { const st = useCanvasStore.getState(), t = !st.selectedIds.length && useTunnelPick.getState().pick ? pickedTunnel(st.objects, undefined, st.gridSize || 40) : null
+          if (t) { deleteTunnel(useCanvasStore, t); return } }
         // one Delete for the key and the bars (studio/selectionActions.js deleteSelection): bays picked — only those
         // bays, the rows stay; rows — the rows
         deleteSelection()

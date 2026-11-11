@@ -71,16 +71,40 @@ function runBays(objects, rack, rot) {
   return objects.filter(o => RACK.has(o.type) && o.parentId === rack.parentId && o.genSection === rack.genSection && (() => { const [d0, d1] = acrossOf(o, rot); return Math.min(d1, c1) - Math.max(d0, c0) > EPS })())
     .reduce((t, o) => t + (o.beams?.length || 0), 0)
 }
-/** How far (whole bays) cross-aisle `c` may move: [dMin, dMax] — every run either side kept at MIN_RUN_BAYS at least
- *  (a positive move: toward the run's high end). Max run does not stop it (xaisle-tool: a Check warning). */
-export function moveRange(objects, c) {
-  let lo = -Infinity, hi = Infinity
+/* tunnel round: a run either side is MIN_RUN_BAYS (3) bays or more, or 0 — the aisle at the row's end, the row trimmed
+   there (only where that run is one rack: it goes); never 1 or 2. Max run does not stop it (xaisle-tool: a Check warning). */
+const okRun = (n, whole) => n >= MIN_RUN_BAYS || (n === 0 && whole)
+/** Is a move of `d` whole bays allowed for cross-aisle `c` (a positive move: toward the run's high end)? */
+function moveOk(objects, c, d) {
   for (const l of c.lines) {
     const na = runBays(objects, l.a, c.rot), nb = runBays(objects, l.b, c.rot)
-    hi = Math.min(hi, nb - MIN_RUN_BAYS)
-    lo = Math.max(lo, MIN_RUN_BAYS - na)
+    const A = na + d, B = nb - d
+    if (A < 0 || B < 0 || (A === 0 && B === 0)) return false
+    if (!okRun(A, na === l.a.beams.length) || !okRun(B, nb === l.b.beams.length)) return false
   }
-  return [Math.min(0, lo), Math.max(0, hi)]
+  return true
+}
+/** Every allowed move of cross-aisle `c`, sorted (0 included). */
+export function allowedMoves(objects, c) {
+  let lo = 0, hi = 0
+  for (const l of c.lines) { lo = Math.min(lo, -runBays(objects, l.a, c.rot)); hi = Math.max(hi, runBays(objects, l.b, c.rot)) }
+  const out = []
+  for (let d = lo; d <= hi; d++) if (d === 0 || moveOk(objects, c, d)) out.push(d)
+  return out
+}
+/** How far (whole bays) cross-aisle `c` may move: [dMin, dMax] — the farthest allowed either way (up to a row's end). */
+export function moveRange(objects, c) {
+  const all = allowedMoves(objects, c)
+  return [Math.min(0, ...all), Math.max(0, ...all)]
+}
+/** The allowed move nearest `d` — a run of 1 or 2 bays is never left: past 3 bays the drag jumps to the row's end
+ *  (half way: the nearer of the two; a tie goes the way it is dragged). */
+export function snapMove(objects, c, d) {
+  d = Math.round(d)
+  const all = allowedMoves(objects, c)
+  let best = 0
+  for (const v of all) { const a = Math.abs(v - d), b = Math.abs(best - d); if (a < b || (a === b && Math.abs(v) > Math.abs(best) && Math.sign(v) === Math.sign(d))) best = v }
+  return best
 }
 /** A bay's pitch along the run at cross-aisle `c` (world px). */
 export const bayPitch = (c, gridSize = 40) => { const r = c.lines[0].a; const beam = r.beams[r.beams.length - 1] || 96; return ((beam + (r.uprightWidth || 3)) / 12) * gridSize }
@@ -106,24 +130,29 @@ function growToward(r, k, toward, rot, gridSize) {
     ...r, beams: high ? [...r.beams, ...Array(k).fill(beam)] : [...Array(k).fill(beam), ...r.beams], width: w, x: ncx - w / 2, y: ncy - r.height / 2,
     ...(r.elevBays ? { elevBays: r.elevBays.map(a => pad(a, undefined)) } : {}),
     ...(r.bayEmpty ? { bayEmpty: r.bayEmpty.map(a => pad(a, false)) } : {}),
+    ...(Array.isArray(r.tunnelBays) ? { tunnelBays: pad(r.tunnelBays, 0) } : {}),
     activeBayIdx: null, activeBaySide: null,
   }
 }
 
-/** `objects` with cross-aisle `c` moved `d` whole bays along the run (clamped to moveRange) → { objects, d }. Pure. */
+/** `objects` with cross-aisle `c` moved `d` whole bays along the run (snapped to an allowed move: snapMove) → { objects,
+ *  d, end (the aisle went to a row's end: no cross-aisle left there) }. Pure. */
 export function planCrossAisleMove(objects, c, d, { gridSize = 40 } = {}) {
-  const [dMin, dMax] = moveRange(objects, c)
-  d = Math.max(dMin, Math.min(dMax, Math.round(d)))
+  d = snapMove(objects, c, d)
   if (!d) return { objects, d: 0 }
-  const changed = new Map()
+  const changed = new Map(), gone = new Set()
   for (const l of c.lines) {
-    // the low side's rack gains d bays toward the aisle, the high side's loses d at its end toward it (and the reverse)
+    // the low side's rack gains d bays toward the aisle, the high side's loses d at its end toward it (and the reverse);
+    // a side brought to 0 bays goes — the aisle at the row's end, the row trimmed there
     const a = changed.get(l.a.id) || l.a, b = changed.get(l.b.id) || l.b
-    const a2 = growToward(a, d, l.lo + (l.hi - l.lo) / 2, c.rot, gridSize), b2 = growToward(b, -d, l.lo + (l.hi - l.lo) / 2, c.rot, gridSize)
+    const mid = l.lo + (l.hi - l.lo) / 2
+    if (d < 0 && -d >= a.beams.length) { gone.add(a.id); changed.set(l.b.id, growToward(b, -d, mid, c.rot, gridSize)); continue }
+    if (d > 0 && d >= b.beams.length) { gone.add(b.id); changed.set(l.a.id, growToward(a, d, mid, c.rot, gridSize)); continue }
+    const a2 = growToward(a, d, mid, c.rot, gridSize), b2 = growToward(b, -d, mid, c.rot, gridSize)
     if (!a2 || !b2) return { objects, d: 0 }
     changed.set(l.a.id, a2); changed.set(l.b.id, b2)
   }
-  let out = objects.map(o => changed.get(o.id) || o)
+  let out = objects.filter(o => !gone.has(o.id)).map(o => changed.get(o.id) || o)
   // a Fill's racks stay its own: the area's pattern split moves too, and the racks' signatures follow
   const areas = new Set([...changed.values()].map(r => r.areaId).filter(Boolean))
   out = out.map(o => {
@@ -134,24 +163,27 @@ export function planCrossAisleMove(objects, c, d, { gridSize = 40 } = {}) {
       if (Math.abs(p.r0 + runLen(p.n) - lo) < 0.02) return { ...p, n: p.n + d }
       if (Math.abs(p.r0 - hi) < 0.02) return { ...p, r0: p.r0 + d * pitchFt, n: p.n - d }
       return p
-    })
+    }).filter(p => p.n > 0)
     const placed = { ...(o.placed || {}) }
     // (only a rack the area still holds as it placed it: one cut or changed by hand stays hand-edited — xaisle-tool)
     for (const r of changed.values()) { const was = objects.find(x => x.id === r.id); if (r.areaId === o.id && placed[r.id] != null && sigMatch(placed[r.id], was)) placed[r.id] = rackSig(r) }
     return { ...o, pattern: { ...P, pieces }, placed }
   })
-  return { objects: rebuildAisles(out, nanoid).objects, d }
+  // the commit's anchor: a rack still there (at a row's end one side's rack is gone)
+  const anchor = [...changed.keys()].find(id => !gone.has(id))
+  return { objects: rebuildAisles(out, nanoid).objects, d, end: gone.size > 0, anchor }
 }
 /** Move cross-aisle `c` `d` bays — one undo step; the pick follows it. → the bays moved. */
 export function moveCrossAisle(store, c, d) {
   const st = store.getState(), gs = st.gridSize || 40
   const plan = planCrossAisleMove(st.objects, c, d, { gridSize: gs })
   if (!plan.d) return 0
-  const anchor = c.lines[0].a.id
+  const anchor = plan.anchor || c.lines[0].a.id
   store.setState({ objects: plan.objects })
   store.getState().commitObjectUpdate(anchor, {})
   const shift = plan.d * bayPitch(c, gs)
-  useCrossAislePick.setState({ pick: { fpId: c.fpId, rot: c.rot, at: (c.lo + c.hi) / 2 + shift }, drag: null })
+  // at a row's end there is no cross-aisle left to pick
+  useCrossAislePick.setState({ pick: plan.end ? null : { fpId: c.fpId, rot: c.rot, at: (c.lo + c.hi) / 2 + shift }, drag: null })
   return plan.d
 }
 

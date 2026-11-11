@@ -132,6 +132,12 @@ export function joinRacks(stationary, moved, gridSize) {
     out.elevBays = Array.from({ length: S }, (_, s) => [...first.beams.map((_, b) => (mine(first) ? first.elevBays?.[s]?.[b] ?? null : effectiveRef(first, b, s))), ...second.beams.map((_, b) => (mine(second) ? second.elevBays?.[s]?.[b] ?? null : effectiveRef(second, b, s)))])
     if (!out.elevBays.some(a => a.some(v => v != null))) delete out.elevBays
   }
+  // a tunnel's bays ride with their bays (tunnel round)
+  delete out.tunnelBays
+  if (Array.isArray(first.tunnelBays) || Array.isArray(second.tunnelBays)) {
+    const tb = [...first.beams.map((_, b) => first.tunnelBays?.[b] || 0), ...second.beams.map((_, b) => second.tunnelBays?.[b] || 0)]
+    if (tb.some(n => n > 0)) out.tunnelBays = tb
+  }
   // a pair's empty bay sides ride with their bays (utils/bayEmpty.js)
   delete out.bayEmpty
   if (hasEmpty(first) || hasEmpty(second)) {

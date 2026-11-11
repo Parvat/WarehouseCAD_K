@@ -79,14 +79,15 @@ function frameLines(r, gridSize) {
 const bayPositions = (r, b, bi, lv) => {
   const per = positionsPerBeam(b, r.palletWIn || 40)
   // a pair's empty bay side holds nothing (utils/bayEmpty.js)
-  if (!lv) return per * (r.levels || 1) * (r.type === 'rack_double_row' ? (isEmptySide(r, bi, 0) ? 0 : 1) + (isEmptySide(r, bi, 1) ? 0 : 1) : 1)
+  // (a tunnel bay: its bottom levels gone — tunnel round)
+  if (!lv) return per * Math.max(0, (r.levels || 1) - (Array.isArray(r.tunnelBays) ? r.tunnelBays[bi] || 0 : 0)) * (r.type === 'rack_double_row' ? (isEmptySide(r, bi, 0) ? 0 : 1) + (isEmptySide(r, bi, 1) ? 0 : 1) : 1)
   // each face's pallets on the beam from its elevation's pallet face (Project setup), its levels from its elevation
   const f = lv.face, at = (s) => (f ? positionsPerBeam(b, f(r, bi, s)) : per) * lv(r, bi, s)
   return at(0) + (r.type === 'rack_double_row' ? at(1) : 0)
 }
 
 let cache = { objects: null, key: null, ledger: null }
-const keyOf = (racks) => racks.map(r => [r.id, r.type, r.x, r.y, r.width, r.height, r.rotation || 0, r.beams.join('/'), r.levels, r.palletWIn, r.uprightWidth, JSON.stringify([r.elevType, r.elevSides, r.elevBays, r.bayEmpty])].join(',')).join(';')
+const keyOf = (racks) => racks.map(r => [r.id, r.type, r.x, r.y, r.width, r.height, r.rotation || 0, r.beams.join('/'), r.levels, r.palletWIn, r.uprightWidth, JSON.stringify([r.elevType, r.elevSides, r.elevBays, r.bayEmpty, r.tunnelBays])].join(',')).join(';')
 /* the types' level counts (a type edited to more levels changes every bay that carries it) */
 const tableKey = (T) => { return T ? T.defaultId + ':' + T.types.map(t => t.id + '=' + t.levels.length + '/' + (t.palletId || '')).join(',') + '|' + (T.project?.pallets || []).map(p => p.id + '=' + p.faceIn).join(',') : '' }
 

@@ -27,7 +27,7 @@
 // A bay side with no elevation (none resolves) is counted with the layout's default elevation, and flagged.
 
 import { bayLedger } from './bayLedger'
-import { typeAt, typeById, beamFace, sidesOf, beamLevelCount } from './elevations'
+import { typeAt, typeById, beamFace, sidesOf, beamLevelCount, tunnelType, tunnelAt } from './elevations'
 import { isEmptySide } from './bayEmpty'
 import { sectionMap } from '../canvas2/sections'
 import { numberLines, worldSide } from './rackLines'
@@ -117,7 +117,8 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
     const t = typeAt(r, b, s, T)
     if (t) return t
     flag('no-elev', (n) => `${n} bay side${n === 1 ? '' : 's'} with no elevation — counted with the default`, r.id)
-    return fallback
+    // (a tunnel bay: the default less its tunnel's levels — tunnel round)
+    return tunnelType(fallback, tunnelAt(r, b))
   }
 
   for (const r of racks) {
@@ -132,7 +133,9 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
       const t = elevOf(r, b, s)
       // the beam levels as the elevation sheet draws them (elevations.js drawnLevels: a level above 0 has a beam pair);
       // no elevation at all: the rack's levels, level 1 on the floor
-      const beamed = t ? beamLevelCount(t) : Math.max(0, (r.levels || 1) - 1)
+      // (a tunnel bay without a types table: its bottom levels — the floor one first — gone; tunnel round)
+      const tn = Array.isArray(r.tunnelBays) ? r.tunnelBays[b] || 0 : 0
+      const beamed = t ? beamLevelCount(t) : tn ? Math.max(0, (r.levels || 1) - tn) : Math.max(0, (r.levels || 1) - 1)
       if (!beamed) return
       const face = beamFace(t), no = noOf(r, s)
       add('Beam', `${inch(beamIn)} × ${inch(face)} face`, beamed * 2, r.id, beamIn * 100 + face, no, beamed)

@@ -143,14 +143,24 @@ export function typeIdAt(rack, bay, side, table) {
   const v = rack.elevBays?.[s]?.[bay] ?? rack.elevSides?.[s] ?? rack.elevType ?? DEFAULT_REF
   return v === DEFAULT_REF ? (table ? table.defaultId : null) : v
 }
-export const typeAt = (rack, bay, side, table) => typeById(table, typeIdAt(rack, bay, side, table))
+/* ── tunnels (tunnel round, utils/tunnel.js) ──
+   A tunnel bay: its frames and upper levels stay, its bottom N levels (L1–LN — the floor position too, where level 1 is
+   on the floor) are gone: `rack.tunnelBays` (per bay, the rack's own order; 0 or absent: none). The bay's type reads as
+   its type less those levels (`tunnel`: N, `tunnelLevels`: the levels taken out) — so the counts that read a bay
+   (positions, beams, decks: levelsAt, typeAt, beamLevelCount) and its elevation (the opening drawn) all follow. */
+export const TUNNEL_FIELD = 'tunnelBays'
+/** The levels taken out of bay `bay` of `rack` by a tunnel (0: none). */
+export const tunnelAt = (rack, bay) => (Array.isArray(rack?.tunnelBays) ? Math.max(0, rack.tunnelBays[bay] || 0) : 0)
+/** Type `t` with its bottom `n` levels taken out (a tunnel bay's), the upper levels at their heights. */
+export const tunnelType = (t, n) => (t && n > 0 ? { ...t, levels: t.levels.slice(n), tunnel: n, tunnelLevels: t.levels.slice(0, n) } : t)
+export const typeAt = (rack, bay, side, table) => tunnelType(typeById(table, typeIdAt(rack, bay, side, table)), tunnelAt(rack, bay))
 /** The rack-level type (what `rack.levels` mirrors). */
 export const rackTypeId = (rack, table) => { const v = rack.elevType ?? DEFAULT_REF; return v === DEFAULT_REF ? table?.defaultId ?? null : v }
 /** Levels on bay `bay`, side `side`: its type's, else the rack's own `levels`. */
 export function levelsAt(rack, bay, side, table) {
   if (isEmptySide(rack, bay, side)) return 0   // a pair's empty bay side holds nothing (utils/bayEmpty.js)
   const t = table ? typeAt(rack, bay, side, table) : null
-  return t ? t.levels.length : rack.levels || 1
+  return t ? t.levels.length : Math.max(0, (rack.levels || 1) - tunnelAt(rack, bay))
 }
 /** `(rack, bay, side) → levels` for a types table, or null without one (read `rack.levels`). */
 export function levelsResolver(table) {
@@ -210,6 +220,8 @@ export function syncAllLevels(objects, table) {
  *  type as its own). Table-free: the layers above the bays are carried as they are. */
 export function carryElev(src, idx, keepSide = null) {
   const out = {}
+  // a tunnel's bays ride with their bays (tunnel round); a new bay has none
+  if (Array.isArray(src.tunnelBays)) { const tb = idx.map(i => (i == null ? 0 : src.tunnelBays[i] || 0)); if (tb.some(n => n > 0)) out[TUNNEL_FIELD] = tb }
   // a pair's empty bay sides ride with their bays (utils/bayEmpty.js)
   const empty = carryEmpty(src, idx, keepSide)
   if (empty) out[EMPTY_FIELD] = empty
@@ -224,7 +236,7 @@ export function carryElev(src, idx, keepSide = null) {
   return out
 }
 /** Replace `piece`'s elevation fields with `fields`. */
-export const withElev = (piece, fields) => { const o = { ...piece }; for (const k of ELEV_FIELDS) delete o[k]; delete o[EMPTY_FIELD]; return { ...o, ...fields } }
+export const withElev = (piece, fields) => { const o = { ...piece }; for (const k of ELEV_FIELDS) delete o[k]; delete o[EMPTY_FIELD]; delete o[TUNNEL_FIELD]; return { ...o, ...fields } }
 /** What bay `b`, side `s` of `rack` carries, explicit ('*' = the default) — for a join, where the bays of two racks
  *  come under one rack-level type. */
 export const effectiveRef = (rack, b, s) => rack.elevBays?.[s]?.[b] ?? rack.elevSides?.[s] ?? rack.elevType ?? DEFAULT_REF

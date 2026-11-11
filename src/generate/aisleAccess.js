@@ -46,12 +46,30 @@ const isRack = (o) => typeof o?.type === 'string' && o.type.startsWith('rack_')
 /** The drivable floor of building `fp`, exactly: the floor less every wall, zone and rack grown by `grow`
  *  px, on a grid whose lines are exactly those grown edges (and the moved-in walls). Each cell is wholly
  *  free or wholly blocked. { xs, ys, nx, ny, free } — xs / ys the cell edges, world px. */
+/** Rack `o`'s footprint as blocking boxes (world px): the whole of it — less, along the run, the clear opening of every
+ *  tunnel bay (tunnel round, utils/tunnel.js: between its uprights, under its kept levels — a truck drives through it,
+ *  so a tunnel is a way in). */
+export function rackBlocks(o, gridSize = 40) {
+  const f = rackFootprint(o)
+  if (!Array.isArray(o.tunnelBays) || !o.tunnelBays.some(n => n > 0)) return [f]
+  const vert = !!f.rotated, t = ((((o.rotation || 0) % 360) + 360) % 360), rev = t === 180 || t === 270
+  const n = o.beams.length, up = ((o.uprightWidth || 3) / 12) * gridSize, beamsRun = rev ? [...o.beams].reverse() : o.beams
+  const r0 = vert ? f.y : f.x, r1 = vert ? f.y + f.h : f.x + f.w
+  const u = [r0]; for (const b of beamsRun) u.push(u[u.length - 1] + up + (b / 12) * gridSize)
+  const open = []
+  for (let j = 0; j < n; j++) { const i = rev ? n - 1 - j : j; if ((o.tunnelBays[i] || 0) > 0) open.push([u[j] + up, u[j + 1]]) }
+  const out = []
+  let at = r0
+  for (const [a, b] of open) { if (a > at + 1e-6) out.push([at, a]); at = Math.max(at, b) }
+  if (r1 > at + 1e-6) out.push([at, r1])
+  return out.map(([a, b]) => (vert ? { x: f.x, y: a, w: f.w, h: b - a } : { x: a, y: f.y, w: b - a, h: f.h }))
+}
 function floorCells(objects, fp, grow, gridSize) {
   const poly = insetPolygon(innerOutline(fp, gridSize), grow)
   const boxes = []
   for (const o of objects) {
     if (isZone(o)) boxes.push({ x0: o.x - grow, y0: o.y - grow, x1: o.x + o.width + grow, y1: o.y + o.height + grow })
-    else if (isRack(o) && o.width > 0 && o.height > 0 && (!o.parentId || o.parentId === fp.id)) { const f = rackFootprint(o); boxes.push({ x0: f.x - grow, y0: f.y - grow, x1: f.x + f.w + grow, y1: f.y + f.h + grow }) }
+    else if (isRack(o) && o.width > 0 && o.height > 0 && (!o.parentId || o.parentId === fp.id)) for (const f of rackBlocks(o, gridSize)) { boxes.push({ x0: f.x - grow, y0: f.y - grow, x1: f.x + f.w + grow, y1: f.y + f.h + grow }) }
   }
   const px = poly.map(q => q.x), py = poly.map(q => q.y)
   const X0 = Math.min(...px), X1 = Math.max(...px), Y0 = Math.min(...py), Y1 = Math.max(...py)

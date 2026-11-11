@@ -50,6 +50,8 @@ import { SectionNames } from './SectionNames'
 import { CrossAislePick } from './CrossAislePick'
 import { CrossAisleBandPreview, CrossAisleBar, liveBand } from './CrossAisleBand'
 import { CROSS_AISLE_TOOL, useCrossAisleTool, commitCut } from '../utils/crossAisleCut'
+import { commitTunnel } from '../utils/tunnel'
+import { TunnelMarks } from './TunnelMarks'
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
    A Konva Stage that owns its own pointer events. No router, no forwarding, no
@@ -445,7 +447,10 @@ export function Canvas2() {
       useCrossAisleTool.setState({ drag: null })
       if (!drag) return                                                     // Esc dropped it
       const band = liveBand(useCanvasStore.getState(), drag)
-      if (band && commitCut(useCanvasStore, band)) useCanvasStore.getState().setActiveTool(HOME_TOOL)
+      // Cross aisle cuts the rows; Tunnel keeps them and takes the bottom levels out of the bays under it (utils/tunnel.js)
+      const T = useCrossAisleTool.getState()
+      const done = band && (T.mode === 'tunnel' ? commitTunnel(useCanvasStore, band, T.levels) : commitCut(useCanvasStore, band))
+      if (done) useCanvasStore.getState().setActiveTool(HOME_TOOL)
     }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
@@ -591,6 +596,8 @@ export function Canvas2() {
             <IssueHighlight />
             {/* a picked cross-aisle, and where a drag takes it (utils/crossAisleTool.js) */}
             <CrossAislePick />
+            {/* tunnels: hatched, labelled, the picked one outlined (utils/tunnel.js) */}
+            <TunnelMarks />
             <TallyHighlight />
             <PlacementGhost gridSize={gridSize} />
             {/* a zone's edge dragged: the bays its release removes, red, and its size (ZoneEdit.jsx) */}

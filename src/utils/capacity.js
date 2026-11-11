@@ -85,7 +85,9 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
     // each bay's levels from its elevation type when `levelsAt` is given (utils/elevations.js)
     // a bay's pallets on the beam from its elevation's pallet face when the levels resolver carries one (Project setup)
     const per = (i, side) => (levelsAt?.face ? positionsPerBeam(beams[i], levelsAt.face(obj, i, side)) : palletsPerBay[i])
-    const total         = levelsAt ? beams.reduce((s, _, i) => s + per(i, 0) * levelsAt(obj, i, 0), 0) : groundTotal * levels
+    // (a tunnel bay without a types table: its bottom levels gone — tunnel round)
+    const tl = (i) => Math.max(0, levels - (Array.isArray(obj.tunnelBays) ? obj.tunnelBays[i] || 0 : 0))
+    const total         = levelsAt ? beams.reduce((s, _, i) => s + per(i, 0) * levelsAt(obj, i, 0), 0) : beams.reduce((s, _, i) => s + palletsPerBay[i] * tl(i), 0)
     return {
       type:    'beam',
       bays:    beams.length,
@@ -106,7 +108,8 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
     const sidesAt = (i) => (isEmptySide(obj, i, 0) ? 0 : 1) + (isEmptySide(obj, i, 1) ? 0 : 1)
     const groundTotal   = palletsPerBay.reduce((s, p, i) => s + p * sidesAt(i), 0)
     const per = (i, side) => (levelsAt?.face ? positionsPerBeam(beams[i], levelsAt.face(obj, i, side)) : palletsPerBay[i])
-    const total         = levelsAt ? beams.reduce((s, _, i) => s + per(i, 0) * levelsAt(obj, i, 0) + per(i, 1) * levelsAt(obj, i, 1), 0) : groundTotal * levels
+    const tl = (i) => Math.max(0, levels - (Array.isArray(obj.tunnelBays) ? obj.tunnelBays[i] || 0 : 0))
+    const total         = levelsAt ? beams.reduce((s, _, i) => s + per(i, 0) * levelsAt(obj, i, 0) + per(i, 1) * levelsAt(obj, i, 1), 0) : beams.reduce((s, p, i) => s + palletsPerBay[i] * sidesAt(i) * tl(i), 0)
     return {
       type:    'beam',
       bays:    beams.length,

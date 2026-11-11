@@ -37,7 +37,7 @@ export function CrossAisleCard() {
         <Field label="Width" title="The run after it starts this far from the run before it — whole bays to where the row ended">
           <TextInput aria="Cross-aisle width" value={fmt(runs.w)} onCommit={width} />
         </Field>
-        <Hint>Drag it along the run to move it a bay at a time. A run stays at least 3 bays.</Hint>
+        <Hint>Drag it along the run to move it a bay at a time — to either end of the rows. A run is 3 bays or more, or none (the aisle at the row's end).</Hint>
         <Btn kind="ghost" aria-label="Delete cross-aisle" title="Delete (Del) — its rows join again" onClick={() => deleteCrossAisle(useCanvasStore, c)}>Delete</Btn>
       </Sec>
     </>
