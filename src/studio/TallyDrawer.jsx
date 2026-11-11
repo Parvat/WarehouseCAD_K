@@ -48,7 +48,7 @@ function TallyTable({ bom, scrollRef, lineOf, checked }) {
   const sum = (on) => ({ ...cell, padding: '5px 8px', color: C.strong, fontWeight: 600, background: on ? HL_BG : C.inset, cursor: 'pointer' })
   const rowCell = (no, extra) => (lit(no) ? { ...extra, background: HL_BG, color: C.strong } : extra)
   const pickSection = (g) => setSection(section?.id === g.id ? null : { id: g.id, nos: g.rows })
-  const groupLabel = (g) => (many ? g.name : 'Total').toUpperCase() + ' · ' + rowsText(g.rows)
+  const groupLabel = (g) => (many ? g.name : 'Total').toUpperCase() + ' · ' + rowsText(g.rows, bom.names)
   return (
     <div ref={scrollRef} style={{ overflow: 'auto', flex: 1, minHeight: 0 }} onMouseLeave={() => setHover(null)}>
       <table aria-label="Tally by row" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '100%' }}>
@@ -73,7 +73,7 @@ function TallyTable({ bom, scrollRef, lineOf, checked }) {
                       style={{ width: 13, height: 13, padding: 0, border: `1px solid ${checked.has(no) ? TICK : C.faint}`, borderRadius: 3, background: checked.has(no) ? TICK : 'transparent', color: '#FFFFFF', fontSize: 9, lineHeight: '11px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                       {checked.has(no) ? '✓' : ''}
                     </button>
-                    R{no}
+                    {bom.names?.[no] || 'R' + no}
                   </span>
                 </th>
               )),

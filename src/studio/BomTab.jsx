@@ -6,7 +6,8 @@ import { bomXlsx } from '../export/bomXlsx'
 import { useLayoutCheck } from '../utils/layoutCheck'
 import { rackFootprint } from '../generate/rackFootprint'
 import { colorOf } from '../utils/sectionAreas'
-import { C, MONO, Note, Btn, Sec } from './cardParts'
+import { C, MONO, Note, Btn, Sec, Seg } from './cardParts'
+import { lineNumbering, setLineNumbering } from '../utils/lineNames'
 import { Icon } from './Icon'
 import { openTally, useBomCards, cardOpen, selectedLineNos } from './tally'
 
@@ -72,7 +73,7 @@ export function BomTable({ bom, picked, onPick, wide = false }) {
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {!g.total && <Swatch color={sw} />}
                   <span style={{ color: C.strong, fontWeight: 600, fontSize: wide ? 13 : 12, flex: 1 }}>{g.name}</span>
-                  {g.rows.length > 0 && <span data-bom-rows style={{ color: C.muted, fontSize: 11 }}>{rowsText(g.rows)}</span>}
+                  {g.rows.length > 0 && <span data-bom-rows style={{ color: C.muted, fontSize: 11 }}>{rowsText(g.rows, bom.names)}</span>}
                 </span>
               </td>
             </tr>
@@ -123,7 +124,7 @@ export function ByRowTable({ bom }) {
           <tr>
             <th style={{ ...head, textAlign: 'left' }}>Part</th><th style={{ ...head, textAlign: 'left' }}>Size</th>
             {groups.map(g => [
-              ...g.rows.map(no => <th key={'r' + no} style={head} data-byrow-col={no}>R{no}</th>),
+              ...g.rows.map(no => <th key={'r' + no} style={head} data-byrow-col={no}>{bom.names?.[no] || 'R' + no}</th>),
               ...(many ? [<th key={'t' + g.id} style={{ ...head, color: C.strong }}>Total</th>] : []),
             ])}
             <th style={{ ...head, color: C.strong }}>{many ? 'Grand total' : 'Total'}</th>
@@ -169,7 +170,7 @@ function PartLines({ g, picked, onPick }) {
   )
 }
 
-const range = (rows) => [rows.length ? rowsText(rows) : null, `${rows.length} line${rows.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
+const range = (rows, names) => [rows.length ? rowsText(rows, names) : null, `${rows.length} line${rows.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
 
 export function BomTab() {
   const { objects, T, gs, filename, selectedIds } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, gs: s.gridSize || 40, filename: s.currentFilename, selectedIds: s.selectedIds })))
@@ -188,6 +189,13 @@ export function BomTab() {
   return (
     <div role="tabpanel" aria-label="BOM" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <Sec>
+        {/* the rack lines' numbering (utils/lineNames.js), saved with the layout: R1 … across it, or each section from 1
+            with its code (L1 …; outside every section U1 …) — the plan, By row, the Tally, the xlsx and the CSV follow */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: C.muted, fontSize: 12 }}>Numbering</span>
+          <Seg aria="Line numbering" value={lineNumbering(T)} onChange={(v) => setLineNumbering(useCanvasStore, v)}
+            options={[{ value: 'continuous', label: 'Continuous', aria: 'Continuous' }, { value: 'section', label: 'Per section', aria: 'Per section' }]} />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Btn kind="primary" style={small} onClick={openTally} disabled={!bom.lines.length}>Tally</Btn>
           <Btn kind="inset" style={small} aria-label="Download xlsx" title="Download xlsx" onClick={xlsx} disabled={!bom.lines.length}>xlsx</Btn>
@@ -204,7 +212,7 @@ export function BomTab() {
               <section data-bom-card="total" aria-label="Total parts" style={{ borderRadius: 8, background: C.active, minWidth: 0 }}>
                 <div data-bom-group-head="total" style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '10px 12px 6px' }}>
                   <span style={{ flex: 1, color: C.strong, fontWeight: 600, fontSize: 13 }}>Total</span>
-                  <span data-bom-rows style={{ color: C.muted, fontSize: 11, whiteSpace: 'nowrap' }}>{range(total.rows)}</span>
+                  <span data-bom-rows style={{ color: C.muted, fontSize: 11, whiteSpace: 'nowrap' }}>{range(total.rows, bom.names)}</span>
                 </div>
                 <PartLines g={total} picked={picked} onPick={pick} />
               </section>
@@ -228,7 +236,7 @@ export function BomTab() {
                       style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px 8px 12px', border: 0, background: '#252A27', color: C.strong, cursor: 'pointer', textAlign: 'left', minWidth: 0 }}>
                       <Swatch color={sw} />
                       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, fontSize: 12 }}>{g.name}</span>
-                      <span data-bom-rows style={{ color: C.muted, fontSize: 11, whiteSpace: 'nowrap' }}>{range(g.rows)}</span>
+                      <span data-bom-rows style={{ color: C.muted, fontSize: 11, whiteSpace: 'nowrap' }}>{range(g.rows, bom.names)}</span>
                       <span aria-hidden style={{ display: 'flex', transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }}><Icon name="Chevron" size={12} color={C.muted} /></span>
                     </button>
                     {open && <div style={{ paddingTop: 6 }}><PartLines g={g} picked={picked} onPick={pick} /></div>}

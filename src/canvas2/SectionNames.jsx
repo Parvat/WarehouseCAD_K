@@ -30,6 +30,7 @@ import { aisleLabelBoxes } from '../render/labelOps'
 import { rackLinesNow } from '../utils/rackLines'
 import { rowLabelPlaces, ROW_LABEL_PX } from './RackLineLabels'
 import { worldBoundsOf } from './hitTest'
+import { lineNamer } from '../utils/lineNames'
 
 /* the zone size tag's pill (ZoneEdit.jsx ZoneSizeLabel → DimensionLabels.jsx LabelPill); the text white */
 const TAG = { px: 11, bg: '#0a0d16', fg: '#F2F4F1', opacity: 0.85, padX: 4, radius: 2, font: 'JetBrains Mono, monospace' }
@@ -96,7 +97,7 @@ export function sectionTagBox(s, gs, zoom, { blocks = [], objects = [], force = 
 
 /** What a section tag may not cover (world boxes): the racks, the zones, the aisle and cross-aisle width labels (their
  *  arrows too), and the R labels when they are drawn (`rows`). */
-export function tagBlocks(objects, gs, { labelSize, rows = false } = {}) {
+export function tagBlocks(objects, gs, { labelSize, rows = false, name } = {}) {
   const blocks = []
   for (const o of objects) {
     if (typeof o?.type !== 'string') continue
@@ -106,7 +107,7 @@ export function tagBlocks(objects, gs, { labelSize, rows = false } = {}) {
   blocks.push(...aisleLabelBoxes(objects, gs, labelSize, { whole: true }))
   if (rows) {
     const fsR = ROW_LABEL_PX / labelScale(labelSize, gs)
-    for (const q of rowLabelPlaces(rackLinesNow(objects, gs), fsR, [])) blocks.push({ x: q.x, y: q.y, w: q.w, h: q.h })
+    for (const q of rowLabelPlaces(rackLinesNow(objects, gs), fsR, [], name)) blocks.push({ x: q.x, y: q.y, w: q.w, h: q.h })
   }
   return blocks
 }
@@ -129,7 +130,7 @@ export function SectionNames() {
   const boxes = useMemo(() => {
     const out = {}
     if (!key) return out
-    const blocks = tagBlocks(objects, gs, { labelSize, rows: rowsOn && layerShown(layers, 'racking') })
+    const blocks = tagBlocks(objects, gs, { labelSize, rows: rowsOn && layerShown(layers, 'racking'), name: lineNamer(objects, useCanvasStore.getState().elevations, gs) })
     for (const id of key.split(',')) {
       const s = objects.find(o => o.id === id)
       // hovered, selected or being renamed: always a tag; only the Section names toggle (every section) may skip one with no room

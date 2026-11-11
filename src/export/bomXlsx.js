@@ -13,7 +13,7 @@ export function bomXlsxSheet(bom, title = '') {
   const head2 = ['', ''], head3 = ['Part', 'Size'], merges = []
   for (const g of groups) {
     const at = head3.length
-    for (const no of g.rows) { head2.push(''); head3.push('R' + no) }
+    for (const no of g.rows) { head2.push(''); head3.push(bom.names?.[no] || 'R' + no) }
     if (many) { head2.push(''); head3.push('Total') }
     if (!many) continue
     head2[at] = g.name

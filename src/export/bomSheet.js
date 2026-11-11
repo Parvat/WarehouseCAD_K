@@ -41,7 +41,7 @@ export function buildBomSheets(bom, { title = '', paperW = 841, paperH = 594 } =
       y += ROW
       if (it.head) {
         out.push(`<line x1="${M}" y1="${y - ROW + 2}" x2="${paperW - M}" y2="${y - ROW + 2}" stroke="${it.head.total ? INK : RULE}" stroke-width="${it.head.total ? 0.5 : 0.4}"/>`)
-        out.push(`<text x="${colPart}" y="${y}" font-family="${FONT}" font-size="8.5" font-weight="700" fill="${INK}" data-bom-group="${esc(it.head.id)}">${esc(it.head.name)}<tspan font-weight="400" fill="${WORDS}" font-size="7.5">${it.head.rows.length ? '  ' + esc(rowsText(it.head.rows)) : ''}</tspan></text>`)
+        out.push(`<text x="${colPart}" y="${y}" font-family="${FONT}" font-size="8.5" font-weight="700" fill="${INK}" data-bom-group="${esc(it.head.id)}">${esc(it.head.name)}<tspan font-weight="400" fill="${WORDS}" font-size="7.5">${it.head.rows.length ? '  ' + esc(rowsText(it.head.rows, bom.names)) : ''}</tspan></text>`)
         continue
       }
       const l = it.l

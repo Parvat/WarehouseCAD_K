@@ -2807,8 +2807,9 @@ describe('REG — the hand check by real clicks', () => {
       const tab = L.page.getByRole('tabpanel', { name: 'BOM' }), head = (id) => tab.locator(`button[data-bom-group-head="${id}"]`)
       const linesIn = (id) => tab.locator(`[data-bom-line][data-bom-group="${id}"]`).count()
       const opened = async () => [await head(s1.id).getAttribute('aria-expanded'), await head(s2.id).getAttribute('aria-expanded')]
-      // the tab: Tally · xlsx · CSV, the Total card, the sections — the first open
-      expect((await tab.getByRole('button').allTextContents()).slice(0, 3)).toEqual(['Tally', 'xlsx', 'CSV'])
+      // the tab: its Numbering (Continuous | Per section — row-numbering round), then Tally · xlsx · CSV, the Total card, the
+      // sections — the first open
+      expect((await tab.getByRole('button').allTextContents()).slice(0, 5)).toEqual(['Continuous', 'Per section', 'Tally', 'xlsx', 'CSV'])
       expect(await tab.locator('section[data-bom-card]').evaluateAll(c => c.slice(0, 3).map(x => x.getAttribute('data-bom-card')))).toEqual(['total', s1.id, s2.id])
       expect(await opened()).toEqual(['true', 'false'])
       expect([(await linesIn(s1.id)) > 0, await linesIn(s2.id)]).toEqual([true, 0])
@@ -5911,6 +5912,16 @@ describe('REG — the hand check by real clicks', () => {
       // the plan: one label per line, at its outer start (fixes-x 2 — was: on each piece)
       const labels = await L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(t => t.text()))
       for (const l of mine0) expect([l.no, labels.filter(t => t.split(/[–]/).includes('R' + l.no) || t === 'R' + l.no).length]).toEqual([l.no, 1])
+      // Per section on top of it (row-numbering on fixes-x): the cut line still ONE line — one name, one label, one column
+      await bomTab()
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('group', { name: 'Line numbering' }).getByRole('button', { name: 'Per section' }).click(); await L.page.waitForTimeout(250)
+      const per = await L.S(`return Promise.all([import('/src/utils/bom.js'), import('/src/utils/lineNames.js')]).then(([B, N]) => { const st = S.getState(), gs = st.gridSize || 40
+        const bom = B.computeBom(st.objects, st.elevations, { gridSize: gs }), nm = N.lineNamer(st.objects, st.elevations, gs)
+        return { rows: bom.rows.map(r => r.no), cols: B.byRowTable(bom).groups.flatMap(g => g.rows), names: Object.fromEntries(arg.map(no => [no, nm(no)])) } })`, mine0.map(l => l.no))
+      expect([per.rows, per.cols]).toEqual([before.rows, before.cols])
+      const labelsPer = await L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(t => t.text()))
+      for (const l of mine0) { const nm = per.names[l.no]; expect([nm, labelsPer.filter(t => t === nm || t.split('–').includes(nm)).length]).toEqual([nm, 1]) }
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('group', { name: 'Line numbering' }).getByRole('button', { name: 'Continuous' }).click(); await L.page.waitForTimeout(200)
     }, T)
 
     /* ── fixes-x 2: the run beyond a cross-aisle slides outward; a row never deleted silently — by real mouse ── */
@@ -6162,6 +6173,40 @@ describe('REG — the hand check by real clicks', () => {
       for (const l of (await linesOf()).filter(q => q.key.startsWith('rack_double_row'))) expect([l.key, l.pieces.map(q => q.n)]).toEqual([l.key, [2, 2]])
       expect((await hist7()) - h0).toBe(1)
       await L.page.keyboard.press('Escape')
+    }, T)
+
+    it('REG-line-numbering (click): the BOM tab’s Numbering — Per section: each section’s lines from 1 with its code (Left: L1 …, Right: R1 …; outside every section U1 …) on the plan’s labels and the By row headers; Continuous again: R1 … across (row-numbering round)', async () => {
+      const [s1, s2] = await twoSections()
+      // the two sections named Left and Right in their card (a click on each in the Sections list)
+      await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(150)
+      for (const [s, nm] of [[s1, 'Left'], [s2, 'Right']]) {
+        await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+        await L.page.getByRole('tabpanel', { name: 'Properties' }).locator('[data-section-row="' + s.id + '"]').click(); await L.page.waitForTimeout(150)
+        const name = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('textbox', { name: 'Name', exact: true })
+        await name.click(); await name.fill(nm); await name.press('Enter'); await L.page.waitForTimeout(150)
+        expect(await L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('textbox', { name: 'Section code' }).inputValue()).toBe(nm[0])
+      }
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      await bomTab()
+      const labels = () => L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(n => n.text()))
+      const heads = async () => { await fullView('By row'); const t = await byRowShown(); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150); return t.heads.filter(h => /^[A-Z]+\d+$/.test(h)) }
+      const cont = await heads()
+      expect(cont.every(h => /^R\d+$/.test(h))).toBe(true)
+      // Per section
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('group', { name: 'Line numbering' }).getByRole('button', { name: 'Per section' }).click(); await L.page.waitForTimeout(250)
+      const per = await heads()
+      expect(per.length).toBe(cont.length)
+      expect([per.includes('L1'), per.includes('R1'), per.every(h => /^(L|R|U)\d+$/.test(h))]).toEqual([true, true, true])
+      // each section from 1, in the order the BOM lists them
+      for (const code of ['L', 'R', 'U']) { const ns = per.filter(h => h.startsWith(code)).map(h => Number(h.slice(1))); expect(ns).toEqual(ns.map((_, i) => i + 1)) }
+      const plan = (await labels()).join(' ')
+      expect([/\bL1\b/.test(plan), /\bR1\b/.test(plan)]).toEqual([true, true])
+      // saved with the layout: the table carries it
+      expect(await L.S('return S.getState().elevations.lineNumbering')).toBe('section')
+      // Continuous again
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('group', { name: 'Line numbering' }).getByRole('button', { name: 'Continuous' }).click(); await L.page.waitForTimeout(250)
+      expect(await heads()).toEqual(cont)
+      expect((await labels()).every(t => /^R\d+(–R\d+)?$/.test(t))).toBe(true)
     }, T)
   })
 })

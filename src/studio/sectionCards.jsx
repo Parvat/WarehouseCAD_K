@@ -10,6 +10,8 @@ import { useSectionHover } from '../canvas2/sectionTool'
 import { useLocked } from './useLocked'
 import { Head, Sec, Grid2, Field, TextInput, NumInput, StaticField, Caption, Seg, SelectField, C, MONO, LockedFields } from './cardParts'
 import { mheProfiles, equipmentOf, CUSTOM, customProfile } from '../utils/equipment'
+import { sectionCodes, codeFree } from '../utils/lineNames'
+import { notify } from '../utils/notice'
 
 /* Sections in the right card (STUDIO.md §7a Sections): a selected section's block — its Name (typed: one undo step),
    its Equipment (the aisle checks of its racks: the project's forklift by default, another of the forklift list, or
@@ -24,6 +26,13 @@ export function SectionMain({ obj }) {
   const gs = useCanvasStore(s => s.gridSize) || 40
   const locked = useLocked(obj)
   const commit = (label) => { const t = String(label || '').trim(); if (t && t !== obj.label) useCanvasStore.getState().commitObjectUpdate(obj.id, { label: t }) }
+  const objs = useCanvasStore(s => s.objects)
+  const setCode = (t) => {
+    const c = String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (!c || c === sectionCodes(objs).get(obj.id)) return
+    if (!codeFree(objs, obj.id, c)) { notify(`${c} is taken`, 'each section needs its own code (U is the racks outside every section)'); return }
+    useCanvasStore.getState().commitObjectUpdate(obj.id, { code: c })
+  }
   const size = (k) => (t) => { const ft = parseFeet(String(t).replace(/′/g, "'").replace(/″/g, '"')); if (ft != null) sizeSection(useCanvasStore, obj.id, k === 'w' ? ft * gs : obj.width, k === 'h' ? ft * gs : obj.height) }
   const b = boundaryOf(obj)
   const projectKey = useCanvasStore(s => s.elevations?.project?.equipment?.mhe) || 'reach'
@@ -43,6 +52,11 @@ export function SectionMain({ obj }) {
       <Sec aria-label="Section settings">
         <LockedFields locked={locked}>
           <Field label="Name"><TextInput words aria="Name" value={obj.label || ''} onCommit={commit} /></Field>
+          {/* its code (utils/lineNames.js): the prefix of its lines when the BOM tab numbers per section — L1, L2 …; by
+              default its name's first letter(s), unique in the layout (a code another section has, or U, is refused) */}
+          <Field label="Code" title="The prefix of its rack lines when numbered per section (the BOM tab)">
+            <TextInput aria="Section code" value={sectionCodes(objs).get(obj.id) || ''} onCommit={setCode} />
+          </Field>
           <Field label="Equipment" title="The aisle checks of the racks in this section use it">
             <SelectField words chevron aria="Section equipment" value={equipmentOf(obj) || ''} onChange={e => setEquip(e.target.value)}>
               <option value="">Project forklift ({P[projectKey]?.label || projectKey})</option>

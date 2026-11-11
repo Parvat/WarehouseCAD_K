@@ -22,6 +22,7 @@ import { labelScale } from '../render/labelSize'
 import { aisleLabelBoxes } from '../render/labelOps'
 import { useLiveObjects } from './live'
 import { checkedNos } from '../studio/tally'
+import { lineNamer } from '../utils/lineNames'
 
 const WORDS = '#767C74', TICK = '#2E7D5B', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 /** The label's size in drawing units: the aisle labels' 10 at the Label size. */
@@ -30,14 +31,15 @@ const meets = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h &&
 
 /** The labels to draw (world px): [{ key, text, x, y, w, h, align }] — one per line or pair, at its start, off each other
  *  and off `avoid` (boxes); `fs`: the font size (world px). */
-export function rowLabelPlaces(lines, fs, avoid = []) {
+export function rowLabelPlaces(lines, fs, avoid = [], name = (n) => 'R' + n) {
   const groups = new Map()
   // a pair up and down: its two lines one label; across: each line its own (beside its own band)
   for (const l of lines) { const k = l.ids.join(',') + (l.vert ? '' : ':' + l.ws); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(l) }
   const h = fs * 1.25, gap = fs * 0.5, placed = [], out = []
   for (const [k, ls] of groups) {
     const nos = ls.map(l => l.no).sort((a, b) => a - b), l0 = ls[0]
-    const text = nos.length > 1 ? `R${nos[0]}–R${nos[nos.length - 1]}` : `R${nos[0]}`
+    // its name (the BOM tab's numbering — utils/lineNames.js): R6, or per section L2
+    const text = nos.length > 1 ? `${name(nos[0])}–${name(nos[nos.length - 1])}` : name(nos[0])
     const w = text.length * fs * 0.62 + fs * 0.3
     const s0 = Math.min(...ls.map(l => l.s0)), s1 = Math.max(...ls.map(l => l.s1)), c = (s0 + s1) / 2, half = (s1 - s0) / 2
     // along the line's end: the middle, then stepping either way while the label still sits beside the end
@@ -64,7 +66,8 @@ export function RackLineLabels() {
   const lz = labelScale(labelSize, gs), fs = ROW_LABEL_PX / lz
   const lines = useMemo(() => rackLinesNow(objects, gs), [objects, gs])
   const avoid = useMemo(() => (shown && lines.length ? aisleLabelBoxes(objects, gs, labelSize) : []), [shown, lines.length, objects, gs, labelSize])
-  const places = useMemo(() => rowLabelPlaces(lines, fs, avoid), [lines, fs, avoid])
+  const namer = useMemo(() => lineNamer(objects, T, gs), [objects, T, gs])
+  const places = useMemo(() => rowLabelPlaces(lines, fs, avoid, namer), [lines, fs, avoid, namer])
   // the Tally's tallied lines (studio/tally.js): a small green tick just before the label (every line it names checked)
   const checked = useMemo(() => checkedNos(objects, lines, T), [objects, lines, T])
   if (!shown || !lines.length || !layerShown(layers, 'racking')) return null

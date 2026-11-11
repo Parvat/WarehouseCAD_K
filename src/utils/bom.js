@@ -32,6 +32,7 @@ import { isEmptySide } from './bayEmpty'
 import { sectionMap } from '../canvas2/sections'
 import { numberLines, worldSide } from './rackLines'
 import { isSection, polygonOf, pointInPolygon } from './sectionAreas'
+import { lineNamer, namedRows } from './lineNames'
 
 export const BOM_DEFAULTS = {
   decks: [
@@ -191,10 +192,12 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
   // the lines R1 … that have a count, each in the drawn section holding its middle (else Unassigned)
   const secs = (objects || []).filter(isSection), polys = secs.map(polygonOf)
   const counted = new Set(entries.map(e => e.no))
+  // each line's name: R6, or per section L2 (the BOM tab's numbering — utils/lineNames.js)
+  const nameOf = lineNamer(objects || [], T, gridSize)
   const rows = numbered.filter(l => counted.has(l.no)).map(l => {
     const a = (l.r0 + l.r1) / 2, c = (l.s0 + l.s1) / 2, x = l.vert ? c : a, y = l.vert ? a : c
     const i = polys.findIndex(p => pointInPolygon(p, x, y))
-    return { no: l.no, label: 'R' + l.no, sectionId: i >= 0 ? secs[i].id : UNASSIGNED, ids: l.ids, ws: l.ws, bays: baysOn.get(l.no) || 0 }
+    return { no: l.no, label: nameOf(l.no), sectionId: i >= 0 ? secs[i].id : UNASSIGNED, ids: l.ids, ws: l.ws, bays: baysOn.get(l.no) || 0 }
   })
   const secOf = new Map(rows.map(r => [r.no, r.sectionId]))
   const sections = [...secs.map(s => ({ id: s.id, name: s.label || 'Section' })), { id: UNASSIGNED, name: 'Unassigned' }]
@@ -204,6 +207,7 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
     lines: linesOf(entries),
     sections,
     rows,
+    names: Object.fromEntries(rows.map(r => [r.no, r.label])),
     hasSections: secs.length > 0,
     flags: [...flags.values()].map(({ key, text, ids }) => ({ key, text, ids: [...ids] })),
     counted: { racks: racks.filter(r => ledger.racks.get(r.id)?.bays > 0).length, bays: racks.reduce((t, r) => t + (ledger.racks.get(r.id)?.bays || 0), 0) },
@@ -298,11 +302,12 @@ export function selectedGroup(bom, nos) {
     const qty = want.reduce((t, no) => t + (l.rows[no] || 0), 0), pairs = want.reduce((t, no) => t + (l.rows['p' + no] || 0), 0)
     return { ...l, qty, pairs, ids: l.ids.filter(id => racks.has(id)), rows: Object.fromEntries(Object.entries(l.rows).filter(([k]) => want.includes(Number(String(k).replace(/^p/, ''))))) }
   }).filter(l => l.qty > 0)
-  return { id: 'selected', name: 'Selected: ' + rowsText(want), rows: want, lines }
+  return { id: 'selected', name: 'Selected: ' + rowsText(want, bom.names), rows: want, lines }
 }
 
-/** Rows as words: "R1–R4, R7". */
-export function rowsText(nos) {
+/** Rows as words: "R1–R4, R7" — or by `names` (the BOM's { no: label }, a namer): "L1–L3, R2". */
+export function rowsText(nos, names = null) {
+  if (names) return namedRows(nos, names)
   const s = [...nos].sort((a, b) => a - b), out = []
   for (let i = 0; i < s.length; i++) { let j = i; while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++; out.push(j > i ? `R${s[i]}–R${s[j]}` : `R${s[i]}`); i = j }
   return out.join(', ')
@@ -313,6 +318,6 @@ export function rowsText(nos) {
 export function bomCsv(bom) {
   const esc = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
   const rows = [['Section', 'Rows', 'Part', 'Size', 'Qty', 'Pairs']]
-  for (const g of bomGroups(bom)) for (const l of g.lines) rows.push([g.name, rowsText(g.rows), l.part, l.size, l.qty, l.part === 'Beam' ? l.pairs : ''])
+  for (const g of bomGroups(bom)) for (const l of g.lines) rows.push([g.name, rowsText(g.rows, bom.names), l.part, l.size, l.qty, l.part === 'Beam' ? l.pairs : ''])
   return [...bom.flags.map(f => '# ' + f.text), ...rows.map(r => r.map(esc).join(','))].join('\r\n') + '\r\n'
 }
