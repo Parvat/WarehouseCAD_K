@@ -4405,6 +4405,40 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
+    it('REG-section-tag-forced (click): a section with no free spot for its tag still shows it while selected or hovered — just outside its top edge, centred, drawn on top; with only the View card\u2019s Section names on it is skipped (look-only, one fixture)', async () => {
+      if (name !== 'older-horizontal') return
+      await openSections()
+      const b = await innerBox()
+      // a small section over the racks: no open floor for its tag inside or just outside — found by the rule itself
+      const spot = await L.S(`return Promise.all([import('/src/canvas2/SectionNames.jsx'), import('/src/canvas2/labelPrefs.js')]).then(([N, LP]) => { const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type))
+        const blocks = N.tagBlocks(st.objects, gs, { labelSize: LP.useLabelPrefs.getState().labelSize, rows: true }), b = arg
+        for (let fy = 0.15; fy < 0.8; fy += 0.05) for (let fx = 0.1; fx < 0.6; fx += 0.05) {
+          const r = [fx, fy, fx + 0.06, fy + 0.1], x = b.x0 + (b.x1 - b.x0) * r[0], y = b.y0 + (b.y1 - b.y0) * r[1]
+          const sec = { id: 'probe', type: 'section_area', shape: 'rect', label: 'Section 1', x, y, width: (b.x1 - b.x0) * 0.06, height: (b.y1 - b.y0) * 0.1, parentId: fp.id }
+          if (!N.sectionTagBox(sec, gs, st.zoom, { blocks, objects: st.objects })) return r
+        }
+        return null })`, b)
+      expect(spot).toBeTruthy()
+      const s = await drawIn(b, ...spot)
+      const free = await L.S(`return Promise.all([import('/src/canvas2/SectionNames.jsx'), import('/src/canvas2/labelPrefs.js')]).then(([N, LP]) => { const st = S.getState(), gs = st.gridSize || 40, o = st.objects.find(x => x.id === arg)
+        return !!N.sectionTagBox(o, gs, st.zoom, { blocks: N.tagBlocks(st.objects, gs, { labelSize: LP.useLabelPrefs.getState().labelSize, rows: true }), objects: st.objects }) })`, s.id)
+      expect(free).toBe(false)
+      // selected (just drawn): its tag, just outside the top edge, centred
+      const tag = () => L.page.evaluate((id) => { const g = window.Konva.stages[0].findOne(n => n.name() === 'section-tab:' + id); if (!g) return null; const t = g.findOne('.section-tag'); return { x0: t.x(), y0: t.y(), x1: t.x() + t.width(), y1: t.y() + t.height() } }, s.id)
+      const t = await tag(), z = await L.S('return S.getState().zoom')
+      expect(t).toBeTruthy()
+      expect([Math.abs((t.x0 + t.x1) / 2 - (s.x + s.w / 2)) < 1e-6, t.y1 <= s.y + 1e-6, s.y - t.y1 < 10 / z]).toEqual([true, true, true])
+      // the Section names toggle alone (nothing selected or hovered): skipped
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(150)
+      await viewSwitch('Section names').click(); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
+      expect(await tag()).toBe(null)
+      // hovered (its outline): shown again
+      const g = await grip(s.id), q = await L.toScreen(g)
+      await L.page.mouse.move(q.x - 3, q.y); await L.page.mouse.move(q.x, q.y, { steps: 3 }); await L.page.waitForTimeout(200)
+      expect(await tag()).toBeTruthy()
+      await viewSwitch('Section names').click()
+    }, T)
+
     it('REG-section-colour (click): 8 soft colours in the card and the bar — the outline, the tint and the label take it, and the PDF', async () => {
       await openSections()
       // (where its tag finds open floor — it is checked below)

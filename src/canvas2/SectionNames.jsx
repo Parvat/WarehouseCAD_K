@@ -3,7 +3,9 @@
 // feet-inches ("Section 1 · 137′-5″ × 87′-3″"), a custom shape "Name · area" ("Section 2 · 2,625 sq ft"). Placed on open
 // floor: inside the section along each edge in turn — bottom, right, top, left — the first spot where the whole tag has no
 // rack, no R label, no aisle label, no zone and no other tag under it; with none inside, just outside an edge on open
-// floor (the building's, and no other section). Never over a rack or a label (no room anywhere: not drawn). No name
+// floor (the building's, and no other section). Never over a rack or a label — but a section hovered or selected always
+// shows its tag: with no room anywhere, just outside its top edge, over whatever is there (drawn on top); only the
+// Section names toggle (every section) skips a tag that has no room. No name
 // inside the section and no dimension labels along its edges. Shown while the section is hovered or selected, or for
 // every section while the View card's Section names is on (sectionNameShown.js); hidden while its name is typed. Each
 // tag's box is published as drawn (sectionNameShown.js boxes, world px): a press on it is the section's
@@ -56,7 +58,7 @@ function along(lo, hi, len) {
 }
 /** Where section `s`'s tag goes (world px) at `zoom` → { x, y, w, h, fs, text, place: 'inside' | 'outside' } or null.
  *  `blocks`: what it may not cover (racks, zones, R labels, aisle labels, tags placed) — world boxes. */
-export function sectionTagBox(s, gs, zoom, { blocks = [], objects = [] } = {}) {
+export function sectionTagBox(s, gs, zoom, { blocks = [], objects = [], force = false } = {}) {
   const poly = polygonOf(s), xs = poly.map(q => q[0]), ys = poly.map(q => q[1])
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys)
   const fs = TAG.px / zoom, text = sectionTagText(s, gs)
@@ -87,7 +89,9 @@ export function sectionTagBox(s, gs, zoom, { blocks = [], objects = [] } = {}) {
     ...oy.map(y => ({ x: x0 - m - w, y })),
   ]
   for (const t of outs) { const b = tag(t.x, t.y, 'outside'); if (onFloor(b) && clear(b)) return b }
-  return null
+  // `force` (the section hovered or selected): no room anywhere — just outside its top edge all the same, over whatever is
+  // there (drawn on top)
+  return force ? tag((x0 + x1) / 2 - w / 2, y0 - m - h, 'forced') : null
 }
 
 /** What a section tag may not cover (world boxes): the racks, the zones, the aisle and cross-aisle width labels (their
@@ -128,11 +132,13 @@ export function SectionNames() {
     const blocks = tagBlocks(objects, gs, { labelSize, rows: rowsOn && layerShown(layers, 'racking') })
     for (const id of key.split(',')) {
       const s = objects.find(o => o.id === id)
-      const b = s ? sectionTagBox(s, gs, zoom, { blocks, objects }) : null
+      // hovered, selected or being renamed: always a tag; only the Section names toggle (every section) may skip one with no room
+      const force = selectedIds.includes(id) || (hoverIds || []).includes(id) || listHover === id || renaming === id
+      const b = s ? sectionTagBox(s, gs, zoom, { blocks, objects, force }) : null
       if (b) { out[id] = b; blocks.push(b) }
     }
     return out
-  }, [key, objects, gs, zoom, labelSize, rowsOn, layers])
+  }, [key, objects, gs, zoom, labelSize, rowsOn, layers, selectedIds, hoverIds, listHover, renaming])
   // what is drawn is what a click can reach (canvas2/hitTest.js), and where
   const drawn = shown.filter(s => s.id !== renaming && boxes[s.id])
   const ids = drawn.map(s => s.id).join(',')
