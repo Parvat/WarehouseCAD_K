@@ -34,7 +34,8 @@ describe('CR — wiring', () => {
     const shapes = readFileSync('src/canvas2/shapes.jsx', 'utf8').split(String.fromCharCode(13)).join('')
     const view = shapes.slice(shapes.indexOf('function ColumnGridShapeView('), shapes.indexOf('\n}\n', shapes.indexOf('function ColumnGridShapeView(')))
     expect(view).toMatch(/function ColumnGridShapeView\(\{ obj, gridSize, listening = false, bind \}\)/)
-    expect(view).toMatch(/useMemo\(\(\) => columnGridOps\(obj, gridSize\), \[obj, gridSize\]\)/)
+    // (col-grid round: and its building — a column outside the outline is not drawn)
+    expect(view).toMatch(/useMemo\(\(\) => columnGridOps\(obj, gridSize, fp \? \[fp\] : null\), \[obj, gridSize, fp\]\)/)
     // the outline is in drawing units: its width comes from the ops, never screen-constant
     expect(view).not.toMatch(/zoom|strokeScaleEnabled|MIN_|grow/i)
     expect(view).toMatch(/stroke=\{g\.color\} strokeWidth=\{g\.outlineWidth\}/)

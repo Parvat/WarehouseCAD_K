@@ -5,6 +5,8 @@ import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { uprightXs, cantileverGeom, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
 import { columnGridOps } from '../render/columnDraw'
+import { useLiveObjects } from './live'
+import { gridBuilding } from '../utils/columnGrid'
 import { isAxisAligned, deviceScale, minDevicePx, snapBorderRects, snapFillRect } from '../render/pixelSnap'
 import { labelScale } from '../render/labelSize'
 
@@ -416,7 +418,9 @@ function FloorPlanShapeView({ obj, gridSize, listening = false, bind }) {
  *  mark always lands on the column it refers to. All columns ride in ONE path:
  *  a 50ft grid over a 1,080ft building is hundreds of squares. */
 function ColumnGridShapeView({ obj, gridSize, listening = false, bind }) {
-  const g = useMemo(() => columnGridOps(obj, gridSize), [obj, gridSize])
+  // (its building: a column outside its outline — an L's open corner — is not drawn; col-grid round)
+  const fp = gridBuilding(useLiveObjects(), obj)
+  const g = useMemo(() => columnGridOps(obj, gridSize, fp ? [fp] : null), [obj, gridSize, fp])
   if (!g) return null
   return (
     <Group name={nodeName(obj.id)} listening={listening} opacity={obj.opacity ?? 1}

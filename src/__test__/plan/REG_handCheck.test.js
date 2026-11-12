@@ -98,10 +98,13 @@ if (DEAL.shard === 0) describe.each(['horizontal', 'vertical'])('REG — the han
     const st = store.getState(), fp = st.objects.find(o => FP.test(o.type)), lz = LS.labelScale(LS.DEFAULT_LABEL_SIZE, st.gridSize || 40)
     const view = { zoom: 0.5, panX: 700 - (fp.x + fp.width / 2) * 0.5, panY: 500 - fp.y * 0.5 }   // the building's top wall at y 500
     const plain = SB.screenBox([fp], st.objects, view), withLabels = SB.screenBox([fp], st.objects, view, lz)
-    const labelTop = plain.y0 - (22 + 11 * 0.75) / lz * view.zoom                    // the top label's upper edge
-    expect(withLabels.y0).toBeLessThanOrEqual(labelTop)
+    // (col-grid round: a rectangle's size lines are its bottom and right only — none on top, the bar's side)
+    const labelBottom = plain.y1 + (22 + 11 * 0.7) / lz * view.zoom                  // the bottom size line's value, lower edge
+    // the top still kept clear (the side handle, the rotate handle, a column chain) — as far out as the size lines
+    const clearTop = plain.y0 - (22 + 11 * 0.7) / lz * view.zoom
+    expect([withLabels.y0 <= clearTop + 0.5, withLabels.y1 >= labelBottom - 0.5, withLabels.x1 >= plain.x1 + (22 + 11 * 0.7) / lz * view.zoom - 0.5]).toEqual([true, true, true])
     const at = SB.placeBar(withLabels, 300, 42, { w: 1440, h: 2000 })
-    expect(at.top + 42).toBeLessThanOrEqual(labelTop)                                 // the bar stops above the label
+    expect(at.top + 42).toBeLessThanOrEqual(clearTop + 0.5)                           // the bar above the building, clear of its top handles
     expect(read('studio/SelectionBar.jsx')).toMatch(/const box = screenBox\(what\.objs, objects, view\), reach = screenBox\(what\.objs, objects, view, lz\)/)
   })
 
@@ -247,19 +250,19 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.S('return S.getState().objects.some(o => /^fp_/.test(o.type))'), await kept()]).toEqual([true, n0])
     }, T)
 
-    it('REG-building-labels (click): a clicked building\'s top dimension label is never under the selection bar', async () => {
+    it('REG-building-labels (click): a clicked building\'s size labels are never under the selection bar (col-grid round: a rectangle\'s are its bottom and right size lines — none on top)', async () => {
       await open()
       const fp = await fpOf()
       await L.click({ x: fp.x + fp.width / 2, y: fp.y })
       await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
-      const lz = await L.S('return LS.labelScale(P.useLabelPrefs.getState().labelSize, S.getState().gridSize)')
-      const top = await L.toScreen({ x: fp.x + fp.width / 2, y: fp.y }), z = await L.S('return S.getState().zoom')
-      const band = { y0: top.y - ((22 + 8.25 + 2) / lz) * z, y1: top.y }                // the top label's reach
+      const cv = await L.page.locator('#canvas2-container').boundingBox(), top = await L.toScreen({ x: fp.x, y: fp.y })
+      const vals = (await L.page.evaluate(() => window.Konva.stages[0].find('.fp-dim-value').map(t => t.getClientRect()))).map(r => ({ x0: r.x + cv.x, y0: r.y + cv.y, x1: r.x + r.width + cv.x, y1: r.y + r.height + cv.y }))
       const bar = await L.page.locator('[data-selection-bar]').boundingBox()
-      expect(bar).toBeTruthy()
-      expect(bar.y + bar.height <= band.y0 || bar.y >= band.y1).toBe(true)
-      const at = await L.page.evaluate(({ x, y }) => { const el = document.elementFromPoint(x, y); return el?.closest('[data-selection-bar]') ? 'bar' : el?.tagName }, { x: top.x, y: (band.y0 + band.y1) / 2 })
-      expect(at).toBe('CANVAS')
+      expect([bar != null, vals.length, vals.filter(v => v.y1 < top.y).length]).toEqual([true, 2, 0])
+      const hits = (v) => v.x0 < bar.x + bar.width && bar.x < v.x1 && v.y0 < bar.y + bar.height && bar.y < v.y1
+      expect(vals.filter(hits)).toEqual([])
+      const at = await L.page.evaluate((vs) => vs.map(v => { const x = (v.x0 + v.x1) / 2, y = (v.y0 + v.y1) / 2; if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return 'off'; const el = document.elementFromPoint(x, y); return el?.closest('[data-selection-bar]') ? 'bar' : 'ok' }), vals)
+      expect(at.filter(a => a === 'bar')).toEqual([])
     }, T)
 
     it('REG-first-click-row (click): the first click on a rack selects the row, no bay; a second click on the same spot its bay — the rack beside a column too', async () => {
@@ -2109,7 +2112,7 @@ describe('REG — the hand check by real clicks', () => {
         if (!g) return null
         const t = g.getAbsoluteTransform()
         const sel = g.find('.wall-select').map(l => { const p = l.points(); const a = t.point({ x: p[0], y: p[1] }), b = t.point({ x: p[2], y: p[3] }); return { stroke: l.stroke(), width: l.strokeWidth(), scaled: l.strokeScaleEnabled(), a, b } })
-        const dims = g.getChildren().map(c => [...new Set(c.find('Line').filter(l => l.name() !== 'wall-select').map(l => l.stroke() || l.fill()))])
+        const dims = g.find('.fp-dim-line').map(c => [...new Set(c.find('Line').map(l => l.stroke() || l.fill()))])
         return { sel, dims, pills: g.find('Text').length }
       }, fp.id)
       expect(look).not.toBe(null)
@@ -2118,8 +2121,8 @@ describe('REG — the hand check by real clicks', () => {
       const s = look.sel[0], top = await L.toScreen({ x: fp.x, y: fp.y }), cv = await L.page.locator('#canvas2-container').boundingBox()
       expect([s.stroke, s.width, s.scaled]).toEqual(['#2E7D5B', 3, false])
       expect([Math.abs(s.a.y - s.b.y) < 1, Math.abs(s.a.y + cv.y - top.y) < 6, Math.abs(s.b.x - s.a.x) > 100]).toEqual([true, true, true])
-      // every side's dimension blue, the selected one's too
-      expect(look.dims).toEqual(look.dims.map(() => ['#4a9eff']))
+      // every dimension line blue (col-grid round: a rectangle's bottom and right only — the top wall selected has none)
+      expect(look.dims).toEqual([['#3B6FB5'], ['#3B6FB5']])
       expect(look.pills).toBe(look.dims.length)
     }, T)
 
@@ -6244,6 +6247,10 @@ describe('REG — the hand check by real clicks', () => {
         const f = st.objects.find(o => /^fp_/.test(o.type)), xs = f.fpVerts.map(q => q.x), ys = f.fpVerts.map(q => q.y), L = SL.sectionLegend(st.objects, gs, LS.labelScale(LP.useLabelPrefs.getState().labelSize, gs))[0], cols = N.sectionChipColors(st.objects)
         return { below: L.y >= Math.max(...ys) - 0.5, left: Math.abs(L.x - Math.min(...xs)) < 1, items: L.items.map(q => ({ id: q.id, x: q.x + q.w / 2, y: q.y + q.h / 2, ok: q.color === cols.get(q.id) })) } })`)
       expect([geo.below, geo.left, geo.items.every(q => q.ok)]).toEqual([true, true, true])
+      // (col-grid round) and clear of the bottom size line: the legend's top below the size values' boxes
+      expect(await L.S(`return Promise.all([import('/src/utils/sectionLegend.js'), import('/src/canvas2/labelPrefs.js'), import('/src/render/labelSize.js'), import('/src/canvas2/FpDimEdit.jsx')]).then(([SL, LP, LS, FD]) => { const st = S.getState(), gs = st.gridSize || 40
+        const f = st.objects.find(o => /^fp_/.test(o.type)), L = SL.sectionLegend(st.objects, gs, LS.labelScale(LP.useLabelPrefs.getState().labelSize, gs))[0]
+        return L.y >= Math.max(...FD.fpDimBoxes(f, gs).map(b => b.y + b.h)) })`)).toBe(true)
       // a click on Section 3's line: Section 3 selected, its line bold
       const l3 = geo.items[2]
       await onCanvasAll([l3]); await L.click(l3); await L.page.waitForTimeout(200)
@@ -6269,6 +6276,130 @@ describe('REG — the hand check by real clicks', () => {
       expect(cards.length).toBe(3)
       for (const [id, text] of cards) expect([id, text.startsWith(own[id])]).toEqual([id, true])
       expect(new Set(cards.map(([id]) => own[id])).size).toBe(3)
+    }, T)
+
+    /* ── col-grid round (STUDIO.md §7a Columns, §7 Building size) ── */
+    const gridNow = () => L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return g ? { id: g.id, x: g.x, y: g.y, sx: g.spacingX.join(), sy: g.spacingY.join(), w: g.columnW, h: g.columnH } : null')
+    /** the column grid selected by a click on one of its columns, then Esc up to the whole grid */
+    const pickGrid = async () => {
+      const c = await L.S(colAt)
+      expect(c).toBeTruthy()
+      await onCanvasAll([c]); await L.click(c); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      expect(await L.selected()).toEqual(['column_grid'])
+    }
+    const bubbles = () => L.page.evaluate(() => window.Konva.stages[0].find('.column-bubble-text').map(t => { const r = t.getClientRect(); return { text: t.text(), x: r.x + r.width / 2, y: r.y + r.height / 2 } }))
+    const outlineBox = () => L.S('return import("/src/utils/floorGeom.js").then(G => { const f = S.getState().objects.find(o => /^fp_/.test(o.type)), p = G.buildingOutline(f), xs = p.map(q => q.x), ys = p.map(q => q.y); return { id: f.id, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) } })')
+
+    it('REG-colgrid-card (click): the column grid selected — its card shows X / Y spacing, X / Y offset, Width, Depth and the Result (columns as drawn, gridlines A–… · 1–…, the last bay to the far wall); X spacing typed redraws the grid as you type (no undo step yet), Enter is one undo step, Ctrl+Z puts it back exactly; an offset past the far wall shows the warning and Esc puts the grid back', async () => {
+      await open()
+      await pickGrid()
+      // Generate leaves the Columns layer locked (the card read-only): unlocked from the bar's padlock first
+      const unlock = L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Unlock' })
+      if (await unlock.count()) { await unlock.click(); await L.page.waitForTimeout(150) }
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      for (const f of ['Column X spacing', 'Column Y spacing', 'Column X offset', 'Column Y offset', 'Column width', 'Column depth']) expect([f, await card.getByLabel(f, { exact: true }).count()]).toEqual([f, 1])
+      const g0 = await gridNow(), gs = await gs7()
+      const drawn = () => L.S('const st = S.getState(); return H.columnRectsOf(st.objects, st.gridSize || 40).length')
+      expect(Number(await card.locator('[data-column-count]').textContent())).toBe(await drawn())
+      const nx = g0.sx.split(',').filter(Boolean).length + 1, ny = g0.sy.split(',').filter(Boolean).length + 1
+      const name = (i) => { let t = '', n = i; do { t = String.fromCharCode(65 + (n % 26)) + t; n = Math.floor(n / 26) - 1 } while (n >= 0); return t }
+      expect(await card.locator('[data-column-range]').textContent()).toBe(`A–${name(nx - 1)} · 1–${ny}`)
+      expect(await card.locator('[data-column-last]').count()).toBe(1)
+      // X spacing typed: the grid redrawn as typed, from the same first gridline, every spacing the typed one
+      const sp0 = Number(g0.sx.split(',')[0]) / gs, sp1 = Math.round(sp0) + 7
+      const h0 = await hist7()
+      const fx = card.getByLabel('Column X spacing', { exact: true })
+      await fx.click(); await fx.fill(String(sp1)); await L.page.waitForTimeout(250)
+      const live = await gridNow()
+      expect([live.x, new Set(live.sx.split(',').map(v => Math.round(Number(v) / gs * 100) / 100)).size, Math.round(Number(live.sx.split(',')[0]) / gs), (await hist7()) - h0]).toEqual([g0.x, 1, sp1, 0])
+      expect(Number(await card.locator('[data-column-count]').textContent())).toBe(await drawn())
+      await fx.press('Enter'); await L.page.waitForTimeout(250)
+      expect((await hist7()) - h0).toBe(1)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect(await gridNow()).toEqual(g0)
+      // an X offset past the far wall: no column inside — the warning; Esc: the grid as it was, no undo step
+      await pickGrid()
+      const ob = await outlineBox(), h1 = await hist7()
+      const fo = card.getByLabel('Column X offset', { exact: true })
+      await fo.click(); await fo.fill(String(Math.round((ob.x1 - ob.x0) / gs) + 20)); await L.page.waitForTimeout(250)
+      expect(await card.locator('[data-column-warning]').count()).toBe(1)
+      await fo.press('Escape'); await L.page.waitForTimeout(250)
+      expect([await gridNow(), (await hist7()) - h1, await card.locator('[data-column-warning]').count()]).toEqual([g0, 0, 0])
+    }, T)
+
+    it('REG-colgrid-annot (click): a column grid\'s gridline bubbles and dimension chains show only while it is selected — A, B, C … above the building, 1, 2, 3 … left of it, one per gridline — and are gone when it is not; the PDF always has them, and the building\'s size lines', async () => {
+      await open()
+      expect((await bubbles()).length).toBe(0)
+      await pickGrid()
+      const g = await gridNow(), nx = g.sx.split(',').filter(Boolean).length + 1, ny = g.sy.split(',').filter(Boolean).length + 1
+      const b = await bubbles(), ob = await outlineBox()
+      const tl = await L.toScreen({ x: ob.x0, y: ob.y0 }), cv = await L.page.locator('#canvas2-container').boundingBox()
+      const letters = b.filter(q => /^[A-Z]+$/.test(q.text)), numbers = b.filter(q => /^\d+$/.test(q.text))
+      expect([letters.length, numbers.length, letters[0]?.text, numbers[0]?.text]).toEqual([nx, ny, 'A', '1'])
+      expect([letters.every(q => q.y + cv.y < tl.y), numbers.every(q => q.x + cv.x < tl.x)]).toEqual([true, true])
+      expect(await L.page.evaluate(() => window.Konva.stages[0].find('.column-chain-text').length)).toBeGreaterThan(0)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      expect([await L.selected(), (await bubbles()).length]).toEqual([[], 0])
+      // the building selected: no bubbles either
+      await L.click({ x: (ob.x0 + ob.x1) / 2, y: ob.y0 + 2 }); await L.page.waitForTimeout(200)
+      expect([(await L.selected()).some(t => /^fp_/.test(t)), (await bubbles()).length]).toEqual([true, 0])
+      await L.page.keyboard.press('Escape')
+      // the PDF: the gridlines and the size lines, nothing selected
+      const svg = await L.S('return import("/src/export/pdfExport.js").then(M => M.buildLayoutSVG(S.getState().objects, S.getState().layers, S.getState().gridSize || 40, { title: "t", elevations: S.getState().elevations }).svg)')
+      expect([svg.includes('data-column-annot='), svg.includes('data-building-dims=')]).toEqual([true, true])
+    }, T)
+
+    it('REG-colgrid-L (click): an L-shaped building — no column is drawn in its open corner (outside the outline), the gridline stays (its bubble still shown); every wall gets its own size line', async () => {
+      await open()
+      const ob = await outlineBox()
+      const g0 = await gridNow(), nx = g0.sx.split(',').filter(Boolean).length + 1, ny = g0.sy.split(',').filter(Boolean).length + 1
+      // the building made an L: its top-right quarter cut away (set up through the store — the shape tool is not under test)
+      await L.S(`const st = S.getState(), f = st.objects.find(o => o.id === arg.id), xs = f.fpVerts.map(q => q.x), ys = f.fpVerts.map(q => q.y)
+        const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), xm = (x0 + x1) / 2, ym = (y0 + y1) / 2
+        st.updateObject(f.id, { fpVerts: [{ x: x0, y: y0 }, { x: xm, y: y0 }, { x: xm, y: ym }, { x: x1, y: ym }, { x: x1, y: y1 }, { x: x0, y: y1 }] })`, ob)
+      const out = await L.S(`return Promise.all([import('/src/utils/floorGeom.js'), import('/src/utils/columnGrid.js')]).then(([G, CG]) => { const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), p = G.buildingOutline(f)
+        const cs = H.columnRectsOf(st.objects, st.gridSize || 40); return { n: cs.length, outside: cs.filter(c => !CG.inOutline(p, c.x + c.w / 2, c.y + c.h / 2, 1)).length } })`)
+      expect([out.outside, out.n < nx * ny]).toEqual([0, true])
+      await pickGrid()
+      expect((await bubbles()).length).toBe(nx + ny)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      await L.click({ x: (ob.x0 + ob.x1) / 4, y: ob.y0 + 2 }); await L.page.waitForTimeout(200)
+      expect(await L.page.evaluate(() => window.Konva.stages[0].find('.fp-dim-value').length)).toBe(6)
+    }, T)
+
+    it('REG-colgrid-grow (click): the building grown by its Width typed — columns added at the grid\'s spacing out to the new far wall, every gridline already there where it was; one Ctrl+Z puts building and grid back', async () => {
+      await open()
+      const ob = await outlineBox(), g0 = await gridNow(), gs = await gs7()
+      const sps = g0.sx.split(',').filter(Boolean).map(Number), sp = sps[sps.length - 1]
+      await L.click({ x: (ob.x0 + ob.x1) / 2, y: ob.y0 + 2 }); await L.page.waitForTimeout(250)
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      const wFt = Math.round((ob.x1 - ob.x0) / gs) + Math.ceil((3 * sp) / gs)
+      const w = card.getByLabel('Width (ft)'); await w.click(); await w.fill(String(wFt)); await w.press('Enter'); await L.page.waitForTimeout(400)
+      const ob1 = await outlineBox(), g1 = await gridNow()
+      const last = g0.x + sps.reduce((t, v) => t + v, 0)
+      let add = 0
+      for (let v = last + sp; v <= ob1.x1 + 0.5; v += sp) add++
+      const sps1 = g1.sx.split(',').map(Number)
+      expect([g1.x, g1.y, g1.sy, sps1.slice(0, sps.length).join(), sps1.length - sps.length, sps1.slice(sps.length).every(v => Math.abs(v - sp) < 0.01)]).toEqual([g0.x, g0.y, g0.sy, g0.sx, add, true])
+      expect(add).toBeGreaterThanOrEqual(3)
+      await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect([await gridNow(), await outlineBox()]).toEqual([g0, ob])
+    }, T)
+
+    it('REG-size-lines (click): a rectangular building selected — its size as two dimension lines, below its bottom wall and right of its right wall, the value bold in blue; nothing above its top or left of its left wall (the column chain\'s side, the rotate handle\'s)', async () => {
+      await open()
+      const ob = await outlineBox()
+      expect(await L.page.evaluate(() => window.Konva.stages[0].find('.fp-dim-value').length)).toBe(0)
+      await L.click({ x: (ob.x0 + ob.x1) / 2, y: ob.y0 + 2 }); await L.page.waitForTimeout(250)
+      const vals = await L.page.evaluate(() => window.Konva.stages[0].find('.fp-dim-value').map(t => { const r = t.getClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, fill: t.fill(), style: t.fontStyle(), text: t.text() } }))
+      const cv = await L.page.locator('#canvas2-container').boundingBox(), a = await L.toScreen({ x: ob.x0, y: ob.y0 }), b = await L.toScreen({ x: ob.x1, y: ob.y1 })
+      const at = vals.map(v => ({ ...v, x: v.x + cv.x, y: v.y + cv.y }))
+      const below = at.filter(v => v.y > b.y && v.x > a.x && v.x < b.x), right = at.filter(v => v.x > b.x && v.y > a.y && v.y < b.y)
+      expect([vals.length, below.length, right.length, at.filter(v => v.y < a.y || v.x < a.x).length]).toEqual([2, 1, 1, 0])
+      expect(vals.map(v => [v.fill, v.style])).toEqual([['#3B6FB5', '700'], ['#3B6FB5', '700']])
+      // each line has its ticks and two dashed extension lines
+      expect(await L.page.evaluate(() => window.Konva.stages[0].find('.fp-dim-line').map(g => g.find('Line').filter(l => (l.dash() || []).length).length))).toEqual([2, 2])
+      await L.page.keyboard.press('Escape')
     }, T)
   })
 })

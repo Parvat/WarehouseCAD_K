@@ -24,9 +24,9 @@ export const COLUMN_OUTLINE_IN = 1
 const rect = (x, y, w, h) => (w > 0 && h > 0 ? `M${x} ${y}h${w}v${h}h${-w}Z` : '')
 
 /** Every column as exactly its own square, one path. */
-export function columnGridPath(obj, gridSize = 40) {
+export function columnGridPath(obj, gridSize = 40, objects = null) {
   if (!obj || obj.showGrid === false) return null
-  const cols = expandColumnGrid(obj, gridSize)
+  const cols = expandColumnGrid(obj, gridSize, objects)
   if (!cols.length) return null
   let d = ''
   for (const c of cols) d += rect(c.x, c.y, c.w, c.h)
@@ -34,8 +34,8 @@ export function columnGridPath(obj, gridSize = 40) {
 }
 
 /** The column look as four paths (world px): body, web, flanges, outline. */
-export function columnGridOps(obj, gridSize = 40) {
-  const body = columnGridPath(obj, gridSize)
+export function columnGridOps(obj, gridSize = 40, objects = null) {
+  const body = columnGridPath(obj, gridSize, objects)
   if (!body) return null
   // the solid square only (C18): the web, flanges and outline paths stay, empty, so every drawer reads one shape
   return { color: COLUMN_COLOR, body, web: '', flanges: '', outline: '', outlineWidth: 0, opacity: COLUMN_OPACITY }

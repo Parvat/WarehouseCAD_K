@@ -231,7 +231,7 @@ export function columnRectsOf(objects, gridSize = 40) {
   if (!Array.isArray(objects)) return []
   const hit = colCache.get(objects)
   if (hit && hit.gridSize === gridSize) return hit.cols
-  const cols = objects.filter(o => o && o.type === 'column_grid' && o.showGrid !== false).flatMap(g => expandColumnGrid(g, gridSize))
+  const cols = objects.filter(o => o && o.type === 'column_grid' && o.showGrid !== false).flatMap(g => expandColumnGrid(g, gridSize, objects))
   colCache.set(objects, { gridSize, cols })
   return cols
 }
@@ -349,7 +349,7 @@ export function pickAt(objects, layers, wx, wy, zoom, gridSize = 40, priority = 
   /* A section's name, while it shows, is drawn above everything (SectionNames.jsx): a press on it is the section's */
   for (const obj of objects) if (obj.type === 'section_area' && isLayerUsable(layerMap, obj) && nameShown(obj.id) && onLabel(obj, wx, wy, zoom, objects)) return { id: obj.id, kind: 'object', real: true }
   const onColumn = (obj, pad) => {
-    for (const c of expandColumnGrid(obj, gridSize)) if (wx >= c.x - pad && wx <= c.x + c.w + pad && wy >= c.y - pad && wy <= c.y + c.h + pad) return true
+    for (const c of expandColumnGrid(obj, gridSize, objects)) if (wx >= c.x - pad && wx <= c.x + c.w + pad && wy >= c.y - pad && wy <= c.y + c.h + pad) return true
     return false
   }
   const line = 2 / zoom

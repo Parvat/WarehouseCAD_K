@@ -26,6 +26,7 @@ import { rackFootprint } from '../generate/rackFootprint'
 import { faceObstacleGaps, faceIndex } from '../generate/faceAisles'
 import { MHE_PROFILES } from '../generate/columnCheck'
 import { getColumnCheckView } from '../generate/columnCheckView'
+import { growGrid } from './columnGrid'
 import { notify } from './notice'
 
 const BEAM = new Set(['rack_row', 'rack_double_row'])
@@ -220,16 +221,20 @@ export function planBuildingResize(objects, before, after, { gridSize = 40, clea
   // its column grids (column-trim fix): the lines the shrink put outside the new walls go — a Generate-locked grid's too
   const wasO = buildingOutline(before), nowO = buildingOutline(after)
   const mineGrid = (o) => o && o.type === 'column_grid' && (o.parentId === after.id || (o.parentId == null && inOrOn(wasO, o.x, o.y, (o.columnW || gridSize))))
-  let columns = 0
+  // and a grow adds gridlines at the same spacing out to the new walls, every existing one where it was (col-grid round)
+  let columns = 0, added = 0
   const withCols = []
+  const count = (g) => (g.spacingX.length + 1) * (g.spacingY.length + 1)
   for (const o of final) {
     if (!mineGrid(o)) { withCols.push(o); continue }
     const t = trimColumnGrid(o, wasO, nowO, gridSize)
     columns += t.removed
-    if (t.grid) withCols.push(t.grid)
+    if (!t.grid) continue
+    const g = growGrid(t.grid, before, after, gridSize)
+    if (g) { const grown = { ...t.grid, ...g }; added += count(grown) - count(t.grid); withCols.push(grown) } else withCols.push(t.grid)
   }
-  shapes.columns = { removed: columns }
-  const shaped = shapes.sections.clipped + shapes.sections.removed + shapes.zones.clipped + shapes.zones.removed + columns
+  shapes.columns = { removed: columns, added }
+  const shaped = shapes.sections.clipped + shapes.sections.removed + shapes.zones.clipped + shapes.zones.removed + columns + (added ? 1 : 0)
   const res = areas || shaped ? withCols : out
   return { objects: removed ? rebuildAisles(res, newId).objects : areas || shaped ? res : objects, removed, areas, shapes }
 }
@@ -242,7 +247,7 @@ export function afterBuildingResize(store, before) {
   let profile = MHE_PROFILES.reach
   try { profile = getColumnCheckView()?.profile || profile } catch { /* no column check view yet */ }
   const plan = planBuildingResize(st.objects, before, after, { gridSize: st.gridSize || 40, clearIn: wallClearanceIn(st.elevations), profile })
-  const sh = plan.shapes, shaped = sh.sections.clipped + sh.sections.removed + sh.zones.clipped + sh.zones.removed + (sh.columns?.removed || 0)
+  const sh = plan.shapes, shaped = sh.sections.clipped + sh.sections.removed + sh.zones.clipped + sh.zones.removed + (sh.columns?.removed || 0) + (sh.columns?.added || 0)
   if (plan.removed || plan.areas || shaped) {
     const history = st.history.slice(0, st.historyIndex + 1)
     history[history.length - 1] = snapshotOf(st, plan.objects)

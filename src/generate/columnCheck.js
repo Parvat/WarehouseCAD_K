@@ -12,6 +12,8 @@
 import { bayAtPoint, uprightXs } from '../render/rackOps'
 import { positionsPerBeam, blockedPositionIndices, positionFootprintIn } from '../utils/capacity'
 import { rackFootprint } from './rackFootprint'
+import { gridBuilding, inOutline } from '../utils/columnGrid'
+import { buildingOutline } from '../utils/floorGeom'
 import { isEmptySide } from '../utils/bayEmpty'
 // the rows' pairing lives in rowAisles.js (one pairing for the aisle labels, Check layout, this check and Generate)
 import { groupBySegment, rowGaps, rowAisleGaps } from './rowAisles'
@@ -100,14 +102,17 @@ const columnsNear = (columns, box) => {
  * is centred on its own line here rather than cornered on it. This is the
  * one place that math happens — ColumnGridShape draws these same rects, so
  * fixing it here also fixes what's actually drawn on screen. */
-export function expandColumnGrid(cg, gridSize = GS) {
+/* (col-grid round: with `objects`, a column whose centre is outside its building's outline — an L's open corner — is
+   skipped; its gridline stays. One on the wall line is inside.) */
+export function expandColumnGrid(cg, gridSize = GS, objects = null) {
   if (!cg || !cg.spacingX || !cg.spacingY) return []
+  const fp = objects ? gridBuilding(objects, cg) : null, poly = fp ? buildingOutline(fp) : null
   const w = cg.columnW || gridSize   // 12" default
   const h = cg.columnH || gridSize
   const xs = [cg.x]; let ax = cg.x; for (const s of cg.spacingX) { ax += s; xs.push(ax) }
   const ys = [cg.y]; let ay = cg.y; for (const s of cg.spacingY) { ay += s; ys.push(ay) }
   const cols = []
-  for (const cx of xs) for (const cy of ys) cols.push({ x: cx - w / 2, y: cy - h / 2, w, h })
+  for (const cx of xs) for (const cy of ys) if (!poly || inOutline(poly, cx, cy, 1)) cols.push({ x: cx - w / 2, y: cy - h / 2, w, h })
   return cols
 }
 

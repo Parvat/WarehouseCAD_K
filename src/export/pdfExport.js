@@ -19,7 +19,8 @@
 // from render/labelOps.js, the SAME ops the canvas paints, at the same Label
 // size (labels are drawing size, so a label is as big on paper, relative to
 // the racks, as on screen). Annotations, freehand strokes, free text and the
-// selection-only dimension labels are NOT drawn here; see the bug journal
+// selection-only dimension labels are NOT drawn here (the building size lines and a column grid's gridlines are —
+// col-grid round: always on the PDF); see the bug journal
 // entry for why that's a deliberate boundary, not an oversight.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,8 @@ import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects, travelArrowGeom } fro
 import { aisleLabelOps, aisleLabelBoxes, clearanceOps, clearanceSolids, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
 import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
 import { sectionLegend } from '../utils/sectionLegend'
+import { columnAnnot, ANNOT } from '../render/columnAnnot'
+import { buildingDims, DIM_INK } from '../render/buildingDims'
 import { columnGridOps } from '../render/columnDraw'
 import { aisleLabelLayout, aisleGapShown, gapShown, gapBase } from '../canvas2/hitTest'
 import { equipmentResolver, designNotes } from '../utils/equipment'
@@ -99,7 +102,7 @@ function computeBounds(objects, gridSize) {
       const verts = o.fpVerts || getFpVertices(o)
       for (const v of verts) eat(v.x, v.y)
     } else if (o.type === 'column_grid') {
-      for (const c of expandColumnGrid(o, gridSize)) { eat(c.x, c.y); eat(c.x + c.w, c.y + c.h) }
+      for (const c of expandColumnGrid(o, gridSize, objects)) { eat(c.x, c.y); eat(c.x + c.w, c.y + c.h) }
     } else if (isZone(o)) {
       eat(o.x, o.y); eat(o.x + o.width, o.y + o.height)
     } else if (PORTED_RACK_TYPES.has(o.type)) {
@@ -141,6 +144,17 @@ function floorPlanSVG(obj, gridSize) {
     `</g>`
 }
 
+/* ── The building's size as dimension lines (render/buildingDims.js — the canvas's own layout) — always on the PDF
+   (col-grid round). */
+function buildingDimsSVG(obj, gridSize, lz) {
+  const dims = buildingDims(obj, gridSize, lz)
+  if (!dims.length) return ''
+  const sw = (11 / lz) * 0.08, ln = (l, extra = '') => `<line x1="${l[0]}" y1="${l[1]}" x2="${l[2]}" y2="${l[3]}" stroke="${DIM_INK}" stroke-width="${sw}"${extra}/>`
+  return `<g data-building-dims="${esc(obj.id || '')}">` + dims.map(d =>
+    d.line.map(l => ln(l)).join('') + d.ticks.map(l => ln(l)).join('') + d.ext.map(l => ln(l, ` stroke-dasharray="${d.fs * 0.27} ${d.fs * 0.27}"`)).join('') +
+    `<text x="${d.tx}" y="${d.ty}" text-anchor="middle" dominant-baseline="central" font-family="'Plus Jakarta Sans', sans-serif" font-weight="700" font-size="${d.fs}" fill="${DIM_INK}"${d.angle ? ` transform="rotate(${d.angle} ${d.tx} ${d.ty})"` : ''}>${esc(d.text)}</text>`).join('') + '</g>'
+}
+
 /* ── Column grid — the real column squares in the canvas's own look
    (render/columnDraw.js: solid body, I-beam web and flanges, a thin outline
    in drawing units), from the same expandColumnGrid the check measures. */
@@ -180,8 +194,22 @@ function sectionKeySVG(objects, gridSize, lz) {
     '</g>').join('')
 }
 
-function columnGridSVG(obj, gridSize) {
-  const g = columnGridOps(obj, gridSize)
+/* ── A column grid's gridlines, bubbles and dimension chains (render/columnAnnot.js) — always on the PDF (col-grid). */
+function columnAnnotSVG(obj, gridSize, objects, lz) {
+  const a = columnAnnot(obj, objects, gridSize, lz)
+  if (!a) return ''
+  const sw = a.fs * 0.08
+  return `<g data-column-annot="${esc(obj.id || '')}">` +
+    a.lines.map(l => `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" stroke="${ANNOT.line}" stroke-width="${sw}" stroke-dasharray="${a.fs * 0.6} ${a.fs * 0.4}"/>`).join('') +
+    a.chain.map(c => `<line x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}" stroke="${ANNOT.ink}" stroke-width="${sw}"/>` +
+      c.ticks.map(([x, y]) => (c.vert ? `<line x1="${x - c.tick}" y1="${y}" x2="${x + c.tick}" y2="${y}" stroke="${ANNOT.ink}" stroke-width="${sw}"/>` : `<line x1="${x}" y1="${y - c.tick}" x2="${x}" y2="${y + c.tick}" stroke="${ANNOT.ink}" stroke-width="${sw}"/>`)).join('') +
+      `<text x="${c.tx}" y="${c.ty}" text-anchor="middle" dominant-baseline="central" font-family="'Plus Jakarta Sans', sans-serif" font-size="${a.fs}" fill="${ANNOT.ink}"${c.vert ? ` transform="rotate(-90 ${c.tx} ${c.ty})"` : ''}>${esc(c.text)}</text>`).join('') +
+    a.bubbles.map(b => `<circle cx="${b.x}" cy="${b.y}" r="${b.r}" fill="#ffffff" stroke="${ANNOT.ink}" stroke-width="${sw}"/><text x="${b.x}" y="${b.y}" text-anchor="middle" dominant-baseline="central" font-family="'Plus Jakarta Sans', sans-serif" font-weight="700" font-size="${b.r * 1.05}" fill="${ANNOT.ink}">${esc(b.text)}</text>`).join('') +
+    '</g>'
+}
+
+function columnGridSVG(obj, gridSize, objects = null) {
+  const g = columnGridOps(obj, gridSize, objects)
   if (!g) return ''
   return `<g>` +
     `<path d="${g.body}" fill="${g.color}" opacity="${g.opacity.body}"/>` +
@@ -399,8 +427,13 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   const bounds0 = computeBounds(objects.filter(usable), gridSize)
   // the sections' key (at the canvas's label size, as on the plan) is on the sheet too
   const keyLz = labelScale(prefs.labelSize, gridSize), keys = sectionLegend(objects.filter(usable), gridSize, keyLz)
-  const bounds = bounds0 && keys.length
-    ? (() => { const x0 = Math.min(bounds0.x, ...keys.map(k => k.x)), y0 = Math.min(bounds0.y, ...keys.map(k => k.y)), x1 = Math.max(bounds0.x + bounds0.width, ...keys.map(k => k.x + k.w)), y1 = Math.max(bounds0.y + bounds0.height, ...keys.map(k => k.y + k.h)); return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } })()
+  // and the column grids' bubbles and chains (outside the building, top and left — col-grid round)
+  const annBoxes = objects.filter(usable).filter(o => o.type === 'column_grid' && o.showGrid !== false).map(o => columnAnnot(o, objects.filter(usable), gridSize, keyLz)).filter(Boolean)
+    .flatMap(a => a.bubbles.map(b => ({ x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 })))
+  const dimBoxes = objects.filter(usable).filter(o => FP_TYPES.has(o.type)).flatMap(o => buildingDims(o, gridSize, keyLz)).map(d => d.box)
+  const extra = [...keys, ...annBoxes, ...dimBoxes]
+  const bounds = bounds0 && extra.length
+    ? (() => { const x0 = Math.min(bounds0.x, ...extra.map(k => k.x)), y0 = Math.min(bounds0.y, ...extra.map(k => k.y)), x1 = Math.max(bounds0.x + bounds0.width, ...extra.map(k => k.x + k.w)), y1 = Math.max(bounds0.y + bounds0.height, ...extra.map(k => k.y + k.h)); return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } })()
     : bounds0 || { x: 0, y: 0, width: gridSize * 40, height: gridSize * 30 }
 
   const pad = Math.max(bounds.width, bounds.height) * 0.05
@@ -473,6 +506,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   const body = [
     `<rect x="${vb.x}" y="${vb.y}" width="${vb.width}" height="${vb.height}" fill="#ffffff"/>`,
     ...floors.map(o => floorPlanSVG(o, gridSize)),
+    ...floors.map(o => buildingDimsSVG(o, gridSize, keyLz)),
     // the sections under everything else, as on the plan
     ...sections.map(o => sectionSVG(o, u, objects.filter(isDoor), gridSize)),
     ...zones.map(o => zoneSVG(o, gridSize)),
@@ -481,7 +515,8 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
        (a hidden Columns layer still has columns); only their drawing is gated */
     labelsSVG(objects.filter(Boolean), gridSize, labelOpts),
     // the columns above the labels and marks, as on the canvas: a column is never hidden under an aisle label
-    ...columns.map(o => columnGridSVG(o, gridSize)),
+    ...columns.map(o => columnGridSVG(o, gridSize, objects.filter(usable))),
+    ...columns.filter(o => o.showGrid !== false).map(o => columnAnnotSVG(o, gridSize, objects.filter(usable), keyLz)),
     sectionKeySVG(objects.filter(usable), gridSize, keyLz),
     scaleBarSVG(vb.x + 10 * u, titleY + titleH * 0.45, gridSize, u),
     titleBlockSVG(titleX, titleY, u, { title, scaleRatio, date }),

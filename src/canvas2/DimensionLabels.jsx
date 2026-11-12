@@ -3,6 +3,7 @@ import { Group, Rect, Line, Text } from 'react-konva'
 import { equipmentResolver } from '../utils/equipment'
 import { pxToFtIn, getFpWallSegments, getObjectBounds } from '../utils/canvas'
 import { spin } from './shapes'
+import { buildingDims, DIM_INK } from '../render/buildingDims'
 import { aisleLabelLayout, gapShown } from './hitTest'
 import { polygonOf } from '../utils/sectionAreas'
 import { rackFootprint } from '../generate/columnCheck'
@@ -186,10 +187,28 @@ export function RackLabels({ obj, zoom, gridSize }) {
    centred length pill, every one in the blue building dimension style.
    `activeWallIdx` — the one wall selected (a click on it): the wall line itself is lit in the selection green
    #2E7D5B, 3 screen px over the wall (`wall-select`); its dimension stays blue like the other sides (was: gold). */
+/* (col-grid round: dimension lines — render/buildingDims.js: a thin blue line outside the wall, end ticks, dashed
+   extension lines from the corners, the length in bold in a break; a rectangle's bottom and right only, an L's or a
+   custom shape's every wall. `zoom` is the label scale.) */
 export function FpDimLabels({ obj, zoom, gridSize, activeWallIdx = null }) {
   const walls = getFpWallSegments(obj, gridSize)
   if (!walls || !walls.length) return null
-  return <Group name={'fpdim:' + obj.id} listening={false} {...spin(obj, gridSize)}><EdgeDims walls={walls} zoom={zoom} gridSize={gridSize} activeWallIdx={activeWallIdx} /></Group>
+  const dims = buildingDims(obj, gridSize, zoom)
+  const act = activeWallIdx != null ? walls[activeWallIdx] : null
+  return (
+    <Group name={'fpdim:' + obj.id} listening={false} {...spin(obj, gridSize)}>
+      {act && <Line name="wall-select" points={[act.a.x, act.a.y, act.b.x, act.b.y]} stroke={WALL_SELECT} strokeWidth={3} strokeScaleEnabled={false} lineCap="butt" listening={false} perfectDrawEnabled={false} />}
+      {dims.map(d => (
+        <Group key={d.wallIdx} name="fp-dim-line" listening={false}>
+          {d.line.map((l, k) => <Line key={'l' + k} points={l} stroke={DIM_INK} strokeWidth={1} strokeScaleEnabled={false} listening={false} perfectDrawEnabled={false} />)}
+          {d.ticks.map((l, k) => <Line key={'t' + k} points={l} stroke={DIM_INK} strokeWidth={1} strokeScaleEnabled={false} listening={false} perfectDrawEnabled={false} />)}
+          {d.ext.map((l, k) => <Line key={'e' + k} points={l} stroke={DIM_INK} strokeWidth={0.75} dash={[3, 3]} strokeScaleEnabled={false} listening={false} perfectDrawEnabled={false} />)}
+          <Text name="fp-dim-value label-pill" text={d.text} x={d.tx} y={d.ty} width={d.tw + d.fs} offsetX={(d.tw + d.fs) / 2} offsetY={d.fs / 2} align="center" rotation={d.angle}
+            fontSize={d.fs} fontStyle="700" fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={DIM_INK} listening={false} />
+        </Group>
+      ))}
+    </Group>
+  )
 }
 
 /* A section's sizes (labels-sections, STUDIO.md §7a Sections): its width and length along its edges — every edge's

@@ -224,7 +224,7 @@ export function clearanceSolids(objects, gridSize = 40) {
   for (const o of objects || []) {
     if (!o) continue
     if (typeof o.type === 'string' && o.type.startsWith('rack_')) { const f = rackFootprint(o); if (f && f.w > 0) out.push({ x: f.x, y: f.y, w: f.w, h: f.h }) }
-    else if (o.type === 'column_grid' && o.showGrid !== false) for (const c of expandColumnGrid(o, gridSize)) out.push({ x: c.x, y: c.y, w: c.w, h: c.h })
+    else if (o.type === 'column_grid' && o.showGrid !== false) for (const c of expandColumnGrid(o, gridSize, objects)) out.push({ x: c.x, y: c.y, w: c.w, h: c.h })
   }
   return out
 }

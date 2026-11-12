@@ -48,6 +48,7 @@ import { RackLineLabels } from './RackLineLabels'
 import { publishView, useView } from './live'
 import { TallyFill, TallyHighlight } from './TallyHighlight'
 import { SectionLegend } from './SectionLegend'
+import { ColumnGridAnnot } from './ColumnGridAnnot'
 import { CrossAislePick } from './CrossAislePick'
 import { CrossAisleBandPreview, CrossAisleBar, liveBand } from './CrossAisleBand'
 import { CROSS_AISLE_TOOL, useCrossAisleTool, commitCut } from '../utils/crossAisleCut'
@@ -586,6 +587,8 @@ export function Canvas2() {
             {/* the sections' legend: a key outside the building, its bottom-left (SectionLegend.jsx — legend round: no name
                 tags on the floor) */}
             <SectionLegend />
+            {/* a selected column grid's gridlines, bubbles and dimension chains (ColumnGridAnnot.jsx — col-grid round) */}
+            <ColumnGridAnnot />
             {/* the Row group: its rows outlined, a pending apply previewed (RowGroupPreview.jsx); a row being placed */}
             <RowGroupPreview />
             {/* the Split tool's cut line (SplitPreview.jsx) */}

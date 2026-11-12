@@ -24,7 +24,7 @@ export const isRack = o => typeof o?.type === 'string' && o.type.startsWith('rac
 export function layoutColumns(objects, gridSize = GS) {
   return objects
     .filter(o => o.type === 'column_grid' && o.showGrid !== false)
-    .flatMap(g => expandColumnGrid(g, gridSize))
+    .flatMap(g => expandColumnGrid(g, gridSize, objects))
 }
 
 /** Building outlines (world polygons) — fpVerts already carries any rotation. */

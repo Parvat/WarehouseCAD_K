@@ -115,7 +115,7 @@ export function worldBounds(objects = [], gridSize = 40) {
   for (const o of objects) {
     if (!o) continue
     if (o.type === 'column_grid') {
-      for (const c of expandColumnGrid(o, gridSize)) { eat(c.x, c.y); eat(c.x + c.w, c.y + c.h) }
+      for (const c of expandColumnGrid(o, gridSize, objects)) { eat(c.x, c.y); eat(c.x + c.w, c.y + c.h) }
       continue
     }
     if (Number.isFinite(o.x1)) { eat(o.x1, o.y1); eat(o.x2, o.y2); continue }

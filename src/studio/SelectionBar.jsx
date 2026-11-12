@@ -41,6 +41,7 @@ import { ZONE_KINDS } from '../generate/rackingArea'
 import { B, MONO, pill, Sep, IconBtn, Chip, Menu, MenuItem, MenuLine } from './barParts'
 import { Icon, hasIcon } from './Icon'
 import { addBayTo, removeBayFrom, rotateQuarter, duplicateSelection, deleteSelection, cutSelection, pasteHere, groupSelectedRows, pickLibraryItem } from './selectionActions'
+import { dimReach } from '../render/buildingDims'
 
 /* ── The selection bar (STUDIO.md §1, §6; design/studio/Studio.dc.html C1 and C6) ──────────────────────────────────
    A dark pill (radius 12) floating just above the selection — never over it: below it when there is no room above
@@ -103,7 +104,7 @@ export function barFor(objects, selectedIds, activeWall, activeBaySelection = []
  *  of them, so a selected object's labels are never under it. */
 export function labelReach(o, lz) {
   const pillHalf = (11 * 1.5) / 2
-  if (FP.has(o.type)) { const r = (22 + pillHalf + 2) / lz; return { top: r, side: r, bottom: r } }
+  if (FP.has(o.type)) { const m = dimReach(o, 40, lz); return { top: m.top, side: Math.max(m.left, m.right), bottom: m.bottom } }
   if (o.type === 'rack_row' || o.type === 'rack_double_row') {
     const rot = ((((o.rotation || 0) % 360) + 360) % 360), r = (14 + pillHalf + 2) / lz
     return { top: rot === 180 || rot === 270 ? r : 0, side: r, bottom: r }
@@ -505,11 +506,14 @@ export function SelectionBar() {
   const view = { zoom, panX, panY }, lz = labelScale(labelSize, gridSize)
   const box = screenBox(what.objs, objects, view), reach = screenBox(what.objs, objects, view, lz)
   if (!box) return null
+  // a building: its top kept clear even with no size line there (col-grid round — a rectangle's are bottom and right):
+  // the side handle, the rotate handle and a column chain stay out from under the bar, where the top label used to hold it
+  const held = reach && what.objs.some(o => FP.has(o.type)) ? { ...box, y0: Math.min(box.y0, reach.y0) } : box
   const host = ref.current?.parentElement?.getBoundingClientRect()
   const win = { w: host?.width || window.innerWidth, h: host?.height || window.innerHeight }
   const card = typeof document !== 'undefined' ? document.querySelector('[data-island="right-card"]')?.getBoundingClientRect() : null
   const cardRect = card ? { left: card.left - (host?.left || 0), top: card.top - (host?.top || 0), right: card.right - (host?.left || 0), bottom: card.bottom - (host?.top || 0) } : null
-  const at = size ? placeBarClear(box, reach, size.w, size.h, win, cardRect, labels) : null
+  const at = size ? placeBarClear(held, reach, size.w, size.h, win, cardRect, labels) : null
   const obj = what.main || what.objs[0]
   const hint = barHint(what.kind, colsLocked)
   const bar = (

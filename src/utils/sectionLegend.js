@@ -9,7 +9,7 @@ import { sectionChipColors } from './lineNames'
 import { buildingOutline } from './floorGeom'
 
 /** Legend metrics at label scale `lz` (the aisle labels' 11 px): font, line height, swatch, gaps. */
-export const legendMetrics = (lz = 1) => { const fs = 11 / lz; return { fs, lineH: fs * 1.7, sw: fs * 0.95, gap: fs * 0.6, pad: fs * 0.6, off: fs * 1.6 } }
+export const legendMetrics = (lz = 1) => { const fs = 11 / lz; return { fs, lineH: fs * 1.7, sw: fs * 0.95, gap: fs * 0.6, pad: fs * 0.6, off: fs * 3.3 } }   // off: below the bottom size line (render/buildingDims.js, 22 out + half its value — col-grid round)
 
 /** Every building's legend: [{ fpId, x, y, w, h, items: [{ id, name, color, x, y, w, h (the line's box), sx, sy (the
  *  swatch's corner), tx (the text's left) }] }] (world px) — the key below the building's bottom-left corner. */

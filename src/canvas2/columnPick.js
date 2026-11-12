@@ -18,7 +18,7 @@ export function columnAt(objects, layers, wx, wy, zoom = 1, gridSize = 40) {
   const pad = 4 / zoom
   for (const g of objects || []) {
     if (!g || g.type !== 'column_grid' || g.showGrid === false || !isShown(layers, g)) continue
-    for (const c of expandColumnGrid(g, gridSize)) {
+    for (const c of expandColumnGrid(g, gridSize, objects)) {
       if (wx >= c.x - pad && wx <= c.x + c.w + pad && wy >= c.y - pad && wy <= c.y + c.h + pad) return { gridId: g.id, x: c.x, y: c.y, w: c.w, h: c.h }
     }
   }
