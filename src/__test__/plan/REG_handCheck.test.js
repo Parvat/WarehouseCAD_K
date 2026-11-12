@@ -4055,7 +4055,7 @@ describe('REG — the hand check by real clicks', () => {
       return (await secsNow()).slice(-1)[0]
     }
 
-    it('REG-gap-labels (click): aisle and gap labels and sections (labels-sections) — the cross-aisle between the halves, once each half is its own section, gets no label (a gap label never crosses a section edge; run ends are not racks facing); a real aisle between two sections (its rows facing across the edge, under 3 × the travel width) still shows; a pair deleted inside a section leaves a gap over 3 × the travel width: no label; a selected section shows its width and length along its edges, and the View card’s Section sizes shows them for all', async () => {
+    it('REG-gap-labels (click): aisle and gap labels and sections (labels-sections) — the cross-aisle between the halves, once each half is its own section, gets no label (a gap label never crosses a section edge; run ends are not racks facing); a real aisle between two sections (its rows facing across the edge, under 3 × the travel width) still shows; a pair deleted inside a section leaves a gap over 3 × the travel width: no label; a selected section’s width and length are in Properties, no tag on the floor (legend round — was: on its tag; before that along its edges)', async () => {
       await open()
       await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(300)
       const b = await innerBox()
@@ -4094,8 +4094,10 @@ describe('REG — the hand check by real clicks', () => {
       // dimension labels for a section now)
       const dims = (id) => L.page.evaluate((id) => { const g = window.Konva.stages[0].findOne(n => n.name() === 'section-tab:' + id); return g ? g.findOne('.section-label').text() : null }, id)
       const words = (px) => L.S('return import("/src/utils/bom.js").then(B => B.ftIn(arg / (S.getState().gridSize || 40) * 12))', px)
-      const dc = await dims(C.id)
-      expect(dc).toBe((await L.S('return S.getState().objects.find(o => o.id === arg).label', C.id)) + ' · ' + (await words(C.w)) + ' × ' + (await words(C.h)))
+      // (legend round: no name tag on the floor — its width and length are in Properties; was: on its tag)
+      expect(await dims(C.id)).toBe(null)
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' }), digits = (t) => String(t).replace(/[^0-9]/g, '')
+      expect([digits(await card.getByLabel('Section width').inputValue()), digits(await card.getByLabel('Section length').inputValue())]).toEqual([digits(await words(C.w)), digits(await words(C.h))])
       expect(await L.page.evaluate(() => window.Konva.stages[0].find(n => /^secdim:/.test(n.name())).length)).toBe(0)
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(150)
       expect([await dims(A.id), await dims(Bs.id), await dims(C.id)]).toEqual([null, null, null])
@@ -4122,11 +4124,13 @@ describe('REG — the hand check by real clicks', () => {
       expect(wide.length).toBeGreaterThan(0)
       const after = await labelsNow()
       expect(wide.filter(a => after.includes('aisle:' + a.id)).map(a => a.ft)).toEqual([])
-      // View card: Section names — every section's tag, its size on it (the Section sizes switch folded into it)
+      // View card: Section names — the legend, a line for every section, its name only (legend round — was: every section's
+      // tag, its size on it); no tag on the floor
       await viewSwitch('Section names').click()
-      expect([/ × /.test(await dims(A.id)), / × /.test(await dims(Bs.id)), / × /.test(await dims(C.id))]).toEqual([true, true, true])   // (C is B with no cross-aisle)
+      const lg = await tabsNow(), labelOf = (id) => L.S('return S.getState().objects.find(o => o.id === arg).label', id)
+      expect([lg[A.id]?.text, lg[Bs.id]?.text, lg[C.id]?.text, lg._tags || 0]).toEqual([await labelOf(A.id), await labelOf(Bs.id), await labelOf(C.id), 0])   // (C is B with no cross-aisle)
       await viewSwitch('Section names').click()
-      expect(await dims(A.id)).toBe(null)
+      expect(await tabsNow()).toEqual({})
     }, T)
 
     /* ── sections-3: a section's edges snap (draw, move, resize); Fill and a selected section ── */
