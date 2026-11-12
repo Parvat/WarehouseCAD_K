@@ -48,6 +48,7 @@ import { sectionSnapLines, snapSectionEdges, sectionBox, SECTION_SNAP_PX } from 
 import { useSectionRename } from './sectionTool'
 import { POINT_HANDLE_PX } from './SectionShape'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
+import { fpDimHit, useDimEdit } from './FpDimEdit'
 import { afterBuildingResize } from '../utils/buildingResize'
 import { afterSectionResize } from '../utils/sectionShrink'
 import { crossAisleAt, useCrossAislePick, clearCrossAislePick, snapMove, bayPitch, runsAt, moveCrossAisle } from '../utils/crossAisleTool'
@@ -166,6 +167,7 @@ export function useCanvasInteraction({
   const colLine = useRef(null)   // a column's line being dragged: { g0, col, from (world), sx, sy, axis, i, again }
   const crossDrag = useRef(null)   // a cross-aisle pressed (crossAisleTool.js): { c, from (world), d (bays) }
   const tunnelDrag = useRef(null)  // a tunnel pressed (utils/tunnel.js): { t, from (world), d (bays) }
+  const dimClick = useRef(null)    // a building's dimension label pressed (FpDimEdit.jsx): { fpId, wallIdx } — opened on the release
 
   /* ── selection, from our own geometry pick ────────────────────────────── */
   /* Selection AND bay pick, from a world point and a hit id already decided by
@@ -668,6 +670,12 @@ export function useCanvasInteraction({
           /* its resize handles — the ONLY way a building is resized (fpHandles.js) */
           const fh = isPickable(st.layers, selected) ? fpHandleHit(selected, world.x, world.y, view.current.zoom) : null
           if (fh) { beginHandleDrag(selected, fh, world); return }
+          /* a click on one of its wall dimensions (after its handles — a pill can sit over a wall's middle square at plan zoom): that length typed (building-size fix, FpDimEdit.jsx) */
+          if (isPickable(st.layers, selected)) {
+            const wi = fpDimHit(selected, world, st.gridSize || 40, view.current.zoom)
+            // (opened on the release, as a section's rename: the press's own focus change would close it at once)
+            if (wi != null) { dimClick.current = { fpId: selected.id, wallIdx: wi }; return }
+          }
         }
       } else if (evt.button === 0 && st.selectedIds.length >= 2) {
         /* Group rotate handle — checked before the plain object hitTest for
@@ -1529,6 +1537,9 @@ export function useCanvasInteraction({
       setMarquee(normalizeRect(m.from, m.to))
     }
     const upGesture = () => {
+      const dc = dimClick.current
+      dimClick.current = null
+      if (dc) { useDimEdit.setState({ edit: dc }); return }
       const td = tunnelDrag.current
       tunnelDrag.current = null
       if (td) {

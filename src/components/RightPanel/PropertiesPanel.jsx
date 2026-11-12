@@ -28,6 +28,7 @@ import { useTunnelPick } from '../../utils/tunnel'
 import { RackMain, RowGroupMain, ZoneMain, NothingSelected } from '../../studio/cards'
 import { LayoutSummary, SectionSummary, LineSummary, BaySummary, SelectionSummary, SummaryFold } from '../../studio/summaryCards'
 import { useRowGroup, groupRowsNow } from '../../utils/rowGroupTool'
+import { sizeUpdate, setBuildingSize } from '../../utils/buildingSize'
 import { Head, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, StaticField, Row, ToggleRow, Seg, Btn,
   IconBtn, Note, Hint, SecLabel, Fold, C, MONO, LockedFields } from '../../studio/cardParts'
 
@@ -378,10 +379,13 @@ function BuildingFields({ obj, up, commit, gridSize, updateObject }) {
   const wFt = obj.width / gridSize, hFt = obj.height / gridSize
   const wallT = obj.wallThicknessFt ?? 0.5
   const setWall = (v) => updateObject(obj.id, { wallThicknessFt: v, strokeWidth: Math.max(2, v * gridSize * 0.5) })
+  /* typed: the building's corners move (its far walls; the top-left held), with the handle resize's shrink rules in the
+     same undo step (utils/buildingSize.js — building-size fix: these wrote width / height alone, which the plan never
+     reads: it draws from the corners, fpVerts) */
   const ft = (key, label) => (
     <Field label={label}>
       <NumInput aria={`${label} (ft)`} value={Math.round(obj[key] / gridSize * 10) / 10} min={1}
-        onCommit={v => { if (v > 0) { up(key, v * gridSize); commit(key, v * gridSize) } }} />
+        onCommit={v => { if (v > 0) setBuildingSize(useCanvasStore, obj.id, sizeUpdate(obj, key === 'width' ? { widthFt: v } : { lengthFt: v }, gridSize)) }} />
     </Field>
   )
   return (

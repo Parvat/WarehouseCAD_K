@@ -22,6 +22,7 @@ import { useColumnCheck } from '../generate/useColumnCheck'
 import { FillOverlay } from './FillTool'
 import { SectionDraft, SectionPointHandles } from './SectionShape'
 import { SectionBar, SectionRename } from './SectionBar'
+import { FpDimEdit } from './FpDimEdit'
 import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, startRect, moveRect, commitRect, penClick, penMove, penDblClick, useSectionTool } from './sectionTool'
 import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
@@ -626,6 +627,8 @@ export function Canvas2() {
       {dooring && <DoorBar />}
       {sectioning && <SectionBar />}
       <SectionRename />
+      {/* a building's wall dimension typed (FpDimEdit.jsx) */}
+      <FpDimEdit />
       <FloorMenu />
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>

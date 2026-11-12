@@ -5952,6 +5952,74 @@ describe('REG — the hand check by real clicks', () => {
     }
     const redNow = () => L.page.evaluate(() => window.Konva.stages[0].find('.cross-aisle-band-red-text').map(t => t.text()))
 
+    /* ── building-size fix: a building's size typed — the card's Width / Length, a click on its dimension label ── */
+    it('REG-building-size (click): the building’s Width typed in the card (200 for 240) — the plan’s building 200 ft wide, its left wall held, the racks past the new wall gone, one undo, the notice "N bays removed" with Undo; Length typed the same; a click on its bottom dimension label opens it for typing — 220 typed, the building 220 ft wide; 260 (larger): nothing removed, no notice (was: the fields wrote width / height, never the corners the plan draws from — fpVerts)', async () => {
+      await open()
+      const gs = await gs7()
+      const fpNow = () => L.S('return (() => { const f = S.getState().objects.find(o => /^fp_/.test(o.type)); const v = f.fpVerts, xs = v.map(q => q.x), ys = v.map(q => q.y); return { id: f.id, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), w: f.width, h: f.height } })()')
+      const bays = () => L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).reduce((t, o) => t + o.beams.length, 0)')
+      // the racks the shrink rule covers: those on the usable floor before (inside the inner walls less the wall clearance —
+      // utils/buildingResize.js; a rack already inside the clearance, flush on a wall, it leaves as the handles do)
+      const usable = await L.S(`return import('/src/generate/columnCheck.js').then(CC => import('/src/utils/floorGeom.js').then(G => import('/src/utils/fillTool.js').then(F => { const st = S.getState(), gs = st.gridSize || 40, f = st.objects.find(o => /^fp_/.test(o.type)), p = G.innerOutline(f, gs)
+        const c = (F.rackingSettings().wallClearIn ?? 3) / 12 * gs - 0.5, X0 = Math.min(...p.map(q => q.x)) + c, X1 = Math.max(...p.map(q => q.x)) - c, Y0 = Math.min(...p.map(q => q.y)) + c, Y1 = Math.max(...p.map(q => q.y)) - c
+        return st.objects.filter(o => /^rack_/.test(o.type)).filter(o => { const q = CC.rackFootprint(o); return q.x >= X0 && q.y >= Y0 && q.x + q.w <= X1 && q.y + q.h <= Y1 }).map(o => o.id) })))`)
+      const outside = () => L.S(`return import('/src/generate/columnCheck.js').then(CC => import('/src/utils/floorGeom.js').then(G => { const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), p = G.innerOutline(f, st.gridSize || 40)
+        const xs = p.map(q => q.x), ys = p.map(q => q.y), X1 = Math.max(...xs), Y1 = Math.max(...ys)
+        return st.objects.filter(o => /^rack_/.test(o.type) && (arg.includes(o.id) || (o.pieceOf && arg.includes(o.pieceOf)))).map(o => CC.rackFootprint(o)).filter(q => q.x + q.w > X1 + 0.5 || q.y + q.h > Y1 + 0.5).length }))`, usable)
+      const notice = L.page.locator('[role="status"][aria-label="Notice"]')
+      const closeNotice = async () => { if (await notice.count()) { await notice.getByRole('button', { name: /close/i }).first().click(); await L.page.waitForTimeout(150) } }
+      const f0 = await fpNow(), b0 = await bays()
+      // the building picked by a click on its top wall
+      const pick = async () => { const f = await fpNow(), w = { x: (f.x0 + f.x1) / 2, y: f.y0 + 2 }; await onCanvasAll([w]); await L.click(w); await L.page.waitForTimeout(250); expect(await L.S('return S.getState().selectedIds')).toEqual([f.id]) }
+      await pick()
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      const typeField = async (label, v) => { const f = card.getByLabel(label); await f.click(); await f.fill(String(v)); await f.press('Enter'); await L.page.waitForTimeout(400) }
+      // Width 200: the plan's building (its corners) 200 ft, the left wall held; the racks past the new wall gone
+      let h0 = await hist7()
+      await typeField('Width (ft)', 200)
+      let f1 = await fpNow()
+      expect([(await hist7()) - h0, Math.round((f1.x1 - f1.x0) / gs), Math.abs(f1.x0 - f0.x0) < 0.5, Math.round(f1.w / gs), Math.abs((f1.y1 - f1.y0) - (f0.y1 - f0.y0)) < 0.5]).toEqual([1, 200, true, 200, true])
+      expect(await outside()).toBe(0)
+      const b1 = await bays()
+      expect(b1).toBeLessThan(b0)
+      expect(await notice.textContent()).toMatch(/^\d+ bays? removed/)
+      expect(await notice.getByRole('button', { name: 'Undo' }).count()).toBe(1)
+      await closeNotice()
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect([Math.round(((await fpNow()).x1 - (await fpNow()).x0) / gs), await bays()]).toEqual([Math.round((f0.x1 - f0.x0) / gs), b0])
+      // Length 100: the bottom wall up, the top held
+      await pick()
+      h0 = await hist7()
+      await typeField('Length (ft)', 100)
+      f1 = await fpNow()
+      expect([(await hist7()) - h0, Math.round((f1.y1 - f1.y0) / gs), Math.abs(f1.y0 - f0.y0) < 0.5]).toEqual([1, 100, true])
+      expect(await outside()).toBe(0)
+      await closeNotice()
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect(Math.round(((await fpNow()).y1 - (await fpNow()).y0) / gs)).toBe(Math.round((f0.y1 - f0.y0) / gs))
+      // the bottom wall's dimension label (the top one sits under the rotate handle): a click opens it for typing, its length in it
+      await pick()
+      const lab = await L.S('return import("/src/canvas2/FpDimEdit.jsx").then(M => { const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)); const bs = M.fpDimBoxes(f, st.gridSize || 40); const b = bs.reduce((m, q) => (q.y + q.h / 2 > m.y + m.h / 2 ? q : m)); return { x: b.x + b.w / 2, y: b.y + b.h / 2, len: b.lenFt } })')
+      await onCanvasAll([lab]); await L.click(lab); await L.page.waitForTimeout(250)
+      const box = L.page.getByRole('textbox', { name: 'Building wall length (ft)' })
+      expect([await box.count(), Number(await box.inputValue())]).toEqual([1, Math.round(lab.len)])
+      h0 = await hist7()
+      await box.fill('220'); await box.press('Enter'); await L.page.waitForTimeout(400)
+      f1 = await fpNow()
+      expect([await box.count(), (await hist7()) - h0, Math.round((f1.x1 - f1.x0) / gs), Math.abs(f1.x0 - f0.x0) < 0.5]).toEqual([0, 1, 220, true])
+      expect(await outside()).toBe(0)
+      await closeNotice()
+      // larger (260): nothing removed, no notice
+      const b2 = await bays()
+      await pick()
+      const lab2 = await L.S('return import("/src/canvas2/FpDimEdit.jsx").then(M => { const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)); const bs = M.fpDimBoxes(f, st.gridSize || 40); const b = bs.reduce((m, q) => (q.y + q.h / 2 > m.y + m.h / 2 ? q : m)); return { x: b.x + b.w / 2, y: b.y + b.h / 2 } })')
+      await onCanvasAll([lab2]); await L.click(lab2); await L.page.waitForTimeout(250)
+      await box.fill('260'); await box.press('Enter'); await L.page.waitForTimeout(400)
+      f1 = await fpNow()
+      expect([Math.round((f1.x1 - f1.x0) / gs), await bays(), await notice.count()]).toEqual([260, b2, 0])
+      await L.page.keyboard.press('Escape')
+    }, T)
+
     it('REG-xaisle-slide (click): an 80 ft building, its rows 9 bays of 8 ft (about 74 ft), a 9 ft cross-aisle after bay 4 — every row cut 4 bays + 9 ft + 4 bays: one bay lost, the run beyond slid outward into the free floor past the row’s end (never past the wall clearance); one undo (fixes-x 2 — was: the run beyond held the row’s end, losing two bays)', async () => {
       await open()
       await fpFilled(80, 60)
