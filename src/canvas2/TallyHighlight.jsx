@@ -12,7 +12,7 @@ import { useCanvasStore } from '../store/useCanvasStore'
 import { rackLinesNow } from '../utils/rackLines'
 import { useTally, lineFigures, lineRect } from '../studio/tally'
 import { useLiveObjects, useView } from './live'
-import { lineNamer } from '../utils/lineNames'
+import { lineFullNamer } from '../utils/lineNames'
 
 const FILL = '#D7F0E2', LINE = '#2E7D5B', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 
@@ -26,7 +26,7 @@ function useLit() {
     if (!open || (hover == null && !section)) return []
     const lines = rackLinesNow(objects, gs), out = []
     const h = hover != null ? lines.find(l => l.no === hover) : null
-    if (h) { const f = lineFigures(objects, h, gs, T); out.push({ no: h.no, rect: lineRect(h), tag: `${lineNamer(objects, T, gs)(h.no)} · ${f.bays} bay${f.bays === 1 ? '' : 's'} · ${f.positions.toLocaleString('en-US')} position${f.positions === 1 ? '' : 's'}` }) }
+    if (h) { const f = lineFigures(objects, h, gs, T); out.push({ no: h.no, rect: lineRect(h), tag: `${lineFullNamer(objects, T, gs)(h.no)} · ${f.bays} bay${f.bays === 1 ? '' : 's'} · ${f.positions.toLocaleString('en-US')} position${f.positions === 1 ? '' : 's'}` }) }
     if (section) for (const l of lines) if (section.nos.includes(l.no) && l.no !== h?.no) out.push({ no: l.no, rect: lineRect(l), tag: null })
     return out
   }, [open, hover, section, objects, gs, T])

@@ -90,6 +90,12 @@ export function sectionTagBox(s, gs, zoom, { blocks = [], objects = [], force = 
     ...oy.map(y => ({ x: x0 - m - w, y })),
   ]
   for (const t of outs) { const b = tag(t.x, t.y, 'outside'); if (onFloor(b) && clear(b)) return b }
+  /* open floor anywhere inside it — an aisle — nearest its middle first (row-numbering fixes: sections side by side, wall
+     to wall and full of racks, have no free edge strip and no open floor outside — their tags were left out) */
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, mid = []
+  for (let y = y0 + m; y <= y1 - m - h + 1e-6; y += h / 2) for (let x = x0 + m; x <= x1 - m - w + 1e-6; x += w / 4) mid.push({ x, y })
+  mid.sort((p, q) => Math.hypot(p.x + w / 2 - cx, p.y + h / 2 - cy) - Math.hypot(q.x + w / 2 - cx, q.y + h / 2 - cy))
+  for (const t of mid) { const b = tag(t.x, t.y, 'inside'); if (inside(b) && clear(b)) return b }
   // `force` (the section hovered or selected): no room anywhere — just outside its top edge all the same, over whatever is
   // there (drawn on top)
   return force ? tag((x0 + x1) / 2 - w / 2, y0 - m - h, 'forced') : null

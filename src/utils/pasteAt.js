@@ -21,6 +21,7 @@
 // where the originals are.
 
 import { startPlacement } from './placement'
+import { isSection, nextName } from './sectionAreas'
 import { isRow } from './copyChange'
 
 const STAMPS = ['rowIndex', 'genSection', 'genRunFt', 'genCrossFt', 'pieceOf', 'splitOf']
@@ -101,6 +102,10 @@ export function planPaste(state, mode, at, newId) {
     }
     return c
   })
+  /* a pasted section takes the next name (Section N), as Duplicate gives (row-numbering fixes — root cause of two BOM cards
+     named Section 1: a paste kept its source's name) */
+  let named = state.objects
+  for (const c of pasted) if (isSection(c)) { c.label = nextName(named); named = [...named, c] }
   const pastedGroups = (state.groups || [])
     .filter(g => g.ids.every(id => clipIds.has(id)))
     .map(g => ({ id: newId(), ids: g.ids.map(id => idMap[id]).filter(Boolean) }))

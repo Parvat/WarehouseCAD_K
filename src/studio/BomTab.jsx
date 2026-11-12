@@ -73,7 +73,7 @@ export function BomTable({ bom, picked, onPick, wide = false }) {
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {!g.total && <Swatch color={sw} />}
                   <span style={{ color: C.strong, fontWeight: 600, fontSize: wide ? 13 : 12, flex: 1 }}>{g.name}</span>
-                  {g.rows.length > 0 && <span data-bom-rows style={{ color: C.muted, fontSize: 11 }}>{rowsText(g.rows, bom.names)}</span>}
+                  {g.rows.length > 0 && <span data-bom-rows style={{ color: C.muted, fontSize: 11 }}>{rowsText(g.rows, bom.names, bom.sec)}</span>}
                 </span>
               </td>
             </tr>
@@ -170,7 +170,7 @@ function PartLines({ g, picked, onPick }) {
   )
 }
 
-const range = (rows, names) => [rows.length ? rowsText(rows, names) : null, `${rows.length} line${rows.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
+const range = (rows, names, sec = null) => [rows.length ? rowsText(rows, names, sec) : null, `${rows.length} line${rows.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
 
 export function BomTab() {
   const { objects, T, gs, filename, selectedIds } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, gs: s.gridSize || 40, filename: s.currentFilename, selectedIds: s.selectedIds })))
@@ -211,8 +211,9 @@ export function BomTab() {
               {/* the Total: every part of the layout */}
               <section data-bom-card="total" aria-label="Total parts" style={{ borderRadius: 8, background: C.active, minWidth: 0 }}>
                 <div data-bom-group-head="total" style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '10px 12px 6px' }}>
-                  <span style={{ flex: 1, color: C.strong, fontWeight: 600, fontSize: 13 }}>Total</span>
-                  <span data-bom-rows style={{ color: C.muted, fontSize: 11, whiteSpace: 'nowrap' }}>{range(total.rows, bom.names)}</span>
+                  <span style={{ flex: 1, flexShrink: 0, color: C.strong, fontWeight: 600, fontSize: 13 }}>Total</span>
+                  {/* (Per section the list says each section — long: cut with an ellipsis, the whole of it on hover) */}
+                  <span data-bom-rows title={range(total.rows, bom.names, bom.sec)} style={{ color: C.muted, fontSize: 11, whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{range(total.rows, bom.names, bom.sec)}</span>
                 </div>
                 <PartLines g={total} picked={picked} onPick={pick} />
               </section>
@@ -236,7 +237,7 @@ export function BomTab() {
                       style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px 8px 12px', border: 0, background: '#252A27', color: C.strong, cursor: 'pointer', textAlign: 'left', minWidth: 0 }}>
                       <Swatch color={sw} />
                       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, fontSize: 12 }}>{g.name}</span>
-                      <span data-bom-rows style={{ color: C.muted, fontSize: 11, whiteSpace: 'nowrap' }}>{range(g.rows, bom.names)}</span>
+                      <span data-bom-rows style={{ color: C.muted, fontSize: 11, whiteSpace: 'nowrap' }}>{range(g.rows, bom.names, bom.sec)}</span>
                       <span aria-hidden style={{ display: 'flex', transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }}><Icon name="Chevron" size={12} color={C.muted} /></span>
                     </button>
                     {open && <div style={{ paddingTop: 6 }}><PartLines g={g} picked={picked} onPick={pick} /></div>}

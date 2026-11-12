@@ -48,7 +48,7 @@ function TallyTable({ bom, scrollRef, lineOf, checked }) {
   const sum = (on) => ({ ...cell, padding: '5px 8px', color: C.strong, fontWeight: 600, background: on ? HL_BG : C.inset, cursor: 'pointer' })
   const rowCell = (no, extra) => (lit(no) ? { ...extra, background: HL_BG, color: C.strong } : extra)
   const pickSection = (g) => setSection(section?.id === g.id ? null : { id: g.id, nos: g.rows })
-  const groupLabel = (g) => (many ? g.name : 'Total').toUpperCase() + ' · ' + rowsText(g.rows, bom.names)
+  const groupLabel = (g) => (many ? g.name : 'Total').toUpperCase() + ' · ' + rowsText(g.rows, bom.names, bom.sec)
   return (
     <div ref={scrollRef} style={{ overflow: 'auto', flex: 1, minHeight: 0 }} onMouseLeave={() => setHover(null)}>
       <table aria-label="Tally by row" style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '100%' }}>

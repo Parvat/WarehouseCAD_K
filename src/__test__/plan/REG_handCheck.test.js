@@ -6175,38 +6175,89 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
-    it('REG-line-numbering (click): the BOM tab’s Numbering — Per section: each section’s lines from 1 with its code (Left: L1 …, Right: R1 …; outside every section U1 …) on the plan’s labels and the By row headers; Continuous again: R1 … across (row-numbering round)', async () => {
+    it('REG-line-numbering (click): the BOM tab’s Numbering — Per section: each section’s rows R1, R2 … from 1, no letter codes (row-numbering fixes; was: its code in front, L1 …); the plan’s chips filled with the section’s colour (one from the palette for a section with none), the text white or dark; the BOM’s lists say the section — "Left > R1–R3"; the CSV a Section column and R3; saved with the layout; Continuous again: R1 … across, no chips (row-numbering round)', async () => {
       const [s1, s2] = await twoSections()
-      // the two sections named Left and Right in their card (a click on each in the Sections list)
+      // the two sections named Left and Right in their card (a click on each in the Sections list) — no Code field any more
       await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(150)
       for (const [s, nm] of [[s1, 'Left'], [s2, 'Right']]) {
         await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
         await L.page.getByRole('tabpanel', { name: 'Properties' }).locator('[data-section-row="' + s.id + '"]').click(); await L.page.waitForTimeout(150)
         const name = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('textbox', { name: 'Name', exact: true })
         await name.click(); await name.fill(nm); await name.press('Enter'); await L.page.waitForTimeout(150)
-        expect(await L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('textbox', { name: 'Section code' }).inputValue()).toBe(nm[0])
+        expect(await L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('textbox', { name: 'Section code' }).count()).toBe(0)
       }
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       await bomTab()
       const labels = () => L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(n => n.text()))
+      const chips = () => L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-chip').map(r => ({ fill: r.fill(), text: r.getParent().findOne('.rack-line-label').fill() })))
       const heads = async () => { await fullView('By row'); const t = await byRowShown(); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150); return t.heads.filter(h => /^[A-Z]+\d+$/.test(h)) }
-      const cont = await heads()
+      const cont = await heads(), contLabels = await labels()
       expect(cont.every(h => /^R\d+$/.test(h))).toBe(true)
+      expect(await chips()).toEqual([])
       // Per section
       await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('group', { name: 'Line numbering' }).getByRole('button', { name: 'Per section' }).click(); await L.page.waitForTimeout(250)
       const per = await heads()
       expect(per.length).toBe(cont.length)
-      expect([per.includes('L1'), per.includes('R1'), per.every(h => /^(L|R|U)\d+$/.test(h))]).toEqual([true, true, true])
-      // each section from 1, in the order the BOM lists them
-      for (const code of ['L', 'R', 'U']) { const ns = per.filter(h => h.startsWith(code)).map(h => Number(h.slice(1))); expect(ns).toEqual(ns.map((_, i) => i + 1)) }
-      const plan = (await labels()).join(' ')
-      expect([/\bL1\b/.test(plan), /\bR1\b/.test(plan)]).toEqual([true, true])
+      expect(per.every(h => /^R\d+$/.test(h))).toBe(true)
+      // each section from R1, in the BOM's order; the lists by section name
+      const bom = await L.S(`return Promise.all([import('/src/utils/bom.js'), import('/src/utils/lineNames.js')]).then(([B, N]) => { const st = S.getState(), gs = st.gridSize || 40, b = B.computeBom(st.objects, st.elevations, { gridSize: gs })
+        const cols = N.sectionChipColors(st.objects)
+        return { secs: b.sections.map(x => ({ name: x.name, names: x.rows.map(no => b.names[no]) })), csv: B.bomCsv(b), want: [...new Set(b.rows.map(r => r.sectionId).filter(id => cols.has(id)).map(id => cols.get(id)))].sort() } })`)
+      for (const sec of bom.secs) expect([sec.name, sec.names]).toEqual([sec.name, sec.names.map((_, k) => 'R' + (k + 1))])
+      const total = await L.page.getByRole('tabpanel', { name: 'BOM' }).locator('[data-bom-group-head="total"] [data-bom-rows]').textContent()
+      expect([/Left > R1/.test(total), /Right > R1/.test(total)]).toEqual([true, true])
+      expect(bom.csv).toMatch(/\nLeft,R1–R\d+,/)
+      const totalRow = bom.csv.split('\r\n').find(r => r.startsWith('Total,')) || ''
+      expect([totalRow.includes('Left > R1'), totalRow.includes('Right > R1')]).toEqual([true, true])
+      // the plan: plain R names in chips of the sections' colours (a palette colour for a section with none), text for contrast
+      expect((await labels()).every(t => /^R\d+(–R\d+)?$/.test(t))).toBe(true)
+      const ch = await chips()
+      expect(ch.length).toBeGreaterThan(0)
+      expect([...new Set(ch.map(c => c.fill))].sort()).toEqual(bom.want)
+      expect(ch.every(c => c.text === '#FFFFFF' || c.text === '#1F2321')).toBe(true)
       // saved with the layout: the table carries it
       expect(await L.S('return S.getState().elevations.lineNumbering')).toBe('section')
-      // Continuous again
+      // Continuous again: as before
       await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('group', { name: 'Line numbering' }).getByRole('button', { name: 'Continuous' }).click(); await L.page.waitForTimeout(250)
       expect(await heads()).toEqual(cont)
-      expect((await labels()).every(t => /^R\d+(–R\d+)?$/.test(t))).toBe(true)
+      expect([await labels(), await chips()]).toEqual([contLabels, []])
+    }, T)
+
+    it('REG-three-sections (click): three sections drawn side by side wall to wall, each filled — with View’s Section names on, every section shows its name tag (on open floor: an aisle inside it when no edge has room — was: only the one with room outside, or none); a section copied and pasted takes the next name, so each BOM card shows its own section’s name (was: the paste kept "Section 1", two cards Section 1) (row-numbering fixes)', async () => {
+      await openSections()
+      await clearRacks()
+      const b = await innerBox()
+      const ss = []
+      for (const [a, c] of [[0.005, 0.33], [0.335, 0.66], [0.665, 0.995]]) { ss.push(await drawIn(b, a, 0.01, c, 0.99)); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100) }
+      // each filled by a Fill drag inside it
+      for (const s of ss) {
+        const box = await L.S('const o = S.getState().objects.find(q => q.id === arg); return { x0: o.x, y0: o.y, x1: o.x + o.width, y1: o.y + o.height }', s.id)
+        const a = { x: box.x0 + (box.x1 - box.x0) * 0.03, y: box.y0 + (box.y1 - box.y0) * 0.03 }, c = { x: box.x1 - (box.x1 - box.x0) * 0.03, y: box.y1 - (box.y1 - box.y0) * 0.03 }
+        await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+        await onCanvasAll([a, c]); await L.drag(a, c); await L.page.waitForTimeout(700)
+        await L.page.mouse.move(5, 300); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      }
+      const names = await L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => o.label)')
+      expect(names).toEqual(['Section 1', 'Section 2', 'Section 3'])
+      expect(await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).length')).toBeGreaterThan(6)
+      // View > Section names on: every section's tag
+      await L.page.getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150)
+      const sw = L.page.getByRole('dialog', { name: 'View card' }).getByRole('switch', { name: 'Section names' }).or(L.page.getByRole('dialog', { name: 'View card' }).getByRole('button', { name: 'Section names' }))
+      if ((await sw.first().getAttribute('aria-checked')) !== 'true' && (await sw.first().getAttribute('aria-pressed')) !== 'true') await sw.first().click()
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(300)
+      const tags = await L.page.evaluate(() => window.Konva.stages[0].find('.section-label').map(t => t.text()))
+      for (const n of names) expect([n, tags.filter(t => t.startsWith(n + ' ·')).length]).toEqual([n, 1])
+      // Section 2 copied and pasted (Ctrl+C, Ctrl+V): the copy is Section 4; the BOM cards each their own section's name
+      await L.S('S.getState().selectObject(arg)', ss[1].id); await L.page.waitForTimeout(150)
+      await L.page.mouse.move(700, 450); await L.page.keyboard.press('Control+c'); await L.page.waitForTimeout(100); await L.page.keyboard.press('Control+v'); await L.page.waitForTimeout(400)
+      expect(await L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => o.label)')).toEqual(['Section 1', 'Section 2', 'Section 3', 'Section 4'])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      await bomTab()
+      const cards = await L.page.getByRole('tabpanel', { name: 'BOM' }).locator('section[data-bom-card]').evaluateAll(es => es.filter(e => !['total', 'selected', 'unassigned'].includes(e.getAttribute('data-bom-card'))).map(e => [e.getAttribute('data-bom-card'), e.querySelector('[data-bom-group-head] span:nth-of-type(2)')?.textContent || e.textContent]))
+      const own = await L.S('return Object.fromEntries(S.getState().objects.filter(o => o.type === "section_area").map(o => [o.id, o.label]))')
+      expect(cards.length).toBe(3)
+      for (const [id, text] of cards) expect([id, text.startsWith(own[id])]).toEqual([id, true])
+      expect(new Set(cards.map(([id]) => own[id])).size).toBe(3)
     }, T)
   })
 })
