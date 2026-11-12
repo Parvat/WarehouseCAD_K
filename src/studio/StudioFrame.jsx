@@ -234,16 +234,17 @@ function BottomRight() {
             {/* the rack lines' numbering (utils/lineNames.js), saved with the layout — greyed while Row numbers is off
                 (legend round: moved here from the BOM tab) */}
             <div data-view-numbering aria-disabled={!rowLabels} title={rowLabels ? 'Continuous: R1 … across the layout · Per section: each section from R1' : 'Turn Row numbers on to choose'}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, height: 30, padding: '0 6px 0 16px', fontSize: 12, color: '#9AA29C', whiteSpace: 'nowrap', opacity: rowLabels ? 1 : 0.4, pointerEvents: rowLabels ? 'auto' : 'none' }}>
-              {/* a sub-row of Row numbers (legend polish): its label indented 12px, muted; plain text choices on the toggles' edge, the
-                  one in force in the green accent, a dot between */}
-              <span>Numbering</span>
-              <span role="group" aria-label="Line numbering" style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+              style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', height: 30, padding: '0 6px', fontSize: 12, whiteSpace: 'nowrap', opacity: rowLabels ? 1 : 0.4, pointerEvents: rowLabels ? 'auto' : 'none' }}>
+              {/* a sub-row of Row numbers (legend polish): a tree branch — 1px, the dividers' grey — drops from under its label and
+                  turns right into this row; the choices at the row labels' size, the one in force in the green accent, a dot
+                  between, on the toggles' edge */}
+              <span aria-hidden data-numbering-branch style={{ position: 'absolute', left: 10, top: -7, width: 10, height: 22, borderLeft: '1px solid #3A403C', borderBottom: '1px solid #3A403C' }} />
+              <span role="group" aria-label="Line numbering" style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                 {[['continuous', 'Continuous'], ['section', 'Per section']].map(([v, label], i) => (
-                  <span key={v} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span key={v} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {i > 0 && <span aria-hidden style={{ width: 3, height: 3, borderRadius: 2, background: '#4A514D' }} />}
                     <button type="button" aria-label={label} aria-pressed={numbering === v} disabled={!rowLabels} onClick={() => setLineNumbering(useCanvasStore, v)}
-                      style={{ padding: 0, border: 0, background: 'transparent', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 10.5, fontWeight: numbering === v ? 600 : 400, color: numbering === v ? '#7BD3A4' : '#C9CEC9' }}>{label}</button>
+                      style={{ padding: 0, border: 0, background: 'transparent', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 400, color: numbering === v ? '#7BD3A4' : '#9AA29C' }}>{label}</button>
                   </span>
                 ))}
               </span>
