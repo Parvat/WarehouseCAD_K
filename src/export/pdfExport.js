@@ -46,6 +46,7 @@ import { expandColumnGrid } from '../generate/columnCheck'
 import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
 import { aisleLabelOps, aisleLabelBoxes, clearanceOps, clearanceSolids, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
 import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
+import { sectionLegend } from '../utils/sectionLegend'
 import { columnGridOps } from '../render/columnDraw'
 import { aisleLabelLayout, aisleGapShown, gapShown, gapBase } from '../canvas2/hitTest'
 import { equipmentResolver, designNotes } from '../utils/equipment'
@@ -155,8 +156,8 @@ function zoneSVG(obj, gridSize) {
     `<text x="${obj.x + obj.width / 2}" y="${obj.y + obj.height / 2}" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="600" font-size="${fs}" fill="${stroke}">${name}</text></g>`
 }
 
-/* ── Section (utils/sectionAreas.js) — as on the plan: a very light fill, a dashed 1-unit outline, its name in small
-   caps at the top-left inside; `u`: world px per paper mm (the label 3.5 mm tall, 4 mm in, whatever the scale). */
+/* ── Section (utils/sectionAreas.js) — as on the plan: a very light fill, a dashed 1-unit outline; its name is in the key
+   (sectionKeySVG — legend round: no name on its floor); `u`: world px per paper mm. */
 function sectionSVG(obj, u, doors = [], gridSize = 40) {
   if (!(obj.width > 0) || !(obj.height > 0)) return ''
   const pts = polygonOf(obj).map(p => p.join(',')).join(' '), st = sectionStyle(obj, false), b = boundaryOf(obj)
@@ -166,7 +167,17 @@ function sectionSVG(obj, u, doors = [], gridSize = 40) {
   return `<g data-section="${esc(obj.id || '')}">` +
     `<polygon points="${pts}" fill="${st.fill || 'none'}"${b === 'none' ? ` stroke="${st.stroke}" stroke-width="${0.3 * u}" stroke-dasharray="${1.8 * u} ${1.2 * u}"` : ''}/>` +
     runs.map(r => `<line x1="${r.a[0]}" y1="${r.a[1]}" x2="${r.b[0]}" y2="${r.b[1]}" stroke="${edge.c}" stroke-width="${edge.w}"/>`).join('') +
-    `<text x="${obj.x + 4 * u}" y="${obj.y + 4 * u}" dominant-baseline="hanging" font-family="'Plus Jakarta Sans', sans-serif" font-weight="600" font-variant="small-caps" font-size="${3.5 * u}" fill="${st.label}">${esc(obj.label || 'Section')}</text></g>`
+    `</g>`
+}
+
+/* ── The sections' key (legend round): as on the plan (utils/sectionLegend.js — the same layout, the canvas's label
+   size), just outside each building at its bottom-left: each section's colour swatch and its name. */
+function sectionKeySVG(objects, gridSize, lz) {
+  return sectionLegend(objects, gridSize, lz).map(L => `<g data-section-key="${esc(L.fpId)}">` +
+    `<rect x="${L.x}" y="${L.y}" width="${L.w}" height="${L.h}" rx="${L.m.fs * 0.3}" fill="#ffffff" stroke="#D5D9D6" stroke-width="${L.m.fs * 0.06}"/>` +
+    L.items.map(q => `<rect x="${q.sx}" y="${q.sy}" width="${L.m.sw}" height="${L.m.sw}" rx="${L.m.sw * 0.2}" fill="${q.color || '#9AA29C'}"/>` +
+      `<text x="${q.tx}" y="${q.y + q.h / 2}" dominant-baseline="central" font-family="'Plus Jakarta Sans', sans-serif" font-size="${L.m.fs}" fill="#1F2321">${esc(q.name)}</text>`).join('') +
+    '</g>').join('')
 }
 
 function columnGridSVG(obj, gridSize) {
@@ -385,7 +396,12 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   labelOpts.showMarks = labelOpts.showMarks !== false && layerShown(layerMap, 'checks')
   const usable = (o) => isLayerUsable(layerMap, o)
 
-  const bounds = computeBounds(objects.filter(usable), gridSize) || { x: 0, y: 0, width: gridSize * 40, height: gridSize * 30 }
+  const bounds0 = computeBounds(objects.filter(usable), gridSize)
+  // the sections' key (at the canvas's label size, as on the plan) is on the sheet too
+  const keyLz = labelScale(prefs.labelSize, gridSize), keys = sectionLegend(objects.filter(usable), gridSize, keyLz)
+  const bounds = bounds0 && keys.length
+    ? (() => { const x0 = Math.min(bounds0.x, ...keys.map(k => k.x)), y0 = Math.min(bounds0.y, ...keys.map(k => k.y)), x1 = Math.max(bounds0.x + bounds0.width, ...keys.map(k => k.x + k.w)), y1 = Math.max(bounds0.y + bounds0.height, ...keys.map(k => k.y + k.h)); return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } })()
+    : bounds0 || { x: 0, y: 0, width: gridSize * 40, height: gridSize * 30 }
 
   const pad = Math.max(bounds.width, bounds.height) * 0.05
   const titleStripH = Math.max(bounds.height * 0.14, gridSize * 12)
@@ -466,6 +482,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     labelsSVG(objects.filter(Boolean), gridSize, labelOpts),
     // the columns above the labels and marks, as on the canvas: a column is never hidden under an aisle label
     ...columns.map(o => columnGridSVG(o, gridSize)),
+    sectionKeySVG(objects.filter(usable), gridSize, keyLz),
     scaleBarSVG(vb.x + 10 * u, titleY + titleH * 0.45, gridSize, u),
     titleBlockSVG(titleX, titleY, u, { title, scaleRatio, date }),
     legend,

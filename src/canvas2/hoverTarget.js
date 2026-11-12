@@ -18,6 +18,11 @@ import { selectionLevel, pickedBays, isBayRack } from './selectionLevel'
 import { bayHalfAt } from '../utils/baySides'
 import { isPickable, selectableIn } from '../utils/layers'
 import { crossAisleAt } from '../utils/crossAisleTool'
+import { legendHit } from '../utils/sectionLegend'
+import { useViewPrefs } from '../studio/viewPrefs'
+import { useLabelPrefs } from './labelPrefs'
+import { labelScale } from '../render/labelSize'
+import { layerShown } from '../utils/layers'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const round = (v) => Math.round(v * 10) / 10
@@ -57,6 +62,11 @@ export function predictClick(st, w, zoom) {
     if (s && FP.has(s.type) && (fpRotateHandleHitTest(s, gs, zoom, w.x, w.y) || (isPickable(st.layers, s) && fpHandleHit(s, w.x, w.y, zoom)))) return keep()
   } else if ((st.selectedIds || []).length >= 2) {
     /* the group rotate handle is checked by the press too; it is small and rare: left as the plain pick */
+  }
+  // a line of the sections' legend: its section (SectionLegend.jsx)
+  if (useViewPrefs.getState().sectionNames && layerShown(st.layers, 'sections')) {
+    const lid = legendHit(st.objects, w, gs, labelScale(useLabelPrefs.getState().labelSize, gs))
+    if (lid) return { key: 'section-legend:' + lid, kind: 'object', ids: [lid] }
   }
   let hitId = hitTest(st.objects, st.layers, w.x, w.y, zoom, gs)
   let hit = hitId ? st.objects.find(o => o.id === hitId) : null

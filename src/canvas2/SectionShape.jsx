@@ -6,6 +6,8 @@ import { polygonOf, isSection, sectionStyle, boundaryOf, wallInOf, edgeRuns } fr
 import { useSectionTool, useSectionHover, SECTION_PEN_TOOL } from './sectionTool'
 import { drawnBox } from '../utils/sectionEdit'
 import { useLiveObjects, useView } from './live'
+import { useHoverTarget } from './hoverTarget'
+import { sectionChipColors } from '../utils/lineNames'
 
 /* A section on the plan (STUDIO.md §7a Sections), drawn under the racks: a dashed #B9C7BE 1px outline (dash 6 4) and a
    very light #F4F8F5 fill — or its colour (utils/sectionAreas.js sectionStyle: the outline, a tint, a deeper label);
@@ -15,8 +17,13 @@ import { useLiveObjects, useView } from './live'
    (SectionNames.jsx). */
 function SectionShapeView({ obj, selected = false, listening = false, bind, doors = null, gridSize = 40 }) {
   const hovered = useSectionHover(s => s.id === obj.id)
+  // (legend round: hovered on the plan or on its legend line too; outlined in its colour — a plain section its chips'
+  // palette colour)
+  const planHover = useHoverTarget(s => !!s.target?.ids?.includes(obj.id) && (s.target.ids.length === 1))
+  const chip = useCanvasStore(s => sectionChipColors(s.objects).get(obj.id))
   if (!(obj.width > 0) || !(obj.height > 0)) return null
-  const pts = polygonOf(obj).flat(), on = selected || hovered, st = sectionStyle(obj, on), b = boundaryOf(obj)
+  const pts = polygonOf(obj).flat(), on = selected || hovered || planHover, b = boundaryOf(obj)
+  const st0 = sectionStyle(obj, on), st = on && !obj.color && chip ? { ...st0, stroke: chip } : st0
   const runs = b === 'none' ? [] : edgeRuns(obj, doors || [])
   return (
     <Group name={nodeName(obj.id)} listening={listening} {...(bind ? bind(obj) : null)}>

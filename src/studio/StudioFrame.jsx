@@ -18,7 +18,8 @@ import { useShownTallyH, TALLY_BOTTOM, TALLY_ISLAND_GAP, ISLAND_H, TALLY_CARD_GA
 import { useElevTab } from '../utils/elevTab'
 import { Icon } from './Icon'
 import { CheckCard } from './cards'
-import { Toggle } from './cardParts'
+import { Toggle, Seg } from './cardParts'
+import { lineNumbering, setLineNumbering } from '../utils/lineNames'
 import { LayerBody } from '../components/RightPanel/LayerPanel'
 import { useHelp, toggleHelp, closeHelp, HelpBody } from './HelpCard'
 
@@ -206,6 +207,7 @@ function BottomRight() {
   const showColors = useElevView(s => s.showColors)
   const { sectionNames, setSectionNames, rowLabels, setRowLabels } = useViewPrefs(useShallow(s => ({ sectionNames: s.sectionNames, setSectionNames: s.setSectionNames, rowLabels: s.rowLabels, setRowLabels: s.setRowLabels })))
   const [view, setView] = useState(false), [layers, setLayers] = useState(false)
+  const numbering = useCanvasStore(s => lineNumbering(s.elevations))
   const help = useHelp(s => s.open)
   const viewWrap = useRef(null), layersWrap = useRef(null), helpWrap = useRef(null)
   useCloses(view, () => setView(false), viewWrap)
@@ -227,8 +229,15 @@ function BottomRight() {
             {sw('Aisle labels', showAisles, toggleAisles)}
             {sw('Checks', showMarks, () => setShowMarks(!showMarks))}
             {sw('Elevation colours', showColors, () => setShowColors(!showColors))}
-            {sw('Section names', sectionNames, () => setSectionNames(!sectionNames), "Every section's tag — its name and size (off: only the one hovered or selected)")}
+            {sw('Section names', sectionNames, () => setSectionNames(!sectionNames), "The sections' legend — each section's colour and name, outside the building at its bottom-left")}
             {sw('Row numbers', rowLabels, () => setRowLabels(!rowLabels), 'The row numbers R1, R2 … at the row starts')}
+            {/* the rack lines' numbering (utils/lineNames.js), saved with the layout — greyed while Row numbers is off
+                (legend round: moved here from the BOM tab) */}
+            <div data-view-numbering aria-disabled={!rowLabels} title={rowLabels ? 'Continuous: R1 … across the layout · Per section: each section from R1' : 'Turn Row numbers on to choose'}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 6px 4px', opacity: rowLabels ? 1 : 0.4, pointerEvents: rowLabels ? 'auto' : 'none' }}>
+              <Seg aria="Line numbering" value={numbering} onChange={(v) => setLineNumbering(useCanvasStore, v)}
+                options={[{ value: 'continuous', label: 'Continuous', aria: 'Continuous' }, { value: 'section', label: 'Per section', aria: 'Per section' }]} />
+            </div>
           </div>
         )}
       </span>

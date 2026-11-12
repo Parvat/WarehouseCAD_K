@@ -49,6 +49,10 @@ import { useSectionRename } from './sectionTool'
 import { POINT_HANDLE_PX } from './SectionShape'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { fpDimHit, useDimEdit } from './FpDimEdit'
+import { legendHit } from '../utils/sectionLegend'
+import { legendShown } from './SectionLegend'
+import { useLabelPrefs } from './labelPrefs'
+import { labelScale } from '../render/labelSize'
 import { afterBuildingResize } from '../utils/buildingResize'
 import { afterSectionResize } from '../utils/sectionShrink'
 import { crossAisleAt, useCrossAislePick, clearCrossAislePick, snapMove, bayPitch, runsAt, moveCrossAisle } from '../utils/crossAisleTool'
@@ -716,6 +720,19 @@ export function useCanvasInteraction({
          falling back to it at mouseup, ONLY if the gesture never actually
          moved (movedEnough) — a real drag still means marquee, matching
          the drag/click split every other gesture here already makes. */
+      /* a press on a line of the sections' legend (SectionLegend.jsx, legend round): that section selected; on the one
+         selected alone, its name typed in place (as a second click on its name) */
+      if (evt.button === 0 && !evt.shiftKey && legendShown(st, useViewPrefs.getState().sectionNames)) {
+        const lid = legendHit(st.objects, world, st.gridSize || 40, labelScale(useLabelPrefs.getState().labelSize, st.gridSize || 40))
+        const sec = lid ? st.objects.find(o => o.id === lid) : null
+        if (sec && isSelectable(st.layers, sec)) {
+          pickedOnPlan(); st.setActiveWall(null)
+          // (the rename opened on the release, as a dimension label: the press's own focus change would close it at once)
+          if (st.selectedIds.length === 1 && st.selectedIds[0] === lid) dimClick.current = { rename: lid }
+          else st.selectObject(lid, false)
+          return
+        }
+      }
       let hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       let hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
       /* a press in a tunnel's bays (tunnel round, utils/tunnel.js): a click picks the tunnel, a drag along the run moves it in
@@ -1539,7 +1556,7 @@ export function useCanvasInteraction({
     const upGesture = () => {
       const dc = dimClick.current
       dimClick.current = null
-      if (dc) { useDimEdit.setState({ edit: dc }); return }
+      if (dc) { if (dc.rename) useSectionRename.setState({ id: dc.rename }); else useDimEdit.setState({ edit: dc }); return }
       const td = tunnelDrag.current
       tunnelDrag.current = null
       if (td) {

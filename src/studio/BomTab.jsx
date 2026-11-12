@@ -6,8 +6,7 @@ import { bomXlsx } from '../export/bomXlsx'
 import { useLayoutCheck } from '../utils/layoutCheck'
 import { rackFootprint } from '../generate/rackFootprint'
 import { colorOf } from '../utils/sectionAreas'
-import { C, MONO, Note, Btn, Sec, Seg } from './cardParts'
-import { lineNumbering, setLineNumbering } from '../utils/lineNames'
+import { C, MONO, Note, Btn, Sec } from './cardParts'
 import { Icon } from './Icon'
 import { openTally, useBomCards, cardOpen, selectedLineNos } from './tally'
 
@@ -189,13 +188,6 @@ export function BomTab() {
   return (
     <div role="tabpanel" aria-label="BOM" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <Sec>
-        {/* the rack lines' numbering (utils/lineNames.js), saved with the layout: R1 … across it, or each section from 1
-            with its code (L1 …; outside every section U1 …) — the plan, By row, the Tally, the xlsx and the CSV follow */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: C.muted, fontSize: 12 }}>Numbering</span>
-          <Seg aria="Line numbering" value={lineNumbering(T)} onChange={(v) => setLineNumbering(useCanvasStore, v)}
-            options={[{ value: 'continuous', label: 'Continuous', aria: 'Continuous' }, { value: 'section', label: 'Per section', aria: 'Per section' }]} />
-        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Btn kind="primary" style={small} onClick={openTally} disabled={!bom.lines.length}>Tally</Btn>
           <Btn kind="inset" style={small} aria-label="Download xlsx" title="Download xlsx" onClick={xlsx} disabled={!bom.lines.length}>xlsx</Btn>

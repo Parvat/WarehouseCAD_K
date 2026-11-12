@@ -47,7 +47,7 @@ import { useViewPrefs, fitRef } from '../studio/viewPrefs'
 import { RackLineLabels } from './RackLineLabels'
 import { publishView, useView } from './live'
 import { TallyFill, TallyHighlight } from './TallyHighlight'
-import { SectionNames } from './SectionNames'
+import { SectionLegend } from './SectionLegend'
 import { CrossAislePick } from './CrossAislePick'
 import { CrossAisleBandPreview, CrossAisleBar, liveBand } from './CrossAisleBand'
 import { CROSS_AISLE_TOOL, useCrossAisleTool, commitCut } from '../utils/crossAisleCut'
@@ -583,8 +583,9 @@ export function Canvas2() {
             )}
             {/* the rack line numbers R1, R2 … at each row end (RackLineLabels.jsx — the BOM's rows) */}
             <RackLineLabels />
-            {/* the sections' names: a tab on the outline, above the racks (SectionNames.jsx) */}
-            <SectionNames />
+            {/* the sections' legend: a key outside the building, its bottom-left (SectionLegend.jsx — legend round: no name
+                tags on the floor) */}
+            <SectionLegend />
             {/* the Row group: its rows outlined, a pending apply previewed (RowGroupPreview.jsx); a row being placed */}
             <RowGroupPreview />
             {/* the Split tool's cut line (SplitPreview.jsx) */}

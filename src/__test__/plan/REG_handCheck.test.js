@@ -2548,6 +2548,12 @@ describe('REG — the hand check by real clicks', () => {
     /* ── BOM v1: the BOM tab (studio/BomTab.jsx, utils/bom.js) by real clicks. Every fixture: one elevation, 4 levels
        (level 1 on the floor), 20′ frames, 96″ beams only ── */
     const bomTab = async () => { await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(200) }
+    /** the rack lines' numbering chosen in the View card, under Row numbers (legend round — was: in the BOM tab) */
+    const setNumbering = async (mode) => {
+      await L.page.getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150)
+      await L.page.getByRole('dialog', { name: 'View card' }).getByRole('group', { name: 'Line numbering' }).getByRole('button', { name: mode }).click(); await L.page.waitForTimeout(200)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+    }
     /** the lines shown: [part, size, qty, pairs] — the group `group` (default: the Total). Each line carries its part,
      *  size and counts (tally round: the tab writes a part on one line, "Frame 20 ft x 42 in"; the modal's table keeps
      *  Part · Size · Qty); its shown quantity must read the same ("18 (9 pr)" in the tab, "18 (9 pairs)" in the modal) */
@@ -2807,9 +2813,9 @@ describe('REG — the hand check by real clicks', () => {
       const tab = L.page.getByRole('tabpanel', { name: 'BOM' }), head = (id) => tab.locator(`button[data-bom-group-head="${id}"]`)
       const linesIn = (id) => tab.locator(`[data-bom-line][data-bom-group="${id}"]`).count()
       const opened = async () => [await head(s1.id).getAttribute('aria-expanded'), await head(s2.id).getAttribute('aria-expanded')]
-      // the tab: its Numbering (Continuous | Per section — row-numbering round), then Tally · xlsx · CSV, the Total card, the
-      // sections — the first open
-      expect((await tab.getByRole('button').allTextContents()).slice(0, 5)).toEqual(['Continuous', 'Per section', 'Tally', 'xlsx', 'CSV'])
+      // the tab: Tally · xlsx · CSV, the Total card, the sections — the first open (legend round: the Numbering moved to the
+      // View card — row-numbering round had it first here)
+      expect((await tab.getByRole('button').allTextContents()).slice(0, 3)).toEqual(['Tally', 'xlsx', 'CSV'])
       expect(await tab.locator('section[data-bom-card]').evaluateAll(c => c.slice(0, 3).map(x => x.getAttribute('data-bom-card')))).toEqual(['total', s1.id, s2.id])
       expect(await opened()).toEqual(['true', 'false'])
       expect([(await linesIn(s1.id)) > 0, await linesIn(s2.id)]).toEqual([true, 0])
@@ -2910,7 +2916,7 @@ describe('REG — the hand check by real clicks', () => {
       expect([await drawer.count(), Math.round(vp.height - back.y - back.height)]).toEqual([0, 20])                      // closed: back at the bottom
     }, T)
 
-    it('REG-live-overlays (click): every overlay moves in the same frame as its racks (tally-2 — was: the R labels, section name tabs and the Tally highlight sat where the racks were until the drop, then jumped; the selection bar trailed a pan by a frame) — everything selected (Ctrl+A) and dragged, after each mouse step the R labels, aisle labels, section name tabs and the Tally’s lit lines have moved exactly as the racks; panned (middle button), the selection bar too', async () => {
+    it('REG-live-overlays (click): every overlay moves in the same frame as its racks (tally-2 — was: the R labels, section name tabs and the Tally highlight sat where the racks were until the drop, then jumped; the selection bar trailed a pan by a frame) — everything selected (Ctrl+A) and dragged, after each mouse step the R labels, aisle labels, the sections’ legend (legend round — was: section name tabs) and the Tally’s lit lines have moved exactly as the racks; panned (middle button), the selection bar too', async () => {
       await openSections()
       const b = await innerBox()
       // (where its tag finds open floor: the tag is one of the overlays checked)
@@ -2921,6 +2927,8 @@ describe('REG — the hand check by real clicks', () => {
       await bomTab()
       await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(500)
       await L.page.getByRole('region', { name: 'Tally' }).locator(`th[data-tally-total="${s1.id}"]`).click(); await L.page.waitForTimeout(200)
+      // the sections' legend on (View's Section names), one of the overlays checked
+      await L.S('return import("/src/studio/viewPrefs.js").then(V => V.useViewPrefs.getState().setSectionNames(true))')
       await zoomForRowLabels()
       /** every overlay node as drawn now (page px), by a stable key, and the reference rack's */
       const snap = (refId) => L.page.evaluate((refId) => {
@@ -2928,7 +2936,7 @@ describe('REG — the hand check by real clicks', () => {
         const put = (k, n) => { const c = n.getClientRect({ skipShadow: true }); out[k] = [c.x, c.y] }
         st.find('.rack-line-label').forEach(n => put('R:' + n.text(), n))
         st.find(n => /^aisle:/.test(n.name())).forEach(n => put(n.name(), n))
-        st.find(n => /^section-tab:/.test(n.name())).forEach(n => put(n.name(), n))
+        st.find(n => /^section-legend-line:/.test(n.name())).forEach(n => put(n.name(), n))
         st.find('.tally-line').forEach((n, i) => put('tally:' + i, n))
         const ref = st.findOne(n => n.name() === 'obj:' + refId)
         const bar = document.querySelector('[data-selection-bar]')?.getBoundingClientRect()
@@ -2942,7 +2950,8 @@ describe('REG — the hand check by real clicks', () => {
       expect(!!grab).toBe(true)
       await L.page.mouse.move(grab.q.x, grab.q.y); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(200)
       const s0 = await snap(grab.id)
-      expect([...kinds(s0.out)].sort()).toEqual(['R', 'aisle', 'section-tab', 'tally'])
+      // (legend round: the sections' legend in place of their name tabs — it moves with the building)
+      expect([...kinds(s0.out)].sort()).toEqual(['R', 'aisle', 'section-legend-line', 'tally'])
       // the drag: after each step, every overlay moved exactly as the rack did
       await L.page.mouse.down()
       for (let k = 1; k <= 6; k++) {
@@ -2968,6 +2977,7 @@ describe('REG — the hand check by real clicks', () => {
         expect([k, off, !!s.bar && Math.hypot(s.bar[0] - p0.bar[0] - d[0], s.bar[1] - p0.bar[1] - d[1]) <= 0.75]).toEqual([k, [], true])
       }
       await L.page.mouse.up({ button: 'middle' }); await L.page.waitForTimeout(200)
+      await L.S('return import("/src/studio/viewPrefs.js").then(V => V.useViewPrefs.getState().setSectionNames(false))')
     }, T)
 
     it('REG-tally-focus (click): the drawer’s Focus hides the left rail, the tool pill, the top islands and the right card, refits the plan above the drawer and lets the drawer grow to 85% of the window; Focus again restores all (the height back within 70%); Focus, then Esc restores; Esc again closes the drawer', async () => {
@@ -3230,68 +3240,48 @@ describe('REG — the hand check by real clicks', () => {
     const openView = async () => { if (!(await viewCard().count())) { await island().getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150) } }
     const viewSwitch = (name) => ({ click: async () => { await openView(); await viewCard().getByRole('switch', { name }).click(); await L.page.waitForTimeout(120); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100) } })
     const viewState = async (name) => { await openView(); const v = await viewCard().getByRole('switch', { name }).getAttribute('aria-checked'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100); return v }
-    /** the section tags drawn now: { id → { x0, y0, x1, y1 (world), fill, fs, bg, texts (every text in it), layer } } */
+    /** the sections' legend lines drawn now (legend round — was: the floor tags): { id → { x0, y0, x1, y1 (world, the
+     *  line), text, bold, swatch (its fill), fs, texts (every text in it) } }; floor tags drawn: under '_tags' */
     const tabsNow = () => L.page.evaluate(() => {
       const st = window.Konva.stages[0], out = {}
-      for (const g of st.find(n => /^section-tab:/.test(n.name()))) {
-        const r = g.findOne('.section-label'), t = g.findOne('.section-tag')
-        out[g.name().slice(12)] = { x0: t.x(), y0: t.y(), x1: t.x() + t.width(), y1: t.y() + t.height(), fill: r.fill(), fs: r.fontSize(), font: r.fontFamily(), bg: t.fill(), texts: g.find('Text').length, layer: g.getLayer().index, text: r.text() }
+      for (const g of st.find(n => /^section-legend-line:/.test(n.name()))) {
+        const t = g.findOne('.section-legend-text'), w = g.findOne('.section-legend-swatch')
+        out[g.name().slice(20)] = { x0: w.x(), y0: t.y(), x1: t.x() + t.width(), y1: t.y() + t.height(), text: t.text(), bold: t.fontStyle() === '700', swatch: w.fill(), fs: t.fontSize(), texts: g.find('Text').length }
       }
+      const tags = st.find('.section-label').length
+      if (tags) out._tags = tags
       return out
     })
 
-    it('REG-section-names (click): a section\u2019s label is one dark tag (the zone size tag\u2019s pill, JetBrains Mono 11 px, its text white #F2F4F1) reading Name · W × L in the app\u2019s feet-inches, placed on open floor — inside the section along its bottom, right, top or left edge, else just outside it — never over a rack, a zone, an aisle label, an R label or another tag; hidden until the section is hovered or selected (the View card\u2019s Section names off by default); Section names on shows every tag; no name text inside and no edge dimension labels (section-tag round 2 — was: top edge centre, ft/in words, #D8B4FE; before that large name text, a dark chip, a white tab); drawn above the racks; the Sections list unchanged', async () => {
+    it('REG-section-names (click): the sections’ names are a legend, not tags on the floor (legend round — was: a dark tag per section, Name · W × L, on open floor): the View card’s Section names (off by default) shows it just outside the building at its bottom-left — a line per section, its colour swatch (its own, else a palette colour, as its R chips) and its name only (size and rows stay in Properties); no name on the floor whether the section is hovered or selected; hovered or selected, its line bold; a click on its line selects it; off again: gone; the Sections list unchanged', async () => {
       await openSections()
       const c0 = await freeCorner(), gs = await gs7()
       expect(c0).toBeTruthy()
       await onCanvasAll([c0, { x: c0.x + 30 * gs, y: c0.y + 24 * gs }])
       await drawRect(c0, { x: c0.x + 30 * gs, y: c0.y + 24 * gs })
       const [sec] = await secsNow()
-      // the View card's Section names switch (ui-polish-2 — was: a Sections button in the island)
       const toggle = viewSwitch('Section names')
       expect(await viewState('Section names')).toBe('false')
-      // drawn: selected — its name shows
-      expect(Object.keys(await tabsNow())).toEqual([sec.id])
-      // nothing selected, the pointer away: no name on the plan
+      // off: nothing — selected (just drawn) or not, hovered or not, no name on the plan
+      expect(await tabsNow()).toEqual({})
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(150)
       expect(await tabsNow()).toEqual({})
-      // hovered (its empty floor — a click there would select it): shown; away: gone
-      const g = await L.S(`const st = S.getState(), z = st.zoom, s = st.objects.find(o => o.id === arg), fp = st.objects.find(o => /^fp_/.test(o.type))
-        for (let fy = 0.2; fy < 0.95; fy += 0.02) for (let fx = 0.2; fx < 0.95; fx += 0.02) {
-          const x = s.x + s.width * fx, y = s.y + s.height * fy
-          if (H.hitTest(st.objects, st.layers, x, y, z, st.gridSize) === fp.id && !H.fpWallHitTest(st.objects, st.layers, x, y, z, st.gridSize) && [[4, 0], [-4, 0], [0, 4], [0, -4]].every(([dx, dy]) => H.hitTest(st.objects, st.layers, x + dx / z, y + dy / z, z, st.gridSize) === fp.id)) return { x, y }
-        }
-        return null`, sec.id)
-      expect(g).toBeTruthy()
-      const q = await L.toScreen(g)
-      await L.page.mouse.move(q.x - 3, q.y); await L.page.mouse.move(q.x, q.y, { steps: 3 }); await L.page.waitForTimeout(200)
-      expect(Object.keys(await tabsNow())).toEqual([sec.id])
-      await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
-      expect(await tabsNow()).toEqual({})
-      // the View card's Section names: every tag — "Section 1 · W x L", the zone size tag's look, at the top edge's middle
+      // on: the legend — its one line "Section 1", the swatch its chip colour, outside the building's bottom-left corner
       await toggle.click(); await L.page.waitForTimeout(150)
       expect(await viewState('Section names')).toBe('true')
-      const tab = (await tabsNow())[sec.id], z = await L.S('return S.getState().zoom')
-      const words = (px) => L.S('return import("/src/utils/bom.js").then(B => B.ftIn(arg / (S.getState().gridSize || 40) * 12))', px)
-      expect([tab.text, tab.fill, tab.bg, /JetBrains Mono/.test(tab.font), Math.abs(tab.fs * z - 11) < 1e-6, tab.texts]).toEqual(['Section 1 · ' + (await words(sec.w)) + ' × ' + (await words(sec.h)), '#F2F4F1', '#0a0d16', true, true, 1])
-      // on open floor: inside the section (else just outside it) — no rack, zone, aisle label or R label under it
-      const where = await tabAt(sec.id)
-      if (where.place === 'inside') expect([tab.x0 >= sec.x - 1e-6, tab.y0 >= sec.y - 1e-6, tab.x1 <= sec.x + sec.w + 1e-6, tab.y1 <= sec.y + sec.h + 1e-6]).toEqual([true, true, true, true])
-      const meets = (b) => b.x < tab.x1 && tab.x0 < b.x + b.width && b.y < tab.y1 && tab.y0 < b.y + b.height
-      const solid = await L.S('const st = S.getState(); return st.objects.filter(o => /^(rack_|zone_)/.test(o.type)).map(o => H.worldBoundsOf(o, st.objects))')
-      const labels = await L.page.evaluate(() => window.Konva.stages[0].find(n => /^(aisle|cross-aisle):/.test(n.name()) || n.name() === 'rack-line-label').map(n => { const c = n.getClientRect({ relativeTo: n.getLayer() }); return { x: c.x, y: c.y, width: c.width, height: c.height } }))
-      expect([solid.filter(meets), labels.filter(meets)]).toEqual([[], []])
+      const tab = (await tabsNow())[sec.id]
+      const want = await L.S(`return Promise.all([import('/src/utils/lineNames.js'), import('/src/utils/floorGeom.js')]).then(([N, G]) => { const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), p = G.buildingOutline(f)
+        return { color: N.sectionChipColors(st.objects).get(arg), x0: Math.min(...p.map(q => q.x)), y1: Math.max(...p.map(q => q.y)) } })`, sec.id)
+      expect([tab.text, tab.swatch, tab.texts, tab.bold]).toEqual(['Section 1', want.color, 1, false])
+      expect([tab.y0 > want.y1, Math.abs(tab.x0 - want.x0) < 3 * tab.fs]).toEqual([true, true])
       expect(await L.page.evaluate(() => window.Konva.stages[0].find(n => /^secdim:/.test(n.name())).length)).toBe(0)   // no edge dimension labels
-      const rackLayer = await L.page.evaluate(() => { const r = window.Konva.stages[0].findOne(n => /^obj:/.test(n.name()) && n.getLayer() && n.getAttr('name') && n.findOne && n.findOne('Rect')); return r ? r.getLayer().index : -1 })
-      expect(tab.layer).toBeGreaterThan(rackLayer)                                              // drawn above the racks
-      // a press on the tag selects the section
-      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
-      await L.click(await tabAt(sec.id))
-      expect(await L.S('return S.getState().selectedIds')).toEqual([sec.id])
+      // a click on its line selects the section, its line bold
+      await L.click(await tabAt(sec.id)); await L.page.waitForTimeout(150)
+      expect([await L.S('return S.getState().selectedIds'), (await tabsNow())[sec.id].bold]).toEqual([[sec.id], true])
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       // the Sections list still names it
       expect(await L.page.getByRole('tabpanel', { name: 'Properties' }).getByText('Section 1', { exact: true }).count()).toBeGreaterThan(0)
-      // off again: hidden
+      // off again: gone
       await toggle.click(); await L.page.waitForTimeout(150)
       expect([await viewState('Section names'), await tabsNow()]).toEqual(['false', {}])
     }, T)
@@ -3902,7 +3892,7 @@ describe('REG — the hand check by real clicks', () => {
       expect((await secsNow()).length).toBe(all.length - 1)
     }, T)
 
-    it('REG-section-edit (click): a section is selected by its name tab (the island’s Sections on — the tab on its outline, ui-polish-1; was: the label inside) or its outline; its name typed in the card or, on a second click on the tab, in place; a drag moves the section with the racks whose centre is in it (round 2) — every other rack stays; Delete removes the section only and one Ctrl+Z brings it back', async () => {
+    it('REG-section-edit (click): a section is selected by its legend line (View’s Section names on — legend round; was: its name tab on its outline, ui-polish-1) or its outline; its name typed in the card or, on a second click on the tab, in place; a drag moves the section with the racks whose centre is in it (round 2) — every other rack stays; Delete removes the section only and one Ctrl+Z brings it back', async () => {
       await openSections()
       const c0 = await freeCorner(40, 30), gs0 = await gs7()
       expect(c0).toBeTruthy()
@@ -3912,7 +3902,7 @@ describe('REG — the hand check by real clicks', () => {
       const [s] = await secsNow(), r0 = await racksNow()
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       expect(await L.selected()).toEqual([])
-      // every name shown (the island's Sections), its tab clicked: it selects it; the card: Name, Width, Length
+      // the legend shown (View's Section names), its line clicked: it selects it; the card: Name, Width, Length
       await viewSwitch('Section names').click()
       const label = await tabAt(s.id)
       await onCanvasAll([label])
@@ -3923,7 +3913,7 @@ describe('REG — the hand check by real clicks', () => {
       const name = card.getByRole('textbox', { name: 'Name' })
       await name.click(); await name.fill('Bulk'); await name.press('Enter'); await L.page.waitForTimeout(150)
       expect((await secsNow())[0].label).toBe('Bulk')
-      // the label clicked again — where it is drawn now (a new name finds its own spot: sections-3): renamed in place
+      // its legend line clicked again: renamed in place, the box over the line
       await L.click(await tabAt(s.id)); await L.page.waitForTimeout(150)
       const box = L.page.getByRole('textbox', { name: 'Rename section' })
       expect(await box.inputValue()).toBe('Bulk')
@@ -3972,7 +3962,8 @@ describe('REG — the hand check by real clicks', () => {
       const strokeOf = () => L.page.evaluate((id) => window.Konva.stages[0].findOne(n => n.name() === 'obj:' + id)?.findOne('Line')?.stroke(), sid)
       expect(await strokeOf()).toBe('#9AA29C')                                        // no colour: the grey dashed outline
       await row.hover(); await L.page.waitForTimeout(150)
-      expect(await strokeOf()).toBe('#2E7D5B')
+      // (legend round: outlined in its colour — a plain section its chips' palette colour; was: #2E7D5B)
+      expect(await strokeOf()).toBe(await L.S('return import("/src/utils/lineNames.js").then(N => N.sectionChipColors(S.getState().objects).get(arg))', sid))
       await row.click(); await L.page.waitForTimeout(150)
       expect(await L.S('return S.getState().selectedIds')).toEqual([sid])
       // the section moved 30 ft right (its left edge dragged): the counts follow, live
@@ -4006,9 +3997,9 @@ describe('REG — the hand check by real clicks', () => {
       await layersCard().getByRole('button', { name: 'Lock Sections layer' }).click(); await L.page.waitForTimeout(150)
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       expect(await drawn()).toBe(true)
-      // locked: a click on its name still selects it (shown while the section is hovered — its outline, here); a drag from
-      // its outline moves nothing
-      { const h = await grip(s.id), hq = await L.toScreen(h); await L.page.mouse.move(hq.x, hq.y, { steps: 2 }); await L.page.waitForTimeout(200) }
+      // locked: a click on its legend line still selects it (View's Section names on — legend round; was: its name tag, shown
+      // while hovered); a drag from its outline moves nothing
+      await L.S('return import("/src/studio/viewPrefs.js").then(V => V.useViewPrefs.getState().setSectionNames(true))'); await L.page.waitForTimeout(150)
       const nb = await tabAt(s.id)
       expect(nb).toBeTruthy()
       await L.click(nb)
@@ -4017,6 +4008,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.drag(edge, { x: edge.x + 10 * gs, y: edge.y }); await L.page.waitForTimeout(200)
       expect((await secsNow())[0].x).toBe(s.x)
       // unlocked: Ctrl+A takes it with the rest
+      await L.S('return import("/src/studio/viewPrefs.js").then(V => V.useViewPrefs.getState().setSectionNames(false))')
       await openLayers(); await layersCard().getByRole('button', { name: 'Unlock Sections layer' }).click(); await L.page.keyboard.press('Escape')
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+a'); await L.page.waitForTimeout(200)
       expect(await L.S('return S.getState().selectedIds.includes(arg)', s.id)).toBe(true)
@@ -4414,41 +4406,30 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
-    it('REG-section-tag-forced (click): a section with no free spot for its tag still shows it while selected or hovered — just outside its top edge, centred, drawn on top; with only the View card\u2019s Section names on it is skipped (look-only, one fixture)', async () => {
+    it('REG-section-tag-forced (click): a small section over the racks — no name tag on the floor at all, selected or hovered (legend round; was: a forced tag just outside its top edge while selected or hovered): selected, it is outlined in its colour (a plain section its chips’ palette colour); with View’s Section names on, its legend line bold while selected or hovered, plain otherwise (look-only, one fixture)', async () => {
       if (name !== 'older-horizontal') return
       await openSections()
       const b = await innerBox()
-      // a small section over the racks: no open floor for its tag inside or just outside — found by the rule itself
-      const spot = await L.S(`return Promise.all([import('/src/canvas2/SectionNames.jsx'), import('/src/canvas2/labelPrefs.js')]).then(([N, LP]) => { const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type))
-        const blocks = N.tagBlocks(st.objects, gs, { labelSize: LP.useLabelPrefs.getState().labelSize, rows: true }), b = arg
-        for (let fy = 0.15; fy < 0.8; fy += 0.05) for (let fx = 0.1; fx < 0.6; fx += 0.05) {
-          const r = [fx, fy, fx + 0.06, fy + 0.1], x = b.x0 + (b.x1 - b.x0) * r[0], y = b.y0 + (b.y1 - b.y0) * r[1]
-          const sec = { id: 'probe', type: 'section_area', shape: 'rect', label: 'Section 1', x, y, width: (b.x1 - b.x0) * 0.06, height: (b.y1 - b.y0) * 0.1, parentId: fp.id }
-          if (!N.sectionTagBox(sec, gs, st.zoom, { blocks, objects: st.objects })) return r
-        }
-        return null })`, b)
-      expect(spot).toBeTruthy()
-      const s = await drawIn(b, ...spot)
-      const free = await L.S(`return Promise.all([import('/src/canvas2/SectionNames.jsx'), import('/src/canvas2/labelPrefs.js')]).then(([N, LP]) => { const st = S.getState(), gs = st.gridSize || 40, o = st.objects.find(x => x.id === arg)
-        return !!N.sectionTagBox(o, gs, st.zoom, { blocks: N.tagBlocks(st.objects, gs, { labelSize: LP.useLabelPrefs.getState().labelSize, rows: true }), objects: st.objects }) })`, s.id)
-      expect(free).toBe(false)
-      // selected (just drawn): its tag, just outside the top edge, centred
-      const tag = () => L.page.evaluate((id) => { const g = window.Konva.stages[0].findOne(n => n.name() === 'section-tab:' + id); if (!g) return null; const t = g.findOne('.section-tag'); return { x0: t.x(), y0: t.y(), x1: t.x() + t.width(), y1: t.y() + t.height() } }, s.id)
-      const t = await tag(), z = await L.S('return S.getState().zoom')
-      expect(t).toBeTruthy()
-      expect([Math.abs((t.x0 + t.x1) / 2 - (s.x + s.w / 2)) < 1e-6, t.y1 <= s.y + 1e-6, s.y - t.y1 < 10 / z]).toEqual([true, true, true])
-      // the Section names toggle alone (nothing selected or hovered): skipped
-      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(150)
-      await viewSwitch('Section names').click(); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
-      expect(await tag()).toBe(null)
-      // hovered (its outline): shown again
+      const s = await drawIn(b, 0.3, 0.3, 0.36, 0.4)
+      const color = await L.S('return import("/src/utils/lineNames.js").then(N => N.sectionChipColors(S.getState().objects).get(arg))', s.id)
+      const stroke = () => L.page.evaluate((id) => window.Konva.stages[0].findOne(n => n.name() === 'obj:' + id).findOne('Line').stroke(), s.id)
+      // selected (just drawn): no tag; outlined in its colour
+      expect([(await tabsNow())._tags || 0, await stroke()]).toEqual([0, color])
+      // the legend on: its line bold while selected
+      await viewSwitch('Section names').click(); await L.page.waitForTimeout(150)
+      expect((await tabsNow())[s.id].bold).toBe(true)
+      // nothing selected, the pointer away: plain
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.mouse.move(5, 890); await L.page.waitForTimeout(200)
+      expect([(await tabsNow())[s.id].bold, await stroke()]).toEqual([false, '#9AA29C'])
+      // hovered (its outline): bold, outlined in its colour; still no tag
       const g = await grip(s.id), q = await L.toScreen(g)
       await L.page.mouse.move(q.x - 3, q.y); await L.page.mouse.move(q.x, q.y, { steps: 3 }); await L.page.waitForTimeout(200)
-      expect(await tag()).toBeTruthy()
+      expect([(await tabsNow())[s.id].bold, await stroke(), (await tabsNow())._tags || 0]).toEqual([true, color, 0])
+      await L.page.mouse.move(5, 890)
       await viewSwitch('Section names').click()
     }, T)
 
-    it('REG-section-colour (click): 8 soft colours in the card and the bar — the outline, the tint and the label take it, and the PDF', async () => {
+    it('REG-section-colour (click): 8 soft colours in the card and the bar — the outline, the tint and its legend swatch take it (legend round — was: its tag), and the PDF (its key too)', async () => {
       await openSections()
       // (where its tag finds open floor — it is checked below)
       const b = await innerBox(), s = await drawTagged(b, [[0.1, 0.1, 0.4, 0.4], [0.05, 0.05, 0.5, 0.6], [0.1, 0.3, 0.6, 0.7], [0.5, 0.1, 0.9, 0.5], [0.3, 0.5, 0.8, 0.95], [0.1, 0.5, 0.6, 0.99], [0.4, 0.6, 0.9, 0.99], [0.05, 0.01, 0.6, 0.4]])   // (a vertical layout: the open strip along a wall)
@@ -4456,16 +4437,20 @@ describe('REG — the hand check by real clicks', () => {
       const swatches = L.page.getByRole('group', { name: 'Section colour' }).getByRole('button')
       expect(await swatches.count()).toBe(9)                                       // none + 8
       await L.page.getByRole('button', { name: 'Colour Sky' }).click(); await L.page.waitForTimeout(150)
-      const look = () => L.page.evaluate((id) => { const st = window.Konva.stages[0], g = st.findOne(n => n.name() === 'obj:' + id), t = st.findOne(n => n.name() === 'section-tab:' + id); return { stroke: g.findOne('Line').stroke(), fill: g.findOne('Line').fill(), label: t.findOne('.section-label').fill() } }, s.id)
+      await L.S('return import("/src/studio/viewPrefs.js").then(V => V.useViewPrefs.getState().setSectionNames(true))'); await L.page.waitForTimeout(150)
+      const look = () => L.page.evaluate((id) => { const st = window.Konva.stages[0], g = st.findOne(n => n.name() === 'obj:' + id), t = st.findOne(n => n.name() === 'section-legend-line:' + id); return { stroke: g.findOne('Line').stroke(), fill: g.findOne('Line').fill(), swatch: t.findOne('.section-legend-swatch').fill() } }, s.id)
       expect((await secObj(s.id)).color).toBe('sky')
       const l = await look()
-      expect([l.fill.startsWith('rgba(110, 156, 200'), l.stroke !== '#2E7D5B' && l.stroke !== '#B9C7BE', l.label === '#F2F4F1']).toEqual([true, true, true])   // its tint and outline (its tag's text stays white — section-tag round 2; was: the label took the colour)
+      expect([l.fill.startsWith('rgba(110, 156, 200'), l.stroke !== '#2E7D5B' && l.stroke !== '#B9C7BE', l.swatch]).toEqual([true, true, '#6E9CC8'])   // its tint, its outline, its legend swatch
       // the bar's Colour ▾: Rose
       await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Colour' }).click(); await L.page.waitForTimeout(150)
       await L.page.getByRole('menu', { name: 'Section colour' }).getByText('Rose').click(); await L.page.waitForTimeout(150)
       expect((await secObj(s.id)).color).toBe('rose')
       const svg = await L.S('return import("/src/export/pdfExport.js").then(M => M.buildLayoutSVG(S.getState().objects, S.getState().layers, S.getState().gridSize || 40, { title: "t", elevations: S.getState().elevations }).svg)')
       expect(svg).toMatch(/data-section="[^"]+"><polygon[^>]*fill="rgba\(201, 133, 133, 0\.1\)"/)
+      // the PDF's key: its swatch Rose and its name (no name on its floor)
+      expect(svg).toMatch(/data-section-key="[^"]*">[\s\S]*fill="#C98585"\/><text[^>]*>Section 1<\/text>/)
+      await L.S('return import("/src/studio/viewPrefs.js").then(V => V.useViewPrefs.getState().setSectionNames(false))')
     }, T)
 
     it('REG-section-boundary (click): Boundary None · Fence · Wall (typed thickness) in the card; with one, the door tool snaps to the section\u2019s edge and the door cuts it', async () => {
@@ -4657,11 +4642,12 @@ describe('REG — the hand check by real clicks', () => {
       expect([Math.round(v1[0] - v0[0]), Math.round(v1[1] - v0[1]), s2.x, s2.y]).toEqual([60, 40, s1.x, s1.y])
     }, T)
 
-    it('REG-section-plain (click): a section with no colour has no fill and a grey #9AA29C dashed outline; selected, the green outline only, no tint', async () => {
+    it('REG-section-plain (click): a section with no colour has no fill and a grey #9AA29C dashed outline; selected, its outline only in its chips’ palette colour (legend round — was: green #2E7D5B), no tint', async () => {
       await openSections()
       const b = await innerBox(), s = await drawIn(b, 0.1, 0.1, 0.4, 0.4)
       const look = () => L.page.evaluate((id) => { const l = window.Konva.stages[0].findOne(n => n.name() === 'obj:' + id).findOne('Line'); return { fill: l.fill() || null, stroke: l.stroke(), dash: (l.dash() || []).length > 0 } }, s.id)
-      expect(await look()).toEqual({ fill: null, stroke: '#2E7D5B', dash: false })      // drawn: selected
+      const chip = await L.S('return import("/src/utils/lineNames.js").then(N => N.sectionChipColors(S.getState().objects).get(arg))', s.id)
+      expect(await look()).toEqual({ fill: null, stroke: chip, dash: false })      // drawn: selected
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       expect(await look()).toEqual({ fill: null, stroke: '#9AA29C', dash: true })
     }, T)
@@ -5914,14 +5900,14 @@ describe('REG — the hand check by real clicks', () => {
       for (const l of mine0) expect([l.no, labels.filter(t => t.split(/[–]/).includes('R' + l.no) || t === 'R' + l.no).length]).toEqual([l.no, 1])
       // Per section on top of it (row-numbering on fixes-x): the cut line still ONE line — one name, one label, one column
       await bomTab()
-      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('group', { name: 'Line numbering' }).getByRole('button', { name: 'Per section' }).click(); await L.page.waitForTimeout(250)
+      await setNumbering('Per section')
       const per = await L.S(`return Promise.all([import('/src/utils/bom.js'), import('/src/utils/lineNames.js')]).then(([B, N]) => { const st = S.getState(), gs = st.gridSize || 40
         const bom = B.computeBom(st.objects, st.elevations, { gridSize: gs }), nm = N.lineNamer(st.objects, st.elevations, gs)
         return { rows: bom.rows.map(r => r.no), cols: B.byRowTable(bom).groups.flatMap(g => g.rows), names: Object.fromEntries(arg.map(no => [no, nm(no)])) } })`, mine0.map(l => l.no))
       expect([per.rows, per.cols]).toEqual([before.rows, before.cols])
       const labelsPer = await L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(t => t.text()))
       for (const l of mine0) { const nm = per.names[l.no]; expect([nm, labelsPer.filter(t => t === nm || t.split('–').includes(nm)).length]).toEqual([nm, 1]) }
-      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('group', { name: 'Line numbering' }).getByRole('button', { name: 'Continuous' }).click(); await L.page.waitForTimeout(200)
+      await setNumbering('Continuous')
     }, T)
 
     /* ── fixes-x 2: the run beyond a cross-aisle slides outward; a row never deleted silently — by real mouse ── */
@@ -6175,7 +6161,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
-    it('REG-line-numbering (click): the BOM tab’s Numbering — Per section: each section’s rows R1, R2 … from 1, no letter codes (row-numbering fixes; was: its code in front, L1 …); the plan’s chips filled with the section’s colour (one from the palette for a section with none), the text white or dark; the BOM’s lists say the section — "Left > R1–R3"; the CSV a Section column and R3; saved with the layout; Continuous again: R1 … across, no chips (row-numbering round)', async () => {
+    it('REG-line-numbering (click): the View card’s Numbering (under Row numbers — legend round; was: in the BOM tab) — Per section: each section’s rows R1, R2 … from 1, no letter codes (row-numbering fixes; was: its code in front, L1 …); the plan’s chips filled with the section’s colour (one from the palette for a section with none), the text white or dark; the BOM’s lists say the section — "Left > R1–R3"; the CSV a Section column and R3; saved with the layout; Continuous again: R1 … across, no chips (row-numbering round)', async () => {
       const [s1, s2] = await twoSections()
       // the two sections named Left and Right in their card (a click on each in the Sections list) — no Code field any more
       await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(150)
@@ -6195,7 +6181,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(cont.every(h => /^R\d+$/.test(h))).toBe(true)
       expect(await chips()).toEqual([])
       // Per section
-      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('group', { name: 'Line numbering' }).getByRole('button', { name: 'Per section' }).click(); await L.page.waitForTimeout(250)
+      await setNumbering('Per section')
       const per = await heads()
       expect(per.length).toBe(cont.length)
       expect(per.every(h => /^R\d+$/.test(h))).toBe(true)
@@ -6218,12 +6204,12 @@ describe('REG — the hand check by real clicks', () => {
       // saved with the layout: the table carries it
       expect(await L.S('return S.getState().elevations.lineNumbering')).toBe('section')
       // Continuous again: as before
-      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('group', { name: 'Line numbering' }).getByRole('button', { name: 'Continuous' }).click(); await L.page.waitForTimeout(250)
+      await setNumbering('Continuous')
       expect(await heads()).toEqual(cont)
       expect([await labels(), await chips()]).toEqual([contLabels, []])
     }, T)
 
-    it('REG-three-sections (click): three sections drawn side by side wall to wall, each filled — with View’s Section names on, every section shows its name tag (on open floor: an aisle inside it when no edge has room — was: only the one with room outside, or none); a section copied and pasted takes the next name, so each BOM card shows its own section’s name (was: the paste kept "Section 1", two cards Section 1) (row-numbering fixes)', async () => {
+    it('REG-three-sections (click): three sections drawn side by side wall to wall, each filled — with View’s Section names on, the legend (outside the building, its bottom-left) lists every section, its colour and its name, and no name tag is on the floor (legend round; was: a tag per section on open floor — row-numbering fixes); a click on a legend line selects that section, its line bold; a hovered line bold; Section names off hides the legend; a section copied and pasted takes the next name, so each BOM card shows its own section’s name (was: the paste kept "Section 1", two cards Section 1) (row-numbering fixes)', async () => {
       await openSections()
       await clearRacks()
       const b = await innerBox()
@@ -6245,8 +6231,29 @@ describe('REG — the hand check by real clicks', () => {
       const sw = L.page.getByRole('dialog', { name: 'View card' }).getByRole('switch', { name: 'Section names' }).or(L.page.getByRole('dialog', { name: 'View card' }).getByRole('button', { name: 'Section names' }))
       if ((await sw.first().getAttribute('aria-checked')) !== 'true' && (await sw.first().getAttribute('aria-pressed')) !== 'true') await sw.first().click()
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(300)
-      const tags = await L.page.evaluate(() => window.Konva.stages[0].find('.section-label').map(t => t.text()))
-      for (const n of names) expect([n, tags.filter(t => t.startsWith(n + ' ·')).length]).toEqual([n, 1])
+      const legend = () => L.page.evaluate(() => window.Konva.stages[0].find('.section-legend-text').map(t => ({ text: t.text(), bold: t.fontStyle() === '700' })))
+      const lg = await legend()
+      expect(lg.map(q => q.text)).toEqual(names)
+      expect(await L.page.evaluate(() => window.Konva.stages[0].find('.section-label').length)).toBe(0)        // no tags on the floor
+      // the legend: outside the building, below its bottom-left corner; each swatch its section's chip colour
+      const geo = await L.S(`return Promise.all([import('/src/utils/sectionLegend.js'), import('/src/canvas2/labelPrefs.js'), import('/src/render/labelSize.js'), import('/src/utils/lineNames.js')]).then(([SL, LP, LS, N]) => { const st = S.getState(), gs = st.gridSize || 40
+        const f = st.objects.find(o => /^fp_/.test(o.type)), xs = f.fpVerts.map(q => q.x), ys = f.fpVerts.map(q => q.y), L = SL.sectionLegend(st.objects, gs, LS.labelScale(LP.useLabelPrefs.getState().labelSize, gs))[0], cols = N.sectionChipColors(st.objects)
+        return { below: L.y >= Math.max(...ys) - 0.5, left: Math.abs(L.x - Math.min(...xs)) < 1, items: L.items.map(q => ({ id: q.id, x: q.x + q.w / 2, y: q.y + q.h / 2, ok: q.color === cols.get(q.id) })) } })`)
+      expect([geo.below, geo.left, geo.items.every(q => q.ok)]).toEqual([true, true, true])
+      // a click on Section 3's line: Section 3 selected, its line bold
+      const l3 = geo.items[2]
+      await onCanvasAll([l3]); await L.click(l3); await L.page.waitForTimeout(200)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([ss[2].id])
+      expect((await legend()).map(q => q.bold)).toEqual([false, false, true])
+      // Section 1's line hovered: bold too
+      const p1 = await L.toScreen(geo.items[0]); await L.page.mouse.move(p1.x, p1.y); await L.page.waitForTimeout(250)
+      expect((await legend()).map(q => q.bold)).toEqual([true, false, true])
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      // Section names off: no legend; on again for the rest
+      await L.page.getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150)
+      await sw.first().click(); await L.page.waitForTimeout(200)
+      expect(await L.page.evaluate(() => window.Konva.stages[0].find('.section-legend-text').length)).toBe(0)
+      await sw.first().click(); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
       // Section 2 copied and pasted (Ctrl+C, Ctrl+V): the copy is Section 4; the BOM cards each their own section's name
       await L.S('S.getState().selectObject(arg)', ss[1].id); await L.page.waitForTimeout(150)
       await L.page.mouse.move(700, 450); await L.page.keyboard.press('Control+c'); await L.page.waitForTimeout(100); await L.page.keyboard.press('Control+v'); await L.page.waitForTimeout(400)
