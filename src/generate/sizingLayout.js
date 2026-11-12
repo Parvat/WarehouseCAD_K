@@ -537,8 +537,9 @@ function intervalHitsColumn(startFt, endFt, colLinesFt) {
  *      extra upright deducted before bays are even counted, not after), so
  *      the actual built width can end up larger (never smaller). */
 /* (cross-aisle round: no run under MIN_RUN_BAYS; the split follows the Fill bar's Cross aisle option — runCounts.) */
-/** The shortest run a cross-aisle may leave (cross-aisle round): no stub of 1 or 2 bays. */
-export const MIN_RUN_BAYS = 3
+/** The shortest run a cross-aisle may leave: one bay (fixes-x 3 — the 3-bay minimum removed everywhere; was 3, cross-aisle
+ *  round). The even split already gives no stubs. */
+export const MIN_RUN_BAYS = 1
 /** Run sizes for `total` bays in `S` runs of MIN_RUN_BAYS..maxBays (cross-aisle round), by the Fill bar's Cross aisle:
  *  'centre' — near-equal runs; 'left' — the runs from the low end as short as allowed, the cross-aisles packed toward
  *  it; 'right' — the mirror. → counts, or null when `total` can't be split so. */

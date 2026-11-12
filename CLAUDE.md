@@ -28,6 +28,9 @@ This file holds the rules; `CODEBASE.md` holds the map.
    **When the full suite runs:** a small fix runs only its related tests, then pushes. A big behaviour round runs the
    full suite (`npm test`) once before its push. And when the user says "ready to merge <branch>": run the full suite on
    that branch, fix anything it finds, then report it green.
+7. **Impact check before any layout-rule change** (placement, cutting, splitting, minimums, clearances): first apply it to
+   the 4 fixtures plus a small building, a short-row case and an L-shaped building, in both orientations, and report a
+   before/after table (racks, bays, positions removed or moved per case). Build it only after the user approves the table.
 
 ---
 

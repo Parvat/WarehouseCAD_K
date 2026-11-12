@@ -24,7 +24,6 @@ import { joinRacks } from '../canvas2/inlineSnap'
 import { rebuildAisles } from './aisleRebuild'
 import { fillEquipment, crossOf } from './fillTool'
 import { useCrossAislePick, crossAislesNow, runPiece, withEnd } from './crossAisleTool'
-import { MIN_RUN_BAYS } from '../generate/sizingLayout'
 import { runRoom } from './runRoom'
 import { wallSideOf } from './rackDepth'
 
@@ -89,8 +88,8 @@ export function bandOf(objects, from, to, widthFt, gs = 40, skip = () => false) 
  *  it stay; the run beyond it starts at its far edge with every bay the row had past it, sliding outward into the free
  *  floor past the row's end (utils/runRoom.js: up to the wall clearance, another rack's aisle, a zone, a door, the
  *  section's edge) — whole bays dropped from its far end only where there is no room. A band over the row's start or end
- *  trims it. A run is 3 bays or more: one of 1 or 2 goes (`short`, shown before the release); both sides under 3 — the row
- *  is not cut at all (`whole`). → { low, high, short: [{ n, r0, r1 }], whole } (low / high null: none that side). */
+ *  trims it. Any run is kept, 1 bay or more (fixes-x 3 — the 3-bay minimum removed); with no bay left on either side the
+ *  row is not cut (`whole`). → { low, high, whole } (low / high null: none that side). */
 function cutRow(o, s0, s1, gs, newId, secLow, secHigh, objects) {
   const g = geom(o), n = g.beams.length, up = upPx(o, gs)
   const ups = uprightsOf(g.r0, g.beams, up, gs), R = ups[n] + up
@@ -98,68 +97,57 @@ function cutRow(o, s0, s1, gs, newId, secLow, secHigh, objects) {
   const range = (from, k) => Array.from({ length: k }, (_, j) => from + j)
   let a = 0
   for (let i = 1; i <= n; i++) if (ups[i] + up <= s0 + EPS) a = i
-  const whole = { low: null, high: null, short: [], whole: true }
+  const whole = { low: null, high: null, whole: true }
   // the band over the row's end: a trim — the bays before it stay
   if (s1 >= R - EPS || a >= n) {
-    if (a < MIN_RUN_BAYS) return whole
+    if (!a) return whole
     const low = withEnd(piece(o, range(0, a), g.r0, gs, { genSection: secLow }), 'hi', 0)
     delete low.xaSpareFt
-    return { low, high: null, short: [], whole: false }
+    return { low, high: null, whole: false }
   }
   // the band over the row's start: a trim — the bays past it stay where they are (the row's far end kept)
   if (a === 0) {
     let b = 0, len = up
     for (let j = n - 1; j >= 0; j--) { const l = len + (g.beams[j] / 12) * gs + up; if (s1 + l <= R + EPS) { len = l; b++ } else break }
-    if (b < MIN_RUN_BAYS) return whole
+    if (!b) return whole
     const high = withEnd(piece(o, range(n - b, b), R - len, gs, {}), 'lo', 0)
     if (high.splitOf) delete high.splitOf
     if (o.xaSpareFt == null) delete high.xaSpareFt
-    return { low: null, high, short: [], whole: false }
+    return { low: null, high, whole: false }
   }
   // the run beyond: every bay past the row's low run, from the band's far edge, outward as far as the floor is free
   const limit = R + runRoom(o, objects, gs).hi
   let k = n - a
   while (k > 0 && s1 + lenOf(range(a, k)) > limit + EPS) k--
-  const lowShort = a < MIN_RUN_BAYS, highShort = k < MIN_RUN_BAYS
-  if (lowShort && highShort) return whole
-  const short = []
-  if (lowShort) short.push({ n: a, r0: g.r0, r1: ups[a] + up })
-  if (highShort && k > 0) short.push({ n: k, r0: s1, r1: s1 + lenOf(range(a, k)) })
-  const low = lowShort ? null : withEnd(piece(o, range(0, a), g.r0, gs, { genSection: secLow }), 'hi', 0)
-  if (low) delete low.xaSpareFt
+  const low = withEnd(piece(o, range(0, a), g.r0, gs, { genSection: secLow }), 'hi', 0)
+  delete low.xaSpareFt
   let high = null
-  if (!highShort) {
+  if (k > 0) {
     // (xaSpareFt: past the row's first end — below 0 when it slid outward; a Delete gives the row back where it ended)
     const spare = (R - (s1 + lenOf(range(a, k)))) / gs + (o.xaSpareFt || 0)
     high = withEnd(piece(o, range(a, k), s1, gs, low ? { id: newId(), pieceOf: o.pieceOf || o.id, genSection: secHigh, xaSpareFt: spare } : {}), 'lo', 0)
     if (high.splitOf) delete high.splitOf
-    if (!low && o.xaSpareFt == null) delete high.xaSpareFt
-  }
-  // a side gone: the aisle trims the row there — an end aisle on the side that stays
-  if (low && !high) return { low: withEnd(low, 'hi', (s1 - geom(low).r1) / gs), high: null, short, whole: false }
-  if (high && !low) return { low: null, high: withEnd(high, 'lo', (s1 - s0) / gs), short, whole: false }
-  return { low, high, short, whole: false }
+    }
+  // no bay fits past it: the aisle trims the row there — an end aisle on the run that stays
+  if (!high) return { low: withEnd(low, 'hi', (s1 - geom(low).r1) / gs), high: null, whole: false }
+  return { low, high, whole: false }
 }
 
 /** `objects` with the band cut through every row it crosses (bandOf) → { objects, cut (ids now either side), lo (the
- *  band's start, world px), report: [{ id, kind: 'short' (a run of 1 or 2 bays that goes) | 'whole' (a row too short to
- *  cut: left whole), n, rect (world px) }] — what the preview shows before the release } — pure; null when it crosses no
- *  row. */
+ *  band's start, world px) } — pure; null when it crosses no row. */
 export function planCut(objects, band, { gridSize = 40, newId = nanoid } = {}) {
   if (!band || !band.racks.length) return null
   const ids = new Set(band.racks)
   let next = 1 + Math.max(0, ...objects.filter(o => isRowRack(o)).map(o => o.genSection || 0))
   const freshLow = next++, freshHigh = next++
-  const out = [], made = [], report = []
-  const rectOf = (g, r0, r1) => (g.vert ? { x: g.s0, y: r0, w: g.s1 - g.s0, h: r1 - r0 } : { x: r0, y: g.s0, w: r1 - r0, h: g.s1 - g.s0 })
+  const out = [], made = []
   for (const o of objects) {
     if (!ids.has(o.id)) { out.push(o); continue }
-    const r = cutRow(o, band.s0, band.s1, gridSize, newId, o.genSection ?? freshLow, freshHigh, objects), g = geom(o)
-    if (r.whole) { out.push(o); report.push({ id: o.id, kind: 'whole', n: g.beams.length, rect: rectOf(g, g.r0, g.r1) }); continue }
-    for (const q of r.short) report.push({ id: o.id, kind: 'short', n: q.n, rect: rectOf(g, q.r0, q.r1) })
+    const r = cutRow(o, band.s0, band.s1, gridSize, newId, o.genSection ?? freshLow, freshHigh, objects)
+    if (r.whole) { out.push(o); continue }                                   // (no bay would be left: not cut)
     for (const p of [r.low, r.high]) if (p) { out.push(p); made.push(p.id) }
   }
-  return { objects: made.length ? rebuildAisles(out, newId).objects : objects, cut: made, lo: band.s0, report }
+  return { objects: made.length ? rebuildAisles(out, newId).objects : objects, cut: made, lo: band.s0 }
 }
 /** Cut the band (one undo step); the new cross-aisle is picked. → true when something was cut. */
 export function commitCut(store, band) {
@@ -214,8 +202,8 @@ export function planCrossAisleWidth(objects, c, widthFt, { gridSize = 40 } = {})
     if (!l.a || !l.b) { const r0 = l.a || l.b, r = changed.get(r0.id) || r0; changed.set(r.id, withEnd(r, l.a ? 'hi' : 'lo', widthFt)); continue }
     const a = changed.get(l.a.id) || l.a, b = changed.get(l.b.id) || l.b
     const b2 = relayHigh(b, geom(a).r1 + widthFt * gridSize, gridSize, objects)
-    // (fixes-x: a run after it of 1 or 2 bays — or none — goes: the aisle at the row's end, an end aisle that wide)
-    if (!b2 || b2.beams.length < MIN_RUN_BAYS) { gone.add(b.id); changed.set(a.id, withEnd(a, 'hi', widthFt)); continue }
+    // (no bay of the run after it left: the aisle at the row's end, an end aisle that wide)
+    if (!b2) { gone.add(b.id); changed.set(a.id, withEnd(a, 'hi', widthFt)); continue }
     changed.set(b.id, b2)
   }
   return rebuildAisles(objects.filter(o => !gone.has(o.id)).map(o => changed.get(o.id) || o), nanoid).objects

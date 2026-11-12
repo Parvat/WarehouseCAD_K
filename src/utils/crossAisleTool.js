@@ -4,7 +4,7 @@
 // next's (utils/copyChange.js sectionCrossAisles, per line). The lines whose gaps line up across are ONE cross-aisle.
 // A click in it picks it (the canvas's press, canvas2/useCanvasInteraction.js); a drag along the run moves it in whole
 // bays — in every line it crosses the run on one side gains the bays the other loses, the aisle's width unchanged — and
-// stops where a run would fall under MIN_RUN_BAYS (3) (xaisle-tool: Max run no longer stops it — a run longer than Max run
+// stops only where a run would have no bay left (fixes-x 3: no 3-bay minimum) (xaisle-tool: Max run no longer stops it — a run longer than Max run
 // is a Check warning). Its width is typed in the card and Delete rejoins its rows (utils/crossAisleCut.js, which also
 // makes one: the Cross aisle tool). The card types its place from the start wall
 // (its low end: the left, or the top). One undo per move. A Fill's racks stay its own: the area's pattern and the racks'
@@ -117,8 +117,8 @@ function runBays(objects, rack, rot) {
   return objects.filter(o => RACK.has(o.type) && o.parentId === rack.parentId && o.genSection === rack.genSection && (() => { const [d0, d1] = acrossOf(o, rot); return Math.min(d1, c1) - Math.max(d0, c0) > EPS })())
     .reduce((t, o) => t + (o.beams?.length || 0), 0)
 }
-/* tunnel round: a run either side is MIN_RUN_BAYS (3) bays or more, or 0 — the aisle at the row's end, the row trimmed
-   there (only where that run is one rack: it goes); never 1 or 2. Max run does not stop it (xaisle-tool: a Check warning). */
+/* a run either side is 1 bay or more (fixes-x 3 — was: 3 or more, tunnel round), or 0 — the aisle at the row's end, the row
+   trimmed there (only where that run is one rack: it goes). Max run does not stop it (xaisle-tool: a Check warning). */
 const okRun = (n, whole) => n >= MIN_RUN_BAYS || (n === 0 && whole)
 /** Is a move of `d` whole bays allowed for cross-aisle `c` (a positive move: toward the run's high end)? */
 function moveOk(objects, c, d) {
@@ -127,16 +127,13 @@ function moveOk(objects, c, d) {
     const A = na + d, B = nb - d
     if (A < 0 || B < 0 || (A === 0 && B === 0)) return false
     if (!l.a || !l.b) {
-      // an end aisle: the run that ends at it keeps 3 bays or more (its end rack one at least); the run it leaves past it
-      // when dragged back in is 3 bays or more, or none (it stays at the end)
+      // an end aisle: the run that ends at it keeps a bay at least; the run it leaves past it when dragged back in is a bay
+      // or more, or none (it stays at the end)
       const r = l.a || l.b, keep = l.a ? A : B, made = l.a ? B : A
       if (keep < MIN_RUN_BAYS || !(made === 0 || made >= MIN_RUN_BAYS) || made >= r.beams.length) return false
       continue
     }
     if (!okRun(A, na === l.a.beams.length) || !okRun(B, nb === l.b.beams.length)) return false
-    // (fixes-x: and each rack either side — not just its run — keeps 3 bays or more, or goes)
-    const ra = l.a.beams.length + d, rb = l.b.beams.length - d
-    if ((ra > 0 && ra < MIN_RUN_BAYS) || (rb > 0 && rb < MIN_RUN_BAYS)) return false
   }
   return true
 }
