@@ -5958,11 +5958,9 @@ describe('REG — the hand check by real clicks', () => {
       const gs = await gs7()
       const fpNow = () => L.S('return (() => { const f = S.getState().objects.find(o => /^fp_/.test(o.type)); const v = f.fpVerts, xs = v.map(q => q.x), ys = v.map(q => q.y); return { id: f.id, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), w: f.width, h: f.height } })()')
       const bays = () => L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).reduce((t, o) => t + o.beams.length, 0)')
-      // the racks the shrink rule covers: those on the usable floor before (inside the inner walls less the wall clearance —
-      // utils/buildingResize.js; a rack already inside the clearance, flush on a wall, it leaves as the handles do)
-      const usable = await L.S(`return import('/src/generate/columnCheck.js').then(CC => import('/src/utils/floorGeom.js').then(G => import('/src/utils/fillTool.js').then(F => { const st = S.getState(), gs = st.gridSize || 40, f = st.objects.find(o => /^fp_/.test(o.type)), p = G.innerOutline(f, gs)
-        const c = (F.rackingSettings().wallClearIn ?? 3) / 12 * gs - 0.5, X0 = Math.min(...p.map(q => q.x)) + c, X1 = Math.max(...p.map(q => q.x)) - c, Y0 = Math.min(...p.map(q => q.y)) + c, Y1 = Math.max(...p.map(q => q.y)) - c
-        return st.objects.filter(o => /^rack_/.test(o.type)).filter(o => { const q = CC.rackFootprint(o); return q.x >= X0 && q.y >= Y0 && q.x + q.w <= X1 && q.y + q.h <= Y1 }).map(o => o.id) })))`)
+      // every rack — one standing inside the wall clearance (flush on a wall) too: trimmed like the others (shrink-gap fix;
+      // was: only those on the usable floor before)
+      const usable = await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => o.id)')
       const outside = () => L.S(`return import('/src/generate/columnCheck.js').then(CC => import('/src/utils/floorGeom.js').then(G => { const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), p = G.innerOutline(f, st.gridSize || 40)
         const xs = p.map(q => q.x), ys = p.map(q => q.y), X1 = Math.max(...xs), Y1 = Math.max(...ys)
         return st.objects.filter(o => /^rack_/.test(o.type) && (arg.includes(o.id) || (o.pieceOf && arg.includes(o.pieceOf)))).map(o => CC.rackFootprint(o)).filter(q => q.x + q.w > X1 + 0.5 || q.y + q.h > Y1 + 0.5).length }))`, usable)
@@ -6018,6 +6016,59 @@ describe('REG — the hand check by real clicks', () => {
       f1 = await fpNow()
       expect([Math.round((f1.x1 - f1.x0) / gs), await bays(), await notice.count()]).toEqual([260, b2, 0])
       await L.page.keyboard.press('Escape')
+    }, T)
+
+    it('REG-shrink-flush (click): a building shrunk by its Width typed — a rack standing inside the wall clearance (flush at 0 in) is trimmed like the others, never left outside: a back-to-back pair along the moving wall, its outer side flush, goes as one object; one end-on to it, flush, loses its end bays and stays a pair — never split into a single; one Ctrl+Z restores every rack exactly (shrink-gap fix)', async () => {
+      await open()
+      const gs = await gs7()
+      const dump = () => L.S(`const r2 = (v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : v)
+        return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => JSON.stringify(Object.fromEntries(Object.keys(o).filter(k => !['activeBayIdx', 'activeBaySide'].includes(k)).sort().map(k => [k, r2(o[k])])))).sort()`)
+      const outsideNow = () => L.S(`return import('/src/generate/columnCheck.js').then(CC => import('/src/utils/floorGeom.js').then(G => { const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), p = G.innerOutline(f, st.gridSize || 40)
+        return st.objects.filter(o => /^rack_/.test(o.type)).filter(o => { const q = CC.rackFootprint(o); return !G.boxOnFloor(p, { x: q.x + 0.5, y: q.y + 0.5, w: q.w - 1, h: q.h - 1 }) }).map(o => o.id) }))`)
+      const notice = L.page.locator('[role="status"][aria-label="Notice"]')
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      const shrinkTo = async (ft) => {
+        const f = await L.S('return (() => { const f = S.getState().objects.find(o => /^fp_/.test(o.type)); const xs = f.fpVerts.map(q => q.x), ys = f.fpVerts.map(q => q.y); return { id: f.id, x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.min(...ys) + 2 } })()')
+        await onCanvasAll([f]); await L.click(f); await L.page.waitForTimeout(250)
+        expect(await L.S('return S.getState().selectedIds')).toEqual([f.id])
+        const w = card.getByLabel('Width (ft)'); await w.click(); await w.fill(String(ft)); await w.press('Enter'); await L.page.waitForTimeout(400)
+        if (await notice.count()) { await notice.getByRole('button', { name: /close/i }).first().click(); await L.page.waitForTimeout(150) }
+      }
+      // (1) the fixture as saved (crowded-vertical: a rack flush on the right wall): Width 200 — nothing left outside; one
+      // Ctrl+Z: every rack back exactly
+      const d0 = await dump()
+      let h0 = await hist7()
+      await shrinkTo(200)
+      expect([(await hist7()) - h0, await outsideNow()]).toEqual([1, []])
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect(await dump()).toEqual(d0)
+      // (2) two back-to-back pairs flush at 0 in on the right wall (setup): one along it (turned, its outer side on the wall),
+      // one end-on to it (its far end on the wall)
+      await clearRacks()
+      const g = await L.S(`return import('/src/utils/floorGeom.js').then(G => { const st = S.getState(), gs = st.gridSize || 40, f = st.objects.find(o => /^fp_/.test(o.type)), p = G.innerOutline(f, gs)
+        const X1 = Math.max(...p.map(q => q.x)), Y0 = Math.min(...p.map(q => q.y)), Y1 = Math.max(...p.map(q => q.y)), px = (i) => i / 12 * gs
+        const W = px(3 * 7 + 96 * 6), H = px(42 * 2 + 9), base = { type: 'rack_double_row', width: W, height: H, beams: [96, 96, 96, 96, 96, 96], uprightWidth: 3, depthIn: 42, flueSpaceIn: 9, levels: 4, parentId: f.id }
+        const cy = Y0 + (Y1 - Y0) * 0.3, along = { ...base, id: 'pairAlong', rotation: 90, x: X1 - H / 2 - W / 2, y: cy - H / 2 }
+        const endOn = { ...base, id: 'pairEnd', rotation: 0, x: X1 - W, y: Y0 + (Y1 - Y0) * 0.75 }
+        S.setState({ objects: [...st.objects, along, endOn] }); st.commitObjectUpdate(f.id, {})
+        return { X1, H, W } })`)
+      expect(await outsideNow()).toEqual([])
+      const d1 = await dump()
+      const fpW = await L.S('return (() => { const f = S.getState().objects.find(o => /^fp_/.test(o.type)); return f.width / (S.getState().gridSize || 40) })()')
+      h0 = await hist7()
+      await shrinkTo(Math.round(fpW - 5))                                                       // the right wall 5 ft in
+      expect((await hist7()) - h0).toBe(1)
+      const racks = await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => ({ id: o.id, type: o.type, n: o.beams.length, pieceOf: o.pieceOf || null }))')
+      // the pair along the wall: gone as one (no single half left of it); the one end-on: still a pair, its end bays off
+      expect(racks.filter(r => r.id === 'pairAlong' || r.pieceOf === 'pairAlong')).toEqual([])
+      const end = racks.filter(r => r.id === 'pairEnd' || r.pieceOf === 'pairEnd')
+      expect(end.map(r => r.type)).toEqual(['rack_double_row'])
+      expect(end[0].n).toBeLessThan(6)
+      expect(await outsideNow()).toEqual([])
+      // one Ctrl+Z: both back exactly
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect(await dump()).toEqual(d1)
+      void g
     }, T)
 
     it('REG-xaisle-slide (click): an 80 ft building, its rows 9 bays of 8 ft (about 74 ft), a 9 ft cross-aisle after bay 4 — every row cut 4 bays + 9 ft + 4 bays: one bay lost, the run beyond slid outward into the free floor past the row’s end (never past the wall clearance); one undo (fixes-x 2 — was: the run beyond held the row’s end, losing two bays)', async () => {

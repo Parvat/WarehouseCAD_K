@@ -97,13 +97,21 @@ const fits = (poly, b) => boxOnFloor(poly, { x: b.x + E, y: b.y + E, w: Math.max
  *  (racking areas clipped or removed) }. Pure. */
 export function planBuildingResize(objects, before, after, { gridSize = 40, clearIn = 0, newId = nanoid, profile = MHE_PROFILES.reach } = {}) {
   const was = usableFloor(before, gridSize, clearIn), now = usableFloor(after, gridSize, clearIn)
+  /* (shrink-gap fix) a bay that stood inside the wall clearance before — closer to a wall than it, flush at 0 — is measured
+     against the clearance it had: the floors inset by that much; it goes when the new walls leave it less (was: never on
+     the floor, left as it stood — outside the building once its wall came in past it) */
+  const steps = [], floors = new Map()
+  for (let c = Math.max(0, clearIn || 0) - 0.25; c > 0; c -= 0.25) steps.push(Math.round(c * 100) / 100)
+  steps.push(0)
+  const floorsAt = (c) => { if (!floors.has(c)) floors.set(c, [usableFloor(before, gridSize, c), usableFloor(after, gridSize, c)]); return floors.get(c) }
+  const okBoth = (b) => { if (fits(was, b)) return [true, fits(now, b)]; for (const c of steps) { const [w, n] = floorsAt(c); if (fits(w, b)) return [true, fits(n, b)] } return [false, false] }
   let removed = 0
   const out = []
   for (const o of objects) {
     const mine = o && BEAM.has(o.type) && Array.isArray(o.beams) && o.beams.length && (o.parentId === after.id || o.parentId == null)
     if (!mine) { out.push(o); continue }
     const boxes = bayBoxes(o, gridSize)
-    const okNow = boxes.map(b => fits(now, b)), okWas = boxes.map(b => fits(was, b))
+    const ok = boxes.map(okBoth), okNow = ok.map(q => q[1]), okWas = ok.map(q => q[0])
     if (okNow.every(Boolean) || !okWas.some(Boolean)) { out.push(o); continue }   // untouched, or never on this floor
     if (!okNow.some(Boolean)) { removed += o.beams.length; continue }              // the whole row is outside now
     // whole bays from the ends: each end bay that fit before and no longer fits, until one fits
