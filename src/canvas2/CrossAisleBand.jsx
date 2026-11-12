@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react'
 import { Group, Rect, Text } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { HOME_TOOL } from '../utils/homeTool'
-import { useCrossAisleTool, bandOf, cutWidthFt, defaultWidthFt, setCutWidth, cancelCut, setCutMode, setTunnelRemove, setTunnelWidthFt, CROSS_AISLE_TOOL } from '../utils/crossAisleCut'
+import { useCrossAisleTool, bandOf, cutWidthFt, defaultWidthFt, setCutWidth, cancelCut, setCutMode, setTunnelRemove, setTunnelWidthFt, planCut, CROSS_AISLE_TOOL } from '../utils/crossAisleCut'
 import { tunnelSummary, tunnelWords, standardBayIn } from '../utils/tunnel'
 import { isPickable } from '../utils/layers'
 import { useView, useLiveObjects } from './live'
@@ -40,6 +40,10 @@ export function CrossAisleBandPreview() {
   const rectOf = (c0, c1) => (b.vert ? { x: c0, y: b.s0, w: c1 - c0, h: b.s1 - b.s0 } : { x: b.s0, y: c0, w: b.s1 - b.s0, h: c1 - c0 })
   const r = rectOf(b.c0, b.c1)
   const fs = 12 / zoom, pad = 4 / zoom
+  /* fixes-x 2: before the release, what the cut would do that loses a row's run — a run of 1 or 2 bays that goes (red, its
+     reason), a row too short to cut (red: it stays whole) */
+  const report = mode === 'tunnel' ? [] : (planCut(objects, b, { gridSize: gs, newId: () => 'preview' })?.report || [])
+  const RED = '#C0392B'
   const label = mode === 'tunnel' ? `Tunnel · ${levels > 1 ? `L1–L${levels}` : 'L1'}` : sizeWords(ftIn(((b.s1 - b.s0) / gs) * 12))
   const lw = label.length * fs * 0.6 + pad * 2, lh = fs + pad * 2
   return (
@@ -54,6 +58,16 @@ export function CrossAisleBandPreview() {
             fontFamily="JetBrains Mono, monospace" fill="#41483F" listening={false} />
         </Group>
       ) })}
+      {report.map((q, i) => {
+        const text = q.kind === 'whole' ? 'Row too short to cut' : `${q.n} bay${q.n === 1 ? '' : 's'} — removed (a run is 3 bays or more)`
+        const fz = Math.min(10 / zoom, Math.max(q.rect.h, q.rect.w) * 0.6)
+        return (
+          <Group key={q.id + ':' + i} name={q.kind === 'whole' ? 'cross-aisle-band-whole' : 'cross-aisle-band-short'} listening={false}>
+            <Rect x={q.rect.x} y={q.rect.y} width={q.rect.w} height={q.rect.h} fill="rgba(192,57,43,0.22)" stroke={RED} strokeWidth={1.5} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={false} />
+            <Text name="cross-aisle-band-red-text" text={text} x={q.rect.x} y={q.rect.y + q.rect.h + 2 / zoom} fontSize={fz} wrap="none" fontFamily="JetBrains Mono, monospace" fill={RED} listening={false} />
+          </Group>
+        )
+      })}
       <Group x={r.x + r.w / 2 - lw / 2} y={r.y + r.h / 2 - lh / 2} listening={false}>
         <Rect width={lw} height={lh} fill="#1F2321" cornerRadius={3 / zoom} listening={false} />
         <Text name="cross-aisle-band-text" text={label} width={lw} height={lh} align="center" verticalAlign="middle" fontSize={fs}

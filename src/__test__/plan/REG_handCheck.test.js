@@ -3077,9 +3077,8 @@ describe('REG — the hand check by real clicks', () => {
       expect(labels.filter(l => dims.some(d => hit(l, d))).map(l => l.text)).toEqual([])                         // nor over an aisle width label
       // one label per line or pair: "R7" or "R2–R3", each number once
       const nums = labels.flatMap(l => { const m = l.text.match(/^R(\d+)(?:–R(\d+))?$/); return m[2] ? [Number(m[1]), Number(m[2])] : [Number(m[1])] })
-      // (fixes-x: a line cut by cross-aisles is labelled on each piece with its one number — was: each number once)
-      const pieces = await L.S('return import("/src/utils/rackLines.js").then(RL => Object.fromEntries(RL.rackLinesNow(S.getState().objects, S.getState().gridSize || 40).map(l => [l.no, l.pieces.length])))')
-      for (const n of new Set(nums)) expect([n, nums.filter(m => m === n).length <= pieces[n]]).toEqual([n, true])
+      // (one label per line — a line cut by cross-aisles too, at its outer start: fixes-x 2; fixes-x had one per piece)
+      expect(new Set(nums).size).toBe(nums.length)
       await bomTab()
       await fullView('By row')
       const t = await byRowShown()
@@ -3092,8 +3091,8 @@ describe('REG — the hand check by real clicks', () => {
         const first = Number(l.text.match(/^R(\d+)/)[1]), r = rows.find(q => q.no === first)
         const x0 = Math.min(...r.b.map(b => b.x)), x1 = Math.max(...r.b.map(b => b.x + b.width)), y0 = Math.min(...r.b.map(b => b.y)), y1 = Math.max(...r.b.map(b => b.y + b.height))
         const vert = (y1 - y0) > (x1 - x0), reach = 60 / z
-        // (just before its line's start — or a piece's start, a line cut by cross-aisles: fixes-x)
-        const before = r.b.some(b => (vert ? l.y < b.y && b.y - l.y < reach : l.x < b.x && b.x - l.x < reach))
+        // (just before its line's outer start — a line cut by cross-aisles too: fixes-x 2)
+        const before = vert ? l.y < y0 && y0 - l.y < reach : l.x < x0 && x0 - l.x < reach
         const across = vert ? l.x > x0 - reach && l.x < x1 + reach : l.y > y0 - reach && l.y < y1 + reach
         expect([l.text, before, across]).toEqual([l.text, true, true])
       }
@@ -5300,12 +5299,15 @@ describe('REG — the hand check by real clicks', () => {
     const eqWidth = () => L.S('return import("/src/utils/crossAisleCut.js").then(X => X.defaultWidthFt(S.getState().objects, null))')
     const xaTool = () => L.page.getByRole('toolbar', { name: 'Drawing tools' }).getByRole('button', { name: 'Cross aisle' })
     /** every row of `before` cut by a `W` ft cross-aisle in `after`: [run before, run after] — the first starting where the
-     *  row did, the gap exactly W, the second ending within a bay of where the row ended (never past) */
+     *  row did, the gap exactly W, the second ending no nearer than a bay short of where the row ended — it slides outward
+     *  into free floor to keep its bays (fixes-x 2; was: ending within a bay of the row's end, never past) — and no more
+     *  bays lost than the aisle covers */
     const expectCut = (before, after, W, pitch, keys = [...before.keys()]) => {
+      const bays = (q) => Math.round((q.r1 - q.r0 - 0.25) / pitch)
       for (const k of keys) {
         const [o] = before.get(k), p = after.get(k)
         expect([k, p.length]).toEqual([k, 2])
-        expect([Math.abs(p[0].r0 - o.r0) < 1e-6, Math.abs(p[1].r0 - p[0].r1 - W) < 1e-6, p[1].r1 <= o.r1 + 1e-6, p[1].r1 > o.r1 - pitch - 1e-6]).toEqual([true, true, true, true])
+        expect([Math.abs(p[0].r0 - o.r0) < 1e-6, Math.abs(p[1].r0 - p[0].r1 - W) < 1e-6, p[1].r1 > o.r1 - pitch - 1e-6, bays(o) - bays(p[0]) - bays(p[1]) <= Math.ceil(W / pitch)]).toEqual([true, true, true, true])
       }
     }
     const pitchFt = (ids) => L.S('const r = S.getState().objects.find(o => arg.includes(o.id)); return ((r.beams[0] || 96) + (r.uprightWidth || 3)) / 12', ids)
@@ -5514,7 +5516,8 @@ describe('REG — the hand check by real clicks', () => {
           const [o] = before.get(k), q = after.get(k)
           expect(q.length).toBe(1)
           if (dir > 0) expect(Math.abs(q[0].r0 - o.r0) < 1e-6 && q[0].r1 < o.r1 - 1e-6).toBe(true)
-          else expect(q[0].r0 > o.r0 + 1e-6 && q[0].r1 <= o.r1 + 1e-6 && q[0].r1 > o.r1 - c.pitch / gs0 - 1e-6).toBe(true)
+          // (its end where the run beyond the cut ended — slid outward past the row's first end where the floor was free: fixes-x 2)
+          else expect(q[0].r0 > o.r0 + 1e-6 && q[0].r1 > o.r1 - c.pitch / gs0 - 1e-6).toBe(true)
         }
         // the end aisle: one cross-aisle, every line of it at the rows' end — still picked
         const ends = (await crossNow()).filter(k => k.lines.every(m => m.a == null || m.b == null))
@@ -5782,7 +5785,7 @@ describe('REG — the hand check by real clicks', () => {
 
     /* ── fixes-x: no run of 1 or 2 bays; the card keeps its room over the Tally; the Check card closes on the floor; the BOM's
        Selected card; a cut row keeps its number — by real mouse ── */
-    it('REG-xaisle-min-run (click): a Cross aisle band laid so the run past it would be 1 bay — that bay goes, the aisle trims the rows there (an end aisle): no rack of 1 or 2 bays; the same with 2 bays (fixes-x)', async () => {
+    it('REG-xaisle-min-run (click): a Cross aisle band laid so the run past it would be 1 bay at the row’s old end — it slides outward to keep 3 bays where the floor is free, else goes and the aisle trims the row there (an end aisle): no rack of 1 or 2 bays; the same with 2 bays (fixes-x; fixes-x 2: the slide)', async () => {
       await open()
       for (const k of [1, 2]) {
         const f = await fillRow(140, 'centre'), area = await lastArea()
@@ -5799,9 +5802,11 @@ describe('REG — the hand check by real clicks', () => {
         await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
         const bays = await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type) && (o.areaId === arg || (o.pieceOf && S.getState().objects.find(p => p.id === o.pieceOf)?.areaId === arg))).map(o => o.beams.length)', area)
         expect([k, bays.every(n => n >= 3)]).toEqual([k, true])
-        // the rows are one run each (trimmed), the aisle an end aisle at their end
-        expect([k, [...(await rowsBy(area)).values()].every(q => q.length === 1)]).toEqual([k, true])
-        expect([k, (await crossNow()).some(c => c.lines.every(m => m.a == null || m.b == null))]).toEqual([k, true])
+        // each row one run (trimmed: an end aisle at its end) or two — the run beyond slid outward to keep 3 bays where the
+        // floor is free (fixes-x 2; was: always trimmed); never a run of 1 or 2 (REG-xaisle-short-red: shown red first)
+        const runs = [...(await rowsBy(area)).values()]
+        expect([k, runs.every(q => q.length === 1 || q.length === 2)]).toEqual([k, true])
+        if (runs.some(q => q.length === 1)) expect([k, (await crossNow()).some(c => c.lines.some(m => m.a == null || m.b == null))]).toEqual([k, true])
       }
     }, T)
 
@@ -5882,7 +5887,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(await tab().locator('[data-bom-card="selected"]').count()).toBe(0)
     }, T)
 
-    it('REG-row-number-cut (click): a row line cut by a cross-aisle keeps its number — each piece labelled with it on the plan, one BOM row (column) covering both pieces; the numbering otherwise unchanged (fixes-x)', async () => {
+    it('REG-row-number-cut (click): a row line cut by a cross-aisle keeps its number — one label, at its outer start (fixes-x 2; was: each piece labelled — fixes-x), one BOM row (column) covering both pieces; the numbering otherwise unchanged (fixes-x)', async () => {
       await open()
       const f = await fillRow(140, 'centre')
       const linesNow = () => L.S(`return Promise.all([import('/src/utils/rackLines.js'), import('/src/utils/bom.js')]).then(([RL, B]) => { const st = S.getState(), gs = st.gridSize || 40
@@ -5900,9 +5905,104 @@ describe('REG — the hand check by real clicks', () => {
       expect(after.lines.filter(l => l.mine).map(l => [l.no, l.pieces])).toEqual(mine0.map(l => [l.no, 2]))
       // the BOM (and the Tally, xlsx and CSV — byRowTable's columns): one column per line
       expect([after.rows, after.cols]).toEqual([before.rows, before.cols])
-      // the plan: each piece labelled with the line's number
+      // the plan: one label per line, at its outer start (fixes-x 2 — was: on each piece)
       const labels = await L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(t => t.text()))
-      for (const l of mine0) expect([l.no, labels.filter(t => t.split(/[–]/).includes('R' + l.no) || t === 'R' + l.no).length]).toEqual([l.no, 2])
+      for (const l of mine0) expect([l.no, labels.filter(t => t.split(/[–]/).includes('R' + l.no) || t === 'R' + l.no).length]).toEqual([l.no, 1])
+    }, T)
+
+    /* ── fixes-x 2: the run beyond a cross-aisle slides outward; a row never deleted silently — by real mouse ── */
+    /** a building `w` × `h` ft alone, filled with rows across wall to wall → { area, ids } */
+    const fpFilled = async (w, h) => {
+      await L.S(`const st = S.getState(); S.setState({ objects: [], selectedIds: [] }); st.placeFpObject({ type: 'fp_rect', widthFt: ${w}, heightFt: ${h} })
+        const f = S.getState().objects.find(o => o.type === 'fp_rect'); S.getState().commitObjectUpdate(f.id, {}); return f.id`)
+      await L.page.getByRole('button', { name: 'Fit', exact: true }).click(); await L.page.waitForTimeout(300)
+      // (a small building fills the screen: out twice, its corners clear of the islands)
+      for (let i = 0; i < 2; i++) { await L.page.getByRole('button', { name: 'Zoom out' }).click(); await L.page.waitForTimeout(120) }
+      const b = await innerBox(), gs = await gs7()
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      await L.page.getByRole('toolbar', { name: 'Fill racking options' }).getByRole('button', { name: 'Rows across' }).click()
+      const a = { x: b.x0 + gs * 0.2, y: b.y0 + gs * 0.2 }, c = { x: b.x1 - gs * 0.2, y: b.y1 - gs * 0.2 }
+      await onCanvasAll([a, c]); await L.drag(a, c); await L.page.waitForTimeout(700)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      const area = await lastArea()
+      return { area, ids: await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => o.id)') }
+    }
+    /** every row line of the racks: [{ key (type + across), pieces: [{ id, n (bays), r0, r1 (ft) }] }] */
+    const linesOf = () => L.S(`return import('/src/generate/columnCheck.js').then(CC => { const st = S.getState(), gs = st.gridSize || 40, m = new Map()
+      for (const o of st.objects.filter(o => /^rack_/.test(o.type))) { const f = CC.rackFootprint(o), v = f.h > f.w, k = o.type + ':' + ((v ? f.x : f.y) / gs).toFixed(2)
+        if (!m.has(k)) m.set(k, []); m.get(k).push({ id: o.id, n: o.beams.length, r0: (v ? f.y : f.x) / gs, r1: (v ? f.y + f.h : f.x + f.w) / gs }) }
+      return [...m.entries()].map(([key, ps]) => ({ key, pieces: ps.sort((p, q) => p.r0 - q.r0) })) })`)
+    /** the Cross aisle tool, Width typed; the press and the drag across every row with the band starting on bay line `k`
+     *  of the first pair (its k-th bay's far upright); `release` false: the pointer kept down (the preview) */
+    const bandAt = async (k, widthFt, release = true) => {
+      await L.page.mouse.move(5, 890)
+      await L.page.getByRole('toolbar', { name: 'Drawing tools' }).getByRole('button', { name: 'Cross aisle' }).click(); await L.page.waitForTimeout(150)
+      const wf = L.page.getByRole('toolbar', { name: 'Cross aisle' }).getByRole('textbox', { name: 'Cross aisle width (ft)' })
+      await wf.click(); await wf.fill(String(widthFt)); await wf.press('Enter'); await L.page.waitForTimeout(100)
+      const g = await L.S(`return import('/src/generate/columnCheck.js').then(CC => { const st = S.getState(), gs = st.gridSize || 40
+        const r = st.objects.find(o => o.type === 'rack_double_row'), f = CC.rackFootprint(r), up = (r.uprightWidth || 3) / 12 * gs
+        const line = f.x + up + arg.k * ((r.beams[0] + (r.uprightWidth || 3)) / 12) * gs
+        const fs = st.objects.filter(o => /^rack_/.test(o.type)).map(o => CC.rackFootprint(o))
+        return { x: line + arg.w * gs / 2, y0: Math.min(...fs.map(q => q.y)) - gs * 0.5, y1: Math.max(...fs.map(q => q.y + q.h)) + gs * 0.5 } })`, { k, w: widthFt })
+      const a = { x: g.x, y: g.y0 }, c = { x: g.x, y: g.y1 }
+      await onCanvasAll([a, c])
+      const pa = await L.toScreen(a), pc = await L.toScreen(c)
+      await L.page.mouse.move(pa.x, pa.y); await L.page.mouse.down(); await L.page.mouse.move(pc.x, pc.y, { steps: 6 }); await L.page.waitForTimeout(200)
+      if (release) { await L.page.mouse.up(); await L.page.waitForTimeout(400) }
+    }
+    const redNow = () => L.page.evaluate(() => window.Konva.stages[0].find('.cross-aisle-band-red-text').map(t => t.text()))
+
+    it('REG-xaisle-slide (click): an 80 ft building, its rows 9 bays of 8 ft (about 74 ft), a 9 ft cross-aisle after bay 4 — every row cut 4 bays + 9 ft + 4 bays: one bay lost, the run beyond slid outward into the free floor past the row’s end (never past the wall clearance); one undo (fixes-x 2 — was: the run beyond held the row’s end, losing two bays)', async () => {
+      await open()
+      await fpFilled(80, 60)
+      const l0 = await linesOf(), pairs0 = l0.filter(l => l.key.startsWith('rack_double_row'))
+      expect(pairs0.length).toBeGreaterThan(0)
+      for (const l of pairs0) expect([l.key, l.pieces.map(q => q.n)]).toEqual([l.key, [9]])
+      const b = await innerBox(), gs = await gs7(), clearFt = await L.S('return import("/src/utils/fillTool.js").then(F => F.rackingSettings().wallClearIn ?? 3)') / 12
+      const h0 = await hist7()
+      await bandAt(4, 9)
+      expect((await hist7()) - h0).toBe(1)
+      const l1 = await linesOf()
+      for (const l of pairs0) {
+        const now = l1.find(q => q.key === l.key), [o] = l.pieces
+        expect([l.key, now.pieces.map(q => q.n)]).toEqual([l.key, [4, 4]])
+        const [lo, hi] = now.pieces
+        expect([l.key, Math.abs(hi.r0 - lo.r1 - 9) < 0.01]).toEqual([l.key, true])                       // the aisle 9 ft
+        expect([l.key, hi.r1 > o.r1 + 0.01, hi.r1 <= b.x1 / gs - clearFt + 0.01]).toEqual([l.key, true, true])  // slid outward, inside the clearance
+      }
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect((await linesOf()).filter(l => l.key.startsWith('rack_double_row')).map(l => l.pieces.map(q => q.n))).toEqual(pairs0.map(() => [9]))
+    }, T)
+
+    it('REG-xaisle-short-red (click): a band whose run before it would be 2 bays — while dragging, those bays show red with the reason ("2 bays — removed …"), nothing changed yet; on release they go, the run beyond kept (slid outward); no rack under 3 bays (fixes-x 2)', async () => {
+      await open()
+      await fpFilled(80, 60)
+      const n0 = await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).length')
+      await bandAt(2, 9, false)
+      const red = await redNow()
+      expect(red.length).toBeGreaterThan(0)
+      expect(red.every(t => /^2 bays — removed \(a run is 3 bays or more\)$/.test(t))).toBe(true)
+      expect(await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).length')).toBe(n0)       // nothing changed yet
+      await L.page.mouse.up(); await L.page.waitForTimeout(400)
+      const l1 = await linesOf()
+      expect(l1.every(l => l.pieces.every(q => q.n >= 3))).toBe(true)
+      for (const l of l1.filter(q => q.key.startsWith('rack_double_row'))) expect([l.key, l.pieces.length, l.pieces[0].n]).toEqual([l.key, 1, 6])
+    }, T)
+
+    it('REG-xaisle-too-short (click): a 47 ft building, 5-bay rows, a cross-aisle in the middle — both sides would be under 3 bays: while dragging each row shows red "Row too short to cut"; on release no row is cut and none removed — every rack as it was (fixes-x 2 — was: the rows deleted)', async () => {
+      await open()
+      await fpFilled(47, 40)
+      const l0 = await linesOf()
+      expect(l0.filter(l => l.key.startsWith('rack_double_row')).every(l => l.pieces.length === 1 && l.pieces[0].n === 5)).toBe(true)
+      const h0 = await hist7()
+      await bandAt(2, 9, false)
+      const red = await redNow()
+      expect(red.length).toBeGreaterThan(0)
+      expect([...new Set(red)]).toEqual(['Row too short to cut'])
+      await L.page.mouse.up(); await L.page.waitForTimeout(400)
+      expect(await linesOf()).toEqual(l0)
+      expect((await hist7()) - h0).toBe(0)
+      await L.page.keyboard.press('Escape')
     }, T)
   })
 })
