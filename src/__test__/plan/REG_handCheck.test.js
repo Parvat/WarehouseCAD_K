@@ -1051,8 +1051,9 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.selected(), await tool()]).toEqual([[], 'pan'])
       // a click outside the building (on the open canvas) clears
       await L.click(floor)
-      // (past the wall's pick band — screen px: nothing to pick there)
-      const out = await L.S('const st = S.getState(), f = st.objects.find(o => o.id === arg); return [0.03, 0.06, 0.1].flatMap(k => [{ x: f.x - f.width * k, y: f.y + f.height / 2 }, { x: f.x + f.width * (1 + k), y: f.y + f.height / 2 }, { x: f.x + f.width / 2, y: f.y - f.height * k }, { x: f.x + f.width / 2, y: f.y + f.height * (1 + k) }]).filter(w => !H.hitTest(st.objects, st.layers, w.x, w.y, st.zoom, st.gridSize) && !H.fpWallHitTest(st.objects, st.layers, w.x, w.y, st.zoom, st.gridSize))', fp.id)
+      // (past the wall's pick band — screen px: nothing to pick there; and off the building's dimension pills, which a click
+      // opens for typing while it is selected — building-size fix, canvas2/FpDimEdit.jsx)
+      const out = await L.S('return import("/src/canvas2/FpDimEdit.jsx").then(D => { const st = S.getState(), f = st.objects.find(o => o.id === arg); return [0.03, 0.06, 0.1].flatMap(k => [{ x: f.x - f.width * k, y: f.y + f.height / 2 }, { x: f.x + f.width * (1 + k), y: f.y + f.height / 2 }, { x: f.x + f.width / 2, y: f.y - f.height * k }, { x: f.x + f.width / 2, y: f.y + f.height * (1 + k) }]).filter(w => !H.hitTest(st.objects, st.layers, w.x, w.y, st.zoom, st.gridSize) && !H.fpWallHitTest(st.objects, st.layers, w.x, w.y, st.zoom, st.gridSize) && D.fpDimHit(f, w, st.gridSize || 40, st.zoom) == null) })', fp.id)
       let outside = null
       for (const w of out) { const p = await L.toScreen(w); if (await L.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName === 'CANVAS', p)) { outside = w; break } }
       expect(outside).toBeTruthy()
