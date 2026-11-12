@@ -759,7 +759,9 @@ export function useCanvasInteraction({
         }
       }
       if (evt.button === 0 && (!hitObj || FP_SET_INPUT.has(hitObj.type))) {
-        const wallHit = fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
+        // (a press inside a cross-aisle's gap — an end aisle a few feet off a wall — is the aisle's, not the wall's hit band:
+        // tunnel fixes)
+        const wallHit = crossAisleAt(st.objects, world) ? null : fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
         if (wallHit) {
           const fpObj = st.objects.find(o => o.id === wallHit.objId)
           if (fpObj) {

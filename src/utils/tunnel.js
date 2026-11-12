@@ -11,10 +11,23 @@
 // (canvas2/TunnelMarks.jsx); a click in it picks it (its card: Levels removed, its elevation, Delete); a drag along the
 // run moves it in whole bays; Delete gives the levels back. One undo step each. A tunnel is a way in for Check layout:
 // a truck drives through it (generate/aisleAccess.js rackBlocks).
+//
+// Its WIDTH (tunnel fixes): a tunnel is ONE bay in each row — the bay at the band's start — whose beam length is the
+// tunnel's width (the mode bar's Width, typed; empty: the bay as it is — the standard bay). Its kept levels take beams that
+// long (the BOM counts them at that length). The row grows or shrinks by the difference at its OPEN end (the end with more
+// free floor before a wall — less the wall clearance — a rack or a zone: endRoom); where it would run into one, whole bays
+// go at that end. The card's Width does the same; a move carries the wide bay along (the row's length unchanged); Delete
+// gives the levels back and the row's own bay length (its other bays'). One undo step each.
 
 import { create } from 'zustand'
+import { nanoid } from 'nanoid'
 import { geom, uprightsOf, isRowRack } from './rowGroup'
 import { levelsAt, typeById } from './elevations'
+import { rackFootprint } from '../generate/rackFootprint'
+import { innerOutline } from './floorGeom'
+import { runPiece } from './crossAisleTool'
+import { rebuildAisles } from './aisleRebuild'
+import { rackingSettings } from './fillTool'
 
 const EPS = 1e-6
 const isRev = (o) => { const t = ((((o.rotation || 0) % 360) + 360) % 360); return t === 180 || t === 270 }
@@ -107,32 +120,107 @@ export function tunnelSummary(objects, T, band, n, gs = 40) {
 /** "Removes L1–L2 · keeps 2 levels" */
 export const tunnelWords = ({ n, keeps }) => `Removes ${n > 1 ? `L1–L${n}` : 'L1'} · keeps ${keeps} level${keeps === 1 ? '' : 's'}`
 
-/** The run-order bays of rack `r` under the band (overlapping it along the run). */
+/** The run-order bay of rack `r` a band makes its tunnel: of the bays under it (overlapping it along the run), the one
+ *  starting nearest the band's start (tunnel fixes: one bay a row) → [j], or [] (none under it). */
 export function bandBays(r, band, gs = 40) {
-  const g = geom(r), up = upPx(r, gs), ups = uprightsOf(g.r0, g.beams, up, gs), out = []
-  for (let j = 0; j < g.beams.length; j++) if (Math.min(ups[j + 1] + up, band.s1) - Math.max(ups[j], band.s0) > EPS) out.push(j)
-  return out
+  const g = geom(r), up = upPx(r, gs), ups = uprightsOf(g.r0, g.beams, up, gs)
+  let best = null, bd = Infinity
+  for (let j = 0; j < g.beams.length; j++) {
+    if (!(Math.min(ups[j + 1] + up, band.s1) - Math.max(ups[j], band.s0) > EPS)) continue
+    const d = Math.abs(ups[j] + up - band.s0)
+    if (d < bd - EPS) { bd = d; best = j }
+  }
+  return best == null ? [] : [best]
+}
+
+/* ── the tunnel's width: its bay's beam length, the row longer or shorter at its open end ── */
+
+const isRack = (o) => typeof o?.type === 'string' && o.type.startsWith('rack_')
+/** The standard bay (in): the Racking settings' bay (beam) length. */
+export const standardBayIn = () => rackingSettings().beamIn || 96
+/** Free floor past each end of rack `o` along its run (world px): { lo, hi } — to the nearest wall across its line (less
+ *  the wall clearance), rack or zone standing across it. */
+export function endRoom(o, objects, gs = 40) {
+  const g = geom(o), room = { lo: Infinity, hi: Infinity }
+  const across = (c0, c1) => Math.min(c1, g.s1) - Math.max(c0, g.s0) > EPS
+  const block = (a0, a1, c0, c1) => {
+    if (!across(c0, c1)) return
+    if (a0 >= g.r1 - EPS) room.hi = Math.min(room.hi, a0 - g.r1)
+    else if (a1 <= g.r0 + EPS) room.lo = Math.min(room.lo, g.r0 - a1)
+  }
+  for (const q of objects || []) {
+    if (q.id === o.id) continue
+    if (isRack(q)) { const f = rackFootprint(q); if (g.vert) block(f.y, f.y + f.h, f.x, f.x + f.w); else block(f.x, f.x + f.w, f.y, f.y + f.h) }
+    else if (/^zone_/.test(q.type || '') && q.width > 0 && q.height > 0) { if (g.vert) block(q.y, q.y + q.height, q.x, q.x + q.width); else block(q.x, q.x + q.width, q.y, q.y + q.height) }
+  }
+  const fp = (objects || []).find(q => q.id === o.parentId && /^fp_/.test(q.type || ''))
+  if (fp) {
+    const poly = innerOutline(fp, gs), clear = ((rackingSettings().wallClearIn ?? 3) / 12) * gs
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length]
+      // the walls across the run: parallel to the rack's depth
+      if (g.vert ? Math.abs(a.y - b.y) > EPS : Math.abs(a.x - b.x) > EPS) continue
+      const at = g.vert ? a.y : a.x, c0 = g.vert ? Math.min(a.x, b.x) : Math.min(a.y, b.y), c1 = g.vert ? Math.max(a.x, b.x) : Math.max(a.y, b.y)
+      if (!across(c0, c1)) continue
+      if (at >= g.r1 - EPS) room.hi = Math.min(room.hi, at - clear - g.r1)
+      else if (at <= g.r0 + EPS) room.lo = Math.min(room.lo, g.r0 - at - clear)
+    }
+  }
+  return { lo: Math.max(0, room.lo), hi: Math.max(0, room.hi) }
+}
+/** Rack `o` with its run-order bays `runIdx` `beamIn` long: the row longer or shorter by the difference at its open end
+ *  (endRoom: the end with more free floor; a tie — the high end); past the free floor there, whole bays go at that end
+ *  (never one of `runIdx`). → { rack, idx (`runIdx` in the rack now) } or null (it cannot fit). */
+export function resizeBays(o, objects, runIdx, beamIn, gs = 40) {
+  const g = geom(o), n = g.beams.length, up = upPx(o, gs)
+  const beamsRun = g.beams.map((b, j) => (runIdx.includes(j) ? beamIn : b))
+  const dPx = ((beamsRun.reduce((t, b) => t + b, 0) - g.beams.reduce((t, b) => t + b, 0)) / 12) * gs
+  if (Math.abs(dPx) < EPS) return { rack: o, idx: runIdx }
+  const room = endRoom(o, objects, gs), hiEnd = room.hi >= room.lo
+  let keep = Array.from({ length: n }, (_, j) => j), over = dPx - (hiEnd ? room.hi : room.lo)
+  while (over > EPS) {
+    const j = hiEnd ? keep[keep.length - 1] : keep[0]
+    if (runIdx.includes(j)) return null
+    keep = hiEnd ? keep.slice(0, -1) : keep.slice(1)
+    over -= (beamsRun[j] / 12) * gs + up
+  }
+  const len = up + keep.reduce((t, j) => t + (beamsRun[j] / 12) * gs + up, 0)
+  const r0 = hiEnd ? g.r0 : g.r1 - len
+  const withBeams = { ...o, beams: isRev(o) ? [...beamsRun].reverse() : beamsRun }
+  return { rack: runPiece(withBeams, keep, r0, gs), idx: runIdx.map(j => keep.indexOf(j)) }
+}
+/** A tunnel's width (ft): its first bay's beam length. */
+export const tunnelWidthFt = (t) => { const s = t.segs[0]; return (s.rack.beams[localOf(s.rack, s.runIdx[0])] || 96) / 12 }
+/** The row's own bay length (in): the commonest beam of its bays outside any tunnel, else the standard bay. */
+function ownBayIn(r) {
+  const count = new Map()
+  r.beams.forEach((b, i) => { if (!(tb(r, i) > 0)) count.set(b, (count.get(b) || 0) + 1) })
+  let best = null
+  for (const [b, k] of count) if (best == null || k > count.get(best)) best = b
+  return best ?? standardBayIn()
 }
 /** `objects` with a tunnel of `n` levels removed under the band in every row it crosses (crossAisleCut.js bandOf: a wall
  *  row is never crossed) → { objects, ids } or null (no bay under it). Pure. */
-export function planTunnel(objects, band, n, gs = 40) {
+/* (tunnel fixes: one bay a row, `widthFt` its beam length — the row longer or shorter at its open end; null: as it is) */
+export function planTunnel(objects, band, n, gs = 40, widthFt = null) {
   if (!band || !band.racks.length || !(n > 0)) return null
   const want = new Set(band.racks), ids = new Set()
   let out = objects.map(o => {
     if (!want.has(o.id)) return o
-    const bays = bandBays(o, band, gs)
+    let bays = bandBays(o, band, gs), r = o
     if (!bays.length) return o
+    if (widthFt > 0) { const z = resizeBays(o, objects, bays, widthFt * 12, gs); if (!z) return o; r = z.rack; bays = z.idx }
     ids.add(o.id)
-    return withTunnel(o, bays, n)
+    return withTunnel(r, bays, n)
   })
   if (!ids.size) return null
   out = asHandEdited(out, ids)
-  return { objects: out, ids }
+  return { objects: widthFt > 0 ? rebuildAisles(out, nanoid).objects : out, ids }
 }
 /** Lay the tunnel (one undo step); it is picked. → true when a bay took it. */
-export function commitTunnel(store, band, n) {
+export function commitTunnel(store, band, n, widthFt = null) {
   const st = store.getState(), gs = st.gridSize || 40
-  const plan = planTunnel(st.objects, band, n, gs)
+  const plan = planTunnel(st.objects, band, n, gs, widthFt)
   if (!plan) return false
   const first = [...plan.ids][0]
   store.setState({ objects: plan.objects })
@@ -170,9 +258,15 @@ export function moveTunnel(store, t, d) {
   d = Math.max(lo, Math.min(hi, Math.round(d)))
   if (!d) return 0
   const st = store.getState(), gs = st.gridSize || 40
-  // every segment's bays cleared first, then set where they go
-  let next = changeSegs(st.objects, t, (r, s) => withTunnel(r, s.runIdx, 0))
-  next = next.map(o => { const ss = t.segs.filter(s => s.rack.id === o.id); return ss.length ? ss.reduce((r, s) => withTunnel(r, s.runIdx.map(j => j + d), s.n), o) : o })
+  // each segment's bays carried d bays along with their beams and types (tunnel fixes: the wide bay goes with it), the
+  // bays they pass the other way — the row's length unchanged
+  const next = changeSegs(st.objects, t, (r, s) => {
+    const n = r.beams.length, lo = Math.min(...s.runIdx), hi = Math.max(...s.runIdx)
+    const rest = Array.from({ length: n }, (_, j) => j).filter(j => j < lo || j > hi)
+    const at = lo + d
+    const perm = [...rest.slice(0, at), ...s.runIdx, ...rest.slice(at)]
+    return runPiece(r, perm, geom(r).r0, gs)
+  })
   commitChange(store, next, t.segs[0].rack.id)
   useTunnelPick.setState({ pick: { fpId: t.fpId, rot: t.rot, at: (t.lo + t.hi) / 2 + d * tunnelPitch(t, gs) }, drag: null })
   return d
@@ -184,9 +278,29 @@ export function setTunnelLevels(store, t, n) {
   commitChange(store, changeSegs(store.getState().objects, t, (r, s) => withTunnel(r, s.runIdx, n)), t.segs[0].rack.id)
   return true
 }
-/** Tunnel `t` deleted: its bays' levels back — one undo step. */
+/** Tunnel `t` `widthFt` wide (its bays' beam length; tunnel fixes) — one undo step. → false when no row took it. */
+export function setTunnelWidth(store, t, widthFt) {
+  if (!(widthFt > 0)) return false
+  const st = store.getState(), gs = st.gridSize || 40
+  let took = false
+  const next = changeSegs(st.objects, t, (r, s) => {
+    const z = resizeBays(r, st.objects, s.runIdx, widthFt * 12, gs)
+    if (!z || z.rack === r) return r
+    took = true
+    return z.rack
+  })
+  if (!took) return false
+  commitChange(store, rebuildAisles(next, nanoid).objects, t.segs[0].rack.id)
+  return true
+}
+/** Tunnel `t` deleted: its bays' levels back, and the row's own bay length (tunnel fixes) — one undo step. */
 export function deleteTunnel(store, t) {
-  commitChange(store, changeSegs(store.getState().objects, t, (r, s) => withTunnel(r, s.runIdx, 0)), t.segs[0].rack.id)
+  const st = store.getState(), gs = st.gridSize || 40
+  const next = changeSegs(st.objects, t, (r, s) => {
+    const z = resizeBays(r, st.objects, s.runIdx, ownBayIn(r), gs)
+    return z ? withTunnel(z.rack, z.idx, 0) : withTunnel(r, s.runIdx, 0)
+  })
+  commitChange(store, rebuildAisles(next, nanoid).objects, t.segs[0].rack.id)
   useTunnelPick.setState({ pick: null, drag: null })
   return true
 }

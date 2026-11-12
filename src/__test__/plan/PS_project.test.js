@@ -486,7 +486,9 @@ describe('PS — the project', () => {
     expect([WR.wallLineFor(100, [10, 70, 200], -1, 40), WR.wallLineFor(100, [10, 50], -1, 40), WR.wallLineFor(100, [130, 160], +1, 40), WR.wallLineFor(100, [150], +1, 40)]).toEqual([70, null, 130, null])
     const at = (gapIn, depthIn = 42) => RD.wallSideOf({ ...wall, y: 10 + ft(gapIn), depthIn, height: ft(depthIn) }, objs, GS)
     expect([at(3), at(30), at(42), at(43), at(50), at(50, 54)]).toEqual([-1, -1, -1, 0, 0, -1])   // 30" on the wall (the old 18" said no); 50" off: a 54" rack's reach, not a 42"'s
-    expect(src('utils/rackDepth.js')).toMatch(/return wallLineFor\(m\.x \* n\.x \+ m\.y \* n\.y, lines, \+1, reach\) != null/)
+    // flush on the wall (wall clearance 0): on it too — tunnel fixes: Fill's wall rows at 0" were cut by the Cross aisle band
+    expect([at(0), at(0.2)]).toEqual([-1, -1])
+    expect(src('utils/rackDepth.js')).toMatch(/return wallLineFor\(m\.x \* n\.x \+ m\.y \* n\.y - tol, lines, \+1, reach \+ tol\) != null/)
     expect(src('utils/rackDepth.js')).toMatch(/reach = wallReachFt\(r\.depthIn \?\? 42\) \* gridSize/)
     expect(/WALL_FACE_IN|\b18\b/.test(src('utils/rackDepth.js'))).toBe(false)
     expect(src('generate/fillRacking.js')).toMatch(/const lo = \(v, lines\) => wallLineFor\(v, lines, -1, reach\) \?\? v/)

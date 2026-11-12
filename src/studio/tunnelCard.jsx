@@ -1,9 +1,13 @@
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { useTunnelPick, pickedTunnel, setTunnelLevels, deleteTunnel, tunnelWords } from '../utils/tunnel'
+import { useTunnelPick, pickedTunnel, setTunnelLevels, setTunnelWidth, deleteTunnel, tunnelWords, tunnelWidthFt } from '../utils/tunnel'
+import { parseFeet } from '../components/RightPanel/panels/RackingAreaPanel'
+import { ftIn, sizeWords } from '../utils/bom'
 import { typeAt } from '../utils/elevations'
 import { elevationLayout, toSVG } from '../utils/elevationDrawing'
-import { Head, Sec, Field, NumInput, Row, Hint, Btn, C, MONO } from './cardParts'
+import { Head, Sec, Field, NumInput, TextInput, Row, Hint, Btn, C, MONO } from './cardParts'
+
+const feetOf = (t) => parseFeet(String(t).replace(/′/g, "'").replace(/″/g, '"').replace(/\s*ft\s*/g, "'").replace(/\s*in\s*/g, '"'))
 
 /* A picked tunnel in the right card (utils/tunnel.js, STUDIO.md §7a Cross-aisles, tunnel round): its Levels removed —
    typed, one undo — what it keeps, its rows and bays, its elevation (the opening under the kept levels, drawn hatched)
@@ -25,11 +29,14 @@ export function TunnelCard() {
         <Field label="Levels removed" title="The bottom levels it takes out of every bay of it (L1 up)">
           <NumInput aria="Tunnel levels removed" value={t.n} min={1} onCommit={v => setTunnelLevels(useCanvasStore, t, v)} />
         </Field>
+        <Field label="Width" title="The tunnel bay's beam length — the row grows or shrinks by the difference at its open end">
+          <TextInput aria="Tunnel width" value={sizeWords(ftIn(tunnelWidthFt(t) * 12))} onCommit={v => { const ft = feetOf(v); if (ft != null && ft > 0 && Math.abs(ft - tunnelWidthFt(t)) > 1e-3) setTunnelWidth(useCanvasStore, t, ft) }} />
+        </Field>
         <Row label="Result"><span data-tunnel-keeps style={{ fontFamily: MONO, color: C.strong, fontSize: 12 }}>{tunnelWords({ n: t.n, keeps })}</span></Row>
         <Row label="Rows"><span data-tunnel-rows style={{ fontFamily: MONO, color: C.strong, fontSize: 12 }}>{rows} rows · {bays} bays</span></Row>
         {svg && <div aria-label="Tunnel elevation" data-tunnel-elevation style={{ background: '#FFFFFF', borderRadius: 8, padding: 4 }} dangerouslySetInnerHTML={{ __html: svg }} />}
         <Hint>Drag it along the run to move it a bay at a time. Its frames stay; the levels above it are kept.</Hint>
-        <Btn kind="ghost" aria-label="Delete tunnel" title="Delete (Del) — the levels come back" onClick={() => deleteTunnel(useCanvasStore, t)}>Delete</Btn>
+        <Btn kind="ghost" aria-label="Delete tunnel" title="Delete (Del) — the levels and the row's bay length come back" onClick={() => deleteTunnel(useCanvasStore, t)}>Delete</Btn>
       </Sec>
     </>
   )

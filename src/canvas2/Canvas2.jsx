@@ -449,7 +449,7 @@ export function Canvas2() {
       const band = liveBand(useCanvasStore.getState(), drag)
       // Cross aisle cuts the rows; Tunnel keeps them and takes the bottom levels out of the bays under it (utils/tunnel.js)
       const T = useCrossAisleTool.getState()
-      const done = band && (T.mode === 'tunnel' ? commitTunnel(useCanvasStore, band, T.levels) : commitCut(useCanvasStore, band))
+      const done = band && (T.mode === 'tunnel' ? commitTunnel(useCanvasStore, band, T.levels, T.tunnelWidthFt) : commitCut(useCanvasStore, band))
       if (done) useCanvasStore.getState().setActiveTool(HOME_TOOL)
     }
     window.addEventListener('mousemove', move)

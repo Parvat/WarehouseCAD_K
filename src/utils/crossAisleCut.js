@@ -23,7 +23,7 @@ import { carryElev, withElev } from './elevations'
 import { joinRacks } from '../canvas2/inlineSnap'
 import { rebuildAisles } from './aisleRebuild'
 import { fillEquipment, crossOf } from './fillTool'
-import { useCrossAislePick, crossAislesNow } from './crossAisleTool'
+import { useCrossAislePick, crossAislesNow, runPiece, withEnd } from './crossAisleTool'
 import { wallSideOf } from './rackDepth'
 
 export const CROSS_AISLE_TOOL = 'cross_aisle'
@@ -33,7 +33,9 @@ const EPS = 1e-6
  *  and the width typed in the mode bar (ft; null — the equipment's). */
 /* (tunnel round: `mode` — 'cross' cuts the rows, 'tunnel' takes the bottom `levels` levels out of the bays under the band,
    utils/tunnel.js) */
-export const useCrossAisleTool = create(() => ({ drag: null, at: null, widthFt: null, mode: 'cross', levels: 2 }))
+/* (tunnel fixes: `tunnelWidthFt` — Tunnel's Width, its bay's beam length, typed; null: the standard bay) */
+export const useCrossAisleTool = create(() => ({ drag: null, at: null, widthFt: null, mode: 'cross', levels: 2, tunnelWidthFt: null }))
+export const setTunnelWidthFt = (ft) => useCrossAisleTool.setState({ tunnelWidthFt: Number.isFinite(ft) && ft > 0 ? ft : null })
 export const setCutMode = (mode) => useCrossAisleTool.setState({ mode: mode === 'tunnel' ? 'tunnel' : 'cross' })
 export const setTunnelRemove = (n) => useCrossAisleTool.setState({ levels: Number.isFinite(n) && n >= 1 ? Math.round(n) : 2 })
 export const setCutWidth = (ft) => useCrossAisleTool.setState({ widthFt: Number.isFinite(ft) && ft > 0 ? ft : null })
@@ -53,15 +55,7 @@ const upPx = (o, gs) => ((o.uprightWidth || 3) / 12) * gs
 
 /** Rack `o` rebuilt as its run-order bays `runIdx` (indices into its own run order) starting at `r0` (world px): the
  *  bays' elevation types and empty sides ride with them; `genRunFt` follows the start. */
-function piece(o, runIdx, r0, gs, fields = {}) {
-  const g = geom(o), n = g.beams.length
-  const built = withRun({ ...o, ...fields }, r0, runIdx.map(j => g.beams[j]), gs)
-  const local = runIdx.map(j => (rev(o) ? n - 1 - j : j))
-  const out = withElev(built, carryElev(o, rev(o) ? [...local].reverse() : local))
-  if (o.genRunFt != null) out.genRunFt = o.genRunFt + (r0 - g.r0) / gs
-  out.activeBaySide = null
-  return out
-}
+const piece = (...a) => runPiece(...a)
 
 /** The band for a drag `from` → `to` (world px): rows run across the drag. → { vert (the rows run up and down), s0, s1
  *  (along the run: the band's width, its start on a bay line), c0, c1 (across: the drag's length), racks (ids crossed) }
@@ -107,7 +101,8 @@ function cutRow(o, s0, s1, gs, newId, secLow, secHigh) {
   // (a trim keeps the rack's own section stamp: no cross-aisle there)
   if (high && !low) { if (o.xaSpareFt == null) delete high.xaSpareFt }
   if (high && high.splitOf) delete high.splitOf
-  return [low, high]
+  // an end aisle stays at its own end: the run before the band keeps the start's, the run after it the end's (tunnel fixes)
+  return [low && withEnd(low, 'hi', 0), high && withEnd(high, 'lo', 0)]
 }
 
 /** `objects` with the band cut through every row it crosses (bandOf) → { objects, cut (ids now either side), lo (the
@@ -171,6 +166,8 @@ export function planCrossAisleWidth(objects, c, widthFt, { gridSize = 40 } = {})
   if (!(widthFt > 0)) return null
   const changed = new Map()
   for (const l of c.lines) {
+    // an end aisle: its gap at the row's end that wide (tunnel fixes)
+    if (!l.a || !l.b) { const r0 = l.a || l.b, r = changed.get(r0.id) || r0; changed.set(r.id, withEnd(r, l.a ? 'hi' : 'lo', widthFt)); continue }
     const a = changed.get(l.a.id) || l.a, b = changed.get(l.b.id) || l.b
     const b2 = relayHigh(b, geom(a).r1 + widthFt * gridSize, gridSize)
     if (!b2) return null
@@ -183,7 +180,7 @@ export function setCrossAisleWidth(store, c, widthFt) {
   const next = planCrossAisleWidth(st.objects, c, widthFt, { gridSize: gs })
   if (!next) return false
   store.setState({ objects: next })
-  store.getState().commitObjectUpdate(c.lines[0].b.id, {})
+  store.getState().commitObjectUpdate((c.lines[0].b || c.lines[0].a).id, {})
   return true
 }
 
@@ -192,6 +189,8 @@ export function setCrossAisleWidth(store, c, widthFt) {
 export function planCrossAisleDelete(objects, c, { gridSize = 40 } = {}) {
   const changed = new Map(), gone = new Set()
   for (const l of c.lines) {
+    // an end aisle: let go — the row stays as it is (tunnel fixes)
+    if (!l.a || !l.b) { const r0 = l.a || l.b, r = changed.get(r0.id) || r0; if (!gone.has(r.id)) changed.set(r.id, withEnd(r, l.a ? 'hi' : 'lo', 0)); continue }
     const a = changed.get(l.a.id) || l.a, b = changed.get(l.b.id) || l.b
     if (gone.has(a.id) || gone.has(b.id)) continue
     const ga = geom(a), gb = geom(b), up = upPx(a, gridSize)
@@ -210,6 +209,8 @@ export function planCrossAisleDelete(objects, c, { gridSize = 40 } = {}) {
     // the run after, end to end with it (joinRacks keeps the first one's place)
     const bAt = withRun(b, geom(merged).r1 - up, gb.beams, gridSize)
     merged = joinRacks(merged, bAt, gridSize)
+    // (the run after's end aisle, if any, is the joined row's: tunnel fixes)
+    merged = withEnd(withEnd(merged, 'hi', b.xaEnd?.hi), 'lo', a.xaEnd?.lo)
     merged.xaSpareFt = (limit - geom(merged).r1) / gridSize
     if (!(merged.xaSpareFt > 1e-6)) delete merged.xaSpareFt
     changed.set(a.id, merged); gone.add(b.id)
@@ -221,7 +222,7 @@ export function deleteCrossAisle(store, c) {
   const st = store.getState(), gs = st.gridSize || 40
   const next = planCrossAisleDelete(st.objects, c, { gridSize: gs })
   store.setState({ objects: next })
-  store.getState().commitObjectUpdate(c.lines[0].a.id, {})
+  store.getState().commitObjectUpdate((c.lines[0].a || c.lines[0].b).id, {})
   useCrossAislePick.setState({ pick: null, drag: null })
   return true
 }

@@ -33,7 +33,7 @@ const turn = (r, vx, vy) => { const t = rotOf(r), c = Math.cos(t), s = Math.sin(
 /** Which long face of beam rack `r` is on a wall of its building → -1 (its local top), +1 (its local bottom), 0
  *  (neither — or both, a rack spanning a narrow building). Fill's and Generate's own rule (generate/wallRun.js
  *  wallLineFor): the face stops short of a wall — an inner wall edge parallel to it and overlapping it along the run —
- *  by no more than the rack's depth (wallReachFt: 3 ft 6 in for a 42" frame). */
+ *  by no more than the rack's depth (wallReachFt: 3 ft 6 in for a 42" frame) — or stands on it (clearance 0). */
 export function wallSideOf(r, objects, gridSize = 40) {
   if (!r || !BEAM.has(r.type)) return 0
   const fp = (objects || []).find(o => o.id === r.parentId && isFp(o)) || (objects || []).find(isFp)
@@ -52,7 +52,10 @@ export function wallSideOf(r, objects, gridSize = 40) {
       const pa = (a.x - c.x) * u.x + (a.y - c.y) * u.y, pb = (b.x - c.x) * u.x + (b.y - c.y) * u.y
       if (Math.min(r1, Math.max(pa, pb)) - Math.max(r0, Math.min(pa, pb)) > 1e-6) lines.push(a.x * n.x + a.y * n.y)
     }
-    return wallLineFor(m.x * n.x + m.y * n.y, lines, +1, reach) != null
+    // (a face ON its wall — a wall clearance of 0, flush — is on it too: the wall line may sit at the face itself, half an
+    // inch either way for rounding; the shared rule counts only walls beyond an edge)
+    const tol = gridSize / 24
+    return wallLineFor(m.x * n.x + m.y * n.y - tol, lines, +1, reach + tol) != null
   }
   const top = near(-1), bottom = near(1)
   return top === bottom ? 0 : top ? -1 : 1

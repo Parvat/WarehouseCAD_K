@@ -5111,7 +5111,7 @@ describe('REG — the hand check by real clicks', () => {
     /** every cross-aisle now (utils/crossAisleTool.js): [{ key, rot, lo, hi, lines: [{ lo, hi, cross, na, nb, a, b }] }] */
     const crossNow = () => L.S(`return import('/src/utils/crossAisleTool.js').then(X => { const st = S.getState(), gs = st.gridSize || 40
       return X.crossAislesNow(st.objects).map(c => ({ key: c.key, rot: c.rot, lo: c.lo, hi: c.hi, pitch: X.bayPitch(c, gs), pos: X.positionFt(st.objects, c, gs), range: X.moveRange(st.objects, c),
-        lines: c.lines.map(l => ({ lo: l.lo, hi: l.hi, cross: l.cross, a: l.a.id, b: l.b.id, na: X.runsAt(st.objects, { ...c, lines: [l] }).a, nb: X.runsAt(st.objects, { ...c, lines: [l] }).b })) })) })`)
+        lines: c.lines.map(l => ({ lo: l.lo, hi: l.hi, cross: l.cross, a: l.a?.id ?? null, b: l.b?.id ?? null, na: X.runsAt(st.objects, { ...c, lines: [l] }).a, nb: X.runsAt(st.objects, { ...c, lines: [l] }).b })) })) })`)
     /** the bays of each run of the rows the fill placed, run by run along each row: [[n, n, …] per row] */
     const runsPerRow = (ids) => L.S(`return import('/src/generate/columnCheck.js').then(CC => { const st = S.getState(), rows = new Map()
       for (const o of st.objects.filter(o => arg.includes(o.id) && o.type === 'rack_double_row')) { const f = CC.rackFootprint(o), v = f.h > f.w, k = Math.round(v ? f.x : f.y); if (!rows.has(k)) rows.set(k, []); rows.get(k).push({ r0: v ? f.y : f.x, n: o.beams.length }) }
@@ -5483,7 +5483,7 @@ describe('REG — the hand check by real clicks', () => {
     /** every tunnel bay: [{ id, bay, n }] */
     const tunnelBaysNow = () => L.S('return S.getState().objects.filter(o => Array.isArray(o.tunnelBays)).flatMap(o => o.tunnelBays.map((n, bay) => ({ id: o.id, bay, n })).filter(q => q.n > 0))')
 
-    it('REG-tunnel-xaisle-ends (click): a cross-aisle dragged past the rows’ high end goes all the way — the aisle at the row end, the rows trimmed there (no run of 1 or 2 bays); dragged to the low end the same; typed one bay short of the end it goes to the end; one undo each (tunnel round)', async () => {
+    it('REG-tunnel-xaisle-ends (click): a cross-aisle dragged past the rows’ high end goes all the way — the aisle at the row end, the rows trimmed there (no run of 1 or 2 bays), and it stays a cross-aisle: the end aisle, still picked (tunnel fixes; was: no cross-aisle left there — tunnel round); dragged to the low end the same; typed one bay short of the end it goes to the end; one undo each (tunnel round)', async () => {
       await open()
       const f = await fillRow(140, 'centre'), area = await lastArea()
       const before = await rowsBy(area)
@@ -5508,7 +5508,11 @@ describe('REG — the hand check by real clicks', () => {
           if (dir > 0) expect(Math.abs(q[0].r0 - o.r0) < 1e-6 && q[0].r1 < o.r1 - 1e-6).toBe(true)
           else expect(q[0].r0 > o.r0 + 1e-6 && q[0].r1 <= o.r1 + 1e-6 && q[0].r1 > o.r1 - c.pitch / gs0 - 1e-6).toBe(true)
         }
-        expect((await crossNow()).filter(k => k.lines.some(m => c.lines.some(q => q.a === m.a || q.b === m.b)))).toEqual([])
+        // the end aisle: one cross-aisle, every line of it at the rows' end — still picked
+        const ends = (await crossNow()).filter(k => k.lines.every(m => m.a == null || m.b == null))
+        expect(ends.length).toBe(1)
+        expect(ends[0].lines.length).toBe(c.lines.length)
+        expect(await L.S('return import("/src/utils/crossAisleTool.js").then(X => !!X.useCrossAislePick.getState().pick)')).toBe(true)
         await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
         expect((await crossNow()).some(k => Math.abs(k.lo - c.lo) < 1e-6)).toBe(true)
       }
@@ -5641,6 +5645,131 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.getByRole('toolbar', { name: 'Drawing tools' }).getByRole('button', { name: 'Cross aisle' }).click(); await L.page.waitForTimeout(150)
       await L.page.getByRole('toolbar', { name: 'Cross aisle' }).getByRole('button', { name: 'Cross aisle', exact: true }).click()
       await L.page.keyboard.press('Escape')
+    }, T)
+
+    /* ── tunnel fixes: the end aisle; the tunnel's width; every row along a wall left whole — by real mouse ── */
+    it('REG-xaisle-end-aisle (click): a cross-aisle dragged to the rows’ end stays an object — the end aisle (the gap at the row ends); let go, a click in it picks it again (its card); dragged back in it cuts the rows again, as they were; one undo each; both ends (tunnel fixes)', async () => {
+      await open()
+      const f = await fillRow(140, 'centre'), area = await lastArea()
+      await cutAcross(f.ids, 0.5)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      const runs = async () => [...(await rowsBy(area)).entries()].map(([k, q]) => k + ':' + q.map(x => x.r0.toFixed(2) + '-' + x.r1.toFixed(2)).join(',')).sort()
+      const cut = await runs()
+      const c = (await crossNow()).find(k => k.lines.some(m => f.ids.includes(m.a)))
+      expect(c).toBeTruthy()
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      const pickNow = () => L.S('return import("/src/utils/crossAisleTool.js").then(X => !!X.useCrossAislePick.getState().pick)')
+      const l = c.lines[Math.floor(c.lines.length / 2)], p = { x: (l.lo + l.hi) / 2, y: (l.cross[0] + l.cross[1]) / 2 }
+      const nb = Math.min(...c.lines.map(m => m.nb)), na = Math.min(...c.lines.map(m => m.na))
+      for (const [dir, n] of [[1, nb], [-1, na]]) {
+        // to the end: one undo
+        await onCanvasAll([p]); await L.click(p); await L.page.waitForTimeout(150)
+        let h0 = await hist7(), to = { x: p.x + dir * (n + 0.6) * c.pitch, y: p.y }
+        await onCanvasAll([p, to]); await L.drag(p, to); await L.page.waitForTimeout(300)
+        expect((await hist7()) - h0).toBe(1)
+        const e = (await crossNow()).find(k => k.lines.every(m => m.a == null || m.b == null))
+        expect(e).toBeTruthy()
+        expect(e.lines.length).toBe(c.lines.length)
+        // let go; a click in the end aisle picks it again — its card
+        await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+        expect(await pickNow()).toBe(false)
+        const el = e.lines[Math.floor(e.lines.length / 2)], q = { x: (el.lo + el.hi) / 2, y: (el.cross[0] + el.cross[1]) / 2 }
+        await onCanvasAll([q]); await L.click(q); await L.page.waitForTimeout(200)
+        expect(await pickNow()).toBe(true)
+        expect(await card.getByRole('textbox', { name: 'Cross-aisle position' }).count()).toBe(1)
+        // dragged back in the bays it went: the rows cut again, exactly as before; one undo
+        h0 = await hist7(); const back = { x: q.x - dir * n * c.pitch, y: q.y }
+        await onCanvasAll([q, back]); await L.drag(q, back); await L.page.waitForTimeout(300)
+        expect((await hist7()) - h0).toBe(1)
+        expect(await runs()).toEqual(cut)
+        expect((await crossNow()).some(k => Math.abs(k.lo - c.lo) < 1e-3 && k.lines.every(m => m.a && m.b))).toBe(true)
+        await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      }
+    }, T)
+
+    it('REG-tunnel-width (click): Tunnel Width 9 in the bar — across 4 rows each row gets ONE tunnel bay, its beam 108 in; the BOM counts those bays’ kept beams at 108 in; the row grows by the difference at its open end; the card’s Width 10 makes it 120 in; Delete gives the row its own bay back (the BOM as before); one undo each (tunnel fixes)', async () => {
+      await open()
+      const ids = await fillBox(0.12, 0.88)
+      const bom0 = await bomNow()
+      const len = () => L.S('return import("/src/generate/columnCheck.js").then(CC => Object.fromEntries(S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => { const f = CC.rackFootprint(o); return [o.id, { len: Math.max(f.w, f.h) / (S.getState().gridSize || 40), n: o.beams.length }] })))')
+      const len0 = await len()
+      await L.page.mouse.move(5, 890)
+      await L.page.getByRole('toolbar', { name: 'Drawing tools' }).getByRole('button', { name: 'Cross aisle' }).click(); await L.page.waitForTimeout(150)
+      const bar = L.page.getByRole('toolbar', { name: 'Cross aisle' })
+      await bar.getByRole('button', { name: 'Tunnel', exact: true }).click(); await L.page.waitForTimeout(100)
+      const wf = bar.getByRole('textbox', { name: 'Tunnel width (ft)' })
+      expect(await wf.inputValue()).toBe('8')                                         // the standard bay (96 in)
+      await wf.click(); await wf.fill('9'); await wf.press('Enter'); await L.page.waitForTimeout(100)
+      const h0 = await hist7()
+      await cutAcross(ids, 0.5, [0, 3])
+      expect((await hist7()) - h0).toBe(1)
+      // one tunnel bay a row, 108 in
+      const tb = await tunnelBaysNow()
+      expect(new Set(tb.map(q => q.id)).size).toBe(4)
+      expect(tb.length).toBe(4)
+      const beamsAt = await L.S('return S.getState().objects.filter(o => Array.isArray(o.tunnelBays)).map(o => o.beams[o.tunnelBays.findIndex(n => n > 0)])')
+      expect(beamsAt).toEqual([108, 108, 108, 108])
+      // the row: 1 ft longer (12 in more beam) — or whole bays fewer where it ran into something
+      const len1 = await len()
+      for (const q of tb) { const a = len0[q.id], b = len1[q.id]; if (b.n === a.n) expect(Math.abs(b.len - a.len - 1)).toBeLessThan(1e-6); else expect(b.n).toBeLessThan(a.n) }
+      // the BOM: the tunnel bays' kept beams at 108 in
+      const want108 = await L.S(`return import('/src/utils/elevations.js').then(E => { const st = S.getState(), T = st.elevations; let k = 0
+        for (const r of st.objects.filter(o => Array.isArray(o.tunnelBays))) r.beams.forEach((b, i) => { if (b === 108) for (let s = 0; s < E.sidesOf(r); s++) k += 2 * E.beamLevelCount(E.typeAt(r, i, s, T)) })
+        return k })`)
+      const bom108 = () => L.S(`return import('/src/utils/bom.js').then(B => { const st = S.getState(), bom = B.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 })
+        return bom.lines.filter(l => l.part === 'Beam' && /^108/.test(l.size)).reduce((t, l) => t + l.qty, 0) })`)
+      expect(want108).toBeGreaterThan(0)
+      expect(await bom108()).toBe(want108)
+      // the card: its Width; 10 ft → 120 in, one undo
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' }), cw = card.getByRole('textbox', { name: 'Tunnel width' })
+      expect(await cw.inputValue()).toMatch(/^9/)
+      const h1 = await hist7()
+      await cw.click(); await cw.fill('10'); await cw.press('Enter'); await L.page.waitForTimeout(300)
+      expect((await hist7()) - h1).toBe(1)
+      expect(await L.S('return S.getState().objects.filter(o => Array.isArray(o.tunnelBays)).map(o => o.beams[o.tunnelBays.findIndex(n => n > 0)])')).toEqual([120, 120, 120, 120])
+      // Delete: the levels and the row's own bay back — the BOM as it was; one undo
+      const h2 = await hist7()
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
+      expect([(await hist7()) - h2, (await tunnelBaysNow()).length]).toEqual([1, 0])
+      expect(await bomNow()).toEqual(bom0)
+      // (the tool back to its standard bay for the next test)
+      await L.S('return import("/src/utils/crossAisleCut.js").then(X => { X.setTunnelWidthFt(null); X.setCutMode("cross") })')
+    }, T)
+
+    it('REG-wall-rows-whole (click): Fill a section wall to wall (wall clearance 0, flush — the hand check’s case — and 3 in): a Cross aisle band across every row cuts every row but the two wall rows (they stay whole); a Tunnel band the same — every other row tunnelled, the wall rows not (tunnel fixes)', async () => {
+      await open()
+      const setClear = (v) => L.S(`return import('/src/utils/fillTool.js').then(F => F.useRackingSettings.getState().setSetting('wallClearIn', ${v}))`)
+      for (const clear of [0, 3]) {
+        await setClear(clear)
+        const ids = await fillBox(0.0, 1.0)
+        const area = await lastArea(), b = await innerBox(), gs = await gs7()
+        // the lines (type + across start), and which stand along a wall: within 1 ft of the top or the bottom wall
+        const lines = async () => { const m = new Map(); for (const q of await areaRows(area)) { const k = q.type + ':' + q.s0.toFixed(2); m.set(k, (m.get(k) || 0) + 1) } return m }
+        const rows = await areaRows(area)
+        const wallKeys = new Set(rows.filter(q => Math.abs(q.s0 * gs - b.y0) <= gs || Math.abs(b.y1 - q.s1 * gs) <= gs).map(q => q.type + ':' + q.s0.toFixed(2)))
+        const wallIds = rows.filter(q => wallKeys.has(q.type + ':' + q.s0.toFixed(2))).map(q => q.id)
+        expect([clear, wallKeys.size]).toEqual([clear, 2])
+        const l0 = await lines()
+        // Cross aisle across every row
+        await cutAcross(ids, 0.5)
+        const l1 = await lines()
+        for (const [k, n] of l0) expect([clear, k, l1.get(k)]).toEqual([clear, k, wallKeys.has(k) ? n : n + 1])
+        await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+        expect(await lines()).toEqual(l0)
+        // Tunnel across every row
+        await L.page.mouse.move(5, 890)
+        await L.page.getByRole('toolbar', { name: 'Drawing tools' }).getByRole('button', { name: 'Cross aisle' }).click(); await L.page.waitForTimeout(150)
+        await L.page.getByRole('toolbar', { name: 'Cross aisle' }).getByRole('button', { name: 'Tunnel', exact: true }).click(); await L.page.waitForTimeout(100)
+        await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+        await cutAcross(ids, 0.5)
+        const tunnelled = new Set((await tunnelBaysNow()).map(q => q.id))
+        const others = (await areaRows(area)).filter(q => !wallIds.includes(q.id))
+        expect([clear, [...tunnelled].some(id => wallIds.includes(id))]).toEqual([clear, false])
+        expect([clear, others.every(q => tunnelled.has(q.id))]).toEqual([clear, true])
+        await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+        await L.S('return import("/src/utils/crossAisleCut.js").then(X => X.setCutMode("cross"))')
+      }
+      await setClear(3)
     }, T)
   })
 })

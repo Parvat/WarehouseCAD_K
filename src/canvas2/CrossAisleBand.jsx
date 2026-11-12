@@ -8,8 +8,8 @@ import { useEffect, useState } from 'react'
 import { Group, Rect, Text } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { HOME_TOOL } from '../utils/homeTool'
-import { useCrossAisleTool, bandOf, cutWidthFt, defaultWidthFt, setCutWidth, cancelCut, setCutMode, setTunnelRemove, CROSS_AISLE_TOOL } from '../utils/crossAisleCut'
-import { tunnelSummary, tunnelWords } from '../utils/tunnel'
+import { useCrossAisleTool, bandOf, cutWidthFt, defaultWidthFt, setCutWidth, cancelCut, setCutMode, setTunnelRemove, setTunnelWidthFt, CROSS_AISLE_TOOL } from '../utils/crossAisleCut'
+import { tunnelSummary, tunnelWords, standardBayIn } from '../utils/tunnel'
 import { isPickable } from '../utils/layers'
 import { useView, useLiveObjects } from './live'
 import { ftIn, sizeWords } from '../utils/bom'
@@ -19,11 +19,14 @@ import { parseAisleFt } from './FillBar'
 
 const SELECT = '#2E7D5B'
 
-/** The band a drag lays now (null: none). */
+/** Tunnel's width now (ft): typed, else the standard bay (tunnel fixes). */
+export const tunnelBandFt = () => useCrossAisleTool.getState().tunnelWidthFt ?? standardBayIn() / 12
+/** The band a drag lays now (null: none) — in Tunnel as wide as the tunnel. */
 export function liveBand(st, drag) {
   if (!drag) return null
   const gs = st.gridSize || 40
-  return bandOf(st.objects, drag.from, drag.to, cutWidthFt(st.objects, drag.from), gs, (o) => !isPickable(st.layers, o))
+  const w = useCrossAisleTool.getState().mode === 'tunnel' ? tunnelBandFt() : cutWidthFt(st.objects, drag.from)
+  return bandOf(st.objects, drag.from, drag.to, w, gs, (o) => !isPickable(st.layers, o))
 }
 
 export function CrossAisleBandPreview() {
@@ -83,6 +86,25 @@ function WidthField() {
   )
 }
 
+/* Tunnel's Width (tunnel fixes): its bay's beam length — typed; empty, the standard bay */
+function TunnelWidthField() {
+  const typed = useCrossAisleTool(s => s.tunnelWidthFt)
+  const std = standardBayIn() / 12
+  const shown = String(+((typed ?? std)).toFixed(2))
+  const [text, setText] = useState(shown)
+  useEffect(() => setText(shown), [shown])
+  const commit = () => {
+    const ft = text.trim() ? parseAisleFt(text) : null
+    if (text.trim() && ft == null) { setText(shown); return }
+    setTunnelWidthFt(ft != null && Math.abs(ft - std) > 1e-6 ? ft : null)
+  }
+  return (
+    <input aria-label="Tunnel width (ft)" className="st-field" title={typed ? `The tunnel bay's beam length — the standard bay is ${+std.toFixed(2)} ft` : 'The standard bay — type another: the tunnel bay takes that beam length'}
+      value={text} onChange={e => setText(e.target.value)} onBlur={commit} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur() }}
+      style={{ ...valueBox, width: 52, color: typed ? B.accent : B.strong }} />
+  )
+}
+
 /* Tunnel's Levels removed: typed, whole levels from the bottom (2 by default) */
 function LevelsField() {
   const n = useCrossAisleTool(s => s.levels)
@@ -120,7 +142,7 @@ export function CrossAisleBar() {
       <span style={word}>{tunnel ? 'Drag across rows where to tunnel' : 'Drag across rows where to cut'}</span>
       <Sep />
       <span style={word}>Width</span>
-      <WidthField />
+      {tunnel ? <TunnelWidthField /> : <WidthField />}
       <span style={word}>ft</span>
       {tunnel && <><Sep /><span style={word}>Levels removed</span><LevelsField /><TunnelResult /></>}
       <Sep />
