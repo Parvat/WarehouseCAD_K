@@ -18,7 +18,7 @@ import { useShownTallyH, TALLY_BOTTOM, TALLY_ISLAND_GAP, ISLAND_H, TALLY_CARD_GA
 import { useElevTab } from '../utils/elevTab'
 import { Icon } from './Icon'
 import { CheckCard } from './cards'
-import { Toggle, Seg } from './cardParts'
+import { Toggle } from './cardParts'
 import { lineNumbering, setLineNumbering } from '../utils/lineNames'
 import { LayerBody } from '../components/RightPanel/LayerPanel'
 import { useHelp, toggleHelp, closeHelp, HelpBody } from './HelpCard'
@@ -234,9 +234,19 @@ function BottomRight() {
             {/* the rack lines' numbering (utils/lineNames.js), saved with the layout — greyed while Row numbers is off
                 (legend round: moved here from the BOM tab) */}
             <div data-view-numbering aria-disabled={!rowLabels} title={rowLabels ? 'Continuous: R1 … across the layout · Per section: each section from R1' : 'Turn Row numbers on to choose'}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 6px 4px', opacity: rowLabels ? 1 : 0.4, pointerEvents: rowLabels ? 'auto' : 'none' }}>
-              <Seg aria="Line numbering" value={numbering} onChange={(v) => setLineNumbering(useCanvasStore, v)}
-                options={[{ value: 'continuous', label: 'Continuous', aria: 'Continuous' }, { value: 'section', label: 'Per section', aria: 'Per section' }]} />
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, height: 30, padding: '0 6px 0 16px', fontSize: 12, color: '#9AA29C', whiteSpace: 'nowrap', opacity: rowLabels ? 1 : 0.4, pointerEvents: rowLabels ? 'auto' : 'none' }}>
+              {/* a sub-row of Row numbers (legend polish): its label indented 12px, muted; plain text choices on the toggles' edge, the
+                  one in force in the green accent, a dot between */}
+              <span>Numbering</span>
+              <span role="group" aria-label="Line numbering" style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                {[['continuous', 'Continuous'], ['section', 'Per section']].map(([v, label], i) => (
+                  <span key={v} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {i > 0 && <span aria-hidden style={{ width: 3, height: 3, borderRadius: 2, background: '#4A514D' }} />}
+                    <button type="button" aria-label={label} aria-pressed={numbering === v} disabled={!rowLabels} onClick={() => setLineNumbering(useCanvasStore, v)}
+                      style={{ padding: 0, border: 0, background: 'transparent', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 10.5, fontWeight: numbering === v ? 600 : 400, color: numbering === v ? '#7BD3A4' : '#C9CEC9' }}>{label}</button>
+                  </span>
+                ))}
+              </span>
             </div>
           </div>
         )}
