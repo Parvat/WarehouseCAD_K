@@ -234,11 +234,13 @@ function BottomRight() {
             {/* the rack lines' numbering (utils/lineNames.js), saved with the layout — greyed while Row numbers is off
                 (legend round: moved here from the BOM tab) */}
             <div data-view-numbering aria-disabled={!rowLabels} title={rowLabels ? 'Continuous: R1 … across the layout · Per section: each section from R1' : 'Turn Row numbers on to choose'}
-              style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', height: 30, padding: '0 6px', fontSize: 12, whiteSpace: 'nowrap', opacity: rowLabels ? 1 : 0.4, pointerEvents: rowLabels ? 'auto' : 'none' }}>
+              style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', height: 30, padding: '0 6px 0 30px', fontSize: 12, whiteSpace: 'nowrap', opacity: rowLabels ? 1 : 0.4, pointerEvents: rowLabels ? 'auto' : 'none' }}>
               {/* a sub-row of Row numbers (legend polish): a tree branch — 1px, the dividers' grey — drops from under its label and
-                  turns right into this row; the choices at the row labels' size, the one in force in the green accent, a dot
-                  between, on the toggles' edge */}
-              <span aria-hidden data-numbering-branch style={{ position: 'absolute', left: 10, top: -7, width: 10, height: 22, borderLeft: '1px solid #3A403C', borderBottom: '1px solid #3A403C' }} />
+                  turns right into this row (1.5px, a little lighter than the text, its corner rounded); the choices 8px after its end,
+                  at the row labels' size, the one in force in the green accent, a dot between */}
+              <svg aria-hidden data-numbering-branch width={12} height={22} viewBox="0 0 12 22" style={{ position: 'absolute', left: 10, top: -7, overflow: 'visible' }}>
+                <path d="M0.75 0 V15.25 A6 6 0 0 0 6.75 21.25 H12" fill="none" stroke="#6E756F" strokeWidth={1.5} strokeLinecap="round" />
+              </svg>
               <span role="group" aria-label="Line numbering" style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
                 {[['continuous', 'Continuous'], ['section', 'Per section']].map(([v, label], i) => (
                   <span key={v} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
