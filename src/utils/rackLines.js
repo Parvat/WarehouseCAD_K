@@ -1,8 +1,11 @@
 // rackLines.js — rack line numbers R1, R2 … (BOM round 2, STUDIO.md §7a BOM).
 //
 // A rack line is one line of beam racking: the selective rows (rack_row) or back-to-back pairs (rack_double_row) of
-// one kind standing end to end in one line — butting or sharing an upright, the same depth across — never across a
-// gap (a cross-aisle starts a new line). A single row is one line; a back-to-back pair is TWO lines, its two sides.
+// one kind standing end to end in one line — butting or sharing an upright, the same depth across. A row line CUT BY
+// CROSS-AISLES stays one line (fixes-x — was: a cross-aisle started a new line): racks in one line across a gap with no
+// rack standing in it, both carrying a section stamp (genSection — every cross-aisle's racks do: Generate's, Fill's, the
+// Cross aisle tool's) and in one drawn section, are one line, one number; its stretches between the gaps are its PIECES (each labelled with the
+// number). A single row is one line; a back-to-back pair is TWO lines, its two sides.
 //
 // Numbering: always R1 to Rn in order, no gaps, recomputed whenever rows are added, deleted or moved — section by
 // section, in the Sections list's order (the layout's), then Unassigned (a line is in the drawn section holding its
@@ -35,12 +38,29 @@ function inLine(a, b, gridSize) {
   return gap <= 1 && gap >= -(up + 1)
 }
 
+/** Do racks `a` and `b` stand in one line across a cross-aisle (fixes-x): one kind, one building, the same band across,
+ *  both section-stamped, a gap between them along the run with no rack (of `racks`) standing in it? */
+function acrossGap(a, b, racks) {
+  if (a.genSection == null || b.genSection == null) return false
+  if (a.type !== b.type || (a.parentId ?? null) !== (b.parentId ?? null) || norm(a.rotation) % 180 !== norm(b.rotation) % 180) return false
+  const A = span(a), B = span(b)
+  if (A.vert !== B.vert || Math.abs(A.s0 - B.s0) > 0.5 || Math.abs(A.s1 - B.s1) > 0.5) return false
+  const g0 = Math.min(A.r1, B.r1), g1 = Math.max(A.r0, B.r0)
+  if (!(g1 - g0 > 1)) return false
+  return !racks.some(q => {
+    if (q === a || q === b) return false
+    const Q = span(q), c0 = Q.vert === A.vert ? Q.s0 : Q.r0, c1 = Q.vert === A.vert ? Q.s1 : Q.r1, r0 = Q.vert === A.vert ? Q.r0 : Q.s0, r1 = Q.vert === A.vert ? Q.r1 : Q.s1
+    return Math.min(c1, A.s1) - Math.max(c0, A.s0) > 0.5 && Math.min(r1, g1) - Math.max(r0, g0) > 0.5
+  })
+}
+
 /** The world side ('lo' | 'hi' across) of local side `s` of rack `r` — 'one' for a single row. */
 export const worldSide = (r, s) => (r.type === 'rack_double_row' ? (faceIndex(r, 'lo') === s ? 'lo' : 'hi') : 'one')
 
 const cache = new WeakMap()
 /** The rack lines of `objects`, in numbering order (before the numbers): [{ key, ids (run order), ws ('lo' | 'hi' |
- *  'one'), vert, r0, r1 (along), s0, s1 (across, this side's band), fpId }]. A pair gives two, its 'lo' side first. */
+ *  'one'), vert, r0, r1 (along), s0, s1 (across, this side's band), fpId, pieces: [{ r0, r1, ids }] (its stretches between
+ *  cross-aisles, along) }]. A pair gives two, its 'lo' side first. */
 export function rackLinesOf(objects, gridSize = 40) {
   if (!Array.isArray(objects)) return []
   const hit = cache.get(objects)
@@ -49,6 +69,12 @@ export function rackLinesOf(objects, gridSize = 40) {
   const parent = new Map(racks.map(o => [o.id, o.id]))
   const find = (id) => { while (parent.get(id) !== id) id = parent.get(id); return id }
   for (let i = 0; i < racks.length; i++) for (let j = i + 1; j < racks.length; j++) if (inLine(racks[i], racks[j], gridSize)) parent.set(find(racks[i].id), find(racks[j].id))
+  // a row line cut by cross-aisles: one line (fixes-x)
+  // (only inside one drawn section: a line in two sections is two lines, each numbered with its own section)
+  const all = objects.filter(o => typeof o?.type === 'string' && o.type.startsWith('rack_') && o.width > 0 && o.height > 0)
+  const secPolys = objects.filter(isSection).map(polygonOf)
+  const secOf = new Map(racks.map(o => { const f = rackFootprint(o), x = f.x + f.w / 2, y = f.y + f.h / 2; return [o.id, secPolys.findIndex(q => pointInPolygon(q, x, y))] }))
+  for (let i = 0; i < racks.length; i++) for (let j = i + 1; j < racks.length; j++) if (find(racks[i].id) !== find(racks[j].id) && secOf.get(racks[i].id) === secOf.get(racks[j].id) && acrossGap(racks[i], racks[j], all)) parent.set(find(racks[i].id), find(racks[j].id))
   const comps = new Map()
   for (const o of racks) { const k = find(o.id); if (!comps.has(k)) comps.set(k, []); comps.get(k).push(o) }
   const fpOrder = new Map(objects.filter(o => /^fp_/.test(o.type || '')).map((o, i) => [o.id, i]))
@@ -57,7 +83,10 @@ export function rackLinesOf(objects, gridSize = 40) {
     const sp = list.map(o => ({ o, s: span(o) })).sort((p, q) => p.s.r0 - q.s.r0)
     const ids = sp.map(p => p.o.id), first = sp[0].s
     const r0 = Math.min(...sp.map(p => p.s.r0)), r1 = Math.max(...sp.map(p => p.s.r1)), s0 = first.s0, s1 = first.s1
-    const base = { ids, vert: first.vert, r0, r1, band: (s0 + s1) / 2, fpId: sp[0].o.parentId ?? null, fpAt: fpOrder.get(sp[0].o.parentId) ?? 1e9 }
+    // its pieces: the racks end to end between its cross-aisles
+    const pieces = []
+    for (const p of sp) { const last = pieces[pieces.length - 1]; if (last && p.s.r0 - last.r1 <= 1) { last.r1 = Math.max(last.r1, p.s.r1); last.ids.push(p.o.id) } else pieces.push({ r0: p.s.r0, r1: p.s.r1, ids: [p.o.id] }) }
+    const base = { ids, pieces, vert: first.vert, r0, r1, band: (s0 + s1) / 2, fpId: sp[0].o.parentId ?? null, fpAt: fpOrder.get(sp[0].o.parentId) ?? 1e9 }
     if (sp[0].o.type === 'rack_double_row') {
       const mid = (s0 + s1) / 2
       lines.push({ ...base, key: ids[0] + ':lo', ws: 'lo', s0, s1: mid }, { ...base, key: ids[0] + ':hi', ws: 'hi', s0: mid, s1 })

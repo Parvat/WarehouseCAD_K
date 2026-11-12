@@ -10,7 +10,7 @@ import { Icon } from './Icon'
 import { useViewPrefs } from './viewPrefs'
 import { BomTable, ByRowTable, highlightLine, downloadCsv, downloadXlsx, baseName, PART_CELL, SIZE_CELL } from './BomTab'
 import { setTallyFocus, setTallied, clearTallied, checkedNos } from './tally'
-import { useTally, closeTally, popOutTally, closeTallyModal, TALLY_LEFT, TALLY_RIGHT, TALLY_BOTTOM, TALLY_ISLAND_GAP, selectedLineNos } from './tally'
+import { useTally, closeTally, popOutTally, closeTallyModal, TALLY_LEFT, TALLY_RIGHT, TALLY_BOTTOM, TALLY_ISLAND_GAP, selectedLineNos, useShownTallyH } from './tally'
 
 /* The Tally (STUDIO.md §1, §7a BOM): the BOM tab's Tally opens a drawer docked at the bottom of the canvas — full width,
    left 16 to right 16 (the right card ends 12px above it), its height dragged by its top edge (200 … 70% of the window, 330 at first),
@@ -102,7 +102,8 @@ function TallyTable({ bom, scrollRef, lineOf, checked }) {
 }
 
 function Drawer({ bom, flags, xlsx }) {
-  const { view, height } = useTally(useShallow(s => ({ view: s.view, height: s.height })))
+  // (drawn no taller than leaves the right card 360px — tally.js shownTallyH; fixes-x)
+  const view = useTally(s => s.view), height = useShownTallyH()
   const scrollRef = useRef(null)
   // a click on a rack on the plan: its column(s) lit and scrolled into view
   useEffect(() => {
@@ -122,7 +123,7 @@ function Drawer({ bom, flags, xlsx }) {
   const startEdge = (ev) => {
     if (ev.button !== 0) return
     ev.preventDefault()
-    const y0 = ev.clientY, h0 = useTally.getState().height
+    const y0 = ev.clientY, h0 = height
     let raf = 0, last = h0
     const move = (m) => { last = h0 + (y0 - m.clientY); if (!raf) raf = requestAnimationFrame(() => { raf = 0; useTally.getState().setHeight(last, { save: false }) }) }
     const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cancelAnimationFrame(raf); useTally.getState().setHeight(last) }
@@ -204,7 +205,7 @@ export function TallyHost() {
   useEffect(() => { useViewPrefs.getState().setBomFull(any); return () => useViewPrefs.getState().setBomFull(false) }, [any])
   // the bottom islands stand above the open drawer: Hub · zoom, the tool pill and the notices 8px; View · Layers · Fit · ?
   // 12px, at the right (the right card ends 12px above it: StudioFrame RightCard)
-  const height = useTally(s => s.height)
+  const height = useShownTallyH()
   useEffect(() => {
     const root = document.querySelector('[data-theme]') || document.documentElement
     root.style.setProperty('--tally-lift', open ? `${height + 8}px` : '0px')

@@ -134,6 +134,9 @@ function moveOk(objects, c, d) {
       continue
     }
     if (!okRun(A, na === l.a.beams.length) || !okRun(B, nb === l.b.beams.length)) return false
+    // (fixes-x: and each rack either side — not just its run — keeps 3 bays or more, or goes)
+    const ra = l.a.beams.length + d, rb = l.b.beams.length - d
+    if ((ra > 0 && ra < MIN_RUN_BAYS) || (rb > 0 && rb < MIN_RUN_BAYS)) return false
   }
   return true
 }

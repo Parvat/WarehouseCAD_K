@@ -197,7 +197,7 @@ describe('SB — the Generate card\'s note, footer and Start over', () => {
     expect(card).toMatch(/<Btn kind="ghost" onClick=\{\(\) => onClose\?\.\(\)\}>Cancel<\/Btn>\s*<Btn kind="primary" onClick=\{run\}/)
     expect(/position: 'fixed'|role="dialog"|var\(--surface\)/.test(card)).toBe(false)
     // the Elevations tab is dark too, in the same card
-    expect(frame).toMatch(/<div data-card-dark style=\{\{ flex: '0 1 auto', minHeight: 0, overflowY: full \? 'hidden' : 'auto'/)
+    expect(frame).toMatch(/<div data-card-dark style=\{\{ flex: '0 1 auto', minHeight: 0, overflowY: full && !tallyH \? 'hidden' : 'auto'/)   // (fixes-x: with the Tally open it scrolls, the Elevations tab too)
   })
 
   it('SB-start-over: Start over with a new building is in the layout menu, behind a confirm, drawing the new building from the Generate card\'s fields — never in the Generate card', () => {

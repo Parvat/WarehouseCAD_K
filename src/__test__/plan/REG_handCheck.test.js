@@ -2880,7 +2880,9 @@ describe('REG — the hand check by real clicks', () => {
       // the top edge dragged up 100 px: 430 high
       const sep = await drawer.getByRole('separator', { name: 'Resize tally' }).boundingBox()
       await L.page.mouse.move(sep.x + sep.width / 2, sep.y + 3); await L.page.mouse.down(); await L.page.mouse.move(sep.x + sep.width / 2, sep.y + 3 - 100, { steps: 6 }); await L.page.mouse.up(); await L.page.waitForTimeout(200)
-      expect(Math.round((await drawer.boundingBox()).height)).toBe(430)
+      // (drawn no taller than leaves the right card 360 px — fixes-x; was: 430 whatever the window)
+      const h430 = Math.min(430, Math.max(120, L.page.viewportSize().height - 76 - 84 - 360))
+      expect(Math.round((await drawer.boundingBox()).height)).toBe(h430)
       // Pop out: the wide modal in its place; Esc closes it
       await drawer.getByRole('button', { name: 'Pop out' }).click(); await L.page.waitForTimeout(200)
       const dlg = L.page.getByRole('dialog', { name: 'Bill of materials' })
@@ -2889,7 +2891,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(await dlg.count()).toBe(0)
       // Tally again: 430 kept; Esc closes the drawer
       await tab.getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(400)
-      expect(Math.round((await drawer.boundingBox()).height)).toBe(430)
+      expect(Math.round((await drawer.boundingBox()).height)).toBe(h430)
       await L.page.mouse.move(700, 120); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       expect([await drawer.count(), await rowLabelsShown()]).toEqual([0, false])                     // closed: Row numbers off again
       // a reload: the cards as left, the drawer's height kept
@@ -2900,7 +2902,7 @@ describe('REG — the hand check by real clicks', () => {
       await bomTab()
       expect(await opened()).toEqual(['false', 'true'])
       await tab.getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(400)
-      expect(Math.round((await drawer.boundingBox()).height)).toBe(430)
+      expect(Math.round((await drawer.boundingBox()).height)).toBe(h430)
       await L.page.mouse.move(700, 120); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       const back = await L.page.locator('[data-island="bottom-right"]').boundingBox()
       expect([await drawer.count(), Math.round(vp.height - back.y - back.height)]).toEqual([0, 20])                      // closed: back at the bottom
@@ -2985,9 +2987,10 @@ describe('REG — the hand check by real clicks', () => {
       const vp = L.page.viewportSize(), sep = await drawer.getByRole('separator', { name: 'Resize tally' }).boundingBox()
       await L.page.mouse.move(sep.x + sep.width / 2, sep.y + 3); await L.page.mouse.down(); await L.page.mouse.move(sep.x + sep.width / 2, 5, { steps: 6 }); await L.page.mouse.up(); await L.page.waitForTimeout(200)
       expect(Math.round((await drawer.boundingBox()).height)).toBe(Math.round(vp.height * 0.85))
-      // Focus again: all back, the drawer within 70%
+      // Focus again: all back, the drawer within 70% — and drawn no taller than leaves the right card 360 px (fixes-x; was:
+      // 70% of the window)
       await focusBtn.click(); await L.page.waitForTimeout(400)
-      expect([await shown(), Math.round((await drawer.boundingBox()).height)]).toEqual([CHROME, Math.round(vp.height * 0.7)])
+      expect([await shown(), Math.round((await drawer.boundingBox()).height)]).toEqual([CHROME, Math.min(Math.round(vp.height * 0.7), Math.max(120, vp.height - 76 - 84 - 360))])
       // Focus, then Esc: restored, the drawer still open; Esc again: closed
       await focusBtn.click(); await L.page.waitForTimeout(300)
       expect(await shown()).toEqual([])
@@ -3074,7 +3077,9 @@ describe('REG — the hand check by real clicks', () => {
       expect(labels.filter(l => dims.some(d => hit(l, d))).map(l => l.text)).toEqual([])                         // nor over an aisle width label
       // one label per line or pair: "R7" or "R2–R3", each number once
       const nums = labels.flatMap(l => { const m = l.text.match(/^R(\d+)(?:–R(\d+))?$/); return m[2] ? [Number(m[1]), Number(m[2])] : [Number(m[1])] })
-      expect(new Set(nums).size).toBe(nums.length)
+      // (fixes-x: a line cut by cross-aisles is labelled on each piece with its one number — was: each number once)
+      const pieces = await L.S('return import("/src/utils/rackLines.js").then(RL => Object.fromEntries(RL.rackLinesNow(S.getState().objects, S.getState().gridSize || 40).map(l => [l.no, l.pieces.length])))')
+      for (const n of new Set(nums)) expect([n, nums.filter(m => m === n).length <= pieces[n]]).toEqual([n, true])
       await bomTab()
       await fullView('By row')
       const t = await byRowShown()
@@ -3087,7 +3092,8 @@ describe('REG — the hand check by real clicks', () => {
         const first = Number(l.text.match(/^R(\d+)/)[1]), r = rows.find(q => q.no === first)
         const x0 = Math.min(...r.b.map(b => b.x)), x1 = Math.max(...r.b.map(b => b.x + b.width)), y0 = Math.min(...r.b.map(b => b.y)), y1 = Math.max(...r.b.map(b => b.y + b.height))
         const vert = (y1 - y0) > (x1 - x0), reach = 60 / z
-        const before = vert ? l.y < y0 && y0 - l.y < reach : l.x < x0 && x0 - l.x < reach
+        // (just before its line's start — or a piece's start, a line cut by cross-aisles: fixes-x)
+        const before = r.b.some(b => (vert ? l.y < b.y && b.y - l.y < reach : l.x < b.x && b.x - l.x < reach))
         const across = vert ? l.x > x0 - reach && l.x < x1 + reach : l.y > y0 - reach && l.y < y1 + reach
         expect([l.text, before, across]).toEqual([l.text, true, true])
       }
@@ -3107,7 +3113,9 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(300)
       const after = await at()
       expect([sel > 0, await racks()]).toEqual([true, n0 - sel])                            // the row (its section) gone
-      expect(after.length).toBe(before.length - 2)                                          // a pair: two lines fewer
+      // the lines with no rack left are gone (a pair: two lines fewer — unless a piece of the line is left, fixes-x)
+      const still = await L.S('return S.getState().objects.map(o => o.id)')
+      expect(after.length).toBe(before.filter(y => y.split(':')[1].split('+').some(id => still.includes(id))).length)
       expect(after.map(y => y.split(':')[0])).toEqual(after.map((_, i) => 'R' + (i + 1)))                 // R1 … Rn, no gaps
       const labelsNow = await L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(n => n.text()))
       const shownNos = labelsNow.flatMap(t => { const m = t.match(/^R(\d+)(?:–R(\d+))?$/); return m[2] ? ['R' + m[1], 'R' + m[2]] : ['R' + m[1]] })
@@ -5770,6 +5778,131 @@ describe('REG — the hand check by real clicks', () => {
         await L.S('return import("/src/utils/crossAisleCut.js").then(X => X.setCutMode("cross"))')
       }
       await setClear(3)
+    }, T)
+
+    /* ── fixes-x: no run of 1 or 2 bays; the card keeps its room over the Tally; the Check card closes on the floor; the BOM's
+       Selected card; a cut row keeps its number — by real mouse ── */
+    it('REG-xaisle-min-run (click): a Cross aisle band laid so the run past it would be 1 bay — that bay goes, the aisle trims the rows there (an end aisle): no rack of 1 or 2 bays; the same with 2 bays (fixes-x)', async () => {
+      await open()
+      for (const k of [1, 2]) {
+        const f = await fillRow(140, 'centre'), area = await lastArea()
+        // where the band starts so the run after it has k whole bays: on a bay line, the band its width, k bays to the row end
+        const u = await L.S(`return Promise.all([import('/src/generate/columnCheck.js'), import('/src/utils/crossAisleCut.js')]).then(([CC, X]) => { const st = S.getState(), gs = st.gridSize || 40
+          const rs = st.objects.filter(o => arg.ids.includes(o.id)), fs = rs.map(o => CC.rackFootprint(o)), r = rs[0], f = fs[0]
+          const r0 = Math.min(...fs.map(q => q.x)), r1 = Math.max(...fs.map(q => q.x + q.w)), up = (r.uprightWidth || 3) / 12 * gs, pitch = ((r.beams[0] + (r.uprightWidth || 3)) / 12) * gs
+          const W = X.cutWidthFt(st.objects, { x: (r0 + r1) / 2, y: f.y }) * gs, R = f.x + f.w
+          let best = null
+          for (let i = 1; i < r.beams.length; i++) { const s1 = f.x + up + i * pitch + W, rest = R - s1, n = Math.floor((rest - up + 1e-6) / pitch); if (n === arg.k) { best = f.x + up + i * pitch; break } }
+          return best == null ? null : (best + W / 2 - r0) / (r1 - r0) })`, { ids: f.ids, k })
+        expect(u).not.toBeNull()
+        await cutAcross(f.ids, u)
+        await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+        const bays = await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type) && (o.areaId === arg || (o.pieceOf && S.getState().objects.find(p => p.id === o.pieceOf)?.areaId === arg))).map(o => o.beams.length)', area)
+        expect([k, bays.every(n => n >= 3)]).toEqual([k, true])
+        // the rows are one run each (trimmed), the aisle an end aisle at their end
+        expect([k, [...(await rowsBy(area)).values()].every(q => q.length === 1)]).toEqual([k, true])
+        expect([k, (await crossNow()).some(c => c.lines.every(m => m.a == null || m.b == null))]).toEqual([k, true])
+      }
+    }, T)
+
+    it('REG-tally-card-room (click): the Tally drawer dragged as tall as it goes — the right card keeps 360 px or more (the drawer drawn shorter), never under the drawer; the card scrolls inside; an elevation edited on the sheet with the Tally open: typed, saved (fixes-x)', async () => {
+      await open()
+      await bomTab()
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(500)
+      const drawer = L.page.getByRole('region', { name: 'Tally' }), card = L.page.locator('[data-island="right-card"]')
+      const sep = await drawer.getByRole('separator', { name: 'Resize tally' }).boundingBox()
+      await L.page.mouse.move(sep.x + sep.width / 2, sep.y + 3); await L.page.mouse.down(); await L.page.mouse.move(sep.x + sep.width / 2, 40, { steps: 8 }); await L.page.mouse.up(); await L.page.waitForTimeout(250)
+      const room = async () => { const c = await card.boundingBox(), d = await drawer.boundingBox(); return { cardMax: await card.evaluate(e => parseFloat(getComputedStyle(e).maxHeight)), cardBottom: c.y + c.height, drawerTop: d.y } }
+      const r1 = await room()
+      expect(r1.cardMax).toBeGreaterThanOrEqual(360 - 0.5)
+      expect(r1.cardBottom).toBeLessThanOrEqual(r1.drawerTop)
+      // the Elevations tab: the card scrolls inside; an elevation edited on the sheet
+      await editSheet()
+      expect(await card.locator('[data-card-dark]').first().evaluate(e => getComputedStyle(e).overflowY)).toBe('auto')
+      const r2 = await room()
+      expect(r2.cardMax).toBeGreaterThanOrEqual(360 - 0.5)
+      expect(r2.cardBottom).toBeLessThanOrEqual(r2.drawerTop)
+      const b0 = await drawnBeams()
+      await sheetOf().locator('text[data-role="dim:elev:0"]').click(); await L.page.waitForTimeout(100)
+      const box = L.page.getByRole('textbox', { name: 'Dimension' }); await box.fill('6'); await box.press('Enter'); await L.page.waitForTimeout(200)
+      const h0 = await hist7()
+      await saveSheet()
+      expect(await L.page.getByLabel('Editing on the sheet').count()).toBe(0)
+      expect((await hist7()) - h0).toBe(1)
+      expect(await drawnBeams()).toBe(b0 + 1)
+      // (back to the drawer's usual height, closed)
+      await L.S('return import("/src/studio/tally.js").then(X => { X.useTally.getState().setHeight(330); X.closeTally() })')
+    }, T)
+
+    it('REG-check-close-click (click): the Check card open — a click on empty canvas closes it, back to Properties; open again, a click on the floor (the building’s, or a section’s) closes it too (fixes-x)', async () => {
+      await open()
+      const checkBtn = L.page.locator('[data-island="top-right"]').getByRole('button', { name: /^Check/ })
+      const isOpen = () => L.page.getByRole('button', { name: 'Close layout check' }).count()
+      const onProps = async () => (await L.page.getByRole('tab', { name: 'Properties' }).getAttribute('aria-selected')) === 'true'
+      // a point on screen that nothing holds (empty canvas), and one on the floor (the building or a section — no rack,
+      // column or wall there)
+      const pts = await L.S(`return import('/src/canvas2/hitTest.js').then(H => { const st = S.getState(), z = st.zoom, gs = st.gridSize || 40
+        const f = st.objects.find(o => /^fp_/.test(o.type)), W = f.width, Hh = f.height
+        const free = (x, y) => !H.fpWallHitTest(st.objects, st.layers, x, y, z, gs)
+        let empty = null, floor = null
+        for (const [fx, fy] of [[0.5, 1.15], [0.5, -0.15], [-0.1, 0.5], [1.1, 0.5], [1.2, 1.2], [-0.2, -0.2]]) { const x = f.x + W * fx, y = f.y + Hh * fy; if (!H.hitTest(st.objects, st.layers, x, y, z, gs) && free(x, y)) { empty = { x, y }; break } }
+        for (let fy = 0.04; fy < 0.96 && !floor; fy += 0.01) for (let fx = 0.04; fx < 0.96; fx += 0.01) { const x = f.x + W * fx, y = f.y + Hh * fy, id = H.hitTest(st.objects, st.layers, x, y, z, gs), o = st.objects.find(q => q.id === id)
+          if (o && (/^fp_/.test(o.type) || o.type === 'section_area') && free(x, y)) { floor = { x, y }; break } }
+        return { empty, floor } })`)
+      expect([!!pts.empty, !!pts.floor]).toEqual([true, true])
+      await checkBtn.click(); await L.page.waitForTimeout(300)
+      expect(await isOpen()).toBe(1)
+      await onCanvasAll([pts.empty]); await L.click(pts.empty); await L.page.waitForTimeout(200)
+      expect([await isOpen(), await onProps()]).toEqual([0, true])
+      await checkBtn.click(); await L.page.waitForTimeout(300)
+      expect(await isOpen()).toBe(1)
+      await onCanvasAll([pts.floor]); await L.click(pts.floor); await L.page.waitForTimeout(200)
+      expect([await isOpen(), await onProps()]).toEqual([0, true])
+      await L.page.keyboard.press('Escape')
+    }, T)
+
+    it('REG-bom-selected (click): the BOM tab — nothing selected, no Selected card; a row clicked on the plan: "Selected: R…" directly under Total with that row’s parts (its quantities, the BOM’s for those lines); Esc — gone (fixes-x)', async () => {
+      await open()
+      await bomTab()
+      const tab = () => L.page.getByRole('tabpanel', { name: 'BOM' })
+      expect(await tab().locator('[data-bom-card="selected"]').count()).toBe(0)
+      const at = await L.S('return import("/src/generate/columnCheck.js").then(CC => { const r = S.getState().objects.find(o => o.type === "rack_double_row"); const f = CC.rackFootprint(r); return { x: f.x + f.w / 2, y: f.y + f.h / 2 } })')
+      await onCanvasAll([at]); await L.click(at); await L.page.waitForTimeout(250)
+      if (!(await tab().count())) await bomTab()
+      const want = await L.S(`return Promise.all([import('/src/utils/bom.js'), import('/src/studio/tally.js')]).then(([B, X]) => { const st = S.getState(), bom = B.computeBom(st.objects, st.elevations, { gridSize: st.gridSize || 40 })
+        const g = B.selectedGroup(bom, X.selectedLineNos(st, bom.rows)); return g && { name: g.name, beams: g.lines.filter(l => l.part === 'Beam').reduce((t, l) => t + l.qty, 0) } })`)
+      expect(want).not.toBeNull()
+      expect(want.name).toMatch(/^Selected: R\d+(–R\d+)?$/)
+      const cards = await tab().locator('section[data-bom-card]').evaluateAll(es => es.map(e => e.getAttribute('data-bom-card')))
+      expect(cards.slice(0, 2)).toEqual(['total', 'selected'])
+      expect(await tab().locator('[data-bom-selected-name]').textContent()).toBe(want.name)
+      const beams = await tab().locator('[data-bom-group="selected"][data-part="Beam"]').evaluateAll(es => es.reduce((t, e) => t + Number(e.getAttribute('data-qty')), 0))
+      expect(beams).toBe(want.beams)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      expect(await tab().locator('[data-bom-card="selected"]').count()).toBe(0)
+    }, T)
+
+    it('REG-row-number-cut (click): a row line cut by a cross-aisle keeps its number — each piece labelled with it on the plan, one BOM row (column) covering both pieces; the numbering otherwise unchanged (fixes-x)', async () => {
+      await open()
+      const f = await fillRow(140, 'centre')
+      const linesNow = () => L.S(`return Promise.all([import('/src/utils/rackLines.js'), import('/src/utils/bom.js')]).then(([RL, B]) => { const st = S.getState(), gs = st.gridSize || 40
+        const bom = B.computeBom(st.objects, st.elevations, { gridSize: gs })
+        return { lines: RL.rackLinesNow(st.objects, gs).map(l => ({ no: l.no, pieces: l.pieces.length, mine: l.ids.some(id => arg.includes(id) || st.objects.find(o => o.id === id)?.pieceOf && arg.includes(st.objects.find(o => o.id === id).pieceOf)) })),
+          rows: bom.rows.map(r => r.no), cols: B.byRowTable(bom).groups.flatMap(g => g.rows) } })`, f.ids)
+      const before = await linesNow()
+      const mine0 = before.lines.filter(l => l.mine)
+      expect(mine0.length).toBeGreaterThan(0)
+      await cutAcross(f.ids, 0.5)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      const after = await linesNow()
+      // the same numbers, the same lines — each of the fill's now two pieces
+      expect(after.lines.map(l => l.no)).toEqual(before.lines.map(l => l.no))
+      expect(after.lines.filter(l => l.mine).map(l => [l.no, l.pieces])).toEqual(mine0.map(l => [l.no, 2]))
+      // the BOM (and the Tally, xlsx and CSV — byRowTable's columns): one column per line
+      expect([after.rows, after.cols]).toEqual([before.rows, before.cols])
+      // the plan: each piece labelled with the line's number
+      const labels = await L.page.evaluate(() => window.Konva.stages[0].find('.rack-line-label').map(t => t.text()))
+      for (const l of mine0) expect([l.no, labels.filter(t => t.split(/[–]/).includes('R' + l.no) || t === 'R' + l.no).length]).toEqual([l.no, 2])
     }, T)
   })
 })

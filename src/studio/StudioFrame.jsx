@@ -14,7 +14,7 @@ import { useColumnCheck } from '../generate/useColumnCheck'
 import { useElevView, setShowColors } from '../utils/elevationDraw'
 import { useViewPrefs, fitRef, CARD_W } from './viewPrefs'
 import { TallyHost } from './TallyDrawer'
-import { useTally, TALLY_BOTTOM, TALLY_ISLAND_GAP, ISLAND_H, TALLY_CARD_GAP } from './tally'
+import { useShownTallyH, TALLY_BOTTOM, TALLY_ISLAND_GAP, ISLAND_H, TALLY_CARD_GAP } from './tally'
 import { useElevTab } from '../utils/elevTab'
 import { Icon } from './Icon'
 import { CheckCard } from './cards'
@@ -118,7 +118,8 @@ function RightCard() {
      §7); the grip shows on the edge's hover, and while an elevation is edited on the sheet (C21) */
   const cardW = useViewPrefs(s => s.cardW), onSheet = useElevTab(s => !!s.editing?.sheet)
   /* the Tally drawer open: the card ends 12px above the bottom-right island, which stands 12px above the drawer */
-  const tallyH = useTally(s => (s.open ? s.height : 0))
+  // (drawn short enough that the card keeps 360px — tally.js shownTallyH; fixes-x)
+  const tallyH = useShownTallyH()
   const [edgeHover, setEdgeHover] = useState(false)
   const startEdge = (ev) => {
     if (ev.button !== 0) return
@@ -157,7 +158,9 @@ function RightCard() {
             </div>
             {/* Properties: the Studio card contents (src/studio/cards.jsx, cardParts.jsx); Elevations: the sheet, then
                 the list or the editor (components/Elevations/ElevationsTab.jsx — C2, C3) */}
-            <div data-card-dark style={{ flex: '0 1 auto', minHeight: 0, overflowY: full ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
+            {/* (fixes-x: with the Tally drawer open the card always scrolls inside — the Elevations tab too, so an elevation is
+                edited however short the card) */}
+            <div data-card-dark style={{ flex: '0 1 auto', minHeight: 0, overflowY: full && !tallyH ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
               <RightPanelTabs tab={tab} />
             </div>
           </>}

@@ -1,14 +1,14 @@
 import { useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { computeBom, bomCsv, bomGroups, byRowTable, qtyText, rowsText, partName, partShort, sizeWords } from '../utils/bom'
+import { computeBom, bomCsv, bomGroups, byRowTable, qtyText, rowsText, partName, partShort, sizeWords, selectedGroup } from '../utils/bom'
 import { bomXlsx } from '../export/bomXlsx'
 import { useLayoutCheck } from '../utils/layoutCheck'
 import { rackFootprint } from '../generate/rackFootprint'
 import { colorOf } from '../utils/sectionAreas'
 import { C, MONO, Note, Btn, Sec } from './cardParts'
 import { Icon } from './Icon'
-import { openTally, useBomCards, cardOpen } from './tally'
+import { openTally, useBomCards, cardOpen, selectedLineNos } from './tally'
 
 /* The BOM tab (right card, beside Properties and Elevations): the layout's bill of materials (utils/bom.js) — its
    flags first in the warning style; the buttons Tally · xlsx · CSV; then the Total card (every part of the layout),
@@ -172,8 +172,10 @@ function PartLines({ g, picked, onPick }) {
 const range = (rows) => [rows.length ? rowsText(rows) : null, `${rows.length} line${rows.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
 
 export function BomTab() {
-  const { objects, T, gs, filename } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, gs: s.gridSize || 40, filename: s.currentFilename })))
+  const { objects, T, gs, filename, selectedIds } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, gs: s.gridSize || 40, filename: s.currentFilename, selectedIds: s.selectedIds })))
   const bom = useMemo(() => computeBom(objects, T, { gridSize: gs }), [objects, T, gs])
+  // rows selected on the plan: their parts in the Selected card, under the Total (fixes-x)
+  const sel = useMemo(() => selectedGroup(bom, selectedLineNos({ objects, selectedIds }, bom.rows)), [bom, objects, selectedIds])
   const hl = useLayoutCheck(s => s.highlight)
   const picked = hl?.kind === 'bom' ? hl.key : null
   const cards = useBomCards(s => s.cards), layout = filename || ''
@@ -206,6 +208,16 @@ export function BomTab() {
                 </div>
                 <PartLines g={total} picked={picked} onPick={pick} />
               </section>
+              {/* the rows selected on the plan: their parts (hidden with nothing selected) */}
+              {sel && (
+                <section data-bom-card="selected" aria-label="Selected parts" style={{ borderRadius: 8, border: `1px solid ${SELECT}`, minWidth: 0 }}>
+                  <div data-bom-group-head="selected" style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '10px 12px 6px' }}>
+                    <span data-bom-selected-name style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.strong, fontWeight: 600, fontSize: 13 }}>{sel.name}</span>
+                    <span data-bom-rows style={{ color: C.muted, fontSize: 11, whiteSpace: 'nowrap' }}>{`${sel.rows.length} line${sel.rows.length === 1 ? '' : 's'}`}</span>
+                  </div>
+                  <PartLines g={sel} picked={picked} onPick={pick} />
+                </section>
+              )}
               {sections.map((g, i) => {
                 const open = cardOpen(cards, layout, g.id, i === 0)
                 const sw = colorOf(objects.find(o => o.id === g.id))?.c

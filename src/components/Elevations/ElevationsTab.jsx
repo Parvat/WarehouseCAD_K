@@ -15,6 +15,7 @@ import { useElevTab, nameOf, assignSelected, recolorElevation, duplicateElevatio
 import { projectOf, ceilingFor, palletFor, openSetup, previewName, advancedOf, ASSUMED_CLEAR_IN } from '../../utils/project'
 import { bayLedger } from '../../utils/bayLedger'
 import { ElevationDrawing, elevFullOpen } from './ElevationDrawing'
+import { useShownTallyH, TALLY_BOTTOM, TALLY_ISLAND_GAP, ISLAND_H, TALLY_CARD_GAP } from '../../studio/tally'
 
 /* ── The Elevations tab (STUDIO.md §5, §7; design/studio/Studio.dc.html panels "elev" C2 and "edit" C3) ─────────────
    In the 300 wide right card, under its Properties | Elevations segment:
@@ -147,14 +148,18 @@ export function ElevationsTab() {
   // tall as its content, so the room is read from the window, not from the card
   const body = useRef(null)
   const [bodyH, setBodyH] = useState(700)
+  // (the Tally drawer open: the card ends above it — StudioFrame RightCard; fixes-x: the sheet sized for the room left, so
+  // the list and the editor stay in the card)
+  const tallyH = useShownTallyH()
   useLayoutEffect(() => {
     const el = body.current
     if (!el) return
-    const read = () => setBodyH(Math.max(200, Math.round(window.innerHeight - 76 - el.getBoundingClientRect().top)))
+    const below = tallyH ? TALLY_BOTTOM + tallyH + TALLY_ISLAND_GAP + ISLAND_H + TALLY_CARD_GAP : 76
+    const read = () => setBodyH(Math.max(200, Math.round(window.innerHeight - below - el.getBoundingClientRect().top)))
     read()
     window.addEventListener('resize', read)
     return () => window.removeEventListener('resize', read)
-  }, [])
+  }, [tallyH])
   const room = bodyH - HANDLE
   const onSheet = !!e?.sheet, full = !!e && !onSheet   // C21 (the pencil) · the C3 editor (New, Full edit)
   // C3: the form's own height, measured — the sheet gives up what the form needs to show whole (down to 200)

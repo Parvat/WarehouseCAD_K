@@ -288,6 +288,19 @@ export function bomGroups(bom) {
   const total = { id: 'total', name: 'Total', rows: bom.rows.map(r => r.no), lines: bom.lines, total: true }
   return bom.hasSections ? [...bom.sections.map(s => ({ ...s, total: false })), total] : [total]
 }
+/** The parts of rack lines `nos` alone (fixes-x: the BOM tab's Selected card) → { id: 'selected', name ("Selected: R2–R3"),
+ *  rows, lines } — each line's quantity and pairs on those rows, its racks those of those rows; null when none. */
+export function selectedGroup(bom, nos) {
+  const want = [...new Set(nos || [])].filter(no => (bom.rows || []).some(r => r.no === no)).sort((a, b) => a - b)
+  if (!want.length) return null
+  const racks = new Set((bom.rows || []).filter(r => want.includes(r.no)).flatMap(r => r.ids))
+  const lines = bom.lines.map(l => {
+    const qty = want.reduce((t, no) => t + (l.rows[no] || 0), 0), pairs = want.reduce((t, no) => t + (l.rows['p' + no] || 0), 0)
+    return { ...l, qty, pairs, ids: l.ids.filter(id => racks.has(id)), rows: Object.fromEntries(Object.entries(l.rows).filter(([k]) => want.includes(Number(String(k).replace(/^p/, ''))))) }
+  }).filter(l => l.qty > 0)
+  return { id: 'selected', name: 'Selected: ' + rowsText(want), rows: want, lines }
+}
+
 /** Rows as words: "R1–R4, R7". */
 export function rowsText(nos) {
   const s = [...nos].sort((a, b) => a - b), out = []

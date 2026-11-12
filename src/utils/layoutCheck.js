@@ -378,7 +378,9 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
      cross-aisle starts a new one) holding a Fill's racks; Max run is that Fill's (its area's settings). A pair's two sides
      are one item, named as the plan names it ("R3–R4"). ── */
   { const lines = rackLinesNow(objects, gridSize), seen = new Set()
-    for (const l of lines) {
+    // (each piece of a line on its own: a line cut by cross-aisles keeps one number — fixes-x)
+    for (const L0 of lines) for (const pc of (L0.pieces || [{ r0: L0.r0, r1: L0.r1, ids: L0.ids }])) {
+      const l = { ...L0, r0: pc.r0, r1: pc.r1, ids: pc.ids }
       const area = l.ids.map(id => byId.get(id)).find(o => o?.areaId)?.areaId
       const a = area ? byId.get(area) : null
       if (!a || a.settings?.autoCross || seen.has(l.ids.join(','))) continue                 // a Fill's rows only (not Generate's area)
@@ -386,7 +388,7 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
       const ft = (l.r1 - l.r0) / gridSize
       if (!(ft > maxRunFt + 1e-6)) continue
       seen.add(l.ids.join(','))
-      const nos = lines.filter(m => m.ids.join(',') === l.ids.join(',')).map(m => m.no).sort((p, q) => p - q)
+      const nos = lines.filter(m => m.ids.join(',') === L0.ids.join(',')).map(m => m.no).sort((p, q) => p - q)
       const name = nos.length > 1 ? `R${nos[0]}–R${nos[nos.length - 1]}` : `R${nos[0]}`
       const b = l.vert ? { x: Math.min(...l.ids.map(id => foot.get(id)?.x ?? Infinity)), y: l.r0, w: 0, h: l.r1 - l.r0 } : { x: l.r0, y: Math.min(...l.ids.map(id => foot.get(id)?.y ?? Infinity)), w: l.r1 - l.r0, h: 0 }
       const box = union(l.ids.map(id => foot.get(id)).filter(Boolean).map(boxOf).concat([b]))

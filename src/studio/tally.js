@@ -11,6 +11,7 @@
 //              refitted above the drawer, the drawer up to 85% of the window high; Esc or Focus again restores all
 // The tallied marks (tally-2) are the layout's, not presentation: saved on its elevation table (`tallied`), below.
 import { create } from 'zustand'
+import { useEffect, useState } from 'react'
 import { fitRef } from './viewPrefs'
 import { positionsPerBeam } from '../utils/palletFit'
 import { levelsResolver } from '../utils/elevations'
@@ -23,6 +24,19 @@ export const TALLY_H = 330, TALLY_H_MIN = 200, TALLY_MAX_FRAC = 0.7, TALLY_FOCUS
  *  island stands 12 above it (at the right) and the right card ends 12 above that island. */
 export const TALLY_LEFT = 16, TALLY_RIGHT = 16, TALLY_BOTTOM = 20, TALLY_ISLAND_GAP = 12, ISLAND_H = 40, TALLY_CARD_GAP = 12
 const H_KEY = 'trace.studio.tally.h'
+/* fixes-x: the right card (top 76) is never squeezed under CARD_MIN_H by the open drawer — with no room for both, the drawer
+   is drawn shorter (its own height kept for when there is room); in Focus the card is hidden, the drawer as set */
+export const CARD_MIN_H = 360, TALLY_SHOWN_MIN = 120
+const CARD_TOP = 76, BELOW_CARD = TALLY_BOTTOM + TALLY_ISLAND_GAP + ISLAND_H + TALLY_CARD_GAP
+/** The drawer's height as drawn for a window `vh` tall. */
+export const shownTallyH = (h, focus, vh) => (focus ? h : Math.max(TALLY_SHOWN_MIN, Math.min(h, vh - CARD_TOP - BELOW_CARD - CARD_MIN_H)))
+/** The drawer's height as drawn now (follows the window's height): 0 when it is closed. */
+export function useShownTallyH() {
+  const [vh, setVh] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 1000))
+  useEffect(() => { const on = () => setVh(window.innerHeight); window.addEventListener('resize', on); return () => window.removeEventListener('resize', on) }, [])
+  const open = useTally(s => s.open), h = useTally(s => s.height), focus = useTally(s => s.focus)
+  return open ? shownTallyH(h, focus, vh) : 0
+}
 const maxH = (focus) => Math.round((typeof window !== 'undefined' ? window.innerHeight : 1000) * (focus ? TALLY_FOCUS_FRAC : TALLY_MAX_FRAC))
 export const clampTallyH = (h, focus = false) => (Number.isFinite(h) ? Math.round(Math.min(maxH(focus), Math.max(TALLY_H_MIN, h))) : TALLY_H)
 const readH = () => { try { const v = Number(localStorage.getItem(H_KEY)); return v ? clampTallyH(v) : TALLY_H } catch { return TALLY_H } }

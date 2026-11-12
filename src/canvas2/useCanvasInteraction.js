@@ -21,7 +21,9 @@ import { rebuildAisles } from '../utils/aisleRebuild'
 import { nanoid } from 'nanoid'
 import { inlineSnap, planInlineDrop, applyJoin } from './inlineSnap'
 import { pickableIn, selectableIn, snapTargets, isPickable, isSelectable } from '../utils/layers'
-import { pickedOnPlan } from '../studio/viewPrefs'
+import { pickedOnPlan, useViewPrefs } from '../studio/viewPrefs'
+import { useLayoutCheck } from '../utils/layoutCheck'
+import { setRightPanel } from '../utils/rightPanel'
 import { groupDragFor, skipNextAction, groupRowsNow } from '../utils/rowGroupTool'
 import { lockToAxis } from '../utils/rowGroup'
 import { clearIssueHighlight } from '../utils/layoutCheck'
@@ -124,6 +126,8 @@ export function useCanvasInteraction({
   const clickOn = (t) => {
     const st = useCanvasStore.getState()
     setStickyBayMode(false)
+    // a click on the floor (a section's too) or on empty canvas closes the Check card: back to Properties, like the other cards (fixes-x)
+    if (useLayoutCheck.getState().open) { useLayoutCheck.getState().close(); if (useViewPrefs.getState().card !== 'generate') setRightPanel({ tab: 'properties' }) }
     if (t && t.column) { pickedOnPlan(); clickColumn(useCanvasStore, t.column); return }
     // a section's empty area: the section (STUDIO.md §7a Sections)
     if (t && t.section && st.objects.some(o => o.id === t.section)) { pickedOnPlan(); st.selectObject(t.section, false); st.setActiveWall(null); return }

@@ -1,5 +1,6 @@
 // RackLineLabels.jsx — the rack line numbers on the plan (utils/rackLines.js: R1, R2 …; the BOM's rows, the same
-// computation): ONE label per rack line, at its start end only — the left end of a line running across, the top end of
+// computation): ONE label per rack line piece (fixes-x: a line cut by cross-aisles keeps one number — each piece is
+// labelled with it), at the piece's start end only — the left end of a line running across, the top end of
 // one running up and down. A back-to-back pair running across gets one label per line, each beside its own line (R16 by
 // the top line, R17 by the bottom one); one running up and down keeps one label for both, "R2–R3", at its top. Drawn like the aisle width labels: a
 // size in feet (the Label size — render/labelSize.js), drawings' words style (Plus Jakarta Sans, #767C74). A label never
@@ -34,8 +35,9 @@ export function rowLabelPlaces(lines, fs, avoid = []) {
   // a pair up and down: its two lines one label; across: each line its own (beside its own band)
   for (const l of lines) { const k = l.ids.join(',') + (l.vert ? '' : ':' + l.ws); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(l) }
   const h = fs * 1.25, gap = fs * 0.5, placed = [], out = []
-  for (const [k, ls] of groups) {
-    const nos = ls.map(l => l.no).sort((a, b) => a - b), l0 = ls[0]
+  for (const [k0, ls] of groups) for (const [pi, pc] of (ls[0].pieces || [{ r0: ls[0].r0 }]).entries()) {
+    const k = pi ? k0 + '#' + pi : k0
+    const nos = ls.map(l => l.no).sort((a, b) => a - b), l0 = { ...ls[0], r0: pc.r0 }
     const text = nos.length > 1 ? `R${nos[0]}–R${nos[nos.length - 1]}` : `R${nos[0]}`
     const w = text.length * fs * 0.62 + fs * 0.3
     const s0 = Math.min(...ls.map(l => l.s0)), s1 = Math.max(...ls.map(l => l.s1)), c = (s0 + s1) / 2, half = (s1 - s0) / 2

@@ -24,6 +24,7 @@ import { joinRacks } from '../canvas2/inlineSnap'
 import { rebuildAisles } from './aisleRebuild'
 import { fillEquipment, crossOf } from './fillTool'
 import { useCrossAislePick, crossAislesNow, runPiece, withEnd } from './crossAisleTool'
+import { MIN_RUN_BAYS } from '../generate/sizingLayout'
 import { wallSideOf } from './rackDepth'
 
 export const CROSS_AISLE_TOOL = 'cross_aisle'
@@ -91,6 +92,26 @@ function cutRow(o, s0, s1, gs, newId, secLow, secHigh) {
   for (let i = 1; i <= n; i++) if (ups[i] + up <= s0 + EPS) a = i
   let b = 0, len = up
   for (let j = n - 1; j >= a; j--) { const l = len + (g.beams[j] / 12) * gs + up; if (s1 + l <= R + EPS) { len = l; b++ } else break }
+  /* fixes-x: a run is 3 bays or more, or none — a side left with 1 or 2 bays goes, the aisle trims the row there (an end
+     aisle on the side that stays: the gap from it to the band's far edge). Root cause of the 1-bay piece: the cut kept
+     whatever whole bays fitted either side, the 3-bay rule lived only in the drag. */
+  const shortLow = a > 0 && a < MIN_RUN_BAYS, shortHigh = b > 0 && b < MIN_RUN_BAYS
+  if (shortLow || shortHigh) {
+    const lowN = shortLow ? 0 : a, highN = shortHigh ? 0 : b
+    const at = a > 0 ? s1 : R - len
+    if (lowN && !highN) {
+      const low = withEnd(piece(o, Array.from({ length: lowN }, (_, j) => j), g.r0, gs, { genSection: secLow }), 'hi', 0)
+      delete low.xaSpareFt
+      return [b > 0 ? withEnd(low, 'hi', (s1 - geom(low).r1) / gs) : low, null]
+    }
+    if (highN && !lowN) {
+      const high = withEnd(piece(o, Array.from({ length: highN }, (_, j) => n - highN + j), at, gs, {}), 'lo', 0)
+      if (high.splitOf) delete high.splitOf
+      if (o.xaSpareFt == null) delete high.xaSpareFt
+      return [null, a > 0 ? withEnd(high, 'lo', (at - s0) / gs) : high]
+    }
+    if (!lowN && !highN) return [null, null]
+  }
   // nothing left before the band (it lies over the row's start: a trim) — the run keeps the row's far end, the leftover by
   // the band; else the run after starts at the band's far edge (the aisle exactly the width), the leftover at the far end
   const at = a > 0 ? s1 : R - len
@@ -164,16 +185,17 @@ function relayHigh(b, start, gs) {
  *  far from the run before it, its far end held where its row ended. → objects, or null (a run would lose every bay). */
 export function planCrossAisleWidth(objects, c, widthFt, { gridSize = 40 } = {}) {
   if (!(widthFt > 0)) return null
-  const changed = new Map()
+  const changed = new Map(), gone = new Set()
   for (const l of c.lines) {
     // an end aisle: its gap at the row's end that wide (tunnel fixes)
     if (!l.a || !l.b) { const r0 = l.a || l.b, r = changed.get(r0.id) || r0; changed.set(r.id, withEnd(r, l.a ? 'hi' : 'lo', widthFt)); continue }
     const a = changed.get(l.a.id) || l.a, b = changed.get(l.b.id) || l.b
     const b2 = relayHigh(b, geom(a).r1 + widthFt * gridSize, gridSize)
-    if (!b2) return null
+    // (fixes-x: a run after it of 1 or 2 bays — or none — goes: the aisle at the row's end, an end aisle that wide)
+    if (!b2 || b2.beams.length < MIN_RUN_BAYS) { gone.add(b.id); changed.set(a.id, withEnd(a, 'hi', widthFt)); continue }
     changed.set(b.id, b2)
   }
-  return rebuildAisles(objects.map(o => changed.get(o.id) || o), nanoid).objects
+  return rebuildAisles(objects.filter(o => !gone.has(o.id)).map(o => changed.get(o.id) || o), nanoid).objects
 }
 export function setCrossAisleWidth(store, c, widthFt) {
   const st = store.getState(), gs = st.gridSize || 40
