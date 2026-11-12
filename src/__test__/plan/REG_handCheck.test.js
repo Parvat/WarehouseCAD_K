@@ -5026,7 +5026,7 @@ describe('REG — the hand check by real clicks', () => {
       }
     }, T)
 
-    it('REG-building-shrink (click): the building made smaller by its wall handle — its sections and zones clipped to the new inner wall in the same undo step, one left with nothing inside removed; the notice counts them, with Undo; columns untouched (shrink-fill)', async () => {
+    it('REG-building-shrink (click): the building made smaller by its wall handle — its sections and zones clipped to the new inner wall in the same undo step, one left with nothing inside removed; the notice counts them, with Undo; columns outside the new walls removed, the rest where they were — column-trim fix; was: columns untouched (shrink-fill)', async () => {
       await openSections()
       const b = await innerBox(), W = b.x1 - b.x0
       // a section and an office over the right part; a staging zone wholly in the strip the shrink takes
@@ -5048,7 +5048,9 @@ describe('REG — the hand check by real clicks', () => {
       expect([now.sec.x + now.sec.width <= nb.x1 + 1e-6, now.off.x + now.off.width <= nb.x1 + 1e-6, now.stg]).toEqual([true, true, undefined])
       expect([now.sec.width > 0, now.off.width > 0]).toEqual([true, true])
       expect((await hist7()) - h0).toBe(1)                                                       // one undo step
-      expect(await L.S('return JSON.stringify(S.getState().objects.filter(o => o.type === "column_grid"))')).toBe(cols0)
+      // its columns: those the new walls leave outside gone, every one left exactly where it was (column-trim fix; was: untouched)
+      const colsNow = await L.S('return import("/src/generate/columnCheck.js").then(CC => { const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), xs = f.fpVerts.map(q => q.x); return { X1: Math.max(...xs), was: JSON.parse(arg).flatMap(g => CC.expandColumnGrid(g, st.gridSize || 40)).map(c => (c.x + c.w / 2).toFixed(2) + "," + (c.y + c.h / 2).toFixed(2)), now: st.objects.filter(o => o.type === "column_grid").flatMap(g => CC.expandColumnGrid(g, st.gridSize || 40)).map(c => ({ k: (c.x + c.w / 2).toFixed(2) + "," + (c.y + c.h / 2).toFixed(2), x: c.x + c.w / 2 })) } })', cols0)
+      expect([colsNow.now.every(c => colsNow.was.includes(c.k)), colsNow.now.every(c => c.x <= colsNow.X1 + 1)]).toEqual([true, true])
       const notice = L.page.locator('[aria-label="Notice"]')
       expect(await notice.textContent()).toMatch(/1 section clipped.*1 zone clipped.*1 zone removed/)
       await notice.getByRole('button', { name: 'Undo' }).click(); await L.page.waitForTimeout(300)
@@ -6070,6 +6072,48 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
       expect(await dump()).toEqual(d1)
       void g
+    }, T)
+
+    it('REG-shrink-columns (click): the building shrunk by its Width, then its Length, typed — the column grid loses the columns the new walls leave outside (with their grid lines), the columns inside stay exactly where they were (no re-spacing), even with the Columns layer locked as Generate leaves it; the rack trim and the columns one undo step, the notice "… N columns removed"; Ctrl+Z restores the grid and the racks exactly (column-trim fix)', async () => {
+      await open()
+      // the Columns layer locked, as Generate leaves it (setup)
+      await L.S("S.setState({ layers: S.getState().layers.map(l => (l.id === 'columns' ? { ...l, locked: true } : l)) })")
+      const state = () => L.S(`return import('/src/generate/columnCheck.js').then(CC => { const st = S.getState(), gs = st.gridSize || 40, f = st.objects.find(o => /^fp_/.test(o.type))
+        const grids = st.objects.filter(o => o.type === 'column_grid')
+        const cols = grids.flatMap(g => CC.expandColumnGrid(g, gs)).map(c => [Math.round((c.x + c.w / 2) * 100) / 100, Math.round((c.y + c.h / 2) * 100) / 100])
+        const v = f.fpVerts, X0 = Math.min(...v.map(q => q.x)), X1 = Math.max(...v.map(q => q.x)), Y0 = Math.min(...v.map(q => q.y)), Y1 = Math.max(...v.map(q => q.y))
+        return { grids: JSON.stringify(grids), racks: JSON.stringify(st.objects.filter(o => /^rack_/.test(o.type)).map(o => [o.id, o.x, o.y, o.width, o.beams.length])), cols, X0, X1, Y0, Y1 } })`)
+      const notice = L.page.locator('[role="status"][aria-label="Notice"]')
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      const shrink = async (label, ft) => {
+        const s0 = await state(), w = { x: (s0.X0 + s0.X1) / 2, y: s0.Y0 + 2 }
+        await onCanvasAll([w]); await L.click(w); await L.page.waitForTimeout(250)
+        const f = card.getByLabel(label); await f.click(); await f.fill(String(ft)); await f.press('Enter'); await L.page.waitForTimeout(400)
+      }
+      const s0 = await state()
+      expect(s0.cols.length).toBeGreaterThan(0)
+      for (const [label, ft] of [['Width (ft)', 200], ['Length (ft)', 100]]) {
+        const h0 = await hist7()
+        await shrink(label, ft)
+        const s1 = await state()
+        expect([label, (await hist7()) - h0]).toEqual([label, 1])
+        // every column left inside the new walls (one on a wall stays); each exactly where it stood
+        const out = s1.cols.filter(([x, y]) => x < s1.X0 - 1 || x > s1.X1 + 1 || y < s1.Y0 - 1 || y > s1.Y1 + 1)
+        expect([label, out]).toEqual([label, []])
+        const was = new Set(s0.cols.map(c => c.join(',')))
+        expect([label, s1.cols.every(c => was.has(c.join(',')))]).toEqual([label, true])
+        // the columns the old walls held that the new ones do not: all gone
+        const shouldGo = s0.cols.filter(([x, y]) => x > s1.X1 + 1 || y > s1.Y1 + 1).length
+        expect([label, s0.cols.length - s1.cols.length]).toEqual([label, shouldGo])
+        expect(shouldGo).toBeGreaterThan(0)
+        expect(await notice.textContent()).toContain(shouldGo + ' column' + (shouldGo === 1 ? '' : 's') + ' removed')
+        if (await notice.count()) { await notice.getByRole('button', { name: /close/i }).first().click(); await L.page.waitForTimeout(150) }
+        // one Ctrl+Z: the grid and the racks exactly as before
+        await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+        const s2 = await state()
+        expect([label, s2.grids === s0.grids, s2.racks === s0.racks]).toEqual([label, true, true])
+      }
+      await L.page.keyboard.press('Escape')
     }, T)
 
     it('REG-xaisle-slide (click): an 80 ft building, its rows 9 bays of 8 ft (about 74 ft), a 9 ft cross-aisle after bay 4 — every row cut 4 bays + 9 ft + 4 bays: one bay lost, the run beyond slid outward into the free floor past the row’s end (never past the wall clearance); one undo (fixes-x 2 — was: the run beyond held the row’s end, losing two bays)', async () => {

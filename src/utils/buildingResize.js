@@ -1,8 +1,10 @@
 // buildingResize.js — what a building resize (its handles: canvas2/fpHandles.js) does to what stands in it
 // (STUDIO.md §7), in the resize's own undo step:
 //   - shrunk: every bay that no longer fits inside the new walls with the wall clearance is removed — whole bays, from
-//     the row ends; a row with no bay left is removed. Zones and columns left outside are not touched: Check layout
-//     flags them (utils/layoutCheck.js). A back-to-back pair left with one face against the new wall (no aisle in
+//     the row ends; a row with no bay left is removed. Its column grid loses the grid lines the shrink put outside the
+//     new walls (every column of the line outside, where one stood inside before — column-trim fix; was: columns not
+//     touched, left outside the walls): an end line dropped, a middle one merged into its neighbours' spacing, so every
+//     column left stays exactly where it was; a grid with no line left goes; a Generate-locked grid too. A back-to-back pair left with one face against the new wall (no aisle in
 //     front of it, where it had one) loses that dead half; the single row left moves flush to the wall at the wall
 //     clearance, as Generate puts a wall row. Its racking areas shrink with it: each side the building came in on clips
 //     the area to the new inner wall minus the wall clearance; an area left with no space is removed. Its sections and
@@ -12,7 +14,7 @@
 //   - enlarged: nothing is added and no notice is shown.
 
 import { nanoid } from 'nanoid'
-import { innerOutline, boxOnFloor } from './floorGeom'
+import { innerOutline, boxOnFloor, buildingOutline } from './floorGeom'
 import { insetPolygon } from './canvas'
 import { uprightXs } from '../render/rackOps'
 import { piecesFromStates } from '../generate/faceReach'
@@ -91,6 +93,42 @@ function clipShape(o, cut) {
 }
 const bbox = (p) => { const xs = p.map(q => q.x), ys = p.map(q => q.y); return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) } }
 const fits = (poly, b) => boxOnFloor(poly, { x: b.x + E, y: b.y + E, w: Math.max(0, b.w - 2 * E), h: Math.max(0, b.h - 2 * E) })
+
+/* ── its columns (column-trim fix) ── */
+/** Is world point (x, y) inside polygon `poly` ({x, y}[]) or within `tol` of its outline? */
+function inOrOn(poly, x, y, tol = 1) {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j]
+    if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside
+  }
+  if (inside) return true
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length], dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy
+    const t = L ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / L)) : 0
+    if (Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy)) <= tol) return true
+  }
+  return false
+}
+/** Column grid `cg` with the grid lines the shrink put outside — every column of the line outside the new walls
+ *  (`now`, the outline: a column on the wall stays), one at least inside the old (`was`) — removed: an end line
+ *  dropped (the grid's corner on the next line), a middle one merged into its neighbours' spacing; every other column
+ *  where it was. → { grid (null: no line left), removed (columns) } — the same grid when untouched. */
+export function trimColumnGrid(cg, was, now, gridSize = 40) {
+  if (!cg || !Array.isArray(cg.spacingX) || !Array.isArray(cg.spacingY)) return { grid: cg, removed: 0 }
+  const line = (o, sp) => { const v = [o]; for (const s of sp) v.push(v[v.length - 1] + s); return v }
+  const xs = line(cg.x, cg.spacingX), ys = line(cg.y, cg.spacingY)
+  const goneX = xs.map(x => ys.every(y => !inOrOn(now, x, y)) && ys.some(y => inOrOn(was, x, y)))
+  const goneY = ys.map(y => xs.every(x => !inOrOn(now, x, y)) && xs.some(x => inOrOn(was, x, y)))
+  if (!goneX.some(Boolean) && !goneY.some(Boolean)) return { grid: cg, removed: 0 }
+  const keepX = xs.filter((_, i) => !goneX[i]), keepY = ys.filter((_, i) => !goneY[i])
+  const removed = xs.length * ys.length - keepX.length * keepY.length
+  if (!keepX.length || !keepY.length) return { grid: null, removed: xs.length * ys.length }
+  const gaps = (v) => v.slice(1).map((p, i) => p - v[i])
+  const spacingX = gaps(keepX), spacingY = gaps(keepY)
+  const cw = cg.columnW || gridSize, ch = cg.columnH || gridSize
+  return { grid: { ...cg, x: keepX[0], y: keepY[0], spacingX, spacingY, width: spacingX.reduce((t, s) => t + s, 0) + cw, height: spacingY.reduce((t, s) => t + s, 0) + ch }, removed }
+}
 
 /** `objects` after building `before` became `after` (same id): the bays that fit before and no longer fit are taken
  *  off the row ends, and its racking areas clipped on each side it came in on → { objects, removed (bays), areas
@@ -179,8 +217,20 @@ export function planBuildingResize(objects, before, after, { gridSize = 40, clea
     if (c === o) { final.push(o); continue }
     if (c) { final.push(c); shapes[kind].clipped++ } else shapes[kind].removed++
   }
-  const shaped = shapes.sections.clipped + shapes.sections.removed + shapes.zones.clipped + shapes.zones.removed
-  const res = areas || shaped ? final : out
+  // its column grids (column-trim fix): the lines the shrink put outside the new walls go — a Generate-locked grid's too
+  const wasO = buildingOutline(before), nowO = buildingOutline(after)
+  const mineGrid = (o) => o && o.type === 'column_grid' && (o.parentId === after.id || (o.parentId == null && inOrOn(wasO, o.x, o.y, (o.columnW || gridSize))))
+  let columns = 0
+  const withCols = []
+  for (const o of final) {
+    if (!mineGrid(o)) { withCols.push(o); continue }
+    const t = trimColumnGrid(o, wasO, nowO, gridSize)
+    columns += t.removed
+    if (t.grid) withCols.push(t.grid)
+  }
+  shapes.columns = { removed: columns }
+  const shaped = shapes.sections.clipped + shapes.sections.removed + shapes.zones.clipped + shapes.zones.removed + columns
+  const res = areas || shaped ? withCols : out
   return { objects: removed ? rebuildAisles(res, newId).objects : areas || shaped ? res : objects, removed, areas, shapes }
 }
 
@@ -192,7 +242,7 @@ export function afterBuildingResize(store, before) {
   let profile = MHE_PROFILES.reach
   try { profile = getColumnCheckView()?.profile || profile } catch { /* no column check view yet */ }
   const plan = planBuildingResize(st.objects, before, after, { gridSize: st.gridSize || 40, clearIn: wallClearanceIn(st.elevations), profile })
-  const sh = plan.shapes, shaped = sh.sections.clipped + sh.sections.removed + sh.zones.clipped + sh.zones.removed
+  const sh = plan.shapes, shaped = sh.sections.clipped + sh.sections.removed + sh.zones.clipped + sh.zones.removed + (sh.columns?.removed || 0)
   if (plan.removed || plan.areas || shaped) {
     const history = st.history.slice(0, st.historyIndex + 1)
     history[history.length - 1] = snapshotOf(st, plan.objects)
@@ -203,6 +253,7 @@ export function afterBuildingResize(store, before) {
       plan.removed ? n(plan.removed, 'bay') + ' removed' : null,
       sh.sections.clipped ? n(sh.sections.clipped, 'section') + ' clipped' : null, sh.sections.removed ? n(sh.sections.removed, 'section') + ' removed' : null,
       sh.zones.clipped ? n(sh.zones.clipped, 'zone') + ' clipped' : null, sh.zones.removed ? n(sh.zones.removed, 'zone') + ' removed' : null,
+      sh.columns?.removed ? n(sh.columns.removed, 'column') + ' removed' : null,
     ].filter(Boolean)
     if (parts.length) notify(parts.join(' · '), 'they no longer fit inside the walls', { undo: true })
   }
