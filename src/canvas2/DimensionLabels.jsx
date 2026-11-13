@@ -202,7 +202,7 @@ export function FpDimLabels({ obj, zoom, gridSize, activeWallIdx = null }) {
         <Group key={d.wallIdx} name="fp-dim-line" listening={false}>
           {d.line.map((l, k) => <Line key={'l' + k} points={l} stroke={DIM_INK} strokeWidth={1} strokeScaleEnabled={false} listening={false} perfectDrawEnabled={false} />)}
           {d.ticks.map((l, k) => <Line key={'t' + k} points={l} stroke={DIM_INK} strokeWidth={1} strokeScaleEnabled={false} listening={false} perfectDrawEnabled={false} />)}
-          {d.ext.map((l, k) => <Line key={'e' + k} points={l} stroke={DIM_INK} strokeWidth={0.75} dash={[3, 3]} strokeScaleEnabled={false} listening={false} perfectDrawEnabled={false} />)}
+          {d.ext.map((l, k) => <Line key={'e' + k} points={l} stroke={DIM_INK} strokeWidth={1} dash={[2, 2]} strokeScaleEnabled={false} listening={false} perfectDrawEnabled={false} />)}
           <Text name="fp-dim-value label-pill" text={d.text} x={d.tx} y={d.ty} width={d.tw + d.fs} offsetX={(d.tw + d.fs) / 2} offsetY={d.fs / 2} align="center" rotation={d.angle}
             fontSize={d.fs} fontStyle="700" fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={DIM_INK} listening={false} />
         </Group>

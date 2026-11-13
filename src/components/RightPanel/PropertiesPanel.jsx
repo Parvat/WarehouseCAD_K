@@ -19,7 +19,7 @@ import { ColorBody } from './ColorPanel'
 import { TextBody } from './TextPanel'
 import { LabelsBody } from './LabelsPanel'
 import { ColumnCheckBody } from './ColumnCheckPanel'
-import { ColumnLineFields } from './panels/ColumnLineFields'
+import { ColumnGridHead } from './panels/ColumnGridPanel'
 import { SectionMain } from '../../studio/sectionCards'
 import { CrossAisleCard } from '../../studio/crossAisleCard'
 import { useCrossAislePick } from '../../utils/crossAisleTool'
@@ -305,6 +305,18 @@ export function PropertiesPanel() {
     )
   }
 
+  /* a column grid (colgrid mockup): its head, its blocks, then More */
+  if (obj.type === 'column_grid') return (
+    <>
+      <Head><ColumnGridHead /></Head>
+      <ColumnGridPanel obj={obj} locked={locked} />
+      <More locked={locked}>
+        <ObjectActions obj={obj} />
+        <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
+      </More>
+    </>
+  )
+
   /* everything else: a caption, the type's own fields, then More */
   const bayLabel = obj.activeBayIdx != null ? `Bay ${obj.activeBayIdx + 1}` : obj.activeTowerIdx != null ? `Tower ${obj.activeTowerIdx + 1}` : null
   return (
@@ -314,9 +326,6 @@ export function PropertiesPanel() {
       <Sec>
         <LockedFields locked={locked}>
         {obj.type === 'rack_cantilever' && <CantileverPanel obj={obj} />}
-        {/* one column picked: the distances to its neighbouring lines, typed (canvas2/columnLines.js) */}
-        {obj.type === 'column_grid' && <ColumnLineFields obj={obj} />}
-        {obj.type === 'column_grid' && <ColumnGridPanel obj={obj} />}
         {obj.type === 'rack_drive_in' && <DriveInPanel obj={obj} />}
         {obj.type === 'rack_drive_through' && <DriveThroughPanel obj={obj} />}
         {obj.type === 'rack_pushback' && <PushbackPanel obj={obj} />}

@@ -149,9 +149,9 @@ function floorPlanSVG(obj, gridSize) {
 function buildingDimsSVG(obj, gridSize, lz) {
   const dims = buildingDims(obj, gridSize, lz)
   if (!dims.length) return ''
-  const sw = (11 / lz) * 0.08, ln = (l, extra = '') => `<line x1="${l[0]}" y1="${l[1]}" x2="${l[2]}" y2="${l[3]}" stroke="${DIM_INK}" stroke-width="${sw}"${extra}/>`
+  const sw = 1 / lz, ln = (l, extra = '') => `<line x1="${l[0]}" y1="${l[1]}" x2="${l[2]}" y2="${l[3]}" stroke="${DIM_INK}" stroke-width="${sw}"${extra}/>`
   return `<g data-building-dims="${esc(obj.id || '')}">` + dims.map(d =>
-    d.line.map(l => ln(l)).join('') + d.ticks.map(l => ln(l)).join('') + d.ext.map(l => ln(l, ` stroke-dasharray="${d.fs * 0.27} ${d.fs * 0.27}"`)).join('') +
+    d.line.map(l => ln(l)).join('') + d.ticks.map(l => ln(l)).join('') + d.ext.map(l => ln(l, ` stroke-dasharray="${d.dash} ${d.dash}"`)).join('') +
     `<text x="${d.tx}" y="${d.ty}" text-anchor="middle" dominant-baseline="central" font-family="'Plus Jakarta Sans', sans-serif" font-weight="700" font-size="${d.fs}" fill="${DIM_INK}"${d.angle ? ` transform="rotate(${d.angle} ${d.tx} ${d.ty})"` : ''}>${esc(d.text)}</text>`).join('') + '</g>'
 }
 
@@ -198,13 +198,13 @@ function sectionKeySVG(objects, gridSize, lz) {
 function columnAnnotSVG(obj, gridSize, objects, lz) {
   const a = columnAnnot(obj, objects, gridSize, lz)
   if (!a) return ''
-  const sw = a.fs * 0.08
+  const sw = a.u, ln = (l) => `<line x1="${l[0]}" y1="${l[1]}" x2="${l[2]}" y2="${l[3]}" stroke="${ANNOT.ink}" stroke-width="${sw}"/>`
+  const font = `font-family="'Plus Jakarta Sans', sans-serif" font-weight="600"`
   return `<g data-column-annot="${esc(obj.id || '')}">` +
-    a.lines.map(l => `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" stroke="${ANNOT.line}" stroke-width="${sw}" stroke-dasharray="${a.fs * 0.6} ${a.fs * 0.4}"/>`).join('') +
-    a.chain.map(c => `<line x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}" stroke="${ANNOT.ink}" stroke-width="${sw}"/>` +
-      c.ticks.map(([x, y]) => (c.vert ? `<line x1="${x - c.tick}" y1="${y}" x2="${x + c.tick}" y2="${y}" stroke="${ANNOT.ink}" stroke-width="${sw}"/>` : `<line x1="${x}" y1="${y - c.tick}" x2="${x}" y2="${y + c.tick}" stroke="${ANNOT.ink}" stroke-width="${sw}"/>`)).join('') +
-      `<text x="${c.tx}" y="${c.ty}" text-anchor="middle" dominant-baseline="central" font-family="'Plus Jakarta Sans', sans-serif" font-size="${a.fs}" fill="${ANNOT.ink}"${c.vert ? ` transform="rotate(-90 ${c.tx} ${c.ty})"` : ''}>${esc(c.text)}</text>`).join('') +
-    a.bubbles.map(b => `<circle cx="${b.x}" cy="${b.y}" r="${b.r}" fill="#ffffff" stroke="${ANNOT.ink}" stroke-width="${sw}"/><text x="${b.x}" y="${b.y}" text-anchor="middle" dominant-baseline="central" font-family="'Plus Jakarta Sans', sans-serif" font-weight="700" font-size="${b.r * 1.05}" fill="${ANNOT.ink}">${esc(b.text)}</text>`).join('') +
+    a.lines.map(l => `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" stroke="${ANNOT.line}" stroke-width="${sw}" stroke-dasharray="${a.dash} ${a.dash}"/>`).join('') +
+    a.chain.map(c => [...c.segs, ...c.ticks].map(ln).join('') +
+      `<text x="${c.tx}" y="${c.ty}" text-anchor="middle" dominant-baseline="central" ${font} font-size="${a.fs}" fill="${ANNOT.ink}">${esc(c.text)}</text>`).join('') +
+    a.bubbles.map(b => `<circle cx="${b.x}" cy="${b.y}" r="${b.r}" fill="${ANNOT.bubbleFill}" stroke="${ANNOT.bubble}" stroke-width="${sw}"/><text x="${b.x}" y="${b.y}" text-anchor="middle" dominant-baseline="central" ${font} font-size="${b.fs}" fill="${ANNOT.bubble}">${esc(b.text)}</text>`).join('') +
     '</g>'
 }
 

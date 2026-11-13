@@ -2122,7 +2122,7 @@ describe('REG — the hand check by real clicks', () => {
       expect([s.stroke, s.width, s.scaled]).toEqual(['#2E7D5B', 3, false])
       expect([Math.abs(s.a.y - s.b.y) < 1, Math.abs(s.a.y + cv.y - top.y) < 6, Math.abs(s.b.x - s.a.x) > 100]).toEqual([true, true, true])
       // every dimension line blue (col-grid round: a rectangle's bottom and right only — the top wall selected has none)
-      expect(look.dims).toEqual([['#3B6FB5'], ['#3B6FB5']])
+      expect(look.dims).toEqual([['#2F6FD6'], ['#2F6FD6']])   // (the colgrid mockup's dimension blue)
       expect(look.pills).toBe(look.dims.length)
     }, T)
 
@@ -6300,11 +6300,17 @@ describe('REG — the hand check by real clicks', () => {
       for (const f of ['Column X spacing', 'Column Y spacing', 'Column X offset', 'Column Y offset', 'Column width', 'Column depth']) expect([f, await card.getByLabel(f, { exact: true }).count()]).toEqual([f, 1])
       const g0 = await gridNow(), gs = await gs7()
       const drawn = () => L.S('const st = S.getState(); return H.columnRectsOf(st.objects, st.gridSize || 40).length')
-      expect(Number(await card.locator('[data-column-count]').textContent())).toBe(await drawn())
+      const count = (t) => Number(String(t).split('=').pop().trim())   // '4 × 3 = 12' → 12 (or just '10' on an L)
+      expect(count(await card.locator('[data-column-count]').textContent())).toBe(await drawn())
       const nx = g0.sx.split(',').filter(Boolean).length + 1, ny = g0.sy.split(',').filter(Boolean).length + 1
       const name = (i) => { let t = '', n = i; do { t = String.fromCharCode(65 + (n % 26)) + t; n = Math.floor(n / 26) - 1 } while (n >= 0); return t }
       expect(await card.locator('[data-column-range]').textContent()).toBe(`A–${name(nx - 1)} · 1–${ny}`)
       expect(await card.locator('[data-column-last]').count()).toBe(1)
+      // as the colgrid mockup draws it: the head, the four blocks, across × down = total, the last bay in feet-inches
+      expect(await card.locator('[data-column-title]').textContent()).toBe('Column grid')
+      expect(await card.locator('[data-caption]').allTextContents()).toEqual(expect.arrayContaining(['Spacing', 'Offset from wall (to first column centre)', 'Column', 'Result']))
+      if (nx * ny === await drawn()) expect(await card.locator('[data-column-count]').textContent()).toBe(`${nx} × ${ny} = ${nx * ny}`)
+      expect(await card.locator('[data-column-last]').textContent()).toMatch(/^X \d+′(-\d+″)? · Y \d+′(-\d+″)?$/)
       // X spacing typed: the grid redrawn as typed, from the same first gridline, every spacing the typed one
       const sp0 = Number(g0.sx.split(',')[0]) / gs, sp1 = Math.round(sp0) + 7
       const h0 = await hist7()
@@ -6312,7 +6318,7 @@ describe('REG — the hand check by real clicks', () => {
       await fx.click(); await fx.fill(String(sp1)); await L.page.waitForTimeout(250)
       const live = await gridNow()
       expect([live.x, new Set(live.sx.split(',').map(v => Math.round(Number(v) / gs * 100) / 100)).size, Math.round(Number(live.sx.split(',')[0]) / gs), (await hist7()) - h0]).toEqual([g0.x, 1, sp1, 0])
-      expect(Number(await card.locator('[data-column-count]').textContent())).toBe(await drawn())
+      expect(count(await card.locator('[data-column-count]').textContent())).toBe(await drawn())
       await fx.press('Enter'); await L.page.waitForTimeout(250)
       expect((await hist7()) - h0).toBe(1)
       await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
@@ -6338,6 +6344,18 @@ describe('REG — the hand check by real clicks', () => {
       expect([letters.length, numbers.length, letters[0]?.text, numbers[0]?.text]).toEqual([nx, ny, 'A', '1'])
       expect([letters.every(q => q.y + cv.y < tl.y), numbers.every(q => q.x + cv.x < tl.x)]).toEqual([true, true])
       expect(await L.page.evaluate(() => window.Konva.stages[0].find('.column-chain-text').length)).toBeGreaterThan(0)
+      // the colgrid mockup's look: the chain values blue 600, upright on the left chain too; the bubbles white with a dark
+      // ring and name; the gridlines grey, dashed
+      const look = await L.page.evaluate(() => { const st = window.Konva.stages[0]
+        return { chain: [...new Set(st.find('.column-chain-text').map(t => [t.fill(), t.fontStyle(), t.rotation()].join()))],
+          ring: [...new Set(st.find('.column-bubble').map(g => { const c = g.findOne('Circle'), t = g.findOne('Text'); return [c.fill(), c.stroke(), t.fill()].join() }))],
+          lines: [...new Set(st.find('.column-gridline').map(l => [l.stroke(), (l.dash() || []).length > 0].join()))] } })
+      expect(look).toEqual({ chain: ['#2F6FD6,600,0'], ring: ['#FFFFFF,#2B2F2C,#2B2F2C'], lines: ['#9AA29C,true'] })
+      // the row numbers sit outside the left (or top) wall too: no chain value and no bubble over one — the chain moves out
+      const hits = await L.page.evaluate(() => { const st = window.Konva.stages[0], box = (n) => n.getClientRect()
+        const rows = st.find('.rack-line-label').filter(t => t.isVisible()).map(box), ann = [...st.find('.column-chain-text'), ...st.find('.column-bubble')].map(box)
+        return ann.filter(a => rows.some(r => a.x < r.x + r.width && r.x < a.x + a.width && a.y < r.y + r.height && r.y < a.y + a.height)).length })
+      expect(hits).toBe(0)
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
       expect([await L.selected(), (await bubbles()).length]).toEqual([[], 0])
       // the building selected: no bubbles either
@@ -6396,7 +6414,9 @@ describe('REG — the hand check by real clicks', () => {
       const at = vals.map(v => ({ ...v, x: v.x + cv.x, y: v.y + cv.y }))
       const below = at.filter(v => v.y > b.y && v.x > a.x && v.x < b.x), right = at.filter(v => v.x > b.x && v.y > a.y && v.y < b.y)
       expect([vals.length, below.length, right.length, at.filter(v => v.y < a.y || v.x < a.x).length]).toEqual([2, 1, 1, 0])
-      expect(vals.map(v => [v.fill, v.style])).toEqual([['#3B6FB5', '700'], ['#3B6FB5', '700']])
+      expect(vals.map(v => [v.fill, v.style])).toEqual([['#2F6FD6', '700'], ['#2F6FD6', '700']])
+      // written as the colgrid mockup writes it: 250′-0″
+      expect(vals.every(v => /^\d+′-\d+″$/.test(v.text))).toBe(true)
       // each line has its ticks and two dashed extension lines
       expect(await L.page.evaluate(() => window.Konva.stages[0].find('.fp-dim-line').map(g => g.find('Line').filter(l => (l.dash() || []).length).length))).toEqual([2, 2])
       await L.page.keyboard.press('Escape')
