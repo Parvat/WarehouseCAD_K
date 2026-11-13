@@ -2022,7 +2022,7 @@ describe('REG — the hand check by real clicks', () => {
     const generateFresh = () => L.S(`S.setState({ objects: [], groups: [], selectedIds: [], activeBaySelection: [] })
         return import('/src/generate/traceGenerate.js').then(G => { G.generateAndPlace(arg); const st = S.getState(); return { layers: st.layers.filter(l => l.locked).map(l => l.id), locked: st.objects.filter(o => o.locked).map(o => o.type + ':' + (o.lockedBy || 'hand')), racks: st.objects.filter(o => /^rack_/.test(o.type)).length } })`,
       { ...R.R1, orientation: name.endsWith('vertical') ? 'vertical' : 'horizontal', rackType: 'rack_double_row', dockDoors: 0 })
-    it('REG-gen-no-locks (click): a fresh Generate locks the Columns layer only and no object (Fix 6 round 6, as before Fix 6) — a column drag moves nothing; Unlock (one click in its bar) then a drag moves its line', async () => {
+    it('REG-gen-no-locks (click): a fresh Generate locks the Columns layer only and no object (Fix 6 round 6, as before Fix 6) — a column drag moves nothing; Unlock (one click in its card) then a drag moves its line', async () => {
       await open()
       const locks = await generateFresh()
       expect([locks.layers, locks.locked, locks.racks > 0]).toEqual([['columns'], [], true])
@@ -2214,7 +2214,7 @@ describe('REG — the hand check by real clicks', () => {
       expect([await bays.isDisabled(), await bar.getByRole('button', { name: 'Rotate', exact: true }).isDisabled()]).toEqual([false, false])
     }, T)
 
-    it('REG-load-grid-lock (click): a layout opens with its Columns layer locked as saved and no lock on the grid object (Fix 6 round 6) — a column drag moves nothing; unlocked by hand (one click in its bar), saved and reopened, it stays unlocked and drags its line', async () => {
+    it('REG-load-grid-lock (click): a layout opens with its Columns layer locked as saved and no lock on the grid object (Fix 6 round 6) — a column drag moves nothing; unlocked by hand (one click in its card), saved and reopened, it stays unlocked and drags its line', async () => {
       const B = await import('./handCheck/browser.js')
       expect(JSON.parse(B.fixture(name)).objects.filter(o => o.type === 'column_grid' && o.locked).length).toBe(0)   // the file has no object lock
       await open()
@@ -2258,9 +2258,10 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.page.getByRole('menu', { name: 'Elevations' }).count()).toBe(1)
     }, T)
 
-    it('REG-load-paths (click): every way a layout is opened — the autosave restored on a refresh, Open… in the layout menu, Ctrl+O, and back from the Hub with Draw — has its Columns layer locked as saved, no lock on the grid object (Fix 6 round 6); a column clicked shows Unlock pressed in its bar, a drag moves nothing, and one click unlocks and locks it again', async () => {
+    it('REG-load-paths (click): every way a layout is opened — the autosave restored on a refresh, Open… in the layout menu, Ctrl+O, and back from the Hub with Draw — has its Columns layer locked as saved, no lock on the grid object (Fix 6 round 6); a column clicked shows Unlock pressed in its card, a drag moves nothing, and one click unlocks and locks it again', async () => {
       const B = await import('./handCheck/browser.js'), os = await import('node:os'), path = await import('node:path'), fs = await import('node:fs')
-      const bar = () => L.page.locator('[data-selection-bar]')
+      // (col-grid round: the padlock is in the column grid's card — no bar over a column)
+      const bar = () => L.page.getByRole('tabpanel', { name: 'Properties' })
       const grid = () => L.S('const st = S.getState(), g = st.objects.find(o => o.type === "column_grid"); return { locked: !!st.layers.find(l => l.id === "columns")?.locked, obj: !!g.locked }')
       /** the Columns layer as this path left it, then its padlock with real clicks */
       const check = async (how, as = { locked: true, obj: false }) => {
@@ -3480,6 +3481,34 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.locator('[data-island="top-right"]').getByRole('button', { name: /^Check layout/ }).click(); await L.page.waitForTimeout(300)
       return L.S('return import("/src/utils/layoutCheck.js").then(M => { const sh = M.shownCheck(M.useLayoutCheck.getState().result, S.getState().elevations); return [...sh.errors, ...sh.warnings].map(i => ({ kind: i.kind, ids: i.ids, text: i.text })) })')
     }
+
+    it('REG-flue-fit (click): a 12" column that exactly fills a back-to-back pair\'s 12" flue, faces on the uprights, is no clash — Check layout lists no column on an upright frame and the plan has no upright mark; ½" into a face it is flagged', async () => {
+      await open()
+      // the fixture's first pair made 40" deep with a 12" flue — built from whole feet as Generate / Fill build it (its near
+      // edge = the gridline − depth − half the flue: 133.33… px), and ONE 12" column on a gridline through the flue's
+      // centre, in line with an upright frame (set up through the store — the rack and grid tools are not under test)
+      const setup = await L.S(`return import('/src/generate/columnCheck.js').then(CC => {
+        const st = S.getState(), gs = st.gridSize || 40, r0 = st.objects.find(o => o.type === 'rack_double_row')
+        const depthIn = 40, flue = 12, totFt = (2 * depthIn + flue) / 12, f0 = CC.rackFootprint(r0), turned = !!f0.rotated
+        const lineFt = Math.round(((turned ? f0.x + f0.w / 2 : f0.y + f0.h / 2) / gs)), nearPx = (lineFt - depthIn / 12 - flue / 24) * gs, h = totFt * gs
+        const r = { ...r0, depthIn, flueSpaceIn: flue, flueBaseIn: flue, flueIn: flue, height: h, ...(turned ? { x: nearPx - r0.width / 2 + h / 2, y: f0.y + f0.h / 2 - h / 2 } : { y: nearPx }) }
+        const fr = CC.uprightFramesLocal(r, gs).map(q => CC.localRectToWorld(r, q))[2]
+        const along = turned ? fr.y + fr.h / 2 : fr.x + fr.w / 2
+        const g = st.objects.find(o => o.type === 'column_grid')
+        const grid = { ...g, x: turned ? lineFt * gs : along, y: turned ? along : lineFt * gs, spacingX: [], spacingY: [], columnW: gs, columnH: gs, colSizeIn: 12 }
+        st.updateObject(r.id, r); st.updateObject(g.id, grid)
+        return { id: r.id, turned, gs }
+      })`)
+      await L.page.mouse.move(5, 890); await L.page.waitForTimeout(400)
+      const upright = (items) => items.filter(i => i.kind === 'upright' && i.ids.includes(setup.id)).length
+      const marks = () => L.page.evaluate((id) => window.Konva.stages[0].find(n => (n.name() || '').startsWith('upright-conflict:' + id)).length, setup.id)
+      expect([upright(await checkItems()), await marks()]).toEqual([0, 0])
+      // ½" into a face: a real overlap — flagged
+      await L.page.keyboard.press('Escape')
+      await L.S(`const st = S.getState(), g = st.objects.find(o => o.type === 'column_grid'); st.updateObject(g.id, arg.turned ? { x: g.x + arg.gs / 24 } : { y: g.y + arg.gs / 24 })`, setup)
+      await L.page.mouse.move(5, 890); await L.page.waitForTimeout(400)
+      expect(upright(await checkItems())).toBe(1)
+    }, T)
 
     it('REG-equip-custom-cross (click): a Custom section — its card\u2019s Aisle to pick and Space to move typed (7 ft, 5 ft); the checks use exactly those: a 5 ft cross-aisle between its racks passes, 4 ft errors', async () => {
       await open()

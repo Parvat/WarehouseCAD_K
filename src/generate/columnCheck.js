@@ -72,8 +72,12 @@ export const MHE_PROFILES = {
   walkie_stacker: { key: 'walkie_stacker', label: 'Walkie stacker', aisleFt: 8.5,  minAisleFt: 8.0,  retrievalFt: 5, travelFt: travelFtFor(8.5) },
 }
 
+/* Overlapping by more than float noise (FLOAT_PX) on both axes: rects that only TOUCH never overlap. A rack's edges
+   come from inch sums (a 40" depth is 133.33… px), so a 12" column exactly filling a 12" flue, its faces on the
+   uprights, landed 1e-13 px inside a frame and read as standing on it (col-grid round, item 4); any real overlap — a
+   hundred-millionth of an inch and up — still counts. */
 const overlaps = (a, b) =>
-  a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+  Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > FLOAT_PX && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > FLOAT_PX
 
 /* Speed, not behaviour: the checks below test many small rects (pick zones,
    upright frames) against every column. Anything that overlaps one of those

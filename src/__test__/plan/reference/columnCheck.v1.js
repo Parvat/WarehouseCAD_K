@@ -38,8 +38,10 @@ export const MHE_PROFILES = {
   counterbalance: { key: 'counterbalance', label: 'Counterbalance', aisleFt: 12.5, minAisleFt: 12.0, retrievalFt: 7, travelFt: travelFtFor(12.5) },
 }
 
+/* (col-grid round, item 4 — a rule change, not performance: rects that only TOUCH, within float noise, never overlap —
+   the same rule as generate/columnCheck.js, so the comparison still pins the optimisation alone) */
 const overlaps = (a, b) =>
-  a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+  Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 1e-6 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 1e-6
 
 /* A rack's TRUE world footprint. canvas2 rotates every object IN PLACE
  * around its own centre (shapes.jsx's spin()) — a rack's stored x/y/width/
