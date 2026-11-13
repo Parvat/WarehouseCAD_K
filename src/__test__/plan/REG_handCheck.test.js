@@ -6460,7 +6460,8 @@ describe('REG — the hand check by real clicks', () => {
       const fx = card.getByLabel('Column X spacing', { exact: true })
       await fx.click(); await fx.fill(String(sp1)); await L.page.waitForTimeout(250)
       const live = await gridNow()
-      expect([live.x, new Set(live.sx.split(',').map(v => Math.round(Number(v) / gs * 100) / 100)).size, Math.round(Number(live.sx.split(',')[0]) / gs), (await hist7()) - h0]).toEqual([g0.x, 1, sp1, 0])
+      // (col-bubbles fix: Yes — the far wall's own line, the last bay the remainder: every spacing but that one the typed one)
+      expect([live.x, new Set(live.sx.split(',').slice(0, -1).map(v => Math.round(Number(v) / gs * 100) / 100)).size, Math.round(Number(live.sx.split(',')[0]) / gs), (await hist7()) - h0]).toEqual([g0.x, 1, sp1, 0])
       expect(count(await card.locator('[data-column-count]').textContent())).toBe(await drawn())
       await fx.press('Enter'); await L.page.waitForTimeout(250)
       expect((await hist7()) - h0).toBe(1)
@@ -6601,7 +6602,7 @@ describe('REG — the hand check by real clicks', () => {
     const figures = () => L.S(`return Promise.all([import('/src/utils/columnGrid.js'), import('/src/generate/columnCheck.js')]).then(([CG, CC]) => { const st = S.getState(), gs = st.gridSize || 40, g = st.objects.find(o => o.type === 'column_grid')
       const r = CG.gridResult(g, st.objects, gs, CC.expandColumnGrid); return { cols: H.columnRectsOf(st.objects, gs).map(c => [Math.round(c.x), Math.round(c.y)].join(',')).join('|'), count: r.count, range: r.range, lastX: r.lastX, lastY: r.lastY } })`)
 
-    it('REG-colgrid-yesno (click): no offsets — Columns on the walls Yes / No; a layout loads as saved (Rule 7: the fixture, and a saved grid with no line on a wall, give identical columns and figures, Yes / No read from the lines); Yes lays the lines from the walls, No centres them — equal end bays, none on a wall — each one undo step', async () => {
+    it('REG-colgrid-yesno (click): no offsets — Columns on the walls Yes / No; a layout loads as saved (Rule 7: the fixture, and a saved grid with no line on a wall, give identical columns and figures, Yes / No read from the lines, no line added on load); the card\'s Yes adds a line on all four walls, its No takes the wall lines away — the inside lines never moved or centred (col-bubbles fix) — each one undo step', async () => {
       await open()
       // the fixture as saved: its grid untouched by the load, the card reads Yes (a line on the walls)
       const file = JSON.parse((await import('./handCheck/browser.js')).fixture(name)), fileGrid = (file.objects || file.scene.objects).find(o => o.type === 'column_grid')
@@ -6622,19 +6623,20 @@ describe('REG — the hand check by real clicks', () => {
       await unlockCard()
       expect(await walls().getByRole('button', { name: 'No' }).getAttribute('aria-pressed')).toBe('true')
       expect(await figures()).toEqual(f1)
-      // Yes: the lines from the walls, one undo step
-      const ob = await outlineBox(), h0 = await hist7()
+      // (col-bubbles fix) Yes: a line added on all four walls, every inside line exactly where it was; one undo step
+      const linesNow = () => L.S('const g = S.getState().objects.find(o => o.type === "column_grid"), xs = [g.x], ys = [g.y]; for (const s of g.spacingX) xs.push(xs[xs.length - 1] + s); for (const s of g.spacingY) ys.push(ys[ys.length - 1] + s); return { xs: xs.map(v => Math.round(v * 100) / 100), ys: ys.map(v => Math.round(v * 100) / 100) }')
+      const ob = await outlineBox(), h0 = await hist7(), before = await linesNow()
+      const inside = (ls, a, b) => ls.filter(v => v > a + 0.5 && v < b - 0.5), offWalls = (ls, a, b) => ls.filter(v => Math.abs(v - a) > 0.5 && Math.abs(v - b) > 0.5)
       await walls().getByRole('button', { name: 'Yes' }).click(); await L.page.waitForTimeout(250)
-      const yes = await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return { x: g.x, y: g.y }')
-      expect([yes.x, yes.y, (await hist7()) - h0]).toEqual([ob.x0, ob.y0, 1])
-      // No: centred — the end bays equal, none on a wall; one more undo step
+      const yes = await linesNow()
+      expect([yes.xs[0], yes.xs[yes.xs.length - 1], yes.ys[0], yes.ys[yes.ys.length - 1], (await hist7()) - h0]).toEqual([ob.x0, ob.x1, ob.y0, ob.y1, 1])
+      expect([offWalls(yes.xs, ob.x0, ob.x1), offWalls(yes.ys, ob.y0, ob.y1)]).toEqual([offWalls(before.xs, ob.x0, ob.x1), offWalls(before.ys, ob.y0, ob.y1)])
+      // No: only the wall lines taken away — the inside lines unmoved, never centred; one more undo step
       await walls().getByRole('button', { name: 'No' }).click(); await L.page.waitForTimeout(250)
-      const no = await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"), xs = [g.x], ys = [g.y]; for (const s of g.spacingX) xs.push(xs[xs.length - 1] + s); for (const s of g.spacingY) ys.push(ys[ys.length - 1] + s); return { xs, ys }')
-      const ends = (ls, lo, hi) => [ls[0] - lo, hi - ls[ls.length - 1]]
-      const [ex0, ex1] = ends(no.xs, ob.x0, ob.x1), [ey0, ey1] = ends(no.ys, ob.y0, ob.y1)
-      expect([Math.abs(ex0 - ex1) < 0.5, Math.abs(ey0 - ey1) < 0.5, ex0 > 0.5, ey0 > 0.5, (await hist7()) - h0]).toEqual([true, true, true, true, 2])
+      const no = await linesNow()
+      expect([no.xs, no.ys, (await hist7()) - h0]).toEqual([offWalls(yes.xs, ob.x0, ob.x1), offWalls(yes.ys, ob.y0, ob.y1), 2])
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
-      expect(await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return { x: g.x, y: g.y }')).toEqual(yes)
+      expect(await linesNow()).toEqual(yes)
     }, T)
 
     it('REG-colgrid-bubble (click): a gridline\'s bubble dragged moves that line and its columns — as the line itself: the same snap, one undo, the chain updated live; the move arrow on hover; the card\'s spacing for that axis then reads Varies, and a spacing typed makes it even again; a column still drags its line', async () => {
@@ -6661,12 +6663,48 @@ describe('REG — the hand check by real clicks', () => {
       expect(await fx.inputValue()).toBe('Varies')
       await fx.click(); await fx.fill('25'); await fx.press('Enter'); await L.page.waitForTimeout(250)
       const l2 = await lines()
-      expect([new Set(l2.xs.slice(1).map((v, i) => Math.round(v - l2.xs[i]))).size, await fx.inputValue()]).toEqual([1, '25′'])
+      // (col-bubbles fix: Yes — a line on the far wall too, the last bay the remainder)
+      expect([new Set(l2.xs.slice(1, -1).map((v, i) => Math.round(v - l2.xs[i]))).size, await fx.inputValue()]).toEqual([1, '25′'])
       // one undo each: the typed spacing, then the drag
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
       expect(await lines()).toEqual(l1)
       await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
       expect(await lines()).toEqual(l0)
+
+      /* (col-bubbles fix — "after F5, a drag and release does nothing") the failing path, by real moves after a reload (the
+         autosave restored, the home tool Pan, the Columns layer as left unlocked): a column pressed with nothing selected
+         selects the grid and drags its line in the same move; an Esc right after the release keeps the move (it used to undo
+         it — the root cause); with the grid selected the bubble and the gridline itself drag; a locked layer says why */
+      const saved = await L.S('return SL.serializeScene(S.getState())')
+      const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, saved, { keepTool: true })
+      const cv2 = await L.page.locator('#canvas2-container').boundingBox()
+      expect([await L.S('return S.getState().activeTool'), await L.selected(), await L.S('return !!S.getState().layers.find(l => l.id === "columns")?.locked')]).toEqual(['pan', [], false])
+      const at = async (w) => { const v = await L.S('const s = S.getState(); return { z: s.zoom, x: s.panX, y: s.panY }'); return { x: cv2.x + w.x * v.z + v.x, y: cv2.y + w.y * v.z + v.y } }
+      const realDrag = async (p, dx, dy = 0) => { await L.page.mouse.move(p.x, p.y); await L.page.mouse.down(); for (let k = 1; k <= 6; k++) await L.page.mouse.move(p.x + dx * k / 6, p.y + dy * k / 6, { steps: 2 }); await L.page.mouse.up(); await L.page.waitForTimeout(300) }
+      const r0 = await lines(), obx = await outlineBox()
+      // a column on line B (the first horizontal line inside), nothing selected
+      const cB = { x: r0.xs[1], y: r0.ys.find(y => y > obx.y0 + 0.5) ?? r0.ys[1] }
+      await realDrag(await at(cB), 3 * gs * (await L.S('return S.getState().zoom')))
+      const r1 = await lines()
+      expect([await L.selected(), Math.round((r1.xs[1] - r0.xs[1]) / gs)]).toEqual([['column_grid'], 3])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(250)
+      expect(await lines()).toEqual(r1)                                                    // Esc: no undo
+      // the grid selected: bubble B, then the gridline itself (on the open floor above the building's top row)
+      if (!(await L.selected()).includes('column_grid')) await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); S.setState({ selectedIds: [g.id] })')
+      await L.page.waitForTimeout(250)
+      const bb2 = (await bubbles()).find(q => q.text === 'B')
+      await realDrag({ x: cv2.x + bb2.x, y: cv2.y + bb2.y }, 4 * gs * (await L.S('return S.getState().zoom')))   // (4 ft: past the 6 px start at plan zoom)
+      const r2 = await lines()
+      expect(Math.round((r2.xs[1] - r1.xs[1]) / gs)).toBe(4)
+      const glY = await L.S('const st = S.getState(), z = st.zoom; const n = window.Konva.stages[0].find(".column-gridline").find(l => Math.abs(l.points()[0] - l.points()[2]) < 1e-6 && Math.abs(l.points()[0] - arg) < 1); const p = n.points(); return p[1] + 2 / z', r2.xs[1])
+      await realDrag(await at({ x: r2.xs[1], y: glY }), -4 * gs * (await L.S('return S.getState().zoom')))
+      expect(Math.round(((await lines()).xs[1] - r2.xs[1]) / gs)).toBe(-4)
+      // locked: a press on a bubble moves nothing and says why
+      await L.S('const st = S.getState(); S.setState({ layers: st.layers.map(l => (l.id === "columns" ? { ...l, locked: true } : l)) })'); await L.page.waitForTimeout(200)
+      const r3 = await lines(), bb3 = (await bubbles()).find(q => q.text === 'B')
+      await realDrag({ x: cv2.x + bb3.x, y: cv2.y + bb3.y }, 2 * gs * (await L.S('return S.getState().zoom')))
+      expect(await lines()).toEqual(r3)
+      expect(await L.page.locator('[role="status"][aria-label="Notice"]').textContent()).toMatch(/Columns layer is locked/)
     }, T)
 
     it('REG-colgrid-chain (click): a value of the dimension chain clicked is typed in place, as a building\'s size label — a bay typed moves the gridline at its far end and every line beyond (their bays kept, the last bay takes the difference); the last bay typed moves the last line; Enter applies (one undo), Esc cancels; a value that puts a line past the wall is refused with a notice; the card\'s spacing then reads Varies; the left chain the same', async () => {

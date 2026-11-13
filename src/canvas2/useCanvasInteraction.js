@@ -51,9 +51,12 @@ import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { fpDimHit, useDimEdit } from './FpDimEdit'
 import { legendHit } from '../utils/sectionLegend'
 import { legendShown } from './SectionLegend'
-import { bubbleAt, chainAt } from './ColumnGridAnnot'
+import { bubbleAt, chainAt, gridLineAt } from './ColumnGridAnnot'
 import { useChainEdit } from './ColumnChainEdit'
 import { startDragBay, dragBayConsumed, releaseDragBay, setChainHover } from './DragBay'
+import { notify } from '../utils/notice'
+/* (col-bubbles fix) a gridline press or drag on a locked Columns layer: nothing moves — it says why */
+const COLS_LOCKED = 'The Columns layer is locked — unlock it (the padlock in the column grid card, or Ctrl+L) to move gridlines.'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { afterBuildingResize } from '../utils/buildingResize'
@@ -741,6 +744,7 @@ export function useCanvasInteraction({
          one undo, the chain live); on an unlocked Columns layer only, a click alone does nothing */
       if (evt.button === 0 && !evt.shiftKey) {
         const bb = bubbleAt(world, view.current.zoom), bg = bb && st.objects.find(o => o.id === bb.gridId)
+        if (bg && !pickableIn(st.layers)(bg)) { notify(COLS_LOCKED); return }
         if (bg && pickableIn(st.layers)(bg)) {
           setStickyBayMode(false); pickedOnPlan()
           colLine.current = { g0: bg, col: null, from: world, sx: evt.clientX, sy: evt.clientY, axis: bb.axis, i: bb.i, bubble: true, started: false }
@@ -753,6 +757,16 @@ export function useCanvasInteraction({
       }
       let hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       let hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
+      /* a press on a gridline itself (drawn while its grid is selected) — on the open floor, not on a rack or a column it
+         runs through: a drag moves that line, as its bubble (col-bubbles fix) */
+      if (evt.button === 0 && !evt.shiftKey && (!hitObj || FP_SET_INPUT.has(hitObj.type))) {
+        const gl = gridLineAt(world, view.current.zoom), lg = gl && st.objects.find(o => o.id === gl.gridId)
+        if (lg && pickableIn(st.layers)(lg)) {
+          setStickyBayMode(false); pickedOnPlan()
+          colLine.current = { g0: lg, col: null, from: world, sx: evt.clientX, sy: evt.clientY, axis: gl.axis, i: gl.i, bubble: true, started: false }
+          return
+        }
+      }
       /* a press in a tunnel's bays (tunnel round, utils/tunnel.js): a click picks the tunnel, a drag along the run moves it in
          whole bays — before the rack under it */
       if (evt.button === 0 && !evt.shiftKey && hitObj && typeof hitObj.type === 'string' && hitObj.type.startsWith('rack_') && isPickable(st.layers, hitObj)) {
@@ -1588,6 +1602,7 @@ export function useCanvasInteraction({
       const m = marqueeRef.current
       if (!m) return
       if (!m.moved && !movedEnough({ x: m.sx, y: m.sy }, { x: evt.clientX, y: evt.clientY })) return
+      if (!m.moved && m.column) notify(COLS_LOCKED)                     // a drag from a locked column: why its line stays
       m.moved = true
       const stage = stageRef.current
       if (!stage) return

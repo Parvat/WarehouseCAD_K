@@ -40,6 +40,16 @@ let SPOTS = []
 /* ...and the dimension chain's values as last drawn — { gridId, axis, lo, hi, x, y, w, h, fs } (the value's box, world px):
    a click on one types it (ColumnChainEdit.jsx) */
 let CHAIN = []
+/* ...and the gridlines as last drawn — { gridId, axis, i, x1, y1, x2, y2 }: a press on one drags it (col-bubbles fix) */
+let LINES = []
+/** The gridline under world point `p` (within 4 screen px of it), or null. */
+export function gridLineAt(p, zoom = 1) {
+  const pad = 4 / (zoom || 1)
+  for (const l of LINES) {
+    if (l.axis === 'x' ? (Math.abs(p.x - l.x1) <= pad && p.y >= Math.min(l.y1, l.y2) && p.y <= Math.max(l.y1, l.y2)) : (Math.abs(p.y - l.y1) <= pad && p.x >= Math.min(l.x1, l.x2) && p.x <= Math.max(l.x1, l.x2))) return l
+  }
+  return null
+}
 /** The chain value under world point `p` (its box, plus 3 screen px), or null. */
 export function chainAt(p, zoom = 1) {
   const pad = 3 / (zoom || 1)
@@ -68,15 +78,18 @@ export function ColumnGridAnnot() {
     const lines = rackLinesNow(objects, gs)
     return lines.length ? rowLabelPlaces(lines, ROW_LABEL_PX / lz, aisleLabelBoxes(objects, gs, labelSize), lineNamer(objects, T, gs)) : []
   }, [grids.length, rowsShown, layers, objects, gs, lz, labelSize, T])
-  if (!grids.length) { SPOTS = []; CHAIN = []; return null }
+  if (!grids.length) { SPOTS = []; CHAIN = []; LINES = []; return null }
   const spots = []
   SPOTS = spots   // (filled as the grids below draw)
   const chainSpots = []
   CHAIN = chainSpots
+  const lineSpots = []
+  LINES = lineSpots
   return (
     <Group name="column-annot" listening={false}>
       {grids.map(g => {
         const a = columnAnnot(g, objects, gs, lz, rowClear(g, objects, places))
+        if (a) for (const l of a.lines) lineSpots.push({ gridId: g.id, axis: l.axis, i: l.i, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 })
         if (a) for (const b of a.bubbles) spots.push({ gridId: g.id, axis: b.axis, i: b.i, x: b.x, y: b.y, r: b.r })
         if (a) for (const c of a.chain) { const w = c.tw + a.fs * 0.4, h = a.fs * 1.3; chainSpots.push({ gridId: g.id, axis: c.axis, lo: c.lo, hi: c.hi, x: c.tx - w / 2, y: c.ty - h / 2, w, h, fs: a.fs, tw: c.tw, text: c.text }) }
         if (!a) return null

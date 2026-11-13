@@ -3,15 +3,15 @@ import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { C, fieldBox, Grid2, Note, Sec, Caption, LockedFields, IconBtn, Seg } from '../../../studio/cardParts'
 import { toggleLock } from '../../../utils/layers'
-import { gridBuilding, gridParams, gridResult, layGrid, sizeGrid, onWalls, varies } from '../../../utils/columnGrid'
+import { gridBuilding, gridParams, gridResult, sizeGrid, onWalls, unevenAxis, setWallLines, respaceAxis } from '../../../utils/columnGrid'
 import { expandColumnGrid } from '../../../generate/columnCheck'
 import { ftIn } from '../../../utils/bom'
 
 // ── Column Grid card (col-grid round; STUDIO.md §7a Columns) ──────────────────────────────────────────────────────
 // As the colgrid mockup draws it: the head (Column grid, what it is), then SPACING (X, Y — Varies once a line has been
 // moved by hand; a spacing typed makes that axis even again), Columns on the walls Yes / No (col-bubbles round, in place
-// of the offsets: Yes — the lines from the walls; No — centred, equal end bays, no line on a wall; read from the saved
-// lines, so a grid loads as it was), COLUMN (Width, Depth — the lines stay), values in feet-inches (50′, 12″); then
+// of the offsets: Yes — a line on all four walls; No — none on a wall; switching only adds or takes away the wall lines,
+// the inside lines never moved; read from the saved lines, so a grid loads as it was), COLUMN (Width, Depth — the lines stay), values in feet-inches (50′, 12″); then
 // RESULT: Columns 4 × 3 = 12, Gridlines A–D · 1–3, Last bay X / Y. Typing redraws the grid live; leaving a field (Enter)
 // is one undo step; Esc puts it back. Lines are laid again only when a spacing or Yes / No changes.
 
@@ -78,8 +78,8 @@ export function ColumnGridPanel({ obj, locked = false }) {
   const patchFor = (cur, k, v) => {
     const f = gridBuilding(useCanvasStore.getState().objects, cur), q = { ...gridParams(cur, f, gs), [k]: v }
     if (k === 'wIn' || k === 'dIn') return sizeGrid(cur, q.wIn, q.dIn, gs)
-    const all = layGrid(cur, f, { ...q, walls: onWalls(start || cur, f) }, gs)
-    return k === 'spX' ? { x: all.x, spacingX: all.spacingX, width: all.width } : { y: all.y, spacingY: all.spacingY, height: all.height }
+    // (col-bubbles fix: Yes — wall to wall, a line on both; No — from the first line, never centred)
+    return respaceAxis(start || cur, f, k === 'spX' ? 'x' : 'y', v * gs, onWalls(start || cur, f), gs)
   }
   const live = (k) => (v) => {
     const st = useCanvasStore.getState(), cur = st.objects.find(o => o.id === obj.id)
@@ -87,11 +87,12 @@ export function ColumnGridPanel({ obj, locked = false }) {
     if (!start) setStart(cur)
     st.updateObject(obj.id, patchFor(start || cur, k, v))
   }
-  /* Columns on the walls, Yes / No: both axes laid again at their spacing — one undo step */
+  /* Columns on the walls, Yes / No (col-bubbles fix): only the wall lines and their columns added or taken away — every
+     inside line stays where it is, never centred — one undo step */
   const setWalls = (on) => {
     const st = useCanvasStore.getState(), cur = st.objects.find(o => o.id === obj.id), f = cur && gridBuilding(st.objects, cur)
-    if (!cur || on === onWalls(cur, f)) return
-    st.commitObjectUpdate(obj.id, layGrid(cur, f, { ...gridParams(cur, f, gs), walls: on }, gs))
+    if (!cur || !f || on === onWalls(cur, f)) return
+    st.commitObjectUpdate(obj.id, setWallLines(cur, f, on, gs))
   }
   const done = () => {
     const st = useCanvasStore.getState(), cur = st.objects.find(o => o.id === obj.id)
@@ -110,7 +111,7 @@ export function ColumnGridPanel({ obj, locked = false }) {
   )
   return (
     <>
-      <Sec label={<Caption>Spacing</Caption>}>{pair(ft('spX', 'X spacing', 'Column X spacing', 1, varies(obj.spacingX)), ft('spY', 'Y spacing', 'Column Y spacing', 1, varies(obj.spacingY)))}</Sec>
+      <Sec label={<Caption>Spacing</Caption>}>{pair(ft('spX', 'X spacing', 'Column X spacing', 1, unevenAxis(obj, fp, 'x')), ft('spY', 'Y spacing', 'Column Y spacing', 1, unevenAxis(obj, fp, 'y')))}</Sec>
       <Sec gap={8}>
         <LockedFields locked={locked}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -120,7 +121,7 @@ export function ColumnGridPanel({ obj, locked = false }) {
             </div>
           </div>
         </LockedFields>
-        <span data-walls-note style={{ color: C.muted, fontSize: 12, lineHeight: 1.45 }}>{walls ? 'Wall columns sit fully inside, face against the wall.' : 'Centred: equal end bays, no columns on the walls.'}</span>
+        <span data-walls-note style={{ color: C.muted, fontSize: 12, lineHeight: 1.45 }}>{walls ? 'Wall columns sit fully inside, face against the wall.' : 'No columns on the walls.'}</span>
       </Sec>
       <Sec label={<Caption>Column</Caption>}>{pair(inch('wIn', 'Width', 'Column width'), inch('dIn', 'Depth', 'Column depth'))}</Sec>
       <Sec data-column-result gap={6} label={<Caption>Result</Caption>}>

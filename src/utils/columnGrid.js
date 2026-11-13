@@ -73,6 +73,14 @@ export function onWalls(cg, fp) {
 }
 /** Is a spacing list uneven (a line moved by hand — the card shows Varies)? */
 export const varies = (sp) => Array.isArray(sp) && sp.some(s => Math.abs(s - sp[0]) > 0.5)
+/** Grid `cg`'s spacing on `axis` uneven — the last bay left out when its line is on the far wall (Yes: that bay is the
+ *  remainder, not a line moved; col-bubbles fix). */
+export function unevenAxis(cg, fp, axis) {
+  const sp = (axis === 'x' ? cg.spacingX : cg.spacingY) || []
+  if (!fp || !sp.length) return varies(sp)
+  const ex = extent(fp), ls = axis === 'x' ? gridLines(cg).xs : gridLines(cg).ys, far = axis === 'x' ? ex.x1 : ex.y1
+  return varies(Math.abs(ls[ls.length - 1] - far) < 0.5 ? sp.slice(0, -1) : sp)
+}
 /** Gridlines centred between `lo` and `hi` at `step`: as many as leave an end bay of at least half a step on each side,
  *  the two end bays equal — none on a wall (Columns on the walls: No). One line in the middle when a step is longer. */
 function centredLines(lo, hi, step) {
@@ -85,6 +93,12 @@ function centredLines(lo, hi, step) {
  *  `p` { spX, spY (ft), walls (Yes: lines from the near walls at the spacing, out to the far walls; No: centred, equal
  *  end bays, no line on a wall), wIn, dIn }. */
 export function layGrid(cg, fp, p, gs = 40) {
+  if (p.walls && fp) {
+    // Yes: a line on all four walls — from the near walls at the spacing, the far walls' own line added, the last bay
+    // before it the remainder (col-bubbles fix: was the near walls only)
+    const ex = extent(fp), xs = withFar(axisLines(ex.x0, p.spX * gs, ex.x1), ex.x1), ys = withFar(axisLines(ex.y0, p.spY * gs, ex.y1), ex.y1)
+    return fromLines(xs, ys, p.wIn, p.dIn, gs)
+  }
   if (p.walls || !fp) return gridUpdate(cg, fp, { ...p, offX: 0, offY: 0 }, gs)
   const ex = extent(fp), xs = centredLines(ex.x0, ex.x1, p.spX * gs), ys = centredLines(ex.y0, ex.y1, p.spY * gs)
   const w = (p.wIn / 12) * gs, d = (p.dIn / 12) * gs
@@ -112,6 +126,37 @@ export function chainEdit(cg, fp, axis, lo, hi, lenPx, gs = 40) {
   if (next.some((v, i) => i > 0 && v - next[i - 1] <= 0.5)) return { error: 'A bay would be zero or less — not changed.' }
   const sp = next.slice(1).map((v, i) => v - next[i]), size = X ? (cg.columnW || gs) : (cg.columnH || gs)
   return { patch: X ? { x: next[0], spacingX: sp, width: sp.reduce((t, s) => t + s, 0) + size } : { y: next[0], spacingY: sp, height: sp.reduce((t, s) => t + s, 0) + size } }
+}
+const withFar = (ls, far) => (ls.length && Math.abs(ls[ls.length - 1] - far) > 0.5 ? [...ls, far] : ls)
+/** The grid fields from its line positions (world px) and its column size (in). */
+function fromLines(xs, ys, wIn, dIn, gs = 40) {
+  const w = (wIn / 12) * gs, d = (dIn / 12) * gs
+  const spacingX = xs.slice(1).map((v, i) => v - xs[i]), spacingY = ys.slice(1).map((v, i) => v - ys[i])
+  return { x: xs[0], y: ys[0], spacingX, spacingY, columnW: w, columnH: d, colSizeIn: Math.round(wIn), width: spacingX.reduce((t, s) => t + s, 0) + w, height: spacingY.reduce((t, s) => t + s, 0) + d }
+}
+/** (col-bubbles fix) The card's Columns on the walls switched: only the wall lines added (Yes — a line on every wall
+ *  without one, both ends of each axis) or taken away (No — every line lying on a wall); every inside line stays exactly
+ *  where it is — never moved, never centred (centring is the Place column grid dialog's No only). */
+export function setWallLines(cg, fp, on, gs = 40) {
+  const ex = extent(fp), { xs, ys } = gridLines(cg)
+  const onW = (v, a, b) => Math.abs(v - a) < 0.5 || Math.abs(v - b) < 0.5
+  const fix = (ls, a, b) => {
+    const inside = ls.filter(v => !onW(v, a, b))
+    return on ? [a, ...inside, b] : (inside.length ? inside : ls)
+  }
+  const nx = fix(xs, ex.x0, ex.x1), ny = fix(ys, ex.y0, ex.y1)
+  return fromLines(nx, ny, ((cg.columnW || gs) / gs) * 12, ((cg.columnH || gs) / gs) * 12, gs)
+}
+/** (col-bubbles fix) A spacing typed in the card: that axis laid again at it — Yes: from the near wall to the far wall,
+ *  a line on both; No: from the grid's first line, every line short of the far wall (none on a wall) — no centring. */
+export function respaceAxis(cg, fp, axis, spPx, walls, gs = 40) {
+  const X = axis === 'x', ex = extent(fp), lo = X ? ex.x0 : ex.y0, hi = X ? ex.x1 : ex.y1
+  const cur = X ? gridLines(cg).xs : gridLines(cg).ys
+  let ls
+  if (walls) ls = withFar(axisLines(lo, spPx, hi), hi)
+  else { const start = cur.find(v => v > lo + 0.5) ?? cur[0]; ls = axisLines(start, spPx, hi).filter(v => v < hi - 0.5); if (!ls.length) ls = [start] }
+  const sp = ls.slice(1).map((v, i) => v - ls[i]), size = X ? (cg.columnW || gs) : (cg.columnH || gs)
+  return X ? { x: ls[0], spacingX: sp, width: sp.reduce((t, s) => t + s, 0) + size } : { y: ls[0], spacingY: sp, height: sp.reduce((t, s) => t + s, 0) + size }
 }
 /** A column size change only (the card's Width / Depth): the lines stay exactly where they are. */
 export function sizeGrid(cg, wIn, dIn, gs = 40) {

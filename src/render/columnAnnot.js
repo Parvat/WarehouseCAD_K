@@ -35,8 +35,8 @@ export function columnAnnot(cg, objects, gridSize = 40, lz = 1, clear = null) {
   const topOff = Math.max(14 * u, clear?.top ? clear.top + pad + fs * 0.6 : 0), leftOff = Math.max(14 * u, clear?.left ? clear.left + pad + halfW : 0)
   const topB = topOff + 26 * u, leftB = leftOff + 26 * u
   const lines = [], bubbles = [], chain = []
-  xs.forEach((x, i) => { lines.push({ x1: x, y1: y0 - topB + r, x2: x, y2: y1 }); bubbles.push({ x, y: y0 - topB, r, fs: 11 * u, text: lineName(i, 'x'), axis: 'x', i }) })
-  ys.forEach((y, i) => { lines.push({ x1: x0 - leftB + r, y1: y, x2: x1, y2: y }); bubbles.push({ x: x0 - leftB, y, r, fs: 11 * u, text: lineName(i, 'y'), axis: 'y', i }) })
+  xs.forEach((x, i) => { lines.push({ x1: x, y1: y0 - topB + r, x2: x, y2: y1, axis: 'x', i }); bubbles.push({ x, y: y0 - topB, r, fs: 11 * u, text: lineName(i, 'x'), axis: 'x', i }) })
+  ys.forEach((y, i) => { lines.push({ x1: x0 - leftB + r, y1: y, x2: x1, y2: y, axis: 'y', i }); bubbles.push({ x: x0 - leftB, y, r, fs: 11 * u, text: lineName(i, 'y'), axis: 'y', i }) })
   // the chain along the top: wall, gridlines, far wall — each value in a break its width
   const stopsX = [x0, ...xs.filter(x => x > x0 + 0.5 && x < x1 - 0.5), x1].filter((v, i, a) => i === 0 || v - a[i - 1] > 0.5)
   const cy = y0 - topOff

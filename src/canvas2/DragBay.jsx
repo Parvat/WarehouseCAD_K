@@ -4,7 +4,7 @@
 //      bay to the grid as it was before the drag — the chain rule (utils/columnGrid.js chainEdit: the lines beyond move
 //      with it, the last bay takes the difference), one undo step; Esc cancels the whole move. After the release the box
 //      stays 3 s, so the number can still be typed (then it is a chain edit of the grid as dropped — its own undo step;
-//      Esc then takes the move back).
+//      Esc then only closes the box — the move stays: an Esc after a drag is a deselect as ever, never an undo).
 //   2. The chain's hint: a value hovered is underlined, with a text cursor and a small "Click to type".
 
 import { useEffect, useRef, useState } from 'react'
@@ -75,11 +75,11 @@ function applyTyped(a, text) {
   if (g && ft != null) applyChainEdit(useCanvasStore, { gridId: a.gridId, axis: a.axis, lo: a.lo, hi: (a.axis === 'x' ? gridLines(g).xs : gridLines(g).ys)[a.i] }, ft)
   clear()
 }
-/** Esc: the whole move cancelled — while dragging, the grid put back; after the release, the move undone. */
+/** Esc while dragging: the whole move cancelled, the grid put back. (After the release Esc only closes a box being
+ *  typed in — the move stays; col-bubbles fix: it used to undo the move, so an Esc to deselect lost the drag.) */
 function cancel(a) {
   const st = useCanvasStore.getState()
   if (a.phase === 'drag') { st.updateObject(a.gridId, a.g0); settled = true }
-  else if (st.historyIndex === a.hist && st.undo) st.undo()
   clear()
 }
 
@@ -97,7 +97,9 @@ export function DragBayBox() {
       const a = useDragBay.getState().act
       if (!a) return
       const inBox = document.activeElement === ref.current
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(a); return }
+      // Esc: while dragging, the move cancelled; after the release, only while a number is being typed (the box closed,
+      // the move kept) — otherwise it is the canvas's Esc, untouched, and the box just goes
+      if (e.key === 'Escape') { if (a.phase === 'drag' || a.typed != null) { e.preventDefault(); e.stopPropagation(); cancel(a) } else clear(); return }
       if (e.key === 'Enter') { if (a.typed != null) { e.preventDefault(); e.stopPropagation(); applyTyped(a, a.typed) } return }
       if (!inBox && /^[0-9.]$/.test(e.key)) {
         e.preventDefault(); e.stopPropagation()

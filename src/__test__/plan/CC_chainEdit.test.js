@@ -35,3 +35,27 @@ describe('CC — the chain typed', () => {
     expect(apply(25, 50, 0).error).toMatch(/longer than zero/)
   })
 })
+
+// (col-bubbles fix) Columns on the walls: Yes is every wall; the card's Yes / No only adds or takes away the wall lines;
+// a spacing typed never centres.
+import { layGrid, setWallLines, respaceAxis } from '../../utils/columnGrid'
+describe('CW — Columns on the walls', () => {
+  it('CW-yes: Yes lays a line on all four walls — from the near walls at the spacing, the far walls\' own line, the last bay the remainder', () => {
+    const g = { ...grid, ...layGrid(grid, fp, { spX: 25, spY: 50, walls: true, wIn: 12, dIn: 12 }, GS) }
+    expect(linesFt(g)).toEqual([0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 240])
+    expect(gridLines(g).ys.map(v => v / GS)).toEqual([0, 50, 100, 120])
+  })
+  it('CW-toggle: the card\'s No takes the wall lines away, the inside lines exactly where they were; Yes puts a line on every wall back, the inside lines unmoved', () => {
+    const off = { ...grid, ...setWallLines(grid, fp, false, GS) }
+    expect(linesFt(off)).toEqual([25, 50, 75, 100, 125, 150, 175, 200, 225])
+    expect(gridLines(off).ys.map(v => v / GS)).toEqual([30, 60, 90])
+    const on = { ...off, ...setWallLines(off, fp, true, GS) }
+    expect(linesFt(on)).toEqual([0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 240])
+    expect(gridLines(on).ys.map(v => v / GS)).toEqual([0, 30, 60, 90, 120])
+  })
+  it('CW-respace: a spacing typed — Yes: wall to wall, a line on both; No: from the first line, none on a wall, never centred', () => {
+    expect(gridLines({ ...grid, ...respaceAxis(grid, fp, 'x', ft(50), true, GS) }).xs.map(v => v / GS)).toEqual([0, 50, 100, 150, 200, 240])
+    const off = { ...grid, ...setWallLines(grid, fp, false, GS) }
+    expect(gridLines({ ...off, ...respaceAxis(off, fp, 'x', ft(50), false, GS) }).xs.map(v => v / GS)).toEqual([25, 75, 125, 175, 225])
+  })
+})
