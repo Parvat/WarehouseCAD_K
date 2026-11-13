@@ -102,8 +102,11 @@ export function DragBayBox() {
       if (!inBox && /^[0-9.]$/.test(e.key)) {
         e.preventDefault(); e.stopPropagation()
         clearTimeout(timer)
-        useDragBay.setState({ act: { ...a, typed: e.key } })
-        requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); const n = el.value.length; el.setSelectionRange(n, n) } })
+        // (keys that come before the box has focus add on — a quick "30" stays 30)
+        useDragBay.setState({ act: { ...a, typed: (a.typed == null ? '' : a.typed) + e.key } })
+        const el = ref.current
+        if (el) el.focus()
+        requestAnimationFrame(() => { const b = ref.current; if (b) { const k = b.value.length; b.setSelectionRange(k, k) } })
       }
     }
     window.addEventListener('keydown', key, true)

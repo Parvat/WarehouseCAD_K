@@ -191,10 +191,11 @@ function OverlaysView({
           marks and aisle shading, X marks, upright flags, oversized bays */}
       {/* a column in an aisle shows its clear distance on both sides whenever the aisle labels are shown (or
           the Checks layer is); the red "pinched" shade is a check mark — only with the Checks layer */}
-      {/* the red under-travel warnings (and the pinched shade): always, as checks; the grey clearance numbers: zoomed
-          in, a column selected, or during a drag or resize — faded in place (clearanceView.js, ClearanceNumbers) */}
+      {/* the red under-travel warnings (and the pinched shade): always, as checks; the grey clearance numbers: only while
+          the View card's Column clearances is on, on every column (col-bubbles round) — faded in place (clearanceView.js,
+          ClearanceNumbers) */}
       {(marksOn || aislesOn) && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels={false} warnings={marksOn} />}
-      {(marksOn || aislesOn) && <ClearanceNumbers aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} selectedObjects={selectedObjects} dragging={dragging} show={showClearances} column={onlyCol} columnShow={colShow} />}
+      {showClearances && <ClearanceNumbers aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} selectedObjects={selectedObjects} dragging={dragging} show={showClearances} column={onlyCol} columnShow={colShow} />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
       {marksOn && <BlockedFaceMarks rackConflicts={xMarks} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}

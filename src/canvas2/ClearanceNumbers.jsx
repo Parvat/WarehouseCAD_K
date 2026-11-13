@@ -15,8 +15,10 @@ export function ClearanceNumbers({ aisleBlocks, columns, objects, lz, gridSize, 
   const was = useRef(false)
   const zoomOn = zoomedIn(clearancePx(zoom, lz), was.current)
   was.current = zoomOn
-  const all = clearanceTagsOn({ dragging, show, zoom: zoomOn, columnSelected: !column && selectedObjects.some(o => o.type === 'column_grid') })
-  const only = !all && column && columnShow ? column : null
+  // (col-bubbles round: the View card's Column clearances alone — on, every column; off, none: no zoom, selection or drag rule)
+  const all = clearanceTagsOn({ show })
+  const only = null
+  void dragging; void selectedObjects; void column; void columnShow; void zoomOn
   const opacity = useFade(all || !!only, FADE_MS)
   // what is drawn while it fades out stays what was shown (one column's, or all)
   const kept = useRef(null)

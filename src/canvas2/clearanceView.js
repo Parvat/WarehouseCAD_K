@@ -1,9 +1,8 @@
 // clearanceView.js — when the column clearance numbers (the grey "8′-8″" on the dotted line) are on the plan
 // (STUDIO.md §2, §7):
-//   - zoomed in far enough to read them: the 9.5-at-label-size number at least 8 px tall on screen — and they stay
-//     until it is under 7 px (the buffer, so they never flicker at the threshold); they fade in and out in place;
-//   - while a column (its column grid) is selected, or the View card's Column clearances is on (every column);
-//   - during a drag or a resize (dragPreview's `dragging`).
+//   - (col-bubbles round) only while the View card's Column clearances is on — then on every column, whatever is
+//     selected, at any zoom, during a drag too; off, none anywhere. The one control (was: also zoomed in, a column
+//     selected, a drag). They fade in and out in place.
 // The red "under travel" warnings are checks: they stay with the Checks layer. The PDF prints every number.
 // Presentation state only.
 
@@ -21,4 +20,4 @@ export const FADE_IN_PX = 8, FADE_OUT_PX = 7, FADE_MS = 180
 /** Zoomed in enough? `was`: whether they were showing (the buffer). */
 export const zoomedIn = (px, was) => (was ? px >= FADE_OUT_PX : px >= FADE_IN_PX)
 /** Are the clearance numbers drawn now? */
-export const clearanceTagsOn = ({ dragging = false, show = false, zoom = false, columnSelected = false } = {}) => !!(dragging || show || zoom || columnSelected)
+export const clearanceTagsOn = ({ show = false } = {}) => !!show   // (col-bubbles round: the View card's toggle alone)

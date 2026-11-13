@@ -264,7 +264,8 @@ describe('CF-3 — shown with the aisle labels', () => {
   it('CF-gate: the clearance numbers are drawn with the aisle labels (or the Checks layer) — on the canvas when zoomed in, a column selected, or during a drag (ClearanceNumbers.jsx); always in the PDF; their red shade only with the Checks layer', () => {
     const ov = read('canvas2/Overlays.jsx')
     expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ColumnClearanceLabels [^>]*warnings=\{marksOn\}/)
-    expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ClearanceNumbers /)
+    // (col-bubbles round: the grey numbers by the View card's Column clearances alone)
+    expect(ov).toMatch(/\{showClearances && <ClearanceNumbers /)
     expect(ov).toMatch(/const on = aislesOn\n/)
     const base = savedFill(true), labelsOf = (svg) => svg.slice(svg.indexOf('<g class="labels">'))
     const aislesOnly = labelsOf(buildLayoutSVG(base, [], GS, { labels: { showAisles: true, showMarks: false } }).svg)

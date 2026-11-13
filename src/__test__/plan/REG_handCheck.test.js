@@ -673,8 +673,15 @@ describe('REG — the hand check by real clicks', () => {
     /** `fn()` until `ok` holds (polled every 100 ms, up to `ms`) → its last value */
     const until = async (fn, ok, ms = 6000) => { const t0 = Date.now(); let v = await fn(); while (!ok(v) && Date.now() - t0 < ms) { await L.page.waitForTimeout(100); v = await fn() } return v }
     const zoomOutTill = async (px) => { for (let i = 0; i < 40 && (await numPx()) >= px; i++) await wheel(40) }
+    /** the View card's Column clearances set (real clicks) — the one control of the numbers (col-bubbles round) */
+    const setClear = async (on) => {
+      await L.page.locator('[data-island="bottom-right"]').getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150)
+      const sw = L.page.getByRole('dialog', { name: 'View card' }).getByRole('switch', { name: 'Column clearances' })
+      if ((await sw.getAttribute('aria-checked')) !== String(!!on)) { await sw.click(); await L.page.waitForTimeout(100) }
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(350)
+    }
 
-    it('REG-clear-tags (click): the clearance numbers (zoomed out, nothing selected) are not drawn; during a rack drag they are; when the drag ends they go', async () => {
+    it('REG-clear-tags (click): the clearance numbers follow the View card\'s Column clearances alone (col-bubbles round; was: drawn during a drag) — off: none, not during a rack drag either; on: drawn, during the drag too', async () => {
       await open()
       await zoomOutTill(7)
       expect(await numbers()).toEqual([])
@@ -684,30 +691,59 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.mouse.move(p.x, p.y); await L.page.mouse.down(); await L.page.mouse.move(p.x + 4, p.y + 4, { steps: 3 }); await L.page.mouse.move(p.x + 6, p.y + 6, { steps: 2 }); await L.page.waitForTimeout(400)
       const during = await numbers()
       await L.page.mouse.up(); await L.page.waitForTimeout(400)
-      expect([during.length > 0, await numbers()]).toEqual([true, []])
+      expect([during.length, await numbers()]).toEqual([0, []])
+      await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      await setClear(true)
+      expect((await until(numbers, v => v.length > 0)).length).toBeGreaterThan(0)
+      await L.page.mouse.move(p.x, p.y); await L.page.mouse.down(); await L.page.mouse.move(p.x + 4, p.y + 4, { steps: 3 }); await L.page.mouse.move(p.x + 6, p.y + 6, { steps: 2 }); await L.page.waitForTimeout(400)
+      const on = await numbers()
+      await L.page.mouse.up(); await L.page.waitForTimeout(300)
+      expect(on.length).toBeGreaterThan(0)
     }, T)
 
-    it('REG-clear-zoom (click): zoomed in past the threshold (the number 8 px tall) the numbers fade in, and stay until under 7 px (the buffer); C18 look — grey ft-in numbers on thin dotted lines, no arrowheads; no number overlaps a rack or a column', async () => {
+    it('REG-clear-toggle (click): View > Column clearances is the only control — off: no clearance number with nothing selected, the grid selected, one column picked, zoomed in or during a drag; on: the numbers of every column in each of those', async () => {
+      await open()
+      await zoomOutTill(7)
+      const states = async () => {
+        const out = {}
+        await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(350)
+        out.nothing = (await numbers()).length
+        const c = await L.S(colAt)
+        await L.click(c); await L.page.waitForTimeout(350)
+        out.column = (await numbers()).length
+        await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(350)
+        out.grid = (await numbers()).length
+        await L.page.keyboard.press('Escape')
+        for (let i = 0; i < 40 && (await numPx()) < 10; i++) await wheel(-40)
+        await L.page.waitForTimeout(350)
+        out.zoomed = (await numbers()).length
+        await zoomOutTill(7)
+        return out
+      }
+      const off = await states()
+      expect(off).toEqual({ nothing: 0, column: 0, grid: 0, zoomed: 0 })
+      await setClear(true)
+      const on = await states()
+      expect([on.nothing > 0, on.column, on.grid].map(String)).toEqual(['true', String(on.nothing), String(on.nothing)])   // every column's, whatever is selected
+      expect(on.zoomed).toBeGreaterThan(0)
+      await setClear(false)
+      expect(await until(numbers, v => v.length === 0)).toEqual([])
+    }, T)
+
+    it('REG-clear-zoom (click): (col-bubbles round: with View > Column clearances on — off, none at any zoom) zoomed in past the threshold (the number 8 px tall) the numbers fade in, and stay until under 7 px (the buffer); C18 look — grey ft-in numbers on thin dotted lines, no arrowheads; no number overlaps a rack or a column', async () => {
       await open()
       await zoomOutTill(7)
       expect(await numbers()).toEqual([])
-      // in, a notch at a time: off until 8 px, on from there
-      let seen = null
-      for (let i = 0; i < 60; i++) {
-        await wheel(-25)
-        const px = await numPx(), n = (await numbers()).length
-        if (px < 8) expect([px < 8, n]).toEqual([true, 0])
-        else { seen = px; expect(n).toBeGreaterThan(0); break }
-      }
-      expect(seen).not.toBe(null)
-      // out again, a notch at a time: still on down to 7 px, off under it
-      for (let i = 0; i < 60; i++) {
-        await wheel(25)
-        const px = await numPx(), n = (await numbers()).length
-        if (px >= 7) expect(n).toBeGreaterThan(0)
-        else { expect(n).toBe(0); break }
-      }
-      // back in, well past: the look, and no number on a rack or a column
+      // (col-bubbles round: no zoom rule) off: none however far in
+      for (let i = 0; i < 40 && (await numPx()) < 10; i++) await wheel(-40)
+      await L.page.waitForTimeout(350)
+      expect(await numbers()).toEqual([])
+      // on: drawn at every zoom — zoomed out too
+      await setClear(true)
+      expect((await until(numbers, v => v.length > 0)).length).toBeGreaterThan(0)
+      await zoomOutTill(7); await L.page.waitForTimeout(350)
+      expect((await numbers()).length).toBeGreaterThan(0)
+      // in, well past: the look, and no number on a rack or a column
       for (let i = 0; i < 12; i++) await wheel(-60)
       const look = await L.page.evaluate(() => {
         const g = window.Konva.stages[0].findOne('.clearance-numbers')
@@ -732,22 +768,26 @@ describe('REG — the hand check by real clicks', () => {
     /** the clearance numbers' centres on the canvas (canvas px) */
     const numberSpots = () => L.page.evaluate(() => { const g = window.Konva.stages[0].findOne('.clearance-numbers'); return g ? g.find('Text').filter(t => t.isVisible()).map(t => { const r = t.getClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } }) : [] })
 
-    it('REG-clear-column (click): a column clicked shows its own clearances even zoomed out; Esc to the whole grid shows all of them; Esc again none', async () => {
+    it('REG-clear-column (click): (col-bubbles round — the View card\'s Column clearances alone; was: a column clicked showed its own) off: a column clicked, the whole grid (Esc) — no numbers; on: every column\'s, the same with a column picked, the grid, or nothing', async () => {
       await open()
       await zoomOutTill(7)
       const col = await L.S(colAt)
       expect(col).toBeTruthy()
       await L.click(col)
       expect(await L.selected()).toEqual(['column_grid'])
-      // the numbers fade in and out in place (clearanceView.js FADE_MS): each state waited for, not a fixed sleep — under
-      // the full run's load a fade can take longer than the old 300-400 ms waits gave it
-      const one = await until(numbers, v => v.length > 0)
-      expect(one.length).toBeGreaterThan(0)
+      await L.page.waitForTimeout(350)
+      expect(await numbers()).toEqual([])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(350)
+      expect([await L.selected(), await numbers()]).toEqual([['column_grid'], []])
       await L.page.keyboard.press('Escape')
-      const all = await until(numbers, v => v.length >= one.length)
-      expect([await L.selected(), all.length >= one.length]).toEqual([['column_grid'], true])
-      await L.page.keyboard.press('Escape')
-      expect(await until(numbers, v => v.length === 0)).toEqual([])
+      // on: the numbers fade in (clearanceView.js FADE_MS: each state waited for, not a fixed sleep)
+      await setClear(true)
+      const all = await until(numbers, v => v.length > 0)
+      await L.click(col)
+      const one = await until(numbers, v => v.length === all.length)
+      expect([all.length > 0, one.length]).toEqual([true, all.length])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      expect((await until(numbers, v => v.length === all.length)).length).toBe(all.length)
     }, T)
 
     /* ── one column: a click picks it, the Columns layer locked or not ── */
@@ -768,14 +808,10 @@ describe('REG — the hand check by real clicks', () => {
       const z = await L.S('return S.getState().zoom')
       expect([ol.length, Math.abs(ol[0][0] - pick.w * z) < 3, Math.abs(ol[0][1] - pick.h * z) < 3]).toEqual([1, true, true])
       // no bar (col-grid round) and no Show clearances in the card (col-card round: Column clearances is in the View card) —
-      // the picked column's numbers show, that column's only, on its own lines
+      // (col-bubbles round) no numbers for the picked column either: View > Column clearances alone draws them
       expect([await L.bar(), await L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('switch', { name: 'Show clearances' }).count()]).toEqual([null, 0])
       await L.page.waitForTimeout(300)
-      const spots = await numberSpots(), cs = await L.toScreen(c), cv = await L.page.locator('#canvas2-container').boundingBox()
-      expect(spots.length).toBeGreaterThan(0)
-      // every number is in line with the column (its lines run straight out of it across the aisle)
-      const half = Math.max(pick.w, pick.h) * z / 2 + 2
-      expect(spots.filter(p => !(Math.abs(p.x + cv.x - cs.x) <= half || Math.abs(p.y + cv.y - cs.y) <= half))).toEqual([])
+      expect(await numberSpots()).toEqual([])
       // locked: a drag from it moves nothing; the arrows move nothing; Delete deletes nothing
       const gs = await L.S('return S.getState().gridSize || 40')
       await L.drag(c, { x: c.x + 3 * gs, y: c.y + 3 * gs })
@@ -1487,7 +1523,8 @@ describe('REG — the hand check by real clicks', () => {
       const c = await L.S(colAt), g0 = await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return { id: g.id, x: g.x, y: g.y, sx: g.spacingX.join(), sy: g.spacingY.join() }')
       const pick = () => L.S('return CP.useColumnPick.getState().pick')
       await L.click(c); await L.page.waitForTimeout(300)
-      expect([!!(await pick()), (await numbers()).length > 0]).toEqual([true, true])
+      // (col-bubbles round: picked, no clearance numbers — View > Column clearances alone draws them)
+      expect([!!(await pick()), (await numbers()).length]).toEqual([true, 0])
       await L.click(c)
       expect([await pick(), await L.selected()]).toEqual([null, ['column_grid']])
       await L.click(c); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
@@ -2434,17 +2471,21 @@ describe('REG — the hand check by real clicks', () => {
       await unlockColumns()
       // sideways: the vertical line through it, every column on it; nothing else
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.click(c)
-      // zoomed in about the column (the wheel over it) until its clearance numbers read
+      // zoomed in about the column (the wheel over it) until its clearance numbers read — (col-bubbles round) View > Column
+      // clearances on, the one control of the numbers
       for (let i = 0; i < 40 && (await numPx()) < 10; i++) { const w = await L.toScreen(c); await L.page.mouse.move(w.x, w.y); await L.page.mouse.wheel(0, -40); await L.page.waitForTimeout(40) }
-      await L.page.waitForTimeout(400)                                                    // its clearances faded in
+      await L.S('return import("/src/canvas2/clearanceView.js").then(V => { V.setShowClearances(true); return true })')
+      await L.page.waitForTimeout(400)                                                    // the clearances faded in
       const h0 = await hist7(), n0 = await numberSpots(), z2 = await L.S('return S.getState().zoom')
       const p = await L.toScreen(c), q = await L.toScreen({ x: c.x + 3 * gs, y: c.y })
       await L.page.mouse.move(p.x, p.y); await L.page.mouse.down()
       await L.page.mouse.move(p.x + 7, p.y + 2); await L.page.mouse.move(q.x, q.y + 2 * gs * z2, { steps: 8 })   // the first 6 px sideways: the vertical line, then off-axis travel ignored
       const live = await L.page.locator('[data-column-gap]').allTextContents()
+      const chainN = await L.page.evaluate(() => window.Konva.stages[0].find('.column-chain-text').length)
       await L.page.mouse.up(); await L.page.waitForTimeout(300)
       const l1 = await lines(), c1 = await colsNow()
-      expect([live.length, live.every(t => /^\d+′(-\d+″)?$/.test(t))]).toEqual([2, true])
+      // (col-bubbles round: the line's own distance labels are hidden while the grid's dimension chain shows — it carries them)
+      expect([live.length, chainN > 0]).toEqual([0, true])
       expect([l1.sy, l1.y, (await hist7()) - h0]).toEqual([l0.sy, l0.y, 1])
       const movedX = c0.filter(k => !c1.includes(k)).map(k => k.split(',')[0])
       expect([new Set(movedX).size, movedX.length, l1.sx.reduce((a, b) => a + b, 0) === l0.sx.reduce((a, b) => a + b, 0)]).toEqual([1, l0.sy.length + 1, true])
