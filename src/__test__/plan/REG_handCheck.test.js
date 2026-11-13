@@ -764,19 +764,15 @@ describe('REG — the hand check by real clicks', () => {
       const ol = await L.page.evaluate(() => window.Konva.stages[0].find(x => /^sel:/.test(x.name() || '')).map(x => { const r = x.getClientRect({ skipStroke: true }); return [r.width, r.height] }))
       const z = await L.S('return S.getState().zoom')
       expect([ol.length, Math.abs(ol[0][0] - pick.w * z) < 3, Math.abs(ol[0][1] - pick.h * z) < 3]).toEqual([1, true, true])
-      // no bar (col-grid round): its card's Show clearances, on — that column's numbers only, on its own lines
-      const btn = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('switch', { name: 'Show clearances' })
-      expect([await L.bar(), await btn.getAttribute('aria-checked')]).toEqual([null, 'true'])
+      // no bar (col-grid round) and no Show clearances in the card (col-card round: Column clearances is in the View card) —
+      // the picked column's numbers show, that column's only, on its own lines
+      expect([await L.bar(), await L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('switch', { name: 'Show clearances' }).count()]).toEqual([null, 0])
       await L.page.waitForTimeout(300)
       const spots = await numberSpots(), cs = await L.toScreen(c), cv = await L.page.locator('#canvas2-container').boundingBox()
       expect(spots.length).toBeGreaterThan(0)
       // every number is in line with the column (its lines run straight out of it across the aisle)
       const half = Math.max(pick.w, pick.h) * z / 2 + 2
       expect(spots.filter(p => !(Math.abs(p.x + cv.x - cs.x) <= half || Math.abs(p.y + cv.y - cs.y) <= half))).toEqual([])
-      await btn.click(); await L.page.waitForTimeout(400)
-      expect([await btn.getAttribute('aria-checked'), await numbers()]).toEqual(['false', []])
-      await btn.click(); await L.page.waitForTimeout(400)
-      expect((await numbers()).length).toBeGreaterThan(0)
       // locked: a drag from it moves nothing; the arrows move nothing; Delete deletes nothing
       const gs = await L.S('return S.getState().gridSize || 40')
       await L.drag(c, { x: c.x + 3 * gs, y: c.y + 3 * gs })
@@ -2416,14 +2412,15 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.page.locator('[data-island="right-card"] [data-layer]').count()).toBe(0)
     }, T)
 
-    it('REG-column-lines (click): on an unlocked Columns layer a column dragged sideways moves its whole vertical line, up or down its horizontal line (the axis from the first 6 px), the distances to the neighbouring lines live; the other lines stay; one undo; the clearances follow; the card types the distances; locked: nothing moves and the fields are disabled', async () => {
+    it('REG-column-lines (click): on an unlocked Columns layer a column dragged sideways moves its whole vertical line, up or down its horizontal line (the axis from the first 6 px), the distances to the neighbouring lines live; the other lines stay; one undo; the clearances follow; the card has no Column lines fields (col-card round); locked: nothing moves', async () => {
       await open()
       await zoomOutTill(7)
       const c = await L.S(colAt), gs = await gs7(), z = await L.S('return S.getState().zoom')
-      // locked (as saved): the card's fields disabled at 45 %, a drag moves nothing
+      // (col-card round: the card has no Column lines section — no distance fields, the whole grid or one column)
+      // locked (as saved): a drag moves nothing
       await L.click(c)
       const left = L.page.getByRole('textbox', { name: 'Distance to the line left' })
-      expect([await left.count(), await left.evaluate(el => el.matches(':disabled')), await left.evaluate(el => getComputedStyle(el).opacity)]).toEqual([1, true, '0.45'])
+      expect([await left.count(), await L.page.getByText('Column lines', { exact: true }).count()]).toEqual([0, 0])
       const l0 = await lines(), c0 = await colsNow()
       await L.drag(c, { x: c.x + 3 * gs, y: c.y }); await L.page.waitForTimeout(250)
       expect(await lines()).toEqual(l0)
@@ -2457,14 +2454,9 @@ describe('REG — the hand check by real clicks', () => {
       const l2 = await lines()
       expect([JSON.stringify(l2.sx), JSON.stringify(l2.sy) !== JSON.stringify(l0.sy)]).toEqual([JSON.stringify(l0.sx), true])
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
-      // the card: typed, one undo; the picked column's line moves so that distance is the one typed
+      // (col-card round: no typed distances in the card — one column picked, unlocked: still none)
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.click(c)
-      expect(await left.evaluate(el => el.matches(':disabled'))).toBe(false)
-      const above = L.page.getByRole('textbox', { name: 'Distance to the line above' }), below = L.page.getByRole('textbox', { name: 'Distance to the line below' })
-      const sum = Number((await above.inputValue()).match(/\d+/)[0]) + Number((await below.inputValue()).match(/\d+/)[0])
-      const h1 = await hist7()
-      await above.click(); await above.fill("10'"); await above.press('Enter'); await L.page.waitForTimeout(200)
-      expect([await above.inputValue(), Number((await below.inputValue()).match(/\d+/)[0]), (await hist7()) - h1, JSON.stringify((await lines()).sx)]).toEqual(['10′', sum - 10, 1, JSON.stringify(l0.sx)])
+      expect([await L.S('return !!CP.useColumnPick.getState().pick'), await left.count()]).toEqual([true, 0])
     }, T)
 
     it('REG-bar-hints (click): one faint hint line (11px, muted) in the selection bar per state — rows, bays, a column on an unlocked layer; none on a locked layer’s column; the Row group keeps its mode bar’s', async () => {
@@ -6336,18 +6328,21 @@ describe('REG — the hand check by real clicks', () => {
       const nx = g0.sx.split(',').filter(Boolean).length + 1, ny = g0.sy.split(',').filter(Boolean).length + 1
       const name = (i) => { let t = '', n = i; do { t = String.fromCharCode(65 + (n % 26)) + t; n = Math.floor(n / 26) - 1 } while (n >= 0); return t }
       expect(await card.locator('[data-column-range]').textContent()).toBe(`A–${name(nx - 1)} · 1–${ny}`)
-      expect(await card.locator('[data-column-last]').count()).toBe(1)
+      // the last bay each way on its own row (col-card round: one row overflowed), the value right-aligned in the card
+      expect([await card.locator('[data-column-last-x]').count(), await card.locator('[data-column-last-y]').count()]).toEqual([1, 1])
+      const cr = await card.boundingBox()
+      for (const k of ['x', 'y']) { const b = await card.locator('[data-column-last-' + k + ']').boundingBox(); expect([k, b.x + b.width <= cr.x + cr.width, cr.x + cr.width - (b.x + b.width) < 24]).toEqual([k, true, true]) }
       // as the colgrid mockup draws it: the head, the four blocks, across × down = total, the last bay in feet-inches
       expect(await card.locator('[data-column-title]').textContent()).toBe('Column grid')
       expect(await card.locator('[data-caption]').allTextContents()).toEqual(expect.arrayContaining(['Spacing', 'Offset from wall (to first column centre)', 'Column', 'Result']))
       if (nx * ny === await drawn()) expect(await card.locator('[data-column-count]').textContent()).toBe(`${nx} × ${ny} = ${nx * ny}`)
-      expect(await card.locator('[data-column-last]').textContent()).toMatch(/^X \d+′(-\d+″)? · Y \d+′(-\d+″)?$/)
+      for (const k of ['x', 'y']) expect(await card.locator('[data-column-last-' + k + ']').textContent()).toMatch(/^\d+′(-\d+″)?$/)
       // the last bay: the last gridline to the far wall — the last gridline on the far wall: the bay between the last two
       // (hand check: "Y 0′" shown with the last gridline on the bottom wall), never 0
       const lastBay = (sp, first, far) => { const v = [first]; for (const s of sp) v.push(v[v.length - 1] + s); const rest = far - v[v.length - 1]; return Math.round((rest <= 0.5 && v.length > 1 ? v[v.length - 1] - v[v.length - 2] : rest) / gs * 12) }
       const obc = await outlineBox(), sxs = g0.sx.split(',').filter(Boolean).map(Number), sys = g0.sy.split(',').filter(Boolean).map(Number)
       const inch = (t) => { const m = t.match(/(\d+)′(?:-(\d+)″)?/); return Number(m[1]) * 12 + Number(m[2] || 0) }
-      const [lx, ly] = (await card.locator('[data-column-last]').textContent()).split('·').map(inch)
+      const lx = inch(await card.locator('[data-column-last-x]').textContent()), ly = inch(await card.locator('[data-column-last-y]').textContent())
       expect([lx, ly]).toEqual([lastBay(sxs, g0.x, obc.x1), lastBay(sys, g0.y, obc.y1)])
       expect([lx > 0, ly > 0]).toEqual([true, true])
       // X spacing typed: the grid redrawn as typed, from the same first gridline, every spacing the typed one
@@ -6413,16 +6408,27 @@ describe('REG — the hand check by real clicks', () => {
       await L.click(c)
       const card = L.page.getByRole('tabpanel', { name: 'Properties' })
       expect([await L.selected(), await L.bar(), await L.page.getByText('Drag to move its line').count()]).toEqual([['column_grid'], null, 0])
-      // the whole grid (Esc): no bar either; Show clearances in its card
+      // the whole grid (Esc): no bar either; (col-card round) no Show clearances in its card — the View card's Column
+      // clearances: with nothing selected, every column's numbers on, then off
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
-      expect([await L.selected(), await L.bar()]).toEqual([['column_grid'], null])
-      const sw = card.getByRole('switch', { name: 'Show clearances' })
-      if ((await sw.getAttribute('aria-checked')) === 'true') { await sw.click(); await L.page.waitForTimeout(300) }
+      expect([await L.selected(), await L.bar(), await card.getByRole('switch', { name: 'Show clearances' }).count()]).toEqual([['column_grid'], null, 0])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      expect(await L.selected()).toEqual([])
+      await L.page.locator('[data-island="bottom-right"]').getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150)
+      const sw = L.page.getByRole('dialog', { name: 'View card' }).getByRole('switch', { name: 'Column clearances' })
+      if ((await sw.getAttribute('aria-checked')) === 'true') { await sw.click(); await L.page.waitForTimeout(400) }
+      expect(await numbers()).toEqual([])
       await sw.click(); await L.page.waitForTimeout(400)
       expect([await sw.getAttribute('aria-checked'), (await numbers()).length > 0]).toEqual(['true', true])
       await sw.click(); await L.page.waitForTimeout(400)
-      expect(await sw.getAttribute('aria-checked')).toBe('false')
-      // the lock: the Columns layer's padlock, both ways
+      expect([await sw.getAttribute('aria-checked'), await numbers()]).toEqual(['false', []])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      await L.click(c); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      expect(await L.selected()).toEqual(['column_grid'])
+      // the lock: the Columns layer's padlock in the card's head (icon only, at the title's right — col-card round; no
+      // Columns layer row), both ways
+      const tb = await card.locator('[data-column-title]').boundingBox(), lb = await card.getByRole('button', { name: /^(Lock|Unlock)$/ }).boundingBox()
+      expect([lb.x > tb.x + tb.width - 1, Math.abs((lb.y + lb.height / 2) - (tb.y + tb.height / 2)) < 8, await card.getByText('Columns layer', { exact: true }).count()]).toEqual([true, true, 0])
       const lockedNow = () => L.S('return !!S.getState().layers.find(l => l.id === "columns")?.locked')
       const was = await lockedNow()
       await card.getByRole('button', { name: was ? 'Unlock' : 'Lock' }).click(); await L.page.waitForTimeout(150)

@@ -2,15 +2,18 @@
 // (STUDIO.md §2, §7):
 //   - zoomed in far enough to read them: the 9.5-at-label-size number at least 8 px tall on screen — and they stay
 //     until it is under 7 px (the buffer, so they never flicker at the threshold); they fade in and out in place;
-//   - while a column (its column grid) is selected, or its bar's Show clearances is on;
+//   - while a column (its column grid) is selected, or the View card's Column clearances is on (every column);
 //   - during a drag or a resize (dragPreview's `dragging`).
 // The red "under travel" warnings are checks: they stay with the Checks layer. The PDF prints every number.
 // Presentation state only.
 
 import { create } from 'zustand'
 
-export const useClearanceView = create(() => ({ show: false }))
-export const setShowClearances = (on) => useClearanceView.setState({ show: !!on })
+// (col-card round: the View card's Column clearances — every column's numbers; remembered per browser, off by default)
+const KEY = 'trace.studio.columnClearances'
+const read = () => { try { return localStorage.getItem(KEY) === '1' } catch { return false } }
+export const useClearanceView = create(() => ({ show: read() }))
+export const setShowClearances = (on) => { try { localStorage.setItem(KEY, on ? '1' : '0') } catch { /* private window */ } useClearanceView.setState({ show: !!on }) }
 
 /** The number's height on screen (px) at the view `zoom` and label scale `lz`. */
 export const clearancePx = (zoom, lz) => (9.5 / lz) * zoom

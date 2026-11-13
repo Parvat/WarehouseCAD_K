@@ -22,6 +22,7 @@ import { Toggle } from './cardParts'
 import { lineNumbering, setLineNumbering } from '../utils/lineNames'
 import { LayerBody } from '../components/RightPanel/LayerPanel'
 import { useHelp, toggleHelp, closeHelp, HelpBody } from './HelpCard'
+import { useClearanceView, setShowClearances } from '../canvas2/clearanceView'
 
 /* The Studio frame (STUDIO.md §1; every value from design/studio/Studio.dc.html, screen C1): the canvas fills the
    window and these islands float on it — top-left (logo, project name ▾, Auto-saved), top-right (undo, redo,
@@ -197,7 +198,7 @@ function useCloses(open, close, wrap) {
 const overIsland = (extra) => ({ right: 16, bottom: 'calc(68px + var(--tally-island-lift, 0px))', flexDirection: 'column', alignItems: 'stretch', borderRadius: 10, ...extra })
 
 /* The bottom-right island (STUDIO.md §1): View · Layers · Fit · ?. View opens a card above it with the display switches —
-   Aisle labels, Checks, Elevation colours, Section names, Row numbers (each remembered as before); Layers opens its own
+   Aisle labels, Column clearances (col-card round), Checks, Elevation colours, Section names, Row numbers (each remembered as before); Layers opens its own
    card, each layer's show toggle and padlock. A click outside or Esc closes either. While the Tally drawer is
    open it stands 12px above the drawer's top edge (--tally-island-lift: TallyDrawer.jsx), its cards with it. */
 function BottomRight() {
@@ -205,6 +206,7 @@ function BottomRight() {
   const toggleAisles = useCanvasStore(s => s.toggleAisles)
   const { showMarks, setShowMarks } = useColumnCheck()
   const showColors = useElevView(s => s.showColors)
+  const colClear = useClearanceView(s => s.show)
   const { sectionNames, setSectionNames, rowLabels, setRowLabels } = useViewPrefs(useShallow(s => ({ sectionNames: s.sectionNames, setSectionNames: s.setSectionNames, rowLabels: s.rowLabels, setRowLabels: s.setRowLabels })))
   const [view, setView] = useState(false), [layers, setLayers] = useState(false)
   const numbering = useCanvasStore(s => lineNumbering(s.elevations))
@@ -227,6 +229,7 @@ function BottomRight() {
         {view && (
           <div className="st-island" role="dialog" aria-label="View card" data-card-dark style={overIsland({ width: 232, padding: 8, gap: 2, maxHeight: 'calc(100vh - 160px)', overflowY: 'auto' })}>
             {sw('Aisle labels', showAisles, toggleAisles)}
+            {sw('Column clearances', colClear, () => setShowClearances(!colClear), "Every column's clear distance from its faces to the nearest rack")}
             {sw('Checks', showMarks, () => setShowMarks(!showMarks))}
             {sw('Elevation colours', showColors, () => setShowColors(!showColors))}
             {sw('Section names', sectionNames, () => setSectionNames(!sectionNames), "The sections' legend — each section's colour and name, outside the building at its bottom-left")}

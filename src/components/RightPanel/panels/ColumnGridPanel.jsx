@@ -1,14 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
-import { C, fieldBox, Grid2, Note, Sec, Caption, LockedFields, ToggleRow, Row, IconBtn } from '../../../studio/cardParts'
-import { useClearanceView, setShowClearances } from '../../../canvas2/clearanceView'
+import { C, fieldBox, Grid2, Note, Sec, Caption, LockedFields, IconBtn } from '../../../studio/cardParts'
 import { toggleLock } from '../../../utils/layers'
 import { gridBuilding, gridParams, gridUpdate, gridResult } from '../../../utils/columnGrid'
 import { expandColumnGrid } from '../../../generate/columnCheck'
 import { ftIn } from '../../../utils/bom'
-import { useColumnPick, setColumnClearances } from '../../../canvas2/columnPick'
-import { ColumnLineFields } from './ColumnLineFields'
 
 // ── Column Grid card (col-grid round; STUDIO.md §7a Columns) ──────────────────────────────────────────────────────
 // As the colgrid mockup draws it: the head (Column grid, what it is), then SPACING (X, Y), OFFSET FROM WALL (TO FIRST
@@ -49,22 +46,25 @@ function GridField({ aria, label, show, parse, min, onLive, onDone, onCancel }) 
   )
 }
 
-/** The card's head (colgrid mockup): the title, and what the grid is. */
+/** The card's head (colgrid mockup): the title with the Columns layer's padlock at its right (icon only — col-card round),
+ *  and what the grid is. */
 export function ColumnGridHead() {
+  const colsLocked = useCanvasStore(s => !!s.layers.find(l => l.id === 'columns')?.locked)
+  const tip = colsLocked ? 'Columns layer locked — Unlock (Ctrl+L)' : 'Lock the Columns layer (Ctrl+L)'
   return (
     <>
-      <span data-column-title style={{ color: C.strong, fontSize: 15, fontWeight: 600 }}>Column grid</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span data-column-title style={{ flex: 1, color: C.strong, fontSize: 15, fontWeight: 600 }}>Column grid</span>
+        <IconBtn name="Lock" label={colsLocked ? 'Unlock' : 'Lock'} title={tip} active={colsLocked} onClick={() => toggleLock(useCanvasStore)} />
+      </div>
       <span style={{ color: C.muted, fontSize: 12, lineHeight: 1.45 }}>Fixed structure. Resizing the building adds or removes columns, never re-spaces them.</span>
     </>
   )
 }
 
-/** The card's blocks after the head: a picked column's lines, Spacing, Offset, Column, Result. */
+/** The card's blocks after the head: Spacing, Offset, Column, Result. */
 export function ColumnGridPanel({ obj, locked = false }) {
   const { objects, gridSize: gsRaw } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize })))
-  const pick = useColumnPick(s => s.pick), pickShow = useColumnPick(s => s.show)
-  const show = useClearanceView(s => s.show)
-  const colsLocked = useCanvasStore(s => !!s.layers.find(l => l.id === 'columns')?.locked)
   const gs = gsRaw || 40
   const fp = gridBuilding(objects, obj)
   const p = gridParams(obj, fp, gs)
@@ -89,30 +89,20 @@ export function ColumnGridPanel({ obj, locked = false }) {
   const row = (label, value, data) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
       <span style={{ color: C.icon, fontSize: 12 }}>{label}</span>
-      <span {...{ [data]: '' }} style={{ color: C.strong, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{value}</span>
+      <span {...{ [data]: '' }} style={{ color: C.strong, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', textAlign: 'right', marginLeft: 'auto' }}>{value}</span>
     </div>
   )
   return (
     <>
-      {/* one column picked: the distances to its neighbouring lines, typed (canvas2/columnLines.js) */}
-      {pick?.gridId === obj.id && <Sec><ColumnLineFields obj={obj} /></Sec>}
-      {/* Show clearances and the Columns layer's lock (col-grid round: was the bar over a clicked column) — a column
-          picked: Show clearances is that column's only, on when it is picked */}
-      <Sec data-column-view gap={8}>
-        {pick?.gridId === obj.id
-          ? <ToggleRow label="Show clearances" title="This column's clear distances on the plan" on={!!pickShow} onClick={() => setColumnClearances(!pickShow)} />
-          : <ToggleRow label="Show clearances" title="The columns' clear distances on the plan" on={!!show} onClick={() => setShowClearances(!show)} />}
-        <Row label="Columns layer" title={colsLocked ? 'Columns layer locked — Unlock (Ctrl+L)' : 'Lock the Columns layer (Ctrl+L)'}>
-          <IconBtn name="Lock" label={colsLocked ? 'Unlock' : 'Lock'} title={colsLocked ? 'Columns layer locked — Unlock (Ctrl+L)' : 'Lock the Columns layer (Ctrl+L)'} active={colsLocked} onClick={() => toggleLock(useCanvasStore)} />
-        </Row>
-      </Sec>
       <Sec label={<Caption>Spacing</Caption>}>{pair(ft('spX', 'X spacing', 'Column X spacing', 1), ft('spY', 'Y spacing', 'Column Y spacing', 1))}</Sec>
       <Sec label={<Caption>Offset from wall (to first column centre)</Caption>}>{pair(ft('offX', 'X offset', 'Column X offset', 0), ft('offY', 'Y offset', 'Column Y offset', 0))}</Sec>
       <Sec label={<Caption>Column</Caption>}>{pair(inch('wIn', 'Width', 'Column width'), inch('dIn', 'Depth', 'Column depth'))}</Sec>
       <Sec data-column-result gap={6} label={<Caption>Result</Caption>}>
         {row('Columns', res.nx * res.ny === res.count ? `${res.nx} × ${res.ny} = ${res.count}` : String(res.count), 'data-column-count')}
         {row('Gridlines', res.range, 'data-column-range')}
-        {res.lastX != null && row('Last bay (to far wall)', `X ${words(res.lastX)} · Y ${words(res.lastY)}`, 'data-column-last')}
+        {/* the last bay each way, its own row (col-card round: one row overflowed) */}
+        {res.lastX != null && row('Last bay X', words(res.lastX), 'data-column-last-x')}
+        {res.lastY != null && row('Last bay Y', words(res.lastY), 'data-column-last-y')}
         {res.none && <Note level="warning" role="alert" data-column-warning>No column inside the building at this spacing and offset — check the values.</Note>}
       </Sec>
     </>
