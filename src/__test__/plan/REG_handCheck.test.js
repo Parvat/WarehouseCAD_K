@@ -2393,7 +2393,7 @@ describe('REG — the hand check by real clicks', () => {
       // View: the display switches only
       await island.getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150)
       const vc = L.page.getByRole('dialog', { name: 'View card' })
-      expect([await vc.getByRole('switch').evaluateAll(ss => ss.map(x => x.getAttribute('aria-label'))), await vc.locator('[data-layer]').count()]).toEqual([['Aisle labels', 'Checks', 'Elevation colours', 'Section names', 'Row numbers'], 0])
+      expect([await vc.getByRole('switch').evaluateAll(ss => ss.map(x => x.getAttribute('aria-label'))), await vc.locator('[data-layer]').count()]).toEqual([['Aisle labels', 'Column clearances', 'Checks', 'Elevation colours', 'Section names', 'Row numbers'], 0])   // (col-card round: Column clearances under Aisle labels)
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       await btn.click(); await L.page.waitForTimeout(150)
       const card = layersCard()
