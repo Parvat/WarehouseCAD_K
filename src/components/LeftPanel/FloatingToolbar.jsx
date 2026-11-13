@@ -55,6 +55,7 @@ import { dropRotation } from '../../utils/rowRotation'
 import { startPlacement } from '../../utils/placement'
 import { setLibraryPick } from '../../studio/selectionActions'
 import { nanoid } from 'nanoid'
+import { openPlaceGrid } from '../../studio/PlaceColumnGrid'
 
 /* One glyph per preset — the text badges ate the popover's width. */
 const PEN_ICONS = { pencil: Pencil, marker: PenTool, highlighter: Highlighter, technical: Ruler }
@@ -952,6 +953,12 @@ export function FloatingToolbar({ studio = false } = {}) {
     const RACK_TYPES     = new Set(['rack_selective','rack_row','rack_double_row','rack_pushback','rack_pallet_flow','rack_shelving'])
     const BAY_RACK_TYPES = new Set(['rack_row','rack_double_row','rack_cantilever','rack_pushback','rack_pallet_flow','rack_drive_through'])
     let w, h
+    /* the Columns tool (col-grid round, item 1): the Place column grid dialog first (studio/PlaceColumnGrid.jsx) — the
+       building under the view centre, else the first one; nothing is placed until its Place grid. No building: as before. */
+    if (item.type === 'column_grid') {
+      const fpAt = [...objects].reverse().find(o => FP_TYPES_SET.has(o.type) && objectContains(o, wx, wy)) || objects.find(o => FP_TYPES_SET.has(o.type))
+      if (fpAt) { openPlaceGrid(fpAt.id, { color: item.color }); return }
+    }
     if (item.type === 'column_grid') {
       const fpFound = [...objects].reverse().find(o => FP_TYPES_SET.has(o.type) && objectContains(o, wx, wy))
       if (fpFound) { const wt=(fpFound.wallThicknessFt||0.25)*GS; w=fpFound.width-2*wt; h=fpFound.height-2*wt }

@@ -6436,6 +6436,47 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return JSON.stringify([g.x, g.y, g.spacingX, g.spacingY])')).not.toBe(l0)
     }, T)
 
+    it('REG-colgrid-place (click): the Columns tool (Structural → Column Grid) opens the Place column grid dialog first — nothing placed; X / Y spacing, Columns on the walls Yes / No (No shows the X / Y offset), Width / Depth, a live preview and its count; Cancel and Esc place nothing; Place grid adds one grid (one undo step) laid by the card\'s rule', async () => {
+      await open()
+      const grids = () => L.S('return S.getState().objects.filter(o => o.type === "column_grid").length')
+      const n0 = await grids(), h0 = await hist7()
+      const dlg = L.page.getByRole('dialog', { name: 'Place column grid' })
+      const openTool = async () => {
+        await L.page.getByRole('button', { name: 'Structural', exact: true }).click(); await L.page.waitForTimeout(150)
+        await L.page.getByRole('menuitem').filter({ hasText: 'Column Grid' }).first().click(); await L.page.waitForTimeout(250)
+      }
+      await openTool()
+      expect([await dlg.count(), await grids(), (await hist7()) - h0]).toEqual([1, n0, 0])
+      for (const f of ['Grid X spacing', 'Grid Y spacing', 'Grid column width', 'Grid column depth']) expect([f, await dlg.getByLabel(f, { exact: true }).count()]).toEqual([f, 1])
+      expect(await dlg.getByLabel('Grid X offset', { exact: true }).count()).toBe(0)                       // Yes: no offsets
+      // the count: the card's rule (placedGrid) for this building, across × down = total, the preview one square per column
+      const want = (p) => L.S(`return Promise.all([import('/src/studio/PlaceColumnGrid.jsx')]).then(([M]) => { const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), g = M.placedGrid(fp, arg, st.gridSize || 40); return { n: g.cols.length, nx: g.nx, ny: g.ny } })`, p)
+      const shown = async () => ({ text: await dlg.locator('[data-place-count]').textContent(), squares: await dlg.locator('[data-preview-column]').count() })
+      const sx = dlg.getByLabel('Grid X spacing', { exact: true })
+      await sx.click(); await sx.fill("30'"); await L.page.waitForTimeout(150)
+      let w = await want({ spX: 30, spY: 40, walls: true, offX: 40, offY: 30, wIn: 12, dIn: 12 }), s = await shown()
+      expect(s).toEqual({ text: w.nx * w.ny === w.n ? `${w.nx} × ${w.ny} = ${w.n} columns` : `${w.n} columns`, squares: w.n })
+      // No: the offsets show, the preview follows
+      await dlg.getByRole('group', { name: 'Columns on the walls' }).getByRole('button', { name: 'No' }).click(); await L.page.waitForTimeout(150)
+      expect([await dlg.getByLabel('Grid X offset', { exact: true }).count(), await dlg.locator('[data-walls-note]').textContent()]).toEqual([1, 'No columns on the walls.'])
+      w = await want({ spX: 30, spY: 40, walls: false, offX: 40, offY: 30, wIn: 12, dIn: 12 })
+      expect((await shown()).squares).toBe(w.n)
+      // Cancel: nothing placed; Esc the same
+      await dlg.getByRole('button', { name: 'Cancel' }).click(); await L.page.waitForTimeout(150)
+      expect([await dlg.count(), await grids(), (await hist7()) - h0]).toEqual([0, n0, 0])
+      await openTool(); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      expect([await dlg.count(), await grids()]).toEqual([0, n0])
+      // Place grid: one more grid, one undo step, laid as the dialog showed it
+      await openTool()
+      await dlg.getByRole('button', { name: 'Place grid' }).click(); await L.page.waitForTimeout(300)
+      expect([await dlg.count(), await grids(), (await hist7()) - h0]).toEqual([0, n0 + 1, 1])
+      const placed = await L.S('const gs = S.getState().gridSize || 40, g = S.getState().objects.filter(o => o.type === "column_grid").pop(); return { sx: g.spacingX.map(v => v / gs), sy: g.spacingY.map(v => v / gs), w: g.columnW / gs * 12 }')
+      // (the dialog keeps the last entries while the app is open: 30′ typed above)
+      expect([new Set(placed.sx).size <= 1, placed.sx[0], placed.sy[0], placed.w]).toEqual([true, 30, 40, 12])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect(await grids()).toBe(n0)
+    }, T)
+
     it('REG-colgrid-L (click): an L-shaped building — no column is drawn in its open corner (outside the outline), the gridline stays (its bubble still shown); every wall gets its own size line', async () => {
       await open()
       const ob = await outlineBox()

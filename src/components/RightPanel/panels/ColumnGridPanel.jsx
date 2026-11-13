@@ -19,7 +19,7 @@ import { ColumnLineFields } from './ColumnLineFields'
 
 /** Feet from typed text — 25, 25', 25 ft, 24' 9", 24′-9″, 9" — 0 allowed (an offset of 0: on the wall); null when not
  *  a length. */
-const feetOf = (t) => {
+export const feetOf = (t) => {
   const s = String(t ?? '').trim().replace(/′/g, "'").replace(/″/g, '"').replace(/\s*ft\b\.?/gi, "'").replace(/\s*in\b\.?/gi, '"')
   let m = s.match(/^(\d+(?:\.\d+)?)\s*'\s*-?\s*(?:(\d+(?:\.\d+)?)\s*"?)?$/)
   if (m) return Number(m[1]) + (m[2] ? Number(m[2]) / 12 : 0)
@@ -28,7 +28,7 @@ const feetOf = (t) => {
   m = s.match(/^(\d+(?:\.\d+)?)$/)
   return m ? Number(m[1]) : null
 }
-const inchesOf = (t) => { const s = String(t).trim(); if (/['′"″]|ft|in/.test(s)) { const f = feetOf(s); return f == null ? null : f * 12 } const v = Number(s); return Number.isFinite(v) ? v : null }
+export const inchesOf = (t) => { const s = String(t).trim(); if (/['′"″]|ft|in/.test(s)) { const f = feetOf(s); return f == null ? null : f * 12 } const v = Number(s); return Number.isFinite(v) ? v : null }
 const words = (ft) => ftIn(ft * 12)
 
 /** One typed field: `show` the value; `parse` text → number or null; `min` the smallest it takes. */
