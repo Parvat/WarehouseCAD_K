@@ -216,14 +216,18 @@ describe('sizingLayout — placements', () => {
 })
 
 describe('sizingLayout — fixtures', () => {
-  it('builds a column grid on the requested spacing, flush to both near walls by default ("Columns along wall" = Yes)', () => {
+  it('builds a column grid on the requested spacing, a line on all four walls by default ("Columns along wall" = Yes)', () => {
     const g = columnGridObject(brief, 0, 0)
     expect(g.type).toBe('column_grid')
-    expect(g.spacingX.every(s => s === brief.gridXFt * GS)).toBe(true)
-    expect(g.spacingY.every(s => s === brief.gridYFt * GS)).toBe(true)
-    // line #0 on the left wall and on the top wall
+    // the requested spacing from the near walls; the last bay before the far wall the remainder (generate-far-walls
+    // round: the Place column grid dialog's Yes, stored as real line positions)
+    expect(g.spacingX).toEqual([50, 50, 50, 50, 40].map(f => f * GS))
+    expect(g.spacingY).toEqual([54, 54, 12].map(f => f * GS))
+    // line #0 on the left wall and on the top wall; the last line on the right wall and on the bottom wall
     expect(g.x).toBe(0)
     expect(g.y).toBe(0)
+    expect(g.x + g.spacingX.reduce((t, s) => t + s, 0)).toBe(brief.lengthFt * GS)
+    expect(g.y + g.spacingY.reduce((t, s) => t + s, 0)).toBe(brief.widthFt * GS)
   })
 
   it('places the requested number of dock doors, spread along the wall', () => {
@@ -829,15 +833,17 @@ describe('sizingLayout — BUG 69: "columns along wall" moves the interior grid\
     expect(Math.min(...lineYsFt(grid))).toBeCloseTo(0, 6)
   })
 
-  it('columnGridObject: No insets the grid one full gridYFt pitch — no line at y=0, one fewer line than Yes, otherwise the same lines', () => {
+  it('columnGridObject: No insets the grid one full gridYFt pitch — no line at y=0, nor on the far wall, otherwise the same lines', () => {
     const yes = columnGridObject({ ...gbrief, columnsAlongWall: true }, 0, 0)
     const no  = columnGridObject({ ...gbrief, columnsAlongWall: false }, 0, 0)
     expect(no.y).toBeCloseTo(gbrief.gridYFt * GS, 6)
     const yesLines = lineYsFt(yes)
     const noLines  = lineYsFt(no)
-    expect(noLines).toHaveLength(yesLines.length - 1)
-    expect(noLines.some(y => Math.abs(y) < 1e-6)).toBe(false)
-    expect(noLines).toEqual(yesLines.slice(1))   // same lines, minus the wall one
+    // (generate-far-walls round) Yes has a line on both walls — 65 / 30: 0, 30, 60, 65
+    expect(yesLines[yesLines.length - 1]).toBeCloseTo(gbrief.widthFt, 6)
+    expect(noLines).toHaveLength(yesLines.length - 2)
+    expect(noLines.some(y => Math.abs(y) < 1e-6 || Math.abs(y - gbrief.widthFt) < 1e-6)).toBe(false)
+    expect(noLines).toEqual(yesLines.slice(1, -1))   // same lines, minus the two wall ones
   })
 
   it('generateFixtures always returns exactly one column_grid, regardless of the toggle — the separate wall-grid mechanism is gone', () => {

@@ -114,6 +114,9 @@ function legalSinglePosition(a, b, cols, t) {
 const walkLines = (offset, pitch, max) => {
   const out = []
   for (let v = offset; v <= max + 1e-9; v += pitch) out.push(+v.toFixed(6))
+  // the last line itself too (generate-far-walls round: Yes ends on the far wall, off the pitch — the walk takes that
+  // wall's columns as its face, columnFaceFrame)
+  if (out.length && max - out[out.length - 1] > 1e-6) out.push(+max.toFixed(6))
   return out
 }
 
@@ -253,7 +256,7 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
         expect(columns.flatMap(c => straddles(c, racks))).toEqual([])
       })
 
-      it(`5 grid rule (${columnsAlongWall ? 'Yes: line on each near wall' : 'No: first line one pitch in, none on any wall'}), drawn == avoided, both axes`, () => {
+      it(`5 grid rule (${columnsAlongWall ? 'Yes: a line on all four walls' : 'No: first line one pitch in, none on any wall'}), drawn == avoided, both axes`, () => {
         const { grid } = get()
         const f = axisFrame(orientation, brief)
         const vertical = orientation === 'vertical'
@@ -268,6 +271,7 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
           expect(drawn.length).toBeGreaterThan(0)
           if (columnsAlongWall) {
             expect(drawn[0]).toBeCloseTo(0, 6)
+            expect(drawn[drawn.length - 1]).toBeCloseTo(wall, 6)
           } else {
             expect(drawn[0]).toBeCloseTo(pitch, 6)
             expect(drawn.some(v => Math.abs(v) < EPS || Math.abs(v - wall) < EPS)).toBe(false)

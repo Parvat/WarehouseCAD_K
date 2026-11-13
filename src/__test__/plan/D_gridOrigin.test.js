@@ -35,6 +35,9 @@ describe('D — grid origin ("Columns along wall")', () => {
   const avoidanceLines = (offset, pitch, max) => {
     const out = []
     for (let v = offset; v <= max + 1e-9; v += pitch) out.push(+v.toFixed(6))
+    // the last line itself too (generate-far-walls round: Yes ends on the far wall, off the pitch — the walk takes
+    // that wall's columns as its face, columnFaceFrame)
+    if (out.length && max - out[out.length - 1] > 1e-6) out.push(+max.toFixed(6))
     return out
   }
   const drawnXLinesFt = (brief) => {
@@ -83,6 +86,7 @@ describe('D — grid origin ("Columns along wall")', () => {
             for (const set of [lines, avoid]) {
               if (columnsAlongWall) {
                 expect(set[0]).toBeCloseTo(0, 6)
+                expect(set[set.length - 1]).toBeCloseTo(wall, 6)
               } else {
                 expect(set[0]).toBeCloseTo(pitch, 6)
                 expect(set.some(v => onWall(v, wall))).toBe(false)
@@ -94,10 +98,11 @@ describe('D — grid origin ("Columns along wall")', () => {
     }
   }
 
-  // 240×120 / 25×30, hand-listed: 240/25 = 9.6 -> 9 whole pitches, last line 225.
-  it('D-values: 240x120 / 25x30, "Yes" — X lines 0..225 every 25\', Y lines 0..120 every 30\'', () => {
+  // 240×120 / 25×30, hand-listed: 240/25 = 9.6 -> 9 whole pitches to 225, then the far wall's own line at 240
+  // (generate-far-walls round: a line on all four walls, the last bay the 15' remainder).
+  it('D-values: 240x120 / 25x30, "Yes" — X lines 0..225 every 25\' and 240 on the far wall, Y lines 0..120 every 30\'', () => {
     const b = { ...R.R1, columnsAlongWall: true }
-    expect(drawnXLinesFt(b)).toEqual([0, 25, 50, 75, 100, 125, 150, 175, 200, 225])
+    expect(drawnXLinesFt(b)).toEqual([0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 240])
     expect(drawnYLinesFt(b)).toEqual([0, 30, 60, 90, 120])
   })
 

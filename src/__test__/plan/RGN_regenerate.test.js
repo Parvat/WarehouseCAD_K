@@ -100,7 +100,25 @@ describe('RGN — Regenerate racking', () => {
     expect(JSON.stringify(objs())).toBe(JSON.stringify(before))
   })
 
-  it('RGN-again: a second Regenerate counts the area\'s own hand edits (a rack removed) and keeps working; \'auto\' keeps the orientation with more positions', () => {
+  it('RGN-grid: Generate\'s grid has a line on all four walls (the last bay before the far wall the remainder, real line positions); a project that already has a grid — an old one, lines on the near walls only — keeps it as is through Regenerate: no far-wall line added, nothing re-laid', () => {
+    const L = generatedThenEdited()
+    const g = objs().find(o => o.type === 'column_grid')
+    const sum = (a) => a.reduce((t, s) => t + s, 0)
+    // generate-far-walls round: 500 × 250 at 30 × 30 — 16 bays of 30' and a 20' remainder across, 8 of 30' and 10' down
+    expect([g.x, g.y]).toEqual([L.fp.x, L.fp.y])
+    expect(g.spacingX.map(s => s / GS)).toEqual([...Array(16).fill(30), 20])
+    expect(g.spacingY.map(s => s / GS)).toEqual([...Array(8).fill(30), 10])
+    expect([g.x + sum(g.spacingX), g.y + sum(g.spacingY)]).toEqual([L.fp.x + 500 * GS, L.fp.y + 250 * GS])
+    // an old project's grid: the far-wall lines gone
+    const old = { ...g, spacingX: g.spacingX.slice(0, -1), spacingY: g.spacingY.slice(0, -1) }
+    store.setState({ objects: objs().map(o => (o.id === g.id ? old : o)) })
+    expect(regenerateRacking({ ...BRIEF, orientation: 'auto' })).not.toBe(null)
+    const grids = objs().filter(o => o.type === 'column_grid')
+    expect(grids.length).toBe(1)
+    expect(JSON.stringify(grids[0])).toBe(JSON.stringify(old))
+  })
+
+  it('RGN-again:a second Regenerate counts the area\'s own hand edits (a rack removed) and keeps working; \'auto\' keeps the orientation with more positions', () => {
     generatedThenEdited()
     regenerateRacking({ ...BRIEF, orientation: 'auto' })
     const victim = objs().find(o => isRack(o) && o.areaId)

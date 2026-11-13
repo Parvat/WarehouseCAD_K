@@ -472,8 +472,12 @@ export function rowBands(widthFt, {
     }
   }
 
-  /* STEP 1's mirror — the far-wall single row, always. */
-  bands.push({ type: 'rack_row', yFt: bottomY, depthFt: singleFt })
+  /* STEP 1's mirror — the far-wall single row, always. A column straddling it (generate-far-walls round: with a
+     column on the far wall the row stands off its face, so the last gridline before it can fall across the row) is
+     taken wholly into the row's face — the row steps back to the column's near edge, the same absorb-into-the-rack-
+     body cost the walk uses; never forward, past the wall clearance. */
+  const farCol = straddlingColumn(bottomY, singleFt, [])
+  bands.push({ type: 'rack_row', yFt: farCol == null ? bottomY : Math.min(bottomY, farCol - colHalfFt), depthFt: singleFt })
   return bands
 }
 
@@ -722,7 +726,9 @@ export function layoutSpec(brief = {}, rules = DEFAULT_RULES) {
  *  (columnGridObject) and the rack-avoidance walk (axisFrame -> rowBands /
  *  rowSegments) read, so they cannot disagree about where any line is.
  *  The same rule applies to both axes:
- *    "Columns along wall" = Yes — line #0 on the near wall.
+ *    "Columns along wall" = Yes — line #0 on the near wall, and a line of its
+ *      own on the far wall, the last bay before it the remainder (the Place
+ *      column grid dialog's Yes — generate-far-walls round).
  *    "Columns along wall" = No  — line #0 one full pitch in from the near
  *      wall, and a line landing exactly on the far wall is dropped, so no
  *      column sits on any wall. */
@@ -733,6 +739,7 @@ export function axisGridLines(totalFt, pitchFt, columnsAlongWall) {
   const count = columnsAlongWall ? n + 1 : n
   const lines = Array.from({ length: count }, (_, i) => start + i * pitchFt)
   if (!columnsAlongWall && lines.length && Math.abs(lines[lines.length - 1] - totalFt) < 1e-9) lines.pop()
+  if (columnsAlongWall && lines.length && totalFt - lines[lines.length - 1] > 1e-6) lines.push(totalFt)
   return lines
 }
 
@@ -981,14 +988,15 @@ export function columnGridObject(brief, ox, oy) {
   if (!xs.length || !ys.length) return null
   const colPx = (colSizeIn / 12) * GS
 
-  const spacingX = Array.from({ length: xs.length - 1 }, () => gridXFt * GS)
-  const spacingY = Array.from({ length: ys.length - 1 }, () => gridYFt * GS)
+  // the real line positions (generate-far-walls round): Yes ends on the far wall, its last bay the remainder
+  const spacingX = xs.slice(1).map((v, i) => (v - xs[i]) * GS)
+  const spacingY = ys.slice(1).map((v, i) => (v - ys[i]) * GS)
 
   return {
     type: 'column_grid', label: 'Column Grid',
     x: ox + xs[0] * GS, y: oy + ys[0] * GS,
-    width:  spacingX.length * gridXFt * GS + colPx,
-    height: spacingY.length * gridYFt * GS + colPx,
+    width:  (xs[xs.length - 1] - xs[0]) * GS + colPx,
+    height: (ys[ys.length - 1] - ys[0]) * GS + colPx,
     spacingX, spacingY,
     colSizeIn, columnW: colPx, columnH: colPx,
     showGrid: true, wallAttached: false,

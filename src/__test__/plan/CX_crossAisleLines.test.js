@@ -104,7 +104,9 @@ describe('CX-generate', () => {
   // (wall-columns round: laid out from the column face on the near walls — the run 1 ft shorter, the cross-aisles
   // 11' 8", the stretches 70.25 ft centred at -74.375 / -4.125 / 66.125; was 9' 3" at -75.208 / -4.625 / 65.958)
   const C9 = [-74.375, -4.125, 66.125]
-  const NINE = [...STRETCH([`11' 8"`, -124.5, -112.833333], C9), ...STRETCH([`11' 8"`, -5.333333, 6.333333], C9), ...STRETCH([`11' 8"`, 122.083333, 133.75], C9)]
+  // (generate-far-walls round: a column on the far wall too — the run 1 ft shorter again, each cross-aisle 4" narrower,
+  // 11' 4"; was 11' 8" at -124.5..-112.833 / -5.333..6.333 / 122.083..133.75)
+  const NINE = [...STRETCH([`11' 4"`, -124.5, -113.166667], C9), ...STRETCH([`11' 4"`, -5.666667, 5.666667], C9), ...STRETCH([`11' 4"`, 121.416667, 132.75], C9)]
   // 4 stretches of 66.875 ft centred at -102.0625 / -35.1875 / 31.6875 / 98.5625 (before: -112.125 / -37.375 / 37.375 / 112.125)
   // (wall-columns round: 10' 2" cross-aisles, stretches centred at -101.1875 / -34.5625 / 32.0625 / 98.6875; was 11' 2")
   const C11 = [-101.1875, -34.5625, 32.0625, 98.6875]
@@ -207,8 +209,9 @@ describe.each([['vertical', true], ['horizontal', false]])('CX — %s', (_, vert
     // placed by hand: no section stamps, and the wall rows in pieces like the rows beside them
     const hand = splitWallRows(gen).map(o => { const { genSection, ...rest } = o; return rest })
     expect(hand.some(o => o.genSection != null)).toBe(false)
-    // (wall-columns round: 11' 8" from the column face; was 9' 3")
-    expectLabels(crossAisleLabels(hand, GS, { profile: REACH }), [[`11' 8"`, -124.5, -112.833333, 0.5], [`11' 8"`, -5.333333, 6.333333, 0.5], [`11' 8"`, 122.083333, 133.75, 0.5]], 5)
+    // (wall-columns round: 11' 8" from the column face; was 9' 3" — generate-far-walls round: 11' 4", a column on the far
+    // wall too — the run's centre, where its labels sit, 0.5 ft back: 0, was 0.5)
+    expectLabels(crossAisleLabels(hand, GS, { profile: REACH }), [[`11' 4"`, -124.5, -113.166667, 0], [`11' 4"`, -5.666667, 5.666667, 0], [`11' 4"`, 121.416667, 132.75, 0]], 5)
   })
 })
 
