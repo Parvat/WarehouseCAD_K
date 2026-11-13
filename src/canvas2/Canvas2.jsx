@@ -24,6 +24,7 @@ import { SectionDraft, SectionPointHandles } from './SectionShape'
 import { SectionBar, SectionRename } from './SectionBar'
 import { FpDimEdit } from './FpDimEdit'
 import { ColumnChainEdit } from './ColumnChainEdit'
+import { DragBayBox, ChainHint } from './DragBay'
 import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, startRect, moveRect, commitRect, penClick, penMove, penDblClick, useSectionTool } from './sectionTool'
 import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
@@ -639,6 +640,9 @@ export function Canvas2() {
       <FpDimEdit />
       {/* a column grid's chain value typed (ColumnChainEdit.jsx) */}
       <ColumnChainEdit />
+      {/* a gridline drag's bay, typed (DragBay.jsx); the chain's hover hint */}
+      <DragBayBox />
+      <ChainHint />
       <FloorMenu />
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>

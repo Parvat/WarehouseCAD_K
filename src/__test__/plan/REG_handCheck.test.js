@@ -6678,6 +6678,61 @@ describe('REG — the hand check by real clicks', () => {
       void room
     }, T)
 
+    it('REG-colgrid-dragbay (click): dragging a gridline\'s bubble shows the bay before it live in a box at the chain; a number typed (no click) fills it, Enter applies that exact bay (the lines beyond move with it — one undo), Esc cancels the whole move; after the release the box stays 3 s for a number still typed, then goes; a chain value hovered: text cursor, underlined, "Click to type"', async () => {
+      await open()
+      await pickGrid(); await unlockCard()
+      const gs = await gs7(), cv = await L.page.locator('#canvas2-container').boundingBox(), z = await L.S('return S.getState().zoom')
+      const lines = () => L.S('const g = S.getState().objects.find(o => o.type === "column_grid"), xs = [g.x], ys = [g.y]; for (const s of g.spacingX) xs.push(xs[xs.length - 1] + s); for (const s of g.spacingY) ys.push(ys[ys.length - 1] + s); return { xs, ys }')
+      const box = L.page.getByRole('textbox', { name: 'Bay before the line (ft)' })
+      const l0 = await lines(), h0 = await hist7(), ob = await outlineBox()
+      const lo = l0.xs.filter(x => x < l0.xs[1] - 0.5 && x > ob.x0 + 0.5).pop() ?? ob.x0, bay0 = (l0.xs[1] - lo) / gs
+      const pressB = async () => { const b = (await bubbles()).find(q => q.text === 'B'); await L.page.mouse.move(cv.x + b.x, cv.y + b.y); await L.page.mouse.down(); return b }
+      // 1. while dragging: the box with the bay before B, live
+      let b = await pressB()
+      await L.page.mouse.move(cv.x + b.x + 4 * gs * z, cv.y + b.y, { steps: 6 }); await L.page.waitForTimeout(150)
+      expect([await box.count(), await box.getAttribute('data-drag-bay')]).toEqual([1, 'drag'])
+      expect(Math.abs(Number(await box.inputValue()) - (bay0 + 4))).toBeLessThan(0.5)
+      // a number typed, no click: it fills the box; Enter: that exact bay, the lines beyond with it (from the grid as it was)
+      await L.page.keyboard.type(String(bay0 + 5)); await L.page.waitForTimeout(100)
+      expect(await box.inputValue()).toBe(String(bay0 + 5))
+      await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(150)
+      await L.page.mouse.move(cv.x + b.x + 9 * gs * z, cv.y + b.y, { steps: 3 }); await L.page.mouse.up(); await L.page.waitForTimeout(250)
+      const l1 = await lines()
+      expect([l1.xs.map((x, i) => Math.round((x - l0.xs[i]) / gs * 100) / 100), l1.ys, (await hist7()) - h0, await box.count()]).toEqual([l0.xs.map((_, i) => (i >= 1 ? 5 : 0)), l0.ys, 1, 0])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect(await lines()).toEqual(l0)
+      if (!(await L.selected()).includes('column_grid')) await pickGrid()
+      // Esc mid-drag: the whole move cancelled
+      b = await pressB()
+      await L.page.mouse.move(cv.x + b.x + 4 * gs * z, cv.y + b.y, { steps: 6 }); await L.page.waitForTimeout(150)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      await L.page.mouse.move(cv.x + b.x + 7 * gs * z, cv.y + b.y, { steps: 3 }); await L.page.mouse.up(); await L.page.waitForTimeout(250)
+      expect([await lines(), (await hist7()) - h0]).toEqual([l0, 0])
+      if (!(await L.selected()).includes('column_grid')) await pickGrid()
+      // after the release: the box stays 3 s; a number typed then is a chain edit of the grid as dropped (its own undo step)
+      b = await pressB()
+      await L.page.mouse.move(cv.x + b.x + 4 * gs * z, cv.y + b.y, { steps: 6 }); await L.page.mouse.up(); await L.page.waitForTimeout(300)
+      const ld = await lines(), hd = await hist7()
+      expect([await box.getAttribute('data-drag-bay'), hd - h0]).toEqual(['after', 1])
+      await L.page.keyboard.type(String(bay0 + 2)); await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(250)
+      const l2 = await lines()
+      expect([Math.round((l2.xs[1] - lo) / gs * 100) / 100, l2.xs.slice(1).map((x, i) => Math.round((x - ld.xs[i + 1]) / gs * 100) / 100).every(v => v === l2.xs[1] / gs - ld.xs[1] / gs || Math.abs(v - (l2.xs[1] - ld.xs[1]) / gs) < 0.01), (await hist7()) - hd]).toEqual([bay0 + 2, true, 1])
+      // left alone: gone after 3 s
+      if (!(await L.selected()).includes('column_grid')) await pickGrid()
+      b = await pressB()
+      await L.page.mouse.move(cv.x + b.x + 3 * gs * z, cv.y + b.y, { steps: 6 }); await L.page.mouse.up(); await L.page.waitForTimeout(300)
+      expect(await box.count()).toBe(1)
+      await L.page.waitForTimeout(3100)
+      expect(await box.count()).toBe(0)
+      // 2. the chain's hint: a value hovered — text cursor, underline, "Click to type"
+      if (!(await L.selected()).includes('column_grid')) await pickGrid()
+      const tv = await L.page.evaluate(() => { const t = window.Konva.stages[0].find('.column-chain-text')[1], r = t.getClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
+      await L.page.mouse.move(cv.x + tv.x, cv.y + tv.y); await L.page.waitForTimeout(150)
+      expect([await L.page.evaluate(() => document.getElementById('canvas2-container').style.cursor), await L.page.locator('[data-chain-tip]').textContent(), await L.page.locator('[data-chain-underline]').count()]).toEqual(['text', 'Click to type', 1])
+      await L.page.mouse.move(5, 300); await L.page.waitForTimeout(150)
+      expect(await L.page.locator('[data-chain-tip]').count()).toBe(0)
+    }, 120000)
+
     it('REG-colgrid-L (click): an L-shaped building — no column is drawn in its open corner (outside the outline), the gridline stays (its bubble still shown); every wall gets its own size line', async () => {
       await open()
       const ob = await outlineBox()

@@ -53,6 +53,7 @@ import { legendHit } from '../utils/sectionLegend'
 import { legendShown } from './SectionLegend'
 import { bubbleAt, chainAt } from './ColumnGridAnnot'
 import { useChainEdit } from './ColumnChainEdit'
+import { startDragBay, dragBayConsumed, releaseDragBay, setChainHover } from './DragBay'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { afterBuildingResize } from '../utils/buildingResize'
@@ -991,11 +992,18 @@ export function useCanvasInteraction({
         }
       }
     }
-    // a gridline's bubble (col-bubbles round): the move arrow along its line's axis, while it can be dragged
+    // a gridline's bubble (col-bubbles round): the move arrow along its line's axis, while it can be dragged; a value of the
+    // chain: a text cursor, the value underlined, "Click to type" (DragBay.jsx ChainHint)
+    let chainHover = null
     if (next === 'default') {
       const bb = bubbleAt(world, view.current.zoom), bg = bb && st.objects.find(o => o.id === bb.gridId)
       if (bg && pickableIn(st.layers)(bg)) next = bb.axis === 'x' ? 'ew-resize' : 'ns-resize'
+      else {
+        const cv = chainAt(world, view.current.zoom), cg = cv && st.objects.find(o => o.id === cv.gridId)
+        if (cg && pickableIn(st.layers)(cg)) { next = 'text'; chainHover = cv }
+      }
     }
+    setChainHover(chainHover)
     if (next === 'default') {
       const wallHit = fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       if (wallHit) {
@@ -1013,6 +1021,7 @@ export function useCanvasInteraction({
      going (and setting its own cursor) even off-canvas. */
   const onStageMouseLeave = () => {
     setFlueHover(null, null)
+    setChainHover(null)
     setAreaHover(null)
     clearHoverTarget()
     if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || colLine.current) return
@@ -1345,12 +1354,15 @@ export function useCanvasInteraction({
       if (cl) {
         const stage = stageRef.current
         if (!stage || !cl.g0) return
+        // the bay box settled the drag (Enter: the typed bay; Esc: cancelled — DragBay.jsx): nothing more moves
+        if (dragBayConsumed()) return
         // a bubble's line: its axis is known; the drag starts past the same 6 px
         if (cl.bubble && !cl.started) {
           if (Math.hypot(evt.clientX - cl.sx, evt.clientY - cl.sy) < MOVE_THRESHOLD) return
           cl.started = true
           setDragging(true)
           setCursor(cl.axis === 'x' ? 'ew-resize' : 'ns-resize')
+          startDragBay(cl.g0, cl.axis, cl.i)                              // the bay before it, live at the chain (DragBay.jsx)
         }
         if (!cl.axis) {
           const dx = evt.clientX - cl.sx, dy = evt.clientY - cl.sy
@@ -1359,6 +1371,7 @@ export function useCanvasInteraction({
           cl.i = lineIndexOf(cl.g0, cl.col, cl.axis)
           setDragging(true)
           setCursor(cl.axis === 'x' ? 'ew-resize' : 'ns-resize')
+          startDragBay(cl.g0, cl.axis, cl.i)                              // the bay before it, live at the chain (DragBay.jsx)
         }
         const box = stage.container().getBoundingClientRect()
         const w = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
@@ -1615,7 +1628,11 @@ export function useCanvasInteraction({
         // a press that never moved: the click — on the column already picked, back up to the grid
         if (!cl.axis) { if (cl.again) clickColumn(useCanvasStore, cl.col); return }
         if (cl.bubble && !cl.started) return   // a click on a bubble: nothing moved
+        // settled by the bay box (its own undo step, or cancelled): nothing to write; else the drag's one undo step, the
+        // box kept 3 s for a number still typed
+        if (dragBayConsumed()) { releaseDragBay(); setCursor(spaceDown.current ? 'grab' : 'default'); return }
         endLineDrag(useCanvasStore, cl.g0)
+        releaseDragBay()
         setCursor(spaceDown.current ? 'grab' : 'default')
         return
       }
