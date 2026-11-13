@@ -51,7 +51,8 @@ import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { fpDimHit, useDimEdit } from './FpDimEdit'
 import { legendHit } from '../utils/sectionLegend'
 import { legendShown } from './SectionLegend'
-import { bubbleAt } from './ColumnGridAnnot'
+import { bubbleAt, chainAt } from './ColumnGridAnnot'
+import { useChainEdit } from './ColumnChainEdit'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { afterBuildingResize } from '../utils/buildingResize'
@@ -744,6 +745,10 @@ export function useCanvasInteraction({
           colLine.current = { g0: bg, col: null, from: world, sx: evt.clientX, sy: evt.clientY, axis: bb.axis, i: bb.i, bubble: true, started: false }
           return
         }
+        /* a value of the dimension chain: typed in place, as a building's size label (ColumnChainEdit.jsx) — opened on the
+           release, the press's own focus change would close it at once */
+        const cv = chainAt(world, view.current.zoom), cg = cv && st.objects.find(o => o.id === cv.gridId)
+        if (cg && pickableIn(st.layers)(cg)) { pickedOnPlan(); dimClick.current = { chain: { gridId: cv.gridId, axis: cv.axis, lo: cv.lo, hi: cv.hi } }; return }
       }
       let hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       let hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
@@ -1580,7 +1585,7 @@ export function useCanvasInteraction({
     const upGesture = () => {
       const dc = dimClick.current
       dimClick.current = null
-      if (dc) { if (dc.rename) useSectionRename.setState({ id: dc.rename }); else useDimEdit.setState({ edit: dc }); return }
+      if (dc) { if (dc.rename) useSectionRename.setState({ id: dc.rename }); else if (dc.chain) useChainEdit.setState({ edit: dc.chain }); else useDimEdit.setState({ edit: dc }); return }
       const td = tunnelDrag.current
       tunnelDrag.current = null
       if (td) {

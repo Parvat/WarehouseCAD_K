@@ -91,6 +91,28 @@ export function layGrid(cg, fp, p, gs = 40) {
   const spacingX = xs.slice(1).map((v, i) => v - xs[i]), spacingY = ys.slice(1).map((v, i) => v - ys[i])
   return { x: xs[0], y: ys[0], spacingX, spacingY, columnW: w, columnH: d, colSizeIn: Math.round(p.wIn), width: spacingX.reduce((t, s) => t + s, 0) + w, height: spacingY.reduce((t, s) => t + s, 0) + d }
 }
+/** (col-bubbles round) A value of the dimension chain typed: the segment from `lo` to `hi` (world px along `axis`; a wall
+ *  or a gridline at each end) made `lenPx` long. A bay (or the first, wall-to-line one) moves the gridline at its far end
+ *  and every line beyond it with it — their bays kept, the last bay to the far wall taking the difference; the last bay
+ *  (its far end the wall) moves the last line. → { patch } or { error } (a line past a wall, a bay zero or less). */
+export function chainEdit(cg, fp, axis, lo, hi, lenPx, gs = 40) {
+  const X = axis === 'x', ex = fp ? extent(fp) : null
+  const ls = X ? gridLines(cg).xs : gridLines(cg).ys
+  const w0 = ex ? (X ? ex.x0 : ex.y0) : ls[0], w1 = ex ? (X ? ex.x1 : ex.y1) : ls[ls.length - 1]
+  if (!(lenPx > 0)) return { error: 'A bay must be longer than zero.' }
+  const at = (v) => ls.findIndex(q => Math.abs(q - v) < 0.5)
+  const j = at(hi), next = [...ls]
+  if (j >= 0) {
+    const d = lenPx - (hi - lo)
+    for (let i = j; i < next.length; i++) next[i] += d
+  } else if (Math.abs(hi - w1) < 0.5 && ls.length) {
+    next[next.length - 1] = w1 - lenPx                                                    // the last bay: the last line
+  } else return { error: 'That value is not a bay of this grid.' }
+  if (next.some(v => v < w0 - 0.5 || v > w1 + 0.5)) return { error: 'A gridline would pass the wall — not changed.' }
+  if (next.some((v, i) => i > 0 && v - next[i - 1] <= 0.5)) return { error: 'A bay would be zero or less — not changed.' }
+  const sp = next.slice(1).map((v, i) => v - next[i]), size = X ? (cg.columnW || gs) : (cg.columnH || gs)
+  return { patch: X ? { x: next[0], spacingX: sp, width: sp.reduce((t, s) => t + s, 0) + size } : { y: next[0], spacingY: sp, height: sp.reduce((t, s) => t + s, 0) + size } }
+}
 /** A column size change only (the card's Width / Depth): the lines stay exactly where they are. */
 export function sizeGrid(cg, wIn, dIn, gs = 40) {
   const w = (wIn / 12) * gs, d = (dIn / 12) * gs

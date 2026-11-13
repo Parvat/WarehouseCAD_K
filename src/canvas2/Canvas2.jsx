@@ -23,6 +23,7 @@ import { FillOverlay } from './FillTool'
 import { SectionDraft, SectionPointHandles } from './SectionShape'
 import { SectionBar, SectionRename } from './SectionBar'
 import { FpDimEdit } from './FpDimEdit'
+import { ColumnChainEdit } from './ColumnChainEdit'
 import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, startRect, moveRect, commitRect, penClick, penMove, penDblClick, useSectionTool } from './sectionTool'
 import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
@@ -636,6 +637,8 @@ export function Canvas2() {
       <SectionRename />
       {/* a building's wall dimension typed (FpDimEdit.jsx) */}
       <FpDimEdit />
+      {/* a column grid's chain value typed (ColumnChainEdit.jsx) */}
+      <ColumnChainEdit />
       <FloorMenu />
       {showRulers && <StoreRulers gridSize={gridSize} size={size} />}
     </div>

@@ -42,13 +42,13 @@ export function columnAnnot(cg, objects, gridSize = 40, lz = 1, clear = null) {
   const cy = y0 - topOff
   for (let i = 0; i + 1 < stopsX.length; i++) {
     const a = stopsX[i], b = stopsX[i + 1], m = (a + b) / 2, text = words(b - a), g = Math.min(tw(text) / 2 + pad, (b - a) / 2)
-    chain.push({ segs: [[a, cy, m - g, cy], [m + g, cy, b, cy]], ticks: [[a, cy - tick, a, cy + tick], [b, cy - tick, b, cy + tick]], text, tw: tw(text), tx: m, ty: cy })
+    chain.push({ segs: [[a, cy, m - g, cy], [m + g, cy, b, cy]], ticks: [[a, cy - tick, a, cy + tick], [b, cy - tick, b, cy + tick]], text, tw: tw(text), tx: m, ty: cy, axis: 'x', lo: a, hi: b })
   }
   // and down the left — the value upright, in a break its height
   const cx = x0 - leftOff
   for (let i = 0; i + 1 < stopsY.length; i++) {
     const a = stopsY[i], b = stopsY[i + 1], m = (a + b) / 2, text = words(b - a), g = Math.min(fs * 0.7 + pad, (b - a) / 2)
-    chain.push({ segs: [[cx, a, cx, m - g], [cx, m + g, cx, b]], ticks: [[cx - tick, a, cx + tick, a], [cx - tick, b, cx + tick, b]], text, tw: tw(text), tx: cx, ty: m })
+    chain.push({ segs: [[cx, a, cx, m - g], [cx, m + g, cx, b]], ticks: [[cx - tick, a, cx + tick, a], [cx - tick, b, cx + tick, b]], text, tw: tw(text), tx: cx, ty: m, axis: 'y', lo: a, hi: b })
   }
   return { lines, bubbles, chain, fs, dash: 4 * u, u }
 }

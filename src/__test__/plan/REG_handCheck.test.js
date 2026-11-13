@@ -6628,6 +6628,56 @@ describe('REG — the hand check by real clicks', () => {
       expect(await lines()).toEqual(l0)
     }, T)
 
+    it('REG-colgrid-chain (click): a value of the dimension chain clicked is typed in place, as a building\'s size label — a bay typed moves the gridline at its far end and every line beyond (their bays kept, the last bay takes the difference); the last bay typed moves the last line; Enter applies (one undo), Esc cancels; a value that puts a line past the wall is refused with a notice; the card\'s spacing then reads Varies; the left chain the same', async () => {
+      await open()
+      await pickGrid(); await unlockCard()
+      const gs = await gs7(), cv = await L.page.locator('#canvas2-container').boundingBox()
+      const lines = () => L.S('const g = S.getState().objects.find(o => o.type === "column_grid"), xs = [g.x], ys = [g.y]; for (const s of g.spacingX) xs.push(xs[xs.length - 1] + s); for (const s of g.spacingY) ys.push(ys[ys.length - 1] + s); return { xs, ys }')
+      /** the chain's values as drawn: top (left to right) and left (top to bottom), page points */
+      const chainVals = () => L.page.evaluate(() => { const ts = window.Konva.stages[0].find('.column-chain-text').map(t => { const r = t.getClientRect(); return { text: t.text(), x: r.x + r.width / 2, y: r.y + r.height / 2 } })
+        const top = Math.min(...ts.map(t => t.y)), left = Math.min(...ts.map(t => t.x))
+        return { top: ts.filter(t => Math.abs(t.y - top) < 2).sort((a, b) => a.x - b.x), left: ts.filter(t => Math.abs(t.x - left) < 2).sort((a, b) => a.y - b.y) } })
+      const box = L.page.getByRole('textbox', { name: 'Column bay length (ft)' })
+      const typeAt = async (v, text, key = 'Enter') => { await L.page.mouse.click(cv.x + v.x, cv.y + v.y); await L.page.waitForTimeout(200); expect(await box.count()).toBe(1); await box.fill(text); await box.press(key); await L.page.waitForTimeout(250) }
+      const l0 = await lines(), h0 = await hist7(), v0 = await chainVals(), ob = await outlineBox()
+      // the stops along the top: the wall, the lines inside, the far wall; the 2nd value is the bay from stop 1 to stop 2
+      const stops = [ob.x0, ...l0.xs.filter(x => x > ob.x0 + 0.5 && x < ob.x1 - 0.5), ob.x1]
+      const bay = (stops[2] - stops[1]) / gs
+      // Esc: nothing
+      await typeAt(v0.top[1], String(bay + 5), 'Escape')
+      expect([await lines(), (await hist7()) - h0, await box.count()]).toEqual([l0, 0, 0])
+      // Enter: the line at its far end and every line beyond move 5 ft, the lines before stay; one undo
+      await typeAt(v0.top[1], String(bay + 5))
+      const l1 = await lines(), j = l0.xs.findIndex(x => Math.abs(x - stops[2]) < 0.5)
+      expect([l1.xs.map((x, i) => Math.round((x - l0.xs[i]) / gs)), l1.ys, (await hist7()) - h0]).toEqual([l0.xs.map((_, i) => (i >= j ? 5 : 0)), l0.ys, 1])
+      expect(await L.page.getByRole('tabpanel', { name: 'Properties' }).getByLabel('Column X spacing', { exact: true }).inputValue()).toBe('Varies')
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect(await lines()).toEqual(l0)
+      const reselect = async () => { if (!(await L.selected()).includes('column_grid')) await pickGrid() }   // (an undo leaves nothing selected)
+      await reselect()
+      // the last bay typed: the last line moves, so that bay is what was typed; nothing else
+      const v1 = await chainVals(), last = l0.xs[l0.xs.length - 1], lastBay = (ob.x1 - last) / gs
+      if (lastBay > 1) {
+        await typeAt(v1.top[v1.top.length - 1], String(lastBay + 2))
+        const l2 = await lines()
+        expect([l2.xs.slice(0, -1), Math.round((ob.x1 - l2.xs[l2.xs.length - 1]) / gs)]).toEqual([l0.xs.slice(0, -1), Math.round(lastBay + 2)])
+        await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+        await reselect()
+      }
+      // past the wall: refused with a notice, nothing changed, no undo step
+      const v2 = await chainVals(), h1 = await hist7()
+      await typeAt(v2.top[1], String(bay + (ob.x1 - last) / gs + 5))
+      expect([await lines(), (await hist7()) - h1]).toEqual([l0, 0])
+      expect(await L.page.locator('[role="status"][aria-label="Notice"]').textContent()).toMatch(/pass the wall/)
+      // the left chain: its 2nd value, the same rule down the lines across
+      const ystops = [ob.y0, ...l0.ys.filter(y => y > ob.y0 + 0.5 && y < ob.y1 - 0.5), ob.y1], ybay = (ystops[2] - ystops[1]) / gs
+      const k = l0.ys.findIndex(y => Math.abs(y - ystops[2]) < 0.5), room = (ob.y1 - l0.ys[l0.ys.length - 1]) / gs
+      await typeAt((await chainVals()).left[1], String(ybay - 2))
+      const l3 = await lines()
+      expect([l3.ys.map((y, i) => Math.round((y - l0.ys[i]) / gs)), l3.xs]).toEqual([l0.ys.map((_, i) => (i >= k ? -2 : 0)), l0.xs])
+      void room
+    }, T)
+
     it('REG-colgrid-L (click): an L-shaped building — no column is drawn in its open corner (outside the outline), the gridline stays (its bubble still shown); every wall gets its own size line', async () => {
       await open()
       const ob = await outlineBox()

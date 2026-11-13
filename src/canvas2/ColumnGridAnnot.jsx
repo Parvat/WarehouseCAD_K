@@ -37,6 +37,17 @@ function rowClear(g, objects, places) {
 /* (col-bubbles round) The bubbles as last drawn — { gridId, axis, i, x, y, r } (world px) — so a press or a hover on one
    finds the gridline it names (canvas2/useCanvasInteraction.js: a bubble dragged moves its line, as the line itself). */
 let SPOTS = []
+/* ...and the dimension chain's values as last drawn — { gridId, axis, lo, hi, x, y, w, h, fs } (the value's box, world px):
+   a click on one types it (ColumnChainEdit.jsx) */
+let CHAIN = []
+/** The chain value under world point `p` (its box, plus 3 screen px), or null. */
+export function chainAt(p, zoom = 1) {
+  const pad = 3 / (zoom || 1)
+  for (const c of CHAIN) if (p.x >= c.x - pad && p.x <= c.x + c.w + pad && p.y >= c.y - pad && p.y <= c.y + c.h + pad) return c
+  return null
+}
+/** The chain value drawn for grid `gridId` along `axis` from `lo` (the one being typed), or null. */
+export const chainSpot = (gridId, axis, lo) => CHAIN.find(c => c.gridId === gridId && c.axis === axis && Math.abs(c.lo - lo) < 0.5) || null
 /** The bubble under world point `p` (its circle, plus 3 screen px), or null. */
 export function bubbleAt(p, zoom = 1) {
   const pad = 3 / (zoom || 1)
@@ -57,14 +68,17 @@ export function ColumnGridAnnot() {
     const lines = rackLinesNow(objects, gs)
     return lines.length ? rowLabelPlaces(lines, ROW_LABEL_PX / lz, aisleLabelBoxes(objects, gs, labelSize), lineNamer(objects, T, gs)) : []
   }, [grids.length, rowsShown, layers, objects, gs, lz, labelSize, T])
-  if (!grids.length) { SPOTS = []; return null }
+  if (!grids.length) { SPOTS = []; CHAIN = []; return null }
   const spots = []
   SPOTS = spots   // (filled as the grids below draw)
+  const chainSpots = []
+  CHAIN = chainSpots
   return (
     <Group name="column-annot" listening={false}>
       {grids.map(g => {
         const a = columnAnnot(g, objects, gs, lz, rowClear(g, objects, places))
         if (a) for (const b of a.bubbles) spots.push({ gridId: g.id, axis: b.axis, i: b.i, x: b.x, y: b.y, r: b.r })
+        if (a) for (const c of a.chain) { const w = c.tw + a.fs * 0.4, h = a.fs * 1.3; chainSpots.push({ gridId: g.id, axis: c.axis, lo: c.lo, hi: c.hi, x: c.tx - w / 2, y: c.ty - h / 2, w, h, fs: a.fs, tw: c.tw, text: c.text }) }
         if (!a) return null
         return (
           <Group key={g.id} name={'column-annot:' + g.id} listening={false}>
