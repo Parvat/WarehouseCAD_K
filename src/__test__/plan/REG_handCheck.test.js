@@ -748,7 +748,7 @@ describe('REG — the hand check by real clicks', () => {
     }, T)
 
     /* ── one column: a click picks it, the Columns layer locked or not ── */
-    it('REG-column-pick (click): a click on a column on the LOCKED Columns layer picks that one column — outlined alone, its bar\'s Show clearances that column\'s only; it cannot be moved (drag, arrows) or deleted; Esc steps up to the grid; Ctrl+A takes it under Generate\'s lock (Fix 5) and skips it under a padlock set by hand', async () => {
+    it('REG-column-pick (click): a click on a column on the LOCKED Columns layer picks that one column — outlined alone, no bar — its card\'s Show clearances that column\'s only; it cannot be moved (drag, arrows) or deleted; Esc steps up to the grid; Ctrl+A takes it under Generate\'s lock (Fix 5) and skips it under a padlock set by hand', async () => {
       await open()
       await zoomOutTill(7)
       // the layout as Generate leaves it: the Columns layer locked
@@ -764,9 +764,9 @@ describe('REG — the hand check by real clicks', () => {
       const ol = await L.page.evaluate(() => window.Konva.stages[0].find(x => /^sel:/.test(x.name() || '')).map(x => { const r = x.getClientRect({ skipStroke: true }); return [r.width, r.height] }))
       const z = await L.S('return S.getState().zoom')
       expect([ol.length, Math.abs(ol[0][0] - pick.w * z) < 3, Math.abs(ol[0][1] - pick.h * z) < 3]).toEqual([1, true, true])
-      // its bar: Show clearances, on — that column's numbers only, on its own lines
-      const btn = L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Show clearances' })
-      expect([(await L.bar())?.kind, await btn.getAttribute('aria-pressed')]).toEqual(['column', 'true'])
+      // no bar (col-grid round): its card's Show clearances, on — that column's numbers only, on its own lines
+      const btn = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('switch', { name: 'Show clearances' })
+      expect([await L.bar(), await btn.getAttribute('aria-checked')]).toEqual([null, 'true'])
       await L.page.waitForTimeout(300)
       const spots = await numberSpots(), cs = await L.toScreen(c), cv = await L.page.locator('#canvas2-container').boundingBox()
       expect(spots.length).toBeGreaterThan(0)
@@ -774,7 +774,7 @@ describe('REG — the hand check by real clicks', () => {
       const half = Math.max(pick.w, pick.h) * z / 2 + 2
       expect(spots.filter(p => !(Math.abs(p.x + cv.x - cs.x) <= half || Math.abs(p.y + cv.y - cs.y) <= half))).toEqual([])
       await btn.click(); await L.page.waitForTimeout(400)
-      expect([await btn.getAttribute('aria-pressed'), await numbers()]).toEqual(['false', []])
+      expect([await btn.getAttribute('aria-checked'), await numbers()]).toEqual(['false', []])
       await btn.click(); await L.page.waitForTimeout(400)
       expect((await numbers()).length).toBeGreaterThan(0)
       // locked: a drag from it moves nothing; the arrows move nothing; Delete deletes nothing
@@ -786,9 +786,9 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('ArrowRight'); await L.page.keyboard.press('Shift+ArrowDown'); await L.page.waitForTimeout(100)
       await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(150)
       expect(await L.S('const g = S.getState().objects.find(o => o.id === arg.id); return g ? { id: g.id, x: g.x, y: g.y } : null', g0)).toEqual(g0)
-      // Esc: the whole grid — no pick, the grid still selected, its bar; Delete still deletes nothing; Esc again: nothing
+      // Esc: the whole grid — no pick, the grid still selected, no bar; Delete still deletes nothing; Esc again: nothing
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
-      expect([await L.S('return CP.useColumnPick.getState().pick'), await L.selected(), (await L.bar())?.kind]).toEqual([null, ['column_grid'], 'column'])
+      expect([await L.S('return CP.useColumnPick.getState().pick'), await L.selected(), await L.bar()]).toEqual([null, ['column_grid'], null])
       await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(150)
       expect(await L.S('return !!S.getState().objects.find(o => o.id === arg)', g0.id)).toBe(true)
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
@@ -2037,7 +2037,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       await L.click(c)
       expect(await L.selected()).toEqual(['column_grid'])
-      const lockBtn = L.page.locator('[data-selection-bar]').getByRole('button', { name: /^(Lock|Unlock)$/ })
+      const lockBtn = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('button', { name: /^(Lock|Unlock)$/ })   // (col-grid round: in the column grid's card — no bar over a column)
       expect(await lockBtn.getAttribute('aria-label')).toBe('Unlock')
       await lockBtn.click(); await L.page.waitForTimeout(150)
       expect((await gridOf()).locked).toBe(false)
@@ -2068,14 +2068,14 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.S('return S.getState().objects.map(o => o.id)')).toEqual([a.r.id])
     }, T)
 
-    it('REG-lock-key (click): Ctrl+L on a selected column locks the Columns layer (Fix 6 round 6) — a drag then moves nothing; Ctrl+L again unlocks it and it drags its line; Lock in the bar is one click and shows the state', async () => {
+    it('REG-lock-key (click): Ctrl+L on a selected column locks the Columns layer (Fix 6 round 6) — a drag then moves nothing; Ctrl+L again unlocks it and it drags its line; Lock in its card is one click and shows the state', async () => {
       await open()
       await zoomOutTill(7)
       const c = await L.S(colAt), gs = await gs7()
       expect(c).toBeTruthy()
       await L.click(c)
       expect(await L.selected()).toEqual(['column_grid'])
-      const lockBtn = L.page.locator('[data-selection-bar]').getByRole('button', { name: /^(Lock|Unlock)$/ })
+      const lockBtn = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('button', { name: /^(Lock|Unlock)$/ })   // (col-grid round: in the column grid's card — no bar over a column)
       // the Columns layer opens locked as saved (Generate's lock): Ctrl+L unlocks it by hand first
       expect([await lockBtn.count(), await lockBtn.getAttribute('aria-label')]).toEqual([1, 'Unlock'])
       await L.page.keyboard.press('Control+l'); await L.page.waitForTimeout(150)
@@ -2226,7 +2226,8 @@ describe('REG — the hand check by real clicks', () => {
       // unlocked by hand: recorded, so a reopen keeps it unlocked
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       await L.click(c)
-      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Unlock' }).click(); await L.page.waitForTimeout(150)
+      // (col-grid round: the lock is in the column grid's card — no bar over a column)
+      await L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('button', { name: 'Unlock' }).click(); await L.page.waitForTimeout(150)
       const saved = await L.S('return SL.serializeScene(S.getState())')
       await L.page.close()
       L = await B.openLayout(app, saved)
@@ -2355,7 +2356,7 @@ describe('REG — the hand check by real clicks', () => {
       await zoomOutTill(7)
       const c = await L.S(colAt), l0 = await lines(), gs = await gs7()
       await L.click(c)
-      const lockBtn = L.page.locator('[data-selection-bar]').getByRole('button', { name: /^(Lock|Unlock)$/ })
+      const lockBtn = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('button', { name: /^(Lock|Unlock)$/ })   // (col-grid round: in the column grid's card — no bar over a column)
       expect([await L.selected(), await lockBtn.getAttribute('aria-label'), await lockBtn.getAttribute('aria-pressed')]).toEqual([['column_grid'], 'Unlock', 'true'])
       await L.drag(c, { x: c.x + 3 * gs, y: c.y + gs / 4 }); await L.page.waitForTimeout(250)
       expect(await lines()).toEqual(l0)
@@ -2481,11 +2482,12 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
       await zoomOutTill(7)
       const c = await L.S(colAt)
+      // a column: no bar at all, locked or not (col-grid round — its card has Show clearances and the lock)
       await L.click(c)
-      expect(await hint()).toBeNull()                                                       // the Columns layer locked
+      expect([await hint(), await L.bar()]).toEqual([null, null])                           // the Columns layer locked
       await unlockColumns()
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.click(c)
-      expect(await hint()).toEqual(['Drag to move its line', mut])
+      expect([await hint(), await L.bar()]).toEqual([null, null])
       // the Row group: its mode bar, no selection bar
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('g'); await L.page.waitForTimeout(150)
@@ -6293,10 +6295,10 @@ describe('REG — the hand check by real clicks', () => {
     it('REG-colgrid-card (click): the column grid selected — its card shows X / Y spacing, X / Y offset, Width, Depth and the Result (columns as drawn, gridlines A–… · 1–…, the last bay to the far wall); X spacing typed redraws the grid as you type (no undo step yet), Enter is one undo step, Ctrl+Z puts it back exactly; an offset past the far wall shows the warning and Esc puts the grid back', async () => {
       await open()
       await pickGrid()
-      // Generate leaves the Columns layer locked (the card read-only): unlocked from the bar's padlock first
-      const unlock = L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Unlock' })
-      if (await unlock.count()) { await unlock.click(); await L.page.waitForTimeout(150) }
+      // Generate leaves the Columns layer locked (the card read-only): unlocked from the card's padlock first
       const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      const unlock = card.getByRole('button', { name: 'Unlock' })
+      if (await unlock.count()) { await unlock.click(); await L.page.waitForTimeout(150) }
       for (const f of ['Column X spacing', 'Column Y spacing', 'Column X offset', 'Column Y offset', 'Column width', 'Column depth']) expect([f, await card.getByLabel(f, { exact: true }).count()]).toEqual([f, 1])
       const g0 = await gridNow(), gs = await gs7()
       const drawn = () => L.S('const st = S.getState(); return H.columnRectsOf(st.objects, st.gridSize || 40).length')
@@ -6373,6 +6375,36 @@ describe('REG — the hand check by real clicks', () => {
       // the PDF: the gridlines and the size lines, nothing selected
       const svg = await L.S('return import("/src/export/pdfExport.js").then(M => M.buildLayoutSVG(S.getState().objects, S.getState().layers, S.getState().gridSize || 40, { title: "t", elevations: S.getState().elevations }).svg)')
       expect([svg.includes('data-column-annot='), svg.includes('data-building-dims=')]).toEqual([true, true])
+    }, T)
+
+    it('REG-colgrid-nobar (click): a click on a column (its gridlines) brings up no floating bar — no Show clearances, no lock, no "Drag to move its line" over the plan; the column grid\'s Properties card has Show clearances (the clearance numbers on and off) and the Columns layer\'s lock; dragging a column still moves its line', async () => {
+      await open()
+      await zoomOutTill(7)
+      const c = await L.S(colAt), gs = await gs7()
+      await L.click(c)
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      expect([await L.selected(), await L.bar(), await L.page.getByText('Drag to move its line').count()]).toEqual([['column_grid'], null, 0])
+      // the whole grid (Esc): no bar either; Show clearances in its card
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      expect([await L.selected(), await L.bar()]).toEqual([['column_grid'], null])
+      const sw = card.getByRole('switch', { name: 'Show clearances' })
+      if ((await sw.getAttribute('aria-checked')) === 'true') { await sw.click(); await L.page.waitForTimeout(300) }
+      await sw.click(); await L.page.waitForTimeout(400)
+      expect([await sw.getAttribute('aria-checked'), (await numbers()).length > 0]).toEqual(['true', true])
+      await sw.click(); await L.page.waitForTimeout(400)
+      expect(await sw.getAttribute('aria-checked')).toBe('false')
+      // the lock: the Columns layer's padlock, both ways
+      const lockedNow = () => L.S('return !!S.getState().layers.find(l => l.id === "columns")?.locked')
+      const was = await lockedNow()
+      await card.getByRole('button', { name: was ? 'Unlock' : 'Lock' }).click(); await L.page.waitForTimeout(150)
+      expect(await lockedNow()).toBe(!was)
+      if (!was) { await card.getByRole('button', { name: 'Unlock' }).click(); await L.page.waitForTimeout(150) }
+      expect(await lockedNow()).toBe(false)
+      // unlocked: a drag from a column still moves its line
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      const l0 = await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return JSON.stringify([g.x, g.y, g.spacingX, g.spacingY])')
+      await L.drag(c, { x: c.x + 3 * gs, y: c.y + 3 * gs }); await L.page.waitForTimeout(250)
+      expect(await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return JSON.stringify([g.x, g.y, g.spacingX, g.spacingY])')).not.toBe(l0)
     }, T)
 
     it('REG-colgrid-L (click): an L-shaped building — no column is drawn in its open corner (outside the outline), the gridline stays (its bubble still shown); every wall gets its own size line', async () => {

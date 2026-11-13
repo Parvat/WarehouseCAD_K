@@ -19,8 +19,7 @@ import { usePlacement } from '../utils/placement'
 import { useRowGroup } from '../utils/rowGroupTool'
 import { pickedBays, kindOf } from '../canvas2/selectionLevel'
 import { withSections, isOneSection, sectionsOf } from '../canvas2/sections'
-import { useClearanceView, setShowClearances } from '../canvas2/clearanceView'
-import { useColumnPick, setColumnClearances } from '../canvas2/columnPick'
+import { useColumnPick } from '../canvas2/columnPick'
 import { getRackCapacity } from '../utils/capacity'
 import { levelsResolver } from '../utils/elevations'
 import { useBayLedger } from '../components/RightPanel/useBayLedger'
@@ -51,8 +50,7 @@ import { dimReach } from '../render/buildingDims'
      one rack row   Elevation ▾ | Add bay · Remove bay · Split · Row group · Rotate | Duplicate · Delete · ⋯
      several rows   Apply elevation ▾ | Row group · Delete
      zone           W × L | Lock · Duplicate · Delete
-     column grid    Show clearances
-     one column     Show clearances — that column's only (a click picks one column: canvas2/columnPick.js)
+     column grid    none — Show clearances and the lock are in its Properties card (col-grid round; a column picked too)
      aisle label    Lock
      building/wall  Thickness 3″ 6″ 9″ 12″ | Add door · Wall clearance
    Not drawn while another tool is on, during a drag or a placement, or while a Row group is open (its mode bar is).
@@ -70,8 +68,8 @@ const store = useCanvasStore
  *  object — canvas2/sections.js), the rows bar for several. `activeBaySelection`: the store's (left out: none). */
 export function barFor(objects, selectedIds, activeWall, activeBaySelection = [], gridSize = 40, column = null) {
   const sel = objects.filter(o => selectedIds.includes(o.id))
-  // one column picked out of its grid: its own bar, over that column
-  if (column && sel.length === 1 && sel[0].id === column.gridId) return { kind: 'column', one: true, objs: [{ id: column.gridId, type: 'column', x: column.x, y: column.y, width: column.w, height: column.h }] }
+  // a column grid, or one column picked out of it: no bar (col-grid round — its card has Show clearances and the lock)
+  if (column && sel.length === 1 && sel[0].id === column.gridId) return null
   if (!sel.length && activeWall) { const fp = objects.find(o => o.id === activeWall.objId); return fp ? { kind: 'building', objs: [fp] } : null }
   const picked = pickedBays({ objects, selectedIds, activeBaySelection })
   if (picked.length) {
@@ -87,7 +85,7 @@ export function barFor(objects, selectedIds, activeWall, activeBaySelection = []
     if (isBeamRack(o)) return { kind: 'rack', objs: sel }
     if (isZone(o)) return { kind: 'zone', objs: sel }
     if (o.type === 'section_area') return { kind: 'section', objs: sel }
-    if (isColumn(o)) return { kind: 'column', objs: sel }
+    if (isColumn(o)) return null
     if (o.type === 'aisle') return { kind: 'aisle', objs: sel }
     if (FP.has(o.type)) return { kind: 'building', objs: sel }
     return null
@@ -416,28 +414,11 @@ function ZoneBar({ obj }) {
 /** A text toggle in a bar (Show clearances): pressed = active fill + accent. */
 const toggleBtn = (on) => ({ height: 32, padding: '0 10px', border: 0, borderRadius: 8, fontSize: 12, background: on ? B.active : 'transparent', color: on ? B.accent : B.text, flexShrink: 0 })
 
-/* Show clearances: the column clearance tags on the plan while it is on (canvas2/clearanceView.js — otherwise they
-   show only during an action) */
-function ColumnBar({ one = false }) {
-  const show = useClearanceView(s => s.show), mine = useColumnPick(s => s.show)
-  // one column picked: Show clearances is that column's only — on when it is picked
-  if (one) return <><button type="button" aria-pressed={!!mine} title="This column's clear distances on the plan" onClick={() => setColumnClearances(!mine)} style={toggleBtn(!!mine)}>Show clearances</button><Sep /><ColumnLockBtn /></>
-  return <><button type="button" aria-pressed={!!show} title="The columns' clear distances on the plan" onClick={() => setShowClearances(!show)} style={toggleBtn(!!show)}>Show clearances</button><Sep /><ColumnLockBtn /></>
-}
-/** A column's Lock: the Columns layer's padlock (STUDIO.md §7a Locks) — pressed while the layer is locked; one click
- *  flips it, the column staying selected (Ctrl+L the same). */
-const columnsLocked = (s) => !!s.layers.find(l => l.id === 'columns')?.locked
-function ColumnLockBtn() {
-  const locked = useCanvasStore(columnsLocked)
-  return <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Columns layer locked — Unlock (Ctrl+L)' : 'Lock the Columns layer (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
-}
-
-/** The bar's one faint hint line per state (STUDIO.md §6): rows, bays, a column whose layer is unlocked; none else (the
- *  Row group's is in its mode bar). */
-export function barHint(kind, columnsLayerLocked) {
+/** The bar's one faint hint line per state (STUDIO.md §6): rows, bays; none else (the Row group's is in its mode bar; a
+ *  column has no bar — col-grid round). */
+export function barHint(kind) {
   if (kind === 'rack' || kind === 'rows') return 'Shift+click to add rows · drag to move'
   if (kind === 'bay' || kind === 'bays') return 'Shift+click or Shift+drag to add bays'
-  if (kind === 'column' && !columnsLayerLocked) return 'Drag to move its line'
   return null
 }
 
@@ -490,7 +471,6 @@ export function SelectionBar() {
   const [size, setSize] = useState(null)
   const [labels, setLabels] = useState(EMPTY)
   const column = useColumnPick(s => s.pick)
-  const colsLocked = useCanvasStore(columnsLocked)
   const what = useMemo(() => barFor(objects, selectedIds, activeWall, activeBaySelection, gridSize, column), [objects, selectedIds, activeWall, activeBaySelection, gridSize, column])
   // not in the Row group (no edit row: its mode bar — STUDIO.md §7a Modes), nor while an apply is asked
   const hidden = !what || !isPlainTool(activeTool) || dragging || !!placing || pending
@@ -515,7 +495,7 @@ export function SelectionBar() {
   const cardRect = card ? { left: card.left - (host?.left || 0), top: card.top - (host?.top || 0), right: card.right - (host?.left || 0), bottom: card.bottom - (host?.top || 0) } : null
   const at = size ? placeBarClear(held, reach, size.w, size.h, win, cardRect, labels) : null
   const obj = what.main || what.objs[0]
-  const hint = barHint(what.kind, colsLocked)
+  const hint = barHint(what.kind)
   const bar = (
     <>
       {what.kind === 'rack' && <RackBar obj={obj} />}
@@ -525,7 +505,6 @@ export function SelectionBar() {
       {what.kind === 'bays' && <BayBar several />}
       {what.kind === 'zone' && <ZoneBar obj={obj} />}
       {what.kind === 'section' && <SectionSelBar obj={obj} />}
-      {what.kind === 'column' && <ColumnBar one={!!what.one} />}
       {what.kind === 'aisle' && <AisleBar obj={obj} />}
       {what.kind === 'building' && <BuildingBar obj={obj} />}
     </>

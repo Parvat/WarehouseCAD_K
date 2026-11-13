@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
-import { C, fieldBox, Grid2, Note, Sec, Caption, LockedFields } from '../../../studio/cardParts'
+import { C, fieldBox, Grid2, Note, Sec, Caption, LockedFields, ToggleRow, Row, IconBtn } from '../../../studio/cardParts'
+import { useClearanceView, setShowClearances } from '../../../canvas2/clearanceView'
+import { toggleLock } from '../../../utils/layers'
 import { gridBuilding, gridParams, gridUpdate, gridResult } from '../../../utils/columnGrid'
 import { expandColumnGrid } from '../../../generate/columnCheck'
 import { ftIn } from '../../../utils/bom'
-import { useColumnPick } from '../../../canvas2/columnPick'
+import { useColumnPick, setColumnClearances } from '../../../canvas2/columnPick'
 import { ColumnLineFields } from './ColumnLineFields'
 
 // ── Column Grid card (col-grid round; STUDIO.md §7a Columns) ──────────────────────────────────────────────────────
@@ -60,7 +62,9 @@ export function ColumnGridHead() {
 /** The card's blocks after the head: a picked column's lines, Spacing, Offset, Column, Result. */
 export function ColumnGridPanel({ obj, locked = false }) {
   const { objects, gridSize: gsRaw } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize })))
-  const pick = useColumnPick(s => s.pick)
+  const pick = useColumnPick(s => s.pick), pickShow = useColumnPick(s => s.show)
+  const show = useClearanceView(s => s.show)
+  const colsLocked = useCanvasStore(s => !!s.layers.find(l => l.id === 'columns')?.locked)
   const gs = gsRaw || 40
   const fp = gridBuilding(objects, obj)
   const p = gridParams(obj, fp, gs)
@@ -92,6 +96,16 @@ export function ColumnGridPanel({ obj, locked = false }) {
     <>
       {/* one column picked: the distances to its neighbouring lines, typed (canvas2/columnLines.js) */}
       {pick?.gridId === obj.id && <Sec><ColumnLineFields obj={obj} /></Sec>}
+      {/* Show clearances and the Columns layer's lock (col-grid round: was the bar over a clicked column) — a column
+          picked: Show clearances is that column's only, on when it is picked */}
+      <Sec data-column-view gap={8}>
+        {pick?.gridId === obj.id
+          ? <ToggleRow label="Show clearances" title="This column's clear distances on the plan" on={!!pickShow} onClick={() => setColumnClearances(!pickShow)} />
+          : <ToggleRow label="Show clearances" title="The columns' clear distances on the plan" on={!!show} onClick={() => setShowClearances(!show)} />}
+        <Row label="Columns layer" title={colsLocked ? 'Columns layer locked — Unlock (Ctrl+L)' : 'Lock the Columns layer (Ctrl+L)'}>
+          <IconBtn name="Lock" label={colsLocked ? 'Unlock' : 'Lock'} title={colsLocked ? 'Columns layer locked — Unlock (Ctrl+L)' : 'Lock the Columns layer (Ctrl+L)'} active={colsLocked} onClick={() => toggleLock(useCanvasStore)} />
+        </Row>
+      </Sec>
       <Sec label={<Caption>Spacing</Caption>}>{pair(ft('spX', 'X spacing', 'Column X spacing', 1), ft('spY', 'Y spacing', 'Column Y spacing', 1))}</Sec>
       <Sec label={<Caption>Offset from wall (to first column centre)</Caption>}>{pair(ft('offX', 'X offset', 'Column X offset', 0), ft('offY', 'Y offset', 'Column Y offset', 0))}</Sec>
       <Sec label={<Caption>Column</Caption>}>{pair(inch('wIn', 'Width', 'Column width'), inch('dIn', 'Depth', 'Column depth'))}</Sec>

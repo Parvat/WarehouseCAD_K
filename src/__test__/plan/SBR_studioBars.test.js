@@ -85,7 +85,7 @@ describe.each(['horizontal', 'vertical'])('SBR — the selection bar, %s', (orie
     const fp = st.objects.find(o => o.type === 'fp_rect'), grid = st.objects.find(o => o.type === 'column_grid')
     expect(SB.barFor(st.objects, [fp.id], null).kind).toBe('building')
     expect(SB.barFor(st.objects, [], { objId: fp.id, wallIdx: 0 }).kind).toBe('building')
-    if (grid) expect(SB.barFor(st.objects, [grid.id], null).kind).toBe('column')
+    if (grid) expect(SB.barFor(st.objects, [grid.id], null)).toBe(null)   // (col-grid round: no bar — its card has Show clearances and the lock)
     const zone = { id: 'z', type: 'zone_office', x: fp.x + 400, y: fp.y + 400, width: 1600, height: 1200, rotation: 0, label: 'Office' }
     const aisle = st.objects.find(o => o.type === 'aisle')
     expect(SB.barFor([...st.objects, zone], ['z'], null).kind).toBe('zone')
@@ -104,7 +104,7 @@ describe.each(['horizontal', 'vertical'])('SBR — the selection bar, %s', (orie
     expect(z).toMatch(/value="40′"[\s\S]*×[\s\S]*value="30′"/)
     store.setState({ selectedIds: [fp.id] })
     expect((await ssr(SB.SelectionBar))).toMatch(/Thickness[\s\S]*aria-label="Wall thickness"[\s\S]*>3″<[\s\S]*>6″<[\s\S]*>9″<[\s\S]*>12″<[\s\S]*Add door[\s\S]*Wall clearance/)
-    if (grid) { store.setState({ selectedIds: [grid.id] }); expect((await ssr(SB.SelectionBar))).toMatch(/aria-pressed="(true|false)"[^>]*>Show clearances</) }
+    if (grid) { store.setState({ selectedIds: [grid.id] }); expect((await ssr(SB.SelectionBar))).toBe('') }
     // hidden: another tool, a placement, a Row group's pending apply (the group's edit row has its bar — STUDIO.md §7)
     store.setState({ selectedIds: [r.id], activeTool: 'split' })
     expect((await ssr(SB.SelectionBar))).toBe('')
