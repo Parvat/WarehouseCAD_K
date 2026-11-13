@@ -6311,6 +6311,14 @@ describe('REG — the hand check by real clicks', () => {
       expect(await card.locator('[data-caption]').allTextContents()).toEqual(expect.arrayContaining(['Spacing', 'Offset from wall (to first column centre)', 'Column', 'Result']))
       if (nx * ny === await drawn()) expect(await card.locator('[data-column-count]').textContent()).toBe(`${nx} × ${ny} = ${nx * ny}`)
       expect(await card.locator('[data-column-last]').textContent()).toMatch(/^X \d+′(-\d+″)? · Y \d+′(-\d+″)?$/)
+      // the last bay: the last gridline to the far wall — the last gridline on the far wall: the bay between the last two
+      // (hand check: "Y 0′" shown with the last gridline on the bottom wall), never 0
+      const lastBay = (sp, first, far) => { const v = [first]; for (const s of sp) v.push(v[v.length - 1] + s); const rest = far - v[v.length - 1]; return Math.round((rest <= 0.5 && v.length > 1 ? v[v.length - 1] - v[v.length - 2] : rest) / gs * 12) }
+      const obc = await outlineBox(), sxs = g0.sx.split(',').filter(Boolean).map(Number), sys = g0.sy.split(',').filter(Boolean).map(Number)
+      const inch = (t) => { const m = t.match(/(\d+)′(?:-(\d+)″)?/); return Number(m[1]) * 12 + Number(m[2] || 0) }
+      const [lx, ly] = (await card.locator('[data-column-last]').textContent()).split('·').map(inch)
+      expect([lx, ly]).toEqual([lastBay(sxs, g0.x, obc.x1), lastBay(sys, g0.y, obc.y1)])
+      expect([lx > 0, ly > 0]).toEqual([true, true])
       // X spacing typed: the grid redrawn as typed, from the same first gridline, every spacing the typed one
       const sp0 = Number(g0.sx.split(',')[0]) / gs, sp1 = Math.round(sp0) + 7
       const h0 = await hist7()

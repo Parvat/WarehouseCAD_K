@@ -67,12 +67,14 @@ export const lineName = (i, axis) => {
   return s
 }
 /** The card's Result: { count (columns drawn — inside the building), xs, ys (gridline counts), range ('A–J · 1–5'),
- *  lastX, lastY (ft: the last gridline to the far wall), none (no column inside: the warning) }. */
+ *  lastX, lastY (ft: the last gridline to the far wall; the last gridline on that wall: the last two's bay), none (no column inside: the warning) }. */
 export function gridResult(cg, objects, gs = 40, expand) {
   const fp = gridBuilding(objects, cg), { xs, ys } = gridLines(cg), ex = fp ? extent(fp) : null
   const count = expand ? expand(cg, gs, objects).length : xs.length * ys.length
   const range = xs.length && ys.length ? `${lineName(0, 'x')}–${lineName(xs.length - 1, 'x')} · ${lineName(0, 'y')}–${lineName(ys.length - 1, 'y')}` : '—'
-  return { count, nx: xs.length, ny: ys.length, range, lastX: ex ? (ex.x1 - xs[xs.length - 1]) / gs : null, lastY: ex ? (ex.y1 - ys[ys.length - 1]) / gs : null, none: count === 0 }
+  // the last bay: the last gridline to the far wall — or, the last gridline on the far wall, the bay between the last two
+  const last = (vs, far) => { const n = vs.length, rest = far - vs[n - 1]; return rest <= E && n > 1 ? vs[n - 1] - vs[n - 2] : Math.max(0, rest) }
+  return { count, nx: xs.length, ny: ys.length, range, lastX: ex ? last(xs, ex.x1) / gs : null, lastY: ex ? last(ys, ex.y1) / gs : null, none: count === 0 }
 }
 /** Grid `cg` after its building grew from `before` to `after`: gridlines added at the grid's spacing on each side the
  *  building came out on (the near side: before its first; the far side: after its last), every gridline already there
