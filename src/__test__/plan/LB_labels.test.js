@@ -14,7 +14,7 @@ import { aisleLabelLayout, aisleRect } from '../../canvas2/hitTest'
 import { crossAisleLabels } from '../../canvas2/crossAisles'
 import { visibleClearanceMarks, aisleWarningRect, SHORT_COLOR } from '../../canvas2/aisleMarks'
 import { pxToFtIn } from '../../utils/canvas'
-import { GS } from './fixtures'
+import { GS, colFace } from './fixtures'
 
 let seq = 0
 const newId = () => 'a' + (++seq)
@@ -34,7 +34,9 @@ describe.each(['horizontal', 'vertical'])('LB — %s', (orientation) => {
   const byId = new Map(objs.map(o => [o.id, o]))
   // a single row 6" off a wall: one rack along the whole run since BUG 70, stamped with section 1
   const stackFt = rot ? 1080 : 410
-  const onWall = (r) => { const f = rackFootprint(r), c = cross(f); return r.type === 'rack_row' && (Math.abs(c[0] / GS - 0.5) < 1e-6 || Math.abs(c[1] / GS - (stackFt - 0.5)) < 1e-6) }
+  // (wall-columns round: off the column face on a wall that carries columns)
+  const face = colFace({ lengthFt: 1080, widthFt: 410, gridXFt: 25, gridYFt: 30, orientation })
+  const onWall = (r) => { const f = rackFootprint(r), c = cross(f); return r.type === 'rack_row' && (Math.abs(c[0] / GS - 0.5 - face.nS) < 1e-6 || Math.abs(c[1] / GS - (stackFt - 0.5 - face.fS)) < 1e-6) }
   // the generator's sections: racks by genSection (the wall rows, running past them all, left out), with their run / cross extents
   const sections = [...new Set(racks.map(r => r.genSection))].sort((a, b) => a - b).map(s => {
     const f = racks.filter(r => r.genSection === s && !onWall(r)).map(rackFootprint)

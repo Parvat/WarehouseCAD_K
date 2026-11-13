@@ -27,6 +27,24 @@ export function innerOutline(fp, gridSize = 40) {
   return insetPolygon(buildingOutline(fp), wt)
 }
 
+/** The floor Generate and Fill lay out from (wall-columns round): the inner wall face, except that a wall carrying
+ *  columns moves in by their depth — the column face is the wall there. `depths`: per outline edge (buildingOutline's
+ *  order, edge i from point i to i + 1), the extra in px (0: a wall without columns). Rectilinear outlines (every
+ *  floor plan type is); anything else, or no depth anywhere: the inner outline. */
+export function faceOutline(fp, gridSize = 40, depths = null) {
+  if (!depths || !depths.some(d => d > 0)) return innerOutline(fp, gridSize)
+  const P = buildingOutline(fp), n = P.length
+  if (depths.length !== n || P.some((a, i) => { const b = P[(i + 1) % n]; return Math.abs(a.x - b.x) > 0.5 && Math.abs(a.y - b.y) > 0.5 })) return innerOutline(fp, gridSize)
+  const wt = fp.wallThicknessFt ? fp.wallThicknessFt * gridSize : (fp.strokeWidth || 10)
+  const inside = (x, y) => { let c = false; for (let i = 0, j = n - 1; i < n; j = i++) { const A = P[i], B = P[j]; if ((A.y > y) !== (B.y > y) && x < (B.x - A.x) * (y - A.y) / (B.y - A.y) + A.x) c = !c } return c }
+  // each wall's line moved in by the wall and its columns; a corner where two moved lines meet
+  const L = P.map((a, i) => {
+    const b = P[(i + 1) % n], v = Math.abs(a.x - b.x) <= 0.5, d = wt + (depths[i] || 0), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
+    return v ? { v, at: a.x + (inside(mx + 0.5, my) ? d : -d) } : { v, at: a.y + (inside(mx, my + 0.5) ? d : -d) }
+  })
+  return P.map((_, i) => { const e0 = L[(i - 1 + n) % n], e1 = L[i]; return e0.v ? { x: e0.at, y: e1.at } : { x: e1.at, y: e0.at } })
+}
+
 const along = (axis, p) => (axis === 'x' ? p.x : p.y)
 const across = (axis, p) => (axis === 'x' ? p.y : p.x)
 

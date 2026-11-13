@@ -76,7 +76,11 @@ function building() {
   })
   const aisles = aisleObjectsForRacks(racks).map((a, i) => ({ ...a, id: 'a' + i }))
   const fixtures = generateFixtures(brief, ox, oy).map((f, i) => ({ ...f, id: 'g' + i }))
-  return [fp, ...parentGenerated([...racks, ...aisles, ...fixtures], 'fp')]
+  // (wall-columns round: Generate's own layout now has no column on an upright frame — one is set on a pair's third
+  // frame by hand, so every overlay type, the upright mark too, is here to follow the drag)
+  const pair = racks.find(r => r.type === 'rack_double_row'), fr = localRectToWorld(pair, uprightFramesLocal(pair, GS)[2])
+  const onFrame = { id: 'gx', type: 'column_grid', x: fr.x + fr.w / 2, y: fr.y + fr.h / 2, spacingX: [], spacingY: [], columnW: GS, columnH: GS, colSizeIn: 12, showGrid: true, width: GS, height: GS }
+  return [fp, ...parentGenerated([...racks, ...aisles, ...fixtures, onFrame], 'fp')]
 }
 
 const shift = (r, dx, dy) => ({ ...r, x: r.x + dx, y: r.y + dy })

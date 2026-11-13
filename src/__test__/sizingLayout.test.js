@@ -6,6 +6,7 @@ import {
 import { placementToObject, aisleObjectsForRacks } from '../generate/traceGenerate'
 import { checkColumns, expandColumnGrid, MHE_PROFILES, rackFootprint } from '../generate/columnCheck'
 import { DEFAULT_RULES } from '../rules/defaults'
+import { colFace } from './plan/fixtures'
 
 const GS = 40
 
@@ -306,9 +307,11 @@ describe('sizingLayout — BUG 53/60: the far-wall transition is column-aware, a
     expect(res.summary.rackConflicts).toBe(0)
     expect(res.flueSeated.length).toBeGreaterThan(0)
     expect(racks.length % 2).toBe(0)
+    // (wall-columns round: off the column face on a wall that carries columns)
+    const face = colFace(spec240)
     const stack = racks.map(r => rackFootprint(r)).map(f => f.x / GS)
-    expect(Math.min(...stack)).toBeCloseTo(0.5, 6)                          // near-wall row present
-    expect(Math.max(...racks.map(r => { const f = rackFootprint(r); return (f.x + f.w) / GS }))).toBeCloseTo(240 - 0.5, 6)   // far-wall row present
+    expect(Math.min(...stack)).toBeCloseTo(0.5 + face.nS, 6)                          // near-wall row present
+    expect(Math.max(...racks.map(r => { const f = rackFootprint(r); return (f.x + f.w) / GS }))).toBeCloseTo(240 - 0.5 - face.fS, 6)   // far-wall row present
   })
 
   it('keeps every generated aisle at or above travelFt', () => {
@@ -381,8 +384,10 @@ describe('sizingLayout — BUG 54: cross-aisle reaches the far wall, clears ever
           const f = rackFootprint(r)
           return orientation === 'vertical' ? [f.y / GS, (f.y + f.h) / GS] : [f.x / GS, (f.x + f.w) / GS]
         })
-        expect(Math.min(...edgesFt.map(e => e[0]))).toBeCloseTo(endClearFt, 1)
-        expect(Math.max(...edgesFt.map(e => e[1]))).toBeCloseTo(farWallFt, 1)
+        // (wall-columns round: off the column face on an end wall that carries columns)
+        const face = colFace(brief)
+        expect(Math.min(...edgesFt.map(e => e[0]))).toBeCloseTo(endClearFt + face.nR, 1)
+        expect(Math.max(...edgesFt.map(e => e[1]))).toBeCloseTo(farWallFt - face.fR, 1)
 
         // exactly one cross-aisle, wide enough for the selected forklift, clear of every column
         const frame = axisFrame(orientation, { lengthFt: base.lengthFt, widthFt: base.widthFt, gridXFt: base.gridXFt, gridYFt: base.gridYFt })
@@ -500,9 +505,11 @@ describe('sizingLayout — BUG 55/59: flue sizing is column-aware, no added clea
     // segments instead of inside either one — a real, coincidental
     // consequence of the wall-clearance default change, not a flue-sizing
     // regression (flueIn is still exactly 12, confirmed below either way).
+    // (wall-columns round: no columns on the walls — the same interior lines, and no wall moved to a column face —
+    // so the coincidental flue hit this test needs is where it was)
     const brief = {
       lengthFt: 40, widthFt: 50, rackType: 'rack_double_row',
-      aisleFt: 12, gridXFt: 15, gridYFt: 20, levels: 4,
+      aisleFt: 12, gridXFt: 15, gridYFt: 20, levels: 4, columnsAlongWall: false,
     }
     const placements = sizingSheetLayout(brief, DEFAULT_RULES)
     const pairPlacement = placements.find(p => p.type === 'rack_double_row')

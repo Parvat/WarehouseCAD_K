@@ -198,7 +198,9 @@ describe.each(['horizontal', 'vertical'])('PD — %s', (orientation) => {
     await act(() => { store.setState({ objects: objs().map(o => (o.id === r.id ? moved : o)) }); store.getState().commitObjectUpdate(r.id, {}) })
     // vertical: the 2' narrows row K's aisle (10' 6") under the pick width — the bar says what that costs, from the usable
     // figure itself: "480 positions lost to narrow aisles", those rows outlined orange; horizontal: wide enough, nothing
-    expect(useRowGroup.getState().pending.summary.text).toBe(`Apply to the other ${others.length} rows?${rot ? ' 480 positions lost to narrow aisles.' : ''}`)
+    // (wall-columns round: laid out from the column face, row K of section 2 moved 2' now puts a column on an upright —
+    // the bar warns of it)
+    expect(useRowGroup.getState().pending.summary.text).toBe(`Apply to the other ${others.length} rows?${rot ? ' 1 will have warnings. 480 positions lost to narrow aisles.' : ''}`)
     expect(useRowGroup.getState().pending.summary.narrowRows.length).toBe(rot ? others.length : 0)
     const before = new Map(others.map(s => [s, centreAcross(row(K, s), rot)]))
     applyPending(); await flushRowGroupWatcher()

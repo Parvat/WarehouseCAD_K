@@ -109,7 +109,9 @@ describe.each(['horizontal', 'vertical'])('HF — %s', (orientation) => {
     expect(held.aisleBlocks.filter(b => b.pinched).length).toBeGreaterThan(0)          // there ARE red warnings to keep steady
     for (const [dx, dy] of frames) {
       const s = clearanceSource({ ...held, objects: p, preview: { ids, dx, dy }, gridSize: GS, profile: MHE_PROFILES.reach })
-      expect(s.blocks).toBe(held.aisleBlocks)                                 // not recomputed
+      // not recomputed: the very blocks drawn before the drag (the held check's, with the face blocks beside them —
+      // wall-columns round: a column now inside the wall line can be one)
+      expect(s.blocks).toBe(src0.blocks)
       expect([s.x, s.y]).toEqual([dx, dy])                                    // moved with the drag
       expect(redSet(s, dx, dy)).toBe(want)
     }

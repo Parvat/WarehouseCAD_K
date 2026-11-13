@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { layoutSpec } from '../../generate/sizingLayout'
 import { rackFootprint } from '../../generate/columnCheck'
 import { DEFAULT_RULES } from '../../rules/defaults'
-import { ALL_CASES, generate, GS, stackPaths } from './fixtures'
+import { ALL_CASES, generate, GS, stackPaths, colFace } from './fixtures'
 
 describe('G — walls', () => {
   it('G-default: wall clearance defaults to 6"', () => {
@@ -32,8 +32,10 @@ describe('G — walls', () => {
         const first = bands[0], last = bands[bands.length - 1]
         expect(first.r.type).toBe('rack_row')
         expect(last.r.type).toBe('rack_row')
-        expect(first.lo).toBeCloseTo(0.5, 6)            // 6" off the near wall
-        expect(last.hi).toBeCloseTo(stackFt - 0.5, 6)   // 6" off the far wall
+        // 6" off the near wall, the far wall — (wall-columns round) off the column face on a wall that carries columns
+        const face = colFace(brief)
+        expect(first.lo).toBeCloseTo(0.5 + face.nS, 6)
+        expect(last.hi).toBeCloseTo(stackFt - 0.5 - face.fS, 6)
         for (const mid of bands.slice(1, -2)) expect(mid.r.type).toBe('rack_double_row')
         const beforeFar = bands[bands.length - 2]
         if (bands.length > 2 && beforeFar.r.type === 'rack_row') {

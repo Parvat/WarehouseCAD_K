@@ -1,7 +1,7 @@
 // Shared fixtures for the TEST_PLAN.md suite. Only INPUTS live here — every
 // expected value is written inline in the test that asserts it, taken from
 // TEST_PLAN.md (see CANVAS2_TESTS.md for the mapping).
-import { sizingSheetLayout, columnGridObject } from '../../generate/sizingLayout'
+import { sizingSheetLayout, columnGridObject, axisFrame, columnFaceFrame } from '../../generate/sizingLayout'
 import { placementToObject } from '../../generate/traceGenerate'
 import { rowAisleGaps } from '../../generate/rowAisles'
 import { expandColumnGrid, rackFootprint } from '../../generate/columnCheck'
@@ -132,3 +132,7 @@ export const MATRIX = {
   M25: [1080, 410, 50, 54, 'reach'],          // the column-on-the-joint report (a display effect; see CANVAS2_TESTS.md)
 }
 
+
+/** Generate's column face on each side, ft (wall-columns round: a wall with a gridline on it carries columns, and Generate
+ *  lays out from their face — the column depth further in): { nS, fS, nR, fR } — near / far, stack / run. */
+export const colFace = (brief) => columnFaceFrame(axisFrame(brief.orientation || 'horizontal', { columnsAlongWall: true, ...brief }), (brief.colSizeIn ?? 12) / 12).colFace || { nS: 0, fS: 0, nR: 0, fR: 0 }

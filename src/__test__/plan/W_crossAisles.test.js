@@ -16,7 +16,7 @@ import { rowSegments, sizingSheetLayout } from '../../generate/sizingLayout'
 import { placementToObject } from '../../generate/traceGenerate'
 import { rackFootprint } from '../../generate/columnCheck'
 import { DEFAULT_RULES } from '../../rules/defaults'
-import { GS } from './fixtures'
+import { GS, colFace } from './fixtures'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
 
@@ -29,11 +29,11 @@ const seg = (lengthFt, extra = {}) => rowSegments(lengthFt, { ...SPEC, ...extra 
 function rowsOf(brief) {
   const racks = sizingSheetLayout(brief, DEFAULT_RULES).map((p, i) => ({ ...placementToObject(p), id: 'r' + i }))
   const stackFt = brief.orientation === 'vertical' ? brief.lengthFt : brief.widthFt
-  const m = new Map()
+  const m = new Map(), face = colFace(brief)   // (wall-columns round: wall rows off the column face where a wall has columns)
   for (const r of racks) {
     const f = rackFootprint(r)
     const s0 = (f.rotated ? f.x : f.y) / GS, s1 = (f.rotated ? f.x + f.w : f.y + f.h) / GS
-    if (r.type === 'rack_row' && (Math.abs(s0 - 0.5) < 1e-6 || Math.abs(s1 - (stackFt - 0.5)) < 1e-6)) continue
+    if (r.type === 'rack_row' && (Math.abs(s0 - 0.5 - face.nS) < 1e-6 || Math.abs(s1 - (stackFt - 0.5 - face.fS)) < 1e-6)) continue
     const key = Math.round((f.rotated ? f.x : f.y) * 1000)
     const run = f.rotated ? [f.y / GS, (f.y + f.h) / GS] : [f.x / GS, (f.x + f.w) / GS]
     if (!m.has(key)) m.set(key, [])
@@ -148,8 +148,10 @@ describe('W — multiple cross-aisles', () => {
           expect(crossOf(row).map(([a, b]) => [a.toFixed(6), b.toFixed(6)])).toEqual(ref.map(([a, b]) => [a.toFixed(6), b.toFixed(6)]))
           for (const [a, b] of row) expect(b - a).toBeLessThanOrEqual((maxRunFt ?? 150) + 1e-9)
           for (const [a, b] of crossOf(row)) expect(b - a).toBeGreaterThanOrEqual(9 - 1e-9)
-          expect(row[0][0]).toBeCloseTo(0.5, 6)
-          expect(row[row.length - 1][1]).toBeCloseTo(1079.5, 6)
+          // (wall-columns round: from the column face on an end wall that carries columns)
+          const face = colFace(brief(maxRunFt))
+          expect(row[0][0]).toBeCloseTo(0.5 + face.nR, 6)
+          expect(row[row.length - 1][1]).toBeCloseTo(1079.5 - face.fR, 6)
         }
       })
     }

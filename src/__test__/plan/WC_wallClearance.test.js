@@ -6,7 +6,7 @@
 // behaviours at the default 3", both orientations, and the pair-half fix found on the way.
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { GS } from './fixtures'
+import { GS, colFace } from './fixtures'
 import { REAL_LAYOUT } from './realLayout.fixture'
 import { planAreaCreate, planAreaResize, areaSettings } from '../../generate/rackingArea'
 import { patternFill, innerOutline, clearOutline } from '../../generate/fillRacking'
@@ -70,10 +70,12 @@ describe('WC — Generate', () => {
     expect(JSON.stringify(now)).toBe(JSON.stringify(old))
     const stackFt = vert ? 250 : 500
     const w = (o) => walls(sizingSheetLayout(brief({ orientation, ...o }), DEFAULT_RULES), vert)
-    // the near wall row's back at outline + wall + clearance; the far one's the same from the other side
+    // the near wall row's back at outline + wall + clearance; the far one's the same from the other side — (wall-columns
+    // round) plus the column depth on a wall that carries columns: they stand fully inside, the rows start at their face
+    const face = colFace(brief({ orientation }))
     for (const [o, off] of [[{ wallClearIn: 3, wallThicknessIn: 3 }, 0.5], [{ wallClearIn: 0, wallThicknessIn: 3 }, 0.25], [{ wallClearIn: 3, wallThicknessIn: 6 }, 0.75]]) {
       const ws = w(o), near = Math.min(...ws.map(a => a[0])), far = Math.max(...ws.map(a => a[1]))
-      expect([near, stackFt - far]).toEqual([off, off])
+      expect([near, stackFt - far]).toEqual([off + face.nS, off + face.fS])
     }
     // the run ends take the same setting (BUG 76 follow-up; before, 6" from the outline whatever the clearance):
     // the rows start at the wall + the clearance, and the far end is never nearer than that
@@ -81,8 +83,8 @@ describe('WC — Generate', () => {
     const runFt = vert ? 500 : 250
     for (const [o, off] of [[{ wallClearIn: 0 }, 0.25], [{ wallClearIn: 3 }, 0.5], [{ wallClearIn: 12 }, 1.25], [{ wallClearIn: 3, wallThicknessIn: 6 }, 0.75]]) {
       const r = runs(o)
-      expect(Math.min(...r.map(q => q[0]))).toBeCloseTo(off, 6)
-      expect(runFt - Math.max(...r.map(q => q[1]))).toBeGreaterThanOrEqual(off - 1e-6)
+      expect(Math.min(...r.map(q => q[0]))).toBeCloseTo(off + face.nR, 6)
+      expect(runFt - Math.max(...r.map(q => q[1]))).toBeGreaterThanOrEqual(off + face.fR - 1e-6)
     }
   })
 })
@@ -200,12 +202,12 @@ describe('WC — saved layouts and the pair-half fix', () => {
     const again = planAreaResize(reopened, ra.id, { x: ra.x, y: ra.y, w: ra.width, h: ra.height }, { gridSize: GS })
     expect(keys(again)).toEqual(keys(filled))
   })
-  it.each(['L', 'T'])('WC-pair-half (%s, turned, horizontal rows): the half of row 2/9 beside the notch carries on from its pair\'s last frame at 42 ft (41.75 ft at 3": the rows start 3" off the run-end wall) — 10 bays, the shared upright kept — also at 3", where it lies on the wall', (shape) => {
-    for (const [settings, at] of [[{ wallClearIn: 0 }, 42], [{ wallClearIn: 3 }, 41.75]]) {
+  it.each(['L', 'T'])('WC-pair-half (%s, turned, horizontal rows): the half of row 2/12 beside the notch carries on from its pair\'s last frame at 108 ft (107.75 ft at 3": the rows start 3" off the run-end wall) — 2 bays, the shared upright kept — also at 3" (wall-columns round: laid out from the column face; was row 2/9 at 42 ft, 10 bays)', (shape) => {
+    for (const [settings, at] of [[{ wallClearIn: 0 }, 108], [{ wallClearIn: 3 }, 107.75]]) {
       const { out } = newFill({ shape, turned: true, orientation: 'horizontal', settings })
-      const half = out.find(o => o.type === 'rack_row' && o.genSection === 2 && o.rowIndex === 9)
-      const pair = out.find(o => o.type === 'rack_double_row' && o.genSection === 2 && o.rowIndex === 9)
-      expect([runOf(half, false)[0], half.beams.length]).toEqual([at, 10])
+      const half = out.find(o => o.type === 'rack_row' && o.genSection === 2 && o.rowIndex === 12)
+      const pair = out.find(o => o.type === 'rack_double_row' && o.genSection === 2 && o.rowIndex === 12)
+      expect([runOf(half, false)[0], half.beams.length]).toEqual([at, 2])
       expect(runOf(half, false)[0]).toBeCloseTo(runOf(pair, false)[1] - 0.25, 6)
     }
   })
@@ -229,8 +231,10 @@ describe.each([['horizontal', false], ['vertical', true]])('WC — every side, %
     const racks = sizingSheetLayout({ lengthFt: 240, widthFt: 120, gridXFt: 50, gridYFt: 54, mhe: 'reach', rackType: 'rack_double_row', orientation, wallClearIn: clearIn, wallThicknessIn: 3 }, DEFAULT_RULES).map(placementToObject)
     const face = vert ? { s0: 0.25, s1: 239.75, r0: 0.25, r1: 119.75 } : { s0: 0.25, s1: 119.75, r0: 0.25, r1: 239.75 }
     const [b0, b1, r0, r1] = sides(racks, face, vert)
-    expect([b0, b1, r0]).toEqual([clearIn, clearIn, clearIn])
-    expect(r1).toBeGreaterThanOrEqual(clearIn - 1e-6)
+    // (wall-columns round: from the column face on a wall that carries columns — the near walls here, 12" more)
+    const c = colFace({ lengthFt: 240, widthFt: 120, gridXFt: 50, gridYFt: 54, orientation })
+    expect([b0, b1, r0]).toEqual([clearIn + c.nS * 12, clearIn + c.fS * 12, clearIn + c.nR * 12])
+    expect(r1).toBeGreaterThanOrEqual(clearIn + c.fR * 12 - 1e-6)
   })
   it.each(SETTINGS)('WC-sides-fill (%s"): a new area over the whole 240 × 120 building — behind the wall rows exactly the setting; the rows start at it (the drag corner); the far end at least it', (clearIn) => {
     const fp = building(240, 120), poly = innerOutline(fp, GS), xs = poly.map(p => p.x), ys = poly.map(p => p.y)

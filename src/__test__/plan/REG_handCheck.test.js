@@ -211,8 +211,11 @@ describe('REG — the hand check by real clicks', () => {
       // pickAt. On the wall's line 1 screen px out: zoomed out, 3″ is under a pixel, and a press lands on whole pixels)
       const wp = await L.S(`return import('/src/utils/canvas.js').then(C => { const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), ids = arg ? [arg] : st.objects.filter(o => /^rack_/.test(o.type)).map(o => o.id), u = 1 / st.zoom
         for (const id of ids) { const r = st.objects.find(o => o.id === id), b = H.worldBoundsOf(r, st.objects)
-          for (const [x, y] of [[fp.x - u, b.y + b.height / 2], [fp.x + fp.width + u, b.y + b.height / 2], [b.x + b.width / 2, fp.y - u], [b.x + b.width / 2, fp.y + fp.height + u]])
-            if (C.objectContains(r, x, y, st.zoom) && !(x >= b.x - u && x <= b.x + b.width + u && y >= b.y - u && y <= b.y + b.height + u) && H.pickAt(st.objects, st.layers, x, y, st.zoom, st.gridSize).kind === 'wall') return { x, y, rack: r.id, type: r.type, c: { x: b.x + b.width / 2, y: b.y + b.height / 2 } } }
+          // (wall-columns round: along the rack, clear of the wall columns now standing just inside the wall — a press within its 4 px pick
+          // padding of one is that column's, drawn above the wall)
+          const cols = H.columnRectsOf(st.objects, st.gridSize || 40), nearCol = (x, y) => cols.some(c => x >= c.x - 5 * u && x <= c.x + c.w + 5 * u && y >= c.y - 5 * u && y <= c.y + c.h + 5 * u)
+          for (const t of [0.5, 0.3, 0.7, 0.15, 0.85]) for (const [x, y] of [[fp.x - u, b.y + b.height * t], [fp.x + fp.width + u, b.y + b.height * t], [b.x + b.width * t, fp.y - u], [b.x + b.width * t, fp.y + fp.height + u]])
+            if (!nearCol(x, y) && C.objectContains(r, x, y, st.zoom) && !(x >= b.x - u && x <= b.x + b.width + u && y >= b.y - u && y <= b.y + b.height + u) && H.pickAt(st.objects, st.layers, x, y, st.zoom, st.gridSize).kind === 'wall') return { x, y, rack: r.id, type: r.type, c: { x: b.x + b.width / 2, y: b.y + b.height / 2 } } }
         return null })`, crowded ? L.meta.wallRack : null)
       if (crowded) expect(wp).toBeTruthy()
       if (wp) {
@@ -1124,9 +1127,13 @@ describe('REG — the hand check by real clicks', () => {
       const text = await notice.textContent()
       expect(text).toMatch(new RegExp('^' + (c0.bays - c1.bays) + ' bays? removed'))
       expect(await notice.getByRole('button', { name: 'Undo' }).count()).toBe(1)
-      // what is past the new walls stays, flagged
-      const flagged = await L.S('const st = S.getState(); return st.objects.some(o => o.type === "column_grid") ? LC.checkLayout(st.objects, { gridSize: st.gridSize || 40 }).warnings.filter(w => w.kind === "outside-item").length : 1')
-      expect(flagged).toBeGreaterThan(0)
+      // what is past the new walls stays, flagged — (wall-columns round) a column whose gridline the new wall lands on is a
+      // wall column, standing fully inside: not past it; flagged exactly when a column really stands outside
+      const past = await L.S(`return import('/src/utils/floorGeom.js').then(G => { const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type)), p = G.buildingOutline(fp)
+        const x0 = Math.min(...p.map(v => v.x)), x1 = Math.max(...p.map(v => v.x)), y0 = Math.min(...p.map(v => v.y)), y1 = Math.max(...p.map(v => v.y))
+        const out = H.columnRectsOf(st.objects, gs).filter(c => c.x < x0 - 0.5 || c.y < y0 - 0.5 || c.x + c.w > x1 + 0.5 || c.y + c.h > y1 + 0.5).length
+        return { out, flagged: st.objects.some(o => o.type === 'column_grid') ? LC.checkLayout(st.objects, { gridSize: gs }).warnings.filter(w => w.kind === 'outside-item').length : 0 } })`)
+      expect(past.flagged > 0).toBe(past.out > 0)
       // one undo: the building and every bay back
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
       expect([await count(), await size()]).toEqual([c0, s0])
@@ -5281,7 +5288,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.waitForTimeout(300)
     }
 
-    it('REG-xaisle-generate-same (click): Generate on the fixture gives exactly the racks it gave before the xaisle-tool round — Fill stopped splitting rows, Generate keeps its automatic cross-aisles (baseline: handCheck/generate-<fixture>.json, written from 27ec968)', async () => {
+    it('REG-xaisle-generate-same (click): Generate on the fixture gives exactly the racks it gave before the xaisle-tool round — Fill stopped splitting rows, Generate keeps its automatic cross-aisles (baseline: handCheck/generate-<fixture>.json, written from 27ec968; rewritten in the wall-columns round — Generate lays out from the column face)', async () => {
       await open()
       await runGenerate()
       const plain = await rackDump()
@@ -5430,7 +5437,9 @@ describe('REG — the hand check by real clicks', () => {
       expectCut(before, await rowsBy(area), W, pitch)
       const c0 = (await crossNow()).find(c => c.rot)
       expect(c0).toBeTruthy()
-      const l = c0.lines[0], p = { x: (l.cross[0] + l.cross[1]) / 2, y: (l.lo + l.hi) / 2 }
+      // (a line in the middle of the cross-aisle: a press within 6 px of the racking area's outline is the area's —
+      // wall-columns round: the first line now lies that close to the area's edge)
+      const l = c0.lines[Math.floor(c0.lines.length / 2)], p = { x: (l.cross[0] + l.cross[1]) / 2, y: (l.lo + l.hi) / 2 }
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       await onCanvasAll([p]); await L.click(p)
       const h0 = await hist7()
@@ -5512,6 +5521,62 @@ describe('REG — the hand check by real clicks', () => {
       return { beams: sum('Beam'), decks: sum('Wire deck'), frames: sum('Upright frame'), positions: BL.bayLedger(st.objects, gs, st.elevations).positions } })`)
     /** every tunnel bay: [{ id, bay, n }] */
     const tunnelBaysNow = () => L.S('return S.getState().objects.filter(o => Array.isArray(o.tunnelBays)).flatMap(o => o.tunnelBays.map((n, bay) => ({ id: o.id, bay, n })).filter(q => q.n > 0))')
+
+    /* ── wall-columns round: a wall column stands fully inside; Generate and Fill lay out from the column face ── */
+    it('REG-wall-columns (click): a wall column stands fully inside the building, its outer face on the wall\'s inner face; the layout as saved keeps its rows and Check flags each new clash with "re-run Fill or Generate on this area"; Fill (real drag) starts the rows from the column face on a wall with columns and from the wall on one without (the card\'s X offset typed takes the left wall\'s columns off); every aisle keeps its width', async () => {
+      await open()
+      // as saved: the rows where the file has them; the clash Check finds says how to fix it
+      const saved = JSON.parse((await import('./handCheck/browser.js')).fixture(name))
+      const racksOf = (os) => os.filter(o => /^rack_/.test(o.type)).map(o => [o.id, Math.round(o.x), Math.round(o.y), o.beams?.length].join(':')).sort()
+      expect(racksOf(await L.S('return S.getState().objects'))).toEqual(racksOf(saved.objects || saved.scene.objects))
+      const items = await checkItems()
+      expect(items.some(i => /a wall column: re-run Fill or Generate on this area to fix it$/.test(i.text))).toBe(true)
+      await L.page.getByLabel('Layout check').getByRole('button', { name: 'Close layout check' }).click(); await L.page.waitForTimeout(150)
+      // every wall column fully inside, its outer face on the inner face
+      const inside = await L.S(`return Promise.all([import('/src/utils/floorGeom.js'), import('/src/utils/columnGrid.js')]).then(([G, CG]) => { const st = S.getState(), gs = st.gridSize || 40
+        const fp = st.objects.find(o => /^fp_/.test(o.type)), p = G.innerOutline(fp, gs), x0 = Math.min(...p.map(v => v.x)), x1 = Math.max(...p.map(v => v.x)), y0 = Math.min(...p.map(v => v.y)), y1 = Math.max(...p.map(v => v.y))
+        const walls = H.columnRectsOf(st.objects, gs).filter(c => c.wall)
+        return { n: walls.length, out: walls.filter(c => c.x < x0 - 0.01 || c.y < y0 - 0.01 || c.x + c.w > x1 + 0.01 || c.y + c.h > y1 + 0.01).length,
+          offFace: walls.filter(c => Math.min(Math.abs(c.x - x0), Math.abs(x1 - c.x - c.w), Math.abs(c.y - y0), Math.abs(y1 - c.y - c.h)) > 0.01).length } })`)
+      expect(inside.n).toBeGreaterThan(0)
+      expect([inside.out, inside.offFace]).toEqual([0, 0])
+      // the gap from each inner face to the nearest rack (in), the clearance, and which walls carry columns
+      const gaps = () => L.S(`return Promise.all([import('/src/utils/floorGeom.js'), import('/src/utils/columnGrid.js'), import('/src/utils/fillTool.js'), import('/src/generate/columnCheck.js')]).then(([G, CG, F, CC]) => { const st = S.getState(), gs = st.gridSize || 40
+        const fp = st.objects.find(o => /^fp_/.test(o.type)), p = G.innerOutline(fp, gs), x0 = Math.min(...p.map(v => v.x)), x1 = Math.max(...p.map(v => v.x)), y0 = Math.min(...p.map(v => v.y)), y1 = Math.max(...p.map(v => v.y))
+        const fs = st.objects.filter(o => /^rack_/.test(o.type)).map(o => CC.rackFootprint(o))
+        const inch = (v) => Math.round(v / gs * 12 * 100) / 100
+        // each side of the outline (its edges in buildingOutline order), its column depth
+        const d = CG.wallColumnDepths(fp, st.objects, gs) || [], P = G.buildingOutline(fp)
+        const side = (i) => { const a = P[i], b = P[(i + 1) % P.length]; return Math.abs(a.x - b.x) < 0.5 ? (Math.abs(a.x - Math.min(...P.map(v => v.x))) < 0.5 ? 'left' : 'right') : (Math.abs(a.y - Math.min(...P.map(v => v.y))) < 0.5 ? 'top' : 'bottom') }
+        const cols = {}; P.forEach((_, i) => { cols[side(i)] = inch(d[i] || 0) })
+        return { clear: F.useRackingSettings.getState().wallClearIn ?? 3, cols, left: inch(Math.min(...fs.map(f => f.x)) - x0), top: inch(Math.min(...fs.map(f => f.y)) - y0), right: inch(x1 - Math.max(...fs.map(f => f.x + f.w))), bottom: inch(y1 - Math.max(...fs.map(f => f.y + f.h))) } })`)
+      // a Fill over the building, rows across (real drag): the near walls carry columns — the rows from their face
+      await fillBox(0.005, 0.995)
+      const g1 = await gaps()
+      expect([g1.cols.left, g1.cols.top]).toEqual([12, 12])
+      expect([g1.left, g1.top]).toEqual([g1.clear + 12, g1.clear + 12])
+      for (const k of ['right', 'bottom']) expect([k, g1[k] >= g1.clear + g1.cols[k] - 0.01]).toEqual([k, true])
+      // every aisle its full width: nothing lost to a narrow aisle, no aisle Check item
+      const narrow = () => L.S('return import("/src/generate/usableCapacity.js").then(U => U.lostPositions(S.getState().objects, { gridSize: S.getState().gridSize || 40 }).filter(l => l.reason === "narrow").length)')
+      expect(await narrow()).toBe(0)
+      expect((await checkItems()).filter(i => i.kind === 'aisle-pick' || i.kind === 'aisle-drive')).toEqual([])
+      await L.page.getByLabel('Layout check').getByRole('button', { name: 'Close layout check' }).click(); await L.page.waitForTimeout(150)
+      // the left wall without columns: the grid's X offset typed in its card (5'), then a Fill — the rows from the wall
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('v'); await L.page.waitForTimeout(100)        // Select again
+      await pickGrid()                                                                    // a click on a column, Esc: the grid
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      const unlock = card.getByRole('button', { name: 'Unlock' })
+      if (await unlock.count()) { await unlock.click(); await L.page.waitForTimeout(150) }
+      const ox = card.getByLabel('Column X offset', { exact: true })
+      await ox.click(); await ox.fill("5'"); await ox.press('Enter'); await L.page.waitForTimeout(250)
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+      await fillBox(0.005, 0.995)
+      const g2 = await gaps()
+      expect([g2.cols.left, g2.cols.top]).toEqual([0, 12])
+      expect([g2.left, g2.top]).toEqual([g2.clear, g2.clear + 12])
+      expect(await narrow()).toBe(0)
+    }, T)
 
     it('REG-tunnel-xaisle-ends (click): a cross-aisle dragged past the rows’ high end goes all the way — the aisle at the row end, the rows trimmed there, and it stays a cross-aisle: the end aisle, still picked (tunnel fixes; was: no cross-aisle left there — tunnel round); dragged to the low end the same; typed one bay short of the end it stays there — a run of 1 bay (fixes-x 3; was: it went to the end); one undo each (tunnel round)', async () => {
       await open()
@@ -5775,10 +5840,11 @@ describe('REG — the hand check by real clicks', () => {
         await setClear(clear)
         const ids = await fillBox(0.0, 1.0)
         const area = await lastArea(), b = await innerBox(), gs = await gs7()
-        // the lines (type + across start), and which stand along a wall: within 1 ft of the top or the bottom wall
+        // the lines (type + across start), and which stand along a wall: within 2 ft of the top or the bottom wall (wall-columns
+        // round: a wall with columns — the rows from their face, 12" further in)
         const lines = async () => { const m = new Map(); for (const q of await areaRows(area)) { const k = q.type + ':' + q.s0.toFixed(2); m.set(k, (m.get(k) || 0) + 1) } return m }
         const rows = await areaRows(area)
-        const wallKeys = new Set(rows.filter(q => Math.abs(q.s0 * gs - b.y0) <= gs || Math.abs(b.y1 - q.s1 * gs) <= gs).map(q => q.type + ':' + q.s0.toFixed(2)))
+        const wallKeys = new Set(rows.filter(q => Math.abs(q.s0 * gs - b.y0) <= 2 * gs || Math.abs(b.y1 - q.s1 * gs) <= 2 * gs).map(q => q.type + ':' + q.s0.toFixed(2)))
         const wallIds = rows.filter(q => wallKeys.has(q.type + ':' + q.s0.toFixed(2))).map(q => q.id)
         expect([clear, wallKeys.size]).toEqual([clear, 2])
         const l0 = await lines()

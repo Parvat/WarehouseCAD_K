@@ -117,6 +117,24 @@ export function expandColumnGrid(cg, gridSize = GS, objects = null) {
   const ys = [cg.y]; let ay = cg.y; for (const s of cg.spacingY) { ay += s; ys.push(ay) }
   const cols = []
   for (const cx of xs) for (const cy of ys) if (!poly || inOutline(poly, cx, cy, 1)) cols.push({ x: cx - w / 2, y: cy - h / 2, w, h })
+  /* (wall-columns round) A column whose gridline lies on a wall stands fully inside the building: its outer face against
+     the wall's inner face, moved in by the wall's thickness and half its own size — a corner column on both walls. The
+     gridline stays on the wall. Marked `wall` (Check's message, Fill's and Generate's column face). */
+  if (poly) {
+    const wt = fp.wallThicknessFt ? fp.wallThicknessFt * gridSize : (fp.strokeWidth || 10)
+    for (const c of cols) {
+      const cx = c.x + w / 2, cy = c.y + h / 2
+      let mx = 0, my = 0
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length]
+        if (!mx && Math.abs(a.x - b.x) < 0.5 && Math.abs(cx - a.x) < 0.5 && cy >= Math.min(a.y, b.y) - 0.5 && cy <= Math.max(a.y, b.y) + 0.5)
+          mx = (inOutline(poly, a.x + 1, (a.y + b.y) / 2, 0) ? 1 : -1) * (wt + w / 2)   // inward, judged at the wall's middle
+        if (!my && Math.abs(a.y - b.y) < 0.5 && Math.abs(cy - a.y) < 0.5 && cx >= Math.min(a.x, b.x) - 0.5 && cx <= Math.max(a.x, b.x) + 0.5)
+          my = (inOutline(poly, (a.x + b.x) / 2, a.y + 1, 0) ? 1 : -1) * (wt + h / 2)
+      }
+      if (mx || my) { c.x += mx; c.y += my; c.wall = true }
+    }
+  }
   return cols
 }
 

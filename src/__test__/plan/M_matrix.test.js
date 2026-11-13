@@ -2,7 +2,7 @@
 // buildings × both orientations × both "Columns along wall" settings.
 // Rules only: no captured totals anywhere in this file.
 import { describe, it, expect, beforeAll } from 'vitest'
-import { sizingSheetLayout, columnGridObject, axisFrame } from '../../generate/sizingLayout'
+import { sizingSheetLayout, columnGridObject, axisFrame, columnFaceFrame } from '../../generate/sizingLayout'
 import { placementToObject, pickOrientation } from '../../generate/traceGenerate'
 import { checkColumns, expandColumnGrid, rackFootprint, MHE_PROFILES } from '../../generate/columnCheck'
 import { usableCapacity, mheProfile } from '../../generate/usableCapacity'
@@ -23,6 +23,9 @@ const SINGLE_FT = 42 / 12                 // 3.5
 const PAIR_FT = (42 + 9 + 42) / 12        // 7.75
 const BAY_FT = (96 + 3) / 12              // 8.25, one bay pitch along the run
 const WALL_CLEAR_FT = 0.5                  // the 6" wall clearance at each run end
+/** The column face on each side (wall-columns round: Generate lays out from the face of the columns on a wall that has
+ *  them — 1' for a 12" column): { nS, fS, nR, fR } — near / far, stack / run. */
+const faceOf = (brief, orientation) => columnFaceFrame(axisFrame(orientation, brief), 1).colFace || { nS: 0, fS: 0, nR: 0, fR: 0 }
 const MAX_RUN_FT = 150                     // Generate panel default "Max rack run (ft)"
 
 const briefOf = (id, orientation, columnsAlongWall) => {
@@ -35,9 +38,10 @@ function build(brief) {
   const placements = sizingSheetLayout(brief, DEFAULT_RULES)
   const racks = placements.map((p, i) => ({ ...placementToObject(p), id: 'r' + i }))
   const grid = columnGridObject(brief, 0, 0)
-  const columns = grid ? expandColumnGrid(grid, GS) : []
   const L = brief.lengthFt * GS, W = brief.widthFt * GS
   const floor = { type: 'fp_rect', fpVerts: [{ x: 0, y: 0 }, { x: L, y: 0 }, { x: L, y: W }, { x: 0, y: W }] }
+  // the columns as they stand (wall-columns round: a wall column fully inside the building)
+  const columns = grid ? expandColumnGrid(grid, GS, [floor]) : []
   return { placements, racks, grid, columns, floor }
 }
 
@@ -202,7 +206,8 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
           const gaps = [b.segs[0][0], ...b.segs.slice(1).map((s, i) => s[0] - b.segs[i][1]), runFt - b.segs[b.segs.length - 1][1]]
           /* a single row 6" off a wall is one rack along the whole run, exempt from the max run and with no
              cross-aisles of its own (BUG 70: Fill racking's rule) — only its ends are checked */
-          const wall = Math.abs(b.hi - b.lo - SINGLE_FT) < 1e-6 && (Math.abs(b.lo - WALL_CLEAR_FT) < 1e-6 || Math.abs(stackFt - WALL_CLEAR_FT - b.hi) < 1e-6)
+          const face = faceOf(brief, orientation)
+          const wall = Math.abs(b.hi - b.lo - SINGLE_FT) < 1e-6 && (Math.abs(b.lo - WALL_CLEAR_FT - face.nS) < 1e-6 || Math.abs(stackFt - WALL_CLEAR_FT - face.fS - b.hi) < 1e-6)
           if (!wall) for (const s of b.segs) if (s[1] - s[0] > MAX_RUN_FT + 1e-6) bad.push({ band: b.lo, sectionFt: s[1] - s[0] })
           const cross = []
           b.segs.slice(1).forEach((s, i) => {
@@ -221,7 +226,7 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
           else if (key !== refCross) bad.push({ band: b.lo, crossAislesNotAligned: key, firstRow: refCross })
           // past the wall clearance, an end holds less than one bay (a run within the max run is one
           // piece, so its rounding slack sits at the far wall rather than in a cross-aisle)
-          for (const g of [gaps[0], gaps[gaps.length - 1]]) if (g - WALL_CLEAR_FT > BAY_FT + 1e-6) bad.push({ band: b.lo, endGapFt: g })
+          for (const [g, fc] of [[gaps[0], face.nR], [gaps[gaps.length - 1], face.fR]]) if (g - WALL_CLEAR_FT - fc > BAY_FT + 1e-6) bad.push({ band: b.lo, endGapFt: g })
         }
         expect(bad, JSON.stringify(bad)).toEqual([])
       })

@@ -4,7 +4,7 @@
 // Four Generate layouts (both orientations), the auto orientation pick on the matrix (M13 and M25 flip to
 // horizontal), and Fill racking on the same buildings.
 import { describe, it, expect } from 'vitest'
-import { GS, MATRIX } from './fixtures'
+import { GS, MATRIX, colFace } from './fixtures'
 import { rackFootprint, MHE_PROFILES } from '../../generate/columnCheck'
 import { usableCapacity } from '../../generate/usableCapacity'
 import { generateAndPlace, pickOrientation } from '../../generate/traceGenerate'
@@ -31,25 +31,28 @@ async function generated(spec) {
   const run0 = (vert ? fp.y : fp.x) / GS, stack0 = (vert ? fp.x : fp.y) / GS
   const runFt = vert ? spec.widthFt : spec.lengthFt, stackFt = vert ? spec.lengthFt : spec.widthFt
   const racks = objs.filter(o => o.type === 'rack_row' || o.type === 'rack_double_row')
-  const onWall = (o) => o.type === 'rack_row' && (Math.abs(crossOf(o)[0] - stack0 - 0.5) < 1e-6 || Math.abs(stack0 + stackFt - 0.5 - crossOf(o)[1]) < 1e-6)
-  return { objs, fp, racks, walls: racks.filter(onWall), interior: racks.filter(o => !onWall(o)), run0, runFt }
+  // (wall-columns round: a wall carrying columns — from the column face, its depth further in)
+  const face = colFace({ gridXFt: 30, gridYFt: 30, ...spec })
+  const onWall = (o) => o.type === 'rack_row' && (Math.abs(crossOf(o)[0] - stack0 - 0.5 - face.nS) < 1e-6 || Math.abs(stack0 + stackFt - 0.5 - face.fS - crossOf(o)[1]) < 1e-6)
+  return { objs, fp, racks, walls: racks.filter(onWall), interior: racks.filter(o => !onWall(o)), run0, runFt, face }
 }
 const LAYOUTS = [
-  ['250x500 vertical', { lengthFt: 250, widthFt: 500, orientation: 'vertical' }, { bays: 747, positions: 10992, usable: 10228, wallBays: 60, sections: 4 }],
-  ['500x250 horizontal', { lengthFt: 500, widthFt: 250, orientation: 'horizontal' }, { bays: 747, positions: 10992, usable: 10228, wallBays: 60, sections: 4 }],
-  ['300x420 vertical', { lengthFt: 300, widthFt: 420, orientation: 'vertical' }, { bays: 772, positions: 11168, usable: 10388, wallBays: 50, sections: 3 }],
-  ['420x300 horizontal', { lengthFt: 420, widthFt: 300, orientation: 'horizontal' }, { bays: 772, positions: 11168, usable: 10388, wallBays: 50, sections: 3 }],
+  ['250x500 vertical', { lengthFt: 250, widthFt: 500, orientation: 'vertical' }, { bays: 736, positions: 10816, usable: 9952, wallBays: 60, sections: 4 }],
+  // (wall-columns round: the horizontal layouts lay out from the column face on the near walls — their numbers moved)
+  ['500x250 horizontal', { lengthFt: 500, widthFt: 250, orientation: 'horizontal' }, { bays: 736, positions: 10816, usable: 9952, wallBays: 60, sections: 4 }],
+  ['300x420 vertical', { lengthFt: 300, widthFt: 420, orientation: 'vertical' }, { bays: 772, positions: 11168, usable: 10440, wallBays: 50, sections: 3 }],
+  ['420x300 horizontal', { lengthFt: 420, widthFt: 300, orientation: 'horizontal' }, { bays: 772, positions: 11168, usable: 10440, wallBays: 50, sections: 3 }],
 ]
 
 describe('WR — Generate', () => {
   it.each(LAYOUTS)('WR-unbroken / WR-maxrun (%s): each wall row is ONE rack from the wall clearance to within a bay of the far end — through every cross-aisle, longer than the 150 ft max run; the interior rows are still in sections of at most 150 ft', async (_, spec, want) => {
-    const { walls, interior, run0, runFt } = await generated(spec)
+    const { walls, interior, run0, runFt, face } = await generated(spec)
     expect(walls.length).toBe(2)
     for (const w of walls) {
       const [a, b] = runOf(w)
-      expect(a - run0).toBeCloseTo(0.5, 6)
-      expect(run0 + runFt - 0.5 - b).toBeGreaterThanOrEqual(-1e-6)
-      expect(run0 + runFt - 0.5 - b).toBeLessThan(PITCH)
+      expect(a - run0).toBeCloseTo(0.5 + face.nR, 6)
+      expect(run0 + runFt - 0.5 - face.fR - b).toBeGreaterThanOrEqual(-1e-6)
+      expect(run0 + runFt - 0.5 - face.fR - b).toBeLessThan(PITCH)
       expect(b - a).toBeGreaterThan(MAX_RUN_FT)
       expect(w.beams.length).toBe(want.wallBays)
     }
@@ -87,17 +90,18 @@ describe('WR-flip', () => {
     const [lengthFt, widthFt, gridXFt, gridYFt, mhe] = MATRIX[id]
     return pickOrientation({ lengthFt, widthFt, gridXFt, gridYFt, mhe, columnsAlongWall, rackType: 'rack_double_row' }, sizingSheetLayout, DEFAULT_RULES)
   }
+  // (wall-columns round: with columns along the walls, Generate lays out from their face — M25 picks vertical again)
   it.each([
-    ['M13', true, 68048, 68032], ['M13', false, 68048, 68032],
-    ['M25', true, 42064, 42000], ['M25', false, 42064, 42000],
-  ])('WR-flip: %s (columns along wall %s) — auto now picks horizontal (H %s / V %s usable); vertical won before (H 67,904 / V 67,968; M25: H 41,936 / V 41,968)', (id, wall, h, v) => {
+    ['M13', true, 'horizontal', 68176, 67024], ['M13', false, 'horizontal', 68048, 68032],
+    ['M25', true, 'vertical', 41972, 42112], ['M25', false, 'horizontal', 42064, 42000],
+  ])('WR-flip: %s (columns along wall %s) — auto picks %s (H %s / V %s usable); vertical won before the wall rows (H 67,904 / V 67,968; M25: H 41,936 / V 41,968)', (id, wall, o, h, v) => {
     const p = pick(id, wall)
-    expect([p.orientation, p.horizontalUsable, p.verticalUsable]).toEqual(['horizontal', h, v])
+    expect([p.orientation, p.horizontalUsable, p.verticalUsable]).toEqual([o, h, v])
   })
   it('WR-flip (controls): the 250 × 500 Generate building still picks horizontal, 300 × 420 vertical', () => {
     const b = (lengthFt, widthFt) => pickOrientation({ lengthFt, widthFt, gridXFt: 30, gridYFt: 30, mhe: 'reach', rackType: 'rack_double_row' }, sizingSheetLayout, DEFAULT_RULES)
-    expect([b(250, 500).orientation, b(250, 500).horizontalUsable, b(250, 500).verticalUsable]).toEqual(['horizontal', 10520, 10228])
-    expect([b(300, 420).orientation, b(300, 420).horizontalUsable, b(300, 420).verticalUsable]).toEqual(['vertical', 10036, 10388])
+    expect([b(250, 500).orientation, b(250, 500).horizontalUsable, b(250, 500).verticalUsable]).toEqual(['horizontal', 10144, 9952])
+    expect([b(300, 420).orientation, b(300, 420).horizontalUsable, b(300, 420).verticalUsable]).toEqual(['vertical', 10020, 10440])
   })
 })
 

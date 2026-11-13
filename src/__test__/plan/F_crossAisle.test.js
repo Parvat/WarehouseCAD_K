@@ -2,21 +2,22 @@
 import { describe, it, expect } from 'vitest'
 import { rowSegments } from '../../generate/sizingLayout'
 import { rackFootprint } from '../../generate/columnCheck'
-import { ALL_CASES, generate, GS } from './fixtures'
+import { ALL_CASES, generate, GS, colFace } from './fixtures'
 
 // TEST_PLAN.md §3E table, cross-aisle column.
 const CROSS = { reach: 9, counterbalance: 13, vna: 8.5 }
 
 /** Group racks into bands (same stack-axis position) and return, per band,
  *  the run-axis extents of its segments in feet. */
-function bandsOf(racks, stackFt = Infinity) {
+function bandsOf(racks, stackFt = Infinity, face = { nS: 0, fS: 0 }) {
   const byBand = new Map()
   for (const r of racks) {
     const f = rackFootprint(r)
     const stack = f.rotated ? f.x : f.y
     // the interior rows only: a single row 6" off a wall is a wall row, read on its own rule
     const s0 = stack / GS, s1 = (f.rotated ? f.x + f.w : f.y + f.h) / GS
-    if (r.type === 'rack_row' && (Math.abs(s0 - 0.5) < 1e-6 || Math.abs(s1 - (stackFt - 0.5)) < 1e-6)) continue
+    // (wall-columns round: off the column face on a wall that carries columns)
+    if (r.type === 'rack_row' && (Math.abs(s0 - 0.5 - face.nS) < 1e-6 || Math.abs(s1 - (stackFt - 0.5 - face.fS)) < 1e-6)) continue
     const key = Math.round(stack * 1000)
     const run = f.rotated ? [f.y / GS, (f.y + f.h) / GS] : [f.x / GS, (f.x + f.w) / GS]
     if (!byBand.has(key)) byBand.set(key, [])
@@ -47,20 +48,21 @@ describe('F — cross-aisle', () => {
       const vertical = brief.orientation === 'vertical'
       const runFt = vertical ? brief.widthFt : brief.lengthFt
       const stackFt = vertical ? brief.lengthFt : brief.widthFt
-      for (const segs of bandsOf(racks, stackFt)) {
+      const face = colFace(brief)
+      for (const segs of bandsOf(racks, stackFt, face)) {
         if (runFt - 1 <= 150) {
           // 120' of run (vertical): one piece from the near wall, ending within a bay of the far one
           expect(segs).toHaveLength(1)
-          expect(segs[0][0]).toBeCloseTo(0.5, 6)
-          expect(runFt - 0.5 - segs[0][1]).toBeGreaterThanOrEqual(-1e-6)
-          expect(runFt - 0.5 - segs[0][1]).toBeLessThan(99 / 12)
+          expect(segs[0][0]).toBeCloseTo(0.5 + face.nR, 6)
+          expect(runFt - 0.5 - face.fR - segs[0][1]).toBeGreaterThanOrEqual(-1e-6)
+          expect(runFt - 0.5 - face.fR - segs[0][1]).toBeLessThan(99 / 12)
           continue
         }
         expect(segs).toHaveLength(2)
         const [a, b] = segs
         // no gap at either end wall: 6" wall clearance, then racking
-        expect(a[0]).toBeCloseTo(0.5, 6)
-        expect(b[1]).toBeCloseTo(runFt - 0.5, 6)
+        expect(a[0]).toBeCloseTo(0.5 + face.nR, 6)
+        expect(b[1]).toBeCloseTo(runFt - 0.5 - face.fR, 6)
         // cross-aisle width per forklift
         const lo = a[1], hi = b[0]
         expect(hi - lo).toBeGreaterThanOrEqual(CROSS[brief.mhe] - 1e-9)

@@ -241,6 +241,9 @@ export function columnFaceBlocks(objects, columns, { gridSize = 40, profile = MH
       }
       if (kind !== 'zone' && kind !== 'wall') continue                // a rack across: the rack-to-rack aisle's
       if (d > reach + E || toCol + (cs1 - cs0) > d + E) continue       // open floor, or the column is past the obstacle
+      // (wall-columns round) narrower than any aisle: the strip behind a row along the wall — a wall column standing
+      // there, between the row's back and the wall, is in no aisle
+      if (kind === 'wall' && d < AISLE_MIN_FT * gridSize - E) continue
       best = { r, vert, face, dir, d, kind, zone, toCol, fr0, fr1 }
     }
     if (!best) return

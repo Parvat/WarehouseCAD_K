@@ -17,6 +17,27 @@ export function gridLines(cg) {
   const line = (o, sp) => { const v = [o]; for (const s of sp || []) v.push(v[v.length - 1] + s); return v }
   return { xs: line(cg.x, cg.spacingX), ys: line(cg.y, cg.spacingY) }
 }
+/** Per wall of building `fp` (buildingOutline's edges, in order): the depth (px, across that wall) of the columns standing
+ *  on it — a gridline on the wall with a gridline across it within the wall's length — 0 for a wall without columns
+ *  (wall-columns round: Generate and Fill lay out from the columns' face there). Null when no wall carries columns. */
+export function wallColumnDepths(fp, objects, gs = 40) {
+  const P = buildingOutline(fp), n = P.length
+  const grids = (objects || []).filter(o => o?.type === 'column_grid' && o.showGrid !== false && gridBuilding(objects, o)?.id === fp.id)
+  if (!grids.length) return null
+  const out = P.map((a, i) => {
+    const b = P[(i + 1) % n], v = Math.abs(a.x - b.x) <= 0.5
+    let d = 0
+    for (const g of grids) {
+      const { xs, ys } = gridLines(g)
+      const on = v ? xs.some(x => Math.abs(x - a.x) < 0.5) && ys.some(y => y >= Math.min(a.y, b.y) - 0.5 && y <= Math.max(a.y, b.y) + 0.5)
+        : ys.some(y => Math.abs(y - a.y) < 0.5) && xs.some(x => x >= Math.min(a.x, b.x) - 0.5 && x <= Math.max(a.x, b.x) + 0.5)
+      if (on) d = Math.max(d, v ? (g.columnW || gs) : (g.columnH || gs))
+    }
+    return d
+  })
+  return out.some(d => d > 0) ? out : null
+}
+
 /** The building a grid belongs to: its parent, else the first building. */
 export const gridBuilding = (objects, cg) => (objects || []).find(o => o.id === cg?.parentId && /^fp_/.test(o.type || '')) || (objects || []).find(o => /^fp_/.test(o.type || '')) || null
 const extent = (fp) => { const p = buildingOutline(fp); return { x0: Math.min(...p.map(q => q.x)), x1: Math.max(...p.map(q => q.x)), y0: Math.min(...p.map(q => q.y)), y1: Math.max(...p.map(q => q.y)) } }

@@ -109,7 +109,9 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect(m.buildLayoutSVG(objects, racksLocked, gridSize, { labels: noLabels }).svg).toBe(m.buildLayoutSVG(objects, layers, gridSize, { labels: noLabels }).svg)
     // snap: drag the rack so its left edge sits 3 px from the building's left wall
     const moved = new Set([rack.id])
-    const dx = fp.x + 3 - rack.x
+    // (its drawn left edge — a turned rack's is not its x; wall-columns round: the coincidence that hid it moved)
+    const left = ((rack.rotation || 0) % 180) === 90 ? rack.x + rack.width / 2 - rack.height / 2 : rack.x
+    const dx = fp.x + 3 - left
     const wallGuides = (ls) => m.computeSmartGuides([rack.id], m.L.snapTargets(objects, ls, moved), gridSize, 1, dx, 0).guides.filter(g => g.isWall)
     const open = allOpen(layers)
     expect(wallGuides(open).length).toBeGreaterThan(0)

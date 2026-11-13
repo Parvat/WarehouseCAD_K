@@ -814,6 +814,26 @@ export function axisFrame(orientation, { lengthFt, widthFt, gridXFt, gridYFt, co
   }
 }
 
+/** The column face as the wall (wall-columns round): a wall with a gridline on it carries columns, which now stand fully
+ *  inside the building — Generate lays out from their face. Frame `f` (axisFrame) narrowed by the column depth `colFt` on
+ *  each side whose wall has a line on it (the near wall: the first line at 0; the far wall: the last line on it), the
+ *  gridlines shifted with it, and its placements carried back — the walk itself (rowBands / rowSegments) unchanged, so
+ *  every aisle keeps its width. A wall without columns stays where it was. */
+export function columnFaceFrame(f, colFt) {
+  if (!(colFt > 0)) return f
+  const on = (v, at) => Number.isFinite(v) && Math.abs(v - at) < 1e-6
+  const nS = f.stackGridFt > 0 && on(f.stackGridOffsetFt, 0) ? colFt : 0, fS = f.stackGridFt > 0 && on(f.stackGridMaxFt, f.stackFt) ? colFt : 0
+  const nR = f.runGridFt > 0 && on(f.runGridOffsetFt, 0) ? colFt : 0, fR = f.runGridFt > 0 && on(f.runGridMaxFt, f.runFt) ? colFt : 0
+  if (!(nS || fS || nR || fR)) return f
+  return {
+    ...f,
+    stackFt: f.stackFt - nS - fS, stackGridOffsetFt: f.stackGridOffsetFt - nS, stackGridMaxFt: f.stackGridMaxFt - nS,
+    runFt: f.runFt - nR - fR, runGridOffsetFt: f.runGridOffsetFt - nR, runGridMaxFt: f.runGridMaxFt - nR,
+    colFace: { nS, fS, nR, fR },
+    place: (band, runPos, runLenFt) => f.place({ ...band, yFt: band.yFt + nS }, runPos + nR, runLenFt),
+  }
+}
+
 /** The generator. Same shape/return as stubGenerateLayout, plus the resolved
  *  rules profile — change the profile and the whole layout re-drives.
  *
@@ -869,7 +889,7 @@ export function sizingSheetLayout(brief, rules = DEFAULT_RULES) {
   } = brief
   const { beamIn, depthIn, upIn, flueIn, palletWIn, endClearFt, sideClearFt } = spec
 
-  const frame = axisFrame(orientation, { lengthFt, widthFt, gridXFt, gridYFt, columnsAlongWall })
+  const frame = columnFaceFrame(axisFrame(orientation, { lengthFt, widthFt, gridXFt, gridYFt, columnsAlongWall }), colSizeIn / 12)
 
   const bands = rowBands(frame.stackFt, { rackType, depthIn, aisleFt, flueIn, gridYFt: frame.stackGridFt, travelFt, gridOffsetFt: frame.stackGridOffsetFt, gridMaxFt: frame.stackGridMaxFt, colSizeIn, wallClearFt: sideClearFt })
   const { segments, bays } = rowSegments(frame.runFt, {

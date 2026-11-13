@@ -34,7 +34,8 @@ import { rowBands, rowSegments, layoutSpec } from './sizingLayout'
 import { placementToObject, aisleObjectsForRacks, parentGenerated } from './traceGenerate'
 import { rackFootprint, expandColumnGrid } from './columnCheck'
 import { layerForType } from '../utils/layers'
-import { buildingOutline, innerOutline, floorSection } from '../utils/floorGeom'
+import { buildingOutline, innerOutline, floorSection, faceOutline } from '../utils/floorGeom'
+import { wallColumnDepths } from '../utils/columnGrid'
 import { dropUnreachableFaces } from './faceReach'
 import { giveWayIn, cutOffRacks } from './aisleAccess'
 import { getRackCapacity } from '../utils/capacity'
@@ -57,7 +58,8 @@ export { buildingOutline, innerOutline }
  *  `clearIn` off the real wall; the pattern starts there too, so every aisle keeps its width.
  *  Rectilinear floors (every floor plan type is). */
 export function clearOutline(fp, gridSize, vert, clearIn = 0, ends = false) {
-  const poly = innerOutline(fp, gridSize), C = (clearIn / 12) * gridSize
+  // (wall-columns round: from the column face on a wall that carries columns — fp.colFace, withColumnFace)
+  const poly = faceOutline(fp, gridSize, fp.colFace), C = (clearIn / 12) * gridSize
   if (!(C > 0)) return poly
   const inside = (x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const P = poly[i], Q = poly[j]; if ((P.y > y) !== (Q.y > y) && x < (Q.x - P.x) * (y - P.y) / (Q.y - P.y) + P.x) c = !c } return c }
   const out = poly.map(p => ({ ...p }))
@@ -70,6 +72,12 @@ export function clearOutline(fp, gridSize, vert, clearIn = 0, ends = false) {
     for (const k of [i, (i + 1) % poly.length]) { if (isV) out[k].x = a.x + dir * C; else out[k].y = a.y + dir * C }
   }
   return out
+}
+/** Building `fp` as Fill lays out in it (wall-columns round): with `colFace`, the depth of the columns on each of its walls
+ *  (utils/columnGrid.js wallColumnDepths), so every wall that carries columns is their face. */
+export function withColumnFace(fp, objects, gridSize = 40) {
+  if (!fp || fp.colFace !== undefined) return fp
+  return { ...fp, colFace: wallColumnDepths(fp, objects, gridSize) }
 }
 export const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 
@@ -302,7 +310,7 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
   if (elevDefault) settings = { ...settings, levels: elevDefault.levels.length }
   const P = fillParams(settings, rules)
   const { set, aisleFt, travelFt, crossAisleFt, beamIn, depthIn, upIn, flueIn } = P
-  const fp = buildingForBox(objects, boxPx)
+  const fp = withColumnFace(buildingForBox(objects, boxPx), objects, gridSize)
   if (!fp || !(boxPx.w > 0) || !(boxPx.h > 0)) return null
   // an edge across the rows within a rack's depth of a wall counts as on it: the pattern starts from the wall
   // the wall clearance (wallClear.js): the floor's walls along the rows moved in by it, the pattern holds it
@@ -464,7 +472,7 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
    before; `sections` (world px rects: every section but the fill's own) are kept clear like zones. */
 export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = nanoid, areaId = null, fp = null, blocked = [], wayIn = true, report = null, snapEnds = false, rackGap = null, sections = [] } = {}) {
   const empty = { fp: null, racks: [], aisles: [], rows: 0, positions: 0 }
-  fp = fp || buildingForBox(objects, boxPx)
+  fp = withColumnFace(fp || buildingForBox(objects, boxPx), objects, gridSize)
   if (!fp || !pattern || !(boxPx.w > 0) || !(boxPx.h > 0)) return empty
   const { vert, beamIn, upIn, depthIn, flueIn, aisleFt } = pattern
   // the clearance the pattern was made with (a pattern from before BUG 76 sat flush)
@@ -694,7 +702,7 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
      rack runs on by as many whole bays as fit, on its own uprights, exempt from the max run. Each is
      kept only while every rack still has a way in and the new bays keep their pick faces. In walk
      order, so the same box always gives the same racks. */
-  const polyW = innerOutline(fp, gridSize)
+  const polyW = faceOutline(fp, gridSize, fp.colFace)   // (the column face on a wall that carries columns)
   const lengthen = (o, k, high) => {
     const d = k * pitch * gridSize, more = Array(k).fill(beamIn)
     const out = { ...o, beams: high ? [...o.beams, ...more] : [...more, ...o.beams], width: o.width + d }
@@ -742,7 +750,7 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
     // ids first: the aisles between the new rows refer to them
     // and no pick face without an aisle: a face against a wall or a zone loses its bays there (faceReach.js)
     const faced = dropUnreachableFaces(P.placements.map(p => ({ ...placementToObject(p), id: newId(), ...(areaId ? { areaId } : {}) })), {
-      poly: innerOutline(fp, gridSize), aislePx: aisleFt * gridSize, gridSize, newId, zones,
+      poly: faceOutline(fp, gridSize, fp.colFace), aislePx: aisleFt * gridSize, gridSize, newId, zones,
     })
     // and every aisle with a way in: wall-to-wall rows leave a travel path; a pocket is opened by its cheapest strip (aisleAccess.js)
     const mine = new Set(faced.map(r => r.id))

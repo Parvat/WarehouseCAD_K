@@ -258,14 +258,16 @@ describe.each(Object.keys(SHAPE_CUTS).flatMap(shape => CASES.map(c => [`${shape}
     // rectangle 30, L 28, T 26, exactly these lines. Any other upright error still fails here)
     const two = (r, s) => `Row ${r}, section ${s}: 2 columns stand on upright frames`, one = (r, s) => `Row ${r}, section ${s}: a column stands on an upright frame`
     const RECT = [two(4, 1), two(4, 2), two(4, 3), two(7, 1), two(7, 2), two(7, 3), two(7, 4), two(10, 1), two(10, 2), two(10, 3), two(10, 4), two(13, 1), two(13, 2), two(13, 3), two(13, 4)]
-    const KNOWN = new Set({
+    // (a list: a row and section can now have two items with the same words — one column each on two frames)
+    const LIST = {
       rectangle: RECT,
-      L: [two(4, 1), two(4, 2), two(4, 3), two(7, 1), two(7, 2), two(7, 3), two(7, 4), two(10, 1), one(10, 2), two(10, 2), two(10, 3), two(10, 4), one(13, 2), two(13, 3), two(13, 4)],
-      T: [two(4, 1), two(4, 2), two(4, 3), two(7, 1), two(7, 2), two(7, 3), two(7, 4), two(10, 1), one(10, 2), two(10, 2), two(10, 3), one(10, 3), two(10, 4), one(13, 2), one(13, 3)],
-    }[shape])
+      // (wall-columns round: the notch walls' columns stand fully inside — Row 10's frames meet one column fewer)
+      L: [two(4, 1), two(4, 2), two(4, 3), two(7, 1), two(7, 2), two(7, 3), two(7, 4), two(10, 1), one(10, 2), one(10, 2), two(10, 3), two(10, 4), one(13, 2), two(13, 3), two(13, 4)],
+      T: [two(4, 1), two(4, 2), two(4, 3), two(7, 1), two(7, 2), two(7, 3), two(7, 4), two(10, 1), one(10, 2), one(10, 2), one(10, 3), one(10, 3), two(10, 4), one(13, 2), one(13, 3)],
+    }[shape], KNOWN = new Set(LIST)
     // (exactly these on the horizontal-row fills; none on the others)
     const rowsAcross = turned ? orientation === 'vertical' : orientation === 'horizontal'
-    expect(m.LC.checkLayout(out, { gridSize: GS }).errors.filter(e => e.kind === 'upright').map(e => e.text).sort()).toEqual(rowsAcross && !stored ? [...KNOWN].sort() : [])
+    expect(m.LC.checkLayout(out, { gridSize: GS }).errors.filter(e => e.kind === 'upright').map(e => e.text).sort()).toEqual(rowsAcross && !stored ? [...LIST].sort() : [])
     expect(m.LC.checkLayout(out, { gridSize: GS }).errors.filter(e => !(e.kind === 'upright' && KNOWN.has(e.text)))).toEqual([])
     expect(m.AA.cutOffRacks(out, fp, { gridSize: GS, travelFt: 8, aisleFt: 10.5 }).cutOff).toEqual([])
     const before = keys(out)

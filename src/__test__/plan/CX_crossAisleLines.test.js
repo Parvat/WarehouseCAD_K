@@ -101,11 +101,14 @@ function onObstacle(objs, ls, size) {
 describe('CX-generate', () => {
   // the wall rows run past the cross-aisles (BUG 70), so each cross-aisle spans the interior lines only: 3 stretches
   // of 70.583 ft centred at -75.208 / -4.625 / 65.958 (before: -83 / 0 / 83, 83 ft)
-  const C9 = [-75.20833333333333, -4.625, 65.95833333333333]
-  const NINE = [...STRETCH([`9' 3"`, -142, -132.75], C9), ...STRETCH([`9' 3"`, -0.5, 8.75], C9), ...STRETCH([`9' 3"`, 124.5, 133.75], C9)]
+  // (wall-columns round: laid out from the column face on the near walls — the run 1 ft shorter, the cross-aisles
+  // 11' 8", the stretches 70.25 ft centred at -74.375 / -4.125 / 66.125; was 9' 3" at -75.208 / -4.625 / 65.958)
+  const C9 = [-74.375, -4.125, 66.125]
+  const NINE = [...STRETCH([`11' 8"`, -124.5, -112.833333], C9), ...STRETCH([`11' 8"`, -5.333333, 6.333333], C9), ...STRETCH([`11' 8"`, 122.083333, 133.75], C9)]
   // 4 stretches of 66.875 ft centred at -102.0625 / -35.1875 / 31.6875 / 98.5625 (before: -112.125 / -37.375 / 37.375 / 112.125)
-  const C11 = [-102.0625, -35.1875, 31.6875, 98.5625]
-  const ELEVEN = [...STRETCH([`11' 2"`, -77.25, -66.125], C11), ...STRETCH([`11' 2"`, 66.125, 77.25], C11)]
+  // (wall-columns round: 10' 2" cross-aisles, stretches centred at -101.1875 / -34.5625 / 32.0625 / 98.6875; was 11' 2")
+  const C11 = [-101.1875, -34.5625, 32.0625, 98.6875]
+  const ELEVEN = [...STRETCH([`10' 2"`, -76.25, -66.125], C11), ...STRETCH([`10' 2"`, 66.125, 76.25], C11)]
   it.each([
     ['250x500 vertical', { lengthFt: 250, widthFt: 500, orientation: 'vertical' }, NINE],
     ['500x250 horizontal', { lengthFt: 500, widthFt: 250, orientation: 'horizontal' }, NINE],
@@ -120,10 +123,10 @@ describe('CX-generate', () => {
     const ls = sorted(crossAisleLabels(gen, GS, { profile: REACH, lz }))
     expect(ls.length).toBe(9)
     expect(onObstacle(gen, ls, 'xlarge')).toEqual([])
-    const C = [-75.20833333333333, -4.625, 65.95833333333333]
+    const C = [-74.375, -4.125, 66.125]   // (wall-columns round: was -75.208 / -4.625 / 65.958)
     const moved = ls.filter(l => !C.some(c => Math.abs(l.positions[0] / GS - c) < 1e-6))
     // the stretches are 70.583 ft wide; a slid label stays inside its own
-    for (const l of moved) expect(Math.min(...C.map(c => Math.abs(l.positions[0] / GS - c)))).toBeLessThanOrEqual(70.58333333333333 / 2 + 1e-6)
+    for (const l of moved) expect(Math.min(...C.map(c => Math.abs(l.positions[0] / GS - c)))).toBeLessThanOrEqual(70.25 / 2 + 1e-6)
     expect(moved.length).toBe(vert ? 0 : 3)                  // before BUG 70: 0 / 6
     // at the default size nothing needed to move
     expect(onObstacle(gen, crossAisleLabels(gen, GS, { profile: REACH }), 'medium')).toEqual([])
@@ -204,7 +207,8 @@ describe.each([['vertical', true], ['horizontal', false]])('CX — %s', (_, vert
     // placed by hand: no section stamps, and the wall rows in pieces like the rows beside them
     const hand = splitWallRows(gen).map(o => { const { genSection, ...rest } = o; return rest })
     expect(hand.some(o => o.genSection != null)).toBe(false)
-    expectLabels(crossAisleLabels(hand, GS, { profile: REACH }), [[`9' 3"`, -142, -132.75, 0], [`9' 3"`, -0.5, 8.75, 0], [`9' 3"`, 124.5, 133.75, 0]], 6)
+    // (wall-columns round: 11' 8" from the column face; was 9' 3")
+    expectLabels(crossAisleLabels(hand, GS, { profile: REACH }), [[`11' 8"`, -124.5, -112.833333, 0.5], [`11' 8"`, -5.333333, 6.333333, 0.5], [`11' 8"`, 122.083333, 133.75, 0.5]], 5)
   })
 })
 

@@ -169,6 +169,10 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
 
   // ── the column check ──
   const cols = layoutColumns(objects, gridSize)
+  /* (wall-columns round) a clash with a wall column — one that now stands fully inside the wall — in a layout laid out
+     before: re-running Fill or Generate on that area lays the rows out from the columns' face */
+  const WALL_FIX = ' — a wall column: re-run Fill or Generate on this area to fix it'
+  const anyWall = (idx) => idx.some(i => cols[i]?.wall)
   const res = runColumnCheck(objects, { profile, gridSize, pickBothSides, elevations })
   if (res) {
     // a column in an aisle leaving less than the travel width
@@ -182,7 +186,7 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
       errors.push({ severity: 'error', kind: 'aisle-drive', ids: [t.id, u.id],
         box: col ? union([col, band]) : boxOf(foot.get(t.id)),
         highlight: band ? [shade(band, HL.red, `${short(b.clearFt * gridSize)} · needs ${len(travelPx)}`)] : [],
-        text: `Aisle between ${pairName(t, u, racks)}: a column leaves ${short(b.clearFt * gridSize)}, needs ${len(travelPx)} to drive` })
+        text: `Aisle between ${pairName(t, u, racks)}: a column leaves ${short(b.clearFt * gridSize)}, needs ${len(travelPx)} to drive` + (anyWall([b.columnIndex]) ? WALL_FIX : '') })
     }
     // columns on upright frames: one item per rack
     const onRack = new Map(), frames = new Map()
@@ -198,7 +202,7 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
       const n = set.size, boxes = [...set].map(ci => cols[ci]).filter(Boolean)
       errors.push({ severity: 'error', kind: 'upright', ids: [id], box: boxes.length ? union(boxes) : boxOf(foot.get(id)),
         highlight: [...frames.get(id).values()].map(b => shade(b, HL.orange)),
-        text: `${name(r)}: ${n === 1 ? 'a column stands' : `${n} columns stand`} on ${n === 1 ? 'an upright frame' : 'upright frames'}` })
+        text: `${name(r)}: ${n === 1 ? 'a column stands' : `${n} columns stand`} on ${n === 1 ? 'an upright frame' : 'upright frames'}` + (anyWall([...set]) ? WALL_FIX : '') })
     }
     // pallet positions lost to columns (in the rack and in its pick zones): one item per
     // section (generated) or per building (placed by hand), with every row it touches
@@ -207,8 +211,9 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
       const r = byId.get(c.rackId)
       if (!r || !c.positionsLost) continue
       const key = r.genSection != null ? 's' + r.genSection : 'b' + (r.parentId || '')
-      if (!lostBy.has(key)) lostBy.set(key, { section: r.genSection, n: 0, ids: new Set(), spots: [] })
+      if (!lostBy.has(key)) lostBy.set(key, { section: r.genSection, n: 0, ids: new Set(), spots: [], wall: false })
       const g = lostBy.get(key)
+      if (anyWall(c.columnIndices || (c.columnIndex != null ? [c.columnIndex] : []))) g.wall = true
       g.n += c.positionsLost; g.ids.add(r.id)
       // exactly the positions the X marks are on (render/labelOps.js), not whole bays or rows
       for (const q of blockedPositionRects(c, r, gridSize)) g.spots.push(localRectToWorld(r, { x: q.x, y: q.y, w: q.width, h: q.height }))
@@ -218,7 +223,7 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
       const where = g.section != null ? `Section ${sectionLabel(g.section)}` : rows === 1 ? name(byId.get(ids[0])) : 'Racks placed by hand'
       warnings.push({ severity: 'warning', kind: 'columns-lost', ids, box: union(ids.map(id => foot.get(id))), positions: g.n,
         highlight: g.spots.map(b => xmark(b, HL.red)),
-        text: `${where}: columns block ${g.n} pallet position${g.n === 1 ? '' : 's'}${rows > 1 ? ` on ${rows} rows` : ''}` })
+        text: `${where}: columns block ${g.n} pallet position${g.n === 1 ? '' : 's'}${rows > 1 ? ` on ${rows} rows` : ''}` + (g.wall ? WALL_FIX : '') })
     }
   }
 

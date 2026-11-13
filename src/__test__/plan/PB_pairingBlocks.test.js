@@ -5,7 +5,7 @@
 // one section leaves its neighbours there paired across the wide aisle. The fixture's four fills, four
 // Generate layouts, AR's layout with its wall rows unbroken (as BUG 70 makes them), both orientations.
 import { describe, it, expect } from 'vitest'
-import { GS } from './fixtures'
+import { GS, colFace } from './fixtures'
 import { REAL_LAYOUT } from './realLayout.fixture'
 import { planAreaResize, planAreaCreate } from '../../generate/rackingArea'
 import { rackFootprint, MHE_PROFILES } from '../../generate/columnCheck'
@@ -96,9 +96,11 @@ function arUnbroken(orientation) {
   const brief = { lengthFt: 240, widthFt: 120, gridXFt: 25, gridYFt: 30, mhe: 'reach', orientation, rackType: 'rack_double_row', ...(orientation === 'vertical' ? { maxRunFt: 100 } : {}) }
   return sizingSheetLayout(brief, DEFAULT_RULES).map((p, i) => ({ ...placementToObject(p), id: 'r' + i, parentId: 'fp' }))
 }
-const onWallAR = (o, orientation) => { const stackFt = orientation === 'vertical' ? 240 : 120; return o.type === 'rack_row' && (Math.abs(across(o)[0] / GS - 0.5) < 1e-6 || Math.abs(across(o)[1] / GS - (stackFt - 0.5)) < 1e-6) }
+// (wall-columns round: off the column face on a wall that carries columns)
+const onWallAR = (o, orientation) => { const stackFt = orientation === 'vertical' ? 240 : 120, c = colFace({ lengthFt: 240, widthFt: 120, gridXFt: 25, gridYFt: 30, orientation }); return o.type === 'rack_row' && (Math.abs(across(o)[0] / GS - 0.5 - c.nS) < 1e-6 || Math.abs(across(o)[1] / GS - (stackFt - 0.5 - c.fS)) < 1e-6) }
 
-describe.each([['horizontal', 30.25], ['vertical', 29.75]])('PB — %s', (orientation, w) => {
+// (wall-columns round: vertical 29.5 — laid out from the column face; was 29.75)
+describe.each([['horizontal', 30.25], ['vertical', 29.5]])('PB — %s', (orientation, w) => {
   it('PB-wall: a wall row running past both sections pairs with the first row of each section; with row 2/4 deleted, rows 2/3 and 2/5 pair across the wide aisle — where the old pairing, merging both sections through the wall row, left them unpaired', () => {
     const racks = arUnbroken(orientation)
     const walls = racks.filter(o => onWallAR(o, orientation))
