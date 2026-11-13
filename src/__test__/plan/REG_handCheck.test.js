@@ -5561,20 +5561,20 @@ describe('REG — the hand check by real clicks', () => {
       expect(await narrow()).toBe(0)
       expect((await checkItems()).filter(i => i.kind === 'aisle-pick' || i.kind === 'aisle-drive')).toEqual([])
       await L.page.getByLabel('Layout check').getByRole('button', { name: 'Close layout check' }).click(); await L.page.waitForTimeout(150)
-      // the left wall without columns: the grid's X offset typed in its card (5'), then a Fill — the rows from the wall
+      // walls without columns: the card's Columns on the walls No (col-bubbles round — the grid centred, no line on a wall;
+      // was: the X offset typed), then a Fill — the rows from the walls
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('v'); await L.page.waitForTimeout(100)        // Select again
       await pickGrid()                                                                    // a click on a column, Esc: the grid
       const card = L.page.getByRole('tabpanel', { name: 'Properties' })
       const unlock = card.getByRole('button', { name: 'Unlock' })
       if (await unlock.count()) { await unlock.click(); await L.page.waitForTimeout(150) }
-      const ox = card.getByLabel('Column X offset', { exact: true })
-      await ox.click(); await ox.fill("5'"); await ox.press('Enter'); await L.page.waitForTimeout(250)
+      await card.getByRole('group', { name: 'Columns on the walls' }).getByRole('button', { name: 'No' }).click(); await L.page.waitForTimeout(250)
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
       await fillBox(0.005, 0.995)
       const g2 = await gaps()
-      expect([g2.cols.left, g2.cols.top]).toEqual([0, 12])
-      expect([g2.left, g2.top]).toEqual([g2.clear, g2.clear + 12])
+      expect([g2.cols.left, g2.cols.top, g2.cols.right, g2.cols.bottom]).toEqual([0, 0, 0, 0])
+      expect([g2.left, g2.top]).toEqual([g2.clear, g2.clear])
       expect(await narrow()).toBe(0)
     }, T)
 
@@ -6379,14 +6379,16 @@ describe('REG — the hand check by real clicks', () => {
     const bubbles = () => L.page.evaluate(() => window.Konva.stages[0].find('.column-bubble-text').map(t => { const r = t.getClientRect(); return { text: t.text(), x: r.x + r.width / 2, y: r.y + r.height / 2 } }))
     const outlineBox = () => L.S('return import("/src/utils/floorGeom.js").then(G => { const f = S.getState().objects.find(o => /^fp_/.test(o.type)), p = G.buildingOutline(f), xs = p.map(q => q.x), ys = p.map(q => q.y); return { id: f.id, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) } })')
 
-    it('REG-colgrid-card (click): the column grid selected — its card shows X / Y spacing, X / Y offset, Width, Depth and the Result (columns as drawn, gridlines A–… · 1–…, the last bay to the far wall); X spacing typed redraws the grid as you type (no undo step yet), Enter is one undo step, Ctrl+Z puts it back exactly; an offset past the far wall shows the warning and Esc puts the grid back', async () => {
+    it('REG-colgrid-card (click): the column grid selected — its card shows X / Y spacing, Columns on the walls Yes / No (no offsets — col-bubbles round), Width, Depth and the Result (columns as drawn, gridlines A–… · 1–…, the last bay to the far wall); X spacing typed redraws the grid as you type (no undo step yet), Enter is one undo step, Ctrl+Z puts it back exactly; a spacing typed then Esc puts the grid back', async () => {
       await open()
       await pickGrid()
       // Generate leaves the Columns layer locked (the card read-only): unlocked from the card's padlock first
       const card = L.page.getByRole('tabpanel', { name: 'Properties' })
       const unlock = card.getByRole('button', { name: 'Unlock' })
       if (await unlock.count()) { await unlock.click(); await L.page.waitForTimeout(150) }
-      for (const f of ['Column X spacing', 'Column Y spacing', 'Column X offset', 'Column Y offset', 'Column width', 'Column depth']) expect([f, await card.getByLabel(f, { exact: true }).count()]).toEqual([f, 1])
+      for (const f of ['Column X spacing', 'Column Y spacing', 'Column width', 'Column depth']) expect([f, await card.getByLabel(f, { exact: true }).count()]).toEqual([f, 1])
+      // (col-bubbles round) no offsets; Columns on the walls Yes / No — Yes on this layout (its lines on the walls)
+      expect([await card.getByLabel('Column X offset', { exact: true }).count(), await card.getByRole('group', { name: 'Columns on the walls' }).getByRole('button', { name: 'Yes' }).getAttribute('aria-pressed')]).toEqual([0, 'true'])
       const g0 = await gridNow(), gs = await gs7()
       const drawn = () => L.S('const st = S.getState(); return H.columnRectsOf(st.objects, st.gridSize || 40).length')
       const count = (t) => Number(String(t).split('=').pop().trim())   // '4 × 3 = 12' → 12 (or just '10' on an L)
@@ -6400,7 +6402,7 @@ describe('REG — the hand check by real clicks', () => {
       for (const k of ['x', 'y']) { const b = await card.locator('[data-column-last-' + k + ']').boundingBox(); expect([k, b.x + b.width <= cr.x + cr.width, cr.x + cr.width - (b.x + b.width) < 24]).toEqual([k, true, true]) }
       // as the colgrid mockup draws it: the head, the four blocks, across × down = total, the last bay in feet-inches
       expect(await card.locator('[data-column-title]').textContent()).toBe('Column grid')
-      expect(await card.locator('[data-caption]').allTextContents()).toEqual(expect.arrayContaining(['Spacing', 'Offset from wall (to first column centre)', 'Column', 'Result']))
+      expect(await card.locator('[data-caption]').allTextContents()).toEqual(expect.arrayContaining(['Spacing', 'Column', 'Result']))
       if (nx * ny === await drawn()) expect(await card.locator('[data-column-count]').textContent()).toBe(`${nx} × ${ny} = ${nx * ny}`)
       for (const k of ['x', 'y']) expect(await card.locator('[data-column-last-' + k + ']').textContent()).toMatch(/^\d+′(-\d+″)?$/)
       // the last bay: the last gridline to the far wall — the last gridline on the far wall: the bay between the last two
@@ -6423,14 +6425,15 @@ describe('REG — the hand check by real clicks', () => {
       expect((await hist7()) - h0).toBe(1)
       await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
       expect(await gridNow()).toEqual(g0)
-      // an X offset past the far wall: no column inside — the warning; Esc: the grid as it was, no undo step
+      // a spacing typed, then Esc: the grid as it was, no undo step (col-bubbles round: no offset to type past the wall — was
+      // the warning's case; with Yes / No a rectangle always keeps a column)
       await pickGrid()
-      const ob = await outlineBox(), h1 = await hist7()
-      const fo = card.getByLabel('Column X offset', { exact: true })
-      await fo.click(); await fo.fill(String(Math.round((ob.x1 - ob.x0) / gs) + 20)); await L.page.waitForTimeout(250)
-      expect(await card.locator('[data-column-warning]').count()).toBe(1)
-      await fo.press('Escape'); await L.page.waitForTimeout(250)
-      expect([await gridNow(), (await hist7()) - h1, await card.locator('[data-column-warning]').count()]).toEqual([g0, 0, 0])
+      const h1 = await hist7()
+      const fe = card.getByLabel('Column X spacing', { exact: true })
+      await fe.click(); await fe.fill(String(sp1 + 9)); await L.page.waitForTimeout(250)
+      expect((await gridNow()).sx).not.toBe(g0.sx)
+      await fe.press('Escape'); await L.page.waitForTimeout(250)
+      expect([await gridNow(), (await hist7()) - h1]).toEqual([g0, 0])
     }, T)
 
     it('REG-colgrid-annot (click): a column grid\'s gridline bubbles and dimension chains show only while it is selected — A, B, C … above the building, 1, 2, 3 … left of it, one per gridline — and are gone when it is not; the PDF always has them, and the building\'s size lines', async () => {
@@ -6530,7 +6533,8 @@ describe('REG — the hand check by real clicks', () => {
       expect(s).toEqual({ text: w.nx * w.ny === w.n ? `${w.nx} × ${w.ny} = ${w.n} columns` : `${w.n} columns`, squares: w.n })
       // No: the offsets show, the preview follows
       await dlg.getByRole('group', { name: 'Columns on the walls' }).getByRole('button', { name: 'No' }).click(); await L.page.waitForTimeout(150)
-      expect([await dlg.getByLabel('Grid X offset', { exact: true }).count(), await dlg.locator('[data-walls-note]').textContent()]).toEqual([1, 'No columns on the walls.'])
+      // (col-bubbles round: no offsets — No centres the grid)
+      expect([await dlg.getByLabel('Grid X offset', { exact: true }).count(), await dlg.locator('[data-walls-note]').textContent()]).toEqual([0, 'Centred: equal end bays, no columns on the walls.'])
       w = await want({ spX: 30, spY: 40, walls: false, offX: 40, offY: 30, wIn: 12, dIn: 12 })
       expect((await shown()).squares).toBe(w.n)
       // Cancel: nothing placed; Esc the same
@@ -6547,6 +6551,81 @@ describe('REG — the hand check by real clicks', () => {
       expect([new Set(placed.sx).size <= 1, placed.sx[0], placed.sy[0], placed.w]).toEqual([true, 30, 40, 12])
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
       expect(await grids()).toBe(n0)
+    }, T)
+
+    /* ── col-bubbles round: Columns on the walls Yes / No (no offsets); a gridline's bubble dragged moves its line ── */
+    const unlockCard = async () => { const u = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('button', { name: 'Unlock' }); if (await u.count()) { await u.click(); await L.page.waitForTimeout(150) } }
+    const walls = () => L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('group', { name: 'Columns on the walls' })
+    /** the columns as drawn and the card's Result figures */
+    const figures = () => L.S(`return Promise.all([import('/src/utils/columnGrid.js'), import('/src/generate/columnCheck.js')]).then(([CG, CC]) => { const st = S.getState(), gs = st.gridSize || 40, g = st.objects.find(o => o.type === 'column_grid')
+      const r = CG.gridResult(g, st.objects, gs, CC.expandColumnGrid); return { cols: H.columnRectsOf(st.objects, gs).map(c => [Math.round(c.x), Math.round(c.y)].join(',')).join('|'), count: r.count, range: r.range, lastX: r.lastX, lastY: r.lastY } })`)
+
+    it('REG-colgrid-yesno (click): no offsets — Columns on the walls Yes / No; a layout loads as saved (Rule 7: the fixture, and a saved grid with no line on a wall, give identical columns and figures, Yes / No read from the lines); Yes lays the lines from the walls, No centres them — equal end bays, none on a wall — each one undo step', async () => {
+      await open()
+      // the fixture as saved: its grid untouched by the load, the card reads Yes (a line on the walls)
+      const file = JSON.parse((await import('./handCheck/browser.js')).fixture(name)), fileGrid = (file.objects || file.scene.objects).find(o => o.type === 'column_grid')
+      const asSaved = (g) => ({ x: g.x, y: g.y, sx: (g.spacingX || []).join(), sy: (g.spacingY || []).join(), w: g.columnW, h: g.columnH })
+      expect(await L.S('return (({ x, y, spacingX, spacingY, columnW, columnH }) => ({ x, y, sx: (spacingX || []).join(), sy: (spacingY || []).join(), w: columnW, h: columnH }))(S.getState().objects.find(o => o.type === "column_grid"))')).toEqual(asSaved(fileGrid))
+      const f0 = await figures()
+      await pickGrid(); await unlockCard()
+      expect([await walls().getByRole('button', { name: 'Yes' }).getAttribute('aria-pressed'), await L.page.getByRole('tabpanel', { name: 'Properties' }).locator('[data-column-count]').count()]).toEqual(['true', 1])
+      expect(await figures()).toEqual(f0)                                                  // shown, not changed
+      // a saved project whose grid has no line on a wall (an old offset grid): loads exactly as saved, the card reads No
+      const gs = await gs7(), shifted = { ...fileGrid, x: fileGrid.x + 5 * gs, y: fileGrid.y + 5 * gs }
+      const saved = JSON.stringify({ ...file, ...(file.objects ? { objects: file.objects.map(o => (o.type === 'column_grid' ? shifted : o)) } : { scene: { ...file.scene, objects: file.scene.objects.map(o => (o.type === 'column_grid' ? shifted : o)) } }) })
+      const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, saved)
+      expect(await L.S('return (({ x, y, spacingX, spacingY, columnW, columnH }) => ({ x, y, sx: (spacingX || []).join(), sy: (spacingY || []).join(), w: columnW, h: columnH }))(S.getState().objects.find(o => o.type === "column_grid"))')).toEqual(asSaved(shifted))
+      const f1 = await figures()
+      // (the grid selected as a click on it would: a column of the shifted grid can stand under a rack here)
+      await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); S.setState({ selectedIds: [g.id] })'); await L.page.waitForTimeout(250)
+      await unlockCard()
+      expect(await walls().getByRole('button', { name: 'No' }).getAttribute('aria-pressed')).toBe('true')
+      expect(await figures()).toEqual(f1)
+      // Yes: the lines from the walls, one undo step
+      const ob = await outlineBox(), h0 = await hist7()
+      await walls().getByRole('button', { name: 'Yes' }).click(); await L.page.waitForTimeout(250)
+      const yes = await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return { x: g.x, y: g.y }')
+      expect([yes.x, yes.y, (await hist7()) - h0]).toEqual([ob.x0, ob.y0, 1])
+      // No: centred — the end bays equal, none on a wall; one more undo step
+      await walls().getByRole('button', { name: 'No' }).click(); await L.page.waitForTimeout(250)
+      const no = await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"), xs = [g.x], ys = [g.y]; for (const s of g.spacingX) xs.push(xs[xs.length - 1] + s); for (const s of g.spacingY) ys.push(ys[ys.length - 1] + s); return { xs, ys }')
+      const ends = (ls, lo, hi) => [ls[0] - lo, hi - ls[ls.length - 1]]
+      const [ex0, ex1] = ends(no.xs, ob.x0, ob.x1), [ey0, ey1] = ends(no.ys, ob.y0, ob.y1)
+      expect([Math.abs(ex0 - ex1) < 0.5, Math.abs(ey0 - ey1) < 0.5, ex0 > 0.5, ey0 > 0.5, (await hist7()) - h0]).toEqual([true, true, true, true, 2])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect(await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return { x: g.x, y: g.y }')).toEqual(yes)
+    }, T)
+
+    it('REG-colgrid-bubble (click): a gridline\'s bubble dragged moves that line and its columns — as the line itself: the same snap, one undo, the chain updated live; the move arrow on hover; the card\'s spacing for that axis then reads Varies, and a spacing typed makes it even again; a column still drags its line', async () => {
+      await open()
+      await pickGrid(); await unlockCard()
+      const cv = await L.page.locator('#canvas2-container').boundingBox(), gs = await gs7()
+      const lines = () => L.S('const g = S.getState().objects.find(o => o.type === "column_grid"), xs = [g.x], ys = [g.y]; for (const s of g.spacingX) xs.push(xs[xs.length - 1] + s); for (const s of g.spacingY) ys.push(ys[ys.length - 1] + s); return { xs, ys }')
+      const chain = () => L.page.evaluate(() => window.Konva.stages[0].find('.column-chain-text').map(t => t.text()).join('|'))
+      const l0 = await lines(), b = (await bubbles()).find(q => q.text === 'B'), z = await L.S('return S.getState().zoom')
+      expect(b).toBeTruthy()
+      // hover: the move arrow along the line's axis
+      await L.page.mouse.move(cv.x + b.x, cv.y + b.y); await L.page.waitForTimeout(150)
+      expect(await L.page.evaluate(() => document.getElementById('canvas2-container').style.cursor)).toBe('ew-resize')
+      // the drag: line B moves (whole inches, as the line drag snaps), every other line stays; the chain live mid-drag
+      const c0 = await chain(), h0 = await hist7(), d = 6 * gs * z
+      await L.page.mouse.down(); await L.page.mouse.move(cv.x + b.x + d / 2, cv.y + b.y, { steps: 4 }); await L.page.waitForTimeout(150)
+      const mid = await chain()
+      await L.page.mouse.move(cv.x + b.x + d, cv.y + b.y, { steps: 4 }); await L.page.mouse.up(); await L.page.waitForTimeout(300)
+      const l1 = await lines()
+      expect(mid).not.toBe(c0)
+      expect([l1.xs.filter((v, i) => i !== 1).join(), l1.ys.join(), Math.abs(l1.xs[1] - l0.xs[1] - 6 * gs) <= 1 / z + gs / 12 + 1e-6 /* (the mouse lands on whole screen px) */, (q => Math.abs(q - Math.round(q)) < 1e-6)((l1.xs[1] - l0.xs[1]) / (gs / 12)), (await hist7()) - h0]).toEqual([l0.xs.filter((v, i) => i !== 1).join(), l0.ys.join(), true, true, 1])
+      // the card: X spacing Varies; a spacing typed: even again
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' }), fx = card.getByLabel('Column X spacing', { exact: true })
+      expect(await fx.inputValue()).toBe('Varies')
+      await fx.click(); await fx.fill('25'); await fx.press('Enter'); await L.page.waitForTimeout(250)
+      const l2 = await lines()
+      expect([new Set(l2.xs.slice(1).map((v, i) => Math.round(v - l2.xs[i]))).size, await fx.inputValue()]).toEqual([1, '25′'])
+      // one undo each: the typed spacing, then the drag
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect(await lines()).toEqual(l1)
+      await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect(await lines()).toEqual(l0)
     }, T)
 
     it('REG-colgrid-L (click): an L-shaped building — no column is drawn in its open corner (outside the outline), the gridline stays (its bubble still shown); every wall gets its own size line', async () => {

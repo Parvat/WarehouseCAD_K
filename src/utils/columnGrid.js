@@ -64,6 +64,38 @@ export function gridParams(cg, fp, gs = 40) {
   const w = cg.columnW || gs, d = cg.columnH || gs
   return { spX: (cg.spacingX?.[0] ?? 0) / gs, spY: (cg.spacingY?.[0] ?? 0) / gs, offX: (cg.x - ex.x0) / gs, offY: (cg.y - ex.y0) / gs, wIn: (w / gs) * 12, dIn: (d / gs) * 12 }
 }
+/** (col-bubbles round) Columns on the walls: does any of grid `cg`'s gridlines lie on its building's outline (its
+ *  extent's walls)? The card's and the dialog's Yes / No — read from the saved lines, so a grid loads as it was. */
+export function onWalls(cg, fp) {
+  if (!fp) return true
+  const ex = extent(fp), { xs, ys } = gridLines(cg)
+  return xs.some(x => Math.abs(x - ex.x0) < 0.5 || Math.abs(x - ex.x1) < 0.5) || ys.some(y => Math.abs(y - ex.y0) < 0.5 || Math.abs(y - ex.y1) < 0.5)
+}
+/** Is a spacing list uneven (a line moved by hand — the card shows Varies)? */
+export const varies = (sp) => Array.isArray(sp) && sp.some(s => Math.abs(s - sp[0]) > 0.5)
+/** Gridlines centred between `lo` and `hi` at `step`: as many as leave an end bay of at least half a step on each side,
+ *  the two end bays equal — none on a wall (Columns on the walls: No). One line in the middle when a step is longer. */
+function centredLines(lo, hi, step) {
+  const L = hi - lo
+  if (!(step > 0) || !(L > 0)) return [lo + L / 2]
+  const k = Math.max(1, Math.floor(L / step + 1e-9)), e = (L - (k - 1) * step) / 2
+  return Array.from({ length: k }, (_, i) => lo + e + i * step)
+}
+/** The update that lays grid `cg` from spacing and Columns on the walls (col-bubbles round — the dialog and the card):
+ *  `p` { spX, spY (ft), walls (Yes: lines from the near walls at the spacing, out to the far walls; No: centred, equal
+ *  end bays, no line on a wall), wIn, dIn }. */
+export function layGrid(cg, fp, p, gs = 40) {
+  if (p.walls || !fp) return gridUpdate(cg, fp, { ...p, offX: 0, offY: 0 }, gs)
+  const ex = extent(fp), xs = centredLines(ex.x0, ex.x1, p.spX * gs), ys = centredLines(ex.y0, ex.y1, p.spY * gs)
+  const w = (p.wIn / 12) * gs, d = (p.dIn / 12) * gs
+  const spacingX = xs.slice(1).map((v, i) => v - xs[i]), spacingY = ys.slice(1).map((v, i) => v - ys[i])
+  return { x: xs[0], y: ys[0], spacingX, spacingY, columnW: w, columnH: d, colSizeIn: Math.round(p.wIn), width: spacingX.reduce((t, s) => t + s, 0) + w, height: spacingY.reduce((t, s) => t + s, 0) + d }
+}
+/** A column size change only (the card's Width / Depth): the lines stay exactly where they are. */
+export function sizeGrid(cg, wIn, dIn, gs = 40) {
+  const w = (wIn / 12) * gs, d = (dIn / 12) * gs
+  return { columnW: w, columnH: d, colSizeIn: Math.round(wIn), width: (cg.spacingX || []).reduce((t, s) => t + s, 0) + w, height: (cg.spacingY || []).reduce((t, s) => t + s, 0) + d }
+}
 /** Gridlines from `start` at `step` up to `end` (the far wall, a line on it kept): world px. */
 function axisLines(start, step, end) {
   if (!(step > 0)) return start <= end + E ? [start] : []

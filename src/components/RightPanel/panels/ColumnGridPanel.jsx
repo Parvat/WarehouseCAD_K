@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react'
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
-import { C, fieldBox, Grid2, Note, Sec, Caption, LockedFields, IconBtn } from '../../../studio/cardParts'
+import { C, fieldBox, Grid2, Note, Sec, Caption, LockedFields, IconBtn, Seg } from '../../../studio/cardParts'
 import { toggleLock } from '../../../utils/layers'
-import { gridBuilding, gridParams, gridUpdate, gridResult } from '../../../utils/columnGrid'
+import { gridBuilding, gridParams, gridResult, layGrid, sizeGrid, onWalls, varies } from '../../../utils/columnGrid'
 import { expandColumnGrid } from '../../../generate/columnCheck'
 import { ftIn } from '../../../utils/bom'
 
 // ── Column Grid card (col-grid round; STUDIO.md §7a Columns) ──────────────────────────────────────────────────────
-// As the colgrid mockup draws it: the head (Column grid, what it is), then SPACING (X, Y), OFFSET FROM WALL (TO FIRST
-// COLUMN CENTRE) (X, Y — the building's wall to the first column's centre; 0: the first gridline on the wall), COLUMN
-// (Width, Depth), each its own block, values in feet-inches (50′, 12″); then RESULT: Columns 4 × 3 = 12, Gridlines
-// A–D · 1–3, Last bay (to far wall) X 60′ · Y 50′. Typing redraws the grid live; leaving a field (Enter) is one undo
-// step; Esc puts it back. A spacing that leaves no column inside the building: a warning, nothing changed for it.
+// As the colgrid mockup draws it: the head (Column grid, what it is), then SPACING (X, Y — Varies once a line has been
+// moved by hand; a spacing typed makes that axis even again), Columns on the walls Yes / No (col-bubbles round, in place
+// of the offsets: Yes — the lines from the walls; No — centred, equal end bays, no line on a wall; read from the saved
+// lines, so a grid loads as it was), COLUMN (Width, Depth — the lines stay), values in feet-inches (50′, 12″); then
+// RESULT: Columns 4 × 3 = 12, Gridlines A–D · 1–3, Last bay X / Y. Typing redraws the grid live; leaving a field (Enter)
+// is one undo step; Esc puts it back. Lines are laid again only when a spacing or Yes / No changes.
 
 /** Feet from typed text — 25, 25', 25 ft, 24' 9", 24′-9″, 9" — 0 allowed (an offset of 0: on the wall); null when not
  *  a length. */
@@ -62,7 +63,7 @@ export function ColumnGridHead() {
   )
 }
 
-/** The card's blocks after the head: Spacing, Offset, Column, Result. */
+/** The card's blocks after the head: Spacing, Columns on the walls, Column, Result. */
 export function ColumnGridPanel({ obj, locked = false }) {
   const { objects, gridSize: gsRaw } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize })))
   const gs = gsRaw || 40
@@ -71,11 +72,26 @@ export function ColumnGridPanel({ obj, locked = false }) {
   const res = gridResult(obj, objects, gs, expandColumnGrid)
   // live: the store written as typed (no undo step); the field left: one undo step, or none when nothing changed
   const [start, setStart] = useState(null)
+  const walls = onWalls(obj, fp)
+  /* the patch for field `k` typed as `v`: a spacing lays that axis again (the other kept exactly), a column size leaves
+     every line where it is */
+  const patchFor = (cur, k, v) => {
+    const f = gridBuilding(useCanvasStore.getState().objects, cur), q = { ...gridParams(cur, f, gs), [k]: v }
+    if (k === 'wIn' || k === 'dIn') return sizeGrid(cur, q.wIn, q.dIn, gs)
+    const all = layGrid(cur, f, { ...q, walls: onWalls(start || cur, f) }, gs)
+    return k === 'spX' ? { x: all.x, spacingX: all.spacingX, width: all.width } : { y: all.y, spacingY: all.spacingY, height: all.height }
+  }
   const live = (k) => (v) => {
     const st = useCanvasStore.getState(), cur = st.objects.find(o => o.id === obj.id)
     if (!cur) return
     if (!start) setStart(cur)
-    st.updateObject(obj.id, gridUpdate(cur, gridBuilding(st.objects, cur), { ...gridParams(cur, gridBuilding(st.objects, cur), gs), [k]: v }, gs))
+    st.updateObject(obj.id, patchFor(start || cur, k, v))
+  }
+  /* Columns on the walls, Yes / No: both axes laid again at their spacing — one undo step */
+  const setWalls = (on) => {
+    const st = useCanvasStore.getState(), cur = st.objects.find(o => o.id === obj.id), f = cur && gridBuilding(st.objects, cur)
+    if (!cur || on === onWalls(cur, f)) return
+    st.commitObjectUpdate(obj.id, layGrid(cur, f, { ...gridParams(cur, f, gs), walls: on }, gs))
   }
   const done = () => {
     const st = useCanvasStore.getState(), cur = st.objects.find(o => o.id === obj.id)
@@ -83,7 +99,7 @@ export function ColumnGridPanel({ obj, locked = false }) {
     setStart(null)
   }
   const cancel = () => { if (start) useCanvasStore.getState().updateObject(obj.id, start); setStart(null) }
-  const ft = (k, label, aria, min) => <GridField key={k} aria={aria} label={label} show={words(p[k])} parse={feetOf} min={min} onLive={live(k)} onDone={done} onCancel={cancel} />
+  const ft = (k, label, aria, min, uneven) => <GridField key={k} aria={aria} label={label} show={uneven ? 'Varies' : words(p[k])} parse={feetOf} min={min} onLive={live(k)} onDone={done} onCancel={cancel} />
   const inch = (k, label, aria) => <GridField key={k} aria={aria} label={label} show={`${Math.round(p[k] * 100) / 100}″`} parse={inchesOf} min={1} onLive={live(k)} onDone={done} onCancel={cancel} />
   const pair = (a, b) => <LockedFields locked={locked}><Grid2>{a}{b}</Grid2></LockedFields>
   const row = (label, value, data) => (
@@ -94,8 +110,18 @@ export function ColumnGridPanel({ obj, locked = false }) {
   )
   return (
     <>
-      <Sec label={<Caption>Spacing</Caption>}>{pair(ft('spX', 'X spacing', 'Column X spacing', 1), ft('spY', 'Y spacing', 'Column Y spacing', 1))}</Sec>
-      <Sec label={<Caption>Offset from wall (to first column centre)</Caption>}>{pair(ft('offX', 'X offset', 'Column X offset', 0), ft('offY', 'Y offset', 'Column Y offset', 0))}</Sec>
+      <Sec label={<Caption>Spacing</Caption>}>{pair(ft('spX', 'X spacing', 'Column X spacing', 1, varies(obj.spacingX)), ft('spY', 'Y spacing', 'Column Y spacing', 1, varies(obj.spacingY)))}</Sec>
+      <Sec gap={8}>
+        <LockedFields locked={locked}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ flex: 1, color: C.text, fontSize: 13 }}>Columns on the walls</span>
+            <div style={{ width: 88 }}>
+              <Seg aria="Columns on the walls" value={walls} onChange={setWalls} options={[{ value: true, label: 'Yes' }, { value: false, label: 'No' }]} />
+            </div>
+          </div>
+        </LockedFields>
+        <span data-walls-note style={{ color: C.muted, fontSize: 12, lineHeight: 1.45 }}>{walls ? 'Wall columns sit fully inside, face against the wall.' : 'Centred: equal end bays, no columns on the walls.'}</span>
+      </Sec>
       <Sec label={<Caption>Column</Caption>}>{pair(inch('wIn', 'Width', 'Column width'), inch('dIn', 'Depth', 'Column depth'))}</Sec>
       <Sec data-column-result gap={6} label={<Caption>Result</Caption>}>
         {row('Columns', res.nx * res.ny === res.count ? `${res.nx} × ${res.ny} = ${res.count}` : String(res.count), 'data-column-count')}
@@ -103,7 +129,7 @@ export function ColumnGridPanel({ obj, locked = false }) {
         {/* the last bay each way, its own row (col-card round: one row overflowed) */}
         {res.lastX != null && row('Last bay X', words(res.lastX), 'data-column-last-x')}
         {res.lastY != null && row('Last bay Y', words(res.lastY), 'data-column-last-y')}
-        {res.none && <Note level="warning" role="alert" data-column-warning>No column inside the building at this spacing and offset — check the values.</Note>}
+        {res.none && <Note level="warning" role="alert" data-column-warning>No column inside the building at this spacing — check the values.</Note>}
       </Sec>
     </>
   )

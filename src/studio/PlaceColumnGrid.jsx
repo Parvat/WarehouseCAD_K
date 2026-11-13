@@ -3,7 +3,7 @@
 // the first column's centre); the column's Width and Depth; a live preview of the building with its columns and their
 // count; Cancel · Place grid. Nothing is placed until Place grid — then one undo step adds the grid to the building, and
 // everything after is edited in the column grid's Properties card (ColumnGridPanel). The gridlines are laid by the card's
-// own rule (utils/columnGrid.js gridUpdate), so the dialog and the card always agree.
+// own rule (utils/columnGrid.js layGrid — Yes: from the walls; No: centred, equal end bays), so the two always agree.
 // Every value from the mockup (measured at its 2×): a 300 card, the card's parts and palette; the preview strip #191C1B,
 // the building white, the columns #2B2F2C; Place grid #2E7D5B with white text.
 
@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { create } from 'zustand'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { C, fieldBox, Grid2, Sec, Caption, Seg, Btn } from './cardParts'
-import { gridUpdate } from '../utils/columnGrid'
+import { layGrid } from '../utils/columnGrid'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { buildingOutline } from '../utils/floorGeom'
 import { layerForType } from '../utils/layers'
@@ -46,15 +46,7 @@ const inShow = (inch) => `${Math.round(inch * 100) / 100}″`
 
 /** The grid these entries lay in building `fp` (world px) — the card's rule — and its columns as drawn. */
 export function placedGrid(fp, p, gs = 40) {
-  let upd = gridUpdate({ x: 0, y: 0 }, fp, { spX: p.spX, spY: p.spY, offX: p.walls ? 0 : p.offX, offY: p.walls ? 0 : p.offY, wIn: p.wIn, dIn: p.dIn }, gs)
-  // No: no column on a wall — a last gridline landing on the far wall is dropped
-  if (!p.walls) {
-    const poly = buildingOutline(fp), x1 = Math.max(...poly.map(q => q.x)), y1 = Math.max(...poly.map(q => q.y))
-    const lastX = upd.x + upd.spacingX.reduce((t, v) => t + v, 0), lastY = upd.y + upd.spacingY.reduce((t, v) => t + v, 0)
-    const spacingX = upd.spacingX.length && Math.abs(lastX - x1) < 0.5 ? upd.spacingX.slice(0, -1) : upd.spacingX
-    const spacingY = upd.spacingY.length && Math.abs(lastY - y1) < 0.5 ? upd.spacingY.slice(0, -1) : upd.spacingY
-    upd = { ...upd, spacingX, spacingY, width: spacingX.reduce((t, v) => t + v, 0) + upd.columnW, height: spacingY.reduce((t, v) => t + v, 0) + upd.columnH }
-  }
+  const upd = layGrid({ x: 0, y: 0 }, fp, { spX: p.spX, spY: p.spY, walls: !!p.walls, wIn: p.wIn, dIn: p.dIn }, gs)
   const cols = expandColumnGrid(upd, gs, [fp])
   return { upd, cols, nx: upd.spacingX.length + 1, ny: upd.spacingY.length + 1 }
 }
@@ -63,8 +55,8 @@ export function PlaceColumnGrid() {
   const { fpId, look } = usePlaceGrid()
   const fp = useCanvasStore(s => (fpId ? s.objects.find(o => o.id === fpId) : null))
   const gs = useCanvasStore(s => s.gridSize) || 40
-  // the mockup's entries: 50′ × 40′ centre to centre, columns on the walls, 12″ × 12″ (No: 40′ / 30′ from the wall)
-  const [p, setP] = useState({ spX: 50, spY: 40, walls: true, offX: 40, offY: 30, wIn: 12, dIn: 12 })
+  // the mockup's entries: 50′ × 40′ centre to centre, columns on the walls, 12″ × 12″
+  const [p, setP] = useState({ spX: 50, spY: 40, walls: true, wIn: 12, dIn: 12 })
   const set = (k) => (v) => setP(q => ({ ...q, [k]: v }))
   const g = useMemo(() => (fp ? placedGrid(fp, p, gs) : null), [fp, p, gs])
   useEffect(() => {
@@ -113,16 +105,8 @@ export function PlaceColumnGrid() {
             <Seg aria="Columns on the walls" value={p.walls} onChange={set('walls')} options={[{ value: true, label: 'Yes' }, { value: false, label: 'No' }]} />
           </div>
         </div>
-        <span data-walls-note style={{ color: C.muted, fontSize: 12, lineHeight: 1.45 }}>{p.walls ? 'Wall columns sit fully inside, face against the wall.' : 'No columns on the walls.'}</span>
+        <span data-walls-note style={{ color: C.muted, fontSize: 12, lineHeight: 1.45 }}>{p.walls ? 'Wall columns sit fully inside, face against the wall.' : 'Centred: equal end bays, no columns on the walls.'}</span>
       </Sec>
-      {!p.walls && (
-        <Sec label={<Caption>First column from wall (centre)</Caption>}>
-          <Grid2>
-            <LenField label="X offset" aria="Grid X offset" value={p.offX} onChange={set('offX')} parse={feetOf} show={ftShow} min={0} />
-            <LenField label="Y offset" aria="Grid Y offset" value={p.offY} onChange={set('offY')} parse={feetOf} show={ftShow} min={0} />
-          </Grid2>
-        </Sec>
-      )}
       <Sec label={<Caption>Column size</Caption>}>
         <Grid2>
           <LenField label="Width" aria="Grid column width" value={p.wIn} onChange={set('wIn')} parse={inchesOf} show={inShow} min={1} />

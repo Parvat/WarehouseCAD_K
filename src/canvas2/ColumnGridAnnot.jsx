@@ -34,6 +34,16 @@ function rowClear(g, objects, places) {
   return { top, left }
 }
 
+/* (col-bubbles round) The bubbles as last drawn — { gridId, axis, i, x, y, r } (world px) — so a press or a hover on one
+   finds the gridline it names (canvas2/useCanvasInteraction.js: a bubble dragged moves its line, as the line itself). */
+let SPOTS = []
+/** The bubble under world point `p` (its circle, plus 3 screen px), or null. */
+export function bubbleAt(p, zoom = 1) {
+  const pad = 3 / (zoom || 1)
+  for (const b of SPOTS) if (Math.hypot(p.x - b.x, p.y - b.y) <= b.r + pad) return b
+  return null
+}
+
 export function ColumnGridAnnot() {
   const objects = useLiveObjects()
   const { selectedIds, gs, layers, T } = useCanvasStore(useShallow(s => ({ selectedIds: s.selectedIds, gs: s.gridSize || 40, layers: s.layers, T: s.elevations })))
@@ -47,11 +57,14 @@ export function ColumnGridAnnot() {
     const lines = rackLinesNow(objects, gs)
     return lines.length ? rowLabelPlaces(lines, ROW_LABEL_PX / lz, aisleLabelBoxes(objects, gs, labelSize), lineNamer(objects, T, gs)) : []
   }, [grids.length, rowsShown, layers, objects, gs, lz, labelSize, T])
-  if (!grids.length) return null
+  if (!grids.length) { SPOTS = []; return null }
+  const spots = []
+  SPOTS = spots   // (filled as the grids below draw)
   return (
     <Group name="column-annot" listening={false}>
       {grids.map(g => {
         const a = columnAnnot(g, objects, gs, lz, rowClear(g, objects, places))
+        if (a) for (const b of a.bubbles) spots.push({ gridId: g.id, axis: b.axis, i: b.i, x: b.x, y: b.y, r: b.r })
         if (!a) return null
         return (
           <Group key={g.id} name={'column-annot:' + g.id} listening={false}>

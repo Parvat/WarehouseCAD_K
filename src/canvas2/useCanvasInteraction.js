@@ -51,6 +51,7 @@ import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { fpDimHit, useDimEdit } from './FpDimEdit'
 import { legendHit } from '../utils/sectionLegend'
 import { legendShown } from './SectionLegend'
+import { bubbleAt } from './ColumnGridAnnot'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { afterBuildingResize } from '../utils/buildingResize'
@@ -733,6 +734,17 @@ export function useCanvasInteraction({
           return
         }
       }
+      /* a press on a gridline's bubble (col-bubbles round — A, B, C … above, 1, 2, 3 … left, drawn while the grid is
+         selected): a drag moves that line and its columns, exactly as dragging the line (columnLines.js — the same snap,
+         one undo, the chain live); on an unlocked Columns layer only, a click alone does nothing */
+      if (evt.button === 0 && !evt.shiftKey) {
+        const bb = bubbleAt(world, view.current.zoom), bg = bb && st.objects.find(o => o.id === bb.gridId)
+        if (bg && pickableIn(st.layers)(bg)) {
+          setStickyBayMode(false); pickedOnPlan()
+          colLine.current = { g0: bg, col: null, from: world, sx: evt.clientX, sy: evt.clientY, axis: bb.axis, i: bb.i, bubble: true, started: false }
+          return
+        }
+      }
       let hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       let hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
       /* a press in a tunnel's bays (tunnel round, utils/tunnel.js): a click picks the tunnel, a drag along the run moves it in
@@ -973,6 +985,11 @@ export function useCanvasInteraction({
           }
         }
       }
+    }
+    // a gridline's bubble (col-bubbles round): the move arrow along its line's axis, while it can be dragged
+    if (next === 'default') {
+      const bb = bubbleAt(world, view.current.zoom), bg = bb && st.objects.find(o => o.id === bb.gridId)
+      if (bg && pickableIn(st.layers)(bg)) next = bb.axis === 'x' ? 'ew-resize' : 'ns-resize'
     }
     if (next === 'default') {
       const wallHit = fpWallHitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
@@ -1323,6 +1340,13 @@ export function useCanvasInteraction({
       if (cl) {
         const stage = stageRef.current
         if (!stage || !cl.g0) return
+        // a bubble's line: its axis is known; the drag starts past the same 6 px
+        if (cl.bubble && !cl.started) {
+          if (Math.hypot(evt.clientX - cl.sx, evt.clientY - cl.sy) < MOVE_THRESHOLD) return
+          cl.started = true
+          setDragging(true)
+          setCursor(cl.axis === 'x' ? 'ew-resize' : 'ns-resize')
+        }
         if (!cl.axis) {
           const dx = evt.clientX - cl.sx, dy = evt.clientY - cl.sy
           if (Math.hypot(dx, dy) < MOVE_THRESHOLD) return
@@ -1585,6 +1609,7 @@ export function useCanvasInteraction({
       if (cl) {
         // a press that never moved: the click — on the column already picked, back up to the grid
         if (!cl.axis) { if (cl.again) clickColumn(useCanvasStore, cl.col); return }
+        if (cl.bubble && !cl.started) return   // a click on a bubble: nothing moved
         endLineDrag(useCanvasStore, cl.g0)
         setCursor(spaceDown.current ? 'grab' : 'default')
         return
