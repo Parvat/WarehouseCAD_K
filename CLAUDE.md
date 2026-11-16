@@ -31,6 +31,12 @@ This file holds the rules; `CODEBASE.md` holds the map.
 7. **Impact check before any layout-rule change** (placement, cutting, splitting, minimums, clearances): first apply it to
    the 4 fixtures plus a small building, a short-row case and an L-shaped building, in both orientations, and report a
    before/after table (racks, bays, positions removed or moved per case). Build it only after the user approves the table.
+8. **Canvas text is at least 11 px on screen, at any zoom** — every text on the canvas (labels, numbers, chains, tags), the
+   size of the row numbers. A text that cannot fit at 11 px hides instead of shrinking. Enforced in one place,
+   `canvas2/minText.js` (a patch of Konva's text drawing): a plain Text grows to 11 px about its anchor (`minFit` = its
+   room); a label on a pill, chip or bubble is a Group with `minLabel` so its background grows with it. A new label with a
+   background gets `minLabel`; one with limited room gets `minFit`. Screen-sized texts (`N / zoom`) use N ≥ 11.
+   REG-canvas-text-min measures every canvas text on the 4 fixtures at Fit, 50% and 200%. The PDF is not affected.
 
 ---
 

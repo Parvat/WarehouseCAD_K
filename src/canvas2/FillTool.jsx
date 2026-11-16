@@ -19,7 +19,7 @@ export function FillOverlay() {
   /* C10 (design/studio/Studio.dc.html): the Fill box (STUDIO.md §7: mint at 6%, a #2E7D5B 1.5 edge dashed 6 4), the racks
      it would place white with a faint green edge, its size in a dark tag on its bottom-right corner — the rows and
      positions are the mode bar's (FillOptionsBar) */
-  const fs = 8.5 / zoom, padX = 4 / zoom, padY = 3.5 / zoom
+  const fs = 11 / zoom, padX = 4 / zoom, padY = 3.5 / zoom   // (Rule 8: the canvas text floor, 11 px)
   const text = `${fmtLen(b.w, gridSize).replace(/'/g, '′').replace(/"/g, '″')} × ${fmtLen(b.h, gridSize).replace(/'/g, '′').replace(/"/g, '″')}`
   const w = text.length * fs * 0.6 + padX * 2, h = fs + padY * 2
   return (

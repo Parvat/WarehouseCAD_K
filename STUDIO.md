@@ -218,6 +218,8 @@ As built (step 3) — every action is the one the card, a key or the library alr
 - **Notices**: plain info fades after 5 s, a notice with Undo after 8 s; the pointer over a notice pauses its timer; questions (Continue / Cancel) stay until answered.
 - **Bar buttons**: the mint primary (Apply, Continue, Export) hovers slightly lighter, never darker; ghost buttons (Skip, Cancel, Undo, a chip) hover a step lighter; disabled is 45% and still readable.
 
+- **Canvas text, 11 px at least** (text-min round; CLAUDE.md Critical Rule 8): every text on the canvas — labels, numbers, chains, tags — is drawn at least **11 px** on screen at any zoom, the size of the row numbers. Drawing-size labels that would come out smaller grow to 11 px about their anchor, a pill, chip or bubble with its text; a text that cannot fit at 11 px in its room hides instead of shrinking — a dimension label longer than the gap it measures, a chain value longer than its bay, a door's or a zone's name larger than the door or zone, "not cut" in a narrow band. Screen-sized labels are 11 px at least (the Fill box's size label was 8.5, the rotate handle's glyph 10). canvas2/minText.js; REG-canvas-text-min (the 4 fixtures, with a dock and a man door, at Fit, 50% and 200%, nothing / the grid / a rack selected). The PDF is unchanged.
+
 ## 7a. Interaction rules
 
 Frozen for the Studio build. It replaces any earlier selection rule that disagrees: if something in code or an older rule disagrees, 7a wins; if 7a is unclear, stop and ask. Each rule is a test in `src/__test__/plan/REG_handCheck.test.js` (the REG-7a matrix).

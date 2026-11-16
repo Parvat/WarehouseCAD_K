@@ -81,7 +81,8 @@ export function RackLineLabels() {
           fontSize={fs} fontFamily={FONT} fill={WORDS} listening={false} perfectDrawEnabled={false} />
         const tw = p.text.length * fs * 0.62 + fs * 0.5, cx = p.align === 'right' ? p.x + p.w - tw : p.x + p.w / 2 - tw / 2
         return (
-          <Group key={p.key} listening={false}>
+          // (Rule 8) a chip is a label: under 11 px its chip and text grow together about its centre (canvas2/minText.js)
+          <Group key={p.key} listening={false} minLabel={{ fs, at: { x: cx + tw / 2, y: p.y + p.h / 2 }, box: { w: tw, h: p.h } }}>
             <Rect name="rack-line-chip" x={cx} y={p.y} width={tw} height={p.h} fill={col} cornerRadius={fs * 0.25} listening={false} perfectDrawEnabled={false} />
             <Text name="rack-line-label" text={p.text} x={cx} y={p.y} width={tw} height={p.h} align="center" verticalAlign="middle"
               fontSize={fs} fontFamily={FONT} fontStyle="600" fill={chipText(col)} listening={false} perfectDrawEnabled={false} />

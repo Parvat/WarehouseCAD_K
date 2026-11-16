@@ -18,7 +18,7 @@ export function RotateGrip({ x, y, r, sx, sy, zoom }) {
         shadowForStrokeEnabled={false} listening={false} />
       <Text name="handleglyph" x={x - r} y={y - r} width={r * 2} height={r * 2}
         text="↻" align="center" verticalAlign="middle"
-        fontSize={10 / zoom} fontFamily="sans-serif" fill={HANDLE_ACCENT}
+        fontSize={11 / zoom} fontFamily="sans-serif" fill={HANDLE_ACCENT}
         listening={false} />
     </>
   )
