@@ -55,7 +55,7 @@ export function DoorMain({ obj }) {
   const along = (c) => (doorWall(obj, objects, gs)?.axis === 'y' ? [c.h, c.w] : [c.w, c.h])
   const clearText = clear.length ? `${len(along(clear[0])[0], gs)} × ${len(along(clear[0])[1], gs)}${clear.length > 1 ? (Math.abs(along(clear[0])[1] - along(clear[1])[1]) < 0.5 ? ' each side' : ` / ${len(along(clear[1])[1], gs)}`) : ''}` : '—'
   const fromLabel = w?.axis === 'y' ? 'From top corner' : 'From left corner'
-  const gapName = (id, end) => (id ? `to ${nums.get(id)}` : `to the ${end} corner`)
+  const gapName = (id, end) => (id ? `to door ${nums.get(id)}` : `to the ${end} corner`)
   const ends = w?.axis === 'y' ? ['top', 'bottom'] : ['left', 'right']
   const heightFt = doorHeightFt(obj)
   return (

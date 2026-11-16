@@ -70,7 +70,7 @@ export function DoorPreview() {
 }
 
 /** The live gap while placing (doors-edit round; STUDIO.md, Doors): the preview's gap to the last door placed on its
- *  wall (or the wall's low corner), outside the wall as the chain is (render/doorAnnot.js gapOps — no box, no chip).
+ *  wall (or the wall's low corner), inside the building as the gaps are (render/doorAnnot.js gapOps — plain text, no line).
  *  A number typed shows in its place with a thin text cursor; Enter drops the door exactly there; Esc ends the tool. */
 export function DoorGapLive() {
   useDoorTool(s => s.hover)

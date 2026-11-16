@@ -8,7 +8,8 @@
 //   - Distances are from the wall's LOW end — its left end (a wall along x) or its top end (along y): "From left corner".
 //   - Doors are numbered per wall, the walls taken top, right, bottom, left (several facing the same way: left to right,
 //     or top to bottom), each wall's doors left to right (top to bottom on a wall along y): dock and drive-in doors D1,
-//     D2 …, man doors M1, M2 …; doors in a section's Fence or Wall after the building's, by section and along their edge.
+//     D2 …, man doors M1, M2 … — (doors5) now just 1, 2, 3 …, one sequence for every door; doors in a section's Fence or
+//     Wall after the building's, by section and along their edge.
 //   - A building wall also carries `outer`: its outer face's line across (the gap chain is drawn just outside it).
 
 import { innerOutline, buildingOutline } from './floorGeom'
@@ -155,7 +156,7 @@ export function chainStops(objects, w, gs = 40) {
   return out
 }
 
-/** Every door's number: Map id → 'D1' … (dock and drive-in) / 'M1' … (man doors) — buildings in drawing order; in each,
+/** Every door's number: Map id → '1', '2' … (one sequence, every type — doors5; was D1 … / M1 …) — buildings in drawing order; in each,
  *  the walls top, right, bottom, left (several facing one way: left to right, or top to bottom), each wall's doors left
  *  to right (a wall along y: top to bottom); section doors after, by section and along their edge. */
 export function doorNumbers(objects, gs = 40) {
@@ -179,8 +180,8 @@ export function doorNumbers(objects, gs = 40) {
   }
   const cmp = (a, b) => { for (let i = 0; i < a.length; i++) { const d = a[i] - b[i]; if (Math.abs(d) > 1e-6) return d } return 0 }
   const order = [...doors].sort((p, q) => cmp(keyOf.get(p.id), keyOf.get(q.id)))
+  // (doors5) just the number — one sequence for every door, dock, drive-in and man doors alike
   const out = new Map()
-  let nD = 0, nM = 0
-  for (const d of order) out.set(d.id, DOCK_TYPES.has(d.type) ? `D${++nD}` : `M${++nM}`)
+  order.forEach((d, i) => out.set(d.id, String(i + 1)))
   return out
 }

@@ -12,7 +12,8 @@
 //     Every shape in it (the pill and the text alike) grows about that anchor by the same factor, or the whole label
 //     hides. A DIMENSION value (`out`: { x, y — its dimension line's end, dx, dy — the way out past it }) that would grow
 //     longer than its line does not hide: it moves outside its extension line, past that end, and a shape in it marked
-//     `minLeader` is drawn as the short leader from the end to it (only then);
+//     `minLeader` is drawn as the short leader from the end to it (only then). A DRAWING-SCALE label (`hide: true` — the
+//     doors' labels) is never grown: under 11 px it hides as a whole;
 //   - `minText: false` on a Text opts it out (none does today).
 // The PDF is not drawn by Konva: untouched. What each text was drawn at is kept on the node (`_mtPx`: screen px, 0 when
 // hidden by the rule) — REG-canvas-text-min reads it.
@@ -40,6 +41,8 @@ function labelGroupOf(node) {
 function labelState(g) {
   const ml = g.getAttr('minLabel'), s = Math.abs(g.getAbsoluteScale().y) || 1, px = (ml.fs || 0) * s
   if (!(px > 0) || px >= MIN_TEXT_PX - 1e-6) return { k: 1, t: null }
+  // a drawing-scale label (`hide`: the doors' — CLAUDE.md Rule 8, the door exception): never grown, hidden under 11 px
+  if (ml.hide) return { k: 0, t: null }
   const k = MIN_TEXT_PX / px, box = ml.box || {}, fit = ml.fit || {}
   if (!((fit.w != null && box.w != null && box.w * k > fit.w + 1e-6) || (fit.h != null && box.h != null && box.h * k > fit.h + 1e-6))) return { k, t: null }
   const o = ml.out

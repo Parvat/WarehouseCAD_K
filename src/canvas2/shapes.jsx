@@ -498,6 +498,9 @@ function FallbackShapeView({ obj, listening = false, bind }) {
 
   const b = getObjectBounds(obj)
   if (!(b.width > 0) || !(b.height > 0)) return null
+  // (doors5) a door is drawn as a thin bar on its wall (DoorAnnot.jsx) — no filled box: its footprint stays, unpainted, as
+  // the object's own node (the pick and the selection outline still use it)
+  if (isDoor(obj)) return <Group name={nodeName(obj.id)} listening={listening} {...spin(obj)} {...(bind ? bind(obj) : null)}><Rect x={b.x} y={b.y} width={b.width} height={b.height} fill="rgba(0,0,0,0)" listening={listening} perfectDrawEnabled={false} /></Group>
 
   return (
     <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...spin(obj)}

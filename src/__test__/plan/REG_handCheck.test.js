@@ -7022,7 +7022,7 @@ describe('REG — the hand check by real clicks', () => {
       }
       return { z, out }
     })
-    it('REG-canvas-text-min (click): every text on the canvas — labels, numbers, chains, tags, the door labels — is drawn at least 11 px on screen at Fit, 50% and 200%, with nothing selected, the column grid selected, a rack selected and a door selected; a text that cannot fit at 11 px is hidden, never smaller; (doors-edit fixes) no two labels drawn over each other and no label clipped — a row of eleven docks and a man door on the top wall, the views on the building and on that wall; every object drawn at its true size (its world size the same at Fit and 200%)', async () => {
+    it('REG-canvas-text-min (click): every text on the canvas — labels, numbers, chains, tags — is drawn at least 11 px on screen at Fit, 50% and 200% (the door labels are drawing-scale: their own size, or hidden under 11 px — doors5), with nothing selected, the column grid selected, a rack selected and a door selected; a text that cannot fit at 11 px is hidden, never smaller; (doors-edit fixes) no two labels drawn over each other and no label clipped — a row of eleven docks and a man door on the top wall, the views on the building and on that wall; every object drawn at its true size (its world size the same at Fit and 200%)', async () => {
       await open()
       // (setup, one undo step) eleven dock doors a little apart and a man door on the building's top wall, as the door tool places them
       await L.S('return import("/src/utils/doorTool.js").then(D => { const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type)), T = D.doorTypes(), add = []; for (const [id, t] of [...Array.from({ length: 11 }, (_, i) => ["struct_loading_dock", 0.15 + i * 0.045]), ["struct_egress", 0.75]]) { const spec = T.find(x => x.id === id), at = D.doorAt([...st.objects, ...add], { x: fp.x + fp.width * t, y: fp.y }, spec, gs, 40); if (at) add.push(D.doorObject(at, spec, () => "door-" + id + "-" + t)) } S.setState({ objects: [...st.objects, ...add] }); S.getState().commitObjectUpdate(fp.id, {}); return add.length })')
@@ -7052,9 +7052,16 @@ describe('REG — the hand check by real clicks', () => {
       expect(small).toEqual([])
       expect(over).toEqual([])
       expect(clipped).toEqual([])
-      // the door chain was drawn with a door selected, on the door wall
-      await zoomTo(0.5, true); await states[3][1]()
-      expect(await L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-chain:/.test(n.name())).length)).toBe(1)
+      // (doors5 — Rule 8's door exception) the door labels are drawing-scale: at 50 % on the door wall they are drawn at their
+      // own size, never grown; at Fit, where they would be under 11 px, they are hidden — never a range tag, nothing outside
+      const doorTexts = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find(n => /^door-(badge|width|gap):/.test(n.name())).flatMap(g => g.find('Text').map(t => ({ px: t._mtPx || 0, own: t.fontSize() * Math.abs(t.getAbsoluteScale().y), text: t.text() }))) })
+      await zoomTo(0.5, true); await states[0][1]()
+      const near = await doorTexts()
+      expect([near.some(t => t.px > 0), near.every(t => t.px === 0 || Math.abs(t.px - t.own) < 0.01), near.some(t => /–|^[DM]\d/.test(t.text))]).toEqual([true, true, false])
+      await fit()
+      const far = await doorTexts()
+      expect(far.every(t => t.px === 0 || Math.abs(t.px - t.own) < 0.01)).toBe(true)
+      expect(far.filter(t => t.own < 11 - 0.01).every(t => t.px === 0)).toBe(true)
       // objects at their true size: the same world size at Fit and at 200 % (a few screen px of stroke either way)
       await states[0][1](); await fit(); const a = await objectSizes()
       await zoomTo(2); const b = await objectSizes()
@@ -7065,7 +7072,7 @@ describe('REG — the hand check by real clicks', () => {
 
 
     /* ── doors-edit round (STUDIO.md, Doors; mockup doors2.png) ── */
-    it('REG-doors-edit (click): placing — the door tool stays on, the next door\'s live gap to the last one shows as a gap label, a number typed + Enter drops it exactly there; D1 / M1 tags; a door selected — its card (Type, Width, Height, From left corner, Clear space, gaps), the gap chain along its wall, a gap clicked and typed, an end handle dragged; the Dock door row tool fills a wall with equal doors in one undo; the padlock in the card head locks it (not movable, fields greyed)', async () => {
+    it('REG-doors-edit (click): placing — the door tool stays on, the next door\'s live gap to the last one shows as a gap label, a number typed + Enter drops it exactly there; the doors as thin bars, numbered 1, 2, 3 in badges (doors5 — was D1 / M1 tags); a door selected — its card (Type, Width, Height, From left corner, Clear space, gaps); its wall’s widths and gaps inside the building (doors5 — was a chain outside), a gap and a width clicked and typed, an end handle dragged; the Dock door row tool fills a wall with equal doors in one undo; the padlock in the card head locks it (not movable, fields greyed)', async () => {
       await open()
       const gs = await gs7(), fp = await fpOf(), wt = (fp.wallThicknessFt || 0.25) * gs
       // (setup, one undo step) the floor emptied of racks, so a click on a door is the door's
@@ -7100,8 +7107,10 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
       expect(await L.S('return S.getState().activeTool')).not.toBe('door')
       // 4 · tags: D1, D2 (dock), M1 (man) — per wall, left to right
-      const tags = await L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-tag:/.test(n.name())).map(g => g.find('Text').map(t => t.text()).join('')).sort())
-      expect(tags).toEqual(['D1', 'D2', 'M1'])
+      // (doors5) just the number, one sequence, in a round badge in each door's clear space (was: D1, D2, M1 tags on the doors);
+      // the door itself a thin bar on the wall — no filled box
+      const badgeOf = () => L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-badge:/.test(n.name())).map(g => g.find('Text').map(t => t.text()).join('')).sort())
+      expect([await badgeOf(), await L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-bar:/.test(n.name())).length)]).toEqual([['1', '2', '3'], 3])
       // 2 · a door selected (D2, a click): its card and the gap chain along its wall
       ds = await doors()
       const d2 = ds.find(d => d.type === 'struct_loading_dock' && d.s[0] > ds[0].s[0] && d.id !== ds[0].id) || ds[1]
@@ -7122,13 +7131,17 @@ describe('REG — the hand check by real clicks', () => {
       if (!(await L.selected()).length) await L.click({ x: (d2.s[0] + d2.s[1]) / 2, y: fp.y + wt + 2 * gs })
       expect([(await doors()).find(q => q.id === d2.id).type, await card.getByLabel('Door height', { exact: true }).inputValue()]).toEqual(['struct_loading_dock', '10′'])
       expect(await card.locator('[data-door-gap="left"]').textContent()).toBe('12′')
-      // (doors-edit fixes) the chain OUTSIDE the building, above the top wall: corner, gap, width, gap, width … far corner — the
-      // widths bold, the gaps regular
-      const chain = () => L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-chain:/.test(n.name())).flatMap(g => g.find('Text').map(t => { const r = t.getClientRect(); return { text: t.text(), bold: t.fontStyle() === '700', x: r.x + r.width / 2, y: r.y + r.height / 2, bottom: r.y + r.height } })))
-      const outerY = (await L.toScreen({ x: 0, y: fp.y })).y - (await L.page.locator('#canvas2-container').boundingBox()).y
+      // (doors5 — was: a chain outside the building) the values INSIDE the building, drawing-scale: zoomed in to read them — the
+      // corner to the first door, then each width (bold, on a short line inside its box) and the gap to the next (plain text);
+      // nothing outside the wall
+      const zoomDoors = async () => { await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), d = st.objects.find(o => o.id === arg), cx = d.x + d.width / 2, cy = fp.y; S.setState({ zoom: 0.5, panX: 720 - cx * 0.5, panY: 300 - cy * 0.5 })', d2.id); await L.page.waitForTimeout(350) }
+      await zoomDoors()
+      const chain = () => L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-(width|gap):/.test(n.name())).flatMap(g => g.find('Text').filter(t => t._mtPx > 0).map(t => { const r = t.getClientRect(); return { text: t.text(), bold: t.fontStyle() === '700', x: r.x + r.width / 2, y: r.y + r.height / 2, top: r.y } })))
+      const innerY = (await L.toScreen({ x: 0, y: fp.y + wt })).y - (await L.page.locator('#canvas2-container').boundingBox()).y
       const ch = (await chain()).sort((a, b) => a.x - b.x)
-      expect([ch.map(c => c.text).includes('12′'), ch.every(c => c.bottom < outerY), ch.map(c => c.bold ? 'W' : 'g').join('')]).toEqual([true, true, 'gWgWgWg'])
+      expect([ch.map(c => c.text).includes('12′'), ch.every(c => c.top > innerY), ch.map(c => c.bold ? 'W' : 'g').join('')]).toEqual([true, true, 'gWgWgW'])
       expect(ch.filter(c => c.bold).map(c => c.text)).toEqual(['9′', '9′', '3′'])
+      expect(await L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-(chain|tag):/.test(n.name())).length)).toBe(0)
       // 3 · a gap clicked and typed: 15 — D2 and the door beyond it move on 3 ft, one undo step
       const h0 = await hist7()
       const v = (await chain()).find(c => c.text === '12′')
@@ -7150,6 +7163,7 @@ describe('REG — the hand check by real clicks', () => {
       expect([Math.round((D2b.s[1] - D2b.s[0]) / gs * 1000) / 1000, Math.round(D2b.s[0]) === Math.round(D2.s[0]), Math.abs(Math.round((M1b.s[0] - D2b.s[1]) - gapM0)), (await hist7()) - h2]).toEqual([11, true, 0, 1])
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
       expect((await doors()).find(q => q.id === d2.id).s).toEqual(D2.s)
+      await L.page.locator('[data-island="bottom-right"]').getByRole('button', { name: 'Fit' }).click(); await L.page.waitForTimeout(300)
       // 1 · its width typed in the card: 10 ft, its low end held; From left corner typed: 5 ft further on
       if (!(await L.selected()).length) await L.click(mid(D2))
       const wf = card.getByLabel('Door width', { exact: true }); await wf.fill('10'); await wf.press('Enter'); await L.page.waitForTimeout(200)
@@ -7188,10 +7202,10 @@ describe('REG — the hand check by real clicks', () => {
       const gaps = row.slice(1).map((q, i) => Math.round((q.s[0] - row[i].s[1]) / gs * 1000) / 1000)
       expect([row.length, want, new Set(gaps).size, gaps[0], Math.abs((row[0].s[0] - ends[0]) - (ends[1] - row[row.length - 1].s[1])) < 1, (await hist7()) - h1]).toEqual([want, want, 1, 12, true, 1])
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
-      // (doors-edit fixes) numbering per wall: the top wall's two docks D1, D2, then the bottom row LEFT TO RIGHT D3, D4 …
-      // (was clockwise: the bottom right to left)
+      // (doors-edit fixes) numbering per wall: the top wall's 1, 2, 3, then the bottom row LEFT TO RIGHT 4, 5 … (was clockwise:
+      // the bottom right to left; doors5: just the number, one sequence — was D3, D4 …)
       const nums = await L.S('return import("/src/utils/doorWall.js").then(W => { const st = S.getState(), m = W.doorNumbers(st.objects, st.gridSize || 40); return arg.map(id => m.get(id)) })', row.map(q => q.id))
-      expect(nums).toEqual(row.map((q, i) => 'D' + (i + 3)))
+      expect(nums).toEqual(row.map((q, i) => String(i + 4)))
     }, 120000)
 
     it('REG-colgrid-bubble-fit (click): a gridline bubble is clicked where it is drawn — zoomed out (5 %) it is drawn grown to the 11 px text floor, and a press at 85 % of its drawn radius (outside its drawing-size circle) drags its line; a press just past the drawn circle does not', async () => {

@@ -39,12 +39,15 @@ This file holds the rules; `CODEBASE.md` holds the map.
    **Labels never overlap each other and are never clipped** (a tag always grows to fit its text). When a label does not
    fit its space: a **dimension or gap value moves outside its extension lines with a short leader** — it does not hide
    (a chain: `render/dimChain.js`, an outer row past the chain; a lone width label: `minLabel.out`, past its line's
-   end); **tags that would overlap collapse into one range tag** (D1–D11, R10–R13) until there is room again. A layout
+   end); **tags that would overlap collapse into one range tag** (R10–R13) until there is room again. A layout
    that must keep its labels apart is laid out at the size it is drawn (`floorUnit`), never grown after.
    **Objects are always drawn at true size** at every zoom (racks, doors, columns, zones, sections, offices, text boxes,
    dimensions, symbols); only their text follows the floor — UI only (selection handles, the rotate handle, cursors)
    stays screen-size. Text is never drawn bigger than the object it labels at far zoom: when even a collapsed tag or a
    whole chain no longer fits its object or wall, it hides as a whole and returns when zooming in.
+   **The door exception (doors5):** the door labels — the number badge, the width, the gaps — are **drawing-scale**: they
+   shrink with the drawing and hide once under 11 px on screen (`minLabel.hide`), never grow, never collapse into ranges,
+   and nothing for doors is drawn outside the wall. Every other label keeps the rules above.
    REG-canvas-text-min measures every canvas text on the 4 fixtures at Fit, 50% and 200% (and on a wall of eleven docks),
    fails on any text under 11 px, any two labels over each other, any clipped label, and any object whose drawn size does
    not scale with the zoom. The PDF is not affected.

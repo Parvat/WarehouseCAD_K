@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { innerOutline } from '../../utils/floorGeom'
 import { doorAt, doorObject, doorTypes } from '../../utils/doorTool'
 import { doorWall, spanOf, wallGaps, neighbourGaps, gapEdit, doorNumbers, doorPlaced, widthEdit, chainStops } from '../../utils/doorWall'
-import { doorTags, doorChain, rangeText } from '../../render/doorAnnot'
+import { doorDrawing, shade } from '../../render/doorAnnot'
 import { dimChain } from '../../render/dimChain'
 
 const GS = 40, ft = (v) => v * GS
@@ -43,15 +43,15 @@ describe('DW — doors on their walls', () => {
     expect(gapEdit(objs, w, g, ft(500), GS).error).toMatch(/corner/)
     expect(gapEdit(objs, w, g, -1, GS).error).toMatch(/less than zero/)
   })
-  it('DW-numbers: dock and drive-in doors D1, D2 …, man doors M1 …; per wall — top, right, bottom, left — each wall left to right (a wall along y: top to bottom)', () => {
+  it('DW-numbers: just the number, one sequence for every door (doors5 — was D1 … / M1 …); per wall — top, right, bottom, left — each wall left to right (a wall along y: top to bottom)', () => {
     const nums = doorNumbers(objs, GS)
-    expect(doors.map(d => nums.get(d.id))).toEqual(['D1', 'D2', 'M1', 'D3', 'M2', 'D4'])
+    expect(doors.map(d => nums.get(d.id))).toEqual(['1', '2', '3', '4', '5', '6'])
     // (doors-edit fix: was clockwise) two more on the bottom wall and the left wall: the bottom left to right, the left top to bottom
     let o2 = put(objs, 'struct_egress', { x: X0 + ft(30), y: Y1 })
     o2 = put(o2, 'struct_loading_dock', { x: X0, y: Y0 + ft(20) })
     const n2 = doorNumbers(o2, GS), ds2 = o2.filter(o => /^struct_/.test(o.type))
-    // top D1 D2 M1 · right D3 · bottom M2 (at 30 ft), M3 (at 100 ft) · left D4 (at 20 ft), D5 (at 60 ft)
-    expect(ds2.map(d => n2.get(d.id))).toEqual(['D1', 'D2', 'M1', 'D3', 'M3', 'D5', 'M2', 'D4'])
+    // top 1 2 3 · right 4 · bottom 5 (at 30 ft), 6 (at 100 ft) · left 7 (at 20 ft), 8 (at 60 ft)
+    expect(ds2.map(d => n2.get(d.id))).toEqual(['1', '2', '3', '4', '6', '8', '5', '7'])
   })
   it('DW-width-typed: a door’s width typed holds its low end; every door beyond moves with its far end (their gaps kept); past the corner — refused', () => {
     const w = doorWall(doors[0], objs, GS)
@@ -68,39 +68,32 @@ describe('DW — doors on their walls', () => {
     const g = wallGaps(moved, w, { gs: GS, withEnd: true }).map(q => Math.round((q.hi - q.lo) / GS * 12) / 12)
     expect([g.slice(1, 3), g[3]]).toEqual([[21, 21], 100])
   })
-  it('DW-chain: the chain is corner, gap, width, gap, width … far corner; widths bold; a value too long for its segment moves outside on a leader, never hides; the whole chain hides only when its values no longer fit the wall', () => {
-    const w = doorWall(doors[0], objs, GS)
-    expect(chainStops(objs, w, GS).map(s => s.kind)).toEqual(['gap', 'door', 'gap', 'door', 'gap', 'door', 'gap'])
-    const c = doorChain(objs, w, GS, 1)
-    expect([c.hidden, c.items.length, c.items.filter(i => i.stop.kind === 'door').every(i => i.stop.bold), c.items.some(i => i.out)]).toEqual([false, 7, true, false])
-    // outside the building: past the wall's outer face (the top wall: above it)
-    expect(c.items.every(i => i.box.y + i.box.h < w.outer)).toBe(true)
-    // at a larger label unit the man door's 3′ no longer fits its 3 ft: outside, with a leader, still drawn; no two values overlap
-    const big = doorChain(objs, w, GS, 6)
-    const man = big.items.find(i => i.stop.kind === 'door' && i.stop.id === doors[2].id)
-    expect([big.hidden, man.out, man.ops.some(o => o.leader)]).toEqual([false, true, true])
-    const bx = big.items.map(i => i.box)
-    expect(bx.some((a, i) => bx.some((b, j) => j > i && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h))).toBe(false)
-    // far out: the whole chain hides
-    expect(doorChain(objs, w, GS, 60).hidden).toBe(true)
-    expect(dimChain([{ lo: 0, hi: 10, text: '10′' }, { lo: 10, hi: 400, text: '390′' }], { axis: 'x', at: 0, out: -1, u: 1 }).items.map(i => i.out)).toEqual([true, false])
-  })
-  it('DW-tags: tags that would overlap collapse into one range tag over their doors, and come apart again with room; a wall whose one tag no longer fits it hides its tags', () => {
-    expect([rangeText(['D1', 'D2', 'D3']), rangeText(['D4']), rangeText(['D1', 'D2', 'M1'])]).toEqual(['D1–D3', 'D4', 'D1–D2, M1'])
-    // eleven docks 9 ft wide, 3 ft apart along the top wall
-    let row = [fp]
-    for (let i = 0; i < 11; i++) row = put(row, 'struct_loading_dock', { x: X0 + ft(30 + i * 12 + 4.5), y: Y0 })
-    const top = (u) => doorTags(row, GS, u).map(t => t.text)
-    expect(top(1)).toEqual(['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'D10', 'D11'])
-    const mid = top(25)
-    expect([mid.length < 11, mid.length > 1, mid.join(',').includes('–')]).toEqual([true, true, true])
-    expect(top(80)).toEqual(['D1–D11'])
-    expect(top(400)).toEqual([])
-    // never two tags over each other
-    for (const u of [1, 6, 12, 25, 50, 80]) {
-      const b = doorTags(row, GS, u)
-      expect([u, b.some((p, i) => b.some((q, j) => j > i && p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h))]).toEqual([u, false])
+  it('DW-drawing (doors5): each door a thin bar ON its wall at its true width — no filled box; its clear space the box; the number alone in a round badge in the box\'s corner away from the wall, at its right end; the width bold on a short line inside the box; the gaps plain text between the boxes, inside the building — the first from the corner; nothing outside the wall', () => {
+    const w = doorWall(doors[0], objs, GS), D = doorDrawing(objs, GS, 1)
+    const top = doors.slice(0, 3), bar = D.bars.find(b => b.id === top[0].id), [s0, s1] = spanOf(top[0])
+    // the bar: its true width, on the wall (between the outer and the inner face's middle), 1.5 ft deep
+    expect([bar.x, bar.x + bar.w, Math.round(bar.h), bar.y < w.at && bar.y + bar.h > w.outer]).toEqual([s0, s1, 60, true])
+    // the badges: the number alone, light fill, mid ring, dark number, 11 medium; inside the door's clear box at its far right
+    const badge = D.labels.find(l => l.kind === 'badge' && l.id === top[1].id), box = D.boxes.find(b => b.id === top[1].id)
+    const [circ, num] = badge.ops
+    expect([num.text, num.fontSize, num.fontStyle, circ.fill, circ.stroke, num.fill]).toEqual(['2', 11, '500', shade('#6366f1', 0.82).length === 7 ? circ.fill : null, circ.stroke, num.fill])
+    expect([circ.x + circ.r <= box.x + box.w, circ.x > box.x + box.w / 2, circ.y + circ.r <= box.y + box.h, circ.y > box.y + box.h / 2]).toEqual([true, true, true, true])
+    // the widths bold on a line inside the box; the gaps regular, no line; all inside the building (below the top wall)
+    const vals = D.labels.filter(l => l.wallKey && l.stop && l.w.edge === w.edge && l.w.axis === 'x' && l.w.inward === 1).sort((p, q) => p.at.x - q.at.x)
+    expect(vals.map(l => (l.kind === 'width' ? 'W' : 'g')).join('')).toEqual('gWgWgW')
+    expect(vals.map(l => l.ops.find(o => o.op === 'text').text)).toEqual(['20′', '9′', '21′', '9′', '21′', '3′'])
+    expect(vals.every(l => l.box.y > w.at)).toBe(true)
+    for (const l of vals.filter(q => q.kind === 'width')) {
+      const bx = D.boxes.find(b => b.id === l.id), lines = l.ops.filter(o => o.op === 'line')
+      expect([l.ops.find(o => o.op === 'text').fontStyle, lines.every(o => o.points.every((v, i) => (i % 2 ? v >= bx.y && v <= bx.y + bx.h : v >= bx.x && v <= bx.x + bx.w)))]).toEqual(['700', true])
     }
+    expect(vals.filter(l => l.kind === 'gap').every(l => l.ops.length === 1 && l.ops[0].fontStyle === '400')).toBe(true)
+    // nothing outside any wall: every label inside the building
+    const inner = { x0: X0, y0: Y0, x1: X1, y1: Y1 }
+    expect(D.labels.every(l => l.box.x >= inner.x0 - 1e-6 && l.box.x + l.box.w <= inner.x1 + 1e-6 && l.box.y >= inner.y0 - 1e-6 && l.box.y + l.box.h <= inner.y1 + 1e-6)).toBe(true)
+    // drawing-scale: a larger label scale only makes them smaller in the drawing — never a range, never a leader
+    const small = doorDrawing(objs, GS, 4)
+    expect([small.labels.filter(l => l.kind === 'badge').map(l => l.ops[1].text).join(), small.labels.some(l => l.ops.some(o => o.leader))]).toEqual(['1,2,3,4,5,6', false])
   })
   it('DW-placed: a door re-placed keeps its wall side — the face on the inner face, its low end where asked', () => {
     const d = doors[3], w = doorWall(d, objs, GS), p = { ...d, ...doorPlaced(d, w, w.lo + ft(10), ft(12)) }
