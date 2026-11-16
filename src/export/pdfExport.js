@@ -49,7 +49,8 @@ import { aisleLabelOps, aisleLabelBoxes, clearanceOps, clearanceSolids, blockedF
 import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
 import { sectionLegend } from '../utils/sectionLegend'
 import { columnAnnot, ANNOT } from '../render/columnAnnot'
-import { doorAnnotOps } from '../render/doorAnnot'
+import { doorAnnotOps, doorReachOf } from '../render/doorAnnot'
+import { gridBuilding } from '../utils/columnGrid'
 import { doorFoot } from '../utils/doorWall'
 import { buildingDims, DIM_INK } from '../render/buildingDims'
 import { columnGridOps } from '../render/columnDraw'
@@ -148,8 +149,9 @@ function floorPlanSVG(obj, gridSize) {
 
 /* ── The building's size as dimension lines (render/buildingDims.js — the canvas's own layout) — always on the PDF
    (col-grid round). */
-function buildingDimsSVG(obj, gridSize, lz) {
-  const dims = buildingDims(obj, gridSize, lz)
+function buildingDimsSVG(obj, gridSize, lz, objects = []) {
+  // (doors-edit) past the door chains outside its walls
+  const dims = buildingDims(obj, gridSize, lz, doorReachOf(objects, obj, gridSize, 1 / lz))
   if (!dims.length) return ''
   const sw = 1 / lz, ln = (l, extra = '') => `<line x1="${l[0]}" y1="${l[1]}" x2="${l[2]}" y2="${l[3]}" stroke="${DIM_INK}" stroke-width="${sw}"${extra}/>`
   return `<g data-building-dims="${esc(obj.id || '')}">` + dims.map(d =>
@@ -198,7 +200,8 @@ function sectionKeySVG(objects, gridSize, lz) {
 
 /* ── A column grid's gridlines, bubbles and dimension chains (render/columnAnnot.js) — always on the PDF (col-grid). */
 function columnAnnotSVG(obj, gridSize, objects, lz) {
-  const a = columnAnnot(obj, objects, gridSize, lz)
+  // (doors-edit) the chain and bubbles step out past the door chains outside the top and left walls
+  const a = columnAnnot(obj, objects, gridSize, lz, doorReachOf(objects, gridBuilding(objects, obj), gridSize, 1 / lz))
   if (!a) return ''
   const sw = a.u, ln = (l) => `<line x1="${l[0]}" y1="${l[1]}" x2="${l[2]}" y2="${l[3]}" stroke="${ANNOT.ink}" stroke-width="${sw}"/>`
   const font = `font-family="'Plus Jakarta Sans', sans-serif" font-weight="600"`
@@ -439,10 +442,12 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   // the sections' key (at the canvas's label size, as on the plan) is on the sheet too
   const keyLz = labelScale(prefs.labelSize, gridSize), keys = sectionLegend(objects.filter(usable), gridSize, keyLz)
   // and the column grids' bubbles and chains (outside the building, top and left — col-grid round)
-  const annBoxes = objects.filter(usable).filter(o => o.type === 'column_grid' && o.showGrid !== false).map(o => columnAnnot(o, objects.filter(usable), gridSize, keyLz)).filter(Boolean)
+  const annBoxes = objects.filter(usable).filter(o => o.type === 'column_grid' && o.showGrid !== false).map(o => columnAnnot(o, objects.filter(usable), gridSize, keyLz, doorReachOf(objects.filter(usable), gridBuilding(objects, o), gridSize, 1 / keyLz))).filter(Boolean)
     .flatMap(a => a.bubbles.map(b => ({ x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 })))
-  const dimBoxes = objects.filter(usable).filter(o => FP_TYPES.has(o.type)).flatMap(o => buildingDims(o, gridSize, keyLz)).map(d => d.box)
-  const extra = [...keys, ...annBoxes, ...dimBoxes]
+  const dimBoxes = objects.filter(usable).filter(o => FP_TYPES.has(o.type)).flatMap(o => buildingDims(o, gridSize, keyLz, doorReachOf(objects.filter(usable), o, gridSize, 1 / keyLz))).map(d => d.box)
+  // and the doors' chains outside the walls (doors-edit)
+  const doorBoxes = doorAnnotOps(objects.filter(usable), gridSize, keyLz).filter(o => o.op === 'text').map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h }))
+  const extra = [...keys, ...annBoxes, ...dimBoxes, ...doorBoxes]
   const bounds = bounds0 && extra.length
     ? (() => { const x0 = Math.min(bounds0.x, ...extra.map(k => k.x)), y0 = Math.min(bounds0.y, ...extra.map(k => k.y)), x1 = Math.max(bounds0.x + bounds0.width, ...extra.map(k => k.x + k.w)), y1 = Math.max(bounds0.y + bounds0.height, ...extra.map(k => k.y + k.h)); return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } })()
     : bounds0 || { x: 0, y: 0, width: gridSize * 40, height: gridSize * 30 }
@@ -517,7 +522,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   const body = [
     `<rect x="${vb.x}" y="${vb.y}" width="${vb.width}" height="${vb.height}" fill="#ffffff"/>`,
     ...floors.map(o => floorPlanSVG(o, gridSize)),
-    ...floors.map(o => buildingDimsSVG(o, gridSize, keyLz)),
+    ...floors.map(o => buildingDimsSVG(o, gridSize, keyLz, objects.filter(usable))),
     // the sections under everything else, as on the plan
     ...sections.map(o => sectionSVG(o, u, objects.filter(isDoor), gridSize)),
     ...zones.map(o => zoneSVG(o, gridSize)),

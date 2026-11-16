@@ -6,10 +6,12 @@
 //     world px along the axis), at (its line across), inward (+1 / -1: the floor's side; 0 for a section edge, where
 //     the door straddles the line) }.
 //   - Distances are from the wall's LOW end — its left end (a wall along x) or its top end (along y): "From left corner".
-//   - Doors are numbered clockwise from the building's top-left corner: dock and drive-in doors D1, D2 …, man doors
-//     M1, M2 …; doors in a section's Fence or Wall after the building's, by section and along their edge.
+//   - Doors are numbered per wall, the walls taken top, right, bottom, left (several facing the same way: left to right,
+//     or top to bottom), each wall's doors left to right (top to bottom on a wall along y): dock and drive-in doors D1,
+//     D2 …, man doors M1, M2 …; doors in a section's Fence or Wall after the building's, by section and along their edge.
+//   - A building wall also carries `outer`: its outer face's line across (the gap chain is drawn just outside it).
 
-import { innerOutline } from './floorGeom'
+import { innerOutline, buildingOutline } from './floorGeom'
 import { isDoor } from './doorTool'
 import { isSection, edgesOf } from './sectionAreas'
 
@@ -53,11 +55,18 @@ export function doorWall(d, objects, gs = 40) {
     const [lo, hi] = range(e), at = lineOf(e)
     if (cA < lo - E || cA > hi + E) continue
     const near = axis === 'x' ? f.y0 : f.x0, far = axis === 'x' ? f.y1 : f.x1
-    if (Math.abs(near - at) < E) return { kind: 'fp', id: fp.id, edge: e.i, axis, lo, hi, at, inward: 1 }
-    if (Math.abs(far - at) < E) return { kind: 'fp', id: fp.id, edge: e.i, axis, lo, hi, at, inward: -1 }
+    if (Math.abs(near - at) < E) return { kind: 'fp', id: fp.id, edge: e.i, axis, lo, hi, at, inward: 1, outer: outerOf(fp, axis, at, 1) }
+    if (Math.abs(far - at) < E) return { kind: 'fp', id: fp.id, edge: e.i, axis, lo, hi, at, inward: -1, outer: outerOf(fp, axis, at, -1) }
   }
   return null
 }
+/** The outer face of building `fp`'s wall whose inner face is the line `at` across `axis`, the floor on side `inward`:
+ *  the outline's nearest parallel line on the outside. */
+function outerOf(fp, axis, at, inward) {
+  const P = buildingOutline(fp), cs = P.map(p => (axis === 'x' ? p.y : p.x)).filter(c => (at - c) * inward > -0.5)
+  return cs.length ? cs.reduce((b, c) => (Math.abs(c - at) < Math.abs(b - at) ? c : b)) : at
+}
+
 /** A key per wall (two doors on the same wall share it). */
 export const wallKey = (w) => (w ? `${w.kind}:${w.id}:${w.axis}:${Math.round(w.at)}:${Math.round(w.lo)}` : '')
 
@@ -100,7 +109,15 @@ export function doorPlaced(d, w, s0, W = d.width, D = d.height) {
  *  every door beyond it on the wall move together; → { patches: [[id, patch]] } or { error }. */
 export function gapEdit(objects, w, g, len, gs = 40) {
   if (!(len >= 0)) return { error: 'A gap can’t be less than zero.' }
-  const ds = doorsOnWall(objects, w, gs), i = ds.findIndex(d => d.id === g.after)
+  const ds = doorsOnWall(objects, w, gs)
+  if (g.after == null && g.before) {
+    // the last door to the far corner: the doors keep their gaps to each other and move together
+    const delta = (g.hi - g.lo) - len
+    if (!ds.length || ds[ds.length - 1].id !== g.before) return { error: 'That value is not a gap of this wall.' }
+    if (spanOf(ds[0])[0] + delta < w.lo - 0.5) return { error: 'A door would pass the corner — not changed.' }
+    return { patches: ds.map(d => [d.id, doorPlaced(d, w, spanOf(d)[0] + delta)]) }
+  }
+  const i = ds.findIndex(d => d.id === g.after)
   if (i < 0) return { error: 'That value is not a gap of this wall.' }
   const delta = len - (g.hi - g.lo), moved = ds.slice(i)
   const last = spanOf(moved[moved.length - 1])
@@ -109,47 +126,59 @@ export function gapEdit(objects, w, g, len, gs = 40) {
   return { patches: moved.map(d => [d.id, doorPlaced(d, w, spanOf(d)[0] + delta)]) }
 }
 
-/** Every door's number: Map id → 'D1' … (dock and drive-in) / 'M1' … (man doors), clockwise from each building's
- *  top-left corner, buildings in drawing order; section doors after, by section and along their edge. */
+/** A door's width typed on the chain: door `id` made `len` px wide, its low end held — every door beyond it on the wall
+ *  moves with its far end, so their gaps are kept; → { patches } or { error }. */
+export function widthEdit(objects, w, id, len, gs = 40) {
+  if (!(len > 0)) return { error: 'A door must be wider than zero.' }
+  const ds = doorsOnWall(objects, w, gs), i = ds.findIndex(d => d.id === id)
+  if (i < 0) return { error: 'That door is not on this wall.' }
+  const [s0, s1] = spanOf(ds[i]), delta = len - (s1 - s0)
+  const lastEnd = spanOf(ds[ds.length - 1])[1] + delta
+  if (lastEnd > w.hi + 0.5) return { error: 'A door would pass the corner — not changed.' }
+  const d = ds[i], patch = { ...doorPlaced(d, w, s0, len), meta: { ...(d.meta || {}), doorWidth: len / gs } }
+  return { patches: [[d.id, patch], ...ds.slice(i + 1).map(o => [o.id, doorPlaced(o, w, spanOf(o)[0] + delta)])] }
+}
+
+/** The values of wall `w`'s chain, low corner to high: a gap (`kind: 'gap'`, wallGaps' gap) then a door (`kind:
+ *  'door'`, its id), …, the last gap to the far corner — [{ kind, lo, hi, gap | id }]; a gap of nothing is left out. */
+export function chainStops(objects, w, gs = 40) {
+  const ds = doorsOnWall(objects, w, gs), gaps = wallGaps(objects, w, { withEnd: true, gs }), out = []
+  if (!ds.length) return out
+  ds.forEach((d, i) => {
+    const g = gaps[i]
+    if (g && g.hi - g.lo > 0.5) out.push({ kind: 'gap', lo: g.lo, hi: g.hi, gap: g })
+    const [s0, s1] = spanOf(d)
+    out.push({ kind: 'door', lo: s0, hi: s1, id: d.id })
+  })
+  const end = gaps[gaps.length - 1]
+  if (end && end.after == null && end.hi - end.lo > 0.5) out.push({ kind: 'gap', lo: end.lo, hi: end.hi, gap: end })
+  return out
+}
+
+/** Every door's number: Map id → 'D1' … (dock and drive-in) / 'M1' … (man doors) — buildings in drawing order; in each,
+ *  the walls top, right, bottom, left (several facing one way: left to right, or top to bottom), each wall's doors left
+ *  to right (a wall along y: top to bottom); section doors after, by section and along their edge. */
 export function doorNumbers(objects, gs = 40) {
   const doors = (objects || []).filter(isDoor)
   if (!doors.length) return new Map()
   const keyOf = new Map()
   const fps = (objects || []).filter(o => /^fp_/.test(o.type || ''))
-  fps.forEach((fp, k) => {
-    let poly = innerOutline(fp, gs)
-    if (!poly || poly.length < 3) return
-    // clockwise on screen (y down): the shoelace sum positive
-    let s = 0
-    for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; s += a.x * b.y - b.x * a.y }
-    if (s < 0) poly = [...poly].reverse()
-    // from the top-left corner: the highest, then the leftmost
-    const start = poly.reduce((bi, p, i) => (p.y < poly[bi].y - 1e-6 || (Math.abs(p.y - poly[bi].y) < 1e-6 && p.x < poly[bi].x) ? i : bi), 0)
-    poly = [...poly.slice(start), ...poly.slice(0, start)]
-    let run = 0
-    poly.forEach((a, i) => {
-      const b = poly[(i + 1) % poly.length], len = Math.hypot(b.x - a.x, b.y - a.y)
-      for (const d of doors) {
-        if (keyOf.has(d.id) || d.sectionId || d.parentId !== fp.id) continue
-        const w = doorWall(d, objects, gs)
-        if (!w || w.kind !== 'fp') continue
-        const isX = Math.abs(a.y - b.y) < 1e-6
-        if ((w.axis === 'x') !== isX || Math.abs((isX ? a.y : a.x) - w.at) > 1) continue
-        const [s0, s1] = spanOf(d), c = (s0 + s1) / 2
-        const t = isX ? (c - a.x) / (b.x - a.x) : (c - a.y) / (b.y - a.y)
-        if (!(t >= -1e-6 && t <= 1 + 1e-6)) continue
-        keyOf.set(d.id, [0, k, run + t * len])
-      }
-      run += len
-    })
-  })
+  // the floor's side → the wall's facing: along x with the floor below it — the top; along y with the floor on its left — the right
+  const facing = (w) => (w.axis === 'x' ? (w.inward > 0 ? 0 : 2) : (w.inward < 0 ? 1 : 3))
+  for (const d of doors) {
+    if (d.sectionId) continue
+    const k = fps.findIndex(f => f.id === d.parentId), w = k >= 0 ? doorWall(d, objects, gs) : null
+    if (!w || w.kind !== 'fp') continue
+    keyOf.set(d.id, [0, k, facing(w), w.lo, w.at, spanOf(d)[0]])
+  }
   const secs = (objects || []).filter(isSection)
   for (const d of doors) {
     if (keyOf.has(d.id)) continue
     const k = secs.findIndex(s => s.id === d.sectionId), [s0] = spanOf(d)
-    keyOf.set(d.id, [1, k < 0 ? 1e9 : k, doorAxis(d) === 'x' ? doorFoot(d).y0 * 1e6 + s0 : doorFoot(d).x0 * 1e6 + s0])
+    keyOf.set(d.id, [1, k < 0 ? 1e9 : k, doorAxis(d) === 'x' ? 0 : 1, doorAxis(d) === 'x' ? doorFoot(d).y0 : doorFoot(d).x0, 0, s0])
   }
-  const order = [...doors].sort((p, q) => { const a = keyOf.get(p.id), b = keyOf.get(q.id); return a[0] - b[0] || a[1] - b[1] || a[2] - b[2] })
+  const cmp = (a, b) => { for (let i = 0; i < a.length; i++) { const d = a[i] - b[i]; if (Math.abs(d) > 1e-6) return d } return 0 }
+  const order = [...doors].sort((p, q) => cmp(keyOf.get(p.id), keyOf.get(q.id)))
   const out = new Map()
   let nD = 0, nM = 0
   for (const d of order) out.set(d.id, DOCK_TYPES.has(d.type) ? `D${++nD}` : `M${++nM}`)

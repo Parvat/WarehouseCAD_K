@@ -18,7 +18,7 @@ const isRect = (walls) => walls.length === 4 && walls.every(s => Math.abs(s.a.x 
 /** Building `fp`'s dimension lines → [{ wallIdx, line: [[x1, y1, x2, y2] …] (the line either side of the break),
  *  ticks: [[x1, y1, x2, y2] …] (the solid end of each extension line), ext: [[x1, y1, x2, y2] …] (dotted, `dash`), text, tx, ty, angle (deg), fs, tw (the text's
  *  length), box: { x, y, w, h } (the value's box, axis-aligned), lenFt }]. */
-export function buildingDims(fp, gridSize = 40, lz = 1) {
+export function buildingDims(fp, gridSize = 40, lz = 1, clear = null) {
   const walls = getFpWallSegments(fp, gridSize)
   if (!walls?.length) return []
   let area = 0
@@ -26,7 +26,7 @@ export function buildingDims(fp, gridSize = 40, lz = 1) {
   const ws = area >= 0 ? 1 : -1
   // (the colgrid mockup: 12 bold, 21 off the wall; each end a 3 gap off the corner, dotted 2 · 2, then solid 7.5 either
   // side of the line)
-  const fs = 12 / lz, off = 21 / lz, tick = 7.5 / lz, extGap = 3 / lz, pad = 4 / lz, dash = 2 / lz
+  const fs = 12 / lz, off0 = 21 / lz, tick = 7.5 / lz, extGap = 3 / lz, pad = 4 / lz, dash = 2 / lz
   const rect = isRect(walls)
   const out = []
   walls.forEach((seg, i) => {
@@ -34,6 +34,10 @@ export function buildingDims(fp, gridSize = 40, lz = 1) {
     if (len < 0.5) return
     const ux = edx / len, uy = edy / len, nx = ws * uy, ny = ws * -ux
     if (rect && !(ny > 0.5 || nx > 0.5)) return   // a rectangle: the bottom and the right wall only
+    // (doors-edit) where a door chain already runs outside this wall (`clear`: how far it reaches past the building's
+    // box on that side), the size line steps out just past it
+    const side = ny > 0.5 ? 'bottom' : nx > 0.5 ? 'right' : ny < -0.5 ? 'top' : 'left'
+    const off = Math.max(off0, clear?.[side] ? clear[side] + 3 / lz + fs * 0.7 : 0)
     const d1 = [seg.a.x + nx * off, seg.a.y + ny * off], d2 = [seg.b.x + nx * off, seg.b.y + ny * off]
     const cx = (d1[0] + d2[0]) / 2, cy = (d1[1] + d2[1]) / 2
     const text = dimText(seg.lenPx, gridSize), tw = text.length * fs * 0.62

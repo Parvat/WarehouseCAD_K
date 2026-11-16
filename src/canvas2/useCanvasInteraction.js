@@ -757,9 +757,10 @@ export function useCanvasInteraction({
            release, the press's own focus change would close it at once */
         const cv = chainAt(world, view.current.zoom), cg = cv && st.objects.find(o => o.id === cv.gridId)
         if (cg && pickableIn(st.layers)(cg)) { pickedOnPlan(); dimClick.current = { chain: { gridId: cv.gridId, axis: cv.axis, lo: cv.lo, hi: cv.hi } }; return }
-        /* (doors-edit round) a gap of a selected door's wall: typed in place (DoorGapEdit.jsx) — the door after it movable */
-        const dg = doorGapAt(world, view.current.zoom), dd = dg && st.objects.find(o => o.id === dg.gap.after)
-        if (dd && pickableIn(st.layers)(dd)) { pickedOnPlan(); dimClick.current = { doorGap: { key: dg.key, w: dg.w, after: dg.gap.after } }; return }
+        /* (doors-edit round) a value of a selected door's wall chain — a gap or a door's width: typed in place (DoorGapEdit.jsx),
+           the door it moves (or resizes) movable */
+        const dg = doorGapAt(world, view.current.zoom), dd = dg && st.objects.find(o => o.id === dg.door)
+        if (dd && pickableIn(st.layers)(dd)) { pickedOnPlan(); dimClick.current = { doorGap: dg.stop.kind === 'door' ? { key: dg.key, w: dg.w, kind: 'door', id: dg.stop.id } : { key: dg.key, w: dg.w, kind: 'gap', after: dg.stop.gap.after, before: dg.stop.gap.before } }; return }
       }
       let hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       let hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
@@ -1021,7 +1022,7 @@ export function useCanvasInteraction({
       else {
         const cv = chainAt(world, view.current.zoom), cg = cv && st.objects.find(o => o.id === cv.gridId)
         if (cg && pickableIn(st.layers)(cg)) { next = 'text'; chainHover = cv }
-        else { const dg = doorGapAt(world, view.current.zoom), dd = dg && st.objects.find(o => o.id === dg.gap.after); if (dd && pickableIn(st.layers)(dd)) next = 'text' }
+        else { const dg = doorGapAt(world, view.current.zoom), dd = dg && st.objects.find(o => o.id === dg.door); if (dd && pickableIn(st.layers)(dd)) next = 'text' }
       }
     }
     setChainHover(chainHover)

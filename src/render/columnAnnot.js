@@ -12,19 +12,22 @@ import { gridLines, gridBuilding, lineName } from '../utils/columnGrid'
 import { buildingOutline } from '../utils/floorGeom'
 import { ftIn } from '../utils/bom'
 import { DIM_INK } from './buildingDims'
+import { dimChain } from './dimChain'
 
 export const ANNOT = { line: '#9AA29C', ink: DIM_INK, bubble: '#2B2F2C', bubbleFill: '#FFFFFF' }
 
 /** The annotation of grid `cg` → { lines: [{ x1, y1, x2, y2 }], bubbles: [{ x, y, r, fs, text, axis, i (the gridline it names) }], chain: [{ segs:
- *  [[x1, y1, x2, y2] …] (the chain either side of the value's break), ticks: [[x1, y1, x2, y2] …], text, tw (its width), tx, ty }],
- *  fs, dash, u (one label px) } or null (no building). */
+ *  [[x1, y1, x2, y2] …] (the chain either side of the value's break — or, a value too long for its bay, the whole bay and
+ *  the leader to the value outside: render/dimChain.js), ticks: [[x1, y1, x2, y2] …], text, tw (its width), tx, ty, out }],
+ *  fs, dash, u (one label px) } or null (no building). A chain that no longer fits its wall is left out whole. On the
+ *  canvas `lz` carries the 11 px floor (canvas2/ColumnGridAnnot.jsx), so what is laid out is what is drawn. */
 export function columnAnnot(cg, objects, gridSize = 40, lz = 1, clear = null) {
   const fp = gridBuilding(objects, cg)
   if (!fp || !Array.isArray(cg?.spacingX) || !Array.isArray(cg?.spacingY)) return null
   const p = buildingOutline(fp), x0 = Math.min(...p.map(q => q.x)), x1 = Math.max(...p.map(q => q.x)), y0 = Math.min(...p.map(q => q.y)), y1 = Math.max(...p.map(q => q.y))
   const { xs, ys } = gridLines(cg)
   const u = 1 / lz
-  const fs = 10.5 * u, r = 9.5 * u, tick = 5.5 * u, pad = 3 * u
+  const fs = 10.5 * u, r = 9.5 * u, pad = 3 * u
   const words = (px) => ftIn((px / gridSize) * 12)
   const tw = (t) => t.length * fs * 0.6
   // the chain 14 off the wall — or, where something already sits outside that wall (`clear`: how far the row numbers
@@ -33,22 +36,20 @@ export function columnAnnot(cg, objects, gridSize = 40, lz = 1, clear = null) {
   const stopsY = [y0, ...ys.filter(y => y > y0 + 0.5 && y < y1 - 0.5), y1].filter((v, i, a) => i === 0 || v - a[i - 1] > 0.5)
   const halfW = Math.max(0, ...stopsY.slice(1).map((v, i) => tw(words(v - stopsY[i])) / 2))
   const topOff = Math.max(14 * u, clear?.top ? clear.top + pad + fs * 0.6 : 0), leftOff = Math.max(14 * u, clear?.left ? clear.left + pad + halfW : 0)
-  const topB = topOff + 26 * u, leftB = leftOff + 26 * u
   const lines = [], bubbles = [], chain = []
+  // the chains (render/dimChain.js): a value too long for its bay moves outside with a leader; the bubbles past them
+  const stopsX = [x0, ...xs.filter(x => x > x0 + 0.5 && x < x1 - 0.5), x1].filter((v, i, a) => i === 0 || v - a[i - 1] > 0.5)
+  const side = (stops, axis, at) => {
+    const c = dimChain(stops.slice(1).map((b, i) => ({ lo: stops[i], hi: b, text: words(b - stops[i]), style: '600' })), { axis, at, out: -1, u, ink: DIM_INK })
+    for (const it of c.items) {
+      const lns = it.ops.filter(o => o.op === 'line').map(o => o.points)
+      chain.push({ segs: lns, ticks: [], text: it.stop.text, tw: tw(it.stop.text), tx: it.box.x + it.box.w / 2, ty: it.box.y + it.box.h / 2, axis, lo: it.stop.lo, hi: it.stop.hi, out: it.out })
+    }
+    return c.hidden ? 0 : c.reach
+  }
+  const topReach = side(stopsX, 'x', y0 - topOff), leftReach = side(stopsY, 'y', x0 - leftOff)
+  const topB = topOff + Math.max(26 * u, topReach + 4 * u + r), leftB = leftOff + Math.max(26 * u, leftReach + 4 * u + r)
   xs.forEach((x, i) => { lines.push({ x1: x, y1: y0 - topB + r, x2: x, y2: y1, axis: 'x', i }); bubbles.push({ x, y: y0 - topB, r, fs: 11 * u, text: lineName(i, 'x'), axis: 'x', i }) })
   ys.forEach((y, i) => { lines.push({ x1: x0 - leftB + r, y1: y, x2: x1, y2: y, axis: 'y', i }); bubbles.push({ x: x0 - leftB, y, r, fs: 11 * u, text: lineName(i, 'y'), axis: 'y', i }) })
-  // the chain along the top: wall, gridlines, far wall — each value in a break its width
-  const stopsX = [x0, ...xs.filter(x => x > x0 + 0.5 && x < x1 - 0.5), x1].filter((v, i, a) => i === 0 || v - a[i - 1] > 0.5)
-  const cy = y0 - topOff
-  for (let i = 0; i + 1 < stopsX.length; i++) {
-    const a = stopsX[i], b = stopsX[i + 1], m = (a + b) / 2, text = words(b - a), g = Math.min(tw(text) / 2 + pad, (b - a) / 2)
-    chain.push({ segs: [[a, cy, m - g, cy], [m + g, cy, b, cy]], ticks: [[a, cy - tick, a, cy + tick], [b, cy - tick, b, cy + tick]], text, tw: tw(text), tx: m, ty: cy, axis: 'x', lo: a, hi: b })
-  }
-  // and down the left — the value upright, in a break its height
-  const cx = x0 - leftOff
-  for (let i = 0; i + 1 < stopsY.length; i++) {
-    const a = stopsY[i], b = stopsY[i + 1], m = (a + b) / 2, text = words(b - a), g = Math.min(fs * 0.7 + pad, (b - a) / 2)
-    chain.push({ segs: [[cx, a, cx, m - g], [cx, m + g, cx, b]], ticks: [[cx - tick, a, cx + tick, a], [cx - tick, b, cx + tick, b]], text, tw: tw(text), tx: cx, ty: m, axis: 'y', lo: a, hi: b })
-  }
   return { lines, bubbles, chain, fs, dash: 4 * u, u }
 }

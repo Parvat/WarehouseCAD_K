@@ -9,16 +9,15 @@ import { useCanvasStore } from '../store/useCanvasStore'
 import { columnAnnot, ANNOT } from '../render/columnAnnot'
 import { labelScale } from '../render/labelSize'
 import { useLabelPrefs } from './labelPrefs'
-import { useLiveObjects } from './live'
+import { useLiveObjects, useView } from './live'
 import { layerShown } from '../utils/layers'
 import { gridBuilding } from '../utils/columnGrid'
-import { buildingOutline } from '../utils/floorGeom'
 import { rackLinesNow } from '../utils/rackLines'
-import { rowLabelPlaces, ROW_LABEL_PX } from './RackLineLabels'
+import { rowLabelPlaces, rowLabelFs, rowReach } from './RackLineLabels'
 import { aisleLabelBoxes } from '../render/labelOps'
 import { lineNamer } from '../utils/lineNames'
 import { useViewPrefs } from '../studio/viewPrefs'
-import { MIN_TEXT_PX } from './minText'
+import { MIN_TEXT_PX, floorUnit } from './minText'
 
 const FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 
@@ -26,13 +25,8 @@ const FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 function rowClear(g, objects, places) {
   const fp = gridBuilding(objects, g)
   if (!fp || !places.length) return null
-  const p = buildingOutline(fp), x0 = Math.min(...p.map(q => q.x)), x1 = Math.max(...p.map(q => q.x)), y0 = Math.min(...p.map(q => q.y)), y1 = Math.max(...p.map(q => q.y))
-  let top = 0, left = 0
-  for (const q of places) {
-    if (q.x < x0 && q.y + q.h > y0 && q.y < y1) left = Math.max(left, x0 - q.x)
-    if (q.y < y0 && q.x + q.w > x0 && q.x < x1) top = Math.max(top, y0 - q.y)
-  }
-  return { top, left }
+  const r = rowReach(fp, places)
+  return { top: r.top, left: r.left }
 }
 
 /* (col-bubbles round) The bubbles as last drawn — { gridId, axis, i, x, y, r } (world px) — so a press or a hover on one
@@ -77,14 +71,17 @@ export function ColumnGridAnnot() {
   const { selectedIds, gs, layers, T } = useCanvasStore(useShallow(s => ({ selectedIds: s.selectedIds, gs: s.gridSize || 40, layers: s.layers, T: s.elevations })))
   const labelSize = useLabelPrefs(s => s.labelSize)
   const rowsShown = useViewPrefs(s => s.rowLabels || s.bomFull)
-  const lz = labelScale(labelSize, gs)
+  const lz = labelScale(labelSize, gs), { zoom } = useView()
+  // (Rule 8) laid out at the size it is drawn: the label scale, or larger so its 10.5 text is 11 px on screen — the chain's
+  // values, the bubbles and the row numbers it keeps clear of, as drawn (render/columnAnnot.js, render/dimChain.js)
+  const lzF = 1 / floorUnit(lz, zoom), rowFs = rowLabelFs(lz, zoom)
   const grids = layerShown(layers, 'columns') ? objects.filter(o => o.type === 'column_grid' && o.showGrid !== false && selectedIds.includes(o.id)) : []
   // the row numbers where they are drawn (only worked out while a grid is selected)
   const places = useMemo(() => {
     if (!grids.length || !rowsShown || !layerShown(layers, 'racking')) return []
     const lines = rackLinesNow(objects, gs)
-    return lines.length ? rowLabelPlaces(lines, ROW_LABEL_PX / lz, aisleLabelBoxes(objects, gs, labelSize), lineNamer(objects, T, gs)) : []
-  }, [grids.length, rowsShown, layers, objects, gs, lz, labelSize, T])
+    return lines.length ? rowLabelPlaces(lines, rowFs, aisleLabelBoxes(objects, gs, labelSize), lineNamer(objects, T, gs)) : []
+  }, [grids.length, rowsShown, layers, objects, gs, rowFs, labelSize, T])
   if (!grids.length) { SPOTS = []; CHAIN = []; LINES = []; return null }
   const spots = []
   SPOTS = spots   // (filled as the grids below draw)
@@ -95,7 +92,7 @@ export function ColumnGridAnnot() {
   return (
     <Group name="column-annot" listening={false}>
       {grids.map(g => {
-        const a = columnAnnot(g, objects, gs, lz, rowClear(g, objects, places))
+        const a = columnAnnot(g, objects, gs, lzF, rowClear(g, objects, places))
         if (a) for (const l of a.lines) lineSpots.push({ gridId: g.id, axis: l.axis, i: l.i, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 })
         if (a) for (const b of a.bubbles) spots.push({ gridId: g.id, axis: b.axis, i: b.i, x: b.x, y: b.y, r: b.r, fs: b.fs })
         if (a) for (const c of a.chain) { const w = c.tw + a.fs * 0.4, h = a.fs * 1.3; chainSpots.push({ gridId: g.id, axis: c.axis, lo: c.lo, hi: c.hi, x: c.tx - w / 2, y: c.ty - h / 2, w, h, fs: a.fs, tw: c.tw, text: c.text }) }
@@ -106,9 +103,8 @@ export function ColumnGridAnnot() {
             {a.chain.map((c, i) => (
               <Group key={'c' + i} listening={false}>
                 {[...c.segs, ...c.ticks].map((l, k) => <Line key={k} points={l} stroke={ANNOT.ink} strokeWidth={1} strokeScaleEnabled={false} listening={false} perfectDrawEnabled={false} />)}
-                {/* (Rule 8) under 11 px it grows to 11, or hides when longer than its bay (canvas2/minText.js) */}
+                {/* (Rule 8) laid out at 11 px at least; too long for its bay: outside, on a leader (render/dimChain.js) */}
                 <Text name="column-chain-text label-pill" text={c.text} x={c.tx} y={c.ty} width={c.tw + a.fs * 0.4} align="center" wrap="none" offsetX={(c.tw + a.fs * 0.4) / 2} offsetY={a.fs / 2}
-                  minFit={c.axis === 'x' ? { w: c.hi - c.lo } : { h: c.hi - c.lo }}
                   fontSize={a.fs} fontStyle="600" fontFamily={FONT} fill={ANNOT.ink} listening={false} />
               </Group>
             ))}

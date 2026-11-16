@@ -306,7 +306,8 @@ export function AisleLabel({ aisle, objects, lz, gridSize, profile = null, colum
    they look the same. */
 export function AisleLabelView({ L, name, lz }) {
   const ops = useMemo(() => aisleLabelOps(L, lz), [L, lz])
-  return <LabelOps ops={ops} name={name} />
+  // (Rule 8) a width is a dimension value: too long for its gap at the 11 px floor, it moves outside with a leader
+  return <LabelOps ops={ops} name={name} out />
 }
 
 /* One width label per cross-aisle (crossAisles.js), in the aisle-label style.
