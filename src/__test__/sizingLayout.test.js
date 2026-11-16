@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   sizingSheetLayout, rowBands, rowSegments, baysInRun, axisFrame, layoutSpec,
-  columnGridObject, dockDoorObjects, stagingObjects, generateFixtures,
+  columnGridObject, dockDoorObjects, stagingObjects, generateFixtures, columnFaceFrame,
 } from '../generate/sizingLayout'
 import { placementToObject, aisleObjectsForRacks } from '../generate/traceGenerate'
 import { checkColumns, expandColumnGrid, MHE_PROFILES, rackFootprint } from '../generate/columnCheck'
@@ -182,9 +182,11 @@ describe('sizingLayout — placements', () => {
     // comparing against a flush-to-the-wall geometry sizingSheetLayout no
     // longer produces.
     const { endClearFt } = layoutSpec(brief, DEFAULT_RULES)
-    const bands = rowBands(brief.widthFt, { ...brief, wallClearFt: endClearFt })
+    // (column grid rule 1) the frame Generate itself walks — its grid lines and the column face on the walls with columns
+    const f = columnFaceFrame(axisFrame('horizontal', { ...brief, columnsAlongWall: true }), 1)
+    const bands = rowBands(f.stackFt, { ...brief, wallClearFt: endClearFt, gridYFt: f.stackGridFt, gridOffsetFt: f.stackGridOffsetFt, gridMaxFt: f.stackGridMaxFt })
     // a single row flush on a wall is ONE rack along the whole run (BUG 70); every other row, one per segment
-    const onWall = (b) => b.type === 'rack_row' && (Math.abs(b.yFt - endClearFt) < 1e-6 || Math.abs(b.yFt + b.depthFt - (brief.widthFt - endClearFt)) < 1e-6)
+    const onWall = (b) => b.type === 'rack_row' && (Math.abs(b.yFt - endClearFt) < 1e-6 || Math.abs(b.yFt + b.depthFt - (f.stackFt - endClearFt)) < 1e-6)
     const walls = bands.filter(onWall).length
     expect(walls).toBe(2)
     expect(placements).toHaveLength((bands.length - walls) * 2 + walls)
@@ -222,7 +224,7 @@ describe('sizingLayout — fixtures', () => {
     // the requested spacing from the near walls; the last bay before the far wall the remainder (generate-far-walls
     // round: the Place column grid dialog's Yes, stored as real line positions)
     expect(g.spacingX).toEqual([50, 50, 50, 50, 40].map(f => f * GS))
-    expect(g.spacingY).toEqual([54, 54, 12].map(f => f * GS))
+    expect(g.spacingY).toEqual([54, 66].map(f => f * GS))   // column grid rule 1: 120 at 54 — no 12' sliver, the end bay 66'
     // line #0 on the left wall and on the top wall; the last line on the right wall and on the bottom wall
     expect(g.x).toBe(0)
     expect(g.y).toBe(0)
@@ -833,17 +835,17 @@ describe('sizingLayout — BUG 69: "columns along wall" moves the interior grid\
     expect(Math.min(...lineYsFt(grid))).toBeCloseTo(0, 6)
   })
 
-  it('columnGridObject: No insets the grid one full gridYFt pitch — no line at y=0, nor on the far wall, otherwise the same lines', () => {
+  it('columnGridObject: No insets the grid one full gridYFt pitch — no line at y=0, nor on the far wall; Yes a line on both walls, no end sliver (rule 1)', () => {
     const yes = columnGridObject({ ...gbrief, columnsAlongWall: true }, 0, 0)
     const no  = columnGridObject({ ...gbrief, columnsAlongWall: false }, 0, 0)
     expect(no.y).toBeCloseTo(gbrief.gridYFt * GS, 6)
     const yesLines = lineYsFt(yes)
     const noLines  = lineYsFt(no)
-    // (generate-far-walls round) Yes has a line on both walls — 65 / 30: 0, 30, 60, 65
-    expect(yesLines[yesLines.length - 1]).toBeCloseTo(gbrief.widthFt, 6)
-    expect(noLines).toHaveLength(yesLines.length - 2)
+    // (generate-far-walls round) Yes has a line on both walls — 65 / 30: 0, 30, 65 (column grid rule 1: 60 dropped, no 5'
+    // sliver; the end bay 35'); No: 30, 60 — none on a wall
+    expect(yesLines).toEqual([0, 30, 65])
+    expect(noLines).toEqual([30, 60])
     expect(noLines.some(y => Math.abs(y) < 1e-6 || Math.abs(y - gbrief.widthFt) < 1e-6)).toBe(false)
-    expect(noLines).toEqual(yesLines.slice(1, -1))   // same lines, minus the two wall ones
   })
 
   it('generateFixtures always returns exactly one column_grid, regardless of the toggle — the separate wall-grid mechanism is gone', () => {
@@ -879,17 +881,20 @@ describe('sizingLayout — BUG 69: "columns along wall" moves the interior grid\
         }
         const racks = sizingSheetLayout(brief2, DEFAULT_RULES).map(placementToObject)
         const columns = expandColumnGrid(columnGridObject(brief2, 0, 0), GS)
-        return checkColumns({ racks, columns, profile: MHE_PROFILES.reach, gridSize: GS })
+        return { ...checkColumns({ racks, columns, profile: MHE_PROFILES.reach, gridSize: GS }), columns }
       }
       const yes = runFor(true)
       const no  = runFor(false)
+      /* (column grid rule 1) Yes no longer draws a line that would leave an end bay under half a spacing — 120 at 54:
+         0, 54, 120, no 108 — while No keeps 54 and 108; the comparison is on the columns both grids have */
+      const shared = (c) => yes.columns.some(q => q.x < c.overlap.x + c.overlap.w && q.x + q.w > c.overlap.x && q.y < c.overlap.y + c.overlap.h && q.y + q.h > c.overlap.y)
       // Whatever level-1 blocks / rack conflicts Yes already has (there is
       // none for this geometry) is an existing generator characteristic
       // this redesign doesn't touch — the bar here is "No doesn't make it
       // worse," not "zero," since that's a stronger claim than the toggle
       // itself makes.
       expect(no.aisleBlocks.filter(a => a.level === 1)).toHaveLength(yes.aisleBlocks.filter(a => a.level === 1).length)
-      expect(no.summary.rackConflicts).toBe(yes.summary.rackConflicts)
+      expect(no.rackConflicts.filter(shared).length).toBe(yes.summary.rackConflicts)
     }
   })
 })

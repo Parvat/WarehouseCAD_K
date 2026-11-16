@@ -728,7 +728,9 @@ export function layoutSpec(brief = {}, rules = DEFAULT_RULES) {
  *  The same rule applies to both axes:
  *    "Columns along wall" = Yes — line #0 on the near wall, and a line of its
  *      own on the far wall, the last bay before it the remainder (the Place
- *      column grid dialog's Yes — generate-far-walls round).
+ *      column grid dialog's Yes — generate-far-walls round); an end bay that
+ *      would be under half a pitch takes the last inside line away instead,
+ *      so the end bay is between half and 1.5 pitches (column grid rule 1).
  *    "Columns along wall" = No  — line #0 one full pitch in from the near
  *      wall, and a line landing exactly on the far wall is dropped, so no
  *      column sits on any wall. */
@@ -740,6 +742,8 @@ export function axisGridLines(totalFt, pitchFt, columnsAlongWall) {
   const lines = Array.from({ length: count }, (_, i) => start + i * pitchFt)
   if (!columnsAlongWall && lines.length && Math.abs(lines[lines.length - 1] - totalFt) < 1e-9) lines.pop()
   if (columnsAlongWall && lines.length && totalFt - lines[lines.length - 1] > 1e-6) lines.push(totalFt)
+  // column grid rule 1: no end bay under half a pitch — the last inside line goes instead (240 at 54: 54, 66)
+  if (columnsAlongWall && lines.length >= 3 && totalFt - lines[lines.length - 2] < pitchFt / 2 - 1e-6) lines.splice(lines.length - 2, 1)
   return lines
 }
 
@@ -805,13 +809,18 @@ export function axisFrame(orientation, { lengthFt, widthFt, gridXFt, gridYFt, co
   const stackLines = vertical ? xLines : yLines
   const runLines   = vertical ? yLines : xLines
   const first = (l) => (l.length ? l[0] : 0)
-  const last  = (l) => (l.length ? l[l.length - 1] : -Infinity)
-  const stackGridOffsetFt = first(stackLines), stackGridMaxFt = last(stackLines)
-  const runGridOffsetFt   = first(runLines),   runGridMaxFt   = last(runLines)
+  /* The walk steps line #0 + k·pitch up to …MaxFt, so …MaxFt is the last line ON the pitch — a far-wall line off the
+     pitch (Yes: the end bay the remainder, rule 1) is not one the walk could step to; it is flagged (…Far) and
+     columnFaceFrame takes that wall's columns as its face. A dropped last inside line is never walked past either. */
+  const onPitch = (l, p) => l.filter(v => Math.abs((v - l[0]) / p - Math.round((v - l[0]) / p)) < 1e-6)
+  const walkMax = (l, p) => { const q = p > 0 ? onPitch(l, p) : l; return q.length ? q[q.length - 1] : -Infinity }
+  const farOn = (l, total) => columnsAlongWall && l.length > 1 && Math.abs(l[l.length - 1] - total) < 1e-6
+  const stackGridOffsetFt = first(stackLines), stackGridMaxFt = walkMax(stackLines, stackGridFt), stackFar = farOn(stackLines, stackFt)
+  const runGridOffsetFt   = first(runLines),   runGridMaxFt   = walkMax(runLines, runGridFt), runFar = farOn(runLines, runFt)
   return {
     vertical, stackFt, runFt,
     stackGridFt, stackGridOffsetFt, stackGridMaxFt,
-    runGridFt, runGridOffsetFt, runGridMaxFt,
+    runGridFt, runGridOffsetFt, runGridMaxFt, stackFar, runFar,
     place(band, runPos, runLenFt) {
       if (!vertical) return { xFt: runPos, yFt: band.yFt, angle: 0 }
       const centreXFt = band.yFt + band.depthFt / 2
@@ -829,8 +838,8 @@ export function axisFrame(orientation, { lengthFt, widthFt, gridXFt, gridYFt, co
 export function columnFaceFrame(f, colFt) {
   if (!(colFt > 0)) return f
   const on = (v, at) => Number.isFinite(v) && Math.abs(v - at) < 1e-6
-  const nS = f.stackGridFt > 0 && on(f.stackGridOffsetFt, 0) ? colFt : 0, fS = f.stackGridFt > 0 && on(f.stackGridMaxFt, f.stackFt) ? colFt : 0
-  const nR = f.runGridFt > 0 && on(f.runGridOffsetFt, 0) ? colFt : 0, fR = f.runGridFt > 0 && on(f.runGridMaxFt, f.runFt) ? colFt : 0
+  const nS = f.stackGridFt > 0 && on(f.stackGridOffsetFt, 0) ? colFt : 0, fS = f.stackGridFt > 0 && (on(f.stackGridMaxFt, f.stackFt) || f.stackFar) ? colFt : 0
+  const nR = f.runGridFt > 0 && on(f.runGridOffsetFt, 0) ? colFt : 0, fR = f.runGridFt > 0 && (on(f.runGridMaxFt, f.runFt) || f.runFar) ? colFt : 0
   if (!(nS || fS || nR || fR)) return f
   return {
     ...f,

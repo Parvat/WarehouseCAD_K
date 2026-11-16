@@ -32,12 +32,12 @@ describe('D — grid origin ("Columns along wall")', () => {
    * each from line #0 (…OffsetFt) every pitch up to the last line
    * (…MaxFt), as fed by axisFrame. World Y carries gridYFt (the stack axis
    * horizontally, the run axis vertically); world X carries gridXFt. */
-  const avoidanceLines = (offset, pitch, max) => {
+  const avoidanceLines = (offset, pitch, max, far) => {
     const out = []
     for (let v = offset; v <= max + 1e-9; v += pitch) out.push(+v.toFixed(6))
-    // the last line itself too (generate-far-walls round: Yes ends on the far wall, off the pitch — the walk takes
+    // the far-wall line too (generate-far-walls round: Yes ends on the far wall, off the pitch — axisFrame flags it, …Far, and the walk takes
     // that wall's columns as its face, columnFaceFrame)
-    if (out.length && max - out[out.length - 1] > 1e-6) out.push(+max.toFixed(6))
+    if (far && out.length && far - out[out.length - 1] > 1e-6) out.push(+far.toFixed(6))
     return out
   }
   const drawnXLinesFt = (brief) => {
@@ -52,8 +52,8 @@ describe('D — grid origin ("Columns along wall")', () => {
           const brief = { ...R[id], orientation, columnsAlongWall }
           const f = axisFrame(orientation, brief)
           const vertical = orientation === 'vertical'
-          const y = vertical ? [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt] : [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt]
-          const x = vertical ? [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt] : [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt]
+          const y = vertical ? [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt, f.runFar && f.runFt] : [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt, f.stackFar && f.stackFt]
+          const x = vertical ? [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt, f.stackFar && f.stackFt] : [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt, f.runFar && f.runFt]
           expect(y[1]).toBe(brief.gridYFt)
           expect(x[1]).toBe(brief.gridXFt)
           expect(drawnYLinesFt(brief)).toEqual(avoidanceLines(...y))
@@ -76,8 +76,8 @@ describe('D — grid origin ("Columns along wall")', () => {
           const brief = { ...base, orientation, columnsAlongWall }
           const f = axisFrame(orientation, brief)
           const vertical = orientation === 'vertical'
-          const avoidX = vertical ? [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt] : [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt]
-          const avoidY = vertical ? [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt] : [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt]
+          const avoidX = vertical ? [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt, f.stackFar && f.stackFt] : [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt, f.runFar && f.runFt]
+          const avoidY = vertical ? [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt, f.runFar && f.runFt] : [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt, f.stackFar && f.stackFt]
           const axes = [
             { lines: drawnXLinesFt(brief), avoid: avoidanceLines(...avoidX), pitch: brief.gridXFt, wall: brief.lengthFt },
             { lines: drawnYLinesFt(brief), avoid: avoidanceLines(...avoidY), pitch: brief.gridYFt, wall: brief.widthFt },

@@ -37,10 +37,11 @@ async function generated(spec) {
   return { objs, fp, racks, walls: racks.filter(onWall), interior: racks.filter(o => !onWall(o)), run0, runFt, face }
 }
 const LAYOUTS = [
-  ['250x500 vertical', { lengthFt: 250, widthFt: 500, orientation: 'vertical' }, { bays: 736, positions: 10816, usable: 9908, wallBays: 60, sections: 4 }],
+  ['250x500 vertical', { lengthFt: 250, widthFt: 500, orientation: 'vertical' }, { bays: 736, positions: 10816, usable: 9980, wallBays: 60, sections: 4 }],
   // (wall-columns round: the horizontal layouts lay out from the column face on the near walls — their numbers moved)
-  // (generate-far-walls round: a line on the far walls too — 250 × 500 usable 9952 → 9908; bays and positions unchanged)
-  ['500x250 horizontal', { lengthFt: 500, widthFt: 250, orientation: 'horizontal' }, { bays: 736, positions: 10816, usable: 9908, wallBays: 60, sections: 4 }],
+  // (generate-far-walls round: a line on the far walls too — 250 × 500 usable 9952 → 9908; bays and positions unchanged;
+  // column grid rule 1 — no end bay under half a spacing, 250 at 30: 30 ×7, 40 — usable 9908 → 9980)
+  ['500x250 horizontal', { lengthFt: 500, widthFt: 250, orientation: 'horizontal' }, { bays: 736, positions: 10816, usable: 9980, wallBays: 60, sections: 4 }],
   ['300x420 vertical', { lengthFt: 300, widthFt: 420, orientation: 'vertical' }, { bays: 772, positions: 11168, usable: 10440, wallBays: 50, sections: 3 }],
   ['420x300 horizontal', { lengthFt: 420, widthFt: 300, orientation: 'horizontal' }, { bays: 772, positions: 11168, usable: 10440, wallBays: 50, sections: 3 }],
 ]
@@ -93,6 +94,7 @@ describe('WR-flip', () => {
   }
   // (wall-columns round: with columns along the walls, Generate lays out from their face — M25 picks vertical again)
   // (generate-far-walls round: a line on the far walls too — M25 H 41972 → 42060; 250 × 500 H 10144 → 10160, V 9952 → 9908)
+  // (column grid rule 1: 250 × 500 H 10160 → 10224, V 9908 → 9980; M25 unchanged)
   it.each([
     ['M13', true, 'horizontal', 68176, 67024], ['M13', false, 'horizontal', 68048, 68032],
     ['M25', true, 'vertical', 42060, 42112], ['M25', false, 'horizontal', 42064, 42000],
@@ -102,7 +104,7 @@ describe('WR-flip', () => {
   })
   it('WR-flip (controls): the 250 × 500 Generate building still picks horizontal, 300 × 420 vertical', () => {
     const b = (lengthFt, widthFt) => pickOrientation({ lengthFt, widthFt, gridXFt: 30, gridYFt: 30, mhe: 'reach', rackType: 'rack_double_row' }, sizingSheetLayout, DEFAULT_RULES)
-    expect([b(250, 500).orientation, b(250, 500).horizontalUsable, b(250, 500).verticalUsable]).toEqual(['horizontal', 10160, 9908])
+    expect([b(250, 500).orientation, b(250, 500).horizontalUsable, b(250, 500).verticalUsable]).toEqual(['horizontal', 10224, 9980])
     expect([b(300, 420).orientation, b(300, 420).horizontalUsable, b(300, 420).verticalUsable]).toEqual(['vertical', 10020, 10440])
   })
 })

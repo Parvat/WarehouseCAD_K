@@ -2488,7 +2488,12 @@ describe('REG — the hand check by real clicks', () => {
       expect([live.length, chainN > 0]).toEqual([0, true])
       expect([l1.sy, l1.y, (await hist7()) - h0]).toEqual([l0.sy, l0.y, 1])
       const movedX = c0.filter(k => !c1.includes(k)).map(k => k.split(',')[0])
-      expect([new Set(movedX).size, movedX.length, l1.sx.reduce((a, b) => a + b, 0) === l0.sx.reduce((a, b) => a + b, 0)]).toEqual([1, l0.sy.length + 1, true])
+      // (column grid rule 3: the dragged line and every line beyond it move together, their bays kept — a line on the far
+      // wall held, the last bay absorbing; was: that one line)
+      const xs0 = [l0.x]; for (const s of l0.sx) xs0.push(xs0[xs0.length - 1] + s)
+      const obL = await outlineBox(), jL = xs0.findIndex(x => Math.abs(x - c.x) < 1), heldL = Math.abs(xs0[xs0.length - 1] - obL.x1) < 0.5
+      const nMoved = xs0.length - jL - (heldL ? 1 : 0), r6 = (a) => a.map(v => Math.round(v * 1e6) / 1e6).join()
+      expect([jL >= 0, new Set(movedX).size, movedX.length, r6(l1.sx.slice(jL, heldL ? -1 : undefined)), r6(l1.sx.slice(0, jL - 1))]).toEqual([true, nMoved, nMoved * (l0.sy.length + 1), r6(l0.sx.slice(jL, heldL ? -1 : undefined)), r6(l0.sx.slice(0, jL - 1))])
       await L.page.waitForTimeout(400)
       // the clearances follow: the picked column's numbers are drawn where it went (along an aisle the distances may stay)
       const n1 = await numberSpots()
@@ -6657,7 +6662,11 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.mouse.move(cv.x + b.x + d, cv.y + b.y, { steps: 4 }); await L.page.mouse.up(); await L.page.waitForTimeout(300)
       const l1 = await lines()
       expect(mid).not.toBe(c0)
-      expect([l1.xs.filter((v, i) => i !== 1).join(), l1.ys.join(), Math.abs(l1.xs[1] - l0.xs[1] - 6 * gs) <= 1 / z + gs / 12 + 1e-6 /* (the mouse lands on whole screen px) */, (q => Math.abs(q - Math.round(q)) < 1e-6)((l1.xs[1] - l0.xs[1]) / (gs / 12)), (await hist7()) - h0]).toEqual([l0.xs.filter((v, i) => i !== 1).join(), l0.ys.join(), true, true, 1])
+      // (column grid rule 3: every line beyond B moves with it, their bays kept — a line on the far wall held, the last bay
+      // absorbing; was: B alone)
+      const obB = await outlineBox(), dB = l1.xs[1] - l0.xs[1], heldB = Math.abs(l0.xs[l0.xs.length - 1] - obB.x1) < 0.5
+      const beyondB = l1.xs.map((v, i) => (i === 0 || (heldB && i === l1.xs.length - 1) ? v === l0.xs[i] : Math.abs(v - l0.xs[i] - dB) < 1e-6)).every(Boolean)
+      expect([beyondB, l1.ys.join(), Math.abs(dB - 6 * gs) <= 1 / z + gs / 12 + 1e-6 /* (the mouse lands on whole screen px) */, (q => Math.abs(q - Math.round(q)) < 1e-6)(dB / (gs / 12)), (await hist7()) - h0]).toEqual([true, l0.ys.join(), true, true, 1])
       // the card: X spacing Varies; a spacing typed: even again
       const card = L.page.getByRole('tabpanel', { name: 'Properties' }), fx = card.getByLabel('Column X spacing', { exact: true })
       expect(await fx.inputValue()).toBe('Varies')
@@ -6753,7 +6762,9 @@ describe('REG — the hand check by real clicks', () => {
       const k = l0.ys.findIndex(y => Math.abs(y - ystops[2]) < 0.5), room = (ob.y1 - l0.ys[l0.ys.length - 1]) / gs
       await typeAt((await chainVals()).left[1], String(ybay - 2))
       const l3 = await lines()
-      expect([l3.ys.map((y, i) => Math.round((y - l0.ys[i]) / gs)), l3.xs]).toEqual([l0.ys.map((_, i) => (i >= k ? -2 : 0)), l0.xs])
+      // (column grid rule 3: a line on the far wall stays — the last bay takes the difference)
+      const heldY = Math.abs(l0.ys[l0.ys.length - 1] - ob.y1) < 0.5
+      expect([l3.ys.map((y, i) => Math.round((y - l0.ys[i]) / gs)), l3.xs]).toEqual([l0.ys.map((_, i) => (i >= k && !(heldY && i === l0.ys.length - 1) ? -2 : 0)), l0.xs])
       void room
     }, T)
 
@@ -6810,6 +6821,95 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.page.evaluate(() => document.getElementById('canvas2-container').style.cursor), await L.page.locator('[data-chain-tip]').textContent(), await L.page.locator('[data-chain-underline]').count()]).toEqual(['text', 'Click to type', 1])
       await L.page.mouse.move(5, 300); await L.page.waitForTimeout(150)
       expect(await L.page.locator('[data-chain-tip]').count()).toBe(0)
+    }, 120000)
+
+    it('REG-colgrid-rules (click): the column grid rules, walked — 1 Place with Yes: a line on all four walls, the inside lines at the spacing from the near wall, no end bay under half a spacing (the last inside line goes instead); 2 Place with No: centred, end bays between half and 1.5 spacings; 3 a bay typed on the chain, a bubble dragged and a column dragged: that line and every line beyond move together, the far-wall line held, the last bay absorbing — a drag stops at the limit; 4 the card\'s Yes / No only adds or takes away the wall lines', async () => {
+      await open()
+      const gs = await gs7(), ob = await outlineBox(), cv = await L.page.locator('#canvas2-container').boundingBox()
+      const W = (ob.x1 - ob.x0) / gs
+      // an X spacing whose end bay would be a sliver (over 0, under half a spacing), at least 3 bays across
+      let sp = 0
+      for (let s = 20; s <= 60 && !sp; s++) { const n = Math.floor(W / s + 1e-9), r = W - n * s; if (n >= 3 && r > 0.5 && r < s / 2 - 0.5) sp = s }
+      expect(sp).toBeGreaterThan(0)
+      // (setup, one undo step) the fixture's own grid out of the way, so the grid placed is the only one, and its racks — the
+      // rules are the grid's alone, and a column under a rack can't be pressed (the rack is); the building and its zones stay
+      await L.S('S.setState({ objects: S.getState().objects.filter(o => o.type !== "column_grid" && !/^rack_/.test(o.type) && o.type !== "aisle"), selectedIds: [] }); S.getState().commitObjectUpdate(arg, {})', ob.id); await L.page.waitForTimeout(200)
+      const lines = () => L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); if (!g) return null; const xs = [g.x], ys = [g.y]; for (const s of g.spacingX) xs.push(xs[xs.length - 1] + s); for (const s of g.spacingY) ys.push(ys[ys.length - 1] + s); return { xs, ys }')
+      const ftOf = (ls, o) => ls.map(v => Math.round((v - o) / gs * 1000) / 1000)
+      const bays = (ls) => ls.slice(1).map((v, i) => Math.round((v - ls[i]) / gs * 1000) / 1000)
+      const dlg = L.page.getByRole('dialog', { name: 'Place column grid' })
+      const undo = async () => { await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300) }
+      const placeWith = async (yes) => {
+        await L.page.getByRole('button', { name: 'Structural', exact: true }).click(); await L.page.waitForTimeout(150)
+        await L.page.getByRole('menuitem').filter({ hasText: 'Column Grid' }).first().click(); await L.page.waitForTimeout(250)
+        const sx = dlg.getByLabel('Grid X spacing', { exact: true })
+        await sx.click(); await sx.fill(`${sp}'`); await L.page.waitForTimeout(100)
+        await dlg.getByRole('group', { name: 'Columns on the walls' }).getByRole('button', { name: yes ? 'Yes' : 'No' }).click(); await L.page.waitForTimeout(100)
+        await dlg.getByRole('button', { name: 'Place grid' }).click(); await L.page.waitForTimeout(300)
+      }
+      // ── rule 1: Place with Yes ──
+      await placeWith(true)
+      const y1 = await lines(), x1 = ftOf(y1.xs, ob.x0), b1 = bays(y1.xs), n = Math.floor(W / sp + 1e-9)
+      expect([x1[0], x1[x1.length - 1], ftOf(y1.ys, ob.y0)[0], Math.round((y1.ys[y1.ys.length - 1] - ob.y1) / gs * 1000) / 1000]).toEqual([0, Math.round(W * 1000) / 1000, 0, 0])
+      expect(b1.slice(0, -1).every(b => Math.abs(b - sp) < 1e-3)).toBe(true)                     // the inside lines at the spacing
+      const end = b1[b1.length - 1]
+      expect([Math.abs(end - (W - (n - 1) * sp)) < 1e-3, end >= sp / 2 && end <= 1.5 * sp, b1.length]).toEqual([true, true, n])   // no sliver: n bays, not n + 1
+      // ── rule 2: Place with No (in place of it) ──
+      await undo()
+      expect(await lines()).toBe(null)
+      await placeWith(false)
+      const n2 = await lines(), x2 = ftOf(n2.xs, ob.x0), e0 = x2[0], e1 = W - x2[x2.length - 1]
+      expect([Math.abs(e0 - e1) < 1e-3, e0 >= sp / 2 - 1e-3 && e0 <= 1.5 * sp + 1e-3, x2.every(v => v > 0.5 && v < W - 0.5)]).toEqual([true, true, true])
+      await undo(); await placeWith(true)
+      // ── rule 3: one rule for a bay typed, a bubble dragged and a column dragged ──
+      const z = () => L.S('return S.getState().zoom')
+      // (the grid selected as a click on it would — on a horizontal fixture every inside column of this grid can stand under a
+      // rack, so there is no free column to click; every edit below is still a real click, typing or drag)
+      const ready = async () => { if (!(await L.selected()).includes('column_grid')) { await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); S.setState({ selectedIds: [g.id] })'); await L.page.waitForTimeout(250) } await unlockCard() }
+      await ready()
+      const l0 = await lines(), h0 = await hist7(), last = l0.xs.length - 1
+      /** line `j` (C by default) and every line beyond moved by the same amount, the far-wall line and the lines before unmoved */
+      const rule3 = (l, ftWant, tol, j = 2) => {
+        const d = (l.xs[j] - l0.xs[j]) / gs
+        return [Math.abs(d - ftWant) <= tol, l.xs.slice(0, j).join(), l.xs.slice(j, last).every((v, i) => Math.abs((v - l0.xs[j + i]) / gs - d) < 1e-6), l.xs[last], l.ys.join()]
+      }
+      const want3 = [true, l0.xs.slice(0, 2).join(), true, l0.xs[last], l0.ys.join()]
+      const want3j = (j) => [true, l0.xs.slice(0, j).join(), true, l0.xs[last], l0.ys.join()]
+      // typed: the chain's 2nd value (B to C) 3 ft longer — Enter, one undo step
+      const chainTop = () => L.page.evaluate(() => { const ts = window.Konva.stages[0].find('.column-chain-text').map(t => { const r = t.getClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } }); const top = Math.min(...ts.map(t => t.y)); return ts.filter(t => Math.abs(t.y - top) < 2).sort((a, b) => a.x - b.x) })
+      const v = (await chainTop())[1]
+      await L.page.mouse.click(cv.x + v.x, cv.y + v.y); await L.page.waitForTimeout(200)
+      const box = L.page.getByRole('textbox', { name: 'Column bay length (ft)' })
+      await box.fill(String(sp + 3)); await box.press('Enter'); await L.page.waitForTimeout(250)
+      expect([...rule3(await lines(), 3, 1e-6), (await hist7()) - h0]).toEqual([...want3, 1])
+      await undo(); expect(await lines()).toEqual(l0); await ready()
+      // a bubble dragged: C 4 ft right by real moves — the same rule
+      const realDrag = async (p, dx) => { await L.page.mouse.move(p.x, p.y); await L.page.mouse.down(); for (let k = 1; k <= 6; k++) await L.page.mouse.move(p.x + dx * k / 6, p.y, { steps: 2 }); await L.page.mouse.up(); await L.page.waitForTimeout(300) }
+      let c = (await bubbles()).find(q => q.text === 'C')
+      await realDrag({ x: cv.x + c.x, y: cv.y + c.y }, 4 * gs * (await z()))
+      expect(rule3(await lines(), 4, 1 / (await z()) / gs + 1 / 12 + 1e-6)).toEqual(want3)
+      await undo(); expect(await lines()).toEqual(l0); await ready()
+      // a column dragged: an inside one clear of every rack (line C or the first beyond it that has one) 3 ft right — the same rule
+      const at = async (w) => { const s = await L.S('const s = S.getState(); return { z: s.zoom, x: s.panX, y: s.panY }'); return { x: cv.x + w.x * s.z + s.x, y: cv.y + w.y * s.z + s.y } }
+      const free = await L.S('const st = S.getState(), racks = st.objects.filter(o => /^rack_/.test(o.type)).map(o => H.worldBoundsOf(o, st.objects)), pad = (st.gridSize || 40); for (let j = 2; j < arg.xs.length - 1; j++) for (const y of arg.ys.slice(1, -1)) { const x = arg.xs[j]; if (!racks.some(b => x >= b.x - pad && x <= b.x + b.width + pad && y >= b.y - pad && y <= b.y + b.height + pad)) return { j, x, y } } return null', l0)
+      expect(free).toBeTruthy()
+      await realDrag(await at({ x: free.x, y: free.y }), 3 * gs * (await z()))
+      expect(rule3(await lines(), 3, 1 / (await z()) / gs + 1 / 12 + 1e-6, free.j)).toEqual(want3j(free.j))
+      await undo(); expect(await lines()).toEqual(l0); await ready()
+      // the limit: C dragged far past the far wall — it stops with the last bay a column wide, the wall line held
+      c = (await bubbles()).find(q => q.text === 'C')
+      const wallAt = await at({ x: ob.x1, y: 0 })
+      await realDrag({ x: cv.x + c.x, y: cv.y + c.y }, wallAt.x + 40 - (cv.x + c.x))
+      const lim = await lines(), colW = await L.S('return S.getState().objects.find(o => o.type === "column_grid").columnW')
+      expect([lim.xs[last], Math.round((lim.xs[last] - lim.xs[last - 1]) * 1000) / 1000, bays(lim.xs).slice(2, -1).join()]).toEqual([l0.xs[last], Math.round(colW * 1000) / 1000, bays(l0.xs).slice(2, -1).join()])
+      await undo(); expect(await lines()).toEqual(l0); await ready()
+      // ── rule 4: the card's No takes only the wall lines away; Yes puts them back — the inside lines never move ──
+      const offWalls = (ls, a, b) => ls.filter(q => Math.abs(q - a) > 0.5 && Math.abs(q - b) > 0.5)
+      await walls().getByRole('button', { name: 'No' }).click(); await L.page.waitForTimeout(250)
+      const no = await lines()
+      expect([no.xs, no.ys]).toEqual([offWalls(l0.xs, ob.x0, ob.x1), offWalls(l0.ys, ob.y0, ob.y1)])
+      await walls().getByRole('button', { name: 'Yes' }).click(); await L.page.waitForTimeout(250)
+      expect(await lines()).toEqual(l0)
     }, 120000)
 
     it('REG-colgrid-L (click): an L-shaped building — no column is drawn in its open corner (outside the outline), the gridline stays (its bubble still shown); every wall gets its own size line', async () => {

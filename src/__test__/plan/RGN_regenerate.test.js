@@ -104,10 +104,11 @@ describe('RGN — Regenerate racking', () => {
     const L = generatedThenEdited()
     const g = objs().find(o => o.type === 'column_grid')
     const sum = (a) => a.reduce((t, s) => t + s, 0)
-    // generate-far-walls round: 500 × 250 at 30 × 30 — 16 bays of 30' and a 20' remainder across, 8 of 30' and 10' down
+    // generate-far-walls round: 500 × 250 at 30 × 30 — 16 bays of 30' and a 20' remainder across; down, 7 of 30' and 40'
+    // (column grid rule 1: a 10' end bay is under half a spacing — the last inside line goes instead)
     expect([g.x, g.y]).toEqual([L.fp.x, L.fp.y])
     expect(g.spacingX.map(s => s / GS)).toEqual([...Array(16).fill(30), 20])
-    expect(g.spacingY.map(s => s / GS)).toEqual([...Array(8).fill(30), 10])
+    expect(g.spacingY.map(s => s / GS)).toEqual([...Array(7).fill(30), 40])
     expect([g.x + sum(g.spacingX), g.y + sum(g.spacingY)]).toEqual([L.fp.x + 500 * GS, L.fp.y + 250 * GS])
     // an old project's grid: the far-wall lines gone
     const old = { ...g, spacingX: g.spacingX.slice(0, -1), spacingY: g.spacingY.slice(0, -1) }

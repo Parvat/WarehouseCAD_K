@@ -111,12 +111,12 @@ function legalSinglePosition(a, b, cols, t) {
   return null
 }
 
-const walkLines = (offset, pitch, max) => {
+const walkLines = (offset, pitch, max, far) => {
   const out = []
   for (let v = offset; v <= max + 1e-9; v += pitch) out.push(+v.toFixed(6))
-  // the last line itself too (generate-far-walls round: Yes ends on the far wall, off the pitch — the walk takes that
+  // the far-wall line too (generate-far-walls round: Yes ends on the far wall, off the pitch — axisFrame flags it, …Far, and the walk takes that
   // wall's columns as its face, columnFaceFrame)
-  if (out.length && max - out[out.length - 1] > 1e-6) out.push(+max.toFixed(6))
+  if (far && out.length && far - out[out.length - 1] > 1e-6) out.push(+far.toFixed(6))
   return out
 }
 
@@ -260,8 +260,8 @@ describe('§2b — building variation matrix, 9 rules on every run', () => {
         const { grid } = get()
         const f = axisFrame(orientation, brief)
         const vertical = orientation === 'vertical'
-        const avoidX = vertical ? [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt] : [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt]
-        const avoidY = vertical ? [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt] : [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt]
+        const avoidX = vertical ? [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt, f.stackFar && f.stackFt] : [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt, f.runFar && f.runFt]
+        const avoidY = vertical ? [f.runGridOffsetFt, f.runGridFt, f.runGridMaxFt, f.runFar && f.runFt] : [f.stackGridOffsetFt, f.stackGridFt, f.stackGridMaxFt, f.stackFar && f.stackFt]
         const axes = [
           { drawn: drawnLines(grid, 'x'), avoid: walkLines(...avoidX), pitch: brief.gridXFt, wall: brief.lengthFt },
           { drawn: drawnLines(grid, 'y'), avoid: walkLines(...avoidY), pitch: brief.gridYFt, wall: brief.widthFt },

@@ -1,7 +1,8 @@
-// canvas2/columnLines.js — a column grid's lines (STUDIO.md §7a Column), moved one at a time. A column grid is its first
-// column's centre (x, y) and the gaps between its lines (spacingX, spacingY — expandColumnGrid). Moving a vertical line
-// moves every column on it: the gaps on its two sides change, every other line stays put. Only on an unlocked Columns
-// layer (the drag and the card's fields both ask isPickable).
+// canvas2/columnLines.js — a column grid's lines (STUDIO.md §7a Column). A column grid is its first column's centre
+// (x, y) and the gaps between its lines (spacingX, spacingY — expandColumnGrid). A drag (a line, its bubble or a column)
+// follows column grid rule 3, the same rule as a bay typed on the chain (utils/columnGrid.js dragChain / chainEdit): the
+// line moves and every line beyond it with it, their bays kept, a line on the far wall held, the last bay absorbing; it
+// stops at the limit (a line at the wall, a bay a column wide). Only on an unlocked Columns layer (isPickable).
 //
 //   - a drag on a column: the axis is decided by the first 6 px (sideways: its vertical line; up or down: its
 //     horizontal line), the distances to the neighbouring lines shown live (useColumnLine → ColumnLineLabels), one undo;
@@ -9,6 +10,7 @@
 
 import { create } from 'zustand'
 import { useColumnPick } from './columnPick'
+import { dragChain, gridBuilding } from '../utils/columnGrid'
 
 const sum = (a) => a.reduce((t, v) => t + v, 0)
 
@@ -55,22 +57,23 @@ export function moveLine(g, axis, i, pos, gridSize = 40) {
 /** The live line drag, for the distance labels: { gridId, axis, i } or null. */
 export const useColumnLine = create(() => ({ live: null }))
 
-/** The picked column follows its line (columnPick.js keeps its square). */
-function followPick(g, patch, axis, i) {
+/** The picked column follows its line, wherever that line went (columnPick.js keeps its square). */
+function followPick(g, patch, axis) {
   const p = useColumnPick.getState().pick
   if (!p || p.gridId !== g.id) return
-  const before = axis === 'x' ? linesOf(g).xs[i] : linesOf(g).ys[i]
-  const after = axis === 'x' ? linesOf({ ...g, ...patch }).xs[i] : linesOf({ ...g, ...patch }).ys[i]
-  const k = axis === 'x' ? 'x' : 'y', size = axis === 'x' ? 'w' : 'h'
-  if (Math.abs(p[k] + p[size] / 2 - before) < 1e-6) useColumnPick.setState({ pick: { ...p, [k]: p[k] + (after - before) } })
+  const k = axis === 'x' ? 'x' : 'y', size = axis === 'x' ? 'w' : 'h', at = p[k] + p[size] / 2
+  const was = axis === 'x' ? linesOf(g).xs : linesOf(g).ys, now = axis === 'x' ? linesOf({ ...g, ...patch }).xs : linesOf({ ...g, ...patch }).ys
+  const j = was.findIndex(v => Math.abs(v - at) < 1e-6)
+  if (j >= 0 && now[j] != null && now[j] !== was[j]) useColumnPick.setState({ pick: { ...p, [k]: p[k] + (now[j] - was[j]) } })
 }
 
-/** A drag frame: line `i` of grid `g0` (the grid as the drag found it) moved by `d` world px — written live, no history. */
+/** A drag frame: line `i` of grid `g0` (the grid as the drag found it) moved by `d` world px, the lines beyond with it
+ *  (column grid rule 3) — written live, no history. */
 export function dragLine(store, g0, axis, i, d) {
-  const ls = axis === 'x' ? linesOf(g0).xs : linesOf(g0).ys
-  const patch = moveLine(g0, axis, i, ls[i] + d, store.getState().gridSize || 40)
-  const now = store.getState().objects.find(o => o.id === g0.id)
-  if (now) followPick(now, patch, axis, i)
+  const ls = axis === 'x' ? linesOf(g0).xs : linesOf(g0).ys, st = store.getState()
+  const patch = dragChain(g0, gridBuilding(st.objects, g0), axis, i, ls[i] + d, st.gridSize || 40)
+  const now = st.objects.find(o => o.id === g0.id)
+  if (now) followPick(now, patch, axis)
   store.getState().updateObject(g0.id, patch)
   useColumnLine.setState({ live: { gridId: g0.id, axis, i } })
 }
@@ -91,6 +94,6 @@ export function setLineGap(store, gridId, axis, i, side, px) {
   const pos = side === 'prev' ? ls[i - 1] + px : ls[i + 1] - px
   if (!Number.isFinite(pos)) return
   const patch = moveLine(g, axis, i, pos, store.getState().gridSize || 40)
-  followPick(g, patch, axis, i)
+  followPick(g, patch, axis)
   store.getState().commitObjectUpdate(gridId, patch)
 }

@@ -95,8 +95,8 @@ function centredLines(lo, hi, step) {
 export function layGrid(cg, fp, p, gs = 40) {
   if (p.walls && fp) {
     // Yes: a line on all four walls — from the near walls at the spacing, the far walls' own line added, the last bay
-    // before it the remainder (col-bubbles fix: was the near walls only)
-    const ex = extent(fp), xs = withFar(axisLines(ex.x0, p.spX * gs, ex.x1), ex.x1), ys = withFar(axisLines(ex.y0, p.spY * gs, ex.y1), ex.y1)
+    // before it the remainder (col-bubbles fix: was the near walls only), never under half a spacing (rule 1)
+    const ex = extent(fp), xs = wallLines(ex.x0, p.spX * gs, ex.x1), ys = wallLines(ex.y0, p.spY * gs, ex.y1)
     return fromLines(xs, ys, p.wIn, p.dIn, gs)
   }
   if (p.walls || !fp) return gridUpdate(cg, fp, { ...p, offX: 0, offY: 0 }, gs)
@@ -105,29 +105,78 @@ export function layGrid(cg, fp, p, gs = 40) {
   const spacingX = xs.slice(1).map((v, i) => v - xs[i]), spacingY = ys.slice(1).map((v, i) => v - ys[i])
   return { x: xs[0], y: ys[0], spacingX, spacingY, columnW: w, columnH: d, colSizeIn: Math.round(p.wIn), width: spacingX.reduce((t, s) => t + s, 0) + w, height: spacingY.reduce((t, s) => t + s, 0) + d }
 }
-/** (col-bubbles round) A value of the dimension chain typed: the segment from `lo` to `hi` (world px along `axis`; a wall
- *  or a gridline at each end) made `lenPx` long. A bay (or the first, wall-to-line one) moves the gridline at its far end
- *  and every line beyond it with it — their bays kept, the last bay to the far wall taking the difference; the last bay
- *  (its far end the wall) moves the last line. → { patch } or { error } (a line past a wall, a bay zero or less). */
-export function chainEdit(cg, fp, axis, lo, hi, lenPx, gs = 40) {
+/** The walls of grid `cg` along `axis` (world px): its building's outline, or its own end lines without a building. */
+function wallsOf(cg, fp, axis, ls) {
   const X = axis === 'x', ex = fp ? extent(fp) : null
-  const ls = X ? gridLines(cg).xs : gridLines(cg).ys
-  const w0 = ex ? (X ? ex.x0 : ex.y0) : ls[0], w1 = ex ? (X ? ex.x1 : ex.y1) : ls[ls.length - 1]
+  return ex ? { w0: X ? ex.x0 : ex.y0, w1: X ? ex.x1 : ex.y1 } : { w0: -Infinity, w1: Infinity, own: { w0: ls[0], w1: ls[ls.length - 1] } }
+}
+const farHeld = (ls, j, w1) => j < ls.length - 1 && Math.abs(ls[ls.length - 1] - w1) < 0.5
+/** Column grid rule 3 (one rule for a bay typed on the chain and a line, bubble or column dragged): line `j` of `ls` moved
+ *  by `d` — it and every line beyond it, their bays kept; a line on the far wall `w1` stays (unless it is the line moved),
+ *  the last bay taking the difference. */
+export function shiftFrom(ls, j, d, w1) {
+  const held = farHeld(ls, j, w1)
+  return ls.map((v, k) => (k >= j && !(held && k === ls.length - 1) ? v + d : v))
+}
+/** The moves `d` shiftFrom may make keeping every line inside the walls and every bay at least `room` (a column's
+ *  width): { lo, hi } — a drag stops at them. */
+export function shiftRange(ls, j, w0, w1, room) {
+  const held = farHeld(ls, j, w1), last = held ? ls.length - 2 : ls.length - 1
+  return {
+    lo: j > 0 ? ls[j - 1] + room - ls[j] : w0 - ls[j],
+    hi: held ? ls[ls.length - 1] - room - ls[last] : w1 - ls[last],
+  }
+}
+/** The axis patch for line positions `ls` (world px). */
+function axisPatch(cg, axis, ls, gs = 40) {
+  const X = axis === 'x', sp = ls.slice(1).map((v, i) => v - ls[i]), size = X ? (cg.columnW || gs) : (cg.columnH || gs)
+  return X ? { x: ls[0], spacingX: sp, width: sp.reduce((t, s) => t + s, 0) + size } : { y: ls[0], spacingY: sp, height: sp.reduce((t, s) => t + s, 0) + size }
+}
+/** (col-bubbles round; column grid rule 3) A value of the dimension chain typed: the segment from `lo` to `hi` (world px
+ *  along `axis`; a wall or a gridline at each end) made `lenPx` long. A bay (or the first, wall-to-line one) moves the
+ *  gridline at its far end and every line beyond it with it — their bays kept, the last bay (to the far wall, or to its
+ *  line) taking the difference; the last bay itself moves the last inside line. → { patch } or { error } (a line past a
+ *  wall, a bay zero or less). */
+export function chainEdit(cg, fp, axis, lo, hi, lenPx, gs = 40) {
+  const ls = axis === 'x' ? gridLines(cg).xs : gridLines(cg).ys
+  const W = wallsOf(cg, fp, axis, ls), { w0, w1 } = W.own || W
   if (!(lenPx > 0)) return { error: 'A bay must be longer than zero.' }
   const at = (v) => ls.findIndex(q => Math.abs(q - v) < 0.5)
-  const j = at(hi), next = [...ls]
-  if (j >= 0) {
-    const d = lenPx - (hi - lo)
-    for (let i = j; i < next.length; i++) next[i] += d
-  } else if (Math.abs(hi - w1) < 0.5 && ls.length) {
-    next[next.length - 1] = w1 - lenPx                                                    // the last bay: the last line
-  } else return { error: 'That value is not a bay of this grid.' }
+  const n = ls.length, onFar = n > 1 && Math.abs(ls[n - 1] - w1) < 0.5
+  let next
+  if (Math.abs(hi - w1) < 0.5 && (onFar || at(hi) < 0) && ls.length) {
+    // the last bay (to the far wall, or to the far wall's line): the line at its near end moves
+    const k = at(lo)
+    if (k < 0 || (onFar && k === n - 1)) return { error: 'That value is not a bay of this grid.' }
+    next = [...ls]; next[k] = hi - lenPx
+  } else {
+    const j = at(hi)
+    if (j < 0) return { error: 'That value is not a bay of this grid.' }
+    next = shiftFrom(ls, j, lenPx - (hi - lo), w1)
+  }
   if (next.some(v => v < w0 - 0.5 || v > w1 + 0.5)) return { error: 'A gridline would pass the wall — not changed.' }
   if (next.some((v, i) => i > 0 && v - next[i - 1] <= 0.5)) return { error: 'A bay would be zero or less — not changed.' }
-  const sp = next.slice(1).map((v, i) => v - next[i]), size = X ? (cg.columnW || gs) : (cg.columnH || gs)
-  return { patch: X ? { x: next[0], spacingX: sp, width: sp.reduce((t, s) => t + s, 0) + size } : { y: next[0], spacingY: sp, height: sp.reduce((t, s) => t + s, 0) + size } }
+  return { patch: axisPatch(cg, axis, next, gs) }
+}
+/** (column grid rule 3) A drag: line `i` on `axis` of grid `cg` (as the drag found it) taken to `pos` (world px) — it and
+ *  every line beyond it move together, their bays kept, a far-wall line held, the last bay absorbing; on whole inches from
+ *  where it was, and stopped at the limit (a line at the wall, a bay a column wide) rather than refused. */
+export function dragChain(cg, fp, axis, i, pos, gs = 40) {
+  const ls = axis === 'x' ? gridLines(cg).xs : gridLines(cg).ys
+  const { w0, w1 } = wallsOf(cg, fp, axis, ls), inch = gs / 12, room = (axis === 'x' ? cg.columnW : cg.columnH) || gs
+  const r = shiftRange(ls, i, w0, w1, room)
+  const d = r.lo > r.hi ? 0 : Math.min(Math.max(Math.round((pos - ls[i]) / inch) * inch, r.lo), r.hi)
+  return axisPatch(cg, axis, shiftFrom(ls, i, d, w1), gs)
 }
 const withFar = (ls, far) => (ls.length && Math.abs(ls[ls.length - 1] - far) > 0.5 ? [...ls, far] : ls)
+/** Column grid rule 1 (Yes): a line on both walls, the inside lines at the spacing from the near wall; an end bay that
+ *  would be under half a spacing takes the last inside line away instead (122.5 ft at 40: 40, 40, 42.5 — no 2.5 ft
+ *  sliver), so the end bay is between half and one and a half spacings. */
+export function wallLines(lo, step, hi) {
+  const ls = withFar(axisLines(lo, step, hi), hi)
+  if (step > 0 && ls.length >= 3 && hi - ls[ls.length - 2] < step / 2 - E) ls.splice(ls.length - 2, 1)
+  return ls
+}
 /** The grid fields from its line positions (world px) and its column size (in). */
 function fromLines(xs, ys, wIn, dIn, gs = 40) {
   const w = (wIn / 12) * gs, d = (dIn / 12) * gs
@@ -153,7 +202,7 @@ export function respaceAxis(cg, fp, axis, spPx, walls, gs = 40) {
   const X = axis === 'x', ex = extent(fp), lo = X ? ex.x0 : ex.y0, hi = X ? ex.x1 : ex.y1
   const cur = X ? gridLines(cg).xs : gridLines(cg).ys
   let ls
-  if (walls) ls = withFar(axisLines(lo, spPx, hi), hi)
+  if (walls) ls = wallLines(lo, spPx, hi)                                          // rule 1: no end sliver
   else { const start = cur.find(v => v > lo + 0.5) ?? cur[0]; ls = axisLines(start, spPx, hi).filter(v => v < hi - 0.5); if (!ls.length) ls = [start] }
   const sp = ls.slice(1).map((v, i) => v - ls[i]), size = X ? (cg.columnW || gs) : (cg.columnH || gs)
   return X ? { x: ls[0], spacingX: sp, width: sp.reduce((t, s) => t + s, 0) + size } : { y: ls[0], spacingY: sp, height: sp.reduce((t, s) => t + s, 0) + size }
