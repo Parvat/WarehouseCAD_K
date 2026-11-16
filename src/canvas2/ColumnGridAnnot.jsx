@@ -18,6 +18,7 @@ import { rowLabelPlaces, ROW_LABEL_PX } from './RackLineLabels'
 import { aisleLabelBoxes } from '../render/labelOps'
 import { lineNamer } from '../utils/lineNames'
 import { useViewPrefs } from '../studio/viewPrefs'
+import { MIN_TEXT_PX } from './minText'
 
 const FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 
@@ -58,12 +59,18 @@ export function chainAt(p, zoom = 1) {
 }
 /** The chain value drawn for grid `gridId` along `axis` from `lo` (the one being typed), or null. */
 export const chainSpot = (gridId, axis, lo) => CHAIN.find(c => c.gridId === gridId && c.axis === axis && Math.abs(c.lo - lo) < 0.5) || null
-/** The bubble under world point `p` (its circle, plus 3 screen px), or null. */
+/** The bubble under world point `p` (its circle as drawn, plus 3 screen px), or null — at a zoom where the bubble is
+ *  drawn grown to the 11 px text floor (CLAUDE.md Rule 8, canvas2/minText.js), its click area grows with it. */
 export function bubbleAt(p, zoom = 1) {
-  const pad = 3 / (zoom || 1)
-  for (const b of SPOTS) if (Math.hypot(p.x - b.x, p.y - b.y) <= b.r + pad) return b
+  const z = zoom || 1, pad = 3 / z
+  for (const b of SPOTS) {
+    const k = b.fs > 0 ? Math.max(1, MIN_TEXT_PX / (b.fs * z)) : 1
+    if (Math.hypot(p.x - b.x, p.y - b.y) <= b.r * k + pad) return b
+  }
   return null
 }
+/** A bubble's drawn radius at `zoom` (world px). */
+export const bubbleRadius = (b, zoom = 1) => b.r * (b.fs > 0 ? Math.max(1, MIN_TEXT_PX / (b.fs * (zoom || 1))) : 1)
 
 export function ColumnGridAnnot() {
   const objects = useLiveObjects()
@@ -90,7 +97,7 @@ export function ColumnGridAnnot() {
       {grids.map(g => {
         const a = columnAnnot(g, objects, gs, lz, rowClear(g, objects, places))
         if (a) for (const l of a.lines) lineSpots.push({ gridId: g.id, axis: l.axis, i: l.i, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 })
-        if (a) for (const b of a.bubbles) spots.push({ gridId: g.id, axis: b.axis, i: b.i, x: b.x, y: b.y, r: b.r })
+        if (a) for (const b of a.bubbles) spots.push({ gridId: g.id, axis: b.axis, i: b.i, x: b.x, y: b.y, r: b.r, fs: b.fs })
         if (a) for (const c of a.chain) { const w = c.tw + a.fs * 0.4, h = a.fs * 1.3; chainSpots.push({ gridId: g.id, axis: c.axis, lo: c.lo, hi: c.hi, x: c.tx - w / 2, y: c.ty - h / 2, w, h, fs: a.fs, tw: c.tw, text: c.text }) }
         if (!a) return null
         return (

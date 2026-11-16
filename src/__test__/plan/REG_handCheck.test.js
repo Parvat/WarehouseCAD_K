@@ -7030,6 +7030,16 @@ describe('REG — the hand check by real clicks', () => {
       const card = L.page.getByRole('tabpanel', { name: 'Properties' })
       for (const f of ['Door type', 'Door width', 'Door height', 'From left corner']) expect([f, await card.getByLabel(f, { exact: true }).count()]).toEqual([f, 1])
       expect([await card.getByLabel('Door width', { exact: true }).inputValue(), await card.getByLabel('Clear space').textContent()]).toEqual(['9′', '13′ × 8′'])
+      // (doors-edit fix) the height by type when none is typed: dock 10 ft; switched to drive-in 14 ft, to a man door 7 ft — one undo each
+      expect(await card.getByLabel('Door height', { exact: true }).inputValue()).toBe('10′')
+      const hType = await hist7()
+      await card.getByLabel('Door type', { exact: true }).selectOption('struct_drive_in'); await L.page.waitForTimeout(200)
+      expect(await card.getByLabel('Door height', { exact: true }).inputValue()).toBe('14′')
+      await card.getByLabel('Door type', { exact: true }).selectOption('struct_egress'); await L.page.waitForTimeout(200)
+      expect([await card.getByLabel('Door height', { exact: true }).inputValue(), (await hist7()) - hType]).toEqual(['7′', 2])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      if (!(await L.selected()).length) await L.click({ x: (d2.s[0] + d2.s[1]) / 2, y: fp.y + wt + 2 * gs })
+      expect([(await doors()).find(q => q.id === d2.id).type, await card.getByLabel('Door height', { exact: true }).inputValue()]).toEqual(['struct_loading_dock', '10′'])
       expect(await card.locator('[data-door-gap="left"]').textContent()).toBe('12′')
       const chain = () => L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-gap:/.test(n.name())).map(g => g.find('Text').map(t => t.text()).join('')))
       expect((await chain()).includes('12′')).toBe(true)
@@ -7080,6 +7090,33 @@ describe('REG — the hand check by real clicks', () => {
       const gaps = row.slice(1).map((q, i) => Math.round((q.s[0] - row[i].s[1]) / gs * 1000) / 1000)
       expect([row.length, want, new Set(gaps).size, gaps[0], Math.abs((row[0].s[0] - ends[0]) - (ends[1] - row[row.length - 1].s[1])) < 1, (await hist7()) - h1]).toEqual([want, want, 1, 12, true, 1])
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+    }, 120000)
+
+    it('REG-colgrid-bubble-fit (click): a gridline bubble is clicked where it is drawn — zoomed out (5 %) it is drawn grown to the 11 px text floor, and a press at 85 % of its drawn radius (outside its drawing-size circle) drags its line; a press just past the drawn circle does not', async () => {
+      await open()
+      await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), z = 0.05; S.setState({ zoom: z, panX: 720 - (fp.x + fp.width / 2) * z, panY: 450 - (fp.y + fp.height / 2) * z })'); await L.page.waitForTimeout(300)
+      await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); S.setState({ selectedIds: [g.id] })'); await L.page.waitForTimeout(250)
+      await unlockCard()
+      const gs = await gs7(), cv = await L.page.locator('#canvas2-container').boundingBox()
+      const lines = () => L.S('const g = S.getState().objects.find(o => o.type === "column_grid"), xs = [g.x]; for (const s of g.spacingX) xs.push(xs[xs.length - 1] + s); return xs')
+      // bubble B as drawn: its centre, its radius on screen — the circle's own radius grown with its letter to 11 px
+      const bb = await L.page.evaluate(() => {
+        const st = window.Konva.stages[0], g = st.find('.column-bubble').find(n => n.findOne('Text')?.text() === 'B'), c = g.findOne('Circle'), t = g.findOne('Text')
+        const s = Math.abs(c.getAbsoluteScale().x), p = c.getAbsolutePosition(), k = Math.max(1, 11 / (t.fontSize() * s))
+        return { x: p.x, y: p.y, r: c.radius() * s, drawn: c.radius() * s * k, k }
+      })
+      expect(bb.k).toBeGreaterThan(2)                                                           // zoomed out it is drawn grown
+      const at = { x: cv.x + bb.x + bb.drawn * 0.85, y: cv.y + bb.y }
+      expect(bb.drawn * 0.85).toBeGreaterThan(bb.r + 3)                                          // outside the old (drawing-size) click area
+      // just past the drawn circle: not the bubble — the cursor is not the move arrow
+      await L.page.mouse.move(cv.x + bb.x + bb.drawn + 6, cv.y + bb.y); await L.page.waitForTimeout(150)
+      expect(await L.page.evaluate(() => document.getElementById('canvas2-container').style.cursor)).not.toBe('ew-resize')
+      // inside it: the move arrow, and a drag moves line B
+      await L.page.mouse.move(at.x, at.y); await L.page.waitForTimeout(150)
+      expect(await L.page.evaluate(() => document.getElementById('canvas2-container').style.cursor)).toBe('ew-resize')
+      const l0 = await lines(), z = await L.S('return S.getState().zoom')
+      await L.page.mouse.down(); for (let k = 1; k <= 6; k++) await L.page.mouse.move(at.x + (8 * gs * z) * k / 6, at.y, { steps: 2 }); await L.page.mouse.up(); await L.page.waitForTimeout(300)
+      expect(Math.abs((await lines())[1] - l0[1] - 8 * gs) <= 1 / z + gs / 12 + 1e-6).toBe(true)
     }, 120000)
 
     it('REG-colgrid-L (click): an L-shaped building — no column is drawn in its open corner (outside the outline), the gridline stays (its bubble still shown); every wall gets its own size line', async () => {

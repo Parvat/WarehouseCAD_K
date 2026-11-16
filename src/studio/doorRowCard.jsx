@@ -5,7 +5,7 @@
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useDoorRow, setDoorRow, rowSpan, rowDoors, ROW_TYPES } from '../utils/doorRowTool'
-import { doorTypes } from '../utils/doorTool'
+import { doorTypes, DOOR_HEIGHT_FT } from '../utils/doorTool'
 import { ftIn } from '../utils/bom'
 import { Head, Sec, Grid2, Field, TextInput, SelectField, C, MONO } from './cardParts'
 import { parseFeet } from '../components/RightPanel/panels/RackingAreaPanel'
@@ -40,7 +40,7 @@ export function DoorRowCard() {
         </Grid2>
         <Grid2>
           <Field label="Type">
-            <SelectField words chevron aria="Row door type" value={s.typeId} onChange={e => setDoorRow({ typeId: e.target.value })}>
+            <SelectField words chevron aria="Row door type" value={s.typeId} onChange={e => setDoorRow({ typeId: e.target.value, heightFt: DOOR_HEIGHT_FT[e.target.value] ?? s.heightFt })}>
               {types.map(t => <option key={t.id} value={t.id}>{NAMES[t.id] || t.short}</option>)}
             </SelectField>
           </Field>

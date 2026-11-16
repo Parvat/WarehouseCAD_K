@@ -8,7 +8,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { Head, Sec, Grid2, Field, TextInput, SelectField, StaticField, LockedFields, C, MONO } from './cardParts'
 import { CardLock } from './CardLock'
 import { useLocked } from './useLocked'
-import { doorTypes } from '../utils/doorTool'
+import { doorTypes, doorHeightFt, DOOR_HEIGHT_FT } from '../utils/doorTool'
 import { doorWall, spanOf, neighbourGaps, doorPlaced, doorsOnWall, doorNumbers } from '../utils/doorWall'
 import { doorClearOf } from '../utils/doorClear'
 import { parseFeet } from '../components/RightPanel/panels/RackingAreaPanel'
@@ -43,7 +43,8 @@ export function DoorMain({ obj }) {
     const g = doorRefit(useCanvasStore.getState().objects, d, { s0: spanOf(d)[0], D: spec.depthFt * gs }, gs)
     if (!g) return
     const color = spec.color || '#6366f1'
-    commit({ ...g, type: spec.type, label: spec.label, fill: color + '22', stroke: color, snapType: spec.snapType, meta: { ...(d.meta || {}), ...(spec.meta || {}), doorWidth: d.width / gs } })
+    const typed = d.meta?.heightFt != null && d.meta.heightFt !== DOOR_HEIGHT_FT[d.type]
+    commit({ ...g, type: spec.type, label: spec.label, fill: color + '22', stroke: color, snapType: spec.snapType, meta: { ...(d.meta || {}), ...(spec.meta || {}), doorWidth: d.width / gs, heightFt: typed ? d.meta.heightFt : DOOR_HEIGHT_FT[spec.type] } })
   }
   const setWidth = (t) => { const ft = feet(t), d = cur(); if (ft == null || !d || Math.abs(ft * gs - d.width) < 0.01) return; const g = doorRefit(useCanvasStore.getState().objects, d, { s0: spanOf(d)[0], W: ft * gs }, gs); if (g) commit({ ...g, meta: { ...(d.meta || {}), doorWidth: ft } }) }
   const setFrom = (t) => { const ft = feet(t), d = cur(), ww = d && doorWall(d, useCanvasStore.getState().objects, gs); if (ft == null || !ww) return; const s = ww.lo + ft * gs; if (Math.abs(s - spanOf(d)[0]) < 0.01) return; commit(doorRefit(useCanvasStore.getState().objects, d, { s0: s }, gs)) }
@@ -56,7 +57,7 @@ export function DoorMain({ obj }) {
   const fromLabel = w?.axis === 'y' ? 'From top corner' : 'From left corner'
   const gapName = (id, end) => (id ? `to ${nums.get(id)}` : `to the ${end} corner`)
   const ends = w?.axis === 'y' ? ['top', 'bottom'] : ['left', 'right']
-  const heightFt = obj.meta?.heightFt
+  const heightFt = doorHeightFt(obj)
   return (
     <>
       <Head caption={`${num ? num + ' · ' : ''}${NAMES[obj.type] || 'Door'}`} right={<CardLock obj={obj} />} />

@@ -20,6 +20,10 @@ export const DOOR_TOOL = 'door'
 /** The door types (the library's wall doors): a door slides along its wall when dragged (STUDIO.md §7a). */
 export const DOOR_TYPES = new Set(['struct_egress', 'struct_loading_dock', 'struct_drive_in'])
 export const isDoor = (o) => !!o && DOOR_TYPES.has(o.type)
+/** A door's height when none is typed (doors-edit round): dock 10 ft, drive-in 14 ft, man door 7 ft. */
+export const DOOR_HEIGHT_FT = { struct_loading_dock: 10, struct_drive_in: 14, struct_egress: 7 }
+/** Door `d`'s height (ft): its own, else its type's. */
+export const doorHeightFt = (d) => d?.meta?.heightFt ?? DOOR_HEIGHT_FT[d?.type] ?? null
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 
 /* the tool's segmented, in order, and what it calls each */
@@ -128,7 +132,7 @@ export function doorObject(at, spec, newId) {
   return {
     id: newId(), type: spec.type, x: at.x, y: at.y, width: at.width, height: at.height, rotation: at.rotation,
     fill: color + '22', stroke: color, strokeWidth: 1.5, opacity: 1, noFill: false, label: spec.label,
-    snapType: spec.snapType, meta: { ...(spec.meta || {}), doorWidth: spec.widthFt }, parentId: at.fpId, layerId: layerForType(spec.type),
+    snapType: spec.snapType, meta: { ...(spec.meta || {}), doorWidth: spec.widthFt, heightFt: DOOR_HEIGHT_FT[spec.type] ?? null }, parentId: at.fpId, layerId: layerForType(spec.type),
     ...(at.sectionId ? { sectionId: at.sectionId } : {}),                 // in a section's Fence or Wall
   }
 }
