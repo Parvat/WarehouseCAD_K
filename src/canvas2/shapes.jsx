@@ -504,7 +504,7 @@ function FallbackShapeView({ obj, listening = false, bind }) {
       <Rect x={b.x} y={b.y} width={b.width} height={b.height} fill={fill} {...common} />
       {b.width > 24 && b.height > 12 && (
         <Text x={b.x} y={b.y + b.height / 2 - 5} width={b.width} align="center"
-          text={labelFor(obj.type)} fontSize={Math.min(11, b.height * 0.5)}
+          text={labelFor(obj.type)} fontSize={Math.min(11, b.height * 0.5)} minFit={{ w: b.width, h: b.height }}
           fontFamily="sans-serif" fill={stroke} opacity={0.75} listening={false} />
       )}
     </Group>
@@ -719,6 +719,7 @@ function ZoneShapeView({ obj, gridSize = 40, listening = false, bind }) {
       <Rect x={obj.x} y={obj.y} width={obj.width} height={obj.height} fill={obj.fill || stroke + '22'} stroke={stroke}
         strokeWidth={1.5} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={listening} />
       <Text x={obj.x} y={obj.y + obj.height / 2 - fs / 2} width={obj.width} align="center" text={obj.label || 'Zone'}
+        minFit={{ w: obj.width, h: obj.height }}
         fontSize={fs} fontStyle="600" fontFamily="'Plus Jakarta Sans', sans-serif" fill={stroke} listening={false} />
     </Group>
   )

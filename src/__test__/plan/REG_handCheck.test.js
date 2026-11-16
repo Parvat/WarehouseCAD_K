@@ -6912,6 +6912,36 @@ describe('REG — the hand check by real clicks', () => {
       expect(await lines()).toEqual(l0)
     }, 120000)
 
+    /* ── text-min round (CLAUDE.md Critical Rule 8): every canvas text at least 11 screen px, or hidden ── */
+    /** every visible canvas text as drawn: { name, text, px } — px the screen size it was drawn at (0: hidden by the rule) */
+    const textsDrawn = () => L.page.evaluate(() => {
+      const st = window.Konva.stages[0]; st.draw()
+      return st.find('Text').filter(t => t.isVisible() && t.text() && t.text().trim() && t._mtPx !== undefined)
+        .map(t => ({ name: t.name() || t.getParent()?.name() || '?', text: t.text().slice(0, 24), px: Math.round(t._mtPx * 100) / 100, raw: Math.round(t.fontSize() * Math.abs(t.getAbsoluteScale().y) * 100) / 100 }))
+    })
+    it('REG-canvas-text-min (click): every text on the canvas — labels, numbers, chains, tags, the door labels — is drawn at least 11 px on screen at Fit, 50% and 200%, with nothing selected, the column grid selected and a rack selected; a text that cannot fit at 11 px is hidden, never smaller', async () => {
+      await open()
+      // (setup, one undo step) a dock door and a man door on the building's top wall, as the door tool places them
+      await L.S('return import("/src/utils/doorTool.js").then(D => { const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type)), T = D.doorTypes(), add = []; for (const [id, t] of [["struct_loading_dock", 0.3], ["struct_egress", 0.6]]) { const spec = T.find(x => x.id === id), at = D.doorAt([...st.objects, ...add], { x: fp.x + fp.width * t, y: fp.y }, spec, gs, 40); if (at) add.push(D.doorObject(at, spec, () => "door-" + id)) } S.setState({ objects: [...st.objects, ...add] }); S.getState().commitObjectUpdate(fp.id, {}); return add.length })')
+      const fit = async () => { await L.page.locator('[data-island="bottom-right"]').getByRole('button', { name: 'Fit' }).click(); await L.page.waitForTimeout(300) }
+      const zoomTo = async (z) => { await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), cx = fp.x + fp.width / 2, cy = fp.y + fp.height / 2; S.setState({ zoom: arg, panX: 720 - cx * arg, panY: 450 - cy * arg })', z); await L.page.waitForTimeout(300) }
+      const states = [
+        ['nothing', async () => { await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.S('S.setState({ selectedIds: [] })'); await L.page.waitForTimeout(200) }],
+        ['grid', async () => { await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); S.setState({ selectedIds: [g.id] })'); await L.page.waitForTimeout(250) }],
+        ['rack', async () => { await L.S('const r = S.getState().objects.find(o => /^rack_/.test(o.type)); S.setState({ selectedIds: [r.id] })'); await L.page.waitForTimeout(250) }],
+      ]
+      const small = []
+      for (const [zname, setZoom] of [['Fit', fit], ['50%', () => zoomTo(0.5)], ['200%', () => zoomTo(2)]]) {
+        for (const [sname, select] of states) {
+          await setZoom(); await select()
+          const ts = await textsDrawn()
+          expect([zname, sname, ts.length > 0]).toEqual([zname, sname, true])
+          for (const t of ts) if (t.px > 0 && t.px < 11 - 0.01) small.push([zname, sname, t.name, t.text, t.px])
+        }
+      }
+      expect(small).toEqual([])
+    }, 120000)
+
     it('REG-colgrid-L (click): an L-shaped building — no column is drawn in its open corner (outside the outline), the gridline stays (its bubble still shown); every wall gets its own size line', async () => {
       await open()
       const ob = await outlineBox()

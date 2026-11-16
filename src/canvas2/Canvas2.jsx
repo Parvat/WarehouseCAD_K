@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, memo } from 'react'
 import { Stage, Layer, Shape } from 'react-konva'
 import { Scene } from './Scene'
+import { installMinText } from './minText'
 import { Overlays } from './Overlays'
 import { ResizeHandlesOverlay } from './ResizeHandlesOverlay'
 import { GroupRotateOverlay } from './GroupRotateOverlay'
@@ -57,6 +58,9 @@ import { CrossAisleBandPreview, CrossAisleBar, liveBand } from './CrossAisleBand
 import { CROSS_AISLE_TOOL, useCrossAisleTool, commitCut } from '../utils/crossAisleCut'
 import { commitTunnel } from '../utils/tunnel'
 import { TunnelMarks } from './TunnelMarks'
+
+// the canvas text floor (CLAUDE.md Rule 8): every Konva text at least 11 screen px, or hidden (canvas2/minText.js)
+installMinText()
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
    A Konva Stage that owns its own pointer events. No router, no forwarding, no

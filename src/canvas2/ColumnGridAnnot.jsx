@@ -99,12 +99,15 @@ export function ColumnGridAnnot() {
             {a.chain.map((c, i) => (
               <Group key={'c' + i} listening={false}>
                 {[...c.segs, ...c.ticks].map((l, k) => <Line key={k} points={l} stroke={ANNOT.ink} strokeWidth={1} strokeScaleEnabled={false} listening={false} perfectDrawEnabled={false} />)}
+                {/* (Rule 8) under 11 px it grows to 11, or hides when longer than its bay (canvas2/minText.js) */}
                 <Text name="column-chain-text label-pill" text={c.text} x={c.tx} y={c.ty} width={c.tw + a.fs * 0.4} align="center" wrap="none" offsetX={(c.tw + a.fs * 0.4) / 2} offsetY={a.fs / 2}
+                  minFit={c.axis === 'x' ? { w: c.hi - c.lo } : { h: c.hi - c.lo }}
                   fontSize={a.fs} fontStyle="600" fontFamily={FONT} fill={ANNOT.ink} listening={false} />
               </Group>
             ))}
             {a.bubbles.map((b, i) => (
-              <Group key={'b' + i} name="column-bubble label-pill" listening={false}>
+              // (Rule 8) a bubble is a label: under 11 px its circle and letter grow together about its centre
+              <Group key={'b' + i} name="column-bubble label-pill" listening={false} minLabel={{ fs: b.fs, at: { x: b.x, y: b.y }, box: { w: b.r * 2, h: b.r * 2 } }}>
                 <Circle x={b.x} y={b.y} radius={b.r} fill={ANNOT.bubbleFill} stroke={ANNOT.bubble} strokeWidth={1} strokeScaleEnabled={false} listening={false} />
                 <Text name="column-bubble-text" text={b.text} x={b.x - b.r} y={b.y - b.r} width={b.r * 2} height={b.r * 2} align="center" verticalAlign="middle" fontSize={b.fs} fontStyle="600" fontFamily={FONT} fill={ANNOT.bubble} listening={false} />
               </Group>

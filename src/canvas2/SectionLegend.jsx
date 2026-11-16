@@ -44,7 +44,7 @@ export function SectionLegend() {
   return (
     <Group name="section-legend" listening={false}>
       {legends.map(L => (
-        <Group key={L.fpId || 'none'} name={'section-legend:' + L.fpId} listening={false}>
+        <Group key={L.fpId || 'none'} name={'section-legend:' + L.fpId} listening={false} minLabel={{ fs: L.m.fs, at: { x: L.x, y: L.y }, box: { w: L.w, h: L.h } }}>
           <Rect name="section-legend-box" x={L.x} y={L.y} width={L.w} height={L.h} fill="#FFFFFF" opacity={0.92} stroke="#D5D9D6" strokeWidth={1} strokeScaleEnabled={false}
             cornerRadius={L.m.fs * 0.3} listening={false} perfectDrawEnabled={false} />
           {L.items.map(q => (

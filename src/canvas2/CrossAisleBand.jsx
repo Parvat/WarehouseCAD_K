@@ -50,7 +50,7 @@ export function CrossAisleBandPreview() {
       {b.walls.map(w => { const q = rectOf(w.s0, w.s1); return (
         <Group key={w.id} name="cross-aisle-band-wall" listening={false}>
           <Rect x={q.x} y={q.y} width={q.w} height={q.h} fill="#F2F4F1" stroke="#7E8680" strokeWidth={1} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={false} />
-          <Text name="cross-aisle-band-wall-text" text="not cut" x={q.x} y={q.y} width={q.w} height={q.h} align="center" verticalAlign="middle" fontSize={Math.min(10 / zoom, q.h * 0.8, q.w / (7 * 0.62))} wrap="none"
+          <Text name="cross-aisle-band-wall-text" text="not cut" x={q.x} y={q.y} width={q.w} height={q.h} align="center" verticalAlign="middle" fontSize={11 / zoom} minFit={{ w: q.w, h: q.h }} visible={11 / zoom <= q.h * 0.8 && 11 / zoom <= q.w / (7 * 0.62)} wrap="none"
             fontFamily="JetBrains Mono, monospace" fill="#41483F" listening={false} />
         </Group>
       ) })}
