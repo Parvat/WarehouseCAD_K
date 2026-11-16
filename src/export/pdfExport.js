@@ -45,7 +45,7 @@ import { bayLedger } from '../utils/bayLedger'
 import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
-import { aisleLabelOps, aisleLabelBoxes, clearanceOps, clearanceSolids, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
+import { aisleLabelOps, aisleLabelBoxes, clearanceOpsAll, clearanceSolids, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
 import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
 import { sectionLegend } from '../utils/sectionLegend'
 import { columnAnnot, ANNOT } from '../render/columnAnnot'
@@ -316,7 +316,8 @@ export function labelsSVG(objects, gridSize, opts) {
       /* a column in an aisle: its clear distance on both sides, to the rack — or the zone or wall — on each
          side (withFaceBlocks), whenever the aisle labels or the marks are printed, as on screen; the red
          pinched shade only with the marks */
-      for (const b of withFaceBlocks(res.aisleBlocks, columns, objects, { gridSize, profile: opts.profile })) ops.push(...clearanceOps(b, columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid, { warnings: !!opts.showMarks, solids }))
+      // (doors-edit fixes) laid out in one pass, so two columns' numbers never land on each other
+      for (const o of clearanceOpsAll(withFaceBlocks(res.aisleBlocks, columns, objects, { gridSize, profile: opts.profile }), b => columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid, { warnings: !!opts.showMarks, solids })) ops.push(...o)
     }
     if (opts.showMarks) {
       if (res) {

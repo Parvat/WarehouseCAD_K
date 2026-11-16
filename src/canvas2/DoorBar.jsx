@@ -44,7 +44,7 @@ export function DoorBar() {
       <span style={word}>ft</span>
       <Sep />
       <button type="button" aria-label="Door row" title="Door row — a row of equal dock doors along a wall" onClick={() => { clearDoorHover(); useCanvasStore.getState().setActiveTool(DOOR_ROW_TOOL) }} className={btnClass(false)}
-        style={{ ...barBtn(false), display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px 0 8px' }}><Icon name="Structural" kind="rail" size={16} />Door row</button>
+        style={{ ...barBtn(false), display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px 0 8px' }}><Icon name="Door row" size={16} />Door row</button>
       <Sep />
       <button type="button" aria-label="Done" title="Done (Esc)" onClick={close} className={btnClass(true)} style={barBtn(true)}>Done</button>
       <CloseBtn label="Close Add door" title="Done (Esc)" onClick={close} />

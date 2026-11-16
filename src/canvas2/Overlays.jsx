@@ -195,7 +195,8 @@ function OverlaysView({
           the View card's Column clearances is on, on every column (col-bubbles round) — faded in place (clearanceView.js,
           ClearanceNumbers) */}
       {(marksOn || aislesOn) && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels={false} warnings={marksOn} />}
-      {showClearances && <ClearanceNumbers aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} selectedObjects={selectedObjects} dragging={dragging} show={showClearances} column={onlyCol} columnShow={colShow} />}
+      {/* (doors-edit fixes) in the marks layer only — it was drawn in both layers, every number twice over itself */}
+      {marksPart && showClearances && <ClearanceNumbers aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} selectedObjects={selectedObjects} dragging={dragging} show={showClearances} column={onlyCol} columnShow={colShow} />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
       {marksOn && <BlockedFaceMarks rackConflicts={xMarks} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}

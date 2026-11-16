@@ -124,7 +124,7 @@ describe('LB — Column labels (now part of the Checks layer)', () => {
     // the grey numbers: zoomed in, a column selected, Show clearances, or a drag (STUDIO.md §7, ClearanceNumbers.jsx); the red ones always
     expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ColumnClearanceLabels [^>]*showLabels=\{false\} warnings=\{marksOn\} \/>\}/)
     // (col-bubbles round: the grey numbers by the View card's Column clearances alone)
-    expect(ov).toMatch(/\{showClearances && <ClearanceNumbers [^>]*dragging=\{dragging\} show=\{showClearances\} column=\{onlyCol\} columnShow=\{colShow\} \/>\}/)
+    expect(ov).toMatch(/\{marksPart && showClearances && <ClearanceNumbers [^>]*dragging=\{dragging\} show=\{showClearances\} column=\{onlyCol\} columnShow=\{colShow\} \/>\}/)
     expect(ov).not.toMatch(/showColumnLabels/)
     for (const comp of ['BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) {
       const line = ov.split('\n').find(l => l.includes('<' + comp + ' '))

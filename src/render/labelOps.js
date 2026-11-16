@@ -189,16 +189,56 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, a
   }
   /* The look (STUDIO.md §2, PlanDetail C18): a thin dotted #9AA29C line from the column to the face, no arrowheads,
      the number (ft-in, #767C74, Plus Jakarta Sans 600) in a break in the line; under travel in red. Touching a face:
-     the number only, beside the column. A number whose gap is shorter than the number itself is not drawn (the line
-     is) — so a number never sits on a rack or a column. Its box is kept (an invisible rect before the text, as a pill)
-     so the selection bar keeps off it. */
+     the number only, beside the column. (doors-edit fixes, CLAUDE.md Rule 8 — was: a number whose gap is shorter than
+     the number itself was not drawn) A number too long for its gap — or with no room on its line clear of a rack, a
+     column or an aisle label — moves OUTSIDE its gap: stepped off the line onto the aisle floor beside it (along the
+     aisle), with a short leader back to the middle of the line; never hidden, never on a rack or a column while there is
+     a spot clear of them. Its box is kept (an invisible rect before the text, as a pill) so the selection bar keeps off it. */
+  const outSpot = (k) => {
+    const line = vertArrow ? k.m.label.x : k.m.label.y, c = vertArrow ? k.m.label.y : k.m.label.x
+    const others = marks.filter(q => q !== k && (q.inGap || q.placedOut)).map(q => q.pill)
+    // off the line (one to six steps either side), and slid along it (up to three of its own lengths) — nearest first
+    const len = vertArrow ? k.h : k.w, cands = []
+    for (let n = -10; n <= 10; n++) for (let sl = -6; sl <= 6; sl++) {
+      if (!n && !sl) continue
+      const o = n * k.step, d = sl * len, x = vertArrow ? line + o : c + d, y = vertArrow ? c + d : line - o
+      cands.push({ x, y, d: Math.hypot(o, d) })
+    }
+    cands.sort((p, q) => p.d - q.d)
+    let best = null
+    for (const q of cands) {
+      // over a label (an aisle label, the other number) is worse than over a rack or column (CLAUDE.md Rule 8: labels never
+      // overlap); with no spot clear of all of them, the number still shows — at the least bad spot, never hidden
+      const r = rectAt(k, q.x, q.y), bad = (avoid.some(p => hit(p, r)) ? 4 : 0) + (others.some(p => hit(p, r)) ? 4 : 0) + (onSolid(r) ? 1 : 0)
+      if (!best || bad < best.bad) best = { x: q.x, y: q.y, bad }
+      if (!bad) break
+    }
+    return best
+  }
   for (const k of marks) {
     const { m } = k
     const a = m.stub ? null : { x0: m.shaft[0].x, y0: m.shaft[0].y, x1: m.arrowhead[0].x, y1: m.arrowhead[0].y }
     const gapLen = a ? Math.hypot(a.x1 - a.x0, a.y1 - a.y0) : 0
     const tw = m.label.text.length * cfs * 0.56, th = cfs * 1.25, along = vertArrow ? th : tw
-    // hidden: a gap narrower than its number, or (touching a face) no spot beside the column clear of a rack or column
-    const fits = (m.stub || gapLen >= along + 4 / lz) && !clashes(k.pill)
+    k.inGap = m.stub || (gapLen >= along + 4 / lz && !clashes(k.pill))
+  }
+  for (const k of marks) {
+    const { m } = k
+    const a = m.stub ? null : { x0: m.shaft[0].x, y0: m.shaft[0].y, x1: m.arrowhead[0].x, y1: m.arrowhead[0].y }
+    const tw = m.label.text.length * cfs * 0.56, th = cfs * 1.25, along = vertArrow ? th : tw
+    // touching a face: beside the column, hidden only when no spot there is clear of a rack or column (as before)
+    if (m.stub && clashes(k.pill)) continue
+    const fits = k.inGap
+    let leader = null
+    if (!fits) {
+      // outside its gap, on a leader from the line's middle to the number's near side
+      const s = outSpot(k), mx = m.label.x, my = m.label.y
+      // no spot near clear of every other label (an aisle label, another number): it no longer fits even outside — hidden
+      // until zooming in gives it room (CLAUDE.md Rule 8: labels never overlap); over a rack or column is the last resort
+      if (s.bad >= 4) continue
+      place(k, s.x, s.y); k.placedOut = true
+      leader = vertArrow ? [mx, my, s.x - Math.sign(s.x - mx) * tw / 2, my] : [mx, my, mx, s.y - Math.sign(s.y - my) * th / 2]
+    }
     const { lx, ly } = k
     const line = m.short ? SHORT_COLOR : CLEAR_LINE, ink = m.short ? SHORT_COLOR : CLEAR_INK
     if (a) {
@@ -212,9 +252,20 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, a
         out.push({ op: 'line', points: [a.x0, a.y0, a.x1, a.y1], stroke: line, strokeWidth: 1 / lz, dash: [2 / lz, 2 / lz] })
       }
     }
-    if (!fits) continue
+    if (leader) out.push({ op: 'line', name: 'clearance-leader', points: leader, stroke: line, strokeWidth: 0.8 / lz })
     out.push({ op: 'rect', x: lx - tw / 2, y: ly - th / 2, w: tw, h: th, fill: 'rgba(0,0,0,0)', opacity: 0 },
       { op: 'text', x: lx - tw / 2, y: ly - th / 2, w: tw, h: th, text: m.label.text, fontSize: cfs, fill: ink, fontFamily: CLEAR_FONT, fontStyle: '600' })
+  }
+  return out
+}
+/** Every block's clearance ops, laid out in one pass: each number keeps clear of the aisle labels (`avoid`) and of every
+ *  number placed before it — two columns' numbers never land on each other (CLAUDE.md Rule 8). `colOf(b)`: its column. */
+export function clearanceOpsAll(blocks, colOf, lz, gridSize = 40, showLabels = true, avoid = [], opts = {}) {
+  const out = [], placed = [...avoid]
+  for (const b of blocks) {
+    const ops = clearanceOps(b, colOf(b), lz, gridSize, showLabels, placed, opts)
+    for (const o of ops) if (o.op === 'text') placed.push({ x: o.x, y: o.y, w: o.w, h: o.h })
+    out.push(ops)
   }
   return out
 }

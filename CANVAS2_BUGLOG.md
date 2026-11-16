@@ -6276,6 +6276,16 @@ Symptom:  a pair's bay clicked on one half; "− Bay" in the panel took it off b
 Cause:    removeBay called the store's deleteSingleBay directly.
 Fix:      the one-side delete first (utils/baySides.js deleteBaySelection), as the Delete key. Test: BS-remove.
 
+## BUG 89 — every grey column clearance number drawn twice, over itself  (2026-11-16, fixed 2026-11-16)
+Symptom:  nothing visible — the two copies sat exactly on each other — until numbers moved outside their gaps on leaders
+          (doors-edit fixes): zoomed out, the overlap measure found 43 pairs of identical numbers at 5 %.
+Chased:   the numbers' width estimate (0.56 em a character) — the real 600 glyphs are narrower (0.46–0.53 em); not it.
+Cause:    Overlays.jsx is rendered in two layers (part 'marks' and 'chrome'); `<ClearanceNumbers>` was not gated by
+          either part, so both layers drew the full set.
+Fix:      `marksPart && showClearances && <ClearanceNumbers …>` (Overlays.jsx).
+Lesson:   a component inside Overlays must say which part it belongs to; measure overlaps on the drawn boxes (_mtRect) —
+          exact duplicates hide from the eye.
+
 ## Template for new entries
 
 ```

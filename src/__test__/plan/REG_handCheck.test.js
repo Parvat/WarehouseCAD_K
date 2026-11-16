@@ -743,12 +743,17 @@ describe('REG — the hand check by real clicks', () => {
       expect((await until(numbers, v => v.length > 0)).length).toBeGreaterThan(0)
       await zoomOutTill(7); await L.page.waitForTimeout(350)
       expect((await numbers()).length).toBeGreaterThan(0)
+      // (doors-edit fixes, Rule 8) zoomed out the numbers are drawn at 11 px: one too long for its gap sits outside on a
+      // leader; no two numbers over each other (two columns' included) — as drawn
+      // (every clearance-numbers group on the stage — BUG 89: one was drawn in both overlay layers, each number twice)
+      const drawnNums = await L.page.evaluate(() => window.Konva.stages[0].find('.clearance-numbers').flatMap(g => g.find('Text').map(t => t._mtRect).filter(Boolean)))
+      expect([drawnNums.length > 0, drawnNums.some((p, i) => drawnNums.some((q, j) => j > i && p.x < q.x + q.w - 0.5 && q.x < p.x + p.w - 0.5 && p.y < q.y + q.h - 0.5 && q.y < p.y + p.h - 0.5))]).toEqual([true, false])
       // in, well past: the look, and no number on a rack or a column
       for (let i = 0; i < 12; i++) await wheel(-60)
       const look = await L.page.evaluate(() => {
         const g = window.Konva.stages[0].findOne('.clearance-numbers')
         if (!g) return null
-        const texts = g.find('Text').filter(t => t.isVisible()), lines = g.find('Line')
+        const texts = g.find('Text').filter(t => t.isVisible()), lines = g.find('Line').filter(l => l.name() !== 'clearance-leader')   // (doors-edit fixes: a number outside its gap has a short solid leader)
         return { texts: texts.map(t => [t.text(), t.fill(), t.fontStyle()]), lines: lines.map(l => [l.stroke(), !!(l.dash() && l.dash().length), !!l.closed()]),
           boxes: texts.map(t => { const r = t.getClientRect(); return { x0: r.x, y0: r.y, x1: r.x + r.width, y1: r.y + r.height } }) }
       })
@@ -7090,6 +7095,8 @@ describe('REG — the hand check by real clicks', () => {
       // (doors-edit fixes) the hint is one line just below the bar, not in it; Door row a normal button with an icon
       const hint = await L.page.locator('[data-mode-bar="door"] [data-mode-hint]').boundingBox(), barBox = await dbar.boundingBox()
       expect([hint.y >= barBox.y + barBox.height, await dbar.getByRole('button', { name: 'Door row', exact: true }).locator('svg').count()]).toEqual([true, 1])
+      // (its own glyph — a door in its opening, Icons.dc.html "Door row"; was the Structural rail icon)
+      expect(await dbar.getByRole('button', { name: 'Door row', exact: true }).locator('svg path[d="M3 20V5h18v15"]').count()).toBe(1)
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
       expect(await L.S('return S.getState().activeTool')).not.toBe('door')
       // 4 · tags: D1, D2 (dock), M1 (man) — per wall, left to right

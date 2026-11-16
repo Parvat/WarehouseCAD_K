@@ -11,7 +11,9 @@ import { useColumnCheck } from '../generate/useColumnCheck'
 import { useDragPreview } from './dragPreview'
 import { clearanceSource } from './clearanceSource'
 import { LabelOps } from './LabelOps'
-import { aisleLabelOps, clearanceOps, clearanceSolids } from '../render/labelOps'
+import { floorUnit } from './minText'
+import { useView } from './live'
+import { aisleLabelOps, clearanceOpsAll, clearanceSolids } from '../render/labelOps'
 import { crossAisleLabels } from './crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 import { isEmptySide } from '../utils/bayEmpty'
@@ -335,25 +337,6 @@ export const FaceAisleLabels = memo(function FaceAisleLabels({ objects, lz, grid
   return <>{list.map((L, i) => <AisleLabelView key={L.rackId + ':' + i} L={L} name={'face-aisle:' + L.rackId + ':' + i} lz={lz} />)}</>
 })
 
-/* One clearance label: redrawn only when its own block, column or the zoom
-   changed. The live check makes new block objects every frame, so they are
-   compared by content. */
-const sameContent = (x, y) => x === y || JSON.stringify(x) === JSON.stringify(y)
-
-const ClearanceItem = memo(function ClearanceItem({ a, i, col, lz, gridSize, showLabels = true, avoid, warnings = true, solids = EMPTY }) {
-  const ops = useMemo(() => clearanceOps(a, col, lz, gridSize, showLabels, avoid, { warnings, solids }), [a, col, lz, gridSize, showLabels, avoid, warnings, solids])
-  return <LabelOps ops={ops} name={'aisle-column:' + i} />
-}, (p, n) => p.i === n.i && p.lz === n.lz && p.gridSize === n.gridSize && p.showLabels === n.showLabels && p.warnings === n.warnings && sameContent(p.a, n.a) && sameContent(p.col, n.col) && sameContent(p.avoid, n.avoid) && p.solids === n.solids)
-
-/* The aisle-label boxes near one column — all its clearance labels could reach (each arrow's length plus a
-   long pill) — so an item compares and redraws only for the labels around it. */
-function avoidNear(avoid, a, col, lz, gridSize) {
-  if (!avoid || !avoid.length || !col) return EMPTY
-  const R = (Math.max(a.nearClearFt || 0, a.farClearFt || 0) + 1) * gridSize + 80 / lz
-  const x0 = col.x - R, x1 = col.x + col.w + R, y0 = col.y - R, y1 = col.y + col.h + R
-  const near = avoid.filter(r => r.x < x1 && r.x + r.w > x0 && r.y < y1 && r.y + r.h > y0)
-  return near.length ? near : EMPTY
-}
 const EMPTY = []
 
 /* ── Column clearance labels + red aisle warning ─────────────────────────────
@@ -374,7 +357,9 @@ const EMPTY = []
    held warnings with it, unchanged; any other drag re-runs just the cheap
    aisle part of the column check on the previewed layout
    (clearanceSource.js). Otherwise it draws the full check's own aisleBlocks. */
-export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridSize = 40, showLabels = true, avoid = EMPTY, warnings = true, only = null }) {
+export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz: lzSize, gridSize = 40, showLabels = true, avoid = EMPTY, warnings = true, only = null }) {
+  // (Rule 8) the numbers laid out at the size they are drawn: the Label size, or larger so the 9.5 number is 11 px on screen
+  const lz = 1 / floorUnit(lzSize, useView().zoom, 9.5)
   const ids = useDragPreview(s => s.ids), dx = useDragPreview(s => s.dx), dy = useDragPreview(s => s.dy)
   const { profile, pickBothSides } = useColumnCheck()
   /* clearanceSource.js: a drag carrying every rack and column (a building
@@ -387,13 +372,17 @@ export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz, gridS
   const local = useMemo(() => (src.x || src.y) ? avoid.map(r => ({ ...r, x: r.x - (src.x || 0), y: r.y - (src.y || 0) })) : avoid, [avoid, src.x, src.y])
   // the racks and columns a number may never sit on, in this group's frame
   const solids = useMemo(() => clearanceSolids(objects, gridSize).map(r => ({ ...r, x: r.x - (src.x || 0), y: r.y - (src.y || 0) })), [objects, gridSize, src.x, src.y])
-  if (!src.blocks?.length || !src.cols?.length) return null
   /* `only`: one column's (a column picked — canvas2/columnPick.js), its square in world px */
-  const mine = (a) => { const c = src.cols[a.columnIndex]; return !only || (c && Math.abs(c.x + (src.x || 0) - only.x) < 1e-3 && Math.abs(c.y + (src.y || 0) - only.y) < 1e-3) }
-
+  const mine = (a) => { const c = src.cols?.[a.columnIndex]; return !only || (c && Math.abs(c.x + (src.x || 0) - only.x) < 1e-3 && Math.abs(c.y + (src.y || 0) - only.y) < 1e-3) }
+  // (doors-edit fixes, Rule 8) every column's numbers laid out in one pass: none lands on another column's
+  const all = useMemo(() => {
+    const bs = (src.blocks || []).filter(mine)
+    return src.cols?.length ? clearanceOpsAll(bs, (a) => src.cols[a.columnIndex], lz, gridSize, showLabels, local, { warnings, solids }) : []
+  }, [src, lz, gridSize, showLabels, local, warnings, solids, only])   // eslint-disable-line react-hooks/exhaustive-deps
+  if (!src.blocks?.length || !src.cols?.length) return null
   return (
     <Group name="column-clearance-labels" listening={false} x={src.x} y={src.y}>
-      {src.blocks.map((a, i) => mine(a) && <ClearanceItem key={i} a={a} i={i} col={src.cols[a.columnIndex]} lz={lz} gridSize={gridSize} showLabels={showLabels} avoid={avoidNear(local, a, src.cols[a.columnIndex], lz, gridSize)} warnings={warnings} solids={solids} />)}
+      {all.map((ops, i) => <LabelOps key={i} ops={ops} name={'aisle-column:' + i} fit={false} />)}
     </Group>
   )
 }

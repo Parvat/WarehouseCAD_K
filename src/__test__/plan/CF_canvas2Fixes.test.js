@@ -9,7 +9,7 @@ import { planAreaResize } from '../../generate/rackingArea'
 import { rackFootprint, MHE_PROFILES, aisleColumnBlocks } from '../../generate/columnCheck'
 import { layoutColumns } from '../../generate/usableCapacity'
 import { aisleLabelLayout, aisleLabelStation, aisleLabelHit, columnRectsOf, AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX } from '../../canvas2/hitTest'
-import { aisleLabelOps, aisleLabelBoxes, clearanceOps, clearanceSolids } from '../../render/labelOps'
+import { aisleLabelOps, aisleLabelBoxes, clearanceOps, clearanceOpsAll, clearanceSolids } from '../../render/labelOps'
 import { aisleLabelScale, labelScale } from '../../render/labelSize'
 import { crossAisleLabels } from '../../canvas2/crossAisles'
 import { zoneResizeBox, snapOffKey } from '../../canvas2/zoneResizeSnap'
@@ -236,17 +236,33 @@ describe.each([['horizontal', false], ['vertical', true]])('CF-3 — %s', (_, ve
     const t = clearanceOps(b[0], layoutColumns(touch, GS)[0], labelScale('medium', GS), GS, true).filter(o => o.op === 'text').map(o => o.text).sort()
     expect(t).toEqual(['0′-0″', '9′-6″'])
   })
-  it('CF-labels: on the saved layout, at every size, a column\'s numbers never sit on each other, on an aisle label, a rack or a column — a number with no room is not drawn (STUDIO.md §7)', () => {
+  it('CF-labels: on the saved layout, at every size, a column\'s numbers never sit on each other or on an aisle label, and on a rack or a column only when outside its gap (a leader) with no clear spot near — never hidden (doors-edit fixes, CLAUDE.md Rule 8; was: a number with no room was not drawn)', () => {
     const base = savedFill(vert), cols = layoutColumns(base, GS), bs = blocks(base)
     expect(bs.length).toBeGreaterThanOrEqual(23)
+    let crowded = 0, outside = 0
     for (const size of ['small', 'medium', 'large', 'xlarge']) {
       const lz = labelScale(size, GS), avoid = aisleLabelBoxes(base, GS, size), solids = clearanceSolids(base, GS)
       for (const b of bs) {
-        const t = clearanceOps(b, cols[b.columnIndex], lz, GS, true, avoid, { solids }).filter(o => o.op === 'text')
-        expect(t.length).toBeLessThanOrEqual(2)
+        const ops = clearanceOps(b, cols[b.columnIndex], lz, GS, true, avoid, { solids }), t = ops.filter(o => o.op === 'text')
+        const leaders = ops.filter(o => o.name === 'clearance-leader').length, marks = clearanceMarks(b, cols[b.columnIndex], lz, GS)
+        // every number with a gap is drawn (a number touching a face still gives way to a rack or column beside it, as before)
+        expect(t.filter(x => marks.some(m => !m.stub && m.label.text === x.text)).length).toBe(marks.filter(m => !m.stub).length)
         if (t.length === 2) expect(hit(t[0], t[1])).toBe(false)
-        for (const x of t) expect([avoid.some(r => hit(x, r)), solids.some(r => hit(x, r))], `${size}: ${x.text}`).toEqual([false, false])
+        for (const x of t) expect(avoid.some(r => hit(x, r)), `${size}: ${x.text}`).toBe(false)
+        const onSolid = t.filter(x => solids.some(r => hit(x, r))).length
+        expect(onSolid, `${size}: on a rack without a leader`).toBeLessThanOrEqual(leaders)
+        crowded += onSolid; outside += leaders
       }
+    }
+    // outside on leaders happens (the narrow gaps); over a rack only where nothing near is clear — rare
+    expect([outside > 0, crowded <= outside / 10]).toEqual([true, true])
+    // (doors-edit fixes) every column's numbers in one pass, as the canvas and the PDF draw them: no two over each other, none
+    // on an aisle label — at every size and, laid out at the 11 px floor, zoomed far out (a label px of 11 / (9.5 · 0.03))
+    for (const lz of [...['small', 'medium', 'large', 'xlarge'].map(z => labelScale(z, GS)), 9.5 * 0.03 / 11]) {
+      const avoid = aisleLabelBoxes(base, GS, 'medium'), solids = clearanceSolids(base, GS)
+      const t = clearanceOpsAll(bs, b => cols[b.columnIndex], lz, GS, true, avoid, { solids }).flat().filter(o => o.op === 'text')
+      const over = t.filter((p, i) => t.some((q, j) => j > i && hit(p, q))).map(p => p.text)
+      expect([lz, over, t.filter(x => avoid.some(r => hit(x, r))).length]).toEqual([lz, [], 0])
     }
   })
   it('CF-source: the canvas source carries the face blocks with the rack-to-rack ones, still and while a zone is dragged (re-measured live)', () => {
@@ -265,7 +281,8 @@ describe('CF-3 — shown with the aisle labels', () => {
     const ov = read('canvas2/Overlays.jsx')
     expect(ov).toMatch(/\{\(marksOn \|\| aislesOn\) && <ColumnClearanceLabels [^>]*warnings=\{marksOn\}/)
     // (col-bubbles round: the grey numbers by the View card's Column clearances alone)
-    expect(ov).toMatch(/\{showClearances && <ClearanceNumbers /)
+    // (doors-edit fixes, BUG 89: in the marks layer only — it was drawn in both overlay layers, each number twice)
+    expect(ov).toMatch(/\{marksPart && showClearances && <ClearanceNumbers /)
     expect(ov).toMatch(/const on = aislesOn\n/)
     const base = savedFill(true), labelsOf = (svg) => svg.slice(svg.indexOf('<g class="labels">'))
     const aislesOnly = labelsOf(buildLayoutSVG(base, [], GS, { labels: { showAisles: true, showMarks: false } }).svg)

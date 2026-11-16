@@ -288,6 +288,18 @@ export const TOOLS = {
    "body": "<path d=\"M8.5 11V8a3.5 3.5 0 0 1 7 0v3\" fill=\"none\" stroke=\"#7BD3A4\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><rect x=\"6\" y=\"11\" width=\"12\" height=\"9\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/><rect x=\"11.5\" y=\"14\" width=\"1\" height=\"3\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/>"
   }
  },
+ "Door row": {
+  "idle": {
+   "viewBox": "0 0 24 24",
+   "size": 24,
+   "body": "<path d=\"M3 20V5h18v15\" fill=\"none\" stroke=\"#C9CEC9\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><rect x=\"6\" y=\"8\" width=\"12\" height=\"12\" fill=\"#C9CEC9\" shape-rendering=\"crispEdges\"/><rect x=\"6\" y=\"11\" width=\"12\" height=\"1\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/><rect x=\"6\" y=\"14\" width=\"12\" height=\"1\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/><rect x=\"6\" y=\"17\" width=\"12\" height=\"1\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/>"
+  },
+  "active": {
+   "viewBox": "0 0 24 24",
+   "size": 24,
+   "body": "<path d=\"M3 20V5h18v15\" fill=\"none\" stroke=\"#7BD3A4\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><rect x=\"6\" y=\"8\" width=\"12\" height=\"12\" fill=\"#7BD3A4\" shape-rendering=\"crispEdges\"/><rect x=\"6\" y=\"11\" width=\"12\" height=\"1\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/><rect x=\"6\" y=\"14\" width=\"12\" height=\"1\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/><rect x=\"6\" y=\"17\" width=\"12\" height=\"1\" fill=\"#1F2321\" shape-rendering=\"crispEdges\"/>"
+  }
+ },
  "Settings": {
   "idle": {
    "viewBox": "0 0 24 24",

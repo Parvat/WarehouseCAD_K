@@ -24,7 +24,7 @@ export function LabelOps({ ops, name, fit: useFit = true, out: useOut = false })
   for (let i = 0; i < ops.length; i++) {
     const o = ops[i]
     if (o.op === 'line') {
-      out.push(<Line key={i} points={o.points} stroke={o.stroke} strokeWidth={o.strokeWidth} dash={o.dash} opacity={o.opacity ?? 1}
+      out.push(<Line key={i} name={o.name} points={o.points} stroke={o.stroke} strokeWidth={o.strokeWidth} dash={o.dash} opacity={o.opacity ?? 1}
         perfectDrawEnabled={false} listening={false} />)
       continue
     }
