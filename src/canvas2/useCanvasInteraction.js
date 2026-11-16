@@ -53,6 +53,9 @@ import { legendHit } from '../utils/sectionLegend'
 import { legendShown } from './SectionLegend'
 import { bubbleAt, chainAt, gridLineAt } from './ColumnGridAnnot'
 import { useChainEdit } from './ColumnChainEdit'
+import { doorGapAt } from './DoorAnnot'
+import { doorWall, spanOf, doorsOnWall, doorPlaced } from '../utils/doorWall'
+import { useDoorGapEdit } from './DoorGapEdit'
 import { startDragBay, dragBayConsumed, releaseDragBay, setChainHover } from './DragBay'
 import { notify } from '../utils/notice'
 /* (col-bubbles fix) a gridline press or drag on a locked Columns layer: nothing moves — it says why */
@@ -754,6 +757,9 @@ export function useCanvasInteraction({
            release, the press's own focus change would close it at once */
         const cv = chainAt(world, view.current.zoom), cg = cv && st.objects.find(o => o.id === cv.gridId)
         if (cg && pickableIn(st.layers)(cg)) { pickedOnPlan(); dimClick.current = { chain: { gridId: cv.gridId, axis: cv.axis, lo: cv.lo, hi: cv.hi } }; return }
+        /* (doors-edit round) a gap of a selected door's wall: typed in place (DoorGapEdit.jsx) — the door after it movable */
+        const dg = doorGapAt(world, view.current.zoom), dd = dg && st.objects.find(o => o.id === dg.gap.after)
+        if (dd && pickableIn(st.layers)(dd)) { pickedOnPlan(); dimClick.current = { doorGap: { key: dg.key, w: dg.w, after: dg.gap.after } }; return }
       }
       let hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       let hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
@@ -1015,6 +1021,7 @@ export function useCanvasInteraction({
       else {
         const cv = chainAt(world, view.current.zoom), cg = cv && st.objects.find(o => o.id === cv.gridId)
         if (cg && pickableIn(st.layers)(cg)) { next = 'text'; chainHover = cv }
+        else { const dg = doorGapAt(world, view.current.zoom), dd = dg && st.objects.find(o => o.id === dg.gap.after); if (dd && pickableIn(st.layers)(dd)) next = 'text' }
       }
     }
     setChainHover(chainHover)
@@ -1148,6 +1155,21 @@ export function useCanvasInteraction({
             stage.batchDraw()
           }
           return
+        }
+
+        /* (doors-edit round) a door's end along its wall: that end moves, the other stays — whole inches, a foot wide at
+           least, never past the corner or into the door beside it; one undo on the release (as any resize) */
+        if (isDoor(origObj) && (handle === 'ml' || handle === 'mr')) {
+          const gs = st.gridSize || 40, w = doorWall(origObj, st.objects, gs)
+          if (w) {
+            const [s0, s1] = spanOf(origObj), p0 = w.axis === 'x' ? startWorld.x : startWorld.y, p = w.axis === 'x' ? pos.x : pos.y
+            const inch = gs / 12, step = Math.round((p - p0) / inch) * inch, others = doorsOnWall(st.objects, w, gs).filter(o => o.id !== origObj.id)
+            let a = s0, b = s1
+            if (Math.abs(p0 - s0) < Math.abs(p0 - s1)) a = Math.min(s1 - gs, Math.max(Math.max(w.lo, ...others.map(o => spanOf(o)[1]).filter(v => v <= s0 + 0.5)), s0 + step))
+            else b = Math.max(s0 + gs, Math.min(Math.min(w.hi, ...others.map(o => spanOf(o)[0]).filter(v => v >= s1 - 0.5)), s1 + step))
+            st.updateObject(objId, { ...doorPlaced(origObj, w, a, b - a), meta: { ...(origObj.meta || {}), doorWidth: (b - a) / gs } })
+            return
+          }
         }
 
         /* Resize. sx/sy mirror CanvasArea's doSnap(pos) — the CURRENT point
@@ -1613,7 +1635,7 @@ export function useCanvasInteraction({
     const upGesture = () => {
       const dc = dimClick.current
       dimClick.current = null
-      if (dc) { if (dc.rename) useSectionRename.setState({ id: dc.rename }); else if (dc.chain) useChainEdit.setState({ edit: dc.chain }); else useDimEdit.setState({ edit: dc }); return }
+      if (dc) { if (dc.rename) useSectionRename.setState({ id: dc.rename }); else if (dc.chain) useChainEdit.setState({ edit: dc.chain }); else if (dc.doorGap) useDoorGapEdit.setState({ edit: dc.doorGap }); else useDimEdit.setState({ edit: dc }); return }
       const td = tunnelDrag.current
       tunnelDrag.current = null
       if (td) {

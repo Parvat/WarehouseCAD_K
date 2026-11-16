@@ -13,6 +13,8 @@ import { WAREHOUSE_CATEGORIES } from '../constants/warehouseObjects'
 import { innerOutline } from './floorGeom'
 import { layerForType } from './layers'
 import { isSection, hasBoundary, edgesOf, wallInOf } from './sectionAreas'
+import { doorWall, spanOf, wallKey, doorsOnWall, doorPlaced } from './doorWall'
+import { notify } from './notice'
 
 export const DOOR_TOOL = 'door'
 /** The door types (the library's wall doors): a door slides along its wall when dragged (STUDIO.md §7a). */
@@ -34,7 +36,9 @@ export function doorTypes() {
 }
 
 /* onlySection: the tool started from a section's bar (its Fence or Wall) — doors go on that section's edges only */
-export const useDoorTool = create(() => ({ typeId: 'struct_loading_dock', widthFt: null, hover: null, onlySection: null }))
+/* anchorId: the last door the tool placed (doors-edit round — the live gap is measured from it while the preview is on its
+   wall, else from the wall's low corner); typed: a gap being typed (text) or null */
+export const useDoorTool = create(() => ({ typeId: 'struct_loading_dock', widthFt: null, hover: null, onlySection: null, anchorId: null, typed: null }))
 /** The type picked, and the width the next door gets (typed, else the type's). */
 export function doorSpec() {
   const s = useDoorTool.getState(), types = doorTypes()
@@ -43,7 +47,7 @@ export function doorSpec() {
 }
 export const setDoorType = (typeId) => useDoorTool.setState({ typeId, widthFt: null })
 export const setDoorWidth = (ft) => { if (Number.isFinite(ft) && ft > 0) useDoorTool.setState({ widthFt: ft }) }
-export const clearDoorHover = () => { const s = useDoorTool.getState(); if (s.hover || s.onlySection) useDoorTool.setState({ hover: null, onlySection: null }) }
+export const clearDoorHover = () => { const s = useDoorTool.getState(); if (s.hover || s.onlySection || s.anchorId || s.typed != null) useDoorTool.setState({ hover: null, onlySection: null, anchorId: null, typed: null }) }
 /** Add door from a section's bar (its Boundary a Fence or a Wall): the door tool on that section's edges only. */
 export function startSectionDoors(store, id) {
   store.getState().setActiveTool(DOOR_TOOL)                 // (the tool keeper ends the last tool first)
@@ -135,11 +139,49 @@ export function hoverDoor(objects, w, gridSize, zoom) {
   useDoorTool.setState({ hover: at })
   return at
 }
-/** A click with the tool on: the door placed where the preview is (one undo step). Returns the new door or null. */
+/** A click with the tool on: the door placed where the preview is (one undo step) — the next door's gap is measured from
+ *  it. Returns the new door or null. */
 export function placeDoor(store, w, newId, zoom) {
   const st = store.getState(), spec = doorSpec(), at = doorAt(st.objects, w, spec, st.gridSize || 40, 16 / zoom, useDoorTool.getState().onlySection)
   if (!at) return null
   const door = doorObject(at, spec, newId)
   st.addObject(door)
+  useDoorTool.setState({ anchorId: door.id, typed: null })
+  return door
+}
+
+/** The preview as a door (its wall found as a placed door's is). */
+const previewDoor = (at, spec) => (at && spec ? { id: '__preview', type: spec.type, x: at.x, y: at.y, width: at.width, height: at.height, rotation: at.rotation, parentId: at.fpId, ...(at.sectionId ? { sectionId: at.sectionId } : {}) } : null)
+
+/** The live gap (doors-edit round; STUDIO.md, Doors): the preview's gap to the last door placed (on its wall) or to the
+ *  wall's low corner → { w (the wall), lo, hi (world px along it), gap, place(g) (the preview's low end for gap g) } or
+ *  null. */
+export function liveGap(objects, gridSize = 40) {
+  const s = useDoorTool.getState(), d = previewDoor(s.hover, doorSpec())
+  if (!d) return null
+  const w = doorWall(d, objects, gridSize)
+  if (!w) return null
+  const [p0, p1] = spanOf(d), W = p1 - p0
+  const a = s.anchorId && objects.find(o => o.id === s.anchorId)
+  if (a && wallKey(doorWall(a, objects, gridSize)) === wallKey(w)) {
+    const [a0, a1] = spanOf(a)
+    if (p0 >= a1 - 0.5) return { w, d, lo: a1, hi: p0, gap: p0 - a1, place: (g) => a1 + g, W }
+    return { w, d, lo: p1, hi: a0, gap: a0 - p1, place: (g) => a0 - g - W, W }
+  }
+  return { w, d, lo: w.lo, hi: p0, gap: p0 - w.lo, place: (g) => w.lo + g, W }
+}
+
+/** Enter with a gap typed: the door dropped exactly that gap from the last door (or the corner) — one undo step; refused
+ *  with a notice when it would leave the wall or overlap a door. → the new door or null. */
+export function placeTypedDoor(store, newId, ft) {
+  const st = store.getState(), gs = st.gridSize || 40, spec = doorSpec(), L = liveGap(st.objects, gs), at = useDoorTool.getState().hover
+  useDoorTool.setState({ typed: null })
+  if (!L || !at || !spec || !(ft >= 0)) return null
+  const s0 = L.place(ft * gs)
+  if (s0 < L.w.lo - 0.5 || s0 + L.W > L.w.hi + 0.5) { notify('The door would pass the corner — not placed.'); return null }
+  if (doorsOnWall(st.objects, L.w, gs).some(o => { const [a, b] = spanOf(o); return s0 < b - 0.5 && s0 + L.W > a + 0.5 })) { notify('The door would overlap a door — not placed.'); return null }
+  const door = doorObject({ ...at, ...doorPlaced(L.d, L.w, s0, L.W, at.height) }, spec, newId)
+  st.addObject(door)
+  useDoorTool.setState({ anchorId: door.id })
   return door
 }

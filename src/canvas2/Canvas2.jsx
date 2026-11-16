@@ -29,7 +29,9 @@ import { DragBayBox, ChainHint } from './DragBay'
 import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, startRect, moveRect, commitRect, penClick, penMove, penDblClick, useSectionTool } from './sectionTool'
 import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
-import { DoorBar, DoorPreview } from './DoorBar'
+import { DoorBar, DoorPreview, DoorGapLive, useDoorGapKeys } from './DoorBar'
+import { DoorRowPreview, DoorRowBar } from './DoorRow'
+import { DOOR_ROW_TOOL, useDoorRow, rowWallAt, placeDoorRow, clearDoorRow } from '../utils/doorRowTool'
 import { DOOR_TOOL, hoverDoor, placeDoor, clearDoorHover } from '../utils/doorTool'
 import { SelectionBar, FloorMenu, openFloorMenu } from '../studio/SelectionBar'
 import { PlaceColumnGrid } from '../studio/PlaceColumnGrid'
@@ -53,6 +55,8 @@ import { publishView, useView } from './live'
 import { TallyFill, TallyHighlight } from './TallyHighlight'
 import { SectionLegend } from './SectionLegend'
 import { ColumnGridAnnot } from './ColumnGridAnnot'
+import { DoorAnnot } from './DoorAnnot'
+import { DoorGapEdit } from './DoorGapEdit'
 import { CrossAislePick } from './CrossAislePick'
 import { CrossAisleBandPreview, CrossAisleBar, liveBand } from './CrossAisleBand'
 import { CROSS_AISLE_TOOL, useCrossAisleTool, commitCut } from '../utils/crossAisleCut'
@@ -469,9 +473,40 @@ export function Canvas2() {
      stays on until Esc or its bar's ✕ */
   const dooring = !measuring && activeTool === DOOR_TOOL
   useEffect(() => { if (!dooring) clearDoorHover() }, [dooring])
+  useDoorGapKeys(dooring)   // a gap typed + Enter drops the next door exactly there (doors-edit round)
   const doorWorld = (e) => { const p = e.target.getStage()?.getPointerPosition(); return p ? screenToWorld(view.current, p) : null }
   const doorMouseMove = (e) => { const w = doorWorld(e); const st = useCanvasStore.getState(); if (w) hoverDoor(st.objects, w, st.gridSize || 40, view.current.zoom) }
   const doorMouseDown = (e) => { if (e.evt && e.evt.button !== 0) return; const w = doorWorld(e); if (w) { placeDoor(useCanvasStore, w, nanoid, view.current.zoom); hoverDoor(useCanvasStore.getState().objects, w, useCanvasStore.getState().gridSize || 40, view.current.zoom) } }
+
+  /* the Dock door row tool (doors-edit round, utils/doorRowTool.js): hovering a wall previews the row that fills it; a
+     press starts a span along that wall, a drag sizes it; the release places the row — one undo step (a press that never
+     moved: the whole wall). The tool stays on until Esc or its bar's ✕. */
+  const rowing = !measuring && activeTool === DOOR_ROW_TOOL
+  useEffect(() => { if (!rowing) clearDoorRow() }, [rowing])
+  const rowMouseMove = (e) => {
+    const w = doorWorld(e), st = useCanvasStore.getState(), d = useDoorRow.getState().drag
+    if (!w) return
+    if (d) { const p = d.w.axis === 'x' ? w.x : w.y; useDoorRow.setState({ drag: { ...d, p1: Math.max(d.w.lo, Math.min(d.w.hi, p)) } }); return }
+    useDoorRow.setState({ hover: rowWallAt(st.objects, w, st.gridSize || 40, 16 / view.current.zoom) })
+  }
+  const rowMouseDown = (e) => {
+    if (e.evt && e.evt.button !== 0) return
+    const h = useDoorRow.getState().hover
+    if (h) useDoorRow.setState({ drag: { w: h.w, p0: h.along, p1: h.along, ref: h.d } })
+  }
+  useEffect(() => {
+    if (!rowing) return
+    const up = () => {
+      const d = useDoorRow.getState().drag
+      if (!d) return
+      // a press that never moved (under 6 screen px): the whole wall
+      if (Math.abs(d.p1 - d.p0) * view.current.zoom < 6) useDoorRow.setState({ drag: { ...d, p1: d.p0 } })
+      placeDoorRow(useCanvasStore, nanoid)
+    }
+    const key = (e) => { if (e.key === 'Escape') { clearDoorRow(); useCanvasStore.getState().setActiveTool(HOME_TOOL) } }
+    window.addEventListener('mouseup', up); window.addEventListener('keydown', key)
+    return () => { window.removeEventListener('mouseup', up); window.removeEventListener('keydown', key) }
+  }, [rowing])
 
   /* the Section tool (sectionTool.js; STUDIO.md §7a Sections): Rectangle — a press starts the box, the release makes the
      section (one undo step) and the tool ends; Custom shape — each click a point, a double-click or a click on the first
@@ -494,15 +529,15 @@ export function Canvas2() {
   }
   const sectionMouseMove = (e) => { if (sectPen) { const w = sectWorld(e); if (w) penMove(w, useCanvasStore, view.current.zoom, !!e.evt?.shiftKey) } }
 
-  const modeMouseDown = measuring ? measureMouseDown : sectioning ? sectionMouseDown : filling ? fillMouseDown : xaisling ? xaisleMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
+  const modeMouseDown = measuring ? measureMouseDown : sectioning ? sectionMouseDown : filling ? fillMouseDown : xaisling ? xaisleMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : rowing ? rowMouseDown : onStageMouseDown
   // Space+drag or a middle drag pans in any tool (STUDIO.md §7a)
   const stageMouseDown = (e) => (isForcePan(e && e.evt) ? onStageMouseDown(e) : modeMouseDown(e))
   // the Row group's cursor: resize over a group row's handle, move over its body, crosshair over the floor (STUDIO.md §7a)
   const [groupCursor, setGroupCursor] = useState('crosshair')
   const groupMouseMove = (e) => { const c = groupCursorAt(e); if (c !== groupCursor) setGroupCursor(c) }
-  const stageMouseMove = measuring ? measureMouseMove : sectioning ? sectionMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : grouping ? groupMouseMove : filling ? fillHoverMove : xaisling ? xaisleHoverMove : onStageMouseMove
-  const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : dooring ? clearDoorHover : filling || grouping || xaisling ? undefined : onStageMouseLeave
-  const effectiveCursor = grouping ? groupCursor : measuring || filling || splitting || dooring || sectioning || xaisling ? 'crosshair' : cursor
+  const stageMouseMove = measuring ? measureMouseMove : sectioning ? sectionMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : rowing ? rowMouseMove : grouping ? groupMouseMove : filling ? fillHoverMove : xaisling ? xaisleHoverMove : onStageMouseMove
+  const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : dooring ? clearDoorHover : rowing ? () => { if (!useDoorRow.getState().drag) useDoorRow.setState({ hover: null }) } : filling || grouping || xaisling ? undefined : onStageMouseLeave
+  const effectiveCursor = grouping ? groupCursor : measuring || filling || splitting || dooring || rowing || sectioning || xaisling ? 'crosshair' : cursor
 
   return (
     <div
@@ -596,6 +631,8 @@ export function Canvas2() {
             <SectionLegend />
             {/* a selected column grid's gridlines, bubbles and dimension chains (ColumnGridAnnot.jsx — col-grid round) */}
             <ColumnGridAnnot />
+            {/* the doors' tags and a selected door's gap chain (doors-edit round) */}
+            <DoorAnnot />
             {/* the Row group: its rows outlined, a pending apply previewed (RowGroupPreview.jsx); a row being placed */}
             <RowGroupPreview />
             {/* the Split tool's cut line (SplitPreview.jsx) */}
@@ -604,6 +641,8 @@ export function Canvas2() {
             {xaisling && <CrossAisleBandPreview />}
             {/* Add door's preview on the hovered wall (DoorBar.jsx) */}
             {dooring && <DoorPreview />}
+            {dooring && <DoorGapLive />}
+            {rowing && <DoorRowPreview />}
             {/* Check layout: the clicked problem, until the next click (utils/layoutCheck.js) */}
             <IssueHighlight />
             {/* a picked cross-aisle, and where a drag takes it (utils/crossAisleTool.js) */}
@@ -638,12 +677,15 @@ export function Canvas2() {
       <CrossAisleBar />
       {filling && <FillOptionsBar />}
       {dooring && <DoorBar />}
+      {rowing && <DoorRowBar />}
       {sectioning && <SectionBar />}
       <SectionRename />
       {/* a building's wall dimension typed (FpDimEdit.jsx) */}
       <FpDimEdit />
       {/* a column grid's chain value typed (ColumnChainEdit.jsx) */}
       <ColumnChainEdit />
+      {/* a gap of a door's wall typed (DoorGapEdit.jsx) */}
+      <DoorGapEdit />
       {/* a gridline drag's bay, typed (DragBay.jsx); the chain's hover hint */}
       <DragBayBox />
       <ChainHint />

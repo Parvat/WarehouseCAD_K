@@ -49,7 +49,8 @@ describe('SC — parts', () => {
 describe('SC — the states', () => {
   it('SC-C1: a rack — "Double deep · row N", positions and usable, Bays · Beam · Depth · Flue, the elevation chip, the two switches, then its rack lines\' summary (summary round — was: the Layout totals)', () => {
     const c = read('studio/cards.jsx')
-    expect(c).toMatch(/<Head caption=\{`\$\{RACK_NAME\[obj\.type\] \|\| 'Rack'\}\$\{row\}`\}>\n\s+<BigFigure value=\{n\(total\)\} unit="positions" right=\{`\$\{n\(usable\)\} usable`\} \/>/)
+    // (doors-edit round: the padlock at the right of every card head)
+    expect(c).toMatch(/<Head caption=\{`\$\{RACK_NAME\[obj\.type\] \|\| 'Rack'\}\$\{row\}`\} right=\{<CardLock obj=\{obj\} \/>\}>\n\s+<BigFigure value=\{n\(total\)\} unit="positions" right=\{`\$\{n\(usable\)\} usable`\} \/>/)
     for (const k of ['label="Bays"', "'Beam'", 'label="Depth"', 'label="Flue"', '<ElevationChip />', 'label="Require pick both sides"', 'label="Show markings"']) expect([k, c.includes(k)]).toEqual([k, true])
     expect(read('components/RightPanel/PropertiesPanel.jsx')).toMatch(/\{obj\.activeBayIdx != null \? <BaySummary obj=\{obj\} \/> : <LineSummary obj=\{obj\} \/>\}/)
     expect(c).toMatch(/height: 26, padding: '0 8px', borderRadius: 6, background: C\.inset, fontSize: 12/)   // the elevation chip
@@ -65,7 +66,8 @@ describe('SC — the states', () => {
   })
   it('SC-C6: a zone — "Zone · kind", Name inline, Width / Length, the zone note; a typed size keeps the edge against a wall', () => {
     const c = read('studio/cards.jsx')
-    expect(c).toMatch(/<span style=\{\{ color: C\.muted, fontSize: 12 \}\}>Zone · \{kind\}<\/span>/)
+    // (doors-edit round: the padlock at the right of the head)
+    expect(c).toMatch(/<span style=\{\{ flex: 1, color: C\.muted, fontSize: 12 \}\}>Zone · \{kind\}<\/span><CardLock obj=\{obj\} \/>/)
     expect(c).toMatch(/<InlineField label="Name"><TextInput words aria="Zone name"/)
     expect(c).toMatch(/commitObjectUpdate\(obj\.id, zoneSized\(st\.objects, cur, \{ \[key\]: ft \* gridSize \}, \{ gridSize \}\)\)/)
     expect(c).toMatch(/<Hint>No racking is placed inside a zone\. Its edges count as walls\.<\/Hint>/)

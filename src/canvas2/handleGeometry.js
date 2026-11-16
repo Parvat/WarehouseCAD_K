@@ -41,10 +41,12 @@ const SUPPRESS_TC = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pushba
    zone is a plain rectangle — all eight. Neither rotates. */
 const EDGE_ONLY = new Set(['racking_area'])
 const isZoneType = (type) => typeof type === 'string' && type.startsWith('zone_')
+/* a door (doors-edit round): its two ends along its wall resize its width — no other handle, no rotate grip */
+const DOOR_TYPES = new Set(['struct_egress', 'struct_loading_dock', 'struct_drive_in'])
 
 /** Does a single selection of this type get resize handles in canvas2? */
 export function hasResizeHandles(type, rackTypes) {
-  return (rackTypes && rackTypes.has(type)) || EDGE_ONLY.has(type) || isZoneType(type) || type === 'section_area'
+  return (rackTypes && rackTypes.has(type)) || EDGE_ONLY.has(type) || isZoneType(type) || type === 'section_area' || DOOR_TYPES.has(type)
 }
 /** Does this object get them? A section drawn as a custom shape gets point handles instead (SectionShape.jsx). */
 export const objHasResizeHandles = (o, rackTypes) => !!o && hasResizeHandles(o.type, rackTypes) && !(o.type === 'section_area' && o.shape === 'poly')
@@ -52,13 +54,13 @@ export const objHasResizeHandles = (o, rackTypes) => !!o && hasResizeHandles(o.t
 export function enabledHandlesFor(type) {
   if (type === 'aisle') return []
   if (EDGE_ONLY.has(type)) return ['tc', 'bc', 'ml', 'mr']
-  if (ML_MR_ONLY.has(type)) return ['ml', 'mr']
+  if (ML_MR_ONLY.has(type) || DOOR_TYPES.has(type)) return ['ml', 'mr']
   if (SUPPRESS_TC.has(type)) return HANDLES.filter(h => h !== 'tc')
   return HANDLES.slice()
 }
 
 export function rotateEnabledFor(type) {
-  return type !== 'aisle' && !EDGE_ONLY.has(type) && !isZoneType(type) && type !== 'section_area'
+  return type !== 'aisle' && !EDGE_ONLY.has(type) && !isZoneType(type) && type !== 'section_area' && !DOOR_TYPES.has(type)
 }
 
 /** World point -> local (pre-rotation) point around the object's own bounds

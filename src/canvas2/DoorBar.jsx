@@ -1,9 +1,19 @@
 import { HOME_TOOL } from '../utils/homeTool'
-import { useState } from 'react'
+import { DOOR_ROW_TOOL } from '../utils/doorRowTool'
+import { useState, useEffect } from 'react'
+import { nanoid } from 'nanoid'
+import { useLiveObjects } from './live'
+import { textOwnsKey } from '../utils/typing'
+import { LabelOps } from './LabelOps'
+import { useLabelPrefs } from './labelPrefs'
+import { labelScale } from '../render/labelSize'
+import { gapOps } from '../render/doorAnnot'
+import { ftIn } from '../utils/bom'
+import { feetOf } from '../components/RightPanel/panels/ColumnGridPanel'
 import { Rect, Line } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
-import { useDoorTool, doorTypes, doorSpec, setDoorType, setDoorWidth, clearDoorHover } from '../utils/doorTool'
+import { useDoorTool, doorTypes, doorSpec, setDoorType, setDoorWidth, clearDoorHover, liveGap, placeTypedDoor } from '../utils/doorTool'
 import { B, MONO, modePill, Sep, Seg, CloseBtn, barBtn, btnClass } from '../studio/barParts'
 import { SELECT_BLUE, selectTint } from '../theme/tokens'
 
@@ -30,7 +40,9 @@ export function DoorBar() {
         onChange={e => setText(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setText(null); e.currentTarget.blur() } }} />
       <span style={word}>ft</span>
       <Sep />
-      <span data-mode-hint style={word}>Hover a wall · click to place · Esc ends</span>
+      <span data-mode-hint style={word}>Hover a wall · click to place · type a gap + Enter · Esc ends</span>
+      <Sep />
+      <button type="button" aria-label="Row of doors" title="Dock door row — a row of equal dock doors along a wall" onClick={() => { clearDoorHover(); useCanvasStore.getState().setActiveTool(DOOR_ROW_TOOL) }} className={btnClass(false)} style={barBtn(false)}>Row…</button>
       <Sep />
       <button type="button" aria-label="Done" title="Done (Esc)" onClick={close} className={btnClass(true)} style={barBtn(true)}>Done</button>
       <CloseBtn label="Close Add door" title="Done (Esc)" onClick={close} />
@@ -50,4 +62,42 @@ export function DoorPreview() {
       <Line points={at.line} stroke={SELECT_BLUE} strokeWidth={3} strokeScaleEnabled={false} listening={false} />
     </>
   )
+}
+
+/** The live gap while placing (doors-edit round; STUDIO.md, Doors): the preview's gap to the last door placed on its
+ *  wall (or the wall's low corner), drawn as the other gap labels are (render/doorAnnot.js gapOps — no box, no chip).
+ *  A number typed shows in its place with a thin text cursor; Enter drops the door exactly there; Esc ends the tool. */
+export function DoorGapLive() {
+  useDoorTool(s => s.hover)
+  const typed = useDoorTool(s => s.typed)
+  const objects = useLiveObjects(), gs = useCanvasStore(s => s.gridSize) || 40
+  const lz = labelScale(useLabelPrefs(s => s.labelSize), gs)
+  const L = liveGap(objects, gs)
+  if (!L || !(L.hi - L.lo > -0.5)) return null
+  const text = typed != null ? (typed || ' ') : ftIn((Math.max(0, L.hi - L.lo) / gs) * 12)
+  const { ops } = gapOps(L.w, L.lo, Math.max(L.lo, L.hi), text, lz, { cursor: typed != null })
+  return <LabelOps ops={typed != null ? ops.filter(o => !(o.op === 'line' && o.opacity === 0)) : ops} name="door-gap-live" fit={typed == null} />
+}
+
+/** The door tool's keys: a number typed (digits, ', ", a point, a space) goes into the live gap; Backspace takes one
+ *  off; Enter drops the door that far from the last door (or the corner); Esc ends the tool. */
+export function useDoorGapKeys(on) {
+  useEffect(() => {
+    if (!on) return
+    const key = (e) => {
+      if (textOwnsKey(e)) return                                   // a text being typed owns its keys (utils/typing.js)
+      const s = useDoorTool.getState()
+      if (/^[0-9.'"]$/.test(e.key) || (e.key === ' ' && s.typed != null)) { e.preventDefault(); e.stopPropagation(); useDoorTool.setState({ typed: (s.typed ?? '') + e.key }); return }
+      if (e.key === 'Backspace' && s.typed != null) { e.preventDefault(); e.stopPropagation(); useDoorTool.setState({ typed: s.typed.slice(0, -1) || null }); return }
+      if (e.key === 'Enter' && s.typed != null) {
+        e.preventDefault(); e.stopPropagation()
+        const ft = feetOf(s.typed)
+        placeTypedDoor(useCanvasStore, nanoid, ft)
+        return
+      }
+      if (e.key === 'Escape') { e.preventDefault(); useDoorTool.setState({ typed: null }); clearDoorHover(); useCanvasStore.getState().setActiveTool(HOME_TOOL) }
+    }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
+  }, [on])
 }

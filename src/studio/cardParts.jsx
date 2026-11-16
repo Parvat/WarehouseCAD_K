@@ -26,10 +26,14 @@ export const LEVEL = {
 }
 
 /** The card's top block (C1): the caption line, then whatever follows (the big figure). */
-export function Head({ caption, children, last }) {
+/** A card's head: its caption, its content. `right`: what sits at the right of the caption row — the object's padlock
+ *  (studio/CardLock.jsx; doors-edit round: every object type's card head has one). */
+export function Head({ caption, children, last, right }) {
   return (
     <div style={{ padding: '8px 16px 14px', display: 'flex', flexDirection: 'column', gap: 4, borderBottom: last ? 'none' : `1px solid ${C.divider}` }}>
-      {caption != null && <span style={{ color: C.muted, fontSize: 12 }}>{caption}</span>}
+      {right
+        ? <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 28 }}><span style={{ flex: 1, color: C.muted, fontSize: 12 }}>{caption}</span>{right}</div>
+        : caption != null && <span style={{ color: C.muted, fontSize: 12 }}>{caption}</span>}
       {children}
     </div>
   )

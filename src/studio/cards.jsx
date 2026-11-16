@@ -20,6 +20,7 @@ import { openSetup, nameOf } from '../utils/project'
 import { ZONE_KINDS } from '../generate/rackingArea'
 import { RowGroupNote } from '../canvas2/RowGroupBar'
 import { useLocked } from './useLocked'
+import { CardLock } from './CardLock'
 import { Head, BigFigure, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, Row, ToggleRow, Totals, Hint,
   Tag, CountChip, IconBtn, C, MONO, LEVEL, LockedFields } from './cardParts'
 
@@ -155,7 +156,7 @@ export function RackMain({ obj, newBeam, setNewBeam }) {
   const row = obj.rowIndex != null ? ` · row ${obj.rowIndex}` : ''
   return (
     <>
-      <Head caption={`${RACK_NAME[obj.type] || 'Rack'}${row}`}>
+      <Head caption={`${RACK_NAME[obj.type] || 'Rack'}${row}`} right={<CardLock obj={obj} />}>
         <BigFigure value={n(total)} unit="positions" right={`${n(usable)} usable`} />
       </Head>
       <RackFields obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} />
@@ -211,7 +212,7 @@ export function ZoneMain({ obj }) {
   }
   return (
     <div aria-label="Zone settings" style={{ padding: '8px 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <span style={{ color: C.muted, fontSize: 12 }}>Zone · {kind}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 28 }}><span style={{ flex: 1, color: C.muted, fontSize: 12 }}>Zone · {kind}</span><CardLock obj={obj} /></div>
       <LockedFields locked={locked}>
         <InlineField label="Name"><TextInput words aria="Zone name" value={obj.label || ''} onCommit={t => commitObjectUpdate(obj.id, { label: t })} /></InlineField>
         <Grid2>

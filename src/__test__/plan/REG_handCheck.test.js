@@ -6987,6 +6987,101 @@ describe('REG — the hand check by real clicks', () => {
       expect(small).toEqual([])
     }, 120000)
 
+
+    /* ── doors-edit round (STUDIO.md, Doors; mockup doors2.png) ── */
+    it('REG-doors-edit (click): placing — the door tool stays on, the next door\'s live gap to the last one shows as a gap label, a number typed + Enter drops it exactly there; D1 / M1 tags; a door selected — its card (Type, Width, Height, From left corner, Clear space, gaps), the gap chain along its wall, a gap clicked and typed, an end handle dragged; the Dock door row tool fills a wall with equal doors in one undo; the padlock in the card head locks it (not movable, fields greyed)', async () => {
+      await open()
+      const gs = await gs7(), fp = await fpOf(), wt = (fp.wallThicknessFt || 0.25) * gs
+      // (setup, one undo step) the floor emptied of racks, so a click on a door is the door's
+      await L.S('S.setState({ objects: S.getState().objects.filter(o => !/^rack_/.test(o.type) && o.type !== "aisle" && o.type !== "racking_area"), selectedIds: [] }); S.getState().commitObjectUpdate(arg, {})', fp.id); await L.page.waitForTimeout(200)
+      const doors = () => L.S('return import("/src/utils/doorWall.js").then(W => S.getState().objects.filter(o => /^struct_(egress|loading_dock|drive_in)$/.test(o.type)).map(o => ({ id: o.id, type: o.type, s: W.spanOf(o).map(v => Math.round(v * 1000) / 1000), locked: !!o.locked })))')
+      const top = (t) => ({ x: fp.x + fp.width * t, y: fp.y + wt * 0.5 })
+      // 1 · placing: the building by its top wall, Add door, Dock door, a click at 20 %
+      await L.click({ x: fp.x + fp.width * 0.3, y: fp.y })
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door' }).click(); await L.page.waitForTimeout(150)
+      const dbar = L.page.locator('[data-mode-bar="door"]')
+      await dbar.getByRole('button', { name: 'Dock Door', exact: true }).click()
+      let p = await L.toScreen(top(0.2)); await L.page.mouse.move(p.x, p.y); await L.page.waitForTimeout(120); await L.page.mouse.click(p.x, p.y); await L.page.waitForTimeout(200)
+      expect([(await doors()).length, await L.S('return S.getState().activeTool')]).toEqual([1, 'door'])            // the tool stays on
+      // the next door follows the mouse: its live gap to D1, as a gap label (no box); 12 typed shows in place; Enter drops it 12 ft on
+      p = await L.toScreen(top(0.4)); await L.page.mouse.move(p.x, p.y, { steps: 4 }); await L.page.waitForTimeout(200)
+      const liveText = () => L.page.evaluate(() => { const g = window.Konva.stages[0].findOne('.door-gap-live'); return g ? g.find('Text').map(t => t.text()).join('|') : null })
+      const rects = () => L.page.evaluate(() => { const g = window.Konva.stages[0].findOne('.door-gap-live'); return g ? g.find('Rect').length : -1 })
+      expect([(await liveText()) != null && /′/.test(await liveText()), await rects()]).toEqual([true, 0])
+      await L.page.keyboard.type('12'); await L.page.waitForTimeout(150)
+      expect(await liveText()).toBe('12')
+      await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(250)
+      let ds = await doors()
+      expect([ds.length, Math.round((ds[1].s[0] - ds[0].s[1]) / gs * 1000) / 1000]).toEqual([2, 12])
+      // a man door further on (a click)
+      await dbar.getByRole('button', { name: 'Man Door', exact: true }).click()
+      p = await L.toScreen(top(0.7)); await L.page.mouse.move(p.x, p.y); await L.page.waitForTimeout(120); await L.page.mouse.click(p.x, p.y); await L.page.waitForTimeout(200)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      expect(await L.S('return S.getState().activeTool')).not.toBe('door')
+      // 4 · tags: D1, D2 (dock), M1 (man), clockwise from the top-left corner
+      const tags = await L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-tag:/.test(n.name())).map(g => g.find('Text').map(t => t.text()).join('')).sort())
+      expect(tags).toEqual(['D1', 'D2', 'M1'])
+      // 2 · a door selected (D2, a click): its card and the gap chain along its wall
+      ds = await doors()
+      const d2 = ds.find(d => d.type === 'struct_loading_dock' && d.s[0] > ds[0].s[0] && d.id !== ds[0].id) || ds[1]
+      const mid = (d) => ({ x: (d.s[0] + d.s[1]) / 2, y: fp.y + wt + 2 * gs })
+      await L.click(mid(d2)); await L.page.waitForTimeout(250)
+      expect(await L.selected()).toEqual(['struct_loading_dock'])
+      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
+      for (const f of ['Door type', 'Door width', 'Door height', 'From left corner']) expect([f, await card.getByLabel(f, { exact: true }).count()]).toEqual([f, 1])
+      expect([await card.getByLabel('Door width', { exact: true }).inputValue(), await card.getByLabel('Clear space').textContent()]).toEqual(['9′', '13′ × 8′'])
+      expect(await card.locator('[data-door-gap="left"]').textContent()).toBe('12′')
+      const chain = () => L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-gap:/.test(n.name())).map(g => g.find('Text').map(t => t.text()).join('')))
+      expect((await chain()).includes('12′')).toBe(true)
+      // 3 · a gap clicked and typed: 15 — D2 and the door beyond it move on 3 ft, one undo step
+      const h0 = await hist7()
+      const v = await L.page.evaluate(() => { const g = window.Konva.stages[0].find(n => /^door-gap:/.test(n.name())).find(n => n.find('Text').some(t => t.text() === '12′')), r = g.find('Text')[0].getClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
+      const cv = await L.page.locator('#canvas2-container').boundingBox()
+      await L.page.mouse.click(cv.x + v.x, cv.y + v.y); await L.page.waitForTimeout(200)
+      const box = L.page.getByRole('textbox', { name: 'Door gap (ft)' })
+      await box.fill('15'); await box.press('Enter'); await L.page.waitForTimeout(250)
+      const ds3 = await doors(), D2 = ds3.find(d => d.id === d2.id), D1 = ds3.find(d => d.id === ds[0].id)
+      expect([Math.round((D2.s[0] - D1.s[1]) / gs * 1000) / 1000, (await hist7()) - h0]).toEqual([15, 1])
+      // 1 · its width typed in the card: 10 ft, its low end held; From left corner typed: 5 ft further on
+      if (!(await L.selected()).length) await L.click(mid(D2))
+      const wf = card.getByLabel('Door width', { exact: true }); await wf.fill('10'); await wf.press('Enter'); await L.page.waitForTimeout(200)
+      let d = (await doors()).find(q => q.id === d2.id)
+      expect([Math.round((d.s[1] - d.s[0]) / gs), Math.round(d.s[0])]).toEqual([10, Math.round(D2.s[0])])
+      const lo = await L.S('return import("/src/utils/doorWall.js").then(W => { const st = S.getState(); return W.doorWall(st.objects.find(o => o.id === arg), st.objects, st.gridSize || 40).lo })', d2.id)
+      const from0 = Math.round((d.s[0] - lo) / gs * 12) / 12, inch = Math.round(from0 * 12)
+      expect(await card.getByLabel('From left corner', { exact: true }).inputValue()).toBe(inch % 12 ? `${Math.floor(inch / 12)}′ ${inch % 12}″` : `${inch / 12}′`)
+      const ff = card.getByLabel('From left corner', { exact: true }); await ff.fill(String(from0 + 5)); await ff.press('Enter'); await L.page.waitForTimeout(200)
+      d = (await doors()).find(q => q.id === d2.id)
+      expect(Math.abs((d.s[0] - lo) / gs - (from0 + 5)) < 1 / 24).toBe(true)
+      // 1 · an end handle dragged: its right end 3 ft on, the left end held
+      const z = await L.S('return S.getState().zoom'), hy = await L.S('const o = S.getState().objects.find(q => q.id === arg); return o.y + o.height / 2', d2.id)
+      const hx = d.s[1] + 6 / z
+      await L.drag({ x: hx, y: hy }, { x: hx + 3 * gs, y: hy }); await L.page.waitForTimeout(250)
+      const dd = (await doors()).find(q => q.id === d2.id)
+      expect([Math.round((dd.s[1] - dd.s[0]) / gs), Math.round(dd.s[0])]).toEqual([13, Math.round(d.s[0])])
+      // 6 · the padlock in the card head: locked — a drag moves nothing, the fields greyed
+      await card.getByRole('button', { name: 'Lock' }).first().click(); await L.page.waitForTimeout(200)
+      expect((await doors()).find(q => q.id === d2.id).locked).toBe(true)
+      const before = (await doors()).find(q => q.id === d2.id).s
+      await L.drag(mid(dd), { x: mid(dd).x + 6 * gs, y: mid(dd).y }); await L.page.waitForTimeout(250)
+      expect((await doors()).find(q => q.id === d2.id).s).toEqual(before)
+      expect(await card.locator('fieldset[data-locked]').count()).toBeGreaterThan(0)
+      // 5 · the Dock door row tool: a click on the bottom wall fills it — equal doors, 12 ft apart, the leftover split evenly, one undo
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      await L.click({ x: fp.x + fp.width * 0.3, y: fp.y + fp.height })
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Dock door row' }).click(); await L.page.waitForTimeout(200)
+      expect(await L.page.locator('[data-mode-bar="door-row"]').count()).toBe(1)
+      const n0 = (await doors()).length, h1 = await hist7()
+      p = await L.toScreen({ x: fp.x + fp.width * 0.5, y: fp.y + fp.height - wt * 0.5 }); await L.page.mouse.move(p.x, p.y); await L.page.waitForTimeout(200)
+      const want = Number((await L.page.locator('[data-row-count]').textContent()).match(/\d+/)[0])
+      await L.page.mouse.down(); await L.page.mouse.up(); await L.page.waitForTimeout(300)
+      const row = (await doors()).slice(n0).sort((a, b) => a.s[0] - b.s[0])
+      const ends = await L.S('return import("/src/utils/doorWall.js").then(W => { const st = S.getState(); const w = W.doorWall(st.objects.find(o => o.id === arg), st.objects, st.gridSize || 40); return [w.lo, w.hi] })', row[0].id)
+      const gaps = row.slice(1).map((q, i) => Math.round((q.s[0] - row[i].s[1]) / gs * 1000) / 1000)
+      expect([row.length, want, new Set(gaps).size, gaps[0], Math.abs((row[0].s[0] - ends[0]) - (ends[1] - row[row.length - 1].s[1])) < 1, (await hist7()) - h1]).toEqual([want, want, 1, 12, true, 1])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+    }, 120000)
+
     it('REG-colgrid-L (click): an L-shaped building — no column is drawn in its open corner (outside the outline), the gridline stays (its bubble still shown); every wall gets its own size line', async () => {
       await open()
       const ob = await outlineBox()

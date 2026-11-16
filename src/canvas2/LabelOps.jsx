@@ -9,12 +9,12 @@ import { Group, Line, Rect, Text } from 'react-konva'
    lone text is a LABEL — under 11 px on screen it grows to 11 px about its centre, pill and text together; the lines
    (a dimension line, its ticks, an arrow) stay drawing-size. A label with a dimension line has that line's length as its
    room along it: a pill that would grow longer than the gap it measures hides instead. */
-export function LabelOps({ ops, name }) {
+export function LabelOps({ ops, name, fit: useFit = true }) {
   if (!ops || !ops.length) return null
   // the room: the longest line of the op list, along its own direction
   let fit = null
   for (const o of ops) {
-    if (o.op !== 'line' || !o.points || o.points.length < 4) continue
+    if (!useFit || o.op !== 'line' || !o.points || o.points.length < 4) continue
     const dx = Math.abs(o.points[2] - o.points[0]), dy = Math.abs(o.points[3] - o.points[1]), len = Math.hypot(dx, dy)
     if (!fit || len > fit.len) fit = { len, alongX: dx >= dy }
   }

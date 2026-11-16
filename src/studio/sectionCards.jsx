@@ -8,6 +8,7 @@ import { setSectionColor, setSectionBoundary, setSectionWallIn, sizeSection } fr
 import { parseFeet } from '../components/RightPanel/panels/RackingAreaPanel'
 import { useSectionHover } from '../canvas2/sectionTool'
 import { useLocked } from './useLocked'
+import { CardLock } from './CardLock'
 import { Head, Sec, Grid2, Field, TextInput, NumInput, StaticField, Caption, Seg, SelectField, C, MONO, LockedFields } from './cardParts'
 import { mheProfiles, equipmentOf, CUSTOM, customProfile } from '../utils/equipment'
 
@@ -39,7 +40,7 @@ export function SectionMain({ obj }) {
   const setCustom = (f) => (t) => { const v = parseFloat(String(t).replace(/[′'fts]+$/g, '')); if (!(v > 0)) return; useCanvasStore.getState().commitObjectUpdate(obj.id, { custom: { pickFt: cp.aisleFt, moveFt: cp.travelFt, [f]: v } }) }
   return (
     <>
-      <Head caption="Section" />
+      <Head caption="Section" right={<CardLock obj={obj} />} />
       <Sec aria-label="Section settings">
         <LockedFields locked={locked}>
           <Field label="Name"><TextInput words aria="Name" value={obj.label || ''} onCommit={commit} /></Field>

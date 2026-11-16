@@ -49,6 +49,8 @@ import { aisleLabelOps, aisleLabelBoxes, clearanceOps, clearanceSolids, blockedF
 import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
 import { sectionLegend } from '../utils/sectionLegend'
 import { columnAnnot, ANNOT } from '../render/columnAnnot'
+import { doorAnnotOps } from '../render/doorAnnot'
+import { doorFoot } from '../utils/doorWall'
 import { buildingDims, DIM_INK } from '../render/buildingDims'
 import { columnGridOps } from '../render/columnDraw'
 import { aisleLabelLayout, aisleGapShown, gapShown, gapBase } from '../canvas2/hitTest'
@@ -249,6 +251,15 @@ function opToSVG(o, lz) {
         `<polygon points="${a.head[0]},${a.head[1]} ${a.head[2]},${a.head[3]} ${a.head[4]},${a.head[5]}"/>`).join('') + `</g>`
   }
   return ''
+}
+
+/* ── The doors (doors-edit round): each door's footprint in its colour, then — always on the PDF — every door's tag (D1 …,
+   M1 …) and every door wall's gap chain (render/doorAnnot.js). */
+function doorsSVG(objects, gridSize, lz) {
+  const doors = objects.filter(isDoor)
+  if (!doors.length) return ''
+  const boxes = doors.map(d => { const f = doorFoot(d), c = d.stroke || '#6366f1'; return `<rect x="${f.x0}" y="${f.y0}" width="${f.x1 - f.x0}" height="${f.y1 - f.y0}" fill="${c}" fill-opacity="0.13" stroke="${c}" stroke-width="${1 / lz}"/>` })
+  return `<g data-doors="">${boxes.join('')}${doorAnnotOps(objects, gridSize, lz).map(labelOpToSVG).join('')}</g>`
 }
 
 /* ── One label op (render/labelOps.js) → an SVG element: the same ops the
@@ -510,6 +521,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     // the sections under everything else, as on the plan
     ...sections.map(o => sectionSVG(o, u, objects.filter(isDoor), gridSize)),
     ...zones.map(o => zoneSVG(o, gridSize)),
+    doorsSVG(objects.filter(usable), gridSize, keyLz),
     ...racks.map(o => rackSVG(o, gridSize, lz, elevTable)),
     /* labels and marks are worked out from the whole layout, as on the canvas
        (a hidden Columns layer still has columns); only their drawing is gated */

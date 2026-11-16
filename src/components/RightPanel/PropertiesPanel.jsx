@@ -26,6 +26,11 @@ import { useCrossAislePick } from '../../utils/crossAisleTool'
 import { TunnelCard } from '../../studio/tunnelCard'
 import { useTunnelPick } from '../../utils/tunnel'
 import { RackMain, RowGroupMain, ZoneMain, NothingSelected } from '../../studio/cards'
+import { DoorMain } from '../../studio/doorCard'
+import { DoorRowCard } from '../../studio/doorRowCard'
+import { DOOR_ROW_TOOL } from '../../utils/doorRowTool'
+import { CardLock } from '../../studio/CardLock'
+import { isDoor } from '../../utils/doorTool'
 import { LayoutSummary, SectionSummary, LineSummary, BaySummary, SelectionSummary, SummaryFold } from '../../studio/summaryCards'
 import { useRowGroup, groupRowsNow } from '../../utils/rowGroupTool'
 import { sizeUpdate, setBuildingSize } from '../../utils/buildingSize'
@@ -182,6 +187,10 @@ export function PropertiesPanel() {
   const [newBeam, setNewBeam] = useState(96)
   const crossPick = useCrossAislePick(s => s.pick)
   const tunnelPick = useTunnelPick(s => s.pick)
+  const rowTool = useCanvasStore(s => s.activeTool === DOOR_ROW_TOOL)
+
+  /* ── the Dock door row tool on: its card (doors-edit round; mockup doors2.png §3) ── */
+  if (rowTool) return <DoorRowCard />
 
   /* ── a cross-aisle picked (utils/crossAisleTool.js): its card ───────────── */
   if (!selected.length && crossPick) return <CrossAisleCard />
@@ -305,6 +314,19 @@ export function PropertiesPanel() {
     )
   }
 
+  /* a door (doors-edit round, studio/doorCard.jsx): Type, Width, Height, From left corner; its clear space and gaps */
+  if (isDoor(obj)) {
+    return (
+      <>
+        <DoorMain obj={obj} />
+        <More locked={locked}>
+          <ObjectActions obj={obj} />
+          <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
+        </More>
+      </>
+    )
+  }
+
   /* a column grid (colgrid mockup): its head, its blocks, then More */
   if (obj.type === 'column_grid') return (
     <>
@@ -321,7 +343,7 @@ export function PropertiesPanel() {
   const bayLabel = obj.activeBayIdx != null ? `Bay ${obj.activeBayIdx + 1}` : obj.activeTowerIdx != null ? `Tower ${obj.activeTowerIdx + 1}` : null
   return (
     <>
-      <Head caption={bayLabel ? `${typeName(obj)} · ${bayLabel}` : typeName(obj)} />
+      <Head caption={bayLabel ? `${typeName(obj)} · ${bayLabel}` : typeName(obj)} right={<CardLock obj={obj} />} />
       <LockedFields locked={locked}><MultiBayPanel /></LockedFields>
       <Sec>
         <LockedFields locked={locked}>

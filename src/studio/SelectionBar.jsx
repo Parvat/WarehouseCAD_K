@@ -27,6 +27,7 @@ import { SPLIT_TOOL } from '../utils/splitTool'
 import { FILL_TOOL, fillWholeSection } from '../utils/fillTool'
 import { notify } from '../utils/notice'
 import { DOOR_TOOL } from '../utils/doorTool'
+import { DOOR_ROW_TOOL } from '../utils/doorRowTool'
 import { endTool } from '../utils/toolSwitch'
 import { isPlainTool } from '../utils/homeTool'
 import { isBeamRack, typeById } from '../utils/elevations'
@@ -447,6 +448,7 @@ function BuildingBar({ obj }) {
       </div>
       <Sep />
       <button type="button" title="Add door — hover a wall, click to place (Esc ends)" onClick={tool(DOOR_TOOL)} style={toggleBtn(false)}>Add door</button>
+      <button type="button" title="Dock door row — drag along a wall, or click a wall to fill it (Esc ends)" onClick={tool(DOOR_ROW_TOOL)} style={toggleBtn(false)}>Dock door row</button>
       {/* the project's wall clearance — set in Project settings, which asks before it regenerates */}
       <button type="button" title="Wall clearance — Project settings" onClick={() => openSetup('settings')} style={toggleBtn(false)}>
         Wall clearance{clear != null && <span style={{ fontFamily: MONO, color: B.muted, marginLeft: 6 }}>{clear}″</span>}

@@ -9,6 +9,7 @@ import { useLiveObjects } from './live'
 import { gridBuilding } from '../utils/columnGrid'
 import { isAxisAligned, deviceScale, minDevicePx, snapBorderRects, snapFillRect } from '../render/pixelSnap'
 import { labelScale } from '../render/labelSize'
+import { isDoor } from '../utils/doorTool'
 
 const DEFAULT_LZ = labelScale()
 import { bayRectForIndex, positionRectForIndex } from '../render/bayGeom'
@@ -502,7 +503,8 @@ function FallbackShapeView({ obj, listening = false, bind }) {
     <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...spin(obj)}
       {...(bind ? bind(obj) : null)}>
       <Rect x={b.x} y={b.y} width={b.width} height={b.height} fill={fill} {...common} />
-      {b.width > 24 && b.height > 12 && (
+      {/* (doors-edit round) a door carries its number in its tag instead (DoorAnnot.jsx) */}
+      {!isDoor(obj) && b.width > 24 && b.height > 12 && (
         <Text x={b.x} y={b.y + b.height / 2 - 5} width={b.width} align="center"
           text={labelFor(obj.type)} fontSize={Math.min(11, b.height * 0.5)} minFit={{ w: b.width, h: b.height }}
           fontFamily="sans-serif" fill={stroke} opacity={0.75} listening={false} />
