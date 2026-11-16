@@ -7,9 +7,10 @@ import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
 import { useElevView, tintOn } from '../utils/elevationDraw'
 import { FILL_TOOL } from '../utils/fillTool'
 import { useAreaHover, areaShown } from './areaHover'
-import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape, RackingAreaShape, ZoneShape } from './shapes'
+import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape, RackingAreaShape, ZoneShape, DoorClearShape } from './shapes'
 import { SectionShape } from './SectionShape'
 import { isDoor } from '../utils/doorTool'
+import { doorClearRects } from '../utils/doorClear'
 
 /* ── STEP 2 · the scene ──────────────────────────────────────────────────────
    Everything in the store, drawn. One painter per object, chosen once, and no
@@ -103,7 +104,10 @@ function SceneView({ listening = false, bind, part = 'all' }) {
     }
     // the doors: a section's Fence or Wall is cut where one stands in its edge (utils/sectionAreas.js edgeRuns)
     const doors = sections.length ? objects.filter(isDoor) : []
-    return { floors, rest, columns, sections, doors }
+    // (fill-doors round) every door's clear space, dashed under the racks — the plan only (the PDF leaves them out)
+    const shownDoors = objects.filter(o => isDoor(o) && isVisible(o))
+    const doorClear = shownDoors.length ? doorClearRects(objects, gridSize).filter(c => shownDoors.some(d => d.id === c.doorId)) : []
+    return { floors, rest, columns, sections, doors, doorClear }
   }, [objects, gridSize, isVisible])
 
   const colEls = scene.columns.map(e => <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />)
@@ -114,6 +118,7 @@ function SceneView({ listening = false, bind, part = 'all' }) {
         <FloorPlanShape key={o.id} obj={o} gridSize={gridSize} listening={listening} bind={bind} />
       ))}
       {scene.sections.map(o => <SectionShape key={o.id} obj={o} selected={selectedIds.includes(o.id)} listening={listening} bind={bind} doors={scene.doors} gridSize={gridSize} />)}
+      {scene.doorClear.map((c, i) => <DoorClearShape key={c.doorId + ':' + i} rect={c} color={byId.get(c.doorId)?.stroke} />)}
       {scene.rest.map(e => {
         if (e.kind === 'rack') {
           return <RackShape key={e.obj.id} obj={e.obj} ops={e.ops} gridSize={gridSize} lz={lz} listening={listening} bind={bind}

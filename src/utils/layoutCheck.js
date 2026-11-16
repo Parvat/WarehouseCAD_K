@@ -62,6 +62,7 @@ import { closedZones, walkwayInNow } from './zoneCheck'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { equipmentResolver } from './equipment'
 import { rackLinesNow } from './rackLines'
+import { doorClearRects, DOOR_NAMES } from './doorClear'
 import { DEFAULT_FILL_SETTINGS } from '../generate/fillRacking'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -231,6 +232,7 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
   const floors = layoutFloors(objects)
   const hasBuilding = objects.some(o => FP.has(o.type))
   const zones = objects.filter(o => typeof o.type === 'string' && o.type.startsWith('zone_') && o.width > 0 && o.height > 0)
+  const doorClear = doorClearRects(objects, gridSize)
   const pairs = new Set()
   for (const r of racks) {
     const f = foot.get(r.id)
@@ -253,6 +255,18 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
     for (const z of zones) {
       const ov = { x: Math.max(f.x, z.x), y: Math.max(f.y, z.y), w: Math.min(f.x + f.w, z.x + z.width) - Math.max(f.x, z.x), h: Math.min(f.y + f.h, z.y + z.height) - Math.max(f.y, z.y) }
       if (ov.w > 0.01 && ov.h > 0.01) errors.push({ severity: 'error', kind: 'zone', ids: [r.id, z.id], box: union([f, { x: z.x, y: z.y, w: z.width, h: z.height }]), highlight: [shade(ov, HL.red)], text: `${name(r)}: inside the ${z.label || 'zone'} by ${len(Math.min(ov.w, ov.h))}` })
+    }
+    /* (fill-doors round) a rack inside a door's clear space (utils/doorClear.js) — Fill keeps them open; a layout made
+       before (or a rack moved there) is flagged, its racks kept */
+    const doorHit = new Set()
+    for (const c of doorClear) {
+      if (doorHit.has(c.doorId)) continue
+      const ov = { x: Math.max(f.x, c.x), y: Math.max(f.y, c.y), w: Math.min(f.x + f.w, c.x + c.w) - Math.max(f.x, c.x), h: Math.min(f.y + f.h, c.y + c.h) - Math.max(f.y, c.y) }
+      if (!(ov.w > 0.01 && ov.h > 0.01)) continue
+      doorHit.add(c.doorId)
+      const d = byId.get(c.doorId)
+      errors.push({ severity: 'error', kind: 'door', ids: [r.id, c.doorId], box: union([f, c]), highlight: [outline(c, HL.red), shade(ov, HL.red)],
+        text: `${name(r)}: in the ${(DOOR_NAMES[d?.type] || 'door').toLowerCase()}'s clear space by ${len(Math.min(ov.w, ov.h))}` })
     }
     const fp = r.parentId ? byId.get(r.parentId) : null
     if (iss.wallOutIn > 0) errors.push({ severity: 'error', kind: 'outside', ids: [r.id], box: boxOf(f), highlight: [outline(f, HL.red)], text: `${name(r)}: past the wall by ${len((iss.wallOutIn / 12) * gridSize)}` })
@@ -303,6 +317,24 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
       for (const o of into) { o.ids.forEach(id => g.ids.add(id)); g.boxes.push(...o.boxes); groups.splice(groups.indexOf(o), 1) }
       groups.push(g)
     }
+    /* (fill-doors round) a door splits a "no way in": the rows in front of it end at its clear space, so their aisles have a
+       way in there and the closed aisles either side read as two places — they stay ONE item, as before the door: two
+       groups with a door's clear space in the gap between them (across their shared span) are one */
+    const between = (A, B, c) => {
+      const ovY = Math.min(A.y + A.h, B.y + B.h) - Math.max(A.y, B.y), ovX = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x)
+      const [L, R] = A.x <= B.x ? [A, B] : [B, A], [T, U] = A.y <= B.y ? [A, B] : [B, A]
+      if (ovY > 0 && R.x >= L.x + L.w - 1) return c.x < R.x && c.x + c.w > L.x + L.w && c.y < Math.min(A.y + A.h, B.y + B.h) + c.h && c.y + c.h > Math.max(A.y, B.y) - c.h
+      if (ovX > 0 && U.y >= T.y + T.h - 1) return c.y < U.y && c.y + c.h > T.y + T.h && c.x < Math.min(A.x + A.w, B.x + B.w) + c.w && c.x + c.w > Math.max(A.x, B.x) - c.w
+      return false
+    }
+    for (let merged = true; merged && doorClear.length;) {
+      merged = false
+      for (let i = 0; i < groups.length && !merged; i++) for (let j = i + 1; j < groups.length && !merged; j++) {
+        const A = union(groups[i].boxes), B = union(groups[j].boxes)
+        if (!doorClear.some(c => between(A, B, c))) continue
+        groups[j].ids.forEach(id => groups[i].ids.add(id)); groups[i].boxes.push(...groups[j].boxes); groups.splice(j, 1); merged = true
+      }
+    }
     for (const g of groups) {
       if (zonesIn && [...g.ids].every(id => !closedAnyway.has(id))) {
         warnings.push({ severity: 'warning', kind: 'zone-no-way-in', ids: [...g.ids], box: union(g.boxes),
@@ -311,8 +343,12 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
       }
       // (xaisle-tool: named by the rack lines either side — "Aisles between R3–R8 have no way in. Add a cross aisle."; a click on
       // the item lights those aisles)
-      const nos = rackLinesNow(objects, gridSize).filter(l => l.ids.some(id => g.ids.has(id))).map(l => l.no).sort((p, q) => p - q)
-      const span = nos.length ? (nos.length > 1 ? `R${nos[0]}–R${nos[nos.length - 1]}` : `R${nos[0]}`) : null
+      const nos = [...new Set(rackLinesNow(objects, gridSize).filter(l => l.ids.some(id => g.ids.has(id))).map(l => l.no))].sort((p, q) => p - q)
+      // (fill-doors round) the aisles inside it, run by run — "R1–R5 and R12–R25" when a door split it; one run as before
+      const runs = []
+      for (const k of nos) { const last = runs[runs.length - 1]; if (last && k === last[1] + 1) last[1] = k; else runs.push([k, k]) }
+      const words = runs.map(([a, b]) => (a === b ? `R${a}` : `R${a}–R${b}`))
+      const span = !nos.length ? null : runs.length === 1 ? (nos.length > 1 ? `R${nos[0]}–R${nos[nos.length - 1]}` : `R${nos[0]}`) : words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1]
       errors.push({ severity: 'error', kind: 'no-way-in', ids: [...g.ids], box: union(g.boxes),
         highlight: g.boxes.map(b => shade(b, HL.red, 'No way in')),
         text: span ? `Aisles ${nos.length > 1 ? 'between' : 'beside'} ${span} have no way in. Add a cross aisle.` : 'Aisles here have no way in. Add a cross aisle.' })
@@ -405,7 +441,7 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }
 }
 
-const KIND_ORDER = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle', 'max-run']
+const KIND_ORDER = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'door', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle', 'max-run']
 function byKind(a, b) { return KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) }
 
 /* ── Mark as OK (aisle-equip): an item the user accepts stays listed, greyed, at the bottom, with Undo mark; it no longer

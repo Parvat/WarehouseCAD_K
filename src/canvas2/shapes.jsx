@@ -724,5 +724,14 @@ function ZoneShapeView({ obj, gridSize = 40, listening = false, bind }) {
   )
 }
 
+/** A door's clear space (fill-doors round, utils/doorClear.js): its outline dashed in the door's own colour, no fill,
+ *  screen-px edge — the plan only, never the PDF; never takes a press. */
+function DoorClearShapeView({ rect, color = '#64748b' }) {
+  if (!(rect.w > 0) || !(rect.h > 0)) return null
+  return <Rect name="door-clear" x={rect.x} y={rect.y} width={rect.w} height={rect.h} stroke={color} strokeWidth={1}
+    dash={[6, 4]} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={false} />
+}
+
 export const RackingAreaShape = memo(RackingAreaShapeView)
 export const ZoneShape = memo(ZoneShapeView)
+export const DoorClearShape = memo(DoorClearShapeView)

@@ -45,6 +45,7 @@ import { nanoid } from 'nanoid'
 import { wallRun, WALL_REACH_FT, wallLineFor } from './wallRun'
 import { WALL_CLEAR_IN } from './wallClear'
 import { typeById } from '../utils/elevations'
+import { doorClearRects } from '../utils/doorClear'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const EPS = 1e-6
@@ -489,6 +490,8 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
   const blockers = [
     ...objects.filter(o => isRack(o) && o.width > 0 && o.height > 0).map(o => { const f = rackFootprint(o); return grow(rsRect(vert, gridSize, { x: f.x, y: f.y, w: f.w, h: f.h }), aisleFt, alongOf(o)) }),
     ...objects.filter(isZone).map(o => rsRect(vert, gridSize, { x: o.x, y: o.y, w: o.width, h: o.height })),
+    // the doors' clear spaces (fill-doors round, utils/doorClear.js): a row breaks around one and carries on past it
+    ...doorClearRects(objects, gridSize).map(b => rsRect(vert, gridSize, b)),
     ...(endGap == null ? [] : sections).map(b => rsRect(vert, gridSize, b)),
     ...blocked.map(b => rsRect(vert, gridSize, b)),
   ].filter(q => q.r1 > box.r0 && q.r0 < box.r1 && q.s1 > box.s0 && q.s0 < box.s1)

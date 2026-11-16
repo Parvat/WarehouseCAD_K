@@ -2036,6 +2036,51 @@ describe('REG — the hand check by real clicks', () => {
       expect([(await racks()) > k0, await L.S('return S.getState().activeTool'), await bar.count()]).toEqual([true, 'pan', 0])
     }, T)
 
+    it('REG-fill-doors (click): a dock door and a man door on a long wall and on a short wall, by the door tool; a Fill over the whole building keeps every door\'s clear space open — the dock door\'s its width plus 2 ft each side, the travel width deep; the man door\'s plus 1 ft each side, 44 in deep — drawn dashed on the plan; Check has no door item, and a rack moved into a clear space is one', async () => {
+      await open()
+      // (setup, one undo step) the floor emptied of racks, so the fill covers the whole building
+      const fp = await fpOf(), gs = await gs7(), wt = (fp.wallThicknessFt || 0.25) * gs
+      await L.S('S.setState({ objects: S.getState().objects.filter(o => !/^rack_/.test(o.type) && o.type !== "aisle" && o.type !== "racking_area"), selectedIds: [] }); S.getState().commitObjectUpdate(arg, {})', fp.id); await L.page.waitForTimeout(200)
+      const horiz = fp.width >= fp.height
+      // the long wall: the top (a wide building) or the left; the short wall: the left or the top
+      const onWall = (wall, t) => (wall === 'top' ? { x: fp.x + fp.width * t, y: fp.y + wt * 0.5 } : { x: fp.x + wt * 0.5, y: fp.y + fp.height * t })
+      const long = horiz ? 'top' : 'left', short = horiz ? 'left' : 'top'
+      await L.click({ x: fp.x + fp.width * 0.3, y: fp.y })                                   // the building, by its top wall
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door' }).click(); await L.page.waitForTimeout(150)
+      const dbar = L.page.locator('[data-mode-bar="door"]')
+      for (const wall of [long, short]) {
+        for (const [name, t] of [['Dock Door', 1 / 3], ['Man Door', 2 / 3]]) {
+          await dbar.getByRole('button', { name }).click()
+          const p = await L.toScreen(onWall(wall, t))
+          await L.page.mouse.move(p.x, p.y); await L.page.waitForTimeout(120); await L.page.mouse.click(p.x, p.y); await L.page.waitForTimeout(200)
+        }
+      }
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      const doors = await L.S('return S.getState().objects.filter(o => /^struct_(egress|loading_dock)$/.test(o.type)).map(o => o.type)')
+      expect(doors.sort()).toEqual(['struct_egress', 'struct_egress', 'struct_loading_dock', 'struct_loading_dock'])
+      // the clear spaces: dock 13 ft × the travel width (reach: 8 ft), man 5 ft × 44 in; drawn dashed, one per door
+      const clear = () => L.S('return import("/src/utils/doorClear.js").then(D => D.doorClearRects(S.getState().objects, S.getState().gridSize || 40))')
+      const c0 = await clear()
+      expect(c0.map(c => [c.dock, Math.round(Math.max(c.w, c.h) / gs * 12), Math.round(Math.min(c.w, c.h) / gs * 12)]).sort()).toEqual([[false, 60, 44], [false, 60, 44], [true, 156, 96], [true, 156, 96]])
+      expect(await L.page.evaluate(() => window.Konva.stages[0].find('.door-clear').length)).toBe(4)
+      // a Fill over the whole building, by a real drag
+      await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+      const a = await L.toScreen(await L.floorPoint({ x: fp.x + fp.width * 0.04, y: fp.y + fp.height * 0.06 })), b = await L.toScreen({ x: fp.x + fp.width - wt - 2, y: fp.y + fp.height - wt - 2 })
+      await L.page.mouse.move(a.x, a.y); await L.page.mouse.down(); await L.page.mouse.move(b.x, b.y, { steps: 12 }); await L.page.mouse.up(); await L.page.waitForTimeout(600)
+      const inClear = () => L.S('return Promise.all([import("/src/utils/doorClear.js"), import("/src/generate/columnCheck.js")]).then(([D, C]) => { const st = S.getState(), cs = D.doorClearRects(st.objects, st.gridSize || 40); return st.objects.filter(o => /^rack_/.test(o.type)).filter(r => { const f = C.rackFootprint(r); return cs.some(c => f.x < c.x + c.w - 1e-6 && f.x + f.w > c.x + 1e-6 && f.y < c.y + c.h - 1e-6 && f.y + f.h > c.y + 1e-6) }).map(r => r.id) })')
+      const nRacks = await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).length')
+      expect([nRacks >= 4, await inClear()]).toEqual([true, []])
+      const checkKinds = () => L.S('return import("/src/utils/layoutCheck.js").then(K => K.checkLayout(S.getState().objects, { gridSize: S.getState().gridSize || 40 }).errors.map(e => e.kind))')
+      const k1 = await checkKinds()
+      expect([k1.filter(k => k === 'door').length, k1.filter(k => k === 'no-way-in').length <= 1]).toEqual([0, true])
+      // a rack moved into the long wall's dock door clear space (as an older layout has it): Check names it
+      const dockC = c0.find(c => c.dock && (horiz ? Math.abs(c.y - (fp.y + wt)) < 1 : Math.abs(c.x - (fp.x + wt)) < 1))
+      const moved = await L.S('const st = S.getState(), r = st.objects.find(o => o.type === "rack_row" || o.type === "rack_double_row"); st.updateObject(r.id, { x: arg.x + arg.w / 2 - r.width / 2, y: arg.y + arg.h / 2 - r.height / 2, rotation: 0 }); st.commitObjectUpdate(r.id, {}); return r.id', dockC); await L.page.waitForTimeout(250)
+      // one item per door whose clear space it stands in (a long rack can reach the man door's too), each naming it
+      const doorItems = await L.S('return import("/src/utils/layoutCheck.js").then(K => K.checkLayout(S.getState().objects, { gridSize: S.getState().gridSize || 40 }).errors.filter(e => e.kind === "door").map(e => ({ rack: e.ids[0], door: e.ids[1], text: e.text })))')
+      expect([doorItems.length >= 1, doorItems.every(e => e.rack === moved && /clear space/.test(e.text)), doorItems.some(e => e.door === dockC.doorId)]).toEqual([true, true, true])
+    }, T)
+
     it('REG-select-all-delete (click): Ctrl+A selects everything, the building included (a lock Generate set skips nothing); Delete then clears the canvas — one undo step, a notice with Undo; one Ctrl+Z restores everything', async () => {
       await open()
       const all = () => L.S('return JSON.stringify(S.getState().objects)')
