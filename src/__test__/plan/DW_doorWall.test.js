@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { innerOutline } from '../../utils/floorGeom'
 import { doorAt, doorObject, doorTypes } from '../../utils/doorTool'
-import { doorWall, spanOf, wallGaps, neighbourGaps, gapEdit, doorNumbers, doorPlaced, widthEdit, chainStops } from '../../utils/doorWall'
+import { doorWall, spanOf, wallGaps, neighbourGaps, gapEdit, doorNumbers, doorPlaced, widthEdit, chainStops, wallKey } from '../../utils/doorWall'
 import { doorDrawing, shade } from '../../render/doorAnnot'
 import { AISLE_LABEL_FONT_PX } from '../../canvas2/hitTest'
 import { dimChain } from '../../render/dimChain'
@@ -86,29 +86,30 @@ describe('DW — doors on their walls', () => {
     expect(D.labels.filter(l => l.kind !== 'badge').every(l => l.ops.find(o => o.op === 'text').fontSize === AISLE_LABEL_FONT_PX)).toBe(true)
     const mg = circ.r * 0.5
     expect([circ.x + circ.r <= box.x + box.w - mg, circ.x > box.x + box.w / 2, circ.y + circ.r <= box.y + box.h - mg, circ.y > box.y + box.h / 2]).toEqual([true, true, true, true])
-    // (doors-real) the width's line about 1 ft past the bar; the badge clear of the line and the value — every door
-    for (const d of doors) {
-      const wl = D.labels.find(l => l.kind === 'width' && l.id === d.id), bl = D.labels.find(l => l.kind === 'badge' && l.id === d.id)
-      if (!wl || !bl) continue
-      const ln = wl.ops.find(o => o.op === 'line'), br = D.bars.find(b => b.id === d.id), wd = doorWall(d, objs, GS)
-      const lineAt = wd.axis === 'x' ? ln.points[1] : ln.points[0], barIn = wd.axis === 'x' ? (wd.inward > 0 ? br.y + br.h : br.y) : (wd.inward > 0 ? br.x + br.w : br.x)
-      expect(Math.abs(lineAt - barIn)).toBeCloseTo(GS, 6)
-      const ext = wl.ops.filter(o => o.op === 'line').flatMap(o => [o.points]).reduce((r, p) => ({ x0: Math.min(r.x0, p[0], p[2]), y0: Math.min(r.y0, p[1], p[3]), x1: Math.max(r.x1, p[0], p[2]), y1: Math.max(r.y1, p[1], p[3]) }), { x0: wl.box.x, y0: wl.box.y, x1: wl.box.x + wl.box.w, y1: wl.box.y + wl.box.h })
-      const b = bl.box, apart = b.x >= ext.x1 || b.x + b.w <= ext.x0 || b.y >= ext.y1 || b.y + b.h <= ext.y0
-      expect(apart).toBe(true)
-    }
-    // the widths bold on a line inside the box; the gaps regular, no line; all inside the building (below the top wall)
-    const vals = D.labels.filter(l => l.wallKey && l.stop && l.w.edge === w.edge && l.w.axis === 'x' && l.w.inward === 1).sort((p, q) => p.at.x - q.at.x)
-    // (labels-cover) every gap — the last door to the far corner too
+    // (chain.png) ONE chain per wall, just above the door bars (1 ft past them): corner, gap, door width … far corner — a tick
+    // at every door edge and both corners; each value centred on its own segment (on the line, or lifted straight up on a
+    // short leader — never sideways); widths bold in the door's colour, gaps regular in the dimension blue
+    const ch = D.chains.find(c => c.wallKey === wallKey(w)), br0 = D.bars.find(b => b.id === top[0].id), lineY = br0.y + br0.h + GS
+    const ticks = ch.ops.filter(o => o.points[0] === o.points[2]).map(o => o.points[0]).sort((a, b) => a - b)
+    const edges = [w.lo, w.hi, ...top.flatMap(d => spanOf(d))].sort((a, b) => a - b)
+    expect([ticks.length, ticks.every((v, i) => Math.abs(v - edges[i]) < 1e-6), ch.ops.filter(o => o.points[1] === o.points[3]).every(o => Math.abs(o.points[1] - lineY) < 1e-6)]).toEqual([edges.length, true, true])
+    const vals = D.labels.filter(l => l.wallKey === wallKey(w) && l.stop).sort((p, q) => p.at.x - q.at.x)
     expect(vals.map(l => (l.kind === 'width' ? 'W' : 'g')).join('')).toEqual('gWgWgWg')
     const endGap = wallGaps(objs, w, { gs: GS, withEnd: true }).pop()
     expect(vals.map(l => l.ops.find(o => o.op === 'text').text)).toEqual(['20′', '9′', '21′', '9′', '21′', '3′', ftInOf(endGap.hi - endGap.lo)])
-    expect(vals.every(l => l.box.y > w.at)).toBe(true)
-    for (const l of vals.filter(q => q.kind === 'width')) {
-      const bx = D.boxes.find(b => b.id === l.id), lines = l.ops.filter(o => o.op === 'line')
-      expect([l.ops.find(o => o.op === 'text').fontStyle, lines.every(o => o.points.every((v, i) => (i % 2 ? v >= bx.y && v <= bx.y + bx.h : v >= bx.x && v <= bx.x + bx.w)))]).toEqual(['700', true])
+    for (const l of vals) {
+      const t = l.ops.find(o => o.op === 'text'), lead = l.ops.find(o => o.op === 'line'), m = (l.stop.lo + l.stop.hi) / 2
+      expect([l.kind, Math.abs(l.at.x - m) < 1e-6, lead ? lead.points[0] === m && lead.points[2] === m && lead.points[1] === lineY : Math.abs(l.at.y - lineY) < 1e-6, t.fontStyle, t.fill])
+        .toEqual([l.kind, true, true, l.kind === 'width' ? '700' : '400', l.kind === 'width' ? top.find(d => d.id === l.id).stroke || '#6366f1' : t.fill])
     }
-    expect(vals.filter(l => l.kind === 'gap').every(l => l.ops.length === 1 && l.ops[0].fontStyle === '400')).toBe(true)
+    // (labels larger — zoomed out: the 3 ft man door's value wider than its segment — lifted straight up, above the boxes, on
+    // a leader from the line; the others stay on their segments)
+    const Z1 = doorDrawing(objs, GS, 0.1), zv = Z1.labels.filter(l => l.wallKey === wallKey(w) && l.stop)
+    const lifted = zv.filter(l => l.ops.some(o => o.op === 'line'))
+    expect(lifted.map(l => l.ops.find(o => o.op === 'text').text)).toEqual(['3′'])
+    expect(lifted.every(l => l.box.y > Math.max(...Z1.boxes.filter(b => top.some(d => d.id === b.id)).map(b => b.y + b.h)) && Math.abs(l.at.x - (l.stop.lo + l.stop.hi) / 2) < 1e-6)).toBe(true)
+    // the badge clear of the chain: below its line's ticks
+    expect(D.labels.filter(l => l.kind === 'badge' && top.some(d => d.id === l.id)).every(l => l.box.y > lineY + AISLE_LABEL_FONT_PX * 0.4)).toBe(true)
     // nothing outside any wall: every label inside the building
     const inner = { x0: X0, y0: Y0, x1: X1, y1: Y1 }
     expect(D.labels.every(l => l.box.x >= inner.x0 - 1e-6 && l.box.x + l.box.w <= inner.x1 + 1e-6 && l.box.y >= inner.y0 - 1e-6 && l.box.y + l.box.h <= inner.y1 + 1e-6)).toBe(true)
@@ -119,13 +120,10 @@ describe('DW — doors on their walls', () => {
       const over = bx.some((p, i) => bx.some((q, j) => j > i && p.x < q.x + q.w - 1e-6 && q.x < p.x + p.w - 1e-6 && p.y < q.y + q.h - 1e-6 && q.y < p.y + p.h - 1e-6))
       const out = Z.labels.some(l => l.box.x < X0 - 1e-6 || l.box.x + l.box.w > X1 + 1e-6 || l.box.y < Y0 - 1e-6 || l.box.y + l.box.h > Y1 + 1e-6)
       expect([lz, over, out]).toEqual([lz, false, false])
-      // (labels-cover) every gap labelled while its wall has another label — a narrow one above it, never left out; the
-      // badges of a wall all at the same place on their boxes; none bigger than its box
+      // (chain.png) every gap on the chain, every zoom — on its segment or lifted straight up, never left out
       for (const wd of [...new Set(doors.map(d => doorWall(d, objs, GS)))]) {
-        const wk = (l) => l.wallKey && l.w && l.w.axis === wd.axis && l.w.inward === wd.inward && Math.abs(l.w.at - wd.at) < 1e-6
-        const others = Z.labels.filter(l => (l.kind === 'width' && wk(l)) || (l.kind === 'badge' && doorWall(doors.find(d => d.id === l.id), objs, GS).edge === wd.edge && doorWall(doors.find(d => d.id === l.id), objs, GS).axis === wd.axis))
         const want = wallGaps(objs, wd, { gs: GS, withEnd: true }).filter(g => g.hi - g.lo > 0.5).length
-        expect([lz, wd.edge, Z.labels.filter(l => l.kind === 'gap' && wk(l)).length]).toEqual([lz, wd.edge, others.length ? want : 0])
+        expect([lz, wd.edge, Z.labels.filter(l => l.kind === 'gap' && l.wallKey === wallKey(wd)).length]).toEqual([lz, wd.edge, want])
       }
       // (the two docks; the man door's 44 in box, zoomed out, puts its badge past its width value — never over it)
       const top3 = Z.labels.filter(l => l.kind === 'badge' && doors.slice(0, 2).some(d => d.id === l.id))

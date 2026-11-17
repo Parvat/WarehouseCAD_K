@@ -1,10 +1,10 @@
-// DoorAnnot.jsx — the doors on the plan (doors-edit; STUDIO.md, Doors; mockup doors5.png — render/doorAnnot.js lays it out,
-// the PDF draws the same): each door a thin bar on its wall at true width, its number in a round badge in its clear space's
-// corner, its width on a short dimension line inside the box, the gaps as plain text between the boxes — nothing outside
-// the wall. Every label is the aisle width labels' size and follows Rule 8 as they do (doors-aisle round): laid out at
-// the size it is drawn (floorUnit — 11 px on screen at least), so it shows wherever the aisle labels do and never overlaps;
-// one that no longer fits its box or gap at that size is not drawn, and returns as you zoom in. Never grouped. A click on a width or a gap types it
-// (DoorGapEdit.jsx). The dashed clear-space boxes are the Scene's (shapes.jsx DoorClearShape).
+// DoorAnnot.jsx — the doors on the plan (doors-edit; STUDIO.md, Doors; mockups doors5.png, chain.png — render/doorAnnot.js
+// lays it out, the PDF draws the same): each door a thin bar on its wall at true width, its number in a round badge at its
+// clear space's top-right corner, and ONE dimension chain per wall just above the bars — corner, gap, door width … far
+// corner — each value on its own segment (a value too wide for it lifted straight up on a leader). Nothing outside the
+// wall. The values are the aisle width labels' size, laid out at the size drawn (floorUnit — Rule 8). A click on a value
+// types it (DoorGapEdit.jsx); the chain follows a door while it is dragged (live objects). The dashed clear-space boxes are
+// the Scene's (shapes.jsx DoorClearShape).
 
 import { useMemo } from 'react'
 import { Group, Rect, Line, Text, Circle } from 'react-konva'
@@ -69,6 +69,12 @@ export function DoorAnnot() {
     <Group name="door-annot" listening={false}>
       {D.bars.map(b => <Rect key={b.id} name={'door-bar:' + b.id} x={b.x} y={b.y} width={b.w} height={b.h} fill={b.fill} stroke={b.stroke} strokeWidth={1}
         strokeScaleEnabled={false} perfectDrawEnabled={false} listening={false} />)}
+      {/* the chain along each wall (chain.png): its line, broken round its values, and its ticks — drawing size */}
+      {D.chains.map(c => (
+        <Group key={'c:' + c.wallKey} name={'door-chain:' + c.wallKey} listening={false}>
+          {c.ops.map((o, i) => <Line key={i} points={o.points} stroke={o.stroke} strokeWidth={o.strokeWidth} perfectDrawEnabled={false} listening={false} />)}
+        </Group>
+      ))}
       {D.labels.map(l => <DoorLabel key={l.key} l={l} grown={l.fs > (l.kind === 'badge' ? BADGE_K : 1) * DOOR_FS / base + 1e-6} />)}
     </Group>
   )

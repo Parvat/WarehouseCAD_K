@@ -7124,13 +7124,14 @@ describe('REG — the hand check by real clicks', () => {
       const wantGaps = await L.S('return import("/src/utils/doorWall.js").then(W => { const st = S.getState(), gs = st.gridSize || 40, ds = st.objects.filter(o => /^struct_/.test(o.type)); const ws = new Map(); for (const d of ds) { const w = W.doorWall(d, st.objects, gs); if (w) ws.set(W.wallKey(w), w) } return [...ws.values()].reduce((n, w) => n + W.wallGaps(st.objects, w, { gs, withEnd: true }).filter(g => g.hi - g.lo > 0.5).length, 0) })')
       const g0 = await gapTexts()
       expect([g0.length, g0.every(Boolean)]).toEqual([wantGaps, true])
-      const dk = await L.S('const st = S.getState(), d = st.objects.filter(o => o.type === "struct_loading_dock").sort((p, q) => p.x - q.x).pop(); return { x: d.x + d.width / 2, y: d.y + d.height * 0.06, id: d.id, x0: d.x }')
-      // (the last dock, toward the man door's open floor; pressed by the wall — its width value, further in, would open the value's
-      // edit box)
+      // (moved at 30 % on the door wall — at Fit a close row's width values fill its doors, and a press there types the value)
+      await zoomTo(0.3, true)
+      const dk = await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), cx = fp.x + fp.width * 0.35, d = st.objects.filter(o => o.type === "struct_loading_dock").sort((p, q) => Math.abs(p.x + p.width / 2 - cx) - Math.abs(q.x + q.width / 2 - cx))[0]; return { x: d.x + d.width * 0.3, y: d.y + d.height * 0.8, id: d.id, x0: d.x }')
+      // (a dock pressed deep in its box — the chain's values, by the wall, would open the value's edit box; its badge is at its right corner)
       const cvb = await L.page.locator('#canvas2-container').boundingBox(), ds0 = await L.toScreen(dk)
       await L.page.mouse.click(ds0.x, ds0.y); await L.page.waitForTimeout(200)
       await L.page.mouse.move(ds0.x, ds0.y); await L.page.mouse.down()
-      for (let k = 1; k <= 6; k++) { await L.page.mouse.move(ds0.x + k * 2, ds0.y); await L.page.waitForTimeout(40) }
+      for (let k = 1; k <= 4; k++) { await L.page.mouse.move(ds0.x + k * 2, ds0.y); await L.page.waitForTimeout(40) }
       await L.page.waitForTimeout(200)
       const gMid = await gapTexts()
       await L.page.mouse.up(); await L.page.waitForTimeout(200)
@@ -7147,8 +7148,9 @@ describe('REG — the hand check by real clicks', () => {
         return st.find(n => /^door-badge:/.test(n.name())).map(b => {
           const id = b.name().slice('door-badge:b:'.length), w = st.findOne(n => n.name() === 'door-width:w:' + id)
           if (!drawn(b) || !drawn(w)) return null
-          const p = rect(b), q = rect(w)
-          return { id, hit: p.x < q.x + q.width && q.x < p.x + p.width && p.y < q.y + q.height && q.y < p.y + p.height }
+          // (each drawn shape of the width — its text, the leader of a lifted value — not the box round them all)
+          const p = rect(b)
+          return { id, hit: w.find('Shape').some(sh => { const q = sh.getClientRect({ skipShadow: true, skipStroke: true }); return p.x < q.x + q.width && q.x < p.x + p.width && p.y < q.y + q.height && q.y < p.y + p.height }) }
         }).filter(Boolean)
       })
       const overlapsAt = []
@@ -7249,7 +7251,8 @@ describe('REG — the hand check by real clicks', () => {
       // (labels-cover: every gap — the last door to the far corner too)
       expect([ch.map(c => c.text).includes('12′'), ch.every(c => c.top > innerY), ch.map(c => c.bold ? 'W' : 'g').join('')]).toEqual([true, true, 'gWgWgWg'])
       expect(ch.filter(c => c.bold).map(c => c.text)).toEqual(['9′', '9′', '3′'])
-      expect(await L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-(chain|tag):/.test(n.name())).length)).toBe(0)
+      // (chain.png) ONE chain per wall with doors — the top wall's here, its values on it; no tag on a door
+      expect(await L.page.evaluate(() => [window.Konva.stages[0].find(n => /^door-chain:/.test(n.name())).length, window.Konva.stages[0].find(n => /^door-tag:/.test(n.name())).length])).toEqual([1, 0])
       // 3 · a gap clicked and typed: 15 — D2 and the door beyond it move on 3 ft, one undo step
       const h0 = await hist7()
       const v = (await chain()).find(c => c.text === '12′')

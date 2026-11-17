@@ -54,8 +54,9 @@ This file holds the rules; `CODEBASE.md` holds the map.
    the gaps — are the **same drawing size as the aisle width labels** and follow the rules above as they do, so they show
    wherever the aisle labels show: laid out at the size drawn (`floorUnit`), never overlapping, never in ranges; a width
    or a badge bigger than its door's box hides and returns when zooming in. The badge's number is 0.8 of the width text
-   (never under 11 px), its circle snug; every gap shows (corner to first door, door to door, last door to far corner) —
-   one too narrow for its text sits just above it. Nothing for doors is drawn outside the wall.
+   (never under 11 px), its circle snug. The widths and gaps are ONE dimension chain per wall (chain.png): just above the
+   door bars, corner, gap, door width … far corner, a tick at every stop; each value on its own segment, and only one too
+   wide for it lifts straight up on a short leader, above the boxes — never sideways. Nothing for doors outside the wall.
    REG-canvas-text-min measures every canvas text on the 4 fixtures at Fit, 50% and 200% (and on a wall of eleven docks),
    fails on any text under 11 px, any two labels over each other, any clipped label, any grown label over an object (or
    bigger than its own), and any object whose drawn size does not scale with the zoom. The PDF is not affected.
