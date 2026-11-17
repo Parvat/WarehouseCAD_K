@@ -36,6 +36,7 @@
 // Skipped only: uprights that don't line up (and a rack only partly inside a dragged stretch, which would
 // have to be split).
 
+import { BEAM_TYPES } from './rackTypes'
 import { rackFootprint, MHE_PROFILES } from '../generate/columnCheck'
 import { checkLayout } from './layoutCheck'
 import { usableCapacity } from '../generate/usableCapacity'
@@ -47,7 +48,7 @@ import { rackDepthAt } from './rackDepth'
 import { carryElev, withElev, ELEV_FIELDS, typeIdAt, typeMap, compressElev, syncLevels, paintRack, sidesOf } from './elevations'
 import { isEmptySide, withEmpty, EMPTY_FIELD } from './bayEmpty'
 
-export const BEAM = new Set(['rack_row', 'rack_double_row'])
+export const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 export const UP_TOL_FT = 0.5 / 12                          // uprights line up within ½"
 const EPS = 1e-6
 const norm = (r) => ((((r || 0) % 360) + 360) % 360)

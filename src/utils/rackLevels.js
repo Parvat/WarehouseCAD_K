@@ -1,3 +1,4 @@
+import { BEAM_TYPES } from './rackTypes'
 // rackLevels.js — every beam rack has a number of levels.
 //
 // Capacity (utils/capacity.js), the column check (generate/columnCheck.js)
@@ -10,8 +11,7 @@
 // levels value keeps it (a pasted or duplicated rack keeps its source's).
 
 export const DEFAULT_LEVELS = 4              // the same as a generated rack
-export const LEVEL_TYPES = new Set(['rack_row', 'rack_double_row'])
-
+export const LEVEL_TYPES = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const hasLevels = (o) => Number.isFinite(o.levels) && o.levels > 0
 
 /** Does `o` need a levels value? */

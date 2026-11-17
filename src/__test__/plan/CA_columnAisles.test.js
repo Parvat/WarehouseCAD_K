@@ -279,11 +279,12 @@ describe.each([['vertical', true, 'medium'], ['horizontal', false, 60]])('CA-lab
 })
 
 describe('CA-graph', () => {
-  it('CA-graph: one pairing module, no two files importing each other — rowAisles.js imports only rackFootprint.js and syncSections.js; the aisle labels, Check layout, the column check and Generate import it; rackFootprint.js imports nothing; bayLedger.js and capacity.js share palletFit.js (which imports nothing) and bayLedger.js does not import capacity.js', () => {
+  it('CA-graph: one pairing module, no two files importing each other — rowAisles.js imports only rackFootprint.js, syncSections.js and the rack type registry (R1 — rackTypes.js, which imports nothing); the aisle labels, Check layout, the column check and Generate import it; rackFootprint.js imports nothing; bayLedger.js and capacity.js share palletFit.js (which imports nothing) and bayLedger.js does not import capacity.js', () => {
     const imports = (f) => [...readFileSync(f, 'utf8').matchAll(/^\s*import\s[^'"]*from\s+['"]([^'"]+)['"]/gm)].map(m => m[1])
-    expect(imports('src/generate/rowAisles.js').sort()).toEqual(['../utils/syncSections', './rackFootprint'])
+    expect(imports('src/generate/rowAisles.js').sort()).toEqual(['../utils/rackTypes', '../utils/syncSections', './rackFootprint'])
+    expect(imports('src/utils/rackTypes.js')).toEqual([])
     expect(imports('src/generate/rackFootprint.js')).toEqual([])
-    expect(imports('src/utils/syncSections.js')).toEqual(['../generate/rackFootprint'])
+    expect(imports('src/utils/syncSections.js').sort()).toEqual(['../generate/rackFootprint', './rackTypes'])
     expect(imports('src/generate/columnCheck.js')).toContain('./rowAisles')
     expect(imports('src/utils/aisleRebuild.js')).toContain('../generate/rowAisles')
     expect(imports('src/utils/layoutCheck.js')).toContain('../generate/rowAisles')

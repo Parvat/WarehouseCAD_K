@@ -16,6 +16,7 @@
 // positionsLost, level, kind: 'narrow-aisle', cause, width }] — `cause`: { kind: 'zone', zone } | { kind: 'wall' } |
 // { kind: 'rack', otherId }, `width`: the clear floor in front (px). Pure.
 
+import { BEAM_TYPES } from '../utils/rackTypes'
 import { rackFootprint, rowAisleLevel, MHE_PROFILES } from './columnCheck'
 import { rowAisleGaps } from './rowAisles'
 import { faceObstacleGaps, positionRunSpans, faceIndex } from './faceAisles'
@@ -24,8 +25,7 @@ import { isEmptySide } from '../utils/bayEmpty'
 import { equipmentResolver } from '../utils/equipment'
 
 const E = 1e-6
-const BEAM = new Set(['rack_row', 'rack_double_row'])
-
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 /* Each rack is held to its own aisle equipment (utils/equipment.js — its section's, else the project's forklift
    `profile`): with every rack on `profile` this is one pass; otherwise one pass per equipment in use, each block kept
    from the pass of the equipment that governs it (its rack's, and across a rack-to-rack aisle the stricter of the two). */

@@ -27,13 +27,14 @@
 // layout with no aisles gets none added. Aisles between other rack types
 // (lane racks) are left as they are.
 
+import { BEAM_TYPES } from './rackTypes'
 import { rackFootprint } from '../generate/rackFootprint'
 // the pairing itself lives in rowAisles.js, shared with Check layout, the column check and Generate
 import { neighbourPairs } from '../generate/rowAisles'
 import { layerForType } from './layers'   // a new aisle goes on the Aisles layer, not its rack's
 export { neighbourPairs }
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const EPS = 1e-6
 const rightAngle = (o) => ((((o.rotation || 0) % 90) + 90) % 90) === 0
 const runOf = (f) => (f.rotated ? [f.y, f.y + f.h] : [f.x, f.x + f.w])

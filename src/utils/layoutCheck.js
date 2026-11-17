@@ -39,6 +39,7 @@
 // result, the highlight, the export question and "go to it" live in the small
 // store below.
 
+import { namesFor } from './rackTypes'
 import { create } from 'zustand'
 import { membership } from './sectionAreas'
 import { rackFootprint, rowGaps, rowAisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld } from '../generate/columnCheck'
@@ -66,11 +67,7 @@ import { doorClearRects, DOOR_NAMES } from './doorClear'
 import { DEFAULT_FILL_SETTINGS } from '../generate/fillRacking'
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
-const TYPE_NAMES = {
-  rack_row: 'Single row', rack_double_row: 'Double row', rack_cantilever: 'Cantilever rack', rack_drive_in: 'Drive-in rack',
-  rack_drive_through: 'Drive-through rack', rack_pushback: 'Pushback rack', rack_pallet_flow: 'Pallet flow rack',
-  rack_mezzanine: 'Mezzanine', rack_shelving: 'Shelving unit',
-}
+const TYPE_NAMES = namesFor('check')   // utils/rackTypes.js (R1)
 
 /** "Row 5, section 3" for a generated row; "Double row 4" (its place among
  *  the racks) for one placed by hand. */

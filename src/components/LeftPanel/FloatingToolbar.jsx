@@ -1,3 +1,4 @@
+import { BEAM_TYPES } from '../../utils/rackTypes'
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { placeFloat, floatAvoidRects, floatFreeHeight } from '../../utils/floatPlace'
 import { SECTION_RECT_TOOL, SECTION_PEN_TOOL } from '../../canvas2/sectionTool'
@@ -61,8 +62,7 @@ import { openPlaceGrid } from '../../studio/PlaceColumnGrid'
 const PEN_ICONS = { pencil: Pencil, marker: PenTool, highlighter: Highlighter, technical: Ruler }
 
 const FP_TYPES_SET = new Set(['fp_rect','fp_l','fp_t','fp_u','fp_cross','fp_l_mirror'])
-const ROW_TYPES = new Set(['rack_row','rack_double_row'])
-
+const ROW_TYPES = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  PANEL PREFERENCES — local to this component, persisted in localStorage.    */
 /*  Deliberately NOT in the canvas store: none of this is document state.      */

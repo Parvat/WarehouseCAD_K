@@ -10,9 +10,10 @@
 // across the aisles, the same in every section), genSection, and where it was
 // generated (genRunFt / genCrossFt, feet from the building's corner).
 
+import { BEAM_TYPES } from './rackTypes'
 import { rackFootprint } from '../generate/rackFootprint'
 
-const BEAM_RACKS = new Set(['rack_row', 'rack_double_row'])
+const BEAM_RACKS = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const EPS = 1e-6
 const rightAngle = (o) => ((((o.rotation || 0) % 90) + 90) % 90) === 0
 const runOf = (f) => (f.rotated ? [f.y, f.y + f.h] : [f.x, f.x + f.w])

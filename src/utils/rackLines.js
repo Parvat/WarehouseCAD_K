@@ -15,11 +15,12 @@
 // one after the other, its left (top) side first. Nothing is stored: the plan's labels and the BOM read this same
 // computation.
 
+import { BEAM_TYPES } from './rackTypes'
 import { rackFootprint } from '../generate/rackFootprint'
 import { faceIndex } from '../generate/faceAisles'
 import { isSection, polygonOf, pointInPolygon } from './sectionAreas'
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const isLineRack = (o) => !!o && BEAM.has(o.type) && Array.isArray(o.beams) && o.beams.length > 0 && o.width > 0 && o.height > 0
 const norm = (r) => ((((r || 0) % 360) + 360) % 360)
 

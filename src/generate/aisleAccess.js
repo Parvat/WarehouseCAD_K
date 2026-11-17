@@ -34,13 +34,14 @@
 // Pure: objects in, analysis out. Shared by Check layout, Fill racking and
 // racking areas (fillRacking.js patternFill) and Generate (traceGenerate.js).
 
+import { BEAM_TYPES } from '../utils/rackTypes'
 import { rackFootprint, TRAVEL_TOL_FT } from './columnCheck'
 import { insetPolygon } from '../utils/canvas'
 import { uprightXs } from '../render/rackOps'
 import { splitRackForBayDelete } from '../utils/baySplit'
 import { innerOutline, floorSection } from '../utils/floorGeom'
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 const isRack = (o) => typeof o?.type === 'string' && o.type.startsWith('rack_')
 /** The drivable floor of building `fp`, exactly: the floor less every wall, zone and rack grown by `grow`

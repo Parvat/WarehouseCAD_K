@@ -4,6 +4,7 @@
 // buildingResize.js); a row with no bay left goes. In the resize's own undo step, with a notice "N bays removed" and
 // Undo. A section made bigger adds nothing (Fill section does that).
 
+import { BEAM_TYPES } from './rackTypes'
 import { nanoid } from 'nanoid'
 import { bayBoxes } from './buildingResize'
 import { polygonOf, pointInPolygon } from './sectionAreas'
@@ -13,7 +14,7 @@ import { snapshotOf } from './elevations'
 import { rackFootprint } from '../generate/rackFootprint'
 import { notify } from './notice'
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const E = 0.5
 /** Box `b` wholly inside polygon `poly` (its corners, a hair in). */
 const fitsIn = (poly, b) => [[b.x + E, b.y + E], [b.x + b.w - E, b.y + E], [b.x + b.w - E, b.y + b.h - E], [b.x + E, b.y + b.h - E]].every(([x, y]) => pointInPolygon(poly, x, y))

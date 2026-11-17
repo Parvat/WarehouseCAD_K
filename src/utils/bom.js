@@ -26,6 +26,7 @@
 //
 // A bay side with no elevation (none resolves) is counted with the layout's default elevation, and flagged.
 
+import { BEAM_TYPES } from './rackTypes'
 import { bayLedger } from './bayLedger'
 import { typeAt, typeById, beamFace, sidesOf, beamLevelCount, tunnelType, tunnelAt } from './elevations'
 import { isEmptySide } from './bayEmpty'
@@ -68,7 +69,7 @@ export const sizeWords = (s) => String(s || '').replace(/(\d+(?:\.\d+)?)′-(\d+
 /** A part on one line: "Frame 21 ft x 42 in", "Beam 96 in x 4 in face", "Anchor". */
 export const partName = (l) => [partShort(l.part), l.size ? sizeWords(l.size) : ''].filter(Boolean).join(' ')
 export const UNASSIGNED = 'unassigned'
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const isBomRack = (o) => !!o && BEAM.has(o.type) && Array.isArray(o.beams) && o.beams.length > 0 && o.width > 0 && o.height > 0
 const OTHER_RACK = /^rack_/
 const norm = (r) => ((((r || 0) % 360) + 360) % 360)

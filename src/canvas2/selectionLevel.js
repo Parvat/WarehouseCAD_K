@@ -5,6 +5,7 @@
 //     { objId, bayIdx, side }), selectedIds the racks that own them — the panels read both as before.
 // Every write here replaces the whole selection, so the two levels can never mix.
 
+import { BEAM_TYPES } from '../utils/rackTypes'
 import { sectionIds, withSections } from './sections'
 import { isDoor } from '../utils/doorTool'
 
@@ -27,7 +28,7 @@ export function selectionKind(st) {
   return ks.size ? (ks.size === 1 ? [...ks][0] : 'mixed') : null
 }
 
-const BAY_TYPES = new Set(['rack_row', 'rack_double_row'])
+const BAY_TYPES = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 export const isBayRack = (o) => !!o && BAY_TYPES.has(o.type) && Array.isArray(o.beams) && o.beams.length > 0
 const sideOf = (s) => (s === 0 || s === 1 ? s : null)
 

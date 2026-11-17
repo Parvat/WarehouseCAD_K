@@ -13,6 +13,7 @@
 // own actions.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { BEAM_TYPES } from '../utils/rackTypes'
 import { getObjectBounds } from '../utils/canvas'
 import { worldBoundsOf } from './hitTest'
 
@@ -246,8 +247,7 @@ export function bayEntriesInMarquee(objects = [], rect, gridSize = 40) {
    marquee, and across racks. Outside that "bay mode" Shift+click still
    toggles whole objects (nextSelection), so extending a plain object
    multi-selection works exactly as before. */
-const BAY_PICK_TYPES = new Set(['rack_row', 'rack_double_row'])
-
+const BAY_PICK_TYPES = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 /** Is a bay selection active — marquee bays, or a selected rack's single
  *  clicked bay? */
 export function inBayMode({ activeBaySelection = [], selectedIds = [], objects = [] }) {

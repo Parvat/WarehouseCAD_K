@@ -9,9 +9,10 @@
 // Selection, the selection bar, the dimension labels and the Row group treat a section as one object.
 // Nothing is stored: sections are read off the pieces, so a layout saved before this rule reads the same way.
 
+import { BEAM_TYPES } from '../utils/rackTypes'
 import { rackFootprint } from '../generate/columnCheck'
 
-const PIECE_TYPES = new Set(['rack_row', 'rack_double_row'])
+const PIECE_TYPES = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 export const isPiece = (o) => !!o && PIECE_TYPES.has(o.type) && Array.isArray(o.beams) && o.beams.length > 0
 const rootOf = (o) => o.pieceOf || o.id
 const norm = (r) => ((((r || 0) % 360) + 360) % 360)

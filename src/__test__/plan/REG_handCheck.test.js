@@ -2683,6 +2683,26 @@ describe('REG — the hand check by real clicks', () => {
     /** the beam pairs the beam lines show */
     const pairsOf = (rows) => rows.filter(r => r[0] === 'Beam').reduce((t, r) => t + r[3], 0)
 
+    it('REG-rack-types-same (click): the rack type registry (R1 — utils/rackTypes.js, one place for what every rack type is) changes no number — on each fixture the Properties card (positions, usable, lost, lines, bays, frames, aisles), the Elevations tab, the BOM tab’s total parts, the Tally and Check layout read exactly as recorded before the registry (handCheck/rack-types-same-<fixture>.json, recorded on master d9f6984)', async () => {
+      await open()
+      const card = L.page.locator('[data-island="right-card"]')
+      const snap = {}
+      snap.card = await card.innerText()
+      await L.page.getByRole('tab', { name: 'Elevations' }).click(); await L.page.waitForTimeout(300)
+      snap.elevations = await card.innerText()
+      await bomTab()
+      snap.bom = await bomRows()
+      await popOut()
+      snap.tally = await L.page.getByRole('dialog').last().innerText()
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      await L.page.locator('[data-island="top-right"]').getByRole('button', { name: /^Check layout/ }).click(); await L.page.waitForTimeout(400)
+      snap.check = await L.S('return import("/src/utils/layoutCheck.js").then(M => { const sh = M.shownCheck(M.useLayoutCheck.getState().result, S.getState().elevations); return [...sh.errors, ...sh.warnings, ...sh.marked].map(i => M.issueKey(i) + " " + (i.text || i.title || "")).sort() })')
+      snap.positions = await L.S('return import("/src/utils/capacity.js").then(C => { const c = C.getLayoutCapacity(S.getState().objects); return { total: c.total, breakdown: c.breakdown, uncounted: c.uncountedBays } })')
+      const file = new URL(`./handCheck/rack-types-same-${name}.json`, import.meta.url)
+      if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify(snap, null, 1) + '\n')     // recorded once, on master before the registry
+      expect(snap).toEqual(JSON.parse(fs.readFileSync(file, 'utf8')))
+    }, T)
+
     it('REG-bom-tab (click): the BOM tab beside Properties and Elevations lists the parts grouped (part, size, qty) — frames, beams (one by one, their pairs beside: 2 beams a pair), pins, decks, spacers, anchors — the pins 4 per beam pair, the decks 2 per 96″ beam level, the anchors 2 per frame, the spacers 2 per frame pair (20′ frames, above 16′); Tally’s Pop out opens the same table wide and Esc closes it (BOM round 2 — was: beam pairs; 3 spacers above 16′; tally round — was: Full view)', async () => {
       await open()
       expect(await L.page.getByRole('tablist', { name: 'Right panel tabs' }).getByRole('tab').allTextContents()).toEqual(['Properties', 'Elevations', 'BOM'])

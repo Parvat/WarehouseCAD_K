@@ -9,6 +9,7 @@
 // changed one stay put and later ones slide, at any rotation. Warnings never
 // block — the dealer knows the site.
 
+import { BEAM_TYPES } from './rackTypes'
 import { anchoredResize } from './bayAnchor'
 
 /** 4' to 16' in 1' steps, in inches. */
@@ -133,7 +134,7 @@ function boxesOverlap(a, b, eps = 0.01) {
   return true
 }
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 /** Two beam racks in one line that share an upright frame: a single row carrying straight on from
  *  a double row's last frame (beside a wall or zone, generate/faceReach.js), or two pieces of a row
  *  butted frame to frame. Their boxes meet end to end, overlapping by no more than one upright

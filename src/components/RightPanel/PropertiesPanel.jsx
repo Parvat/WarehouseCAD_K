@@ -1,3 +1,4 @@
+import { BEAM_TYPES, namesFor } from '../../utils/rackTypes'
 import { useState } from 'react'
 import { TEXT_FONTS, textFace } from '../../theme/tokens'
 import { useCanvasStore } from '../../store/useCanvasStore'
@@ -41,10 +42,11 @@ import { Head, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField,
    delete, the bay list, appearance, Arrange, colour, layers, text, labels, the column check's detail) sits in one
    collapsed "More" fold under it, so nothing is lost before the selection bar (step 3) takes the object actions. */
 
-const RACK_TYPES = new Set(['rack_row', 'rack_double_row'])
+const RACK_TYPES = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const TYPE_NAME = {
-  rack_cantilever: 'Cantilever', rack_drive_in: 'Drive-in', rack_drive_through: 'Drive-through', rack_pushback: 'Pushback',
-  rack_pallet_flow: 'Pallet flow', column_grid: 'Column grid', aisle: 'Aisle label', racking_area: 'Racking area',
+  // the racks other than the beam racks (those have their own card) — utils/rackTypes.js (R1)
+  ...Object.fromEntries(Object.entries(namesFor('card')).filter(([t]) => !BEAM_TYPES.has(t))),
+  column_grid: 'Column grid', aisle: 'Aisle label', racking_area: 'Racking area',
   text: 'Text', annot_dimension: 'Dimension', line: 'Line', arc: 'Arc', arrow: 'Arrow', circle: 'Circle', rect: 'Rectangle',
   freehand: 'Freehand',
 }

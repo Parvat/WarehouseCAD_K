@@ -16,6 +16,7 @@
 // A cut rack edited by hand since (a piece moved, deleted, re-typed — its pieces no longer what its base and the
 // zones before gave) keeps the edit: its pieces become their own bases and only the footprint is taken off them.
 
+import { BEAM_TYPES } from './rackTypes'
 import { uprightXs } from '../render/rackOps'
 import { piecesFromStates } from '../generate/faceReach'
 import { splitRackForBayDelete } from './baySplit'
@@ -27,7 +28,7 @@ export const MIN_PIECE_BAYS = 2           // a piece shorter than this, left bes
 export const STUB_NEAR_FT = 2             // "beside": within this of the zone's footprint
 
 const E = 1e-3
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const isRack = (o) => typeof o?.type === 'string' && o.type.startsWith('rack_')
 export const isZoneObj = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_') && o.width > 0 && o.height > 0
 const isAreaObj = (o) => o?.type === 'racking_area'

@@ -9,6 +9,7 @@
 // brief); this module is what they call.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { BEAM_TYPES } from '../utils/rackTypes'
 import { bayAtPoint, uprightXs } from '../render/rackOps'
 import { positionsPerBeam, blockedPositionIndices, positionFootprintIn } from '../utils/capacity'
 import { rackFootprint } from './rackFootprint'
@@ -158,8 +159,7 @@ export function expandColumnGrid(cg, gridSize = GS, objects = null) {
  * with. Exact for any multiple of 90°; other angles are skipped rather than
  * approximated, since a wrong red X is worse than none. */
 
-const PICK_TYPES = new Set(['rack_row', 'rack_double_row'])
-
+const PICK_TYPES = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 export function localRectToWorld(obj, rect) {
   const rot = (((obj.rotation || 0) % 360) + 360) % 360
   if (rot === 0) return { ...rect }

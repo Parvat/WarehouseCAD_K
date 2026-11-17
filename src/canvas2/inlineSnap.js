@@ -18,12 +18,13 @@
 // the drop are wired in useCanvasInteraction.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { BEAM_TYPES } from '../utils/rackTypes'
 import { rackFootprint } from '../generate/columnCheck'
 import { sharesFrame, beamsUpdate } from '../utils/bayBeam'
 import { ELEV_FIELDS, effectiveRef, sidesOf } from '../utils/elevations'
 import { hasEmpty, isEmptySide, normEmpty } from '../utils/bayEmpty'
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const EPS = 1e-6
 
 /** A rack with bays (a single or a back-to-back pair), drawn. */

@@ -14,6 +14,7 @@
 //     compares only neighbours in one list across (BUG 74, BUG 75).
 // Pure. Imports only rackFootprint.js and syncSections.js — nothing that imports this module back.
 
+import { BEAM_TYPES } from '../utils/rackTypes'
 import { rackFootprint } from './rackFootprint'
 import { rowLines } from '../utils/syncSections'
 
@@ -169,7 +170,7 @@ export function neighbourPairs(racks) {
   return { pairs, sectionOf }
 }
 
-const BEAMS = new Set(['rack_row', 'rack_double_row'])
+const BEAMS = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 /** The aisles between neighbouring rows, every one: [{ top, bot, stacked, gapStart, gapLen, crossStart, crossEnd, box }] (world px; top before bot
  *  across). Beam racks are paired exactly as the aisle labels pair them — facing stretches, per line
  *  (neighbourPairs) — whatever the sections or the wall rows; the old pairing (rowGaps over segments joined

@@ -1,0 +1,62 @@
+{
+ "card": "Properties\nElevations\nBOM\nNothing selected\nClick a rack, zone or wall to edit it.\nSTORAGE\n2,600\npositions\n2,216\nusable\n384\nlost\nLOST TO\nNarrow aisle\n176\nColumn\n208\nZone\n0\nOther\n0\nPositions per 1,000 sq ft\n90.3\nBUILDING\nSize\n240′ × 120′\nArea\n28,800 sq ft\nClear height\nNot set\nSprinklers\nNot set\nRACKING\nRack lines\n25\nBays\n325\nFrames\n350\n4 levels\n325 bays\nAISLES\nPick aisle\n9' 6\" – 12' 6\"\nCross aisles\n0\nEquipment\nProject forklift · Reach truck\nCHECKS\n1\n2\n2\nOpen\nMore",
+ "elevations": "Properties\nElevations\nBOM\nCeiling 24 ft (assumed)\nMax load height 22′-6″ (18″ below sprinklers)\nL1\nL2\n5′-0″\nL3\n10′-0″\nL4\n15′-0″\n48″\n40″\n4″\n8″\n3′-6″ free\nTop of load 19′-0″\nFrame 20′-0″\nBeam 96″ · 2 pallets · 2,000 lb\nIN THIS LAYOUT\nDepth\n4 levels\n325 bays\nDEFAULT\nSelect rows to apply\nNew",
+ "bom": [
+  [
+   "Upright frame",
+   "20′ × 42″",
+   350,
+   null
+  ],
+  [
+   "Beam",
+   "96″ × 4″ face",
+   1950,
+   975
+  ],
+  [
+   "Safety pin",
+   "—",
+   3900,
+   null
+  ],
+  [
+   "Wire deck",
+   "46″ × 42″",
+   1950,
+   null
+  ],
+  [
+   "Row spacer",
+   "9″ flue",
+   252,
+   null
+  ],
+  [
+   "Row spacer",
+   "12″ flue",
+   56,
+   null
+  ],
+  [
+   "Anchor",
+   "—",
+   700,
+   null
+  ]
+ ],
+ "tally": "Bill of materials\nSummary\nBy row\nDownload xlsx\nDownload CSV\nPart\tSize\tQty\n\nTotal\nR1–R25\n\nFrame\t20 ft x 42 in\t350\nBeam\t96 in x 4 in face\t1,950 (975 pairs)\nSafety pin\t—\t3,900\nWire deck\t46 in x 42 in\t1,950\nRow spacer\t9 in flue\t252\nRow spacer\t12 in flue\t56\nAnchor\t—\t700",
+ "check": [
+  "aisle-pick:WWLa5FxxJeS3MaaPh7Jmn,nLpqXhj2NRzCiTyU71JdM Aisle between rows 7 and 8, section 1: 9' 6\", needs 10' 6\" to pick — 176 pallet positions lost",
+  "columns-lost:7hezt0uVvKmQPgER3p3fT,BWqH8E1TpJenuhnm8Kukk,D143Qlfj5cv8LxaQzP4gr,Jnj65bCCErDdYrti4pOP_,V_ufIYSKn1ANxxJVc9s5a,WWLa5FxxJeS3MaaPh7Jmn,d0msJfc5h5mK8b2eqIu1d,nLpqXhj2NRzCiTyU71JdM,uRwzD-r9G6OSs_2DTG9zY,udRJzwPAxkqVXcKCsCVWf Section 1: columns block 208 pallet positions on 10 rows — a wall column: re-run Fill or Generate on this area to fix it",
+  "upright:BWqH8E1TpJenuhnm8Kukk Row 1, section 1: a column stands on an upright frame — a wall column: re-run Fill or Generate on this area to fix it"
+ ],
+ "positions": {
+  "total": 2600,
+  "breakdown": {
+   "rack_row": 312,
+   "rack_double_row": 2288
+  },
+  "uncounted": 0
+ }
+}

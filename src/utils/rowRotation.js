@@ -2,9 +2,10 @@
 // rows (90° for vertical rows, 0° for horizontal). Kept from the old across-sections replay engine
 // (utils/rowEdits.js, removed with section copy); the left panel's toolbar and object picker use it.
 
+import { BEAM_TYPES } from './rackTypes'
 import { rackFootprint } from '../generate/columnCheck'
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const stamped = (r) => r.rowIndex != null && r.genSection != null
 
 /** Whether building `fp`'s rows run vertically: most of its generated rows (else most of its racks) are turned. */

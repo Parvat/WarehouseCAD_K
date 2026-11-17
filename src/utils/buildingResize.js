@@ -13,6 +13,7 @@
 //     the sections and zones clipped or removed — with Undo.
 //   - enlarged: nothing is added and no notice is shown.
 
+import { BEAM_TYPES } from './rackTypes'
 import { nanoid } from 'nanoid'
 import { innerOutline, boxOnFloor, buildingOutline } from './floorGeom'
 import { insetPolygon } from './canvas'
@@ -29,7 +30,7 @@ import { getColumnCheckView } from '../generate/columnCheckView'
 import { growGrid } from './columnGrid'
 import { notify } from './notice'
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const E = 0.5
 
 /** The rack's local point → world, about its own centre. */

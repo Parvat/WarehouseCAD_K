@@ -16,6 +16,7 @@
 // (faceAisleLabels) and by narrowAisles.js: every bay of such a face loses its positions (X marks, off usable).
 // Pure.
 
+import { BEAM_TYPES } from '../utils/rackTypes'
 import { rackFootprint, aisleLevel, AISLE_MIN_FT, MHE_PROFILES, underTravel } from './columnCheck'
 import { uprightXs } from '../render/rackOps'
 import { innerOutline, floorSection } from '../utils/floorGeom'
@@ -23,7 +24,7 @@ import { fmtLenDown } from '../utils/copyChange'
 import { positionFootprintIn, positionsPerBeam } from '../utils/capacity'
 
 const E = 1e-6
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_') && o.width > 0 && o.height > 0
 const ZONE_NAME = { zone_office: 'Office', zone_staging: 'Staging', zone_washroom: 'Washroom', zone_custom: 'Custom area' }
 /** How a zone reads in a message: its own name, else its kind. */

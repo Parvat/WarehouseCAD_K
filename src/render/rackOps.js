@@ -24,6 +24,7 @@
 // same world width.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { BEAM_TYPES } from '../utils/rackTypes'
 import { hasEmpty, isEmptySide } from '../utils/bayEmpty'
 
 /* The locked rack symbology. Literal by design: CLAUDE.md keeps canvas object
@@ -524,8 +525,7 @@ export const PORTED_RACK_TYPES = new Set(Object.keys(BUILDERS))
  *  towers, and a mezzanine or shelving unit into neither — asking any of them
  *  which bay a click landed in is a category error, and before this set existed
  *  they would each have answered "bay 0" from a defaulted 96in beam. */
-const BAY_TYPES = new Set(['rack_row', 'rack_double_row'])
-
+const BAY_TYPES = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 /** Turn a dragged WIDTH back into a bay count.
  *
  *  A rack resize is semantic, not a scale: dragging the end of a rack adds or

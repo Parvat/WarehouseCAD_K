@@ -1,8 +1,9 @@
+import { BEAM_TYPES } from '../utils/rackTypes'
 import { memo, useMemo } from 'react'
 import { LabelOps } from './LabelOps'
 import { oversizedOps } from '../render/labelOps'
 
-const BEAM_RACK_TYPES = new Set(['rack_row', 'rack_double_row'])
+const BEAM_RACK_TYPES = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 /* ── Oversized-bay marks — BUG 67 ─────────────────────────────────────────────
    Distinct from BlockedFaceMarks (a column blocking a real pick spot): this is
    a bay that holds ZERO pallet positions regardless of any column, because the

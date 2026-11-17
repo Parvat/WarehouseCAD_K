@@ -5,6 +5,7 @@
 // that predates a field, or one drawn before a dealer set their standard, is
 // counted against that dealer's pallet and beam rather than a hardcoded 48/96.
 // Per-object values still win — they are what is actually drawn.
+import { isLaneType, flowOf } from './rackTypes'
 import { bayLedger } from './bayLedger'
 import { DEFAULT_RULES } from '../rules/defaults'
 
@@ -122,23 +123,17 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
   }
 
   // ── Lane racks ────────────────────────────────────────────────────────────
-  if (['rack_drive_in','rack_drive_through','rack_pushback','rack_pallet_flow'].includes(obj.type)) {
+  if (isLaneType(obj.type)) {
     const lanes      = obj.lanes      || 2
     const palletDeep = obj.palletDeep || 5
     const total      = lanes * palletDeep
-    const modeMap = {
-      rack_drive_in:      'LIFO',
-      rack_drive_through: 'FIFO',
-      rack_pushback:      'LIFO',
-      rack_pallet_flow:   'FIFO',
-    }
     return {
       type:   'lane',
       lanes,
       palletDeep,
       total,
       label:  `${total} PAL (${lanes}L × ${palletDeep}D)`,
-      mode:   modeMap[obj.type],
+      mode:   flowOf(obj.type),
     }
   }
 

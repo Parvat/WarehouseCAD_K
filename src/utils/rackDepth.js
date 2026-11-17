@@ -6,11 +6,11 @@
 // centre line, so a pair keeps its flue where it was and grows outward, the aisles on both sides giving or taking the
 // same. The aisles are re-paired after the edit (aisleKeeper), the counts follow. Pure.
 
+import { BEAM_TYPES } from './rackTypes'
 import { innerOutline } from './floorGeom'
 import { wallLineFor, wallReachFt } from '../generate/wallRun'
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
-
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 /** The update that gives beam rack `r` frame depth `depthIn` (inches) — { depthIn, height, y } (the box re-sized across
  *  about its centre; a turned rack turns about its centre too, so the same y shift holds) — or null when it is not a
  *  beam rack, the depth isn't a length, or nothing changes. */

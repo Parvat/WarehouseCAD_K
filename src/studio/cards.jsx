@@ -1,3 +1,4 @@
+import { namesFor } from '../utils/rackTypes'
 import { useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
@@ -27,7 +28,7 @@ import { Head, BigFigure, Sec, Grid2, Field, InlineField, TextInput, NumInput, S
 /* The right card's blocks for the states drawn in the mockups (design/studio/Studio.dc.html): nothing selected (C7),
    a rack (C1), a zone (C6) and Check layout (C5). Every other section uses the same parts (cardParts.jsx). */
 
-const RACK_NAME = { rack_row: 'Selective', rack_double_row: 'Double deep', rack_drive_in: 'Drive-in', rack_drive_through: 'Drive-through', rack_pushback: 'Pushback', rack_pallet_flow: 'Pallet flow', rack_cantilever: 'Cantilever' }
+const RACK_NAME = namesFor('card')   // utils/rackTypes.js (R1)
 const isFp = (o) => typeof o?.type === 'string' && o.type.startsWith('fp_')
 const n = (v) => (v ?? 0).toLocaleString('en-US')
 /** feet and inches as the mockup writes them: 8′ 0″, 42″ */

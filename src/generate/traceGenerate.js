@@ -16,6 +16,7 @@
 // costs exactly one generateLayout call either way.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { BEAM_TYPES, namesFor } from '../utils/rackTypes'
 import { snapshotOf } from '../utils/elevations'
 import { nanoid } from 'nanoid'
 import { useCanvasStore } from '../store/useCanvasStore'
@@ -38,16 +39,8 @@ const FLUE_IN = 9    // back-to-back flue gap for double rows
 
 // Storage/racking identity colour (matches warehouseObjects category "storage")
 const RACK_COLOR = '#22c55e'
-const LABELS = {
-  rack_row:           'Rack Row',
-  rack_double_row:    'Double Row',
-  rack_drive_in:      'Drive-In Rack',
-  rack_drive_through: 'Drive-Through Rack',
-  rack_pushback:      'Push-Back Rack',
-  rack_pallet_flow:   'Pallet-Flow Rack',
-}
+const LABELS = namesFor('generate')   // utils/rackTypes.js (R1)
 
-const BEAM_TYPES = new Set(['rack_row', 'rack_double_row'])
 
 // Common fields every placed object carries (so it renders + selects like a
 // hand-placed one from the library).

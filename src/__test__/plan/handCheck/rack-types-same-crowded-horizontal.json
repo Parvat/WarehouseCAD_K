@@ -1,0 +1,58 @@
+{
+ "card": "Properties\nElevations\nBOM\nNothing selected\nClick a rack, zone or wall to edit it.\nSTORAGE\n2,392\npositions\n2,164\nusable\n228\nlost\nLOST TO\nNarrow aisle\n0\nColumn\n228\nZone\n0\nOther\n0\nPositions per 1,000 sq ft\n83.1\nBUILDING\nSize\n240′ × 120′\nArea\n28,800 sq ft\nClear height\nNot set\nSprinklers\nNot set\nRACKING\nRack lines\n11\nBays\n299\nFrames\n319\n4 levels\n299 bays\nAISLES\nPick aisle\n10' 6\" – 16' 3\"\nCross aisles\n1 · 15' 6\"\nEquipment\nProject forklift · Reach truck\nCHECKS\n3\n2\n2\nOpen\nMore",
+ "elevations": "Properties\nElevations\nBOM\nCeiling 24 ft (assumed)\nMax load height 22′-6″ (18″ below sprinklers)\nL1\nL2\n5′-0″\nL3\n10′-0″\nL4\n15′-0″\n48″\n40″\n4″\n8″\n3′-6″ free\nTop of load 19′-0″\nFrame 20′-0″\nBeam 96″ · 2 pallets · 2,000 lb\nIN THIS LAYOUT\nDepth\n4 levels\n299 bays\nDEFAULT\nSelect rows to apply\nNew",
+ "bom": [
+  [
+   "Upright frame",
+   "20′ × 42″",
+   319,
+   null
+  ],
+  [
+   "Beam",
+   "96″ × 4″ face",
+   1794,
+   897
+  ],
+  [
+   "Safety pin",
+   "—",
+   3588,
+   null
+  ],
+  [
+   "Wire deck",
+   "46″ × 42″",
+   1794,
+   null
+  ],
+  [
+   "Row spacer",
+   "9″ flue",
+   232,
+   null
+  ],
+  [
+   "Anchor",
+   "—",
+   638,
+   null
+  ]
+ ],
+ "tally": "Bill of materials\nSummary\nBy row\nDownload xlsx\nDownload CSV\nPart\tSize\tQty\n\nTotal\nR1–R11\n\nFrame\t20 ft x 42 in\t319\nBeam\t96 in x 4 in face\t1,794 (897 pairs)\nSafety pin\t—\t3,588\nWire deck\t46 in x 42 in\t1,794\nRow spacer\t9 in flue\t232\nAnchor\t—\t638",
+ "check": [
+  "columns-lost:22mJKWVZNnLdxTuI18-NR,LDoftGLeakMUJJNRxRjjb,POodYAACZyv0zlj1C8ooQ,isFJOtVxRd_I76qqb_P08 Section 2: columns block 80 pallet positions on 4 rows",
+  "columns-lost:PnlcBUu4yoArrqXSflg7M,QcJ6BK46Ph87rAVHcQSTD,oHajF2kVUQDoUohpmYz0D,qtrUE9q3ZoCegLNzfp02Q,w9xIy_gN3EiRniRv81BXR,zrueQAOJ22h5h8mF383BH Section 1: columns block 148 pallet positions on 6 rows — a wall column: re-run Fill or Generate on this area to fix it",
+  "upright:PnlcBUu4yoArrqXSflg7M Row 4, section 1: 5 columns stand on upright frames — a wall column: re-run Fill or Generate on this area to fix it",
+  "upright:qtrUE9q3ZoCegLNzfp02Q Row 7, section 1: 5 columns stand on upright frames — a wall column: re-run Fill or Generate on this area to fix it",
+  "upright:w9xIy_gN3EiRniRv81BXR Row 1, section 1: 4 columns stand on upright frames — a wall column: re-run Fill or Generate on this area to fix it"
+ ],
+ "positions": {
+  "total": 2392,
+  "breakdown": {
+   "rack_row": 664,
+   "rack_double_row": 1728
+  },
+  "uncounted": 0
+ }
+}

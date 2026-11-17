@@ -19,6 +19,7 @@
 // the bay-side's own type. With no table (the generator's own layouts, the test fixtures) everything reads
 // `rack.levels`, exactly as before. Pure, except installElevationsKeeper.
 
+import { BEAM_TYPES } from './rackTypes'
 import { carryEmpty, EMPTY_FIELD, isEmptySide } from './bayEmpty'
 
 export const ELEV_TYPE = 'elevation_types'
@@ -26,7 +27,7 @@ export const ELEV_ID = 'elevation-types'
 export const ELEV_VERSION = 1
 export const DEFAULT_REF = '*'
 export const ELEV_FIELDS = ['elevType', 'elevSides', 'elevBays']
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 export const isBeamRack = (o) => !!o && BEAM.has(o.type) && Array.isArray(o.beams)
 export const isElevTable = (o) => !!o && o.type === ELEV_TYPE
 /** A file or clipboard from before the types moved to the store: the 'elevation_types' object(s) taken out of

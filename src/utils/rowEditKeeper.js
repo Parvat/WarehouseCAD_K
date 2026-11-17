@@ -10,10 +10,10 @@
 // Written without a history entry, like the aisle keeper; the next commit
 // records it.
 
+import { BEAM_TYPES } from './rackTypes'
 import { rackFootprint } from '../generate/columnCheck'
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
-
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 // racks whose stamps are kept the first time they appear (utils/splitTool.js: a cut-off piece is the same row)
 const keepOnce = new Set()
 export const keepStampsOnce = (id) => { keepOnce.add(id) }

@@ -6,13 +6,14 @@
 // (Copying row changes across sections lived here too; the Row group replaced it — utils/rowGroup.js.)
 // Pure: no store, no React.
 
+import { BEAM_TYPES } from './rackTypes'
 import { rackFootprint, MHE_PROFILES, aisleLevel, underTravel } from '../generate/columnCheck'
 import { layoutColumns } from '../generate/usableCapacity'
 import { rackIssues } from './bayBeam'
 import { buildingSections } from './syncSections'
 import { uprightXs } from '../render/rackOps'
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const EPS = 1e-6
 const rightAngle = (o) => ((((o.rotation || 0) % 90) + 90) % 90) === 0

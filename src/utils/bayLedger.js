@@ -25,11 +25,12 @@
 // Pure, and cached: computed again only when a rack changes (the racks' geometry key), never for a
 // change elsewhere — and the panels hold their last ledger while a drag is in flight.
 
+import { BEAM_TYPES } from './rackTypes'
 import { positionsPerBeam } from './palletFit'
 import { levelsResolver } from './elevations'
 import { isEmptySide } from './bayEmpty'
 
-const BEAM = new Set(['rack_row', 'rack_double_row'])
+const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const EPS = 1e-6
 const isBayRack = (o) => !!o && BEAM.has(o.type) && Array.isArray(o.beams) && o.beams.length > 0 && o.width > 0 && o.height > 0
 const norm = (r) => ((((r || 0) % 360) + 360) % 360)

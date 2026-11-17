@@ -15,6 +15,7 @@
 // is picked, dragged and typed like any other: dragged back in, the rows are cut there again (the bays it passes go past
 // it, a run of 3 bays or more); its Width sets that gap; Delete lets it go (the rows stay as they are). One undo each.
 
+import { BEAM_TYPES } from './rackTypes'
 import { create } from 'zustand'
 import { sectionCrossAisles } from './copyChange'
 import { rackFootprint } from '../generate/rackFootprint'
@@ -29,8 +30,7 @@ import { nanoid } from 'nanoid'
 
 const EPS = 1e-6
 const FP = /^fp_/
-const RACK = new Set(['rack_row', 'rack_double_row'])
-
+const RACK = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 /* ── end aisles: the mark on the rack that ends at one (`xaEnd`, ft, world axis) ── */
 export const END_FIELD = 'xaEnd'
 /** Rack `o` with its end aisle on `side` ('lo' | 'hi') `wFt` wide (0 / null: none there). */
