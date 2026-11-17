@@ -56,6 +56,7 @@ import { TallyFill, TallyHighlight } from './TallyHighlight'
 import { SectionLegend } from './SectionLegend'
 import { ColumnGridAnnot } from './ColumnGridAnnot'
 import { DoorAnnot } from './DoorAnnot'
+import { LabelObstacles } from './LabelObstacles'
 import { DoorGapEdit } from './DoorGapEdit'
 import { CrossAislePick } from './CrossAislePick'
 import { CrossAisleBandPreview, CrossAisleBar, liveBand } from './CrossAisleBand'
@@ -624,6 +625,8 @@ export function Canvas2() {
             {measuring && (
               <MeasureOverlay points={measurePts} hover={measureHover} zoom={zoom} gridSize={gridSize} />
             )}
+            {/* the objects a grown label never covers (Rule 8 — LabelObstacles.jsx; draws nothing) */}
+            <LabelObstacles />
             {/* the rack line numbers R1, R2 … at each row end (RackLineLabels.jsx — the BOM's rows) */}
             <RackLineLabels />
             {/* the sections' legend: a key outside the building, its bottom-left (SectionLegend.jsx — legend round: no name

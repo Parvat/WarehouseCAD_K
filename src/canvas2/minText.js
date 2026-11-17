@@ -12,9 +12,13 @@
 //     Every shape in it (the pill and the text alike) grows about that anchor by the same factor, or the whole label
 //     hides. A DIMENSION value (`out`: { x, y — its dimension line's end, dx, dy — the way out past it }) that would grow
 //     longer than its line does not hide: it moves outside its extension line, past that end, and a shape in it marked
-//     `minLeader` is drawn as the short leader from the end to it (only then). A DRAWING-SCALE label (`hide: true` — the
-//     doors' labels) is never grown: under 11 px it hides as a whole;
+//     `minLeader` is drawn as the short leader from the end to it (only then). A DRAWING-SCALE label (`hide: true` — none
+//     today; was the doors' labels, doors5) is never grown: under 11 px it hides as a whole;
 //   - `minText: false` on a Text opts it out (none does today).
+// A label GROWN to the floor (or laid out at it — `minLabel.grown`) never covers another object — a rack, a door, a column,
+// a zone (setLabelObstacles: the canvas's list, world px) — and is never larger than the object it sits on (the one under
+// its anchor, or `own` / `minOwn` ids): if it would, it hides until the zoom allows it (CLAUDE.md Rule 8, labels-cover
+// round). `keep: true` (a door's gap value) is exempt.
 // The PDF is not drawn by Konva: untouched. What each text was drawn at is kept on the node (`_mtPx`: screen px, 0 when
 // hidden by the rule) — REG-canvas-text-min reads it.
 
@@ -26,6 +30,27 @@ export const MIN_TEXT_PX = 11
  *  drawing size (1 / lz), or larger so its text is drawn at 11 px — a layout made with it is drawn as laid out, never
  *  grown after, so its values can be kept off each other (CLAUDE.md Rule 8). */
 export const floorUnit = (lz, zoom, base = 10.5) => Math.max(1 / lz, MIN_TEXT_PX / (base * (zoom || 1)))
+
+/* The objects a grown label must not cover: [{ id, x, y, w, h }] (world px), set by the canvas (LabelObstacles). */
+let OBST = [], OBST_V = 0
+export function setLabelObstacles(list) { OBST = list || []; OBST_V++ }
+/** Would a grown label, its box `sb` on screen and its anchor `sa` on screen, cover an object (or outgrow its own)? `node`:
+ *  any node on its layer (world = the layer's space); `own`: object ids it labels. */
+function coversObject(node, sb, sa, own) {
+  if (!OBST.length) return false
+  const layer = node.getLayer && node.getLayer()
+  if (!layer) return false
+  const inv = layer.getAbsoluteTransform().copy().invert()
+  const p0 = inv.point({ x: sb.x, y: sb.y }), p1 = inv.point({ x: sb.x + sb.w, y: sb.y + sb.h }), a = inv.point(sa)
+  const x0 = Math.min(p0.x, p1.x), x1 = Math.max(p0.x, p1.x), y0 = Math.min(p0.y, p1.y), y1 = Math.max(p0.y, p1.y)
+  const sc = Math.abs(layer.getAbsoluteScale().x) || 1, e = 0.5 / sc            // half a screen px: touching is not covering
+  for (const o of OBST) {
+    const mine = (own && own.includes(o.id)) || (a.x > o.x && a.x < o.x + o.w && a.y > o.y && a.y < o.y + o.h)
+    if (mine) { if (x0 < o.x - e || x1 > o.x + o.w + e || y0 < o.y - e || y1 > o.y + o.h + e) { if (!own || !own.includes(o.id)) return true } continue }
+    if (x0 < o.x + o.w - e && x1 > o.x + e && y0 < o.y + o.h - e && y1 > o.y + e) return true
+  }
+  return false
+}
 
 /** The nearest ancestor Group carrying `minLabel` (cached on the node), or null. */
 function labelGroupOf(node) {
@@ -39,9 +64,27 @@ function labelGroupOf(node) {
 /** A label group now: { k — 1 (already 11 px or more), > 1 (grow), 0 (hide: it cannot fit); t — moved outside (a
  *  dimension value that cannot fit its line: the shift, group units) or null; lead — the leader's points then }. */
 function labelState(g) {
+  const key = g.getAbsoluteTransform().m.join(',') + '|' + OBST_V
+  const ml = g.getAttr('minLabel')
+  if (g._mtS && g._mtS.key === key && g._mtS.ml === ml) return g._mtS.st
+  const st = coverState(g, labelFloor(g))
+  g._mtS = { key, ml, st }
+  return st
+}
+/* a grown label (or one laid out at the floor) that would cover an object: hidden */
+function coverState(g, st) {
+  const ml = g.getAttr('minLabel')
+  if (st.k === 0 || ml.keep || !(st.k > 1 + 1e-9 || ml.grown)) return st
+  const box = ml.box || {}, at = ml.at || { x: 0, y: 0 }
+  if (!(box.w > 0 && box.h > 0)) return st
+  const sb = screenBox(g, { x: at.x - box.w / 2, y: at.y - box.h / 2, w: box.w, h: box.h }, st.k, at, st.t)
+  const sa = g.getAbsoluteTransform().point(at)
+  return coversObject(g, sb, sa, ml.own) ? { k: 0, t: null } : st
+}
+function labelFloor(g) {
   const ml = g.getAttr('minLabel'), s = Math.abs(g.getAbsoluteScale().y) || 1, px = (ml.fs || 0) * s
   if (!(px > 0) || px >= MIN_TEXT_PX - 1e-6) return { k: 1, t: null }
-  // a drawing-scale label (`hide`: the doors' — CLAUDE.md Rule 8, the door exception): never grown, hidden under 11 px
+  // a drawing-scale label (`hide`): never grown, hidden under 11 px
   if (ml.hide) return { k: 0, t: null }
   const k = MIN_TEXT_PX / px, box = ml.box || {}, fit = ml.fit || {}
   if (!((fit.w != null && box.w != null && box.w * k > fit.w + 1e-6) || (fit.h != null && box.h != null && box.h * k > fit.h + 1e-6))) return { k, t: null }
@@ -94,6 +137,9 @@ export function installMinText() {
     const W = this.width(), H = this.height(), align = this.align(), va = this.verticalAlign()
     const ax = align === 'center' ? W / 2 : align === 'right' ? W - pad : pad
     const ay = va === 'middle' ? H / 2 : va === 'bottom' ? H - pad : pad + (lines * fs * lh) / 2
+    // grown: never over another object, never larger than its own (Rule 8 — labels-cover)
+    const tb0 = textBox(this), sb = screenBox(this, tb0, k, { x: ax, y: ay })
+    if (coversObject(this, sb, this.getAbsoluteTransform().point({ x: tb0.x + tb0.w / 2, y: tb0.y + tb0.h / 2 }), this.getAttr('minOwn'))) { this._mtPx = 0; this._mtRect = null; return }
     context.save()
     context.translate(ax, ay); context.scale(k, k); context.translate(-ax, -ay)
     textDraw.call(this, context)

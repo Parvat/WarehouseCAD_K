@@ -37,21 +37,28 @@ This file holds the rules; `CODEBASE.md` holds the map.
    room); a label on a pill, chip or bubble is a Group with `minLabel` so its background grows with it. A new label with a
    background gets `minLabel`; one with limited room gets `minFit`. Screen-sized texts (`N / zoom`) use N ≥ 11.
    **Labels never overlap each other and are never clipped** (a tag always grows to fit its text). When a label does not
-   fit its space: a **dimension or gap value moves outside its extension lines with a short leader** — it does not hide
-   (a chain: `render/dimChain.js`, an outer row past the chain; a lone width label: `minLabel.out`, past its line's
+   fit its space: a **dimension or gap value moves outside its extension lines with a short leader** — it does not hide on
+   its own (a chain: `render/dimChain.js`, an outer row past the chain; a lone width label: `minLabel.out`, past its line's
    end); **tags that would overlap collapse into one range tag** (R10–R13) until there is room again. A layout
    that must keep its labels apart is laid out at the size it is drawn (`floorUnit`), never grown after.
    **Objects are always drawn at true size** at every zoom (racks, doors, columns, zones, sections, offices, text boxes,
    dimensions, symbols); only their text follows the floor — UI only (selection handles, the rotate handle, cursors)
    stays screen-size. Text is never drawn bigger than the object it labels at far zoom: when even a collapsed tag or a
    whole chain no longer fits its object or wall, it hides as a whole and returns when zooming in.
+   **A label grown to the 11 px floor never covers another object** (racks, doors, columns, zones) **and is never larger
+   than the thing it labels**: if it would, it hides until the zoom allows it (labels-cover — `minText.js` coverState,
+   the objects from `LabelObstacles.jsx`; a layout laid out at the floor marks its labels `minLabel.grown`; its own
+   object is `own`). This covers a value moved outside on a leader too. **Exception:** a door's **gap values** never hide
+   while their wall's other labels show (`minLabel.keep`).
    **Doors (doors-aisle — replaces the doors5 "drawing-scale" exception):** the door labels — the number badge, the width,
    the gaps — are the **same drawing size as the aisle width labels** and follow the rules above as they do, so they show
-   wherever the aisle labels show: laid out at the size drawn (`floorUnit`), never overlapping, never in ranges; a door
-   label wider than its door's box hides and returns when zooming in. Nothing for doors is drawn outside the wall.
+   wherever the aisle labels show: laid out at the size drawn (`floorUnit`), never overlapping, never in ranges; a width
+   or a badge bigger than its door's box hides and returns when zooming in. The badge's number is 0.8 of the width text
+   (never under 11 px), its circle snug; every gap shows (corner to first door, door to door, last door to far corner) —
+   one too narrow for its text sits just above it. Nothing for doors is drawn outside the wall.
    REG-canvas-text-min measures every canvas text on the 4 fixtures at Fit, 50% and 200% (and on a wall of eleven docks),
-   fails on any text under 11 px, any two labels over each other, any clipped label, and any object whose drawn size does
-   not scale with the zoom. The PDF is not affected.
+   fails on any text under 11 px, any two labels over each other, any clipped label, any grown label over an object (or
+   bigger than its own), and any object whose drawn size does not scale with the zoom. The PDF is not affected.
 
 ---
 

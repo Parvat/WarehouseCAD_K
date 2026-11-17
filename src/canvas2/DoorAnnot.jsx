@@ -15,7 +15,7 @@ import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { isDoor } from '../utils/doorTool'
 import { shownIn } from '../utils/layers'
-import { doorDrawing, DOOR_FS } from '../render/doorAnnot'
+import { doorDrawing, DOOR_FS, BADGE_K } from '../render/doorAnnot'
 import { floorUnit, MIN_TEXT_PX } from './minText'
 export { floorUnit }
 
@@ -33,10 +33,13 @@ export const doorGapSpot = (key, e) => VALUES.find(g => g.key === key && (e.kind
   ? g.stop.kind === 'door' && g.stop.id === e.id
   : g.stop.kind === 'gap' && g.stop.gap.after === e.after && (e.after != null || g.stop.gap.before === e.before))) || null
 
-/* one label (a badge, a width, a gap): its shapes in one group, laid out at the size it is drawn */
-function DoorLabel({ l }) {
+/* one label (a badge, a width, a gap): its shapes in one group, laid out at the size it is drawn. `grown`: laid out past
+   its drawing size (the 11 px floor) — then it never covers another object, or hides (minText; Rule 8); its own door is not
+   "another"; a gap is kept (`keep` — it never hides while its wall's other labels show) */
+function DoorLabel({ l, grown }) {
   return (
-    <Group name={'door-' + l.kind + ':' + l.key} listening={false} minLabel={{ fs: l.fs, at: l.at, box: { w: l.box.w, h: l.box.h } }}>
+    <Group name={'door-' + l.kind + ':' + l.key} listening={false}
+      minLabel={{ fs: l.fs, at: l.at, box: { w: l.box.w, h: l.box.h }, grown, own: l.id ? [l.id] : undefined, keep: !!l.keep }}>
       {l.ops.map((o, i) => {
         if (o.op === 'circle') return <Circle key={i} name="door-badge-ring" x={o.x} y={o.y} radius={o.r} fill={o.fill} stroke={o.stroke} strokeWidth={o.strokeWidth} perfectDrawEnabled={false} listening={false} />
         if (o.op === 'line') return <Line key={i} points={o.points} stroke={o.stroke} strokeWidth={o.strokeWidth} perfectDrawEnabled={false} listening={false} />
@@ -52,20 +55,21 @@ export function DoorAnnot() {
   const { gs, layers } = useCanvasStore(useShallow(s => ({ gs: s.gridSize || 40, layers: s.layers })))
   // (the aisle labels' Label size, laid out at the size drawn: the floor in it — Rule 8)
   const zoom = useView().zoom
-  const lz = 1 / floorUnit(labelScale(useLabelPrefs(s => s.labelSize), gs), zoom, DOOR_FS)
+  const base = labelScale(useLabelPrefs(s => s.labelSize), gs), lz = 1 / floorUnit(base, zoom, DOOR_FS)
+  const minFs = MIN_TEXT_PX / (zoom || 1)
   const shown = useMemo(() => shownIn(layers), [layers])
   // (a door on a hidden layer: neither drawn nor labelled)
   const D = useMemo(() => {
     const visible = objects.filter(o => !isDoor(o) || shown(o))
-    return visible.some(isDoor) ? doorDrawing(visible, gs, lz) : null
-  }, [objects, shown, gs, lz])
+    return visible.some(isDoor) ? doorDrawing(visible, gs, lz, { minFs }) : null
+  }, [objects, shown, gs, lz, minFs])
   VALUES = D ? D.labels.filter(l => l.stop).map(l => ({ key: l.wallKey, w: l.w, stop: l.stop, box: l.box, fs: l.fs, door: l.stop.kind === 'door' ? l.stop.id : (l.stop.gap.after || l.stop.gap.before) })) : []
   if (!D) return null
   return (
     <Group name="door-annot" listening={false}>
       {D.bars.map(b => <Rect key={b.id} name={'door-bar:' + b.id} x={b.x} y={b.y} width={b.w} height={b.h} fill={b.fill} stroke={b.stroke} strokeWidth={1}
         strokeScaleEnabled={false} perfectDrawEnabled={false} listening={false} />)}
-      {D.labels.map(l => <DoorLabel key={l.key} l={l} />)}
+      {D.labels.map(l => <DoorLabel key={l.key} l={l} grown={l.fs > (l.kind === 'badge' ? BADGE_K : 1) * DOOR_FS / base + 1e-6} />)}
     </Group>
   )
 }
