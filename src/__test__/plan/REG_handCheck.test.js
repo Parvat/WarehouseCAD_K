@@ -7062,6 +7062,34 @@ describe('REG — the hand check by real clicks', () => {
       const far = await doorTexts()
       expect(far.every(t => t.px === 0 || Math.abs(t.px - t.own) < 0.01)).toBe(true)
       expect(far.filter(t => t.own < 11 - 0.01).every(t => t.px === 0)).toBe(true)
+      // (doors-real) the badge never over the width's line or value — at 50 %, 100 % and 200 % on the door wall, a dock clicked
+      // (a real click on its bar) and nothing selected; the badge's diameter a fifth of its clear depth (capped), so it keeps
+      // its proportion to the box at every zoom
+      const badgeVsWidth = () => L.page.evaluate(() => {
+        const st = window.Konva.stages[0]; st.draw()
+        const drawn = (g) => g && g.isVisible() && g.find('Text').some(t => (t._mtPx || 0) > 0)
+        const rect = (g) => g.getClientRect({ skipShadow: true, skipStroke: true })
+        return st.find(n => /^door-badge:/.test(n.name())).map(b => {
+          const id = b.name().slice('door-badge:b:'.length), w = st.findOne(n => n.name() === 'door-width:w:' + id)
+          if (!drawn(b) || !drawn(w)) return null
+          const p = rect(b), q = rect(w)
+          return { id, hit: p.x < q.x + q.width && q.x < p.x + p.width && p.y < q.y + q.height && q.y < p.y + p.height }
+        }).filter(Boolean)
+      })
+      const overlapsAt = []
+      for (const zz of [0.5, 1, 2]) {
+        await zoomTo(zz, true); await states[0][1]()
+        const box = await L.page.locator('#canvas2-container').boundingBox()
+        const spot = await L.S('const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type)), z = st.zoom; const ds = st.objects.filter(o => o.type === "struct_loading_dock"); const vw = 1100; const d = ds.find(o => { const x = (o.x + o.width / 2) * z + st.panX; return x > 120 && x < vw }); return d ? { x: (d.x + d.width / 2) * z + st.panX, y: (d.y + d.height / 2) * z + st.panY } : null')
+        for (const sel of ['nothing', 'dock']) {
+          if (sel === 'dock' && spot) { await L.page.mouse.click(box.x + spot.x, box.y + spot.y); await L.page.waitForTimeout(250) }
+          const pairs = await badgeVsWidth()
+          expect([zz, sel, pairs.length > 0]).toEqual([zz, sel, true])
+          for (const p of pairs) if (p.hit) overlapsAt.push([zz, sel, p.id])
+        }
+        await L.page.keyboard.press('Escape')
+      }
+      expect(overlapsAt).toEqual([])
       // objects at their true size: the same world size at Fit and at 200 % (a few screen px of stroke either way)
       await states[0][1](); await fit(); const a = await objectSizes()
       await zoomTo(2); const b = await objectSizes()
@@ -7133,8 +7161,8 @@ describe('REG — the hand check by real clicks', () => {
       expect(await card.locator('[data-door-gap="left"]').textContent()).toBe('12′')
       // (doors5 — was: a chain outside the building) the values INSIDE the building, drawing-scale: zoomed in to read them — the
       // corner to the first door, then each width (bold, on a short line inside its box) and the gap to the next (plain text);
-      // nothing outside the wall
-      const zoomDoors = async () => { await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), d = st.objects.find(o => o.id === arg), cx = d.x + d.width / 2, cy = fp.y; S.setState({ zoom: 0.5, panX: 720 - cx * 0.5, panY: 300 - cy * 0.5 })', d2.id); await L.page.waitForTimeout(350) }
+      // nothing outside the wall (doors-real: at 100 % — each door's values sized to its box, a man door's 44 in box under 11 px at 50 %)
+      const zoomDoors = async () => { await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), d = st.objects.find(o => o.id === arg), cx = d.x + d.width / 2, cy = fp.y; S.setState({ zoom: 1, panX: 720 - cx, panY: 300 - cy })', d2.id); await L.page.waitForTimeout(350) }
       await zoomDoors()
       const chain = () => L.page.evaluate(() => window.Konva.stages[0].find(n => /^door-(width|gap):/.test(n.name())).flatMap(g => g.find('Text').filter(t => t._mtPx > 0).map(t => { const r = t.getClientRect(); return { text: t.text(), bold: t.fontStyle() === '700', x: r.x + r.width / 2, y: r.y + r.height / 2, top: r.y } })))
       const innerY = (await L.toScreen({ x: 0, y: fp.y + wt })).y - (await L.page.locator('#canvas2-container').boundingBox()).y

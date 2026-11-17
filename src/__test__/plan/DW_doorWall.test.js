@@ -73,11 +73,25 @@ describe('DW — doors on their walls', () => {
     const top = doors.slice(0, 3), bar = D.bars.find(b => b.id === top[0].id), [s0, s1] = spanOf(top[0])
     // the bar: its true width, on the wall (between the outer and the inner face's middle), 1.5 ft deep
     expect([bar.x, bar.x + bar.w, Math.round(bar.h), bar.y < w.at && bar.y + bar.h > w.outer]).toEqual([s0, s1, 60, true])
-    // the badges: the number alone, light fill, mid ring, dark number, 11 medium; inside the door's clear box at its far right
+    // the badges: the number alone, light fill, mid ring, dark number, medium; inside the door's clear box at its far right,
+    // a clear margin in from its edges; (doors-real) its diameter a fifth of the clear depth, at most 2.5x its 11 px size
     const badge = D.labels.find(l => l.kind === 'badge' && l.id === top[1].id), box = D.boxes.find(b => b.id === top[1].id)
     const [circ, num] = badge.ops
-    expect([num.text, num.fontSize, num.fontStyle, circ.fill, circ.stroke, num.fill]).toEqual(['2', 11, '500', shade('#6366f1', 0.82).length === 7 ? circ.fill : null, circ.stroke, num.fill])
-    expect([circ.x + circ.r <= box.x + box.w, circ.x > box.x + box.w / 2, circ.y + circ.r <= box.y + box.h, circ.y > box.y + box.h / 2]).toEqual([true, true, true, true])
+    expect([num.text, num.fontStyle, circ.fill, circ.stroke, num.fill]).toEqual(['2', '500', shade('#6366f1', 0.82).length === 7 ? circ.fill : null, circ.stroke, num.fill])
+    expect(circ.r * 2).toBeCloseTo(Math.min(box.h / 5, 2.5 * 11 * 1.7), 6)
+    const mg = circ.r * 0.5
+    expect([circ.x + circ.r <= box.x + box.w - mg, circ.x > box.x + box.w / 2, circ.y + circ.r <= box.y + box.h - mg, circ.y > box.y + box.h / 2]).toEqual([true, true, true, true])
+    // (doors-real) the width's line about 1 ft past the bar; the badge clear of the line and the value — every door
+    for (const d of doors) {
+      const wl = D.labels.find(l => l.kind === 'width' && l.id === d.id), bl = D.labels.find(l => l.kind === 'badge' && l.id === d.id)
+      if (!wl || !bl) continue
+      const ln = wl.ops.find(o => o.op === 'line'), br = D.bars.find(b => b.id === d.id), wd = doorWall(d, objs, GS)
+      const lineAt = wd.axis === 'x' ? ln.points[1] : ln.points[0], barIn = wd.axis === 'x' ? (wd.inward > 0 ? br.y + br.h : br.y) : (wd.inward > 0 ? br.x + br.w : br.x)
+      expect(Math.abs(lineAt - barIn)).toBeCloseTo(GS, 6)
+      const ext = wl.ops.filter(o => o.op === 'line').flatMap(o => [o.points]).reduce((r, p) => ({ x0: Math.min(r.x0, p[0], p[2]), y0: Math.min(r.y0, p[1], p[3]), x1: Math.max(r.x1, p[0], p[2]), y1: Math.max(r.y1, p[1], p[3]) }), { x0: wl.box.x, y0: wl.box.y, x1: wl.box.x + wl.box.w, y1: wl.box.y + wl.box.h })
+      const b = bl.box, apart = b.x >= ext.x1 || b.x + b.w <= ext.x0 || b.y >= ext.y1 || b.y + b.h <= ext.y0
+      expect(apart).toBe(true)
+    }
     // the widths bold on a line inside the box; the gaps regular, no line; all inside the building (below the top wall)
     const vals = D.labels.filter(l => l.wallKey && l.stop && l.w.edge === w.edge && l.w.axis === 'x' && l.w.inward === 1).sort((p, q) => p.at.x - q.at.x)
     expect(vals.map(l => (l.kind === 'width' ? 'W' : 'g')).join('')).toEqual('gWgWgW')
