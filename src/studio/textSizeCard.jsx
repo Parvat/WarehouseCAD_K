@@ -4,7 +4,7 @@
 //     project's own, saved with it (replaces the old Label size setting);
 //   - an object's Text size field in its card (an aisle, a building, a column grid, a zone, a door — its badge): that
 //     object's own height (\`labelSizeIn\`, inches — document data: saved, undoable, printed); empty = the type's.
-// A height reads and types as feet and inches (1′-6″, 18, 18 in, 1.5 ft).
+// A height reads and types as feet and inches (1′-6″, 1.5, 1.5 ft, 18 in — a bare number is feet).
 
 import { useState, useEffect } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
@@ -13,13 +13,15 @@ import { serializeScene, autoSave } from '../utils/saveLoad'
 import { ftIn } from '../utils/bom'
 import { Sec, Field, fieldBox, Btn } from './cardParts'
 
-/** "1′-6″", "1'6\"", "18", "18 in", "1.5 ft" → inches (within the allowed range), or null. */
+/** "1′-6″", "1'6\"", "1.5", "1.5 ft", "18 in", '18"' → inches (within the allowed range), or null — a bare number is feet, as
+ *  every length typed in the app (a door's width, a gap). */
 export function parseTextInches(text) {
   const t = String(text || '').trim().toLowerCase().replace(/[′’]/g, "'").replace(/[″”]/g, '"').replace(/\s+/g, ' ')
   let m = t.match(/^(\d+(?:\.\d+)?) ?(?:'|ft|feet) ?-? ?(?:(\d+(?:\.\d+)?) ?(?:"|in|inch|inches)?)?$/)
   let v = null
   if (m) v = +m[1] * 12 + (m[2] ? +m[2] : 0)
-  else if ((m = t.match(/^(\d+(?:\.\d+)?) ?(?:"|in|inch|inches)?$/))) v = +m[1]
+  else if ((m = t.match(/^(\d+(?:\.\d+)?) ?(?:"|in|inch|inches)$/))) v = +m[1]
+  else if ((m = t.match(/^(\d+(?:\.\d+)?)$/))) v = +m[1] * 12
   if (v == null || !(v >= MIN_TEXT_IN && v <= MAX_TEXT_IN)) return null
   return Math.round(v * 100) / 100
 }
