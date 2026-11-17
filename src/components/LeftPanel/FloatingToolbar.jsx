@@ -839,10 +839,10 @@ function PinnedTray({ items, mode, colorOf, onPick, pinned, onTogglePin, onClose
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* Studio (STUDIO.md §1): `studio` renders the library as the left rail and its flyout, and the drawing tools as the
    bottom tool pill (src/studio/StudioTools.jsx) — the same sections, placement, tools and pen options as below. */
+/* (D1) Arrow and Arc are held out until they draw (docs/EPICS.md) — restore their rows then:
+     { id:'arrow', tool:TOOLS.ARROW, label:'Arrow', icon:'Arrow' }, { id:'arc', tool:TOOLS.ARC, label:'Arc', icon:'Arc' } */
 const LINE_TOOLS = [
   { id:'line',      tool:TOOLS.LINE,      label:'Line',      icon:'Line',      keyName:'L' },
-  { id:'arrow',     tool:TOOLS.ARROW,     label:'Arrow',     icon:'Arrow' },
-  { id:'arc',       tool:TOOLS.ARC,       label:'Arc',       icon:'Arc' },
   { id:'dimension', tool:ANNOT.DIMENSION, label:'Dimension', icon:'Dimension', kind:'object' },
   { id:'freehand',  tool:TOOLS.FREEHAND,  label:'Freehand',  icon:'Freehand' },
 ]

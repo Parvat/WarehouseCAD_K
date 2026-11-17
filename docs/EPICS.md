@@ -22,7 +22,8 @@ Platform (PL1–PL5) after its open questions are answered (FEATURES.md, Platfor
   lanes × deep and ignore levels (fix in R3/R4); the card calls a back-to-back pair "Double deep" (rename in R2).
 - **D1 — done** (branch d1-drawing): the Draw bar and the Text bar (design/drawbar.png); Line, Polyline, Rectangle, Circle,
   Polygon, Text — select, move, resize, lock, PDF; R fixed. REG-draw-line, REG-draw-rect, REG-draw-poly, REG-text-place.
-  Arc and Arrow still draw nothing (D2 or later).
+  Arc and Arrow still draw nothing (D2 or later): held out of the Line tools menu (and the A key) until they are built —
+  restore their LINE_TOOLS rows in components/LeftPanel/FloatingToolbar.jsx then.
 
 ## Epics
 

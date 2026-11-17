@@ -112,7 +112,7 @@ export function shortcutHandler(e) {
           's': SPLIT_TOOL,
           'p': TOOLS.PAN,
           'l': TOOLS.LINE,
-          'a': TOOLS.ARC,
+          // (D1) A (Arc) held out until Arc draws (docs/EPICS.md)
           'c': TOOLS.CIRCLE,
           'r': TOOLS.SQUARE,       // the Rectangle (D1 — was TOOLS.RECT, which does not exist: R did nothing)
           't': TOOLS.TEXT,
