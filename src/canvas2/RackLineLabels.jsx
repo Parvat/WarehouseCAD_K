@@ -22,6 +22,7 @@ import { labelScale } from '../render/labelSize'
 import { aisleLabelBoxes } from '../render/labelOps'
 import { useLiveObjects } from './live'
 import { MIN_TEXT_PX } from './minText'
+import { useTextSizes, textLz } from '../utils/textSizes'
 import { checkedNos } from '../studio/tally'
 import { lineNamer, lineSections, chipText } from '../utils/lineNames'
 import { buildingOutline } from '../utils/floorGeom'
@@ -29,8 +30,8 @@ import { buildingOutline } from '../utils/floorGeom'
 const WORDS = '#767C74', TICK = '#2E7D5B', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 /** The label's size in drawing units: the aisle labels' 10 at the Label size. */
 export const ROW_LABEL_PX = 10
-/** The labels' font size (world px): the Label size's — their natural drawing size, at any zoom (labels-final, CLAUDE.md
- *  Rule 8: never grown to reach 11 px; under it they hide — canvas2/minText.js). */
+/** The labels' font size (world px) at their label scale `lz` (utils/textSizes.js 'row' — CLAUDE.md Rule 8, the CAD text
+ *  model: a real text height, scaling with the drawing like geometry). */
 export const rowLabelFs = (lz) => ROW_LABEL_PX / lz
 void MIN_TEXT_PX
 const meets = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
@@ -86,13 +87,13 @@ export function useRowPlaces(on) {
   const objects = useLiveObjects()
   const { gs, layers, T } = useCanvasStore(useShallow(s => ({ gs: s.gridSize || 40, layers: s.layers, T: s.elevations })))
   const rowsShown = useViewPrefs(s => s.rowLabels || s.bomFull)
-  const labelSize = useLabelPrefs(s => s.labelSize)
-  const fs = rowLabelFs(labelScale(labelSize, gs))
+  const labelSize = useLabelPrefs(s => s.labelSize), sizes = useTextSizes(s => s.sizes)
+  const fs = rowLabelFs(textLz('row', gs, null, sizes))
   return useMemo(() => {
     if (!on || !rowsShown || !layerShown(layers, 'racking')) return []
     const lines = rackLinesNow(objects, gs)
     return lines.length ? rowLabelPlaces(lines, fs, aisleLabelBoxes(objects, gs, labelSize), lineNamer(objects, T, gs)) : []
-  }, [on, rowsShown, layers, objects, gs, fs, labelSize, T])
+  }, [on, rowsShown, layers, objects, gs, fs, labelSize, T, sizes])
 }
 
 export function RackLineLabels() {
@@ -102,9 +103,10 @@ export function RackLineLabels() {
   const shown = useViewPrefs(s => s.rowLabels || s.bomFull)
   const labelSize = useLabelPrefs(s => s.labelSize)
   // (Rule 8, labels-final) placed and drawn at their natural drawing size; under 11 px on screen they hide (minText)
-  const lz = labelScale(labelSize, gs), fs = ROW_LABEL_PX / lz, fsL = fs, k0 = 1
+  const sizes = useTextSizes(s => s.sizes)
+  const lz = textLz('row', gs, null, sizes), fs = ROW_LABEL_PX / lz, fsL = fs, k0 = 1
   const lines = useMemo(() => rackLinesNow(objects, gs), [objects, gs])
-  const avoid = useMemo(() => (shown && lines.length ? aisleLabelBoxes(objects, gs, labelSize) : []), [shown, lines.length, objects, gs, labelSize])
+  const avoid = useMemo(() => (shown && lines.length ? aisleLabelBoxes(objects, gs, labelSize) : []), [shown, lines.length, objects, gs, labelSize, sizes])
   const namer = useMemo(() => lineNamer(objects, T, gs), [objects, T, gs])
   const places = useMemo(() => rowLabelPlaces(lines, fsL, avoid, namer), [lines, fsL, avoid, namer])
   // Per section (row-numbering fixes): each chip filled with its section's colour, the text white or dark to read on it

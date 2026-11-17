@@ -6,7 +6,7 @@ import { useLocked } from '../../studio/useLocked'
 import { deleteSelectionWithAreas } from '../../utils/deleteSelection'
 import { useShallow } from 'zustand/react/shallow'
 import { pxToFtIn } from '../../utils/canvas'
-import { AisleLabelSize } from './panels/AisleLabelSize'
+import { TextSizeField } from '../../studio/textSizeCard'
 import { RackingAreaPanel } from './panels/RackingAreaPanel'
 import { RackRowExtras, MultiBayPanel, CantileverPanel, ColumnGridPanel, DriveInPanel, DriveThroughPanel, PushbackPanel } from '../RightPanel/Rackrowpanel'
 import { getLayoutCapacity } from '../../utils/capacity'
@@ -102,7 +102,8 @@ function AislePanel({ obj }) {
         <Seg aria="Traffic" value={direction} onChange={val => commitObjectUpdate(obj.id, { direction: val })}
           options={[{ value: 'up', label: '↑' }, { value: 'down', label: '↓' }, { value: 'both', label: '↕' }, { value: 'none', label: '—' }]} />
       </Field>
-      <AisleLabelSize ids={[obj.id]} />
+      {/* its own Text size (CLAUDE.md Rule 8 — the CAD text model; studio/textSizeCard.jsx) */}
+      <TextSizeField objs={[obj]} type="aisle" bare />
     </>
   )
 }
@@ -245,9 +246,9 @@ export function PropertiesPanel() {
         <MultiBayPanel />
         <Sec>
           <SelectionRacks selected={selected} />
-          {/* aisles among the selection: their own label size */}
+          {/* aisles among the selection: their own Text size */}
           {selected.some(o => o.type === 'aisle') && (
-            <AisleLabelSize ids={selected.filter(o => o.type === 'aisle').map(o => o.id)} />
+            <TextSizeField objs={selected.filter(o => o.type === 'aisle')} type="aisle" bare />
           )}
           {twoRacks && <Btn kind="ghost" onClick={() => createAisle(selected[0].id, selected[1].id)}>+ Create Aisle Label</Btn>}
           <Btn kind="danger" onClick={() => deleteSelectionWithAreas(useCanvasStore)}>Delete all</Btn>
@@ -293,6 +294,7 @@ export function PropertiesPanel() {
     return (
       <>
         <ZoneMain obj={obj} />
+        <TextSizeField objs={[obj]} type="names" />
         <More locked={locked}>
           <ObjectActions obj={obj} />
           <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
@@ -319,6 +321,7 @@ export function PropertiesPanel() {
     return (
       <>
         <DoorMain obj={obj} />
+        <TextSizeField objs={[obj]} type="doorBadge" />
         <More locked={locked}>
           <ObjectActions obj={obj} />
           <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
@@ -332,6 +335,7 @@ export function PropertiesPanel() {
     <>
       <Head><ColumnGridHead /></Head>
       <ColumnGridPanel obj={obj} locked={locked} />
+      <TextSizeField objs={[obj]} type="column" />
       <More locked={locked}>
         <ObjectActions obj={obj} />
         <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
@@ -355,6 +359,8 @@ export function PropertiesPanel() {
         {obj.type === 'aisle' && <AislePanel obj={obj} />}
         {obj.type === 'racking_area' && <RackingAreaPanel obj={obj} />}
         {obj.type?.startsWith('fp_') && <BuildingFields obj={obj} up={up} commit={commit} gridSize={gridSize} updateObject={updateObject} />}
+        {/* the building's size labels: its own Text size (CLAUDE.md Rule 8 — the CAD text model) */}
+        {obj.type?.startsWith('fp_') && <TextSizeField objs={[obj]} type="building" bare />}
         {['rect', 'l_shape', 't_shape', 'u_shape'].includes(obj.type) && (
           <Grid2>
             <NumField label="W px" value={obj.width} onChange={v => up('width', v)} onCommit={v => commit('width', v)} />

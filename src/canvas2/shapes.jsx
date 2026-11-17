@@ -1,4 +1,5 @@
 import { SELECT_BLUE, selectTint, textFace } from '../theme/tokens'
+import { useTextSizes, textHeight } from '../utils/textSizes'
 import { useCallback, useMemo, memo } from 'react'
 import { Group, Rect, Path, Shape, Circle, Line, Text } from 'react-konva'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
@@ -713,18 +714,18 @@ function RackingAreaShapeView({ obj, listening = false, bind }) {
   )
 }
 
-/** A zone: a tinted rectangle with its name in the middle, sized to the zone
- *  (drawing-size text, like every other label on the plan). */
+/** A zone: a tinted rectangle with its name in the middle — at the zone names' real text height (CLAUDE.md Rule 8, the
+ *  CAD text model: utils/textSizes.js 'names', 2 ft; the zone's own Text size if set), scaling with the drawing. */
 function ZoneShapeView({ obj, gridSize = 40, listening = false, bind }) {
+  const sizes = useTextSizes(s => s.sizes)
   if (!(obj.width > 0) || !(obj.height > 0)) return null
   const stroke = obj.stroke || '#64748b'
-  const fs = Math.max(gridSize, Math.min(4 * gridSize, Math.min(obj.width, obj.height) * 0.18))
+  const fs = textHeight('names', gridSize, obj.labelSizeIn, sizes)
   return (
     <Group name={nodeName(obj.id)} listening={listening} opacity={obj.opacity ?? 1} {...(bind ? bind(obj) : null)}>
       <Rect x={obj.x} y={obj.y} width={obj.width} height={obj.height} fill={obj.fill || stroke + '22'} stroke={stroke}
         strokeWidth={1.5} strokeScaleEnabled={false} perfectDrawEnabled={false} listening={listening} />
-      <Text x={obj.x} y={obj.y + obj.height / 2 - fs / 2} width={obj.width} align="center" text={obj.label || 'Zone'}
-        minFit={{ w: obj.width, h: obj.height }}
+      <Text x={obj.x} y={obj.y + obj.height / 2 - fs / 2} width={obj.width} align="center" text={obj.label || 'Zone'} wrap="none"
         fontSize={fs} fontStyle="600" fontFamily="'Plus Jakarta Sans', sans-serif" fill={stroke} listening={false} />
     </Group>
   )

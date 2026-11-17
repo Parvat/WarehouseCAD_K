@@ -56,7 +56,6 @@ import { TallyFill, TallyHighlight } from './TallyHighlight'
 import { SectionLegend } from './SectionLegend'
 import { ColumnGridAnnot } from './ColumnGridAnnot'
 import { DoorAnnot } from './DoorAnnot'
-import { LabelObstacles } from './LabelObstacles'
 import { DoorGapEdit } from './DoorGapEdit'
 import { CrossAislePick } from './CrossAislePick'
 import { CrossAisleBandPreview, CrossAisleBar, liveBand } from './CrossAisleBand'
@@ -64,7 +63,7 @@ import { CROSS_AISLE_TOOL, useCrossAisleTool, commitCut } from '../utils/crossAi
 import { commitTunnel } from '../utils/tunnel'
 import { TunnelMarks } from './TunnelMarks'
 
-// the canvas text floor (CLAUDE.md Rule 8): every Konva text at least 11 screen px, or hidden (canvas2/minText.js)
+// the canvas text, measured for the tests (CLAUDE.md Rule 8 — the CAD text model: canvas2/minText.js)
 installMinText()
 
 /* ── STEP 1 · the canvas surface ─────────────────────────────────────────────
@@ -625,8 +624,6 @@ export function Canvas2() {
             {measuring && (
               <MeasureOverlay points={measurePts} hover={measureHover} zoom={zoom} gridSize={gridSize} />
             )}
-            {/* the objects a grown label never covers (Rule 8 — LabelObstacles.jsx; draws nothing) */}
-            <LabelObstacles />
             {/* the rack line numbers R1, R2 … at each row end (RackLineLabels.jsx — the BOM's rows) */}
             <RackLineLabels />
             {/* the sections' legend: a key outside the building, its bottom-left (SectionLegend.jsx — legend round: no name

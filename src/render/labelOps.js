@@ -24,6 +24,7 @@ import { positionRectForIndex, bayRectForIndex } from './bayGeom'
 import { uprightFramesLocal, rackFootprint, expandColumnGrid } from '../generate/columnCheck'
 import { oversizedBayIndices } from '../utils/capacity'
 import { isEmptySide } from '../utils/bayEmpty'
+import { textLz } from '../utils/textSizes'
 
 export const LABEL_FONT = 'JetBrains Mono, monospace'
 const RED = '#C0392B'
@@ -71,7 +72,16 @@ export function aisleLabelOps(L, lz) {
         { op: 'poly', points: [a1, ly, a1 + aw, ly - aw / 2, a1 + aw, ly + aw / 2], fill: clr },
         { op: 'poly', points: [a2, ly, a2 - aw, ly - aw / 2, a2 - aw, ly + aw / 2], fill: clr })
     }
-    out.push(...pillOps(lx, ly, text, fs, lz, { color: look.text, bg: look.bg, padX: AISLE_LABEL_PADX_PX / lz, heightScale: 1.5, rx: 2 / lz, stroke: look.stroke, strokeWidth: look.sw / lz, opacity: 0.95 }))
+    // (CLAUDE.md Rule 8 — the CAD text model) a pill longer than the gap it measures sits just past the arrow's end, on a
+    // short leader — laid out once in drawing units, the same at every zoom
+    const padX = AISLE_LABEL_PADX_PX / lz, along = isHoriz ? fs * 1.5 : text.length * fs * 0.62 + padX * 2, off = 4 / lz
+    let px = lx, py = ly
+    if (along > a2 - a1 + 1e-6) {
+      const c = a2 + off + along / 2
+      if (isHoriz) py = c; else px = c
+      out.push({ op: 'line', name: 'aisle-leader', points: isHoriz ? [lx, a2, lx, a2 + off] : [a2, ly, a2 + off, ly], stroke: clr, strokeWidth: sw })
+    }
+    out.push(...pillOps(px, py, text, fs, lz, { color: look.text, bg: look.bg, padX, heightScale: 1.5, rx: 2 / lz, stroke: look.stroke, strokeWidth: look.sw / lz, opacity: 0.95 }))
   }
   return out
 }
@@ -95,11 +105,11 @@ export function aisleLabelBoxes(objects, gridSize = 40, labelSize, { aisles = tr
   if (aisles) for (const a of objects) {
     if (!a || a.type !== 'aisle') continue
     if (!aisleGapShown(a, objects, gridSize, gapR.pair(a.row1Id, a.row2Id))) continue      // not drawn (hitTest.js gapShown)
-    const lz = aisleLabelScale(a, labelSize, gridSize)
+    const lz = textLz('aisle', gridSize, a.labelSizeIn)
     const L = aisleLabelLayout(a, objects, gridSize, { profile, lz })
     if (L) take(aisleLabelOps(L, lz))
   }
-  if (cross) { const lz = labelScale(labelSize, gridSize); for (const L of crossAisleLabels(objects, gridSize, { profile, lz })) take(aisleLabelOps(L, lz)) }
+  if (cross) { const lz = textLz('aisle', gridSize); for (const L of crossAisleLabels(objects, gridSize, { profile, lz })) take(aisleLabelOps(L, lz)) }
   return out
 }
 
@@ -231,13 +241,14 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, a
     const fits = k.inGap
     let leader = null
     if (!fits) {
-      // (labels-final, CLAUDE.md Rule 8) a number that does not fit its own gap is left out — its line drawn whole — and
-      // returns as you zoom in; no leader (was: stepped off the line onto the aisle, on a leader)
-      const line = m.short ? SHORT_COLOR : CLEAR_LINE
-      if (a) out.push({ op: 'line', points: [a.x0, a.y0, a.x1, a.y1], stroke: line, strokeWidth: 1 / lz, dash: [2 / lz, 2 / lz] })
-      continue
+      // (CLAUDE.md Rule 8 — the CAD text model) too long for its gap at its real size: just outside it, on a short leader
+      // from the line's middle — laid out once in drawing units, the same at every zoom
+      const s = outSpot(k), mx = m.label.x, my = m.label.y
+      // no spot near clear of every other label (an aisle label, another number): left out — labels never overlap
+      if (s.bad >= 4) continue
+      place(k, s.x, s.y); k.placedOut = true
+      leader = vertArrow ? [mx, my, s.x - Math.sign(s.x - mx) * tw / 2, my] : [mx, my, mx, s.y - Math.sign(s.y - my) * th / 2]
     }
-    void outSpot
     const { lx, ly } = k
     const line = m.short ? SHORT_COLOR : CLEAR_LINE, ink = m.short ? SHORT_COLOR : CLEAR_INK
     if (a) {

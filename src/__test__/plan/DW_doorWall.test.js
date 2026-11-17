@@ -129,7 +129,8 @@ describe('DW — doors on their walls', () => {
       const top3 = Z.labels.filter(l => l.kind === 'badge' && doors.slice(0, 2).some(d => d.id === l.id))
       const rel = top3.map(l => { const b = Z.boxes.find(q => q.id === l.id); return Math.round((l.at.y - (b.y + b.h)) * 1000) / 1000 })   // (from its box's far edge)
       expect([lz, new Set(rel).size <= 1]).toEqual([lz, true])
-      for (const l of Z.labels.filter(q => q.kind === 'badge')) { const b = Z.boxes.find(q => q.id === l.id); expect(l.box.w <= Math.min(b.w, b.h) + 1e-6).toBe(true) }
+      // (labels-cad, CLAUDE.md Rule 8: nothing hides — every door keeps its badge at any label scale)
+      expect([lz, Z.labels.filter(q => q.kind === 'badge').length]).toEqual([lz, doors.length])
     }
     const small = doorDrawing(objs, GS, 4)
     expect([small.labels.filter(l => l.kind === 'badge').map(l => l.ops[1].text).join(), small.labels.some(l => l.ops.some(o => o.leader))]).toEqual(['1,2,3,4,5,6', false])

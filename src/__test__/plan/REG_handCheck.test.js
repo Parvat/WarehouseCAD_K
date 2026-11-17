@@ -598,7 +598,9 @@ describe('REG — the hand check by real clicks', () => {
       await L.click(a.flue)                                                             // the pair, as one row
       const sel = (await levelOf()).ids
       expect([sel, (await L.bar())?.kind, await L.page.locator('[data-selection-bar]').count()]).toEqual([(await pieces()).sort(), 'rack', 1])
-      expect((await L.pills()).length - base1).toBe(one0)                               // one label set, as before
+      // one label set, as before (labels-cad: at the rack labels' real height a bay's beam label fits its bay — the emptied
+      // side's is gone, so the set may have one fewer)
+      expect([one0 - 1, one0]).toContain((await L.pills()).length - base1)
       // the facing bay too: the pair splits — two sections
       await L.click(other)
       expect((await levelOf()).one.length + (await levelOf()).multi).toBe(1)
@@ -743,11 +745,10 @@ describe('REG — the hand check by real clicks', () => {
       expect((await until(numbers, v => v.length > 0)).length).toBeGreaterThan(0)
       await zoomOutTill(7); await L.page.waitForTimeout(350)
       expect((await numbers()).length).toBeGreaterThan(0)
-      // (labels-final, Rule 8 — was: drawn grown to 11 px, a long one outside on a leader) zoomed out the numbers would be under
-      // 11 px: none drawn — and never two over each other, never a leader (every clearance-numbers group on the stage — BUG 89)
+      // (labels-cad, CLAUDE.md Rule 8 — the CAD text model) zoomed out the numbers are drawn at their real height, as zoomed
+      // in — none hidden; never two over each other (two columns' included — every clearance-numbers group, BUG 89)
       const drawnNums = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find('.clearance-numbers').flatMap(g => g.find('Text').filter(t => (t._mtPx || 0) > 0).map(t => t._mtRect).filter(Boolean)) })
-      const leadersOut = await L.page.evaluate(() => window.Konva.stages[0].find(n => n.name() === 'clearance-leader').length)
-      expect([drawnNums.length, leadersOut]).toEqual([0, 0])
+      expect([drawnNums.length > 0, drawnNums.some((p, i) => drawnNums.some((q, j) => j > i && p.x < q.x + q.w - 0.5 && q.x < p.x + p.w - 0.5 && p.y < q.y + q.h - 0.5 && q.y < p.y + p.h - 0.5))]).toEqual([true, false])
       // in, well past: the look, and no number on a rack or a column
       for (let i = 0; i < 12; i++) await wheel(-60)
       const look = await L.page.evaluate(() => {
@@ -1585,7 +1586,8 @@ describe('REG — the hand check by real clicks', () => {
       const d1 = await addDoor7(0.4), d2 = await addDoor7(0.6), gs = await gs7()
       await L.page.keyboard.press('Escape')
       // close in on the doors (the view only): at plan zoom the rack along the wall reaches over them by its pick padding
-      await L.S('const z = 0.6, c = arg; S.setState({ zoom: z, panX: 720 - c.x * z, panY: 450 - c.y * z })', { x: (d1.x + d2.x + d2.width) / 2, y: d1.y + d1.height / 2 }); await L.page.waitForTimeout(200)
+      // (labels-cad: both doors between the left rail and the card, which its Text size field makes taller)
+      await L.S('const z = 0.5, c = arg; S.setState({ zoom: z, panX: 600 - c.x * z, panY: 450 - c.y * z })', { x: (d1.x + d2.x + d2.width) / 2, y: d1.y + d1.height / 2 }); await L.page.waitForTimeout(200)
       const p1 = await doorPoint7(d1), p2 = await doorPoint7(d2)
       await L.click(p1)
       expect((await levelOf()).ids).toEqual([d1.id])
@@ -6480,9 +6482,9 @@ describe('REG — the hand check by real clicks', () => {
       await onCanvasAll([c]); await L.click(c); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
       expect(await L.selected()).toEqual(['column_grid'])
     }
-    /** (labels-final, Rule 8) the Label size Extra large: the grid's bubbles and chain values drawn at Fit (11 px or more there) —
-     *  for the tests that work the grid by its labels at Fit, not about the labels' size */
-    const bigLabels = async () => { await L.page.evaluate(() => window.__hc.P.useLabelPrefs.setState({ labelSize: 'xlarge' })); await L.page.waitForTimeout(250) }
+    /** (labels-cad, Rule 8 — the CAD text model) the column chain and bubbles' Text size 4 ft (View › Text size): big enough to
+     *  press at Fit — for the tests that work the grid by its labels at Fit, not about the labels' size */
+    const bigLabels = async () => { await L.S('return import("/src/utils/textSizes.js").then(m => m.useTextSizes.getState().setSize("column", 48))'); await L.page.waitForTimeout(250) }
     const bubbles = () => L.page.evaluate(() => window.Konva.stages[0].find('.column-bubble-text').map(t => { const r = t.getClientRect(); return { text: t.text(), x: r.x + r.width / 2, y: r.y + r.height / 2 } }))
     const outlineBox = () => L.S('return import("/src/utils/floorGeom.js").then(G => { const f = S.getState().objects.find(o => /^fp_/.test(o.type)), p = G.buildingOutline(f), xs = p.map(q => q.x), ys = p.map(q => q.y); return { id: f.id, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) } })')
 
@@ -7058,127 +7060,71 @@ describe('REG — the hand check by real clicks', () => {
       }
       return { z, out }
     })
-    it('REG-canvas-text-min (click): every text on the canvas — labels, numbers, chains, tags — is drawn at least 11 px on screen at Fit, 50% and 200% (the door labels at the aisle labels\' size, showing wherever they show — doors-aisle; was doors5\'s drawing-scale exception), with nothing selected, the column grid selected, a rack selected and a door selected; a text that cannot fit at 11 px is hidden, never smaller; (doors-edit fixes) no two labels drawn over each other and no label clipped — a row of eleven docks and a man door on the top wall, the views on the building and on that wall; every object drawn at its true size (its world size the same at Fit and 200%)', async () => {
+    it('REG-canvas-text-cad (click): the CAD text model (CLAUDE.md Rule 8 — replaces REG-canvas-text-min) — every canvas label has a real text height and a fixed place in drawing units: on the 4 fixtures with a row of eleven docks and a man door on the top wall, every label’s world size and position are identical at 10 %, 50 % and 200 % (nothing hidden, grown, grouped or moved by the zoom), nothing selected and a dock selected (a real click); no two labels over each other at real size; every object drawn at its true size', async () => {
       await open()
       // (setup, one undo step) eleven dock doors a little apart and a man door on the building's top wall, as the door tool places them
       await L.S('return import("/src/utils/doorTool.js").then(D => { const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type)), T = D.doorTypes(), add = []; for (const [id, t] of [...Array.from({ length: 11 }, (_, i) => ["struct_loading_dock", 0.15 + i * 0.045]), ["struct_egress", 0.75]]) { const spec = T.find(x => x.id === id), at = D.doorAt([...st.objects, ...add], { x: fp.x + fp.width * t, y: fp.y }, spec, gs, 40); if (at) add.push(D.doorObject(at, spec, () => "door-" + id + "-" + t)) } S.setState({ objects: [...st.objects, ...add] }); S.getState().commitObjectUpdate(fp.id, {}); return add.length })')
       expect(await L.S('return S.getState().objects.filter(o => /^struct_(loading_dock|egress)$/.test(o.type)).length')).toBe(12)
-      const fit = async () => { await L.page.locator('[data-island="bottom-right"]').getByRole('button', { name: 'Fit' }).click(); await L.page.waitForTimeout(300) }
-      // a zoom, the view on the building's middle — or on its top wall's doors
-      const zoomTo = async (z, onDoors = false) => { await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), cx = fp.x + fp.width * (arg[1] ? 0.35 : 0.5), cy = arg[1] ? fp.y : fp.y + fp.height / 2; S.setState({ zoom: arg[0], panX: 720 - cx * arg[0], panY: 450 - cy * arg[0] })', [z, onDoors]); await L.page.waitForTimeout(300) }
-      const states = [
-        ['nothing', async () => { await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.S('S.setState({ selectedIds: [] })'); await L.page.waitForTimeout(200) }],
-        ['grid', async () => { await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); S.setState({ selectedIds: [g.id] })'); await L.page.waitForTimeout(250) }],
-        ['rack', async () => { await L.S('const r = S.getState().objects.find(o => /^rack_/.test(o.type)); S.setState({ selectedIds: [r.id] })'); await L.page.waitForTimeout(250) }],
-        ['door', async () => { await L.S('const r = S.getState().objects.find(o => /^struct_loading_dock$/.test(o.type)); S.setState({ selectedIds: [r.id] })'); await L.page.waitForTimeout(250) }],
-      ]
-      const small = [], over = [], clipped = [], covers = []
-      const views = [['Fit', fit], ['50%', () => zoomTo(0.5)], ['200%', () => zoomTo(2)], ['50% doors', () => zoomTo(0.5, true)], ['200% doors', () => zoomTo(2, true)]]
-      for (const [zname, setZoom] of views) {
-        for (const [sname, select] of states) {
-          await setZoom(); await select()
-          const ts = await textsDrawn()
-          expect([zname, sname, ts.length > 0]).toEqual([zname, sname, true])
-          for (const t of ts) if (t.px > 0 && t.px < 11 - 0.01) small.push([zname, sname, t.name, t.text, t.px])
-          // (labels-final) never grown past its own drawing size
-          for (const t of ts) if (t.px > t.raw + 0.01) small.push([zname, sname, t.name, t.text, 'grown', t.px, t.raw])
-          const ls = await labelsDrawn()
-          for (const o of overlapsOf(ls)) over.push([zname, sname, o])
-          for (const l of ls) if (l.clip) clipped.push([zname, sname, l.name, l.text])
-          for (const c of await grownOverObjects()) covers.push([zname, sname, c])
-        }
-      }
-      expect(small).toEqual([])
-      expect(over).toEqual([])
-      expect(clipped).toEqual([])
-      // (labels-cover, Rule 8) no label grown to the floor drawn over an object or bigger than its own
-      expect(covers).toEqual([])
-      // (labels-final, Rule 8 — was: door labels grown to show wherever the aisle labels show) every door and aisle label is
-      // drawn at its own drawing size — never grown — and only at 11 px or more; with nothing selected no door chain at all
-      const doorTexts = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find(n => /^door-(badge|width|gap):/.test(n.name())).flatMap(g => g.find('Text').map(t => ({ kind: g.name().split(':')[0], px: t._mtPx || 0, own: t.fontSize() * Math.abs(t.getAbsoluteScale().y), text: t.text() }))) })
-      const aisleTexts = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find(n => /^aisle:/.test(n.name())).flatMap(g => g.find('Text').map(t => ({ px: t._mtPx || 0, own: t.fontSize() * Math.abs(t.getAbsoluteScale().y) }))) })
-      // (a label on the floor never covers a rack: here, as Fill keeps them, no rack in the doors' clear spaces — the racks under
-      // them taken away; the setup put the docks over the top wall's row)
-      await L.S('return Promise.all([import("/src/utils/doorClear.js"), import("/src/canvas2/hitTest.js")]).then(([C, H]) => { const st = S.getState(), gs = st.gridSize || 40, cl = C.doorClearRects(st.objects, gs), under = (o) => { const b = H.worldBoundsOf(o, st.objects); return b && cl.some(c => b.x < c.x + c.w && c.x < b.x + b.width && b.y < c.y + c.h && c.y < b.y + b.height) }; S.setState({ objects: st.objects.filter(o => !(/^rack_/.test(o.type) && under(o))) }) })')
-      await states[0][1](); await fit()
-      const seen = { aisle: 0, badge: 0, value: 0 }
-      for (let step = 0; step < 10; step++) {
-        const at = await aisleTexts(), dt = await doorTexts(), z = await L.S('return S.getState().zoom')
-        const all = [...at, ...dt]
-        // drawn at its own size, 11 px or more — or not drawn at all; never a range, never a D / M tag
-        expect([z, all.every(t => t.px === 0 || (Math.abs(t.px - t.own) < 0.01 && t.px >= 11 - 0.01)), dt.some(t => /–|^[DM]\d/.test(t.text || ''))]).toEqual([z, true, false])
-        // a label whose own size is under 11 px is hidden
-        expect([z, all.filter(t => t.own < 11 - 0.01).every(t => t.px === 0)]).toEqual([z, true])
-        // nothing selected: the door chain is not drawn (only the doors, boxes and badges)
-        expect([z, dt.filter(t => t.kind !== 'door-badge' && t.px > 0).length]).toEqual([z, 0])
-        seen.aisle += at.filter(t => t.px > 0).length; seen.badge += dt.filter(t => t.kind === 'door-badge' && t.px > 0).length
-        if (z >= 0.5) break
-        await L.page.locator('[data-island="bottom-left"]').getByRole('button', { name: 'Zoom in' }).click(); await L.page.waitForTimeout(250)
-      }
-      expect([seen.aisle > 0, seen.badge > 0]).toEqual([true, true])
-      // (labels-final) the door chain shows only while a door on its wall is selected, placed or dragged: at Fit with nothing
-      // selected, no gap; a dock clicked at 30 % (where its values are 11 px or more), every gap on its wall — the corner to the
-      // first door, door to door, the last door to the far corner — and they stay while it is moved (a real drag, held)
-      const gapTexts = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find(n => /^door-gap:/.test(n.name())).map(g => g.find('Text').some(t => (t._mtPx || 0) >= 11 - 0.01)) })
-      await states[0][1](); await fit()
-      expect((await gapTexts()).filter(Boolean).length).toBe(0)
-      const wantGaps = await L.S('return import("/src/utils/doorWall.js").then(W => { const st = S.getState(), gs = st.gridSize || 40, ds = st.objects.filter(o => /^struct_/.test(o.type)); const ws = new Map(); for (const d of ds) { const w = W.doorWall(d, st.objects, gs); if (w) ws.set(W.wallKey(w), w) } return [...ws.values()].reduce((n, w) => n + W.wallGaps(st.objects, w, { gs, withEnd: true }).filter(g => g.hi - g.lo > 0.5).length, 0) })')
-      // (at 30 % on the door wall)
-      await zoomTo(0.3, true)
-      const dk = await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), cx = fp.x + fp.width * 0.35, d = st.objects.filter(o => o.type === "struct_loading_dock").sort((p, q) => Math.abs(p.x + p.width / 2 - cx) - Math.abs(q.x + q.width / 2 - cx))[0]; return { x: d.x + d.width * 0.3, y: d.y + d.height * 0.8, id: d.id, x0: d.x }')
-      // (a dock pressed deep in its box — the chain's values, by the wall, would open the value's edit box; its badge is at its right corner)
-      const cvb = await L.page.locator('#canvas2-container').boundingBox(), ds0 = await L.toScreen(dk)
-      await L.page.mouse.click(ds0.x, ds0.y); await L.page.waitForTimeout(200)
-      // (labels-final) the gaps that fit their segments, off the racks, are drawn — the docks here 1′-10″ apart, most do not at
-      // this size; what is drawn stays drawn while the dock is moved
-      const g0 = await gapTexts()
-      expect([g0.length <= wantGaps, g0.filter(Boolean).length > 0 || g0.length < wantGaps]).toEqual([true, true])
-      await L.page.mouse.move(ds0.x, ds0.y); await L.page.mouse.down()
-      for (let k = 1; k <= 4; k++) { await L.page.mouse.move(ds0.x + k * 2, ds0.y); await L.page.waitForTimeout(40) }
-      await L.page.waitForTimeout(200)
-      const gMid = await gapTexts()
-      await L.page.mouse.up(); await L.page.waitForTimeout(200)
-      const moved = await L.S('const d = S.getState().objects.find(o => o.id === arg.id); return Math.abs(d.x - arg.x0) > 1e-6', dk)
-      expect([moved, gMid.filter(Boolean).length]).toEqual([true, g0.filter(Boolean).length])
-      await L.page.mouse.move(cvb.x + 5, cvb.y + cvb.height - 5); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(200)
-      // (doors-real) the badge never over the width's line or value — at 50 %, 100 % and 200 % on the door wall, a dock clicked
-      // (a real click on its bar) and nothing selected; the badge's diameter a fifth of its clear depth (capped), so it keeps
-      // its proportion to the box at every zoom
-      const badgeVsWidth = () => L.page.evaluate(() => {
+      // every label drawn, in WORLD units: one entry per label (a pill or chip with its text, or a lone text), keyed by its
+      // name, text and order — its world box from what was drawn on screen (canvas2/minText.js _mtRect)
+      const worldLabels = () => L.page.evaluate(() => {
         const st = window.Konva.stages[0]; st.draw()
-        const drawn = (g) => g && g.isVisible() && g.find('Text').some(t => (t._mtPx || 0) > 0)
-        const rect = (g) => g.getClientRect({ skipShadow: true, skipStroke: true })
-        return st.find(n => /^door-badge:/.test(n.name())).map(b => {
-          const id = b.name().slice('door-badge:b:'.length), w = st.findOne(n => n.name() === 'door-width:w:' + id)
-          if (!drawn(b) || !drawn(w)) return null
-          // (each drawn shape of the width — its text, the leader of a lifted value — not the box round them all)
-          const p = rect(b)
-          return { id, hit: w.find('Shape').some(sh => { const q = sh.getClientRect({ skipShadow: true, skipStroke: true }); return p.x < q.x + q.width && q.x < p.x + p.width && p.y < q.y + q.height && q.y < p.y + p.height }) }
-        }).filter(Boolean)
-      })
-      const overlapsAt = []
-      for (const zz of [0.5, 1, 2]) {
-        await zoomTo(zz, true); await states[0][1]()
-        const box = await L.page.locator('#canvas2-container').boundingBox()
-        const spot = await L.S('const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type)), z = st.zoom; const ds = st.objects.filter(o => o.type === "struct_loading_dock"); const vw = 1100; const d = ds.find(o => { const x = (o.x + o.width / 2) * z + st.panX; return x > 120 && x < vw }); return d ? { x: (d.x + d.width / 2) * z + st.panX, y: (d.y + d.height / 2) * z + st.panY } : null')
-        for (const sel of ['nothing', 'dock']) {
-          if (sel === 'dock' && spot) { await L.page.mouse.click(box.x + spot.x, box.y + spot.y); await L.page.waitForTimeout(250) }
-          const pairs = await badgeVsWidth()
-          // (labels-final: the widths are on the chain — shown only with a dock on the wall selected)
-          expect([zz, sel, pairs.length > 0]).toEqual([zz, sel, sel === 'dock'])
-          for (const p of pairs) if (p.hit) overlapsAt.push([zz, sel, p.id])
+        const S = window.__hc.S.getState(), z = S.zoom, px = S.panX, py = S.panY
+        const groupOf = (n) => { let p = n.getParent(); while (p && p.nodeType !== 'Layer') { if (p.getAttr('minLabel')) return p; p = p.getParent() } return null }
+        const nameOf = (n) => { let p = n; while (p && p.nodeType !== 'Layer') { if (p.name()) return p.name(); p = p.getParent() } return '?' }
+        const out = [], seen = new Map()
+        for (const t of st.find('Text')) {
+          if (!t.isVisible() || !t.text() || !t.text().trim() || !t._mtRect) continue
+          const g = groupOf(t)
+          let r = t._mtRect
+          if (g) for (const q of g.find('Shape')) if (q !== t && q._mtRect && q.isVisible() && q.className !== 'Line') { const b = q._mtRect, x = Math.min(r.x, b.x), y = Math.min(r.y, b.y); r = { x, y, w: Math.max(r.x + r.w, b.x + b.w) - x, h: Math.max(r.y + r.h, b.y + b.h) - y } }
+          const base = nameOf(t) + ' «' + t.text().slice(0, 16) + '»', k = (seen.get(base) || 0) + 1
+          seen.set(base, k)
+          out.push({ key: base + '#' + k, x: (r.x - px) / z, y: (r.y - py) / z, w: r.w / z, h: r.h / z, fs: t.fontSize() * Math.abs(t.getAbsoluteScale().y) / z, grp: g ? g._id : t._id })
         }
-        await L.page.keyboard.press('Escape')
+        return out
+      })
+      const zoomTo = async (z) => { await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), cx = fp.x + fp.width * 0.4, cy = fp.y + fp.height * 0.3; S.setState({ zoom: arg, panX: 560 - cx * arg, panY: 450 - cy * arg })', z); await L.page.waitForTimeout(350) }
+      const diffs = [], over = []
+      for (const sel of ['nothing', 'dock']) {
+        await L.page.keyboard.press('Escape'); await L.S('S.setState({ selectedIds: [] })'); await L.page.waitForTimeout(150)
+        const views = {}
+        for (const z of [0.1, 0.5, 2]) {
+          await zoomTo(z)
+          if (sel === 'dock') {
+            // a dock clicked where it is drawn (deep in its door box, off its chain value)
+            const p = await L.S('const st = S.getState(), d = st.objects.filter(o => o.type === "struct_loading_dock").sort((p, q) => p.x - q.x)[5], z = st.zoom; return { x: (d.x + d.width * 0.3) * z + st.panX, y: (d.y + d.height * 0.85) * z + st.panY, id: d.id }')
+            const cv = await L.page.locator('#canvas2-container').boundingBox()
+            if (z === 0.1) { await L.page.mouse.click(cv.x + p.x, cv.y + p.y); await L.page.waitForTimeout(250) }
+            expect([z, await L.S('return S.getState().selectedIds')]).toEqual([z, [p.id]])
+          }
+          views[z] = await worldLabels()
+        }
+        const keys = new Set([...views[0.1], ...views[0.5], ...views[2]].map(l => l.key))
+        const at = (z, k) => views[z].find(l => l.key === k)
+        for (const k of keys) {
+          const ls = [0.1, 0.5, 2].map(z => at(z, k))
+          if (ls.some(l => !l)) { diffs.push([sel, k, 'not at every zoom', ls.map(Boolean)]); continue }
+          const [p, q, r] = ls, tol = 0.6 / 0.1                                         // half a screen px at 10 %, in world px
+          for (const o of [q, r]) if (['x', 'y', 'w', 'h'].some(c => Math.abs(o[c] - p[c]) > tol) || Math.abs(o.fs - p.fs) > 1e-6) diffs.push([sel, k, [p.x, p.y, p.w, p.h, p.fs].map(Math.round), [o.x, o.y, o.w, o.h, o.fs].map(Math.round)])
+        }
+        // no two labels over each other at their real size (more than a few hundredths of a foot each way), at 200 %
+        const ls = [...new Map(views[2].map(l => [l.grp, l])).values()]
+        for (let i = 0; i < ls.length; i++) for (let j = i + 1; j < ls.length; j++) {
+          const A = ls[i], B = ls[j], ox = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x), oy = Math.min(A.y + A.h, B.y + B.h) - Math.max(A.y, B.y)
+          if (ox > 1 && oy > 1) over.push([sel, A.key, B.key])
+        }
       }
-      expect(overlapsAt).toEqual([])
-      // objects at their true size: the same world size at Fit and at 200 % (a few screen px of stroke either way)
-      await states[0][1](); await fit(); const a = await objectSizes()
-      await zoomTo(2); const b = await objectSizes()
+      expect(diffs).toEqual([])
+      expect(over).toEqual([])
+      // objects at their true size: the same world size at 10 % and at 200 % (a few screen px of stroke either way)
+      await L.page.keyboard.press('Escape'); await L.S('S.setState({ selectedIds: [] })')
+      await zoomTo(0.1); const A = await objectSizes()
+      await zoomTo(2); const B = await objectSizes()
       const off = []
-      for (const [k, v] of Object.entries(a.out)) { const w = b.out[k]; if (!w) continue; const tol = 4 / a.z + 4 / b.z; if (Math.abs(v.w - w.w) > tol || Math.abs(v.h - w.h) > tol) off.push([v.type, Math.round(v.w), Math.round(v.h), Math.round(w.w), Math.round(w.h)]) }
-      expect([Object.keys(a.out).length > 20, off]).toEqual([true, []])
-    }, 240000)
-
+      for (const [k, v] of Object.entries(A.out)) { const w = B.out[k]; if (!w) continue; const tol = 4 / A.z + 4 / B.z; if (Math.abs(v.w - w.w) > tol || Math.abs(v.h - w.h) > tol) off.push([v.type, Math.round(v.w), Math.round(v.h), Math.round(w.w), Math.round(w.h)]) }
+      expect(off).toEqual([])
+    }, 180000)
 
     /* ── doors-edit round (STUDIO.md, Doors; mockup doors2.png) ── */
     it('REG-doors-edit (click): placing — the door tool stays on, the next door\'s live gap to the last one shows as a gap label, a number typed + Enter drops it exactly there; the doors as thin bars, numbered 1, 2, 3 in badges (doors5 — was D1 / M1 tags); a door selected — its card (Type, Width, Height, From left corner, Clear space, gaps); its wall’s widths and gaps inside the building (doors5 — was a chain outside), a gap and a width clicked and typed, an end handle dragged; the Dock door row tool fills a wall with equal doors in one undo; the padlock in the card head locks it (not movable, fields greyed)', async () => {
@@ -7361,7 +7307,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(ends).toBeGreaterThan(0)
     }, 180000)
 
-    it('REG-colgrid-bubble-fit (click): a gridline bubble takes a click only where it is drawn (labels-final, CLAUDE.md Rule 8 — was: drawn grown to 11 px zoomed out, its click area with it) — at 5 % its name would be under 11 px: hidden, and a press where it would be does not drag its line; zoomed in, drawn at its drawing size, a press inside its circle drags the line, one just past the circle does not', async () => {
+    it('REG-colgrid-bubble-fit (click): a gridline bubble is clicked where it is drawn (labels-cad, CLAUDE.md Rule 8 — the CAD text model; was: hidden zoomed out) — drawn at every zoom at its real size, the same circle in drawing units at 5 % and at 30 %; zoomed in, a press inside its circle drags its line, one just past the circle does not', async () => {
       await open()
       await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), z = 0.05; S.setState({ zoom: z, panX: 720 - (fp.x + fp.width / 2) * z, panY: 450 - (fp.y + fp.height / 2) * z })'); await L.page.waitForTimeout(300)
       await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); S.setState({ selectedIds: [g.id] })'); await L.page.waitForTimeout(250)
@@ -7369,23 +7315,20 @@ describe('REG — the hand check by real clicks', () => {
       const gs = await gs7(), cv = await L.page.locator('#canvas2-container').boundingBox()
       const lines = () => L.S('const g = S.getState().objects.find(o => o.type === "column_grid"), xs = [g.x]; for (const s of g.spacingX) xs.push(xs[xs.length - 1] + s); return xs')
       const cursor = () => L.page.evaluate(() => document.getElementById('canvas2-container').style.cursor)
-      // bubble B as laid out: its centre and radius on screen, and its letter as drawn (0: hidden by the rule)
+      // bubble B as drawn: its centre and radius on screen, its letter's size on screen
       const bubbleB = () => L.page.evaluate(() => {
         const st = window.Konva.stages[0]; st.draw()
         const g = st.find('.column-bubble').find(n => n.findOne('Text')?.text() === 'B'), c = g.findOne('Circle'), t = g.findOne('Text')
         const p = c.getAbsolutePosition()
         return { x: p.x, y: p.y, r: c.radius() * Math.abs(c.getAbsoluteScale().x), letter: t._mtPx || 0 }
       })
-      const far = await bubbleB(), l0 = await lines()
-      expect(far.letter).toBe(0)
-      await L.page.mouse.move(cv.x + far.x, cv.y + far.y); await L.page.waitForTimeout(150)
-      expect(await cursor()).not.toBe('ew-resize')
-      // zoomed in on it (its world point from the far view): drawn at its drawing size, 11 px or more
+      const far = await bubbleB(), l0 = await lines(), z0 = await L.S('return S.getState().zoom')
+      expect(far.letter > 0).toBe(true)
+      // zoomed in on it (its world point from the far view): the same circle in drawing units, the letter at the same height
       const v = await L.S('const s = S.getState(); return { z: s.zoom, x: s.panX, y: s.panY }'), wb = { x: (far.x - v.x) / v.z, y: (far.y - v.y) / v.z }
       await L.S('const z = 0.3; S.setState({ zoom: z, panX: 560 - arg.x * z, panY: 450 - arg.y * z })', wb); await L.page.waitForTimeout(350)
-      const bb = await bubbleB()
-      expect(bb.letter >= 11 - 0.01).toBe(true)
-      expect(await lines()).toEqual(l0)
+      const bb = await bubbleB(), z = await L.S('return S.getState().zoom')
+      expect([Math.abs(bb.r / z - far.r / z0) < 0.01, Math.abs(bb.letter / z - far.letter / z0) < 0.01]).toEqual([true, true])
       // just past the circle: not the bubble
       await L.page.mouse.move(cv.x + bb.x + bb.r + 6, cv.y + bb.y); await L.page.waitForTimeout(150)
       expect(await cursor()).not.toBe('ew-resize')
@@ -7393,7 +7336,6 @@ describe('REG — the hand check by real clicks', () => {
       const at = { x: cv.x + bb.x + bb.r * 0.7, y: cv.y + bb.y }
       await L.page.mouse.move(at.x, at.y); await L.page.waitForTimeout(150)
       expect(await cursor()).toBe('ew-resize')
-      const z = await L.S('return S.getState().zoom')
       await L.page.mouse.down(); for (let k = 1; k <= 6; k++) await L.page.mouse.move(at.x + (8 * gs * z) * k / 6, at.y, { steps: 2 }); await L.page.mouse.up(); await L.page.waitForTimeout(300)
       expect(Math.abs((await lines())[1] - l0[1] - 8 * gs) <= 1 / z + gs / 12 + 1e-6).toBe(true)
     }, 120000)

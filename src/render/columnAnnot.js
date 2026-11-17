@@ -27,7 +27,9 @@ export function columnAnnot(cg, objects, gridSize = 40, lz = 1, clear = null) {
   const p = buildingOutline(fp), x0 = Math.min(...p.map(q => q.x)), x1 = Math.max(...p.map(q => q.x)), y0 = Math.min(...p.map(q => q.y)), y1 = Math.max(...p.map(q => q.y))
   const { xs, ys } = gridLines(cg)
   const u = 1 / lz
-  const fs = 10.5 * u, r = 9.5 * u, pad = 3 * u
+  // (CLAUDE.md Rule 8 — the CAD text model: the chain's values and the bubbles' names at the same real height — the
+  // 'column' text size; the bubble's 11 design px scaled to the values' 10.5)
+  const fs = 10.5 * u, bk = 10.5 / 11, r = 9.5 * u * bk, pad = 3 * u
   const words = (px) => ftIn((px / gridSize) * 12)
   const tw = (t) => t.length * fs * 0.6
   // the chain 14 off the wall — or, where something already sits outside that wall (`clear`: how far the row numbers
@@ -49,7 +51,7 @@ export function columnAnnot(cg, objects, gridSize = 40, lz = 1, clear = null) {
   }
   const topReach = side(stopsX, 'x', y0 - topOff), leftReach = side(stopsY, 'y', x0 - leftOff)
   const topB = topOff + Math.max(26 * u, topReach + 4 * u + r), leftB = leftOff + Math.max(26 * u, leftReach + 4 * u + r)
-  xs.forEach((x, i) => { lines.push({ x1: x, y1: y0 - topB + r, x2: x, y2: y1, axis: 'x', i }); bubbles.push({ x, y: y0 - topB, r, fs: 11 * u, text: lineName(i, 'x'), axis: 'x', i }) })
-  ys.forEach((y, i) => { lines.push({ x1: x0 - leftB + r, y1: y, x2: x1, y2: y, axis: 'y', i }); bubbles.push({ x: x0 - leftB, y, r, fs: 11 * u, text: lineName(i, 'y'), axis: 'y', i }) })
+  xs.forEach((x, i) => { lines.push({ x1: x, y1: y0 - topB + r, x2: x, y2: y1, axis: 'x', i }); bubbles.push({ x, y: y0 - topB, r, fs: 11 * u * bk, text: lineName(i, 'x'), axis: 'x', i }) })
+  ys.forEach((y, i) => { lines.push({ x1: x0 - leftB + r, y1: y, x2: x1, y2: y, axis: 'y', i }); bubbles.push({ x: x0 - leftB, y, r, fs: 11 * u * bk, text: lineName(i, 'y'), axis: 'y', i }) })
   return { lines, bubbles, chain, fs, dash: 4 * u, u }
 }

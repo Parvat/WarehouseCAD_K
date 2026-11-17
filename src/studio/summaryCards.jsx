@@ -21,6 +21,7 @@ import { ftIn } from './cards'
 import { Caption, CountChip, Btn, C, MONO } from './cardParts'
 import { Icon } from './Icon'
 import { useViewPrefs } from './viewPrefs'
+import { textLz } from '../utils/textSizes'
 
 /* Summary follows selection (STUDIO.md §7a): the right card's Properties tab shows the layout's figures under whatever is
    selected — nothing: the whole layout's Storage · Building · Racking · Aisles · Sections · Checks; a building: its fields,
@@ -159,7 +160,7 @@ export function AislesBlock({ objects, gs, profile, rackIds = null, section = nu
     const pick = objects.filter(o => o.type === 'aisle' && (has(o.row1Id) || has(o.row2Id)) && aisleGapShown(o, objects, gs, gapR.pair(o.row1Id, o.row2Id)))
       .map(o => aisleLabelLayout(o, objects, gs, { columns: [], lz: 1 })).filter(Boolean).map(L => L.gapHi - L.gapLo)
     const cross = new Map()
-    for (const L of crossAisleLabels(objects, gs, { lz: labelScale(labelSize, gs) })) {
+    for (const L of crossAisleLabels(objects, gs, { lz: textLz('aisle', gs) })) {
       if (rackIds && !(L.ids || []).some(has)) continue
       const k = L.ids ? L.key.split('|').slice(0, 3).join('|') : L.key   // a cross-aisle's labels (one about every 75 ft) are one
       cross.set(k, Math.min(cross.get(k) ?? Infinity, L.gapHi - L.gapLo))

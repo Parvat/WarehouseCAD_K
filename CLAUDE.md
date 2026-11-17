@@ -31,24 +31,22 @@ This file holds the rules; `CODEBASE.md` holds the map.
 7. **Impact check before any layout-rule change** (placement, cutting, splitting, minimums, clearances): first apply it to
    the 4 fixtures plus a small building, a short-row case and an L-shaped building, in both orientations, and report a
    before/after table (racks, bays, positions removed or moved per case). Build it only after the user approves the table.
-8. **One label rule (labels-final).** Every canvas label — row numbers, aisle widths, door badges, door chain values, the
-   column chain and its bubbles, clearances, building size, zone and section names — **shows only when it fits its own
-   space at 11 px or more on screen; otherwise it hides until the zoom allows it.** A label is drawn at its natural drawing
-   size: it **never grows** to reach 11 px, **never groups into ranges** (no R1–R3 from separate lines — a back-to-back
-   pair keeps its one R2–R3, it is one object), and **never lifts onto a leader** when zoomed out. Its own space: its room
-   (`minFit` / `minLabel.fit` — a width label's gap, a chain value's segment, a name's zone) and, for a label on the
-   floor (`minLabel.cover` — aisle widths, door labels), clear of every other object (racks, doors, columns, zones —
-   `LabelObstacles.jsx`). Enforced in one place, `canvas2/minText.js`; layouts use their natural size (`floorUnit` = 1 / lz).
-   Labels never overlap each other and are never clipped. **Objects are always drawn at true size** at every zoom; UI only
-   (selection handles, the rotate handle, cursors) stays screen-size; screen-sized texts (`N / zoom`) use N ≥ 11.
-   **The door chain** shows only while a door on that wall is selected, being placed or dragged; otherwise only the doors,
-   their boxes and badges. A single value too wide for its segment may lift straight up on a short leader — only when the
-   rest of its chain fits. A press on a door bar or its clear-space box drags the door at any zoom; a chain value takes
-   the click only where it is drawn. **The PDF**: every label at the PDF's scale, the same fit rule.
-   After this round, label look issues go to the Polish list unless a label is unreadable or overlapping.
-   REG-canvas-text-min measures every canvas text on the 4 fixtures at Fit, 50% and 200% (and on a wall of eleven docks):
-   fails on any text drawn under 11 px or grown past its drawing size, any two labels over each other, any clipped label,
-   any label on the floor over an object, and any object whose drawn size does not scale with the zoom.
+8. **The CAD text model (labels-cad — replaces every earlier label rule).** Every canvas label has a **real-world text
+   height in drawing units** and scales with the drawing exactly like geometry: **no 11 px floor, no hiding, no growing,
+   no range grouping, no leaders added on zoom.** A label's position is fixed in drawing units, so the plan looks the same
+   at every zoom, only bigger or smaller. One height per label type (`utils/textSizes.js` — the project's, saved with it):
+   aisle widths 1′-6″, row numbers 1′-6″, door chain values 1′, door badges 1′, column chain and bubbles 1′-6″, building
+   size 2′, zone and section names 2′, clearances 9″. Each layout runs ONCE at those real sizes so nothing overlaps; a value
+   that does not fit its segment sits just outside it at a fixed drawing offset (a short leader in drawing units), the same
+   at every zoom. **Text size**: the View card sets each type's height (with Reset — it replaced Label size and PDF label
+   size); an object's card has its own Text size field (an aisle, a building, a column grid, a zone, a door's badge —
+   `labelSizeIn`, saved and undoable). Row numbers keep only the back-to-back pair label R2–R3 (one object), no ranges.
+   The door chain shows on every wall with doors. The PDF uses the same real sizes at the print scale.
+   `canvas2/minText.js` no longer changes any drawing — it only measures (`_mtPx`, `_mtRect`) for the tests. Objects are
+   always drawn at true size; UI only (selection handles, the rotate handle, cursors) stays screen-size.
+   REG-canvas-text-cad (replaces REG-canvas-text-min): on the 4 fixtures with a wall of eleven docks, every label's world
+   size and position are identical at 10%, 50% and 200%, no two labels overlap at real size, and every object's drawn size
+   scales with the zoom.
 
 ---
 

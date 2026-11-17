@@ -1,7 +1,7 @@
 import { rackFootprint } from '../generate/columnCheck'
 import { pxToFtIn } from '../utils/canvas'
 import { failingCrossAisles, fmtLenDown, sectionCrossAisles, isRow } from '../utils/copyChange'
-import { labelScale } from '../render/labelSize'
+import { textLz } from '../utils/textSizes'
 import { equipmentResolver } from '../utils/equipment'
 import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX, columnRectsOf, aisleLabelStation, gapShown, gapBase } from './hitTest'
 
@@ -57,7 +57,7 @@ const EPS = 1e-6
 /** A cross-aisle's width label repeats along it about this often (ft). */
 export const LABEL_EVERY_FT = 75
 
-export function crossAisleLabels(objects, gridSize = 40, { profile = null, lz = labelScale(undefined, gridSize) } = {}) {
+export function crossAisleLabels(objects, gridSize = 40, { profile = null, lz = textLz('aisle', gridSize) } = {}) {
   const groups = new Map()
   for (const o of objects) {
     if (!o || typeof o.type !== 'string' || !o.type.startsWith('rack_')) continue
@@ -150,7 +150,7 @@ function lineLabels(k, { parentId, rot, feet }, objects, gridSize, profile, lz) 
 }
 
 /** A building with no section stamps: the gaps between the racks merged along the run (as ever). */
-function envelopeLabels(k, { rot, feet }, gridSize, columns = [], lz = labelScale(undefined, gridSize)) {
+function envelopeLabels(k, { rot, feet }, gridSize, columns = [], lz = textLz('aisle', gridSize)) {
   const run = (f) => (rot ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
   const cross = (f) => (rot ? [f.x, f.x + f.w] : [f.y, f.y + f.h])
   // sections: racks merged along the run

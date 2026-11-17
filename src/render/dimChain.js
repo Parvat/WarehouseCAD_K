@@ -1,10 +1,11 @@
 // render/dimChain.js — a dimension chain laid out by the label rules (CLAUDE.md Critical Rule 8; STUDIO.md, Canvas text):
-// a run of values along one line — the column grid's chain — each value in a break of its segment when it fits there.
-// One rule for every label (labels-final): a value shows only when it fits its own segment — one too long for it is left
-// out (its segment drawn whole), and returns as you zoom in; no outside row, no leaders. Its size is its drawing size;
-// the canvas hides it while under 11 px on screen (canvas2/minText.js).
+// a run of values along one line — the column grid's chain — each value in a break of its segment when it fits there. A
+// value too long for its segment sits just outside it: on a second row just past the chain (away from the building), on a
+// short leader from its segment, pushed apart so the values never overlap. CLAUDE.md Rule 8 — the CAD text model: laid out
+// ONCE at the values' real text height (utils/textSizes.js), every offset in drawing units — the same at every zoom; it
+// never hides.
 //
-// Pure layout in world px, as label ops (render/labelOps.js): the canvas and the PDF at their label scale.
+// Pure layout in world px, as label ops (render/labelOps.js): the canvas and the PDF at the same label scale.
 
 const FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 
@@ -31,7 +32,15 @@ export function dimChain(stops, { axis = 'x', at = 0, out = -1, u = 1, ink = '#2
   const across = (v) => (axis === 'x' ? v.h : v.w)
   for (const v of sized) v.fits = along(v) + pad <= v.L + 1e-6                // in its segment, a little clear of the ticks
   if (!stops.length) return { items: [], ops: [], reach: 0, hidden: false }
-  void gap; void runLo; void runHi
+  // the outside row: past the values in the chain, pushed apart left to right, then back from the far end
+  const rowAt = at + out * (Math.max(0, ...sized.map(across)) / 2 + gap + Math.max(0, ...sized.filter(v => !v.fits).map(across)) / 2)
+  const outs = sized.filter(v => !v.fits)
+  let edge = -Infinity
+  for (const v of outs) { v.c = Math.max(v.m, edge + gap + along(v) / 2); edge = v.c + along(v) / 2 }
+  edge = Infinity
+  for (let i = outs.length - 1; i >= 0; i--) { const v = outs[i]; v.c = Math.min(v.c, edge - gap - along(v) / 2, runHi - along(v) / 2); edge = v.c - along(v) / 2 }
+  edge = -Infinity
+  for (const v of outs) { v.c = Math.max(v.c, edge + gap + along(v) / 2, runLo + along(v) / 2); edge = v.c + along(v) / 2 }
   const line = (a, b, extra) => ({ op: 'line', points: [...a, ...b], stroke: ink, strokeWidth: sw, ...extra })
   const ops = [], items = []
   const ticks = new Set()
@@ -45,11 +54,11 @@ export function dimChain(stops, { axis = 'x', at = 0, out = -1, u = 1, ink = '#2
       if (v.L - 2 * brk > 0.01) push(line(P(s.lo, at), P(v.m - brk, at)), line(P(v.m + brk, at), P(s.hi, at)))
       ;[cx, cy] = P(v.m, at)
     } else {
-      // too long for its segment: left out — the segment whole, no text
       push(line(P(s.lo, at), P(s.hi, at)))
-      ;[cx, cy] = P(v.m, at)
-      items.push({ stop: s, box: { x: cx, y: cy, w: 0, h: 0 }, out: false, hidden: true, ops: mine })
-      return
+      // the leader: from the segment's middle on the chain to the value's near side on the outside row
+      const near = rowAt - out * (across(v) / 2)
+      push(line(P(v.m, at + out * tick * 0.6), P(v.c, near), { strokeWidth: 0.8 * u, leader: true }))
+      ;[cx, cy] = P(v.c, rowAt)
     }
     const box = { x: cx - v.w / 2, y: cy - v.h / 2, w: v.w, h: v.h }
     push({ op: 'text', x: box.x, y: box.y, w: box.w, h: box.h, text: s.text, fontSize: fs, fill: ink, fontFamily: FONT, fontStyle: s.style || (s.bold ? '700' : '400'), ...(faint ? { opacity: 0.85 } : null) })
@@ -57,6 +66,6 @@ export function dimChain(stops, { axis = 'x', at = 0, out = -1, u = 1, ink = '#2
     items.push({ stop: s, box, out: !v.fits, ops: mine })
   })
   const inRow = Math.max(tick, Math.max(0, ...sized.map(across)) / 2)
-  const reach = inRow
+  const reach = outs.length ? Math.abs(rowAt - at) + Math.max(...outs.map(across)) / 2 : inRow
   return { items, ops, reach, hidden: false }
 }

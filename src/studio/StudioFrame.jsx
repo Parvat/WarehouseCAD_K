@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ViewTextSizes } from './textSizeCard'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { generateBlocked } from '../utils/sectionEdit'
 import { regenBuilding } from '../generate/regenerate'
@@ -254,6 +255,8 @@ function BottomRight() {
                 ))}
               </span>
             </div>
+            {/* the label types' real text heights (CLAUDE.md Rule 8 — the CAD text model; studio/textSizeCard.jsx) */}
+            <ViewTextSizes />
           </div>
         )}
       </span>

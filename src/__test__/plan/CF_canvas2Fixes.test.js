@@ -236,7 +236,7 @@ describe.each([['horizontal', false], ['vertical', true]])('CF-3 — %s', (_, ve
     const t = clearanceOps(b[0], layoutColumns(touch, GS)[0], labelScale('medium', GS), GS, true).filter(o => o.op === 'text').map(o => o.text).sort()
     expect(t).toEqual(['0′-0″', '9′-6″'])
   })
-  it('CF-labels: on the saved layout, at every size, a column\'s numbers never sit on each other or on an aisle label, and never on a rack or a column — a number that does not fit its own gap is left out, no leader (labels-final, CLAUDE.md Rule 8; was: outside on a leader, doors-edit fixes)', () => {
+  it('CF-labels: on the saved layout, at every size, a column\'s numbers never sit on each other or on an aisle label, and on a rack or a column only when outside its gap (a leader) with no clear spot near — never hidden (doors-edit fixes, CLAUDE.md Rule 8; was: a number with no room was not drawn)', () => {
     const base = savedFill(vert), cols = layoutColumns(base, GS), bs = blocks(base)
     expect(bs.length).toBeGreaterThanOrEqual(23)
     let crowded = 0, outside = 0
@@ -245,17 +245,17 @@ describe.each([['horizontal', false], ['vertical', true]])('CF-3 — %s', (_, ve
       for (const b of bs) {
         const ops = clearanceOps(b, cols[b.columnIndex], lz, GS, true, avoid, { solids }), t = ops.filter(o => o.op === 'text')
         const leaders = ops.filter(o => o.name === 'clearance-leader').length, marks = clearanceMarks(b, cols[b.columnIndex], lz, GS)
-        // (labels-final) only numbers of this column's marks, never more than it has; no leader
-        expect([t.every(x => marks.some(m => m.label.text === x.text)), t.length <= marks.length, leaders]).toEqual([true, true, 0])
+        // every number with a gap is drawn (a number touching a face still gives way to a rack or column beside it, as before)
+        expect(t.filter(x => marks.some(m => !m.stub && m.label.text === x.text)).length).toBe(marks.filter(m => !m.stub).length)
         if (t.length === 2) expect(hit(t[0], t[1])).toBe(false)
         for (const x of t) expect(avoid.some(r => hit(x, r)), `${size}: ${x.text}`).toBe(false)
         const onSolid = t.filter(x => solids.some(r => hit(x, r))).length
-        expect(onSolid, `${size}: on a rack`).toBe(0)
-        crowded += onSolid; outside += marks.length - t.length
+        expect(onSolid, `${size}: on a rack without a leader`).toBeLessThanOrEqual(leaders)
+        crowded += onSolid; outside += leaders
       }
     }
-    // numbers left out happen (the narrow gaps); none over a rack
-    expect([outside > 0, crowded]).toEqual([true, 0])
+    // outside on leaders happens (the narrow gaps); over a rack only where nothing near is clear — rare
+    expect([outside > 0, crowded <= outside / 10]).toEqual([true, true])
     // (doors-edit fixes) every column's numbers in one pass, as the canvas and the PDF draw them: no two over each other, none
     // on an aisle label — at every size and, laid out at the 11 px floor, zoomed far out (a label px of 11 / (9.5 · 0.03))
     for (const lz of [...['small', 'medium', 'large', 'xlarge'].map(z => labelScale(z, GS)), 9.5 * 0.03 / 11]) {

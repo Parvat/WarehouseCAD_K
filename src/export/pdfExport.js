@@ -58,6 +58,7 @@ import { crossAisleLabels } from '../canvas2/crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
 import { useLabelPrefs } from '../canvas2/labelPrefs'
+import { textLz, textHeight } from '../utils/textSizes'
 import { buildCheckSheets } from './checkSheet'
 import { checkForExport } from '../utils/layoutCheck'
 import { getColumnCheckView } from '../generate/columnCheckView'
@@ -165,7 +166,8 @@ function buildingDimsSVG(obj, gridSize, lz, objects = []) {
 function zoneSVG(obj, gridSize) {
   if (!(obj.width > 0) || !(obj.height > 0)) return ''
   const stroke = /^#[0-9a-f]{6}$/i.test(obj.stroke || '') ? obj.stroke : '#64748b'
-  const fs = Math.max(gridSize, Math.min(4 * gridSize, Math.min(obj.width, obj.height) * 0.18))
+  // (CLAUDE.md Rule 8 — the CAD text model) its name at the zone names' real height (utils/textSizes.js 'names', its own if set)
+  const fs = textHeight('names', gridSize, obj.labelSizeIn)
   const name = esc(obj.label || 'Zone')
   return `<g data-zone="${esc(obj.id || '')}">` +
     `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" fill="${stroke}" fill-opacity="0.13" stroke="${stroke}" stroke-width="${gridSize * 0.0375}"/>` +
@@ -259,7 +261,9 @@ function doorsSVG(objects, gridSize, lz) {
   // (doors5) as the canvas zoomed in: each door's clear space dashed, the door a thin bar on its wall, its number badge,
   // its width on a short line inside the box, the gaps between the boxes (render/doorAnnot.js)
   if (!objects.some(isDoor)) return ''
-  return `<g data-doors="">${doorDrawingSVG(objects, gridSize, lz, labelOpToSVG)}</g>`
+  // (CLAUDE.md Rule 8 — the CAD text model) the chain and the badges at their real heights (utils/textSizes.js), as on the plan
+  void lz
+  return `<g data-doors="">${doorDrawingSVG(objects, gridSize, textLz('doorValue', gridSize), labelOpToSVG, 1 / textLz('doorBadge', gridSize))}</g>`
 }
 
 /* ── One label op (render/labelOps.js) → an SVG element: the same ops the
@@ -285,33 +289,22 @@ export function labelsSVG(objects, gridSize, opts) {
   const ops = []
   // the aisle width labels graded as on screen: coloured while the Checks layer and the markings are on
   const warnProfile = opts.showMarks ? (opts.profile || null) : null
-  /* (labels-final, CLAUDE.md Rule 8 — the same fit rule as the canvas, at the PDF's scale) a width label's pill longer than
-     the gap it measures is left out; its arrow stays (canvas2/LabelOps.jsx's `fit`) */
-  const fitted = (lops) => {
-    let len = 0, alongX = true
-    for (const o of lops) if (o.op === 'line' && o.points && o.points.length >= 4) { const dx = Math.abs(o.points[2] - o.points[0]), dy = Math.abs(o.points[3] - o.points[1]), l = Math.hypot(dx, dy); if (l > len) { len = l; alongX = dx >= dy } }
-    if (!len) return lops
-    const keep = []
-    for (let i = 0; i < lops.length; i++) {
-      const o = lops[i], t = lops[i + 1]
-      if (o.op === 'rect' && t && t.op === 'text' && t.x === o.x && t.y === o.y) { if ((alongX ? o.w : o.h) <= len + 1e-6) keep.push(o, t); i++; continue }
-      keep.push(o)
-    }
-    return keep
-  }
+  // (CLAUDE.md Rule 8 — the CAD text model) nothing is left out: a pill longer than its gap sits past its arrow's end
+  const fitted = (lops) => lops
   if (opts.showAisles) {
     // the labels the plan shows: never across a section edge unless a real aisle, never open floor (hitTest.js gapShown)
     const gapR = equipmentResolver(objects, opts.profile || gapBase())
     for (const a of objects) {
       if (a.type !== 'aisle') continue
       if (!aisleGapShown(a, objects, gridSize, gapR.pair(a.row1Id, a.row2Id))) continue
-      const az = aisleLabelScale(a, opts.labelSize, gridSize)
+      const az = textLz('aisle', gridSize, a.labelSizeIn)
       const L = aisleLabelLayout(a, objects, gridSize, { profile: warnProfile, lz: az })
       if (L) ops.push(...fitted(aisleLabelOps(L, az)))
     }
-    for (const L of crossAisleLabels(objects, gridSize, { profile: warnProfile, lz })) ops.push(...fitted(aisleLabelOps(L, lz)))
+    const aLz = textLz('aisle', gridSize)
+    for (const L of crossAisleLabels(objects, gridSize, { profile: warnProfile, lz: aLz })) ops.push(...fitted(aisleLabelOps(L, aLz)))
     // a face with a zone or a wall in front of it, failing (generate/faceAisles.js): as on screen
-    if (warnProfile) for (const L of faceAisleLabels(objects, gridSize, { profile: warnProfile })) if (gapShown(L, objects, gridSize, gapR.of(L.rackId), false)) ops.push(...fitted(aisleLabelOps(L, lz)))
+    if (warnProfile) for (const L of faceAisleLabels(objects, gridSize, { profile: warnProfile })) if (gapShown(L, objects, gridSize, gapR.of(L.rackId), false)) ops.push(...fitted(aisleLabelOps(L, aLz)))
   }
   if (opts.showMarks || opts.showAisles) {
     const racks = objects.filter(o => typeof o.type === 'string' && o.type.startsWith('rack_'))
@@ -329,7 +322,7 @@ export function labelsSVG(objects, gridSize, opts) {
          side (withFaceBlocks), whenever the aisle labels or the marks are printed, as on screen; the red
          pinched shade only with the marks */
       // (doors-edit fixes) laid out in one pass, so two columns' numbers never land on each other
-      for (const o of clearanceOpsAll(withFaceBlocks(res.aisleBlocks, columns, objects, { gridSize, profile: opts.profile }), b => columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid, { warnings: !!opts.showMarks, solids })) ops.push(...o)
+      for (const o of clearanceOpsAll(withFaceBlocks(res.aisleBlocks, columns, objects, { gridSize, profile: opts.profile }), b => columns[b.columnIndex], textLz('clearance', gridSize), gridSize, opts.showColumnLabels, avoid, { warnings: !!opts.showMarks, solids })) ops.push(...o)
     }
     if (opts.showMarks) {
       if (res) {
@@ -453,13 +446,16 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
 
   const bounds0 = computeBounds(objects.filter(usable), gridSize)
   // the sections' key (at the canvas's label size, as on the plan) is on the sheet too
-  const keyLz = labelScale(prefs.labelSize, gridSize), keys = sectionLegend(objects.filter(usable), gridSize, keyLz)
+  // (CLAUDE.md Rule 8 — the CAD text model) every label type at its real height at the print scale (utils/textSizes.js)
+  const keyLz = labelScale(prefs.labelSize, gridSize), namesLz = textLz('names', gridSize), keys = sectionLegend(objects.filter(usable), gridSize, namesLz)
+  const colLz = (o) => textLz('column', gridSize, o.labelSizeIn), bldLz = (o) => textLz('building', gridSize, o.labelSizeIn)
+  void keyLz
   // and the column grids' bubbles and chains (outside the building, top and left — col-grid round)
-  const annBoxes = objects.filter(usable).filter(o => o.type === 'column_grid' && o.showGrid !== false).map(o => columnAnnot(o, objects.filter(usable), gridSize, keyLz)).filter(Boolean)
+  const annBoxes = objects.filter(usable).filter(o => o.type === 'column_grid' && o.showGrid !== false).map(o => columnAnnot(o, objects.filter(usable), gridSize, colLz(o))).filter(Boolean)
     .flatMap(a => a.bubbles.map(b => ({ x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 })))
-  const dimBoxes = objects.filter(usable).filter(o => FP_TYPES.has(o.type)).flatMap(o => buildingDims(o, gridSize, keyLz)).map(d => d.box)
+  const dimBoxes = objects.filter(usable).filter(o => FP_TYPES.has(o.type)).flatMap(o => buildingDims(o, gridSize, bldLz(o))).map(d => d.box)
   // and the doors' chains outside the walls (doors-edit)
-  const doorBoxes = doorDrawing(objects.filter(usable), gridSize, keyLz).labels.map(l => l.box)
+  const doorBoxes = doorDrawing(objects.filter(usable), gridSize, textLz('doorValue', gridSize), { badgeU: 1 / textLz('doorBadge', gridSize) }).labels.map(l => l.box)
   const extra = [...keys, ...annBoxes, ...dimBoxes, ...doorBoxes]
   const bounds = bounds0 && extra.length
     ? (() => { const x0 = Math.min(bounds0.x, ...extra.map(k => k.x)), y0 = Math.min(bounds0.y, ...extra.map(k => k.y)), x1 = Math.max(bounds0.x + bounds0.width, ...extra.map(k => k.x + k.w)), y1 = Math.max(bounds0.y + bounds0.height, ...extra.map(k => k.y + k.h)); return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } })()
@@ -535,19 +531,19 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   const body = [
     `<rect x="${vb.x}" y="${vb.y}" width="${vb.width}" height="${vb.height}" fill="#ffffff"/>`,
     ...floors.map(o => floorPlanSVG(o, gridSize)),
-    ...floors.map(o => buildingDimsSVG(o, gridSize, keyLz, objects.filter(usable))),
+    ...floors.map(o => buildingDimsSVG(o, gridSize, bldLz(o), objects.filter(usable))),
     // the sections under everything else, as on the plan
     ...sections.map(o => sectionSVG(o, u, objects.filter(isDoor), gridSize)),
     ...zones.map(o => zoneSVG(o, gridSize)),
-    doorsSVG(objects.filter(usable), gridSize, keyLz),
+    doorsSVG(objects.filter(usable), gridSize, null),
     ...racks.map(o => rackSVG(o, gridSize, lz, elevTable)),
     /* labels and marks are worked out from the whole layout, as on the canvas
        (a hidden Columns layer still has columns); only their drawing is gated */
     labelsSVG(objects.filter(Boolean), gridSize, labelOpts),
     // the columns above the labels and marks, as on the canvas: a column is never hidden under an aisle label
     ...columns.map(o => columnGridSVG(o, gridSize, objects.filter(usable))),
-    ...columns.filter(o => o.showGrid !== false).map(o => columnAnnotSVG(o, gridSize, objects.filter(usable), keyLz)),
-    sectionKeySVG(objects.filter(usable), gridSize, keyLz),
+    ...columns.filter(o => o.showGrid !== false).map(o => columnAnnotSVG(o, gridSize, objects.filter(usable), colLz(o))),
+    sectionKeySVG(objects.filter(usable), gridSize, namesLz),
     scaleBarSVG(vb.x + 10 * u, titleY + titleH * 0.45, gridSize, u),
     titleBlockSVG(titleX, titleY, u, { title, scaleRatio, date }),
     legend,

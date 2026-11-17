@@ -10,6 +10,7 @@ import { LabelOps } from './LabelOps'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { gapOps } from '../render/doorAnnot'
+import { useTextSizes, textLz } from '../utils/textSizes'
 import { ftIn } from '../utils/bom'
 import { feetOf } from '../components/RightPanel/panels/ColumnGridPanel'
 import { Rect, Line } from 'react-konva'
@@ -76,7 +77,8 @@ export function DoorGapLive() {
   useDoorTool(s => s.hover)
   const typed = useDoorTool(s => s.typed)
   const objects = useLiveObjects(), gs = useCanvasStore(s => s.gridSize) || 40
-  const u = floorUnit(labelScale(useLabelPrefs(s => s.labelSize), gs), useView().zoom)
+  // (CLAUDE.md Rule 8 — the CAD text model) the live gap at the door chain's real text height
+  const u = 1 / textLz('doorValue', gs, null, useTextSizes(s => s.sizes))
   const L = liveGap(objects, gs)
   if (!L || !(L.hi - L.lo > -0.5)) return null
   const text = typed != null ? (typed || ' ') : ftIn((Math.max(0, L.hi - L.lo) / gs) * 12)

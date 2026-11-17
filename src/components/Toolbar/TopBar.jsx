@@ -217,21 +217,8 @@ export function LayoutMenu({ onClose, onRules, onHub, style }) {
         <MenuRow label="Double-click to fit">
           <Switch on={dblClickFit} onClick={() => useViewPrefs.getState().toggleDblClickFit()} label="Toggle double-click to fit" />
         </MenuRow>
-        <MenuRow label="Label size">
-          <SegGroup>
-            {[['small','S'],['medium','M'],['large','L'],['xlarge','XL']].map(([val,lbl]) => (
-              <Seg key={val} active={labelSize===val} onClick={() => setLabelSize(val)} title={`${LABEL_SIZE_NAMES[val]} — ${LABEL_SIZES[val]} in text`}>{lbl}</Seg>
-            ))}
-          </SegGroup>
-        </MenuRow>
-        <MenuRow label="PDF label size">
-          <select value={pdfLabelSize} onChange={e => setPdfLabelSize(e.target.value)} aria-label="PDF label size"
-            style={{ fontSize:11, fontFamily:'var(--font-mono)', background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', borderRadius:6, padding:'3px 4px' }}>
-            <option value="auto">Auto (≥ 2.5 mm)</option>
-            <option value="screen">Same as screen</option>
-            {Object.keys(LABEL_SIZES).map(k => <option key={k} value={k}>{LABEL_SIZE_NAMES[k]} ({LABEL_SIZES[k]} in)</option>)}
-          </select>
-        </MenuRow>
+        {/* (CLAUDE.md Rule 8 — the CAD text model: Label size and PDF label size replaced by View › Text size — a real height
+            per label type, the PDF at the same heights) */}
         <MenuRow label="Snap to grid">
           <Switch on={snapToGrid} onClick={toggleSnap} label="Toggle snap" />
         </MenuRow>

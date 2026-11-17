@@ -15,7 +15,8 @@ import { aisleLabelLayout, columnRectsOf, aisleGapShown } from './hitTest'
 import { useLabelPrefs } from './labelPrefs'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { layerShown } from '../utils/layers'
-import { labelScale, aisleLabelScale } from '../render/labelSize'
+import { labelScale } from '../render/labelSize'
+import { useTextSizes, textLz } from '../utils/textSizes'
 import { isPiece, withSections, sectionsOf, sectionView } from './sections'
 import { useClearanceView } from './clearanceView'
 import { ClearanceNumbers } from './ClearanceNumbers'
@@ -86,6 +87,10 @@ function OverlaysView({
   const aislesOn = marksPart && showAisles && layerShown(layers, 'aisles')
   const marksOn = marksPart && showMarks && layerShown(layers, 'checks')
   const lz = labelScale(labelSize, gridSize)
+  // (CLAUDE.md Rule 8 — the CAD text model) each label type at its own real text height (utils/textSizes.js); the marks
+  // (blocked faces, upright conflicts, oversized bays) keep the drawing's default label size
+  const sizes = useTextSizes(s => s.sizes)
+  const aisleLz = textLz('aisle', gridSize, null, sizes), clearLz = textLz('clearance', gridSize, null, sizes)
   /* The aisle width labels are coloured by the aisle's grade (rowAisleLevel — the same function Check layout
      lists it by) against the column check's forklift, while the Checks layer and the markings are on; with
      them off the labels draw plain. Live: the labels already redraw from the drag preview. */
@@ -143,8 +148,8 @@ function OverlaysView({
   // the clearance labels keep clear of the aisle labels whenever both are drawn — the clearances now draw
   // whenever the aisle labels do (not only with the Checks layer)
   const on = aislesOn
-  const ownBoxes = useMemo(() => (on ? aisleLabelBoxes(aisleSrc, gridSize, labelSize, { cross: false, profile: warnProfile }) : []), [on, aisleSrc, gridSize, labelSize, warnProfile])
-  const crossBoxes = useMemo(() => (on ? aisleLabelBoxes(shifted, gridSize, labelSize, { aisles: false, profile: warnProfile }) : []), [on, shifted, gridSize, labelSize, warnProfile])
+  const ownBoxes = useMemo(() => (on ? aisleLabelBoxes(aisleSrc, gridSize, labelSize, { cross: false, profile: warnProfile }) : []), [on, aisleSrc, gridSize, labelSize, warnProfile, sizes])
+  const crossBoxes = useMemo(() => (on ? aisleLabelBoxes(shifted, gridSize, labelSize, { aisles: false, profile: warnProfile }) : []), [on, shifted, gridSize, labelSize, warnProfile, sizes])
   const avoid = useMemo(() => {
     const ox = aisleRigid ? dx : 0, oy = aisleRigid ? dy : 0
     return [...(ox || oy ? ownBoxes.map(r => ({ ...r, x: r.x + ox, y: r.y + oy })) : ownBoxes), ...crossBoxes]
@@ -174,19 +179,19 @@ function OverlaysView({
   return (
     <>
       {chromePart && outlined.map(o => <SelectionOutline key={o.id} obj={o} gridSize={gridSize} objects={objects} dashed={bayLevel && isPiece(o)} />)}
-      {chromePart && labelled.map(o => <RackLabels key={'rl:' + o.id} obj={o} zoom={lz} gridSize={gridSize} />)}
+      {chromePart && labelled.map(o => <RackLabels key={'rl:' + o.id} obj={o} zoom={textLz('aisle', gridSize, null, sizes, 11)} gridSize={gridSize} />)}
       {chromePart && selectedObjects.map(o => (FP_TYPES.has(o.type) && o.fpVerts)
-        ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={lz} gridSize={gridSize}
+        ? <FpDimLabels key={'fp:' + o.id} obj={o} zoom={textLz('building', gridSize, o.labelSizeIn, sizes)} gridSize={gridSize}
             activeWallIdx={activeWall && activeWall.objId === o.id ? activeWall.wallIdx : null} /> : null)}
       {/* (a section's size is on its tag — SectionNames.jsx; no dimension labels along its edges) */}
       <Group x={aisleRigid ? dx : 0} y={aisleRigid ? dy : 0} listening={false}>
       {/* each label graded against its own rows' equipment, resolved on the whole layout (its sections — utils/equipment.js):
           a label is drawn from its two rows alone, which hold no section */}
-      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={aisleLabelScale(a, labelSize, gridSize)} gridSize={gridSize} profile={warnProfile && equipR.pair(a.row1Id, a.row2Id)} columns={aisleCols} />)}
+      {aisles.map(a => <AisleLabelItem key={'ai:' + a.id} aisle={a} row1={aisleById.get(a.row1Id)} row2={aisleById.get(a.row2Id)} lz={textLz('aisle', gridSize, a.labelSizeIn, sizes)} gridSize={gridSize} profile={warnProfile && equipR.pair(a.row1Id, a.row2Id)} columns={aisleCols} />)}
       </Group>
       {/* one width label per cross-aisle; few, so drawn from the previewed layout every drag frame */}
-      {aislesOn && <CrossAisleLabels objects={shifted} lz={lz} gridSize={gridSize} profile={warnProfile} />}
-      {aislesOn && <FaceAisleLabels objects={shifted} lz={lz} gridSize={gridSize} profile={warnProfile} />}
+      {aislesOn && <CrossAisleLabels objects={shifted} lz={aisleLz} gridSize={gridSize} profile={warnProfile} />}
+      {aislesOn && <FaceAisleLabels objects={shifted} lz={aisleLz} gridSize={gridSize} profile={warnProfile} />}
       {/* the Checks layer: clearance arrows and distances, red "under travel"
           marks and aisle shading, X marks, upright flags, oversized bays */}
       {/* a column in an aisle shows its clear distance on both sides whenever the aisle labels are shown (or
@@ -194,9 +199,9 @@ function OverlaysView({
       {/* the red under-travel warnings (and the pinched shade): always, as checks; the grey clearance numbers: only while
           the View card's Column clearances is on, on every column (col-bubbles round) — faded in place (clearanceView.js,
           ClearanceNumbers) */}
-      {(marksOn || aislesOn) && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} showLabels={false} warnings={marksOn} />}
+      {(marksOn || aislesOn) && <ColumnClearanceLabels aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={clearLz} gridSize={gridSize} avoid={avoid} showLabels={false} warnings={marksOn} />}
       {/* (doors-edit fixes) in the marks layer only — it was drawn in both layers, every number twice over itself */}
-      {marksPart && showClearances && <ClearanceNumbers aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={lz} gridSize={gridSize} avoid={avoid} selectedObjects={selectedObjects} dragging={dragging} show={showClearances} column={onlyCol} columnShow={colShow} />}
+      {marksPart && showClearances && <ClearanceNumbers aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={clearLz} gridSize={gridSize} avoid={avoid} selectedObjects={selectedObjects} dragging={dragging} show={showClearances} column={onlyCol} columnShow={colShow} />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
       {marksOn && <BlockedFaceMarks rackConflicts={xMarks} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}

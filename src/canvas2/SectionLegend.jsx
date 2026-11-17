@@ -13,7 +13,7 @@ import { sectionLegend } from '../utils/sectionLegend'
 import { layerShown } from '../utils/layers'
 import { useViewPrefs } from '../studio/viewPrefs'
 import { useLabelPrefs } from './labelPrefs'
-import { labelScale } from '../render/labelSize'
+import { useTextSizes, textLz } from '../utils/textSizes'
 import { useLiveObjects } from './live'
 import { useHoverTarget } from './hoverTarget'
 import { useSectionHover } from './sectionTool'
@@ -29,7 +29,10 @@ export function SectionLegend() {
   const { layers, selectedIds, gs } = useCanvasStore(useShallow(s => ({ layers: s.layers, selectedIds: s.selectedIds, gs: s.gridSize || 40 })))
   const on = useViewPrefs(s => s.sectionNames), labelSize = useLabelPrefs(s => s.labelSize)
   const hoverIds = useHoverTarget(s => s.target?.ids || null), listHover = useSectionHover(s => s.id)
-  const lz = labelScale(labelSize, gs)
+  // (CLAUDE.md Rule 8 — the CAD text model) the section names at their real text height (utils/textSizes.js 'names')
+  const sizes = useTextSizes(s => s.sizes)
+  const lz = textLz('names', gs, null, sizes)
+  void labelSize
   const shown = legendShown({ layers }, on)
   const legends = useMemo(() => (shown ? sectionLegend(objects, gs, lz) : []), [shown, objects, gs, lz])
   // where each line is (the rename box goes over it — SectionBar.jsx SectionRename); no name tag is a click target

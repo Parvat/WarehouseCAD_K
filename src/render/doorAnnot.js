@@ -8,17 +8,17 @@
 //     badge at the clear space's top-right corner (away from the wall, at its right end; a wall along y: its top end):
 //     inside with a clear margin when every door's on the wall fits clear of the chain, else centred ON that corner — the
 //     same on every door of the wall; the circle a light shade of the door's colour, snug round its number, a ring a mid
-//     shade, the number medium in the dark shade at 0.8 of the values (never under 11 px); one bigger than its box hides;
+//     shade, the number medium in the dark shade, at its real height (utils/textSizes.js 'doorBadge', 1 ft; a door's own
+//     Text size — labelSizeIn);
 //   - THE CHAIN (chain.png): one dimension line per wall with doors, just above the door bars, corner to far corner —
 //     gap, door width, gap, door width … the last door to the far corner — a tick at every door edge and both corners.
 //     Each value centred on its own segment, in a break of the line: a width bold in the door's colour, a gap regular in
-//     the dimension blue. Only a SINGLE value too wide for its segment lifts STRAIGHT UP on a short leader, above the
-//     boxes — never sideways — and only when the rest of its chain fits; two or more too wide are left out. The canvas
-//     draws a wall's chain only while a door on it is selected, placed or dragged (`chains`); the PDF every wall's.
+//     the dimension blue. A value too wide for its segment lifts STRAIGHT UP on a short leader, above the boxes — never
+//     sideways — at a fixed drawing offset. The canvas and the PDF draw every wall's chain (`chains`: only those walls —
+//     a door's hit test lays out none).
 //     A click on a value types it (DoorGapEdit.jsx); the chain follows a door while it is dragged.
-// Nothing for doors outside the wall. Every value is the SAME drawing size as the aisle width labels (AISLE_LABEL_FONT_PX
-// label px), at its drawing size; on the canvas a label shows only when it fits its space at 11 px or more, off every
-// other object (canvas2/minText.js — CLAUDE.md Rule 8, labels-final).
+// Nothing for doors outside the wall. CLAUDE.md Rule 8 — the CAD text model: every label at its real text height (the chain
+// values 1 ft — utils/textSizes.js 'doorValue'), laid out once in drawing units, scaling with the drawing like geometry.
 
 import { DIM_INK } from './buildingDims'
 import { AISLE_LABEL_FONT_PX } from '../canvas2/hitTest'
@@ -55,11 +55,11 @@ export function doorWalls(objects, gridSize = 40) {
  * The doors' drawing → { bars: [{ id, x, y, w, h, fill, stroke }], boxes: [{ id, x, y, w, h, stroke }] (clear spaces),
  * labels: [{ kind: 'badge' | 'width' | 'gap', key, fs, at: { x, y }, box (its text, world px), ops (label ops, a 'circle'
  * op for a badge), stop (a width or gap: { kind: 'door', id, lo, hi } | { kind: 'gap', gap, lo, hi }), wallKey, w }] }.
- * `lz`: the label scale (render/labelSize.js) — one label px is 1 / lz world px. `minFs`: the smallest font (world px) — the
- * canvas's 11 px at its zoom (labels-final: 0 — every label at its drawing size). `chains`: the walls (wallKey) whose chain
+ * `lz`: the chain values' label scale (utils/textSizes.js 'doorValue') — one label px is 1 / lz world px; `badgeU`: the
+ * badges' label px (1 / textLz('doorBadge')), a door's own `labelSizeIn` its badge's height. `chains`: the walls (wallKey) whose chain
  * is drawn — the canvas's: a wall with a door selected, dragged or being placed; null (the PDF): every wall.
  */
-export function doorDrawing(objects, gridSize = 40, lz = 1, { minFs = 0, chains = null } = {}) {
+export function doorDrawing(objects, gridSize = 40, lz = 1, { badgeU = null, chains = null } = {}) {
   const u = 1 / lz, doors = (objects || []).filter(isDoor)
   const out = { bars: [], boxes: [], labels: [], chains: [] }
   if (!doors.length) return out
@@ -82,8 +82,8 @@ export function doorDrawing(objects, gridSize = 40, lz = 1, { minFs = 0, chains 
     const fp = fpOf(w), wt = fp ? Math.abs((w.outer ?? w.at) - w.at) : 0
     const mid = fp ? (w.at + (w.outer ?? w.at)) / 2 : w.at, bd = Math.max(BAR_FT * gridSize, wt)
     // the sizes: the values at the aisle labels' size; the badge's number BADGE_K of it — never under 11 px on screen
-    // (`minFs`, world px: the canvas's) — its circle snug round it
-    const fsV = DOOR_FS * u, fsB = Math.max(BADGE_K * fsV, minFs || 0), tick = fsV * 0.4, margin = fsB * 0.3
+    // — its circle snug round it (CLAUDE.md Rule 8 — the CAD text model: real heights, utils/textSizes.js)
+    const fsV = DOOR_FS * u, fsB = BADGE_K * DOOR_FS * (badgeU ?? u), tick = fsV * 0.4, margin = fsB * 0.3
     const barIn = mid + inward * bd / 2
     const nearOf = (c) => (X ? (inward > 0 ? c.y : c.y + c.h) : (inward > 0 ? c.x : c.x + c.w))
     const placed = []                                   // the wall's label boxes (a badge, a lifted value keep off them)
@@ -135,30 +135,31 @@ export function doorDrawing(objects, gridSize = 40, lz = 1, { minFs = 0, chains 
     if (!chains || chains.has(key)) out.chains.push({ wallKey: key, ops: cops })
     // the badges: the box's top-right corner (away from the wall, at its right end — a wall along y: its top end) — inside
     // with a clear margin when every door's on the wall fits clear of the chain; otherwise centred ON that corner — the same
-    // on every door of the wall. One bigger than its door's box is not drawn (Rule 8 — it returns as you zoom in)
+    // on every door of the wall.
     const chainFar = (line - w.at) * inward + Math.max(tick, fsV * 0.7)
     const per = ds.map((d, i) => {
       const c = main[i], near = nearOf(c), num = String(nums.get(d.id) || '').replace(/^[A-Z]+/, '')
-      const r = Math.max(0.6 * fsB, textW(num, fsB) / 2 + 0.16 * fsB)
+      const fb = d.labelSizeIn > 0 ? (d.labelSizeIn / 12) * gridSize : fsB          // (its own Text size, if set)
+      const r = Math.max(0.6 * fb, textW(num, fb) / 2 + 0.16 * fb)
       const fitsIn = (near - w.at) * inward + depthOf(c) - margin - 2 * r >= chainFar + margin - 1e-6 && 2 * (r + margin) <= hi(c) - lo(c) + 1e-6
-      return { d, c, S: doorShades(d.stroke || '#6366f1'), num, r, near, fitsIn }
+      return { d, c, S: doorShades(d.stroke || '#6366f1'), num, r, near, fitsIn, fb }
     })
     const allIn = per.every(p => !p.num || p.fitsIn)
     for (const p of per) {
-      const { d, c, S, num, r, near } = p
-      if (!num || 2 * r > Math.min(hi(c) - lo(c), depthOf(c)) + 1e-6) continue
+      const { d, c, S, num, r, near, fb } = p
+      if (!num) continue
       const edge = near + inward * depthOf(c), sq = (q) => ({ x: q.x - r, y: q.y - r, w: 2 * r, h: 2 * r })
       const bc = allIn ? P(X ? hi(c) - r - margin : lo(c) + r + margin, edge - inward * (r + margin)) : P(X ? hi(c) : lo(c), edge)
       const tb = sq(bc)
-      out.labels.push({ kind: 'badge', key: 'b:' + d.id, id: d.id, fs: fsB, at: bc, box: tb, wallKey: key, ops: [
+      out.labels.push({ kind: 'badge', key: 'b:' + d.id, id: d.id, fs: fb, at: bc, box: tb, wallKey: key, ops: [
         { op: 'circle', x: bc.x, y: bc.y, r, fill: S.light, stroke: S.mid, strokeWidth: u },
-        { op: 'text', x: tb.x, y: tb.y, w: tb.w, h: tb.h, text: num, fontSize: fsB, fill: S.dark, fontFamily: FONT, fontStyle: '500' },
+        { op: 'text', x: tb.x, y: tb.y, w: tb.w, h: tb.h, text: num, fontSize: fb, fill: S.dark, fontFamily: FONT, fontStyle: '500' },
       ] })
       placed.push(tb)
     }
-    // (the lifted values last: straight up past the boxes, and past a badge on a corner) — labels-final: only a SINGLE
-    // narrow value lifts, and only when the rest of its chain fits; two or more too wide for their segments: left out
-    for (const L of lifts.length === 1 ? lifts : []) {
+    // (the lifted values last: straight up past the boxes, and past a badge on a corner — at a fixed drawing offset, the
+    // same at every zoom)
+    for (const L of lifts) {
       let at = null
       for (let j = 0; !at && j <= 8; j++) { const p = P(L.m, w.at + inward * (above + fsV * 0.5 + L.ext / 2 + j * (L.ext + fsV * 0.3))); if (!hit(L.boxAt(p)) || j === 8) at = p }
       const box = L.boxAt(at), tip = P(L.m, (X ? at.y : at.x) - inward * L.ext / 2)
@@ -195,8 +196,8 @@ export function gapOps(w, lo, hi, text, u = 1, { cursor = false } = {}) {
 }
 
 /** The PDF: the doors as on the canvas zoomed in — the clear boxes dashed, the bars, every label (`lz`: its label scale). */
-export function doorDrawingSVG(objects, gridSize = 40, lz = 1, opToSVG) {
-  const D = doorDrawing(objects, gridSize, lz), sw = 1 / lz
+export function doorDrawingSVG(objects, gridSize = 40, lz = 1, opToSVG, badgeU = null) {
+  const D = doorDrawing(objects, gridSize, lz, { badgeU }), sw = 1 / lz
   const boxes = D.boxes.map(b => `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="${b.stroke}" stroke-width="${sw}" stroke-dasharray="${6 / lz} ${4 / lz}"/>`)
   const bars = D.bars.map(b => `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="${b.fill}" stroke="${b.stroke}" stroke-width="${sw}"/>`)
   return boxes.join('') + bars.join('') + D.chains.flatMap(c => c.ops).map(opToSVG).join('') + D.labels.flatMap(l => l.ops).map(opToSVG).join('')

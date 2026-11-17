@@ -215,27 +215,22 @@ describe.each([['vertical', true, 'medium'], ['horizontal', false, 60]])('CA-lab
     return clearanceMarks(b, col, lz, GS).filter(m => !m.stub && Math.hypot(m.arrowhead[0].x - m.shaft[0].x, m.arrowhead[0].y - m.shaft[0].y) < (b.axis === 'y' ? cfs * 1.25 : m.label.text.length * cfs * 0.56) + 4 / lz).length
   }
 
-  /** (labels-final) the numbers that fit their own gap — the only ones drawn (a number too long for its gap is left out) */
-  const fitting = (b, col, lz) => {
-    const cfs = 9.5 / lz
-    return clearanceMarks(b, col, lz, GS).filter(m => m.stub || Math.hypot(m.arrowhead[0].x - m.shaft[0].x, m.arrowhead[0].y - m.shaft[0].y) >= (b.axis === 'y' ? cfs * 1.25 : m.label.text.length * cfs * 0.56) + 4 / lz).map(m => m.label.text)
-  }
   const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-  it('CA-labels: a column at a rack face (9 ft / 0.5 ft): the 9 ft gap holds its number; the 0.5 ft gap is narrower than its number, so that number is left out until zoom allows it (labels-final — was: outside on a leader, doors-edit fixes) — dotted lines, no arrowheads', () => {
+  it('CA-labels: a column at a rack face (9 ft / 0.5 ft): the 9 ft gap holds its number; the 0.5 ft gap is narrower than its number, so that number moves outside on a leader, off the column (doors-edit fixes — was: hidden) — dotted lines, no arrowheads', () => {
     const base = savedFill(vert), cols = layoutColumns(base, GS), LZ = labelScale(faceSize, GS)
     const face = blocksOf(base).aisleBlocks.find(x => Math.min(x.nearClearFt, x.farClearFt) <= 0.5 && Math.max(x.nearClearFt, x.farClearFt) >= 9)
     expect(face, 'a column 0.5 ft off a face').toBeTruthy()
     const ops = clearanceOps(face, cols[face.columnIndex], LZ, GS, true), k = kinds(ops)
     expect([k.polys, k.dotted, k.lines > 0]).toEqual([0, true, true])
-    expect(k.texts.every(x => fitting(face, cols[face.columnIndex], LZ).includes(x))).toBe(true)
+    expect(k.texts.sort()).toEqual(shown(face, cols[face.columnIndex], LZ))
     expect(k.texts).toContain(ftIn(Math.max(face.nearClearFt, face.farClearFt)))
-    expect(k.texts).not.toContain(ftIn(Math.min(face.nearClearFt, face.farClearFt)))
+    expect(k.texts).toContain(ftIn(Math.min(face.nearClearFt, face.farClearFt)))
     const t = ops.filter(o => o.op === 'text'), col = cols[face.columnIndex]
-    expect([ops.filter(o => o.name === 'clearance-leader').length, outside(face, col, LZ) > 0, shown(face, col, LZ).length > k.texts.length]).toEqual([0, true, true])
+    expect(ops.filter(o => o.name === 'clearance-leader').length).toBe(outside(face, col, LZ))
     expect(t.some(x => hit(x, { x: col.x, y: col.y, w: col.w, h: col.h }))).toBe(false)
     if (t.length === 2) expect(hit(t[0], t[1])).toBe(false)
   })
-  it('CA-labels-all: every column in an aisle, every Label size — a number drawn only in its gap where it fits (or touching a face); one too long for its gap left out, no leader (labels-final — was: outside on a leader), never two overlapping; dotted lines, no arrowheads. Sizes: the four presets and a custom 60 in', () => {
+  it('CA-labels-all: every column in an aisle, every Label size — every number drawn: in its gap where it holds it (or touching a face), else outside on a leader (doors-edit fixes — was: not drawn), never two overlapping; dotted lines, no arrowheads. Sizes: the four presets and a custom 60 in', () => {
     const base = savedFill(vert), cols = layoutColumns(base, GS), blocks = blocksOf(base).aisleBlocks
     let n = 0
     for (const size of [...Object.keys(LABEL_SIZES), 60]) {
@@ -243,9 +238,8 @@ describe.each([['vertical', true, 'medium'], ['horizontal', false, 60]])('CA-lab
         const lz = labelScale(size, GS), ops = clearanceOps(b, cols[b.columnIndex], lz, GS, true), k = kinds(ops)
         expect([k.polys, k.dotted]).toEqual([0, true])
         const t = ops.filter(o => o.op === 'text')
-        const fit = fitting(b, cols[b.columnIndex], lz)
-        expect(t.every(x => fit.includes(x.text))).toBe(true)
-        expect(ops.filter(o => o.name === 'clearance-leader').length).toBe(0)
+        expect(t.map(x => x.text).sort()).toEqual(shown(b, cols[b.columnIndex], lz))
+        expect(ops.filter(o => o.name === 'clearance-leader').length).toBe(outside(b, cols[b.columnIndex], lz))
         if (t.length === 2) expect(hit(t[0], t[1])).toBe(false)
         n++
       }
@@ -280,7 +274,7 @@ describe.each([['vertical', true, 'medium'], ['horizontal', false, 60]])('CA-lab
   it('CA-labels-wire: the canvas (Overlays.jsx) and the PDF pass the aisle labels\' boxes to the clearance labels', () => {
     expect(readFileSync('src/canvas2/Overlays.jsx', 'utf8')).toMatch(/<ColumnClearanceLabels [^>]*avoid=\{avoid\}/)
     // (doors-edit fixes: every block in one pass — clearanceOpsAll — so two columns' numbers never overlap)
-    expect(readFileSync('src/export/pdfExport.js', 'utf8').includes('b => columns[b.columnIndex], lz, gridSize, opts.showColumnLabels, avoid, { warnings: !!opts.showMarks, solids })')).toBe(true)
+    expect(readFileSync('src/export/pdfExport.js', 'utf8').includes("b => columns[b.columnIndex], textLz('clearance', gridSize), gridSize, opts.showColumnLabels, avoid, { warnings: !!opts.showMarks, solids })")).toBe(true)   // (labels-cad: the clearances at their real text height)
   })
 })
 

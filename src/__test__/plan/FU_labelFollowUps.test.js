@@ -21,6 +21,9 @@ import { aisleLabelLayout } from '../../canvas2/hitTest'
 import { buildLayoutSVG } from '../../export/pdfExport'
 import { useLabelPrefs } from '../../canvas2/labelPrefs'
 import { serializeScene, deserializeScene } from '../../utils/saveLoad'
+import { TEXT_TYPES, useTextSizes, textLz, textHeight } from '../../utils/textSizes'
+import { ViewTextSizes } from '../../studio/textSizeCard'
+import * as TS from '../../studio/textSizeCard'
 import { GS, MATRIX } from './fixtures'
 
 globalThis.document = globalThis.document || { getElementById: () => null }
@@ -103,22 +106,18 @@ describe.each(['horizontal', 'vertical'])('FU — %s', (orientation) => {
     expect(store.getState().objects.filter(o => o.type === 'aisle').every(o => o.labelSizeIn === 18)).toBe(true)
   })
 
-  it('FU-pdf-min: at the default (Auto) every printed label is at least 2.5 mm tall on the sheet — this building and much bigger / smaller ones', () => {
+  it('FU-pdf-real: (labels-cad, CLAUDE.md Rule 8 — the CAD text model; was: Auto, every label at least 2.5 mm on the sheet) the PDF prints the aisle widths at their real text height, 1 ft 6 in, on this building and much bigger / smaller ones — the same drawing units as the plan, whatever the sheet scale; a type\'s Text size changed prints at the new height', () => {
     for (const dims of [[1080, 410, 25, 30, 'reach'], MATRIX.M13, MATRIX.M23, MATRIX.M1]) {
       const o = layout(orientation, dims)
       const svg = buildLayoutSVG(o, [], GS).svg
-      const mm = svgScale(svg), sizes = labelFontSizes(svg)
+      const sizes = labelFontSizes(svg)
       expect(sizes.length, String(dims)).toBeGreaterThan(0)
-      expect(Math.min(...sizes) * mm, String(dims)).toBeGreaterThanOrEqual(2.5 - 1e-9)
+      expect(sizes.filter(v => Math.abs(v / GS - 1.5) < 1e-9).length, String(dims)).toBeGreaterThan(0)
     }
-    // and the setting matters: a fixed Small on the 1,500 ft building prints under 2.5 mm
-    useLabelPrefs.setState({ pdfLabelSize: 'small' })
-    const big = buildLayoutSVG(layout(orientation, MATRIX.M23), [], GS).svg
-    expect(Math.min(...labelFontSizes(big)) * svgScale(big)).toBeLessThan(2.5)
-    // 'screen' follows the drawing's Label size
-    useLabelPrefs.setState({ pdfLabelSize: 'screen', labelSize: 'xlarge' })
-    const scr = buildLayoutSVG(objs, [], GS).svg
-    expect(Math.max(...labelFontSizes(scr)) / GS).toBeCloseTo(4, 9)
+    useTextSizes.getState().setSize('aisle', 30)
+    const big = buildLayoutSVG(objs, [], GS).svg
+    expect(labelFontSizes(big).some(v => Math.abs(v / GS - 2.5) < 1e-9)).toBe(true)
+    useTextSizes.getState().resetAll()
   })
 })
 
@@ -145,35 +144,43 @@ describe('FU — arrows, sizes, columns', () => {
     expect(pdf).toMatch(/const g = travelArrowGeom\(o, lz\)/)
   })
 
-  it('FU-sizes: Extra large is 48 in; the View menu offers it and a PDF label size (Auto by default)', () => {
-    expect(LABEL_SIZES.xlarge).toBe(48)
-    expect(labelScale('xlarge', GS)).toBeCloseTo(10 / (4 * GS), 12)
-    expect(useLabelPrefs.getState().pdfLabelSize).toBe('auto')
-    expect(autoPdfLabelInches(0.1, GS)).toBe(Math.ceil((2.5 / 0.9 / 0.1 / GS) * 12))
+  it('FU-sizes: (labels-cad — was: Extra large 48 in, a View-menu Label size and a PDF label size) one real text height per label type, the defaults as asked, saved with the project; the View card shows Text size with Reset; the layout menu no longer offers Label size or PDF label size', () => {
+    expect(Object.fromEntries(Object.entries(TEXT_TYPES).map(([k, t]) => [k, t.inches]))).toEqual({ aisle: 18, row: 18, doorValue: 12, doorBadge: 12, column: 18, building: 24, names: 24, clearance: 9 })
+    expect(textLz('aisle', GS) * textHeight('aisle', GS)).toBeCloseTo(TEXT_TYPES.aisle.fs, 9)
+    useTextSizes.getState().setSize('row', 30)
+    const json = serializeScene({ ...store.getState() })
+    expect(JSON.parse(json).textSizes).toEqual({ row: 30 })
+    useTextSizes.getState().resetAll()
+    deserializeScene(json, {})
+    expect(useTextSizes.getState().sizes).toEqual({ row: 30 })
+    useTextSizes.getState().resetAll()
+    const frame = readFileSync('src/studio/StudioFrame.jsx', 'utf8')
+    expect(frame).toMatch(/<ViewTextSizes \/>/)
     const top = readFileSync('src/components/Toolbar/TopBar.jsx', 'utf8')
-    expect(top).toMatch(/\['xlarge','XL'\]/)
-    expect(top).toMatch(/<MenuRow label="PDF label size">[\s\S]*?<option value="auto">Auto \(≥ 2\.5 mm\)<\/option>/)
+    expect([top.includes('<MenuRow label="Label size">'), top.includes('<MenuRow label="PDF label size">')]).toEqual([false, false])
+    const html = renderToStaticMarkup(createElement(ViewTextSizes))
+    for (const t of ['Text size', 'Reset', 'Aisle widths', 'Row numbers', 'Door chain', 'Door numbers', 'Column chain and bubbles', 'Building size', 'Zone and section names', 'Clearances']) expect(html).toContain(t)
   })
 
-  it('FU-panel: with aisles selected the right panel offers Default / Small / Medium / Large / Extra large / custom and Apply to all', () => {
+  it('FU-panel: (labels-cad — was: an aisle\'s Label size presets) a selected aisle shows a Text size field in its card — empty: the aisle widths\' size; typed in feet and inches; Reset clears it; one or several aisles', () => {
     const objs = layout('horizontal'), ids = objs.filter(o => o.type === 'aisle').slice(0, 2).map(o => o.id)
-    load(objs.map(o => (o.id === ids[0] ? { ...o, labelSizeIn: 36 } : o)))
+    load(objs.map(o => (o.id === ids[0] ? { ...o, labelSizeIn: 30 } : o)))
     Object.assign(store.getInitialState(), store.getState())
-    const one = renderToStaticMarkup(createElement(AL.AisleLabelSize, { ids: [ids[0]] }))
-    for (const t of ['Default', 'Small', 'Medium', 'Large', 'Extra large', 'custom (inches)', 'Apply to all aisles']) expect(one).toContain(t)
-    expect(one).toMatch(/aria-pressed="true"[^>]*>Large</)
-    const mixed = renderToStaticMarkup(createElement(AL.AisleLabelSize, { ids }))
-    expect(mixed).toContain('Mixed sizes')
-    expect(AL.parseLabelInches('30')).toBe(30)
-    expect(AL.parseLabelInches("2.5'")).toBe(30)
-    expect(AL.parseLabelInches('1')).toBe(null)                                       // below 3 in
-    // "Apply to all aisles" targets every aisle in the layout, not just the selection
-    const panel = readFileSync('src/components/RightPanel/panels/AisleLabelSize.jsx', 'utf8')
-    expect(panel).toMatch(/const allAisles = objects\.filter\(o => o\.type === 'aisle'\)\.map\(o => o\.id\)/)
-    expect(panel).toMatch(/onClick=\{\(\) => setAisleLabelSize\(useCanvasStore, allAisles, current\)\}/)
+    const get = (id) => store.getState().objects.find(o => o.id === id)
+    const one = renderToStaticMarkup(createElement(TS.TextSizeField, { objs: [get(ids[0])], type: 'aisle' }))
+    for (const t of ['Text size', 'Reset']) expect(one).toContain(t)
+    expect(one).toContain('value="2′-6″"')
+    const mixed = renderToStaticMarkup(createElement(TS.TextSizeField, { objs: ids.map(get), type: 'aisle' }))
+    expect(mixed).toContain('placeholder="Mixed"')
+    expect([TS.parseTextInches('30'), TS.parseTextInches("2.5'"), TS.parseTextInches('1′-6″'), TS.parseTextInches("1'6\""), TS.parseTextInches('0.5')]).toEqual([30, 30, 18, 18, null])
+    expect(TS.setLabelSizeIn(store, [ids[1]], 24)).toBe(1)
+    expect(get(ids[1]).labelSizeIn).toBe(24)
+    TS.setLabelSizeIn(store, [ids[1]], null)
+    expect('labelSizeIn' in get(ids[1])).toBe(false)
     const props = readFileSync('src/components/RightPanel/PropertiesPanel.jsx', 'utf8')
-    expect(props).toMatch(/<AisleLabelSize ids=\{\[obj\.id\]\} \/>/)                  // one aisle
-    expect(props).toMatch(/<AisleLabelSize ids=\{selected\.filter\(o => o\.type === 'aisle'\)\.map\(o => o\.id\)\} \/>/)   // several
+    expect(props).toMatch(/<TextSizeField objs=\{\[obj\]\} type="aisle" bare \/>/)                                   // one aisle
+    expect(props).toMatch(/<TextSizeField objs=\{selected\.filter\(o => o\.type === 'aisle'\)\} type="aisle" bare \/>/)   // several
+    for (const t of ['type="names"', 'type="doorBadge"', 'type="column"', 'type="building"']) expect(props).toContain(t)
   })
 
   it('FU-columns: a column is a solid #1F2321 square at its true size (STUDIO.md §2, PlanDetail C18) — no web, no flanges, no outline; conflict marks still drawn above them', () => {

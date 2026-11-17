@@ -21,6 +21,7 @@ import { crossAisleAt } from '../utils/crossAisleTool'
 import { legendHit } from '../utils/sectionLegend'
 import { useViewPrefs } from '../studio/viewPrefs'
 import { useLabelPrefs } from './labelPrefs'
+import { textLz } from '../utils/textSizes'
 import { labelScale } from '../render/labelSize'
 import { layerShown } from '../utils/layers'
 
@@ -65,7 +66,7 @@ export function predictClick(st, w, zoom) {
   }
   // a line of the sections' legend: its section (SectionLegend.jsx)
   if (useViewPrefs.getState().sectionNames && layerShown(st.layers, 'sections')) {
-    const lid = legendHit(st.objects, w, gs, labelScale(useLabelPrefs.getState().labelSize, gs))
+    const lid = legendHit(st.objects, w, gs, textLz('names', gs))
     if (lid) return { key: 'section-legend:' + lid, kind: 'object', ids: [lid] }
   }
   let hitId = hitTest(st.objects, st.layers, w.x, w.y, zoom, gs)

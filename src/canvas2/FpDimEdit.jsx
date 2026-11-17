@@ -15,6 +15,7 @@ import { labelScale } from '../render/labelSize'
 import { useLiveObjects, useView } from './live'
 import { parseFeet } from '../components/RightPanel/panels/RackingAreaPanel'
 import { wallLengthUpdate, setBuildingSize } from '../utils/buildingSize'
+import { textLz } from '../utils/textSizes'
 
 /** The label being typed: { fpId, wallIdx } or null. */
 export const useDimEdit = create(() => ({ edit: null }))
@@ -23,7 +24,7 @@ export const closeDimEdit = () => { if (useDimEdit.getState().edit) useDimEdit.s
 /** Building `fp`'s size values as drawn (render/buildingDims.js — a rectangle's bottom and right, an L's every wall):
  *  [{ wallIdx, x, y, w, h (the value's box), text, fs, tw, lenFt }] (world px). */
 export function fpDimBoxes(fp, gridSize = 40) {
-  const lz = labelScale(useLabelPrefs.getState().labelSize, gridSize)
+  const lz = textLz('building', gridSize, fp && fp.labelSizeIn)
   return buildingDims(fp, gridSize, lz).map(d => ({ wallIdx: d.wallIdx, ...d.box, text: d.text, fs: d.fs, tw: d.tw, lenFt: d.lenFt }))
 }
 /** The wall whose dimension pill holds world point `w` (a few screen px of slack at `zoom`), or null. */

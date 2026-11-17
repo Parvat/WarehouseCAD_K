@@ -17,7 +17,7 @@ import { rowLabelPlaces, rowLabelFs, rowReach } from './RackLineLabels'
 import { aisleLabelBoxes } from '../render/labelOps'
 import { lineNamer } from '../utils/lineNames'
 import { useViewPrefs } from '../studio/viewPrefs'
-import { MIN_TEXT_PX, floorUnit } from './minText'
+import { useTextSizes, textLz } from '../utils/textSizes'
 
 const FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 
@@ -45,26 +45,21 @@ export function gridLineAt(p, zoom = 1) {
   }
   return null
 }
-/** The chain value under world point `p` (its box, plus 3 screen px), or null — only where the value is drawn (11 px or
- *  more on screen, and fitting its bay — labels-final). */
+/** The chain value under world point `p` (its box, plus 3 screen px), or null. */
 export function chainAt(p, zoom = 1) {
   const pad = 3 / (zoom || 1)
-  for (const c of CHAIN) if (c.text && c.fs * (zoom || 1) >= MIN_TEXT_PX - 1e-6 && p.x >= c.x - pad && p.x <= c.x + c.w + pad && p.y >= c.y - pad && p.y <= c.y + c.h + pad) return c
+  for (const c of CHAIN) if (c.text && p.x >= c.x - pad && p.x <= c.x + c.w + pad && p.y >= c.y - pad && p.y <= c.y + c.h + pad) return c
   return null
 }
 /** The chain value drawn for grid `gridId` along `axis` from `lo` (the one being typed), or null. */
 export const chainSpot = (gridId, axis, lo) => CHAIN.find(c => c.gridId === gridId && c.axis === axis && Math.abs(c.lo - lo) < 0.5) || null
-/** The bubble under world point `p` (its circle as drawn, plus 3 screen px), or null — only while it is drawn: its name
- *  11 px or more on screen (labels-final, CLAUDE.md Rule 8 — a smaller bubble hides and takes no click). */
+/** The bubble under world point `p` (its circle as drawn, plus 3 screen px), or null. */
 export function bubbleAt(p, zoom = 1) {
-  const z = zoom || 1, pad = 3 / z
-  for (const b of SPOTS) {
-    if (b.fs > 0 && b.fs * z < MIN_TEXT_PX - 1e-6) continue
-    if (Math.hypot(p.x - b.x, p.y - b.y) <= b.r + pad) return b
-  }
+  const pad = 3 / (zoom || 1)
+  for (const b of SPOTS) if (Math.hypot(p.x - b.x, p.y - b.y) <= b.r + pad) return b
   return null
 }
-/** A bubble's drawn radius (world px): its drawing size, at any zoom (never grown). */
+/** A bubble's drawn radius (world px): its real size, at any zoom. */
 export const bubbleRadius = (b) => b.r
 
 export function ColumnGridAnnot() {
@@ -72,18 +67,17 @@ export function ColumnGridAnnot() {
   const { selectedIds, gs, layers, T } = useCanvasStore(useShallow(s => ({ selectedIds: s.selectedIds, gs: s.gridSize || 40, layers: s.layers, T: s.elevations })))
   const labelSize = useLabelPrefs(s => s.labelSize)
   const rowsShown = useViewPrefs(s => s.rowLabels || s.bomFull)
-  const lz = labelScale(labelSize, gs), { zoom } = useView()
-  // (Rule 8, labels-final) laid out at its natural drawing size — the chain's values, the bubbles and the row numbers it
-  // keeps clear of (render/columnAnnot.js, render/dimChain.js); under 11 px on screen they hide (minText)
-  const lzF = 1 / floorUnit(lz), rowFs = rowLabelFs(lz)
-  void zoom
+  // (CLAUDE.md Rule 8 — the CAD text model) the chain's values and the bubbles at their real text height ('column', a grid's
+  // own Text size if set); the row numbers it keeps clear of at theirs (utils/textSizes.js)
+  const sizes = useTextSizes(s => s.sizes)
+  const lzOf = (g) => textLz('column', gs, g.labelSizeIn, sizes), rowFs = rowLabelFs(textLz('row', gs, null, sizes))
   const grids = layerShown(layers, 'columns') ? objects.filter(o => o.type === 'column_grid' && o.showGrid !== false && selectedIds.includes(o.id)) : []
   // the row numbers where they are drawn (only worked out while a grid is selected)
   const places = useMemo(() => {
     if (!grids.length || !rowsShown || !layerShown(layers, 'racking')) return []
     const lines = rackLinesNow(objects, gs)
     return lines.length ? rowLabelPlaces(lines, rowFs, aisleLabelBoxes(objects, gs, labelSize), lineNamer(objects, T, gs)) : []
-  }, [grids.length, rowsShown, layers, objects, gs, rowFs, labelSize, T])
+  }, [grids.length, rowsShown, layers, objects, gs, rowFs, labelSize, T, sizes])
   if (!grids.length) { SPOTS = []; CHAIN = []; LINES = []; return null }
   const spots = []
   SPOTS = spots   // (filled as the grids below draw)
@@ -94,7 +88,7 @@ export function ColumnGridAnnot() {
   return (
     <Group name="column-annot" listening={false}>
       {grids.map(g => {
-        const a = columnAnnot(g, objects, gs, lzF, rowClear(g, objects, places))
+        const a = columnAnnot(g, objects, gs, lzOf(g), rowClear(g, objects, places))
         if (a) for (const l of a.lines) lineSpots.push({ gridId: g.id, axis: l.axis, i: l.i, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 })
         if (a) for (const b of a.bubbles) spots.push({ gridId: g.id, axis: b.axis, i: b.i, x: b.x, y: b.y, r: b.r, fs: b.fs })
         if (a) for (const c of a.chain) { const w = c.tw + a.fs * 0.4, h = a.fs * 1.3; chainSpots.push({ gridId: g.id, axis: c.axis, lo: c.lo, hi: c.hi, x: c.tx - w / 2, y: c.ty - h / 2, w, h, fs: a.fs, tw: c.tw, text: c.text }) }

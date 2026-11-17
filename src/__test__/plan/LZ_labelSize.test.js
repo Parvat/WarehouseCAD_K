@@ -66,8 +66,12 @@ describe.each(['horizontal', 'vertical'])('LZ — %s', (orientation) => {
       upright: (lz) => uprightOps({ rackId: rack.id, upright: 2, faces: [0, 1] }, rack, GS, lz),
       oversized: (lz) => oversizedOps({ ...rack, beams: [96, 30, 96] }, GS, lz),
     }
+    // (labels-cad) a width label too long for its gap at a size sits just past its arrow's end, on a short leader — the leader
+    // is left out of the like-for-like comparison, and such a label is no longer centred on its gap
+    const noLead = (ops) => ops.filter(o => o.name !== 'aisle-leader')
     for (const [name, gen] of Object.entries(gens)) {
-      const S = gen(labelScale('small', GS)), L = gen(labelScale('large', GS))
+      const S0 = gen(labelScale('small', GS)), L0 = gen(labelScale('large', GS)), led = L0.some(o => o.name === 'aisle-leader')
+      const S = noLead(S0), L = noLead(L0)
       expect(S.length, name).toBeGreaterThan(0)
       // a clearance number is not drawn where its gap is narrower than it (STUDIO.md §7) — a bigger size can drop one
       if (name === 'clearance') { const fs = (ops) => ops.filter(o => o.op === 'text').map(o => o.fontSize); expect(fs(L).every(v => Math.abs(v / fs(S)[0] - 3) < 1e-9 || !fs(S).length)).toBe(true); continue }
@@ -78,7 +82,7 @@ describe.each(['horizontal', 'vertical'])('LZ — %s', (orientation) => {
         const fsS = texts(S).map(t => t.fontSize), fsL = texts(L).map(t => t.fontSize)
         fsL.forEach((v, i) => expect(v / fsS[i], name).toBeCloseTo(3, 9))
         // a width label stays centred on its gap (a clearance pill may slide aside when it no longer fits)
-        if (name !== 'clearance') texts(L).forEach((t, i) => { const u = texts(S)[i]; expect(t.x + t.w / 2).toBeCloseTo(u.x + u.w / 2, 6); expect(t.y + t.h / 2).toBeCloseTo(u.y + u.h / 2, 6) })
+        if (name !== 'clearance' && !led) texts(L).forEach((t, i) => { const u = texts(S)[i]; expect(t.x + t.w / 2).toBeCloseTo(u.x + u.w / 2, 6); expect(t.y + t.h / 2).toBeCloseTo(u.y + u.h / 2, 6) })
       }
       const strokesS = S.filter(o => o.strokeWidth).map(o => o.strokeWidth), strokesL = L.filter(o => o.strokeWidth).map(o => o.strokeWidth)
       strokesL.forEach((v, i) => expect(v / strokesS[i], name + ' stroke').toBeCloseTo(3, 9))
@@ -86,33 +90,34 @@ describe.each(['horizontal', 'vertical'])('LZ — %s', (orientation) => {
     }
   })
 
-  it('LZ-zoom: nothing on the drawing is sized by the view zoom — the overlays read the Label size, the op generators take no zoom', () => {
+  it('LZ-zoom: nothing on the drawing is sized by the view zoom — the overlays read each label type\'s real text height (labels-cad, utils/textSizes.js — was: one Label size), the op generators take no zoom', () => {
     const ov = readFileSync('src/canvas2/Overlays.jsx', 'utf8')
     expect(ov).toMatch(/const lz = labelScale\(labelSize, gridSize\)/)
+    expect(ov).toMatch(/const aisleLz = textLz\('aisle', gridSize, null, sizes\), clearLz = textLz\('clearance', gridSize, null, sizes\)/)
     expect(ov).not.toMatch(/\bzoom=\{zoom\}|s => s\.zoom|zoom = 1,/)
-    for (const comp of ['AisleLabelItem', 'CrossAisleLabels', 'ColumnClearanceLabels', 'BlockedFaceMarks', 'UprightConflictMarks', 'OversizedBayMarks']) {
+    const want = { AisleLabelItem: /\blz=\{textLz\('aisle', gridSize, a\.labelSizeIn, sizes\)\}/, CrossAisleLabels: /\blz=\{aisleLz\}/, ColumnClearanceLabels: /\blz=\{clearLz\}/,
+      BlockedFaceMarks: /\blz=\{lz\}/, UprightConflictMarks: /\blz=\{lz\}/, OversizedBayMarks: /\blz=\{lz\}/ }
+    for (const [comp, re] of Object.entries(want)) {
       const line = ov.split('\n').find(l => l.includes('<' + comp + ' '))
-      // an aisle may carry its own size (labelSizeIn); otherwise the global one
-      expect(line, comp).toMatch(comp === 'AisleLabelItem' ? /\blz=\{aisleLabelScale\(a, labelSize, gridSize\)\}/ : /\blz=\{lz\}/)
+      expect(line, comp).toMatch(re)
     }
-    // the selection-only dimension labels too
-    expect(ov).toMatch(/<RackLabels [^>]*zoom=\{lz\}/)
-    expect(ov).toMatch(/<FpDimLabels [^>]*zoom=\{lz\}/)
+    // the selection-only dimension labels too: a rack's at the aisle widths' height, a building's at the building size's
+    expect(ov).toMatch(/<RackLabels [^>]*zoom=\{textLz\('aisle', gridSize, null, sizes, 11\)\}/)
+    expect(ov).toMatch(/<FpDimLabels [^>]*zoom=\{textLz\('building', gridSize, o\.labelSizeIn, sizes\)\}/)
     const canvas = readFileSync('src/canvas2/Canvas2.jsx', 'utf8')
     expect(canvas).not.toMatch(/<Overlays [^>]*\bzoom=/)
   })
 
-  it('LZ-pdf: the PDF draws the same labels at the same size — aisle and cross-aisle labels, Label size honoured, Column labels switch honoured (warnings kept)', () => {
+  it('LZ-pdf: the PDF draws the same labels at the same size — aisle and cross-aisle labels at the aisle widths\' real text height (labels-cad: every one, none left out; the old Label size no longer sizes them), Column labels switch honoured (warnings kept)', () => {
     const p = pinched(objs)
     const at = (labels) => buildLayoutSVG(p, [], GS, { labels: { showAisles: true, showMarks: true, profile: MHE_PROFILES.reach, pickBothSides: false, ...labels } }).svg
     const fontSizes = (svg) => [...svg.matchAll(/<text x="[^"]*" y="[^"]*" font-size="([^"]+)" font-family="JetBrains/g)].map(m => +m[1])
     const med = at({ labelSize: 'medium', showColumnLabels: true }), big = at({ labelSize: 'large', showColumnLabels: true })
     const nAisle = aisles.length, nCross = crossAisleLabels(p, GS).length
     expect(nCross).toBeGreaterThan(0)
-    // aisle + cross-aisle labels at exactly the Label size — (labels-final) each one that fits its gap; a larger size leaves
-    // more out, never draws one at another size
-    const nMed = fontSizes(med).filter(v => Math.abs(inFt(v) - 2) < 1e-9).length, nBig = fontSizes(big).filter(v => Math.abs(inFt(v) - 3) < 1e-9).length
-    expect([nMed > 0, nMed <= nAisle + nCross, nBig > 0, nBig <= nMed]).toEqual([true, true, true, true])
+    // aisle + cross-aisle labels, every one, at the aisle widths' 1 ft 6 in — whatever the old Label size option says
+    const at15 = (svg) => fontSizes(svg).filter(v => Math.abs(inFt(v) - 1.5) < 1e-9).length
+    expect([at15(med), at15(big)]).toEqual([nAisle + nCross, nAisle + nCross])
     // switch off: the grey numbers go, the red "under travel" ones and the shades stay
     const off = at({ labelSize: 'medium', showColumnLabels: false })
     const grey = (svg) => (svg.match(/fill="#767C74"[^>]*>\d+′-\d+″</g) || []).length
@@ -133,15 +138,15 @@ describe.each(['horizontal', 'vertical'])('LZ — %s', (orientation) => {
 
 describe('LZ — the setting', () => {
   beforeEach(() => useLabelPrefs.setState({ labelSize: 'medium', showColumnLabels: true }))
-  it('LZ-default: Medium by default; the View menu offers Small / Medium / Large; Column labels on by default', () => {
+  it('LZ-default: the marks\' Label size Medium by default (no longer offered in the menu — labels-cad); Column labels on by default', () => {
     expect(useLabelPrefs.getState().labelSize).toBe('medium')
     expect(useLabelPrefs.getState().showColumnLabels).toBe(true)
     useLabelPrefs.getState().setLabelSize('huge')                        // not a size: ignored
     expect(useLabelPrefs.getState().labelSize).toBe('medium')
     useLabelPrefs.getState().setLabelSize('large')
     expect(useLabelPrefs.getState().labelSize).toBe('large')
+    // (labels-cad) the layout menu no longer offers Label size — View › Text size, per label type, replaces it
     const top = readFileSync('src/components/Toolbar/TopBar.jsx', 'utf8')
-    expect(top).toMatch(/<MenuRow label="Label size">[\s\S]*?\['small','S'\],\['medium','M'\],\['large','L'\]/)
-    expect(top).toMatch(/onClick=\{\(\) => setLabelSize\(val\)\}/)
+    expect(top.includes('<MenuRow label="Label size">')).toBe(false)
   })
 })

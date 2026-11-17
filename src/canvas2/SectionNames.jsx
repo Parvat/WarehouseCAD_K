@@ -31,6 +31,7 @@ import { rackLinesNow } from '../utils/rackLines'
 import { rowLabelPlaces, ROW_LABEL_PX } from './RackLineLabels'
 import { worldBoundsOf } from './hitTest'
 import { lineNamer } from '../utils/lineNames'
+import { textLz } from '../utils/textSizes'
 
 /* the zone size tag's pill (ZoneEdit.jsx ZoneSizeLabel → DimensionLabels.jsx LabelPill); the text white */
 const TAG = { px: 11, bg: '#0a0d16', fg: '#F2F4F1', opacity: 0.85, padX: 4, radius: 2, font: 'JetBrains Mono, monospace' }
@@ -112,7 +113,7 @@ export function tagBlocks(objects, gs, { labelSize, rows = false, name } = {}) {
   }
   blocks.push(...aisleLabelBoxes(objects, gs, labelSize, { whole: true }))
   if (rows) {
-    const fsR = ROW_LABEL_PX / labelScale(labelSize, gs)
+    const fsR = ROW_LABEL_PX / textLz('row', gs)
     for (const q of rowLabelPlaces(rackLinesNow(objects, gs), fsR, [], name)) blocks.push({ x: q.x, y: q.y, w: q.w, h: q.h })
   }
   return blocks

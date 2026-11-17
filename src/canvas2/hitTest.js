@@ -19,8 +19,7 @@ import { objectContains, getFpWallSegments, distToSegment, getObjectBounds, pxTo
 import { rackFootprint, rowAisleLevel, MHE_PROFILES, expandColumnGrid } from '../generate/columnCheck'
 import { fmtLenDown } from '../utils/copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'
-import { aisleLabelScale } from '../render/labelSize'
-import { useLabelPrefs } from './labelPrefs'
+import { textLz } from '../utils/textSizes'
 import { isSelectable, layerShown } from '../utils/layers'
 import { onOutline, onLabel, isSection, polygonOf, pointInPolygon } from '../utils/sectionAreas'
 import { nameShown } from './sectionNameShown'
@@ -175,7 +174,7 @@ export function aisleLabelLayout(aisle, objects, gridSize = 40, { profile = null
      out, they are read from `objects` — the whole layout's column grids, as the column check reads them.
      `lz`: the size it is drawn at (left out: the aisle's own Label size, as the canvas draws it). */
   const cols = columns === undefined ? columnRectsOf(objects, gridSize) : (columns || [])
-  const scale = lz || aisleLabelScale(aisle, useLabelPrefs.getState().labelSize, gridSize)
+  const scale = lz || textLz('aisle', gridSize, aisle && aisle.labelSizeIn)
   const pos = aisleLabelStation({ isHoriz, gapLo, gapHi, labelMid, runLo, runLen, text }, cols, scale)
   return { isHoriz, gapLo, gapHi, labelMid, positions: [pos], level, text }
 }
@@ -290,7 +289,7 @@ export function aisleLabelHit(aisle, objects, wx, wy, zoom = 1, gridSize = 40, p
   /* The pill is DRAWING size (the aisle's own label size if it has one,
      else the Label size setting — render/labelSize.js), exactly as drawn;
      only the click tolerance is in screen px. */
-  const lz = aisleLabelScale(aisle, useLabelPrefs.getState().labelSize, gridSize)
+  const lz = textLz('aisle', gridSize, aisle && aisle.labelSizeIn)
   const fs = AISLE_LABEL_FONT_PX / lz
   const w = L.text.length * fs * 0.62 + (AISLE_LABEL_PADX_PX / lz) * 2
   const h = fs * 1.5

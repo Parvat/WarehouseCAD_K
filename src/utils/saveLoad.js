@@ -3,6 +3,7 @@ import { extractLegacy } from './elevations'
 import { releaseGeneratedLocks, releaseGeneratedObjectLocks } from './layers'
 import { joinSplitPairs } from './pairJoin'
 import { rebuildAisles } from './aisleRebuild'
+import { getTextSizes, loadTextSizes } from './textSizes'
 // ─── Scene serialization / deserialization ────────────────────────────────────
 // Format version — bump when breaking changes are made to the schema
 const SCHEMA_VERSION = 2      // 2: the elevation types as their own field (`elevations`)
@@ -17,6 +18,7 @@ export function serializeScene(s) {
     // Canvas content
     objects:      s.objects,
     elevations:   s.elevations ?? null,   // the layout's elevation types (utils/elevations.js)
+    textSizes:    getTextSizes(),         // the label types' text heights, inches (utils/textSizes.js — labels-cad)
     groups:       s.groups || [],
     layers:       s.layers,
     activeLayerId: s.activeLayerId,
@@ -55,6 +57,8 @@ export function deserializeScene(json, s) {
   // an object lock an earlier Generate set on the column grid is dropped (utils/layers.js releaseGeneratedObjectLocks)
   s.objects      = releaseGeneratedObjectLocks(legacy.objects)
   s.elevations   = data.elevations ?? legacy.table ?? null
+  // the label types' text heights (utils/textSizes.js): the file's own, or the defaults
+  loadTextSizes(data.textSizes || null)
   s.groups       = data.groups || []
   // a Building layer an older Generate locked is released (a hand lock stays; Columns as saved) — utils/layers.js releaseGeneratedLocks
   s.layers       = releaseGeneratedLocks(data.layers || s.layers)

@@ -3,6 +3,7 @@
 // reading the narrowest of its own lines, red on its own lines by failingCrossAisles, on clear floor (no rack, no
 // zone; a stretch with none gets no label). A building with no section stamps keeps the old merged-envelope labels.
 // The fixture's four fills (none had a cross-aisle label before), four Generate layouts, both orientations.
+import { textLz } from '../../utils/textSizes'
 import { describe, it, expect } from 'vitest'
 import { GS, splitWallRows } from './fixtures'
 import { REAL_LAYOUT } from './realLayout.fixture'
@@ -90,7 +91,8 @@ function onObstacle(objs, ls, size) {
   const obst = objs.filter(o => typeof o.type === 'string' && (o.type.startsWith('rack_') || o.type.startsWith('zone_')))
     .map(o => (o.type.startsWith('rack_') ? rackFootprint(o) : { x: o.x, y: o.y, w: o.width, h: o.height }))
   const E = 1e-6, hit = (a, b) => a.x < b.x + b.w - E && b.x < a.x + a.w - E && a.y < b.y + b.h - E && b.y < a.y + a.h - E
-  const lz = labelScale(size, GS)
+  // (labels-cad, CLAUDE.md Rule 8: the cross-aisle labels at the aisle widths' real text height — utils/textSizes.js)
+  const lz = textLz('aisle', GS); void size
   return ls.filter(l => {
     const ops = aisleLabelOps(l, lz), pill = ops.find(o => o.op === 'rect'), line = ops.find(o => o.op === 'line').points
     const arrow = { x: Math.min(line[0], line[2]) - 1, y: Math.min(line[1], line[3]) - 1, w: Math.abs(line[2] - line[0]) + 2, h: Math.abs(line[3] - line[1]) + 2 }
@@ -158,9 +160,9 @@ describe.each([['vertical', true], ['horizontal', false]])('CX — %s', (_, vert
     const [l] = changed
     expect([l.level, l.text]).toEqual([level, text])
     expect(l.gapHi - l.gapLo).toBeCloseTo(ft * GS, 6)
-    // the nearest label: its stretch holds the grown line (at 0 across) — at its centre, 35.393 ft, unless the
-    // gap is shorter than its pill along the run (horizontal, the 7' 11" pill), when it slides into the nearest row aisle
-    expect(l.positions[0] / GS).toBeCloseTo(!vert && listed ? 31.15 : 35.393, 2)
+    // the nearest label: its stretch holds the grown line (at 0 across) — at its centre, 35.393 ft (labels-cad: at the aisle
+    // widths' 1 ft 6 in the 7' 11" pill fits its gap along the run — it no longer slides into a row aisle)
+    expect(l.positions[0] / GS).toBeCloseTo(35.393, 2)
     expect(ls.filter(x => x !== l).every(x => x.level === 3 && x.text === `16' 8"`)).toBe(true)
     const items = checkLayout(out, { gridSize: GS, profile: REACH }).errors.filter(e => e.kind === 'cross-aisle' && e.ids.includes(mover.id))
     expect(items.length > 0).toBe(listed)
@@ -220,6 +222,6 @@ describe('CX-wire', () => {
     const { readFileSync } = await import('node:fs')
     expect(readFileSync('src/canvas2/DimensionLabels.jsx', 'utf8')).toMatch(/crossAisleLabels\(objects, gridSize, \{ profile, lz \}\)/)
     expect(readFileSync('src/render/labelOps.js', 'utf8')).toMatch(/crossAisleLabels\(objects, gridSize, \{ profile, lz \}\)/)
-    expect(readFileSync('src/export/pdfExport.js', 'utf8')).toMatch(/crossAisleLabels\(objects, gridSize, \{ profile: warnProfile, lz \}\)/)
+    expect(readFileSync('src/export/pdfExport.js', 'utf8')).toMatch(/crossAisleLabels\(objects, gridSize, \{ profile: warnProfile, lz: aLz \}\)/)   // (labels-cad: the aisle widths' text height)
   })
 })

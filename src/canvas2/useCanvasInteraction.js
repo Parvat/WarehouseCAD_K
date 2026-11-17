@@ -36,6 +36,7 @@ import { TOOLS } from '../constants'
 import { isBayRack, selectionLevel, pickedBays, bayOwners, selectRows, selectBays, toggleBay, kindOf, selectionKind } from './selectionLevel'
 import { isDoor } from '../utils/doorTool'
 import { doorAtPoint } from '../render/doorAnnot'
+import { textLz } from '../utils/textSizes'
 import { predictClick, setHoverTarget, clearHoverTarget } from './hoverTarget'
 import { isPlainTool } from '../utils/homeTool'
 import { innerOutline } from '../utils/floorGeom'
@@ -733,7 +734,7 @@ export function useCanvasInteraction({
       /* a press on a line of the sections' legend (SectionLegend.jsx, legend round): that section selected; on the one
          selected alone, its name typed in place (as a second click on its name) */
       if (evt.button === 0 && !evt.shiftKey && legendShown(st, useViewPrefs.getState().sectionNames)) {
-        const lid = legendHit(st.objects, world, st.gridSize || 40, labelScale(useLabelPrefs.getState().labelSize, st.gridSize || 40))
+        const lid = legendHit(st.objects, world, st.gridSize || 40, textLz('names', st.gridSize || 40))
         const sec = lid ? st.objects.find(o => o.id === lid) : null
         if (sec && isSelectable(st.layers, sec)) {
           pickedOnPlan(); st.setActiveWall(null)
