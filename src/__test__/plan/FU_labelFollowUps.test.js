@@ -159,9 +159,10 @@ describe('FU — arrows, sizes, columns', () => {
     const top = readFileSync('src/components/Toolbar/TopBar.jsx', 'utf8')
     expect([top.includes('<MenuRow label="Label size">'), top.includes('<MenuRow label="PDF label size">')]).toEqual([false, false])
     const html = renderToStaticMarkup(createElement(ViewTextSizes))
-    // a plain number (inches of text height), a dropdown of the usual sizes
-    for (const v of [6, 8, 9, 10, 12, 14, 18, 24, 36, 48, 72]) expect(html).toContain('<option value="' + v + '">')
-    expect(html).toContain('value="18"')
+    // a plain number (inches of text height), the app's own dropdown of the usual sizes (no browser datalist — it filtered
+    // by the field's content), each field a combobox with its arrow
+    expect(TS.SIZE_OPTIONS).toEqual([6, 8, 9, 10, 12, 14, 18, 24, 36, 48, 72])
+    expect([html.includes('<datalist'), html.includes('value="18"'), html.includes('role="combobox"'), html.includes('aria-label="Aisle widths text size sizes"')]).toEqual([false, true, true, true])
     for (const t of ['Text size', 'Reset', 'Aisle widths', 'Row numbers', 'Door chain', 'Door numbers', 'Column chain and bubbles', 'Building size', 'Zone and section names', 'Clearances']) expect(html).toContain(t)
   })
 

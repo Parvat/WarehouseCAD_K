@@ -190,7 +190,8 @@ function useCloses(open, close, wrap) {
   useEffect(() => {
     if (!open) return
     const down = (e) => { if (!wrap.current?.contains(e.target)) close() }
-    const key = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); close() } }
+    // (Esc with a Text size list open closes the list only — studio/textSizeCard.jsx)
+    const key = (e) => { if (e.key === 'Escape') { if (document.querySelector('[data-size-list]')) return; e.stopImmediatePropagation(); close() } }
     document.addEventListener('mousedown', down); window.addEventListener('keydown', key, true)
     return () => { document.removeEventListener('mousedown', down); window.removeEventListener('keydown', key, true) }
   }, [open]) // eslint-disable-line

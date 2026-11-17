@@ -39,7 +39,7 @@ This file holds the rules; `CODEBASE.md` holds the map.
    size 2′, zone and section names 2′, clearances 9″. Each layout runs ONCE at those real sizes so nothing overlaps; a value
    that does not fit its segment sits just outside it at a fixed drawing offset (a short leader in drawing units), the same
    at every zoom. **Text size**: a plain number, like a word processor's font size — the text height in INCHES (18 =
-   1′-6″), a dropdown of 6 8 9 10 12 14 18 24 36 48 72, any number typed. The **Text** panel (the bottom-right island:
+   1′-6″), the app's own dropdown of 6 8 9 10 12 14 18 24 36 48 72 (click to pick, Esc closes), any number typed. The **Text** panel (the bottom-right island:
    View · Text · Layers · Fit · ?) sets each type's size, with Reset (it replaced Label size and PDF label size); an
    object's card has its own Text size field (an aisle, a building, a column grid, a zone, a door's badge — `labelSizeIn`,
    inches, saved and undoable). The View, Text and Layers panels open upward and to the left of the right Properties

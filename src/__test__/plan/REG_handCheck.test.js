@@ -7145,16 +7145,32 @@ describe('REG — the hand check by real clicks', () => {
       const panel = L.page.getByRole('dialog', { name: 'Text card' })
       const want = { 'Aisle widths': '18', 'Row numbers': '18', 'Door chain': '12', 'Door numbers': '12', 'Column chain and bubbles': '18', 'Building size': '24', 'Zone and section names': '24', 'Clearances': '9' }
       for (const [n, v] of Object.entries(want)) expect([n, await panel.getByRole('combobox', { name: n + ' text size' }).inputValue()]).toEqual([n, v])
-      expect(await panel.locator('datalist option').evaluateAll(os => os.map(o => o.value))).toEqual(['6', '8', '9', '10', '12', '14', '18', '24', '36', '48', '72'])
       // the aisle labels drawn now (world text height, ft)
       const aisleFt = () => L.page.evaluate(() => { const st = window.Konva.stages[0], z = window.__hc.S.getState().zoom, gs = window.__hc.S.getState().gridSize || 40; st.draw(); return [...new Set(st.find(n => /^aisle:/.test(n.name())).flatMap(g => g.find('Text')).map(t => Math.round(t.fontSize() * Math.abs(t.getAbsoluteScale().y) / z / gs * 1000) / 1000))] })
       expect(await aisleFt()).toEqual([1.5])
       const aw = panel.getByRole('combobox', { name: 'Aisle widths text size' })
       await aw.fill('24'); await aw.press('Enter'); await L.page.waitForTimeout(300)
       expect(await aisleFt()).toEqual([2])
-      // picked from the dropdown (the browser's list fills the field — a pick commits at once)
-      await aw.click(); await aw.fill(''); await L.page.keyboard.type('36'); await aw.press('Enter'); await L.page.waitForTimeout(300)
-      expect(await aisleFt()).toEqual([3])
+      // the app's own dropdown (no browser datalist — it showed only the current value): a click on the field opens every size,
+      // the current one highlighted, below the field or above it, never over the right card; Esc closes; a click picks
+      const list = L.page.getByRole('listbox', { name: 'Aisle widths text size sizes' })
+      await aw.click(); await L.page.waitForTimeout(150)
+      expect([await list.getByRole('option').evaluateAll(os => os.map(o => o.textContent)), await list.getByRole('option', { selected: true }).textContent()])
+        .toEqual([['6', '8', '9', '10', '12', '14', '18', '24', '36', '48', '72'], '24'])
+      const lb = await list.boundingBox(), fb = await aw.boundingBox(), cb = await card()
+      expect([lb.y >= fb.y + fb.height || lb.y + lb.height <= fb.y, lb.x + lb.width <= cb.x - 8 + 0.5, lb.y >= 0 && lb.y + lb.height <= 900]).toEqual([true, true, true])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      expect([await list.count(), await L.page.getByRole('dialog', { name: 'Text card' }).count()]).toEqual([0, 1])   // (the list closed, the panel open)
+      // its arrow opens it too; a click on 36 picks it
+      await panel.getByRole('button', { name: 'Aisle widths text size sizes' }).click(); await L.page.waitForTimeout(150)
+      await list.getByRole('option', { name: '36', exact: true }).click(); await L.page.waitForTimeout(300)
+      expect([await list.count(), await aw.inputValue(), await aisleFt()]).toEqual([0, '36', [3]])
+      // the Clearances field, the panel's last: its list opens upward when there is no room below
+      const cl = panel.getByRole('combobox', { name: 'Clearances text size' })
+      await cl.click(); await L.page.waitForTimeout(150)
+      const ll = await L.page.getByRole('listbox', { name: 'Clearances text size sizes' }).boundingBox(), clb = await cl.boundingBox()
+      expect([ll.y + ll.height <= clb.y + 0.5 || ll.y >= clb.y + clb.height - 0.5, ll.y + ll.height <= 900, ll.x + ll.width <= cb.x - 8 + 0.5]).toEqual([true, true, true])
+      await L.page.keyboard.press('Escape')
       await panel.getByRole('button', { name: 'Reset text sizes' }).click(); await L.page.waitForTimeout(300)
       expect([await aw.inputValue(), await aisleFt()]).toEqual(['18', [1.5]])
       await island.getByRole('button', { name: 'Text', exact: true }).click()
@@ -7164,6 +7180,12 @@ describe('REG — the hand check by real clicks', () => {
       expect(await field.getAttribute('placeholder')).toBe('18')
       await field.fill('30'); await field.press('Enter'); await L.page.waitForTimeout(300)
       expect([await L.S('return S.getState().objects.find(o => o.id === arg).labelSizeIn', a), (await aisleFt()).sort()]).toEqual([30, [1.5, 2.5]])
+      // the same dropdown in the card: a click opens it, 24 picked — inside the card it stays in the card
+      await field.click(); await L.page.waitForTimeout(150)
+      const cardList = L.page.getByRole('listbox', { name: 'Text size sizes' })
+      expect(await cardList.getByRole('option').count()).toBe(11)
+      await cardList.getByRole('option', { name: '24', exact: true }).click(); await L.page.waitForTimeout(300)
+      expect([await L.S('return S.getState().objects.find(o => o.id === arg).labelSizeIn', a), (await aisleFt()).sort()]).toEqual([24, [1.5, 2]])
     }, T)
 
     /* ── doors-edit round (STUDIO.md, Doors; mockup doors2.png) ── */
