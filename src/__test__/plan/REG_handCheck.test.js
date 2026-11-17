@@ -7216,11 +7216,11 @@ describe('REG — the hand check by real clicks', () => {
       // a man door further on (a click)
       await dbar.getByRole('button', { name: 'Man Door', exact: true }).click()
       p = await L.toScreen(top(0.7)); await L.page.mouse.move(p.x, p.y); await L.page.waitForTimeout(120); await L.page.mouse.click(p.x, p.y); await L.page.waitForTimeout(200)
-      // (doors-edit fixes) the hint is one line just below the bar, not in it; Door row a normal button with an icon
+      // (doors-edit fixes) the hint is one line just below the bar, not in it; the Row toggle (door-row round — was Door row) a normal button with an icon
       const hint = await L.page.locator('[data-mode-bar="door"] [data-mode-hint]').boundingBox(), barBox = await dbar.boundingBox()
-      expect([hint.y >= barBox.y + barBox.height, await dbar.getByRole('button', { name: 'Door row', exact: true }).locator('svg').count()]).toEqual([true, 1])
+      expect([hint.y >= barBox.y + barBox.height, await dbar.getByRole('button', { name: 'Row', exact: true }).locator('svg').count()]).toEqual([true, 1])
       // (its own glyph — a door in its opening, Icons.dc.html "Door row"; was the Structural rail icon)
-      expect(await dbar.getByRole('button', { name: 'Door row', exact: true }).locator('svg path[d="M3 20V5h18v15"]').count()).toBe(1)
+      expect(await dbar.getByRole('button', { name: 'Row', exact: true }).locator('svg path[d="M3 20V5h18v15"]').count()).toBe(1)
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
       expect(await L.S('return S.getState().activeTool')).not.toBe('door')
       // 4 · tags: D1, D2 (dock), M1 (man) — per wall, left to right
@@ -7319,20 +7319,19 @@ describe('REG — the hand check by real clicks', () => {
       await L.drag(mid(dd), { x: mid(dd).x + 6 * gs, y: mid(dd).y }); await L.page.waitForTimeout(250)
       expect((await doors()).find(q => q.id === d2.id).s).toEqual(before)
       expect(await card.locator('fieldset[data-locked]').count()).toBeGreaterThan(0)
-      // 5 · the Door row tool (door-row round — was Dock door row, the leftover split evenly): a click on the bottom wall (no door
-      // on it yet) fills it from the corner — the Start gap (12 ft), then equal doors 12 ft apart, the length left at the end; one undo
+      // 5 · Door row (door-row round — the Add door bar with Row on, design/doorbar.png): Count 3, a click mid-way along the
+      // bottom wall drops the row there — 3 doors 12 ft apart, centred on the click; one undo
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       await L.click({ x: fp.x + fp.width * 0.3, y: fp.y + fp.height })
       await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Door row', exact: true }).click(); await L.page.waitForTimeout(200)
-      expect(await L.page.locator('[data-mode-bar="door-row"]').count()).toBe(1)
-      const n0 = (await doors()).length, h1 = await hist7()
+      expect(await L.page.locator('[data-mode-bar="door"]').getByRole('button', { name: 'Row', exact: true }).getAttribute('aria-pressed')).toBe('true')
+      const n0 = (await doors()).length, h1 = await hist7(), want = 3
       p = await L.toScreen({ x: fp.x + fp.width * 0.5, y: fp.y + fp.height - wt * 0.5 }); await L.page.mouse.move(p.x, p.y); await L.page.waitForTimeout(200)
-      const want = Number((await L.page.locator('[data-row-count]').textContent()).match(/\d+/)[0])
       await L.page.mouse.down(); await L.page.mouse.up(); await L.page.waitForTimeout(300)
       const row = (await doors()).slice(n0).sort((a, b) => a.s[0] - b.s[0])
       const ends = await L.S('return import("/src/utils/doorWall.js").then(W => { const st = S.getState(); const w = W.doorWall(st.objects.find(o => o.id === arg), st.objects, st.gridSize || 40); return [w.lo, w.hi] })', row[0].id)
       const gaps = row.slice(1).map((q, i) => Math.round((q.s[0] - row[i].s[1]) / gs * 1000) / 1000)
-      expect([row.length, want, new Set(gaps).size, gaps[0], Math.round((row[0].s[0] - ends[0]) / gs * 1000) / 1000, ends[1] - row[row.length - 1].s[1] < 21 * gs, (await hist7()) - h1]).toEqual([want, want, 1, 12, 12, true, 1])
+      expect([row.length, new Set(gaps).size, gaps[0], Math.abs((row[0].s[0] + row[row.length - 1].s[1]) / 2 - (ends[0] + ends[1]) / 2) < gs, (await hist7()) - h1]).toEqual([want, 1, 12, true, 1])
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       // (doors-edit fixes) numbering per wall: the top wall's 1, 2, 3, then the bottom row LEFT TO RIGHT 4, 5 … (was clockwise:
       // the bottom right to left; doors5: just the number, one sequence — was D3, D4 …)
@@ -7340,71 +7339,67 @@ describe('REG — the hand check by real clicks', () => {
       expect(nums).toEqual(row.map((q, i) => String(i + 4)))
     }, 120000)
 
-    it('REG-door-row (click): the Door row tool (door-row round, mockup rowcard.png) — opened from the Add door bar on its type (Man): its card’s Type switch Man / Dock / Drive-in, the width and height the type’s until typed; Start gap from the corner, then from the last door on the wall; Fill the rest stops one Gap before a door further along; Count places that many, its length needed and free length shown, and refuses with a notice when they do not fit; one undo each; doors never overlapped', async () => {
+    it('REG-door-row (click): a row of doors in the Add door bar (door-row round, design/doorbar.png — was a Door row card): the bar keeps the type and Width and gets a Row toggle; Row on, Gap and Count slide into the bar. Count 3: the whole row follows the mouse along the wall with its live distances to the corner each side, a click drops it mid-wall (one undo); a left distance typed + Enter drops the next row that far from the last door; a row over existing doors is red and refused; Count empty: a drag along the wall fills it from its start', async () => {
       await open()
       const gs = await gs7(), fp = await fpOf(), wt = (fp.wallThicknessFt || 0.25) * gs
-      const doors = () => L.S('return import("/src/utils/doorWall.js").then(W => S.getState().objects.filter(o => /^struct_(loading_dock|egress|drive_in)$/.test(o.type)).map(o => ({ id: o.id, type: o.type, s: W.spanOf(o), w: W.doorWall(o, S.getState().objects, S.getState().gridSize || 40) })))')
-      const wallEnds = (id) => L.S('return import("/src/utils/doorWall.js").then(W => { const st = S.getState(); const w = W.doorWall(st.objects.find(o => o.id === arg), st.objects, st.gridSize || 40); return [w.lo, w.hi] })', id)
-      const card = L.page.getByRole('tabpanel', { name: 'Properties' })
-      const field = (name) => card.getByRole('textbox', { name, exact: true })
-      const type = async (name, v) => { const fl = field(name); await fl.fill(v); await fl.press('Enter'); await L.page.waitForTimeout(150) }
-      // the building's bar → Add door → its Man type → Door row
+      const doors = () => L.S('return import("/src/utils/doorWall.js").then(W => S.getState().objects.filter(o => /^struct_(loading_dock|egress|drive_in)$/.test(o.type)).map(o => ({ id: o.id, type: o.type, s: W.spanOf(o), at: W.doorWall(o, S.getState().objects, S.getState().gridSize || 40)?.at })))')
+      // the building's bar → Add door: Row off — no Gap, no Count
       await L.click({ x: fp.x + fp.width * 0.3, y: fp.y + fp.height })
       await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door', exact: true }).click(); await L.page.waitForTimeout(200)
-      const addBar = L.page.locator('[data-mode-bar="door"]')
-      await addBar.getByRole('button', { name: 'Man Door' }).click(); await L.page.waitForTimeout(150)
-      await addBar.getByRole('button', { name: 'Door row', exact: true }).click(); await L.page.waitForTimeout(250)
-      expect(await L.page.locator('[data-mode-bar="door-row"]').count()).toBe(1)
-      const typeSeg = card.getByRole('group', { name: 'Row door type' })
-      expect([await typeSeg.getByRole('button', { pressed: true }).textContent(), await field('Row door width').inputValue(), await field('Row door height').inputValue()]).toEqual(['Man', '3′', '7′'])
-      // Dock: its width and height; a typed width kept through another switch
-      await typeSeg.getByRole('button', { name: 'Dock', exact: true }).click(); await L.page.waitForTimeout(150)
-      expect([await field('Row door width').inputValue(), await field('Row door height').inputValue()]).toEqual(['9′', '10′'])
-      await type('Row door width', '10'); await typeSeg.getByRole('button', { name: 'Drive-in', exact: true }).click(); await L.page.waitForTimeout(150)
-      expect([await field('Row door width').inputValue(), await field('Row door height').inputValue()]).toEqual(['10′', '14′'])
-      await typeSeg.getByRole('button', { name: 'Dock', exact: true }).click(); await type('Row door width', '9')
-      await type('Row gap between', '12'); await type('Row start gap', '10')
-      // Fill the rest, a click on the bottom wall (no door there): from the corner — 10 ft, then 9 ft doors 12 ft apart; one undo
+      const bar = L.page.locator('[data-mode-bar="door"]'), rowBtn = bar.getByRole('button', { name: 'Row', exact: true })
+      expect([await rowBtn.getAttribute('aria-pressed'), await bar.getByRole('textbox', { name: 'Row gap (ft)' }).count(), await bar.getByRole('textbox', { name: 'Row count' }).count()]).toEqual(['false', 0, 0])
+      expect(await L.page.locator('[data-island="right-card"]').getByText('Door row').count()).toBe(0)          // (no Door row card)
+      // Row on: Gap 12 and Count 3 slide in; nothing else opens
+      await rowBtn.click(); await L.page.waitForTimeout(250)
+      expect([await rowBtn.getAttribute('aria-pressed'), await bar.getByRole('textbox', { name: 'Row gap (ft)' }).inputValue(), await bar.getByRole('textbox', { name: 'Row count' }).inputValue()]).toEqual(['true', '12', '3'])
+      expect(await bar.locator('[data-mode-hint]').textContent()).toContain('Count 3: the 3 doors follow the mouse along any wall')
+      // the building in view, left of the card
+      await L.S('const z = 0.11; S.setState({ zoom: z, panX: 40 - arg.x * z, panY: 600 - (arg.y + arg.height) * z })', fp); await L.page.waitForTimeout(300)
+      const lo = fp.x + wt, wy = fp.y + fp.height - wt * 0.5
+      const onWall = async (ftAlong) => { const p = await L.toScreen({ x: lo + ftAlong * gs, y: wy }); await L.page.mouse.move(p.x, p.y); await L.page.waitForTimeout(200); return p }
+      const preview = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return { ok: st.find('.door-row-door').length, red: st.find('.door-row-door-refused').length, dist: st.find(n => /^door-row-distance:/.test(n.name())).map(g => g.name().split(':')[1] + '=' + g.findOne('Text').text()) } })
+      // Count 3 follows the mouse: three doors, a distance each side
+      await onWall(60)
+      let pv = await preview()
+      expect([pv.ok, pv.red, pv.dist.map(d => d.split('=')[0]).sort()]).toEqual([3, 0, ['left', 'right']])
+      // a click drops it mid-wall: 3 docks, 12 ft apart, centred where the mouse was — one undo
       const n0 = (await doors()).length, h0 = await hist7()
-      const onWall = async (x) => { const p = await L.toScreen({ x, y: fp.y + fp.height - wt * 0.5 }); await L.page.mouse.move(p.x, p.y); await L.page.waitForTimeout(200); return p }
-      let p = await onWall(fp.x + fp.width * 0.5)
-      expect(await L.page.locator('[data-row-from]').textContent()).toBe('from the corner')
-      const want = Number((await L.page.locator('[data-row-count]').textContent()).match(/\d+/)[0])
       await L.page.mouse.down(); await L.page.mouse.up(); await L.page.waitForTimeout(300)
-      let row = (await doors()).slice(n0).sort((a, b) => a.s[0] - b.s[0])
-      const [lo, hi] = await wallEnds(row[0].id)
-      expect([row.length, want, Math.round((row[0].s[0] - lo) / gs * 1000) / 1000, Math.round((row[1].s[0] - row[0].s[1]) / gs * 1000) / 1000, row.every(d => d.type === 'struct_loading_dock'), (await hist7()) - h0]).toEqual([want, want, 10, 12, true, 1])
-      // undone, then Count 2 on a wall with doors — after the last door, its Start gap: Length needed 30′
-      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
-      expect((await doors()).length).toBe(n0)
-      await L.S('return import("/src/utils/doorTool.js").then(D => { const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type)), T = D.doorTypes(), wt = (fp.wallThicknessFt || 0.25) * gs, spec = T.find(x => x.id === "struct_loading_dock"), at = D.doorAt(st.objects, { x: fp.x + wt + 40 * gs, y: fp.y + fp.height - wt / 2 }, spec, gs, 40); S.setState({ objects: [...st.objects, D.doorObject(at, spec, () => "pre-door")] }); S.getState().commitObjectUpdate(fp.id, {}) })')
-      const pre = (await doors()).find(d => d.id === 'pre-door')
-      await card.getByRole('group', { name: 'Row how many' }).getByRole('button', { name: 'Count', exact: true }).click(); await L.page.waitForTimeout(150)
-      await type('Row door count', '2')
-      p = await onWall(fp.x + fp.width * 0.7)
-      expect([await L.page.locator('[data-row-from]').textContent(), await L.page.locator('[data-row-need]').textContent()]).toEqual(['after the last door', '30′'])
-      const n1 = (await doors()).length, h1 = await hist7()
-      await L.page.mouse.down(); await L.page.mouse.up(); await L.page.waitForTimeout(300)
-      row = (await doors()).filter(d => !['pre-door'].includes(d.id)).slice(n1 - 1).sort((a, b) => a.s[0] - b.s[0])
-      expect([row.length, Math.round((row[0].s[0] - pre.s[1]) / gs * 1000) / 1000, (await hist7()) - h1]).toEqual([2, 10, 1])
-      // Count 200: refused — a notice, nothing placed
-      await type('Row door count', '200')
-      p = await onWall(fp.x + fp.width * 0.7)
-      expect(await L.page.locator('[data-row-refuse]').count()).toBe(1)
+      let row = (await doors()).slice(n0).sort((p, q) => p.s[0] - q.s[0])
+      const ft = (v) => Math.round(v / gs * 10) / 10
+      expect([row.length, row.every(d => d.type === 'struct_loading_dock'), ft(row[1].s[0] - row[0].s[1]), ft(row[2].s[0] - row[1].s[1]), Math.abs(ft((row[0].s[0] + row[2].s[1]) / 2 - lo) - 60) <= 0.5, (await hist7()) - h0]).toEqual([3, true, 12, 12, true, 1])
+      // a left distance typed: hover further along, 15 + Enter — the next row 15 ft after the last door
+      await onWall(130)
+      await L.page.keyboard.type('15'); await L.page.waitForTimeout(150)
+      pv = await preview()
+      expect(pv.dist.find(d => d.startsWith('left=')).startsWith('left=15')).toBe(true)
+      const n1 = (await doors()).length
+      await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(300)
+      const row2 = (await doors()).slice(n1).sort((p, q) => p.s[0] - q.s[0])
+      expect([row2.length, ft(row2[0].s[0] - row[2].s[1])]).toEqual([3, 15])
+      // over the first row: red, and a click drops nothing — a notice says why
+      await onWall(60)
+      pv = await preview()
+      expect([pv.red, pv.ok]).toEqual([3, 0])
       const n2 = (await doors()).length
       await L.page.mouse.down(); await L.page.mouse.up(); await L.page.waitForTimeout(300)
-      expect([(await doors()).length, /need .* only .* is free/.test(await L.S('return N.useNotice.getState().text'))]).toEqual([n2, true])
-      // Fill the rest, dragged along the bottom wall from near its corner over the door already there: it stops one Gap (12 ft)
-      // before that door — never skips over it, never overlaps it
-      await L.S('N.clearNotice()'); await L.page.waitForTimeout(150)
-      await card.getByRole('group', { name: 'Row how many' }).getByRole('button', { name: 'Fill the rest', exact: true }).click(); await L.page.waitForTimeout(150)
-      const a0 = await L.toScreen({ x: lo + 1 * gs, y: fp.y + fp.height - wt * 0.5 }), a1 = await L.toScreen({ x: hi - 2 * gs, y: fp.y + fp.height - wt * 0.5 })
-      await L.page.mouse.move(a0.x, a0.y); await L.page.waitForTimeout(150); await L.page.mouse.down()
-      for (let k = 1; k <= 8; k++) await L.page.mouse.move(a0.x + (a1.x - a0.x) * k / 8, a0.y, { steps: 2 })
+      expect([(await doors()).length, /overlap/.test(await L.S('return N.useNotice.getState().text'))]).toEqual([n2, true])
+      await L.S('N.clearNotice()')
+      // Count empty: a drag along the wall from 170 ft to 230 ft fills it from its start — 170, 191, 212 — one undo
+      const cnt = bar.getByRole('textbox', { name: 'Row count' }); await cnt.fill(''); await cnt.press('Enter'); await L.page.waitForTimeout(150)
+      expect(await bar.locator('[data-mode-hint]').textContent()).toContain('Count empty')
+      const d0 = await onWall(170), d1 = await L.toScreen({ x: lo + 230 * gs, y: wy }), h2 = await hist7()
+      await L.page.mouse.down()
+      for (let k = 1; k <= 8; k++) await L.page.mouse.move(d0.x + (d1.x - d0.x) * k / 8, d0.y, { steps: 2 })
+      await L.page.waitForTimeout(150)
+      pv = await preview()
+      expect(pv.ok).toBe(3)
       await L.page.mouse.up(); await L.page.waitForTimeout(300)
-      const all = await doors(), mine = all.filter(d => d.w && Math.abs(d.w.at - pre.w.at) < 1 && d.s[1] <= pre.s[0] + 0.5 && d.id !== 'pre-door')
-      const lastEnd = Math.max(...mine.map(d => d.s[1]))
-      expect([mine.length > 0, lastEnd <= pre.s[0] - 12 * gs + 0.5, all.filter(d => d.w && Math.abs(d.w.at - pre.w.at) < 1).every((d, i, arr) => arr.every(e => e === d || d.s[1] <= e.s[0] + 0.5 || e.s[1] <= d.s[0] + 0.5))]).toEqual([true, true, true])
+      const fill = (await doors()).slice(n2).sort((p, q) => p.s[0] - q.s[0])
+      expect([fill.map(d => Math.round(ft(d.s[0] - lo))), (await hist7()) - h2]).toEqual([[170, 191, 212], 1])
+      // never over each other
+      const all = (await doors()).filter(d => Math.abs(d.at - row[0].at) < 1).sort((p, q) => p.s[0] - q.s[0])
+      expect(all.every((d, i) => i === 0 || d.s[0] >= all[i - 1].s[1] - 0.5)).toBe(true)
       await L.page.keyboard.press('Escape')
     }, 120000)
 

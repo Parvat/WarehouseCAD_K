@@ -42,7 +42,10 @@ export function doorTypes() {
 /* onlySection: the tool started from a section's bar (its Fence or Wall) — doors go on that section's edges only */
 /* anchorId: the last door the tool placed (doors-edit round — the live gap is measured from it while the preview is on its
    wall, else from the wall's low corner); typed: a gap being typed (text) or null */
-export const useDoorTool = create(() => ({ typeId: 'struct_loading_dock', widthFt: null, hover: null, onlySection: null, anchorId: null, typed: null }))
+/* row (door-row round, design/doorbar.png): the bar's Row toggle — rowGapFt the Gap, rowCount the Count (null: empty — a drag
+   fills as many as fit); rowDrag: a press along a wall with Row on — { w, p0, p1, ref, pw (the press, world) } */
+export const useDoorTool = create(() => ({ typeId: 'struct_loading_dock', widthFt: null, hover: null, onlySection: null, anchorId: null, typed: null,
+  row: false, rowGapFt: 12, rowCount: 3, rowDrag: null }))
 /** The type picked, and the width the next door gets (typed, else the type's). */
 export function doorSpec() {
   const s = useDoorTool.getState(), types = doorTypes()
@@ -51,7 +54,7 @@ export function doorSpec() {
 }
 export const setDoorType = (typeId) => useDoorTool.setState({ typeId, widthFt: null })
 export const setDoorWidth = (ft) => { if (Number.isFinite(ft) && ft > 0) useDoorTool.setState({ widthFt: ft }) }
-export const clearDoorHover = () => { const s = useDoorTool.getState(); if (s.hover || s.onlySection || s.anchorId || s.typed != null) useDoorTool.setState({ hover: null, onlySection: null, anchorId: null, typed: null }) }
+export const clearDoorHover = () => { const s = useDoorTool.getState(); if (s.hover || s.onlySection || s.anchorId || s.typed != null || s.rowDrag) useDoorTool.setState({ hover: null, onlySection: null, anchorId: null, typed: null, rowDrag: null }) }
 /** Add door from a section's bar (its Boundary a Fence or a Wall): the door tool on that section's edges only. */
 export function startSectionDoors(store, id) {
   store.getState().setActiveTool(DOOR_TOOL)                 // (the tool keeper ends the last tool first)

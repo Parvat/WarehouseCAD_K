@@ -27,8 +27,6 @@ import { TunnelCard } from '../../studio/tunnelCard'
 import { useTunnelPick } from '../../utils/tunnel'
 import { RackMain, RowGroupMain, ZoneMain, NothingSelected } from '../../studio/cards'
 import { DoorMain } from '../../studio/doorCard'
-import { DoorRowCard } from '../../studio/doorRowCard'
-import { DOOR_ROW_TOOL } from '../../utils/doorRowTool'
 import { CardLock } from '../../studio/CardLock'
 import { isDoor } from '../../utils/doorTool'
 import { LayoutSummary, SectionSummary, LineSummary, BaySummary, SelectionSummary, SummaryFold } from '../../studio/summaryCards'
@@ -188,10 +186,6 @@ export function PropertiesPanel() {
   const [newBeam, setNewBeam] = useState(96)
   const crossPick = useCrossAislePick(s => s.pick)
   const tunnelPick = useTunnelPick(s => s.pick)
-  const rowTool = useCanvasStore(s => s.activeTool === DOOR_ROW_TOOL)
-
-  /* ── the Dock door row tool on: its card (doors-edit round; mockup doors2.png §3) ── */
-  if (rowTool) return <DoorRowCard />
 
   /* ── a cross-aisle picked (utils/crossAisleTool.js): its card ───────────── */
   if (!selected.length && crossPick) return <CrossAisleCard />

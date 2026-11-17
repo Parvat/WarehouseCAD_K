@@ -66,3 +66,6 @@ input.st-field::placeholder { color:#7E8680; }
 [data-card-dark] .st-hov:hover:not(:disabled):not([data-on]):not([aria-pressed="true"]) { background:#2A2F2C !important; }
 /* a locked object's controls (cardParts.jsx LockedFields): disabled, at 45 % */
 fieldset[data-locked] :is(input, select, textarea, button) { opacity:.45; cursor:not-allowed; }
+
+/* the Add door bar's Row fields sliding in (door-row round, design/doorbar.png) */
+@keyframes st-slide-in { from { opacity: 0; transform: translateX(-6px) } to { opacity: 1; transform: none } }
