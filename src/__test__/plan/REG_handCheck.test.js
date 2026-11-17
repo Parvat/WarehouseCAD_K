@@ -2475,13 +2475,13 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return [!!g.locked, g.lockedBy ?? null]'), await colsLocked()]).toEqual([[false, null], true])
     }, T)
 
-    it('REG-layers-card (click): the bottom-right island is View · Layers · Fit · ? (ui-polish-3); View opens a dark card above it with the display switches Aisle labels, Checks, Elevation colours, Section names (section-tag round: Section sizes folded into it — was: its own switch, labels-sections), Row numbers; Layers opens its own dark card above it (radius 10) with each layer’s show toggle and padlock; they work; a click outside or Esc closes it; the right card has no Layers block', async () => {
+    it('REG-layers-card (click): the bottom-right island is View · Text · Layers · Fit · ? (ui-polish-3; Text — labels-cad); View opens a dark card above it with the display switches Aisle labels, Checks, Elevation colours, Section names (section-tag round: Section sizes folded into it — was: its own switch, labels-sections), Row numbers; Layers opens its own dark card above it (radius 10) with each layer’s show toggle and padlock; they work; a click outside or Esc closes it; the right card has no Layers block', async () => {
       await open()
       const island = L.page.locator('[data-island="bottom-right"]')
       const btn = island.getByRole('button', { name: 'Layers', exact: true }), help = island.getByRole('button', { name: 'Shortcuts' })
       const look = (b) => b.evaluate(el => { const c = getComputedStyle(el); return [c.height, c.fontSize, c.borderRadius, c.paddingLeft] })
       expect(await look(btn)).toEqual(await look(help))
-      expect(await island.locator(':scope > span > button, :scope > button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')))).toEqual(['View', 'Layers', 'Fit', 'Shortcuts'])
+      expect(await island.locator(':scope > span > button, :scope > button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')))).toEqual(['View', 'Text', 'Layers', 'Fit', 'Shortcuts'])   // (labels-cad: + Text, the text sizes' panel)
       // View: the display switches only
       await island.getByRole('button', { name: 'View', exact: true }).click(); await L.page.waitForTimeout(150)
       const vc = L.page.getByRole('dialog', { name: 'View card' })
@@ -7125,6 +7125,46 @@ describe('REG — the hand check by real clicks', () => {
       for (const [k, v] of Object.entries(A.out)) { const w = B.out[k]; if (!w) continue; const tol = 4 / A.z + 4 / B.z; if (Math.abs(v.w - w.w) > tol || Math.abs(v.h - w.h) > tol) off.push([v.type, Math.round(v.w), Math.round(v.h), Math.round(w.w), Math.round(w.h)]) }
       expect(off).toEqual([])
     }, 180000)
+
+    it('REG-text-panel (click): the Text button in the bottom-right island (View · Text · Layers · Fit · ?) opens the Text panel — every label type’s size as a plain number, inches of text height (aisle widths 18 … clearances 9), Reset; a size typed (24 + Enter) or picked from the dropdown draws that type’s labels at that height; an aisle’s own Text size in its card the same; the View, Text and Layers panels open to the left of the right card, their right edge 8 px before its left edge', async () => {
+      await open()
+      const island = L.page.locator('[data-island="bottom-right"]')
+      expect(await island.getByRole('button').evaluateAll(bs => bs.map(b => b.getAttribute('aria-label')))).toEqual(['View', 'Text', 'Layers', 'Fit', 'Shortcuts'])
+      const card = async () => (await L.page.locator('[data-island="right-card"]').boundingBox())
+      const clear = async (name) => { const b = await L.page.getByRole('dialog', { name }).boundingBox(); const c = await card(); return [name, Math.round(c.x - (b.x + b.width))] }
+      // View and Layers: beside the card
+      await island.getByRole('button', { name: 'View' }).click(); await L.page.waitForTimeout(200)
+      expect(await clear('View card')).toEqual(['View card', 8])
+      expect(await L.page.getByRole('dialog', { name: 'View card' }).getByRole('group', { name: 'Text size' }).count()).toBe(0)   // (no longer in View)
+      await island.getByRole('button', { name: 'View' }).click(); await island.getByRole('button', { name: 'Layers' }).click(); await L.page.waitForTimeout(200)
+      expect(await clear('Layers card')).toEqual(['Layers card', 8])
+      await island.getByRole('button', { name: 'Layers' }).click()
+      // Text: its rows, the defaults as plain numbers
+      await island.getByRole('button', { name: 'Text', exact: true }).click(); await L.page.waitForTimeout(200)
+      expect(await clear('Text card')).toEqual(['Text card', 8])
+      const panel = L.page.getByRole('dialog', { name: 'Text card' })
+      const want = { 'Aisle widths': '18', 'Row numbers': '18', 'Door chain': '12', 'Door numbers': '12', 'Column chain and bubbles': '18', 'Building size': '24', 'Zone and section names': '24', 'Clearances': '9' }
+      for (const [n, v] of Object.entries(want)) expect([n, await panel.getByRole('combobox', { name: n + ' text size' }).inputValue()]).toEqual([n, v])
+      expect(await panel.locator('datalist option').evaluateAll(os => os.map(o => o.value))).toEqual(['6', '8', '9', '10', '12', '14', '18', '24', '36', '48', '72'])
+      // the aisle labels drawn now (world text height, ft)
+      const aisleFt = () => L.page.evaluate(() => { const st = window.Konva.stages[0], z = window.__hc.S.getState().zoom, gs = window.__hc.S.getState().gridSize || 40; st.draw(); return [...new Set(st.find(n => /^aisle:/.test(n.name())).flatMap(g => g.find('Text')).map(t => Math.round(t.fontSize() * Math.abs(t.getAbsoluteScale().y) / z / gs * 1000) / 1000))] })
+      expect(await aisleFt()).toEqual([1.5])
+      const aw = panel.getByRole('combobox', { name: 'Aisle widths text size' })
+      await aw.fill('24'); await aw.press('Enter'); await L.page.waitForTimeout(300)
+      expect(await aisleFt()).toEqual([2])
+      // picked from the dropdown (the browser's list fills the field — a pick commits at once)
+      await aw.click(); await aw.fill(''); await L.page.keyboard.type('36'); await aw.press('Enter'); await L.page.waitForTimeout(300)
+      expect(await aisleFt()).toEqual([3])
+      await panel.getByRole('button', { name: 'Reset text sizes' }).click(); await L.page.waitForTimeout(300)
+      expect([await aw.inputValue(), await aisleFt()]).toEqual(['18', [1.5]])
+      await island.getByRole('button', { name: 'Text', exact: true }).click()
+      // an aisle's own Text size, in its card: 30 — that aisle's label 2 ft 6 in, the others 1 ft 6 in
+      const a = await L.S('const a = S.getState().objects.find(o => o.type === "aisle"); S.setState({ selectedIds: [a.id] }); return a.id'); await L.page.waitForTimeout(300)
+      const field = L.page.getByRole('tabpanel', { name: 'Properties' }).getByRole('combobox', { name: 'Text size', exact: true })
+      expect(await field.getAttribute('placeholder')).toBe('18')
+      await field.fill('30'); await field.press('Enter'); await L.page.waitForTimeout(300)
+      expect([await L.S('return S.getState().objects.find(o => o.id === arg).labelSizeIn', a), (await aisleFt()).sort()]).toEqual([30, [1.5, 2.5]])
+    }, T)
 
     /* ── doors-edit round (STUDIO.md, Doors; mockup doors2.png) ── */
     it('REG-doors-edit (click): placing — the door tool stays on, the next door\'s live gap to the last one shows as a gap label, a number typed + Enter drops it exactly there; the doors as thin bars, numbered 1, 2, 3 in badges (doors5 — was D1 / M1 tags); a door selected — its card (Type, Width, Height, From left corner, Clear space, gaps); its wall’s widths and gaps inside the building (doors5 — was a chain outside), a gap and a width clicked and typed, an end handle dragged; the Dock door row tool fills a wall with equal doors in one undo; the padlock in the card head locks it (not movable, fields greyed)', async () => {

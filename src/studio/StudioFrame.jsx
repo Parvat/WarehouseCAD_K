@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ViewTextSizes } from './textSizeCard'
+import { TextSizePanel } from './textSizeCard'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { generateBlocked } from '../utils/sectionEdit'
 import { regenBuilding } from '../generate/regenerate'
@@ -197,8 +197,18 @@ function useCloses(open, close, wrap) {
 }
 /* the cards above the bottom-right island: dark island style, radius 10, right-aligned with it */
 const overIsland = (extra) => ({ right: 16, bottom: 'calc(68px + var(--tally-island-lift, 0px))', flexDirection: 'column', alignItems: 'stretch', borderRadius: 10, ...extra })
+/* (labels-cad) the View, Text and Layers panels open upward and to the LEFT of the right Properties card, never over it:
+   their right edge 8px before the card's left edge (the card as drawn now; hidden — the Tally's Focus — the island's edge) */
+const CARD_GAP = 8
+function besideCard(extra) {
+  const card = typeof document !== 'undefined' ? document.querySelector('[data-island="right-card"]') : null
+  const r = card && card.getClientRects().length ? card.getBoundingClientRect() : null
+  const right = r && r.width > 0 ? Math.max(16, window.innerWidth - r.left + CARD_GAP) : 16
+  return overIsland({ ...extra, right })
+}
 
-/* The bottom-right island (STUDIO.md §1): View · Layers · Fit · ?. View opens a card above it with the display switches —
+/* The bottom-right island (STUDIO.md §1): View · Text · Layers · Fit · ?. Text opens the Text panel — one text size per
+   label type, with Reset (studio/textSizeCard.jsx; labels-cad — was in the View card). View opens a card above it with the display switches —
    Aisle labels, Column clearances (col-card round), Checks, Elevation colours, Section names, Row numbers (each remembered as before); Layers opens its own
    card, each layer's show toggle and padlock. A click outside or Esc closes either. While the Tally drawer is
    open it stands 12px above the drawer's top edge (--tally-island-lift: TallyDrawer.jsx), its cards with it. */
@@ -209,11 +219,12 @@ function BottomRight() {
   const showColors = useElevView(s => s.showColors)
   const colClear = useClearanceView(s => s.show)
   const { sectionNames, setSectionNames, rowLabels, setRowLabels } = useViewPrefs(useShallow(s => ({ sectionNames: s.sectionNames, setSectionNames: s.setSectionNames, rowLabels: s.rowLabels, setRowLabels: s.setRowLabels })))
-  const [view, setView] = useState(false), [layers, setLayers] = useState(false)
+  const [view, setView] = useState(false), [layers, setLayers] = useState(false), [text, setText] = useState(false)
   const numbering = useCanvasStore(s => lineNumbering(s.elevations))
   const help = useHelp(s => s.open)
-  const viewWrap = useRef(null), layersWrap = useRef(null), helpWrap = useRef(null)
+  const viewWrap = useRef(null), layersWrap = useRef(null), helpWrap = useRef(null), textWrap = useRef(null)
   useCloses(view, () => setView(false), viewWrap)
+  useCloses(text, () => setText(false), textWrap)
   useCloses(layers, () => setLayers(false), layersWrap)
   useCloses(help, closeHelp, helpWrap)
   const tog = (on) => ({ height: 30, padding: '0 10px', border: 0, borderRadius: 6, background: on ? '#2E4A3C' : 'transparent', color: on ? '#7BD3A4' : '#C9CEC9', fontSize: 12 })
@@ -228,7 +239,7 @@ function BottomRight() {
       <span ref={viewWrap} style={{ display: 'flex' }}>
         <button type="button" aria-label="View" aria-haspopup="dialog" aria-expanded={view} aria-pressed={view} onClick={() => setView(o => !o)} style={tog(view)}>View</button>
         {view && (
-          <div className="st-island" role="dialog" aria-label="View card" data-card-dark style={overIsland({ width: 232, padding: 8, gap: 2, maxHeight: 'calc(100vh - 160px)', overflowY: 'auto' })}>
+          <div className="st-island" role="dialog" aria-label="View card" data-card-dark style={besideCard({ width: 232, padding: 8, gap: 2, maxHeight: 'calc(100vh - 160px)', overflowY: 'auto' })}>
             {sw('Aisle labels', showAisles, toggleAisles)}
             {sw('Column clearances', colClear, () => setShowClearances(!colClear), "Every column's clear distance from its faces to the nearest rack")}
             {sw('Checks', showMarks, () => setShowMarks(!showMarks))}
@@ -255,8 +266,15 @@ function BottomRight() {
                 ))}
               </span>
             </div>
-            {/* the label types' real text heights (CLAUDE.md Rule 8 — the CAD text model; studio/textSizeCard.jsx) */}
-            <ViewTextSizes />
+          </div>
+        )}
+      </span>
+      {/* Text: the label types' text sizes, in its own panel above (CLAUDE.md Rule 8 — the CAD text model; studio/textSizeCard.jsx) */}
+      <span ref={textWrap} style={{ display: 'flex' }}>
+        <button type="button" aria-label="Text" aria-haspopup="dialog" aria-expanded={text} aria-pressed={text} onClick={() => setText(o => !o)} style={tog(text)}>Text</button>
+        {text && (
+          <div className="st-island" role="dialog" aria-label="Text card" data-card-dark style={besideCard({ width: 248, padding: 8, gap: 2, maxHeight: 'calc(100vh - 160px)', overflowY: 'auto' })}>
+            <TextSizePanel />
           </div>
         )}
       </span>
@@ -264,7 +282,7 @@ function BottomRight() {
       <span ref={layersWrap} style={{ display: 'flex' }}>
         <button type="button" aria-label="Layers" aria-haspopup="dialog" aria-expanded={layers} aria-pressed={layers} onClick={() => setLayers(o => !o)} style={tog(layers)}>Layers</button>
         {layers && (
-          <div className="st-island" role="dialog" aria-label="Layers card" data-card-dark style={overIsland({ width: 232, padding: 8 })}>
+          <div className="st-island" role="dialog" aria-label="Layers card" data-card-dark style={besideCard({ width: 232, padding: 8 })}>
             <LayerBody />
           </div>
         )}

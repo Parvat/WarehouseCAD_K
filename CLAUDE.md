@@ -38,9 +38,12 @@ This file holds the rules; `CODEBASE.md` holds the map.
    aisle widths 1′-6″, row numbers 1′-6″, door chain values 1′, door badges 1′, column chain and bubbles 1′-6″, building
    size 2′, zone and section names 2′, clearances 9″. Each layout runs ONCE at those real sizes so nothing overlaps; a value
    that does not fit its segment sits just outside it at a fixed drawing offset (a short leader in drawing units), the same
-   at every zoom. **Text size**: the View card sets each type's height (with Reset — it replaced Label size and PDF label
-   size); an object's card has its own Text size field (an aisle, a building, a column grid, a zone, a door's badge —
-   `labelSizeIn`, saved and undoable). Row numbers keep only the back-to-back pair label R2–R3 (one object), no ranges.
+   at every zoom. **Text size**: a plain number, like a word processor's font size — the text height in INCHES (18 =
+   1′-6″), a dropdown of 6 8 9 10 12 14 18 24 36 48 72, any number typed. The **Text** panel (the bottom-right island:
+   View · Text · Layers · Fit · ?) sets each type's size, with Reset (it replaced Label size and PDF label size); an
+   object's card has its own Text size field (an aisle, a building, a column grid, a zone, a door's badge — `labelSizeIn`,
+   inches, saved and undoable). The View, Text and Layers panels open upward and to the left of the right Properties
+   card, never over it — their right edge 8 px before its left edge. Row numbers keep only the back-to-back pair label R2–R3 (one object), no ranges.
    The door chain shows on every wall with doors. The PDF uses the same real sizes at the print scale.
    `canvas2/minText.js` no longer changes any drawing — it only measures (`_mtPx`, `_mtRect`) for the tests. Objects are
    always drawn at true size; UI only (selection handles, the rotate handle, cursors) stays screen-size.

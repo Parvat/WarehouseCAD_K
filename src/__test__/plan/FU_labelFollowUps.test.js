@@ -155,24 +155,27 @@ describe('FU — arrows, sizes, columns', () => {
     expect(useTextSizes.getState().sizes).toEqual({ row: 30 })
     useTextSizes.getState().resetAll()
     const frame = readFileSync('src/studio/StudioFrame.jsx', 'utf8')
-    expect(frame).toMatch(/<ViewTextSizes \/>/)
+    expect(frame).toMatch(/<TextSizePanel \/>/)                                      // (its own Text panel — was in the View card)
     const top = readFileSync('src/components/Toolbar/TopBar.jsx', 'utf8')
     expect([top.includes('<MenuRow label="Label size">'), top.includes('<MenuRow label="PDF label size">')]).toEqual([false, false])
     const html = renderToStaticMarkup(createElement(ViewTextSizes))
+    // a plain number (inches of text height), a dropdown of the usual sizes
+    for (const v of [6, 8, 9, 10, 12, 14, 18, 24, 36, 48, 72]) expect(html).toContain('<option value="' + v + '">')
+    expect(html).toContain('value="18"')
     for (const t of ['Text size', 'Reset', 'Aisle widths', 'Row numbers', 'Door chain', 'Door numbers', 'Column chain and bubbles', 'Building size', 'Zone and section names', 'Clearances']) expect(html).toContain(t)
   })
 
-  it('FU-panel: (labels-cad — was: an aisle\'s Label size presets) a selected aisle shows a Text size field in its card — empty: the aisle widths\' size; typed in feet and inches (a bare number is feet); Reset clears it; one or several aisles', () => {
+  it('FU-panel: (labels-cad — was: an aisle\'s Label size presets) a selected aisle shows a Text size field in its card — empty: the aisle widths\' size; a plain number, inches (18 = 1 ft 6 in), picked or typed; Reset clears it; one or several aisles', () => {
     const objs = layout('horizontal'), ids = objs.filter(o => o.type === 'aisle').slice(0, 2).map(o => o.id)
     load(objs.map(o => (o.id === ids[0] ? { ...o, labelSizeIn: 30 } : o)))
     Object.assign(store.getInitialState(), store.getState())
     const get = (id) => store.getState().objects.find(o => o.id === id)
     const one = renderToStaticMarkup(createElement(TS.TextSizeField, { objs: [get(ids[0])], type: 'aisle' }))
     for (const t of ['Text size', 'Reset']) expect(one).toContain(t)
-    expect(one).toContain('value="2′-6″"')
+    expect(one).toContain('value="30"')                                               // a plain number: inches of text height
     const mixed = renderToStaticMarkup(createElement(TS.TextSizeField, { objs: ids.map(get), type: 'aisle' }))
     expect(mixed).toContain('placeholder="Mixed"')
-    expect([TS.parseTextInches('2.5'), TS.parseTextInches("2.5'"), TS.parseTextInches('1′-6″'), TS.parseTextInches("1'6\""), TS.parseTextInches('18 in'), TS.parseTextInches('9"'), TS.parseTextInches('0.05')]).toEqual([30, 30, 18, 18, 18, 9, null])
+    expect([TS.parseTextInches('30'), TS.parseTextInches('13.5'), TS.parseTextInches("2.5'"), TS.parseTextInches('1′-6″'), TS.parseTextInches('18 in'), TS.parseTextInches('0.5'), TS.parseTextInches('300')]).toEqual([30, 13.5, 30, 18, 18, null, null])
     expect(TS.setLabelSizeIn(store, [ids[1]], 24)).toBe(1)
     expect(get(ids[1]).labelSizeIn).toBe(24)
     TS.setLabelSizeIn(store, [ids[1]], null)
