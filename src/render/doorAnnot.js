@@ -7,20 +7,20 @@
 //   - its number: just the number (1, 2, 3 … — utils/doorWall.js doorNumbers: one sequence, per wall) in a small round
 //     badge in the clear space's corner away from the wall, at its right end (a wall along y: its top end), a clear margin
 //     in from the box's edges — the circle a light shade of the door's colour, a ring a mid shade, the number medium in
-//     the dark shade. Sized to its box (doors-real.png): the badge's diameter about a fifth of the clear space's depth,
-//     at most 2.5x its 11-label-px size (BADGE_DEPTH, BADGE_CAP);
+//     the dark shade; the circle sized to its number;
 //   - its width: a dimension line across the door's own width (ticks at its ends) about 1 ft past the door bar
-//     (WIDTH_OFF_FT), the value bold just past it — 12/11 of the badge's number, so it keeps its proportion to the box;
-//     the badge never overlaps the line or the value: a box too shallow for both (a man door's 44 in) puts the badge just
-//     past its far edge, still inside the building;
+//     (WIDTH_OFF_FT), the value bold just past it; the badge never overlaps the line or the value: a box too shallow for
+//     both (a man door's 44 in, or any box zoomed out) puts the badge just past its far edge, still inside the building;
 //   - the gaps: plain text inside the building between the boxes, on the widths' row, no line, regular — the first from
 //     the corner to the first door, then door to door (none past the last door, as the mockup).
-// Nothing for doors outside the wall. Every label is DRAWING-SCALE (CLAUDE.md Rule 8, the door exception): a size in label
-// px (1 / lz world px), shrinking with the drawing; the canvas hides each one once under 11 px on screen (canvas2/minText.js
-// `hide`), never grows it, never groups doors into ranges. A label that does not fit where it goes (a width wider than its
-// box, a gap wider than the floor between two boxes) is not drawn at any zoom.
+// Nothing for doors outside the wall. Every label is the SAME drawing size as the aisle width labels (AISLE_LABEL_FONT_PX
+// label px — doors-aisle round), and follows Rule 8 as they do: the canvas lays the doors out at the size they are drawn
+// (`lz` from floorUnit — 11 px on screen at least), so they show wherever the aisle labels show and never overlap; a label
+// that does not fit where it goes at that size (a width or a badge wider than its box,
+// a gap wider than the floor between two boxes) is not drawn — it returns as you zoom in. Never grouped into ranges.
 
 import { DIM_INK } from './buildingDims'
+import { AISLE_LABEL_FONT_PX } from '../canvas2/hitTest'
 import { ftIn } from '../utils/bom'
 import { doorWall, doorNumbers, doorFoot, wallKey, doorsOnWall, spanOf, wallGaps } from '../utils/doorWall'
 import { isDoor } from '../utils/doorTool'
@@ -28,9 +28,8 @@ import { doorClearOf } from '../utils/doorClear'
 
 const FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 export const BAR_FT = 1.5                       // the door bar's depth across the wall (ft), the wall's thickness if more
-const BADGE_FS = 11, VALUE_FS = 12               // label px: the badge's number; a width or a gap (their ratio)
-const BADGE_D = BADGE_FS * 1.7                   // label px: the badge's diameter at an 11 px number
-export const BADGE_DEPTH = 1 / 5, BADGE_CAP = 2.5 // the badge's diameter: this share of the clear depth, at most CAP x BADGE_D
+export const DOOR_FS = AISLE_LABEL_FONT_PX       // label px: every door label (the badge's number, a width, a gap) — the aisle labels' size
+const BADGE_R = 0.85                             // the badge's radius, x its number's font: the circle sized to its number
 export const WIDTH_OFF_FT = 1                    // the width's dimension line: this far past the door bar (ft)
 
 /** `hex` mixed toward white (t > 0) or black (t < 0) by |t| — the door colour's shades. */
@@ -80,16 +79,13 @@ export function doorDrawing(objects, gridSize = 40, lz = 1) {
     const fp = fpOf(w), wt = fp ? Math.abs((w.outer ?? w.at) - w.at) : 0
     const mid = fp ? (w.at + (w.outer ?? w.at)) / 2 : w.at, bd = Math.max(BAR_FT * gridSize, wt)
     const barIn = mid + inward * bd / 2, line = barIn + inward * WIDTH_OFF_FT * gridSize
-    // each door's sizes, from its box (doors-real.png): the badge's diameter, its number, the value font
-    const size = main.map(c => {
-      const dia = Math.min(depthOf(c) * BADGE_DEPTH, BADGE_CAP * BADGE_D * u), fsB = dia / 1.7
-      return { dia, r: dia / 2, fsB, fsV: fsB * VALUE_FS / BADGE_FS, margin: dia * 0.3 }
-    })
+    // the sizes: every label at the aisle labels' size; the badge's circle round its number, a clear margin in from the box
+    const fsB = DOOR_FS * u, fsV = DOOR_FS * u, r = fsB * BADGE_R, margin = r * 0.6
     // a value (a width, a gap) of font fs: its text box, and its row just past the width line (its centre)
     const across = (text, fs, bold) => { const bw = textW(text, fs, bold) + fs * 0.4, bh = fs * 1.4; return { bw, bh, ext: X ? bh : bw, al: X ? bw : bh } }
     const rowOf = (ext, fs) => line + inward * (fs * 0.25 + ext / 2)
     ds.forEach((d, i) => {
-      const color = d.stroke || '#6366f1', S = doorShades(color), [s0, s1] = spanOf(d), c = main[i], { fsV } = size[i]
+      const color = d.stroke || '#6366f1', S = doorShades(color), [s0, s1] = spanOf(d), c = main[i]
       const b0 = P(s0, mid - bd / 2), b1 = P(s1, mid + bd / 2)
       out.bars.push({ id: d.id, x: Math.min(b0.x, b1.x), y: Math.min(b0.y, b1.y), w: Math.abs(b1.x - b0.x), h: Math.abs(b1.y - b0.y), fill: S.light, stroke: color })
       for (const cc of clears[i]) out.boxes.push({ id: d.id, x: cc.x, y: cc.y, w: cc.w, h: cc.h, stroke: color })
@@ -98,9 +94,11 @@ export function doorDrawing(objects, gridSize = 40, lz = 1) {
       const near = X ? (inward > 0 ? c.y : c.y + c.h) : (inward > 0 ? c.x : c.x + c.w)
       const row = rowOf(ext, fsV), reach = (row - near) * inward + ext / 2
       let valueFar = null                              // the width's far reach from the box's wall side, if drawn
-      if (al <= hi(c) - lo(c) + 1e-6 && reach <= depthOf(c) + 1e-6 && (line - near) * inward - tick >= -1e-6) {
+      // (the value just past its line, even where that crosses the box's dashed edge — a man door's 44 in box zoomed out;
+      // not drawn when wider than its box)
+      if (al <= hi(c) - lo(c) + 1e-6 && (line - near) * inward - tick >= -1e-6) {
         const m = (s0 + s1) / 2, at = P(m, row), box = { x: at.x - bw / 2, y: at.y - bh / 2, w: bw, h: bh }
-        const ln = (p, q) => ({ op: 'line', points: [p.x, p.y, q.x, q.y], stroke: DIM_INK, strokeWidth: fsV / VALUE_FS })
+        const ln = (p, q) => ({ op: 'line', points: [p.x, p.y, q.x, q.y], stroke: DIM_INK, strokeWidth: u })
         const ops = [ln(P(s0, line), P(s1, line)), ln(P(s0, line - tick), P(s0, line + tick)), ln(P(s1, line - tick), P(s1, line + tick)),
           { op: 'text', x: box.x, y: box.y, w: box.w, h: box.h, text, fontSize: fsV, fill: DIM_INK, fontFamily: FONT, fontStyle: '700' }]
         out.labels.push({ kind: 'width', key: 'w:' + d.id, id: d.id, fs: fsV, at, box, ops, stop: { kind: 'door', id: d.id, lo: s0, hi: s1 }, wallKey: key, w })
@@ -108,16 +106,18 @@ export function doorDrawing(objects, gridSize = 40, lz = 1) {
       }
       // the badge: the box's corner away from the wall, at its right end (a wall along y: its top end), a clear margin in;
       // never over the width's line or value — a box too shallow for both: just past its far edge, still inside the building
-      const { r, fsB, margin } = size[i], num = String(nums.get(d.id) || '').replace(/^[A-Z]+/, '')
+      const num = String(nums.get(d.id) || '').replace(/^[A-Z]+/, '')
       const edge = X ? (inward > 0 ? c.y + c.h : c.y) : (inward > 0 ? c.x + c.w : c.x)
       const clearOf = Math.max(valueFar ?? 0, (line - near) * inward + tick) + margin
       const fitsIn = depthOf(c) - margin - 2 * r >= clearOf - 1e-6
-      const far = edge + (fitsIn ? -1 : 1) * inward * (r + margin)
-      const along = X ? hi(c) - r - margin : lo(c) + r + margin
-      if (num && fsB > 0 && 2 * (r + margin) <= hi(c) - lo(c) + 1e-6) {
+      // (outside: just past the box's far edge, or past the value where it reaches further)
+      const far = fitsIn ? edge - inward * (r + margin) : near + inward * (Math.max(depthOf(c), valueFar ?? 0) + margin + r)
+      const mA = Math.min(margin, (hi(c) - lo(c) - 2 * r) / 2), along = X ? hi(c) - r - mA : lo(c) + r + mA
+      // (zoomed out: a badge wider than its box is not drawn — Rule 8, never bigger than the object it labels)
+      if (num && fsB > 0 && 2 * r <= hi(c) - lo(c) + 1e-6) {
         const bc = P(along, far), tb = { x: bc.x - r, y: bc.y - r, w: 2 * r, h: 2 * r }
         out.labels.push({ kind: 'badge', key: 'b:' + d.id, id: d.id, fs: fsB, at: bc, box: tb, ops: [
-          { op: 'circle', x: bc.x, y: bc.y, r, fill: S.light, stroke: S.mid, strokeWidth: fsB / BADGE_FS },
+          { op: 'circle', x: bc.x, y: bc.y, r, fill: S.light, stroke: S.mid, strokeWidth: u },
           { op: 'text', x: tb.x, y: tb.y, w: tb.w, h: tb.h, text: num, fontSize: fsB, fill: S.dark, fontFamily: FONT, fontStyle: '500' },
         ] })
       }
@@ -127,8 +127,7 @@ export function doorDrawing(objects, gridSize = 40, lz = 1) {
     gaps.forEach((g, i) => {
       if (!(g.hi - g.lo > 0.5)) return
       const a = i === 0 ? w.lo : hi(main[i - 1]), b = lo(main[i])
-      // (its font: the smaller of the two doors' it lies between — the first gap, the first door's)
-      const fsV = Math.min(size[Math.max(0, i - 1)].fsV, size[Math.min(size.length - 1, i)].fsV), pad = fsV * 0.25
+      const pad = fsV * 0.25
       const text = ftIn(((g.hi - g.lo) / gridSize) * 12), { bw, bh, ext, al } = across(text, fsV, false)
       if (al + 2 * pad > b - a + 1e-6) return
       const at = P((a + b) / 2, rowOf(ext, fsV)), box = { x: at.x - bw / 2, y: at.y - bh / 2, w: bw, h: bh }
@@ -145,7 +144,7 @@ export function doorDrawing(objects, gridSize = 40, lz = 1) {
  *  gaps are; `u` one label px (with the 11 px floor — it is the tool's feedback, read while typing). → { ops, box }.
  *  `cursor`: a thin text cursor after the value (a gap being typed). */
 export function gapOps(w, lo, hi, text, u = 1, { cursor = false } = {}) {
-  const fs = VALUE_FS * u, X = w.axis === 'x', inward = w.inward || 1, row = w.at + inward * fs * 1.75, m = (lo + hi) / 2
+  const fs = DOOR_FS * u, X = w.axis === 'x', inward = w.inward || 1, row = w.at + inward * fs * 1.75, m = (lo + hi) / 2
   const at = X ? { x: m, y: row } : { x: row, y: m }, tw = textW(text, fs), bw = tw + fs * 0.4, bh = fs * 1.4
   const box = { x: at.x - bw / 2, y: at.y - bh / 2, w: bw, h: bh }
   const ops = [{ op: 'text', x: box.x, y: box.y, w: bw, h: bh, text, fontSize: fs, fill: DIM_INK, fontFamily: FONT, fontStyle: '400' }]

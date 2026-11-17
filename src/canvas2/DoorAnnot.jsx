@@ -1,20 +1,21 @@
 // DoorAnnot.jsx — the doors on the plan (doors-edit; STUDIO.md, Doors; mockup doors5.png — render/doorAnnot.js lays it out,
 // the PDF draws the same): each door a thin bar on its wall at true width, its number in a round badge in its clear space's
 // corner, its width on a short dimension line inside the box, the gaps as plain text between the boxes — nothing outside
-// the wall. Every label is drawing-scale (CLAUDE.md Rule 8, the door exception): it shrinks with the drawing and hides
-// once under 11 px on screen (canvas2/minText.js `hide`), never grows, never groups. A click on a width or a gap types it
+// the wall. Every label is the aisle width labels' size and follows Rule 8 as they do (doors-aisle round): laid out at
+// the size it is drawn (floorUnit — 11 px on screen at least), so it shows wherever the aisle labels do and never overlaps;
+// one that no longer fits its box or gap at that size is not drawn, and returns as you zoom in. Never grouped. A click on a width or a gap types it
 // (DoorGapEdit.jsx). The dashed clear-space boxes are the Scene's (shapes.jsx DoorClearShape).
 
 import { useMemo } from 'react'
 import { Group, Rect, Line, Text, Circle } from 'react-konva'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { useLiveObjects } from './live'
+import { useLiveObjects, useView } from './live'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { isDoor } from '../utils/doorTool'
 import { shownIn } from '../utils/layers'
-import { doorDrawing } from '../render/doorAnnot'
+import { doorDrawing, DOOR_FS } from '../render/doorAnnot'
 import { floorUnit, MIN_TEXT_PX } from './minText'
 export { floorUnit }
 
@@ -32,10 +33,10 @@ export const doorGapSpot = (key, e) => VALUES.find(g => g.key === key && (e.kind
   ? g.stop.kind === 'door' && g.stop.id === e.id
   : g.stop.kind === 'gap' && g.stop.gap.after === e.after && (e.after != null || g.stop.gap.before === e.before))) || null
 
-/* one label (a badge, a width, a gap): its shapes in one group that hides as a whole under 11 px (minText `hide`) */
+/* one label (a badge, a width, a gap): its shapes in one group, laid out at the size it is drawn */
 function DoorLabel({ l }) {
   return (
-    <Group name={'door-' + l.kind + ':' + l.key} listening={false} minLabel={{ fs: l.fs, at: l.at, box: { w: l.box.w, h: l.box.h }, hide: true }}>
+    <Group name={'door-' + l.kind + ':' + l.key} listening={false} minLabel={{ fs: l.fs, at: l.at, box: { w: l.box.w, h: l.box.h } }}>
       {l.ops.map((o, i) => {
         if (o.op === 'circle') return <Circle key={i} name="door-badge-ring" x={o.x} y={o.y} radius={o.r} fill={o.fill} stroke={o.stroke} strokeWidth={o.strokeWidth} perfectDrawEnabled={false} listening={false} />
         if (o.op === 'line') return <Line key={i} points={o.points} stroke={o.stroke} strokeWidth={o.strokeWidth} perfectDrawEnabled={false} listening={false} />
@@ -49,7 +50,9 @@ function DoorLabel({ l }) {
 export function DoorAnnot() {
   const objects = useLiveObjects()
   const { gs, layers } = useCanvasStore(useShallow(s => ({ gs: s.gridSize || 40, layers: s.layers })))
-  const lz = labelScale(useLabelPrefs(s => s.labelSize), gs)
+  // (the aisle labels' Label size, laid out at the size drawn: the floor in it — Rule 8)
+  const zoom = useView().zoom
+  const lz = 1 / floorUnit(labelScale(useLabelPrefs(s => s.labelSize), gs), zoom, DOOR_FS)
   const shown = useMemo(() => shownIn(layers), [layers])
   // (a door on a hidden layer: neither drawn nor labelled)
   const D = useMemo(() => {

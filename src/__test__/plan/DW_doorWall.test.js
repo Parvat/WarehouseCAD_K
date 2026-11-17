@@ -4,6 +4,7 @@ import { innerOutline } from '../../utils/floorGeom'
 import { doorAt, doorObject, doorTypes } from '../../utils/doorTool'
 import { doorWall, spanOf, wallGaps, neighbourGaps, gapEdit, doorNumbers, doorPlaced, widthEdit, chainStops } from '../../utils/doorWall'
 import { doorDrawing, shade } from '../../render/doorAnnot'
+import { AISLE_LABEL_FONT_PX } from '../../canvas2/hitTest'
 import { dimChain } from '../../render/dimChain'
 
 const GS = 40, ft = (v) => v * GS
@@ -74,11 +75,12 @@ describe('DW — doors on their walls', () => {
     // the bar: its true width, on the wall (between the outer and the inner face's middle), 1.5 ft deep
     expect([bar.x, bar.x + bar.w, Math.round(bar.h), bar.y < w.at && bar.y + bar.h > w.outer]).toEqual([s0, s1, 60, true])
     // the badges: the number alone, light fill, mid ring, dark number, medium; inside the door's clear box at its far right,
-    // a clear margin in from its edges; (doors-real) its diameter a fifth of the clear depth, at most 2.5x its 11 px size
+    // a clear margin in from its edges; (doors-aisle) the number at the aisle width labels' size, the circle sized to it
     const badge = D.labels.find(l => l.kind === 'badge' && l.id === top[1].id), box = D.boxes.find(b => b.id === top[1].id)
     const [circ, num] = badge.ops
     expect([num.text, num.fontStyle, circ.fill, circ.stroke, num.fill]).toEqual(['2', '500', shade('#6366f1', 0.82).length === 7 ? circ.fill : null, circ.stroke, num.fill])
-    expect(circ.r * 2).toBeCloseTo(Math.min(box.h / 5, 2.5 * 11 * 1.7), 6)
+    expect([num.fontSize, circ.r]).toEqual([AISLE_LABEL_FONT_PX, AISLE_LABEL_FONT_PX * 0.85])
+    expect(D.labels.filter(l => l.kind !== 'badge').every(l => l.ops.find(o => o.op === 'text').fontSize === AISLE_LABEL_FONT_PX)).toBe(true)
     const mg = circ.r * 0.5
     expect([circ.x + circ.r <= box.x + box.w - mg, circ.x > box.x + box.w / 2, circ.y + circ.r <= box.y + box.h - mg, circ.y > box.y + box.h / 2]).toEqual([true, true, true, true])
     // (doors-real) the width's line about 1 ft past the bar; the badge clear of the line and the value — every door
@@ -105,7 +107,14 @@ describe('DW — doors on their walls', () => {
     // nothing outside any wall: every label inside the building
     const inner = { x0: X0, y0: Y0, x1: X1, y1: Y1 }
     expect(D.labels.every(l => l.box.x >= inner.x0 - 1e-6 && l.box.x + l.box.w <= inner.x1 + 1e-6 && l.box.y >= inner.y0 - 1e-6 && l.box.y + l.box.h <= inner.y1 + 1e-6)).toBe(true)
-    // drawing-scale: a larger label scale only makes them smaller in the drawing — never a range, never a leader
+    // (doors-aisle) laid out larger (zoomed out, the floor in the unit): no two labels over each other, nothing outside the
+    // building; what no longer fits is left out — never a range, never a leader
+    for (const lz of [1, 0.5, 0.25, 0.1, 0.05]) {
+      const Z = doorDrawing(objs, GS, lz), bx = Z.labels.map(l => l.box)
+      const over = bx.some((p, i) => bx.some((q, j) => j > i && p.x < q.x + q.w - 1e-6 && q.x < p.x + p.w - 1e-6 && p.y < q.y + q.h - 1e-6 && q.y < p.y + p.h - 1e-6))
+      const out = Z.labels.some(l => l.box.x < X0 - 1e-6 || l.box.x + l.box.w > X1 + 1e-6 || l.box.y < Y0 - 1e-6 || l.box.y + l.box.h > Y1 + 1e-6)
+      expect([lz, over, out]).toEqual([lz, false, false])
+    }
     const small = doorDrawing(objs, GS, 4)
     expect([small.labels.filter(l => l.kind === 'badge').map(l => l.ops[1].text).join(), small.labels.some(l => l.ops.some(o => o.leader))]).toEqual(['1,2,3,4,5,6', false])
   })
