@@ -103,7 +103,8 @@ describe('AW — the switches and the PDF', () => {
     expect(ov).toMatch(/<AisleLabelItem [^>]*profile=\{warnProfile && equipR\.pair\(a\.row1Id, a\.row2Id\)\}/)   // each label on its rows' equipment (ui-polish-2)
     const { labelsSVG } = await import('../../export/pdfExport')
     const { out } = narrowed(true, 7.99)
-    const svg = (showMarks) => labelsSVG(out, GS, { labelSize: 'medium', showAisles: true, showMarks, showColumnLabels: true, profile: REACH, pickBothSides: false })
+    // (labels-final: a pill longer than its gap is left out — at Small the 8 ft aisle holds its label)
+    const svg = (showMarks) => labelsSVG(out, GS, { labelSize: 'small', showAisles: true, showMarks, showColumnLabels: true, profile: REACH, pickBothSides: false })
     const RED_PILL = 'rgba(254,226,226,0.95)'
     expect(svg(true)).toContain(RED_PILL)
     expect(svg(true)).toContain(`7' 11`)

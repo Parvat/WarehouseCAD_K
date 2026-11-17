@@ -11,9 +11,8 @@ import { useColumnCheck } from '../generate/useColumnCheck'
 import { useDragPreview } from './dragPreview'
 import { clearanceSource } from './clearanceSource'
 import { LabelOps } from './LabelOps'
-import { floorUnit, MIN_TEXT_PX } from './minText'
+import { floorUnit } from './minText'
 import { useRowPlaces } from './RackLineLabels'
-import { useView } from './live'
 import { aisleLabelOps, clearanceOpsAll, clearanceSolids } from '../render/labelOps'
 import { crossAisleLabels } from './crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
@@ -91,7 +90,6 @@ export function LabelPill({ cx, cy, text, fontSize, zoom, color = '#4a9eff', bg 
    has no equivalent of yet — the caller gates this on `selected`). */
 export function RackLabels({ obj, zoom, gridSize }) {
   // (Rule 8 — never over each other) the row numbers as drawn now: an end label (a depth, an arm) keeps off them
-  const viewZoom = useView().zoom
   const chips = useRowPlaces(true)
   if (!RACK_LABEL_TYPES.has(obj.type)) return null
 
@@ -102,12 +100,12 @@ export function RackLabels({ obj, zoom, gridSize }) {
   const fmtIn = (px) => pxToFtIn(px, gridSize)
   const nodes = []
   /* An END label (a depth at the rack's end, a double row's front / back, a cantilever's arm): at its end unless that is
-     over a row number (or another end label) as drawn — its text grown to 11 px (canvas2/minText.js) — then at the rack's
+     over a row number (or another end label) as drawn — at its drawing size (labels-final: never grown) — then at the rack's
      other end; both taken: left out (CLAUDE.md Rule 8: labels never overlap). Boxes in world px, the rack's turn in them. */
   const sp = spin(obj, gridSize), t = ((obj.rotation || 0) * Math.PI) / 180, cs = Math.cos(t), sn = Math.sin(t)
   const toW = (x, y) => ({ x: sp.x + (x - sp.offsetX) * cs - (y - sp.offsetY) * sn, y: sp.y + (x - sp.offsetX) * sn + (y - sp.offsetY) * cs })
   const drawnBox = (cx, cy, text) => {
-    const k = Math.max(1, MIN_TEXT_PX / (fs * (viewZoom || 1))), w = (text.length * fs * 0.62 + (4 / zoom) * 2) * k, h = fs * 1.5 * k
+    const w = text.length * fs * 0.62 + (4 / zoom) * 2, h = fs * 1.5
     const ps = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, c]) => toW(cx + (a * w) / 2, cy + (c * h) / 2))
     const x0 = Math.min(...ps.map(p => p.x)), y0 = Math.min(...ps.map(p => p.y))
     return { x: x0, y: y0, w: Math.max(...ps.map(p => p.x)) - x0, h: Math.max(...ps.map(p => p.y)) - y0 }
@@ -340,8 +338,8 @@ export function AisleLabel({ aisle, objects, lz, gridSize, profile = null, colum
    they look the same. */
 export function AisleLabelView({ L, name, lz }) {
   const ops = useMemo(() => aisleLabelOps(L, lz), [L, lz])
-  // (Rule 8) a width is a dimension value: too long for its gap at the 11 px floor, it moves outside with a leader
-  return <LabelOps ops={ops} name={name} out />
+  // (Rule 8) a width shows only when it fits its gap at 11 px or more, off the racks and columns (labels-final)
+  return <LabelOps ops={ops} name={name} cover />
 }
 
 /* One width label per cross-aisle (crossAisles.js), in the aisle-label style.
@@ -390,8 +388,9 @@ const EMPTY = []
    aisle part of the column check on the previewed layout
    (clearanceSource.js). Otherwise it draws the full check's own aisleBlocks. */
 export function ColumnClearanceLabels({ aisleBlocks, columns, objects, lz: lzSize, gridSize = 40, showLabels = true, avoid = EMPTY, warnings = true, only = null }) {
-  // (Rule 8) the numbers laid out at the size they are drawn: the Label size, or larger so the 9.5 number is 11 px on screen
-  const lz = 1 / floorUnit(lzSize, useView().zoom, 9.5)
+  // (Rule 8, labels-final) the numbers laid out at their drawing size (the Label size); under 11 px on screen, or not fitting
+  // their gap, they are left out
+  const lz = 1 / floorUnit(lzSize)
   const ids = useDragPreview(s => s.ids), dx = useDragPreview(s => s.dx), dy = useDragPreview(s => s.dy)
   const { profile, pickBothSides } = useColumnCheck()
   /* clearanceSource.js: a drag carrying every rack and column (a building

@@ -109,9 +109,10 @@ describe.each(['horizontal', 'vertical'])('LZ — %s', (orientation) => {
     const med = at({ labelSize: 'medium', showColumnLabels: true }), big = at({ labelSize: 'large', showColumnLabels: true })
     const nAisle = aisles.length, nCross = crossAisleLabels(p, GS).length
     expect(nCross).toBeGreaterThan(0)
-    // aisle + cross-aisle labels at exactly the Label size
-    expect(fontSizes(med).filter(v => Math.abs(inFt(v) - 2) < 1e-9)).toHaveLength(nAisle + nCross)
-    expect(fontSizes(big).filter(v => Math.abs(inFt(v) - 3) < 1e-9)).toHaveLength(nAisle + nCross)
+    // aisle + cross-aisle labels at exactly the Label size — (labels-final) each one that fits its gap; a larger size leaves
+    // more out, never draws one at another size
+    const nMed = fontSizes(med).filter(v => Math.abs(inFt(v) - 2) < 1e-9).length, nBig = fontSizes(big).filter(v => Math.abs(inFt(v) - 3) < 1e-9).length
+    expect([nMed > 0, nMed <= nAisle + nCross, nBig > 0, nBig <= nMed]).toEqual([true, true, true, true])
     // switch off: the grey numbers go, the red "under travel" ones and the shades stay
     const off = at({ labelSize: 'medium', showColumnLabels: false })
     const grey = (svg) => (svg.match(/fill="#767C74"[^>]*>\d+′-\d+″</g) || []).length

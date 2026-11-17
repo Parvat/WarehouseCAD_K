@@ -285,6 +285,20 @@ export function labelsSVG(objects, gridSize, opts) {
   const ops = []
   // the aisle width labels graded as on screen: coloured while the Checks layer and the markings are on
   const warnProfile = opts.showMarks ? (opts.profile || null) : null
+  /* (labels-final, CLAUDE.md Rule 8 — the same fit rule as the canvas, at the PDF's scale) a width label's pill longer than
+     the gap it measures is left out; its arrow stays (canvas2/LabelOps.jsx's `fit`) */
+  const fitted = (lops) => {
+    let len = 0, alongX = true
+    for (const o of lops) if (o.op === 'line' && o.points && o.points.length >= 4) { const dx = Math.abs(o.points[2] - o.points[0]), dy = Math.abs(o.points[3] - o.points[1]), l = Math.hypot(dx, dy); if (l > len) { len = l; alongX = dx >= dy } }
+    if (!len) return lops
+    const keep = []
+    for (let i = 0; i < lops.length; i++) {
+      const o = lops[i], t = lops[i + 1]
+      if (o.op === 'rect' && t && t.op === 'text' && t.x === o.x && t.y === o.y) { if ((alongX ? o.w : o.h) <= len + 1e-6) keep.push(o, t); i++; continue }
+      keep.push(o)
+    }
+    return keep
+  }
   if (opts.showAisles) {
     // the labels the plan shows: never across a section edge unless a real aisle, never open floor (hitTest.js gapShown)
     const gapR = equipmentResolver(objects, opts.profile || gapBase())
@@ -293,11 +307,11 @@ export function labelsSVG(objects, gridSize, opts) {
       if (!aisleGapShown(a, objects, gridSize, gapR.pair(a.row1Id, a.row2Id))) continue
       const az = aisleLabelScale(a, opts.labelSize, gridSize)
       const L = aisleLabelLayout(a, objects, gridSize, { profile: warnProfile, lz: az })
-      if (L) ops.push(...aisleLabelOps(L, az))
+      if (L) ops.push(...fitted(aisleLabelOps(L, az)))
     }
-    for (const L of crossAisleLabels(objects, gridSize, { profile: warnProfile, lz })) ops.push(...aisleLabelOps(L, lz))
+    for (const L of crossAisleLabels(objects, gridSize, { profile: warnProfile, lz })) ops.push(...fitted(aisleLabelOps(L, lz)))
     // a face with a zone or a wall in front of it, failing (generate/faceAisles.js): as on screen
-    if (warnProfile) for (const L of faceAisleLabels(objects, gridSize, { profile: warnProfile })) if (gapShown(L, objects, gridSize, gapR.of(L.rackId), false)) ops.push(...aisleLabelOps(L, lz))
+    if (warnProfile) for (const L of faceAisleLabels(objects, gridSize, { profile: warnProfile })) if (gapShown(L, objects, gridSize, gapR.of(L.rackId), false)) ops.push(...fitted(aisleLabelOps(L, lz)))
   }
   if (opts.showMarks || opts.showAisles) {
     const racks = objects.filter(o => typeof o.type === 'string' && o.type.startsWith('rack_'))

@@ -45,26 +45,27 @@ export function gridLineAt(p, zoom = 1) {
   }
   return null
 }
-/** The chain value under world point `p` (its box, plus 3 screen px), or null. */
+/** The chain value under world point `p` (its box, plus 3 screen px), or null — only where the value is drawn (11 px or
+ *  more on screen, and fitting its bay — labels-final). */
 export function chainAt(p, zoom = 1) {
   const pad = 3 / (zoom || 1)
-  for (const c of CHAIN) if (p.x >= c.x - pad && p.x <= c.x + c.w + pad && p.y >= c.y - pad && p.y <= c.y + c.h + pad) return c
+  for (const c of CHAIN) if (c.text && c.fs * (zoom || 1) >= MIN_TEXT_PX - 1e-6 && p.x >= c.x - pad && p.x <= c.x + c.w + pad && p.y >= c.y - pad && p.y <= c.y + c.h + pad) return c
   return null
 }
 /** The chain value drawn for grid `gridId` along `axis` from `lo` (the one being typed), or null. */
 export const chainSpot = (gridId, axis, lo) => CHAIN.find(c => c.gridId === gridId && c.axis === axis && Math.abs(c.lo - lo) < 0.5) || null
-/** The bubble under world point `p` (its circle as drawn, plus 3 screen px), or null — at a zoom where the bubble is
- *  drawn grown to the 11 px text floor (CLAUDE.md Rule 8, canvas2/minText.js), its click area grows with it. */
+/** The bubble under world point `p` (its circle as drawn, plus 3 screen px), or null — only while it is drawn: its name
+ *  11 px or more on screen (labels-final, CLAUDE.md Rule 8 — a smaller bubble hides and takes no click). */
 export function bubbleAt(p, zoom = 1) {
   const z = zoom || 1, pad = 3 / z
   for (const b of SPOTS) {
-    const k = b.fs > 0 ? Math.max(1, MIN_TEXT_PX / (b.fs * z)) : 1
-    if (Math.hypot(p.x - b.x, p.y - b.y) <= b.r * k + pad) return b
+    if (b.fs > 0 && b.fs * z < MIN_TEXT_PX - 1e-6) continue
+    if (Math.hypot(p.x - b.x, p.y - b.y) <= b.r + pad) return b
   }
   return null
 }
-/** A bubble's drawn radius at `zoom` (world px). */
-export const bubbleRadius = (b, zoom = 1) => b.r * (b.fs > 0 ? Math.max(1, MIN_TEXT_PX / (b.fs * (zoom || 1))) : 1)
+/** A bubble's drawn radius (world px): its drawing size, at any zoom (never grown). */
+export const bubbleRadius = (b) => b.r
 
 export function ColumnGridAnnot() {
   const objects = useLiveObjects()
@@ -72,9 +73,10 @@ export function ColumnGridAnnot() {
   const labelSize = useLabelPrefs(s => s.labelSize)
   const rowsShown = useViewPrefs(s => s.rowLabels || s.bomFull)
   const lz = labelScale(labelSize, gs), { zoom } = useView()
-  // (Rule 8) laid out at the size it is drawn: the label scale, or larger so its 10.5 text is 11 px on screen — the chain's
-  // values, the bubbles and the row numbers it keeps clear of, as drawn (render/columnAnnot.js, render/dimChain.js)
-  const lzF = 1 / floorUnit(lz, zoom), rowFs = rowLabelFs(lz, zoom)
+  // (Rule 8, labels-final) laid out at its natural drawing size — the chain's values, the bubbles and the row numbers it
+  // keeps clear of (render/columnAnnot.js, render/dimChain.js); under 11 px on screen they hide (minText)
+  const lzF = 1 / floorUnit(lz), rowFs = rowLabelFs(lz)
+  void zoom
   const grids = layerShown(layers, 'columns') ? objects.filter(o => o.type === 'column_grid' && o.showGrid !== false && selectedIds.includes(o.id)) : []
   // the row numbers where they are drawn (only worked out while a grid is selected)
   const places = useMemo(() => {
@@ -103,13 +105,13 @@ export function ColumnGridAnnot() {
             {a.chain.map((c, i) => (
               <Group key={'c' + i} listening={false}>
                 {[...c.segs, ...c.ticks].map((l, k) => <Line key={k} points={l} stroke={ANNOT.ink} strokeWidth={1} strokeScaleEnabled={false} listening={false} perfectDrawEnabled={false} />)}
-                {/* (Rule 8) laid out at 11 px at least; too long for its bay: outside, on a leader (render/dimChain.js) */}
+                {/* (Rule 8, labels-final) at its drawing size: under 11 px hidden (minText); too long for its bay: left out (render/dimChain.js) */}
                 <Text name="column-chain-text label-pill" text={c.text} x={c.tx} y={c.ty} width={c.tw + a.fs * 0.4} align="center" wrap="none" offsetX={(c.tw + a.fs * 0.4) / 2} offsetY={a.fs / 2}
                   fontSize={a.fs} fontStyle="600" fontFamily={FONT} fill={ANNOT.ink} listening={false} />
               </Group>
             ))}
             {a.bubbles.map((b, i) => (
-              // (Rule 8) a bubble is a label: under 11 px its circle and letter grow together about its centre
+              // (Rule 8) a bubble is a label: under 11 px its circle and letter hide together
               <Group key={'b' + i} name="column-bubble label-pill" listening={false} minLabel={{ fs: b.fs, at: { x: b.x, y: b.y }, box: { w: b.r * 2, h: b.r * 2 } }}>
                 <Circle x={b.x} y={b.y} radius={b.r} fill={ANNOT.bubbleFill} stroke={ANNOT.bubble} strokeWidth={1} strokeScaleEnabled={false} listening={false} />
                 <Text name="column-bubble-text" text={b.text} x={b.x - b.r} y={b.y - b.r} width={b.r * 2} height={b.r * 2} align="center" verticalAlign="middle" fontSize={b.fs} fontStyle="600" fontFamily={FONT} fill={ANNOT.bubble} listening={false} />

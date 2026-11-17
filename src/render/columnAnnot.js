@@ -18,9 +18,9 @@ export const ANNOT = { line: '#9AA29C', ink: DIM_INK, bubble: '#2B2F2C', bubbleF
 
 /** The annotation of grid `cg` → { lines: [{ x1, y1, x2, y2 }], bubbles: [{ x, y, r, fs, text, axis, i (the gridline it names) }], chain: [{ segs:
  *  [[x1, y1, x2, y2] …] (the chain either side of the value's break — or, a value too long for its bay, the whole bay and
- *  the leader to the value outside: render/dimChain.js), ticks: [[x1, y1, x2, y2] …], text, tw (its width), tx, ty, out }],
- *  fs, dash, u (one label px) } or null (no building). A chain that no longer fits its wall is left out whole. On the
- *  canvas `lz` carries the 11 px floor (canvas2/ColumnGridAnnot.jsx), so what is laid out is what is drawn. */
+ *  no text: render/dimChain.js), ticks: [[x1, y1, x2, y2] …], text ('' when left out), tw (its width), tx, ty, out }],
+ *  fs, dash, u (one label px) } or null (no building). At its drawing size (labels-final); the canvas hides a value or a
+ *  bubble under 11 px on screen. */
 export function columnAnnot(cg, objects, gridSize = 40, lz = 1, clear = null) {
   const fp = gridBuilding(objects, cg)
   if (!fp || !Array.isArray(cg?.spacingX) || !Array.isArray(cg?.spacingY)) return null
@@ -37,13 +37,13 @@ export function columnAnnot(cg, objects, gridSize = 40, lz = 1, clear = null) {
   const halfW = Math.max(0, ...stopsY.slice(1).map((v, i) => tw(words(v - stopsY[i])) / 2))
   const topOff = Math.max(14 * u, clear?.top ? clear.top + pad + fs * 0.6 : 0), leftOff = Math.max(14 * u, clear?.left ? clear.left + pad + halfW : 0)
   const lines = [], bubbles = [], chain = []
-  // the chains (render/dimChain.js): a value too long for its bay moves outside with a leader; the bubbles past them
+  // the chains (render/dimChain.js): a value too long for its bay is left out (labels-final); the bubbles past them
   const stopsX = [x0, ...xs.filter(x => x > x0 + 0.5 && x < x1 - 0.5), x1].filter((v, i, a) => i === 0 || v - a[i - 1] > 0.5)
   const side = (stops, axis, at) => {
     const c = dimChain(stops.slice(1).map((b, i) => ({ lo: stops[i], hi: b, text: words(b - stops[i]), style: '600' })), { axis, at, out: -1, u, ink: DIM_INK })
     for (const it of c.items) {
       const lns = it.ops.filter(o => o.op === 'line').map(o => o.points)
-      chain.push({ segs: lns, ticks: [], text: it.stop.text, tw: tw(it.stop.text), tx: it.box.x + it.box.w / 2, ty: it.box.y + it.box.h / 2, axis, lo: it.stop.lo, hi: it.stop.hi, out: it.out })
+      chain.push({ segs: lns, ticks: [], text: it.hidden ? '' : it.stop.text, tw: tw(it.stop.text), tx: it.box.x + it.box.w / 2, ty: it.box.y + it.box.h / 2, axis, lo: it.stop.lo, hi: it.stop.hi, out: it.out })
     }
     return c.hidden ? 0 : c.reach
   }

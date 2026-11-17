@@ -231,14 +231,13 @@ export function clearanceOps(block, col, lz, gridSize = 40, showLabels = true, a
     const fits = k.inGap
     let leader = null
     if (!fits) {
-      // outside its gap, on a leader from the line's middle to the number's near side
-      const s = outSpot(k), mx = m.label.x, my = m.label.y
-      // no spot near clear of every other label (an aisle label, another number): it no longer fits even outside — hidden
-      // until zooming in gives it room (CLAUDE.md Rule 8: labels never overlap); over a rack or column is the last resort
-      if (s.bad >= 4) continue
-      place(k, s.x, s.y); k.placedOut = true
-      leader = vertArrow ? [mx, my, s.x - Math.sign(s.x - mx) * tw / 2, my] : [mx, my, mx, s.y - Math.sign(s.y - my) * th / 2]
+      // (labels-final, CLAUDE.md Rule 8) a number that does not fit its own gap is left out — its line drawn whole — and
+      // returns as you zoom in; no leader (was: stepped off the line onto the aisle, on a leader)
+      const line = m.short ? SHORT_COLOR : CLEAR_LINE
+      if (a) out.push({ op: 'line', points: [a.x0, a.y0, a.x1, a.y1], stroke: line, strokeWidth: 1 / lz, dash: [2 / lz, 2 / lz] })
+      continue
     }
+    void outSpot
     const { lx, ly } = k
     const line = m.short ? SHORT_COLOR : CLEAR_LINE, ink = m.short ? SHORT_COLOR : CLEAR_INK
     if (a) {

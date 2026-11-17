@@ -74,25 +74,26 @@ describe.each(['horizontal', 'vertical'])('FU — %s', (orientation) => {
     const get = (id) => store.getState().objects.find(o => o.id === id)
     expect(fsOf(get(a.id)) / GS).toBeCloseTo(2, 9)                                  // Medium: 24 in
     const h0 = store.getState().historyIndex
-    expect(AL.setAisleLabelSize(store, [a.id], 36)).toBe(1)
+    // (labels-final: 21 in — a size whose pill still fits its aisle, so the PDF draws it; a larger one is left out)
+    expect(AL.setAisleLabelSize(store, [a.id], 21)).toBe(1)
     expect(store.getState().historyIndex).toBe(h0 + 1)                              // one undo step
-    expect(fsOf(get(a.id)) / GS).toBeCloseTo(3, 9)
+    expect(fsOf(get(a.id)) / GS).toBeCloseTo(1.75, 9)
     expect(fsOf(get(b.id)) / GS).toBeCloseTo(2, 9)                                  // only that aisle
     // saved with the layout
     const loaded = {}
     deserializeScene(serializeScene({ ...store.getState() }), loaded)
-    expect(loaded.objects.find(o => o.id === a.id).labelSizeIn).toBe(36)
+    expect(loaded.objects.find(o => o.id === a.id).labelSizeIn).toBe(21)
     // printed at that size in the PDF, the others at the PDF's own size
     const svg = buildLayoutSVG(store.getState().objects, [], GS, { labels: { labelSize: 'medium' } }).svg
     const fs = labelFontSizes(svg).map(v => +(v / GS).toFixed(6))
-    expect(fs.filter(v => v === 3)).toHaveLength(1)
+    expect(fs.filter(v => v === 1.75)).toHaveLength(1)
     // Default: back to the global size, the field gone
     AL.setAisleLabelSize(store, [a.id], null)
     expect('labelSizeIn' in get(a.id)).toBe(false)
     expect(fsOf(get(a.id)) / GS).toBeCloseTo(2, 9)
     // undo brings the override back, redo removes it again
     store.getState().undo()
-    expect(get(a.id).labelSizeIn).toBe(36)
+    expect(get(a.id).labelSizeIn).toBe(21)
     store.getState().redo()
     expect(get(a.id).labelSizeIn).toBeUndefined()
     // Apply to all aisles: one step, every aisle

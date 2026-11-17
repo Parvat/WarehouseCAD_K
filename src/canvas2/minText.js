@@ -1,35 +1,29 @@
-// canvas2/minText.js — the canvas text floor (CLAUDE.md Critical Rule 8; STUDIO.md, Canvas text): every text on the
-// canvas is drawn at least MIN_TEXT_PX (11) screen px tall, at any zoom — the size of the row numbers. A text that would
-// draw smaller is drawn at 11 px, grown about its anchor; one that cannot fit at 11 px in the room it has hides instead
-// of shrinking.
+// canvas2/minText.js — the one label rule on the canvas (CLAUDE.md Critical Rule 8; STUDIO.md, Canvas text — labels-final
+// round): a label shows only when it FITS ITS OWN SPACE at 11 px (MIN_TEXT_PX) or more on screen; otherwise it hides until
+// the zoom allows it. A label is drawn at its natural drawing size — never grown to reach 11 px, never grouped into ranges,
+// never moved onto a leader.
 //
 // One patch of Konva's drawing, so every text on the canvas — today's and any added later — keeps the rule without each
 // painter knowing the zoom:
-//   - a plain Konva Text grows about its own anchor (its aligned side across, its middle down); `minFit` ({ w, h } in its
-//     own units, either optional) is the room it has — grown past it, it is not drawn;
+//   - a plain Konva Text: under 11 px on screen it is not drawn; `minFit` ({ w, h } in its own units, either optional) is
+//     the room it has — wider than that, it is not drawn;
 //   - a LABEL — text on a pill, a chip, a bubble — is a Group with `minLabel`: { fs (its text's font size), at: { x, y }
-//     (the anchor, group units), box: { w, h } (the label's size), fit: { w, h } (its room, optional), out (optional) }.
-//     Every shape in it (the pill and the text alike) grows about that anchor by the same factor, or the whole label
-//     hides. A DIMENSION value (`out`: { x, y — its dimension line's end, dx, dy — the way out past it }) that would grow
-//     longer than its line does not hide: it moves outside its extension line, past that end, and a shape in it marked
-//     `minLeader` is drawn as the short leader from the end to it (only then). A DRAWING-SCALE label (`hide: true` — none
-//     today; was the doors' labels, doors5) is never grown: under 11 px it hides as a whole;
+//     (the anchor, group units), box: { w, h } (the label's size), fit: { w, h } (its room, optional), cover (optional) }.
+//     Under 11 px, or bigger than its room, the whole label (its pill and its text) hides. `cover: true` (a label that
+//     sits on the floor between objects — an aisle width, a door's values): it also hides while it would cover another
+//     object — a rack, a door, a column, a zone (setLabelObstacles: the canvas's list, world px) — or be larger than the
+//     object under its anchor (`own` ids: the objects it labels, never "another");
 //   - `minText: false` on a Text opts it out (none does today).
-// A label GROWN to the floor (or laid out at it — `minLabel.grown`) never covers another object — a rack, a door, a column,
-// a zone (setLabelObstacles: the canvas's list, world px) — and is never larger than the object it sits on (the one under
-// its anchor, or `own` / `minOwn` ids): if it would, it hides until the zoom allows it (CLAUDE.md Rule 8, labels-cover
-// round). `keep: true` (a door's gap value) is exempt.
-// The PDF is not drawn by Konva: untouched. What each text was drawn at is kept on the node (`_mtPx`: screen px, 0 when
-// hidden by the rule) — REG-canvas-text-min reads it.
+// The PDF is not drawn by Konva: its layouts keep the same fit rule at the PDF's scale. What each text was drawn at is kept
+// on the node (`_mtPx`: screen px, 0 when hidden by the rule) — REG-canvas-text-min reads it.
 
 import Konva from 'konva'
 
 export const MIN_TEXT_PX = 11
 
-/** One label px at `zoom` with the floor in it, for a layout whose text is 10.5 label px (the chains, the tags): the
- *  drawing size (1 / lz), or larger so its text is drawn at 11 px — a layout made with it is drawn as laid out, never
- *  grown after, so its values can be kept off each other (CLAUDE.md Rule 8). */
-export const floorUnit = (lz, zoom, base = 10.5) => Math.max(1 / lz, MIN_TEXT_PX / (base * (zoom || 1)))
+/** One label px for a layout: its natural drawing size, 1 / lz — never grown with the zoom (labels-final: a label too small
+ *  for 11 px hides instead; was: enlarged so its text drew at 11 px). Kept so the layouts read one unit. */
+export const floorUnit = (lz) => 1 / lz
 
 /* The objects a grown label must not cover: [{ id, x, y, w, h }] (world px), set by the canvas (LabelObstacles). */
 let OBST = [], OBST_V = 0
@@ -61,8 +55,7 @@ function labelGroupOf(node) {
   return node._mlg
 }
 
-/** A label group now: { k — 1 (already 11 px or more), > 1 (grow), 0 (hide: it cannot fit); t — moved outside (a
- *  dimension value that cannot fit its line: the shift, group units) or null; lead — the leader's points then }. */
+/** A label group now: { k — 1 (drawn: 11 px or more, in its room), 0 (hidden), t — always null (nothing moves) }. */
 function labelState(g) {
   const key = g.getAbsoluteTransform().m.join(',') + '|' + OBST_V
   const ml = g.getAttr('minLabel')
@@ -71,10 +64,10 @@ function labelState(g) {
   g._mtS = { key, ml, st }
   return st
 }
-/* a grown label (or one laid out at the floor) that would cover an object: hidden */
+/* a label on the floor (`cover`) that would cover an object, or outgrow the one it sits on: hidden */
 function coverState(g, st) {
   const ml = g.getAttr('minLabel')
-  if (st.k === 0 || ml.keep || !(st.k > 1 + 1e-9 || ml.grown)) return st
+  if (st.k === 0 || !ml.cover) return st
   const box = ml.box || {}, at = ml.at || { x: 0, y: 0 }
   if (!(box.w > 0 && box.h > 0)) return st
   const sb = screenBox(g, { x: at.x - box.w / 2, y: at.y - box.h / 2, w: box.w, h: box.h }, st.k, at, st.t)
@@ -83,16 +76,13 @@ function coverState(g, st) {
 }
 function labelFloor(g) {
   const ml = g.getAttr('minLabel'), s = Math.abs(g.getAbsoluteScale().y) || 1, px = (ml.fs || 0) * s
-  if (!(px > 0) || px >= MIN_TEXT_PX - 1e-6) return { k: 1, t: null }
-  // a drawing-scale label (`hide`): never grown, hidden under 11 px
-  if (ml.hide) return { k: 0, t: null }
-  const k = MIN_TEXT_PX / px, box = ml.box || {}, fit = ml.fit || {}
-  if (!((fit.w != null && box.w != null && box.w * k > fit.w + 1e-6) || (fit.h != null && box.h != null && box.h * k > fit.h + 1e-6))) return { k, t: null }
-  const o = ml.out
-  if (!o) return { k: 0, t: null }
-  const along = (Math.abs(o.dx) >= Math.abs(o.dy) ? box.w : box.h) * k, gap = 5 / s, at = ml.at || { x: 0, y: 0 }
-  const cx = o.x + o.dx * (gap + along / 2), cy = o.y + o.dy * (gap + along / 2)
-  return { k, t: { x: cx - at.x, y: cy - at.y }, lead: [o.x, o.y, o.x + o.dx * gap, o.y + o.dy * gap] }
+  if (!(px > 0)) return { k: 1, t: null }
+  // under 11 px on screen: hidden (never grown)
+  if (px < MIN_TEXT_PX - 1e-6) return { k: 0, t: null }
+  // bigger than its own room: hidden (never moved outside)
+  const box = ml.box || {}, fit = ml.fit || {}
+  if ((fit.w != null && box.w != null && box.w > fit.w + 1e-6) || (fit.h != null && box.h != null && box.h > fit.h + 1e-6)) return { k: 0, t: null }
+  return { k: 1, t: null }
 }
 
 /** A text's drawn content, in its own units: { x, y, w, h } — the lines as laid out (Konva's textArr), aligned. */
@@ -122,33 +112,23 @@ export function installMinText() {
   if (installed || !Konva?.Text?.prototype?._sceneFunc || !Konva?.Shape?.prototype?.getSceneFunc) return
   installed = true
 
-  // a plain text: grown about its own anchor, or hidden past its `minFit`
+  // a plain text: drawn at its own size — or not drawn, under 11 px or wider than its room (`minFit`)
   const textDraw = Konva.Text.prototype._sceneFunc
   Konva.Text.prototype._sceneFunc = function minTextScene(context) {
     if (labelGroupOf(this)) return textDraw.call(this, context)          // a label's text: the label decides (below)
     const fs = this.fontSize(), s = Math.abs(this.getAbsoluteScale().y) || 1, px = fs * s
     this._mtClip = textClipped(this)
-    if (this.getAttr('minText') === false || !(px > 0) || px >= MIN_TEXT_PX - 1e-6) { this._mtPx = px; this._mtRect = screenBox(this, textBox(this)); return textDraw.call(this, context) }
-    const k = MIN_TEXT_PX / px
-    const lines = (this.textArr && this.textArr.length) || 1, pad = this.padding() || 0, lh = this.lineHeight()
-    const tw = (this.getTextWidth ? this.getTextWidth() : 0) * k, th = lines * fs * lh * k
+    if (this.getAttr('minText') === false || !(px > 0)) { this._mtPx = px; this._mtRect = screenBox(this, textBox(this)); return textDraw.call(this, context) }
+    const lines = (this.textArr && this.textArr.length) || 1, lh = this.lineHeight()
+    const tw = this.getTextWidth ? this.getTextWidth() : 0, th = lines * fs * lh
     const fit = this.getAttr('minFit')
-    if (fit && ((fit.w != null && tw > fit.w + 1e-6) || (fit.h != null && th > fit.h + 1e-6))) { this._mtPx = 0; this._mtRect = null; return }
-    const W = this.width(), H = this.height(), align = this.align(), va = this.verticalAlign()
-    const ax = align === 'center' ? W / 2 : align === 'right' ? W - pad : pad
-    const ay = va === 'middle' ? H / 2 : va === 'bottom' ? H - pad : pad + (lines * fs * lh) / 2
-    // grown: never over another object, never larger than its own (Rule 8 — labels-cover)
-    const tb0 = textBox(this), sb = screenBox(this, tb0, k, { x: ax, y: ay })
-    if (coversObject(this, sb, this.getAbsoluteTransform().point({ x: tb0.x + tb0.w / 2, y: tb0.y + tb0.h / 2 }), this.getAttr('minOwn'))) { this._mtPx = 0; this._mtRect = null; return }
-    context.save()
-    context.translate(ax, ay); context.scale(k, k); context.translate(-ax, -ay)
-    textDraw.call(this, context)
-    context.restore()
-    this._mtPx = MIN_TEXT_PX
-    this._mtRect = screenBox(this, textBox(this), k, { x: ax, y: ay })
+    if (px < MIN_TEXT_PX - 1e-6 || (fit && ((fit.w != null && tw > fit.w + 1e-6) || (fit.h != null && th > fit.h + 1e-6)))) { this._mtPx = 0; this._mtRect = null; return }
+    this._mtPx = px
+    this._mtRect = screenBox(this, textBox(this))
+    return textDraw.call(this, context)
   }
 
-  // a label's shapes (its pill and its text): grown together about the label's anchor, or all hidden
+  // a label's shapes (its pill and its text): drawn together, or all hidden
   const sceneOf = Konva.Shape.prototype.getSceneFunc
   Konva.Shape.prototype.getSceneFunc = function minLabelSceneFunc() {
     const f = sceneOf.call(this)

@@ -35,6 +35,7 @@ import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
 import { isBayRack, selectionLevel, pickedBays, bayOwners, selectRows, selectBays, toggleBay, kindOf, selectionKind } from './selectionLevel'
 import { isDoor } from '../utils/doorTool'
+import { doorAtPoint } from '../render/doorAnnot'
 import { predictClick, setHoverTarget, clearHoverTarget } from './hoverTarget'
 import { isPlainTool } from '../utils/homeTool'
 import { innerOutline } from '../utils/floorGeom'
@@ -764,6 +765,12 @@ export function useCanvasInteraction({
       }
       let hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       let hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
+      /* (labels-final) a press on a door's bar or its clear-space box picks that door — and drags it — at any zoom, before
+         the wall, the floor or a rack under it (a value drawn there took the press above) */
+      if (evt.button === 0 && !(hitObj && isDoor(hitObj))) {
+        const dz = doorAtPoint(st.objects, st.gridSize || 40, world, pickableIn(st.layers))
+        if (dz) { hitId = dz; hitObj = st.objects.find(o => o.id === dz) }
+      }
       /* a press on a gridline itself (drawn while its grid is selected) — on the open floor, not on a rack or a column it
          runs through: a drag moves that line, as its bubble (col-bubbles fix) */
       if (evt.button === 0 && !evt.shiftKey && (!hitObj || FP_SET_INPUT.has(hitObj.type))) {

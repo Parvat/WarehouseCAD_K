@@ -12,11 +12,13 @@
 //   - THE CHAIN (chain.png): one dimension line per wall with doors, just above the door bars, corner to far corner —
 //     gap, door width, gap, door width … the last door to the far corner — a tick at every door edge and both corners.
 //     Each value centred on its own segment, in a break of the line: a width bold in the door's colour, a gap regular in
-//     the dimension blue. Only a value too wide for its segment lifts STRAIGHT UP on a short leader, above the boxes —
-//     never sideways. A click on a value types it (DoorGapEdit.jsx); the chain follows a door while it is dragged.
+//     the dimension blue. Only a SINGLE value too wide for its segment lifts STRAIGHT UP on a short leader, above the
+//     boxes — never sideways — and only when the rest of its chain fits; two or more too wide are left out. The canvas
+//     draws a wall's chain only while a door on it is selected, placed or dragged (`chains`); the PDF every wall's.
+//     A click on a value types it (DoorGapEdit.jsx); the chain follows a door while it is dragged.
 // Nothing for doors outside the wall. Every value is the SAME drawing size as the aisle width labels (AISLE_LABEL_FONT_PX
-// label px), laid out at the size it is drawn (`lz` from floorUnit — 11 px on screen at least); on the canvas a grown width
-// that would cover another object hides (minText — Rule 8), a gap never does while its wall's other labels show.
+// label px), at its drawing size; on the canvas a label shows only when it fits its space at 11 px or more, off every
+// other object (canvas2/minText.js — CLAUDE.md Rule 8, labels-final).
 
 import { DIM_INK } from './buildingDims'
 import { AISLE_LABEL_FONT_PX } from '../canvas2/hitTest'
@@ -54,9 +56,10 @@ export function doorWalls(objects, gridSize = 40) {
  * labels: [{ kind: 'badge' | 'width' | 'gap', key, fs, at: { x, y }, box (its text, world px), ops (label ops, a 'circle'
  * op for a badge), stop (a width or gap: { kind: 'door', id, lo, hi } | { kind: 'gap', gap, lo, hi }), wallKey, w }] }.
  * `lz`: the label scale (render/labelSize.js) — one label px is 1 / lz world px. `minFs`: the smallest font (world px) — the
- * canvas's 11 px at its zoom (the badge's number is BADGE_K of the values', never under it).
+ * canvas's 11 px at its zoom (labels-final: 0 — every label at its drawing size). `chains`: the walls (wallKey) whose chain
+ * is drawn — the canvas's: a wall with a door selected, dragged or being placed; null (the PDF): every wall.
  */
-export function doorDrawing(objects, gridSize = 40, lz = 1, { minFs = 0 } = {}) {
+export function doorDrawing(objects, gridSize = 40, lz = 1, { minFs = 0, chains = null } = {}) {
   const u = 1 / lz, doors = (objects || []).filter(isDoor)
   const out = { bars: [], boxes: [], labels: [], chains: [] }
   if (!doors.length) return out
@@ -113,7 +116,8 @@ export function doorDrawing(objects, gridSize = 40, lz = 1, { minFs = 0 } = {}) 
       const al = X ? bw : bh, ext = X ? bh : bw, m = (q.lo + q.hi) / 2, color = W ? (q.d.stroke || '#6366f1') : DIM_INK
       const boxAt = (at) => ({ x: at.x - bw / 2, y: at.y - bh / 2, w: bw, h: bh })
       const base = W ? { kind: 'width', key: 'w:' + q.d.id, id: q.d.id, stop: { kind: 'door', id: q.d.id, lo: q.lo, hi: q.hi } }
-        : { kind: 'gap', key: 'g:' + key + ':' + (q.g.after || 'end'), keep: true, stop: { kind: 'gap', gap: q.g, lo: q.lo, hi: q.hi } }
+        : { kind: 'gap', key: 'g:' + key + ':' + (q.g.after || 'end'), stop: { kind: 'gap', gap: q.g, lo: q.lo, hi: q.hi } }
+      if (chains && !chains.has(key)) continue
       const textOp = (box) => ({ op: 'text', x: box.x, y: box.y, w: box.w, h: box.h, text, fontSize: fsV, fill: color, fontFamily: FONT, fontStyle: W ? '700' : '400' })
       if (al + fsV * 0.5 <= q.hi - q.lo + 1e-6) {
         const at = P(m, line), box = boxAt(at)
@@ -128,7 +132,7 @@ export function doorDrawing(objects, gridSize = 40, lz = 1, { minFs = 0 } = {}) 
     for (const [a, b] of breaks.sort((p, q) => p[0] - q[0])) { if (a > from) cops.push(ln(P(from, line), P(a, line))); from = Math.max(from, b) }
     if (stops[stops.length - 1] > from) cops.push(ln(P(from, line), P(stops[stops.length - 1], line)))
     for (const v of stops) cops.push(ln(P(v, line - tick), P(v, line + tick)))
-    out.chains.push({ wallKey: key, ops: cops })
+    if (!chains || chains.has(key)) out.chains.push({ wallKey: key, ops: cops })
     // the badges: the box's top-right corner (away from the wall, at its right end — a wall along y: its top end) — inside
     // with a clear margin when every door's on the wall fits clear of the chain; otherwise centred ON that corner — the same
     // on every door of the wall. One bigger than its door's box is not drawn (Rule 8 — it returns as you zoom in)
@@ -152,8 +156,9 @@ export function doorDrawing(objects, gridSize = 40, lz = 1, { minFs = 0 } = {}) 
       ] })
       placed.push(tb)
     }
-    // (the lifted values last: straight up past the boxes, and past a badge on a corner)
-    for (const L of lifts) {
+    // (the lifted values last: straight up past the boxes, and past a badge on a corner) — labels-final: only a SINGLE
+    // narrow value lifts, and only when the rest of its chain fits; two or more too wide for their segments: left out
+    for (const L of lifts.length === 1 ? lifts : []) {
       let at = null
       for (let j = 0; !at && j <= 8; j++) { const p = P(L.m, w.at + inward * (above + fsV * 0.5 + L.ext / 2 + j * (L.ext + fsV * 0.3))); if (!hit(L.boxAt(p)) || j === 8) at = p }
       const box = L.boxAt(at), tip = P(L.m, (X ? at.y : at.x) - inward * L.ext / 2)
@@ -164,6 +169,17 @@ export function doorDrawing(objects, gridSize = 40, lz = 1, { minFs = 0 } = {}) 
   // a door on no wall: its footprint as the bar
   for (const d of doors) if (!out.bars.some(b => b.id === d.id)) { const f = doorFoot(d), S = doorShades(d.stroke || '#6366f1'); out.bars.push({ id: d.id, x: f.x0, y: f.y0, w: f.x1 - f.x0, h: f.y1 - f.y0, fill: S.light, stroke: d.stroke || '#6366f1' }) }
   return out
+}
+
+/** The door whose bar or clear-space box is under world point `p` (its id), or null — a press there drags that door, at
+ *  any zoom (labels-final; canvas2/useCanvasInteraction.js). `ok(d)`: the doors that may be picked. */
+export function doorAtPoint(objects, gridSize = 40, p, ok = () => true) {
+  const doors = (objects || []).filter(d => isDoor(d) && ok(d))
+  if (!doors.length) return null
+  const D = doorDrawing(doors.length === (objects || []).filter(isDoor).length ? objects : [...(objects || []).filter(o => !isDoor(o)), ...doors], gridSize, 1, { chains: new Set() })
+  const inside = (r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
+  const b = D.bars.find(inside) || D.boxes.find(inside)
+  return b ? b.id : null
 }
 
 /** The live gap while placing (DoorBar.jsx): plain text inside the building between `lo` and `hi` along wall `w`, as the
