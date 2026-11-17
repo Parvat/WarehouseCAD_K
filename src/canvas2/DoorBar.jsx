@@ -144,8 +144,11 @@ export function RowPreview() {
   const P = (q, c) => (w.axis === 'x' ? [q, c] : [c, q])
   const dist = (a, b, text, key) => {
     if (!(b - a > 0.5)) return null
-    const [x0, y0] = P(a, along), [x1, y1] = P(b, along), m = (a + b) / 2, [tx, ty] = P(m, along - inward * 0.9 * gs)
-    const fs = DOOR_FS_ROW * u, tw = String(text).length * fs * 0.6 + fs * 0.4, th = fs * 1.4
+    // (the value just outside the row's own end — left of the first door, right of the last — so it moves with the row and
+    //  stays on screen at any zoom; the dotted line still runs the whole distance)
+    const fs = DOOR_FS_ROW * u, tw = String(text).length * fs * 0.6 + fs * 0.4, th = fs * 1.4, ext = w.axis === 'x' ? tw : th, pad = fs * 0.4
+    const m = key === 'left' ? b - pad - ext / 2 : a + pad + ext / 2
+    const [x0, y0] = P(a, along), [x1, y1] = P(b, along), [tx, ty] = P(m, along - inward * 0.9 * gs)
     return (
       <Group key={key} name={'door-row-distance:' + key} listening={false}>
         <Line points={[x0, y0, x1, y1]} stroke="#2F6FD6" strokeWidth={1} dash={[2, 3]} strokeScaleEnabled={false} listening={false} />

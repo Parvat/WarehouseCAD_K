@@ -7362,6 +7362,20 @@ describe('REG — the hand check by real clicks', () => {
       await onWall(60)
       let pv = await preview()
       expect([pv.ok, pv.red, pv.dist.map(d => d.split('=')[0]).sort()]).toEqual([3, 0, ['left', 'right']])
+      // each value sits just outside its own row end (left of the first door, right of the last), not mid-span — at two zooms
+      const ends = () => L.page.evaluate(() => {
+        const st = window.Konva.stages[0]; st.draw()
+        const ds = st.find('.door-row-door').map(n => n.getClientRect()), l = st.findOne('.door-row-distance:left').findOne('Text').getClientRect(), r = st.findOne('.door-row-distance:right').findOne('Text').getClientRect()
+        const d0 = Math.min(...ds.map(d => d.x)), d1 = Math.max(...ds.map(d => d.x + d.width))
+        return { lGap: d0 - (l.x + l.width), rGap: r.x - d1 }
+      })
+      for (const z of [0.11, 0.4]) {
+        if (z !== 0.11) { await L.S('S.setState({ zoom: arg.z, panX: 400 - arg.x * arg.z, panY: 400 - arg.y * arg.z })', { x: lo + 60 * gs, y: wy, z }); await L.page.waitForTimeout(300); await onWall(60) }
+        const e = await ends()
+        expect([e.lGap >= -0.5 && e.lGap < 12, e.rGap >= -0.5 && e.rGap < 12]).toEqual([true, true])
+      }
+      await L.S('const z = 0.11; S.setState({ zoom: z, panX: 40 - arg.x * z, panY: 600 - (arg.y + arg.height) * z })', fp); await L.page.waitForTimeout(300)
+      await onWall(60)
       // a click drops it mid-wall: 3 docks, 12 ft apart, centred where the mouse was — one undo
       const n0 = (await doors()).length, h0 = await hist7()
       await L.page.mouse.down(); await L.page.mouse.up(); await L.page.waitForTimeout(300)
