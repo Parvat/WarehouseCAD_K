@@ -7316,6 +7316,36 @@ describe('REG — the hand check by real clicks', () => {
       expect(nums).toEqual(row.map((q, i) => String(i + 4)))
     }, 120000)
 
+    it('REG-rack-depth-label (click): a rack clicked at Fit and at 50 % — its dimension labels never drawn over a row number (R2, R2–R3 …): an end label (a depth, a double row’s front / back) whose end is taken goes to the rack’s other end, never over the number (CLAUDE.md Rule 8 — labels never overlap)', async () => {
+      await open()
+      const fit = async () => { await L.page.locator('[data-island="bottom-right"]').getByRole('button', { name: 'Fit' }).click(); await L.page.waitForTimeout(300) }
+      // each label of the selected rack (its pills) and each row number, as drawn on screen
+      const drawn = () => L.page.evaluate(() => {
+        const st = window.Konva.stages[0]; st.draw()
+        const box = (ns) => { let r = null; for (const q of ns) { if (!q._mtRect || !q.isVisible()) continue; const b = q._mtRect; r = r ? { x: Math.min(r.x, b.x), y: Math.min(r.y, b.y), x1: Math.max(r.x1, b.x + b.w), y1: Math.max(r.y1, b.y + b.h) } : { x: b.x, y: b.y, x1: b.x + b.w, y1: b.y + b.h } } return r }
+        const pills = st.find(n => /^racklabels:/.test(n.name())).flatMap(g => g.find('Text').map(t => ({ t: t.text(), r: box([t]) }))).filter(p => p.r)
+        const rows = st.find(n => n.name() === 'rack-line-label').map(t => { const g = t.getParent().getAttr('minLabel') ? t.getParent() : null; return { t: t.text(), r: box(g ? g.find('Shape') : [t]) } }).filter(p => p.r)
+        return { pills, rows }
+      })
+      const racks = await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => ({ id: o.id, x: o.x + o.width / 2, y: o.y + o.height / 2, type: o.type }))')
+      const over = []
+      let ends = 0
+      for (const view of ['Fit', '50%']) {
+        for (const r of racks) {
+          await fit()
+          if (view === '50%') { await L.S('S.setState({ zoom: 0.5, panX: 560 - arg.x * 0.5, panY: 450 - arg.y * 0.5 })', r); await L.page.waitForTimeout(250) }
+          await L.page.keyboard.press('Escape'); await L.click(r); await L.page.waitForTimeout(150)
+          if (!(await L.S('return S.getState().selectedIds.includes(arg)', r.id))) continue
+          const d = await drawn()
+          for (const p of d.pills) for (const q of d.rows) { const ox = Math.min(p.r.x1, q.r.x1) - Math.max(p.r.x, q.r.x), oy = Math.min(p.r.y1, q.r.y1) - Math.max(p.r.y, q.r.y); if (ox > 0.5 && oy > 0.5) over.push([view, r.type, p.t, q.t]) }
+          if (r.type === 'rack_double_row') ends += d.pills.filter(p => /^\d+' ?\d*"?$/.test(p.t) && p.t.length <= 6).length
+        }
+      }
+      expect(over).toEqual([])
+      // (the end labels still drawn — moved to the other end, not lost)
+      expect(ends).toBeGreaterThan(0)
+    }, 180000)
+
     it('REG-colgrid-bubble-fit (click): a gridline bubble is clicked where it is drawn — zoomed out (5 %) it is drawn grown to the 11 px text floor, and a press at 85 % of its drawn radius (outside its drawing-size circle) drags its line; a press just past the drawn circle does not', async () => {
       await open()
       await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)), z = 0.05; S.setState({ zoom: z, panX: 720 - (fp.x + fp.width / 2) * z, panY: 450 - (fp.y + fp.height / 2) * z })'); await L.page.waitForTimeout(300)

@@ -11,7 +11,8 @@ import { useColumnCheck } from '../generate/useColumnCheck'
 import { useDragPreview } from './dragPreview'
 import { clearanceSource } from './clearanceSource'
 import { LabelOps } from './LabelOps'
-import { floorUnit } from './minText'
+import { floorUnit, MIN_TEXT_PX } from './minText'
+import { useRowPlaces } from './RackLineLabels'
 import { useView } from './live'
 import { aisleLabelOps, clearanceOpsAll, clearanceSolids } from '../render/labelOps'
 import { crossAisleLabels } from './crossAisles'
@@ -89,6 +90,9 @@ export function LabelPill({ cx, cy, text, fontSize, zoom, color = '#4a9eff', bg 
    specs. Shown only while the rack is selected (or printing, which canvas2
    has no equivalent of yet — the caller gates this on `selected`). */
 export function RackLabels({ obj, zoom, gridSize }) {
+  // (Rule 8 — never over each other) the row numbers as drawn now: an end label (a depth, an arm) keeps off them
+  const viewZoom = useView().zoom
+  const chips = useRowPlaces(true)
   if (!RACK_LABEL_TYPES.has(obj.type)) return null
 
   const b = getObjectBounds(obj)
@@ -97,6 +101,29 @@ export function RackLabels({ obj, zoom, gridSize }) {
   const clr = '#4a9eff'
   const fmtIn = (px) => pxToFtIn(px, gridSize)
   const nodes = []
+  /* An END label (a depth at the rack's end, a double row's front / back, a cantilever's arm): at its end unless that is
+     over a row number (or another end label) as drawn — its text grown to 11 px (canvas2/minText.js) — then at the rack's
+     other end; both taken: left out (CLAUDE.md Rule 8: labels never overlap). Boxes in world px, the rack's turn in them. */
+  const sp = spin(obj, gridSize), t = ((obj.rotation || 0) * Math.PI) / 180, cs = Math.cos(t), sn = Math.sin(t)
+  const toW = (x, y) => ({ x: sp.x + (x - sp.offsetX) * cs - (y - sp.offsetY) * sn, y: sp.y + (x - sp.offsetX) * sn + (y - sp.offsetY) * cs })
+  const drawnBox = (cx, cy, text) => {
+    const k = Math.max(1, MIN_TEXT_PX / (fs * (viewZoom || 1))), w = (text.length * fs * 0.62 + (4 / zoom) * 2) * k, h = fs * 1.5 * k
+    const ps = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, c]) => toW(cx + (a * w) / 2, cy + (c * h) / 2))
+    const x0 = Math.min(...ps.map(p => p.x)), y0 = Math.min(...ps.map(p => p.y))
+    return { x: x0, y: y0, w: Math.max(...ps.map(p => p.x)) - x0, h: Math.max(...ps.map(p => p.y)) - y0 }
+  }
+  const meets = (a, c) => a.x < c.x + c.w && c.x < a.x + a.w && a.y < c.y + c.h && c.y < a.y + a.h
+  const ends = []
+  const endPill = (key, cx, cy, text, alt) => {
+    for (const x of [cx, alt]) {
+      const bb = drawnBox(x, cy, text)
+      if (chips.some(c => meets(c, bb)) || ends.some(e => meets(e, bb))) continue
+      ends.push(bb)
+      nodes.push(<LabelPill key={key} cx={x} cy={cy} text={text} fontSize={fs} zoom={zoom} color={clr} />)
+      return
+    }
+  }
+  const mirror = (cx, mid) => 2 * mid - cx
 
   if (obj.type === 'rack_row') {
     const beams = obj.beams || [96]
@@ -112,7 +139,8 @@ export function RackLabels({ obj, zoom, gridSize }) {
     })
     const totY = by + bh + 14 / zoom
     nodes.push(<LabelPill key="total" cx={bx + bw / 2} cy={totY} text={fmtIn(bw)} fontSize={fs} zoom={zoom} color={clr} />)
-    nodes.push(<LabelPill key="depth" cx={bx + bw + 6 / zoom + (fmtIn(bh).length * fs * 0.62 + (4 / zoom) * 2) / 2} cy={by + bh / 2} text={fmtIn(bh)} fontSize={fs} zoom={zoom} color={clr} />)
+    const dx = bx + bw + 6 / zoom + (fmtIn(bh).length * fs * 0.62 + (4 / zoom) * 2) / 2
+    endPill('depth', dx, by + bh / 2, fmtIn(bh), mirror(dx, bx + bw / 2))
   }
 
   if (obj.type === 'rack_double_row') {
@@ -136,10 +164,12 @@ export function RackLabels({ obj, zoom, gridSize }) {
     const totY = by + bh + 14 / zoom
     nodes.push(<LabelPill key="total" cx={bx + bw / 2} cy={totY} text={fmtIn(bw)} fontSize={fs} zoom={zoom} color={clr} />)
     const frontTxt = fmtIn(rowH), frontTw = frontTxt.length * fs * 0.62 + (4 / zoom) * 2
-    nodes.push(<LabelPill key="front" cx={bx - 6 / zoom - frontTw / 2} cy={by + rowH / 2} text={frontTxt} fontSize={fs} zoom={zoom} color={clr} />)
+    const fx = bx - 6 / zoom - frontTw / 2
+    endPill('front', fx, by + rowH / 2, frontTxt, mirror(fx, bx + bw / 2))
     const backTxt = fmtIn(rowH), backTw = backTxt.length * fs * 0.62 + (4 / zoom) * 2
     const backRowMidY = by + rowH + flueH + rowH / 2
-    nodes.push(<LabelPill key="back" cx={bx + bw + 6 / zoom + backTw / 2} cy={backRowMidY} text={backTxt} fontSize={fs} zoom={zoom} color={clr} />)
+    const kx = bx + bw + 6 / zoom + backTw / 2
+    endPill('back', kx, backRowMidY, backTxt, mirror(kx, bx + bw / 2))
     if (flueH > fs * 2) {
       const flueTxt = `${obj.flueSpaceIn || 9}" flue`
       nodes.push(<LabelPill key="flue" cx={bx + bw / 2} cy={by + rowH + flueH / 2} text={flueTxt} fontSize={fs} zoom={zoom} color="#888" />)
@@ -150,7 +180,8 @@ export function RackLabels({ obj, zoom, gridSize }) {
     const towers = obj.towers || [36]
     const armIn = towers[0] || 36
     const armTxt = `${armIn}" arm`, armTw = armTxt.length * fs * 0.62 + (4 / zoom) * 2
-    nodes.push(<LabelPill key="arm" cx={bx + bw + 6 / zoom + armTw / 2} cy={by + bh / 2} text={armTxt} fontSize={fs} zoom={zoom} color={clr} />)
+    const ax = bx + bw + 6 / zoom + armTw / 2
+    endPill('arm', ax, by + bh / 2, armTxt, mirror(ax, bx + bw / 2))
     const spTxt = '48" spacing', spTw = spTxt.length * fs * 0.62 + (4 / zoom) * 2
     const tSpPx = (48 / 12) * gridSize
     if (tSpPx > spTw && bw > tSpPx) {
@@ -173,7 +204,8 @@ export function RackLabels({ obj, zoom, gridSize }) {
     const wY = by + bh + 14 / zoom
     nodes.push(<LabelPill key="width" cx={bx + derivedW / 2} cy={wY} text={fmtIn(derivedW)} fontSize={fs} zoom={zoom} color={clr} />)
     const dTxt = fmtIn(bh), dTw = dTxt.length * fs * 0.62 + (4 / zoom) * 2
-    nodes.push(<LabelPill key="depth" cx={bx + derivedW + 6 / zoom + dTw / 2} cy={by + bh / 2} text={dTxt} fontSize={fs} zoom={zoom} color={clr} />)
+    const lx = bx + derivedW + 6 / zoom + dTw / 2
+    endPill('depth', lx, by + bh / 2, dTxt, mirror(lx, bx + derivedW / 2))
     const cap = lanes * palletDeep
     const lTxt = `${lanes}L × ${palletDeep}D · ${cap} PAL`
     nodes.push(<LabelPill key="lanes" cx={bx + derivedW / 2} cy={by - 14 / zoom} text={lTxt} fontSize={fs} zoom={zoom} color={clr} />)
