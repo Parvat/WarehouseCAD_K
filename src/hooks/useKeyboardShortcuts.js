@@ -114,7 +114,7 @@ export function shortcutHandler(e) {
           'l': TOOLS.LINE,
           'a': TOOLS.ARC,
           'c': TOOLS.CIRCLE,
-          'r': TOOLS.RECT,
+          'r': TOOLS.SQUARE,       // the Rectangle (D1 — was TOOLS.RECT, which does not exist: R did nothing)
           't': TOOLS.TEXT,
         }
         const tool = toolMap[e.key.toLowerCase()]

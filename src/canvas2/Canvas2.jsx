@@ -30,6 +30,8 @@ import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, startRect, moveRect, commitRect, p
 import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
 import { DoorBar, DoorPreview, DoorGapLive, RowPreview, useDoorGapKeys } from './DoorBar'
+import { DrawBar, TextBar, DrawPreview, TextEditor, useDrawKeys } from './DrawBar'
+import { useDrawTool, shapeOfTool, twoPoint, snapPoint, commitShape, startText, commitText } from '../utils/drawTool'
 import { rowWallAt, rowCountOn, hoverRow, dropRow, fillRow } from '../utils/doorRowTool'
 import { DOOR_TOOL, hoverDoor, placeDoor, clearDoorHover, useDoorTool } from '../utils/doorTool'
 import { SelectionBar, FloorMenu, openFloorMenu } from '../studio/SelectionBar'
@@ -532,15 +534,75 @@ export function Canvas2() {
   }
   const sectionMouseMove = (e) => { if (sectPen) { const w = sectWorld(e); if (w) penMove(w, useCanvasStore, view.current.zoom, !!e.evt?.shiftKey) } }
 
-  const modeMouseDown = measuring ? measureMouseDown : sectioning ? sectionMouseDown : filling ? fillMouseDown : xaisling ? xaisleMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
+  /* the drawing tools (D1 — utils/drawTool.js, DrawBar.jsx; design/drawbar.png): Line and Rectangle a drag or two clicks,
+     Circle the centre then the radius, Polyline and Polygon a click per point (a double-click or Enter finishes). Each
+     point snaps (Shift: 0 / 45 / 90°; Alt: none); each shape is one undo step; the tool stays on until Esc. The Text tool:
+     a click places a text (TextEditor), a click elsewhere finishes it and starts the next. */
+  const drawShape = !measuring ? shapeOfTool(activeTool) : null, drawing = !!drawShape
+  const texting = !measuring && activeTool === TOOLS.TEXT
+  useDrawKeys(drawing, texting)
+  useEffect(() => { if (!texting && useDrawTool.getState().text) commitText(useCanvasStore, nanoid) }, [texting])
+  const drawAt = (screen, evt) => {
+    const st = useCanvasStore.getState(), s = useDrawTool.getState(), w = screenToWorld(view.current, screen)
+    const last = s.pts[s.pts.length - 1] || null
+    return snapPoint(w, { st, zoom: view.current.zoom, last, shift: !!evt?.shiftKey, alt: !!evt?.altKey, shape: drawShape })
+  }
+  const drawMouseMove = (e) => {
+    const p = e.target.getStage()?.getPointerPosition()
+    if (!p || useDrawTool.getState().press) return
+    const r = drawAt(p, e.evt)
+    useDrawTool.setState({ at: r.p, guides: r.guides })
+  }
+  const drawMouseDown = (e) => {
+    if (e.evt && e.evt.button !== 0) return
+    const stage = e.target.getStage(), p = stage?.getPointerPosition()
+    if (!p) return
+    const s = useDrawTool.getState(), r = drawAt(p, e.evt), z = view.current.zoom
+    if (twoPoint(drawShape)) {
+      if (s.pts.length) { commitShape(useCanvasStore, drawShape, [s.pts[0], r.p], z, nanoid); useDrawTool.setState({ at: r.p }); return }
+      // the first point: a drag from it draws the shape (its release ends it); a click waits for the second click
+      useDrawTool.setState({ pts: [r.p], at: r.p, guides: r.guides, press: { sx: p.x, sy: p.y }, typed: null })
+      const rect = stage.container().getBoundingClientRect()
+      const move = (ev) => { const q = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }, rr = drawAt(q, ev); useDrawTool.setState({ at: rr.p, guides: rr.guides }) }
+      const up = (ev) => {
+        window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+        const t = useDrawTool.getState()
+        if (!t.press) return
+        const dragged = Math.hypot(ev.clientX - rect.left - t.press.sx, ev.clientY - rect.top - t.press.sy) >= 6
+        if (dragged && t.pts.length && t.at) commitShape(useCanvasStore, drawShape, [t.pts[0], t.at], view.current.zoom, nanoid)
+        else useDrawTool.setState({ press: null })
+      }
+      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+      return
+    }
+    // a polyline / polygon: a point — a second press on the same spot (a double-click's) adds none
+    const last = s.pts[s.pts.length - 1]
+    if (last && Math.hypot(r.p.x - last.x, r.p.y - last.y) <= 3 / z) { useDrawTool.setState({ added: false }); return }
+    useDrawTool.setState({ pts: [...s.pts, r.p], at: r.p, added: true, typed: null })
+  }
+  const drawDblClick = () => {
+    const s = useDrawTool.getState()
+    if (twoPoint(drawShape) || s.added) { useDrawTool.setState({ added: false }); return }
+    if (s.pts.length) commitShape(useCanvasStore, drawShape, s.pts, view.current.zoom, nanoid)
+  }
+  const textMouseDown = (e) => {
+    if (e.evt && e.evt.button !== 0) return
+    const p = e.target.getStage()?.getPointerPosition()
+    if (!p) return
+    e.evt?.preventDefault?.()                       // the press does not take the focus back from the text being typed
+    if (useDrawTool.getState().text) commitText(useCanvasStore, nanoid)
+    startText(screenToWorld(view.current, p), useCanvasStore.getState().gridSize || 40)
+  }
+
+  const modeMouseDown = drawing ? drawMouseDown : texting ? textMouseDown : measuring ? measureMouseDown : sectioning ? sectionMouseDown : filling ? fillMouseDown : xaisling ? xaisleMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
   // Space+drag or a middle drag pans in any tool (STUDIO.md §7a)
   const stageMouseDown = (e) => (isForcePan(e && e.evt) ? onStageMouseDown(e) : modeMouseDown(e))
   // the Row group's cursor: resize over a group row's handle, move over its body, crosshair over the floor (STUDIO.md §7a)
   const [groupCursor, setGroupCursor] = useState('crosshair')
   const groupMouseMove = (e) => { const c = groupCursorAt(e); if (c !== groupCursor) setGroupCursor(c) }
-  const stageMouseMove = measuring ? measureMouseMove : sectioning ? sectionMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : grouping ? groupMouseMove : filling ? fillHoverMove : xaisling ? xaisleHoverMove : onStageMouseMove
-  const stageMouseLeave = measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : dooring ? () => { if (!useDoorTool.getState().rowDrag) clearDoorHover() } : filling || grouping || xaisling ? undefined : onStageMouseLeave
-  const effectiveCursor = grouping ? groupCursor : measuring || filling || splitting || dooring || sectioning || xaisling ? 'crosshair' : cursor
+  const stageMouseMove = drawing ? drawMouseMove : texting ? undefined : measuring ? measureMouseMove : sectioning ? sectionMouseMove : splitting ? splitMouseMove : dooring ? doorMouseMove : grouping ? groupMouseMove : filling ? fillHoverMove : xaisling ? xaisleHoverMove : onStageMouseMove
+  const stageMouseLeave = drawing ? () => { if (!useDrawTool.getState().press) useDrawTool.setState({ at: null, guides: [] }) } : texting ? undefined : measuring ? () => setMeasureHover(null) : splitting ? () => useSplit.setState({ hover: null }) : dooring ? () => { if (!useDoorTool.getState().rowDrag) clearDoorHover() } : filling || grouping || xaisling ? undefined : onStageMouseLeave
+  const effectiveCursor = grouping ? groupCursor : texting ? 'text' : drawing || measuring || filling || splitting || dooring || sectioning || xaisling ? 'crosshair' : cursor
 
   return (
     <div
@@ -567,7 +629,7 @@ export function Canvas2() {
           onMouseMove={stageMouseMove}
           onMouseLeave={stageMouseLeave}
           onWheel={onWheel}
-          onDblClick={sectPen ? () => penDblClick(useCanvasStore) : onDblClick}
+          onDblClick={drawing ? drawDblClick : texting ? undefined : sectPen ? () => penDblClick(useCanvasStore) : onDblClick}
         >
           {/* background — the grid alone; it never intercepts anything */}
           <Layer listening={false}>
@@ -643,6 +705,8 @@ export function Canvas2() {
             {/* the Cross aisle tool's band (CrossAisleBand.jsx) */}
             {xaisling && <CrossAisleBandPreview />}
             {/* Add door's preview on the hovered wall (DoorBar.jsx) */}
+            {/* the shape being drawn (DrawBar.jsx) */}
+            {drawing && <DrawPreview />}
             {dooring && !rowOn && <DoorPreview />}
             {dooring && !rowOn && <DoorGapLive />}
             {dooring && rowOn && <RowPreview />}
@@ -681,6 +745,9 @@ export function Canvas2() {
       <CrossAisleBar />
       {filling && <FillOptionsBar />}
       {dooring && <DoorBar />}
+      {drawing && <DrawBar />}
+      {texting && <TextBar />}
+      <TextEditor />
       {sectioning && <SectionBar />}
       <SectionRename />
       {/* a building's wall dimension typed (FpDimEdit.jsx) */}

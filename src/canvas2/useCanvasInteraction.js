@@ -11,6 +11,7 @@ import { clampResizeUpdates, clampDragDelta } from '../utils/floorClamp'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
 import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
 import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from './fpRotate'
+import { resizeText } from '../utils/drawTool'
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
@@ -414,7 +415,8 @@ export function useCanvasInteraction({
       ids, nodes,
       startWorld: world,
       sx: evt.clientX, sy: evt.clientY,   // SCREEN coords, for the drag threshold below
-      origin: { x: grabbed.x, y: grabbed.y },   // the grabbed object, which snap follows
+      // the grabbed object, which snap follows (D1: a line or a circle has no x / y — its box's corner)
+      origin: Number.isFinite(grabbed.x) && Number.isFinite(grabbed.y) ? { x: grabbed.x, y: grabbed.y } : (() => { const b = getObjectBounds(grabbed); return { x: b.x, y: b.y } })(),
       grabbedId: hitId,
       /* the grabbed object as it was: a live-flue drag writes it to the store every frame, so a drop
          that can't stay (in-line, no free end) or ends where it started puts this back, with no history */
@@ -424,7 +426,7 @@ export function useCanvasInteraction({
          worked out from the base depth sat (current − base)/2 off, which
          moved the rack ALONG its run (a turned rack) or across by that much
          the moment its flue changed back */
-      size: { w: grabbed.width, h: grabbed.height },
+      size: Number.isFinite(grabbed.width) && Number.isFinite(grabbed.height) ? { w: grabbed.width, h: grabbed.height } : (() => { const b = getObjectBounds(grabbed); return { w: b.width, h: b.height } })(),   // (D1: a line, a circle — its box)
       /* a Row group row (utils/rowGroupTool.js): the drag is locked to its dominant axis, and the other
          group rows and every rack lined up with where it started are not snap targets — they could only
          pull it back to where it was. null for any other drag. */
@@ -1220,7 +1222,8 @@ export function useCanvasInteraction({
           })
           updates = z.box
           setSmartGuides(z.guides)
-        } else updates = applyResize(origObj, handle, dx, dy, snapFn, !!evt.shiftKey)
+        } else if (origObj.type === 'text') updates = resizeText(origObj, handle, pos.x - startWorld.x, pos.y - startWorld.y, getObjectBounds(origObj))   // (D1) its text height
+        else updates = applyResize(origObj, handle, dx, dy, snapFn, !!evt.shiftKey)
 
         /* Anchor-point correction for a rotated rect: growing/shrinking
            shifts the rotation pivot (the object's own centre) unless the

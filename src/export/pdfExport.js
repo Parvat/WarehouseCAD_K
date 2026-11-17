@@ -18,7 +18,8 @@
 // labels and red aisle warnings, X marks, upright flags, oversized bays —
 // from render/labelOps.js, the SAME ops the canvas paints, at the same Label
 // size (labels are drawing size, so a label is as big on paper, relative to
-// the racks, as on screen). Annotations, freehand strokes, free text and the
+// the racks, as on screen). The drawn shapes and texts (D1 — render/drawnShapes.js) print as on the canvas, on top.
+// Other annotations, freehand strokes and the
 // selection-only dimension labels are NOT drawn here (the building size lines and a column grid's gridlines are —
 // col-grid round: always on the PDF); see the bug journal
 // entry for why that's a deliberate boundary, not an oversight.
@@ -66,6 +67,8 @@ import { checkColumns } from '../generate/columnCheck'
 import { layoutColumns, layoutFloors } from '../generate/usableCapacity'
 import { withFaceBlocks } from '../canvas2/clearanceSource'
 import { isShown, layerShown } from '../utils/layers'
+import { isDrawn, drawnGeom, drawnSVG, textSVG } from '../render/drawnShapes'
+import { getObjectBounds } from '../utils/canvas'
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
@@ -107,6 +110,12 @@ function computeBounds(objects, gridSize) {
       for (const c of expandColumnGrid(o, gridSize, objects)) { eat(c.x, c.y); eat(c.x + c.w, c.y + c.h) }
     } else if (isZone(o)) {
       eat(o.x, o.y); eat(o.x + o.width, o.y + o.height)
+    } else if (isDrawn(o)) {
+      // (D1) a drawn shape: its outline's extent
+      const g = drawnGeom(o)
+      if (g.kind === 'ellipse') { eat(g.cx - g.rx, g.cy - g.ry); eat(g.cx + g.rx, g.cy + g.ry) } else for (const [px, py] of g.pts) eat(px, py)
+    } else if (o.type === 'text' && o.text) {
+      const b = getObjectBounds(o); eat(b.x, b.y); eat(b.x + b.width, b.y + b.height)
     } else if (PORTED_RACK_TYPES.has(o.type)) {
       const cx = o.x + o.width / 2, cy = o.y + o.height / 2
       const rot = ((o.rotation || 0) * Math.PI) / 180
@@ -500,9 +509,10 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   // then the labels and marks, then the columns on top of all of it (structure:
   // a column inside a rack is the conflict the check reports, and no rack, aisle
   // label, arrow or X mark may hide it).
-  const floors = [], zones = [], columns = [], racks = [], sections = []
+  const floors = [], zones = [], columns = [], racks = [], sections = [], drawn = []
   for (const o of objects) {
     if (!o || !usable(o)) continue
+    if (isDrawn(o) || (o.type === 'text' && o.text)) { drawn.push(o); continue }   // (D1) on top, as drawn
     if (FP_TYPES.has(o.type)) floors.push(o)
     else if (isZone(o)) zones.push(o)
     else if (o.type === 'section_area') sections.push(o)
@@ -543,6 +553,8 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     // the columns above the labels and marks, as on the canvas: a column is never hidden under an aisle label
     ...columns.map(o => columnGridSVG(o, gridSize, objects.filter(usable))),
     ...columns.filter(o => o.showGrid !== false).map(o => columnAnnotSVG(o, gridSize, objects.filter(usable), colLz(o))),
+    // (D1) the drawn shapes and texts, above the plan as on the canvas
+    ...drawn.map(o => (o.type === 'text' ? textSVG(o) : drawnSVG(o, u))),
     sectionKeySVG(objects.filter(usable), gridSize, namesLz),
     scaleBarSVG(vb.x + 10 * u, titleY + titleH * 0.45, gridSize, u),
     titleBlockSVG(titleX, titleY, u, { title, scaleRatio, date }),

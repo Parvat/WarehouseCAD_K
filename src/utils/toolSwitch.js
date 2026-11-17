@@ -14,6 +14,7 @@ import { useFillTool } from './fillTool'
 import { cancelGroupBox, onRowGroupToolStart, clearGroup, ROW_GROUP_TOOL } from './rowGroupTool'
 import { useSplit } from './splitTool'
 import { clearDoorHover } from './doorTool'
+import { cancelDraw } from './drawTool'
 import { cancelPlacement } from './placement'
 import { cancelSection, SECTION_RECT_TOOL, SECTION_PEN_TOOL } from '../canvas2/sectionTool'
 
@@ -28,6 +29,7 @@ function clearTransients() {
   cancelGroupBox()
   { if (useSplit.getState().hover) useSplit.setState({ hover: null }) }
   clearDoorHover()
+  cancelDraw()                                 // the shape being drawn (utils/drawTool.js)
   cancelSection()                              // the Section tool's box or pen points (canvas2/sectionTool.js)
 }
 

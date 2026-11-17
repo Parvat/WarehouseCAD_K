@@ -45,14 +45,18 @@ const isZoneType = (type) => typeof type === 'string' && type.startsWith('zone_'
 const DOOR_TYPES = new Set(['struct_egress', 'struct_loading_dock', 'struct_drive_in'])
 
 /** Does a single selection of this type get resize handles in canvas2? */
+/* (D1) the drawn shapes and a text resize as any box (a line by its two ends, a text by its height — utils/drawTool.js) */
+const DRAWN_RESIZE = new Set(['line', 'rect', 'circle', 'polyline', 'polygon', 'text'])
 export function hasResizeHandles(type, rackTypes) {
-  return (rackTypes && rackTypes.has(type)) || EDGE_ONLY.has(type) || isZoneType(type) || type === 'section_area' || DOOR_TYPES.has(type)
+  return (rackTypes && rackTypes.has(type)) || DRAWN_RESIZE.has(type) || EDGE_ONLY.has(type) || isZoneType(type) || type === 'section_area' || DOOR_TYPES.has(type)
 }
 /** Does this object get them? A section drawn as a custom shape gets point handles instead (SectionShape.jsx). */
 export const objHasResizeHandles = (o, rackTypes) => !!o && hasResizeHandles(o.type, rackTypes) && !(o.type === 'section_area' && o.shape === 'poly')
 
 export function enabledHandlesFor(type) {
   if (type === 'aisle') return []
+  if (type === 'text') return ['tl', 'tr', 'bl', 'br']          // (D1) a text scales by its corners
+  if (type === 'line') return ['ml', 'mr']                     // (D1) a line: its two ends (handlePositions)
   if (EDGE_ONLY.has(type)) return ['tc', 'bc', 'ml', 'mr']
   if (ML_MR_ONLY.has(type) || DOOR_TYPES.has(type)) return ['ml', 'mr']
   if (SUPPRESS_TC.has(type)) return HANDLES.filter(h => h !== 'tc')
@@ -60,7 +64,7 @@ export function enabledHandlesFor(type) {
 }
 
 export function rotateEnabledFor(type) {
-  return type !== 'aisle' && !EDGE_ONLY.has(type) && !isZoneType(type) && type !== 'section_area' && !DOOR_TYPES.has(type)
+  return type !== 'aisle' && !DRAWN_RESIZE.has(type) && !EDGE_ONLY.has(type) && !isZoneType(type) && type !== 'section_area' && !DOOR_TYPES.has(type)
 }
 
 /** World point -> local (pre-rotation) point around the object's own bounds
@@ -132,11 +136,18 @@ export function cursorForHandle(handle, rotation) {
  *  collectDragNodes for the same idea applied to plain object drag) can
  *  never disagree on where a handle belongs mid-gesture, before React's
  *  own re-render has caught up. */
+/** (D1) Where the handles are: a box's around it (getHandlePositions); a line's ON its two ends — ml the first end (x1),
+ *  mr the second, the ends utils/canvas.js applyResize moves for them. */
+export function handlePositions(obj, bounds, pad) {
+  if (obj && obj.type === 'line' && Number.isFinite(obj.x1)) return { ml: { x: obj.x1, y: obj.y1 }, mr: { x: obj.x2, y: obj.y2 } }
+  return getHandlePositions(bounds, pad)
+}
+
 export function computeHandleLayout(obj, zoom) {
   const bounds = getObjectBounds(obj)
   const enabled = enabledHandlesFor(obj.type)
   const canRotate = rotateEnabledFor(obj.type)
-  const positions = getHandlePositions(bounds, handlePad(zoom))
+  const positions = handlePositions(obj, bounds, handlePad(zoom))
   const hs = HANDLE_PX / 2 / zoom
   let rotateHandle = null
   if (canRotate) {
@@ -163,7 +174,7 @@ export function handleHitTest(obj, worldX, worldY, zoom) {
 
   const enabled = enabledHandlesFor(obj.type)
   if (!enabled.length) return null
-  const positions = getHandlePositions(bounds, handlePad(zoom))
+  const positions = handlePositions(obj, bounds, handlePad(zoom))
   for (const h of enabled) {
     const hp = positions[h]
     if (!hp) continue

@@ -1,7 +1,8 @@
 import { SELECT_BLUE, selectTint, textFace } from '../theme/tokens'
 import { useTextSizes, textHeight } from '../utils/textSizes'
 import { useCallback, useMemo, memo } from 'react'
-import { Group, Rect, Path, Shape, Circle, Line, Text } from 'react-konva'
+import { Group, Rect, Path, Shape, Circle, Ellipse, Line, Text } from 'react-konva'
+import { drawnGeom, isFilled, dashOf, textGeom } from '../render/drawnShapes'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { uprightXs, cantileverGeom, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
@@ -464,10 +465,15 @@ function FallbackShapeView({ obj, listening = false, bind }) {
   }
 
   if (obj.type === 'text') {
+    /* (D1) the text's box as getObjectBounds measures it — obj.x the anchor of its alignment, obj.y the first line's
+       baseline — its lines one under the other (render/drawnShapes.js textGeom; the PDF draws the same) */
+    const T = textGeom(obj), fs = T.fontSize
     return (
       <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...(bind ? bind(obj) : null)}>
-        <Text x={obj.x} y={obj.y} text={obj.text || ''}
-          fontSize={obj.fontSize || 14} fontFamily={textFace(obj.fontFamily)}
+        <Text name="drawn-text" x={T.box.x} y={obj.y - fs} width={Math.max(T.box.width, 1)} text={obj.text || ''} wrap="none"
+          align={obj.align === 'center' ? 'center' : obj.align === 'right' ? 'right' : 'left'} lineHeight={obj.lineHeight ?? 1.25}
+          fontStyle={`${obj.italic ? 'italic ' : ''}${obj.bold ? 'bold' : 'normal'}`.trim()}
+          fontSize={fs} fontFamily={textFace(obj.fontFamily)}
           fill={obj.fill || stroke} listening={listening} />
       </Group>
     )
@@ -516,6 +522,24 @@ function FallbackShapeView({ obj, listening = false, bind }) {
     </Group>
   )
 }
+
+/* ── Drawn shapes (D1 — utils/drawTool.js, render/drawnShapes.js) ─────────── */
+
+/** A drawn Line, Rectangle, Circle, Polyline or Polygon: its own stroke (screen px, as every drawn line), Solid or
+ *  Dashed, its fill when closed and filled — the outline render/drawnShapes.js gives the PDF and the pick too. */
+function DrawnShapeView({ obj, listening = false, bind }) {
+  const g = drawnGeom(obj), fill = isFilled(obj) ? obj.fill : undefined
+  const common = { stroke: obj.stroke || '#1F2321', strokeWidth: obj.strokeWidth || 2, dash: dashOf(obj) || undefined, lineJoin: 'round', lineCap: 'round',
+    strokeScaleEnabled: false, perfectDrawEnabled: false, shadowForStrokeEnabled: false, listening }
+  return (
+    <Group name={nodeName(obj.id)} listening={listening} opacity={obj.opacity ?? 1} {...(bind ? bind(obj) : null)}>
+      {g.kind === 'ellipse'
+        ? <Ellipse name="drawn-shape" x={g.cx} y={g.cy} radiusX={g.rx} radiusY={g.ry} fill={fill} {...common} />
+        : <Line name="drawn-shape" points={g.pts.flat()} closed={g.closed} fill={fill} {...common} />}
+    </Group>
+  )
+}
+export const DrawnShape = memo(DrawnShapeView)
 
 /* ── Aisle ────────────────────────────────────────────────────────────────── */
 

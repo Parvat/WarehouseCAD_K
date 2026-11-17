@@ -20,6 +20,9 @@ Platform (PL1–PL5) after its open questions are answered (FEATURES.md, Platfor
 - **R1 — done** (branch r1-rack-registry): `utils/rackTypes.js` replaces 31 local beam-rack lists and 4 name tables;
   REG-rack-types-same (recorded on master d9f6984) and RT_rackTypes. Audit findings carried forward: lane racks count
   lanes × deep and ignore levels (fix in R3/R4); the card calls a back-to-back pair "Double deep" (rename in R2).
+- **D1 — done** (branch d1-drawing): the Draw bar and the Text bar (design/drawbar.png); Line, Polyline, Rectangle, Circle,
+  Polygon, Text — select, move, resize, lock, PDF; R fixed. REG-draw-line, REG-draw-rect, REG-draw-poly, REG-text-place.
+  Arc and Arrow still draw nothing (D2 or later).
 
 ## Epics
 

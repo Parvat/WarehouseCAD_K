@@ -15,6 +15,7 @@
 // same function runs identically in either canvas.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isDrawn, drawnHit } from '../render/drawnShapes'
 import { objectContains, getFpWallSegments, distToSegment, getObjectBounds, pxToFtIn } from '../utils/canvas'
 import { rackFootprint, rowAisleLevel, MHE_PROFILES, expandColumnGrid } from '../generate/columnCheck'
 import { fmtLenDown } from '../utils/copyChange'
@@ -397,6 +398,14 @@ export function pickAt(objects, layers, wx, wy, zoom, gridSize = 40, priority = 
     if (obj.type === 'section_area') {
       if (onOutline(obj, wx, wy, line)) take({ id: obj.id, kind: 'object', real: true, p })
       else if (onOutline(obj, wx, wy, 6 / zoom)) take({ id: obj.id, kind: 'object', real: false, p })
+      continue
+    }
+    /* (D1) a drawn shape is picked on its line (an open one, an unfilled one) — a filled one inside too; the band around
+       its line (8 screen px) is its padding (render/drawnShapes.js drawnHit) */
+    if (isDrawn(obj)) {
+      const h = drawnHit(obj, wx, wy, Math.max(line, ((obj.strokeWidth || 2) / 2 + 1) / zoom))
+      if (h) take({ id: obj.id, kind: 'object', real: true, p })
+      else if (drawnHit(obj, wx, wy, 8 / zoom)) take({ id: obj.id, kind: 'object', real: false, p })
       continue
     }
     if (objectContains(obj, wx, wy, zoom)) {

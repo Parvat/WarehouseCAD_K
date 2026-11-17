@@ -7,7 +7,8 @@ import { rackDrawOps, PORTED_RACK_TYPES } from '../render/rackOps'
 import { useElevView, tintOn } from '../utils/elevationDraw'
 import { FILL_TOOL } from '../utils/fillTool'
 import { useAreaHover, areaShown } from './areaHover'
-import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape, RackingAreaShape, ZoneShape, DoorClearShape } from './shapes'
+import { RackShape, FloorPlanShape, ColumnGridShape, AisleShape, FallbackShape, RackingAreaShape, ZoneShape, DoorClearShape, DrawnShape } from './shapes'
+import { isDrawn } from '../render/drawnShapes'
 import { SectionShape } from './SectionShape'
 import { isDoor } from '../utils/doorTool'
 import { doorClearRects } from '../utils/doorClear'
@@ -95,6 +96,7 @@ function SceneView({ listening = false, bind, part = 'all' }) {
       if (o.type === 'aisle') { rest.push({ kind: 'aisle', obj: o }); continue }
       if (o.type === 'racking_area') { rest.push({ kind: 'area', obj: o }); continue }
       if (typeof o.type === 'string' && o.type.startsWith('zone_')) { rest.push({ kind: 'zone', obj: o }); continue }
+      if (isDrawn(o)) { rest.push({ kind: 'drawn', obj: o }); continue }   // (D1) Line, Rectangle, Circle, Polyline, Polygon
       if (PORTED_RACK_TYPES.has(o.type)) {
         const ops = opsFor(o, gridSize)
         // a degenerate rack has no ops; fall through so it is still visible
@@ -129,6 +131,7 @@ function SceneView({ listening = false, bind, part = 'all' }) {
         }
         if (e.kind === 'area') return areaShown(e.obj.id, { filling, hoverId: areaHoverId, selectedIds }) ? <RackingAreaShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} /> : null
         if (e.kind === 'zone') return <ZoneShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />
+        if (e.kind === 'drawn') return <DrawnShape key={e.obj.id} obj={e.obj} listening={listening} bind={bind} />
         return <FallbackShape key={e.obj.id} obj={e.obj} listening={listening} bind={bind} />
       })}
       {part === 'all' && colEls}

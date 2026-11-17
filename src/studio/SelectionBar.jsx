@@ -1,3 +1,4 @@
+import { isDrawn } from '../render/drawnShapes'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
@@ -61,6 +62,9 @@ const GAP = 8, TOP_SAFE = 68, EDGE = 16, RAIL_RIGHT = 72
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 const isColumn = (o) => o?.type === 'column_grid' || o?.type === 'column'
+// (D1) the drawn shapes and texts (utils/drawTool.js): their own bar — Lock, Duplicate, Delete
+const DRAWN_NAMES = { line: 'Line', rect: 'Rectangle', circle: 'Circle', polyline: 'Polyline', polygon: 'Polygon', text: 'Text' }
+const isDrawnOrText = (o) => !!o && (o.type === 'text' || isDrawn(o))
 const store = useCanvasStore
 
 /** What the bar is for, and on what: { kind, objs } or null. One selection rule (STUDIO.md §7): bays picked — the bay
@@ -80,6 +84,7 @@ export function barFor(objects, selectedIds, activeWall, activeBaySelection = []
     const main = [...sel].sort((a, b) => (b.beams?.length || 0) - (a.beams?.length || 0))[0]
     return { kind: 'rack', objs: sel, main }
   }
+  if (sel.length && sel.every(isDrawnOrText)) return { kind: 'drawn', objs: sel }
   if (sel.length === 1) {
     const o = sel[0]
     if (isBeamRack(o)) return { kind: 'rack', objs: sel }
@@ -325,6 +330,23 @@ function RowsBar({ ids }) {
 }
 
 /** Several kinds selected together: the count, then only the actions every one of them has — Lock, Duplicate, Delete. */
+/** (D1) A drawn shape or a text (several: their count): Lock · Duplicate · Delete. */
+function DrawnBar({ objs }) {
+  const layers = useCanvasStore(s => s.layers), locked = objs.every(o => isLockedIn(layers, o))
+  const kinds = [...new Set(objs.map(o => DRAWN_NAMES[o.type] || 'Shape'))]
+  return (
+    <>
+      <span aria-label="Selected" data-bar-count style={{ padding: '0 8px 0 6px', fontSize: 12, color: B.muted }}>
+        {objs.length > 1 ? <><span style={{ fontFamily: MONO, color: B.text }}>{objs.length}</span> selected</> : <span style={{ color: B.text }}>{kinds[0]}</span>}
+      </span>
+      <Sep />
+      <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
+      <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={duplicateSelection} locked={locked} />
+      <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} locked={locked} />
+    </>
+  )
+}
+
 function MixedBar({ objs }) {
   const st = store.getState(), layers = useCanvasStore(s => s.layers), locked = objs.every(o => isLockedIn(layers, o))
   return (
@@ -502,6 +524,7 @@ export function SelectionBar() {
       {what.kind === 'rack' && <RackBar obj={obj} />}
       {what.kind === 'rows' && <RowsBar ids={what.objs.map(o => o.id)} />}
       {what.kind === 'mixed' && <MixedBar objs={what.objs} />}
+      {what.kind === 'drawn' && <DrawnBar objs={what.objs} />}
       {what.kind === 'bay' && <BayBar />}
       {what.kind === 'bays' && <BayBar several />}
       {what.kind === 'zone' && <ZoneBar obj={obj} />}

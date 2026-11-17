@@ -78,7 +78,7 @@ describe.each(['horizontal', 'vertical'])('SBR — the selection bar, %s', (orie
     expect(read('canvas2/Canvas2.jsx')).toMatch(/<SelectionBar \/>/)
   })
 
-  it('SBR-contents: the §6 table per selection — one rack row, several rows, a zone, a column grid, an aisle label, a building; nothing for other objects; hidden in another tool, while placing or while a Row group is open', async () => {
+  it('SBR-contents: the §6 table per selection — one rack row, several rows, a zone, a column grid, an aisle label, a building, a drawn shape or a text (D1 — was: nothing for a text); nothing for other objects; hidden in another tool, while placing or while a Row group is open', async () => {
     const st = store.getState(), r = rackOf(store), racks = st.objects.filter(o => o.type === 'rack_double_row' || o.type === 'rack_row')
     expect(SB.barFor(st.objects, [r.id], null).kind).toBe('rack')
     expect(SB.barFor(st.objects, racks.slice(0, 3).map(o => o.id), null).kind).toBe('rows')
@@ -90,7 +90,10 @@ describe.each(['horizontal', 'vertical'])('SBR — the selection bar, %s', (orie
     const aisle = st.objects.find(o => o.type === 'aisle')
     expect(SB.barFor([...st.objects, zone], ['z'], null).kind).toBe('zone')
     if (aisle) expect(SB.barFor(st.objects, [aisle.id], null).kind).toBe('aisle')
-    expect(SB.barFor([...st.objects, { id: 't', type: 'text', x: 0, y: 0, width: 10, height: 10 }], ['t'], null)).toBe(null)
+    // (D1) a text and a drawn shape: their own bar (Lock · Duplicate · Delete) — was: nothing for a text
+    expect(SB.barFor([...st.objects, { id: 't', type: 'text', x: 0, y: 0, width: 10, height: 10 }], ['t'], null).kind).toBe('drawn')
+    expect(SB.barFor([...st.objects, { id: 'l', type: 'line', x1: 0, y1: 0, x2: 50, y2: 0 }], ['l'], null).kind).toBe('drawn')
+    expect(SB.barFor([...st.objects, { id: 'm', type: 'mhe_forklift', x: 0, y: 0, width: 10, height: 10 }], ['m'], null)).toBe(null)
     // the buttons, in C1's order
     store.setState({ selectedIds: [r.id], activeTool: 'select' })
     const one = (await ssr(SB.SelectionBar))

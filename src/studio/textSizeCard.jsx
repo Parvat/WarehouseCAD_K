@@ -54,7 +54,7 @@ const save = () => { try { autoSave(serializeScene(useCanvasStore.getState())) }
  *  current one highlighted; a click picks it (committed at once); ↑ / ↓ move, Enter picks, Esc closes. Typing commits on
  *  Enter or leaving the field. The list opens below — or upward with no room there — and never over the right Properties
  *  card (from outside it: kept to its left). */
-function SizeInput({ inches, placeholder, aria, onCommit }) {
+export function SizeInput({ inches, placeholder, aria, onCommit }) {
   const show = sizeText(inches)
   const [text, setText] = useState(show)
   const [bad, setBad] = useState(false)

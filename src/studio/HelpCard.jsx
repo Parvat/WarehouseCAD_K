@@ -41,7 +41,7 @@ export const HELP = [
   ] },
   { title: 'Tools', rows: [
     ['V', 'Select'], ['P', 'Pan'], ['F', 'Fill racking — one fill, then Pan'], ['G', 'Row group'], ['S', 'Split'],
-    ['M', 'Measure'], ['L', 'Line'], ['T', 'Text'], ['Space+drag, middle-drag', 'Pans in any tool'],
+    ['M', 'Measure'], ['L', 'Line'], ['R', 'Rectangle'], ['T', 'Text'], ['Space+drag, middle-drag', 'Pans in any tool'],
   ] },
   { title: 'Keys', rows: [
     ['Ctrl+A', 'Selects everything; Delete then clears all'], ['Delete', 'Deletes the selection'],

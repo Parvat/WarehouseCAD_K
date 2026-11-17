@@ -53,8 +53,8 @@ Users forgive a plain interface. They won't forgive frustrating drawing. So, in 
 
 | Item | Phase | Status |
 |---|---|---|
-| Line, polyline, rectangle, polygon, circle, arc | 1 | Partial — Line/Arc/Arrow in the pill, Rectangle/Ellipse in Blocks, but canvas2 has no draw handler for them; no polyline/polygon |
-| Text with font size, style, colour | 1 | Partial — text objects draw and style (Text panel); the Text tool doesn't place text in canvas2 |
+| Line, polyline, rectangle, polygon, circle, arc | 1 | Partial — Line, Polyline, Rectangle, Circle, Polygon done (D1: the Draw bar, live lengths, typed lengths, Shift, snap, PDF); Arc and Arrow not drawn yet |
+| Text with font size, style, colour | 1 | Done — D1: the Text tool places text; Size (real height), bold, italic, colour, alignment; resize scales it; PDF |
 | Dimension tool (linear, chained) and leader / callout | 1 | Partial — automatic building and column-grid chains; Dimension tool not drawn in canvas2; no leader |
 | Freehand pen | 2 | Partial — pen options UI and saved strokes draw; no stroke capture in canvas2 |
 | Hand-drawn shape recognition (rect, circle, line, arrow) | 2 | Todo |
@@ -230,7 +230,7 @@ Details: [Platform plan](#platform-plan-details)
 
 | Item | Phase | Status |
 |---|---|---|
-| Keyboard shortcuts (V move, R rotate, M measure, Ctrl+D duplicate, Space pan, Delete) + shortcut sheet | 1 | Partial — V, M, Ctrl+D, Space, Delete and the ? sheet; no R rotate (R is Rectangle) |
+| Keyboard shortcuts (V move, R rotate, M measure, Ctrl+D duplicate, Space pan, Delete) + shortcut sheet | 1 | Partial — V, M, L line, R rectangle (D1 — R did nothing before), T text, Ctrl+D, Space, Delete and the ? sheet; no R rotate (R is Rectangle) |
 | Command palette (Ctrl+K) | 2 | Todo |
 | Context menu (right click) | 1 | Done |
 | Icon redesign (line style), rail labels | 1 | Partial — icons redone; rail names are tooltips only |
