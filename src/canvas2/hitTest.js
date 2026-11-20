@@ -15,7 +15,7 @@
 // same function runs identically in either canvas.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isDrawn, drawnHit } from '../render/drawnShapes'
+import { isDrawn, drawnHit, drawnBox } from '../render/drawnShapes'
 import { objectContains, getFpWallSegments, distToSegment, getObjectBounds, pxToFtIn } from '../utils/canvas'
 import { rackFootprint, rowAisleLevel, MHE_PROFILES, expandColumnGrid } from '../generate/columnCheck'
 import { fmtLenDown } from '../utils/copyChange'
@@ -86,6 +86,8 @@ export function boundsOf(obj, objects = []) {
     const r = aisleRect(obj, objects)
     return r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null
   }
+  // (d2-arrows) an elbow or block arrow: its drawn outline's box (getObjectBounds does not know them)
+  if (obj.type === 'elbow' || obj.type === 'block_arrow') return Number.isFinite(obj.x1) ? drawnBox(obj) : null
   return getObjectBounds(obj)
 }
 
@@ -408,7 +410,8 @@ export function pickAt(objects, layers, wx, wy, zoom, gridSize = 40, priority = 
       /* (d1-fixes) inside a closed shape — filled or not — the shape truly holds the click, but last of everything that
          does: a rack, a door, a column, a zone, a section's outline, a wall under it still wins; only the building's
          blank floor comes after it. Of two shapes, the one drawn later (on top) */
-      if (h === 'inside') take({ id: obj.id, kind: 'object', real: true, p: -0.5 + (drawnOrder.get(obj.id) || 0) * 1e-9 })
+      // (d2-arrows) a block arrow is solid: its inside holds a click as its line does
+      if (h === 'inside' && obj.type !== 'block_arrow') take({ id: obj.id, kind: 'object', real: true, p: -0.5 + (drawnOrder.get(obj.id) || 0) * 1e-9 })
       else if (h) take({ id: obj.id, kind: 'object', real: true, p: p + (drawnOrder.get(obj.id) || 0) * 1e-9 })   // (of two lines, the later)
       else if (drawnHit(obj, wx, wy, 8 / zoom)) take({ id: obj.id, kind: 'object', real: false, p })
       continue

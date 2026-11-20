@@ -2,7 +2,7 @@ import { SELECT_BLUE, selectTint, textFace } from '../theme/tokens'
 import { useTextSizes, textHeight } from '../utils/textSizes'
 import { useCallback, useMemo, memo } from 'react'
 import { Group, Rect, Path, Shape, Circle, Ellipse, Line, Text } from 'react-konva'
-import { drawnGeom, dashOf, textGeom, fillPaint, hatchSegments, drawnBox, rectLabel, textBox, isDrawn, shapePoints, isPointShape } from '../render/drawnShapes'
+import { drawnGeom, dashOf, textGeom, fillPaint, hatchSegments, drawnBox, rectLabel, textBox, isDrawn, shapePoints, isPointShape, drawnPaths, tracePath, cornerR, blockText, pathD } from '../render/drawnShapes'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
@@ -532,18 +532,42 @@ function FallbackShapeView({ obj, listening = false, bind }) {
 /** A drawn Line, Rectangle, Circle, Polyline or Polygon: its own stroke (screen px, as every drawn line), Solid or
  *  Dashed, its fill when closed and filled — the outline render/drawnShapes.js gives the PDF and the pick too. */
 function DrawnShapeView({ obj, listening = false, bind }) {
-  const g = drawnGeom(obj), fp = fillPaint(obj)
   const gs = useCanvasStore(s => s.gridSize) || 40, sizes = useTextSizes(t => t.sizes)
-  const common = { stroke: obj.stroke || '#1F2321', strokeWidth: obj.strokeWidth || 2, dash: dashOf(obj) || undefined, lineJoin: 'round', lineCap: 'round',
-    strokeScaleEnabled: false, perfectDrawEnabled: false, shadowForStrokeEnabled: false, listening }
-  /* (d1-final, the Rectangle mockup) the inside: tinted (its fill colour, light) or hatched (45° lines, clipped to it) */
-  const outline = (ctx) => { ctx.beginPath(); if (g.kind === 'ellipse') ctx.ellipse(g.cx, g.cy, Math.max(g.rx, 0), Math.max(g.ry, 0), 0, 0, Math.PI * 2); else g.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath() }
-  const lab = rectLabel(obj, gs, sizes)
   return (
     <Group name={nodeName(obj.id)} listening={listening} opacity={obj.opacity ?? 1} {...(bind ? bind(obj) : null)}>
+      <DrawnBody obj={obj} gs={gs} sizes={sizes} listening={listening} />
+    </Group>
+  )
+}
+/** A drawn shape's own marks (its painter's body — also the Draw tool's live preview, DrawBar.jsx): the fill (tinted,
+ *  hatched, or a block arrow's solid), the stroke (corners rounded, ends pulled back under its arrowheads — d2-arrows),
+ *  the arrowheads in the stroke colour, a named rectangle's label, a block arrow's words. */
+export function DrawnBody({ obj, gs = 40, sizes, listening = false }) {
+  const g = drawnGeom(obj), fp = fillPaint(obj), dp = drawnPaths(obj, gs)
+  const plain = !dp.heads.length && !(cornerR(obj, gs) > 0)
+  const ink = obj.stroke || '#1F2321'
+  const common = { stroke: ink, strokeWidth: obj.strokeWidth || 2, dash: dashOf(obj) || undefined, lineJoin: dp.join, lineCap: dp.cap,
+    strokeScaleEnabled: false, perfectDrawEnabled: false, shadowForStrokeEnabled: false, listening }
+  /* (d1-final, the Rectangle mockup) the inside: tinted (its fill colour, light) or hatched (45° lines, clipped to it) */
+  const outline = (ctx) => { if (g.kind === 'ellipse') { ctx.beginPath(); ctx.ellipse(g.cx, g.cy, Math.max(g.rx, 0), Math.max(g.ry, 0), 0, 0, Math.PI * 2); ctx.closePath() } else tracePath(ctx, dp.fillCmds || dp.cmds) }
+  // (a Path, not a custom Shape: Konva measures a Path's box — the zoom check, the marquee — and never a sceneFunc's)
+  const lab = rectLabel(obj, gs, sizes)
+  if (obj.type === 'block_arrow') {
+    const t = blockText(obj, gs), tw = t ? t.text.length * t.fs * 0.72 + t.fs : 0
+    return (
+      <>
+        <Line name="drawn-shape" points={g.pts.flat()} closed fill={fp.color} listening={listening} perfectDrawEnabled={false} />
+        {t && <Text name="block-text" x={t.x} y={t.y} offsetX={tw / 2} offsetY={t.fs * 0.55} width={tw} align="center" rotation={t.rot} text={t.text}
+          fontSize={t.fs} fontStyle="bold" fontFamily="'Plus Jakarta Sans', sans-serif" fill="#FFFFFF" listening={false} />}
+      </>
+    )
+  }
+  return (
+    <>
       {fp.kind === 'tint' && (g.kind === 'ellipse'
         ? <Ellipse name="drawn-fill" x={g.cx} y={g.cy} radiusX={g.rx} radiusY={g.ry} fill={fp.color} opacity={fp.alpha} listening={false} />
-        : <Line name="drawn-fill" points={g.pts.flat()} closed fill={fp.color} opacity={fp.alpha} listening={false} />)}
+        : plain ? <Line name="drawn-fill" points={g.pts.flat()} closed fill={fp.color} opacity={fp.alpha} listening={false} />
+          : <Path name="drawn-fill" data={pathD(dp.fillCmds)} fill={fp.color} opacity={fp.alpha} listening={false} />)}
       {fp.kind === 'hatch' && (
         <Group name="drawn-hatch" clipFunc={outline} listening={false}>
           {hatchSegments(drawnBox(obj), gs).map((s, i) => <Line key={i} points={s} stroke={fp.color} opacity={fp.alpha} strokeWidth={1} strokeScaleEnabled={false} listening={false} />)}
@@ -551,13 +575,16 @@ function DrawnShapeView({ obj, listening = false, bind }) {
       )}
       {g.kind === 'ellipse'
         ? <Ellipse name="drawn-shape" x={g.cx} y={g.cy} radiusX={g.rx} radiusY={g.ry} {...common} />
-        : <Line name="drawn-shape" points={g.pts.flat()} closed={g.closed} {...common} />}
+        : plain ? <Line name="drawn-shape" points={g.pts.flat()} closed={g.closed} {...common} />
+          : <Path name="drawn-shape" data={pathD(dp.cmds)} {...common} />}
+      {/* (d2-arrows) its arrowheads: filled triangles in its stroke colour, real size */}
+      {dp.heads.map((h, i) => <Line key={'h' + i} name="drawn-head" points={h.flat()} closed fill={ink} listening={false} perfectDrawEnabled={false} />)}
       {/* a named rectangle: its name over its size and area, in its stroke colour (inside; above its top edge if it does not fit) */}
       {lab && lab.lines.map((l, i) => (
         <Text key={i} name={'rect-label' + (i ? '-size' : '')} x={l.x - lab.width / 2 - l.fs} y={l.y} width={lab.width + 2 * l.fs} align="center" text={l.text}
-          fontSize={l.fs} fontStyle={l.bold ? '600' : 'normal'} fontFamily="'Plus Jakarta Sans', sans-serif" fill={obj.stroke || '#1F2321'} listening={false} />
+          fontSize={l.fs} fontStyle={l.bold ? '600' : 'normal'} fontFamily="'Plus Jakarta Sans', sans-serif" fill={ink} listening={false} />
       ))}
-    </Group>
+    </>
   )
 }
 export const DrawnShape = memo(DrawnShapeView)
@@ -741,7 +768,7 @@ export function SelectionOutline({ obj, gridSize = 40, objects = [], dashed = fa
 function DrawnMarks({ obj }) {
   const z = useView().zoom || 1, s = 6 / z
   let P
-  if (obj.type === 'line') P = [[obj.x1, obj.y1], [obj.x2, obj.y2]]
+  if (obj.type === 'line' || obj.type === 'elbow' || obj.type === 'block_arrow') P = [[obj.x1, obj.y1], [obj.x2, obj.y2]]
   else if (isPointShape(obj)) P = shapePoints(obj)
   else {
     const b = getObjectBounds(obj)

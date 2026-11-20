@@ -13,7 +13,7 @@ import { useCallback, useState } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { toggleLock, isLockedIn } from '../utils/layers'
 import { styleDrawn, alignTexts, rotateTexts, angleOf } from '../utils/drawTool'
-import { drawnGeom } from '../render/drawnShapes'
+import { drawnGeom, hasEnds, endsOf, hasCorners, roundOn, blockW } from '../render/drawnShapes'
 import { ftIn } from '../utils/bom'
 import { B, MONO, Sep, IconBtn } from './barParts'
 import { Swatch, onDark } from './Swatch'
@@ -22,7 +22,9 @@ import { SizeInput } from './textSizeCard'
 import { duplicateSelection, deleteSelection } from './selectionActions'
 
 const store = useCanvasStore
-const NAMES = { line: 'Line', rect: 'Rectangle', circle: 'Circle', polyline: 'Polyline', polygon: 'Polyline', text: 'Text' }
+const NAMES = { line: 'Line', rect: 'Rectangle', circle: 'Circle', polyline: 'Polyline', polygon: 'Polyline', text: 'Text', elbow: 'Elbow arrow', block_arrow: 'Block arrow' }
+/** (d2-arrows) a line with an arrowhead is an Arrow */
+const nameOf = (o) => (o.type === 'line' && endsOf(o) !== 'none' ? 'Arrow' : NAMES[o.type] || 'Shape')
 const INK = '#E8EAE6'
 export const STROKE_WIDTHS = [1, 2, 3]
 
@@ -79,6 +81,63 @@ function WidthPick({ value, onPick, locked }) {
           ))}
         </Popover>
       )}
+    </>
+  )
+}
+
+/* (d2-arrows) the end styles (four pictures: none, end, start, both) and the corners (square, round) */
+const PicEnds = ({ e, c = INK }) => svg(
+  <g stroke={c} fill={c} strokeLinecap="round">
+    <line x1={e === 'start' || e === 'both' ? 6 : 3} y1="9" x2={e === 'end' || e === 'both' ? 12 : 15} y2="9" strokeWidth="1.6" />
+    {(e === 'end' || e === 'both') && <path d="M16 9 L11 6 L11 12 Z" stroke="none" />}
+    {(e === 'start' || e === 'both') && <path d="M2 9 L7 6 L7 12 Z" stroke="none" />}
+  </g>)
+const PicCorner = ({ round }) => svg(<path d={round ? 'M4 15 V9 Q4 4 9 4 H15' : 'M4 15 V4 H15'} fill="none" stroke={INK} strokeWidth="1.6" strokeLinecap={round ? 'round' : 'butt'} strokeLinejoin={round ? 'round' : 'miter'} />)
+export const END_LABELS = { none: 'No arrowheads', end: 'Arrowhead at the end', start: 'Arrowhead at the start', both: 'Arrowheads at both ends' }
+/** End style ▾ — a popover of the four pictures, attached to its button. */
+function EndsPick({ objs, ids, locked }) {
+  const [el, setEl] = useState(null), [open, setOpen] = useState(false)
+  const close = useCallback(() => setOpen(false), [])
+  const cur = endsOf(objs[0])
+  return (
+    <>
+      <PicBtn btnRef={setEl} label="End style" title={'End style · ' + END_LABELS[cur]} haspopup="listbox" expanded={open} on={open} locked={locked} onClick={() => setOpen(o => !o)}><PicEnds e={cur === 'none' ? 'none' : cur} /></PicBtn>
+      {open && el && (
+        <Popover anchor={el} onClose={close} role="listbox" label="End styles"
+          style={{ padding: 4, display: 'flex', gap: 2, background: B.island, border: `1px solid ${B.line}`, borderRadius: 10, boxShadow: '0 10px 28px rgba(15,18,16,.28)' }}>
+          {['none', 'end', 'start', 'both'].map(e => (
+            <button key={e} type="button" role="option" aria-selected={cur === e} aria-label={END_LABELS[e]} title={END_LABELS[e]} data-ends={e} onClick={() => { styleDrawn(store, ids, { ends: e }); close() }}
+              style={{ width: 32, height: 32, border: 0, borderRadius: 8, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: cur === e ? B.active : 'transparent' }}>
+              <PicEnds e={e} c={cur === e ? B.accent : INK} />
+            </button>
+          ))}
+        </Popover>
+      )}
+    </>
+  )
+}
+/** Square · Round — corners (a rectangle, a polyline, an elbow); a line's ends. */
+function CornersGroup({ objs, ids, locked }) {
+  const round = roundOn(objs[0]), lineOnly = objs.every(o => o.type === 'line')
+  return (
+    <>
+      <PicBtn label="Square" title={lineOnly ? 'Square — flat line ends' : 'Square corners'} on={!round} locked={locked} onClick={() => styleDrawn(store, ids, { corners: 'square' })}><PicCorner round={false} /></PicBtn>
+      <PicBtn label="Round" title={lineOnly ? 'Round — round line ends' : 'Round corners (radius in the card)'} on={round} locked={locked} onClick={() => styleDrawn(store, ids, { corners: 'round' })}><PicCorner round /></PicBtn>
+    </>
+  )
+}
+/** A block arrow: its fill colour and its body width (ft — real size). */
+function BlockGroup({ objs, ids, locked, gs }) {
+  const o = objs[0], ft = Math.round((blockW(o, gs) / gs) * 100) / 100
+  const [t, setT] = useState(null)
+  const commit = () => { const v = Number(String(t ?? '').replace(/['′]|ft/g, '').trim()); setT(null); if (Number.isFinite(v) && v > 0 && v <= 100) styleDrawn(store, ids, { bodyW: v * gs }) }
+  return (
+    <>
+      <Swatch round="dot" label="Fill colour" value={o.fill || '#E07B22'} locked={locked} onPick={(c) => { if (c) styleDrawn(store, ids, { fill: c }) }} />
+      <input aria-label="Block arrow width (ft)" title="Width (ft)" className="st-field" disabled={locked} value={t ?? String(ft)} onChange={e => setT(e.target.value)} onFocus={e => { setT(String(ft)); requestAnimationFrame(() => e.target.select()) }}
+        onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setT(null); e.currentTarget.blur() } }}
+        style={{ height: 28, width: 44, boxSizing: 'border-box', padding: 0, border: 0, borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, textAlign: 'center', flexShrink: 0, ...(locked ? { opacity: 0.45 } : null) }} />
+      <span aria-hidden="true" style={{ fontSize: 12, color: B.muted, padding: '0 4px 0 2px' }}>ft</span>
     </>
   )
 }
@@ -157,10 +216,13 @@ function TextGroup({ objs, ids, locked, gs }) {
 export function DrawnBar({ objs }) {
   const layers = useCanvasStore(s => s.layers), gs = useCanvasStore(s => s.gridSize) || 40
   const locked = objs.every(o => isLockedIn(layers, o)), ids = objs.map(o => o.id)
-  const kinds = [...new Set(objs.map(o => NAMES[o.type] || 'Shape'))]
-  const texts = objs.every(o => o.type === 'text'), noText = !objs.some(o => o.type === 'text')
+  const kinds = [...new Set(objs.map(nameOf))]
+  const blocks = objs.every(o => o.type === 'block_arrow'), anyBlock = objs.some(o => o.type === 'block_arrow')
+  const texts = objs.every(o => o.type === 'text'), noText = !objs.some(o => o.type === 'text') && !anyBlock
   const lines = objs.every(o => o.type === 'line')
-  const closed = noText && !lines && objs.every(o => o.type !== 'line' && drawnGeom(o).closed)
+  const closed = noText && !lines && objs.every(o => o.type !== 'line' && o.type !== 'elbow' && drawnGeom(o).closed)
+  // (d2-arrows) the end style (a line, an open polyline, an elbow) and the corners (not a circle, not a block arrow)
+  const ends = noText && objs.every(hasEnds), corners = noText && objs.every(hasCorners)
   return (
     <>
       <span aria-label="Selected" data-bar-count style={{ padding: '0 8px 0 6px', fontSize: 12, fontWeight: 600, color: B.strong }}>
@@ -168,10 +230,13 @@ export function DrawnBar({ objs }) {
       </span>
       <Sep />
       {noText && <StrokeGroup objs={objs} ids={ids} locked={locked} />}
+      {ends && <EndsPick objs={objs} ids={ids} locked={locked} />}
+      {corners && <><Sep /><CornersGroup objs={objs} ids={ids} locked={locked} /></>}
       {closed && <><Sep /><FillGroup objs={objs} ids={ids} locked={locked} /></>}
+      {blocks && <BlockGroup objs={objs} ids={ids} locked={locked} gs={gs} />}
       {lines && objs.length === 1 && <><Sep /><LineReadout o={objs[0]} gs={gs} /></>}
       {texts && <TextGroup objs={objs} ids={ids} locked={locked} gs={gs} />}
-      {(noText || texts) && <Sep />}
+      {(noText || texts || blocks) && <Sep />}
       <LockDupDel locked={locked} />
     </>
   )

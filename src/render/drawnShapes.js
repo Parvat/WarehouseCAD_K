@@ -13,9 +13,133 @@ const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
 /** Feet and inches as every plan label writes them (utils/bom.js ftIn's format: 13′-9″) — kept here, no BOM import. */
 const ftIn = (inches) => { const v = Math.round(inches), f = Math.floor(v / 12), i = v - f * 12; return i ? `${f}′-${i}″` : `${f}′` }
 
-export const DRAWN_TYPES = new Set(['line', 'rect', 'circle', 'polyline', 'polygon'])
+export const DRAWN_TYPES = new Set(['line', 'rect', 'circle', 'polyline', 'polygon', 'elbow', 'block_arrow'])
+/** (d2-arrows) The two-ended ones: a line (an Arrow is a line with an arrowhead), an elbow arrow, a block arrow — x1, y1
+ *  (the tail) to x2, y2 (the head); the store moves them by their ends. */
+export const TWO_ENDED = new Set(['line', 'elbow', 'block_arrow'])
 /** A drawn shape — a line with its two ends, or a shape with its box / centre. */
-export const isDrawn = (o) => !!o && DRAWN_TYPES.has(o.type) && (o.type !== 'line' || Number.isFinite(o.x1)) && (o.type !== 'circle' || Number.isFinite(o.cx))
+export const isDrawn = (o) => !!o && DRAWN_TYPES.has(o.type) && (!TWO_ENDED.has(o.type) || Number.isFinite(o.x1)) && (o.type !== 'circle' || Number.isFinite(o.cx))
+export const isTwoEnded = (o) => !!o && TWO_ENDED.has(o.type) && Number.isFinite(o.x1)
+
+/* ── (d2-arrows) arrows, elbows, block arrows, corners ── */
+/** A line's / open polyline's / elbow's arrowheads: none, end, start or both. */
+export const END_STYLES = ['none', 'end', 'start', 'both']
+export const endsOf = (o) => (END_STYLES.includes(o?.ends) ? o.ends : 'none')
+/** Can it carry arrowheads: a line, an open polyline, an elbow arrow. */
+export const hasEnds = (o) => !!o && (o.type === 'line' || o.type === 'elbow' || (o.type === 'polyline' && !o.closed))
+/** The arrowhead's length (world px — real size, with the drawing): 9″ per px of stroke width; its half width 0.45 of it. */
+export const headLen = (o, gs = 40) => (o.strokeWidth || 2) * (9 / 12) * gs
+/** Can it have round corners (a rectangle, a polyline, an elbow) — or round line ends (a line, an arrow)? */
+export const hasCorners = (o) => !!o && (o.type === 'rect' || o.type === 'polyline' || o.type === 'polygon' || o.type === 'elbow' || o.type === 'line')
+export const roundOn = (o) => o?.corners === 'round'
+/** The corner radius (world px): its own (cornerFt, default 1 ft — real size) when Round, else 0 (a line: its ends only). */
+export const cornerR = (o, gs = 40) => (roundOn(o) && o.type !== 'line' ? Math.max(0, Number.isFinite(o.cornerFt) ? o.cornerFt : 1) * gs : 0)
+/** An elbow arrow's route: two right-angle segments — horizontal then vertical ('h') or vertical then horizontal ('v') —
+ *  three once its bend is moved (`bend`: the middle segment's offset from the start along the first leg; null: at the
+ *  end — two segments). → [[x, y]…] */
+export function elbowRoute(o) {
+  const v = o.dir === 'v'
+  const m = o.bend == null ? (v ? o.y2 : o.x2) : (v ? o.y1 : o.x1) + o.bend
+  const P = v ? [[o.x1, o.y1], [o.x1, m], [o.x2, m], [o.x2, o.y2]] : [[o.x1, o.y1], [m, o.y1], [m, o.y2], [o.x2, o.y2]]
+  return P.filter((p, i) => i === 0 || Math.hypot(p[0] - P[i - 1][0], p[1] - P[i - 1][1]) > 1e-6)
+}
+/** Where its bend dot sits: the middle of its middle segment. */
+export function elbowBendAt(o) {
+  const v = o.dir === 'v', m = o.bend == null ? (v ? o.y2 : o.x2) : (v ? o.y1 : o.x1) + o.bend
+  return v ? { x: (o.x1 + o.x2) / 2, y: m } : { x: m, y: (o.y1 + o.y2) / 2 }
+}
+/** The elbow with its bend dot dragged to world (x, y): the middle segment moves across itself. */
+export const elbowBendTo = (o, x, y) => ({ bend: o.dir === 'v' ? y - o.y1 : x - o.x1 })
+/** The default body width of a block arrow (feet). */
+export const BLOCK_FT = 4
+/** A block arrow's body width (world px). */
+export const blockW = (o, gs = 40) => (o.bodyW > 0 ? o.bodyW : BLOCK_FT * gs)
+/** A block arrow's outline (world px): its body `bodyW` wide from its tail, a head 2.4 × as wide and as long as the body is
+ *  wide (at most 60 % of the arrow). */
+export function blockOutline(o) {
+  const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux
+  const W = blockW(o), w = W / 2, hw = W * 1.2, hl = Math.min(W, L * 0.6)
+  const bx = o.x2 - ux * hl, by = o.y2 - uy * hl
+  return [[o.x1 + nx * w, o.y1 + ny * w], [bx + nx * w, by + ny * w], [bx + nx * hw, by + ny * hw], [o.x2, o.y2], [bx - nx * hw, by - ny * hw], [bx - nx * w, by - ny * w], [o.x1 - nx * w, o.y1 - ny * w]]
+}
+/** A block arrow's words: centred on its body, along it (never upside down), white, bold, at its real text height
+ *  (`labelSizeIn`, default 18″ — CLAUDE.md Rule 8). → { text, x, y, fs, rot } or null */
+export function blockText(o, gs = 40) {
+  const t = String(o.text || '').trim()
+  if (!t) return null
+  const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L = Math.hypot(dx, dy) || 1
+  const hl = Math.min(blockW(o), L * 0.6), k = (L - hl) / 2 / L
+  let rot = (Math.atan2(dy, dx) * 180) / Math.PI
+  if (rot > 90) rot -= 180
+  if (rot <= -90) rot += 180
+  return { text: t, x: o.x1 + dx * k, y: o.y1 + dy * k, fs: ((o.labelSizeIn > 0 ? o.labelSizeIn : 18) / 12) * gs, rot }
+}
+/** The stroked path of a line-like shape and its arrowheads: the path's ends pulled back under each head; each head a
+ *  filled triangle [tip, left, right] in the stroke colour. → { P, heads } */
+export function withHeads(o, P, gs = 40) {
+  const e = hasEnds(o) ? endsOf(o) : 'none'
+  if (e === 'none' || P.length < 2) return { P, heads: [] }
+  const hl = headLen(o, gs), hw = hl * 0.45, Q = P.map(p => [...p]), heads = []
+  const head = (tip, from, at) => {
+    const dx = tip[0] - from[0], dy = tip[1] - from[1], L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L
+    const l = Math.min(hl, L * 0.9), bx = tip[0] - ux * l, by = tip[1] - uy * l
+    heads.push([tip, [bx - uy * hw, by + ux * hw], [bx + uy * hw, by - ux * hw]])
+    Q[at] = [tip[0] - ux * l * 0.9, tip[1] - uy * l * 0.9]
+  }
+  const n = P.length
+  if (e === 'end' || e === 'both') head(P[n - 1], P[n - 2], n - 1)
+  if (e === 'start' || e === 'both') head(P[0], P[1], 0)
+  return { P: Q, heads }
+}
+/** A path through `P` with its corners rounded to `r` (each at most half its shorter side): commands
+ *  [['M', x, y] | ['L', x, y] | ['Q', cx, cy, x, y] | ['Z']]. */
+export function roundedPath(P, closed, r) {
+  const n = P.length, out = []
+  if (n < 2) return out
+  if (!(r > 0) || n < 3) { P.forEach((p, i) => out.push([i ? 'L' : 'M', p[0], p[1]])); if (closed) out.push(['Z']); return out }
+  const cut = (i) => {
+    const c = P[i], a = P[(i - 1 + n) % n], b = P[(i + 1) % n]
+    const d1 = Math.hypot(a[0] - c[0], a[1] - c[1]) || 1, d2 = Math.hypot(b[0] - c[0], b[1] - c[1]) || 1, rr = Math.min(r, d1 / 2, d2 / 2)
+    return { p1: [c[0] + ((a[0] - c[0]) / d1) * rr, c[1] + ((a[1] - c[1]) / d1) * rr], c, p2: [c[0] + ((b[0] - c[0]) / d2) * rr, c[1] + ((b[1] - c[1]) / d2) * rr] }
+  }
+  if (closed) {
+    const k0 = cut(0)
+    out.push(['M', k0.p2[0], k0.p2[1]])
+    for (let i = 1; i < n; i++) { const k = cut(i); out.push(['L', k.p1[0], k.p1[1]], ['Q', k.c[0], k.c[1], k.p2[0], k.p2[1]]) }
+    out.push(['L', k0.p1[0], k0.p1[1]], ['Q', k0.c[0], k0.c[1], k0.p2[0], k0.p2[1]], ['Z'])
+    return out
+  }
+  out.push(['M', P[0][0], P[0][1]])
+  for (let i = 1; i < n - 1; i++) { const k = cut(i); out.push(['L', k.p1[0], k.p1[1]], ['Q', k.c[0], k.c[1], k.p2[0], k.p2[1]]) }
+  out.push(['L', P[n - 1][0], P[n - 1][1]])
+  return out
+}
+/** The commands as SVG path data. */
+export const pathD = (cmds) => cmds.map(c => c[0] + (c.length > 1 ? ' ' + c.slice(1).join(' ') : '')).join(' ')
+/** The commands traced on a canvas context (Konva's sceneFunc, a clip). */
+export function tracePath(ctx, cmds) {
+  ctx.beginPath()
+  for (const c of cmds) {
+    if (c[0] === 'M') ctx.moveTo(c[1], c[2])
+    else if (c[0] === 'L') ctx.lineTo(c[1], c[2])
+    else if (c[0] === 'Q') ctx.quadraticCurveTo(c[1], c[2], c[3], c[4])
+    else ctx.closePath()
+  }
+}
+/** How a shape is drawn (the canvas and the PDF alike): its stroked path (corners rounded, ends pulled back under its
+ *  arrowheads), its arrowheads, its fill outline, its line cap and join (Square: flat ends and sharp corners; Round:
+ *  round). → { cmds, heads, fillCmds, cap, join } — cmds null for a circle. */
+export function drawnPaths(o, gs = 40) {
+  const g = drawnGeom(o), round = roundOn(o)
+  const cap = round ? 'round' : 'butt', join = round ? 'round' : 'miter'
+  if (g.kind !== 'line') return { cmds: null, heads: [], fillCmds: null, cap, join }
+  if (o.type === 'block_arrow') { const c = roundedPath(g.pts, true, 0); return { cmds: c, heads: [], fillCmds: c, cap, join } }
+  const h = withHeads(o, g.pts, gs)
+  let r = cornerR(o, gs)
+  if (o.type === 'rect') r = Math.min(r, o.width / 2, o.height / 2)
+  return { cmds: roundedPath(h.P, g.closed, r), heads: h.heads, fillCmds: g.closed ? roundedPath(g.pts, true, r) : null, cap, join }
+}
+
 
 /** The shape's outline: { kind: 'line' | 'ellipse', pts: [[x, y]…], closed } in world px. */
 export function drawnGeom(o) {
@@ -25,6 +149,8 @@ export function drawnGeom(o) {
     return { kind: 'ellipse', cx: o.cx, cy: o.cy, rx: rx || 0, ry: ry || 0, closed: true }
   }
   if (o.type === 'rect') return { kind: 'line', pts: [[o.x, o.y], [o.x + o.width, o.y], [o.x + o.width, o.y + o.height], [o.x, o.y + o.height]], closed: true }
+  if (o.type === 'elbow') return { kind: 'line', pts: elbowRoute(o), closed: false }
+  if (o.type === 'block_arrow') return { kind: 'line', pts: blockOutline(o), closed: true }
   const sx = o.w0 > 0 ? o.width / o.w0 : 1, sy = o.h0 > 0 ? o.height / o.h0 : 1
   return { kind: 'line', pts: (o.pts || []).map(([px, py]) => [o.x + px * sx, o.y + py * sy]), closed: o.type === 'polygon' || !!o.closed }
 }
@@ -33,6 +159,7 @@ export const isFilled = (o) => !!o.fill && !o.noFill && drawnGeom(o).closed
  *  "filled, tinted" swatch) or hatched (its fill colour's 45° lines — the "no racking" look). → { kind, color, alpha } */
 export const FILL_TINT = 0.15
 export function fillPaint(o) {
+  if (o.type === 'block_arrow') return { kind: 'solid', color: o.fill || '#E07B22', alpha: 1 }   // (d2-arrows) filled solid
   if (!isFilled(o)) return { kind: 'none' }
   if (o.fillStyle === 'hatch') return { kind: 'hatch', color: o.fill, alpha: 0.55 }
   return { kind: 'tint', color: o.fill, alpha: Number.isFinite(o.fillOpacity) ? o.fillOpacity : FILL_TINT }
@@ -148,12 +275,22 @@ export function drawnSVG(o, u, gs = 40, sizes) {
   const pid = 'hatch-' + String(o.id || Math.random()).replace(/[^w-]/g, '')
   const defs = fp.kind === 'hatch' ? `<defs><pattern id="${pid}" patternUnits="userSpaceOnUse" width="${hatchGap(gs)}" height="${hatchGap(gs)}" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${hatchGap(gs)}" stroke="${fp.color}" stroke-opacity="${fp.alpha}" stroke-width="${sw * 0.6}"/></pattern></defs>` : ''
   const fill = fp.kind === 'tint' ? `fill="${fp.color}" fill-opacity="${fp.alpha}"` : fp.kind === 'hatch' ? `fill="url(#${pid})"` : 'fill="none"'
-  const paint = `stroke="${o.stroke || '#1F2321'}" stroke-width="${sw}"${dash} stroke-linejoin="round" stroke-linecap="round" ${fill}`
+  const dp = drawnPaths(o, gs)
+  const paint = `stroke="${o.stroke || '#1F2321'}" stroke-width="${sw}"${dash} stroke-linejoin="${dp.join}" stroke-linecap="${dp.cap}" ${fill}`
   if (g.kind === 'ellipse') return `${defs}<ellipse cx="${g.cx}" cy="${g.cy}" rx="${g.rx}" ry="${g.ry}" ${paint}/>`
-  const pts = g.pts.map(p => p.join(',')).join(' ')
+  // (d2-arrows) a block arrow: filled solid, its words in white along it
+  if (o.type === 'block_arrow') {
+    const t = blockText(o, gs)
+    const words = t ? `<text x="${t.x}" y="${t.y + t.fs * 0.35}" font-size="${t.fs}" font-family="'Plus Jakarta Sans', sans-serif" font-weight="700" fill="#FFFFFF" text-anchor="middle" transform="rotate(${t.rot} ${t.x} ${t.y})">${esc(t.text)}</text>` : ''
+    return `<path data-block-arrow d="${pathD(dp.cmds)}" fill="${fp.color}" stroke="none"/>` + words
+  }
   const lab = rectLabel(o, gs, sizes)
   const words = lab ? lab.lines.map(l => `<text x="${l.x}" y="${l.y + l.fs * 0.85}" font-size="${l.fs}" font-family="'Plus Jakarta Sans', sans-serif"${l.bold ? ' font-weight="600"' : ''} fill="${o.stroke || '#1F2321'}" text-anchor="middle">${esc(l.text)}</text>`).join('') : ''
-  return defs + (g.closed ? `<polygon points="${pts}" ${paint}/>` : `<polyline points="${pts}" ${paint}/>`) + words
+  const heads = dp.heads.map(h => `<polygon data-arrow-head points="${h.map(p => p.join(',')).join(' ')}" fill="${o.stroke || '#1F2321'}" stroke="none"/>`).join('')
+  // the fill under the stroke when the stroke is pulled back (a head) or rounded: its own outline
+  const pts = g.pts.map(p => p.join(',')).join(' '), plain = !dp.heads.length && !(cornerR(o, gs) > 0)
+  const body = plain ? (g.closed ? `<polygon points="${pts}" ${paint}/>` : `<polyline points="${pts}" ${paint}/>`) : `<path d="${pathD(dp.cmds)}" ${paint}/>`
+  return defs + body + heads + words
 }
 
 /** A text object's lines and box, as drawn (getObjectBounds — the selection outline's — and layoutText):

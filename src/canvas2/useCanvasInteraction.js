@@ -2,7 +2,7 @@ import { setDragPreview, clearDragPreview, setDragging } from './dragPreview'
 import { textOwnsKey } from '../utils/typing'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Konva from 'konva'
-import { hitTest, hitTestBay, fpWallHitTest } from './hitTest'
+import { hitTest, hitTestBay, fpWallHitTest, boundsOf } from './hitTest'
 import { handleHitTest, cursorForHandle, hasResizeHandles, objHasResizeHandles } from './handleGeometry'
 import { finishAreaResize } from '../utils/rackingAreaTool'
 import { bayHalfAt, setFlueHover } from '../utils/baySides'
@@ -50,7 +50,7 @@ import { membersOf, clampSectionMove, clampSectionBox, clampSectionPoint } from 
 import { sectionSnapLines, snapSectionEdges, sectionBox, SECTION_SNAP_PX } from '../utils/sectionSnap'
 import { useSectionRename } from './sectionTool'
 import { POINT_HANDLE_PX } from './SectionShape'
-import { isPointShape, pointAt, sideAt, movePointTo, moveSideBy, isDrawn, drawnHit, shapePoints } from '../render/drawnShapes'
+import { isPointShape, pointAt, sideAt, movePointTo, moveSideBy, isDrawn, drawnHit, shapePoints, elbowBendAt, elbowBendTo } from '../render/drawnShapes'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { fpDimHit, useDimEdit } from './FpDimEdit'
 import { legendHit } from '../utils/sectionLegend'
@@ -418,7 +418,7 @@ export function useCanvasInteraction({
       startWorld: world,
       sx: evt.clientX, sy: evt.clientY,   // SCREEN coords, for the drag threshold below
       // the grabbed object, which snap follows (D1: a line or a circle has no x / y — its box's corner)
-      origin: Number.isFinite(grabbed.x) && Number.isFinite(grabbed.y) ? { x: grabbed.x, y: grabbed.y } : (() => { const b = getObjectBounds(grabbed); return { x: b.x, y: b.y } })(),
+      origin: Number.isFinite(grabbed.x) && Number.isFinite(grabbed.y) ? { x: grabbed.x, y: grabbed.y } : (() => { const b = boundsOf(grabbed); return { x: b.x, y: b.y } })(),
       grabbedId: hitId,
       /* the grabbed object as it was: a live-flue drag writes it to the store every frame, so a drop
          that can't stay (in-line, no free end) or ends where it started puts this back, with no history */
@@ -428,7 +428,7 @@ export function useCanvasInteraction({
          worked out from the base depth sat (current − base)/2 off, which
          moved the rack ALONG its run (a turned rack) or across by that much
          the moment its flue changed back */
-      size: Number.isFinite(grabbed.width) && Number.isFinite(grabbed.height) ? { w: grabbed.width, h: grabbed.height } : (() => { const b = getObjectBounds(grabbed); return { w: b.width, h: b.height } })(),   // (D1: a line, a circle — its box)
+      size: Number.isFinite(grabbed.width) && Number.isFinite(grabbed.height) ? { w: grabbed.width, h: grabbed.height } : (() => { const b = boundsOf(grabbed); return { w: b.width, h: b.height } })(),   // (D1: a line, a circle — its box)
       /* a Row group row (utils/rowGroupTool.js): the drag is locked to its dominant axis, and the other
          group rows and every rack lined up with where it started are not snap targets — they could only
          pull it back to where it was. null for any other drag. */
@@ -671,6 +671,18 @@ export function useCanvasInteraction({
           const r = POINT_HANDLE_PX / 2 / view.current.zoom
           const i = polygonOf(selected).findIndex(([x, y]) => Math.abs(world.x - x) <= r && Math.abs(world.y - y) <= r)
           if (i >= 0) { sectionPoint.current = { id: selected.id, i, orig: selected }; return }
+        }
+        /* (d2-arrows) an elbow or a block arrow: a press on an end drags it (snapped as drawing snaps; an elbow re-routes —
+           its bend back to the end); on an elbow's bend dot drags the middle segment across itself */
+        if (selected && (selected.type === 'elbow' || selected.type === 'block_arrow')) {
+          const rr = (POINT_HANDLE_PX / 2 + 4) / view.current.zoom
+          for (const [k, ex, ey] of [[0, selected.x1, selected.y1], [1, selected.x2, selected.y2]]) {
+            if (Math.hypot(world.x - ex, world.y - ey) <= rr) { shapeEdit.current = { id: selected.id, kind: 'end', i: k, orig: selected, from: world }; return }
+          }
+          if (selected.type === 'elbow') {
+            const d = elbowBendAt(selected)
+            if (Math.hypot(world.x - d.x, world.y - d.y) <= 7 / view.current.zoom) { shapeEdit.current = { id: selected.id, kind: 'bend', orig: selected, from: world }; return }
+          }
         }
         /* (d1-fixes) a polyline / polygon, as the building outline: a press on one of its points drags that point */
         if (selected && isPointShape(selected)) {
@@ -1426,6 +1438,12 @@ export function useCanvasInteraction({
         se.moved = true
         const st = useCanvasStore.getState()
         if (se.kind === 'point') { const q = snapPoint(w, { st, zoom: view.current.zoom, alt: !!evt.altKey, skip: se.id }).p; st.updateObject(se.id, movePointTo(se.orig, se.i, q.x, q.y)) }
+        else if (se.kind === 'end') {
+          const o = se.orig, fixed = se.i ? { x: o.x1, y: o.y1 } : { x: o.x2, y: o.y2 }
+          const q = snapPoint(w, { st, zoom: view.current.zoom, alt: !!evt.altKey, shift: !!evt.shiftKey, last: fixed, skip: se.id }).p
+          st.updateObject(se.id, { ...(se.i ? { x2: q.x, y2: q.y } : { x1: q.x, y1: q.y }), ...(o.type === 'elbow' ? { bend: null } : null) })
+        }
+        else if (se.kind === 'bend') { const q = snapPoint(w, { st, zoom: view.current.zoom, alt: !!evt.altKey, skip: se.id }).p; st.updateObject(se.id, elbowBendTo(se.orig, q.x, q.y)) }
         else st.updateObject(se.id, moveSideBy(se.orig, se.i, w.x - se.from.x, w.y - se.from.y))
         return
       }

@@ -46,7 +46,7 @@ const DOOR_TYPES = new Set(['struct_egress', 'struct_loading_dock', 'struct_driv
 
 /** Does a single selection of this type get resize handles in canvas2? */
 /* (D1) the drawn shapes and a text resize as any box (a line by its two ends, a text by its height — utils/drawTool.js) */
-const DRAWN_RESIZE = new Set(['line', 'rect', 'circle', 'polyline', 'polygon', 'text'])
+const DRAWN_RESIZE = new Set(['line', 'rect', 'circle', 'polyline', 'polygon', 'text', 'elbow', 'block_arrow'])
 export function hasResizeHandles(type, rackTypes) {
   return (rackTypes && rackTypes.has(type)) || DRAWN_RESIZE.has(type) || EDGE_ONLY.has(type) || isZoneType(type) || type === 'section_area' || DOOR_TYPES.has(type)
 }
@@ -56,7 +56,7 @@ export const objHasResizeHandles = (o, rackTypes) => !!o && hasResizeHandles(o.t
 export function enabledHandlesFor(type) {
   if (type === 'aisle') return []
   if (type === 'text') return ['tl', 'tr', 'bl', 'br', 'ml', 'mr']   // (D1) a text scales by its corners; (d1-final) its side dots set its wrap width
-  if (type === 'line') return ['ml', 'mr']                     // (D1) a line: its two ends (handlePositions)
+  if (type === 'line' || type === 'elbow' || type === 'block_arrow') return ['ml', 'mr']   // (D1) a line: its two ends (handlePositions); (d2-arrows) an elbow's, a block arrow's tail and head
   // (d1-bar, design/selbar.png) a shape shows only its own handles: a circle its 4 radius handles ON the circle, a
   // polyline none here — its corner squares and side dots (DrawBar.jsx ShapePointHandles); no box scaling
   if (type === 'circle') return ['tc', 'ml', 'mr', 'bc']
@@ -143,7 +143,7 @@ export function cursorForHandle(handle, rotation) {
 /** (D1) Where the handles are: a box's around it (getHandlePositions); a line's ON its two ends — ml the first end (x1),
  *  mr the second, the ends utils/canvas.js applyResize moves for them. */
 export function handlePositions(obj, bounds, pad) {
-  if (obj && obj.type === 'line' && Number.isFinite(obj.x1)) return { ml: { x: obj.x1, y: obj.y1 }, mr: { x: obj.x2, y: obj.y2 } }
+  if (obj && (obj.type === 'line' || obj.type === 'elbow' || obj.type === 'block_arrow') && Number.isFinite(obj.x1)) return { ml: { x: obj.x1, y: obj.y1 }, mr: { x: obj.x2, y: obj.y2 } }
   // (d1-bar) a drawn rectangle's 8 and a circle's 4 sit ON its own edge — no gap, no second rectangle round it
   if (obj && (obj.type === 'rect' || obj.type === 'circle')) return getHandlePositions(bounds, 0)
   return getHandlePositions(bounds, pad)

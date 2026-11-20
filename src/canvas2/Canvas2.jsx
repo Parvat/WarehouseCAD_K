@@ -31,7 +31,7 @@ import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
 import { DoorBar, DoorPreview, DoorGapLive, RowPreview, useDoorGapKeys } from './DoorBar'
 import { DrawBar, TextBar, DrawPreview, TextEditor, useDrawKeys, ShapePointHandles, TextBoxDraft } from './DrawBar'
-import { useDrawTool, shapeOfTool, twoPoint, snapPoint, commitShape, startText, commitText, closesAt, editText, addPolylinePoint, RECT_CLICK_IN } from '../utils/drawTool'
+import { useDrawTool, shapeOfTool, twoPoint, snapPoint, commitShape, startText, commitText, closesAt, editText, addPolylinePoint, RECT_CLICK_IN, noteLead } from '../utils/drawTool'
 import { isPointShape, sideAt, pointAt } from '../render/drawnShapes'
 import { pickAt } from './hitTest'
 import { rowWallAt, rowCountOn, hoverRow, dropRow, fillRow } from '../utils/doorRowTool'
@@ -558,6 +558,7 @@ export function Canvas2() {
     if (!p || useDrawTool.getState().press) return
     const r = drawAt(p, e.evt)
     useDrawTool.setState({ at: r.p, guides: r.guides, closing: !!r.closing, snap: r.snap || null })
+    noteLead(drawShape, view.current.zoom)   // (d2-arrows) an elbow's first leg: the way the pointer leaves its start
   }
   const drawMouseDown = (e) => {
     if (e.evt && e.evt.button !== 0) return
@@ -569,7 +570,7 @@ export function Canvas2() {
       // the first point: a drag from it draws the shape (its release ends it); a click waits for the second click
       useDrawTool.setState({ pts: [r.p], at: r.p, guides: r.guides, press: { sx: p.x, sy: p.y }, typed: null })
       const rect = stage.container().getBoundingClientRect()
-      const move = (ev) => { const q = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }, rr = drawAt(q, ev); useDrawTool.setState({ at: rr.p, guides: rr.guides, snap: rr.snap || null }) }
+      const move = (ev) => { const q = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }, rr = drawAt(q, ev); useDrawTool.setState({ at: rr.p, guides: rr.guides, snap: rr.snap || null }); noteLead(drawShape, view.current.zoom) }
       const up = (ev) => {
         window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
         const t = useDrawTool.getState()

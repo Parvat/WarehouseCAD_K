@@ -26,12 +26,17 @@ import { rackFootprint } from '../generate/rackFootprint'
 import { innerOutline } from './floorGeom'
 import { isSection, polygonOf } from './sectionAreas'
 import { notify } from './notice'
-import { isDrawn, drawnGeom, withPoints, shapePoints } from '../render/drawnShapes'
+import { isDrawn, drawnGeom, withPoints, shapePoints, BLOCK_FT } from '../render/drawnShapes'
 
 /** The tool ids: Line, Polyline, Rectangle, Circle — all in the rail's Draw flyout, with Text. */
 export const POLYLINE_TOOL = 'polyline'
+/** (d2-arrows) Arrow (a line with an arrowhead), Elbow arrow (two right-angle segments), Block arrow (a wide filled one) */
+export const ARROW_TOOL = 'draw_arrow', ELBOW_TOOL = 'elbow_arrow', BLOCK_TOOL = 'block_arrow'
 export const DRAW_SHAPES = [
   { id: 'line', tool: TOOLS.LINE, label: 'Line' },
+  { id: 'arrow', tool: ARROW_TOOL, label: 'Arrow' },
+  { id: 'elbow', tool: ELBOW_TOOL, label: 'Elbow arrow' },
+  { id: 'block', tool: BLOCK_TOOL, label: 'Block arrow' },
   { id: 'polyline', tool: POLYLINE_TOOL, label: 'Polyline' },
   { id: 'rect', tool: TOOLS.SQUARE, label: 'Rectangle' },
   { id: 'circle', tool: TOOLS.CIRCLE, label: 'Circle' },
@@ -62,7 +67,17 @@ export const useDrawTool = create(() => ({
   text: null,                                         // { x, y (world: the anchor and the first line's baseline), value, width?, id? (a text edited) }
   textPress: null,                                    // a press of the Text tool not yet released: { w (world), sx, sy } — a drag sets a wrap width
   textIn: 18, bold: false, italic: false, color: '#1F2321', align: 'left',
+  // (d2-arrows) a block arrow's body width (ft, real size) and fill; an elbow's first leg ('h' | 'v' — the way the pointer
+  // first leaves its start), null until it does
+  blockFt: BLOCK_FT, blockFill: '#E07B22', lead: null,
 }))
+/** (d2-arrows) The elbow being drawn: its first leg, from the way the pointer first leaves the start (6 screen px). */
+export function noteLead(shape, zoom = 1) {
+  const s = useDrawTool.getState()
+  if (shape !== 'elbow' || s.pts.length !== 1 || s.lead || !s.at) return
+  const dx = s.at.x - s.pts[0].x, dy = s.at.y - s.pts[0].y
+  if (Math.hypot(dx, dy) * (zoom || 1) >= 6) useDrawTool.setState({ lead: Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v' })
+}
 
 /** (d1-final) The point picked on a selected polyline (a click on it): Delete takes it off. */
 export const useShapePoint = create(() => ({ id: null, i: null }))
@@ -72,7 +87,7 @@ export const clearShapePoint = () => { if (useShapePoint.getState().id) useShape
 export function cancelDraw() {
   const s = useDrawTool.getState()
   if (!s.pts.length && !s.press && s.typed == null && !s.guides.length && !s.at && !s.closing && !s.snap) return false
-  useDrawTool.setState({ pts: [], at: null, snap: null, press: null, typed: null, guides: [], closing: false })
+  useDrawTool.setState({ pts: [], at: null, snap: null, press: null, typed: null, guides: [], closing: false, lead: null })
   return true
 }
 
@@ -112,6 +127,8 @@ export function drawSnapTargets(objects, gs = 40, skip = null) {
       const f = rackFootprint(o), xs = [f.x, f.x + f.w], ys = [f.y, f.y + f.h]
       for (const v of xs) x.push({ v, a: f.y, b: f.y + f.h, kind: f.rotated ? 'rack face' : 'rack end' })
       for (const v of ys) y.push({ v, a: f.x, b: f.x + f.w, kind: f.rotated ? 'rack end' : 'rack face' })
+    } else if (o.type === 'block_arrow' && Number.isFinite(o.x1)) {
+      pts.push({ x: o.x1, y: o.y1, kind: 'endpoint' }, { x: o.x2, y: o.y2, kind: 'endpoint' })   // (d2-arrows) its tail and head
     } else if (isDrawn(o)) {
       const g = drawnGeom(o)
       if (g.kind === 'ellipse') { pts.push({ x: g.cx, y: g.cy, kind: 'centre' }); continue }
@@ -170,7 +187,7 @@ const filled = (s) => (s.fill ? { fill: s.fill, noFill: false } : { fill: null, 
 export function refusal(shape, pts, gs = 40) {
   if (pts.length < 2) return null
   const [a, b] = pts, d = Math.hypot(b.x - a.x, b.y - a.y)
-  if (shape === 'line' && d > E && d < (MIN_LINE_IN / 12) * gs) return 'A line under 3″ is not drawn'
+  if ((shape === 'line' || shape === 'arrow' || shape === 'elbow' || shape === 'block') && d > E && d < (MIN_LINE_IN / 12) * gs) return (shape === 'line' ? 'A line' : 'An arrow') + ' under 3″ is not drawn'
   if (shape === 'circle' && d > E && d < (MIN_RADIUS_IN / 12) * gs) return 'A circle under 3″ radius is not drawn'
   return null
 }
@@ -186,6 +203,18 @@ export function shapeObject(shape, pts, s, zoom = 1, gs = 40) {
     if (Math.hypot(b.x - a.x, b.y - a.y) < min) return null
     if (b.x < a.x || (b.x === a.x && b.y < a.y)) [a, b] = [b, a]      // left to right: the left handles move the left end
     return { type: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y, ...style(s), noFill: true }
+  }
+  // (d2-arrows) an Arrow: a line with its head at the end (its direction kept: tail to head)
+  if (shape === 'arrow' || shape === 'elbow' || shape === 'block') {
+    if (pts.length < 2) return null
+    const [a, b] = pts
+    if (Math.hypot(b.x - a.x, b.y - a.y) < min) return null
+    if (shape === 'arrow') return { type: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y, ...style(s), noFill: true, ends: 'end' }
+    if (shape === 'elbow') {
+      const dir = s.lead || (Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? 'h' : 'v')
+      return { type: 'elbow', x1: a.x, y1: a.y, x2: b.x, y2: b.y, dir, bend: null, ...style(s), noFill: true, ends: 'end' }
+    }
+    return { type: 'block_arrow', x1: a.x, y1: a.y, x2: b.x, y2: b.y, bodyW: (s.blockFt > 0 ? s.blockFt : BLOCK_FT) * gs, fill: s.blockFill || '#E07B22', noFill: false, text: '', layerId: 'notes', opacity: 1, rotation: 0 }
   }
   if (shape === 'rect') {
     if (pts.length < 2) return null
@@ -216,7 +245,7 @@ export function commitShape(store, shape, pts, zoom = 1, newId = null, closed = 
   const s = useDrawTool.getState(), gs = store.getState().gridSize || 40
   // closed: true closes it; 'open' keeps it open whatever the bar's Close says (Esc on a polyline — d1-bar)
   const o = shapeObject(shape, pts, closed === true ? { ...s, closed: true } : closed === 'open' ? { ...s, closed: false } : s, zoom, gs)
-  useDrawTool.setState({ pts: [], typed: null, press: null, guides: [], closing: false, snap: null })
+  useDrawTool.setState({ pts: [], typed: null, press: null, guides: [], closing: false, snap: null, lead: null })
   const why = refusal(shape, pts, gs)
   if (why) notify(why)
   if (!o) return null
@@ -238,7 +267,7 @@ export function feetOf(t) {
 }
 
 /** How many points finish the shape: Line, Rectangle, Circle 2 — a polyline a double-click / Enter / its first point. */
-export const twoPoint = (shape) => shape === 'line' || shape === 'rect' || shape === 'circle'
+export const twoPoint = (shape) => shape === 'line' || shape === 'rect' || shape === 'circle' || shape === 'arrow' || shape === 'elbow' || shape === 'block'
 
 /** The angle of the segment a → b, in degrees counter-clockwise from the right (as a protractor reads the plan: up is
  *  positive) — 0 … 359. */

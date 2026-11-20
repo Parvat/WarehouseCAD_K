@@ -22,12 +22,13 @@ import { SizeInput } from '../studio/textSizeCard'
 import { useView, toScreen, useLiveObjects } from './live'
 import { Swatch } from '../studio/Swatch'
 export { Swatch }
-import { isPointShape, shapePoints } from '../render/drawnShapes'
+import { isPointShape, shapePoints, drawnGeom, elbowBendAt } from '../render/drawnShapes'
+import { DrawnBody } from './shapes'
 import { angleOf, useShapePoint } from '../utils/drawTool'
 import { POINT_HANDLE_PX } from './SectionShape'
 import {
   DRAW_SHAPES, DRAW_COLORS, useDrawTool, shapeOfTool, toolOfShape, twoPoint, typedPoint, commitShape, endDraw, cancelDraw,
-  commitText, textFields, pickDrawTool,
+  commitText, textFields, pickDrawTool, shapeObject,
 } from '../utils/drawTool'
 import { TOOLS } from '../constants'
 
@@ -50,6 +51,9 @@ const HINTS = {
   rect: 'drag or 2 clicks · Shift = square · type W x H + Enter · Esc ends',
   circle: 'click the centre, then the radius (or drag) · type R 9 or D 18 + Enter · Esc ends',
   polyline: 'click each point · Shift = 0/45/90° · type length + Enter · click the first point to close · double-click or Enter to finish · Esc keeps it open',
+  arrow: 'click the tail · click the head (or drag) · Shift 0/45/90° · type 30 + Enter (30<45 for an angle) · Esc ends',
+  elbow: 'click start · click end (or drag) — it bends the way you first move · Esc ends',
+  block: 'drag from the tail to the head (or 2 clicks) · its width from Width · Esc ends',
 }
 
 /** The Draw bar (design/drawbar.png): opens when a shape tool is picked, in the Add door bar's place and style. */
@@ -58,6 +62,8 @@ export function DrawBar() {
   const s = useDrawTool()
   const [w, setW] = useState(null)
   const commitW = () => { const v = Number(String(w ?? '').trim()); setW(null); if (Number.isFinite(v) && v > 0 && v <= 48) useDrawTool.setState({ strokeWidth: v }) }
+  const [bw, setBw] = useState(null)
+  const commitBw = () => { const v = Number(String(bw ?? '').replace(/['′]|ft/g, '').trim()); setBw(null); if (Number.isFinite(v) && v > 0 && v <= 100) useDrawTool.setState({ blockFt: v }) }
   const done = () => endDraw(useCanvasStore, shape, useCanvasStore.getState().zoom, true)
   // ✕ cancels what is being drawn (Esc keeps a polyline's points — endDraw)
   const cancel = () => { cancelDraw(); endDraw(useCanvasStore, shape, useCanvasStore.getState().zoom, false) }
@@ -69,17 +75,31 @@ export function DrawBar() {
       <Seg aria="Shape" options={DRAW_SHAPES.map(d => ({ value: d.id, label: d.label, aria: d.label, on: d.id === shape, onClick: () => { cancelDraw(); pickDrawTool(useCanvasStore, toolOfShape(d.id), useDrawTool.getState().keep) },
         onDoubleClick: () => pickDrawTool(useCanvasStore, toolOfShape(d.id), true), title: d.label + ' · double-click to keep it on' }))} />
       <Sep />
-      <span style={word}>Stroke</span>
-      <Swatch label="Stroke colour" value={s.stroke} onPick={(c) => useDrawTool.setState({ stroke: c || '#1F2321' })} />
-      <input aria-label="Stroke width (px)" className="st-field" style={valueBox} value={w ?? String(s.strokeWidth)}
-        onChange={e => setW(e.target.value)} onBlur={commitW} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setW(null); e.currentTarget.blur() } }} />
-      <span style={word}>px</span>
-      <span style={word}>Fill</span>
-      <Swatch label="Fill" value={s.fill} none onPick={(c) => useDrawTool.setState({ fill: c })} />
-      <Seg aria="Line style" options={[
-        { value: 'solid', label: 'Solid', on: !s.dashed, onClick: () => useDrawTool.setState({ dashed: false }) },
-        { value: 'dashed', label: 'Dashed', on: s.dashed, onClick: () => useDrawTool.setState({ dashed: true }) },
-      ]} />
+      {/* (d2-arrows) a block arrow: its body Width (ft, real size — default 4) and its fill */}
+      {shape === 'block' ? (
+        <>
+          <span style={word}>Width</span>
+          <input aria-label="Block arrow width (ft)" className="st-field" style={valueBox} value={bw ?? String(s.blockFt)}
+            onChange={e => setBw(e.target.value)} onBlur={commitBw} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setBw(null); e.currentTarget.blur() } }} />
+          <span style={word}>ft</span>
+          <span style={word}>Fill</span>
+          <Swatch label="Fill" value={s.blockFill} onPick={(c) => { if (c) useDrawTool.setState({ blockFill: c }) }} />
+        </>
+      ) : (
+        <>
+          <span style={word}>Stroke</span>
+          <Swatch label="Stroke colour" value={s.stroke} onPick={(c) => useDrawTool.setState({ stroke: c || '#1F2321' })} />
+          <input aria-label="Stroke width (px)" className="st-field" style={valueBox} value={w ?? String(s.strokeWidth)}
+            onChange={e => setW(e.target.value)} onBlur={commitW} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setW(null); e.currentTarget.blur() } }} />
+          <span style={word}>px</span>
+          <span style={word}>Fill</span>
+          <Swatch label="Fill" value={s.fill} none onPick={(c) => useDrawTool.setState({ fill: c })} />
+          <Seg aria="Line style" options={[
+            { value: 'solid', label: 'Solid', on: !s.dashed, onClick: () => useDrawTool.setState({ dashed: false }) },
+            { value: 'dashed', label: 'Dashed', on: s.dashed, onClick: () => useDrawTool.setState({ dashed: true }) },
+          ]} />
+        </>
+      )}
       {/* (d1-fixes) Close keeps its room for every shape (shown for a polyline only), so the bar never changes width as
           the shape switches — a double-click on a shape lands both clicks on it */}
       {(
@@ -173,6 +193,14 @@ export function DrawPreview() {
       parts.push(<Line key="r" name="draw-draft" points={[x, y, x + w, y, x + w, y + h, x, y + h]} closed fill={fill} opacity={0.9} {...stroke} dash={stroke.dash || [6, 4]} />)
       parts.push(label({ x, y }, { x: x + w, y }, words(w), 'w', -1))
       parts.push(label({ x: x + w, y }, { x: x + w, y: y + h }, words(h), 'h', -1))
+    } else if (shape === 'arrow' || shape === 'elbow' || shape === 'block') {
+      const tmp = shapeObject(shape, [all[0], end], s, z, gs)
+      if (tmp) {
+        parts.push(<Group key="a" name="draw-draft" opacity={0.9} listening={false}><DrawnBody obj={{ ...tmp, id: 'draft' }} gs={gs} /></Group>)
+        const P = shape === 'elbow' ? drawnGeom(tmp).pts.map(([x, y]) => ({ x, y })) : [all[0], end]
+        for (let i = 1; i < P.length; i++) parts.push(label(P[i - 1], P[i], words(Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y)), 'seg' + i))
+      }
+      if (shape !== 'elbow') parts.push(angleAt(all[0], end, 'ang'))
     } else if (shape === 'circle') {
       const [c, e] = all, r = Math.hypot(e.x - c.x, e.y - c.y)
       parts.push(<Circle key="c" name="draw-draft" x={c.x} y={c.y} radius={r} fill={fill} opacity={0.9} {...stroke} />)
@@ -234,6 +262,8 @@ export function ShapePointHandles({ obj: picked }) {
     if (deg < -90) deg += 180
     return <Text name="line-measure label-pill" x={mx} y={my} offsetX={tw / 2} offsetY={fs * 0.7} width={tw} align="center" rotation={deg} text={text} fontSize={fs} fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={SELECT_BLUE} listening={false} />
   }
+  // (d2-arrows) an elbow's bend: a blue dot on its middle segment (a drag moves the bend)
+  if (obj && obj.type === 'elbow' && Number.isFinite(obj.x1)) { const d = elbowBendAt(obj); return <Circle name="elbow-bend" x={d.x} y={d.y} radius={4 / zoom} fill={SELECT_BLUE} listening={false} /> }
   if (!isPointShape(obj)) return null
   const s = POINT_HANDLE_PX / zoom, P = shapePoints(obj), n = P.length, closed = obj.type === 'polygon' || !!obj.closed
   return (

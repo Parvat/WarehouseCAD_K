@@ -9,7 +9,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { pxToFtIn } from '../../utils/canvas'
 import { TextSizeField } from '../../studio/textSizeCard'
 import { rotateTexts, alignTexts, setLineLength, setLineAngle, setCircleRadius, setPolylineClosed, polyMeasures, convertRectToZone, angleOf } from '../../utils/drawTool'
-import { isDrawn, drawnGeom } from '../../render/drawnShapes'
+import { isDrawn, drawnGeom, hasEnds, endsOf, hasCorners, roundOn, blockW } from '../../render/drawnShapes'
 import { Swatch } from '../../studio/Swatch'
 import { SizeInput } from '../../studio/textSizeCard'
 import { nanoid as newIdForZone } from 'nanoid'
@@ -18,8 +18,9 @@ import { nanoid as newIdForZone } from 'nanoid'
  *  Stroke colour and width (px), Solid | Dashed; a closed shape's Fill — None | Tinted | Hatched — and its colour. Each
  *  change one undo. */
 function DrawnStyleFields({ obj }) {
-  const closed = drawnGeom(obj).closed
+  const closed = drawnGeom(obj).closed && obj.type !== 'block_arrow'
   const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
+  if (obj.type === 'block_arrow') return <BlockArrowFields obj={obj} set={set} />
   const fillOn = !obj.noFill && !!obj.fill, kind = !fillOn ? 'none' : obj.fillStyle === 'hatch' ? 'hatch' : 'tint'
   const fillColor = obj.fill || obj.stroke || '#1F2321'
   return (
@@ -37,6 +38,24 @@ function DrawnStyleFields({ obj }) {
           { value: 'dashed', label: 'Dashed', on: !!obj.dashed, onClick: () => set({ dashed: true }) },
         ]} />
       </Field>
+      {/* (d2-arrows) arrowheads: none, end, start, both — a line, an open polyline, an elbow arrow */}
+      {hasEnds(obj) && (
+        <Field label="Arrowheads">
+          <Seg aria="End style" options={[['none', 'None'], ['end', 'End'], ['start', 'Start'], ['both', 'Both']].map(([v, l]) => ({ value: v, label: l, aria: 'Arrowheads ' + l.toLowerCase(), on: endsOf(obj) === v, onClick: () => set({ ends: v }) }))} />
+        </Field>
+      )}
+      {/* (d2-arrows) corners Square | Round (a line: its ends flat or round), Round's radius (ft — real size, never over half the shortest side) */}
+      {hasCorners(obj) && (
+        <Field label={obj.type === 'line' ? 'Ends' : 'Corners'}>
+          <Seg aria="Corners" options={[
+            { value: 'square', label: 'Square', aria: 'Square', on: !roundOn(obj), onClick: () => set({ corners: 'square' }) },
+            { value: 'round', label: 'Round', aria: 'Round', on: roundOn(obj), onClick: () => set({ corners: 'round' }) },
+          ]} />
+        </Field>
+      )}
+      {hasCorners(obj) && roundOn(obj) && obj.type !== 'line' && (
+        <Field label="Corner radius (ft)"><NumInput aria="Corner radius (ft)" value={Number.isFinite(obj.cornerFt) ? obj.cornerFt : 1} min={0.05} step={0.25} onCommit={v => { if (v > 0) set({ cornerFt: v }) }} /></Field>
+      )}
       {closed && (
         <Field label="Fill">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -52,11 +71,31 @@ function DrawnStyleFields({ obj }) {
     </>
   )
 }
+/** (d2-arrows) A block arrow's card: its fill colour, its body Width (ft — real size), its words (optional, white, inside)
+ *  and their Text size (inches — the CAD text model). Each change one undo. */
+function BlockArrowFields({ obj, set }) {
+  const gs = useCanvasStore.getState().gridSize || 40
+  return (
+    <>
+      <Field label="Fill">
+        <Swatch label="Fill colour" value={obj.fill || '#E07B22'} onPick={(c) => { if (c) set({ fill: c }) }} />
+      </Field>
+      <Field label="Width (ft)"><NumInput aria="Block arrow width (ft)" value={Math.round((blockW(obj, gs) / gs) * 100) / 100} min={0.25} step={0.5} onCommit={v => { if (v > 0) set({ bodyW: v * gs }) }} /></Field>
+      <Field label="Text">
+        <TextInput words aria="Arrow text" placeholder="Optional — shown inside" value={obj.text || ''} onCommit={t => set({ text: String(t || '').trim() })} />
+      </Field>
+      <Field label="Text size">
+        <SizeInput inches={obj.labelSizeIn > 0 ? obj.labelSizeIn : 18} aria="Arrow text size" onCommit={(v) => { if (v > 0) set({ labelSizeIn: v }) }} />
+      </Field>
+    </>
+  )
+}
 /** (dealer audit; d1-final) A drawn shape's own fields, typed: a rectangle's Name (shown inside with its size and area),
  *  Width and Length (ft), Convert to zone; a circle's Radius and Diameter (linked; under 3″ radius refused); a line's
  *  Length (its start held) and Angle; a polyline's Open | Closed, and closed its area and perimeter (sides crossing: the
  *  area a dash). Each change one undo. */
 function DrawnSizeFields({ obj, gridSize }) {
+  if (obj.type === 'elbow' || obj.type === 'block_arrow') return null   // (d2-arrows) edited by their ends and bend
   const st = useCanvasStore
   const set = (u) => st.getState().commitObjectUpdate(obj.id, u)
   const ft = (px) => Math.round(px / gridSize * 100) / 100
@@ -166,9 +205,10 @@ const TYPE_NAME = {
   ...Object.fromEntries(Object.entries(namesFor('card')).filter(([t]) => !BEAM_TYPES.has(t))),
   column_grid: 'Column grid', aisle: 'Aisle label', racking_area: 'Racking area',
   text: 'Text', annot_dimension: 'Dimension', line: 'Line', arc: 'Arc', arrow: 'Arrow', circle: 'Circle', rect: 'Rectangle', polyline: 'Polyline', polygon: 'Polygon',
-  freehand: 'Freehand',
+  freehand: 'Freehand', elbow: 'Elbow arrow', block_arrow: 'Block arrow',
 }
-const typeName = (o) => (o.type?.startsWith('fp_') ? 'Building' : TYPE_NAME[o.type] || (o.type || 'shape').replace(/_/g, ' '))
+// (d2-arrows) a line with an arrowhead is an Arrow
+const typeName = (o) => (o.type?.startsWith('fp_') ? 'Building' : o.type === 'line' && isDrawn(o) && endsOf(o) !== 'none' ? 'Arrow' : TYPE_NAME[o.type] || (o.type || 'shape').replace(/_/g, ' '))
 const divider = <div style={{ height: 1, background: C.divider, margin: '4px 0' }} />
 
 /* ─── fields ──────────────────────────────────────────────────────────────── */
