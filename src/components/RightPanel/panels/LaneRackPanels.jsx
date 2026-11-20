@@ -23,7 +23,7 @@ const ModeLine = ({ children }) => (
 const CountInput = ({ label, val, inputKey, onCommit, hint, aria }) => (
   <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
     <SecLabel>{label}</SecLabel>
-    <input type="text" className="st-field" aria-label={aria} defaultValue={val} key={inputKey}
+    <input type="text" className="st-field" aria-label={aria || label} defaultValue={val} key={inputKey}
       onFocus={e => e.target.select()}
       onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
       onBlur={e => { const v = parseInt(e.target.value); if (v > 0) onCommit(v); else e.target.value = val }}

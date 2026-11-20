@@ -8973,19 +8973,22 @@ describe('REG — the hand check by real clicks', () => {
      *  inside it where it applies. → [{ check, ok, detail }] */
     /* (basics-triage) by-design rules — not failures: recorded n/a, "exempt — <reason>" (CLAUDE.md Rule 9) */
     const DOOR_RULE = 'exempt — doors move along their wall only'
+    const DOOR_MOVE = { 'edit: move': DOOR_RULE, 'undo: one step': DOOR_RULE, redo: DOOR_RULE, 'snap: wall': DOOR_RULE, 'snap: Alt off': DOOR_RULE }
     const BASICS_EXEMPT = {
-      struct_loading_dock: { 'edit: move': DOOR_RULE, 'snap: wall': DOOR_RULE, 'snap: Alt off': DOOR_RULE },
-      struct_egress: { 'edit: move': DOOR_RULE, 'snap: wall': DOOR_RULE, 'snap: Alt off': DOOR_RULE },
-      struct_drive_in: { 'edit: move': DOOR_RULE, 'snap: wall': DOOR_RULE, 'snap: Alt off': DOOR_RULE },
-      column_grid: { lock: 'exempt — a column grid follows the Columns layer lock' },
+      struct_loading_dock: DOOR_MOVE,
+      struct_egress: DOOR_MOVE,
+      struct_drive_in: DOOR_MOVE,
+      column_grid: Object.fromEntries([['lock', 'exempt — a column grid follows the Columns layer lock'],
+        ...['select: click', 'select: box', 'select: Shift adds', 'select: Tab', 'edit: move', 'undo: one step', 'redo', 'edit: resize', 'undo: resize', 'snap: wall', 'snap: Alt off', 'zoom: scales', 'edit: typed value', 'copy + paste', 'duplicate', 'delete', 'undo: delete', 'redo: delete', 'delete: undo brings it back']
+          .map(c => [c, 'exempt — a column grid is edited by its columns and grid lines, never as one box (col-grid round)'])]),
       line: { 'edit: typed value': 'exempt — drawn annotations have no typed values' },
       elbow: { 'edit: typed value': 'exempt — drawn annotations have no typed values' },
       // (my choice — the report says so) a building is the walls everything else snaps to: it has no wall of its own to snap to
-      ...Object.fromEntries(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross', 'fp_custom'].map(t => [t, { 'snap: wall': 'exempt — a building is the walls others snap to', 'snap: Alt off': 'exempt — a building is the walls others snap to' }])),
+      ...Object.fromEntries(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross', 'fp_custom'].map(t => [t, { 'snap: wall': 'exempt — a building is the walls others snap to', 'snap: Alt off': 'exempt — a building is the walls others snap to', 'select: box': 'exempt — a box never selects the building (selection.js isMarqueeExcluded)', 'select: Shift adds': 'exempt — a building is selected on its own (Shift+click on a wall selects it alone)' }])),
     }
     const contract = async (label, make, { drawTool = null, at = null, there: thereAt = null } = {}) => {
       let typeNow = null
-      const out = [], rec = (check, ok, detail = '') => { const why = typeNow && BASICS_EXEMPT[typeNow] && BASICS_EXEMPT[typeNow][check]; if (why) { out.push({ type: label, check, ok: 'n/a', detail: why }); return } out.push({ type: label, check, ok: ok === true ? true : ok === 'n/a' ? 'n/a' : false, detail: typeof detail === 'string' ? detail : JSON.stringify(detail) }) }
+      const out = [], rec = (check, ok, detail = '') => { const why = (typeNow && BASICS_EXEMPT[typeNow] && BASICS_EXEMPT[typeNow][check]) || (/filled building/.test(label) && (check === 'copy + paste' || check === 'duplicate' || check === 'edit: resize' || check === 'undo: resize') ? 'exempt — no room between real racks: a copy or a resize never overlaps a rack' : null); if (why) { out.push({ type: label, check, ok: 'n/a', detail: why }); return } out.push({ type: label, check, ok: ok === true ? true : ok === 'n/a' ? 'n/a' : false, detail: typeof detail === 'string' ? detail : JSON.stringify(detail) }) }
       const p = L.page, gs = await gs7()
       // (basics-triage) an empty layout (a building tested on its own): the origin where the building would be
       const view = async () => { const fp = await fpOf(); await L.S('const z = 0.1; S.setState({ zoom: z, panX: 220 - arg.x * z, panY: 120 - arg.y * z })', fp || { x: 0, y: 0 }); await wait(250) }
@@ -8996,18 +8999,36 @@ describe('REG — the hand check by real clicks', () => {
          point found over its box */
       const grip = async (id) => {
         const w = await L.S(`const st = S.getState(), o = st.objects.find(q => q.id === arg); if (!o) return null; const b = H.worldBoundsOf(o, st.objects)
-          for (const [fx, fy] of [[0.5, 0.5], [0.5, 0.3], [0.3, 0.5], [0.7, 0.5], [0.5, 0.7], [0.2, 0.2], [0.8, 0.8], [0.5, 0], [0, 0.5], [0.5, 1], [1, 0.5]]) {
-            const x = b.x + b.width * fx, y = b.y + b.height * fy
+          // (basics-fixes) a building is picked by its wall — its floor is open ground: the middle of a wall segment, in its band
+          if (/^fp_/.test(o.type) && Array.isArray(o.fpVerts) && o.fpVerts.length >= 3) {
+            const V = o.fpVerts, gsz = st.gridSize || 40, t = ((o.wallThicknessFt || 0.25) * gsz) / 2
+            for (let i = 0; i < V.length; i++) {
+              const a = V[i], c = V[(i + 1) % V.length], L = Math.hypot(c.x - a.x, c.y - a.y) || 1, nx = -(c.y - a.y) / L, ny = (c.x - a.x) / L
+              for (const sg of [1, -1]) {
+                const x = a.x + (c.x - a.x) * 0.3 + nx * t * sg, y = a.y + (c.y - a.y) * 0.3 + ny * t * sg   // 30 % along: off the squares
+                const w = H.fpWallHitTest(st.objects, st.layers, x, y, st.zoom, gsz)
+                // (basics-fixes) only where the canvas is not under the islands (a click there lands on the chrome)
+                const cont = document.querySelector("#canvas2-container"), cr = cont && cont.getBoundingClientRect(), sx = cr ? cr.left + x * st.zoom + st.panX : 0, sy = cr ? cr.top + y * st.zoom + st.panY : 0, el = cr ? document.elementFromPoint(sx, sy) : null
+                if (w && w.objId === o.id && (!cr || (el && cont.contains(el)))) return { x, y }
+              }
+            }
+            return null
+          }
+          const wt = 0
+          const cand = wt ? [[0.5, 0, 0, wt], [0, 0.5, wt, 0], [0.5, 1, 0, -wt], [1, 0.5, -wt, 0]] : [[0.5, 0.5], [0.5, 0.3], [0.3, 0.5], [0.7, 0.5], [0.5, 0.7], [0.2, 0.2], [0.8, 0.8], [0.5, 0], [0, 0.5], [0.5, 1], [1, 0.5]]
+          for (const [fx, fy, ox = 0, oy = 0] of cand) {
+            const x = b.x + b.width * fx + ox, y = b.y + b.height * fy + oy
             if (H.pickAt(st.objects, st.layers, x, y, st.zoom, st.gridSize).id === o.id) return { x, y } }
           return null`, id)
         return w ? L.toScreen(w) : null
       }
-      const json = (id) => L.S('const o = S.getState().objects.find(q => q.id === arg); if (!o) return null; const { activeBayIdx, ...rest } = o; void activeBayIdx; return JSON.stringify(rest)', id)   // (basics-triage) a rack's picked bay is selection, not a change
+      const json = (id) => L.S('const o = S.getState().objects.find(q => q.id === arg); if (!o) return null; const { activeBayIdx, activeBaySide, ...rest } = o; void activeBayIdx; void activeBaySide; return JSON.stringify(rest)', id)   // (basics-triage) a rack's picked bay and bay side are selection, not a change
       const count = (type) => L.S('return S.getState().objects.filter(o => o.type === arg).length', type)
       const dropPlacement = async (at) => { if (await L.S('return import("/src/utils/placement.js").then(M => !!M.usePlacement.getState().active)')) { await p.mouse.move(at.x, at.y); await p.mouse.click(at.x, at.y); await wait(250) } }
       await view()
       let id = null
       try { id = await make(rec) } catch (e) { rec('place', false, e.message.slice(0, 160)) }
+      await wait(700)   // (basics-fixes) placing a building fits the view to it: let the view settle before reading the screen
       if (!id) { rec('place', false, 'nothing placed'); return out }
       const o0 = await L.S('return S.getState().objects.find(q => q.id === arg) || null', id)
       if (!o0) { rec('place', false, 'its object is gone'); return out }
@@ -9017,13 +9038,27 @@ describe('REG — the hand check by real clicks', () => {
       await esc()
       let g = await grip(id)
       if (!g) rec('select: click', false, 'no point on it picks it (something else always wins)')
-      else { await p.mouse.click(g.x, g.y); await wait(200); const s = await selIds(); rec('select: click', s.length === 1 && s[0] === id, s) }
+      else { await p.mouse.click(g.x, g.y); await wait(200); const s = await selIds(); rec('select: click', s.length === 1 && s[0] === id, s.length === 1 && s[0] === id ? s : { sel: s, at: { x: Math.round(g.x), y: Math.round(g.y) }, under: await p.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e ? e.tagName + '.' + (e.getAttribute('data-island') || e.closest('[data-island]')?.getAttribute('data-island') || e.className || '') : null }, [g.x, g.y]), view: await L.S('const s = S.getState(); return [s.zoom, s.panX, s.panY]') }) }
       // box select: a box round it from open ground
       await esc()
-      { const b = await bounds(id), a = await L.toScreen({ x: b.x - 3 * gs, y: b.y - 3 * gs }), c = await L.toScreen({ x: b.x + b.width + 3 * gs, y: b.y + b.height + 3 * gs })
+      { const b = await bounds(id), hBox = await L.S('return S.getState().historyIndex')
         await p.keyboard.press('v'); await wait(100)
-        await p.mouse.move(a.x, a.y); await p.mouse.down(); for (let k = 1; k <= 6; k++) await p.mouse.move(a.x + (c.x - a.x) * k / 6, a.y + (c.y - a.y) * k / 6); await p.mouse.up(); await wait(250)
-        const s = await selIds(); rec('select: box', s.includes(id), s.length + ' selected') }
+        let s = []
+        // (basics-fixes) 3, 8, then 15 ft round it, from each corner: a dealer starts the box on open floor
+        const tries = []
+        for (const mft of [3, 8, 15]) {
+          const a = await L.toScreen({ x: b.x - mft * gs, y: b.y - mft * gs }), c = await L.toScreen({ x: b.x + b.width + mft * gs, y: b.y + b.height + mft * gs })
+          tries.push([a, c], [c, a], [{ x: a.x, y: c.y }, { x: c.x, y: a.y }], [{ x: c.x, y: a.y }, { x: a.x, y: c.y }])
+        }
+        for (const [u, v] of tries) {
+          await esc(); await p.keyboard.press('v'); await wait(80)
+          await p.mouse.move(u.x, u.y); await p.mouse.down(); for (let k = 1; k <= 6; k++) await p.mouse.move(u.x + (v.x - u.x) * k / 6, u.y + (v.y - u.y) * k / 6); await p.mouse.up(); await wait(250)
+          s = await selIds()
+          // (a press on a wall or a rack moved it: put it back before the next corner)
+          if (!s.includes(id) && (await L.S('return S.getState().historyIndex')) > hBox) { await p.mouse.move(5, 890); await p.keyboard.press('Control+z'); await wait(200) }
+          if (s.includes(id)) break
+        }
+        rec('select: box', s.includes(id), s.length + ' selected: ' + (await L.S('return arg.map(i => (S.getState().objects.find(o => o.id === i) || {}).type)', s)).join(',')) }
       // Shift adds: the anchor (a line drawn below), then Shift+click on it
       await esc()
       { const anchor = await L.S('const st = S.getState(); return st.objects.find(o => o.id === "basics-anchor") ? "basics-anchor" : null')
@@ -9044,7 +9079,8 @@ describe('REG — the hand check by real clicks', () => {
         const from = type === 'polyline' ? await L.toScreen({ x: b0.x + b0.width * 0.3, y: b0.y + b0.height * 0.7 }) : g
         await dragPx(from, { x: from.x + 40, y: from.y + 30 })
         const b1 = await bounds(id), z = await L.S('return S.getState().zoom')
-        const moved = Math.abs((b1.x - b0.x) * z - 40) < 8 && Math.abs((b1.y - b0.y) * z - 30) < 8
+        // (basics-fixes) a building, dragged by a wall, moves across that wall (REG-7a-wall: it moves): any move counts
+        const moved = /^fp_/.test(type) ? Math.abs(b1.x - b0.x) + Math.abs(b1.y - b0.y) > 0 && Math.abs(b1.width - b0.width) < 0.5 && Math.abs(b1.height - b0.height) < 0.5 : Math.abs((b1.x - b0.x) * z - 40) < 8 && Math.abs((b1.y - b0.y) * z - 30) < 8
         rec('edit: move', moved, { dx: Math.round((b1.x - b0.x) * z), dy: Math.round((b1.y - b0.y) * z) })
         await p.mouse.move(5, 890); await p.keyboard.press('Control+z'); await wait(250)
         rec('undo: one step', (await json(id)) === j0, 'Ctrl+Z after the move')
@@ -9057,7 +9093,9 @@ describe('REG — the hand check by real clicks', () => {
         const lay = await L.S('return import("/src/canvas2/handleGeometry.js").then(M => { const l = M.computeHandleLayout(arg, S.getState().zoom); return { mr: l.positions.mr, br: l.positions.br, en: l.enabled } })', o)
         // (d1-bar) a polyline has no box handles — it is edited by its corners: its second corner dragged instead
         const corner = (o.type === 'polyline' || o.type === 'polygon') && Array.isArray(o.pts) ? await L.S('return import("/src/render/drawnShapes.js").then(M => { const P = M.shapePoints(S.getState().objects.find(q => q.id === arg)); return { x: P[1][0], y: P[1][1] } })', id) : null
-        const h = corner || ((lay.en || []).includes('mr') ? lay.mr : (lay.en || []).includes('br') ? lay.br : null)
+        // (basics-fixes) a building resizes from its own side squares (FpHandles — fphandle:), not the box's handles
+        const fpH = /^fp_/.test(o.type) ? await p.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const n = st.find(q => /^fphandle:wall_/.test(q.name() || ''))[0] || st.find(q => /^fphandle:/.test(q.name() || ''))[0]; if (!n) return null; const r = n.getClientRect(), c = st.container().getBoundingClientRect(), t = st.position(), sc = st.scaleX(); return { x: (r.x + r.width / 2 - t.x) / sc, y: (r.y + r.height / 2 - t.y) / sc } }) : null
+        const h = fpH || corner || ((lay.en || []).includes('mr') ? lay.mr : (lay.en || []).includes('br') ? lay.br : null)
         if (!h) rec('edit: resize', 'n/a', 'no resize handles')
         else {
           const hs = await L.toScreen(h), j0 = await json(id)
@@ -9076,6 +9114,13 @@ describe('REG — the hand check by real clicks', () => {
         const combo = card.locator('input[role=combobox]').first()   // (a size field, never a <select>)
         if (o && (o.type === 'line' || o.type === 'elbow')) {
           rec('edit: typed value', 'n/a', 'exempt — drawn annotations have no typed values')
+        } else if (!(await f.count()) && (await card.locator('input[type=text]:not([role=combobox])').evaluateAll(es => es.findIndex(e => !e.disabled && /^\s*\d+(\.\d+)?\s*$/.test(e.value)))) >= 0) {
+          // (basics-fixes) a count typed in a text field (a lane rack's Lanes, Deep): + 1, Enter
+          const i = await card.locator('input[type=text]:not([role=combobox])').evaluateAll(es => es.findIndex(e => !e.disabled && /^\s*\d+(\.\d+)?\s*$/.test(e.value)))
+          const t = card.locator('input[type=text]:not([role=combobox])').nth(i), j0 = await json(id), v = Number(await t.inputValue())
+          await t.fill(String(v + 1)); await t.press('Enter'); await wait(250)
+          rec('edit: typed value', (await json(id)) !== j0, (await t.getAttribute('aria-label')) || 'its count')
+          await p.mouse.move(5, 890); await p.keyboard.press('Control+z'); await wait(200)
         } else if (!(await f.count()) && (await combo.count())) {
           const j0 = await json(id), v = Number(await combo.inputValue())
           await combo.fill(String(Number.isFinite(v) ? v + 1 : 12)); await combo.press('Enter'); await wait(250)
@@ -9138,7 +9183,7 @@ describe('REG — the hand check by real clicks', () => {
           await dragPx(from, { x: from.x + dx, y: from.y })
           const b1 = await bounds(id)
           // onto the wall's face — or onto a nearer edge there (a rack end, a column, another object's side): any real edge
-          const edges = await L.S('const st = S.getState(); return st.objects.filter(o => o.id !== arg && o.type !== "aisle").flatMap(o => { const b = H.worldBoundsOf(o, st.objects); return b ? [b.x, b.x + b.width] : [] })', id)
+          const edges = await L.S('const st = S.getState(); return st.objects.filter(o => o.id !== arg && o.type !== "aisle").flatMap(o => { const b = H.worldBoundsOf(o, st.objects); return b ? [b.x, b.x + b.width] : [] }).concat(H.columnRectsOf(st.objects, st.gridSize || 40).flatMap(c => [c.x, c.x + c.w]))', id)
           // (basics-triage) a rack keeps the project's wall clearance from the face (by design): that line counts as the wall's
           const clearIn = await L.S('return import("/src/utils/project.js").then(M => (M.projectOf(S.getState().elevations)?.rules?.wallClearIn) ?? 0)').catch(() => 0)
           const faces = [inner, fp.x, inner + (clearIn / 12) * gs], lockedNow = await L.S('return import("/src/utils/layers.js").then(M => { const st = S.getState(), o = st.objects.find(q => q.id === arg); return !!o && M.isLockedIn(st.layers, o) })', id)
@@ -9179,7 +9224,7 @@ describe('REG — the hand check by real clicks', () => {
         await open()
         // an anchor line far below the building, for Shift adds (setup, not under test)
         await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)); S.getState().addObject({ id: "basics-anchor", type: "line", x1: fp.x + 180 * (st.gridSize || 40), y1: fp.y + fp.height + 18 * (st.gridSize || 40), x2: fp.x + 200 * (st.gridSize || 40), y2: fp.y + fp.height + 18 * (st.gridSize || 40), stroke: "#1F2321", strokeWidth: 2, dashed: false, layerId: "notes", opacity: 1, rotation: 0, noFill: true })')
-        if (it.setup) await it.setup()
+        if (it.setup) { await it.setup(); await L.S('const s = S.getState(); S.setState({ history: [JSON.stringify({ objects: s.objects, groups: s.groups || [], layers: s.layers, elevations: s.elevations ?? null })], historyIndex: 0 })') }   // (basics-fixes) history starts at the setup: Ctrl+Z never reaches the fixture as it was
         all.push(...await contract(it.label, it.make, it))
         if (L.errors.length) { all.push({ type: it.label, check: 'page errors', ok: false, detail: L.errors.join(' | ').slice(0, 300) }); L.errors.length = 0 }
       }
@@ -9282,10 +9327,13 @@ describe('REG — the hand check by real clicks', () => {
     const emptyLayout = () => L.S('S.setState({ objects: S.getState().objects.filter(o => o.id === "basics-anchor"), selectedIds: [] })')
     const libraryItem = (section, n) => {
       const it = { label: section + ' › ' + n }
-      if (section === 'Racking') {
+      // (basics-fixes) every item but a door and a column: inside the building, on cleared floor — where it is used, its wall
+      // alongside for the snap; not on the racks (a box or a click would start on one) nor below the wall's end
+      const inside = section === 'Racking' || section === 'Ops' || section === 'Safety' || section === 'Zones' || (section === 'Structural' && !/Grid|Door/.test(n))
+      if (inside) {
         let at = { x: 700, y: 360 }, there = { x: 760, y: 420 }
         it.setup = async () => {
-          await basicsClearRacks()
+          await basicsClearRacks(); if (/Column/.test(n)) await basicsUnlockColumns()
           const sp = await openSpot(14), v = await viewAt()
           if (sp) { at = v.s(sp.x, sp.y); there = { x: at.x, y: at.y + 70 } }
           it.there = there
@@ -9296,7 +9344,7 @@ describe('REG — the hand check by real clicks', () => {
         it.make = libraryMake(section, n)
       } else if (section === 'Floor Plans') {
         it.setup = emptyLayout
-        it.make = libraryMake(section, n)
+        it.make = libraryMake(section, n, { x: 600, y: 400 })   // (basics-fixes) mid-screen: a large L or U stays in view
       } else it.make = libraryMake(section, n)
       return it
     }

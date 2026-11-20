@@ -2,7 +2,7 @@ import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getObjectBounds } from '../../../utils/canvas'
-import { C, MONO, Grid2, Seg, Btn, Totals, SecLabel } from '../../../studio/cardParts'
+import { C, MONO, Grid2, Seg, Btn, Totals, SecLabel, Field, NumInput } from '../../../studio/cardParts'
 
 // ── Cantilever Properties Panel ───────────────────────────────────────────────
 const CANT_ARM_LENGTHS = [36, 48, 52, 60, 72]
@@ -62,6 +62,14 @@ export function CantileverPanel({ obj }) {
   }
 
   const canRemove = towers.length > 2
+  /* (basics-fixes) its length, typed: the number of towers (2 at least; a new tower's arm as the last one's) — one undo */
+  const setTowerCount = (n) => {
+    const k = Math.max(2, Math.round(n))
+    if (!Number.isFinite(k) || k === towers.length) return
+    const newTowers = k > towers.length ? [...towers, ...Array(k - towers.length).fill(towers[towers.length - 1] || 36)] : towers.slice(0, k)
+    const newW = ((newTowers.length - 1) * TSPACE_IN / 12) * gridSize
+    commitObjectUpdate(obj.id, withAnchoredPosition(obj, { towers: newTowers, width: newW, activeTowerIdx: null }))
+  }
 
   /* Studio card: a column of card parts; PropertiesPanel wraps it in the card block (padding 12px 16px). */
   return (
@@ -73,6 +81,8 @@ export function CantileverPanel({ obj }) {
         { label: 'Towers', value: towers.length },
         { label: 'Type', value: doubleSided ? 'Double-sided' : 'Single-sided' },
       ]} />
+
+      <Field label="Towers"><NumInput aria="Towers" value={towers.length} min={2} step={1} onCommit={setTowerCount} /></Field>
 
       {/* Tower list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>

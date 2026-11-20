@@ -70,6 +70,23 @@ import { isShown, layerShown } from '../utils/layers'
 import { isDrawn, drawnGeom, drawnSVG, textSVG } from '../render/drawnShapes'
 import { getObjectBounds } from '../utils/canvas'
 
+/* (basics-fixes) An object with no symbol of its own (the Ops and Safety items, a column / pillar, a partition wall, a
+   window): its box, filled and edged as on the canvas, turned with it, its name in the middle when it fits — the canvas's
+   FallbackShape, on paper. */
+const otherName = (t) => String(t || '').replace(/^(mhe|util|safety|struct|annot|fp|rack|ops)_/, '').replace(/_/g, ' ')
+const xmlEsc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+export function otherSVG(o) {
+  if (o.type === 'circle' && Number.isFinite(o.cx)) return `<circle data-other="${o.type}" cx="${o.cx}" cy="${o.cy}" r="${o.r || 10}" fill="${o.noFill ? 'none' : (o.fill || 'none')}" stroke="${o.stroke || '#6B7280'}" stroke-width="${(o.strokeWidth || 1.5) * 0.5}"/>`
+  const b = getObjectBounds(o)
+  if (!b || !(b.width > 0) || !(b.height > 0)) return ''
+  const cx = b.x + b.width / 2, cy = b.y + b.height / 2
+  const turn = o.rotation ? ` transform="rotate(${o.rotation} ${cx} ${cy})"` : ''
+  const fill = o.noFill ? 'none' : (o.fill || 'none'), stroke = o.stroke || '#6B7280'
+  const fs = Math.min(11, b.height * 0.5), name = otherName(o.type)
+  const words = b.width > 24 && b.height > 12 ? `<text x="${cx}" y="${cy + fs * 0.35}" font-size="${fs}" font-family="sans-serif" fill="${stroke}" fill-opacity="0.75" text-anchor="middle">${xmlEsc(name)}</text>` : ''
+  return `<g data-other="${o.type}"${turn} opacity="${o.opacity ?? 1}"><rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" fill="${fill}" stroke="${stroke}" stroke-width="${(o.strokeWidth || 1.5) * 0.5}"/>${words}</g>`
+}
+
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 
@@ -124,6 +141,10 @@ function computeBounds(objects, gridSize) {
         const dx = cxo - o.width / 2, dy = cyo - o.height / 2
         eat(cx + dx * Math.cos(rot) - dy * Math.sin(rot), cy + dx * Math.sin(rot) + dy * Math.cos(rot))
       }
+    } else if (o.type !== 'aisle' && o.type !== 'racking_area' && o.type !== 'section_area' && !isDoor(o)) {
+      // (basics-fixes) an object printed as its box (otherSVG): its box on the sheet
+      const b = getObjectBounds(o)
+      if (b && b.width > 0 && b.height > 0) { eat(b.x, b.y); eat(b.x + b.width, b.y + b.height) }
     }
   }
   if (minX === Infinity) return null
@@ -509,7 +530,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   // then the labels and marks, then the columns on top of all of it (structure:
   // a column inside a rack is the conflict the check reports, and no rack, aisle
   // label, arrow or X mark may hide it).
-  const floors = [], zones = [], columns = [], racks = [], sections = [], drawn = []
+  const floors = [], zones = [], columns = [], racks = [], sections = [], drawn = [], others = []
   for (const o of objects) {
     if (!o || !usable(o)) continue
     if (isDrawn(o) || (o.type === 'text' && o.text)) { drawn.push(o); continue }   // (D1) on top, as drawn
@@ -518,6 +539,9 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     else if (o.type === 'section_area') sections.push(o)
     else if (o.type === 'column_grid') columns.push(o)
     else if (PORTED_RACK_TYPES.has(o.type)) racks.push(o)
+    // (basics-fixes) everything else the canvas draws as its box and name (shapes.jsx FallbackShape): the Ops and Safety
+    // items, a column / pillar, a partition wall, a window — printed the same (a door has its own drawing: doorsSVG)
+    else if (!isDoor(o) && o.type !== 'aisle' && o.type !== 'racking_area' && o.type !== 'text') others.push(o)
   }
 
   const stripY = bounds.y + bounds.height + pad
@@ -546,6 +570,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     ...sections.map(o => sectionSVG(o, u, objects.filter(isDoor), gridSize)),
     ...zones.map(o => zoneSVG(o, gridSize)),
     doorsSVG(objects.filter(usable), gridSize, null),
+    ...others.map(o => otherSVG(o)),
     ...racks.map(o => rackSVG(o, gridSize, lz, elevTable)),
     /* labels and marks are worked out from the whole layout, as on the canvas
        (a hidden Columns layer still has columns); only their drawing is gated */

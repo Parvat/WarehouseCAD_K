@@ -515,6 +515,9 @@ export function PropertiesPanel() {
         {obj.type?.startsWith('fp_') && <BuildingFields obj={obj} up={up} commit={commit} gridSize={gridSize} updateObject={updateObject} />}
         {/* the building's size labels: its own Text size (CLAUDE.md Rule 8 — the CAD text model) */}
         {obj.type?.startsWith('fp_') && <TextSizeField objs={[obj]} type="building" bare />}
+        {/* (basics-fixes) an object with a box and no size field of its own (the Ops and Safety items, a column / pillar, a
+            partition wall, a window, a mezzanine, a shelving unit): its Width and Depth, typed in feet — one undo each */}
+        {hasOwnSizeBlock(obj) && <SizeBlock obj={obj} gridSize={gridSize} />}
         {/* (dealer audit) a drawn shape: its size in feet, then its style — the Draw bar's controls */}
         {isDrawn(obj) && <DrawnSizeFields obj={obj} gridSize={gridSize} />}
         {isDrawn(obj) && <DrawnStyleFields obj={obj} />}
@@ -606,6 +609,24 @@ function BuildingFields({ obj, up, commit, gridSize, updateObject }) {
         <span style={{ fontFamily: MONO, fontSize: 12, color: C.strong }}>{Math.round(wFt * hFt).toLocaleString()} sq ft <span style={{ color: C.faint }}>({(wFt * hFt / 43560).toFixed(3)} ac)</span></span>
       </Row>
     </>
+  )
+}
+
+/* ─── (basics-fixes) the size block ──────────────────────────────────────── */
+const OWN_SIZE_PREFIX = /^(mhe_|ops_|util_|safety_)/
+const OWN_SIZE_TYPES = new Set(['struct_column', 'struct_partition', 'struct_window', 'rack_mezzanine', 'rack_shelving'])
+/** Does it get the shared Width / Depth block (it has a box, no size field of its own)? */
+export const hasOwnSizeBlock = (o) => !!o && Number.isFinite(o.width) && Number.isFinite(o.height) && !isDrawn(o) && (OWN_SIZE_TYPES.has(o.type) || OWN_SIZE_PREFIX.test(o.type || ''))
+/** Width and Depth (ft): its box, its left-top corner held. A partition wall: Length and Thickness. */
+function SizeBlock({ obj, gridSize }) {
+  const ft = (px) => Math.round((px / gridSize) * 100) / 100
+  const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
+  const wall = obj.type === 'struct_partition'
+  return (
+    <Grid2>
+      <Field label={wall ? 'Length (ft)' : 'Width (ft)'}><NumInput aria={wall ? 'Length (ft)' : 'Width (ft)'} value={ft(obj.width)} min={0.1} step={0.5} onCommit={v => { if (v > 0) set({ width: v * gridSize }) }} /></Field>
+      <Field label={wall ? 'Thickness (ft)' : 'Depth (ft)'}><NumInput aria={wall ? 'Thickness (ft)' : 'Depth (ft)'} value={ft(obj.height)} min={0.05} step={0.25} onCommit={v => { if (v > 0) set({ height: v * gridSize }) }} /></Field>
+    </Grid2>
   )
 }
 
