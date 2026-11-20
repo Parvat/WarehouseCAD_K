@@ -9086,7 +9086,7 @@ describe('REG — the hand check by real clicks', () => {
         /* (d1-polish) no number field: a line's, an arrow's, an elbow's length label (a click types a new length); a size
            dropdown (a block arrow's — a plain number, typed); a polyline has none that applies (edited by its points) */
         const lab = await p.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const n = st.findOne('.line-measure'); if (!n) return null; const r = n.getClientRect(), c = st.container().getBoundingClientRect(); return { x: c.left + r.x + r.width / 2, y: c.top + r.y + r.height / 2 } })
-        const combo = card.getByRole('combobox').first()
+        const combo = card.locator('input[role=combobox]').first()   // (a size field, never a <select>)
         if (!(await f.count()) && o && (o.type === 'elbow' || o.type === 'line') && lab) {
           const j0 = await json(id)
           await p.mouse.click(lab.x, lab.y); await wait(250)
