@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign in</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased}
+*{scrollbar-width:thin;scrollbar-color:#3A403C transparent}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#3A403C;border-radius:4px;border:2px solid #1F2321}
+::-webkit-scrollbar-thumb:hover{background:#4A514D}
+a{color:#7BD3A4}a:hover{color:#B5EBCD}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; position: relative; overflow: hidden; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-size: 13px; color: #E8EAE6; background-color: #F4F3EF; background-image: radial-gradient(#D9D6CC 1px, transparent 1.2px); background-size: 20px 20px">
+
+<div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 380px; display: flex; flex-direction: column; gap: 14px; padding: 28px; background: #1F2321; border: 1px solid #323835; border-radius: 12px; box-shadow: 0 16px 40px rgba(15,18,16,.22)">
+<div style="display: flex; align-items: center; gap: 10px"><svg width="16" height="16" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 0l6 6-6 6-6-6z" fill="#7BD3A4"/></svg><span style="font-weight: 600; font-size: 18px; color: #F2F4F1">Trace</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 16px; font-weight: 600; color: #F2F4F1">Sign in</span><span style="color: #9AA29C; font-size: 12px">Your dealer workspace</span></div>
+<label style="display: flex; flex-direction: column; gap: 4px"><span style="color: #9AA29C; font-size: 12px">Email</span><span style="height: 34px; display: flex; align-items: center; padding: 0 10px; border-radius: 6px; background: #2A2F2C; font-size: 13px; color: #F2F4F1">you@yourdealer.com</span></label>
+<label style="display: flex; flex-direction: column; gap: 4px"><span style="color: #9AA29C; font-size: 12px">Password</span><span style="height: 34px; display: flex; align-items: center; padding: 0 10px; border-radius: 6px; background: #2A2F2C; font-size: 13px; color: #F2F4F1">••••••••••</span></label>
+<div style="display: flex; align-items: center"><label style="display: flex; align-items: center; gap: 8px; color: #C9CEC9; font-size: 12px"><span style="width: 14px; height: 14px; border-radius: 4px; background: #7BD3A4"></span>Keep me signed in</label><a href="#forgot" style="margin-left: auto; font-size: 12px">Forgot password?</a></div>
+<button style="height: 40px; border: 0; border-radius: 8px; background: #7BD3A4; color: #0F2A1F; font-family: inherit; font-size: 14px; font-weight: 600">Sign in</button>
+<span style="text-align: center; color: #7E8680; font-size: 11px">Trace · v0.1</span>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

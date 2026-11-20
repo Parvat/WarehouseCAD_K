@@ -6,3 +6,6 @@ dist/
 
 # stray test screenshots
 *.png
+
+# the Studio design export, kept unpacked in design/studio-source/
+trace-studio-design.zip
