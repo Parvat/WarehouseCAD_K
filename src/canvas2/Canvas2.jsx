@@ -30,8 +30,8 @@ import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, startRect, moveRect, commitRect, p
 import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
 import { DoorBar, DoorPreview, DoorGapLive, RowPreview, useDoorGapKeys } from './DoorBar'
-import { DrawBar, TextBar, DrawPreview, TextEditor, useDrawKeys } from './DrawBar'
-import { useDrawTool, shapeOfTool, twoPoint, snapPoint, commitShape, startText, commitText } from '../utils/drawTool'
+import { DrawBar, TextBar, DrawPreview, TextEditor, useDrawKeys, ShapePointHandles } from './DrawBar'
+import { useDrawTool, shapeOfTool, twoPoint, snapPoint, commitShape, startText, commitText, closesAt } from '../utils/drawTool'
 import { rowWallAt, rowCountOn, hoverRow, dropRow, fillRow } from '../utils/doorRowTool'
 import { DOOR_TOOL, hoverDoor, placeDoor, clearDoorHover, useDoorTool } from '../utils/doorTool'
 import { SelectionBar, FloorMenu, openFloorMenu } from '../studio/SelectionBar'
@@ -536,8 +536,10 @@ export function Canvas2() {
 
   /* the drawing tools (D1 — utils/drawTool.js, DrawBar.jsx; design/drawbar.png): Line and Rectangle a drag or two clicks,
      Circle the centre then the radius, Polyline and Polygon a click per point (a double-click or Enter finishes). Each
-     point snaps (Shift: 0 / 45 / 90°; Alt: none); each shape is one undo step; the tool stays on until Esc. The Text tool:
-     a click places a text (TextEditor), a click elsewhere finishes it and starts the next. */
+     point snaps (Shift: 0 / 45 / 90°; Alt: none); each shape is one undo step; one shape, then Select (d1-fixes — a tool
+     picked with a double-click stays on until Esc). A polyline / polygon snaps to its first point near it (the closing
+     marker) and a click there closes it. The Text tool: a click places a text (TextEditor), a click elsewhere finishes it
+     (then Select; kept on — the next text starts there). */
   const drawShape = !measuring ? shapeOfTool(activeTool) : null, drawing = !!drawShape
   const texting = !measuring && activeTool === TOOLS.TEXT
   useDrawKeys(drawing, texting)
@@ -545,13 +547,15 @@ export function Canvas2() {
   const drawAt = (screen, evt) => {
     const st = useCanvasStore.getState(), s = useDrawTool.getState(), w = screenToWorld(view.current, screen)
     const last = s.pts[s.pts.length - 1] || null
+    // near the first point of a polyline / polygon: on it (it closes there)
+    if (!evt?.altKey && closesAt(drawShape, s.pts, w, view.current.zoom)) return { p: { ...s.pts[0] }, guides: [], closing: true }
     return snapPoint(w, { st, zoom: view.current.zoom, last, shift: !!evt?.shiftKey, alt: !!evt?.altKey, shape: drawShape })
   }
   const drawMouseMove = (e) => {
     const p = e.target.getStage()?.getPointerPosition()
     if (!p || useDrawTool.getState().press) return
     const r = drawAt(p, e.evt)
-    useDrawTool.setState({ at: r.p, guides: r.guides })
+    useDrawTool.setState({ at: r.p, guides: r.guides, closing: !!r.closing })
   }
   const drawMouseDown = (e) => {
     if (e.evt && e.evt.button !== 0) return
@@ -575,7 +579,9 @@ export function Canvas2() {
       window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
       return
     }
-    // a polyline / polygon: a point — a second press on the same spot (a double-click's) adds none
+    // a polyline / polygon: a click on its first point closes it and finishes it
+    if (r.closing) { commitShape(useCanvasStore, drawShape, s.pts, z, nanoid, true); return }
+    // a point — a second press on the same spot (a double-click's) adds none
     const last = s.pts[s.pts.length - 1]
     if (last && Math.hypot(r.p.x - last.x, r.p.y - last.y) <= 3 / z) { useDrawTool.setState({ added: false }); return }
     useDrawTool.setState({ pts: [...s.pts, r.p], at: r.p, added: true, typed: null })
@@ -590,7 +596,11 @@ export function Canvas2() {
     const p = e.target.getStage()?.getPointerPosition()
     if (!p) return
     e.evt?.preventDefault?.()                       // the press does not take the focus back from the text being typed
-    if (useDrawTool.getState().text) commitText(useCanvasStore, nanoid)
+    if (useDrawTool.getState().text) {
+      const made = commitText(useCanvasStore, nanoid)
+      // one text, then Select with it selected (d1-fixes) — unless the tool is kept on (a double-click): the next starts here
+      if (made && !useDrawTool.getState().keep) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); useCanvasStore.getState().selectObject(made.id, false); return }
+    }
     startText(screenToWorld(view.current, p), useCanvasStore.getState().gridSize || 40)
   }
 
@@ -729,6 +739,7 @@ export function Canvas2() {
             {/* the Section tool's box or pen, and a selected custom-shape section's points (SectionShape.jsx) */}
             <SectionDraft />
             {unlockedSel && selectedObjects.length === 1 && <SectionPointHandles obj={selectedObjects[0]} />}
+            {unlockedSel && selectedObjects.length === 1 && <ShapePointHandles obj={selectedObjects[0]} />}
           </Layer>
         </Stage>
       )}

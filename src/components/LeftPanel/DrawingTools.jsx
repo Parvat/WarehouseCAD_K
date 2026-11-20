@@ -15,7 +15,7 @@ const DRAW_TOOLS = [
   { id: TOOLS.LINE,         label: 'Line (L)',     icon: <S><line x1="3" y1="17" x2="17" y2="3" strokeLinecap="round" /></S> },
   { id: TOOLS.ARC,          label: 'Arc (A)',      icon: <S><path d="M3 16 Q10 2 17 16" strokeLinecap="round" /></S> },
   { id: TOOLS.SQUARE,       label: 'Rect (R)',     icon: <S><rect x="3" y="3" width="14" height="14" rx="1.5" /></S> },
-  { id: TOOLS.CIRCLE,       label: 'Ellipse (C)',  icon: <S><ellipse cx="10" cy="10" rx="7" ry="4.5" /></S> },
+  { id: TOOLS.CIRCLE,       label: 'Circle (C)',  icon: <S><ellipse cx="10" cy="10" rx="7" ry="4.5" /></S> },
   { id: TOOLS.TRIANGLE,     label: 'Triangle',     icon: <S><path d="M10 3 L17 17 L3 17 Z" /></S> },
   { id: TOOLS.DIAMOND,      label: 'Diamond',      icon: <S><path d="M10 2 L18 10 L10 18 L2 10 Z" /></S> },
   { id: TOOLS.STAR,         label: 'Star',         icon: <S><path d="M10 2 L12 8 L18 8 L13 12 L15 18 L10 14 L5 18 L7 12 L2 8 L8 8 Z" /></S> },

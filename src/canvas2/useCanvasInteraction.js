@@ -11,7 +11,7 @@ import { clampResizeUpdates, clampDragDelta } from '../utils/floorClamp'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
 import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
 import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from './fpRotate'
-import { resizeText } from '../utils/drawTool'
+import { resizeText, resizeCircle, snapPoint } from '../utils/drawTool'
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
@@ -50,6 +50,7 @@ import { membersOf, clampSectionMove, clampSectionBox, clampSectionPoint } from 
 import { sectionSnapLines, snapSectionEdges, sectionBox, SECTION_SNAP_PX } from '../utils/sectionSnap'
 import { useSectionRename } from './sectionTool'
 import { POINT_HANDLE_PX } from './SectionShape'
+import { isPointShape, pointAt, sideAt, movePointTo, moveSideBy, isDrawn, drawnHit } from '../render/drawnShapes'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { fpDimHit, useDimEdit } from './FpDimEdit'
 import { legendHit } from '../utils/sectionLegend'
@@ -180,6 +181,7 @@ export function useCanvasInteraction({
   const groupRotateDrag = useRef(null)
   const fpRotateDrag = useRef(null)
   const sectionPoint = useRef(null)   // a custom-shape section's point being dragged: { id, i, orig }
+  const shapeEdit = useRef(null)      // (d1-fixes) a polyline's / polygon's point or side being dragged: { id, kind, i, orig, from }
   const colLine = useRef(null)   // a column's line being dragged: { g0, col, from (world), sx, sy, axis, i, again }
   const crossDrag = useRef(null)   // a cross-aisle pressed (crossAisleTool.js): { c, from (world), d (bays) }
   const tunnelDrag = useRef(null)  // a tunnel pressed (utils/tunnel.js): { t, from (world), d (bays) }
@@ -650,6 +652,7 @@ export function useCanvasInteraction({
     /* what a press that never moves picks on its release (a pan's or a floor box's click): the building whose blank
        floor it was on, or a locked column */
     let clickTarget = null
+    let boxMove = null      // (dealer audit) a selected polyline / polygon: a press inside its box, off its line, moves it whole
     if (!forcePan) {
       const st = useCanvasStore.getState()
 
@@ -668,11 +671,23 @@ export function useCanvasInteraction({
           const i = polygonOf(selected).findIndex(([x, y]) => Math.abs(world.x - x) <= r && Math.abs(world.y - y) <= r)
           if (i >= 0) { sectionPoint.current = { id: selected.id, i, orig: selected }; return }
         }
+        /* (d1-fixes) a polyline / polygon, as the building outline: a press on one of its points drags that point */
+        if (selected && isPointShape(selected)) {
+          const i = pointAt(selected, world.x, world.y, (POINT_HANDLE_PX / 2 + 3) / view.current.zoom)
+          if (i >= 0) { shapeEdit.current = { id: selected.id, kind: 'point', i, orig: selected, from: world }; return }
+        }
         if (selected && objHasResizeHandles(selected, PORTED_RACK_TYPES)) {
           const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
           if (handle) {
             beginHandleDrag(selected, handle, world)
             return
+          }
+          /* (d1-fixes) after its box handles (they still scale the whole shape): a press on a side drags that side */
+          if (isPointShape(selected)) {
+            const si = sideAt(selected, world.x, world.y, Math.max(2, (selected.strokeWidth || 2) / 2 + 3) / view.current.zoom)
+            if (si >= 0) { shapeEdit.current = { id: selected.id, kind: 'side', i: si, orig: selected, from: world }; return }
+            const bb = getObjectBounds(selected)
+            if (bb && world.x >= bb.x && world.x <= bb.x + bb.width && world.y >= bb.y && world.y <= bb.y + bb.height) boxMove = selected.id
           }
         } else if (selected && isFloorPlan(selected)) {
           /* A floor plan's own rotate handle — same "handle sits above
@@ -768,6 +783,8 @@ export function useCanvasInteraction({
       }
       let hitId = hitTest(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize)
       let hitObj = hitId ? st.objects.find(o => o.id === hitId) : null
+      // (dealer audit) inside a selected polyline's box, over the floor only (a rack, a door … there still wins): the shape
+      if (boxMove && (!hitObj || FP_SET_INPUT.has(hitObj.type) || hitObj.type === 'section_area' || (isDrawn(hitObj) && hitObj.id !== boxMove && drawnHit(hitObj, world.x, world.y, 2 / view.current.zoom) === 'inside'))) { hitId = boxMove; hitObj = st.objects.find(o => o.id === boxMove) }
       /* (labels-final) a press on a door's bar or its clear-space box picks that door — and drags it — at any zoom, before
          the wall, the floor or a rack under it (a value drawn there took the press above) */
       if (evt.button === 0 && !(hitObj && isDoor(hitObj))) {
@@ -972,7 +989,7 @@ export function useCanvasInteraction({
      gesture (pan/drag/marquee/resize) keeps setting it from its own
      mousemove/mouseup, and held space always means grab. */
   const onStageMouseMove = () => {
-    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current || colLine.current || sectionPoint.current || crossDrag.current || tunnelDrag.current) { setFlueHover(null, null); clearHoverTarget(); return }
+    if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current || colLine.current || sectionPoint.current || shapeEdit.current || crossDrag.current || tunnelDrag.current) { setFlueHover(null, null); clearHoverTarget(); return }
     if (spaceDown.current) { clearHoverTarget(); return }
     const stage = stageRef.current
     if (!stage) return
@@ -1222,7 +1239,8 @@ export function useCanvasInteraction({
           })
           updates = z.box
           setSmartGuides(z.guides)
-        } else if (origObj.type === 'text') updates = resizeText(origObj, handle, pos.x - startWorld.x, pos.y - startWorld.y, getObjectBounds(origObj))   // (D1) its text height
+        } else if (origObj.type === 'circle' && isDrawn(origObj)) updates = resizeCircle(origObj, handle, pos.x - startWorld.x, pos.y - startWorld.y)   // (dealer audit) stays a circle
+        else if (origObj.type === 'text') updates = resizeText(origObj, handle, pos.x - startWorld.x, pos.y - startWorld.y, getObjectBounds(origObj))   // (D1) its text height
         else updates = applyResize(origObj, handle, dx, dy, snapFn, !!evt.shiftKey)
 
         /* Anchor-point correction for a rotated rect: growing/shrinking
@@ -1384,6 +1402,21 @@ export function useCanvasInteraction({
         return
       }
 
+      /* (d1-fixes) a polyline's / polygon's point follows the pointer (snapped as the drawing tool snaps; Alt: none), or
+         its side moves across itself */
+      const se = shapeEdit.current
+      if (se) {
+        const stage = stageRef.current
+        if (!stage) return
+        const box = stage.container().getBoundingClientRect()
+        const w = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
+        if (!se.moved && Math.hypot(w.x - se.from.x, w.y - se.from.y) * view.current.zoom < 3) return
+        se.moved = true
+        const st = useCanvasStore.getState()
+        if (se.kind === 'point') { const q = snapPoint(w, { st, zoom: view.current.zoom, alt: !!evt.altKey }).p; st.updateObject(se.id, movePointTo(se.orig, se.i, q.x, q.y)) }
+        else st.updateObject(se.id, moveSideBy(se.orig, se.i, w.x - se.from.x, w.y - se.from.y))
+        return
+      }
       /* a custom-shape section's point follows the pointer */
       const sp = sectionPoint.current
       if (sp) {
@@ -1663,6 +1696,9 @@ export function useCanvasInteraction({
         else useCrossAislePick.setState({ drag: null })
         return
       }
+      const se = shapeEdit.current
+      shapeEdit.current = null
+      if (se) { if (se.moved) useCanvasStore.getState().commitObjectUpdate(se.id, {}); return }   // one undo step
       const sp = sectionPoint.current
       sectionPoint.current = null
       if (sp) {

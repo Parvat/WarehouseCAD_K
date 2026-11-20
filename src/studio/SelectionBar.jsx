@@ -1,4 +1,5 @@
 import { isDrawn } from '../render/drawnShapes'
+import { rotateTexts } from '../utils/drawTool'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
@@ -340,6 +341,8 @@ function DrawnBar({ objs }) {
         {objs.length > 1 ? <><span style={{ fontFamily: MONO, color: B.text }}>{objs.length}</span> selected</> : <span style={{ color: B.text }}>{kinds[0]}</span>}
       </span>
       <Sep />
+      {/* (d1-fixes) a text turns in 90° steps — no rotate handle on a shape or a text */}
+      {objs.every(o => o.type === 'text') && <IconBtn name="Rotate" label="Rotate 90°" title="Rotate 90°" onClick={() => rotateTexts(store, objs.map(o => o.id))} locked={locked} />}
       <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
       <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={duplicateSelection} locked={locked} />
       <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} locked={locked} />

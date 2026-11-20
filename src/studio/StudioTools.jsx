@@ -8,7 +8,8 @@ import { Icon } from './Icon'
 
 /* the rail's categories and their icon (the rail section of the icon set) */
 export const RAIL_ICON = {
-  floorplans: 'Floor plans', racking: 'Racking', ops: 'Ops', structural: 'Structural', safety: 'Safety', zones: 'Zones', blocks: 'Blocks',
+  floorplans: 'Floor plans', racking: 'Racking', ops: 'Ops', structural: 'Structural', safety: 'Safety', zones: 'Zones',
+  draw: 'Blocks',          // (d1-fixes) the one Draw button — the set's shapes glyph (was the Blocks section's)
 }
 
 const railBtn = (on, color = 'transparent') => ({
@@ -35,9 +36,12 @@ export function StudioRail({ sections, open, onOpen, onSettings }) {
 }
 
 /** The library flyout, right of the rail: the section's caption and its items as 36px rows. A pick places the item
- *  as before; the flyout then closes. Esc and a click outside close it too. */
-export function StudioFlyout({ section, items, onPick, onClose }) {
-  const ref = useRef(null)
+ *  as before; the flyout then closes. Esc and a click outside close it too. `onKeep` (the Draw flyout — d1-fixes): a
+ *  double-click on a row keeps that tool on until Esc — the flyout waits a double-click's time before it closes, so the
+ *  second click lands on the row, not the canvas. */
+export function StudioFlyout({ section, items, onPick, onClose, onKeep = null }) {
+  const ref = useRef(null), closing = useRef(null)
+  useEffect(() => () => clearTimeout(closing.current), [])
   useEffect(() => {
     const down = (e) => { if (!ref.current?.contains(e.target) && !e.target.closest?.('[data-island="rail"]')) onClose() }
     const key = (e) => { if (e.key === 'Escape') onClose() }
@@ -49,7 +53,13 @@ export function StudioFlyout({ section, items, onPick, onClose }) {
       style={{ left: 72, top: 76, width: 232, flexDirection: 'column', alignItems: 'stretch', padding: 6, maxHeight: 'calc(100vh - 152px)', overflowY: 'auto' }}>
       <span style={{ padding: '6px 8px 6px', color: '#9AA29C', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase' }}>{section.label}</span>
       {items.map(it => (
-        <button key={it.id} type="button" role="menuitem" title={it.hint || it.label} onClick={() => { onPick(it); onClose() }}
+        <button key={it.id} type="button" role="menuitem" title={it.hint || (onKeep ? it.label + ' · double-click to keep it on' : it.label)}
+          onClick={(e) => {
+            if (!onKeep) { onPick(it); onClose(); return }
+            if (e.detail > 1) return                                   // a double-click's second click: onDoubleClick has it
+            onPick(it); clearTimeout(closing.current); closing.current = setTimeout(onClose, 350)
+          }}
+          onDoubleClick={onKeep ? () => { clearTimeout(closing.current); onKeep(it); onClose() } : undefined}
           style={{ height: 36, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '0 8px', border: 0, borderRadius: 6, background: 'transparent', fontSize: 13, color: '#E8EAE6', textAlign: 'left' }}>
           <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
         </button>

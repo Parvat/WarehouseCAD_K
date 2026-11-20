@@ -7,6 +7,8 @@
 // typed in the app; a rectangle takes "W x H" too). Shift keeps 0 / 45 / 90° (a rectangle: a square). Points snap onto
 // walls, section and zone edges and rack ends (utils/sectionSnap.js, as the Section tool's), else the grid when it is on;
 // Alt held: no snap. Esc ends the tool (a polyline or polygon with enough points is kept). Each shape is ONE undo step.
+// (d1-fixes) One shape, then Select (the shape selected): a tool picked with a double-click stays on until Esc (`keep`).
+// A polyline / polygon snaps to its first point near it (a closing marker); a click there closes it and finishes it.
 // The tool's settings are presentation state (this store), never the canvas store; the shapes themselves are document
 // objects on the Notes layer (render/drawnShapes.js draws them, on the canvas and the PDF alike).
 
@@ -16,8 +18,9 @@ import { HOME_TOOL } from './homeTool'
 import { snapToGrid } from './canvas'
 import { sectionSnapLines, snapSectionEdges, SECTION_SNAP_PX } from './sectionSnap'
 import { TEXT_FONT_DEFAULT } from '../theme/tokens'
+import { rackFootprint } from '../generate/rackFootprint'
 
-/** The tool ids: the existing ones (Line, Rectangle — Blocks' Rectangle, Circle — Blocks' Ellipse, Polygon) and Polyline. */
+/** The tool ids: the existing ones (Line, Rectangle, Circle, Polygon) and Polyline — all in the rail's Draw flyout. */
 export const POLYLINE_TOOL = 'polyline'
 export const DRAW_SHAPES = [
   { id: 'line', tool: TOOLS.LINE, label: 'Line' },
@@ -41,6 +44,8 @@ export const DRAW_COLORS = ['#1F2321', '#6B7280', '#E5484D', '#E07B22', '#C9A100
 export const useDrawTool = create(() => ({
   stroke: '#1F2321', strokeWidth: 2, fill: null, dashed: false, closed: false,
   pts: [], at: null, press: null, typed: null, guides: [],
+  keep: false,                                        // picked with a double-click: the tool stays on after a shape, until Esc
+  closing: false,                                     // the pointer on the first point (a polyline / polygon closes there)
   // the Text tool
   text: null,                                         // { x, y (world: the anchor and the first line's baseline), value }
   textIn: 18, bold: false, italic: false, color: '#1F2321', align: 'left',
@@ -49,16 +54,41 @@ export const useDrawTool = create(() => ({
 /** Drop the shape being drawn (and a text being typed is kept: commitText ends it). */
 export function cancelDraw() {
   const s = useDrawTool.getState()
-  if (!s.pts.length && !s.press && s.typed == null && !s.guides.length && !s.at) return false
-  useDrawTool.setState({ pts: [], at: null, press: null, typed: null, guides: [] })
+  if (!s.pts.length && !s.press && s.typed == null && !s.guides.length && !s.at && !s.closing) return false
+  useDrawTool.setState({ pts: [], at: null, press: null, typed: null, guides: [], closing: false })
   return true
+}
+
+/** Pick a drawing tool (the rail's Draw flyout, the Draw bar's shape switch): `keep` — a double-click — leaves it on after
+ *  each shape until Esc; a single pick draws one shape, then Select. (Any other tool change clears keep: toolSwitch.js.) */
+export function pickDrawTool(store, tool, keep = false) {
+  store.getState().setActiveTool(tool)
+  useDrawTool.setState({ keep: !!keep })
+}
+/** The pixels within which a polyline / polygon point snaps to its first point (and closes there). */
+export const CLOSE_SNAP_PX = 10
+/** Does the shape being drawn close at world `w`: a polyline or polygon with 3 points or more, `w` within
+ *  CLOSE_SNAP_PX of its first point? */
+export function closesAt(shape, pts, w, zoom = 1) {
+  if ((shape !== 'polyline' && shape !== 'polygon') || pts.length < 3 || !w) return false
+  return Math.hypot(w.x - pts[0].x, w.y - pts[0].y) <= CLOSE_SNAP_PX / (zoom || 1)
 }
 
 /* ── snapping ── */
 const E = 1e-9
 let linesCache = { objects: null, gs: 0, lines: null }
 const linesFor = (objects, gs) => {
-  if (linesCache.objects !== objects || linesCache.gs !== gs) linesCache = { objects, gs, lines: sectionSnapLines(objects, new Set(), gs) }
+  if (linesCache.objects !== objects || linesCache.gs !== gs) {
+    const L = sectionSnapLines(objects, new Set(), gs)
+    // (dealer audit) drawing snaps to a rack's long faces too, not only its ends — a walkway or a note along a row
+    for (const o of objects || []) {
+      if (!o || typeof o.type !== 'string' || !o.type.startsWith('rack_') || !(o.width > 0) || !(o.height > 0)) continue
+      const f = rackFootprint(o)
+      if (f.rotated) { L.x.push({ v: f.x, a: f.y, b: f.y + f.h }); L.x.push({ v: f.x + f.w, a: f.y, b: f.y + f.h }) }
+      else { L.y.push({ v: f.y, a: f.x, b: f.x + f.w }); L.y.push({ v: f.y + f.h, a: f.x, b: f.x + f.w }) }
+    }
+    linesCache = { objects, gs, lines: L }
+  }
   return linesCache.lines
 }
 /** The point for the pointer at world `w`: Shift — on the 0 / 45 / 90° line from `last` (a rectangle: its diagonal at
@@ -75,7 +105,11 @@ export function snapPoint(w, { st, zoom = 1, last = null, shift = false, alt = f
     }
   }
   if (alt) return { p: w, guides: [] }
-  const r = snapSectionEdges({ x: [w.x], y: [w.y] }, linesFor(st.objects, gs), SECTION_SNAP_PX / (zoom || 1))
+  /* (dealer audit) only the lines that run past the pointer (within the snap distance of their extent): a rack face or a
+     wall 30 ft away along its own line pulls nothing (was: every line snapped as if endless) */
+  const tol = SECTION_SNAP_PX / (zoom || 1), all = linesFor(st.objects, gs)
+  const near = { x: all.x.filter(l => w.y >= l.a - tol && w.y <= l.b + tol), y: all.y.filter(l => w.x >= l.a - tol && w.x <= l.b + tol) }
+  const r = snapSectionEdges({ x: [w.x], y: [w.y] }, near, tol)
   const grid = (v) => (st.snapToGrid ? snapToGrid(v, gs, st.snapUnit) : v)
   const p = { x: r.dx || r.guides.some(g => g.axis === 'x') ? w.x + r.dx : grid(w.x), y: r.dy || r.guides.some(g => g.axis === 'y') ? w.y + r.dy : grid(w.y) }
   return { p, guides: r.guides }
@@ -118,14 +152,17 @@ export function shapeObject(shape, pts, s, zoom = 1) {
   return null
 }
 
-/** Add the shape — one undo step (the store's addObject). → the new object, or null. */
-export function commitShape(store, shape, pts, zoom = 1, newId = null) {
-  const o = shapeObject(shape, pts, useDrawTool.getState(), zoom)
-  useDrawTool.setState({ pts: [], typed: null, press: null, guides: [] })
+/** Add the shape — one undo step (the store's addObject); `closed`: a polyline closed on its first point. Then, unless
+ *  the tool is kept on (a double-click), Select with the new shape selected. → the new object, or null. */
+export function commitShape(store, shape, pts, zoom = 1, newId = null, closed = false) {
+  const s = useDrawTool.getState()
+  const o = shapeObject(shape, pts, closed ? { ...s, closed: true } : s, zoom)
+  useDrawTool.setState({ pts: [], typed: null, press: null, guides: [], closing: false })
   if (!o) return null
   store.getState().addObject(newId ? { ...o, id: newId() } : o)
-  const all = store.getState().objects
-  return all[all.length - 1]
+  const all = store.getState().objects, made = all[all.length - 1]
+  if (!s.keep) { store.getState().setActiveTool(TOOLS.SELECT); if (made) store.getState().selectObject(made.id, false) }
+  return made
 }
 
 /** Feet from a typed length — 25, 25', 25 ft, 24' 9", 24′-9″, 9" (a bare number is feet, as every length typed in the
@@ -166,12 +203,36 @@ export function typedPoint(shape, last, at, typed, gs = 40) {
 /** The end of the tool (Esc, Done, ✕): a polyline / polygon with enough points is kept, the rest dropped. */
 export function endDraw(store, shape, zoom = 1) {
   const s = useDrawTool.getState()
-  if ((shape === 'polyline' || shape === 'polygon') && s.pts.length) commitShape(store, shape, s.pts, zoom)
+  const made = (shape === 'polyline' || shape === 'polygon') && s.pts.length ? commitShape(store, shape, s.pts, zoom) : null
   cancelDraw()
-  store.getState().setActiveTool(HOME_TOOL)
+  useDrawTool.setState({ keep: false })
+  // a shape finished by it: Select, the shape selected (as any shape finished); else the home tool
+  if (made) { store.getState().setActiveTool(TOOLS.SELECT); store.getState().selectObject(made.id, false) }
+  else store.getState().setActiveTool(HOME_TOOL)
+}
+
+/** (dealer audit) A drawn circle resized by a handle: it stays a circle, the side (or corner) opposite the handle held —
+ *  a side handle sets the diameter along its axis, a corner the larger of the two (was: the box resize made it an
+ *  ellipse about a fixed centre). → { cx, cy, r, rx, ry } */
+export function resizeCircle(o, handle, dx, dy) {
+  const r0 = Number.isFinite(o.rx) ? o.rx : o.r || 0
+  const x0 = o.cx - r0, x1 = o.cx + r0, y0 = o.cy - r0, y1 = o.cy + r0
+  const L = handle.includes('l'), R = handle.includes('r'), T = handle.includes('t'), Bm = handle.includes('b')
+  const w = R ? x1 + dx - x0 : L ? x1 - (x0 + dx) : null, h = Bm ? y1 + dy - y0 : T ? y1 - (y0 + dy) : null
+  const d = Math.max(1, w != null && h != null ? Math.max(Math.abs(w), Math.abs(h)) : Math.abs(w ?? h ?? r0 * 2))
+  const cx = L ? x1 - d / 2 : R ? x0 + d / 2 : o.cx, cy = T ? y1 - d / 2 : Bm ? y0 + d / 2 : o.cy
+  return { cx, cy, r: d / 2, rx: d / 2, ry: d / 2 }
 }
 
 /* ── the Text tool ── */
+/** (d1-fixes) Turn the texts `ids` a quarter turn clockwise (90° steps: 0, 90, 180, 270) — one undo step. */
+export function rotateTexts(store, ids) {
+  const st = store.getState(), texts = ids.map(id => st.objects.find(o => o.id === id)).filter(o => o && o.type === 'text' && !o.locked)
+  if (!texts.length) return false
+  for (const t of texts) st.updateObject(t.id, { rotation: ((Math.round((t.rotation || 0) / 90) * 90 + 90) % 360 + 360) % 360 })
+  store.getState().commitObjectUpdate(texts[texts.length - 1].id, {})
+  return true
+}
 /** A text object's fields from the Text bar's settings (`textIn`: the real text height, inches — CLAUDE.md Rule 8). */
 export function textFields(s, gs = 40) {
   return { fontSize: (s.textIn / 12) * gs, textIn: s.textIn, bold: !!s.bold, italic: !!s.italic, fill: s.color, align: s.align, lineHeight: 1.25, fontFamily: TEXT_FONT_DEFAULT }

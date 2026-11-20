@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { nanoid } from 'nanoid'
-import { Line, Group, Text, Circle } from 'react-konva'
+import { Line, Group, Text, Circle, Rect } from 'react-konva'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { HOME_TOOL } from '../utils/homeTool'
 import { textOwnsKey } from '../utils/typing'
@@ -19,56 +19,36 @@ import { layoutText, fontSpec } from '../utils/textLayout'
 import { SELECT_BLUE } from '../theme/tokens'
 import { B, MONO, modePill, Sep, Seg, CloseBtn, barBtn, btnClass } from '../studio/barParts'
 import { SizeInput } from '../studio/textSizeCard'
-import { useView, toScreen } from './live'
+import { useView, toScreen, useLiveObjects } from './live'
+import { Swatch } from '../studio/Swatch'
+export { Swatch }
+import { isPointShape, shapePoints } from '../render/drawnShapes'
+import { POINT_HANDLE_PX } from './SectionShape'
 import {
   DRAW_SHAPES, DRAW_COLORS, useDrawTool, shapeOfTool, toolOfShape, twoPoint, typedPoint, commitShape, endDraw, cancelDraw,
-  commitText, textFields,
+  commitText, textFields, pickDrawTool,
 } from '../utils/drawTool'
+import { TOOLS } from '../constants'
+
+/** (d1-fixes) A text finished (Esc, Done, a click elsewhere): Select with it selected; nothing typed — the home tool. */
+export function finishText(store) {
+  const made = commitText(store, nanoid)
+  useDrawTool.setState({ keep: false })
+  if (made) { store.getState().setActiveTool(TOOLS.SELECT); store.getState().selectObject(made.id, false) }
+  else store.getState().setActiveTool(HOME_TOOL)
+  return made
+}
 
 const word = { color: B.muted, fontSize: 12 }
 const HINT = '#767C74'
 const valueBox = { height: 26, width: 44, padding: '0 8px', borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, border: 0, boxSizing: 'border-box' }
-const HATCH = 'repeating-linear-gradient(45deg, #5A615C 0 2px, transparent 2px 5px)'
-
-/** A colour swatch that opens the colours (and None, for a fill): DRAW_COLORS, any colour picked. */
-function Swatch({ label, value, onPick, none = false }) {
-  const [open, setOpen] = useState(false), ref = useRef(null)
-  useEffect(() => {
-    if (!open) return
-    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false) } }
-    window.addEventListener('pointerdown', away, true); window.addEventListener('keydown', esc, true)
-    return () => { window.removeEventListener('pointerdown', away, true); window.removeEventListener('keydown', esc, true) }
-  }, [open])
-  const face = (v) => (v ? { background: v } : { background: HATCH })
-  return (
-    <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
-      <button type="button" aria-label={label} aria-haspopup="dialog" aria-expanded={open} title={label} onClick={() => setOpen(o => !o)} data-swatch={value || 'none'}
-        style={{ width: 22, height: 22, borderRadius: 5, border: '1px solid #5A615C', padding: 0, cursor: 'pointer', ...face(value) }} />
-      {open && (
-        <div role="dialog" aria-label={label + ' colours'} data-card-dark
-          style={{ position: 'absolute', top: 30, left: -8, zIndex: 400, padding: 8, display: 'grid', gridTemplateColumns: 'repeat(5, 22px)', gap: 6,
-            background: B.island, border: `1px solid ${B.line}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(15,18,16,.28)' }}>
-          {none && <button type="button" aria-label="None" title="None" onClick={() => { onPick(null); setOpen(false) }}
-            style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${!value ? B.accent : '#5A615C'}`, padding: 0, background: HATCH, cursor: 'pointer' }} />}
-          {DRAW_COLORS.map(c => (
-            <button key={c} type="button" aria-label={c} title={c} onClick={() => { onPick(c); setOpen(false) }}
-              style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${value === c ? B.accent : '#5A615C'}`, padding: 0, background: c, cursor: 'pointer' }} />
-          ))}
-          <input type="color" aria-label={label + ' (any colour)'} value={/^#[0-9a-f]{6}$/i.test(value || '') ? value : '#1F2321'} onChange={e => onPick(e.target.value)}
-            style={{ width: 22, height: 22, padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }} />
-        </div>
-      )}
-    </span>
-  )
-}
 
 const HINTS = {
   line: 'Drag or click two points · Shift keeps 0/45/90° · type a length + Enter · Esc ends',
   rect: 'Drag or click two corners · Shift makes a square · type W x H + Enter · Esc ends',
   circle: 'Drag or click the centre, then the radius · type a radius + Enter · Esc ends',
-  polyline: 'Click each point · double-click or Enter to finish · Backspace removes the last point · live length on each segment',
-  polygon: 'Click each point · double-click or Enter to finish · Backspace removes the last point · live length on each segment',
+  polyline: 'Click each point · click the first point to close · double-click or Enter to finish · Backspace removes the last point',
+  polygon: 'Click each point · click the first point or double-click or Enter to finish · Backspace removes the last point',
 }
 
 /** The Draw bar (design/drawbar.png): opens when a shape tool is picked, in the Add door bar's place and style. */
@@ -83,7 +63,8 @@ export function DrawBar() {
     <div role="toolbar" aria-label="Draw" data-mode-bar="draw" className="st-pill" style={modePill}>
       <span style={{ fontWeight: 600, color: B.strong }}>Draw</span>
       <Sep />
-      <Seg aria="Shape" options={DRAW_SHAPES.map(d => ({ value: d.id, label: d.label, aria: d.label, on: d.id === shape, onClick: () => { cancelDraw(); useCanvasStore.getState().setActiveTool(toolOfShape(d.id)) } }))} />
+      <Seg aria="Shape" options={DRAW_SHAPES.map(d => ({ value: d.id, label: d.label, aria: d.label, on: d.id === shape, onClick: () => { cancelDraw(); pickDrawTool(useCanvasStore, toolOfShape(d.id), useDrawTool.getState().keep) },
+        onDoubleClick: () => pickDrawTool(useCanvasStore, toolOfShape(d.id), true), title: d.label + ' · double-click to keep it on' }))} />
       <Sep />
       <span style={word}>Stroke</span>
       <Swatch label="Stroke colour" value={s.stroke} onPick={(c) => useDrawTool.setState({ stroke: c || '#1F2321' })} />
@@ -96,8 +77,10 @@ export function DrawBar() {
         { value: 'solid', label: 'Solid', on: !s.dashed, onClick: () => useDrawTool.setState({ dashed: false }) },
         { value: 'dashed', label: 'Dashed', on: s.dashed, onClick: () => useDrawTool.setState({ dashed: true }) },
       ]} />
-      {shape === 'polyline' && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: B.text, cursor: 'pointer' }}>
+      {/* (d1-fixes) Close keeps its room for every shape (shown for a polyline only), so the bar never changes width as
+          the shape switches — a double-click on a shape lands both clicks on it */}
+      {(
+        <label aria-hidden={shape !== 'polyline'} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: B.text, cursor: 'pointer', visibility: shape === 'polyline' ? 'visible' : 'hidden' }}>
           <input type="checkbox" aria-label="Close" checked={!!s.closed} onChange={e => useDrawTool.setState({ closed: e.target.checked })}
             style={{ width: 14, height: 14, accentColor: B.accent, margin: 0 }} />Close
         </label>
@@ -105,7 +88,7 @@ export function DrawBar() {
       <button type="button" aria-label="Done" title="Done (Esc)" onClick={done} className={btnClass(true)} style={barBtn(true)}>Done</button>
       <CloseBtn label="Close Draw" title="Done (Esc)" onClick={done} />
       <div data-mode-hint aria-live="polite" style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, textAlign: 'center', fontSize: 12, color: HINT, pointerEvents: 'none' }}>
-        {HINTS[shape]}
+        {HINTS[shape]}{s.keep ? ' · stays on until Esc' : ''}
       </div>
     </div>
   )
@@ -114,7 +97,7 @@ export function DrawBar() {
 /** The Text bar (design/drawbar.png): Size, B, I, Colour, alignment. */
 export function TextBar() {
   const s = useDrawTool()
-  const done = () => { commitText(useCanvasStore, nanoid); useCanvasStore.getState().setActiveTool(HOME_TOOL) }
+  const done = () => finishText(useCanvasStore)
   const tog = (on, label, key, extra) => (
     <button type="button" aria-label={label} aria-pressed={on} title={label} onClick={() => useDrawTool.setState({ [key]: !on })}
       style={{ height: 28, minWidth: 28, padding: '0 8px', border: 0, borderRadius: 6, fontSize: 12, background: on ? B.active : 'transparent', color: on ? B.accent : B.muted, ...extra }}>{label[0]}</button>
@@ -192,8 +175,24 @@ export function DrawPreview() {
     <Group name="draw-preview" listening={false}>
       {parts}
       {s.pts.map((p, i) => <Circle key={'pt' + i} name="draw-point" x={p.x} y={p.y} radius={3 / z} fill="#FFFFFF" stroke={SELECT_BLUE} strokeWidth={1.5} strokeScaleEnabled={false} listening={false} />)}
+      {/* (d1-fixes) the pointer on the first point: the closing marker — a click there closes the shape */}
+      {s.closing && s.pts.length > 0 && <Circle name="draw-close" x={s.pts[0].x} y={s.pts[0].y} radius={7 / z} stroke={SELECT_BLUE} strokeWidth={2} fill="rgba(47,111,214,0.15)" strokeScaleEnabled={false} listening={false} />}
       {s.at && !s.pts.length && <Circle name="draw-cursor" x={s.at.x} y={s.at.y} radius={3 / z} fill={SELECT_BLUE} listening={false} />}
       {s.guides.map((g, i) => <Line key={'g' + i} name="draw-snap-guide" points={g.axis === 'x' ? [g.val, g.from, g.val, g.to] : [g.from, g.val, g.to, g.val]} stroke="#22c55e" strokeWidth={1} dash={[6, 3]} opacity={0.9} strokeScaleEnabled={false} listening={false} />)}
+    </Group>
+  )
+}
+
+/** (d1-fixes) A selected polyline's / polygon's points: white squares, as a custom section's — a press on one drags that
+ *  point, on a side drags that side (useCanvasInteraction.js); the box handles still scale the whole shape. */
+export function ShapePointHandles({ obj: picked }) {
+  const zoom = useView().zoom || 1
+  const live = useLiveObjects(), obj = live.find(o => o.id === picked?.id) || picked     // where it is drawn now (live.js)
+  if (!isPointShape(obj)) return null
+  const s = POINT_HANDLE_PX / zoom
+  return (
+    <Group name="shape-points" listening={false}>
+      {shapePoints(obj).map(([x, y], i) => <Rect key={i} name="shape-point" x={x - s / 2} y={y - s / 2} width={s} height={s} fill="#FFFFFF" stroke={SELECT_BLUE} strokeWidth={1.5} strokeScaleEnabled={false} listening={false} />)}
     </Group>
   )
 }
@@ -236,7 +235,7 @@ export function useDrawKeys(on, textOn) {
       const st = useCanvasStore.getState(), s = useDrawTool.getState()
       if (textOn || s.text) {
         // the text tool: Esc finishes the text and ends the tool (Enter is the text's own new line)
-        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const made = commitText(useCanvasStore, nanoid); st.setActiveTool(HOME_TOOL); if (made) useCanvasStore.getState().selectObject(made.id, false) }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finishText(useCanvasStore) }
         return
       }
       if (textOwnsKey(e)) return                                   // a field of the bar being typed in owns its keys

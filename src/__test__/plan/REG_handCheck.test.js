@@ -7459,6 +7459,9 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('l'); await L.page.waitForTimeout(200)
       expect([await L.S('return S.getState().activeTool'), await drawBar().getByRole('button', { name: 'Line', exact: true }).getAttribute('aria-pressed'), await drawBar().getByRole('textbox', { name: 'Stroke width (px)' }).inputValue(), await drawBar().getByRole('button', { name: 'Done' }).count()]).toEqual(['line', 'true', '2', 1])
       expect(await drawBar().locator('[data-mode-hint]').textContent()).toContain('Drag or click two points')
+      // (d1-fixes — one shape, then Select) a double-click on the bar's Line keeps it on until Esc, for the lines below
+      await drawBar().getByRole('button', { name: 'Line', exact: true }).dblclick(); await L.page.waitForTimeout(150)
+      expect(await drawBar().locator('[data-mode-hint]').textContent()).toContain('stays on until Esc')
       // a drag: the live length on it as it is drawn
       let h0 = await hist7(), live = null
       await dragPx({ x: 150, y: 680 }, { x: 450, y: 680 }, { mid: async () => { live = await konva('.draw-length:seg1') } })
@@ -7505,11 +7508,13 @@ describe('REG — the hand check by real clicks', () => {
       expect(svg.includes('<polyline points="' + l3.x1 + ',' + l3.y1 + ' ' + l3.x2 + ',' + l3.y2 + '"')).toBe(true)
     }, T)
 
-    it('REG-draw-rect (click): R (and Blocks → Rectangle) opens the Draw bar with Rectangle on — a drag draws a rectangle, its width and height live; two clicks draw one; "30x10" + Enter sets 30 ft × 10 ft; Shift makes a square; Fill and Dashed from the bar go on the next one; Circle: the centre, then the radius; each one undo. A rectangle resizes by its corner handle (one undo) and prints on the PDF', async () => {
+    it('REG-draw-rect (click): R (and Draw → Rectangle) opens the Draw bar with Rectangle on — a drag draws a rectangle, its width and height live; two clicks draw one; "30x10" + Enter sets 30 ft × 10 ft; Shift makes a square; Fill and Dashed from the bar go on the next one; Circle: the centre, then the radius; each one undo. A rectangle resizes by its corner handle (one undo) and prints on the PDF', async () => {
       await open(); await drawView()
       const gs = await gs7(), z = 0.1, n0 = (await drawnNow()).length
       await L.page.keyboard.press('r'); await L.page.waitForTimeout(200)
       expect([await L.S('return S.getState().activeTool'), await drawBar().getByRole('button', { name: 'Rectangle', exact: true }).getAttribute('aria-pressed')]).toEqual(['square', 'true'])
+      // (d1-fixes) kept on (a double-click on the bar's Rectangle) for the shapes below — Circle from the bar stays kept
+      await drawBar().getByRole('button', { name: 'Rectangle', exact: true }).dblclick(); await L.page.waitForTimeout(150)
       let live = null, h0 = await hist7()
       await dragPx({ x: 150, y: 670 }, { x: 350, y: 770 }, { mid: async () => { live = (await konva('Text')).length; live = [await konva('.draw-length:w'), await konva('.draw-length:h')] } })
       expect(live.map(v => v.length)).toEqual([1, 1])
@@ -7537,9 +7542,9 @@ describe('REG — the hand check by real clicks', () => {
       d = await drawnNow(); const c1 = d[d.length - 1]
       expect([d.length - n0, c1.type, Math.abs(c1.r * z - 50) < 8, c1.rx === c1.r]).toEqual([5, 'circle', true, true])
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
-      // Blocks → Rectangle opens the same bar
-      await L.page.getByRole('button', { name: 'Blocks', exact: true }).click(); await L.page.waitForTimeout(300)
-      await L.page.getByText('Rectangle', { exact: true }).first().click(); await L.page.waitForTimeout(250)
+      // Draw → Rectangle opens the same bar (d1-fixes — was Blocks → Rectangle)
+      await L.page.getByRole('button', { name: 'Draw', exact: true }).click(); await L.page.waitForTimeout(300)
+      await L.page.getByRole('menu', { name: 'Draw library' }).getByRole('menuitem', { name: 'Rectangle' }).click(); await L.page.waitForTimeout(500)
       expect([await L.S('return S.getState().activeTool'), await drawBar().getByRole('button', { name: 'Rectangle', exact: true }).getAttribute('aria-pressed')]).toEqual(['square', 'true'])
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
       // a rectangle resized by its corner: wider and taller, one undo
@@ -7559,7 +7564,8 @@ describe('REG — the hand check by real clicks', () => {
       await open(); await drawView()
       const gs = await gs7(), z = 0.1, n0 = (await drawnNow()).length
       await L.page.keyboard.press('l'); await L.page.waitForTimeout(150)
-      await drawBar().getByRole('button', { name: 'Polyline', exact: true }).click(); await L.page.waitForTimeout(150)
+      // (d1-fixes) Polyline kept on (a double-click) for the shapes below
+      await drawBar().getByRole('button', { name: 'Polyline', exact: true }).dblclick(); await L.page.waitForTimeout(150)
       expect([await L.S('return S.getState().activeTool'), await drawBar().getByRole('checkbox', { name: 'Close' }).count()]).toEqual(['polyline', 1])
       expect(await drawBar().locator('[data-mode-hint]').textContent()).toContain('double-click or Enter to finish')
       const h0 = await hist7()
@@ -7627,13 +7633,16 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(250)
       let d = await drawnNow(); const t1 = d[d.length - 1]
       expect([d.length - n0, t1.type, t1.text, t1.textIn, Math.round(t1.fontSize / gs * 12 * 1000) / 1000, t1.bold, t1.layerId, (await hist7()) - h0, await L.S('return S.getState().activeTool'), await L.S('return S.getState().selectedIds')])
-        .toEqual([1, 'text', 'Dock 1\nstaging lane', 36, 36, true, 'notes', 1, 'pan', [t1.id]])
+        .toEqual([1, 'text', 'Dock 1\nstaging lane', 36, 36, true, 'notes', 1, 'select', [t1.id]])   // (d1-fixes: one text, then Select — was Pan)
       expect((await konva('.drawn-text')).includes('Dock 1\nstaging lane')).toBe(true)
       // its box starts where it was clicked
       const tl = await L.toScreen({ x: t1.x, y: t1.y - t1.fontSize })
       expect([Math.abs(tl.x - 200) < 2, Math.abs(tl.y - 690) < 2]).toEqual([true, true])
-      // a second text, Right; a click elsewhere finishes it and starts a third
-      await L.page.keyboard.press('t'); await L.page.waitForTimeout(150)
+      // a second text, Right; a click elsewhere finishes it and starts a third — the tool kept on (d1-fixes: Draw → a
+      // double-click on Text; T alone finishes after one text)
+      await L.page.getByRole('button', { name: 'Draw', exact: true }).click(); await L.page.waitForTimeout(300)
+      await L.page.getByRole('menu', { name: 'Draw library' }).getByRole('menuitem', { name: 'Text' }).dblclick(); await L.page.waitForTimeout(300)
+      expect(await L.S('return S.getState().activeTool')).toBe('text')
       await bar.getByRole('button', { name: 'Right', exact: true }).click(); await L.page.waitForTimeout(100)
       await L.page.mouse.click(700, 690); await L.page.waitForTimeout(200)
       await L.page.keyboard.type('Office')
@@ -7661,6 +7670,365 @@ describe('REG — the hand check by real clicks', () => {
       // on the PDF: its two lines
       const svg = await planSvg()
       expect([svg.includes('>Dock 1</tspan>'), svg.includes('>staging lane</tspan>'), svg.includes('font-weight="700"')]).toEqual([true, true, true])
+    }, T)
+
+    /* ── d1-fixes: picking inside a shape, one shape then Select, closing and editing points, no rotate on shapes, the Draw
+       flyout — by real clicks ── */
+    const selIds = () => L.S('return S.getState().selectedIds')
+    const toolNow = () => L.S('return S.getState().activeTool')
+
+    it('REG-draw-pick-inside (click): a click inside an unfilled rectangle or circle selects it — a rack and a column under the click still win, and the building is picked only where no shape is (d1-fixes 1)', async () => {
+      await open()
+      // the building at 10 %, its left wall at x 140 — clear of the rail
+      { const fp = await fpOf(); await L.S('const z = 0.1; S.setState({ zoom: z, panX: 140 - arg.x * z, panY: 140 - arg.y * z })', fp); await L.page.waitForTimeout(300); await L.page.mouse.move(120, 800) }
+      const gs = await gs7()
+      // a rack and the rectangle drawn round it, 4 ft clear (R, a real drag; unfilled)
+      const rb = await L.S('const st = S.getState(), r = st.objects.filter(o => /^rack_/.test(o.type)).sort((a, b) => b.width - a.width)[0]; return { id: r.id, b: H.worldBoundsOf(r, st.objects) }')
+      const a = await L.toScreen({ x: rb.b.x - 4 * gs, y: rb.b.y - 4 * gs }), b = await L.toScreen({ x: rb.b.x + rb.b.width + 4 * gs, y: rb.b.y + rb.b.height + 4 * gs })
+      await L.page.keyboard.press('r'); await L.page.waitForTimeout(150)
+      await dragPx(a, b)
+      const rect = (await drawnNow()).slice(-1)[0]
+      expect([rect.type, rect.noFill]).toEqual(['rect', true])
+      // the rack, clicked inside the rectangle: the rack
+      const rc = await L.toScreen({ x: rb.b.x + rb.b.width / 2, y: rb.b.y + rb.b.height / 2 })
+      await L.page.mouse.click(rc.x, rc.y); await L.page.waitForTimeout(200)
+      expect(await selIds()).toEqual([rb.id])
+      // open floor inside the rectangle (nothing else there but the building's floor): the rectangle
+      const inside = await L.S(`const st = S.getState(), r = st.objects.find(o => o.id === arg.id), rest = st.objects.filter(o => o.id !== arg.id)
+        for (let fy = 0.03; fy < 0.98; fy += 0.01) for (let fx = 0.03; fx < 0.98; fx += 0.02) {
+          const x = r.x + r.width * fx, y = r.y + r.height * fy
+          if (H.pickAt(rest, st.layers, x, y, st.zoom, st.gridSize).kind === 'floor') return { x, y }
+        }
+        return null`, rect)
+      expect(inside).not.toBe(null)
+      const ip = await L.toScreen(inside)
+      await L.page.mouse.click(ip.x, ip.y); await L.page.waitForTimeout(200)
+      expect(await selIds()).toEqual([rect.id])
+      // the building's floor outside it: the building
+      const fp = await fpOf(), fl = await L.floorPoint({ x: fp.x + fp.width * 0.9, y: fp.y + fp.height * 0.9 })
+      const fs = await L.toScreen(fl)
+      await L.page.mouse.click(fs.x, fs.y); await L.page.waitForTimeout(200)
+      expect(await L.selected()).toEqual([fp.type])
+      // a circle round a column: the column still wins; inside the circle beside it, the circle
+      // a column with open floor round it (a point 3 ft off it is the building's floor)
+      const col = await L.S(`return import("/src/generate/columnCheck.js").then(M => { const st = S.getState(), g = st.objects.find(o => o.type === "column_grid"), gs = st.gridSize || 40
+        for (const c of M.expandColumnGrid(g, gs, st.objects)) { const x = c.x + c.w / 2, y = c.y + c.h / 2
+          if (H.pickAt(st.objects, st.layers, x, y, st.zoom, gs).kind !== 'column') continue
+          for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2, px = x + Math.cos(a) * 3 * gs, py = y + Math.sin(a) * 3 * gs
+            if (H.pickAt(st.objects, st.layers, px, py, st.zoom, gs).kind === 'floor') return { id: g.id, x, y, fx: px, fy: py } } }
+        return null })`)
+      expect(col).not.toBe(null)
+      const cc = await L.toScreen(col), ce = await L.toScreen({ x: col.x + 6 * gs, y: col.y })
+      // what a click on that column selects with no shape there
+      await L.page.mouse.click(cc.x, cc.y); await L.page.waitForTimeout(200)
+      const colSel = await selIds()
+      expect(colSel.includes(col.id)).toBe(true)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      await L.page.getByRole('button', { name: 'Draw', exact: true }).click(); await L.page.waitForTimeout(300)
+      await L.page.getByRole('menu', { name: 'Draw library' }).getByRole('menuitem', { name: 'Circle' }).click(); await L.page.waitForTimeout(500)
+      await dragPx(cc, ce)
+      const circ = (await drawnNow()).slice(-1)[0]
+      expect([circ.type, circ.noFill]).toEqual(['circle', true])
+      await L.page.mouse.click(5, 890); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      await L.page.mouse.click(cc.x, cc.y); await L.page.waitForTimeout(200)
+      expect(await selIds()).toEqual(colSel)
+      // the open floor 3 ft off the column, inside the circle: the circle
+      await L.page.mouse.click(5, 890); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      const np = await L.toScreen({ x: col.fx, y: col.fy })
+      await L.page.mouse.click(np.x, np.y); await L.page.waitForTimeout(200)
+      expect(await selIds()).toEqual([circ.id])
+    }, T)
+
+    it('REG-draw-one-shape (click): one shape, then Select with it selected — R and a drag, L and two clicks, a polygon by Enter, a text by Esc; a double-click on a tool (the Draw flyout or the Draw bar) keeps it on until Esc (d1-fixes 2)', async () => {
+      await open(); await drawView()
+      const n0 = (await drawnNow()).length
+      // R, a drag: one rectangle — then Select, it selected, no bar
+      await L.page.keyboard.press('r'); await L.page.waitForTimeout(150)
+      await dragPx({ x: 150, y: 680 }, { x: 260, y: 760 })
+      let d = await drawnNow()
+      expect([d.length - n0, await toolNow(), await selIds(), await drawBar().count()]).toEqual([1, 'select', [d[d.length - 1].id], 0])
+      // a second drag now selects or boxes — no second rectangle
+      await dragPx({ x: 300, y: 680 }, { x: 380, y: 760 })
+      expect((await drawnNow()).length - n0).toBe(1)
+      // Draw → Line (one click): two clicks, one line, then Select
+      await L.page.getByRole('button', { name: 'Draw', exact: true }).click(); await L.page.waitForTimeout(300)
+      await L.page.getByRole('menu', { name: 'Draw library' }).getByRole('menuitem', { name: 'Line', exact: true }).click(); await L.page.waitForTimeout(500)
+      expect(await toolNow()).toBe('line')
+      await L.page.mouse.click(420, 690); await L.page.mouse.move(500, 690); await L.page.mouse.click(520, 690); await L.page.waitForTimeout(250)
+      d = await drawnNow()
+      expect([d.length - n0, d[d.length - 1].type, await toolNow(), await selIds()]).toEqual([2, 'line', 'select', [d[d.length - 1].id]])
+      // Polygon from the bar: three clicks + Enter — then Select
+      await L.page.keyboard.press('l'); await L.page.waitForTimeout(150)
+      await drawBar().getByRole('button', { name: 'Polygon', exact: true }).click(); await L.page.waitForTimeout(150)
+      for (const [x, y] of [[560, 680], [640, 680], [600, 760]]) { await L.page.mouse.click(x, y); await L.page.waitForTimeout(120) }
+      await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(250)
+      d = await drawnNow()
+      expect([d.length - n0, d[d.length - 1].type, await toolNow()]).toEqual([3, 'polygon', 'select'])
+      // T: one text, Esc — Select, it selected
+      await L.page.keyboard.press('t'); await L.page.waitForTimeout(150)
+      await L.page.mouse.click(700, 700); await L.page.waitForTimeout(200)
+      await L.page.keyboard.type('A1'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(250)
+      d = await drawnNow()
+      expect([d.length - n0, d[d.length - 1].text, await toolNow(), await selIds()]).toEqual([4, 'A1', 'select', [d[d.length - 1].id]])
+      // a double-click on Rectangle in the Draw flyout: it stays on — two rectangles; Esc ends it (the home tool)
+      await L.page.getByRole('button', { name: 'Draw', exact: true }).click(); await L.page.waitForTimeout(300)
+      await L.page.getByRole('menu', { name: 'Draw library' }).getByRole('menuitem', { name: 'Rectangle' }).dblclick(); await L.page.waitForTimeout(400)
+      expect([await toolNow(), await L.page.getByRole('menu', { name: 'Draw library' }).count()]).toEqual(['square', 0])
+      await dragPx({ x: 800, y: 680 }, { x: 860, y: 740 })
+      await dragPx({ x: 880, y: 680 }, { x: 940, y: 740 })
+      expect([(await drawnNow()).length - n0, await toolNow(), await drawBar().count()]).toEqual([6, 'square', 1])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      expect([await toolNow(), await drawBar().count()]).toEqual(['pan', 0])
+      // a double-click on Circle in the Draw bar keeps it on too
+      await L.page.keyboard.press('r'); await L.page.waitForTimeout(150)
+      await drawBar().getByRole('button', { name: 'Circle', exact: true }).dblclick(); await L.page.waitForTimeout(200)
+      await dragPx({ x: 200, y: 790 }, { x: 220, y: 790 })
+      await dragPx({ x: 300, y: 790 }, { x: 320, y: 790 })
+      d = await drawnNow()
+      expect([d.length - n0, d.slice(-2).map(o => o.type), await toolNow()]).toEqual([8, ['circle', 'circle'], 'circle'])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      expect(await toolNow()).toBe('pan')
+    }, T)
+
+    it('REG-draw-close-edit (click): a polyline snaps to its first point near it with a closing marker and a click there closes it (one undo); selected, a corner dragged moves that point, a side dragged moves that side (each one undo), and the box handles still scale the whole shape (d1-fixes 3)', async () => {
+      await open(); await drawView()
+      const gs = await gs7(), z = 0.1, n0 = (await drawnNow()).length
+      await L.page.keyboard.press('l'); await L.page.waitForTimeout(150)
+      await drawBar().getByRole('button', { name: 'Polyline', exact: true }).click(); await L.page.waitForTimeout(150)
+      const h0 = await hist7()
+      for (const [x, y] of [[200, 680], [360, 680], [360, 780]]) { await L.page.mouse.click(x, y); await L.page.waitForTimeout(120) }
+      // the pointer 5 px from the first point: on it, the closing marker
+      await L.page.mouse.move(204, 683); await L.page.waitForTimeout(150)
+      const first = await L.S('return import("/src/utils/drawTool.js").then(M => { const s = M.useDrawTool.getState(); return { at: s.at, p0: s.pts[0], closing: s.closing } })')
+      expect([first.closing, first.at.x === first.p0.x && first.at.y === first.p0.y, (await konva('.draw-close')).length]).toEqual([true, true, 1])
+      // farther off: no marker
+      await L.page.mouse.move(240, 700); await L.page.waitForTimeout(150)
+      expect((await konva('.draw-close')).length).toBe(0)
+      // a click on it: closed, three points, one undo, then Select
+      await L.page.mouse.move(204, 683); await L.page.waitForTimeout(100); await L.page.mouse.click(204, 683); await L.page.waitForTimeout(300)
+      let d = await drawnNow(); const p = d[d.length - 1]
+      expect([d.length - n0, p.type, p.closed, p.pts.length, (await hist7()) - h0, await toolNow(), await selIds()]).toEqual([1, 'polyline', true, 3, 1, 'select', [p.id]])
+      expect((await konva('.shape-point')).length).toBe(3)
+      const pts = async (id) => L.S('return import("/src/render/drawnShapes.js").then(M => M.shapePoints(S.getState().objects.find(o => o.id === arg)))', id)
+      const P0 = await pts(p.id)
+      // a corner dragged (the right-angle corner, 30 px right and down): that point only, one undo
+      let h1 = await hist7()
+      const c2 = await L.toScreen({ x: P0[2][0], y: P0[2][1] })
+      await dragPx(c2, { x: c2.x + 30, y: c2.y + 20 })
+      const P1 = await pts(p.id)
+      expect([Math.abs((P1[2][0] - P0[2][0]) * z - 30) < 6, Math.abs((P1[2][1] - P0[2][1]) * z - 20) < 6, P1[0], P1[1], (await hist7()) - h1]).toEqual([true, true, P0[0], P0[1], 1])
+      // a side dragged (the top side, 25 px down): its two points move down, across the side; the third stays
+      h1 = await hist7()
+      const sm = await L.toScreen({ x: (P1[0][0] + P1[1][0]) / 2, y: (P1[0][1] + P1[1][1]) / 2 })
+      await dragPx(sm, { x: sm.x + 10, y: sm.y + 25 })
+      const P2 = await pts(p.id)
+      expect([Math.abs((P2[0][1] - P1[0][1]) * z - 25) < 6, Math.abs((P2[1][1] - P1[1][1]) * z - 25) < 6, Math.abs(P2[0][0] - P1[0][0]) < 1e-6, P2[2], (await hist7()) - h1]).toEqual([true, true, true, P1[2], 1])
+      // Ctrl+Z puts the side back
+      await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(200)
+      expect(await pts(p.id)).toEqual(P1)
+      // the box handles still scale the whole shape: its right edge's handle (mr — no point under it) 40 px right: every
+      // point scales from the left edge (the left point stays, the others move in proportion), one undo
+      const sel = await L.toScreen({ x: (P1[1][0] + P1[2][0]) / 2, y: (P1[1][1] + P1[2][1]) / 2 })
+      if (!(await selIds()).includes(p.id)) { await L.page.mouse.click(sel.x, sel.y); await L.page.waitForTimeout(200) }
+      expect(await selIds()).toEqual([p.id])
+      const o1 = await L.S('return S.getState().objects.find(o => o.id === arg)', p.id)
+      h1 = await hist7()
+      const mr = await handleAt(o1, 'mr')
+      await dragPx(mr, { x: mr.x + 40, y: mr.y })
+      const o2 = await L.S('return S.getState().objects.find(o => o.id === arg)', p.id), P3 = await pts(p.id)
+      const k = o2.width / o1.width
+      expect([Math.abs((o2.width - o1.width) * z - 40) < 8, o2.x, Math.abs(P3[0][0] - P1[0][0]) < 1e-6, Math.abs(P3[1][0] - (o1.x + (P1[1][0] - o1.x) * k)) < 1e-3, (await hist7()) - h1]).toEqual([true, o1.x, true, true, 1])
+      void gs
+    }, T)
+
+    it('REG-draw-no-rotate (click): no rotate handle on a shape or a text; a text turns in 90° steps — Rotate 90° in its bar and in its card (each one undo), drawn turned, still picked where it is drawn, printed turned on the PDF (d1-fixes 4)', async () => {
+      await open(); await drawView()
+      const z = 0.1
+      // a rectangle and a polygon: no rotate handle
+      await L.page.keyboard.press('r'); await L.page.waitForTimeout(150)
+      await dragPx({ x: 150, y: 680 }, { x: 260, y: 760 })
+      const rect = (await drawnNow()).slice(-1)[0]
+      const lay = (o) => L.S('return import("/src/canvas2/handleGeometry.js").then(M => { const l = M.computeHandleLayout(arg, S.getState().zoom); return [l.canRotate, !!l.rotateHandle] })', o)
+      expect(await lay(rect)).toEqual([false, false])
+      expect(await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Rotate 90°' }).count()).toBe(0)
+      // a text: no handle either; Rotate 90° in its bar
+      await L.page.keyboard.press('t'); await L.page.waitForTimeout(150)
+      await L.page.mouse.click(400, 690); await L.page.waitForTimeout(200)
+      await L.page.keyboard.type('Bay 7'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(250)
+      const t = (await drawnNow()).slice(-1)[0]
+      expect([await selIds(), await lay(t)]).toEqual([[t.id], [false, false]])
+      let h = await hist7()
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Rotate 90°' }).click(); await L.page.waitForTimeout(200)
+      expect([(await L.S('return S.getState().objects.find(o => o.id === arg).rotation', t.id)), (await hist7()) - h]).toEqual([90, 1])
+      // drawn turned: its node turned 90°
+      expect(await L.page.evaluate((id) => { const st = window.Konva.stages[0]; const g = st.findOne(n => n.name() === 'obj:' + id) || st.find('.drawn-text')[0]?.getParent(); return g ? Math.round(g.rotation()) : null }, t.id)).toBe(90)
+      // in its card (Properties › More): Rotate text 90° — 180°, one undo
+      const card = L.page.locator('[data-island="right-card"]')
+      if (await card.getByRole('button', { name: 'Rotate text 90°' }).count() === 0) { const more = card.getByRole('button', { name: /More/ }); if (await more.count()) { await more.first().click(); await L.page.waitForTimeout(200) } }
+      h = await hist7()
+      await card.getByRole('button', { name: 'Rotate text 90°' }).click(); await L.page.waitForTimeout(200)
+      expect([(await L.S('return S.getState().objects.find(o => o.id === arg).rotation', t.id)), (await hist7()) - h]).toEqual([180, 1])
+      // back to 90 by two more turns (270, 0, 90 — the steps wrap), then picked where it is drawn: a point on its turned box
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Rotate 90°' }).click(); await L.page.waitForTimeout(150)
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Rotate 90°' }).click(); await L.page.waitForTimeout(150)
+      expect(await L.S('return S.getState().objects.find(o => o.id === arg).rotation', t.id)).toBe(0)
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Rotate 90°' }).click(); await L.page.waitForTimeout(150)
+      const t90 = await L.S('return S.getState().objects.find(o => o.id === arg)', t.id)
+      const tb = await L.S('return import("/src/utils/canvas.js").then(M => M.getObjectBounds(arg))', t90)
+      // the turned box: centred where the flat one was, standing upright — a point near its top end, off the flat box
+      const cx = tb.x + tb.width / 2, cy = tb.y + tb.height / 2, up = await L.toScreen({ x: cx, y: cy - tb.width / 2 + tb.height * 0.3 })
+      await L.page.mouse.click(5, 890); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      await L.page.mouse.click(up.x, up.y); await L.page.waitForTimeout(200)
+      expect(await selIds()).toEqual([t.id])
+      // the PDF: turned about its box's centre
+      expect((await planSvg()).includes('<text transform="rotate(90 ')).toBe(true)
+      void z
+    }, T)
+
+    it('REG-draw-flyout (click): one Draw button on the rail (no Blocks) — its flyout, in the library flyout\'s style, lists Line, Polyline, Rectangle, Circle, Polygon, Text; each picks its tool; Circle everywhere, never Ellipse (d1-fixes 5)', async () => {
+      await open()
+      const rail = L.page.locator('[data-island="rail"]')
+      expect([await rail.getByRole('button', { name: 'Draw', exact: true }).count(), await rail.getByRole('button', { name: 'Blocks', exact: true }).count()]).toEqual([1, 0])
+      const tools = { Line: 'line', Polyline: 'polyline', Rectangle: 'square', Circle: 'circle', Polygon: 'polygon', Text: 'text' }
+      await rail.getByRole('button', { name: 'Draw', exact: true }).click(); await L.page.waitForTimeout(300)
+      const menu = L.page.getByRole('menu', { name: 'Draw library' })
+      expect(await menu.getByRole('menuitem').allTextContents()).toEqual(Object.keys(tools))
+      // the library flyout's style: the same island, rows 36 high
+      const st = await menu.evaluate(m => ({ cls: m.className, flyout: m.getAttribute('data-island'), h: Math.round(m.querySelector('[role=menuitem]').getBoundingClientRect().height) }))
+      expect(st).toEqual({ cls: 'st-island', flyout: 'flyout', h: 36 })
+      for (const [name, tool] of Object.entries(tools)) {
+        if (!(await menu.count())) { await rail.getByRole('button', { name: 'Draw', exact: true }).click(); await L.page.waitForTimeout(300) }
+        await menu.getByRole('menuitem', { name, exact: true }).click(); await L.page.waitForTimeout(500)
+        expect([name, await toolNow()]).toEqual([name, tool])
+        await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      }
+      // Circle in the Draw bar, never Ellipse anywhere on the page
+      await L.page.keyboard.press('r'); await L.page.waitForTimeout(150)
+      expect([await drawBar().getByRole('button', { name: 'Circle', exact: true }).count(), /Ellipse/.test(await L.page.locator('body').innerText())]).toEqual([1, false])
+      await L.page.keyboard.press('Escape')
+    }, T)
+
+    /* ── the dealer audit on d1-fixes: what a dealer could not do after drawing ── */
+    it('REG-draw-style-card (click): a drawn shape\'s card — its name (Polyline, Polygon), its size in feet (a rectangle\'s Width and Height, a circle\'s Diameter, typed), Stroke colour and width, Fill (a closed shape), Solid | Dashed — each change one undo; a text\'s card sets its real Text size in inches (36 = 3 ft), not px (dealer audit)', async () => {
+      await open(); await drawView()
+      const gs = await gs7(), card = L.page.locator('[data-island="right-card"]')
+      // a rectangle: R, a drag
+      await L.page.keyboard.press('r'); await L.page.waitForTimeout(150)
+      await dragPx({ x: 150, y: 670 }, { x: 300, y: 760 })
+      const r = (await drawnNow()).slice(-1)[0]
+      expect(await selIds()).toEqual([r.id])
+      // size typed in feet: 40 × 20
+      for (const [name, v] of [['Width (ft)', '40'], ['Height (ft)', '20']]) { const f = card.getByRole('spinbutton', { name }); await f.fill(v); await f.press('Enter'); await L.page.waitForTimeout(150) }
+      let o = await L.S('return S.getState().objects.find(o => o.id === arg)', r.id)
+      expect([o.width / gs, o.height / gs]).toEqual([40, 20])
+      // style: 4 px, red, blue fill, dashed — each one undo (Ctrl+Z takes back the last only)
+      const w = card.getByRole('spinbutton', { name: 'Stroke width (px)' }); await w.fill('4'); await w.press('Enter'); await L.page.waitForTimeout(150)
+      await card.getByRole('button', { name: 'Stroke colour' }).click(); await L.page.waitForTimeout(150)
+      await L.page.getByRole('dialog', { name: 'Stroke colour colours' }).getByRole('button', { name: '#E5484D' }).click(); await L.page.waitForTimeout(150)
+      await card.getByRole('button', { name: 'Fill', exact: true }).click(); await L.page.waitForTimeout(150)
+      await L.page.getByRole('dialog', { name: 'Fill colours' }).getByRole('button', { name: '#2F80ED' }).click(); await L.page.waitForTimeout(150)
+      const h0 = await hist7()
+      await card.getByRole('button', { name: 'Dashed', exact: true }).click(); await L.page.waitForTimeout(150)
+      o = await L.S('return S.getState().objects.find(o => o.id === arg)', r.id)
+      expect([o.strokeWidth, o.stroke, o.fill, o.noFill, o.dashed, (await hist7()) - h0]).toEqual([4, '#E5484D', '#2F80ED', false, true, 1])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(200)
+      o = await L.S('return S.getState().objects.find(o => o.id === arg)', r.id)
+      expect([o.dashed, o.fill, o.stroke]).toEqual([false, '#2F80ED', '#E5484D'])
+      // drawn as set: dashed, 4 px on the canvas and on the PDF
+      await L.page.keyboard.press('Control+y'); await L.page.waitForTimeout(200)
+      expect((await planSvg()).includes('fill="#2F80ED"')).toBe(true)
+      // a circle: its Diameter typed — 30 ft, still a circle
+      await L.page.keyboard.press('r'); await L.page.waitForTimeout(150)
+      await drawBar().getByRole('button', { name: 'Circle', exact: true }).click(); await L.page.waitForTimeout(150)
+      await dragPx({ x: 500, y: 720 }, { x: 540, y: 720 })
+      const c = (await drawnNow()).slice(-1)[0]
+      const dia = card.getByRole('spinbutton', { name: 'Diameter (ft)' }); await dia.fill('30'); await dia.press('Enter'); await L.page.waitForTimeout(150)
+      o = await L.S('return S.getState().objects.find(o => o.id === arg)', c.id)
+      expect([o.rx * 2 / gs, o.ry * 2 / gs, o.cx, o.cy]).toEqual([30, 30, c.cx, c.cy])
+      // a polygon and an open polyline: their names; an open one has no Fill
+      await L.page.keyboard.press('l'); await L.page.waitForTimeout(150)
+      await drawBar().getByRole('button', { name: 'Polygon', exact: true }).click(); await L.page.waitForTimeout(150)
+      for (const [x, y] of [[620, 680], [700, 690], [660, 770]]) { await L.page.mouse.click(x, y); await L.page.waitForTimeout(120) }
+      await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(300)
+      expect([/Polygon/.test(await card.innerText()), await card.getByRole('button', { name: 'Fill', exact: true }).count()]).toEqual([true, 1])
+      await L.page.keyboard.press('l'); await L.page.waitForTimeout(150)
+      await drawBar().getByRole('button', { name: 'Polyline', exact: true }).click(); await L.page.waitForTimeout(150)
+      for (const [x, y] of [[760, 680], [840, 680]]) { await L.page.mouse.click(x, y); await L.page.waitForTimeout(120) }
+      await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(300)
+      expect([/Polyline/.test(await card.innerText()), await card.getByRole('button', { name: 'Fill', exact: true }).count(), await card.getByRole('button', { name: 'Dashed', exact: true }).count()]).toEqual([true, 0, 1])
+      // a text: Text size 36 in its card — 3 ft, the field in inches
+      await L.page.keyboard.press('t'); await L.page.waitForTimeout(150)
+      await L.page.mouse.click(900, 700); await L.page.waitForTimeout(200)
+      await L.page.keyboard.type('Gate 2'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(300)
+      const t = (await drawnNow()).slice(-1)[0]
+      const ts = card.getByRole('combobox', { name: 'Text size' })
+      expect(await ts.inputValue()).toBe('18')
+      await ts.fill('36'); await ts.press('Enter'); await L.page.waitForTimeout(200)
+      o = await L.S('return S.getState().objects.find(o => o.id === arg)', t.id)
+      expect([o.textIn, o.fontSize / gs]).toEqual([36, 3])
+    }, T)
+
+    it('REG-draw-circle-resize (click): a circle resized by a handle stays a circle and the side opposite the handle stays put — a side handle, a corner handle (dealer audit; was: it became an ellipse about a fixed centre)', async () => {
+      await open(); await drawView()
+      const z = 0.1
+      await L.page.keyboard.press('r'); await L.page.waitForTimeout(150)
+      await drawBar().getByRole('button', { name: 'Circle', exact: true }).click(); await L.page.waitForTimeout(150)
+      await dragPx({ x: 400, y: 720 }, { x: 440, y: 720 })
+      const c0 = (await drawnNow()).slice(-1)[0]
+      expect(await selIds()).toEqual([c0.id])
+      // the right handle 40 px right: 40 px wider, a circle, its left side where it was
+      let h0 = await hist7()
+      const mr = await handleAt(c0, 'mr')
+      await dragPx(mr, { x: mr.x + 40, y: mr.y })
+      const c1 = await L.S('return S.getState().objects.find(o => o.id === arg)', c0.id)
+      expect([c1.rx === c1.ry, Math.abs((c1.rx - c0.rx) * 2 * z - 40) < 6, Math.abs((c1.cx - c1.rx) - (c0.cx - c0.rx)) < 1e-6, (await hist7()) - h0]).toEqual([true, true, true, 1])
+      // the top-left corner 30 px up-left: a circle, its bottom-right corner held
+      h0 = await hist7()
+      const tl = await handleAt(c1, 'tl')
+      await dragPx(tl, { x: tl.x - 30, y: tl.y - 30 })
+      const c2 = await L.S('return S.getState().objects.find(o => o.id === arg)', c0.id)
+      expect([c2.rx === c2.ry, c2.rx > c1.rx, Math.abs((c2.cx + c2.rx) - (c1.cx + c1.rx)) < 1e-6, Math.abs((c2.cy + c2.ry) - (c1.cy + c1.ry)) < 1e-6, (await hist7()) - h0]).toEqual([true, true, true, true, 1])
+    }, T)
+
+    it('REG-draw-snap-move (click): a line starts on a rack\'s long face when pressed 3 px off it (a green guide while hovering), but nothing pulls it from a face 30 ft along that face\'s line; a selected open polyline moves whole when dragged inside its box off its line (its line drags a side) (dealer audit)', async () => {
+      await open()
+      const gs = await gs7()
+      // a rack's long face, at 40 %
+      const rk = await L.S('const st = S.getState(); return st.objects.filter(o => /^rack_/.test(o.type)).map(r => ({ b: H.worldBoundsOf(r, st.objects), vert: H.worldBoundsOf(r, st.objects).height > H.worldBoundsOf(r, st.objects).width }))[0]')
+      await L.S('S.setState({ zoom: 0.4, panX: 600 - (arg.b.x + arg.b.width / 2) * 0.4, panY: 450 - (arg.b.y + arg.b.height / 2) * 0.4 })', rk); await L.page.waitForTimeout(300)
+      // its long face: the right side of an upright rack, else its bottom side
+      const face = rk.vert ? { x: rk.b.x + rk.b.width, y: rk.b.y + rk.b.height / 2 } : { x: rk.b.x + rk.b.width / 2, y: rk.b.y + rk.b.height }
+      const fs = await L.toScreen(face), off = rk.vert ? { x: fs.x + 3, y: fs.y } : { x: fs.x, y: fs.y + 3 }
+      await L.page.keyboard.press('l'); await L.page.waitForTimeout(150)
+      await L.page.mouse.move(off.x + 20, off.y + 20); await L.page.mouse.move(off.x, off.y); await L.page.waitForTimeout(200)
+      expect((await konva('.draw-snap-guide')).length > 0).toBe(true)
+      await dragPx(off, { x: off.x + 60, y: off.y + 60 })
+      const l = (await drawnNow()).slice(-1)[0]
+      expect(rk.vert ? Math.abs(l.x1 - face.x) < 1e-6 : Math.abs(l.y1 - face.y) < 1e-6).toBe(true)
+      // 30 ft past the rack's end, on the face's line: no pull
+      const far = rk.vert ? { x: face.x, y: rk.b.y + rk.b.height + 30 * gs } : { x: rk.b.x + rk.b.width + 30 * gs, y: face.y }
+      await L.S('S.setState({ zoom: 0.4, panX: 600 - arg.x * 0.4, panY: 450 - arg.y * 0.4 })', far); await L.page.waitForTimeout(300)
+      const ffs = await L.toScreen(far), foff = rk.vert ? { x: ffs.x + 3, y: ffs.y } : { x: ffs.x, y: ffs.y + 3 }
+      const hit = await L.S('const st = S.getState(); return H.pickAt(st.objects, st.layers, arg.x, arg.y, st.zoom, st.gridSize).kind', far)
+      if (hit === 'none') {   // open ground only (outside the building): the line there would be the face's line alone
+        await L.page.keyboard.press('l'); await L.page.waitForTimeout(150)
+        await L.page.mouse.move(foff.x + 20, foff.y + 20); await L.page.mouse.move(foff.x, foff.y); await L.page.waitForTimeout(200)
+        const at = await L.S('return import("/src/utils/drawTool.js").then(M => M.useDrawTool.getState().at)')
+        expect(rk.vert ? Math.abs(at.x - face.x) > 1e-6 : Math.abs(at.y - face.y) > 1e-6).toBe(true)
+        await L.page.keyboard.press('Escape')
+      }
+      // a selected open polyline: dragged from inside its box, off its line — it moves whole, one undo
+      await drawView()
+      await L.page.keyboard.press('l'); await L.page.waitForTimeout(150)
+      await drawBar().getByRole('button', { name: 'Polyline', exact: true }).click(); await L.page.waitForTimeout(150)
+      for (const [x, y] of [[200, 670], [320, 670], [320, 770]]) { await L.page.mouse.click(x, y); await L.page.waitForTimeout(120) }
+      await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(300)
+      const pl = (await drawnNow()).slice(-1)[0]
+      expect([pl.closed, await selIds()]).toEqual([false, [pl.id]])
+      const h0 = await hist7()
+      await dragPx({ x: 230, y: 745 }, { x: 260, y: 765 })
+      const pm = await L.S('return S.getState().objects.find(o => o.id === arg)', pl.id)
+      expect([Math.abs((pm.x - pl.x) * 0.1 - 30) < 6, Math.abs((pm.y - pl.y) * 0.1 - 20) < 6, pm.pts, (await hist7()) - h0]).toEqual([true, true, pl.pts, 1])
     }, T)
 
     it('REG-rack-depth-label (click): a rack clicked at Fit and at 50 % — its dimension labels never drawn over a row number (R2, R2–R3 …): an end label (a depth, a double row’s front / back) whose end is taken goes to the rack’s other end, never over the number (CLAUDE.md Rule 8 — labels never overlap)', async () => {

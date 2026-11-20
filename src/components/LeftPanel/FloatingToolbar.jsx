@@ -40,6 +40,7 @@ import { layerForType } from '../../utils/layers'
 import { levelsFor } from '../../utils/rackLevels'
 import { useShallow } from 'zustand/react/shallow'
 import { TOOLS } from '../../constants'
+import { DRAW_SHAPES, pickDrawTool } from '../../utils/drawTool'
 import { FILL_TOOL } from '../../utils/fillTool'
 import { endTool, useMeasureMode, toggleMeasure } from '../../utils/toolSwitch'
 import { StudioRail, StudioFlyout, StudioToolPill } from '../../studio/StudioTools'
@@ -250,9 +251,11 @@ function CatIcon({ id, size = ICON_SIZE, color }) {
    crossPath without importing them (ShapeGeometry.jsx:4 imports the same four
    correctly). That file is protected — see the note in the handover. Put them
    back the moment the import is added.  */
-const BLOCK_ITEMS = [
-  { id:'shape_rect',    label:'Rectangle', tool:TOOLS.SQUARE },
-  { id:'shape_ellipse', label:'Ellipse',   tool:TOOLS.CIRCLE },
+/* (d1-fixes) the rail's one Draw button (was Blocks — Rectangle, Ellipse): its flyout lists every drawing tool, the Draw
+   bar's shapes and Text. A click picks one for one shape (then Select); a double-click keeps it on until Esc. */
+const DRAW_ITEMS = [
+  ...DRAW_SHAPES.map(d => ({ id:'draw_' + d.id, label:d.label, tool:d.tool })),
+  { id:'draw_text', label:'Text', tool:TOOLS.TEXT },
 ]
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -1062,10 +1065,10 @@ export function FloatingToolbar({ studio = false } = {}) {
     { id:'structural', label:'Structural',  icon:'structural', cats:['structural'] },
     { id:'safety',     label:'Safety',      icon:'safety',     cats:['safety'] },
     { id:'zones',      label:'Zones',       icon:'zones',      cats:['zones'] },
-    { id:'blocks',     label:'Blocks',      icon:'shapes',     cats:['shapes'] },
+    { id:'draw',       label:'Draw',        icon:'shapes',     cats:['shapes'] },
   ]
   const catItems = id =>
-      id === 'shapes' ? BLOCK_ITEMS.map(o => ({ ...o, catId:'shapes' }))
+      id === 'shapes' ? DRAW_ITEMS.map(o => ({ ...o, catId:'shapes' }))
     : id === 'fp'     ? FP_ITEMS.map(o => ({ ...o, catId:'fp' }))
     : id === 'zones'  ? ZONE_ITEMS.map(o => ({ ...o, catId:'zones' }))
     : getCategoryItems(id).map(o => ({ ...o, catId:id }))
@@ -1074,7 +1077,7 @@ export function FloatingToolbar({ studio = false } = {}) {
 
   /* a library item fully ends the tool before it (utils/toolSwitch.js endTool): its cursor, preview, ghost, keys */
   const selectItem  = item => { endTool(useCanvasStore); bumpUsage(item.id); placeObject(item) }
-  const selectShape = item => { endTool(useCanvasStore); setActiveTool(item.tool) }
+  const selectShape = (item, keep = false) => { endTool(useCanvasStore); pickDrawTool(useCanvasStore, item.tool, keep) }
   const selectFp    = item => { endTool(useCanvasStore); placeFpObject({ type:item.type, widthFt:item.wFt, heightFt:item.hFt }) }
   const pickItem    = item =>
       item.catId === 'shapes' ? selectShape(item)
@@ -1085,7 +1088,7 @@ export function FloatingToolbar({ studio = false } = {}) {
      shapes and floor plans are pinnable too — so look across all three lists. */
   const everyItem = useMemo(() => [
     ...allItems,
-    ...BLOCK_ITEMS.map(o => ({ ...o, catId:'shapes' })),
+    ...DRAW_ITEMS.map(o => ({ ...o, catId:'shapes' })),
     ...FP_ITEMS.map(o => ({ ...o, catId:'fp' })),
     ...ZONE_ITEMS.map(o => ({ ...o, catId:'zones' })),
   ], [allItems])
@@ -1151,7 +1154,8 @@ export function FloatingToolbar({ studio = false } = {}) {
     return (
       <>
         <StudioRail sections={SECTIONS} open={flyout} onOpen={setFlyout} onSettings={() => openSetup('settings')} />
-        {sec && <StudioFlyout section={sec} items={secItems(sec)} onPick={pickItem} onClose={() => setFlyout(null)} />}
+        {sec && <StudioFlyout section={sec} items={secItems(sec)} onPick={pickItem} onClose={() => setFlyout(null)}
+          onKeep={sec.id === 'draw' ? (it => selectShape(it, true)) : null} />}
         <StudioToolPill groups={groups} lineTools={lineTools} zones={zones} sections={sectionTools}
           penOptions={activeTool === TOOLS.FREEHAND && !measuring && (
             <PenOptions prefs={penPrefs} setPrefs={setPenPrefs} place="above"

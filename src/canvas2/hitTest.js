@@ -346,6 +346,7 @@ export function pickAt(objects, layers, wx, wy, zoom, gridSize = 40, priority = 
   const P = priority || ((o) => (o.type?.startsWith('annot_') || o.type === 'text') ? 2 : FP_SET.has(o.type) ? 0 : COL_GRID.has(o.type) ? 0.5
     : (typeof o.type === 'string' && o.type.startsWith('zone_')) ? 0.75 : o.type === 'section_area' ? 0.6 : 1)
   const sorted = [...objects].sort((x, y) => P(y) - P(x))
+  const drawnOrder = new Map(objects.map((o, i) => [o.id, i]))
   /* A section's name, while it shows, is drawn above everything (SectionNames.jsx): a press on it is the section's */
   for (const obj of objects) if (obj.type === 'section_area' && isLayerUsable(layerMap, obj) && nameShown(obj.id) && onLabel(obj, wx, wy, zoom, objects)) return { id: obj.id, kind: 'object', real: true }
   const onColumn = (obj, pad) => {
@@ -404,14 +405,24 @@ export function pickAt(objects, layers, wx, wy, zoom, gridSize = 40, priority = 
        its line (8 screen px) is its padding (render/drawnShapes.js drawnHit) */
     if (isDrawn(obj)) {
       const h = drawnHit(obj, wx, wy, Math.max(line, ((obj.strokeWidth || 2) / 2 + 1) / zoom))
-      if (h) take({ id: obj.id, kind: 'object', real: true, p })
+      /* (d1-fixes) inside a closed shape — filled or not — the shape truly holds the click, but last of everything that
+         does: a rack, a door, a column, a zone, a section's outline, a wall under it still wins; only the building's
+         blank floor comes after it. Of two shapes, the one drawn later (on top) */
+      if (h === 'inside') take({ id: obj.id, kind: 'object', real: true, p: -0.5 + (drawnOrder.get(obj.id) || 0) * 1e-9 })
+      else if (h) take({ id: obj.id, kind: 'object', real: true, p: p + (drawnOrder.get(obj.id) || 0) * 1e-9 })   // (of two lines, the later)
       else if (drawnHit(obj, wx, wy, 8 / zoom)) take({ id: obj.id, kind: 'object', real: false, p })
       continue
     }
     if (objectContains(obj, wx, wy, zoom)) {
       // (a text's box is the one objectContains pads — worldBoundsOf measures its words)
       const b = obj.type === 'text' ? getObjectBounds(obj) : worldBoundsOf(obj, objects)
-      const inside = !b || !(b.width > 0) || !(b.height > 0) || (wx >= b.x && wx <= b.x + b.width && wy >= b.y && wy <= b.y + b.height)
+      // (d1-fixes) a text turned in 90° steps: the point turned back about its box's centre (as objectContains does)
+      let qx = wx, qy = wy
+      if (obj.type === 'text' && b && obj.rotation) {
+        const cx = b.x + b.width / 2, cy = b.y + b.height / 2, a = (-obj.rotation * Math.PI) / 180
+        qx = cx + (wx - cx) * Math.cos(a) - (wy - cy) * Math.sin(a); qy = cy + (wx - cx) * Math.sin(a) + (wy - cy) * Math.cos(a)
+      }
+      const inside = !b || !(b.width > 0) || !(b.height > 0) || (qx >= b.x && qx <= b.x + b.width && qy >= b.y && qy <= b.y + b.height)
       take({ id: obj.id, kind: 'object', real: inside, p })
     }
   }

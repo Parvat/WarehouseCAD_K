@@ -66,7 +66,7 @@ passes and the tools are otherwise wired correctly.
 
 The fix is one line in a protected file: add those nine names to the existing
 `from '../../utils/canvas'` import. Until that is approved, Arrow and Arc are held out of the
-floating toolbar and Triangle/Diamond/Star/Cross are held out of Blocks; both lists carry a
+floating toolbar and Triangle/Diamond/Star/Cross are held out of the rail's Draw flyout (was Blocks); both lists carry a
 comment saying to restore them the moment the import lands.
 
 ---

@@ -8,6 +8,57 @@ import { deleteSelectionWithAreas } from '../../utils/deleteSelection'
 import { useShallow } from 'zustand/react/shallow'
 import { pxToFtIn } from '../../utils/canvas'
 import { TextSizeField } from '../../studio/textSizeCard'
+import { rotateTexts } from '../../utils/drawTool'
+import { isDrawn, drawnGeom } from '../../render/drawnShapes'
+import { Swatch } from '../../studio/Swatch'
+import { SizeInput } from '../../studio/textSizeCard'
+
+/** (dealer audit) A drawn shape's style after drawing — the Draw bar's own controls: Stroke and its width (px), Fill (a
+ *  closed shape), Solid | Dashed; each change one undo. */
+function DrawnStyleFields({ obj }) {
+  const closed = drawnGeom(obj).closed
+  const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
+  return (
+    <>
+      <Field label="Stroke">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Swatch label="Stroke colour" value={obj.stroke || '#1F2321'} onPick={(c) => set({ stroke: c || '#1F2321' })} />
+          <NumInput aria="Stroke width (px)" value={obj.strokeWidth || 2} min={0.5} step={0.5} onCommit={v => { if (v > 0 && v <= 48) set({ strokeWidth: v }) }} />
+          <span style={{ fontSize: 12, color: C.muted }}>px</span>
+        </div>
+      </Field>
+      {closed && (
+        <Field label="Fill">
+          <Swatch label="Fill" none value={obj.noFill ? null : obj.fill || null} onPick={(c) => set(c ? { fill: c, noFill: false } : { fill: null, noFill: true })} />
+        </Field>
+      )}
+      <Field label="Line">
+        <Seg aria="Line style" options={[
+          { value: 'solid', label: 'Solid', on: !obj.dashed, onClick: () => set({ dashed: false }) },
+          { value: 'dashed', label: 'Dashed', on: !!obj.dashed, onClick: () => set({ dashed: true }) },
+        ]} />
+      </Field>
+    </>
+  )
+}
+/** (dealer audit) A drawn rectangle's / circle's size typed in feet (was raw px fields), one undo. */
+function DrawnSizeFields({ obj, gridSize }) {
+  const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
+  const ft = (px) => Math.round(px / gridSize * 100) / 100
+  if (obj.type === 'rect') return (
+    <Grid2>
+      <Field label="Width (ft)"><NumInput aria="Width (ft)" value={ft(obj.width)} min={0.01} step={0.5} onCommit={v => set({ width: v * gridSize })} /></Field>
+      <Field label="Height (ft)"><NumInput aria="Height (ft)" value={ft(obj.height)} min={0.01} step={0.5} onCommit={v => set({ height: v * gridSize })} /></Field>
+    </Grid2>
+  )
+  if (obj.type === 'circle') return (
+    <Field label="Diameter (ft)"><NumInput aria="Diameter (ft)" value={ft((obj.rx ?? obj.r) * 2)} min={0.01} step={0.5} onCommit={v => { const r = v * gridSize / 2; set({ r, rx: r, ry: r }) }} /></Field>
+  )
+  const b = drawnGeom(obj).pts || []
+  if (!b.length) return null
+  const xs = b.map(p => p[0]), ys = b.map(p => p[1])
+  return <Grid2><DimReadout label="W" px={Math.max(...xs) - Math.min(...xs)} gridSize={gridSize} /><DimReadout label="H" px={Math.max(...ys) - Math.min(...ys)} gridSize={gridSize} /></Grid2>
+}
 import { RackingAreaPanel } from './panels/RackingAreaPanel'
 import { RackRowExtras, MultiBayPanel, CantileverPanel, ColumnGridPanel, DriveInPanel, DriveThroughPanel, PushbackPanel } from '../RightPanel/Rackrowpanel'
 import { getLayoutCapacity } from '../../utils/capacity'
@@ -47,7 +98,7 @@ const TYPE_NAME = {
   // the racks other than the beam racks (those have their own card) — utils/rackTypes.js (R1)
   ...Object.fromEntries(Object.entries(namesFor('card')).filter(([t]) => !BEAM_TYPES.has(t))),
   column_grid: 'Column grid', aisle: 'Aisle label', racking_area: 'Racking area',
-  text: 'Text', annot_dimension: 'Dimension', line: 'Line', arc: 'Arc', arrow: 'Arrow', circle: 'Circle', rect: 'Rectangle',
+  text: 'Text', annot_dimension: 'Dimension', line: 'Line', arc: 'Arc', arrow: 'Arrow', circle: 'Circle', rect: 'Rectangle', polyline: 'Polyline', polygon: 'Polygon',
   freehand: 'Freehand',
 }
 const typeName = (o) => (o.type?.startsWith('fp_') ? 'Building' : TYPE_NAME[o.type] || (o.type || 'shape').replace(/_/g, ' '))
@@ -357,16 +408,20 @@ export function PropertiesPanel() {
         {obj.type?.startsWith('fp_') && <BuildingFields obj={obj} up={up} commit={commit} gridSize={gridSize} updateObject={updateObject} />}
         {/* the building's size labels: its own Text size (CLAUDE.md Rule 8 — the CAD text model) */}
         {obj.type?.startsWith('fp_') && <TextSizeField objs={[obj]} type="building" bare />}
-        {['rect', 'l_shape', 't_shape', 'u_shape'].includes(obj.type) && (
+        {/* (dealer audit) a drawn shape: its size in feet, then its style — the Draw bar's controls */}
+        {isDrawn(obj) && <DrawnSizeFields obj={obj} gridSize={gridSize} />}
+        {isDrawn(obj) && <DrawnStyleFields obj={obj} />}
+        {!isDrawn(obj) && ['rect', 'l_shape', 't_shape', 'u_shape'].includes(obj.type) && (
           <Grid2>
             <NumField label="W px" value={obj.width} onChange={v => up('width', v)} onCommit={v => commit('width', v)} />
             <NumField label="H px" value={obj.height} onChange={v => up('height', v)} onCommit={v => commit('height', v)} />
             <DimReadout label="W" px={obj.width} gridSize={gridSize} />
             <DimReadout label="H" px={obj.height} gridSize={gridSize} />
-            <NumField label="Rot" value={obj.rotation || 0} onChange={v => up('rotation', v)} onCommit={v => commit('rotation', v)} unit="°" />
+            {/* (d1-fixes) a drawn rectangle does not rotate: no Rot */}
+            {!isDrawn(obj) && <NumField label="Rot" value={obj.rotation || 0} onChange={v => up('rotation', v)} onCommit={v => commit('rotation', v)} unit="°" />}
           </Grid2>
         )}
-        {obj.type === 'circle' && (
+        {obj.type === 'circle' && !isDrawn(obj) && (
           <Grid2>
             <NumField label="CX" value={obj.cx} onChange={v => up('cx', v)} onCommit={v => commit('cx', v)} />
             <NumField label="CY" value={obj.cy} onChange={v => up('cy', v)} onCommit={v => commit('cy', v)} />
@@ -376,7 +431,7 @@ export function PropertiesPanel() {
             <DimReadout label="Ø H" px={obj.ry * 2} gridSize={gridSize} />
           </Grid2>
         )}
-        {(obj.type === 'line' || obj.type === 'arc') && (
+        {((obj.type === 'line' && !isDrawn(obj)) || obj.type === 'arc') && (
           <>
             <DimReadout label="Len" px={Math.hypot(obj.x2 - obj.x1, obj.y2 - obj.y1)} gridSize={gridSize} />
             {obj.type === 'arc' && (
@@ -455,10 +510,22 @@ function TextFields({ obj, up, commit }) {
           {TEXT_FONTS.map(f => <option key={f} value={f}>{f}</option>)}
         </SelectField>
       </Field>
-      <NumField label="Size" value={obj.fontSize || 14} onChange={v => up('fontSize', v)} onCommit={v => commit('fontSize', v)} />
+      {/* (dealer audit) the real text height, inches — as the Text bar and the Text panel (CLAUDE.md Rule 8; was px) */}
+      <Field label="Text size">
+        <SizeInput inches={obj.textIn || Math.round(((obj.fontSize || 14) / (useCanvasStore.getState().gridSize || 40)) * 12 * 100) / 100} aria="Text size"
+          onCommit={(v) => { if (v > 0) { const gs = useCanvasStore.getState().gridSize || 40; useCanvasStore.getState().commitObjectUpdate(obj.id, { textIn: v, fontSize: (v / 12) * gs }) } }} />
+      </Field>
       <Field label="Style">
         <Seg aria="Style" options={[['bold', 'B', 'Bold'], ['italic', 'I', 'Italic'], ['underline', 'U', 'Underline'], ['strike', 'S', 'Strikethrough']]
           .map(([k, label, title]) => ({ value: k, label, title, aria: title, on: !!obj[k], onClick: () => commit(k, !obj[k]) }))} />
+      </Field>
+      {/* (d1-fixes) a text turns in 90° steps */}
+      <Field label="Rotation">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: MONO, color: C.strong, minWidth: 34 }}>{(obj.rotation || 0)}°</span>
+          <button type="button" aria-label="Rotate text 90°" title="Rotate 90°" onClick={() => rotateTexts(useCanvasStore, [obj.id])}
+            style={{ height: 26, padding: '0 10px', border: 0, borderRadius: 6, fontSize: 12, cursor: 'pointer', background: C.inset || 'rgba(255,255,255,0.06)', color: C.strong }}>Rotate 90°</button>
+        </div>
       </Field>
       <Field label="Align">
         <Seg aria="Align" value={obj.align || 'left'} onChange={a => commit('align', a)}

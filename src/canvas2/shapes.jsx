@@ -469,7 +469,7 @@ function FallbackShapeView({ obj, listening = false, bind }) {
        baseline — its lines one under the other (render/drawnShapes.js textGeom; the PDF draws the same) */
     const T = textGeom(obj), fs = T.fontSize
     return (
-      <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...(bind ? bind(obj) : null)}>
+      <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...spin(obj)} {...(bind ? bind(obj) : null)}>
         <Text name="drawn-text" x={T.box.x} y={obj.y - fs} width={Math.max(T.box.width, 1)} text={obj.text || ''} wrap="none"
           align={obj.align === 'center' ? 'center' : obj.align === 'right' ? 'right' : 'left'} lineHeight={obj.lineHeight ?? 1.25}
           fontStyle={`${obj.italic ? 'italic ' : ''}${obj.bold ? 'bold' : 'normal'}`.trim()}

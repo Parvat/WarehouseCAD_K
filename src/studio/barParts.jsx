@@ -56,7 +56,7 @@ export function Seg({ aria, options }) {
   return (
     <div role="group" aria-label={aria} style={{ display: 'flex', padding: 2, borderRadius: 6, background: B.inset, flexShrink: 0 }}>
       {options.map(o => (
-        <button key={o.value} type="button" aria-pressed={!!o.on} aria-label={o.aria} title={o.title} onClick={o.onClick}
+        <button key={o.value} type="button" aria-pressed={!!o.on} aria-label={o.aria} title={o.title} onClick={o.onClick} onDoubleClick={o.onDoubleClick}
           style={{ height: 28, padding: '0 10px', border: 0, borderRadius: 6, fontSize: 12, background: o.on ? B.active : 'transparent', color: o.on ? B.accent : B.muted }}>{o.label}</button>
       ))}
     </div>

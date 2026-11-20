@@ -14,7 +14,7 @@ import { useFillTool } from './fillTool'
 import { cancelGroupBox, onRowGroupToolStart, clearGroup, ROW_GROUP_TOOL } from './rowGroupTool'
 import { useSplit } from './splitTool'
 import { clearDoorHover } from './doorTool'
-import { cancelDraw } from './drawTool'
+import { cancelDraw, useDrawTool } from './drawTool'
 import { cancelPlacement } from './placement'
 import { cancelSection, SECTION_RECT_TOOL, SECTION_PEN_TOOL } from '../canvas2/sectionTool'
 
@@ -64,6 +64,8 @@ export function installToolKeeper(store) {
     // any mode ending (Row group, Split, Fill, Door — Done, Esc, ✕, another tool): nothing selected (STUDIO.md §7a)
     if (MODE_TOOLS.has(was)) { store.getState().clearSelection?.(); store.getState().setActiveWall?.(null) }
     clearTransients()                                       // every tool's leftovers, not only the last one's
+    // a drawing tool kept on (a double-click — utils/drawTool.js pickDrawTool) is kept only until the tool changes
+    if (useDrawTool.getState().keep) useDrawTool.setState({ keep: false })
     cancelPlacement()
     if (useMeasureMode.getState().on) useMeasureMode.setState({ on: false })
     // the Row group tool starts empty (the pill, G) — not from what the last group or the selection left

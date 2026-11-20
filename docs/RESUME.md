@@ -32,7 +32,7 @@ CLAUDE.md (the rules) and STUDIO.md (the chrome spec).
   - Arc and Arrow are held out of the Line tools menu and the A key; D2 or later.
   - The Dimension tool and leaders (D2).
   - Freehand saves strokes but cannot capture new ones in canvas2.
-- **Blocked on a protected file:** `Canvas/CanvasObjectCore.jsx` is missing an import of nine path helpers, so Triangle, Diamond, Star and Cross are held out of Blocks (CLAUDE.md, Open blocker). The fix is one line and needs approval.
+- **Blocked on a protected file:** `Canvas/CanvasObjectCore.jsx` is missing an import of nine path helpers, so Triangle, Diamond, Star and Cross are held out of the Draw flyout (was Blocks) (CLAUDE.md, Open blocker). The fix is one line and needs approval.
 - **Partial, from FEATURES.md Phase 1:**
   - The unit setting is saved but nothing reads it; there is no metric input or display (U1, U2).
   - No zoom to selection, endpoint/midpoint snap, snap marker or viewport culling (E1, S1).
@@ -104,7 +104,11 @@ files, tests and walkthrough are in EPICS.md.
 
 ### Polish list
 
-(Empty at the pause. Add label look issues here, one line each, with the fixture and zoom.)
+One line each, with where it shows. From the drawing-tools dealer audit (d1-fixes, older-horizontal and crowded-vertical, 10 %):
+- The text card's Color swatches: the dark colours are almost invisible on the dark card (no ring or border).
+- The Draw rail button uses the Blocks glyph — Icons.dc.html has no Draw icon yet (needs a design icon; never hand-drawn).
+- A selected polyline's corner squares sit on top of the box handles where a corner is a box corner; there the corner drag wins (the other box handles still scale).
+- The floating selection bar can cover a neighbouring shape; a click there lands on the bar.
 
 ## Demo project (5 minutes)
 
