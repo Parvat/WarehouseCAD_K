@@ -62,6 +62,8 @@ This file holds the rules; `CODEBASE.md` holds the map.
    - **Dropdowns and popovers** (lists, colours, menus) open attached to their own field: directly below it, left-aligned
      with it, or directly above it when there is no room below — never elsewhere on screen — floating over the canvas so
      no card or bar clips them (`studio/Popover.jsx`). REG-dropdown-attached checks that every one touches its field.
+     The one exception: the View, Text and Layers island panels keep their own position (Rule 8 — upward and to the left
+     of the right Properties card, never over it).
    REG-basics runs every object type in the library and every draw tool through the contract with real clicks on two
    fixtures (older-horizontal and crowded-vertical). Before every report, also do a 10-minute dealer walkthrough of what
    changed.

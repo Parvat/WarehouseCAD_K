@@ -8559,6 +8559,15 @@ describe('REG — the hand check by real clicks', () => {
       await selBar().getByRole('button', { name: 'No fill' }).click(); await wait(200)
       P = await pics()
       expect([P.none.on, (await objNow(r.id)).noFill, (await konva('.drawn-hatch')).length]).toEqual([GREEN, true, 0])
+      // a fill colour picked while Fill is None: Fill switches to Tinted in that colour — one undo step
+      const h0 = await hist7()
+      await selBar().getByRole('button', { name: 'Fill colour' }).click(); await wait(150)
+      await popNow().getByRole('button', { name: '#2F80ED', exact: true }).click(); await wait(200)
+      const o5 = await objNow(r.id); P = await pics()
+      expect([o5.noFill, o5.fillStyle, o5.fill, P.tint.on, (await hist7()) - h0, (await konva('.drawn-fill')).length > 0]).toEqual([false, 'tint', '#2F80ED', GREEN, 1, true])
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('Control+z'); await wait(250)
+      const o6 = await objNow(r.id)
+      expect([o6.noFill, o6.fill]).toEqual([true, '#E07B22'])
     }, T)
 
     /* ── REG-basics (CLAUDE.md Rule 9 — the Basics contract): every draw tool and every object type in the library, by

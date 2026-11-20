@@ -104,7 +104,8 @@ function StrokeGroup({ objs, ids, locked }) {
   )
 }
 
-/** None · Tinted · Hatched · fill colour (fill.png): the colour swatch sets the colour Tinted and Hatched use. */
+/** None · Tinted · Hatched · fill colour (fill.png): the colour swatch sets the colour Tinted and Hatched use — picked while
+ *  Fill is None, it switches Fill to Tinted in the same undo step. */
 function FillGroup({ objs, ids, locked }) {
   const o = objs[0], set = (u) => styleDrawn(store, ids, u)
   const colour = o.fill || o.stroke || '#1F2321', seen = onDark(colour)
@@ -114,7 +115,7 @@ function FillGroup({ objs, ids, locked }) {
       <PicBtn label="No fill" title="None — outline only" on={kind === 'none'} locked={locked} onClick={() => set({ noFill: true })}><PicNone /></PicBtn>
       <PicBtn label="Tinted" title="Tinted — a light wash of the fill colour" on={kind === 'tint'} locked={locked} onClick={() => set(q => ({ fill: q.fill || colour, noFill: false, fillStyle: 'tint' }))}><PicTint c={seen === colour ? colour : '#4A514D'} /></PicBtn>
       <PicBtn label="Hatched" title="Hatched — 45° lines in the fill colour" on={kind === 'hatch'} locked={locked} onClick={() => set(q => ({ fill: q.fill || colour, noFill: false, fillStyle: 'hatch' }))}><PicHatch c={seen} /></PicBtn>
-      <Swatch round="dot" label="Fill colour" value={colour} locked={locked} onPick={(c) => { if (c) set({ fill: c }) }} />
+      <Swatch round="dot" label="Fill colour" value={colour} locked={locked} onPick={(c) => { if (c) set(q => (!q.noFill && q.fill ? { fill: c } : { fill: c, noFill: false, fillStyle: 'tint' })) }} />
     </>
   )
 }
