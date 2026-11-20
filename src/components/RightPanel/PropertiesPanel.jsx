@@ -126,7 +126,7 @@ function DrawnSizeFields({ obj, gridSize }) {
   if (obj.type === 'line') { const L = Math.hypot(obj.x2 - obj.x1, obj.y2 - obj.y1); return (
     <Grid2>
       <Field label="Length (ft)"><NumInput aria="Length (ft)" value={ft(L)} min={0.01} step={0.5} onCommit={v => setLineLength(st, obj.id, v)} /></Field>
-      <Field label="Angle (°)"><NumInput aria="Angle (°)" value={Math.round(angleOf({ x: obj.x1, y: obj.y1 }, { x: obj.x2, y: obj.y2 }) * 10) / 10} min={-360} step={1} onCommit={v => setLineAngle(st, obj.id, v)} /></Field>
+      <Field label="Angle (°)"><NumInput aria="Angle (°)" value={angleOf({ x: obj.x1, y: obj.y1 }, { x: obj.x2, y: obj.y2 })} min={-360} step={1} onCommit={v => setLineAngle(st, obj.id, v)} /></Field>
     </Grid2>
   ) }
   const b = drawnGeom(obj).pts || []

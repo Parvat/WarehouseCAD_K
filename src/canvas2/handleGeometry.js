@@ -17,6 +17,7 @@
 
 import { SELECT_BLUE } from '../theme/tokens'
 import { getObjectBounds, getHandlePositions, HANDLES } from '../utils/canvas'
+import { endHandlePts } from '../render/drawnShapes'
 
 /* Handle sizes, in SCREEN px at every zoom (divided by the zoom for world
    units). Drawn small — the handles are chrome, not content — but hit in a
@@ -143,7 +144,8 @@ export function cursorForHandle(handle, rotation) {
 /** (D1) Where the handles are: a box's around it (getHandlePositions); a line's ON its two ends — ml the first end (x1),
  *  mr the second, the ends utils/canvas.js applyResize moves for them. */
 export function handlePositions(obj, bounds, pad) {
-  if (obj && (obj.type === 'line' || obj.type === 'elbow' || obj.type === 'block_arrow') && Number.isFinite(obj.x1)) return { ml: { x: obj.x1, y: obj.y1 }, mr: { x: obj.x2, y: obj.y2 } }
+  // (d1-polish) an end with an arrowhead: its handle just behind the tip, the head left in view (render/drawnShapes.js endHandlePts)
+  if (obj && (obj.type === 'line' || obj.type === 'elbow' || obj.type === 'block_arrow') && Number.isFinite(obj.x1)) { const h = endHandlePts(obj); return { ml: h.a, mr: h.b } }
   // (d1-bar) a drawn rectangle's 8 and a circle's 4 sit ON its own edge — no gap, no second rectangle round it
   if (obj && (obj.type === 'rect' || obj.type === 'circle')) return getHandlePositions(bounds, 0)
   return getHandlePositions(bounds, pad)

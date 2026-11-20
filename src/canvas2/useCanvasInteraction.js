@@ -50,7 +50,7 @@ import { membersOf, clampSectionMove, clampSectionBox, clampSectionPoint } from 
 import { sectionSnapLines, snapSectionEdges, sectionBox, SECTION_SNAP_PX } from '../utils/sectionSnap'
 import { useSectionRename } from './sectionTool'
 import { POINT_HANDLE_PX } from './SectionShape'
-import { isPointShape, pointAt, sideAt, movePointTo, moveSideBy, isDrawn, drawnHit, shapePoints, elbowBendAt, elbowBendTo, lengthLabelAt, lengthFs, onLengthLabel } from '../render/drawnShapes'
+import { isPointShape, pointAt, sideAt, movePointTo, moveSideBy, isDrawn, drawnHit, shapePoints, elbowBendAt, elbowBendTo, lengthLabelAt, lengthFs, onLengthLabel, endHandlePts } from '../render/drawnShapes'
 import { lengthText } from './DrawBar'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { fpDimHit, useDimEdit } from './FpDimEdit'
@@ -685,7 +685,8 @@ export function useCanvasInteraction({
            its bend back to the end); on an elbow's bend dot drags the middle segment across itself */
         if (selected && (selected.type === 'elbow' || selected.type === 'block_arrow')) {
           const rr = (POINT_HANDLE_PX / 2 + 4) / view.current.zoom
-          for (const [k, ex, ey] of [[0, selected.x1, selected.y1], [1, selected.x2, selected.y2]]) {
+          const eh = endHandlePts(selected)   // (d1-polish) where the handles are drawn: behind an arrowhead's tip
+          for (const [k, ex, ey] of [[0, eh.a.x, eh.a.y], [1, eh.b.x, eh.b.y]]) {
             if (Math.hypot(world.x - ex, world.y - ey) <= rr) { shapeEdit.current = { id: selected.id, kind: 'end', i: k, orig: selected, from: world }; return }
           }
           if (selected.type === 'elbow') {
@@ -1449,7 +1450,9 @@ export function useCanvasInteraction({
         if (se.kind === 'point') { const q = snapPoint(w, { st, zoom: view.current.zoom, alt: !!evt.altKey, skip: se.id }).p; st.updateObject(se.id, movePointTo(se.orig, se.i, q.x, q.y)) }
         else if (se.kind === 'end') {
           const o = se.orig, fixed = se.i ? { x: o.x1, y: o.y1 } : { x: o.x2, y: o.y2 }
-          const q = snapPoint(w, { st, zoom: view.current.zoom, alt: !!evt.altKey, shift: !!evt.shiftKey, last: fixed, skip: se.id }).p
+          // the end follows the pointer's travel (its handle may sit behind the tip — d1-polish), snapped as drawing snaps
+          const tip = se.i ? { x: o.x2 + w.x - se.from.x, y: o.y2 + w.y - se.from.y } : { x: o.x1 + w.x - se.from.x, y: o.y1 + w.y - se.from.y }
+          const q = snapPoint(tip, { st, zoom: view.current.zoom, alt: !!evt.altKey, shift: !!evt.shiftKey, last: fixed, skip: se.id }).p
           st.updateObject(se.id, { ...(se.i ? { x2: q.x, y2: q.y } : { x1: q.x, y1: q.y }), ...(o.type === 'elbow' ? { bend: null } : null) })
         }
         else if (se.kind === 'bend') { const q = snapPoint(w, { st, zoom: view.current.zoom, alt: !!evt.altKey, skip: se.id }).p; st.updateObject(se.id, elbowBendTo(se.orig, q.x, q.y)) }

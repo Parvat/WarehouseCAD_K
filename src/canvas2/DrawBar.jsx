@@ -25,7 +25,7 @@ export { Swatch }
 import { isPointShape, shapePoints, drawnGeom, elbowBendAt, lengthLabelAt, drawnLength } from '../render/drawnShapes'
 import { styleFor } from '../utils/drawStyles'
 import { DrawnBody } from './shapes'
-import { angleOf, useShapePoint, useLengthEdit, setDrawnLength, feetOf, kindOfShape } from '../utils/drawTool'
+import { angleOf, angleShown, useShapePoint, useLengthEdit, setDrawnLength, feetOf, kindOfShape } from '../utils/drawTool'
 import { POINT_HANDLE_PX } from './SectionShape'
 import {
   DRAW_SHAPES, DRAW_COLORS, useDrawTool, shapeOfTool, toolOfShape, twoPoint, typedPoint, commitShape, endDraw, cancelDraw,
@@ -90,7 +90,7 @@ export function DrawPreview() {
   const fill = ks.fill && !ks.noFill ? ks.fill : undefined
   const parts = []
   const end = all.length ? all[all.length - 1] : null
-  const angleAt = (a, b, key) => <Text key={key} name="draw-angle" x={b.x + 10 / z} y={b.y - fs * 0.7} text={angleOf(a, b) + '°'} fontSize={fs} fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={ANGLE} listening={false} />
+  const angleAt = (a, b, key) => <Text key={key} name="draw-angle" x={b.x + 10 / z} y={b.y - fs * 0.7} text={angleShown(a, b) + '°'} fontSize={fs} fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={ANGLE} listening={false} />
   if (all.length >= 2) {
     if (shape === 'rect') {
       const [a, b] = all, x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y)
@@ -179,7 +179,7 @@ export function ShapePointHandles({ obj: picked }) {
 /** (d1-polish) What a length label reads: a line's (an arrow's) length · angle, an elbow's length. */
 export function lengthText(o, gs = 40) {
   const L = ftIn((drawnLength(o) / gs) * 12)
-  return o.type === 'line' ? L + ' · ' + Math.round(angleOf({ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 })) + '°' : L
+  return o.type === 'line' ? L + ' · ' + angleShown({ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 }) + '°' : L
 }
 /** (d1-polish) A length label clicked: a field on it, the length (feet and inches) selected — Enter sets it (the start stays
  *  put, the end moves along the same direction — drawTool.js setDrawnLength), Esc or a click away leaves it as it was. */

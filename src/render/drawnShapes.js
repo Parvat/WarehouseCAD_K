@@ -109,6 +109,19 @@ export function blockText(o, gs = 40) {
   if (rot <= -90) rot += 180
   return { text: t, x: o.x1 + dx * k, y: o.y1 + dy * k, fs: ((o.labelSizeIn > 0 ? o.labelSizeIn : 18) / 12) * gs, rot }
 }
+/** (d1-polish) Where a two-ended shape's end handles sit (world px): on its ends — but an end with an arrowhead has its
+ *  handle just behind the tip (where the stroke stops under the head), so a selected arrow still shows its head.
+ *  → { a: { x, y } (the start's), b: { x, y } (the end's) } */
+export function endHandlePts(o, gs = 40) {
+  const P = o.type === 'elbow' ? elbowRoute(o) : [[o.x1, o.y1], [o.x2, o.y2]], n = P.length
+  const e = hasEnds(o) ? endsOf(o) : 'none'
+  const back = (tip, from) => {
+    const dx = tip[0] - from[0], dy = tip[1] - from[1], L = Math.hypot(dx, dy) || 1, l = Math.min(headLen(o, gs), L * 0.9) * 0.9
+    return { x: tip[0] - (dx / L) * l, y: tip[1] - (dy / L) * l }
+  }
+  const at = (p) => ({ x: p[0], y: p[1] })
+  return { a: n > 1 && (e === 'start' || e === 'both') ? back(P[0], P[1]) : at(P[0]), b: n > 1 && (e === 'end' || e === 'both') ? back(P[n - 1], P[n - 2]) : at(P[n - 1]) }
+}
 /** The stroked path of a line-like shape and its arrowheads: the path's ends pulled back under each head; each head a
  *  filled triangle [tip, left, right] in the stroke colour. → { P, heads } */
 export function withHeads(o, P, gs = 40) {

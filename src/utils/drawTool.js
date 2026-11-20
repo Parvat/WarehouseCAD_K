@@ -278,7 +278,9 @@ export const twoPoint = (shape) => shape === 'line' || shape === 'rect' || shape
 
 /** The angle of the segment a → b, in degrees counter-clockwise from the right (as a protractor reads the plan: up is
  *  positive) — 0 … 359. */
-export const angleOf = (a, b) => { const d = (Math.atan2(-(b.y - a.y), b.x - a.x) * 180) / Math.PI; return Math.round(((d % 360) + 360) % 360 * 10) / 10 }
+export const angleOf = (a, b) => { const d = (Math.atan2(-(b.y - a.y), b.x - a.x) * 180) / Math.PI, r = Math.round(((d % 360) + 360) % 360 * 10) / 10; return r >= 360 ? r - 360 : r }
+/** (d1-polish) The angle as shown: whole degrees 0 … 359 — never 360 (359.6° reads 0°). */
+export const angleShown = (a, b) => Math.round(angleOf(a, b)) % 360
 
 /** A length typed for the segment being drawn, from the last point (feet): toward the pointer, or "L<A" — L feet at A°
  *  (counter-clockwise from the right); a rectangle "W x H" or "W,H"; a circle "R 9" / "D 18" (a bare number: the
@@ -354,6 +356,16 @@ export function setDrawnLength(store, id, ft) {
   if (!(L0 > 0)) return false
   const k = (ft * gs) / L0
   st.commitObjectUpdate(id, { x2: o.x1 + (o.x2 - o.x1) * k, y2: o.y1 + (o.y2 - o.y1) * k, ...(o.type === 'elbow' && o.bend != null ? { bend: o.bend * k } : null) })
+  return true
+}
+/** (d1-polish) A line's, an arrow's or an elbow arrow's angle (degrees, counter-clockwise from the right — the way its end
+ *  lies from its start) typed in its bar: it turns about its start, its length kept (an elbow: its straight span; its route
+ *  re-made, the bend back at its end). One undo. */
+export function setDrawnAngle(store, id, deg) {
+  const st = store.getState(), o = st.objects.find(q => q.id === id)
+  if (!o || o.locked || !Number.isFinite(deg) || (o.type !== 'line' && o.type !== 'elbow')) return false
+  const L = Math.hypot(o.x2 - o.x1, o.y2 - o.y1), a = (deg * Math.PI) / 180
+  st.commitObjectUpdate(id, { x2: o.x1 + Math.cos(a) * L, y2: o.y1 - Math.sin(a) * L, ...(o.type === 'elbow' ? { bend: null } : null) })
   return true
 }
 /** (d1-final) A line's angle (degrees, counter-clockwise from the right) typed: its start and length held. One undo. */

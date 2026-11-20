@@ -2,7 +2,7 @@ import { SELECT_BLUE, selectTint, textFace } from '../theme/tokens'
 import { useTextSizes, textHeight } from '../utils/textSizes'
 import { useCallback, useMemo, memo } from 'react'
 import { Group, Rect, Path, Shape, Circle, Ellipse, Line, Text } from 'react-konva'
-import { drawnGeom, dashOf, textGeom, fillPaint, hatchSegments, drawnBox, rectLabel, textBox, isDrawn, shapePoints, isPointShape, drawnPaths, tracePath, cornerR, blockText, pathD } from '../render/drawnShapes'
+import { drawnGeom, dashOf, textGeom, fillPaint, hatchSegments, drawnBox, rectLabel, textBox, isDrawn, shapePoints, isPointShape, drawnPaths, tracePath, cornerR, blockText, pathD, endHandlePts } from '../render/drawnShapes'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
@@ -768,7 +768,7 @@ export function SelectionOutline({ obj, gridSize = 40, objects = [], dashed = fa
 function DrawnMarks({ obj }) {
   const z = useView().zoom || 1, s = 6 / z
   let P
-  if (obj.type === 'line' || obj.type === 'elbow' || obj.type === 'block_arrow') P = [[obj.x1, obj.y1], [obj.x2, obj.y2]]
+  if (obj.type === 'line' || obj.type === 'elbow' || obj.type === 'block_arrow') { const h = endHandlePts(obj); P = [[h.a.x, h.a.y], [h.b.x, h.b.y]] }   // (d1-polish: behind an arrowhead's tip)
   else if (isPointShape(obj)) P = shapePoints(obj)
   else {
     const b = getObjectBounds(obj)
