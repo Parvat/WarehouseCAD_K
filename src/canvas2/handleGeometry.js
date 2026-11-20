@@ -57,6 +57,10 @@ export function enabledHandlesFor(type) {
   if (type === 'aisle') return []
   if (type === 'text') return ['tl', 'tr', 'bl', 'br', 'ml', 'mr']   // (D1) a text scales by its corners; (d1-final) its side dots set its wrap width
   if (type === 'line') return ['ml', 'mr']                     // (D1) a line: its two ends (handlePositions)
+  // (d1-bar, design/selbar.png) a shape shows only its own handles: a circle its 4 radius handles ON the circle, a
+  // polyline none here — its corner squares and side dots (DrawBar.jsx ShapePointHandles); no box scaling
+  if (type === 'circle') return ['tc', 'ml', 'mr', 'bc']
+  if (type === 'polyline' || type === 'polygon') return []
   if (EDGE_ONLY.has(type)) return ['tc', 'bc', 'ml', 'mr']
   if (ML_MR_ONLY.has(type) || DOOR_TYPES.has(type)) return ['ml', 'mr']
   if (SUPPRESS_TC.has(type)) return HANDLES.filter(h => h !== 'tc')
@@ -140,6 +144,8 @@ export function cursorForHandle(handle, rotation) {
  *  mr the second, the ends utils/canvas.js applyResize moves for them. */
 export function handlePositions(obj, bounds, pad) {
   if (obj && obj.type === 'line' && Number.isFinite(obj.x1)) return { ml: { x: obj.x1, y: obj.y1 }, mr: { x: obj.x2, y: obj.y2 } }
+  // (d1-bar) a drawn rectangle's 8 and a circle's 4 sit ON its own edge — no gap, no second rectangle round it
+  if (obj && (obj.type === 'rect' || obj.type === 'circle')) return getHandlePositions(bounds, 0)
   return getHandlePositions(bounds, pad)
 }
 

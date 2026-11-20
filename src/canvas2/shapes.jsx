@@ -2,13 +2,13 @@ import { SELECT_BLUE, selectTint, textFace } from '../theme/tokens'
 import { useTextSizes, textHeight } from '../utils/textSizes'
 import { useCallback, useMemo, memo } from 'react'
 import { Group, Rect, Path, Shape, Circle, Ellipse, Line, Text } from 'react-konva'
-import { drawnGeom, dashOf, textGeom, fillPaint, hatchSegments, drawnBox, rectLabel, textBox } from '../render/drawnShapes'
+import { drawnGeom, dashOf, textGeom, fillPaint, hatchSegments, drawnBox, rectLabel, textBox, isDrawn, shapePoints, isPointShape } from '../render/drawnShapes'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { uprightXs, cantileverGeom, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
 import { columnGridOps } from '../render/columnDraw'
-import { useLiveObjects } from './live'
+import { useLiveObjects, useView } from './live'
 import { gridBuilding } from '../utils/columnGrid'
 import { isAxisAligned, deviceScale, minDevicePx, snapBorderRects, snapFillRect } from '../render/pixelSnap'
 import { labelScale } from '../render/labelSize'
@@ -697,15 +697,9 @@ export function outlineBounds(obj, gridSize = 40, objects = []) {
 export function SelectionOutline({ obj, gridSize = 40, objects = [], dashed = false }) {
   /* a row whose bays are picked: thin and dashed (STUDIO.md §7); a selected row: the 2px solid outline */
   const line = dashed ? { strokeWidth: 1, dash: [5, 4] } : { strokeWidth: 2 }
-  /* (d1-final, the Line mockup) a drawn line selected: no box — the line itself in the selection blue, its two end
-     handles (ResizeHandlesOverlay) */
-  if (obj.type === 'line' && Number.isFinite(obj.x1)) {
-    return (
-      <Group name={'sel:' + obj.id} listening={false}>
-        <Line points={[obj.x1, obj.y1, obj.x2, obj.y2]} stroke={SELECT_BLUE} strokeWidth={Math.max(2, obj.strokeWidth || 2)} strokeScaleEnabled={false} lineCap="round" listening={false} />
-      </Group>
-    )
-  }
+  /* (d1-bar, design/selbar.png) a drawn line, rectangle, circle or polyline selected: only its own handles — no outer
+     box, no second rectangle, the shape in its own colour (ResizeHandlesOverlay; DrawBar.jsx ShapePointHandles) */
+  if (isDrawn(obj)) return <DrawnMarks obj={obj} />
   /* A floor plan traces its OWN fpVerts directly — always the true,
      exact polygon, tight at any orientation — rather than an
      outlineBounds Rect wrapped in spin(). A building's rotation is baked
@@ -737,6 +731,27 @@ export function SelectionOutline({ obj, gridSize = 40, objects = [], dashed = fa
         strokeScaleEnabled={false} perfectDrawEnabled={false}
         shadowForStrokeEnabled={false} listening={false}
       />
+    </Group>
+  )
+}
+
+/** (d1-bar) A selected drawn shape's own marks — where its handles are, nothing else: a line's two ends, a rectangle's
+ *  8 on its edges, a circle's 4 on the circle, a polyline's corners. Drawn for every one selected (several, or locked:
+ *  no live handles), white squares edged in the selection blue at screen size; the live handles draw over them. */
+function DrawnMarks({ obj }) {
+  const z = useView().zoom || 1, s = 6 / z
+  let P
+  if (obj.type === 'line') P = [[obj.x1, obj.y1], [obj.x2, obj.y2]]
+  else if (isPointShape(obj)) P = shapePoints(obj)
+  else {
+    const b = getObjectBounds(obj)
+    if (!b) return null
+    const l = b.x, r = b.x + b.width, t = b.y, btm = b.y + b.height, cx = (l + r) / 2, cy = (t + btm) / 2
+    P = obj.type === 'circle' ? [[cx, t], [l, cy], [r, cy], [cx, btm]] : [[l, t], [cx, t], [r, t], [l, cy], [r, cy], [l, btm], [cx, btm], [r, btm]]
+  }
+  return (
+    <Group name={'sel:' + obj.id} listening={false}>
+      {P.map(([x, y], i) => <Rect key={i} name="sel-mark" x={x - s / 2} y={y - s / 2} width={s} height={s} fill="#FFFFFF" stroke={SELECT_BLUE} strokeWidth={1} strokeScaleEnabled={false} listening={false} />)}
     </Group>
   )
 }

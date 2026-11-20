@@ -19,7 +19,7 @@
 import { create } from 'zustand'
 import { TOOLS } from '../constants'
 import { HOME_TOOL } from './homeTool'
-import { snapToGrid } from './canvas'
+import { snapToGrid, getObjectBounds } from './canvas'
 import { SECTION_SNAP_PX } from './sectionSnap'
 import { TEXT_FONT_DEFAULT } from '../theme/tokens'
 import { rackFootprint } from '../generate/rackFootprint'
@@ -44,7 +44,8 @@ export const isTextTool = (tool) => tool === TOOLS.TEXT
 export const toolOfShape = (id) => DRAW_SHAPES.find(s => s.id === id)?.tool || TOOLS.LINE
 
 /** The swatches the Stroke, Fill and Colour pickers offer (a colour typed is taken too). */
-export const DRAW_COLORS = ['#1F2321', '#6B7280', '#E5484D', '#E07B22', '#C9A100', '#27AE60', '#2F80ED', '#9B51E0']
+// (d1-bar, design/selbar.png) two rows of six: ink, grey, red, orange, yellow, green / sky, blue, purple, pink, white, light grey
+export const DRAW_COLORS = ['#1F2321', '#6B7280', '#E5484D', '#E07B22', '#C9A100', '#27AE60', '#0EA5E9', '#2F80ED', '#9B51E0', '#EC4899', '#FFFFFF', '#9CA3AF']
 
 /** The smallest a line may be and a circle's radius (inches), and a rectangle drag that is still a click. */
 export const MIN_LINE_IN = 3, MIN_RADIUS_IN = 3, RECT_CLICK_IN = 6
@@ -213,7 +214,8 @@ export function shapeObject(shape, pts, s, zoom = 1, gs = 40) {
  *  → the new object, or null. */
 export function commitShape(store, shape, pts, zoom = 1, newId = null, closed = false) {
   const s = useDrawTool.getState(), gs = store.getState().gridSize || 40
-  const o = shapeObject(shape, pts, closed ? { ...s, closed: true } : s, zoom, gs)
+  // closed: true closes it; 'open' keeps it open whatever the bar's Close says (Esc on a polyline — d1-bar)
+  const o = shapeObject(shape, pts, closed === true ? { ...s, closed: true } : closed === 'open' ? { ...s, closed: false } : s, zoom, gs)
   useDrawTool.setState({ pts: [], typed: null, press: null, guides: [], closing: false, snap: null })
   const why = refusal(shape, pts, gs)
   if (why) notify(why)
@@ -280,9 +282,12 @@ export function typedPoint(shape, last, at, typed, gs = 40) {
 
 /** The end of the tool: Done (`finish`) keeps a polyline with enough points; Esc and ✕ cancel the shape being drawn
  *  (CLAUDE.md Rule 9 — Esc cancels; d1-final, was: Esc kept it). */
+/* (d1-bar) Esc on a polyline with 2 points or more keeps them, an open polyline (the one exception to Rule 9's "Esc
+   cancels"); Done finishes it as the bar says (Close); the bar's ✕ cancels (cancelDraw first). */
 export function endDraw(store, shape, zoom = 1, finish = false) {
   const s = useDrawTool.getState()
-  const made = finish && shape === 'polyline' && s.pts.length ? commitShape(store, shape, s.pts, zoom) : null
+  const keep = shape === 'polyline' && (finish ? s.pts.length > 0 : s.pts.length >= 2)
+  const made = keep ? commitShape(store, shape, s.pts, zoom, null, finish ? false : 'open') : null
   cancelDraw()
   useDrawTool.setState({ keep: false })
   // a shape finished by it: Select, the shape selected (as any shape finished); else the home tool
@@ -409,6 +414,31 @@ export function resizeCircle(o, handle, dx, dy) {
 
 /* ── the Text tool ── */
 /** (d1-fixes) Turn the texts `ids` a quarter turn clockwise (90° steps: 0, 90, 180, 270) — one undo step. */
+/** (d1-bar) A style change on drawn shapes and texts `ids` (the selection bar's, the card's): `patch` (an object, or a
+ *  function of the object giving one) on every unlocked one — ONE undo step. → how many changed. */
+export function styleDrawn(store, ids, patch) {
+  const st = store.getState()
+  const objs = ids.map(id => st.objects.find(o => o.id === id)).filter(o => o && !o.locked)
+  let last = null
+  for (const o of objs) {
+    const u = typeof patch === 'function' ? patch(o) : patch
+    if (!u || Object.keys(u).every(k => o[k] === u[k])) continue
+    st.updateObject(o.id, u); last = o.id
+  }
+  if (last) store.getState().commitObjectUpdate(last, {})
+  return last ? 1 : 0
+}
+/** (d1-bar) A text's alignment: its lines move inside its box, the box never moves — its anchor (x) goes to the box's
+ *  left, centre or right edge as the alignment needs (getObjectBounds reads x as the anchor of the alignment). */
+export function alignPatch(o, align) {
+  if (!o || o.type !== 'text' || (o.align || 'left') === align) return null
+  const b = getObjectBounds(o)
+  if (!b) return { align }
+  return { align, x: align === 'center' ? b.x + b.width / 2 : align === 'right' ? b.x + b.width : b.x }
+}
+/** Align texts `ids` (left | center | right): one undo step, every box where it was. */
+export const alignTexts = (store, ids, align) => styleDrawn(store, ids, (o) => alignPatch(o, align))
+
 export function rotateTexts(store, ids) {
   const st = store.getState(), texts = ids.map(id => st.objects.find(o => o.id === id)).filter(o => o && o.type === 'text' && !o.locked)
   if (!texts.length) return false

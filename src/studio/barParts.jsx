@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
+import { anchorPlace } from './Popover'
 
 /* ── The bars' parts (STUDIO.md §1, §4, §5; design/studio/Studio.dc.html — the selection bars C1 / C6, the mode bars
    C8 / C9 / C10, the notice C6). Values copied from the mockup; icons from §9 only (src/studio/iconData.js, 24px).
@@ -97,10 +98,10 @@ export function Menu({ label, anchor, at, onClose, children, width = MENU_W }) {
     return () => { window.removeEventListener('pointerdown', down, true); window.removeEventListener('scroll', away, true); window.removeEventListener('resize', onClose); window.removeEventListener('keydown', key, true) }
   }, [onClose, anchor])
   const host = document.querySelector('[data-theme]') || document.body
+  // (d1-bar) attached to its chip: below it, left-aligned — above it with no room below (studio/Popover.jsx); a
+  // right-click menu opens at the pointer
   const r = anchor ? anchor.getBoundingClientRect() : { left: at.x, right: at.x + width, top: at.y, bottom: at.y }
-  const left = Math.max(8, Math.min(anchor ? r.left : r.left, window.innerWidth - width - 8))
-  const below = (anchor ? r.bottom + 6 : r.top)
-  const top = below + h > window.innerHeight - 8 ? Math.max(8, (anchor ? r.top - 6 : r.top) - h) : below
+  const { left, top } = anchorPlace(r, width, h, { w: window.innerWidth, h: window.innerHeight })
   return createPortal(
     <div ref={ref} role="menu" aria-label={label} data-card-dark style={{ position: 'fixed', left, top, zIndex: 500, width, padding: 6, borderRadius: 10, background: B.island, border: `1px solid ${B.line}`, boxShadow: '0 16px 40px rgba(15,18,16,.3)', display: 'flex', flexDirection: 'column', fontFamily: PJS }}>
       {children}

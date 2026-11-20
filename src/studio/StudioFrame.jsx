@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { TextSizePanel } from './textSizeCard'
+import { POP_GAP } from './Popover'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { generateBlocked } from '../utils/sectionEdit'
 import { regenBuilding } from '../generate/regenerate'
@@ -41,7 +42,7 @@ function TopLeft({ onHub }) {
   const name = useCanvasStore(s => s.currentFilename)
   const [menu, setMenu] = useState(false)
   const rules = useViewPrefs(s => s.rulesOpen), setRules = useViewPrefs.getState().setRulesOpen
-  const wrap = useRef(null)
+  const wrap = useRef(null), menuBtn = useRef(null)
   useEffect(() => {
     if (!menu) return
     const down = (e) => { if (!wrap.current?.contains(e.target)) setMenu(false) }
@@ -49,19 +50,21 @@ function TopLeft({ onHub }) {
     document.addEventListener('mousedown', down); document.addEventListener('keydown', key)
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
   }, [menu])
+  const menuAt = (el) => { const r = el?.getBoundingClientRect(); return r ? { left: r.left, top: r.bottom + POP_GAP } : { left: 120, top: 66 } }
   return (
     <div ref={wrap}>
       <div className="st-island" data-island="top-left" style={{ left: 16, top: 16, height: 44, gap: 10, padding: '0 12px 0 14px' }}>
         <svg width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 0l6 6-6 6-6-6z" fill="#7BD3A4" /></svg>
         <span style={{ fontWeight: 600, fontSize: 14 }}>Trace</span>
         <span style={{ width: 1, height: 18, background: '#3A403C' }} />
-        <button type="button" aria-haspopup="menu" aria-expanded={menu} aria-label="Layout menu" onClick={() => setMenu(m => !m)}
+        <button ref={menuBtn} type="button" aria-haspopup="menu" aria-expanded={menu} aria-label="Layout menu" onClick={() => setMenu(m => !m)}
           style={ghost({ height: 30, gap: 6, padding: '0 8px', fontSize: 13, color: '#E8EAE6' })}>
           {name || 'Untitled layout'}<Icon name="Chevron" size={12} color="#9AA29C" />
         </button>
         <span style={{ height: 22, padding: '0 8px', display: 'flex', alignItems: 'center', borderRadius: 6, background: '#2A2F2C', color: '#9AA29C', fontSize: 12 }}>Auto-saved</span>
       </div>
-      {menu && <LayoutMenu style={{ left: 120, top: 66 }} onClose={() => setMenu(false)} onRules={() => setRules(true)} onHub={onHub} />}
+      {/* (d1-bar, Rule 9) attached to its button: directly below it, left-aligned with it */}
+      {menu && <LayoutMenu style={menuAt(menuBtn.current)} onClose={() => setMenu(false)} onRules={() => setRules(true)} onHub={onHub} />}
       {rules && <RulesPanel onClose={() => setRules(false)} />}
     </div>
   )
@@ -189,7 +192,8 @@ function BottomLeft({ onHub }) {
 function useCloses(open, close, wrap) {
   useEffect(() => {
     if (!open) return
-    const down = (e) => { if (!wrap.current?.contains(e.target)) close() }
+    // (d1-bar) a press in a list or popover its fields opened (portalled over the canvas — studio/Popover.jsx) is not outside
+    const down = (e) => { if (!wrap.current?.contains(e.target) && !e.target.closest?.('[data-size-list], [data-popover]')) close() }
     // (Esc with a Text size list open closes the list only — studio/textSizeCard.jsx)
     const key = (e) => { if (e.key === 'Escape') { if (document.querySelector('[data-size-list]')) return; e.stopImmediatePropagation(); close() } }
     document.addEventListener('mousedown', down); window.addEventListener('keydown', key, true)

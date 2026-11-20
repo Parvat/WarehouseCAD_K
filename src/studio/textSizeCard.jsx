@@ -8,6 +8,8 @@
 // dropdown of the usual sizes (SIZE_OPTIONS), any number typed. Heights were always stored in inches, so a saved project keeps its own.
 
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { anchorPlace, popHost } from './Popover'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TEXT_TYPES, TEXT_TYPE_KEYS, MIN_TEXT_IN, MAX_TEXT_IN, useTextSizes, textInches } from '../utils/textSizes'
 import { serializeScene, autoSave } from '../utils/saveLoad'
@@ -52,8 +54,9 @@ const save = () => { try { autoSave(serializeScene(useCanvasStore.getState())) }
 /** A size field — the app's own dropdown (Studio style): the number of inches (or empty, its placeholder the default),
  *  typed, or picked from the list. A click on the field or its arrow opens the list of every size (SIZE_OPTIONS), the
  *  current one highlighted; a click picks it (committed at once); ↑ / ↓ move, Enter picks, Esc closes. Typing commits on
- *  Enter or leaving the field. The list opens below — or upward with no room there — and never over the right Properties
- *  card (from outside it: kept to its left). */
+ *  Enter or leaving the field. (d1-bar) The list opens ATTACHED to the field (studio/Popover.jsx anchorPlace): directly
+ *  below it, left-aligned with it — above it with no room below — portalled over the canvas, so a bar's transform or a
+ *  card's edge never moves or clips it (the Text bar's list used to open far to the right). */
 export function SizeInput({ inches, placeholder, aria, onCommit }) {
   const show = sizeText(inches)
   const [text, setText] = useState(show)
@@ -73,20 +76,18 @@ export function SizeInput({ inches, placeholder, aria, onCommit }) {
   const place = () => {
     const r = wrap.current?.getBoundingClientRect()
     if (!r) return null
-    const below = window.innerHeight - r.bottom - 8 >= LIST_H
-    let left = r.left
-    // never over the right Properties card: a field outside it keeps its list to the card's left
-    const card = document.querySelector('[data-island="right-card"]'), c = card && card.getClientRects().length ? card.getBoundingClientRect() : null
-    if (c && !(r.left >= c.left && r.right <= c.right) && left + r.width > c.left - 8) left = Math.max(8, c.left - 8 - r.width)
-    return { left, width: r.width, top: below ? r.bottom + 4 : Math.max(8, r.top - 4 - LIST_H) }
+    const w = Math.max(r.width, 64), at = anchorPlace(r, w, LIST_H, { w: window.innerWidth, h: window.innerHeight })
+    return { left: at.left, width: w, top: at.top }
   }
   const openList = () => { setPos(place()); setHi(Math.max(0, SIZE_OPTIONS.indexOf(inches))); setOpen(true) }
   const pick = (v) => { setOpen(false); setText(sizeText(v)); setBad(false); if (v !== inches) onCommit(v) }
   useEffect(() => {
     if (!open) return
     const away = (e) => { if (wrap.current && !wrap.current.contains(e.target) && !e.target.closest?.('[data-size-list]')) setOpen(false) }
-    window.addEventListener('pointerdown', away, true)
-    return () => window.removeEventListener('pointerdown', away, true)
+    // (d1-bar) Esc closes the list only — not the tool, the selection or the panel behind it
+    const esc = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false) } }
+    window.addEventListener('pointerdown', away, true); window.addEventListener('keydown', esc, true)
+    return () => { window.removeEventListener('pointerdown', away, true); window.removeEventListener('keydown', esc, true) }
   }, [open])
   const listId = 'size-list-' + aria.replace(/\W+/g, '-').toLowerCase()
   return (
@@ -114,7 +115,7 @@ export function SizeInput({ inches, placeholder, aria, onCommit }) {
         }} />
       <button type="button" tabIndex={-1} aria-label={aria + ' sizes'} onMouseDown={e => e.preventDefault()} onClick={() => (open ? setOpen(false) : openList())}
         style={{ position: 'absolute', right: 2, top: 0, bottom: 0, width: 20, padding: 0, border: 0, background: 'transparent', color: '#9AA29C', fontSize: 9, cursor: 'pointer' }}>▾</button>
-      {open && pos && (
+      {open && pos && popHost() && createPortal(
         <div role="listbox" id={listId} aria-label={aria + ' sizes'} data-size-list data-card-dark
           style={{ position: 'fixed', left: pos.left, top: pos.top, width: Math.max(pos.width, 64), zIndex: 400, padding: 4, display: 'flex', flexDirection: 'column',
             background: '#1F2321', border: '1px solid #323835', borderRadius: 8, boxShadow: '0 8px 24px rgba(15,18,16,.28)' }}>
@@ -128,7 +129,7 @@ export function SizeInput({ inches, placeholder, aria, onCommit }) {
               </div>
             )
           })}
-        </div>
+        </div>, popHost()
       )}
     </span>
   )

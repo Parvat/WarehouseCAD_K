@@ -49,7 +49,7 @@ const HINTS = {
   line: 'click start · click end (or drag) · Shift 0/45/90° · type 30 + Enter (30<45 for an angle) · Esc ends',
   rect: 'drag or 2 clicks · Shift = square · type W x H + Enter · Esc ends',
   circle: 'click the centre, then the radius (or drag) · type R 9 or D 18 + Enter · Esc ends',
-  polyline: 'click each point · Shift = 0/45/90° · type length + Enter · click the first point to close · double-click or Enter to finish',
+  polyline: 'click each point · Shift = 0/45/90° · type length + Enter · click the first point to close · double-click or Enter to finish · Esc keeps it open',
 }
 
 /** The Draw bar (design/drawbar.png): opens when a shape tool is picked, in the Add door bar's place and style. */
@@ -59,7 +59,8 @@ export function DrawBar() {
   const [w, setW] = useState(null)
   const commitW = () => { const v = Number(String(w ?? '').trim()); setW(null); if (Number.isFinite(v) && v > 0 && v <= 48) useDrawTool.setState({ strokeWidth: v }) }
   const done = () => endDraw(useCanvasStore, shape, useCanvasStore.getState().zoom, true)
-  const cancel = () => endDraw(useCanvasStore, shape, useCanvasStore.getState().zoom, false)
+  // ✕ cancels what is being drawn (Esc keeps a polyline's points — endDraw)
+  const cancel = () => { cancelDraw(); endDraw(useCanvasStore, shape, useCanvasStore.getState().zoom, false) }
   if (!shape) return null
   return (
     <div role="toolbar" aria-label="Draw" data-mode-bar="draw" className="st-pill" style={modePill}>
@@ -231,7 +232,7 @@ export function ShapePointHandles({ obj: picked }) {
     let deg = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
     if (deg > 90) deg -= 180
     if (deg < -90) deg += 180
-    return <Text name="line-measure" x={mx} y={my} offsetX={tw / 2} offsetY={fs * 0.7} width={tw} align="center" rotation={deg} text={text} fontSize={fs} fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={SELECT_BLUE} listening={false} />
+    return <Text name="line-measure label-pill" x={mx} y={my} offsetX={tw / 2} offsetY={fs * 0.7} width={tw} align="center" rotation={deg} text={text} fontSize={fs} fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={SELECT_BLUE} listening={false} />
   }
   if (!isPointShape(obj)) return null
   const s = POINT_HANDLE_PX / zoom, P = shapePoints(obj), n = P.length, closed = obj.type === 'polygon' || !!obj.closed

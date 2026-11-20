@@ -8,7 +8,7 @@ import { deleteSelectionWithAreas } from '../../utils/deleteSelection'
 import { useShallow } from 'zustand/react/shallow'
 import { pxToFtIn } from '../../utils/canvas'
 import { TextSizeField } from '../../studio/textSizeCard'
-import { rotateTexts, setLineLength, setLineAngle, setCircleRadius, setPolylineClosed, polyMeasures, convertRectToZone, angleOf } from '../../utils/drawTool'
+import { rotateTexts, alignTexts, setLineLength, setLineAngle, setCircleRadius, setPolylineClosed, polyMeasures, convertRectToZone, angleOf } from '../../utils/drawTool'
 import { isDrawn, drawnGeom } from '../../render/drawnShapes'
 import { Swatch } from '../../studio/Swatch'
 import { SizeInput } from '../../studio/textSizeCard'
@@ -87,7 +87,6 @@ function DrawnSizeFields({ obj, gridSize }) {
   ) }
   const b = drawnGeom(obj).pts || []
   if (!b.length) return null
-  const xs = b.map(p => p[0]), ys = b.map(p => p[1])
   const m = obj.type === 'polyline' ? polyMeasures(obj) : null
   const sqft = (px2) => Math.round(px2 / (gridSize * gridSize)).toLocaleString('en-US') + ' sq ft'
   return (
@@ -100,7 +99,7 @@ function DrawnSizeFields({ obj, gridSize }) {
           ]} />
         </Field>
       )}
-      <Grid2><DimReadout label="W" px={Math.max(...xs) - Math.min(...xs)} gridSize={gridSize} /><DimReadout label="H" px={Math.max(...ys) - Math.min(...ys)} gridSize={gridSize} /></Grid2>
+      {/* (d1-bar) no W and H: a polyline is edited by its points and sides, never scaled as a box */}
       {m && obj.closed && (
         <Grid2>
           <Field label="Area"><span data-poly-area style={{ fontFamily: MONO, color: C.strong, fontSize: 12 }}>{m.area == null ? '—' : sqft(m.area)}</span></Field>
@@ -597,20 +596,13 @@ function TextFields({ obj, up, commit }) {
         </div>
       </Field>
       <Field label="Align">
-        <Seg aria="Align" value={obj.align || 'left'} onChange={a => commit('align', a)}
+        <Seg aria="Align" value={obj.align || 'left'} onChange={a => alignTexts(useCanvasStore, [obj.id], a)}
           options={[{ value: 'left', label: 'Left', aria: 'Align left' }, { value: 'center', label: 'Centre', aria: 'Align center' }, { value: 'right', label: 'Right', aria: 'Align right' }]} />
       </Field>
       <Field label="Color">
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-          {PALETTE_COLORS.slice(16, 24).map(c => (
-            <button key={c} type="button" title={c} onClick={() => commit('fill', c)}
-              style={{ width: 18, height: 18, borderRadius: 4, cursor: 'pointer', background: c, border: `1.5px solid ${obj.fill === c ? C.strong : 'transparent'}` }} />
-          ))}
-          {/* writes obj.fill directly via this panel's own commit — deliberately NOT through ColorPanel's
-              global-opacity-baking path, so text has exactly one fill mechanism */}
-          <input type="color" title="Custom text color" value={/^#[0-9a-f]{6}$/i.test(obj.fill) ? obj.fill : '#0B101D'}
-            onChange={e => commit('fill', e.target.value)} style={{ width: 22, height: 20, padding: 0, border: `1px solid ${C.separator}`, borderRadius: 4, background: 'transparent', cursor: 'pointer' }} />
-        </div>
+        {/* (d1-bar) the colours open as a popover over the canvas, attached to the swatch (studio/Swatch.jsx) — never
+            inside the card; writes obj.fill through this panel's own commit (text has one fill mechanism) */}
+        <Swatch label="Text colour" value={obj.fill || '#1F2321'} onPick={(c) => commit('fill', c || '#1F2321')} />
       </Field>
       <Grid2>
         <Field label="Line height"><NumInput aria="Line height" value={obj.lineHeight ?? 1.25} step="0.05" onCommit={v => { up('lineHeight', v); commit('lineHeight', v) }} /></Field>

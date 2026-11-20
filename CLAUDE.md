@@ -53,11 +53,15 @@ This file holds the rules; `CODEBASE.md` holds the map.
 9. **The Basics contract.** A round is not reported done until every object type and every tool it touches passes it:
    - **Select:** a click on the object (or inside a closed one) selects it, and the most specific object under the click
      wins; box select; Shift adds to the selection; **Tab** cycles through the objects stacked under the pointer.
-   - **Tool flow:** one use, then back to Select; Esc cancels; a double-click on a tool keeps it on.
+   - **Tool flow:** one use, then back to Select; Esc cancels; a double-click on a tool keeps it on. The one exception:
+     Esc on a polyline with 2 or more points keeps them as an open polyline.
    - **Edit:** move, resize, corner and side editing where they apply, and typed exact values.
    - **Copy, paste, duplicate, delete.** **One undo per action**, and redo.
    - **Lock.** **Snap** to walls, edges, endpoints and the grid; Alt turns snapping off.
    - **Save and reload** unchanged. **PDF export.** The same at every zoom.
+   - **Dropdowns and popovers** (lists, colours, menus) open attached to their own field: directly below it, left-aligned
+     with it, or directly above it when there is no room below — never elsewhere on screen — floating over the canvas so
+     no card or bar clips them (`studio/Popover.jsx`). REG-dropdown-attached checks that every one touches its field.
    REG-basics runs every object type in the library and every draw tool through the contract with real clicks on two
    fixtures (older-horizontal and crowded-vertical). Before every report, also do a 10-minute dealer walkthrough of what
    changed.
