@@ -55,7 +55,7 @@ None of these cards has a number field for the object's size. Plan: one shared s
 
 ## Checks
 - REG-basics (all groups) re-run on both fixtures. The draw tools stay green: 0 real failures.
-- Full suite on its own: see below.
+- Full suite on its own: **4,412 / 4,412 passed**.
 - No dealer walkthrough: the app is unchanged.
 
 ## Hand-check (≤ 6)
