@@ -11,7 +11,7 @@ import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
 import { useDragPreview, previewObjects } from './dragPreview'
 import { UprightConflictMarks } from './UprightConflictMarks'
 import { OversizedBayMarks } from './OversizedBayMarks'
-import { aisleLabelLayout, columnRectsOf, aisleGapShown } from './hitTest'
+import { aisleLabelLayout, labelBlockersOf as columnRectsOf, aisleGapShown } from './hitTest'   // (d2-labels) columns + drawn objects
 import { useLabelPrefs } from './labelPrefs'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { layerShown } from '../utils/layers'

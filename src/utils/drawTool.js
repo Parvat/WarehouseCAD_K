@@ -180,7 +180,8 @@ export function snapPoint(w, { st, zoom = 1, last = null, shift = false, alt = f
 }
 
 /* ── the shapes as document objects ── */
-const style = (s) => ({ stroke: s.stroke, strokeWidth: s.strokeWidth, dashed: !!s.dashed, layerId: 'notes', opacity: 1, rotation: 0 })
+// (d2-labels) a new shape is Square (corners, line ends) — written down, so a shape saved without it is one from before (saveLoad.js: Round)
+const style = (s) => ({ stroke: s.stroke, strokeWidth: s.strokeWidth, dashed: !!s.dashed, layerId: 'notes', opacity: 1, rotation: 0, corners: 'square' })
 const filled = (s) => (s.fill ? { fill: s.fill, noFill: false } : { fill: null, noFill: true })
 
 /** Why the shape through `pts` is refused — a line under 3″, a circle under 3″ radius — or null. */

@@ -8781,6 +8781,96 @@ describe('REG — the hand check by real clicks', () => {
       expect([await selBar().getByRole('button', { name: 'Round' }).count(), await card.getByRole('group', { name: 'Corners' }).count()]).toEqual([0, 0])
     }, T)
 
+    it('REG-old-shapes-round (click): a layout saved before Corners existed opens with its shapes round (a line\'s ends, a rectangle\'s and a polyline\'s corners, drawn and printed round); a shape drawn now is Square; saved and reopened, each keeps its own (d2-labels 1)', async () => {
+      const B = await import('./handCheck/browser.js'), j = JSON.parse(B.fixture(name))
+      const fp = j.objects.find(o => /^fp_/.test(o.type)), y0 = fp.y + fp.height + 400
+      j.objects.push(
+        { id: 'oldline', type: 'line', x1: fp.x, y1: y0, x2: fp.x + 800, y2: y0, stroke: '#1F2321', strokeWidth: 3, layerId: 'notes', noFill: true, opacity: 1, rotation: 0 },
+        { id: 'oldrect', type: 'rect', x: fp.x + 1000, y: y0, width: 600, height: 400, stroke: '#1F2321', strokeWidth: 2, layerId: 'notes', noFill: true, opacity: 1, rotation: 0 },
+        { id: 'oldpoly', type: 'polyline', x: fp.x + 1800, y: y0, width: 400, height: 400, w0: 400, h0: 400, pts: [[0, 0], [400, 0], [400, 400]], closed: false, stroke: '#1F2321', strokeWidth: 2, layerId: 'notes', noFill: true, opacity: 1, rotation: 0 })
+      L = await B.openLayout(app, JSON.stringify(j))
+      const ids = ['oldline', 'oldrect', 'oldpoly']
+      expect(await Promise.all(ids.map(async id => (await objNow(id)).corners))).toEqual(['round', 'round', 'round'])
+      const paths = await L.S('return import("/src/render/drawnShapes.js").then(M => arg.map(id => { const o = S.getState().objects.find(q => q.id === id), d = M.drawnPaths(o, S.getState().gridSize || 40); return [d.cap, d.join, d.cmds.filter(c => c[0] === "Q").length] }))', ids)
+      expect(paths).toEqual([['round', 'round', 0], ['round', 'round', 4], ['round', 'round', 1]])
+      // selected, its bar shows Round
+      await L.S('S.getState().selectObject("oldrect", false)'); await wait(250)
+      expect(await selBar().getByRole('button', { name: 'Round' }).getAttribute('aria-pressed')).toBe('true')
+      // drawn now: Square
+      await L.page.keyboard.press('Escape'); await drawView()
+      const r = await drawRectB({ x: 150, y: 670 }, { x: 300, y: 760 })
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('l'); await wait()
+      await L.page.mouse.click(350, 700); await L.page.mouse.click(500, 700); await wait(250)
+      const ln = await lastDrawn()
+      expect([(await objNow(r.id)).corners, ln.corners]).toEqual(['square', 'square'])
+      // saved and reopened: the old ones round, the new ones square
+      const doc = await L.S('return SL.serializeScene(S.getState())')
+      L = await B.openLayout(app, doc)
+      expect(await Promise.all([...ids, r.id, ln.id].map(async id => (await objNow(id)).corners))).toEqual(['round', 'round', 'round', 'square', 'square'])
+      expect((await planSvg()).includes('stroke-linecap="round"')).toBe(true)
+    }, T)
+
+    it('REG-aisle-label-clear (click): an aisle width label slides along its aisle off a drawn object put on it — a block arrow, an arrow, a rectangle, a text, drawn by real drags and clicks — as it slides off a column, and never overlaps one (d2-labels 2)', async () => {
+      await open()
+      const gs = await gs7()
+      // an aisle whose width label is drawn, and where its pill is (world)
+      const pill = (aid) => L.page.evaluate((aid) => {
+        const st = window.Konva.stages[0]; st.draw()
+        const g = st.findOne(n => n.name() === 'aisle:' + aid); if (!g) return null
+        const p = g.findOne('.label-pill') || g.find('Rect')[0]; if (!p) return null
+        const r = p.getClientRect(), s = st.scaleX(), t = st.position()
+        return { x: (r.x - t.x) / s, y: (r.y - t.y) / s, w: r.width / s, h: r.height / s }
+      }, aid)
+      const aid = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const n = st.find(n => /^aisle:/.test(n.name()))[0]; return n ? n.name().slice(6) : null })
+      expect(!!aid).toBe(true)
+      let p0 = await pill(aid)
+      // the view: 25 %, the pill's centre at (600, 450)
+      const c0 = { x: p0.x + p0.w / 2, y: p0.y + p0.h / 2 }
+      await L.S('S.setState({ zoom: 0.25, panX: 600 - arg.x * 0.25, panY: 450 - arg.y * 0.25 })', c0); await wait(300)
+      p0 = await pill(aid)
+      const ax = await L.S('return H.aisleLabelLayout(S.getState().objects.find(o => o.id === arg), S.getState().objects, S.getState().gridSize || 40)', aid)
+      const clear = async (id) => {
+        const p = await pill(aid), b = await L.S('const st = S.getState(), o = st.objects.find(q => q.id === arg); return H.worldBoundsOf(o, st.objects)', id)
+        const overlap = p.x < b.x + b.width && b.x < p.x + p.w && p.y < b.y + b.height && b.y < p.y + p.h
+        const moved = Math.hypot((p.x + p.w / 2) - (p0.x + p0.w / 2), (p.y + p.h / 2) - (p0.y + p0.h / 2)) > 1
+        // it slid along its aisle: the same line across the gap
+        const along = ax.isHoriz ? Math.abs((p.y + p.h / 2) - (p0.y + p0.h / 2)) < 1 : Math.abs((p.x + p.w / 2) - (p0.x + p0.w / 2)) < 1
+        return { overlap, moved, along }
+      }
+      const del = async (id) => { await L.S('S.getState().selectObject(arg, false)', id); await wait(100); await L.page.mouse.move(5, 890); await L.page.keyboard.press('Delete'); await wait(250) }
+      const runDir = ax.isHoriz ? { x: 1, y: 0 } : { x: 0, y: 1 }
+      const at = (k) => ({ x: 600 + runDir.x * k, y: 450 + runDir.y * k })
+      // a block arrow along the aisle, over the label
+      await pickDraw('Block arrow')
+      const bw = drawBar().getByRole('textbox', { name: 'Block arrow width (ft)' }); await bw.fill('2'); await bw.press('Enter')
+      await L.page.keyboard.down('Alt'); await dragPx(at(-40), at(60)); await L.page.keyboard.up('Alt')
+      let o = await lastDrawn()
+      expect([o.type, await clear(o.id)]).toEqual(['block_arrow', { overlap: false, moved: true, along: true }])
+      await del(o.id)
+      // an arrow across the label
+      await pickDraw('Arrow')
+      await L.page.keyboard.down('Alt'); await dragPx(at(-30), at(30)); await L.page.keyboard.up('Alt')
+      o = await lastDrawn()
+      expect([o.type, await clear(o.id)]).toEqual(['line', { overlap: false, moved: true, along: true }])
+      await del(o.id)
+      // a rectangle over it
+      await L.page.keyboard.press('r'); await wait()
+      await L.page.keyboard.down('Alt'); await dragPx({ x: 585, y: 440 }, { x: 615, y: 460 }); await L.page.keyboard.up('Alt')
+      o = await lastDrawn()
+      expect([o.type, await clear(o.id)]).toEqual(['rect', { overlap: false, moved: true, along: true }])
+      await del(o.id)
+      // a text on it
+      await L.page.keyboard.press('t'); await wait()
+      await L.page.mouse.click(590, 445); await wait(); await L.page.keyboard.type('Note'); await L.page.keyboard.press('Escape'); await wait(300)
+      o = await lastDrawn()
+      expect([o.type, await clear(o.id)]).toEqual(['text', { overlap: false, moved: true, along: true }])
+      // deleted: back where it was
+      await del(o.id)
+      const p = await pill(aid)
+      expect(Math.hypot(p.x - p0.x, p.y - p0.y) < 1).toBe(true)
+      void gs
+    }, T)
+
     /* ── REG-basics (CLAUDE.md Rule 9 — the Basics contract): every draw tool and every object type in the library, by
        real clicks, on two fixtures. Every draw tool must pass every check; the other types' failures are written to the
        report (os tmpdir, reg-basics-<fixture>-<group>.json) and printed — listed for the owner, not failed here. ── */

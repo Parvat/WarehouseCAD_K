@@ -3,7 +3,7 @@ import { pxToFtIn } from '../utils/canvas'
 import { failingCrossAisles, fmtLenDown, sectionCrossAisles, isRow } from '../utils/copyChange'
 import { textLz } from '../utils/textSizes'
 import { equipmentResolver } from '../utils/equipment'
-import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX, columnRectsOf, aisleLabelStation, gapShown, gapBase } from './hitTest'
+import { AISLE_LABEL_FONT_PX, AISLE_LABEL_PADX_PX, labelBlockersOf as columnRectsOf, aisleLabelStation, gapShown, gapBase } from './hitTest'   // (d2-labels) columns + drawn objects
 
 /* ── Cross-aisle width labels ─────────────────────────────────────────────────
    A cross-aisle is not an object: it is a gap along the run between sections

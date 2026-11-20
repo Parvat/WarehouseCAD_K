@@ -176,7 +176,7 @@ export function aisleLabelLayout(aisle, objects, gridSize = 40, { profile = null
      nearest spot clear of every column (aisleLabelStation). `columns`: the column squares (world px); left
      out, they are read from `objects` — the whole layout's column grids, as the column check reads them.
      `lz`: the size it is drawn at (left out: the aisle's own Label size, as the canvas draws it). */
-  const cols = columns === undefined ? columnRectsOf(objects, gridSize) : (columns || [])
+  const cols = columns === undefined ? labelBlockersOf(objects, gridSize) : (columns || [])   // (d2-labels: + drawn objects)
   const scale = lz || textLz('aisle', gridSize, aisle && aisle.labelSizeIn)
   const pos = aisleLabelStation({ isHoriz, gapLo, gapHi, labelMid, runLo, runLen, text }, cols, scale)
   return { isHoriz, gapLo, gapHi, labelMid, positions: [pos], level, text }
@@ -236,6 +236,24 @@ export function columnRectsOf(objects, gridSize = 40) {
   const cols = objects.filter(o => o && o.type === 'column_grid' && o.showGrid !== false).flatMap(g => expandColumnGrid(g, gridSize, objects))
   colCache.set(objects, { gridSize, cols })
   return cols
+}
+
+/** (d2-labels) What an aisle or cross-aisle width label keeps clear of: the column squares, and every drawn object —
+ *  an arrow, a shape, a text (their boxes, world px { x, y, w, h }) — so a label never sits on a drawing (it slides
+ *  along its aisle, as off a column). Kept per objects array. */
+const blockCache = new WeakMap()
+export function labelBlockersOf(objects, gridSize = 40) {
+  if (!Array.isArray(objects)) return []
+  const hit = blockCache.get(objects)
+  if (hit && hit.gridSize === gridSize) return hit.out
+  const out = [...columnRectsOf(objects, gridSize)]
+  for (const o of objects) {
+    if (!o) continue
+    const b = isDrawn(o) ? drawnBox(o) : o.type === 'text' && o.text ? worldBoundsOf(o, objects) : null
+    if (b && Number.isFinite(b.x)) out.push({ x: b.x, y: b.y, w: Math.max(b.width, 1e-6), h: Math.max(b.height, 1e-6), drawn: true })
+  }
+  blockCache.set(objects, { gridSize, out })
+  return out
 }
 
 /** Where along its run an aisle label is drawn: mid-run, or — when a column is under its pill or its

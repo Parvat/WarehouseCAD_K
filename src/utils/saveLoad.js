@@ -4,6 +4,7 @@ import { releaseGeneratedLocks, releaseGeneratedObjectLocks } from './layers'
 import { joinSplitPairs } from './pairJoin'
 import { rebuildAisles } from './aisleRebuild'
 import { getTextSizes, loadTextSizes } from './textSizes'
+import { isDrawn, hasCorners } from '../render/drawnShapes'
 // ─── Scene serialization / deserialization ────────────────────────────────────
 // Format version — bump when breaking changes are made to the schema
 const SCHEMA_VERSION = 2      // 2: the elevation types as their own field (`elevations`)
@@ -58,6 +59,8 @@ export function deserializeScene(json, s) {
   s.objects      = releaseGeneratedObjectLocks(legacy.objects)
     // (d1-final) the Polygon tool is gone: a saved polygon loads as a closed polyline (the same points)
     .map(o => (o && o.type === 'polygon' && Array.isArray(o.pts) ? { ...o, type: 'polyline', closed: true } : o))
+    // (d2-labels) a shape saved before corners were a setting (no `corners`) was drawn round: it keeps round ends and corners
+    .map(o => (o && hasCorners(o) && isDrawn(o) && o.corners == null ? { ...o, corners: 'round' } : o))
   s.elevations   = data.elevations ?? legacy.table ?? null
   // the label types' text heights (utils/textSizes.js): the file's own, or the defaults
   loadTextSizes(data.textSizes || null)
