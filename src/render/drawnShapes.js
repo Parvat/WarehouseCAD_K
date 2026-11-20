@@ -6,7 +6,12 @@
 // The stroke width is screen px on the canvas (as every drawn line); on paper 1 px = 0.25 mm.
 
 import { distToSegment, getObjectBounds } from '../utils/canvas'
-import { layoutText } from '../utils/textLayout'
+import { layoutText, makeMeasure, fontSpec } from '../utils/textLayout'
+import { textInches } from '../utils/textSizes'
+
+const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+/** Feet and inches as every plan label writes them (utils/bom.js ftIn's format: 13′-9″) — kept here, no BOM import. */
+const ftIn = (inches) => { const v = Math.round(inches), f = Math.floor(v / 12), i = v - f * 12; return i ? `${f}′-${i}″` : `${f}′` }
 
 export const DRAWN_TYPES = new Set(['line', 'rect', 'circle', 'polyline', 'polygon'])
 /** A drawn shape — a line with its two ends, or a shape with its box / centre. */
@@ -24,6 +29,52 @@ export function drawnGeom(o) {
   return { kind: 'line', pts: (o.pts || []).map(([px, py]) => [o.x + px * sx, o.y + py * sy]), closed: o.type === 'polygon' || !!o.closed }
 }
 export const isFilled = (o) => !!o.fill && !o.noFill && drawnGeom(o).closed
+/** (d1-final, the Rectangle mockup) How a closed shape's inside is painted: none, tinted (its fill colour, light — the
+ *  "filled, tinted" swatch) or hatched (its fill colour's 45° lines — the "no racking" look). → { kind, color, alpha } */
+export const FILL_TINT = 0.15
+export function fillPaint(o) {
+  if (!isFilled(o)) return { kind: 'none' }
+  if (o.fillStyle === 'hatch') return { kind: 'hatch', color: o.fill, alpha: 0.55 }
+  return { kind: 'tint', color: o.fill, alpha: Number.isFinite(o.fillOpacity) ? o.fillOpacity : FILL_TINT }
+}
+/** The hatch's line spacing (world px): 2′, at any zoom (the drawing's, not the screen's). */
+export const hatchGap = (gs = 40) => 2 * gs
+/** The hatch lines (45°, world px segments) over box `b` — clipped to the shape where drawn. */
+export function hatchSegments(b, gs = 40) {
+  const g = hatchGap(gs), out = []
+  for (let k = -b.height; k < b.width; k += g) out.push([b.x + k, b.y + b.height, b.x + k + b.height, b.y])
+  return out
+}
+/** A shape's box (world px). */
+export function drawnBox(o) {
+  const g = drawnGeom(o)
+  if (g.kind === 'ellipse') return { x: g.cx - g.rx, y: g.cy - g.ry, width: g.rx * 2, height: g.ry * 2 }
+  const xs = g.pts.map(p => p[0]), ys = g.pts.map(p => p[1])
+  return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) }
+}
+
+/** (d1-final, the Rectangle mockup) A named rectangle's label: its name over its size and area ("25′ × 13′-9″ · 344 sq
+ *  ft"), in its stroke colour, centred inside — or just above its top edge when it does not fit. Real text heights
+ *  (CLAUDE.md Rule 8): the name at the zone and section names' height, the size at the aisle widths'. → { lines: [{ text,
+ *  x, y (top), fs, bold }], inside } or null (no name). */
+export function rectLabel(o, gs = 40, sizes) {
+  const name = String(o.name || '').trim()
+  if (o.type !== 'rect' || !name) return null
+  const fsN = (textInches('names', null, sizes) / 12) * gs, fsS = (textInches('aisle', null, sizes) / 12) * gs * 0.75
+  const ftOf = (px) => ftIn((px / gs) * 12)
+  const area = Math.round((o.width / gs) * (o.height / gs))
+  const size = `${ftOf(o.width)} × ${ftOf(o.height)} · ${area.toLocaleString('en-US')} sq ft`
+  const wN = makeMeasure(fontSpec({ fontSize: fsN, bold: true, fontFamily: "'Plus Jakarta Sans', sans-serif" }), fsN)(name)
+  const wS = makeMeasure(fontSpec({ fontSize: fsS, fontFamily: "'Plus Jakarta Sans', sans-serif" }), fsS)(size)
+  const W = Math.max(wN, wS), H = fsN * 1.25 + fsS * 1.3, pad = fsS * 0.5
+  const inside = W <= o.width - 2 * pad && H <= o.height - 2 * pad
+  const top = inside ? o.y + (o.height - H) / 2 : o.y - H - pad
+  const cx = o.x + o.width / 2
+  return { inside, width: W, height: H, lines: [
+    { text: name, x: cx, y: top, fs: fsN, bold: true },
+    { text: size, x: cx, y: top + fsN * 1.25, fs: fsS, bold: false },
+  ] }
+}
 /** The dash (screen px) for a dashed shape. */
 export const dashOf = (o) => (o.dashed ? [Math.max(4, (o.strokeWidth || 2) * 3), Math.max(3, (o.strokeWidth || 2) * 2)] : null)
 
@@ -91,14 +142,18 @@ function inPoly(P, x, y) {
 }
 
 /** The shape as SVG for the PDF (world px; `u` world px per paper mm). */
-export function drawnSVG(o, u) {
-  const g = drawnGeom(o), sw = (o.strokeWidth || 2) * 0.25 * u, d = dashOf(o)
+export function drawnSVG(o, u, gs = 40, sizes) {
+  const g = drawnGeom(o), sw = (o.strokeWidth || 2) * 0.25 * u, d = dashOf(o), fp = fillPaint(o)
   const dash = d ? ` stroke-dasharray="${d[0] * 0.25 * u} ${d[1] * 0.25 * u}"` : ''
-  const fill = isFilled(o) ? `fill="${o.fill}" fill-opacity="${o.fillOpacity ?? 1}"` : 'fill="none"'
+  const pid = 'hatch-' + String(o.id || Math.random()).replace(/[^w-]/g, '')
+  const defs = fp.kind === 'hatch' ? `<defs><pattern id="${pid}" patternUnits="userSpaceOnUse" width="${hatchGap(gs)}" height="${hatchGap(gs)}" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${hatchGap(gs)}" stroke="${fp.color}" stroke-opacity="${fp.alpha}" stroke-width="${sw * 0.6}"/></pattern></defs>` : ''
+  const fill = fp.kind === 'tint' ? `fill="${fp.color}" fill-opacity="${fp.alpha}"` : fp.kind === 'hatch' ? `fill="url(#${pid})"` : 'fill="none"'
   const paint = `stroke="${o.stroke || '#1F2321'}" stroke-width="${sw}"${dash} stroke-linejoin="round" stroke-linecap="round" ${fill}`
-  if (g.kind === 'ellipse') return `<ellipse cx="${g.cx}" cy="${g.cy}" rx="${g.rx}" ry="${g.ry}" ${paint}/>`
+  if (g.kind === 'ellipse') return `${defs}<ellipse cx="${g.cx}" cy="${g.cy}" rx="${g.rx}" ry="${g.ry}" ${paint}/>`
   const pts = g.pts.map(p => p.join(',')).join(' ')
-  return g.closed ? `<polygon points="${pts}" ${paint}/>` : `<polyline points="${pts}" ${paint}/>`
+  const lab = rectLabel(o, gs, sizes)
+  const words = lab ? lab.lines.map(l => `<text x="${l.x}" y="${l.y + l.fs * 0.85}" font-size="${l.fs}" font-family="'Plus Jakarta Sans', sans-serif"${l.bold ? ' font-weight="600"' : ''} fill="${o.stroke || '#1F2321'}" text-anchor="middle">${esc(l.text)}</text>`).join('') : ''
+  return defs + (g.closed ? `<polygon points="${pts}" ${paint}/>` : `<polyline points="${pts}" ${paint}/>`) + words
 }
 
 /** A text object's lines and box, as drawn (getObjectBounds — the selection outline's — and layoutText):
@@ -107,7 +162,13 @@ export function textGeom(o) {
   const L = layoutText(o), box = getObjectBounds(o)
   return { box, lines: L.lines, lineH: L.lineH, fontSize: o.fontSize || 14 }
 }
-const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+/** (d1-final) A text's Box (its card's Box option): the frame round its words, a quarter of its height clear. → { x, y,
+ *  width, height } or null. */
+export function textBox(o) {
+  if (!o.boxed) return null
+  const T = textGeom(o), pad = T.fontSize * 0.25
+  return { x: T.box.x - pad, y: T.box.y - pad, width: T.box.width + 2 * pad, height: T.lines.length * T.lineH + 2 * pad }
+}
 /** A text object as SVG for the PDF: one line under the other, aligned as on the canvas. */
 export function textSVG(o) {
   const T = textGeom(o), a = o.align === 'center' ? 'middle' : o.align === 'right' ? 'end' : 'start'
@@ -115,6 +176,8 @@ export function textSVG(o) {
   const weight = o.bold ? ' font-weight="700"' : '', style = o.italic ? ' font-style="italic"' : ''
   // (d1-fixes) turned in 90° steps about its box's centre, as on the canvas (shapes.jsx spin)
   const turn = o.rotation ? ` transform="rotate(${o.rotation} ${T.box.x + T.box.width / 2} ${T.box.y + T.box.height / 2})"` : ''
-  return `<text${turn} x="${x}" y="${o.y}" font-size="${T.fontSize}" font-family="'${o.fontFamily || 'Plus Jakarta Sans'}', sans-serif"${weight}${style} fill="${o.fill || '#1F2321'}" text-anchor="${a}">` +
+  const bx = textBox(o)
+  const frame = bx ? `<rect${turn} x="${bx.x}" y="${bx.y}" width="${bx.width}" height="${bx.height}" fill="${o.boxFill || 'none'}" stroke="${o.boxStroke || o.fill || '#1F2321'}" stroke-width="${(o.fontSize || 14) * 0.06}"/>` : ''
+  return frame + `<text${turn} x="${x}" y="${o.y}" font-size="${T.fontSize}" font-family="'${o.fontFamily || 'Plus Jakarta Sans'}', sans-serif"${weight}${style} fill="${o.fill || '#1F2321'}" text-anchor="${a}">` +
     T.lines.map((l, i) => `<tspan x="${x}" y="${o.y + i * T.lineH}">${esc(l) || ' '}</tspan>`).join('') + '</text>'
 }

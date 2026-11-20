@@ -24,6 +24,10 @@ Platform (PL1–PL5) after its open questions are answered (FEATURES.md, Platfor
   Polygon, Text — select, move, resize, lock, PDF; R fixed. REG-draw-line, REG-draw-rect, REG-draw-poly, REG-text-place.
   Arc and Arrow still draw nothing (D2 or later): held out of the Line tools menu (and the A key) until they are built —
   restore their LINE_TOOLS rows in components/LeftPanel/FloatingToolbar.jsx then.
+- **D1 finished** (branches d1-fixes, d1-final): the Draw flyout (no Polygon, no Blocks), one shape then Select, Tab through
+  stacked objects, the Line / Polyline / Rectangle / Circle / Text cards and edits to the mockups, the dealer audit fixes;
+  CLAUDE.md Rule 9 (the Basics contract) and REG-basics. Dimension and Freehand left the tool pill (they draw nothing in
+  canvas2) — D2 gives them a home.
 
 ## Epics
 

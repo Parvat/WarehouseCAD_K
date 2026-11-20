@@ -101,7 +101,8 @@ describe.each(['horizontal', 'vertical'])('SF-3 — buildings, %s', (orientation
     const fp = st().objects.find(o => o.type === 'fp_rect'), seg = m.getFpWallSegments(fp, st().gridSize)[0]
     expect(m.fpWallHitTest(st().objects, st().layers, (seg.a.x + seg.b.x) / 2, (seg.a.y + seg.b.y) / 2, 0.2, st().gridSize)?.objId).toBe(fp.id)
     expect(m.L.LOCKED_AFTER_GENERATE).toEqual(['columns'])                         // Fix 6 round 6: Generate locks the Columns layer again
-    expect(read('canvas2/useCanvasInteraction.js')).toMatch(/\} else if \(obj && JSON\.stringify\(obj\) !== JSON\.stringify\(rd\.origObj\)\) \{\s+st\.commitObjectUpdate\(rd\.objId, obj\)/)
+    // (d1-final) and only when the pointer truly moved (3 px — a double-click on a handle commits nothing)
+    expect(read('canvas2/useCanvasInteraction.js')).toMatch(/\} else if \(obj && rd\.moved !== false && JSON\.stringify\(obj\) !== JSON\.stringify\(rd\.origObj\)\) \{\s+st\.commitObjectUpdate\(rd\.objId, obj\)/)
   })
 })
 

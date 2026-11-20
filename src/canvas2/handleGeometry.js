@@ -55,7 +55,7 @@ export const objHasResizeHandles = (o, rackTypes) => !!o && hasResizeHandles(o.t
 
 export function enabledHandlesFor(type) {
   if (type === 'aisle') return []
-  if (type === 'text') return ['tl', 'tr', 'bl', 'br']          // (D1) a text scales by its corners
+  if (type === 'text') return ['tl', 'tr', 'bl', 'br', 'ml', 'mr']   // (D1) a text scales by its corners; (d1-final) its side dots set its wrap width
   if (type === 'line') return ['ml', 'mr']                     // (D1) a line: its two ends (handlePositions)
   if (EDGE_ONLY.has(type)) return ['tc', 'bc', 'ml', 'mr']
   if (ML_MR_ONLY.has(type) || DOOR_TYPES.has(type)) return ['ml', 'mr']

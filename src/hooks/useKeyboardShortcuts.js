@@ -2,7 +2,9 @@ import { useEffect } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TOOLS } from '../constants'
 import { nanoid } from 'nanoid'
-import { pasteAt } from '../utils/pasteAt'
+import { pasteAt, pointerWorld } from '../utils/pasteAt'
+import { stackAt } from '../canvas2/hitTest'
+import { useShapePoint, removePolylinePoint } from '../utils/drawTool'
 import { cancelPlacement } from '../utils/placement'
 import { useRowGroup, clearGroup, cancelGroupBox, ROW_GROUP_TOOL } from '../utils/rowGroupTool'
 import { FILL_TOOL, cancelFill } from '../utils/fillTool'
@@ -75,6 +77,9 @@ export function shortcutHandler(e) {
         // a tunnel picked, nothing selected: Delete gives its levels back (utils/tunnel.js)
         { const st = useCanvasStore.getState(), t = !st.selectedIds.length && useTunnelPick.getState().pick ? pickedTunnel(st.objects, undefined, st.gridSize || 40) : null
           if (t) { deleteTunnel(useCanvasStore, t); return } }
+        // (d1-final) a polyline's point picked (a click on it): Delete takes that point off, not the polyline
+        { const st = useCanvasStore.getState(), sp = useShapePoint.getState()
+          if (sp.id && st.selectedIds.length === 1 && st.selectedIds[0] === sp.id) { removePolylinePoint(useCanvasStore, sp.id, sp.i); return } }
         // one Delete for the key and the bars (studio/selectionActions.js deleteSelection): bays picked — only those
         // bays, the rows stay; rows — the rows
         deleteSelection()
@@ -105,6 +110,19 @@ export function shortcutHandler(e) {
         // Studio (STUDIO.md §5): F Fill racking, G Row group, S Split, M Measure — shown in the tool pill's hints.
         // M was Multi-select, a tool only the retired SVG engine had.
         if (e.key.toLowerCase() === 'm') { toggleMeasure(useCanvasStore); return }
+        /* (d1-final, CLAUDE.md Rule 9) Tab, with the pointer over the plan: the next object stacked under it (Shift+Tab
+           the one before) — what a click picks first, then the one under it … the building last; round again */
+        if (e.key === 'Tab' && !e.altKey && document.querySelector('#canvas2-container:hover')) {
+          const st = useCanvasStore.getState(), w = pointerWorld(st)
+          if (!w) return
+          const ids = stackAt(st.objects, st.layers, w.x, w.y, st.zoom || 1, st.gridSize || 40)
+          if (!ids.length) return
+          e.preventDefault()
+          const cur = st.selectedIds.length === 1 ? ids.indexOf(st.selectedIds[0]) : -1
+          const next = cur < 0 ? (e.shiftKey ? ids.length - 1 : 0) : (cur + (e.shiftKey ? -1 : 1) + ids.length) % ids.length
+          st.selectObject(ids[next], false)
+          return
+        }
         const toolMap = {
           'v': TOOLS.SELECT,
           'f': FILL_TOOL,

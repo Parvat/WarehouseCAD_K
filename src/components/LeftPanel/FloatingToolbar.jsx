@@ -842,13 +842,9 @@ function PinnedTray({ items, mode, colorOf, onPick, pinned, onTogglePin, onClose
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* Studio (STUDIO.md §1): `studio` renders the library as the left rail and its flyout, and the drawing tools as the
    bottom tool pill (src/studio/StudioTools.jsx) — the same sections, placement, tools and pen options as below. */
-/* (D1) Arrow and Arc are held out until they draw (docs/EPICS.md) — restore their rows then:
-     { id:'arrow', tool:TOOLS.ARROW, label:'Arrow', icon:'Arrow' }, { id:'arc', tool:TOOLS.ARC, label:'Arc', icon:'Arc' } */
-const LINE_TOOLS = [
-  { id:'line',      tool:TOOLS.LINE,      label:'Line',      icon:'Line',      keyName:'L' },
-  { id:'dimension', tool:ANNOT.DIMENSION, label:'Dimension', icon:'Dimension', kind:'object' },
-  { id:'freehand',  tool:TOOLS.FREEHAND,  label:'Freehand',  icon:'Freehand' },
-]
+/* (d1-final) the pill's Line tools menu (Line, Dimension, Freehand) and its Text button are gone: Line and Text are in the
+   rail's Draw flyout (keys L, R, C, T); Dimension (D2) and Freehand draw nothing in canvas2 yet — give them a home then.
+   (D1) Arrow and Arc are held out until they draw (docs/EPICS.md). */
 const ZONE_ICON = { zone_office:'Office', zone_staging:'Staging', zone_washroom:'Washroom', zone_custom:'Custom area' }
 
 export function FloatingToolbar({ studio = false } = {}) {
@@ -1143,10 +1139,10 @@ export function FloatingToolbar({ studio = false } = {}) {
       [tool('fill', FILL_TOOL, 'Fill racking', 'Fill racking', { keyName:'F' }), tool('rowgroup', ROW_GROUP_TOOL, 'Row group', 'Row group', { keyName:'G' }), tool('split', SPLIT_TOOL, 'Split', 'Split', { keyName:'S' }),
        // the Cross aisle tool (utils/crossAisleCut.js, xaisle-tool): drag across rows — they are cut there (icon: the set's Aisles)
        tool('crossaisle', CROSS_AISLE_TOOL, 'Cross aisle', 'Aisles', { title: 'Cross aisle — drag across rows to cut them there' })],
-      [{ id:'measure', label:'Measure', icon:'Measure', keyName:'M', on: measuring, onClick: () => toggleMeasure(useCanvasStore), title: measuring ? 'Exit measure tool (Esc)' : 'Measure — click two points for the distance between them' },
-       tool('text', TOOLS.TEXT, 'Text', 'Text', { kind:'object', keyName:'T' })],
+      // (d1-final) the drawing tools live in the rail's Draw flyout (and the keys L, R, C, T): no Line tools or Text here
+      [{ id:'measure', label:'Measure', icon:'Measure', keyName:'M', on: measuring, onClick: () => toggleMeasure(useCanvasStore), title: measuring ? 'Exit measure tool (Esc)' : 'Measure — click two points for the distance between them' }],
     ]
-    const lineTools = LINE_TOOLS.map(t => ({ ...t, on: !measuring && activeTool === t.tool, onClick: () => setActiveTool(t.tool) }))
+    const lineTools = []   // (d1-final) Line tools left the pill — Line is in the Draw flyout; Dimension and Freehand draw nothing in canvas2 yet
     const zones = ZONE_ITEMS.map(z => ({ id: z.id, label: z.label, icon: ZONE_ICON[z.id] || 'Custom area', onClick: () => pickItem({ ...z, catId:'zones' }) }))
     // the Section tool (canvas2/sectionTool.js): its two ways of drawing, R and P while its menu is open
     const sectionTools = [tool('section-rect', SECTION_RECT_TOOL, 'Rectangle', 'Custom area', { kind:'object', keyName:'R' }), tool('section-pen', SECTION_PEN_TOOL, 'Custom shape', 'Freehand', { keyName:'P' })]

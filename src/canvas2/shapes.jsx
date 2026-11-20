@@ -2,7 +2,8 @@ import { SELECT_BLUE, selectTint, textFace } from '../theme/tokens'
 import { useTextSizes, textHeight } from '../utils/textSizes'
 import { useCallback, useMemo, memo } from 'react'
 import { Group, Rect, Path, Shape, Circle, Ellipse, Line, Text } from 'react-konva'
-import { drawnGeom, isFilled, dashOf, textGeom } from '../render/drawnShapes'
+import { drawnGeom, dashOf, textGeom, fillPaint, hatchSegments, drawnBox, rectLabel, textBox } from '../render/drawnShapes'
+import { useCanvasStore } from '../store/useCanvasStore'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
 import { uprightXs, cantileverGeom, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
@@ -467,10 +468,13 @@ function FallbackShapeView({ obj, listening = false, bind }) {
   if (obj.type === 'text') {
     /* (D1) the text's box as getObjectBounds measures it — obj.x the anchor of its alignment, obj.y the first line's
        baseline — its lines one under the other (render/drawnShapes.js textGeom; the PDF draws the same) */
-    const T = textGeom(obj), fs = T.fontSize
+    const T = textGeom(obj), fs = T.fontSize, bx = textBox(obj)
     return (
       <Group name={nodeName(obj.id)} listening={listening} opacity={opacity} {...spin(obj)} {...(bind ? bind(obj) : null)}>
-        <Text name="drawn-text" x={T.box.x} y={obj.y - fs} width={Math.max(T.box.width, 1)} text={obj.text || ''} wrap="none"
+        {/* (d1-final) its Box: a frame round its words, filled or not */}
+        {bx && <Rect name="text-box" x={bx.x} y={bx.y} width={bx.width} height={bx.height} fill={obj.boxFill || undefined} stroke={obj.boxStroke || obj.fill || stroke} strokeWidth={fs * 0.06} listening={listening} />}
+        {/* its lines as laid out (a wrap width breaks them — d1-final) */}
+        <Text name="drawn-text" x={T.box.x} y={obj.y - fs} width={Math.max(T.box.width, 1)} text={T.lines.join(String.fromCharCode(10))} wrap="none"
           align={obj.align === 'center' ? 'center' : obj.align === 'right' ? 'right' : 'left'} lineHeight={obj.lineHeight ?? 1.25}
           fontStyle={`${obj.italic ? 'italic ' : ''}${obj.bold ? 'bold' : 'normal'}`.trim()}
           fontSize={fs} fontFamily={textFace(obj.fontFamily)}
@@ -528,14 +532,31 @@ function FallbackShapeView({ obj, listening = false, bind }) {
 /** A drawn Line, Rectangle, Circle, Polyline or Polygon: its own stroke (screen px, as every drawn line), Solid or
  *  Dashed, its fill when closed and filled — the outline render/drawnShapes.js gives the PDF and the pick too. */
 function DrawnShapeView({ obj, listening = false, bind }) {
-  const g = drawnGeom(obj), fill = isFilled(obj) ? obj.fill : undefined
+  const g = drawnGeom(obj), fp = fillPaint(obj)
+  const gs = useCanvasStore(s => s.gridSize) || 40, sizes = useTextSizes(t => t.sizes)
   const common = { stroke: obj.stroke || '#1F2321', strokeWidth: obj.strokeWidth || 2, dash: dashOf(obj) || undefined, lineJoin: 'round', lineCap: 'round',
     strokeScaleEnabled: false, perfectDrawEnabled: false, shadowForStrokeEnabled: false, listening }
+  /* (d1-final, the Rectangle mockup) the inside: tinted (its fill colour, light) or hatched (45° lines, clipped to it) */
+  const outline = (ctx) => { ctx.beginPath(); if (g.kind === 'ellipse') ctx.ellipse(g.cx, g.cy, Math.max(g.rx, 0), Math.max(g.ry, 0), 0, 0, Math.PI * 2); else g.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath() }
+  const lab = rectLabel(obj, gs, sizes)
   return (
     <Group name={nodeName(obj.id)} listening={listening} opacity={obj.opacity ?? 1} {...(bind ? bind(obj) : null)}>
+      {fp.kind === 'tint' && (g.kind === 'ellipse'
+        ? <Ellipse name="drawn-fill" x={g.cx} y={g.cy} radiusX={g.rx} radiusY={g.ry} fill={fp.color} opacity={fp.alpha} listening={false} />
+        : <Line name="drawn-fill" points={g.pts.flat()} closed fill={fp.color} opacity={fp.alpha} listening={false} />)}
+      {fp.kind === 'hatch' && (
+        <Group name="drawn-hatch" clipFunc={outline} listening={false}>
+          {hatchSegments(drawnBox(obj), gs).map((s, i) => <Line key={i} points={s} stroke={fp.color} opacity={fp.alpha} strokeWidth={1} strokeScaleEnabled={false} listening={false} />)}
+        </Group>
+      )}
       {g.kind === 'ellipse'
-        ? <Ellipse name="drawn-shape" x={g.cx} y={g.cy} radiusX={g.rx} radiusY={g.ry} fill={fill} {...common} />
-        : <Line name="drawn-shape" points={g.pts.flat()} closed={g.closed} fill={fill} {...common} />}
+        ? <Ellipse name="drawn-shape" x={g.cx} y={g.cy} radiusX={g.rx} radiusY={g.ry} {...common} />
+        : <Line name="drawn-shape" points={g.pts.flat()} closed={g.closed} {...common} />}
+      {/* a named rectangle: its name over its size and area, in its stroke colour (inside; above its top edge if it does not fit) */}
+      {lab && lab.lines.map((l, i) => (
+        <Text key={i} name={'rect-label' + (i ? '-size' : '')} x={l.x - lab.width / 2 - l.fs} y={l.y} width={lab.width + 2 * l.fs} align="center" text={l.text}
+          fontSize={l.fs} fontStyle={l.bold ? '600' : 'normal'} fontFamily="'Plus Jakarta Sans', sans-serif" fill={obj.stroke || '#1F2321'} listening={false} />
+      ))}
     </Group>
   )
 }
@@ -676,6 +697,15 @@ export function outlineBounds(obj, gridSize = 40, objects = []) {
 export function SelectionOutline({ obj, gridSize = 40, objects = [], dashed = false }) {
   /* a row whose bays are picked: thin and dashed (STUDIO.md §7); a selected row: the 2px solid outline */
   const line = dashed ? { strokeWidth: 1, dash: [5, 4] } : { strokeWidth: 2 }
+  /* (d1-final, the Line mockup) a drawn line selected: no box — the line itself in the selection blue, its two end
+     handles (ResizeHandlesOverlay) */
+  if (obj.type === 'line' && Number.isFinite(obj.x1)) {
+    return (
+      <Group name={'sel:' + obj.id} listening={false}>
+        <Line points={[obj.x1, obj.y1, obj.x2, obj.y2]} stroke={SELECT_BLUE} strokeWidth={Math.max(2, obj.strokeWidth || 2)} strokeScaleEnabled={false} lineCap="round" listening={false} />
+      </Group>
+    )
+  }
   /* A floor plan traces its OWN fpVerts directly — always the true,
      exact polygon, tight at any orientation — rather than an
      outlineBounds Rect wrapped in spin(). A building's rotation is baked

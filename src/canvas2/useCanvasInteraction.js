@@ -11,7 +11,7 @@ import { clampResizeUpdates, clampDragDelta } from '../utils/floorClamp'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
 import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
 import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from './fpRotate'
-import { resizeText, resizeCircle, snapPoint } from '../utils/drawTool'
+import { resizeText, resizeCircle, snapPoint, useShapePoint, clearShapePoint, mergedOnNeighbour } from '../utils/drawTool'
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
@@ -50,7 +50,7 @@ import { membersOf, clampSectionMove, clampSectionBox, clampSectionPoint } from 
 import { sectionSnapLines, snapSectionEdges, sectionBox, SECTION_SNAP_PX } from '../utils/sectionSnap'
 import { useSectionRename } from './sectionTool'
 import { POINT_HANDLE_PX } from './SectionShape'
-import { isPointShape, pointAt, sideAt, movePointTo, moveSideBy, isDrawn, drawnHit } from '../render/drawnShapes'
+import { isPointShape, pointAt, sideAt, movePointTo, moveSideBy, isDrawn, drawnHit, shapePoints } from '../render/drawnShapes'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { fpDimHit, useDimEdit } from './FpDimEdit'
 import { legendHit } from '../utils/sectionLegend'
@@ -465,7 +465,7 @@ export function useCanvasInteraction({
      not delta-from-previous-frame, so the snapshot has to stay fixed for the
      whole gesture. */
   const beginHandleDrag = (obj, handle, world) => {
-    resizeDrag.current = { objId: obj.id, handle, origObj: { ...obj }, startWorld: world }
+    resizeDrag.current = { objId: obj.id, handle, origObj: { ...obj }, startWorld: world, moved: false }
     // a zone's edge: the bays the release will remove show red meanwhile (ZoneEdit.jsx)
     if (typeof obj.type === 'string' && obj.type.startsWith('zone_')) useZoneEdit.setState({ zoneId: obj.id, was: { ...obj } })
   }
@@ -629,6 +629,7 @@ export function useCanvasInteraction({
     clearIssueHighlight()
 
     const evt = e.evt
+    clearShapePoint()      // (d1-final) a polyline's picked point: picked again by a click on it, else let go
 
     /* Middle button and held space pan over ANYTHING — the unambiguous escape
        hatches, checked before any hit test so they can never be shadowed by
@@ -675,6 +676,13 @@ export function useCanvasInteraction({
         if (selected && isPointShape(selected)) {
           const i = pointAt(selected, world.x, world.y, (POINT_HANDLE_PX / 2 + 3) / view.current.zoom)
           if (i >= 0) { shapeEdit.current = { id: selected.id, kind: 'point', i, orig: selected, from: world }; return }
+          /* (d1-final, the Polyline mockup) a side's dot (its middle): that side dragged — before the box handles, one of
+             which can sit on it */
+          const P = shapePoints(selected), n = P.length, closedP = selected.type === 'polygon' || !!selected.closed, rr = 7 / view.current.zoom
+          for (let k = 0; k < n - (closedP ? 0 : 1); k++) {
+            const a = P[k], b = P[(k + 1) % n]
+            if (Math.hypot(world.x - (a[0] + b[0]) / 2, world.y - (a[1] + b[1]) / 2) <= rr) { shapeEdit.current = { id: selected.id, kind: 'side', i: k, orig: selected, from: world }; return }
+          }
         }
         if (selected && objHasResizeHandles(selected, PORTED_RACK_TYPES)) {
           const handle = handleHitTest(selected, world.x, world.y, view.current.zoom)
@@ -1132,6 +1140,10 @@ export function useCanvasInteraction({
         const pos = screenToWorld(view.current, { x: evt.clientX - box.left, y: evt.clientY - box.top })
         const st = useCanvasStore.getState()
         const { objId, handle, origObj, startWorld } = rd
+        // (d1-final) the pointer truly moved: a press on a handle that never moves commits nothing (a double-click on a
+        // polyline's side, where a box handle sits, adds its point once — no second, empty undo step)
+        if (!rd.moved && Math.hypot(pos.x - startWorld.x, pos.y - startWorld.y) * view.current.zoom >= 3) rd.moved = true
+        if (!rd.moved) return      // under 3 px: not a drag yet — nothing changes
 
         if (handle === 'rotate') {
           /* Same flow as CanvasArea.jsx: angle from the UNSNAPPED pointer
@@ -1413,7 +1425,7 @@ export function useCanvasInteraction({
         if (!se.moved && Math.hypot(w.x - se.from.x, w.y - se.from.y) * view.current.zoom < 3) return
         se.moved = true
         const st = useCanvasStore.getState()
-        if (se.kind === 'point') { const q = snapPoint(w, { st, zoom: view.current.zoom, alt: !!evt.altKey }).p; st.updateObject(se.id, movePointTo(se.orig, se.i, q.x, q.y)) }
+        if (se.kind === 'point') { const q = snapPoint(w, { st, zoom: view.current.zoom, alt: !!evt.altKey, skip: se.id }).p; st.updateObject(se.id, movePointTo(se.orig, se.i, q.x, q.y)) }
         else st.updateObject(se.id, moveSideBy(se.orig, se.i, w.x - se.from.x, w.y - se.from.y))
         return
       }
@@ -1698,7 +1710,15 @@ export function useCanvasInteraction({
       }
       const se = shapeEdit.current
       shapeEdit.current = null
-      if (se) { if (se.moved) useCanvasStore.getState().commitObjectUpdate(se.id, {}); return }   // one undo step
+      if (se) {
+        // (d1-final) a click on a point (no drag) picks it — Delete takes it off; a point dropped on its neighbour merges into it
+        if (!se.moved) { if (se.kind === 'point') useShapePoint.setState({ id: se.id, i: se.i }); return }
+        const st = useCanvasStore.getState(), o = st.objects.find(x => x.id === se.id)
+        const m = se.kind === 'point' && o ? mergedOnNeighbour(o, se.i, 6 / view.current.zoom) : null
+        if (m) st.updateObject(se.id, m)
+        useCanvasStore.getState().commitObjectUpdate(se.id, {})   // one undo step
+        return
+      }
       const sp = sectionPoint.current
       sectionPoint.current = null
       if (sp) {
@@ -1752,7 +1772,7 @@ export function useCanvasInteraction({
           finishAreaResize(useCanvasStore, rd.objId, { x: o.x, y: o.y, w: o.width, h: o.height }, { gridSize: st.gridSize })
         // nothing moved (a click on a wall or a handle only selects): no history entry — so one Ctrl+Z right after
         // dropping a building and clicking its wall still takes the building away
-        } else if (obj && JSON.stringify(obj) !== JSON.stringify(rd.origObj)) {
+        } else if (obj && rd.moved !== false && JSON.stringify(obj) !== JSON.stringify(rd.origObj)) {
           st.commitObjectUpdate(rd.objId, obj)
           // a building resized from its handles: the bays that no longer fit go in the same undo step (buildingResize.js)
           if (isFloorPlan(obj) && typeof rd.handle === 'string' && /^(wall|corner)_/.test(rd.handle)) afterBuildingResize(useCanvasStore, rd.origObj)

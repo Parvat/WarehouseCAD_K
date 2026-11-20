@@ -8,16 +8,20 @@ import { deleteSelectionWithAreas } from '../../utils/deleteSelection'
 import { useShallow } from 'zustand/react/shallow'
 import { pxToFtIn } from '../../utils/canvas'
 import { TextSizeField } from '../../studio/textSizeCard'
-import { rotateTexts } from '../../utils/drawTool'
+import { rotateTexts, setLineLength, setLineAngle, setCircleRadius, setPolylineClosed, polyMeasures, convertRectToZone, angleOf } from '../../utils/drawTool'
 import { isDrawn, drawnGeom } from '../../render/drawnShapes'
 import { Swatch } from '../../studio/Swatch'
 import { SizeInput } from '../../studio/textSizeCard'
+import { nanoid as newIdForZone } from 'nanoid'
 
-/** (dealer audit) A drawn shape's style after drawing — the Draw bar's own controls: Stroke and its width (px), Fill (a
- *  closed shape), Solid | Dashed; each change one undo. */
+/** (dealer audit; d1-final, the mockups' cards) A drawn shape's style after drawing — the Draw bar's own controls:
+ *  Stroke colour and width (px), Solid | Dashed; a closed shape's Fill — None | Tinted | Hatched — and its colour. Each
+ *  change one undo. */
 function DrawnStyleFields({ obj }) {
   const closed = drawnGeom(obj).closed
   const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
+  const fillOn = !obj.noFill && !!obj.fill, kind = !fillOn ? 'none' : obj.fillStyle === 'hatch' ? 'hatch' : 'tint'
+  const fillColor = obj.fill || obj.stroke || '#1F2321'
   return (
     <>
       <Field label="Stroke">
@@ -27,37 +31,101 @@ function DrawnStyleFields({ obj }) {
           <span style={{ fontSize: 12, color: C.muted }}>px</span>
         </div>
       </Field>
-      {closed && (
-        <Field label="Fill">
-          <Swatch label="Fill" none value={obj.noFill ? null : obj.fill || null} onPick={(c) => set(c ? { fill: c, noFill: false } : { fill: null, noFill: true })} />
-        </Field>
-      )}
       <Field label="Line">
         <Seg aria="Line style" options={[
           { value: 'solid', label: 'Solid', on: !obj.dashed, onClick: () => set({ dashed: false }) },
           { value: 'dashed', label: 'Dashed', on: !!obj.dashed, onClick: () => set({ dashed: true }) },
         ]} />
       </Field>
+      {closed && (
+        <Field label="Fill">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Swatch label="Fill" none value={fillOn ? obj.fill : null} onPick={(c) => set(c ? { fill: c, noFill: false, fillStyle: obj.fillStyle || 'tint' } : { noFill: true })} />
+            <div style={{ flex: 1, minWidth: 0 }}><Seg aria="Fill style" options={[
+              { value: 'none', label: 'None', on: kind === 'none', onClick: () => set({ noFill: true }) },
+              { value: 'tint', label: 'Tinted', on: kind === 'tint', onClick: () => set({ fill: fillColor, noFill: false, fillStyle: 'tint' }) },
+              { value: 'hatch', label: 'Hatched', on: kind === 'hatch', onClick: () => set({ fill: fillColor, noFill: false, fillStyle: 'hatch' }) },
+            ]} /></div>
+          </div>
+        </Field>
+      )}
     </>
   )
 }
-/** (dealer audit) A drawn rectangle's / circle's size typed in feet (was raw px fields), one undo. */
+/** (dealer audit; d1-final) A drawn shape's own fields, typed: a rectangle's Name (shown inside with its size and area),
+ *  Width and Length (ft), Convert to zone; a circle's Radius and Diameter (linked; under 3″ radius refused); a line's
+ *  Length (its start held) and Angle; a polyline's Open | Closed, and closed its area and perimeter (sides crossing: the
+ *  area a dash). Each change one undo. */
 function DrawnSizeFields({ obj, gridSize }) {
-  const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
+  const st = useCanvasStore
+  const set = (u) => st.getState().commitObjectUpdate(obj.id, u)
   const ft = (px) => Math.round(px / gridSize * 100) / 100
   if (obj.type === 'rect') return (
+    <>
+      <Field label="Name">
+        <TextInput words aria="Name" placeholder="Optional — shown inside" value={obj.name || ''} onCommit={t => set({ name: String(t || '').trim() || undefined })} />
+      </Field>
+      <Grid2>
+        <Field label="Width (ft)"><NumInput aria="Width (ft)" value={ft(obj.width)} min={0.01} step={0.5} onCommit={v => set({ width: v * gridSize })} /></Field>
+        <Field label="Length (ft)"><NumInput aria="Length (ft)" value={ft(obj.height)} min={0.01} step={0.5} onCommit={v => set({ height: v * gridSize })} /></Field>
+      </Grid2>
+      <Btn kind="ghost" aria-label="Convert to zone" title="Turn this rectangle into an office-style zone — the bays under it go, as with any zone"
+        onClick={() => convertRectToZone(st, obj.id, newIdForZone)} style={{ width: '100%' }}>Convert to zone</Btn>
+    </>
+  )
+  if (obj.type === 'circle') { const r = obj.rx ?? obj.r; return (
     <Grid2>
-      <Field label="Width (ft)"><NumInput aria="Width (ft)" value={ft(obj.width)} min={0.01} step={0.5} onCommit={v => set({ width: v * gridSize })} /></Field>
-      <Field label="Height (ft)"><NumInput aria="Height (ft)" value={ft(obj.height)} min={0.01} step={0.5} onCommit={v => set({ height: v * gridSize })} /></Field>
+      <Field label="Radius (ft)"><NumInput aria="Radius (ft)" value={ft(r)} min={0.01} step={0.5} onCommit={v => setCircleRadius(st, obj.id, v)} /></Field>
+      <Field label="Diameter (ft)"><NumInput aria="Diameter (ft)" value={ft(r * 2)} min={0.01} step={0.5} onCommit={v => setCircleRadius(st, obj.id, v / 2)} /></Field>
     </Grid2>
-  )
-  if (obj.type === 'circle') return (
-    <Field label="Diameter (ft)"><NumInput aria="Diameter (ft)" value={ft((obj.rx ?? obj.r) * 2)} min={0.01} step={0.5} onCommit={v => { const r = v * gridSize / 2; set({ r, rx: r, ry: r }) }} /></Field>
-  )
+  ) }
+  if (obj.type === 'line') { const L = Math.hypot(obj.x2 - obj.x1, obj.y2 - obj.y1); return (
+    <Grid2>
+      <Field label="Length (ft)"><NumInput aria="Length (ft)" value={ft(L)} min={0.01} step={0.5} onCommit={v => setLineLength(st, obj.id, v)} /></Field>
+      <Field label="Angle (°)"><NumInput aria="Angle (°)" value={Math.round(angleOf({ x: obj.x1, y: obj.y1 }, { x: obj.x2, y: obj.y2 }) * 10) / 10} min={-360} step={1} onCommit={v => setLineAngle(st, obj.id, v)} /></Field>
+    </Grid2>
+  ) }
   const b = drawnGeom(obj).pts || []
   if (!b.length) return null
   const xs = b.map(p => p[0]), ys = b.map(p => p[1])
-  return <Grid2><DimReadout label="W" px={Math.max(...xs) - Math.min(...xs)} gridSize={gridSize} /><DimReadout label="H" px={Math.max(...ys) - Math.min(...ys)} gridSize={gridSize} /></Grid2>
+  const m = obj.type === 'polyline' ? polyMeasures(obj) : null
+  const sqft = (px2) => Math.round(px2 / (gridSize * gridSize)).toLocaleString('en-US') + ' sq ft'
+  return (
+    <>
+      {obj.type === 'polyline' && (
+        <Field label="Shape">
+          <Seg aria="Open or closed" options={[
+            { value: 'open', label: 'Open', on: !obj.closed, onClick: () => setPolylineClosed(st, obj.id, false) },
+            { value: 'closed', label: 'Closed', on: !!obj.closed, onClick: () => setPolylineClosed(st, obj.id, true) },
+          ]} />
+        </Field>
+      )}
+      <Grid2><DimReadout label="W" px={Math.max(...xs) - Math.min(...xs)} gridSize={gridSize} /><DimReadout label="H" px={Math.max(...ys) - Math.min(...ys)} gridSize={gridSize} /></Grid2>
+      {m && obj.closed && (
+        <Grid2>
+          <Field label="Area"><span data-poly-area style={{ fontFamily: MONO, color: C.strong, fontSize: 12 }}>{m.area == null ? '—' : sqft(m.area)}</span></Field>
+          <Field label="Perimeter"><span data-poly-perimeter style={{ fontFamily: MONO, color: C.strong, fontSize: 12 }}>{pxToFtIn(m.perimeter, gridSize)}</span></Field>
+        </Grid2>
+      )}
+      {m && obj.closed && m.crossing && <Note>Its sides cross — no area.</Note>}
+    </>
+  )
+}
+/** (d1-final) A text's Box: a frame round its words — its border and its fill (None allowed). Each change one undo. */
+function TextBoxFields({ obj }) {
+  const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
+  return (
+    <Field label="Box">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Seg aria="Box" options={[
+          { value: 'off', label: 'None', on: !obj.boxed, onClick: () => set({ boxed: false }) },
+          { value: 'on', label: 'Box', on: !!obj.boxed, onClick: () => set({ boxed: true }) },
+        ]} />
+        {obj.boxed && <Swatch label="Box border" value={obj.boxStroke || obj.fill || '#1F2321'} onPick={(c) => set({ boxStroke: c || null })} />}
+        {obj.boxed && <Swatch label="Box fill" none value={obj.boxFill || null} onPick={(c) => set({ boxFill: c || null })} />}
+      </div>
+    </Field>
+  )
 }
 import { RackingAreaPanel } from './panels/RackingAreaPanel'
 import { RackRowExtras, MultiBayPanel, CantileverPanel, ColumnGridPanel, DriveInPanel, DriveThroughPanel, PushbackPanel } from '../RightPanel/Rackrowpanel'
@@ -519,6 +587,7 @@ function TextFields({ obj, up, commit }) {
         <Seg aria="Style" options={[['bold', 'B', 'Bold'], ['italic', 'I', 'Italic'], ['underline', 'U', 'Underline'], ['strike', 'S', 'Strikethrough']]
           .map(([k, label, title]) => ({ value: k, label, title, aria: title, on: !!obj[k], onClick: () => commit(k, !obj[k]) }))} />
       </Field>
+      <TextBoxFields obj={obj} />
       {/* (d1-fixes) a text turns in 90° steps */}
       <Field label="Rotation">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

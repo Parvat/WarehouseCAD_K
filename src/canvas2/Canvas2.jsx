@@ -30,8 +30,10 @@ import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, startRect, moveRect, commitRect, p
 import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
 import { DoorBar, DoorPreview, DoorGapLive, RowPreview, useDoorGapKeys } from './DoorBar'
-import { DrawBar, TextBar, DrawPreview, TextEditor, useDrawKeys, ShapePointHandles } from './DrawBar'
-import { useDrawTool, shapeOfTool, twoPoint, snapPoint, commitShape, startText, commitText, closesAt } from '../utils/drawTool'
+import { DrawBar, TextBar, DrawPreview, TextEditor, useDrawKeys, ShapePointHandles, TextBoxDraft } from './DrawBar'
+import { useDrawTool, shapeOfTool, twoPoint, snapPoint, commitShape, startText, commitText, closesAt, editText, addPolylinePoint, RECT_CLICK_IN } from '../utils/drawTool'
+import { isPointShape, sideAt, pointAt } from '../render/drawnShapes'
+import { pickAt } from './hitTest'
 import { rowWallAt, rowCountOn, hoverRow, dropRow, fillRow } from '../utils/doorRowTool'
 import { DOOR_TOOL, hoverDoor, placeDoor, clearDoorHover, useDoorTool } from '../utils/doorTool'
 import { SelectionBar, FloorMenu, openFloorMenu } from '../studio/SelectionBar'
@@ -388,7 +390,7 @@ export function Canvas2() {
       if (live) useCanvasStore.getState().setActiveTool(HOME_TOOL)
     }
     window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
   }
 
   /* "Row group" (utils/rowGroupTool.js) — the same way: a press starts a box, the release adds the rows it
@@ -548,14 +550,14 @@ export function Canvas2() {
     const st = useCanvasStore.getState(), s = useDrawTool.getState(), w = screenToWorld(view.current, screen)
     const last = s.pts[s.pts.length - 1] || null
     // near the first point of a polyline / polygon: on it (it closes there)
-    if (!evt?.altKey && closesAt(drawShape, s.pts, w, view.current.zoom)) return { p: { ...s.pts[0] }, guides: [], closing: true }
+    if (!evt?.altKey && closesAt(drawShape, s.pts, w, view.current.zoom)) return { p: { ...s.pts[0] }, guides: [], closing: true, snap: 'close' }
     return snapPoint(w, { st, zoom: view.current.zoom, last, shift: !!evt?.shiftKey, alt: !!evt?.altKey, shape: drawShape })
   }
   const drawMouseMove = (e) => {
     const p = e.target.getStage()?.getPointerPosition()
     if (!p || useDrawTool.getState().press) return
     const r = drawAt(p, e.evt)
-    useDrawTool.setState({ at: r.p, guides: r.guides, closing: !!r.closing })
+    useDrawTool.setState({ at: r.p, guides: r.guides, closing: !!r.closing, snap: r.snap || null })
   }
   const drawMouseDown = (e) => {
     if (e.evt && e.evt.button !== 0) return
@@ -567,12 +569,14 @@ export function Canvas2() {
       // the first point: a drag from it draws the shape (its release ends it); a click waits for the second click
       useDrawTool.setState({ pts: [r.p], at: r.p, guides: r.guides, press: { sx: p.x, sy: p.y }, typed: null })
       const rect = stage.container().getBoundingClientRect()
-      const move = (ev) => { const q = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }, rr = drawAt(q, ev); useDrawTool.setState({ at: rr.p, guides: rr.guides }) }
+      const move = (ev) => { const q = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }, rr = drawAt(q, ev); useDrawTool.setState({ at: rr.p, guides: rr.guides, snap: rr.snap || null }) }
       const up = (ev) => {
         window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
         const t = useDrawTool.getState()
         if (!t.press) return
-        const dragged = Math.hypot(ev.clientX - rect.left - t.press.sx, ev.clientY - rect.top - t.press.sy) >= 6
+        let dragged = Math.hypot(ev.clientX - rect.left - t.press.sx, ev.clientY - rect.top - t.press.sy) >= 6
+        // (d1-final) a rectangle dragged under 6″ either way is a click: the second click ends it
+        if (dragged && drawShape === 'rect' && t.pts.length && t.at) { const lim = (RECT_CLICK_IN / 12) * (useCanvasStore.getState().gridSize || 40); if (Math.abs(t.at.x - t.pts[0].x) < lim && Math.abs(t.at.y - t.pts[0].y) < lim) dragged = false }
         if (dragged && t.pts.length && t.at) commitShape(useCanvasStore, drawShape, [t.pts[0], t.at], view.current.zoom, nanoid)
         else useDrawTool.setState({ press: null })
       }
@@ -597,16 +601,50 @@ export function Canvas2() {
     if (!p) return
     e.evt?.preventDefault?.()                       // the press does not take the focus back from the text being typed
     if (useDrawTool.getState().text) {
-      const made = commitText(useCanvasStore, nanoid)
-      // one text, then Select with it selected (d1-fixes) — unless the tool is kept on (a double-click): the next starts here
-      if (made && !useDrawTool.getState().keep) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); useCanvasStore.getState().selectObject(made.id, false); return }
+      const was = useDrawTool.getState().text, made = commitText(useCanvasStore, nanoid)
+      // one text, then Select with it selected (d1-fixes) — unless the tool is kept on (a double-click): the next starts here;
+      // a text edited again (d1-final): finished, then Select
+      if ((made && !useDrawTool.getState().keep) || was.id) { useCanvasStore.getState().setActiveTool(TOOLS.SELECT); if (made) useCanvasStore.getState().selectObject(made.id, false); return }
     }
-    startText(screenToWorld(view.current, p), useCanvasStore.getState().gridSize || 40)
+    /* (d1-final) a drag sets the text's wrap width (the box dragged, its left edge where the press was); a click — none */
+    const stage = e.target.getStage(), rect = stage.container().getBoundingClientRect(), w0 = screenToWorld(view.current, p)
+    const move = (ev) => { const q = screenToWorld(view.current, { x: ev.clientX - rect.left, y: ev.clientY - rect.top }); useDrawTool.setState({ textPress: { x0: w0.x, y0: w0.y, x1: q.x, y1: q.y } }) }
+    const up = (ev) => {
+      window.removeEventListener('mouseup', up); window.removeEventListener('mousemove', move)
+      useDrawTool.setState({ textPress: null })
+      const q = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }, gs = useCanvasStore.getState().gridSize || 40
+      if (Math.hypot(q.x - p.x, q.y - p.y) >= 6) { const w1 = screenToWorld(view.current, q); startText({ x: Math.min(w0.x, w1.x), y: Math.min(w0.y, w1.y) }, gs, Math.abs(w1.x - w0.x)) }
+      else startText(w0, gs)
+    }
+    window.addEventListener('mouseup', up)
+  }
+  /* (d1-final) a double-click with Select or Pan: on a text — its words edited again; on a side of the selected polyline —
+     a point added there (one undo); else the canvas's own (fit) */
+  const shapeDblClick = (e) => {
+    const stage = e?.target?.getStage?.(), p = stage?.getPointerPosition()
+    // a double-click is two presses in one spot: a click, then a drag soon after, is not one (it moves what it grabbed)
+    const [pa, pb] = presses.current.slice(-2)
+    if (!pa || !pb || Math.hypot(pa.x - pb.x, pa.y - pb.y) > 4 || (p && Math.hypot(p.x - pb.x, p.y - pb.y) > 4)) return
+    if (p) {
+      const st = useCanvasStore.getState(), w = screenToWorld(view.current, p), z = view.current.zoom
+      const sel = st.selectedIds.length === 1 ? st.objects.find(o => o.id === st.selectedIds[0]) : null
+      if (sel && sel.type === 'polyline' && isPointShape(sel) && !sel.locked) {
+        // on one of its points already (a quick click after a double-click reads as another): nothing added
+        if (pointAt(sel, w.x, w.y, 7 / z) >= 0) return
+        const si = sideAt(sel, w.x, w.y, Math.max(2, (sel.strokeWidth || 2) / 2 + 3) / z)
+        if (si >= 0) { addPolylinePoint(useCanvasStore, sel.id, si, w); return }
+      }
+      const hit = pickAt(st.objects, st.layers, w.x, w.y, z, st.gridSize || 40)
+      const o = hit.id && st.objects.find(q => q.id === hit.id)
+      if (o && o.type === 'text' && !o.locked) { editText(useCanvasStore, o.id); return }
+    }
+    onDblClick(e)
   }
 
   const modeMouseDown = drawing ? drawMouseDown : texting ? textMouseDown : measuring ? measureMouseDown : sectioning ? sectionMouseDown : filling ? fillMouseDown : xaisling ? xaisleMouseDown : grouping ? groupMouseDown : splitting ? splitMouseDown : dooring ? doorMouseDown : onStageMouseDown
   // Space+drag or a middle drag pans in any tool (STUDIO.md §7a)
-  const stageMouseDown = (e) => (isForcePan(e && e.evt) ? onStageMouseDown(e) : modeMouseDown(e))
+  const presses = useRef([])      // (d1-final) where the last presses landed (screen) — a double-click is two in one spot
+  const stageMouseDown = (e) => { const pp = e?.target?.getStage?.()?.getPointerPosition(); if (pp) presses.current = [...presses.current.slice(-1), pp]; return isForcePan(e && e.evt) ? onStageMouseDown(e) : modeMouseDown(e) }
   // the Row group's cursor: resize over a group row's handle, move over its body, crosshair over the floor (STUDIO.md §7a)
   const [groupCursor, setGroupCursor] = useState('crosshair')
   const groupMouseMove = (e) => { const c = groupCursorAt(e); if (c !== groupCursor) setGroupCursor(c) }
@@ -639,7 +677,7 @@ export function Canvas2() {
           onMouseMove={stageMouseMove}
           onMouseLeave={stageMouseLeave}
           onWheel={onWheel}
-          onDblClick={drawing ? drawDblClick : texting ? undefined : sectPen ? () => penDblClick(useCanvasStore) : onDblClick}
+          onDblClick={drawing ? drawDblClick : texting ? undefined : sectPen ? () => penDblClick(useCanvasStore) : shapeDblClick}
         >
           {/* background — the grid alone; it never intercepts anything */}
           <Layer listening={false}>
@@ -717,6 +755,7 @@ export function Canvas2() {
             {/* Add door's preview on the hovered wall (DoorBar.jsx) */}
             {/* the shape being drawn (DrawBar.jsx) */}
             {drawing && <DrawPreview />}
+            {texting && <TextBoxDraft />}
             {dooring && !rowOn && <DoorPreview />}
             {dooring && !rowOn && <DoorGapLive />}
             {dooring && rowOn && <RowPreview />}

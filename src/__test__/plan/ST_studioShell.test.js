@@ -68,8 +68,10 @@ describe('ST — the frame', () => {
     expect(kb).toMatch(/if \(e\.key\.toLowerCase\(\) === 'm'\) \{ toggleMeasure\(useCanvasStore\); return \}/)
     expect(kb).toMatch(/'f': FILL_TOOL,\n\s+'g': ROW_GROUP_TOOL,\n\s+'s': SPLIT_TOOL,/)
     expect(/MULTI_SELECT/.test(kb)).toBe(false)
-    for (const [id, k] of [['fill', 'F'], ['rowgroup', 'G'], ['split', 'S'], ['select', 'V'], ['pan', 'P'], ['text', 'T']]) expect([id, ft.split('\n').some(l => l.includes(`tool('${id}'`) && new RegExp(`tool\\('${id}'[^)]*\\)?[^)]*keyName:'${k}'`).test(l))]).toEqual([id, true])
+    for (const [id, k] of [['fill', 'F'], ['rowgroup', 'G'], ['split', 'S'], ['select', 'V'], ['pan', 'P']]) expect([id, ft.split('\n').some(l => l.includes(`tool('${id}'`) && new RegExp(`tool\\('${id}'[^)]*\\)?[^)]*keyName:'${k}'`).test(l))]).toEqual([id, true])
     expect(ft).toMatch(/icon:'Measure', keyName:'M'/)
+    // (d1-final) Text left the pill (the rail's Draw flyout has it); its key T stays — and L, R, C
+    for (const k of ["'t': TOOLS.TEXT", "'l': TOOLS.LINE", "'r': TOOLS.SQUARE", "'c': TOOLS.CIRCLE"]) expect([k, kb.includes(k)]).toEqual([k, true])
     expect(readFileSync(new URL('../../../STUDIO.md', import.meta.url), 'utf8')).toMatch(/V Select · P Pan · F Fill racking · G Row group · S Split · M Measure · L Line · T Text/)
   })
 })

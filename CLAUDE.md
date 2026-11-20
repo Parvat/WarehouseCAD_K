@@ -50,6 +50,17 @@ This file holds the rules; `CODEBASE.md` holds the map.
    REG-canvas-text-cad (replaces REG-canvas-text-min): on the 4 fixtures with a wall of eleven docks, every label's world
    size and position are identical at 10%, 50% and 200%, no two labels overlap at real size, and every object's drawn size
    scales with the zoom.
+9. **The Basics contract.** A round is not reported done until every object type and every tool it touches passes it:
+   - **Select:** a click on the object (or inside a closed one) selects it, and the most specific object under the click
+     wins; box select; Shift adds to the selection; **Tab** cycles through the objects stacked under the pointer.
+   - **Tool flow:** one use, then back to Select; Esc cancels; a double-click on a tool keeps it on.
+   - **Edit:** move, resize, corner and side editing where they apply, and typed exact values.
+   - **Copy, paste, duplicate, delete.** **One undo per action**, and redo.
+   - **Lock.** **Snap** to walls, edges, endpoints and the grid; Alt turns snapping off.
+   - **Save and reload** unchanged. **PDF export.** The same at every zoom.
+   REG-basics runs every object type in the library and every draw tool through the contract with real clicks on two
+   fixtures (older-horizontal and crowded-vertical). Before every report, also do a 10-minute dealer walkthrough of what
+   changed.
 
 ---
 

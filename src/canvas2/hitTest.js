@@ -436,6 +436,20 @@ export function pickAt(objects, layers, wx, wy, zoom, gridSize = 40, priority = 
   return { id: null, kind: 'none', real: false }
 }
 
+/** (d1-final) Every object stacked under world point (wx, wy), in the order a click would pick them (pickAt): the
+ *  first is what a click takes, then what a click would take with it gone, and so on — the building (its wall or its
+ *  floor) last. Tab cycles through them (hooks/useKeyboardShortcuts.js). → [id, …] */
+export function stackAt(objects, layers, wx, wy, zoom, gridSize = 40) {
+  const ids = [], skip = new Set()
+  for (let k = 0; k < 40; k++) {
+    const h = pickAt(objects.filter(o => !skip.has(o.id)), layers, wx, wy, zoom, gridSize)
+    if (!h.id || skip.has(h.id)) break
+    ids.push(h.id); skip.add(h.id)
+    if (h.kind === 'floor') break
+  }
+  return ids
+}
+
 /** Which floor plan's wall a world point falls on, as { objId, wallIdx }, or
  *  null — ported from CanvasUI.jsx's FpWallHitAreas hit band, NOT reinvented:
  *  the same distance-to-segment test, the same ~24-screen-px band (a real

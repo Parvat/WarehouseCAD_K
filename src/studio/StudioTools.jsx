@@ -118,7 +118,7 @@ function PillMenu({ label, rows, onClose }) {
 export function StudioToolPill({ groups, lineTools, zones, sections = [], penOptions }) {
   const [hover, setHover] = useState(null)
   const [menu, setMenu] = useState(null)
-  const lineOn = lineTools.some(t => t.on)
+  const lineOn = lineTools.some(t => t.on)   // (d1-final: the pill passes none — Line tools left it)
   const btn = (t) => (
     <div key={t.id} style={{ position: 'relative', display: 'flex' }} onMouseEnter={() => setHover(t.id)} onMouseLeave={() => setHover(h => (h === t.id ? null : h))}>
       <button type="button" aria-label={t.label} aria-pressed={!!t.on} disabled={t.disabled} title={t.title} onClick={t.onClick} style={pillBtn(t.on)}>
@@ -147,7 +147,7 @@ export function StudioToolPill({ groups, lineTools, zones, sections = [], penOpt
       <Sep />
       {groups[1].map(btn)}
       <Sep />
-      <div style={{ position: 'relative', display: 'flex' }} onMouseEnter={() => setHover('lines')} onMouseLeave={() => setHover(h => (h === 'lines' ? null : h))}>
+      {lineTools.length > 0 && <div style={{ position: 'relative', display: 'flex' }} onMouseEnter={() => setHover('lines')} onMouseLeave={() => setHover(h => (h === 'lines' ? null : h))}>
         <button type="button" aria-label="Line tools" aria-haspopup="menu" aria-expanded={menu === 'lines'} aria-pressed={lineOn}
           onClick={() => setMenu(m => (m === 'lines' ? null : 'lines'))} style={pillBtn(lineOn, true)}>
           <Icon name={(lineTools.find(t => t.on) || lineTools[0]).icon} kind={(lineTools.find(t => t.on) || lineTools[0]).kind || 'tool'} active={lineOn} />
@@ -157,7 +157,7 @@ export function StudioToolPill({ groups, lineTools, zones, sections = [], penOpt
         {menu === 'lines' && <PillMenu label="Line tools" onClose={() => setMenu(null)}
           rows={lineTools.map(t => ({ ...t, icon: <Icon name={t.icon} kind={t.kind || 'tool'} active={!!t.on} /> }))} />}
         {penOptions}
-      </div>
+      </div>}
       {groups[2].map(btn)}
       <div style={{ position: 'relative', display: 'flex' }} onMouseEnter={() => setHover('zone')} onMouseLeave={() => setHover(h => (h === 'zone' ? null : h))}>
         <button type="button" aria-label="Zone" aria-haspopup="menu" aria-expanded={menu === 'zone'} onClick={() => setMenu(m => (m === 'zone' ? null : 'zone'))} style={pillBtn(false, true)}>

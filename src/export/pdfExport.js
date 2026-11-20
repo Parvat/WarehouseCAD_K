@@ -554,7 +554,7 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     ...columns.map(o => columnGridSVG(o, gridSize, objects.filter(usable))),
     ...columns.filter(o => o.showGrid !== false).map(o => columnAnnotSVG(o, gridSize, objects.filter(usable), colLz(o))),
     // (D1) the drawn shapes and texts, above the plan as on the canvas
-    ...drawn.map(o => (o.type === 'text' ? textSVG(o) : drawnSVG(o, u))),
+    ...drawn.map(o => (o.type === 'text' ? textSVG(o) : drawnSVG(o, u, gridSize))),
     sectionKeySVG(objects.filter(usable), gridSize, namesLz),
     scaleBarSVG(vb.x + 10 * u, titleY + titleH * 0.45, gridSize, u),
     titleBlockSVG(titleX, titleY, u, { title, scaleRatio, date }),

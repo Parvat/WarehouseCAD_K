@@ -61,7 +61,7 @@ describe('TH — type and tokens', () => {
     const shapes = read('canvas2/shapes.jsx'), ov = read('canvas2/Overlays.jsx')
     expect(/#4a9eff|74,158,255/i.test(shapes)).toBe(false)
     expect(/#4a9eff|74,158,255/i.test(ov)).toBe(false)
-    expect(shapes.match(/stroke=\{SELECT_BLUE\}/g)).toHaveLength(4)
+    expect(shapes.match(/stroke=\{SELECT_BLUE\}/g)).toHaveLength(5)   // (d1-final: + a selected drawn line, drawn in the selection blue)
   })
 })
 

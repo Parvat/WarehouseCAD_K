@@ -56,6 +56,8 @@ export function deserializeScene(json, s) {
   const legacy = extractLegacy(data.objects)
   // an object lock an earlier Generate set on the column grid is dropped (utils/layers.js releaseGeneratedObjectLocks)
   s.objects      = releaseGeneratedObjectLocks(legacy.objects)
+    // (d1-final) the Polygon tool is gone: a saved polygon loads as a closed polyline (the same points)
+    .map(o => (o && o.type === 'polygon' && Array.isArray(o.pts) ? { ...o, type: 'polyline', closed: true } : o))
   s.elevations   = data.elevations ?? legacy.table ?? null
   // the label types' text heights (utils/textSizes.js): the file's own, or the defaults
   loadTextSizes(data.textSizes || null)
