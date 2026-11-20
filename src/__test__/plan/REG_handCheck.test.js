@@ -7461,24 +7461,23 @@ describe('REG — the hand check by real clicks', () => {
       expect([await L.S('return S.getState().activeTool'), await L.page.locator('[data-mode-bar]').count(), await L.page.locator('[data-mode-hint]').count()]).toEqual(['line', 0, 0])
       // (d1-fixes — one shape, then Select) a double-click on the bar's Line keeps it on until Esc, for the lines below
       await pickDraw('Line', true); await L.page.waitForTimeout(150)
-      // a drag: the live length on it as it is drawn
+      // a drag (d1-trim: an annotation — no live length or angle on it while drawn)
       let h0 = await hist7(), live = null
-      await dragPx({ x: 150, y: 680 }, { x: 450, y: 680 }, { mid: async () => { live = await konva('.draw-length:seg1') } })
-      expect(live && live.length === 1 && /′/.test(live[0])).toBe(true)
+      await dragPx({ x: 150, y: 680 }, { x: 450, y: 680 }, { mid: async () => { live = [...await konva('.draw-length:seg1'), ...await konva('.draw-angle')] } })
+      expect(live).toEqual([])
       let d = await drawnNow()
       const l1 = d[d.length - 1]
       expect([d.length - n0, l1.type, l1.layerId, Math.abs(Math.hypot(l1.x2 - l1.x1, l1.y2 - l1.y1) * z - 300) < 12, (await hist7()) - h0]).toEqual([1, 'line', 'notes', true, 1])
       // two clicks
       await L.page.mouse.click(150, 740); await L.page.mouse.move(300, 740); await L.page.waitForTimeout(100); await L.page.mouse.click(400, 740); await L.page.waitForTimeout(250)
       expect((await drawnNow()).length - n0).toBe(2)
-      // a length typed: 25 + Enter — exactly 25 ft, toward the pointer
+      // (d1-trim) no typed length: 25 typed while drawing types nothing — the click ends it where it is
       await L.page.mouse.click(520, 680); await L.page.mouse.move(700, 680); await L.page.waitForTimeout(100)
       await L.page.keyboard.type('25'); await L.page.waitForTimeout(100)
-      // (d1-final, the mockups) the length typed shows in a green pill by the pointer; the segment keeps its live length
-      expect((await konva('.draw-typing-text'))[0]).toBe('25')   // (d1-polish: the value alone, no hint words)
-      await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(250)
+      expect((await konva('.draw-typing-text')).length).toBe(0)
+      await L.page.mouse.click(700, 680); await L.page.waitForTimeout(250)
       d = await drawnNow(); const l3 = d[d.length - 1]
-      expect([d.length - n0, Math.round(Math.hypot(l3.x2 - l3.x1, l3.y2 - l3.y1) / gs * 1000) / 1000, l3.x2 > l3.x1]).toEqual([3, 25, true])
+      expect([d.length - n0, Math.abs(Math.hypot(l3.x2 - l3.x1, l3.y2 - l3.y1) * z - 180) < 12, l3.x2 > l3.x1]).toEqual([3, true, true])
       // Shift: level (0°) though the pointer is 6° off
       await L.page.mouse.click(520, 740); await L.page.keyboard.down('Shift'); await L.page.mouse.move(700, 758); await L.page.waitForTimeout(100); await L.page.mouse.click(700, 758); await L.page.keyboard.up('Shift'); await L.page.waitForTimeout(250)
       d = await drawnNow(); const l4 = d[d.length - 1]
@@ -8096,26 +8095,16 @@ describe('REG — the hand check by real clicks', () => {
       expect((await selIds())[0]).toBe(seq[at - 1])
     }, T)
 
-    it('REG-line-card (click): typing 30<45 + Enter while drawing gives 30 ft at 45°; the line\'s card has Length and Angle typed — a length keeps its start, an angle keeps its start and length (each one undo); a line under 3″ is refused with a notice (d1-final 3)', async () => {
+    it('REG-line-card (click): a line under 3″ is refused with a notice (d1-final 3; d1-trim: a line is an annotation — no typed length while drawing, no Length or Angle in its card or bar, no length label: the Dimension tool measures)', async () => {
       await open(); await drawView()
-      const gs = await gs7(), card = cardNow()
+      const card = cardNow()
+      // a line drawn: its card and bar have no Length or Angle; typing a number while drawing types nothing
       await L.page.keyboard.press('l'); await wait()
       await L.page.mouse.click(200, 760); await L.page.mouse.move(380, 700); await wait()
       await L.page.keyboard.type('30<45'); await wait()
-      expect((await konva('.draw-typing-text'))[0]).toBe('30<45')
-      await L.page.keyboard.press('Enter'); await wait(250)
-      const l = await lastDrawn(), len = (o) => Math.hypot(o.x2 - o.x1, o.y2 - o.y1) / gs, ang = (o) => (Math.atan2(-(o.y2 - o.y1), o.x2 - o.x1) * 180) / Math.PI
-      expect([Math.round(len(l) * 1000) / 1000, Math.round(ang(l) * 1000) / 1000, await toolNow()]).toEqual([30, 45, 'select'])
-      // the card: Length 20 — its start (the first click) held
-      let h0 = await hist7()
-      const lf = card.getByRole('spinbutton', { name: 'Length (ft)' }); await lf.fill('20'); await lf.press('Enter'); await wait()
-      let o = await objNow(l.id)
-      expect([o.x1, o.y1, Math.round(len(o) * 1000) / 1000, Math.round(ang(o) * 1000) / 1000, (await hist7()) - h0]).toEqual([l.x1, l.y1, 20, 45, 1])
-      // Angle 90: straight up from its start, the same length
-      h0 = await hist7()
-      const af = card.getByRole('spinbutton', { name: 'Angle (°)' }); await af.fill('90'); await af.press('Enter'); await wait()
-      o = await objNow(l.id)
-      expect([o.x1, o.y1, Math.abs(o.x2 - o.x1) < 1e-6, o.y2 < o.y1, Math.round(len(o) * 1000) / 1000, (await hist7()) - h0]).toEqual([l.x1, l.y1, true, true, 20, 1])
+      expect((await konva('.draw-typing-text')).length).toBe(0)
+      await L.page.mouse.click(380, 700); await wait(250)
+      expect([await card.getByRole('spinbutton', { name: 'Length (ft)' }).count(), await card.getByRole('spinbutton', { name: 'Angle (°)' }).count(), await selBar().getByRole('textbox').count(), (await konva('.line-measure')).length]).toEqual([0, 0, 0, 0])
       // a line under 3″ — at 200 %, a 12 px drag (1½″), no snap (Alt): refused, a notice
       await L.page.keyboard.press('Escape')
       await L.S('S.setState({ zoom: 2 })'); await wait(200)
@@ -8512,9 +8501,8 @@ describe('REG — the hand check by real clicks', () => {
       const ln = await lastDrawn(), gs = await gs7()
       // (d2-arrows: + the end style, and Square | Round line ends)
       expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'End style', 'Square', 'Round', 'Lock', 'Duplicate', 'Delete'])
-      // (d1-polish) the read-out: two small fields, Length and Angle
-      const ro = [await selBar().getByRole('textbox', { name: 'Length' }).inputValue(), await selBar().getByRole('textbox', { name: 'Angle (°)' }).inputValue()].join(' · ') + '°'
-      expect(ro).toBe(await L.S('return Promise.all([import("/src/utils/bom.js"), import("/src/utils/drawTool.js")]).then(([M, D]) => M.ftIn(Math.hypot(arg.x2 - arg.x1, arg.y2 - arg.y1) / arg.gs * 12) + " · " + D.angleShown({ x: arg.x1, y: arg.y1 }, { x: arg.x2, y: arg.y2 }) + "°")', { ...ln, gs }))
+      // (d1-trim) an annotation: no Length or Angle fields in its bar
+      expect(await selBar().getByRole('textbox').count()).toBe(0)
       await once('line dashed', () => selBar().getByRole('button', { name: 'Dashed' }).click(), async () => (await objNow(ln.id)).dashed === true)
       // a text
       await L.page.keyboard.press('Escape')
@@ -8608,9 +8596,12 @@ describe('REG — the hand check by real clicks', () => {
       const b = await lastDrawn()
       expect([b.ends, Math.abs(b.y2 - b.y1) < 1e-6]).toEqual(['end', true])
       await pickDraw('Arrow')
-      await L.page.mouse.click(450, 760); await L.page.mouse.move(600, 760); await wait(100); await L.page.keyboard.type('25'); await L.page.keyboard.press('Enter'); await wait(250)
+      // (d1-trim) no typed length: 25 types nothing; two clicks
+      await L.page.mouse.click(450, 760); await L.page.mouse.move(600, 760); await wait(100); await L.page.keyboard.type('25'); await wait(100)
+      expect((await konva('.draw-typing-text')).length).toBe(0)
+      await L.page.mouse.click(600, 760); await wait(250)
       const c = await lastDrawn()
-      expect([c.ends, Math.round(Math.hypot(c.x2 - c.x1, c.y2 - c.y1) / gs * 1000) / 1000]).toEqual(['end', 25])
+      expect([c.ends, Math.abs(Math.hypot(c.x2 - c.x1, c.y2 - c.y1) * 0.1 - 150) < 12]).toEqual(['end', true])
       // End style: both, start, none — one undo each; the card and the bar name it Arrow, then Line
       const base = (await headsNow()).length - 1   // the other arrows' heads
       const setEnds = async (label) => { const h0 = await hist7(); await selBar().getByRole('button', { name: 'End style' }).click(); await wait(150); await popNow().getByRole('option', { name: label }).click(); await wait(200); return (await hist7()) - h0 }
@@ -8922,48 +8913,6 @@ describe('REG — the hand check by real clicks', () => {
       expect([l3.stroke, l3.strokeWidth, l3.dashed]).toEqual(['#E5484D', 6, true])
     }, T)
 
-    it('REG-length-label (click): a selected Line, Arrow or Elbow arrow — a click on its length label types a new length: Enter applies (the start stays put, the end moves along the same direction; one undo), Esc cancels (d1-polish 3)', async () => {
-      await open(); await drawView()
-      const gs = await gs7()
-      const labelAt = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const n = st.findOne('.line-measure'); if (!n) return null; const r = n.getClientRect(), c = st.container().getBoundingClientRect(); return { x: c.left + r.x + r.width / 2, y: c.top + r.y + r.height / 2 } })
-      const len = (o) => L.S('return import("/src/render/drawnShapes.js").then(M => M.drawnLength(S.getState().objects.find(q => q.id === arg)))', o.id)
-      const typeLen = async (v, key = 'Enter') => {
-        const p = await labelAt(); await L.page.mouse.click(p.x, p.y); await wait(250)
-        const ed = L.page.locator('[data-length-editor]')
-        expect(await ed.count()).toBe(1)
-        await L.page.keyboard.type(v); await L.page.keyboard.press(key); await wait(250)
-        expect(await ed.count()).toBe(0)
-      }
-      // a line: 20 ft
-      await L.page.keyboard.press('l'); await wait()
-      await L.page.keyboard.down('Alt'); await L.page.mouse.click(150, 700); await L.page.mouse.click(400, 650); await L.page.keyboard.up('Alt'); await wait(250)
-      const a = await lastDrawn()
-      let h0 = await hist7()
-      await typeLen('20')
-      let o = await objNow(a.id)
-      const dir = (q) => Math.atan2(q.y2 - q.y1, q.x2 - q.x1)
-      expect([Math.round(await len(o) / gs * 1000) / 1000, o.x1 === a.x1 && o.y1 === a.y1, Math.abs(dir(o) - dir(a)) < 1e-9, (await hist7()) - h0]).toEqual([20, true, true, 1])
-      // Esc: unchanged
-      h0 = await hist7()
-      await typeLen('5', 'Escape')
-      expect([Math.round(await len(await objNow(a.id)) / gs * 1000) / 1000, (await hist7()) - h0]).toEqual([20, 0])
-      // an arrow: 12′-6″
-      await L.page.keyboard.press('Escape'); await pickDraw('Arrow')
-      await L.page.keyboard.down('Alt'); await L.page.mouse.click(500, 700); await L.page.mouse.click(700, 760); await L.page.keyboard.up('Alt'); await wait(250)
-      const b = await lastDrawn()
-      await typeLen(`12' 6"`)
-      o = await objNow(b.id)
-      expect([o.ends, Math.round(await len(o) / gs * 1000) / 1000, o.x1 === b.x1 && o.y1 === b.y1, Math.abs(dir(o) - dir(b)) < 1e-9]).toEqual(['end', 12.5, true, true])
-      // an elbow arrow: 30 ft along its route, its start kept
-      await L.page.keyboard.press('Escape'); await pickDraw('Elbow arrow')
-      await L.page.keyboard.down('Alt'); await L.page.mouse.move(150, 760); await L.page.mouse.down(); await L.page.mouse.move(170, 761); await L.page.mouse.move(260, 780); await L.page.mouse.move(350, 795); await L.page.mouse.up(); await L.page.keyboard.up('Alt'); await wait(250)
-      const e = await lastDrawn()
-      h0 = await hist7()
-      await typeLen('30')
-      o = await objNow(e.id)
-      expect([o.type, Math.round(await len(o) / gs * 1000) / 1000, o.x1 === e.x1 && o.y1 === e.y1, (await hist7()) - h0]).toEqual(['elbow', 30, true, 1])
-    }, T)
-
     it('REG-stroke-width-pick (click): the stroke width is a dropdown of 1 2 3 4 6 8 px shown as line pictures, in the bar and the card of a line, an arrow, an elbow arrow, a polyline, a rectangle and a circle — one undo each (d1-polish 4)', async () => {
       await open(); await drawView()
       const made = []
@@ -8993,52 +8942,23 @@ describe('REG — the hand check by real clicks', () => {
       }
     }, T)
 
-    it('REG-bar-length-angle (click): a selected Line, Arrow or Elbow arrow — its bar\'s length and angle are two small fields: 40 typed in Length + Enter makes it 40 ft (its start put, the same direction); 90 in Angle turns it about its start (its length kept); Esc leaves it; one undo each; the canvas label still clicks to type; angles read 0 to 359, never 360; a selected arrow still shows its head — its end handle just behind the tip (d1-polish 2)', async () => {
+    it('REG-bar-length-angle (click): (d1-trim: Line, Arrow and Elbow arrow are annotations — no Length or Angle fields in their bar) a selected arrow still shows its head: its end handle just behind the tip, and it still drags the end (d1-polish 3)', async () => {
       await open(); await drawView()
       const gs = await gs7()
-      const lenF = () => selBar().getByRole('textbox', { name: 'Length' }), angF = () => selBar().getByRole('textbox', { name: 'Angle (°)' })
-      const len = (id) => L.S('return import("/src/render/drawnShapes.js").then(M => M.drawnLength(S.getState().objects.find(q => q.id === arg)))', id)
-      const typeIn = async (fld, v, key = 'Enter') => { await fld.click(); await wait(150); await L.page.keyboard.type(v); await L.page.keyboard.press(key); await wait(250) }
       for (const tool of ['Line', 'Arrow', 'Elbow arrow']) {
         await L.page.keyboard.press('Escape'); await pickDraw(tool)
         await L.page.keyboard.down('Alt')
         if (tool === 'Elbow arrow') { await L.page.mouse.move(150, 690); await L.page.mouse.down(); await L.page.mouse.move(170, 691); await L.page.mouse.move(260, 720); await L.page.mouse.move(330, 760); await L.page.mouse.up() }
         else { await L.page.mouse.click(150, 700); await L.page.mouse.click(330, 660) }
         await L.page.keyboard.up('Alt'); await wait(250)
-        const a = await lastDrawn()
-        // 40 typed in Length + Enter: 40 ft, the start put, the same direction — one undo
-        let h0 = await hist7()
-        await typeIn(lenF(), '40')
-        let o = await objNow(a.id)
-        expect([tool, Math.round(await len(a.id) / gs * 1000) / 1000, o.x1 === a.x1 && o.y1 === a.y1, Math.abs(Math.atan2(o.y2 - o.y1, o.x2 - o.x1) - Math.atan2(a.y2 - a.y1, a.x2 - a.x1)) < 1e-9, (await hist7()) - h0, await lenF().inputValue()])
-          .toEqual([tool, 40, true, true, 1, "40′"])
-        // 90 in Angle: straight up from its start, its span kept — one undo
-        h0 = await hist7()
-        const span = Math.hypot(o.x2 - o.x1, o.y2 - o.y1)
-        await typeIn(angF(), '90')
-        o = await objNow(a.id)
-        expect([tool, Math.abs(o.x2 - o.x1) < 1e-6, Math.abs((o.y1 - o.y2) - span) < 1e-6, o.x1 === a.x1 && o.y1 === a.y1, (await hist7()) - h0, await angF().inputValue()]).toEqual([tool, true, true, true, 1, '90'])
-        // Esc: as it was
-        h0 = await hist7()
-        await typeIn(lenF(), '7', 'Escape')
-        expect([Math.round(await len(a.id) / gs), (await hist7()) - h0, await lenF().inputValue() !== '7'].slice(1)).toEqual([0, true])
-        // 359.7 typed: reads 0, never 360
-        await typeIn(angF(), '359.7')
-        expect(await angF().inputValue()).toBe('0')
+        expect([tool, await selBar().getByRole('textbox').count(), (await konva('.line-measure')).length]).toEqual([tool, 0, 0])
       }
-      // the canvas label still clicks to type (the last one, an elbow): 25
-      const e = await lastDrawn()
-      const lab = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const n = st.findOne('.line-measure'); if (!n) return null; const r = n.getClientRect(), c = st.container().getBoundingClientRect(); return { x: c.left + r.x + r.width / 2, y: c.top + r.y + r.height / 2 } })
-      await L.page.mouse.click(lab.x, lab.y); await wait(250); await L.page.keyboard.type('25'); await L.page.keyboard.press('Enter'); await wait(250)
-      expect(Math.round(await len(e.id) / gs * 1000) / 1000).toBe(25)
-      // a selected arrow: its end handle just behind the tip — the head in view
       await L.page.keyboard.press('Escape'); await pickDraw('Arrow')
       await L.page.keyboard.down('Alt'); await L.page.mouse.click(400, 760); await L.page.mouse.click(700, 760); await L.page.keyboard.up('Alt'); await wait(250)
       const ar = await lastDrawn(), tip = await L.toScreen({ x: ar.x2, y: ar.y2 })
       const hb = await nodesAt('handlebox:mr'), head = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find('.drawn-head').length })
       const hl = (ar.strokeWidth || 2) * 0.75 * gs * 0.1
       expect([head > 0, hb.length, hb[0].x < tip.x - hl * 0.5, Math.abs(hb[0].y - tip.y) < 1]).toEqual([true, 1, true, true])
-      // and its handle still drags the end: 30 px right
       await L.page.keyboard.down('Alt'); await dragPx({ x: hb[0].x, y: hb[0].y }, { x: hb[0].x + 30, y: hb[0].y }); await L.page.keyboard.up('Alt')
       const ar2 = await objNow(ar.id)
       expect([Math.round((ar2.x2 - ar.x2) * 0.1), ar2.x1 === ar.x1]).toEqual([30, true])
@@ -9135,16 +9055,12 @@ describe('REG — the hand check by real clicks', () => {
       await esc(); await L.S('S.getState().selectObject(arg, false)', id); await wait(250)
       { const card = cardNow(), f = card.getByRole('spinbutton').first()
         const o = await L.S('return S.getState().objects.find(q => q.id === arg)', id)
-        /* (d1-polish) no number field: a line's, an arrow's, an elbow's length label (a click types a new length); a size
-           dropdown (a block arrow's — a plain number, typed); a polyline has none that applies (edited by its points) */
-        const lab = await p.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const n = st.findOne('.line-measure'); if (!n) return null; const r = n.getClientRect(), c = st.container().getBoundingClientRect(); return { x: c.left + r.x + r.width / 2, y: c.top + r.y + r.height / 2 } })
+        /* (d1-trim) a line, an arrow, an elbow arrow: drawn annotations have no typed values — exempt, by design (the
+           Dimension tool measures); no number field otherwise: a size dropdown (a block arrow's — a plain number, typed); a
+           polyline has none that applies (edited by its points) */
         const combo = card.locator('input[role=combobox]').first()   // (a size field, never a <select>)
-        if (!(await f.count()) && o && (o.type === 'elbow' || o.type === 'line') && lab) {
-          const j0 = await json(id)
-          await p.mouse.click(lab.x, lab.y); await wait(250)
-          await p.keyboard.type('17'); await p.keyboard.press('Enter'); await wait(250)
-          rec('edit: typed value', (await json(id)) !== j0, 'its length label, typed')
-          await p.mouse.move(5, 890); await p.keyboard.press('Control+z'); await wait(200)
+        if (o && (o.type === 'line' || o.type === 'elbow')) {
+          rec('edit: typed value', 'n/a', 'exempt — drawn annotations have no typed values')
         } else if (!(await f.count()) && (await combo.count())) {
           const j0 = await json(id), v = Number(await combo.inputValue())
           await combo.fill(String(Number.isFinite(v) ? v + 1 : 12)); await combo.press('Enter'); await wait(250)

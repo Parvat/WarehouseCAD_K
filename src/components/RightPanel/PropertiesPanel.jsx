@@ -123,12 +123,7 @@ function DrawnSizeFields({ obj, gridSize }) {
       <Field label="Diameter (ft)"><NumInput aria="Diameter (ft)" value={ft(r * 2)} min={0.01} step={0.5} onCommit={v => setCircleRadius(st, obj.id, v / 2)} /></Field>
     </Grid2>
   ) }
-  if (obj.type === 'line') { const L = Math.hypot(obj.x2 - obj.x1, obj.y2 - obj.y1); return (
-    <Grid2>
-      <Field label="Length (ft)"><NumInput aria="Length (ft)" value={ft(L)} min={0.01} step={0.5} onCommit={v => setLineLength(st, obj.id, v)} /></Field>
-      <Field label="Angle (°)"><NumInput aria="Angle (°)" value={angleOf({ x: obj.x1, y: obj.y1 }, { x: obj.x2, y: obj.y2 })} min={-360} step={1} onCommit={v => setLineAngle(st, obj.id, v)} /></Field>
-    </Grid2>
-  ) }
+  if (obj.type === 'line') return null   // (d1-trim) an annotation: no Length or Angle (the Dimension tool measures)
   const b = drawnGeom(obj).pts || []
   if (!b.length) return null
   const m = obj.type === 'polyline' ? polyMeasures(obj) : null

@@ -178,33 +178,6 @@ function FillGroup({ objs, ids, locked }) {
   )
 }
 
-/** (d1-polish) A small field in the bar: its value shown; a click selects it to type — Enter applies, Esc (or a click away)
- *  leaves it as it was. */
-function BarField({ aria, shown, width, onApply, locked, suffix }) {
-  const [t, setT] = useState(null)
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-      <input aria-label={aria} title={locked ? 'Locked' : aria} className="st-field" disabled={locked} value={t ?? shown} spellCheck={false}
-        onChange={e => setT(e.target.value)} onFocus={e => { setT(shown); const el = e.target; requestAnimationFrame(() => el.select()) }} onBlur={() => setT(null)}
-        onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); const v = t; setT(null); onApply(v); e.currentTarget.blur() } else if (e.key === 'Escape') { e.preventDefault(); setT(null); e.currentTarget.blur() } }}
-        style={{ height: 28, width, boxSizing: 'border-box', padding: '0 4px', border: 0, borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, textAlign: 'center', flexShrink: 0, ...(locked ? { opacity: 0.45 } : null) }} />
-      {suffix && <span aria-hidden="true" style={{ fontFamily: MONO, fontSize: 12, color: B.muted, padding: '0 2px' }}>{suffix}</span>}
-    </span>
-  )
-}
-/** (d1-polish) A line's, an arrow's or an elbow arrow's length and angle, two small fields (20′ · 3°): a length typed moves
- *  its end along the same direction (its start put), an angle turns it about its start — one undo each. */
-function LineReadout({ o, gs, locked }) {
-  const len = ftIn((drawnLength(o) / gs) * 12), ang = String(angleShown({ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 }))
-  return (
-    <span data-line-readout style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '0 4px' }}>
-      <BarField aria="Length" shown={len} width={64} locked={locked} onApply={(v) => { const ft = feetOf(v); if (ft > 0) setDrawnLength(store, o.id, ft) }} />
-      <span aria-hidden="true" style={{ color: B.muted }}>·</span>
-      <BarField aria="Angle (°)" shown={ang} width={40} suffix="°" locked={locked} onApply={(v) => { const d = Number(String(v ?? '').replace(/°/g, '').trim()); if (String(v ?? '').trim() !== '' && Number.isFinite(d)) setDrawnAngle(store, o.id, d) }} />
-    </span>
-  )
-}
-
 /** Size ▾ · B · I · colour | left · centre · right · rotate 90 — texts. */
 function TextGroup({ objs, ids, locked, gs }) {
   const o = objs[0], set = (u) => styleDrawn(store, ids, u)
@@ -254,7 +227,7 @@ export function DrawnBar({ objs }) {
       {corners && <><Sep /><CornersGroup objs={objs} ids={ids} locked={locked} /></>}
       {closed && <><Sep /><FillGroup objs={objs} ids={ids} locked={locked} /></>}
       {blocks && <BlockGroup objs={objs} ids={ids} locked={locked} gs={gs} />}
-      {objs.length === 1 && (objs[0].type === 'line' || objs[0].type === 'elbow') && <><Sep /><LineReadout o={objs[0]} gs={gs} locked={locked} /></>}
+      {/* (d1-trim) a line, an arrow, an elbow arrow: annotations — no length or angle fields */}
       {texts && <TextGroup objs={objs} ids={ids} locked={locked} gs={gs} />}
       {(noText || texts || blocks) && <Sep />}
       <LockDupDel locked={locked} />

@@ -101,10 +101,10 @@ export function DrawPreview() {
       const tmp = shapeObject(shape, [all[0], end], s, z, gs)
       if (tmp) {
         parts.push(<Group key="a" name="draw-draft" opacity={0.9} listening={false}><DrawnBody obj={{ ...tmp, id: 'draft' }} gs={gs} /></Group>)
-        const P = shape === 'elbow' ? drawnGeom(tmp).pts.map(([x, y]) => ({ x, y })) : [all[0], end]
-        for (let i = 1; i < P.length; i++) parts.push(label(P[i - 1], P[i], words(Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y)), 'seg' + i))
+        // (d1-trim) an arrow and an elbow arrow are annotations: no length, no angle; a block arrow keeps its
+        if (shape === 'block') parts.push(label(all[0], end, words(Math.hypot(end.x - all[0].x, end.y - all[0].y)), 'seg1'))
       }
-      if (shape !== 'elbow') parts.push(angleAt(all[0], end, 'ang'))
+      if (shape === 'block') parts.push(angleAt(all[0], end, 'ang'))
     } else if (shape === 'circle') {
       const [c, e] = all, r = Math.hypot(e.x - c.x, e.y - c.y)
       parts.push(<Circle key="c" name="draw-draft" x={c.x} y={c.y} radius={r} fill={fill} opacity={0.9} {...stroke} />)
@@ -119,8 +119,11 @@ export function DrawPreview() {
         if (placed.length >= 2) parts.push(<Line key="p" name="draw-draft" points={placed.flatMap(p => [p.x, p.y])} closed={false} {...stroke} />)
         parts.push(<Line key="band" name="draw-band" points={[all[all.length - 2].x, all[all.length - 2].y, end.x, end.y]} stroke={ks.stroke} strokeWidth={sw} dash={[6, 4]} strokeScaleEnabled={false} listening={false} />)
       }
-      for (let i = 1; i < all.length; i++) parts.push(label(all[i - 1], all[i], words(Math.hypot(all[i].x - all[i - 1].x, all[i].y - all[i - 1].y)), 'seg' + i))
-      parts.push(angleAt(all[all.length - 2], end, 'ang'))
+      // (d1-trim) a line is an annotation: no length or angle while it is drawn; a polyline keeps its
+      if (shape !== 'line') {
+        for (let i = 1; i < all.length; i++) parts.push(label(all[i - 1], all[i], words(Math.hypot(all[i].x - all[i - 1].x, all[i].y - all[i - 1].y)), 'seg' + i))
+        parts.push(angleAt(all[all.length - 2], end, 'ang'))
+      }
       if (closed && all.length >= 3) parts.push(<Line key="close" points={[end.x, end.y, all[0].x, all[0].y]} stroke={SELECT_BLUE} strokeWidth={1} dash={[4, 3]} strokeScaleEnabled={false} listening={false} />)
     }
   }
@@ -156,16 +159,10 @@ export function ShapePointHandles({ obj: picked }) {
   const u = 1 / textLz('doorValue', gs, null, useTextSizes(t => t.sizes))
   const pickedPt = useShapePoint()
   const live = useLiveObjects(), obj = live.find(o => o.id === picked?.id) || picked     // where it is drawn now (live.js)
-  const editing = useLengthEdit(e => e.id)
-  /* a line's (an arrow's) length · angle, an elbow's length: (d1-polish) a click on it types a new length (LengthEditor) */
-  const measure = (o) => {
-    if (editing === o.id) return null
-    const fs = LEN_FS * u, text = lengthText(o, gs), g = lengthLabelAt(o, fs, text)
-    return <Text name="line-measure label-pill" x={g.x} y={g.y} offsetX={g.w / 2} offsetY={fs * 0.7} width={g.w} align="center" rotation={g.rot} text={text} fontSize={fs} fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={SELECT_BLUE} listening={false} />
-  }
-  if (obj && obj.type === 'line' && Number.isFinite(obj.x1)) return measure(obj)
-  // (d2-arrows) an elbow's bend: a blue dot on its middle segment (a drag moves the bend); its length
-  if (obj && obj.type === 'elbow' && Number.isFinite(obj.x1)) { const d = elbowBendAt(obj); return <Group listening={false}>{measure(obj)}<Circle name="elbow-bend" x={d.x} y={d.y} radius={4 / zoom} fill={SELECT_BLUE} listening={false} /></Group> }
+  // (d1-trim) a line, an arrow: annotations — no length or angle label when selected (its two end handles only)
+  if (obj && obj.type === 'line' && Number.isFinite(obj.x1)) return null
+  // (d2-arrows) an elbow's bend: a blue dot on its middle segment (a drag moves the bend) — no length label (d1-trim)
+  if (obj && obj.type === 'elbow' && Number.isFinite(obj.x1)) { const d = elbowBendAt(obj); return <Circle name="elbow-bend" x={d.x} y={d.y} radius={4 / zoom} fill={SELECT_BLUE} listening={false} /> }
   if (!isPointShape(obj)) return null
   const s = POINT_HANDLE_PX / zoom, P = shapePoints(obj), n = P.length, closed = obj.type === 'polygon' || !!obj.closed
   return (
@@ -173,39 +170,6 @@ export function ShapePointHandles({ obj: picked }) {
       {P.slice(0, closed ? n : n - 1).map((a, i) => { const b = P[(i + 1) % n]; return <Circle key={'m' + i} name="shape-side" x={(a[0] + b[0]) / 2} y={(a[1] + b[1]) / 2} radius={3.5 / zoom} fill={SELECT_BLUE} listening={false} /> })}
       {P.map(([x, y], i) => { const on = pickedPt.id === obj.id && pickedPt.i === i; return <Rect key={i} name={on ? 'shape-point-picked' : 'shape-point'} x={x - s / 2} y={y - s / 2} width={s} height={s} fill={on ? SELECT_BLUE : '#FFFFFF'} stroke={SELECT_BLUE} strokeWidth={1.5} strokeScaleEnabled={false} listening={false} /> })}
     </Group>
-  )
-}
-
-/** (d1-polish) What a length label reads: a line's (an arrow's) length · angle, an elbow's length. */
-export function lengthText(o, gs = 40) {
-  const L = ftIn((drawnLength(o) / gs) * 12)
-  return o.type === 'line' ? L + ' · ' + angleShown({ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 }) + '°' : L
-}
-/** (d1-polish) A length label clicked: a field on it, the length (feet and inches) selected — Enter sets it (the start stays
- *  put, the end moves along the same direction — drawTool.js setDrawnLength), Esc or a click away leaves it as it was. */
-export function LengthEditor() {
-  const id = useLengthEdit(e => e.id)
-  const view = useView(), gs = useCanvasStore(st => st.gridSize) || 40, sizes = useTextSizes(t => t.sizes)
-  const o = useCanvasStore(st => (id ? st.objects.find(q => q.id === id) : null))
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!id) return
-    const go = () => { const el = ref.current; if (el && document.activeElement !== el) { el.focus(); el.select() } }
-    const r = requestAnimationFrame(go)   // (after the press that opened it — focusing during it, the press would blur it)
-    return () => cancelAnimationFrame(r)
-  }, [id])
-  if (!id || !o) return null
-  const start = ftIn((drawnLength(o) / gs) * 12).replace(/′/g, "'").replace(/″/g, '"')
-  const fs = LEN_FS / textLz('doorValue', gs, null, sizes), g = lengthLabelAt(o, fs, lengthText(o, gs)), c = toScreen(view, { x: g.x, y: g.y }), z = view.zoom || 1
-  const close = () => useLengthEdit.setState({ id: null })
-  const apply = () => { const ft = feetOf(ref.current?.value); close(); if (ft > 0) setDrawnLength(useCanvasStore, id, ft) }
-  return (
-    <input ref={ref} key={id} aria-label="Length" data-length-editor defaultValue={start} onFocus={e => e.target.select()} onBlur={close} spellCheck={false}
-      onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); apply() } else if (e.key === 'Escape') { e.preventDefault(); close() } }}
-      onMouseDown={e => e.stopPropagation()}
-      style={{ position: 'absolute', left: c.x, top: c.y, transform: 'translate(-50%, -50%)', zIndex: 125, width: Math.max(64, g.w * z * 0.8), height: Math.max(20, g.h * z),
-        boxSizing: 'border-box', padding: '0 6px', border: `1px solid ${SELECT_BLUE}`, borderRadius: 4, outline: 'none', background: '#FFFFFF', color: SELECT_BLUE,
-        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: Math.max(11, fs * z), textAlign: 'center' }} />
   )
 }
 
@@ -266,7 +230,7 @@ export function useDrawKeys(on, textOn) {
       const shape = shapeOfTool(st.activeTool)
       if (!shape) return
       const gs = st.gridSize || 40, last = s.pts[s.pts.length - 1]
-      if (last && (/^[0-9.'"]$/.test(e.key) || (s.typed != null && /^[ x,×*<]$/i.test(e.key)) || (shape === 'circle' && s.typed == null && /^[rd]$/i.test(e.key)))) { e.preventDefault(); e.stopPropagation(); useDrawTool.setState({ typed: (s.typed ?? '') + e.key }); return }
+      if (last && !(shape === 'line' || shape === 'arrow' || shape === 'elbow') && (/^[0-9.'"]$/.test(e.key) || (s.typed != null && /^[ x,×*<]$/i.test(e.key)) || (shape === 'circle' && s.typed == null && /^[rd]$/i.test(e.key)))) { e.preventDefault(); e.stopPropagation(); useDrawTool.setState({ typed: (s.typed ?? '') + e.key }); return }
       if (e.key === 'Backspace' || e.key === 'Delete') {
         if (s.typed != null) { e.preventDefault(); e.stopPropagation(); useDrawTool.setState({ typed: s.typed.slice(0, -1) || null }); return }
         if (s.pts.length) { e.preventDefault(); e.stopPropagation(); useDrawTool.setState({ pts: s.pts.slice(0, -1), press: null }); return }
