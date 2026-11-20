@@ -8971,10 +8971,24 @@ describe('REG — the hand check by real clicks', () => {
     const basicsIt = (title, fn) => { if (BASICS_FX.includes(name)) it(title, fn, 15 * 60 * 1000) }
     /** The contract on one object: `make()` puts one there by real clicks (and returns its id) — the tool flow checked
      *  inside it where it applies. → [{ check, ok, detail }] */
-    const contract = async (label, make, { drawTool = null } = {}) => {
-      const out = [], rec = (check, ok, detail = '') => out.push({ type: label, check, ok: ok === true ? true : ok === 'n/a' ? 'n/a' : false, detail: typeof detail === 'string' ? detail : JSON.stringify(detail) })
+    /* (basics-triage) by-design rules — not failures: recorded n/a, "exempt — <reason>" (CLAUDE.md Rule 9) */
+    const DOOR_RULE = 'exempt — doors move along their wall only'
+    const BASICS_EXEMPT = {
+      struct_loading_dock: { 'edit: move': DOOR_RULE, 'snap: wall': DOOR_RULE, 'snap: Alt off': DOOR_RULE },
+      struct_egress: { 'edit: move': DOOR_RULE, 'snap: wall': DOOR_RULE, 'snap: Alt off': DOOR_RULE },
+      struct_drive_in: { 'edit: move': DOOR_RULE, 'snap: wall': DOOR_RULE, 'snap: Alt off': DOOR_RULE },
+      column_grid: { lock: 'exempt — a column grid follows the Columns layer lock' },
+      line: { 'edit: typed value': 'exempt — drawn annotations have no typed values' },
+      elbow: { 'edit: typed value': 'exempt — drawn annotations have no typed values' },
+      // (my choice — the report says so) a building is the walls everything else snaps to: it has no wall of its own to snap to
+      ...Object.fromEntries(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross', 'fp_custom'].map(t => [t, { 'snap: wall': 'exempt — a building is the walls others snap to', 'snap: Alt off': 'exempt — a building is the walls others snap to' }])),
+    }
+    const contract = async (label, make, { drawTool = null, at = null, there: thereAt = null } = {}) => {
+      let typeNow = null
+      const out = [], rec = (check, ok, detail = '') => { const why = typeNow && BASICS_EXEMPT[typeNow] && BASICS_EXEMPT[typeNow][check]; if (why) { out.push({ type: label, check, ok: 'n/a', detail: why }); return } out.push({ type: label, check, ok: ok === true ? true : ok === 'n/a' ? 'n/a' : false, detail: typeof detail === 'string' ? detail : JSON.stringify(detail) }) }
       const p = L.page, gs = await gs7()
-      const view = async () => { const fp = await fpOf(); await L.S('const z = 0.1; S.setState({ zoom: z, panX: 220 - arg.x * z, panY: 120 - arg.y * z })', fp); await wait(250) }
+      // (basics-triage) an empty layout (a building tested on its own): the origin where the building would be
+      const view = async () => { const fp = await fpOf(); await L.S('const z = 0.1; S.setState({ zoom: z, panX: 220 - arg.x * z, panY: 120 - arg.y * z })', fp || { x: 0, y: 0 }); await wait(250) }
       const esc = async () => { await p.keyboard.press('Escape'); await L.S('S.getState().clearSelection(); S.getState().setActiveTool("select")'); await wait(100) }
       const bounds = (id) => L.S('const st = S.getState(), o = st.objects.find(q => q.id === arg); return o ? H.worldBoundsOf(o, st.objects) : null', id)
       const centreOf = async (id) => { const b = await bounds(id); return L.toScreen({ x: b.x + b.width / 2, y: b.y + b.height / 2 }) }
@@ -8988,7 +9002,7 @@ describe('REG — the hand check by real clicks', () => {
           return null`, id)
         return w ? L.toScreen(w) : null
       }
-      const json = (id) => L.S('const o = S.getState().objects.find(q => q.id === arg); return o ? JSON.stringify(o) : null', id)
+      const json = (id) => L.S('const o = S.getState().objects.find(q => q.id === arg); if (!o) return null; const { activeBayIdx, ...rest } = o; void activeBayIdx; return JSON.stringify(rest)', id)   // (basics-triage) a rack's picked bay is selection, not a change
       const count = (type) => L.S('return S.getState().objects.filter(o => o.type === arg).length', type)
       const dropPlacement = async (at) => { if (await L.S('return import("/src/utils/placement.js").then(M => !!M.usePlacement.getState().active)')) { await p.mouse.move(at.x, at.y); await p.mouse.click(at.x, at.y); await wait(250) } }
       await view()
@@ -8998,6 +9012,7 @@ describe('REG — the hand check by real clicks', () => {
       const o0 = await L.S('return S.getState().objects.find(q => q.id === arg) || null', id)
       if (!o0) { rec('place', false, 'its object is gone'); return out }
       const type = o0.type
+      typeNow = type
       // ── select: a click on it; the most specific wins (it, not the building or what is under it)
       await esc()
       let g = await grip(id)
@@ -9075,7 +9090,7 @@ describe('REG — the hand check by real clicks', () => {
           await p.mouse.move(5, 890); await p.keyboard.press('Control+z'); await wait(200)
         } }
       // ── copy, paste, duplicate, delete (+ undo, redo)
-      const there = { x: 900, y: 820 }
+      const there = thereAt || { x: 900, y: 820 }   // (basics-triage) a rack's paste and duplicate: inside the building
       await esc(); await L.S('S.getState().selectObject(arg, false)', id); await wait(150)
       const idsBefore = await L.S('return S.getState().objects.map(o => o.id)')
       { const n0 = await count(type)
@@ -9098,6 +9113,8 @@ describe('REG — the hand check by real clicks', () => {
         // the copies go (setup for the checks after: a copy over it would take its clicks)
         await L.S('S.setState({ objects: S.getState().objects.filter(o => arg.includes(o.id) || o.type === "aisle") })', [...idsBefore]) }
       // ── lock: Ctrl+L — a drag moves it no more, Delete removes nothing; Ctrl+L again
+      // (basics-triage) gone after the delete / undo / redo steps: a failure, and nothing more to check on it
+      if (!(await json(id))) { rec('delete: undo brings it back', false, 'its object is gone after Delete, Ctrl+Z, Ctrl+Y, Ctrl+Z'); return out }
       await esc(); await L.S('S.getState().selectObject(arg, false)', id); await wait(150)
       { await p.mouse.move(5, 890); await p.keyboard.press('Control+l'); await wait(200)
         const locked = await L.S('return import("/src/utils/layers.js").then(M => { const st = S.getState(), o = st.objects.find(q => q.id === arg); return !!o && M.isLockedIn(st.layers, o) })', id)
@@ -9110,7 +9127,8 @@ describe('REG — the hand check by real clicks', () => {
       await esc()
       { const fp = await fpOf(), z = await L.S('return S.getState().zoom')
         const b0 = await bounds(id), c = await grip(id)
-        if (!c) rec('snap: wall', false, 'no point picks it')
+        if (!fp) { rec('snap: wall', 'n/a', 'no building in this layout'); rec('snap: Alt off', 'n/a', 'no building in this layout') }
+        else if (!c) rec('snap: wall', false, 'no point picks it')
         else {
           await p.mouse.click(c.x, c.y); await wait(150)
           const inner = fp.x + (fp.wallThicknessFt || 0.25) * gs, target = inner + 3 / z   // 3 px inside the left wall's inner face
@@ -9121,7 +9139,9 @@ describe('REG — the hand check by real clicks', () => {
           const b1 = await bounds(id)
           // onto the wall's face — or onto a nearer edge there (a rack end, a column, another object's side): any real edge
           const edges = await L.S('const st = S.getState(); return st.objects.filter(o => o.id !== arg && o.type !== "aisle").flatMap(o => { const b = H.worldBoundsOf(o, st.objects); return b ? [b.x, b.x + b.width] : [] })', id)
-          const faces = [inner, fp.x], lockedNow = await L.S('return import("/src/utils/layers.js").then(M => { const st = S.getState(), o = st.objects.find(q => q.id === arg); return !!o && M.isLockedIn(st.layers, o) })', id)
+          // (basics-triage) a rack keeps the project's wall clearance from the face (by design): that line counts as the wall's
+          const clearIn = await L.S('return import("/src/utils/project.js").then(M => (M.projectOf(S.getState().elevations)?.rules?.wallClearIn) ?? 0)').catch(() => 0)
+          const faces = [inner, fp.x, inner + (clearIn / 12) * gs], lockedNow = await L.S('return import("/src/utils/layers.js").then(M => { const st = S.getState(), o = st.objects.find(q => q.id === arg); return !!o && M.isLockedIn(st.layers, o) })', id)
           const on = Math.abs(b1.x - target) > 0.5 && [...faces, ...edges].some(f => Math.abs(b1.x - f) < 0.6)
           rec('snap: wall', on, { left: Math.round(b1.x), dropped: Math.round(target), faces: faces.map(Math.round), locked: lockedNow, b0: Math.round(b0.x), grip: c, dx: Math.round(dx), sel: await selIds(), tool: await toolNow(), n: (await L.S('return S.getState().objects.filter(o => o.type === arg).length', type)) })
           await p.mouse.move(5, 890); await p.keyboard.press('Control+z'); await wait(250)
@@ -9159,6 +9179,7 @@ describe('REG — the hand check by real clicks', () => {
         await open()
         // an anchor line far below the building, for Shift adds (setup, not under test)
         await L.S('const st = S.getState(), fp = st.objects.find(o => /^fp_/.test(o.type)); S.getState().addObject({ id: "basics-anchor", type: "line", x1: fp.x + 180 * (st.gridSize || 40), y1: fp.y + fp.height + 18 * (st.gridSize || 40), x2: fp.x + 200 * (st.gridSize || 40), y2: fp.y + fp.height + 18 * (st.gridSize || 40), stroke: "#1F2321", strokeWidth: 2, dashed: false, layerId: "notes", opacity: 1, rotation: 0, noFill: true })')
+        if (it.setup) await it.setup()
         all.push(...await contract(it.label, it.make, it))
         if (L.errors.length) { all.push({ type: it.label, check: 'page errors', ok: false, detail: L.errors.join(' | ').slice(0, 300) }); L.errors.length = 0 }
       }
@@ -9172,19 +9193,19 @@ describe('REG — the hand check by real clicks', () => {
     }
     /** Place a library item by real clicks: the rail's section, its row in the flyout; a row or a zone follows the mouse
      *  until a click (on open ground below the building); the Columns tool's dialog: Place grid. → its new object's id. */
-    const libraryMake = (section, label) => async (rec) => {
+    const libraryMake = (section, label, at = { x: 700, y: 780 }) => async (rec) => {
       const before = new Set(await L.S('return S.getState().objects.map(o => o.id)'))
       await L.page.locator('[data-island="rail"]').getByRole('button', { name: section, exact: true }).click(); await wait(300)
       await L.page.getByRole('menu', { name: section + ' library' }).getByRole('menuitem', { name: label, exact: true }).click(); await wait(400)
       const placing = await L.S('return import("/src/utils/placement.js").then(M => !!M.usePlacement.getState().active)')
       if (placing) {
         // Esc cancels the placement on the mouse (the tool flow), then again, and a click places it
-        await L.page.mouse.move(700, 780); await wait(150); await L.page.keyboard.press('Escape'); await wait(200)
+        await L.page.mouse.move(at.x, at.y); await wait(150); await L.page.keyboard.press('Escape'); await wait(200)
         const gone = !(await L.S('return import("/src/utils/placement.js").then(M => !!M.usePlacement.getState().active)'))
         rec('tool: Esc cancels', gone && (await L.S('return S.getState().objects.length')) === before.size, gone ? 'cancelled' : 'still placing')
         await L.page.locator('[data-island="rail"]').getByRole('button', { name: section, exact: true }).click(); await wait(300)
         await L.page.getByRole('menu', { name: section + ' library' }).getByRole('menuitem', { name: label, exact: true }).click(); await wait(400)
-        await L.page.mouse.move(700, 780); await wait(150); await L.page.mouse.click(700, 780); await wait(300)
+        await L.page.mouse.move(at.x, at.y); await wait(150); await L.page.mouse.click(at.x, at.y); await wait(300)
       } else rec('tool: Esc cancels', 'n/a', 'placed at once')
       const dlg = L.page.getByRole('button', { name: 'Place grid' }); if (await dlg.count()) { await dlg.click(); await wait(300) }
       rec('tool: back to Select', (await toolNow()) === 'select', await toolNow())
@@ -9239,16 +9260,75 @@ describe('REG — the hand check by real clicks', () => {
       await runBasics('draw', DRAW_ITEMS, { strict: true })
     })
     /** Every library section's items, read from the flyout itself (so a new item is in the contract the day it is added). */
+    /* (basics-triage) where an item is placed, and its setup — not under test:
+       - racks: inside the building, on floor cleared of its racks, aisles and sections (a rack refuses open ground outside);
+         the spot clear of columns and walls; its paste and duplicate inside too
+       - a column and a column grid: the Columns layer unlocked first (an older Generate locks it)
+       - a building: in an empty layout (the fixture's own building would take its clicks) */
+    const VIEW_Z = 0.1, viewAt = async () => { const fp = await fpOf(); return { fp, s: (x, y) => ({ x: 220 + (x - fp.x) * VIEW_Z, y: 120 + (y - fp.y) * VIEW_Z }) } }
+    const basicsClearRacks = () => L.S('S.setState({ objects: S.getState().objects.filter(o => !(typeof o.type === "string" && (o.type.startsWith("rack_") || o.type === "aisle" || o.type === "section_area" || o.type === "racking_area"))) })')
+    /** a spot inside the building, `ft` clear of every column and the walls (world) — the most open one near its middle */
+    const openSpot = (ft) => L.S(`const st = S.getState(), gs = st.gridSize || 40, fp = st.objects.find(o => /^fp_/.test(o.type)), cols = H.columnRectsOf(st.objects, gs)
+      let best = null
+      for (let fx = 0.15; fx <= 0.85; fx += 0.05) for (let fy = 0.2; fy <= 0.8; fy += 0.05) {
+        const x = fp.x + fp.width * fx, y = fp.y + fp.height * fy
+        const d = Math.min(...cols.map(c => Math.max(Math.abs(x - (c.x + c.w / 2)) - c.w / 2, Math.abs(y - (c.y + c.h / 2)) - c.h / 2)), 1e9)
+        if (d < arg * gs) continue
+        const mid = Math.hypot(fx - 0.5, fy - 0.5)
+        if (!best || mid < best.mid) best = { x, y, mid }
+      }
+      return best`, ft)
+    const basicsUnlockColumns = () => L.S('const st = S.getState(), Ls = st.layers, set = (l) => (l && l.id === "columns" ? { ...l, locked: false } : l); S.setState({ layers: Ls instanceof Map ? new Map([...Ls].map(([k, v]) => [k, set(v)])) : Ls.map(set) })')
+    const emptyLayout = () => L.S('S.setState({ objects: S.getState().objects.filter(o => o.id === "basics-anchor"), selectedIds: [] })')
+    const libraryItem = (section, n) => {
+      const it = { label: section + ' › ' + n }
+      if (section === 'Racking') {
+        let at = { x: 700, y: 360 }, there = { x: 760, y: 420 }
+        it.setup = async () => {
+          await basicsClearRacks()
+          const sp = await openSpot(14), v = await viewAt()
+          if (sp) { at = v.s(sp.x, sp.y); there = { x: at.x, y: at.y + 70 } }
+          it.there = there
+        }
+        it.make = async (rec) => libraryMake(section, n, at)(rec)
+      } else if (section === 'Structural' && /Column/.test(n)) {
+        it.setup = basicsUnlockColumns
+        it.make = libraryMake(section, n)
+      } else if (section === 'Floor Plans') {
+        it.setup = emptyLayout
+        it.make = libraryMake(section, n)
+      } else it.make = libraryMake(section, n)
+      return it
+    }
+    /* (basics-triage) one rack in a filled building: a Selective Rack placed where one row of the fixture's racks was (that
+       row removed — setup), between real racks — so its snap and overlap are tested against them */
+    const filledRackItem = () => {
+      const it = { label: 'Racking › Selective Rack (filled building)' }
+      let at = { x: 700, y: 360 }, there = { x: 700, y: 420 }
+      it.setup = async () => {
+        const r = await L.S(`const st = S.getState(), rows = st.objects.filter(o => o.type === "rack_row" || o.type === "rack_double_row")
+          if (!rows.length) return null
+          const fp = st.objects.find(o => /^fp_/.test(o.type)), cx = fp.x + fp.width / 2, cy = fp.y + fp.height / 2
+          const pick = rows.map(o => ({ o, b: H.worldBoundsOf(o, st.objects) })).sort((a, b) => Math.hypot(a.b.x + a.b.width / 2 - cx, a.b.y + a.b.height / 2 - cy) - Math.hypot(b.b.x + b.b.width / 2 - cx, b.b.y + b.b.height / 2 - cy))[0]
+          S.setState({ objects: st.objects.filter(o => o.id !== pick.o.id && !(o.type === "aisle" && (o.row1Id === pick.o.id || o.row2Id === pick.o.id))) })
+          return { x: pick.b.x + pick.b.width / 2, y: pick.b.y + pick.b.height / 2 }`)
+        const v = await viewAt()
+        if (r) { at = v.s(r.x, r.y); there = { x: at.x + 40, y: at.y } }
+        it.there = there
+      }
+      it.make = async (rec) => libraryMake('Racking', 'Selective Rack', at)(rec)
+      return it
+    }
     const libraryItems = async (section) => {
       await open()
       await L.page.locator('[data-island="rail"]').getByRole('button', { name: section, exact: true }).click(); await wait(300)
       const names = await L.page.getByRole('menu', { name: section + ' library' }).getByRole('menuitem').allTextContents()
       await L.page.keyboard.press('Escape')
-      return names.map(n => ({ label: section + ' › ' + n, make: libraryMake(section, n) }))
+      return names.map(n => libraryItem(section, n))
     }
     for (const section of ['Racking', 'Ops', 'Structural', 'Safety', 'Zones', 'Floor Plans']) {
       basicsIt(`REG-basics (click) — library: ${section} — every item through the Basics contract; failures reported (not failed) for the owner`, async () => {
-        await runBasics(section.replace(/\s/g, ''), await libraryItems(section))
+        await runBasics(section.replace(/\s/g, ''), [...await libraryItems(section), ...(section === 'Racking' ? [filledRackItem()] : [])])
       })
     }
 
