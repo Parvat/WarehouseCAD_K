@@ -7,7 +7,7 @@
 
 import { distToSegment, getObjectBounds } from '../utils/canvas'
 import { layoutText, makeMeasure, fontSpec } from '../utils/textLayout'
-import { textInches } from '../utils/textSizes'
+import { textInches, textLz, useTextSizes } from '../utils/textSizes'
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 /** Feet and inches as every plan label writes them (utils/bom.js ftIn's format: 13′-9″) — kept here, no BOM import. */
@@ -50,15 +50,50 @@ export function elbowBendAt(o) {
 }
 /** The elbow with its bend dot dragged to world (x, y): the middle segment moves across itself. */
 export const elbowBendTo = (o, x, y) => ({ bend: o.dir === 'v' ? y - o.y1 : x - o.x1 })
+/* ── (d1-polish) a selected line's, arrow's or elbow arrow's length label — a click on it types a new length ── */
+/** Its length (world px): a line's, an elbow's route's. */
+export function drawnLength(o) {
+  if (o.type === 'line') return Math.hypot(o.x2 - o.x1, o.y2 - o.y1)
+  const P = elbowRoute(o)
+  let L = 0
+  for (let i = 1; i < P.length; i++) L += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1])
+  return L
+}
+/** The label's text height (world px): the door chain's real height at the 10 px design size (CLAUDE.md Rule 8). */
+export const lengthFs = (gs = 40, sizes) => 10 / textLz('doorValue', gs, null, sizes || useTextSizes.getState().sizes)
+/** Where the label sits (world px) for its words `text`: beside the middle of a line (above it), or of an elbow's longest
+ *  segment; turned along it, never upside down. → { x, y (its centre), w, h, rot } */
+export function lengthLabelAt(o, fs, text) {
+  let a, b
+  if (o.type === 'line') { a = [o.x1, o.y1]; b = [o.x2, o.y2] }
+  else { const P = elbowRoute(o); let best = -1; for (let i = 1; i < P.length; i++) { const d = Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); if (d > best) { best = d; a = P[i - 1]; b = P[i] } } }
+  const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L, side = ny > 0 ? -1 : 1
+  let rot = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI
+  if (rot > 90) rot -= 180
+  if (rot < -90) rot += 180
+  const w = String(text).length * fs * 0.6 + fs, h = fs * 1.4
+  return { x: (a[0] + b[0]) / 2 + nx * side * fs * 1.2, y: (a[1] + b[1]) / 2 + ny * side * fs * 1.2, w, h, rot }
+}
+/** Is world (wx, wy) on the label `g` (lengthLabelAt's)? */
+export function onLengthLabel(g, wx, wy, pad = 0) {
+  const t = (-g.rot * Math.PI) / 180, dx = wx - g.x, dy = wy - g.y
+  const lx = dx * Math.cos(t) - dy * Math.sin(t), ly = dx * Math.sin(t) + dy * Math.cos(t)
+  return Math.abs(lx) <= g.w / 2 + pad && Math.abs(ly) <= g.h / 2 + pad
+}
+
 /** The default body width of a block arrow (feet). */
 export const BLOCK_FT = 4
+/** (d1-polish) A block arrow's size: a plain number, its body width in inches (6 8 12 18 24 36 48 — as a text size), no
+ *  feet; one drawn before (d2-arrows) has its width in world px (bodyW). */
+export const BLOCK_SIZES = [6, 8, 12, 18, 24, 36, 48]
+export const blockSize = (o, gs = 40) => (o.size > 0 ? o.size : o.bodyW > 0 ? Math.round((o.bodyW / gs) * 12 * 100) / 100 : BLOCK_FT * 12)
 /** A block arrow's body width (world px). */
-export const blockW = (o, gs = 40) => (o.bodyW > 0 ? o.bodyW : BLOCK_FT * gs)
-/** A block arrow's outline (world px): its body `bodyW` wide from its tail, a head 2.4 × as wide and as long as the body is
- *  wide (at most 60 % of the arrow). */
+export const blockW = (o, gs = 40) => (o.size > 0 ? (o.size / 12) * gs : o.bodyW > 0 ? o.bodyW : BLOCK_FT * gs)
+/** A block arrow's outline (world px): its body as wide as its size from its tail; (d1-polish) its head twice as wide as the
+ *  body, as long as the body is wide (at most 60 % of the arrow). */
 export function blockOutline(o) {
   const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux
-  const W = blockW(o), w = W / 2, hw = W * 1.2, hl = Math.min(W, L * 0.6)
+  const W = blockW(o), w = W / 2, hw = W, hl = Math.min(W, L * 0.6)
   const bx = o.x2 - ux * hl, by = o.y2 - uy * hl
   return [[o.x1 + nx * w, o.y1 + ny * w], [bx + nx * w, by + ny * w], [bx + nx * hw, by + ny * hw], [o.x2, o.y2], [bx - nx * hw, by - ny * hw], [bx - nx * w, by - ny * w], [o.x1 - nx * w, o.y1 - ny * w]]
 }

@@ -26,7 +26,8 @@ import { rackFootprint } from '../generate/rackFootprint'
 import { innerOutline } from './floorGeom'
 import { isSection, polygonOf } from './sectionAreas'
 import { notify } from './notice'
-import { isDrawn, drawnGeom, withPoints, shapePoints, BLOCK_FT } from '../render/drawnShapes'
+import { isDrawn, drawnGeom, withPoints, shapePoints, BLOCK_FT, drawnLength } from '../render/drawnShapes'
+import { styleFor, rememberStylesOf } from './drawStyles'
 
 /** The tool ids: Line, Polyline, Rectangle, Circle — all in the rail's Draw flyout, with Text. */
 export const POLYLINE_TOOL = 'polyline'
@@ -180,9 +181,12 @@ export function snapPoint(w, { st, zoom = 1, last = null, shift = false, alt = f
 }
 
 /* ── the shapes as document objects ── */
-// (d2-labels) a new shape is Square (corners, line ends) — written down, so a shape saved without it is one from before (saveLoad.js: Round)
-const style = (s) => ({ stroke: s.stroke, strokeWidth: s.strokeWidth, dashed: !!s.dashed, layerId: 'notes', opacity: 1, rotation: 0, corners: 'square' })
-const filled = (s) => (s.fill ? { fill: s.fill, noFill: false } : { fill: null, noFill: true })
+/* (d1-polish) a new shape starts with its kind's last used style (utils/drawStyles.js — there is no Draw bar); its corners
+   always written (d2-labels: a shape saved without them is one from before — saveLoad.js: Round) */
+const KIND = { line: 'line', arrow: 'arrow', elbow: 'elbow', block: 'block', polyline: 'polyline', rect: 'rect', circle: 'circle' }
+export const kindOfShape = (shape) => KIND[shape] || 'line'
+const style = (k) => ({ stroke: k.stroke, strokeWidth: k.strokeWidth, dashed: !!k.dashed, layerId: 'notes', opacity: 1, rotation: 0, corners: k.corners || 'square', ...(Number.isFinite(k.cornerFt) ? { cornerFt: k.cornerFt } : null) })
+const filled = (k) => (k.fill && !k.noFill ? { fill: k.fill, noFill: false, fillStyle: k.fillStyle || 'tint' } : { fill: k.fill || null, noFill: true, ...(k.fillStyle ? { fillStyle: k.fillStyle } : null) })
 
 /** Why the shape through `pts` is refused — a line under 3″, a circle under 3″ radius — or null. */
 export function refusal(shape, pts, gs = 40) {
@@ -196,45 +200,47 @@ export function refusal(shape, pts, gs = 40) {
 /** The object for shape `shape` through points `pts` (world), or null when it is too small (under 2 screen px; a line
  *  under 3″; a circle under 3″ radius). */
 export function shapeObject(shape, pts, s, zoom = 1, gs = 40) {
-  const min = 2 / (zoom || 1)
+  const min = 2 / (zoom || 1), k = styleFor(kindOfShape(shape))
   if (refusal(shape, pts, gs)) return null
   if (shape === 'line') {
     if (pts.length < 2) return null
     let [a, b] = pts
     if (Math.hypot(b.x - a.x, b.y - a.y) < min) return null
     if (b.x < a.x || (b.x === a.x && b.y < a.y)) [a, b] = [b, a]      // left to right: the left handles move the left end
-    return { type: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y, ...style(s), noFill: true }
+    return { type: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y, ...style(k), noFill: true, ends: k.ends || 'none' }
   }
   // (d2-arrows) an Arrow: a line with its head at the end (its direction kept: tail to head)
   if (shape === 'arrow' || shape === 'elbow' || shape === 'block') {
     if (pts.length < 2) return null
     const [a, b] = pts
     if (Math.hypot(b.x - a.x, b.y - a.y) < min) return null
-    if (shape === 'arrow') return { type: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y, ...style(s), noFill: true, ends: 'end' }
+    if (shape === 'arrow') return { type: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y, ...style(k), noFill: true, ends: k.ends || 'end' }
     if (shape === 'elbow') {
       const dir = s.lead || (Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? 'h' : 'v')
-      return { type: 'elbow', x1: a.x, y1: a.y, x2: b.x, y2: b.y, dir, bend: null, ...style(s), noFill: true, ends: 'end' }
+      return { type: 'elbow', x1: a.x, y1: a.y, x2: b.x, y2: b.y, dir, bend: null, ...style(k), noFill: true, ends: k.ends || 'end' }
     }
-    return { type: 'block_arrow', x1: a.x, y1: a.y, x2: b.x, y2: b.y, bodyW: (s.blockFt > 0 ? s.blockFt : BLOCK_FT) * gs, fill: s.blockFill || '#E07B22', noFill: false, text: '', layerId: 'notes', opacity: 1, rotation: 0 }
+    // (d1-polish) its size: a plain number, the body width in inches (the last used)
+    return { type: 'block_arrow', x1: a.x, y1: a.y, x2: b.x, y2: b.y, size: k.size > 0 ? k.size : BLOCK_FT * 12, fill: k.fill || '#E07B22', noFill: false, text: '', layerId: 'notes', opacity: 1, rotation: 0 }
   }
   if (shape === 'rect') {
     if (pts.length < 2) return null
     const [a, b] = pts, x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), width = Math.abs(b.x - a.x), height = Math.abs(b.y - a.y)
     if (width < min || height < min) return null
-    return { type: 'rect', x, y, width, height, ...style(s), ...filled(s) }
+    return { type: 'rect', x, y, width, height, ...style(k), ...filled(k) }
   }
   if (shape === 'circle') {
     if (pts.length < 2) return null
     const [c, e] = pts, r = Math.hypot(e.x - c.x, e.y - c.y)
     if (r < min) return null
-    return { type: 'circle', cx: c.x, cy: c.y, r, rx: r, ry: r, ...style(s), ...filled(s) }
+    const { corners, cornerFt, ...cs } = style(k); void corners; void cornerFt
+    return { type: 'circle', cx: c.x, cy: c.y, r, rx: r, ry: r, ...cs, ...filled(k) }
   }
   if (shape === 'polyline') {
     const closed = !!s.closed
     if (pts.length < (closed ? 3 : 2)) return null
     const xs = pts.map(p => p.x), ys = pts.map(p => p.y)
     if (Math.max(...xs) - Math.min(...xs) < min && Math.max(...ys) - Math.min(...ys) < min) return null
-    return { type: 'polyline', ...withPoints(pts.map(p => [p.x, p.y])), closed, ...style(s), ...(closed ? filled(s) : { fill: null, noFill: true }) }
+    return { type: 'polyline', ...withPoints(pts.map(p => [p.x, p.y])), closed, ...style(k), ...(closed ? filled(k) : { fill: null, noFill: true }), ...(closed ? null : { ends: k.ends || 'none' }) }
   }
   return null
 }
@@ -333,6 +339,21 @@ export function setLineLength(store, id, ft) {
   if (ft * 12 < MIN_LINE_IN) { notify('A line under 3″ is not drawn'); return false }
   const L = Math.hypot(o.x2 - o.x1, o.y2 - o.y1) || 1, ux = (o.x2 - o.x1) / L, uy = (o.y2 - o.y1) / L
   st.commitObjectUpdate(id, { x2: o.x1 + ux * ft * gs, y2: o.y1 + uy * ft * gs })
+  return true
+}
+/** (d1-polish) The length label being typed into (a click on a selected line's, arrow's or elbow's length label). */
+export const useLengthEdit = create(() => ({ id: null }))
+/** (d1-polish) A line's, an arrow's or an elbow arrow's length (feet) typed on its label: its start stays put, its end moves
+ *  along the same direction (an elbow: its route scaled about its start — the same shape, that long). Under 3″ refused.
+ *  One undo. */
+export function setDrawnLength(store, id, ft) {
+  const st = store.getState(), o = st.objects.find(q => q.id === id), gs = st.gridSize || 40
+  if (!o || o.locked || !(ft > 0) || (o.type !== 'line' && o.type !== 'elbow')) return false
+  if (ft * 12 < MIN_LINE_IN) { notify((o.type === 'line' && (!o.ends || o.ends === 'none') ? 'A line' : 'An arrow') + ' under 3″ is not drawn'); return false }
+  const L0 = drawnLength(o)
+  if (!(L0 > 0)) return false
+  const k = (ft * gs) / L0
+  st.commitObjectUpdate(id, { x2: o.x1 + (o.x2 - o.x1) * k, y2: o.y1 + (o.y2 - o.y1) * k, ...(o.type === 'elbow' && o.bend != null ? { bend: o.bend * k } : null) })
   return true
 }
 /** (d1-final) A line's angle (degrees, counter-clockwise from the right) typed: its start and length held. One undo. */
@@ -455,7 +476,7 @@ export function styleDrawn(store, ids, patch) {
     if (!u || Object.keys(u).every(k => o[k] === u[k])) continue
     st.updateObject(o.id, u); last = o.id
   }
-  if (last) store.getState().commitObjectUpdate(last, {})
+  if (last) { store.getState().commitObjectUpdate(last, {}); rememberStylesOf(store, objs.map(o => o.id)) }   // (d1-polish) the kind's last used style
   return last ? 1 : 0
 }
 /** (d1-bar) A text's alignment: its lines move inside its box, the box never moves — its anchor (x) goes to the box's
@@ -477,13 +498,16 @@ export function rotateTexts(store, ids) {
   return true
 }
 /** A text object's fields from the Text bar's settings (`textIn`: the real text height, inches — CLAUDE.md Rule 8). */
+/* (d1-polish) the last text style used (utils/drawStyles.js — there is no Text bar) */
 export function textFields(s, gs = 40) {
-  return { fontSize: (s.textIn / 12) * gs, textIn: s.textIn, bold: !!s.bold, italic: !!s.italic, fill: s.color, align: s.align, lineHeight: 1.25, fontFamily: TEXT_FONT_DEFAULT }
+  const k = styleFor('text')
+  return { fontSize: (k.textIn / 12) * gs, textIn: k.textIn, bold: !!k.bold, italic: !!k.italic, fill: k.fill, align: k.align || 'left', lineHeight: 1.25, fontFamily: k.fontFamily || TEXT_FONT_DEFAULT,
+    ...(k.boxed ? { boxed: true, boxStroke: k.boxStroke || null, boxFill: k.boxFill || null } : null) }
 }
 /** Start a text at world `w` (its anchor; the first line's baseline one text height below the click); `width` (world px):
  *  a box dragged — the text wraps at it (d1-final). */
 export function startText(w, gs = 40, width = null) {
-  const s = useDrawTool.getState()
+  const s = styleFor('text')
   const x = width ? (s.align === 'center' ? w.x + width / 2 : s.align === 'right' ? w.x + width : w.x) : w.x
   useDrawTool.setState({ text: { x, y: w.y + (s.textIn / 12) * gs, value: '', ...(width ? { width } : {}) } })
 }

@@ -9,7 +9,9 @@ import { useShallow } from 'zustand/react/shallow'
 import { pxToFtIn } from '../../utils/canvas'
 import { TextSizeField } from '../../studio/textSizeCard'
 import { rotateTexts, alignTexts, setLineLength, setLineAngle, setCircleRadius, setPolylineClosed, polyMeasures, convertRectToZone, angleOf } from '../../utils/drawTool'
-import { isDrawn, drawnGeom, hasEnds, endsOf, hasCorners, roundOn, blockW } from '../../render/drawnShapes'
+import { isDrawn, drawnGeom, hasEnds, endsOf, hasCorners, roundOn, blockSize, BLOCK_SIZES } from '../../render/drawnShapes'
+import { rememberStylesOf } from '../../utils/drawStyles'
+import { WidthPick } from '../../studio/drawnBar'
 import { Swatch } from '../../studio/Swatch'
 import { SizeInput } from '../../studio/textSizeCard'
 import { nanoid as newIdForZone } from 'nanoid'
@@ -19,7 +21,8 @@ import { nanoid as newIdForZone } from 'nanoid'
  *  change one undo. */
 function DrawnStyleFields({ obj }) {
   const closed = drawnGeom(obj).closed && obj.type !== 'block_arrow'
-  const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
+  // (d1-polish) each change one undo, and its kind's last used style (a new one starts with it)
+  const set = (u) => { useCanvasStore.getState().commitObjectUpdate(obj.id, u); rememberStylesOf(useCanvasStore, [obj.id]) }
   if (obj.type === 'block_arrow') return <BlockArrowFields obj={obj} set={set} />
   const fillOn = !obj.noFill && !!obj.fill, kind = !fillOn ? 'none' : obj.fillStyle === 'hatch' ? 'hatch' : 'tint'
   const fillColor = obj.fill || obj.stroke || '#1F2321'
@@ -28,8 +31,9 @@ function DrawnStyleFields({ obj }) {
       <Field label="Stroke">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Swatch label="Stroke colour" value={obj.stroke || '#1F2321'} onPick={(c) => set({ stroke: c || '#1F2321' })} />
-          <NumInput aria="Stroke width (px)" value={obj.strokeWidth || 2} min={0.5} step={0.5} onCommit={v => { if (v > 0 && v <= 48) set({ strokeWidth: v }) }} />
-          <span style={{ fontSize: 12, color: C.muted }}>px</span>
+          {/* (d1-polish) 1 2 3 4 6 8 px as line pictures (the bar's dropdown) */}
+          <WidthPick value={obj.strokeWidth || 2} onPick={(w) => set({ strokeWidth: w })} />
+          <span style={{ fontSize: 12, color: C.muted, fontFamily: MONO }}>{obj.strokeWidth || 2} px</span>
         </div>
       </Field>
       <Field label="Line">
@@ -80,7 +84,8 @@ function BlockArrowFields({ obj, set }) {
       <Field label="Fill">
         <Swatch label="Fill colour" value={obj.fill || '#E07B22'} onPick={(c) => { if (c) set({ fill: c }) }} />
       </Field>
-      <Field label="Width (ft)"><NumInput aria="Block arrow width (ft)" value={Math.round((blockW(obj, gs) / gs) * 100) / 100} min={0.25} step={0.5} onCommit={v => { if (v > 0) set({ bodyW: v * gs }) }} /></Field>
+      {/* (d1-polish) its size: a plain number (its body width in inches), a dropdown of 6 8 12 18 24 36 48 — no feet */}
+      <Field label="Size"><SizeInput inches={blockSize(obj, gs)} aria="Block arrow size" options={BLOCK_SIZES} onCommit={(v) => { if (v > 0) set({ size: v, bodyW: undefined }) }} /></Field>
       <Field label="Text">
         <TextInput words aria="Arrow text" placeholder="Optional — shown inside" value={obj.text || ''} onCommit={t => set({ text: String(t || '').trim() })} />
       </Field>
@@ -151,7 +156,7 @@ function DrawnSizeFields({ obj, gridSize }) {
 }
 /** (d1-final) A text's Box: a frame round its words — its border and its fill (None allowed). Each change one undo. */
 function TextBoxFields({ obj }) {
-  const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
+  const set = (u) => { useCanvasStore.getState().commitObjectUpdate(obj.id, u); rememberStylesOf(useCanvasStore, [obj.id]) }   // (d1-polish) the last text style
   return (
     <Field label="Box">
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -556,7 +561,8 @@ export function PropertiesPanel() {
             <Hint>Leave empty to show auto-measured value</Hint>
           </>
         )}
-        {obj.type === 'text' && <TextFields obj={obj} up={up} commit={commit} />}
+        {/* (d1-polish) a text's style changed in its card is the next text's (utils/drawStyles.js) */}
+        {obj.type === 'text' && <TextFields obj={obj} up={up} commit={(k, v) => { commit(k, v); rememberStylesOf(useCanvasStore, [obj.id]) }} />}
         </LockedFields>
       </Sec>
       {/* a building: its fields, then the whole layout's summary */}
@@ -620,7 +626,7 @@ function TextFields({ obj, up, commit }) {
       {/* (dealer audit) the real text height, inches — as the Text bar and the Text panel (CLAUDE.md Rule 8; was px) */}
       <Field label="Text size">
         <SizeInput inches={obj.textIn || Math.round(((obj.fontSize || 14) / (useCanvasStore.getState().gridSize || 40)) * 12 * 100) / 100} aria="Text size"
-          onCommit={(v) => { if (v > 0) { const gs = useCanvasStore.getState().gridSize || 40; useCanvasStore.getState().commitObjectUpdate(obj.id, { textIn: v, fontSize: (v / 12) * gs }) } }} />
+          onCommit={(v) => { if (v > 0) { const gs = useCanvasStore.getState().gridSize || 40; useCanvasStore.getState().commitObjectUpdate(obj.id, { textIn: v, fontSize: (v / 12) * gs }); rememberStylesOf(useCanvasStore, [obj.id]) } }} />
       </Field>
       <Field label="Style">
         <Seg aria="Style" options={[['bold', 'B', 'Bold'], ['italic', 'I', 'Italic'], ['underline', 'U', 'Underline'], ['strike', 'S', 'Strikethrough']]

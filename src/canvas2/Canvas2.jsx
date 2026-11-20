@@ -30,7 +30,7 @@ import { SECTION_RECT_TOOL, SECTION_PEN_TOOL, startRect, moveRect, commitRect, p
 import { FillOptionsBar } from './FillBar'
 import { SplitBar } from './SplitBar'
 import { DoorBar, DoorPreview, DoorGapLive, RowPreview, useDoorGapKeys } from './DoorBar'
-import { DrawBar, TextBar, DrawPreview, TextEditor, useDrawKeys, ShapePointHandles, TextBoxDraft } from './DrawBar'
+import { DrawPreview, TextEditor, LengthEditor, useDrawKeys, ShapePointHandles, TextBoxDraft } from './DrawBar'
 import { useDrawTool, shapeOfTool, twoPoint, snapPoint, commitShape, startText, commitText, closesAt, editText, addPolylinePoint, RECT_CLICK_IN, noteLead } from '../utils/drawTool'
 import { isPointShape, sideAt, pointAt } from '../render/drawnShapes'
 import { pickAt } from './hitTest'
@@ -796,9 +796,9 @@ export function Canvas2() {
       <CrossAisleBar />
       {filling && <FillOptionsBar />}
       {dooring && <DoorBar />}
-      {drawing && <DrawBar />}
-      {texting && <TextBar />}
+      {/* (d1-polish) no Draw bar, no Text bar: nothing shows while a draw tool is on */}
       <TextEditor />
+      <LengthEditor />
       {sectioning && <SectionBar />}
       <SectionRename />
       {/* a building's wall dimension typed (FpDimEdit.jsx) */}

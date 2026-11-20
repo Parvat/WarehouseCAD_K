@@ -1,4 +1,4 @@
-// DrawBar.jsx — the drawing tools' bars and previews (D1, design/drawbar.png; utils/drawTool.js):
+// DrawBar.jsx — the drawing tools' previews (d1-polish: the Draw bar and the Text bar are gone; the name stays) (D1, design/drawbar.png; utils/drawTool.js):
 //   DrawBar      "Draw": the shape switch (Line · Polyline · Rectangle · Circle · Polygon), Stroke colour and width (px),
 //                Fill, Solid | Dashed, Close (a polyline), Done, ✕ — in the Add door bar's place (top 76), its hint below
 //   TextBar      "Text": Size (the real text height, inches — the Text panel's numbers), B, I, Colour, Left · Centre ·
@@ -22,9 +22,10 @@ import { SizeInput } from '../studio/textSizeCard'
 import { useView, toScreen, useLiveObjects } from './live'
 import { Swatch } from '../studio/Swatch'
 export { Swatch }
-import { isPointShape, shapePoints, drawnGeom, elbowBendAt } from '../render/drawnShapes'
+import { isPointShape, shapePoints, drawnGeom, elbowBendAt, lengthLabelAt, drawnLength } from '../render/drawnShapes'
+import { styleFor } from '../utils/drawStyles'
 import { DrawnBody } from './shapes'
-import { angleOf, useShapePoint } from '../utils/drawTool'
+import { angleOf, useShapePoint, useLengthEdit, setDrawnLength, feetOf, kindOfShape } from '../utils/drawTool'
 import { POINT_HANDLE_PX } from './SectionShape'
 import {
   DRAW_SHAPES, DRAW_COLORS, useDrawTool, shapeOfTool, toolOfShape, twoPoint, typedPoint, commitShape, endDraw, cancelDraw,
@@ -45,107 +46,8 @@ const word = { color: B.muted, fontSize: 12 }
 const HINT = '#767C74'
 const valueBox = { height: 26, width: 44, padding: '0 8px', borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, border: 0, boxSizing: 'border-box' }
 
-/* (d1-final) the hints as the mockups word them (Rectangle, Line, Polyline) */
-const HINTS = {
-  line: 'click start · click end (or drag) · Shift 0/45/90° · type 30 + Enter (30<45 for an angle) · Esc ends',
-  rect: 'drag or 2 clicks · Shift = square · type W x H + Enter · Esc ends',
-  circle: 'click the centre, then the radius (or drag) · type R 9 or D 18 + Enter · Esc ends',
-  polyline: 'click each point · Shift = 0/45/90° · type length + Enter · click the first point to close · double-click or Enter to finish · Esc keeps it open',
-  arrow: 'click the tail · click the head (or drag) · Shift 0/45/90° · type 30 + Enter (30<45 for an angle) · Esc ends',
-  elbow: 'click start · click end (or drag) — it bends the way you first move · Esc ends',
-  block: 'drag from the tail to the head (or 2 clicks) · its width from Width · Esc ends',
-}
-
-/** The Draw bar (design/drawbar.png): opens when a shape tool is picked, in the Add door bar's place and style. */
-export function DrawBar() {
-  const tool = useCanvasStore(s => s.activeTool), shape = shapeOfTool(tool)
-  const s = useDrawTool()
-  const [w, setW] = useState(null)
-  const commitW = () => { const v = Number(String(w ?? '').trim()); setW(null); if (Number.isFinite(v) && v > 0 && v <= 48) useDrawTool.setState({ strokeWidth: v }) }
-  const [bw, setBw] = useState(null)
-  const commitBw = () => { const v = Number(String(bw ?? '').replace(/['′]|ft/g, '').trim()); setBw(null); if (Number.isFinite(v) && v > 0 && v <= 100) useDrawTool.setState({ blockFt: v }) }
-  const done = () => endDraw(useCanvasStore, shape, useCanvasStore.getState().zoom, true)
-  // ✕ cancels what is being drawn (Esc keeps a polyline's points — endDraw)
-  const cancel = () => { cancelDraw(); endDraw(useCanvasStore, shape, useCanvasStore.getState().zoom, false) }
-  if (!shape) return null
-  return (
-    <div role="toolbar" aria-label="Draw" data-mode-bar="draw" className="st-pill" style={modePill}>
-      <span style={{ fontWeight: 600, color: B.strong }}>Draw</span>
-      <Sep />
-      <Seg aria="Shape" options={DRAW_SHAPES.map(d => ({ value: d.id, label: d.label, aria: d.label, on: d.id === shape, onClick: () => { cancelDraw(); pickDrawTool(useCanvasStore, toolOfShape(d.id), useDrawTool.getState().keep) },
-        onDoubleClick: () => pickDrawTool(useCanvasStore, toolOfShape(d.id), true), title: d.label + ' · double-click to keep it on' }))} />
-      <Sep />
-      {/* (d2-arrows) a block arrow: its body Width (ft, real size — default 4) and its fill */}
-      {shape === 'block' ? (
-        <>
-          <span style={word}>Width</span>
-          <input aria-label="Block arrow width (ft)" className="st-field" style={valueBox} value={bw ?? String(s.blockFt)}
-            onChange={e => setBw(e.target.value)} onBlur={commitBw} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setBw(null); e.currentTarget.blur() } }} />
-          <span style={word}>ft</span>
-          <span style={word}>Fill</span>
-          <Swatch label="Fill" value={s.blockFill} onPick={(c) => { if (c) useDrawTool.setState({ blockFill: c }) }} />
-        </>
-      ) : (
-        <>
-          <span style={word}>Stroke</span>
-          <Swatch label="Stroke colour" value={s.stroke} onPick={(c) => useDrawTool.setState({ stroke: c || '#1F2321' })} />
-          <input aria-label="Stroke width (px)" className="st-field" style={valueBox} value={w ?? String(s.strokeWidth)}
-            onChange={e => setW(e.target.value)} onBlur={commitW} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setW(null); e.currentTarget.blur() } }} />
-          <span style={word}>px</span>
-          <span style={word}>Fill</span>
-          <Swatch label="Fill" value={s.fill} none onPick={(c) => useDrawTool.setState({ fill: c })} />
-          <Seg aria="Line style" options={[
-            { value: 'solid', label: 'Solid', on: !s.dashed, onClick: () => useDrawTool.setState({ dashed: false }) },
-            { value: 'dashed', label: 'Dashed', on: s.dashed, onClick: () => useDrawTool.setState({ dashed: true }) },
-          ]} />
-        </>
-      )}
-      {/* (d1-fixes) Close keeps its room for every shape (shown for a polyline only), so the bar never changes width as
-          the shape switches — a double-click on a shape lands both clicks on it */}
-      {(
-        <label aria-hidden={shape !== 'polyline'} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: B.text, cursor: 'pointer', visibility: shape === 'polyline' ? 'visible' : 'hidden' }}>
-          <input type="checkbox" aria-label="Close" checked={!!s.closed} onChange={e => useDrawTool.setState({ closed: e.target.checked })}
-            style={{ width: 14, height: 14, accentColor: B.accent, margin: 0 }} />Close
-        </label>
-      )}
-      <button type="button" aria-label="Done" title="Done — keeps the polyline drawn so far" onClick={done} className={btnClass(true)} style={barBtn(true)}>Done</button>
-      <CloseBtn label="Close Draw" title="Cancel (Esc)" onClick={cancel} />
-      <div data-mode-hint aria-live="polite" style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, textAlign: 'center', fontSize: 12, color: HINT, pointerEvents: 'none' }}>
-        {HINTS[shape]}{s.keep ? ' · stays on until Esc' : ''}
-      </div>
-    </div>
-  )
-}
-
-/** The Text bar (design/drawbar.png): Size, B, I, Colour, alignment. */
-export function TextBar() {
-  const s = useDrawTool()
-  const done = () => finishText(useCanvasStore)
-  const tog = (on, label, key, extra) => (
-    <button type="button" aria-label={label} aria-pressed={on} title={label} onClick={() => useDrawTool.setState({ [key]: !on })}
-      style={{ height: 28, minWidth: 28, padding: '0 8px', border: 0, borderRadius: 6, fontSize: 12, background: on ? B.active : 'transparent', color: on ? B.accent : B.muted, ...extra }}>{label[0]}</button>
-  )
-  return (
-    <div role="toolbar" aria-label="Text" data-mode-bar="text" className="st-pill" style={modePill}>
-      <span style={{ fontWeight: 600, color: B.strong }}>Text</span>
-      <Sep />
-      <span style={word}>Size</span>
-      <SizeInput inches={s.textIn} aria="Text size" onCommit={(v) => { if (v > 0) useDrawTool.setState({ textIn: v }) }} />
-      <div role="group" aria-label="Style" style={{ display: 'flex', padding: 2, borderRadius: 6, background: B.inset }}>
-        {tog(s.bold, 'Bold', 'bold', { fontWeight: 700 })}
-        {tog(s.italic, 'Italic', 'italic', { fontStyle: 'italic' })}
-      </div>
-      <span style={word}>Colour</span>
-      <Swatch label="Text colour" value={s.color} onPick={(c) => useDrawTool.setState({ color: c || '#1F2321' })} />
-      <Seg aria="Alignment" options={[['left', 'Left'], ['center', 'Centre'], ['right', 'Right']].map(([v, l]) => ({ value: v, label: l, on: s.align === v, onClick: () => useDrawTool.setState({ align: v }) }))} />
-      <button type="button" aria-label="Done" title="Done (Esc)" onClick={done} className={btnClass(true)} style={barBtn(true)}>Done</button>
-      <CloseBtn label="Close Text" title="Done (Esc)" onClick={done} />
-      <div data-mode-hint aria-live="polite" style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, textAlign: 'center', fontSize: 12, color: HINT, pointerEvents: 'none' }}>
-        Click to place · type · Enter for a new line · Esc finishes · size is real text height (18 = 1′-6″)
-      </div>
-    </div>
-  )
-}
+/* (d1-polish) no Draw bar and no Text bar: nothing shows while a draw tool is on — a new shape or text starts with its
+   kind's last used style (utils/drawStyles.js) and is styled on the selection bar once drawn (it is selected). */
 
 const LEN_FS = 10
 /* (the mockups) the green of a snap ring, the close ring and the typing pill; the angle's brown */
@@ -182,8 +84,10 @@ export function DrawPreview() {
     return <Text key={key} name={'draw-length:' + key} x={mx + nx * off - tw / 2} y={my + ny * off - th / 2} width={tw} height={th} align="center" verticalAlign="middle"
       text={text} fontSize={fs} fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={color} listening={false} />
   }
-  const stroke = { stroke: s.stroke, strokeWidth: s.strokeWidth, dash: s.dashed ? [Math.max(4, s.strokeWidth * 3), Math.max(3, s.strokeWidth * 2)] : undefined, strokeScaleEnabled: false, listening: false, lineJoin: 'round', lineCap: 'round' }
-  const fill = s.fill || undefined
+  // (d1-polish) as it will be: its kind's last used style
+  const ks = styleFor(kindOfShape(shape)), sw = ks.strokeWidth || 2
+  const stroke = { stroke: ks.stroke, strokeWidth: sw, dash: ks.dashed ? [Math.max(4, sw * 3), Math.max(3, sw * 2)] : undefined, strokeScaleEnabled: false, listening: false, lineJoin: 'round', lineCap: 'round' }
+  const fill = ks.fill && !ks.noFill ? ks.fill : undefined
   const parts = []
   const end = all.length ? all[all.length - 1] : null
   const angleAt = (a, b, key) => <Text key={key} name="draw-angle" x={b.x + 10 / z} y={b.y - fs * 0.7} text={angleOf(a, b) + '°'} fontSize={fs} fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={ANGLE} listening={false} />
@@ -213,7 +117,7 @@ export function DrawPreview() {
       if (shape === 'line') parts.push(<Line key="l" name="draw-draft" points={[all[0].x, all[0].y, end.x, end.y]} {...stroke} />)
       else {
         if (placed.length >= 2) parts.push(<Line key="p" name="draw-draft" points={placed.flatMap(p => [p.x, p.y])} closed={false} {...stroke} />)
-        parts.push(<Line key="band" name="draw-band" points={[all[all.length - 2].x, all[all.length - 2].y, end.x, end.y]} stroke={s.stroke} strokeWidth={s.strokeWidth} dash={[6, 4]} strokeScaleEnabled={false} listening={false} />)
+        parts.push(<Line key="band" name="draw-band" points={[all[all.length - 2].x, all[all.length - 2].y, end.x, end.y]} stroke={ks.stroke} strokeWidth={sw} dash={[6, 4]} strokeScaleEnabled={false} listening={false} />)
       }
       for (let i = 1; i < all.length; i++) parts.push(label(all[i - 1], all[i], words(Math.hypot(all[i].x - all[i - 1].x, all[i].y - all[i - 1].y)), 'seg' + i))
       parts.push(angleAt(all[all.length - 2], end, 'ang'))
@@ -232,7 +136,7 @@ export function DrawPreview() {
       {ringAt && <Circle name={s.closing ? 'draw-close' : 'draw-snap-ring'} x={ringAt.x} y={ringAt.y} radius={7 / z} stroke={SNAP_GREEN} strokeWidth={2} strokeScaleEnabled={false} listening={false} />}
       {ringAt && <Pill name={s.closing ? 'draw-close-pill' : 'draw-snap-pill'} x={ringAt.x + 12 / z} y={ringAt.y - 30 / z} text={s.closing ? 'close' : s.snap} z={z} />}
       {/* a length being typed: the green pill by the pointer */}
-      {s.typed != null && end && <Pill name="draw-typing" x={end.x + 10 / z} y={end.y + 10 / z} text={s.typed + ' | typing…'} z={z} />}
+      {s.typed != null && end && <Pill name="draw-typing" x={end.x + 10 / z} y={end.y + 10 / z} text={s.typed} z={z} />}
     </Group>
   )
 }
@@ -252,18 +156,16 @@ export function ShapePointHandles({ obj: picked }) {
   const u = 1 / textLz('doorValue', gs, null, useTextSizes(t => t.sizes))
   const pickedPt = useShapePoint()
   const live = useLiveObjects(), obj = live.find(o => o.id === picked?.id) || picked     // where it is drawn now (live.js)
-  if (obj && obj.type === 'line' && Number.isFinite(obj.x1)) {
-    const fs = LEN_FS * u, a = { x: obj.x1, y: obj.y1 }, b = { x: obj.x2, y: obj.y2 }, L = Math.hypot(b.x - a.x, b.y - a.y) || 1
-    const nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L, side = ny > 0 ? -1 : 1, mx = (a.x + b.x) / 2 + nx * side * fs * 1.2, my = (a.y + b.y) / 2 + ny * side * fs * 1.2
-    const text = ftIn((L / gs) * 12) + ' · ' + Math.round(angleOf(a, b)) + '°'
-    const tw = text.length * fs * 0.6 + fs
-    let deg = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
-    if (deg > 90) deg -= 180
-    if (deg < -90) deg += 180
-    return <Text name="line-measure label-pill" x={mx} y={my} offsetX={tw / 2} offsetY={fs * 0.7} width={tw} align="center" rotation={deg} text={text} fontSize={fs} fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={SELECT_BLUE} listening={false} />
+  const editing = useLengthEdit(e => e.id)
+  /* a line's (an arrow's) length · angle, an elbow's length: (d1-polish) a click on it types a new length (LengthEditor) */
+  const measure = (o) => {
+    if (editing === o.id) return null
+    const fs = LEN_FS * u, text = lengthText(o, gs), g = lengthLabelAt(o, fs, text)
+    return <Text name="line-measure label-pill" x={g.x} y={g.y} offsetX={g.w / 2} offsetY={fs * 0.7} width={g.w} align="center" rotation={g.rot} text={text} fontSize={fs} fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fill={SELECT_BLUE} listening={false} />
   }
-  // (d2-arrows) an elbow's bend: a blue dot on its middle segment (a drag moves the bend)
-  if (obj && obj.type === 'elbow' && Number.isFinite(obj.x1)) { const d = elbowBendAt(obj); return <Circle name="elbow-bend" x={d.x} y={d.y} radius={4 / zoom} fill={SELECT_BLUE} listening={false} /> }
+  if (obj && obj.type === 'line' && Number.isFinite(obj.x1)) return measure(obj)
+  // (d2-arrows) an elbow's bend: a blue dot on its middle segment (a drag moves the bend); its length
+  if (obj && obj.type === 'elbow' && Number.isFinite(obj.x1)) { const d = elbowBendAt(obj); return <Group listening={false}>{measure(obj)}<Circle name="elbow-bend" x={d.x} y={d.y} radius={4 / zoom} fill={SELECT_BLUE} listening={false} /></Group> }
   if (!isPointShape(obj)) return null
   const s = POINT_HANDLE_PX / zoom, P = shapePoints(obj), n = P.length, closed = obj.type === 'polygon' || !!obj.closed
   return (
@@ -271,6 +173,39 @@ export function ShapePointHandles({ obj: picked }) {
       {P.slice(0, closed ? n : n - 1).map((a, i) => { const b = P[(i + 1) % n]; return <Circle key={'m' + i} name="shape-side" x={(a[0] + b[0]) / 2} y={(a[1] + b[1]) / 2} radius={3.5 / zoom} fill={SELECT_BLUE} listening={false} /> })}
       {P.map(([x, y], i) => { const on = pickedPt.id === obj.id && pickedPt.i === i; return <Rect key={i} name={on ? 'shape-point-picked' : 'shape-point'} x={x - s / 2} y={y - s / 2} width={s} height={s} fill={on ? SELECT_BLUE : '#FFFFFF'} stroke={SELECT_BLUE} strokeWidth={1.5} strokeScaleEnabled={false} listening={false} /> })}
     </Group>
+  )
+}
+
+/** (d1-polish) What a length label reads: a line's (an arrow's) length · angle, an elbow's length. */
+export function lengthText(o, gs = 40) {
+  const L = ftIn((drawnLength(o) / gs) * 12)
+  return o.type === 'line' ? L + ' · ' + Math.round(angleOf({ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 })) + '°' : L
+}
+/** (d1-polish) A length label clicked: a field on it, the length (feet and inches) selected — Enter sets it (the start stays
+ *  put, the end moves along the same direction — drawTool.js setDrawnLength), Esc or a click away leaves it as it was. */
+export function LengthEditor() {
+  const id = useLengthEdit(e => e.id)
+  const view = useView(), gs = useCanvasStore(st => st.gridSize) || 40, sizes = useTextSizes(t => t.sizes)
+  const o = useCanvasStore(st => (id ? st.objects.find(q => q.id === id) : null))
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!id) return
+    const go = () => { const el = ref.current; if (el && document.activeElement !== el) { el.focus(); el.select() } }
+    const r = requestAnimationFrame(go)   // (after the press that opened it — focusing during it, the press would blur it)
+    return () => cancelAnimationFrame(r)
+  }, [id])
+  if (!id || !o) return null
+  const start = ftIn((drawnLength(o) / gs) * 12).replace(/′/g, "'").replace(/″/g, '"')
+  const fs = LEN_FS / textLz('doorValue', gs, null, sizes), g = lengthLabelAt(o, fs, lengthText(o, gs)), c = toScreen(view, { x: g.x, y: g.y }), z = view.zoom || 1
+  const close = () => useLengthEdit.setState({ id: null })
+  const apply = () => { const ft = feetOf(ref.current?.value); close(); if (ft > 0) setDrawnLength(useCanvasStore, id, ft) }
+  return (
+    <input ref={ref} key={id} aria-label="Length" data-length-editor defaultValue={start} onFocus={e => e.target.select()} onBlur={close} spellCheck={false}
+      onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); apply() } else if (e.key === 'Escape') { e.preventDefault(); close() } }}
+      onMouseDown={e => e.stopPropagation()}
+      style={{ position: 'absolute', left: c.x, top: c.y, transform: 'translate(-50%, -50%)', zIndex: 125, width: Math.max(64, g.w * z * 0.8), height: Math.max(20, g.h * z),
+        boxSizing: 'border-box', padding: '0 6px', border: `1px solid ${SELECT_BLUE}`, borderRadius: 4, outline: 'none', background: '#FFFFFF', color: SELECT_BLUE,
+        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: Math.max(11, fs * z), textAlign: 'center' }} />
   )
 }
 

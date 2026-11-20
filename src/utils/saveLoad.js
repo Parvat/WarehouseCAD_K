@@ -4,6 +4,7 @@ import { releaseGeneratedLocks, releaseGeneratedObjectLocks } from './layers'
 import { joinSplitPairs } from './pairJoin'
 import { rebuildAisles } from './aisleRebuild'
 import { getTextSizes, loadTextSizes } from './textSizes'
+import { getDrawStyles, loadDrawStyles } from './drawStyles'
 import { isDrawn, hasCorners } from '../render/drawnShapes'
 // ─── Scene serialization / deserialization ────────────────────────────────────
 // Format version — bump when breaking changes are made to the schema
@@ -20,6 +21,7 @@ export function serializeScene(s) {
     objects:      s.objects,
     elevations:   s.elevations ?? null,   // the layout's elevation types (utils/elevations.js)
     textSizes:    getTextSizes(),         // the label types' text heights, inches (utils/textSizes.js — labels-cad)
+    drawStyles:   getDrawStyles(),        // (d1-polish) each drawing kind's last used style (utils/drawStyles.js)
     groups:       s.groups || [],
     layers:       s.layers,
     activeLayerId: s.activeLayerId,
@@ -64,6 +66,7 @@ export function deserializeScene(json, s) {
   s.elevations   = data.elevations ?? legacy.table ?? null
   // the label types' text heights (utils/textSizes.js): the file's own, or the defaults
   loadTextSizes(data.textSizes || null)
+  loadDrawStyles(data.drawStyles || null)   // (d1-polish) new shapes and texts start with these
   s.groups       = data.groups || []
   // a Building layer an older Generate locked is released (a hand lock stays; Columns as saved) — utils/layers.js releaseGeneratedLocks
   s.layers       = releaseGeneratedLocks(data.layers || s.layers)

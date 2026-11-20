@@ -57,7 +57,7 @@ const save = () => { try { autoSave(serializeScene(useCanvasStore.getState())) }
  *  Enter or leaving the field. (d1-bar) The list opens ATTACHED to the field (studio/Popover.jsx anchorPlace): directly
  *  below it, left-aligned with it — above it with no room below — portalled over the canvas, so a bar's transform or a
  *  card's edge never moves or clips it (the Text bar's list used to open far to the right). */
-export function SizeInput({ inches, placeholder, aria, onCommit }) {
+export function SizeInput({ inches, placeholder, aria, onCommit, options = SIZE_OPTIONS }) {   // (d1-polish) `options`: its list (a block arrow's sizes)
   const show = sizeText(inches)
   const [text, setText] = useState(show)
   const [bad, setBad] = useState(false)
@@ -72,14 +72,14 @@ export function SizeInput({ inches, placeholder, aria, onCommit }) {
     if (v == null) { setBad(true); return }
     setBad(false); if (v !== inches) onCommit(v); else setText(show)
   }
-  const ROW = 26, LIST_H = SIZE_OPTIONS.length * ROW + 8
+  const ROW = 26, LIST_H = options.length * ROW + 8
   const place = () => {
     const r = wrap.current?.getBoundingClientRect()
     if (!r) return null
     const w = Math.max(r.width, 64), at = anchorPlace(r, w, LIST_H, { w: window.innerWidth, h: window.innerHeight })
     return { left: at.left, width: w, top: at.top }
   }
-  const openList = () => { setPos(place()); setHi(Math.max(0, SIZE_OPTIONS.indexOf(inches))); setOpen(true) }
+  const openList = () => { setPos(place()); setHi(Math.max(0, options.indexOf(inches))); setOpen(true) }
   const pick = (v) => { setOpen(false); setText(sizeText(v)); setBad(false); if (v !== inches) onCommit(v) }
   useEffect(() => {
     if (!open) return
@@ -102,13 +102,13 @@ export function SizeInput({ inches, placeholder, aria, onCommit }) {
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault()
             if (!open) { openList(); return }
-            setHi(h => Math.min(SIZE_OPTIONS.length - 1, Math.max(0, (h < 0 ? 0 : h) + (e.key === 'ArrowDown' ? 1 : -1))))
+            setHi(h => Math.min(options.length - 1, Math.max(0, (h < 0 ? 0 : h) + (e.key === 'ArrowDown' ? 1 : -1))))
             return
           }
           if (e.key === 'Enter') {
             e.preventDefault()
             // the list open and the field not changed by typing: the highlighted size; else what was typed
-            if (open && hi >= 0 && text === show) { pick(SIZE_OPTIONS[hi]); return }
+            if (open && hi >= 0 && text === show) { pick(options[hi]); return }
             setOpen(false); done(); return
           }
           if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (open) { setOpen(false); return } setText(show); setBad(false); e.currentTarget.blur() }
@@ -119,7 +119,7 @@ export function SizeInput({ inches, placeholder, aria, onCommit }) {
         <div role="listbox" id={listId} aria-label={aria + ' sizes'} data-size-list data-card-dark
           style={{ position: 'fixed', left: pos.left, top: pos.top, width: Math.max(pos.width, 64), zIndex: 400, padding: 4, display: 'flex', flexDirection: 'column',
             background: '#1F2321', border: '1px solid #323835', borderRadius: 8, boxShadow: '0 8px 24px rgba(15,18,16,.28)' }}>
-          {SIZE_OPTIONS.map((v, i) => {
+          {options.map((v, i) => {
             const cur = v === inches, lit = i === hi
             return (
               <div key={v} role="option" aria-selected={cur} data-size={v} onMouseDown={e => e.preventDefault()} onClick={() => pick(v)} onMouseEnter={() => setHi(i)}

@@ -13,7 +13,7 @@ import { useCallback, useState } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { toggleLock, isLockedIn } from '../utils/layers'
 import { styleDrawn, alignTexts, rotateTexts, angleOf } from '../utils/drawTool'
-import { drawnGeom, hasEnds, endsOf, hasCorners, roundOn, blockW } from '../render/drawnShapes'
+import { drawnGeom, hasEnds, endsOf, hasCorners, roundOn, blockSize, BLOCK_SIZES } from '../render/drawnShapes'
 import { ftIn } from '../utils/bom'
 import { B, MONO, Sep, IconBtn } from './barParts'
 import { Swatch, onDark } from './Swatch'
@@ -26,7 +26,8 @@ const NAMES = { line: 'Line', rect: 'Rectangle', circle: 'Circle', polyline: 'Po
 /** (d2-arrows) a line with an arrowhead is an Arrow */
 const nameOf = (o) => (o.type === 'line' && endsOf(o) !== 'none' ? 'Arrow' : NAMES[o.type] || 'Shape')
 const INK = '#E8EAE6'
-export const STROKE_WIDTHS = [1, 2, 3]
+// (d1-polish) 1 2 3 4 6 8 px, shown as line pictures — the bar's and the card's
+export const STROKE_WIDTHS = [1, 2, 3, 4, 6, 8]
 
 /** A picture button (32×32, radius 8): pressed = the active fill (green), as the mockup's. */
 function PicBtn({ label, title, on = false, onClick, locked = false, children, btnRef, haspopup, expanded }) {
@@ -63,8 +64,8 @@ const PicAlign = ({ a }) => {
   })}</g>)
 }
 
-/** Stroke width ▾ — 1, 2, 3 (px), a popover attached to its button. */
-function WidthPick({ value, onPick, locked }) {
+/** Stroke width ▾ — 1 2 3 4 6 8 px as line pictures, a popover attached to its button (the bar's and the card's). */
+export function WidthPick({ value, onPick, locked }) {
   const [el, setEl] = useState(null), [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
   return (
@@ -126,18 +127,16 @@ function CornersGroup({ objs, ids, locked }) {
     </>
   )
 }
-/** A block arrow: its fill colour and its body width (ft — real size). */
+/** A block arrow: its fill colour and its size (d1-polish: a plain number, like a text size — its body width in inches —
+ *  from a dropdown of 6 8 12 18 24 36 48, any number typed). */
 function BlockGroup({ objs, ids, locked, gs }) {
-  const o = objs[0], ft = Math.round((blockW(o, gs) / gs) * 100) / 100
-  const [t, setT] = useState(null)
-  const commit = () => { const v = Number(String(t ?? '').replace(/['′]|ft/g, '').trim()); setT(null); if (Number.isFinite(v) && v > 0 && v <= 100) styleDrawn(store, ids, { bodyW: v * gs }) }
+  const o = objs[0]
   return (
     <>
       <Swatch round="dot" label="Fill colour" value={o.fill || '#E07B22'} locked={locked} onPick={(c) => { if (c) styleDrawn(store, ids, { fill: c }) }} />
-      <input aria-label="Block arrow width (ft)" title="Width (ft)" className="st-field" disabled={locked} value={t ?? String(ft)} onChange={e => setT(e.target.value)} onFocus={e => { setT(String(ft)); requestAnimationFrame(() => e.target.select()) }}
-        onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setT(null); e.currentTarget.blur() } }}
-        style={{ height: 28, width: 44, boxSizing: 'border-box', padding: 0, border: 0, borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, textAlign: 'center', flexShrink: 0, ...(locked ? { opacity: 0.45 } : null) }} />
-      <span aria-hidden="true" style={{ fontSize: 12, color: B.muted, padding: '0 4px 0 2px' }}>ft</span>
+      <span style={{ display: 'inline-flex', ...(locked ? { opacity: 0.45, pointerEvents: 'none' } : null) }}>
+        <SizeInput inches={blockSize(o, gs)} aria="Block arrow size" options={BLOCK_SIZES} onCommit={(v) => { if (v > 0) styleDrawn(store, ids, { size: v, bodyW: undefined }) }} />
+      </span>
     </>
   )
 }

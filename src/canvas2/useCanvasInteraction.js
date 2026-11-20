@@ -11,7 +11,7 @@ import { clampResizeUpdates, clampDragDelta } from '../utils/floorClamp'
 import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
 import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
 import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from './fpRotate'
-import { resizeText, resizeCircle, snapPoint, useShapePoint, clearShapePoint, mergedOnNeighbour } from '../utils/drawTool'
+import { resizeText, resizeCircle, snapPoint, useShapePoint, clearShapePoint, mergedOnNeighbour, useLengthEdit } from '../utils/drawTool'
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
@@ -50,7 +50,8 @@ import { membersOf, clampSectionMove, clampSectionBox, clampSectionPoint } from 
 import { sectionSnapLines, snapSectionEdges, sectionBox, SECTION_SNAP_PX } from '../utils/sectionSnap'
 import { useSectionRename } from './sectionTool'
 import { POINT_HANDLE_PX } from './SectionShape'
-import { isPointShape, pointAt, sideAt, movePointTo, moveSideBy, isDrawn, drawnHit, shapePoints, elbowBendAt, elbowBendTo } from '../render/drawnShapes'
+import { isPointShape, pointAt, sideAt, movePointTo, moveSideBy, isDrawn, drawnHit, shapePoints, elbowBendAt, elbowBendTo, lengthLabelAt, lengthFs, onLengthLabel } from '../render/drawnShapes'
+import { lengthText } from './DrawBar'
 import { fpHandleHit, applyFpCornerDrag } from './fpHandles'
 import { fpDimHit, useDimEdit } from './FpDimEdit'
 import { legendHit } from '../utils/sectionLegend'
@@ -671,6 +672,14 @@ export function useCanvasInteraction({
           const r = POINT_HANDLE_PX / 2 / view.current.zoom
           const i = polygonOf(selected).findIndex(([x, y]) => Math.abs(world.x - x) <= r && Math.abs(world.y - y) <= r)
           if (i >= 0) { sectionPoint.current = { id: selected.id, i, orig: selected }; return }
+        }
+        /* (d1-polish) a line's, an arrow's or an elbow arrow's length label: a click on it types a new length (LengthEditor) */
+        //   — never a press on its own line (that drags it) nor on an elbow's bend dot (that moves the bend)
+        if (selected && (selected.type === 'line' || selected.type === 'elbow') && Number.isFinite(selected.x1)) {
+          const gs = st.gridSize || 40, fs = lengthFs(gs), zz = view.current.zoom
+          const onLine = drawnHit(selected, world.x, world.y, ((selected.strokeWidth || 2) / 2 + 3) / zz) === 'line'
+          const d = selected.type === 'elbow' ? elbowBendAt(selected) : null, onBend = d && Math.hypot(world.x - d.x, world.y - d.y) <= 7 / zz
+          if (!onLine && !onBend && onLengthLabel(lengthLabelAt(selected, fs, lengthText(selected, gs)), world.x, world.y)) { useLengthEdit.setState({ id: selected.id }); return }
         }
         /* (d2-arrows) an elbow or a block arrow: a press on an end drags it (snapped as drawing snaps; an elbow re-routes —
            its bend back to the end); on an elbow's bend dot drags the middle segment across itself */
