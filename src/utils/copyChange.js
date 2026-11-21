@@ -12,6 +12,7 @@ import { layoutColumns } from '../generate/usableCapacity'
 import { rackIssues } from './bayBeam'
 import { buildingSections } from './syncSections'
 import { uprightXs } from '../render/rackOps'
+import { isDefaultUnits, fmtLength, unitsNow } from './units'   // (units) the project's units
 
 const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -24,8 +25,9 @@ const rotatedOf = (o) => rackFootprint(o).rotated
 const runOf = (f, rot) => (rot ? [f.y, f.y + f.h] : [f.x, f.x + f.w])
 const crossOf = (f, rot) => (rot ? [f.x, f.x + f.w] : [f.y, f.y + f.h])
 
-/** "6' 3"" from world px. */
+/** "6' 3"" from world px — (units) in the project's units (a plan label: metres in metric). */
 export function fmtLen(px, gridSize = 40) {
+  if (!isDefaultUnits()) return fmtLength((Math.abs(px) / gridSize) * 12, 'plan', 'plain')
   const inches = Math.round((Math.abs(px) / gridSize) * 12)
   const f = Math.floor(inches / 12), i = inches % 12
   return f && i ? `${f}' ${i}"` : f ? `${f}'` : `${i}"`
@@ -34,6 +36,8 @@ export function fmtLen(px, gridSize = 40) {
 /** As fmtLen, rounded DOWN to the inch: a width that fails a check, so it never reads the same as the width
  *  it needs (7.99 ft is 7' 11", not 8'). A hair under the inch (float noise) still counts as the inch. */
 export function fmtLenDown(px, gridSize = 40) {
+  // (units) rounded down to the precision (metric: to the mm precision; plan labels in metres keep 2 decimals)
+  if (!isDefaultUnits()) { const u = unitsNow(), inches = (Math.abs(px) / gridSize) * 12; const p = u.metric ? (u.precisionMm || 1) / 25.4 : (u.precisionIn || 1); return fmtLength(Math.floor(inches / p + 1e-6) * p, 'plan', 'plain') }
   const inches = Math.floor((Math.abs(px) / gridSize) * 12 + 1e-6)
   const f = Math.floor(inches / 12), i = inches % 12
   return f && i ? `${f}' ${i}"` : f ? `${f}'` : `${i}"`

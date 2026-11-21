@@ -15,7 +15,7 @@ import { aisleGapShown, aisleLabelLayout, gapBase } from '../canvas2/hitTest'
 import { crossAisleLabels } from '../canvas2/crossAisles'
 import { labelScale } from '../render/labelSize'
 import { useLabelPrefs } from '../canvas2/labelPrefs'
-import { pxToFtIn } from '../utils/canvas'
+import { pxToFtInCard as pxToFtIn, isDefaultUnits, unitsNow } from '../utils/units'   // (units) the project's units, as a card shows them (mm in metric)
 import { SectionsList } from './sectionCards'
 import { ftIn } from './cards'
 import { Caption, CountChip, Btn, C, MONO } from './cardParts'
@@ -119,8 +119,8 @@ export function BuildingBlock({ objects, T, gs }) {
   const notSet = (v, sum) => (v > 0 ? <Line label={sum === 'clear' ? 'Clear height' : 'Sprinklers'} sum={sum} value={ftIn(v)} /> : <Line label={sum === 'clear' ? 'Clear height' : 'Sprinklers'} sum={sum} muted value="Not set" />)
   return (
     <Block label="Building">
-      <Line label="Size" sum="size" value={fp ? `${Math.round(fp.width / gs)}′ × ${Math.round(fp.height / gs)}′` : '—'} />
-      <Line label="Area" sum="area" value={`${n(Math.round(area))} sq ft`} />
+      <Line label="Size" sum="size" value={fp ? (isDefaultUnits() ? `${Math.round(fp.width / gs)}′ × ${Math.round(fp.height / gs)}′` : `${pxToFtIn(fp.width, gs)} × ${pxToFtIn(fp.height, gs)}`) : '—'} />
+      <Line label="Area" sum="area" value={unitsNow().metric ? `${n(Math.round(area * 0.09290304))} m²` : `${n(Math.round(area))} sq ft`} />
       {notSet(ceil?.clearHeightIn, 'clear')}
       {notSet(ceil?.sprinklerIn, 'sprinkler')}
     </Block>

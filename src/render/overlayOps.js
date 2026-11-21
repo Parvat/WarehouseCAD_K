@@ -15,10 +15,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { SELECT_BLUE } from '../theme/tokens'
-import {
-  getObjectBounds, getHandlePositions, HANDLES, pxToFtIn,
-  getFpWallSegments, ANNOT_LINE_TYPES, ANNOT_RECT_TYPES,
-} from '../utils/canvas'
+import { getObjectBounds, getHandlePositions, HANDLES, getFpWallSegments, ANNOT_LINE_TYPES, ANNOT_RECT_TYPES } from '../utils/canvas'
+import { pxToFtIn } from '../utils/units'   // (units) the project's units
 
 /* The overlay palette, lifted verbatim from CanvasUI so the ported handles are
    the same blue and the same ink. Canvas drawing colours stay literal by

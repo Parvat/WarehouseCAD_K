@@ -5,7 +5,7 @@ import { RackShape, ZoneShape } from './shapes'
 import { usePlacement, placementDistances } from '../utils/placement'
 import { LabelPill } from './DimensionLabels'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { pxToFtIn } from '../utils/canvas'
+import { pxToFtIn } from '../utils/units'   // (units) the project's units
 import { ZoneSizeLabel } from './ZoneEdit'
 
 /* ── A row (or a zone) being placed, on the canvas ─────────────────────────────

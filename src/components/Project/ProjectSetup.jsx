@@ -8,6 +8,7 @@ import { useCanvasStore } from '../../store/useCanvasStore'
 import { useRules } from '../../rules/useRules'
 import { useRackingSettings } from '../../utils/fillTool'
 import { UNITS } from '../../constants'
+import { unitsOfRules } from '../../utils/units'
 import { useProjectSetup, closeSetup, installStartScreen, projectOf, newProject, newId, palletName, withProject, syncTypesToPallets, layoutAffecting, ceilingInUse, palletInUse, generateBrief, ADVANCED_DEFAULTS, PALLET_DEFAULT, RULES_DEFAULTS, BUILDING_DEFAULTS, ASSUMED_CLEAR_IN } from '../../utils/project'
 import { refreshNames } from '../../utils/elevTab'
 import { regenBuilding, regenSummary } from '../../generate/regenerate'
@@ -119,6 +120,31 @@ function ForkliftSelect({ value, onChange, mheOptions, compact = false }) {
 }
 /** Advanced (folded): the fixed defaults — load clearance, sprinkler clearance, hole pitch, flue, upright step, the
  *  beam face new elevations start with; units; (the start screen) columns along the wall. */
+/* (units) The project's units: Imperial (ft-in) or Metric, and the precision lengths are shown to (utils/units.js). Every
+   length typed anywhere is read in any form (12'6, 3.8 m, 3800 mm …); a bare number is the project unit. */
+function UnitsSettings({ rules = {}, onChange }) {
+  const u = unitsOfRules(rules)
+  const precIn = [[1 / 16, '1/16 in'], [1 / 8, '1/8 in'], [1 / 2, '1/2 in'], [1, '1 in']], precMm = [[1, '1 mm'], [10, '10 mm'], [100, '100 mm']]
+  return (
+    <div style={S.sec} role="group" aria-label="Units">
+      <span style={S.h}>Units</span>
+      <div style={{ ...S.grid, marginTop: 10 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}><span style={S.th}>Units</span>
+          <select aria-label="Units" value={u.metric ? 'metric' : 'imperial'} onChange={e => onChange({ ...rules, unitSystem: e.target.value, units: e.target.value === 'metric' ? 'mm' : 'ft · in' })} style={S.in}>
+            <option value="imperial">Imperial (ft-in)</option><option value="metric">Metric (mm, m)</option>
+          </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}><span style={S.th}>Precision</span>
+          <select aria-label="Precision" value={String(u.metric ? u.precisionMm : u.precisionIn)} style={S.in}
+            onChange={e => onChange({ ...rules, ...(u.metric ? { precisionMm: Number(e.target.value) } : { precisionIn: Number(e.target.value) }) })}>
+            {(u.metric ? precMm : precIn).map(([v, l]) => <option key={l} value={String(v)}>{l}</option>)}
+          </select>
+        </label>
+      </div>
+    </div>
+  )
+}
+
 function Advanced({ value, onChange, units, onUnits, extra = null, style = null }) {
   const [open, setOpen] = useState(false)
   return (
@@ -133,9 +159,6 @@ function Advanced({ value, onChange, units, onUnits, extra = null, style = null 
             <Num key={k} label={label} value={value?.[k] ?? ADVANCED_DEFAULTS[k]} onChange={v => onChange({ ...value, [k]: v ?? ADVANCED_DEFAULTS[k] })} />
           ))}
           <Num label="Upright step (ft)" step={0.5} value={(value?.uprightStepIn ?? 12) / 12} onChange={v => onChange({ ...value, uprightStepIn: v > 0 ? v * 12 : 12 })} />
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}><span style={S.th}>Units</span>
-            <select aria-label="Units" value={units} onChange={e => onUnits(e.target.value)} style={S.in}>{Object.values(UNITS).map(u => <option key={u} value={u}>{u}</option>)}</select>
-          </label>
           {extra}
         </div>
       )}
@@ -461,6 +484,7 @@ function SettingsCard() {
           {/* the bill of materials (utils/bom.js): the deck table, anchors, row spacers, guards */}
           <BomSettings value={bomSettings(pr)} onChange={b => set({ bom: b })} />
 
+          <UnitsSettings rules={pr.rules || {}} onChange={r => set({ rules: r })} />
           <Advanced value={pr.advanced || {}} onChange={v => set({ advanced: v })} units={pr.rules?.units} onUnits={u => set({ rules: { ...pr.rules, units: u } })} />
         </div>
 

@@ -8,10 +8,11 @@
 import { distToSegment, getObjectBounds } from '../utils/canvas'
 import { layoutText, makeMeasure, fontSpec } from '../utils/textLayout'
 import { textInches, textLz, useTextSizes } from '../utils/textSizes'
+import { isDefaultUnits, fmtLength, unitsNow } from '../utils/units'   // (units) the project's units
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 /** Feet and inches as every plan label writes them (utils/bom.js ftIn's format: 13′-9″) — kept here, no BOM import. */
-const ftIn = (inches) => { const v = Math.round(inches), f = Math.floor(v / 12), i = v - f * 12; return i ? `${f}′-${i}″` : `${f}′` }
+const ftIn = (inches) => { if (!isDefaultUnits()) return fmtLength(inches, 'plan', 'dash'); const v = Math.round(inches), f = Math.floor(v / 12), i = v - f * 12; return i ? `${f}′-${i}″` : `${f}′` }   // (units)
 
 export const DRAWN_TYPES = new Set(['line', 'rect', 'circle', 'polyline', 'polygon', 'elbow', 'block_arrow'])
 /** (d2-arrows) The two-ended ones: a line (an Arrow is a line with an arrowhead), an elbow arrow, a block arrow — x1, y1

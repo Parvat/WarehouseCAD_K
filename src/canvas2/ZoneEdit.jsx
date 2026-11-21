@@ -4,7 +4,7 @@ import { create } from 'zustand'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { zonePreview } from '../utils/rackingAreaTool'
 import { LabelPill } from './DimensionLabels'
-import { pxToFtIn } from '../utils/canvas'
+import { pxToFtIn } from '../utils/units'   // (units) the project's units
 import { selectedZones } from './zoneSelection'
 import { useLiveObjects, useView } from './live'
 

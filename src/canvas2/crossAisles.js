@@ -1,5 +1,5 @@
 import { rackFootprint } from '../generate/columnCheck'
-import { pxToFtIn } from '../utils/canvas'
+import { pxToFtIn } from '../utils/units'   // (units) the project's units
 import { failingCrossAisles, fmtLenDown, sectionCrossAisles, isRow } from '../utils/copyChange'
 import { textLz } from '../utils/textSizes'
 import { equipmentResolver } from '../utils/equipment'

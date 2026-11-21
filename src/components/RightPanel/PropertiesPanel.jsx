@@ -6,7 +6,7 @@ import { toggleLock, isLockedIn } from '../../utils/layers'
 import { useLocked } from '../../studio/useLocked'
 import { deleteSelectionWithAreas } from '../../utils/deleteSelection'
 import { useShallow } from 'zustand/react/shallow'
-import { pxToFtIn } from '../../utils/canvas'
+import { pxToFtInCard as pxToFtIn } from '../../utils/units'   // (units) the project's units, as a card shows them (mm in metric)
 import { TextSizeField } from '../../studio/textSizeCard'
 import { rotateTexts, alignTexts, setLineLength, setLineAngle, setCircleRadius, setPolylineClosed, polyMeasures, convertRectToZone, angleOf } from '../../utils/drawTool'
 import { isDrawn, drawnGeom, hasEnds, endsOf, hasCorners, roundOn, blockSize, BLOCK_SIZES } from '../../render/drawnShapes'

@@ -34,6 +34,7 @@ import { sectionMap } from '../canvas2/sections'
 import { numberLines, worldSide } from './rackLines'
 import { isSection, polygonOf, pointInPolygon } from './sectionAreas'
 import { lineNamer, namedRows, lineSections } from './lineNames'
+import { isDefaultUnits, fmtLength, unitsNow } from '../utils/units'   // (units) the project's units
 
 export const BOM_DEFAULTS = {
   decks: [
@@ -79,8 +80,8 @@ const footprint = (r) => {
 }
 const n2 = (v) => Math.round(v * 100) / 100
 /** 192 → 16′; 198 → 16′-6″ */
-export const ftIn = (inches) => { const v = Math.round(inches), f = Math.floor(v / 12), i = v - f * 12; return i ? `${f}′-${i}″` : `${f}′` }
-const inch = (v) => `${n2(v)}″`
+export const ftIn = (inches) => { if (!isDefaultUnits()) return fmtLength(inches, 'table', 'dash'); const v = Math.round(inches), f = Math.floor(v / 12), i = v - f * 12; return i ? `${f}′-${i}″` : `${f}′` }   // (units) BOM, Tally, xlsx, CSV: mm in metric
+const inch = (v) => (unitsNow().metric ? fmtLength(v, 'table') : `${n2(v)}″`)
 
 /** The deck set for a beam length (in): its widths, or null with no row for it (within ½"). */
 export function deckSet(decks, beamIn) {

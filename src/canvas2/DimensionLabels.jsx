@@ -1,7 +1,8 @@
 import { useMemo, memo } from 'react'
 import { Group, Rect, Line, Text } from 'react-konva'
 import { equipmentResolver } from '../utils/equipment'
-import { pxToFtIn, getFpWallSegments, getObjectBounds } from '../utils/canvas'
+import { getFpWallSegments, getObjectBounds } from '../utils/canvas'
+import { pxToFtIn, useUnits } from '../utils/units'   // (units) the project's units
 import { spin } from './shapes'
 import { buildingDims, DIM_INK } from '../render/buildingDims'
 import { aisleLabelLayout, gapShown } from './hitTest'
@@ -314,6 +315,7 @@ function EdgeDims({ walls, zoom, gridSize, activeWallIdx = null }) {
    memoised item fed exactly those: a drag redraws only the labels of aisles
    beside a moved rack, a selection change redraws none. */
 export const AisleLabelItem = memo(function AisleLabelItem({ aisle, row1, row2, lz, gridSize, profile = null, columns = EMPTY }) {
+  useUnits()   // (units) redrawn in the new units when the project's change
   return <AisleLabel aisle={aisle} objects={[row1, row2].filter(Boolean)} lz={lz} gridSize={gridSize} profile={profile} columns={columns} />
 })
 

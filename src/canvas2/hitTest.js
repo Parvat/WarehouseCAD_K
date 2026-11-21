@@ -16,7 +16,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { isDrawn, drawnHit, drawnBox } from '../render/drawnShapes'
-import { objectContains, getFpWallSegments, distToSegment, getObjectBounds, pxToFtIn } from '../utils/canvas'
+import { objectContains, getFpWallSegments, distToSegment, getObjectBounds } from '../utils/canvas'
+import { pxToFtIn } from '../utils/units'   // (units) the project's units
 import { rackFootprint, rowAisleLevel, MHE_PROFILES, expandColumnGrid } from '../generate/columnCheck'
 import { fmtLenDown } from '../utils/copyChange'
 import { getColumnCheckView } from '../generate/columnCheckView'

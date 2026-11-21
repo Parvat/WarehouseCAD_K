@@ -6,6 +6,7 @@ import { create } from 'zustand'
 import { typeAt, sidesOf, isBeamRack, PALETTE, OLD_PALETTE } from './elevations'
 import { bayRectForIndex } from '../render/bayGeom'
 import { isEmptySide } from './bayEmpty'
+import { isDefaultUnits, fmtLength, unitsNow } from './units'   // (units) the project's units
 
 const LS_KEY = 'trace.elev.v1'
 const read = () => { try { const v = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); return { showColors: v.showColors !== false } } catch { return { showColors: true } } }
@@ -44,4 +45,4 @@ export function bandRects(rack, table, gridSize = 40) {
   return out
 }
 
-export const ftIn = (inches) => { const v = Math.round(inches); const f = Math.floor(v / 12), i = v - f * 12; return i ? `${f}' ${i}"` : `${f}'` }
+export const ftIn = (inches) => { if (!isDefaultUnits()) return fmtLength(inches, 'plan', 'plain'); const v = Math.round(inches); const f = Math.floor(v / 12), i = v - f * 12; return i ? `${f}' ${i}"` : `${f}'` }

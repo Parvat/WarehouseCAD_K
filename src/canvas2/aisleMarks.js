@@ -8,6 +8,7 @@
 // aisle's run — and mapped to world x/y only at the end. A vertical layout's
 // marks are therefore the horizontal layout's marks with x and y swapped:
 // same arrows, same labels, same colours.
+import { isDefaultUnits, fmtLength, unitsNow } from '../utils/units'   // (units) the project's units
 
 export const CLEAR_COLOR = '#0369a1'
 export const SHORT_COLOR = '#C0392B'
@@ -16,7 +17,7 @@ export const SHORT_COLOR = '#C0392B'
 const HEAD_PX = 9, MIN_DRAW_PX = 1
 
 /** A clearance as C18 writes it: 8.67 ft → 8′-8″, 0.5 → 0′-6″. */
-export const ftInDash = (ft) => { const t = Math.round(Math.abs(ft || 0) * 12), f = Math.floor(t / 12), i = t - f * 12; return `${(ft || 0) < 0 ? '-' : ''}${f}′-${i}″` }
+export const ftInDash = (ft) => { if (!isDefaultUnits()) return fmtLength((ft || 0) * 12, 'plan', 'dash'); const t = Math.round(Math.abs(ft || 0) * 12), f = Math.floor(t / 12), i = t - f * 12; return `${(ft || 0) < 0 ? '-' : ''}${f}′-${i}″` }
 
 const toXY = (axis) => (d, r) => (axis === 'y' ? { x: r, y: d } : { x: d, y: r })
 
