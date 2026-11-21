@@ -54,7 +54,7 @@ export function summaryBase(objects, T, { gridSize = 40, ledger = null, check, p
   for (const o of objects) {
     if (typeof o?.type !== 'string' || !o.type.startsWith('rack_')) continue
     const e = L.racks.get(o.id)
-    pos.set(o.id, e ? e.positions : (getRackCapacity(o)?.total || 0))
+    pos.set(o.id, e ? e.positions : (getRackCapacity(o, undefined, lv)?.total || 0))   // (lane-positions: a lane rack's levels too)
     if (!e || !Array.isArray(o.beams)) continue
     const noOf = (s) => lineOf.get(o.id + ':' + worldSide(o, s)) ?? 0
     for (let s = 0; s < sidesOf(o); s++) o.beams.forEach((beamIn, b) => {

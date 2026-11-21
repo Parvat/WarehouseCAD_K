@@ -7,6 +7,9 @@ import { buildingDims, DIM_INK } from '../render/buildingDims'
 import { aisleLabelLayout, gapShown } from './hitTest'
 import { polygonOf } from '../utils/sectionAreas'
 import { rackFootprint } from '../generate/columnCheck'
+import { getRackCapacity } from '../utils/capacity'
+import { levelsResolver } from '../utils/elevations'
+import { useCanvasStore } from '../store/useCanvasStore'
 import { useColumnCheck } from '../generate/useColumnCheck'
 import { useDragPreview } from './dragPreview'
 import { clearanceSource } from './clearanceSource'
@@ -204,8 +207,9 @@ export function RackLabels({ obj, zoom, gridSize }) {
     const dTxt = fmtIn(bh), dTw = dTxt.length * fs * 0.62 + (4 / zoom) * 2
     const lx = bx + derivedW + 6 / zoom + dTw / 2
     endPill('depth', lx, by + bh / 2, dTxt, mirror(lx, bx + derivedW / 2))
-    const cap = lanes * palletDeep
-    const lTxt = `${lanes}L × ${palletDeep}D · ${cap} PAL`
+    // (lane-positions) lanes × deep × levels (utils/capacity.js), its levels from its elevation type
+    const capR = getRackCapacity(obj, undefined, levelsResolver(useCanvasStore.getState().elevations)), cap = capR?.total ?? lanes * palletDeep
+    const lTxt = `${lanes}L × ${palletDeep}D × ${capR?.levels ?? 1} · ${cap} PAL`
     nodes.push(<LabelPill key="lanes" cx={bx + derivedW / 2} cy={by - 14 / zoom} text={lTxt} fontSize={fs} zoom={zoom} color={clr} />)
   }
 

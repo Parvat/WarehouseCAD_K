@@ -3,6 +3,9 @@ import { useShallow } from 'zustand/react/shallow'
 import { withAnchoredPosition } from '../../../utils/bayAnchor'
 import { getObjectBounds } from '../../../utils/canvas'
 import { getRackCapacity } from '../../../utils/capacity'
+import { levelsResolver } from '../../../utils/elevations'
+/** (lane-positions) a lane rack's positions: lanes × deep × levels (utils/capacity.js), its levels from its elevation type */
+const usePal = (obj) => { const T = useCanvasStore(s => s.elevations); return getRackCapacity(obj, undefined, levelsResolver(T))?.total ?? 0 }
 import { C, fieldBox, Grid2, Seg, Totals, SecLabel, Hint, Note, Row } from '../../../studio/cardParts'
 
 /* ── Studio card parts shared by the lane racks (presentation only; every panel keeps its own recalc) ──
@@ -64,6 +67,7 @@ function LaneControls({ obj, lanes, palletDeep, palletWIn, palletDIn, upIn, reca
 
 // ── Drive-In Panel ───────────────────────────────────────────────────────────
 export function DriveInPanel({ obj }) {
+  const pal = usePal(obj)   // (lane-positions) lanes × deep × levels
   const { commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize })))
   const lanes      = obj.lanes      || 2
   const palletDeep = obj.palletDeep || 5
@@ -90,7 +94,7 @@ export function DriveInPanel({ obj }) {
     <div style={col}>
       {/* Status */}
       <Totals items={[
-        { label: 'Capacity', value: `${lanes * palletDeep} PAL`, accent: true },
+        { label: 'Capacity', value: `${pal} PAL`, accent: true },
         { label: 'Footprint', value: `${Math.round(obj.width/gridSize*10)/10}' x ${Math.round(obj.height/gridSize*10)/10}'` },
       ]} />
       <LaneControls obj={obj} lanes={lanes} palletDeep={palletDeep} palletWIn={palletWIn} palletDIn={palletDIn} upIn={upIn}
@@ -101,6 +105,7 @@ export function DriveInPanel({ obj }) {
 
 // ── Drive-Through Panel (reuses DriveInPanel logic, FIFO label) ─────────────
 export function DriveThroughPanel({ obj }) {
+  const pal = usePal(obj)   // (lane-positions) lanes × deep × levels
   const { commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize })))
   const lanes      = obj.lanes        || 2
   const palletDeep = obj.palletDeep   || 5
@@ -120,7 +125,7 @@ export function DriveThroughPanel({ obj }) {
 
   return (
     <div style={col}>
-      <Totals items={[{ label: 'Capacity', value: `${lanes*palletDeep} PAL`, accent: true }]} />
+      <Totals items={[{ label: 'Capacity', value: `${pal} PAL`, accent: true }]} />
       <ModeLine>FIFO — load back, pick front</ModeLine>
       <LaneControls obj={obj} lanes={lanes} palletDeep={palletDeep} palletWIn={palletWIn} palletDIn={palletDIn} upIn={upIn}
         recalc={recalc} deepUnit="pal" />
@@ -130,6 +135,7 @@ export function DriveThroughPanel({ obj }) {
 
 // ── Pushback Panel ────────────────────────────────────────────────────────────
 export function PushbackPanel({ obj }) {
+  const pal = usePal(obj)   // (lane-positions) lanes × deep × levels
   const { commitObjectUpdate, gridSize } = useCanvasStore(useShallow(s => ({ commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize })))
   const lanes      = obj.lanes        || 2
   const palletDeep = obj.palletDeep   || 2
@@ -149,7 +155,7 @@ export function PushbackPanel({ obj }) {
 
   return (
     <div style={col}>
-      <Totals items={[{ label: 'Capacity', value: `${lanes*palletDeep} PAL`, accent: true }]} />
+      <Totals items={[{ label: 'Capacity', value: `${pal} PAL`, accent: true }]} />
       <ModeLine>LIFO — carts on inclined rails</ModeLine>
       {palletDeep > 5 && <Note level="warning">⚠ Pushback typically max 5-deep</Note>}
       <LaneControls obj={obj} lanes={lanes} palletDeep={palletDeep} palletWIn={palletWIn} palletDIn={palletDIn} upIn={upIn}

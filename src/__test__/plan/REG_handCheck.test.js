@@ -9044,6 +9044,41 @@ describe('REG — the hand check by real clicks', () => {
       expect([Math.round((ar2.x2 - ar.x2) * 0.1), ar2.x1 === ar.x1]).toEqual([30, true])
     }, T)
 
+    it('REG-lane-positions (click): a Drive-In, Drive-Through, Pushback and Pallet Flow rack count lanes × deep × levels (levels from its elevation type — was: levels ignored): its card\'s Capacity, its label on the plan and the layout\'s totals agree; a Selective rack is unchanged (lane-positions 4)', async () => {
+      await open()
+      const fp = await fpOf()
+      await L.S('S.setState({ objects: S.getState().objects.filter(o => !(typeof o.type === "string" && (o.type.startsWith("rack_") || o.type === "aisle" || o.type === "section_area"))) })')
+      await L.S('const z = 0.1; S.setState({ zoom: z, panX: 220 - arg.x * z, panY: 120 - arg.y * z })', fp); await L.page.waitForTimeout(300)
+      const levels = await L.S('const T = S.getState().elevations; const t = T && T.types.find(x => x.id === T.defaultId); return t ? t.levels.length : 1')
+      const card = L.page.locator('[data-island="right-card"]')
+      const rail = L.page.locator('[data-island="rail"]')
+      let n = 0
+      for (const name of ['Drive-In Rack', 'Drive-Through Rack', 'Pushback Rack', 'Pallet Flow Rack']) {
+        await rail.getByRole('button', { name: 'Racking', exact: true }).click(); await L.page.waitForTimeout(300)
+        await L.page.getByRole('menu', { name: 'Racking library' }).getByRole('menuitem', { name, exact: true }).click(); await L.page.waitForTimeout(400)
+        const at = { x: 330 + n * 160, y: 300 }
+        await L.page.mouse.move(at.x, at.y); await L.page.waitForTimeout(150); await L.page.mouse.click(at.x, at.y); await L.page.waitForTimeout(300)
+        const o = await L.S('return S.getState().objects.slice(-1)[0]')
+        await L.page.keyboard.press('Escape'); await L.S('S.getState().selectObject(arg, false)', o.id); await L.page.waitForTimeout(300)
+        const want = (o.lanes || 2) * (o.palletDeep || (/pushback|pallet_flow/.test(o.type) ? 2 : 5)) * levels
+        const capCard = await L.S('return Promise.all([import("/src/utils/capacity.js"), import("/src/utils/elevations.js")]).then(([C, E]) => C.getRackCapacity(S.getState().objects.find(q => q.id === arg), undefined, E.levelsResolver(S.getState().elevations)).total)', o.id)
+        expect([name, capCard]).toEqual([name, want])
+        // its card shows it (Drive-In, Drive-Through, Pushback carry a Capacity line)
+        if (!/Pallet Flow/.test(name)) expect(await card.getByText(want + ' PAL', { exact: true }).count()).toBeGreaterThanOrEqual(1)
+        n++
+      }
+      // the layout's total is the sum
+      const sum = await L.S('return Promise.all([import("/src/utils/capacity.js"), import("/src/utils/elevations.js"), import("/src/utils/bayLedger.js")]).then(([C, E, B]) => { const st = S.getState(), lv = E.levelsResolver(st.elevations); return [C.getLayoutCapacity(st.objects, undefined, B.bayLedger(st.objects, st.gridSize || 40, st.elevations), lv).total, st.objects.filter(o => /^rack_/.test(o.type)).reduce((t, o) => t + (C.getRackCapacity(o, undefined, lv)?.total || 0), 0)] })')
+      expect(sum[0]).toBe(sum[1])
+      // a Selective rack: unchanged (bays × pallets per beam × levels, as before)
+      await rail.getByRole('button', { name: 'Racking', exact: true }).click(); await L.page.waitForTimeout(300)
+      await L.page.getByRole('menu', { name: 'Racking library' }).getByRole('menuitem', { name: 'Selective Rack', exact: true }).click(); await L.page.waitForTimeout(400)
+      await L.page.mouse.move(500, 500); await L.page.waitForTimeout(150); await L.page.mouse.click(500, 500); await L.page.waitForTimeout(300)
+      const sel = await L.S('return S.getState().objects.slice(-1)[0]')
+      const selCap = await L.S('return Promise.all([import("/src/utils/capacity.js"), import("/src/utils/elevations.js")]).then(([C, E]) => C.getRackCapacity(S.getState().objects.find(q => q.id === arg), undefined, E.levelsResolver(S.getState().elevations)).total)', sel.id)
+      expect(selCap).toBe(sel.beams.reduce((t, b) => t + (b >= 96 ? 2 : 1), 0) * levels)
+    }, T)
+
     /* ── REG-basics (CLAUDE.md Rule 9 — the Basics contract): every draw tool and every object type in the library, by
        real clicks, on two fixtures. Every draw tool must pass every check; the other types' failures are written to the
        report (os tmpdir, reg-basics-<fixture>-<group>.json) and printed — listed for the owner, not failed here. ── */

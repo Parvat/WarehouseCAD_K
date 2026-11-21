@@ -44,7 +44,7 @@ export function useLayoutFigures() {
   const ledger = useBayLedger(objects, gridSize)
   const { result, profile } = useColumnCheck()
   return useMemo(() => {
-    const gross = getLayoutCapacity(objects, undefined, ledger).total
+    const gross = getLayoutCapacity(objects, undefined, ledger, levelsResolver(elevations)).total   // (lane-positions: a lane rack's levels)
     // held to the project forklift, as the X marks are (canvas2/Overlays.jsx) and the layout summary (utils/summary.js)
     const { usable } = usableCapacity(objects, { profile, check: result, ledger, gridSize, elevations })
     const racks = objects.filter(o => RACK_NAME[o.type]).length
