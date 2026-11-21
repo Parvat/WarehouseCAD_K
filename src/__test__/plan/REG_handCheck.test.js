@@ -3149,33 +3149,35 @@ describe('REG — the hand check by real clicks', () => {
       const M = await drawer.locator('th[data-tally-col]').count()
       const planTicks = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; return st.find('.rack-line-tick').map(t => { const c = t.getClientRect(); return { x: c.x, y: c.y + c.height / 2 } }) })
       const labelOf = (no) => L.page.evaluate((no) => { const re = new RegExp('(^|–)R' + no + '(–|$)'); const n = window.Konva.stages[0].find('.rack-line-label').find(x => re.test(x.text())); if (!n) return null; const c = n.getClientRect(); return { x0: c.x, x1: c.x + c.width, y: c.y + c.height / 2, text: n.text() } }, no)
-      expect([await count(), await planTicks()]).toEqual([`0 / ${M} checked`, []])
+      // (small-bugs) every check waits for the drawer and the plan to settle — never a fixed pause (stable under load)
+      await expect.poll(async () => [await count(), await planTicks()], { timeout: 15000, interval: 200 }).toEqual([`0 / ${M} checked`, []])
       // a single row's line, labelled on its own (so its tick is its own)
       const lines = await L.S('return import("/src/utils/rackLines.js").then(M => M.rackLinesNow(S.getState().objects, S.getState().gridSize || 40).map(l => ({ no: l.no, ids: l.ids, ws: l.ws, vert: l.vert, r0: l.r0, r1: l.r1, s0: l.s0, s1: l.s1 })))')
       const labelled = []
       for (const l of lines) { const lb = await labelOf(l.no); if (lb && lb.text === 'R' + l.no) labelled.push(l) }
       expect(labelled.length).toBeGreaterThan(1)
       const [a, c] = [labelled[0], labelled[labelled.length - 1]]
-      await tick(a.no).click(); await L.page.waitForTimeout(200)
-      expect([await tick(a.no).getAttribute('aria-checked'), await count()]).toEqual(['true', `1 / ${M} checked`])
+      await tick(a.no).click()
+      await expect.poll(async () => [await tick(a.no).getAttribute('aria-checked'), await count()], { timeout: 15000, interval: 200 }).toEqual(['true', `1 / ${M} checked`])
       // the column dims; the plan: a tick just before its R label, on its line
       const op = await drawer.locator(`td[data-row="${a.no}"]`).first().evaluate(td => Number(getComputedStyle(td).opacity))
       expect(op).toBeLessThan(0.6)
+      await expect.poll(async () => (await planTicks()).length, { timeout: 15000, interval: 200 }).toBe(1)
       const lb = await labelOf(a.no), ts = await planTicks()
-      expect(ts.length).toBe(1)
       expect([ts[0].x < lb.x1, Math.abs(ts[0].y - lb.y) < 3]).toEqual([true, true])
       // Clear checks
-      await drawer.getByRole('button', { name: 'Clear checks' }).click(); await L.page.waitForTimeout(200)
-      expect([await tick(a.no).getAttribute('aria-checked'), await count(), (await planTicks()).length]).toEqual(['false', `0 / ${M} checked`, 0])
+      await drawer.getByRole('button', { name: 'Clear checks' }).click()
+      await expect.poll(async () => [await tick(a.no).getAttribute('aria-checked'), await count(), (await planTicks()).length], { timeout: 15000, interval: 200 }).toEqual(['false', `0 / ${M} checked`, 0])
       // two checked, then a reload: still checked (saved with the layout)
-      await tick(a.no).click(); await tick(c.no).click(); await L.page.waitForTimeout(600)
-      expect(await count()).toBe(`2 / ${M} checked`)
+      await tick(a.no).click(); await tick(c.no).click()
+      await expect.poll(() => count(), { timeout: 15000, interval: 200 }).toBe(`2 / ${M} checked`)
+      await L.page.waitForTimeout(600)   // (the autosave settles before the reload)
       await L.page.reload()
       await L.page.getByRole('button', { name: 'Sign in' }).click({ timeout: 120000 })
       await L.page.getByRole('button', { name: /^Draw/ }).click(); await L.page.waitForSelector('.konvajs-content'); await L.page.waitForTimeout(800)
       await bomTab()
       await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(500)
-      expect([await tick(a.no).getAttribute('aria-checked'), await tick(c.no).getAttribute('aria-checked'), await count()]).toEqual(['true', 'true', `2 / ${M} checked`])
+      await expect.poll(async () => [await tick(a.no).getAttribute('aria-checked'), await tick(c.no).getAttribute('aria-checked'), await count()], { timeout: 15000, interval: 200 }).toEqual(['true', 'true', `2 / ${M} checked`])
       // a bay of line a deleted (clicked on its side, Delete): its tick goes, c's stays
       await L.page.keyboard.press('Escape')
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('v'); await L.page.waitForTimeout(100)
@@ -3188,9 +3190,8 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(400)
       await L.page.mouse.move(5, 890); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
       if (!(await drawer.count())) { await bomTab(); await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(500) }
-      expect(await count()).toBe(`1 / ${await drawer.locator('th[data-tally-col]').count()} checked`)
-      expect(await drawer.locator('th[data-tally-col][data-tallied]').count()).toBe(1)
-    }, T)
+      await expect.poll(async () => [await count() === `1 / ${await drawer.locator('th[data-tally-col]').count()} checked`, await drawer.locator('th[data-tally-col][data-tallied]').count()], { timeout: 15000, interval: 200 }).toEqual([true, 1])
+    }, T * 3)   // (small-bugs) a reload and a sign-in inside it: room under load
 
     it('REG-bom-rack-labels (click): one R label per rack line at its start end only (left of a line running across, above one running up and down), a back-to-back pair one label R2–R3, in the drawings\u2019 words style; no label over another or over an aisle width label; the aisle labels’ size, drawn at any zoom (ui-polish-4 — was: none under 8 px on screen); the numbers are the By row table\u2019s (ui-polish-2 — was: a label at each end, one per side of a pair)', async () => {
       await open()
@@ -8997,6 +8998,56 @@ describe('REG — the hand check by real clicks', () => {
       const sel = await L.S('return S.getState().objects.slice(-1)[0]')
       const selCap = await L.S('return Promise.all([import("/src/utils/capacity.js"), import("/src/utils/elevations.js")]).then(([C, E]) => C.getRackCapacity(S.getState().objects.find(q => q.id === arg), undefined, E.levelsResolver(S.getState().elevations)).total)', sel.id)
       expect(selCap).toBe(sel.beams.reduce((t, b) => t + (b >= 96 ? 2 : 1), 0) * levels)
+    }, T)
+
+    it('REG-duplicate-notice (click): Duplicate (Ctrl+D) with nothing selected — or nothing a copy can be made of — shows a notice "Nothing to duplicate"; a rack selected duplicates as before, with no such notice (small-bugs 1)', async () => {
+      await open()
+      const N = () => L.S('return N.useNotice.getState().text')
+      // nothing selected
+      await L.page.keyboard.press('Escape'); await L.S('S.getState().clearSelection(); N.useNotice.setState({ text: null })')
+      await L.page.mouse.move(600, 400); await L.page.keyboard.press('Control+d'); await L.page.waitForTimeout(250)
+      expect(await N()).toBe('Nothing to duplicate')
+      // a rack: a duplicate on its way (it follows the pointer, or is placed) — no notice
+      await L.S('N.useNotice.setState({ text: null })')
+      const rk = await L.S('return S.getState().objects.find(o => o.type === "rack_row" || o.type === "rack_double_row").id')
+      await L.S('S.getState().selectObject(arg, false)', rk); await L.page.waitForTimeout(150)
+      await L.page.mouse.move(600, 400); await L.page.keyboard.press('Control+d'); await L.page.waitForTimeout(300)
+      expect(await N()).not.toBe('Nothing to duplicate')
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      // the bar's Duplicate is the same path: a column grid (it is never copied) — the notice
+      await L.S('N.useNotice.setState({ text: null }); S.getState().clearSelection()')
+      const n0 = await L.S('return S.getState().objects.length')
+      const grid = await L.S('const g = S.getState().objects.find(o => o.type === "column_grid"); return g && g.id')
+      if (grid) {
+        await L.S('S.getState().selectObject(arg, false)', grid); await L.page.waitForTimeout(150)
+        await L.page.mouse.move(600, 400); await L.page.keyboard.press('Control+d'); await L.page.waitForTimeout(300)
+        const n1 = await L.S('return S.getState().objects.length'), placing = await L.S('return import("/src/utils/placement.js").then(M => !!M.usePlacement.getState().active)')
+        if (n1 === n0 && !placing) expect(await N()).toBe('Nothing to duplicate')
+      }
+    }, T)
+
+    it('REG-section-overlap-check (click): a custom-shape section drawn with the pen across another section\'s edge does not go unnoticed — Check layout lists "their edges cross — the sections overlap" with both sections; two sections side by side are not flagged (small-bugs 2)', async () => {
+      await open()
+      const fp = await fpOf()
+      await L.S('S.setState({ objects: S.getState().objects.filter(o => !(typeof o.type === "string" && (o.type.startsWith("rack_") || o.type === "aisle" || o.type === "section_area"))) })')
+      await L.S('const z = 0.1; S.setState({ zoom: z, panX: 220 - arg.x * z, panY: 120 - arg.y * z })', fp); await L.page.waitForTimeout(300)
+      const at = (fx, fy) => ({ x: fp.x + fp.width * fx, y: fp.y + fp.height * fy })
+      const overlaps = async () => (await checkNow()).open.filter(i => i.kind === 'section-overlap')
+      // two rectangles side by side: no warning
+      await drawRect(at(0.1, 0.2), at(0.4, 0.6)); await drawRect(at(0.4, 0.2), at(0.7, 0.6))
+      expect((await overlaps()).length).toBe(0)
+      await L.page.keyboard.press('Escape')
+      // a custom shape (the pen) across the first rectangle's edge
+      await sectionTool('Custom shape')
+      const pts = [at(0.2, 0.5), at(0.35, 0.5), at(0.35, 0.8), at(0.2, 0.8)]
+      for (const q of pts) await L.click(q)
+      const last = await L.toScreen(pts[3]); await L.page.mouse.dblclick(last.x, last.y); await L.page.waitForTimeout(250)
+      const secs = await L.S('return S.getState().objects.filter(o => o.type === "section_area").map(o => o.id)')
+      const ov = await overlaps()
+      // either the pen kept it off the neighbour (no overlap made), or Check names the two that overlap
+      const made = await L.S('return import("/src/utils/layoutCheck.js").then(M => import("/src/utils/sectionAreas.js").then(A => { const s = S.getState().objects.filter(o => o.type === "section_area"); const P = s.map(o => A.polygonOf(o)); let n = 0; for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) if (M.sectionsOverlap(P[i], P[j])) n++; return n }))')
+      expect([secs.length, ov.length]).toEqual([3, made])
+      if (made) expect(ov[0].ids.length).toBe(2)
     }, T)
 
     /* ── REG-basics (CLAUDE.md Rule 9 — the Basics contract): every draw tool and every object type in the library, by

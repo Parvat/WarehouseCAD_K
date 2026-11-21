@@ -15,6 +15,7 @@ import { useRowGroup, startGroupFromSelection } from '../utils/rowGroupTool'
 import { selectionLevel, pickedBays } from '../canvas2/selectionLevel'
 import { sectionIds } from '../canvas2/sections'
 import { notify } from '../utils/notice'
+import { usePlacement } from '../utils/placement'
 import { pickableIn } from '../utils/layers'
 import { pickedColumn } from '../canvas2/columnPick'
 
@@ -42,12 +43,23 @@ export function rotateQuarter(obj) {
 }
 /** Duplicate (Ctrl+D): copy, then paste 20 px down-right; the copy is the selection. Sections only: each beside itself
  *  (utils/sectionEdit.js duplicateSections). */
+/* (small-bugs) Duplicate (Ctrl+D and the bars' Duplicate — one path): when nothing comes of it, a notice says so — nothing
+   selected, or nothing that can be copied or that has room (a building, a column grid, a locked object, no room) */
 export function duplicateSelection() {
   useRowGroup.setState({ message: null })
-  { const st = store.getState()
-    if (st.selectedIds.length && st.selectedIds.every(id => st.objects.find(o => o.id === id)?.type === 'section_area')) { duplicateSections(store); return } }
+  const st = store.getState(), n0 = st.objects.length
+  const none = () => notify('Nothing to duplicate', st.selectedIds.length ? 'it cannot be copied, or there is no room for a copy here' : 'select something first')
+  if (!st.selectedIds.length && !(st.activeBaySelection || []).length) { none(); return false }
+  if (st.selectedIds.length && st.selectedIds.every(id => st.objects.find(o => o.id === id)?.type === 'section_area')) {
+    duplicateSections(store)
+    if (store.getState().objects.length === n0) { none(); return false }
+    return true
+  }
   store.getState().copySelected()
-  pasteAt(store, 'nudge', nanoid)
+  const ok = pasteAt(store, 'nudge', nanoid)
+  // a row's copy follows the pointer first (placement): that is a duplicate on its way, not nothing
+  if (!ok || (store.getState().objects.length === n0 && !usePlacement.getState().active)) { none(); return false }
+  return true
 }
 /** Delete (the Delete key, and the bars' Delete): bays picked delete only those bays — a pair's bay picked on one side
  *  comes off that side only (utils/baySides.js), the rows stay; rows selected delete the rows, with each racking
