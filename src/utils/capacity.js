@@ -67,6 +67,12 @@ export function oversizedBayIndices(beams, palletFaceIn) {
   }, [])
 }
 
+/** (lane-positions) A lane rack's levels: its elevation type's (`levelsAt` — levelsResolver), else its own, else 1. */
+export function laneLevels(obj, levelsAt = null) {
+  const v = levelsAt ? levelsAt(obj, 0, 0) : obj.levels
+  return Math.max(1, Math.round(Number(v) || 1))
+}
+
 /**
  * Calculate pallet capacity for a single rack object.
  * Returns null for non-rack objects.
@@ -123,16 +129,20 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
   }
 
   // ── Lane racks ────────────────────────────────────────────────────────────
+  /* (lane-positions) lanes × deep × levels — each lane holds a pallet per level at every depth; the levels from its
+     elevation type when the layout has types (as a beam rack's), else its own `levels`, else 1 (was: levels ignored) */
   if (isLaneType(obj.type)) {
     const lanes      = obj.lanes      || 2
     const palletDeep = obj.palletDeep || 5
-    const total      = lanes * palletDeep
+    const levels     = laneLevels(obj, levelsAt)
+    const total      = lanes * palletDeep * levels
     return {
       type:   'lane',
       lanes,
       palletDeep,
+      levels,
       total,
-      label:  `${total} PAL (${lanes}L × ${palletDeep}D)`,
+      label:  `${total} PAL (${lanes}L × ${palletDeep}D × ${levels}L)`,
       mode:   flowOf(obj.type),
     }
   }
@@ -148,7 +158,7 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
  * is counted once, so an overlap never counts twice. `ledger` lets a caller pass one it already has.
  * Returns { total, breakdown: { type → positions }, uncountedBays }.
  */
-export function getLayoutCapacity(objects, rules = DEFAULT_RULES, ledger = null) {
+export function getLayoutCapacity(objects, rules = DEFAULT_RULES, ledger = null, levelsAt = null) {   // (lane-positions) `levelsAt`: a lane rack's levels
   const L = ledger || bayLedger(objects)
   let total = 0
   const breakdown = {}
@@ -157,7 +167,7 @@ export function getLayoutCapacity(objects, rules = DEFAULT_RULES, ledger = null)
   objects.forEach(obj => {
     const entry = L.racks.get(obj.id)
     if (entry) { add(obj.type, entry.positions); return }
-    const cap = getRackCapacity(obj, rules)
+    const cap = getRackCapacity(obj, rules, levelsAt)
     if (!cap) return
     add(obj.type, cap.total)
   })

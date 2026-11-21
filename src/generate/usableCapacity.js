@@ -59,7 +59,7 @@ export function runColumnCheck(objects, { profile = MHE_PROFILES.reach, gridSize
  *  out isn't taken off — the usable figure never goes below what is really there, nor above gross. */
 export function usableCapacity(objects, { profile, gridSize = GS, rules = DEFAULT_RULES, check, ledger, elevations = null } = {}) {
   const L = ledger || bayLedger(objects, gridSize, elevations)
-  const gross = getLayoutCapacity(objects, rules, L).total
+  const gross = getLayoutCapacity(objects, rules, L, levelsResolver(elevations)).total   // (lane-positions: a lane rack's levels)
   const res = check !== undefined ? check : runColumnCheck(objects, { profile, gridSize, elevations })
   const counts = (c) => { const e = L.racks.get(c.rackId); return !e || c.bayIndex == null || e.counted[c.bayIndex] !== false }
   const inRackLost = res ? (res.rackConflicts || []).filter(counts).reduce((t, c) => t + (c.positionsLost || 0), 0) : 0
