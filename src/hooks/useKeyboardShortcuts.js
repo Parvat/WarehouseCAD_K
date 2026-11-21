@@ -17,7 +17,7 @@ import { deleteBaySelection } from '../utils/baySides'
 import { toggleMeasure } from '../utils/toolSwitch'
 import { isTypingTarget, textOwnsKey } from '../utils/typing'
 import { selectionLevel, stepUp } from '../canvas2/selectionLevel'
-import { deleteSelection, cutSelection } from '../studio/selectionActions'
+import { deleteSelection, cutSelection, duplicateSelection } from '../studio/selectionActions'
 import { HOME_TOOL, isPlainTool } from '../utils/homeTool'
 import { toggleHelp } from '../studio/HelpCard'
 import { nudgeWithSections, duplicateSections } from '../utils/sectionEdit'
@@ -199,10 +199,8 @@ export function shortcutHandler(e) {
           e.preventDefault()
           // Duplicate: copy, then paste 20 px down-right; the copy is the selection (utils/pasteAt.js) — sections go
           // beside themselves instead, never over a neighbour (utils/sectionEdit.js)
-          { const st = useCanvasStore.getState()
-            if (st.selectedIds.length && st.selectedIds.every(id => st.objects.find(o => o.id === id)?.type === 'section_area')) { duplicateSections(useCanvasStore); break } }
-          useCanvasStore.getState().copySelected()
-          pasteAt(useCanvasStore, 'nudge', nanoid)
+          // (small-bugs) the bars' own Duplicate: one path — and a notice when nothing can be duplicated
+          duplicateSelection()
           break
         }
         case 'g':

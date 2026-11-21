@@ -41,7 +41,7 @@
 
 import { namesFor } from './rackTypes'
 import { create } from 'zustand'
-import { membership } from './sectionAreas'
+import { membership, isSection, polygonOf } from './sectionAreas'
 import { rackFootprint, rowGaps, rowAisleLevel, rackReachable, MHE_PROFILES, uprightFramesLocal, localRectToWorld } from '../generate/columnCheck'
 import { uprightXs } from '../render/rackOps'
 import { blockedPositionRects } from '../render/labelOps'
@@ -297,6 +297,19 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
         highlight: out.map(c => outline({ x: c.x, y: c.y, w: c.w, h: c.h }, HL.amber)), text: `${out.length} column${out.length === 1 ? '' : 's'} past the building's walls` })
     }
   }
+  // ── (small-bugs) a section's edge across another's: two sections overlap (a custom shape drawn with the pen, or a
+  //    polyline's point dragged, can cross a neighbour's edge) — never unnoticed: a warning, both sections lit ──
+  {
+    const secs = objects.filter(isSection).map(s => ({ s, P: polygonOf(s) })).filter(x => x.P && x.P.length >= 3)
+    for (let i = 0; i < secs.length; i++) for (let j = i + 1; j < secs.length; j++) {
+      const a = secs[i], b = secs[j]
+      if (!sectionsOverlap(a.P, b.P)) continue
+      const bx = (P) => { const xs = P.map(p => p[0]), ys = P.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } }
+      const nm = (s) => s.label || s.name || 'A section'
+      warnings.push({ severity: 'warning', kind: 'section-overlap', ids: [a.s.id, b.s.id], box: union([bx(a.P), bx(b.P)]),
+        highlight: [outline(bx(a.P), HL.amber), outline(bx(b.P), HL.amber)], text: `${nm(a.s)} and ${nm(b.s)}: their edges cross — the sections overlap` })
+    }
+  }
   // ── a way in: racks only a dead-end pocket reaches (an aisle closed at both ends) ──
   const zonesIn = objects.some(o => typeof o.type === 'string' && o.type.startsWith('zone_'))
   for (const fp of objects.filter(o => FP.has(o.type))) {
@@ -438,8 +451,26 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }
 }
 
-const KIND_ORDER = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'door', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle', 'max-run']
+const KIND_ORDER = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'section-overlap', 'door', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle', 'max-run']
 function byKind(a, b) { return KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) }
+
+/** (small-bugs) Do polygons A and B overlap — an edge of one crossing an edge of the other, or a point of one strictly
+ *  inside the other? Touching along an edge (two sections side by side) is not an overlap. */
+export function sectionsOverlap(A, B, eps = 1e-6) {
+  const cross = (p, q, r, s) => {
+    const d = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    const d1 = d(p, q, r), d2 = d(p, q, s), d3 = d(r, s, p), d4 = d(r, s, q)
+    return ((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps)) && ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps))
+  }
+  for (let i = 0; i < A.length; i++) for (let j = 0; j < B.length; j++) if (cross(A[i], A[(i + 1) % A.length], B[j], B[(j + 1) % B.length])) return true
+  const inside = (P, x, y) => { let c = false; for (let i = 0, k = P.length - 1; i < P.length; k = i++) { const [xi, yi] = P[i], [xk, yk] = P[k]; if ((yi > y) !== (yk > y) && x < ((xk - xi) * (y - yi)) / (yk - yi || 1e-12) + xi) c = !c } return c }
+  const onEdge = (P, x, y) => P.some((p, i) => { const q = P[(i + 1) % P.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1; const t = ((x - p[0]) * (q[0] - p[0]) + (y - p[1]) * (q[1] - p[1])) / (L * L); if (t < -eps || t > 1 + eps) return false; return Math.hypot(p[0] + (q[0] - p[0]) * t - x, p[1] + (q[1] - p[1]) * t - y) < 1e-3 })
+  // a point strictly inside (on neither edge): one inside the other — or both the same box (every point on edges)
+  const centre = (P) => [P.reduce((t, p) => t + p[0], 0) / P.length, P.reduce((t, p) => t + p[1], 0) / P.length]
+  if (A.some(([x, y]) => !onEdge(B, x, y) && inside(B, x, y)) || B.some(([x, y]) => !onEdge(A, x, y) && inside(A, x, y))) return true
+  const [ax, ay] = centre(A), [bx, by] = centre(B)
+  return (inside(B, ax, ay) && inside(A, ax, ay) && !onEdge(B, ax, ay)) && (inside(A, bx, by) && inside(B, bx, by))
+}
 
 /* ── Mark as OK (aisle-equip): an item the user accepts stays listed, greyed, at the bottom, with Undo mark; it no longer
    counts as an error or a warning (the counts, the label, the export question). The marks are the items' keys
