@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Icon } from './Icon'
+import { useUnits, isDefaultUnits, parseLength, fmtLength } from '../utils/units'   // (units)
 
 /* The right card's parts (STUDIO.md §3, §5; every value from design/studio/Studio.dc.html — C1 props, C5 check,
    C6 zone, C7 empty, C4 generate). One set for every Properties section, so the card reads as one thing:
@@ -75,9 +76,11 @@ export const fieldBox = (words = false) => ({
 
 /** Label above, field below (C1 Bays / Beam, C6 Width / Length). */
 export function Field({ label, children, title }) {
+  const u = useUnits()   // (units) a length's value carries its own unit outside Imperial 1″: the label drops "(ft)"
+  const shown = typeof label === 'string' && !isDefaultUnits(u) ? label.replace(/\s*\(ft\)$/, '') : label
   return (
     <label title={title} style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-      <span style={{ color: C.muted, fontSize: 12 }}>{label}</span>
+      <span style={{ color: C.muted, fontSize: 12 }}>{shown}</span>
       {children}
     </label>
   )
@@ -107,6 +110,31 @@ export function TextInput({ value, onCommit, words = false, aria, placeholder, o
 
 /** A number input in the field box: Enter / blur commits a finite number ≥ min; anything else goes back. */
 export function NumInput({ value, onCommit, aria, min = 0, step, inputProps }) {
+  if (typeof aria === 'string' && /\(ft\)$/.test(aria)) return <LengthInput value={value} onCommit={onCommit} aria={aria} min={min} step={step} inputProps={inputProps} />
+  return <PlainNumInput value={value} onCommit={onCommit} aria={aria} min={min} step={step} inputProps={inputProps} />
+}
+/** (units) A length field (its aria ends "(ft)"; the value is feet): typed in any form — 12'6, 12 ft 6 in, 150 in, 3.8 m,
+ *  3800 mm, or a bare number in the project unit (utils/units.js parseLength) — and shown in the project's units (feet as
+ *  a plain number at Imperial 1″, as it always was). Arrow keys step it like a number field. */
+function LengthInput({ value, onCommit, aria, min = 0, step, inputProps }) {
+  const u = useUnits()
+  const show = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? String(v ?? '') : isDefaultUnits(u) ? String(v) : fmtLength(Number(v) * 12, 'card', 'space', u))
+  const [text, setText] = useState(show(value))
+  useEffect(() => setText(show(value)), [value, u.metric, u.precisionIn, u.precisionMm])   // eslint-disable-line react-hooks/exhaustive-deps
+  const done = () => {
+    if (text === show(value)) return
+    const v = parseLength(text, u)
+    if (String(text).trim() !== '' && v != null && Number.isFinite(v) && v >= min && Math.abs(v - Number(value)) > 1e-9) onCommit(v); else setText(show(value))
+  }
+  const nudge = (dir) => { const s = Number(step) || 1, cur = parseLength(text, u) ?? Number(value) ?? 0, nv = Math.max(min, Math.round((cur + dir * s) * 1e6) / 1e6); if (nv !== Number(value)) onCommit(nv) }
+  return (
+    <input type="text" role="spinbutton" inputMode="decimal" aria-label={aria} aria-valuenow={Number.isFinite(Number(value)) ? Number(value) : undefined}
+      value={text} className="st-field" style={fieldBox()}
+      onChange={e => setText(e.target.value)} onBlur={done}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); else if (e.key === 'Escape') { setText(show(value)); e.currentTarget.blur() } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); nudge(e.key === 'ArrowUp' ? 1 : -1) } }} {...inputProps} />
+  )
+}
+function PlainNumInput({ value, onCommit, aria, min = 0, step, inputProps }) {
   const [text, setText] = useState(String(value ?? ''))
   useEffect(() => setText(String(value ?? '')), [value])
   const done = () => { const v = Number(text); if (String(text).trim() !== '' && Number.isFinite(v) && v >= min && v !== value) onCommit(v); else setText(String(value ?? '')) }

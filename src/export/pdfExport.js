@@ -43,7 +43,8 @@ import { elevationLayout, itemSVG, lengthsByType, ftInDash, archScale, CARD_SHEE
 import { typeIdAt, sprinklerClearance } from '../utils/elevations'
 import { nameOf, ceilingFor, palletFor } from '../utils/project'
 import { bayLedger } from '../utils/bayLedger'
-import { getFpVertices, insetPolygon, pxToFtIn } from '../utils/canvas'
+import { getFpVertices, insetPolygon } from '../utils/canvas'
+import { pxToFtIn } from '../utils/units'   // (units) the project's units
 import { expandColumnGrid } from '../generate/columnCheck'
 import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
 import { aisleLabelOps, aisleLabelBoxes, clearanceOpsAll, clearanceSolids, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'

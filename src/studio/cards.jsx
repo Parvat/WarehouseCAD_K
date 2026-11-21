@@ -10,7 +10,7 @@ import { levelsResolver, typeById } from '../utils/elevations'
 import { selectionCells, cellTypes } from '../utils/elevSelection'
 import { setRackDepths } from '../utils/rackDepthAction'
 import { withAnchoredPosition } from '../utils/bayAnchor'
-import { pxToFtIn } from '../utils/canvas'
+import { pxToFtInCard as pxToFtIn } from '../utils/units'   // (units) the project's units, as a card shows them (mm in metric)
 import { zoneSized } from '../utils/floorClamp'
 import { parseFeet } from '../components/RightPanel/panels/RackingAreaPanel'
 import { BeamSelect, changeBayUpdate } from '../components/RightPanel/panels/RackRowPanelCore'
@@ -24,6 +24,7 @@ import { useLocked } from './useLocked'
 import { CardLock } from './CardLock'
 import { Head, BigFigure, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, Row, ToggleRow, Totals, Hint,
   Tag, CountChip, IconBtn, C, MONO, LEVEL, LockedFields } from './cardParts'
+import { isDefaultUnits, fmtLength, unitsNow } from '../utils/units'   // (units) the project's units
 
 /* The right card's blocks for the states drawn in the mockups (design/studio/Studio.dc.html): nothing selected (C7),
    a rack (C1), a zone (C6) and Check layout (C5). Every other section uses the same parts (cardParts.jsx). */
@@ -33,6 +34,7 @@ const isFp = (o) => typeof o?.type === 'string' && o.type.startsWith('fp_')
 const n = (v) => (v ?? 0).toLocaleString('en-US')
 /** feet and inches as the mockup writes them: 8′ 0″, 42″ */
 export const ftIn = (inches) => {
+  if (!isDefaultUnits()) return fmtLength(inches, 'card', 'space')   // (units) the card in the project's units
   const ft = Math.floor(Math.abs(inches) / 12), inc = Math.round((Math.abs(inches) % 12) * 10) / 10
   if (inc === 12) return `${ft + 1}′ 0″`
   return ft === 0 ? `${inc}″` : `${ft}′ ${inc}″`
@@ -49,7 +51,7 @@ export function useLayoutFigures() {
     const { usable } = usableCapacity(objects, { profile, check: result, ledger, gridSize, elevations })
     const racks = objects.filter(o => RACK_NAME[o.type]).length
     const fp = objects.find(isFp)
-    return { gross, usable, racks, building: fp ? `${Math.round(fp.width / gridSize)}′ × ${Math.round(fp.height / gridSize)}′` : null }
+    return { gross, usable, racks, building: fp ? (isDefaultUnits() ? `${Math.round(fp.width / gridSize)}′ × ${Math.round(fp.height / gridSize)}′` : `${pxToFtIn(fp.width, gridSize)} × ${pxToFtIn(fp.height, gridSize)}`) : null }
   }, [objects, ledger, result, profile, gridSize, elevations])
 }
 

@@ -17,6 +17,7 @@
 // objects on the Notes layer (render/drawnShapes.js draws them, on the canvas and the PDF alike).
 
 import { create } from 'zustand'
+import { parseLength } from './units'   // (units)
 import { TOOLS } from '../constants'
 import { HOME_TOOL } from './homeTool'
 import { snapToGrid, getObjectBounds } from './canvas'
@@ -265,6 +266,7 @@ export function commitShape(store, shape, pts, zoom = 1, newId = null, closed = 
 /** Feet from a typed length — 25, 25', 25 ft, 24' 9", 24′-9″, 9" (a bare number is feet, as every length typed in the
  *  app — the same reading as ColumnGridPanel's feetOf, kept here so the tool switch needs no panel) — or null. */
 export function feetOf(t) {
+  const u = parseLength(t); if (u != null) return u   // (units) one parser for every length (utils/units.js)
   const s = String(t ?? '').trim().replace(/′/g, "'").replace(/″/g, '"').replace(/\s*ft\b\.?/gi, "'").replace(/\s*in\b\.?/gi, '"')
   let m = s.match(/^(\d+(?:\.\d+)?)\s*'\s*-?\s*(?:(\d+(?:\.\d+)?)\s*"?)?$/)
   if (m) return Number(m[1]) + (m[2] ? Number(m[2]) / 12 : 0)

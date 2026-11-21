@@ -20,7 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { worldToScreen, screenToWorld } from './viewport'
-import { pxToFtIn } from '../utils/canvas'
+import { pxToFtIn } from '../utils/units'   // (units) the project's units
 
 const RULER_PX     = 20   // band thickness — matches the original's w-5/h-5
 const MIN_LABEL_PX  = 56  // labelled ticks need room for the text

@@ -22,7 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Group, Line, Circle } from 'react-konva'
-import { pxToFtIn } from '../utils/canvas'
+import { pxToFtIn } from '../utils/units'   // (units) the project's units
 import { LabelPill } from './DimensionLabels'
 
 const CLR = '#f0b429'   // same amber family AisleLabel uses for other transient/derived readouts

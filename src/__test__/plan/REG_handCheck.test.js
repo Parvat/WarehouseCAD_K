@@ -7917,6 +7917,61 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
     }, T)
 
+    /* ── units round: the project's units (utils/units.js) ── */
+    it('REG-units (click): a card length field takes every form — 12\'6, 12 ft 6 in, 150 in, 3.8 m, 3800 mm and a bare number in the project unit (feet, then mm after Project settings → Units → Metric); in Metric the card shows mm and the label drops (ft), the PDF prints metres on the plan and the xlsx sizes are mm; Imperial at 1/2 in shows halves; the geometry never changes with the unit', async () => {
+      await open(); await drawView()
+      const gs = await gs7(), card = L.page.locator('[data-island="right-card"]')
+      await L.page.keyboard.press('r'); await L.page.waitForTimeout(150)
+      await dragPx({ x: 150, y: 670 }, { x: 300, y: 760 })
+      const r = (await drawnNow()).slice(-1)[0]
+      expect(await selIds()).toEqual([r.id])
+      const width = async () => (await L.S('return S.getState().objects.find(o => o.id === arg).width', r.id)) / gs
+      const typeW = async (v) => { const f = card.getByRole('spinbutton', { name: 'Width (ft)' }); await f.click(); await f.fill(v); await f.press('Enter'); await L.page.waitForTimeout(150) }
+      const M = 1000 / 25.4 / 12   // feet in a metre
+      for (const [v, ft] of [["12'6", 12.5], ['30', 30], ['12 ft 6 in', 12.5], ['31', 31], ['150 in', 12.5], ['32', 32], ['3.8 m', 3.8 * M], ['33', 33], ['3800 mm', 3.8 * M], ['20', 20]]) {
+        await typeW(v); expect([v, Math.round(await width() * 1e4) / 1e4]).toEqual([v, Math.round(ft * 1e4) / 1e4])
+      }
+      expect(await card.getByRole('spinbutton', { name: 'Width (ft)' }).inputValue()).toBe('20')   // Imperial 1″: feet, as before
+      const geom = () => L.S('return S.getState().objects.map(o => [o.id, o.x, o.y, o.width, o.height]).sort()')
+      const before = await geom()
+      const pdf = () => L.S('return import("/src/export/pdfExport.js").then(M => M.buildLayoutSVG(S.getState().objects, S.getState().layers, S.getState().gridSize || 40, { title: "t", elevations: S.getState().elevations }).svg)')
+      expect(/>\s*\d+\.\d\d m\s*</.test(await pdf())).toBe(false)
+      // Project settings → Units → Metric (mm, m), Save
+      const setUnits = async (sys, prec) => {
+        await L.page.getByRole('button', { name: 'Project settings' }).click(); await L.page.waitForTimeout(250)
+        const g = L.page.getByRole('group', { name: 'Units' })
+        await g.getByRole('combobox', { name: 'Units' }).selectOption(sys); await L.page.waitForTimeout(100)
+        if (prec != null) await g.getByRole('combobox', { name: 'Precision' }).selectOption(prec)
+        await L.page.getByRole('button', { name: 'Save', exact: true }).click(); await L.page.waitForTimeout(300)
+      }
+      await setUnits('metric')
+      expect(await geom()).toEqual(before)                                                      // nothing moved
+      const wf = card.getByRole('spinbutton', { name: 'Width (ft)' })
+      expect(await wf.inputValue()).toBe('6096 mm')                                              // 20 ft
+      expect(await card.getByText('Width (ft)', { exact: true }).count()).toBe(0)                // the label: Width
+      await typeW('3000'); expect(Math.round(await width() * 1e4) / 1e4).toBe(Math.round(3 * M * 1e4) / 1e4)   // bare: mm
+      await typeW("10'"); expect(await width()).toBe(10)                                        // a unit typed wins
+      expect(/>\s*\d+\.\d\d m\s*</.test(await pdf())).toBe(true)                            // the PDF: metres on the plan
+      // the xlsx (By row): every size in mm, no inches
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(250)
+      const dlg = await fullView('By row')
+      const [dl] = await Promise.all([L.page.waitForEvent('download'), dlg.getByRole('button', { name: 'Download xlsx' }).click()])
+      const X = await import('../../utils/xlsx.js')
+      const cells = X.sheetCells(X.readStoredZip(new Uint8Array(fs.readFileSync(await dl.path())))['xl/worksheets/sheet1.xml'])
+      const sizes = cells.slice(3).map(c => String(c[1] ?? '')).filter(t => /\d/.test(t))
+      expect(sizes.length).toBeGreaterThan(0)
+      expect(sizes.filter(t => !/mm/.test(t) || /″| in\b| ft\b/.test(t))).toEqual([])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      // Imperial at 1/2 in: halves in the card
+      await L.page.getByRole('tab', { name: 'Properties' }).click().catch(() => {}); await L.page.waitForTimeout(150)
+      await setUnits('imperial', '0.5')
+      await L.S('S.getState().selectObject(arg, false)', r.id); await L.page.waitForTimeout(200)
+      await typeW('12\' 6 1/2"'); expect(await width()).toBeCloseTo(12 + 6.5 / 12, 6)
+      expect(await card.getByRole('spinbutton', { name: 'Width (ft)' }).inputValue()).toBe('12′ 6 ½″')
+      await setUnits('imperial', '1')
+    }, T)
+
     /* ── the dealer audit on d1-fixes: what a dealer could not do after drawing ── */
     it('REG-draw-style-card (click): a drawn shape\'s card — its name (Polyline, Polygon), its size in feet (a rectangle\'s Width and Height, a circle\'s Diameter, typed), Stroke colour and width, Fill (a closed shape), Solid | Dashed — each change one undo; a text\'s card sets its real Text size in inches (36 = 3 ft), not px (dealer audit)', async () => {
       await open(); await drawView()

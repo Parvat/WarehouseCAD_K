@@ -4,6 +4,7 @@ import { useMheOptions } from '../../rules/useMheOptions'
 import { useColumnCheck } from '../../generate/useColumnCheck'
 import { useRackingSettings } from '../../utils/fillTool'
 import { defaultPallet } from '../../utils/project'
+import { useUnits, unitsOfRules } from '../../utils/units'
 
 /* The project (utils/project.js) is where the forklift, the pallet, the wall clearance and the units are set; this
    keeps what still reads them elsewhere in step — the column check's forklift (its context), and the Fill racking
@@ -21,6 +22,14 @@ export function ProjectSync() {
     for (const [k, v] of Object.entries(want)) if (rs[k] !== v && v != null) set(k, v)
     const units = pr.rules?.units, st = useCanvasStore.getState()
     if (units && st.unit !== units) st.setUnit(units)
+    // (units) the project's units and precision: every formatter and parser reads them (utils/units.js)
+    const u = unitsOfRules(pr.rules || {}), cur = useUnits.getState()
+    if (u.metric !== cur.metric || u.precisionIn !== cur.precisionIn || u.precisionMm !== cur.precisionMm) {
+      useUnits.setState(u)
+      // the plan's labels are worked out once per objects list: a fresh list (the same objects — no history step, no
+      // geometry change) lays them again in the new units
+      useCanvasStore.setState(s => ({ objects: s.objects.slice() }))
+    }
   }, [pr, mheOptions])   // eslint-disable-line react-hooks/exhaustive-deps
   return null
 }

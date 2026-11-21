@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { parseLength } from '../../../utils/units'   // (units)
 import { useCanvasStore } from '../../../store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { C, fieldBox, Grid2, Note, Sec, Caption, LockedFields, IconBtn, Seg } from '../../../studio/cardParts'
@@ -18,6 +19,7 @@ import { ftIn } from '../../../utils/bom'
 /** Feet from typed text — 25, 25', 25 ft, 24' 9", 24′-9″, 9" — 0 allowed (an offset of 0: on the wall); null when not
  *  a length. */
 export const feetOf = (t) => {
+  const u = parseLength(t); if (u != null) return u   // (units) one parser for every length (utils/units.js)
   const s = String(t ?? '').trim().replace(/′/g, "'").replace(/″/g, '"').replace(/\s*ft\b\.?/gi, "'").replace(/\s*in\b\.?/gi, '"')
   let m = s.match(/^(\d+(?:\.\d+)?)\s*'\s*-?\s*(?:(\d+(?:\.\d+)?)\s*"?)?$/)
   if (m) return Number(m[1]) + (m[2] ? Number(m[2]) / 12 : 0)

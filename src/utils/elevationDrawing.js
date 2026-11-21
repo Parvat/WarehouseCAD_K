@@ -11,6 +11,7 @@
 // simple diagonal bracing pattern, the pallets at their real depth.
 
 import { beamFace, topLoadIssue, SPRINKLER_CLEARANCE_IN, ceilingOf, drawnLevels } from './elevations'
+import { parseLength, unitsNow } from './units'   // (units)
 import { positionsPerBeam } from './palletFit'
 import { isEmptySide } from './bayEmpty'
 
@@ -24,6 +25,8 @@ export function ftInDash(inches) {
 }
 /** Parse 6'-2" / 6' 2" / 6.5' / 74 / 74" / 6-2 → inches (NaN when it isn't a length). */
 export function parseFtIn(text) {
+  // (units) a length with its unit (3.8 m, 3800 mm, 12 ft 6 in …), or a bare number in metric (mm): utils/units.js
+  if (/[a-z]/i.test(String(text)) || unitsNow().metric) { const f = parseLength(text); if (f != null) return f * 12 }
   const t = String(text).trim().replace(/[″]/g, '"').replace(/[′]/g, "'")
   let m = t.match(/^(\d+(?:\.\d+)?)\s*'\s*-?\s*(\d+(?:\.\d+)?)?\s*"?$/)
   if (m) return Number(m[1]) * 12 + (m[2] ? Number(m[2]) : 0)

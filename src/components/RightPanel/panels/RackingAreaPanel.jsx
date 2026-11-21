@@ -1,9 +1,10 @@
 import { useCanvasStore } from '../../../store/useCanvasStore'
+import { parseLength } from '../../../utils/units'   // (units) one parser for every length
 import { requestAreaRebuild } from '../../../utils/rackingAreaTool'
 import { areaSettings, areaEdits } from '../../../generate/rackingArea'
 import { MHE_PROFILES } from '../../../generate/columnCheck'
 import { zoneSized } from '../../../utils/floorClamp'
-import { pxToFtIn } from '../../../utils/canvas'
+import { pxToFtInCard as pxToFtIn } from '../../../utils/units'   // (units) the project's units, as a card shows them (mm in metric)
 import { fieldBox, Grid2, Seg, SelectField, SecLabel, Hint } from '../../../studio/cardParts'
 
 /* The right panel for a racking area (generate/rackingArea.js): its Racking
@@ -53,13 +54,11 @@ export function RackingAreaPanel({ obj }) {
   )
 }
 
-/** Feet from a typed length: "40", "40'", "40' 6\"", "40'6", "40.5". Null when it isn't one. */
+/** Feet from a typed length — (units) utils/units.js parseLength: "40", "40'", "40' 6\"", "40'6", "40 ft 6 in", "486 in",
+ *  "12.2 m", "12200 mm" (a bare number in the project unit). Null when it isn't one, or not above 0. */
 export function parseFeet(text) {
-  const t = String(text ?? '').trim()
-  const m = t.match(/^(\d+(?:\.\d+)?)\s*'?\s*(?:(\d+(?:\.\d+)?)\s*"?)?$/)
-  if (!m) return null
-  const v = Number(m[1]) + (m[2] ? Number(m[2]) / 12 : 0)
-  return Number.isFinite(v) && v > 0 ? v : null
+  const v = parseLength(text)
+  return v != null && Number.isFinite(v) && v > 0 ? v : null
 }
 
 export function ZonePanel({ obj }) {
