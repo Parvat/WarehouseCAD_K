@@ -113,6 +113,16 @@ function pointInPolygon(px, py, pts) {
   return inside
 }
 
+/** (fill-columns) The columns whose stack span meets the box's: each one's run interval { r0, r1 } (feet). */
+function runColumns(grids, vert, gridSize, box) {
+  const out = []
+  for (const g of grids) for (const c of expandColumnGrid(g, gridSize)) {
+    const r0 = (vert ? c.y : c.x) / gridSize, r1 = (vert ? c.y + c.h : c.x + c.w) / gridSize
+    const s0 = (vert ? c.x : c.y) / gridSize, s1 = (vert ? c.x + c.w : c.y + c.h) / gridSize
+    if (s1 > box.s0 + EPS && s0 < box.s1 - EPS) out.push({ r0, r1 })
+  }
+  return out
+}
 /** The column lines along one axis (feet), from the building's column grids. */
 function columnLines(grids, axis, gridSize) {
   const vals = new Set()
@@ -392,7 +402,15 @@ export function areaPattern(objects, boxPx, settings = {}, { gridSize = 40, rule
 
   // ── along the rows ──
   const clearEnd = (kind) => (kind === 'rack' ? (endGapFt ?? aisleFt) : 0)
-  const rLo = Math.min(...rects.map(q => q.r0 + clearEnd(q.e0))), rHi = Math.max(...rects.map(q => q.r1 - clearEnd(q.e1)))
+  let rLo = Math.min(...rects.map(q => q.r0 + clearEnd(q.e0))), rHi = Math.max(...rects.map(q => q.r1 - clearEnd(q.e1)))
+  /* (fill-columns) Generate's rule (sizingLayout.js columnFaceFrame): a run end on a column starts at the column's face —
+     an end frame never stands on a column. A column across the row's span whose run interval meets the end frame there
+     moves that end to its face (a section edge drawn on a column line: the demo's split at Bulk). */
+  {
+    const upFt = upIn / 12, cols = runColumns(grids, vert, gridSize, box)
+    for (const c of cols) if (c.r0 < rLo + upFt + EPS && c.r1 > rLo - EPS) rLo = Math.max(rLo, c.r1)
+    for (const c of cols) if (c.r1 > rHi - upFt - EPS && c.r0 < rHi + EPS) rHi = Math.min(rHi, c.r0)
+  }
   const len = rHi - rLo
   if (!(len > EPS)) return null
   const rg = walkGrid(runLines, flipR ? rHi : rLo, len, flipR ? -1 : 1)
