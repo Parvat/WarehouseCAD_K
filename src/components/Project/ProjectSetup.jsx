@@ -8,7 +8,8 @@ import { useCanvasStore } from '../../store/useCanvasStore'
 import { useRules } from '../../rules/useRules'
 import { useRackingSettings } from '../../utils/fillTool'
 import { UNITS } from '../../constants'
-import { unitsOfRules } from '../../utils/units'
+import { unitsOfRules, useUnits, unitLabel, isDefaultUnits } from '../../utils/units'
+import { useLengthField } from '../../studio/lengthField'   // (units-2)
 import { useProjectSetup, closeSetup, installStartScreen, projectOf, newProject, newId, palletName, withProject, syncTypesToPallets, layoutAffecting, ceilingInUse, palletInUse, generateBrief, ADVANCED_DEFAULTS, PALLET_DEFAULT, RULES_DEFAULTS, BUILDING_DEFAULTS, ASSUMED_CLEAR_IN } from '../../utils/project'
 import { refreshNames } from '../../utils/elevTab'
 import { regenBuilding, regenSummary } from '../../generate/regenerate'
@@ -59,23 +60,38 @@ const ASSUMED_FT = Math.round(ASSUMED_CLEAR_IN / 12)
 
 /** A ceiling's field error: its sprinkler height above its clear height → the message, else null. */
 export const sprinklerError = (c) => (c?.sprinklerIn > 0 && c?.clearHeightIn > 0 && c.sprinklerIn > c.clearHeightIn + 1e-6 ? 'Sprinkler height above the ceiling' : null)
+/** (units-2) A length field by its name: "… (ft)" a length in feet, "… (in)" in inches — every form typed is read, the value
+ *  shown in the project's units (studio/lengthField.js). The deck table's beam length and the hole pitch stay plain inches:
+ *  they are catalogue keys (96″ must stay 96″). → 'ft' | 'in' | null */
+const NOT_LENGTH = new Set(['Deck beam length (in)', 'Hole pitch (in)'])
+const lengthUnitOf = (aria) => (typeof aria !== 'string' || NOT_LENGTH.has(aria) ? null : /\(ft\)$/.test(aria) ? 'ft' : /\(in\)$/.test(aria) ? 'in' : null)
 function NumIn({ value, onChange, aria, step = 1, placeholder, error = null }) {
+  const lenUnit = lengthUnitOf(aria), lp = useLengthField(value, onChange, { unit: lenUnit || 'ft' })
+  const errStyle = error ? { ...S.in, borderColor: 'var(--red, #C0452A)', boxShadow: '0 0 0 1px var(--red, #C0452A)' } : S.in
+  if (lenUnit) return <input aria-label={aria} aria-invalid={error ? 'true' : undefined} title={error || undefined} placeholder={placeholder} style={errStyle} {...lp} />
   // `error`: a field error — the field outlined red, the message as its title and for screen readers
   return <input aria-label={aria} aria-invalid={error ? 'true' : undefined} title={error || undefined} type="number" min={0} step={step} value={value ?? ''} placeholder={placeholder} style={error ? { ...S.in, borderColor: 'var(--red, #C0452A)', boxShadow: '0 0 0 1px var(--red, #C0452A)' } : S.in} onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))} />
 }
 /** A labelled number field (Project settings' tables). */
 function Num({ label, ...p }) {
-  return <label style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}><span style={S.th}>{label}</span><NumIn aria={label} {...p} /></label>
+  useUnits()   // (units-2) the label in the project's units
+  return <label style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}><span style={S.th}>{unitLabel(label)}</span><NumIn aria={label} {...p} /></label>
 }
 /** THEME.md's compact field: the label above, the value in mono, the unit inside on the right. `label` null: a field
  *  in a "a × b" row whose label sits over the row. */
 function Field({ label, aria, unit, value, onChange, step = 1, placeholder, width }) {
+  // (units-2) a length (unit ft or in): every form typed is read; its value and its unit shown in the project's units
+  const lenUnit = unit === 'ft' || unit === 'in' ? lengthUnitOf(aria || label) || unit : null
+  const lp = useLengthField(value, onChange, { unit: lenUnit || 'ft' }), u = useUnits()
+  const unitShown = !lenUnit ? unit : u.metric ? 'mm' : lenUnit === 'ft' && !isDefaultUnits(u) ? '' : unit
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, flex: width ? `0 0 ${width}px` : 1 }}>
       {label && <span style={T5.label}>{label}</span>}
       <span className="t5-field" style={T5.box}>
-        <input className="no-spin" aria-label={aria || label} type="number" min={0} step={step} value={value ?? ''} placeholder={placeholder} style={T5.input} onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))} />
-        {unit && <span style={T5.unit}>{unit}</span>}
+        {lenUnit
+          ? <input className="no-spin" aria-label={aria || label} placeholder={placeholder} style={T5.input} {...lp} />
+          : <input className="no-spin" aria-label={aria || label} type="number" min={0} step={step} value={value ?? ''} placeholder={placeholder} style={T5.input} onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))} />}
+        {unitShown && <span style={T5.unit}>{unitShown}</span>}
       </span>
     </label>
   )
@@ -168,6 +184,7 @@ function Advanced({ value, onChange, units, onUnits, extra = null, style = null 
 
 export function ProjectSetup() {
   const { open, reason } = useProjectSetup()
+  useUnits()   // (units-2) its length fields and their headers in the project's units
   // for as long as the CAD is on screen: a new project opens the start screen, at once — on entering (Hub → Draw) and
   // on a later File → New, once per new project
   useEffect(() => installStartScreen(store), [])
@@ -294,7 +311,7 @@ function ForkliftList({ base, trucks, onChange }) {
   }
   return (
     <table aria-label="Forklift list" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '4px 4px' }}>
-      <thead><tr><th style={S.th}>Forklift</th><th style={{ ...S.th, width: 120 }} title="Turn and put away">Aisle to pick (ft)</th><th style={{ ...S.th, width: 120 }} title="Drive straight">Space to move (ft)</th></tr></thead>
+      <thead><tr><th style={S.th}>Forklift</th><th style={{ ...S.th, width: 120 }} title="Turn and put away">{unitLabel('Aisle to pick (ft)')}</th><th style={{ ...S.th, width: 120 }} title="Drive straight">{unitLabel('Space to move (ft)')}</th></tr></thead>
       <tbody>
         {Object.values(base).map(m => (
           <tr key={m.key} data-forklift={m.key}>
@@ -330,7 +347,7 @@ function BomSettings({ value: b, onChange }) {
       <span style={S.h}>Bill of materials</span>
       <span style={S.note}>Wire decks per beam length — a beam length with no row gets no decks, and the BOM asks for one.</span>
       <table aria-label="Deck table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '4px 4px' }}>
-        <thead><tr><th style={{ ...S.th, width: 140 }}>Beam length (in)</th><th style={S.th}>Deck widths (in)</th><th style={{ width: 30 }} /></tr></thead>
+        <thead><tr><th style={{ ...S.th, width: 140 }}>{unitLabel('Beam length (in)')}</th><th style={S.th}>{unitLabel('Deck widths (in)')}</th><th style={{ width: 30 }} /></tr></thead>
         <tbody>
           {b.decks.map((d, i) => (
             <tr key={i} data-deck-row={i}>
@@ -414,7 +431,7 @@ function SettingsCard() {
           <div style={S.sec} role="group" aria-label="Ceiling heights">
             <span style={S.h}>Building · ceiling heights</span>
             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '4px 4px' }}>
-              <thead><tr><th style={{ ...S.th, width: 56 }}>Default</th><th style={S.th}>Name</th><th style={S.th}>Clear height (ft)</th><th style={S.th}>Sprinkler height (ft)</th><th style={{ width: 30 }} /></tr></thead>
+              <thead><tr><th style={{ ...S.th, width: 56 }}>Default</th><th style={S.th}>Name</th><th style={S.th}>{unitLabel('Clear height (ft)')}</th><th style={S.th}>{unitLabel('Sprinkler height (ft)')}</th><th style={{ width: 30 }} /></tr></thead>
               <tbody>
                 {pr.ceilings.map(c => {
                   const used = ceilUsed(c.id)
@@ -439,7 +456,7 @@ function SettingsCard() {
           <div style={S.sec} role="group" aria-label="Pallet sizes">
             <span style={S.h}>Pallet sizes</span>
             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '4px 4px' }}>
-              <thead><tr><th style={{ ...S.th, width: 56 }}>Default</th><th style={S.th}>Name</th><th style={S.th}>Depth (in)</th><th style={S.th}>Width (in)</th><th style={S.th}>Height (in)</th><th style={S.th}>Weight (lb)</th><th style={{ width: 30 }} /></tr></thead>
+              <thead><tr><th style={{ ...S.th, width: 56 }}>Default</th><th style={S.th}>Name</th><th style={S.th}>{unitLabel('Depth (in)')}</th><th style={S.th}>{unitLabel('Width (in)')}</th><th style={S.th}>{unitLabel('Height (in)')}</th><th style={S.th}>Weight (lb)</th><th style={{ width: 30 }} /></tr></thead>
               <tbody>
                 {pr.pallets.map(p => {
                   const blocked = palUsed(p.id) || pr.pallets.length <= 1

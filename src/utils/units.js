@@ -97,3 +97,30 @@ export function pxToFtIn(pixels, gridSize = 40, where = 'plan') {
 }
 /** pxToFtIn for a card, a table or an export: mm in metric (the plan's is metres) — the same text at the default units. */
 export const pxToFtInCard = (pixels, gridSize = 40) => pxToFtIn(pixels, gridSize, 'card')
+
+/* ── (units-2) every remaining length field — Project settings, Generate, the Fill and Door bars, the elevation ── */
+/** A typed length read into `unit` ('ft' or 'in'): any form parseLength reads; a bare number is that unit in Imperial
+ *  (feet in a feet field, inches in an inches field) and mm in Metric. → a number, or null when it is not a length. */
+export function parseLengthAs(text, unit = 'ft', u = unitsNow()) {
+  const t = String(text ?? '').trim()
+  if (!t) return null
+  if (!u.metric && unit === 'in' && /^\d+(?:\.\d+)?$/.test(t)) return Number(t)
+  const ft = parseLength(t, u)
+  return ft == null ? null : unit === 'in' ? ft * 12 : ft
+}
+/** A length field's shown value: `v` in `unit` ('ft' | 'in'), in the project's units — the plain number it always showed
+ *  at Imperial 1″ (and in any Imperial inches field), ft-in at a finer precision, mm in Metric. */
+export function showLengthAs(v, unit = 'ft', u = unitsNow()) {
+  if (v == null || v === '' || !Number.isFinite(Number(v))) return v == null ? '' : String(v)
+  const inches = unit === 'in' ? Number(v) : Number(v) * 12
+  if (u.metric) return fmtMetric(inches, 'card', u)
+  if (unit === 'in' || isDefaultUnits(u)) return String(v)
+  return fmtImperial(inches, 'space', u)
+}
+/** A field's label in the project's units: "(ft)" / "(in)" read "(mm)" in Metric, and "(ft)" goes outside Imperial 1″
+ *  (the value carries its own ′ ″). */
+export function unitLabel(label, u = unitsNow()) {
+  if (typeof label !== 'string') return label
+  if (u.metric) return label.replace(/\((ft|in)\)/g, '(mm)')
+  return isDefaultUnits(u) ? label : label.replace(/\s*\(ft\)/g, '')
+}

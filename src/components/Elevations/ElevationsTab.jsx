@@ -8,6 +8,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { typeById, typeIdAt, legendCounts, sprinklerClearance, isBeamRack, beamFace, sidesOf, frameDepthNote, frameNeededFor } from '../../utils/elevations'
 import { lengthsByType, ftInDash, parseFtIn } from '../../utils/elevationDrawing'
+import { useUnits, parseLengthAs } from '../../utils/units'   // (units-2)
 import { tint } from '../../utils/elevationDraw'
 import { useElevEditor } from '../../utils/elevEditor'
 import { useRules } from '../../rules/useRules'
@@ -317,11 +318,12 @@ function SmallField({ label, children }) {
 /** A typed value (C3): shown formatted (30′-0″, 60″, 2,500), all of it selected on focus; Enter or leaving commits a
  *  value that parses, anything else goes back. `kind`: 'ftin' (feet-inches), 'in' (inches), 'lb' (thousands). */
 function Typed({ value, kind = 'in', aria, onCommit, style, readOnly = false }) {
-  const shown = !(value > 0) ? '' : kind === 'ftin' ? primes(ftInDash(value)) : kind === 'lb' ? Math.round(value).toLocaleString('en-US') : `${Math.round(value * 100) / 100}″`
+  const U = useUnits()   // (units-2) heights in the project's units: mm in Metric (an inches value too); any form typed
+  const shown = !(value > 0) ? '' : kind === 'ftin' ? primes(ftInDash(value)) : kind === 'lb' ? Math.round(value).toLocaleString('en-US') : U.metric ? `${Math.round((value * 25.4) / (U.precisionMm || 1)) * (U.precisionMm || 1)} mm` : `${Math.round(value * 100) / 100}″`
   const [text, setText] = useState(shown)
   useEffect(() => setText(shown), [shown])
   const done = () => {
-    const raw = String(text).replace(/,/g, '').trim(), v = kind === 'ftin' ? parseFtIn(raw) : Number(raw.replace(/[″"in\s]/g, ''))
+    const raw = String(text).replace(/,/g, '').trim(), v = kind === 'ftin' ? parseFtIn(raw) : kind === 'in' ? (parseLengthAs(raw, 'in', U) ?? NaN) : Number(raw.replace(/[″"in\s]/g, ''))
     if (raw && Number.isFinite(v) && v > 0 && v !== value) onCommit(v); else setText(shown)
   }
   if (readOnly) return <span aria-label={aria} style={{ ...small, color: C.muted, ...style }}>{shown}</span>

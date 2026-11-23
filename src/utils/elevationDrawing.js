@@ -11,13 +11,15 @@
 // simple diagonal bracing pattern, the pallets at their real depth.
 
 import { beamFace, topLoadIssue, SPRINKLER_CLEARANCE_IN, ceilingOf, drawnLevels } from './elevations'
-import { parseLength, unitsNow } from './units'   // (units)
+import { parseLength, unitsNow, isDefaultUnits, fmtLength } from './units'   // (units)
 import { positionsPerBeam } from './palletFit'
 import { isEmptySide } from './bayEmpty'
 
 /** 6'-2" / 26'-0" / 8" — feet and inches as on a rack drawing: a length of a foot or more always with its inches,
  *  under a foot in inches. */
 export function ftInDash(inches) {
+  // (units-2) the elevation's heights in the project's units: mm in Metric, ft-in to the precision in Imperial
+  if (!isDefaultUnits()) return fmtLength(inches, 'card', 'dash').replace(/′/g, "'").replace(/″/g, '"')
   const v = Math.round(inches)
   const f = Math.floor(Math.abs(v) / 12), i = Math.abs(v) - f * 12, sign = v < 0 ? '-' : ''
   if (!f) return `${sign}${i}"`

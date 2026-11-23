@@ -11,6 +11,8 @@ import { layoutSpec } from '../../generate/sizingLayout'
 import { useCanvasStore } from '../../store/useCanvasStore'
 import { openSetup, defaultPallet, projectOf, commitProject } from '../../utils/project'
 import { useGenFields, setGenField, fillGenFields, genBrief, startOverLayout, projectWithDraft } from '../../utils/genFields'
+import { useLengthField } from '../../studio/lengthField'   // (units-2)
+import { useUnits, isDefaultUnits } from '../../utils/units'
 import { useViewPrefs } from '../../studio/viewPrefs'
 import { useRules } from '../../rules/useRules'
 
@@ -32,11 +34,26 @@ import { useRules } from '../../rules/useRules'
 const unit = { color: C.strong, fontFamily: MONO, fontSize: 12 }
 /** A number in the 30h field with its unit after it (240′, 3″): the input as wide as its digits. */
 function UnitNum({ value, onChange, aria, u, min = 0, title, disabled }) {
+  // (units-2) a length (… (ft), … (in)): every form typed is read, shown in the project's units (studio/lengthField.js)
+  const lenUnit = /\(ft\)$/.test(aria || '') ? 'ft' : /\(in\)$/.test(aria || '') ? 'in' : null
+  const lp = useLengthField(value === '' || value == null ? null : Number(value), (v) => onChange(v == null ? '' : v), { unit: lenUnit || 'ft', min })
+  if (lenUnit) return (
+    <input aria-label={aria} title={title} disabled={disabled} className="st-field" {...lp}
+      style={{ ...unit, width: `${Math.max(1, String(lp.value ?? '').length)}ch`, minWidth: 0, padding: 0, border: 0, background: 'transparent', outline: 'none' }} />
+  )
   const w = Math.max(1, String(value ?? '').length)
   return (
     <input type="number" aria-label={aria} title={title} min={min} value={value} disabled={disabled} className="st-field" onChange={e => onChange(e.target.value)}
       style={{ ...unit, width: `${w}ch`, minWidth: 0, padding: 0, border: 0, background: 'transparent', outline: 'none' }} />
   )
+}
+/** (units-2) a field's unit mark: ′ (or ″) after a plain number — Imperial; mm in Metric; none where the value carries
+ *  its own (finer imperial precision). */
+function Mark({ u }) {
+  const U = useUnits()
+  if (U.metric) return null
+  if (u === 'ft' && !isDefaultUnits(U)) return null
+  return u === 'in' ? '″' : '′'
 }
 const box = (extra) => ({ ...fieldBox(), gap: 0, ...extra })
 
@@ -118,13 +135,13 @@ export function GeneratePanel({ onClose } = {}) {
       {/* the fields — the part that scrolls on a short window; the footer stays */}
       <div style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         <div style={{ ...fieldsGrid, padding: '0 16px 12px' }}>
-          <Field label="Building width"><span style={box()}><UnitNum aria="Building width (ft)" value={f.widthFt} onChange={v => setGenField('widthFt', v)} u="′" />′</span></Field>
-          <Field label="Building length"><span style={box()}><UnitNum aria="Building length (ft)" value={f.lengthFt} onChange={v => setGenField('lengthFt', v)} u="′" />′</span></Field>
+          <Field label="Building width"><span style={box()}><UnitNum aria="Building width (ft)" value={f.widthFt} onChange={v => setGenField('widthFt', v)} u="′" /><Mark u="ft" /></span></Field>
+          <Field label="Building length"><span style={box()}><UnitNum aria="Building length (ft)" value={f.lengthFt} onChange={v => setGenField('lengthFt', v)} u="′" /><Mark u="ft" /></span></Field>
           <div style={{ gridColumn: '1 / -1' }}>
-            <Field label="Column grid"><span style={box()}><UnitNum aria="Column grid X (ft)" value={f.gridXFt} onChange={v => setGenField('gridXFt', v)} />′<span style={{ margin: '0 6px' }}>×</span><UnitNum aria="Column grid Y (ft)" value={f.gridYFt} onChange={v => setGenField('gridYFt', v)} />′</span></Field>
+            <Field label="Column grid"><span style={box()}><UnitNum aria="Column grid X (ft)" value={f.gridXFt} onChange={v => setGenField('gridXFt', v)} /><Mark u="ft" /><span style={{ margin: '0 6px' }}>×</span><UnitNum aria="Column grid Y (ft)" value={f.gridYFt} onChange={v => setGenField('gridYFt', v)} /><Mark u="ft" /></span></Field>
           </div>
-          <Field label="Max run" title="Longest continuous rack run before a cross-aisle"><span style={box()}><UnitNum aria="Max rack run (ft)" min={20} value={f.maxRunFt} onChange={v => setGenField('maxRunFt', v)} />′</span></Field>
-          <Field label="Wall clearance" title="From each wall's inner face — Project settings' value"><span style={box({ opacity: project ? 1 : 0.45 })}><UnitNum aria="Wall clearance (in)" disabled={!project} value={wallClearIn} onChange={v => setDraft(d => ({ ...d, wallClearIn: Math.max(0, Number(v) || 0) }))} />″</span></Field>
+          <Field label="Max run" title="Longest continuous rack run before a cross-aisle"><span style={box()}><UnitNum aria="Max rack run (ft)" min={20} value={f.maxRunFt} onChange={v => setGenField('maxRunFt', v)} /><Mark u="ft" /></span></Field>
+          <Field label="Wall clearance" title="From each wall's inner face — Project settings' value"><span style={box({ opacity: project ? 1 : 0.45 })}><UnitNum aria="Wall clearance (in)" disabled={!project} value={wallClearIn} onChange={v => setDraft(d => ({ ...d, wallClearIn: Math.max(0, Number(v) || 0) }))} /><Mark u="in" /></span></Field>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 16px 12px' }}>
