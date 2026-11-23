@@ -72,6 +72,7 @@ import { crossAisleAt, useCrossAislePick, clearCrossAislePick, snapMove, bayPitc
 import { tunnelAt, useTunnelPick, clearTunnelPick, tunnelRange, tunnelPitch, moveTunnel } from '../utils/tunnel'
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
 import { fitInset } from '../studio/fitInset'
+import { stackHintAfterClick, hideStackHint } from './StackHint'   // (stacking)
 
 /* Beam/lane racks whose applyResize branch handles its own snapping
    internally (bay/tower/lane counts, not raw pixels) — ported verbatim from
@@ -196,6 +197,8 @@ export function useCanvasInteraction({
     if (!shiftKey) setStickyBayMode(false)   // a plain click ends bay-by-bay editing
     pickedOnPlan()                            // the Generate card closes on a pick (studio/viewPrefs.js)
     const st = useCanvasStore.getState()
+    // (stacking) 2 or more objects stacked under the click: the hint "Tab for the next one under here" (StackHint.jsx)
+    if (!shiftKey && hitId) stackHintAfterClick(st, world); else hideStackHint()
     const prevSelectedIds = st.selectedIds
     const gs = st.gridSize || 40
 

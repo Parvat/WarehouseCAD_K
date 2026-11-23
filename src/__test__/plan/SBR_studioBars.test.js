@@ -309,7 +309,7 @@ describe('SBR — the mode bars and the notices', () => {
     SB.useFloorMenu.setState({ at: null, objId: null })
     // its items: the More items, one list with the ⋯ menu's
     const items = renderToStaticMarkup(createElement(SB.MoreItems, { obj: r, close: () => {} }))
-    expect([...items.matchAll(/<span style="flex:1[^"]*">([^<]+)<\/span>/g)].map(m => m[1])).toEqual(['Lock', 'To back', 'Back', 'Forward', 'To front', 'Copy', 'Cut'])
+    expect([...items.matchAll(/<span style="flex:1[^"]*">([^<]+)<\/span>/g)].map(m => m[1])).toEqual(['Lock', 'Send to back', 'Back', 'Forward', 'Bring to front', 'Copy', 'Cut'])
     expect(renderToStaticMarkup(createElement(SB.MoreItems, { obj: { ...r, locked: true }, close: () => {} }))).toMatch(/>Unlock</)
     const src = read('studio/SelectionBar.jsx')
     expect(src).toMatch(/if \(objId\) return <Menu label="Object" at=\{at\} onClose=\{close\}><MoreItems obj=\{obj\} close=\{close\} \/><\/Menu>/)

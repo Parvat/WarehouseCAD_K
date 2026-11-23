@@ -65,6 +65,7 @@ import { CrossAisleBandPreview, CrossAisleBar, liveBand } from './CrossAisleBand
 import { CROSS_AISLE_TOOL, useCrossAisleTool, commitCut } from '../utils/crossAisleCut'
 import { commitTunnel } from '../utils/tunnel'
 import { TunnelMarks } from './TunnelMarks'
+import { StackHint } from './StackHint'   // (stacking)
 
 // the canvas text, measured for the tests (CLAUDE.md Rule 8 — the CAD text model: canvas2/minText.js)
 installMinText()
@@ -662,6 +663,7 @@ export function Canvas2() {
       onContextMenu={(e) => openFloorMenu(e, e.currentTarget)}
     >
       {showGrid && <DotGround />}
+      <StackHint />
       {size.w > 0 && size.h > 0 && (
         <Stage
           ref={stageRef}

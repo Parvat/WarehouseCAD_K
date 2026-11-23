@@ -224,18 +224,18 @@ export function MoreItems({ obj, close }) {
       {/* the icon on the left (section 9; none yet: an empty slot), the shortcut on the right (only those that work) */}
       <MenuItem icon={{ name: 'Lock' }} keys="Ctrl+L" onClick={run(() => toggleLock(store))}>{locked ? 'Unlock' : 'Lock'}</MenuItem>
       <MenuLine />
-      <MenuItem icon={null} onClick={run(st.sendToBack)}>To back</MenuItem>
+      <MenuItem icon={null} onClick={run(st.sendToBack)}>Send to back</MenuItem>
       <MenuItem icon={null} onClick={run(st.sendBackward)}>Back</MenuItem>
       <MenuItem icon={null} onClick={run(st.bringForward)}>Forward</MenuItem>
-      <MenuItem icon={null} onClick={run(st.bringToFront)}>To front</MenuItem>
+      <MenuItem icon={null} onClick={run(st.bringToFront)}>Bring to front</MenuItem>
       <MenuLine />
       <MenuItem icon={null} keys="Ctrl+C" onClick={run(st.copySelected)}>Copy</MenuItem>
       <MenuItem icon={null} keys="Ctrl+X" onClick={run(cutSelection)}>Cut</MenuItem>
     </>
   )
 }
-/** ⋯ More (the rack bar's last button). */
-function MoreMenu({ obj }) {
+/** ⋯ More (the rack bar's last button; the drawn shapes' bar too — stacking round). */
+export function MoreMenu({ obj }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   return (

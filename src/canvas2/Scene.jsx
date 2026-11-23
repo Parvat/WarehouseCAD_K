@@ -12,6 +12,7 @@ import { isDrawn } from '../render/drawnShapes'
 import { SectionShape } from './SectionShape'
 import { isDoor } from '../utils/doorTool'
 import { doorClearRects } from '../utils/doorClear'
+import { inStackOrder } from '../utils/stacking'   // (stacking)
 
 /* ── STEP 2 · the scene ──────────────────────────────────────────────────────
    Everything in the store, drawn. One painter per object, chosen once, and no
@@ -109,6 +110,8 @@ function SceneView({ listening = false, bind, part = 'all' }) {
     // (fill-doors round) every door's clear space, dashed under the racks — the plan only (the PDF leaves them out)
     const shownDoors = objects.filter(o => isDoor(o) && isVisible(o))
     const doorClear = shownDoors.length ? doorClearRects(objects, gridSize).filter(c => shownDoors.some(d => d.id === c.doorId)) : []
+    // (stacking) equipment, safety, ops and drawn annotations on top of the racks and zones (utils/stacking.js)
+    { const ordered = inStackOrder(rest, e => e.obj); if (ordered !== rest) rest.splice(0, rest.length, ...ordered) }
     return { floors, rest, columns, sections, doors, doorClear }
   }, [objects, gridSize, isVisible])
 
