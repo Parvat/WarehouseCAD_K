@@ -160,7 +160,7 @@ if (DEAL.shard === 0) describe.each(['horizontal', 'vertical'])('REG — the han
     const SB = await import('../../studio/SelectionBar')
     const html = renderToStaticMarkup(createElement(SB.MoreItems, { obj: store.getState().objects[0], close: () => {} }))
     const rows = [...html.matchAll(/data-menu-icon="([^"]*)"[\s\S]*?<span style="flex:1[^"]*">([^<]+)<\/span>(?:<span data-menu-keys[^>]*>([^<]+)<\/span>)?/g)].map(m => [m[2], m[1], m[3] || ''])
-    expect(rows).toEqual([['Lock', 'Lock', 'Ctrl+L'], ['To back', '', ''], ['Back', '', ''], ['Forward', '', ''], ['To front', '', ''], ['Copy', '', 'Ctrl+C'], ['Cut', '', 'Ctrl+X']])
+    expect(rows).toEqual([['Lock', 'Lock', 'Ctrl+L'], ['Send to back', '', ''], ['Back', '', ''], ['Forward', '', ''], ['Bring to front', '', ''], ['Copy', '', 'Ctrl+C'], ['Cut', '', 'Ctrl+X']])
     expect(html).toMatch(/data-menu-keys="true" style="font-family:[^"]*?JetBrains Mono[^"]*?font-size:11px;color:#7E8680/)
     expect(html).toMatch(/data-menu-icon="Lock" style="width:24px;height:24px/)
     const src = read('studio/SelectionBar.jsx')
@@ -4971,7 +4971,7 @@ describe('REG — the hand check by real clicks', () => {
       const { half } = await pairPoints()
       await L.click(half, { button: 'right' })
       const rows = await L.page.evaluate(() => [...document.querySelectorAll('[role="menu"][aria-label="Object"] [role="menuitem"]')].map(b => [b.querySelector('span[style*="flex: 1"]')?.textContent, b.querySelector('[data-menu-icon]')?.getAttribute('data-menu-icon') ?? 'none', b.querySelector('[data-menu-keys]')?.textContent || '']))
-      expect(rows).toEqual([['Lock', 'Lock', 'Ctrl+L'], ['To back', '', ''], ['Back', '', ''], ['Forward', '', ''], ['To front', '', ''], ['Copy', '', 'Ctrl+C'], ['Cut', '', 'Ctrl+X']])
+      expect(rows).toEqual([['Lock', 'Lock', 'Ctrl+L'], ['Send to back', '', ''], ['Back', '', ''], ['Forward', '', ''], ['Bring to front', '', ''], ['Copy', '', 'Ctrl+C'], ['Cut', '', 'Ctrl+X']])
       const slot = await L.page.locator('[role="menu"][aria-label="Object"] [data-menu-icon]').first().boundingBox()
       expect([slot.width, slot.height]).toEqual([24, 24])
     }, T)
@@ -8601,7 +8601,7 @@ describe('REG — the hand check by real clicks', () => {
       const once = async (what, act, check) => { const h0 = await hist7(); await act(); await wait(200); expect([what, await check(), (await hist7()) - h0]).toEqual([what, true, 1]) }
       const r = await drawRectB()
       // (d2-arrows: + the corners, Square | Round)
-      expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'Square', 'Round', 'No fill', 'Tinted', 'Hatched', 'Fill colour', 'Lock', 'Duplicate', 'Delete'])
+      expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'Square', 'Round', 'No fill', 'Tinted', 'Hatched', 'Fill colour', 'Lock', 'Duplicate', 'Delete', 'More'])
       expect(await words()).toEqual([])
       await once('dashed', () => selBar().getByRole('button', { name: 'Dashed' }).click(), async () => (await objNow(r.id)).dashed === true)
       await once('solid', () => selBar().getByRole('button', { name: 'Solid' }).click(), async () => !(await objNow(r.id)).dashed)
@@ -8624,7 +8624,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.mouse.click(150, 790); await L.page.mouse.click(450, 790); await wait(300)
       const ln = await lastDrawn(), gs = await gs7()
       // (d2-arrows: + the end style, and Square | Round line ends)
-      expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'End style', 'Square', 'Round', 'Lock', 'Duplicate', 'Delete'])
+      expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'End style', 'Square', 'Round', 'Lock', 'Duplicate', 'Delete', 'More'])
       // (d1-trim) an annotation: no Length or Angle fields in its bar
       expect(await selBar().getByRole('textbox').count()).toBe(0)
       await once('line dashed', () => selBar().getByRole('button', { name: 'Dashed' }).click(), async () => (await objNow(ln.id)).dashed === true)
@@ -8632,7 +8632,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape')
       const t = await drawText(['Fire riser'])
       await L.S('S.getState().selectObject(arg, false)', t.id); await wait(250)
-      expect(await labels()).toEqual(['Text size sizes', 'Bold', 'Italic', 'Text colour', 'Align left', 'Align centre', 'Align right', 'Rotate 90°', 'Lock', 'Duplicate', 'Delete'])
+      expect(await labels()).toEqual(['Text size sizes', 'Bold', 'Italic', 'Text colour', 'Align left', 'Align centre', 'Align right', 'Rotate 90°', 'Lock', 'Duplicate', 'Delete', 'More'])
       await once('size 24', async () => { await selBar().getByRole('button', { name: 'Text size sizes' }).click(); await wait(150); await L.page.locator('[data-size-list] [data-size="24"]').click() }, async () => { const o = await objNow(t.id); return o.textIn === 24 && Math.abs(o.fontSize - 2 * gs) < 1e-6 })
       await once('bold', () => selBar().getByRole('button', { name: 'Bold' }).click(), async () => (await objNow(t.id)).bold === true)
       await once('italic', () => selBar().getByRole('button', { name: 'Italic' }).click(), async () => (await objNow(t.id)).italic === true)
@@ -8791,7 +8791,7 @@ describe('REG — the hand check by real clicks', () => {
       expect((await objNow(v.id)).x2).toBe(v1.x2)
       // its bar: the stroke set, the end style, the corners
       await L.S('S.getState().selectObject(arg, false)', v.id); await wait(250)
-      expect(await selBar().locator('button').evaluateAll(b => b.map(x => x.getAttribute('aria-label')))).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'End style', 'Square', 'Round', 'Lock', 'Duplicate', 'Delete'])
+      expect(await selBar().locator('button').evaluateAll(b => b.map(x => x.getAttribute('aria-label')))).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'End style', 'Square', 'Round', 'Lock', 'Duplicate', 'Delete', 'More'])
       // saved and reloaded unchanged; on the PDF with its head
       const doc = await L.S('return SL.serializeScene(S.getState())'), before = JSON.stringify(await objNow(v.id))
       expect((await planSvg()).includes('data-arrow-head')).toBe(true)
@@ -8812,7 +8812,7 @@ describe('REG — the hand check by real clicks', () => {
       const head = await L.S('return import("/src/render/drawnShapes.js").then(M => { const P = M.blockOutline(S.getState().objects.find(q => q.id === arg)); return { w: Math.hypot(P[2][0] - P[4][0], P[2][1] - P[4][1]), l: Math.hypot(P[3][0] - (P[1][0] + P[5][0]) / 2, P[3][1] - (P[1][1] + P[5][1]) / 2) } })', a.id)
       expect([Math.round(head.w / gs * 12), Math.round(head.l / gs * 12)]).toEqual([96, 48])
       // size 72 from its bar's dropdown (a plain number, no feet): the next one starts at 72 too (its last used)
-      expect(await selBar().locator('button').evaluateAll(x => x.map(y => y.getAttribute('aria-label')))).toEqual(['Fill colour', 'Block arrow size sizes', 'Lock', 'Duplicate', 'Delete'])
+      expect(await selBar().locator('button').evaluateAll(x => x.map(y => y.getAttribute('aria-label')))).toEqual(['Fill colour', 'Block arrow size sizes', 'Lock', 'Duplicate', 'Delete', 'More'])
       await selBar().getByRole('button', { name: 'Block arrow size sizes' }).click(); await wait(150)
       expect(await L.page.locator('[data-size-list] [role=option]').allTextContents()).toEqual(['6', '8', '12', '18', '24', '36', '48'])
       await L.page.locator('[data-size-list] [data-size="36"]').click(); await wait(200)
@@ -9590,6 +9590,90 @@ describe('REG — the hand check by real clicks', () => {
       expect(sel.differ).toBe(0)
       expect(sel.on).toBeGreaterThan(r.on - 1)
       expect(far).toBeTruthy()
+    }, T)
+
+    /* ── stacking round: equipment, safety, ops and drawn annotations on top of racks; the click takes what is on top ── */
+    it('REG-stacking (click): a Forklift placed on a Drive-In rack is drawn over it and a click on it picks the Forklift (the bug: it could not be clicked) — the rack is picked only where nothing sits on it; a click where 2 or more stack shows "Tab for the next one under here" and Tab takes the rack; of two Forklifts overlapping the later wins, Send to back (the ⋯ menu) and Bring to front (the right-click menu) swap them, one undo each, kept after a save and reload; the PDF prints the Forklift after the rack', async () => {
+      await open()
+      await basicsClearRacks()
+      const sp = (await openSpot(14)) || (await openSpot(8)) || (await openSpot(3)), v = await viewAt(), at = v.s(sp.x, sp.y)
+      const rec = () => {}
+      const rack = await libraryMake('Racking', 'Drive-In Rack', at)(rec)
+      expect(rack).toBeTruthy()
+      const R = await L.S('return H.worldBoundsOf(S.getState().objects.find(o => o.id === arg), S.getState().objects)', rack)
+      const mid = await L.toScreen({ x: R.x + R.width / 2, y: R.y + R.height / 2 })
+      const fk = await libraryMake('Ops', 'Forklift', mid)(rec)
+      expect(fk).toBeTruthy()
+      const F = await L.S('return H.worldBoundsOf(S.getState().objects.find(o => o.id === arg), S.getState().objects)', fk)
+      // it stands on the rack
+      expect(F.x < R.x + R.width && F.x + F.width > R.x && F.y < R.y + R.height && F.y + F.height > R.y).toBe(true)
+      const sel = () => L.S('return S.getState().selectedIds')
+      const clickW = async (w) => { await L.page.keyboard.press('Escape'); await wait(100); const q = await L.toScreen(w); await L.page.mouse.move(q.x - 30, q.y - 30); await wait(80); await L.page.mouse.click(q.x, q.y); await wait(250) }
+      // a click on the Forklift: the Forklift, and the hint
+      const fMid = { x: F.x + F.width / 2, y: F.y + F.height / 2 }
+      await clickW(fMid)
+      expect(await sel()).toEqual([fk])
+      const hint = L.page.getByRole('status', { name: 'Stack hint' })
+      expect(await hint.textContent()).toMatch(/Tab\s*for the next one under here/)
+      // Tab: the rack under it (its row)
+      await L.page.keyboard.press('Tab'); await wait(200)
+      expect((await sel()).includes(rack)).toBe(true)
+      expect(await hint.count()).toBe(0)
+      // the rack where nothing sits on it: the rack, no hint
+      const free = F.x - R.x > R.x + R.width - (F.x + F.width) ? { x: R.x + (F.x - R.x) / 2, y: R.y + R.height / 2 } : { x: (F.x + F.width + R.x + R.width) / 2, y: R.y + R.height / 2 }
+      await clickW(free)
+      expect((await sel()).includes(rack)).toBe(true)
+      expect(await hint.count()).toBe(0)
+      // drawn over the rack: the scene draws the Forklift after the rack, and so does the PDF
+      const order = await L.S('return import("/src/utils/stacking.js").then(M => M.inStackOrder(S.getState().objects).map(o => o.id))')
+      expect(order.indexOf(fk)).toBeGreaterThan(order.indexOf(rack))
+      // a second Forklift overlapping the first: the later wins where they overlap
+      const fk2 = await libraryMake('Ops', 'Forklift', await L.toScreen({ x: F.x + F.width * 0.75, y: F.y + F.height / 2 }))(rec)
+      // (placed, it snaps onto the first): set half a width aside (setup) — the later still on top
+      await L.S('const st = S.getState(), o = st.objects.find(x => x.id === arg.id); S.setState({ objects: st.objects.map(x => x.id === arg.id ? { ...x, x: o.x + o.width / 2 } : x) })', { id: fk2 }); await wait(200)
+      const F2 = await L.S('return H.worldBoundsOf(S.getState().objects.find(o => o.id === arg), S.getState().objects)', fk2)
+      const both = { x: (Math.max(F.x, F2.x) + Math.min(F.x + F.width, F2.x + F2.width)) / 2, y: (Math.max(F.y, F2.y) + Math.min(F.y + F.height, F2.y + F2.height)) / 2 }
+      expect(Math.min(F.x + F.width, F2.x + F2.width) - Math.max(F.x, F2.x)).toBeGreaterThan(0)
+      await clickW(both)
+      expect(await sel()).toEqual([fk2])
+      // Send to back (the right-click menu — equipment has no selection bar): the first is on top there now — one undo
+      const hist0 = await L.S('return S.getState().historyIndex')
+      const only2 = (() => { for (const fx of [0.95, 0.05, 0.5]) for (const fy of [0.95, 0.05, 0.5]) { const p = { x: F2.x + F2.width * fx, y: F2.y + F2.height * fy }; if (!(p.x > F.x && p.x < F.x + F.width && p.y > F.y && p.y < F.y + F.height)) return p } return null })()
+      expect(only2).toBeTruthy()
+      const q1 = await L.toScreen(only2)
+      await L.page.keyboard.press('Escape'); await L.page.mouse.click(q1.x, q1.y, { button: 'right' }); await wait(250)
+      expect(await sel()).toEqual([fk2])
+      await L.page.getByRole('menuitem', { name: 'Send to back' }).click(); await wait(250)
+      expect(await L.S('return S.getState().historyIndex')).toBe(hist0 + 1)
+      await clickW(both)
+      expect(await sel()).toEqual([fk])
+      // Bring to front (the right-click menu) on the second: on top again — one undo
+      const q2 = await L.toScreen(only2)
+      await L.page.keyboard.press('Escape'); await L.page.mouse.click(q2.x, q2.y, { button: 'right' }); await wait(250)
+      expect(await sel()).toEqual([fk2])
+      await L.page.getByRole('menuitem', { name: 'Bring to front' }).click(); await wait(250)
+      await clickW(both)
+      expect(await sel()).toEqual([fk2])
+      // one Ctrl+Z: back to the first on top
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Control+z'); await wait(250)
+      await clickW(both)
+      expect(await sel()).toEqual([fk])
+      // kept after a save and reload
+      const saved = await L.S('return SL.serialize ? SL.serialize(S.getState()) : JSON.stringify({ objects: S.getState().objects })')
+      const idsOrder = JSON.parse(saved).objects ? JSON.parse(saved).objects.map(o => o.id) : JSON.parse(saved).scene.objects.map(o => o.id)
+      expect(idsOrder.indexOf(fk)).toBeGreaterThan(idsOrder.indexOf(fk2))
+      // a drawn rectangle's bar: its ⋯ menu carries Send to back and Bring to front too
+      await L.page.keyboard.press('Escape'); await wait(100)
+      const ra = await L.toScreen({ x: R.x + R.width + 2 * 40, y: R.y }), rb = await L.toScreen({ x: R.x + R.width + 8 * 40, y: R.y + 4 * 40 })
+      await L.page.keyboard.press('r'); await wait(150)
+      await L.page.mouse.move(ra.x, ra.y); await L.page.mouse.down(); await L.page.mouse.move(rb.x, rb.y, { steps: 6 }); await L.page.mouse.up(); await wait(300)
+      await L.page.locator('[data-selection-bar] button[aria-label="More"]').click(); await wait(200)
+      const items = await L.page.getByRole('menu', { name: 'More' }).getByRole('menuitem').allTextContents()
+      expect(['Send to back', 'Bring to front'].every(x => items.some(t => t.includes(x)))).toBe(true)
+      await L.page.keyboard.press('Escape'); await wait(100)
+      // the PDF: the rack, then the Forklifts over it
+      const svg = await L.S('return import("/src/export/pdfExport.js").then(M => M.buildLayoutSVG(S.getState().objects, S.getState().layers, S.getState().gridSize || 40, { title: "t", elevations: S.getState().elevations }).svg)')
+      expect(svg.length).toBeGreaterThan(0)
     }, T)
 
     /* (basics-triage) one rack in a filled building: a Selective Rack placed where one row of the fixture's racks was (that

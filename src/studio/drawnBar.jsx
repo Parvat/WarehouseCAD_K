@@ -20,6 +20,7 @@ import { Swatch, onDark } from './Swatch'
 import { Popover } from './Popover'
 import { SizeInput } from './textSizeCard'
 import { duplicateSelection, deleteSelection } from './selectionActions'
+import { MoreMenu } from './SelectionBar'   // (stacking) ⋯ More: Send to back, Bring to front …
 
 const store = useCanvasStore
 const NAMES = { line: 'Line', rect: 'Rectangle', circle: 'Circle', polyline: 'Polyline', polygon: 'Polyline', text: 'Text', elbow: 'Elbow arrow', block_arrow: 'Block arrow' }
@@ -141,11 +142,12 @@ function BlockGroup({ objs, ids, locked, gs }) {
   )
 }
 
-const LockDupDel = ({ locked }) => (
+const LockDupDel = ({ locked, obj }) => (
   <>
     <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
     <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={duplicateSelection} locked={locked} />
     <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} locked={locked} />
+    {obj && <MoreMenu obj={obj} />}
   </>
 )
 
@@ -230,7 +232,7 @@ export function DrawnBar({ objs }) {
       {/* (d1-trim) a line, an arrow, an elbow arrow: annotations — no length or angle fields */}
       {texts && <TextGroup objs={objs} ids={ids} locked={locked} gs={gs} />}
       {(noText || texts || blocks) && <Sep />}
-      <LockDupDel locked={locked} />
+      <LockDupDel locked={locked} obj={objs[0]} />
     </>
   )
 }

@@ -70,6 +70,7 @@ import { withFaceBlocks } from '../canvas2/clearanceSource'
 import { isShown, layerShown } from '../utils/layers'
 import { isDrawn, drawnGeom, drawnSVG, textSVG } from '../render/drawnShapes'
 import { getObjectBounds } from '../utils/canvas'
+import { onTop } from '../utils/stacking'   // (stacking)
 
 /* (basics-fixes) An object with no symbol of its own (the Ops and Safety items, a column / pillar, a partition wall, a
    window): its box, filled and edged as on the canvas, turned with it, its name in the middle when it fits — the canvas's
@@ -571,8 +572,10 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     ...sections.map(o => sectionSVG(o, u, objects.filter(isDoor), gridSize)),
     ...zones.map(o => zoneSVG(o, gridSize)),
     doorsSVG(objects.filter(usable), gridSize, null),
-    ...others.map(o => otherSVG(o)),
+    ...others.filter(o => !onTop(o)).map(o => otherSVG(o)),
     ...racks.map(o => rackSVG(o, gridSize, lz, elevTable)),
+    // (stacking) equipment, safety and ops items on top of the racks, as on the plan (utils/stacking.js)
+    ...others.filter(onTop).map(o => otherSVG(o)),
     /* labels and marks are worked out from the whole layout, as on the canvas
        (a hidden Columns layer still has columns); only their drawing is gated */
     labelsSVG(objects.filter(Boolean), gridSize, labelOpts),

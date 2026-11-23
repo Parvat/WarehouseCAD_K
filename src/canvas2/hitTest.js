@@ -15,7 +15,7 @@
 // same function runs identically in either canvas.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isDrawn, drawnHit, drawnBox } from '../render/drawnShapes'
+import { isDrawn, drawnHit, drawnBox, isFilled } from '../render/drawnShapes'
 import { objectContains, getFpWallSegments, distToSegment, getObjectBounds } from '../utils/canvas'
 import { pxToFtIn } from '../utils/units'   // (units) the project's units
 import { rackFootprint, rowAisleLevel, MHE_PROFILES, expandColumnGrid } from '../generate/columnCheck'
@@ -26,6 +26,7 @@ import { isSelectable, layerShown } from '../utils/layers'
 import { onOutline, onLabel, isSection, polygonOf, pointInPolygon } from '../utils/sectionAreas'
 import { nameShown } from './sectionNameShown'
 import { equipmentResolver } from '../utils/equipment'
+import { onTop } from '../utils/stacking'   // (stacking)
 
 const FP_SET = new Set(['fp_rect', 'fp_l', 'fp_t', 'fp_u', 'fp_cross', 'fp_l_mirror'])
 const COL_GRID = new Set(['column_grid'])
@@ -341,6 +342,9 @@ export function aisleLabelHit(aisle, objects, wx, wy, zoom = 1, gridSize = 40, p
 export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
   const priority = o =>
     (o.type?.startsWith('annot_') || o.type === 'text') ? 2
+      /* (stacking) equipment, safety and ops items stand on top of the racks (utils/stacking.js): drawn over them and
+         picked over them — a Forklift on a Drive-In rack is the Forklift */
+      : onTop(o) ? 2
       : FP_SET.has(o.type) ? 0
       : COL_GRID.has(o.type) ? 0.5
       /* a zone is drawn on the Zones layer, under the racks: a rack standing in one (a pair grown into it) is
@@ -364,7 +368,7 @@ export function hitTest(objects, layers, wx, wy, zoom, gridSize = 40) {
    'none', real: true when it truly holds the point } */
 export function pickAt(objects, layers, wx, wy, zoom, gridSize = 40, priority = null) {
   const layerMap = new Map((layers || []).map(l => [l.id, l]))
-  const P = priority || ((o) => (o.type?.startsWith('annot_') || o.type === 'text') ? 2 : FP_SET.has(o.type) ? 0 : COL_GRID.has(o.type) ? 0.5
+  const P = priority || ((o) => (o.type?.startsWith('annot_') || o.type === 'text') ? 2 : onTop(o) ? 2 : FP_SET.has(o.type) ? 0 : COL_GRID.has(o.type) ? 0.5
     : (typeof o.type === 'string' && o.type.startsWith('zone_')) ? 0.75 : o.type === 'section_area' ? 0.6 : 1)
   const sorted = [...objects].sort((x, y) => P(y) - P(x))
   const drawnOrder = new Map(objects.map((o, i) => [o.id, i]))
@@ -376,6 +380,8 @@ export function pickAt(objects, layers, wx, wy, zoom, gridSize = 40, priority = 
   }
   const line = 2 / zoom
   let real = null, pad = null
+  /* (stacking) of two on top (equipment, safety, ops, drawn, text) the one drawn later wins — Bring to front puts it there */
+  const topOrder = (obj) => (onTop(obj) ? (drawnOrder.get(obj.id) || 0) * 1e-9 : 0)
   const take = (cand) => {
     if (cand.real) { if (!real || cand.p > real.p) real = cand }
     else if (!pad || cand.p > pad.p) pad = cand
@@ -430,7 +436,10 @@ export function pickAt(objects, layers, wx, wy, zoom, gridSize = 40, priority = 
          does: a rack, a door, a column, a zone, a section's outline, a wall under it still wins; only the building's
          blank floor comes after it. Of two shapes, the one drawn later (on top) */
       // (d2-arrows) a block arrow is solid: its inside holds a click as its line does
-      if (h === 'inside' && obj.type !== 'block_arrow') take({ id: obj.id, kind: 'object', real: true, p: -0.5 + (drawnOrder.get(obj.id) || 0) * 1e-9 })
+      /* (stacking) a FILLED closed shape covers what is under it: its inside holds the click as its line does (it is
+         drawn on top); an unfilled one is see-through — its inside comes after everything that truly holds the point */
+      const filled = isFilled(obj)
+      if (h === 'inside' && obj.type !== 'block_arrow' && !filled) take({ id: obj.id, kind: 'object', real: true, p: -0.5 + (drawnOrder.get(obj.id) || 0) * 1e-9 })
       else if (h) take({ id: obj.id, kind: 'object', real: true, p: p + (drawnOrder.get(obj.id) || 0) * 1e-9 })   // (of two lines, the later)
       else if (drawnHit(obj, wx, wy, 8 / zoom)) take({ id: obj.id, kind: 'object', real: false, p })
       continue
@@ -445,7 +454,7 @@ export function pickAt(objects, layers, wx, wy, zoom, gridSize = 40, priority = 
         qx = cx + (wx - cx) * Math.cos(a) - (wy - cy) * Math.sin(a); qy = cy + (wx - cx) * Math.sin(a) + (wy - cy) * Math.cos(a)
       }
       const inside = !b || !(b.width > 0) || !(b.height > 0) || (qx >= b.x && qx <= b.x + b.width && qy >= b.y && qy <= b.y + b.height)
-      take({ id: obj.id, kind: 'object', real: inside, p })
+      take({ id: obj.id, kind: 'object', real: inside, p: p + topOrder(obj) })
     }
   }
   if (real) return { id: real.id, kind: real.kind, real: true }
