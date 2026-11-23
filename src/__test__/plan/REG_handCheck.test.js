@@ -8040,6 +8040,81 @@ describe('REG — the hand check by real clicks', () => {
       await setUnits('imperial', '1')
     }, T)
 
+    /* ── shape-dims: the ruler toggle (design/dimtoggle.png) ── */
+    it('REG-shape-dims (click): a rectangle\u2019s and a line\u2019s ruler in the selection bar and the card — off by default; on shows the rectangle\u2019s width on top, its length on the right and its area inside, the line\u2019s length above its middle; display only; live while a side is dragged; the same world size at every zoom; one undo per toggle (and redo); a multi-selection turned on at once; printed on the PDF; kept after a save and reload', async () => {
+      await open(); await drawView()
+      const gs = await gs7(), card = L.page.locator('[data-island="right-card"]'), bar = () => L.page.locator('[data-selection-bar]')
+      const dimNodes = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find(n => /(^| )shape-dim( |$)/.test(n.name() || '')).map(n => ({ name: n.name(), text: n.text(), fs: n.fontSize(), x: n.x(), y: n.y() })) })
+      const objNow = (id) => L.S('return S.getState().objects.find(o => o.id === arg)', id)
+      // a rectangle (R, a drag): no dimensions until the ruler is on
+      await L.page.keyboard.press('r'); await L.page.waitForTimeout(150)
+      await dragPx({ x: 150, y: 640 }, { x: 330, y: 740 })
+      const r = (await drawnNow()).slice(-1)[0]
+      expect(await selIds()).toEqual([r.id])
+      const ruler = bar().getByRole('button', { name: 'Dimensions' })
+      expect([await ruler.count(), await ruler.getAttribute('aria-pressed'), !!r.showDims, (await dimNodes()).length]).toEqual([1, 'false', false, 0])
+      // the card's toggle shows the same state
+      expect(await card.getByRole('switch', { name: 'Dimensions' }).getAttribute('aria-checked')).toBe('false')
+      // on: one undo step
+      const h0 = await L.S('return S.getState().historyIndex')
+      await ruler.click(); await L.page.waitForTimeout(200)
+      expect([await L.S('return S.getState().historyIndex'), (await objNow(r.id)).showDims, await ruler.getAttribute('aria-pressed')]).toEqual([h0 + 1, true, 'true'])
+      expect(await card.getByRole('switch', { name: 'Dimensions' }).getAttribute('aria-checked')).toBe('true')
+      const U = await import('../../utils/units.js')
+      const o1 = await objNow(r.id), want = (px) => U.fmtImperial((px / gs) * 12, 'dash', U.DEFAULT_UNITS)
+      let d = await dimNodes()
+      const byKey = (k) => d.find(n => n.name.split(' ').includes('shape-dim-' + k))
+      expect([byKey('w')?.text, byKey('h')?.text, byKey('area')?.text]).toEqual([want(o1.width), want(o1.height), Math.round((o1.width / gs) * (o1.height / gs)).toLocaleString('en-US') + ' sq ft'])
+      // where: width above the top edge (centred), length right of the right edge, area inside
+      expect([byKey('w').y < o1.y, Math.abs(byKey('w').x - (o1.x + o1.width / 2)) < 1, byKey('h').x > o1.x + o1.width, byKey('area').x > o1.x && byKey('area').x < o1.x + o1.width]).toEqual([true, true, true, true])
+      // the real text height (Shape sizes 12″): the same world size at every zoom
+      const fs0 = byKey('w').fs
+      expect(Math.abs(fs0 - gs)).toBeLessThan(0.01)
+      await L.page.mouse.move(600, 500); await L.page.mouse.wheel(0, -400); await L.page.waitForTimeout(300)
+      d = await dimNodes()
+      expect([byKey('w').fs, byKey('w').text]).toEqual([fs0, want(o1.width)])
+      await drawView()
+      // display only: a click on the width label does not open a field
+      const wl = await L.toScreen({ x: byKey('w').x, y: byKey('w').y })
+      await L.page.mouse.click(wl.x, wl.y); await L.page.waitForTimeout(200)
+      expect(await L.page.locator('input[aria-label="Length"], [data-length-editor]').count()).toBe(0)
+      // live while its right side is dragged: the width label follows before the release
+      await L.page.keyboard.press('Escape'); await L.S('S.getState().selectObject(arg, false)', r.id); await L.page.waitForTimeout(200)
+      const o2 = await objNow(r.id), mr = await L.toScreen({ x: o2.x + o2.width, y: o2.y + o2.height / 2 })
+      await L.page.mouse.move(mr.x, mr.y); await L.page.mouse.down(); await L.page.mouse.move(mr.x + 40, mr.y, { steps: 6 }); await L.page.waitForTimeout(150)
+      d = await dimNodes()
+      const live = byKey('w')?.text
+      await L.page.mouse.up(); await L.page.waitForTimeout(250)
+      const o3 = await objNow(r.id)
+      expect(o3.width).toBeGreaterThan(o2.width)
+      expect([live !== want(o2.width), byKey('w') && true]).toEqual([true, true])
+      // one Ctrl+Z (the resize), another (the ruler): off; Ctrl+Y: on again
+      await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(150); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(200)
+      expect([!!(await objNow(r.id)).showDims, (await dimNodes()).length]).toEqual([false, 0])
+      await L.page.keyboard.press('Control+y'); await L.page.waitForTimeout(200)
+      expect(!!(await objNow(r.id)).showDims).toBe(true)
+      // a line: its length above its middle — and a multi-selection (the rectangle on, the line off) turned on at once
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('l'); await L.page.waitForTimeout(150)
+      await L.page.mouse.click(420, 700); await L.page.mouse.move(560, 700); await L.page.mouse.click(560, 700); await L.page.waitForTimeout(250)
+      const ln = (await drawnNow()).slice(-1)[0]
+      expect(ln.type).toBe('line')
+      await L.page.keyboard.down('Shift'); const rc = await L.toScreen({ x: o1.x, y: o1.y + o1.height / 2 }); await L.page.mouse.click(rc.x, rc.y); await L.page.keyboard.up('Shift'); await L.page.waitForTimeout(250)
+      expect((await selIds()).sort()).toEqual([ln.id, r.id].sort())
+      const h1 = await L.S('return S.getState().historyIndex')
+      await bar().getByRole('button', { name: 'Dimensions' }).click(); await L.page.waitForTimeout(200)
+      expect([(await objNow(ln.id)).showDims, (await objNow(r.id)).showDims, await L.S('return S.getState().historyIndex')]).toEqual([true, true, h1 + 1])
+      d = await dimNodes()
+      const lo = await objNow(ln.id), lenL = byKey('len')
+      expect([lenL?.text, lenL.y < lo.y1, Math.abs(lenL.x - (lo.x1 + lo.x2) / 2) < 1]).toEqual([want(Math.hypot(lo.x2 - lo.x1, lo.y2 - lo.y1)), true, true])
+      // the PDF prints them
+      const svg = await L.S('return import("/src/export/pdfExport.js").then(M => M.buildLayoutSVG(S.getState().objects, S.getState().layers, S.getState().gridSize || 40, { title: "t", elevations: S.getState().elevations }).svg)')
+      expect(['w', 'h', 'area', 'len'].map(k => svg.includes('data-dim="' + k + '"'))).toEqual([true, true, true, true])
+      // kept after a save and reload
+      const doc = await L.S('return SL.serializeScene(S.getState())')
+      const Bm = await import('./handCheck/browser.js'); L = await Bm.openLayout(app, doc)
+      expect([(await objNow(ln.id)).showDims, (await objNow(r.id)).showDims]).toEqual([true, true])
+    }, T)
+
     /* ── the dealer audit on d1-fixes: what a dealer could not do after drawing ── */
     it('REG-draw-style-card (click): a drawn shape\'s card — its name (Polyline, Polygon), its size in feet (a rectangle\'s Width and Height, a circle\'s Diameter, typed), Stroke colour and width, Fill (a closed shape), Solid | Dashed — each change one undo; a text\'s card sets its real Text size in inches (36 = 3 ft), not px (dealer audit)', async () => {
       await open(); await drawView()
@@ -8601,7 +8676,7 @@ describe('REG — the hand check by real clicks', () => {
       const once = async (what, act, check) => { const h0 = await hist7(); await act(); await wait(200); expect([what, await check(), (await hist7()) - h0]).toEqual([what, true, 1]) }
       const r = await drawRectB()
       // (d2-arrows: + the corners, Square | Round)
-      expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'Square', 'Round', 'No fill', 'Tinted', 'Hatched', 'Fill colour', 'Lock', 'Duplicate', 'Delete', 'More'])
+      expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'Square', 'Round', 'No fill', 'Tinted', 'Hatched', 'Fill colour', 'Dimensions', 'Lock', 'Duplicate', 'Delete', 'More'])
       expect(await words()).toEqual([])
       await once('dashed', () => selBar().getByRole('button', { name: 'Dashed' }).click(), async () => (await objNow(r.id)).dashed === true)
       await once('solid', () => selBar().getByRole('button', { name: 'Solid' }).click(), async () => !(await objNow(r.id)).dashed)
@@ -8624,7 +8699,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.mouse.click(150, 790); await L.page.mouse.click(450, 790); await wait(300)
       const ln = await lastDrawn(), gs = await gs7()
       // (d2-arrows: + the end style, and Square | Round line ends)
-      expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'End style', 'Square', 'Round', 'Lock', 'Duplicate', 'Delete', 'More'])
+      expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'End style', 'Square', 'Round', 'Dimensions', 'Lock', 'Duplicate', 'Delete', 'More'])
       // (d1-trim) an annotation: no Length or Angle fields in its bar
       expect(await selBar().getByRole('textbox').count()).toBe(0)
       await once('line dashed', () => selBar().getByRole('button', { name: 'Dashed' }).click(), async () => (await objNow(ln.id)).dashed === true)
@@ -8791,7 +8866,7 @@ describe('REG — the hand check by real clicks', () => {
       expect((await objNow(v.id)).x2).toBe(v1.x2)
       // its bar: the stroke set, the end style, the corners
       await L.S('S.getState().selectObject(arg, false)', v.id); await wait(250)
-      expect(await selBar().locator('button').evaluateAll(b => b.map(x => x.getAttribute('aria-label')))).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'End style', 'Square', 'Round', 'Lock', 'Duplicate', 'Delete', 'More'])
+      expect(await selBar().locator('button').evaluateAll(b => b.map(x => x.getAttribute('aria-label')))).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'End style', 'Square', 'Round', 'Dimensions', 'Lock', 'Duplicate', 'Delete', 'More'])
       // saved and reloaded unchanged; on the PDF with its head
       const doc = await L.S('return SL.serializeScene(S.getState())'), before = JSON.stringify(await objNow(v.id))
       expect((await planSvg()).includes('data-arrow-head')).toBe(true)

@@ -24,6 +24,8 @@ export const TEXT_TYPES = {
   building:  { name: 'Building size', inches: 24, fs: 12 },
   names:     { name: 'Zone and section names', inches: 24, fs: 11 },
   clearance: { name: 'Clearances', inches: 9, fs: 9.5 },
+  // (shape-dims) a drawn shape's dimensions, its ruler toggle on (render/drawnShapes.js dimLabels)
+  shape:     { name: 'Shape sizes', inches: 12, fs: 10 },
 }
 export const TEXT_TYPE_KEYS = Object.keys(TEXT_TYPES)
 export const MIN_TEXT_IN = 1, MAX_TEXT_IN = 240
