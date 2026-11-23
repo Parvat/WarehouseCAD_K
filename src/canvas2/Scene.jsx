@@ -12,6 +12,7 @@ import { isDrawn } from '../render/drawnShapes'
 import { SectionShape } from './SectionShape'
 import { isDoor } from '../utils/doorTool'
 import { doorClearRects } from '../utils/doorClear'
+import { useCullWindow, culled } from './cullWindow'   // (perf)
 
 /* ── STEP 2 · the scene ──────────────────────────────────────────────────────
    Everything in the store, drawn. One painter per object, chosen once, and no
@@ -62,6 +63,9 @@ function SceneView({ listening = false, bind, part = 'all' }) {
   const filling = useCanvasStore(s => s.activeTool === FILL_TOOL)
   const areaHoverId = useAreaHover(s => s.id)
   const selectedIds = useCanvasStore(s => s.selectedIds)
+  // (perf) viewport culling (cullWindow.js): the padded window, changing only when the view crosses a cell
+  const cull = useCullWindow()
+  const selKey = selectedIds.join(','), selSet = useMemo(() => new Set(selectedIds), [selKey])   // eslint-disable-line react-hooks/exhaustive-deps
   /* Nothing here reads the zoom: every object — columns included — is drawn
      at its real size and the stage transform scales it, so zooming re-renders
      none of the scene. */
@@ -104,13 +108,16 @@ function SceneView({ listening = false, bind, part = 'all' }) {
       }
       rest.push({ kind: 'fallback', obj: o })
     }
+    // (perf) viewport culling: the racks, zones and boxes wholly outside the padded window are not drawn (cullWindow.js);
+    // a selected one always is
+    if (cull) { const keep = rest.filter(e => !(e.kind === 'rack' || e.kind === 'zone' || e.kind === 'fallback') || selSet.has(e.obj.id) || !culled(e.obj, cull)); if (keep.length !== rest.length) rest.splice(0, rest.length, ...keep) }
     // the doors: a section's Fence or Wall is cut where one stands in its edge (utils/sectionAreas.js edgeRuns)
     const doors = sections.length ? objects.filter(isDoor) : []
     // (fill-doors round) every door's clear space, dashed under the racks — the plan only (the PDF leaves them out)
     const shownDoors = objects.filter(o => isDoor(o) && isVisible(o))
     const doorClear = shownDoors.length ? doorClearRects(objects, gridSize).filter(c => shownDoors.some(d => d.id === c.doorId)) : []
     return { floors, rest, columns, sections, doors, doorClear }
-  }, [objects, gridSize, isVisible])
+  }, [objects, gridSize, isVisible, cull?.key, selKey])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const colEls = scene.columns.map(e => <ColumnGridShape key={e.obj.id} obj={e.obj} gridSize={gridSize} listening={listening} bind={bind} />)
   if (part === 'columns') return <>{colEls}</>
