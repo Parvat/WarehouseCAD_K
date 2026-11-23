@@ -13,7 +13,7 @@ import { useCallback, useState } from 'react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { toggleLock, isLockedIn } from '../utils/layers'
 import { styleDrawn, alignTexts, rotateTexts, angleShown, setDrawnLength, setDrawnAngle, feetOf } from '../utils/drawTool'
-import { drawnGeom, hasEnds, endsOf, hasCorners, roundOn, blockSize, BLOCK_SIZES, drawnLength } from '../render/drawnShapes'
+import { drawnGeom, hasEnds, endsOf, hasCorners, roundOn, blockSize, BLOCK_SIZES, drawnLength, canDim } from '../render/drawnShapes'
 import { ftIn } from '../utils/bom'
 import { B, MONO, Sep, IconBtn } from './barParts'
 import { Swatch, onDark } from './Swatch'
@@ -141,6 +141,19 @@ function BlockGroup({ objs, ids, locked, gs }) {
   )
 }
 
+/** (shape-dims) The ruler toggle: on shows the shapes' dimensions (render/drawnShapes.js dimLabels) — on when every one of
+ *  them shows them; a click turns them all on (or, all on, all off) in one undo step. */
+function DimsBtn({ objs, locked }) {
+  const on = objs.every(o => o.showDims)
+  return (
+    <>
+      <Sep />
+      <IconBtn name="Measure" label="Dimensions" title={on ? 'Hide dimensions' : 'Show dimensions'} active={on} pressed={on} locked={locked}
+        onClick={() => styleDrawn(store, objs.map(o => o.id), { showDims: !on })} />
+    </>
+  )
+}
+
 const LockDupDel = ({ locked }) => (
   <>
     <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
@@ -229,6 +242,8 @@ export function DrawnBar({ objs }) {
       {blocks && <BlockGroup objs={objs} ids={ids} locked={locked} gs={gs} />}
       {/* (d1-trim) a line, an arrow, an elbow arrow: annotations — no length or angle fields */}
       {texts && <TextGroup objs={objs} ids={ids} locked={locked} gs={gs} />}
+      {/* (shape-dims) the ruler: its dimensions shown (design/dimtoggle.png) — every shape selected that has some, one undo */}
+      {objs.some(canDim) && <DimsBtn objs={objs.filter(canDim)} locked={locked} />}
       {(noText || texts || blocks) && <Sep />}
       <LockDupDel locked={locked} />
     </>

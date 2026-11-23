@@ -9,7 +9,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { pxToFtInCard as pxToFtIn } from '../../utils/units'   // (units) the project's units, as a card shows them (mm in metric)
 import { TextSizeField } from '../../studio/textSizeCard'
 import { rotateTexts, alignTexts, setLineLength, setLineAngle, setCircleRadius, setPolylineClosed, polyMeasures, convertRectToZone, angleOf } from '../../utils/drawTool'
-import { isDrawn, drawnGeom, hasEnds, endsOf, hasCorners, roundOn, blockSize, BLOCK_SIZES } from '../../render/drawnShapes'
+import { isDrawn, drawnGeom, hasEnds, endsOf, hasCorners, roundOn, blockSize, BLOCK_SIZES, canDim } from '../../render/drawnShapes'
 import { rememberStylesOf } from '../../utils/drawStyles'
 import { WidthPick } from '../../studio/drawnBar'
 import { Swatch } from '../../studio/Swatch'
@@ -60,6 +60,8 @@ function DrawnStyleFields({ obj }) {
       {hasCorners(obj) && roundOn(obj) && obj.type !== 'line' && (
         <Field label="Corner radius (ft)"><NumInput aria="Corner radius (ft)" value={Number.isFinite(obj.cornerFt) ? obj.cornerFt : 1} min={0.05} step={0.25} onCommit={v => { if (v > 0) set({ cornerFt: v }) }} /></Field>
       )}
+      {/* (shape-dims) its dimensions on the plan and the PDF — the bar's ruler; off by default, one undo */}
+      {canDim(obj) && <ToggleRow label="Dimensions" aria="Dimensions" title="Show its size on the plan and the PDF" on={!!obj.showDims} onClick={() => set({ showDims: !obj.showDims })} />}
       {closed && (
         <Field label="Fill">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -145,7 +145,7 @@ describe('FU — arrows, sizes, columns', () => {
   })
 
   it('FU-sizes: (labels-cad — was: Extra large 48 in, a View-menu Label size and a PDF label size) one real text height per label type, the defaults as asked, saved with the project; the View card shows Text size with Reset; the layout menu no longer offers Label size or PDF label size', () => {
-    expect(Object.fromEntries(Object.entries(TEXT_TYPES).map(([k, t]) => [k, t.inches]))).toEqual({ aisle: 18, row: 18, doorValue: 12, doorBadge: 12, column: 18, building: 24, names: 24, clearance: 9 })
+    expect(Object.fromEntries(Object.entries(TEXT_TYPES).map(([k, t]) => [k, t.inches]))).toEqual({ aisle: 18, row: 18, doorValue: 12, doorBadge: 12, column: 18, building: 24, names: 24, clearance: 9, shape: 12 })
     expect(textLz('aisle', GS) * textHeight('aisle', GS)).toBeCloseTo(TEXT_TYPES.aisle.fs, 9)
     useTextSizes.getState().setSize('row', 30)
     const json = serializeScene({ ...store.getState() })

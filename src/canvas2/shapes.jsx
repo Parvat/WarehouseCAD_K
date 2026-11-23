@@ -2,7 +2,7 @@ import { SELECT_BLUE, selectTint, textFace } from '../theme/tokens'
 import { useTextSizes, textHeight } from '../utils/textSizes'
 import { useCallback, useMemo, memo } from 'react'
 import { Group, Rect, Path, Shape, Circle, Ellipse, Line, Text } from 'react-konva'
-import { drawnGeom, dashOf, textGeom, fillPaint, hatchSegments, drawnBox, rectLabel, textBox, isDrawn, shapePoints, isPointShape, drawnPaths, tracePath, cornerR, blockText, pathD, endHandlePts } from '../render/drawnShapes'
+import { drawnGeom, dashOf, textGeom, fillPaint, hatchSegments, drawnBox, rectLabel, textBox, isDrawn, shapePoints, isPointShape, drawnPaths, tracePath, cornerR, blockText, pathD, endHandlePts, dimLabels, dimWidth } from '../render/drawnShapes'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
@@ -580,6 +580,10 @@ export function DrawnBody({ obj, gs = 40, sizes, listening = false }) {
       {/* (d2-arrows) its arrowheads: filled triangles in its stroke colour, real size */}
       {dp.heads.map((h, i) => <Line key={'h' + i} name="drawn-head" points={h.flat()} closed fill={ink} listening={false} perfectDrawEnabled={false} />)}
       {/* a named rectangle: its name over its size and area, in its stroke colour (inside; above its top edge if it does not fit) */}
+      {/* (shape-dims) its dimensions — the ruler toggle (render/drawnShapes.js dimLabels): real size, live while dragged */}
+      {dimLabels(obj, gs, sizes).map(l => { const w = dimWidth(l); return (
+        <Text key={'dim-' + l.key} name={'shape-dim shape-dim-' + l.key} x={l.x} y={l.y} offsetX={l.anchor === 'left' ? 0 : w / 2} offsetY={l.fs * 0.6} width={w + 1} rotation={l.rot}
+          text={l.text} fontSize={l.fs} fontFamily="'Plus Jakarta Sans', sans-serif" fill={l.color} listening={false} />) })}
       {lab && lab.lines.map((l, i) => (
         <Text key={i} name={'rect-label' + (i ? '-size' : '')} x={l.x - lab.width / 2 - l.fs} y={l.y} width={lab.width + 2 * l.fs} align="center" text={l.text}
           fontSize={l.fs} fontStyle={l.bold ? '600' : 'normal'} fontFamily="'Plus Jakarta Sans', sans-serif" fill={ink} listening={false} />

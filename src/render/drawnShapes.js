@@ -236,6 +236,12 @@ export function drawnBox(o) {
 export function rectLabel(o, gs = 40, sizes) {
   const name = String(o.name || '').trim()
   if (o.type !== 'rect' || !name) return null
+  // (shape-dims) its dimensions on: they show its size and area — the name alone here, centred (the area sits under it)
+  if (o.showDims) {
+    const fsN = (textInches('names', null, sizes) / 12) * gs
+    const wN = makeMeasure(fontSpec({ fontSize: fsN, bold: true, fontFamily: "'Plus Jakarta Sans', sans-serif" }), fsN)(name)
+    return { inside: true, width: wN, height: fsN * 1.25, lines: [{ text: name, x: o.x + o.width / 2, y: o.y + o.height / 2 - fsN * 1.15, fs: fsN, bold: true }] }
+  }
   const fsN = (textInches('names', null, sizes) / 12) * gs, fsS = (textInches('aisle', null, sizes) / 12) * gs * 0.75
   const ftOf = (px) => ftIn((px / gs) * 12)
   const area = Math.round((o.width / gs) * (o.height / gs))
@@ -251,6 +257,72 @@ export function rectLabel(o, gs = 40, sizes) {
     { text: size, x: cx, y: top + fsN * 1.25, fs: fsS, bold: false },
   ] }
 }
+/* ── (shape-dims) a drawn shape's dimensions — its ruler toggle (`showDims`, off by default; the bar and the card) ──
+   Display only, never typed. A line's or an arrow's length above its middle; each segment's length on an elbow arrow or a
+   polyline, and the area inside a closed one; a rectangle's width on top, its length on its right and its area inside; a
+   circle's diameter. Real text heights (CLAUDE.md Rule 8 — the Shape sizes type, 12″): fixed in drawing units, the same at
+   every zoom; each sits a fixed drawing offset off its edge, so the labels of one shape never overlap. The project's
+   units (utils/units.js: ft-in, or metres on the plan). The plan (canvas2/shapes.jsx DrawnBody — the drag preview too)
+   and the PDF (drawnSVG) draw these same labels. */
+export const DIM_TYPES = new Set(['line', 'elbow', 'polyline', 'polygon', 'rect', 'circle'])
+export const DIM_BLUE = '#1B4FD8'
+export const canDim = (o) => !!o && DIM_TYPES.has(o.type) && isDrawn(o)
+const areaText = (ft2) => (unitsNow().metric ? `${Math.round(ft2 * 0.09290304 * 10) / 10} m²` : `${Math.round(ft2).toLocaleString('en-US')} sq ft`)
+function polyArea(P) { let a = 0; for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length]; a += p[0] * q[1] - q[0] * p[1] } return a / 2 }
+function polyCentroid(P) {
+  const A = polyArea(P)
+  if (Math.abs(A) < 1e-9) return [P.reduce((t, p) => t + p[0], 0) / P.length, P.reduce((t, p) => t + p[1], 0) / P.length]
+  let cx = 0, cy = 0
+  for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length], k = p[0] * q[1] - q[0] * p[1]; cx += (p[0] + q[0]) * k; cy += (p[1] + q[1]) * k }
+  return [cx / (6 * A), cy / (6 * A)]
+}
+/** The dimension labels of `o` (world px): [{ key, text, x, y (the text's centre — or its left middle when anchor 'left'),
+ *  rot (degrees, never upside down), fs, color, anchor }] — [] when its ruler is off or it has none. */
+export function dimLabels(o, gs = 40, sizes) {
+  if (!o || !o.showDims || !canDim(o)) return []
+  const fs = (textInches('shape', null, sizes) / 12) * gs, len = (px) => fmtLength((px / gs) * 12, 'plan', 'dash')
+  const ink = o.stroke || '#1F2321', gap = fs * 0.85 + ((o.strokeWidth || 2) / 2)
+  const out = []
+  /** a segment's length, off its middle on the side `away` points to (or above it: up, else left) */
+  const seg = (a, b, key, away = null) => {
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1])
+    if (!(L > 1e-6)) return
+    let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2
+    const flip = away ? (nx * (mx - away[0]) + ny * (my - away[1]) < 0) : (ny > 1e-9 || (Math.abs(ny) <= 1e-9 && nx > 0))
+    if (flip) { nx = -nx; ny = -ny }
+    let rot = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI
+    if (rot > 90) rot -= 180
+    if (rot <= -90) rot += 180
+    out.push({ key, text: len(L), x: mx + nx * gap, y: my + ny * gap, rot, fs, color: DIM_BLUE, anchor: 'center' })
+  }
+  const g = drawnGeom(o)
+  if (o.type === 'circle') {
+    const t = Math.abs(g.rx - g.ry) < 1e-6 ? '⌀ ' + len(g.rx * 2) : `${len(g.rx * 2)} × ${len(g.ry * 2)}`
+    out.push({ key: 'dia', text: t, x: g.cx, y: g.cy, rot: 0, fs, color: DIM_BLUE, anchor: 'center' })
+    return out
+  }
+  if (o.type === 'rect') {
+    const named = !!String(o.name || '').trim()
+    out.push({ key: 'w', text: len(o.width), x: o.x + o.width / 2, y: o.y - gap, rot: 0, fs, color: DIM_BLUE, anchor: 'center' })
+    out.push({ key: 'h', text: len(o.height), x: o.x + o.width + gap * 0.6, y: o.y + o.height / 2, rot: 0, fs, color: DIM_BLUE, anchor: 'left' })
+    out.push({ key: 'area', text: areaText((o.width / gs) * (o.height / gs)), x: o.x + o.width / 2, y: o.y + o.height / 2 + (named ? fs * 0.75 : 0), rot: 0, fs, color: ink, anchor: 'center' })
+    return out
+  }
+  const P = g.pts
+  if (g.closed) {
+    const c = polyCentroid(P)
+    for (let i = 0; i < P.length; i++) seg(P[i], P[(i + 1) % P.length], 's' + i, c)
+    out.push({ key: 'area', text: areaText(Math.abs(polyArea(P)) / (gs * gs)), x: c[0], y: c[1], rot: 0, fs, color: ink, anchor: 'center' })
+    return out
+  }
+  if (o.type === 'line') { seg(P[0], P[1], 'len'); return out }
+  for (let i = 1; i < P.length; i++) seg(P[i - 1], P[i], 's' + (i - 1))
+  return out
+}
+/** A dimension label's width (world px) as drawn. */
+export const dimWidth = (l) => makeMeasure(fontSpec({ fontSize: l.fs, fontFamily: "'Plus Jakarta Sans', sans-serif" }), l.fs)(l.text)
+
 /** The dash (screen px) for a dashed shape. */
 export const dashOf = (o) => (o.dashed ? [Math.max(4, (o.strokeWidth || 2) * 3), Math.max(3, (o.strokeWidth || 2) * 2)] : null)
 
@@ -326,7 +398,7 @@ export function drawnSVG(o, u, gs = 40, sizes) {
   const fill = fp.kind === 'tint' ? `fill="${fp.color}" fill-opacity="${fp.alpha}"` : fp.kind === 'hatch' ? `fill="url(#${pid})"` : 'fill="none"'
   const dp = drawnPaths(o, gs)
   const paint = `stroke="${o.stroke || '#1F2321'}" stroke-width="${sw}"${dash} stroke-linejoin="${dp.join}" stroke-linecap="${dp.cap}" ${fill}`
-  if (g.kind === 'ellipse') return `${defs}<ellipse cx="${g.cx}" cy="${g.cy}" rx="${g.rx}" ry="${g.ry}" ${paint}/>`
+  if (g.kind === 'ellipse') return `${defs}<ellipse cx="${g.cx}" cy="${g.cy}" rx="${g.rx}" ry="${g.ry}" ${paint}/>` + dimLabels(o, gs, sizes).map(l => `<text data-dim="${l.key}" x="${l.x}" y="${l.y + l.fs * 0.35}" font-size="${l.fs}" font-family="'Plus Jakarta Sans', sans-serif" fill="${l.color}" text-anchor="middle">${esc(l.text)}</text>`).join('')
   // (d2-arrows) a block arrow: filled solid, its words in white along it
   if (o.type === 'block_arrow') {
     const t = blockText(o, gs)
@@ -336,10 +408,12 @@ export function drawnSVG(o, u, gs = 40, sizes) {
   const lab = rectLabel(o, gs, sizes)
   const words = lab ? lab.lines.map(l => `<text x="${l.x}" y="${l.y + l.fs * 0.85}" font-size="${l.fs}" font-family="'Plus Jakarta Sans', sans-serif"${l.bold ? ' font-weight="600"' : ''} fill="${o.stroke || '#1F2321'}" text-anchor="middle">${esc(l.text)}</text>`).join('') : ''
   const heads = dp.heads.map(h => `<polygon data-arrow-head points="${h.map(p => p.join(',')).join(' ')}" fill="${o.stroke || '#1F2321'}" stroke="none"/>`).join('')
+  // (shape-dims) its dimensions, as on the plan
+  const dims = dimLabels(o, gs, sizes).map(l => `<text data-dim="${l.key}" x="${l.x}" y="${l.y + l.fs * 0.35}" font-size="${l.fs}" font-family="'Plus Jakarta Sans', sans-serif" fill="${l.color}" text-anchor="${l.anchor === 'left' ? 'start' : 'middle'}"${l.rot ? ` transform="rotate(${l.rot} ${l.x} ${l.y})"` : ''}>${esc(l.text)}</text>`).join('')
   // the fill under the stroke when the stroke is pulled back (a head) or rounded: its own outline
   const pts = g.pts.map(p => p.join(',')).join(' '), plain = !dp.heads.length && !(cornerR(o, gs) > 0)
   const body = plain ? (g.closed ? `<polygon points="${pts}" ${paint}/>` : `<polyline points="${pts}" ${paint}/>`) : `<path d="${pathD(dp.cmds)}" ${paint}/>`
-  return defs + body + heads + words
+  return defs + body + heads + words + dims
 }
 
 /** A text object's lines and box, as drawn (getObjectBounds — the selection outline's — and layoutText):
