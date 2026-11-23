@@ -3621,6 +3621,65 @@ describe('REG — the hand check by real clicks', () => {
       return L.S('return import("/src/utils/layoutCheck.js").then(M => { const sh = M.shownCheck(M.useLayoutCheck.getState().result, S.getState().elevations); return [...sh.errors, ...sh.warnings].map(i => ({ kind: i.kind, ids: i.ids, text: i.text })) })')
     }
 
+    /* ── fill-columns-e: Check's Slide off column ── */
+    it('REG-slide-off-column (click): Check layout lists a column on an upright frame with a Slide off column button; clicked, the row (its Row group with it) slides along its run the least that clears the column — the frame is off the column, the item goes, the group\u2019s rows still line up, nothing else moves; one Ctrl+Z puts it all back; where no slide within half a bay works the button says so and nothing moves; Fill is untouched (nothing changes until clicked)', async () => {
+      await open()
+      const placeAll = () => L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => [o.id, Math.round(o.x * 100) / 100, Math.round(o.y * 100) / 100].join(":")).sort()')
+      const opened = await placeAll()
+      // Check: the frame-on-column items
+      const items = (await checkItems()).filter(i => i.kind === 'upright')
+      expect(items.length).toBeGreaterThan(0)
+      expect(await placeAll()).toEqual(opened)                                     // nothing changes until clicked
+      // a rack whose row and the same row of another section slide together (the Row group) — found the app's way
+      const pick = await L.S(`return Promise.all([import('/src/utils/slideOffColumn.js'), import('/src/utils/rowGroup.js')]).then(([SO, RG]) => {
+        const st = S.getState(), gs = st.gridSize || 40, rows = RG.rowsOf(st.objects, gs)
+        for (const id of arg) { const k = RG.rowOfRack(rows, id); const other = (RG.sameRowOtherSections(st.objects, k, gs) || [])[0]; if (!other) continue
+          const keys = [k, other], p = SO.planSlideOff(st.objects, id, gs, keys); if (p.ok) return { id, keys, ids: p.ids } }
+        return null })`, items.map(i => i.ids[0]))
+      expect(pick).toBeTruthy()
+      // the group (the Row group's own state, as its tool sets it)
+      await L.S('return import("/src/utils/rowGroupTool.js").then(M => M.useRowGroup.setState({ keys: arg }))', pick.keys)
+      const firstUprights = () => L.S(`return import('/src/render/rackOps.js').then(R => { const st = S.getState(), gs = st.gridSize || 40
+        return arg.map(id => { const o = st.objects.find(x => x.id === id), u = R.uprightXs(o, gs); const vert = !!(((o.rotation || 0) % 180) === 90); return vert ? o.y + (o.height - o.width) / 2 + u.xs[0] - o.x : u.xs[0] }) })`, pick.ids)
+      const u0 = await firstUprights()
+      const hitsOf = () => L.S(`return import('/src/generate/columnCheck.js').then(C => { const st = S.getState(), gs = st.gridSize || 40
+        return C.columnsOnUprights({ racks: st.objects.filter(o => o.id === arg), columns: st.objects.filter(o => o.type === 'column_grid').flatMap(g => C.expandColumnGrid(g, gs, st.objects)), gridSize: gs }).length })`, pick.id)
+      expect(await hitsOf()).toBeGreaterThan(0)
+      const card = L.page.getByLabel('Layout check')
+      const btn = card.locator(`[data-slide-off="${pick.id}"]`)
+      expect(await btn.textContent()).toBe('Slide off column')
+      const h0 = await L.S('return S.getState().historyIndex')
+      await btn.click(); await L.page.waitForTimeout(300)
+      // the frame off the column, one undo step, the item gone from the list
+      expect([await hitsOf(), await L.S('return S.getState().historyIndex')]).toEqual([0, h0 + 1])
+      await expect.poll(() => card.locator(`[data-slide-off="${pick.id}"]`).count(), { timeout: 5000, interval: 100 }).toBe(0)
+      // every row of the group moved the same along its run — still lined up; nothing else moved
+      const u1 = await firstUprights(), d = u1.map((v, k) => Math.round((v - u0[k]) * 1000) / 1000)
+      expect(d[0]).not.toBe(0)
+      expect(new Set(d).size).toBe(1)
+      const moved = (await placeAll()).filter(p => !opened.includes(p)).map(p => p.split(':')[0]).sort()
+      expect(moved).toEqual([...pick.ids].sort())
+      // one Ctrl+Z: all of it back
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect(await placeAll()).toEqual(opened)
+      // no slide within half a bay: the button says so, nothing moves (where the fixture has one — a 3-row group)
+      const none = await L.S(`return Promise.all([import('/src/utils/slideOffColumn.js'), import('/src/utils/rowGroup.js')]).then(([SO, RG]) => {
+        const st = S.getState(), gs = st.gridSize || 40, rows = RG.rowsOf(st.objects, gs)
+        for (const id of arg) { const k = RG.rowOfRack(rows, id); const keys = [k, ...(RG.sameRowOtherSections(st.objects, k, gs) || [])]; if (keys.length < 2) continue
+          if (!SO.planSlideOff(st.objects, id, gs, keys).ok) return { id, keys } }
+        return null })`, items.map(i => i.ids[0]))
+      if (none) {
+        await L.S('return import("/src/utils/rowGroupTool.js").then(M => M.useRowGroup.setState({ keys: arg }))', none.keys)
+        await checkItems()
+        const b2 = L.page.getByLabel('Layout check').locator(`[data-slide-off="${none.id}"]`)
+        const before = await placeAll(), hb = await L.S('return S.getState().historyIndex')
+        await b2.click(); await L.page.waitForTimeout(250)
+        expect(await b2.textContent()).toMatch(/^No slide within half a bay/)
+        expect([await placeAll(), await L.S('return S.getState().historyIndex')]).toEqual([before, hb])
+      }
+      await L.S('return import("/src/utils/rowGroupTool.js").then(M => M.clearGroup())')
+    }, T)
+
     it('REG-flue-fit (click): a 12" column that exactly fills a back-to-back pair\'s 12" flue, faces on the uprights, is no clash — Check layout lists no column on an upright frame and the plan has no upright mark; ½" into a face it is flagged', async () => {
       await open()
       // the fixture's first pair made 40" deep with a 12" flue — built from whole feet as Generate / Fill build it (its near
