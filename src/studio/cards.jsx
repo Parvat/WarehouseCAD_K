@@ -25,6 +25,8 @@ import { CardLock } from './CardLock'
 import { Head, BigFigure, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, Row, ToggleRow, Totals, Hint,
   Tag, CountChip, IconBtn, C, MONO, LEVEL, LockedFields } from './cardParts'
 import { isDefaultUnits, fmtLength, unitsNow } from '../utils/units'   // (units) the project's units
+import { slideOffColumn } from '../utils/slideOffColumn'   // (fill-columns-e)
+import { useRowGroup } from '../utils/rowGroupTool'
 
 /* The right card's blocks for the states drawn in the mockups (design/studio/Studio.dc.html): nothing selected (C7),
    a rack (C1), a zone (C6) and Check layout (C5). Every other section uses the same parts (cardParts.jsx). */
@@ -240,6 +242,8 @@ export function CheckCard() {
   const close = useLayoutCheck(s => s.close)
   const hiKey = useLayoutCheck(s => s.highlight?.key)
   const f = useLayoutFigures()
+  // (fill-columns-e) Slide off column: what a click that could not slide said, per item
+  const [slideSaid, setSlideSaid] = useState({})
   if (!result) return null
   const items = [
     ...result.errors.map(it => ({ it, level: 'error' })),
@@ -261,13 +265,23 @@ export function CheckCard() {
           const [t, d] = split(it.text)
           const on = !reminder && hiKey === issueKey(it)
           return (
-            <div key={it.kind + i} data-check-item={reminder ? undefined : issueKey(it)} data-check-marked={marked ? 'true' : undefined} style={{ display: 'flex', alignItems: 'flex-start', gap: 4, borderRadius: 8, background: on ? C.inset : 'transparent', opacity: marked ? 0.45 : 1 }}>
+            <div key={it.kind + i} data-check-item={reminder ? undefined : issueKey(it)} data-check-marked={marked ? 'true' : undefined} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 4, borderRadius: 8, background: on ? C.inset : 'transparent', opacity: marked ? 0.45 : 1 }}>
               <button type="button" className="st-hov" aria-label={it.text} title={reminder ? 'Open Project settings' : 'Show it on the drawing'}
                 onClick={() => (reminder ? openSetup('settings') : goToIssue(useCanvasStore, it, getCanvasContainerSize()))}
                 style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4, padding: 10, border: 0, borderRadius: 8, background: 'transparent', textAlign: 'left', color: C.text, cursor: 'pointer' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Tag level={level} /><span style={{ fontSize: 13, color: C.strong }}>{t}</span>{marked && <span style={{ fontSize: 11, color: C.muted }}>Marked as OK</span>}</span>
                 {d && <span style={{ fontSize: 12, lineHeight: 1.45, color: C.muted }}>{d}</span>}
               </button>
+              {/* (fill-columns-e) a column on an upright frame: slide the row (its Row group with it) off the column — one undo */}
+              {!reminder && !marked && it.kind === 'upright' && it.ids?.[0] && (
+                <span style={{ order: 3, flexBasis: '100%', display: 'flex', padding: '0 10px 8px' }}>
+                <button type="button" className="st-hov" aria-label="Slide off column" data-slide-off={it.ids[0]}
+                  title={slideSaid[issueKey(it)] || 'Slide this row along its run, the least that clears the column (its Row group slides with it) — Ctrl+Z puts it back'}
+                  onClick={() => { const p = slideOffColumn(useCanvasStore, it.ids[0], useRowGroup.getState().keys); if (!p.ok) setSlideSaid(s => ({ ...s, [issueKey(it)]: p.reason })) }}
+                  style={{ height: 24, padding: '0 8px', border: 0, borderRadius: 6, background: C.inset, color: slideSaid[issueKey(it)] ? C.muted : C.accent, fontSize: 11, whiteSpace: 'nowrap', cursor: 'pointer', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {slideSaid[issueKey(it)] || 'Slide off column'}</button>
+                </span>
+              )}
               {!reminder && (
                 <button type="button" className="st-hov" aria-label={marked ? 'Undo mark' : 'Mark as OK'} title={marked ? 'Count it again' : 'Accept it: it stays listed, greyed, and no longer counts'}
                   onClick={() => markCheckItem(useCanvasStore, it, !marked)}
