@@ -707,7 +707,8 @@ describe.each([['horizontal', false], ['vertical', true]])('RG — %s rows, the 
     expect(ci).toMatch(/groupNoSnap: groupDragFor\(st\.objects, ids\)/)
     expect(ci).toMatch(/if \(d\.groupNoSnap\) \(\{ dx, dy \} = lockToAxis\(dx, dy\)\)/)
     expect((ci.match(/targetsFor\(/g) || []).length).toBe(4)                    // both drag paths: the smart guides and the in-line snap
-    expect(ci).toMatch(/const targetsFor = \(objs\) => \{ const t = snapTargets\(objs, st\.layers, d\.movedIds\); return d\.groupNoSnap \? t\.filter\(o => !d\.groupNoSnap\.has\(o\.id\)\) : t \}/)
+    // (drag-perf-bar) the targets cut to those near the dragged rows first (snapIndex.js), then the group's rows skipped
+    expect(ci).toMatch(/const targetsFor = \(objs\) => \{ const t = nearTargets\(snapTargets\(objs, st\.layers, d\.movedIds\), d, st\.objects, st\.gridSize \|\| 40, dx, dy\); return d\.groupNoSnap \? t\.filter\(o => !d\.groupNoSnap\.has\(o\.id\)\) : t \}/)
     expect((ci.match(/\n\s+lock\(\)\r?\n/g) || []).length).toBe(2)                // locked again after snapping, both paths
     // a live-flue drag that ends where it started writes no history
     expect(ci).toMatch(/if \(back\) st\.updateObject\(d\.ids\[0\], \{ x: s0\.x, y: s0\.y, height: s0\.height, flueSpaceIn: s0\.flueSpaceIn \}\)/)

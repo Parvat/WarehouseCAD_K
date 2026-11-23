@@ -8735,7 +8735,7 @@ describe('REG — the hand check by real clicks', () => {
       const once = async (what, act, check) => { const h0 = await hist7(); await act(); await wait(200); expect([what, await check(), (await hist7()) - h0]).toEqual([what, true, 1]) }
       const r = await drawRectB()
       // (d2-arrows: + the corners, Square | Round)
-      expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'Square', 'Round', 'No fill', 'Tinted', 'Hatched', 'Fill colour', 'Dimensions', 'Lock', 'Duplicate', 'Delete', 'More'])
+      expect(await labels()).toEqual(['Stroke colour', 'Fill colour', 'Stroke width', 'Solid', 'Dashed', 'No fill', 'Tinted', 'Hatched', 'Square', 'Round', 'Dimensions', 'Lock', 'Duplicate', 'Delete', 'More'])
       expect(await words()).toEqual([])
       await once('dashed', () => selBar().getByRole('button', { name: 'Dashed' }).click(), async () => (await objNow(r.id)).dashed === true)
       await once('solid', () => selBar().getByRole('button', { name: 'Solid' }).click(), async () => !(await objNow(r.id)).dashed)
@@ -8758,7 +8758,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.mouse.click(150, 790); await L.page.mouse.click(450, 790); await wait(300)
       const ln = await lastDrawn(), gs = await gs7()
       // (d2-arrows: + the end style, and Square | Round line ends)
-      expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'End style', 'Square', 'Round', 'Dimensions', 'Lock', 'Duplicate', 'Delete', 'More'])
+      expect(await labels()).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'Square', 'Round', 'End style', 'Dimensions', 'Lock', 'Duplicate', 'Delete', 'More'])
       // (d1-trim) an annotation: no Length or Angle fields in its bar
       expect(await selBar().getByRole('textbox').count()).toBe(0)
       await once('line dashed', () => selBar().getByRole('button', { name: 'Dashed' }).click(), async () => (await objNow(ln.id)).dashed === true)
@@ -8925,7 +8925,7 @@ describe('REG — the hand check by real clicks', () => {
       expect((await objNow(v.id)).x2).toBe(v1.x2)
       // its bar: the stroke set, the end style, the corners
       await L.S('S.getState().selectObject(arg, false)', v.id); await wait(250)
-      expect(await selBar().locator('button').evaluateAll(b => b.map(x => x.getAttribute('aria-label')))).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'End style', 'Square', 'Round', 'Dimensions', 'Lock', 'Duplicate', 'Delete', 'More'])
+      expect(await selBar().locator('button').evaluateAll(b => b.map(x => x.getAttribute('aria-label')))).toEqual(['Stroke colour', 'Stroke width', 'Solid', 'Dashed', 'Square', 'Round', 'End style', 'Dimensions', 'Lock', 'Duplicate', 'Delete', 'More'])
       // saved and reloaded unchanged; on the PDF with its head
       const doc = await L.S('return SL.serializeScene(S.getState())'), before = JSON.stringify(await objNow(v.id))
       expect((await planSvg()).includes('data-arrow-head')).toBe(true)
@@ -9865,6 +9865,38 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Control+z'); await wait(200); await L.page.keyboard.press('Control+z'); await wait(250)
       o = await objNow()
       expect([o.type, o.deep]).toEqual(['rack_row', 2])
+    }, T)
+
+    /* ── drag-perf-bar: a drag defers the labels, the cards, Check, BOM and Tally to the drop ── */
+    it('REG-drag-defer (click): while a rack is dragged (real mouse) the aisle labels and the card hold still — nothing is re-derived per frame; on the drop they update, and they are exactly what a fresh load of the dropped layout draws', async () => {
+      await open()
+      const labels = () => L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find(n => /^aisle:/.test(n.name() || '')).map(g => g.name() + '=' + g.find('Text').map(t => t.text()).join('/')).sort() })
+      const cardText = () => L.page.locator('[data-island="right-card"]').innerText()
+      // a rack with an aisle beside it
+      const r = await L.S('const st = S.getState(), a = st.objects.find(o => o.type === "aisle"); return st.objects.find(o => o.id === a.row1Id)')
+      const start = { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+      await L.click(start); await L.page.waitForTimeout(300)
+      const lab0 = await labels(), card0 = await cardText()
+      expect(lab0.length).toBeGreaterThan(0)
+      // down, and moved 2 ft across (the aisle beside it narrows) — still held
+      const vert = await L.S('return import("/src/generate/columnCheck.js").then(C => !!C.rackFootprint(S.getState().objects.find(o => o.id === arg)).rotated)', r.id)
+      const gs = await gs7(), d = 2 * gs
+      const p0 = await L.toScreen(start), p1 = await L.toScreen(vert ? { x: start.x + d, y: start.y } : { x: start.x, y: start.y + d })
+      await L.page.keyboard.down('Alt')                                     // no snap: the move is exactly 2 ft
+      await L.page.mouse.move(p0.x, p0.y); await L.page.mouse.down()
+      for (let i = 1; i <= 10; i++) await L.page.mouse.move(p0.x + (p1.x - p0.x) * i / 10, p0.y + (p1.y - p0.y) * i / 10)
+      await L.page.waitForTimeout(300)
+      expect(await L.S('return import("/src/canvas2/dragPreview.js").then(M => M.useDragPreview.getState().dragging)')).toBe(true)
+      expect(await labels()).toEqual(lab0)
+      expect(await cardText()).toBe(card0)
+      await L.page.mouse.up(); await L.page.keyboard.up('Alt'); await L.page.waitForTimeout(500)
+      // dropped: the labels follow, exactly as a fresh load of the same layout draws them
+      const lab1 = await labels()
+      expect(lab1).not.toEqual(lab0)
+      const doc = await L.S('return SL.serializeScene(S.getState())')
+      const Bm = await import('./handCheck/browser.js'); L = await Bm.openLayout(app, doc)
+      await L.page.waitForTimeout(500)
+      expect(await labels()).toEqual(lab1)
     }, T)
 
     /* (basics-triage) one rack in a filled building: a Selective Rack placed where one row of the fixture's racks was (that

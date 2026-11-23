@@ -22,6 +22,7 @@ import { Caption, CountChip, Btn, C, MONO } from './cardParts'
 import { Icon } from './Icon'
 import { useViewPrefs } from './viewPrefs'
 import { textLz } from '../utils/textSizes'
+import { useSettledStore, useSettledObjects } from '../canvas2/settled'   // (drag-perf-bar) held still during a drag
 
 /* Summary follows selection (STUDIO.md §7a): the right card's Properties tab shows the layout's figures under whatever is
    selected — nothing: the whole layout's Storage · Building · Racking · Aisles · Sections · Checks; a building: its fields,
@@ -57,7 +58,7 @@ export function Line({ label, value, sum, muted, swatch, children }) {
 
 /** The layout's summary inputs, worked out once per change (utils/summary.js summaryBase). */
 export function useSummaryBase() {
-  const { objects, T, gs } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, gs: s.gridSize || 40 })))
+  const { objects, T, gs } = useSettledStore((s => ({ objects: s.objects, T: s.elevations, gs: s.gridSize || 40 })))
   const ledger = useBayLedger(objects, gs)
   // (outside the provider — a card rendered on its own — the check is run here, on the shipped reach truck)
   const cc = useColumnCheckOptional()

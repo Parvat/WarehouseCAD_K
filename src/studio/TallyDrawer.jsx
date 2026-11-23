@@ -11,6 +11,7 @@ import { useViewPrefs } from './viewPrefs'
 import { BomTable, ByRowTable, highlightLine, downloadCsv, downloadXlsx, baseName, PART_CELL, SIZE_CELL } from './BomTab'
 import { setTallyFocus, setTallied, clearTallied, checkedNos } from './tally'
 import { useTally, closeTally, popOutTally, closeTallyModal, TALLY_LEFT, TALLY_RIGHT, TALLY_BOTTOM, TALLY_ISLAND_GAP, selectedLineNos, useShownTallyH } from './tally'
+import { useSettledStore, useSettledObjects } from '../canvas2/settled'   // (drag-perf-bar) held still during a drag
 
 /* The Tally (STUDIO.md §1, §7a BOM): the BOM tab's Tally opens a drawer docked at the bottom of the canvas — full width,
    left 16 to right 16 (the right card ends 12px above it), its height dragged by its top edge (200 … 70% of the window, 330 at first),
@@ -130,7 +131,7 @@ function Drawer({ bom, flags, xlsx }) {
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
   }
   const small = { height: 28, padding: '0 10px', fontSize: 12 }
-  const { objects, gs, T } = useCanvasStore(useShallow(s => ({ objects: s.objects, gs: s.gridSize || 40, T: s.elevations })))
+  const { objects, gs, T } = useSettledStore((s => ({ objects: s.objects, gs: s.gridSize || 40, T: s.elevations })))
   const lines = useMemo(() => rackLinesNow(objects, gs), [objects, gs])
   const checked = useMemo(() => checkedNos(objects, lines, T), [objects, lines, T])
   const lineOf = (no) => lines.find(l => l.no === no) || null
@@ -164,7 +165,7 @@ function Drawer({ bom, flags, xlsx }) {
 }
 
 function SummaryTable({ bom }) {
-  const objects = useCanvasStore(s => s.objects)
+  const objects = useSettledObjects()
   const hl = useLayoutCheck(s => s.highlight)
   return <BomTable bom={bom} picked={hl?.kind === 'bom' ? hl.key : null} onPick={(l) => highlightLine(l, objects)} wide />
 }
@@ -199,7 +200,7 @@ function Modal({ bom, flags, xlsx, csv }) {
 /** Always mounted (StudioFrame): the drawer or the modal, whichever is open; the R labels shown while either is. */
 export function TallyHost() {
   const { open, modal } = useTally(useShallow(s => ({ open: s.open, modal: s.modal })))
-  const { objects, T, gs, filename } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, gs: s.gridSize || 40, filename: s.currentFilename })))
+  const { objects, T, gs, filename } = useSettledStore((s => ({ objects: s.objects, T: s.elevations, gs: s.gridSize || 40, filename: s.currentFilename })))
   const any = open || modal
   const bom = useMemo(() => (any ? computeBom(objects, T, { gridSize: gs }) : null), [any, objects, T, gs])
   useEffect(() => { useViewPrefs.getState().setBomFull(any); return () => useViewPrefs.getState().setBomFull(false) }, [any])

@@ -21,6 +21,7 @@ import { isPiece, withSections, sectionsOf, sectionView } from './sections'
 import { useClearanceView } from './clearanceView'
 import { ClearanceNumbers } from './ClearanceNumbers'
 import { useColumnPick } from './columnPick'
+import { useSettledObjects } from './settled'   // (drag-perf-bar)
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const near = (a, b) => Math.abs(a - b) < 1e-6
@@ -74,6 +75,15 @@ function OverlaysView({
   showMarks = true, aisleBlocks = [], columns = [], rackConflicts = [], pickBlocks = [], uprightHits = [], part = 'all',
 }) {
   const marksPart = part !== 'chrome', chromePart = part !== 'marks'
+  /* (drag-perf-bar) the labels and marks wait for the drop: during a drag the marks part draws the layout as it stood
+     when the drag began (settled.js) — no per-frame re-derivation; on the drop it draws the dropped layout, exactly what
+     it drew before. The chrome part (selection outlines, guides, handles) follows the drag as before. */
+  const settledObjects = useSettledObjects(), dragNow = useDragPreview(s => s.dragging), movingIds = useDragPreview(s => s.ids)
+  /* a drag that carries everything these overlays come from (a building with all its racks, everything selected) moves
+     them rigidly — one group offset, nothing re-derived — so they follow it as before: only the other drags defer */
+  const carriesAll = useMemo(() => !!movingIds && objects.every(o => !feedsOverlays(o) || movingIds.has(o.id)), [objects, movingIds])
+  const deferMarks = marksPart && !chromePart && dragNow && !carriesAll
+  if (deferMarks) objects = settledObjects
   /* Every label and mark here is DRAWING size (render/labelSize.js): sized by
      the Label size setting, never by the view zoom, so zooming re-renders
      none of it — the stage transform scales it with the racks. */
@@ -106,7 +116,8 @@ function OverlaysView({
      (collectDragNodes), and offsetting them here too would move them twice.
      The clearance labels apply the preview themselves (they re-run the aisle
      check on the previewed layout). */
-  const ids = useDragPreview(s => s.ids), dx = useDragPreview(s => s.dx), dy = useDragPreview(s => s.dy)
+  const ids0 = useDragPreview(s => s.ids), dx0 = useDragPreview(s => s.dx), dy0 = useDragPreview(s => s.dy)
+  const ids = deferMarks ? null : ids0, dx = deferMarks ? 0 : dx0, dy = deferMarks ? 0 : dy0
   const dragging = useDragPreview(s => s.dragging), showClearances = useClearanceView(s => s.show)
   /* A drag that carries EVERYTHING these overlays come from — a building
      dragged with all its racks, aisles and columns — moves them rigidly: they

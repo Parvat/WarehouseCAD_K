@@ -229,7 +229,8 @@ describe.each(['horizontal', 'vertical'])('LY — %s', (orientation) => {
     expect(ci).not.toMatch(/bayEntriesInMarquee\(st\.objects\.filter\(ok\), rect/)
     // both drag paths take their snap targets through targetsFor, which is snapTargets (layers) minus a dragged Row group row's no-snap racks
     expect(ci.match(/computeSmartGuides\(\s*d\.ids, targetsFor\(/g)).toHaveLength(2)
-    expect(ci).toMatch(/const targetsFor = \(objs\) => \{ const t = snapTargets\(objs, st\.layers, d\.movedIds\);/)
+    // (drag-perf-bar) the shown layers' targets, then only those near the dragged objects (snapIndex.js)
+    expect(ci).toMatch(/const targetsFor = \(objs\) => \{ const t = nearTargets\(snapTargets\(objs, st\.layers, d\.movedIds\),/)
     expect(readFileSync('src/hooks/useKeyboardShortcuts.js', 'utf8')).toMatch(/const ids = selectAllIds\(st\.objects, st\.layers\)/)
   })
 

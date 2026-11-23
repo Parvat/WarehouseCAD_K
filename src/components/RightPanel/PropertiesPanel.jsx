@@ -26,11 +26,18 @@ function DrawnStyleFields({ obj }) {
   if (obj.type === 'block_arrow') return <BlockArrowFields obj={obj} set={set} />
   const fillOn = !obj.noFill && !!obj.fill, kind = !fillOn ? 'none' : obj.fillStyle === 'hatch' ? 'hatch' : 'tint'
   const fillColor = obj.fill || obj.stroke || '#1F2321'
+  /* (drag-perf-bar) the bar's order: stroke and fill colour side by side, stroke width, solid or dashed, fill none · tinted ·
+     hatched, corners, end style where it applies, the ruler */
   return (
     <>
-      <Field label="Stroke">
+      <Field label="Colour">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Swatch label="Stroke colour" value={obj.stroke || '#1F2321'} onPick={(c) => set({ stroke: c || '#1F2321' })} />
+          {closed && <Swatch label="Fill" none value={fillOn ? obj.fill : null} onPick={(c) => set(c ? { fill: c, noFill: false, fillStyle: obj.fillStyle || 'tint' } : { noFill: true })} />}
+        </div>
+      </Field>
+      <Field label="Stroke">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* (d1-polish) 1 2 3 4 6 8 px as line pictures (the bar's dropdown) */}
           <WidthPick value={obj.strokeWidth || 2} onPick={(w) => set({ strokeWidth: w })} />
           <span style={{ fontSize: 12, color: C.muted, fontFamily: MONO }}>{obj.strokeWidth || 2} px</span>
@@ -42,10 +49,13 @@ function DrawnStyleFields({ obj }) {
           { value: 'dashed', label: 'Dashed', on: !!obj.dashed, onClick: () => set({ dashed: true }) },
         ]} />
       </Field>
-      {/* (d2-arrows) arrowheads: none, end, start, both — a line, an open polyline, an elbow arrow */}
-      {hasEnds(obj) && (
-        <Field label="Arrowheads">
-          <Seg aria="End style" options={[['none', 'None'], ['end', 'End'], ['start', 'Start'], ['both', 'Both']].map(([v, l]) => ({ value: v, label: l, aria: 'Arrowheads ' + l.toLowerCase(), on: endsOf(obj) === v, onClick: () => set({ ends: v }) }))} />
+      {closed && (
+        <Field label="Fill">
+          <Seg aria="Fill style" options={[
+            { value: 'none', label: 'None', on: kind === 'none', onClick: () => set({ noFill: true }) },
+            { value: 'tint', label: 'Tinted', on: kind === 'tint', onClick: () => set({ fill: fillColor, noFill: false, fillStyle: 'tint' }) },
+            { value: 'hatch', label: 'Hatched', on: kind === 'hatch', onClick: () => set({ fill: fillColor, noFill: false, fillStyle: 'hatch' }) },
+          ]} />
         </Field>
       )}
       {/* (d2-arrows) corners Square | Round (a line: its ends flat or round), Round's radius (ft — real size, never over half the shortest side) */}
@@ -60,20 +70,14 @@ function DrawnStyleFields({ obj }) {
       {hasCorners(obj) && roundOn(obj) && obj.type !== 'line' && (
         <Field label="Corner radius (ft)"><NumInput aria="Corner radius (ft)" value={Number.isFinite(obj.cornerFt) ? obj.cornerFt : 1} min={0.05} step={0.25} onCommit={v => { if (v > 0) set({ cornerFt: v }) }} /></Field>
       )}
-      {/* (shape-dims) its dimensions on the plan and the PDF — the bar's ruler; off by default, one undo */}
-      {canDim(obj) && <ToggleRow label="Dimensions" aria="Dimensions" title="Show its size on the plan and the PDF" on={!!obj.showDims} onClick={() => set({ showDims: !obj.showDims })} />}
-      {closed && (
-        <Field label="Fill">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Swatch label="Fill" none value={fillOn ? obj.fill : null} onPick={(c) => set(c ? { fill: c, noFill: false, fillStyle: obj.fillStyle || 'tint' } : { noFill: true })} />
-            <div style={{ flex: 1, minWidth: 0 }}><Seg aria="Fill style" options={[
-              { value: 'none', label: 'None', on: kind === 'none', onClick: () => set({ noFill: true }) },
-              { value: 'tint', label: 'Tinted', on: kind === 'tint', onClick: () => set({ fill: fillColor, noFill: false, fillStyle: 'tint' }) },
-              { value: 'hatch', label: 'Hatched', on: kind === 'hatch', onClick: () => set({ fill: fillColor, noFill: false, fillStyle: 'hatch' }) },
-            ]} /></div>
-          </div>
+      {/* (d2-arrows) arrowheads: none, end, start, both — a line, an open polyline, an elbow arrow */}
+      {hasEnds(obj) && (
+        <Field label="Arrowheads">
+          <Seg aria="End style" options={[['none', 'None'], ['end', 'End'], ['start', 'Start'], ['both', 'Both']].map(([v, l]) => ({ value: v, label: l, aria: 'Arrowheads ' + l.toLowerCase(), on: endsOf(obj) === v, onClick: () => set({ ends: v }) }))} />
         </Field>
       )}
+      {/* (shape-dims) its dimensions on the plan and the PDF — the bar's ruler; off by default, one undo */}
+      {canDim(obj) && <ToggleRow label="Dimensions" aria="Dimensions" title="Show its size on the plan and the PDF" on={!!obj.showDims} onClick={() => set({ showDims: !obj.showDims })} />}
     </>
   )
 }

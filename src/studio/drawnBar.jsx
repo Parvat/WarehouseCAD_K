@@ -165,11 +165,16 @@ const LockDupDel = ({ locked, obj }) => (
 )
 
 /** Stroke colour · width · solid · dashed — shapes and lines. */
+/** (drag-perf-bar) The stroke colour — first in the bar, beside the fill colour. */
+function StrokeColour({ objs, ids, locked }) {
+  const o = objs[0], set = (u) => styleDrawn(store, ids, u)
+  return <Swatch round="ring" label="Stroke colour" value={o.stroke || '#1F2321'} locked={locked} onPick={(c) => set({ stroke: c || '#1F2321' })} />
+}
+/** Stroke width · solid · dashed. */
 function StrokeGroup({ objs, ids, locked }) {
   const o = objs[0], set = (u) => styleDrawn(store, ids, u)
   return (
     <>
-      <Swatch round="ring" label="Stroke colour" value={o.stroke || '#1F2321'} locked={locked} onPick={(c) => set({ stroke: c || '#1F2321' })} />
       <WidthPick value={o.strokeWidth || 2} locked={locked} onPick={(w) => set({ strokeWidth: w })} />
       <PicBtn label="Solid" title="Solid" on={!o.dashed} locked={locked} onClick={() => set({ dashed: false })}><PicSolid /></PicBtn>
       <PicBtn label="Dashed" title="Dashed" on={!!o.dashed} locked={locked} onClick={() => set({ dashed: true })}><PicDashed /></PicBtn>
@@ -188,9 +193,15 @@ function FillGroup({ objs, ids, locked }) {
       <PicBtn label="No fill" title="None — outline only" on={kind === 'none'} locked={locked} onClick={() => set({ noFill: true })}><PicNone /></PicBtn>
       <PicBtn label="Tinted" title="Tinted — a light wash of the fill colour" on={kind === 'tint'} locked={locked} onClick={() => set(q => ({ fill: q.fill || colour, noFill: false, fillStyle: 'tint' }))}><PicTint c={seen === colour ? colour : '#4A514D'} /></PicBtn>
       <PicBtn label="Hatched" title="Hatched — 45° lines in the fill colour" on={kind === 'hatch'} locked={locked} onClick={() => set(q => ({ fill: q.fill || colour, noFill: false, fillStyle: 'hatch' }))}><PicHatch c={seen} /></PicBtn>
-      <Swatch round="dot" label="Fill colour" value={colour} locked={locked} onPick={(c) => { if (c) set(q => (!q.noFill && q.fill ? { fill: c } : { fill: c, noFill: false, fillStyle: 'tint' })) }} />
     </>
   )
+}
+/** (drag-perf-bar) The fill colour — beside the stroke colour at the bar's start. It sets the colour Tinted and Hatched
+ *  use; picked while Fill is None, it switches Fill to Tinted in the same undo step. */
+function FillColour({ objs, ids, locked }) {
+  const o = objs[0], set = (u) => styleDrawn(store, ids, u)
+  const colour = o.fill || o.stroke || '#1F2321'
+  return <Swatch round="dot" label="Fill colour" value={colour} locked={locked} onPick={(c) => { if (c) set(q => (!q.noFill && q.fill ? { fill: c } : { fill: c, noFill: false, fillStyle: 'tint' })) }} />
 }
 
 /** Size ▾ · B · I · colour | left · centre · right · rotate 90 — texts. */
@@ -237,10 +248,14 @@ export function DrawnBar({ objs }) {
         {objs.length > 1 && kinds.length > 1 ? <><span style={{ fontFamily: MONO }}>{objs.length}</span> <span style={{ fontWeight: 400, color: B.muted }}>selected</span></> : kinds[0]}
       </span>
       <Sep />
-      {noText && <StrokeGroup objs={objs} ids={ids} locked={locked} />}
-      {ends && <EndsPick objs={objs} ids={ids} locked={locked} />}
-      {corners && <><Sep /><CornersGroup objs={objs} ids={ids} locked={locked} /></>}
+      {/* (drag-perf-bar) the order: stroke and fill colour side by side, stroke width · solid · dashed, fill none · tinted ·
+          hatched, corners, end style where it applies, the ruler, then lock · duplicate · delete · more */}
+      {noText && <StrokeColour objs={objs} ids={ids} locked={locked} />}
+      {closed && <FillColour objs={objs} ids={ids} locked={locked} />}
+      {noText && <><Sep /><StrokeGroup objs={objs} ids={ids} locked={locked} /></>}
       {closed && <><Sep /><FillGroup objs={objs} ids={ids} locked={locked} /></>}
+      {corners && <><Sep /><CornersGroup objs={objs} ids={ids} locked={locked} /></>}
+      {ends && <EndsPick objs={objs} ids={ids} locked={locked} />}
       {blocks && <BlockGroup objs={objs} ids={ids} locked={locked} gs={gs} />}
       {/* (d1-trim) a line, an arrow, an elbow arrow: annotations — no length or angle fields */}
       {texts && <TextGroup objs={objs} ids={ids} locked={locked} gs={gs} />}

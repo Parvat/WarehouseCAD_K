@@ -73,6 +73,7 @@ import { tunnelAt, useTunnelPick, clearTunnelPick, tunnelRange, tunnelPitch, mov
 import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from './viewport'
 import { fitInset } from '../studio/fitInset'
 import { stackHintAfterClick, hideStackHint } from './StackHint'   // (stacking)
+import { nearTargets } from './snapIndex'   // (drag-perf-bar)
 
 /* Beam/lane racks whose applyResize branch handles its own snapping
    internally (bay/tower/lane counts, not raw pixels) — ported verbatim from
@@ -1532,7 +1533,8 @@ export function useCanvasInteraction({
         const lock = () => { if (d.groupNoSnap) { if (axisX) dy = 0; else dx = 0 } }
 
         const st = useCanvasStore.getState()
-        const targetsFor = (objs) => { const t = snapTargets(objs, st.layers, d.movedIds); return d.groupNoSnap ? t.filter(o => !d.groupNoSnap.has(o.id)) : t }
+        // (drag-perf-bar) only the targets near the dragged objects (snapIndex.js: built once per drag)
+        const targetsFor = (objs) => { const t = nearTargets(snapTargets(objs, st.layers, d.movedIds), d, st.objects, st.gridSize || 40, dx, dy); return d.groupNoSnap ? t.filter(o => !d.groupNoSnap.has(o.id)) : t }
 
         /* Live auto-flue (liveFlue.js) — a rack_double_row dragged over a
            column widens its flue in real time to seat it and shrinks back

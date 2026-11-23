@@ -47,7 +47,8 @@ describe('LV — canvas overlays read live positions', () => {
     const c = all.find(x => x.f === 'canvas2/Canvas2.jsx').src
     expect(c).toMatch(/st\.position\(\{ x: v\.panX, y: v\.panY \}\)\s*\n\s*st\.batchDraw\(\)\s*\n(?:\s*\/\/[^\n]*\n)*\s*publishView\(v\)/)
     for (const f of ['canvas2/RackLineLabels.jsx', 'canvas2/SectionNames.jsx', 'canvas2/TallyHighlight.jsx', 'canvas2/HoverHighlight.jsx', 'canvas2/ZoneEdit.jsx', 'canvas2/RowGroupPreview.jsx', 'canvas2/SectionShape.jsx', 'canvas2/ColumnLineLabels.jsx', 'canvas2/SectionBar.jsx'])
-      expect([f, /useLiveObjects\(\)/.test(all.find(x => x.f === f).src)]).toEqual([f, true])
+      // (drag-perf-bar) the row numbers read useLabelObjects() — the live objects, held during a drag that doesn't carry everything
+      expect([f, (f === 'canvas2/RackLineLabels.jsx' ? /useLabelObjects\(\)/ : /useLiveObjects\(\)/).test(all.find(x => x.f === f).src)]).toEqual([f, true])
     for (const f of ['studio/SelectionBar.jsx', 'canvas2/ColumnLineLabels.jsx', 'canvas2/SectionBar.jsx', 'canvas2/IssueHighlight.jsx'])
       expect([f, /useView\(\)/.test(all.find(x => x.f === f).src)]).toEqual([f, true])
   })

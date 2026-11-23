@@ -9,6 +9,7 @@ import { colorOf } from '../utils/sectionAreas'
 import { C, MONO, Note, Btn, Sec } from './cardParts'
 import { Icon } from './Icon'
 import { openTally, useBomCards, cardOpen, selectedLineNos } from './tally'
+import { useSettledStore, useSettledObjects } from '../canvas2/settled'   // (drag-perf-bar) held still during a drag
 
 /* The BOM tab (right card, beside Properties and Elevations): the layout's bill of materials (utils/bom.js) — its
    flags first in the warning style; the buttons Tally · xlsx · CSV; then the Total card (every part of the layout),
@@ -54,7 +55,7 @@ export function Swatch({ color }) {
 /** The Summary (the Tally's, the wide modal's): as the BOM tab — the Total first, then each section under a header band
  *  (#252A27: its swatch, name, R range), the parts in Part | Size | Qty columns, 12 px between groups. */
 export function BomTable({ bom, picked, onPick, wide = false }) {
-  const objects = useCanvasStore(s => s.objects)
+  const objects = useSettledObjects()
   const cell = { padding: wide ? '7px 10px' : '6px 8px', fontSize: wide ? 13 : 12, borderTop: `1px solid ${C.divider}`, verticalAlign: 'top' }
   const head = { ...cell, borderTop: 'none', color: C.muted, fontSize: 11, fontWeight: 500, textAlign: 'left' }
   const all = bomGroups(bom), groups = [...all.filter(g => g.total), ...all.filter(g => !g.total)]
@@ -172,7 +173,7 @@ function PartLines({ g, picked, onPick }) {
 const range = (rows, names, sec = null) => [rows.length ? rowsText(rows, names, sec) : null, `${rows.length} line${rows.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
 
 export function BomTab() {
-  const { objects, T, gs, filename, selectedIds } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, gs: s.gridSize || 40, filename: s.currentFilename, selectedIds: s.selectedIds })))
+  const { objects, T, gs, filename, selectedIds } = useSettledStore((s => ({ objects: s.objects, T: s.elevations, gs: s.gridSize || 40, filename: s.currentFilename, selectedIds: s.selectedIds })))
   const bom = useMemo(() => computeBom(objects, T, { gridSize: gs }), [objects, T, gs])
   // rows selected on the plan: their parts in the Selected card, under the Total (fixes-x)
   const sel = useMemo(() => selectedGroup(bom, selectedLineNos({ objects, selectedIds }, bom.rows)), [bom, objects, selectedIds])

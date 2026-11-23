@@ -28,6 +28,7 @@ import { isDefaultUnits, fmtLength, unitsNow } from '../utils/units'   // (units
 import { isDeep, deepOf, deepGapOf, acrossIn as deepAcrossIn } from '../utils/deep'   // (r2-double-deep)
 import { slideOffColumn } from '../utils/slideOffColumn'   // (fill-columns-e)
 import { useRowGroup } from '../utils/rowGroupTool'
+import { useSettledStore, useSettledObjects } from '../canvas2/settled'   // (drag-perf-bar) held still during a drag
 
 /* The right card's blocks for the states drawn in the mockups (design/studio/Studio.dc.html): nothing selected (C7),
    a rack (C1), a zone (C6) and Check layout (C5). Every other section uses the same parts (cardParts.jsx). */
@@ -45,7 +46,7 @@ export const ftIn = (inches) => {
 
 /** The layout's figures: gross positions, usable (after column and narrow-aisle losses), racks, the building. */
 export function useLayoutFigures() {
-  const { objects, gridSize, elevations } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize || 40, elevations: s.elevations })))
+  const { objects, gridSize, elevations } = useSettledStore((s => ({ objects: s.objects, gridSize: s.gridSize || 40, elevations: s.elevations })))
   const ledger = useBayLedger(objects, gridSize)
   const { result, profile } = useColumnCheck()
   return useMemo(() => {
@@ -72,7 +73,7 @@ export function NothingSelected() {
 
 /** The selection's elevation as the C1 chip: its colour and name (read-only — elevations are set in the Elevations tab). */
 function ElevationChip() {
-  const { objects, T, selectedIds, activeBaySelection } = useCanvasStore(useShallow(s => ({ objects: s.objects, T: s.elevations, selectedIds: s.selectedIds, activeBaySelection: s.activeBaySelection })))
+  const { objects, T, selectedIds, activeBaySelection } = useSettledStore((s => ({ objects: s.objects, T: s.elevations, selectedIds: s.selectedIds, activeBaySelection: s.activeBaySelection })))
   const types = useMemo(() => (T ? cellTypes(objects, T, selectionCells({ objects, selectedIds, activeBaySelection })) : []), [objects, T, selectedIds, activeBaySelection])
   if (!types.length) return null
   const t = types.length === 1 ? typeById(T, types[0].id) : null
@@ -175,7 +176,7 @@ function DeepFields({ obj }) {
 /** C1: a beam rack row — its name, positions and usable, Bays · Beam · Depth · Flue, the elevation, the column
  *  check's two switches. `beam` is the rack panel's beam state (the picked bay's, else the next new bay's). */
 export function RackMain({ obj, newBeam, setNewBeam }) {
-  const { objects, gridSize, elevations } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize || 40, elevations: s.elevations })))
+  const { objects, gridSize, elevations } = useSettledStore((s => ({ objects: s.objects, gridSize: s.gridSize || 40, elevations: s.elevations })))
   const ledger = useBayLedger(objects, gridSize)
   const { result, profile, showMarks, setShowMarks, pickBothSides, setPickBothSides } = useColumnCheck()
   const entry = ledger.racks.get(obj.id)
@@ -203,7 +204,7 @@ export function RackMain({ obj, newBeam, setNewBeam }) {
  *  (Bays · Depth · Beam · Flue), the pending edit's note (canvas2/RowGroupBar.jsx RowGroupNote). An edit here goes to
  *  every row of the group as the Row group says (Ask / Auto apply — utils/rowGroupTool.js). */
 export function RowGroupMain({ obj, newBeam, setNewBeam, rows }) {
-  const { objects, gridSize, elevations } = useCanvasStore(useShallow(s => ({ objects: s.objects, gridSize: s.gridSize || 40, elevations: s.elevations })))
+  const { objects, gridSize, elevations } = useSettledStore((s => ({ objects: s.objects, gridSize: s.gridSize || 40, elevations: s.elevations })))
   const ledger = useBayLedger(objects, gridSize)
   const total = useMemo(() => {
     let t = 0

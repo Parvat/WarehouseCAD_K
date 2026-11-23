@@ -26,6 +26,7 @@ import { useTextSizes, textLz } from '../utils/textSizes'
 import { checkedNos } from '../studio/tally'
 import { lineNamer, lineSections, chipText } from '../utils/lineNames'
 import { buildingOutline } from '../utils/floorGeom'
+import { useLabelObjects } from './settled'   // (drag-perf-bar)
 
 const WORDS = '#767C74', TICK = '#2E7D5B', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 /** The label's size in drawing units: the aisle labels' 10 at the Label size. */
@@ -84,7 +85,7 @@ export function rowReach(fp, places) {
 /** The labels as the canvas draws them now, for a layout that must keep clear of them (the column chain, the door chain):
  *  [] when they are not shown. */
 export function useRowPlaces(on) {
-  const objects = useLiveObjects()
+  const objects = useLabelObjects()   // (drag-perf-bar) held during a drag, placed once on the drop (settled.js)
   const { gs, layers, T } = useCanvasStore(useShallow(s => ({ gs: s.gridSize || 40, layers: s.layers, T: s.elevations })))
   const rowsShown = useViewPrefs(s => s.rowLabels || s.bomFull)
   const labelSize = useLabelPrefs(s => s.labelSize), sizes = useTextSizes(s => s.sizes)
@@ -97,8 +98,9 @@ export function useRowPlaces(on) {
 }
 
 export function RackLineLabels() {
-  // where the racks are drawn now — a drag moves them before the store (live.js)
-  const objects = useLiveObjects()
+  // where the racks are drawn now — a drag moves them before the store (live.js); (drag-perf-bar) held during a drag that
+  // does not carry everything, placed once on the drop (settled.js)
+  const objects = useLabelObjects()
   const { gs, layers, T } = useCanvasStore(useShallow(s => ({ gs: s.gridSize || 40, layers: s.layers, T: s.elevations })))
   const shown = useViewPrefs(s => s.rowLabels || s.bomFull)
   const labelSize = useLabelPrefs(s => s.labelSize)
