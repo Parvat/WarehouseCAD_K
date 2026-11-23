@@ -8004,7 +8004,7 @@ describe('REG — the hand check by real clicks', () => {
       const M = 1000 / 25.4 / 12
       // Project settings: the forklift's aisle in mm; 3.5 m typed
       await L.page.getByRole('button', { name: 'Project settings' }).click(); await L.page.waitForTimeout(250)
-      const aisle = L.page.getByRole('spinbutton', { name: 'Reach truck aisle to pick (ft)' })
+      const aisle = L.page.getByRole('spinbutton', { name: 'Reach truck aisle to pick (ft)', exact: true })
       expect(await aisle.inputValue()).toMatch(/^\d+ mm$/)
       await aisle.click(); await aisle.fill('3.5 m'); await aisle.press('Tab'); await L.page.waitForTimeout(100)
       await L.page.getByRole('button', { name: 'Save', exact: true }).click(); await L.page.waitForTimeout(300)
