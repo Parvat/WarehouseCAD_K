@@ -32,7 +32,7 @@
 
 import { rowBands, rowSegments, layoutSpec } from './sizingLayout'
 import { placementToObject, aisleObjectsForRacks, parentGenerated } from './traceGenerate'
-import { rackFootprint, expandColumnGrid } from './columnCheck'
+import { rackFootprint, expandColumnGrid, columnsOnUprights } from './columnCheck'
 import { layerForType } from '../utils/layers'
 import { buildingOutline, innerOutline, floorSection, faceOutline } from '../utils/floorGeom'
 import { wallColumnDepths } from '../utils/columnGrid'
@@ -769,6 +769,40 @@ export function patternFill(objects, boxPx, pattern, { gridSize = 40, newId = na
     return extendRuns(opened)
   }
   let pass = lay(), rep = [], racks = finish(pass, rep)
+  /* (fill-columns A) No frame on a column. When the racks this Fill makes stand a frame on a column (Check's own rule,
+     columnsOnUprights), the whole run grid slides along the run — every row of the Fill by the same amount, so their
+     uprights still line up across (Row group, the Cross aisle tool) — within the leftover the box's ends leave, to the
+     nearest place with no frame on a column. The places tried are the few that put a frame face just past a column face.
+     A bay is given up only when no place clears every column with all the bays (the most bays, then the smallest
+     slide). Nothing changes where no frame meets a column, and the racks already on the floor are never moved (they
+     are obstacles here, not this Fill's racks). */
+  {
+    const colsW = objects.filter(o => o.type === 'column_grid').flatMap(g => expandColumnGrid(g, gridSize, objects))
+    const hitsIn = (list) => columnsOnUprights({ racks: list, columns: colsW, gridSize }).length
+    const baysIn = (list) => list.reduce((t, o) => t + ((o.beams && o.beams.length) || 0), 0)
+    if (colsW.length && racks.length && hitsIn(racks) > 0) {
+      const orig = pattern, upFt = upIn / 12, shifted = (d) => ({ ...orig, pieces: orig.pieces.map(p => ({ ...p, r0: p.r0 + d })) })
+      const cand = new Set()
+      for (const c of colsW.map(q => rsRect(vert, gridSize, { x: q.x, y: q.y, w: q.w, h: q.h })).filter(q => q.s1 > box.s0 + EPS && q.s0 < box.s1 - EPS)) {
+        for (const pc of orig.pieces) {
+          const k0 = Math.floor((c.r0 - pc.r0) / pitch)
+          for (let k = k0 - 1; k <= k0 + 2; k++) {
+            const f = pc.r0 + k * pitch
+            for (const d of [c.r1 - f + 0.01, c.r0 - (f + upFt) - 0.01]) if (Math.abs(d) < pitch) cand.add(Math.round(d * 960) / 960)
+          }
+        }
+      }
+      let best = { d: 0, hits: hitsIn(racks), bays: baysIn(racks), pass, racks, rep }
+      for (const d of [...cand].sort((a, b) => Math.abs(a) - Math.abs(b) || a - b).slice(0, 48)) {
+        if (best.hits === 0 && Math.abs(d) > Math.abs(best.d) + EPS && best.bays >= baysIn(racks)) break   // nothing nearer can do better
+        pattern = shifted(d)
+        const P = lay(), rp = [], rk = finish(P, rp), h = hitsIn(rk), b = baysIn(rk)
+        if (h < best.hits || (h === best.hits && b > best.bays)) best = { d, hits: h, bays: b, pass: P, racks: rk, rep: rp }
+      }
+      pattern = best.d ? shifted(best.d) : orig
+      pass = best.pass; racks = best.racks; rep = best.rep
+    }
+  }
   const slide = slideFor(pass)
   if (slide) {
     const B = lay(slide)

@@ -5649,6 +5649,39 @@ describe('REG — the hand check by real clicks', () => {
     /** every tunnel bay: [{ id, bay, n }] */
     const tunnelBaysNow = () => L.S('return S.getState().objects.filter(o => Array.isArray(o.tunnelBays)).flatMap(o => o.tunnelBays.map((n, bay) => ({ id: o.id, bay, n })).filter(q => q.n > 0))')
 
+    /* ── fill-columns (option A): Fill never stands a frame on a column ── */
+    it('REG-fill-columns (click): Fill (real drags, the layout’s own row direction) stands no upright frame on a column — a row that would slides within its leftover, a bay given up only where no place works; the racks of the first Fill never move when a second Fill runs beside them; one Ctrl+Z takes the second Fill back', async () => {
+      await open()
+      await clearRacks()
+      const hitsOf = (ids) => L.S(`return import('/src/generate/columnCheck.js').then(C => { const st = S.getState(), gs = st.gridSize || 40
+        const racks = st.objects.filter(o => arg.includes(o.id)), columns = st.objects.filter(o => o.type === 'column_grid').flatMap(g => C.expandColumnGrid(g, gs, st.objects))
+        return C.columnsOnUprights({ racks, columns, gridSize: gs }).length })`, ids)
+      const racksNow = () => L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => o.id)')
+      const b = await innerBox(), at = (u, v) => ({ x: b.x0 + (b.x1 - b.x0) * u, y: b.y0 + (b.y1 - b.y0) * v })
+      const fillDrag = async (a, c) => {
+        const before = new Set(await racksNow())
+        await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(150)
+        await onCanvasAll([a, c]); await L.drag(a, c); await L.page.waitForTimeout(700)
+        await L.page.mouse.move(5, 300); await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+        return (await racksNow()).filter(id => !before.has(id))
+      }
+      // the left part: no frame on a column
+      const left = await fillDrag(at(0.005, 0.005), at(0.55, 0.995))
+      expect(left.length).toBeGreaterThan(0)
+      expect(await hitsOf(left)).toBe(0)
+      // the rest beside it: the first Fill's racks never move, the new ones clear the columns too
+      const placeOf = () => L.S('return S.getState().objects.filter(o => arg.includes(o.id)).map(o => [o.id, o.x, o.y, o.width, o.height].join(":")).sort()', left)
+      const was = await placeOf()
+      const right = await fillDrag(at(0.56, 0.005), at(0.995, 0.995))
+      expect(right.length).toBeGreaterThan(0)
+      expect(await placeOf()).toEqual(was)
+      expect(await hitsOf(right)).toBe(0)
+      // one Ctrl+Z: the second Fill gone, the first as it was
+      await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect(await L.S('return S.getState().objects.filter(o => arg.includes(o.id)).length', right)).toBe(0)
+      expect(await placeOf()).toEqual(was)
+    }, T)
+
     /* ── wall-columns round: a wall column stands fully inside; Generate and Fill lay out from the column face ── */
     it('REG-wall-columns (click): a wall column stands fully inside the building, its outer face on the wall\'s inner face; the layout as saved keeps its rows and Check flags each new clash with "re-run Fill or Generate on this area"; Fill (real drag) starts the rows from the column face on a wall with columns and from the wall on one without (the card\'s X offset typed takes the left wall\'s columns off); every aisle keeps its width', async () => {
       await open()
