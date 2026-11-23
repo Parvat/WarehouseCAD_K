@@ -78,7 +78,16 @@ export function faceIndex(r, side) {
 /** The failing aisles in front of faces with a zone or a wall across them: [{ rack, side ('lo' | 'hi' across), face (faceIndex), bays (its own bay indices), slots ({ bay: [positions with the obstacle in front of their own slot] }),
  *  obstacle ({ kind: 'zone', zone } | { kind: 'wall' }), width (px, the stretch's narrowest), level (1 | 2),
  *  vert (the rows run along y), box (world px: the strip from the face to the obstacle, the stretch long) }]. */
+/* (perf) The last answer, kept: the canvas, the X marks and the usable count ask for the same objects in the same frame. */
+let gapsMemo = { objects: null, key: null, out: null }
 export function faceObstacleGaps(objects, { gridSize = 40, profile = MHE_PROFILES.reach } = {}) {
+  const key = gridSize + '|' + (profile?.key || '') + '|' + (profile?.aisleFt ?? '')
+  if (gapsMemo.objects === objects && gapsMemo.key === key) return gapsMemo.out
+  const out = faceObstacleGaps1(objects, { gridSize, profile })
+  gapsMemo = { objects, key, out }
+  return out
+}
+function faceObstacleGaps1(objects, { gridSize = 40, profile = MHE_PROFILES.reach } = {}) {
   const racks = objects.filter(o => BEAM.has(o.type) && o.width > 0 && o.height > 0 && ((o.rotation || 0) % 90) === 0 && Array.isArray(o.beams))
   if (!racks.length) return []
   const zones = objects.filter(isZone)
@@ -101,18 +110,23 @@ export function faceObstacleGaps(objects, { gridSize = 40, profile = MHE_PROFILE
     const bays = bayRunSpans(r, gridSize), spans = bays.map(b => [b.a, b.c])
     let slotCache = null
     const slotsOf = () => slotCache || (slotCache = positionRunSpans(r, gridSize))
+    /* (perf) only what shares this rack's run span can stand in front of one of its bays — the zones and the racks the
+       same orientation, not in line with it — picked once for the rack, not once per bay (the same answer: every bay's
+       span lies inside the rack's) */
+    const [fr0, fr1] = R(f)
+    const zonesNear = zones.filter(z => { const [zr0, zr1] = R({ x: z.x, y: z.y, w: z.width, h: z.height }); return Math.min(fr1, zr1) - Math.max(fr0, zr0) > E })
+    const racksNear = racks.filter(o => { if (o.id === r.id) return false; const g = foots.get(o.id); if (!!g.rotated !== vert) return false; const [gr0, gr1] = R(g), [gs0, gs1] = S(g); return Math.min(fr1, gr1) - Math.max(fr0, gr0) > E && !(Math.min(s1, gs1) - Math.max(s0, gs0) > E) })
     /** What stands nearest in front of `face` (across) over the run span [a, c], `dir` +1 / −1: { d, kind, zone }. */
     const nearest = (face, dir, a, c) => {
       let best = { d: Infinity, kind: null, zone: null }
       const take = (d, kind, zone = null) => { if (d > -E && d < best.d) best = { d: Math.max(0, d), kind, zone } }
-      for (const z of zones) {
+      for (const z of zonesNear) {
         const zb = { x: z.x, y: z.y, w: z.width, h: z.height }, [zr0, zr1] = R(zb), [zs0, zs1] = S(zb)
         if (!(Math.min(c, zr1) - Math.max(a, zr0) > E)) continue
         take(dir > 0 ? zs0 - face : face - zs1, 'zone', z)
       }
-      for (const o of racks) {
-        if (o.id === r.id) continue
-        const g = foots.get(o.id); if (!!g.rotated !== vert) continue
+      for (const o of racksNear) {
+        const g = foots.get(o.id)
         const [gr0, gr1] = R(g), [gs0, gs1] = S(g)
         if (!(Math.min(c, gr1) - Math.max(a, gr0) > E)) continue
         if (Math.min(s1, gs1) - Math.max(s0, gs0) > E) continue    // in line with it (a piece of the row), not in front

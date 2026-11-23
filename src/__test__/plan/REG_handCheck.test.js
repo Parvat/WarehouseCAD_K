@@ -9489,6 +9489,41 @@ describe('REG — the hand check by real clicks', () => {
       } else it.make = libraryMake(section, n)
       return it
     }
+    /* ── perf: viewport culling changes nothing visible ── */
+    it('REG-perf-cull (click): zoomed into a corner of the plan and panned with the Pan tool, the racks off screen are not drawn (fewer canvas nodes) and the canvas is pixel for pixel the same as with culling off; the selected rack is always drawn', async () => {
+      await open()
+      const fp = await fpOf()
+      // (the pixels stay in the page: the first kept there, the second compared to it)
+      const pix = (keep) => L.page.evaluate((keep) => { const st = window.Konva.stages[0]; st.draw(); const c = st.toCanvas({ pixelRatio: 1 }), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let diff = 0; if (keep) window.__px = d; else { const p = window.__px; for (let i = 0; i < d.length; i++) if (d[i] !== p[i]) diff++ } return { n: st.find('Shape').length, diff } }, keep)
+      const republish = () => L.S('return import("/src/canvas2/live.js").then(LV => LV.useLiveView.setState({ ...LV.useLiveView.getState() }))')
+      const compare = async () => {
+        await L.page.waitForTimeout(400)
+        const a = await pix(true)
+        await L.page.evaluate(() => { window.__noCull = true }); await republish(); await L.page.waitForTimeout(400)
+        const b = await pix(false)
+        await L.page.evaluate(() => { window.__noCull = false }); await republish(); await L.page.waitForTimeout(300)
+        return { on: a.n, off: b.n, differ: b.diff }
+      }
+      // zoomed in on the building's top-left corner: most racks off screen
+      await L.S('S.setState({ zoom: 1.2, panX: 300 - arg.x * 1.2, panY: 200 - arg.y * 1.2 })', { x: fp.x, y: fp.y })
+      let r = await compare()
+      expect(r.on).toBeLessThan(r.off)
+      expect(r.differ).toBe(0)
+      // the Pan tool, a real drag across: still the same pixels
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('p'); await L.page.waitForTimeout(150)
+      await L.page.mouse.move(900, 500); await L.page.mouse.down(); for (let i = 0; i < 20; i++) await L.page.mouse.move(900 - i * 25, 500 - i * 8); await L.page.mouse.up()
+      await L.page.keyboard.press('v')
+      r = await compare()
+      expect(r.differ).toBe(0)
+      // a selected rack far off screen is still drawn (its node there with culling on)
+      const far = await L.S('const st = S.getState(); const r = st.objects.filter(o => /^rack_/.test(o.type)).sort((a, b) => (b.x + b.y) - (a.x + a.y))[0]; S.getState().selectObject(r.id, false); return r.id')
+      await L.page.waitForTimeout(300)
+      const sel = await compare()
+      expect(sel.differ).toBe(0)
+      expect(sel.on).toBeGreaterThan(r.on - 1)
+      expect(far).toBeTruthy()
+    }, T)
+
     /* (basics-triage) one rack in a filled building: a Selective Rack placed where one row of the fixture's racks was (that
        row removed — setup), between real racks — so its snap and overlap are tested against them */
     const filledRackItem = () => {
