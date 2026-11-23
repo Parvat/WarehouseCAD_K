@@ -938,23 +938,36 @@ describe('REG — the hand check by real clicks', () => {
     it('REG-door-types (click): the door tool offers Man door · Dock door · Drive-in door, in that order; each places at its own width — Man 3 ft, Dock 9 ft, Drive-in 12 ft overhead', async () => {
       await open()
       const fp = await fpOf(), gs = await L.S('return S.getState().gridSize || 40'), wt = (fp.wallThicknessFt || 0.25) * gs
+      /* (flaky-tests) stable under the full suite (REG-tally-ticks' approach): every step waits for the state it needs —
+         the building selected, the tool on, the type and its width, the hover on the wall, the door added — by
+         expect.poll, never a fixed sleep; the test has T × 3 */
+      const P = { timeout: 15000, interval: 100 }
       await L.click({ x: fp.x + fp.width * 0.3, y: fp.y })
-      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door' }).click(); await L.page.waitForTimeout(150)
+      await expect.poll(() => L.S('return S.getState().selectedIds.length === 1 && /^fp_/.test(S.getState().objects.find(o => o.id === S.getState().selectedIds[0])?.type || "")'), P).toBe(true)
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door' }).click()
+      await expect.poll(() => L.S('return S.getState().activeTool'), P).toBe('door')
       const bar = L.page.locator('[data-mode-bar="door"]'), seg = bar.getByRole('group', { name: 'Door type' }).getByRole('button')
       expect(await seg.evaluateAll(bs => bs.map(b => b.textContent.trim()))).toEqual(['Man door', 'Dock door', 'Drive-in door'])
-      const place = async (name, fx) => {
+      const doorTool = (code) => L.S('return import("/src/utils/doorTool.js").then(M => { const s = M.useDoorTool.getState(); ' + code + ' })')
+      const place = async (name, fx, wantW) => {
         await bar.getByRole('button', { name }).click()
+        await expect.poll(() => bar.getByLabel('Door width (ft)').inputValue(), P).toBe(wantW)
         const width = await bar.getByLabel('Door width (ft)').inputValue()
+        const n0 = await L.S('return S.getState().objects.length')
         const p = await L.toScreen({ x: fp.x + fp.width * fx, y: fp.y - wt * 0.5 })
-        await L.page.mouse.move(p.x, p.y); await L.page.waitForTimeout(150); await L.page.mouse.click(p.x, p.y); await L.page.waitForTimeout(200)
+        // the hover on the wall first (the click places where the hover is), then the click; the door added
+        await L.page.mouse.move(p.x - 6, p.y); await L.page.mouse.move(p.x, p.y)
+        await expect.poll(() => doorTool('return !!s.hover'), P).toBe(true)
+        await L.page.mouse.click(p.x, p.y)
+        await expect.poll(() => L.S('return S.getState().objects.length'), P).toBe(n0 + 1)
         const d = await L.S('const o = S.getState().objects; return o[o.length - 1]')
         return [width, d.type, Math.round(d.width / gs), d.label, d.meta?.doorType ?? null, Math.abs(d.y - (fp.y + wt)) < 1]
       }
-      expect(await place('Man Door', 0.25)).toEqual(['3', 'struct_egress', 3, 'Man Door', null, true])
-      expect(await place('Dock Door', 0.5)).toEqual(['9', 'struct_loading_dock', 9, 'Dock Door', 'roll-up', true])
-      expect(await place('Drive-in Door', 0.75)).toEqual(['12', 'struct_drive_in', 12, 'Drive-in Door', 'overhead', true])
+      expect(await place('Man Door', 0.25, '3')).toEqual(['3', 'struct_egress', 3, 'Man Door', null, true])
+      expect(await place('Dock Door', 0.5, '9')).toEqual(['9', 'struct_loading_dock', 9, 'Dock Door', 'roll-up', true])
+      expect(await place('Drive-in Door', 0.75, '12')).toEqual(['12', 'struct_drive_in', 12, 'Drive-in Door', 'overhead', true])
       await L.page.keyboard.press('Escape')
-    }, T)
+    }, T * 3)
 
     /* ── 1: the Row group ends with its tool ── */
     it('REG-row-group-done (click): the purple group outline shows only while the Row group tool is on; Done (primary, 28 high, at the right of the mode bar), Esc, ✕ or another tool end the mode — the outline gone at once, nothing selected, no bar', async () => {
