@@ -24,7 +24,8 @@ export function onDark(c) {
 export function ColourPop({ anchor, label, value, onPick, none = false, onClose }) {
   const cell = (c, on, title, extra) => (
     <button key={title} type="button" aria-label={title} title={title} aria-pressed={on} data-colour={c || 'none'} onClick={() => { onPick(c); onClose() }}
-      style={{ width: 24, height: 24, borderRadius: '50%', padding: 0, cursor: 'pointer', border: c && same(c, '#FFFFFF') ? '1px solid #5A615C' : 0,
+      // (polish) a very dark colour (the ink) ringed like white: on the dark popover it would vanish (docs/RESUME.md Polish list)
+      style={{ width: 24, height: 24, borderRadius: '50%', padding: 0, cursor: 'pointer', border: c && (same(c, '#FFFFFF') || onDark(c) !== c) ? '1px solid #5A615C' : 0,
         boxShadow: on ? `0 0 0 2px ${B.island}, 0 0 0 4px ${B.accent}` : 'none', background: c || HATCH, ...extra }} />
   )
   return (
