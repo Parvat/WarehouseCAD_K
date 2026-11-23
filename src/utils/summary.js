@@ -18,6 +18,7 @@ import { numberLines, worldSide } from './rackLines'
 import { positionsPerBeam } from './palletFit'
 import { lostPositions } from '../generate/usableCapacity'
 import { membership, isSection, areaOf } from './sectionAreas'
+import { deepOf } from './deep'   // (r2-double-deep)
 
 export const LOST_REASONS = [
   { key: 'narrow', label: 'Narrow aisle' },
@@ -61,7 +62,7 @@ export function summaryBase(objects, T, { gridSize = 40, ledger = null, check, p
       if (!e.counted[b] || isEmptySide(o, b, s)) return
       const levels = lv ? lv(o, b, s) : (o.levels || 1)
       const face = lv && lv.face ? lv.face(o, b, s) : (o.palletWIn || 40)
-      sides.push({ rackId: o.id, b, s, no: noOf(s), typeId: (typeAt(o, b, s, T) || fallback)?.id ?? null, levels, positions: positionsPerBeam(beamIn, face) * levels })
+      sides.push({ rackId: o.id, b, s, no: noOf(s), typeId: (typeAt(o, b, s, T) || fallback)?.id ?? null, levels, positions: positionsPerBeam(beamIn, face) * levels * deepOf(o) })   // (r2-double-deep)
     })
     ;(e.frameSides || []).forEach(list => { for (const s of list) frames.push({ rackId: o.id, no: noOf(s) }) })
   }

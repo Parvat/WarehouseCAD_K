@@ -1008,6 +1008,8 @@ export function FloatingToolbar({ studio = false } = {}) {
           spineDepthIn:item.meta?.spineDepthIn||4,armThicknessIn:item.meta?.armThicknessIn||3,activeTowerIdx:null}
       })():{}),
       ...(item.type==='rack_double_row'?{flueSpaceIn:item.meta?.flueSpace||9}:{}),
+      // (r2-double-deep) a double-deep rack: its pallets deep and their spacing, the frame depth they are counted from
+      ...(item.meta?.deep?{deep:item.meta.deep,deepGapIn:item.meta.deepGapIn??6,depthIn:42,height:((item.meta.deep*42+(item.meta.deep-1)*(item.meta.deepGapIn??6))/12)*GS}:{}),
       ...levelsFor(item.type),   // 4 levels, like a generated rack (utils/rackLevels.js)
       layerId:layerForType(item.type),   // its layer by type (utils/layers.js)
       /* column_grid is parented like everything else: the columns are the

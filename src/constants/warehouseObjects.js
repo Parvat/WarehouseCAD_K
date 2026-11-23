@@ -80,6 +80,30 @@ export const WAREHOUSE_CATEGORIES = [
           ]
         },
       },
+      // (r2-double-deep) a selective rack two pallets deep on its face — placed by hand (Fill and Generate never make one);
+      // its card sets Number deep, Deep spacing and Back-to-back (utils/deep.js)
+      {
+        id: 'rack_double_deep',
+        type: 'rack_row',
+        label: 'Double-deep Rack',
+        description: 'Two pallets deep — a deep-reach truck picks it',
+        color: '#22c55e',
+        snapType: SNAP_TYPES.END,
+        w: 8, h: 7.5,
+        variants: [
+          { label: '3 bays / 2 deep (42"+6"+42")', w: 24, h: 7.5, bays: 3 },
+        ],
+        meta: { deep: 2, deepGapIn: 6, uprightWidth: 3 },
+        getSnapPoints: (obj) => {
+          const { x, y, width: w, height: h } = obj
+          return [
+            { id: 'left',  x: x,     y: y+h/2, role: 'end',  axis: 'x' },
+            { id: 'right', x: x+w,   y: y+h/2, role: 'end',  axis: 'x' },
+            { id: 'back',  x: x+w/2, y: y,     role: 'back', axis: 'y' },
+            { id: 'front', x: x+w/2, y: y+h,   role: 'back', axis: 'y' },
+          ]
+        },
+      },
       {
         id: 'rack_double_row',
         type: 'rack_double_row',

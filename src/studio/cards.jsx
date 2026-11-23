@@ -25,6 +25,7 @@ import { CardLock } from './CardLock'
 import { Head, BigFigure, Sec, Grid2, Field, InlineField, TextInput, NumInput, SelectField, Row, ToggleRow, Totals, Hint,
   Tag, CountChip, IconBtn, C, MONO, LEVEL, LockedFields } from './cardParts'
 import { isDefaultUnits, fmtLength, unitsNow } from '../utils/units'   // (units) the project's units
+import { isDeep, deepOf, deepGapOf, acrossIn as deepAcrossIn } from '../utils/deep'   // (r2-double-deep)
 
 /* The right card's blocks for the states drawn in the mockups (design/studio/Studio.dc.html): nothing selected (C7),
    a rack (C1), a zone (C6) and Check layout (C5). Every other section uses the same parts (cardParts.jsx). */
@@ -140,8 +141,32 @@ export function RackFields({ obj, newBeam, setNewBeam, group = false }) {
         <Grid2>
           {group ? <>{f.bays}{f.depth}{f.beam}{f.flue}</> : <>{f.bays}{f.beam}{f.depth}{f.flue}</>}
         </Grid2>
+        {!group && isDeep(obj) && <DeepFields obj={obj} />}
       </LockedFields>
     </Sec>
+  )
+}
+
+/** (r2-double-deep) A double-deep rack's own fields: Levels (its elevation's), Number deep (2 …), Deep spacing (in) and
+ *  Back-to-back — each one undo step; the rack re-sized across about its centre (utils/deep.js acrossIn). */
+function DeepFields({ obj }) {
+  const { commitObjectUpdate, gridSize, elevations } = useCanvasStore(useShallow(s => ({ commitObjectUpdate: s.commitObjectUpdate, gridSize: s.gridSize || 40, elevations: s.elevations })))
+  const lv = levelsResolver(elevations), levels = lv ? lv(obj, 0, 0) : (obj.levels || 1)
+  const apply = (patch) => {
+    const next = { ...obj, ...patch }, H = (deepAcrossIn(next) / 12) * gridSize
+    commitObjectUpdate(obj.id, { ...patch, height: H, y: obj.y + (obj.height - H) / 2 })
+  }
+  const b2b = obj.type === 'rack_double_row'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+      <Grid2>
+        <Field label="Levels" title="Set by its elevation (Elevations tab)"><span aria-label="Levels" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, padding: '6px 0' }}>{levels}</span></Field>
+        <Field label="Number deep"><NumInput aria="Number deep" value={deepOf(obj)} min={2} step={1} onCommit={v => { const n = Math.max(2, Math.min(6, Math.round(v))); if (n !== deepOf(obj)) apply({ deep: n }) }} /></Field>
+        <Field label="Deep spacing (in)"><NumInput aria="Deep spacing (in)" value={deepGapOf(obj)} min={0} step={1} onCommit={v => { if (v >= 0 && v !== deepGapOf(obj)) apply({ deepGapIn: v }) }} /></Field>
+      </Grid2>
+      <ToggleRow label="Back-to-back" aria="Back-to-back" title={b2b ? 'Two double-deep faces back to back across a flue' : 'One double-deep face'} on={b2b}
+        onClick={() => apply(b2b ? { type: 'rack_row' } : { type: 'rack_double_row', flueSpaceIn: obj.flueSpaceIn || 9 })} />
+    </div>
   )
 }
 
@@ -159,7 +184,7 @@ export function RackMain({ obj, newBeam, setNewBeam }) {
   const row = obj.rowIndex != null ? ` · row ${obj.rowIndex}` : ''
   return (
     <>
-      <Head caption={`${RACK_NAME[obj.type] || 'Rack'}${row}`} right={<CardLock obj={obj} />}>
+      <Head caption={`${isDeep(obj) ? 'Double-deep' : RACK_NAME[obj.type] || 'Rack'}${row}`} right={<CardLock obj={obj} />}>
         <BigFigure value={n(total)} unit="positions" right={`${n(usable)} usable`} />
       </Head>
       <RackFields obj={obj} newBeam={newBeam} setNewBeam={setNewBeam} />

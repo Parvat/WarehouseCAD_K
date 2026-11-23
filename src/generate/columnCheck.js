@@ -71,6 +71,8 @@ export const MHE_PROFILES = {
   counterbalance: { key: 'counterbalance', label: 'Counterbalance', aisleFt: 12.5, minAisleFt: 12.0, retrievalFt: 7, travelFt: travelFtFor(12.5) },
   pallet_jack:    { key: 'pallet_jack',    label: 'Pallet jack',    aisleFt: 7.0,  minAisleFt: 6.5,  retrievalFt: 4, travelFt: 5.0 },
   walkie_stacker: { key: 'walkie_stacker', label: 'Walkie stacker', aisleFt: 8.5,  minAisleFt: 8.0,  retrievalFt: 5, travelFt: travelFtFor(8.5) },
+  // (r2-double-deep) a reach truck with a pantograph that reaches the second pallet back — the double-deep rack's truck
+  deep_reach:     { key: 'deep_reach',     label: 'Deep reach truck', aisleFt: 10.5, minAisleFt: 10.0, retrievalFt: 6, travelFt: travelFtFor(10.5) },
 }
 
 /* Overlapping by more than float noise (FLOAT_PX) on both axes: rects that only TOUCH never overlap. A rack's edges

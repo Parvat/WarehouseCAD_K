@@ -9,6 +9,7 @@
 import { BEAM_TYPES } from './rackTypes'
 import { innerOutline } from './floorGeom'
 import { wallLineFor, wallReachFt } from '../generate/wallRun'
+import { acrossIn as acrossOf } from './deep'
 
 const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 /** The update that gives beam rack `r` frame depth `depthIn` (inches) — { depthIn, height, y } (the box re-sized across
@@ -18,7 +19,7 @@ export function rackDepthUpdate(r, depthIn, gridSize = 40) {
   if (!r || !BEAM.has(r.type) || !(depthIn > 0)) return null
   const d = Math.round(depthIn * 1000) / 1000
   if ((r.depthIn ?? 42) === d) return null
-  const acrossIn = r.type === 'rack_double_row' ? 2 * d + (r.flueSpaceIn ?? 9) : d
+  const acrossIn = acrossOf(r, d)   // (r2-double-deep) a double-deep rack's deep frames and spacings too
   const height = (acrossIn / 12) * gridSize
   return { depthIn: d, height, y: r.y + (r.height - height) / 2 }
 }

@@ -47,10 +47,11 @@ describe('SC — parts', () => {
 })
 
 describe('SC — the states', () => {
-  it('SC-C1: a rack — "Double deep · row N", positions and usable, Bays · Beam · Depth · Flue, the elevation chip, the two switches, then its rack lines\' summary (summary round — was: the Layout totals)', () => {
+  it('SC-C1: a rack — "Back-to-back · row N" (r2-double-deep — was: Double deep), positions and usable, Bays · Beam · Depth · Flue, the elevation chip, the two switches, then its rack lines\' summary (summary round — was: the Layout totals)', () => {
     const c = read('studio/cards.jsx')
     // (doors-edit round: the padlock at the right of every card head)
-    expect(c).toMatch(/<Head caption=\{`\$\{RACK_NAME\[obj\.type\] \|\| 'Rack'\}\$\{row\}`\} right=\{<CardLock obj=\{obj\} \/>\}>\n\s+<BigFigure value=\{n\(total\)\} unit="positions" right=\{`\$\{n\(usable\)\} usable`\} \/>/)
+    // (r2-double-deep) a double-deep rack's caption is Double-deep; a pair's is Back-to-back (rackTypes.js)
+    expect(c).toMatch(/<Head caption=\{`\$\{isDeep\(obj\) \? 'Double-deep' : RACK_NAME\[obj\.type\] \|\| 'Rack'\}\$\{row\}`\} right=\{<CardLock obj=\{obj\} \/>\}>\n\s+<BigFigure value=\{n\(total\)\} unit="positions" right=\{`\$\{n\(usable\)\} usable`\} \/>/)
     for (const k of ['label="Bays"', "'Beam'", 'label="Depth"', 'label="Flue"', '<ElevationChip />', 'label="Require pick both sides"', 'label="Show markings"']) expect([k, c.includes(k)]).toEqual([k, true])
     expect(read('components/RightPanel/PropertiesPanel.jsx')).toMatch(/\{obj\.activeBayIdx != null \? <BaySummary obj=\{obj\} \/> : <LineSummary obj=\{obj\} \/>\}/)
     expect(c).toMatch(/height: 26, padding: '0 8px', borderRadius: 6, background: C\.inset, fontSize: 12/)   // the elevation chip

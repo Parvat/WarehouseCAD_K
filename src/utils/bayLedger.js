@@ -29,6 +29,7 @@ import { BEAM_TYPES } from './rackTypes'
 import { positionsPerBeam } from './palletFit'
 import { levelsResolver } from './elevations'
 import { isEmptySide } from './bayEmpty'
+import { deepOf } from './deep'   // (r2-double-deep)
 
 const BEAM = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R1)
 const EPS = 1e-6
@@ -77,7 +78,8 @@ function frameLines(r, gridSize) {
 
 /** Positions one bay holds: pallets on the beam × levels, per face (a pair has two) — each face's levels from its
  *  elevation type (utils/elevations.js), else the rack's own `levels`. */
-const bayPositions = (r, b, bi, lv) => {
+const bayPositions = (r, b, bi, lv) => deepOf(r) * bayPositions1(r, b, bi, lv)   // (r2-double-deep) every pallet deep
+const bayPositions1 = (r, b, bi, lv) => {
   const per = positionsPerBeam(b, r.palletWIn || 40)
   // a pair's empty bay side holds nothing (utils/bayEmpty.js)
   // (a tunnel bay: its bottom levels gone — tunnel round)
@@ -88,7 +90,7 @@ const bayPositions = (r, b, bi, lv) => {
 }
 
 let cache = { objects: null, key: null, ledger: null }
-const keyOf = (racks) => racks.map(r => [r.id, r.type, r.x, r.y, r.width, r.height, r.rotation || 0, r.beams.join('/'), r.levels, r.palletWIn, r.uprightWidth, JSON.stringify([r.elevType, r.elevSides, r.elevBays, r.bayEmpty, r.tunnelBays])].join(',')).join(';')
+const keyOf = (racks) => racks.map(r => [r.id, r.type, r.x, r.y, r.width, r.height, r.rotation || 0, r.beams.join('/'), r.levels, r.palletWIn, r.uprightWidth, JSON.stringify([r.elevType, r.elevSides, r.elevBays, r.bayEmpty, r.tunnelBays, r.deep, r.deepGapIn])].join(',')).join(';')
 /* the types' level counts (a type edited to more levels changes every bay that carries it) */
 const tableKey = (T) => { return T ? T.defaultId + ':' + T.types.map(t => t.id + '=' + t.levels.length + '/' + (t.palletId || '')).join(',') + '|' + (T.project?.pallets || []).map(p => p.id + '=' + p.faceIn).join(',') : '' }
 

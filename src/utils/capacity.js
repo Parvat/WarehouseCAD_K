@@ -13,6 +13,7 @@ import { DEFAULT_RULES } from '../rules/defaults'
 // never import each other); re-exported here, where they have always been imported from.
 import { UPRIGHT_CLEARANCE_IN, PALLET_GAP_IN, positionsPerBeam } from './palletFit'
 import { isEmptySide } from './bayEmpty'
+import { deepOf } from './deep'   // (r2-double-deep)
 export { UPRIGHT_CLEARANCE_IN, PALLET_GAP_IN, positionsPerBeam }
 
 /** Position `i`'s own [startIn, endIn) footprint along the beam — LOCAL to
@@ -94,14 +95,16 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
     const per = (i, side) => (levelsAt?.face ? positionsPerBeam(beams[i], levelsAt.face(obj, i, side)) : palletsPerBay[i])
     // (a tunnel bay without a types table: its bottom levels gone — tunnel round)
     const tl = (i) => Math.max(0, levels - (Array.isArray(obj.tunnelBays) ? obj.tunnelBays[i] || 0 : 0))
-    const total         = levelsAt ? beams.reduce((s, _, i) => s + per(i, 0) * levelsAt(obj, i, 0), 0) : beams.reduce((s, _, i) => s + palletsPerBay[i] * tl(i), 0)
+    const dp = deepOf(obj)   // (r2-double-deep) every pallet deep
+    const total         = dp * (levelsAt ? beams.reduce((s, _, i) => s + per(i, 0) * levelsAt(obj, i, 0), 0) : beams.reduce((s, _, i) => s + palletsPerBay[i] * tl(i), 0))
     return {
       type:    'beam',
       bays:    beams.length,
       levels,
-      groundTotal,
+      deep:    dp,
+      groundTotal: groundTotal * dp,
       total,
-      label:   `${total} PAL (${groundTotal} × ${levels}L)`,
+      label:   dp > 1 ? `${total} PAL (${groundTotal} × ${levels}L × ${dp} deep)` : `${total} PAL (${groundTotal} × ${levels}L)`,
       detail:  palletsPerBay.map((p, i) => `Bay ${i+1}: ${p} pal`),
     }
   }
@@ -116,7 +119,8 @@ export function getRackCapacity(obj, rules = DEFAULT_RULES, levelsAt = null) {
     const groundTotal   = palletsPerBay.reduce((s, p, i) => s + p * sidesAt(i), 0)
     const per = (i, side) => (levelsAt?.face ? positionsPerBeam(beams[i], levelsAt.face(obj, i, side)) : palletsPerBay[i])
     const tl = (i) => Math.max(0, levels - (Array.isArray(obj.tunnelBays) ? obj.tunnelBays[i] || 0 : 0))
-    const total         = levelsAt ? beams.reduce((s, _, i) => s + per(i, 0) * levelsAt(obj, i, 0) + per(i, 1) * levelsAt(obj, i, 1), 0) : beams.reduce((s, p, i) => s + palletsPerBay[i] * sidesAt(i) * tl(i), 0)
+    const dp = deepOf(obj)   // (r2-double-deep) each face every pallet deep (2 + 2: 4 deep)
+    const total         = dp * (levelsAt ? beams.reduce((s, _, i) => s + per(i, 0) * levelsAt(obj, i, 0) + per(i, 1) * levelsAt(obj, i, 1), 0) : beams.reduce((s, p, i) => s + palletsPerBay[i] * sidesAt(i) * tl(i), 0))
     return {
       type:    'beam',
       bays:    beams.length,
