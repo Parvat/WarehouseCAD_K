@@ -26,6 +26,7 @@
 
 import { BEAM_TYPES } from '../utils/rackTypes'
 import { hasEmpty, isEmptySide } from '../utils/bayEmpty'
+import { deepOf, deepGapOf } from '../utils/deep'   // (r2-double-deep)
 
 /* The locked rack symbology. Literal by design: CLAUDE.md keeps canvas object
    colours out of the theme system, since a token here would repaint the
@@ -83,7 +84,24 @@ export function rackRowOps(obj, gridSize) {
 
   const uprights = uprightsOp(xs, upW, [{ y, h }])
   if (uprights) ops.push(uprights)
+  const dd = deepLinesOp(obj, xs, upW, [{ y, h, dir: 1 }], gridSize)
+  if (dd) ops.push(dd)
   return ops
+}
+
+/** (r2-double-deep) A double-deep rack's frame lines: in each bay, a dashed line between the front and the rear pallet
+ *  positions — across the middle of each deep spacing — on each face (`bands`: { y, h } of each face). One op. */
+function deepLinesOp(obj, xs, upW, bands, gridSize) {
+  const n = deepOf(obj)
+  if (n < 2) return null
+  const d = ((obj.depthIn ?? 42) / 12) * gridSize, g = (deepGapOf(obj) / 12) * gridSize
+  let p = ''
+  for (const b of bands) for (let k = 1; k < n; k++) {
+    const yy = b.y + k * d + (k - 0.5) * g
+    if (!(yy > b.y && yy < b.y + b.h)) continue
+    for (let i = 0; i + 1 < xs.length; i++) p += `M${xs[i] + upW} ${yy}L${xs[i + 1]} ${yy}`
+  }
+  return p ? { op: 'path', d: p, name: 'deep-line', stroke: RACK_PALETTE.divider, strokeWidth: RACK_LINE.hair, dash: [4, 3], opacity: 0.95 } : null
 }
 
 /** Every upright frame of a beam rack, drawn to scale: a filled rect at the
@@ -175,6 +193,9 @@ export function rackDoubleRowOps(obj, gridSize) {
 
   const uprights = uprightsOp(xs, upW, [{ y: topY, h: rowH }, { y: botY, h: rowH }])
   if (uprights) ops.push(uprights)
+  // (r2-double-deep) each face deep: counted from its aisle face inward (the top face from its top, the bottom from its bottom)
+  const dd = deepLinesOp(obj, xs, upW, [{ y: topY, h: rowH }, { y: botY, h: rowH }], gridSize)
+  if (dd) ops.push(dd)
   return ops
 }
 

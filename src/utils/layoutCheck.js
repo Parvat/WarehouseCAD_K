@@ -62,6 +62,7 @@ import { useDragPreview } from '../canvas2/dragPreview'
 import { closedZones, walkwayInNow } from './zoneCheck'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { equipmentResolver } from './equipment'
+import { isDeep, deepOf, reachesDeep } from './deep'   // (r2-double-deep)
 import { rackLinesNow } from './rackLines'
 import { doorClearRects, DOOR_NAMES } from './doorClear'
 import { DEFAULT_FILL_SETTINGS } from '../generate/fillRacking'
@@ -276,6 +277,10 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
       if (bad.length) warnings.push({ severity: 'warning', kind: 'oversized', ids: [r.id], box: boxOf(f),
         highlight: bad.map(i => bayRect(r, i, gridSize)).filter(Boolean).map(b => shade(b, HL.amber)),
         text: `${name(r)}: bay${bad.length > 1 ? 's' : ''} ${bad.map(i => `${i + 1} (${r.beams[i]}")`).join(', ')} too short for a ${r.palletWIn || 40}" pallet — hold${bad.length > 1 ? '' : 's'} nothing` })
+    }
+    // (r2-double-deep) a double-deep rack is picked by a deep-reach truck: any other truck reaches its first pallet only
+    if (isDeep(r) && !reachesDeep(profile.key)) {
+      warnings.push({ severity: 'warning', kind: 'deep-reach', ids: [r.id], box: boxOf(f), highlight: [outline(f, HL.amber)], text: `${name(r)}: ${deepOf(r)} deep — needs a deep-reach truck (its equipment is ${profile.label || profile.key})` })
     }
     if (((r.rotation || 0) % 90) !== 0 && cols.length) {
       warnings.push({ severity: 'warning', kind: 'angled', ids: [r.id], box: boxOf(f), highlight: [outline(f, HL.amber)], text: `${name(r)}: angled ${Math.round(r.rotation)}° — its column losses weren't checked` })

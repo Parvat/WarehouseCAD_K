@@ -19,7 +19,7 @@
 
 export const RACK_TYPES = {
   rack_row:           { family: 'beam',     faces: 1, card: 'Selective',     check: 'Single row',         generate: 'Rack Row' },
-  rack_double_row:    { family: 'beam',     faces: 2, card: 'Double deep',   check: 'Double row',         generate: 'Double Row' },
+  rack_double_row:    { family: 'beam',     faces: 2, card: 'Back-to-back',   check: 'Double row',         generate: 'Double Row' },
   rack_drive_in:      { family: 'lane',     flow: 'LIFO', card: 'Drive-in',      check: 'Drive-in rack',      generate: 'Drive-In Rack' },
   rack_drive_through: { family: 'lane',     flow: 'FIFO', card: 'Drive-through', check: 'Drive-through rack', generate: 'Drive-Through Rack' },
   rack_pushback:      { family: 'lane',     flow: 'LIFO', card: 'Pushback',      check: 'Pushback rack',      generate: 'Push-Back Rack' },

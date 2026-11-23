@@ -18,6 +18,7 @@ import { levelsResolver } from '../utils/elevations'
 import { isEmptySide } from '../utils/bayEmpty'
 import { bayLedger } from '../utils/bayLedger'
 import { worldSide, rackLinesNow as rackLinesFor } from '../utils/rackLines'
+import { deepOf } from '../utils/deep'   // (r2-double-deep)
 
 export const TALLY_H = 330, TALLY_H_MIN = 200, TALLY_MAX_FRAC = 0.7, TALLY_FOCUS_FRAC = 0.85
 /** The drawer's place: full width, left 16 to right 16, bottom 20 (the islands'). While it is open the bottom-right
@@ -107,8 +108,8 @@ export function lineFigures(objects, line, gridSize = 40, elevations = null) {
       for (const s of sides) {
         if (isEmptySide(r, bi, s)) continue
         bays++
-        positions += lv ? (lv.face ? positionsPerBeam(b, lv.face(r, bi, s)) : positionsPerBeam(b, r.palletWIn || 40)) * lv(r, bi, s)
-          : positionsPerBeam(b, r.palletWIn || 40) * (r.levels || 1)
+        positions += deepOf(r) * (lv ? (lv.face ? positionsPerBeam(b, lv.face(r, bi, s)) : positionsPerBeam(b, r.palletWIn || 40)) * lv(r, bi, s)
+          : positionsPerBeam(b, r.palletWIn || 40) * (r.levels || 1))   // (r2-double-deep) every pallet deep
       }
     })
   }

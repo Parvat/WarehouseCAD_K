@@ -9489,6 +9489,63 @@ describe('REG — the hand check by real clicks', () => {
       } else it.make = libraryMake(section, n)
       return it
     }
+    /* ── r2-double-deep: the Double-deep Rack ── */
+    it('REG-double-deep (click): the Racking library\u2019s Double-deep Rack places a selective rack 2 deep (42″ + 6″ + 42″ across) — its card "Double-deep" with Levels, Number deep 2, Deep spacing 6 in and Back-to-back off; positions, beams, decks and frames twice a 1-deep rack\u2019s; a dashed line between the front and rear positions in each bay (plan and PDF); Check warns unless the truck is a deep-reach truck; Back-to-back on: 4 deep (one undo); Number deep 3 typed: 3 deep', async () => {
+      await open()
+      await basicsClearRacks()
+      const sp = (await openSpot(14)) || (await openSpot(8)) || (await openSpot(3)), v = await viewAt(), at = v.s(sp.x, sp.y)
+      const id = await libraryMake('Racking', 'Double-deep Rack', at)(() => {})
+      expect(id).toBeTruthy()
+      const gs = await gs7(), objNow = () => L.S('return S.getState().objects.find(o => o.id === arg)', id)
+      let o = await objNow()
+      expect([o.type, o.deep, o.deepGapIn, o.depthIn, Math.round((o.height / gs) * 12)]).toEqual(['rack_row', 2, 6, 42, 90])
+      // the card
+      await L.S('S.getState().selectObject(arg, false)', id); await wait(300)
+      const card = L.page.locator('[data-island="right-card"]')
+      expect(await card.textContent()).toContain('Double-deep')
+      expect([await card.getByLabel('Levels').count(), await card.getByRole('spinbutton', { name: 'Number deep' }).inputValue(), await card.getByRole('spinbutton', { name: 'Deep spacing (in)' }).inputValue(), await card.getByRole('switch', { name: 'Back-to-back' }).getAttribute('aria-checked')]).toEqual([1, '2', '6', 'false'])
+      // counts: twice a 1-deep rack's — positions (capacity and the bay ledger), beams, decks, frames
+      const counts = () => L.S(`return Promise.all([import('/src/utils/capacity.js'), import('/src/utils/bom.js'), import('/src/utils/bayLedger.js'), import('/src/utils/elevations.js')]).then(([C, B, BL, E]) => {
+        const st = S.getState(), gs = st.gridSize || 40, o = st.objects.find(x => x.id === arg), one = { ...o, deep: 1 }
+        const lv = E.levelsResolver(st.elevations)
+        const bomOf = (list) => { const b = B.computeBom(list, st.elevations, { gridSize: gs }), q = (p) => b.lines.filter(l => l.part === p && b.rows !== undefined ? true : l.part === p).reduce((t, l) => t + l.qty, 0); return { beams: q('Beam'), decks: q('Wire deck'), frames: q('Upright frame') } }
+        const others = st.objects.filter(x => x.id !== arg)
+        return { cap: C.getRackCapacity(o, undefined, lv).total, cap1: C.getRackCapacity(one, undefined, lv).total,
+          led: BL.bayLedger(st.objects, gs, st.elevations).racks.get(arg).positions, led1: BL.bayLedger([...others, one], gs, st.elevations).racks.get(arg).positions,
+          bom: bomOf(st.objects), bom1: bomOf([...others, one]) } })`, id)
+      let c = await counts()
+      expect(c.cap1).toBeGreaterThan(0)
+      expect([c.cap, c.led]).toEqual([c.cap1 * 2, c.led1 * 2])
+      expect([c.bom.beams, c.bom.decks, c.bom.frames]).toEqual([c.bom1.beams * 2, c.bom1.decks * 2, c.bom1.frames * 2])
+      // the plan and the PDF: the dashed line between front and rear positions, one per bay
+      const deepOps = () => L.S('return import("/src/render/rackOps.js").then(M => { const op = (M.rackDrawOps(S.getState().objects.find(o => o.id === arg), { gridSize: S.getState().gridSize || 40 }) || []).find(x => x.name === "deep-line"); return op ? { n: (op.d.match(/M/g) || []).length, dash: !!op.dash } : null })', id)
+      expect(await deepOps()).toEqual({ n: o.beams.length, dash: true })
+      const svg = await L.S('return import("/src/export/pdfExport.js").then(M => M.buildLayoutSVG(S.getState().objects, S.getState().layers, S.getState().gridSize || 40, { title: "t", elevations: S.getState().elevations }).svg)')
+      expect(/stroke-dasharray="4,3"|stroke-dasharray="4 3"/.test(svg)).toBe(true)
+      // Check: a reach truck (the project's) reaches only its first pallet
+      const deepWarn = () => L.S('return import("/src/utils/layoutCheck.js").then(M => M.checkLayout(S.getState().objects, { gridSize: S.getState().gridSize || 40, elevations: S.getState().elevations }).warnings.filter(w => w.kind === "deep-reach" && w.ids.includes(arg)).map(w => w.text))', id)
+      expect((await deepWarn())[0]).toMatch(/2 deep — needs a deep-reach truck/)
+      const deepOk = await L.S('return Promise.all([import("/src/utils/layoutCheck.js"), import("/src/generate/columnCheck.js")]).then(([M, CC]) => M.checkLayout(S.getState().objects, { gridSize: S.getState().gridSize || 40, profile: CC.MHE_PROFILES.deep_reach }).warnings.filter(w => w.kind === "deep-reach").length)')
+      expect(deepOk).toBe(0)
+      // Back-to-back on (the card's switch): a pair 2 + 2 deep — one undo
+      const h0 = await L.S('return S.getState().historyIndex')
+      await card.getByRole('switch', { name: 'Back-to-back' }).click(); await wait(300)
+      o = await objNow()
+      expect([o.type, await L.S('return S.getState().historyIndex'), Math.round((o.height / gs) * 12)]).toEqual(['rack_double_row', h0 + 1, 2 * 90 + (o.flueSpaceIn || 9)])
+      c = await counts()
+      expect(c.cap).toBe(c.cap1 * 2)
+      expect(await card.textContent()).toContain('Double-deep')
+      // Number deep 3, typed: 3 deep each face
+      const nd = card.getByRole('spinbutton', { name: 'Number deep' })
+      await nd.click(); await nd.fill('3'); await nd.press('Enter'); await wait(300)
+      o = await objNow(); c = await counts()
+      expect([o.deep, c.cap, Math.round((o.height / gs) * 12)]).toEqual([3, c.cap1 * 3, 2 * (3 * 42 + 2 * 6) + (o.flueSpaceIn || 9)])
+      // Ctrl+Z twice: back to 2 deep, then a single face
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Control+z'); await wait(200); await L.page.keyboard.press('Control+z'); await wait(250)
+      o = await objNow()
+      expect([o.type, o.deep]).toEqual(['rack_row', 2])
+    }, T)
+
     /* (basics-triage) one rack in a filled building: a Selective Rack placed where one row of the fixture's racks was (that
        row removed — setup), between real racks — so its snap and overlap are tested against them */
     const filledRackItem = () => {

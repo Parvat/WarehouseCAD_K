@@ -61,6 +61,8 @@ export const DEFAULT_RULES = {
        about 7'; a walkie stacker (straddle) stacks at right angles in about 8' 6" */
     pallet_jack:    { aisleFt: 7.0,  minAisleFt: 6.5,  travelFt: 5.0,  crossAisleFt: 6 },     // space to move 5' (60")
     walkie_stacker: { aisleFt: 8.5,  minAisleFt: 8.0,  travelFt: travelFtFor(8.5),  crossAisleFt: 7 },
+    // (r2-double-deep) the double-deep rack's truck: a reach truck's aisle, a pantograph to the second pallet back
+    deep_reach:     { aisleFt: 10.5, minAisleFt: 10.0, travelFt: travelFtFor(10.5), crossAisleFt: 9 },
   },
 
   clearances: { esfrBelowDeflectorIn: 18, locked: true },
@@ -80,6 +82,7 @@ export const MHE_LABELS = {
   counterbalance: 'Counterbalance',
   pallet_jack:    'Pallet jack',
   walkie_stacker: 'Walkie stacker',
+  deep_reach:     'Deep reach truck',
 }
 
 /* The lane-storage types, so validation and the form can iterate them without

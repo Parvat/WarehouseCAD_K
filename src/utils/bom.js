@@ -35,6 +35,7 @@ import { numberLines, worldSide } from './rackLines'
 import { isSection, polygonOf, pointInPolygon } from './sectionAreas'
 import { lineNamer, namedRows, lineSections } from './lineNames'
 import { isDefaultUnits, fmtLength, unitsNow } from '../utils/units'   // (units) the project's units
+import { deepOf, deepGapOf } from './deep'   // (r2-double-deep)
 
 export const BOM_DEFAULTS = {
   decks: [
@@ -141,11 +142,12 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
       const beamed = t ? beamLevelCount(t) : tn ? Math.max(0, (r.levels || 1) - tn) : Math.max(0, (r.levels || 1) - 1)
       if (!beamed) return
       const face = beamFace(t), no = noOf(r, s)
-      add('Beam', `${inch(beamIn)} × ${inch(face)} face`, beamed * 2, r.id, beamIn * 100 + face, no, beamed)
-      add('Safety pin', '', beamed * 4, r.id, 0, no)
+      const dp = deepOf(r)   // (r2-double-deep) each frame line deep has its own beams, pins and decks
+      add('Beam', `${inch(beamIn)} × ${inch(face)} face`, beamed * 2 * dp, r.id, beamIn * 100 + face, no, beamed * dp)
+      add('Safety pin', '', beamed * 4 * dp, r.id, 0, no)
       const set = deckSet(S.decks, beamIn)
       if (!set || !set.length) { flag('deck-' + n2(beamIn), `Set decks for ${n2(beamIn)} in beams`, r.id); return }
-      for (const w of set) add('Wire deck', `${inch(w)} × ${inch(depth)}`, beamed, r.id, w * 1000 + depth, no)
+      for (const w of set) add('Wire deck', `${inch(w)} × ${inch(depth)}`, beamed * dp, r.id, w * 1000 + depth, no)
     })
     // frames: the ledger's (a shared one once; a pair side's only beside a bay of that side)
     /* a frame's height on its side: the taller of the bays it stands between there */
@@ -163,9 +165,14 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
     sidesAt.forEach((list, k) => {
       for (const s of list) {
         const h = heightAt(k, s)
-        add('Upright frame', h == null ? `height not set × ${inch(depth)}` : `${ftIn(h)} × ${inch(depth)}`, 1, r.id, (h || 0) * 1000 + depth, noOf(r, s))
+        const dp = deepOf(r)   // (r2-double-deep) a frame for each deep, anchored; the deep frames tied by row spacers
+        add('Upright frame', h == null ? `height not set × ${inch(depth)}` : `${ftIn(h)} × ${inch(depth)}`, dp, r.id, (h || 0) * 1000 + depth, noOf(r, s))
         if (h == null) flag('no-height', (n) => `${n} frame${n === 1 ? '' : 's'} with no height (no elevation)`, r.id)
-        add('Anchor', '', 2 * (Number(S.anchorsPerFoot) || 0), r.id, 0, noOf(r, s))
+        add('Anchor', '', 2 * dp * (Number(S.anchorsPerFoot) || 0), r.id, 0, noOf(r, s))
+        if (dp > 1) {
+          const n = (h || 0) > (Number(S.spacerBreakFt) || 16) * 12 + 1e-6 ? SPACERS_ABOVE : SPACERS_UP_TO
+          add('Row spacer', `${inch(deepGapOf(r))} deep spacing`, n * (dp - 1), r.id, deepGapOf(r), noOf(r, s))
+        }
       }
       // a back-to-back pair's two frames at this upright: tied by row spacers between them — 1 up to the height set, 2
       // above; 2: one on each side's line, 1: on the pair's first line
