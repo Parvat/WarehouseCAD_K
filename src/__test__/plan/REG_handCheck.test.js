@@ -7918,6 +7918,61 @@ describe('REG — the hand check by real clicks', () => {
     }, T)
 
     /* ── units round: the project's units (utils/units.js) ── */
+    it('REG-units-2 (click): every other length field in the project\u2019s units — in Metric, Project settings\u2019 forklift aisle shows mm and takes 3.5 m; the Fill bar\u2019s Aisle shows mm and takes 3300 (mm); the Door bar\u2019s Width takes 1200 (mm) and the door placed is that wide; the same fields take 12\'6 in Imperial; switching units moves nothing (Rule 7)', async () => {
+      await open()
+      const geom = () => L.S('return S.getState().objects.filter(o => o.type !== "elevation_types").map(o => [o.id, o.x, o.y, o.width, o.height]).sort()')
+      const before = await geom()
+      const setUnits = async (sys) => {
+        await L.page.getByRole('button', { name: 'Project settings' }).click(); await L.page.waitForTimeout(250)
+        await L.page.getByRole('group', { name: 'Units' }).getByRole('combobox', { name: 'Units' }).selectOption(sys); await L.page.waitForTimeout(100)
+        await L.page.getByRole('button', { name: 'Save', exact: true }).click(); await L.page.waitForTimeout(300)
+      }
+      await setUnits('metric')
+      expect(await geom()).toEqual(before)
+      const M = 1000 / 25.4 / 12
+      // Project settings: the forklift's aisle in mm; 3.5 m typed
+      await L.page.getByRole('button', { name: 'Project settings' }).click(); await L.page.waitForTimeout(250)
+      const aisle = L.page.getByRole('spinbutton', { name: 'Reach truck aisle to pick (ft)' })
+      expect(await aisle.inputValue()).toMatch(/^\d+ mm$/)
+      await aisle.click(); await aisle.fill('3.5 m'); await aisle.press('Tab'); await L.page.waitForTimeout(100)
+      await L.page.getByRole('button', { name: 'Save', exact: true }).click(); await L.page.waitForTimeout(300)
+      const ft = await L.S('return S.getState().elevations.project.equipment.trucks.reach.aisleFt')
+      expect(Math.round(ft * 1e4) / 1e4).toBe(Math.round(3.5 * M * 1e4) / 1e4)
+      // the Fill bar: its Aisle in mm (the forklift's 3.5 m); a bare 3300 is mm
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(200)
+      const fa = L.page.getByRole('toolbar', { name: 'Fill racking options' }).getByRole('textbox', { name: 'Aisle', exact: true })
+      expect(await fa.inputValue()).toBe('3500 mm')
+      await fa.click(); await fa.fill('3300'); await fa.press('Enter'); await L.page.waitForTimeout(150)
+      const typed = await L.S('return import("/src/utils/fillTool.js").then(F => F.useFillTool.getState().aisleFt)')
+      expect(Math.round(typed * 1e4) / 1e4).toBe(Math.round(3.3 * M * 1e4) / 1e4)
+      expect(await fa.inputValue()).toBe('3300 mm')
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      // the Door bar: Width 1200 (mm); the door placed that wide
+      const fp = await fpOf()
+      await L.click({ x: fp.x + fp.width * 0.3, y: fp.y }); await L.page.waitForTimeout(150)
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add door' }).click(); await L.page.waitForTimeout(150)
+      const dw = L.page.locator('[data-mode-bar="door"]').getByRole('textbox', { name: 'Door width (ft)' })
+      await dw.click(); await dw.fill('1200'); await dw.press('Enter'); await L.page.waitForTimeout(150)
+      expect(await dw.inputValue()).toBe('1200 mm')
+      const n0 = await L.S('return S.getState().objects.length')
+      const at = await L.toScreen({ x: fp.x + fp.width * 0.45, y: fp.y + 2 })
+      await L.page.mouse.move(at.x, at.y + 4); await L.page.waitForTimeout(150); await L.page.mouse.click(at.x, at.y + 4); await L.page.waitForTimeout(300)
+      const door = await L.S('const st = S.getState(); return st.objects.length > arg ? st.objects[st.objects.length - 1] : null', n0)
+      expect(door).toBeTruthy()
+      const gs = await gs7()
+      expect([Math.round(door.meta.doorWidth * 1e3) / 1e3, Math.round((door.width / gs) * 1e3) / 1e3]).toEqual([Math.round(1.2 * M * 1e3) / 1e3, Math.round(1.2 * M * 1e3) / 1e3])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      // back to Imperial: the same fields read ft-in again; nothing moved by the switch
+      const g2 = await geom()
+      await setUnits('imperial')
+      expect(await geom()).toEqual(g2)
+      await L.page.mouse.move(5, 890); await L.page.keyboard.press('f'); await L.page.waitForTimeout(200)
+      const fa2 = L.page.getByRole('toolbar', { name: 'Fill racking options' }).getByRole('textbox', { name: 'Aisle', exact: true })
+      await fa2.click(); await fa2.fill("12'6"); await fa2.press('Enter'); await L.page.waitForTimeout(150)
+      expect([await L.S('return import("/src/utils/fillTool.js").then(F => F.useFillTool.getState().aisleFt)'), await fa2.inputValue()]).toEqual([12.5, '12′ 6″'])
+      await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape')
+    }, T)
+
     it('REG-units (click): a card length field takes every form — 12\'6, 12 ft 6 in, 150 in, 3.8 m, 3800 mm and a bare number in the project unit (feet, then mm after Project settings → Units → Metric); in Metric the card shows mm and the label drops (ft), the PDF prints metres on the plan and the xlsx sizes are mm; Imperial at 1/2 in shows halves; the geometry never changes with the unit', async () => {
       await open(); await drawView()
       const gs = await gs7(), card = L.page.locator('[data-island="right-card"]')

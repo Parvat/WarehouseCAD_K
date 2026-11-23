@@ -239,6 +239,6 @@ describe('SG-6 / SG-7 / SG-8', () => {
     expect(/\{p\.name\} · \{p\.depthIn\}/.test(read('components/Elevations/ElevationsTab.jsx'))).toBe(false)
     expect(read('components/RightPanel/panels/RackRowPanelCore.jsx')).toMatch(/\{obj\.palletDIn \|\| 48\}×\{obj\.palletWIn \|\| 40\}<\/span>/)
     expect(read('components/Project/ProjectSetup.jsx')).toMatch(/<Times label="Depth × width × height">\s*<Field aria="Pallet depth \(in\)"/)
-    expect(read('components/Project/ProjectSetup.jsx')).toMatch(/<th style=\{S\.th\}>Depth \(in\)<\/th><th style=\{S\.th\}>Width \(in\)<\/th>/)
+    expect(read('components/Project/ProjectSetup.jsx')).toMatch(/<th style=\{S\.th\}>(Depth \(in\)|\{unitLabel\('Depth \(in\)'\)\})<\/th><th style=\{S\.th\}>(Width \(in\)|\{unitLabel\('Width \(in\)'\)\})<\/th>/)   // (units-2) in the project's units
   })
 })

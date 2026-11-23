@@ -5,16 +5,20 @@ import { useEffect, useState } from 'react'
 import { useFillTool, useRackingSettings, cancelFill, setFillAisle, fillEquipment, fillSection, setFillDesign, setFillCustom } from '../utils/fillTool'
 import { B, MONO, modePill, Sep, Seg, CloseBtn, barBtn, btnClass } from '../studio/barParts'
 import { useViewPrefs } from '../studio/viewPrefs'
+import { useLengthField } from '../studio/lengthField'   // (units-2)
+import { isDefaultUnits, fmtLength, unitsNow, parseLengthAs, useUnits } from '../utils/units'
 
 /* the bar's 26h inset value (C10's Aisle) and its fields (Beam, Max run) */
 const valueBox = { height: 26, padding: '0 8px', display: 'flex', alignItems: 'center', borderRadius: 6, background: B.inset, fontFamily: MONO, fontSize: 12, color: B.strong, border: 0, boxSizing: 'border-box' }
 const word = { color: B.muted, fontSize: 12 }
 /** 10.5 → 10′ 6″ (C10's Aisle) */
-const ftInPrime = (ft) => { const t = Math.round(ft * 12), f = Math.floor(t / 12), i = t - f * 12; return `${f}′ ${i}″` }
+const ftInPrime = (ft) => { if (!isDefaultUnits()) return fmtLength(ft * 12, 'card', 'space'); const t = Math.round(ft * 12), f = Math.floor(t / 12), i = t - f * 12; return `${f}′ ${i}″` }   // (units-2) the project's units
 /** "11", "10.5", "10' 6", "10′ 6″", "10 6" → feet; null when it isn't a length */
 export function parseAisleFt(t) {
+  // (units-2) Metric: any length (a bare number is mm); Imperial: "10 6" as before, then every other form (utils/units.js)
+  if (unitsNow().metric) { const v = parseLengthAs(t, 'ft'); return v > 0 ? v : null }
   const m = String(t ?? '').trim().match(/^(\d+(?:\.\d+)?)\s*(?:ft|'|′)?\s*(?:(\d+(?:\.\d+)?)\s*(?:in|"|″)?)?$/)
-  if (!m) return null
+  if (!m) { const v = parseLengthAs(t, 'ft'); return v > 0 ? v : null }
   const ft = Number(m[1]) + (m[2] != null ? Number(m[2]) / 12 : 0)
   return ft > 0 ? ft : null
 }
@@ -22,6 +26,7 @@ export function parseAisleFt(t) {
 /* The Aisle field: the forklift's aisle until a length is typed — that one for this fill only (utils/fillTool.js
    setFillAisle), Project settings untouched; emptied, back to the forklift's. */
 function AisleField({ forkliftFt }) {
+  useUnits()
   const typed = useFillTool(st => st.aisleFt)
   const shown = ftInPrime(typed ?? forkliftFt)
   const [text, setText] = useState(shown)
@@ -43,13 +48,17 @@ function AisleField({ forkliftFt }) {
    aisle to pick). */
 function WidthField({ k, label, title, placeholder }) {
   const v = useFillTool(st => st.custom[k])
-  const [text, setText] = useState(v ? String(+v.toFixed(2)) : '')
-  useEffect(() => setText(v ? String(+v.toFixed(2)) : ''), [v])
-  const commit = () => { const ft = text.trim() ? parseAisleFt(text) : null; if (text.trim() && ft == null) { setText(v ? String(+v.toFixed(2)) : ''); return } setFillCustom(k, ft) }
+  // (units-2) every form typed (12'6, 3.8 m, 3800 mm, a bare number in the project unit); shown in the project's units
+  const lp = useLengthField(v ? +v.toFixed(4) : null, (ft) => setFillCustom(k, ft > 0 ? ft : null), { unit: 'ft', live: false })
   return (
-    <input aria-label={label} title={title} className="st-field" value={text} placeholder={placeholder} onChange={e => setText(e.target.value)} onBlur={commit}
-      onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur() }} style={{ ...valueBox, width: 44 }} />
+    <input aria-label={label} title={title} className="st-field" placeholder={placeholder} {...lp} role={undefined}
+      onKeyDown={e => { e.stopPropagation(); lp.onKeyDown(e) }} style={{ ...valueBox, width: 64 }} />
   )
+}
+/** (units-2) Max run, typed in any form, shown in the project's units; committed on Enter / blur. */
+function MaxRunField({ s }) {
+  const lp = useLengthField(s.maxRunFt, (ft) => { if (ft > 0) s.setSetting('maxRunFt', ft) }, { unit: 'ft', live: false, min: 0.01 })
+  return <input aria-label="Max rack run (ft)" className="st-field" style={{ ...valueBox, width: 64 }} {...lp} role={undefined} onKeyDown={e => { e.stopPropagation(); lp.onKeyDown(e) }} />
 }
 
 /* Fill racking's mode bar (STUDIO.md §1; design/studio/Studio.dc.html C10), top 76, while the tool is on: the
@@ -94,7 +103,7 @@ export function FillOptionsBar() {
         {[72, 84, 96, 108, 120, 144].map(v => <option key={v} value={v}>{v}″</option>)}
       </select>
       <span style={word}>Max run</span>
-      <input aria-label="Max rack run (ft)" className="st-field" style={{ ...valueBox, width: 52 }} defaultValue={s.maxRunFt} key={'m' + s.maxRunFt} onBlur={e => num('maxRunFt', e.target.value)} />
+      <MaxRunField s={s} />
       <span style={word}>ft</span>
       {/* the pallet, the forklift (its aisle) and the wall clearance: Project settings (utils/project.js) */}
       {!inSection && <Seg aria="Equipment" options={[

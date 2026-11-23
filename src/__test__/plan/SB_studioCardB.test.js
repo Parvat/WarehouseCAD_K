@@ -110,7 +110,7 @@ describe('SB — the editor (C3)', () => {
 
   it('SB-pallet-fields: a typed value shows its unit (40″, 30′-0″) and the weight its thousands (2,500), all of it selected on focus; a value that does not parse goes back', () => {
     const f = between(read('components/Elevations/ElevationsTab.jsx'), 'function Typed(', 'const primes')
-    expect(f).toMatch(/kind === 'ftin' \? primes\(ftInDash\(value\)\) : kind === 'lb' \? Math\.round\(value\)\.toLocaleString\('en-US'\) : `\$\{Math\.round\(value \* 100\) \/ 100\}″`/)
+    expect(f).toMatch(/kind === 'ftin' \? primes\(ftInDash\(value\)\) : kind === 'lb' \? Math\.round\(value\)\.toLocaleString\('en-US'\) : (U\.metric \? .*? : )?`\$\{Math\.round\(value \* 100\) \/ 100\}″`/)   // (units-2) mm in Metric
     expect(f).toMatch(/requestAnimationFrame\(\(\) => el\.select\(\)\)/)
     expect(f).toMatch(/if \(raw && Number\.isFinite\(v\) && v > 0 && v !== value\) onCommit\(v\); else setText\(shown\)/)
   })

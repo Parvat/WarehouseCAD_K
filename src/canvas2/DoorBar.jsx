@@ -20,6 +20,7 @@ import { TOOLS } from '../constants'
 import { useDoorTool, doorTypes, doorSpec, setDoorType, setDoorWidth, clearDoorHover, liveGap, placeTypedDoor } from '../utils/doorTool'
 import { B, MONO, modePill, Sep, Seg, CloseBtn, barBtn, btnClass } from '../studio/barParts'
 import { SELECT_BLUE, selectTint } from '../theme/tokens'
+import { parseLengthAs, showLengthAs, useUnits, isDefaultUnits } from '../utils/units'   // (units-2)
 
 /* Add door's mode bar (STUDIO.md §7; the mode bars' look, C9 / C10; design/doorbar.png): top 76 — "Add door", the door
    types in the library today (a segmented control), the width (the type's; typed here for the next door), the Row toggle —
@@ -34,21 +35,23 @@ export function DoorBar() {
   useDoorTool(s => s.widthFt)                                   // the width shown follows a typed one
   const row = useDoorTool(s => s.row), rowGap = useDoorTool(s => s.rowGapFt), rowCount = useDoorTool(s => s.rowCount)
   const [text, setText] = useState(null), [gapText, setGapText] = useState(null), [countText, setCountText] = useState(null)
-  const commitGap = () => { const v = parseFloat(String(gapText ?? '').replace(/[′']/g, '')); setGapText(null); if (Number.isFinite(v) && v >= 0) useDoorTool.setState({ rowGapFt: v }) }
+  const commitGap = () => { const v = String(gapText ?? '').trim() === '0' ? 0 : parseLengthAs(gapText ?? '', 'ft'); setGapText(null); if (v != null && v >= 0) useDoorTool.setState({ rowGapFt: v }) }   // (units-2)
   const commitCount = () => { const t = String(countText ?? '').trim(); setCountText(null); if (t === '') { useDoorTool.setState({ rowCount: null }); return } const v = Math.floor(Number(t)); if (v >= 1 && v <= 500) useDoorTool.setState({ rowCount: v }) }
   const fieldKeys = (reset) => (e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { reset(null); e.currentTarget.blur() } }
   const spec = doorSpec(), types = doorTypes()
   const close = () => { clearDoorHover(); useCanvasStore.getState().setActiveTool(HOME_TOOL) }
-  const commit = () => { const v = parseFloat(String(text ?? '').replace(/[′']/g, '')); setText(null); if (Number.isFinite(v) && v > 0) setDoorWidth(v) }
+  // (units-2) every form typed (3' 6, 1 m, 900 mm, a bare number in the project unit); shown in the project's units
+  const commit = () => { const v = parseLengthAs(text ?? '', 'ft'); setText(null); if (v != null && v > 0) setDoorWidth(v) }
+  const U = useUnits(), ftWord = U.metric || !isDefaultUnits(U) ? '' : 'ft'
   return (
     <div role="toolbar" aria-label="Add door" data-mode-bar="door" className="st-pill" style={modePill}>
       <span style={{ fontWeight: 600, color: B.strong }}>Add door</span>
       <Sep />
       <Seg aria="Door type" options={types.map(t => ({ value: t.id, label: t.short, aria: t.label, title: `${t.label} — ${t.widthFt}′ wide`, on: t.id === typeId, onClick: () => setDoorType(t.id) }))} />
       <span style={word}>Width</span>
-      <input aria-label="Door width (ft)" className="st-field" style={valueBox} value={text ?? String(spec?.widthFt ?? '')}
+      <input aria-label="Door width (ft)" className="st-field" style={{ ...valueBox, ...(ftWord ? null : { width: 72 }) }} value={text ?? showLengthAs(spec?.widthFt ?? '', 'ft', U)}
         onChange={e => setText(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setText(null); e.currentTarget.blur() } }} />
-      <span style={word}>ft</span>
+      {ftWord && <span style={word}>{ftWord}</span>}
       <Sep />
       {/* Row: a row of doors (design/doorbar.png) — on, its Gap and Count slide in */}
       <button type="button" aria-label="Row" aria-pressed={row} title="Row — a row of equal doors along a wall" onClick={() => { useDoorTool.setState({ row: !row, typed: null, rowDrag: null }) }} className={btnClass(row)}
@@ -56,9 +59,9 @@ export function DoorBar() {
       {row && (
         <span data-row-fields style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 8, borderLeft: '1px solid #3A403C', animation: 'st-slide-in .16s ease-out' }}>
           <span style={word}>Gap</span>
-          <input aria-label="Row gap (ft)" className="st-field" style={valueBox} value={gapText ?? String(rowGap)}
+          <input aria-label="Row gap (ft)" className="st-field" style={{ ...valueBox, ...(ftWord ? null : { width: 72 }) }} value={gapText ?? showLengthAs(rowGap, 'ft', U)}
             onChange={e => setGapText(e.target.value)} onBlur={commitGap} onKeyDown={fieldKeys(setGapText)} />
-          <span style={word}>ft</span>
+          {ftWord && <span style={word}>{ftWord}</span>}
           <span style={word}>Count</span>
           <input aria-label="Row count" className="st-field" placeholder="all" style={{ ...valueBox, width: 48 }} value={countText ?? (rowCount > 0 ? String(rowCount) : '')}
             onChange={e => setCountText(e.target.value)} onBlur={commitCount} onKeyDown={fieldKeys(setCountText)} />
