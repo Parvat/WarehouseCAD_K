@@ -22,7 +22,7 @@ beforeAll(async () => {
   store = (await import('../../store/useCanvasStore')).useCanvasStore
   Panel = await import('../../components/RightPanel/panels/RackRowPanelCore.jsx')
   PropertiesPanel = (await import('../../components/RightPanel/PropertiesPanel.jsx')).PropertiesPanel
-})
+}, 120000)   // (gen-lock) the panels' import can take over 20 s while the whole suite runs
 
 const ROTATIONS = [0, 90, 180, 270]
 const orient = (r) => (r % 180 === 0 ? 'horizontal' : 'vertical')

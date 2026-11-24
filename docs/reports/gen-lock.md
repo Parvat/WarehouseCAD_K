@@ -160,4 +160,4 @@ badges, the selection bar).
    over a column as before, and everything lands where it did.
 6. `npm run build` passes.
 
-Status: **ready**. Full suite on its own: 4388 passed, 0 failed tests; one file, X_bayBeam, could not start because its setup hook timed out at 20 s while the suite was running (it imports the store and the panels), so its 105 tests were skipped. Run alone, it passes 105/105, which makes 4493/4493. `vite build` passes.
+Status: **ready**. Full suite on its own: 4388 passed, 0 failed tests; one file, X_bayBeam, could not start because its setup hook timed out at 20 s while the suite was running (it imports the store and the panels), so its 105 tests were skipped. Run alone, it passes 105/105, which makes 4493/4493. Its setup hook now allows 120 s, so the suite load no longer skips it. `vite build` passes.
