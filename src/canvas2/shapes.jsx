@@ -231,7 +231,7 @@ export function Ops({ ops, opacity = 1, listening = false, lz = DEFAULT_LZ }) {
                 for (const a of arrowGeom(o)) {
                   c.beginPath(); c.moveTo(a.shaft[0], a.shaft[1]); c.lineTo(a.shaft[2], a.shaft[3]); c.stroke()
                   c.beginPath(); c.moveTo(a.head[0], a.head[1]); c.lineTo(a.head[2], a.head[3]); c.lineTo(a.head[4], a.head[5])
-                  c.closePath(); c.fill()
+                  c.lineJoin = 'round'; c.lineCap = 'round'; c.stroke()   // (rack-design-match) an open head, as the mockup
                 }
               }} />
           )

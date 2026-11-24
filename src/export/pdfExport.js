@@ -300,7 +300,7 @@ function opToSVG(o, lz) {
   if (o.op === 'arrows') {
     return `<g stroke="${o.color}" fill="${o.color}" stroke-width="${o.strokeWidth}">` +
       arrowGeom(o).map(a => `<line x1="${a.shaft[0]}" y1="${a.shaft[1]}" x2="${a.shaft[2]}" y2="${a.shaft[3]}"/>` +
-        `<polygon points="${a.head[0]},${a.head[1]} ${a.head[2]},${a.head[3]} ${a.head[4]},${a.head[5]}"/>`).join('') + `</g>`
+        `<polyline points="${a.head[0]},${a.head[1]} ${a.head[2]},${a.head[3]} ${a.head[4]},${a.head[5]}" fill="none" stroke-linejoin="round" stroke-linecap="round"/>`).join('') + `</g>`
   }
   return ''
 }

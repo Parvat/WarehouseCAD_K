@@ -57,7 +57,7 @@ export function RackGlyph({ icon, color }) {
   return <svg width="20" height="16" viewBox="0 0 20 16" aria-hidden="true" style={{ flexShrink: 0, display: 'block' }}>{g}</svg>
 }
 
-const GROUP = { padding: '10px 8px 4px', color: '#8A918C', fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase' }
+const GROUP = { padding: '8px 8px 2px', color: '#8A918C', fontSize: 10.5, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase' }
 
 /** The flyout. `items`: the Racking section's library items (FloatingToolbar's secItems); `onPick(item)`; `onKeep(item)`:
  *  a double-click — the type stays on until Esc; `onClose`. */
@@ -112,7 +112,7 @@ export function RackLibrary({ items, onPick, onKeep = null, onClose }) {
     clearTimeout(tipTimer.current)
     const row = e.currentTarget.getBoundingClientRect(), panel = ref.current?.getBoundingClientRect()
     const text = f.item ? f.r.tip : 'Coming soon'
-    tipTimer.current = setTimeout(() => setTip({ text, top: row.top + row.height / 2, left: (panel ? panel.right : row.right) + 8 }), 300)
+    tipTimer.current = setTimeout(() => setTip({ text, top: row.top + row.height / 2, left: (panel ? panel.right : row.right) + 4 }), 300)
   }
   const hideTip = () => { clearTimeout(tipTimer.current); setTip(null) }
 
@@ -148,7 +148,7 @@ export function RackLibrary({ items, onPick, onKeep = null, onClose }) {
         </div>
       ))}
       {tip && (
-        <span role="tooltip" style={{ position: 'fixed', left: tip.left, top: tip.top, transform: 'translateY(-50%)', padding: '6px 10px', borderRadius: 6, background: '#111412', color: '#FFFFFF', fontSize: 13, whiteSpace: 'nowrap', pointerEvents: 'none', boxShadow: '0 6px 16px rgba(15,18,16,.25)', zIndex: 160 }}>
+        <span role="tooltip" style={{ position: 'fixed', left: tip.left, top: tip.top, transform: 'translateY(-50%)', padding: '5px 9px', borderRadius: 6, background: '#111412', color: '#FFFFFF', fontSize: 12, whiteSpace: 'nowrap', pointerEvents: 'none', boxShadow: '0 6px 16px rgba(15,18,16,.25)', zIndex: 160 }}>
           {tip.text}
         </span>
       )}

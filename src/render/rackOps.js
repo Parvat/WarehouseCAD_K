@@ -46,7 +46,7 @@ export const RACK_PALETTE = {
 }
 
 /** Screen widths (px): the outline, a hairline (lane lines, deep lines), a slot's dash line, the travel arrow. */
-export const RACK_LINE = { edge: 1.25, hair: 1, slot: 1, arrow: 1.5, mezz: 2.5 }
+export const RACK_LINE = { edge: 1.25, hair: 1, lane: 1.5, slot: 1, arrow: 2, mezz: 3 }   // (rack-design-match) lane 1.5, arrow 2, mezz 3 — as the mockup
 /** The pallet slots' dash, screen px. */
 export const SLOT_DASH = [4, 3]
 /** A face bar's real depth, inches (ENTRY / LOAD / PICK). */
@@ -272,10 +272,12 @@ function laneOps(obj, gridSize, { faces, arrows, posts }) {
     // a thin lane line at each post's centre, and a square post at each pallet along it
     const segs = []
     for (const px of postXs.slice(1, -1)) segs.push(px + upW / 2, y, px + upW / 2, y + h)
-    const lo = linesOp(segs, c.line)
+    const lo = linesOp(segs, c.line, RACK_LINE.lane)
     if (lo) ops.push(lo)
     const rects = []
-    for (const px of postXs) for (let k = 0; k <= deep; k++) rects.push({ x: px, y: y + k * sd - upW / 2, w: upW, h: upW })
+    // (rack-design-match) a post square at each pallet, never under 6″ (the mockup's posts read as squares, not dots)
+    const ps = Math.max(upW, inch(6, gridSize))
+    for (const px of postXs) for (let k = 0; k <= deep; k++) rects.push({ x: px + upW / 2 - ps / 2, y: y + k * sd - ps / 2, w: ps, h: ps })
     ops.push({ op: 'uprights', name: 'lane-posts', rects, fill: c.line })
   }
 
@@ -286,7 +288,7 @@ function laneOps(obj, gridSize, { faces, arrows, posts }) {
 
   // the arrows, in the front (bottom) pallet of each lane
   if (arrows) {
-    const s0 = y + h - sd + inset, s1 = y + h - inset, len = Math.max(0, (s1 - s0) * 0.62), mid = (s0 + s1) / 2
+    const s0 = y + h - sd + inset, s1 = y + h - inset, len = Math.max(0, (s1 - s0) * 0.7), mid = (s0 + s1) / 2
     if (len > 0) {
       const head = Math.min(len * 0.32, laneW * 0.25)
       const items = laneCx.map(cx => (arrows === 'up' ? { x: cx, y0: mid + len / 2, y1: mid - len / 2 } : { x: cx, y0: mid - len / 2, y1: mid + len / 2 }))
@@ -297,12 +299,13 @@ function laneOps(obj, gridSize, { faces, arrows, posts }) {
   return ops
 }
 
-/** An `arrows` op's geometry (world px): each arrow's shaft (x1, y1, x2, y2) and head triangle, the head's tip at y1.
+/** An `arrows` op's geometry (world px): each arrow's shaft (x1, y1, x2, y2) to its tip at y1, and its open head (a
+ *  chevron: three points, stroked — rack-design-match, as the mockup; was a filled triangle).
  *  The canvas painter and the PDF export both draw from this. */
 export function arrowGeom(o) {
   return o.items.map(it => {
     const dir = Math.sign(it.y1 - it.y0) || -1, hb = it.y1 - dir * o.head
-    return { shaft: [it.x, it.y0, it.x, hb], head: [it.x - o.head * 0.5, hb, it.x, it.y1, it.x + o.head * 0.5, hb] }
+    return { shaft: [it.x, it.y0, it.x, it.y1], head: [it.x - o.head * 0.5, hb, it.x, it.y1, it.x + o.head * 0.5, hb] }
   })
 }
 
@@ -386,16 +389,16 @@ export function rackMezzanineOps(obj, gridSize) {
   const { x, y, width: w, height: h } = obj
   const c = colorsOf(obj)
   const ops = [{ ...body(x, y, w, h, null) }]   // the body: its hit area only — its edge is the dashed line below
-  ops.push(linesOp([x, y, x + w, y, x + w, y, x + w, y + h, x + w, y + h, x, y + h, x, y + h, x, y], c.line, RACK_LINE.mezz, { name: 'mezz-edge', dash: [7, 4] }))
+  ops.push(linesOp([x, y, x + w, y, x + w, y, x + w, y + h, x + w, y + h, x, y + h, x, y + h, x, y], c.line, RACK_LINE.mezz, { name: 'mezz-edge', dash: [9, 5] }))
   ops.push(linesOp([x, y, x + w, y + h, x + w, y, x, y + h], c.line, RACK_LINE.hair, { name: 'mezz-cross', opacity: 0.6 }))
   // the posts: the corners, and along each edge no more than 25 ft apart
   const pts = [], step = 25 * gridSize
   const nx = Math.max(1, Math.ceil(w / step)), ny = Math.max(1, Math.ceil(h / step))
   for (let i = 0; i <= nx; i++) pts.push(x + (w * i) / nx, y, x + (w * i) / nx, y + h)
   for (let j = 1; j < ny; j++) pts.push(x, y + (h * j) / ny, x + w, y + (h * j) / ny)
-  ops.push({ op: 'dots', pts, r: inch(3.5, gridSize), fill: c.line })
+  ops.push({ op: 'dots', pts, r: inch(5, gridSize), fill: c.line })
   // its name and size, centred
-  const s1 = inch(16, gridSize), s2 = inch(12, gridSize)
+  const s1 = inch(14, gridSize), s2 = inch(11, gridSize)   // (rack-design-match — was 16″ / 12″)
   if (w > s1 * 7 && h > (s1 + s2) * 1.6) {
     const ft = (v) => `${Math.round((v / gridSize) * 10) / 10}′`
     ops.push({ op: 'text', x: x + w / 2, y: y + h / 2 - (s1 + s2 * 1.2) / 2, size: s1, text: 'MEZZANINE', color: c.line, bold: true, halo: true })
